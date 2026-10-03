@@ -150,6 +150,150 @@ func TestBoxEdgeLocationsExport(t *testing.T) {
 	}
 }
 
+// TestBoxesNoFloorOnOneWayDecline — B10 T1 (CTO 2026-10-03): a steady
+// decline is a one-way tape; every bar is a LEFT-only low, but no bar has a
+// later candle closing back above its low, so nothing is confirmed and no
+// FTGL may be drawn (mirror: a steady rise draws no FTGH). Mutant (drop the
+// confirmation) → RED.
+func TestBoxesNoFloorOnOneWayDecline(t *testing.T) {
+	cfg := DefaultBoxCfg()
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	decline := make([]market.Kline, 0, 20)
+	for i := 0; i < 20; i++ {
+		decline = append(decline, mk(i, 220-2*float64(i), 221-2*float64(i), 218-2*float64(i), 219-2*float64(i)))
+	}
+	now := time.UnixMilli(decline[len(decline)-1].OpenTime + 60_000).In(ctime())
+	boxes := BoxesBuild(decline, cfg, now)
+	for _, b := range boxes {
+		if b.Kind == FTGL {
+			t.Fatalf("steady decline drew FTGL %+v — a one-way tape confirms no swing low", b)
+		}
+	}
+	if len(boxes) != 0 {
+		t.Fatalf("steady decline drew %d boxes, want 0", len(boxes))
+	}
+
+	rise := make([]market.Kline, 0, 20)
+	for i := 0; i < 20; i++ {
+		rise = append(rise, mk(i, 200+2*float64(i), 202+2*float64(i), 199+2*float64(i), 201+2*float64(i)))
+	}
+	nowR := time.UnixMilli(rise[len(rise)-1].OpenTime + 60_000).In(ctime())
+	for _, b := range BoxesBuild(rise, cfg, nowR) {
+		if b.Kind == FTGH {
+			t.Fatalf("steady rise drew FTGH %+v — a one-way tape confirms no swing high", b)
+		}
+	}
+}
+
+// TestBoxesExtremeAmongTodayOnly — B10 T2 (CTO 2026-10-03): the slice holds
+// up to 1500 1m bars (A9), so pairing against a YESTERDAY extreme and then
+// dropping the box at the day check leaves a day whose low sits above
+// yesterday's with no floor at all. The extreme must be chosen among TODAY's
+// swings: yesterday low 100, today a clean floor at 120 → the FTGL [120, 123]
+// exists. Mutant (extreme over the whole slice) → RED.
+func TestBoxesExtremeAmongTodayOnly(t *testing.T) {
+	cfg := DefaultBoxCfg()
+	day1 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	day2 := time.Date(2026, time.September, 16, 9, 4, 0, 0, ctime()).UnixMilli()
+	mk := func(t0 int64, i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(day1, 0, 104, 105, 103, 104),
+		mk(day1, 1, 103, 103.5, 101, 102),
+		mk(day1, 2, 102, 102.5, 100, 101), // yesterday's extreme low 100
+		mk(day1, 3, 101, 102, 100.5, 101.5),
+		mk(day2, 0, 127, 128, 126, 127),
+		mk(day2, 1, 127, 127, 122.5, 125),
+		mk(day2, 2, 125, 126, 123, 124),
+		mk(day2, 3, 124, 126, 120, 123), // today's swing low 120
+		mk(day2, 4, 123, 125, 122, 124),
+		mk(day2, 5, 124, 125, 123, 124),
+		mk(day2, 6, 124, 124.5, 121.5, 123), // today's nearest low
+		mk(day2, 7, 123, 124, 122, 123.5),
+	}
+	now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000).In(ctime())
+	boxes := BoxesBuild(bars, cfg, now)
+	if len(boxes) != 1 {
+		t.Fatalf("boxes = %d (%+v), want exactly the today FTGL [120, 123]", len(boxes), boxes)
+	}
+	b := boxes[0]
+	if b.Kind != FTGL || b.Bottom != 120 || b.Top != 123 {
+		t.Fatalf("box = %+v, want FTGL bottom 120 top 123", b)
+	}
+}
+
+// TestBoxTopTwoCandleNeverWalked — B10 T3 (CTO 2026-10-03): in a normal FTGH
+// the extreme (top 1) forms FIRST and the nearest (top 2) LATER. The box
+// exists only once both tops are known, so the return walk must start AFTER
+// the later of the two — the top-2 candle closes back below the bottom and
+// WOULD trade (reject short) if walked; it must not be, and the first return
+// is the NEXT visit. Mutant (FormedAt = the extreme idx) → RED.
+func TestBoxTopTwoCandleNeverWalked(t *testing.T) {
+	cfg := DefaultBoxCfg()
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(0, 100, 101, 99, 100.5),
+		mk(1, 100, 103, 99, 101),
+		mk(2, 104, 106, 102, 104.5),     // top 1: the extreme high
+		mk(3, 104, 105, 103.5, 104),     // closes above the box bottom
+		mk(4, 104, 104.5, 102.5, 103.2), // closes back below the bottom
+		mk(5, 103.5, 106, 102.5, 103.2), // top 2: the nearest — wick 106, closes below bottom
+		mk(6, 102.5, 103.5, 101, 102.2), // touches with the spell open — not itself a return
+		mk(7, 102.5, 103, 102, 102.5),   // no touch
+		mk(8, 102, 103.6, 101.5, 102.6), // the NEXT visit: touch while outside
+	}
+	now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000).In(ctime())
+	boxes := BoxesBuild(bars, cfg, now)
+	var b *Box
+	for i := range boxes {
+		if boxes[i].Kind == FTGH {
+			bb := boxes[i]
+			b = &bb
+		}
+	}
+	if b == nil {
+		t.Fatal("no FTGH built")
+	}
+	if b.Top != 106 || b.Bottom != 103.5 {
+		t.Fatalf("FTGH = [%.2f, %.2f], want [103.5, 106]", b.Bottom, b.Top)
+	}
+	if b.FormedAt != 5 {
+		t.Fatalf("FormedAt = %d, want 5 (the later of the extreme and the nearest)", b.FormedAt)
+	}
+	// The production call site (eval.go) walks incrementally from
+	// FormedAt+1 via BoxReturnBarsFrom; mirror that exact shape.
+	ret := BoxReturnBarsFrom(bars, *b, b.FormedAt+1, cfg)
+	if len(ret) == 0 {
+		t.Fatal("no return visit at all — the next visit after the top-2 candle must be return 1")
+	}
+	if ret[0].RefBar != 8 {
+		t.Fatalf("first return RefBar = %d (%+v), want 8 — the next visit after the top-2 candle", ret[0].RefBar, ret)
+	}
+	for _, r := range ret {
+		if r.RefBar <= b.FormedAt {
+			t.Fatalf("return RefBar %d <= FormedAt %d — a formation candle was walked", r.RefBar, b.FormedAt)
+		}
+	}
+	// The top-2 candle is entry-eligible: walked, it would trade. With the
+	// correct FormedAt the walk never reaches it.
+	c := DefaultConfig()
+	c.Enabled = true
+	c.RoomMultiple = 0.05
+	c.LocTriggerFilter = false
+	levels := []Level{{Key: "k", Kind: KindKeyLevel, Price: 100}}
+	out := boxEntryIntent(bars[5], *b, []Box{*b}, levels, TriggerLine{}, c)
+	if len(out) != 1 || out[0].Action != PlaceStopEntry || out[0].Side != SideShort {
+		t.Fatalf("top-2 candle eligibility = %+v, want one SHORT stop entry (proves the walk must exclude it)", out)
+	}
+}
+
 // TestBoxesGolden13SepFrame — the course frame (D3.3 FTGH/FTGL
 // part1_06-25.jpg, verified by the CTO): two 1m boxes on Sun 13 Sep 2026,
 // FTGL ≈ 28,982 → 29,015 and FTGH ≈ 29,097 → 29,105. The builder must draw

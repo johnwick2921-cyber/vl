@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"math"
 	"time"
 
 	"vl/kernel"
@@ -65,7 +66,9 @@ type Box struct {
 	// Touches counts closed candles whose wick reached an edge since the
 	// box formed — the entry layer requires the THIRD touch [@ 04:29].
 	Touches int
-	// FormedAt is the bar index the box was drawn (extend-right origin).
+	// FormedAt is the bar index the box was drawn (extend-right origin):
+	// the LATER of the extreme's and the nearest's bar, so a pairing candle
+	// is never walked as a return (B10 T3).
 	FormedAt int
 }
 
@@ -142,9 +145,42 @@ func barsForTF(bars []market.Kline, tf string) []market.Kline {
 // swings3 is the role detector [B]: a rolling 3-candle extreme — candle i is
 // a LOW when its low is the min of the last three lows, a HIGH when its high
 // is the max of the last three highs.
+//
+// B10 T1 (CTO 2026-10-03): the left-only scan drew a box at every new low of
+// a steady decline. The extreme must be TWO-SIDED — confirmed by a later
+// closed candle whose CLOSE returns above the swing low (below the swing high
+// for highs). A one-way tape confirms nothing, so no pair and no box. (The
+// confirmation uses the later candle's CLOSE, not its low/high: the high
+// mirror would have demanded a later LOWER high, which contradicts the escape
+// fixture TestBoxSurvivesEscape — its top is never re-tested, yet the box
+// must survive.)
 func swings3(bars []market.Kline) []swingPairAt {
+	n := len(bars)
+	// Suffix confirmation arrays over CLOSED candles only (an unclosed bar
+	// cannot confirm): maxCloseAfter[i] is the highest later close, and
+	// minCloseAfter[i] the lowest. A swing low at i is confirmed iff some
+	// later closed candle closed above its low; a swing high, iff some later
+	// closed candle closed below its high.
+	maxCloseAfter := make([]float64, n)
+	minCloseAfter := make([]float64, n)
+	for i := range maxCloseAfter {
+		maxCloseAfter[i] = math.Inf(-1)
+		minCloseAfter[i] = math.Inf(1)
+	}
+	for i := n - 2; i >= 0; i-- {
+		maxCloseAfter[i] = maxCloseAfter[i+1]
+		minCloseAfter[i] = minCloseAfter[i+1]
+		if bars[i+1].CloseTime != 0 {
+			if bars[i+1].Close > maxCloseAfter[i] {
+				maxCloseAfter[i] = bars[i+1].Close
+			}
+			if bars[i+1].Close < minCloseAfter[i] {
+				minCloseAfter[i] = bars[i+1].Close
+			}
+		}
+	}
 	var seq []swingPairAt
-	for i := 2; i < len(bars); i++ {
+	for i := 2; i < n; i++ {
 		if bars[i].CloseTime == 0 {
 			continue
 		}
@@ -159,9 +195,13 @@ func swings3(bars []market.Kline) []swingPairAt {
 		}
 		switch {
 		case bars[i].Low == lo && bars[i].Low < bars[i-1].Low && bars[i].Low < bars[i-2].Low:
-			seq = append(seq, swingPairAt{kind: kernel.KindSWGL, price: bars[i].Low, idx: i})
+			if maxCloseAfter[i] > bars[i].Low {
+				seq = append(seq, swingPairAt{kind: kernel.KindSWGL, price: bars[i].Low, idx: i})
+			}
 		case bars[i].High == hi && bars[i].High > bars[i-1].High && bars[i].High > bars[i-2].High:
-			seq = append(seq, swingPairAt{kind: kernel.KindSWGH, price: bars[i].High, idx: i})
+			if minCloseAfter[i] < bars[i].High {
+				seq = append(seq, swingPairAt{kind: kernel.KindSWGH, price: bars[i].High, idx: i})
+			}
 		}
 	}
 	return seq
@@ -179,6 +219,17 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 	tfBars := barsForTF(bars, cfg.TF)
 	seq := swings3(tfBars)
 	today := tradingDayKey(now.In(ctime()))
+	// B10 T2 (CTO 2026-10-03): pick the extreme among TODAY's swings only.
+	// The slice is 1500 1m bars since A9; pairing against a yesterday extreme
+	// and dropping the box at the day check left a day whose low sits above
+	// yesterday's with no floor at all.
+	var seqToday []swingPairAt
+	for _, s := range seq {
+		if tradingDayKey(time.UnixMilli(tfBars[s.idx].OpenTime).In(ctime())) == today {
+			seqToday = append(seqToday, s)
+		}
+	}
+	seq = seqToday
 	var out []Box
 	for _, role := range []kernel.LevelKind{kernel.KindSWGL, kernel.KindSWGH} {
 		extreme := -1
@@ -235,20 +286,23 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 		if b == nil {
 			continue
 		}
-		if tradingDayKey(time.UnixMilli(tfBars[seq[extreme].idx].OpenTime).In(ctime())) != today {
-			continue // the box does not outlive its day
-		}
 		b.Touches = countBoxTouches(tfBars, *b, seq[extreme].idx, cfg)
 		// B4 (10-03 ruling, PLAN.md: "NEVER deleted during the session… delete
 		// at the end of the day" [D4.1 p2 @02:39–03:09]): an escaped body does
 		// NOT delete the box — v3's "delete on escape" mixed in the 5m ISB box
-		// rule and killed every box trade. The tradingDayKey check above is the
-		// box's only death.
+		// rule and killed every box trade. The today-only candidate filter
+		// above is the box's only death.
 		b.Key = "ftgh:" + fnum(b.Top) + ":" + fnum(b.Bottom)
 		if b.Kind == FTGL {
 			b.Key = "ftgl:" + fnum(b.Top) + ":" + fnum(b.Bottom)
 		}
+		// B10 T3 (CTO 2026-10-03): the box exists only once BOTH pairing
+		// candles are known, so the formation completes at the LATER of the
+		// two — the return walk must never include the pairing candles.
 		b.FormedAt = seq[extreme].idx
+		if seq[nearest].idx > b.FormedAt {
+			b.FormedAt = seq[nearest].idx
+		}
 		out = append(out, *b)
 	}
 	return out
