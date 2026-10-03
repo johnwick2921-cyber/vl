@@ -21,6 +21,7 @@ package mentor
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"os"
 	"sort"
 	"strconv"
@@ -109,6 +110,7 @@ func TestParityAgainstReplayV5(t *testing.T) {
 	var intents []goIntent
 	total := 0
 	byDay := map[string]int{}
+	reasonCounts := map[string]int{}
 	for _, d := range days {
 		bars := LoadCSVBars(t, d.file, 1)
 		if len(bars) < 100 {
@@ -117,7 +119,16 @@ func TestParityAgainstReplayV5(t *testing.T) {
 		e := New(cfg)
 		for i := 2; i <= len(bars); i++ {
 			now := bars[i-1].CloseTime
+			// Tick sees the full history; only the TARGET day is recorded (the
+			// 30-day prefix is warm-up per the CTO's routing).
+			if time.UnixMilli(bars[i-1].OpenTime).UTC().Format("2006-01-02") != d.day {
+				for _, in := range e.Tick(bars[:i], now) {
+					reasonCounts[in.Reason]++
+				}
+				continue
+			}
 			for _, in := range e.Tick(bars[:i], now) {
+				reasonCounts[in.Reason]++
 				if in.Action != PlaceStopEntry && in.Action != PlaceStopLimitEntry {
 					continue // cancel/level intents are not trades
 				}
@@ -137,9 +148,29 @@ func TestParityAgainstReplayV5(t *testing.T) {
 				})
 			}
 		}
+		// Per-day evaluator state at the end of the target day: live ISB arms,
+		// the HTF latch and the day gate (refusals are mostly fail-closed
+		// latches, so this is how a silent day explains itself).
+		t.Logf("STATE %-8s %s: isb_arms=%d htf=%s day=%s",
+			d.name, d.day, len(e.State.ISBArms),
+			mustJSON(e.State.HTF), mustJSON(e.State.Day))
 	}
 	if total == 0 {
 		t.Fatal("the driver emitted ZERO intents across 5 days — evaluator or tape broken")
+	}
+	type rc struct {
+		k string
+		n int
+	}
+	var ranks []rc
+	for k, n := range reasonCounts {
+		ranks = append(ranks, rc{k, n})
+	}
+	sort.Slice(ranks, func(i, j int) bool { return ranks[i].n > ranks[j].n })
+	for _, r := range ranks {
+		if r.n > 0 {
+			t.Logf("REASON %4d x %s", r.n, r.k)
+		}
 	}
 
 	// Swing-vs-swing match: same day, same side, entry within 1 pt, stop
@@ -202,4 +233,12 @@ func minCTFromBar(b market.Kline) string {
 	// the package convention: bar times are the CT wall clock as epoch millis,
 	// so UTC formatting of the epoch yields the CT clock string.
 	return time.UnixMilli(b.OpenTime).UTC().Format("2006-01-02 15:04")
+}
+
+func mustJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "<unmarshalable>"
+	}
+	return string(b)
 }
