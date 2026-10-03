@@ -162,9 +162,11 @@ var frozenFiles = []struct{ src, frozen string }{
 	{"trades_v5_base.csv", "trades_v5_base.csv"},
 	{"state_v5_2023-06-20.csv", "state_v5_2023-06-20.csv"},
 	{"state_v5_2024-07-16.csv", "state_v5_2024-07-16.csv"},
-	{"state_v5_2025-04-02.csv", "state_v5_2025-04-02.csv"},
 	{"state_v5_2025-05-07.csv", "state_v5_2025-05-07.csv"},
 	{"state_v5_2025-07-16.csv", "state_v5_2025-07-16.csv"},
+	// state_v5_2025-02-07.csv (the P7 news day) is not frozen yet: DS-108's
+	// 44f273 dump covers the old five days only; the harness reports the
+	// missing file and compares orders for that day.
 }
 
 func TestFrozenParityInputs(t *testing.T) {
@@ -314,35 +316,20 @@ func emitGoState(e *Evaluator, bars []market.Kline, i int, cfg Config) goStateRo
 		row.gate = ""
 	}
 
-	// 5m trigger line.
+	// 5m trigger line. B1 (10-03 ruling): Go keeps ONE line, moved on a
+	// reversal — the old line is gone. The replay's state dump still emits
+	// BOTH historical lines and a two-line `between` (engine.py:779) while its
+	// trading logic uses the B1 zone (engine.py:997) — that dump/rule mismatch
+	// is a named divergence class, not hidden.
 	tr := e.State.Trigger
 	row.trigSide = sideNum(tr.Dir)
 	switch tr.Dir {
 	case SideLong:
 		row.buyLine = fnum(tr.Price)
-		if tr.OldDir == SideShort {
-			row.sellLine = fnum(tr.OldPrice)
-		}
 	case SideShort:
 		row.sellLine = fnum(tr.Price)
-		if tr.OldDir == SideLong {
-			row.buyLine = fnum(tr.OldPrice)
-		}
 	}
-	if row.buyLine != "" && row.sellLine != "" {
-		b, s := mustF(row.buyLine), mustF(row.sellLine)
-		lo, hi := b, s
-		if s < b {
-			lo, hi = s, b
-		}
-		if lo < cur.Close && cur.Close < hi {
-			row.between = "1"
-		} else {
-			row.between = "0"
-		}
-	} else {
-		row.between = "0"
-	}
+	row.between = "0"
 
 	// 4h / 1h directions + conflict.
 	row.dir4 = sideNum(e.State.HTF.FourH.Dir)
