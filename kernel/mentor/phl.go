@@ -26,8 +26,24 @@ func PHLPLH(t Touch, oldExtreme Level, extremeIdx, barIdx int, cfg Config) (Inte
 }
 
 // PHLPLHR2 is the R2 PHL/PLH: priorSwing is the previous same-role swing
-// price (0 = skip the higher-low / lower-high check).
+// price (0 = skip the higher-low / lower-high check). The target is NEAR
+// the old extreme, not at it.
 func PHLPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, cfg Config) (Intent, bool, string) {
+	return phlPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, nil, cfg)
+}
+
+// PHLPLHR2Levels is PHLPLHR2 with B15 (CTO 20:48:40Z): the target is the
+// FIRST obstacle in the way — the nearest level beyond the entry (the same
+// nextLevelBeyond the ISB and box paths use), capped at the old extreme
+// minus PHLTargetShyPts [D3.3 p1 @05:18-05:34: "target là về những level kế
+// tiếp… những cái mà nó ngán đường trên đường đi"]. The room rule and the
+// 1:1 floor are measured to that target. nil levels = the old behaviour.
+func PHLPLHR2Levels(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config) (Intent, bool, string) {
+	return phlPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, levels, cfg)
+}
+
+// phlPLHR2 is the shared PHL/PLH core.
+func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config) (Intent, bool, string) {
 	if !cfg.Enabled {
 		return Intent{}, false, "mentor mode off"
 	}
@@ -64,11 +80,9 @@ func PHLPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if barIdx-extremeIdx < cfg.PHLMinCandlesFromExtreme {
 		return Intent{}, false, "too close to the old extreme — wait 1–2 more pullback candles [D2.2 p2 @ 05:25, 07:02]"
 	}
-	// Target: NEAR the old extreme, not exactly at it [D2.2 p1 @ 07:33].
-	target := oldExtreme.Price - cfg.PHLTargetShyPts
-	if side == SideShort {
-		target = oldExtreme.Price + cfg.PHLTargetShyPts
-	}
+	// Target: NEAR the old extreme, not exactly at it [D2.2 p1 @ 07:33];
+	// B15: capped by the FIRST obstacle in the way when levels are given.
+	target := phlTarget(oldExtreme, price, side, levels, cfg)
 	risk := price - stop
 	reward := target - price
 	if side == SideShort {
@@ -103,6 +117,36 @@ func PHLPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 // EVERY setup's intent).
 const targetCloserThanStopReason = "target closer than the stop — the target is never smaller than the stop [D1.2 p1 @ 07:48]"
 
+// phlTarget — B15 (CTO 20:48:40Z): the target is the FIRST obstacle in the
+// way [D3.3 p1 @05:18-05:34] — the nearest level beyond the entry (the same
+// nextLevelBeyond the ISB and box paths use), capped at the old extreme
+// minus PHLTargetShyPts ("gần đỉnh cũ", D2.2 p1 @06:11). nil levels = the
+// old extreme minus the shy only.
+func phlTarget(oldExtreme Level, price float64, side Side, levels []Level, cfg Config) float64 {
+	target := oldExtreme.Price - cfg.PHLTargetShyPts
+	if side == SideShort {
+		target = oldExtreme.Price + cfg.PHLTargetShyPts
+	}
+	if levels == nil {
+		return target
+	}
+	ob := nextLevelBeyond(levels, price, side)
+	if ob == 0 {
+		return target
+	}
+	switch side {
+	case SideLong:
+		if ob < target {
+			return ob // a key level / EMA 34 / box edge stands in the way
+		}
+	case SideShort:
+		if ob > target {
+			return ob
+		}
+	}
+	return target
+}
+
 // PHLPLHGated is the call site the evaluator uses for every PHL/PLH: the
 // §2.2 rules in PHLPLH, then the two direction gates on top —
 //
@@ -130,7 +174,17 @@ func PHLPLHGated(t Touch, oldExtreme Level, extremeIdx, barIdx int, cfg Config, 
 // check). Wired by DS-103 at the evaluator's PHL/PLH call site (CTO box mail
 // 1791003269412: "the PHLPLHR2 call with the prior same-role swing").
 func PHLPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, cfg Config, htf HTF, day DayVerdict, dg DayGate) (Intent, bool, string) {
-	in, ok, reason := PHLPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, cfg)
+	return phlPLHGatedR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, nil, cfg, htf, day, dg)
+}
+
+// PHLPLHGatedR2Levels is the B15 call the evaluator should use once DS-103
+// merges the patch: the same gates with the first-obstacle target.
+func PHLPLHGatedR2Levels(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config, htf HTF, day DayVerdict, dg DayGate) (Intent, bool, string) {
+	return phlPLHGatedR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, levels, cfg, htf, day, dg)
+}
+
+func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config, htf HTF, day DayVerdict, dg DayGate) (Intent, bool, string) {
+	in, ok, reason := phlPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, levels, cfg)
 	if !ok {
 		return in, false, reason
 	}
