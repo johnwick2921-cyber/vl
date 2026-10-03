@@ -40,6 +40,24 @@ type replayTrade struct {
 	entry, stop, target, risk float64
 }
 
+// Warm-up seam (CTO P0 plan, point 1 and 3): one constant per source. The
+// binding numbers are DS-103's Seed PR; until the Seed API lands, the ticked
+// history prefix is the proxy for all of them and the test only checks the
+// aggregate depth. When the Seed lands, replace the tick warm-up below with a
+// Seed call and move these per-source values into the seed inputs.
+const (
+	warmupHistoryDays  = 3 // distinct prefix days currently extracted into each tape
+	warmup1mBarsPerDay = 1440
+
+	// Per-source requirements (documented, not yet individually enforced —
+	// enforced together via warmupHistoryDays):
+	warmupFourHEMA34Bars = 34   // 4h EMA34, derived from 1h, 17:00 CT anchor
+	warmupOneMEMA34Bars  = 34   // 1m EMA34
+	warmupOneHRTHAll     = true // 1H RTH level set: FULL stored history, no cap (Seed-owned)
+	warmupSessionDays    = 1    // today's session for boxes / ORB / day latch
+	warmupClosed15mBars  = 1
+)
+
 func loadReplayTrades(t *testing.T, path string, days map[string]bool) []replayTrade {
 	t.Helper()
 	f, err := os.Open(path)
@@ -113,14 +131,37 @@ func TestParityAgainstReplayV5(t *testing.T) {
 	reasonCounts := map[string]int{}
 	for _, d := range days {
 		bars := LoadCSVBars(t, d.file, 1)
-		if len(bars) < 100 {
-			t.Fatalf("%s: only %d bars — tape too short", d.name, len(bars))
+		// Warm-up depth check: the tape must carry at least warmupHistoryDays
+		// distinct calendar days BEFORE the first target-day bar (the first
+		// prefix day is typically a partial globex session), or the evaluator
+		// runs on a cold prefix (cold EMA / truncated levels) and the
+		// comparison is meaningless. Fail-closed, like the P0 requires of the
+		// live driver. DS-103's Seed PR replaces this aggregate check with the
+		// per-source numbers above.
+		firstTarget := -1
+		for i, b := range bars {
+			if time.UnixMilli(b.OpenTime).UTC().Format("2006-01-02") == d.day {
+				firstTarget = i
+				break
+			}
 		}
+		if firstTarget < 0 {
+			t.Fatalf("%s: no target-day bars in the tape", d.name)
+		}
+		prefixDays := map[string]bool{}
+		for i := 0; i < firstTarget; i++ {
+			prefixDays[time.UnixMilli(bars[i].OpenTime).UTC().Format("2006-01-02")] = true
+		}
+		if len(prefixDays) < warmupHistoryDays {
+			t.Fatalf("%s: only %d distinct warm-up days before %s; need %d (cold EMA / truncated levels)",
+				d.name, len(prefixDays), d.day, warmupHistoryDays)
+		}
+		t.Logf("WARMUP %s: %d bars / %d days before %s", d.name, firstTarget, len(prefixDays), d.day)
 		e := New(cfg)
 		for i := 2; i <= len(bars); i++ {
 			now := bars[i-1].CloseTime
 			// Tick sees the full history; only the TARGET day is recorded (the
-			// 30-day prefix is warm-up per the CTO's routing).
+			// prefix is warm-up per the CTO's routing).
 			if time.UnixMilli(bars[i-1].OpenTime).UTC().Format("2006-01-02") != d.day {
 				for _, in := range e.Tick(bars[:i], now) {
 					reasonCounts[in.Reason]++
