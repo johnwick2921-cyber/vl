@@ -421,8 +421,8 @@ func mustF(s string) float64 {
 	return v
 }
 
-func ctMinuteOfDay(ctMs int64) int {
-	ct := time.UnixMilli(ctMs).UTC()
+func ctMinuteOfDay(ms int64) int {
+	ct := time.UnixMilli(ms).In(ctime())
 	return ct.Hour()*60 + ct.Minute()
 }
 
@@ -518,7 +518,7 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 
 	firstTarget := -1
 	for i, b := range bars {
-		if time.UnixMilli(b.OpenTime).UTC().Format("2006-01-02") == d.day {
+		if time.UnixMilli(b.OpenTime).In(ctime()).Format("2006-01-02") == d.day {
 			firstTarget = i
 			break
 		}
@@ -559,7 +559,7 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 	var rowOrder []string
 	for i := 2; i <= len(bars); i++ {
 		cur := bars[i-1]
-		if time.UnixMilli(cur.OpenTime).UTC().Format("2006-01-02") != d.day {
+		if time.UnixMilli(cur.OpenTime).In(ctime()).Format("2006-01-02") != d.day {
 			e.Tick(bars[:i], cur.CloseTime)
 			continue
 		}
@@ -854,7 +854,7 @@ func replaySideNum(s Side) int {
 func prefixDays(bars []market.Kline) int {
 	days := map[string]bool{}
 	for _, b := range bars {
-		days[time.UnixMilli(b.OpenTime).UTC().Format("2006-01-02")] = true
+		days[time.UnixMilli(b.OpenTime).In(ctime()).Format("2006-01-02")] = true
 	}
 	return len(days)
 }
@@ -873,7 +873,6 @@ func atofOrNaN(s string) float64 {
 }
 
 func minCTFromBar(b market.Kline) string {
-	// the package convention: bar times are the CT wall clock as epoch millis,
-	// so UTC formatting of the epoch yields the CT clock string.
-	return time.UnixMilli(b.OpenTime).UTC().Format("2006-01-02 15:04")
+	// real UTC epoch ms → CT clock string (epoch ruling 2026-10-03 12:59Z).
+	return time.UnixMilli(b.OpenTime).In(ctime()).Format("2006-01-02 15:04")
 }
