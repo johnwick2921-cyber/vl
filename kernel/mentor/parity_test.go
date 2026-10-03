@@ -1,15 +1,19 @@
 package mentor
 
-// Parity check vs DS-108's replay v5 base (CTO 2026-10-03): drive the Go
-// evaluator minute by minute over 5 recorded RTH days (trend / range / news /
-// two normal) and compare every emitted intent with the replay's
-// trades_v5_base.csv for the same days.
+// Parity check vs DS-108's replay (CTO 2026-10-03): drive the Go evaluator
+// minute by minute over 5 recorded days (trend / range / news / two normal)
+// and compare every emitted intent with the replay's trades for the same days.
 //
-// The v5 base models SWING4H ONLY (its setup column is all SWING4H), so this
-// test matches swing-vs-swing and reports every other intent as go-only (with
-// its rule) and every unmatched replay trade as replay-only. Rules DS-103 has
-// not built yet (EMA34-off, R6, R10, R11, leg budget) are tagged "not yet
-// built" instead of being counted as defects.
+// Compared against trades_v5_nolimits.csv for now: trades_v5_base.csv currently
+// has 0 intraday trades (a DS-108 daily-limits bug being fixed). The Go side
+// therefore runs with the daily limits OFF (window, done-after-win) too. When
+// DS-108 posts the fixed v5_base, re-point this test at it and turn the limits
+// back on.
+//
+// The replay records FILLS (with A/B/C exits); the evaluator emits RESTING
+// arms. The match rule is the closest arm per replay trade (same day, same
+// side, entry within 1 pt, stop within 2 pts). Rules DS-103 has not built yet
+// (EMA34-off, R6, R10, R11, leg budget) are tagged "not yet built".
 //
 // REPORT-style: the full table is logged; the test fails only when the driver
 // itself produced nothing (a broken tape or evaluator), never on a mismatch —
@@ -89,7 +93,7 @@ func TestParityAgainstReplayV5(t *testing.T) {
 	for _, d := range days {
 		want[d.day] = true
 	}
-	replay := loadReplayTrades(t, "/home/hoang/mm-course/mentor-mode/replay/trades_v5_base.csv", want)
+	replay := loadReplayTrades(t, "/home/hoang/mm-course/mentor-mode/replay/trades_v5_nolimits.csv", want)
 
 	cfg := DefaultConfig()
 	cfg.Enabled = true
