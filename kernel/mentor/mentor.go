@@ -77,6 +77,10 @@ const (
 	// after the 3rd touch; discarded by a 5m close through. Location only,
 	// never a target.
 	KindTrendline LevelKind = "trendline"
+	// KindHTFTrigger is the 4h/1h trigger line as a TARGET-LADDER level only
+	// (D4.4-15): it joins the level set so nextLevelBeyond can pick it, but it
+	// is never touched, never located and never a PHL/PLH place.
+	KindHTFTrigger LevelKind = "htf_trigger"
 )
 
 // Level is one mentor level line. Lo/Hi are equal (a line); AtTime is the bar

@@ -708,6 +708,18 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.State.Trigger.Dir != "" && e.State.Trigger.Price != 0 {
 		levels = append(levels, Level{Key: string(KindTriggerRetest), Kind: KindTriggerRetest, Price: e.State.Trigger.Price})
 	}
+	// D4.4-15: the 4h/1h trigger lines join the TARGET LADDER (never the
+	// location set) — a trade's target can be the higher-TF trigger line when
+	// it sits between the entry and the next level [D4.4 p2 @05:04–06:02
+	// "TARGET MÌNH VỀ LẠI 4 GIỜ nè anh chị… CÁI LỆNH TRĂM ĐIỂM của mình LÀ VỀ
+	// ĐÂY"]. Target-only: the touch loop skips KindHTFTrigger and
+	// levelIsLocation returns false for it.
+	if e.State.HTF.FourH.Dir != "" && e.State.HTF.FourH.Price != 0 {
+		levels = append(levels, Level{Key: "htf_4h_trigger", Kind: KindHTFTrigger, Price: e.State.HTF.FourH.Price})
+	}
+	if e.State.HTF.OneH.Dir != "" && e.State.HTF.OneH.Price != 0 {
+		levels = append(levels, Level{Key: "htf_1h_trigger", Kind: KindHTFTrigger, Price: e.State.HTF.OneH.Price})
+	}
 	if el, ok := EMALocationLevel(bars, e.Cfg); ok {
 		levels = append(levels, el)
 	}
@@ -736,7 +748,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// an approach from above). The edges stay in `levels` for location /
 	// InsideAnyBox / boxBanFilter / midRangeBoxed checks.
 	for _, lvl := range levels {
-		if lvl.Kind == KindFTGHEdge || lvl.Kind == KindFTGLEdge {
+		if lvl.Kind == KindFTGHEdge || lvl.Kind == KindFTGLEdge || lvl.Kind == KindHTFTrigger {
 			continue
 		}
 		moving := isMovingLineKey(lvl.Key)
