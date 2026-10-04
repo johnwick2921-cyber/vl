@@ -1,9 +1,104 @@
-import { GUIDE_BUILT_REV, type GuideSection } from '../types'
+import { GUIDE_BUILT_REV, type GuideSection, type KnobSpec } from '../types'
 
 // Mentor mode (🧑‍🏫) — the owner's mentor's method, built as a per-strategy
 // trading mode. Everything below is read from the lane branches that implement
 // it (feat/mentor-eval, feat/mentor-isb, feat/mentor-boxes-swing,
 // feat/mentor-p3). Items not yet merged are marked "coming with Mentor mode".
+const mentorKnobKeys: Record<string, { key: string; live: boolean }> = {
+  'Mentor mode': { key: 'mentor_mode', live: true },
+  'Base contracts': { key: 'mentor_base_contracts', live: true },
+  'Confluence contracts': { key: 'mentor_confluence_contracts', live: true },
+  'Big contracts': { key: 'mentor_big_contracts', live: true },
+  'Max contracts': { key: 'mentor_max_contracts', live: true },
+  'Reduced contracts': { key: 'mentor_reduced_contracts', live: true },
+  'SWING4H contracts': { key: 'mentor_swing4h_contracts', live: true },
+  'Spent-day contracts': { key: 'mentor_spent_day_contracts', live: true },
+  'Trail timeframe': { key: 'mentor_trail_tf', live: true },
+  'Key level timeframe': { key: 'Config.KeyLevelTFMinutes', live: true },
+  'Key levels RTH only': { key: 'Config.KeyLevelRTHOnly', live: true },
+  'Key level prune': { key: 'Config.KeyLevelPrunePts', live: true },
+  'EMA 34 period': { key: 'Config.EMAPeriod34', live: true },
+  'EMA 9 period': { key: 'Config.EMAPeriod9', live: true },
+  'EMA timeframe': { key: 'Config.EMATFMinutes', live: true },
+  'EMA 34 location timeframe': {
+    key: 'Config.EMALocationTFMinutes',
+    live: true,
+  },
+  'Touch band': { key: 'Config.TouchBandPts', live: true },
+  'ISB buffer': { key: 'Config.ISBBufferPts', live: true },
+  'ISB minimum stop (retired)': { key: 'Config.ISBStopMinPts', live: false },
+  'ISB twenties': { key: 'Config.ISBTwentiesPts', live: true },
+  'Reverse ISB at EMA 9': { key: 'Config.ISBReverseEMA9Enabled', live: true },
+  'PHL min candles from old extreme': {
+    key: 'Config.PHLMinCandlesFromExtreme',
+    live: true,
+  },
+  'PHL target shy': { key: 'Config.PHLTargetShyPts', live: true },
+  'Stop ceiling': { key: 'Config.StopCeilingPts', live: true },
+  'Room multiple': { key: 'Config.RoomMultiple', live: true },
+  'Mid-range gap': { key: 'Config.RangeGapPts', live: true },
+  'Day gate spent threshold': { key: 'Config.DayGateSpentPts', live: true },
+  'Day gate target cap': { key: 'Config.DayGateTargetCapPts', live: true },
+  'Swing EMA period': { key: 'SwingCfg.EMAPeriod', live: true },
+  'Swing line offset': { key: 'SwingCfg.LineOffsetPts', live: true },
+  'Swing stop distance': { key: 'SwingCfg.StopBeyondLinePts', live: true },
+  'Swing max stop': { key: 'SwingCfg.MaxStopPts', live: true },
+  'Swing entry buffer': { key: 'SwingCfg.EntryBufferPts', live: true },
+  'Swing target fallback': { key: 'SwingCfg.TargetFallbackPts', live: true },
+  'Swing target EMA period': { key: 'SwingCfg.TargetEMA5mPeriod', live: true },
+  'Swing leeway candles': { key: 'SwingCfg.LeewayCandles', live: true },
+  'Swing hold bars': { key: 'SwingCfg.Hold4hBars', live: true },
+  'Swing respects 5m zone': { key: 'SwingCfg.Respects5mZone', live: true },
+  'Box timeframe': { key: 'BoxCfg.TF', live: true },
+  'Box touch band': { key: 'BoxCfg.TouchBandPts', live: true },
+  'ORB entry gate': { key: 'Config.OrbGateEnabled', live: true },
+  'Leg budget': { key: 'mentor_leg_budget_enabled', live: true },
+  'Leg reset on': { key: 'mentor_leg_reset_on', live: true },
+  'Level revisit distance': {
+    key: 'mentor_lvl_revisit_min_pts',
+    live: true,
+  },
+  'EMA 34 cross cap (30m)': {
+    key: 'mentor_ema_max_cross_30m',
+    live: true,
+  },
+  'Loss departure distance': {
+    key: 'mentor_loss_departure_pts',
+    live: true,
+  },
+  '5m trigger at locations': {
+    key: 'mentor_loc_trigger_filter',
+    live: true,
+  },
+  'Trigger school': { key: 'Config.TriggerSchool', live: true },
+  'Ping-pong minimum gap': { key: 'Config.PingPongMinGapPts', live: true },
+  'Ping-pong candle maximum': {
+    key: 'Config.PingPongCandleMaxPts',
+    live: true,
+  },
+  'Ping-pong candle lookback': {
+    key: 'Config.PingPongCandleLookback',
+    live: true,
+  },
+  'Maximum level visits per day': {
+    key: 'Config.LevelMaxVisits',
+    live: true,
+  },
+  'Done after a winning day': {
+    key: 'mentor_done_after_win',
+    live: true,
+  },
+  'Trading window start': { key: 'mentor_window_start', live: true },
+  'Trading window length': { key: 'mentor_window_minutes', live: true },
+}
+
+function withMentorKnobKeys(knobs: KnobSpec[]): KnobSpec[] {
+  return knobs.map((knob) => {
+    const metadata = mentorKnobKeys[knob.label]
+    return metadata ? { ...knob, ...metadata } : knob
+  })
+}
+
 export const mentor: GuideSection = {
   id: 'mentor',
   num: 17,
@@ -284,7 +379,7 @@ export const mentor: GuideSection = {
     },
     {
       kind: 'knobs',
-      knobs: [
+      knobs: withMentorKnobKeys([
         {
           label: 'Mentor mode',
           where: 'Strategy → Mentor mode (per strategy)',
@@ -510,6 +605,19 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
+          label: 'ISB minimum stop (retired)',
+          where: 'Strategy → Mentor mode → ISB',
+          what: 'Legacy minimum-stop field; it has no runtime reader. ISB stops have no fixed minimum size.',
+          trader: 'Not live — changing it has no effect.',
+          consumer: 'kernel/mentor/mentor.go Config.ISBStopMinPts (retired)',
+          range: 'pts',
+          systemDefault: '5 (unused)',
+          recommended:
+            'Do not rely on this value; RULES-FIX-v3 removed the fixed ISB stop size.',
+          whenToTouch: 'Never — retired.',
+          perSession: 'No.',
+        },
+        {
           label: 'ISB twenties',
           where: 'Strategy → Mentor mode → ISB',
           what: 'An ISB whose stop is at/above this ("in the twenties") is not taken.',
@@ -585,14 +693,15 @@ export const mentor: GuideSection = {
         {
           label: 'Mid-range gap',
           where: 'Strategy → Mentor mode → filters',
-          what: 'Mid-range ban. Coming with Mentor mode: when price sits between an FTGL below and an FTGH above, ANY width, PHL/PLH are banned — ISB only.',
+          what: 'Refuse PHL/PLH when price is within this many points of a pair of levels bracketing it. Zero disables this proximity filter.',
           trader:
-            '0 = DISABLED. Coming with Mentor mode: enabled for price between an FTGL below and an FTGH above, any width.',
-          consumer: 'kernel/mentor/mentor.go RangeGapPts',
+            '0 = OFF. The separate FTGL/FTGH box no-trade rule is not controlled by this knob.',
+          consumer: 'kernel/mentor/filters.go Config.RangeGapPts',
           range: 'pts (0 = off)',
           systemDefault: '0 (disabled)',
-          recommended: 'Left at 0 until DS-103 wires the between-boxes ban.',
-          whenToTouch: 'After the between-boxes ban ships.',
+          recommended: '0 — leave the optional proximity filter disabled.',
+          whenToTouch:
+            'Only when deliberately tuning the level-distance filter.',
           perSession: 'No.',
         },
         {
@@ -618,6 +727,84 @@ export const mentor: GuideSection = {
           systemDefault: '15',
           recommended: '15 — D5.1 p1.',
           whenToTouch: 'With the spent tier.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Trigger school',
+          where: 'Built-in evaluator default — not a Strategy Studio setting',
+          what: 'School 1 allows level and box entries before the 5m trigger agrees, then upgrades on a later flip; school 2 waits for agreement. The trigger-side and no-trade-zone rules still apply.',
+          trader:
+            'Built into the release: school 1. Not editable in Strategy Studio; changing it requires a release.',
+          consumer: 'kernel/mentor/mentor.go Config.TriggerSchool',
+          range: '1 / 2',
+          systemDefault: '1',
+          recommended:
+            '1 — the mentor’s own approach; the later trigger flip upgrades confluence.',
+          whenToTouch: 'Only to compare school 1 with school 2.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Ping-pong minimum gap',
+          where: 'Built-in evaluator default — not a Strategy Studio setting',
+          what: 'The FTGL-to-FTGH gap must be strictly greater than this before a box-edge ping-pong entry is allowed.',
+          trader:
+            'Built into the release: 50 pts. Not editable in Strategy Studio; changing it requires a release.',
+          consumer: 'kernel/mentor/mentor.go Config.PingPongMinGapPts',
+          range: 'pts',
+          systemDefault: '50',
+          recommended: '50 — B21 gap ruling.',
+          whenToTouch: 'Rarely.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Ping-pong candle maximum',
+          where: 'Built-in evaluator default — not a Strategy Studio setting',
+          what: 'Reject the ping-pong and key-level pair if the largest candle in the lookback exceeds this size.',
+          trader:
+            'Built into the release: 20 pts. Not editable in Strategy Studio; changing it requires a release.',
+          consumer: 'kernel/mentor/mentor.go Config.PingPongCandleMaxPts',
+          range: 'pts',
+          systemDefault: '20',
+          recommended: '20 — B21 candle-size ruling.',
+          whenToTouch: 'Rarely.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Ping-pong candle lookback',
+          where: 'Built-in evaluator default — not a Strategy Studio setting',
+          what: 'How many closed 1m candles to scan for the largest-candle gate on box ping-pong and key-level pairs.',
+          trader:
+            'Built into the release: 30 closed 1m candles. Not editable in Strategy Studio; changing it requires a release.',
+          consumer: 'kernel/mentor/mentor.go Config.PingPongCandleLookback',
+          range: 'closed 1m candles',
+          systemDefault: '30',
+          recommended: '30 — B21 lookback.',
+          whenToTouch: 'Rarely.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Maximum level visits per day',
+          where: 'Built-in evaluator default — not a Strategy Studio setting',
+          what: 'Allow this many visits to each level in a day; later visits are refused. Zero disables the cap.',
+          trader:
+            'Built into the release: 3 visits. Not editable in Strategy Studio; changing it requires a release.',
+          consumer: 'kernel/mentor/mentor.go Config.LevelMaxVisits',
+          range: 'visits (0 = off)',
+          systemDefault: '3',
+          recommended: '3 — B23 “knock knock” ruling.',
+          whenToTouch: 'Rarely.',
+          perSession: 'No.',
+        },
+        {
+          label: 'ORB entry gate',
+          where: 'Strategy → Mentor mode → day gate',
+          what: 'Require price to escape the first 2-minute RTH opening range before intraday entries; the 4h swing setup is exempt.',
+          trader: 'ON — no entry inside the opening range.',
+          consumer: 'kernel/mentor/orb.go Config.OrbGateEnabled',
+          range: 'true / false',
+          systemDefault: 'true',
+          recommended: 'ON — the §7 step-0 gate.',
+          whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
         {
@@ -818,12 +1005,14 @@ export const mentor: GuideSection = {
         {
           label: 'Loss departure distance',
           where: 'Strategy → Mentor mode → limits',
-          what: 'After a loss at a place (level, box edge or the EMA line), a closed candle AFTER the loss candle whose close is this many pts away from the loss price is the departure that un-blocks it. The loss price is the level price, the EMA loss price, or the box MIDPOINT. One number for every place.',
-          trader: '20 pts — “leave the area”, no stated number.',
-          consumer: 'kernel/mentor loss_departure_pts',
+          what: 'Structure is the loss area. A fixed-point departure is an optional fallback: when greater than zero, a later closed candle this far from the loss price can unblock a place.',
+          trader: '0 = OFF; structural departure remains the primary rule.',
+          consumer:
+            'mentor_loss_departure_pts → kernel/mentor Config.LossDeparturePts',
           range: 'pts',
-          systemDefault: '20',
-          recommended: '20 — departure ruling 2026-10-03.',
+          systemDefault: '0 (OFF)',
+          recommended:
+            '0 — B22 makes structure primary; fixed points are fallback only.',
           whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
@@ -840,7 +1029,45 @@ export const mentor: GuideSection = {
           whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
-      ],
+        {
+          label: 'Done after a winning day',
+          where: 'Strategy → Mentor mode → stop rules',
+          what: 'Stop new mentor entries for the trading day after a winning trade closes and the day’s net P&L is positive.',
+          trader: 'ON by default; an explicit false disables this stop rule.',
+          consumer: 'trader/mentor_tick.go mentorDoneAfterWinGate',
+          range: 'true / false',
+          systemDefault: 'true (unset = ON)',
+          recommended:
+            'ON — owner ruling; stop after a win on a net-positive day.',
+          whenToTouch: 'Rarely.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Trading window start',
+          where: 'Strategy → Mentor mode → stop rules',
+          what: 'The CT time when the entry window opens; the rule blocks new entries outside the window.',
+          trader: '08:30 CT by default; SWING4H is exempt.',
+          consumer: 'trader/mentor_tick.go mentorWindowGate',
+          range: 'HH:MM CT',
+          systemDefault: '08:30',
+          recommended: '08:30 CT — owner ruling.',
+          whenToTouch: 'Only when the approved trading window changes.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Trading window length',
+          where: 'Strategy → Mentor mode → stop rules',
+          what: 'How long the entry window stays open after its start time; SWING4H is exempt.',
+          trader:
+            '60 minutes by default; an unset/zero strategy value inherits 60.',
+          consumer: 'trader/mentor_tick.go mentorWindowGate',
+          range: '30 / 60 / 90 / 120 minutes',
+          systemDefault: '60',
+          recommended: '60 minutes — owner ruling.',
+          whenToTouch: 'Only when the approved trading window changes.',
+          perSession: 'No — per strategy.',
+        },
+      ]),
     },
   ],
 }
