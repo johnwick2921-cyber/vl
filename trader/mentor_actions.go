@@ -148,6 +148,10 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		// and DS-106's admission gate both key off it. Every other author leaves
 		// it empty.
 		Origin: store.ArmOriginMentor,
+		// B2 (2026-10-04): the signed contract count rides the row so the armed
+		// pass sends it (never 1). The sizing table already clamped it to
+		// mentor_max_contracts.
+		Contracts: store.IntPtr(choice.Contracts),
 	}
 	if err := ledger.UpsertArm(&row); err != nil {
 		mentorCount("placement_refused_upsert")
@@ -160,6 +164,27 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	recordMentorLatency(barCloseMs, at.mentorFinalArrival.Load(), emitMs, ackMs)
 	at.logInfof("🧑‍🏫 mentor arm authored: %s %s %d contracts (tier %s) — row %d, the armed pass places it (stop-limit by the origin rule), expiry %d",
 		in.Setup, side, choice.Contracts, choice.Tier, row.ID, in.ExpiryMs)
+}
+
+// mentorArmQuantity resolves the contract count the armed pass sends for a
+// mentor-authored arm (B2, 2026-10-04). A mentor row WITHOUT a count is a
+// refusal (why != "") — never sent as 1 (absent ≠ 0). A non-positive count is
+// also refused. Otherwise the count is clamped to the trader's current max
+// (resolveMaxContracts): mentor_max_contracts in mentor mode, the Stage-A
+// 1-contract cap in AI mode — so a stale mentor row authored under a higher
+// cap is never oversized on a reload.
+func (at *AutoTrader) mentorArmQuantity(r store.ArmedOrderDB) (float64, string) {
+	if r.Contracts == nil {
+		return 0, "the mentor arm carries no contract count (absent ≠ 0) — never sent as 1"
+	}
+	n := *r.Contracts
+	if n < 1 {
+		return 0, fmt.Sprintf("the mentor arm's contract count %d is not a positive count — never sent as 1", n)
+	}
+	if mx := at.resolveMaxContracts(); mx > 0 && n > mx {
+		return float64(mx), ""
+	}
+	return float64(n), ""
 }
 
 // mentorExtendArm pushes a resting arm's expiry forward (ISB stacking, N12).

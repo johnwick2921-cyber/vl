@@ -1887,7 +1887,23 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		}
 		placeStopFn = pl.PlaceStopEntryWithLimit
 	}
-	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, 1, d.Trigger, r.StopPx, r.TargetPx, func(sid string) error {
+	// B2 MENTOR SIZE (2026-10-04): the mentor arm carries its signed contract
+	// count on the row. A mentor row WITHOUT one is REFUSED (counted + logged),
+	// never sent as 1 (absent ≠ 0). Non-mentor rows stay 1.
+	qty := 1.0
+	if isMentorArmOrigin(r) {
+		n, why := at.mentorArmQuantity(r)
+		if why != "" {
+			if armRefusalChanged(&at.armRefusalLast, armKey, "stop_entry:mentor_no_contracts") {
+				shown := at.countStopEntryRefusal(r, "stop_entry:mentor_no_contracts", now)
+				at.logWarnf("📛 armed %s mentor stop-entry REFUSED [guard=mentor_contracts verdict=%s] %s stop-limit trigger=%.2f: %s%s",
+					r.Scenario, d.Verdict, strings.ToUpper(d.Side), d.Trigger, why, shown)
+			}
+			return stopPlaceNotSent
+		}
+		qty = n
+	}
+	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, r.TargetPx, func(sid string) error {
 		if err := ledger.BeginPlacement(r.ID, sid); err != nil {
 			return err
 		}
