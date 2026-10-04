@@ -155,6 +155,11 @@ func TestMaterializeArmedEntrySetsCumulativeOnFill(t *testing.T) {
 		Origin: store.ArmOriginMentor, Contracts: store.IntPtr(5),
 	}
 	at.materializeArmedEntry(row, ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-part", Account: "Sim101", FillPrice: 29644, Quantity: 2})
+	// N3 (DS-107, CTO 2026-10-04): u.Quantity is CUMULATIVE (e.Filled) and the
+	// delta is measured against the arm row's LAST RECORDED cumulative fill.
+	// Production re-reads the row each frame; the fixture mirrors that by
+	// advancing row.FillQuantity to what the prior frame stamped.
+	row.FillQuantity = 2
 	at.materializeArmedEntry(row, ntwire.OrderUpdatePayload{State: "filled", SignalID: "sig-part", Account: "Sim101", FillPrice: 29646, Quantity: 5})
 	pos, err := st.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), "LONG")
 	if err != nil || pos == nil {
@@ -178,7 +183,8 @@ func TestMaterializeArmedEntryDuplicatePartFillIdempotent(t *testing.T) {
 	}
 	u := ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-dup", Account: "Sim101", FillPrice: 29644, Quantity: 2}
 	at.materializeArmedEntry(row, u)
-	at.materializeArmedEntry(row, u) // duplicate — same cumulative qty
+	row.FillQuantity = 2             // the row's last recorded cumulative fill
+	at.materializeArmedEntry(row, u) // duplicate — same cumulative qty → delta 0
 	pos, err := st.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), "LONG")
 	if err != nil || pos == nil {
 		t.Fatalf("open row not materialized: %v", err)
@@ -201,6 +207,7 @@ func TestMaterializeArmedEntryPartFillSetsNotAdds(t *testing.T) {
 		Origin: store.ArmOriginMentor, Contracts: store.IntPtr(5),
 	}
 	at.materializeArmedEntry(row, ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-set", Account: "Sim101", FillPrice: 29644, Quantity: 2})
+	row.FillQuantity = 2 // the row's last recorded cumulative fill
 	at.materializeArmedEntry(row, ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-set", Account: "Sim101", FillPrice: 29645, Quantity: 4})
 	pos, err := st.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), "LONG")
 	if err != nil || pos == nil {
