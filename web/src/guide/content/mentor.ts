@@ -44,6 +44,7 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
   'PHL target shy': { settingId: 'Config.PHLTargetShyPts', live: false },
   'Stop ceiling': { settingId: 'Config.StopCeilingPts', live: false },
   'Room multiple': { settingId: 'Config.RoomMultiple', live: false },
+  'Near-box room': { settingId: 'Config.NearBoxRoomMultiple', live: false },
   'Mid-range gap': { settingId: 'Config.RangeGapPts', live: false },
   'Day gate spent threshold': {
     settingId: 'Config.DayGateSpentPts',
@@ -731,6 +732,20 @@ export const mentor: GuideSection = {
           systemDefault: '2',
           recommended: '2 — D5.3 p1 @ 09:16.',
           whenToTouch: 'Rarely.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Near-box room',
+          where: 'Strategy → Mentor mode → risk',
+          what: 'Refuse an ISB or PHL/PLH whose nearest box edge in the trade direction is closer than this × its own risk — the setup is "sát box". A setup between two boxes (one edge above, one below) is exempt.',
+          trader:
+            '2× — the same room the target rule demands. A setup between two boxes is allowed.',
+          consumer: 'kernel/mentor/mentor.go NearBoxRoomMultiple',
+          range: '× (0 = off)',
+          systemDefault: '2',
+          recommended:
+            '2 — D3.2 p1 @ 21:53–23:08 (row 24); between-boxes exemption row 25 @ 23:14–24:03.',
+          whenToTouch: 'Rarely. Zero disables the near-box refusal entirely.',
           perSession: 'No.',
         },
         {
