@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"vl/calendar"
@@ -168,6 +169,12 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	last := bars[len(bars)-1]
 	at.mentorEvalMu.Lock()
 	defer at.mentorEvalMu.Unlock()
+	// R-F: a contract roll awaiting its rebuild gates the tick — the evaluator
+	// is rebuilt from the new contract's own bars first (mentorRollApply),
+	// inside the N11 mutex so the rebuild never races the other loop's tick.
+	if !at.mentorRollApply() {
+		return false
+	}
 	if last.OpenTime <= at.mentorLastTickOpen {
 		return false // already ticked (the other goroutine won the race)
 	}
@@ -882,6 +889,15 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}
+	at.mentorSeedEvaluator()
+	at.mentorWireRollListener()
+}
+
+// mentorSeedEvaluator seeds at.mentorEval from the stored bars of the CURRENT
+// contract (the boot path and the roll rebuild share it) and returns the
+// per-source depth it seeded plus the contract the rows came from ("" on a
+// cold store).
+func (at *AutoTrader) mentorSeedEvaluator() (map[string]int, string) {
 	now := time.Now().UnixMilli()
 	bh := store.NewBarHistoryStore(at.store.GormDB())
 	rows1m, err1m := bh.LastNBarsCurrentContract("MNQ", "1m", mentorSeedBars1mN)
@@ -890,7 +906,11 @@ func (at *AutoTrader) mentorSeedAtStart() {
 		mentorCount("seed_store_read_error")
 		rows1m = nil
 	}
-	bars1m := storeBarsToKlines(rows1m, 60_000)
+	contract := ""
+	if n := len(rows1m); n > 0 {
+		contract = rows1m[n-1].Contract
+	}
+	bars1m := mentorSeedBarsFromRows(rows1m)
 	// P1 (CTO 12:44:08Z / 12:47:11Z): ONE bar source — the seed aggregates
 	// every higher timeframe from 1m; the store's native 1h is never read.
 	// The trader-side 1h aggregation mirrors kernel barsTF(bars1m, 60)
@@ -913,6 +933,120 @@ func (at *AutoTrader) mentorSeedAtStart() {
 		mentorCount("seed_missing")
 		at.logErrorf("%s", mentorSeedRefusalLine(missing))
 	}
+	return depths, contract
+}
+
+// mentorSeedBarsFromRows converts the stored 1m rows to the seed's series and
+// drops the wave-101 ISOLATED import snapshots (one bar per day on a contract's
+// back-month days, e.g. MNQ 12-26 at 09-07 17:00 / 09-08·09·10 21:00Z). Kept,
+// they count as closed 1m bars, seed the 1m EMA from a bar days older than its
+// neighbour, and open phantom 1h/4h candles on days that have no tape. A dense
+// import fill is untouched: a bar is dropped only when BOTH neighbours are
+// farther than 3 bars away — the same isolation rule the chart seam applies
+// (bars_store_depth.go dropIsolatedImportSnapshots).
+func mentorSeedBarsFromRows(rows []store.BarHistoryDB) []market.Kline {
+	bars := storeBarsToKlines(rows, 60_000)
+	snap := map[int64]bool{}
+	for _, r := range rows {
+		if r.Source == store.BarSourceHistoricalImport {
+			snap[r.OpenTimeMs] = true
+		}
+	}
+	if len(snap) == 0 {
+		return bars
+	}
+	return dropIsolatedImportSnapshots(bars, snap, importIsolationGap("1m"))
+}
+
+// ── ROLL REBUILD (owner ruling 2026-10-04 R-F) ──────────────────────────────
+//
+// A contract roll purges the ring and reseeds it from the NEW contract's own
+// rows; the evaluator, built before the roll, kept its seed levels, 1m EMA,
+// swing line and trigger on the RETIRED price scale (a ~290-pt basis on MNQ).
+// The mentor charts the contract itself: after a roll the evaluator is rebuilt
+// from the new contract's own stored bars only — no retired-contract bars, no
+// basis adjustment. Where those bars are too few the existing warm-up floors
+// refuse (4h EMA34: SWING4H only; intraday entries are never blocked by it).
+
+// mentorRollSettle is how long the rebuild waits after the roll for the
+// AddOn's post-subscribe replay to reach the store (the persist wire's own roll
+// listener waits 5 s for the same reason).
+var mentorRollSettle = 6 * time.Second
+
+// mentorRollEvent is one observed roll awaiting its rebuild. ready flips once
+// the store has settled.
+type mentorRollEvent struct {
+	from, to string
+	at       time.Time
+	ready    atomic.Bool
+}
+
+// mentorWireRollListener registers this trader's roll listener once.
+func (at *AutoTrader) mentorWireRollListener() {
+	if at == nil || !at.mentorRollWired.CompareAndSwap(false, true) {
+		return
+	}
+	ntwire.OnContractRoll(at.mentorOnContractRoll)
+}
+
+// mentorOnContractRoll is the roll listener. It runs on the NT8 reader
+// goroutine, so it only records the roll: the evaluator is touched on the tick
+// goroutine alone (mentorRollApply). From this instant until the rebuild the
+// tick HOLDS — a retired-scale evaluator never steps over new-scale bars.
+func (at *AutoTrader) mentorOnContractRoll(symbol, from, to string, rolledAt time.Time) {
+	if at == nil || !strings.EqualFold(strings.TrimSpace(symbol), "MNQ") {
+		return
+	}
+	ev := &mentorRollEvent{from: from, to: to, at: rolledAt}
+	at.mentorRollPending.Store(ev)
+	mentorCount("roll_pending")
+	settle := mentorRollSettle
+	at.goNetted("mentor-roll-settle", func() {
+		time.Sleep(settle)
+		ev.ready.Store(true)
+	})
+}
+
+// mentorRollApply runs at the top of every tick. It returns false while a
+// roll's rebuild is pending but the store has not settled (the tick holds), and
+// performs the rebuild — on the tick goroutine — once it has.
+func (at *AutoTrader) mentorRollApply() bool {
+	ev := at.mentorRollPending.Load()
+	if ev == nil {
+		return true
+	}
+	if !ev.ready.Load() {
+		mentorCount("roll_hold")
+		return false
+	}
+	if !at.mentorRollPending.CompareAndSwap(ev, nil) {
+		return true
+	}
+	at.mentorRebuildAfterRoll(ev)
+	return true
+}
+
+// mentorRebuildAfterRoll retires every resting arm priced on the old contract,
+// replaces the evaluator with a fresh one and seeds it from the new contract's
+// own rows, then logs the ONE roll line.
+func (at *AutoTrader) mentorRebuildAfterRoll(ev *mentorRollEvent) {
+	ids := mentorLiveArmIDs()
+	for _, id := range ids {
+		at.mentorCancelArm(mentor.Intent{
+			ArmID:  id,
+			Reason: fmt.Sprintf("contract roll %s → %s: the arm was priced on the retired contract", ev.from, ev.to),
+		})
+	}
+	at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
+	depths, contract := at.mentorSeedEvaluator()
+	mentorCount("roll_rebuilt")
+	d4 := depths["4h EMA34"]
+	scope := "all sources met"
+	if d4 < mentor.FourHEMA34Warmup {
+		scope = "SWING4H refused until met (intraday entries unaffected)"
+	}
+	at.logWarnf("🧑‍🏫 mentor ROLL %s → %s at %s: evaluator rebuilt from %q's own stored bars only (no retired-contract bars, no basis adjustment); %d resting arm(s) on the retired scale sent to cancel; 4h EMA34 %d/%d — %s",
+		ev.from, ev.to, kernel.ClockCTSeconds(ev.at), contract, len(ids), d4, mentor.FourHEMA34Warmup, scope)
 }
 
 // mentorSeedRefusalLine prints every missing source and which entry kinds it

@@ -382,7 +382,11 @@ type AutoTrader struct {
 	// mentorEvalMu serializes the evaluator: the scan loop (mentorTick) and the
 	// event loop (mentorEventPassAt) both call mentorEvalOnce, whose Tick
 	// mutates the evaluator's maps — N11 (DS-104). One mutex, both callers.
-	mentorEvalMu     sync.Mutex
+	mentorEvalMu sync.Mutex
+	// R-F: a contract roll awaiting its evaluator rebuild (nil = none) and the
+	// once-only roll-listener registration.
+	mentorRollPending atomic.Pointer[mentorRollEvent]
+	mentorRollWired   atomic.Bool
 	mentorFinalArrival atomic.Int64 // ms — when the FINAL frame hit the sink
 	// MENTOR B20 — the chosen exit branch per open position (keyed by side:
 	// "long"/"short"), set at placement from the entry-time fork (A/B/C/swing)
