@@ -54,26 +54,32 @@ func (at *AutoTrader) mentorTick(ctx *kernel.Context) {
 	if market.FuturesBarsProvider == nil {
 		return
 	}
-	bars := mentorClosedBars(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth), time.Now())
+	bars := mentorClosedBars(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth))
 	if len(bars) == 0 {
+		return
+	}
+	// Same once-per-bar watermark as the event pass: Tick is not idempotent
+	// per bar (a repeat tick re-emits intents and double-counts refusals).
+	if bars[len(bars)-1].OpenTime <= at.mentorLastTickOpen {
 		return
 	}
 	at.mentorEvalOnce(bars)
 }
 
-// mentorClosedBars drops the trailing FORMING 1m bars. The NT8 cache's newest
-// bar is usually still building (trader/ninjatrader/bars_market_bridge.go
+// mentorClosedBars drops the FORMING tail bar. The NT8 cache's newest bar is
+// usually still building (trader/ninjatrader/bars_market_bridge.go
 // barsToKlines). Evaluating it reads a half-built candle as the current one,
-// and the mentorLastTickOpen dedup then skips that bar's FINAL for good, so
-// the bar is never evaluated closed. A bar counts as closed when NT8 marked it
-// Final or its scheduled close has passed.
-func mentorClosedBars(bars []market.Kline, now time.Time) []market.Kline {
-	nowMs := now.UnixMilli()
-	n := len(bars)
-	for n > 0 && !bars[n-1].Final && bars[n-1].CloseTime >= nowMs {
-		n--
+// and the mentorLastTickOpen dedup then skips that bar's FINAL for good, so the
+// bar is never evaluated closed. A bar is closed when NT8 marked it Final OR a
+// newer bar exists (NT8 has started the next one, so this one is complete even
+// if its Final frame was lost). The bot's wall clock is deliberately NOT used:
+// a clock ahead of NT8's, or a Final frame that lags, would let an unfinished
+// bar through and stamp the watermark on it.
+func mentorClosedBars(bars []market.Kline) []market.Kline {
+	if n := len(bars); n > 0 && !bars[n-1].Final {
+		return bars[:n-1]
 	}
-	return bars[:n]
+	return bars
 }
 
 // noteLiveBarsForMentorPass is the sink's mentor half: a FINAL 1m/5m frame
@@ -115,7 +121,7 @@ func (at *AutoTrader) mentorEventPassAt(now time.Time) bool {
 	if market.FuturesBarsProvider == nil {
 		return false
 	}
-	bars := mentorClosedBars(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth), now)
+	bars := mentorClosedBars(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth))
 	if len(bars) == 0 {
 		return false
 	}
@@ -154,7 +160,7 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
 	// S9 (D5.2 p2 @05:21): strong-day detection from the recent CLOSED 5m bars
 	// — 50–80 pt candles cut every tier to 1–2.
 	strongDay := false
-	if bars5 := market.FuturesBarsProvider("MNQ", "5m", 12); len(bars5) > 0 && mentorStrongDayFrom5m(bars5) {
+	if bars5 := mentorClosedBars(market.FuturesBarsProvider("MNQ", "5m", 12)); len(bars5) > 0 && mentorStrongDayFrom5m(bars5) {
 		strongDay = true
 	}
 	for _, in := range intents {
