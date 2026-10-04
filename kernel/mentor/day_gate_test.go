@@ -228,60 +228,6 @@ func TestGlobexRunSundayOpen(t *testing.T) {
 	}
 }
 
-// TestStampDayState — A5 (CTO 1791041016051): a DaySpent verdict stamps every
-// intent; every other verdict leaves the slice untouched.
-func TestStampDayState(t *testing.T) {
-	in := []Intent{{Action: PlaceStopEntry}, {Action: CancelArm}, {Action: ExtendArm}}
-	for _, v := range []DayVerdict{DayTrade, DayOff, DayNotMeasured} {
-		out := stampDayState(append([]Intent(nil), in...), v)
-		for i, it := range out {
-			if it.SpentDay {
-				t.Fatalf("verdict %v must not stamp intent %d", v, i)
-			}
-		}
-	}
-	out := stampDayState(append([]Intent(nil), in...), DaySpent)
-	for i, it := range out {
-		if !it.SpentDay {
-			t.Fatalf("DaySpent must stamp intent %d", i)
-		}
-	}
-}
-
-// TestTickStampsSpentDay — the A5 CALL SITE: with the day latched DaySpent,
-// every intent Tick emits carries SpentDay (the trader's spent_day tier 2 and
-// the R9 15-pt stop cap hang off it). The recorded RTH tape cannot reproduce
-// a 300-pt Globex run, so the latch is preset per tick (the §7 freeze keeps a
-// preset latch at/after the open); the run covers the full day so the FIRST
-// emitted intent — whichever emit path produced it, including the ISB
-// missing-target early return — is checked.
-func TestTickStampsSpentDay(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.Enabled = true
-	e := New(cfg)
-	bars := loadFixture(t, "mnq_1m_2026-09-15_rth", "1m")
-	loc := ctime()
-	saw := 0
-	for i := 2; i <= len(bars); i++ {
-		now := bars[i-1].OpenTime + 59_999
-		ct := time.UnixMilli(now).In(loc)
-		open := time.Date(ct.Year(), ct.Month(), ct.Day(), globexCloseMin/60, globexCloseMin%60, 0, 0, loc)
-		if ct.Before(open) {
-			continue // pre-open ticks recompute the verdict live — not the call site under test
-		}
-		e.State.Day = DayLatch{Key: tradingDayKey(ct), Verdict: DaySpent}
-		for _, in := range e.Tick(bars[:i], now) {
-			saw++
-			if !in.SpentDay {
-				t.Fatalf("bar %d (%s): intent %s emitted without the spent-day stamp", i, ct.Format("15:04"), in.Action)
-			}
-		}
-	}
-	if saw == 0 {
-		t.Fatal("the 09-15 tape emitted no intents under a DaySpent latch — the call-site test proves nothing")
-	}
-}
-
 // TestCapTargetForDay — on a spent day the target distance is capped at
 // TargetCapPts ("15 điểm bán, 10 điểm bán" [D5.1 p1 @ 15:57]); on a normal
 // day the target is untouched.

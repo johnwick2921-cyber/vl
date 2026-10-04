@@ -424,7 +424,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) []Intent {
 						if target := nextLevelBeyond(levels, chosen.Price, side); target != 0 {
 							chosen.Target = target
 						} else {
-							return stampDayState(out, e.State.Day.Verdict) // missing target — not a setup [D4.1 p1 @ 01:45]
+							return out // missing target — not a setup [D4.1 p1 @ 01:45]
 						}
 						// ISB size flags for the injector: rule 2 (at an old
 						// high/low → REDUCE SIZE) and rule 3 (in a range → REDUCE
@@ -577,7 +577,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) []Intent {
 		out = failClosedFilter(out)
 	}
 
-	return stampDayState(out, e.State.Day.Verdict)
+	return out
 }
 
 // oldExtreme holds an old high/low and its index in the 1m history.
