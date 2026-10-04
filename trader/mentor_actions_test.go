@@ -199,6 +199,9 @@ func TestMentorEntryIsAlwaysStopLimit(t *testing.T) {
 	if row.Kind != "stop_entry" || row.ExpiryMs != in.ExpiryMs || row.State != store.StateArmed {
 		t.Fatalf("mentor arm kind=%q expiry=%d state=%q, want stop_entry / %d / armed", row.Kind, row.ExpiryMs, row.State, in.ExpiryMs)
 	}
+	if !isMentorArmOrigin(row) {
+		t.Fatalf("mentor injector row origin=%q, want %q", row.Origin, store.ArmOriginMentor)
+	}
 	arm, ok := mentorLiveArmFor("isb-1")
 	if !ok || arm.RowID != row.ID {
 		t.Fatalf("the ArmID registry must resolve isb-1 -> row %d, got %+v ok=%v", row.ID, arm, ok)
@@ -228,6 +231,15 @@ func TestMentorEntryIsAlwaysStopLimit(t *testing.T) {
 	}
 	if row.State != store.StatePlacePending || row.SignalID == "" {
 		t.Fatalf("after the armed pass the row must be place_pending with a signal id, got %q/%q", row.State, row.SignalID)
+	}
+
+	// The same production send-point admission refuses a planner row on this
+	// mentor-mode trader, even when its planner authoring pass admitted it.
+	plannerRow := store.ArmedOrderDB{PlanID: "planner", Scenario: "S1", LegIndex: 0}
+	plannerAdmission := armAdmission{armAdmitKey(plannerRow.PlanID, plannerRow.Scenario, plannerRow.LegIndex): true}
+	if admitted, refusal := at.armAdmitted(plannerRow, "long", 29600, now, plannerAdmission); admitted ||
+		!strings.Contains(refusal, "mentor_mode: AI entries are OFF") {
+		t.Fatalf("planner row must be refused by mentor-mode admission, admitted=%v refusal=%q", admitted, refusal)
 	}
 }
 

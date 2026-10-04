@@ -75,7 +75,8 @@ func (at *AutoTrader) armAdmitted(r store.ArmedOrderDB, side string, price float
 	}
 	if refusal, refused := at.admitEntry(admitIntent{
 		Path: admitArm, Symbol: at.futuresSymbol(), Action: action, Now: now, Key: key, Price: price,
-		Source: r.Source, // W5 D21 — a Picture-sourced row faces Picture's running / Day Plan checks
+		Source:    r.Source, // W5 D21 — a Picture-sourced row faces Picture's running / Day Plan checks
+		MentorArm: isMentorArmOrigin(r),
 	}); refused {
 		return false, refusal
 	}

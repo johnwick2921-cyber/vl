@@ -98,13 +98,11 @@ func (at *AutoTrader) mentorDispatchIntent(in mentor.Intent, extra mentorTierInp
 	}
 }
 
-// mentorAuthoredRow reports whether a ledger row was authored by the mentor
-// injector (PlanID "mentor" + kind stop_entry). The injector is its own
-// authoring pass: its rows are admitted by armAdmitted without the planner's
-// admission set — every other placement gate still runs. The bundle-2 bind
-// commit switches this marker to the arm's origin field (ArmOriginMentor).
+// mentorAuthoredRow reports whether the ledger row carries the mentor origin.
+// The injector is its own authoring pass: its rows are admitted by armAdmitted
+// without the planner's admission set — every other placement gate still runs.
 func mentorAuthoredRow(r store.ArmedOrderDB) bool {
-	return r.PlanID == "mentor" && r.Kind == "stop_entry"
+	return isMentorArmOrigin(r)
 }
 
 // mentorArmIntent is the ONE mentor entry path (P0-b, CTO 1791040400571): it
