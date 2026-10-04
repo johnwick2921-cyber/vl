@@ -410,23 +410,26 @@ func InsideAnyBox(boxes []Box, price float64) bool {
 // too close to a box is refused. The nearest box edge STRICTLY in the trade
 // direction (long → the closest edge ABOVE; short → the closest edge BELOW)
 // must be at least roomMultiple × risk points away, else the setup is "sát
-// box" and skipped. Row 25 [@ 23:14–24:03]: a setup bracketed by box edges on
-// BOTH sides is "between two boxes" and is exempt. No edge in the trade
-// direction → allowed. roomMultiple <= 0 or risk <= 0 disables the check.
+// box" and skipped. Row 25 [@ 23:14–24:03]: "nằm ở GIỮA 2 box" — exempt ONLY
+// between two DIFFERENT boxes: one wholly above (Bottom > price) AND another
+// wholly below (Top < price). A price inside a single box is NOT exempt. No
+// edge in the trade direction → allowed. roomMultiple <= 0 or risk <= 0
+// disables the check.
 func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk float64) (refuse bool, why string) {
 	if roomMultiple <= 0 || risk <= 0 {
 		return false, ""
 	}
-	var edgeAbove, edgeBelow bool
+	wholeAbove, wholeBelow := false, false
 	nearest := 0.0
 	found := false
 	for _, b := range boxes {
+		if b.Bottom > price {
+			wholeAbove = true // a box lies wholly above the entry
+		}
+		if b.Top < price {
+			wholeBelow = true // a box lies wholly below the entry
+		}
 		for _, edge := range []float64{b.Top, b.Bottom} {
-			if edge > price {
-				edgeAbove = true
-			} else if edge < price {
-				edgeBelow = true
-			}
 			var dist float64
 			switch side {
 			case SideLong:
@@ -449,8 +452,8 @@ func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk fl
 			}
 		}
 	}
-	if edgeAbove && edgeBelow {
-		return false, "" // row 25: between two boxes — exempt
+	if wholeAbove && wholeBelow {
+		return false, "" // row 25: between two DIFFERENT boxes — exempt
 	}
 	if !found {
 		return false, ""

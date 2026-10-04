@@ -45,6 +45,33 @@ func TestNearBoxRefusal(t *testing.T) {
 			wantRefuse:   false,
 		},
 		{
+			name:         "inside one box, 3 pts under its top, 6 pt risk → refused (F1 pin)",
+			boxes:        []Box{{Kind: FTGH, Top: 100, Bottom: 90}},
+			price:        97, // 3 pts under the top, INSIDE the box
+			side:         SideLong,
+			roomMultiple: 2,
+			risk:         6,
+			wantRefuse:   true,
+		},
+		{
+			name:         "far box below + near box above (price inside the near box) → refused (F1 pin)",
+			boxes:        []Box{{Kind: FTGH, Top: 100, Bottom: 90}, {Kind: FTGL, Top: 70, Bottom: 60}},
+			price:        95, // inside the near box (90 < 95 < 100); far box wholly below
+			side:         SideLong,
+			roomMultiple: 2,
+			risk:         6,
+			wantRefuse:   true,
+		},
+		{
+			name:         "box wholly above + box wholly below → allowed (F1 pin)",
+			boxes:        []Box{{Kind: FTGH, Top: 110, Bottom: 100}, {Kind: FTGL, Top: 80, Bottom: 70}},
+			price:        95,
+			side:         SideLong,
+			roomMultiple: 2,
+			risk:         6,
+			wantRefuse:   false,
+		},
+		{
 			name:         "short: 10 pts above FTGL, 6 pt risk → refused",
 			boxes:        []Box{{Kind: FTGL, Top: 100, Bottom: 95}},
 			price:        110, // 10 pts above the FTGL top edge

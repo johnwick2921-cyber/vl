@@ -895,6 +895,24 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.refuse("phl_no_old_extreme_on_side")
 			continue
 		}
+		// B14b: the NEAREST target-side extreme must sit at least
+		// PHLMinCandlesFromExtreme candles from the touch bar — the same
+		// "too close" refusal phlPLHR2 raises. Checked here so the near-box
+		// rule (next) does not pre-empt this structural skip.
+		if len(bars)-1-ex.idx < e.Cfg.PHLMinCandlesFromExtreme {
+			e.refuse("phl_too_close_to_extreme")
+			continue
+		}
+		// Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: refuse a setup whose nearest
+		// box edge IN the trade direction is closer than NearBoxRoomMultiple ×
+		// its own risk; between two boxes (row 25) is exempt. It fires BEFORE
+		// the room rule — the room rule's target reads the box edge as the
+		// first obstacle, so the same proximity would otherwise surface as
+		// phl_room_rule instead of the near_box counter.
+		if refuse, _ := nearBoxRefusal(boxes, tref, side, e.Cfg.NearBoxRoomMultiple, tr.RefBar.High-tr.RefBar.Low); refuse {
+			e.refuse("near_box")
+			continue
+		}
 		// B14a: the higher-low / lower-high check reads the nearest
 		// PRIOR same-role swing of the tape ("đối chiếu với cái
 		// đáy/đỉnh bên tay trái" [D2.2 p3 @04:06]).
@@ -910,13 +928,6 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		// retest rejecting from below is NOT a short [CTO ruling 2026-10-04].
 		if lvl.Kind == KindTriggerRetest && in.Side != e.State.Trigger.Dir {
 			e.refuse("trigger_retest_wrong_way")
-			continue
-		}
-		// Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: refuse a setup whose nearest
-		// box edge in the trade direction is closer than NearBoxRoomMultiple ×
-		// its own risk; between two boxes (row 25) is exempt.
-		if refuse, _ := nearBoxRefusal(boxes, in.Price, in.Side, e.Cfg.NearBoxRoomMultiple, abs(in.Price-in.Stop)); refuse {
-			e.refuse("near_box")
 			continue
 		}
 		// B6 (10-03 ruling): a LEVEL order RESTS — the one-candle expiry is
