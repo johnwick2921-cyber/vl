@@ -13,6 +13,9 @@ import (
 // logged (measure, not a hard assert); a hard ceiling of 120s guards the
 // regression class.
 func TestThirtyDayReplaySeconds(t *testing.T) {
+	if raceEnabled {
+		t.Skip("wall-clock threshold is meaningless under -race; the non-race suite enforces it")
+	}
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	var bars1m []market.Kline
