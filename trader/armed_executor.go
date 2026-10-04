@@ -2377,6 +2377,11 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 			at.materializeArmedEntry(r, u)
 			at.stampArmedFillLineage(r, u.FillPrice)
 			at.logInfof("⚡ armed fill %s @ %.2f (entry_class=armed_fill — stale_reeval NOT applied)", r.Scenario, u.FillPrice)
+			// N12 funnel stage: a mentor-origin fill is counted once (a partfill
+			// that later fills fully is not double-counted).
+			if isMentorArmOrigin(r) && strings.EqualFold(u.State, "filled") {
+				at.mentorFunnel.bumpFilled()
+			}
 		case "cancelled":
 			// CANCEL-REPORT REGIME (2026-10-03, knob default OFF): for a row
 			// awaiting cancel confirmation, the AddOn's positive report is
@@ -2397,6 +2402,11 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 			// A received live ENTRY state proves placement. Preserve pending
 			// cancellation and terminal outcomes; protective legs cannot promote.
 			if ntwire.ClassifyOrderState(u.State) == ntwire.LivenessLive {
+				// N12 funnel stage: the FIRST live receipt for a mentor-origin
+				// row is the placement (subsequent live receipts don't re-count).
+				if isMentorArmOrigin(r) && r.State != store.StateWorking {
+					at.mentorFunnel.bumpPlaced()
+				}
 				_ = ledger.ApplyPlacementReceipt(at.id, u.SignalID, store.StateWorking, fmt.Sprintf("order_update signal=%s state=%s seq=%d", u.SignalID, u.State, u.Seq))
 				at.recordAcceptedRisk(r, u)
 			}
