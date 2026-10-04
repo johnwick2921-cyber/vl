@@ -1350,16 +1350,26 @@ func (at *AutoTrader) runArmedPlacementAt(bars []market.Kline, sinceMs int64, no
 		// the existing settlement path; no expiry stored → this code never
 		// sweeps it (additive, OFF by absence).
 		//
-		// A working order with a PARTIAL fill is a trade in progress: expiry
-		// never cancels it — it is logged once and left to the position logic
-		// (the bot is one contract per leg anyway).
+		// N3 P1 (2026-10-04): a working order with a PARTIAL fill cancels the
+		// REMAINDER at expiry (never "keep forever") — the filled part keeps
+		// its bracket; only the unfilled contracts are cancelled.
 		if r.ExpiryMs > 0 && now.UnixMilli() >= r.ExpiryMs &&
 			r.State == store.StateWorking && r.FillQuantity > 0 {
-			expKey := "expiry_partial_fill:" + strconv.FormatInt(r.ID, 10)
-			if armRefusalChanged(&at.armRefusalLast, expKey, "partial_fill_kept") {
-				at.logWarnf("⏳ armed %s row %d working with a partial fill at its expiry — KEPT (never auto-cancelled by expiry); the position logic owns it",
-					r.Scenario, r.ID)
+			if remain := mentorRemainderToCancel(r); remain > 0 {
+				total := *r.Contracts
+				if strings.TrimSpace(r.SignalID) != "" {
+					if v := at.cancelSafetyFor(r, now); !v.Allow {
+						at.logWarnf("🛟 armed remainder cancel REFUSED: %s %s signal=%s — %s", r.Session, r.Scenario, shortID(r.SignalID), v.Why)
+					} else if cerr := nt.CancelOrder(r.SignalID); cerr != nil {
+						at.logWarnf("✕ armed remainder cancel SEND failed: %s %s: %v", r.Session, r.Scenario, cerr)
+					}
+				}
+				at.armLifecycleWrite("request_cancel(remainder)", r,
+					ledger.RequestCancel(r.ID, fmt.Sprintf("stop-limit expiry: remainder cancelled %d of %d", remain, total), now.UnixMilli()))
+				at.logInfof("⏳ armed %s row %d partial fill at expiry — remainder cancelled %d of %d (the filled part keeps its bracket)",
+					r.Scenario, r.ID, remain, total)
 			}
+			continue
 		}
 		if armExpired(r, now.UnixMilli()) {
 			// REVIEW-313 F2: an expired row that was NEVER SENT (armed, no
@@ -2380,7 +2390,25 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 			continue
 		}
 		switch strings.ToLower(u.State) {
-		case "filled", "partfilled":
+		case "filled", "partfilled", "partial":
+			// N3 P0 (partial fills): the AddOn emits "partial" for a part-fill
+			// (VLTraderTCPClient.cs:1545) and "filled" only when complete; the
+			// wire comment named "partfilled". A PARTIAL fill (< the row's
+			// signed contracts) keeps the row WORKING — only a FULL fill is
+			// terminal. u.Quantity is CUMULATIVE (e.Filled, .cs:2006).
+			total := 1
+			if r.Contracts != nil && *r.Contracts > 0 {
+				total = *r.Contracts
+			}
+			if !mentorFillIsFull(u.State, u.Quantity, total) {
+				at.armLifecycleWrite("set_fill_quantity(part)", r, ledger.SetFillQuantity(r.ID, u.Quantity))
+				at.armLifecycleWrite("set_fill_price", r, ledger.SetFillPrice(r.ID, u.FillPrice))
+				at.armLifecycleWrite("touch", r, ledger.Touch(r.ID))
+				at.materializeArmedEntry(r, u)
+				at.logInfof("⚡ armed PART fill %s @ %.2f (%d/%d) — row stays working; the remainder is cancelled at expiry",
+					r.Scenario, u.FillPrice, u.Quantity, total)
+				return
+			}
 			at.armLifecycleWrite("set_state(filled)", r, ledger.SetState(r.ID, "filled", "fill@"+strconv.FormatFloat(u.FillPrice, 'f', 2, 64)))
 			at.armLifecycleWrite("set_fill_price", r, ledger.SetFillPrice(r.ID, u.FillPrice))
 			at.armLifecycleWrite("touch", r, ledger.Touch(r.ID))
@@ -2446,20 +2474,20 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 	if qty < 1 {
 		qty = 1
 	}
-	isPart := strings.EqualFold(u.State, "partfilled")
-	// PART-FILL: a position already materialized by a prior partial fill (or
-	// reconcile winning the race) is GROWN by this fill's quantity — with B2
-	// the order is N contracts and each part-fill counts. A full fill with a
-	// position already present is reconcile's truth and is left untouched.
+	// N3 P0 (2026-10-04): u.Quantity is CUMULATIVE (e.Filled), so an existing
+	// position is grown only by the DELTA (cumulative − current). Adding the
+	// cumulative value again would double-count a 2nd+ part-fill (3 then 2,
+	// cumulative 5, would read 8). A delta ≤ 0 is a no-op (reconcile already
+	// has the truth, or the same fill re-delivered).
 	if pos, err := at.store.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), side); err == nil && pos != nil {
-		if isPart {
-			at.growMaterializedEntry(pos, r, u, float64(qty))
+		if delta := float64(qty) - pos.Quantity; delta > 0 {
+			at.growMaterializedEntry(pos, r, u, delta)
 		}
 		return
 	}
 	if pos, err := at.store.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), strings.ToLower(side)); err == nil && pos != nil {
-		if isPart {
-			at.growMaterializedEntry(pos, r, u, float64(qty))
+		if delta := float64(qty) - pos.Quantity; delta > 0 {
+			at.growMaterializedEntry(pos, r, u, delta)
 		}
 		return
 	}

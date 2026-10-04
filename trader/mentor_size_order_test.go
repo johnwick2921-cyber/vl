@@ -154,7 +154,9 @@ func TestMaterializeArmedEntryGrowsOnPartFill(t *testing.T) {
 	}
 	u1 := ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-part", Account: "Sim101", FillPrice: 29645, Quantity: 2}
 	at.materializeArmedEntry(row, u1)
-	u2 := ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-part", Account: "Sim101", FillPrice: 29646, Quantity: 3}
+	// N3 P0 (DS-107): the order_update quantity is CUMULATIVE (e.Filled), so the
+	// completing part-fill carries the running total (5), not the increment (3).
+	u2 := ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-part", Account: "Sim101", FillPrice: 29646, Quantity: 5}
 	at.materializeArmedEntry(row, u2)
 	pos, err := st.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), "LONG")
 	if err != nil || pos == nil {
