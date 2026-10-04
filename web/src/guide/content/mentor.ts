@@ -260,8 +260,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Smaller size when the ISB is in a range',
-          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). Written rule 3 [D4.1 p1 @09:40]. A spent day (2) still wins; the cut beats the confluence size.',
-          cite: 'trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlags',
+          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). "In range" means: between an FTGL below and an FTGH above; inside the standing 5m ISB rest box; between two key levels closer than the ping-pong minimum (50 pts); and — once built — a 15m ISB range. Written rule 3 [D4.1 p1 @09:40]. A spent day (2) still wins; the cut beats the confluence size.',
+          cite: 'trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlagsFor',
         },
         {
           title: 'Skip a stop in the twenties',

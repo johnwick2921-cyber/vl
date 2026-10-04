@@ -325,6 +325,54 @@ func midRangeBoxed(boxes []Box, price float64) bool {
 	return floor && ceil
 }
 
+// inNarrowRange (item 21, D4.1-06) reports whether price sits between two KEY
+// levels closer than minPts (the ping-pong minimum, 50) — a too-small range
+// ("range quá nhỏ" [D4.2 p2 @06:25–06:43]) is still a range for the ISB size
+// cut: the market is running inside a range too small to touch.
+func inNarrowRange(price float64, levels []Level, minPts float64) bool {
+	if minPts <= 0 {
+		return false
+	}
+	floor, ceil := 0.0, 0.0
+	for _, l := range levels {
+		if l.Kind != KindKeyLevel {
+			continue
+		}
+		if l.Price < price && l.Price > floor {
+			floor = l.Price
+		}
+		if l.Price > price && (ceil == 0 || l.Price < ceil) {
+			ceil = l.Price
+		}
+	}
+	if floor <= 0 || ceil <= 0 {
+		return false
+	}
+	return ceil-floor < minPts
+}
+
+// isbInRange (item 21, D4.1-06) reports whether an ISB's candle sits "in range"
+// — the compulsory size cut [D4.1 p1 written rule 3 "Khi trade isb in-range bắt
+// buộc giảm size"]. The range is WIDER than midRangeBoxed:
+//   - between an FTGL below and an FTGH above (midRangeBoxed, unchanged);
+//   - inside the standing 5m ISB rest box (State.ISBBox);
+//   - between two key levels closer than the ping-pong minimum;
+//   - (once built) inside a 15m ISB range (D4.1-25) — add that condition here.
+func isbInRange(price float64, levels []Level, boxes []Box, isbBox *ISBBox, pingPongMin float64) bool {
+	if midRangeBoxed(boxes, price) {
+		return true
+	}
+	if isbBox != nil && price >= isbBox.Low && price <= isbBox.High {
+		return true
+	}
+	if inNarrowRange(price, levels, pingPongMin) {
+		return true
+	}
+	// A 15m ISB range (D4.1-25) is not built yet; when it lands, price inside
+	// it must also set the in-range flag.
+	return false
+}
+
 // isbArmActive reports whether an ISB arm for the SAME side is still live
 // (CTO parity ruling 1791008332386 #1: ONE active ISB arm per side — the
 // reference is the FIRST ISB; a new arm forms only after the previous one is
@@ -349,6 +397,24 @@ func isbFlags(cur market.Kline, levels []Level, boxes []Box) string {
 		flags = append(flags, FlagISBInRange)
 	}
 	return strings.Join(flags, "|")
+}
+
+// isbFlagsFor is the production flag resolver: isbFlags plus the WIDENED rule-3
+// "in range" (item 21) — the standing 5m ISB box and the narrow (< ping-pong
+// minimum) range also set isb_in_range, so an ISB inside them gets the
+// compulsory size cut [D4.1 p1 written rule 3].
+func (e *Evaluator) isbFlagsFor(cur market.Kline, levels []Level, boxes []Box) string {
+	flags := isbFlags(cur, levels, boxes)
+	if HasFlag(flags, FlagISBInRange) {
+		return flags
+	}
+	if isbInRange(cur.Close, levels, boxes, e.State.ISBBox, e.Cfg.PingPongMinGapPts) {
+		if flags != "" {
+			flags += "|"
+		}
+		flags += FlagISBInRange
+	}
+	return flags
 }
 
 // touchesOldExtreme reports whether the candle's range reaches an old high/low
@@ -708,7 +774,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								// SIZE, "Khi trade isb in-range bắt buộc giảm size" [D4.1 p1
 								// @ 08:05/09:40]) — the range is the same mid-range test as
 								// the PHL/PLH ban.
-								chosen.Flag = isbFlags(cur, levels, boxes)
+								chosen.Flag = e.isbFlagsFor(cur, levels, boxes)
 								// N12: a single ISB fills by the close of the NEXT 1m candle
 								// or it is cancelled ("cancel if the next candle does not
 								// fill" [D1.4 p1 @ 18:32–18:45]); stacking extends it below.
