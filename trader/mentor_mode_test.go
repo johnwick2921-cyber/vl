@@ -214,6 +214,60 @@ func TestMentorSplitLegs(t *testing.T) {
 	}
 }
 
+// TestMentorLegsForPlacement pins the split AT PLACEMENT (part 1): the pure
+// leg computation the injector uses before arming the two rows.
+func TestMentorLegsForPlacement(t *testing.T) {
+	long5 := mentor.Intent{Side: mentor.SideLong, Setup: "ISB", Price: 100, Stop: 90, Target: 115}
+	// 5 contracts → 3 + 2, leg 1 TP = entry + R = 110 (the compulsory 1:1).
+	l1, l2 := mentorLegsForPlacement(long5, 5, "B", 0)
+	if l1.Qty != 3 || l2.Qty != 2 {
+		t.Fatalf("5-lot B split = (%d, %d), want (3, 2)", l1.Qty, l2.Qty)
+	}
+	if l1.TP != 110 || l1.Stop != 90 {
+		t.Fatalf("leg 1 = {TP %.2f, Stop %.2f}, want {TP 110, Stop 90} (entry ± R)", l1.TP, l1.Stop)
+	}
+	if l2.TP != 115 || l2.Stop != 90 {
+		t.Fatalf("leg 2 = {TP %.2f, Stop %.2f}, want {TP 115, Stop 90} (trade target)", l2.TP, l2.Stop)
+	}
+	if l1.Final || !l2.Final {
+		t.Fatalf("final flag: leg1=%v leg2=%v, want false/true (leg 2 is the runner)", l1.Final, l2.Final)
+	}
+
+	// n = 1 → a single leg, the runner semantics (TP = target, Final).
+	s1, s2 := mentorLegsForPlacement(long5, 1, "B", 0)
+	if s1.Qty != 1 || s2.Qty != 0 {
+		t.Fatalf("1-lot split = (%d, %d), want (1, 0)", s1.Qty, s2.Qty)
+	}
+	if !s1.Final || s1.TP != 115 {
+		t.Fatalf("single leg = {Final %v, TP %.2f}, want {true, 115} (no partial, holds to target)", s1.Final, s1.TP)
+	}
+
+	// C → leg 1 TP = 2R at entry (mentorLeg1TPForC = 120), not the +1R default.
+	c1, c2 := mentorLegsForPlacement(long5, 5, "C", mentorLeg1TPForC(100, 10, "long"))
+	if c1.TP != 120 || c1.Qty != 3 || c2.Qty != 2 {
+		t.Fatalf("C split leg 1 = {TP %.2f, Qty %d}, want {TP 120, Qty 3}", c1.TP, c1.Qty)
+	}
+
+	// D (spent day) → the runner is capped at 2, the total is not.
+	d1, d2 := mentorLegsForPlacement(mentor.Intent{Side: mentor.SideLong, Setup: "ISB", Price: 100, Stop: 90, Target: 115, SpentDay: true}, 6, "B", 0)
+	if d1.Qty != 3 || d2.Qty != 2 {
+		t.Fatalf("spent-day 6-lot split = (%d, %d), want (3, 2) — runner capped at 2", d1.Qty, d2.Qty)
+	}
+
+	// short mirror: leg 1 TP = entry − R.
+	short := mentor.Intent{Side: mentor.SideShort, Setup: "PLH", Price: 100, Stop: 110, Target: 85}
+	sl1, _ := mentorLegsForPlacement(short, 5, "B", 0)
+	if sl1.TP != 90 {
+		t.Fatalf("short leg 1 TP = %.2f, want 90 (entry − R)", sl1.TP)
+	}
+
+	// swing → the whole position is a single leg held by the 4h.
+	sw1, sw2 := mentorLegsForPlacement(mentor.Intent{Side: mentor.SideLong, Setup: "SWING4H", Price: 100, Stop: 90, Target: 130}, 3, "swing", 0)
+	if sw1.Qty != 3 || sw2.Qty != 0 || !sw1.Final || sw1.TP != 130 {
+		t.Fatalf("swing split = leg1{%d, TP %.2f, Final %v} leg2{%d}, want single leg {3, 130, true}", sw1.Qty, sw1.TP, sw1.Final, sw2.Qty)
+	}
+}
+
 // TestMentorLeg1TPForC: C sets leg 1's TP at ≥1:2 AT ENTRY.
 func TestMentorLeg1TPForC(t *testing.T) {
 	if got := mentorLeg1TPForC(100, 10, "long"); got != 120 {

@@ -20,7 +20,7 @@ import (
 // plan version change, re-armed only by a NEW authorization).
 // ArmOriginMentor (REVIEW-313 F3) is the ONLY origin value the stop-limit
 // routing reads as "mentor-authored". The mentor injector stamps it; every
-// other author leaves the origin ''.
+// other author leaves the origin ”.
 const ArmOriginMentor = "mentor"
 
 type ArmedOrderDB struct {
@@ -54,14 +54,21 @@ type ArmedOrderDB struct {
 	// evaluator's intent authors when it places a stop-limit. The armed pass
 	// cancels an unfilled order at now >= expiry_ms. 0 = no expiry authored =
 	// this code never auto-cancels the row.
-	ExpiryMs     int64 `gorm:"default:0"`
+	ExpiryMs int64 `gorm:"default:0"`
 	// Origin (REVIEW-313 F3, 2026-10-03): who authored this arm. The mentor
 	// injector (DS-102, #316) sets ArmOriginMentor; every other author leaves
 	// it ''. The stop-limit routing reads THIS field, never the expiry as a
 	// proxy: mentor + knob ON + expiry > 0 routes to the limit variant; a
 	// mentor arm with the knob ON and no expiry is REFUSED fail-closed; a
 	// non-mentor arm takes today's path whatever its expiry.
-	Origin       string `gorm:"default:''"`
+	Origin string `gorm:"default:''"`
+	// EntryGroup (mentor split legs, DS-103 2026-10-04): the shared group id
+	// (the mentor intent's ArmID) carried by BOTH leg rows of ONE split entry.
+	// The one-entry guards (latch, one-contract, sibling-cancel) treat rows
+	// sharing a non-empty EntryGroup as ONE entry: a sibling leg is admitted,
+	// any other entry stays refused exactly as today. '' on every non-split and
+	// historical row = not part of a split group, which is the truth for them.
+	EntryGroup   string `gorm:"default:''"`
 	FillPrice    float64
 	FillQuantity int
 
@@ -300,6 +307,10 @@ func (s *ArmedOrderStore) Migrate() error {
 			// injector stamps ArmOriginMentor; '' on every historical
 			// row = not a mentor arm, which is the truth for them.
 			{"origin", "TEXT NOT NULL DEFAULT ''"},
+			// ENTRY GROUP (mentor split legs, DS-103 2026-10-04). The
+			// shared group id on both leg rows of ONE split entry; '' on
+			// every historical / non-split row = not a split group.
+			{"entry_group", "TEXT NOT NULL DEFAULT ''"},
 			// W3 market_in_zone (2026-09-23): NULLable where 0 would be a
 			// fabricated value (absent ≠ 0); '' where the text is a label.
 			{"policy", "TEXT NOT NULL DEFAULT ''"},

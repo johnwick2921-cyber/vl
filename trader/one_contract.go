@@ -105,12 +105,33 @@ func isBracketChild(name string) bool {
 // adjudicateAccountContract is the whole decision as a PURE function: book in,
 // verdict out, no clock and no store. Tests drive it with the shapes the tape
 // actually produced (class 60/A28 — nothing under here reads a clock).
+//
+// It delegates to adjudicateAccountContractExempt with NO exemption — every
+// working entry and open position counts, which is the behaviour every
+// non-split / legacy caller needs.
 func adjudicateAccountContract(
 	book []nt.NT8Order,
 	haveBook bool,
 	age, maxAge time.Duration,
 	snapshotID int64,
 	openPositions int,
+) contractVerdict {
+	return adjudicateAccountContractExempt(book, haveBook, age, maxAge, snapshotID, openPositions, nil)
+}
+
+// adjudicateAccountContractExempt is the group-aware form (mentor split legs):
+// a working ENTRY order whose name is in exempt (a sibling leg's signal id)
+// does NOT count against this row — it is the group's own entry, not a
+// competing one. nil exempt = today's behaviour. The open-position count is
+// already offset by the caller (oneContractGuardForRow) for filled siblings;
+// this pure function only ever skips the working-entry half.
+func adjudicateAccountContractExempt(
+	book []nt.NT8Order,
+	haveBook bool,
+	age, maxAge time.Duration,
+	snapshotID int64,
+	openPositions int,
+	exempt map[string]bool,
 ) contractVerdict {
 	// UNVERIFIABLE FIRST. Order matters: a stale book that happens to look
 	// empty must not read as free, which is exactly the plausible-zero A24
@@ -138,6 +159,9 @@ func adjudicateAccountContract(
 		if isBracketChild(o.Name) {
 			continue
 		}
+		if exempt[o.Name] {
+			continue // a sibling leg's own entry — not a competing entry
+		}
 		v.WorkingEntries++
 		if v.FirstOrderID == "" {
 			v.FirstOrderID, v.FirstName = o.OrderID, o.Name
@@ -162,6 +186,32 @@ func (at *AutoTrader) oneContractGuard(now time.Time) contractVerdict {
 	book, have, age := at.liveBook(now)
 	_, _, _, snapID := at.persistedBook(now)
 	return adjudicateAccountContract(book, have, age, snapshotMaxAge(), snapID, at.openPositionCount())
+}
+
+// oneContractGuardForRow is the GROUP-AWARE entry point the mentor split path
+// calls for one row: it exempts r's sibling legs so the two rows of ONE mentor
+// intent read as ONE entry.
+//
+//   - a working sibling (already placed, still resting) is exempted from the
+//     book's working-entry count by its signal id;
+//   - a filled sibling owns a share of the group's position, so up to that many
+//     open positions are not counted against the group.
+//
+// Any OTHER working entry or position — outside the group — still refuses
+// exactly as today (CTO ruling 2026-10-04 18:21). For a non-split row
+// (EntryGroup == ”) this is byte-identical to oneContractGuard.
+func (at *AutoTrader) oneContractGuardForRow(now time.Time, rows []store.ArmedOrderDB, r store.ArmedOrderDB) contractVerdict {
+	exempt := entryGroupSiblingSignalIDs(rows, r)
+	positions := at.openPositionCount()
+	if filled := entryGroupFilledSiblingCount(rows, r); filled > 0 && positions > 0 {
+		positions -= filled
+		if positions < 0 {
+			positions = 0
+		}
+	}
+	book, have, age := at.liveBook(now)
+	_, _, _, snapID := at.persistedBook(now)
+	return adjudicateAccountContractExempt(book, have, age, snapshotMaxAge(), snapID, positions, exempt)
 }
 
 // openPositionCount counts the account's open positions. A read error is NOT a
@@ -236,6 +286,13 @@ func (at *AutoTrader) cancelOtherArmsInPlan(ledger *store.ArmedOrderStore, rows 
 		}
 		// The row that just placed keeps its own state.
 		if rr.ID == placed.ID {
+			continue
+		}
+		// DS-103 split legs (2026-10-04): a SIBLING leg — the other row of the
+		// same non-empty EntryGroup — is never cancelled or refused by this
+		// placement. The two rows are ONE entry; only entries OUTSIDE the group
+		// are cancelled for one-live-entry (CTO ruling 2026-10-04 18:21).
+		if sameEntryGroup(rr, placed) {
 			continue
 		}
 		if store.IsTerminalArmState(rr.State) {

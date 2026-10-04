@@ -532,6 +532,84 @@ func mentorLeg1TPForC(entry, r float64, side string) float64 {
 	return entry + 2*r
 }
 
+// mentorLeg is ONE leg of a split-at-entry mentor position (EXIT-SPEC-v3,
+// rulings 2026-10-03 / 2026-10-04). A mentor entry of n contracts = leg 1
+// (ceil(n/2), its OWN TP at +1R) + leg 2 (the runner, TP = the trade target);
+// n = 1 → a single leg. SignalID is empty until the armed pass stamps it on
+// placement; Qty is the leg's contract count; TP is the leg's NATIVE bracket
+// target; Stop is the shared bracket stop; Final marks the runner — the leg
+// that holds to the trade target and carries the trail (leg 2 when split, the
+// single leg when n = 1, and a swing's whole position).
+type mentorLeg struct {
+	SignalID string
+	Qty      int
+	TP       float64
+	Stop     float64
+	Final    bool
+}
+
+// mentorLivePos is the filled-position registry entry the live exit drive loop
+// (DS-107, part 2) consumes. It is registered under the LEG-1 signal id at the
+// fill callback (armed_executor.go filled case), in a map guarded by
+// mentorExitMu, and cleared when the position goes flat.
+type mentorLivePos struct {
+	Pos           mentorPosition
+	Legs          [2]mentorLeg // Legs[1] zero for n = 1 (and swing)
+	FillBarOpen   int64
+	FillBarClose  float64
+	BarsSinceFill int
+	SpentDay      bool
+	Confluence    bool
+}
+
+// mentorLegsForPlacement computes the two legs of ONE mentor intent of n
+// contracts — the split AT PLACEMENT (pure; no I/O).
+//
+//	leg 1 = ceil(n/2), TP = entry ± R (the compulsory 1:1 partial [D2.1 p1
+//	        @08:58]), or ≥2R for mode C (mentorLeg1TPForC, set AT ENTRY);
+//	leg 2 = n − leg 1 (the runner), TP = the trade target; spent day caps the
+//	        runner at mentorSpentDayRunnerCap (mode D);
+//	n = 1 → a single leg (no partial — scale-out requires size ≥ 2
+//	        [D5.2 p2 @06:19]): the single contract is the runner (TP = target);
+//	swing → the WHOLE position is a single leg held by the 4h (no 1:1 partial).
+//
+// leg1TP is the exit fork's leg-1 target (mentorExitFork: non-zero only for
+// C); 0 → the +1R default. The returned legs map to mentorLivePos.Legs[0..1].
+func mentorLegsForPlacement(in mentor.Intent, n int, mode string, leg1TP float64) (leg1, leg2 mentorLeg) {
+	side := "long"
+	if in.Side == mentor.SideShort {
+		side = "short"
+	}
+	entry, stop, target, r := in.Price, in.Stop, in.Target, mentorIntentRisk(in)
+
+	// SWING — hold the whole position by the 4h; no 1:1 partial.
+	if mode == "swing" {
+		return mentorLeg{Qty: n, TP: target, Stop: stop, Final: true}, mentorLeg{}
+	}
+
+	runnerCap := 0
+	if in.SpentDay {
+		runnerCap = mentorSpentDayRunnerCap
+	}
+	l1, l2 := mentorSplitLegs(n, runnerCap)
+	if l1 <= 0 {
+		return mentorLeg{}, mentorLeg{}
+	}
+	if l2 <= 0 {
+		// n = 1 → a single leg; the single contract is the runner (TP = target).
+		return mentorLeg{Qty: l1, TP: target, Stop: stop, Final: true}, mentorLeg{}
+	}
+	tp1 := leg1TP
+	if tp1 == 0 {
+		if side == "short" {
+			tp1 = entry - r
+		} else {
+			tp1 = entry + r
+		}
+	}
+	return mentorLeg{Qty: l1, TP: tp1, Stop: stop}, mentorLeg{Qty: l2, TP: target, Stop: stop, Final: true}
+}
+
 // mentorConfluenceForIntent is the R2 STUB (CTO 1791029620038: "use a stub
 // flag until DS-106's lands"): reports whether the intent carries the
 // confluence flag (box edge + key level inside the box or within 2 pts of its
