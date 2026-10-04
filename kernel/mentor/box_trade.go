@@ -54,17 +54,18 @@ func BoxReturnBars(bars []market.Kline, b Box, formedAt int, cfg BoxCfg) []BoxRe
 // BoxReturnBars, starting at bar start with the outside-spell state already
 // known from bars[start-1] (the approach side). Running the full walk from
 // FormedAt every tick is O(n^2) on a long tape (the 30-day replay timed out
-// at 437s); the incremental form is O(new bars). The full walk starts with
-// outside=false at FormedAt+1 — the formation candle itself never opens a
-// spell — so only when start is past the first return does the previous
-// candle's close carry the spell state.
+// at 437s); the incremental form is O(new bars). Under B10 T1 the box is
+// BORN when the extreme's confirming bar closes (FormedAt = max(nearest,
+// extreme+1)) and the walk starts after it — so the FIRST walk seeds the
+// spell state from that formation candle's close (start-1 == FormedAt), and
+// a return visit on the very next bar is not lost.
 func BoxReturnBarsFrom(bars []market.Kline, b Box, start int, cfg BoxCfg) []BoxReturn {
 	var out []BoxReturn
 	if start >= len(bars) {
 		return out
 	}
 	outside := false
-	if start-1 > b.FormedAt && start-1 < len(bars) {
+	if start-1 >= b.FormedAt && start-1 < len(bars) {
 		c := bars[start-1]
 		switch b.Kind {
 		case FTGH:

@@ -1,7 +1,6 @@
 package mentor
 
 import (
-	"math"
 	"time"
 
 	"vl/kernel"
@@ -67,8 +66,9 @@ type Box struct {
 	// box formed — the entry layer requires the THIRD touch [@ 04:29].
 	Touches int
 	// FormedAt is the bar index the box was drawn (extend-right origin):
-	// the LATER of the extreme's and the nearest's bar, so a pairing candle
-	// is never walked as a return (B10 T3).
+	// max(nearest idx, extreme idx + 1) — born when the extreme's confirming
+	// bar closes, and never earlier than the later pairing candle, so a
+	// pairing candle is never walked as a return (B10 T1 ruling + T3).
 	FormedAt int
 }
 
@@ -144,43 +144,12 @@ func barsForTF(bars []market.Kline, tf string) []market.Kline {
 
 // swings3 is the role detector [B]: a rolling 3-candle extreme — candle i is
 // a LOW when its low is the min of the last three lows, a HIGH when its high
-// is the max of the last three highs.
-//
-// B10 T1 (CTO 2026-10-03): the left-only scan drew a box at every new low of
-// a steady decline. The extreme must be TWO-SIDED — confirmed by a later
-// closed candle whose CLOSE returns above the swing low (below the swing high
-// for highs). A one-way tape confirms nothing, so no pair and no box. (The
-// confirmation uses the later candle's CLOSE, not its low/high: the high
-// mirror would have demanded a later LOWER high, which contradicts the escape
-// fixture TestBoxSurvivesEscape — its top is never re-tested, yet the box
-// must survive.)
+// is the max of the last three highs. LEFT-only, deliberately: the NEAREST
+// pairing swing keeps no right-side confirmation (B10 T1 ruling 21:00Z);
+// only the EXTREME is confirmed, by swingConfirmed, at the pairing site.
 func swings3(bars []market.Kline) []swingPairAt {
-	n := len(bars)
-	// Suffix confirmation arrays over CLOSED candles only (an unclosed bar
-	// cannot confirm): maxCloseAfter[i] is the highest later close, and
-	// minCloseAfter[i] the lowest. A swing low at i is confirmed iff some
-	// later closed candle closed above its low; a swing high, iff some later
-	// closed candle closed below its high.
-	maxCloseAfter := make([]float64, n)
-	minCloseAfter := make([]float64, n)
-	for i := range maxCloseAfter {
-		maxCloseAfter[i] = math.Inf(-1)
-		minCloseAfter[i] = math.Inf(1)
-	}
-	for i := n - 2; i >= 0; i-- {
-		maxCloseAfter[i] = maxCloseAfter[i+1]
-		minCloseAfter[i] = minCloseAfter[i+1]
-		if bars[i+1].CloseTime != 0 {
-			if bars[i+1].Close > maxCloseAfter[i] {
-				maxCloseAfter[i] = bars[i+1].Close
-			}
-			if bars[i+1].Close < minCloseAfter[i] {
-				minCloseAfter[i] = bars[i+1].Close
-			}
-		}
-	}
 	var seq []swingPairAt
-	for i := 2; i < n; i++ {
+	for i := 2; i < len(bars); i++ {
 		if bars[i].CloseTime == 0 {
 			continue
 		}
@@ -195,16 +164,28 @@ func swings3(bars []market.Kline) []swingPairAt {
 		}
 		switch {
 		case bars[i].Low == lo && bars[i].Low < bars[i-1].Low && bars[i].Low < bars[i-2].Low:
-			if maxCloseAfter[i] > bars[i].Low {
-				seq = append(seq, swingPairAt{kind: kernel.KindSWGL, price: bars[i].Low, idx: i})
-			}
+			seq = append(seq, swingPairAt{kind: kernel.KindSWGL, price: bars[i].Low, idx: i})
 		case bars[i].High == hi && bars[i].High > bars[i-1].High && bars[i].High > bars[i-2].High:
-			if minCloseAfter[i] < bars[i].High {
-				seq = append(seq, swingPairAt{kind: kernel.KindSWGH, price: bars[i].High, idx: i})
-			}
+			seq = append(seq, swingPairAt{kind: kernel.KindSWGH, price: bars[i].High, idx: i})
 		}
 	}
 	return seq
+}
+
+// swingConfirmed is the B10 T1 fractal right side (CTO ruling 21:00Z),
+// applied to the EXTREME only: a swing low is the extreme only when the NEXT
+// closed bar has a HIGHER low (the spike failed to go lower); a swing high,
+// only when the NEXT closed bar has a LOWER high. A one-way tape never
+// confirms, so no extreme and no box. The box is BORN when the confirming
+// bar closes.
+func swingConfirmed(bars []market.Kline, s swingPairAt) bool {
+	if s.idx+1 >= len(bars) || bars[s.idx+1].CloseTime == 0 {
+		return false
+	}
+	if s.kind == kernel.KindSWGL {
+		return bars[s.idx+1].Low > s.price
+	}
+	return bars[s.idx+1].High < s.price
 }
 
 // BoxesBuild is the pure, deterministic box scan: role extremes pair with
@@ -237,6 +218,12 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 			if s.kind != role {
 				continue
 			}
+			// B10 T1 (CTO ruling 21:00Z): only a CONFIRMED swing can be the
+			// extreme — the next closed bar failed to break it. A one-way
+			// tape has no confirmed swing, so no extreme and no box.
+			if !swingConfirmed(tfBars, s) {
+				continue
+			}
 			if extreme < 0 {
 				extreme = i
 				continue
@@ -253,6 +240,8 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 		}
 		nearest := -1
 		for i, s := range seq {
+			// the NEAREST keeps no confirmation (B10 T1 ruling): the
+			// left-only swing nearest in time that did not break the extreme.
 			if i == extreme || s.kind != role {
 				continue
 			}
@@ -298,8 +287,10 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 		}
 		// B10 T3 (CTO 2026-10-03): the box exists only once BOTH pairing
 		// candles are known, so the formation completes at the LATER of the
-		// two — the return walk must never include the pairing candles.
-		b.FormedAt = seq[extreme].idx
+		// two — the return walk must never include the pairing candles. Per
+		// the T1 ruling the box is BORN when the extreme's confirming bar
+		// closes, so the origin is at least extreme+1.
+		b.FormedAt = seq[extreme].idx + 1
 		if seq[nearest].idx > b.FormedAt {
 			b.FormedAt = seq[nearest].idx
 		}

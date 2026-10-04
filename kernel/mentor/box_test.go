@@ -90,10 +90,16 @@ func TestBoxSurvivesEscape(t *testing.T) {
 		mk(1, 100, 102, 99, 101),
 		mk(2, 101, 105, 100, 104), // swing high @2 — pairs with @4
 		mk(3, 103, 104, 102, 103),
-		mk(4, 102, 106, 101, 105),       // swing high @4 — the extreme
-		mk(5, 105, 107, 99, 100),        // registers SWGL (low 99), not a higher high
+		mk(4, 102, 106, 101, 105), // swing high @4 — the extreme
+		// B10 T1 ruling (20:52Z): bar 5's high was 107, above the "extreme"
+		// 106 — on a real chart 106 is then not the top. 105.8 keeps bar 4 the
+		// true top and still registers the SWGL (low 99).
+		mk(5, 105, 105.8, 99, 100),
 		mk(6, 106.2, 106.5, 105, 106.4), // ESCAPE: body fully above 106
-		mk(7, 106, 106.3, 105.5, 106.1),
+		// The escape candle's wick 106.5 is a higher high; bar 7's high 106.6
+		// stops the NEXT-bar fractal confirmation so the escape candle never
+		// becomes a new swing — the box must stay [104, 106].
+		mk(7, 106, 106.6, 105.5, 106.1),
 	}
 	now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000).In(ctime())
 	boxes := BoxesBuild(bars, cfg, now)
@@ -151,10 +157,10 @@ func TestBoxEdgeLocationsExport(t *testing.T) {
 }
 
 // TestBoxesNoFloorOnOneWayDecline — B10 T1 (CTO 2026-10-03): a steady
-// decline is a one-way tape; every bar is a LEFT-only low, but no bar has a
-// later candle closing back above its low, so nothing is confirmed and no
-// FTGL may be drawn (mirror: a steady rise draws no FTGH). Mutant (drop the
-// confirmation) → RED.
+// decline is a one-way tape; every bar is a LEFT-only low, but the NEXT bar
+// never has a higher low, so nothing is confirmed and no FTGL may be drawn
+// (mirror: a steady rise draws no FTGH). Mutant (drop the confirmation) →
+// RED.
 func TestBoxesNoFloorOnOneWayDecline(t *testing.T) {
 	cfg := DefaultBoxCfg()
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
@@ -185,6 +191,83 @@ func TestBoxesNoFloorOnOneWayDecline(t *testing.T) {
 		if b.Kind == FTGH {
 			t.Fatalf("steady rise drew FTGH %+v — a one-way tape confirms no swing high", b)
 		}
+	}
+
+	// CTO probe 20:52Z, verbatim: overlapping 1m candles — every bar makes a
+	// lower high AND a lower low, but each close sits ABOVE the prior bar's
+	// low, as real 1m bars do. Still a one-way tape: the next bar's low is
+	// never higher, so no swing low is confirmed and no FTGL may exist.
+	// (Mutant: revert the confirmation to the close test — this pin goes RED.)
+	overlap := make([]market.Kline, 0, 20)
+	for i := 0; i < 20; i++ {
+		overlap = append(overlap, mk(i, 220-2*float64(i), 221-2*float64(i), 215-2*float64(i), 218-2*float64(i)))
+	}
+	nowO := time.UnixMilli(overlap[len(overlap)-1].OpenTime + 60_000).In(ctime())
+	for _, b := range BoxesBuild(overlap, cfg, nowO) {
+		if b.Kind == FTGL {
+			t.Fatalf("overlapping decline drew FTGL %+v — the next bar never has a higher low", b)
+		}
+	}
+}
+
+// TestBoxesDeclineOneBounceDrawsOneFloor — B10 T1 (CTO ruling 21:00Z): a
+// decline that ends with ONE bounce bar draws exactly one FTGL, with the
+// bottom as the outer edge. The last decline low is confirmed by the bounce
+// bar (its low is higher) and becomes the extreme; the bar before it is the
+// nearest.
+func TestBoxesDeclineOneBounceDrawsOneFloor(t *testing.T) {
+	cfg := DefaultBoxCfg()
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(0, 110, 111, 108, 109),
+		mk(1, 109, 109.5, 106, 107),
+		mk(2, 107, 107.5, 104, 105),     // the nearest low — left-only, no confirmation
+		mk(3, 105, 105.5, 103, 104),     // the extreme low — the spike
+		mk(4, 104.5, 106, 103.5, 105.5), // the ONE bounce bar: low 103.5 > 103 confirms the extreme
+		mk(5, 105, 106, 104, 105),
+		mk(6, 105, 105.5, 104.2, 105),
+	}
+	now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000).In(ctime())
+	boxes := BoxesBuild(bars, cfg, now)
+	if len(boxes) != 1 {
+		t.Fatalf("boxes = %d (%+v), want exactly one FTGL [103, 105]", len(boxes), boxes)
+	}
+	b := boxes[0]
+	if b.Kind != FTGL || b.Bottom != 103 || b.Top != 105 {
+		t.Fatalf("box = %+v, want FTGL bottom 103 (the outer edge) top 105", b)
+	}
+}
+
+// TestBoxesRealFloorStillDrawn — B10 T1 (CTO 20:52Z): the fractal right side
+// confirms REAL swings — lows 100 (bounce) then 101.5 (bounce) still draw
+// the FTGL [100, 102.5].
+func TestBoxesRealFloorStillDrawn(t *testing.T) {
+	cfg := DefaultBoxCfg()
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(0, 106, 107, 105, 106),
+		mk(1, 105, 105.5, 101, 102),
+		mk(2, 102, 103, 100, 101.5), // swing low 100 — next bar's low 102.5 confirms
+		mk(3, 103, 104, 102.5, 103.5),
+		mk(4, 103.5, 104, 103, 103.5),
+		mk(5, 103, 103.8, 101.5, 102.5), // the nearest low — next bar's low 102 confirms
+		mk(6, 102.5, 104, 102, 103.5),
+		mk(7, 103, 104, 102.5, 103.5),
+	}
+	now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000).In(ctime())
+	boxes := BoxesBuild(bars, cfg, now)
+	if len(boxes) != 1 {
+		t.Fatalf("boxes = %d (%+v), want exactly the FTGL [100, 102.5]", len(boxes), boxes)
+	}
+	b := boxes[0]
+	if b.Kind != FTGL || b.Bottom != 100 || b.Top != 102.5 {
+		t.Fatalf("box = %+v, want FTGL bottom 100 top 102.5", b)
 	}
 }
 
@@ -245,9 +328,9 @@ func TestBoxTopTwoCandleNeverWalked(t *testing.T) {
 		mk(3, 104, 105, 103.5, 104),     // closes above the box bottom
 		mk(4, 104, 104.5, 102.5, 103.2), // closes back below the bottom
 		mk(5, 103.5, 106, 102.5, 103.2), // top 2: the nearest — wick 106, closes below bottom
-		mk(6, 102.5, 103.5, 101, 102.2), // touches with the spell open — not itself a return
+		mk(6, 102.5, 103.5, 101, 102.2), // the NEXT visit: touch while the spell is open
 		mk(7, 102.5, 103, 102, 102.5),   // no touch
-		mk(8, 102, 103.6, 101.5, 102.6), // the NEXT visit: touch while outside
+		mk(8, 102, 103.6, 101.5, 102.6), // a later visit
 	}
 	now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000).In(ctime())
 	boxes := BoxesBuild(bars, cfg, now)
@@ -273,8 +356,8 @@ func TestBoxTopTwoCandleNeverWalked(t *testing.T) {
 	if len(ret) == 0 {
 		t.Fatal("no return visit at all — the next visit after the top-2 candle must be return 1")
 	}
-	if ret[0].RefBar != 8 {
-		t.Fatalf("first return RefBar = %d (%+v), want 8 — the next visit after the top-2 candle", ret[0].RefBar, ret)
+	if ret[0].RefBar != 6 {
+		t.Fatalf("first return RefBar = %d (%+v), want 6 — the next visit after the top-2 candle", ret[0].RefBar, ret)
 	}
 	for _, r := range ret {
 		if r.RefBar <= b.FormedAt {
