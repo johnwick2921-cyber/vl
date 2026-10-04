@@ -235,6 +235,12 @@ type Config struct {
 	RoomMultiple   float64 // room rule: reward >= RoomMultiple x risk; default 2 [D5.3 p1 @ 09:16]
 	RangeGapPts    float64 // mid-range: levels bracketing price within this gap both sides; default 0 = disabled
 
+	// NearBoxRoomMultiple — Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: a setup
+	// whose nearest box edge IN the trade direction is closer than this × its
+	// own risk is refused ("sát box"); 0 disables. Default 2 — the same 2R
+	// room the target rule demands. Between two boxes (row 25) is exempt.
+	NearBoxRoomMultiple float64
+
 	// §7 day gate knobs (fold item 4, DS-106): the method defaults until the
 	// routed Config integration lands.
 	DayGateSpentPts     float64 // run >= this before the open = spent; default 300 [D5.1 p1 @ 15:57]
@@ -294,6 +300,7 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
+		NearBoxRoomMultiple:    2, // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
 		LossDeparturePts:       0, // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
