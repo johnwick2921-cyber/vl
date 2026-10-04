@@ -1,6 +1,8 @@
 package mentor
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -388,5 +390,180 @@ func TestSeed1hEquals1mAggregation(t *testing.T) {
 	if e.State.Swing.EmaCount != len(want4h) {
 		t.Fatalf("seeded 4h count %d != all-hours aggregation %d",
 			e.State.Swing.EmaCount, len(want4h))
+	}
+}
+
+func formingSeedTape(t *testing.T, throughMinute int, priorClose, partialClose, finalClose float64) []market.Kline {
+	t.Helper()
+	var bars []market.Kline
+	for minute := 8*60 + 30; minute <= throughMinute; minute++ {
+		hour, min := minute/60, minute%60
+		close := priorClose
+		if minute >= 9*60+30 {
+			close = partialClose
+			if minute > 10*60+15 {
+				close = finalClose
+			}
+		}
+		bars = append(bars, mkBar(100, close, ctMs(t, 0, hour, min), 1))
+	}
+	return bars
+}
+
+func TestSeedDropsForming1HCandleUntilTickClosesIt(t *testing.T) {
+	bars := formingSeedTape(t, 10*60+31, 101, 105, 103)
+	seedNow := ctMs(t, 0, 10, 15)
+	seedEnd := 10*60 + 15 - (8*60 + 30) + 1
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	e := New(cfg)
+	Seed(e, bars[:seedEnd], seedNow)
+
+	for _, c := range e.State.Seed1HBars {
+		if c.OpenTime == ctMs(t, 0, 9, 30) {
+			t.Fatal("Seed retained the still-forming 09:30 candle")
+		}
+	}
+
+	// The 10:31 minute is present but still forming at this timestamp; the
+	// preceding 09:30–10:29 hour is closed and must be appended exactly once.
+	e.Tick(bars, ctMs(t, 0, 10, 31))
+	var found int
+	for _, c := range e.State.Seed1HBars {
+		if c.OpenTime != ctMs(t, 0, 9, 30) {
+			continue
+		}
+		found++
+		if c.Open != 100 || c.High != 105 || c.Low != 100 || c.Close != 103 ||
+			c.CloseTime != ctMs(t, 0, 10, 29)+59_999 {
+			t.Fatalf("09:30 candle = %+v, want full 09:30–10:29 OHLC 100/105/100/103", c)
+		}
+	}
+	if found != 1 {
+		t.Fatalf("09:30 candle occurrence count = %d, want exactly one; bars=%+v", found, e.State.Seed1HBars)
+	}
+}
+
+func TestSeedFormingCandleColourFlipUsesClosedColour(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		partialClose float64
+		finalClose   float64
+		wantLevel    bool
+	}{
+		{name: "remove forming-only flip", partialClose: 99, finalClose: 101, wantLevel: false},
+		{name: "add final closed flip", partialClose: 101, finalClose: 99, wantLevel: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bars := formingSeedTape(t, 10*60+29, 101, tc.partialClose, tc.finalClose)
+			cfg := DefaultConfig()
+			cfg.Enabled = true
+			e := New(cfg)
+			Seed(e, bars[:10*60+15-(8*60+30)+1], ctMs(t, 0, 10, 15))
+			e.Tick(bars, ctMs(t, 0, 10, 30))
+
+			var found bool
+			for _, level := range e.State.SeedLevels {
+				if level.AtTime == ctMs(t, 0, 9, 30) {
+					found = true
+					if level.Kind != KindKeyLevel || level.Price != 100 {
+						t.Fatalf("09:30 level = %+v, want key level at 100", level)
+					}
+				}
+			}
+			if found != tc.wantLevel {
+				t.Fatalf("09:30 level present = %v, want %v; levels=%+v", found, tc.wantLevel, e.State.SeedLevels)
+			}
+			if e.State.Seed1HLastColour != (tc.finalClose > 100) {
+				t.Fatalf("last seeded colour = %v, want closed candle colour %v", e.State.Seed1HLastColour, tc.finalClose > 100)
+			}
+		})
+	}
+}
+
+func TestSeedClosedHistoryAtMidnightIsByteIdentical(t *testing.T) {
+	bars := formingSeedTape(t, 14*60+59, 101, 101, 101)
+	cfg := DefaultConfig()
+	e := New(cfg)
+	Seed(e, bars, ctMs(t, 1, 0, 0))
+
+	// This is the pre-filter output for already-closed history. Comparing the
+	// serialized tuple keeps the no-forming-candle path byte-for-byte stable.
+	candles := keyLevel1HBars(bars)
+	want, err := json.Marshal(struct {
+		Bars      []market.Kline `json:"bars"`
+		Levels    []Level        `json:"levels"`
+		Watermark int64          `json:"watermark"`
+		Colour    bool           `json:"colour"`
+	}{candles, keyLevelsFromCandles(candles, cfg.KeyLevelPrunePts), candles[len(candles)-1].OpenTime, candleColour(candles[len(candles)-1])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := json.Marshal(struct {
+		Bars      []market.Kline `json:"bars"`
+		Levels    []Level        `json:"levels"`
+		Watermark int64          `json:"watermark"`
+		Colour    bool           `json:"colour"`
+	}{e.State.Seed1HBars, e.State.SeedLevels, e.State.Seed1HWatermark, e.State.Seed1HLastColour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("closed-history seed changed at midnight:\n got %s\nwant %s", got, want)
+	}
+}
+
+func TestSeedDropsScheduledFormingCandleWithClosedStoredBars(t *testing.T) {
+	seedBars := formingSeedTape(t, 10*60+14, 101, 105, 103)
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	e := New(cfg)
+	Seed(e, seedBars, ctMs(t, 0, 10, 15)+30_000)
+
+	for _, c := range e.State.Seed1HBars {
+		if c.OpenTime == ctMs(t, 0, 9, 30) {
+			t.Fatalf("Seed included scheduled-forming 09:30 candle ending at %d", c.CloseTime)
+		}
+	}
+
+	bars := formingSeedTape(t, 10*60+31, 101, 105, 103)
+	for i := len(seedBars); i < len(bars); i++ {
+		e.Tick(bars[:i+1], bars[i].OpenTime)
+	}
+	var found int
+	for _, c := range e.State.Seed1HBars {
+		if c.OpenTime != ctMs(t, 0, 9, 30) {
+			continue
+		}
+		found++
+		if c.Open != 100 || c.High != 105 || c.Low != 100 || c.Close != 103 ||
+			c.CloseTime != ctMs(t, 0, 10, 29)+59_999 {
+			t.Fatalf("09:30 candle = %+v, want full 09:30–10:29 OHLC 100/105/100/103", c)
+		}
+	}
+	if found != 1 {
+		t.Fatalf("09:30 candle occurrence count = %d, want exactly one", found)
+	}
+}
+
+func TestSeed14h30CandleClosesAt1500(t *testing.T) {
+	bars := formingSeedTape(t, 14*60+59, 101, 101, 101)
+	e := New(DefaultConfig())
+	Seed(e, bars, ctMs(t, 0, 15, 0))
+
+	var found int
+	for _, c := range e.State.Seed1HBars {
+		if c.OpenTime >= ctMs(t, 0, 15, 0) {
+			t.Fatalf("post-close candle entered RTH seed: %+v", c)
+		}
+		if c.OpenTime == ctMs(t, 0, 14, 30) {
+			found++
+			if c.CloseTime != ctMs(t, 0, 14, 59)+59_999 {
+				t.Fatalf("14:30 candle CloseTime = %d, want last stored minute close %d", c.CloseTime, ctMs(t, 0, 14, 59)+59_999)
+			}
+		}
+	}
+	if found != 1 {
+		t.Fatalf("14:30 candle count at 15:00 = %d, want one", found)
 	}
 }
