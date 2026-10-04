@@ -492,7 +492,9 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 	if spentCap <= 0 {
 		spentCap = mentor.DefaultConfig().DayGateTargetCapPts
 	}
-	if extra.SpentDay && stop > spentCap {
+	// R13 [D5.2 §6]: DayOff does not stop the swing, so the spent-day stop cap
+	// must not either — the overnight SWING4H is exempt from the R9 cap.
+	if extra.SpentDay && !swing && stop > spentCap {
 		return fmt.Sprintf("R9: spent day cap %.0f — stop %.1f pts skips", spentCap, stop)
 	}
 	return ""

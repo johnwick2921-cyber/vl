@@ -155,7 +155,7 @@ export const mentor: GuideSection = {
   num: 17,
   title: 'Mentor Mode',
   tagline:
-    "The mentor's method: three setups, four locations, hard filters, small and patient.",
+    "The mentor's method: three setups, five locations, hard filters, small and patient.",
   asBuiltRev: GUIDE_BUILT_REV,
   blocks: [
     {
@@ -205,7 +205,7 @@ export const mentor: GuideSection = {
     },
     {
       kind: 'h',
-      text: 'The four locations',
+      text: 'The five locations',
     },
     {
       kind: 'table',
@@ -230,8 +230,13 @@ export const mentor: GuideSection = {
         ],
         [
           'Box edge',
-          'FTGH/FTGL boxes, 1m regular candles, paired by role with no tolerance',
+          'FTGH/FTGL boxes, 1m regular candles, paired by role with no tolerance — the extreme (lowest low / highest high) pairs with the NEXT confirmed swing AFTER it that fails to exceed it (a higher low / lower high); the trade is the 3rd touch',
           'A box edge is used again and again; an escape (a 1m BODY closes outside) does NOT kill the box — it stays and every later return trades [B4]; boxes die at day end only',
+        ],
+        [
+          'Trendline',
+          'Two same-role swings joined — a low and a HIGHER low (support) or a high and a LOWER high (resistance); never horizontal',
+          'Exists at 2 points; becomes a location only after the 3rd touch [DAY-3 p2 @03:45-04:07]; a break confirmed by a 5m close discards it (a break is NOT an entry). Box beats trendline',
         ],
       ],
     },
@@ -266,8 +271,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Smaller size when the ISB is in a range',
-          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). Written rule 3 [D4.1 p1 @09:40]. A spent day (2) still wins; the cut beats the confluence size.',
-          cite: 'trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlags',
+          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). "In range" means: between an FTGL below and an FTGH above; inside the standing 5m ISB rest box; between two key levels closer than the ping-pong minimum (50 pts); and — once built — a 15m ISB range. Written rule 3 [D4.1 p1 @09:40]. A spent day (2) still wins; the cut beats the confluence size.',
+          cite: 'trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlagsFor',
         },
         {
           title: 'Skip a stop in the twenties',
@@ -292,8 +297,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Every box return trades',
-          body: 'Each new visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). EVERY return trades, the first one included — there is no touch count to wait for. An escape does not delete the box; boxes die at end of day only.',
-          cite: 'R1 · D3.2 p2 @06:25',
+          body: 'The box is drawn from two touches — the extreme and the next confirmed swing after it that failed to exceed it ("lần thứ 3 mới vô lệnh": the 3rd touch is the trade). Each return visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). EVERY return trades, the first one included. An escape does not delete the box; boxes die at end of day only. After a body escape the role flips (Uno Reverse): a broken FTGH becomes support and a broken FTGL becomes resistance, and the next returns come from the new side with the same reject rule and gates.',
+          cite: 'R1 · D3.2 p2 @06:25 · D14 slide 17 · X2 @02:36–03:25',
         },
         {
           title: 'Intraday confluence (exit C, size 10)',
