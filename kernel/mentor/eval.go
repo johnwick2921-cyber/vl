@@ -152,11 +152,20 @@ func New(cfg Config) *Evaluator {
 // Levels computes the full mentor level set from the 1m history: colour-change
 // key levels (§4.3), EMA 34/9 (§8/§11), and the old highs/lows — the bot's own
 // swing levels reused [DS-106 §1: kernel/levels_swing.go SwingPointLevels].
+// swingPointNow is the clock handed to kernel.SwingPointLevels. That function
+// drops a bucket whose CloseTime >= now, and kernel.aggregateBars gives a
+// bucket CloseTime = open+interval (exclusive end, unlike barsTF's -1). With
+// now = the instant the last bar closed (CloseTime+1 of the 1m bar) that bucket
+// would still read as forming for one more bar, so the mentor passes now+1.
+// Mentor-local on purpose: aggregateBars is shared with the live structure
+// engine and must not change.
+func swingPointNow(now int64) int64 { return now + 1 }
+
 func Levels(bars []market.Kline, cfg Config, now int64) []Level {
 	var out []Level
 	out = append(out, KeyLevels(bars, cfg)...)
 	out = append(out, EMALevels(bars, cfg)...)
-	for _, d := range kernel.SwingPointLevels(bars, time.UnixMilli(now)) {
+	for _, d := range kernel.SwingPointLevels(bars, time.UnixMilli(swingPointNow(now))) {
 		switch d.Kind {
 		case kernel.KindSWGH, kernel.KindSWGL:
 			out = append(out, Level{
@@ -458,6 +467,15 @@ func stampLeave(out []Intent, verdict DayVerdict) ([]Intent, []string) {
 	}
 	return kept, refusals
 }
+
+// BarCloseInstant is the evaluator clock for a just-closed 1m bar: the instant
+// it closed (CloseTime is the bar's last millisecond, so +1). Every closedness
+// test inside Tick (CloseTime >= now), every time-of-day gate (08:32 ORB, 15:00
+// window end, 4h boundary) and every order expiry reads `now` as THAT instant,
+// so a bar is always evaluated as CLOSED and no gate shifts by a minute.
+// Production (trader mentorEvalOnce) and every replay/harness driver call Tick
+// with this value — never with the bar's OpenTime.
+func BarCloseInstant(last market.Kline) int64 { return last.CloseTime + 1 }
 
 func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// A5 + P0 sizing gap (CTO 20:13:25Z): ONE stamp where intents LEAVE Tick —
@@ -1289,7 +1307,7 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 	out = append(out, e.State.SeedLevels...)
 	out = append(out, Level{Key: string(KindEMA34), Kind: KindEMA34, Price: e.State.EMA34})
 	out = append(out, Level{Key: string(KindEMA9), Kind: KindEMA9, Price: e.State.EMA9})
-	for _, d := range kernel.SwingPointLevels(bars, time.UnixMilli(now)) {
+	for _, d := range kernel.SwingPointLevels(bars, time.UnixMilli(swingPointNow(now))) {
 		switch d.Kind {
 		case kernel.KindSWGH, kernel.KindSWGL:
 			out = append(out, Level{
