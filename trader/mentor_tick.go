@@ -54,11 +54,26 @@ func (at *AutoTrader) mentorTick(ctx *kernel.Context) {
 	if market.FuturesBarsProvider == nil {
 		return
 	}
-	bars := market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth)
+	bars := mentorClosedBars(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth), time.Now())
 	if len(bars) == 0 {
 		return
 	}
 	at.mentorEvalOnce(bars)
+}
+
+// mentorClosedBars drops the trailing FORMING 1m bars. The NT8 cache's newest
+// bar is usually still building (trader/ninjatrader/bars_market_bridge.go
+// barsToKlines). Evaluating it reads a half-built candle as the current one,
+// and the mentorLastTickOpen dedup then skips that bar's FINAL for good, so
+// the bar is never evaluated closed. A bar counts as closed when NT8 marked it
+// Final or its scheduled close has passed.
+func mentorClosedBars(bars []market.Kline, now time.Time) []market.Kline {
+	nowMs := now.UnixMilli()
+	n := len(bars)
+	for n > 0 && !bars[n-1].Final && bars[n-1].CloseTime >= nowMs {
+		n--
+	}
+	return bars[:n]
 }
 
 // noteLiveBarsForMentorPass is the sink's mentor half: a FINAL 1m/5m frame
@@ -100,7 +115,7 @@ func (at *AutoTrader) mentorEventPassAt(now time.Time) bool {
 	if market.FuturesBarsProvider == nil {
 		return false
 	}
-	bars := market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth)
+	bars := mentorClosedBars(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth), now)
 	if len(bars) == 0 {
 		return false
 	}

@@ -48,6 +48,11 @@ type State struct {
 	// ISBBox is the R5 5m-ISB rest box (nil = none standing). Rebuildable by
 	// replaying the closed 5m buckets + 1m escapes.
 	ISBBox *ISBBox `json:"isb_box,omitempty"`
+	// LastISBBoxAt is the 5m ISB candle open of the last box built. After an
+	// escape the same closed pair is still the latest one until the next 5m
+	// candle closes, so without it the escaped box is rebuilt on the very
+	// next tick and flaps on and off (CTO parity ruling 2026-10-04).
+	LastISBBoxAt int64 `json:"last_isb_box_at,omitempty"`
 	// SchoolOneSide / SchoolOneUpgraded — B20 flip tracking: a school-1 entry
 	// was emitted without the 5m trigger agreeing; when the trigger later
 	// flips to that side the evaluator emits ConfluenceUpgrade once.
@@ -582,8 +587,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.State.ISBBox = nil
 		}
 	} else if cb := closedBuckets(bars, now, e.Cfg); len(cb) >= 2 {
-		if bx, ok := ISBBoxFrom5m(cb[len(cb)-2], cb[len(cb)-1]); ok {
+		// One box per 5m ISB pair: an escaped box is gone for good [D3.4 p2
+		// @ 12:02], so the same pair never builds it again.
+		if bx, ok := ISBBoxFrom5m(cb[len(cb)-2], cb[len(cb)-1]); ok && bx.AtTime != e.State.LastISBBoxAt {
 			e.State.ISBBox = &bx
+			e.State.LastISBBoxAt = bx.AtTime
 		}
 	}
 

@@ -890,3 +890,44 @@ func TestMentorNewsGateAtPlacementCallSite(t *testing.T) {
 		t.Fatalf("no calendar outside the window must proceed, placed=%d", placed)
 	}
 }
+
+// TestMentorEvaluatesClosedBarsOnly: the NT8 cache's newest 1m bar is usually
+// FORMING. The event pass and the scan must evaluate the last CLOSED bar,
+// never the forming one. Evaluating it would read a half-built candle and
+// make the dedup skip that bar's FINAL, so it would never be evaluated closed.
+func TestMentorEvaluatesClosedBarsOnly(t *testing.T) {
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	old := market.FuturesBarsProvider
+	t.Cleanup(func() { market.FuturesBarsProvider = old })
+	now := time.Now()
+	minute := now.Truncate(time.Minute).UnixMilli()
+	closedA := market.Kline{OpenTime: minute - 120_000, CloseTime: minute - 60_001, Open: 100, High: 101, Low: 99, Close: 100.5, Final: true}
+	closedB := market.Kline{OpenTime: minute - 60_000, CloseTime: minute - 1, Open: 100.5, High: 101.5, Low: 100, Close: 101, Final: true}
+	forming := market.Kline{OpenTime: minute, CloseTime: minute + 59_999, Open: 101, High: 101, Low: 101, Close: 101}
+	served := []market.Kline{closedA, closedB, forming}
+	market.FuturesBarsProvider = func(symbol, tf string, n int) []market.Kline { return served }
+
+	// the event pass: the forming bar is not evaluated; the last CLOSED one is.
+	if !at.mentorEventPassAt(now) {
+		t.Fatal("the pass must run on the new CLOSED bar")
+	}
+	if at.mentorLastTickOpen != closedB.OpenTime {
+		t.Fatalf("evaluated bar open %d, want the last CLOSED bar %d (forming %d)", at.mentorLastTickOpen, closedB.OpenTime, forming.OpenTime)
+	}
+	// the scan fallback: same rule.
+	at.mentorLastTickOpen = 0
+	at.mentorTick(nil)
+	if at.mentorLastTickOpen != closedB.OpenTime {
+		t.Fatalf("scan evaluated bar open %d, want the last CLOSED bar %d", at.mentorLastTickOpen, closedB.OpenTime)
+	}
+	// the forming bar's FINAL arrives → it is evaluated now, closed.
+	final := forming
+	final.Final = true
+	served = []market.Kline{closedA, closedB, final}
+	if !at.mentorEventPassAt(now) {
+		t.Fatal("the bar's FINAL must be evaluated once it arrives")
+	}
+	if at.mentorLastTickOpen != final.OpenTime {
+		t.Fatalf("evaluated bar open %d, want the now-final bar %d", at.mentorLastTickOpen, final.OpenTime)
+	}
+}
