@@ -300,7 +300,7 @@ func fnumOrEmpty(v float64) string {
 func emitGoState(e *Evaluator, bars []market.Kline, i int, cfg Config) goStateRow {
 	cur := bars[i-1]
 	prev := bars[i-2]
-	now := cur.CloseTime
+	now := cur.OpenTime // the production Tick clock (mentorEvalOnce)
 	row := goStateRow{
 		minCT: minCTFromBar(cur),
 		o:     fnum(cur.Open), h: fnum(cur.High), l: fnum(cur.Low), c: fnum(cur.Close),
@@ -351,9 +351,13 @@ func emitGoState(e *Evaluator, bars []market.Kline, i int, cfg Config) goStateRo
 	}
 
 	// Match Tick's source path and post-deletion set for this minute.
-	levels := Levels(bars[:i], cfg, now)
+	// Seeded: read the state Tick just advanced — never call seededLevels from
+	// the dump, it MUTATES the seeded walk (watermarks, appended candles).
+	var levels []Level
 	if e.seeded {
-		levels = e.seededLevels(bars[:i], now)
+		levels = append(levels, e.State.SeedLevels...)
+	} else {
+		levels = Levels(bars[:i], cfg, now)
 	}
 	// Tick has already updated DeletedLevels before this state snapshot.
 	levels = withoutDeleted(levels, e.State.DeletedLevels)
@@ -585,11 +589,25 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 	var rowOrder []string
 	for i := 2; i <= len(bars); i++ {
 		cur := bars[i-1]
+		// PRODUCTION CALL SITES (canon 53): the bot seeds ONCE from stored
+		// history (trader/mentor_tick.go → mentor.Seed), then ticks every
+		// CLOSED 1m bar with now = that bar's OpenTime (mentorEvalOnce:
+		// Tick(bars, last.OpenTime)). Seeding at 00:00 CT of the target day
+		// leaves no 1H RTH candle forming at the seed instant. The cold
+		// ticks before it build the trigger/HTF/box state minute by minute,
+		// the way a bot that has been running all along holds it.
+		if i-1 == firstTarget {
+			if missing := Seed(e, bars[:firstTarget], cur.OpenTime); len(missing) > 0 {
+				t.Errorf("%s: seed at %s missing sources %v — entries would be refused (fail-closed)",
+					d.name, time.UnixMilli(cur.OpenTime).In(ctime()).Format("2006-01-02 15:04"), missing)
+			}
+		}
+		now := cur.OpenTime
 		if time.UnixMilli(cur.OpenTime).In(ctime()).Format("2006-01-02") != d.day {
-			e.Tick(bars[:i], cur.CloseTime)
+			e.Tick(bars[:i], now)
 			continue
 		}
-		intents := e.Tick(bars[:i], cur.CloseTime)
+		intents := e.Tick(bars[:i], now)
 		minute := minCTFromBar(cur)
 		placedThisMinute, cancelledThisMinute := 0, 0
 		for _, in := range intents {
