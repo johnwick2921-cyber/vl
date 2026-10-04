@@ -60,3 +60,13 @@ func ISBBoxEscape(box ISBBox, bar1m market.Kline) (escaped bool, dir Side) {
 	}
 	return false, ""
 }
+
+// mtfConflict is the D4.2-03 PERSISTENT 15m/5m conflict: BOTH the 5m and the
+// 15m ISB boxes stand with OPPOSITE directions → "làm ơn đừng trade luôn" — no
+// trade at all until one of the two boxes escapes [D4.2 p1 @13:59–14:53,
+// @07:37–08:00]. Unlike the old one-shot pair veto it is a standing STATE, so
+// it refuses every setup (ISB, PHL/PLH, box returns) for as long as the two
+// boxes disagree.
+func mtfConflict(box5, box15 *ISBBox) bool {
+	return box5 != nil && box15 != nil && box5.Dir != box15.Dir
+}
