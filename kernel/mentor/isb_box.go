@@ -70,3 +70,24 @@ func ISBBoxEscape(box ISBBox, bar1m market.Kline) (escaped bool, dir Side) {
 func mtfConflict(box5, box15 *ISBBox) bool {
 	return box5 != nil && box15 != nil && box5.Dir != box15.Dir
 }
+
+// crossingISBs reports whether the last `lookback` CLOSED buckets hold 2 ISBs
+// with OPPOSITE directions — the choppy read that makes that TF invalid and
+// escalates the read one TF up [D3.4 p2 @17:07–17:49]. Conservative reading
+// (mentor question open, Q10): lookback 3 buckets, 2 crossing ISBs.
+func crossingISBs(buckets []market.Kline, lookback int) bool {
+	if len(buckets) < lookback {
+		return false
+	}
+	window := buckets[len(buckets)-lookback:]
+	var dirs []Side
+	for i := 1; i < len(window); i++ {
+		if IsISB(window[i-1], window[i]) {
+			dirs = append(dirs, ISBDirection(window[i-1]))
+		}
+	}
+	if len(dirs) < 2 {
+		return false
+	}
+	return dirs[0] != dirs[len(dirs)-1]
+}

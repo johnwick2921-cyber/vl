@@ -61,6 +61,11 @@ type State struct {
 	// LastISBBox15mAt is the 15m ISB candle open of the last box built (the
 	// same flap guard as LastISBBoxAt).
 	LastISBBox15mAt int64 `json:"last_isb_box_15m_at,omitempty"`
+	// ISBBox30m is the 30m ISB rest box (D4.2-07): the latest CLOSED 30m
+	// inside-bar candle, boxed like R5. Nil = none standing.
+	ISBBox30m *ISBBox `json:"isb_box_30m,omitempty"`
+	// LastISBBox30mAt is the 30m ISB candle open of the last box built.
+	LastISBBox30mAt int64 `json:"last_isb_box_30m_at,omitempty"`
 	// SchoolOneSide / SchoolOneUpgraded — B20 flip tracking: a school-1 entry
 	// was emitted without the 5m trigger agreeing; when the trigger later
 	// flips to that side the evaluator emits ConfluenceUpgrade once.
@@ -790,6 +795,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// mode-C read use the SAME CLOSED buckets — computed once per tick.
 	cb5 := closedBuckets(bars, now, e.Cfg)
 	cb15 := closedBucketsTF(bars, 15, now)
+	cb30 := closedBucketsTF(bars, 30, now)
 
 	// D4.1-25: the 15m ISB rest box — box the latest CLOSED 15m inside-bar
 	// candle (the REAL 15m TF, B8) and keep it until a 1m BODY closes outside.
@@ -804,6 +810,20 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		if bx, ok := ISBBoxFrom5m(cb15[len(cb15)-2], cb15[len(cb15)-1]); ok && bx.AtTime != e.State.LastISBBox15mAt {
 			e.State.ISBBox15m = &bx
 			e.State.LastISBBox15mAt = bx.AtTime
+		}
+	}
+
+	// D4.2-07: the 30m ISB rest box — the same machinery as the 15m box on the
+	// 30m TF. "Never trade against a 15m/30m ISB inside its range" [D4.2 p1
+	// @16:28–16:46, 18:02–18:36].
+	if e.State.ISBBox30m != nil {
+		if escaped, _ := ISBBoxEscape(*e.State.ISBBox30m, cur); escaped {
+			e.State.ISBBox30m = nil
+		}
+	} else if len(cb30) >= 2 {
+		if bx, ok := ISBBoxFrom5m(cb30[len(cb30)-2], cb30[len(cb30)-1]); ok && bx.AtTime != e.State.LastISBBox30mAt {
+			e.State.ISBBox30m = &bx
+			e.State.LastISBBox30mAt = bx.AtTime
 		}
 	}
 
@@ -843,18 +863,29 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// SAME-direction 1m ISB — compute the verdict up front so an
 					// allowed ISB still falls through to the emit below.
 					boxBlocked := false
-					if e.State.ISBBox != nil {
+					if e.State.ISBBox != nil && !crossingISBs(cb5, 3) {
 						if allowed, r := ISBBoxAllows(*e.State.ISBBox, prev, cur); !allowed {
 							boxBlocked, _ = true, r
 						}
 					}
 					// D4.1-25: the 15m box gates the ISB exactly like the 5m box —
 					// inside it only a 1m ISB in the 15m box's direction [D4.1 p2
-					// @07:35–08:11; D4.2 p1 @03:40–04:45].
+					// @07:35–08:11; D4.2 p1 @03:40–04:45]. The escalation ladder
+					// (D3.4 p2 @17:07–17:49) skips this gate when the 15m ISBs
+					// are crossing.
 					box15Blocked := false
-					if e.State.ISBBox15m != nil {
+					if e.State.ISBBox15m != nil && !crossingISBs(cb15, 3) {
 						if allowed, r := ISBBoxAllows(*e.State.ISBBox15m, prev, cur); !allowed {
 							box15Blocked, _ = true, r
+						}
+					}
+					// D4.2-07: the 30m box gates the ISB the same way — never
+					// trade against a 30m ISB inside its range; skipped when the
+					// 30m ISBs are crossing.
+					box30Blocked := false
+					if e.State.ISBBox30m != nil && !crossingISBs(cb30, 3) {
+						if allowed, r := ISBBoxAllows(*e.State.ISBBox30m, prev, cur); !allowed {
+							box30Blocked, _ = true, r
 						}
 					}
 					side, chosen, ok, _ := ISBStopLimitOrder(prev, cur, e.Cfg)
@@ -869,6 +900,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					} else if box15Blocked {
 						// D4.1-25: an ISB against the 15m box direction — no entry
 						e.refuse("isb_box_blocked_15m")
+					} else if box30Blocked {
+						// D4.2-07: an ISB against the 30m box direction — no entry
+						e.refuse("isb_box_blocked_30m")
 					} else if e.State.ISBBox == nil && trigSide != "" && side != "" && side != trigSide {
 						// I1: while NO R5 5m ISB box stands, the LIVE 5m trigger
 						// line governs the ISB side — a short ISB above a buy line
@@ -1125,6 +1159,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				e.refuse("phl_15m_box_ban")
 				continue
 			}
+			// D4.2-07: the 30m box refuses PHL/PLH inside it too.
+			if e.State.ISBBox30m != nil && cur.Close > e.State.ISBBox30m.Low && cur.Close < e.State.ISBBox30m.High {
+				e.refuse("phl_30m_box_ban")
+				continue
+			}
 			// B16 (10-03 ruling, D5.3 p1 @20:40–22:12): ONE intent per reference —
 			// while a level order RESTS at this level, the level is not re-emitted
 			// (no double size on repeated touches).
@@ -1286,6 +1325,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// D4.1-25: the 15m box refuses box returns inside it too.
 				if e.State.ISBBox15m != nil && bars[r.RefBar].Close > e.State.ISBBox15m.Low && bars[r.RefBar].Close < e.State.ISBBox15m.High {
 					e.refuse("box_isb_ban_15m")
+					continue
+				}
+				// D4.2-07: the 30m box refuses box returns inside it too.
+				if e.State.ISBBox30m != nil && bars[r.RefBar].Close > e.State.ISBBox30m.Low && bars[r.RefBar].Close < e.State.ISBBox30m.High {
+					e.refuse("box_isb_ban_30m")
 					continue
 				}
 				if !BoxReturnReject(b, bars[r.RefBar]) {
