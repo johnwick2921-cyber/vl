@@ -7963,3 +7963,42 @@ CloseTime of its last member bar. Reference: kernel/mentor/eval.go
 BarCloseInstant/swingPointNow, key_levels.go keyLevel1HCandleCloseTime +
 levelDeletedBy1HBody, trader/mentor_tick.go mentorEvalOnce; pins in
 kernel/mentor/clock_close_instant_test.go and trader/mentor_clock_test.go.
+
+## CLASS NN (assigned at merge) — an exit signal fired before the state its restart will read is persisted
+
+symptom: the 2026-10-04 Update-button install (job de4cf900) ended
+recovery_needed: "worker_swapped ran 3 times without finishing". The worker
+swapped its own binary and CLOSED the exit channel inside the step; serve()
+returned before the swap receipt and the worker_swapped -> complete transition
+were written. Each restarted worker found worker_swapped/started, took the
+"already swapped" branch, signalled the exit AGAIN and exited again before
+persisting, until the attempts cap fired; the hold and the main-tree lock were
+never released. probe: for every exit / restart / hand-off signal in a durable
+state machine, ask whether the process can leave before the write the next
+process will read; and for every idempotent "already done" branch ask whether
+it re-emits the side effect (the exit) its first run emitted. rule: signal AFTER
+the job is finished (receipt, terminal transition and cleanup persisted); the
+already-done branch emits nothing; pin it on the REAL job history with a crash
+seam at the effect boundary and N restarts, and keep a mutant per branch.
+Reference: internal/updaterworker/worker_self_update.go (swapPending),
+runner.go finished(); pins worker_swap_restart_test.go.
+
+## CLASS NN (assigned at merge) — a "measured, never inferred" gate with no measurement in the never-observed state
+
+symptom: the nt8_absent (closed-NT8) install path required the AddOn link to
+have been down 60 s, measured from the closing connection's disconnect stamp. A
+bot that booted with NT8 already closed has no connection record, so no stamp:
+the path was never eligible and preflight fell to the connected-world legs, which
+refused "api_positions … NT8 account positions unknown" until the owner opened
+NT8 (job de4cf900, 07:27). The documented owner flow ("close NT8 first") was
+unreachable after any bot or WSL restart with NT8 off. probe: for every gate that
+measures a duration or state from an event, enumerate the states in which no
+event has ever been observed (fresh process, first boot) and ask whether
+"nothing observed since I started watching" is itself a measurement. rule: seed
+the measurement with the start of observation (the moment the listener came up),
+keep a measured event stamp authoritative over the seed, fail closed for shapes
+that cannot be measured at all, and pin the three shapes (never-connected after
+the window, inside the window, connected-then-lost) at the production call site
+with the real leg that failed. Reference: provider/ninjatrader/maintenance_wire.go
+LinkDownSince; trader/installation_gate.go; pins
+installation_gate_nt8absent_never_connected_test.go.
