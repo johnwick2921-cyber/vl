@@ -794,11 +794,24 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// N12: an R7 reverse ISB fills by the close of the NEXT 1m candle
 			// (the R1 family rule).
 			in.ExpiryMs = cur.CloseTime + 60_000
-			// Item 26 / R81 (RELEASE #4): the reverse ISB needs a target — Q7
-			// open → the normal ISB target rule: the next level beyond in the
-			// trade direction, with the 1:1 floor and the spent-day cap.
-			target := nextLevelBeyond(levels, in.Price, in.Side)
-			if target == 0 {
+			// R85 (CTO, release #4): now that the reverse ISB can place, it
+			// runs through the SAME gates as the normal ISB — the twenties
+			// stop skip [D4.1 p1 @ 05:41], the 4h HTF verdict and side, and
+			// the near-box rule (row 24) — before any target is set.
+			htfOK, htfSide, _ := HTFVerdict(e.State.HTF)
+			target := 0.0
+			if _, stopOK, _ := ISBStopVerdict(cur, e.Cfg); !stopOK {
+				e.refuse("isbrev_stop_twenties")
+			} else if !htfOK {
+				e.refuse("isbrev_htf_blocked")
+			} else if htfSide != "" && in.Side != htfSide {
+				e.refuse("isbrev_htf_side_mismatch")
+			} else if refuse, _ := nearBoxRefusal(boxes, in.Price, in.Side, e.Cfg.NearBoxRoomMultiple, abs(in.Price-in.Stop)); refuse {
+				e.refuse("near_box")
+			} else if target = nextLevelBeyond(levels, in.Price, in.Side); target == 0 {
+				// Item 26 / R81 (RELEASE #4): the reverse ISB needs a target —
+				// Q7 open → the normal ISB target rule: the next level beyond
+				// in the trade direction, with the 1:1 floor and the cap.
 				e.refuse("isbrev_missing_target")
 			} else if !targetFloorOK(in.Price, in.Stop, target) {
 				e.refuse("isbrev_target_below_floor")

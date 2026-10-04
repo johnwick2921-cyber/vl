@@ -115,44 +115,45 @@ func TestReverseISBEmitsWithTarget(t *testing.T) {
 	}
 }
 
-// TestReverseISBSuppressesNormalISB (R85 call-site pin): with a SHORT R5 box
-// standing and the 4h SHORT, the normal ISB path would arm a SHORT stop-limit on
-// the same pair the reverse ISB (LONG, trend side) fires on — two opposite
-// orders on one candle. R85 suppresses the short arm AND unregisters it.
-// Mutant: skip the suppression call → RED.
-func TestReverseISBSuppressesNormalISB(t *testing.T) {
+// TestReverseISBObeysThe4hAgainstANormalISB (R85 call-site pin, CTO release
+// #4): the reverse ISB now runs through the normal ISB gates, the 4h side
+// included. With the 4h SHORT, the normal ISB's short arms and the reverse
+// ISB's LONG (5m-trend side, against the 4h) is REFUSED isbrev_htf_side_mismatch
+// — the 4h governs, so two opposite orders on one candle cannot both pass.
+// (The same-pair suppression stays as defence in depth; its helper is pinned
+// by TestSuppressSamePairCounterISB.) Mutant: drop the reverse HTF side gate →
+// the long fires → RED.
+func TestReverseISBObeysThe4hAgainstANormalISB(t *testing.T) {
 	e, bars, now := isbReverseFixture(t)
-	// A short 5m ISB box stands (so the 1m short ISB inside is "same-direction"
-	// and I1's trigger-side gate is skipped), and the 4h is SHORT so the normal
-	// ISB's short side passes the HTF gate.
 	e.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideShort, AtTime: bars[0].OpenTime}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideShort, Price: 120}}
 
 	ins := e.Tick(bars, now)
-	var longSeen, shortSeen bool
 	for i := range ins {
 		in := &ins[i]
-		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" {
-			if in.Side == SideLong {
-				longSeen = true
-				if in.Target != 110 {
-					t.Fatalf("reverse ISB target = %.2f, want 110; intents %+v", in.Target, ins)
-				}
-			}
-			if in.Side == SideShort {
-				shortSeen = true
-			}
+		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" && in.Side == SideLong {
+			t.Fatalf("a reverse ISB against the 4h must not fire; intents %+v", ins)
 		}
 	}
-	if !longSeen {
-		t.Fatalf("the reverse ISB (LONG) must fire; intents %+v refusals %v", ins, e.State.Refusals)
+	if e.State.Refusals["isbrev_htf_side_mismatch"] < 1 {
+		t.Fatalf("want isbrev_htf_side_mismatch counted; refusals %v", e.State.Refusals)
 	}
-	if shortSeen {
-		t.Fatalf("R85: the counter-trend short ISB must not arm beside the reverse; intents %+v", ins)
-	}
-	for id, arm := range e.State.ISBArms {
-		if arm.Side == SideShort {
-			t.Fatalf("R85: the suppressed short arm %q must be unregistered from ISBArms: %+v", id, e.State.ISBArms)
+}
+
+// R85 (CTO, release #4): the reverse ISB obeys the twenties stop skip like the
+// normal ISB [D4.1 p1 @ 05:41]. The fixture's inside candle gives a 5-pt stop;
+// a twenties window moved to [4, 14) puts it inside → refused
+// isbrev_stop_twenties. Mutant: drop the gate → the reverse fires → RED.
+func TestReverseISBSkipsTheTwenties(t *testing.T) {
+	e, bars, now := isbReverseFixture(t)
+	e.Cfg.ISBTwentiesPts = 4
+	ins := e.Tick(bars, now)
+	for i := range ins {
+		if in := &ins[i]; (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" && in.Side == SideLong {
+			t.Fatalf("a reverse ISB with a stop in the twenties window must not fire; intents %+v", ins)
 		}
+	}
+	if e.State.Refusals["isbrev_stop_twenties"] < 1 {
+		t.Fatalf("want isbrev_stop_twenties counted; refusals %v", e.State.Refusals)
 	}
 }
