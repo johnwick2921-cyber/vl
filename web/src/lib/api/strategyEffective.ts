@@ -43,6 +43,9 @@ export interface StrategyEffectiveResponse {
   venue: string | null
   settings: EffectiveKnob[]
   coverage: EffectiveCoverage
+  /** MENTOR_PLACE gate of the running process (read-only). Absent on an older
+   *  server — the UI then says the gate status is unavailable. */
+  mentor_place?: boolean
 }
 
 export type EffectiveByPath = Record<string, EffectiveKnob>
@@ -89,6 +92,8 @@ export function effectiveByPath(
 export interface StudioEffective {
   byPath: EffectiveByPath
   bySession: Partial<Record<string, EffectiveByPath>>
+  /** MENTOR_PLACE gate from the strategy-level reply; absent = unknown. */
+  mentorPlace?: boolean
 }
 
 /** Builds the editors' lookup from the four responses. A response answers a
@@ -103,8 +108,12 @@ export function studioEffective(
   for (const [name, resp] of Object.entries(sessions)) {
     if (resp && resp.session === name) bySession[name] = effectiveByPath(resp)
   }
-  return {
+  const out: StudioEffective = {
     byPath: base && base.session == null ? effectiveByPath(base) : {},
     bySession,
   }
+  if (base && base.session == null && typeof base.mentor_place === 'boolean') {
+    out.mentorPlace = base.mentor_place
+  }
+  return out
 }

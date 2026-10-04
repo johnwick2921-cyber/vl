@@ -915,6 +915,7 @@ export function StrategyStudioPage() {
           language={language}
           isFutures={isFuturesStrategy}
           effective={studioEffective}
+          strategyName={selectedStrategy?.name}
         />
       ),
     },

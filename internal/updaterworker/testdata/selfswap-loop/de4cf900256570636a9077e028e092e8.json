@@ -1,0 +1,391 @@
+{
+  "schema": 1,
+  "job_id": "de4cf900256570636a9077e028e092e8",
+  "release_id": "v2026.10.04.1",
+  "source_sha": "a057ab834a364db24b3045a293295c2c3e7afb96",
+  "state": "recovery_needed",
+  "phase": "done",
+  "attempts": 0,
+  "created_at": "2026-10-04T12:27:18.964363247Z",
+  "updated_at": "2026-10-04T12:35:20.486965389Z",
+  "transitions": [
+    {
+      "state": "requested",
+      "phase": "done",
+      "at": "2026-10-04T12:27:18.964363247Z",
+      "receipts": 0
+    },
+    {
+      "state": "downloaded",
+      "phase": "started",
+      "at": "2026-10-04T12:27:18.966922299Z",
+      "receipts": 0
+    },
+    {
+      "state": "downloaded",
+      "phase": "done",
+      "at": "2026-10-04T12:27:19.06576663Z",
+      "receipts": 1
+    },
+    {
+      "state": "verified",
+      "phase": "started",
+      "at": "2026-10-04T12:27:19.068589511Z",
+      "receipts": 1
+    },
+    {
+      "state": "verified",
+      "phase": "done",
+      "at": "2026-10-04T12:27:19.07203577Z",
+      "receipts": 2
+    },
+    {
+      "state": "preflight_ok",
+      "phase": "started",
+      "at": "2026-10-04T12:27:19.0746178Z",
+      "receipts": 2
+    },
+    {
+      "state": "preflight_ok",
+      "phase": "done",
+      "at": "2026-10-04T12:27:49.213063862Z",
+      "receipts": 4
+    },
+    {
+      "state": "maintenance_held",
+      "phase": "started",
+      "at": "2026-10-04T12:27:49.217174203Z",
+      "receipts": 4
+    },
+    {
+      "state": "maintenance_held",
+      "phase": "done",
+      "at": "2026-10-04T12:27:49.22746078Z",
+      "receipts": 5
+    },
+    {
+      "state": "drained_acked",
+      "phase": "started",
+      "at": "2026-10-04T12:27:49.230280451Z",
+      "receipts": 5
+    },
+    {
+      "state": "drained_acked",
+      "phase": "done",
+      "at": "2026-10-04T12:28:11.310409606Z",
+      "receipts": 6
+    },
+    {
+      "state": "gate_ok",
+      "phase": "started",
+      "at": "2026-10-04T12:28:11.313787935Z",
+      "receipts": 6
+    },
+    {
+      "state": "gate_ok",
+      "phase": "done",
+      "at": "2026-10-04T12:28:21.353421533Z",
+      "receipts": 7
+    },
+    {
+      "state": "backup_done",
+      "phase": "started",
+      "at": "2026-10-04T12:28:21.356405141Z",
+      "receipts": 7
+    },
+    {
+      "state": "backup_done",
+      "phase": "done",
+      "at": "2026-10-04T12:28:57.743082217Z",
+      "receipts": 10
+    },
+    {
+      "state": "nt8_updated",
+      "phase": "started",
+      "at": "2026-10-04T12:28:57.751363741Z",
+      "receipts": 10
+    },
+    {
+      "state": "nt8_updated",
+      "phase": "done",
+      "at": "2026-10-04T12:28:57.759032511Z",
+      "receipts": 11
+    },
+    {
+      "state": "activated",
+      "phase": "started",
+      "at": "2026-10-04T12:34:57.114435339Z",
+      "receipts": 12
+    },
+    {
+      "state": "activated",
+      "phase": "done",
+      "at": "2026-10-04T12:35:02.533255647Z",
+      "receipts": 13
+    },
+    {
+      "state": "booted",
+      "phase": "started",
+      "at": "2026-10-04T12:35:02.537603203Z",
+      "receipts": 13
+    },
+    {
+      "state": "booted",
+      "phase": "done",
+      "at": "2026-10-04T12:35:13.585409523Z",
+      "receipts": 14
+    },
+    {
+      "state": "boot_verified",
+      "phase": "started",
+      "at": "2026-10-04T12:35:13.606453618Z",
+      "receipts": 14
+    },
+    {
+      "state": "boot_verified",
+      "phase": "done",
+      "at": "2026-10-04T12:35:13.624986883Z",
+      "receipts": 15
+    },
+    {
+      "state": "worker_swapped",
+      "phase": "started",
+      "at": "2026-10-04T12:35:13.629995189Z",
+      "receipts": 15
+    },
+    {
+      "state": "recovery_needed",
+      "phase": "done",
+      "at": "2026-10-04T12:35:20.486965389Z",
+      "receipts": 15
+    }
+  ],
+  "receipts": [
+    {
+      "step": "download",
+      "started_at": "2026-10-04T12:27:18.969413562Z",
+      "ended_at": "2026-10-04T12:27:19.065626019Z",
+      "ok": true,
+      "evidence": {
+        "artifacts": "88",
+        "manifest_sha256": "9374d93320b13cb87db022bcd1ecdbf3884a411fa81d2724e742a7f9dac01365"
+      }
+    },
+    {
+      "step": "verify",
+      "started_at": "2026-10-04T12:27:19.071347424Z",
+      "ended_at": "2026-10-04T12:27:19.071801325Z",
+      "ok": true,
+      "evidence": {
+        "signer_fingerprint": "SHA256:IvzjG35bsg2Ak3pwpka4GP1HM2PUCriy65nRjOjw8/o",
+        "source_sha": "a057ab834a364db24b3045a293295c2c3e7afb96"
+      }
+    },
+    {
+      "step": "stage",
+      "started_at": "2026-10-04T12:27:19.09656501Z",
+      "ended_at": "2026-10-04T12:27:19.156846401Z",
+      "ok": true,
+      "evidence": {
+        "binary_md5": "b32e6b43764b8aa14f1253ebdf1f1819",
+        "manifest.binary_md5": "b32e6b43764b8aa14f1253ebdf1f1819",
+        "manifest.source_sha": "a057ab834a364db24b3045a293295c2c3e7afb96",
+        "vcs.modified": "false",
+        "vcs.revision": "a057ab834a364db24b3045a293295c2c3e7afb96"
+      }
+    },
+    {
+      "step": "preflight",
+      "started_at": "2026-10-04T12:27:19.077462177Z",
+      "ended_at": "2026-10-04T12:27:49.212914901Z",
+      "ok": true,
+      "evidence": {
+        "calendar": "equal",
+        "flat": "pass",
+        "health_revision": "52f1989ca0a5",
+        "install_modified": "false",
+        "install_sha": "52f1989ca0a5ba4a4f126caa8b9bd2c0d790b96b",
+        "main_tree_lock_state": "acquired",
+        "pid": "181"
+      }
+    },
+    {
+      "step": "hold",
+      "started_at": "2026-10-04T12:27:49.22477663Z",
+      "ended_at": "2026-10-04T12:27:49.22731498Z",
+      "ok": true,
+      "evidence": {
+        "already": "false",
+        "owner": "updater"
+      }
+    },
+    {
+      "step": "drain",
+      "started_at": "2026-10-04T12:27:49.232958881Z",
+      "ended_at": "2026-10-04T12:28:11.310270926Z",
+      "ok": true,
+      "evidence": {
+        "ack_build_id": "2026-09-30-m22",
+        "ack_received": "2026-10-04T12:28:09.449046942Z",
+        "drain_path": "normal"
+      }
+    },
+    {
+      "step": "gate",
+      "started_at": "2026-10-04T12:28:11.31616255Z",
+      "ended_at": "2026-10-04T12:28:21.353284211Z",
+      "ok": true,
+      "evidence": {
+        "ack_1_age_ms": "892",
+        "ack_1_at": "2026-10-04T07:28:14.44209909-05:00",
+        "ack_2_age_ms": "1911",
+        "ack_2_at": "2026-10-04T07:28:19.442281489-05:00"
+      }
+    },
+    {
+      "step": "backup",
+      "started_at": "2026-10-04T12:28:21.363433969Z",
+      "ended_at": "2026-10-04T12:28:57.535717162Z",
+      "ok": true,
+      "evidence": {
+        "bytes": "2521313280",
+        "db": "/home/hoang/vl/data/data.db",
+        "dest": "/home/hoang/vl-backups/updater/de4cf900256570636a9077e028e092e8/data.db",
+        "integrity_check": "ok"
+      }
+    },
+    {
+      "step": "snapshot",
+      "started_at": "2026-10-04T12:28:57.535912778Z",
+      "ended_at": "2026-10-04T12:28:57.695982743Z",
+      "ok": true,
+      "evidence": {
+        "captured": "binary,dist,RELEASE",
+        "dest": "/home/hoang/vl-backups/updater/de4cf900256570636a9077e028e092e8/install",
+        "from": "/home/hoang/vl",
+        "release_marker": "52f1989ca0a5ba4a4f126caa8b9bd2c0d790b96b"
+      }
+    },
+    {
+      "step": "snapshot_verify",
+      "started_at": "2026-10-04T12:28:57.696011558Z",
+      "ended_at": "2026-10-04T12:28:57.742932234Z",
+      "ok": true
+    },
+    {
+      "step": "nt8",
+      "started_at": "2026-10-04T12:28:57.755856526Z",
+      "ended_at": "2026-10-04T12:28:57.758815644Z",
+      "ok": true,
+      "evidence": {
+        "acked_build_id": "2026-09-30-m22",
+        "cs_unchanged": "false",
+        "decision": "updated",
+        "manifest_build_id": "2026-10-03-c2",
+        "reason": "the AddOn runs build \"2026-09-30-m22\", the release is \"2026-10-03-c2\"; the release's ninjascript/*.cs differs from the install's (VLTraderTCPClient.cs)"
+      }
+    },
+    {
+      "step": "resume",
+      "started_at": "2026-10-04T12:34:57.092854966Z",
+      "ended_at": "2026-10-04T12:34:57.097953157Z",
+      "ok": true,
+      "evidence": {
+        "acked_accept_seq": "5",
+        "acked_at": "2026-10-04T12:34:57.092537966Z",
+        "acked_build_id": "2026-10-03-c2",
+        "manifest_build_id": "2026-10-03-c2"
+      }
+    },
+    {
+      "step": "activate",
+      "started_at": "2026-10-04T12:34:57.12235638Z",
+      "ended_at": "2026-10-04T12:35:02.532857444Z",
+      "ok": true,
+      "evidence": {
+        "installed": "binary,dist,RELEASE",
+        "killed": "SIGKILL",
+        "new_pid": "1839341",
+        "old_pid": "181",
+        "prev": "52f1989ca0a5ba4a4f126caa8b9bd2c0d790b96b",
+        "release": "a057ab834a364db24b3045a293295c2c3e7afb96"
+      }
+    },
+    {
+      "step": "watch",
+      "started_at": "2026-10-04T12:35:02.546918765Z",
+      "ended_at": "2026-10-04T12:35:13.585049612Z",
+      "ok": true,
+      "evidence": {
+        "boot_line": "found after the kill",
+        "expect_sha": "a057ab834a364db24b3045a293295c2c3e7afb96",
+        "health_sha": "a057ab834a36",
+        "pid": "1839341",
+        "since": "2026-10-04T12:34:57Z"
+      }
+    },
+    {
+      "step": "boot_verify",
+      "started_at": "2026-10-04T12:35:13.611922824Z",
+      "ended_at": "2026-10-04T12:35:13.62466191Z",
+      "ok": true,
+      "evidence": {
+        "acked_age_ms": "1557",
+        "acked_at": "2026-10-04T07:35:12.064903079-05:00",
+        "acked_build_id": "2026-10-03-c2",
+        "boot_line": "OK rev a057ab834a36",
+        "boot_pid": "1839341",
+        "health_revision": "a057ab834a36",
+        "index_sha256": "bd169c4c36981e53706f1b9fc493a4c276af522f2ea8c30fdc03bf24556d770d",
+        "log_offset": "316167",
+        "manifest_build_id": "2026-10-03-c2"
+      }
+    }
+  ],
+  "release": {
+    "dir": "/home/hoang/vl-releases/a057ab834a364db24b3045a293295c2c3e7afb96",
+    "sha": "a057ab834a364db24b3045a293295c2c3e7afb96",
+    "binary": "/home/hoang/vl-releases/a057ab834a364db24b3045a293295c2c3e7afb96/vl-bin",
+    "dist": "/home/hoang/vl-releases/a057ab834a364db24b3045a293295c2c3e7afb96/web/dist",
+    "release_file": "/home/hoang/vl-releases/a057ab834a364db24b3045a293295c2c3e7afb96/RELEASE",
+    "manifest_path": "/home/hoang/vl-releases/a057ab834a364db24b3045a293295c2c3e7afb96/manifest.json"
+  },
+  "install": {
+    "dir": "/home/hoang/vl",
+    "sha": "52f1989ca0a5ba4a4f126caa8b9bd2c0d790b96b",
+    "binary": "/home/hoang/vl/vl-bin",
+    "dist": "/home/hoang/vl/web/dist",
+    "release_file": "/home/hoang/vl/deploy/RELEASE"
+  },
+  "snapshot": {
+    "dir": "/home/hoang/vl-backups/updater/de4cf900256570636a9077e028e092e8/install",
+    "sha": "52f1989ca0a5ba4a4f126caa8b9bd2c0d790b96b",
+    "binary": "/home/hoang/vl-backups/updater/de4cf900256570636a9077e028e092e8/install/vl-bin",
+    "dist": "/home/hoang/vl-backups/updater/de4cf900256570636a9077e028e092e8/install/web/dist",
+    "release_file": "/home/hoang/vl-backups/updater/de4cf900256570636a9077e028e092e8/install/RELEASE"
+  },
+  "backup_path": "/home/hoang/vl-backups/updater/de4cf900256570636a9077e028e092e8/data.db",
+  "identity_before": {
+    "pid": 181,
+    "start_ticks": 2463
+  },
+  "identity_after": {
+    "pid": 1839341,
+    "start_ticks": 2475065
+  },
+  "log_path": "/home/hoang/vl/data/vl_2026-10-04.log",
+  "log_offset": 316167,
+  "watch_since": "2026-10-04T12:34:57Z",
+  "nt8": {
+    "decision": "updated",
+    "reason": "the AddOn runs build \"2026-09-30-m22\", the release is \"2026-10-03-c2\"; the release's ninjascript/*.cs differs from the install's (VLTraderTCPClient.cs)",
+    "manifest_build_id": "2026-10-03-c2",
+    "acked_build_id": "2026-09-30-m22",
+    "acked_at": "2026-10-04T12:28:57.447321031Z",
+    "ack_accept_seq": 2,
+    "cs_unchanged": false
+  },
+  "resumed_at": "2026-10-04T12:34:57.098274737Z",
+  "last_good_receipt": 14,
+  "recovery_reason": "worker_swapped ran 3 times without finishing (attempts cap 3)"
+}

@@ -102,5 +102,8 @@ func (s *Server) handleStrategyEffective(c *gin.Context) {
 		"venue":       venueOut,
 		"settings":    rows,
 		"coverage":    trader.EffectiveCoverageOf(rows),
+		// Read-only placement gate for the Studio's Mentor mode line: with
+		// mentor_mode ON and this false every intent is SIZED, NOT PLACED.
+		"mentor_place": trader.MentorPlacementEnabled(),
 	})
 }
