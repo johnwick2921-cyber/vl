@@ -180,7 +180,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'SWING4H — 4h EMA 34',
-          body: 'The line is the 4h EMA 34 known at the start of the current 4h bar (17:00 CT anchor), drawn BEFORE price gets there. Switch straight down to the 5m and wait for a LITERAL touch. Reject (closes back on the approach side) → stop order tight on the candle, stop 30 beyond the line. Through-close → cancel; closes back → 5m inside bar with the stop AT the line. Stop ~100 → do not enter. One setup per approach until price leaves the line by the stop distance.',
+          body: "The line is the 4h EMA 34 known at the start of the current 4h bar (17:00 CT anchor), drawn BEFORE price gets there. Switch straight down to the 5m and wait for a LITERAL touch. Reject (closes back on the approach side) → stop order tight on the candle, stop 30 beyond the line. Through-close → cancel; closes back → 5m inside bar with the stop AT the line. Stop ~100 → do not enter. One setup per approach until price leaves the line by the stop distance. After a contract roll the line is rebuilt from the NEW contract's own bars only (no old-contract bars, no basis adjustment): the swing waits until 102 closed 4h candles exist on it (about 17 trading days); intraday setups are never blocked by that wait.",
           tag: 'D5.2',
         },
       ],
