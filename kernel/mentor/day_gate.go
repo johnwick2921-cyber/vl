@@ -228,3 +228,19 @@ func CapTargetForDay(in Intent, v DayVerdict, g DayGate) Intent {
 	}
 	return in
 }
+
+// stampDayState is the A5 stamp (CTO 1791041016051): on a DaySpent day every
+// intent Tick emits carries SpentDay — the trader's size table then takes the
+// spent_day tier (2) and the R9 15-pt stop cap fires. DayOff needs no stamp:
+// its emit gates suppress the entries themselves. Tick applies this at BOTH
+// of its exit points (the ISB missing-target early return and the final
+// return), so an intent never escapes unstamped.
+func stampDayState(out []Intent, v DayVerdict) []Intent {
+	if v != DaySpent {
+		return out
+	}
+	for i := range out {
+		out[i].SpentDay = true
+	}
+	return out
+}
