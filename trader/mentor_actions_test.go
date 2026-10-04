@@ -179,7 +179,7 @@ func TestMentorDispatchHandlesEveryAction(t *testing.T) {
 // row behind, and this turns RED.
 func TestMentorEntryIsAlwaysStopLimit(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "on")
-	t.Setenv("MENTOR_STOP_LIMIT", "on") // the p3 routing is knob-gated; the origin rule makes it knob-independent at the bundle bind
+	t.Setenv("MENTOR_STOP_LIMIT", "") // ALWAYS stop-limit: the env is not read, an unset env must still route the limit variant
 	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
 	mentorWireSeams(t, at, ledger)
 	resetMentorCounters()
@@ -304,7 +304,7 @@ func mentorLoopbackRaw(t *testing.T, buildID string) (at *AutoTrader, ledger *st
 // arrives with the bundle's origin routing; p3's routing is knob-gated.)
 func TestMentorEntryFrameCarriesStopLimitTrue(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "on")
-	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	t.Setenv("MENTOR_STOP_LIMIT", "") // the env is not read (always stop-limit)
 	at, ledger, raw := mentorLoopbackRaw(t, ntwire.MinAddonBuildStopLimit)
 	mentorWireSeams(t, at, ledger)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-raw", Setup: "ISB", Side: mentor.SideLong,
@@ -337,7 +337,7 @@ func TestMentorEntryFrameCarriesStopLimitTrue(t *testing.T) {
 // wire) — never a stop-market fallback.
 func TestMentorEntryRefusesBelowC2(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "on")
-	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	t.Setenv("MENTOR_STOP_LIMIT", "")                                            // the env is not read (always stop-limit)
 	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildCancelReport) // c1 < c2
 	mentorWireSeams(t, at, ledger)
 	resetMentorCounters()
@@ -506,7 +506,7 @@ func TestMentorIntentYieldsExactlyOneArmedRow(t *testing.T) {
 // expiry -> cancel_order on the SAME pass.
 func TestMentorChainIntentToWireToExpiryCancel(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "on")
-	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	t.Setenv("MENTOR_STOP_LIMIT", "") // the env is not read (always stop-limit)
 	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
 	mentorWireSeams(t, at, ledger)
 	t0 := rthInstant()
