@@ -2,14 +2,19 @@ package updaterworker
 
 // worker-self-update (owner order 10-02 12:0x CT): after boot_verified proves
 // the NEW BOT, the worker installs the release's verified updater/vl-updater
-// over its own binary ATOMICALLY, records a receipt, and signals serve() to
-// exit so systemd restarts the unit on the new binary.
+// over its own binary ATOMICALLY, records a receipt, and — once the job has
+// FINISHED — signals serve() to exit so systemd restarts the unit on the new
+// binary.
 //
 // Ordering guarantees (state table, internal/updaterjob/states.go):
 //   - the step runs ONLY from StateWorkerSwapped, whose sole predecessor is
 //     StateBootVerified (never refused/rolled_back/recovery_needed — no edge).
 //   - a refusal records a named reason in the receipt and the job COMPLETES
 //     (the bot install itself succeeded; the swap is best-effort).
+//   - the exit comes only AFTER the job finished (receipt, complete and the
+//     hold/lock release persisted): the step sets swapPending, finished()
+//     closes SwapDone. A restart that lands on an already-swapped binary
+//     completes the step as "already" and never exits again (job de4cf900).
 //
 // Knob (L4): VL_UPDATER_SELF_UPDATE=1 enables the swap; anything else is OFF.
 //
@@ -39,7 +44,8 @@ func selfUpdateOn() bool {
 	return v == "1"
 }
 
-// SwapDone closes when a swap completed. cmd/vl-updater serve exits on it.
+// SwapDone closes when a job that swapped the worker binary has finished
+// (receipt and terminal effects persisted). cmd/vl-updater serve exits on it.
 func (w *Worker) SwapDone() <-chan struct{} { return w.swapDone }
 
 // stepWorkerSwap is the EffectWorkerSwap side effect.
@@ -111,9 +117,13 @@ func (w *Worker) swapWorkerBinary(ctx context.Context, j updaterjob.Job, ev map[
 		return nil
 	}
 	if oldRev == rev {
+		// Idempotent: the running worker already IS the release's updater
+		// (a restart after the swap, or a release that did not change it).
+		// Nothing to swap and nothing to restart — never signal an exit here:
+		// the restarted worker would exit again before this step persists, and
+		// the job would loop to the attempts cap.
 		ev["already"] = "true"
 		ev["old_sha"], ev["new_sha"] = oldRev, rev
-		closeSwapDone(w)
 		return nil
 	}
 
@@ -157,7 +167,9 @@ func (w *Worker) swapWorkerBinary(ctx context.Context, j updaterjob.Job, ev map[
 		w.logf("updater: worker self-update: prune: %v", err)
 	}
 	w.logf("updater: worker self-update: swapped %s %s -> %s", workerBinaryName, oldRev, rev)
-	closeSwapDone(w)
+	// Exit is deferred to finished(): the receipt and the complete transition
+	// are not on disk yet.
+	w.swapPending.Store(true)
 	return nil
 }
 
