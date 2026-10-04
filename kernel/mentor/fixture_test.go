@@ -23,18 +23,16 @@ type fixture struct {
 // LoadCSVBars loads a recorded-bar CSV fixture (CTO fixtures format,
 // 2026-10-03): kernel/mentor/testdata/<rule>/<name>.csv, one bar per line —
 // ts_utc,open,high,low,close,volume,tf — with '#' header comments naming the
-// source query + date. ts_utc is converted to the CT-based epoch millis the
-// mentor package uses (the bot's bar timestamps are CT-based, DS-108 §1.2).
+// source query + date. EPOCH RULING (CTO 2026-10-03 12:59Z): ONE convention =
+// REAL UTC epoch ms everywhere (store, BarCache, Go mentor, harness,
+// fixtures). ts_utc is kept as-is (real UTC); the old wall-as-epoch
+// conversion fed Go wall epochs it converted AGAIN (the 5h day-gate shift).
 // This is THE pattern DS-105/DS-106 copy for their fixtures.
 func LoadCSVBars(t *testing.T, path string, wantTF int) []market.Kline {
 	t.Helper()
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("fixture %s: %v", path, err)
-	}
-	loc, err := time.LoadLocation("America/Chicago")
-	if err != nil {
-		t.Fatalf("tzdata: %v", err)
 	}
 	var out []market.Kline
 	for ln, line := range strings.Split(string(raw), "\n") {
@@ -59,11 +57,8 @@ func LoadCSVBars(t *testing.T, path string, wantTF int) []market.Kline {
 		if err != nil || tf != wantTF {
 			t.Fatalf("%s:%d: tf %q, want %d", path, ln+1, f[6], wantTF)
 		}
-		// ts_utc → CT-based epoch millis (the package convention: bar times
-		// are the CT wall clock expressed as epoch).
-		ct := ts.In(loc)
-		_, offset := ct.Zone()
-		ctMs := ts.UnixMilli() + int64(offset)*1000
+		// ts_utc → epoch millis, kept REAL UTC (epoch ruling 2026-10-03 12:59Z).
+		ctMs := ts.UnixMilli()
 		out = append(out, market.Kline{
 			OpenTime:  ctMs,
 			CloseTime: ctMs + 59_999,
@@ -100,6 +95,12 @@ func TestLoadCSVBarsExampleFixture(t *testing.T) {
 	}
 	if bars[0].Open != 29430.00 || bars[0].High != 29434.75 || bars[0].Low != 29409.50 || bars[0].Close != 29431.50 {
 		t.Fatalf("first bar = %+v, want the DB copy's 08:40 bar", bars[0])
+	}
+	// the loader keeps REAL UTC (EPOCH RULING 2026-10-03 12:59Z): the DB
+	// copy's 08:40 CT bar must read 08:40 through the zone.
+	ct := time.UnixMilli(bars[0].OpenTime).In(ctime())
+	if ct.Hour() != 8 || ct.Minute() != 40 {
+		t.Fatalf("first bar CT time = %02d:%02d, want 08:40", ct.Hour(), ct.Minute())
 	}
 }
 
