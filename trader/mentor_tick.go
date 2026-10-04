@@ -177,9 +177,9 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
 func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64) {
 	// WIRING PROOF (fail-closed): with any mentor source seam missing, EVERY
 	// entry refuses here — the boot line logs it, this line enforces it.
-	if missing := at.mentorSourcesMissing(); len(missing) > 0 {
+	if missing := at.mentorSourcesBlocking(in.Setup); len(missing) > 0 {
 		mentorCount("mentor_sources_missing")
-		at.logErrorf("🧑‍🏫 mentor sources MISSING [%s] — refusing the entry (fail-closed)", strings.Join(missing, ", "))
+		at.logErrorf("🧑‍🏫 mentor sources MISSING [%s] — refusing the %s entry (fail-closed)", strings.Join(missing, ", "), in.Setup)
 		return
 	}
 	// STOP RULES (owner ruling 00:1x CT, "exactly like he said") — class
@@ -824,8 +824,29 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	at.logInfof("%s", mentorSeamBootLine())
 	if len(missing) > 0 {
 		mentorCount("seed_missing")
-		at.logErrorf("🧑‍🏫 mentor seed REFUSING entries — missing: %s", strings.Join(missing, "; "))
+		at.logErrorf("%s", mentorSeedRefusalLine(missing))
 	}
+}
+
+// mentorSeedRefusalLine prints every missing source and which entry kinds it
+// blocks: a short 4h EMA 34 blocks SWING4H entries only (it feeds only the
+// swing line); any other missing source blocks all entries.
+func mentorSeedRefusalLine(missing []string) string {
+	all := false
+	parts := make([]string, 0, len(missing))
+	for _, m := range missing {
+		if strings.HasPrefix(m, "bar history depth: 4h EMA34") {
+			parts = append(parts, m+" [blocks SWING4H entries only]")
+			continue
+		}
+		all = true
+		parts = append(parts, m+" [blocks ALL entries]")
+	}
+	scope := "SWING4H entries only (intraday entries allowed)"
+	if all {
+		scope = "ALL entries"
+	}
+	return fmt.Sprintf("🧑‍🏫 mentor seed REFUSING %s — missing: %s", scope, strings.Join(parts, "; "))
 }
 
 // mentorAgg1H aggregates 1m bars into clock-aligned 1h buckets on epoch
@@ -870,6 +891,19 @@ func mentorAgg1H(bars []market.Kline) []market.Kline {
 // mentor_mode ON a missing source refuses the arm (fail-closed); the boot line
 // reports them in ONE error line.
 func (at *AutoTrader) mentorSourcesMissing() []string {
+	return at.mentorMissingSources(true)
+}
+
+// mentorSourcesBlocking is the set of missing sources that block THIS setup's
+// entry. The 4h EMA 34 feeds only the swing line, so a short 4h EMA blocks
+// SWING4H entries only; every other missing source blocks every entry.
+func (at *AutoTrader) mentorSourcesBlocking(setup string) []string {
+	return at.mentorMissingSources(strings.EqualFold(setup, "SWING4H"))
+}
+
+// mentorMissingSources lists the missing sources; includeSwingOnly adds the
+// ones that block only the swing (the 4h EMA 34 depth).
+func (at *AutoTrader) mentorMissingSources(includeSwingOnly bool) []string {
 	var missing []string
 	for _, n := range mentorSeamMissing() {
 		missing = append(missing, "seam: "+n)
@@ -887,6 +921,9 @@ func (at *AutoTrader) mentorSourcesMissing() []string {
 		missing = append(missing, "5m feed")
 	}
 	for _, req := range mentorDepthRequirements {
+		if req.Name == "4h EMA34" && !includeSwingOnly {
+			continue
+		}
 		min := req.Min
 		// the EMA 34 floors are the warm-up constants (safe default 3×34): the
 		// 4h one is DS-103's stated warm-up via SetMentor4hEMA34Warmup, the 1m
@@ -921,9 +958,13 @@ func MentorSourcesBootLine(loaded map[string]*AutoTrader) string {
 		if at == nil || !at.mentorEnabled() {
 			continue
 		}
-		if missing := at.mentorSourcesMissing(); len(missing) > 0 {
+		if missing := at.mentorSourcesBlocking("ISB"); len(missing) > 0 {
 			logger.Errorf("🧑‍🏫 mentor sources MISSING for trader %s: [%s] — mentor_mode refuses to arm (fail-closed)", id, strings.Join(missing, ", "))
 			lines = append(lines, fmt.Sprintf("🧑‍🏫 mentor sources MISSING for trader %s: [%s] — mentor_mode refuses to arm (fail-closed)", id, strings.Join(missing, ", ")))
+		} else if swingOnly := at.mentorSourcesMissing(); len(swingOnly) > 0 {
+			// only the swing-only source (4h EMA 34) is short: intraday entries
+			// are allowed, SWING4H entries are refused until it warms up.
+			lines = append(lines, fmt.Sprintf("🧑‍🏫 mentor sources wired for trader %s — intraday entries allowed; SWING4H entries refused until: [%s]", id, strings.Join(swingOnly, ", ")))
 		} else {
 			var depths []string
 			for _, req := range mentorDepthRequirements {

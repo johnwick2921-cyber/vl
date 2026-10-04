@@ -1028,9 +1028,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 	// P0 fail-closed: seeded with a missing source → no ENTRIES until every
 	// source meets its warm-up (cancels still flow — an arm left open must be
-	// closable).
+	// closable). A short 4h EMA blocks only SWING4H entries (it feeds only the
+	// swing line); any other missing source blocks all entries.
 	if e.seeded && len(e.missing) > 0 {
-		out, refused = failClosedFilter(out)
+		out, refused = scopedFailClosedFilter(out, e.missing)
 		for _, r := range refused {
 			e.refuse(r)
 		}

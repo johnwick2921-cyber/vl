@@ -410,6 +410,50 @@ func keyLevelsAppend(levels []Level, candle market.Kline, lastColour bool, prune
 	return levels, lastColour
 }
 
+// missing4hPrefix names the one source that feeds ONLY the §8 swing line.
+const missing4hPrefix = "bar history depth: 4h EMA34"
+
+// missingScope classifies the missing sources. The 4h EMA 34 feeds only the
+// swing line (State.Swing.Line); intraday setups read the 1m EMA 34 and the 1H
+// level set. So a short 4h EMA blocks SWING4H entries only; every other
+// missing source (1m EMA 34, 1H RTH levels, today's session, closed 15m)
+// blocks ALL entries.
+func missingScope(missing []string) (blockAll, blockSwing bool) {
+	for _, m := range missing {
+		if strings.HasPrefix(m, missing4hPrefix) {
+			blockSwing = true
+		} else {
+			blockAll = true
+		}
+	}
+	return blockAll, blockSwing
+}
+
+// scopedFailClosedFilter is failClosedFilter with the per-source scope: with
+// any non-4h source missing every entry is dropped (seed_missing_source); with
+// only the 4h EMA short, only SWING4H entries are dropped
+// (seed_missing_4h_ema_warmup) and the intraday entries pass. Cancels always
+// pass.
+func scopedFailClosedFilter(out []Intent, missing []string) (kept []Intent, refusals []string) {
+	blockAll, blockSwing := missingScope(missing)
+	kept = out[:0]
+	for _, in := range out {
+		switch in.Action {
+		case PlaceStopEntry, PlaceStopLimitEntry:
+			if blockAll {
+				refusals = append(refusals, "seed_missing_source")
+				continue
+			}
+			if blockSwing && strings.EqualFold(in.Setup, "SWING4H") {
+				refusals = append(refusals, "seed_missing_4h_ema_warmup")
+				continue
+			}
+		}
+		kept = append(kept, in)
+	}
+	return kept, refusals
+}
+
 // failClosedFilter drops every entry intent while any seeded source is missing
 // (cancels survive — an open arm must stay closable). Unseeded evaluators never
 // call it: legacy behaviour is untouched.
