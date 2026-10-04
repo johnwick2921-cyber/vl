@@ -18,21 +18,22 @@ func TestEveryRefusalNamesReason(t *testing.T) {
 		return Intent{Action: PlaceStopEntry, Side: side, Price: price, Reason: "test"}
 	}
 
-	// ORB stages.
+	// ORB stages (post-open: 09:00 CT, so the pre-market exemption is off).
+	postOpen := auditMs(2026, 9, 15, 9, 0, 0)
 	orb := ORB{Day: 0, High: 90, Low: 85, Drawn: true, Escaped: SideLong}
-	_, r := orbGateFilter([]Intent{entry(SideShort, 92)}, orb, cfg)
+	_, r := orbGateFilter([]Intent{entry(SideShort, 92)}, orb, postOpen, cfg)
 	if len(r) != 1 || r[0] != "orb_wrong_side" {
 		t.Fatalf("wrong-side ORB refusal = %v", r)
 	}
-	_, r = orbGateFilter([]Intent{entry(SideLong, 88)}, orb, cfg)
+	_, r = orbGateFilter([]Intent{entry(SideLong, 88)}, orb, postOpen, cfg)
 	if len(r) != 1 || r[0] != "orb_inside" {
 		t.Fatalf("inside ORB refusal = %v", r)
 	}
-	_, r = orbGateFilter([]Intent{entry(SideLong, 92)}, ORB{Day: 0, Drawn: false}, cfg)
+	_, r = orbGateFilter([]Intent{entry(SideLong, 92)}, ORB{Day: 0, Drawn: false}, postOpen, cfg)
 	if len(r) != 1 || r[0] != "orb_not_drawn" {
 		t.Fatalf("not-drawn ORB refusal = %v", r)
 	}
-	_, r = orbGateFilter([]Intent{entry(SideLong, 92)}, ORB{Day: 0, High: 90, Low: 85, Drawn: true}, cfg)
+	_, r = orbGateFilter([]Intent{entry(SideLong, 92)}, ORB{Day: 0, High: 90, Low: 85, Drawn: true}, postOpen, cfg)
 	if len(r) != 1 || r[0] != "orb_not_escaped" {
 		t.Fatalf("not-escaped ORB refusal = %v", r)
 	}
