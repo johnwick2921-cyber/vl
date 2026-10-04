@@ -8021,3 +8021,21 @@ re-check" and for each frozen copy (the kernel flag AND the trader snapshot).
 Reference: kernel/mentor/seed.go advanceDepth + trader/mentor_tick.go
 mentorRefreshDepths + kernel/mentor/seed_recheck_test.go +
 trader/mentor_seed_recheck_test.go.
+
+## CLASS NN (assigned at merge) — a gate input read by the decision but assigned nowhere (the branch is unreachable)
+
+symptom: DS-106 (2026-10-04, SETTINGS-VS-LESSONS-1004 P1-2): the 20-contract
+size tier required `HTFAgree`, a `mentorTierInputs` field no code ever set
+(`grep` found the struct field and the one condition only), so the tier the
+guide promises could never fire and every test passed because each test
+assigned the field itself. probe: for every boolean/numeric input of a
+decision table, grep its assignments outside the struct and the tests — zero
+production assignments means the branch is dead; ask which layer should own the
+value (here the evaluator's own 4h/1h state, stamped where the intent leaves
+Tick, exactly like `SpentDay`). rule: stamp the input at the layer that knows
+it, carry it on the intent, and pin the chain at the call sites with a control
+(agree → the tier, disagree → not the tier) plus a mutant per layer (stamp
+dropped, copy dropped). Reference: kernel/mentor/htf_direction.go HTFAgrees +
+stampHTFAgree (called from the Tick defer), trader/mentor_mode.go
+mentorExtraFor, kernel/mentor/htf_agree_test.go,
+trader/mentor_htfagree_test.go.
