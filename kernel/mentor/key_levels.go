@@ -209,6 +209,18 @@ func rthHourAnchor(ms int64) int64 {
 	return time.Date(t.Year(), t.Month(), t.Day(), h, 30, 0, 0, ctime()).UnixMilli()
 }
 
+// keyLevel1HCandleCloseTime returns the scheduled close of an RTH hour candle.
+// The final 14:30 candle closes at the 15:00 RTH boundary.
+func keyLevel1HCandleCloseTime(openMs int64) int64 {
+	t := time.UnixMilli(openMs).In(ctime())
+	closeMs := t.Add(time.Hour).UnixMilli()
+	rthEnd := time.Date(t.Year(), t.Month(), t.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
+	if closeMs > rthEnd {
+		return rthEnd
+	}
+	return closeMs
+}
+
 // candleColour: green iff close > open, red otherwise (§4.3 step 2).
 func candleColour(b market.Kline) bool {
 	return b.Close > b.Open
