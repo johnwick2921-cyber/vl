@@ -84,7 +84,7 @@ export interface ButtonSpec {
 /** Per-knob card — ALL fields mandatory (linted by a content test). */
 export interface KnobSpec {
   label: string // exact on-screen text
-  key?: string
+  settingId?: string
   live?: boolean
   where: string // page / section / accordion
   what: string // one plain sentence

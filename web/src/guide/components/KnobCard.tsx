@@ -51,7 +51,7 @@ export function KnobCard({ knob }: { knob: KnobSpec }) {
         className="flex flex-col gap-0.5 rounded-lg p-2"
         style={{ background: 'var(--vl-card2)' }}
       >
-        {knob.key && <Row k="key" v={knob.key} />}
+        {knob.settingId && <Row k="key" v={knob.settingId} />}
         {knob.live !== undefined && (
           <Row k="live" v={knob.live ? 'yes' : 'no'} />
         )}

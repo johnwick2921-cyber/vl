@@ -34,11 +34,14 @@ describe('knob spec completeness', () => {
   it('shows an exact key and live status for every mentor knob', () => {
     expect(mentorKnobs).toHaveLength(55)
     const keys = mentorKnobs.map((knob) => {
-      expect(knob.key, `mentor knob "${knob.label}" key`).toBeTruthy()
+      expect(
+        knob.settingId,
+        `mentor knob "${knob.label}" settingId`
+      ).toBeTruthy()
       expect(typeof knob.live, `mentor knob "${knob.label}" live`).toBe(
         'boolean'
       )
-      return knob.key
+      return knob.settingId
     })
     expect(new Set(keys).size).toBe(keys.length)
     expect(keys).toEqual(
