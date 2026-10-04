@@ -51,7 +51,7 @@ import (
 )
 
 const (
-	replaySourceDir = "/home/hoang/mm-course/mentor-mode/replay-ds108-dst/archive-fc065aa0802b"
+	replaySourceDir = "/home/hoang/mm-course/mentor-mode/replay-ds108-align/archive-1c8b88af7566"
 	frozenDir       = "testdata/parity/replay"
 
 	// Per-source warm-up floors (CTO 2026-10-03 07:02Z, pending DS-103's
