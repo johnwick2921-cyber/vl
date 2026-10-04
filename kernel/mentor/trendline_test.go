@@ -248,3 +248,45 @@ func TestEvaluatorTrendlineInsideBoxBoxWins(t *testing.T) {
 		t.Fatalf("trendline inside the box must not be a location — refusals=%v", e.State.Refusals)
 	}
 }
+
+// TestTrendlineMinBarSpacing — CTO ruling 23:10:31Z: the two points must be at
+// least 5 bars apart. Two CONFIRMED structural lows 3 bars apart draw NO line;
+// the same pair 5 bars apart draws one. Mutant (the < 5 guard becomes < 0)
+// makes the 3-bars-apart case draw a line -> RED.
+func TestTrendlineMinBarSpacing(t *testing.T) {
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := trendlineMk(t0)
+
+	// 3 bars apart: swing lows at bar 2 (97) and bar 5 (97.5), both confirmed.
+	three := []market.Kline{
+		mk(0, 100, 101, 100, 100.5),
+		mk(1, 100, 101, 99, 100.2),
+		mk(2, 100, 101, 97, 100.4), // swing low @2 (97)
+		mk(3, 100, 101, 98, 100.6), // confirms bar 2
+		mk(4, 100, 101, 98.2, 100.8),
+		mk(5, 100, 101, 97.5, 100.9), // swing low @5 (97.5) — 3 bars after bar 2
+		mk(6, 100, 101, 98, 100.9),   // confirms bar 5
+	}
+	now3 := time.UnixMilli(three[6].OpenTime + 59_999).In(ctime())
+	if tls := TrendlinesBuild(three, now3); len(tls) != 0 {
+		t.Fatalf("3-bars-apart lows drew a line = %+v, want none (>= 5 bars apart)", tls)
+	}
+
+	// 5 bars apart: swing lows at bar 2 (97) and bar 7 (97.5), both confirmed.
+	five := []market.Kline{
+		mk(0, 100, 101, 100, 100.5),
+		mk(1, 100, 101, 99, 100.2),
+		mk(2, 100, 101, 97, 100.4), // swing low @2 (97)
+		mk(3, 100, 101, 98, 100.6), // confirms bar 2
+		mk(4, 100, 101, 98.2, 100.8),
+		mk(5, 100, 101, 98.3, 100.9),
+		mk(6, 100, 101, 98.4, 100.9),
+		mk(7, 100, 101, 97.5, 100.9), // swing low @7 (97.5) — 5 bars after bar 2
+		mk(8, 100, 101, 98, 100.9),   // confirms bar 7
+	}
+	now5 := time.UnixMilli(five[8].OpenTime + 59_999).In(ctime())
+	tls := TrendlinesBuild(five, now5)
+	if len(tls) != 1 || tls[0].P0Idx != 2 || tls[0].P1Idx != 7 {
+		t.Fatalf("5-bars-apart lows = %+v, want one line P0=(2,97) P1=(7,97.5)", tls)
+	}
+}
