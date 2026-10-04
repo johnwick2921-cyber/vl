@@ -46,12 +46,12 @@ describe('knob spec completeness', () => {
     expect(new Set(keys).size).toBe(keys.length)
     expect(keys).toEqual(
       expect.arrayContaining([
-        'Config.TriggerSchool',
-        'Config.PingPongMinGapPts',
-        'Config.PingPongCandleMaxPts',
-        'Config.PingPongCandleLookback',
-        'Config.LevelMaxVisits',
-        'Config.OrbGateEnabled',
+        'risk_control.mentor_tuning.trigger_school',
+        'risk_control.mentor_tuning.ping_pong_min_gap_pts',
+        'risk_control.mentor_tuning.ping_pong_candle_max_pts',
+        'risk_control.mentor_tuning.ping_pong_candle_lookback',
+        'risk_control.mentor_tuning.level_max_visits',
+        'risk_control.mentor_tuning.orb_gate_enabled',
         'Config.StopCeilingPts',
         'mentor_done_after_win',
         'mentor_window_start',
@@ -98,7 +98,9 @@ describe('GuidePage', () => {
 
   it('renders mentor knob keys and live status on their cards', () => {
     render(<GuidePage />)
-    const schoolKey = screen.getByText('Config.TriggerSchool')
+    const schoolKey = screen.getByText(
+      'risk_control.mentor_tuning.trigger_school'
+    )
     const schoolCard = schoolKey.closest('[data-testid="guide-knob"]')
     expect(schoolCard).toBeTruthy()
     expect(within(schoolCard as HTMLElement).getByText('yes')).toBeTruthy()

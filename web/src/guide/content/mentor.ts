@@ -34,7 +34,7 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
   'ISB buffer': { settingId: 'Config.ISBBufferPts', live: false },
   'ISB twenties': { settingId: 'Config.ISBTwentiesPts', live: false },
   'Reverse ISB at EMA 9': {
-    settingId: 'Config.ISBReverseEMA9Enabled',
+    settingId: 'risk_control.mentor_tuning.isb_reverse_ema9_enabled',
     live: true,
   },
   'PHL min candles from old extreme': {
@@ -46,11 +46,11 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
   'Room multiple': { settingId: 'Config.RoomMultiple', live: false },
   'Mid-range gap': { settingId: 'Config.RangeGapPts', live: false },
   'Day gate spent threshold': {
-    settingId: 'Config.DayGateSpentPts',
+    settingId: 'risk_control.mentor_tuning.day_gate_spent_pts',
     live: true,
   },
   'Day gate target cap': {
-    settingId: 'Config.DayGateTargetCapPts',
+    settingId: 'risk_control.mentor_tuning.day_gate_target_cap_pts',
     live: true,
   },
   'Swing EMA period': { settingId: 'SwingCfg.EMAPeriod', live: false },
@@ -59,7 +59,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'SwingCfg.StopBeyondLinePts',
     live: false,
   },
-  'Swing max stop': { settingId: 'SwingCfg.MaxStopPts', live: true },
+  'Swing max stop': {
+    settingId: 'risk_control.mentor_tuning.swing_max_stop_pts',
+    live: true,
+  },
   'Swing entry buffer': { settingId: 'SwingCfg.EntryBufferPts', live: false },
   'Swing target fallback': {
     settingId: 'SwingCfg.TargetFallbackPts',
@@ -77,7 +80,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
   },
   'Box timeframe': { settingId: 'BoxCfg.TF', live: false },
   'Box touch band': { settingId: 'BoxCfg.TouchBandPts', live: false },
-  'ORB entry gate': { settingId: 'Config.OrbGateEnabled', live: true },
+  'ORB entry gate': {
+    settingId: 'risk_control.mentor_tuning.orb_gate_enabled',
+    live: true,
+  },
   'Leg budget': { settingId: 'mentor_leg_budget_enabled', live: true },
   'Leg reset on': { settingId: 'mentor_leg_reset_on', live: true },
   'Level revisit distance': {
@@ -96,21 +102,24 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'mentor_loc_trigger_filter',
     live: true,
   },
-  'Trigger school': { settingId: 'Config.TriggerSchool', live: true },
+  'Trigger school': {
+    settingId: 'risk_control.mentor_tuning.trigger_school',
+    live: true,
+  },
   'Ping-pong minimum gap': {
-    settingId: 'Config.PingPongMinGapPts',
+    settingId: 'risk_control.mentor_tuning.ping_pong_min_gap_pts',
     live: true,
   },
   'Ping-pong candle maximum': {
-    settingId: 'Config.PingPongCandleMaxPts',
+    settingId: 'risk_control.mentor_tuning.ping_pong_candle_max_pts',
     live: true,
   },
   'Ping-pong candle lookback': {
-    settingId: 'Config.PingPongCandleLookback',
+    settingId: 'risk_control.mentor_tuning.ping_pong_candle_lookback',
     live: true,
   },
   'Maximum level visits per day': {
-    settingId: 'Config.LevelMaxVisits',
+    settingId: 'risk_control.mentor_tuning.level_max_visits',
     live: true,
   },
   'Done after a winning day': {
@@ -675,14 +684,15 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Reverse ISB at EMA 9',
-          where: 'Strategy → Mentor mode → setups',
+          where: 'Strategy → Risk control → Mentor method numbers',
           what: 'R7: an ISB pointing AGAINST the trend at EMA 9 reverses — uptrend → long buy stop above the ISB high; downtrend → the mirror. Requires price to actually reach EMA 9.',
-          trader: 'OFF by default — the course keeps it behind its own knob.',
-          consumer: 'kernel/mentor/mentor.go ISBReverseEMA9Enabled',
+          trader: 'ON — R-C owner ruling 2026-10-04.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (ISBReverseEMA9Enabled)',
           range: 'true / false',
-          systemDefault: 'false',
-          recommended: 'OFF — the course keeps R7 behind its own knob.',
-          whenToTouch: 'Only with the ISB family fully wired.',
+          systemDefault: 'true',
+          recommended: 'ON — [D5.4], R-C ruling.',
+          whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
         {
@@ -749,11 +759,12 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Day gate spent threshold',
-          where: 'Strategy → Mentor mode → day gate',
+          where: 'Strategy → Risk control → Mentor method numbers',
           what: 'The Globex run (17:00 → 08:30 CT) at/above this before the open = a spent day.',
           trader:
             '300 pts — "already run 300–400 before the open → 80–90% it ranges".',
-          consumer: 'kernel/mentor/mentor.go DayGateSpentPts',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (DayGateSpentPts)',
           range: 'pts',
           systemDefault: '300',
           recommended: '300 — D5.1 p1 @ 15:57.',
@@ -762,10 +773,11 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Day gate target cap',
-          where: 'Strategy → Mentor mode → day gate',
+          where: 'Strategy → Risk control → Mentor method numbers',
           what: 'On a spent+agree day, cap the target distance; skip any setup whose stop is over this.',
           trader: '15 pts — "15 điểm bán, 10 điểm bán".',
-          consumer: 'kernel/mentor/mentor.go DayGateTargetCapPts',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (DayGateTargetCapPts)',
           range: 'pts',
           systemDefault: '15',
           recommended: '15 — D5.1 p1.',
@@ -774,11 +786,11 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Trigger school',
-          where: 'Built-in evaluator default — not a Strategy Studio setting',
+          where: 'Strategy → Risk control → Mentor method numbers',
           what: 'School 1 allows level and box entries before the 5m trigger agrees, then upgrades on a later flip; school 2 waits for agreement. The trigger-side and no-trade-zone rules still apply.',
-          trader:
-            'Built into the release: school 1. Not editable in Strategy Studio; changing it requires a release.',
-          consumer: 'kernel/mentor/mentor.go Config.TriggerSchool',
+          trader: '1 = enter at the level; 2 = wait for the 5m trigger.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (TriggerSchool)',
           range: '1 / 2',
           systemDefault: '1',
           recommended:
@@ -788,11 +800,11 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Ping-pong minimum gap',
-          where: 'Built-in evaluator default — not a Strategy Studio setting',
+          where: 'Strategy → Risk control → Mentor method numbers',
           what: 'The FTGL-to-FTGH gap must be strictly greater than this before a box-edge ping-pong entry is allowed.',
-          trader:
-            'Built into the release: 50 pts. Not editable in Strategy Studio; changing it requires a release.',
-          consumer: 'kernel/mentor/mentor.go Config.PingPongMinGapPts',
+          trader: '50 pts. Tunable in Studio (blank = default).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (PingPongMinGapPts)',
           range: 'pts',
           systemDefault: '50',
           recommended: '50 — B21 gap ruling.',
@@ -801,11 +813,11 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Ping-pong candle maximum',
-          where: 'Built-in evaluator default — not a Strategy Studio setting',
+          where: 'Strategy → Risk control → Mentor method numbers',
           what: 'Reject the ping-pong and key-level pair if the largest candle in the lookback exceeds this size.',
-          trader:
-            'Built into the release: 20 pts. Not editable in Strategy Studio; changing it requires a release.',
-          consumer: 'kernel/mentor/mentor.go Config.PingPongCandleMaxPts',
+          trader: '20 pts. Tunable in Studio (blank = default).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (PingPongCandleMaxPts)',
           range: 'pts',
           systemDefault: '20',
           recommended: '20 — B21 candle-size ruling.',
@@ -814,11 +826,11 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Ping-pong candle lookback',
-          where: 'Built-in evaluator default — not a Strategy Studio setting',
+          where: 'Strategy → Risk control → Mentor method numbers',
           what: 'How many closed 1m candles to scan for the largest-candle gate on box ping-pong and key-level pairs.',
-          trader:
-            'Built into the release: 30 closed 1m candles. Not editable in Strategy Studio; changing it requires a release.',
-          consumer: 'kernel/mentor/mentor.go Config.PingPongCandleLookback',
+          trader: '30 closed 1m candles. Tunable in Studio (blank = default).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (PingPongCandleLookback)',
           range: 'closed 1m candles',
           systemDefault: '30',
           recommended: '30 — B21 lookback.',
@@ -827,11 +839,11 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Maximum level visits per day',
-          where: 'Built-in evaluator default — not a Strategy Studio setting',
+          where: 'Strategy → Risk control → Mentor method numbers',
           what: 'Allow this many visits to each level in a day; later visits are refused. Zero disables the cap.',
-          trader:
-            'Built into the release: 3 visits. Not editable in Strategy Studio; changing it requires a release.',
-          consumer: 'kernel/mentor/mentor.go Config.LevelMaxVisits',
+          trader: '3 visits; 0 = off. Tunable in Studio (blank = default).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (LevelMaxVisits)',
           range: 'visits (0 = off)',
           systemDefault: '3',
           recommended: '3 — B23 “knock knock” ruling.',
@@ -840,10 +852,11 @@ export const mentor: GuideSection = {
         },
         {
           label: 'ORB entry gate',
-          where: 'Strategy → Mentor mode → day gate',
+          where: 'Strategy → Risk control → Mentor method numbers',
           what: 'Require price to escape the first 2-minute RTH opening range before intraday entries; the 4h swing setup is exempt.',
           trader: 'ON — no entry inside the opening range.',
-          consumer: 'kernel/mentor/orb.go Config.OrbGateEnabled',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (OrbGateEnabled)',
           range: 'true / false',
           systemDefault: 'true',
           recommended: 'ON — the §7 step-0 gate.',
@@ -888,10 +901,11 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Swing max stop',
-          where: 'Strategy → Mentor mode → SWING4H',
+          where: 'Strategy → Risk control → Mentor method numbers',
           what: 'A swing stop at/above this → do not enter. The swing is EXEMPT from the 25-pt ceiling.',
           trader: '100 pts.',
-          consumer: 'kernel/mentor/swing4h.go SwingCfg.MaxStopPts',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (SwingMaxStopPts)',
           range: 'pts',
           systemDefault: '100',
           recommended: '100 — D5.2 table.',
