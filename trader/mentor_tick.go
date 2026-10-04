@@ -174,6 +174,14 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
 			// bookkeeping) lands with P1; the intent is recorded, never silent.
 			mentorCount("intent_" + string(in.Action))
 			at.logInfof("🧑‍🏫 mentor %s intent recorded (arm lifecycle lands with P1): %s", in.Action, in.Reason)
+		case mentorActionConfluenceUpgrade:
+			// B20 trader half (CTO 1791058836784, FIXES.md B20): the trigger
+			// LATER flipped to the trade's side — the OPEN position upgrades
+			// to confluence: exit C (hold ≥ 1:2, stop untouched), size
+			// UNCHANGED (the table is never re-run for an upgrade). The emit
+			// itself is DS-103's (kernel/mentor is his).
+			mentorCount("intent_" + string(in.Action))
+			at.mentorConfluenceUpgrade(in)
 		}
 	}
 }
@@ -238,6 +246,9 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	forkMode, forkTP, forkWhy := mentorExitFork(in, mentorConfluenceFlag(in))
 	mentorCount("exit_fork_" + forkMode)
 	at.logInfof("🧑‍🏫 mentor exit fork: %s — %s (leg 1 TP %.2f)", forkMode, forkWhy, forkTP)
+	// B20: the chosen branch is REGISTERED per open position — a later
+	// confluence upgrade switches it to C (hold ≥ 1:2, size untouched).
+	at.setMentorExitMode(strings.ToLower(string(in.Side)), forkMode)
 	if mentorPlaceRecorderForTest != nil {
 		mentorPlaceRecorderForTest(in, choice.Contracts)
 		return // test seam: the real pipeline is never reached from a test
@@ -355,6 +366,75 @@ func mentorNoChase(side mentor.Side, latest float64, trigger float64) (skip bool
 // placement: the no-chase mutant (dropping the check) makes it fire on a
 // through-price intent and the test goes RED.
 var mentorPlaceRecorderForTest func(in mentor.Intent, contracts int)
+
+// ── B20 CONFLUENCE UPGRADE (trader half; the emit is DS-103's kernel) ───────
+
+// mentorActionConfluenceUpgrade is the action NAME the evaluator emits when a
+// live school-1 entry's 5m trigger LATER flips to the trade's side (FIXES.md
+// B20, D3.4 p3 @09:17–12:59: "a later flip to the trade's side upgrades it to
+// confluence (hold ≥1:2, exit C)"). It is a consumer-side constant of DS-103's
+// type — kernel/mentor is his, and the eval-loop case matches by string, so
+// his emit lands the moment the action constant appears.
+const mentorActionConfluenceUpgrade mentor.Action = "confluence_upgrade"
+
+// mentorExitMode / setMentorExitMode read/write the per-position exit branch
+// registered at placement (A/B/C/swing). The P1 exit loop drives the branch;
+// B20 switches it to C.
+func (at *AutoTrader) mentorExitMode(key string) string {
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	return at.mentorExitModes[key]
+}
+
+func (at *AutoTrader) setMentorExitMode(key, mode string) {
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	if at.mentorExitModes == nil {
+		at.mentorExitModes = map[string]string{}
+	}
+	at.mentorExitModes[key] = mode
+}
+
+// mentorConfluenceUpgradeMode is the pure B20 switch: an upgrade moves the
+// open position's exit branch to C — hold ≥ 1:2, the stop untouched. The SIZE
+// is never re-read (the upgrade never touches the size table). A no-position
+// and the swing (which holds by the 4h, not the 5m trigger) are no-ops — the
+// kernel only emits for live school-1 entries, but the switch fails closed
+// anyway.
+func mentorConfluenceUpgradeMode(current string) (mode string, why string) {
+	switch current {
+	case "":
+		return "", "no open mentor position — the upgrade names nothing"
+	case "swing":
+		return "swing", "the swing holds by the 4h — B20 upgrades school-1 entries only"
+	case "C":
+		return "C", "already confluence — hold ≥ 1:2, nothing to switch"
+	default:
+		return "C", fmt.Sprintf("exit %s → C: hold ≥ 1:2, stop untouched, size unchanged [D3.4 p3 @09:17–12:59]", current)
+	}
+}
+
+// mentorConfluenceUpgrade applies the B20 switch to the OPEN position named by
+// the intent's side: the exit branch moves to C (hold ≥ 1:2), the stop and the
+// size stay exactly as placed. A no-position or already-C intent is counted
+// and logged, never silent.
+func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
+	key := strings.ToLower(string(in.Side))
+	next, why := mentorConfluenceUpgradeMode(at.mentorExitMode(key))
+	if next == "" {
+		mentorCount("exit_upgrade_no_position")
+		at.logWarnf("🧑‍🏫 mentor confluence upgrade IGNORED — %s (%s)", why, in.Reason)
+		return
+	}
+	if next == at.mentorExitMode(key) {
+		mentorCount("exit_upgrade_noop")
+		at.logInfof("🧑‍🏫 mentor confluence upgrade: %s (%s) — %s", key, why, in.Reason)
+		return
+	}
+	at.setMentorExitMode(key, next)
+	mentorCount("exit_upgrade_c")
+	at.logInfof("🧑‍🏫 mentor confluence upgrade: %s %s (size unchanged) — %s", key, why, in.Reason)
+}
 
 // ── STRONG DAY (S9) ────────────────────────────────────────────────────────
 

@@ -373,7 +373,15 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 // mentorSizeFor chooses the tier for one intent, logs it and counts it. The
 // tier inputs beyond the intent's own fields (confluence, 4h/1h agreement,
 // spent day) come from the caller's evaluator context.
+// mentorSizeForHook is a test seam: if set, mentorSizeFor calls it first — the
+// B20 upgrade pin asserts the upgrade path NEVER re-runs the size table.
+var mentorSizeForHook func()
+
 func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (mentorSizeChoice, error) {
+	// B20 size-unchanged pin: the upgrade path must never re-run the table.
+	if mentorSizeForHook != nil {
+		mentorSizeForHook()
+	}
 	extra.Setup = in.Setup
 	// Defence in depth (CTO 1791058442006): the tier inputs are the GEOMETRY
 	// (abs(Price−Stop), abs(Target−Price)), never a bare intent field an

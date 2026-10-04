@@ -380,7 +380,13 @@ type AutoTrader struct {
 	mentorEval         *mentor.Evaluator
 	mentorLastTickOpen int64
 	mentorFinalArrival atomic.Int64 // ms — when the FINAL frame hit the sink
-	fastTapePending    atomic.Bool
+	// MENTOR B20 — the chosen exit branch per open position (keyed by side:
+	// "long"/"short"), set at placement from the entry-time fork (A/B/C/swing)
+	// and switched to C by a confluence upgrade. The P1 exit loop drives the
+	// branch. Size is never touched by the upgrade.
+	mentorExitMu    sync.Mutex
+	mentorExitModes map[string]string
+	fastTapePending atomic.Bool
 	// lastClockHealthSession: which session the last clock-health line was
 	// logged for (PHASE 3.5) — one line per session roll, not per tick.
 	lastClockHealthSession string
