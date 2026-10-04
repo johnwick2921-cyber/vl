@@ -2439,28 +2439,25 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 	if side == "" {
 		return
 	}
-	// N2 (2026-10-04): the fill frame's quantity is the truth. A fill delivers
-	// at least one contract, so an absent/zero quantity floors at 1 rather than
-	// materializing an empty position.
+	// N2 (2026-10-04): the AddOn's fill frame quantity is CUMULATIVE (e.Filled)
+	// and its price is the running AVERAGE (e.AverageFillPrice) — it emits ONE
+	// partfilled frame then ONE filled frame per state. So the ledger SETS the
+	// position to the frame's cumulative values, never adds. An absent/zero
+	// quantity floors at 1 (a fill delivers at least one contract).
 	qty := u.Quantity
 	if qty < 1 {
 		qty = 1
 	}
-	isPart := strings.EqualFold(u.State, "partfilled")
-	// PART-FILL: a position already materialized by a prior partial fill (or
-	// reconcile winning the race) is GROWN by this fill's quantity — with B2
-	// the order is N contracts and each part-fill counts. A full fill with a
-	// position already present is reconcile's truth and is left untouched.
+	// A position already materialized (a prior partfill, or reconcile winning
+	// the race) is SET to this frame's cumulative quantity, monotonic and
+	// idempotent — a duplicate or out-of-order frame must never shrink it or
+	// double-count it.
 	if pos, err := at.store.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), side); err == nil && pos != nil {
-		if isPart {
-			at.growMaterializedEntry(pos, r, u, float64(qty))
-		}
+		at.setMaterializedEntry(pos, r, u, float64(qty))
 		return
 	}
 	if pos, err := at.store.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), strings.ToLower(side)); err == nil && pos != nil {
-		if isPart {
-			at.growMaterializedEntry(pos, r, u, float64(qty))
-		}
+		at.setMaterializedEntry(pos, r, u, float64(qty))
 		return
 	}
 	tradeDate := r.PlanID
@@ -2501,16 +2498,20 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 	at.excursionOnOpen(row, r.StopPx, r.TargetPx, plannerATR5m(at.futuresSymbol()))
 }
 
-// growMaterializedEntry (N2, 2026-10-04) grows an already-open position by a
-// part-fill's quantity and folds its price into the weighted entry average —
-// the broker holds N contracts and the ledger must agree, or reconcile freezes
-// the trader on the 1-vs-N mismatch.
-func (at *AutoTrader) growMaterializedEntry(pos *store.TraderPosition, r store.ArmedOrderDB, u ntwire.OrderUpdatePayload, addQty float64) {
-	if err := at.store.Position().UpdatePositionQuantityAndPrice(pos.ID, addQty, u.FillPrice, 0); err != nil {
-		at.logWarnf("🧩 armed fill %s part-fill grow failed (pos %d): %v", r.Scenario, pos.ID, err)
+// setMaterializedEntry (N2, 2026-10-04) sets an already-open position to the
+// fill frame's CUMULATIVE quantity and average price. Monotonic and idempotent:
+// a frame whose quantity is not larger than the current one is ignored (the
+// AddOn dedupes per state, but a duplicate or out-of-order frame must never
+// shrink the position or double-count it).
+func (at *AutoTrader) setMaterializedEntry(pos *store.TraderPosition, r store.ArmedOrderDB, u ntwire.OrderUpdatePayload, qty float64) {
+	if qty <= pos.Quantity {
+		return // monotonic: never decrease; a duplicate frame keeps the position
+	}
+	if err := at.store.Position().SetPositionQuantityAndPrice(pos.ID, qty, u.FillPrice); err != nil {
+		at.logWarnf("🧩 armed fill %s cumulative-set failed (pos %d): %v", r.Scenario, pos.ID, err)
 		return
 	}
-	at.logInfof("🧩 armed fill %s part-fill grew position %d by %.0f @ %.2f", r.Scenario, pos.ID, addQty, u.FillPrice)
+	at.logInfof("🧩 armed fill %s set position %d to %.0f @ %.2f (cumulative)", r.Scenario, pos.ID, qty, u.FillPrice)
 }
 
 // stampArmedFillLineage links the freshly-filled position row to the plan the

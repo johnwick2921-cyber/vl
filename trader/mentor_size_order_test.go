@@ -136,14 +136,16 @@ func TestMaterializeArmedEntryUsesFillQuantity(t *testing.T) {
 	if err != nil || pos == nil {
 		t.Fatalf("open row not materialized: %v", err)
 	}
-	if pos.Quantity != 5 || pos.EntryQuantity != 5 {
-		t.Fatalf("materialized position qty = %.0f / entry %.0f, want 5/5 (N2: the fill quantity is the truth)", pos.Quantity, pos.EntryQuantity)
+	if pos.Quantity != 5 || pos.EntryQuantity != 5 || pos.EntryPrice != 29645 {
+		t.Fatalf("materialized position qty = %.0f / entry %.0f @ %.2f, want 5/5 @ 29645 (N2: the fill frame's cumulative quantity + average price are the truth)", pos.Quantity, pos.EntryQuantity, pos.EntryPrice)
 	}
 }
 
-// TestMaterializeArmedEntryGrowsOnPartFill (N2): a part-fill then a later
-// part-fill grows the position to the sum, never ignored.
-func TestMaterializeArmedEntryGrowsOnPartFill(t *testing.T) {
+// TestMaterializeArmedEntrySetsCumulativeOnFill (N2): the AddOn emits ONE
+// partfilled frame then ONE filled frame with the CUMULATIVE quantity, so the
+// ledger SETS the position — partfilled 2 → 2, then filled 5 → 5 at the new
+// average. Mutant: skip the filled-frame update → RED.
+func TestMaterializeArmedEntrySetsCumulativeOnFill(t *testing.T) {
 	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
 	at.id = "mentor-partfill"
 	row := store.ArmedOrderDB{
@@ -152,15 +154,59 @@ func TestMaterializeArmedEntryGrowsOnPartFill(t *testing.T) {
 		State: "partfilled", SignalID: "sig-part", FillPrice: 29645,
 		Origin: store.ArmOriginMentor, Contracts: store.IntPtr(5),
 	}
-	u1 := ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-part", Account: "Sim101", FillPrice: 29645, Quantity: 2}
-	at.materializeArmedEntry(row, u1)
-	u2 := ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-part", Account: "Sim101", FillPrice: 29646, Quantity: 3}
-	at.materializeArmedEntry(row, u2)
+	at.materializeArmedEntry(row, ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-part", Account: "Sim101", FillPrice: 29644, Quantity: 2})
+	at.materializeArmedEntry(row, ntwire.OrderUpdatePayload{State: "filled", SignalID: "sig-part", Account: "Sim101", FillPrice: 29646, Quantity: 5})
 	pos, err := st.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), "LONG")
 	if err != nil || pos == nil {
 		t.Fatalf("open row not materialized: %v", err)
 	}
-	if pos.Quantity != 5 || pos.EntryQuantity != 5 {
-		t.Fatalf("position qty after part-fills = %.0f / entry %.0f, want 5/5", pos.Quantity, pos.EntryQuantity)
+	if pos.Quantity != 5 || pos.EntryQuantity != 5 || pos.EntryPrice != 29646 {
+		t.Fatalf("position = %.0f / entry %.0f @ %.2f, want 5/5 @ 29646 (the filled frame's cumulative qty + average price must win)", pos.Quantity, pos.EntryQuantity, pos.EntryPrice)
+	}
+}
+
+// TestMaterializeArmedEntryDuplicatePartFillIdempotent (N2): a duplicate
+// partfilled frame keeps the position unchanged (never shrinks, never adds).
+func TestMaterializeArmedEntryDuplicatePartFillIdempotent(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
+	at.id = "mentor-dup"
+	row := store.ArmedOrderDB{
+		TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR",
+		Scenario: "isb-3", Side: "long", EntryPx: 29650, StopPx: 29640, TargetPx: 29670,
+		State: "partfilled", SignalID: "sig-dup", FillPrice: 29645,
+		Origin: store.ArmOriginMentor, Contracts: store.IntPtr(5),
+	}
+	u := ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-dup", Account: "Sim101", FillPrice: 29644, Quantity: 2}
+	at.materializeArmedEntry(row, u)
+	at.materializeArmedEntry(row, u) // duplicate — same cumulative qty
+	pos, err := st.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), "LONG")
+	if err != nil || pos == nil {
+		t.Fatalf("open row not materialized: %v", err)
+	}
+	if pos.Quantity != 2 {
+		t.Fatalf("position qty = %.0f after a duplicate frame, want 2 (idempotent)", pos.Quantity)
+	}
+}
+
+// TestMaterializeArmedEntryPartFillSetsNotAdds (N2): two partfilled frames with
+// cumulative quantities 2 then 4 set the position to 4, not 6 — the frame
+// quantity is cumulative, never an increment. Mutant: add instead of set → RED.
+func TestMaterializeArmedEntryPartFillSetsNotAdds(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
+	at.id = "mentor-set"
+	row := store.ArmedOrderDB{
+		TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR",
+		Scenario: "isb-4", Side: "long", EntryPx: 29650, StopPx: 29640, TargetPx: 29670,
+		State: "partfilled", SignalID: "sig-set", FillPrice: 29645,
+		Origin: store.ArmOriginMentor, Contracts: store.IntPtr(5),
+	}
+	at.materializeArmedEntry(row, ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-set", Account: "Sim101", FillPrice: 29644, Quantity: 2})
+	at.materializeArmedEntry(row, ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-set", Account: "Sim101", FillPrice: 29645, Quantity: 4})
+	pos, err := st.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), "LONG")
+	if err != nil || pos == nil {
+		t.Fatalf("open row not materialized: %v", err)
+	}
+	if pos.Quantity != 4 {
+		t.Fatalf("position qty = %.0f after partfills 2 then 4, want 4 (SET, not add)", pos.Quantity)
 	}
 }
