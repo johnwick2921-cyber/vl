@@ -269,7 +269,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Intraday confluence (exit C, size 10)',
-          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. Then: hold at least 1:2, the stop is never moved up (exit C), size 10; size 20 only when 4h AND 1h agree and room ≥ 30 pts.',
+          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. Then: hold at least 1:2, the stop is never moved up (exit C), size 10; size 20 only when 4h AND 1h both point the entry’s side (a silent 1h does not count), room ≥ 2× the risk and target ≥ 30 pts.',
           cite: 'R2 · D3.4 p3 @07:38',
         },
         {
@@ -458,7 +458,7 @@ export const mentor: GuideSection = {
         {
           label: 'Big contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'The big tier — the largest deliberate size.',
+          what: 'The big tier — the largest deliberate size. Only when 4h AND 1h both point the entry’s side (a silent 1h does not count), room ≥ 2× the risk and target ≥ 30 pts.',
           trader: '20 contracts max on a big tier.',
           consumer: 'trader/mentor_mode.go:27',
           range: 'int',
