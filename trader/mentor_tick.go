@@ -174,7 +174,7 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
 			// bookkeeping) lands with P1; the intent is recorded, never silent.
 			mentorCount("intent_" + string(in.Action))
 			at.logInfof("🧑‍🏫 mentor %s intent recorded (arm lifecycle lands with P1): %s", in.Action, in.Reason)
-		case mentorActionConfluenceUpgrade:
+		case mentor.ConfluenceUpgrade:
 			// B20 trader half (CTO 1791058836784, FIXES.md B20): the trigger
 			// LATER flipped to the trade's side — the OPEN position upgrades
 			// to confluence: exit C (hold ≥ 1:2, stop untouched), size
@@ -368,14 +368,6 @@ func mentorNoChase(side mentor.Side, latest float64, trigger float64) (skip bool
 var mentorPlaceRecorderForTest func(in mentor.Intent, contracts int)
 
 // ── B20 CONFLUENCE UPGRADE (trader half; the emit is DS-103's kernel) ───────
-
-// mentorActionConfluenceUpgrade is the action NAME the evaluator emits when a
-// live school-1 entry's 5m trigger LATER flips to the trade's side (FIXES.md
-// B20, D3.4 p3 @09:17–12:59: "a later flip to the trade's side upgrades it to
-// confluence (hold ≥1:2, exit C)"). It is a consumer-side constant of DS-103's
-// type — kernel/mentor is his, and the eval-loop case matches by string, so
-// his emit lands the moment the action constant appears.
-const mentorActionConfluenceUpgrade mentor.Action = "confluence_upgrade"
 
 // mentorExitMode / setMentorExitMode read/write the per-position exit branch
 // registered at placement (A/B/C/swing). The P1 exit loop drives the branch;

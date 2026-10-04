@@ -7,6 +7,7 @@ import (
 
 	"vl/kernel"
 	"vl/kernel/mentor"
+	"vl/market"
 	"vl/store"
 )
 
@@ -52,7 +53,7 @@ func TestMentorConfluenceUpgradeHandler(t *testing.T) {
 	mentorSizeForHook = func() { sized = true }
 	t.Cleanup(func() { mentorSizeForHook = nil })
 
-	in := mentor.Intent{Action: mentorActionConfluenceUpgrade, Side: mentor.SideLong,
+	in := mentor.Intent{Action: mentor.ConfluenceUpgrade, Side: mentor.SideLong,
 		Reason: "trigger flipped to the long side [B20, D3.4 p3 @09:17]"}
 	at.mentorConfluenceUpgrade(in)
 
@@ -85,6 +86,59 @@ func TestMentorConfluenceUpgradeHandler(t *testing.T) {
 	}
 	if got := at.mentorExitMode("short"); got != "" {
 		t.Fatalf("a no-position upgrade must not fabricate a branch, got %q", got)
+	}
+}
+
+// TestMentorConfluenceUpgradeEndToEnd exercises the evaluator and trader
+// dispatch together. Mutating the production action link leaves the exit on B.
+func TestMentorConfluenceUpgradeEndToEnd(t *testing.T) {
+	ResetMentorCountersForTest()
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	at.setMentorExitMode("long", "B")
+
+	sized := false
+	mentorSizeForHook = func() { sized = true }
+	t.Cleanup(func() { mentorSizeForHook = nil })
+
+	oldBarsProvider := market.FuturesBarsProvider
+	market.FuturesBarsProvider = func(_, _ string, _ int) []market.Kline { return nil }
+	t.Cleanup(func() { market.FuturesBarsProvider = oldBarsProvider })
+
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	e := mentor.New(cfg)
+	base := time.Date(2026, 10, 2, 9, 0, 0, 0, kernel.CTLocation()).UnixMilli()
+	e.State.SchoolOneSide = mentor.SideLong
+	e.State.Trigger = mentor.TriggerLine{
+		Dir:        mentor.SideShort,
+		Price:      95,
+		LastBucket: base,
+		LastBar: market.Kline{
+			OpenTime: base,
+			High:     100,
+			Low:      94,
+			Close:    95,
+		},
+	}
+	at.mentorEval = e
+	bars := []market.Kline{
+		{OpenTime: base + 4*60_000, CloseTime: base + 5*60_000 - 1, Open: 95, High: 99, Low: 94, Close: 96},
+		{OpenTime: base + 5*60_000, CloseTime: base + 6*60_000 - 1, Open: 99, High: 101, Low: 98, Close: 100.5},
+	}
+
+	at.mentorEvalOnce(bars)
+
+	if e.State.Trigger.Dir != mentor.SideLong || !e.State.SchoolOneUpgraded {
+		t.Fatalf("kernel did not process the long 5m flip: trigger=%+v upgraded=%v", e.State.Trigger, e.State.SchoolOneUpgraded)
+	}
+	if got := at.mentorExitMode("long"); got != "C" {
+		t.Fatalf("the kernel upgrade must switch the open position to exit C, got %q", got)
+	}
+	if sized {
+		t.Fatal("the confluence upgrade must not re-run the size table")
+	}
+	if got := MentorCountSnapshot()["exit_upgrade_c"]; got != 1 {
+		t.Fatalf("the kernel-to-trader upgrade must be applied once, got %d", got)
 	}
 }
 
