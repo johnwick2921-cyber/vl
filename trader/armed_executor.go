@@ -1337,6 +1337,26 @@ func (at *AutoTrader) runArmedPlacementAt(bars []market.Kline, sinceMs int64, no
 	holdReason, held := MaintenanceHeld()
 	scope := firstPassScope(scopes)
 
+	// N7 (2026-10-04) — settle cancels BEFORE placing. The placement loop's
+	// one-entry latch refuses "ledger_open" on any cancel_pending row left by a
+	// previous pass's cancel (entryLatchLedgers lists cancel_pending as placed),
+	// and "queued_entry"/"recent_send" on the broker pending map that only a
+	// fill/reject clears. Settling first confirms those cancels (terminal, or
+	// re-armed) and — via forgetPendingEntry — drops the pending marker, so the
+	// entry that follows a confirmed cancel places in the SAME pass instead of
+	// expiring unplaced. Unconfirmed cancels stay cancel_pending and keep
+	// refusing (fail-closed).
+	cancelFn := func(sid string) error {
+		// A re-request is still a cancel. If the entry filled while the first
+		// cancel was in flight, re-sending would reach the protections — and a
+		// refused re-request is not recorded as one (W-EXEC-TRUTH W0 (f)).
+		if !at.cancelSignalIfSafe(nt.CancelOrder, sid, "cancel re-request", now) {
+			return errCancelRefused
+		}
+		return nil
+	}
+	at.confirmPendingCancels(ledger, cancelFn, now)
+
 	for _, r := range rows {
 		if r.TraderID != at.id {
 			continue
@@ -1555,15 +1575,7 @@ func (at *AutoTrader) runArmedPlacementAt(bars []market.Kline, sinceMs int64, no
 	// cancel_pending, says so once past the timeout, and is re-requested up to
 	// the cap. Nothing here ever promotes a row on ignorance.
 	at.confirmPendingPlacements(ledger, now)
-	at.confirmPendingCancels(ledger, func(sid string) error {
-		// A re-request is still a cancel. If the entry filled while the first
-		// cancel was in flight, re-sending would reach the protections — and a
-		// refused re-request is not recorded as one (W-EXEC-TRUTH W0 (f)).
-		if !at.cancelSignalIfSafe(nt.CancelOrder, sid, "cancel re-request", now) {
-			return errCancelRefused
-		}
-		return nil
-	}, now)
+	at.confirmPendingCancels(ledger, cancelFn, now)
 	// D4 — the once-per-boot three-state reconciliation, run at the first cycle
 	// where a book actually exists. Nothing is auto-cancelled by it.
 	at.reconcileOncePerBoot(ledger, now)
