@@ -66,11 +66,16 @@ func applyBreak(next TriggerLine, before, cur market.Kline) TriggerLine {
 	brokeLow := cur.Low < before.Low
 	if brokeHigh && brokeLow {
 		// broke BOTH: draw both lines, keep the one price is NOW beyond
-		// [D3.4 p2 @ 18:49].
-		if cur.Close > before.High {
+		// [D3.4 p2 @ 18:49]. A close INSIDE the prior range is beyond
+		// neither extreme: the bar moves nothing and the next bar decides
+		// (CTO parity ruling 2026-10-04 Q2).
+		switch {
+		case cur.Close > before.High:
 			brokeLow = false
-		} else {
+		case cur.Close < before.Low:
 			brokeHigh = false
+		default:
+			return next
 		}
 	}
 	switch {
