@@ -411,7 +411,7 @@ func (at *AutoTrader) mentorReconcileLevelArms() {
 			found = ledger.DB().Where("trader_id = ?", at.id).First(&r, live.RowID).Error == nil
 		}
 		resting := found &&
-			(r.State == store.StateArmed || r.State == store.StatePlacePending || r.State == store.StateWorking)
+			!store.IsTerminalArmState(r.State) && !strings.EqualFold(strings.TrimSpace(r.State), store.StateCancelPending)
 		if !resting {
 			delete(at.mentorEval.State.LevelArms, key)
 		}
