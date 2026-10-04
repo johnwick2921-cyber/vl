@@ -213,15 +213,13 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 				l.refuse("orphan_not_location") // K2: not a location
 				continue
 			}
-			if pid := placeID(ref.key, ref.anchor); pid != "" {
-				if p := l.Places[pid]; p != nil && (p.Blocked || p.OffDay) {
-					if p.OffDay {
-						l.refuse("loss_box_off_day")
-					} else {
-						l.refuse("loss_box_blocked")
-					}
-					continue // G2: the place is boxed after a loss
+			if p := l.blockedPlace(ref, in.Price); p != nil {
+				if p.OffDay {
+					l.refuse("loss_box_off_day")
+				} else {
+					l.refuse("loss_box_blocked")
 				}
+				continue // G2: the place is boxed after a loss
 			}
 			kept = append(kept, in)
 			l.pend = append(l.pend, &pendOrder{
@@ -246,6 +244,17 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 					continue
 				}
 			}
+			// D2-17 (D4.2-13): an ISB participates in G2 — a blocked band
+			// refuses the entry, and the ISB's own stop-out boxes its
+			// entry-to-stop band.
+			if p := l.blockedPlace(placeRef{}, in.Price); p != nil {
+				if p.OffDay {
+					l.refuse("loss_box_off_day")
+				} else {
+					l.refuse("loss_box_blocked")
+				}
+				continue
+			}
 			kept = append(kept, in)
 			l.pend = append(l.pend, &pendOrder{
 				side:   in.Side,
@@ -255,6 +264,11 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 				expiry: pendExpiry(in, now),
 				isISB:  true,
 				armID:  in.ArmID,
+				anchor: in.Price, // the ISB band: the loss is boxed by price band
+				place:  isbBandKey(in.Price, in.Stop),
+				box:    true,
+				lo:     math.Min(in.Price, in.Stop),
+				hi:     math.Max(in.Price, in.Stop),
 			})
 		default:
 			if in.Action == CancelArm {
@@ -510,6 +524,51 @@ func placeID(anchorKey string, anchor float64) string {
 		return placeKey(anchor)
 	}
 	return ""
+}
+
+// isbBandKey is the G2 registry key for an ISB loss: its entry-to-stop price
+// band (D2-17, D4.2-13) — two ISB losses in the SAME band turn that band off
+// for the day, like any other place.
+func isbBandKey(entry, stop float64) string {
+	return "isb:" + placeKey(math.Min(entry, stop)) + ":" + placeKey(math.Max(entry, stop))
+}
+
+// blockedPlace is the G2 placement check (D2-17): an entry is refused when its
+// place is boxed — by the EXACT place key, or by PRICE BAND (the entry lies
+// inside the loss's [wave, swing] area / ISB band), so a different level a few
+// points away inside the same area is also refused, both sides.
+func (l *Limits) blockedPlace(ref placeRef, price float64) *Place {
+	if pid := placeID(ref.key, ref.anchor); pid != "" {
+		if p := l.Places[pid]; p != nil && (p.Blocked || p.OffDay) {
+			return p
+		}
+	}
+	for _, p := range l.Places {
+		if !p.Blocked && !p.OffDay {
+			continue
+		}
+		if p.insideBand(price) {
+			return p
+		}
+	}
+	return nil
+}
+
+// insideBand reports whether a price lies inside the place's blocked area —
+// the box edges for a box place, else the [wave, swing] structural band of a
+// level/EMA loss (D2-17, D4.2-13).
+func (p *Place) insideBand(price float64) bool {
+	if p.Box {
+		return price >= p.Lo && price <= p.Hi
+	}
+	if p.Swing == 0 || p.Wave == 0 {
+		return false // no structural band — the exact key is the only match
+	}
+	lo, hi := p.Swing, p.Wave
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	return price >= lo && price <= hi
 }
 
 // placeRef is the normalized G2 place for one entry.

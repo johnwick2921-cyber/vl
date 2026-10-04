@@ -13,15 +13,18 @@ import (
 // frame D3.3 FTGH/FTGL part1_06-25.jpg):
 //
 //   - Pair by ROLE — lows with lows (floor), highs with highs (ceiling) —
-//     with NO price tolerance. A box is drawn the moment price approaches
-//     an old extreme and FAILS to break it; the pairing is the extreme
-//     (lowest low / highest high) with the NEAREST same-role extreme.
+//     with NO price tolerance. Item 12 (CTO ruling 23:06Z): "the FAILURE
+//     defines the box" — the partner is the next CONFIRMED two-sided swing
+//     AFTER the extreme that FAILS to exceed it (a higher low / lower
+//     high); the trade is the 3rd touch ("lần thứ 3 mới vô lệnh"). An
+//     earlier adjacent decline bar is never the partner.
 //   - "Mình lấy cái râu thấp nhất… của cái đáy trước đó… kéo lên tới… cái
 //     BODY của cái đáy GẦN NHẤT" [Cách vẽ box @ 02:16–02:41] — FTGL: from
-//     the LOWEST WICK of the earlier low up to the BODY of the nearest low.
+//     the LOWEST WICK of the extreme low up to the BODY of the later
+//     higher low.
 //   - "râu ở cái đỉnh cao nhất, và cái BODY của cái đỉnh GẦN NHẤT"
-//     [@ 03:29] — FTGH: from the HIGHEST WICK of the earlier high down to
-//     the BODY of the nearest high.
+//     [@ 03:29] — FTGH: from the HIGHEST WICK of the extreme high down to
+//     the BODY of the later lower high.
 //   - Role detection [B]: a rolling 3-candle extreme — a low is a candle
 //     whose low is the min of the last three lows; a high, the max of the
 //     last three highs. This reproduces BOTH golden boxes on the 13-Sep
@@ -67,9 +70,10 @@ type Box struct {
 	// box formed — the entry layer requires the THIRD touch [@ 04:29].
 	Touches int
 	// FormedAt is the bar index the box was drawn (extend-right origin):
-	// max(nearest idx, extreme idx + 1) — born when the extreme's confirming
-	// bar closes, and never earlier than the later pairing candle, so a
-	// pairing candle is never walked as a return (B10 T1 ruling + T3).
+	// the partner's confirmation bar (seq[nearest].idx + 1) — the box is
+	// born when bottom/high 2's confirming bar closes, so neither pairing
+	// candle nor its confirmation is ever walked as a return (item 12
+	// ruling 23:06Z, folding B10 T1 + T3).
 	FormedAt int
 	// Flipped marks a box whose BODY escaped (a closed candle's whole body
 	// outside on the far side) — D14 "Uno Reverse" [slide 17; X2 @02:36–
@@ -181,12 +185,12 @@ func swings3(bars []market.Kline) []swingPairAt {
 	return seq
 }
 
-// swingConfirmed is the B10 T1 fractal right side (CTO ruling 21:00Z),
-// applied to the EXTREME only: a swing low is the extreme only when the NEXT
-// closed bar has a HIGHER low (the spike failed to go lower); a swing high,
-// only when the NEXT closed bar has a LOWER high. A one-way tape never
-// confirms, so no extreme and no box. The box is BORN when the confirming
-// bar closes.
+// swingConfirmed is the B10 T1 fractal right side (CTO ruling 21:00Z): a
+// swing low is confirmed only when the NEXT closed bar has a HIGHER low (the
+// spike failed to go lower); a swing high, only when the NEXT closed bar has
+// a LOWER high. A one-way tape never confirms, so no swing and no box.
+// Item 12 (CTO ruling 23:06Z) applies it to BOTH pairing swings — the
+// EXTREME and its partner.
 func swingConfirmed(bars []market.Kline, s swingPairAt) bool {
 	if s.idx+1 >= len(bars) || bars[s.idx+1].CloseTime == 0 {
 		return false
@@ -249,9 +253,20 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 		}
 		nearest := -1
 		for i, s := range seq {
-			// the NEAREST keeps no confirmation (B10 T1 ruling): the
-			// left-only swing nearest in time that did not break the extreme.
+			// item 12 (CTO ruling 23:06Z, DAY-3 row 12): "the FAILURE
+			// defines the box" — bottom/high 2 comes AFTER the extreme and
+			// FAILS to exceed it, and the trade is the 3rd touch ("lần thứ
+			// 3 mới vô lệnh"). The partner is the next CONFIRMED two-sided
+			// swing AFTER the extreme that does not break it — a higher low
+			// / lower high. An EARLIER adjacent decline bar is NEVER the
+			// partner.
 			if i == extreme || s.kind != role {
+				continue
+			}
+			if s.idx <= seq[extreme].idx {
+				continue // bottom/high 2 is LATER, never the previous bar
+			}
+			if !swingConfirmed(tfBars, s) {
 				continue
 			}
 			// the nearest did not break the extreme
@@ -294,19 +309,15 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 		if b.Kind == FTGL {
 			b.Key = "ftgl:" + fnum(b.Top) + ":" + fnum(b.Bottom)
 		}
-		// B10 T3 (CTO 2026-10-03): the box exists only once BOTH pairing
-		// candles are known, so the formation completes at the LATER of the
-		// two — the return walk must never include the pairing candles. Per
-		// the T1 ruling the box is BORN when the extreme's confirming bar
-		// closes, so the origin is at least extreme+1.
-		b.FormedAt = seq[extreme].idx + 1
-		if seq[nearest].idx > b.FormedAt {
-			b.FormedAt = seq[nearest].idx
-		}
+		// item 12 (CTO ruling 23:06Z): FormedAt = bottom/high 2's
+		// CONFIRMATION — the box is born when the partner's confirming bar
+		// closes. The partner is always the LATER swing now, so this is
+		// seq[nearest].idx + 1; the partner candle itself (bottom/high 2)
+		// is a formation candle and is never walked as a return.
+		b.FormedAt = seq[nearest].idx + 1
 		// D14 "Uno Reverse" [slide 17; X2 @02:36–03:25]: a BODY escape flips
 		// the role — a broken FTGH becomes support, a broken FTGL becomes
-		// resistance. The box is NOT deleted (B4: "vẽ rồi thì để y nguyên đó
-		// tới cuối ngày" [D4.1 p2 @02:39–03:09]); it stays and trades the
+		// resistance. The box is NOT deleted (B4); it stays and trades the
 		// new side with the same reject rule and gates.
 		b.Flipped = escaped(tfBars, *b, b.FormedAt)
 		out = append(out, *b)

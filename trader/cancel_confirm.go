@@ -198,11 +198,7 @@ func entryFilledInBook(o nt.NT8Order, signalID string) bool {
 	if !strings.EqualFold(strings.TrimSpace(o.Name), strings.TrimSpace(signalID)) {
 		return false
 	}
-	switch strings.ToLower(strings.ReplaceAll(strings.TrimSpace(o.State), " ", "")) {
-	case "filled", "partfilleddone":
-		return true
-	}
-	return false
+	return o.TerminalOutcome() == nt.OrderOutcomeFilled
 }
 
 // cancelSeenInBook (N7 part 5) is the POSITIVE cancel proof the latch forget
@@ -218,8 +214,7 @@ func cancelSeenInBook(book []nt.NT8Order, signalID string) bool {
 		if !strings.EqualFold(strings.TrimSpace(o.Name), strings.TrimSpace(signalID)) {
 			continue
 		}
-		switch strings.ToLower(strings.TrimSpace(o.State)) {
-		case "cancelled", "canceled", "rejected", "expired":
+		if o.TerminalOutcome() == nt.OrderOutcomeUnfilled {
 			return true
 		}
 	}

@@ -26,25 +26,30 @@ func TestEvaluatorUnoReverseBrokenFTGHTradesLong(t *testing.T) {
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
 	}
+	// item 12 pairing (CTO ruling 23:06Z): the box partner is the next
+	// CONFIRMED two-sided swing AFTER the extreme that does not break it — a
+	// lower high here. top1 = bar 2 (106), top2 = bar 6 (105) → FTGH [104, 106].
 	bars := []market.Kline{
 		mk(0, 100, 101, 99, 100),
 		mk(1, 100, 102, 99, 101),
-		mk(2, 101, 105, 100, 104), // swing high @2 — pairs with @4 (nearest)
-		mk(3, 103, 104, 102, 103),
-		mk(4, 102, 106, 101, 105),       // swing high @4 — the extreme; FTGH [104, 106]
-		mk(5, 105, 105.8, 99, 100),      // confirms bar 4 (high 105.8 < 106)
-		mk(6, 106.2, 106.5, 105, 106.4), // ESCAPE: whole body above 106 → role flips
-		// bar 7 blocks bar 6 from confirmation (106.6 > 106.5) and is the ONE
+		mk(2, 101, 106, 100, 104), // swing high @2 (106) — top1, the extreme
+		mk(3, 103, 104, 102, 103), // confirms bar 2 (104 < 106)
+		mk(4, 102, 103, 101, 102),
+		mk(5, 103, 104, 102, 103),
+		mk(6, 104, 105, 103, 104),       // swing high @6 (105) — top2, the lower high (confirmed by bar 7)
+		mk(7, 104, 104.5, 103, 104),     // confirms bar 6 (104.5 < 105)
+		mk(8, 106.2, 106.5, 105, 106.4), // ESCAPE: whole body above 106 → role flips
+		// bar 9 blocks bar 8 from confirmation (106.7 > 106.5) and is the ONE
 		// return: it re-approaches the broken ceiling from ABOVE, touches 106
 		// (low 105.9), and closes back above it (106.3 > 106) = the reject.
-		mk(7, 106.4, 106.6, 105.9, 106.3),
-		// bar 8: the target key level (colour flip → open 106.8); its high
-		// 106.9 also blocks bar 7, so neither escape candle becomes the new
+		mk(9, 106.4, 106.7, 105.9, 106.3),
+		// bar 10: the target key level (colour flip → open 106.8); its high
+		// 106.9 also blocks bar 9, so neither escape candle becomes the new
 		// extreme and the box stays [104, 106].
-		mk(8, 106.8, 106.9, 106.6, 106.85),
+		mk(10, 106.8, 106.9, 106.6, 106.85),
 	}
 	e := New(cfg)
-	now := bars[8].OpenTime + 59_999
+	now := bars[10].OpenTime + 59_999
 	// ORB preset (the §7 gate is drawn+escaped long; the tape alone never
 	// draws an ORB and the gate would refuse every intraday entry).
 	e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
@@ -66,7 +71,7 @@ func TestEvaluatorUnoReverseBrokenFTGHTradesLong(t *testing.T) {
 		t.Fatalf("flipped FTGH return = %d box intents (%+v), want 1 — a broken FTGH re-approached from above trades LONG [D14, slide 17; X2 @02:36–03:25]", len(first), first)
 	}
 	in := first[0]
-	if in.Side != SideLong || in.Price != 106.6 || in.Stop != 105.9 || in.Target != 106.8 {
-		t.Fatalf("flipped FTGH intent = %+v, want LONG entry 106.6 / stop 105.9 / target 106.8", in)
+	if in.Side != SideLong || in.Price != 106.7 || in.Stop != 105.9 || in.Target != 106.8 {
+		t.Fatalf("flipped FTGH intent = %+v, want LONG entry 106.7 / stop 105.9 / target 106.8", in)
 	}
 }

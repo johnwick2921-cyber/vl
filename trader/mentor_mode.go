@@ -411,7 +411,7 @@ func (at *AutoTrader) mentorReconcileLevelArms() {
 			found = ledger.DB().Where("trader_id = ?", at.id).First(&r, live.RowID).Error == nil
 		}
 		resting := found &&
-			(r.State == store.StateArmed || r.State == store.StatePlacePending || r.State == store.StateWorking)
+			!store.IsTerminalArmState(r.State) && !strings.EqualFold(strings.TrimSpace(r.State), store.StateCancelPending)
 		if !resting {
 			delete(at.mentorEval.State.LevelArms, key)
 		}
@@ -492,7 +492,9 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 	if spentCap <= 0 {
 		spentCap = mentor.DefaultConfig().DayGateTargetCapPts
 	}
-	if extra.SpentDay && stop > spentCap {
+	// R13 [D5.2 §6]: DayOff does not stop the swing, so the spent-day stop cap
+	// must not either — the overnight SWING4H is exempt from the R9 cap.
+	if extra.SpentDay && !swing && stop > spentCap {
 		return fmt.Sprintf("R9: spent day cap %.0f — stop %.1f pts skips", spentCap, stop)
 	}
 	return ""
