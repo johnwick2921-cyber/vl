@@ -152,6 +152,109 @@ func TestSwing4hThroughCancelsThenISB(t *testing.T) {
 	}
 }
 
+// TestSwing4hISBWatchOpenUntilFlip — R34 [D5.2 p2 @10:30]: after a through-close
+// the ISB watch stays open until the 4h flip, NOT time-limited to LeewayCandles
+// (2). An inside bar that closes back FOUR candles after the through-close still
+// enters, with the stop AT the level.
+func TestSwing4hISBWatchOpenUntilFlip(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	cur := []market.Kline{
+		mk5m(t, 15, 5, 0, 10200, 10220, 10190, 10210),  // prev close above the line (Long approach)
+		mk5m(t, 15, 5, 5, 10200, 10200, 10140, 10150),  // touches, closes THROUGH (below) → invalid
+		mk5m(t, 15, 5, 10, 10150, 10160, 10140, 10145), // below, no ISB (candle 1)
+		mk5m(t, 15, 5, 15, 10145, 10155, 10135, 10140), // below, no ISB (candle 2 — the old window ends)
+		mk5m(t, 15, 5, 20, 10180, 10190, 10120, 10130), // wide, below (candle 3)
+		mk5m(t, 15, 5, 25, 10130, 10185, 10125, 10180), // closes back above, ISB of candle 3 → LONG entry
+	}
+	bars := swingTape(t, cur)
+	s := &SwingState{}
+	out := SwingTick(s, bars, cfg, cur[5].OpenTime+60_000)
+	if len(out) != 2 {
+		t.Fatalf("intents = %d, want cancel + ISB entry (the watch is not 2-candle limited); got %+v", len(out), out)
+	}
+	if out[0].Action != CancelArm {
+		t.Fatalf("first intent = %+v, want CancelArm for the through-close", out[0])
+	}
+	in := out[1]
+	if in.Action != PlaceStopEntry || in.Side != SideLong {
+		t.Fatalf("ISB intent = %+v, want a LONG stop entry (support close-back)", in)
+	}
+	if abs(in.Stop-swingLineGolden) > 0.01 {
+		t.Fatalf("ISB stop = %.2f, want %.2f (AT the level)", in.Stop, swingLineGolden)
+	}
+	if abs(in.Price-10185) > 0.01 {
+		t.Fatalf("ISB entry = %.2f, want 10185 (the ISB candle's high, tight R8)", in.Price)
+	}
+	// R43 (item 24, CTO merge pin): the ISB-after-close-through entry carries
+	// the swing first target max(1R, 5m EMA34); this short tape has no warm EMA,
+	// so it is exactly 1R beyond the entry.
+	if want := in.Price + (in.Price - in.Stop); abs(in.Target-want) > 0.01 {
+		t.Fatalf("ISB target = %.2f, want %.2f (1R: TARGET 1-1 TRƯỚC [D5.2 p2 @11:17])", in.Target, want)
+	}
+}
+
+// TestSwing4hRejectTargetIsOneRFloor — item 24 (R43): the swing first target is
+// max(1R, the 5m EMA 34) [D5.2 p2 @11:00 "TARGET 1-1 TRƯỚC"]. The old 50-pt
+// fallback made a swing with a >50-pt stop carry a target SMALLER than its stop
+// and the trader's R9 refused it. With a short tape (no EMA) the target is 1R,
+// never the 50-pt fallback.
+func TestSwing4hRejectTargetIsOneRFloor(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	// ref.Low 10143 sits ~25 pts below the line → stop ~55 pts > 50: the old
+	// 50-pt fallback target was smaller than the stop and R9 refused the swing.
+	cur := []market.Kline{
+		mk5m(t, 15, 5, 0, 10145, 10150, 10140, 10145), // prev below the line
+		mk5m(t, 15, 5, 5, 10150, 10165, 10143, 10145), // touches, closes back below (reject)
+	}
+	bars := swingTape(t, cur)
+	s := &SwingState{}
+	out := SwingTick(s, bars, cfg, cur[1].OpenTime+60_000)
+	if len(out) != 1 || out[0].Side != SideShort {
+		t.Fatalf("intents = %+v, want one SHORT reject stop entry", out)
+	}
+	in := out[0]
+	risk := abs(in.Stop - in.Price)
+	if risk <= 50 {
+		t.Fatalf("fixture: the stop must exceed 50 pts to exercise the regression (risk=%.2f)", risk)
+	}
+	if d := abs(in.Target - in.Price); d < risk {
+		t.Fatalf("target distance %.2f must be ≥ risk %.2f — R9 must never refuse a swing for a nearer target", d, risk)
+	}
+	if abs(in.Target-(in.Price-risk)) > 0.01 {
+		t.Fatalf("target = %.2f, want 1R = %.2f (never the old 50-pt fallback)", in.Target, in.Price-risk)
+	}
+}
+
+// TestSwingFirstTarget — the pure max(1R, 5m EMA 34) rule: the EMA wins only
+// when it sits FURTHER than 1R on the profitable side; nearer, absent or
+// wrong-side EMA falls back to 1R.
+func TestSwingFirstTarget(t *testing.T) {
+	cases := []struct {
+		name        string
+		side        Side
+		entry, stop float64
+		ema         float64
+		want        float64
+	}{
+		{"long ema absent", SideLong, 100, 90, 0, 110},
+		{"long ema nearer than 1R", SideLong, 100, 90, 105, 110},
+		{"long ema further than 1R", SideLong, 100, 90, 120, 120},
+		{"long ema wrong side", SideLong, 100, 90, 95, 110},
+		{"short ema absent", SideShort, 100, 110, 0, 90},
+		{"short ema nearer than 1R", SideShort, 100, 110, 95, 90},
+		{"short ema further than 1R", SideShort, 100, 110, 80, 80},
+		{"short ema wrong side", SideShort, 100, 110, 105, 90},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := swingFirstTarget(tc.side, tc.entry, tc.stop, tc.ema); abs(got-tc.want) > 1e-9 {
+				t.Fatalf("swingFirstTarget(%s, entry %.0f, stop %.0f, ema %.0f) = %.2f, want %.2f",
+					tc.side, tc.entry, tc.stop, tc.ema, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSwingTickWarmLineIsAuthoritativeWithinBucket(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	bars := []market.Kline{
@@ -172,7 +275,6 @@ func TestSwingTickWarmLineIsAuthoritativeWithinBucket(t *testing.T) {
 		LastBarTime: bars[2].OpenTime,
 		EmaCount:    FourHEMA34Min,
 		FirstTouch:  &swingTouch{Approach: SideShort, Through: true},
-		LeewayLeft:  2,
 	}
 	out := SwingTick(s, bars, cfg, now)
 	if len(out) != 0 {
@@ -216,8 +318,10 @@ func TestSwing4hHardInvariantCounter(t *testing.T) {
 
 // TestSwing4hOneSetupPerApproach — one setup per approach: no new one until
 // price has left the line by at least the stop distance and comes back. The
-// return path crosses through (cancel), the leeway expires, and the next
-// below-the-line touch is the new setup.
+// return path crosses through (cancel) and marks the level INVALID (R32
+// [D5.2 p2 @20:48]): the later below-line touch is REFUSED — an invalid level
+// may only trade an inside bar, never a normal reject, for the rest of the 4h
+// candle.
 func TestSwing4hOneSetupPerApproach(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	cur := []market.Kline{
@@ -225,11 +329,11 @@ func TestSwing4hOneSetupPerApproach(t *testing.T) {
 		mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160),  // first setup (short)
 		mk5m(t, 15, 5, 10, 10160, 10175, 10155, 10160), // same approach again — blocked
 		mk5m(t, 15, 5, 15, 10190, 10210, 10190, 10205), // leaves the line by ≥ 30 (entirely above)
-		mk5m(t, 15, 5, 20, 10200, 10200, 10150, 10160), // crosses back through → cancel
-		mk5m(t, 15, 5, 25, 10195, 10205, 10150, 10155), // leeway candle 1 (closes below → no ISB)
-		mk5m(t, 15, 5, 30, 10195, 10205, 10150, 10155), // leeway candle 2 (closes below → no ISB)
+		mk5m(t, 15, 5, 20, 10200, 10200, 10150, 10160), // crosses back through → cancel, level INVALID
+		mk5m(t, 15, 5, 25, 10195, 10205, 10150, 10155), // below the line — no ISB close-back
+		mk5m(t, 15, 5, 30, 10195, 10205, 10150, 10155), // below the line — no ISB close-back
 		mk5m(t, 15, 5, 35, 10060, 10100, 10050, 10060), // back below without touching
-		mk5m(t, 15, 5, 40, 10160, 10175, 10155, 10160), // below-line touch → new setup
+		mk5m(t, 15, 5, 40, 10160, 10175, 10155, 10160), // below-line touch → REFUSED (invalid level)
 	}
 	bars := swingTape(t, cur)
 	s := &SwingState{}
@@ -243,8 +347,8 @@ func TestSwing4hOneSetupPerApproach(t *testing.T) {
 			cancels++
 		}
 	}
-	if entries != 2 {
-		t.Fatalf("stop entries = %d, want 2 (the blocked repeat produces none); got %+v", entries, out)
+	if entries != 1 {
+		t.Fatalf("stop entries = %d, want 1 (the invalid level refuses the later below-line touch); got %+v", entries, out)
 	}
 	if cancels != 1 {
 		t.Fatalf("cancels = %d, want 1 (the through-cross back); got %+v", cancels, out)
@@ -263,7 +367,7 @@ func TestSwing4hFlipOnNewBucket(t *testing.T) {
 	bars := swingTape(t, cur)
 	s := &SwingState{}
 	SwingTick(s, bars, cfg, cur[1].OpenTime+60_000)
-	if s.FirstTouch == nil || s.LeewayLeft == 0 {
+	if s.FirstTouch == nil || !s.FirstTouch.Through {
 		t.Fatalf("setup: pending touch not armed: %+v", s.FirstTouch)
 	}
 	// advance into the NEXT 4h bucket (09:00), one more closed bucket close

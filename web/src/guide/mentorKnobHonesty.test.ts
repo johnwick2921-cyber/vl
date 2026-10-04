@@ -31,7 +31,6 @@ const CODE_CONSTANTS = [
   'SwingCfg.LineOffsetPts',
   'SwingCfg.StopBeyondLinePts',
   'SwingCfg.EntryBufferPts',
-  'SwingCfg.TargetFallbackPts',
   'SwingCfg.TargetEMA5mPeriod',
   'SwingCfg.LeewayCandles',
   'SwingCfg.Hold4hBars',
@@ -41,8 +40,8 @@ const CODE_CONSTANTS = [
 ]
 
 describe('mentor guide knob honesty', () => {
-  it('lists the 26 code-constant evaluator defaults as live:false, "default, code constant"', () => {
-    expect(CODE_CONSTANTS).toHaveLength(26)
+  it('lists the 25 code-constant evaluator defaults as live:false, "default, code constant"', () => {
+    expect(CODE_CONSTANTS).toHaveLength(25)
     for (const id of CODE_CONSTANTS) {
       const card = mentorKnobs.find((k) => k.settingId === id)
       expect(card, `${id} has a card`).toBeDefined()

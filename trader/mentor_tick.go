@@ -142,6 +142,7 @@ func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 	cfg.LegBudgetEnabled = mentorLegBudgetEnabled(rc)
 	cfg.LegResetOn = mentorLegResetOn(rc)
 	cfg.LocTriggerFilter = mentorLocationTriggerFilter(rc)
+	applyMentorTuning(&cfg, rc)
 	if rc != nil {
 		cfg.LvlRevisitMinPts = mentorLvlRevisitMinPts(rc)
 		cfg.EmaMaxCross30m = mentorEmaMaxCross30m(rc)
@@ -156,6 +157,49 @@ func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 func (at *AutoTrader) mentorPlaceNow(bars []market.Kline) {
 	now := mentorClockNow()
 	at.maybeManageArmedOrdersAt(kernel.StructureSnapshot(bars, now.UnixMilli()), now)
+}
+
+// mentorPlaceCadence (N7 part 3) is how often the event loop re-runs the
+// mentor-only placement while an unexpired mentor arm sits UNPLACED. A package
+// var so the event-loop pin can shorten it; production leaves it at 5s.
+var mentorPlaceCadence = 5 * time.Second
+
+// mentorPlacementDue reports whether the mentor-only placement pass should run
+// NOW: mentor mode + MENTOR_PLACE on, AND at least one mentor-authored row is
+// UNPLACED (armed, no signal) and unexpired. A working row needs no retry — the
+// pass already reached it; an expired row is cancelled by the pass, not placed.
+func (at *AutoTrader) mentorPlacementDue(now time.Time) bool {
+	if at == nil || at.store == nil || !at.mentorEnabled() || !mentorPlaceEnv() {
+		return false
+	}
+	rows, err := at.store.ArmedOrders().ListNonTerminal(at.id)
+	if err != nil {
+		return false
+	}
+	nowMs := now.UnixMilli()
+	for _, r := range rows {
+		if !mentorAuthoredRow(r) || r.State != store.StateArmed {
+			continue
+		}
+		if r.ExpiryMs == 0 || nowMs < r.ExpiryMs {
+			return true
+		}
+	}
+	return false
+}
+
+// mentorPlacementCadencePass runs the mentor-only placement pass when due (the
+// event loop's cadence tick calls it). Returns whether a pass ran.
+func (at *AutoTrader) mentorPlacementCadencePass() bool {
+	if !at.mentorPlacementDue(mentorClockNow()) {
+		return false
+	}
+	var bars []market.Kline
+	if market.FuturesBarsProvider != nil {
+		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
+	}
+	at.mentorPlaceNow(bars)
+	return true
 }
 
 // mentorEvalOnce runs one evaluator tick over the bars and processes every
@@ -185,6 +229,15 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// source that was short at boot (94/102 closed 4h candles) clears on its
 	// own instead of needing a restart.
 	at.mentorRefreshDepths()
+	// EXIT DRIVE (DS-107): event-driven resonance arming first — a same-side
+	// ISB within 3 candles of a PHL/PLH fill flips it to mode A (both stops to
+	// BE NOW) — then the candle-driven exit loop, once per closed 1m bar.
+	for _, in := range intents {
+		if isISBEntryIntent(in) {
+			at.mentorArmResonanceOnISB(string(in.Side))
+		}
+	}
+	at.mentorExitDrive(bars)
 	// S9 (D5.2 p2 @05:21): strong-day detection from the recent CLOSED 5m bars
 	// — 50–80 pt candles cut every tier to 1–2.
 	strongDay := false
@@ -216,6 +269,11 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	if mentorPlaceEnv() {
 		at.mentorPlaceNow(bars)
 	}
+	// D2-44 (item 11): reconcile the evaluator's LevelArms against the ledger —
+	// a level order the trader cancelled/expired on its side must stop resting
+	// in the evaluator, so the level can re-emit on the next valid touch.
+	// Under the N11 mutex (the whole function is the critical section).
+	at.mentorReconcileLevelArms()
 	// N12 funnel visibility (read-only): one closed bar + this tick's intents.
 	// Runs inside the N11 evaluator mutex (taken at the top of mentorEvalOnce),
 	// after the event placement so this tick's placements are counted.
@@ -322,17 +380,32 @@ var mentorSetArmExpiryWire func(armID int64, expiryMs int64) error
 
 // mentorIntentExpiry resolves the N12 per-order expiry (PR #313): the expiry
 // belongs to the RULES, not a blanket timer. An intent-carried expiry wins;
-// otherwise the injector computes the setup's default — a level touch or a
-// single ISB expires at the close of the NEXT 1m candle; the swing lives until
+// otherwise the injector computes the setup's default — a LEVEL order (PHL/PLH/
+// EMA, ArmID prefix "lvl-") RESTS until the RTH window end at 15:00 CT
+// (D2-44, item 11); a single ISB expires at the close of the NEXT 1m candle
+// (the one-candle rule is the ISB only [D1.4 p1 @18:32]); the swing lives until
 // the close of the current 4h candle (mentorSwingExpiry).
 func mentorIntentExpiry(in mentor.Intent, barCloseMs int64) int64 {
 	if in.ExpiryMs > 0 {
 		return in.ExpiryMs
 	}
+	if strings.HasPrefix(strings.TrimSpace(in.ArmID), "lvl-") {
+		return mentorLevelExpiry(barCloseMs)
+	}
 	if strings.EqualFold(in.Setup, "SWING4H") {
 		return mentorSwingExpiry(barCloseMs + 1) // +1: the instant the bar closed, so a 4h-boundary bar reads the NEW 4h candle
 	}
 	return barCloseMs + 60_000 // the close of the NEXT 1m candle
+}
+
+// mentorLevelExpiry (D2-44, item 11) is the B6 lifetime for a LEVEL order
+// (ArmID prefix "lvl-"): it RESTS until the RTH window end at 15:00 CT, or
+// until the evaluator's close-through sweep cancels it — never the next 1m
+// candle [D2.3 p1 @17:42–18:14, @18:46–19:12]. At or after 15:00 CT it
+// fail-safes to tomorrow's 15:00 (placement past RTH is already refused
+// upstream, so this is a guard, never the live path).
+func mentorLevelExpiry(nowMs int64) int64 {
+	return mentor.LevelArmExpiry(nowMs) // one definition, shared with the leg budget
 }
 
 // mentorSwingExpiry (RULING [C], knob swing_order_expiry): a swing stop order
