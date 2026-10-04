@@ -286,8 +286,8 @@ export const mentor: GuideSection = {
       items: [
         {
           title: 'Per-visit level references',
-          body: 'A level reference lasts until a closed candle departs the level; every NEW visit (a closed candle not touching it since the last reference) gets its own reference candle and stop. One level no longer blocks itself for the whole day.',
-          cite: 'L1 — lvl_revisit_min_pts, default 0',
+          body: 'A level reference lasts until a closed candle departs the level; every NEW visit (a closed candle not touching it since the last reference) gets its own reference candle and stop. One level no longer blocks itself for the whole day. A wrong-way close marks a level ISB-only (only ISBs may trade there): a moving line (EMA / trigger retest) clears that mark when the line drifts or the visit departs; a key level clears it at the next session day.',
+          cite: 'L1 — lvl_revisit_min_pts, default 0 · D5.2 p2 @20:48 (item 22)',
         },
         {
           title: 'Box ping-pong needs ≥ 50 pts',
