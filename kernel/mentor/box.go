@@ -75,6 +75,14 @@ type Box struct {
 	// candle nor its confirmation is ever walked as a return (item 12
 	// ruling 23:06Z, folding B10 T1 + T3).
 	FormedAt int
+	// Flipped marks a box whose BODY escaped (a closed candle's whole body
+	// outside on the far side) — D14 "Uno Reverse" [slide 17; X2 @02:36–
+	// 03:25]: "Kháng cự bị phá → sẽ thành hỗ trợ khi backtest. Hỗ trợ bị
+	// phá → sẽ thành kháng cự khi backtest" — a broken FTGH becomes SUPPORT
+	// and a broken FTGL becomes RESISTANCE. Returns are then evaluated from
+	// the NEW side with the same reject rule and the same gates (HTF, ORB,
+	// ping-pong). The edges do not move; only the role flips.
+	Flipped bool
 }
 
 // BoxCfg holds the §4.1 knobs.
@@ -307,6 +315,11 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 		// seq[nearest].idx + 1; the partner candle itself (bottom/high 2)
 		// is a formation candle and is never walked as a return.
 		b.FormedAt = seq[nearest].idx + 1
+		// D14 "Uno Reverse" [slide 17; X2 @02:36–03:25]: a BODY escape flips
+		// the role — a broken FTGH becomes support, a broken FTGL becomes
+		// resistance. The box is NOT deleted (B4); it stays and trades the
+		// new side with the same reject rule and gates.
+		b.Flipped = escaped(tfBars, *b, b.FormedAt)
 		out = append(out, *b)
 	}
 	return out
@@ -379,7 +392,14 @@ func countBoxTouches(bars []market.Kline, b Box, formedAt int, cfg BoxCfg) int {
 
 // touchesEdge reports a wick touch of either edge within TouchBandPts.
 func touchesEdge(b Box, c market.Kline, cfg BoxCfg) bool {
-	switch b.Kind {
+	return touchesEdgeKind(b.Kind, b, c, cfg)
+}
+
+// touchesEdgeKind is touchesEdge with the role made explicit — D14 "Uno
+// Reverse": the return walk evaluates the box's CURRENT role (a flipped FTGH
+// touches like an FTGL), while the third-touch count keeps the original.
+func touchesEdgeKind(k BoxKind, b Box, c market.Kline, cfg BoxCfg) bool {
+	switch k {
 	case FTGH:
 		if abs(c.High-b.Top) <= cfg.TouchBandPts {
 			return true
