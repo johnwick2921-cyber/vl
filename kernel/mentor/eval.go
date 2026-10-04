@@ -720,6 +720,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.State.HTF.OneH.Dir != "" && e.State.HTF.OneH.Price != 0 {
 		levels = append(levels, Level{Key: "htf_1h_trigger", Kind: KindHTFTrigger, Price: e.State.HTF.OneH.Price})
 	}
+	// D4.3 wick microscalp (advanced, knob OFF by default): 2+ consecutive 5m
+	// candles rejecting with same-way wicks put a bounded target at their far
+	// wick — target-only (the touch loop skips KindWickMicroscalp).
+	if e.Cfg.WickMicroscalpEnabled {
+		if wl, ok := wickMicroscalpLevel(closedBuckets(bars, now, e.Cfg), e.State.Trigger.Dir); ok {
+			levels = append(levels, wl)
+		}
+	}
 	if el, ok := EMALocationLevel(bars, e.Cfg); ok {
 		levels = append(levels, el)
 	}
@@ -748,7 +756,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// an approach from above). The edges stay in `levels` for location /
 	// InsideAnyBox / boxBanFilter / midRangeBoxed checks.
 	for _, lvl := range levels {
-		if lvl.Kind == KindFTGHEdge || lvl.Kind == KindFTGLEdge || lvl.Kind == KindHTFTrigger {
+		if lvl.Kind == KindFTGHEdge || lvl.Kind == KindFTGLEdge || lvl.Kind == KindHTFTrigger || lvl.Kind == KindWickMicroscalp {
 			continue
 		}
 		moving := isMovingLineKey(lvl.Key)
