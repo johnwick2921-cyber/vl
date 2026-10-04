@@ -82,6 +82,17 @@ const GATE_LABELS: Record<string, { en: string; icon: string }> = {
     en: 'Entry zone invalid — leg never placed',
     icon: '⚔️',
   },
+  // Mentor mode (P0 fix/mentor-ai-off): with mentor_mode ON every entry
+  // comes from the mentor evaluator — AI/planner entries and AI closes on
+  // mentor-owned positions are refused under these names.
+  mentor_ai_entries_off: {
+    en: 'Mentor mode — AI entries off',
+    icon: '🚫',
+  },
+  mentor_ai_closes_off: {
+    en: 'Mentor mode — AI closes off (mentor-owned position)',
+    icon: '🙅',
+  },
 }
 
 export function GateBlocksPanel({

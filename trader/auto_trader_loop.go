@@ -519,6 +519,28 @@ func (at *AutoTrader) runCycle() error {
 	at.logInfof("📊 Account equity: %.2f | Available: %.2f | Positions: %d",
 		ctx.Account.TotalEquity, ctx.Account.AvailableBalance, ctx.Account.PositionCount)
 
+	// MENTOR P3 (P0 fix/mentor-ai-off, DS-106): a mentor-mode trader's entries
+	// come ONLY from the mentor evaluator; the AI decision call is skipped so
+	// no tokens are spent on a decision that cannot place (the admission chain
+	// refuses every non-mentor open anyway). Closes, flattens and the safety
+	// paths never needed this call — they live outside it. Logged once per
+	// cycle; the snapshot + row still land so the dashboard keeps moving.
+	if at.mentorSkipsAIDecision() {
+		at.logInfof("🧑‍🏫 mentor_mode: AI decision skipped for cycle #%d — entries come from the mentor evaluator (no LLM call, no tokens)", at.callCount)
+		record.Success = true
+		record.ExecutionLog = append(record.ExecutionLog,
+			"mentor_mode: AI decision skipped — entries come from the mentor evaluator (no LLM call)")
+		record.AccountState = store.AccountSnapshot{
+			TotalBalance:          ctx.Account.TotalEquity,
+			AvailableBalance:      ctx.Account.AvailableBalance,
+			TotalUnrealizedProfit: ctx.Account.UnrealizedPnL,
+			PositionCount:         ctx.Account.PositionCount,
+			InitialBalance:        at.initialBalance,
+		}
+		at.saveDecision(record)
+		return nil
+	}
+
 	// 5. Use strategy engine to call AI for decision
 	at.logInfof("🤖 Requesting AI analysis and decision... [Strategy Engine]")
 	// Plan 4 Task 25 — decision latency timer (start)
@@ -1117,6 +1139,7 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 	for key := range at.positionFirstSeenTime {
 		if !currentPositionKeys[key] {
 			delete(at.positionFirstSeenTime, key)
+			delete(at.positionMentorOwned, key)
 		}
 	}
 

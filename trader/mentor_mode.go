@@ -298,6 +298,57 @@ func (at *AutoTrader) mentorSuppressAIEntry(d *kernel.Decision) string {
 	return ""
 }
 
+// mentorSkipsAIDecision reports whether the AI decision cycle must skip its
+// LLM call (P0 fix/mentor-ai-off): with mentor_mode ON the AI's entries are
+// refused at the admission chain anyway, so the call would spend tokens on a
+// decision that cannot place. OFF → false, byte-identical.
+func (at *AutoTrader) mentorSkipsAIDecision() bool {
+	return at.mentorEnabled()
+}
+
+// mentorSuppressAIClose is the close half of the AI-off scope (CTO 15:17:23Z,
+// D2.1 @02:47): while mentor_mode is ON, an AI close decision is refused when
+// the open position was opened by a mentor-sourced decision — the mentor
+// driver owns the exits. Mentor-sourced closes pass. The ownership flag is
+// cleared by the flat sweep; a stale flag only over-refuses (fail-safe).
+func (at *AutoTrader) mentorSuppressAIClose(d *kernel.Decision) string {
+	if !at.mentorEnabled() || d.MentorSourced {
+		return ""
+	}
+	side := "long"
+	if d.Action == "close_short" {
+		side = "short"
+	}
+	if !at.positionMentorOwned[d.Symbol+"_"+side] {
+		return ""
+	}
+	mentorCount("ai_close_suppressed")
+	telemetry.IncGateBlock(at.id, "mentor_ai_closes_off")
+	return "mentor_mode: AI closes are OFF on a mentor-owned position — the mentor driver owns the exit"
+}
+
+// mentorAdmitRefusal is the ONE admission-chain form of the AI-entries-off
+// mode switch (P0 fix/mentor-ai-off, DS-106): it refuses every non-mentor
+// entry on every producer path — decision, agent-chat, arm, picture. A
+// mentor-sourced decision passes (the mentor's own placement must reach the
+// executor). A mentor-authored armed row (the injector's ledger path) passes
+// via MentorArm even though it carries no Decision — the bundle routes every
+// mentor entry as an armed-ledger row (CTO 20:14:30Z). Planner arms, the
+// agent door and Picture stay refused. With mentor_mode OFF it returns "" —
+// byte-identical.
+func (at *AutoTrader) mentorAdmitRefusal(in admitIntent) string {
+	if !at.mentorEnabled() {
+		return ""
+	}
+	if in.Decision != nil && in.Decision.MentorSourced {
+		return ""
+	}
+	if in.Path == admitArm && in.MentorArm {
+		return ""
+	}
+	return "mentor_mode: AI entries are OFF — every entry comes from the mentor evaluator"
+}
+
 // mentorRuleGate is the injector-side R8/R9 gate: it refuses intents the
 // evaluator should never have let through, fail-closed, before any sizing.
 // (R8) SWING4H: stop 30–60 allowed, ≥100 refused, exempt from the 25-pt

@@ -3,13 +3,13 @@ package trader
 import (
 	"fmt"
 	"math"
+	"time"
 	"vl/kernel"
 	"vl/logger"
 	"vl/market"
 	"vl/store"
 	"vl/telemetry"
 	ntTrader "vl/trader/ninjatrader"
-	"time"
 )
 
 // maxFuturesContracts caps the per-order contract count for CME futures
@@ -159,11 +159,17 @@ func (at *AutoTrader) executeDecisionWithRecordAt(decision *kernel.Decision, act
 		at.applyWeeklyDecisionShadow(decision)
 	}
 
-	// MENTOR P3 — AI-entries-off for a mentor-mode trader. Mentor-sourced
-	// decisions (MentorSourced) pass; every other open is refused and counted.
-	// Closes, flattens and the safety paths never reach this refusal.
-	if decision.Action == "open_long" || decision.Action == "open_short" {
-		if refusal := at.mentorSuppressAIEntry(decision); refusal != "" {
+	// MENTOR P3 — AI-entries-off for a mentor-mode trader lives in admitChain
+	// (entry_admission.go): the ONE admission chain that the decision, agent,
+	// arm and picture paths all ask. Mentor-sourced decisions (MentorSourced)
+	// pass; every other open is refused and counted there — no second copy here.
+
+	// MENTOR P3 (CTO 15:17:23Z, D2.1 @02:47) — the CLOSE half: the AI's close
+	// decisions must not act on a mentor-owned position — the mentor driver
+	// owns the exits. Mentor-sourced closes pass; the safety paths (EOD flat,
+	// reconcile) never reach this switch, so they stay untouched.
+	if decision.Action == "close_long" || decision.Action == "close_short" {
+		if refusal := at.mentorSuppressAIClose(decision); refusal != "" {
 			at.logWarnf("🧑‍🏫 %s (trader %s)", refusal, at.id)
 			actionRecord.Success = false
 			actionRecord.Error = refusal
@@ -649,6 +655,12 @@ func (at *AutoTrader) openEntryWithRecord(decision *kernel.Decision, actionRecor
 	if manual == nil {
 		posKey := decision.Symbol + "_" + side
 		at.positionFirstSeenTime[posKey] = time.Now().UnixMilli()
+		// MENTOR P3 — a mentor-sourced open marks the position as
+		// mentor-owned so the AI's closes refuse it (the mentor driver
+		// owns the exit). Cleared by the close paths and the flat sweep.
+		if decision.MentorSourced {
+			at.positionMentorOwned[posKey] = true
+		}
 	}
 
 	// Set stop loss and take profit — inside the entry-send section too

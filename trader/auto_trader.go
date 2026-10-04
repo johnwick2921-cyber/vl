@@ -454,6 +454,7 @@ type AutoTrader struct {
 	startTime             time.Time        // System start time
 	callCount             int              // AI call count
 	positionFirstSeenTime map[string]int64 // Position first seen time (symbol_side -> timestamp in milliseconds)
+	positionMentorOwned   map[string]bool  // MENTOR P3: symbol_side -> the open position was opened by a mentor-sourced decision (the mentor driver owns its exits)
 	stopMonitorMu         sync.Mutex       // guards stopMonitorCtx/stopMonitorCancel (per-Run)
 	stopMonitorCtx        context.Context
 	stopMonitorCancel     context.CancelFunc
@@ -840,6 +841,7 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		callCount:             0,
 		isRunning:             false,
 		positionFirstSeenTime: make(map[string]int64),
+		positionMentorOwned:   make(map[string]bool),
 		kickCh:                make(chan string, 4),
 		monitorWg:             sync.WaitGroup{},
 		peakPnLCache:          make(map[string]float64),
