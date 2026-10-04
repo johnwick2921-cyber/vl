@@ -229,7 +229,7 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 				entry:  in.Price,
 				stop:   in.Stop,
 				target: in.Target,
-				expiry: in.ExpiryMs,
+				expiry: pendExpiry(in, now),
 				armID:  in.ArmID,
 				legExt: ext,
 				anchor: ref.anchor,
@@ -252,7 +252,7 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 				entry:  in.Price,
 				stop:   in.Stop,
 				target: in.Target,
-				expiry: in.ExpiryMs,
+				expiry: pendExpiry(in, now),
 				isISB:  true,
 				armID:  in.ArmID,
 			})

@@ -396,13 +396,7 @@ func mentorIntentExpiry(in mentor.Intent, barCloseMs int64) int64 {
 // fail-safes to tomorrow's 15:00 (placement past RTH is already refused
 // upstream, so this is a guard, never the live path).
 func mentorLevelExpiry(nowMs int64) int64 {
-	loc := kernel.CTLocation()
-	now := time.UnixMilli(nowMs).In(loc)
-	end := time.Date(now.Year(), now.Month(), now.Day(), 15, 0, 0, 0, loc)
-	if now.After(end) {
-		end = end.AddDate(0, 0, 1)
-	}
-	return end.UnixMilli()
+	return mentor.LevelArmExpiry(nowMs) // one definition, shared with the leg budget
 }
 
 // mentorSwingExpiry (RULING [C], knob swing_order_expiry): a swing stop order

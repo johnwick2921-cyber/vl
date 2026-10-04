@@ -78,25 +78,45 @@ func TestLimitsCancelArmDropsPend(t *testing.T) {
 }
 
 // TestLimitsZeroExpiryPendExpiresAfterOneCandle pins X15-5 (live expiry) at
-// Limits.Apply: a zero-expiry level/box PHL (B6) rests exactly ONE candle
-// live (the trader's N12 next-candle default); after that it must not fill.
-// MUTANT: keep the `p.expiry != 0 && now >= p.expiry` guard only → the
-// zero-expiry PHL rests forever and fills on candle 3 → RED.
+// Limits.Apply for a NON-level zero-expiry order (a box order): it rests
+// exactly ONE candle live (the trader's N12 next-candle default); after that
+// it must not fill. MUTANT: keep only the `p.expiry != 0 && now >= p.expiry`
+// guard → the order rests forever and fills on candle 3 → RED.
 func TestLimitsZeroExpiryPendExpiresAfterOneCandle(t *testing.T) {
 	var l Limits
 	prev := limitsK(94, 96, 94, 95, 0)
 
-	in := limitsPHL(90, 88, 99, 0) // zero expiry (the level-order shape)
+	in := limitsPHL(90, 88, 99, 0) // zero expiry, NOT a level arm
+	in.ArmID = "box-1"
+	if out := applyAt(&l, []Intent{in}, prev, limitsK(93, 94, 92, 93, 1), 1); len(out) != 1 {
+		t.Fatalf("placement: want 1, got %d", len(out))
+	}
+	applyAt(&l, nil, limitsK(93, 94, 92, 93, 1), limitsK(85, 89, 84, 86, 2), 2)
+	applyAt(&l, nil, limitsK(85, 89, 84, 86, 2), limitsK(94, 95, 93, 94, 3), 3)
+	if l.Long != nil {
+		t.Fatalf("an expired one-candle order must not register a fill, got %+v", l.Long)
+	}
+}
+
+// TestLimitsLevelPendRestsUntilTheWindowEnd (CTO, release #4 — D2-44 x X15-5):
+// a LEVEL arm ("lvl-") rests at the broker until the next 15:00 CT
+// (LevelArmExpiry, the trader's own lifetime), so the leg budget must keep
+// watching it: a fill two candles later IS a real fill and counts. Before the
+// shared lifetime the budget dropped it after one candle and the later live
+// fill went uncounted (fail-open). MUTANT: pendExpiry ignores the level
+// prefix → no fill registered → RED.
+func TestLimitsLevelPendRestsUntilTheWindowEnd(t *testing.T) {
+	var l Limits
+	prev := limitsK(94, 96, 94, 95, 0)
+
+	in := limitsPHL(90, 88, 99, 0)
 	in.ArmID = "lvl-1"
 	if out := applyAt(&l, []Intent{in}, prev, limitsK(93, 94, 92, 93, 1), 1); len(out) != 1 {
 		t.Fatalf("PHL placement: want 1, got %d", len(out))
 	}
-	// Candle 2 does NOT reach the entry → the zero-expiry order expires at
-	// candle 2's close.
 	applyAt(&l, nil, limitsK(93, 94, 92, 93, 1), limitsK(85, 89, 84, 86, 2), 2)
-	// Candle 3 DOES reach the entry — but the order already expired.
 	applyAt(&l, nil, limitsK(85, 89, 84, 86, 2), limitsK(94, 95, 93, 94, 3), 3)
-	if l.Long != nil {
-		t.Fatalf("expired zero-expiry PHL must not register a fill, got %+v", l.Long)
+	if l.Long == nil || l.Long.Entries != 1 || !l.Long.PHLFilled {
+		t.Fatalf("a resting level order filled on candle 3 must count in the leg, got %+v", l.Long)
 	}
 }
