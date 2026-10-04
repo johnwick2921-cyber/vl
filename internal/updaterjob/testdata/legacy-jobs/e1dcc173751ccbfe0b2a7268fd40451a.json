@@ -149,19 +149,19 @@
     }
   ],
   "release": {
-    "dir": "/home/hoang/nofx-releases/24220e1474f137e545f247919249351b7a278543",
+    "dir": "/home/hoang/vl-releases/24220e1474f137e545f247919249351b7a278543",
     "sha": "24220e1474f137e545f247919249351b7a278543",
-    "binary": "/home/hoang/nofx-releases/24220e1474f137e545f247919249351b7a278543/nofx-bin",
-    "dist": "/home/hoang/nofx-releases/24220e1474f137e545f247919249351b7a278543/web/dist",
-    "release_file": "/home/hoang/nofx-releases/24220e1474f137e545f247919249351b7a278543/RELEASE",
-    "manifest_path": "/home/hoang/nofx-releases/24220e1474f137e545f247919249351b7a278543/manifest.json"
+    "binary": "/home/hoang/vl-releases/24220e1474f137e545f247919249351b7a278543/vl-bin",
+    "dist": "/home/hoang/vl-releases/24220e1474f137e545f247919249351b7a278543/web/dist",
+    "release_file": "/home/hoang/vl-releases/24220e1474f137e545f247919249351b7a278543/RELEASE",
+    "manifest_path": "/home/hoang/vl-releases/24220e1474f137e545f247919249351b7a278543/manifest.json"
   },
   "install": {
-    "dir": "/home/hoang/nofx",
+    "dir": "/home/hoang/vl",
     "sha": "1fa5c3f1d0c9f49541a75569082718b0d671aa70",
-    "binary": "/home/hoang/nofx/nofx-bin",
-    "dist": "/home/hoang/nofx/web/dist",
-    "release_file": "/home/hoang/nofx/deploy/RELEASE"
+    "binary": "/home/hoang/vl/vl-bin",
+    "dist": "/home/hoang/vl/web/dist",
+    "release_file": "/home/hoang/vl/deploy/RELEASE"
   },
   "last_good_receipt": 4,
   "recovery_reason": "drained_acked failed: not passed within 10m0s: addon_ack: no AddOn maintenance_ack"

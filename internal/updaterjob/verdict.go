@@ -90,7 +90,7 @@ func VerdictPath(dataDir, releaseID string) (string, error) {
 // Check reports whether every field is computed and in range (never an empty
 // stand-in). The worker checks a verdict before writing it; ReadVerdict
 // checks it after reading. release_dir must be the clean absolute path of a
-// directory NAMED for source_sha (<NOFX_RELEASE_DIR>/<source_sha>) — never
+// directory NAMED for source_sha (<VL_RELEASE_DIR>/<source_sha>) — never
 // "/", never another release's dir (verifier D5).
 func (v Verdict) Check() error {
 	if v.Schema != VerdictSchema || !updaterwire.ValidReleaseID(v.ReleaseID) || !verdictSHA40Re.MatchString(v.SourceSHA) ||

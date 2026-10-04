@@ -27,7 +27,7 @@ func TestActivateReProvesTheProcessBeforeTheKill(t *testing.T) {
 	// During the park the unit is restarted onto another build and the
 	// install binary is hotfixed — the preflighted process is gone.
 	r.set(func() { r.exe = "/opt/somewhere-else/other-bin" })
-	writeFile(r.t, filepath.Join(r.inst, "nofx-bin"), binaryBody(strings.Repeat("c3", 20)))
+	writeFile(r.t, filepath.Join(r.inst, "vl-bin"), binaryBody(strings.Repeat("c3", 20)))
 	r.f5()
 	if resp := r.w.Handle(resumeRequest(boxJobID)); !resp.OK {
 		t.Fatalf("resume verb: %+v", resp)

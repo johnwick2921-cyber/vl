@@ -76,7 +76,7 @@ echo "→ detected: user=$TARGET_USER  repo=$VL_DIR  node=$NODE_DIR"
 # NT_TRANSPORT silently falls back to the deprecated CSV bridge.
 if [ -f "$VL_DIR/.env" ]; then
   if ! grep -q '^NT_TRANSPORT=' "$VL_DIR/.env"; then
-    printf '\n# Added by deploy/install-autostart.sh — services never read ~/.bashrc\nNT_TRANSPORT=tcp\n' >> "$NOFX_DIR/.env"
+    printf '\n# Added by deploy/install-autostart.sh — services never read ~/.bashrc\nNT_TRANSPORT=tcp\n' >> "$VL_DIR/.env"
     echo "⚠ NOTICE: NT_TRANSPORT was missing from .env — appended NT_TRANSPORT=tcp."
     echo "  (Without it the bot silently uses the deprecated CSV path instead of the TCP bridge.)"
   fi

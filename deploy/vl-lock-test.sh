@@ -43,7 +43,6 @@ cleanup() {
 }
 trap cleanup EXIT
 o=no; o=${o}fx   # the pre-rename prefix, assembled at runtime (never written literal)
-W=no; W=${W}fx   # same prefix for the wrapper file names
 mkdir -p "$WORK/home"; export HOME="$WORK/home"   # OTHER_HOME is $HOME/vl-main.lock.d; never the real HOME
 export VL_LOCK_DIR="$WORK/$o-main.lock.d"
 L() { VL_LOCK_DIR="$VL_LOCK_DIR" bash "$LOCK_SH" "$@" 2>&1; }
@@ -508,161 +507,98 @@ unset VL_LOCK_DIR; export VL_LOCK_DIR="$WORK/$o-main.lock.d"
 rm -rf "$KI"
 
 
-echo "== one home, THREE copies: this tool, the wrapper, and a pre-rename copy =="
+echo "== one home, TWO callers: this tool races itself for one winner =="
 #
-# Z18: the old-name wrapper and every pre-rename worktree copy must contend for
-# the SAME atomic mkdir this tool uses. Three writers, one home, one winner —
-# and whichever copy wins, every copy must read the same holder.
+# Z18 (R5): with the wrapper and the pre-rename copies retired, the atomic
+# mkdir still admits exactly one winner — two concurrent acquires of the SAME
+# tool into one home.
 KCONT="$WORK/cont.lock.d"
-WRAP="$PWD/$W-lock.sh"
-git show 9d52f5dc6:deploy/$W-lock.sh > "$WORK/legacy-lock.sh" 2>/dev/null \
-  || cp "$LOCK_SH" "$WORK/legacy-lock.sh"
-chmod +x "$WORK/legacy-lock.sh"
-VL_LOCK_DIR="$KCONT" bash "$LOCK_SH" acquire sess-1 'three copies, one home' 60 >/dev/null
-has   "the wrapper reads the same holder"   "$(VL_LOCK_DIR="$KCONT" "$WRAP" status 2>&1)" "sess-1"
-hasi  "and the boot-7 copy too"            "$(VL_LOCK_DIR="$KCONT" NOFX_LOCK_DIR="$KCONT" bash "$WORK/legacy-lock.sh" status 2>&1)" "sess-1"
-VL_LOCK_DIR="$KCONT" "$WRAP" release sess-1 >/dev/null
-check "the wrapper releases what the tool acquired" "$([ -d "$KCONT" ] && echo held || echo gone)" "gone"
 for i in $(seq 1 10); do
   rm -rf "$KCONT"
-  VL_LOCK_DIR="$KCONT" bash "$LOCK_SH" acquire r-$i 'race' 60 >/dev/null 2>&1 &
-  VL_LOCK_DIR="$KCONT" "$WRAP" acquire r-$i 'race' 60 >/dev/null 2>&1 &
-  VL_LOCK_DIR="$KCONT" NOFX_LOCK_DIR="$KCONT" NOFX_LOCK_BEAT_SECONDS=1 bash "$WORK/legacy-lock.sh" acquire r-$i 'race' 60 >/dev/null 2>&1 &
+  VL_LOCK_DIR="$KCONT" bash "$LOCK_SH" acquire r-$i "race" 60 >/dev/null 2>&1 &
+  VL_LOCK_DIR="$KCONT" bash "$LOCK_SH" acquire r-$i "race" 60 >/dev/null 2>&1 &
   wait
   n="$(VL_LOCK_DIR="$KCONT" bash "$LOCK_SH" status 2>&1 | grep -c "held by 'r-")"
   check "one-home race round $i has exactly one holder" "$n" "1"
   VL_LOCK_DIR="$KCONT" bash "$LOCK_SH" release r-$i >/dev/null 2>&1
 done
 
-echo "== (c) boot-7 interop: tonight's box copy and this tool take one lock =="
-#
-# FWD: the copy on the box tonight (9d52f5dc6) acquires its default home; this
-# tool reads the same holder, checks rc 1, and releases rc 0. REV: this tool
-# acquires; the boot-7 copy reads the same holder. Both prove one home, one
-# lock, across the rename.
-B7="$WORK/b7home"; mkdir -p "$B7"
-( unset VL_LOCK_DIR NOFX_LOCK_DIR; HOME="$B7" NOFX_LOCK_BEAT_SECONDS=1 VL_LOCK_BEAT_SECONDS=60 VL_LOCK_STALE_SECONDS=600 bash "$WORK/legacy-lock.sh" acquire sess-B7 'the box tonight' 60 >/dev/null )
-has   "vl reads the boot-7 holder"  "$(unset VL_LOCK_DIR NOFX_LOCK_DIR; HOME="$B7" bash "$LOCK_SH" status 2>&1)" "sess-B7"
-check "vl check beside the boot-7 lock is 1" "$(unset VL_LOCK_DIR NOFX_LOCK_DIR; HOME="$B7" bash "$LOCK_SH" check >/dev/null 2>&1; echo $?)" "1"
-check "vl release clears the boot-7 lock"    "$(unset VL_LOCK_DIR NOFX_LOCK_DIR; HOME="$B7" bash "$LOCK_SH" release sess-B7 >/dev/null 2>&1; echo $?)" "0"
-check "and the dir is gone"                  "$([ -d "$B7/$o-main.lock.d" ] && echo yes || echo no)" "no"
-( unset VL_LOCK_DIR NOFX_LOCK_DIR; HOME="$B7" VL_LOCK_BEAT_SECONDS=60 VL_LOCK_STALE_SECONDS=600 bash "$LOCK_SH" acquire sess-V 'vl first' 60 >/dev/null )
-has   "the boot-7 copy reads the vl holder"  "$(HOME="$B7" bash "$WORK/legacy-lock.sh" status 2>&1)" "sess-V"
-( unset VL_LOCK_DIR NOFX_LOCK_DIR; HOME="$B7" bash "$LOCK_SH" release sess-V >/dev/null 2>&1 )
-rm -rf "$B7"
-
-echo "== the keeper re-invoked THROUGH the wrapper beats, and dies with it =="
-KWP="$WORK/wrap.lock.d"
-VL_LOCK_DIR="$KWP" VL_LOCK_BEAT_SECONDS=1 VL_LOCK_STALE_SECONDS=600 "$WRAP" acquire sess-W 'keeper through the wrapper' 60 >/dev/null
-e1="$(grep -m1 '^heartbeat_epoch=' "$KWP/meta" | cut -d= -f2)"
-sleep 3
-e2="$(grep -m1 '^heartbeat_epoch=' "$KWP/meta" | cut -d= -f2)"
-check "the keeper beats through the wrapper" "$([ "$e2" -gt "$e1" ] && echo yes || echo no)" "yes"
-pg="$(cat "$KWP/keeper.pid" 2>/dev/null || echo)"
-VL_LOCK_DIR="$KWP" "$WRAP" release sess-W >/dev/null
-sleep 1
-check "wrapper release stops the keeper group" "$([ -n "$pg" ] && kill -0 -- "-$pg" 2>/dev/null && echo alive || echo dead)" "dead"
-rm -rf "$KWP"
-
 echo "== Z18 cross-home: two homes can never stand held by different lanes =="
 XH="$WORK/xhome"; mkdir -p "$XH"
-OLDA() { HOME="$XH" VL_LOCK_DIR= VL_LOCK_BEAT_SECONDS=60 VL_LOCK_STALE_SECONDS=600 bash "$LOCK_SH" "$@" 2>&1; }
-NEWB() { HOME="$XH" VL_LOCK_DIR="$XH/vl-main.lock.d" VL_LOCK_BEAT_SECONDS=60 VL_LOCK_STALE_SECONDS=600 bash "$LOCK_SH" "$@" 2>&1; }
-NEWB acquire sess-B 'the vl home first' 60 >/dev/null
-out="$(OLDA acquire sess-A 'the old home second' 60)"; rc=$?
+VLB() { HOME="$XH" VL_LOCK_DIR= VL_LOCK_BEAT_SECONDS=60 VL_LOCK_STALE_SECONDS=600 bash "$LOCK_SH" "$@" 2>&1; }
+OLDB() { HOME="$XH" VL_LOCK_DIR="$XH/$o-main.lock.d" VL_LOCK_BEAT_SECONDS=60 VL_LOCK_STALE_SECONDS=600 bash "$LOCK_SH" "$@" 2>&1; }
+VLB acquire sess-B 'the vl home first' 60 >/dev/null
+out="$(OLDB acquire sess-A 'the retired home second' 60)"; rc=$?
 check "an old-home acquire beside a held vl home REFUSES" "$rc" "1"
 hasi  "and names the other holder"        "$out" "sess-B"
 check "and tears its own home down"       "$([ -d "$XH/$o-main.lock.d" ] && echo left || echo gone)" "gone"
-NEWB release sess-B >/dev/null
-OLDA acquire sess-A 'the old home first' 60 >/dev/null
-out="$(NEWB acquire sess-B 'the vl home second' 60)"; rc=$?
+VLB release sess-B >/dev/null
+OLDB acquire sess-A 'the retired home first' 60 >/dev/null
+out="$(VLB acquire sess-B 'the vl home second' 60)"; rc=$?
 check "a vl-home acquire beside a held old home REFUSES" "$rc" "1"
 hasi  "and names the other holder"        "$out" "sess-A"
 check "and tears its own home down"       "$([ -d "$XH/vl-main.lock.d" ] && echo left || echo gone)" "gone"
-OLDA release sess-A >/dev/null
-OLDA acquire sess-X 'the hand-over' 60 >/dev/null
-out="$(NEWB acquire sess-X 'the R5 hand-over' 60)"; rc=$?
+OLDB release sess-A >/dev/null
+OLDB acquire sess-X 'the hand-over' 60 >/dev/null
+out="$(VLB acquire sess-X 'the R5 hand-over' 60)"; rc=$?
 check "the SAME session may hold both homes" "$rc" "0"
 hasi  "and the exemption is on the record"   "$out" "same session"
-NEWB release sess-X >/dev/null; OLDA release sess-X >/dev/null
+VLB release sess-X >/dev/null; OLDB release sess-X >/dev/null
 both=0
 for i in $(seq 1 50); do
   rm -rf "$XH/$o-main.lock.d" "$XH/vl-main.lock.d"
-  OLDA acquire race-a 'race' 60 >/dev/null 2>&1 &
-  NEWB acquire race-b 'race' 60 >/dev/null 2>&1 &
+  OLDB acquire race-a 'race' 60 >/dev/null 2>&1 &
+  VLB acquire race-b 'race' 60 >/dev/null 2>&1 &
   wait
   a=$([ -d "$XH/$o-main.lock.d" ] && echo 1 || echo 0)
   b=$([ -d "$XH/vl-main.lock.d" ] && echo 1 || echo 0)
   if [ "$((a+b))" -le 1 ]; then ok "cross-home race round $i: never both held"
   else bad "cross-home race round $i: never both held" "both homes exist"; both=$((both+1)); fi
-  [ "$a" = 1 ] && OLDA release race-a >/dev/null 2>&1
-  [ "$b" = 1 ] && NEWB release race-b >/dev/null 2>&1
+  [ "$a" = 1 ] && OLDB release race-a >/dev/null 2>&1
+  [ "$b" = 1 ] && VLB release race-b >/dev/null 2>&1
 done
 check "no round ever left both homes held" "$both" "0"
-NEWB acquire sess-B 'check mirror' 60 >/dev/null
-check "check never reads 0 beside a held other home" "$(OLDA check >/dev/null 2>&1; echo $?)" "1"
-NEWB release sess-B >/dev/null
-check "check reads 0 only when BOTH homes are absent" "$(OLDA check >/dev/null 2>&1; echo $?)" "0"
-NEWB2() { HOME="$XH" VL_LOCK_DIR="$XH/vl-main.lock.d" VL_LOCK_BEAT_SECONDS=1 VL_LOCK_STALE_SECONDS=4 bash "$LOCK_SH" "$@" 2>&1; }
-NEWB2 acquire sess-B 'short stale window' 60 >/dev/null
+VLB acquire sess-B 'check mirror' 60 >/dev/null
+check "check never reads 0 beside a held other home" "$(OLDB check >/dev/null 2>&1; echo $?)" "1"
+VLB release sess-B >/dev/null
+check "check reads 0 only when BOTH homes are absent" "$(OLDB check >/dev/null 2>&1; echo $?)" "0"
+VLB2() { HOME="$XH" VL_LOCK_DIR= VL_LOCK_BEAT_SECONDS=1 VL_LOCK_STALE_SECONDS=4 bash "$LOCK_SH" "$@" 2>&1; }
+VLB2 acquire sess-B 'short stale window' 60 >/dev/null
 kp="$(cat "$XH/vl-main.lock.d/keeper.pid" 2>/dev/null || echo)"
 [ -n "$kp" ] && kill -- -"$kp" 2>/dev/null
 sleep 5
-OLDA4() { HOME="$XH" VL_LOCK_DIR= VL_LOCK_BEAT_SECONDS=60 VL_LOCK_STALE_SECONDS=4 bash "$LOCK_SH" "$@" 2>&1; }
-check "check mirrors a STALE other home as 2" "$(OLDA4 check >/dev/null 2>&1; echo $?)" "2"
-out="$(OLDA reclaim sess-A sess-B 'HEAD static; no build in flight' 2>&1)"; rc=$?
+OLDB4() { HOME="$XH" VL_LOCK_DIR="$XH/$o-main.lock.d" VL_LOCK_BEAT_SECONDS=60 VL_LOCK_STALE_SECONDS=4 bash "$LOCK_SH" "$@" 2>&1; }
+check "check mirrors a STALE other home as 2" "$(OLDB4 check >/dev/null 2>&1; echo $?)" "2"
+out="$(OLDB reclaim sess-A sess-B 'HEAD static; no build in flight' 2>&1)"; rc=$?
 check "reclaim refuses while the other home is held by another" "$rc" "1"
-NEWB2 reclaim sess-B sess-A 'HEAD static; no build in flight' >/dev/null 2>&1
-NEWB2 release sess-B >/dev/null
+VLB2 reclaim sess-B sess-A 'HEAD static; no build in flight' >/dev/null 2>&1
+VLB2 release sess-B >/dev/null
 rm -rf "$XH"
 
 
-echo "== (a) DEFAULT-HOME: envs unset, the ONE old home, the vl home never born =="
+echo "== (a) DEFAULT-HOME: envs unset, the vl home, the retired home never born =="
 #
-# R1a flipped the default to $HOME/vl-main.lock.d at 84dec7f4f while promising
-# byte-identical behaviour. An empty NEW home reads "free" while the deploy
-# session holds the real lock in the OLD home (the updater's attended C19 check
-# included), and the post-boot release would refuse. $WORK/home is the
-# production call site: a temp HOME, both env vars unset, the real default.
+# R5 flipped the default to $HOME/vl-main.lock.d. An env-less acquire parks
+# THERE; the retired home is never created. $WORK/home is the production call
+# site: a temp HOME, every env var unset, the real default.
 ZD="$WORK/home"
-( unset VL_LOCK_DIR NOFX_LOCK_DIR; HOME="$ZD" VL_LOCK_BEAT_SECONDS=60 VL_LOCK_STALE_SECONDS=600 bash "$LOCK_SH" acquire sess-D 'default home' 60 >/dev/null )
-check "an env-less acquire parks in the old home"  "$([ -d "$ZD/$o-main.lock.d" ] && echo yes || echo no)" "yes"
-check "and the vl home is never created"           "$([ -e "$ZD/vl-main.lock.d" ] && echo yes || echo no)" "no"
-( unset VL_LOCK_DIR NOFX_LOCK_DIR; HOME="$ZD" bash "$LOCK_SH" release sess-D >/dev/null 2>&1 )
-check "and release clears the old home"            "$([ -d "$ZD/$o-main.lock.d" ] && echo yes || echo no)" "no"
-# the old-name wrapper and the tool resolve the SAME default home
-( unset VL_LOCK_DIR NOFX_LOCK_DIR; HOME="$ZD" "$WRAP" acquire sess-D 'wrapper default' 60 >/dev/null )
-has   "the tool reads the wrapper's default home"  "$(unset VL_LOCK_DIR NOFX_LOCK_DIR; HOME="$ZD" bash "$LOCK_SH" status 2>&1)" "sess-D"
-check "and it is the SAME old home"                "$([ -d "$ZD/$o-main.lock.d" ] && echo yes || echo no)" "yes"
-check "the wrapper never creates the vl home"      "$([ -e "$ZD/vl-main.lock.d" ] && echo yes || echo no)" "no"
-( unset VL_LOCK_DIR NOFX_LOCK_DIR; HOME="$ZD" "$WRAP" release sess-D >/dev/null 2>&1 )
+( unset VL_LOCK_DIR; HOME="$ZD" VL_LOCK_BEAT_SECONDS=60 VL_LOCK_STALE_SECONDS=600 bash "$LOCK_SH" acquire sess-D 'default home' 60 >/dev/null )
+check "an env-less acquire parks in the vl home"  "$([ -d "$ZD/vl-main.lock.d" ] && echo yes || echo no)" "yes"
+check "and the retired home is never created"     "$([ -e "$ZD/$o-main.lock.d" ] && echo yes || echo no)" "no"
+( unset VL_LOCK_DIR; HOME="$ZD" bash "$LOCK_SH" release sess-D >/dev/null 2>&1 )
+check "and release clears the vl home"            "$([ -d "$ZD/vl-main.lock.d" ] && echo yes || echo no)" "no"
 rm -rf "$ZD/$o-main.lock.d" "$ZD/vl-main.lock.d"
-echo "== (b) the old-name wrapper is an exec, never a fork =="
-if grep -q '^exec env VL_LOCK_DIR=' "$WRAP"; then
-  ok "the wrapper's action line starts with exec env VL_LOCK_DIR="
-else
-  bad "the wrapper's action line starts with exec env VL_LOCK_DIR=" "missing in $WRAP"
-fi
-
-echo "== the wrappers run DIRECTLY on their own shebang, never via bash =="
-KDC="$WORK/direct.lock.d"
-VL_LOCK_DIR="$KDC" "$WRAP" acquire sess-D 'direct exec' 60 >/dev/null
-check "lock wrapper direct-exec acquire rc" "$?" "0"
-check "and the lock landed"                 "$([ -d "$KDC" ] && echo yes || echo no)" "yes"
-VL_LOCK_DIR="$KDC" "$WRAP" release sess-D >/dev/null
-rm -rf "$KDC"
-for w in "$W-lock.sh" "$W-claim.sh" "$W-db-backup.sh" "$W-clock-guard.sh"; do
-  check "$w is executable" "$([ -x "$PWD/$w" ] && echo yes || echo no)" "yes"
-done
-out="$("$PWD/$W-claim.sh" 2>&1)"; rc=$?
-check "claim wrapper direct-exec refuses a bare call" "$rc" "1"
+echo "== the vl tools run DIRECTLY on their own shebang, never via bash =="
+out="$("$PWD/vl-claim.sh" 2>&1)"; rc=$?
+check "vl-claim direct-exec refuses a bare call" "$rc" "1"
 hasi  "and prints its own usage"                       "$out" "vl-claim"
+
 echo "== KEEPER-DRAIN: no keeper outlives the suite =="
 #
 # The corrupt-handle sections (sess-N, sess-J) release WITHOUT killing their
 # keepers by design — those keepers exit via the dir-watch within one beat. A
 # keeper that outlives a 35s drain is a real leak, not test hygiene.
-drain_pat="$SDIR/vl-lock.sh heartbeat|$SDIR/$W-lock.sh heartbeat|$WORK/legacy-lock.sh heartbeat"
+drain_pat="$SDIR/vl-lock.sh heartbeat"
 KEEP_BASE=$(pgrep -fc "$drain_pat" 2>/dev/null || true); KEEP_BASE=${KEEP_BASE:-0}
 pkill -KILL -f "$drain_pat" 2>/dev/null || true
 n=$KEEP_BASE; drain=0

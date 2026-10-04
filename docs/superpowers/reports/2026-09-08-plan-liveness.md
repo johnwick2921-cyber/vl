@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # Plan liveness — corrected premises and implementation
 
@@ -48,7 +50,7 @@ vcs.modified=false
 ```
 
 [A] The basis audit is **not yet on dev**. Its pinned source is
-[planner-preparation audit, sections 4, 7 and 8](https://github.com/johnwick2921-cyber/nofx/blob/6095ca58fe5901ba398be374e4f9d3488d0bed6b/docs/superpowers/reports/2026-09-07-planner-preparation-audit/README.md).
+[planner-preparation audit, sections 4, 7 and 8](https://github.com/johnwick2921-cyber/vl/blob/6095ca58fe5901ba398be374e4f9d3488d0bed6b/docs/superpowers/reports/2026-09-07-planner-preparation-audit/README.md).
 The extracted git blob is 77,345 bytes. Its `git log -1 <sha> -- <path>` is:
 
 ```

@@ -12,7 +12,7 @@ package updaterworker
 // A4: the downloaded tarball goes to <inbox>/<tag>.tar.gz and through the
 // SAME updaterworker.FetchRelease the attended CLI runs (cmd/vl-updater
 // main.go fetch) — no second unpack/hash/verify path.
-// A5: knob VL_RELEASE_SOURCE (envcompat VL_ prefix + legacy fallback), default OFF.
+// A5: knob VL_RELEASE_SOURCE (default OFF).
 
 import (
 	"context"
@@ -23,7 +23,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"vl/internal/envcompat"
 	"vl/internal/updaterjob"
 	"vl/internal/updatersource"
 	"vl/internal/updaterwire"
@@ -166,14 +165,14 @@ func (w *Worker) handleCheck() updaterwire.Response {
 // releaseSourceOn is the A5 knob: VL_RELEASE_SOURCE exactly "github" turns
 // the source on; anything else (unset, "off", anything) is OFF. Fail-closed.
 func releaseSourceOn() bool {
-	v, _ := envcompat.Env("RELEASE_SOURCE")
+	v := os.Getenv("VL_RELEASE_SOURCE")
 	return strings.TrimSpace(v) == "github"
 }
 
-// releaseInbox returns the inbox dir (envcompat RELEASE_INBOX, same var the
+// releaseInbox returns the inbox dir (VL_RELEASE_INBOX, same var the
 // CLI reads) when it is an existing absolute directory.
 func releaseInbox() (string, error) {
-	inbox, _ := envcompat.Env("RELEASE_INBOX")
+	inbox := os.Getenv("VL_RELEASE_INBOX")
 	inbox = strings.TrimSpace(inbox)
 	if inbox == "" {
 		return "", fmt.Errorf("RELEASE_INBOX is not set")

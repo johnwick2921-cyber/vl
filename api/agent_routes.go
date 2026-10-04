@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterAgentHandler registers NOFXi agent API routes on the main router.
+// RegisterAgentHandler registers VLi agent API routes on the main router.
 // Chat endpoint requires authentication; market data endpoints are public.
 func (s *Server) RegisterAgentHandler(h *agent.WebHandler) {
 	// Chat requires auth — can trigger trades and access account data

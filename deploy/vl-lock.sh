@@ -59,35 +59,28 @@
 # ALIVE that no succession path can reach.
 set -uo pipefail
 
-# Z2 + Z18: the pre-rename prefix is assembled at runtime and never written
-# out (the census scans this file). Until R5 the DEFAULT home is the OLD home:
-# every copy of the tool (this one, the old-name wrapper, and the pre-rename
-# copy at the OLD name in every worktree cut before the rename) must take the SAME
-# atomic mkdir, or two holders could stand on one tree (class 70). VL_LOCK_DIR
-# overrides; the home is never a symlink.
+# R5 (2026-10-02): the DEFAULT home is the vl home. The pre-rename home name
+# is assembled at runtime and never written out (the census scans this file);
+# the cross-home rules stay, now pointing at the retired home, so a stale
+# pre-rename lock can never stand beside a fresh vl lock (class 70).
+# VL_LOCK_DIR overrides; the home is never a symlink.
 o=no; o=${o}fx
-LOCK_DIR="${VL_LOCK_DIR:-${NOFX_LOCK_DIR:-$HOME/$o-main.lock.d}}"
-LEGACY_LOCK="${VL_LEGACY_LOCK:-${NOFX_LEGACY_LOCK:-$HOME/$o-main.lock}}"
-# The OTHER home — the one R5 flips the default to. The cross-home rules are
-# built and tested NOW, dormant until a second home exists, so R5 changes only
-# the default. Its name is the NEW name and may be written literally.
-OTHER_HOME="$HOME/vl-main.lock.d"
-# The other home is the COMPLEMENT of this run's own: a default run parks in the
-# old home and must see the vl home as "other"; a run pointed AT the vl home must
-# see the old home as "other". Without this, a vl-home acquire read its OWN meta
-# as the other home, hit the same-session exemption, and both homes could stand
-# held by two lanes (class 70, worn as a new hat).
+LOCK_DIR="${VL_LOCK_DIR:-$HOME/vl-main.lock.d}"
+# The other home is the retired pre-rename home — the COMPLEMENT of this run's
+# own: a default run parks in the vl home and must see the old home as "other";
+# a run pointed AT the old home must see the vl home as "other".
+OTHER_HOME="$HOME/$o-main.lock.d"
 case "${LOCK_DIR##*/}" in
-  vl-main.lock.d) OTHER_HOME="$HOME/$o-main.lock.d" ;;
+  "$o-main.lock.d") OTHER_HOME="$HOME/vl-main.lock.d" ;;
 esac
-HEARTBEAT_STALE_SECONDS="${VL_LOCK_STALE_SECONDS:-${NOFX_LOCK_STALE_SECONDS:-300}}"   # 5 min
-HEARTBEAT_EVERY_SECONDS="${VL_LOCK_BEAT_SECONDS:-${NOFX_LOCK_BEAT_SECONDS:-120}}"     # 2 min
+HEARTBEAT_STALE_SECONDS="${VL_LOCK_STALE_SECONDS:-300}"   # 5 min
+HEARTBEAT_EVERY_SECONDS="${VL_LOCK_BEAT_SECONDS:-120}"     # 2 min
 # How long a lock directory may exist with NO meta before it is ABANDONED rather
 # than merely being born. `acquire` fills meta ~7ms after mkdir (measured, n=10:
 # min 6.92ms, mean 7.35ms, max 7.71ms), so 30s is ~4000x the observed window —
 # wide enough that a loaded machine cannot cross it, narrow enough that a lock
 # orphaned mid-creation clears within the minute.
-INCOMPLETE_ABANDON_SECONDS="${VL_LOCK_INCOMPLETE_SECONDS:-${NOFX_LOCK_INCOMPLETE_SECONDS:-30}}" # R5 removes the NOFX twin
+INCOMPLETE_ABANDON_SECONDS="${VL_LOCK_INCOMPLETE_SECONDS:-30}"
 
 _now()      { date -Is; }
 _epoch()    { date +%s; }
@@ -376,12 +369,7 @@ _dir_age() {
 }
 
 cmd_status() {
-  if [ -f "$LEGACY_LOCK" ]; then
-    echo "LEGACY lock file present at $LEGACY_LOCK — a lane is still on the old shape:"
-    sed 's/^/    /' "$LEGACY_LOCK"
-  fi
   if [ ! -d "$LOCK_DIR" ]; then
-    [ -f "$LEGACY_LOCK" ] && return 0
     echo "free"; return 0
   fi
   # A directory with no meta is BEING BORN or was ORPHANED mid-creation. It is

@@ -8,7 +8,7 @@
   "attempts": 0,
   "created_at": "2026-09-24T18:02:11.123456789Z",
   "updated_at": "2026-09-24T18:06:35.123456789Z",
-  "blocker": "attended recovery: nofx-updater recovery 0123456789abcdef0123456789abcdef",
+  "blocker": "attended recovery: vl-updater recovery 0123456789abcdef0123456789abcdef",
   "error": "watch: no boot line for 89abcdef0123 within 1m30s",
   "transitions": [
     {
@@ -233,28 +233,28 @@
     }
   ],
   "release": {
-    "dir": "/home/u/nofx-releases/0123456789abcdef0123456789abcdef01234567",
+    "dir": "/home/u/vl-releases/0123456789abcdef0123456789abcdef01234567",
     "sha": "0123456789abcdef0123456789abcdef01234567",
-    "binary": "/home/u/nofx-releases/0123456789abcdef0123456789abcdef01234567/nofx-bin",
-    "dist": "/home/u/nofx-releases/0123456789abcdef0123456789abcdef01234567/web/dist",
-    "release_file": "/home/u/nofx-releases/0123456789abcdef0123456789abcdef01234567/RELEASE",
-    "manifest_path": "/home/u/nofx-releases/0123456789abcdef0123456789abcdef01234567/manifest.json"
+    "binary": "/home/u/vl-releases/0123456789abcdef0123456789abcdef01234567/vl-bin",
+    "dist": "/home/u/vl-releases/0123456789abcdef0123456789abcdef01234567/web/dist",
+    "release_file": "/home/u/vl-releases/0123456789abcdef0123456789abcdef01234567/RELEASE",
+    "manifest_path": "/home/u/vl-releases/0123456789abcdef0123456789abcdef01234567/manifest.json"
   },
   "install": {
-    "dir": "/home/u/nofx",
+    "dir": "/home/u/vl",
     "sha": "89abcdef0123456789abcdef0123456789abcdef",
-    "binary": "/home/u/nofx/nofx-bin",
-    "dist": "/home/u/nofx/web/dist",
-    "release_file": "/home/u/nofx/deploy/RELEASE"
+    "binary": "/home/u/vl/vl-bin",
+    "dist": "/home/u/vl/web/dist",
+    "release_file": "/home/u/vl/deploy/RELEASE"
   },
   "snapshot": {
-    "dir": "/home/u/nofx-backups/updater/0123456789abcdef0123456789abcdef/install",
+    "dir": "/home/u/vl-backups/updater/0123456789abcdef0123456789abcdef/install",
     "sha": "89abcdef0123456789abcdef0123456789abcdef",
-    "binary": "/home/u/nofx-backups/updater/0123456789abcdef0123456789abcdef/install/nofx-bin",
-    "dist": "/home/u/nofx-backups/updater/0123456789abcdef0123456789abcdef/install/web/dist",
-    "release_file": "/home/u/nofx-backups/updater/0123456789abcdef0123456789abcdef/install/deploy/RELEASE"
+    "binary": "/home/u/vl-backups/updater/0123456789abcdef0123456789abcdef/install/vl-bin",
+    "dist": "/home/u/vl-backups/updater/0123456789abcdef0123456789abcdef/install/web/dist",
+    "release_file": "/home/u/vl-backups/updater/0123456789abcdef0123456789abcdef/install/deploy/RELEASE"
   },
-  "backup_path": "/home/u/nofx-backups/updater/0123456789abcdef0123456789abcdef/data.db",
+  "backup_path": "/home/u/vl-backups/updater/0123456789abcdef0123456789abcdef/data.db",
   "identity_before": {
     "pid": 172,
     "start_ticks": 23987
@@ -267,10 +267,10 @@
     "pid": 9120,
     "start_ticks": 24410
   },
-  "log_path": "/home/u/nofx/data/nofx_2026-09-24.log",
+  "log_path": "/home/u/vl/data/vl_2026-09-24.log",
   "log_offset": 81920,
   "watch_since": "2026-09-24T18:03:28.123456789Z",
-  "rollback_log_path": "/home/u/nofx/data/nofx_2026-09-24.log",
+  "rollback_log_path": "/home/u/vl/data/vl_2026-09-24.log",
   "rollback_log_offset": 90112,
   "rollback_watch_since": "2026-09-24T18:05:00.123456789Z",
   "nt8": {

@@ -2,7 +2,6 @@ package kernel
 
 import (
 	"fmt"
-	"vl/internal/envcompat"
 	"vl/internal/installpath"
 	"os"
 	"runtime/debug"
@@ -19,7 +18,7 @@ import (
 // to remember to check:
 //
 //	· read the revision + build time EMBEDDED in this binary (runtime/debug)
-//	· compare against the INTENDED release (NOFX_EXPECTED_REVISION, or
+//	· compare against the INTENDED release (VL_EXPECTED_REVISION, or
 //	  deploy/RELEASE — whichever is set; a prefix match so short SHAs work)
 //	· re-render the prompt goldens embedded in this same binary
 //
@@ -83,13 +82,13 @@ func goldensWord(ok bool) string {
 	return "FAIL"
 }
 
-// expectedRevision resolves the intended release: NOFX_EXPECTED_REVISION wins,
+// expectedRevision resolves the intended release: VL_EXPECTED_REVISION wins,
 // else the first line of deploy/RELEASE. Empty means "no expectation declared".
 func expectedRevision() string {
-	if v, _ := envcompat.Env("EXPECTED_REVISION"); strings.TrimSpace(v) != "" { // R5 removes
+	if v := os.Getenv("VL_EXPECTED_REVISION"); strings.TrimSpace(v) != "" { // R5: VL_ only
 		return v
 	}
-	// With NOFX_RELEASE_DIR set, the marker that matters is the ACTIVE
+	// With VL_RELEASE_DIR set, the marker that matters is the ACTIVE
 	// release's own RELEASE file — deploy/RELEASE in the working directory
 	// belongs to whatever tree the process was started from and would answer
 	// for a different build. Unset (the default) reads exactly what it always

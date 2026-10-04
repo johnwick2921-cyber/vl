@@ -3,7 +3,7 @@
 # The live bot and the normal dev server are never matched by these patterns.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
-pkill -f "$PWD/.sandbox/nofx-sandbox" 2>/dev/null
+pkill -f "$PWD/.sandbox/vl-sandbox" 2>/dev/null
 pkill -f "vite.sandbox.config.ts" 2>/dev/null
 sleep 1
 echo "sandbox stopped."

@@ -69,7 +69,7 @@ func fetchTestRelease(t *testing.T, dataDir, releaseID string) updaterjob.Verdic
 	work := t.TempDir()
 	src := filepath.Join(work, "src")
 	for rel, body := range map[string]string{
-		"nofx-bin":                             "\x7fELF u5b stand-in binary\n",
+		"vl-bin":                             "\x7fELF u5b stand-in binary\n",
 		"LICENSE":                              "test licence\n",
 		"ninjascript/vltrader_tcp_PROTOCOL.md": "protocol_version: 3\n",
 		"ninjascript/VLTraderTCPClient.cs":           "public const string VL_BUILD_ID = \"2026-09-24-u5b\";\n",
@@ -85,7 +85,7 @@ func fetchTestRelease(t *testing.T, dataDir, releaseID string) updaterjob.Verdic
 			t.Fatal(err)
 		}
 	}
-	if err := os.Chmod(filepath.Join(src, "nofx-bin"), 0o755); err != nil {
+	if err := os.Chmod(filepath.Join(src, "vl-bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	stage := filepath.Join(work, "stage")
@@ -96,7 +96,7 @@ func fetchTestRelease(t *testing.T, dataDir, releaseID string) updaterjob.Verdic
 		t.Fatal(err)
 	}
 	priv := filepath.Join(work, "release-signer")
-	runTool(t, work, false, "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "nofx-test-u5b", "-f", priv)
+	runTool(t, work, false, "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "vl-test-u5b", "-f", priv)
 	runTool(t, work, false, "ssh-keygen", "-Y", "sign", "-f", priv, "-n", "release", mpath)
 	pub, err := os.ReadFile(priv + ".pub")
 	if err != nil {

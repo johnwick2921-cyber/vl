@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # Dispatch 102 — visible brand implementation (not deployed)
 
@@ -175,7 +177,7 @@ No owner GO has been given for this swap, and the observation precedes the 14:45
 
 This preparation receipt is pushed from the same clean main tree under the lock before releasing it. Lock release ends preparation only; the future cutover must reacquire, check current dev/source equivalence, rerun any required merged validation if source changed, make fresh backups/gates and obtain the owner GO. The report will be updated with actual boot/five-reference evidence after that boot; it is not a boot marker today.
 
-[A] Publication check: the complete authenticated census/failed-gate receipt at [commit e3a6de6dcdb267942c9d6eabce3cdc88aec1032a](https://raw.githubusercontent.com/johnwick2921-cyber/nofx/e3a6de6dcdb267942c9d6eabce3cdc88aec1032a/docs/superpowers/reports/2026-09-08-brand-visible.md) returned **HTTP 200, size_download=24,901 bytes**; `git ls-tree -l` reported **24,901 bytes**, and `cmp` passed. Origin dev and fix/brand-visible both resolved to that commit after the push from main. This subsequent publication note does not amend source, tests or gate evidence. The final report revision is separately checked after its push; no self-referential commit id is fabricated.
+[A] Publication check: the complete authenticated census/failed-gate receipt at [commit e3a6de6dcdb267942c9d6eabce3cdc88aec1032a](https://raw.githubusercontent.com/johnwick2921-cyber/vl/e3a6de6dcdb267942c9d6eabce3cdc88aec1032a/docs/superpowers/reports/2026-09-08-brand-visible.md) returned **HTTP 200, size_download=24,901 bytes**; `git ls-tree -l` reported **24,901 bytes**, and `cmp` passed. Origin dev and fix/brand-visible both resolved to that commit after the push from main. This subsequent publication note does not amend source, tests or gate evidence. The final report revision is separately checked after its push; no self-referential commit id is fabricated.
 
 ## Arm 133 comparison and class-33 boot sweep finding — owner WAIT
 

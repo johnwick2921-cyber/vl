@@ -1,7 +1,7 @@
 package updaterworker
 
 // release.go — W-ONE-BUTTON M4 (3b-B, unit U3): turn a LOCAL release archive
-// (3a's <release_id>.tar.gz, copied into NOFX_RELEASE_INBOX by the owner — no
+// (3a's <release_id>.tar.gz, copied into VL_RELEASE_INBOX by the owner — no
 // network code exists here) into a release directory in the layout
 // internal/activation's Resolve reads, and record a verdict ONLY after every
 // check has passed (brief C6/C7/C8/C9, CTO ruling 1790259689740).
@@ -100,16 +100,15 @@ const (
 	// The signed pair at the archive root (release.yml signs manifest.json there).
 	signedManifestName = "manifest.json"
 	signedSigName      = "manifest.json.sig"
-	// The materialized layout (activation.Resolve: <dir>/{vl-bin|nofx-bin,
+	// The materialized layout (activation.Resolve: <dir>/{vl-bin,
 	// web/dist, RELEASE, manifest.json}) plus the signed pair kept under
-	// signed/. A release dir holds EXACTLY ONE binary (R5 removes the vl
-	// name).
+	// signed/. A release dir holds EXACTLY ONE binary (R5 removed the
+	// old vl-bin name).
 	signedDir      = "signed"
 	activationMfst = "manifest.json"
 	releaseMarker  = "RELEASE"
 	archiveMarker  = "deploy/RELEASE"
-	binaryNameVL   = "vl-bin"
-	binaryName     = "nofx-bin"
+	binaryName     = "vl-bin"
 	distIndex      = "web/dist/index.html"
 	stagingPrefix  = ".fetch-"
 )
@@ -140,7 +139,7 @@ type SignedManifest struct {
 type FetchConfig struct {
 	Archive        string               // the local <release_id>.tar.gz (a path, never a URL)
 	ReleaseID      string               // the id asked for; the signed manifest must say the same
-	ReleaseRoot    string               // NOFX_RELEASE_DIR: absolute, a real dir, owner-only writable
+	ReleaseRoot    string               // VL_RELEASE_DIR: absolute, a real dir, owner-only writable
 	AllowedSigners string               // <installDir>/deploy/release_allowed_signers
 	DataDir        string               // the installation's data dir (absolute)
 	Now            func() time.Time     // nil ⇒ time.Now
@@ -748,24 +747,11 @@ func rehashTree(root *os.Root, artifacts []Artifact, exempt map[string]bool) err
 	return fmt.Errorf("%w: %s", ErrArtifactMismatch, strings.Join(parts, "; "))
 }
 
-// binaryInRoot returns the staged release's ONE binary name: vl-bin when
-// present, else vl-bin; BOTH present is refused (the dir must hold EXACTLY
-// ONE — R5 removes the vl branch). // R5 removes.
-func binaryInRoot(root *os.Root) (string, error) {
-	vl, vlErr := root.Lstat(binaryNameVL)
-	nfx, nfxErr := root.Lstat(binaryName)
-	vlOK := vlErr == nil && vl.Mode().IsRegular()
-	nfxOK := nfxErr == nil && nfx.Mode().IsRegular()
-	switch {
-	case vlOK && nfxOK:
-		return "", fmt.Errorf("holds BOTH vl-bin and nofx-bin; a release dir must hold exactly one")
-	case vlOK:
-		return binaryNameVL, nil
-	default:
-		// Neither present keeps the old reading (vl-bin); the layout
-		// check fails on the missing binary, as it always did.
-		return binaryName, nil
-	}
+// binaryInRoot returns the staged release's ONE binary name: vl-bin. A
+// missing binary keeps the old lenient reading (vl-bin); the layout check
+// fails on the missing binary, as it always did.
+func binaryInRoot(_ *os.Root) (string, error) {
+	return binaryName, nil
 }
 
 // checkArchiveLayout requires what activation needs from the archive half.

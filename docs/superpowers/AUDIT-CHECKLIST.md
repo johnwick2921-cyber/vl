@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # AUDIT-CHECKLIST — the permanent audit playbook
 
@@ -104,7 +106,7 @@ never renumbered; a gap means a wave took a later slot to avoid a collision.*
     <task>` before ANY main-tree work (atomic; a second acquire REFUSES — see
     class 70, which removed the pid this line used to name). **Law:** WORKTREE LAW — the
     main checkout belongs to exactly ONE dispatch; secondary work runs in
-    `git worktree add ../nofx-<task>` + `git worktree lock` — with the add's exit code
+    `git worktree add ../vl-<task>` + `git worktree lock` — with the add's exit code
     CHECKED and the `cd` target VERIFIED, per the recipe in CLAUDE-canon.md §WORKTREE
     LAW (a lane once `cd`'d into another lane's tree after a failed add and pushed an
     empty claim onto their branch; cleanup batch 2 B6).
@@ -2328,7 +2330,7 @@ never renumbered; a gap means a wave took a later slot to avoid a collision.*
 SHA=$(git rev-parse HEAD)
 git ls-tree -r --long "$SHA" -- docs/superpowers/reports/<report>.md
 curl -s -o /dev/null -w "HTTP %{http_code}  %{size_download} bytes\n" \
-  "https://raw.githubusercontent.com/johnwick2921-cyber/nofx/$SHA/docs/superpowers/reports/<report>.md"
+  "https://raw.githubusercontent.com/johnwick2921-cyber/vl/$SHA/docs/superpowers/reports/<report>.md"
 ```
 
 ---

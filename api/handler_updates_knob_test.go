@@ -1,6 +1,6 @@
 package api
 
-// W-ONE-BUTTON M4 3b-B U5b (a) — the NOFX_UPDATER knob, at the PRODUCTION
+// W-ONE-BUTTON M4 3b-B U5b (a) — the VL_UPDATER knob, at the PRODUCTION
 // router (canon 53: NewServer → setupRoutes, the real gate).
 //
 // OFF (unset, or anything but exactly "1") is M3, byte for byte: the four
@@ -33,7 +33,7 @@ const (
 
 func TestUpdatesKnobOffIsByteIdentical(t *testing.T) {
 	for _, v := range []string{"", "0", "true", "on", "yes", " 1", "1 ", "01", "TRUE"} {
-		t.Run("NOFX_UPDATER="+v, func(t *testing.T) {
+		t.Run("VL_UPDATER="+v, func(t *testing.T) {
 			t.Setenv(updaterKnobEnv, v)
 			logs := captureLogs(t)
 			e := newUpdEnv(t)

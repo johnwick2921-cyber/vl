@@ -30,7 +30,7 @@ func mintMapJWT(t *testing.T, claims jwt.MapClaims) string {
 func ownerClaims(email string) jwt.MapClaims {
 	now := time.Now()
 	return jwt.MapClaims{
-		"user_id": updAdminID, "email": email, "iss": "nofxAI",
+		"user_id": updAdminID, "email": email, "iss": "vlAI",
 		"iat": now.Add(-5 * time.Second).Unix(), "nbf": now.Add(-time.Minute).Unix(), "exp": now.Add(time.Hour).Unix(),
 	}
 }

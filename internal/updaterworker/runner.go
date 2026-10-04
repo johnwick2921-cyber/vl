@@ -365,7 +365,7 @@ func (w *Worker) backupIntent(j updaterjob.Job) func(k *updaterjob.Job) {
 // second must still count).
 func (w *Worker) setBootWatch(k *updaterjob.Job) {
 	since := w.host.Now().Truncate(time.Second)
-	bin := "nofx-bin" // R5 removes: no release yet means the install's name
+	bin := "vl-bin" // no release yet means the install's name
 	if k.Release != nil {
 		bin = k.Release.Binary
 	}
@@ -388,7 +388,7 @@ func (w *Worker) rollbackIntent(ctx context.Context, j updaterjob.Job) func(k *u
 		}
 	}
 	since := w.host.Now().Truncate(time.Second)
-	bin := "nofx-bin" // R5 removes: the snapshot's own binary name
+	bin := "vl-bin" // the snapshot's own binary name
 	if j.Snapshot != nil {
 		bin = j.Snapshot.Binary
 	}
@@ -415,13 +415,13 @@ func (w *Worker) currentIdentityRetry(ctx context.Context) (Identity, bool) {
 }
 
 // logPrefixForBinary is the log prefix of the binary that will run: vl_ when
-// it is vl-bin, else nofx_ — the prefix comes from the BINARY, never from
-// which file happens to exist (R5 removes the vl branch).
+// it is vl-bin — the prefix comes from the BINARY, never from
+// which file happens to exist.
 func logPrefixForBinary(binPath string) string {
 	if filepath.Base(binPath) == "vl-bin" {
 		return "vl_"
 	}
-	return "nofx_"
+	return "vl_"
 }
 
 // predictedLog is <install>/data/<prefix><local date of t>.log — the bot's

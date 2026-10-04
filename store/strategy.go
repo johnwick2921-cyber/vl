@@ -2003,6 +2003,54 @@ type RiskControlConfig struct {
 	// Chunk 3 — max CONTRACTS per futures order (clamp). Unset → the 2-contract
 	// default (the prior hidden const maxFuturesContracts). Toggle default ON.
 	MaxContractsPerOrder int `json:"max_contracts_per_order,omitempty"`
+
+	// MENTOR P3 — mentor mode, per strategy. OFF by default: while off the bot
+	// is byte-identical (L4). A mentor-mode trader takes AI entries off, sizes
+	// from the mentor table, and its exits follow the mentor §6 modes; the AI
+	// 0B size clamp and EXIT_MECHS_SUSPENDED do not apply to it.
+	MentorMode bool `json:"mentor_mode,omitempty"`
+	// Mentor size-table knobs (CTO defaults when unset — the owner can change
+	// them): base setup at a location 5; confluence 10; confluence+4h/1h agree
+	// + room≥2× target≥30pts 20 (hard cap); stop 20–25 pts or spent day 3;
+	// SWING4H 3; never above MentorMaxContracts (default 20).
+	MentorBaseContracts       int `json:"mentor_base_contracts,omitempty"`
+	MentorConfluenceContracts int `json:"mentor_confluence_contracts,omitempty"`
+	MentorBigContracts        int `json:"mentor_big_contracts,omitempty"`
+	MentorReducedContracts    int `json:"mentor_reduced_contracts,omitempty"`
+	MentorSwing4HContracts    int `json:"mentor_swing4h_contracts,omitempty"`
+	MentorSpentDayContracts   int `json:"mentor_spent_day_contracts,omitempty"`
+	MentorMaxContracts        int `json:"mentor_max_contracts,omitempty"`
+	// EXIT-SPEC-v3 (B): the candle-trail timeframe. "1m" default (course frame
+	// D2.4 p1 @08:35 on the 1-MINUTE chart); 30s/45s allowed (@09:07); "off" =
+	// the video-8 legacy "never trail on the 1m" (SUPERSEDED, kept as a knob).
+	MentorTrailTF string `json:"mentor_trail_tf,omitempty"`
+	// STOP RULES (owner ruling 00:1x CT "exactly like he said") — class rules,
+	// NOT his personal routine. All default ON:
+	// (a) done for the day after a winning close with the day net positive
+	//     (nil → ON; explicit false disables);
+	// (b) the trading window: MentorWindowStart (HH:MM CT) + MentorWindowMinutes
+	//     (30/60/90/120; unset → 60). The SWING setup is exempt.
+	// (c)/(d) never-widen / never-add are guards, not knobs.
+	MentorDoneAfterWin  *bool  `json:"mentor_done_after_win,omitempty"`
+	MentorWindowStart   string `json:"mentor_window_start,omitempty"`
+	MentorWindowMinutes int    `json:"mentor_window_minutes,omitempty"`
+	// Knob routing (CTO 1791033257041): the evaluator's G1/L1/E4/location
+	// knobs ride the strategy config like the other mentor knobs, defaults as
+	// ruled:
+	//   MentorLegBudgetEnabled — G1 leg budget (nil → ON);
+	//   MentorLegResetOn — G1 parity ("close" default | "touch"; bad → close);
+	//   MentorLvlRevisitMinPts — L1 per-visit departure (default 0);
+	//   MentorEmaMaxCross30m — E4 "xien len xien xuong" (0 = OFF, base);
+	//   MentorLocationTriggerFilter — the 5m trigger filter at locations
+	//     (nil → ON, L3: keep it ON in the base).
+	//   MentorLossDeparturePts — optional fixed-points fallback for B22's
+	//     structural loss-area departure (default 0 = OFF).
+	MentorLegBudgetEnabled      *bool   `json:"mentor_leg_budget_enabled,omitempty"`
+	MentorLegResetOn            string  `json:"mentor_leg_reset_on,omitempty"`
+	MentorLvlRevisitMinPts      float64 `json:"mentor_lvl_revisit_min_pts,omitempty"`
+	MentorEmaMaxCross30m        int     `json:"mentor_ema_max_cross_30m,omitempty"`
+	MentorLocationTriggerFilter *bool   `json:"mentor_loc_trigger_filter,omitempty"`
+	MentorLossDeparturePts      float64 `json:"mentor_loss_departure_pts,omitempty"`
 	// Deprecated (6.4 ruling B): the enabled toggle never had a reader — the
 	// contracts clamp is always-on venue safety. Field kept so old stored
 	// configs still parse; nothing reads it, the UI no longer writes it.

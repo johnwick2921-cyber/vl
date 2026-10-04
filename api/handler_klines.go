@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 	"vl/store"
 
-	"vl/internal/envcompat"
 	"vl/logger"
 	"vl/market"
 	"vl/provider/alpaca"
@@ -308,23 +308,26 @@ func (s *Server) handleSymbols(c *gin.Context) {
 }
 
 // chartAcrossRoll is the D2 flag, default ON per the owner's ruling. Set
-// VL_CHART_ACROSS_ROLL=off (or NOFX_CHART_ACROSS_ROLL=off — R5 removes the
-// NOFX branch) to serve the current contract only.
-var chartAcrossRollRaw, chartAcrossRollSrc = envcompat.Env("CHART_ACROSS_ROLL")
+// VL_CHART_ACROSS_ROLL=off to serve the current contract only.
+var chartAcrossRollRaw = os.Getenv("VL_CHART_ACROSS_ROLL")
 var chartAcrossRoll = strings.ToLower(strings.TrimSpace(chartAcrossRollRaw)) != "off"
 
 // chartAcrossRollResolved renders the boot-line value and the env SOURCE it
 // was read from (A11: READ, never a guess).
-func chartAcrossRollResolved(on bool, src envcompat.Source) string {
+func chartAcrossRollResolved(on bool, src string) string {
 	if on {
 		return "on[O]"
 	}
-	return "off[env:" + string(src) + "]"
+	return "off[env:" + src + "]"
 }
 
 // ChartAcrossRollResolved is READ onto the boot line (A11).
 func ChartAcrossRollResolved() string {
-	return chartAcrossRollResolved(chartAcrossRoll, chartAcrossRollSrc)
+	src := "default"
+	if chartAcrossRollRaw != "" {
+		src = "VL"
+	}
+	return chartAcrossRollResolved(chartAcrossRoll, src)
 }
 
 // dropCurrentRowsBefore returns base without the rows whose open time is

@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # WATERFALL-CLASS WAVE — BUILD & PROVE (NO DEPLOY)
 
@@ -90,4 +92,4 @@ RELEASE bump, no restart. The cutover (flat-gated, canon) will be executed only
 on the owner's explicit ack; the binary must be rebuilt from the main checkout
 at the deploy commit (worktree builds lose vcs stamping).
 
-Pinned: https://github.com/johnwick2921-cyber/nofx/blob/5be9b1b5f65ca0df1581342861aae9c87107a68e/docs/superpowers/reports/2026-08-28-waterfall-class-wave.md
+Pinned: https://github.com/johnwick2921-cyber/vl/blob/5be9b1b5f65ca0df1581342861aae9c87107a68e/docs/superpowers/reports/2026-08-28-waterfall-class-wave.md

@@ -48,11 +48,11 @@ func mainPIDOf(unit string) (int, error) {
 	return pid, nil
 }
 
-// readMainPID walks the unit list through the reader: vl first (R5 removes
-// the vl fallback); a unit that is absent or stopped reports 0 or errors,
-// and then the next unit answers.
+// readMainPID walks the unit list through the reader (R5 removed the old
+// vl unit fallback); a unit that is absent or stopped reports 0 or
+// errors, and then the next unit answers.
 func readMainPID(mainPIDOf func(string) (int, error)) (int, error) {
-	for _, unit := range []string{"vl", "nofx"} {
+	for _, unit := range []string{"vl"} {
 		pid, err := mainPIDOf(unit)
 		if err != nil {
 			continue
@@ -137,19 +137,15 @@ func IdentityOf(pid int) (Identity, error) {
 // exist, and then a Watch fails for a reason that has nothing to do with the
 // activation.
 func NewestLogPath(dir string) (string, error) {
-	// Both prefixes: a vl-boot names its log vl_, a nofx-boot nofx_; the
-	// newest of either is what the running process is writing. // R5 removes
-	// the vl glob.
+	// One prefix: the boot names its log vl_. // R5 removed the old vl glob.
 	var hits []string
-	for _, pat := range []string{"vl_*.log", "nofx_*.log"} {
-		h, err := filepath.Glob(filepath.Join(dir, pat))
-		if err != nil {
-			return "", err
-		}
-		hits = append(hits, h...)
+	h, err := filepath.Glob(filepath.Join(dir, "vl_*.log"))
+	if err != nil {
+		return "", err
 	}
+	hits = append(hits, h...)
 	if len(hits) == 0 {
-		return "", fmt.Errorf("no vl_*.log or nofx_*.log in %s", dir)
+		return "", fmt.Errorf("no vl_*.log in %s", dir)
 	}
 	newest, newestAt := "", time.Time{}
 	for _, h := range hits {
@@ -162,7 +158,7 @@ func NewestLogPath(dir string) (string, error) {
 		}
 	}
 	if newest == "" {
-		return "", fmt.Errorf("no readable vl_*.log or nofx_*.log in %s", dir)
+		return "", fmt.Errorf("no readable vl_*.log in %s", dir)
 	}
 	return newest, nil
 }

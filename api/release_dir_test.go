@@ -10,7 +10,7 @@ import (
 // L4: the knob is OFF by default and OFF must be byte-identical to before.
 // This is the test that makes "additive" a fact rather than an intention.
 func TestUnsetReleaseDirServesExactlyTheOldPath(t *testing.T) {
-	t.Setenv("NOFX_RELEASE_DIR", "")
+	t.Setenv("VL_RELEASE_DIR", "")
 	resetReleaseDirForTest()
 	if got := ResolvedDistDir(); got != UIDistDir {
 		t.Fatalf("ResolvedDistDir() = %q with the knob unset, want the historical %q", got, UIDistDir)
@@ -22,7 +22,7 @@ func TestUnsetReleaseDirServesExactlyTheOldPath(t *testing.T) {
 
 func TestSetReleaseDirServesFromTheActiveRelease(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("NOFX_RELEASE_DIR", root)
+	t.Setenv("VL_RELEASE_DIR", root)
 	resetReleaseDirForTest()
 	want := filepath.Join(root, "current", UIDistDir)
 	if got := ResolvedDistDir(); got != want {
@@ -35,12 +35,12 @@ func TestSetReleaseDirServesFromTheActiveRelease(t *testing.T) {
 // what is being served.
 func TestReleaseDirIsResolvedOnceAndDoesNotMoveUnderTheProcess(t *testing.T) {
 	first := t.TempDir()
-	t.Setenv("NOFX_RELEASE_DIR", first)
+	t.Setenv("VL_RELEASE_DIR", first)
 	resetReleaseDirForTest()
 	before := ResolvedDistDir()
 
 	// Change the environment the way a careless caller might.
-	if err := os.Setenv("NOFX_RELEASE_DIR", t.TempDir()); err != nil {
+	if err := os.Setenv("VL_RELEASE_DIR", t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	if after := ResolvedDistDir(); after != before {
@@ -51,7 +51,7 @@ func TestReleaseDirIsResolvedOnceAndDoesNotMoveUnderTheProcess(t *testing.T) {
 // The 🗂 line's golden, in BOTH states. It is a separate line precisely so the
 // 🖥 golden stays byte-identical when the knob is off.
 func TestReleaseDirBootLineGoldenUnset(t *testing.T) {
-	t.Setenv("NOFX_RELEASE_DIR", "")
+	t.Setenv("VL_RELEASE_DIR", "")
 	resetReleaseDirForTest()
 	want := "release-dir: n/a — versioned runtimes off; serving web/dist and reading deploy/RELEASE"
 	if got := ReleaseDirBootLine(); got != want {
@@ -60,9 +60,9 @@ func TestReleaseDirBootLineGoldenUnset(t *testing.T) {
 }
 
 func TestReleaseDirBootLineGoldenSet(t *testing.T) {
-	t.Setenv("NOFX_RELEASE_DIR", "/srv/nofx/releases")
+	t.Setenv("VL_RELEASE_DIR", "/srv/vl/releases")
 	resetReleaseDirForTest()
-	want := "release-dir: /srv/nofx/releases/current — serving /srv/nofx/releases/current/web/dist and reading /srv/nofx/releases/current/RELEASE"
+	want := "release-dir: /srv/vl/releases/current — serving /srv/vl/releases/current/web/dist and reading /srv/vl/releases/current/RELEASE"
 	if got := ReleaseDirBootLine(); got != want {
 		t.Fatalf("set golden drifted:\n got: %s\nwant: %s", got, want)
 	}
@@ -70,7 +70,7 @@ func TestReleaseDirBootLineGoldenSet(t *testing.T) {
 
 // An unset knob must never print an empty gap that reads as a missing field.
 func TestReleaseDirBootLineNeverPrintsAnEmptyValue(t *testing.T) {
-	t.Setenv("NOFX_RELEASE_DIR", "")
+	t.Setenv("VL_RELEASE_DIR", "")
 	resetReleaseDirForTest()
 	line := ReleaseDirBootLine()
 	if !strings.Contains(line, "n/a") {

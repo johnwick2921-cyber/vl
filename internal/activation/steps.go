@@ -369,7 +369,7 @@ func healthSHA(url string) (string, error) {
 // and the marker claiming the new sha — so the box lies about what it is
 // running at exactly the moment someone is trying to find out.
 //
-// prev is a Release DIRECTORY (NOFX_RELEASE_DIR/<sha>/). Under that layout all
+// prev is a Release DIRECTORY (VL_RELEASE_DIR/<sha>/). Under that layout all
 // three halves move together by repointing the `current` symlink, which is
 // atomic and cannot leave a mixed install. The v6 script kept siblings named
 // vl-bin.old.<sha>.<timestamp>, which could collide and could not carry the
@@ -469,7 +469,7 @@ func RollbackTo(prev Release, install Release, id Identity) (Identity, Receipt, 
 // Without it the rollback story has a hole nobody notices until they need it:
 // Activate overwrites the install in place, and once it has, the previous
 // binary, bundle and marker exist only wherever someone happened to put them.
-// Under NOFX_RELEASE_DIR the old release stays in its own directory and this
+// Under VL_RELEASE_DIR the old release stays in its own directory and this
 // is unnecessary; without it, this is the step that makes rollback possible at
 // all. Taking it is cheap; discovering it was skipped is not.
 //
@@ -488,7 +488,7 @@ func Snapshot(install Release, dest string) (Receipt, error) {
 	out := Release{
 		Dir:         dest,
 		SHA:         install.SHA,
-		Binary:      filepath.Join(dest, filepath.Base(install.Binary)), // snapshot keeps the install's basename (vl-bin or nofx-bin — R5 removes the nofx name)
+		Binary:      filepath.Join(dest, filepath.Base(install.Binary)), // snapshot keeps the install's basename (vl-bin)
 		Dist:        filepath.Join(dest, "web", "dist"),
 		ReleaseFile: filepath.Join(dest, "RELEASE"),
 	}

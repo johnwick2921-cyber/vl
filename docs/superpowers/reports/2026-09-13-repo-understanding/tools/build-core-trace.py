@@ -52,7 +52,7 @@ for boundary,path,name,note in items:
 (out/'core-trace.json').write_text(json.dumps(dict(revision=rev,scope='selected production declarations; not runtime call graph',entries=rows),indent=2)+'\n')
 text=['# Core trading source trace','',f'Source snapshot: `{rev}`. Each link names an exact committed declaration. This is a selected source locator, not evidence that every branch ran. Detailed baseline function notes and connections are in the 30 review folders. Execution-order and integration tests must be read beside these source links.','', '| Boundary | Exact source | Responsibility / transfer limit |','| --- | --- | --- |']
 for row in rows:
- url=f'https://github.com/johnwick2921-cyber/nofx/blob/{rev}/{row["path"]}#L{row["line"]}'
+ url=f'https://github.com/johnwick2921-cyber/vl/blob/{rev}/{row["path"]}#L{row["line"]}'
  text.append(f'| {row["boundary"]} | [{row["function"]}]({url}) | {row["note"]} |')
 text.extend(['','Ordered execution and shared receipt lifetime are repaired at the source snapshot above; final verification is recorded in CHECKPOINT.md. Transport receipt, broker acceptance, execution, position reconciliation and permission to enter are separate facts. The root report records their verification status.',''])
 (out/'CORE-TRACE.md').write_text('\n'.join(text))

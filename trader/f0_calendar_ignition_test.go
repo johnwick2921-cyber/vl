@@ -75,7 +75,7 @@ func TestF0Fallback404StoresStatic(t *testing.T) {
 	staticPath := filepath.Join(t.TempDir(), "static_t1.json")
 	os.WriteFile(staticPath, []byte(`[
 	  {"time":"2026-08-19T18:00:00Z","currency":"USD","title":"FOMC Meeting Minutes (static)","impact":"T1"}]`), 0o644)
-	t.Setenv("NOFX_CALENDAR_STATIC", staticPath)
+	t.Setenv("VL_CALENDAR_STATIC", staticPath)
 	at.calFetch = func() ([]byte, error) { return nil, errors.New("forexfactory HTTP 404") }
 
 	at.maybeFetchCalendar(nowOnCT(t, "2026-08-19"))

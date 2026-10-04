@@ -570,7 +570,7 @@ export const translations = {
       'Four simple steps to start your AI automated trading journey',
     step1Title: 'Clone GitHub Repository',
     step1Desc:
-      'git clone https://github.com/johnwick2921-cyber/nofx and switch to dev branch to test new features.',
+      'git clone https://github.com/johnwick2921-cyber/vl and switch to dev branch to test new features.',
     step2Title: 'Configure Environment',
     step2Desc:
       'Frontend setup for exchange APIs, AI models and custom prompts.',
@@ -674,7 +674,7 @@ export const translations = {
 
     faqManualInstallation: 'How do I install manually for development?',
     faqManualInstallationAnswer:
-      'Prerequisites: Go 1.21+, Node.js 18+, TA-Lib. Steps: 1) Clone repo: "git clone https://github.com/johnwick2921-cyber/nofx.git"; 2) Install backend deps: "go mod download"; 3) Install frontend deps: "cd web && npm install"; 4) Build backend: "go build -o vl"; 5) Run backend: "./vl"; 6) Run frontend (new terminal): "cd web && npm run dev". Access at http://127.0.0.1:3000',
+      'Prerequisites: Go 1.21+, Node.js 18+, TA-Lib. Steps: 1) Clone repo: "git clone https://github.com/johnwick2921-cyber/vl.git"; 2) Install backend deps: "go mod download"; 3) Install frontend deps: "cd web && npm install"; 4) Build backend: "go build -o vl"; 5) Run backend: "./vl"; 6) Run frontend (new terminal): "cd web && npm run dev". Access at http://127.0.0.1:3000',
 
     faqServerDeployment: 'How do I deploy to a remote server?',
     faqServerDeploymentAnswer:
@@ -815,7 +815,7 @@ export const translations = {
 
     faqPRGuidelines: 'What are the PR guidelines?',
     faqPRGuidelinesAnswer:
-      'PR Process: 1) Fork repo to your account; 2) Create feature branch from dev: "git checkout -b feat/your-feature"; 3) Make changes, run lint: "npm --prefix web run lint"; 4) Commit with Conventional Commits format; 5) Push and create PR to johnwick2921-cyber/nofx:dev; 6) Reference related issue (Closes #123); 7) Wait for review. Keep PRs small and focused.',
+      'PR Process: 1) Fork repo to your account; 2) Create feature branch from dev: "git checkout -b feat/your-feature"; 3) Make changes, run lint: "npm --prefix web run lint"; 4) Commit with Conventional Commits format; 5) Push and create PR to johnwick2921-cyber/vl:dev; 6) Reference related issue (Closes #123); 7) Wait for review. Keep PRs small and focused.',
 
     faqBountyProgram: 'Is there a bounty program?',
     faqBountyProgramAnswer:
@@ -1857,7 +1857,7 @@ export const translations = {
     fourSimpleSteps: '四个简单步骤，开启 AI 自动交易之旅',
     step1Title: '拉取 GitHub 仓库',
     step1Desc:
-      'git clone https://github.com/johnwick2921-cyber/nofx 并切换到 dev 分支测试新功能。',
+      'git clone https://github.com/johnwick2921-cyber/vl 并切换到 dev 分支测试新功能。',
     step2Title: '配置环境',
     step2Desc: '前端设置交易所 API、AI 模型和自定义提示词。',
     step3Title: '部署与运行',
@@ -1956,7 +1956,7 @@ export const translations = {
 
     faqManualInstallation: '如何手动安装用于开发？',
     faqManualInstallationAnswer:
-      '前置条件：Go 1.21+、Node.js 18+、TA-Lib。步骤：1）克隆仓库："git clone https://github.com/johnwick2921-cyber/nofx.git"；2）安装后端依赖："go mod download"；3）安装前端依赖："cd web && npm install"；4）构建后端："go build -o vl"；5）运行后端："./vl"；6）运行前端（新终端）："cd web && npm run dev"。访问 http://127.0.0.1:3000',
+      '前置条件：Go 1.21+、Node.js 18+、TA-Lib。步骤：1）克隆仓库："git clone https://github.com/johnwick2921-cyber/vl.git"；2）安装后端依赖："go mod download"；3）安装前端依赖："cd web && npm install"；4）构建后端："go build -o vl"；5）运行后端："./vl"；6）运行前端（新终端）："cd web && npm run dev"。访问 http://127.0.0.1:3000',
 
     faqServerDeployment: '如何部署到远程服务器？',
     faqServerDeploymentAnswer:
@@ -2096,7 +2096,7 @@ export const translations = {
 
     faqPRGuidelines: 'PR 指南是什么？',
     faqPRGuidelinesAnswer:
-      'PR 流程：1）Fork 仓库到您的账户；2）从 dev 创建功能分支："git checkout -b feat/your-feature"；3）修改代码，运行 lint："npm --prefix web run lint"；4）使用 Conventional Commits 格式提交；5）推送并创建 PR 到 johnwick2921-cyber/nofx:dev；6）关联相关 issue（Closes #123）；7）等待审核。保持 PR 小而聚焦。',
+      'PR 流程：1）Fork 仓库到您的账户；2）从 dev 创建功能分支："git checkout -b feat/your-feature"；3）修改代码，运行 lint："npm --prefix web run lint"；4）使用 Conventional Commits 格式提交；5）推送并创建 PR 到 johnwick2921-cyber/vl:dev；6）关联相关 issue（Closes #123）；7）等待审核。保持 PR 小而聚焦。',
 
     faqBountyProgram: '有赏金计划吗？',
     faqBountyProgramAnswer:
@@ -3139,7 +3139,7 @@ export const translations = {
       'Empat langkah sederhana untuk memulai perjalanan trading AI otomatis Anda',
     step1Title: 'Clone Repository GitHub',
     step1Desc:
-      'git clone https://github.com/johnwick2921-cyber/nofx dan beralih ke branch dev untuk menguji fitur baru.',
+      'git clone https://github.com/johnwick2921-cyber/vl dan beralih ke branch dev untuk menguji fitur baru.',
     step2Title: 'Konfigurasi Lingkungan',
     step2Desc: 'Setup frontend untuk API bursa, model AI dan prompt kustom.',
     step3Title: 'Deploy & Jalankan',
@@ -3327,7 +3327,7 @@ export const translations = {
       ' open-source dan menyambut kontribusi! Cara: 1) Kode - perbaiki bug, tambah fitur; 2) Dokumentasi; 3) Laporan Bug; 4) Ide Fitur. Semua kontributor mungkin mendapat reward airdrop.',
     faqPRGuidelines: 'Apa panduan PR?',
     faqPRGuidelinesAnswer:
-      'Proses PR: 1) Fork repo; 2) Buat branch fitur dari dev; 3) Buat perubahan, jalankan lint; 4) Commit dengan format Conventional Commits; 5) Push dan buat PR ke johnwick2921-cyber/nofx:dev.',
+      'Proses PR: 1) Fork repo; 2) Buat branch fitur dari dev; 3) Buat perubahan, jalankan lint; 4) Commit dengan format Conventional Commits; 5) Push dan buat PR ke johnwick2921-cyber/vl:dev.',
     faqBountyProgram: 'Apakah ada program bounty?',
     faqBountyProgramAnswer:
       'Ya! Kontributor mendapat reward airdrop berdasarkan kontribusi. Issue dengan label "bounty" memiliki reward uang tunai.',

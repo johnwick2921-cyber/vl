@@ -2,22 +2,19 @@ package api
 
 import (
 	"testing"
-
-	"vl/internal/envcompat"
 )
 
-// R1a: the chart-across-roll boot-line word names the env SOURCE (VL/NOFX/
+// R5: the chart-across-roll boot-line word names the env SOURCE (VL/
 // default), not a guess.
 func TestChartAcrossRollResolvedNamesTheSource(t *testing.T) {
 	for _, c := range []struct {
 		on   bool
-		src  envcompat.Source
+		src  string
 		want string
 	}{
-		{true, envcompat.SourceDefault, "on[O]"},
-		{false, envcompat.SourceVL, "off[env:VL]"},
-		{false, envcompat.SourceNOFX, "off[env:NOFX]"},
-		{false, envcompat.SourceDefault, "off[env:default]"},
+		{true, "default", "on[O]"},
+		{false, "VL", "off[env:VL]"},
+		{false, "default", "off[env:default]"},
 	} {
 		if got := chartAcrossRollResolved(c.on, c.src); got != c.want {
 			t.Errorf("chartAcrossRollResolved(%v, %s) = %s, want %s", c.on, c.src, got, c.want)

@@ -104,7 +104,7 @@ func btEarlierSecondBotToken(t *testing.T) string {
 	at := jwt.NewNumericDate(time.Now().Add(-5 * time.Second))
 	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, auth.Claims{
 		UserID: btOwnerID, Email: auth.BotInternalEmail, Scope: auth.ScopeTelegram,
-		RegisteredClaims: jwt.RegisteredClaims{IssuedAt: at, NotBefore: at, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)), Issuer: "nofxAI"},
+		RegisteredClaims: jwt.RegisteredClaims{IssuedAt: at, NotBefore: at, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)), Issuer: "vlAI"},
 	}).SignedString(auth.JWTSecret)
 	if err != nil {
 		t.Fatal(err)
@@ -226,7 +226,7 @@ func btMintStampedBy(now func() time.Time) func(string) (string, error) {
 		at := jwt.NewNumericDate(now())
 		return jwt.NewWithClaims(jwt.SigningMethodHS256, auth.Claims{
 			UserID: userID, Email: auth.BotInternalEmail, Scope: auth.ScopeTelegram,
-			RegisteredClaims: jwt.RegisteredClaims{IssuedAt: at, NotBefore: at, ExpiresAt: jwt.NewNumericDate(now().Add(24 * time.Hour)), Issuer: "nofxAI"},
+			RegisteredClaims: jwt.RegisteredClaims{IssuedAt: at, NotBefore: at, ExpiresAt: jwt.NewNumericDate(now().Add(24 * time.Hour)), Issuer: "vlAI"},
 		}).SignedString(auth.JWTSecret)
 	}
 }

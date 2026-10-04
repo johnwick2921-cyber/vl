@@ -614,12 +614,12 @@ func newFetchRig(t *testing.T) fetchRig {
 	return f
 }
 
-// env sets NOFX_RELEASE_INBOX and NOFX_RELEASE_DIR ("" unsets) and resets the
+// env sets VL_RELEASE_INBOX and VL_RELEASE_DIR ("" unsets) and resets the
 // one release-dir resolver (a sync.Once in production).
 func (f fetchRig) env(t *testing.T, inbox, root string) {
 	t.Helper()
 	t.Setenv(releaseInboxEnv, inbox)
-	t.Setenv("NOFX_RELEASE_DIR", root)
+	t.Setenv("VL_RELEASE_DIR", root)
 	installpath.ResetReleaseDirForTest()
 	t.Cleanup(installpath.ResetReleaseDirForTest)
 }
@@ -627,7 +627,7 @@ func (f fetchRig) env(t *testing.T, inbox, root string) {
 // PIN (U4N item B): `vl-updater fetch <release_id>` — the production entry —
 // verifies a REAL archive (3a's package.sh + manifest.sh, the real ssh-keygen
 // signature, tar) from the local inbox against the INSTALL's allowed-signers,
-// materializes it under NOFX_RELEASE_DIR/<source_sha>, writes the verdict
+// materializes it under VL_RELEASE_DIR/<source_sha>, writes the verdict
 // into the installation's data dir, and prints the release id and source sha
 // (never a key). The wired re-proof adapter then re-proves what it wrote.
 func TestFetchVerifiesALocalReleaseEndToEnd(t *testing.T) {
@@ -680,7 +680,7 @@ func TestFetchVerifiesALocalReleaseEndToEnd(t *testing.T) {
 
 // PIN (U4F defect 6, probe P7; a fail-closed default named for the CTO): a
 // release fetched — through the production entry — into root A is NOT
-// re-provable once NOFX_RELEASE_DIR names root B: the wired re-proof's
+// re-provable once VL_RELEASE_DIR names root B: the wired re-proof's
 // Verdict refuses (so the install verb, the verify step, the nt8 rule, the
 // resume and the boot check all refuse), and with the knob back at A it
 // re-proves again. The verdict's release_dir must be <the current resolved
@@ -703,7 +703,7 @@ func TestAVerdictIsReprovedOnlyUnderTheCurrentReleaseRoot(t *testing.T) {
 		ok         bool
 	}{
 		{"the root it was fetched into", f.root, true},
-		{"another root (the operator moved NOFX_RELEASE_DIR)", other, false},
+		{"another root (the operator moved VL_RELEASE_DIR)", other, false},
 		{"unset", "", false},
 		{"back at the root it was fetched into", f.root, true},
 	} {
@@ -767,7 +767,7 @@ func TestAMovedReleaseDirectoryRefusalOrdersMoveAsideBeforeTheRm(t *testing.T) {
 }
 
 // PIN (U4F verify note 2): the refusal after the operator moved
-// NOFX_RELEASE_DIR names BOTH steps — remove the old verdict by hand (a
+// VL_RELEASE_DIR names BOTH steps — remove the old verdict by hand (a
 // re-fetch alone refuses: the verdict is written once), then re-fetch — as
 // exact guidance, and FOLLOWING it works end to end through the production
 // entry: fetch into root A, move the knob to root B, run the two printed
@@ -839,7 +839,7 @@ func TestFetchRefusesWithoutItsInputs(t *testing.T) {
 	}{
 		{"no inbox", func(t *testing.T, f *fetchRig) []string { f.env(t, "", f.root); return []string{fetchID} }, releaseInboxEnv + " is not set"},
 		{"relative inbox", func(t *testing.T, f *fetchRig) []string { f.env(t, "inbox", f.root); return []string{fetchID} }, "must be an absolute path"},
-		{"no release dir", func(t *testing.T, f *fetchRig) []string { f.env(t, f.inbox, ""); return []string{fetchID} }, "NOFX_RELEASE_DIR is not set"},
+		{"no release dir", func(t *testing.T, f *fetchRig) []string { f.env(t, f.inbox, ""); return []string{fetchID} }, "VL_RELEASE_DIR is not set"},
 		{"relative release dir", func(t *testing.T, f *fetchRig) []string { f.env(t, f.inbox, "releases"); return []string{fetchID} }, "must be an absolute path"},
 		{"release dir inside the install", func(t *testing.T, f *fetchRig) []string {
 			in := filepath.Join(f.inst, "releases")

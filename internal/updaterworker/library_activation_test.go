@@ -53,24 +53,24 @@ func TestAdapterDelegatesToActivation(t *testing.T) {
 	relDir := t.TempDir()
 	writeTree(t, relDir, map[string]string{
 		"manifest.json":       `{"source_sha":"` + newSHA + `","signature_verdict":"sshsig:release:SHA256:fixture"}`,
-		"nofx-bin":            "new binary (not a Go binary)\n",
+		"vl-bin":            "new binary (not a Go binary)\n",
 		"RELEASE":             newSHA + "\n",
 		"web/dist/index.html": "<html>new</html>",
 	})
 	newInstall := func(t *testing.T) Release {
 		d := t.TempDir()
 		writeTree(t, d, map[string]string{
-			"nofx-bin":            "old binary\n",
+			"vl-bin":            "old binary\n",
 			"deploy/RELEASE":      oldSHA + "\n",
 			"web/dist/index.html": "<html>old</html>",
 		})
-		return Release{Dir: d, SHA: oldSHA, Binary: filepath.Join(d, "nofx-bin"), Dist: filepath.Join(d, "web", "dist"), ReleaseFile: filepath.Join(d, "deploy", "RELEASE")}
+		return Release{Dir: d, SHA: oldSHA, Binary: filepath.Join(d, "vl-bin"), Dist: filepath.Join(d, "web", "dist"), ReleaseFile: filepath.Join(d, "deploy", "RELEASE")}
 	}
 
 	var rel Release
 	t.Run("Resolve", func(t *testing.T) {
 		got, err := lib.Resolve(relDir)
-		want := Release{Dir: relDir, SHA: newSHA, Binary: filepath.Join(relDir, "nofx-bin"), Dist: filepath.Join(relDir, "web", "dist"),
+		want := Release{Dir: relDir, SHA: newSHA, Binary: filepath.Join(relDir, "vl-bin"), Dist: filepath.Join(relDir, "web", "dist"),
 			ReleaseFile: filepath.Join(relDir, "RELEASE"), ManifestPath: filepath.Join(relDir, "manifest.json")}
 		if err != nil || got != want {
 			t.Fatalf("Resolve = %+v, %v\nwant %+v", got, err, want)
@@ -131,7 +131,7 @@ func TestAdapterDelegatesToActivation(t *testing.T) {
 		if err != nil || !rc.OK || rc.Step != "snapshot" || rc.Evidence["from"] != install.Dir || rc.Evidence["dest"] != dest || rc.Evidence["release_marker"] != oldSHA {
 			t.Fatalf("Snapshot = %+v, %v", rc, err)
 		}
-		for rel, want := range map[string]string{"nofx-bin": "old binary\n", "RELEASE": oldSHA + "\n", "web/dist/index.html": "<html>old</html>"} {
+		for rel, want := range map[string]string{"vl-bin": "old binary\n", "RELEASE": oldSHA + "\n", "web/dist/index.html": "<html>old</html>"} {
 			if b, err := os.ReadFile(filepath.Join(dest, rel)); err != nil || string(b) != want {
 				t.Fatalf("snapshot %s = %q, %v; want %q", rel, b, err, want)
 			}
@@ -164,8 +164,8 @@ func TestAdapterDelegatesToActivation(t *testing.T) {
 		if _, err := lib.Snapshot(install, snap); err != nil {
 			t.Fatal(err)
 		}
-		prev := Release{Dir: snap, SHA: oldSHA, Binary: filepath.Join(snap, "nofx-bin"), Dist: filepath.Join(snap, "web", "dist"), ReleaseFile: filepath.Join(snap, "RELEASE")}
-		writeTree(t, install.Dir, map[string]string{"nofx-bin": "new binary\n", "deploy/RELEASE": newSHA + "\n", "web/dist/index.html": "<html>new</html>"})
+		prev := Release{Dir: snap, SHA: oldSHA, Binary: filepath.Join(snap, "vl-bin"), Dist: filepath.Join(snap, "web", "dist"), ReleaseFile: filepath.Join(snap, "RELEASE")}
+		writeTree(t, install.Dir, map[string]string{"vl-bin": "new binary\n", "deploy/RELEASE": newSHA + "\n", "web/dist/index.html": "<html>new</html>"})
 		next, rc, err := lib.RollbackTo(prev, install, Identity{PID: impossiblePID, StartTicks: 9})
 		if err == nil || !strings.HasPrefix(err.Error(), "ROLLBACK FAILED — ") || !strings.Contains(err.Error(), fmt.Sprintf("pid %d is no longer the process", impossiblePID)) {
 			t.Fatalf("RollbackTo against an impossible pid = %v; want activation's ROLLBACK FAILED refusal", err)
@@ -188,7 +188,7 @@ func TestAdapterDelegatesToActivation(t *testing.T) {
 		}))
 		defer srv.Close()
 		now := time.Now().Truncate(time.Second)
-		logPath := filepath.Join(t.TempDir(), "nofx_boot.log")
+		logPath := filepath.Join(t.TempDir(), "vl_boot.log")
 		line := now.Format("01-02 15:04:05") + " [INFO] 🔐 BOOT INTEGRITY OK — rev " + sha12 + " · built x · goldens PASS\n"
 		if err := os.WriteFile(logPath, []byte(line), 0o600); err != nil {
 			t.Fatal(err)

@@ -7,7 +7,7 @@
 // no trace that nobody saved it.
 //
 // Ownership is the strategy GET's own: Strategy().Get(userID, id) — another
-// user's id is 404, never 403. Secrets (the NofxOS key, external data-source
+// user's id is 404, never 403. Secrets (the VlOS key, external data-source
 // headers/URLs, any credential-shaped leaf) are redacted in the stored value
 // AND the effective value.
 

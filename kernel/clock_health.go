@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"vl/internal/envcompat"
 	"vl/logger"
 	"vl/market"
 )
@@ -144,7 +143,7 @@ func LogClockGuardBoot() {
 	// Guard timer state, judged by state-file freshness (the bot runs as a
 	// SYSTEM service and cannot reliably reach the user systemd manager, so the
 	// file the 15-min timer writes is the honest signal: fresh = active).
-	statePath, _ := envcompat.Env("CLOCK_STATE") // R5 removes
+	statePath := os.Getenv("VL_CLOCK_STATE") // R5: VL_ only
 	if statePath == "" {
 		statePath = "data/clock-guard-state.json"
 	}

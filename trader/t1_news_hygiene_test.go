@@ -174,7 +174,7 @@ func TestCalendarStaticLoaderDropsNotes(t *testing.T) {
 			t.Fatalf("write static file: %v", err)
 		}
 	}
-	t.Setenv("NOFX_CALENDAR_STATIC", path)
+	t.Setenv("VL_CALENDAR_STATIC", path)
 
 	writeFile(`[
 	  {"time":"2026-09-04T12:30:00Z","currency":"USD","title":"NFP","impact":"T1"},

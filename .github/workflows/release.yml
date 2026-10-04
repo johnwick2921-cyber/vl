@@ -36,7 +36,7 @@ env:
   # OPEN OWNER DECISION (plan §Owner decisions 4). Fail-closed default: this
   # repo. Changeable by the owner in ONE line. Never the partner mirror —
   # deploy/release_contract_test.go fails if that name appears here.
-  RELEASE_REPO: johnwick2921-cyber/nofx
+  RELEASE_REPO: johnwick2921-cyber/vl
 
 jobs:
   # A rollback pair is advertised tested ONLY when this job has actually done

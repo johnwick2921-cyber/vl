@@ -1,4 +1,24 @@
 // Dispatch 102 freezes load-bearing identifiers, including their surrounding guards.
+// Wire baselines advanced 2026-10-03 for PR A (cancel-confirm report regime,
+// feat/cancel-confirm-a, DS-101):
+//   provider/ninjatrader/tcp_framing.go  sha256 d3a570e4… — SignalPayload gains
+//     cancel_report (parse-only, omitempty) + the cancel-report build floor and
+//     CancelReportRegimeOn. Additive JSON; no identifier renamed.
+//   provider/ninjatrader/tcp_server.go   sha256 5a59d739… — the order_update
+//     read loop drops a cancel-report echo when the regime is OFF, before any
+//     consumer. Knob-gated; no identifier renamed.
+//   ninjascript/VLTraderTCPClient.cs     sha256 b0c7f01a… — SendCancelReport
+//     echo (cancel_report=true) + the R5 account.txt branch drop + build id
+//     2026-10-03-c1. The order-name / account / signal-id contract is
+//     byte-untouched.
+// Stack top (PR B, feat/stop-limit rebased on #312, 2026-10-03) re-pins the two
+// files PR B touches; tcp_server.go is untouched by PR B and keeps 5a59d739…:
+//   ninjascript/VLTraderTCPClient.cs     sha256 c3f4b51a… — build id
+//     2026-10-03-c2 + the stop_limit construction (OrderType.StopLimit with
+//     LimitPrice == StopPrice) and the stop-limit cancel-request type label.
+//     The protected order-name / account / signal-id contract is byte-untouched.
+//   provider/ninjatrader/tcp_framing.go  sha256 e46c12be… — SignalPayload.StopLimit
+//     + MinAddonBuildStopLimit (c2). Additive JSON; no identifier renamed.
 // OWNER RULING 2026-09-30 (plan v7 FINAL R1b.10 / Z21, reverses the 09-08
 // Dispatch 102): the protected namespace is now `vl/…`; the old module prefix
 // is forbidden (Go: TestNoOldModuleImport; this file's base stays the
@@ -6,17 +26,17 @@
 // Ops baselines advanced 2026-09-30 for RENAME-R1a (feat/rename-vl-r1a, DS-103,
 // owner ruling 2026-09-29 "dual readers"): three pinned deploy scripts become
 // dual readers by dispatch, not by drift —
-//   deploy/nofx-claim.sh      sha256 99d09313… — VL_SESSION wins over
-//     NOFX_SESSION (the shell twin); the refusal names both keys.
-//   deploy/nofx-db-backup.sh  sha256 10c0cfbf… — D1-FOLD (DS-105): the
-//     prune also handles vl-*.db.gz beside the nofx-*.db.gz it always pruned
-//     (write side stays nofx until the rename boot; R5 removes the nofx prune).
-//     VL_ → NOFX_ → default; DB/DB_RESEARCH defaults use the install-root rule
-//     ($HOME/vl when present, else $HOME/nofx — never /home/hoang).
-//   deploy/nofx-lock.sh       sha256 bb0b09d5… — the five lock envs are the
+//   deploy/vl-claim.sh      sha256 99d09313… — VL_SESSION wins over
+//     VL_SESSION (the shell twin); the refusal names both keys.
+//   deploy/vl-db-backup.sh  sha256 10c0cfbf… — D1-FOLD (DS-105): the
+//     prune also handles vl-*.db.gz beside the vl-*.db.gz it always pruned
+//     (write side stays vl until the rename boot; R5 removes the vl prune).
+//     VL_ → VL_ → default; DB/DB_RESEARCH defaults use the install-root rule
+//     ($HOME/vl when present, else $HOME/vl — never /home/hoang).
+//   deploy/vl-lock.sh       sha256 bb0b09d5… — the five lock envs are the
 //     shell twin; the lock dir defaults to ~/vl-main.lock.d.
 // The protected guards are byte-untouched by all three deltas (R5 removes the
-// NOFX twins later).
+// VL twins later).
 // Auth baseline advanced 2026-09-26 for FIX-SEC (fix/sec-0926-auth, DS-106,
 // audit 0926-system): auth/auth.go adds the TokenBlacklistStore interface +
 // fingerprint (P2-10 persistence behind the memory map) and the
@@ -25,7 +45,7 @@
 // `&& token.Valid`, the Issuer, and the blacklist lookup; no identifier
 // renamed).
 // Lock baseline advanced after the separately authorized lock-keeper wave:
-// deploy/nofx-lock.sh @ ace51598 (fix/lock-defects-release-meta-halfbuilt),
+// deploy/vl-lock.sh @ ace51598 (fix/lock-defects-release-meta-halfbuilt),
 // following keeper @ 97a6525cb6d10d6c8898b2d277c0fe7581872c24.
 // Only its recorded hash changes; protected-file mutation checks remain enforced.
 // Auth baseline advanced 2026-09-24 for W-ONE-BUTTON M3 (CTO-dispatched,
@@ -216,20 +236,20 @@
 // Ops baselines advanced 2026-09-26 for DS-104 FIX-OPS (fix/ops-observability,
 // CTO-dispatched observability/ops wave) — the wave's P2 items change two pinned
 // files BY DISPATCH, not by drift:
-//   deploy/nofx-db-backup.sh  sha256 6d49d291… — P2-5: dual-DB online backup
+//   deploy/vl-db-backup.sh  sha256 6d49d291… — P2-5: dual-DB online backup
 //     (main + 212 GB research.db) via a backup_one(src,prefix) helper, prune
-//     and promote_weekly stages, NOFX_DB_RESEARCH / NOFX_KEEP_RESEARCH_* knobs.
+//     and promote_weekly stages, VL_DB_RESEARCH / VL_KEEP_RESEARCH_* knobs.
 //     The pre-existing main-DB backup path, quick_check and gzip steps are
 //     preserved byte-for-byte inside backup_one; the script's CLI contract
 //     (daily|weekly|prune) is unchanged.
-//   deploy/nofx-db-backup.sh  sha256 0e9dae38… — REVISED same wave after the
+//   deploy/vl-db-backup.sh  sha256 0e9dae38… — REVISED same wave after the
 //     CTO's P0 gate on the first version (a 213 GB research snapshot every
 //     timer run would fill the disk): research is now OPT-IN
-//     (NOFX_BACKUP_RESEARCH=1, default OFF — default run = main DB only),
-//     a disk-space precheck (2.5 × source size AND a NOFX_BACKUP_MIN_FREE_GB
+//     (VL_BACKUP_RESEARCH=1, default OFF — default run = main DB only),
+//     a disk-space precheck (2.5 × source size AND a VL_BACKUP_MIN_FREE_GB
 //     50 GB post-backup floor) refuses loudly with nothing written, and the
 //     opted-in retention defaults to 1/1 instead of mirroring 14/8.
-//     Contract tests: deploy/nofx_db_backup_test.go (fake small DBs + a PATH
+//     Contract tests: deploy/vl_db_backup_test.go (fake small DBs + a PATH
 //     df shim) — default-touches-only-main, opt-in-backs-up-research,
 //     refuse-on-low-space, refuse-on-floor; mutation "default ON" fails the
 //     first one.
@@ -293,6 +313,9 @@ import { expect, it } from 'vitest'
 // CRYPTO REMOVAL (owner order 2026-09-30; CR-A 7497a02d3): go.mod re-pinned 2026-10-01 — crypto SDK requires dropped
 // ONE-BUTTON P-E (owner order 2026-10-02 "do all now"; DS-101 ac8983b32): auth/auth.go re-pinned 2026-10-02 — cutover-worker scope, per-scope TTL, two-route allowlist
 // TOKEN-IAT-SAME-SECOND (owner order 2026-10-02 "one merge per update"; DS-101 #302 f16954d0f/c54792d98, bundled in #305): auth/auth.go re-pinned 2026-10-02 — every mint carries a distinct jti + auth.Now clock seam
+// RENAME-R5 (owner order 2026-10-02 'finish rename'; DS-104, integrated head): the three pre-rename deploy scripts deleted — keys removed, renamed vl-*.sh re-pinned from the merged tree 2026-10-02
+// PR #309 dev merge (2026-10-04): re-pin the reviewed AddOn cancel/partial-close
+// and stop-limit surface plus Go cancel-report gating at the read loop.
 import baseline from './test/brand-scope-baseline.json'
 
 function verifyScope(path: string, bytes: Buffer, expected: string) {
@@ -329,9 +352,9 @@ it('preserves every existing TypeScript import target in changed files', async (
       stdio: ['ignore', 'pipe', 'pipe'],
     })
   // The base is a pre-rename commit (A4-S3 P3-7). A mirror clone (the VL
-  // partner repo) does not carry nofx history, so the pin cannot be evaluated
+  // partner repo) does not carry vl history, so the pin cannot be evaluated
   // there: skip with the reason stated instead of failing on `git diff` (bad
-  // object). In nofx itself the commit exists and the check runs unchanged.
+  // object). In vl itself the commit exists and the check runs unchanged.
   // TypeScript twin of the Go skip in branding/scope_test.go
   // (TestExistingGoImportTargetsPreserved).
   let baseIsPresent = true
@@ -360,7 +383,7 @@ it('preserves every existing TypeScript import target in changed files', async (
   }
   // W-EXEC-TRUTH W0 twin (the Go preserveImports move rule): a target that
   // left THIS file but is still imported by another tracked file was MOVED —
-  // a legitimate refactor (e.g. the D2-WEB fold deleted the NofxOS Studio
+  // a legitimate refactor (e.g. the D2-WEB fold deleted the VlOS Studio
   // surface and IndicatorEditor.tsx dropped its `../ui/select` import while
   // five other files keep importing it) — and is preserved; a target that
   // vanished from the module is rejected.

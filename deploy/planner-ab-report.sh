@@ -30,15 +30,14 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# install-root rule: $HOME/vl when present, else $HOME/nofx — never a
-# hardcoded /home/hoang. Every var is the shell twin VL_ → NOFX_ → default.
-# R5 removes the NOFX twins and the rule.
-DEFAULT_REPO="$HOME/vl"; [ -d "$DEFAULT_REPO" ] || DEFAULT_REPO="$HOME/nofx"
-NOFX_REPO="${VL_REPO:-${NOFX_REPO:-$DEFAULT_REPO}}"
-NOFX_DATA="${VL_DATA:-${NOFX_DATA:-$NOFX_REPO/data}}"
-[ -n "$LOG" ] || LOG=$(ls -t "$NOFX_DATA"/{vl,nofx}_*.log 2>/dev/null | head -1)
-[ -n "$DB" ] || DB=$NOFX_DATA/data.db
-[ -n "$OUT" ] || OUT=$NOFX_DATA
+# install root is $HOME/vl — never a hardcoded /home/hoang. R5: env reads
+# are the VL_ names only.
+DEFAULT_REPO="$HOME/vl"
+VL_REPO="${VL_REPO:-$DEFAULT_REPO}"
+VL_DATA="${VL_DATA:-$VL_REPO/data}"
+[ -n "$LOG" ] || LOG=$(ls -t "$VL_DATA"/vl_*.log 2>/dev/null | head -1)
+[ -n "$DB" ] || DB=$VL_DATA/data.db
+[ -n "$OUT" ] || OUT=$VL_DATA
 [ -n "$BOOT" ] || { echo "--boot YYYY-MM-DD required" >&2; exit 2; }
 [ -r "$LOG" ] || { echo "log not readable: $LOG" >&2; exit 2; }
 [ -r "$DB" ] || { echo "db not readable: $DB" >&2; exit 2; }

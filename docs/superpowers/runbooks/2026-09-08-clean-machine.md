@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # CLEAN-MACHINE READINESS RUNBOOK — second machine, vl
 
@@ -387,7 +389,7 @@ anything I could not execute is marked **UNTESTED**.
 
 ## Step 2 — Clone
 
-2.1 `git clone git@github.com:johnwick2921-cyber/nofx.git ~/vl` (origin per AGENTS.md
+2.1 `git clone git@github.com:johnwick2921-cyber/vl.git ~/vl` (origin per AGENTS.md
     repo ownership; this is the user's own project).
 2.2 Decide the pin: machine A's running rev is `f8bc7044` and dev tip is
     `59af58fd` (measured). For a parallel test machine, check out the SAME commit

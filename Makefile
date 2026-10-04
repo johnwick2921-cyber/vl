@@ -1,10 +1,10 @@
-# NOFX Makefile for testing and development
+# VL Makefile for testing and development
 
 .PHONY: help test test-backend test-frontend test-coverage clean
 
 # Default target
 help:
-	@echo "NOFX Testing & Development Commands"
+	@echo "VL Testing & Development Commands"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test                 - Run all tests (backend + frontend)"

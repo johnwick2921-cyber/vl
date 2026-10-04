@@ -15,13 +15,8 @@ SRC="${1:-}"; OUT="${2:-}"
 [ -d "${SRC:-}" ] && [ -n "${OUT:-}" ] || { echo "package: usage: package.sh <repo-root> <stage-dir>" >&2; exit 2; }
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# The package holds EXACTLY ONE binary: vl-bin when the repo has it, else
-# nofx-bin; BOTH present is refused. R5 removes the nofx branch.
-BIN_NAME="vl-bin"; [ -f "$SRC/$BIN_NAME" ] || BIN_NAME="nofx-bin"
-if [ -f "$SRC/vl-bin" ] && [ -f "$SRC/nofx-bin" ]; then
-  echo "package: the repo holds BOTH vl-bin and nofx-bin — refusing (a package must hold exactly one)" >&2
-  exit 2
-fi
+# The package holds EXACTLY ONE binary: vl-bin (R5 — the old name is gone).
+BIN_NAME="vl-bin"
 ALLOW=(
   "$BIN_NAME"
   "web/dist"
@@ -32,7 +27,7 @@ ALLOW=(
 # PROCEDURE wrote for the previous boot, so copying it would ship a stale sha
 # that disagrees with the binary in the same archive. It is WRITTEN here from
 # the source sha, and the manifest pins the two to be byte-equal.
-OPTIONAL=( "updater/nofx-updater" "updater/nofx-updater-bootstrap" "updater/vl-updater" "updater/vl-updater-bootstrap" "calendar_static_t1.json" ) # R5 removes the nofx names
+OPTIONAL=( "updater/vl-updater" "updater/vl-updater-bootstrap" "calendar_static_t1.json" )
 
 mkdir -p "$OUT"
 staged=()

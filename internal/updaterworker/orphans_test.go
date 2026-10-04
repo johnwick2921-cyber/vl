@@ -51,8 +51,8 @@ func TestInterruptedFetchIsQuarantinedAndNeverActivated(t *testing.T) {
 	sha := func(p string) string { return strings.Repeat(p, 20) }
 	foreign := filepath.Join(root, sha("c3"))
 	finished := filepath.Join(root, sha("e5"))
-	writeFile(t, filepath.Join(foreign, "nofx-bin"), binaryBody(sha("c3")))
-	writeFile(t, filepath.Join(finished, "nofx-bin"), binaryBody(sha("e5")))
+	writeFile(t, filepath.Join(foreign, "vl-bin"), binaryBody(sha("c3")))
+	writeFile(t, filepath.Join(finished, "vl-bin"), binaryBody(sha("e5")))
 	writeFile(t, filepath.Join(r.data, "updater", "verdicts", "v1.1.0.json"), `{"schema":1,"release_id":"v1.1.0","release_dir":"`+finished+`"}`)
 	writeFile(t, filepath.Join(root, ".fetch-v1.3.0-123", "x"), "staging")
 	os.Symlink(finished, filepath.Join(root, sha("f6")))
@@ -89,7 +89,7 @@ func TestInterruptedFetchIsQuarantinedAndNeverActivated(t *testing.T) {
 	if _, err := os.Stat(r.relDir); !os.IsNotExist(err) {
 		t.Fatalf("the interrupted fetch's dir still blocks the name: %v", err)
 	}
-	if got, _ := parseBinaryBody(filepath.Join(moved[0], "nofx-bin")); got != boxNew {
+	if got, _ := parseBinaryBody(filepath.Join(moved[0], "vl-bin")); got != boxNew {
 		t.Fatal("the quarantined release lost its bytes")
 	}
 	for _, keep := range []string{foreign, finished, filepath.Join(root, ".fetch-v1.3.0-123"), filepath.Join(root, sha("f6"))} {

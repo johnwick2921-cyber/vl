@@ -269,3 +269,98 @@ func TestUpsertArmReauthorizesOnVersionBump(t *testing.T) {
 		t.Fatalf("state=%q version=%d, want armed v3 (version bump re-authorizes)", got.State, got.Version)
 	}
 }
+
+// SetArmExpiry (PR B stop-limit, 2026-10-03): an expiry can only be stamped on
+// an unfilled arm. A positive stamp lands and survives; a filled or terminal
+// row refuses it (never silent) — the caller's intent and the ledger
+// disagreeing must not be papered over.
+func TestSetArmExpiryStampsOnlyUnfilledRows(t *testing.T) {
+	db := newArmedTestDB(t)
+	st := NewArmedOrderStore(db)
+	now := time.Now()
+	armed := &ArmedOrderDB{
+		TraderID: "t1", PlanID: "2026-10-03:planZ", Version: 1, Session: "RTH",
+		Scenario: "S1", Side: "long", EntryPx: 100, StopPx: 99, TargetPx: 102,
+		State: "armed", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := st.UpsertArm(armed); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	expiry := now.UnixMilli() + 60_000
+	if err := st.SetArmExpiry(armed.ID, expiry); err != nil {
+		t.Fatalf("an unfilled arm must accept its expiry: %v", err)
+	}
+	if err := st.SetArmExpiry(armed.ID, 0); err == nil {
+		t.Fatal("a non-positive expiry must be refused")
+	}
+	if err := st.SetState(armed.ID, StateWorking, "entry order_update"); err != nil {
+		t.Fatalf("to working: %v", err)
+	}
+	extended := expiry + 60_000
+	if err := st.SetArmExpiry(armed.ID, extended); err != nil {
+		t.Fatalf("a WORKING, UNFILLED row is the resting stop-limit the evaluator extends (ISB stacking) — the stamp must be accepted: %v", err)
+	}
+	var got ArmedOrderDB
+	if err := st.DB().First(&got, armed.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.ExpiryMs != extended {
+		t.Fatalf("the working row's expiry was not stamped: got %d, want %d", got.ExpiryMs, extended)
+	}
+	if err := st.DB().Model(&ArmedOrderDB{}).Where("id = ?", armed.ID).Update("fill_quantity", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetArmExpiry(armed.ID, expiry); err == nil {
+		t.Fatal("a PARTIALLY FILLED working row is a trade in progress — its expiry must never be moved")
+	}
+	if err := st.SetState(armed.ID, StateCancelled, "owner"); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if err := st.SetArmExpiry(armed.ID, expiry); err == nil {
+		t.Fatal("a terminal row must refuse an expiry stamp")
+	}
+}
+
+// TestArmExpirySurvivesTheTransitionToWorking (PR B stop-limit, 2026-10-03): a
+// stop-limit resting at NT8 is a working, unfilled order, and its expiry must
+// survive armed → place_pending → working. If the transition cleared it, every
+// order that reached the broker would never expire.
+func TestArmExpirySurvivesTheTransitionToWorking(t *testing.T) {
+	db := newArmedTestDB(t)
+	st := NewArmedOrderStore(db)
+	now := time.Now()
+	row := &ArmedOrderDB{
+		TraderID: "t1", PlanID: "2026-10-03:planY", Version: 1, Session: "RTH",
+		Scenario: "S1", Side: "long", EntryPx: 100, StopPx: 99, TargetPx: 102,
+		State: "armed", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := st.UpsertArm(row); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if err := st.BeginPlacement(row.ID, "sig-exp"); err != nil {
+		t.Fatalf("begin placement: %v", err)
+	}
+	expiry := now.UnixMilli() + 60_000
+	if err := st.SetArmExpiry(row.ID, expiry); err != nil {
+		t.Fatalf("set expiry: %v", err)
+	}
+	if err := st.ConfirmPlacement(row.ID, "order_update"); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	rows, err := st.ListNonTerminal("t1")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	for _, r := range rows {
+		if r.ID == row.ID {
+			if r.State != StateWorking {
+				t.Fatalf("state=%q, want working", r.State)
+			}
+			if r.ExpiryMs != expiry {
+				t.Fatalf("the expiry must survive the transition to working, got %d want %d", r.ExpiryMs, expiry)
+			}
+			return
+		}
+	}
+	t.Fatal("row not found in the non-terminal list")
+}

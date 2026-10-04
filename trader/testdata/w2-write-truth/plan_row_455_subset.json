@@ -1,5 +1,5 @@
 {
- "_provenance": "plans rowid=455 (2026-09-23:LONDON v1, active, created 2026-09-23 01:51:47.925812345-05:00) read with nice -n 19 sqlite3 -readonly /home/hoang/nofx/data/data.db by Claude-101 2026-09-23 10:36 CT (SELECT doc FROM plans WHERE rowid=455); subset copied verbatim: identity_levels, levels, bias, death, flip, death_condition, day_type, price_at_write, scenarios S2,S3,S4. W-EXEC-TRUTH W2 A3/A4 fixture.",
+ "_provenance": "plans rowid=455 (2026-09-23:LONDON v1, active, created 2026-09-23 01:51:47.925812345-05:00) read with nice -n 19 sqlite3 -readonly /home/hoang/vl/data/data.db by Claude-101 2026-09-23 10:36 CT (SELECT doc FROM plans WHERE rowid=455); subset copied verbatim: identity_levels, levels, bias, death, flip, death_condition, day_type, price_at_write, scenarios S2,S3,S4. W-EXEC-TRUTH W2 A3/A4 fixture.",
  "identity_levels": [
   {
    "id": "a8824a229dbae38e7c226df8e6eb307de54e90b6e63adaf87e2c9cd7c98baf6e",

@@ -1,7 +1,9 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # 2026-08-26 · FVG Entry Model — 5th scenario condition (pure-math play)
 
-**PR:** [#79](https://github.com/johnwick2921-cyber/nofx/pull/79) · **Branch:** `feat/fvg-entry-model` (base: merged dev `024cf6b0` ⊂ `b22f5c02`)
+**PR:** [#79](https://github.com/johnwick2921-cyber/vl/pull/79) · **Branch:** `feat/fvg-entry-model` (base: merged dev `024cf6b0` ⊂ `b22f5c02`)
 **Deployed:** `rev 657e813b9da5 · goldens PASS` (flat cutover, release==running verified first).
 
 ## Purpose

@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # FINAL BUNDLE — watcher · trailing profit · discard-burn · post-exit rescan · honest logs · planner UI · wire-fixes
 
@@ -113,4 +115,4 @@ Risks: observer-prompt quality unproven until a live position (rails bound the i
 
 ## 10 · PR
 
-**#55** — https://github.com/johnwick2921-cyber/nofx/pull/55, parsed from the `gh pr create` output URL.
+**#55** — https://github.com/johnwick2921-cyber/vl/pull/55, parsed from the `gh pr create` output URL.

@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # Time-gate audit + AI timeout fix — both zero-trade causes were literals from the NY-only era; 57 gates audited, 8 BUG rows, C# clean
 
@@ -132,6 +134,6 @@ The new line caught the REAL WSL↔NT8 skew on its first session roll: WSL ~2 mi
 
 ## PR
 
-https://github.com/johnwick2921-cyber/nofx/pull/45 — **#45** (parsed from the `gh pr create` output URL).
+https://github.com/johnwick2921-cyber/vl/pull/45 — **#45** (parsed from the `gh pr create` output URL).
 
 **Note on process:** the dispatch's branch+PR flow was followed; the deploy runs from the branch (RELEASE = branch HEAD `4ebd779a`). Merging #45 to main keeps rev continuity. Owner action: none required — deployed and verified live.

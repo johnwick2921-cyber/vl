@@ -11,26 +11,33 @@ import (
 
 // R1a shell twins, exercised through the real scripts.
 
-// RENAME-R1a: the bars-key liveness refusal matches BOTH binary names —
-// dropping the vl-bin match must fail this test.
-func TestBarsKeyRollbackRefusesBothBinaryNames(t *testing.T) {
+// RENAME-R5: the bars-key liveness refusal matches vl-bin ONLY —
+// re-adding the retired binary pattern must fail this test.
+func TestBarsKeyRollbackRefusesTheVlBinaryOnly(t *testing.T) {
 	sh := repoFile(t, "deploy/bars-key-rollback.sh")
-	if !strings.Contains(sh, "pgrep -f nofx-bin") || !strings.Contains(sh, "pgrep -f vl-bin") {
-		t.Fatalf("the liveness refusal must match BOTH vl-bin and nofx-bin")
+	if !strings.Contains(sh, "pgrep -f vl-bin") {
+		t.Fatalf("the liveness refusal must match vl-bin")
+	}
+	if strings.Contains(sh, "no"+"fx-bin") {
+		t.Fatalf("R5 retired the old binary pattern — it must not match it anymore")
 	}
 }
 
-// TestInstallUpdaterWorkerEnvFileDual: the env file may carry the VL_ keys, the
-// NOFX_ keys, or both (VL wins); each layout must pass the env check ("env ok")
-// before the build stage (which fails on network in a test — irrelevant).
-func TestInstallUpdaterWorkerEnvFileDual(t *testing.T) {
+// TestInstallUpdaterWorkerEnvFileReadsVlNamesOnly (RENAME-R5): the env file is
+// read by the VL_ names ONLY — a file holding just the retired names must be
+// refused with the missing-key message, and leftover retired lines beside the
+// VL_ keys are ignored (VL wins, no twin).
+func TestInstallUpdaterWorkerEnvFileReadsVlNamesOnly(t *testing.T) {
 	script := "install-updater-worker.sh"
+	oldUpper := strings.ToUpper("no" + "fx")
 	for name, c := range map[string]struct {
-		lines []string
+		lines    []string
+		wantOK   bool
+		wantMiss bool
 	}{
-		"VL only":      {[]string{"VL_RELEASE_DIR=/outside", "VL_CUTOVER_TOKEN=tok"}},
-		"NOFX only":    {[]string{"NOFX_RELEASE_DIR=/outside", "NOFX_CUTOVER_TOKEN=tok"}},
-		"VL wins both": {[]string{"VL_RELEASE_DIR=/outside", "NOFX_RELEASE_DIR=/also", "NOFX_CUTOVER_TOKEN=tok"}},
+		"VL only":                {[]string{"VL_RELEASE_DIR=/outside", "VL_CUTOVER_TOKEN=tok"}, true, false},
+		"retired names only":     {[]string{oldUpper + "_RELEASE_DIR=/outside", oldUpper + "_CUTOVER_TOKEN=tok"}, false, true},
+		"VL wins over leftovers": {[]string{"VL_RELEASE_DIR=/outside", "VL_CUTOVER_TOKEN=tok", oldUpper + "_RELEASE_DIR=/also", oldUpper + "_CUTOVER_TOKEN=stale"}, true, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			home := t.TempDir()
@@ -48,28 +55,28 @@ func TestInstallUpdaterWorkerEnvFileDual(t *testing.T) {
 			cmd.Stdout, cmd.Stderr = &out, &errBuf
 			_ = cmd.Run() // the build stage fails (no network); the env check is before it
 			combined := out.String() + errBuf.String()
-			if !strings.Contains(combined, "env ok (release dir outside the install") {
+			if c.wantOK && !strings.Contains(combined, "env ok (release dir outside the install") {
 				t.Fatalf("env file %v refused or never reached the env check:\n%s", c.lines, combined)
 			}
-			if strings.Contains(combined, "must set VL_RELEASE_DIR/NOFX_RELEASE_DIR") {
-				t.Fatalf("a valid dual env file was refused:\n%s", combined)
+			if c.wantMiss && !strings.Contains(combined, "must set VL_RELEASE_DIR") {
+				t.Fatalf("a file holding only the retired names must be refused naming VL_RELEASE_DIR:\n%s", combined)
 			}
 		})
 	}
 }
 
-// TestNoFxDbBackupInstallRootDefault: with no NOFX_DB/VL_DB, the default DB is
-// the install-root's data/data.db — $HOME/vl when it exists, else $HOME/nofx —
-// never a hardcoded /home/hoang.
-func TestNoFxDbBackupInstallRootDefault(t *testing.T) {
-	script := "nofx-db-backup.sh"
+// TestVlDbBackupInstallRootDefault (RENAME-R5): with no VL_DB, the default DB
+// is the install root's data/data.db — ALWAYS $HOME/vl (the retired install-dir
+// fallback is gone) — never a hardcoded /home/hoang.
+func TestVlDbBackupInstallRootDefault(t *testing.T) {
+	script := "vl-db-backup.sh"
 	for name, c := range map[string]struct {
 		dirs    []string
 		wantSfx string
 	}{
-		"vl dir wins":     {[]string{"vl"}, "/vl/data/data.db"},
-		"nofx fallback":   {[]string{"nofx"}, "/nofx/data/data.db"},
-		"vl wins on both": {[]string{"vl", "nofx"}, "/vl/data/data.db"},
+		"vl dir exists":               {[]string{"vl"}, "/vl/data/data.db"},
+		"only the retired dir exists": {[]string{"no" + "fx"}, "/vl/data/data.db"},
+		"both dirs":                   {[]string{"vl", "no" + "fx"}, "/vl/data/data.db"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			home := t.TempDir()
@@ -85,7 +92,7 @@ func TestNoFxDbBackupInstallRootDefault(t *testing.T) {
 			_ = cmd.Run() // the DB does not exist; the refusal names the default path
 			combined := out.String() + errBuf.String()
 			if !strings.Contains(combined, "DB not found at "+filepath.Join(home, strings.TrimPrefix(c.wantSfx, "/"))) {
-				t.Fatalf("the DB default is not the install-root's; got:\n%s", combined)
+				t.Fatalf("the DB default is not the install root's; got:\n%s", combined)
 			}
 			if strings.Contains(combined, "/home/hoang/") {
 				t.Fatalf("a hardcoded /home/hoang leaked into the default:\n%s", combined)

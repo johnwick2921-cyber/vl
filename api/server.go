@@ -39,7 +39,7 @@ type Server struct {
 	updateVerifier updateauth.Verifier
 	updateStart    UpdateStarter
 	updatesNow     func() time.Time
-	// M4 3b-B U5b: NOFX_UPDATER=1 read once at NewServer (configureUpdater).
+	// M4 3b-B U5b: VL_UPDATER=1 read once at NewServer (configureUpdater).
 	updaterOn bool
 	// CTO fold 1790280466263: the (route, category) pairs already WARNed
 	// (handler_updates.go updatesForbid).

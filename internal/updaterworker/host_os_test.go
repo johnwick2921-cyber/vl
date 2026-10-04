@@ -24,7 +24,7 @@ func TestWorkerRefusesRoot(t *testing.T) {
 	}{
 		"an ordinary user":    {user, plainCgroup, noTZ, nil},
 		"root":                {func() int { return 0 }, plainCgroup, noTZ, ErrRoot},
-		"inside nofx.service": {user, func() ([]byte, error) { return []byte("0::/system.slice/nofx.service\n"), nil }, noTZ, ErrBotCgroup}, "inside vl.service": {user, func() ([]byte, error) { return []byte("0::/system.slice/vl.service\n"), nil }, noTZ, ErrBotCgroup}, // R5 removes the nofx name, keeps vl		"TZ set":                    {user, plainCgroup, func() (string, bool) { return "America/Chicago", true }, ErrTZ},
+		"inside vl.service": {user, func() ([]byte, error) { return []byte("0::/system.slice/vl.service\n"), nil }, noTZ, ErrBotCgroup},		"TZ set":                    {user, plainCgroup, func() (string, bool) { return "America/Chicago", true }, ErrTZ},
 		"TZ set empty is still set": {user, plainCgroup, func() (string, bool) { return "", true }, ErrTZ},
 	} {
 		geteuid, readCgroup, lookupTZ = c.euid, c.cgroup, c.tz

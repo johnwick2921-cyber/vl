@@ -669,7 +669,7 @@ func TestDescribeStrategyIncludesManualPageSections(t *testing.T) {
 	}
 	for _, unexpected := range []string{
 		"标的来源：",
-		"NofxOS 数据：",
+		"VlOS 数据：",
 	} {
 		if strings.Contains(detail, unexpected) {
 			t.Fatalf("expected grid strategy detail not to contain AI field %q, got: %s", unexpected, detail)

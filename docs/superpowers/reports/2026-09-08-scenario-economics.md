@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # Scenario economics — new authoring contract, legacy UNKNOWN preserved
 
@@ -33,8 +35,8 @@ Both requested documents are evidence at their specified immutable revisions. Ne
 
 | Basis | Exact revision | HTTP / downloaded bytes = Git blob bytes | `git log -1 -- <file>` at that revision |
 | --- | --- | --- | --- |
-| [Trading-policy research](https://raw.githubusercontent.com/johnwick2921-cyber/nofx/982091d4d908f4a5b8b65022cedf5b8c7c8202d5/docs/superpowers/research/2026-09-08-trading-policy/README.md) | `982091d4d908f4a5b8b65022cedf5b8c7c8202d5` | 200 / 67,959 = 67,959 | `0ec5bd2c 2026-09-08T08:30:15-05:00 docs(research): publish four-policy trading study with 28 cited sources` |
-| [Planner-preparation audit](https://raw.githubusercontent.com/johnwick2921-cyber/nofx/6095ca58fe5901ba398be374e4f9d3488d0bed6b/docs/superpowers/reports/2026-09-07-planner-preparation-audit/README.md) | `6095ca58fe5901ba398be374e4f9d3488d0bed6b` | 200 / 77,345 = 77,345 | `6095ca58 2026-09-07T23:09:02-05:00 docs: record owner approval for public audit evidence publication` |
+| [Trading-policy research](https://raw.githubusercontent.com/johnwick2921-cyber/vl/982091d4d908f4a5b8b65022cedf5b8c7c8202d5/docs/superpowers/research/2026-09-08-trading-policy/README.md) | `982091d4d908f4a5b8b65022cedf5b8c7c8202d5` | 200 / 67,959 = 67,959 | `0ec5bd2c 2026-09-08T08:30:15-05:00 docs(research): publish four-policy trading study with 28 cited sources` |
+| [Planner-preparation audit](https://raw.githubusercontent.com/johnwick2921-cyber/vl/6095ca58fe5901ba398be374e4f9d3488d0bed6b/docs/superpowers/reports/2026-09-07-planner-preparation-audit/README.md) | `6095ca58fe5901ba398be374e4f9d3488d0bed6b` | 200 / 77,345 = 77,345 | `6095ca58 2026-09-07T23:09:02-05:00 docs: record owner approval for public audit evidence publication` |
 
 Research §02 separates authored geometry from actual admission/execution and corrects the six under-2R records. §03 requires explicit obstacle response and explains why a favorable final R is not evidence of profitable behavior at a nearby obstacle. §07 connects causal preparation, permission, geometry and management, and prohibits inventing partial exits. §09 says **“Do not prescribe now: a mandatory 1R first target”**. Its priority two is consistency between obstacle, response, arm target and risk geometry. §05 preserves a level's possible target/obstacle/invalidation usefulness even when it is unsuitable for entry.
 

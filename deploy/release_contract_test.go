@@ -60,7 +60,7 @@ func TestReleaseWorkflowDefaultsToThisRepoAndNeverThePartner(t *testing.T) {
 	if !strings.Contains(y, "RELEASE_REPO") {
 		t.Fatalf("the artifact target must be ONE variable, RELEASE_REPO, so the owner changes it in one line")
 	}
-	if !strings.Contains(y, "johnwick2921-cyber/nofx") {
+	if !strings.Contains(y, "johnwick2921-cyber/vl") {
 		t.Fatalf("RELEASE_REPO must DEFAULT to this repo")
 	}
 	if strings.Contains(y, "vlautoagenttraderv1") {
@@ -90,7 +90,7 @@ func runScript(t *testing.T, script string, args ...string) (string, error) {
 // everything else costs a rebuild, this costs a credential.
 func TestSecretScanRejectsASecretInTheStagedTree(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "nofx-bin"), []byte("binary"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "vl-bin"), []byte("binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// The deny-list entry that has actually bitten this repo before.
@@ -108,7 +108,7 @@ func TestSecretScanRejectsASecretInTheStagedTree(t *testing.T) {
 
 func TestSecretScanAcceptsACleanTree(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "nofx-bin"), []byte("binary"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "vl-bin"), []byte("binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := runScript(t, "deploy/release/secret-scan.sh", dir); err != nil {
@@ -177,7 +177,7 @@ func TestReleaseSignatureVerifiesOnlyWithAnAllowedSignersFile(t *testing.T) {
 	}
 	dir := t.TempDir()
 	key := filepath.Join(dir, "k")
-	if out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-C", "nofx-release-test", "-f", key).CombinedOutput(); err != nil {
+	if out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-C", "vl-release-test", "-f", key).CombinedOutput(); err != nil {
 		t.Fatalf("keygen: %v\n%s", err, out)
 	}
 	msg := filepath.Join(dir, "manifest.json")
@@ -257,7 +257,7 @@ func TestReleaseWorkflowDoesNotPipeAnUnpinnedRemoteScriptIntoShell(t *testing.T)
 // boot, so a copy ships a sha that disagrees with the binary beside it.
 func TestPackagerWritesTheReleaseMarkerFromTheSourceSha(t *testing.T) {
 	src := t.TempDir()
-	for _, p := range []string{"nofx-bin", "LICENSE", "ninjascript/x.cs", "ninjascript/vltrader_tcp_PROTOCOL.md", "web/dist/index.html"} {
+	for _, p := range []string{"vl-bin", "LICENSE", "ninjascript/x.cs", "ninjascript/vltrader_tcp_PROTOCOL.md", "web/dist/index.html"} {
 		full := filepath.Join(src, p)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)
@@ -300,7 +300,7 @@ func TestPackagerWritesTheReleaseMarkerFromTheSourceSha(t *testing.T) {
 // cannot tell them apart treats an unrun job as a proven-empty result.
 func TestManifestRendersUncomputedListsAsNullNotEmpty(t *testing.T) {
 	stage := t.TempDir()
-	if err := os.WriteFile(filepath.Join(stage, "nofx-bin"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(stage, "vl-bin"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// P3 made manifest.sh require a staged deploy/RELEASE that AGREES with the
@@ -358,7 +358,7 @@ func TestManifestRefusesWhenTheStagedReleaseDisagreesWithTheSourceSha(t *testing
 	if err := os.MkdirAll(filepath.Join(stage, "deploy"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(stage, "nofx-bin"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(stage, "vl-bin"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	want := strings.Repeat("b", 40)
@@ -381,7 +381,7 @@ func TestManifestRefusesWhenTheStagedReleaseDisagreesWithTheSourceSha(t *testing
 // staged tree must contain neither key, under any name.
 func TestStagedTreeNeverContainsTheEphemeralBootSecrets(t *testing.T) {
 	src := t.TempDir()
-	for _, p := range []string{"nofx-bin", "LICENSE", "ninjascript/x.cs", "ninjascript/vltrader_tcp_PROTOCOL.md", "web/dist/index.html"} {
+	for _, p := range []string{"vl-bin", "LICENSE", "ninjascript/x.cs", "ninjascript/vltrader_tcp_PROTOCOL.md", "web/dist/index.html"} {
 		full := filepath.Join(src, p)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)
@@ -479,7 +479,7 @@ func TestCutoverRefusesWithoutAPassingInstallationGate(t *testing.T) {
 	// existence before the kill. The fold: /api/installation-gate, whose legs
 	// the script REQUIRES by name — and whose overall "ready" verdict it must
 	// NEVER trust (addon_census can never pass on a never-held bot).
-	if !strings.Contains(sh, "NOFX_CUTOVER_TOKEN") || !strings.Contains(sh, "cutover gate needs a token") {
+	if !strings.Contains(sh, "VL_CUTOVER_TOKEN") || !strings.Contains(sh, "cutover gate needs a token") {
 		t.Fatalf("no token must REFUSE, and the token must never be a command-line argument")
 	}
 	if !strings.Contains(sh, "/api/installation-gate") {
@@ -507,7 +507,7 @@ func TestCutoverRefusesWithoutAPassingInstallationGate(t *testing.T) {
 
 // interpolationRefused returns the offending header form when sh interpolates
 // a cutover token into a curl Authorization header, else "". ANY expansion
-// that names CUTOVER_TOKEN is refused (RENAME-R1a: the NOFX_ and VL_ forms,
+// that names CUTOVER_TOKEN is refused (RENAME-R5: the VL_ form and any future name,
 // and any future name — the token must never ride argv).
 func interpolationRefused(sh string) string {
 	re := regexp.MustCompile(`Authorization: Bearer \$\{[A-Z0-9_]*CUTOVER_TOKEN\}`)
@@ -535,12 +535,12 @@ func TestCutoverTokenNeverRidesAProcessArgv(t *testing.T) {
 	}
 }
 
-// RENAME-R1a: the refusal covers the VL_ form too — narrowing it back to the
-// literal NOFX_ form must fail THIS test (the mutant list's item 11).
+// RENAME-R5: the refusal covers every CUTOVER_TOKEN name — narrowing it back
+// to one literal form must fail THIS test (the mutant list's item 11).
 func TestCutoverTokenInterpolationRefusalCoversAnyCUTOVER_TOKENName(t *testing.T) {
 	for _, line := range []string{
 		"curl -H \"Authorization: Bearer ${VL_CUTOVER_TOKEN}\" http://x",
-		"curl -H \"Authorization: Bearer ${NOFX_CUTOVER_TOKEN}\" http://x",
+		"curl -H \"Authorization: Bearer ${SOME_FUTURE_CUTOVER_TOKEN}\" http://x",
 		"curl -H \"Authorization: Bearer ${SOME_OTHER_CUTOVER_TOKEN}\" http://x",
 	} {
 		if interpolationRefused(line) == "" {
@@ -727,10 +727,10 @@ func TestManifestSeparatesOwnerDataFromProgramArtifacts(t *testing.T) {
 
 // D1-FOLD (DS-105): a post-R1b archive that holds ONLY the vl updater binaries
 // must still stage them — OPTIONAL accepts both name pairs (R5 removes the
-// nofx pair). Dropping the vl entries must fail THIS test.
+// old-name pair). Dropping the vl entries must fail THIS test.
 func TestPackagerStagesAnArchiveHoldingOnlyVlUpdaterBinaries(t *testing.T) {
 	src := t.TempDir()
-	for _, p := range []string{"nofx-bin", "LICENSE", "ninjascript/x.cs", "ninjascript/vltrader_tcp_PROTOCOL.md", "web/dist/index.html",
+	for _, p := range []string{"vl-bin", "LICENSE", "ninjascript/x.cs", "ninjascript/vltrader_tcp_PROTOCOL.md", "web/dist/index.html",
 		"updater/vl-updater", "updater/vl-updater-bootstrap"} {
 		full := filepath.Join(src, p)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {

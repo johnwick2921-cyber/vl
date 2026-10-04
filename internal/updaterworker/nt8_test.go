@@ -173,7 +173,7 @@ func TestBootVerifyRefusesARefusedBootLine(t *testing.T) {
 		{name: "an OK line for another pid does not satisfy", after: strings.Replace(ok, " pid "+strconv.Itoa(bootPID)+" ", " pid 9999 ", 1), wantErr: "no \"BOOT INTEGRITY OK"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			p := filepath.Join(t.TempDir(), "nofx_2026-09-24.log")
+			p := filepath.Join(t.TempDir(), "vl_2026-09-24.log")
 			writeFile(t, p, c.before)
 			off := int64(len(c.before))
 			f, _ := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0)

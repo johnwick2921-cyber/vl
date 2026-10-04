@@ -66,7 +66,7 @@ func TestLogClockHealthWithInjectedDriftDoesNotPanic(t *testing.T) {
 func TestLogClockGuardBootReadsState(t *testing.T) {
 	dir := t.TempDir()
 	state := filepath.Join(dir, "clock-guard-state.json")
-	t.Setenv("NOFX_CLOCK_STATE", state)
+	t.Setenv("VL_CLOCK_STATE", state)
 
 	LogClockGuardBoot() // missing file → timer=inactive-or-not-installed, no panic
 

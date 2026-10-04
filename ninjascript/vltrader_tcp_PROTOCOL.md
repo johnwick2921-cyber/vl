@@ -505,7 +505,7 @@ as every other capability):
 - the regime is OFF by default; with it OFF this frame is received and ignored
   (the field is additive), and the bot is byte-identical to today.
 
-### `reduce_position` / `reduce_fill` / `reduce_position_rejected` (2026-10-03-c1)
+### `reduce_position` / `reduce_fill` / `reduce_position_rejected` (2026-10-03-c2)
 
 PARTIAL-CLOSE — the exact-quantity cousin of `close_position`, so the mentor
 mode can scale out HALF at 1:1 while the protective stop keeps the remainder.
@@ -554,7 +554,7 @@ without a confirming book FLATTENS the remainder. There is no naked window,
 no doubled stop, and no OCO cascade — a cancel of the bracket is never sent
 on this path.
 
-### `signal.stop_limit` (2026-10-03-c1) — mentor stop-LIMIT entries
+### `signal.stop_limit` (2026-10-03-c2) — mentor stop-LIMIT entries
 
 The `signal` payload gains `stop_limit` (bool, omitempty). When true and
 `order_type` is `stop_entry`, the AddOn builds `OrderType.StopLimit` with
@@ -563,8 +563,6 @@ stop-MARKET (D1.4 p1 @24:41, p2 @00:00). Go sets the flag only when its
 `MENTOR_STOP_LIMIT` knob is ON and the far side proves
 `MinAddonBuildStopLimit` (fail-closed: an older AddOn would build StopMarket
 and fill sloppily). With the knob OFF the wire is byte-identical.
-
-
 
 Entry `signal.timestamp` is UTC command creation time (RFC3339 with fractional
 seconds), independent of the market bar close used to compose entry prices.
@@ -672,3 +670,33 @@ A value the AddOn cannot read is **left out**, never guessed. The Go reply sets 
 its `accept_seq`, monotonic accept time and `remote_port`, as that connection's record.
 The verifier binds to that record, **never** to `FarSideBuildID()`. `VL_BUILD_ID` keeps
 its ISO-date prefix, because the capability floors compare it bytewise.
+
+## `signal.stop_limit` (2026-10-03-c2) — mentor stop-LIMIT entries (PR B)
+
+The `signal` payload gains `stop_limit` (bool, omitempty). When true and
+`order_type` is `stop_entry`, the AddOn builds `OrderType.StopLimit` with
+`LimitPrice == StopPrice` — the entry fills at its price or misses, never a
+stop-MARKET (D1.4 p1 @24:41, p2 @00:00). Go sets the flag only when its
+`MENTOR_STOP_LIMIT` knob is ON and the far side proves
+`MinAddonBuildStopLimit` = `2026-10-03-c2` (fail-closed: an older AddOn would
+build StopMarket and fill sloppily). With the knob OFF the wire is
+byte-identical.
+
+N12: with limit == stop and Day time-in-force, a gap through the trigger leaves
+a RESTING limit that can fill later at a stale price. Go closes that window
+with a per-order EXPIRY, authored by the mentor evaluator's intent, not a
+blanket timer: armed_orders.expiry_ms will be stamped when the mentor injector
+lands (DS-102, #316 — a level touch or a single ISB expires at the close of
+the NEXT 1m candle; ISB stacking is extended while the candles stay inside and
+cancelled at the 4th; the swing runs its 5m rule). Stop-limit + expiry apply
+to MENTOR-MODE arms ONLY, and the discriminator is the arm's EXPLICIT origin
+(armed_orders.origin = 'mentor', stamped by the mentor injector), never the
+expiry as a proxy: mentor + knob ON + expiry_ms > 0 routes the stop entry
+through the limit variant; mentor + knob ON + no expiry is REFUSED fail-closed
+with a reason + counter and NO stop-market fallback; a non-mentor arm takes
+today's stop-market path whatever its expiry, and the knob OFF is that same
+path for everyone. At now >= expiry_ms the
+armed pass sends the cancel_order frame on the SAME pass (an expired arm that
+was never placed — armed, no signal id — ends terminal 'expired' in the
+ledger); a row with no expiry is never auto-cancelled. The AddOn needs no new
+frame for this.

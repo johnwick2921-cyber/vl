@@ -151,7 +151,7 @@ func TestKlinesNinjaTraderStoreDepthContractFiltered(t *testing.T) {
 	chartAcrossRoll = false
 	t.Cleanup(func() { chartAcrossRoll = prev })
 	if off, _ := s.getKlinesFromNinjaTrader("MNQ", "1m", 6); len(off) != 5 || off[0].OpenTime != older(3) {
-		t.Fatalf("with NOFX_CHART_ACROSS_ROLL=off the 09-14 behaviour must hold: got %d bars, oldest %d", len(off), off[0].OpenTime)
+		t.Fatalf("with VL_CHART_ACROSS_ROLL=off the 09-14 behaviour must hold: got %d bars, oldest %d", len(off), off[0].OpenTime)
 	}
 }
 

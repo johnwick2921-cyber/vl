@@ -175,13 +175,11 @@ check_encryption() {
 # ------------------------------------------------------------------------
 read_env_vars() {
     if [ -f ".env" ]; then
-        # The VL_ line wins when non-empty; the NOFX_ line is the fallback
-        # (R5 removes it). Values are read, never written, here.
+        # The VL_ line only (R5 removed the old-name fallback). Values are
+        # read, never written, here.
         v=$(grep "^VL_FRONTEND_PORT=" .env 2>/dev/null | head -1 | cut -d'=' -f2- || true)
-        [ -n "$v" ] || v=$(grep "^NOFX_FRONTEND_PORT=" .env 2>/dev/null | head -1 | cut -d'=' -f2- || true)
         VL_FRONTEND_PORT=$v
         v=$(grep "^VL_BACKEND_PORT=" .env 2>/dev/null | head -1 | cut -d'=' -f2- || true)
-        [ -n "$v" ] || v=$(grep "^NOFX_BACKEND_PORT=" .env 2>/dev/null | head -1 | cut -d'=' -f2- || true)
         VL_BACKEND_PORT=$v
 
         VL_FRONTEND_PORT=$(echo "$VL_FRONTEND_PORT" | tr -d '"'"'" | tr -d ' ')

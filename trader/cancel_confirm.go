@@ -251,21 +251,20 @@ func cancelReRequestMax() int {
 // with it OFF the bot is byte-identical to today.
 
 // cancelConfirmRequireReport resolves the regime (L4 knob, default OFF).
+// P2-2 (REVIEW-312 r3): ONE parser — this delegates to the provider's
+// CancelReportRegimeOn so the knob has exactly one reader and cannot drift
+// between packages.
 func cancelConfirmRequireReport() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("CANCEL_CONFIRM_REQUIRE_REPORT"))) {
-	case "1", "true", "on", "yes":
-		return true
-	}
-	return false
+	return nt.CancelReportRegimeOn()
 }
+
+// cancelReportBuildIDFor is the build-id seam the report pass reads (P1-2,
+// REVIEW-312 r3): the production value is the far side's proven build; tests
+// override it to pin the dispatch to the report pass without a live link.
+var cancelReportBuildIDFor = func(at *AutoTrader) string { return at.farSideBuildID() }
 
 // armedReportNow is the report receipt clock — swappable in tests (A28).
 var armedReportNow = func() int64 { return time.Now().UTC().UnixMilli() }
-
-// cancelReportBuildIDFor is the build-id seam the report pass reads — the far
-// side's build in production, swappable in tests so a pin can drive the
-// dispatch with a PROVEN build without a live connection (A28).
-var cancelReportBuildIDFor = func(at *AutoTrader) string { return at.farSideBuildID() }
 
 // ResetArmedReportNowForTest restores the real clock.
 func ResetArmedReportNowForTest() {

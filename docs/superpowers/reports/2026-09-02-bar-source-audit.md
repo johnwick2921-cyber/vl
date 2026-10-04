@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # 2026-09-02 — Bar-source audit: which consumers are starved of history the system already has
 
@@ -179,4 +181,4 @@ Per TF, source and earliest bar read FROM the resolver (no literals), e.g.:
 
 - Read-only maintained: no code/config/DB writes, no restart, no lock, main tree untouched.
 - Report committed to `docs/bar-source-audit-0902`; raw URL 200-checked below.
-- Commit ref: **e88395942fd570cb3ecdfff58ab25caa08d445db** · raw: https://raw.githubusercontent.com/johnwick2921-cyber/nofx/e88395942fd570cb3ecdfff58ab25caa08d445db/docs/superpowers/reports/2026-09-02-bar-source-audit.md → HTTP 200 (verified).
+- Commit ref: **e88395942fd570cb3ecdfff58ab25caa08d445db** · raw: https://raw.githubusercontent.com/johnwick2921-cyber/vl/e88395942fd570cb3ecdfff58ab25caa08d445db/docs/superpowers/reports/2026-09-02-bar-source-audit.md → HTTP 200 (verified).

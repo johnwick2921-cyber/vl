@@ -18,11 +18,11 @@ func TestReleaseRootRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	install := filepath.Join(base, "nofx")
+	install := filepath.Join(base, "vl")
 	mkdirRRFixture(t, install)
 	outsideRoot := filepath.Join(base, "releases")
 	mkdirRRFixture(t, outsideRoot)
-	prefixSibling := filepath.Join(base, "nofx-releases")
+	prefixSibling := filepath.Join(base, "vl-releases")
 	mkdirRRFixture(t, prefixSibling)
 	dotdotInside := filepath.Join(install, "..rel")
 	mkdirRRFixture(t, dotdotInside)
@@ -52,12 +52,12 @@ func TestReleaseRootRules(t *testing.T) {
 			got, err := ReleaseRoot(tc.installDir)
 			if tc.want == "refuse" {
 				if !errors.Is(err, ErrReleaseRoot) || got != "" {
-					t.Fatalf("ReleaseRoot(%s) with NOFX_RELEASE_DIR=%s = %q, %v; want refused with ErrReleaseRoot", tc.installDir, tc.root, got, err)
+					t.Fatalf("ReleaseRoot(%s) with VL_RELEASE_DIR=%s = %q, %v; want refused with ErrReleaseRoot", tc.installDir, tc.root, got, err)
 				}
 				return
 			}
 			if err != nil || got != tc.root {
-				t.Fatalf("ReleaseRoot(%s) with NOFX_RELEASE_DIR=%s = %q, %v; want %q accepted", tc.installDir, tc.root, got, err, tc.root)
+				t.Fatalf("ReleaseRoot(%s) with VL_RELEASE_DIR=%s = %q, %v; want %q accepted", tc.installDir, tc.root, got, err, tc.root)
 			}
 		})
 	}

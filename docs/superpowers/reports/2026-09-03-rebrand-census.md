@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # Rebrand Census — every "vl" identity, mapped and classified (2026-09-03)
 
@@ -108,9 +110,9 @@ Legend: **visible?** = what the owner SEES today (screen/log/alert/URL/none). **
 
 | # | location | what | count | visible? | rename-safe? | keys on | migration | command |
 |---|---|---|---|---|---|---|---|---|
-| 4.1 | GitHub | repo `johnwick2921-cyber/nofx` | 1 | URL | yes (GitHub redirects after rename) | clones, raw URLs, CI | rename repo last; update raw URLs after redirect proven | `git remote -v` |
+| 4.1 | GitHub | repo `johnwick2921-cyber/vl` | 1 | URL | yes (GitHub redirects after rename) | clones, raw URLs, CI | rename repo last; update raw URLs after redirect proven | `git remote -v` |
 | 4.2 | GitHub | upstream `upstream github link (removed in the VL rename)` (historical) | 1 | URL | n/a | fork lineage | leave; do not touch upstream | `git remote -v` |
-| 4.3 | `docs/superpowers/reports/` | raw.githubusercontent URLs embedding `johnwick2921-cyber/nofx` | **5** | URL (clickable in prior reports) | yes | GitHub redirect | works via redirect; update for cleanliness | `grep -rIin 'raw.githubusercontent.com/johnwick2921-cyber/nofx' . --exclude-dir=.git \| wc -l` |
+| 4.3 | `docs/superpowers/reports/` | raw.githubusercontent URLs embedding `johnwick2921-cyber/vl` | **5** | URL (clickable in prior reports) | yes | GitHub redirect | works via redirect; update for cleanliness | `grep -rIin 'raw.githubusercontent.com/johnwick2921-cyber/vl' . --exclude-dir=.git \| wc -l` |
 | 4.4 | branches | 25+ remote branches, incl. `origin/docs/brand-census` (prior census) | 25+ | URL | yes | nothing | branch names are cosmetic | `git branch -r` |
 | 4.5 | `.github/CODEOWNERS:24` | `upstream github link (removed in the VL rename)` + upstream contributor handles | 1 | URL | migration | GitHub org/account names (external) | edit only after upstream accounts confirmed; never rename external handles | `grep -n upstream github link (removed in the VL rename) .github/CODEOWNERS` |
 | 4.6 | `.github/workflows/` | 11 workflow files, docker image tags (see 3.4), workflow README "for the VL project" | 11 files | URL (Actions UI) | yes | Actions | string swaps | `ls .github/workflows/` |
@@ -142,7 +144,7 @@ Count per `docs/` directory (command: `for d in docs/*/; do printf "%s " "$d"; g
 - **Screen (Studio):** VLi labels in the AgentBeta chat — message attribution "VLi ·" (`ChatMessages.tsx:133`), input placeholder "Ask VLi anything… ⌘K" (`ChatInput.tsx:123-124`), disclaimer "VLi may make mistakes…" (`ChatInput.tsx:187`), welcome "What can I help with?"/zh variant (`WelcomeScreen.tsx:118`). Guide architecture diagram says "Go bot (vl-bin)" (`guide/content/welcome.ts:37`). **The tab title, header brand, and icon are ALREADY VL** (`index.html:8`, `HeaderBar.tsx:95`, `icons/vl.svg`) — the gold theme remains CSS classes `--vl-*` (invisible as text).
 - **Logs:** boot banner `🚀 VL - AI-Powered Trading System` every restart (`main.go:44`); log files named `vl_YYYY-MM-DD.log` (`logger/logger.go:90`); backup timer log line "vl-backup: done (…)" (`vl-db-backup.sh:79`); process name `./vl-bin` in ps/journald; journald dropin installed as `vl.conf`.
 - **Alerts/Telegram:** `/start` → "✅ VL 就绪…/VL is ready!", `/help` → "VL 使用指南/VL Help"; agent replies speak as "VL quantitative trading system AI assistant".
-- **URLs:** `github.com/johnwick2921-cyber/nofx`; GitHub README `<h1>VL</h1>`; 5 raw URLs inside prior reports; Actions UI shows workflow image tags `vl-*`.
+- **URLs:** `github.com/johnwick2921-cyber/vl`; GitHub README `<h1>VL</h1>`; 5 raw URLs inside prior reports; Actions UI shows workflow image tags `vl-*`.
 - **systemd --user output:** unit names `vl-backup.service/.timer`, `vl-clock-guard.service/.timer`.
 - **What does NOT surface:** Prometheus metrics (no scraper configured [B]), docker/nginx (not used locally), DB rows (zero vl), NT8 AddOns (already VL).
 
@@ -181,7 +183,7 @@ grep -rIin '"vl/' --include='*.go' . | wc -l         # module imports (phase 3)
 grep -rIin 'VL_' --include='*.sh' --include='*.yml' --include='*.yaml' . | wc -l   # env prefixes
 grep -rIil vl . --exclude-dir=.git | wc -l           # files remaining
 grep -rIin 'vl' deploy/ scripts/ | grep -v '"vl/' | wc -l   # hardcoded paths/units
-grep -rIin 'raw.githubusercontent.com/johnwick2921-cyber/nofx' . --exclude-dir=.git | wc -l
+grep -rIin 'raw.githubusercontent.com/johnwick2921-cyber/vl' . --exclude-dir=.git | wc -l
 sqlite3 'file:/home/hoang/vl/data/data.db?mode=ro' ".schema" | grep -in vl | wc -l
 sqlite3 'file:/home/hoang/vl/data/data.db?mode=ro' "SELECT COUNT(*) FROM traders WHERE lower(CAST(id AS TEXT)) LIKE '%vl%' OR lower(CAST(name AS TEXT)) LIKE '%vl%';"
 sqlite3 'file:/home/hoang/vl/data/data.db?mode=ro' "SELECT COUNT(*) FROM strategies WHERE lower(CAST(name AS TEXT)) LIKE '%vl%';"

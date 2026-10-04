@@ -31,16 +31,15 @@
 set -uo pipefail
 
 SHA="${1:-}"
-# Shell twins VL_ → NOFX_ → default; the install default is $HOME/vl
-# (plan v7 FINAL D2 item 7 :34). The repo URL STAYS the pre-rename owner repo
-# until the R4 commit (Z14). R5 removes the NOFX twins.
-REPO_URL="${VL_UPDATER_BUILD_REPO:-${NOFX_UPDATER_BUILD_REPO:-https://github.com/johnwick2921-cyber/nofx}}"
-INSTALL_DIR="${VL_UPDATER_INSTALL_DIR:-${NOFX_UPDATER_INSTALL_DIR:-$HOME/vl}}"
+# R5: env reads are the VL_ names only; the install default is $HOME/vl
+# and the repo URL is the renamed owner repo.
+REPO_URL="${VL_UPDATER_BUILD_REPO:-https://github.com/johnwick2921-cyber/vl}"
+INSTALL_DIR="${VL_UPDATER_INSTALL_DIR:-$HOME/vl}"
 
 usage() {
   echo "usage: install-updater-worker.sh <40-hex sha>" >&2
   echo "  builds ~/bin/vl-updater from that exact commit and installs the systemd --user unit" >&2
-  echo "  env: VL_/NOFX_UPDATER_BUILD_REPO (default $REPO_URL), VL_/NOFX_UPDATER_INSTALL_DIR (default \$HOME/vl)" >&2
+  echo "  env: VL_UPDATER_BUILD_REPO (default $REPO_URL), VL_UPDATER_INSTALL_DIR (default \$HOME/vl)" >&2
 }
 [ -n "$SHA" ] || { usage; exit 2; }
 printf '%s' "$SHA" | grep -Eqx '[0-9a-f]{40}' || {
@@ -53,7 +52,7 @@ ENV_FILE="$HOME/.config/vl-updater/env"
 [ -f "$ENV_FILE" ] || {
   echo "install-updater-worker: REFUSED — $ENV_FILE does not exist." >&2
   echo "  create it (mode 0600, owner you) with exactly two lines (VL_ names win):" >&2
-  echo "    VL_RELEASE_DIR=/absolute/path/outside/vl   (or the pre-rename key — R5 removes)" >&2
+  echo "    VL_RELEASE_DIR=/absolute/path/outside/vl" >&2
   echo "    VL_CUTOVER_TOKEN=<written by: vl-updater-bootstrap --install-dir <bot> enroll <owner-email>>" >&2
   exit 2
 }
@@ -62,14 +61,12 @@ ENV_FILE="$HOME/.config/vl-updater/env"
   exit 2
 }
 
-# Read the two required values WITHOUT printing them. The VL_ key wins when
-# non-empty; the pre-rename key is the fallback (R5 removes it).
+# Read the two required values WITHOUT printing them (R5: VL_ names only).
 release_dir="$(awk -F= '$1=="VL_RELEASE_DIR"{print $2}' "$ENV_FILE" | tail -1)"
-[ -n "$release_dir" ] || release_dir="$(awk -F= '$1=="NOFX_RELEASE_DIR"{print $2}' "$ENV_FILE" | tail -1)"
 token_ok=no
-grep -Eq '^(VL|NOFX)_CUTOVER_TOKEN=.+' "$ENV_FILE" && token_ok=yes
+grep -Eq '^VL_CUTOVER_TOKEN=.+' "$ENV_FILE" && token_ok=yes
 { [ -n "$release_dir" ] && [ "$token_ok" = "yes" ]; } || {
-  echo "install-updater-worker: REFUSED — $ENV_FILE must set VL_RELEASE_DIR/NOFX_RELEASE_DIR and VL_CUTOVER_TOKEN/NOFX_CUTOVER_TOKEN (both non-empty)" >&2
+  echo "install-updater-worker: REFUSED — $ENV_FILE must set VL_RELEASE_DIR and VL_CUTOVER_TOKEN (both non-empty)" >&2
   exit 2
 }
 case "$release_dir" in
@@ -83,11 +80,11 @@ real_root="$(realpath -m "$release_dir" 2>/dev/null || echo "$release_dir")"
 real_install="$(realpath -m "$INSTALL_DIR" 2>/dev/null || echo "$INSTALL_DIR")"
 case "$real_root" in
   "$real_install"|"$real_install"/*)
-    echo "install-updater-worker: REFUSED — VL_RELEASE_DIR/NOFX_RELEASE_DIR ($release_dir) must be OUTSIDE the install ($INSTALL_DIR)" >&2
+    echo "install-updater-worker: REFUSED — VL_RELEASE_DIR ($release_dir) must be OUTSIDE the install ($INSTALL_DIR)" >&2
     exit 2 ;;
 esac
 echo "install-updater-worker: env ok (release dir outside the install; token present, not shown)"
-echo "install-updater-worker: note — VL_/NOFX_CUTOVER_TOKEN is the cutover-worker credential enroll writes (auth.ScopeCutoverWorker); never a hand-minted gate-jwt"a hand-minted gate-jwt"ended install window — no longer-lived token type exists"
+echo "install-updater-worker: note — VL_CUTOVER_TOKEN is the cutover-worker credential enroll writes (auth.ScopeCutoverWorker); never a hand-minted gate-jwt — the enroll token is the long-lived type (auth.WorkerTokenTTL)"
 
 BUILD_DIR="$(mktemp -d /tmp/vl-updater-build.XXXXXX)" || { echo "install-updater-worker: REFUSED — cannot make a build dir" >&2; exit 2; }
 trap 'rm -rf "$BUILD_DIR"' EXIT

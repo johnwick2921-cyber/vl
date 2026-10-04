@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # Touch/Bounce Detector — Why It Is Biased, and a Symmetric Replacement
 
@@ -319,7 +321,7 @@ pushed (`15b01369..1dc958da dev -> dev`); branch in sync. The A8 commit-ref raw 
 returned **HTTP 200**:
 
 ```
-https://raw.githubusercontent.com/johnwick2921-cyber/nofx/<report-commit>/docs/superpowers/reports/2026-09-02-detector-redesign.md
+https://raw.githubusercontent.com/johnwick2921-cyber/vl/<report-commit>/docs/superpowers/reports/2026-09-02-detector-redesign.md
 HTTP 200
 ```
 

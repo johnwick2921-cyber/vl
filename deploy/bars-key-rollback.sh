@@ -18,10 +18,9 @@
 # rc 1 = a step failed (the transaction rolled back; nothing renamed).
 set -euo pipefail
 
-# Shell twin VL_ → NOFX_ → default; DB uses the install-root rule. R5 removes
-# the NOFX twins.
-DEFAULT_DB="$HOME/vl/data/data.db"; [ -d "$HOME/vl" ] || DEFAULT_DB="$HOME/nofx/data/data.db"
-DB="${VL_DB:-${NOFX_DB:-$DEFAULT_DB}}"
+# R5: env reads are the VL_ names only; the DB default is the install root.
+DEFAULT_DB="$HOME/vl/data/data.db"
+DB="${VL_DB:-$DEFAULT_DB}"
 FORCE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -55,13 +54,13 @@ if [[ -n "$(q "SELECT name FROM sqlite_master WHERE type='table' AND name='$NEW'
   echo "bars-key-rollback: REFUSED — $NEW already exists; rename or drop it first, deliberately" >&2
   exit 3
 fi
-if { pgrep -f nofx-bin >/dev/null 2>&1 || pgrep -f vl-bin >/dev/null 2>&1; } && [[ $FORCE -ne 1 ]]; then # R5 removes the nofx pattern
-  echo "bars-key-rollback: REFUSED — a bot binary (nofx-bin/vl-bin) is running (pid $(pgrep -f 'nofx-bin|vl-bin' | head -1)); stop it, or pass --force if that process is not using $DB" >&2
+if pgrep -f vl-bin >/dev/null 2>&1 && [[ $FORCE -ne 1 ]]; then
+  echo "bars-key-rollback: REFUSED — a bot binary (vl-bin) is running (pid $(pgrep -f vl-bin | head -1)); stop it, or pass --force if that process is not using $DB" >&2
   exit 2
 fi
 
 # Backup first (guarded write): VACUUM INTO is SQLite's online consistent copy.
-DEFAULT_BKDIR="$HOME/vl-backups"; [ -d "$HOME/vl" ] || DEFAULT_BKDIR="$HOME/nofx-backups"
+DEFAULT_BKDIR="$HOME/vl-backups"
 BKDIR="${VL_BARS_KEY_BACKUP_DIR:-${BARS_KEY_BACKUP_DIR:-$DEFAULT_BKDIR}}"
 mkdir -p "$BKDIR"
 BK="$BKDIR/pre-bars-key-rollback-$(date +%Y%m%d-%H%M%S).db"

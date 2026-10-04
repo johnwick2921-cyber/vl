@@ -46,15 +46,15 @@ func reproofInstall(t *testing.T, r testRelease) (Target, Verdict) {
 	if err != nil {
 		t.Fatalf("fixture fetch: %v", err)
 	}
-	setReleaseRoot(t, root) // the operator's NOFX_RELEASE_DIR is the root it was fetched into
+	setReleaseRoot(t, root) // the operator's VL_RELEASE_DIR is the root it was fetched into
 	return tg, mirrorVerdict(fv)
 }
 
-// setReleaseRoot sets NOFX_RELEASE_DIR ("" unsets it) and resets the one
+// setReleaseRoot sets VL_RELEASE_DIR ("" unsets it) and resets the one
 // release-dir resolver (a sync.Once in production).
 func setReleaseRoot(t *testing.T, root string) {
 	t.Helper()
-	t.Setenv("NOFX_RELEASE_DIR", root)
+	t.Setenv("VL_RELEASE_DIR", root)
 	installpath.ResetReleaseDirForTest()
 	t.Cleanup(installpath.ResetReleaseDirForTest)
 }
@@ -127,17 +127,17 @@ func TestReleaseReverifierRefuses(t *testing.T) {
 		// release dir must be <the CURRENT resolved release root>/<source
 		// sha> — Verdict refuses otherwise, so no step resolves a release
 		// from a root the operator no longer names (probe P7).
-		"NOFX_RELEASE_DIR is unset": {func(t *testing.T, tg Target, v *Verdict) {
+		"VL_RELEASE_DIR is unset": {func(t *testing.T, tg Target, v *Verdict) {
 			setReleaseRoot(t, "")
 		}, verdict, ErrReleaseRoot},
-		"NOFX_RELEASE_DIR now names another root": {func(t *testing.T, tg Target, v *Verdict) {
+		"VL_RELEASE_DIR now names another root": {func(t *testing.T, tg Target, v *Verdict) {
 			other := filepath.Join(t.TempDir(), "other-root")
 			if err := os.Mkdir(other, 0o755); err != nil {
 				t.Fatal(err)
 			}
 			setReleaseRoot(t, other)
 		}, verdict, ErrReleaseRoot},
-		"NOFX_RELEASE_DIR names the same root through a symlink": {func(t *testing.T, tg Target, v *Verdict) {
+		"VL_RELEASE_DIR names the same root through a symlink": {func(t *testing.T, tg Target, v *Verdict) {
 			link := filepath.Join(t.TempDir(), "rootlink")
 			if err := os.Symlink(filepath.Dir(v.ReleaseDir), link); err != nil {
 				t.Fatal(err)

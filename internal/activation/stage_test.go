@@ -62,7 +62,7 @@ func buildTiny(t *testing.T, withGit, dirty bool) (bin string, sha string) {
 func stageRelease(t *testing.T, bin, sourceSHA, md5sum string) Release {
 	t.Helper()
 	dir := t.TempDir()
-	dst := filepath.Join(dir, "nofx-bin")
+	dst := filepath.Join(dir, "vl-bin")
 	b, err := os.ReadFile(bin)
 	if err != nil {
 		t.Fatalf("read binary: %v", err)

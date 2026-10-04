@@ -141,9 +141,9 @@ func withRollbackInputs(j *Job) {
 	sha := "0123456789abcdef0123456789abcdef01234567"
 	old := "89abcdef0123456789abcdef0123456789abcdef"
 	j.SourceSHA = sha
-	j.Release = &Release{Dir: "/r/" + sha, SHA: sha, Binary: "/r/" + sha + "/nofx-bin", Dist: "/r/" + sha + "/web/dist", ReleaseFile: "/r/" + sha + "/RELEASE", ManifestPath: "/r/" + sha + "/manifest.json"}
-	j.Install = &Release{Dir: "/i", SHA: old, Binary: "/i/nofx-bin", Dist: "/i/web/dist", ReleaseFile: "/i/deploy/RELEASE"}
-	j.Snapshot = &Release{Dir: "/b/install", SHA: old, Binary: "/b/install/nofx-bin", Dist: "/b/install/web/dist", ReleaseFile: "/b/install/deploy/RELEASE"}
+	j.Release = &Release{Dir: "/r/" + sha, SHA: sha, Binary: "/r/" + sha + "/vl-bin", Dist: "/r/" + sha + "/web/dist", ReleaseFile: "/r/" + sha + "/RELEASE", ManifestPath: "/r/" + sha + "/manifest.json"}
+	j.Install = &Release{Dir: "/i", SHA: old, Binary: "/i/vl-bin", Dist: "/i/web/dist", ReleaseFile: "/i/deploy/RELEASE"}
+	j.Snapshot = &Release{Dir: "/b/install", SHA: old, Binary: "/b/install/vl-bin", Dist: "/b/install/web/dist", ReleaseFile: "/b/install/deploy/RELEASE"}
 	j.BackupPath = "/b/data.db"
 	j.IdentityBefore = &Identity{PID: 172, StartTicks: 23987}
 }
@@ -355,10 +355,10 @@ func TestReleaseInstallAndSnapshotSHAsAgree(t *testing.T) {
 	old := "89abcdef0123456789abcdef0123456789abcdef"
 	other := "fedcba9876543210fedcba9876543210fedcba98"
 	rel := func(s string) *Release {
-		return &Release{Dir: "/r/" + s, SHA: s, Binary: "/r/" + s + "/nofx-bin", Dist: "/r/" + s + "/web/dist", ReleaseFile: "/r/" + s + "/RELEASE", ManifestPath: "/r/" + s + "/manifest.json"}
+		return &Release{Dir: "/r/" + s, SHA: s, Binary: "/r/" + s + "/vl-bin", Dist: "/r/" + s + "/web/dist", ReleaseFile: "/r/" + s + "/RELEASE", ManifestPath: "/r/" + s + "/manifest.json"}
 	}
 	inst := func(dir, s string) *Release {
-		return &Release{Dir: dir, SHA: s, Binary: dir + "/nofx-bin", Dist: dir + "/web/dist", ReleaseFile: dir + "/deploy/RELEASE"}
+		return &Release{Dir: dir, SHA: s, Binary: dir + "/vl-bin", Dist: dir + "/web/dist", ReleaseFile: dir + "/deploy/RELEASE"}
 	}
 	for _, c := range []struct {
 		name string

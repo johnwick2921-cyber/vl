@@ -57,17 +57,6 @@ func partialCloseEnabled() bool {
 	return false
 }
 
-// stopLimitEntriesEnabled: mentor stop-LIMIT entries have their OWN knob,
-// default OFF (D1.4 p1 @24:41 — never a stop-MARKET). Go sets the wire flag
-// only when this is ON and the AddOn proves MinAddonBuildStopLimit.
-func stopLimitEntriesEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("MENTOR_STOP_LIMIT"))) {
-	case "1", "true", "on", "yes":
-		return true
-	}
-	return false
-}
-
 // verifyBracketResize is PURE: the book agrees the protective pair now carries
 // `remaining`. Every WORKING -sl and -tp order for the symbol must carry
 // exactly `remaining` quantity, and at least one of each leg must exist — a

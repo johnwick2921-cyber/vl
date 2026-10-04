@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # 2026-09-01 — Planner API failure: root cause + fix (class 37)
 
@@ -370,7 +372,7 @@ released 17:59:06 CT; re-acquired for ~1 s at 18:00:19 CT only to check/unstage 
 released again. Phase 1 itself ran lock-free and read-only. Nothing in `~/vl` was edited by this dispatch
 at any point (porcelain clean before/after; the only file I ever created there was the ignored
 `vl-bin.next`, since replaced by class 36's). (2) Phase-1 report raw URL, pinned to the Phase-1 commit:
-`https://raw.githubusercontent.com/johnwick2921-cyber/nofx/638af5ed/docs/superpowers/reports/2026-09-01-planner-api-failure.md`
+`https://raw.githubusercontent.com/johnwick2921-cyber/vl/638af5ed/docs/superpowers/reports/2026-09-01-planner-api-failure.md`
 → HTTP 200 (51,940 bytes); branch-tip raw URL → HTTP 200.
 
 **Concurrency surprise (A23, reported, not acted on beyond my own branch).** While this dispatch ran, class
@@ -392,7 +394,7 @@ Tests on the merge: `go test ./mcp ./kernel ./trader -count=1` ok · full suite 
 **27 packages ok, 0 FAIL, EXIT=0** (e42a0b43) · frontend `npm run build` ✓ (4.35 s).
 PR #87 after the push: `mergeable=MERGEABLE` (state UNSTABLE = no CI checks configured).
 Commit URLs (HTTP 200): `75130d59…` (fix), `225bc367` (first marker), `dad07771` (Phase-2 report),
-`e42a0b43…` (merge), `3c3f5465` (combined marker); PR https://github.com/johnwick2921-cyber/nofx/pull/87 → 200.
+`e42a0b43…` (merge), `3c3f5465` (combined marker); PR https://github.com/johnwick2921-cyber/vl/pull/87 → 200.
 
 **Sequencing for the owner (ONE BOOT, ONE MARKER — two valid orders):**
 - **(a) class 36 first, class 37 later:** cut over class 36 from its own stage per its report; afterwards

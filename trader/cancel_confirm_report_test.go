@@ -313,13 +313,82 @@ func TestConfirmPendingCancelsReportTimeoutCensusAndRerequest(t *testing.T) {
 	}
 }
 
-// ── REVIEW-309 MUTANT PINS AT THE PRODUCTION CALL SITES ─────────────────────
-//
-// The reviewer's mutants that stayed GREEN across the trader package. Each pin
-// below drives the PRODUCTION call site — not the pure helper — so removing
-// the guarded call goes RED.
+// ── REVIEW r2 MUTANT PINS (M6, M9) AT THE PRODUCTION CALL SITES ─────────────
 
-// Mutant: delete the slotReportBlock call inside armSlotGuard. The guard must
+// M6 pin: remove the knob-OFF echo no-op in onArmedOrderUpdate and a
+// cancel-report echo settles a cancel_pending row through SetState while the
+// regime is OFF — the exact bypass the regime exists to remove. The echo is
+// a report, never a state event.
+func TestEchoIsANoOpWithTheRegimeOFF(t *testing.T) {
+	t.Setenv("CANCEL_CONFIRM_REQUIRE_REPORT", "")
+	if cancelConfirmRequireReport() {
+		t.Fatalf("fixture: the regime must be OFF")
+	}
+	ledger, _, _ := newReportLedger(t)
+	at := &AutoTrader{id: "t1"}
+	seedPendingRow(t, ledger, time.Now().UnixMilli())
+	at.onArmedOrderUpdate(nt.OrderUpdatePayload{
+		OrderName: "sig-a", SignalID: "sig-a", State: "cancelled", CancelReport: true,
+	}, ledger)
+	rows := pendingRows(t, ledger)
+	if len(rows) != 1 || rows[0].State != store.StateCancelPending {
+		t.Fatalf("an echo with the regime OFF must be a complete no-op, got %+v", rows)
+	}
+	if rows[0].CancelReportMs != 0 || rows[0].CancelReportState != "" {
+		t.Fatalf("an echo with the regime OFF must not record a report, got ms=%d state=%q", rows[0].CancelReportMs, rows[0].CancelReportState)
+	}
+}
+
+// M9 pin: remove the settledIDs skip and a row the pass just settled is
+// re-requested (resurrected to cancel_pending) by the census loop. cancelFn
+// must fire EXACTLY once — for the still-pending row only.
+func TestReportPassNeverResurrectsSettledRows(t *testing.T) {
+	ledger, cancelFn, sends := newReportLedger(t)
+	at := &AutoTrader{id: "t1"}
+	reqMs := time.Now().UnixMilli()
+	// Row A: qualifies for settlement AND is past the timeout.
+	a := seedPendingRow(t, ledger, reqMs)
+	if err := ledger.RecordCancelReport(a.ID, reqMs+5_000, "cancelled"); err != nil {
+		t.Fatalf("record report A: %v", err)
+	}
+	// Row B: no report, past the timeout — the one re-request is for B.
+	seedPendingRowB := &store.ArmedOrderDB{
+		TraderID: "t1", PlanID: "2026-10-03:planY", Version: 1, Session: "RTH",
+		Scenario: "S2", Side: "short", EntryPx: 100, StopPx: 101, TargetPx: 98,
+		State: "armed", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := ledger.UpsertArm(seedPendingRowB); err != nil {
+		t.Fatalf("upsert B: %v", err)
+	}
+	if err := ledger.SetSignal(seedPendingRowB.ID, "sig-b"); err != nil {
+		t.Fatalf("signal B: %v", err)
+	}
+	if err := ledger.RequestCancel(seedPendingRowB.ID, "gate changed", reqMs); err != nil {
+		t.Fatalf("request B: %v", err)
+	}
+	now := time.UnixMilli(reqMs + 2*60_000) // both rows past the 1-min timeout
+	settled, still, reReq := at.confirmPendingCancelsReport(ledger, cancelFn, pendingRows(t, ledger), now, time.Minute, 5, nt.MinAddonBuildCancelReport)
+	if settled != 1 || still != 1 || reReq != 1 {
+		t.Fatalf("want settled=1 still=1 reRequested=1, got settled=%d still=%d reRequested=%d", settled, still, reReq)
+	}
+	if sends() != 1 {
+		t.Fatalf("the only re-request must be for the still-pending row, got %d sends", sends())
+	}
+	// A must be settled, B still pending — never resurrected.
+	for _, r := range pendingRows(t, ledger) {
+		if r.SignalID == "sig-a" {
+			t.Fatalf("settled row A was resurrected: %+v", r)
+		}
+	}
+}
+
+// ── REVIEW-312 r3 MUTANT PINS AT THE PRODUCTION CALL SITES (P1-2) ────────────
+//
+// M3/M4/M5 stayed GREEN in the review because the round-2 call-site pins were
+// not carried into this split. Each pin below drives the PRODUCTION call site —
+// not the pure helper — so removing the guarded call goes RED.
+
+// M3 pin: delete the slotReportBlock call inside armSlotGuard. The guard must
 // refuse on an unconfirmed cancel BEFORE the broker book is even consulted.
 func TestArmSlotGuardReportBlockIsACallSite(t *testing.T) {
 	t.Setenv("CANCEL_CONFIRM_REQUIRE_REPORT", "1")
@@ -342,7 +411,7 @@ func TestArmSlotGuardReportBlockIsACallSite(t *testing.T) {
 	}
 }
 
-// Mutant: delete the RecordCancelReport branch in onArmedOrderUpdate. A
+// M4 pin: delete the RecordCancelReport branch in onArmedOrderUpdate. A
 // `cancelled` order_update for a cancel_pending row must RECORD the report and
 // leave the settlement to the pass — a direct SetState(cancelled) is the
 // bypass the regime exists to remove.
@@ -351,7 +420,7 @@ func TestOnArmedOrderUpdateRecordsTheReportNotTheSettlement(t *testing.T) {
 	defer t.Setenv("CANCEL_CONFIRM_REQUIRE_REPORT", "")
 	ledger, _, _ := newReportLedger(t)
 	at := &AutoTrader{id: "t1"}
-	r := seedPendingRow(t, ledger, time.Now().UnixMilli())
+	seedPendingRow(t, ledger, time.Now().UnixMilli())
 	at.onArmedOrderUpdate(nt.OrderUpdatePayload{
 		OrderName: "sig-a", SignalID: "sig-a", State: "cancelled",
 	}, ledger)
@@ -362,10 +431,9 @@ func TestOnArmedOrderUpdateRecordsTheReportNotTheSettlement(t *testing.T) {
 	if rows[0].CancelReportMs <= 0 || rows[0].CancelReportState != "cancelled" {
 		t.Fatalf("the event must RECORD the report, got ms=%d state=%q", rows[0].CancelReportMs, rows[0].CancelReportState)
 	}
-	_ = r
 }
 
-// Mutant: delete the dispatch from confirmPendingCancels to the report pass.
+// M5 pin: delete the dispatch from confirmPendingCancels to the report pass.
 // With the knob ON and a qualifying report recorded, a cancel settles EVEN
 // THOUGH the broker book still lists the order — the snapshot pass would not
 // settle it. If the dispatch is removed this goes RED.

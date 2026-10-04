@@ -348,14 +348,12 @@ they are told to trust over the untracked CLAUDE.md.`, v, v, canonPath, v)
 	}
 }
 
-// TestDeployScriptsAndWrappersAreExecutable pins the mode bits the rename plan
-// requires (4 vl twins + 4 old-name wrappers). A wrapper without +x cannot run
-// on its own shebang, and every call site invokes them DIRECTLY.
-func TestDeployScriptsAndWrappersAreExecutable(t *testing.T) {
-	old := "no" + "fx" // the pre-rename prefix, assembled at runtime (census)
+// TestDeployScriptsAreExecutable pins the mode bits the rename plan requires
+// (4 vl scripts — the old-name wrappers were deleted in R5). A script without
+// +x cannot run on its own shebang, and every call site invokes them DIRECTLY.
+func TestDeployScriptsAreExecutable(t *testing.T) {
 	names := []string{
 		"vl-lock.sh", "vl-claim.sh", "vl-db-backup.sh", "vl-clock-guard.sh",
-		old + "-lock.sh", old + "-claim.sh", old + "-db-backup.sh", old + "-clock-guard.sh",
 	}
 	for _, n := range names {
 		fi, err := os.Stat(filepath.Join(".", n))
@@ -364,7 +362,7 @@ func TestDeployScriptsAndWrappersAreExecutable(t *testing.T) {
 			continue
 		}
 		if got := fi.Mode().Perm(); got != 0o755 {
-			t.Errorf("%s mode is %04o, want 0755 (call sites exec the wrappers directly)", n, got)
+			t.Errorf("%s mode is %04o, want 0755 (call sites exec the scripts directly)", n, got)
 		}
 	}
 }
@@ -374,7 +372,7 @@ func TestDeployScriptsAndWrappersAreExecutable(t *testing.T) {
 // canon doc that names the old tool in its verb block is exactly the drift the
 // two verb/rc contract tests cannot see — they only assert the doc names EVERY
 // verb of the REAL tool, never that it stops naming the old one. dev's doc said
-// deploy/nofx-lock.sh after the docs rename and both tests went RED on it.
+// the OLD tool name (a wrapper) after the docs rename and both tests went RED on it.
 func TestCanonDocNeverNamesTheOldLockTool(t *testing.T) {
 	old := "no" + "fx" // assembled at runtime; the census must never see the token
 	b, err := os.ReadFile(canonPath)

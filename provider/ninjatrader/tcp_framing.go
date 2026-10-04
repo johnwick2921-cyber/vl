@@ -14,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 )
 
 // FrameType enumerates the 4 wire envelope types per spec L4382.
@@ -64,13 +66,16 @@ type SignalPayload struct {
 	OrderType  string  `json:"order_type,omitempty"`
 	LimitPrice float64 `json:"limit_price,omitempty"`
 	StopPrice  float64 `json:"stop_price,omitempty"`
-	// StopLimit (MENTOR STOP-LIMIT, 2026-10-03): when true and OrderType is
-	// "stop_entry", the AddOn builds OrderType.StopLimit with LimitPrice ==
-	// StopPrice — the mentor rule "fills at its price or misses, never a
-	// stop-MARKET" (D1.4 p1 @24:41, p2 @00:00). Go sets this only when the
-	// mentor stop-limit knob is ON and the AddOn proves the floor; an older
-	// AddOn ignores the field and would build StopMarket, which is why the
-	// knob is fail-closed below MinAddonBuildStopLimit.
+	// StopLimit (MENTOR STOP-LIMIT, PR B 2026-10-03): when true and OrderType is
+	// "stop_entry", the AddOn builds OrderType.StopLimit with
+	// LimitPrice == StopPrice — the mentor rule "fills at its price or misses,
+	// never a stop-MARKET" (D1.4 p1 @24:41, p2 @00:00). The N12 resting-limit
+	// window is closed Go-side by a per-order expiry (armed_orders.expiry_ms,
+	// authored by the evaluator's intent): an unfilled order is cancelled when
+	// its expiry lapses. Go sets this only when the mentor stop-limit knob is
+	// ON and the AddOn proves MinAddonBuildStopLimit; an older AddOn ignores
+	// the field and would build StopMarket, which is why the knob is
+	// fail-closed below the floor.
 	StopLimit bool `json:"stop_limit,omitempty"`
 }
 
@@ -355,6 +360,16 @@ const FarSideBuildE7 = "2026-08-30-e7"
 // Every future minimum MUST advance the ISO DATE, never only the suffix.
 const MinAddonBuildStopSlot = "2026-09-05-g2"
 
+// MinAddonBuildStopLimit is the minimum AddOn build that builds a stop_entry
+// as OrderType.StopLimit (LimitPrice == StopPrice) when the signal carries
+// stop_limit=true — the mentor's no-stop-MARKET rule (D1.4 p1 @24:41). Below
+// this floor an AddOn would build StopMarket and fill sloppily, so the knob is
+// fail-closed: Go refuses to set the flag unless the far side proves this
+// build. A NEW id, not the cancel-report id: the two capabilities ship in
+// separate PRs and an AddOn that proves cancel reports does not necessarily
+// build stop-limits.
+const MinAddonBuildStopLimit = "2026-10-03-c2"
+
 // MinAddonBuildProtectiveStop is the minimum AddOn build that can honour
 // place_protective_stop — the frame D5's reconciler uses to restore a stop for a
 // position the broker holds unprotected. There was NO wire command for this
@@ -388,19 +403,26 @@ const MinAddonBuildPictureHtf = "2026-09-20-p1"
 // The ISO date advances, per the suffix rule above.
 const MinAddonBuildCancelReport = "2026-10-03-c1"
 
-// MinAddonBuildStopLimit is the minimum AddOn build that builds a stop_entry
-// as OrderType.StopLimit (LimitPrice == StopPrice) when the signal carries
-// stop_limit=true — the mentor's no-stop-MARKET rule (D1.4 p1 @24:41). Below
-// this floor an AddOn would build StopMarket and fill sloppily, so the knob is
-// fail-closed: Go refuses to set the flag unless the far side proves this
-// build.
-const MinAddonBuildStopLimit = "2026-10-03-c1"
-
 // CancelReportProven reports whether the far-side AddOn certifies cancel
 // reports. Unknown ("") NEVER satisfies — capability is proven by receipt,
 // not assumed (same rule as every other floor).
 func CancelReportProven(buildID string) bool {
 	return FarSideProven(buildID, MinAddonBuildCancelReport)
+}
+
+// CancelReportRegimeOn mirrors the trader's CANCEL_CONFIRM_REQUIRE_REPORT knob
+// (the provider package cannot import the trader package). N9 (review r2,
+// 2026-10-03): with the regime OFF the read loop DROPS cancel-report echo
+// frames BEFORE NoteEntryExecution, the ordered worker's snapshot wait,
+// RetryPendingNT8Exits and the picture-HTF consumer can see them — a report
+// frame is only meaningful to the regime, and the wire stays byte-identical
+// with the knob OFF.
+func CancelReportRegimeOn() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("CANCEL_CONFIRM_REQUIRE_REPORT"))) {
+	case "1", "true", "on", "yes":
+		return true
+	}
+	return false
 }
 
 // ErrAddonBuildTooOld is the sentinel behind a stop entry refused because the

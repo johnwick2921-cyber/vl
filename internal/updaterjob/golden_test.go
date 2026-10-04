@@ -47,10 +47,10 @@ func fullJob(t *testing.T, dd string) Job {
 		step(t, dd, &j, &now, s)
 	}
 	j.SourceSHA = sha
-	j.Release = &Release{Dir: "/home/u/nofx-releases/" + sha, SHA: sha, Binary: "/home/u/nofx-releases/" + sha + "/nofx-bin",
-		Dist: "/home/u/nofx-releases/" + sha + "/web/dist", ReleaseFile: "/home/u/nofx-releases/" + sha + "/RELEASE",
-		ManifestPath: "/home/u/nofx-releases/" + sha + "/manifest.json"}
-	j.Install = &Release{Dir: "/home/u/nofx", SHA: old, Binary: "/home/u/nofx/nofx-bin", Dist: "/home/u/nofx/web/dist", ReleaseFile: "/home/u/nofx/deploy/RELEASE"}
+	j.Release = &Release{Dir: "/home/u/vl-releases/" + sha, SHA: sha, Binary: "/home/u/vl-releases/" + sha + "/vl-bin",
+		Dist: "/home/u/vl-releases/" + sha + "/web/dist", ReleaseFile: "/home/u/vl-releases/" + sha + "/RELEASE",
+		ManifestPath: "/home/u/vl-releases/" + sha + "/manifest.json"}
+	j.Install = &Release{Dir: "/home/u/vl", SHA: old, Binary: "/home/u/vl/vl-bin", Dist: "/home/u/vl/web/dist", ReleaseFile: "/home/u/vl/deploy/RELEASE"}
 	for _, s := range []State{StatePreflightOK, StateMaintenanceHeld} {
 		step(t, dd, &j, &now, s)
 	}
@@ -61,9 +61,9 @@ func fullJob(t *testing.T, dd string) Job {
 	for _, s := range []State{StateDrainedAcked, StateGateOK} {
 		step(t, dd, &j, &now, s)
 	}
-	j.BackupPath = "/home/u/nofx-backups/updater/" + id + "/data.db"
-	j.Snapshot = &Release{Dir: "/home/u/nofx-backups/updater/" + id + "/install", SHA: old, Binary: "/home/u/nofx-backups/updater/" + id + "/install/nofx-bin",
-		Dist: "/home/u/nofx-backups/updater/" + id + "/install/web/dist", ReleaseFile: "/home/u/nofx-backups/updater/" + id + "/install/deploy/RELEASE"}
+	j.BackupPath = "/home/u/vl-backups/updater/" + id + "/data.db"
+	j.Snapshot = &Release{Dir: "/home/u/vl-backups/updater/" + id + "/install", SHA: old, Binary: "/home/u/vl-backups/updater/" + id + "/install/vl-bin",
+		Dist: "/home/u/vl-backups/updater/" + id + "/install/web/dist", ReleaseFile: "/home/u/vl-backups/updater/" + id + "/install/deploy/RELEASE"}
 	step(t, dd, &j, &now, StateBackupDone)
 	cs := false
 	j.NT8 = &NT8Decision{Decision: NT8Updated, Reason: "ninjascript/*.cs changed", ManifestBuildID: "2026-09-24-m4", AckedBuildID: "2026-09-23-m21", AckedAt: "2026-09-24T18:02:30Z", AckAcceptSeq: 7, CSUnchanged: &cs, Absent: true, F5Owed: true}
@@ -80,7 +80,7 @@ func fullJob(t *testing.T, dd string) Job {
 	j.IdentityBefore = &Identity{PID: 172, StartTicks: 23987}
 	off := int64(81920)
 	since := now.Add(time.Second)
-	j.LogPath, j.LogOffset, j.WatchSince = "/home/u/nofx/data/nofx_2026-09-24.log", &off, &since
+	j.LogPath, j.LogOffset, j.WatchSince = "/home/u/vl/data/vl_2026-09-24.log", &off, &since
 	step(t, dd, &j, &now, StateActivated)
 	j.IdentityAfter = &Identity{PID: 9120, StartTicks: 24410}
 	mustWrite(t, dd, j)
@@ -97,7 +97,7 @@ func fullJob(t *testing.T, dd string) Job {
 	j.IdentityRollback = &Identity{PID: 9120, StartTicks: 24410}
 	roff := int64(90112)
 	rsince := now
-	j.RollbackLogPath, j.RollbackLogOffset, j.RollbackWatchSince = "/home/u/nofx/data/nofx_2026-09-24.log", &roff, &rsince
+	j.RollbackLogPath, j.RollbackLogOffset, j.RollbackWatchSince = "/home/u/vl/data/vl_2026-09-24.log", &roff, &rsince
 	if err := j.Enter(StateRollingBack, now); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func fullJob(t *testing.T, dd string) Job {
 	if err := j.Enter(StateRecoveryNeeded, now); err != nil {
 		t.Fatal(err)
 	}
-	j.Blocker = "attended recovery: nofx-updater recovery " + id
+	j.Blocker = "attended recovery: vl-updater recovery " + id
 	mustWrite(t, dd, j)
 	got, err := Read(dd, id)
 	if err != nil {

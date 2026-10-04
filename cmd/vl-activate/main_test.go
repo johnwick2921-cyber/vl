@@ -13,7 +13,7 @@ import (
 // EXIT CODE and its STDOUT, which only a real process has.
 func buildCLI(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "nofx-activate")
+	bin := filepath.Join(t.TempDir(), "vl-activate")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
@@ -119,7 +119,7 @@ func TestCLIRejectsAnUnknownSubcommand(t *testing.T) {
 	if code == 0 {
 		t.Fatal("CLI exited 0 on an unknown subcommand")
 	}
-	if !strings.Contains(stderr, "unknown subcommand") && !strings.Contains(stderr, "nofx-activate") {
+	if !strings.Contains(stderr, "unknown subcommand") && !strings.Contains(stderr, "vl-activate") {
 		t.Fatalf("stderr does not help the caller: %q", stderr)
 	}
 }

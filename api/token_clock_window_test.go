@@ -32,7 +32,7 @@ import (
 // let the nbf rule hide what the iat rule does.
 func mintAt(t *testing.T, iat, nbf, exp time.Time) string {
 	t.Helper()
-	rc := jwt.RegisteredClaims{Issuer: "nofxAI"}
+	rc := jwt.RegisteredClaims{Issuer: "vlAI"}
 	if !iat.IsZero() {
 		rc.IssuedAt = jwt.NewNumericDate(iat)
 	}

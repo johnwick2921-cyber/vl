@@ -21,7 +21,7 @@ func TestInstallRefusesAMACOverAnUntaggedMessage(t *testing.T) {
 	e := newUpdEnv(t)
 	key := mustKey(t, e.dataDir)
 	exp := time.Now().Unix() + 120
-	for i, layout := range []string{"%s|%s|%d", "nofx-update-rollback/v1|" + updAdminID + "|%s|%s|%d"} {
+	for i, layout := range []string{"%s|%s|%d", "vl-update-rollback/v1|" + updAdminID + "|%s|%s|%d"} {
 		job := fmt.Sprintf("untagged-mac-%04d", i)
 		m := hmac.New(sha256.New, key)
 		fmt.Fprintf(m, layout, updRelease, job, exp)

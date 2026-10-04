@@ -1,8 +1,10 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # Weekly-Bias + Planner-Eyes Wave — 2026-08-30
 
 - **Branch:** `feat/weekly-bias` (off `dev` f08a300a), worktree `/home/hoang/vl-weekly`
-- **Commit:** 2ed6a1704b77a0232242adf34bfb2f90509dd7d5 — https://github.com/johnwick2921-cyber/nofx/commit/2ed6a1704b77a0232242adf34bfb2f90509dd7d5
+- **Commit:** 2ed6a1704b77a0232242adf34bfb2f90509dd7d5 — https://github.com/johnwick2921-cyber/vl/commit/2ed6a1704b77a0232242adf34bfb2f90509dd7d5
 - **Status:** built, gated, pushed — WARN/shadow only. NO deploy, NO C# changes, NO gate changes, NO DB writes outside the code path (no live DB touched).
 - **Law recap honored:** main tree untouched (all work in the worktree); SIM-only; no hard gates added; guide law satisfied in the same PR (no `GUIDE_BUILT_REV` bump — the cutover marker does that).
 

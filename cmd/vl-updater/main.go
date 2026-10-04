@@ -10,7 +10,7 @@
 //
 // It never runs as root, never touches the hold (only the worker's census-
 // admitted hold.go does), never mints a token (serve reads the operator's
-// NOFX_CUTOVER_TOKEN from its environment) and never runs a step itself.
+// VL_CUTOVER_TOKEN from its environment) and never runs a step itself.
 //
 // fetch is wired (U4N item B): it only verifies a LOCAL archive into the
 // release root and writes its verdict — it installs nothing.
@@ -36,7 +36,7 @@ import (
 	"strings"
 	"syscall"
 
-	"vl/internal/envcompat"
+	"vl/internal/installpath"
 	"vl/internal/updaterjob"
 	"vl/internal/updaterwire"
 	"vl/internal/updaterwire/wireserver"
@@ -76,17 +76,13 @@ var (
 // releaseInboxEnv names the local inbox the owner fills with release assets
 // (`gh release download`); fetch reads <inbox>/<release_id>.tar.gz. There is
 // no network source in v1 (brief C9).
-const releaseInboxEnv = "NOFX_RELEASE_INBOX"
+const releaseInboxEnv = "VL_RELEASE_INBOX"
 
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 
 const usage = "usage: vl-updater [--install-dir d] serve | fetch <release_id> | status [<job>] | resume <job> | recovery <job>"
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	// The worker's three env fallbacks (cutover token, inbox, service dir)
-	// WARN through envcompat; the updater never inits the logger, so its
-	// sink is stderr. // R5 removes with envcompat.
-	envcompat.SetWarnSink(func(m string) { fmt.Fprintln(stderr, "vl-updater:", m) })
 	top := flag.NewFlagSet("vl-updater", flag.ContinueOnError)
 	top.SetOutput(stderr)
 	wd, _ := getwd()
@@ -137,14 +133,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 2
 }
 
-// lockScriptFor is the deploy lock script for this install: vl-lock.sh when
-// present, else vl-lock.sh. Only `check` is ever run. // R5 removes the
-// vl branch.
+// lockScriptFor is the deploy lock script for this install: deploy/vl-lock.sh
+// (R5 removed the old vl-lock.sh branch). Only `check` is ever run.
 func lockScriptFor(installDir string) string {
-	if _, err := os.Stat(filepath.Join(installDir, "deploy", "vl-lock.sh")); err == nil {
-		return filepath.Join(installDir, "deploy", "vl-lock.sh")
-	}
-	return filepath.Join(installDir, "deploy", "nofx-lock.sh")
+	return filepath.Join(installDir, "deploy", "vl-lock.sh")
 }
 
 // serve refuses, in order: the process checks (root, the bot's cgroup, TZ),
@@ -175,13 +167,12 @@ func serve(t updaterworker.Target, stderr io.Writer) int {
 		return 2
 	}
 	logf := func(format string, a ...any) { fmt.Fprintf(stderr, format+"\n", a...) }
-	// The lock script is deploy/vl-lock.sh when present, else nofx-lock.sh
-	// (the rename lands in R5; until then either may be shipped). Only its
+	// The lock script is deploy/vl-lock.sh. Only its
 	// `check` verb is ever run.
 	lockScript := lockScriptFor(t.InstallDir)
 	w, err := updaterworker.New(updaterworker.Config{
 		Target:     t,
-		BackupRoot: filepath.Join(envcompat.BackupRoot(), "updater"),
+		BackupRoot: filepath.Join(installpath.BackupRoot(), "updater"),
 		Budgets:    updaterworker.DefaultBudgets(),
 		Logf:       logf,
 	}, updaterworker.Deps{Lib: lib, App: app, Rel: rel, Host: updaterworker.OSHost{LockScript: lockScript}})
@@ -235,9 +226,9 @@ func serve(t updaterworker.Target, stderr io.Writer) int {
 }
 
 // fetch is the ATTENDED pre-fetch (brief C9): it verifies the local archive
-// <$NOFX_RELEASE_INBOX>/<release_id>.tar.gz against the INSTALL's
+// <$VL_RELEASE_INBOX>/<release_id>.tar.gz against the INSTALL's
 // deploy/release_allowed_signers (C6/C7: absent ⇒ refused), materializes it
-// under $NOFX_RELEASE_DIR/<source_sha> (the one release-dir resolver,
+// under $VL_RELEASE_DIR/<source_sha> (the one release-dir resolver,
 // installpath.ReleaseDir; never inside the install) and writes the verdict
 // into the installation's data dir — U3's FetchRelease does all of it, in
 // its order. No network code; nothing is written on a refusal. It prints the
@@ -250,7 +241,7 @@ func fetch(t updaterworker.Target, releaseID string, stdout, stderr io.Writer) i
 	if !updaterwire.ValidReleaseID(releaseID) {
 		return refuse("invalid release id %q", releaseID)
 	}
-	inbox, _ := envcompat.Env("RELEASE_INBOX") // R5 removes: VL_/NOFX_ prefix is envcompat's business
+	inbox := os.Getenv("VL_RELEASE_INBOX") // R5: VL_ only
 	inbox = strings.TrimSpace(inbox)
 	if inbox == "" {
 		return refuse("%s is not set (the local inbox holding %s.tar.gz — there is no network fetch)", releaseInboxEnv, releaseID)
@@ -397,7 +388,7 @@ func na(s string) string {
 // warn when the running unit's Restart policy won't. The line is READ, never
 // literal: n/a when systemctl is unavailable or the unit is not loaded.
 func warnSelfUpdateRestart(stderr io.Writer) {
-	v, _ := envcompat.Env("UPDATER_SELF_UPDATE")
+	v := os.Getenv("VL_UPDATER_SELF_UPDATE")
 	if v != "1" {
 		return
 	}

@@ -110,7 +110,7 @@ func TestWorkerImportGuardRefusesTheActivationLibrary(t *testing.T) {
 				"go.mod":                            "module vl\n\ngo 1.25\n",
 				"internal/activation/activation.go": "package activation\n\nfunc Activate() {}\n",
 				"internal/helper/h.go":              "package helper\n",
-				"cmd/nofx-updater/main.go":          "package main\n\nimport _ \"vl/internal/activation\"\n\nfunc main() {}\n",
+				"cmd/vl-updater/main.go":          "package main\n\nimport _ \"vl/internal/activation\"\n\nfunc main() {}\n",
 				"api/server.go":                     "package api\n\nimport _ \"vl/internal/helper\"\n",
 				"trader/t.go":                       "package trader\n",
 				"main.go":                           "package main\n\nimport _ \"vl/api\"\nimport _ \"vl/trader\"\n\nfunc main() {}\n",

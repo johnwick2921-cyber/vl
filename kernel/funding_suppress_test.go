@@ -41,11 +41,11 @@ func TestFundingRateSuppressedOnFutures(t *testing.T) {
 	}
 }
 
-// TestAI500OITopRemovedWithNofxOSProvider (F11a, D2-DEAD item 12): the AI500 /
+// TestAI500OITopRemovedWithVlOSProvider (F11a, D2-DEAD item 12): the AI500 /
 // OI_Top filter tags rode the deleted legacy provider, so they must not be
 // advertised anywhere — futures never had them (single static symbol), and the
 // crypto branch loses them with the provider.
-func TestAI500OITopRemovedWithNofxOSProvider(t *testing.T) {
+func TestAI500OITopRemovedWithVlOSProvider(t *testing.T) {
 	mk := func(symbol string) *StrategyEngine {
 		cfg := &store.StrategyConfig{}
 		cfg.CoinSource.StaticCoins = []string{symbol}

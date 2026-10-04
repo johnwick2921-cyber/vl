@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"vl/internal/activation"
-	"vl/internal/envcompat"
+	"vl/internal/installpath"
 )
 
 func main() {
@@ -30,12 +30,12 @@ func main() {
 	cmd := os.Args[1]
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	var (
-		relDir    = fs.String("release", "", "release directory (VL_RELEASE_DIR/NOFX_RELEASE_DIR/<sha>)")
+		relDir    = fs.String("release", "", "release directory (VL_RELEASE_DIR/VL_RELEASE_DIR/<sha>)")
 		prevDir   = fs.String("prev", "", "previous release directory, for activate/rollback")
 		install   = fs.String("install", "", "install directory the running process reads from")
 		dbPath    = fs.String("db", "data/data.db", "sqlite database to back up")
 		dest      = fs.String("dest", "", "backup destination file")
-		logPath   = fs.String("log", "", "the bot's log file; empty = the NEWEST data/vl_*.log (nofx_* while the rename is in flight; logs are named by BOOT date, not today's date)")
+		logPath   = fs.String("log", "", "the bot's log file; empty = the NEWEST data/vl_*.log (vl_* while the rename is in flight; logs are named by BOOT date, not today's date)")
 		healthURL = fs.String("health", "http://127.0.0.1:8080/api/health", "health endpoint")
 		within    = fs.Duration("within", 90*time.Second, "how long watch waits")
 		pid       = fs.Int("pid", 0, "pid to replace; 0 = read it from systemd")
@@ -51,7 +51,7 @@ func main() {
 	if err != nil {
 		// The message goes to stderr so the receipt on stdout stays parseable
 		// by a caller that is piping it.
-		fmt.Fprintf(os.Stderr, "nofx-activate %s: %v\n", cmd, err)
+		fmt.Fprintf(os.Stderr, "vl-activate %s: %v\n", cmd, err)
 		os.Exit(1)
 	}
 }
@@ -81,7 +81,7 @@ func run(cmd string, o opts) (activation.Receipt, error) {
 	case "backup":
 		dest := o.dest
 		if dest == "" {
-			dest = filepath.Join(envcompat.BackupRoot(), "updater", // R5 removes: vl-backups wins, nofx-backups only while ~/nofx exists
+			dest = filepath.Join(installpath.BackupRoot(), "updater",
 				time.Now().Format("20060102-150405"), "data.db")
 		}
 		return activation.Backup(o.dbPath, dest)
@@ -177,7 +177,7 @@ func emit(rc activation.Receipt) {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `nofx-activate <verify|stage|backup|watch|activate|rollback> [flags]
+	fmt.Fprint(os.Stderr, `vl-activate <verify|stage|backup|watch|activate|rollback> [flags]
 
   verify   -release DIR                 prove a release's binary; safe on a live box
   stage    -release DIR                 same proofs, as the install step

@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # VL TRADING RULEBOOK v1 — corrected evidence and policy structure
 
@@ -433,46 +435,46 @@ All internal implementation/audit references below are pinned to the observed so
 
 The local verification for this correction checks the single-document diff, all internal source paths and one-based line anchors, the preserved original bytes, the corrected arithmetic and the separation of runtime facts from desired/backlog/recommendation sections. Trading tests and builds are not claimed for a Markdown-only change.
 
-[C01]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/entry_law.go#L38
-[C02]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/confirmation_evidence.go#L27
-[C03]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/entry_law.go#L49
-[C04]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/entry_law.go#L105
-[C05]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/armed_executor.go#L1071
-[C06]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/entry_gate.go#L184
-[C07]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/confirmation_evidence.go#L91
-[C08]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/scenario_economics.go#L137
-[C09]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/arm_stop_anchor.go#L71
-[C10]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/armed_executor.go#L1976
-[C11]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/session_registry.go#L86
-[C12]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/no_trade_band.go#L34
-[C13]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/store/strategy.go#L1006
-[C14]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/auto_trader_clock.go#L395
-[C15]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/session_risk.go#L92
-[C16]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/session_risk.go#L120
-[C17]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/session_risk.go#L143
-[C18]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/armed_executor.go#L330
-[C19]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/levels_assemble.go#L210
-[C20]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/levels_assemble.go#L284
-[C21]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/levels_assemble.go#L329
-[C22]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/levels_volume.go#L35
-[C23]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/levels_volume.go#L162
-[C24]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/scenario_economics.go#L188
-[C25]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/armed_executor.go#L1125
-[C26]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/armed_executor.go#L1426
-[C27]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/session_calendar.json#L119
-[C28]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/arm_stop_anchor.go#L138
-[C29]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/armed_executor.go#L470
-[A01]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-vet-01-way-it-trades.md#L77
-[A02]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-vet-01-way-it-trades.md#L48
-[A03]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-veteran-part-d.md#L167
-[A04]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-vet-02-levels-complete.md#L29
-[A05]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-vet-02-levels-complete.md#L33
-[A06]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-08-scenario-economics.md#L44
-[A07]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-08-scenario-economics.md#L22
-[A08]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-08-the-strategy.md#L1
-[D01]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-vet-01-way-it-trades-data/revise/r01_headline.out#L1
-[D02]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-vet-01-way-it-trades-data/q11_planned_rr.out#L1
-[D03]: https://github.com/johnwick2921-cyber/nofx/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-08-scenario-economics-data/scenarios.json#L1
+[C01]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/entry_law.go#L38
+[C02]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/confirmation_evidence.go#L27
+[C03]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/entry_law.go#L49
+[C04]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/entry_law.go#L105
+[C05]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/armed_executor.go#L1071
+[C06]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/entry_gate.go#L184
+[C07]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/confirmation_evidence.go#L91
+[C08]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/scenario_economics.go#L137
+[C09]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/arm_stop_anchor.go#L71
+[C10]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/armed_executor.go#L1976
+[C11]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/session_registry.go#L86
+[C12]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/no_trade_band.go#L34
+[C13]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/store/strategy.go#L1006
+[C14]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/auto_trader_clock.go#L395
+[C15]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/session_risk.go#L92
+[C16]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/session_risk.go#L120
+[C17]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/session_risk.go#L143
+[C18]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/armed_executor.go#L330
+[C19]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/levels_assemble.go#L210
+[C20]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/levels_assemble.go#L284
+[C21]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/levels_assemble.go#L329
+[C22]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/levels_volume.go#L35
+[C23]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/levels_volume.go#L162
+[C24]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/scenario_economics.go#L188
+[C25]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/armed_executor.go#L1125
+[C26]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/armed_executor.go#L1426
+[C27]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/kernel/session_calendar.json#L119
+[C28]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/arm_stop_anchor.go#L138
+[C29]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/trader/armed_executor.go#L470
+[A01]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-vet-01-way-it-trades.md#L77
+[A02]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-vet-01-way-it-trades.md#L48
+[A03]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-veteran-part-d.md#L167
+[A04]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-vet-02-levels-complete.md#L29
+[A05]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-vet-02-levels-complete.md#L33
+[A06]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-08-scenario-economics.md#L44
+[A07]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-08-scenario-economics.md#L22
+[A08]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-08-the-strategy.md#L1
+[D01]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-vet-01-way-it-trades-data/revise/r01_headline.out#L1
+[D02]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-05-vet-01-way-it-trades-data/q11_planned_rr.out#L1
+[D03]: https://github.com/johnwick2921-cyber/vl/blob/95f387ae3cfe675919cd6f81a689010a85889059/docs/superpowers/reports/2026-09-08-scenario-economics-data/scenarios.json#L1
 
 [R1]: https://www.cmegroup.com/trading/equity-index/files/cme-micro-e-mini-futures-fact-card.pdf
 [R2]: https://www.cmegroup.com/trading-hours.html

@@ -1,7 +1,9 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # 2026-08-26 · Pack B Volume Levels + Role/Bias Addendum (owner override)
 
-**PR:** [#78](https://github.com/johnwick2921-cyber/nofx/pull/78) · **Branch:** `feat/volume-levels`
+**PR:** [#78](https://github.com/johnwick2921-cyber/vl/pull/78) · **Branch:** `feat/volume-levels`
 **Step 0:** PR #77 merged → dev (`33368ef2`), regression green, flat redeploy, boot quote:
 ```
 🔐 BOOT INTEGRITY OK — rev 33368ef27891 +dirty · expected 33368ef2 · goldens PASS

@@ -16,11 +16,11 @@ import (
 // ReleaseDir returns the configured release root, or "" when unset.
 func ReleaseDir() string { return installpath.ReleaseDir() }
 
-// CurrentReleaseDir is NOFX_RELEASE_DIR/current, or "" when unset.
+// CurrentReleaseDir is VL_RELEASE_DIR/current, or "" when unset.
 func CurrentReleaseDir() string { return installpath.CurrentReleaseDir() }
 
 // ResolvedDistDir is where the served bundle actually lives: under the active
-// release when NOFX_RELEASE_DIR is set, else the working-directory-relative
+// release when VL_RELEASE_DIR is set, else the working-directory-relative
 // path this process has always used.
 func ResolvedDistDir() string {
 	cur := installpath.CurrentReleaseDir()

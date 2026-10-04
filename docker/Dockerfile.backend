@@ -1,7 +1,7 @@
 # docker/backend/Dockerfile
 
 # ═══════════════════════════════════════════════════════════════
-# NOFX Backend Dockerfile (Go + TA-Lib)
+# VL Backend Dockerfile (Go + TA-Lib)
 # Multi-stage build with shared TA-Lib compilation stage
 # Versions extracted as ARGs for maintainability
 # ═══════════════════════════════════════════════════════════════

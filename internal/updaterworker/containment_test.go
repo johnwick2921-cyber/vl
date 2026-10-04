@@ -24,7 +24,7 @@ func TestPathWithinTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	install := filepath.Join(base, "nofx")
+	install := filepath.Join(base, "vl")
 	mkdirRRFixture(t, install)
 	dangle := filepath.Join(base, "dangle")
 	if err := os.Symlink(filepath.Join(base, "nowhere"), dangle); err != nil {

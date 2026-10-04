@@ -8,7 +8,7 @@
 //
 // With no -days, the bar-coverage span is scanned from the bars table and each
 // covered session-day is re-evaluated. Default trader = the hoang day-plan
-// trader (env NOFX_TRADER_ID overrides). DB path: env NOFX_DB_PATH, default
+// trader (env VL_TRADER_ID overrides). DB path: env VL_DB_PATH, default
 // data/data.db.
 package main
 
@@ -20,7 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"vl/internal/envcompat"
 	"vl/kernel"
 	"vl/store"
 	nt "vl/trader/ninjatrader"
@@ -33,13 +32,13 @@ func main() {
 	traderFlag := flag.String("trader", "", "trader id (default: hoang day-plan trader)")
 	flag.Parse()
 
-	dbPath, _ := envcompat.Env("DB_PATH") // R5 removes
+	dbPath := os.Getenv("VL_DB_PATH") // R5: VL_ only
 	if dbPath == "" {
 		dbPath = "data/data.db"
 	}
 	traderID := *traderFlag
 	if traderID == "" {
-		traderID, _ = envcompat.Env("TRADER_ID") // R5 removes
+		traderID = os.Getenv("VL_TRADER_ID") // R5: VL_ only
 	}
 	if traderID == "" {
 		traderID = defaultTraderID

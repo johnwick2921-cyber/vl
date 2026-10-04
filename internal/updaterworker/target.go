@@ -2,7 +2,6 @@ package updaterworker
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 
@@ -102,12 +101,8 @@ func (t Target) InstallRelease(sha string) Release {
 	}
 }
 
-// InstallBinaryPath is the install's binary: vl-bin when present, else
-// nofx-bin — on the INSTALL side vl wins when both exist (a rename in
-// flight may leave both). // R5 removes the vl branch.
+// InstallBinaryPath is the install's binary: vl-bin (R5 removed the old
+// vl-bin branch).
 func (t Target) InstallBinaryPath() string {
-	if st, err := os.Stat(filepath.Join(t.InstallDir, "vl-bin")); err == nil && st.Mode().IsRegular() {
-		return filepath.Join(t.InstallDir, "vl-bin")
-	}
-	return filepath.Join(t.InstallDir, "nofx-bin")
+	return filepath.Join(t.InstallDir, "vl-bin")
 }

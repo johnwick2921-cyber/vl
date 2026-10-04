@@ -52,7 +52,7 @@ func TestWatchTimeoutRollsBackToTheSnapshotAndReadsRolledBack(t *testing.T) {
 	if got := r.watchOpts[1]; !got.Since.Equal(*j.RollbackWatchSince) || got.LogPath != j.RollbackLogPath {
 		t.Fatalf("the rollback's Watch since=%v log=%s, want the persisted kill instant %v and %s", got.Since, got.LogPath, *j.RollbackWatchSince, j.RollbackLogPath)
 	}
-	if sha, _ := parseBinaryBody(filepath.Join(r.inst, "nofx-bin")); sha != boxOld {
+	if sha, _ := parseBinaryBody(filepath.Join(r.inst, "vl-bin")); sha != boxOld {
 		t.Fatalf("the install binary is %s after the rollback, want %s", sha, boxOld)
 	}
 	if b, _ := os.ReadFile(filepath.Join(r.inst, "web", "dist", "index.html")); string(b) != "<html>old</html>\n" {
@@ -108,7 +108,7 @@ func TestRollbackFailureIsRecoveryNeededAndStops(t *testing.T) {
 			t.Fatalf("recovery text uses %s:\n%s", bad, text)
 		}
 	}
-	for _, want := range []string{`systemctl show -p MainPID --value nofx`, j.Snapshot.Binary, "BOOT INTEGRITY OK — rev " + boxOld[:12],
+	for _, want := range []string{`systemctl show -p MainPID --value vl`, j.Snapshot.Binary, "BOOT INTEGRITY OK — rev " + boxOld[:12],
 		"maintenance-hold --install-dir " + r.inst + " clear --job " + boxJobID, j.BackupPath} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("recovery text lacks %q:\n%s", want, text)
@@ -142,7 +142,7 @@ func TestRecoveryRestartNeverKillsTheProcessGroup(t *testing.T) {
 	text := RecoveryText(j, r.cfg.Target)
 	var line string
 	for _, l := range strings.Split(text, "\n") {
-		if strings.Contains(l, "systemctl show -p MainPID --value nofx") {
+		if strings.Contains(l, "systemctl show -p MainPID --value vl") {
 			line = strings.TrimSpace(l)
 		}
 	}

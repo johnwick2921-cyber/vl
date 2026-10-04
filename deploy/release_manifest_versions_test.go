@@ -24,7 +24,7 @@ import (
 func manifestFixture(t *testing.T) (stage, sha string) {
 	t.Helper()
 	stage = t.TempDir()
-	if err := os.WriteFile(filepath.Join(stage, "nofx-bin"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(stage, "vl-bin"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	sha = strings.Repeat("c", 40)

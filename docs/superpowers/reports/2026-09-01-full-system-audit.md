@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # FULL SYSTEM AUDIT — research alignment · live status · every component · every counter · every open defect (2026-09-01)
 
@@ -662,7 +664,7 @@ RR / min-SL / one-live-arm / split-leg refusals: log-only via `armRefusalChanged
 - **Read-only compliance:** no file in the main tree, no config, no knob, no DB row, no order, no restart was touched. The only writes: this report on `docs/full-system-audit-0901` (worktree `~/vl-audit`), a `.backup` DB copy + JWT token in the session scratchpad (outside the repo), and the GIN journal lines this audit's GETs produced.
 - **What the owner will still see wrong on screen:** dashboard header P&L `0.00` beside a +212.00 day total (H10); plan cards saying `0 re-reads left` on chains that spent nothing (H3, until ec6632f9 is cut over); the Guide's proximity "⭐ 0.3 LIVE" and NY read "08:25" (H1, H15); the boot block's "market-entry floor 3.0", "retuned 0.3", "capacity=1" (H6, H1, H22); `Total PnL −203.68` in every stored executor prompt (H11); four red `CLOCK EARLY-WARNING` lines a day that are artifacts (H9); an ASIA card that stays "not found" until ~17:08 every day (I4-1).
 - **Rollback command (for reference, NOT run):** `cp ~/vl/vl-bin.prev.boot ~/vl/vl-bin && echo ebc37e01d7dd5f19c0e0f0ffa962388e12988f58 > ~/vl/deploy/RELEASE && kill -9 1625428` (then GUIDE_BUILT_REV would drift — see §B3).
-- **A9 commit-ref URL — NOT produced.** `git push -u origin docs/full-system-audit-0901` from `~/vl-audit` was denied by the session's auto-mode classifier (no workaround attempted). The branch exists locally with this report committed; the owner publishes it with `git -C ~/vl-audit push -u origin docs/full-system-audit-0901`, after which the raw URL is `https://raw.githubusercontent.com/johnwick2921-cyber/nofx/<sha>/docs/superpowers/reports/2026-09-01-full-system-audit.md` (curl it for 200 before citing — this has 404'd twice before).
+- **A9 commit-ref URL — NOT produced.** `git push -u origin docs/full-system-audit-0901` from `~/vl-audit` was denied by the session's auto-mode classifier (no workaround attempted). The branch exists locally with this report committed; the owner publishes it with `git -C ~/vl-audit push -u origin docs/full-system-audit-0901`, after which the raw URL is `https://raw.githubusercontent.com/johnwick2921-cyber/vl/<sha>/docs/superpowers/reports/2026-09-01-full-system-audit.md` (curl it for 200 before citing — this has 404'd twice before).
 
 ---
 

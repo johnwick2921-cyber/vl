@@ -1,8 +1,10 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # F1 — Dependency Vulnerability Scan (build & prove, no deploy)
 
 **Branch:** `fix/security-hygiene` · **Base:** `f08a300a` · **Deploy:** rides Monday's cutover with news-hygiene (one boot for everything).
-**Commit-ref:** `https://github.com/johnwick2921-cyber/nofx/blob/eab22ecc6879ede4f3d242f9965d1c078cf013fc/docs/superpowers/reports/2026-08-29-f1-dependency-vuln-scan.md`
+**Commit-ref:** `https://github.com/johnwick2921-cyber/vl/blob/eab22ecc6879ede4f3d242f9965d1c078cf013fc/docs/superpowers/reports/2026-08-29-f1-dependency-vuln-scan.md`
 
 ## F1a — FINDINGS (pre-fix, all fresh this run)
 

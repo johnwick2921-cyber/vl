@@ -18,6 +18,11 @@ import (
 
 // ArmedOrderDB is one armed scenario (one row per scenario-arm; upserted on
 // plan version change, re-armed only by a NEW authorization).
+// ArmOriginMentor (REVIEW-313 F3) is the ONLY origin value the stop-limit
+// routing reads as "mentor-authored". The mentor injector stamps it; every
+// other author leaves the origin ”.
+const ArmOriginMentor = "mentor"
+
 type ArmedOrderDB struct {
 	ID int64 `gorm:"primaryKey;autoIncrement"`
 
@@ -41,10 +46,22 @@ type ArmedOrderDB struct {
 
 	// State: armed (authorized) | place_pending (registered, awaiting receipt) |
 	// working (received live entry) | filled | rejected | cancelled | expired.
-	State        string `gorm:"index"`
-	StateReason  string
-	EntryClass   string // armed_fill when filled (fills bypass stale_reeval)
-	SignalID     string // the wire signal_id registered before sending
+	State       string `gorm:"index"`
+	StateReason string
+	EntryClass  string // armed_fill when filled (fills bypass stale_reeval)
+	SignalID    string // the wire signal_id registered before sending
+	// ExpiryMs (PR B stop-limit, 2026-10-03): the per-order expiry the
+	// evaluator's intent authors when it places a stop-limit. The armed pass
+	// cancels an unfilled order at now >= expiry_ms. 0 = no expiry authored =
+	// this code never auto-cancels the row.
+	ExpiryMs int64 `gorm:"default:0"`
+	// Origin (REVIEW-313 F3, 2026-10-03): who authored this arm. The mentor
+	// injector (DS-102, #316) sets ArmOriginMentor; every other author leaves
+	// it ''. The stop-limit routing reads THIS field, never the expiry as a
+	// proxy: mentor + knob ON + expiry > 0 routes to the limit variant; a
+	// mentor arm with the knob ON and no expiry is REFUSED fail-closed; a
+	// non-mentor arm takes today's path whatever its expiry.
+	Origin       string `gorm:"default:''"`
 	FillPrice    float64
 	FillQuantity int
 
@@ -220,8 +237,9 @@ CREATE TABLE IF NOT EXISTS armed_orders (
 	kind          TEXT    NOT NULL DEFAULT '',
 	boot_id       TEXT    NOT NULL DEFAULT '',
 	cancel_attempts_boot TEXT NOT NULL DEFAULT '',
-	created_at    DATETIME,
-	updated_at    DATETIME
+        expiry_ms     INTEGER NOT NULL DEFAULT 0,
+        created_at    DATETIME,
+        updated_at    DATETIME
 )`
 
 // ArmedOrderStore persists the armed ledger.
@@ -271,6 +289,17 @@ func (s *ArmedOrderStore) Migrate() error {
 			// report was never recorded, and absent ≠ 0.
 			{"cancel_report_ms", "INTEGER NOT NULL DEFAULT 0"},
 			{"cancel_report_state", "TEXT NOT NULL DEFAULT ''"},
+			// PER-ORDER EXPIRY (PR B stop-limit, 2026-10-03). The
+			// evaluator's intent sets expiry_ms when it places a
+			// stop-limit (DS-102); the armed pass cancels an unfilled
+			// order at now >= expiry_ms. 0 on every historical row = the
+			// truth for them: no expiry was ever authored, so nothing is
+			// auto-cancelled (absent ≠ 0 fabricated as data).
+			{"expiry_ms", "INTEGER NOT NULL DEFAULT 0"},
+			// ARM ORIGIN (REVIEW-313 F3, 2026-10-03). The mentor
+			// injector stamps ArmOriginMentor; '' on every historical
+			// row = not a mentor arm, which is the truth for them.
+			{"origin", "TEXT NOT NULL DEFAULT ''"},
 			// W3 market_in_zone (2026-09-23): NULLable where 0 would be a
 			// fabricated value (absent ≠ 0); '' where the text is a label.
 			{"policy", "TEXT NOT NULL DEFAULT ''"},
@@ -675,6 +704,33 @@ func (s *ArmedOrderStore) BeginPlacement(id int64, signalID string) error {
 	}
 	if r.RowsAffected != 1 {
 		return fmt.Errorf("armed_orders: row %d is no longer eligible for placement", id)
+	}
+	return nil
+}
+
+// SetArmExpiry (PR B stop-limit, 2026-10-03) stamps the per-order expiry the
+// evaluator's intent authored when it placed the order (DS-102). Only an
+// unfilled, non-terminal row can carry one: once filled or terminal the
+// expiry is meaningless, and a late stamp must not revive anything. A refused
+// stamp is an error, never silent — the caller's intent and the ledger
+// disagreeing is exactly what must not be papered over.
+func (s *ArmedOrderStore) SetArmExpiry(id int64, expiryMs int64) error {
+	if expiryMs <= 0 {
+		return fmt.Errorf("armed_orders: expiry must be a positive ms timestamp")
+	}
+	// The stamp set = the due predicate's set: non-terminal and not
+	// cancel_pending, with working allowed only while UNFILLED (a resting
+	// stop-limit at NT8 IS working — the evaluator extends its expiry while
+	// the candles stay inside). Canonical SQL helpers, never a re-typed list.
+	r := s.db.Model(&ArmedOrderDB{}).Where(
+		"id = ? AND (("+NonTerminalArmStateSQL()+" AND state <> ? AND state <> ?) OR (state = ? AND fill_quantity = 0))",
+		id, StateCancelPending, StateWorking, StateWorking).
+		Update("expiry_ms", expiryMs)
+	if r.Error != nil {
+		return r.Error
+	}
+	if r.RowsAffected != 1 {
+		return fmt.Errorf("armed_orders: row %d is not an unfilled arm — expiry refused", id)
 	}
 	return nil
 }

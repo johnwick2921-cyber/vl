@@ -24,7 +24,7 @@ import (
 	"time"
 )
 
-// Release is one versioned runtime on disk: NOFX_RELEASE_DIR/<sha>/.
+// Release is one versioned runtime on disk: VL_RELEASE_DIR/<sha>/.
 // It is a DIRECTORY, never a set of sibling files — the `vl-bin.old.<sha>.<ts>`
 // naming the v6 script used could collide and could not carry the dist or the
 // RELEASE marker alongside the binary it belonged to.
@@ -121,25 +121,15 @@ func Resolve(dir string) (Release, error) {
 	return rel, nil
 }
 
-// releaseBinaryName returns the release dir's ONE binary name: vl-bin when
-// present, else vl-bin; BOTH present is refused (the dir must hold EXACTLY
-// ONE — R5 removes the vl branch when the rename lands). Neither present is
-// refused too: a release without a binary would only fail later, after a kill.
+// releaseBinaryName returns the release dir's ONE binary name: vl-bin (R5
+// removed the old pre-rename binary branch). Missing keeps the old lenient
+// reading (vl-bin) — the activate step fails on the missing binary, as it
+// always did, and the manifest gates keep their error ordering.
 func releaseBinaryName(dir string) (string, error) {
-	vl, vlErr := os.Stat(filepath.Join(dir, "vl-bin"))
-	nfx, nfxErr := os.Stat(filepath.Join(dir, "nofx-bin"))
-	vlOK := vlErr == nil && vl.Mode().IsRegular()
-	nfxOK := nfxErr == nil && nfx.Mode().IsRegular()
-	switch {
-	case vlOK && nfxOK:
-		return "", fmt.Errorf("holds BOTH vl-bin and nofx-bin; a release dir must hold exactly one")
-	case vlOK:
+	if st, err := os.Stat(filepath.Join(dir, "vl-bin")); err == nil && st.Mode().IsRegular() {
 		return "vl-bin", nil
-	default:
-		// Neither present keeps the old reading (vl-bin); the activate
-		// step fails on the missing binary, as it always did.
-		return "nofx-bin", nil
 	}
+	return "vl-bin", nil
 }
 
 // Manifest re-reads the manifest for a resolved release.

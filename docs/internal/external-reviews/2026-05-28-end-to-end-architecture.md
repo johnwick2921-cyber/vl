@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # External Architecture Report — End-to-end UI, Backend, NT8 Data Pipeline (2026-05-28)
 
@@ -7,7 +9,7 @@ names rewritten to vl on 2026-09-30 (VL rename)
 > what's drifted, and what's missing relative to
 > `docs/superpowers/plans/2026-05-22-nq-databento-ninjatrader.md`.
 > The author probed the public `dev` branch of
-> `github.com/johnwick2921-cyber/nofx` and explicitly flagged NT8-specific
+> `github.com/johnwick2921-cyber/vl` and explicitly flagged NT8-specific
 > claims as INFERRED. The actual NT8 work lives on `main` (default branch
 > for the operator) and the comparison doc reconciles the two views.
 
@@ -17,14 +19,14 @@ names rewritten to vl on 2026-09-30 (VL rename)
 
 ## TL;DR
 
-- **The futures/NT8 adaptation described in the brief is not visible on the public `dev` branch of `johnwick2921-cyber/nofx` as of 2026-05-28.** A direct probe of the repo found a 1,113-commit fork whose visible `dev` HEAD is the upstream crypto VL (CHANGELOG last-updated 2025-11-01, latest version 3.0.0, no v1.5.x entries, no `ninjascript/` folder, no `CLAUDE.md`, no `provider/ninjatrader` surfaced at the root listing, and zero C# in the language breakdown shown by GitHub). The NT8 work in this report is therefore documented from the owner's detailed architecture brief and external authoritative references, and is explicitly flagged as **INFERRED / UNVERIFIED-FROM-PUBLIC** where it cannot be corroborated against the visible source.
+- **The futures/NT8 adaptation described in the brief is not visible on the public `dev` branch of `johnwick2921-cyber/vl` as of 2026-05-28.** A direct probe of the repo found a 1,113-commit fork whose visible `dev` HEAD is the upstream crypto VL (CHANGELOG last-updated 2025-11-01, latest version 3.0.0, no v1.5.x entries, no `ninjascript/` folder, no `CLAUDE.md`, no `provider/ninjatrader` surfaced at the root listing, and zero C# in the language breakdown shown by GitHub). The NT8 work in this report is therefore documented from the owner's detailed architecture brief and external authoritative references, and is explicitly flagged as **INFERRED / UNVERIFIED-FROM-PUBLIC** where it cannot be corroborated against the visible source.
 - **Architecturally, the system is a three-tier loop**: NT8 C# AddOn (`VLTraderTCPClient.cs` + `VLBarsSubscriptionManager.cs`) ⇄ Go backend (`provider/ninjatrader/tcp_server.go` + `tcp_framing.go`, `kernel/engine_*.go` decision layer, `store/` GORM persistence, Gin `api/` HTTP layer, SSE chart relay) ⇄ React frontend (Vite + TypeScript + TradingView Lightweight Charts v5). A single TCP socket carries both control-plane messages (`signal`, `fill`, `heartbeat`, `ack`) and the data-plane bar feed (`bars_subscribe`, `bars_historical`, `bar_update`, `bars_unsubscribe`) using a 4-byte big-endian length prefix + JSON envelope `{type, payload}`, 1 MB max frame.
 - **Three concrete operational risks dominate**: (1) the **N11 trader-starvation bug** — Balanced Strategy pointing at a dead crypto-coin signal source returns an error and starves the NQ trader; fix is `coin_source=static` + `["NQ.c.0"]`; (2) the **EventSource/JWT-in-query constraint** for the chart SSE stream — the WHATWG html issue #2177, opened by GitHub user chicoxyzzy on Dec 14, 2016, asks "Seems like there is no way to add Authorization header or any other headers for EventSource. Is there any reason it shouldn't be possible?" — so the JWT must travel as a URL query parameter and the chart relay endpoint must accept it there; (3) the **ADR-007 "Plan 1 critical files" byte-identical contract** — `tcp_server.go`, `tcp_framing.go`, and the C# `VLTraderTCPClient.cs` must remain wire-compatible across versions or the AddOn silently desyncs from the Go side.
 
 ## Key Findings
 
 ### 1. Repository state as actually observed
-- The public fork `https://github.com/johnwick2921-cyber/nofx` (forked from `upstream github link (removed in the VL rename)`, owner login `johnwick2921-cyber`, default branch `dev`, 1,113 commits, 27 tags, homepage `vergex.trade`) **shows only the upstream crypto codebase on `dev`**. CHANGELOG.md last-updated 2025-11-01 has six entries — `[Unreleased]`, `[3.0.0] 2025-10-30`, `[2.0.2] 2025-10-29`, `[2.0.1] 2025-10-29`, `[2.0.0] 2025-10-28`, `[1.0.0] 2025-10-27` — none of which mention NT8, Databento, v1.5.x TCP fixes, Plan 4.4, ADR-007, or N11.
+- The public fork `https://github.com/johnwick2921-cyber/vl` (forked from `upstream github link (removed in the VL rename)`, owner login `johnwick2921-cyber`, default branch `dev`, 1,113 commits, 27 tags, homepage `vergex.trade`) **shows only the upstream crypto codebase on `dev`**. CHANGELOG.md last-updated 2025-11-01 has six entries — `[Unreleased]`, `[3.0.0] 2025-10-30`, `[2.0.2] 2025-10-29`, `[2.0.1] 2025-10-29`, `[2.0.0] 2025-10-28`, `[1.0.0] 2025-10-27` — none of which mention NT8, Databento, v1.5.x TCP fixes, Plan 4.4, ADR-007, or N11.
 - `agents.md` at the root is a 922-line Chinese-language VLi crypto-agent spec ("VLi 交易智能助手规范"); it lists agent tools (`manage_trader`, `manage_exchange_config`, `manage_model_config`, `manage_strategy`, `execute_trade`, `get_positions`, `get_balance`, `search_stock`) but contains no futures/NQ/NT8 vocabulary.
 - No `ninjascript/` folder, no `CLAUDE.md` at root, and no C# language fraction is visible (GitHub language stats: Go 67.6%, TypeScript 31.2%, Shell 0.6%, CSS 0.4%, JavaScript 0.1%, Makefile 0.1%). The futures pivot work therefore **either lives on a non-`dev` branch, in a separate private fork, or in an unpushed working tree**. All NT8 architectural detail below is described as in the brief and should be treated as the intended/local design rather than confirmed-from-public source.
 
@@ -128,7 +130,7 @@ Symptom: the NQ trader's decision cycle never produces a signal; the log shows t
 ## Recommendations
 
 **Stage 1 — Verify ground truth (do this first, before any code change)**
-- Confirm which branch of `johnwick2921-cyber/nofx` contains the NT8 adaptation. The public `dev` does not, as of 2026-05-28. Likely candidates: a `futures/*` branch, a `nt8/*` branch, or a private fork. Once identified, point CI and documentation at it explicitly.
+- Confirm which branch of `johnwick2921-cyber/vl` contains the NT8 adaptation. The public `dev` does not, as of 2026-05-28. Likely candidates: a `futures/*` branch, a `nt8/*` branch, or a private fork. Once identified, point CI and documentation at it explicitly.
 - If the work is unpushed, push it to a non-`dev` feature branch and tag the most recent stable revision so v1.5.6/v1.5.7 fixes are recoverable. Trigger to escalate: if the working tree exceeds 30 days without a remote backup.
 
 **Stage 2 — Lock down the wire contract**
@@ -151,7 +153,7 @@ Symptom: the NQ trader's decision cycle never produces a signal; the log shows t
 
 ## Caveats
 
-- **Public-repo discrepancy**: the `dev` branch of `johnwick2921-cyber/nofx` as publicly visible on 2026-05-28 does not contain the NT8/futures adaptation. Treat every NT8-specific code path described above as the **intended design from the owner's brief**, not as code confirmed against the public source. Code quotes, line numbers, and CHANGELOG version numbers for v1.5.6 / v1.5.7 / Plan 4.4 / ADR-007 / N11 should be re-verified against the actual branch that holds the work.
+- **Public-repo discrepancy**: the `dev` branch of `johnwick2921-cyber/vl` as publicly visible on 2026-05-28 does not contain the NT8/futures adaptation. Treat every NT8-specific code path described above as the **intended design from the owner's brief**, not as code confirmed against the public source. Code quotes, line numbers, and CHANGELOG version numbers for v1.5.6 / v1.5.7 / Plan 4.4 / ADR-007 / N11 should be re-verified against the actual branch that holds the work.
 - **Single-client TCP** is a deliberate simplification; it precludes running two NT8 AddOns (e.g. one for sim, one for live) against the same Go process. Workaround if needed: run two Go processes on different ports.
 - **EventSource-in-query JWT** is a known compromise. URLs leak into logs and browser history; the chart token must be short-lived and scoped (read-only, single symbol+timeframe).
 - **Databento historical lag** (the cited ~8h availability gap) is the explicit reason it was dropped from the live decision path. It remains useful for backtest and offline indicator tuning; the lag is intrinsic to the Historical-vs-Live tier boundary documented on Databento's product pages.

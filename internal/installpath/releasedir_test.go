@@ -17,7 +17,7 @@ import (
 // test of both by construction.
 func TestEveryConsumerSeesTheSameReleaseDirAfterTheEnvironmentMoves(t *testing.T) {
 	first := t.TempDir()
-	t.Setenv("NOFX_RELEASE_DIR", first)
+	t.Setenv("VL_RELEASE_DIR", first)
 	ResetReleaseDirForTest()
 
 	root := ReleaseDir()
@@ -27,7 +27,7 @@ func TestEveryConsumerSeesTheSameReleaseDirAfterTheEnvironmentMoves(t *testing.T
 
 	// Move the environment the way a careless caller (or a restarted unit
 	// manager) might.
-	if err := os.Setenv("NOFX_RELEASE_DIR", t.TempDir()); err != nil {
+	if err := os.Setenv("VL_RELEASE_DIR", t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -50,7 +50,7 @@ func TestEveryConsumerSeesTheSameReleaseDirAfterTheEnvironmentMoves(t *testing.T
 
 // L4: unset is the default and must be exactly what it always was.
 func TestUnsetIsExactlyTheHistoricalSinglePath(t *testing.T) {
-	t.Setenv("NOFX_RELEASE_DIR", "")
+	t.Setenv("VL_RELEASE_DIR", "")
 	ResetReleaseDirForTest()
 	if got := ReleaseDir(); got != "" {
 		t.Fatalf("ReleaseDir() = %q with the knob unset, want empty", got)
@@ -66,7 +66,7 @@ func TestUnsetIsExactlyTheHistoricalSinglePath(t *testing.T) {
 
 func TestSetPrefersTheActiveReleasesOwnMarker(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("NOFX_RELEASE_DIR", root)
+	t.Setenv("VL_RELEASE_DIR", root)
 	ResetReleaseDirForTest()
 	got := ReleaseMarkerPaths()
 	if len(got) != 2 {

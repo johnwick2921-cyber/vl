@@ -21,7 +21,7 @@ for rev, path in sources:
     blob = subprocess.check_output(['git', 'show', rev + ':' + path])
     ls_tree = subprocess.check_output(['git', 'ls-tree', '-l', rev, '--', path], text=True).strip()
     last_change = subprocess.check_output(['git', 'log', rev, '-1', '--format=%H %cI %s', '--', path], text=True).strip()
-    url = 'https://raw.githubusercontent.com/johnwick2921-cyber/nofx/' + rev + '/' + path
+    url = 'https://raw.githubusercontent.com/johnwick2921-cyber/vl/' + rev + '/' + path
     with urllib.request.urlopen(url, timeout=30) as response:
         content = response.read()
         status = response.status

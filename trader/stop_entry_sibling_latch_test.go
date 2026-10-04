@@ -140,7 +140,10 @@ func TestUnsentStopEntryNeverCancelsTheSiblingArm(t *testing.T) {
 // stampThenFailPlacer stamps the ledger (the send is under way) and then fails
 // — the frame's fate is unknown, which is exactly the case the latch stays
 // pessimistic for.
-type stampThenFailPlacer struct{ calls int }
+type stampThenFailPlacer struct {
+	calls         int
+	stopLimitUsed bool
+}
 
 func (p *stampThenFailPlacer) PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, beforeSend ...func(string) error) (string, error) {
 	p.calls++
@@ -149,7 +152,12 @@ func (p *stampThenFailPlacer) PlaceStopEntry(symbol, side string, quantity float
 			return "", err
 		}
 	}
-	return "", fmt.Errorf("send stop-entry signal: write tcp: broken pipe")
+	return "", fmt.Errorf("send stop-entry signal: write tcp: simulated")
+}
+
+func (p *stampThenFailPlacer) PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, beforeSend ...func(string) error) (string, error) {
+	p.stopLimitUsed = true
+	return p.PlaceStopEntry(symbol, side, quantity, stopPx, sl, tp, beforeSend...)
 }
 
 // The outcome placeOneStopEntry reports is exactly "did a send start":

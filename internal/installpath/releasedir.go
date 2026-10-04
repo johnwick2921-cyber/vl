@@ -1,17 +1,16 @@
 package installpath
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-
-	"vl/internal/envcompat"
 )
 
-// NOFX_RELEASE_DIR turns the install into VERSIONED runtimes:
+// VL_RELEASE_DIR turns the install into VERSIONED runtimes:
 //
-//	NOFX_RELEASE_DIR/<sha>/{vl-bin,web/dist,RELEASE,manifest.json}
-//	NOFX_RELEASE_DIR/current -> <sha>
+//      VL_RELEASE_DIR/<sha>/{vl-bin,web/dist,RELEASE,manifest.json}
+//      VL_RELEASE_DIR/current -> <sha>
 //
 // with `current` a symlink, so an activation or a rollback moves all three
 // halves at once and can never leave a mixed install.
@@ -36,12 +35,12 @@ var (
 // two parts of the same boot will read differently.
 func ReleaseDir() string {
 	releaseDirOnce.Do(func() {
-		releaseDirVal = strings.TrimSpace(envcompat.EnvValue("RELEASE_DIR")) // R5 removes
+		releaseDirVal = strings.TrimSpace(os.Getenv("VL_RELEASE_DIR")) // R5: VL_ only
 	})
 	return releaseDirVal
 }
 
-// CurrentReleaseDir is NOFX_RELEASE_DIR/current, or "" when unset.
+// CurrentReleaseDir is VL_RELEASE_DIR/current, or "" when unset.
 func CurrentReleaseDir() string {
 	root := ReleaseDir()
 	if root == "" {

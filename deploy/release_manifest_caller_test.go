@@ -35,7 +35,7 @@ func TestTheWorkflowsOwnManifestCommandProducesAUsableManifest(t *testing.T) {
 	// the RELEASE marker package.sh writes.
 	stage := t.TempDir()
 	sha := strings.Repeat("a", 40)
-	mustWrite(t, filepath.Join(stage, "nofx-bin"), "ELF-ish")
+	mustWrite(t, filepath.Join(stage, "vl-bin"), "ELF-ish")
 	mustWrite(t, filepath.Join(stage, "web", "dist", "index.html"), "<html></html>")
 	mustWrite(t, filepath.Join(stage, "deploy", "RELEASE"), sha+"\n")
 

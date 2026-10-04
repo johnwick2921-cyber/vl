@@ -1048,9 +1048,9 @@ func (a *Agent) toolGetExchangeConfigs(storeUserID string) string {
 
 func latestBackendLogFilePath() string {
 	// BOTH prefixes; the newest by MTIME wins (lexicographic order would let
-	// a vl_/nofx_ prefix flip the choice — R5 removes the nofx glob).
+	// a vl_/vl_ prefix flip the choice — R5 removes the vl glob).
 	var matches []string
-	for _, pat := range []string{"vl_*.log", "nofx_*.log"} {
+	for _, pat := range []string{"vl_*.log", "vl_*.log"} {
 		hits, err := filepath.Glob(filepath.Join("data", pat))
 		if err == nil {
 			matches = append(matches, hits...)

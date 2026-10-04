@@ -36,16 +36,16 @@ func TestPreflightRefusalsNeverHold(t *testing.T) {
 			}
 		}, "cannot be compared with the release's"},
 		{"the install binary is dirty", func(r *rig) {
-			writeFile(r.t, filepath.Join(r.inst, "nofx-bin"), "NOFXBIN rev="+boxOld+" modified=true\n")
+			writeFile(r.t, filepath.Join(r.inst, "vl-bin"), "VLBIN rev="+boxOld+" modified=true\n")
 		}, "modified=true"},
 		{"the RELEASE marker names another build", func(r *rig) {
 			writeFile(r.t, filepath.Join(r.inst, "deploy", "RELEASE"), strings.Repeat("c3", 20)+"\n")
 		}, "RELEASE marker names"},
-		{"the unit runs another binary", func(r *rig) { r.exe = "/opt/other/nofx-bin (deleted)" }, "not the install's"},
+		{"the unit runs another binary", func(r *rig) { r.exe = "/opt/other/vl-bin (deleted)" }, "not the install's"},
 		{"health serves another build", func(r *rig) { r.running = strings.Repeat("d4", 20) }, "the app serves"},
 		{"no bot database", func(r *rig) { os.Remove(filepath.Join(r.data, "data.db")) }, "no bot database"},
 		{"the release IS the install", func(r *rig) {
-			writeFile(r.t, filepath.Join(r.inst, "nofx-bin"), binaryBody(boxNew))
+			writeFile(r.t, filepath.Join(r.inst, "vl-bin"), binaryBody(boxNew))
 		}, "already this release"},
 	} {
 		t.Run(c.name, func(t *testing.T) {

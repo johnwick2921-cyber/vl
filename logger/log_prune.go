@@ -24,12 +24,12 @@ func logRetentionDays() int {
 	return n
 }
 
-// pruneOldLogs (P2-2) deletes data/{vl,nofx}_YYYY-MM-DD.log files strictly
+// pruneOldLogs (P2-2) deletes data/vl_YYYY-MM-DD.log files strictly
 // older than `days` calendar days, EXCEPT today's file and the currently-open
 // process file (a running boot's file is never deleted). Returns the removed
 // names (basenames) and the first error. Pure in (dir, now, days, current) so
 // the pin drives the production path — Init calls it once after opening the
-// day's file. // R5 removes the vl prefix.
+// day's file.
 func pruneOldLogs(dir string, now time.Time, days int, current string) ([]string, error) {
 	if days <= 0 {
 		return nil, nil // OFF: keep everything
@@ -43,12 +43,9 @@ func pruneOldLogs(dir string, now time.Time, days int, current string) ([]string
 	for _, e := range entries {
 		name := e.Name()
 		prefix := ""
-		switch {
-		case strings.HasPrefix(name, "nofx_"):
-			prefix = "nofx_" // R5 removes
-		case strings.HasPrefix(name, "vl_"):
+		if strings.HasPrefix(name, "vl_") {
 			prefix = "vl_"
-		default:
+		} else {
 			continue
 		}
 		if !strings.HasSuffix(name, ".log") {

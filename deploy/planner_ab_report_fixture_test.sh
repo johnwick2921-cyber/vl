@@ -24,7 +24,7 @@ assert_md() { # <file> <needle>
 # baseline window: 2 max calls (100s, 300s), 3 reads (attempts=1 active,
 # attempts=2 active, attempts=3 no_trade), 1 💀 drop.
 # test window: 1 high call (150s), 1 read attempts=1 active, no drops.
-cat > "$T/nofx_fixture.log" <<'LOG'
+cat > "$T/vl_fixture.log" <<'LOG'
 09-24 10:00:00 [INFO] trader [id=t1] 🧠 planner call (reasoning=max wire=max/100 cap=64000 stream idle=60s total=1200s) completed in 100.0s
 09-24 10:02:00 [INFO] trader [id=t1] 🧭 planner read: session=NY attempts=1 reject_classes=none read→publish=1200ms lifecycle=active
 09-24 12:00:00 [INFO] trader [id=t1] 🧠 planner call (reasoning=max wire=max/100 cap=64000 stream idle=60s total=1200s) completed in 300.0s
@@ -47,7 +47,7 @@ INSERT INTO trader_positions VALUES ('PLAN-X', 1, -5.0);
 INSERT INTO trader_positions VALUES ('PLAN-X', 1, NULL);
 SQL
 
-bash "$REPORT" --boot 2026-09-26 --log "$T/nofx_fixture.log" --db "$T/fixture.db" --out-dir "$T" >/dev/null
+bash "$REPORT" --boot 2026-09-26 --log "$T/vl_fixture.log" --db "$T/fixture.db" --out-dir "$T" >/dev/null
 
 md=$T/planner_ab_report.md
 csv=$T/planner_ab_report.csv

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"vl/calendar"
-	"vl/internal/envcompat"
 	"vl/kernel"
 	"vl/store"
 )
@@ -110,12 +109,12 @@ func (at *AutoTrader) maybeFetchCalendar(now time.Time) {
 
 // calendarStaticLoader loads the owner-editable static T1 fallback file (F0.2)
 // so blackout coverage never depends on feed availability: on a feed 404/outage
-// the static events STORE as source=static rows. Path: env NOFX_CALENDAR_STATIC,
+// the static events STORE as source=static rows. Path: env VL_CALENDAR_STATIC,
 // else ./calendar_static_t1.json (repo-shipped template). Shape: JSON array of
 // calendar.Event ({"time": RFC3339-UTC, "currency", "title", "impact":"T1"}).
 // Missing/unreadable/invalid file → nil (FetchWeek reports SourceNone + warns).
 func calendarStaticLoader() []calendar.Event {
-	path, _ := envcompat.Env("CALENDAR_STATIC") // R5 removes
+	path := os.Getenv("VL_CALENDAR_STATIC") // R5: VL_ only
 	if path == "" {
 		path = "calendar_static_t1.json"
 	}

@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # UX fix (S) — plan_mode layering honesty (2026-08-27)
 
@@ -72,4 +74,4 @@ string can never be read as an override.
 ## Pinned report
 
 Commit-ref URL (canon — blob-SHA 404s on this repo):
-`https://github.com/johnwick2921-cyber/nofx/blob/00533398eea9c9958b8fb4dcbb6f6fbb297d81f6/docs/superpowers/reports/2026-08-27-plan-mode-layering-ux.md`
+`https://github.com/johnwick2921-cyber/vl/blob/00533398eea9c9958b8fb4dcbb6f6fbb297d81f6/docs/superpowers/reports/2026-08-27-plan-mode-layering-ux.md`

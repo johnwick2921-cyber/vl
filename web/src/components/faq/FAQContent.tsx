@@ -90,7 +90,7 @@ export function FAQContent({
                       <div className="text-base">
                         {language === 'zh' ? '链接：' : 'Links:'}{' '}
                         <a
-                          href="https://github.com/johnwick2921-cyber/nofx/issues/3"
+                          href="https://github.com/johnwick2921-cyber/vl/issues/3"
                           target="_blank"
                           rel="noreferrer"
                           style={{ color: '#F0B90B' }}
@@ -99,7 +99,7 @@ export function FAQContent({
                         </a>
                         {'  |  '}
                         <a
-                          href="https://github.com/johnwick2921-cyber/nofx/issues/5"
+                          href="https://github.com/johnwick2921-cyber/vl/issues/5"
                           target="_blank"
                           rel="noreferrer"
                           style={{ color: '#F0B90B' }}
@@ -149,9 +149,8 @@ export function FAQContent({
                             </li>
                             <li>
                               打开 PR：base 选择{' '}
-                              <code>johnwick2921-cyber/nofx:dev</code> ← compare
-                              选择 <code>你的用户名/nofx:feat/your-topic</code>
-                              。
+                              <code>johnwick2921-cyber/vl:dev</code> ← compare
+                              选择 <code>你的用户名/vl:feat/your-topic</code>。
                             </li>
                             <li>
                               在 PR 中关联 Issue（示例：
@@ -204,8 +203,8 @@ export function FAQContent({
                             </li>
                             <li>
                               Open a PR: base{' '}
-                              <code>johnwick2921-cyber/nofx:dev</code> ← compare{' '}
-                              <code>your-username/nofx:feat/your-topic</code>.
+                              <code>johnwick2921-cyber/vl:dev</code> ← compare{' '}
+                              <code>your-username/vl:feat/your-topic</code>.
                             </li>
                             <li>
                               In PR, reference the Issue (e.g.,{' '}
@@ -326,8 +325,7 @@ export function FAQContent({
                             <li>
                               在 PR 中关联 Issue（示例：
                               <code className="ml-1">Closes #123</code>），PR
-                              目标选择 <code>johnwick2921-cyber/nofx:dev</code>
-                              。
+                              目标选择 <code>johnwick2921-cyber/vl:dev</code>。
                             </li>
                             <li>
                               保持与 <code>upstream/dev</code>{' '}
@@ -364,7 +362,7 @@ export function FAQContent({
                             <li>
                               Link the Issue in PR (e.g.,{' '}
                               <code className="ml-1">Closes #123</code>) and
-                              target <code>johnwick2921-cyber/nofx:dev</code>.
+                              target <code>johnwick2921-cyber/vl:dev</code>.
                             </li>
                             <li>
                               Keep rebasing onto <code>upstream/dev</code>,

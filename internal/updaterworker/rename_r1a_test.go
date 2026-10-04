@@ -3,21 +3,19 @@ package updaterworker
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"vl/internal/updaterjob"
 )
 
-// R1a dual readers: the boot-watch inputs are predicted from the BINARY the
-// release carries (vl-bin → vl_ log, nofx-bin → nofx_ log), never from which
-// log file happens to exist; the archive holds EXACTLY ONE binary.
+// R5 single binary: the boot-watch inputs are predicted from the BINARY the
+// release carries (vl-bin → vl_ log), never from which
+// log file happens to exist.
 
 func TestLogPrefixFollowsTheBinary(t *testing.T) {
 	for bin, want := range map[string]string{
 		"/i/vl-bin":                "vl_",
-		"/i/nofx-bin":              "nofx_",
-		"/i/nofx-bin.old.00090003": "nofx_", // anything but vl-bin is the nofx name
+		"/i/vl-bin.old.00090003": "vl_", // anything but vl-bin is still the vl name
 	} {
 		if got := logPrefixForBinary(bin); got != want {
 			t.Errorf("logPrefixForBinary(%s) = %s, want %s", bin, got, want)
@@ -25,13 +23,13 @@ func TestLogPrefixFollowsTheBinary(t *testing.T) {
 	}
 }
 
-// The predictor end-to-end: run a full boot on a vl-bin release and on a
-// vl-bin release; the Watch's LogPath must carry the release's prefix, the
+// The predictor end-to-end: run a full boot on a vl-bin release; the
+// Watch's LogPath must carry the release's prefix, the
 // offset must be 0 (the fake writes the boot line only AFTER Activate
 // returned — the log the worker predicted was ABSENT while it predicted it),
 // and the boot line must land in exactly that file.
 func TestBootWatchPredictsTheLogFromTheReleaseBinary(t *testing.T) {
-	for _, bin := range []string{"nofx-bin", "vl-bin"} {
+	for _, bin := range []string{"vl-bin"} {
 		t.Run(bin, func(t *testing.T) {
 			r := newRig(t, withBinary(bin))
 			j := r.runToEnd(t)
@@ -39,10 +37,7 @@ func TestBootWatchPredictsTheLogFromTheReleaseBinary(t *testing.T) {
 			if j.Phase != updaterjob.PhaseDone {
 				t.Fatalf("job %s/%s (error %q), want a done phase", j.State, j.Phase, j.Error)
 			}
-			prefix := "nofx_"
-			if bin == "vl-bin" {
-				prefix = "vl_"
-			}
+			prefix := "vl_"
 			want := filepath.Join(r.data, prefix+"2026-09-24.log")
 			if len(r.watchOpts) == 0 {
 				t.Fatalf("Watch never ran (job %s/%s, error %q)", j.State, j.Phase, j.Error)
@@ -78,33 +73,21 @@ func TestArchiveBinaryExactlyOne(t *testing.T) {
 		t.Cleanup(func() { r.Close() })
 		return r
 	}
-	t.Run("vl only", func(t *testing.T) {
+	t.Run("vl present", func(t *testing.T) {
 		root := openRoot(t, write(t, "vl-bin"))
 		if got, err := binaryInRoot(root); err != nil || got != "vl-bin" {
 			t.Fatalf("binaryInRoot = %q/%v, want vl-bin", got, err)
 		}
 	})
-	t.Run("nofx only", func(t *testing.T) {
-		root := openRoot(t, write(t, "nofx-bin"))
-		if got, err := binaryInRoot(root); err != nil || got != "nofx-bin" {
-			t.Fatalf("binaryInRoot = %q/%v, want nofx-bin", got, err)
-		}
-	})
-	t.Run("both refused", func(t *testing.T) {
-		root := openRoot(t, write(t, "vl-bin", "nofx-bin"))
-		if _, err := binaryInRoot(root); err == nil || !strings.Contains(err.Error(), "exactly one") {
-			t.Fatalf("binaryInRoot on both = %v, want the exactly-one refusal", err)
-		}
-	})
-	t.Run("neither keeps the old lenient reading", func(t *testing.T) {
+	t.Run("missing keeps the old lenient reading", func(t *testing.T) {
 		root := openRoot(t, write(t))
-		if got, err := binaryInRoot(root); err != nil || got != "nofx-bin" {
-			t.Fatalf("binaryInRoot on neither = %q/%v, want the lenient nofx-bin", got, err)
+		if got, err := binaryInRoot(root); err != nil || got != "vl-bin" {
+			t.Fatalf("binaryInRoot on neither = %q/%v, want the lenient vl-bin", got, err)
 		}
 	})
 }
 
-// A rollback from a vl-bin release back to a nofx-bin snapshot: the activate
+// A rollback from a vl-bin release back to the snapshot: the activate
 // Watch points at the release's vl_ log, and the rollback Watch is re-predicted
 // from the SNAPSHOT's binary — the vl_ log.
 func TestRollbackFromVlReleaseRePredictsFromTheSnapshotBinary(t *testing.T) {
@@ -121,21 +104,21 @@ func TestRollbackFromVlReleaseRePredictsFromTheSnapshotBinary(t *testing.T) {
 	if got := filepath.Base(r.watchOpts[0].LogPath); got != "vl_2026-09-24.log" {
 		t.Fatalf("the activate Watch log = %s, want the release's vl_ file", got)
 	}
-	if got := filepath.Base(r.watchOpts[1].LogPath); got != "nofx_2026-09-24.log" {
-		t.Fatalf("the rollback Watch log = %s, want the snapshot's nofx_ file", got)
+	if got := filepath.Base(r.watchOpts[1].LogPath); got != "vl_2026-09-24.log" {
+		t.Fatalf("the rollback Watch log = %s, want the snapshot's vl_ file", got)
 	}
 	if _, err := os.Stat(filepath.Join(r.data, "vl_2026-09-24.log")); err != nil {
 		t.Fatalf("the vl boot line never landed: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(r.data, "nofx_2026-09-24.log")); err != nil {
-		t.Fatalf("the nofx rollback boot line never landed: %v", err)
+	if _, err := os.Stat(filepath.Join(r.data, "vl_2026-09-24.log")); err != nil {
+		t.Fatalf("the vl rollback boot line never landed: %v", err)
 	}
 }
 
-// R2-like: the install holds BOTH binaries; the install side reads vl-bin.
-func TestInstallSideVlWinsWhenBothExist(t *testing.T) {
+// R5: the install side reads vl-bin.
+func TestInstallSideIsVl(t *testing.T) {
 	dir := t.TempDir()
-	for _, n := range []string{"vl-bin", "nofx-bin"} {
+	for _, n := range []string{"vl-bin"} {
 		if err := os.WriteFile(filepath.Join(dir, n), []byte("\x7fELF"), 0o755); err != nil {
 			t.Fatal(err)
 		}

@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # PARTNER UPDATE RUNBOOK — Binnie's machine, 2026-09-04
 
@@ -154,7 +156,7 @@ cp -r ~/vl/data         ~/vl-keep-data
 mv ~/vl                 ~/vl-old-$(date +%Y%m%d-%H%M)
 
 # 3.2 fresh clone — the directory MUST be named vl
-git clone https://github.com/johnwick2921-cyber/nofx.git ~/vl
+git clone https://github.com/johnwick2921-cyber/vl.git ~/vl
 cd ~/vl
 git checkout dev
 git rev-parse HEAD                      # expect b2d3826e… or later

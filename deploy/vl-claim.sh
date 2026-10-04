@@ -21,8 +21,7 @@
 #   vl-claim check [branch]               # validate one branch's claim  (rc 1 = bad)
 #   vl-claim audit                        # every origin claim commit    (rc 1 = any bad)
 #
-# NOFX_SESSION names the lane; it is required for `new` (VL_SESSION wins —
-# R5 removes the NOFX twin).
+# VL_SESSION names the lane; it is required for `new`.
 set -uo pipefail
 
 # The contract. All three parts are mandatory:
@@ -51,9 +50,9 @@ claim_msg_of() { # first-parent commit on <branch> that is not on dev
 cmd_new() {
   local br="${1:-}" wave="${2:-}"
   [ -n "$br" ] && [ -n "$wave" ] || die "usage: vl-claim new <branch> \"<wave>\""
-  local sess="${VL_SESSION:-${NOFX_SESSION:-}}"
-  [ -n "$sess" ] || die "REFUSED — VL_SESSION/NOFX_SESSION is unset. A claim without a reachable identity proves a collision and cannot resolve it (2026-09-04)."
-  printf '%s' "$sess" | grep -qE -- '-[0-9a-f]{6,40}/[^,]+\[[A-Za-z0-9_-]+\]$' || die "REFUSED — NOFX_SESSION must be routable: <wave>-<uuid-prefix>/<ListAgents-name>[<ref>], e.g. claimid-ee7f9468/vl-db[ca9c60]. Use [unlisted] if you cannot read your own ref (owner ruling 2026-09-07). Got: $sess"
+  local sess="${VL_SESSION:-}"
+  [ -n "$sess" ] || die "REFUSED — VL_SESSION is unset. A claim without a reachable identity proves a collision and cannot resolve it (2026-09-04)."
+  printf '%s' "$sess" | grep -qE -- '-[0-9a-f]{6,40}/[^,]+\[[A-Za-z0-9_-]+\]$' || die "REFUSED — VL_SESSION must be routable: <wave>-<uuid-prefix>/<ListAgents-name>[<ref>], e.g. claimid-ee7f9468/vl-db[ca9c60]. Use [unlisted] if you cannot read your own ref (owner ruling 2026-09-07). Got: $sess"
   git ls-remote --heads origin "$br" | grep -q . && die "REFUSED — $br already exists on origin: ANOTHER LANE HAS THIS WAVE. Stop and coordinate."
   git checkout -q -b "$br" origin/dev || die "cannot branch from origin/dev"
   git commit -q --allow-empty -m "claim: $wave — $sess, $(date -Is)"

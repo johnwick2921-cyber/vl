@@ -58,8 +58,8 @@ cp "$BIN" "$WORK/inst/vl-bin"
 # the dist preflight greps the bundle for the sha being installed
 mkdir -p "$WORK/inst/web/dist"
 printf 'fixture bundle carrying %s\n' "$SHA" > "$WORK/inst/web/dist/index.js"
-export NOFX_INSTALL="$WORK/inst"
-export NOFX_CUTOVER_TOKEN="DS102-SECRETMARKER-NOT-A-TOKEN"
+export VL_INSTALL="$WORK/inst"
+export VL_CUTOVER_TOKEN="DS102-SECRETMARKER-NOT-A-TOKEN"
 check_hdr_gone() { # the token header file must not survive any exit path
   n=$(ls /tmp/vl-cutover-hdr.* 2>/dev/null | wc -l)
   check "$1" "$n" "0"
@@ -110,8 +110,8 @@ start_server() { # $1 = health revision, $2 = gate payload
   for _ in $(seq 1 50); do [ -f "$PORTFILE" ] && break; sleep 0.1; done
   [ -f "$PORTFILE" ] || { echo "FAIL: fixture server did not start"; exit 1; }
   PORT="$(cat "$PORTFILE")"
-  export NOFX_HEALTH_URL="http://127.0.0.1:$PORT/health"
-  export NOFX_GATE_URL="http://127.0.0.1:$PORT/gate"
+  export VL_HEALTH_URL="http://127.0.0.1:$PORT/health"
+  export VL_GATE_URL="http://127.0.0.1:$PORT/gate"
 }
 
 run_cutover() { # prints the script's combined output, sets RC
@@ -129,7 +129,7 @@ has   "F1 prints reconciled" "$OUT" "current reconciled"
 has   "F1 prints every leg"  "$OUT" "leg: trader_cutover:abc"
 has   "F1 dry run completes" "$OUT" "dry run complete"
 hasnt "F1 no refusal"        "$OUT" "refusing"
-hasnt "F1 token never printed" "$OUT" "$NOFX_CUTOVER_TOKEN"
+hasnt "F1 token never printed" "$OUT" "$VL_CUTOVER_TOKEN"
 check_hdr_gone "F1 token header file removed"
 
 echo "== F2: disk != health -> refuses, names the mismatch =="
@@ -142,8 +142,8 @@ has   "F2 refuses the cutover" "$OUT" "refusing"
 hasnt "F2 no dry-run completion" "$OUT" "dry run complete"
 
 echo "== F3: neither health nor RELEASE answers -> refuses =="
-export NOFX_HEALTH_URL="http://127.0.0.1:9/health"   # discard port: nothing listens
-export NOFX_GATE_URL="http://127.0.0.1:9/gate"
+export VL_HEALTH_URL="http://127.0.0.1:9/health"   # discard port: nothing listens
+export VL_GATE_URL="http://127.0.0.1:9/gate"
 rm -f "$WORK/inst/RELEASE"
 run_cutover
 check "F3 rc is nonzero"   "$([ $RC -ne 0 ] && echo nonzero || echo zero)" "nonzero"
@@ -159,7 +159,7 @@ check "F4 rc is nonzero"   "$([ $RC -ne 0 ] && echo nonzero || echo zero)" "nonz
 has   "F4 names the failing leg" "$OUT" "failing installation-gate legs: ledger_exposure"
 has   "F4 refuses the cutover"   "$OUT" "refusing"
 hasnt "F4 no dry-run completion" "$OUT" "dry run complete"
-hasnt "F4 token never printed" "$OUT" "$NOFX_CUTOVER_TOKEN"
+hasnt "F4 token never printed" "$OUT" "$VL_CUTOVER_TOKEN"
 check_hdr_gone "F4 token header file removed"
 
 echo "== F5: a REQUIRED leg is absent -> refuses (unevaluable = failure) =="
@@ -190,8 +190,8 @@ has   "F7 rollback only AFTER the install began" "$OUT" "failure AFTER"
 hasnt "F7 no unconditional rollback instruction" "$OUT" "on ANY failure: vl-activate rollback"
 
 echo "== F8: the unit default is vl (D2-OPS item 7) =="
-UNIT_LINE="$(grep -o 'UNIT="${VL_UNIT:-${NOFX_UNIT:-[a-z]*}}"' "$CUTOVER_SH")"
-check "F8 UNIT default is vl" "$UNIT_LINE" 'UNIT="${VL_UNIT:-${NOFX_UNIT:-vl}}"'
+UNIT_LINE="$(grep -o 'UNIT="${VL_UNIT:-[a-z]*}"' "$CUTOVER_SH")"
+check "F8 UNIT default is vl" "$UNIT_LINE" 'UNIT="${VL_UNIT:-vl}"'
 
 printf '\n== %d pass / %d fail ==\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

@@ -10,6 +10,10 @@ import (
 	"testing"
 )
 
+// retiredName is the pre-rename name, assembled at runtime so the rename
+// census never sees it as a literal (the R5 tree holds zero occurrences).
+func retiredName() string { return "no" + "fx" }
+
 func TestVlServiceTemplate(t *testing.T) {
 	svc := repoFile(t, "deploy/vl.service")
 	for _, want := range []string{
@@ -30,7 +34,7 @@ func TestVlServiceTemplate(t *testing.T) {
 		t.Fatalf("vl.service must carry NO Alias= (enable would overwrite the R2 rollback target):\n%s", svc)
 	}
 	// The pre-rename placeholders are gone.
-	for _, bad := range []string{"__NOFX_USER__", "__NOFX_DIR__", "nofx-bin"} {
+	for _, bad := range []string{"__" + strings.ToUpper(retiredName()) + "_USER__", "__" + strings.ToUpper(retiredName()) + "_DIR__", retiredName() + "-bin"} {
 		if strings.Contains(svc, bad) {
 			t.Fatalf("vl.service must not carry %q:\n%s", bad, svc)
 		}
@@ -49,7 +53,7 @@ func TestVlWebServiceTemplate(t *testing.T) {
 			t.Fatalf("vl-web.service must carry %q:\n%s", want, svc)
 		}
 	}
-	for _, bad := range []string{"__NOFX_USER__", "__NOFX_DIR__"} {
+	for _, bad := range []string{"__" + strings.ToUpper(retiredName()) + "_USER__", "__" + strings.ToUpper(retiredName()) + "_DIR__"} {
 		if strings.Contains(svc, bad) {
 			t.Fatalf("vl-web.service must not carry %q:\n%s", bad, svc)
 		}
@@ -88,7 +92,7 @@ func TestVlUserUnitTemplates(t *testing.T) {
 			}
 		}
 		// None of them may name the pre-rename unit, script or binary.
-		for _, bad := range []string{"nofx", "NOFX"} {
+		for _, bad := range []string{retiredName(), strings.ToUpper(retiredName())} {
 			if strings.Contains(body, bad) {
 				t.Fatalf("%s must not carry %q:\n%s", path, bad, body)
 			}

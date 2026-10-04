@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # END-TO-END AUDIT OF THE DEEPSEEK CALL SYSTEM — ROOT CAUSE (2026-09-02)
 
@@ -707,4 +709,4 @@ Stripping the 503 storm: overlapped streams cut **10/104 = 9.6%**, streams alone
 
 **What the owner will still see wrong on screen:** sessions that fail-close on `breakdown_continue` and need a manual reset (2026-09-01 ASIA four times, 2026-09-02 LONDON once) · a boot line advertising `AI_MAX_RETRIES=calls`, `keepalive=30s` read from nothing, and `truncation → 🚨 WARN, never silent` which is false for the planner · `timeout_source=transport` on failures that are 503s · `request_id=""` on every call, so no failure can be traced to the provider's side · a `📊 AI call complete (stream)` line on streams that did not complete.
 
-**A9 — commit-ref URL: NOT produced.** The branch is committed locally; a push from this session was classifier-denied in an earlier dispatch and was not re-attempted. The owner publishes with `git -C ~/vl-dsaudit push -u origin docs/deepseek-e2e-audit-0902`, after which the raw URL is `https://raw.githubusercontent.com/johnwick2921-cyber/nofx/<sha>/docs/superpowers/reports/2026-09-02-deepseek-e2e-audit.md` — **curl it for 200 before citing it** (this has 404'd twice before).
+**A9 — commit-ref URL: NOT produced.** The branch is committed locally; a push from this session was classifier-denied in an earlier dispatch and was not re-attempted. The owner publishes with `git -C ~/vl-dsaudit push -u origin docs/deepseek-e2e-audit-0902`, after which the raw URL is `https://raw.githubusercontent.com/johnwick2921-cyber/vl/<sha>/docs/superpowers/reports/2026-09-02-deepseek-e2e-audit.md` — **curl it for 200 before citing it** (this has 404'd twice before).

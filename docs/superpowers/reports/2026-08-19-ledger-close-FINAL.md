@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # FINAL REPORT — fix/ledger-close-sep-risk (2026-08-19)
 
@@ -325,5 +327,5 @@ before Sep 4, (4) journald flood.
 
 ## SECTION 11 — PR
 
-PR **#51** — https://github.com/johnwick2921-cyber/nofx/pull/51
+PR **#51** — https://github.com/johnwick2921-cyber/vl/pull/51
 (number parsed from the `gh pr create` output URL).

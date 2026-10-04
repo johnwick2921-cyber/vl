@@ -31,7 +31,7 @@ func vdGood() Verdict {
 		Schema:            VerdictSchema,
 		ReleaseID:         "v1.2.0",
 		SourceSHA:         vdSHA,
-		ReleaseDir:        "/srv/nofx-releases/" + vdSHA,
+		ReleaseDir:        "/srv/vl-releases/" + vdSHA,
 		Signer:            VerdictSigner,
 		SignerFingerprint: "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:]),
 		HashAlg:           VerdictHashAlg,
@@ -182,7 +182,7 @@ func TestVerdictIsTheWorkersExactShape(t *testing.T) {
   "schema": 1,
   "release_id": "v1.2.0",
   "source_sha": "0123456789abcdef0123456789abcdef01234567",
-  "release_dir": "/srv/nofx-releases/0123456789abcdef0123456789abcdef01234567",
+  "release_dir": "/srv/vl-releases/0123456789abcdef0123456789abcdef01234567",
   "signer": "release",
   "signer_fingerprint": "` + vdGood().SignerFingerprint + `",
   "hashalg": "sha512",
@@ -246,19 +246,19 @@ func TestReadVerdictTakesExactlyOneObject(t *testing.T) {
 
 // TestReadVerdictReleaseDirIsNamedForItsSHA (U3 verifier defect 5):
 // release_dir is the clean absolute path of a directory NAMED source_sha
-// (<NOFX_RELEASE_DIR>/<source_sha>, filepath.Base == source_sha) — never
+// (<VL_RELEASE_DIR>/<source_sha>, filepath.Base == source_sha) — never
 // the filesystem root, never another release's dir, never an unclean or
 // relative spelling of the right one.
 func TestReadVerdictReleaseDirIsNamedForItsSHA(t *testing.T) {
 	for name, dir := range map[string]string{
 		"the filesystem root":               "/",
-		"another release's dir":             "/srv/nofx-releases/89abcdef0123456789abcdef0123456789abcdef",
-		"the release root itself":           "/srv/nofx-releases",
-		"a dir named for the sha plus more": "/srv/nofx-releases/" + vdSHA + ".old",
-		"a trailing slash (not clean)":      "/srv/nofx-releases/" + vdSHA + "/",
-		"a dot-dot spelling (not clean)":    "/srv/other/../nofx-releases/" + vdSHA,
-		"a doubled slash (not clean)":       "/srv//nofx-releases/" + vdSHA,
-		"relative":                          "srv/nofx-releases/" + vdSHA,
+		"another release's dir":             "/srv/vl-releases/89abcdef0123456789abcdef0123456789abcdef",
+		"the release root itself":           "/srv/vl-releases",
+		"a dir named for the sha plus more": "/srv/vl-releases/" + vdSHA + ".old",
+		"a trailing slash (not clean)":      "/srv/vl-releases/" + vdSHA + "/",
+		"a dot-dot spelling (not clean)":    "/srv/other/../vl-releases/" + vdSHA,
+		"a doubled slash (not clean)":       "/srv//vl-releases/" + vdSHA,
+		"relative":                          "srv/vl-releases/" + vdSHA,
 		"empty":                             "",
 		"the sha as a parent, not the leaf": "/srv/" + vdSHA + "/current",
 	} {
@@ -272,7 +272,7 @@ func TestReadVerdictReleaseDirIsNamedForItsSHA(t *testing.T) {
 		}
 	}
 	// positive control: the release's own dir, anywhere absolute
-	for _, dir := range []string{"/srv/nofx-releases/" + vdSHA, "/" + vdSHA} {
+	for _, dir := range []string{"/srv/vl-releases/" + vdSHA, "/" + vdSHA} {
 		v := vdGood()
 		v.ReleaseDir = dir
 		dd := t.TempDir()

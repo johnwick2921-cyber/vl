@@ -170,15 +170,15 @@ func TestAPIViewProjectsOnlyComputedFields(t *testing.T) {
 	f := j
 	f.Blocker, f.Error = "", ""
 	f.SourceSHA = sha
-	f.Release = &Release{Dir: "/rel/" + sha, SHA: sha, Binary: "/rel/" + sha + "/nofx-bin", Dist: "/rel/" + sha + "/web/dist", ReleaseFile: "/rel/" + sha + "/RELEASE", ManifestPath: "/rel/" + sha + "/manifest.json"}
-	f.Install = &Release{Dir: "/inst", SHA: old, Binary: "/inst/nofx-bin", Dist: "/inst/web/dist", ReleaseFile: "/inst/deploy/RELEASE"}
-	f.Snapshot = &Release{Dir: "/bak/install", SHA: old, Binary: "/bak/install/nofx-bin", Dist: "/bak/install/web/dist", ReleaseFile: "/bak/install/deploy/RELEASE"}
+	f.Release = &Release{Dir: "/rel/" + sha, SHA: sha, Binary: "/rel/" + sha + "/vl-bin", Dist: "/rel/" + sha + "/web/dist", ReleaseFile: "/rel/" + sha + "/RELEASE", ManifestPath: "/rel/" + sha + "/manifest.json"}
+	f.Install = &Release{Dir: "/inst", SHA: old, Binary: "/inst/vl-bin", Dist: "/inst/web/dist", ReleaseFile: "/inst/deploy/RELEASE"}
+	f.Snapshot = &Release{Dir: "/bak/install", SHA: old, Binary: "/bak/install/vl-bin", Dist: "/bak/install/web/dist", ReleaseFile: "/bak/install/deploy/RELEASE"}
 	f.BackupPath = "/bak/data.db"
 	f.IdentityBefore = &Identity{PID: 17231, StartTicks: 239871}
-	f.LogPath, f.LogOffset, f.WatchSince = "/inst/data/nofx_2026-09-24.log", &off, &since
+	f.LogPath, f.LogOffset, f.WatchSince = "/inst/data/vl_2026-09-24.log", &off, &since
 	f.NT8 = &NT8Decision{Decision: NT8Skipped, ManifestBuildID: "BUILD-M-77", AckedBuildID: "BUILD-M-77", AckedAt: "2026-09-24T18:09:40Z", CSUnchanged: &cs}
 	b, _ := json.Marshal(View(f))
-	for _, leak := range []string{"/rel/", "/inst", "/bak", "nofx-bin", "17231", "239871", "4096", "BUILD-M-77", sha, old, "nofx_2026"} {
+	for _, leak := range []string{"/rel/", "/inst", "/bak", "vl-bin", "17231", "239871", "4096", "BUILD-M-77", sha, old, "vl_2026"} {
 		if strings.Contains(string(b), leak) {
 			t.Errorf("the API view leaks %q: %s", leak, b)
 		}

@@ -10,7 +10,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 ROOT="$PWD"
 SB_DB="$ROOT/data/sandbox.db"
-SB_BIN="$ROOT/.sandbox/nofx-sandbox"
+SB_BIN="$ROOT/.sandbox/vl-sandbox"
 LOG_DIR="$ROOT/.sandbox"
 mkdir -p "$LOG_DIR"
 

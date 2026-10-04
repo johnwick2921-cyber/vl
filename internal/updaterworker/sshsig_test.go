@@ -124,7 +124,7 @@ func TestSSHSIGVerifiesAnSshKeygenSignature(t *testing.T) {
 	// and a principal LIST that contains release.
 	other := newTestSigner(t, f.dir, "other")
 	busy := writeAllowedSigners(t, f.dir,
-		"# nofx release trust anchor",
+		"# vl release trust anchor",
 		"",
 		"ci "+other.pub,
 		"ci,release "+f.signer.pub,
@@ -378,7 +378,7 @@ func TestSSHSIGRefusesAnAbsentOrUnsafeAllowedSignersFile(t *testing.T) {
 	if _, err := VerifySSHSIG(f.msg, sig, absent); !errors.Is(err, ErrNoAllowedSigners) || !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("absent allowed-signers: err = %v, want ErrNoAllowedSigners wrapping fs.ErrNotExist", err)
 	}
-	if got := ReleaseAllowedSignersPath("/srv/nofx"); got != "/srv/nofx/deploy/release_allowed_signers" {
+	if got := ReleaseAllowedSignersPath("/srv/vl"); got != "/srv/vl/deploy/release_allowed_signers" {
 		t.Fatalf("ReleaseAllowedSignersPath = %q", got)
 	}
 	link := filepath.Join(f.dir, "signers-link")

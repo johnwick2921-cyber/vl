@@ -114,7 +114,7 @@ func mintJWT(t *testing.T, userID, email string, iat, exp time.Time, secret stri
 	t.Helper()
 	c := auth.Claims{UserID: userID, Email: email, RegisteredClaims: jwt.RegisteredClaims{
 		IssuedAt: jwt.NewNumericDate(iat), NotBefore: jwt.NewNumericDate(iat.Add(-time.Minute)),
-		ExpiresAt: jwt.NewNumericDate(exp), Issuer: "nofxAI",
+		ExpiresAt: jwt.NewNumericDate(exp), Issuer: "vlAI",
 	}}
 	s, err := jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString([]byte(secret))
 	if err != nil {
@@ -672,25 +672,6 @@ func TestUpdatesRequireTheUpdateHeader(t *testing.T) {
 	e.expectAllAdmitted("header 1")
 }
 
-// TestLegacyUpdateHeaderAcceptedUntilR5 — transition entry (d): the
-// pre-rename header name stays accepted until R5 removes it. Exactly one value
-// in total across both names is admitted; anything else is refused.
-func TestLegacyUpdateHeaderAcceptedUntilR5(t *testing.T) {
-	e := newUpdEnv(t)
-	e.expectAllAdmitted("legacy header 1", func(r *http.Request) {
-		r.Header.Del(UpdateHeader)
-		r.Header.Set(LegacyUpdateHeader, "1")
-	})
-	e.expectAllForbidden("new + legacy", func(r *http.Request) {
-		r.Header.Set(LegacyUpdateHeader, "1")
-	})
-	e.expectAllForbidden("legacy twice", func(r *http.Request) {
-		r.Header.Del(UpdateHeader)
-		r.Header.Add(LegacyUpdateHeader, "1")
-		r.Header.Add(LegacyUpdateHeader, "1")
-	})
-}
-
 func TestUpdatesRefuseCrossOrigin(t *testing.T) {
 	e := newUpdEnv(t)
 	for _, o := range []string{"http://evil.test", "null", "http://127.0.0.1:3000", "https://127.0.0.1:8080", "http://localhost:8080", "http://127.0.0.1:8080/"} {
@@ -748,14 +729,14 @@ func TestUpdatePreflightNeverAllowsTheUpdateHeader(t *testing.T) {
 		r.RemoteAddr, r.Host = "127.0.0.1:52000", "127.0.0.1:8080"
 		r.Header.Set("Origin", "http://evil.test")
 		r.Header.Set("Access-Control-Request-Method", "POST")
-		r.Header.Set("Access-Control-Request-Headers", "x-nofx-update,authorization,content-type")
+		r.Header.Set("Access-Control-Request-Headers", "x-vl-update,authorization,content-type")
 		w := httptest.NewRecorder()
 		e.s.router.ServeHTTP(w, r)
 		allow := strings.ToLower(strings.Join(w.Header().Values("Access-Control-Allow-Headers"), ","))
 		if allow == "" {
 			t.Fatalf("%s: positive control: the CORS middleware did not answer the preflight", p)
 		}
-		if strings.Contains(allow, "x-nofx-update") || strings.Contains(allow, "*") {
+		if strings.Contains(allow, "x-vl-update") || strings.Contains(allow, "*") {
 			t.Fatalf("%s: preflight allows the update header: %q", p, allow)
 		}
 	}

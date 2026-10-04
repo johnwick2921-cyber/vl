@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # 5-DAY ZERO-TRADE FORENSIC POSTMORTEM — the drought was a layer cake: K2 truncation under everything, K1 clock-kill on every survivor, a 41-hour K10 wall, a 4-hour credit outage, and six K5 refusals at the end. Zero unexplained proposals.
 
@@ -120,4 +122,4 @@ Re-evaluated all 32 lost proposals (6 K5-refused + 26 K1-converted) against HEAD
 
 ## 10 · PR
 
-https://github.com/johnwick2921-cyber/nofx/pull/46 — **#46** (parsed from the `gh pr create` output URL).
+https://github.com/johnwick2921-cyber/vl/pull/46 — **#46** (parsed from the `gh pr create` output URL).

@@ -28,11 +28,11 @@ var (
 var (
 	// ErrRoot: the worker never runs as root (a root-owned data/updater would
 	// lock the bot into a hold it cannot read — the hold CLI's M2.1 N4 rule).
-	ErrRoot = errors.New("updaterworker: refusing to run as root: run nofx-updater as the bot's own user")
+	ErrRoot = errors.New("updaterworker: refusing to run as root: run vl-updater as the bot's own user")
 	// ErrBotCgroup: the worker must never share the bot's control group — the
 	// unit is KillMode=control-group, so the activation's kill would kill the
-	// worker with the bot, mid-job. Both unit names until R5 removes vl.
-	ErrBotCgroup = errors.New("updaterworker: refusing to run inside the bot's service control group (vl or nofx — R5 removes the nofx name)")
+	// worker with the bot, mid-job.
+	ErrBotCgroup = errors.New("updaterworker: refusing to run inside the bot's service control group (vl)")
 	// ErrTZ: the library parses log line times in time.Local; a worker whose
 	// zone differs from the bot's would misjudge every boot line's time.
 	ErrTZ = errors.New("updaterworker: refusing to run with TZ set: the worker must read log times in the bot's own local zone")
@@ -43,7 +43,7 @@ func CheckProcess() error {
 	if geteuid() == 0 {
 		return ErrRoot
 	}
-	if b, err := readCgroup(); err == nil && (bytes.Contains(b, []byte("/nofx.service")) || bytes.Contains(b, []byte("/vl.service"))) { // R5 removes the vl name
+	if b, err := readCgroup(); err == nil && bytes.Contains(b, []byte("/vl.service")) {
 		return ErrBotCgroup
 	}
 	if _, set := lookupTZ(); set {

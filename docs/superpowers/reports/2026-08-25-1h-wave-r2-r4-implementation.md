@@ -1,7 +1,9 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # 1H WAVE + R2 GRADING + R4 QUALITY KNOB — IMPLEMENTATION REPORT (2026-08-25/26)
 
-PR: https://github.com/johnwick2921-cyber/nofx/pull/75 · Branch: `feat/1h-wave-grading`
+PR: https://github.com/johnwick2921-cyber/vl/pull/75 · Branch: `feat/1h-wave-grading`
 Deployed rev: **57b60b60** · PID 1991583 · PR #75 OPEN (base `dev`)
 
 ---

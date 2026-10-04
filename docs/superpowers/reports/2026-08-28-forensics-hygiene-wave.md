@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # FORENSICS-HYGIENE WAVE — STRICT-TRUTH + S-1..S-4 + T2/T4
 
@@ -118,4 +120,4 @@ plan write that carries .125-price rows.
 - Re-measure retention at the next reopen boundary; counters through the next
   17:00 flood; strict-gate first cited-scenario quote at the next entry.
 
-Pinned: https://github.com/johnwick2921-cyber/nofx/blob/8b55822fa6e6ba3dd5332e0eedd4a516e6a17571/docs/superpowers/reports/2026-08-28-forensics-hygiene-wave.md
+Pinned: https://github.com/johnwick2921-cyber/vl/blob/8b55822fa6e6ba3dd5332e0eedd4a516e6a17571/docs/superpowers/reports/2026-08-28-forensics-hygiene-wave.md

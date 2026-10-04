@@ -27,7 +27,6 @@ import (
 	"sort"
 	"strings"
 
-	"vl/internal/envcompat"
 	"vl/internal/updaterjob"
 )
 
@@ -36,7 +35,7 @@ const workerBinaryName = "vl-updater"
 
 // selfUpdateOn is the knob: exactly "1" enables the swap (L4, default OFF).
 func selfUpdateOn() bool {
-	v, _ := envcompat.Env("UPDATER_SELF_UPDATE")
+	v := os.Getenv("VL_UPDATER_SELF_UPDATE")
 	return v == "1"
 }
 

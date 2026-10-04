@@ -47,7 +47,7 @@ func TestSafeExchangeConfigFromStore_NinjaTraderFields(t *testing.T) {
 		Name:                 "NinjaTrader",
 		Type:                 "futures",
 		Enabled:              true,
-		NTDataDir:            "/mnt/c/Users/foo/NofxTrader/data",
+		NTDataDir:            "/mnt/c/Users/foo/VlTrader/data",
 		NTInstrumentName:     "MNQ",
 		NTDefaultContractQty: 1,
 	}
@@ -74,7 +74,7 @@ func TestCreateExchangeRequest_NinjaTraderJSON(t *testing.T) {
 		"exchange_type": "ninjatrader",
 		"account_name": "NT8 Sim",
 		"enabled": true,
-		"nt_data_dir": "/mnt/c/Users/foo/NofxTrader/data",
+		"nt_data_dir": "/mnt/c/Users/foo/VlTrader/data",
 		"nt_instrument_name": "MNQ",
 		"nt_default_contract_qty": 1
 	}`

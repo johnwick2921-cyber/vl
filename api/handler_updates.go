@@ -7,13 +7,13 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"vl/auth"
 	"vl/config"
-	"vl/internal/envcompat"
 	"vl/internal/updateauth"
 	"vl/internal/updaterjob"
 	"vl/internal/updatersource"
@@ -69,10 +69,6 @@ const updatesAdminIDKey = "updates_admin_user_id"
 // preflight fails) — pinned by TestUpdatePreflightNeverAllowsTheUpdateHeader.
 const UpdateHeader = "X-VL-Update"
 
-// LegacyUpdateHeader is the pre-rename name, accepted until R5 (transition
-// table entry (d)); R5 removes this const and the dual-accept test.
-const LegacyUpdateHeader = "X-NOFX-Update"
-
 // maxUpdateInstallBody caps the install body (a Grant is ~200 bytes).
 const maxUpdateInstallBody = 4096
 
@@ -108,12 +104,12 @@ func (s *Server) SetUpdateStarter(f UpdateStarter) { s.updateStart = f }
 
 // ── W-ONE-BUTTON M4 3b-B U5b — the updater glue knob ────────────────────
 //
-// NOFX_UPDATER=1 (exactly "1"; anything else, or unset, is OFF) wires the
+// VL_UPDATER=1 (exactly "1"; anything else, or unset, is OFF) wires the
 // M4 worker behind the M3 routes. OFF is M3 byte for byte — the stub
 // verifier, no starter, the job routes' literal 404 before any filesystem
 // access, and no boot line (TestUpdatesKnobOffIsByteIdentical pins M3's
 // bytes as literals).
-const updaterKnobEnv = "NOFX_UPDATER"
+const updaterKnobEnv = "VL_UPDATER"
 
 // updateVerifierName is the name the boot line READS off the verifier the
 // server holds (never a literal the line asserts about itself).
@@ -137,7 +133,7 @@ func updateVerifierName(v updateauth.Verifier) string {
 // dialled (a worker is started by hand, attended — not dialling at boot is
 // not knowing yet, so n/a, never "down").
 func (s *Server) configureUpdater() {
-	if v, _ := envcompat.Env("UPDATER"); v != "1" { // R5 removes: VL_/NOFX_ prefix is envcompat's business
+	if v := os.Getenv("VL_UPDATER"); v != "1" { // R5: VL_ only
 		return
 	}
 	s.updaterOn = true
@@ -427,10 +423,8 @@ func (s *Server) updatesRefusal(c *gin.Context) string {
 	if h := forwardingHeader(r.Header); h != "" {
 		return "forwarded request (" + h + ")"
 	}
-	// CSRF: the custom header, exactly one value in total across
-	// both names, exactly "1". The legacy name stays accepted until R5
-	// (transition entry (d)).
-	vs := append(append([]string{}, r.Header.Values(UpdateHeader)...), r.Header.Values(LegacyUpdateHeader)...)
+	// CSRF: the custom header, exactly one value, exactly "1".
+	vs := r.Header.Values(UpdateHeader)
 	if len(vs) != 1 || vs[0] != "1" {
 		return "update header missing or wrong"
 	}

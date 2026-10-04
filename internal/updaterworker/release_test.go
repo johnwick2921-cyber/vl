@@ -234,9 +234,9 @@ func TestFetchMaterializesTheActivationLayout(t *testing.T) {
 		t.Fatalf("release root = %v, want exactly [%s] (no staging debris)", got, testSHA)
 	}
 	// activation.Resolve's layout: <dir>/{vl-bin, web/dist, RELEASE, manifest.json}
-	bin, err := os.Lstat(filepath.Join(final, "nofx-bin"))
+	bin, err := os.Lstat(filepath.Join(final, "vl-bin"))
 	if err != nil || !bin.Mode().IsRegular() || bin.Mode().Perm()&0o100 == 0 {
-		t.Fatalf("nofx-bin: %v %v (want a regular executable file)", bin, err)
+		t.Fatalf("vl-bin: %v %v (want a regular executable file)", bin, err)
 	}
 	if b, err := os.ReadFile(filepath.Join(final, "web", "dist", "index.html")); err != nil || !bytes.Contains(b, []byte("u3")) {
 		t.Fatalf("web/dist/index.html: %q %v", b, err)
@@ -268,7 +268,7 @@ func TestFetchMaterializesTheActivationLayout(t *testing.T) {
 		Signature string `json:"signature_verdict"`
 	}
 	_ = json.Unmarshal(raw, &am)
-	binBytes, _ := os.ReadFile(filepath.Join(final, "nofx-bin"))
+	binBytes, _ := os.ReadFile(filepath.Join(final, "vl-bin"))
 	md := md5.Sum(binBytes)
 	if am.SourceSHA != testSHA || am.BinaryMD5 != hex.EncodeToString(md[:]) || am.Signature != "sshsig:release:"+r.fp {
 		t.Fatalf("activation manifest = %+v; want source_sha %s, binary_md5 %x, signature_verdict sshsig:release:%s", am, testSHA, md, r.fp)
@@ -425,7 +425,7 @@ func TestExtractRefusesTraversalSymlinkDeviceAbsolute(t *testing.T) {
 		"backslash path":          reg(`web\..\..\escape-bs`, "x"),
 		"symlink out of the tree": {hdr: tar.Header{Typeflag: tar.TypeSymlink, Name: "./evil-link", Linkname: "/etc/passwd"}},
 		"symlink inside the tree": {hdr: tar.Header{Typeflag: tar.TypeSymlink, Name: "./web/dist/alias.html", Linkname: "index.html"}},
-		"hard link":               {hdr: tar.Header{Typeflag: tar.TypeLink, Name: "./hard", Linkname: "nofx-bin"}},
+		"hard link":               {hdr: tar.Header{Typeflag: tar.TypeLink, Name: "./hard", Linkname: "vl-bin"}},
 		"char device":             {hdr: tar.Header{Typeflag: tar.TypeChar, Name: "./dev-null", Devmajor: 1, Devminor: 3}},
 		"block device":            {hdr: tar.Header{Typeflag: tar.TypeBlock, Name: "./dev-sda", Devmajor: 8}},
 		"fifo":                    {hdr: tar.Header{Typeflag: tar.TypeFifo, Name: "./pipe"}},
@@ -484,10 +484,10 @@ func TestRehashRefusesExtraMissingOrChangedArtifact(t *testing.T) {
 		"missing file":             {releaseOpts{afterSign: func(t *testing.T, s string) { _ = os.Remove(filepath.Join(s, "LICENSE")) }}, ErrArtifactMismatch, "missing: LICENSE"},
 		"changed bytes, same size": {releaseOpts{afterSign: flip("web/dist/index.html")}, ErrArtifactMismatch, "changed: web/dist/index.html"},
 		"changed size": {releaseOpts{afterSign: func(t *testing.T, s string) {
-			f, _ := os.OpenFile(filepath.Join(s, "nofx-bin"), os.O_APPEND|os.O_WRONLY, 0)
+			f, _ := os.OpenFile(filepath.Join(s, "vl-bin"), os.O_APPEND|os.O_WRONLY, 0)
 			_, _ = f.WriteString("more")
 			_ = f.Close()
-		}}, ErrArtifactMismatch, "changed: nofx-bin"},
+		}}, ErrArtifactMismatch, "changed: vl-bin"},
 		// C8: release.yml:172 redirects manifest.sh INTO the stage, so the shell
 		// has created a 0-byte manifest.json before find runs and artifacts[]
 		// lists it — an entry the signed file can never match. Injected, so the
@@ -545,7 +545,7 @@ func TestRehashRefusesExtraMissingOrChangedArtifact(t *testing.T) {
 	}{
 		"extra file":      {func(t *testing.T, d string) { writeFiles(t, d, map[string]string{"web/dist/extra.js": "x"}) }, ErrArtifactMismatch, "extra (not in artifacts[]): web/dist/extra.js"},
 		"missing file":    {func(t *testing.T, d string) { _ = os.Remove(filepath.Join(d, "ninjascript", "VLTraderTCPClient.cs")) }, ErrArtifactMismatch, "missing: ninjascript/VLTraderTCPClient.cs"},
-		"changed binary":  {func(t *testing.T, d string) { flip("nofx-bin")(t, d) }, ErrArtifactMismatch, "changed: nofx-bin"},
+		"changed binary":  {func(t *testing.T, d string) { flip("vl-bin")(t, d) }, ErrArtifactMismatch, "changed: vl-bin"},
 		"planted symlink": {func(t *testing.T, d string) { _ = os.Symlink("/etc/passwd", filepath.Join(d, "web", "dist", "x.js")) }, ErrArtifactMismatch, "not a regular file: web/dist/x.js"},
 		"RELEASE rewritten": {func(t *testing.T, d string) {
 			_ = os.WriteFile(filepath.Join(d, "RELEASE"), []byte(strings.Repeat("b", 40)+"\n"), 0o644)
@@ -651,8 +651,8 @@ func TestVerdictWrittenOnlyAfterEveryCheck(t *testing.T) {
 		"extra artifact":         {nil, &releaseOpts{afterSign: func(t *testing.T, s string) { writeFiles(t, s, map[string]string{"x": "x"}) }}, ErrArtifactMismatch},
 		"no web/dist/index.html": {nil, &releaseOpts{noIndex: true}, ErrLayout},
 		// modes are not hashed: chmod after signing changes no sha256
-		"nofx-bin not executable": {nil, &releaseOpts{afterSign: func(t *testing.T, s string) {
-			if err := os.Chmod(filepath.Join(s, "nofx-bin"), 0o644); err != nil {
+		"vl-bin not executable": {nil, &releaseOpts{afterSign: func(t *testing.T, s string) {
+			if err := os.Chmod(filepath.Join(s, "vl-bin"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}}, ErrLayout},

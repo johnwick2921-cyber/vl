@@ -38,6 +38,7 @@ type placeCall struct {
 
 type fakePlacer struct {
 	calls         []placeCall
+	stopLimitCalls int
 	sid           string
 	err           error
 	afterRegister func()
@@ -45,6 +46,28 @@ type fakePlacer struct {
 
 func (f *fakePlacer) PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, beforeSend ...func(string) error) (string, error) {
 	f.calls = append(f.calls, placeCall{symbol, side, quantity, stopPx, sl, tp})
+	if f.err != nil {
+		return "", f.err
+	}
+	if f.sid == "" {
+		f.sid = "sid-fake"
+	}
+	for _, register := range beforeSend {
+		if err := register(f.sid); err != nil {
+			return "", err
+		}
+	}
+	if f.afterRegister != nil {
+		f.afterRegister()
+	}
+	return f.sid, nil
+}
+
+// PlaceStopEntryWithLimit records the SAME call through the limit variant (PR B,
+// 2026-10-03): the routing pin asserts which variant the knob selected.
+func (f *fakePlacer) PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, beforeSend ...func(string) error) (string, error) {
+	f.calls = append(f.calls, placeCall{symbol, side, quantity, stopPx, sl, tp})
+	f.stopLimitCalls++
 	if f.err != nil {
 		return "", f.err
 	}

@@ -27,7 +27,7 @@ func statLine(pid int, ticks uint64) string {
 	for i := 4; i <= 21; i++ {
 		mid += " 0"
 	}
-	return fmt.Sprintf("%d (nofx bin (x)) S%s %d 0 0", pid, mid, ticks)
+	return fmt.Sprintf("%d (vl bin (x)) S%s %d 0 0", pid, mid, ticks)
 }
 
 func tempDB(t *testing.T) string {
@@ -213,7 +213,7 @@ func twoReleases(t *testing.T) (rel, prev Release) {
 		if err := os.MkdirAll(filepath.Join(dir, "web", "dist"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "nofx-bin"), []byte(binBody), 0o755); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "vl-bin"), []byte(binBody), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(dir, "web", "dist", "index.html"), []byte(distBody), 0o644); err != nil {
@@ -224,7 +224,7 @@ func twoReleases(t *testing.T) (rel, prev Release) {
 		}
 		return Release{
 			Dir: dir, SHA: releaseBody,
-			Binary:      filepath.Join(dir, "nofx-bin"),
+			Binary:      filepath.Join(dir, "vl-bin"),
 			Dist:        filepath.Join(dir, "web", "dist"),
 			ReleaseFile: filepath.Join(dir, "RELEASE"),
 		}
@@ -239,7 +239,7 @@ func twoReleases(t *testing.T) (rel, prev Release) {
 func TestWatchIsRedOnAPreKillBootLineAndGreenOnAPostKillOne(t *testing.T) {
 	sha := strings.Repeat("c", 40)
 	dir := t.TempDir()
-	logPath := filepath.Join(dir, "nofx.log")
+	logPath := filepath.Join(dir, "vl.log")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"release":%q}`, sha)
@@ -288,7 +288,7 @@ func TestWatchIsRedOnAPreKillBootLineAndGreenOnAPostKillOne(t *testing.T) {
 // Health alone is not proof: a process that never restarted still answers.
 func TestWatchRefusesWhenHealthAgreesButTheLogNeverShowsARestart(t *testing.T) {
 	sha := strings.Repeat("d", 40)
-	logPath := filepath.Join(t.TempDir(), "nofx.log")
+	logPath := filepath.Join(t.TempDir(), "vl.log")
 	if err := os.WriteFile(logPath, []byte("no boot lines here\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +331,7 @@ func TestHealthMayReportAnAbbreviatedRevision(t *testing.T) {
 // the log at all. This pins the real line shape, copied from the live box.
 func TestBootLineIsRecognisedFromTheShortRevTheBotActuallyPrints(t *testing.T) {
 	full := "662c79bd236f43fb15eb0c7950880123896be8c0"
-	live := "09-23 18:50:09 [INFO] nofx-clean/main.go:322 🔐 BOOT INTEGRITY OK — rev 662c79bd236f · built 2026-09-23T23:45:35Z · expected 662c79bd236f"
+	live := "09-23 18:50:09 [INFO] vl-clean/main.go:322 🔐 BOOT INTEGRITY OK — rev 662c79bd236f · built 2026-09-23T23:45:35Z · expected 662c79bd236f"
 	if !lineNamesRevision(live, full) {
 		t.Fatal("the REAL boot line from the live box is not recognised — both legs of Watch would be unfalsifiable")
 	}
@@ -349,7 +349,7 @@ func TestBootLineIsRecognisedFromTheShortRevTheBotActuallyPrints(t *testing.T) {
 func TestWatchAcceptsTheShortRevBootLineTheBotWrites(t *testing.T) {
 	full := "aabbccddeeff00112233445566778899aabbccdd"
 	short := full[:12]
-	logPath := filepath.Join(t.TempDir(), "nofx_2026-09-23.log")
+	logPath := filepath.Join(t.TempDir(), "vl_2026-09-23.log")
 	line := fmt.Sprintf("%s [INFO] 🔐 BOOT INTEGRITY OK — rev %s · built x\n",
 		time.Now().Add(time.Second).Format("01-02 15:04:05"), short)
 	if err := os.WriteFile(logPath, []byte(line), 0o644); err != nil {
@@ -373,8 +373,8 @@ func TestWatchAcceptsTheShortRevBootLineTheBotWrites(t *testing.T) {
 // 09-24 the active file was vl_2026-09-23.log.
 func TestNewestLogPathIgnoresTheCalendarAndPicksTheActiveFile(t *testing.T) {
 	dir := t.TempDir()
-	stale := filepath.Join(dir, "nofx_2026-09-24.log") // today's DATE, but older
-	active := filepath.Join(dir, "nofx_2026-09-23.log")
+	stale := filepath.Join(dir, "vl_2026-09-24.log") // today's DATE, but older
+	active := filepath.Join(dir, "vl_2026-09-23.log")
 	for _, p := range []string{stale, active} {
 		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
@@ -401,7 +401,7 @@ func TestNewestLogPathIgnoresTheCalendarAndPicksTheActiveFile(t *testing.T) {
 func TestWatchProvesABootAgainstThePersistedKillInstantNotNow(t *testing.T) {
 	full := "112233445566778899aabbccddeeff0011223344"
 	short := full[:12]
-	logPath := filepath.Join(t.TempDir(), "nofx_2026-09-24.log")
+	logPath := filepath.Join(t.TempDir(), "vl_2026-09-24.log")
 
 	// The restart happened 10 minutes ago and wrote its boot line then.
 	killedAt := time.Now().Add(-10 * time.Minute)
@@ -441,7 +441,7 @@ func TestWatchProvesABootAgainstThePersistedKillInstantNotNow(t *testing.T) {
 func TestWatchStillRefusesABootLineOlderThanTheKillInstant(t *testing.T) {
 	full := "99887766554433221100ffeeddccbbaa99887766"
 	short := full[:12]
-	logPath := filepath.Join(t.TempDir(), "nofx_2026-09-24.log")
+	logPath := filepath.Join(t.TempDir(), "vl_2026-09-24.log")
 	killedAt := time.Now().Add(-5 * time.Minute)
 	// Written BEFORE the kill: the previous boot's line.
 	line := fmt.Sprintf("%s [INFO] 🔐 BOOT INTEGRITY OK — rev %s · built x\n",
@@ -475,7 +475,7 @@ func TestSnapshotCapturesAllThreeHalvesAndRollbackToCanUseThem(t *testing.T) {
 		t.Fatalf("receipt must name what it captured, got %+v", rc.Evidence)
 	}
 	for _, p := range []string{
-		filepath.Join(dest, "nofx-bin"),
+		filepath.Join(dest, "vl-bin"),
 		filepath.Join(dest, "RELEASE"),
 		filepath.Join(dest, "web", "dist", "index.html"),
 	} {
@@ -486,7 +486,7 @@ func TestSnapshotCapturesAllThreeHalvesAndRollbackToCanUseThem(t *testing.T) {
 	// And the snapshot is usable as prev.
 	prev := Release{
 		Dir: dest, SHA: rc.Evidence["release_marker"],
-		Binary:      filepath.Join(dest, "nofx-bin"),
+		Binary:      filepath.Join(dest, "vl-bin"),
 		Dist:        filepath.Join(dest, "web", "dist"),
 		ReleaseFile: filepath.Join(dest, "RELEASE"),
 	}

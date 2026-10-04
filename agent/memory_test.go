@@ -35,7 +35,7 @@ func (f *fakeAIClient) CallWithRequestFull(req *mcp.Request) (*mcp.LLMResponse, 
 
 func TestMaybeCompressHistoryKeepsRecentThreeRounds(t *testing.T) {
 	t.Skip("TODO: adapt to fork's agent API — see PR #3 merge 2026-05-25, incoming test from main targets upstream API")
-	st, err := store.New(filepath.Join(t.TempDir(), "nofxi-test.db"))
+	st, err := store.New(filepath.Join(t.TempDir(), "vli-test.db"))
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}
@@ -104,7 +104,7 @@ func TestNormalizeTaskStateDropsExecutionLevelOpenLoops(t *testing.T) {
 }
 
 func TestMaybeUpdateTaskStateIncrementallyPersistsShortConversationFacts(t *testing.T) {
-	st, err := store.New(filepath.Join(t.TempDir(), "nofxi-test.db"))
+	st, err := store.New(filepath.Join(t.TempDir(), "vli-test.db"))
 	if err != nil {
 		t.Fatalf("store.New() error = %v", err)
 	}

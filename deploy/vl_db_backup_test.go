@@ -22,10 +22,10 @@ import (
 
 const backupScript = "vl-db-backup.sh"
 
-// oldPrefix is the pre-rename backup file prefix, assembled at runtime so the
-// rename census never sees the old name as a literal (the dual prune still
-// honors old-prefix files until R5 removes it).
-var oldPrefix = "no" + "fx"
+// retiredPrefix is the pre-rename backup file prefix, assembled at runtime so
+// the rename census never sees the old name as a literal (R5 dropped the dual
+// prune; the retired-prefix files are left alone).
+var retiredPrefix = "no" + "fx"
 
 // mkDB creates a small real SQLite database at path via python3's stdlib.
 func mkTestSQLiteDB(t *testing.T, path string) {
@@ -196,12 +196,12 @@ func TestBackupRefusesWhenPostBackupFreeBelowFloor(t *testing.T) {
 	}
 }
 
-// D1-FOLD (DS-105): the prune handles BOTH prefixes — an ancient vl-*.db.gz and
-// an ancient old-prefix *.db.gz beyond the retention window are both removed
-// (each prefix seeded with a NEWER file so the ancient one is never "the newest
-// of its prefix" and kept by correct retention). Dropping either prune line must
-// fail THIS test.
-func TestBackupPrunesOldVlAndLegacyBackups(t *testing.T) {
+// R5-FOLD: the prune handles ONLY the vl prefix now — an ancient vl-*.db.gz
+// beyond the retention window is removed (a NEWER vl file keeps it from being
+// "the newest of its prefix"), while retired-prefix files are LEFT ALONE (the
+// dual prune is retired). Re-adding a retired-prefix prune must fail THIS test
+// (the seeded retired-prefix ancient file must survive).
+func TestBackupPrunesVlAndLeavesRetiredBackups(t *testing.T) {
 	root, _, stderr, rc := runBackupScript(t, 1<<40, nil)
 	if rc != 0 {
 		t.Fatalf("run rc=%d stderr=%q", rc, stderr)
@@ -210,22 +210,22 @@ func TestBackupPrunesOldVlAndLegacyBackups(t *testing.T) {
 	if _, err := os.Stat(daily); err != nil {
 		t.Fatalf("no daily dir after the run: %v", err)
 	}
-	// Seed TWO ancient files of each prefix: with KEEP_DAILY=1 the oldest of
-	// each prefix must go; the newest of each prefix is retained (correct
-	// retention, not a blanket delete).
+	// Seed TWO ancient vl files and ONE retired-prefix file: with KEEP_DAILY=1
+	// the oldest vl file must go; the retired-prefix file must SURVIVE.
 	for _, name := range []string{"vl-2020-01-01_000000.db.gz", "vl-2019-01-01_000000.db.gz",
-		fmt.Sprintf("%s-2020-01-01_000000.db.gz", oldPrefix), fmt.Sprintf("%s-2019-01-01_000000.db.gz", oldPrefix)} {
+		fmt.Sprintf("%s-2019-01-01_000000.db.gz", retiredPrefix)} {
 		if err := os.WriteFile(filepath.Join(daily, name), []byte("gz"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, _, stderr2, rc2 := runBackupScript(t, 1<<40, map[string]string{"VL_BACKUP_DIR": root, "NOFX_KEEP_DAILY": "1"}); rc2 != 0 {
+	if _, _, stderr2, rc2 := runBackupScript(t, 1<<40, map[string]string{"VL_BACKUP_DIR": root, "VL_KEEP_DAILY": "1"}); rc2 != 0 {
 		t.Fatalf("second run rc=%d stderr=%q", rc2, stderr2)
 	}
-	for _, gone := range []string{"vl-2019-01-01_000000.db.gz", fmt.Sprintf("%s-2019-01-01_000000.db.gz", oldPrefix)} {
-		if _, err := os.Stat(filepath.Join(daily, gone)); err == nil {
-			t.Fatalf("the prune kept the ancient %s", gone)
-		}
+	if _, err := os.Stat(filepath.Join(daily, "vl-2019-01-01_000000.db.gz")); err == nil {
+		t.Fatalf("the prune kept the ancient vl file")
+	}
+	if _, err := os.Stat(filepath.Join(daily, fmt.Sprintf("%s-2019-01-01_000000.db.gz", retiredPrefix))); err != nil {
+		t.Fatalf("the retired-prefix file must be LEFT ALONE in R5: %v", err)
 	}
 	files := listBackupFiles(t, root)
 	fresh := 0

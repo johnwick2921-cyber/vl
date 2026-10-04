@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # G-DISPATCH — IN-APP USER GUIDE PAGE (2026-08-27)
 
@@ -107,7 +109,7 @@ Grepped before writing (not from memory):
 
 ## 6. PR
 
-**https://github.com/johnwick2921-cyber/nofx/pull/84**
+**https://github.com/johnwick2921-cyber/vl/pull/84**
 
 ## 7. Notes / follow-ups
 

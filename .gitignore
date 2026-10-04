@@ -9,7 +9,7 @@ CLAUDE.md
 
 # 编译产物
 *.exe
-nofx
+vl
 
 # Go 相关
 *.test
@@ -149,7 +149,7 @@ PR_DESCRIPTION.md
 /sandbox-seed
 
 # Compiled binaries (defensive; the vl form is anchored at /vl-bin* above)
-nofx-bin*
+vl-bin*
 /nq_smoke
 
 # Local environment backups (not for commit)

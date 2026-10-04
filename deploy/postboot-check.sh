@@ -12,8 +12,8 @@
 #                                           # repo sources (anti-rot)
 #
 # Env overrides (defaults are the production layout):
-#   NOFX_REPO=/home/hoang/nofx   NOFX_DATA=$NOFX_REPO/data
-#   NOFX_BIN=$NOFX_REPO/nofx-bin NOFX_ENV=$NOFX_REPO/.env
+#   VL_REPO=/home/hoang/vl   VL_DATA=$VL_REPO/data
+#   VL_BIN=$VL_REPO/vl-bin VL_ENV=$VL_REPO/.env
 #
 # Exit code = number of FAILs (0 = all green). Run right after the boot line
 # sweep and again at Sunday 17:00 CT open (the SUBSET: planner-max, fast-market
@@ -25,16 +25,16 @@ set -u
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 KIT_REPO=$(cd "$SCRIPT_DIR/.." && pwd)
 
-# Every var is the shell twin VL_ → NOFX_ → default; the install-side
-# binary is vl-bin when present, else nofx-bin. R5 removes the NOFX twins.
-NOFX_REPO="${VL_REPO:-${NOFX_REPO:-$KIT_REPO}}"
-NOFX_DATA="${VL_DATA:-${NOFX_DATA:-$NOFX_REPO/data}}"
-NOFX_BIN="${VL_BIN:-${NOFX_BIN:-}}"
-if [ -z "$NOFX_BIN" ]; then
-  NOFX_BIN="$NOFX_REPO/vl-bin"; [ -f "$NOFX_BIN" ] || NOFX_BIN="$NOFX_REPO/nofx-bin"
+# R5: env reads are the VL_ names only (the old-name twins are gone).
+# The install-side binary is vl-bin, end of story.
+VL_REPO="${VL_REPO:-$KIT_REPO}"
+VL_DATA="${VL_DATA:-$VL_REPO/data}"
+VL_BIN="${VL_BIN:-}"
+if [ -z "$VL_BIN" ]; then
+  VL_BIN="$VL_REPO/vl-bin"
 fi
-NOFX_ENV="${VL_ENV:-${NOFX_ENV:-$NOFX_REPO/.env}}"
-DB=$NOFX_DATA/data.db
+VL_ENV="${VL_ENV:-$VL_REPO/.env}"
+DB=$VL_DATA/data.db
 
 # The documented `_ =` baseline at dev 35a53d29 (regex below, non-test Go
 # files). Bump deliberately in deploy/POSTBOOT-CHECK.md when a reviewed wave
@@ -86,7 +86,7 @@ check_retention() {
 check_jwt() {
   grep -q '🔑 JWT secret configured' "$LOG" 2>/dev/null || { bad "JWT boot line absent"; return; }
   local v
-  v=$(grep -E '^JWT_SECRET=' "$NOFX_ENV" 2>/dev/null | cut -d= -f2-)
+  v=$(grep -E '^JWT_SECRET=' "$VL_ENV" 2>/dev/null | cut -d= -f2-)
   if [ -z "$v" ]; then bad "JWT_SECRET unset in .env (default-jwt-secret in force)"; return; fi
   if [ "$v" = "default-jwt-secret-change-in-production" ]; then bad "JWT_SECRET is the shipped default"; return; fi
   [ ${#v} -ge 24 ] && ok "JWT secret set, length ${#v}" || bad "JWT_SECRET shorter than 24 chars"
@@ -100,7 +100,7 @@ check_transport() {
   grep -q 'Using NinjaTrader (transport via NT_TRANSPORT env' "$LOG" 2>/dev/null \
     || { bad "transport boot line absent"; return; }
   if grep -q '⚠️ transport:' "$LOG" 2>/dev/null; then bad "transport WARN present (CSV fallback): $(grep -m1 '⚠️ transport:' "$LOG")"; else ok "transport line present, no CSV-fallback WARN"; fi
-  grep -qE '^NT_TRANSPORT=tcp' "$NOFX_ENV" 2>/dev/null && ok "NT_TRANSPORT=tcp in .env" \
+  grep -qE '^NT_TRANSPORT=tcp' "$VL_ENV" 2>/dev/null && ok "NT_TRANSPORT=tcp in .env" \
     || bad "NT_TRANSPORT=tcp not found in .env"
 }
 
@@ -111,7 +111,7 @@ check_transport() {
 # ---------------------------------------------------------------------------
 check_fast_market_reasoning() {
   local expected lines bad
-  expected=$(grep -m1 -E '^FAST_MARKET_REASONING=' "$NOFX_ENV" 2>/dev/null | tail -1 | cut -d= -f2-)
+  expected=$(grep -m1 -E '^FAST_MARKET_REASONING=' "$VL_ENV" 2>/dev/null | tail -1 | cut -d= -f2-)
   [ -z "$expected" ] && expected=max
   lines=$(grep 'planner mode: fast-market' "$LOG" 2>/dev/null)
   if [ -z "$lines" ]; then
@@ -158,7 +158,7 @@ except Exception:
 #    the pool; the binary carrying the DSN suffix does.
 # ---------------------------------------------------------------------------
 check_busy_timeout() {
-  if strings -n 8 "$NOFX_BIN" 2>/dev/null | grep -qE '_pragma=busy_timeout\(5000\)|_busy_timeout=5000'; then
+  if strings -n 8 "$VL_BIN" 2>/dev/null | grep -qE '_pragma=busy_timeout\(5000\)|_busy_timeout=5000'; then
     ok "binary carries the per-connection busy_timeout DSN"
   else
     bad "binary does not embed the busy_timeout DSN (or strings unavailable)"
@@ -174,7 +174,7 @@ check_busy_timeout() {
 # ---------------------------------------------------------------------------
 check_planner_reasoning() {
   local expected first
-  expected=$(grep -m1 -E '^AI_PLAN_REASONING=' "$NOFX_ENV" 2>/dev/null | tail -1 | cut -d= -f2-)
+  expected=$(grep -m1 -E '^AI_PLAN_REASONING=' "$VL_ENV" 2>/dev/null | tail -1 | cut -d= -f2-)
   [ -z "$expected" ] && expected=max
   first=$(grep -m1 '🧠 planner call (reasoning=' "$LOG" 2>/dev/null)
   [ -n "$first" ] || { bad "no planner call line found"; return; }
@@ -190,7 +190,7 @@ check_planner_reasoning() {
 check_reasoning_env_dupes() {
   local k n
   for k in AI_PLAN_REASONING FAST_MARKET_REASONING AI_EXEC_REASONING; do
-    n=$(grep -cE "^$k=" "$NOFX_ENV" 2>/dev/null || true)
+    n=$(grep -cE "^$k=" "$VL_ENV" 2>/dev/null || true)
     if [ -n "$n" ] && [ "$n" -gt 1 ]; then
       echo "WARN $k appears ${n}× in .env — the LAST line wins for the bot; remove the duplicates"
     fi
@@ -231,7 +231,7 @@ check_no_errors() {
 # ---------------------------------------------------------------------------
 check_underscore_eq() {
   local n
-  n=$(git -C "$NOFX_REPO" grep -E '_ = [a-zA-Z_]' -- '*.go' ':!*_test.go' 2>/dev/null | wc -l | tr -d ' ')
+  n=$(git -C "$VL_REPO" grep -E '_ = [a-zA-Z_]' -- '*.go' ':!*_test.go' 2>/dev/null | wc -l | tr -d ' ')
   if [ -n "$n" ] && [ "$n" -le "$UNDERSCORE_EQ_BASELINE" ]; then ok "_ = hits $n ≤ baseline $UNDERSCORE_EQ_BASELINE"; else
     bad "_ = hits $n > baseline $UNDERSCORE_EQ_BASELINE"
   fi
@@ -272,10 +272,10 @@ NEEDLES
 
 LOG=${1:-}
 if [ -z "$LOG" ]; then
-  LOG=$(ls -t "$NOFX_DATA"/{vl,nofx}_*.log 2>/dev/null | head -1) # R5 removes the nofx glob
+  LOG=$(ls -t "$VL_DATA"/vl_*.log 2>/dev/null | head -1)
 fi
 if [ -z "$LOG" ] || [ ! -r "$LOG" ]; then
-  echo "no readable log (pass the path; looked in $NOFX_DATA)" >&2
+  echo "no readable log (pass the path; looked in $VL_DATA)" >&2
   exit 2
 fi
 echo "== postboot-check against $LOG"

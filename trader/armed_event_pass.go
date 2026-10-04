@@ -157,6 +157,11 @@ func (at *AutoTrader) runArmedEventLoop(l *armedEventLoop) {
 		if ran {
 			l.passes.Add(1)
 		}
+		// MENTOR P3 — the event pass also drives the mentor evaluator
+		// (event-driven: every FINAL 1m bar). Inert unless mentor mode ON.
+		if at.mentorEventPassAt(time.Now()) {
+			l.passes.Add(1)
+		}
 	}
 }
 

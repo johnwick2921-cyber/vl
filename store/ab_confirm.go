@@ -11,7 +11,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"vl/internal/envcompat"
+	"vl/internal/installpath"
 )
 
 // AB-CONFIRM SHADOW (E8, entry-mechanics 2026-08-30) — the Sep-9 courtroom
@@ -443,7 +443,7 @@ func onOff(b bool) string {
 // BackupBeforeE8Backfill takes an online sqlite3 backup before the recompute
 // writes. No backup, no write.
 func BackupBeforeE8Backfill(dbPath, stamp string) (string, error) {
-	root := envcompat.BackupRoot() // R5 removes: vl-backups wins, nofx-backups only when ~/nofx exists
+	root := installpath.BackupRoot()
 	if root == "" {
 		return "", fmt.Errorf("resolve home for the backup dir")
 	}

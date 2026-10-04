@@ -2140,6 +2140,14 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 				s.logger.Warn("tcp_server: bad order_update payload", "err", err)
 				continue
 			}
+			// N9 (review r2, 2026-10-03): a cancel-report ECHO is a report,
+			// not a state event. With the regime OFF it is dropped HERE, at
+			// the read loop, so nothing downstream (NoteEntryExecution, the
+			// ordered worker's snapshot wait, RetryPendingNT8Exits,
+			// picture-HTF) ever sees a frame the regime ignores.
+			if oup.CancelReport && !CancelReportRegimeOn() {
+				continue
+			}
 			// W117 F2 — enqueue to the owner's worker (stamped with the
 			// snapshot watermark for the post-change book gate, R4).
 			if s.enqueueOrdered(subKey(oup.Symbol, oup.Account), orderedItem{kind: orderedOrder, order: oup, snapAt: s.snapSeqFor(oup.Account)}) {

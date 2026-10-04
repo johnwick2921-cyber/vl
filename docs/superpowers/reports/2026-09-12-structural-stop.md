@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # Structural stop and first-zone target
 
@@ -54,8 +56,8 @@ Evidence labels: **[A] directly inspected or reproduced; [B] inference; [C] spec
 
 Pinned bases:
 
-- [Round 22 at e81602bb](https://github.com/johnwick2921-cyber/nofx/blob/e81602bb5c4bacb237ae2921e0188f8aa1d752bf/docs/superpowers/research/2026-09-12-stop-target-geometry/README.md): 64,780 bytes. Last source-file commit at that base: `586d00ef 2026-09-12T11:30:05-05:00 docs: incorporate fresh structural-geometry backtest and qualify fill results`.
-- [Backtest 1 at 6b3fddf7](https://github.com/johnwick2921-cyber/nofx/blob/6b3fddf7/docs/superpowers/research/2026-09-12-backtest-zone-fade/README.md): 29,654 bytes; frozen control and original cohort, with the fill errors discussed below.
+- [Round 22 at e81602bb](https://github.com/johnwick2921-cyber/vl/blob/e81602bb5c4bacb237ae2921e0188f8aa1d752bf/docs/superpowers/research/2026-09-12-stop-target-geometry/README.md): 64,780 bytes. Last source-file commit at that base: `586d00ef 2026-09-12T11:30:05-05:00 docs: incorporate fresh structural-geometry backtest and qualify fill results`.
+- [Backtest 1 at 6b3fddf7](https://github.com/johnwick2921-cyber/vl/blob/6b3fddf7/docs/superpowers/research/2026-09-12-backtest-zone-fade/README.md): 29,654 bytes; frozen control and original cohort, with the fill errors discussed below.
 - Level-map basis `6c96683c`; scenario-economics basis `6f677b55`. Their detectors, zones, merge and economics writers are unchanged.
 - [Source freshness manifest](2026-09-12-structural-stop/evidence/source-provenance.md) records `git log -1` at the accepted base for each cited/changed existing file. New candidate files are identified as new; their final content is pinned by this report's containing commit.
 

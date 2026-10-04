@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # CLASS 35 — replan budget arithmetic (PART 1) + 1C touch-band calibration & friction floor (PART 2)
 
@@ -147,7 +149,7 @@ Boot block (after `🔐 ConfirmRuleLedger`): `🧮 replan budget: recorded-count
 ## 7. Build, stage, rollback (A4/A13)
 
 ```
-git clone --no-local https://github.com/johnwick2921-cyber/nofx.git <scratch>/clone && git checkout ec6632f9de41060b52398f41f9ffbbf840814c40
+git clone --no-local https://github.com/johnwick2921-cyber/vl.git <scratch>/clone && git checkout ec6632f9de41060b52398f41f9ffbbf840814c40
 go build -o vl-bin.next .
 go version -m vl-bin.next:
 	build	vcs.revision=ec6632f9de41060b52398f41f9ffbbf840814c40

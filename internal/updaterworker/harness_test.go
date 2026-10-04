@@ -41,7 +41,7 @@ import (
 // and every call after the hold write also requires this job's hold on disk.
 
 const (
-	boxToken     = "tok-u4-never-anywhere-7f3a9c41e2" // NOFX_CUTOVER_TOKEN in every rig
+	boxToken     = "tok-u4-never-anywhere-7f3a9c41e2" // VL_CUTOVER_TOKEN in every rig
 	boxReleaseID = "v1.2.0"
 	boxJobID     = "job-u4-0001abcd"
 	boxOldBuild  = "2026-09-23-m21"
@@ -77,7 +77,7 @@ type box struct {
 
 	inst, data, relDir, backupRoot string
 
-	binName    string // the install binary basename (vl-bin or nofx-bin — R5 removes the nofx form)
+	binName    string // the install binary basename (vl-bin or vl-bin — R5 removes the vl form)
 	relBinName string // the release dir's binary basename (defaults to binName)
 
 	id      Identity // the unit's MainPID identity
@@ -163,7 +163,7 @@ type rigOpt func(*box)
 func withBinary(binName string) rigOpt {
 	return func(b *box) {
 		for _, dir := range []string{b.inst, b.relDir} {
-			old, nu := filepath.Join(dir, "nofx-bin"), filepath.Join(dir, binName)
+			old, nu := filepath.Join(dir, "vl-bin"), filepath.Join(dir, binName)
 			if err := os.Rename(old, nu); err == nil {
 				_ = os.Chmod(nu, 0o755)
 			}
@@ -174,10 +174,10 @@ func withBinary(binName string) rigOpt {
 }
 
 // withReleaseBinary renames ONLY the release's binary (the R2-like rollback
-// test: a vl release activating onto a nofx install).
+// test: a vl release activating onto a vl install).
 func withReleaseBinary(binName string) rigOpt {
 	return func(b *box) {
-		old, nu := filepath.Join(b.relDir, "nofx-bin"), filepath.Join(b.relDir, binName)
+		old, nu := filepath.Join(b.relDir, "vl-bin"), filepath.Join(b.relDir, binName)
 		if err := os.Rename(old, nu); err == nil {
 			_ = os.Chmod(nu, 0o755)
 		}
@@ -203,8 +203,8 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	t.Cleanup(func() { os.RemoveAll(root) })
 	b := &box{
 		t: t, clock: &fakeClock{t: time.Date(2026, 9, 24, 10, 0, 0, 0, time.Local)},
-		inst: filepath.Join(root, "nofx"), backupRoot: filepath.Join(root, "nofx-backups", "updater"),
-		binName: "nofx-bin",
+		inst: filepath.Join(root, "vl"), backupRoot: filepath.Join(root, "vl-backups", "updater"),
+		binName: "vl-bin",
 		id:      Identity{PID: 4242, StartTicks: 1000}, running: boxOld,
 		flat: true, addonConnected: true, addonBuild: boxOldBuild, manifestBuild: boxOldBuild,
 		absentSim:  true,
@@ -485,13 +485,13 @@ func (b *box) kill(id Identity) (Identity, error) {
 	return b.id, nil
 }
 
-// instBinary is the install's binary: vl-bin when present, else nofx-bin
+// instBinary is the install's binary: vl-bin when present, else vl-bin
 // (R5 removes the vl branch) — the same rule target.InstallBinaryPath uses.
 func (b *box) instBinary() string {
 	if _, err := os.Stat(filepath.Join(b.inst, "vl-bin")); err == nil {
 		return filepath.Join(b.inst, "vl-bin")
 	}
-	return filepath.Join(b.inst, "nofx-bin")
+	return filepath.Join(b.inst, "vl-bin")
 }
 
 // writeBootLine appends the relaunched process's boot line to logPath — called
@@ -924,7 +924,7 @@ func (b *box) gateView() GateView {
 
 // ── files ───────────────────────────────────────────────────────────────────
 
-func binaryBody(sha string) string { return "NOFXBIN rev=" + sha + " modified=false\n" }
+func binaryBody(sha string) string { return "VLBIN rev=" + sha + " modified=false\n" }
 
 func parseBinaryBody(p string) (sha, modified string) {
 	b, err := os.ReadFile(p)

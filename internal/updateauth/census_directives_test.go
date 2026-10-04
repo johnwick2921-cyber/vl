@@ -182,7 +182,7 @@ func TestUpdateAuthCensusRefusesRootPackageEmbed(t *testing.T) {
 // of the DB path (main.go's os.Args[1] if given — it overrides the config —
 // else DB_PATH from the process env, else <install>/.env, else data/data.db),
 // anchored on the bot's WorkingDirectory — the checkout the deploy builds in
-// (deploy/vl.service WorkingDirectory=__NOFX_DIR__). So DB_PATH=kernel/data.db
+// (deploy/vl.service WorkingDirectory=__VL_DIR__). So DB_PATH=kernel/data.db
 // puts device.key at <root>/kernel/updater/device.key, in reach of a
 // //go:embed in package kernel [A read: installpath.DataDir, main.go:68-74].
 // Fail-closed and cheap: in EVERY package, a //go:embed pattern with an

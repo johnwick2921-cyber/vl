@@ -55,7 +55,7 @@ func TestSocketPathRefusesRelativeEmptyOrTooLong(t *testing.T) {
 	if _, err := SocketPath(long); err == nil {
 		t.Fatal("a socket path over the 107-byte sun_path limit must be refused, not truncated")
 	}
-	if p, err := SocketPath("/srv/nofx/data"); err != nil || p != "/srv/nofx/data/updater/worker.sock" {
+	if p, err := SocketPath("/srv/vl/data"); err != nil || p != "/srv/vl/data/updater/worker.sock" {
 		t.Fatalf("positive control: %q %v", p, err)
 	}
 }

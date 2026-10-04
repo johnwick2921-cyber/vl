@@ -12,7 +12,7 @@ func TestAssertBootIntegrityBothPaths(t *testing.T) {
 	t.Cleanup(func() { SetTradingRefusedForTest(false, "") })
 
 	// ── path A: no expectation declared → never refuses, goldens still checked
-	t.Setenv("NOFX_EXPECTED_REVISION", "")
+	t.Setenv("VL_EXPECTED_REVISION", "")
 	a := AssertBootIntegrity()
 	if !a.GoldensOK {
 		t.Fatalf("goldens must pass in a healthy tree: %+v", a.Goldens)
@@ -28,7 +28,7 @@ func TestAssertBootIntegrityBothPaths(t *testing.T) {
 	}
 
 	// ── path B: an expectation that CANNOT match → refuse to trade
-	t.Setenv("NOFX_EXPECTED_REVISION", "0000000000000000000000000000000000000000")
+	t.Setenv("VL_EXPECTED_REVISION", "0000000000000000000000000000000000000000")
 	b := AssertBootIntegrity()
 	if b.RevisionOK {
 		t.Fatal("a bogus expected revision must not match")
@@ -45,7 +45,7 @@ func TestAssertBootIntegrityBothPaths(t *testing.T) {
 	}
 
 	// ── back to A: re-asserting a good state re-opens the gate (restart recovers)
-	t.Setenv("NOFX_EXPECTED_REVISION", "")
+	t.Setenv("VL_EXPECTED_REVISION", "")
 	if c := AssertBootIntegrity(); c.Refused {
 		t.Fatal("clearing the expectation must clear the refusal on the next boot")
 	}
@@ -61,7 +61,7 @@ func TestExpectedRevisionPrefixMatch(t *testing.T) {
 	if rev == "" {
 		t.Skip("binary built without VCS stamping (go test w/o -buildvcs)")
 	}
-	t.Setenv("NOFX_EXPECTED_REVISION", rev[:7]) // the short sha an operator would paste
+	t.Setenv("VL_EXPECTED_REVISION", rev[:7]) // the short sha an operator would paste
 	got := AssertBootIntegrity()
 	if !got.RevisionOK || got.Refused {
 		t.Fatalf("short-sha prefix must match the full revision: exp=%q rev=%q", rev[:7], rev)
@@ -84,7 +84,7 @@ func TestExpectedRevisionFromReleaseFile(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("NOFX_EXPECTED_REVISION", "")
+	t.Setenv("VL_EXPECTED_REVISION", "")
 	if got := expectedRevision(); got != "abc1234" {
 		t.Fatalf("deploy/RELEASE not read (comments must be skipped): got %q", got)
 	}

@@ -14,7 +14,7 @@ import (
 // is pinned; this test proves the pin at the production call site (canon 53).
 func TestManifestAddonBuildReadsThePinnedFileNotTheGlob(t *testing.T) {
 	stage := t.TempDir()
-	mustWrite(t, filepath.Join(stage, "nofx-bin"), "x")
+	mustWrite(t, filepath.Join(stage, "vl-bin"), "x")
 	if err := os.MkdirAll(filepath.Join(stage, "deploy"), 0o755); err != nil {
 		t.Fatal(err)
 	}

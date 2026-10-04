@@ -154,7 +154,7 @@ func TestWorkerHoldWritersCensusModuleWide(t *testing.T) {
 	}
 	put("go.mod", "module vl\n\ngo 1.25\n")
 	put("internal/updaterworker/hold.go", "package updaterworker\n\nfunc HoldForJob() {}\nfunc ReleaseJob() {}\nfunc HoldFileForDisplay() string { return \"\" }\n")
-	put("cmd/nofx-updater/main.go", "package main\n\nimport \"vl/internal/updaterworker\"\n\nfunc main() { updaterworker.ReleaseJob() }\n")
+	put("cmd/vl-updater/main.go", "package main\n\nimport \"vl/internal/updaterworker\"\n\nfunc main() { updaterworker.ReleaseJob() }\n")
 	put("api/a.go", "package api\n\nimport uw \"vl/internal/updaterworker\"\n\nvar _ = uw.HoldForJob\n")
 	put("api/b.go", "package api\n\nimport . \"vl/internal/updaterworker\"\n\nfunc b() { HoldForJob() }\n")
 	put("api/c.go", "package api\n\nimport \""+pkgImport(dir)+"\"\n\nvar _ = updaterworker.HoldFileForDisplay\n")
@@ -162,13 +162,13 @@ func TestWorkerHoldWritersCensusModuleWide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(off, "|"); got != "api/a.go: names updaterworker.HoldForJob|api/b.go: names updaterworker.HoldForJob|cmd/nofx-updater/main.go: names updaterworker.ReleaseJob" {
+	if got := strings.Join(off, "|"); got != "api/a.go: names updaterworker.HoldForJob|api/b.go: names updaterworker.HoldForJob|cmd/vl-updater/main.go: names updaterworker.ReleaseJob" {
 		t.Fatalf("synthetic census offenders = %v", off)
 	}
 }
 
 // pkgImport is the updaterworker import path as the census derives it from the
-// module (never the hardcoded nofx/ form — R5 makes the module vl).
+// module (never the hardcoded vl/ form — R5 makes the module vl).
 func pkgImport(root string) string {
 	if m, err := censuswalk.ModulePath(root); err == nil {
 		return m + "/internal/updaterworker"

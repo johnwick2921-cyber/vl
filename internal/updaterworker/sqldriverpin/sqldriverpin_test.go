@@ -71,7 +71,7 @@ func TestNoBinaryLinkingTheWorkerSetRegistersADuplicateSQLDriver(t *testing.T) {
 				t.Fatalf("%s links neither %s nor %s — the probe is not seeing the binary (%d deps)", c.binary, modernc, glebarez, len(deps))
 			case len(drivers) == 2:
 				t.Fatalf("%s links BOTH %s — two registrations of the database/sql driver \"sqlite\"; it panics at init "+
-					"(\"sql: Register called twice for driver sqlite\"). Every package imports nofx/store/sqlitedriver, never a driver.",
+					"(\"sql: Register called twice for driver sqlite\"). Every package imports vl/store/sqlitedriver, never a driver.",
 					c.binary, strings.Join(drivers, " AND "))
 			case drivers[0] != c.want:
 				// one driver, the wrong one for this tag: a build that flipped

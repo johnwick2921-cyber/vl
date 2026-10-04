@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"vl/internal/envcompat"
+	"vl/internal/installpath"
 	"vl/logger"
 )
 
@@ -119,7 +119,7 @@ func (s *PositionStore) AdherenceDistribution() (map[string]int, error) {
 // uses, so it is safe against a live process. A failure here ABORTS the
 // migration: no backup, no write.
 func BackupBeforeRegrade(dbPath, stamp string) (string, error) {
-	root := envcompat.BackupRoot() // R5 removes: vl-backups wins, nofx-backups only when ~/nofx exists
+	root := installpath.BackupRoot()
 	if root == "" {
 		return "", fmt.Errorf("resolve home for the backup dir")
 	}

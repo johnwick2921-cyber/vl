@@ -75,7 +75,7 @@ var loginLimiterClock = time.Now
 var loginDummyHash = mustLoginDummyHash()
 
 func mustLoginDummyHash() string {
-	h, err := auth.HashPassword("nofx-login-dummy-constant-time-v1")
+	h, err := auth.HashPassword("vl-login-dummy-constant-time-v1")
 	if err != nil {
 		panic(fmt.Sprintf("api: dummy login hash init failed: %v", err))
 	}

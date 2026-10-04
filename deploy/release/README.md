@@ -56,7 +56,7 @@ where the NOTE says so.
 ## Open owner decision
 
 `RELEASE_REPO` is where artifacts are published. It defaults **fail-closed** to
-this repository (`johnwick2921-cyber/nofx`) and is one line to change. The
+this repository (`johnwick2921-cyber/vl`) and is one line to change. The
 partner mirror is never a valid target, and the contract test fails if its name
 appears in the workflow.
 

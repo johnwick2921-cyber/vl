@@ -18,7 +18,7 @@ import (
 
 // snapshotRelease addresses a snapshot dir as a Release (sha = the install's;
 // binName is the install's basename, kept as-is — a snapshot of a vl-bin
-// install restores to vl-bin). // R5 removes the nofx name.
+// install restores to vl-bin). // R5 removes the vl name.
 func snapshotRelease(dir, sha, binName string) Release {
 	return Release{
 		Dir:         dir,

@@ -43,7 +43,7 @@ import (
 // SAME package/file/identifier with its own value, so every future sync's
 // partner carve-out stays one line. The worker reads updatersource.ReleaseRepo
 // — never an env var for the repo (VL_RELEASE_SOURCE only toggles on/off).
-const ReleaseRepo = "johnwick2921-cyber/nofx"
+const ReleaseRepo = "johnwick2921-cyber/vl"
 
 // DefaultHosts is the production allow-list (fold A3). The asset path was
 // verified live 2026-10-02 [A]: the asset URL

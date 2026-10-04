@@ -13,7 +13,7 @@
 # v6 SEMANTICS PRESERVED, deliberately and testably:
 #   --dry-run performs every preflight and kills/swaps/writes NOTHING
 #   the flat gate (class 33) must answer READY before anything is touched
-#   NOFX_CUTOVER_TOKEN is read from the environment, NEVER a command-line arg
+#   VL_CUTOVER_TOKEN is read from the environment, NEVER a command-line arg
 #   the new binary is PROVEN before anything moves (two distinct refusals,
 #     class 248: no vcs stamps at all vs stamped with a different revision)
 #   the dist must carry the sha being installed
@@ -33,11 +33,11 @@ set -uo pipefail
 DRY=0
 [ "${1:-}" = "--dry-run" ] && { DRY=1; shift; }
 NEW_SHA="${1:-}"; NEW_BIN="${2:-}"; NEW_DIST="${3:-}"
-# Shell twins VL_ → NOFX_ → default; the install default is $HOME/vl and
-# the unit default is vl (plan v7 FINAL D2 item 7). R5 removes the NOFX twins.
-UNIT="${VL_UNIT:-${NOFX_UNIT:-vl}}"
-INSTALL="${VL_INSTALL:-${NOFX_INSTALL:-$HOME/vl}}"
-ACTIVATE="${VL_ACTIVATE_BIN:-${NOFX_ACTIVATE_BIN:-}}"
+# R5: env reads are the VL_ names only; the install default is $HOME/vl and
+# the unit default is vl (plan v7 FINAL D2 item 7).
+UNIT="${VL_UNIT:-vl}"
+INSTALL="${VL_INSTALL:-$HOME/vl}"
+ACTIVATE="${VL_ACTIVATE_BIN:-}"
 
 say()  { printf 'cutover: %s\n' "$*"; }
 plan() { printf 'cutover: WOULD %s\n' "$*"; }
@@ -57,7 +57,7 @@ if [ -z "$ACTIVATE" ]; then
   ACTIVATE="$(mktemp -t vl-activate.XXXXXX)"
   trap 'rm -f "$ACTIVATE"' EXIT
   go build -o "$ACTIVATE" ./cmd/vl-activate 2>/dev/null \
-    || die "cannot build cmd/vl-activate from this tree; pass VL_ACTIVATE_BIN=<path> (or NOFX_ACTIVATE_BIN until R5) if you have one"
+    || die "cannot build cmd/vl-activate from this tree; pass VL_ACTIVATE_BIN=<path> if you have one"
 fi
 [ -x "$ACTIVATE" ] || die "$ACTIVATE is not executable"
 
@@ -66,7 +66,7 @@ fi
 # runs is the one that answers here. The manifest records what the operator
 # asserted; verify decides whether the binary agrees.
 STAGE_DIR="$(mktemp -d -t vl-cutover.XXXXXX)"
-trap 'rm -rf "$STAGE_DIR"; [ -n "${ACTIVATE:-}" ] && [ -z "${VL_ACTIVATE_BIN:-}${NOFX_ACTIVATE_BIN:-}" ] && rm -f "$ACTIVATE"; rm -f "${TOKEN_HDR:-}"' EXIT
+trap 'rm -rf "$STAGE_DIR"; [ -n "${ACTIVATE:-}" ] && [ -z "${VL_ACTIVATE_BIN:-}" ] && rm -f "$ACTIVATE"; rm -f "${TOKEN_HDR:-}"' EXIT
 [ -f "$NEW_BIN" ] || die "new binary $NEW_BIN not found"
 cp "$NEW_BIN" "$STAGE_DIR/vl-bin" || die "cannot stage $NEW_BIN"
 NEW_MD5="$(md5sum "$STAGE_DIR/vl-bin" | cut -d' ' -f1)"
@@ -89,13 +89,13 @@ grep -rql "$NEW_SHA" "$SRC_DIST" 2>/dev/null >/dev/null \
 say "dist carries $SHORT"
 
 # --- what is running now ------------------------------------------------------
-# Install side: vl-bin wins when both exist. R5 removes the nofx branch.
-INSTALL_BIN="$INSTALL/vl-bin"; [ -f "$INSTALL_BIN" ] || INSTALL_BIN="$INSTALL/nofx-bin"
+# Install side: vl-bin, end of story.
+INSTALL_BIN="$INSTALL/vl-bin"
 OLD_SHA="$(go version -m "$INSTALL_BIN" 2>/dev/null | tr '\t' ' ' \
   | awk '{for(i=1;i<=NF;i++) if($i ~ /^vcs\.revision=/){sub(/^vcs\.revision=/,"",$i); print $i; exit}}')"
 [ -n "$OLD_SHA" ] || die "cannot read vcs.revision from the CURRENT binary; refusing a cutover with no way back"
 OLD_SHORT="${OLD_SHA:0:12}"
-RELEASES="${VL_RELEASE_DIR:-${NOFX_RELEASE_DIR:-$INSTALL/releases}}" # R5 removes the NOFX twin
+RELEASES="${VL_RELEASE_DIR:-$INSTALL/releases}"
 say "current: rev=$OLD_SHORT  releases → $RELEASES"
 
 # --- reconcile OLD_SHA with what is ACTUALLY running -------------------------
@@ -103,7 +103,7 @@ say "current: rev=$OLD_SHORT  releases → $RELEASES"
 # never-proven file on disk while the old process keeps serving. Reconcile the
 # way back against BOTH /api/health (the running process's own revision) and
 # the RELEASE marker. A mismatch, or neither consultable, refuses the cutover.
-HEALTH_URL="${VL_HEALTH_URL:-${NOFX_HEALTH_URL:-http://127.0.0.1:8080/api/health}}" # R5 removes the NOFX twin
+HEALTH_URL="${VL_HEALTH_URL:-http://127.0.0.1:8080/api/health}"
 HEALTH_REV="$(curl -s --max-time 5 "$HEALTH_URL" 2>/dev/null \
   | sed -n 's/.*"revision"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]*\)".*/\1/p' | tr 'A-F' 'a-f')"
 RELEASE_REV="$([ -f "$INSTALL/RELEASE" ] && tr -d '[:space:]' < "$INSTALL/RELEASE" 2>/dev/null | tr 'A-F' 'a-f')"
@@ -128,14 +128,14 @@ say "current reconciled: disk=$OLD_SHORT health=$(rev12 "${HEALTH_REV:-}") relea
 # leg that is absent, unevaluable or failing refuses the cutover. The token
 # comes from the environment and is never echoed, never logged, and never
 # accepted as an argument.
-[ -n "${NOFX_CUTOVER_TOKEN:-}" ] || die "cutover gate needs a token — set NOFX_CUTOVER_TOKEN (never pass it on the command line)"
-GATE_URL="${VL_GATE_URL:-${NOFX_GATE_URL:-http://127.0.0.1:8080/api/installation-gate}}" # R5 removes the NOFX twin
+[ -n "${VL_CUTOVER_TOKEN:-}" ] || die "cutover gate needs a token — set VL_CUTOVER_TOKEN (never pass it on the command line)"
+GATE_URL="${VL_GATE_URL:-http://127.0.0.1:8080/api/installation-gate}}"
 # The token never rides ANY process's argv ([25]/[29]): it is written to a 0600
 # header file and handed to curl as -H @file, so ps and /proc/<pid>/cmdline show
 # only the file path for the call's lifetime, and the file is removed on every
 # exit path.
 TOKEN_HDR="$(mktemp -t vl-cutover-hdr.XXXXXX)" || die "cannot create the token header file; refusing"
-( umask 077; printf 'Authorization: Bearer %s' "$NOFX_CUTOVER_TOKEN" > "$TOKEN_HDR" ) \
+( umask 077; printf 'Authorization: Bearer %s' "$VL_CUTOVER_TOKEN" > "$TOKEN_HDR" ) \
   || { rm -f "$TOKEN_HDR"; die "cannot write the token header file; refusing"; }
 GATE="$(curl -s --max-time 10 -H "@$TOKEN_HDR" "$GATE_URL" 2>/dev/null || true)"
 rm -f "$TOKEN_HDR"
@@ -177,7 +177,7 @@ if [ "$DRY" -eq 1 ]; then
   plan "run: vl-activate activate -release $RELEASES/$NEW_SHA -prev $RELEASES/$OLD_SHA"
   plan "  which installs binary + dist + RELEASE atomically, THEN kills the unit's"
   plan "  MainPID only if /proc/<pid>/stat field 22 still matches (a recycled pid is refused)"
-  plan "run: vl-activate watch -release $RELEASES/$NEW_SHA -log <the NEWEST data/{vl,nofx}_*.log>"
+  plan "run: vl-activate watch -release $RELEASES/$NEW_SHA -log <the NEWEST data/vl_*.log>"
   plan "  GREEN needs BOTH a boot line newer than the kill AND /api/health reporting $SHORT"
   plan "on ANY failure BEFORE anything moved (verify, gate, staging, backup):"
   plan "  REFUSE and stop — the running bot is NOT touched and NO rollback runs"
@@ -193,7 +193,7 @@ die "unattended activation is not enabled in v7 from this script.
     Run the steps explicitly with the owner present, each printing its receipt:
       vl-activate backup   -db $INSTALL/data/data.db
       vl-activate activate -release $RELEASES/$NEW_SHA -prev $RELEASES/$OLD_SHA
-      vl-activate watch    -release $RELEASES/$NEW_SHA    # -log defaults to the NEWEST data/{vl,nofx}_*.log; do NOT build it from today's date
+      vl-activate watch    -release $RELEASES/$NEW_SHA    # -log defaults to the NEWEST data/vl_*.log; do NOT build it from today's date
       vl-activate rollback -prev $RELEASES/$OLD_SHA        # if watch refuses
     NO UNATTENDED DEPLOYS is canon: a cutover needs the owner reachable and
     acking the boot line, or a tested auto-rollback. The worker (3b-B) is the

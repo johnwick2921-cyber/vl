@@ -1,3 +1,5 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # CLAUDE-canon — the operating rules that must SURVIVE, in a file a wave can reach
 
@@ -123,7 +125,7 @@ TREE — and the next `git commit` goes somewhere nobody chose. The failure is
 silent because every command after it succeeds.
 
 ```
-W=/home/hoang/nofx-<task>
+W=/home/hoang/vl-<task>
 git worktree add --detach "$W" origin/dev || { echo "worktree add FAILED"; exit 1; }
 git -C "$W" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
   || { echo "$W is not a worktree"; exit 1; }

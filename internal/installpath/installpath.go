@@ -22,6 +22,17 @@ import (
 // historical default).
 const DefaultDBPath = "data/data.db"
 
+// BackupRoot is the one backup-directory default: ~/vl-backups. (R5 dropped
+// the old ~/vl-backups branch.) Callers:
+// store backups, the activate and updater CLIs.
+func BackupRoot() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, "vl-backups")
+}
+
 // DBPath resolves the database path exactly as config.Init does: DB_PATH if
 // set and non-empty, else DefaultDBPath.
 func DBPath(getenv func(string) string) string {

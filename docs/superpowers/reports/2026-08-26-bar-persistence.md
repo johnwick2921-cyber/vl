@@ -1,7 +1,9 @@
+> R5 rename note (2026-10-02): names in this file were rewritten from the pre-rename repo name to `vl`.
+
 names rewritten to vl on 2026-09-30 (VL rename)
 # 2026-08-26 · Bar Persistence — The Unblock (dispatch report)
 
-**PR:** [#77](https://github.com/johnwick2921-cyber/nofx/pull/77) · **Branch:** `feat/bar-persistence`
+**PR:** [#77](https://github.com/johnwick2921-cyber/vl/pull/77) · **Branch:** `feat/bar-persistence`
 **Deployed revs (cutover sequence):** `3f5c6b24` (step 0, PR #76 base) → `fb066e6b` (bar persistence) → `85f6badb` (live-persist fix)
 
 ## 1. Schema

@@ -82,6 +82,11 @@ type admitIntent struct {
 	// Source is the arm row's machine source (W5: store.ArmSourcePicture on a
 	// Picture scenario's row, "" on every planner row and every other path).
 	Source string
+	// MentorArm marks an armed-ledger row authored by the mentor injector
+	// (P0 fix/mentor-ai-off, CTO 20:14:30Z): the mentor's arm-path entries
+	// pass the AI-entries-off gate even though they carry no Decision.
+	// Planner arms leave it false and stay refused while mentor_mode is ON.
+	MentorArm bool
 }
 
 func (in admitIntent) side() string {
@@ -169,6 +174,19 @@ func (at *AutoTrader) admitEntry(in admitIntent) (string, bool) {
 }
 
 func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time) (string, bool) {
+	// MENTOR P3 (P0 fix/mentor-ai-off, DS-106): with mentor_mode ON every
+	// NON-mentor entry is refused HERE — the one admission chain that the
+	// decision, agent-chat, arm and picture producers all ask. A mentor-sourced
+	// decision (kernel.Decision.MentorSourced) passes; closes, flattens and the
+	// safety paths never reach this chain (it is entry-only), so they are
+	// untouched. With mentor_mode OFF the gate is inert — byte-identical.
+	// It sits FIRST: for a mentor-mode trader the policy gates below are moot —
+	// the AI never enters at all, and the refusal always names the mode.
+	if refusal := at.mentorAdmitRefusal(in); refusal != "" {
+		return at.admitRefuse(in, "mentor_ai_entries_off", refusal, func() {
+			at.logWarnf("🧑‍🏫 %s %s REFUSED — %s (trader %s)", sym, act, refusal, at.id)
+		})
+	}
 	if in.Path == admitPicture || in.Source == store.ArmSourcePicture {
 		// Picture runs on the live-bar goroutine, outside runCycle, so it has
 		// no loop in front of it that stops when the trader stops or the Day

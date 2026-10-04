@@ -888,7 +888,7 @@ func (w *Worker) stepRollback(ctx context.Context, j updaterjob.Job) stepResult 
 	if j.Attempts > 1 || j.IdentityRollback == nil {
 		id, ok := w.currentIdentityRetry(ctx)
 		since := w.host.Now().Truncate(time.Second)
-		bin := "nofx-bin" // R5 removes: the snapshot's own binary
+		bin := "vl-bin" // the snapshot's own binary
 		if j.Snapshot != nil {
 			bin = j.Snapshot.Binary
 		}

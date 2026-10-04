@@ -19,20 +19,20 @@ func TestPruneOldLogsNeverDeletesTodayOrLive(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("nofx_2026-09-26.log") // today — never deleted
-	write("nofx_2026-09-25.log") // 1 day old — inside a 3-day window
-	write("nofx_2026-09-20.log") // 6 days old — outside a 3-day window
-	write("nofx_2026-09-19.log") // 7 days old — outside a 3-day window
+	write("vl_2026-09-26.log") // today — never deleted
+	write("vl_2026-09-25.log") // 1 day old — inside a 3-day window
+	write("vl_2026-09-20.log") // 6 days old — outside a 3-day window
+	write("vl_2026-09-19.log") // 7 days old — outside a 3-day window
 	write("other.txt")           // not ours — untouched
 
-	removed, err := pruneOldLogs(dir, now, 3, "nofx_2026-09-26.log")
+	removed, err := pruneOldLogs(dir, now, 3, "vl_2026-09-26.log")
 	if err != nil {
 		t.Fatalf("prune: %v", err)
 	}
-	if len(removed) != 2 || removed[0] != "nofx_2026-09-19.log" || removed[1] != "nofx_2026-09-20.log" {
-		t.Fatalf("want exactly [nofx_2026-09-19.log nofx_2026-09-20.log], got %v", removed)
+	if len(removed) != 2 || removed[0] != "vl_2026-09-19.log" || removed[1] != "vl_2026-09-20.log" {
+		t.Fatalf("want exactly [vl_2026-09-19.log vl_2026-09-20.log], got %v", removed)
 	}
-	for _, keep := range []string{"nofx_2026-09-26.log", "nofx_2026-09-25.log", "other.txt"} {
+	for _, keep := range []string{"vl_2026-09-26.log", "vl_2026-09-25.log", "other.txt"} {
 		if _, err := os.Stat(filepath.Join(dir, keep)); err != nil {
 			t.Fatalf("%s must survive the prune: %v", keep, err)
 		}
@@ -48,7 +48,7 @@ func TestPruneOldLogsOffKeepsEverything(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("nofx_2020-01-01.log")
+	write("vl_2020-01-01.log")
 	removed, err := pruneOldLogs(dir, time.Now(), 0, "")
 	if err != nil {
 		t.Fatalf("prune: %v", err)
@@ -56,7 +56,7 @@ func TestPruneOldLogsOffKeepsEverything(t *testing.T) {
 	if len(removed) != 0 {
 		t.Fatalf("OFF must keep everything, removed %v", removed)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "nofx_2020-01-01.log")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "vl_2020-01-01.log")); err != nil {
 		t.Fatalf("off-state file deleted: %v", err)
 	}
 }

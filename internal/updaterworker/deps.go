@@ -12,7 +12,7 @@
 //     rule: the updater never cancels orders).
 //   - the trading app never links this package (TestTradingAppNeverLinksTheUpdaterWorkerSide).
 //   - the worker never mints: it reads the app's own views on loopback with
-//     the operator's $NOFX_CUTOVER_TOKEN, which is never logged or persisted.
+//     the operator's $VL_CUTOVER_TOKEN, which is never logged or persisted.
 //
 // Every side effect is behind a narrow interface (this file) so the whole state
 // machine is driven, in tests and in the §5 dry run, against fakes — never the
@@ -158,7 +158,7 @@ type Reverifier interface {
 var ErrUnauthorized = errors.New("updaterworker: the app refused the cutover token (401)")
 
 // AppReader reads the running bot's own views. The real one (app_http.go)
-// sends GETs to 127.0.0.1 with Bearer $NOFX_CUTOVER_TOKEN; it never writes.
+// sends GETs to 127.0.0.1 with Bearer $VL_CUTOVER_TOKEN; it never writes.
 type AppReader interface {
 	// Health is GET /api/health's "revision" (12 chars on the live bot).
 	Health(ctx context.Context) (string, error)

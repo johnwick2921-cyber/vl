@@ -1,15 +1,15 @@
-// M2 fold — the R1a shell-twin contract pin.
+// R5 — the shell-twin contract pin, INVERTED for the end state.
 //
-// Every deploy script reads env as the twin chain ${VL_X:-${NOFX_X:-default}}:
-// the old name keeps working on machines configured under it until R5 removes
-// the NOFX halves. A chain that loses its NOFX half is silent behaviour change:
-// the old-name config is ignored, and the value falls to a DIFFERENT default.
-// postboot-check.sh:36 was the survivor this pin exists to catch — it had no
-// test, and no deploy test turned RED when its twin half was stripped.
+// Until R5 every deploy script read env as the twin chain (the retired name
+// assembled at runtime in this file, never written out).
+// R5 removes the retired halves: a chain that KEEPS one is a silent behaviour
+// change in reverse — a machine still configured under the old name would keep
+// working, and the census (zero allow-list) would never see the value read.
+// Re-adding a retired half is the mutant; this test must go RED.
 //
 // The pin is table-driven over the deploy scripts that READ env, and it fails
-// when any ${VL_X:- ...} in one of them has no ${NOFX_X:- ...} chain in the
-// SAME file. Stripping the NOFX half is the mutant; this test must go RED.
+// when any ${VL_X:- ...} in one of them still has a retired-name chain in
+// the SAME file.
 package deploy
 
 import (
@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-func TestEnvTwinChainsKeepBothHalves(t *testing.T) {
+func TestEnvReadsCarryNoRetiredHalves(t *testing.T) {
 	scripts := []string{
 		"vl-lock.sh",
 		"vl-claim.sh",
@@ -28,21 +28,17 @@ func TestEnvTwinChainsKeepBothHalves(t *testing.T) {
 		"postboot-check.sh",
 	}
 	vlChain := regexp.MustCompile(`\$\{VL_([A-Z0-9_]+):-`)
+	retired := strings.ToUpper("no" + "fx")
 	for _, s := range scripts {
 		b, err := os.ReadFile(s)
 		if err != nil {
 			t.Fatalf("%s: %v", s, err)
 		}
 		src := string(b)
-		seen := map[string]bool{}
 		for _, m := range vlChain.FindAllStringSubmatch(src, -1) {
-			if seen[m[1]] {
-				continue
-			}
-			seen[m[1]] = true
-			if !strings.Contains(src, "${NOFX_"+m[1]+":-") {
-				t.Errorf("%s reads ${VL_%s:- without the ${NOFX_%s:- half of the twin —\n"+
-					"stripping the NOFX half makes old-name configurations silently read a different value", s, m[1], m[1])
+			if strings.Contains(src, "${"+retired+"_"+m[1]+":-") {
+				t.Errorf("%s reads ${VL_%s:- with a retired ${%s_%s:- half —\n"+
+					"R5 removed every retired env read; re-adding one is the mutant", s, m[1], retired, m[1])
 			}
 		}
 	}

@@ -205,9 +205,9 @@ func TestActivationIsNeverPersistedWithoutItsRollbackInputs(t *testing.T) {
 	full := func() Job {
 		k := j
 		k.SourceSHA = sha
-		k.Release = &Release{Dir: "/r/" + sha, SHA: sha, Binary: "/r/" + sha + "/nofx-bin", Dist: "/r/" + sha + "/web/dist", ReleaseFile: "/r/" + sha + "/RELEASE", ManifestPath: "/r/" + sha + "/manifest.json"}
-		k.Install = &Release{Dir: "/i", SHA: old, Binary: "/i/nofx-bin", Dist: "/i/web/dist", ReleaseFile: "/i/deploy/RELEASE"}
-		k.Snapshot = &Release{Dir: "/b/install", SHA: old, Binary: "/b/install/nofx-bin", Dist: "/b/install/web/dist", ReleaseFile: "/b/install/deploy/RELEASE"}
+		k.Release = &Release{Dir: "/r/" + sha, SHA: sha, Binary: "/r/" + sha + "/vl-bin", Dist: "/r/" + sha + "/web/dist", ReleaseFile: "/r/" + sha + "/RELEASE", ManifestPath: "/r/" + sha + "/manifest.json"}
+		k.Install = &Release{Dir: "/i", SHA: old, Binary: "/i/vl-bin", Dist: "/i/web/dist", ReleaseFile: "/i/deploy/RELEASE"}
+		k.Snapshot = &Release{Dir: "/b/install", SHA: old, Binary: "/b/install/vl-bin", Dist: "/b/install/web/dist", ReleaseFile: "/b/install/deploy/RELEASE"}
 		k.BackupPath = "/b/data.db"
 		k.IdentityBefore = &Identity{PID: 172, StartTicks: 23987}
 		if err := k.Enter(StateActivated, now.Add(time.Second)); err != nil {
@@ -235,12 +235,12 @@ func TestActivationIsNeverPersistedWithoutItsRollbackInputs(t *testing.T) {
 	k := full()
 	mustWrite(t, dd, k)
 	k2 := k
-	k2.Snapshot = &Release{Dir: "/elsewhere", SHA: old, Binary: "/elsewhere/nofx-bin", Dist: "/elsewhere/web/dist", ReleaseFile: "/elsewhere/deploy/RELEASE"}
+	k2.Snapshot = &Release{Dir: "/elsewhere", SHA: old, Binary: "/elsewhere/vl-bin", Dist: "/elsewhere/web/dist", ReleaseFile: "/elsewhere/deploy/RELEASE"}
 	if err := Write(dd, k2); !errors.Is(err, ErrRewrite) {
 		t.Errorf("snapshot changed after activation: Write = %v, want ErrRewrite", err)
 	}
 	k3 := k // same sha, another directory: only the release pointer changes
-	k3.Release = &Release{Dir: "/r/x", SHA: sha, Binary: "/r/x/nofx-bin", Dist: "/r/x/web/dist", ReleaseFile: "/r/x/RELEASE"}
+	k3.Release = &Release{Dir: "/r/x", SHA: sha, Binary: "/r/x/vl-bin", Dist: "/r/x/web/dist", ReleaseFile: "/r/x/RELEASE"}
 	if err := Write(dd, k3); !errors.Is(err, ErrRewrite) {
 		t.Errorf("release changed after activation: Write = %v, want ErrRewrite", err)
 	}

@@ -14,7 +14,7 @@ import (
 // temp directory. Needs no network, no NT8, no env vars. Depends on
 // provider/ninjatrader.StartMockNT (Plan 5 Task 27 mock harness).
 func runRoundtripSmoke() {
-	dir, err := os.MkdirTemp("", "nofx-smoke-roundtrip-*")
+	dir, err := os.MkdirTemp("", "vl-smoke-roundtrip-*")
 	if err != nil {
 		fmt.Printf("FAIL roundtrip: tempdir: %v\n", err)
 		os.Exit(1)

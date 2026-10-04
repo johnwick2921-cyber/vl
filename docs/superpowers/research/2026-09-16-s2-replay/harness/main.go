@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	dbPath     = "/home/hoang/nofx/data/data.db"
+	dbPath     = "/home/hoang/vl/data/data.db"
 	symbol     = "MNQ"
 	traderID   = "8d5c8af5_8ef641a7-815c-4bb5-9798-b070b67d7998_deepseek_1781246265"
 	levelDate  = "2026-09-16"

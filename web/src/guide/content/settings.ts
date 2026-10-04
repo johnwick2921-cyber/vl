@@ -1384,6 +1384,22 @@ const pictureHtf: KnobSpec[] = [
     whenToTouch: 'To set a stricter floor than risk control.',
     perSession: 'No.',
   },
+  {
+    label: 'Mentor stop-limit entries',
+    where: 'Environment only (MENTOR_STOP_LIMIT, default OFF)',
+    what: 'D1.4: never a stop-MARKET. With the knob ON, a stop-entry arm whose origin is mentor and that carries a per-order expiry (expiry_ms) goes out with stop_limit=true and the AddOn builds OrderType.StopLimit with LimitPrice == StopPrice: the entry fills at its price or misses. The expiry is authored by the mentor evaluator intent; the armed pass cancels the order unfilled when it lapses — the cancel frame is sent on the same pass (N12: a gap through the trigger otherwise leaves a resting limit that can fill later at a stale price), and an expired arm that was never placed ends terminal.',
+    trader:
+      'The routing reads the arm’s explicit origin. Mentor + knob ON + expiry → stop-limit; mentor + knob ON + no expiry → REFUSED with a reason and a counter (the arm stays armed, no stop-market fallback). A non-mentor arm takes the ordinary stop-market path whatever its expiry, and knob OFF is that same path for everyone.',
+    consumer:
+      'provider/ninjatrader/tcp_framing.go (SignalPayload.StopLimit, MinAddonBuildStopLimit) · trader/ninjatrader/tcp_trader.go (PlaceStopEntryWithLimit) · trader/armed_executor.go (origin-gated routing + expiry sweep) · trader/stop_limit.go (isMentorArmOrigin) · store/armed_orders.go (origin + expiry_ms) · ninjascript VLTraderTCPClient.cs (stop_limit).',
+    range: 'off | on · default off',
+    systemDefault: 'off',
+    recommended:
+      '⭐ keep OFF until Mentor mode; then ON with SIM-only trading.',
+    whenToTouch:
+      'Only with Mentor mode — and do NOT turn ON until the mentor injector stamps origin=mentor AND expiry_ms on every stop-limit it arms (DS-102, #316).',
+    perSession: 'No.',
+  },
 ]
 
 const sessions: KnobSpec[] = [
@@ -1411,19 +1427,20 @@ const sessions: KnobSpec[] = [
     trader:
       'The knob is the Mentor-mode gate (cancel/re-place every few candles). With it OFF the bot is byte-identical to today. An AddOn below build 2026-10-03-c1 fails closed while ON: no confirmation → no stop-entry placement.',
     consumer:
-      'trader/cancel_confirm.go (cancelConfirmRequireReport · confirmPendingCancelsReport · slotReportBlock in armSlotGuard) · store/armed_orders.go (RecordCancelReport · ConfirmCancelByReport) · the AddOn echoes the order’s state on every cancel_order (VL_BUILD_ID 2026-10-03-c1)',
+      'trader/cancel_confirm.go (cancelConfirmRequireReport · confirmPendingCancelsReport · slotReportBlock in armSlotGuard) · store/armed_orders.go (RecordCancelReport · ConfirmCancelByReport) · the AddOn echoes the order’s state on every cancel_order (VL_BUILD_ID 2026-10-03-c2)',
     range:
       'off | on · default off · companion envs CANCEL_CONFIRM_TIMEOUT_S (90) · CANCEL_REREQUEST_MAX (5)',
     systemDefault: 'off',
     recommended:
       '⭐ keep OFF for the AI path; the owner turns it ON before Mentor mode places its first live (SIM) stop entry.',
-    whenToTouch: 'Only with a deliberate move of the Mentor-mode gate.',
+    whenToTouch:
+      'Only with a deliberate move of the Mentor-mode gate — and do NOT turn ON until: (1) lost-report recovery works across every SIM account (SendCancelReport currently scans only the active account); (2) the slot refusal also raises the book-outage P0 with an uncertified or disconnected AddOn; (3) part-filled entries can never be cancelled by a report; (4) an operator path exists to clear a cancel_pending row that can never receive a report.',
     perSession: 'No.',
   },
   {
     label: 'Partial close (mentor scale-out) — own knob',
     where: 'Environment only (PARTIAL_CLOSE_ENABLED, default OFF)',
-    what: 'The exact-quantity exit the mentor scale-out needs: reduce_position exits EXACTLY qty contracts at market (never more than the open position; qty ≥ open is refused — a full close stays close_position). As part of the same frame the AddOn shrinks the existing SL and TP IN PLACE (Account.Change — never cancel-and-replace) to the remaining quantity and reports it as bracket_qty; Go verifies the shrink on the next snapshot and FAILS CLOSED (flattens the remainder) on a mismatch or an absent quantity. AddOn build 2026-10-03-c1 (hello flag reduce_position); Go refuses the send to an older AddOn.',
+    what: 'The exact-quantity exit the mentor scale-out needs: reduce_position exits EXACTLY qty contracts at market (never more than the open position; qty ≥ open is refused — a full close stays close_position). As part of the same frame the AddOn shrinks the existing SL and TP IN PLACE (Account.Change — never cancel-and-replace) to the remaining quantity and reports it as bracket_qty; Go verifies the shrink on the next snapshot and FAILS CLOSED (flattens the remainder) on a mismatch or an absent quantity. AddOn build 2026-10-03-c2 (hello flag reduce_position); Go refuses the send to an older AddOn.',
     trader:
       'Nothing changes for the AI mode: the feature is byte-off unless its own knob is ON (it is SPLIT from CANCEL_CONFIRM_REQUIRE_REPORT), and the AI mode keeps its 1-contract rule.',
     consumer:
@@ -1439,7 +1456,7 @@ const sessions: KnobSpec[] = [
   {
     label: 'Mentor stop-limit entries',
     where: 'Environment only (MENTOR_STOP_LIMIT, default OFF)',
-    what: 'D1.4: never a stop-MARKET. With the knob ON, stop entries carry stop_limit=true and the AddOn builds OrderType.StopLimit with LimitPrice == StopPrice: the entry fills at its price or misses. Fail-closed: Go refuses the flag unless the AddOn proves build 2026-10-03-c1.',
+    what: 'D1.4: never a stop-MARKET. With the knob ON, stop entries carry stop_limit=true and the AddOn builds OrderType.StopLimit with LimitPrice == StopPrice: the entry fills at its price or misses. Fail-closed: Go refuses the flag unless the AddOn proves build 2026-10-03-c2.',
     trader: 'The mentor evaluator drives this knob; the AI path never sets it.',
     consumer:
       'provider/ninjatrader/tcp_framing.go (SignalPayload.StopLimit, MinAddonBuildStopLimit) · trader/ninjatrader/tcp_trader.go (PlaceStopEntryWithLimit) · ninjascript VLTraderTCPClient.cs (stop_limit construction)',

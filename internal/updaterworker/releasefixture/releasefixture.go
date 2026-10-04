@@ -69,7 +69,7 @@ type Signer struct {
 func NewSigner(t *testing.T, dir, name string) Signer {
 	t.Helper()
 	priv := filepath.Join(dir, name)
-	RunKeygen(t, "-q", "-t", "ed25519", "-N", "", "-C", "nofx-test-"+name, "-f", priv)
+	RunKeygen(t, "-q", "-t", "ed25519", "-N", "", "-C", "vl-test-"+name, "-f", priv)
 	pub, err := os.ReadFile(priv + ".pub")
 	if err != nil {
 		t.Fatal(err)
@@ -157,9 +157,9 @@ func WriteFiles(t *testing.T, root string, files map[string]string) {
 
 // ReleaseSource is a repo tree with exactly what package.sh requires, plus a
 // STALE deploy/RELEASE that package.sh must not ship. ReleaseSourceBinary
-// names the binary (vl-bin or nofx-bin — R5 removes the nofx form).
+// names the binary (vl-bin or vl-bin — R5 removes the vl form).
 func ReleaseSource(t *testing.T, withIndex bool) string {
-	return ReleaseSourceBinary(t, withIndex, "nofx-bin")
+	return ReleaseSourceBinary(t, withIndex, "vl-bin")
 }
 
 func ReleaseSourceBinary(t *testing.T, withIndex bool, binary string) string {
