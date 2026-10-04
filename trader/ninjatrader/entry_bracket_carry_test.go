@@ -40,8 +40,10 @@ func TestOpenWithBracketRefusedLeavesTheMapsByteIdentical(t *testing.T) {
 		{"the one entry latch", func() *TCPTrader {
 			tr := NewTCPTrader(s, "MNQ", "Sim101")
 			tr.SetEntryLatchSource(&EntryLatchSource{
-						Book:    func(_ time.Time, _ map[string]bool) EntryLatchBookVerdict { return EntryLatchBookVerdict{Detail: "fixture: book stale"} },
-						Ledgers: func(_ map[string]bool) ([]string, error) { return nil, nil },
+				Book: func(_ time.Time, _ map[string]bool) EntryLatchBookVerdict {
+					return EntryLatchBookVerdict{Detail: "fixture: book stale"}
+				},
+				Ledgers: func(_ map[string]bool) ([]string, error) { return nil, nil },
 			})
 			return tr
 		}, 29050, "one_entry_latch"},
