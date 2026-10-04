@@ -72,6 +72,10 @@ const (
 	// KindTriggerRetest is the 5m trigger-line retest location (§5.1
 	// [D3.4 p2 @ 20:51]: the retest is a level confirm).
 	KindTriggerRetest LevelKind = "trigger_retest"
+	// KindHTFTrigger is the 4h/1h trigger line as a TARGET-LADDER level only
+	// (D4.4-15): it joins the level set so nextLevelBeyond can pick it, but it
+	// is never touched, never located and never a PHL/PLH place.
+	KindHTFTrigger LevelKind = "htf_trigger"
 )
 
 // Level is one mentor level line. Lo/Hi are equal (a line); AtTime is the bar
