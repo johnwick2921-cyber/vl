@@ -596,6 +596,7 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 	// ── state comparison: first divergent minute per column.
 	statePath := frozenDir + "/state_v5_" + d.day + ".csv"
 	state, stateHeader := loadStateRows(t, statePath)
+	stateSkipped := false
 	if len(state) == 0 {
 		if _, err := os.Stat(statePath); err != nil {
 			t.Errorf("%s: replay state file missing (%s) — DS-108 must dump state_v5 for this day",
@@ -603,14 +604,16 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 		} else {
 			t.Errorf("%s: replay state file empty for %s", d.name, d.day)
 		}
-		// no state comparison possible — the orders comparison below still runs
-		return failed
+		failed = true
+		stateSkipped = true
 	}
 	replayByMin := map[string][]string{}
 	var replayMinutes []string
-	for _, r := range state {
-		replayByMin[r[1]] = r
-		replayMinutes = append(replayMinutes, r[1])
+	if !stateSkipped {
+		for _, r := range state {
+			replayByMin[r[1]] = r
+			replayMinutes = append(replayMinutes, r[1])
+		}
 	}
 	colIdx := map[string]int{}
 	for i, h := range stateHeader {
@@ -625,7 +628,7 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 	}
 	var onlyGo, onlyReplay []string
 	for _, m := range rowOrder {
-		if _, ok := replayByMin[m]; !ok {
+		if _, ok := replayByMin[m]; !ok && !stateSkipped {
 			onlyGo = append(onlyGo, m)
 		}
 	}
@@ -650,32 +653,34 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 		goCols[m] = goStateColumns(goRows[m])
 	}
 	diverged := 0
-	for _, col := range stateColumnNames {
-		idx, ok := colIdx[col]
-		if !ok {
-			t.Errorf("%s: state column %q missing from the replay file", d.name, col)
-			continue
-		}
-		firstMin, goVal, replayVal := "", "", ""
-		for _, m := range replayMinutes {
-			row := replayByMin[m]
-			grow, ok := goCols[m]
+	if !stateSkipped {
+		for _, col := range stateColumnNames {
+			idx, ok := colIdx[col]
 			if !ok {
-				continue // minute-set divergence reported above
+				t.Errorf("%s: state column %q missing from the replay file", d.name, col)
+				continue
 			}
-			gv := grow[col]
-			rv := row[idx]
-			if !stateCellEqual(col, gv, rv) {
-				if firstMin == "" {
-					firstMin, goVal, replayVal = m, gv, rv
+			firstMin, goVal, replayVal := "", "", ""
+			for _, m := range replayMinutes {
+				row := replayByMin[m]
+				grow, ok := goCols[m]
+				if !ok {
+					continue // minute-set divergence reported above
+				}
+				gv := grow[col]
+				rv := row[idx]
+				if !stateCellEqual(col, gv, rv) {
+					if firstMin == "" {
+						firstMin, goVal, replayVal = m, gv, rv
+					}
 				}
 			}
-		}
-		if firstMin != "" {
-			t.Errorf("%s: column %-14s first divergence at %s: go=%q replay=%q",
-				d.name, col, firstMin, goVal, replayVal)
-			failed = true
-			diverged++
+			if firstMin != "" {
+				t.Errorf("%s: column %-14s first divergence at %s: go=%q replay=%q",
+					d.name, col, firstMin, goVal, replayVal)
+				failed = true
+				diverged++
+			}
 		}
 	}
 	t.Logf("STATE %-8s %s: %d/%d columns diverged", d.name, d.day, diverged, len(stateColumnNames))
