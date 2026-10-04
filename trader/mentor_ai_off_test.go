@@ -54,6 +54,43 @@ func TestMentorAdmitChainAIEntriesOff(t *testing.T) {
 	}
 }
 
+// TestMentorAdmitMentorArmPasses — P0 bundle conflict fix (CTO 20:14:30Z):
+// the mentor injector routes every mentor entry as an armed-ledger row, so
+// the gate must pass an arm-path intent flagged MentorArm. A planner arm
+// (MentorArm false) stays refused; the agent door stays refused; mentor_mode
+// OFF stays byte-identical.
+func TestMentorAdmitMentorArmPasses(t *testing.T) {
+	withMaintenanceDir(t)
+	at := mkPlanTrader(nil)
+	at.config.StrategyConfig.RiskControl.MentorMode = true
+	at.id = "mentor-ai-off-arm"
+	nyMidday := time.Date(2026, 9, 15, 16, 0, 0, 0, time.UTC)
+
+	// A mentor-authored armed row passes the mentor gate (a downstream gate
+	// may still judge it) even though it carries no Decision.
+	reason, refused := at.admitEntry(admitIntent{Path: admitArm, Symbol: "MNQ", Action: "open_long", Now: nyMidday, Key: "mentor|S1|0", MentorArm: true})
+	if refused && strings.Contains(reason, "mentor_mode") {
+		t.Fatalf("a MentorArm arm-path open must pass the mentor gate, got %q", reason)
+	}
+	// The same row from the planner (MentorArm false) is refused with the
+	// named reason.
+	reason, refused = at.admitEntry(admitIntent{Path: admitArm, Symbol: "MNQ", Action: "open_long", Now: nyMidday, Key: "P1|S1|0"})
+	if !refused || !strings.Contains(reason, "mentor_mode: AI entries are OFF") {
+		t.Fatalf("a planner arm must be refused with the named reason, got refused=%v %q", refused, reason)
+	}
+	// The agent door stays refused.
+	reason, refused = at.admitEntry(admitIntent{Path: admitAgent, Symbol: "MNQ", Action: "open_short", Now: nyMidday, Decision: &kernel.Decision{Action: "open_short", Symbol: "MNQ"}})
+	if !refused || !strings.Contains(reason, "mentor_mode: AI entries are OFF") {
+		t.Fatalf("the agent door must be refused with the named reason, got refused=%v %q", refused, reason)
+	}
+	// A MentorArm flag on any non-arm path changes nothing — only the arm
+	// path reads it.
+	reason, refused = at.admitEntry(admitIntent{Path: admitDecision, Symbol: "MNQ", Action: "open_long", Now: nyMidday, Decision: &kernel.Decision{Action: "open_long", Symbol: "MNQ"}, MentorArm: true})
+	if !refused || !strings.Contains(reason, "mentor_mode: AI entries are OFF") {
+		t.Fatalf("MentorArm must not open the decision path, got refused=%v %q", refused, reason)
+	}
+}
+
 // TestMentorAdmitChainOffByteIdentical — mentor_mode OFF: the chain must not
 // refuse any open with the mentor reason (the AI path is byte-identical).
 func TestMentorAdmitChainOffByteIdentical(t *testing.T) {
@@ -66,6 +103,7 @@ func TestMentorAdmitChainOffByteIdentical(t *testing.T) {
 		{Path: admitDecision, Symbol: "MNQ", Action: "open_long", Now: nyMidday, Decision: &kernel.Decision{Action: "open_long", Symbol: "MNQ"}},
 		{Path: admitAgent, Symbol: "MNQ", Action: "open_short", Now: nyMidday, Decision: &kernel.Decision{Action: "open_short", Symbol: "MNQ"}},
 		{Path: admitArm, Symbol: "MNQ", Action: "open_long", Now: nyMidday, Key: "P1|S1|0"},
+		{Path: admitArm, Symbol: "MNQ", Action: "open_long", Now: nyMidday, Key: "mentor|S1|0", MentorArm: true},
 	} {
 		if reason, refused := at.admitEntry(c); refused && strings.Contains(reason, "mentor_mode") {
 			t.Fatalf("mentor_mode OFF: the chain must never refuse with the mentor reason, got %q", reason)

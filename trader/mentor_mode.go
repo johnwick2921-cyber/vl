@@ -326,13 +326,19 @@ func (at *AutoTrader) mentorSuppressAIClose(d *kernel.Decision) string {
 // mode switch (P0 fix/mentor-ai-off, DS-106): it refuses every non-mentor
 // entry on every producer path — decision, agent-chat, arm, picture. A
 // mentor-sourced decision passes (the mentor's own placement must reach the
-// executor); the arm/picture paths carry no Decision and are always refused
-// while the mode is ON. With mentor_mode OFF it returns "" — byte-identical.
+// executor). A mentor-authored armed row (the injector's ledger path) passes
+// via MentorArm even though it carries no Decision — the bundle routes every
+// mentor entry as an armed-ledger row (CTO 20:14:30Z). Planner arms, the
+// agent door and Picture stay refused. With mentor_mode OFF it returns "" —
+// byte-identical.
 func (at *AutoTrader) mentorAdmitRefusal(in admitIntent) string {
 	if !at.mentorEnabled() {
 		return ""
 	}
 	if in.Decision != nil && in.Decision.MentorSourced {
+		return ""
+	}
+	if in.Path == admitArm && in.MentorArm {
 		return ""
 	}
 	return "mentor_mode: AI entries are OFF — every entry comes from the mentor evaluator"

@@ -82,6 +82,11 @@ type admitIntent struct {
 	// Source is the arm row's machine source (W5: store.ArmSourcePicture on a
 	// Picture scenario's row, "" on every planner row and every other path).
 	Source string
+	// MentorArm marks an armed-ledger row authored by the mentor injector
+	// (P0 fix/mentor-ai-off, CTO 20:14:30Z): the mentor's arm-path entries
+	// pass the AI-entries-off gate even though they carry no Decision.
+	// Planner arms leave it false and stay refused while mentor_mode is ON.
+	MentorArm bool
 }
 
 func (in admitIntent) side() string {
