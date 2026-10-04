@@ -663,6 +663,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 								e.refuse("isb_target_below_floor")
 							} else {
+								// The emitted intent carries the CAPPED target: `capped`
+								// above fed only the floor check, so a spent-day ISB went
+								// out with the full target (CapTargetForDay changes the
+								// target only; Price and Stop are untouched).
+								chosen.Target = capped.Target
 								// ISB size flags for the injector: rule 2 (at an old
 								// high/low → REDUCE SIZE) and rule 3 (in a range → REDUCE
 								// SIZE, "Khi trade isb in-range bắt buộc giảm size" [D4.1 p1
