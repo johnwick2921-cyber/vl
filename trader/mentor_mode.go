@@ -548,11 +548,16 @@ func mentorConfluenceFlag(in mentor.Intent) bool {
 // A5 (CTO 1791041016051): the §7 spent-day flag rides the intent (stamped by
 // the evaluator) — before this line the flag existed in the table but was
 // never SET, so the spent_day tier (2) and the R9 15-pt stop cap never fired.
+// The 4h+1h agreement rides the intent the same way (HTFAgree).
 func mentorExtraFor(in mentor.Intent, strongDay bool) mentorTierInputs {
 	return mentorTierInputs{
 		StrongDay:  strongDay,
 		Confluence: mentorConfluenceFlag(in),
 		SpentDay:   in.SpentDay,
+		// the evaluator stamps the 4h+1h agreement on the entry intent; before
+		// this line HTFAgree was never set, so the 20-contract tier was
+		// unreachable (SETTINGS-VS-LESSONS-1004 P1-2).
+		HTFAgree: in.HTFAgree,
 	}
 }
 
