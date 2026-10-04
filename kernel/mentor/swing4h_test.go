@@ -297,6 +297,13 @@ func TestSwing4hBEAndHold(t *testing.T) {
 // the hold close is a phantom that would flatten a DIFFERENT mentor position on
 // the same side. Mutant: openPosition at emit again (s.Pos = p) → the hold
 // close fires and this turns RED.
+// TestSwingNeverFillsSendsNoManage (S1 pin, production call site SwingTick):
+// a swing intent that never fills must never send MoveStopBE / ClosePosition —
+// the hold close is a phantom that would flatten a DIFFERENT mentor position on
+// the same side. It also pins that the position opens only on a FILL: the
+// no-fill bar between emit and the hold boundary must leave s.Pos nil. Mutants:
+// open at emit again (s.Pos = p) OR promote without a fill check → the hold
+// close fires and this turns RED.
 func TestSwingNeverFillsSendsNoManage(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	cfg.Hold4hBars = 1 // hold to the close of the 1st 4h candle after entry
@@ -318,17 +325,29 @@ func TestSwingNeverFillsSendsNoManage(t *testing.T) {
 	if s.Pending == nil || s.Pos != nil {
 		t.Fatalf("the swing must rest PENDING before any fill: pending=%v pos=%v", s.Pending, s.Pos)
 	}
-	// Bars that NEVER trade through the entry (low > 10155) across the hold
-	// limit (Hold4hBars=1 → the 05:00 bucket holds to 09:00). The doji at
-	// 10156 neither fills the 10155 sell stop nor touches the flipped line.
-	late := append(entryBars, mk5m(t, 15, 9, 5, 10156, 10156, 10156, 10156))
-	out2 := SwingTick(s, late, cfg, late[len(late)-1].OpenTime+60_000)
+	// A no-fill bar INSIDE the same 4h bucket (before the expiry): low 10156
+	// never trades through the 10155 sell stop, high 10160 never touches the
+	// line. A promote-without-fill mutant opens s.Pos here.
+	rest := append(entryBars, mk5m(t, 15, 5, 10, 10158, 10160, 10156, 10158))
+	out2 := SwingTick(s, rest, cfg, rest[len(rest)-1].OpenTime+60_000)
 	for _, in := range out2 {
 		if in.Action == ActionMoveStopBE || in.Action == ActionClosePosition {
 			t.Fatalf("an unfilled swing must never send %s; got %+v", in.Action, out2)
 		}
 	}
 	if s.Pos != nil {
-		t.Fatalf("the unfilled swing must not open a position, got %+v", s.Pos)
+		t.Fatalf("a bar that does not trade through the entry must not open a position, got %+v", s.Pos)
+	}
+	// The hold boundary (Hold4hBars=1 → the 05:00 bucket holds to 09:00): the
+	// doji at 10156 neither fills the sell stop nor touches the flipped line.
+	late := append(rest, mk5m(t, 15, 9, 5, 10156, 10156, 10156, 10156))
+	out3 := SwingTick(s, late, cfg, late[len(late)-1].OpenTime+60_000)
+	for _, in := range out3 {
+		if in.Action == ActionMoveStopBE || in.Action == ActionClosePosition {
+			t.Fatalf("an unfilled swing must never send %s across the hold; got %+v", in.Action, out3)
+		}
+	}
+	if s.Pos != nil {
+		t.Fatalf("the unfilled swing must not open a position across the hold, got %+v", s.Pos)
 	}
 }

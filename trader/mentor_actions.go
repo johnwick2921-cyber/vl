@@ -239,32 +239,37 @@ func (at *AutoTrader) mentorRecordLevelInvalid(in mentor.Intent) {
 	at.logInfof("🧑‍🏫 mentor level invalidated: %s — %s", in.LevelKey, in.Reason)
 }
 
-// mentorSwingFill resolves the swing arm's ledger row and reports whether the
-// arm FILLED and the contracts the fill delivered. S1: an arm that never
-// filled (still resting, cancelled, expired or refused) must never drive a
-// stop move or a close — otherwise a phantom swing would close a DIFFERENT
-// mentor position on the same side.
-func (at *AutoTrader) mentorSwingFill(arm mentorLiveArm) (store.ArmedOrderDB, bool, float64) {
+// mentorSwingFill resolves the swing arm's ledger row and returns the contracts
+// the swing leg's own close must send, and whether acting is safe. S1: an arm
+// that never filled (still resting, cancelled, expired or refused) must never
+// drive a stop move or a close — otherwise a phantom swing would close a
+// DIFFERENT mentor position on the same side. A FILLED arm whose contracts
+// cannot be attributed is REFUSED (never guessed as 1).
+func (at *AutoTrader) mentorSwingFill(arm mentorLiveArm) (qty float64, ok bool) {
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
 		mentorCount("swing_fill_no_ledger")
 		at.logErrorf("🧑‍🏫 mentor swing fill check REFUSED — no armed ledger")
-		return store.ArmedOrderDB{}, false, 0
+		return 0, false
 	}
 	var r store.ArmedOrderDB
 	if err := ledger.DB().First(&r, arm.RowID).Error; err != nil {
 		mentorCount("swing_fill_row_gone")
 		at.logWarnf("🧑‍🏫 mentor swing fill check REFUSED — ArmID row %d gone: %v", arm.RowID, err)
-		return store.ArmedOrderDB{}, false, 0
+		return 0, false
 	}
 	if r.State != store.StateFilled {
-		return r, false, 0
+		return 0, false
 	}
-	qty := float64(r.FillQuantity)
-	if qty <= 0 {
-		qty = 1 // mentor arms are one contract until B2 wires the real size
+	if r.FillQuantity > 0 {
+		return float64(r.FillQuantity), true
 	}
-	return r, true, qty
+	if r.Contracts != nil && *r.Contracts > 0 {
+		return float64(*r.Contracts), true
+	}
+	mentorCount("swing_fill_unknown_qty")
+	at.logWarnf("🧑‍🏫 mentor swing fill REFUSED — ArmID row %d filled but no contracts (FillQuantity=0, Contracts absent): cannot size its own close; never guessed", arm.RowID)
+	return 0, false
 }
 
 // mentorMoveStopBE executes the swing's stop-to-break-even intent: the move
@@ -283,8 +288,9 @@ func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 		mentorCount("move_be_refused_unavailable")
 		return
 	}
-	// S1: a phantom swing (never filled) must not move another trade's stop.
-	if _, filled, _ := at.mentorSwingFill(arm); !filled {
+	// S1: a phantom swing (never filled, or an unattributable fill) must not
+	// move another trade's stop.
+	if _, ok := at.mentorSwingFill(arm); !ok {
 		mentorCount("move_be_refused_not_filled")
 		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q never filled; the swing leg has no position of its own: %s", in.ArmID, in.Reason)
 		return
@@ -314,11 +320,12 @@ func (at *AutoTrader) mentorClosePosition(in mentor.Intent) {
 		mentorCount("close_refused_unavailable")
 		return
 	}
-	// S1: the close must be attributed to the swing leg's own fill.
-	_, filled, qty := at.mentorSwingFill(arm)
-	if !filled {
+	// S1: the close must be attributed to the swing leg's own fill, sized by
+	// its own contracts — never a side-wide 0, never guessed.
+	qty, ok := at.mentorSwingFill(arm)
+	if !ok {
 		mentorCount("close_refused_not_filled")
-		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q never filled; a phantom swing must not close another trade: %s", in.ArmID, in.Reason)
+		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q never filled (or its fill has no attributable contracts); a phantom swing must not close another trade: %s", in.ArmID, in.Reason)
 		return
 	}
 	var err error

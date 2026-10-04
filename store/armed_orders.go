@@ -64,6 +64,11 @@ type ArmedOrderDB struct {
 	Origin       string `gorm:"default:''"`
 	FillPrice    float64
 	FillQuantity int
+	// Contracts (B2, DS-101 — armed_orders.contracts, *int): the contract count
+	// the mentor arm was AUTHORED at. Absent (nil) ≠ 0, so a mentor row without
+	// a count is REFUSED, never sent as 1. Stubbed here so the swing close can
+	// size its own position before B2 lands on dev.
+	Contracts *int
 
 	// E4 (entry-mechanics 2026-08-30) — split-entry legs: a two-leg arm writes
 	// TWO rows sharing (plan_id, scenario) distinguished by LegIndex. LegCount
@@ -321,6 +326,10 @@ func (s *ArmedOrderStore) Migrate() error {
 			{"source_rule", "TEXT NOT NULL DEFAULT ''"},
 			{"eligible_until_ms", "INTEGER"},
 			{"source_run_epoch", "INTEGER"},
+			// B2 (DS-101) — the mentor arm's AUTHORED contract count.
+			// NULLable (absent ≠ 0): a mentor row without a count is
+			// REFUSED, never sent as 1.
+			{"contracts", "INTEGER"},
 		} {
 			var n int64
 			if err := s.db.Raw("SELECT COUNT(*) FROM pragma_table_info('armed_orders') WHERE name = ?", col.name).Scan(&n).Error; err != nil {

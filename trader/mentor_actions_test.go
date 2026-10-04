@@ -596,3 +596,66 @@ func TestMentorMoveStopBERefusesUnfilledArm(t *testing.T) {
 		t.Fatalf("move_be_refused_not_filled = %d, want 1", c)
 	}
 }
+
+// TestMentorSwingFillQuantityResolution (S1 pin): the swing close is sized by
+// FillQuantity when set, else by the B2 Contracts column, else REFUSED — never
+// guessed as 1 (a guess would close 1 of a 3-lot swing and strand the rest).
+func TestMentorSwingFillQuantityResolution(t *testing.T) {
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	three := 3
+	cases := []struct {
+		name         string
+		fillQty      int
+		contracts    *int
+		wantQty      float64
+		wantOK       bool
+		unknownCount int
+	}{
+		{"fill quantity wins", 4, &three, 4, true, 0},
+		{"contracts column fallback", 0, &three, 3, true, 0},
+		{"both absent refused", 0, nil, 0, false, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-qty-" + tc.name,
+				Side: "short", EntryPx: 29600, StopPx: 29630, TargetPx: 29540, Kind: "stop_entry", Condition: "SWING4H",
+				State: store.StateFilled, SignalID: "sig-" + tc.name, FillPrice: 29600, FillQuantity: tc.fillQty, Contracts: tc.contracts}
+			if err := ledger.DB().Create(&row).Error; err != nil {
+				t.Fatal(err)
+			}
+			resetMentorCounters()
+			qty, ok := at.mentorSwingFill(mentorLiveArm{RowID: row.ID, Side: "short", Entry: 29600})
+			if qty != tc.wantQty || ok != tc.wantOK {
+				t.Fatalf("mentorSwingFill = (%v, %v), want (%v, %v)", qty, ok, tc.wantQty, tc.wantOK)
+			}
+			if got := MentorCountSnapshot()["swing_fill_unknown_qty"]; got != tc.unknownCount {
+				t.Fatalf("swing_fill_unknown_qty = %d, want %d", got, tc.unknownCount)
+			}
+		})
+	}
+}
+
+// TestMentorClosePositionRefusesUnknownQty (S1 pin): a FILLED swing arm whose
+// contracts cannot be attributed (FillQuantity 0, Contracts absent) is refused
+// — the close must never guess 1 and strand the rest of a multi-lot swing.
+func TestMentorClosePositionRefusesUnknownQty(t *testing.T) {
+	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-uq",
+		Side: "short", EntryPx: 29600, StopPx: 29630, TargetPx: 29540, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateFilled, SignalID: "swing-uq-sig", FillPrice: 29600, FillQuantity: 0, Contracts: nil}
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-uq", row.ID, "short", 29600)
+	resetMentorCounters()
+	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionClosePosition, ArmID: "swing-uq", Reason: "hold to the 2nd 4h close"}, mentorTierInputs{}, 1000, 1100)
+	if sawMentorFrame(t, frames, ntwire.FrameClosePosition, 500*time.Millisecond) {
+		t.Fatal("a filled swing with no attributable contracts must NOT close")
+	}
+	if c := MentorCountSnapshot()["swing_fill_unknown_qty"]; c != 1 {
+		t.Fatalf("swing_fill_unknown_qty = %d, want 1", c)
+	}
+	if c := MentorCountSnapshot()["close_refused_not_filled"]; c != 1 {
+		t.Fatalf("close_refused_not_filled = %d, want 1", c)
+	}
+}
