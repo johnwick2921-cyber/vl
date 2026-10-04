@@ -620,6 +620,11 @@ func TestMentorRuleGateR8R9(t *testing.T) {
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 88, Target: 124, StopPts: 12, TargetPts: 24}, mentorTierInputs{SpentDay: true}); why != "" {
 		t.Fatalf("a spent day with a 12-pt stop must pass: %q", why)
 	}
+	// R13: DayOff does not stop the swing, so the spent-day cap must not
+	// either — a SWING4H with a >15-pt stop trades through a spent day.
+	if why := mentorRuleGate(mentor.Intent{Setup: "SWING4H", Side: "long", Price: 100, Stop: 60, StopPts: 40, TargetPts: 80}, mentorTierInputs{SpentDay: true}); why != "" {
+		t.Fatalf("a spent day must NOT refuse the swing (R13): %q", why)
+	}
 	// a targetless intraday entry is BAD GEOMETRY now (CTO 1791058631982) —
 	// the kernel always tags the ISB target, so a zero target is a bug
 	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 94, StopPts: 5.75}, mentorTierInputs{}); why == "" || !strings.HasPrefix(why, "bad geometry") {

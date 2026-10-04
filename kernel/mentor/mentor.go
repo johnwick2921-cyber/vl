@@ -72,6 +72,20 @@ const (
 	// KindTriggerRetest is the 5m trigger-line retest location (§5.1
 	// [D3.4 p2 @ 20:51]: the retest is a level confirm).
 	KindTriggerRetest LevelKind = "trigger_retest"
+	// KindTrendline is an intraday trendline location (X9 slide 27, D2.3,
+	// DAY-3 row 27): two same-role swings joined, valid as a location only
+	// after the 3rd touch; discarded by a 5m close through. Location only,
+	// never a target.
+	KindTrendline LevelKind = "trendline"
+	// KindHTFTrigger is the 4h/1h trigger line as a TARGET-LADDER level only
+	// (D4.4-15): it joins the level set so nextLevelBeyond can pick it, but it
+	// is never touched, never located and never a PHL/PLH place.
+	KindHTFTrigger LevelKind = "htf_trigger"
+	// KindWickMicroscalp is the D4.3 wick-microscalp target (D4.3-02/-07): the
+	// rejecting 5m candles' far wick, target-only — it joins the level set so
+	// nextLevelBeyond can pick it, but it is never touched and never a
+	// PHL/PLH location.
+	KindWickMicroscalp LevelKind = "wick_microscalp"
 )
 
 // Level is one mentor level line. Lo/Hi are equal (a line); AtTime is the bar
@@ -225,6 +239,12 @@ type Config struct {
 	// (RULES-FIX-v3, its own knob per the dispatch). Default ON — OWNER RULING
 	// 2026-10-04 R-C "do all as mentor": it is the mentor's own reading [D5.4].
 	ISBReverseEMA9Enabled bool
+	// WickMicroscalpEnabled turns on the D4.3 wick microscalp (advanced —
+	// "đừng có tập khúc này đầu tiên" [D4.3 @04:55]): 2+ consecutive CLOSED 5m
+	// candles rejecting with wicks the SAME way (lower wicks in an uptrend,
+	// upper wicks in a downtrend) put a bounded target at the rejecting
+	// candles' far wick. Default OFF (advanced, behind a knob per D4.3-02).
+	WickMicroscalpEnabled bool
 
 	// PHL/PLH (PLAN v1 §3).
 	PHLMinCandlesFromExtreme int     // entry at least N candles from the old extreme; default 3 [D4.1 p1 @ 09:40 written]
@@ -294,6 +314,8 @@ func DefaultConfig() Config {
 		ISBTwentiesPts: 20,
 
 		ISBReverseEMA9Enabled: true,
+
+		WickMicroscalpEnabled: false, // D4.3 advanced wick read — OFF by default
 
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,

@@ -75,10 +75,12 @@ func TestEscapeDetection(t *testing.T) {
 
 // TestBoxSurvivesEscape — B4 (10-03 ruling): a box is NEVER deleted intraday
 // ("vẽ rồi thì để y nguyên đó tới cuối ngày" [D4.1 p2 @02:39–03:09]); an
-// escaped body only re-arms trading [D3.2 p1 @ 18:30–19:30]. The fixture's
-// candle 6 closes with its whole body above the FTGH [104, 106] (open 106.2,
-// close 106.4) — the pre-fix code dropped the box right there. Mutant
-// (re-insert the escaped() drop in BoxesBuild) -> RED.
+// escaped body only re-arms trading [D3.2 p1 @ 18:30–19:30]. Item 12 (CTO
+// ruling 23:06Z): the partner is the LATER confirmed lower high (top 2 @5,
+// body edge 104) — the earlier adjacent high is never the partner. The
+// fixture's candle 7 closes with its whole body above the FTGH [104, 106]
+// (open 106.2, close 106.4) — the pre-fix code dropped the box right there.
+// Mutant (re-insert the escaped() drop in BoxesBuild) -> RED.
 func TestBoxSurvivesEscape(t *testing.T) {
 	cfg := DefaultBoxCfg()
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
@@ -88,18 +90,16 @@ func TestBoxSurvivesEscape(t *testing.T) {
 	bars := []market.Kline{
 		mk(0, 100, 101, 99, 100),
 		mk(1, 100, 102, 99, 101),
-		mk(2, 101, 105, 100, 104), // swing high @2 — pairs with @4
-		mk(3, 103, 104, 102, 103),
-		mk(4, 102, 106, 101, 105), // swing high @4 — the extreme
-		// B10 T1 ruling (20:52Z): bar 5's high was 107, above the "extreme"
-		// 106 — on a real chart 106 is then not the top. 105.8 keeps bar 4 the
-		// true top and still registers the SWGL (low 99).
-		mk(5, 105, 105.8, 99, 100),
-		mk(6, 106.2, 106.5, 105, 106.4), // ESCAPE: body fully above 106
-		// The escape candle's wick 106.5 is a higher high; bar 7's high 106.6
+		mk(2, 101, 106, 100, 105), // top 1: the extreme high 106
+		mk(3, 104, 105, 102, 104), // confirms top 1 (high 105 < 106)
+		mk(4, 103, 104, 102, 103),
+		mk(5, 104, 105.5, 102, 103.5),   // top 2: swing high 105.5, body edge max(104, 103.5) = 104
+		mk(6, 103, 104.5, 102.5, 103.5), // confirms top 2 (high 104.5 < 105.5)
+		mk(7, 106.2, 106.5, 105, 106.4), // ESCAPE: body fully above 106
+		// The escape candle's wick 106.5 is a higher high; bar 8's high 106.6
 		// stops the NEXT-bar fractal confirmation so the escape candle never
 		// becomes a new swing — the box must stay [104, 106].
-		mk(7, 106, 106.6, 105.5, 106.1),
+		mk(8, 106, 106.6, 105.5, 106.1),
 	}
 	now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000).In(ctime())
 	boxes := BoxesBuild(bars, cfg, now)
@@ -210,12 +210,14 @@ func TestBoxesNoFloorOnOneWayDecline(t *testing.T) {
 	}
 }
 
-// TestBoxesDeclineOneBounceDrawsOneFloor — B10 T1 (CTO ruling 21:00Z): a
-// decline that ends with ONE bounce bar draws exactly one FTGL, with the
-// bottom as the outer edge. The last decline low is confirmed by the bounce
-// bar (its low is higher) and becomes the extreme; the bar before it is the
-// nearest.
-func TestBoxesDeclineOneBounceDrawsOneFloor(t *testing.T) {
+// TestBoxesDeclineOneBounceDrawsNoFloor — item 12 (D3.2 p1 @02:45; D3.4 p3
+// @06:46; CTO ruling 23:06Z): "the FAILURE defines the box" — the partner is
+// the next CONFIRMED two-sided swing AFTER the extreme that fails to exceed it
+// (a higher low), never the previous decline bar. A decline that ends with ONE
+// bounce bar has no later confirmed 2nd bottom, so it draws NO box —
+// "lần thứ 3 mới vô lệnh". (The pre-item-12 pin drew exactly one FTGL here;
+// the course overturns that.)
+func TestBoxesDeclineOneBounceDrawsNoFloor(t *testing.T) {
 	cfg := DefaultBoxCfg()
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {
@@ -224,7 +226,7 @@ func TestBoxesDeclineOneBounceDrawsOneFloor(t *testing.T) {
 	bars := []market.Kline{
 		mk(0, 110, 111, 108, 109),
 		mk(1, 109, 109.5, 106, 107),
-		mk(2, 107, 107.5, 104, 105),     // the nearest low — left-only, no confirmation
+		mk(2, 107, 107.5, 104, 105),     // the previous decline low — NOT a confirmed 2nd bottom
 		mk(3, 105, 105.5, 103, 104),     // the extreme low — the spike
 		mk(4, 104.5, 106, 103.5, 105.5), // the ONE bounce bar: low 103.5 > 103 confirms the extreme
 		mk(5, 105, 106, 104, 105),
@@ -232,12 +234,71 @@ func TestBoxesDeclineOneBounceDrawsOneFloor(t *testing.T) {
 	}
 	now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000).In(ctime())
 	boxes := BoxesBuild(bars, cfg, now)
+	if len(boxes) != 0 {
+		t.Fatalf("boxes = %d (%+v), want none — a decline plus ONE bounce is not a 2nd bottom (item 12)", len(boxes), boxes)
+	}
+}
+
+// TestBoxesPartnerIsLaterOnly — item 12 (CTO ruling 23:06Z): the partner is the
+// next confirmed swing AFTER the extreme, never an earlier one. The tape has an
+// EARLIER confirmed low (103, closer in time) and a LATER confirmed low
+// (100.2): the box must pair the extreme (100) with the LATER low — top =
+// min(101.5, 101.2) = 101.2, not the earlier low's 103.5. Mutant (partner on
+// either side) → RED: the earlier low wins by distance and the top moves to
+// 103.5.
+func TestBoxesPartnerIsLaterOnly(t *testing.T) {
+	cfg := DefaultBoxCfg()
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(0, 105, 106, 104, 105),
+		mk(1, 105, 105.5, 103.5, 104),
+		mk(2, 104, 104.5, 103, 103.5), // earlier confirmed low 103 (confirmed by bar 3 low 103.2 > 103)
+		mk(3, 104, 104.5, 103.2, 104),
+		mk(4, 104, 104.5, 100, 101),   // the extreme low 100
+		mk(5, 101, 102, 100.5, 101.5), // confirms the extreme (low 100.5 > 100)
+		mk(6, 101.5, 102, 100.8, 101.5),
+		mk(7, 101.5, 102, 100.2, 101.2), // later confirmed low 100.2 (confirmed by bar 8 low 100.6 > 100.2)
+		mk(8, 101, 102, 100.6, 101.5),
+	}
+	now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000).In(ctime())
+	boxes := BoxesBuild(bars, cfg, now)
 	if len(boxes) != 1 {
-		t.Fatalf("boxes = %d (%+v), want exactly one FTGL [103, 105]", len(boxes), boxes)
+		t.Fatalf("boxes = %d (%+v), want exactly one FTGL [100, 101.2]", len(boxes), boxes)
 	}
 	b := boxes[0]
-	if b.Kind != FTGL || b.Bottom != 103 || b.Top != 105 {
-		t.Fatalf("box = %+v, want FTGL bottom 103 (the outer edge) top 105", b)
+	if b.Kind != FTGL || b.Bottom != 100 || b.Top != 101.2 {
+		t.Fatalf("box = %+v, want FTGL bottom 100 top 101.2 (the LATER low, not the earlier 103.5)", b)
+	}
+}
+
+// TestBoxesPartnerMustBeConfirmed — item 12 (CTO ruling 23:06Z): the partner
+// must be a CONFIRMED two-sided swing. A later dip (103.2) whose NEXT bar goes
+// lower (103.1) is NOT a 2nd bottom — it never confirmed. The extreme (103)
+// pairs with no one, so no box. Mutant (drop the nearest confirmation) → RED:
+// the later unconfirmed dip 103.2 pairs and draws FTGL [103, 104.5].
+func TestBoxesPartnerMustBeConfirmed(t *testing.T) {
+	cfg := DefaultBoxCfg()
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(0, 110, 111, 108, 109),
+		mk(1, 109, 109.5, 106, 107),
+		mk(2, 107, 107.5, 104, 105),     // the previous decline low
+		mk(3, 105, 105.5, 103, 104),     // the extreme low 103
+		mk(4, 104.5, 106, 103.5, 105.5), // the bounce: confirms the extreme
+		mk(5, 105, 105.5, 104, 105),
+		mk(6, 104.5, 105, 103.2, 104.5), // a later dip 103.2 — UNCONFIRMED (bar 7 goes lower)
+		mk(7, 104, 104.5, 103.1, 104),   // the dip continues lower — no confirmed 2nd bottom
+	}
+	now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000).In(ctime())
+	boxes := BoxesBuild(bars, cfg, now)
+	if len(boxes) != 0 {
+		t.Fatalf("boxes = %d (%+v), want none — the later dip never confirmed (item 12)", len(boxes), boxes)
 	}
 }
 
@@ -309,12 +370,13 @@ func TestBoxesExtremeAmongTodayOnly(t *testing.T) {
 	}
 }
 
-// TestBoxTopTwoCandleNeverWalked — B10 T3 (CTO 2026-10-03): in a normal FTGH
-// the extreme (top 1) forms FIRST and the nearest (top 2) LATER. The box
-// exists only once both tops are known, so the return walk must start AFTER
-// the later of the two — the top-2 candle closes back below the bottom and
-// WOULD trade (reject short) if walked; it must not be, and the first return
-// is the NEXT visit. Mutant (FormedAt = the extreme idx) → RED.
+// TestBoxTopTwoCandleNeverWalked — B10 T3 (CTO 2026-10-03), folded by item 12
+// (CTO ruling 23:06Z): in a normal FTGH the extreme (top 1) forms FIRST and
+// the nearest (top 2) LATER. FormedAt = top 2's CONFIRMATION (top2 idx + 1),
+// so the return walk starts after the top-2 candle AND its confirming bar —
+// the top-2 candle closes back below the bottom and WOULD trade (reject
+// short) if walked; it must not be, and the first return is the NEXT visit
+// after the confirmation. Mutant (FormedAt = the nearest idx) → RED.
 func TestBoxTopTwoCandleNeverWalked(t *testing.T) {
 	cfg := DefaultBoxCfg()
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
@@ -325,12 +387,12 @@ func TestBoxTopTwoCandleNeverWalked(t *testing.T) {
 		mk(0, 100, 101, 99, 100.5),
 		mk(1, 100, 103, 99, 101),
 		mk(2, 104, 106, 102, 104.5),     // top 1: the extreme high
-		mk(3, 104, 105, 103.5, 104),     // closes above the box bottom
+		mk(3, 104, 105, 103.5, 104),     // confirms top 1 (high 105 < 106)
 		mk(4, 104, 104.5, 102.5, 103.2), // closes back below the bottom
-		mk(5, 103.5, 106, 102.5, 103.2), // top 2: the nearest — wick 106, closes below bottom
-		mk(6, 102.5, 103.5, 101, 102.2), // the NEXT visit: touch while the spell is open
+		mk(5, 103.5, 106, 102.5, 103.2), // top 2: wick 106, closes below bottom
+		mk(6, 102.5, 103.5, 101, 102.2), // top 2's confirming bar (high 103.5 < 106)
 		mk(7, 102.5, 103, 102, 102.5),   // no touch
-		mk(8, 102, 103.6, 101.5, 102.6), // a later visit
+		mk(8, 102, 103.6, 101.5, 102.6), // the NEXT visit — return 1
 	}
 	now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000).In(ctime())
 	boxes := BoxesBuild(bars, cfg, now)
@@ -347,17 +409,17 @@ func TestBoxTopTwoCandleNeverWalked(t *testing.T) {
 	if b.Top != 106 || b.Bottom != 103.5 {
 		t.Fatalf("FTGH = [%.2f, %.2f], want [103.5, 106]", b.Bottom, b.Top)
 	}
-	if b.FormedAt != 5 {
-		t.Fatalf("FormedAt = %d, want 5 (the later of the extreme and the nearest)", b.FormedAt)
+	if b.FormedAt != 6 {
+		t.Fatalf("FormedAt = %d, want 6 = top 2 idx 5 + 1 (born at top 2's confirmation, item 12)", b.FormedAt)
 	}
 	// The production call site (eval.go) walks incrementally from
 	// FormedAt+1 via BoxReturnBarsFrom; mirror that exact shape.
 	ret := BoxReturnBarsFrom(bars, *b, b.FormedAt+1, cfg)
 	if len(ret) == 0 {
-		t.Fatal("no return visit at all — the next visit after the top-2 candle must be return 1")
+		t.Fatal("no return visit at all — the next visit after top 2's confirmation must be return 1")
 	}
-	if ret[0].RefBar != 6 {
-		t.Fatalf("first return RefBar = %d (%+v), want 6 — the next visit after the top-2 candle", ret[0].RefBar, ret)
+	if ret[0].RefBar != 8 {
+		t.Fatalf("first return RefBar = %d (%+v), want 8 — the visit after top 2's confirming bar", ret[0].RefBar, ret)
 	}
 	for _, r := range ret {
 		if r.RefBar <= b.FormedAt {
@@ -377,11 +439,12 @@ func TestBoxTopTwoCandleNeverWalked(t *testing.T) {
 	}
 }
 
-// TestBoxesFormedAtBornOnConfirmation — B10 T1 FOLD (CTO 21:16Z): when the
-// EXTREME is the LATER pairing candle, FormedAt must be extreme+1 (the box
-// is born when the confirming bar closes), and the confirming bar is never
-// walked as a return. Mutant M3 (FormedAt = seq[extreme].idx, drop the +1)
-// → RED: FormedAt becomes 5 and the confirming bar is walked as return 1.
+// TestBoxesFormedAtBornOnConfirmation — item 12 (CTO ruling 23:06Z): the
+// EXTREME is the EARLIER pairing candle (bottom 1) and bottom 2 is a LATER
+// CONFIRMED higher low. FormedAt = bottom 2's confirmation (bottom2 idx + 1):
+// the box is born when bottom 2's confirming bar closes, and that bar is
+// never walked as a return. Mutant (FormedAt = seq[nearest].idx, drop the +1)
+// → RED: the confirming bar is walked as return 1.
 func TestBoxesFormedAtBornOnConfirmation(t *testing.T) {
 	cfg := DefaultBoxCfg()
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
@@ -391,12 +454,12 @@ func TestBoxesFormedAtBornOnConfirmation(t *testing.T) {
 	bars := []market.Kline{
 		mk(0, 110, 111, 108, 109),
 		mk(1, 109, 110, 107, 108),
-		mk(2, 108, 108.5, 104, 105),
-		mk(3, 105, 106, 103, 104.5),
-		mk(4, 104, 104.5, 101.5, 103),   // the nearest low (left-only, unconfirmed)
-		mk(5, 103.5, 104, 100, 103.6),   // the EXTREME — the later pairing candle; closes outside
-		mk(6, 102, 103.2, 101.5, 102.2), // the confirming bar (higher low) — touches while outside
-		mk(7, 102.5, 104, 102, 103.5),
+		mk(2, 108, 109, 105, 106),
+		mk(3, 106, 107, 100, 104),     // bottom 1: the EXTREME low 100
+		mk(4, 103, 105, 102, 104),     // confirms the extreme (low 102 > 100)
+		mk(5, 104, 105, 102.5, 104.5), // spacer: low 102.5
+		mk(6, 104, 104.5, 101.5, 103), // bottom 2: swing low 101.5, body edge min(104, 103) = 103
+		mk(7, 103, 104.5, 102, 103.5), // bottom 2's confirming bar (low 102 > 101.5)
 		mk(8, 103, 104.5, 102.8, 104), // the first return visit
 		mk(9, 104, 104.5, 103.2, 104.2),
 	}
@@ -409,25 +472,29 @@ func TestBoxesFormedAtBornOnConfirmation(t *testing.T) {
 	if b.Kind != FTGL || b.Bottom != 100 || b.Top != 103 {
 		t.Fatalf("box = %+v, want FTGL bottom 100 top 103", b)
 	}
-	if b.FormedAt != 6 {
-		t.Fatalf("FormedAt = %d, want 6 = extreme idx 5 + 1 — born when the confirming bar closes", b.FormedAt)
+	if b.FormedAt != 7 {
+		t.Fatalf("FormedAt = %d, want 7 = bottom 2 idx 6 + 1 — born when bottom 2's confirming bar closes", b.FormedAt)
 	}
 	ret := BoxReturnBarsFrom(bars, b, b.FormedAt+1, cfg)
 	if len(ret) != 1 || ret[0].RefBar != 8 {
 		t.Fatalf("returns = %+v, want exactly one return at RefBar 8", ret)
 	}
 	for _, r := range ret {
-		if r.RefBar <= 6 {
-			t.Fatalf("return RefBar %d — the confirming bar (6) was walked", r.RefBar)
+		if r.RefBar <= 7 {
+			t.Fatalf("return RefBar %d — bottom 2's confirming bar (7) was walked", r.RefBar)
 		}
 	}
 }
 
-// TestBoxesGolden13SepFrame — the course frame (D3.3 FTGH/FTGL
-// part1_06-25.jpg, verified by the CTO): two 1m boxes on Sun 13 Sep 2026,
-// FTGL ≈ 28,982 → 29,015 and FTGH ≈ 29,097 → 29,105. The builder must draw
-// both (±1 pt) from the recorded db-copy tape. The 17:00 open candle is
-// excluded (the frame's first candle is later).
+// TestBoxesGolden13SepFrame — the 13-Sep-2026 tape with BOTH zones.
+// Item 12 ruling (CTO 23:06Z): the old golden FTGL [28981, 29015] paired the
+// extreme with an EARLIER adjacent decline bar — "an earlier adjacent decline
+// bar is never the partner." The course pairs the extreme low (28981) with the
+// next CONFIRMED higher low (28987.75 at bar 6), whose lower body edge is
+// min(29007.25, 29003.75) = 29003.75 → FTGL [28981, 29003.75]. FTGH is
+// unchanged: extreme high 29105 pairs with the next confirmed lower high
+// (29101.5 at bar 39), body edge max(29095.25, 29096.75) = 29096.75.
+// The 17:00 open candle is excluded (the frame's first candle is later).
 func TestBoxesGolden13SepFrame(t *testing.T) {
 	bars := loadFixture(t, "mnq_1m_2026-09-13_boxframe", "1m")
 	start := bars[0].OpenTime + 3*60_000 // from 17:03 CT (rolling-3 needs 2 lead bars)
@@ -450,8 +517,8 @@ func TestBoxesGolden13SepFrame(t *testing.T) {
 	if ftgl == nil {
 		t.Fatal("no FTGL box drawn on the golden frame")
 	}
-	if abs(ftgl.Bottom-28981) > 1 || abs(ftgl.Top-29015) > 1 {
-		t.Fatalf("FTGL = [%.2f, %.2f], want ≈ [28981, 29015] ±1 (golden ~28,982 → 29,015)", ftgl.Bottom, ftgl.Top)
+	if abs(ftgl.Bottom-28981) > 1 || abs(ftgl.Top-29003.75) > 1 {
+		t.Fatalf("FTGL = [%.2f, %.2f], want ≈ [28981, 29003.75] ±1 (item 12 ruling 23:06Z re-pin)", ftgl.Bottom, ftgl.Top)
 	}
 	if ftgh == nil {
 		t.Fatal("no FTGH box drawn on the golden frame")
