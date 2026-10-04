@@ -446,4 +446,4 @@ it('preserves every existing TypeScript import target in changed files', async (
       )
     }
   }
-})
+}, 30_000) // explicit timeout: the git/ts walk took 5089 ms on CI vs vitest's 5 s default (flake seen on #321, #288)
