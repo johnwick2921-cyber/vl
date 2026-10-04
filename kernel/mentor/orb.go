@@ -108,10 +108,15 @@ func ORBVerdict(orb ORB, side Side, price float64, cfg Config) (ok bool, reason 
 
 // orbGateFilter applies the ORB gate to every intraday entry intent. The §8
 // swing is EXEMPT (its reasons start with "swing") — the ORB is a gate on
-// intraday entries only.
-func orbGateFilter(ints []Intent, orb ORB, cfg Config) (out []Intent, refusals []string) {
+// intraday entries only. No ORB for pre-market [X5 @05:42]: before the RTH
+// open (08:30 CT) the gate does not block — it applies only from 08:30 CT
+// until the ORB is drawn and escaped.
+func orbGateFilter(ints []Intent, orb ORB, now int64, cfg Config) (out []Intent, refusals []string) {
 	if !cfg.OrbGateEnabled {
 		return ints, nil
+	}
+	if now < dayStartCT(now)+int64(globexCloseMin)*60_000 {
+		return ints, nil // pre-market (before the 08:30 CT RTH open): no ORB gate [X5 @05:42]
 	}
 	out = make([]Intent, 0, len(ints))
 	for _, in := range ints {

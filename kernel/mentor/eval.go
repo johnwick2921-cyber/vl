@@ -1047,8 +1047,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 
 	// ORB gate ("ĐIỀU BẮT BUỘC" [X11 @16:43]): every intraday entry is gated
-	// on the opening range; the §8 swing is exempt (orbGateFilter).
-	out, refused = orbGateFilter(out, e.State.ORB, e.Cfg)
+	// on the opening range; the §8 swing is exempt (orbGateFilter). No ORB for
+	// pre-market [X5 @05:42] — before the 08:30 CT RTH open it does not block.
+	out, refused = orbGateFilter(out, e.State.ORB, now, e.Cfg)
 	for _, r := range refused {
 		e.refuse(r)
 	}
