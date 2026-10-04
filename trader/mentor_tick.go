@@ -229,6 +229,15 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// source that was short at boot (94/102 closed 4h candles) clears on its
 	// own instead of needing a restart.
 	at.mentorRefreshDepths()
+	// EXIT DRIVE (DS-107): event-driven resonance arming first — a same-side
+	// ISB within 3 candles of a PHL/PLH fill flips it to mode A (both stops to
+	// BE NOW) — then the candle-driven exit loop, once per closed 1m bar.
+	for _, in := range intents {
+		if isISBEntryIntent(in) {
+			at.mentorArmResonanceOnISB(string(in.Side))
+		}
+	}
+	at.mentorExitDrive(bars)
 	// S9 (D5.2 p2 @05:21): strong-day detection from the recent CLOSED 5m bars
 	// — 50–80 pt candles cut every tier to 1–2.
 	strongDay := false

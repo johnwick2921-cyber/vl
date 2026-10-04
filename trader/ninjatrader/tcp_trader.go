@@ -47,8 +47,13 @@ type TCPTrader struct {
 
 	mu       sync.Mutex
 	stopLoss map[string]float64 // key: "<symbol>:<side>"
-	takePrft map[string]float64
-	guard    *orderGuard // B3: dupe-drop + rate breaker at the order-submission chokepoint
+	// stopBySignal is the per-signal live stop for the mentor exit-drive's
+	// signal-keyed moves (two legs of one mentor intent carry two signal ids on
+	// the SAME side, so the side-keyed stopLoss cannot guard both). Keyed by
+	// signal id; read first, with stopLoss as the fallback. Guarded by mu.
+	stopBySignal map[string]float64
+	takePrft     map[string]float64
+	guard        *orderGuard // B3: dupe-drop + rate breaker at the order-submission chokepoint
 	// openOrdersSrc (class 33) — the ledger-backed working-order source for
 	// GetOpenOrders (flat-gate leg 4). nil = unwired = the leg FAILS.
 	openOrdersSrc func(symbol string) ([]types.OpenOrder, error)
@@ -1102,6 +1107,56 @@ func (t *TCPTrader) MoveStopToBreakeven(side string, newStop float64) error {
 	// Track the new stop so a subsequent move is checked against it.
 	t.mu.Lock()
 	t.stopLoss[key] = newStop
+	t.mu.Unlock()
+	return nil
+}
+
+// MoveStopForSignal (mentor exit-drive, DS-107) asks the AddOn to move the
+// resting stop for an EXPLICIT signal id to newStop, tick-rounded, WITHOUT
+// closing the position — the SAME move_stop frame MoveStopToBreakeven sends.
+// The side-keyed MoveStopToBreakeven resolves the LAST entry's signal id via
+// resolveEntrySignalID, which cannot address two legs of one mentor intent
+// (leg 1 and the runner share a side but carry distinct signal ids). No C#
+// change: the AddOn's HandleMoveStop reads only signal_id + new_stop_loss.
+// The B1 stop-widen ban still applies — against the per-signal live stop when
+// known, else the side-keyed one — so a signal-keyed move can never widen.
+func (t *TCPTrader) MoveStopForSignal(signalID, side string, newStop float64) error {
+	if strings.TrimSpace(signalID) == "" {
+		return fmt.Errorf("ninjatrader/tcp: move_stop needs a signal id")
+	}
+	t.mu.Lock()
+	cur := 0.0
+	if t.stopBySignal != nil {
+		cur = t.stopBySignal[signalID]
+	}
+	tid := t.traderID
+	t.mu.Unlock()
+	newStop = RoundToTick(newStop, InstrumentTickSize(t.symbol))
+	// B1 stop-widen ban, PER SIGNAL: two legs of one mentor intent carry two
+	// signal ids on the same side, so the side-keyed stopLoss must never be the
+	// reference here (it would cross-contaminate leg 1's stop into the runner's
+	// widen check). No per-signal record → nothing to compare against (the
+	// mentor loop's mentorNeverWiden already guarded the move).
+	if cur > 0 && stopWouldWiden(side, cur, newStop) {
+		logger.Warnf("⛔ stop-widen REFUSED: %s %s signal %s new stop %.2f would WIDEN from %.2f (risk-increasing) — NOT sent.",
+			t.symbol, side, signalID, newStop, cur)
+		return fmt.Errorf("ninjatrader/tcp: stop-widen ban — %s %s signal %s new stop %.2f widens from %.2f", t.symbol, side, signalID, newStop, cur)
+	}
+	if err := t.server.SendMoveStop(ntwire.MoveStopPayload{
+		Symbol:      t.symbol,
+		SignalID:    signalID,
+		NewStopLoss: newStop,
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Account:     t.boundAccount,
+		TraderID:    tid,
+	}); err != nil {
+		return err
+	}
+	t.mu.Lock()
+	if t.stopBySignal == nil {
+		t.stopBySignal = map[string]float64{}
+	}
+	t.stopBySignal[signalID] = newStop
 	t.mu.Unlock()
 	return nil
 }

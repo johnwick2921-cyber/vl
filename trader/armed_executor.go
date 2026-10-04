@@ -2473,10 +2473,14 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 			at.materializeArmedEntry(r, u)
 			at.stampArmedFillLineage(r, u.FillPrice)
 			at.logInfof("⚡ armed fill %s @ %.2f (entry_class=armed_fill — stale_reeval NOT applied)", r.Scenario, u.FillPrice)
-			// N12 funnel stage: a mentor-origin fill is counted once (a partfill
-			// that later fills fully is not double-counted).
+			// N12 funnel + MENTOR EXIT DRIVE (DS-107): a mentor-origin full fill
+			// is counted once, registered from the ONE row (dev's one-row entry,
+			// no split legs — #353 rejected) and poked so the loop wakes on the
+			// fill instead of waiting for the next FINAL bar.
 			if isMentorArmOrigin(r) && strings.EqualFold(u.State, "filled") {
 				at.mentorFunnel.bumpFilled()
+				at.registerMentorLivePos(r, u)
+				at.pokeMentorExitDrive()
 			}
 		case "cancelled":
 			// CANCEL-REPORT REGIME (2026-10-03, knob default OFF): for a row
