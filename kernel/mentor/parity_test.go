@@ -355,6 +355,7 @@ func emitGoState(e *Evaluator, bars []market.Kline, i int, cfg Config) goStateRo
 	if e.seeded {
 		levels = e.seededLevels(bars[:i], now)
 	}
+	// Tick has already updated DeletedLevels before this state snapshot.
 	levels = withoutDeleted(levels, e.State.DeletedLevels)
 	var below, above float64
 	for _, lvl := range levels {
