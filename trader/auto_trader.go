@@ -10,6 +10,7 @@ import (
 	"time"
 	"vl/discipline"
 	"vl/kernel"
+	"vl/kernel/mentor"
 	"vl/logger"
 	"vl/market"
 	"vl/mcp"
@@ -373,7 +374,19 @@ type AutoTrader struct {
 	// F3 fast-market wake reads (waterfall-class wave, 2026-08-28): the price
 	// at the last successful plan write + a one-shot flag for the next read.
 	lastPlanWritePrice atomic.Uint64 // math.Float64bits
-	fastTapePending    atomic.Bool
+
+	// MENTOR P3 — evaluator instance + one-tick-per-1m-close dedup. Both are
+	// only consulted when the per-strategy mentor_mode is ON.
+	mentorEval         *mentor.Evaluator
+	mentorLastTickOpen int64
+	mentorFinalArrival atomic.Int64 // ms — when the FINAL frame hit the sink
+	// MENTOR B20 — the chosen exit branch per open position (keyed by side:
+	// "long"/"short"), set at placement from the entry-time fork (A/B/C/swing)
+	// and switched to C by a confluence upgrade. The P1 exit loop drives the
+	// branch. Size is never touched by the upgrade.
+	mentorExitMu    sync.Mutex
+	mentorExitModes map[string]string
+	fastTapePending atomic.Bool
 	// lastClockHealthSession: which session the last clock-health line was
 	// logged for (PHASE 3.5) — one line per session roll, not per tick.
 	lastClockHealthSession string
@@ -855,6 +868,15 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		// W-EXEC-TRUTH W0 (b) — the one entry latch's evidence (book + both
 		// ledgers), wired at construction, before Run.
 		wireNT8EntryLatch(at, nt)
+	}
+	// P0 SPLICE (CTO 1791030462901) — a mentor-mode trader seeds the evaluator
+	// from the stored 1m+1h bars at start (read-only); while any source is
+	// missing every mentor entry is refused with the named source.
+	// P0 WIRING (CTO 1791039541371) — the production seams bind FIRST; a
+	// missing seam refuses entries, named, on the same boot line.
+	if at.mentorEnabled() {
+		at.mentorWireProductionSeams()
+		at.mentorSeedAtStart()
 	}
 	return at, nil
 }

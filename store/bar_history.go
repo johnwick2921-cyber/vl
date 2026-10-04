@@ -609,6 +609,30 @@ func (s *BarHistoryStore) LastNBarsOn(symbol, tf, contract string, n int) ([]Bar
 	return desc, nil
 }
 
+// LastNBarsCurrentContract returns the NEWEST n bars for (symbol, tf) on the
+// CURRENT contract only — the contract of the newest non-mixed row. One price
+// scale across a roll: rows written before the contract column existed carry
+// an empty contract and fall outside the filter (a cold store simply has no
+// rows). Read-only; never writes. n <= 0 returns nil.
+func (s *BarHistoryStore) LastNBarsCurrentContract(symbol, tf string, n int) ([]BarHistoryDB, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("store required")
+	}
+	if n <= 0 {
+		return nil, nil
+	}
+	var newest BarHistoryDB
+	if err := s.db.Where("symbol = ? AND tf = ? AND contract <> '' AND COALESCE(source, '') NOT IN (?, ?)",
+		symbol, tf, BarSourceMixed, BarSourceOffScale).
+		Order("open_time_ms DESC").Limit(1).Find(&newest).Error; err != nil {
+		return nil, err
+	}
+	if newest.Contract == "" {
+		return nil, nil
+	}
+	return s.LastNBarsOn(symbol, tf, newest.Contract, n)
+}
+
 // ImportSnapshotTimes returns the open times of historical_import rows for
 // (symbol, tf, contract) — the sparse wave-101 pull snapshots. The DISPLAY
 // seam (BarsWithStoreDepthDisplay) uses this set to drop the same sparse bars

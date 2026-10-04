@@ -387,6 +387,11 @@ func (at *AutoTrader) runCycle() error {
 		return fmt.Errorf("failed to build trading context: %w", err)
 	}
 
+	// MENTOR P3 — one evaluator tick per new 1m close. Inert unless the
+	// per-strategy mentor_mode is ON; placements stay behind the MENTOR_PLACE
+	// env gate until P1 (#309) lands (L4: default OFF, byte-identical bot).
+	at.mentorTick(ctx)
+
 	// G2 (regime wave 2026-08-21) — per-cycle STRUCTURE snapshot: computed from
 	// the same 1m cache every other futures consumer reads, threaded into the
 	// executor prompt (engine_prompt.go) and persisted on the decision row —

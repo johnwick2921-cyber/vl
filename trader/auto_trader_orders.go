@@ -48,6 +48,12 @@ func futuresOrderQuantity(symbol string, notionalUSD, price float64, maxContract
 // strategy (per-strategy value, else the 2-contract venue default; 6.6 comment-truth fix). Hardening D3
 // (audit F2): ALWAYS ON — the guardrails master switch no longer disables it.
 func (at *AutoTrader) resolveMaxContracts() int {
+	// MENTOR P3 — the 0B size clamp does NOT apply to a mentor-mode trader:
+	// mentor sizes come from the mentor table (up to mentor_max_contracts).
+	// AI mode keeps the 2-contract default untouched.
+	if mx, ok := at.mentorMaxContracts(); ok {
+		return mx
+	}
 	if at.config.StrategyConfig == nil {
 		return int(maxFuturesContracts)
 	}
@@ -151,6 +157,18 @@ func (at *AutoTrader) executeDecisionWithRecordAt(decision *kernel.Decision, act
 	// (the real gates below are untouched — W5.4 THE LAW).
 	if decision.Action == "open_long" || decision.Action == "open_short" {
 		at.applyWeeklyDecisionShadow(decision)
+	}
+
+	// MENTOR P3 — AI-entries-off for a mentor-mode trader. Mentor-sourced
+	// decisions (MentorSourced) pass; every other open is refused and counted.
+	// Closes, flattens and the safety paths never reach this refusal.
+	if decision.Action == "open_long" || decision.Action == "open_short" {
+		if refusal := at.mentorSuppressAIEntry(decision); refusal != "" {
+			at.logWarnf("🧑‍🏫 %s (trader %s)", refusal, at.id)
+			actionRecord.Success = false
+			actionRecord.Error = refusal
+			return nil
+		}
 	}
 
 	// Feed-down gate (NinjaTrader, TRACK A), CLOSE half: the SIM cannot fill
@@ -591,7 +609,25 @@ func (at *AutoTrader) openEntryWithRecord(decision *kernel.Decision, actionRecor
 		manual.brokerCalled = true
 	}
 	var order map[string]interface{}
-	if carries {
+	// MENTOR P3 — a mentor-sourced decision rests a STOP-ENTRY at the
+	// evaluator's trigger price. Every gate above (admission, one-contract,
+	// sizing) has already run; only the wire hop differs from the AI's market
+	// entry. A broker without PlaceStopEntry refuses fail-closed (no trade).
+	if decision.MentorSourced && decision.EntryPrice > 0 {
+		sp, ok := at.trader.(mentorStopEntryPlacer)
+		if !ok {
+			mentorCount("refused_no_stop_entry_frame")
+			telemetry.IncGateBlock(at.id, "mentor_no_stop_entry_frame")
+			return fmt.Errorf("mentor stop-entry: the broker carries no PlaceStopEntry frame — refusing rather than market-filling a stop order")
+		}
+		order, err = sp.PlaceStopEntry(decision.Symbol, side, quantity,
+			decision.EntryPrice, decision.StopLoss, decision.TakeProfit)
+		if err == nil {
+			at.logInfof("🧑‍🏫 mentor stop-entry resting: %s %s %.0f @ %.2f (stop %.2f, target %.2f)",
+				decision.Symbol, side, quantity, decision.EntryPrice, decision.StopLoss, decision.TakeProfit)
+			mentorCount("stop_entry_placed")
+		}
+	} else if carries {
 		order, err = carrier.OpenWithBracket(decision.Symbol, side, quantity, decision.StopLoss, decision.TakeProfit)
 	} else {
 		order, err = open(decision.Symbol, quantity, decision.Leverage)
