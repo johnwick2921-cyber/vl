@@ -36,12 +36,6 @@ const (
 	mentorRoomBigMultiple    = 2.0  // room ≥ this × risk for the big tier
 	mentorStopTwentiesMinPts = 20.0 // stop 20–25 pts → reduced [D3.3 p1 @ 01:09]
 	mentorStopTwentiesMaxPts = 25.0
-	// R8 (RULES-FIX v3): a SWING4H stop of 30–60 pts is allowed, ~100 is
-	// refused, and SWING4H is EXEMPT from the 25-pt ceiling.
-	mentorSwingStopMaxPts = 60.0
-	// R9 (RULES-FIX v3): the target is never smaller than the stop; on a spent
-	// day (cap 15) any setup whose stop is over 15 is skipped.
-	mentorSpentDayStopCapPts = 15.0
 )
 
 // mentorTierInputs is everything the size table reads. The trader computes
@@ -57,6 +51,12 @@ type mentorTierInputs struct {
 	StrongDay     bool    // S9: 5m candles running 50–80 pts → size 1–2
 	ISBOldExtreme bool    // ISB at an old high/low → reduce size, tier 3 [D4.1 p1 rule 2]
 	ISBInRange    bool    // ISB traded inside a range → reduce size, tier 3 [D4.1 p1 rule 3]
+
+	// Rule-gate limits resolved from the strategy (mentorTuningResolve): the
+	// SAME numbers the evaluator reads. Zero (a bare table test) falls back to
+	// the kernel defaults, never to a second constant.
+	SwingMaxStopPts    float64
+	SpentDayStopCapPts float64
 }
 
 // mentorSizeChoice is the tier decision: contracts, the tier name and why.
@@ -400,8 +400,12 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 	stop := mentorIntentRisk(in)
 	target := mentorIntentTargetPts(in)
 	if swing {
-		if stop > mentorSwingStopMaxPts {
-			return fmt.Sprintf("R8: SWING4H stop %.1f pts — ~100 is refused (allowed 30–60, no 25-pt ceiling for the swing)", stop)
+		swingMax := extra.SwingMaxStopPts
+		if swingMax <= 0 {
+			swingMax = mentor.DefaultSwingCfg().MaxStopPts
+		}
+		if stop >= swingMax {
+			return fmt.Sprintf("R8: SWING4H stop %.1f pts — a stop at or over %.0f is skipped [D5.2; owner ruling 2026-10-04 R-D] (no 25-pt ceiling for the swing)", stop, swingMax)
 		}
 	} else {
 		if stop > mentorStopTwentiesMaxPts {
@@ -411,8 +415,12 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 	if target > 0 && target < stop {
 		return fmt.Sprintf("R9: target %.1f pts smaller than the stop %.1f pts — never trade it [D1.2 p1 @ 07:48–09:00]", target, stop)
 	}
-	if extra.SpentDay && stop > mentorSpentDayStopCapPts {
-		return fmt.Sprintf("R9: spent day cap 15 — stop %.1f pts skips", stop)
+	spentCap := extra.SpentDayStopCapPts
+	if spentCap <= 0 {
+		spentCap = mentor.DefaultConfig().DayGateTargetCapPts
+	}
+	if extra.SpentDay && stop > spentCap {
+		return fmt.Sprintf("R9: spent day cap %.0f — stop %.1f pts skips", spentCap, stop)
 	}
 	return ""
 }
