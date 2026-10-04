@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"fmt"
 	"time"
 
 	"vl/kernel"
@@ -403,4 +404,59 @@ func InsideAnyBox(boxes []Box, price float64) bool {
 		}
 	}
 	return false
+}
+
+// nearBoxRefusal implements Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: a setup
+// too close to a box is refused. The nearest box edge STRICTLY in the trade
+// direction (long → the closest edge ABOVE; short → the closest edge BELOW)
+// must be at least roomMultiple × risk points away, else the setup is "sát
+// box" and skipped. Row 25 [@ 23:14–24:03]: a setup bracketed by box edges on
+// BOTH sides is "between two boxes" and is exempt. No edge in the trade
+// direction → allowed. roomMultiple <= 0 or risk <= 0 disables the check.
+func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk float64) (refuse bool, why string) {
+	if roomMultiple <= 0 || risk <= 0 {
+		return false, ""
+	}
+	var edgeAbove, edgeBelow bool
+	nearest := 0.0
+	found := false
+	for _, b := range boxes {
+		for _, edge := range []float64{b.Top, b.Bottom} {
+			if edge > price {
+				edgeAbove = true
+			} else if edge < price {
+				edgeBelow = true
+			}
+			var dist float64
+			switch side {
+			case SideLong:
+				if edge > price {
+					dist = edge - price
+				} else {
+					continue
+				}
+			case SideShort:
+				if edge < price {
+					dist = price - edge
+				} else {
+					continue
+				}
+			default:
+				continue
+			}
+			if !found || dist < nearest {
+				nearest, found = dist, true
+			}
+		}
+	}
+	if edgeAbove && edgeBelow {
+		return false, "" // row 25: between two boxes — exempt
+	}
+	if !found {
+		return false, ""
+	}
+	if nearest < roomMultiple*risk {
+		return true, fmt.Sprintf("near box: nearest box edge %.2f pts < %.2f pts room (%gx risk)", nearest, roomMultiple*risk, roomMultiple)
+	}
+	return false, ""
 }
