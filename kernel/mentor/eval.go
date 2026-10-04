@@ -446,6 +446,16 @@ func freshTouch(tr Touch, lvl Level) Touch {
 	return tr
 }
 
+// isMovingLineKey (item 22) reports whether a level key is one of the MOVING
+// lines — the 1m EMA34, the EMA34HTF location line, or the trigger-retest line.
+// These are re-priced every bar, so their wrong-way "invalid" state is scoped to
+// the touching candle: a drift or a visit departure clears it (the course never
+// makes a line dead for good [D5.2 p2 @20:48]). Key levels are stable and keep
+// ISB-only until the session day rolls or a closed 1H body deletes them.
+func isMovingLineKey(key string) bool {
+	return key == string(KindEMA34) || key == string(KindEMA34HTF) || key == string(KindTriggerRetest)
+}
+
 // Tick evaluates the newest closed 1m candle. bars is the closed history up to
 // now (the bot's BarCache slice); now is the current time for the swing
 // detector's closed-bar filter. Returns the intents for this candle.
@@ -543,6 +553,15 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.State.Day.Key != e.State.VisitsDay {
 		e.State.Visits = map[string]int{}
 		e.State.VisitsDay = e.State.Day.Key
+		// item 22: a KEY level's ISB-only invalidity is scoped to the session
+		// day (the course never makes a level dead for good [D5.2 p2 @20:48]).
+		// The moving lines reset on drift/departure in the touch loop below,
+		// so only the stable keys reset here.
+		for key := range e.State.ISBOnly {
+			if !isMovingLineKey(key) {
+				delete(e.State.ISBOnly, key)
+			}
+		}
 	}
 
 	// the location set grows by the trigger-line retest and the EMA 34
@@ -574,16 +593,33 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		if lvl.Kind == KindFTGHEdge || lvl.Kind == KindFTGLEdge {
 			continue
 		}
+		moving := isMovingLineKey(lvl.Key)
 		tr := e.State.Touches[lvl.Key]
-		if e.State.ISBOnly[lvl.Key] {
-			continue // invalid level: no PHL/PLH, and touches need no re-read
+		// item 22: a KEY level stays ISB-only for the session day (frozen touch,
+		// no re-read); a MOVING line keeps its visit machinery running so a
+		// drift or departure can clear the invalidity — the course scopes
+		// "invalid" to the touching candle [D5.2 p2 @20:48], never the line.
+		if e.State.ISBOnly[lvl.Key] && !moving {
+			continue // invalid key level: no PHL/PLH, and touches need no re-read
 		}
 		// a MOVING line (EMA) that drifted away from where it was touched is
-		// a fresh line for touch purposes — reset the classification.
+		// a fresh line — reset the classification AND its ISB-only state.
+		before := tr
 		tr = freshTouch(tr, lvl)
+		if before.Outcome != TouchNone && tr.Outcome == TouchNone && moving {
+			delete(e.State.ISBOnly, lvl.Key)
+		}
 		wasNone := tr.Outcome == TouchNone
 		intents := visitTick(&tr, lvl, bars[len(bars)-2], bars[len(bars)-1], e.Cfg)
+		if !wasNone && tr.Outcome == TouchNone && moving {
+			// visit departure: the touching candle is gone — clear the ISB-only
+			// state scoped to that visit.
+			delete(e.State.ISBOnly, lvl.Key)
+		}
 		e.State.Touches[lvl.Key] = tr
+		if e.State.ISBOnly[lvl.Key] {
+			continue // still invalid (no drift, no departure this tick)
+		}
 		// B23: each NEW reject classification is one visit of that level
 		// today (a revisit can only classify after the departure reset, so
 		// None -> Reject is exactly one visit).
