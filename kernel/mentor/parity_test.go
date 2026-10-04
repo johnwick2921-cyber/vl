@@ -565,36 +565,36 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 		fourHBuckets[b.OpenTime] = true
 	}
 	oneH := len(barsTF(prefix, 60))
+	warmupFailed := false
 	if len(fourHBuckets) < warmupFourHBuckets {
 		// hard fail for THIS day (never a comparison on a cold prefix) but
-		// the run continues so every day still gets its report line.
+		// still drive the evaluator to preserve production's path-dependent state.
 		t.Errorf("%s: 4h prefix depth FAIL: %d buckets < %d (cold 4h sources — no comparison for this day)",
 			d.name, len(fourHBuckets), warmupFourHBuckets)
-		return true
+		warmupFailed = true
 	}
 	if len(prefix) < warmupOneMBars {
 		t.Errorf("%s: 1m prefix depth FAIL: %d bars < %d (no comparison for this day)",
 			d.name, len(prefix), warmupOneMBars)
-		return true
+		warmupFailed = true
 	}
 	t.Logf("WARMUP %-8s: prefix %d bars / %d days / 4h buckets %d / 1h buckets %d before %s",
 		d.name, len(prefix), prefixDays(prefix), len(fourHBuckets), oneH, d.day)
 
-	// Production seeds once at target-day midnight from stored history.
 	e := New(cfg)
-	seedAt := bars[firstTarget].OpenTime
-	if missing := Seed(e, prefix, seedAt); len(missing) > 0 {
-		t.Errorf("%s: seed at %s missing sources %v — entries would be refused (fail-closed)",
-			d.name, time.UnixMilli(seedAt).In(ctime()).Format("2006-01-02 15:04"), missing)
+	if bars[firstTarget].OpenTime != dayStartCT(bars[firstTarget].OpenTime) {
+		t.Fatalf("%s: first target-day bar is not 00:00 CT: %s",
+			d.name, time.UnixMilli(bars[firstTarget].OpenTime).In(ctime()).Format("2006-01-02 15:04"))
 	}
 
-	// Tick only target-day bars, passing the same bounded tail production
-	// fetches on each call. State dumps use this identical window.
+	// Production holds path-dependent trigger/HTF/box state built by every
+	// minute's Tick. Warm the evaluator from the tape start, then Seed levels
+	// and EMA once at target-day midnight from the full current-contract prefix.
 	goRows := map[string]goStateRow{}
 	placements := map[string]armKey{} // deduped Go arms, keyed by arm key
 	unknownSetups := map[string]int{}
 	var rowOrder []string
-	for i := firstTarget + 1; i <= len(bars); i++ {
+	for i := 1; i <= len(bars); i++ {
 		cur := bars[i-1]
 		now := cur.OpenTime
 		start := i - productionTickBars
@@ -602,7 +602,16 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 			start = 0
 		}
 		tickBars := bars[start:i]
+		if i-1 == firstTarget {
+			if missing := Seed(e, prefix, now); len(missing) > 0 {
+				t.Errorf("%s: seed at %s missing sources %v — entries would be refused (fail-closed)",
+					d.name, time.UnixMilli(now).In(ctime()).Format("2006-01-02 15:04"), missing)
+			}
+		}
 		intents := e.Tick(tickBars, now)
+		if time.UnixMilli(cur.OpenTime).In(ctime()).Format("2006-01-02") != d.day {
+			continue
+		}
 		minute := minCTFromBar(cur)
 		placedThisMinute, cancelledThisMinute := 0, 0
 		for _, in := range intents {
@@ -642,6 +651,10 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 
 	t.Logf("GO %-8s %s: %d placements (%d unique arms), %d RTH state rows, evaluator %s",
 		d.name, d.day, len(placements), len(placements), len(goRows), time.Since(t0).Round(time.Millisecond))
+
+	if warmupFailed {
+		return true
+	}
 
 	failed := false
 
