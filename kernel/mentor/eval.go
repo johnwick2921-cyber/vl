@@ -663,6 +663,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) []Intent {
 	// §2.2: PHL/PLH from a fresh reject touch against an old extreme,
 	// gated by trigger side, mid-range and the setup's own gates.
 	oldExtremes := oldExtremeIndexes(levels, bars)
+	// B14a: one tape-swing scan per tick — the prior same-role swing for the
+	// higher-low / lower-high check reads the tape, not the level set.
+	sw := swings3(bars)
 	// E2: watch the last emitted EMA stop; block the EMA line on a loss.
 	emaPrice := 0.0
 	for _, lvl := range levels {
@@ -721,43 +724,63 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) []Intent {
 		if _, resting := e.State.LevelArms[lvl.Key]; resting {
 			continue
 		}
-		for _, ex := range oldExtremes {
-			in, ok, reason := PHLPLHGatedR2(tr, ex.level, ex.idx, len(bars)-1, priorSameRole(ex, oldExtremes), e.Cfg, e.State.HTF, e.State.Day.Verdict, dg)
-			if !ok {
-				if reason == targetCloserThanStopReason {
-					e.refuse("phl_target_below_floor") // E-2: the D1.2 floor holds for the PHL too
-				}
-				continue
-			}
-			// B6 (10-03 ruling): a LEVEL order RESTS — the one-candle expiry is
-			// the ISB rule only [D1.4 p1 @18:32]. ExpiryMs stays 0; the cancel
-			// sweep (levelArmCancels) closes it through the level or at the
-			// window end.
-			// G2 place (CTO R-b): the setup's PLACE — the touch level. For the
-			// EMA the anchor is the loss-time price (the stop, K1).
-			e.State.ArmSeq++
-			id := fmt.Sprintf("lvl-%d", e.State.ArmSeq)
-			in.ArmID = id
-			in.AnchorKey = lvl.Key
-			in.Anchor = lvl.Price
-			if lvl.Kind == KindEMA34 || lvl.Kind == KindEMA9 || lvl.Kind == KindEMA34HTF {
-				in.Anchor = in.Stop
-			}
-			if e.State.LevelArms == nil {
-				e.State.LevelArms = map[string]LevelArm{}
-			}
-			e.State.LevelArms[lvl.Key] = LevelArm{ArmID: id, Side: in.Side, LevelPrice: lvl.Price, PlacedAt: cur.CloseTime}
-			if isEMA34(lvl) {
-				e.State.EmaPendingSide = in.Side
-				e.State.EmaPendingEntry = in.Price
-				e.State.EmaPendingStop = in.Stop
-				e.State.EmaPendingTarget = in.Target
-				e.State.EmaPendingExpiry = in.ExpiryMs
-				e.State.EmaPendingFilled = false
-			}
-			out = append(out, in)
-			break
+		// B14b: the target is the NEAREST old extreme on the trade side —
+		// a failed nearest high is a SKIP, never a farther old high
+		// [D2.2 p2 @03:07–03:14].
+		side, _, sideOK := RejectEntry(tr, e.Cfg)
+		if !sideOK {
+			e.refuse("phl_no_reject_entry")
+			continue
 		}
+		// DS-107 patch (20:54:52Z): ONE nearest target-side extreme, picked
+		// above the touch candle (long: > RefBar.High / short: < RefBar.Low);
+		// a failed nearest is a SKIP, never a farther old extreme.
+		tref := tr.RefBar.High
+		if side == SideShort {
+			tref = tr.RefBar.Low
+		}
+		ex, found := nearestOldExtremeOnSide(oldExtremes, tref, side)
+		if !found {
+			e.refuse("phl_no_old_extreme_on_side")
+			continue
+		}
+		// B14a: the higher-low / lower-high check reads the nearest
+		// PRIOR same-role swing of the tape ("đối chiếu với cái
+		// đáy/đỉnh bên tay trái" [D2.2 p3 @04:06]).
+		prior := priorSwingOnTape(sw, side == SideShort, len(bars)-1)
+		in, ok, reason := PHLPLHGatedR2Levels(tr, ex.level, ex.idx, len(bars)-1, prior, levels, e.Cfg, e.State.HTF, e.State.Day.Verdict, dg)
+		if !ok {
+			// B-rules (13:51:31Z): EVERY drop names a reason and counts it.
+			e.refuse(phlRefusalKey(reason))
+			continue
+		}
+		// B6 (10-03 ruling): a LEVEL order RESTS — the one-candle expiry is
+		// the ISB rule only [D1.4 p1 @18:32]. ExpiryMs stays 0; the cancel
+		// sweep (levelArmCancels) closes it through the level or at the
+		// window end.
+		// G2 place (CTO R-b): the setup's PLACE — the touch level. For the
+		// EMA the anchor is the loss-time price (the stop, K1).
+		e.State.ArmSeq++
+		id := fmt.Sprintf("lvl-%d", e.State.ArmSeq)
+		in.ArmID = id
+		in.AnchorKey = lvl.Key
+		in.Anchor = lvl.Price
+		if lvl.Kind == KindEMA34 || lvl.Kind == KindEMA9 || lvl.Kind == KindEMA34HTF {
+			in.Anchor = in.Stop
+		}
+		if e.State.LevelArms == nil {
+			e.State.LevelArms = map[string]LevelArm{}
+		}
+		e.State.LevelArms[lvl.Key] = LevelArm{ArmID: id, Side: in.Side, LevelPrice: lvl.Price, PlacedAt: cur.CloseTime}
+		if isEMA34(lvl) {
+			e.State.EmaPendingSide = in.Side
+			e.State.EmaPendingEntry = in.Price
+			e.State.EmaPendingStop = in.Stop
+			e.State.EmaPendingTarget = in.Target
+			e.State.EmaPendingExpiry = in.ExpiryMs
+			e.State.EmaPendingFilled = false
+		}
+		out = append(out, in)
 	}
 
 	// B6 cancel sweep: a resting level order dies when a later candle
@@ -921,6 +944,91 @@ func priorSameRole(ex oldExtreme, extremes []oldExtreme) float64 {
 		}
 	}
 	return 0
+}
+
+// phlRefusalKey names every PHL/PLH drop for the refusal ledger
+// (B-rules 13:51:31Z — the E-2 floor, the B14 skip and every gate).
+func phlRefusalKey(reason string) string {
+	switch {
+	case reason == targetCloserThanStopReason:
+		return "phl_target_below_floor"
+	case strings.HasPrefix(reason, "not a higher low"):
+		return "phl_not_higher_low"
+	case strings.HasPrefix(reason, "not a lower high"):
+		return "phl_not_lower_high"
+	case strings.HasPrefix(reason, "too close to the old extreme"):
+		return "phl_too_close_to_extreme"
+	case strings.HasPrefix(reason, "old extreme not on the target side"):
+		return "phl_extreme_wrong_side"
+	case strings.HasPrefix(reason, "room rule"):
+		return "phl_room_rule"
+	case strings.HasPrefix(reason, "stop over the 25-pt ceiling"):
+		return "phl_stop_ceiling"
+	case strings.HasPrefix(reason, "degenerate stop/target"):
+		return "phl_degenerate_geometry"
+	case strings.HasPrefix(reason, "HTF direction gate"):
+		return "phl_htf_blocked"
+	case strings.HasPrefix(reason, "day gate: spent"):
+		return "phl_day_off"
+	case strings.HasPrefix(reason, "day gate: day run not measured"):
+		return "phl_day_not_measured"
+	case strings.HasPrefix(reason, "spent day: stop over the 15-pt cap"):
+		return "phl_spent_stop_cap"
+	case strings.HasPrefix(reason, "no reject entry"):
+		return "phl_no_reject_entry"
+	default:
+		return "phl_refused"
+	}
+}
+
+// priorSwingOnTape — B14a [D2.2 p3 @04:06]: the higher-low / lower-high check
+// reads the nearest PRIOR same-role swing of the TAPE ("đối chiếu với cái
+// đáy/đỉnh bên tay trái"), not the old-extreme level set (which the swing
+// significance filter may have pruned). wantHigh = the PLH's prior high.
+// beforeIdx excludes the touch bar itself. 0 = none.
+func priorSwingOnTape(swings []swingPairAt, wantHigh bool, beforeIdx int) float64 {
+	best := -1
+	for _, s := range swings {
+		if s.idx >= beforeIdx {
+			continue
+		}
+		if (wantHigh && s.kind != kernel.KindSWGH) || (!wantHigh && s.kind != kernel.KindSWGL) {
+			continue
+		}
+		if s.idx > best {
+			best = s.idx
+		}
+	}
+	if best < 0 {
+		return 0
+	}
+	for _, s := range swings {
+		if s.idx == best {
+			return s.price
+		}
+	}
+	return 0
+}
+
+// nearestOldExtremeOnSide — B14b [D2.2 p2 @03:07–03:14]: the target is the
+// NEAREST old extreme on the trade side only; a failed nearest high is a
+// SKIP ("mình xác định ra mình không có target"), never a farther old high.
+func nearestOldExtremeOnSide(extremes []oldExtreme, price float64, side Side) (oldExtreme, bool) {
+	var best oldExtreme
+	found := false
+	for _, o := range extremes {
+		if side == SideLong && !(o.level.Price > price) {
+			continue
+		}
+		if side == SideShort && !(o.level.Price < price) {
+			continue
+		}
+		if !found || abs(o.level.Price-price) < abs(best.level.Price-price) {
+			best = o
+			found = true
+		}
+	}
+	return best, found
 }
 
 // runSwing evaluates the §8 4h-EMA34 swing on FINAL 5m bars (the forming

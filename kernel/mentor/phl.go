@@ -95,11 +95,15 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if risk > cfg.StopCeilingPts {
 		return Intent{}, false, "stop over the 25-pt ceiling — not worth trading [D3.3 p1 @ 02:04]"
 	}
-	if reward < cfg.RoomMultiple*risk {
-		return Intent{}, false, "room rule: reward < " + fnum(cfg.RoomMultiple) + "x risk — not enough room [D5.3 p1 @ 09:16]"
-	}
+	// E-2: the D1.2 floor is checked BEFORE the room knob — when the
+	// target is closer than the stop, the floor is the binding constraint
+	// and is the reason the ledger names (the room rule cannot pass when
+	// the floor fails; roomMultiple >= 2).
 	if reward < risk {
 		return Intent{}, false, targetCloserThanStopReason
+	}
+	if reward < cfg.RoomMultiple*risk {
+		return Intent{}, false, "room rule: reward < " + fnum(cfg.RoomMultiple) + "x risk — not enough room [D5.3 p1 @ 09:16]"
 	}
 	return Intent{
 		Action: PlaceStopEntry,
