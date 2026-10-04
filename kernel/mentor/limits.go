@@ -69,10 +69,11 @@ type Limits struct {
 
 // Leg is one G1 leg per side.
 type Leg struct {
-	Side    Side
-	Extreme float64 // the old extreme the leg runs to (the prior high/low)
-	Entries int     // fills registered in this leg
-	Stopped bool    // a stop-out inside the leg closed it
+	Side      Side
+	Extreme   float64 // the old extreme the leg runs to (the prior high/low)
+	Entries   int     // fills registered in this leg
+	PHLFilled bool    // a PHL/PLH (not an ISB) already filled in this leg
+	Stopped   bool    // a stop-out inside the leg closed it
 }
 
 // Place is the G2 loss box at one place, keyed by the setup's place (R-b).
@@ -103,6 +104,7 @@ type pendOrder struct {
 	target float64
 	expiry int64
 	isISB  bool
+	armID  string  // the intent's ArmID — a CancelArm drops this pend (X15-5)
 	legExt float64 // G1 extreme carried from placement; 0 = none
 	anchor float64 // G2 loss price (level / EMA / box midpoint); 0 = none
 	place  string  // G2 place key (AnchorKey); "" = use the quarter-tick
@@ -228,6 +230,7 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 				stop:   in.Stop,
 				target: in.Target,
 				expiry: in.ExpiryMs,
+				armID:  in.ArmID,
 				legExt: ext,
 				anchor: ref.anchor,
 				place:  ref.key,
@@ -251,8 +254,12 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 				target: in.Target,
 				expiry: in.ExpiryMs,
 				isISB:  true,
+				armID:  in.ArmID,
 			})
 		default:
+			if in.Action == CancelArm {
+				l.dropPend(in.ArmID) // X15-5: a cancelled order must never phantom-fill
+			}
 			kept = append(kept, in) // cancels, extends, moves — never filtered
 		}
 	}
@@ -291,7 +298,7 @@ func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 			// Entry touched = filled. A stop-out on the SAME candle is a
 			// loss (the trade existed for the span of the candle) — the
 			// open-trade loop below catches it.
-			l.registerLeg(p.side, p.legExt, levels, p.entry)
+			l.registerLeg(p.side, p.legExt, levels, p.entry, p.isISB)
 			wave := cur.Low
 			if p.side == SideShort {
 				wave = cur.High
@@ -312,6 +319,13 @@ func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 		}
 		if p.expiry != 0 && now >= p.expiry {
 			continue // never touched before the expiry — NOT a loss (case b)
+		}
+		if p.expiry == 0 {
+			// X15-5: a zero-expiry level/box order rests exactly ONE candle
+			// live (the trader's N12 next-candle default, mentor_tick.go);
+			// here it has just missed that candle, so it expires — it must
+			// not sit forever and phantom-fill on a later candle.
+			continue
 		}
 		keepP = append(keepP, p)
 	}
@@ -346,8 +360,10 @@ func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 // registerLeg records a FILL in the side's leg, creating the leg at the
 // extreme it runs to. ext 0 falls back to the nearest old extreme beyond
 // the entry (the replay's most-recent swing fallback); no extreme -> no leg
-// (the replay skips registration too).
-func (l *Limits) registerLeg(side Side, ext float64, levels []Level, entry float64) {
+// (the replay skips registration too). isISB distinguishes the fill kind
+// (X15-4): a PHL/PLH fill stamps PHLFilled so a 2nd PHL/PLH is refused
+// while an ISB-then-PHL is allowed.
+func (l *Limits) registerLeg(side Side, ext float64, levels []Level, entry float64, isISB bool) {
 	if ext == 0 {
 		ext = nearestOldExtreme(levels, entry, side)
 	}
@@ -360,6 +376,9 @@ func (l *Limits) registerLeg(side Side, ext float64, levels []Level, entry float
 		l.setLeg(side, leg)
 	}
 	leg.Entries++
+	if !isISB {
+		leg.PHLFilled = true
+	}
 }
 
 // loss registers a stop-out: one loss at the place (G2) and the leg is
@@ -412,10 +431,29 @@ func (l *Limits) legVerdict(side Side, isISB bool) string {
 		}
 		return ""
 	}
-	if leg.Entries >= 1 {
-		return "leg_budget_second_phl" // the PHL is only ever the FIRST entry
+	if leg.PHLFilled {
+		return "leg_budget_second_phl" // at most ONE PHL/PLH per leg (X15-4)
 	}
 	return ""
+}
+
+// dropPend removes every still-pending order with the given ArmID. A
+// CancelArm from the evaluator (level through-the-level / window-end, ISB
+// 4th-candle) must remove the simulated order so it never phantom-fills
+// later and spends the budget (X15-5). Already-filled orders live in `open`
+// and are NOT undone — a fill that happened is real.
+func (l *Limits) dropPend(armID string) {
+	if armID == "" {
+		return
+	}
+	keep := l.pend[:0]
+	for _, p := range l.pend {
+		if p.armID == armID {
+			continue
+		}
+		keep = append(keep, p)
+	}
+	l.pend = keep
 }
 
 func (l *Limits) leg(side Side) *Leg {
