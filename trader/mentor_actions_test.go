@@ -192,8 +192,12 @@ func TestMentorEntryIsAlwaysStopLimit(t *testing.T) {
 	if sawMentorFrame(t, frames, ntwire.FrameSignal, 300*time.Millisecond) {
 		t.Fatal("the injector must NOT place directly — the armed executor places")
 	}
+	arm, ok := mentorLiveArmFor("isb-1")
+	if !ok || arm.RowID == 0 {
+		t.Fatalf("the ArmID registry must resolve isb-1 -> a real row, got %+v ok=%v", arm, ok)
+	}
 	var row store.ArmedOrderDB
-	if err := ledger.DB().Where("scenario = ?", "isb-1").First(&row).Error; err != nil {
+	if err := ledger.DB().First(&row, arm.RowID).Error; err != nil {
 		t.Fatalf("the mentor arm row must exist: %v", err)
 	}
 	if row.Kind != "stop_entry" || row.ExpiryMs != in.ExpiryMs || row.State != store.StateArmed {
@@ -202,9 +206,10 @@ func TestMentorEntryIsAlwaysStopLimit(t *testing.T) {
 	if !isMentorArmOrigin(row) {
 		t.Fatalf("mentor injector row origin=%q, want %q", row.Origin, store.ArmOriginMentor)
 	}
-	arm, ok := mentorLiveArmFor("isb-1")
-	if !ok || arm.RowID != row.ID {
-		t.Fatalf("the ArmID registry must resolve isb-1 -> row %d, got %+v ok=%v", row.ID, arm, ok)
+	// N1 (DS-104): the ledger scenario is the ArmID prefixed with the
+	// per-construction epoch — the registry key is the UNPREFIXED armID.
+	if !strings.HasPrefix(row.Scenario, "isb-1-") {
+		t.Fatalf("N1: the ledger scenario must be epoch-prefixed, got %q", row.Scenario)
 	}
 	armed := 0
 	for k, v := range MentorCountSnapshot() {
@@ -352,7 +357,7 @@ func TestMentorEntryRefusesBelowC2(t *testing.T) {
 		t.Fatal("an AddOn below c2 must never receive a mentor entry frame")
 	}
 	var row store.ArmedOrderDB
-	if err := ledger.DB().Where("scenario = ?", "isb-c1").First(&row).Error; err != nil {
+	if err := ledger.DB().Where("scenario LIKE ?", "isb-c1-%").First(&row).Error; err != nil {
 		t.Fatal(err)
 	}
 	if row.State != store.StateArmed {
@@ -478,7 +483,7 @@ func TestMentorIntentYieldsExactlyOneArmedRow(t *testing.T) {
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-one", Setup: "ISB", Side: mentor.SideLong,
 		Price: 29600, Stop: 29595, Target: 29610, StopPts: 5, TargetPts: 10, ExpiryMs: expiry}, mentorTierInputs{}, 1000, 1100)
 	var rows []store.ArmedOrderDB
-	if err := ledger.DB().Where("scenario = ?", "isb-one").Find(&rows).Error; err != nil {
+	if err := ledger.DB().Where("scenario LIKE ?", "isb-one-%").Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
 	if len(rows) != 1 {
@@ -501,7 +506,7 @@ func TestMentorChainIntentToWireToExpiryCancel(t *testing.T) {
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-chain", Setup: "ISB", Side: mentor.SideLong,
 		Price: 29600, Stop: 29595, Target: 29610, StopPts: 5, TargetPts: 10, ExpiryMs: t0.UnixMilli() + 60_000}, mentorTierInputs{}, 1000, 1100)
 	var row store.ArmedOrderDB
-	if err := ledger.DB().Where("scenario = ?", "isb-chain").First(&row).Error; err != nil {
+	if err := ledger.DB().Where("scenario LIKE ?", "isb-chain-%").First(&row).Error; err != nil {
 		t.Fatal(err)
 	}
 	srv := at.armedTrader().GetServer()

@@ -62,11 +62,8 @@ func (at *AutoTrader) mentorTick(ctx *kernel.Context) {
 	if len(bars) == 0 {
 		return
 	}
-	// Same once-per-bar watermark as the event pass: Tick is not idempotent
-	// per bar (a repeat tick re-emits intents and double-counts refusals).
-	if bars[len(bars)-1].OpenTime <= at.mentorLastTickOpen {
-		return
-	}
+	// N11: the once-per-bar watermark is enforced inside mentorEvalOnce under
+	// the evaluator mutex (the scan and the event loop can race here).
 	at.mentorEvalOnce(bars)
 }
 
@@ -129,11 +126,9 @@ func (at *AutoTrader) mentorEventPassAt(now time.Time) bool {
 	if len(bars) == 0 {
 		return false
 	}
-	if bars[len(bars)-1].OpenTime <= at.mentorLastTickOpen {
-		return false // already evaluated this bar (the scan or an earlier pass)
-	}
-	at.mentorEvalOnce(bars)
-	return true
+	// N11: the once-per-bar watermark is enforced inside mentorEvalOnce under
+	// the evaluator mutex (the scan and the event loop can race here).
+	return at.mentorEvalOnce(bars)
 }
 
 // mentorEvaluatorConfig applies strategy overrides to the evaluator. B22's
@@ -155,9 +150,18 @@ func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 }
 
 // mentorEvalOnce runs one evaluator tick over the bars and processes every
-// intent (size → latency → no-chase → place-or-hold).
-func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
+// intent (size → latency → no-chase → place-or-hold). Returns whether it ran —
+// false when another goroutine (scan vs event) already ticked this bar.
+// N11 (DS-104): the scan loop and the event loop both call this; the mutex
+// serializes the evaluator (its Tick mutates shared maps) AND makes the
+// once-per-bar watermark atomic.
+func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	last := bars[len(bars)-1]
+	at.mentorEvalMu.Lock()
+	defer at.mentorEvalMu.Unlock()
+	if last.OpenTime <= at.mentorLastTickOpen {
+		return false // already ticked (the other goroutine won the race)
+	}
 	at.mentorLastTickOpen = last.OpenTime
 
 	if at.mentorEval == nil {
@@ -198,6 +202,7 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
 		// every arm action; an unknown action is refused, never silent.
 		at.mentorDispatchIntent(in, extra, last.CloseTime, emitMs)
 	}
+	return true
 }
 
 // mentorPlaceIntent runs the placement gates (sources wired, stop rules,
@@ -844,6 +849,9 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	if at == nil || at.store == nil {
 		return
 	}
+	// N1 (DS-104): each construction (boot or reload) gets its own arm epoch, so
+	// a rebuilt evaluator's "isb-1" never collides with a prior terminal row.
+	bumpMentorArmEpoch()
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}
