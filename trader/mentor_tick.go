@@ -36,6 +36,10 @@ func mentorPlaceEnv() bool {
 	return false
 }
 
+// MentorPlacementEnabled reports the MENTOR_PLACE placement gate (read-only; the
+// Studio status line reads it — a name and a flag, never a secret).
+func MentorPlacementEnabled() bool { return mentorPlaceEnv() }
+
 // mentorBars1mDepth is the 1m history depth the mentor fetch asks for (P0 A6
 // routing, CTO 1791058624275): the §7 Globex run window (17:00→08:30 CT) is
 // 930 bars and the full RTH day to 15:00 CT is 1320 — 1500 covers both with
@@ -533,7 +537,8 @@ func (at *AutoTrader) mentorNewsGate() (bool, string) {
 
 // (b) TRADING WINDOW [D1.2 p1 @23:52–24:59]: a fixed window — when it ends, no
 // new entries. Default 08:30–09:30 CT, 60 minutes; knobs for the start and the
-// length (30/60/90/120; 0 disables the window). The SWING setup is exempt
+// length (30/60/90/120; -1 disables the window — a stored 0 is "unset", so it
+// resolves to the default 60). The SWING setup is exempt
 // (D5.2: the swing may be at any hour).
 const (
 	mentorWindowDefaultStart   = "08:30"
@@ -556,9 +561,14 @@ func (at *AutoTrader) mentorWindowKnobs() (start string, minutes int) {
 }
 
 // mentorWindowActive is the pure window check: now inside [start, start+len)
-// CT. A bad start string refuses fail-closed (why carries the refusal).
+// CT, where start is the most recent occurrence of the start time at or before
+// now (today's, or yesterday's when today's is still ahead) — so a window that
+// crosses midnight (23:00 + 120) is active at 00:30. minutes <= 0 disables the
+// window (entries at any hour); the knob stores -1 for that, because a stored 0
+// means "unset → default 60" (mentorWindowKnobs). A bad start string refuses
+// fail-closed (why carries the refusal).
 func mentorWindowActive(start string, minutes int, now time.Time) (active bool, why string) {
-	if minutes == 0 {
+	if minutes <= 0 {
 		return true, "" // the window is disabled
 	}
 	hour, minute, ok := parseMentorWindowStart(start)
@@ -568,6 +578,9 @@ func mentorWindowActive(start string, minutes int, now time.Time) (active bool, 
 	loc := kernel.CTLocation()
 	ct := now.In(loc)
 	open := time.Date(ct.Year(), ct.Month(), ct.Day(), hour, minute, 0, 0, loc)
+	if open.After(now) {
+		open = time.Date(ct.Year(), ct.Month(), ct.Day()-1, hour, minute, 0, 0, loc)
+	}
 	end := open.Add(time.Duration(minutes) * time.Minute)
 	if !now.Before(open) && now.Before(end) {
 		return true, ""
