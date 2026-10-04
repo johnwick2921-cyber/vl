@@ -156,8 +156,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Entries become stop-LIMIT',
-          body: 'The ISB order type is stop-limit with the limit at the stop price ("đừng đặt buy stop market nữa…"). The live wire stays stop-market until the cancel-confirm frame lands — mentor_mode must not be enabled before then.',
-          cite: 'D1.4 p1 @ 24:41–24:55 · coming with Mentor mode',
+          body: 'Every mentor entry goes out as a stop-LIMIT with the limit at the stop price ("đừng đặt buy stop market nữa…") — always, no setting turns it off. Each order carries an expiry (the close of the next 1m candle for a level touch or an ISB; the close of the current 4h candle for the swing) and the armed pass cancels it unfilled when it lapses. A mentor entry without an expiry is refused, never sent as a stop-market. Other (non-mentor) orders keep their own order types.',
+          cite: 'D1.4 p1 @ 24:41–24:55 · trader/armed_executor.go placeOneStopEntry',
         },
       ],
     },
@@ -213,7 +213,7 @@ export const mentor: GuideSection = {
         [
           'Box edge',
           'FTGH/FTGL boxes, 1m regular candles, paired by role with no tolerance',
-          'A box edge is used again and again; a box dies only on escape (a 1m BODY closes outside) or at day end',
+          'A box edge is used again and again; an escape (a 1m BODY closes outside) does NOT kill the box — it stays and every later return trades [B4]; boxes die at day end only',
         ],
       ],
     },
@@ -264,12 +264,12 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Every box return trades',
-          body: 'Each new visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). The first return is the 3rd touch; later returns trade too. Boxes die at end of day only.',
+          body: 'Each new visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). EVERY return trades, the first one included — there is no touch count to wait for. An escape does not delete the box; boxes die at end of day only.',
           cite: 'R1 · D3.2 p2 @06:25',
         },
         {
           title: 'Intraday confluence (exit C, size 10)',
-          body: 'LONG = entry at an FTGL AND a key level (inside the box or within 2 pts of its edge) AND the 5m BUY trigger agrees; SHORT = FTGH + key level + 5m SELL trigger. Then: hold at least 1:2, the stop is never moved up (exit C), size 10; size 20 only when 4h AND 1h agree and room ≥ 30 pts.',
+          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. Then: hold at least 1:2, the stop is never moved up (exit C), size 10; size 20 only when 4h AND 1h agree and room ≥ 30 pts.',
           cite: 'R2 · D3.4 p3 @07:38',
         },
         {
@@ -425,7 +425,7 @@ export const mentor: GuideSection = {
           range: 'true / false',
           systemDefault: 'OFF',
           recommended:
-            'OFF — SIM only, and the wire is still stop-market until the cancel-confirm frame lands. When you do turn it ON, leave MENTOR_PLACE off first and watch the dry-run lines.',
+            'OFF — SIM only. Mentor entries are always stop-LIMIT. When you do turn it ON, leave MENTOR_PLACE off first and watch the dry-run lines.',
           whenToTouch:
             'Only after every item marked "coming with Mentor mode" has shipped.',
           perSession: 'No — per strategy.',
@@ -977,7 +977,7 @@ export const mentor: GuideSection = {
         {
           label: 'Box touch band',
           where: 'Strategy → Mentor mode → boxes',
-          what: 'A wick within this of a box edge counts as a touch (the third touch is the trade).',
+          what: 'A wick within this of a box edge counts as a touch (every return to the box is a trade, the first one included).',
           trader: '0.25 pts.',
           consumer: 'kernel/mentor/box.go BoxCfg.TouchBandPts',
           range: 'pts',
