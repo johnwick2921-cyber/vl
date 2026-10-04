@@ -124,6 +124,13 @@ type Intent struct {
 	// evaluator stamps it on EVERY intent; the injector's size table then
 	// holds 1-2 (spent_day tier) and the R9 15-pt stop cap applies.
 	SpentDay bool
+	// HTFAgree: the 4h AND 1h triggers BOTH stand and point this entry's side
+	// (D4.4 p1 @16:00 case 1: "4h trigger buy, 1h trigger buy" → trade that
+	// side). The evaluator stamps it on every ENTRY where intents leave Tick;
+	// the trader's size table needs it for the 20-contract tier ("size 20 only
+	// when 4h AND 1h agree and room ≥ 30 pts"). A silent 1h (case 2: follow the
+	// 4h) is NOT agreement.
+	HTFAgree bool
 }
 
 // Config is every knob. Enabled is mentor_mode and defaults to false (L4):

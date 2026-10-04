@@ -496,6 +496,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.refuse(r)
 		}
 		out = kept
+		stampHTFAgree(out, e.State.HTF)
 	}()
 	if !e.Cfg.Enabled || len(bars) < 2 {
 		return nil
