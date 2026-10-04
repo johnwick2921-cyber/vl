@@ -218,10 +218,8 @@ func (at *AutoTrader) mentorRiskControl() *store.RiskControlConfig {
 // ── KNOB ROUTING (CTO 1791033257041) — defaults as ruled ───────────────────
 //
 // The evaluator's G1/L1/E4/location knobs ride the strategy config like the
-// other mentor knobs. Each resolver is the single defaults site; the
-// evaluator config builder (mentorEvaluatorConfig) applies the two that exist
-// on feat/mentor-eval today, and the rest wire in when the evaluator fields
-// land (DS-107's limits, DS-103's location trigger knob).
+// other mentor knobs. Each resolver is the single defaults site, and
+// mentorEvaluatorConfig applies every one of them to the evaluator.
 
 // mentorLegBudgetEnabled — G1 leg budget: nil → ON (default).
 func mentorLegBudgetEnabled(rc *store.RiskControlConfig) bool {
