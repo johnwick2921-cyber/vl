@@ -185,6 +185,12 @@ func TestSwing4hISBWatchOpenUntilFlip(t *testing.T) {
 	if abs(in.Price-10185) > 0.01 {
 		t.Fatalf("ISB entry = %.2f, want 10185 (the ISB candle's high, tight R8)", in.Price)
 	}
+	// R43 (item 24, CTO merge pin): the ISB-after-close-through entry carries
+	// the swing first target max(1R, 5m EMA34); this short tape has no warm EMA,
+	// so it is exactly 1R beyond the entry.
+	if want := in.Price + (in.Price - in.Stop); abs(in.Target-want) > 0.01 {
+		t.Fatalf("ISB target = %.2f, want %.2f (1R: TARGET 1-1 TRƯỚC [D5.2 p2 @11:17])", in.Target, want)
+	}
 }
 
 // TestSwing4hRejectTargetIsOneRFloor — item 24 (R43): the swing first target is
