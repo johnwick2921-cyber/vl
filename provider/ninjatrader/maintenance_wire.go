@@ -47,6 +47,12 @@ type ConnectionRecord struct {
 	// this stamp, never inferred from a stale ack). Zero = never connected
 	// or still connected.
 	DisconnectedMonoMs int64 `json:"disconnected_mono_ms,omitempty"`
+	// Listening / ListenMonoMs are SERVER facts (not per-connection), filled in
+	// by ConnectionRecord(): the listener is up, and since when on the
+	// monotonic clock. They let a bot that booted with NT8 closed measure
+	// "no AddOn connection since the server began listening" (LinkDownSince).
+	Listening    bool  `json:"listening,omitempty"`
+	ListenMonoMs int64 `json:"listen_mono_ms,omitempty"`
 	// What this connection was last TOLD (so a release goes only to a
 	// connection that was held, and a resend keeps the census fresh).
 	SentHeld   bool   `json:"sent_held"`
@@ -63,6 +69,9 @@ type maintenanceWire struct {
 	seq          uint64
 	conn         net.Conn // the connection rec describes
 	rec          ConnectionRecord
+	// listening/listenMono: the listener came up (set once, in Start).
+	listening  bool
+	listenMono int64
 
 	sinkMu sync.Mutex
 	sinks  map[string]func(DroppedEntry) // owner → drop sink
@@ -86,6 +95,7 @@ func (s *TCPServer) ConnectionRecord() (ConnectionRecord, bool) {
 	s.maint.mu.Lock()
 	defer s.maint.mu.Unlock()
 	rec := s.maint.rec
+	rec.Listening, rec.ListenMonoMs = s.maint.listening, s.maint.listenMono
 	if rec.Hello != nil {
 		h := *rec.Hello
 		rec.Hello = &h
@@ -229,6 +239,34 @@ func (r ConnectionRecord) DisconnectedAt() (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return wireMonoBase.Add(time.Duration(r.DisconnectedMonoMs) * time.Millisecond), true
+}
+
+// LinkDownSince is when the AddOn link went down, for the nt8_absent verdict
+// (UPDATER-NT8-CLOSED: measured, never inferred). connected is the live-link
+// flag ConnectionRecord returned beside this record. ok=false (fail closed)
+// when the link is up or the stamp cannot be measured:
+//   - a connection that closed: its disconnect stamp (a reconnect replaces the
+//     record, so the stamp never outlives the link it measured);
+//   - NEVER connected since the server began listening (AcceptSeq 0): the
+//     moment the listener came up. A bot that booted with NT8 closed has no
+//     disconnect stamp to measure from, but "no AddOn connection since boot"
+//     is itself a measured fact — without it the closed-NT8 install is
+//     unreachable after any bot/WSL restart with NT8 off (job de4cf900,
+//     2026-10-04 07:27: preflight refused "api_positions … NT8 account
+//     positions unknown" and the owner had to open NT8);
+//   - a record that WAS accepted but carries no stamp while not connected is
+//     not a shape closeConn writes: still unmeasured, still refused.
+func (r ConnectionRecord) LinkDownSince(connected bool) (time.Time, bool) {
+	if connected {
+		return time.Time{}, false
+	}
+	if t, ok := r.DisconnectedAt(); ok {
+		return t, true
+	}
+	if r.AcceptSeq == 0 && r.Listening {
+		return wireMonoBase.Add(time.Duration(r.ListenMonoMs) * time.Millisecond), true
+	}
+	return time.Time{}, false
 }
 
 // MaintenanceAckMaxAge is the oldest ack the installation gate accepts: three

@@ -78,8 +78,23 @@ minutes**, single use.
    either way — authorize a new one.
 6. **Watch.** The job runs its states until it parks at `nt8_updated`; the
    maintenance hold covers the bot meanwhile.
-7. **F5 in NT8** when the job says `nt8_updated`.
-8. **Resume (attended):** `vl-updater resume <job>`.
+7. **Update the AddOn and F5 in NT8** when the job says `nt8_updated`. Copy the
+   AddOn source from the RELEASE folder the job materialized — never from
+   `~/vl/ninjascript/`: the activation swaps ONLY `vl-bin`, `web/dist` and
+   `deploy/RELEASE`, so `~/vl/ninjascript/` still holds the previous build and
+   copying it leaves the AddOn on the old build id (`match=NO` forever; the
+   2026-10-04 checklist had this wrong). At the park the install has NOT been
+   activated yet, so `deploy/RELEASE` still names the OLD release — take the
+   folder from the job file instead:
+   `REL=$(jq -r .release.dir ~/vl/data/updater/jobs/<job_id>.json)`,
+   `grep -n 'VL_BUILD_ID  *=' "$REL/ninjascript/VLTraderTCPClient.cs"` (must print the
+   release's build id), then
+   `cp "$REL/ninjascript/VLTraderTCPClient.cs" "/mnt/c/Users/<you>/Documents/NinjaTrader 8/bin/Custom/AddOns/"`,
+   F5 in NT8, full NT8 restart. (After a completed NT8-closed install,
+   `$(cat ~/vl/deploy/RELEASE)` names the new release and gives the same folder.)
+8. **Resume (attended):** `vl-updater resume <job>` — a TERMINAL only: it
+   refuses when stdin is not a terminal (a pipe or a script cannot resume),
+   prints the job's state and blocker, and makes you type the job id back.
 9. **The RELEASE marker commit.** After the cutover, the deploy lane writes the
    post-update `deploy/RELEASE` marker commit per the boot procedure — that is
    a deploy-lane step, never yours from the Updates page.
@@ -98,6 +113,19 @@ PROCEEDS instead of waiting for an AddOn that cannot answer:
   and every bound trading account is SIM-tradeable. The receipt records the
   path and each leg's evidence; the job file says `nt8_absent (link down
   since <ts>)`.
+- **When the closed-NT8 path is reachable** (the link-down start is MEASURED,
+  never assumed — `ConnectionRecord.LinkDownSince`): (1) NT8 was connected to
+  THIS bot process and then closed — the start is the disconnect; or (2) the bot
+  booted with NT8 already closed and no AddOn has connected since its listener
+  came up (after a bot or WSL restart with NT8 off) — the start is the moment the
+  bot began listening, so the path is eligible after 60 s of bot uptime. Before
+  this was written (2) was unreachable: the never-connected bot had no
+  disconnect stamp, preflight fell to the connected-world legs and refused
+  "trader_cutover … api_positions: NT8 account positions unknown" (job de4cf900,
+  2026-10-04 07:27) until NT8 was opened. If the link has been down less than
+  60 s the job is refused at preflight with that blocker: wait, then re-run.
+  With NT8 OPEN instead, take the normal path: flat → the job parks at
+  `nt8_updated` → copy + F5 + restart (step 7) → `vl-updater resume` (step 8).
 - If NT8 reconnects DURING the job, the normal ack/census legs apply again
   from that moment — the absent verdict is revoked, never grandfathered.
 - The NT8 step with NT8 absent: **no `.cs` change → nt8_skipped** (as
