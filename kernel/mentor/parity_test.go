@@ -297,10 +297,9 @@ func fnumOrEmpty(v float64) string {
 }
 
 // emitGoState builds the state row from the same bounded bar window Tick saw.
-func emitGoState(e *Evaluator, bars []market.Kline, cfg Config) goStateRow {
+func emitGoState(e *Evaluator, bars []market.Kline, cfg Config, now int64) goStateRow {
 	cur := bars[len(bars)-1]
 	prev := bars[len(bars)-2]
-	now := cur.OpenTime // the production Tick clock (mentorEvalOnce)
 	row := goStateRow{
 		minCT: minCTFromBar(cur),
 		o:     fnum(cur.Open), h: fnum(cur.High), l: fnum(cur.Low), c: fnum(cur.Close),
@@ -597,7 +596,7 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 	var rowOrder []string
 	for i := 1; i <= len(bars); i++ {
 		cur := bars[i-1]
-		now := cur.OpenTime
+		now := cur.CloseTime + 1
 		start := i - productionTickBars
 		if start < 0 {
 			start = 0
@@ -640,7 +639,7 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 		// RTH minutes only, like the replay's 390-row state files.
 		m := ctMinuteOfDay(cur.OpenTime)
 		if m >= 8*60+30 && m < 15*60 {
-			row := emitGoState(e, tickBars, cfg)
+			row := emitGoState(e, tickBars, cfg, now)
 			row.armsPlac = strconv.Itoa(placedThisMinute)
 			row.armsCanc = strconv.Itoa(cancelledThisMinute)
 			if _, seen := goRows[row.minCT]; !seen {
