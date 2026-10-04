@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +24,9 @@ import (
 // Mutant: drop the epoch prefix (Scenario: armID) → the new arm is refused
 // (row id 0) and this turns RED.
 func TestMentorArmIDUniqueAcrossRestarts(t *testing.T) {
+	mentorLiveMu.Lock()
+	mentorLiveArms = map[string]mentorLiveArm{}
+	mentorLiveMu.Unlock()
 	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
 	ledger := st.ArmedOrders()
 
@@ -55,6 +59,53 @@ func TestMentorArmIDUniqueAcrossRestarts(t *testing.T) {
 	}
 	if row.State != store.StateArmed || row.Scenario == old.Scenario {
 		t.Fatalf("new arm state=%q scenario=%q, want armed on a distinct scenario", row.State, row.Scenario)
+	}
+}
+
+// TestMentorArmRowZeroRefuses (N1 fail-safe): when UpsertArm authors no row
+// (a same-scenario terminal-row collision leaves id 0), the arm is REFUSED +
+// counted + logged — never registered as a phantom row 0. Mutant: disable the
+// row-0 check (`if false && row.ID == 0`) → this goes RED.
+func TestMentorArmRowZeroRefuses(t *testing.T) {
+	mentorLiveMu.Lock()
+	mentorLiveArms = map[string]mentorLiveArm{}
+	mentorLiveMu.Unlock()
+	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
+	ledger := st.ArmedOrders()
+	ResetMentorCountersForTest()
+
+	// Pin the epoch and seed a TERMINAL no-signal row for THIS construction's
+	// scenario, so UpsertArm finds it and no-ops (returns nil, id 0).
+	bumpMentorArmEpoch()
+	scenario := fmt.Sprintf("isb-1-%d", mentorArmEpoch.Load())
+	old := store.ArmedOrderDB{
+		TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR",
+		Scenario: scenario, LegIndex: 0, Side: "LONG",
+		State: store.StateCancelled, EntryPx: 100, StopPx: 99, TargetPx: 102,
+		Kind: "stop_entry",
+	}
+	if err := ledger.DB().Create(&old).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// NO bump: the new arm reuses the same epoch → same scenario → collision.
+	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-1", Setup: "ISB",
+		Side: mentor.SideLong, Price: 200, Stop: 199, Target: 204, StopPts: 1, TargetPts: 4,
+		ExpiryMs: time.Now().UnixMilli() + 60_000}
+	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 5, Tier: "base", Why: "test"}, 1000, 1100)
+
+	if _, ok := mentorLiveArmFor("isb-1"); ok {
+		t.Fatal("a row-0 arm must NOT be registered")
+	}
+	if c := MentorCountSnapshot()["placement_refused_arm_id_zero"]; c != 1 {
+		t.Fatalf("placement_refused_arm_id_zero = %d, want 1", c)
+	}
+	var n int64
+	if err := ledger.DB().Model(&store.ArmedOrderDB{}).Where("scenario = ? AND state = ?", scenario, store.StateArmed).Count(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("a collision must not mint a fresh armed row, got %d", n)
 	}
 }
 
