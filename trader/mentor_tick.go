@@ -150,6 +150,15 @@ func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 	return cfg
 }
 
+// mentorPlaceNow (B3 item 4) runs the mentor-only armed pass immediately after
+// the evaluator authors rows, instead of waiting for the 2-minute scan. It is
+// the same serialized pass the scan would run (armedPassMu) — the pass is now
+// mentor-aware and needs no day plan.
+func (at *AutoTrader) mentorPlaceNow(bars []market.Kline) {
+	now := mentorClockNow()
+	at.maybeManageArmedOrdersAt(kernel.StructureSnapshot(bars, now.UnixMilli()), now)
+}
+
 // mentorEvalOnce runs one evaluator tick over the bars and processes every
 // intent (size → latency → no-chase → place-or-hold).
 func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
@@ -193,6 +202,11 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
 		// ALWAYS stop-limit) handles PlaceStopEntry/PlaceStopLimitEntry and
 		// every arm action; an unknown action is refused, never silent.
 		at.mentorDispatchIntent(in, extra, last.CloseTime, emitMs)
+	}
+	// B3 (release #3b) item 4: place at the authoring event, not on the 2-min
+	// scan — a 1-candle mentor arm must not expire before the scan runs.
+	if mentorPlaceEnv() {
+		at.mentorPlaceNow(bars)
 	}
 }
 

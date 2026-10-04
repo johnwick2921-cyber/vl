@@ -229,8 +229,7 @@ func TestNoWireNeverRetiresARowThatReachedTheBroker(t *testing.T) {
 	at, _ := flatFixture(t, now, true, store.StateWorking, "sig-nowire", nil)
 
 	// The wire is gone: no cancel function, no ack stream.
-	n, unacked := at.cancelArmedOrdersSyncWith("session close — EOD flat", time.Millisecond, nil, nil)
-
+	n, unacked := at.cancelArmedOrdersSyncWith("session close — EOD flat", time.Millisecond, nil, nil, nil)
 	rows, err := at.store.ArmedOrders().ListForPlan("2026-08-18:NY:trader-1")
 	if err != nil {
 		t.Fatal(err)

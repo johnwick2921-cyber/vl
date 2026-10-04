@@ -210,9 +210,20 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 	defer at.armedPassMu.Unlock()
 	defer armedPassEntered(at.id)()
 	scope := opts.scope
-	if !at.dayPlanEnabled() || at.store == nil || at.exchange != "ninjatrader" {
-		at.dayPlanOffPassHead(now) // W5 R8 settle, then D21
+	// B3 (release #3b): mentor placement does NOT depend on the AI day plan.
+	// With mentor mode ON the pass falls through to the mentor-only placement
+	// path even when the day plan master is off or no AI plan is active.
+	mentor := at.mentorEnabled()
+	if at.store == nil || at.exchange != "ninjatrader" {
 		return
+	}
+	if !at.dayPlanEnabled() {
+		if !mentor {
+			at.dayPlanOffPassHead(now) // W5 R8 settle, then D21
+			return
+		}
+		// mentor: fall through — mentor rows are governed by mentor mode + their
+		// own expiry + the evaluator's CancelArm/ExtendArm, never the day plan.
 	}
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
@@ -272,18 +283,39 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 		// S-list closer: synchronous (ack-waited) cancel on session end and
 		// dormancy too — the resting limit must be dead BEFORE any flatten or
 		// the next cycle, not up to 2m later.
-		if n, unacked := at.cancelArmedOrdersSync(reason); n > 0 {
+		// B3 (release #3b): this cancel is NON-mentor only. Mentor rows are
+		// governed by mentor mode + their own expiry + the evaluator's
+		// CancelArm/ExtendArm — never the AI plan's lifecycle.
+		if n, unacked := at.cancelArmedOrdersSyncNonMentor(reason); n > 0 {
 			at.logWarnf("🔒 armed cancel: %s — %d order(s) disarmed", reason, n)
 			if unacked > 0 {
 				at.logWarnf("⚠️ armed cancel: %d unacked after retry (ledger cancelled; wire reconciles next cycle)", unacked)
 			}
 		}
-		// W1 EPISODE CONTRACT — E6: every episode closes, and says why. This is
-		// the session-close path: the plan is gone, dormant or the session has
-		// ended, so no touch recorded under it can still be open. Idempotent by
-		// predicate (it selects on a NULL outcome), so running it on every cycle
-		// that reaches here closes each row exactly once.
-		at.closeEpisodesForSessionClose(reason)
+		// EOD flat is a NON-AI safety and is KEPT for INTRADAY mentor arms; a
+		// SWING4H arm is exempt (the course holds the swing by the 4h, "set an
+		// alert and go to bed" [D5.2]). Gated on the day plan, matching the
+		// enforceEODFlatAt position flatten.
+		if mentor && at.dayPlanEnabled() && reason == "session ended (EOD flat)" {
+			at.cancelIntradayMentorArms()
+		}
+		if !mentor {
+			// W1 EPISODE CONTRACT — E6: every episode closes, and says why. This is
+			// the session-close path: the plan is gone, dormant or the session has
+			// ended, so no touch recorded under it can still be open. Idempotent by
+			// predicate (it selects on a NULL outcome), so running it on every cycle
+			// that reaches here closes each row exactly once.
+			at.closeEpisodesForSessionClose(reason)
+			return
+		}
+		// mentor: fall through to the mentor-only placement path below.
+	}
+
+	// B3 (release #3b) — MENTOR-ONLY PLACEMENT PATH. Mentor rows are governed by
+	// mentor mode + their own expiry + the evaluator's CancelArm/ExtendArm; no
+	// plan-doc authoring, conditions, one-setup or supersede runs for them.
+	if mentor {
+		at.mentorOnlyPlacementPass(now, scope)
 		return
 	}
 
@@ -2638,7 +2670,64 @@ func (at *AutoTrader) armGateVerdictFor(sc kernel.PlanScenario, leg kernel.PlanA
 // pace (W1b FOLD-12, window_sweep_pace.go) is the window sweep's: a
 // cancel_pending row whose cancel was requested < 30 s ago is skipped — its
 // intent is already on record. Absent = every row, every call (unchanged).
-func (at *AutoTrader) cancelArmedOrders(reason string, pace ...*armedCancelPace) (retired, unsettled int) {
+
+// armCancelSkip selects rows a cancel must NOT reach (nil = every row). B3
+// (release #3b): the AI plan-lifecycle and session-window cancels skip the
+// mentor injector's rows — mentor rows are governed by mentor mode + their own
+// expiry + the evaluator's CancelArm/ExtendArm, never the AI plan's lifecycle.
+type armCancelSkip func(r store.ArmedOrderDB) bool
+
+// skipMentorArms is the B3 origin filter: it excludes ArmOriginMentor rows.
+func skipMentorArms(r store.ArmedOrderDB) bool { return isMentorArmOrigin(r) }
+
+// skipNonIntradayMentor keeps only INTRADAY mentor rows (mentor origin, not
+// SWING4H): it skips every non-mentor row and every SWING4H mentor arm.
+func skipNonIntradayMentor(r store.ArmedOrderDB) bool {
+	if !isMentorArmOrigin(r) {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(r.Condition), "SWING4H")
+}
+
+// cancelIntradayMentorArms (B3 Q2) cancels INTRADAY mentor arms at the session
+// close — the non-AI EOD-flat safety stays for intraday setups. A SWING4H arm
+// is EXEMPT: the course holds the swing by the 4h and its own expiry owns it.
+func (at *AutoTrader) cancelIntradayMentorArms() {
+	n, unacked := at.cancelArmedOrdersSyncFiltered("session ended (EOD flat) — intraday mentor arm", skipNonIntradayMentor)
+	if n > 0 {
+		at.logWarnf("🔒 EOD-FLAT (mentor intraday): %d armed order(s) cancelled — SWING4H arms are exempt (held by the 4h)", n)
+	}
+	if unacked > 0 {
+		at.logWarnf("⚠️ EOD-FLAT (mentor intraday): %d unacked after retry — held cancel_pending, the settlement pass owns them", unacked)
+	}
+}
+
+// mentorOnlyPlacementPass is the B3 (release #3b) mentor-only placement path.
+// It runs the SAME placement engine as the planner pass — admission chain,
+// maintenance hold, one-contract guard, the account/SIM gate, the slot guard,
+// per-order expiry and the stop-limit origin routing — but for the mentor
+// injector's rows only: no plan-doc authoring, conditions, one-setup or
+// supersede. The consecutive-loss breaker stays a mentor safety; the lunch /
+// first-N band and the force-flat windows do NOT refuse mentor rows (Q1).
+func (at *AutoTrader) mentorOnlyPlacementPass(now time.Time, scope *armedPassScope) {
+	var bars []market.Kline
+	if market.FuturesBarsProvider != nil {
+		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
+	}
+	// Q1 — the consecutive-loss breaker stays; the lunch / first-N band is the
+	// AI's window rule and the mentor has its own (mentorWindowGate).
+	if risk := at.sessionRiskGateAt(now); risk.N > 0 && risk.Losses >= risk.N {
+		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_session_risk", "consecutive_loss") {
+			at.logWarnf("🛑 mentor placement REFUSED (consecutive loss): %d consecutive losing trades this session-day (limit %d) — the breaker stays a mentor safety",
+				risk.Losses, risk.N)
+		}
+		scope.note(scope.scenarioOrEmpty(), "refused: consecutive_loss: "+risk.Reason)
+		return
+	}
+	at.runArmedPlacementAt(bars, 0, now, nil, scope)
+}
+
+func (at *AutoTrader) cancelArmedOrders(reason string, skip armCancelSkip, pace ...*armedCancelPace) (retired, unsettled int) {
 	rows, err := at.store.ArmedOrders().ListNonTerminal(at.id)
 	if err != nil {
 		return 0, 0
@@ -2648,6 +2737,9 @@ func (at *AutoTrader) cancelArmedOrders(reason string, pace ...*armedCancelPace)
 	now := p.nowMs()
 	for _, r := range rows {
 		if r.TraderID != at.id {
+			continue
+		}
+		if skip != nil && skip(r) {
 			continue
 		}
 		if r.SignalID == "" {
@@ -2737,6 +2829,18 @@ func (at *AutoTrader) armedUpdateStream(nt *ntTrader.TCPTrader) <-chan ntwire.Or
 // window_sweep_pace.go) and is honoured on every branch below; the EOD flat,
 // session end, news and T1 enforce callers pass none and are unchanged.
 func (at *AutoTrader) cancelArmedOrdersSync(reason string, pace ...*armedCancelPace) (n, unacked int) {
+	return at.cancelArmedOrdersSyncFiltered(reason, nil, pace...)
+}
+
+// cancelArmedOrdersSyncNonMentor (B3) cancels every non-terminal NON-mentor
+// armed row with ack-waited wire cancels. Mentor rows are excluded — they are
+// governed by mentor mode + their own expiry + the evaluator's CancelArm/
+// ExtendArm, never the AI plan's lifecycle or session bands.
+func (at *AutoTrader) cancelArmedOrdersSyncNonMentor(reason string, pace ...*armedCancelPace) (n, unacked int) {
+	return at.cancelArmedOrdersSyncFiltered(reason, skipMentorArms, pace...)
+}
+
+func (at *AutoTrader) cancelArmedOrdersSyncFiltered(reason string, skip armCancelSkip, pace ...*armedCancelPace) (n, unacked int) {
 	if at.store == nil {
 		return 0, 0
 	}
@@ -2745,17 +2849,17 @@ func (at *AutoTrader) cancelArmedOrdersSync(reason string, pace ...*armedCancelP
 		if timeout <= 0 {
 			timeout = armedCancelAckTimeout()
 		}
-		return at.cancelArmedOrdersSyncWith(reason, timeout, s.Cancel, s.Stream, pace...)
+		return at.cancelArmedOrdersSyncWith(reason, timeout, s.Cancel, s.Stream, skip, pace...)
 	}
 	nt := at.armedTrader()
 	if nt == nil {
 		// The unsettled rows are UNACKED, not cancelled — this used to return
 		// them in `n`, so the operator-facing flat line reported rows nothing
 		// had confirmed as "armed order(s) cancelled".
-		return at.cancelArmedOrders(reason, pace...)
+		return at.cancelArmedOrders(reason, skip, pace...)
 	}
 	return at.cancelArmedOrdersSyncWith(reason, armedCancelAckTimeout(), nt.CancelOrder,
-		func() <-chan ntwire.OrderUpdatePayload { return at.armedUpdateStream(nt) }, pace...)
+		func() <-chan ntwire.OrderUpdatePayload { return at.armedUpdateStream(nt) }, skip, pace...)
 }
 
 // cancelArmedOrdersSyncWith is the pure body: per-row cancel + ack drain. Every
@@ -2763,7 +2867,7 @@ func (at *AutoTrader) cancelArmedOrdersSync(reason string, pace ...*armedCancelP
 // consumer uses, so no ledger state is lost and no second subscription is ever
 // made (a second subscribe would close the consumer's channel). pace: see
 // cancelArmedOrdersSync.
-func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Duration, cancelFn func(string) error, src func() <-chan ntwire.OrderUpdatePayload, pace ...*armedCancelPace) (n, unacked int) {
+func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Duration, cancelFn func(string) error, src func() <-chan ntwire.OrderUpdatePayload, skip armCancelSkip, pace ...*armedCancelPace) (n, unacked int) {
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
 		return 0, 0
@@ -2780,7 +2884,7 @@ func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Dura
 	filled := 0
 	var mine []store.ArmedOrderDB
 	for _, r := range rows {
-		if r.TraderID == at.id {
+		if r.TraderID == at.id && (skip == nil || !skip(r)) {
 			mine = append(mine, r)
 		}
 	}
