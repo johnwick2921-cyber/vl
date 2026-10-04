@@ -97,8 +97,8 @@ func mentorWireSeams(t *testing.T, at *AutoTrader, ledger *store.ArmedOrderStore
 	mentorLegProtectedSource = func(leg string) bool { return false }
 	mentorLatestPriceSource = func() (float64, bool) { return 29590, true } // below the long trigger: the no-chase rule passes
 	mentorConfluenceForIntent = func(in mentor.Intent) bool { return in.Confluence }
-	mentorDayNetSource = func() float64 { return 0 }
-	mentorClosedProfitSource = func() bool { return false }
+	mentorDayNetSource = func() (float64, bool) { return 0, true }
+	mentorClosedProfitSource = func() (bool, bool) { return false, true }
 	mentorSetArmExpiryWire = func(armID int64, expiryMs int64) error {
 		return ledger.SetArmExpiry(armID, expiryMs)
 	}

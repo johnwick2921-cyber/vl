@@ -629,11 +629,14 @@ func mentorDoneAfterWin(dayNetPnl float64, closedInProfit bool) bool {
 	return closedInProfit && dayNetPnl > 0
 }
 
-// mentorDayNetSource / mentorClosedProfitSource are the session seams for (a)
-// (nil → no data → the gate stays open; the live driver fills them at P1).
+// mentorDayNetSource / mentorClosedProfitSource are the session seams for (a).
+// nil → unwired (fail closed). A wired seam that returns ok=false means the
+// day's data is UNRESOLVED (a NULL pnl_corrected closed row or a read error) —
+// an unknown is not "no win", so the gate fails CLOSED. The production wiring
+// (mentorWireProductionSeams) binds both to the strict-corrected day read.
 var (
-	mentorDayNetSource       func() float64
-	mentorClosedProfitSource func() bool
+	mentorDayNetSource       func() (float64, bool)
+	mentorClosedProfitSource func() (bool, bool)
 )
 
 // mentorDoneAfterWinGate is the call-site half of (a); the knob is default ON
@@ -650,8 +653,13 @@ func (at *AutoTrader) mentorDoneAfterWinGate() (bool, string) {
 		at.logWarnf("🧑‍🏫 mentor done-after-win source missing (day net / closed profit) — refusing the entry (fail-closed)")
 		return true, "done-after-win: day P&L or closed-trade source not wired — an unknown is not 'no win'; refusing (fail-closed) [D1.2 p1 @20:53–21:16]"
 	}
-	net := mentorDayNetSource()
-	closed := mentorClosedProfitSource()
+	net, okNet := mentorDayNetSource()
+	closed, okClosed := mentorClosedProfitSource()
+	if !okNet || !okClosed {
+		mentorCount("done_after_win_unresolved")
+		at.logWarnf("🧑‍🏫 mentor done-after-win day UNRESOLVED (a NULL pnl_corrected closed row or a read error) — refusing the entry (fail-closed)")
+		return true, "done-after-win: day P&L unresolved (a NULL pnl_corrected closed row) — an unknown is not 'no win'; refusing (fail-closed) [D1.2 p1 @20:53–21:16]"
+	}
 	if mentorDoneAfterWin(net, closed) {
 		mentorCount("done_after_win_refused")
 		return true, "done for the day after a win — a trade closed in profit and the day is net positive; no new entries until the next trading day (17:00 CT) [D1.2 p1 @20:53–21:16]"
@@ -948,12 +956,6 @@ func (at *AutoTrader) mentorMissingSources(includeSwingOnly bool) []string {
 	for _, n := range mentorSeamMissing() {
 		missing = append(missing, "seam: "+n)
 	}
-	if mentorDayNetSource == nil {
-		missing = append(missing, "day net")
-	}
-	if mentorClosedProfitSource == nil {
-		missing = append(missing, "closed profit")
-	}
 	if at.store == nil && mentorDayEventsForTest == nil {
 		missing = append(missing, "news events")
 	}
@@ -988,6 +990,36 @@ func (at *AutoTrader) mentorMissingSources(includeSwingOnly bool) []string {
 	return missing
 }
 
+// mentorSourcesLine is the single-trader "mentor sources" line ("" when the
+// trader is nil or not mentor-mode). The boot line and the reload line both
+// join these per-trader lines, so a save that arms mentor mode reports the
+// exact same facts as boot.
+func mentorSourcesLine(id string, at *AutoTrader) string {
+	if at == nil || !at.mentorEnabled() {
+		return ""
+	}
+	if missing := at.mentorSourcesBlocking("ISB"); len(missing) > 0 {
+		line := fmt.Sprintf("🧑‍🏫 mentor sources MISSING for trader %s: [%s] — mentor_mode refuses to arm (fail-closed)", id, strings.Join(missing, ", "))
+		logger.Errorf("%s", line)
+		return line
+	}
+	if swingOnly := at.mentorSourcesMissing(); len(swingOnly) > 0 {
+		// only the swing-only source (4h EMA 34) is short: intraday entries
+		// are allowed, SWING4H entries are refused until it warms up.
+		return fmt.Sprintf("🧑‍🏫 mentor sources wired for trader %s — intraday entries allowed; SWING4H entries refused until: [%s]", id, strings.Join(swingOnly, ", "))
+	}
+	var depths []string
+	for _, req := range mentorDepthRequirements {
+		depth, known := mentorSourceDepth(req.Name)
+		if !known {
+			depths = append(depths, fmt.Sprintf("%s=n/a", req.Name))
+		} else {
+			depths = append(depths, fmt.Sprintf("%s=%d", req.Name, depth))
+		}
+	}
+	return fmt.Sprintf("🧑‍🏫 mentor sources wired for trader %s — seeded depths: %s", id, strings.Join(depths, ", "))
+}
+
 // MentorSourcesBootLine is the boot wiring check: with mentor_mode ON every
 // mentor source seam must be non-nil, or mentor_mode refuses to arm — one ERROR
 // line names the missing seams per trader. A wired trader prints the seeded
@@ -995,31 +1027,26 @@ func (at *AutoTrader) mentorMissingSources(includeSwingOnly bool) []string {
 func MentorSourcesBootLine(loaded map[string]*AutoTrader) string {
 	var lines []string
 	for id, at := range loaded {
-		if at == nil || !at.mentorEnabled() {
-			continue
-		}
-		if missing := at.mentorSourcesBlocking("ISB"); len(missing) > 0 {
-			logger.Errorf("🧑‍🏫 mentor sources MISSING for trader %s: [%s] — mentor_mode refuses to arm (fail-closed)", id, strings.Join(missing, ", "))
-			lines = append(lines, fmt.Sprintf("🧑‍🏫 mentor sources MISSING for trader %s: [%s] — mentor_mode refuses to arm (fail-closed)", id, strings.Join(missing, ", ")))
-		} else if swingOnly := at.mentorSourcesMissing(); len(swingOnly) > 0 {
-			// only the swing-only source (4h EMA 34) is short: intraday entries
-			// are allowed, SWING4H entries are refused until it warms up.
-			lines = append(lines, fmt.Sprintf("🧑‍🏫 mentor sources wired for trader %s — intraday entries allowed; SWING4H entries refused until: [%s]", id, strings.Join(swingOnly, ", ")))
-		} else {
-			var depths []string
-			for _, req := range mentorDepthRequirements {
-				depth, known := mentorSourceDepth(req.Name)
-				if !known {
-					depths = append(depths, fmt.Sprintf("%s=n/a", req.Name))
-				} else {
-					depths = append(depths, fmt.Sprintf("%s=%d", req.Name, depth))
-				}
-			}
-			lines = append(lines, fmt.Sprintf("🧑‍🏫 mentor sources wired for trader %s — seeded depths: %s", id, strings.Join(depths, ", ")))
+		if line := mentorSourcesLine(id, at); line != "" {
+			lines = append(lines, line)
 		}
 	}
 	if len(lines) == 0 {
 		return "🧑‍🏫 mentor sources: n/a (no mentor-mode trader)"
+	}
+	return strings.Join(lines, " | ")
+}
+
+// MentorSourcesReloadLine re-prints the sources line for exactly the traders a
+// strategy reload just rebuilt (B1). The boot line covers process boot; this
+// covers "mentor mode turned ON by a save" without a restart. Empty when none
+// of the ids is a mentor-mode trader.
+func MentorSourcesReloadLine(loaded map[string]*AutoTrader, ids []string) string {
+	var lines []string
+	for _, id := range ids {
+		if line := mentorSourcesLine(id, loaded[id]); line != "" {
+			lines = append(lines, line)
+		}
 	}
 	return strings.Join(lines, " | ")
 }
