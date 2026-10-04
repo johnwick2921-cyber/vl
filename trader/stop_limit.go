@@ -1,27 +1,10 @@
 package trader
 
 import (
-	"os"
 	"strings"
 
 	"vl/store"
 )
-
-// stopLimitEntriesEnabled reads the mentor stop-limit knob (PR B, 2026-10-03).
-// Default OFF — L4: additive and fail-closed. With the knob ON, an adjudicated
-// stop-entry arm routes through PlaceStopEntryWithLimit: the AddOn builds
-// OrderType.StopLimit (LimitPrice == StopPrice) instead of StopMarket, so the
-// entry fills at its price or misses (D1.4 p1 @24:41, p2 @00:00); the order's
-// expiry (expiry_ms) is authored by the evaluator's intent (DS-102) and the
-// armed pass cancels it when it lapses unfilled (N12). Go sets the frame flag
-// only when the far side proves MinAddonBuildStopLimit.
-func stopLimitEntriesEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("MENTOR_STOP_LIMIT"))) {
-	case "1", "true", "on", "yes":
-		return true
-	}
-	return false
-}
 
 // isMentorArmOrigin (REVIEW-313 F3) reports whether the arm carries the
 // mentor origin. The routing reads THIS, never the expiry as a proxy for

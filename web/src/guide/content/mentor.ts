@@ -20,35 +20,31 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     live: true,
   },
   'Trail timeframe': { settingId: 'mentor_trail_tf', live: true },
-  'Key level timeframe': { settingId: 'Config.KeyLevelTFMinutes', live: true },
-  'Key levels RTH only': { settingId: 'Config.KeyLevelRTHOnly', live: true },
-  'Key level prune': { settingId: 'Config.KeyLevelPrunePts', live: true },
-  'EMA 34 period': { settingId: 'Config.EMAPeriod34', live: true },
-  'EMA 9 period': { settingId: 'Config.EMAPeriod9', live: true },
-  'EMA timeframe': { settingId: 'Config.EMATFMinutes', live: true },
+  'Key level timeframe': { settingId: 'Config.KeyLevelTFMinutes', live: false },
+  'Key levels RTH only': { settingId: 'Config.KeyLevelRTHOnly', live: false },
+  'Key level prune': { settingId: 'Config.KeyLevelPrunePts', live: false },
+  'EMA 34 period': { settingId: 'Config.EMAPeriod34', live: false },
+  'EMA 9 period': { settingId: 'Config.EMAPeriod9', live: false },
+  'EMA timeframe': { settingId: 'Config.EMATFMinutes', live: false },
   'EMA 34 location timeframe': {
     settingId: 'Config.EMALocationTFMinutes',
-    live: true,
-  },
-  'Touch band': { settingId: 'Config.TouchBandPts', live: true },
-  'ISB buffer': { settingId: 'Config.ISBBufferPts', live: true },
-  'ISB minimum stop (retired)': {
-    settingId: 'Config.ISBStopMinPts',
     live: false,
   },
-  'ISB twenties': { settingId: 'Config.ISBTwentiesPts', live: true },
+  'Touch band': { settingId: 'Config.TouchBandPts', live: false },
+  'ISB buffer': { settingId: 'Config.ISBBufferPts', live: false },
+  'ISB twenties': { settingId: 'Config.ISBTwentiesPts', live: false },
   'Reverse ISB at EMA 9': {
     settingId: 'Config.ISBReverseEMA9Enabled',
     live: true,
   },
   'PHL min candles from old extreme': {
     settingId: 'Config.PHLMinCandlesFromExtreme',
-    live: true,
+    live: false,
   },
-  'PHL target shy': { settingId: 'Config.PHLTargetShyPts', live: true },
-  'Stop ceiling': { settingId: 'Config.StopCeilingPts', live: true },
-  'Room multiple': { settingId: 'Config.RoomMultiple', live: true },
-  'Mid-range gap': { settingId: 'Config.RangeGapPts', live: true },
+  'PHL target shy': { settingId: 'Config.PHLTargetShyPts', live: false },
+  'Stop ceiling': { settingId: 'Config.StopCeilingPts', live: false },
+  'Room multiple': { settingId: 'Config.RoomMultiple', live: false },
+  'Mid-range gap': { settingId: 'Config.RangeGapPts', live: false },
   'Day gate spent threshold': {
     settingId: 'Config.DayGateSpentPts',
     live: true,
@@ -57,30 +53,30 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'Config.DayGateTargetCapPts',
     live: true,
   },
-  'Swing EMA period': { settingId: 'SwingCfg.EMAPeriod', live: true },
-  'Swing line offset': { settingId: 'SwingCfg.LineOffsetPts', live: true },
+  'Swing EMA period': { settingId: 'SwingCfg.EMAPeriod', live: false },
+  'Swing line offset': { settingId: 'SwingCfg.LineOffsetPts', live: false },
   'Swing stop distance': {
     settingId: 'SwingCfg.StopBeyondLinePts',
-    live: true,
+    live: false,
   },
   'Swing max stop': { settingId: 'SwingCfg.MaxStopPts', live: true },
-  'Swing entry buffer': { settingId: 'SwingCfg.EntryBufferPts', live: true },
+  'Swing entry buffer': { settingId: 'SwingCfg.EntryBufferPts', live: false },
   'Swing target fallback': {
     settingId: 'SwingCfg.TargetFallbackPts',
-    live: true,
+    live: false,
   },
   'Swing target EMA period': {
     settingId: 'SwingCfg.TargetEMA5mPeriod',
-    live: true,
+    live: false,
   },
-  'Swing leeway candles': { settingId: 'SwingCfg.LeewayCandles', live: true },
-  'Swing hold bars': { settingId: 'SwingCfg.Hold4hBars', live: true },
+  'Swing leeway candles': { settingId: 'SwingCfg.LeewayCandles', live: false },
+  'Swing hold bars': { settingId: 'SwingCfg.Hold4hBars', live: false },
   'Swing respects 5m zone': {
     settingId: 'SwingCfg.Respects5mZone',
-    live: true,
+    live: false,
   },
-  'Box timeframe': { settingId: 'BoxCfg.TF', live: true },
-  'Box touch band': { settingId: 'BoxCfg.TouchBandPts', live: true },
+  'Box timeframe': { settingId: 'BoxCfg.TF', live: false },
+  'Box touch band': { settingId: 'BoxCfg.TouchBandPts', live: false },
   'ORB entry gate': { settingId: 'Config.OrbGateEnabled', live: true },
   'Leg budget': { settingId: 'mentor_leg_budget_enabled', live: true },
   'Leg reset on': { settingId: 'mentor_leg_reset_on', live: true },
@@ -125,10 +121,26 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
   'Trading window length': { settingId: 'mentor_window_minutes', live: true },
 }
 
+// Evaluator settings that have no Studio control and no store field: the
+// evaluator ships them as code constants (kernel/mentor DefaultConfig,
+// SwingCfg, BoxCfg). They are documented, not tunable from the app, so their
+// cards say "live: no" and "default, code constant" instead of pointing at a
+// control that does not exist.
+const codeConstantNote = {
+  where: 'Default, code constant — no Studio control',
+  whenToTouch:
+    'Not tunable from the app: this is the default the evaluator ships with; changing it takes a code change.',
+}
+
 function withMentorKnobKeys(knobs: KnobSpec[]): KnobSpec[] {
   return knobs.map((knob) => {
     const metadata = mentorKnobKeys[knob.label]
-    return metadata ? { ...knob, ...metadata } : knob
+    if (!metadata) return knob
+    const isConstant =
+      !metadata.live && /^(Config|SwingCfg|BoxCfg)\./.test(metadata.settingId)
+    return isConstant
+      ? { ...knob, ...metadata, ...codeConstantNote }
+      : { ...knob, ...metadata }
   })
 }
 
@@ -156,8 +168,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Entries become stop-LIMIT',
-          body: 'The ISB order type is stop-limit with the limit at the stop price ("đừng đặt buy stop market nữa…"). The live wire stays stop-market until the cancel-confirm frame lands — mentor_mode must not be enabled before then.',
-          cite: 'D1.4 p1 @ 24:41–24:55 · coming with Mentor mode',
+          body: 'Every mentor entry goes out as a stop-LIMIT with the limit at the stop price ("đừng đặt buy stop market nữa…") — always, no setting turns it off. Each order carries an expiry (the close of the next 1m candle for a level touch or an ISB; the close of the current 4h candle for the swing) and the armed pass cancels it unfilled when it lapses. A mentor entry without an expiry is refused, never sent as a stop-market. Other (non-mentor) orders keep their own order types.',
+          cite: 'D1.4 p1 @ 24:41–24:55 · trader/armed_executor.go placeOneStopEntry',
         },
       ],
     },
@@ -213,7 +225,7 @@ export const mentor: GuideSection = {
         [
           'Box edge',
           'FTGH/FTGL boxes, 1m regular candles, paired by role with no tolerance',
-          'A box edge is used again and again; a box dies only on escape (a 1m BODY closes outside) or at day end',
+          'A box edge is used again and again; an escape (a 1m BODY closes outside) does NOT kill the box — it stays and every later return trades [B4]; boxes die at day end only',
         ],
       ],
     },
@@ -243,8 +255,13 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Smaller size at an old high/low',
-          body: 'An ISB at an old high/low trades the reduced size.',
-          cite: 'coming with Mentor mode',
+          body: 'An ISB right at an old high/low trades the reduced size (3 contracts), not the base size. Written rule 2 [D4.1 p1 @08:05] — wired: the evaluator flags the ISB and the size table cuts it.',
+          cite: 'trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlags',
+        },
+        {
+          title: 'Smaller size when the ISB is in a range',
+          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). Written rule 3 [D4.1 p1 @09:40]. A spent day (2) still wins; the cut beats the confluence size.',
+          cite: 'trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlags',
         },
         {
           title: 'Skip a stop in the twenties',
@@ -269,12 +286,12 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Every box return trades',
-          body: 'Each new visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). The first return is the 3rd touch; later returns trade too. Boxes die at end of day only.',
+          body: 'Each new visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). EVERY return trades, the first one included — there is no touch count to wait for. An escape does not delete the box; boxes die at end of day only.',
           cite: 'R1 · D3.2 p2 @06:25',
         },
         {
           title: 'Intraday confluence (exit C, size 10)',
-          body: 'LONG = entry at an FTGL AND a key level (inside the box or within 2 pts of its edge) AND the 5m BUY trigger agrees; SHORT = FTGH + key level + 5m SELL trigger. Then: hold at least 1:2, the stop is never moved up (exit C), size 10; size 20 only when 4h AND 1h agree and room ≥ 30 pts.',
+          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. Then: hold at least 1:2, the stop is never moved up (exit C), size 10; size 20 only when 4h AND 1h both point the entry’s side (a silent 1h does not count), room ≥ 2× the risk and target ≥ 30 pts.',
           cite: 'R2 · D3.4 p3 @07:38',
         },
         {
@@ -430,7 +447,7 @@ export const mentor: GuideSection = {
           range: 'true / false',
           systemDefault: 'OFF',
           recommended:
-            'OFF — SIM only, and the wire is still stop-market until the cancel-confirm frame lands. When you do turn it ON, leave MENTOR_PLACE off first and watch the dry-run lines.',
+            'OFF — SIM only. Mentor entries are always stop-LIMIT. When you do turn it ON, leave MENTOR_PLACE off first and watch the dry-run lines.',
           whenToTouch:
             'Only after every item marked "coming with Mentor mode" has shipped.',
           perSession: 'No — per strategy.',
@@ -463,7 +480,7 @@ export const mentor: GuideSection = {
         {
           label: 'Big contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'The big tier — the largest deliberate size.',
+          what: 'The big tier — the largest deliberate size. Only when 4h AND 1h both point the entry’s side (a silent 1h does not count), room ≥ 2× the risk and target ≥ 30 pts.',
           trader: '20 contracts max on a big tier.',
           consumer: 'trader/mentor_mode.go:27',
           range: 'int',
@@ -641,19 +658,6 @@ export const mentor: GuideSection = {
           systemDefault: '1.5',
           recommended: '1.5 — D1.4 p1 @ 22:22–22:30.',
           whenToTouch: 'Rarely.',
-          perSession: 'No.',
-        },
-        {
-          label: 'ISB minimum stop (retired)',
-          where: 'Strategy → Mentor mode → ISB',
-          what: 'Legacy minimum-stop field; it has no runtime reader. ISB stops have no fixed minimum size.',
-          trader: 'Not live — changing it has no effect.',
-          consumer: 'kernel/mentor/mentor.go Config.ISBStopMinPts (retired)',
-          range: 'pts',
-          systemDefault: '5 (unused)',
-          recommended:
-            'Do not rely on this value; RULES-FIX-v3 removed the fixed ISB stop size.',
-          whenToTouch: 'Never — retired.',
           perSession: 'No.',
         },
         {
@@ -982,7 +986,7 @@ export const mentor: GuideSection = {
         {
           label: 'Box touch band',
           where: 'Strategy → Mentor mode → boxes',
-          what: 'A wick within this of a box edge counts as a touch (the third touch is the trade).',
+          what: 'A wick within this of a box edge counts as a touch (every return to the box is a trade, the first one included).',
           trader: '0.25 pts.',
           consumer: 'kernel/mentor/box.go BoxCfg.TouchBandPts',
           range: 'pts',
