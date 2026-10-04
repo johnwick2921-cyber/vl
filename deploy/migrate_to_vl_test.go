@@ -1599,3 +1599,90 @@ func TestRollbackDelayedOldBootSaysDone(t *testing.T) {
 	mustContain(t, out, "rollback: OLD boot line OK after")
 	mustContain(t, out, "rollback DONE")
 }
+
+// migrateScript returns the migrate-to-vl.sh source (the test runs from the
+// deploy package dir).
+func migrateScript(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile("migrate-to-vl.sh")
+	if err != nil {
+		t.Fatalf("read migrate-to-vl.sh: %v", err)
+	}
+	return string(b)
+}
+
+// extractShellFunc pulls one shell function body (from the line holding
+// `name()` to its closing `}`) VERBATIM out of the migrate script, so the seam
+// pins below run the production bytes — not a re-typed copy.
+func extractShellFunc(t *testing.T, src, name string) string {
+	t.Helper()
+	lines := strings.Split(src, "\n")
+	start := -1
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), name+"()") {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("function %s() not found in migrate-to-vl.sh", name)
+	}
+	for end := start; end < len(lines); end++ {
+		if strings.TrimSpace(lines[end]) == "}" {
+			return strings.Join(lines[start:end+1], "\n")
+		}
+	}
+	t.Fatalf("function %s() has no closing brace", name)
+	return ""
+}
+
+// envWithout drops every VL_MIGRATE_POLL_S=… entry so "unset" is truly absent.
+func envWithout(key string) []string {
+	var out []string
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, key+"=") {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// TestPollSecsSeamDefaultsAndFallsBack pins the two VL_MIGRATE_POLL_S guards
+// (CTO pre-PR check): (a) unset → the shipped 2 s poll; (b) a non-numeric or
+// ≤0 value → the same 2 s default, never 0 (a 0-interval poll would busy-loop
+// wait_leg). A positive integer is honoured. The poll_secs body is extracted
+// from the script so this runs the production bytes.
+func TestPollSecsSeamDefaultsAndFallsBack(t *testing.T) {
+	fn := extractShellFunc(t, migrateScript(t), "poll_secs")
+	poll := func(envVal string, unset bool) string {
+		t.Helper()
+		cmd := exec.Command("bash", "-c", fn+"\nprintf '%s' \"$(poll_secs)\"")
+		if unset {
+			cmd.Env = envWithout("VL_MIGRATE_POLL_S")
+		} else {
+			cmd.Env = append(envWithout("VL_MIGRATE_POLL_S"), "VL_MIGRATE_POLL_S="+envVal)
+		}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("poll_secs probe (env=%q unset=%v) failed: %v\n%s", envVal, unset, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	// (a) unset → the shipped default (byte-identical 2 s poll).
+	if got := poll("", true); got != "2" {
+		t.Fatalf("unset VL_MIGRATE_POLL_S must poll 2 s, got %q", got)
+	}
+	// (b) non-numeric or ≤0 → default 2, never 0 / a busy loop.
+	for _, bad := range []string{"", "abc", "0", "00", "-1", "1.5", "2s", " "} {
+		if got := poll(bad, false); got != "2" {
+			t.Fatalf("VL_MIGRATE_POLL_S=%q must fall back to 2, got %q", bad, got)
+		}
+	}
+	// a positive integer is honoured (the test seam actually shrinks the poll).
+	if got := poll("1", false); got != "1" {
+		t.Fatalf("VL_MIGRATE_POLL_S=1 must poll 1 s, got %q", got)
+	}
+	if got := poll("7", false); got != "7" {
+		t.Fatalf("VL_MIGRATE_POLL_S=7 must poll 7 s, got %q", got)
+	}
+}
