@@ -193,11 +193,11 @@ func TestMentorEntryIsAlwaysStopLimit(t *testing.T) {
 		t.Fatal("the injector must NOT place directly — the armed executor places")
 	}
 	arm, ok := mentorLiveArmFor("isb-1")
-	if !ok || arm.RowID == 0 {
-		t.Fatalf("the ArmID registry must resolve isb-1 -> a real row, got %+v ok=%v", arm, ok)
+	if !ok || len(arm.RowIDs) == 0 {
+		t.Fatalf("the ArmID registry must resolve isb-1 -> real rows, got %+v ok=%v", arm, ok)
 	}
 	var row store.ArmedOrderDB
-	if err := ledger.DB().First(&row, arm.RowID).Error; err != nil {
+	if err := ledger.DB().First(&row, arm.RowIDs[0]).Error; err != nil {
 		t.Fatalf("the mentor arm row must exist: %v", err)
 	}
 	if row.Kind != "stop_entry" || row.ExpiryMs != in.ExpiryMs || row.State != store.StateArmed {
@@ -629,7 +629,7 @@ func TestMentorSwingFillQuantityResolution(t *testing.T) {
 				t.Fatal(err)
 			}
 			resetMentorCounters()
-			_, qty, ok := at.mentorSwingFill(mentorLiveArm{RowID: row.ID, Side: "short", Entry: 29600})
+			_, qty, ok := at.mentorSwingFill(mentorLiveArm{RowIDs: []int64{row.ID}, Side: "short", Entry: 29600})
 			if qty != tc.wantQty || ok != tc.wantOK {
 				t.Fatalf("mentorSwingFill = (%v, %v), want (%v, %v)", qty, ok, tc.wantQty, tc.wantOK)
 			}

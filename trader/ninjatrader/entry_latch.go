@@ -66,25 +66,36 @@ type EntryLatchBookVerdict struct {
 
 // EntryLatchSource is the store/book-side evidence the latch cannot read from
 // inside the broker package (the ≤60 s book law and both ledgers live in
-// package trader, which imports this one).
+// package trader, which imports this one). Book and Ledgers take the CURRENT
+// entry group's sibling signal ids, so the latch treats the two legs of ONE
+// split entry as one entry (DS-103 split legs). nil siblings = today's
+// behaviour (no exemption).
 type EntryLatchSource struct {
-	Book    func(now time.Time) EntryLatchBookVerdict
-	Ledgers func() (ids []string, err error)
+	Book    func(now time.Time, siblings map[string]bool) EntryLatchBookVerdict
+	Ledgers func(siblings map[string]bool) (ids []string, err error)
 	Now     func() time.Time
+}
+
+// latchSend is the last-send stamp per key: the time AND the entry group that
+// send belonged to, so a split leg's second send is not refused as a "recent
+// send" (DS-103: one acquisition covers the group).
+type latchSend struct {
+	at    time.Time
+	group string
 }
 
 // latchState is one server's latch: a mutex and a last-send stamp per key.
 type latchState struct {
 	mu    sync.Mutex
 	keys  map[string]*sync.Mutex
-	sent  map[string]time.Time
+	sent  map[string]latchSend
 	lastR map[string]string // last refusal reason per key (dedupes the WARN)
 }
 
 var latches sync.Map // *ntwire.TCPServer → *latchState
 
 func latchFor(s *ntwire.TCPServer) *latchState {
-	v, _ := latches.LoadOrStore(s, &latchState{keys: map[string]*sync.Mutex{}, sent: map[string]time.Time{}, lastR: map[string]string{}})
+	v, _ := latches.LoadOrStore(s, &latchState{keys: map[string]*sync.Mutex{}, sent: map[string]latchSend{}, lastR: map[string]string{}})
 	return v.(*latchState)
 }
 
@@ -125,6 +136,8 @@ func (t *TCPTrader) acquireEntryLatch(what string) (done func(sent bool), err er
 	t.mu.Lock()
 	src := t.latchSource
 	tid := t.traderID
+	group := t.latchGroup
+	siblings := t.latchSiblings
 	t.mu.Unlock()
 	if src == nil || src.Book == nil || src.Ledgers == nil {
 		return func(bool) {}, nil // UNWIRED — the boot line says so
@@ -150,14 +163,14 @@ func (t *TCPTrader) acquireEntryLatch(what string) (done func(sent bool), err er
 		return nil, fmt.Errorf("ninjatrader/tcp: refusing %s: %w: one_entry_latch:%s — %s", what, ErrEntryLatched, reason, detail)
 	}
 	at := now()
-	bv := src.Book(at)
+	bv := src.Book(at, siblings)
 	if !bv.Verifiable {
 		return refuse("book_unverifiable", bv.Detail)
 	}
 	if bv.Live {
 		return refuse("working_entry_or_position", bv.Detail)
 	}
-	ids, lerr := src.Ledgers()
+	ids, lerr := src.Ledgers(siblings)
 	if lerr != nil {
 		return refuse("ledger_unreadable", lerr.Error())
 	}
@@ -168,6 +181,9 @@ func (t *TCPTrader) acquireEntryLatch(what string) (done func(sent bool), err er
 	t.pendingMu.Lock()
 	var queued []string
 	for sid := range t.pending {
+		if siblings != nil && siblings[sid] {
+			continue // DS-103: a sibling leg's own pending entry is this entry
+		}
 		queued = append(queued, sid)
 	}
 	t.pendingMu.Unlock()
@@ -178,8 +194,9 @@ func (t *TCPTrader) acquireEntryLatch(what string) (done func(sent bool), err er
 	ls.mu.Lock()
 	last, seen := ls.sent[key]
 	ls.mu.Unlock()
-	if seen && at.Sub(last) < EntryLatchRecentWindow && at.Sub(last) >= 0 {
-		return refuse("recent_send", fmt.Sprintf("an entry was sent on %s %s ago (window %s)", key, at.Sub(last).Round(time.Second), EntryLatchRecentWindow))
+	if seen && at.Sub(last.at) < EntryLatchRecentWindow && at.Sub(last.at) >= 0 &&
+		!(group != "" && last.group == group) {
+		return refuse("recent_send", fmt.Sprintf("an entry was sent on %s %s ago (window %s)", key, at.Sub(last.at).Round(time.Second), EntryLatchRecentWindow))
 	}
 	ls.mu.Lock()
 	delete(ls.lastR, key)
@@ -187,11 +204,31 @@ func (t *TCPTrader) acquireEntryLatch(what string) (done func(sent bool), err er
 	return func(sent bool) {
 		if sent {
 			ls.mu.Lock()
-			ls.sent[key] = now()
+			ls.sent[key] = latchSend{at: now(), group: group}
 			ls.mu.Unlock()
 		}
 		m.Unlock()
 	}, nil
+}
+
+// SetLatchGroup marks the NEXT latch acquisition as one leg of an entry group
+// (DS-103 split legs): group is the shared entry-group id and siblings are the
+// OTHER legs' signal ids. The latch then exempts those siblings from the
+// queued / ledger / book / recent-send checks, so the two legs of ONE mentor
+// intent read as ONE entry. ClearLatchGroup restores today's behaviour.
+func (t *TCPTrader) SetLatchGroup(group string, siblings map[string]bool) {
+	t.mu.Lock()
+	t.latchGroup = group
+	t.latchSiblings = siblings
+	t.mu.Unlock()
+}
+
+// ClearLatchGroup clears the entry-group hint set by SetLatchGroup.
+func (t *TCPTrader) ClearLatchGroup() {
+	t.mu.Lock()
+	t.latchGroup = ""
+	t.latchSiblings = nil
+	t.mu.Unlock()
 }
 
 // sendAttempted reports whether a SendSignal outcome may have put the entry on

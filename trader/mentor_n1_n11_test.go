@@ -47,14 +47,14 @@ func TestMentorArmIDUniqueAcrossRestarts(t *testing.T) {
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-1", Setup: "ISB",
 		Side: mentor.SideLong, Price: 200, Stop: 199, Target: 204, StopPts: 1, TargetPts: 4,
 		ExpiryMs: time.Now().UnixMilli() + 60_000}
-	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 5, Tier: "base", Why: "test"}, 1000, 1100)
+	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 5, Tier: "base", Why: "test"}, 1000, 1100, "B", 0)
 
 	arm, ok := mentorLiveArmFor("isb-1")
-	if !ok || arm.RowID == 0 || arm.RowID == old.ID {
+	if !ok || len(arm.RowIDs) == 0 || arm.RowIDs[0] == old.ID {
 		t.Fatalf("the new arm must be authored on its own row after a reset, got %+v ok=%v (old row %d)", arm, ok, old.ID)
 	}
 	var row store.ArmedOrderDB
-	if err := ledger.DB().First(&row, arm.RowID).Error; err != nil {
+	if err := ledger.DB().First(&row, arm.RowIDs[0]).Error; err != nil {
 		t.Fatalf("the new arm row must exist: %v", err)
 	}
 	if row.State != store.StateArmed || row.Scenario == old.Scenario {
@@ -92,7 +92,7 @@ func TestMentorArmRowZeroRefuses(t *testing.T) {
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-1", Setup: "ISB",
 		Side: mentor.SideLong, Price: 200, Stop: 199, Target: 204, StopPts: 1, TargetPts: 4,
 		ExpiryMs: time.Now().UnixMilli() + 60_000}
-	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 5, Tier: "base", Why: "test"}, 1000, 1100)
+	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 5, Tier: "base", Why: "test"}, 1000, 1100, "B", 0)
 
 	if _, ok := mentorLiveArmFor("isb-1"); ok {
 		t.Fatal("a row-0 arm must NOT be registered")

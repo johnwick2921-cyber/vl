@@ -80,7 +80,7 @@ func TestEntryLatchBookIsScopedToTheSymbolAndFailsClosed(t *testing.T) {
 			if !tc.noBook {
 				f.book(tc.orders, tc.bookAt)
 			}
-			v := f.at.entryLatchBook(now)
+			v := f.at.entryLatchBook(now, nil)
 			if v.Verifiable != tc.verifiable || (tc.verifiable && v.Live != tc.live) {
 				t.Fatalf("book verdict = %+v, want verifiable=%v live=%v", v, tc.verifiable, tc.live)
 			}
@@ -95,11 +95,11 @@ func TestEntryLatchBookSeesAPositionOnTheSymbol(t *testing.T) {
 	now := time.Now()
 	f.book(nil, now)
 	f.s.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{{Symbol: "ES", Side: "short", Quantity: 1, AvgPrice: 6000}})
-	if v := f.at.entryLatchBook(now); !v.Verifiable || v.Live {
+	if v := f.at.entryLatchBook(now, nil); !v.Verifiable || v.Live {
 		t.Fatalf("a position on ANOTHER symbol must not latch this one: %+v", v)
 	}
 	f.s.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{{Symbol: "MNQ", Side: "short", Quantity: 1, AvgPrice: 29000}})
-	if v := f.at.entryLatchBook(now); !v.Verifiable || !v.Live {
+	if v := f.at.entryLatchBook(now, nil); !v.Verifiable || !v.Live {
 		t.Fatalf("a position on the symbol must latch it: %+v", v)
 	}
 }
@@ -150,7 +150,7 @@ func TestEntryLatchLedgersListPlacedRowsOnTheAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ids, err := f.at.entryLatchLedgers()
+	ids, err := f.at.entryLatchLedgers(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestEntryLatchLedgersListPlacedRowsOnTheAccount(t *testing.T) {
 	if err := f.st.PictureHtfStampSignal("pic-claimed", "claim-1", "broker-sig"); err != nil {
 		t.Fatal(err)
 	}
-	ids, _ = f.at.entryLatchLedgers()
+	ids, _ = f.at.entryLatchLedgers(nil)
 	if !strings.Contains(strings.Join(ids, " "), picName("pic-claimed")) {
 		t.Fatalf("a stamped Picture claim must be listed: %v", ids)
 	}

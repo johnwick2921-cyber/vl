@@ -69,6 +69,11 @@ type TCPTrader struct {
 	// latchSource is the W0 (b) entry latch's evidence (nil = UNWIRED = allow;
 	// production wiring is wireNT8EntryLatch, pinned). Guarded by mu.
 	latchSource *EntryLatchSource
+	// latchGroup / latchSiblings are the DS-103 split-leg entry-group hint for
+	// the NEXT latch acquisition (set by SetLatchGroup, cleared by
+	// ClearLatchGroup). Guarded by mu.
+	latchGroup    string
+	latchSiblings map[string]bool
 
 	// closedAt records the wall-clock (ms) of the most recent FILL-CONFIRMED close
 	// (position_close frame) per "SYMBOL|SIDE" for THIS trader's bound account. The

@@ -38,7 +38,7 @@ func TestStopEntryRefusedWhenSlotIsLiveAtTheBroker(t *testing.T) {
 		t.Fatal("fixture precondition: the 1664 book must read LIVE")
 	}
 
-	at.placeOneStopEntry(pl, led, r, d, 29650.00, time.Now(), live)
+	at.placeOneStopEntry(pl, led, r, d, 29650.00, time.Now(), live, nil)
 
 	if len(pl.calls) != 0 {
 		t.Fatalf("E1 RED: %d order(s) reached the wire while nine were already live at the broker for this slot — the placement must be REFUSED (%s)",

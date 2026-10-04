@@ -66,8 +66,9 @@ func (at *AutoTrader) latchScope() (account, symbol string) {
 
 // entryLatchBook adjudicates the account's fresh book and positions for THIS
 // trader's symbol through the one classifier the armed path uses. A stale or
-// absent book, or unreadable positions, is UNVERIFIABLE — a refusal.
-func (at *AutoTrader) entryLatchBook(now time.Time) ntTrader.EntryLatchBookVerdict {
+// absent book, or unreadable positions, is UNVERIFIABLE — a refusal. siblings
+// (DS-103 split legs) exempts those signal ids from the working-entry count.
+func (at *AutoTrader) entryLatchBook(now time.Time, siblings map[string]bool) ntTrader.EntryLatchBookVerdict {
 	_, sym := at.latchScope()
 	root := instrumentRoot(sym)
 	book, have, age := at.liveBook(now)
@@ -93,7 +94,7 @@ func (at *AutoTrader) entryLatchBook(now time.Time) ntTrader.EntryLatchBookVerdi
 			positions++
 		}
 	}
-	v := adjudicateAccountContract(mine, have, age, snapshotMaxAge(), 0, positions)
+	v := adjudicateAccountContractExempt(mine, have, age, snapshotMaxAge(), 0, positions, siblings)
 	switch v.Action {
 	case contractUnverifiable:
 		return ntTrader.EntryLatchBookVerdict{Verifiable: false, Detail: v.Why}
@@ -138,7 +139,7 @@ func (at *AutoTrader) traderScope(traderID string) (account, symbol string, ok b
 // (place_pending / working / cancel_pending), a Picture row working or stamped
 // (a send was started). An unplaced arm and an unstamped Picture claim are not placed. A
 // read error is returned — the latch refuses on it.
-func (at *AutoTrader) entryLatchLedgers() ([]string, error) {
+func (at *AutoTrader) entryLatchLedgers(siblings map[string]bool) ([]string, error) {
 	if at.store == nil {
 		return nil, fmt.Errorf("no store")
 	}
@@ -156,6 +157,9 @@ func (at *AutoTrader) entryLatchLedgers() ([]string, error) {
 		// predicate — never a copied list of states (arm_state guard).
 		if strings.TrimSpace(r.SignalID) == "" || store.IsTerminalArmState(r.State) {
 			continue
+		}
+		if siblings != nil && siblings[r.SignalID] {
+			continue // DS-103: a sibling leg's own placed row is this entry
 		}
 		if a, s, ok := at.traderScope(r.TraderID); ok && (!strings.EqualFold(a, acct) || instrumentRoot(s) != root) {
 			continue

@@ -640,25 +640,27 @@ func mentorLegsForPlacement(in mentor.Intent, n int, mode string, leg1TP float64
 // per leg (two for n ≥ 2; one for n = 1 / swing), each carrying its OWN
 // Contracts (the B2 requested count), TargetPx (the leg's native bracket TP),
 // StopPx (the shared stop), EntryGroup (the shared group id = the intent's
-// ArmID) and LegIndex/LegCount. Pure — no I/O; mentorArmIntent Upserts these.
+// epoch-prefixed scenario) and LegIndex/LegCount. Pure — no I/O; mentorArmIntent
+// Upserts these.
 //
 // For a single leg (n = 1 / swing) the runner leg is absent, so LegCount stays
 // 0 (the legacy single-arm form) and the one row is LegIndex 0.
-func mentorArmRows(in mentor.Intent, choice mentorSizeChoice, mode string, leg1TP float64, armID string) []store.ArmedOrderDB {
+func mentorArmRows(in mentor.Intent, choice mentorSizeChoice, mode string, leg1TP float64, groupID string) []store.ArmedOrderDB {
 	side := strings.ToLower(strings.TrimSpace(string(in.Side)))
 	leg1, leg2 := mentorLegsForPlacement(in, choice.Contracts, mode, leg1TP)
 	base := store.ArmedOrderDB{
 		PlanID:     "mentor",
 		Version:    1,
 		Session:    "MENTOR",
-		Scenario:   armID,
+		Scenario:   groupID,
 		Side:       side,
+		State:      store.StateArmed,
 		EntryPx:    in.Price,
 		Kind:       "stop_entry",
 		Condition:  in.Setup,
 		ExpiryMs:   in.ExpiryMs,
 		Origin:     store.ArmOriginMentor,
-		EntryGroup: armID,
+		EntryGroup: groupID,
 	}
 	legCount := 0
 	if leg2.Qty > 0 {

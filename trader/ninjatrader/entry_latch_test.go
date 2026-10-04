@@ -92,14 +92,14 @@ type latchFixture struct {
 
 func (f *latchFixture) source() *EntryLatchSource {
 	return &EntryLatchSource{
-		Book: func(time.Time) EntryLatchBookVerdict {
+		Book: func(_ time.Time, _ map[string]bool) EntryLatchBookVerdict {
 			f.bookCalls.Add(1)
 			if f.unverifiable {
 				return EntryLatchBookVerdict{Verifiable: false, Detail: "book age 3m exceeds the 1m bound"}
 			}
 			return EntryLatchBookVerdict{Verifiable: true, Live: f.live, Detail: "working entry ord-7"}
 		},
-		Ledgers: func() ([]string, error) { return f.ledger, f.ledgerErr },
+		Ledgers: func(_ map[string]bool) ([]string, error) { return f.ledger, f.ledgerErr },
 		Now:     func() time.Time { return f.now },
 	}
 }

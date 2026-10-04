@@ -989,7 +989,7 @@ func TestEntryLatchNamesAPictureHolder(t *testing.T) {
 	if err := r.st.PictureHtfStampSignal("pic-legacy", "claim-l", "broker-l"); err != nil {
 		t.Fatal(err)
 	}
-	ids, err := r.at.entryLatchLedgers()
+	ids, err := r.at.entryLatchLedgers(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1208,7 +1208,7 @@ func TestDayPlanOffStillSettlesTheCancelItRequested(t *testing.T) {
 	if row := r.row("P1"); row.State != store.StateCancelled {
 		t.Fatalf("Day Plan OFF must still settle the cancel from the fresh book (else the account latches): %+v", row)
 	}
-	ids, err := r.at.entryLatchLedgers()
+	ids, err := r.at.entryLatchLedgers(nil)
 	if err != nil || len(ids) != 0 {
 		t.Fatalf("the entry latch must be free once the cancel settles: %v %v", ids, err)
 	}

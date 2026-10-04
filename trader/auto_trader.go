@@ -382,7 +382,7 @@ type AutoTrader struct {
 	// mentorEvalMu serializes the evaluator: the scan loop (mentorTick) and the
 	// event loop (mentorEventPassAt) both call mentorEvalOnce, whose Tick
 	// mutates the evaluator's maps — N11 (DS-104). One mutex, both callers.
-	mentorEvalMu     sync.Mutex
+	mentorEvalMu       sync.Mutex
 	mentorFinalArrival atomic.Int64 // ms — when the FINAL frame hit the sink
 	// MENTOR B20 — the chosen exit branch per open position (keyed by side:
 	// "long"/"short"), set at placement from the entry-time fork (A/B/C/swing)
@@ -390,6 +390,10 @@ type AutoTrader struct {
 	// branch. Size is never touched by the upgrade.
 	mentorExitMu    sync.Mutex
 	mentorExitModes map[string]string
+	// MENTOR SPLIT LEGS (DS-103) — the live-position shape DS-107's exit drive
+	// loop consumes, keyed by the LEG-1 signal id. Registered at the fill
+	// callback, cleared on flat (part 2). Guarded by mentorExitMu.
+	mentorLivePositions map[string]*mentorLivePos
 	// mentorFunnel is the N12 visibility counter (read-only): one INFO line per
 	// 15 minutes + on change, session-day scoped (17:00 CT). Never gates a trade.
 	mentorFunnel    mentorFunnel

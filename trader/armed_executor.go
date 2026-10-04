@@ -1365,6 +1365,10 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 	// the wire.
 	contract := at.oneContractGuard(now)
 	placedThisPass := false
+	// placedGroup is the EntryGroup of the row placed THIS pass (DS-103 split
+	// legs): a sibling leg of that group is the same entry and is not refused
+	// by the one-live-entry guard; any other row is refused exactly as today.
+	placedGroup := ""
 	// W-ONE-BUTTON M2 site 2 — THE INSTALLATION MAINTENANCE HOLD. Read once per
 	// pass, and it refuses each arm AT ITS SEND POINT below. Never an early
 	// return: the tail of this function (stale-working reaper, order_update
@@ -1488,12 +1492,20 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 				if ok, _ := at.armAdmitted(r, side, price, now, admitted); !ok {
 					continue // a refusal, never a cancellation — the row stays armed
 				}
-				if !contract.Allowed() || placedThisPass {
-					at.refuseContract(r, contract, placedThisPass, "stop", now)
+				// DS-103 split legs: a sibling leg of the group placed THIS pass
+				// is the same entry — the one-live-entry and one-contract guards
+				// exempt it. Any other entry is refused exactly as today.
+				siblingPlaced := placedGroup != "" && placedGroup == r.EntryGroup
+				contractFor := contract
+				if r.EntryGroup != "" {
+					contractFor = at.oneContractGuardForRow(now, rows, r)
+				}
+				if !contractFor.Allowed() || (placedThisPass && !siblingPlaced) {
+					at.refuseContract(r, contractFor, placedThisPass && !siblingPlaced, "stop", now)
 					continue
 				}
 				d := decideStopEntry(side, r.EntryPx, float64(stopEntryOffsetTicks())*tick, tick, price)
-				if at.placeOneStopEntry(nt, ledger, r, d, price, now, at.armSlotGuard(rows, r, now)) != stopPlaceCommitted {
+				if at.placeOneStopEntry(nt, ledger, r, d, price, now, at.armSlotGuard(rows, r, now), entryGroupSiblingSignalIDs(rows, r)) != stopPlaceCommitted {
 					// A hold refusal, a guard cancel, an un-adjudicated verdict,
 					// a refused slot, an AddOn too old to build the order, or a
 					// refusal before the ledger stamp: NOTHING was sent, so the
@@ -1508,6 +1520,7 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 				// question here, not "did it work" (class 81: a send is not a
 				// settlement, so this latch is deliberately pessimistic).
 				placedThisPass = true
+				placedGroup = r.EntryGroup
 				at.cancelOtherArmsInPlan(ledger, rows, r, now)
 				continue
 			}
@@ -1840,7 +1853,7 @@ const (
 	stopPlaceCommitted                         // sent, or attempted after the ledger stamp (ambiguous → pessimistic)
 )
 
-func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWriter, r store.ArmedOrderDB, d stopEntryDecision, price float64, now time.Time, guard slotVerdict) stopPlaceOutcome {
+func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWriter, r store.ArmedOrderDB, d stopEntryDecision, price float64, now time.Time, guard slotVerdict, siblings ...map[string]bool) stopPlaceOutcome {
 	// THE PLACEMENT KEYSPACE IS NAMED AND 1-BASED. Every other writer into
 	// at.armRefusalLast keys the same leg as strconv.Itoa(li+1) (:455, :498,
 	// :525, :579); a 0-based key here was byte-identical to the ARM-GATE key for
@@ -1941,6 +1954,20 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 			return stopPlaceNotSent
 		}
 		qty = n
+	}
+	// DS-103 split legs: the latch treats the two legs of one entry as ONE
+	// (one acquisition covers the group). Set the entry-group hint on the real
+	// TCP trader before the send; fakes without the seam place non-grouped.
+	var sibs map[string]bool
+	if len(siblings) > 0 {
+		sibs = siblings[0]
+	}
+	if g, ok := pl.(interface {
+		SetLatchGroup(string, map[string]bool)
+		ClearLatchGroup()
+	}); ok && r.EntryGroup != "" {
+		g.SetLatchGroup(r.EntryGroup, sibs)
+		defer g.ClearLatchGroup()
 	}
 	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, r.TargetPx, func(sid string) error {
 		if err := ledger.BeginPlacement(r.ID, sid); err != nil {
@@ -2437,6 +2464,9 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 			// that later fills fully is not double-counted).
 			if isMentorArmOrigin(r) && strings.EqualFold(u.State, "filled") {
 				at.mentorFunnel.bumpFilled()
+				// DS-103 split legs: register the live-position shape DS-107's
+				// exit drive loop consumes, keyed by the leg-1 signal id.
+				at.registerMentorLivePos(rows, r, u)
 			}
 		case "cancelled":
 			// CANCEL-REPORT REGIME (2026-10-03, knob default OFF): for a row
@@ -2562,6 +2592,74 @@ func (at *AutoTrader) setMaterializedEntry(pos *store.TraderPosition, r store.Ar
 		return
 	}
 	at.logInfof("🧩 armed fill %s set position %d to %.0f @ %.2f (cumulative)", r.Scenario, pos.ID, qty, u.FillPrice)
+}
+
+// mentorLegContracts resolves a mentor leg's contract count: the B2 Contracts
+// when present, else the delivered FillQuantity (a filled historical row).
+func mentorLegContracts(r store.ArmedOrderDB) int {
+	if r.Contracts != nil {
+		return *r.Contracts
+	}
+	return r.FillQuantity
+}
+
+// registerMentorLivePos (DS-103 split legs) builds the live-position shape
+// DS-107's exit drive loop consumes from the filled mentor entry's two arm rows
+// and registers it under the LEG-1 signal id. Cleared on flat (part 2). A row
+// with no EntryGroup (a single-leg mentor arm without the split shape) is not
+// registered.
+func (at *AutoTrader) registerMentorLivePos(rows []store.ArmedOrderDB, r store.ArmedOrderDB, u ntwire.OrderUpdatePayload) {
+	if r.EntryGroup == "" {
+		return
+	}
+	leg1, leg2 := r, store.ArmedOrderDB{}
+	if r.LegIndex == 1 {
+		leg1, leg2 = store.ArmedOrderDB{}, r
+	}
+	for _, rr := range rows {
+		if rr.EntryGroup != r.EntryGroup || rr.ID == r.ID {
+			continue
+		}
+		if rr.LegIndex == 0 {
+			leg1 = rr
+		} else {
+			leg2 = rr
+		}
+	}
+	if leg1.ID == 0 || leg1.SignalID == "" {
+		return
+	}
+	side := strings.ToLower(strings.TrimSpace(leg1.Side))
+	entry := u.FillPrice
+	pos := mentorPosition{
+		Symbol:    at.futuresSymbol(),
+		Side:      side,
+		Origin:    leg1.Condition,
+		Entry:     entry,
+		Stop:      leg1.StopPx,
+		Target:    leg2.TargetPx,
+		R:         math.Abs(entry - leg1.StopPx),
+		Contracts: mentorLegContracts(leg1) + mentorLegContracts(leg2),
+		Leg1:      mentorLegContracts(leg1),
+		Leg2:      mentorLegContracts(leg2),
+		Mode:      at.mentorExitMode(side),
+		Leg1TP:    leg1.TargetPx,
+	}
+	if leg2.ID == 0 {
+		// n = 1 / swing: the single leg holds to the trade target.
+		pos.Target = leg1.TargetPx
+	}
+	lp := &mentorLivePos{Pos: pos}
+	lp.Legs[0] = mentorLeg{SignalID: leg1.SignalID, Qty: mentorLegContracts(leg1), TP: leg1.TargetPx, Stop: leg1.StopPx}
+	if leg2.ID != 0 {
+		lp.Legs[1] = mentorLeg{SignalID: leg2.SignalID, Qty: mentorLegContracts(leg2), TP: leg2.TargetPx, Stop: leg2.StopPx, Final: true}
+	}
+	at.mentorExitMu.Lock()
+	if at.mentorLivePositions == nil {
+		at.mentorLivePositions = map[string]*mentorLivePos{}
+	}
+	at.mentorLivePositions[leg1.SignalID] = lp
+	at.mentorExitMu.Unlock()
 }
 
 // stampArmedFillLineage links the freshly-filled position row to the plan the

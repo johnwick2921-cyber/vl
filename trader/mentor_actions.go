@@ -28,9 +28,11 @@ import (
 // find the real order. In-memory only: an ArmID from a previous process does
 // not resolve — every handler refuses that NAMED, never silent.
 type mentorLiveArm struct {
-	RowID int64
-	Side  string  // "long" | "short"
-	Entry float64 // the arm's entry price (MoveStopBE target)
+	// RowIDs are the armed-ledger rows this ArmID authored — ONE for a swing /
+	// n=1 single leg, TWO for a split intraday entry (leg 1 + leg 2, DS-103).
+	RowIDs []int64
+	Side   string  // "long" | "short"
+	Entry  float64 // the arm's entry price (MoveStopBE target)
 }
 
 var (
@@ -50,8 +52,14 @@ func bumpMentorArmEpoch() {
 }
 
 func mentorRegisterLiveArm(armID string, rowID int64, side string, entry float64) {
+	mentorRegisterLiveArmGroup(armID, []int64{rowID}, side, entry)
+}
+
+// mentorRegisterLiveArmGroup registers every ledger row of one ArmID — ONE for a
+// swing / n=1 single leg, TWO for a split intraday entry (DS-103).
+func mentorRegisterLiveArmGroup(armID string, rowIDs []int64, side string, entry float64) {
 	mentorLiveMu.Lock()
-	mentorLiveArms[armID] = mentorLiveArm{RowID: rowID, Side: side, Entry: entry}
+	mentorLiveArms[armID] = mentorLiveArm{RowIDs: rowIDs, Side: side, Entry: entry}
 	mentorLiveMu.Unlock()
 }
 
@@ -119,13 +127,19 @@ func mentorAuthoredRow(r store.ArmedOrderDB) bool {
 }
 
 // mentorArmIntent is the ONE mentor entry path (P0-b, CTO 1791040400571): it
-// creates an ARMED LEDGER row — kind stop_entry, the intent's expiry — and
-// lets the armed executor place it. No direct wire call here: the armed
+// creates the ARMED LEDGER rows — kind stop_entry, the intent's expiry — and
+// lets the armed executor place them. No direct wire call here: the armed
 // pass runs the admission chain, the slot guard, the c2 floor (refused,
 // never a stop-market fallback), the stop-limit origin routing and, at
 // expiry, the F1 cancel — all on the one path. The ArmID registry records
-// the row for CancelArm / ExtendArm / MoveStopBE / ClosePosition.
-func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64) {
+// the rows for CancelArm / ExtendArm / MoveStopBE / ClosePosition.
+//
+// SPLIT AT PLACEMENT (DS-103, EXIT-SPEC-v3): one intent of n contracts becomes
+// leg 1 (ceil(n/2), its own TP) + leg 2 (the runner, TP = the trade target) —
+// TWO rows sharing one EntryGroup, each with its own Contracts. n = 1 and the
+// swing are a single row. forkMode / forkTP are the exit fork from
+// mentorPlaceIntent (leg-1 TP: the +1R default, or ≥2R for mode C).
+func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64, forkMode string, forkTP float64) {
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
 		mentorCount("placement_refused_no_ledger")
@@ -137,59 +151,41 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		armID = fmt.Sprintf("mentor-%d", time.Now().UnixNano())
 	}
 	// N1 (DS-104): the ledger scenario is the evaluator's ArmID prefixed with
-	// the per-construction epoch. The in-memory registry stays keyed by the
-	// UNPREFIXED armID, so ExtendArm / CancelArm / MoveStopBE / ClosePosition
-	// still resolve by the evaluator's id.
-	scenario := fmt.Sprintf("%s-%s", armID, strconv.FormatInt(mentorArmEpoch.Load(), 10))
+	// the per-construction epoch. Both leg rows share it as their EntryGroup,
+	// so the in-memory registry stays keyed by the UNPREFIXED armID while the
+	// ledger group is unique per process and per reload.
+	groupID := fmt.Sprintf("%s-%s", armID, strconv.FormatInt(mentorArmEpoch.Load(), 10))
 	side := strings.ToLower(strings.TrimSpace(string(in.Side)))
 	if side != "long" && side != "short" {
 		mentorCount("placement_refused_bad_side")
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — unknown side %q", in.Side)
 		return
 	}
-	row := store.ArmedOrderDB{
-		TraderID:  at.id,
-		PlanID:    "mentor",
-		Version:   1,
-		Session:   "MENTOR",
-		Scenario:  scenario,
-		Side:      side,
-		State:     store.StateArmed,
-		EntryPx:   in.Price,
-		StopPx:    in.Stop,
-		TargetPx:  in.Target,
-		Kind:      "stop_entry",
-		Condition: in.Setup,
-		ExpiryMs:  in.ExpiryMs,
-		// P0 bind wiring step 1 (CTO 02:56Z): the ONLY author of the mentor
-		// origin — the stop-limit origin routing (stop_limit.go isMentorArmOrigin)
-		// and DS-106's admission gate both key off it. Every other author leaves
-		// it empty.
-		Origin: store.ArmOriginMentor,
-		// B2 (2026-10-04): the signed contract count rides the row so the armed
-		// pass sends it (never 1). The sizing table already clamped it to
-		// mentor_max_contracts.
-		Contracts: store.IntPtr(choice.Contracts),
+	rows := mentorArmRows(in, choice, forkMode, forkTP, groupID)
+	rowIDs := make([]int64, 0, len(rows))
+	for i := range rows {
+		rows[i].TraderID = at.id
+		if err := ledger.UpsertArm(&rows[i]); err != nil {
+			mentorCount("placement_refused_upsert")
+			at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm upsert failed (leg %d): %v", i, err)
+			return
+		}
+		// N1 (DS-104): a terminal row with the same scenario makes UpsertArm a
+		// no-op that leaves the row ID at 0. Refuse + log — never register a phantom.
+		if rows[i].ID == 0 {
+			mentorCount("placement_refused_arm_id_zero")
+			at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm %q leg %d authored no row (id 0)", armID, i)
+			return
+		}
+		rowIDs = append(rowIDs, rows[i].ID)
 	}
-	if err := ledger.UpsertArm(&row); err != nil {
-		mentorCount("placement_refused_upsert")
-		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm upsert failed: %v", err)
-		return
-	}
-	// N1 (DS-104): a terminal row with the same scenario makes UpsertArm a
-	// no-op that leaves row.ID at 0. Refuse + log — never register a phantom.
-	if row.ID == 0 {
-		mentorCount("placement_refused_arm_id_zero")
-		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm %q authored no row (id 0)", armID)
-		return
-	}
-	mentorRegisterLiveArm(armID, row.ID, side, in.Price)
+	mentorRegisterLiveArmGroup(armID, rowIDs, side, in.Price)
 	mentorCount("armed_" + choice.Tier)
 	at.mentorFunnel.bumpAuthored() // N12 funnel stage: the arm row was authored
 	ackMs := time.Now().UnixMilli()
 	recordMentorLatency(barCloseMs, at.mentorFinalArrival.Load(), emitMs, ackMs)
-	at.logInfof("🧑‍🏫 mentor arm authored: %s %s %d contracts (tier %s) — row %d, the armed pass places it (stop-limit by the origin rule), expiry %d",
-		in.Setup, side, choice.Contracts, choice.Tier, row.ID, in.ExpiryMs)
+	at.logInfof("🧑‍🏫 mentor arm authored: %s %s %d contracts (tier %s) — %d leg row(s) (group %s), the armed pass places them (stop-limit by the origin rule), expiry %d",
+		in.Setup, side, choice.Contracts, choice.Tier, len(rowIDs), groupID, in.ExpiryMs)
 }
 
 // mentorArmQuantity resolves the contract count the armed pass sends for a
@@ -233,10 +229,14 @@ func (at *AutoTrader) mentorExtendArm(in mentor.Intent) {
 		mentorCount("extend_refused_no_ledger")
 		return
 	}
-	if err := ledger.SetArmExpiry(arm.RowID, in.ExpiryMs); err != nil {
-		mentorCount("extend_refused")
-		at.logWarnf("🧑‍🏫 mentor ExtendArm REFUSED for ArmID %q (row %d): %v", in.ArmID, arm.RowID, err)
-		return
+	// DS-103 split legs: a split entry has TWO rows — the expiry extension
+	// covers BOTH legs (they are one entry, same expiry).
+	for _, id := range arm.RowIDs {
+		if err := ledger.SetArmExpiry(id, in.ExpiryMs); err != nil {
+			mentorCount("extend_refused")
+			at.logWarnf("🧑‍🏫 mentor ExtendArm REFUSED for ArmID %q (row %d): %v", in.ArmID, id, err)
+			return
+		}
 	}
 	mentorCount("extend_ok")
 	at.logInfof("🧑‍🏫 mentor arm %q expiry extended to %d — %s", in.ArmID, in.ExpiryMs, in.Reason)
@@ -259,25 +259,29 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) {
 		at.logWarnf("🧑‍🏫 mentor CancelArm REFUSED — ledger/broker unavailable: %s", in.Reason)
 		return
 	}
-	var r store.ArmedOrderDB
-	if err := ledger.DB().First(&r, arm.RowID).Error; err != nil || store.IsTerminalArmState(r.State) {
-		mentorCount("cancel_refused_row_gone")
-		at.logInfof("🧑‍🏫 mentor CancelArm for ArmID %q — the row is already terminal; nothing to cancel (%s)", in.ArmID, in.Reason)
-		return
-	}
 	now := time.Now()
 	if mentorNowSource != nil {
 		now = mentorNowSource()
 	}
-	if strings.TrimSpace(r.SignalID) != "" {
-		if v := at.cancelSafetyFor(r, now); !v.Allow {
-			at.logWarnf("🛟 mentor cancel REFUSED: %s %s — %s", r.Session, r.Scenario, v.Why)
-		} else if cerr := nt.CancelOrder(r.SignalID); cerr != nil {
-			at.logWarnf("✕ mentor cancel SEND failed: %s %s: %v", r.Session, r.Scenario, cerr)
+	// DS-103 split legs: a split entry has TWO rows — the cancel covers BOTH
+	// legs (they are one entry).
+	for _, id := range arm.RowIDs {
+		var r store.ArmedOrderDB
+		if err := ledger.DB().First(&r, id).Error; err != nil || store.IsTerminalArmState(r.State) {
+			mentorCount("cancel_refused_row_gone")
+			at.logInfof("🧑‍🏫 mentor CancelArm for ArmID %q — the row is already terminal; nothing to cancel (%s)", in.ArmID, in.Reason)
+			continue
 		}
+		if strings.TrimSpace(r.SignalID) != "" {
+			if v := at.cancelSafetyFor(r, now); !v.Allow {
+				at.logWarnf("🛟 mentor cancel REFUSED: %s %s — %s", r.Session, r.Scenario, v.Why)
+			} else if cerr := nt.CancelOrder(r.SignalID); cerr != nil {
+				at.logWarnf("✕ mentor cancel SEND failed: %s %s: %v", r.Session, r.Scenario, cerr)
+			}
+		}
+		at.armLifecycleWrite("request_cancel(mentor)", r,
+			ledger.RequestCancel(r.ID, "mentor: "+in.Reason, now.UnixMilli()))
 	}
-	at.armLifecycleWrite("request_cancel(mentor)", r,
-		ledger.RequestCancel(r.ID, "mentor: "+in.Reason, now.UnixMilli()))
 	mentorCount("cancel_requested")
 	at.logInfof("🧑‍🏫 mentor cancel requested for ArmID %q: %s", in.ArmID, in.Reason)
 }
@@ -303,9 +307,16 @@ func (at *AutoTrader) mentorSwingFill(arm mentorLiveArm) (r store.ArmedOrderDB, 
 		at.logErrorf("🧑‍🏫 mentor swing fill check REFUSED — no armed ledger")
 		return store.ArmedOrderDB{}, 0, false
 	}
-	if err := ledger.DB().First(&r, arm.RowID).Error; err != nil {
+	// The swing is a SINGLE leg — exactly one row. A phantom registry entry
+	// with no rows refuses (never index an empty slice).
+	if len(arm.RowIDs) != 1 {
 		mentorCount("swing_fill_row_gone")
-		at.logWarnf("🧑‍🏫 mentor swing fill check REFUSED — ArmID row %d gone: %v", arm.RowID, err)
+		at.logWarnf("🧑‍🏫 mentor swing fill check REFUSED — ArmID has %d row(s), want exactly 1", len(arm.RowIDs))
+		return store.ArmedOrderDB{}, 0, false
+	}
+	if err := ledger.DB().First(&r, arm.RowIDs[0]).Error; err != nil {
+		mentorCount("swing_fill_row_gone")
+		at.logWarnf("🧑‍🏫 mentor swing fill check REFUSED — ArmID row %d gone: %v", arm.RowIDs[0], err)
 		return store.ArmedOrderDB{}, 0, false
 	}
 	if r.State != store.StateFilled {
@@ -318,7 +329,7 @@ func (at *AutoTrader) mentorSwingFill(arm mentorLiveArm) (r store.ArmedOrderDB, 
 		return r, float64(*r.Contracts), true
 	}
 	mentorCount("swing_fill_unknown_qty")
-	at.logWarnf("🧑‍🏫 mentor swing fill REFUSED — ArmID row %d filled but no contracts (FillQuantity=0, Contracts absent): cannot size its own close; never guessed", arm.RowID)
+	at.logWarnf("🧑‍🏫 mentor swing fill REFUSED — ArmID row %d filled but no contracts (FillQuantity=0, Contracts absent): cannot size its own close; never guessed", arm.RowIDs[0])
 	return r, 0, false
 }
 

@@ -34,10 +34,10 @@ func TestRefusedChatOpenLeavesTheBracketMapsByteIdentical(t *testing.T) {
 		}, "maintenance"},
 		{"the one entry latch", func(w *chatDoorWire) {
 			w.nt.SetEntryLatchSource(&nttrader.EntryLatchSource{
-				Book: func(time.Time) nttrader.EntryLatchBookVerdict {
+				Book: func(_ time.Time, _ map[string]bool) nttrader.EntryLatchBookVerdict {
 					return nttrader.EntryLatchBookVerdict{Detail: "book stale (fixture)"}
 				},
-				Ledgers: func() ([]string, error) { return nil, nil },
+				Ledgers: func(_ map[string]bool) ([]string, error) { return nil, nil },
 			})
 		}, "one_entry_latch"},
 		{"an unbound account", func(w *chatDoorWire) {
