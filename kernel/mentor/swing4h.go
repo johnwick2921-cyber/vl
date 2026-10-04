@@ -270,6 +270,20 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			s.Pos.MovedBE = false
 			s.Pending = nil
 		}
+		// R31 [D5.2 p1 @15:48–16:24 "1 cây nến sau đó đóng ở trên level…
+		// không đặt lệnh"]: while a reject order rests, any later 5m close
+		// THROUGH the line kills it — the level went invalid, so the stop
+		// order must not keep holding the account slot against a line price
+		// has already cut through. The fill check above wins: a filled order
+		// is a position, not a resting order to cancel.
+		if s.Pending != nil && closesThroughPendingLine(s.Pending.Side, b.Close, line) {
+			out = append(out, Intent{
+				Action: CancelArm,
+				ArmID:  s.Pending.ArmID,
+				Reason: "swing: a later 5m close cut through the line — cancel the resting order [D5.2 p1 @15:48–16:24]",
+			})
+			s.Pending = nil
+		}
 		prev := bars5m[i-1]
 		// one-setup-per-approach re-arm: price left the line by the stop
 		// distance and has room to come back.
@@ -364,6 +378,17 @@ func fillsSwingEntry(p *swingPosition, b market.Kline) bool {
 		return b.High >= p.Entry
 	}
 	return b.Low <= p.Entry
+}
+
+// closesThroughPendingLine reports whether a closed 5m bar cut through the
+// line a resting swing order sits against [D5.2 p1 @15:48–16:24]: a short
+// rests BELOW the resistance (a close above = through), a long rests ABOVE
+// the support (a close below = through). Either invalidates the level.
+func closesThroughPendingLine(side Side, close, line float64) bool {
+	if side == SideShort {
+		return close > line
+	}
+	return close < line
 }
 
 // openPosition records the RESTING swing order (not yet filled). S1: the
