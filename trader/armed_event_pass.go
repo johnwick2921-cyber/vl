@@ -124,11 +124,23 @@ func (at *AutoTrader) stopArmedEventLoop() {
 func (at *AutoTrader) runArmedEventLoop(l *armedEventLoop) {
 	defer close(l.done)
 	var last time.Time
+	// N7 part 3 — the mentor placement cadence: while an unexpired mentor arm
+	// sits UNPLACED, re-run the mentor-only placement every ~5s so a 1-candle
+	// arm authored between the 2-min scans is placed within ~10s. The 2-min
+	// scan stays the fallback; this ticker is inert unless mentor placement is
+	// due (mentorPlacementDue is false on every non-mentor, non-armed state).
+	mentorTicker := time.NewTicker(mentorPlaceCadence)
+	defer mentorTicker.Stop()
 	for {
 		select {
 		case <-l.stop:
 			return
 		case <-l.kick:
+		case <-mentorTicker.C:
+			if at.mentorPlacementCadencePass() {
+				l.passes.Add(1)
+			}
+			continue
 		}
 		if !last.IsZero() {
 			if wait := armedEventMinGap - time.Since(last); wait > 0 {
