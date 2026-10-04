@@ -428,12 +428,12 @@ namespace NinjaTrader.NinjaScript.AddOns
         // Selection order (first match wins):
         //   1. The account name in %USERPROFILE%\VLTrader\account.txt
         //      (operator-editable — one line, e.g. "Sim101" or "MyPropAcct").
-        //      NOTE (R5, 2026-10-03): the legacy NofxTrader\account.txt
+        //      NOTE (R5, 2026-10-03): the legacy pre-rename account.txt
         //      migration branch was REMOVED in the cancel-confirm AddOn update
-        //      (one F5) — the NofxTrader folder holds only data\ and VLTrader
+        //      (one F5) — the pre-rename folder holds only data\ and VLTrader
         //      did not exist there yet, so there is nothing to migrate. If you
-        //      ever had NofxTrader\account.txt, move it to VLTrader\account.txt
-        //      yourself.
+        //      ever had the pre-rename folder's account.txt, move it to
+        //      VLTrader\account.txt yourself.
         //   2. "Sim101" (SIM default).
         //   3. The first available account.
         private void ResolveAccount()

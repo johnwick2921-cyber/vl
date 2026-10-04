@@ -1362,6 +1362,29 @@ func (at *AutoTrader) runArmedPlacementAt(bars []market.Kline, sinceMs int64, no
 			}
 		}
 		if armExpired(r, now.UnixMilli()) {
+			// REVIEW-313 F2: an expired row that was NEVER SENT (armed, no
+			// signal id) ends terminal here. No regime can settle a
+			// cancel_pending row with signal_id="" — the snapshot regime
+			// answers "no signal id", no report can arrive, and the
+			// re-request refuses the empty id — so it would otherwise WARN
+			// and bump the unconfirmed counter every pass, forever. Kill the
+			// authorization in the ledger, like cancelOtherArmsInPlan does.
+			if store.IsUnplacedArm(r.State, r.SignalID) {
+				at.armLifecycleWrite("set_state(expired)", r, ledger.SetState(r.ID, "expired", "stop-limit expiry elapsed — never placed"))
+				continue
+			}
+			// REVIEW-313 F1: the cancel frame goes out on THIS pass (the
+			// gate_changed shape), not on the settlement pass ~90s later. A
+			// gap through the trigger with a resting stop-limit must not wait
+			// for the re-request to cancel — a fill in that window lands at a
+			// stale price, which is the exact N12 hazard the column closes.
+			if strings.TrimSpace(r.SignalID) != "" {
+				if v := at.cancelSafetyFor(r, now); !v.Allow {
+					at.logWarnf("🛟 armed expiry cancel REFUSED: %s %s signal=%s — %s", r.Session, r.Scenario, shortID(r.SignalID), v.Why)
+				} else if cerr := nt.CancelOrder(r.SignalID); cerr != nil {
+					at.logWarnf("✕ armed expiry cancel SEND failed: %s %s: %v", r.Session, r.Scenario, cerr)
+				}
+			}
 			at.armLifecycleWrite("request_cancel(expiry_elapsed)", r,
 				ledger.RequestCancel(r.ID, "stop-limit expiry elapsed", now.UnixMilli()))
 			continue
@@ -1405,8 +1428,9 @@ func (at *AutoTrader) runArmedPlacementAt(bars []market.Kline, sinceMs int64, no
 				}
 				// D3 (2026-09-04): the window belongs to the E7 FALLBACK only.
 				// A reclaim's buy stop IS the entry — waiting for a no-retest
-				// window would miss the reclaim it exists to catch.
-				if stopEntryNeedsRetestWindow(r.Condition) &&
+				// window would miss the reclaim it exists to catch. A MENTOR
+				// row's stop is the evaluator's own entry (P0-b): no window.
+				if !mentorAuthoredRow(r) && stopEntryNeedsRetestWindow(r.Condition) &&
 					!stopEntryFallbackDue(bars, int64(r.EntryPx), sinceMs, now.UnixMilli()) {
 					continue // still inside the retest window
 				}
@@ -1837,14 +1861,30 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 	// so everything after it is the send itself. An error before it is a
 	// refusal (build, account, permit, B3, the ledger CAS) — provably unsent.
 	stamped := false
-	// MENTOR STOP-LIMIT (PR B, 2026-10-03): with the knob ON the stop-entry
-	// routes through the limit variant — the AddOn builds OrderType.StopLimit
-	// (bounded limit offset past the trigger, N12) instead of StopMarket.
-	// Default OFF keeps the wire byte-identical to today. The send itself and
-	// the beforeSend callback are shared verbatim: the only difference is the
+	// MENTOR STOP-LIMIT (PR B, 2026-10-03, REVIEW-313 F3): the routing reads
+	// the arm's EXPLICIT origin, never the expiry as a proxy. The mentor
+	// injector stamps origin=mentor and expiry_ms (DS-102, #316):
+	//   mentor + knob ON + expiry > 0  -> the limit variant (the AddOn builds
+	//     OrderType.StopLimit with LimitPrice == StopPrice: the entry fills at
+	//     its price or misses, never a stop-MARKET).
+	//   mentor + knob ON + no expiry -> REFUSED fail-closed: a counted
+	//     refusal, the arm stays armed, and there is NO stop-market fallback —
+	//     a mentor arm without its expiry must never rest unbounded.
+	//   non-mentor -> today's path (stop-market) whatever the expiry; the knob
+	//     OFF is also today's path for everyone.
+	// Default OFF keeps the wire byte-identical. The send itself and the
+	// beforeSend callback are shared verbatim: the only difference is the
 	// stop_limit frame flag behind the far-side floor.
 	placeStopFn := pl.PlaceStopEntry
-	if stopLimitEntriesEnabled() {
+	if isMentorArmOrigin(r) && stopLimitEntriesEnabled() {
+		if r.ExpiryMs <= 0 {
+			if armRefusalChanged(&at.armRefusalLast, armKey, "stop_entry:stop_limit_no_expiry") {
+				shown := at.countStopEntryRefusal(r, "stop_entry:stop_limit_no_expiry", now)
+				at.logWarnf("📛 armed %s mentor stop-entry REFUSED [guard=stop_limit_expiry verdict=%s] %s stop-limit trigger=%.2f: no expiry_ms — the mentor injector must stamp it before arming; no stop-market fallback%s",
+					r.Scenario, d.Verdict, strings.ToUpper(d.Side), d.Trigger, shown)
+			}
+			return stopPlaceNotSent
+		}
 		placeStopFn = pl.PlaceStopEntryWithLimit
 	}
 	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, 1, d.Trigger, r.StopPx, r.TargetPx, func(sid string) error {

@@ -150,8 +150,7 @@ export function FAQContent({
                             <li>
                               打开 PR：base 选择{' '}
                               <code>johnwick2921-cyber/vl:dev</code> ← compare
-                              选择 <code>你的用户名/vl:feat/your-topic</code>
-                              。
+                              选择 <code>你的用户名/vl:feat/your-topic</code>。
                             </li>
                             <li>
                               在 PR 中关联 Issue（示例：
@@ -326,8 +325,7 @@ export function FAQContent({
                             <li>
                               在 PR 中关联 Issue（示例：
                               <code className="ml-1">Closes #123</code>），PR
-                              目标选择 <code>johnwick2921-cyber/vl:dev</code>
-                              。
+                              目标选择 <code>johnwick2921-cyber/vl:dev</code>。
                             </li>
                             <li>
                               保持与 <code>upstream/dev</code>{' '}

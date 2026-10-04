@@ -1,0 +1,125 @@
+package mentor
+
+import (
+	"testing"
+
+	"vl/market"
+)
+
+// TestPHLPLHWorkedExampleGeometry — §2.2 [D2.2 p1 @ 06:50, R2 @ 19:34]:
+// the buy stop sits at the PREVIOUS candle's high (29,395.75, no buffer),
+// stop = the low of that broken candle (29,387.50), target 29,425.75 —
+// visibly below the old high 29,430–29,440. The setup must PASS the room
+// rule (reward 30 vs risk 8.25 = 3.6R ≥ 2×) and the stop ceiling.
+func TestPHLPLHWorkedExampleGeometry(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.PHLTargetShyPts = 6 // worked example: 29,425.75 vs old high ~29,431.75
+	ref := market.Kline{High: 29_395.75, Low: 29_387.5, Close: 29_392.0}
+	touch := Touch{
+		LevelKey: "old-low", Outcome: TouchReject,
+		RefBar:         ref,
+		ApproachedFrom: SideLong,
+	}
+	oldHigh := Level{Key: "old-high", Kind: KindOldExtreme, Price: 29_431.75}
+	in, ok, reason := PHLPLH(touch, oldHigh, 0, 3, cfg)
+	if !ok {
+		t.Fatalf("worked example refused: %s", reason)
+	}
+	if in.Side != SideLong || in.Price != 29_395.75 || in.Stop != 29_387.5 {
+		t.Fatalf("entry = %+v, want long price 29395.75 stop 29387.50 (R2: tight on the previous candle)", in)
+	}
+	// target = old high − shy = 29,425.75
+	if in.Target != 29_425.75 {
+		t.Fatalf("target = %.2f, want 29425.75 (near, not at, the old high)", in.Target)
+	}
+	if !(29_425.75 < 29_431.75) {
+		t.Fatalf("target must sit BEFORE the old high [D4.1 p1 @ 07:27]")
+	}
+}
+
+// TestPHLPLHRequiresThreeCandlesFromOldExtreme — [D4.1 p1 @ 09:40 written]:
+// "Phải đợi đi xa đỉnh/đáy cũ trước đó (ít nhất là 3 cây nến backtest)".
+func TestPHLPLHRequiresThreeCandlesFromOldExtreme(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	touch := Touch{
+		Outcome: TouchReject, RefBar: market.Kline{High: 101, Low: 99},
+		ApproachedFrom: SideLong,
+	}
+	oldHigh := Level{Kind: KindOldExtreme, Price: 120}
+	_, ok, reason := PHLPLH(touch, oldHigh, 0, 2, cfg)
+	if ok {
+		t.Fatalf("entry 2 candles from the old extreme was allowed")
+	}
+	if reason == "" {
+		t.Fatal("refusal must carry a reason")
+	}
+	if _, ok, _ := PHLPLH(touch, oldHigh, 0, 3, cfg); !ok {
+		t.Fatal("entry exactly 3 candles away must pass the distance gate")
+	}
+}
+
+// TestPHLPLHRoomRule — §6 [D5.3 p1 @ 09:16]: reward must be at least 2× risk.
+// A 1:1 shape is refused.
+func TestPHLPLHRoomRule(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.PHLTargetShyPts = 0
+	// entry 110 (buy stop above ref high 108.5 + 1.5), stop 103 (ref low 104.5 − 1.5)
+	touch := Touch{
+		Outcome: TouchReject, RefBar: market.Kline{High: 108.5, Low: 104.5},
+		ApproachedFrom: SideLong,
+	}
+	// target 115: reward 5, risk 7 → 0.71R < 2 → refused
+	if _, ok, _ := PHLPLH(touch, Level{Kind: KindOldExtreme, Price: 115}, 0, 3, cfg); ok {
+		t.Fatal("1:1-ish trade passed the room rule")
+	}
+	// target 125: reward 15, risk 7 → 2.14R → accepted
+	if _, ok, reason := PHLPLH(touch, Level{Kind: KindOldExtreme, Price: 125}, 0, 3, cfg); !ok {
+		t.Fatalf("2.14R trade refused: %s", reason)
+	}
+}
+
+// TestPHLPLHStopCeiling — §6 [D3.3 p1 @ 02:04]: stop over 25 pts is never a
+// trade, regardless of reward.
+func TestPHLPLHStopCeiling(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	touch := Touch{
+		Outcome: TouchReject, RefBar: market.Kline{High: 130, Low: 100},
+		ApproachedFrom: SideLong,
+	}
+	// risk ≈ 30 > 25 → refused even with a huge target
+	if _, ok, _ := PHLPLH(touch, Level{Kind: KindOldExtreme, Price: 200}, 0, 3, cfg); ok {
+		t.Fatal("stop over the 25-pt ceiling was accepted")
+	}
+}
+
+// TestPHLPLHOldExtremeOnTargetSide — the old extreme must be on the target
+// side: long → old high above the entry; a high BELOW the entry is refused.
+func TestPHLPLHOldExtremeOnTargetSide(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	touch := Touch{
+		Outcome: TouchReject, RefBar: market.Kline{High: 101, Low: 99},
+		ApproachedFrom: SideLong,
+	}
+	if _, ok, _ := PHLPLH(touch, Level{Kind: KindOldExtreme, Price: 95}, 0, 3, cfg); ok {
+		t.Fatal("long targeting an old extreme BELOW the entry was accepted")
+	}
+	if _, ok, _ := PHLPLH(touch, Level{Kind: KindOldExtreme, Price: 125}, 0, 3, cfg); !ok {
+		t.Fatal("long targeting the old high above the entry must pass")
+	}
+}
+
+// TestPHLPLHWrongWayTouchIsNotASetup — §3 [D5.2 p1 @ 19:51]: only a REJECT
+// touch can be a PHL/PLH; a wrong-way (invalidated) level never produces one.
+func TestPHLPLHWrongWayTouchIsNotASetup(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	touch := Touch{Outcome: TouchWrongWay, RefBar: market.Kline{High: 101, Low: 99}}
+	if _, ok, _ := PHLPLH(touch, Level{Kind: KindOldExtreme, Price: 125}, 0, 3, cfg); ok {
+		t.Fatal("wrong-way touch produced a PHL/PLH")
+	}
+}

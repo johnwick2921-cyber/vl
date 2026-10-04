@@ -1387,15 +1387,17 @@ const pictureHtf: KnobSpec[] = [
   {
     label: 'Mentor stop-limit entries',
     where: 'Environment only (MENTOR_STOP_LIMIT, default OFF)',
-    what: 'D1.4: never a stop-MARKET. With the knob ON, stop entries carry stop_limit=true and the AddOn builds OrderType.StopLimit with LimitPrice == StopPrice: the entry fills at its price or misses. The order carries a per-order expiry (expiry_ms) authored by the evaluator intent and is cancelled unfilled when it lapses (N12: a gap through the trigger otherwise leaves a resting limit that can fill later at a stale price).',
-    trader: 'The mentor evaluator drives this knob; the AI path never sets it.',
+    what: 'D1.4: never a stop-MARKET. With the knob ON, a stop-entry arm whose origin is mentor and that carries a per-order expiry (expiry_ms) goes out with stop_limit=true and the AddOn builds OrderType.StopLimit with LimitPrice == StopPrice: the entry fills at its price or misses. The expiry is authored by the mentor evaluator intent; the armed pass cancels the order unfilled when it lapses — the cancel frame is sent on the same pass (N12: a gap through the trigger otherwise leaves a resting limit that can fill later at a stale price), and an expired arm that was never placed ends terminal.',
+    trader:
+      'The routing reads the arm’s explicit origin. Mentor + knob ON + expiry → stop-limit; mentor + knob ON + no expiry → REFUSED with a reason and a counter (the arm stays armed, no stop-market fallback). A non-mentor arm takes the ordinary stop-market path whatever its expiry, and knob OFF is that same path for everyone.',
     consumer:
-      'provider/ninjatrader/tcp_framing.go (SignalPayload.StopLimit, MinAddonBuildStopLimit) · trader/ninjatrader/tcp_trader.go (PlaceStopEntryWithLimit) · trader/armed_executor.go (routing + expiry sweep) · store/armed_orders.go (expiry_ms) · ninjascript VLTraderTCPClient.cs (stop_limit).',
+      'provider/ninjatrader/tcp_framing.go (SignalPayload.StopLimit, MinAddonBuildStopLimit) · trader/ninjatrader/tcp_trader.go (PlaceStopEntryWithLimit) · trader/armed_executor.go (origin-gated routing + expiry sweep) · trader/stop_limit.go (isMentorArmOrigin) · store/armed_orders.go (origin + expiry_ms) · ninjascript VLTraderTCPClient.cs (stop_limit).',
     range: 'off | on · default off',
     systemDefault: 'off',
     recommended:
       '⭐ keep OFF until Mentor mode; then ON with SIM-only trading.',
-    whenToTouch: 'Only with Mentor mode.',
+    whenToTouch:
+      'Only with Mentor mode — and do NOT turn ON until the mentor injector stamps origin=mentor AND expiry_ms on every stop-limit it arms (DS-102, #316).',
     perSession: 'No.',
   },
 ]

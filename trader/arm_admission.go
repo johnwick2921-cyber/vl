@@ -45,20 +45,28 @@ func (a armAdmission) retract(planID, scenario string, leg int) {
 // to be discarded here.
 func (at *AutoTrader) armAdmitted(r store.ArmedOrderDB, side string, price float64, now time.Time, admitted armAdmission) (bool, string) {
 	key := r.PlanID + ":" + r.Scenario + ":leg" + strconv.Itoa(r.LegIndex+1)
-	// FAIL-CLOSED (CTO M2): no admitted set means no authoring pass stands in
-	// front of this placement — nothing is admitted. A nil default would let a
-	// direct caller (W3's event-driven pass) bypass G1 silently.
-	if admitted == nil || !admitted[armAdmitKey(r.PlanID, r.Scenario, r.LegIndex)] {
-		why := "not admitted this pass"
-		if admitted == nil {
-			why = "no authoring pass"
+	// P0-b (mentor injector, CTO 1791040400571): the mentor injector is its
+	// OWN authoring pass — a mentor-authored row is admitted without the
+	// planner's admission set (the injector just authored it THIS cycle), and
+	// then runs the SAME admitEntry gate chain as every other arm. With a
+	// mentor-mode row the admitted-set membership would otherwise be
+	// impossible: the planner's admission only names the AI plan's legs.
+	if !mentorAuthoredRow(r) {
+		// FAIL-CLOSED (CTO M2): no admitted set means no authoring pass stands in
+		// front of this placement — nothing is admitted. A nil default would let a
+		// direct caller (W3's event-driven pass) bypass G1 silently.
+		if admitted == nil || !admitted[armAdmitKey(r.PlanID, r.Scenario, r.LegIndex)] {
+			why := "not admitted this pass"
+			if admitted == nil {
+				why = "no authoring pass"
+			}
+			if at.admitLast.changed("arm-g1|"+key, why) {
+				at.logWarnf("⏸ armed %s leg %d NOT placed — %s (G1); it stays armed until a pass admits it", r.Scenario, r.LegIndex+1, why)
+				// counted once per change, like every arm refusal
+				telemetry.IncGateBlock(at.id, "arm_not_admitted")
+			}
+			return false, "arm_not_admitted: " + why
 		}
-		if at.admitLast.changed("arm-g1|"+key, why) {
-			at.logWarnf("⏸ armed %s leg %d NOT placed — %s (G1); it stays armed until a pass admits it", r.Scenario, r.LegIndex+1, why)
-			// counted once per change, like every arm refusal
-			telemetry.IncGateBlock(at.id, "arm_not_admitted")
-		}
-		return false, "arm_not_admitted: " + why
 	}
 	at.admitLast.clear("arm-g1|" + key)
 	action := "open_long"
@@ -67,7 +75,8 @@ func (at *AutoTrader) armAdmitted(r store.ArmedOrderDB, side string, price float
 	}
 	if refusal, refused := at.admitEntry(admitIntent{
 		Path: admitArm, Symbol: at.futuresSymbol(), Action: action, Now: now, Key: key, Price: price,
-		Source: r.Source, // W5 D21 — a Picture-sourced row faces Picture's running / Day Plan checks
+		Source:    r.Source, // W5 D21 — a Picture-sourced row faces Picture's running / Day Plan checks
+		MentorArm: isMentorArmOrigin(r),
 	}); refused {
 		return false, refusal
 	}

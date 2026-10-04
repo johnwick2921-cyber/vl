@@ -368,6 +368,8 @@ func main() {
 	logger.Infof("%s", trader.MaintenanceBootLine(traderManager.GetAllTraders()))
 	// W-NO-BINANCE A — the market-data sources, READ (replaces the old literal).
 	logger.Infof("%s", trader.MarketDataBootLine(traderManager.GetAllTraders()))
+	logger.Infof("%s", trader.MentorLatencyBootLine())
+	logger.Infof("%s", trader.MentorSourcesBootLine(traderManager.GetAllTraders()))
 	logger.Infof("%s", researchsnapshot.CurrentBootLine())
 	// UI SERVING PATH (owner ruling 2026-09-03). Printed right after the boot
 	// integrity line because it answers the same question about a different

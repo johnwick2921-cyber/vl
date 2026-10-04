@@ -54,7 +54,9 @@ func pictureHtfLiveBars(symbol, tf, contract string, bars []ntwire.Bar, received
 			// W3 D14 — the live-bar armed pass (market_in_zone): a non-blocking
 			// kick on a final 1m bar or a zone-verdict change. It reads the
 			// WIRE bars because the kline copy above drops Final.
-			at.noteLiveBarsForArmedPass(symbol, tf, bars)
+			at.noteLiveBarsForArmedPass(symbol, tf, bars) // MENTOR P3 — the mentor evaluator rides the same event loop:
+			// a FINAL 1m/5m frame stamps the arrival and kicks the pass.
+			at.noteLiveBarsForMentorPass(symbol, tf, bars, receivedAt)
 		}
 		return true
 	})

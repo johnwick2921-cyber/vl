@@ -293,11 +293,25 @@ func TestSetArmExpiryStampsOnlyUnfilledRows(t *testing.T) {
 	if err := st.SetArmExpiry(armed.ID, 0); err == nil {
 		t.Fatal("a non-positive expiry must be refused")
 	}
-	if err := st.SetState(armed.ID, StateWorking, "filled"); err != nil {
-		t.Fatalf("fill: %v", err)
+	if err := st.SetState(armed.ID, StateWorking, "entry order_update"); err != nil {
+		t.Fatalf("to working: %v", err)
+	}
+	extended := expiry + 60_000
+	if err := st.SetArmExpiry(armed.ID, extended); err != nil {
+		t.Fatalf("a WORKING, UNFILLED row is the resting stop-limit the evaluator extends (ISB stacking) — the stamp must be accepted: %v", err)
+	}
+	var got ArmedOrderDB
+	if err := st.DB().First(&got, armed.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.ExpiryMs != extended {
+		t.Fatalf("the working row's expiry was not stamped: got %d, want %d", got.ExpiryMs, extended)
+	}
+	if err := st.DB().Model(&ArmedOrderDB{}).Where("id = ?", armed.ID).Update("fill_quantity", 1).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := st.SetArmExpiry(armed.ID, expiry); err == nil {
-		t.Fatal("a filled row must refuse an expiry stamp")
+		t.Fatal("a PARTIALLY FILLED working row is a trade in progress — its expiry must never be moved")
 	}
 	if err := st.SetState(armed.ID, StateCancelled, "owner"); err != nil {
 		t.Fatalf("cancel: %v", err)

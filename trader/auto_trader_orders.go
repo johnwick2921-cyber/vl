@@ -3,13 +3,13 @@ package trader
 import (
 	"fmt"
 	"math"
+	"time"
 	"vl/kernel"
 	"vl/logger"
 	"vl/market"
 	"vl/store"
 	"vl/telemetry"
 	ntTrader "vl/trader/ninjatrader"
-	"time"
 )
 
 // maxFuturesContracts caps the per-order contract count for CME futures
@@ -48,6 +48,12 @@ func futuresOrderQuantity(symbol string, notionalUSD, price float64, maxContract
 // strategy (per-strategy value, else the 2-contract venue default; 6.6 comment-truth fix). Hardening D3
 // (audit F2): ALWAYS ON — the guardrails master switch no longer disables it.
 func (at *AutoTrader) resolveMaxContracts() int {
+	// MENTOR P3 — the 0B size clamp does NOT apply to a mentor-mode trader:
+	// mentor sizes come from the mentor table (up to mentor_max_contracts).
+	// AI mode keeps the 2-contract default untouched.
+	if mx, ok := at.mentorMaxContracts(); ok {
+		return mx
+	}
 	if at.config.StrategyConfig == nil {
 		return int(maxFuturesContracts)
 	}
@@ -151,6 +157,24 @@ func (at *AutoTrader) executeDecisionWithRecordAt(decision *kernel.Decision, act
 	// (the real gates below are untouched — W5.4 THE LAW).
 	if decision.Action == "open_long" || decision.Action == "open_short" {
 		at.applyWeeklyDecisionShadow(decision)
+	}
+
+	// MENTOR P3 — AI-entries-off for a mentor-mode trader lives in admitChain
+	// (entry_admission.go): the ONE admission chain that the decision, agent,
+	// arm and picture paths all ask. Mentor-sourced decisions (MentorSourced)
+	// pass; every other open is refused and counted there — no second copy here.
+
+	// MENTOR P3 (CTO 15:17:23Z, D2.1 @02:47) — the CLOSE half: the AI's close
+	// decisions must not act on a mentor-owned position — the mentor driver
+	// owns the exits. Mentor-sourced closes pass; the safety paths (EOD flat,
+	// reconcile) never reach this switch, so they stay untouched.
+	if decision.Action == "close_long" || decision.Action == "close_short" {
+		if refusal := at.mentorSuppressAIClose(decision); refusal != "" {
+			at.logWarnf("🧑‍🏫 %s (trader %s)", refusal, at.id)
+			actionRecord.Success = false
+			actionRecord.Error = refusal
+			return nil
+		}
 	}
 
 	// Feed-down gate (NinjaTrader, TRACK A), CLOSE half: the SIM cannot fill
@@ -591,6 +615,12 @@ func (at *AutoTrader) openEntryWithRecord(decision *kernel.Decision, actionRecor
 		manual.brokerCalled = true
 	}
 	var order map[string]interface{}
+	// P0-a / P0-b (mentor injector, CTO 1791040400571): mentor-sourced
+	// decisions no longer take this route — the injector authors an ARMED
+	// LEDGER row and the armed executor places it (stop-limit by the origin
+	// rule, slot guard, c2 floor, expiry). The old direct stop-entry hop here
+	// asserted an interface the real broker never satisfied, so every mentor
+	// entry was refused.
 	if carries {
 		order, err = carrier.OpenWithBracket(decision.Symbol, side, quantity, decision.StopLoss, decision.TakeProfit)
 	} else {
@@ -625,6 +655,12 @@ func (at *AutoTrader) openEntryWithRecord(decision *kernel.Decision, actionRecor
 	if manual == nil {
 		posKey := decision.Symbol + "_" + side
 		at.positionFirstSeenTime[posKey] = time.Now().UnixMilli()
+		// MENTOR P3 — a mentor-sourced open marks the position as
+		// mentor-owned so the AI's closes refuse it (the mentor driver
+		// owns the exit). Cleared by the close paths and the flat sweep.
+		if decision.MentorSourced {
+			at.positionMentorOwned[posKey] = true
+		}
 	}
 
 	// Set stop loss and take profit — inside the entry-send section too
