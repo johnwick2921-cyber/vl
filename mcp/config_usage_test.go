@@ -30,7 +30,8 @@ func TestConfig_MaxRetries_IsUsed(t *testing.T) {
 		WithHTTPClient(mockHTTP.ToHTTPClient()),
 		WithLogger(mockLogger),
 		WithAPIKey("sk-test-key"),
-		WithMaxRetries(5), // Set to retry 5 times
+		WithMaxRetries(5),             // Set to retry 5 times
+		WithRetryWaitBase(time.Millisecond), // shrink the real-clock backoff: the pin is the retry COUNT, not the wait
 	)
 
 	// Call API (should fail)

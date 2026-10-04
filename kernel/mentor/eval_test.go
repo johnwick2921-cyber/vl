@@ -94,7 +94,6 @@ func TestEvaluatorTickWarmSwingEntryUsesSeededLine(t *testing.T) {
 		LastBarTime: bars[3].OpenTime,
 		EmaCount:    FourHEMA34Min,
 		FirstTouch:  &swingTouch{Approach: SideShort, Through: true},
-		LeewayLeft:  2,
 	}
 
 	var swings []Intent

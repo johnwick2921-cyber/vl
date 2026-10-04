@@ -21,11 +21,19 @@ func reverseCfg() Config {
 
 func TestReverseISBAtEMA9KnobOff(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.Enabled = true // the knob itself stays off
+	cfg.Enabled = true
+	cfg.ISBReverseEMA9Enabled = false // explicitly off (the default is ON since R-C)
 	prev := market.Kline{Open: 106, Close: 100, High: 106.5, Low: 99.5}
 	cur := market.Kline{Open: 102, Close: 104, High: 104.5, Low: 99.5}
 	if in, ok, _ := ReverseISBAtEMA9(prev, cur, 101, SideLong, cfg); ok || in.Action != "" {
 		t.Fatalf("knob off must emit nothing; got %+v ok=%v [D5.4; L4]", in, ok)
+	}
+}
+
+// OWNER RULING 2026-10-04 R-C: the reverse ISB at EMA 9 is ON by default.
+func TestReverseISBAtEMA9DefaultIsOn(t *testing.T) {
+	if !DefaultConfig().ISBReverseEMA9Enabled {
+		t.Fatal("DefaultConfig().ISBReverseEMA9Enabled must be true (owner ruling 2026-10-04 R-C)")
 	}
 }
 

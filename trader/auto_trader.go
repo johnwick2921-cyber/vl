@@ -390,6 +390,10 @@ type AutoTrader struct {
 	// branch. Size is never touched by the upgrade.
 	mentorExitMu    sync.Mutex
 	mentorExitModes map[string]string
+	// mentorLivePos is the exit-drive's input: every FILLED mentor position,
+	// keyed by its entry signal id, registered at the fill callback and driven
+	// by the exit-drive loop (DS-107). Guarded by mentorExitMu.
+	mentorLivePos map[string]*mentorLivePos
 	// mentorFunnel is the N12 visibility counter (read-only): one INFO line per
 	// 15 minutes + on change, session-day scoped (17:00 CT). Never gates a trade.
 	mentorFunnel    mentorFunnel

@@ -13,6 +13,7 @@ import (
 	nt "vl/provider/ninjatrader"
 	"vl/store"
 	"vl/telemetry"
+	ntTrader "vl/trader/ninjatrader"
 )
 
 // ── CANCEL-CONFIRMATION (2026-09-06) ─────────────────────────────────────────
@@ -175,6 +176,13 @@ func cancelSettled(
 	for i := range book {
 		o := book[i]
 		if !o.IsWorking() {
+			// N7 part 5 (CTO, release #4): a FILLED entry is terminal but it is
+			// not a cancel — the fill path owns that row. Settling it here would
+			// mark a filled entry cancelled before its fill frame lands, and the
+			// N7 forget would then drop the latch's in-flight protection.
+			if entryFilledInBook(o, signalID) {
+				return false, "filled at the broker (" + o.State + ") — the filled path owns it"
+			}
 			continue
 		}
 		if _, ok := orderBelongsToSlot(o.Name, []string{signalID}); ok {
@@ -182,6 +190,35 @@ func cancelSettled(
 		}
 	}
 	return true, "absent from a fresh book"
+}
+
+// entryFilledInBook reports whether o is the slot's ENTRY order (named exactly
+// after the signal — never a "-sl"/"-tp" child) in a filled terminal state.
+func entryFilledInBook(o nt.NT8Order, signalID string) bool {
+	if !strings.EqualFold(strings.TrimSpace(o.Name), strings.TrimSpace(signalID)) {
+		return false
+	}
+	return o.TerminalOutcome() == nt.OrderOutcomeFilled
+}
+
+// cancelSeenInBook (N7 part 5) is the POSITIVE cancel proof the latch forget
+// needs: the slot's entry order is in the fresh book as Cancelled / Rejected /
+// Expired. Mere absence settles the ROW (cancelSettled) but never clears the
+// broker-side pending marker — the 45s sweep owns that.
+func cancelSeenInBook(book []nt.NT8Order, signalID string) bool {
+	if strings.TrimSpace(signalID) == "" {
+		return false
+	}
+	for i := range book {
+		o := book[i]
+		if !strings.EqualFold(strings.TrimSpace(o.Name), strings.TrimSpace(signalID)) {
+			continue
+		}
+		if o.TerminalOutcome() == nt.OrderOutcomeUnfilled {
+			return true
+		}
+	}
+	return false
 }
 
 // shortID keeps a log line readable without inventing a value.
@@ -491,6 +528,22 @@ func (at *AutoTrader) refuseSlot(r store.ArmedOrderDB, v slotVerdict, what strin
 // guard refused the cancel: nothing was sent (W-EXEC-TRUTH W0 (f), canon 35).
 var errCancelRefused = errors.New("cancel refused by the filled-arm guard")
 
+// forgetPendingEntry drops the broker-side queued-entry marker for a signal
+// whose row has just SETTLED CANCELLED (confirmed gone from the book). This is
+// the N7 hook: the one-entry latch's queued_entry / recent_send refusals read
+// the TCPTrader's pending map, which a cancel never clears on its own — only a
+// fill, a rejection, or the 45s stale sweep do. Forgetting it here lets the
+// entry that follows a confirmed cancel place instead of being refused and
+// lost. Non-NT traders are a no-op.
+func (at *AutoTrader) forgetPendingEntry(signalID string) {
+	if signalID == "" {
+		return
+	}
+	if ntTCP, ok := at.trader.(*ntTrader.TCPTrader); ok {
+		ntTCP.ForgetPending(signalID)
+	}
+}
+
 func (at *AutoTrader) confirmPendingCancels(ledger *store.ArmedOrderStore, cancelFn func(string) error, now time.Time) (settled, stillPending, reRequested int) {
 	if at == nil || ledger == nil {
 		return 0, 0, 0
@@ -543,6 +596,9 @@ func (at *AutoTrader) confirmPendingCancels(ledger *store.ArmedOrderStore, cance
 					at.logWarnf("🧾 cancel confirm: re-arm write failed for %s: %v", r.Scenario, err)
 					continue
 				}
+				if cancelSeenInBook(book, r.SignalID) {
+					at.forgetPendingEntry(r.SignalID) // N7 part 5: positive cancel only
+				}
 				settled++
 				at.logInfof("🧾 cancel CONFIRMED %s signal=%s — %s (snapshot %d, book age %s, attempts %d) — returned to armed-unplaced, re-placeable",
 					r.Scenario, shortID(r.SignalID), why, snapID, age.Round(time.Second), r.CancelAttempts)
@@ -556,6 +612,9 @@ func (at *AutoTrader) confirmPendingCancels(ledger *store.ArmedOrderStore, cance
 			if err := ledger.ConfirmCancel(r.ID, snapID, strings.TrimSpace(r.StateReason)+" — confirmed: "+why); err != nil {
 				at.logWarnf("🧾 cancel confirm: ledger write failed for %s: %v", r.Scenario, err)
 				continue
+			}
+			if cancelSeenInBook(book, r.SignalID) {
+				at.forgetPendingEntry(r.SignalID) // N7 part 5: positive cancel only
 			}
 			settled++
 			at.logInfof("🧾 cancel CONFIRMED %s signal=%s — %s (snapshot %d, book age %s, attempts %d)",
@@ -653,6 +712,7 @@ func (at *AutoTrader) confirmPendingCancelsReport(ledger *store.ArmedOrderStore,
 				at.logWarnf("🧾 cancel-report confirm: re-arm write failed for %s: %v", r.Scenario, err)
 				continue
 			}
+			at.forgetPendingEntry(r.SignalID)
 			settled++
 			settledIDs[r.ID] = true
 			at.logInfof("🧾 cancel-report CONFIRMED %s signal=%s — %s (report_ms=%d state=%s attempts=%d) — returned to armed-unplaced, re-placeable",
@@ -666,6 +726,7 @@ func (at *AutoTrader) confirmPendingCancelsReport(ledger *store.ArmedOrderStore,
 			at.logWarnf("🧾 cancel-report confirm failed for %s: %v", r.Scenario, err)
 			continue
 		}
+		at.forgetPendingEntry(r.SignalID)
 		settled++
 		settledIDs[r.ID] = true
 		at.logInfof("🧾 cancel-report CONFIRMED %s signal=%s — %s (report_ms=%d state=%s attempts=%d)",

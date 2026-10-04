@@ -14,6 +14,7 @@ import {
   effectiveValueText,
 } from './EffectiveChip'
 import { MentorModeToggle } from './MentorModeToggle'
+import { MentorTuningPanel } from './MentorTuningPanel'
 
 // ClampedNumberInput edits a single clamped number (e.g. min R/R). It holds the
 // RAW typed text in local state WHILE editing — so clearing + retyping work — and
@@ -252,6 +253,14 @@ export function RiskControlEditor({
         onWindowStartChange={(v) => updateField('mentor_window_start', v)}
         onWindowMinutesChange={(v) => updateField('mentor_window_minutes', v)}
       />
+      {config.mentor_mode === true && (
+        <MentorTuningPanel
+          tuning={config.mentor_tuning}
+          onChange={(v) => updateField('mentor_tuning', v)}
+          disabled={disabled}
+          language={language}
+        />
+      )}
       {/* Hold discipline (hold-lock) — applies to futures + crypto; default OFF */}
       <div
         className="p-4 rounded-lg"
