@@ -72,6 +72,7 @@ func ISBOrders(candle market.Kline, cfg Config) (long, short Intent) {
 		Price:  candle.High + cfg.ISBBufferPts,
 		Limit:  candle.High + cfg.ISBBufferPts,
 		Stop:   candle.Low - cfg.ISBBufferPts,
+		RefBarMs: candle.CloseTime,
 		Reason: "ISB: buy stop-limit above the ISB high + buffer, stop below the ISB low − buffer [D1.4 p1 @ 10:33–11:25, 14:42–14:44, 22:22–22:30, 24:41–24:55]",
 	}
 	short = Intent{
@@ -81,6 +82,7 @@ func ISBOrders(candle market.Kline, cfg Config) (long, short Intent) {
 		Price:  candle.Low - cfg.ISBBufferPts,
 		Limit:  candle.Low - cfg.ISBBufferPts,
 		Stop:   candle.High + cfg.ISBBufferPts,
+		RefBarMs: candle.CloseTime,
 		Reason: "ISB: sell stop-limit below the ISB low − buffer, stop above the ISB high + buffer [D1.4 p1 @ 10:33–11:25, 14:42–14:44, 22:22–22:30, 24:41–24:55]",
 	}
 	return long, short

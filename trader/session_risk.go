@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"vl/kernel"
@@ -185,6 +186,18 @@ func sessionRiskWindowWords(class string) (name, noun string, window bool) {
 		return "force-flat window", "window", true
 	}
 	return "", "", false
+}
+
+// mentorWaivesSessionBand (B3 Q1 + N5) reports whether the session-risk refusal
+// is one the mentor ignores: ONLY the lunch window and the first-N (first-5m)
+// window. Every other class — the consecutive-loss breaker, the red-news T1
+// blackout, the per-session trade cap, the force-flat windows, outside-session
+// and session-off — still refuses a mentor arm.
+func mentorWaivesSessionBand(risk sessionRiskVerdict) bool {
+	if risk.Class != "no_trade_band" {
+		return false
+	}
+	return strings.Contains(risk.Reason, "lunch no-trade") || strings.Contains(risk.Reason, "first-5m no-trade")
 }
 
 // SessionRiskBootLine — D5. Every field READ from the code that enforces it

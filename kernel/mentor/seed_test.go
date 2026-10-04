@@ -567,3 +567,39 @@ func TestSeed14h30CandleClosesAt1500(t *testing.T) {
 		t.Fatalf("14:30 candle count at 15:00 = %d, want one", found)
 	}
 }
+
+// TestSeedSwingWatermarkBlocksOldTouches (S2 pin, production call site Seed +
+// Tick): a boot over a long tape must stamp the swing watermark at the newest
+// closed 5m bar, and the first tick must walk NOTHING old — an old touch must
+// never become a live order. Mutant: drop the LastBarTime assignment in Seed →
+// (b1) turns RED.
+func TestSeedSwingWatermarkBlocksOldTouches(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	// 19 days of around-the-clock 1m bars: ≥102 closed 4h candles so the swing
+	// is allowed (not refused by the warm-up gate), and every touch in the tape
+	// is OLD by the time the bot boots at the end of the tape.
+	bars1m := minuteTape(t, 19)
+	now := ctMs(t, 19, 0, 0) // just past the last bar (day 18 23:59)
+	e := New(cfg)
+	if m := Seed(e, bars1m, now); len(m) != 0 {
+		t.Fatalf("fixture: unexpected missing sources %v", m)
+	}
+	b5 := closedBuckets(bars1m, now, cfg)
+	if len(b5) == 0 {
+		t.Fatal("fixture: no closed 5m bars")
+	}
+	newest := b5[len(b5)-1].OpenTime
+	// (b1) the seed stamped the swing watermark at the newest closed 5m bar.
+	if e.State.Swing.LastBarTime != newest {
+		t.Fatalf("seed LastBarTime = %d, want the newest closed 5m bar %d",
+			e.State.Swing.LastBarTime, newest)
+	}
+	// (b2) the first tick (no new bars) emits zero swing entries.
+	out := e.Tick(bars1m, now)
+	for _, in := range out {
+		if in.Action == PlaceStopEntry && in.Setup == "SWING4H" {
+			t.Fatalf("first tick replayed an old swing entry: %+v", in)
+		}
+	}
+}

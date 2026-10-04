@@ -68,16 +68,17 @@ type ArmedOrderDB struct {
 	// sharing a non-empty EntryGroup as ONE entry: a sibling leg is admitted,
 	// any other entry stays refused exactly as today. '' on every non-split and
 	// historical row = not part of a split group, which is the truth for them.
-	EntryGroup   string `gorm:"default:''"`
+	EntryGroup string `gorm:"default:''"`
+	// Contracts (B2 mentor size, 2026-10-04): the mentor-signed contract count
+	// the armed pass must send. NULL = ABSENT (absent ≠ 0) — only the mentor
+	// injector stamps it; every historical and non-mentor row is NULL. The
+	// armed pass sends this count for origin=mentor rows (clamped to the
+	// trader's max) and REFUSES a mentor row without one — never sent as 1.
+	// For the mentor split each leg row carries its OWN count (leg 1 =
+	// ceil(n/2), leg 2 = n − leg 1).
+	Contracts    *int
 	FillPrice    float64
 	FillQuantity int
-	// Contracts is the requested contract count for this arm row (DS-101 B2,
-	// 2026-10-04). NULLable with no default: NULL = absent (a legacy /
-	// non-mentor row never requested a count), absent ≠ 0. For the mentor split
-	// each leg row carries its OWN count (leg 1 = ceil(n/2), leg 2 = n − leg 1);
-	// the armed pass sends it for origin=mentor rows, clamped to
-	// resolveMaxContracts, and REFUSES a mentor row whose value is NULL.
-	Contracts *int
 
 	// E4 (entry-mechanics 2026-08-30) — split-entry legs: a two-leg arm writes
 	// TWO rows sharing (plan_id, scenario) distinguished by LegIndex. LegCount
@@ -318,8 +319,9 @@ func (s *ArmedOrderStore) Migrate() error {
 			// shared group id on both leg rows of ONE split entry; '' on
 			// every historical / non-split row = not a split group.
 			{"entry_group", "TEXT NOT NULL DEFAULT ''"},
-			// CONTRACTS (DS-101 B2, 2026-10-04): the requested contract
-			// count, NULLable with no default — NULL = absent, absent ≠ 0.
+			// B2 MENTOR SIZE (2026-10-04): the mentor-signed contract count.
+			// NULL = ABSENT on every historical and non-mentor row — a mentor
+			// row without one is REFUSED by the armed pass, never sent as 1.
 			{"contracts", "INTEGER"},
 			// W3 market_in_zone (2026-09-23): NULLable where 0 would be a
 			// fabricated value (absent ≠ 0); '' where the text is a label.

@@ -172,6 +172,50 @@ func (s *PositionStore) GetSessionDayActivity(traderID string, sinceMs int64, ac
 	return pnl.Total, int(cnt), nil
 }
 
+// MentorDayActivity is the B1 done-after-win seam read: one query over the
+// trader's CLOSED trades since sinceMs (the CME session-day start, 17:00 CT),
+// optionally scoped to one NT account (variadic, mirrors GetSessionDayActivity).
+// DayNetPnl sums pnl_corrected ONLY (corrected-column law, A22); a NULL row
+// increments Unresolved and is excluded from the sum — the caller fails CLOSED
+// when Unresolved > 0. ClosedInProfit is "a trade closed in profit today".
+type MentorDayActivity struct {
+	DayNetPnl      float64
+	ClosedInProfit bool
+	Unresolved     int
+}
+
+// MentorDayActivity returns the day's net P&L, whether any closed trade won,
+// and the unresolved (NULL pnl_corrected) count since sinceMs. Strict
+// corrected-column: the raw realized_pnl column is never read here.
+func (s *PositionStore) MentorDayActivity(traderID string, sinceMs int64, account ...string) (MentorDayActivity, error) {
+	acct := ""
+	if len(account) > 0 {
+		acct = account[0]
+	}
+	var out MentorDayActivity
+	q := s.db.Where("trader_id = ? AND status = ? AND exit_time >= ? AND close_reason NOT IN (?, ?, ?)",
+		traderID, "CLOSED", sinceMs, CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam)
+	if acct != "" {
+		q = q.Where("account = ?", acct)
+	}
+	var rows []TraderPosition
+	if err := q.Find(&rows).Error; err != nil {
+		return out, fmt.Errorf("mentor day activity: %w", err)
+	}
+	for _, r := range rows {
+		pnl, resolved := r.CorrectedPnL()
+		if !resolved {
+			out.Unresolved++
+			continue
+		}
+		out.DayNetPnl += pnl
+		if pnl > 0 {
+			out.ClosedInProfit = true
+		}
+	}
+	return out, nil
+}
+
 // GetFullStats gets complete trading statistics, optionally scoped to one
 // account (mirrors GetClosedPositions): account=="" → trader-global (crypto +
 // legacy); account!="" → only that NT account's closed trades, excluding
