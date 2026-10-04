@@ -102,7 +102,7 @@ func TestORBGateWorkedExample(t *testing.T) {
 		{Action: CancelArm, Reason: "stacking"},
 		{Action: PlaceStopEntry, Side: SideShort, Price: 24810, Reason: "swing §8: reject touch"},
 	}
-	got, _ := orbGateFilter(ints, orb, cfg)
+	got, _ := orbGateFilter(ints, orb, day, cfg)
 	if len(got) != 4 {
 		t.Fatalf("gate kept %d intents, want 4 (long PHL, long ISB, cancel, exempt swing; short PLH dropped): %+v", len(got), got)
 	}

@@ -14,8 +14,10 @@ import (
 	"testing"
 
 	"vl/internal/testhome"
+	"vl/internal/testtmpfs"
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(testhome.Guard(m))
+	// t.TempDir() on tmpfs (internal/testtmpfs); the guard still wraps m.Run.
+	os.Exit(testtmpfs.Run(func() int { return testhome.Guard(m) }))
 }

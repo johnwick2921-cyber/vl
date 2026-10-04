@@ -9,7 +9,11 @@
 // off nothing in this package is consulted (L4: byte-identical bot).
 package mentor
 
-import "vl/market"
+import (
+	"strings"
+
+	"vl/market"
+)
 
 // Action is what the evaluator asks the outside world to do. It is an intent,
 // not an execution: no order, wire frame or ledger write happens here.
@@ -91,13 +95,20 @@ type Intent struct {
 	Limit  float64 // PlaceStopLimitEntry: the limit price (== Price)
 	Stop   float64 // stop-loss
 	Target float64 // take-profit level
-	Flag   string  // sizing/routing flags for the injector (e.g. "isb_at_old_extreme")
+	Flag   string  // sizing/routing flags for the injector, joined with "|" (FlagISBAtOldExtreme, FlagISBInRange)
 
 	// ExpiryMs is the per-order expiry the injector arms on placement (N12
 	// correction): cancel when now >= expiry_ms and the order is unfilled.
 	// 0 = no expiry — the order is never auto-cancelled by the expiry sweep
 	// (the setup carries its own explicit CancelArm instead).
 	ExpiryMs int64
+
+	// RefBarMs (N10) is the reference candle's CLOSE time (ms) — the bar the
+	// entry geometry was measured from. The injector refuses any entry whose
+	// reference candle is not the newest closed bar (a reload replay of stale
+	// box/ISB/PHL returns must never become live orders). 0 = not stamped
+	// (swing — gated by its own 5m watermark instead).
+	RefBarMs int64
 
 	// Confluence is the R2 flag [00-METHOD Risk-reward, D3.4 p3 @ 07:38]:
 	// box edge + a key level inside the box or within 2 pts of its edge +
@@ -124,6 +135,13 @@ type Intent struct {
 	// evaluator stamps it on EVERY intent; the injector's size table then
 	// holds 1-2 (spent_day tier) and the R9 15-pt stop cap applies.
 	SpentDay bool
+	// HTFAgree: the 4h AND 1h triggers BOTH stand and point this entry's side
+	// (D4.4 p1 @16:00 case 1: "4h trigger buy, 1h trigger buy" → trade that
+	// side). The evaluator stamps it on every ENTRY where intents leave Tick;
+	// the trader's size table needs it for the 20-contract tier ("size 20 only
+	// when 4h AND 1h agree and room ≥ 30 pts"). A silent 1h (case 2: follow the
+	// 4h) is NOT agreement.
+	HTFAgree bool
 }
 
 // Config is every knob. Enabled is mentor_mode and defaults to false (L4):
@@ -342,4 +360,22 @@ func bucketOpen(openMs int64, tfMin int) int64 {
 		return fourHBucketStart(openMs, ctime())
 	}
 	return (openMs / (int64(tfMin) * 60_000)) * (int64(tfMin) * 60_000)
+}
+
+// ISB size flags carried on Intent.Flag (written rules 2 and 3, D4.1 p1 @08:05 /
+// @09:40). isbFlags produces them and the trader's size decision reads them, so
+// both sides use these constants.
+const (
+	FlagISBAtOldExtreme = "isb_at_old_extreme"
+	FlagISBInRange      = "isb_in_range"
+)
+
+// HasFlag reports whether the "|"-joined Intent.Flag contains the exact flag.
+func HasFlag(flag, want string) bool {
+	for _, f := range strings.Split(flag, "|") {
+		if strings.TrimSpace(f) == want {
+			return true
+		}
+	}
+	return false
 }

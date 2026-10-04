@@ -97,8 +97,8 @@ func mentorWireSeams(t *testing.T, at *AutoTrader, ledger *store.ArmedOrderStore
 	mentorLegProtectedSource = func(leg string) bool { return false }
 	mentorLatestPriceSource = func() (float64, bool) { return 29590, true } // below the long trigger: the no-chase rule passes
 	mentorConfluenceForIntent = func(in mentor.Intent) bool { return in.Confluence }
-	mentorDayNetSource = func() float64 { return 0 }
-	mentorClosedProfitSource = func() bool { return false }
+	mentorDayNetSource = func() (float64, bool) { return 0, true }
+	mentorClosedProfitSource = func() (bool, bool) { return false, true }
 	mentorSetArmExpiryWire = func(armID int64, expiryMs int64) error {
 		return ledger.SetArmExpiry(armID, expiryMs)
 	}
@@ -179,7 +179,7 @@ func TestMentorDispatchHandlesEveryAction(t *testing.T) {
 // row behind, and this turns RED.
 func TestMentorEntryIsAlwaysStopLimit(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "on")
-	t.Setenv("MENTOR_STOP_LIMIT", "on") // the p3 routing is knob-gated; the origin rule makes it knob-independent at the bundle bind
+	t.Setenv("MENTOR_STOP_LIMIT", "") // ALWAYS stop-limit: the env is not read, an unset env must still route the limit variant
 	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
 	mentorWireSeams(t, at, ledger)
 	resetMentorCounters()
@@ -192,8 +192,12 @@ func TestMentorEntryIsAlwaysStopLimit(t *testing.T) {
 	if sawMentorFrame(t, frames, ntwire.FrameSignal, 300*time.Millisecond) {
 		t.Fatal("the injector must NOT place directly — the armed executor places")
 	}
+	arm, ok := mentorLiveArmFor("isb-1")
+	if !ok || arm.RowID == 0 {
+		t.Fatalf("the ArmID registry must resolve isb-1 -> a real row, got %+v ok=%v", arm, ok)
+	}
 	var row store.ArmedOrderDB
-	if err := ledger.DB().Where("scenario = ?", "isb-1").First(&row).Error; err != nil {
+	if err := ledger.DB().First(&row, arm.RowID).Error; err != nil {
 		t.Fatalf("the mentor arm row must exist: %v", err)
 	}
 	if row.Kind != "stop_entry" || row.ExpiryMs != in.ExpiryMs || row.State != store.StateArmed {
@@ -202,9 +206,10 @@ func TestMentorEntryIsAlwaysStopLimit(t *testing.T) {
 	if !isMentorArmOrigin(row) {
 		t.Fatalf("mentor injector row origin=%q, want %q", row.Origin, store.ArmOriginMentor)
 	}
-	arm, ok := mentorLiveArmFor("isb-1")
-	if !ok || arm.RowID != row.ID {
-		t.Fatalf("the ArmID registry must resolve isb-1 -> row %d, got %+v ok=%v", row.ID, arm, ok)
+	// N1 (DS-104): the ledger scenario is the ArmID prefixed with the
+	// per-construction epoch — the registry key is the UNPREFIXED armID.
+	if !strings.HasPrefix(row.Scenario, "isb-1-") {
+		t.Fatalf("N1: the ledger scenario must be epoch-prefixed, got %q", row.Scenario)
 	}
 	armed := 0
 	for k, v := range MentorCountSnapshot() {
@@ -304,7 +309,7 @@ func mentorLoopbackRaw(t *testing.T, buildID string) (at *AutoTrader, ledger *st
 // arrives with the bundle's origin routing; p3's routing is knob-gated.)
 func TestMentorEntryFrameCarriesStopLimitTrue(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "on")
-	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	t.Setenv("MENTOR_STOP_LIMIT", "") // the env is not read (always stop-limit)
 	at, ledger, raw := mentorLoopbackRaw(t, ntwire.MinAddonBuildStopLimit)
 	mentorWireSeams(t, at, ledger)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-raw", Setup: "ISB", Side: mentor.SideLong,
@@ -337,7 +342,7 @@ func TestMentorEntryFrameCarriesStopLimitTrue(t *testing.T) {
 // wire) — never a stop-market fallback.
 func TestMentorEntryRefusesBelowC2(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "on")
-	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	t.Setenv("MENTOR_STOP_LIMIT", "")                                            // the env is not read (always stop-limit)
 	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildCancelReport) // c1 < c2
 	mentorWireSeams(t, at, ledger)
 	resetMentorCounters()
@@ -352,7 +357,7 @@ func TestMentorEntryRefusesBelowC2(t *testing.T) {
 		t.Fatal("an AddOn below c2 must never receive a mentor entry frame")
 	}
 	var row store.ArmedOrderDB
-	if err := ledger.DB().Where("scenario = ?", "isb-c1").First(&row).Error; err != nil {
+	if err := ledger.DB().Where("scenario LIKE ?", "isb-c1-%").First(&row).Error; err != nil {
 		t.Fatal(err)
 	}
 	if row.State != store.StateArmed {
@@ -426,7 +431,7 @@ func TestMentorCancelArmReachesTheBroker(t *testing.T) {
 // stop to the registered ENTRY price through mentorMoveStop (never-widen
 // guarded). Mutant: dropping the dispatch case leaves the spy uncalled.
 func TestMentorMoveStopBEReachesMoveStopWire(t *testing.T) {
-	at, _, _, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
 	mentorOpenStopSource = func() (float64, bool) { return 29595, true } // current stop below entry: BE is not a widen
 	t.Cleanup(func() { mentorOpenStopSource = nil })
 	var mu sync.Mutex
@@ -439,7 +444,13 @@ func TestMentorMoveStopBEReachesMoveStopWire(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { moveStopWire = oldWire })
-	mentorRegisterLiveArm("swing-1", 42, "long", 29600)
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-1",
+		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateFilled, SignalID: "swing-1-sig", FillPrice: 29600, FillQuantity: 1}
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-1", row.ID, "long", 29600)
 	resetMentorCounters()
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-1", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
 	mu.Lock()
@@ -455,8 +466,14 @@ func TestMentorMoveStopBEReachesMoveStopWire(t *testing.T) {
 // TestMentorClosePositionReachesTheBroker — the swing's hold-close intent
 // closes the registered side at the broker.
 func TestMentorClosePositionReachesTheBroker(t *testing.T) {
-	at, _, _, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
-	mentorRegisterLiveArm("swing-1", 42, "short", 29600)
+	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-1",
+		Side: "short", EntryPx: 29600, StopPx: 29630, TargetPx: 29540, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateFilled, SignalID: "swing-1-sig", FillPrice: 29600, FillQuantity: 1}
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-1", row.ID, "short", 29600)
 	resetMentorCounters()
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionClosePosition, ArmID: "swing-1", Reason: "hold to the 2nd 4h close"}, mentorTierInputs{}, 1000, 1100)
 	if !sawMentorFrame(t, frames, ntwire.FrameClosePosition, 1*time.Second) {
@@ -478,7 +495,7 @@ func TestMentorIntentYieldsExactlyOneArmedRow(t *testing.T) {
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-one", Setup: "ISB", Side: mentor.SideLong,
 		Price: 29600, Stop: 29595, Target: 29610, StopPts: 5, TargetPts: 10, ExpiryMs: expiry}, mentorTierInputs{}, 1000, 1100)
 	var rows []store.ArmedOrderDB
-	if err := ledger.DB().Where("scenario = ?", "isb-one").Find(&rows).Error; err != nil {
+	if err := ledger.DB().Where("scenario LIKE ?", "isb-one-%").Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
 	if len(rows) != 1 {
@@ -494,14 +511,14 @@ func TestMentorIntentYieldsExactlyOneArmedRow(t *testing.T) {
 // expiry -> cancel_order on the SAME pass.
 func TestMentorChainIntentToWireToExpiryCancel(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "on")
-	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	t.Setenv("MENTOR_STOP_LIMIT", "") // the env is not read (always stop-limit)
 	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
 	mentorWireSeams(t, at, ledger)
 	t0 := rthInstant()
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-chain", Setup: "ISB", Side: mentor.SideLong,
 		Price: 29600, Stop: 29595, Target: 29610, StopPts: 5, TargetPts: 10, ExpiryMs: t0.UnixMilli() + 60_000}, mentorTierInputs{}, 1000, 1100)
 	var row store.ArmedOrderDB
-	if err := ledger.DB().Where("scenario = ?", "isb-chain").First(&row).Error; err != nil {
+	if err := ledger.DB().Where("scenario LIKE ?", "isb-chain-%").First(&row).Error; err != nil {
 		t.Fatal(err)
 	}
 	srv := at.armedTrader().GetServer()
@@ -533,5 +550,186 @@ func TestMentorChainIntentToWireToExpiryCancel(t *testing.T) {
 	}
 	if row.State != store.StateCancelPending {
 		t.Fatalf("step 3: the lapsed row must be cancel_pending on the SAME pass, got %q", row.State)
+	}
+}
+
+// TestMentorClosePositionRefusesUnfilledArm (S1 pin, production call site
+// mentorDispatchIntent): a swing ClosePosition for an arm that never FILLED
+// must be refused NAMED and must NOT flatten an open position on the same
+// side. Mutant: close on any registered arm (skip the fill check) → the
+// close_sent counter fires and this turns RED.
+func TestMentorClosePositionRefusesUnfilledArm(t *testing.T) {
+	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-uf",
+		Side: "short", EntryPx: 29600, StopPx: 29630, TargetPx: 29540, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateWorking, SignalID: "swing-uf-sig"} // resting, NOT filled
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-uf", row.ID, "short", 29600)
+	resetMentorCounters()
+	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionClosePosition, ArmID: "swing-uf", Reason: "hold to the 2nd 4h close"}, mentorTierInputs{}, 1000, 1100)
+	if sawMentorFrame(t, frames, ntwire.FrameClosePosition, 500*time.Millisecond) {
+		t.Fatal("an unfilled swing must NOT send a close")
+	}
+	if c := MentorCountSnapshot()["close_refused_not_filled"]; c != 1 {
+		t.Fatalf("close_refused_not_filled = %d, want 1", c)
+	}
+}
+
+// TestMentorMoveStopBERefusesUnfilledArm (S1 pin): a swing MoveStopBE for an
+// arm that never FILLED must be refused and must NOT move another trade's stop.
+func TestMentorMoveStopBERefusesUnfilledArm(t *testing.T) {
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-uf-be",
+		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateCancelled, SignalID: "swing-uf-be-sig"} // cancelled, never filled
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-uf-be", row.ID, "long", 29600)
+	resetMentorCounters()
+	oldWire := moveStopWire
+	moved := false
+	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error { moved = true; return nil }
+	t.Cleanup(func() { moveStopWire = oldWire })
+	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-uf-be", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
+	if moved {
+		t.Fatal("an unfilled swing must NOT move a stop")
+	}
+	if c := MentorCountSnapshot()["move_be_refused_not_filled"]; c != 1 {
+		t.Fatalf("move_be_refused_not_filled = %d, want 1", c)
+	}
+}
+
+// TestMentorSwingFillQuantityResolution (S1 pin): the swing close is sized by
+// FillQuantity when set, else by the B2 Contracts column, else REFUSED — never
+// guessed as 1 (a guess would close 1 of a 3-lot swing and strand the rest).
+func TestMentorSwingFillQuantityResolution(t *testing.T) {
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	three := 3
+	cases := []struct {
+		name         string
+		fillQty      int
+		contracts    *int
+		wantQty      float64
+		wantOK       bool
+		unknownCount int
+	}{
+		{"fill quantity wins", 4, &three, 4, true, 0},
+		{"contracts column fallback", 0, &three, 3, true, 0},
+		{"both absent refused", 0, nil, 0, false, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-qty-" + tc.name,
+				Side: "short", EntryPx: 29600, StopPx: 29630, TargetPx: 29540, Kind: "stop_entry", Condition: "SWING4H",
+				State: store.StateFilled, SignalID: "sig-" + tc.name, FillPrice: 29600, FillQuantity: tc.fillQty, Contracts: tc.contracts}
+			if err := ledger.DB().Create(&row).Error; err != nil {
+				t.Fatal(err)
+			}
+			resetMentorCounters()
+			_, qty, ok := at.mentorSwingFill(mentorLiveArm{RowID: row.ID, Side: "short", Entry: 29600})
+			if qty != tc.wantQty || ok != tc.wantOK {
+				t.Fatalf("mentorSwingFill = (%v, %v), want (%v, %v)", qty, ok, tc.wantQty, tc.wantOK)
+			}
+			if got := MentorCountSnapshot()["swing_fill_unknown_qty"]; got != tc.unknownCount {
+				t.Fatalf("swing_fill_unknown_qty = %d, want %d", got, tc.unknownCount)
+			}
+		})
+	}
+}
+
+// TestMentorClosePositionRefusesUnknownQty (S1 pin): a FILLED swing arm whose
+// contracts cannot be attributed (FillQuantity 0, Contracts absent) is refused
+// — the close must never guess 1 and strand the rest of a multi-lot swing.
+func TestMentorClosePositionRefusesUnknownQty(t *testing.T) {
+	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-uq",
+		Side: "short", EntryPx: 29600, StopPx: 29630, TargetPx: 29540, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateFilled, SignalID: "swing-uq-sig", FillPrice: 29600, FillQuantity: 0, Contracts: nil}
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-uq", row.ID, "short", 29600)
+	resetMentorCounters()
+	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionClosePosition, ArmID: "swing-uq", Reason: "hold to the 2nd 4h close"}, mentorTierInputs{}, 1000, 1100)
+	if sawMentorFrame(t, frames, ntwire.FrameClosePosition, 500*time.Millisecond) {
+		t.Fatal("a filled swing with no attributable contracts must NOT close")
+	}
+	if c := MentorCountSnapshot()["swing_fill_unknown_qty"]; c != 1 {
+		t.Fatalf("swing_fill_unknown_qty = %d, want 1", c)
+	}
+	if c := MentorCountSnapshot()["close_refused_not_filled"]; c != 1 {
+		t.Fatalf("close_refused_not_filled = %d, want 1", c)
+	}
+}
+
+// TestMentorPlaceIntentRefusesStaleBox (N10 pin): an entry whose reference
+// candle is not the newest closed bar came from a reload replay of stale box
+// state — refused, counted "stale_intent", never a live order.
+func TestMentorPlaceIntentRefusesStaleBox(t *testing.T) {
+	at, _, _, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	resetMentorCounters()
+	in := mentor.Intent{Action: mentor.PlaceStopEntry, Setup: "BOX", Side: mentor.SideLong,
+		Price: 15260, Stop: 15240, Target: 15320, RefBarMs: 1_700_000_000_000} // stale: far older than barCloseMs
+	at.mentorPlaceIntent(in, mentorSizeChoice{}, 1_800_000_000_000, 1_800_000_000_000)
+	if c := MentorCountSnapshot()["stale_intent"]; c != 1 {
+		t.Fatalf("stale_intent = %d, want 1", c)
+	}
+}
+
+// TestMentorSwingBEUsesLegOwnStop (S1 fold-in): with NO STOP_MARKET row in the
+// ledger, the swing BE move is still guarded by the swing leg's OWN recorded
+// stop (the arm row's StopPx) and still goes through — never refused because
+// the ledger's open-orders list is empty.
+func TestMentorSwingBEUsesLegOwnStop(t *testing.T) {
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	mentorOpenStopSource = func() (float64, bool) { return 0, false } // no STOP_MARKET row
+	t.Cleanup(func() { mentorOpenStopSource = nil })
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-be",
+		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateFilled, SignalID: "swing-be-sig", FillPrice: 29600, FillQuantity: 1}
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-be", row.ID, "long", 29600)
+	oldWire := moveStopWire
+	var moved []float64
+	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error {
+		moved = append(moved, newStop)
+		return nil
+	}
+	t.Cleanup(func() { moveStopWire = oldWire })
+	resetMentorCounters()
+	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-be", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
+	if len(moved) != 1 || moved[0] != 29600 {
+		t.Fatalf("the BE move must go through on the leg's own stop even with no STOP_MARKET row; got %v", moved)
+	}
+}
+
+// TestMentorMoveStopBERefusesUnknownOwnStop (S1 fold-in): a filled swing arm
+// with no recorded stop (StopPx 0) refuses the BE move fail-closed — the widen
+// guard is never skipped.
+func TestMentorMoveStopBERefusesUnknownOwnStop(t *testing.T) {
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-nostop",
+		Side: "long", EntryPx: 29600, StopPx: 0, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateFilled, SignalID: "swing-nostop-sig", FillPrice: 29600, FillQuantity: 1}
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-nostop", row.ID, "long", 29600)
+	oldWire := moveStopWire
+	moved := false
+	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error { moved = true; return nil }
+	t.Cleanup(func() { moveStopWire = oldWire })
+	resetMentorCounters()
+	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-nostop", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
+	if moved {
+		t.Fatal("an unknown own stop must NOT move a stop")
+	}
+	if c := MentorCountSnapshot()["move_be_refused_no_stop"]; c != 1 {
+		t.Fatalf("move_be_refused_no_stop = %d, want 1", c)
 	}
 }
