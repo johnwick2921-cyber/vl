@@ -731,9 +731,10 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Trigger school',
-          where: 'Strategy → Mentor mode → trigger',
+          where: 'Built-in evaluator default — not a Strategy Studio setting',
           what: 'School 1 allows level and box entries before the 5m trigger agrees, then upgrades on a later flip; school 2 waits for agreement. The trigger-side and no-trade-zone rules still apply.',
-          trader: '1 = enter first; 2 = wait for trigger agreement.',
+          trader:
+            'Built into the release: school 1. Not editable in Strategy Studio; changing it requires a release.',
           consumer: 'kernel/mentor/mentor.go Config.TriggerSchool',
           range: '1 / 2',
           systemDefault: '1',
@@ -744,9 +745,10 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Ping-pong minimum gap',
-          where: 'Strategy → Mentor mode → filters',
+          where: 'Built-in evaluator default — not a Strategy Studio setting',
           what: 'The FTGL-to-FTGH gap must be strictly greater than this before a box-edge ping-pong entry is allowed.',
-          trader: '50 pts minimum gap.',
+          trader:
+            'Built into the release: 50 pts. Not editable in Strategy Studio; changing it requires a release.',
           consumer: 'kernel/mentor/mentor.go Config.PingPongMinGapPts',
           range: 'pts',
           systemDefault: '50',
@@ -756,9 +758,10 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Ping-pong candle maximum',
-          where: 'Strategy → Mentor mode → filters',
+          where: 'Built-in evaluator default — not a Strategy Studio setting',
           what: 'Reject the ping-pong and key-level pair if the largest candle in the lookback exceeds this size.',
-          trader: 'The largest 1m candle must be no larger than 20 pts.',
+          trader:
+            'Built into the release: 20 pts. Not editable in Strategy Studio; changing it requires a release.',
           consumer: 'kernel/mentor/mentor.go Config.PingPongCandleMaxPts',
           range: 'pts',
           systemDefault: '20',
@@ -768,9 +771,10 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Ping-pong candle lookback',
-          where: 'Strategy → Mentor mode → filters',
+          where: 'Built-in evaluator default — not a Strategy Studio setting',
           what: 'How many closed 1m candles to scan for the largest-candle gate on box ping-pong and key-level pairs.',
-          trader: '30 closed 1m candles.',
+          trader:
+            'Built into the release: 30 closed 1m candles. Not editable in Strategy Studio; changing it requires a release.',
           consumer: 'kernel/mentor/mentor.go Config.PingPongCandleLookback',
           range: 'closed 1m candles',
           systemDefault: '30',
@@ -780,9 +784,10 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Maximum level visits per day',
-          where: 'Strategy → Mentor mode → levels',
+          where: 'Built-in evaluator default — not a Strategy Studio setting',
           what: 'Allow this many visits to each level in a day; later visits are refused. Zero disables the cap.',
-          trader: 'The first three visits may trade; the fourth is refused.',
+          trader:
+            'Built into the release: 3 visits. Not editable in Strategy Studio; changing it requires a release.',
           consumer: 'kernel/mentor/mentor.go Config.LevelMaxVisits',
           range: 'visits (0 = off)',
           systemDefault: '3',
