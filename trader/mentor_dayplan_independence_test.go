@@ -43,6 +43,9 @@ func seedMentorArmedRow(t *testing.T, at *AutoTrader, ledger *store.ArmedOrderSt
 		EntryPx: 29600, StopPx: 29590, TargetPx: 29620,
 		Kind: "stop_entry", Condition: "ISB", ExpiryMs: expiryMs,
 		Origin: store.ArmOriginMentor,
+		// B2 (#347): a mentor row must carry its authored contract count, or
+		// the armed pass refuses it (absent ≠ 0). The injector always stamps it.
+		Contracts: store.IntPtr(1),
 	}
 	if err := ledger.UpsertArm(&row); err != nil {
 		t.Fatal(err)
