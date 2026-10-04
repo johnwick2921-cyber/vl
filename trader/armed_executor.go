@@ -290,7 +290,7 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 		// SWING4H arm is exempt (the course holds the swing by the 4h, "set an
 		// alert and go to bed" [D5.2]). Gated on the day plan, matching the
 		// enforceEODFlatAt position flatten.
-		if mentor && at.dayPlanEnabled() && reason == "session ended (EOD flat)" {
+		if mentor && reason == "session ended (EOD flat)" {
 			at.cancelIntradayMentorArms()
 		}
 		if !mentor {
@@ -1317,6 +1317,17 @@ func (at *AutoTrader) armedLines() string {
 // maybeManageArmedOrdersAt, passes its set; the wall-clock wrapper
 // runArmedPlacement was removed (no production caller — A29).
 func (at *AutoTrader) runArmedPlacementAt(bars []market.Kline, sinceMs int64, now time.Time, admitted armAdmission, scopes ...*armedPassScope) {
+	at.runArmedPlacementAtFiltered(bars, sinceMs, now, admitted, nil, scopes...)
+}
+
+// runArmedPlacementAtFiltered is runArmedPlacementAt with a row filter: keep
+// (non-nil) restricts the PLACEMENT loop to the rows it accepts. B3 (release
+// #3b) P0: the mentor-only placement pass keeps ONLY mentor-origin rows, so a
+// planner arm never places through the mentor path — it stays unplaced
+// (fail-closed) and keeps its own cancel rules. The housekeeping tail (stale-
+// working reaper, order_update drain, cancel settlement) still runs for every
+// row, whatever the filter.
+func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs int64, now time.Time, admitted armAdmission, keep func(store.ArmedOrderDB) bool, scopes ...*armedPassScope) {
 	nt := at.armedTrader()
 	if nt == nil {
 		return
@@ -1365,6 +1376,9 @@ func (at *AutoTrader) runArmedPlacementAt(bars []market.Kline, sinceMs int64, no
 
 	for _, r := range rows {
 		if r.TraderID != at.id {
+			continue
+		}
+		if keep != nil && !keep(r) {
 			continue
 		}
 		// N12 (REVIEW-309 r2, PR B 2026-10-03) — per-order EXPIRY, not a
@@ -2682,6 +2696,12 @@ func skipNonIntradayMentor(r store.ArmedOrderDB) bool {
 	return strings.EqualFold(strings.TrimSpace(r.Condition), "SWING4H")
 }
 
+// skipSwingArms (N4) keeps a SWING4H mentor arm resting at the EOD flat: the
+// course holds the swing by the 4h and its own expiry owns it.
+func skipSwingArms(r store.ArmedOrderDB) bool {
+	return isMentorArmOrigin(r) && strings.EqualFold(strings.TrimSpace(r.Condition), "SWING4H")
+}
+
 // cancelIntradayMentorArms (B3 Q2) cancels INTRADAY mentor arms at the session
 // close — the non-AI EOD-flat safety stays for intraday setups. A SWING4H arm
 // is EXEMPT: the course holds the swing by the 4h and its own expiry owns it.
@@ -2715,17 +2735,22 @@ func (at *AutoTrader) mentorOnlyPlacementPass(now time.Time, scope *armedPassSco
 	if market.FuturesBarsProvider != nil {
 		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
 	}
-	// Q1 — the consecutive-loss breaker stays; the lunch / first-N band is the
-	// AI's window rule and the mentor has its own (mentorWindowGate).
-	if risk := at.sessionRiskGateAt(now); risk.N > 0 && risk.Losses >= risk.N {
-		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_session_risk", "consecutive_loss") {
-			at.logWarnf("🛑 mentor placement REFUSED (consecutive loss): %d consecutive losing trades this session-day (limit %d) — the breaker stays a mentor safety",
-				risk.Losses, risk.N)
+	// B3 Q1 + N5 — the mentor ignores ONLY the lunch and first-N windows. The
+	// consecutive-loss breaker, the red-news T1 blackout, the per-session trade
+	// cap, the force-flat windows and outside-session/session-off all still
+	// refuse (session_risk.go labels them one class; mentorWaivesSessionBand
+	// splits the lunch/first-N sub-windows).
+	if risk := at.sessionRiskGateAt(now); risk.Refuse && !mentorWaivesSessionBand(risk) {
+		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_session_risk", risk.Class) {
+			at.logWarnf("🛑 mentor placement REFUSED (%s): %s", risk.Class, risk.Reason)
 		}
-		scope.note(scope.scenarioOrEmpty(), "refused: consecutive_loss: "+risk.Reason)
+		scope.note(scope.scenarioOrEmpty(), "refused: "+risk.Class+": "+risk.Reason)
 		return
 	}
-	at.runArmedPlacementAt(bars, 0, now, nil, scope)
+	// P0 (B3 review): the mentor-only pass places ONLY mentor-origin rows. A
+	// planner arm (authored before mentor mode, or in a mixed state) stays
+	// unplaced — fail-closed — and keeps its own cancel rules.
+	at.runArmedPlacementAtFiltered(bars, 0, now, nil, isMentorArmOrigin, scope)
 }
 
 func (at *AutoTrader) cancelArmedOrders(reason string, skip armCancelSkip, pace ...*armedCancelPace) (retired, unsettled int) {

@@ -20,7 +20,7 @@ import (
 func mentorB3Rig(t *testing.T) (at *AutoTrader, st *store.Store, ledger *store.ArmedOrderStore, frames chan ntwire.FrameType) {
 	t.Helper()
 	at, st, ledger, frames = mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
-	at.config.StrategyConfig.DayPlan = &store.DayPlanConfig{PlanEnabled: true}
+	at.config.StrategyConfig.DayPlan = &store.DayPlanConfig{PlanEnabled: true, SessionsEnabled: []string{"TEST"}}
 	shadowEnableTestSession(t, st)
 	return at, st, ledger, frames
 }
@@ -50,13 +50,16 @@ func seedMentorArmedRow(t *testing.T, at *AutoTrader, ledger *store.ArmedOrderSt
 }
 
 // seedPlannerArmedRow authors a planner-origin armed row (never placed).
+// Condition "reclaim" makes it a stop-entry setup (no retest window), so it is
+// PLACEABLE if the P0 origin filter and the AI-entries-off gate were ever both
+// dropped — the row the P0 pin must keep off the wire in mentor mode.
 func seedPlannerArmedRow(t *testing.T, at *AutoTrader, ledger *store.ArmedOrderStore, scenario string) {
 	t.Helper()
 	row := store.ArmedOrderDB{
 		TraderID: at.id, PlanID: "planner-1", Version: 1, Session: "NY",
 		Scenario: scenario, Side: "long", State: store.StateArmed,
 		EntryPx: 29600, StopPx: 29590, TargetPx: 29620,
-		Kind: "stop_entry",
+		Kind: "stop_entry", Condition: "reclaim",
 	}
 	if err := ledger.UpsertArm(&row); err != nil {
 		t.Fatal(err)

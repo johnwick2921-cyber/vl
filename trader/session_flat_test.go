@@ -196,7 +196,7 @@ func TestFlattenCancelsBeforeItReadsPositions(t *testing.T) {
 	if e := strings.Index(body[1:], "\nfunc "); e >= 0 {
 		body = body[:e+1]
 	}
-	cancel := strings.Index(body, "at.cancelArmedOrdersSync(")
+	cancel := strings.Index(body, "at.cancelArmedOrdersSyncFiltered(")
 	read := strings.Index(body, "at.store.Position().GetOpenPositions(")
 	if cancel < 0 || read < 0 {
 		t.Fatalf("cannot locate both halves (cancel=%d read=%d)", cancel, read)
