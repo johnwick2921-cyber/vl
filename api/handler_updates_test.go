@@ -66,7 +66,14 @@ type updEnv struct {
 // CLI's own writer, and the production server.
 func newUpdEnv(t *testing.T) *updEnv {
 	t.Helper()
-	root := t.TempDir()
+	// SHORT root: the worker socket lives at <dataDir>/updater/worker.sock and
+	// unix socket paths are capped at 107 bytes — t.TempDir() embeds the full
+	// (sub)test name and overflows on a long one.
+	root, err := os.MkdirTemp("", "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(root) })
 	dataDir := filepath.Join(root, "data")
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		t.Fatal(err)
