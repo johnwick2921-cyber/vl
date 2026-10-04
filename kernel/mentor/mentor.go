@@ -33,6 +33,12 @@ const (
 	// LevelInvalid marks a level invalid per §3 [D5.2 p1 @ 19:51]:
 	// only ISBs may ever trade there after.
 	LevelInvalid Action = "level_invalid"
+	// ConfluenceUpgrade (B20, 10-03 evening, OPEN-NUMBERS Q2, CTO-verified
+	// D3.4 p3 @09:17–12:59): a school-1 entry was taken WITHOUT the 5m trigger
+	// agreeing; the trigger has now flipped to the trade's side — the open
+	// position upgrades to confluence (hold >= 1:2, exit C). The trader half
+	// (DS-102) matches this ONE definition — no local re-declaration.
+	ConfluenceUpgrade Action = "confluence_upgrade"
 )
 
 // Side is the trade direction.
@@ -158,6 +164,28 @@ type Config struct {
 	// 13:20:22Z): true (default) keeps the 5m-trigger filter on LEVEL and BOX
 	// rejects; false switches it off for those two only.
 	LocTriggerFilter bool
+	// TriggerSchool — B20 (10-03 evening, OPEN-NUMBERS Q2, CTO-verified
+	// D3.4 p3 @09:17–12:59): 1 (default, his own) = a key-level reject and an
+	// FTGL/FTGH box return are taken WITHOUT waiting for the 5m trigger to
+	// agree ("em vô trước" @09:22–09:36) — a later flip to the trade's side
+	// upgrades the position to confluence. 2 = wait for the flip (school 2,
+	// "chọn 1 trong 2" @12:38). Still binding in both schools: the FTGL+BUY-line
+	// no-trade zone and the trigger side for every ISB and non-level entry.
+	TriggerSchool int
+	// PingPong knobs — B21 (10-03 evening, OPEN-NUMBERS Q5, CTO-verified
+	// D4.2 p2 @05:17–06:37): the gap between an FTGL floor and an FTGH ceiling
+	// must exceed PingPongMinGapPts AND the largest 1m candle of the last
+	// PingPongCandleLookback closed bars must stay at or below
+	// PingPongCandleMaxPts ("nến tầm mười mấy điểm"). The same candle cap and
+	// lookback gate the key-level pair rule (X4 @06:31–08:52: "một cái nến nó
+	// bằng cái rank của 2 cái level rồi thì ngồi im").
+	PingPongMinGapPts      float64
+	PingPongCandleMaxPts   float64
+	PingPongCandleLookback int
+	// LevelMaxVisits — B23 (10-03 evening, OPEN-NUMBERS Q3, CTO-verified
+	// D1.3 p1 @10:32–11:43 "knock knock"): a level trades its first
+	// LevelMaxVisits visits of the day; later visits refuse (0 = cap off).
+	LevelMaxVisits int
 	// EmaMaxCross30m — E4 knob (CTO 12:27:25Z): refuse the EMA34 setup when the
 	// close crossed the line this many times over the last 30 closed 1m candles
 	// ("xien len xien xuong", D4.2 p1 @ 22:27 — he never gives a number).
@@ -239,11 +267,16 @@ func DefaultConfig() Config {
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
 
-		StopCeilingPts:   25,
-		RoomMultiple:     2,
-		LossDeparturePts: 0, // B22: structural departure; the numeric fallback is OFF
-		LocTriggerFilter: true,
-		RangeGapPts:      0,
+		StopCeilingPts:         25,
+		RoomMultiple:           2,
+		LossDeparturePts:       0, // B22: structural departure; the numeric fallback is OFF
+		LocTriggerFilter:       true,
+		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
+		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30
+		PingPongCandleMaxPts:   20, // B21: "nến tầm mười mấy điểm" (D4.2 p2 @05:17–06:37)
+		PingPongCandleLookback: 30, // B21 [C: ours]: keeps the on-camera rejection @06:21
+		LevelMaxVisits:         3,  // B23: first 3 visits/day trade, the 4th refuses
+		RangeGapPts:            0,
 
 		DayGateSpentPts:     300,
 		DayGateTargetCapPts: 15,
