@@ -142,6 +142,7 @@ func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 	cfg.LegBudgetEnabled = mentorLegBudgetEnabled(rc)
 	cfg.LegResetOn = mentorLegResetOn(rc)
 	cfg.LocTriggerFilter = mentorLocationTriggerFilter(rc)
+	applyMentorTuning(&cfg, rc)
 	if rc != nil {
 		cfg.LvlRevisitMinPts = mentorLvlRevisitMinPts(rc)
 		cfg.EmaMaxCross30m = mentorEmaMaxCross30m(rc)

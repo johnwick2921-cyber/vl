@@ -1933,6 +1933,36 @@ type ExternalDataSource struct {
 	RefreshSecs int               `json:"refresh_secs,omitempty"` // refresh interval (seconds)
 }
 
+// MentorTuning holds the mentor-method numbers the owner may tune from Studio.
+// Zero / nil = "use the ruled default" (never "off", except LevelMaxVisits
+// where an explicit 0 turns the per-day visit cap off).
+type MentorTuning struct {
+	// TriggerSchool: 1 = enter at the level without waiting for the 5m
+	// confirm (his own school, D3.4 p3 @09:22); 2 = wait for the 5m trigger.
+	TriggerSchool int `json:"trigger_school,omitempty"`
+	// Box ping-pong gate (D4.2 p2 @05:17): the box must be wider than this
+	// many points AND the largest 1m candle of the last Lookback bars must
+	// stay at or below CandleMax.
+	PingPongMinGapPts      float64 `json:"ping_pong_min_gap_pts,omitempty"`
+	PingPongCandleMaxPts   float64 `json:"ping_pong_candle_max_pts,omitempty"`
+	PingPongCandleLookback int     `json:"ping_pong_candle_lookback,omitempty"`
+	// LevelMaxVisits: a level trades its first N visits of the day (D1.3 p1
+	// @11:02). nil → 3; explicit 0 → no cap.
+	LevelMaxVisits *int `json:"level_max_visits,omitempty"`
+	// OrbGateEnabled: the §7 step-0 opening-range gate (nil → ON).
+	OrbGateEnabled *bool `json:"orb_gate_enabled,omitempty"`
+	// ISBReverseEMA9Enabled: the reverse ISB at EMA 9 (D5.4; nil → ON, R-C).
+	ISBReverseEMA9Enabled *bool `json:"isb_reverse_ema9_enabled,omitempty"`
+	// Spent-day gate (METHOD §7 table, D5.1 p1 @14:21–15:57): a run of at
+	// least SpentPts before the open = spent; the target cap then applies,
+	// and any setup whose stop is over the cap is skipped (R9).
+	DayGateSpentPts     float64 `json:"day_gate_spent_pts,omitempty"`
+	DayGateTargetCapPts float64 `json:"day_gate_target_cap_pts,omitempty"`
+	// SwingMaxStopPts: SWING4H skips at a stop >= this (R-D, default 100). The
+	// trader rule gate and the kernel swing gate read this ONE value.
+	SwingMaxStopPts float64 `json:"swing_max_stop_pts,omitempty"`
+}
+
 // RiskControlConfig risk control configuration
 type RiskControlConfig struct {
 	// Max number of coins held simultaneously (CODE ENFORCED)
@@ -2051,6 +2081,12 @@ type RiskControlConfig struct {
 	MentorEmaMaxCross30m        int     `json:"mentor_ema_max_cross_30m,omitempty"`
 	MentorLocationTriggerFilter *bool   `json:"mentor_loc_trigger_filter,omitempty"`
 	MentorLossDeparturePts      float64 `json:"mentor_loss_departure_pts,omitempty"`
+	// MentorTuning — the owner-tunable mentor method numbers (K3, OWNER RULING
+	// 2026-10-04 "do all as mentor"). EVERY field unset (nil/0) resolves to the
+	// ruled default in kernel/mentor DefaultConfig, so an absent block runs
+	// exactly the shipped method; an out-of-range value fails closed to that
+	// default (trader/mentor_tuning.go).
+	MentorTuning *MentorTuning `json:"mentor_tuning,omitempty"`
 	// Deprecated (6.4 ruling B): the enabled toggle never had a reader — the
 	// contracts clamp is always-on venue safety. Field kept so old stored
 	// configs still parse; nothing reads it, the UI no longer writes it.

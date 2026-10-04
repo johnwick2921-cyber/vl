@@ -216,7 +216,8 @@ type Config struct {
 	ISBTwentiesPts float64 // a stop at/above this ("in the twenties") must not be taken; default 20 [D4.1 p1 @ 05:41]
 
 	// ISBReverseEMA9Enabled turns on R7, the reverse-ISB-at-EMA9 setup
-	// (RULES-FIX-v3, its own knob per the dispatch). Default OFF (L4).
+	// (RULES-FIX-v3, its own knob per the dispatch). Default ON — OWNER RULING
+	// 2026-10-04 R-C "do all as mentor": it is the mentor's own reading [D5.4].
 	ISBReverseEMA9Enabled bool
 
 	// PHL/PLH (PLAN v1 §3).
@@ -280,7 +281,7 @@ func DefaultConfig() Config {
 		ISBStopMinPts:  5,
 		ISBTwentiesPts: 20,
 
-		ISBReverseEMA9Enabled: false,
+		ISBReverseEMA9Enabled: true,
 
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,

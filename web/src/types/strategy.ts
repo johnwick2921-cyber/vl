@@ -277,6 +277,19 @@ export interface ExternalDataSource {
   refresh_secs?: number
 }
 
+export interface MentorTuning {
+  trigger_school?: 1 | 2
+  ping_pong_min_gap_pts?: number
+  ping_pong_candle_max_pts?: number
+  ping_pong_candle_lookback?: number
+  level_max_visits?: number // explicit 0 = no per-day cap
+  orb_gate_enabled?: boolean
+  isb_reverse_ema9_enabled?: boolean
+  day_gate_spent_pts?: number
+  day_gate_target_cap_pts?: number
+  swing_max_stop_pts?: number
+}
+
 export interface RiskControlConfig {
   // Max number of coins held simultaneously (CODE ENFORCED)
   max_positions: number
@@ -306,6 +319,9 @@ export interface RiskControlConfig {
   // minutes (unset/0 → 60; -1 = no window, entries at any hour). SWING is exempt.
   mentor_window_start?: string
   mentor_window_minutes?: number
+  // Mentor method numbers (K3). Every field unset = the ruled default; the
+  // Go side (store.MentorTuning) fails closed to the default on a bad value.
+  mentor_tuning?: MentorTuning
   // Hold-lock: once in a position, suppress AI-initiated closes so the trade
   // rides to the AI's stop/target (a real OCO bracket at the exchange). Default OFF.
   hold_discipline?: boolean

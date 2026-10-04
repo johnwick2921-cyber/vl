@@ -72,6 +72,9 @@ func (at *AutoTrader) mentorDispatchIntent(in mentor.Intent, extra mentorTierInp
 		// evaluator; the injector always rests a stop-limit. The confluence
 		// flag feeds the size tier (10/20) and the exit fork (C).
 		extra.Confluence = mentorConfluenceFlag(in)
+		tuned := mentorTuningResolve(at.mentorRiskControl())
+		extra.SwingMaxStopPts = tuned.SwingMaxStopPts
+		extra.SpentDayStopCapPts = tuned.DayGateTargetCapPts
 		if why := mentorRuleGate(in, extra); why != "" {
 			rule := "other"
 			if i := strings.Index(why, ":"); i > 0 {
