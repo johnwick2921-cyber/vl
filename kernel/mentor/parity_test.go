@@ -509,7 +509,7 @@ func setupFor(in Intent) string {
 // ────────────────────────────────────────────────────────────────────────────
 // The strict test
 
-func TestParityStrictAgainstReplayV5(t *testing.T) {
+func TestStrictReplayParity(t *testing.T) {
 	allOrders := loadOrderRows(t, frozenDir+"/orders_v5_base.csv")
 	allTrades := loadTradeRows(t, frozenDir+"/trades_v5_base.csv")
 
