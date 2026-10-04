@@ -367,6 +367,48 @@ func isSwingPosition(p *store.TraderPosition) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(p.CitedScenarioID)), "swing-")
 }
 
+// clearMentorLevelArmLocked (D2-44, item 11) is the LOCK-FREE half of the
+// level-arm clear. It drops the evaluator's LevelArms entry for one level
+// ("lvl-") arm. It MUST be called with mentorEvalMu already held: the only
+// production callers are mentorCancelArm (reached from mentorEvalOnce under
+// N11) and mentorReconcileLevelArms (also under N11). Never call it from the
+// armed pass's scan path — the armed pass can run inside mentorEvalOnce (via
+// mentorPlaceNow) and a second Lock() there would deadlock, while the scan
+// path without the lock would race the evaluator Tick.
+func (at *AutoTrader) clearMentorLevelArmLocked(armID string) {
+	if !strings.HasPrefix(strings.TrimSpace(armID), "lvl-") {
+		return
+	}
+	if at.mentorEval != nil {
+		at.mentorEval.ClearLevelArm(armID)
+	}
+}
+
+// mentorReconcileLevelArms (D2-44, item 11) runs once per tick under mentorEvalMu
+// (from mentorEvalOnce) and clears every LevelArms entry whose ledger row is no
+// longer RESTING — terminal, cancel_pending, filled, or gone. It is the single
+// reconciler that covers every trader-side terminal transition (the N12 expiry
+// sweep, session-end cancels, one-live-entry cancels) without any hook at those
+// sites — which would deadlock inside mentorEvalOnce's mutex or race it outside.
+func (at *AutoTrader) mentorReconcileLevelArms() {
+	if at.mentorEval == nil || len(at.mentorEval.State.LevelArms) == 0 {
+		return
+	}
+	ledger := at.store.ArmedOrders()
+	if ledger == nil {
+		return
+	}
+	for key, arm := range at.mentorEval.State.LevelArms {
+		var r store.ArmedOrderDB
+		err := ledger.DB().Where("trader_id = ? AND scenario = ?", at.id, arm.ArmID).First(&r).Error
+		resting := err == nil &&
+			(r.State == store.StateArmed || r.State == store.StatePlacePending || r.State == store.StateWorking)
+		if !resting {
+			delete(at.mentorEval.State.LevelArms, key)
+		}
+	}
+}
+
 // mentorRuleGate is the injector-side R8/R9 gate: it refuses intents the
 // evaluator should never have let through, fail-closed, before any sizing.
 // (R8) SWING4H: stop 30–60 allowed, ≥100 refused, exempt from the 25-pt

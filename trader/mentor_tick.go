@@ -216,6 +216,11 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	if mentorPlaceEnv() {
 		at.mentorPlaceNow(bars)
 	}
+	// D2-44 (item 11): reconcile the evaluator's LevelArms against the ledger —
+	// a level order the trader cancelled/expired on its side must stop resting
+	// in the evaluator, so the level can re-emit on the next valid touch.
+	// Under the N11 mutex (the whole function is the critical section).
+	at.mentorReconcileLevelArms()
 	// N12 funnel visibility (read-only): one closed bar + this tick's intents.
 	// Runs inside the N11 evaluator mutex (taken at the top of mentorEvalOnce),
 	// after the event placement so this tick's placements are counted.
@@ -322,17 +327,38 @@ var mentorSetArmExpiryWire func(armID int64, expiryMs int64) error
 
 // mentorIntentExpiry resolves the N12 per-order expiry (PR #313): the expiry
 // belongs to the RULES, not a blanket timer. An intent-carried expiry wins;
-// otherwise the injector computes the setup's default — a level touch or a
-// single ISB expires at the close of the NEXT 1m candle; the swing lives until
+// otherwise the injector computes the setup's default — a LEVEL order (PHL/PLH/
+// EMA, ArmID prefix "lvl-") RESTS until the RTH window end at 15:00 CT
+// (D2-44, item 11); a single ISB expires at the close of the NEXT 1m candle
+// (the one-candle rule is the ISB only [D1.4 p1 @18:32]); the swing lives until
 // the close of the current 4h candle (mentorSwingExpiry).
 func mentorIntentExpiry(in mentor.Intent, barCloseMs int64) int64 {
 	if in.ExpiryMs > 0 {
 		return in.ExpiryMs
 	}
+	if strings.HasPrefix(strings.TrimSpace(in.ArmID), "lvl-") {
+		return mentorLevelExpiry(barCloseMs)
+	}
 	if strings.EqualFold(in.Setup, "SWING4H") {
 		return mentorSwingExpiry(barCloseMs + 1) // +1: the instant the bar closed, so a 4h-boundary bar reads the NEW 4h candle
 	}
 	return barCloseMs + 60_000 // the close of the NEXT 1m candle
+}
+
+// mentorLevelExpiry (D2-44, item 11) is the B6 lifetime for a LEVEL order
+// (ArmID prefix "lvl-"): it RESTS until the RTH window end at 15:00 CT, or
+// until the evaluator's close-through sweep cancels it — never the next 1m
+// candle [D2.3 p1 @17:42–18:14, @18:46–19:12]. At or after 15:00 CT it
+// fail-safes to tomorrow's 15:00 (placement past RTH is already refused
+// upstream, so this is a guard, never the live path).
+func mentorLevelExpiry(nowMs int64) int64 {
+	loc := kernel.CTLocation()
+	now := time.UnixMilli(nowMs).In(loc)
+	end := time.Date(now.Year(), now.Month(), now.Day(), 15, 0, 0, 0, loc)
+	if now.After(end) {
+		end = end.AddDate(0, 0, 1)
+	}
+	return end.UnixMilli()
 }
 
 // mentorSwingExpiry (RULING [C], knob swing_order_expiry): a swing stop order

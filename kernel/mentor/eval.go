@@ -232,6 +232,24 @@ type LevelArm struct {
 	PlacedAt   int64   `json:"placed_at"` // the placement candle's CloseTime
 }
 
+// ClearLevelArm (D2-44, item 11) drops the LevelArms entry for one level order
+// by its ArmID. The TRADER calls it when it cancels or expires a "lvl-" arm on
+// its own side (the N12 expiry sweep, the injector cancel) so the evaluator
+// stops believing the order still rests and re-emits the level on the next
+// valid touch. Idempotent — a level already cleared by levelArmCancels (the
+// close-through sweep) is a no-op, and an unknown ArmID is a no-op.
+func (e *Evaluator) ClearLevelArm(armID string) {
+	if e.State.LevelArms == nil {
+		return
+	}
+	for key, arm := range e.State.LevelArms {
+		if arm.ArmID == armID {
+			delete(e.State.LevelArms, key)
+			return
+		}
+	}
+}
+
 // levelArmCancels is the B6 cancel sweep [D2.3 p1 @18:01–19:12, recovered
 // @23:48]: a resting level order is cancelled when a LATER closed candle
 // CLOSES THROUGH the level ("Minh cancel"), or at the RTH window end
