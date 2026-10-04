@@ -2467,28 +2467,27 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 	if side == "" {
 		return
 	}
-	// N2 (2026-10-04): the fill frame's quantity is the truth. A fill delivers
-	// at least one contract, so an absent/zero quantity floors at 1 rather than
-	// materializing an empty position.
+	// N2/N3 (2026-10-04, CTO ruling): the AddOn's fill frame quantity is
+	// CUMULATIVE (e.Filled) and its price the running AVERAGE
+	// (e.AverageFillPrice). The DELTA is measured against the arm row's LAST
+	// RECORDED cumulative fill (r.FillQuantity) — never the current position
+	// quantity — because an exit can take the position to 0 while a late
+	// cumulative frame still arrives (3 filled → exit → late 5 → position 2,
+	// not 5). A delta ≤ 0 is a duplicate/out-of-order frame and is ignored.
 	qty := u.Quantity
 	if qty < 1 {
 		qty = 1
 	}
-	// N3 P0 (2026-10-04): u.Quantity is CUMULATIVE (e.Filled), so an existing
-	// position is grown only by the DELTA (cumulative − current). Adding the
-	// cumulative value again would double-count a 2nd+ part-fill (3 then 2,
-	// cumulative 5, would read 8). A delta ≤ 0 is a no-op (reconcile already
-	// has the truth, or the same fill re-delivered).
+	delta := qty - r.FillQuantity
+	if delta <= 0 {
+		return
+	}
 	if pos, err := at.store.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), side); err == nil && pos != nil {
-		if delta := float64(qty) - pos.Quantity; delta > 0 {
-			at.growMaterializedEntry(pos, r, u, delta)
-		}
+		at.growMaterializedEntry(pos, r, u, qty, delta)
 		return
 	}
 	if pos, err := at.store.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), strings.ToLower(side)); err == nil && pos != nil {
-		if delta := float64(qty) - pos.Quantity; delta > 0 {
-			at.growMaterializedEntry(pos, r, u, delta)
-		}
+		at.growMaterializedEntry(pos, r, u, qty, delta)
 		return
 	}
 	tradeDate := r.PlanID
@@ -2502,8 +2501,8 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 		ExchangePositionID: fmt.Sprintf("armed_%s_%d", r.SignalID, nowMs),
 		Symbol:             at.futuresSymbol(),
 		Side:               side,
-		Quantity:           float64(qty),
-		EntryQuantity:      float64(qty),
+		Quantity:           float64(delta),
+		EntryQuantity:      float64(delta),
 		EntryPrice:         u.FillPrice,
 		EntryTime:          nowMs,
 		EntryOrderID:       r.SignalID,
@@ -2523,22 +2522,32 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 		at.logWarnf("🧩 armed fill %s materialize OPEN failed: %v", r.Scenario, err)
 		return
 	}
+	if err := at.store.ArmedOrders().SetFillQuantity(r.ID, qty); err != nil {
+		at.logWarnf("🧩 armed fill %s fill_quantity stamp failed: %v", r.Scenario, err)
+	}
 	at.logInfof("🧩 armed fill %s @ %.2f materialized OPEN (source=armed_entry — sub-60s round-trips are ledger-visible)", r.Scenario, u.FillPrice)
 	// E1 (wave 1A) — the excursion row's entry half. An armed fill carries its
 	// own levels in the ledger row, so nothing has to be resolved later.
 	at.excursionOnOpen(row, r.StopPx, r.TargetPx, plannerATR5m(at.futuresSymbol()))
 }
 
-// growMaterializedEntry (N2, 2026-10-04) grows an already-open position by a
-// part-fill's quantity and folds its price into the weighted entry average —
-// the broker holds N contracts and the ledger must agree, or reconcile freezes
-// the trader on the 1-vs-N mismatch.
-func (at *AutoTrader) growMaterializedEntry(pos *store.TraderPosition, r store.ArmedOrderDB, u ntwire.OrderUpdatePayload, addQty float64) {
-	if err := at.store.Position().UpdatePositionQuantityAndPrice(pos.ID, addQty, u.FillPrice, 0); err != nil {
+// growMaterializedEntry (N2/N3, 2026-10-04) grows an already-open position by
+// the DELTA between the frame's cumulative fill quantity and the arm row's last
+// recorded cumulative fill (r.FillQuantity). The delta is computed by the
+// caller; here it is applied and the arm row's fill_quantity is stamped to the
+// new cumulative AFTER the grow, so the next frame measures against the right
+// baseline. The entry price is SET to the frame's running average
+// (e.AverageFillPrice) — not re-weighted — because the broker's cumulative
+// price already averages every contract.
+func (at *AutoTrader) growMaterializedEntry(pos *store.TraderPosition, r store.ArmedOrderDB, u ntwire.OrderUpdatePayload, qty, delta int) {
+	if err := at.store.Position().SetPositionQuantityAndPrice(pos.ID, pos.Quantity+float64(delta), u.FillPrice); err != nil {
 		at.logWarnf("🧩 armed fill %s part-fill grow failed (pos %d): %v", r.Scenario, pos.ID, err)
 		return
 	}
-	at.logInfof("🧩 armed fill %s part-fill grew position %d by %.0f @ %.2f", r.Scenario, pos.ID, addQty, u.FillPrice)
+	if err := at.store.ArmedOrders().SetFillQuantity(r.ID, qty); err != nil {
+		at.logWarnf("🧩 armed fill %s fill_quantity stamp failed (pos %d): %v", r.Scenario, pos.ID, err)
+	}
+	at.logInfof("🧩 armed fill %s grew position %d to %.0f @ %.2f (cumulative %d)", r.Scenario, pos.ID, pos.Quantity+float64(delta), u.FillPrice, qty)
 }
 
 // stampArmedFillLineage links the freshly-filled position row to the plan the
@@ -2564,12 +2573,10 @@ func (at *AutoTrader) stampArmedFillLineage(r store.ArmedOrderDB, fillPrice floa
 	if err := at.store.Position().SetPlanLinkFull(pos.ID, r.Version, r.Scenario, true, "armed_fill", r.PlanID, tradeDate, r.Session); err != nil {
 		at.logWarnf("⚡ armed fill lineage stamp failed: %v", err)
 	}
-	// F3 (2026-09-03) — the contracts the fill delivered, on the same path that
-	// stamps lineage. Row 35 read filled with fill_quantity=0 beside a position
-	// of quantity 1.
-	if err := at.store.ArmedOrders().SetFillQuantity(r.ID, int(pos.Quantity)); err != nil {
-		at.logWarnf("⚡ armed fill quantity stamp failed: %v", err)
-	}
+	// fill_quantity is stamped by materializeArmedEntry (the cumulative frame
+	// quantity, in BOTH the create and grow paths) — do not re-stamp
+	// pos.Quantity here: after an exit + late cumulative frame the position is
+	// the DELTA (2), and re-stamping 2 would corrupt the cumulative baseline.
 	// F2 (2026-09-03) — the fill line names the version the arm BELONGS to,
 	// not whatever version is live by the time it fills.
 	at.logInfof("⚡ armed fill %s: armed under v%d %s %s (%s) · qty %.0f",
