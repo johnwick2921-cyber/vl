@@ -320,10 +320,9 @@ func emitGoState(e *Evaluator, bars []market.Kline, cfg Config) goStateRow {
 	}
 
 	// 5m trigger line. B1 (10-03 ruling): Go keeps ONE line, moved on a
-	// reversal — the old line is gone. The replay's state dump still emits
-	// BOTH historical lines and a two-line `between` (engine.py:779) while its
-	// trading logic uses the B1 zone (engine.py:997) — that dump/rule mismatch
-	// is a named divergence class, not hidden.
+	// reversal — the old line is gone. The replay dump still uses both
+	// historical lines for `between` (engine.py:877-879), unlike its B1 trade
+	// filter (engine.py:1084-1094).
 	tr := e.State.Trigger
 	row.trigSide = sideNum(tr.Dir)
 	switch tr.Dir {
@@ -332,7 +331,12 @@ func emitGoState(e *Evaluator, bars []market.Kline, cfg Config) goStateRow {
 	case SideShort:
 		row.sellLine = fnum(tr.Price)
 	}
-	row.between = "0"
+	boxes := BoxesBuild(bars, e.Cfg.Box, time.UnixMilli(now))
+	if ok, _ := triggerBoxZoneVerdict(tr, boxes, cur.Close); !ok {
+		row.between = "1"
+	} else {
+		row.between = "0"
+	}
 
 	// 4h / 1h directions + conflict.
 	row.dir4 = sideNum(e.State.HTF.FourH.Dir)
@@ -385,13 +389,10 @@ func emitGoState(e *Evaluator, bars []market.Kline, cfg Config) goStateRow {
 		row.boxTop = fnum(bx.High)
 		row.boxBot = fnum(bx.Low)
 		row.boxDir = sideNum(bx.Dir)
-	} else {
-		row.boxDir = "0"
 	}
 
-	// ISB on the closed pair (the replay requires the pair to be consecutive
-	// RTH minutes; the Go evaluator's IsISB has no doji guard, so its true
-	// reading is emitted as-is).
+	// ISB is a structural snapshot of the closed pair: consecutive RTH
+	// minutes, body inside the mother's full range, and a non-doji mother.
 	prevMin := ctMinuteOfDay(prev.OpenTime)
 	curMin := ctMinuteOfDay(cur.OpenTime)
 	consecutiveRTH := prev.OpenTime == cur.OpenTime-60_000 &&
