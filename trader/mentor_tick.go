@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -472,9 +473,8 @@ func mentorNewsHold(events []calendar.Event, now time.Time) (hold bool, why stri
 	if !mentorNewsWindowActive(now) {
 		return false, ""
 	}
-	loc := kernel.CTLocation()
 	for _, e := range events {
-		if e.Impact != calendar.T1 || e.Time.In(loc).Format("15:04") != "07:30" {
+		if e.Impact != calendar.T1 || kernel.CloseHHMMCT(e.Time) != "07:30" {
 			continue
 		}
 		title := strings.ToLower(e.Title)
@@ -575,18 +575,38 @@ func mentorWindowActive(start string, minutes int, now time.Time) (active bool, 
 	if minutes == 0 {
 		return true, "" // the window is disabled
 	}
-	hm, err := time.Parse("15:04", start)
-	if err != nil {
+	hour, minute, ok := parseMentorWindowStart(start)
+	if !ok {
 		return false, fmt.Sprintf("trading window start %q unparseable — entries refused (fail-closed) [D1.2 p1 @23:52]", start)
 	}
 	loc := kernel.CTLocation()
 	ct := now.In(loc)
-	open := time.Date(ct.Year(), ct.Month(), ct.Day(), hm.Hour(), hm.Minute(), 0, 0, loc)
+	open := time.Date(ct.Year(), ct.Month(), ct.Day(), hour, minute, 0, 0, loc)
 	end := open.Add(time.Duration(minutes) * time.Minute)
 	if !now.Before(open) && now.Before(end) {
 		return true, ""
 	}
-	return false, fmt.Sprintf("outside the trading window %s–%s CT — no new entries [D1.2 p1 @23:52–24:59]", open.Format("15:04"), end.Format("15:04"))
+	return false, fmt.Sprintf("outside the trading window %s–%s CT — no new entries [D1.2 p1 @23:52–24:59]", kernel.CloseHHMMCT(open), kernel.CloseHHMMCT(end))
+}
+
+func parseMentorWindowStart(start string) (hour, minute int, ok bool) {
+	if len(start) != 5 || start[2] != ':' {
+		return 0, 0, false
+	}
+	for i, r := range start {
+		if i != 2 && (r < '0' || r > '9') {
+			return 0, 0, false
+		}
+	}
+	hour, err := strconv.Atoi(start[:2])
+	if err != nil || hour < 0 || hour > 23 {
+		return 0, 0, false
+	}
+	minute, err = strconv.Atoi(start[3:])
+	if err != nil || minute < 0 || minute > 59 {
+		return 0, 0, false
+	}
+	return hour, minute, true
 }
 
 // mentorWindowGate is the call-site half of (b); SWING4H is exempt.
