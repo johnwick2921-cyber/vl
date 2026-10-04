@@ -230,7 +230,7 @@ export const mentor: GuideSection = {
         ],
         [
           'Box edge',
-          'FTGH/FTGL boxes, 1m regular candles, paired by role with no tolerance',
+          'FTGH/FTGL boxes, 1m regular candles, paired by role with no tolerance — the extreme (lowest low / highest high) pairs with the NEXT confirmed swing AFTER it that fails to exceed it (a higher low / lower high); the trade is the 3rd touch',
           'A box edge is used again and again; an escape (a 1m BODY closes outside) does NOT kill the box — it stays and every later return trades [B4]; boxes die at day end only',
         ],
       ],
@@ -292,7 +292,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Every box return trades',
-          body: 'Each new visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). EVERY return trades, the first one included — there is no touch count to wait for. An escape does not delete the box; boxes die at end of day only.',
+          body: 'The box is drawn from two touches — the extreme and the next confirmed swing after it that failed to exceed it ("lần thứ 3 mới vô lệnh": the 3rd touch is the trade). Each return visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). EVERY return trades, the first one included. An escape does not delete the box; boxes die at end of day only.',
           cite: 'R1 · D3.2 p2 @06:25',
         },
         {
