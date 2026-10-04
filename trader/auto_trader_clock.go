@@ -373,7 +373,7 @@ func pastSessionCutoff(now time.Time, sess *kernel.SessionDef, cutoffMin int) bo
 // entryBlockedByLastEntryAt is the injectable-clock body, so the T1–T4 table
 // tests can pin real CT instants (including a DST-transition date).
 func (at *AutoTrader) entryBlockedByLastEntryAt(now time.Time) (string, bool) {
-	if !at.dayPlanEnabled() {
+	if !at.dayPlanEnabled() && !at.mentorEnabled() {
 		return "", false
 	}
 	sess, ok := at.sessionRegistry(now).ActiveSession(now)
@@ -456,7 +456,7 @@ func (at *AutoTrader) enforceEODFlat() bool {
 }
 
 func (at *AutoTrader) enforceEODFlatAt(now time.Time) bool {
-	if !at.dayPlanEnabled() || at.store == nil || at.trader == nil {
+	if (!at.dayPlanEnabled() && !at.mentorEnabled()) || at.store == nil || at.trader == nil {
 		return false
 	}
 	reg := at.sessionRegistry(now)
@@ -491,7 +491,7 @@ func (at *AutoTrader) enforceEODFlatAt(now time.Time) bool {
 	// after the flat (deep-verify hole 11). The same ordering guards the
 	// session-end branch, the T1 force-flat, and the dormancy path.
 	acted := false
-	n, unacked := at.cancelArmedOrdersSync("session close — EOD flat")
+	n, unacked := at.cancelArmedOrdersSyncFiltered("session close — EOD flat", skipSwingArms)
 	if n > 0 {
 		at.logWarnf("🔒 EOD-FLAT (%s): %d armed order(s) cancelled — the book is retired at the close, not just the position", flat, n)
 		acted = true
@@ -546,6 +546,10 @@ func (at *AutoTrader) enforceEODFlatAt(now time.Time) bool {
 	}
 	at.logWarnf("🕒 EOD-FLAT (%s): session close — flattening %d open position(s) via the trader close path.", flat, len(positions))
 	for _, p := range positions {
+		if isSwingPosition(p) {
+			at.logInfof("🕒 EOD-FLAT (%s): SWING4H position %d (%s) EXEMPT — held by the 4h (N4)", flat, p.ID, p.CitedScenarioID)
+			continue
+		}
 		at.flattenPosition(p, "🕒 EOD-FLAT")
 	}
 	return true
@@ -765,7 +769,7 @@ func (at *AutoTrader) enforceT1ForceFlat() bool {
 }
 
 func (at *AutoTrader) enforceT1ForceFlatAt(now time.Time) bool {
-	if !at.dayPlanEnabled() || at.store == nil || at.trader == nil {
+	if (!at.dayPlanEnabled() && !at.mentorEnabled()) || at.store == nil || at.trader == nil {
 		return false
 	}
 	if _, ok := at.sessionRegistry(now).ActiveSession(now); !ok {

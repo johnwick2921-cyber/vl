@@ -103,6 +103,13 @@ type Intent struct {
 	// (the setup carries its own explicit CancelArm instead).
 	ExpiryMs int64
 
+	// RefBarMs (N10) is the reference candle's CLOSE time (ms) — the bar the
+	// entry geometry was measured from. The injector refuses any entry whose
+	// reference candle is not the newest closed bar (a reload replay of stale
+	// box/ISB/PHL returns must never become live orders). 0 = not stamped
+	// (swing — gated by its own 5m watermark instead).
+	RefBarMs int64
+
 	// Confluence is the R2 flag [00-METHOD Risk-reward, D3.4 p3 @ 07:38]:
 	// box edge + a key level inside the box or within 2 pts of its edge +
 	// the 5m trigger agrees — DS-102's exit-C / size-10 branch reads it.

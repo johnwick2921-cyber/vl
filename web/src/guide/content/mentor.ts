@@ -244,6 +244,11 @@ export const mentor: GuideSection = {
           cite: 'trigger zone filter — merged',
         },
         {
+          title: 'The 5m trigger side still gates',
+          body: 'After a buy trigger, entries are long only and above the line ("BẤT KỲ TRƯỜNG HỢP NÀO") — a short ISB above a buy line (or a long below a sell line) is refused. While a 5m ISB box stands, the box direction governs instead.',
+          cite: 'D3.4 p1 @09:30–10:38 · D4.3 @14:40',
+        },
+        {
           title: 'Only same-direction inside a 5m ISB box',
           body: 'The latest 5m ISB candle is boxed; only a same-direction 1m ISB trades inside it.',
           cite: 'ISB rest box filter — merged',
@@ -436,7 +441,7 @@ export const mentor: GuideSection = {
             'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode (per strategy), top of the section',
           what: 'Turns the mentor method on for this strategy. SIM only.',
           trader:
-            'A switch at the top of Risk control. Turning it ON asks you to confirm (it names the strategy and the order gate); turning it OFF is immediate. Press Save: the running trader reloads on save, so no restart is needed. A second, read-only line under it shows the order gate: "Orders: DRY RUN (MENTOR_PLACE off)" means every mentor entry is only sized and logged, nothing is sent; "Orders: SIM orders ON (MENTOR_PLACE=1)" means mentor entries are placed on the SIM account. The two are separate: the switch picks the method, MENTOR_PLACE (a server setting, not a button) allows orders. Start with the dry run.',
+            'A switch at the top of Risk control. Turning it ON asks you to confirm (it names the strategy and the order gate); turning it OFF is immediate. Press Save: the running trader reloads on save, so no restart is needed. A second, read-only line under it shows the order gate: "Orders: DRY RUN (MENTOR_PLACE off)" means every mentor entry is only sized and logged, nothing is sent; "Orders: SIM orders ON (MENTOR_PLACE=1)" means mentor entries are placed on the SIM account. The two are separate: the switch picks the method, MENTOR_PLACE (a server setting, not a button) allows orders. Start with the dry run. While Mentor mode is ON, a funnel line logs every 15 minutes (and on change): bars · intents · kernel refusals · trader refusals · authored · placed · filled — the visibility for why entries were dropped (e.g. orb_not_drawn).',
           consumer:
             'trader/mentor_mode.go:158 · kernel/mentor/mentor.go Config.Enabled',
           range: 'true / false',

@@ -573,6 +573,21 @@ func (s *PositionStore) UpdatePositionQuantityAndPrice(id int64, addQty float64,
 	}).Error
 }
 
+// SetPositionQuantityAndPrice (N2, 2026-10-04) sets the position quantity and
+// entry price to the broker's CUMULATIVE fill values — the fill frame's
+// quantity is e.Filled (cumulative) and its price is e.AverageFillPrice (the
+// running average), never an increment. The caller enforces monotonicity (a
+// frame must not decrease the position).
+func (s *PositionStore) SetPositionQuantityAndPrice(id int64, qty, avgPrice float64) error {
+	nowMs := time.Now().UTC().UnixMilli()
+	return s.db.Model(&TraderPosition{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"quantity":       qty,
+		"entry_quantity": qty,
+		"entry_price":    avgPrice,
+		"updated_at":     nowMs,
+	}).Error
+}
+
 // ReducePositionQuantity reduces position quantity for partial close
 // If quantity reaches 0 (or near 0), automatically closes the position
 // WAVE A / D3 — exitReason is the BROKER's word for the close that took the
