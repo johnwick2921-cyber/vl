@@ -8002,3 +8002,22 @@ the window, inside the window, connected-then-lost) at the production call site
 with the real leg that failed. Reference: provider/ninjatrader/maintenance_wire.go
 LinkDownSince; trader/installation_gate.go; pins
 installation_gate_nt8absent_never_connected_test.go.
+
+## CLASS NN (assigned at merge) — a fail-closed readiness gate computed once at boot and never re-evaluated
+
+symptom: DS-106 (2026-10-04): the mentor evaluator's `e.missing` was set ONCE in
+`Seed`, and the trader's per-source depth snapshot behind
+`mentorSourcesMissing` froze at the same moment. The live MNQ store had 94 of
+the 102 closed 4h candles at boot, so every entry stayed refused until a
+restart, even after the 102nd candle had closed. probe: for every
+"refuse while X is short" gate, find where X is measured and ask whether
+anything re-measures it as the world moves — a gate that can only open at boot
+is a restart requirement, and a warm-up that needs a restart is invisible until
+the owner is waiting on it. rule: advance the depth from the owner's own state
+each tick (never lower a floor), clear the gate when every source meets its
+floor, log ONE line on the flip, and pin the whole sequence at the production
+call site (seed short → tick → entries allowed) with mutants for "never
+re-check" and for each frozen copy (the kernel flag AND the trader snapshot).
+Reference: kernel/mentor/seed.go advanceDepth + trader/mentor_tick.go
+mentorRefreshDepths + kernel/mentor/seed_recheck_test.go +
+trader/mentor_seed_recheck_test.go.

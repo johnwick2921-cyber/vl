@@ -119,11 +119,16 @@ func mentorSeedStore(t *testing.T) *store.Store {
 // source. Closes alternate hour by hour so the aggregated 1H RTH level set
 // draws ≥2 candles (the 1m-only P1 seed builds 1h from these rows).
 func mentorSeedBars1m(now int64) []store.BarHistoryDB {
+	return mentorSeedBars1mHours(now, 430)
+}
+
+// mentorSeedBars1mHours is mentorSeedBars1m with the history length in hours.
+func mentorSeedBars1mHours(now int64, hours int64) []store.BarHistoryDB {
 	const hourMs = int64(3600_000)
 	const bucketMs = int64(4 * 3600_000)
 	b0 := now - ((now - 22*hourMs) % bucketMs) // current 4h bucket start
 	var rows []store.BarHistoryDB
-	for h := int64(1); h <= 430; h++ {
+	for h := int64(1); h <= hours; h++ {
 		h0 := b0 - h*hourMs
 		green := h%2 == 0
 		for m := int64(0); m < 60; m++ {
