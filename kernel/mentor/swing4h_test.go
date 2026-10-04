@@ -152,6 +152,37 @@ func TestSwing4hThroughCancelsThenISB(t *testing.T) {
 	}
 }
 
+func TestSwingTickWarmLineIsAuthoritativeWithinBucket(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	bars := []market.Kline{
+		mk5m(t, 14, 1, 5, 1000, 1000, 1000, 1000),
+		mk5m(t, 14, 5, 5, 1600, 1600, 1600, 1600),
+		mk5m(t, 14, 9, 0, 950, 1100, 900, 1000),
+		mk5m(t, 14, 9, 5, 1000, 1050, 950, 1000),
+	}
+	now := bars[3].OpenTime + 60_000
+	localLine, bucketStart, ok := swingLine(bars, now, cfg, ctime())
+	if !ok || localLine <= bars[3].Close || localLine-bars[3].Low >= cfg.MaxStopPts {
+		t.Fatalf("test setup local line %.2f, want a line above close with a valid stop distance", localLine)
+	}
+
+	s := &SwingState{
+		Line:        950,
+		BucketStart: bucketStart,
+		LastBarTime: bars[2].OpenTime,
+		EmaCount:    FourHEMA34Min,
+		FirstTouch:  &swingTouch{Approach: SideShort, Through: true},
+		LeewayLeft:  2,
+	}
+	out := SwingTick(s, bars, cfg, now)
+	if len(out) != 0 {
+		t.Fatalf("warm line %.2f must govern the same-bucket close; local line %.2f emitted %+v", s.Line, localLine, out)
+	}
+	if s.Line != 950 {
+		t.Fatalf("warm line changed within its bucket: got %.2f, want 950", s.Line)
+	}
+}
+
 // TestSwing4hStopCeiling100 — R8: 30–60 is allowed, ~100 → DO NOT ENTER
 // [table].
 func TestSwing4hStopCeiling100(t *testing.T) {
