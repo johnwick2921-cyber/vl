@@ -603,9 +603,10 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 		}
 		tickBars := bars[start:i]
 		if i-1 == firstTarget {
-			if missing := Seed(e, prefix, now); len(missing) > 0 {
+			seedNow := cur.OpenTime
+			if missing := Seed(e, prefix, seedNow); len(missing) > 0 {
 				t.Errorf("%s: seed at %s missing sources %v — entries would be refused (fail-closed)",
-					d.name, time.UnixMilli(now).In(ctime()).Format("2006-01-02 15:04"), missing)
+					d.name, time.UnixMilli(seedNow).In(ctime()).Format("2006-01-02 15:04"), missing)
 			}
 		}
 		intents := e.Tick(tickBars, now)
