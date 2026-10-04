@@ -437,6 +437,26 @@ func triggerBoxZoneVerdict(t TriggerLine, boxes []Box, price float64) (ok bool, 
 	return true, ""
 }
 
+// suppressSamePairCounterISB (R85, RELEASE #4 item 26) drops the normal ISB
+// that arms the counter-trend side on the SAME candle pair when the reverse
+// ISB fired — one candle must never carry two opposite stop orders. It also
+// returns the dropped arms' ArmIDs so the caller can unregister them from the
+// one-arm-per-side map (a dangling arm would stack an entry that never
+// materialized).
+func suppressSamePairCounterISB(out []Intent, in Intent, refBarMs int64) (kept []Intent, suppressed []string) {
+	kept = out[:0]
+	for _, o := range out {
+		if o.Setup == "ISB" && o.RefBarMs == refBarMs && o.Side != in.Side {
+			if o.ArmID != "" {
+				suppressed = append(suppressed, o.ArmID)
+			}
+			continue
+		}
+		kept = append(kept, o)
+	}
+	return kept, suppressed
+}
+
 func nextLevelBeyond(levels []Level, price float64, side Side) float64 {
 	best := 0.0
 	for _, l := range levels {
@@ -764,8 +784,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 	}
 
-	// R7 (RULES-FIX-v3, behind its own knob, default OFF): the reverse ISB
-	// at EMA 9 — an ISB that points AGAINST the trend with price at the EMA 9
+	// R7 (RULES-FIX-v3, behind its own knob, default ON since R-C): the reverse
+	// ISB at EMA 9 — an ISB that points AGAINST the trend with price at the EMA 9
 	// trades WITH the trend [D5.4].
 	if e.Cfg.ISBReverseEMA9Enabled && IsISB(prev, cur) {
 		if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
@@ -774,7 +794,34 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// N12: an R7 reverse ISB fills by the close of the NEXT 1m candle
 			// (the R1 family rule).
 			in.ExpiryMs = cur.CloseTime + 60_000
-			out = append(out, in)
+			// Item 26 / R81 (RELEASE #4): the reverse ISB needs a target — Q7
+			// open → the normal ISB target rule: the next level beyond in the
+			// trade direction, with the 1:1 floor and the spent-day cap.
+			target := nextLevelBeyond(levels, in.Price, in.Side)
+			if target == 0 {
+				e.refuse("isbrev_missing_target")
+			} else if !targetFloorOK(in.Price, in.Stop, target) {
+				e.refuse("isbrev_target_below_floor")
+			} else {
+				in.Target = target
+				capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
+				if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
+					e.refuse("isbrev_target_below_floor")
+				} else {
+					in.Target = capped.Target
+					// R85: with the reverse ON, the normal ISB must not arm the
+					// counter-trend side on the same candle pair (two opposite
+					// stop orders on one candle) — drop any same-pair normal ISB
+					// already emitted this tick AND unregister its arm.
+					var suppressed []string
+					out, suppressed = suppressSamePairCounterISB(out, in, cur.CloseTime)
+					for _, id := range suppressed {
+						delete(e.State.ISBArms, id)
+						delete(justPlaced, id)
+					}
+					out = append(out, in)
+				}
+			}
 		}
 	}
 
