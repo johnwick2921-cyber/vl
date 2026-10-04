@@ -433,7 +433,9 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 	if target > 0 && target < stop {
 		return fmt.Sprintf("R9: target %.1f pts smaller than the stop %.1f pts — never trade it [D1.2 p1 @ 07:48–09:00]", target, stop)
 	}
-	if extra.SpentDay && stop > mentorSpentDayStopCapPts {
+	// R13 [D5.2 §6]: DayOff does not stop the swing, so the spent-day stop cap
+	// must not either — the overnight SWING4H is exempt from the R9 15-pt cap.
+	if extra.SpentDay && !swing && stop > mentorSpentDayStopCapPts {
 		return fmt.Sprintf("R9: spent day cap 15 — stop %.1f pts skips", stop)
 	}
 	return ""
