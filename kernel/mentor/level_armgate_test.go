@@ -35,7 +35,7 @@ func TestLevelOrderRestsAndCancels(t *testing.T) {
 	bars := []market.Kline{
 		rthBars(0, 29420, 29431.75, 29410, 29425), // the old high (extreme)
 		rthBars(1, 29405, 29408, 29395, 29402),
-		rthBars(2, 29398, 29402, 29390, 29396),
+		rthBars(2, 29392, 29402, 29370, 29396),
 		rthBars(3, 29390, 29392, 29385, 29391), // reject touch of L=29385 (low touches, close above)
 	}
 	now := bars[3].CloseTime + 1
@@ -43,6 +43,16 @@ func TestLevelOrderRestsAndCancels(t *testing.T) {
 	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
 
 	ints := e.Tick(bars, now)
+	armed := false
+	for _, in := range ints {
+		if in.Action == PlaceStopEntry && in.Setup == "PHL" && in.Side == SideLong && in.Price == 29392 {
+			armed = true
+			break
+		}
+	}
+	if !armed {
+		t.Fatalf("B6 precondition: expected a LONG PHL stop-entry at 29392 before testing rest/cancel behavior; intents=%+v refusals=%v", ints, e.State.Refusals)
+	}
 	phl := 0
 	for _, in := range ints {
 		if in.Action == PlaceStopEntry && strings.HasPrefix(in.Reason, "PHL") {
