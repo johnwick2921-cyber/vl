@@ -122,11 +122,22 @@ func TestMentorWindowActivePure(t *testing.T) {
 	if active, why := mentorWindowActive("08:30", 60, time.Date(2026, 10, 2, 9, 0, 0, 0, ct)); !active || why != "" {
 		t.Fatalf("09:00 CT is inside 08:30+60: active=%v why=%q", active, why)
 	}
+	if active, why := mentorWindowActive("08:30", 60, time.Date(2026, 10, 2, 9, 29, 0, 0, ct)); !active || why != "" {
+		t.Fatalf("09:29 CT is inside the 08:30–09:30 window: active=%v why=%q", active, why)
+	}
 	if active, why := mentorWindowActive("08:30", 60, time.Date(2026, 10, 2, 10, 0, 0, 0, ct)); active || why == "" {
 		t.Fatalf("10:00 CT is outside: active=%v why=%q", active, why)
 	}
-	if active, why := mentorWindowActive("bogus", 60, time.Date(2026, 10, 2, 9, 0, 0, 0, ct)); active || why == "" {
-		t.Fatalf("an unparseable start must refuse: active=%v why=%q", active, why)
+	if active, why := mentorWindowActive("08:30", 60, time.Date(2026, 10, 2, 9, 30, 0, 0, ct)); active || why == "" {
+		t.Fatalf("09:30 CT is the exclusive end of the 08:30–09:30 window: active=%v why=%q", active, why)
+	}
+	for _, start := range []string{"25:00", "8-30", "", "bogus"} {
+		t.Run("invalid_"+start, func(t *testing.T) {
+			active, why := mentorWindowActive(start, 60, time.Date(2026, 10, 2, 9, 0, 0, 0, ct))
+			if active || !strings.Contains(why, fmt.Sprintf("trading window start %q unparseable", start)) {
+				t.Fatalf("invalid start %q must refuse with the fail-closed message: active=%v why=%q", start, active, why)
+			}
+		})
 	}
 }
 
