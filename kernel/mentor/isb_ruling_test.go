@@ -169,3 +169,27 @@ func TestISBFlags(t *testing.T) {
 		t.Fatalf("flags = %q, want both joined", f)
 	}
 }
+
+// The flag strings are the contract with the trader's sizing call site
+// (trader.mentorSizeFor reads them through HasFlag): a rename on one side only
+// silently turns the written size cuts off again.
+func TestISBFlagContractWithTrader(t *testing.T) {
+	if FlagISBAtOldExtreme != "isb_at_old_extreme" || FlagISBInRange != "isb_in_range" {
+		t.Fatalf("flag strings changed: %q %q", FlagISBAtOldExtreme, FlagISBInRange)
+	}
+	both := FlagISBAtOldExtreme + "|" + FlagISBInRange
+	for _, tc := range []struct {
+		flag, want string
+		has        bool
+	}{
+		{both, FlagISBAtOldExtreme, true},
+		{both, FlagISBInRange, true},
+		{FlagISBInRange, FlagISBAtOldExtreme, false},
+		{"", FlagISBInRange, false},
+		{"x_isb_in_range", FlagISBInRange, false}, // exact match only
+	} {
+		if got := HasFlag(tc.flag, tc.want); got != tc.has {
+			t.Fatalf("HasFlag(%q,%q) = %v, want %v", tc.flag, tc.want, got, tc.has)
+		}
+	}
+}
