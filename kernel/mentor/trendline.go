@@ -56,11 +56,15 @@ func (t Trendline) brokenBy5m(b market.Kline) bool {
 }
 
 // TrendlinesBuild is the pure, deterministic trendline scan: one support
-// line (the lowest confirmed swing low + the nearest LATER higher low) and
-// one resistance line (the highest confirmed swing high + the nearest LATER
-// lower high). Only today's swings survive. The line is drawn when P1 closes
-// and extended right; it becomes a location on the 3rd touch and is
-// discarded by a 5m close through.
+// line and one resistance line. The points are STRUCTURAL swings (CTO ruling
+// 23:10:31Z, item 12): a point must be a CONFIRMED two-sided swing —
+// swings3's left 3-bar fractal plus the right-side confirmation
+// (swingConfirmed). Raw one-sided 3-bar fractals are pullback noise and never
+// pair a line. The pairing is the two MOST RECENT qualifying same-role swings
+// (ONE live line per side: the newest pair replaces any older line), at least
+// 5 bars apart. Only today's swings survive. The line is drawn when P1 closes
+// and extended right; it becomes a location on the 3rd touch and is discarded
+// by a 5m close through.
 func TrendlinesBuild(bars []market.Kline, now time.Time) []Trendline {
 	seq := swings3(bars)
 	today := tradingDayKey(now.In(ctime()))
@@ -73,58 +77,43 @@ func TrendlinesBuild(bars []market.Kline, now time.Time) []Trendline {
 	seq = seqToday
 	var out []Trendline
 	for _, role := range []kernel.LevelKind{kernel.KindSWGL, kernel.KindSWGH} {
-		extreme := -1
-		for i, s := range seq {
-			if s.kind != role || !swingConfirmed(bars, s) {
-				continue
-			}
-			if extreme < 0 {
-				extreme = i
-				continue
-			}
-			if role == kernel.KindSWGL && s.price < seq[extreme].price {
-				extreme = i
-			}
-			if role == kernel.KindSWGH && s.price > seq[extreme].price {
-				extreme = i
+		// STRUCTURAL swings only: confirmed two-sided (left fractal + right
+		// confirmation). The D2-28 lesson — fractals pair pullback noise.
+		var pts []swingPairAt
+		for _, s := range seq {
+			if s.kind == role && swingConfirmed(bars, s) {
+				pts = append(pts, s)
 			}
 		}
-		if extreme < 0 {
+		if len(pts) < 2 {
 			continue
 		}
-		nearest := -1
-		for i, s := range seq {
-			if i == extreme || s.kind != role || s.idx <= seq[extreme].idx {
-				continue
-			}
-			// the later swing must form the slope: a HIGHER low (support)
-			// or a LOWER high (resistance). Equal = horizontal = refused.
-			if role == kernel.KindSWGL && s.price <= seq[extreme].price {
-				continue
-			}
-			if role == kernel.KindSWGH && s.price >= seq[extreme].price {
-				continue
-			}
-			if nearest < 0 || s.idx < seq[nearest].idx {
-				nearest = i
-			}
-		}
-		if nearest < 0 {
-			continue
+		// the two MOST RECENT qualifying swings — the newest pair.
+		p0, p1 := pts[len(pts)-2], pts[len(pts)-1]
+		if p1.idx-p0.idx < 5 {
+			continue // at least 5 bars apart
 		}
 		side := SideLong
 		if role == kernel.KindSWGH {
 			side = SideShort
 		}
+		// must slope: support = a HIGHER low; resistance = a LOWER high.
+		// Equal (horizontal) is refused [D2.3 p1 @06:44–07:18].
+		if role == kernel.KindSWGL && p1.price <= p0.price {
+			continue
+		}
+		if role == kernel.KindSWGH && p1.price >= p0.price {
+			continue
+		}
 		tl := Trendline{
 			Side:     side,
-			P0Idx:    seq[extreme].idx,
-			P0Px:     seq[extreme].price,
-			P0T:      bars[seq[extreme].idx].OpenTime,
-			P1Idx:    seq[nearest].idx,
-			P1Px:     seq[nearest].price,
-			P1T:      bars[seq[nearest].idx].OpenTime,
-			FormedAt: seq[nearest].idx,
+			P0Idx:    p0.idx,
+			P0Px:     p0.price,
+			P0T:      bars[p0.idx].OpenTime,
+			P1Idx:    p1.idx,
+			P1Px:     p1.price,
+			P1T:      bars[p1.idx].OpenTime,
+			FormedAt: p1.idx,
 		}
 		if tl.P1T <= tl.P0T {
 			continue
@@ -187,23 +176,13 @@ func TrendlineLevels(trendlines []Trendline, boxes []Box, bars []market.Kline) [
 			continue
 		}
 		price := tl.priceAt(cur.OpenTime)
-		if nearBoxEdge(boxes, price) {
-			continue // box beats trendline
+		// BOX BEATS TRENDLINE (CTO ruling 23:10:31Z): the band is the BOX
+		// ITSELF — a trendline touch inside a live box's [Bottom, Top] is not
+		// a trendline location; the box governs the interior.
+		if InsideAnyBox(boxes, price) {
+			continue
 		}
 		out = append(out, Level{Key: tl.key(), Kind: KindTrendline, Price: price, AtTime: cur.OpenTime})
 	}
 	return out
-}
-
-// nearBoxEdge reports whether a price sits within one trendline touch band
-// of a box edge — the SAME spot. BOX BEATS TRENDLINE [DAY-3 row 27 rec
-// @04:38] only where the two coincide; a trendline sloping away from the box
-// is a separate location.
-func nearBoxEdge(boxes []Box, price float64) bool {
-	for _, b := range boxes {
-		if abs(price-b.Top) <= trendlineTouchBandPts || abs(price-b.Bottom) <= trendlineTouchBandPts {
-			return true
-		}
-	}
-	return false
 }
