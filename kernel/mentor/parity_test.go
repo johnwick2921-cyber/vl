@@ -296,7 +296,7 @@ func fnumOrEmpty(v float64) string {
 	return fnum(v)
 }
 
-// emitGoState builds the state row from the same bounded bar window Tick saw.
+// emitGoState builds the row from Tick's bar window and exact evaluation instant.
 func emitGoState(e *Evaluator, bars []market.Kline, cfg Config, now int64) goStateRow {
 	cur := bars[len(bars)-1]
 	prev := bars[len(bars)-2]
@@ -596,7 +596,7 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 	var rowOrder []string
 	for i := 1; i <= len(bars); i++ {
 		cur := bars[i-1]
-		now := cur.CloseTime + 1
+		now := cur.CloseTime + 1 // first instant after this closed bar
 		start := i - productionTickBars
 		if start < 0 {
 			start = 0
