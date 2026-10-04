@@ -23,6 +23,12 @@ type TriggerLine struct {
 	// may fire a break once and is never re-applied.
 	LastBucket int64
 	LastBar    market.Kline
+
+	// MovedAt is the bucket open of the bar that last MOVED the line (the
+	// first draw or a reversal). The 1h line counts only when it moved at or
+	// after the 4h line's last move — an earlier 1h trigger is ignored, the
+	// 1h is "silent" [D4.4 p1 @18:36; p2 @03:10] (D4.4-05, item 19).
+	MovedAt int64
 }
 
 // TriggerTick advances the trigger state over the closed buckets newer than
@@ -81,19 +87,29 @@ func applyBreak(next TriggerLine, before, cur market.Kline) TriggerLine {
 			return next
 		}
 	}
+	moved := false
 	switch {
 	case next.Dir == "": // the FIRST break draws the line [@ 19:48]
 		if brokeHigh {
 			next.Dir, next.Price = SideLong, before.High
+			moved = true
 		} else if brokeLow {
 			next.Dir, next.Price = SideShort, before.Low
+			moved = true
 		}
 	case next.Dir == SideLong && brokeLow: // reversal: move the line once
 		// B1 (10-03 ruling): ONE line, moved on a reversal — the old line is
 		// gone, not kept as a second line [D3.4 p1 @11:11–12:40].
 		next.Dir, next.Price = SideShort, before.Low
+		moved = true
 	case next.Dir == SideShort && brokeHigh: // reversal: move the line once
 		next.Dir, next.Price = SideLong, before.High
+		moved = true
+	}
+	if moved {
+		// MovedAt = the bucket that fired the move (item 19: the 1h line
+		// resets when the 4h moves again) [D4.4 p1 @18:36; p2 @03:10].
+		next.MovedAt = cur.OpenTime
 	}
 	// same-direction breaks (including repeats) never move the line
 	return next

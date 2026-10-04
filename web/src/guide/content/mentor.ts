@@ -342,7 +342,7 @@ export const mentor: GuideSection = {
         ],
         [
           '4h/1h direction',
-          'Entries only WITH the 4h trigger; 1h agreeing or silent. 1h opposite → sit out until it flips. No 4h trigger → nothing to follow',
+          'Entries only WITH the 4h trigger. The 1h counts only when it fired at or after the 4h (an earlier 1h trigger is ignored — it is silent): 1h agreeing or silent → follow the 4h; 1h opposite → sit out until it flips. No 4h trigger → nothing to follow',
           '—',
         ],
         [
