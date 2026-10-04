@@ -3,7 +3,7 @@ import { GUIDE_BUILT_REV, type GuideSection, type KnobSpec } from '../types'
 // Mentor mode (🧑‍🏫) — the owner's mentor's method, built as a per-strategy
 // trading mode. Everything below is read from the lane branches that implement
 // it (feat/mentor-eval, feat/mentor-isb, feat/mentor-boxes-swing,
-// feat/mentor-p3). Items not yet merged are marked "coming with Mentor mode".
+// feat/mentor-p3). Items not yet merged are marked "live: no — coming".
 const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
   'Mentor mode': { settingId: 'mentor_mode', live: true },
   'Base contracts': { settingId: 'mentor_base_contracts', live: true },
@@ -351,13 +351,13 @@ export const mentor: GuideSection = {
           'RoomMultiple 2 · StopCeilingPts 25',
         ],
         [
-          'ORB gate (opening range) — coming with Mentor mode',
+          'ORB gate (opening range)',
           'ORB = the high and the low of the FIRST 2-minute candle of the regular session (08:30–08:32 CT), drawn only once that candle has completed. NO trade inside the ORB and NO reversal trade at either edge. Trade only after price has LEFT the box — escape test: a 1m BODY close outside. Direction follows the escape side: below → shorts only (ISB short / PLH); above → longs only. The escape picks the side; it is NOT an entry. No ORB for pre-market. The SWING4H is exempt.',
           'orb_gate_enabled = true (default ON) · X5 @01:52, 02:36, 03:29–03:47, 05:42',
         ],
         [
-          'Coming with Mentor mode',
-          'Between-boxes mid-range ban (NO PHL/PLH regardless of width, ISB only) · 15m-confirm conflict (R6) · loss box — two losses at one place, the level is off for the day (R11) · news 07:30 CT — no resting order through the print (R12) · EMA 34 turned off while price cuts through it (§11)',
+          'Not live yet — coming',
+          'News 07:30 CT — a mentor entry is refused through the print (07:20–07:35), but resting arms are not yet cancelled and an open position is not yet flattened before the print (R12). The EMA 34 cut-through gate is not wired (D4.2-09). The persistent 15m/5m conflict and the 15m ISB rest box land with item 15 (live: no — coming).',
           '—',
         ],
       ],
@@ -369,17 +369,17 @@ export const mentor: GuideSection = {
         {
           title: 'Done for the day after a win',
           body: 'One win and the machine is done for the day.',
-          cite: 'coming with Mentor mode',
+          cite: 'mentor_done_after_win — live',
         },
         {
           title: 'Trading window 08:30–09:30 CT',
           body: 'The day is only 08:30–09:30 CT. The SWING4H is exempt.',
-          cite: 'knob — coming with Mentor mode',
+          cite: 'mentor_window_start / mentor_window_minutes — live',
         },
         {
           title: 'Never widen a stop, never add',
           body: 'A stop only ever moves toward break-even. Never add to a position.',
-          cite: 'coming with Mentor mode',
+          cite: 'D1.2 p1 @05:48 — live',
         },
         {
           title: '"One loss → done" is NOT used',
@@ -425,7 +425,7 @@ export const mentor: GuideSection = {
         ],
         [
           'B — normal',
-          'At +0.5R the stop moves to break-even (live R:R stays 1:1); at +1R take half off; then the stop trails behind each closed candle (trail_tf: 1m default, 30s/45s allowed, off = legacy)',
+          'Single leg (no partial). The stop moves to break-even at HALF the distance to the target; live 1:1 keeps the stop at 1:1 behind the target; after the 1:1 point is printed the stop trails 1 tick beyond each closed candle (trail_tf: 1m default, 30s/45s allowed, off = legacy)',
         ],
         ['C — confluence', 'Hold to at least 1:2 — the stop does not move up'],
         [
@@ -434,7 +434,7 @@ export const mentor: GuideSection = {
         ],
         [
           'ISB partial',
-          'For an ISB trade the first partial is taken when the candle that FILLED you closes — a setup has three parts, never a fourth (coming with Mentor mode: replaces +1R half-off for ISB trades)',
+          'The ISB follows the same single-leg drive as B (BE at half the distance, live 1:1, trail 1 tick beyond after the 1:1 point) — the old three-part partial is gone',
         ],
       ],
     },
@@ -459,7 +459,7 @@ export const mentor: GuideSection = {
           recommended:
             'OFF — SIM only. Mentor entries are always stop-LIMIT. When you do turn it ON, leave MENTOR_PLACE off first and watch the dry-run lines.',
           whenToTouch:
-            'Only after every item marked "coming with Mentor mode" has shipped.',
+            'SIM only. Start with the dry run (MENTOR_PLACE off), then enable orders when the funnel shows the entries you expect.',
           perSession: 'No — per strategy.',
         },
         {
@@ -686,10 +686,10 @@ export const mentor: GuideSection = {
         {
           label: 'Reverse ISB at EMA 9',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'R7: an ISB pointing AGAINST the trend at EMA 9 reverses — uptrend → long buy stop above the ISB high; downtrend → the mirror. Requires price to actually reach EMA 9.',
+          what: 'R7: an ISB pointing AGAINST the trend at EMA 9 reverses — uptrend → long buy stop above the ISB high; downtrend → the mirror. Requires price to actually reach EMA 9. It carries a target (the next level beyond, with the 1:1 floor and the spent-day cap) and runs through the normal ISB gates — twenties skip, 4h side, near-box room — before it can place; with it ON, the normal ISB does not arm the opposite side on the same candle pair.',
           trader: 'ON — R-C owner ruling 2026-10-04.',
           consumer:
-            'trader/mentor_tuning.go mentorTuningResolve (ISBReverseEMA9Enabled)',
+            'trader/mentor_tuning.go mentorTuningResolve (ISBReverseEMA9Enabled) · kernel/mentor/eval.go (reverse ISB emit)',
           range: 'true / false',
           systemDefault: 'true',
           recommended: 'ON — [D5.4], R-C ruling.',
