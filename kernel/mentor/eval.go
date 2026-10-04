@@ -420,6 +420,31 @@ func freshTouch(tr Touch, lvl Level) Touch {
 // Tick evaluates the newest closed 1m candle. bars is the closed history up to
 // now (the bot's BarCache slice); now is the current time for the swing
 // detector's closed-bar filter. Returns the intents for this candle.
+// stampLeave is the leave-stamp + untagged-setup safety net, extracted pure
+// so the net itself is pinnable: an untagged ENTRY is dropped (refusal
+// untagged_setup), a tagged entry gets its geometry stamped
+// (StopPts/TargetPts) and the spent-day flag, and a non-entry action passes
+// untouched. The defer in Tick applies the returned refusals through
+// e.refuse so the B-rules counter stays single-sourced.
+func stampLeave(out []Intent, verdict DayVerdict) ([]Intent, []string) {
+	spent := verdict == DaySpent
+	kept := out[:0]
+	var refusals []string
+	for _, in := range out {
+		if in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry {
+			if in.Setup == "" {
+				refusals = append(refusals, "untagged_setup")
+				continue
+			}
+			in.StopPts = abs(in.Price - in.Stop)
+			in.TargetPts = abs(in.Target - in.Price)
+		}
+		in.SpentDay = spent
+		kept = append(kept, in)
+	}
+	return kept, refusals
+}
+
 func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// A5 + P0 sizing gap (CTO 20:13:25Z): ONE stamp where intents LEAVE Tick —
 	// the geometry (StopPts/TargetPts), the spent-day flag, and the
@@ -429,19 +454,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		if out == nil {
 			return
 		}
-		spent := e.State.Day.Verdict == DaySpent
-		kept := out[:0]
-		for _, in := range out {
-			if in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry {
-				if in.Setup == "" {
-					e.refuse("untagged_setup")
-					continue
-				}
-				in.StopPts = abs(in.Price - in.Stop)
-				in.TargetPts = abs(in.Target - in.Price)
-			}
-			in.SpentDay = spent
-			kept = append(kept, in)
+		kept, refusals := stampLeave(out, e.State.Day.Verdict)
+		for _, r := range refusals {
+			e.refuse(r)
 		}
 		out = kept
 	}()
