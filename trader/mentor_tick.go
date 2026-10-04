@@ -159,6 +159,49 @@ func (at *AutoTrader) mentorPlaceNow(bars []market.Kline) {
 	at.maybeManageArmedOrdersAt(kernel.StructureSnapshot(bars, now.UnixMilli()), now)
 }
 
+// mentorPlaceCadence (N7 part 3) is how often the event loop re-runs the
+// mentor-only placement while an unexpired mentor arm sits UNPLACED. A package
+// var so the event-loop pin can shorten it; production leaves it at 5s.
+var mentorPlaceCadence = 5 * time.Second
+
+// mentorPlacementDue reports whether the mentor-only placement pass should run
+// NOW: mentor mode + MENTOR_PLACE on, AND at least one mentor-authored row is
+// UNPLACED (armed, no signal) and unexpired. A working row needs no retry — the
+// pass already reached it; an expired row is cancelled by the pass, not placed.
+func (at *AutoTrader) mentorPlacementDue(now time.Time) bool {
+	if at == nil || at.store == nil || !at.mentorEnabled() || !mentorPlaceEnv() {
+		return false
+	}
+	rows, err := at.store.ArmedOrders().ListNonTerminal(at.id)
+	if err != nil {
+		return false
+	}
+	nowMs := now.UnixMilli()
+	for _, r := range rows {
+		if !mentorAuthoredRow(r) || r.State != store.StateArmed {
+			continue
+		}
+		if r.ExpiryMs == 0 || nowMs < r.ExpiryMs {
+			return true
+		}
+	}
+	return false
+}
+
+// mentorPlacementCadencePass runs the mentor-only placement pass when due (the
+// event loop's cadence tick calls it). Returns whether a pass ran.
+func (at *AutoTrader) mentorPlacementCadencePass() bool {
+	if !at.mentorPlacementDue(mentorClockNow()) {
+		return false
+	}
+	var bars []market.Kline
+	if market.FuturesBarsProvider != nil {
+		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
+	}
+	at.mentorPlaceNow(bars)
+	return true
+}
+
 // mentorEvalOnce runs one evaluator tick over the bars and processes every
 // intent (size → latency → no-chase → place-or-hold). Returns whether it ran —
 // false when another goroutine (scan vs event) already ticked this bar.

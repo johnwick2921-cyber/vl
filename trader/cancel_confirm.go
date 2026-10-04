@@ -13,6 +13,7 @@ import (
 	nt "vl/provider/ninjatrader"
 	"vl/store"
 	"vl/telemetry"
+	ntTrader "vl/trader/ninjatrader"
 )
 
 // ── CANCEL-CONFIRMATION (2026-09-06) ─────────────────────────────────────────
@@ -491,6 +492,22 @@ func (at *AutoTrader) refuseSlot(r store.ArmedOrderDB, v slotVerdict, what strin
 // guard refused the cancel: nothing was sent (W-EXEC-TRUTH W0 (f), canon 35).
 var errCancelRefused = errors.New("cancel refused by the filled-arm guard")
 
+// forgetPendingEntry drops the broker-side queued-entry marker for a signal
+// whose row has just SETTLED CANCELLED (confirmed gone from the book). This is
+// the N7 hook: the one-entry latch's queued_entry / recent_send refusals read
+// the TCPTrader's pending map, which a cancel never clears on its own — only a
+// fill, a rejection, or the 45s stale sweep do. Forgetting it here lets the
+// entry that follows a confirmed cancel place instead of being refused and
+// lost. Non-NT traders are a no-op.
+func (at *AutoTrader) forgetPendingEntry(signalID string) {
+	if signalID == "" {
+		return
+	}
+	if ntTCP, ok := at.trader.(*ntTrader.TCPTrader); ok {
+		ntTCP.ForgetPending(signalID)
+	}
+}
+
 func (at *AutoTrader) confirmPendingCancels(ledger *store.ArmedOrderStore, cancelFn func(string) error, now time.Time) (settled, stillPending, reRequested int) {
 	if at == nil || ledger == nil {
 		return 0, 0, 0
@@ -543,6 +560,7 @@ func (at *AutoTrader) confirmPendingCancels(ledger *store.ArmedOrderStore, cance
 					at.logWarnf("🧾 cancel confirm: re-arm write failed for %s: %v", r.Scenario, err)
 					continue
 				}
+				at.forgetPendingEntry(r.SignalID)
 				settled++
 				at.logInfof("🧾 cancel CONFIRMED %s signal=%s — %s (snapshot %d, book age %s, attempts %d) — returned to armed-unplaced, re-placeable",
 					r.Scenario, shortID(r.SignalID), why, snapID, age.Round(time.Second), r.CancelAttempts)
@@ -557,6 +575,7 @@ func (at *AutoTrader) confirmPendingCancels(ledger *store.ArmedOrderStore, cance
 				at.logWarnf("🧾 cancel confirm: ledger write failed for %s: %v", r.Scenario, err)
 				continue
 			}
+			at.forgetPendingEntry(r.SignalID)
 			settled++
 			at.logInfof("🧾 cancel CONFIRMED %s signal=%s — %s (snapshot %d, book age %s, attempts %d)",
 				r.Scenario, shortID(r.SignalID), why, snapID, age.Round(time.Second), r.CancelAttempts)
@@ -653,6 +672,7 @@ func (at *AutoTrader) confirmPendingCancelsReport(ledger *store.ArmedOrderStore,
 				at.logWarnf("🧾 cancel-report confirm: re-arm write failed for %s: %v", r.Scenario, err)
 				continue
 			}
+			at.forgetPendingEntry(r.SignalID)
 			settled++
 			settledIDs[r.ID] = true
 			at.logInfof("🧾 cancel-report CONFIRMED %s signal=%s — %s (report_ms=%d state=%s attempts=%d) — returned to armed-unplaced, re-placeable",
@@ -666,6 +686,7 @@ func (at *AutoTrader) confirmPendingCancelsReport(ledger *store.ArmedOrderStore,
 			at.logWarnf("🧾 cancel-report confirm failed for %s: %v", r.Scenario, err)
 			continue
 		}
+		at.forgetPendingEntry(r.SignalID)
 		settled++
 		settledIDs[r.ID] = true
 		at.logInfof("🧾 cancel-report CONFIRMED %s signal=%s — %s (report_ms=%d state=%s attempts=%d)",

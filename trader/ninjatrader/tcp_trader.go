@@ -924,6 +924,41 @@ func (t *TCPTrader) CancelOrder(signalID string) error {
 	})
 }
 
+// ForgetPending clears the queued-entry marker for a signal whose entry has
+// SETTLED CANCELLED — a confirmed cancel, never a cancel request. It is the N7
+// counterpart to the settlement pass: t.pending is otherwise cleared only by a
+// fill or a rejection (handleFillInbound) or the 45s stale sweep
+// (reconcilePositions), so a cancelled entry would hold the one-entry latch as
+// "queued_entry" and — via the recent-send stamp — "recent_send" for up to 60s,
+// and the entry that follows the cancel would be refused and lost.
+//
+// It also drops the latch's recent-send stamp for this account|symbol: a
+// confirmed cancel is not a duplicate-send risk, so the EntryLatchRecentWindow
+// must not hold the next entry. The key lock serializes this against
+// acquireEntryLatch, so the stamp can never be cleared in the gap between a
+// concurrent entry's check and its stamp. Unconfirmed cancels are untouched —
+// the protections stay fail-closed.
+func (t *TCPTrader) ForgetPending(signalID string) {
+	if signalID == "" {
+		return
+	}
+	ls := latchFor(t.server)
+	key := t.latchKey()
+	m := ls.keyLock(key)
+	m.Lock()
+	defer m.Unlock()
+	t.pendingMu.Lock()
+	delete(t.pending, signalID)
+	delete(t.pendingAt, signalID)
+	t.pendingMu.Unlock()
+	t.mu.Lock()
+	if t.lastEntrySignalID == signalID {
+		t.lastEntrySignalID = ""
+	}
+	t.mu.Unlock()
+	ls.clearSent(key)
+}
+
 // ModifyBracket (PHASE 2 armed orders) modifies the live bracket SL/TP in place.
 func (t *TCPTrader) ModifyBracket(signalID string, newSL, newTP float64) error {
 	return t.server.SendModifyBracket(ntwire.ModifyBracketPayload{
