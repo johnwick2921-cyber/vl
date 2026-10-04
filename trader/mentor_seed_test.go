@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"vl/kernel"
 	"vl/store"
 	"vl/store/sqlitedriver"
 )
@@ -148,7 +149,17 @@ func mentorSeedBars1mHours(now int64, hours int64) []store.BarHistoryDB {
 			})
 		}
 	}
-	extra := now - ((now - 5*3600_000) % (24 * 3600_000)) + 5*60_000
+	// "today's session" for the seed is the Globex session, which opens at
+	// 17:00 CT (tradingDayKey flips at 17:00). The old midnight-CT anchor
+	// broke after 17:00 CT: `now` is in the NEXT trading-day key while a
+	// 00:05 CT bar is in the previous one, so the seed read the session as
+	// missing and refused every entry.
+	t := time.UnixMilli(now).In(kernel.CTLocation())
+	sessOpen := time.Date(t.Year(), t.Month(), t.Day(), 17, 0, 0, 0, kernel.CTLocation())
+	if sessOpen.After(t) {
+		sessOpen = sessOpen.AddDate(0, 0, -1)
+	}
+	extra := sessOpen.Add(time.Minute).UnixMilli()
 	have := false
 	for _, r := range rows {
 		if r.OpenTimeMs == extra {
