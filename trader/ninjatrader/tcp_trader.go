@@ -924,6 +924,58 @@ func (t *TCPTrader) CancelOrder(signalID string) error {
 	})
 }
 
+// CancelBracketLeg (PARTIAL-CLOSE) cancels ONE named bracket leg for the entry
+// signal — the explicit leg call the C# D1 ruling (2026-09-07) reserves:
+// cancelling a protective leg is its own request, never a side effect of an
+// entry cancel. Leg is "sl" or "tp". The C# side resolves the leg from its
+// bracket map and then from the account's own orders (P1-1); when neither
+// holds a resting order, nothing is cancelled and no report is emitted, so
+// the report regime never confirms and the caller fails closed.
+func (t *TCPTrader) CancelBracketLeg(signalID, leg string) error {
+	if t == nil || t.server == nil {
+		return fmt.Errorf("ninjatrader/tcp: trader not bound")
+	}
+	leg = strings.ToLower(strings.TrimSpace(leg))
+	if leg != "sl" && leg != "tp" {
+		return fmt.Errorf("ninjatrader/tcp: bracket leg must be sl or tp, got %q", leg)
+	}
+	return t.server.SendCancelOrder(ntwire.CancelOrderPayload{
+		Symbol: t.symbol, SignalID: signalID, Leg: leg,
+		Account: t.boundAccount, TraderID: t.traderID,
+	})
+}
+
+// ReducePosition (PARTIAL-CLOSE) asks the AddOn to exit EXACTLY qty contracts
+// at market. It refuses BEFORE the send when the far side never advertised the
+// reduce_position capability in its hello (ErrReduceUnsupported), and applies
+// the same account guards as PlaceProtectiveStop (bound account + tradeable —
+// P1-4).
+func (t *TCPTrader) ReducePosition(side string, qty int, clientID string) error {
+	if t == nil || t.server == nil || !t.server.ReducePositionSupported() {
+		return ntwire.ErrReduceUnsupported
+	}
+	tradeAcct := t.boundAccount
+	if tradeAcct == "" {
+		return fmt.Errorf("ninjatrader/tcp: refusing reduce_position on %s — trader has no bound account", t.symbol)
+	}
+	if !t.isAccountTradeable(tradeAcct) {
+		return fmt.Errorf("ninjatrader/tcp: refusing reduce_position — account %q is not tradeable (not on allow-list / not SIM)", tradeAcct)
+	}
+	return t.server.SendReducePosition(ntwire.ReducePositionPayload{
+		Symbol: t.symbol, Side: side, Quantity: qty, ClientID: clientID,
+		Account: t.boundAccount, TraderID: t.traderID,
+	})
+}
+
+// ReduceFills returns THIS trader's reduce_fill stream (symbol, account) — the
+// AddOn's report of a filled partial exit with the remaining quantity.
+func (t *TCPTrader) ReduceFills() <-chan ntwire.ReduceFillPayload {
+	if t == nil || t.server == nil {
+		return nil
+	}
+	return t.server.SubscribeReduceFillsFor(t.symbol, t.boundAccount)
+}
+
 // ModifyBracket (PHASE 2 armed orders) modifies the live bracket SL/TP in place.
 func (t *TCPTrader) ModifyBracket(signalID string, newSL, newTP float64) error {
 	return t.server.SendModifyBracket(ntwire.ModifyBracketPayload{

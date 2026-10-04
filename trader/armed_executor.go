@@ -1549,6 +1549,14 @@ func (at *AutoTrader) runArmedPlacementAt(bars []market.Kline, sinceMs int64, no
 		at.cancelSignalIfSafe(nt.CancelOrder, sid, "stale-working reaper", now)
 	})
 	at.consumeArmedOrderUpdates(nt, ledger)
+	// PARTIAL-CLOSE (2026-10-03, behind its own knob): drain the reduce_fill
+	// stream and verify the in-place bracket shrink against the broker book.
+	// P1-7: with the knob OFF these must be complete no-ops — byte-identical
+	// to today.
+	if partialCloseEnabled() {
+		at.consumeReduceFills(nt)
+		at.verifyBracketResizes(time.Now())
+	}
 	// D1/D2 — THE SETTLEMENT PASS. Every requested cancel is checked against the
 	// freshest PERSISTED snapshot: gone from a fresh book → cancelled, with the
 	// snapshot id that proved it; still listed, or no fresh book → it stays
@@ -2342,6 +2350,8 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 		return
 	}
 	if u.OrderName != "" && u.OrderName != u.SignalID {
+		// Leg frames ("<signal>-sl" / "-tp") never match the entry's signal id
+		// and carry no meaning to the armed ledger; dropped.
 		return
 	}
 	if strings.EqualFold(u.State, "rejected") {

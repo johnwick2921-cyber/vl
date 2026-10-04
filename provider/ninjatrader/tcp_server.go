@@ -92,6 +92,10 @@ type TCPServer struct {
 	// mis-execute an unknown frame must never receive it (the 22:32 stop_entry
 	// test executed as MARKET on the pre-E7 AddOn).
 	farSideBuild atomic.Value // string
+	// PARTIAL-CLOSE (2026-10-03): the peer's hello advertised reduce_position.
+	// Retired with farSideBuild the moment the link drops (capability is proven
+	// by a RECEIVED frame on the CURRENT connection, never remembered).
+	farSideReduce atomic.Bool
 
 	// F12 — the broker's working-order book, latest per account+symbol. Read by
 	// cutover leg 4 and the override guard; nil-safe because an older AddOn
@@ -117,6 +121,7 @@ type TCPServer struct {
 	closeCh    chan PositionClosePayload
 	orderUpdCh chan OrderUpdatePayload
 	rejectCh   chan PositionCloseRejectedPayload
+	reduceCh   chan ReduceFillPayload
 	instrCh    chan InstrumentInfoPayload
 
 	// W117 F2 — per-(symbol,account) ordered-execution owners: one FIFO worker
@@ -238,6 +243,7 @@ type TCPServer struct {
 	rejectSubs   map[string]chan PositionCloseRejectedPayload
 	instrSubs    map[string]chan InstrumentInfoPayload
 	orderUpdSubs map[string]chan OrderUpdatePayload
+	reduceSubs   map[string]chan ReduceFillPayload
 
 	// Connection state — single concurrent client (spec L4359).
 	connMu        sync.Mutex
@@ -300,6 +306,7 @@ func (s *TCPServer) ensureRouters() {
 		s.rejectSubs = make(map[string]chan PositionCloseRejectedPayload)
 		s.instrSubs = make(map[string]chan InstrumentInfoPayload)
 		s.orderUpdSubs = make(map[string]chan OrderUpdatePayload)
+		s.reduceSubs = make(map[string]chan ReduceFillPayload)
 		s.subsMu.Unlock()
 		ctx := s.runCtx
 		if ctx == nil {
@@ -328,6 +335,8 @@ func (s *TCPServer) runRouters(ctx context.Context) {
 			// PHASE 2 armed orders — order state changes route per (symbol,account)
 			// like fills, so each trader sees only its own working orders.
 			dispatchToOwner(s, s.orderUpdSubs, p.Symbol, p.Account, p, "order_update")
+		case p := <-s.reduceCh:
+			dispatchToOwner(s, s.reduceSubs, p.Symbol, p.Account, p, "reduce_fill")
 		}
 	}
 }
@@ -553,6 +562,11 @@ func (s *TCPServer) SubscribeRejectsFor(symbol, account string) <-chan PositionC
 	return subscribeFor(s, &s.rejectSubs, symbol, account)
 }
 
+// SubscribeReduceFillsFor returns the reduce_fill stream for (symbol, account).
+func (s *TCPServer) SubscribeReduceFillsFor(symbol, account string) <-chan ReduceFillPayload {
+	return subscribeFor(s, &s.reduceSubs, symbol, account)
+}
+
 // SubscribeInstrumentInfoFor returns the instrument_info stream for (symbol,
 // account). instrument_info is broadcast to all accounts of the symbol, but the
 // subscription is still per-(symbol,account) so each trader has its own channel.
@@ -726,6 +740,7 @@ func NewTCPServer(logger *slog.Logger) *TCPServer {
 		fillCh:     make(chan FillPayload, fillChannelBuffer),
 		orderUpdCh: make(chan OrderUpdatePayload, fillChannelBuffer), closeCh: make(chan PositionClosePayload, fillChannelBuffer),
 		rejectCh:              make(chan PositionCloseRejectedPayload, fillChannelBuffer),
+		reduceCh:              make(chan ReduceFillPayload, fillChannelBuffer),
 		instrCh:               make(chan InstrumentInfoPayload, fillChannelBuffer),
 		barCache:              NewBarCache(0),
 		barIngestCh:           make(chan barIngestMsg, ingestQueueCap()),
@@ -1353,6 +1368,38 @@ func (s *TCPServer) SendPlaceProtectiveStop(payload PlaceProtectiveStopPayload) 
 	s.writeMu.Lock()
 	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	err := WriteFrame(c, FramePlaceProtectiveStop, payload)
+	s.writeMu.Unlock()
+	return err
+}
+
+// ReducePositionSupported reports whether the CONNECTED peer advertised the
+// reduce_position capability in its hello. False while nothing has proven it —
+// an unproven capability is an unsupported one.
+func (s *TCPServer) ReducePositionSupported() bool {
+	if s == nil {
+		return false
+	}
+	return s.farSideReduce.Load()
+}
+
+// SendReducePosition asks the AddOn to exit EXACTLY `payload.Quantity`
+// contracts. It refuses BEFORE the write when the peer never advertised the
+// reduce_position capability (ErrReduceUnsupported) — a reduce that is not
+// supported is never attempted (dispatch item 3).
+func (s *TCPServer) SendReducePosition(payload ReducePositionPayload) error {
+	if !s.ReducePositionSupported() {
+		return ErrReduceUnsupported
+	}
+	s.connMu.Lock()
+	c := s.conn
+	s.connMu.Unlock()
+	if c == nil {
+		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
+	}
+	payload.Seq = s.assignSeqRegister(payload.TraderID, payload.Account, payload.ClientID)
+	s.writeMu.Lock()
+	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	err := WriteFrame(c, FrameReducePosition, payload)
 	s.writeMu.Unlock()
 	return err
 }
@@ -2026,6 +2073,9 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 					s.farSideBuild.Store(p.BuildID)
 				}
 			}
+			// PARTIAL-CLOSE — the capability flag rides the SAME handshake
+			// as build_id and retires with it on disconnect.
+			s.farSideReduce.Store(p.ReducePosition)
 			s.recordHello(c, p, time.Now()) // W-ONE-BUTTON M2 (Q3): the epoch, per connection
 			pid, mvid := helloProcessPair(p.NT8PID, p.AssemblyMVID)
 			s.logger.Info("tcp_server: hello handshake OK",
@@ -2448,6 +2498,33 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 				s.logger.Warn("tcp_server: reject channel full, dropping", "signal_id", p.SignalID)
 			}
 
+		case FrameReduceFill:
+			// PARTIAL-CLOSE — a reduce exit filled (Filled or PartFilled):
+			// route to the (symbol,account) subscribers. The payload carries
+			// the REMAINING quantity; the Go ledger upserts by client_id.
+			var rp ReduceFillPayload
+			if err := json.Unmarshal(env.Payload, &rp); err != nil {
+				s.logger.Warn("tcp_server: bad reduce_fill payload", "err", err)
+				continue
+			}
+			select {
+			case s.reduceCh <- rp:
+			default:
+				s.logger.Warn("tcp_server: reduce channel full, dropping", "client_id", rp.ClientID)
+			}
+
+		case FrameReduceRejected:
+			// PARTIAL-CLOSE — the AddOn refused the reduce (no open position,
+			// quantity >= open, non-SIM account, or submit failure). The
+			// position is unchanged and the protective stop untouched. Log the
+			// reason; the Go decision layer already guards quantity < open.
+			var rj ReduceRejectedPayload
+			if err := json.Unmarshal(env.Payload, &rj); err != nil {
+				s.logger.Warn("tcp_server: bad reduce_position_rejected payload", "err", err)
+				continue
+			}
+			s.logger.Warn("tcp_server: reduce_position REJECTED", "client_id", rj.ClientID, "reason", rj.Reason)
+
 		case FrameFeedStatus:
 			// NT8 price-feed status. Store the latest; the AutoTrader gates
 			// opens/closes when it is not "Connected" (the SIM rejects orders
@@ -2744,4 +2821,5 @@ func (s *TCPServer) closeConn() {
 	// older AddOn. Fail closed: until the new connection proves itself,
 	// FarSideBuildID() reads "".
 	s.farSideBuild.Store("")
+	s.farSideReduce.Store(false)
 }

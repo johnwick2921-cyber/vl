@@ -320,6 +320,8 @@ import { expect, it } from 'vitest'
 // ONE-BUTTON P-E (owner order 2026-10-02 "do all now"; DS-101 ac8983b32): auth/auth.go re-pinned 2026-10-02 — cutover-worker scope, per-scope TTL, two-route allowlist
 // TOKEN-IAT-SAME-SECOND (owner order 2026-10-02 "one merge per update"; DS-101 #302 f16954d0f/c54792d98, bundled in #305): auth/auth.go re-pinned 2026-10-02 — every mint carries a distinct jti + auth.Now clock seam
 // RENAME-R5 (owner order 2026-10-02 'finish rename'; DS-104, integrated head): the three pre-rename deploy scripts deleted — keys removed, renamed vl-*.sh re-pinned from the merged tree 2026-10-02
+// PR #309 dev merge (2026-10-04): re-pin the reviewed AddOn cancel/partial-close
+// and stop-limit surface plus Go cancel-report gating at the read loop.
 import baseline from './test/brand-scope-baseline.json'
 
 function verifyScope(path: string, bytes: Buffer, expected: string) {

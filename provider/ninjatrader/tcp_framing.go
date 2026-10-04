@@ -135,6 +135,14 @@ type HelloPayload struct {
 	// for an older AddOn that does not send it.
 	BuildID string `json:"build_id,omitempty"`
 
+	// ReducePosition (PARTIAL-CLOSE, 2026-10-03) is the AddOn's capability
+	// flag for the reduce_position frame: a market exit of EXACTLY quantity
+	// contracts + a reduce_fill report carrying the remaining quantity. Go
+	// refuses to SEND reduce_position to a peer that never advertised it —
+	// capability is proven by a RECEIVED frame, never assumed (the same rule
+	// as build_id). omitempty keeps an older hello byte-identical.
+	ReducePosition bool `json:"reduce_position,omitempty"`
+
 	// W-ONE-BUTTON M2 (CTO ruling Q3) — the running AddOn's EPOCH, so a
 	// verifier can bind "this connection is the new build" to evidence rather
 	// than to the hand-set BuildID (M1 F4). All additive + omitempty: an older
@@ -226,6 +234,14 @@ const (
 type CancelOrderPayload struct {
 	Symbol   string `json:"symbol"`
 	SignalID string `json:"signal_id"`
+	// Leg (PARTIAL-CLOSE, 2026-10-03): when "sl" or "tp", the cancel targets
+	// THAT named bracket leg — the explicit leg call the C# D1 ruling
+	// (2026-09-07) reserves. Absent = the historical entry cancel,
+	// byte-identical framing. NOTE: no Go-side build floor gates this field —
+	// an older AddOn ignores it and cancels the ENTRY instead, which is why
+	// the leg path is only ever sent under the partial-close knob (whose own
+	// wire capability is the reduce_position hello flag).
+	Leg      string `json:"leg,omitempty"`
 	Account  string `json:"account,omitempty"`
 	TraderID string `json:"trader_id,omitempty"`
 	Seq      uint64 `json:"seq,omitempty"`
@@ -647,6 +663,75 @@ const FrameAccountRegister FrameType = "account_register"
 type AccountRegisterPayload struct {
 	Accounts []string `json:"accounts"`
 }
+
+// ── PARTIAL CLOSE (2026-10-03, mentor mode) ────────────────────────────────
+//
+// reduce_position is the EXACT-quantity cousin of close_position: the AddOn
+// exits exactly `quantity` contracts at market (never more than the open
+// quantity), leaves the protective stop for the remainder, and reports the
+// fill WITH the remaining quantity. The hello capability flag
+// `reduce_position` gates it: Go refuses to SEND the frame to an AddOn that
+// never advertised the flag — same capability-by-receipt rule as every other
+// floor. The feature sits behind CANCEL_CONFIRM_REQUIRE_REPORT (the #309
+// knob, default OFF): nothing changes for the AI mode.
+const (
+	FrameReducePosition FrameType = "reduce_position"
+	FrameReduceFill     FrameType = "reduce_fill"
+	FrameReduceRejected FrameType = "reduce_position_rejected"
+)
+
+// ReducePositionPayload is the Go-server → C#-AddOn request. Quantity is
+// EXACT: the AddOn exits exactly that many contracts and refuses (with a
+// reason) when quantity >= the open position, so a full close still goes
+// through close_position.
+type ReducePositionPayload struct {
+	Symbol   string `json:"symbol"`
+	Side     string `json:"side"` // "long" | "short" — the position side being reduced
+	Quantity int    `json:"quantity"`
+	// ClientID is Go's per-reduce operation id; the AddOn names the exit order
+	// "<client_id>-rx" and echoes it on the fill/rejection.
+	ClientID string `json:"client_id"`
+	// A2 (G1, wire v3) — identity stamp, same semantics as close_position.
+	Account  string `json:"account,omitempty"`
+	TraderID string `json:"trader_id,omitempty"`
+	Seq      uint64 `json:"seq,omitempty"`
+}
+
+// ReduceFillPayload (C#-AddOn → Go-server) reports a reduce fill with the
+// REMAINING position quantity. Emitted on Filled and PartFilled; the Go ledger
+// upserts by client_id latest-wins so a part-fill then full-fill pair applies
+// exactly once per progress step.
+type ReduceFillPayload struct {
+	ClientID  string  `json:"client_id"`
+	Symbol    string  `json:"symbol"`
+	Side      string  `json:"side"` // "long" | "short"
+	Quantity  int     `json:"quantity"`
+	FillPrice float64 `json:"fill_price"`
+	Remaining int     `json:"remaining"`
+	// BracketQty (2026-10-03 redesign): the NEW quantity the AddOn set on the
+	// protective SL and TP IN PLACE (Account.Change) as part of the reduce —
+	// equals Remaining on success, -1 when the shrink failed or is unknown.
+	// Go verifies it against the next snapshot; -1 or a mismatch FAILS CLOSED.
+	BracketQty int    `json:"bracket_qty"`
+	Account    string `json:"account,omitempty"`
+}
+
+// ReduceRejectedPayload (C#-AddOn → Go-server) reports why a reduce_position
+// did NOT take: no open position, quantity >= open (a full close goes through
+// close_position), a non-SIM account, or a submit failure. The position is
+// unchanged and the protective stop is untouched.
+type ReduceRejectedPayload struct {
+	ClientID string `json:"client_id"`
+	Reason   string `json:"reason"`
+	Account  string `json:"account,omitempty"`
+}
+
+// ErrReduceUnsupported is the sentinel behind a reduce_position refusal whose
+// cause is the far side not advertising the capability: the AddOn never sent
+// reduce_position=true in its hello, or the connection that did has since
+// dropped. The caller refuses BEFORE the send — a reduce that is not
+// supported is never attempted.
+var ErrReduceUnsupported = errors.New("reduce_position unsupported: the AddOn never advertised the capability")
 
 // FrameMoveStop asks the AddOn to move a RESTING stop-loss order (keyed by the
 // entry's signal_id) to a new price WITHOUT closing the position — auto-breakeven.

@@ -979,4 +979,11 @@ func (at *AutoTrader) settleArmedLedgerWhileOff(now time.Time) {
 		}
 		return nil
 	}, now)
+	// PARTIAL-CLOSE (2026-10-03, behind its own knob): the OFF head drains
+	// the same reduce fills and verifies the in-place bracket shrink. P1-7:
+	// gated — with the knob OFF these are complete no-ops.
+	if partialCloseEnabled() {
+		at.consumeReduceFills(nt)
+		at.verifyBracketResizes(now)
+	}
 }

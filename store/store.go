@@ -37,6 +37,7 @@ type Store struct {
 	abConfirm         *AbConfirmStore
 	tradeExcursions   *TradeExcursionStore
 	nt8OrderSnapshots *NT8OrderSnapshotStore
+	partialClose      *partialCloseStore
 	acceptedRisk      *AcceptedRiskStore
 	plannerRejected   *PlannerRejectedStore
 	plannerReadFacts  *PlannerReadFactsStore
@@ -243,6 +244,9 @@ func (s *Store) initTables() error {
 	}
 	if err := s.NT8OrderSnapshots().Migrate(); err != nil {
 		return fmt.Errorf("failed to initialize nt8_order_snapshots table: %w", err)
+	}
+	if err := s.PartialClose().Migrate(); err != nil {
+		return fmt.Errorf("failed to initialize partial-close tables: %w", err)
 	}
 	if err := s.TradeExcursions().Migrate(); err != nil {
 		return fmt.Errorf("failed to initialize trade_excursions table: %w", err)
@@ -509,6 +513,17 @@ func (s *Store) NT8OrderSnapshots() *NT8OrderSnapshotStore {
 		s.nt8OrderSnapshots = NewNT8OrderSnapshotStore(s.gdb)
 	}
 	return s.nt8OrderSnapshots
+}
+
+// PartialClose (2026-10-03) is the mentor-mode partial-close ledger
+// pair: position_reductions + stop_resizes, behind the #309 knob.
+func (s *Store) PartialClose() *partialCloseStore {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.partialClose == nil {
+		s.partialClose = &partialCloseStore{db: s.gdb}
+	}
+	return s.partialClose
 }
 
 func (s *Store) TradeExcursions() *TradeExcursionStore {
