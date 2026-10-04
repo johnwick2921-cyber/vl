@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -15,9 +16,13 @@ import (
 func TestISBNotLocationGated(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
-	prev := market.Kline{Open: 99, High: 106, Low: 98.5, Close: 106, CloseTime: 60_000 - 1}
-	cur := market.Kline{Open: 101, High: 102.1, Low: 100.9, Close: 102, CloseTime: 119_999}
-	bars := []market.Kline{prev, cur}
+	// a head bar with a high close so the EMA 34 target sits well BEYOND the
+	// entry: the E-2 floor ("the target is never smaller than the stop"
+	// [D1.2 p1 @ 07:48]) refuses a sub-1:1 target.
+	head := rthBars(0, 121, 121.5, 120.5, 120)
+	prev := rthBars(1, 99, 106, 98.5, 106)
+	cur := rthBars(2, 101, 102.1, 100.9, 102)
+	bars := []market.Kline{head, prev, cur}
 	if !IsISB(prev, cur) {
 		t.Fatal("fixture: must be an ISB")
 	}
@@ -28,6 +33,7 @@ func TestISBNotLocationGated(t *testing.T) {
 	// (these tests are about the location rule, not the ORB).
 	e.State.ORB = ORB{Day: dayStartCT(cur.CloseTime + 1), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
 	now := cur.CloseTime + 1
+	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
 	intents := e.Tick(bars, now)
 	// sanity: this ISB has NO location — the old gate would refuse it here.
 	levels := Levels(bars, cfg, now)
@@ -49,14 +55,15 @@ func TestISBBoxGatesTheEvaluator(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	// a box standing with Dir long
-	box := ISBBox{High: 103, Low: 97, Dir: SideLong, AtTime: 60_000}
+	box := ISBBox{High: 103, Low: 97, Dir: SideLong, AtTime: auditMs(2026, 9, 15, 9, 0, 0)}
 
 	newE := func(esc Side) *Evaluator {
 		e := New(cfg)
 		e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
 		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
 		e.State.ISBBox = &box
-		e.State.ORB = ORB{Day: 0, High: 90, Low: 85, Drawn: true, Escaped: esc}
+		e.State.ORB = ORB{Day: dayStartCT(auditMs(2026, 9, 15, 9, 0, 0)), High: 90, Low: 85, Drawn: true, Escaped: esc}
+		e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(auditMs(2026, 9, 15, 9, 0, 0)).In(ctime())), Verdict: DayTrade}
 		return e
 	}
 	tick := func(e *Evaluator, bars []market.Kline) []Intent {
@@ -65,12 +72,12 @@ func TestISBBoxGatesTheEvaluator(t *testing.T) {
 	// a head bar with a high close so the EMA 34 target sits BEYOND the entry
 	// price (the setup must carry a target: §6 "TARGET LÀ VỀ NHỮNG LEVEL KẾ
 	// TIẾP").
-	head := market.Kline{Open: 121, High: 121.5, Low: 120.5, Close: 120, CloseTime: 1}
+	head := rthBars(0, 121, 121.5, 120.5, 120)
 
 	t.Run("same-direction ISB allowed", func(t *testing.T) {
 		// candle-1 green → ISB direction long == box.Dir
-		prev := market.Kline{Open: 98, High: 102.9, Low: 97.5, Close: 99, CloseTime: 60_000 - 1}
-		cur := market.Kline{Open: 99.5, High: 101, Low: 98, Close: 100, CloseTime: 119_999}
+		prev := rthBars(1, 98, 102.9, 97.5, 99)
+		cur := rthBars(2, 99.5, 101, 98, 100)
 		if !IsISB(prev, cur) || ISBDirection(prev) != SideLong {
 			t.Fatal("fixture: green candle-1 ISB")
 		}
@@ -86,8 +93,8 @@ func TestISBBoxGatesTheEvaluator(t *testing.T) {
 		// candle-1 red → ISB direction short, against the box. The HTF is set
 		// SHORT so the R5 box gate is the ONLY blocker — removing it must let
 		// the entry through (the mutant goes RED on this subtest).
-		prev := market.Kline{Open: 100, High: 102.9, Low: 97.5, Close: 99, CloseTime: 60_000 - 1}
-		cur := market.Kline{Open: 99.5, High: 101, Low: 98, Close: 100, CloseTime: 119_999}
+		prev := rthBars(1, 100, 102.9, 97.5, 99)
+		cur := rthBars(2, 99.5, 101, 98, 100)
 		if ISBDirection(prev) != SideShort {
 			t.Fatal("fixture: red candle-1")
 		}
@@ -102,8 +109,8 @@ func TestISBBoxGatesTheEvaluator(t *testing.T) {
 	})
 	t.Run("1m body close outside deletes the box", func(t *testing.T) {
 		// cur closes with its BODY above the box top (103) → escape → delete
-		prev := market.Kline{Open: 98, High: 102.9, Low: 97.5, Close: 99, CloseTime: 60_000 - 1}
-		cur := market.Kline{Open: 104.5, High: 105, Low: 104, Close: 105, CloseTime: 119_999}
+		prev := rthBars(1, 98, 102.9, 97.5, 99)
+		cur := rthBars(2, 104.5, 105, 104, 105)
 		e := newE(SideLong)
 		tick(e, []market.Kline{head, prev, cur})
 		if e.State.ISBBox != nil {

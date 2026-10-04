@@ -3,6 +3,7 @@ package mentor
 import (
 	"log"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -124,11 +125,21 @@ type swingPosition struct {
 }
 
 // fourHBucketStart returns the start (ms) of the 4h bucket a bar belongs to.
-// Buckets are anchored at 17:00 CT (the Globex session open) — a local
-// helper; TODO: switch to DS-103's B1 clock-aligned buckets once they land.
+// Buckets are anchored at 17:00 CT (the Globex session open), DST-aware via
+// America/Chicago. The minute-keyed cache keeps the per-bar cost to a map
+// lookup (barsTF(240) buckets every bar on every tick — without it the
+// time.Date path made the 30-day replay 16x slower: 27s -> 437s). The key is
+// the bar's UTC minute, so distinct buckets can never collide (a 17:00 CT
+// bucket may straddle two UTC 4h spans).
+var fourHBucketCache sync.Map // utcMinute -> bucket start ms
+
 func fourHBucketStart(ot int64, loc *time.Location) int64 {
 	if loc == nil {
 		loc = ctime()
+	}
+	key := ot / 60_000
+	if v, ok := fourHBucketCache.Load(key); ok {
+		return v.(int64)
 	}
 	t := time.UnixMilli(ot).In(loc)
 	anchor := time.Date(t.Year(), t.Month(), t.Day(), globexOpenMin/60, globexOpenMin%60, 0, 0, loc)
@@ -137,7 +148,9 @@ func fourHBucketStart(ot int64, loc *time.Location) int64 {
 	}
 	delta := t.Sub(anchor)
 	step := 4 * time.Hour
-	return anchor.Add(delta - delta%step).UnixMilli()
+	res := anchor.Add(delta - delta%step).UnixMilli()
+	fourHBucketCache.Store(key, res)
+	return res
 }
 
 // swingLine computes the 4h EMA 34 known at the START of the current 4h bar:
@@ -384,18 +397,18 @@ func swingRejectIntent(approach Side, ref market.Kline, line float64, cfg SwingC
 	if approach == SideShort { // resistance: came from below → sell stop
 		in = Intent{
 			Action: PlaceStopEntry,
+			Setup:  "SWING4H",
 			Side:   SideShort,
 			Price:  ref.Low - cfg.EntryBufferPts,
 			Stop:   line + cfg.StopBeyondLinePts,
-			Setup:  "SWING4H",
 		}
 	} else {
 		in = Intent{
 			Action: PlaceStopEntry,
+			Setup:  "SWING4H",
 			Side:   SideLong,
 			Price:  ref.High + cfg.EntryBufferPts,
 			Stop:   line - cfg.StopBeyondLinePts,
-			Setup:  "SWING4H",
 		}
 	}
 	if abs(in.Stop-in.Price) >= cfg.MaxStopPts {
@@ -420,9 +433,9 @@ func swingRejectIntent(approach Side, ref market.Kline, line float64, cfg SwingC
 func swingISBIntent(t *swingTouch, ref market.Kline, line float64, cfg SwingCfg) (Intent, bool) {
 	var in Intent
 	if t.Approach == SideShort {
-		in = Intent{Action: PlaceStopEntry, Side: SideShort, Price: ref.Low - cfg.EntryBufferPts, Stop: line, Setup: "SWING4H"}
+		in = Intent{Action: PlaceStopEntry, Setup: "SWING4H", Side: SideShort, Price: ref.Low - cfg.EntryBufferPts, Stop: line}
 	} else {
-		in = Intent{Action: PlaceStopEntry, Side: SideLong, Price: ref.High + cfg.EntryBufferPts, Stop: line, Setup: "SWING4H"}
+		in = Intent{Action: PlaceStopEntry, Setup: "SWING4H", Side: SideLong, Price: ref.High + cfg.EntryBufferPts, Stop: line}
 	}
 	if abs(in.Stop-in.Price) >= cfg.MaxStopPts {
 		return Intent{}, false

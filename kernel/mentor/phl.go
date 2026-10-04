@@ -26,8 +26,24 @@ func PHLPLH(t Touch, oldExtreme Level, extremeIdx, barIdx int, cfg Config) (Inte
 }
 
 // PHLPLHR2 is the R2 PHL/PLH: priorSwing is the previous same-role swing
-// price (0 = skip the higher-low / lower-high check).
+// price (0 = skip the higher-low / lower-high check). The target is NEAR
+// the old extreme, not at it.
 func PHLPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, cfg Config) (Intent, bool, string) {
+	return phlPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, nil, cfg)
+}
+
+// PHLPLHR2Levels is PHLPLHR2 with B15 (CTO 20:48:40Z): the target is the
+// FIRST obstacle in the way — the nearest level beyond the entry (the same
+// nextLevelBeyond the ISB and box paths use), capped at the old extreme
+// minus PHLTargetShyPts [D3.3 p1 @05:18-05:34: "target là về những level kế
+// tiếp… những cái mà nó ngán đường trên đường đi"]. The room rule and the
+// 1:1 floor are measured to that target. nil levels = the old behaviour.
+func PHLPLHR2Levels(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config) (Intent, bool, string) {
+	return phlPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, levels, cfg)
+}
+
+// phlPLHR2 is the shared PHL/PLH core.
+func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config) (Intent, bool, string) {
 	if !cfg.Enabled {
 		return Intent{}, false, "mentor mode off"
 	}
@@ -64,11 +80,9 @@ func PHLPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if barIdx-extremeIdx < cfg.PHLMinCandlesFromExtreme {
 		return Intent{}, false, "too close to the old extreme — wait 1–2 more pullback candles [D2.2 p2 @ 05:25, 07:02]"
 	}
-	// Target: NEAR the old extreme, not exactly at it [D2.2 p1 @ 07:33].
-	target := oldExtreme.Price - cfg.PHLTargetShyPts
-	if side == SideShort {
-		target = oldExtreme.Price + cfg.PHLTargetShyPts
-	}
+	// Target: NEAR the old extreme, not exactly at it [D2.2 p1 @ 07:33];
+	// B15: capped by the FIRST obstacle in the way when levels are given.
+	target := phlTarget(oldExtreme, price, side, levels, cfg)
 	risk := price - stop
 	reward := target - price
 	if side == SideShort {
@@ -81,6 +95,13 @@ func PHLPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if risk > cfg.StopCeilingPts {
 		return Intent{}, false, "stop over the 25-pt ceiling — not worth trading [D3.3 p1 @ 02:04]"
 	}
+	// E-2: the D1.2 floor is checked BEFORE the room knob — when the
+	// target is closer than the stop, the floor is the binding constraint
+	// and is the reason the ledger names (the room rule cannot pass when
+	// the floor fails; roomMultiple >= 2).
+	if reward < risk {
+		return Intent{}, false, targetCloserThanStopReason
+	}
 	if reward < cfg.RoomMultiple*risk {
 		return Intent{}, false, "room rule: reward < " + fnum(cfg.RoomMultiple) + "x risk — not enough room [D5.3 p1 @ 09:16]"
 	}
@@ -90,15 +111,49 @@ func PHLPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	}
 	return Intent{
 		Action: PlaceStopEntry,
+		Setup:  setup,
 		Side:   side,
 		Price:  price,
 		Stop:   stop,
 		Target: target,
 		Reason: "PHL/PLH: buy stop at the previous candle's high, stop at the broken candle's low, target near the old extreme [D2.2 p1 @ 19:34, 04:58, 07:33]",
-		Setup:     setup,
-		StopPts:   risk,
-		TargetPts: reward,
 	}, true, ""
+}
+
+// targetCloserThanStopReason is the D1.2 floor refusal ("the target is
+// never smaller than the stop" [D1.2 p1 @ 07:48]) — the call site routes it
+// to the refusal ledger (CTO E-2 2026-10-03T15:12Z: the floor holds for
+// EVERY setup's intent).
+const targetCloserThanStopReason = "target closer than the stop — the target is never smaller than the stop [D1.2 p1 @ 07:48]"
+
+// phlTarget — B15 (CTO 20:48:40Z): the target is the FIRST obstacle in the
+// way [D3.3 p1 @05:18-05:34] — the nearest level beyond the entry (the same
+// nextLevelBeyond the ISB and box paths use), capped at the old extreme
+// minus PHLTargetShyPts ("gần đỉnh cũ", D2.2 p1 @06:11). nil levels = the
+// old extreme minus the shy only.
+func phlTarget(oldExtreme Level, price float64, side Side, levels []Level, cfg Config) float64 {
+	target := oldExtreme.Price - cfg.PHLTargetShyPts
+	if side == SideShort {
+		target = oldExtreme.Price + cfg.PHLTargetShyPts
+	}
+	if levels == nil {
+		return target
+	}
+	ob := nextLevelBeyond(levels, price, side)
+	if ob == 0 {
+		return target
+	}
+	switch side {
+	case SideLong:
+		if ob < target {
+			return ob // a key level / EMA 34 / box edge stands in the way
+		}
+	case SideShort:
+		if ob > target {
+			return ob
+		}
+	}
+	return target
 }
 
 // PHLPLHGated is the call site the evaluator uses for every PHL/PLH: the
@@ -128,7 +183,17 @@ func PHLPLHGated(t Touch, oldExtreme Level, extremeIdx, barIdx int, cfg Config, 
 // check). Wired by DS-103 at the evaluator's PHL/PLH call site (CTO box mail
 // 1791003269412: "the PHLPLHR2 call with the prior same-role swing").
 func PHLPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, cfg Config, htf HTF, day DayVerdict, dg DayGate) (Intent, bool, string) {
-	in, ok, reason := PHLPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, cfg)
+	return phlPLHGatedR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, nil, cfg, htf, day, dg)
+}
+
+// PHLPLHGatedR2Levels is the B15 call the evaluator should use once DS-103
+// merges the patch: the same gates with the first-obstacle target.
+func PHLPLHGatedR2Levels(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config, htf HTF, day DayVerdict, dg DayGate) (Intent, bool, string) {
+	return phlPLHGatedR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, levels, cfg, htf, day, dg)
+}
+
+func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config, htf HTF, day DayVerdict, dg DayGate) (Intent, bool, string) {
+	in, ok, reason := phlPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, levels, cfg)
 	if !ok {
 		return in, false, reason
 	}
@@ -137,11 +202,10 @@ func PHLPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 	} else if side != in.Side {
 		return in, false, "HTF direction gate: entry side " + string(in.Side) + " against the " + string(side) + " trigger — entries only with the 4h direction [D4.4 p1 @ 16:00]"
 	}
-	if day == DayOff {
-		return in, false, "day gate: spent + 4h/1h conflict at the pre-open read — 'TẮT MÁY NGHỈ LUÔN CHO EM', no trades today [D5.1 p1 @ 19:22]"
-	}
-	if day == DayNotMeasured {
-		return in, false, "day gate: day run not measured — no mentor entries ('any trade you are vague about — don't' [§12])"
+	// A10 (CTO 20:15:49Z): ONE day gate — DayOff AND DayNotMeasured refuse
+	// every intraday setup through the same helper (dayGateRefusal).
+	if r := dayGateRefusal(day); r != "" {
+		return in, false, "day gate: " + r
 	}
 	if day == DaySpent {
 		risk := in.Price - in.Stop

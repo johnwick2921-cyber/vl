@@ -93,24 +93,30 @@ type Intent struct {
 	// (the setup carries its own explicit CancelArm instead).
 	ExpiryMs int64
 
-	// Confluence is the R2 flag (CTO 12:12Z): a box edge + a key level inside
-	// the box or within 2 pts of its edge + the 5m trigger agreeing. DS-103's
-	// box path sets it; the injector's size tier (10/20) and the exit fork (C)
-	// read it.
+	// Confluence is the R2 flag [00-METHOD Risk-reward, D3.4 p3 @ 07:38]:
+	// box edge + a key level inside the box or within 2 pts of its edge +
+	// the 5m trigger agrees — DS-102's exit-C / size-10 branch reads it.
 	Confluence bool
+	// Anchor / AnchorKey name the G2 place the setup was taken at (CTO R-b
+	// 2026-10-03): the level price, the box edge, or the EMA — NOT the old
+	// extreme. The PHL/PLH emit site sets both from the touch level; a plain
+	// ISB sets neither (no anchor = not loss-boxed). Limits keys the loss
+	// box on AnchorKey when set, else the quarter-tick Anchor.
+	Anchor    float64
+	AnchorKey string
 
 	// CancelArm / LevelInvalid fields.
 	ArmID    string
 	LevelKey string
 
 	// P3 size-tier inputs (the trader's mentorContractsFor reads these).
-	Setup     string  // "ISB", "PHL", "PLH" (SWING4H when it lands)
+	Setup     string  // "ISB", "PHL", "PLH", "BOX" (SWING4H when it lands)
 	StopPts   float64 // |entry - stop|
 	TargetPts float64 // |target - entry|
 	// SpentDay is the A5 flag (CTO 1791041016051): the §7 verdict for the
-	// trading day is DaySpent ("already run 300–400+ before the open"). The
+	// trading day is DaySpent ("already run 300-400+ before the open"). The
 	// evaluator stamps it on EVERY intent; the injector's size table then
-	// holds 1–2 (spent_day tier) and the R9 15-pt stop cap applies.
+	// holds 1-2 (spent_day tier) and the R9 15-pt stop cap applies.
 	SpentDay bool
 }
 
@@ -142,6 +148,15 @@ type Config struct {
 	// Default 0: any closed candle that did not touch ends the visit ("he never
 	// states one"). Key-level touch references are per VISIT, not per day.
 	LvlRevisitMinPts float64
+	// LossDeparturePts — departure rule for loss blocks (CTO 13:24:53Z):
+	// a closed candle AFTER the loss candle whose |close - loss price| reaches
+	// this distance lifts the block. Default 20 ("leave the area", no number
+	// from the mentor). ONE rule for E2 (EMA) and G2 (levels/boxes).
+	LossDeparturePts float64
+	// LocTriggerFilter — mirror of the replay row v5_loc_notrig (CTO
+	// 13:20:22Z): true (default) keeps the 5m-trigger filter on LEVEL and BOX
+	// rejects; false switches it off for those two only.
+	LocTriggerFilter bool
 	// EmaMaxCross30m — E4 knob (CTO 12:27:25Z): refuse the EMA34 setup when the
 	// close crossed the line this many times over the last 30 closed 1m candles
 	// ("xien len xien xuong", D4.2 p1 @ 22:27 — he never gives a number).
@@ -186,6 +201,15 @@ type Config struct {
 	// intraday entry — nothing inside, no reversal at the edges, only the
 	// escape side after a 1m body close outside. The §8 swing is exempt.
 	OrbGateEnabled bool
+
+	// LegBudgetEnabled — G1 (R12, DS-107, CTO 2026-10-03): at most 2 entries
+	// per leg (the PHL/PLH + a same-direction ISB); a stop-out inside the leg
+	// closes it. Default ON.
+	LegBudgetEnabled bool
+	// LegResetOn — G1 parity knob: a NEW leg starts only on a break beyond
+	// the prior extreme. "close" (default): the previous candle's CLOSE
+	// strictly beyond the extreme; "touch": this candle's wick reaching it.
+	LegResetOn string
 }
 
 // DefaultConfig returns the mentor defaults per PLAN v1 (knob values start from
@@ -214,9 +238,11 @@ func DefaultConfig() Config {
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
 
-		StopCeilingPts: 25,
-		RoomMultiple:   2,
-		RangeGapPts:    0,
+		StopCeilingPts:   25,
+		RoomMultiple:     2,
+		LossDeparturePts: 20,
+		LocTriggerFilter: true,
+		RangeGapPts:      0,
 
 		DayGateSpentPts:     300,
 		DayGateTargetCapPts: 15,
@@ -226,11 +252,13 @@ func DefaultConfig() Config {
 		Box: DefaultBoxCfg(),
 
 		OrbGateEnabled: true,
+
+		LegBudgetEnabled: true,
+		LegResetOn:       "close",
 	}
 }
 
 // barsTF aggregates 1m bars into the given timeframe on CLOCK-ALIGNED buckets
-// in CT (B1, CTO review): 5m/15m/1h floor the open time to the TF; 4h anchors
 // to the CME session open 17:00 CT (17–21, 21–01, 01–05, 05–09, 09–13, 13–16)
 // the way NT8 draws them. Buckets never re-anchor when the window slides or a
 // gap appears.
@@ -270,20 +298,14 @@ func barsTF(bars []market.Kline, tfMin int) []market.Kline {
 	return out
 }
 
-// bucketOpen floors a CT-based epoch-millis open time to its TF bucket. For
-// 240 minutes the anchor is the CME session open at 17:00 CT (B1).
+// bucketOpen floors an open time to its TF bucket. 1m/5m/15m/1h buckets are
+// whole TF multiples of real-UTC epoch ms (whole-hour UTC offsets — DST
+// safe). The 4h bucket is anchored at the CME session open 17:00 CT and is
+// DST-aware via America/Chicago (EPOCH RULING 2026-10-03: bars carry real
+// UTC ms; the CT read never uses raw division on the epoch).
 func bucketOpen(openMs int64, tfMin int) int64 {
-	t := openMs / 60_000 // minutes since epoch, CT basis (DS-108 §1.2)
 	if tfMin == 240 {
-		const sess = 17 * 60 // 17:00 CT
-		d := t - sess
-		day := d / (24 * 60)
-		rem := d % (24 * 60)
-		if rem < 0 {
-			day--
-			rem += 24 * 60
-		}
-		return (day*(24*60) + sess + (rem/240)*240) * 60_000
+		return fourHBucketStart(openMs, ctime())
 	}
-	return (t / int64(tfMin)) * int64(tfMin) * 60_000
+	return (openMs / (int64(tfMin) * 60_000)) * (int64(tfMin) * 60_000)
 }

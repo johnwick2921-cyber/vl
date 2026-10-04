@@ -62,42 +62,68 @@ func TestEMAVisitReclassifies(t *testing.T) {
 	}
 }
 
-// TestEmaLossTick — E2: a stop-out before the fill = one loss at the line →
-// blocked; a departure (a closed candle whose range does not touch the line)
-// unblocks. A fill clears the pending stop without blocking.
+// TestEmaLossTick — E2 (CTO 12:50:13Z): the block is a LOSS at the line. The
+// entry must FILL first; only then does a stop touch block. Pinned cases:
+// (a) filled, then stopped → blocked until a departure; (b) never filled
+// before the expiry → NOT blocked; (c) filled, then target first → NOT blocked.
 func TestEmaLossTick(t *testing.T) {
 	cfg := DefaultConfig()
 	e := New(cfg)
-	e.State.EmaPendingSide = SideLong
-	e.State.EmaPendingEntry = 102
-	e.State.EmaPendingStop = 98
 
-	// filled first: candle trades through the entry — no loss.
-	emaLossTick(e, 100, market.Kline{High: 103, Low: 99})
-	if e.State.EmaBlocked || e.State.EmaPendingSide != "" {
-		t.Fatalf("fill must clear the pending stop without blocking")
+	armLong := func(entry, stop, target, expiry float64) {
+		e.State.EmaPendingSide = SideLong
+		e.State.EmaPendingEntry = entry
+		e.State.EmaPendingStop = stop
+		e.State.EmaPendingTarget = target
+		e.State.EmaPendingExpiry = int64(expiry)
+		e.State.EmaPendingFilled = false
 	}
 
-	// pending again, then stopped out: the stop is hit while the entry (102)
-	// never traded (high stays under it) — that is the loss.
-	e.State.EmaPendingSide = SideLong
-	e.State.EmaPendingEntry = 102
-	e.State.EmaPendingStop = 98
-	emaLossTick(e, 100, market.Kline{High: 100.9, Low: 97.5})
+	// (a) fill then stop: candle 1 reaches the entry; candle 2 hits the stop.
+	armLong(102, 98, 108, 200_000)
+	emaLossTick(e, 100, market.Kline{High: 102.5, Low: 101, CloseTime: 100_000}, 100_000)
+	if e.State.EmaPendingSide == "" || !e.State.EmaPendingFilled {
+		t.Fatal("touching the entry must fill the pending setup")
+	}
+	emaLossTick(e, 100, market.Kline{High: 101.5, Low: 97.5, CloseTime: 101_000}, 101_000)
 	if !e.State.EmaBlocked {
-		t.Fatal("stop-out before fill must block the EMA line")
+		t.Fatal("(a) filled then stopped must block the EMA line")
 	}
-
-	// still touching: stays blocked.
-	emaLossTick(e, 100, market.Kline{High: 100.5, Low: 99})
+	// R-a: the loss candle is never its own departure, however far its close.
+	emaLossTick(e, 100, market.Kline{High: 120, Low: 119, Close: 120, CloseTime: 101_000}, 101_000)
 	if !e.State.EmaBlocked {
-		t.Fatal("a touching candle must not lift the block")
+		t.Fatal("R-a: the loss candle must not lift the block")
 	}
-
-	// departure: range entirely above the line.
-	emaLossTick(e, 100, market.Kline{High: 102, Low: 100.5})
+	// Departure (loss_departure_pts 20): a LATER candle close 110 (12 pts) is
+	// not far enough.
+	emaLossTick(e, 100, market.Kline{High: 111, Low: 109, Close: 110, CloseTime: 102_000}, 102_000)
+	if !e.State.EmaBlocked {
+		t.Fatal("12 pts from the loss price must not lift the block")
+	}
+	// 22 pts: the departure lifts the block.
+	emaLossTick(e, 100, market.Kline{High: 121, Low: 119, Close: 120, CloseTime: 103_000}, 103_000)
 	if e.State.EmaBlocked {
-		t.Fatal("departure must lift the EMA block")
+		t.Fatal("departure (>=20 pts after the loss candle) must lift the EMA block")
+	}
+
+	// (b) never filled: the stop trades but the entry never did, then the
+	// order expires — no position, no loss.
+	armLong(102, 98, 108, 200_000)
+	emaLossTick(e, 100, market.Kline{High: 100.9, Low: 97.5}, 100_000)
+	if e.State.EmaBlocked || e.State.EmaPendingSide == "" {
+		t.Fatal("(b) a stop touch without a fill is not a loss")
+	}
+	emaLossTick(e, 100, market.Kline{High: 100, Low: 99}, 250_000)
+	if e.State.EmaBlocked || e.State.EmaPendingSide != "" {
+		t.Fatal("(b) expiry of an unfilled order must NOT block")
+	}
+
+	// (c) filled, then target first: a win, not a loss.
+	armLong(102, 98, 108, 200_000)
+	emaLossTick(e, 100, market.Kline{High: 102.5, Low: 101}, 100_000)
+	emaLossTick(e, 100, market.Kline{High: 108.5, Low: 103}, 101_000)
+	if e.State.EmaBlocked || e.State.EmaPendingSide != "" {
+		t.Fatal("(c) target first must clear the setup without blocking")
 	}
 }
 

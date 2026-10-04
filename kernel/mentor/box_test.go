@@ -56,19 +56,59 @@ func TestFTGLBoxFromPairGeometry(t *testing.T) {
 	}
 }
 
-// TestBoxEscapeDeletes — "ESCAPE = the candle's BODY outside (whole candle
-// better)" [D3.2 p1 @ 19:05]; "Delete it once price escapes it" [D3.4 p2
-// @ 12:11].
-func TestBoxEscapeDeletes(t *testing.T) {
+// TestEscapeDetection — "ESCAPE = the candle's BODY outside (whole candle
+// better)" [D3.2 p1 @ 19:05]. The helper is pure detection: an escape
+// re-arms trading and does NOT delete the box [D3.2 p1 @ 18:30–19:30];
+// nothing in the builder consults it for deletion (TestBoxSurvivesEscape).
+func TestEscapeDetection(t *testing.T) {
 	b := Box{Kind: FTGH, Top: 105, Bottom: 102}
 	if escaped([]market.Kline{{Open: 103, High: 104.5, Low: 102.5, Close: 103, CloseTime: 1}}, b, -1) {
 		t.Fatal("a candle inside the zone is not an escape")
 	}
 	if !escaped([]market.Kline{{Open: 106, High: 108, Low: 105.5, Close: 107, CloseTime: 1}}, b, -1) {
-		t.Fatal("a candle whose whole body is above the FTGH must escape-delete it")
+		t.Fatal("a candle whose whole body is above the FTGH must read as an escape")
 	}
 	if escaped([]market.Kline{{Open: 103, High: 109, Low: 102.5, Close: 104, CloseTime: 1}}, b, -1) {
-		t.Fatal("a wick beyond with the body inside must not delete the box")
+		t.Fatal("a wick beyond with the body inside is not an escape")
+	}
+}
+
+// TestBoxSurvivesEscape — B4 (10-03 ruling): a box is NEVER deleted intraday
+// ("vẽ rồi thì để y nguyên đó tới cuối ngày" [D4.1 p2 @02:39–03:09]); an
+// escaped body only re-arms trading [D3.2 p1 @ 18:30–19:30]. The fixture's
+// candle 6 closes with its whole body above the FTGH [104, 106] (open 106.2,
+// close 106.4) — the pre-fix code dropped the box right there. Mutant
+// (re-insert the escaped() drop in BoxesBuild) -> RED.
+func TestBoxSurvivesEscape(t *testing.T) {
+	cfg := DefaultBoxCfg()
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(0, 100, 101, 99, 100),
+		mk(1, 100, 102, 99, 101),
+		mk(2, 101, 105, 100, 104), // swing high @2 — pairs with @4
+		mk(3, 103, 104, 102, 103),
+		mk(4, 102, 106, 101, 105),       // swing high @4 — the extreme
+		mk(5, 105, 107, 99, 100),        // registers SWGL (low 99), not a higher high
+		mk(6, 106.2, 106.5, 105, 106.4), // ESCAPE: body fully above 106
+		mk(7, 106, 106.3, 105.5, 106.1),
+	}
+	now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000).In(ctime())
+	boxes := BoxesBuild(bars, cfg, now)
+	var ftgh *Box
+	for i := range boxes {
+		if boxes[i].Kind == FTGH {
+			b := boxes[i]
+			ftgh = &b
+		}
+	}
+	if ftgh == nil {
+		t.Fatal("FTGH deleted on escape — a box is never deleted intraday [D3.2 p1 @ 18:30–19:30; D4.1 p2 @ 02:39–03:09]")
+	}
+	if ftgh.Top != 106 || ftgh.Bottom != 104 {
+		t.Fatalf("FTGH = [%.2f, %.2f], want [104, 106]", ftgh.Bottom, ftgh.Top)
 	}
 }
 

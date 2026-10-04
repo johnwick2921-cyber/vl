@@ -16,16 +16,26 @@ import (
 // IsISB reports whether cur's BODY sits inside prev's FULL range (wicks
 // included) [D1.4 p1 @ 06:13–08:47].
 func IsISB(prev, cur market.Kline) bool {
+	// RULING P3 (CTO 2026-10-03T15:12Z): a DOJI candle 1 is NO ISB — with no
+	// candle-1 colour there is no direction, so the pair cannot trade (the old
+	// Close >= Open read traded dojis long).
+	if prev.Close == prev.Open {
+		return false
+	}
 	return curHigh(cur) <= prev.High && curLow(cur) >= prev.Low
 }
 
 // ISBDirection is the ISB direction: the COLOUR OF CANDLE 1 — green → long,
-// red → short; candle 2's colour is irrelevant [D1.4 p1 @ 09:20–10:20].
+// red → short; candle 2's colour is irrelevant [D1.4 p1 @ 09:20–10:20]. A
+// doji has no colour: "" (callers gate on IsISB first; "" fails closed).
 func ISBDirection(prev market.Kline) Side {
-	if prev.Close >= prev.Open {
+	if prev.Close > prev.Open {
 		return SideLong
 	}
-	return SideShort
+	if prev.Close < prev.Open {
+		return SideShort
+	}
+	return ""
 }
 
 func curHigh(b market.Kline) float64 {
@@ -55,26 +65,23 @@ func curLow(b market.Kline) float64 {
 //
 // Risk = (High − Low) + 2×buffer.
 func ISBOrders(candle market.Kline, cfg Config) (long, short Intent) {
-	stopPts := (candle.High - candle.Low) + 2*cfg.ISBBufferPts
 	long = Intent{
 		Action: PlaceStopLimitEntry,
+		Setup:  "ISB",
 		Side:   SideLong,
 		Price:  candle.High + cfg.ISBBufferPts,
 		Limit:  candle.High + cfg.ISBBufferPts,
 		Stop:   candle.Low - cfg.ISBBufferPts,
 		Reason: "ISB: buy stop-limit above the ISB high + buffer, stop below the ISB low − buffer [D1.4 p1 @ 10:33–11:25, 14:42–14:44, 22:22–22:30, 24:41–24:55]",
-		Setup:  "ISB",
-		StopPts: stopPts,
 	}
 	short = Intent{
 		Action: PlaceStopLimitEntry,
+		Setup:  "ISB",
 		Side:   SideShort,
 		Price:  candle.Low - cfg.ISBBufferPts,
 		Limit:  candle.Low - cfg.ISBBufferPts,
 		Stop:   candle.High + cfg.ISBBufferPts,
 		Reason: "ISB: sell stop-limit below the ISB low − buffer, stop above the ISB high + buffer [D1.4 p1 @ 10:33–11:25, 14:42–14:44, 22:22–22:30, 24:41–24:55]",
-		Setup:  "ISB",
-		StopPts: stopPts,
 	}
 	return long, short
 }
@@ -84,6 +91,9 @@ func ISBOrders(candle market.Kline, cfg Config) (long, short Intent) {
 // stop is in the twenties — the ONLY stop-size skip R1 has [D4.1 p1 @ 05:41].
 func ISBStopLimitOrder(prev, cur market.Kline, cfg Config) (Side, Intent, bool, string) {
 	dir := ISBDirection(prev)
+	if dir == "" {
+		return "", Intent{}, false, "doji candle 1 — no ISB direction [P3 ruling]"
+	}
 	long, short := ISBOrders(cur, cfg)
 	if dir == SideLong {
 		if _, ok, reason := ISBStopVerdict(cur, cfg); !ok {

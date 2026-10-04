@@ -206,6 +206,47 @@ func TestGlobexRunLivePreOpen(t *testing.T) {
 	}
 }
 
+// TestGlobexRunUndersizedFeedRefused — A6 [D5.1 p1 @17:44-17:56]: the run
+// is the FULL Globex session (Asia high -> pre-market low). A feed that
+// starts mid-window (the live 240-bar fetch starts ~04:30 at the 08:30
+// latch) under-measures it and must read not-measured — never a fabricated
+// "normal" day. Within the alignment tolerance the feed counts as full.
+func TestGlobexRunUndersizedFeedRefused(t *testing.T) {
+	loc := time.FixedZone("CT", -5*3600)
+	mk := func(day int, hour, minute int, h, l float64) market.Kline {
+		ot := time.Date(2026, 9, day, hour, minute, 0, 0, loc)
+		return market.Kline{OpenTime: ot.UnixMilli(), High: h, Low: l}
+	}
+	// The 240-bar live feed at the 08:30 latch: earliest bar 04:30.
+	undersized := []market.Kline{
+		mk(15, 4, 30, 120, 100),
+		mk(15, 5, 30, 125, 105),
+		mk(15, 6, 30, 130, 110),
+	}
+	if run, ok := GlobexRun(undersized, time.Date(2026, 9, 15, 9, 0, 0, 0, loc).UnixMilli(), loc); ok {
+		t.Fatalf("frozen read on a 04:30-start feed: run=%.2f ok=true, want ok=false (under-measured)", run)
+	}
+	// Same during the pre-open live phase: a 03:30 read with a feed that
+	// starts 23:30 misses 17:00-23:30 — under-measured, fail closed.
+	undersizedLive := []market.Kline{
+		mk(14, 23, 30, 120, 100),
+		mk(15, 1, 30, 125, 105),
+		mk(15, 2, 30, 130, 110),
+	}
+	if run, ok := GlobexRun(undersizedLive, time.Date(2026, 9, 15, 3, 30, 0, 0, loc).UnixMilli(), loc); ok {
+		t.Fatalf("pre-open read on a 23:30-start feed: run=%.2f ok=true, want ok=false", run)
+	}
+	// A feed starting inside the alignment tolerance (17:05) is full.
+	full := []market.Kline{
+		mk(14, 17, 5, 100, 98),
+		mk(14, 20, 0, 105, 99),
+		mk(15, 7, 0, 106, 90),
+	}
+	if run, ok := GlobexRun(full, time.Date(2026, 9, 15, 9, 0, 0, 0, loc).UnixMilli(), loc); !ok || abs(run-16) > 1e-9 {
+		t.Fatalf("17:05-start feed: run=%.2f ok=%v, want 16 true", run, ok)
+	}
+}
+
 // TestGlobexRunSundayOpen — E2: at Sunday 17:05 CT the current session
 // opened at 17:00 the same day; Saturday bars are excluded (the Globex
 // week does not have a Saturday session).

@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"fmt"
+	"time"
 
 	"vl/market"
 )
@@ -100,24 +101,13 @@ func keyLevel1HBars(bars []market.Kline) []market.Kline {
 		// 81 buckets from the same 216 bars a clean call buckets into 53).
 		res := make([]market.Kline, 0, len(bars))
 		for _, b := range bars {
-			m := (b.OpenTime / 60_000) % (24 * 60)
-			if m >= 8*60 && m < rthEnd {
+			if m := rthMinuteOf(b.OpenTime); m >= 8*60 && m < rthEnd {
 				res = append(res, b)
 			}
 		}
 		return res
 	}
-	openMin := func(t int64) int64 {
-		t /= 60_000 // minutes, CT basis (DS-108 §1.2)
-		d := t - anchorMin
-		day := d / (24 * 60)
-		rem := d % (24 * 60)
-		if rem < 0 {
-			day--
-			rem += 24 * 60
-		}
-		return (day*(24*60) + anchorMin + (rem/60)*60) * 60_000
-	}
+	openMin := rthHourAnchor
 	var out []market.Kline
 	var cur *market.Kline
 	flush := func() {
@@ -128,7 +118,7 @@ func keyLevel1HBars(bars []market.Kline) []market.Kline {
 	}
 	key := int64(-1)
 	for _, b := range bars {
-		if (b.OpenTime/60_000)%(24*60) >= rthEnd {
+		if rthMinuteOf(b.OpenTime) >= rthEnd {
 			continue // post-close external minutes never enter the last candle
 		}
 		k := openMin(b.OpenTime)
@@ -152,8 +142,7 @@ func keyLevel1HBars(bars []market.Kline) []market.Kline {
 	flush()
 	res := out[:0]
 	for _, c := range out {
-		m := (c.OpenTime / 60_000) % (24 * 60)
-		if m >= anchorMin && m < rthEnd {
+		if m := rthMinuteOf(c.OpenTime); m >= anchorMin && m < rthEnd {
 			res = append(res, c)
 		}
 	}
@@ -177,6 +166,27 @@ func rthOnly(bars []market.Kline) []market.Kline {
 	return out
 }
 
+// rthMinuteOf returns the CT wall minute-of-day of a bar open (EPOCH
+// RULING 2026-10-03: real UTC ms through America/Chicago — never raw
+// division on the epoch).
+func rthMinuteOf(ms int64) int {
+	t := time.UnixMilli(ms).In(ctime())
+	return t.Hour()*60 + t.Minute()
+}
+
+// rthHourAnchor returns the open epoch of the RTH 1h candle a bar belongs
+// to: candles open at :30 (08:30, 09:30, …) — a bar at hh:29 belongs to
+// the previous hour's candle, hh:30 starts the current one. DST-safe via
+// America/Chicago.
+func rthHourAnchor(ms int64) int64 {
+	t := time.UnixMilli(ms).In(ctime())
+	h := t.Hour()
+	if t.Minute() < 30 {
+		h--
+	}
+	return time.Date(t.Year(), t.Month(), t.Day(), h, 30, 0, 0, ctime()).UnixMilli()
+}
+
 // candleColour: green iff close > open, red otherwise (§4.3 step 2).
 func candleColour(b market.Kline) bool {
 	return b.Close > b.Open
@@ -190,8 +200,13 @@ func candleColour(b market.Kline) bool {
 // (keyLevel1HBars), and only a candle that CLOSED at or after the level was
 // drawn can delete it. The still-forming candle (whose close time has not
 // been reached) never counts.
-func levelDeletedBy1HBody(lvl Level, bars []market.Kline, now int64) bool {
-	b60 := keyLevel1HBars(bars)
+// b60 is the PRE-COMPUTED 1H RTH candle series (keyLevel1HBars). It was
+// hoisted out of the per-level loop: re-aggregating the full slice for every
+// level on every tick is O(levels x bars) per tick and timed the replay out
+// once site 4 made the aggregation per-bar time.Date calls. The caller owns
+// the b60 lifecycle (seeded: State.Seed1HBars, incremental; cold: one
+// keyLevel1HBars per tick).
+func levelDeletedBy1HBody(lvl Level, b60 []market.Kline, now int64) bool {
 	if len(b60) > 0 && b60[len(b60)-1].CloseTime >= now {
 		b60 = b60[:len(b60)-1] // the forming 1H candle has not closed
 	}
@@ -227,8 +242,10 @@ func fnum(v float64) string {
 // epoch_floor convention per the bars table (DS-108 §1.2: maintenance gap
 // lands at 17:00–18:00 CT, which confirms the CT basis).
 func ctOf(ms int64) (day int, hh, mm int) {
-	t := ms / 1000 / 60 // minutes since epoch in CT
-	day = int(t / (24 * 60))
-	mod := int(t % (24 * 60))
-	return day, mod / 60, mod % 60
+	// EPOCH RULING 2026-10-03: bars carry REAL UTC epoch ms; the CT wall
+	// read goes through America/Chicago (DST-aware), never raw division.
+	t := time.UnixMilli(ms).In(ctime())
+	mid := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, ctime()).UnixMilli()
+	day = int(mid / (24 * 60 * 60_000))
+	return day, t.Hour(), t.Minute()
 }

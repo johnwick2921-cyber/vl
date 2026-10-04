@@ -52,9 +52,7 @@ func TestMentorSeedAtStart(t *testing.T) {
 		now := time.Now().UnixMilli()
 		bh := store.NewBarHistoryStore(st.GormDB())
 		rows1m := mentorSeedBars1m(now)
-		rows1h := mentorSeedBars1h(now)
-		rows := append(rows1m, rows1h...)
-		if err := bh.InsertBars(rows); err != nil {
+		if err := bh.InsertBars(rows1m); err != nil {
 			t.Fatalf("InsertBars: %v", err)
 		}
 		// the exact closed 1m count the seed must report (the fixture seam
@@ -114,25 +112,38 @@ func mentorSeedStore(t *testing.T) *store.Store {
 	return st
 }
 
-// mentorSeedBars1m builds 200 closed 1m bars ending at now−1m, plus one bar on
-// the current CT day (00:00 CT = 05:00 UTC) so the "today session" source is
-// present at ANY time of day — the engine skips unclosed bars everywhere
-// except the today-session scan, which reads OpenTime only.
+// mentorSeedBars1m builds 430 hours of closed 1m bars (25,800 rows) ending one
+// hour before the current 4h bucket start (22:00 UTC = 17:00 CT anchor) — 107
+// fully closed 4h buckets, above the 102 warm-up — plus one bar on today's
+// session (00:00 CT = 05:00 UTC, read by OpenTime) for the "today session"
+// source. Closes alternate hour by hour so the aggregated 1H RTH level set
+// draws ≥2 candles (the 1m-only P1 seed builds 1h from these rows).
 func mentorSeedBars1m(now int64) []store.BarHistoryDB {
-	const dayMs = int64(24 * 3600_000)
-	ctDay := now - ((now - 5*3600_000) % dayMs) // UTC start of the current CT day
+	const hourMs = int64(3600_000)
+	const bucketMs = int64(4 * 3600_000)
+	b0 := now - ((now - 22*hourMs) % bucketMs) // current 4h bucket start
 	var rows []store.BarHistoryDB
-	start := now - 201*60_000
-	for k := int64(0); k < 200; k++ {
-		o := start + k*60_000
-		base := 30000.0 + float64(k)*0.25
-		rows = append(rows, store.BarHistoryDB{
-			Symbol: "MNQ", TF: "1m", Contract: "MNQ 12-26",
-			Source: store.BarSourceLive, OpenTimeMs: o,
-			O: base, H: base + 5, L: base - 5, C: base + 2, V: 1,
-		})
+	for h := int64(1); h <= 430; h++ {
+		h0 := b0 - h*hourMs
+		green := h%2 == 0
+		for m := int64(0); m < 60; m++ {
+			o := h0 + m*60_000
+			if o+60_000 > now {
+				continue // never seed a bar that has not closed yet
+			}
+			base := 29000.0 - float64(h)*0.5 + float64(m)*0.1
+			c := base + 1
+			if !green {
+				c = base - 1
+			}
+			rows = append(rows, store.BarHistoryDB{
+				Symbol: "MNQ", TF: "1m", Contract: "MNQ 12-26",
+				Source: store.BarSourceLive, OpenTimeMs: o,
+				O: base, H: base + 5, L: base - 5, C: c, V: 1,
+			})
+		}
 	}
-	extra := ctDay + 5*60_000
+	extra := now - ((now - 5*3600_000) % (24 * 3600_000)) + 5*60_000
 	have := false
 	for _, r := range rows {
 		if r.OpenTimeMs == extra {
@@ -145,33 +156,6 @@ func mentorSeedBars1m(now int64) []store.BarHistoryDB {
 			Symbol: "MNQ", TF: "1m", Contract: "MNQ 12-26",
 			Source: store.BarSourceLive, OpenTimeMs: extra,
 			O: 29999, H: 30004, L: 29994, C: 30001, V: 1,
-		})
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].OpenTimeMs < rows[j].OpenTimeMs })
-	return rows
-}
-
-// mentorSeedBars1h builds 430 closed 1h bars ending one hour before the current
-// 4h bucket start (22:00 UTC = 17:00 CT anchor) — 107 fully closed 4h buckets,
-// above the 102 warm-up — with alternating candle colours so the 1H RTH level
-// set draws ≥2 candles.
-func mentorSeedBars1h(now int64) []store.BarHistoryDB {
-	const hourMs = int64(3600_000)
-	const bucketMs = int64(4 * 3600_000)
-	b0 := now - ((now - 22*hourMs) % bucketMs) // current 4h bucket start
-	var rows []store.BarHistoryDB
-	for k := int64(1); k <= 430; k++ {
-		o := b0 - k*hourMs
-		base := 29000.0 - float64(k)*0.5
-		green := k%2 == 0
-		c := base + 3
-		if !green {
-			c = base - 3
-		}
-		rows = append(rows, store.BarHistoryDB{
-			Symbol: "MNQ", TF: "1h", Contract: "MNQ 12-26",
-			Source: store.BarSourceLive, OpenTimeMs: o,
-			O: base, H: base + 10, L: base - 10, C: c, V: 10,
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].OpenTimeMs < rows[j].OpenTimeMs })

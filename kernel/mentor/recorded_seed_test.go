@@ -53,7 +53,7 @@ func TestSeedIncrementalMatchesRebuildRecordedDay(t *testing.T) {
 
 	// Incremental: seed day 1, then tick day 2 closed-bar by closed-bar.
 	inc := New(cfg)
-	Seed(inc, day1, day1, seedTime)
+	Seed(inc, day1, seedTime)
 	for i := len(day1) + 1; i <= len(full); i++ {
 		now := full[i-1].CloseTime + 1
 		inc.Tick(full[:i], now)
@@ -62,7 +62,7 @@ func TestSeedIncrementalMatchesRebuildRecordedDay(t *testing.T) {
 	// Rebuild: seed the whole tape at the end time.
 	endTime := full[len(full)-1].CloseTime
 	reb := New(cfg)
-	Seed(reb, full, full, endTime)
+	Seed(reb, full, endTime)
 
 	if len(inc.State.SeedLevels) != len(reb.State.SeedLevels) {
 		t.Fatalf("levels: incremental %d, rebuild %d",

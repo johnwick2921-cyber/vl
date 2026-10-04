@@ -38,6 +38,7 @@ func ReverseISBAtEMA9(prev, cur market.Kline, ema9 float64, trend Side, cfg Conf
 		// ISB points short in an uptrend → LONG, buy stop above its high.
 		return Intent{
 			Action: PlaceStopEntry,
+			Setup:  "ISB",
 			Side:   SideLong,
 			Price:  cur.High,
 			Stop:   cur.Low - cfg.ISBBufferPts,
@@ -46,6 +47,7 @@ func ReverseISBAtEMA9(prev, cur market.Kline, ema9 float64, trend Side, cfg Conf
 	}
 	return Intent{
 		Action: PlaceStopEntry,
+		Setup:  "ISB",
 		Side:   SideShort,
 		Price:  cur.Low,
 		Stop:   cur.High + cfg.ISBBufferPts,

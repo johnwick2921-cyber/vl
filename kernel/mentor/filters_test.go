@@ -109,8 +109,10 @@ func TestTriggerLineMovesOnEveryReversalOnceEach(t *testing.T) {
 	if got.Dir != SideLong || got.Price != 98 {
 		t.Fatalf("after two reversals = %+v, want long @ 98 (the second reversal's broken high)", got)
 	}
-	if got.OldPrice != 101 || got.OldDir != SideShort {
-		t.Fatalf("old line = %v/%q, want 101/short (the line before the LAST reversal)", got.OldPrice, got.OldDir)
+	// B1 (10-03 ruling): ONE line — a reversal moves it and the old line is gone
+	// [D3.4 p1 @11:11–12:40].
+	if got.Price != 98 {
+		t.Fatalf("the line must carry only the last reversal's extreme, got %+v", got)
 	}
 }
 
@@ -124,25 +126,21 @@ func TestTriggerVerdictSideAndNoTradeZone(t *testing.T) {
 	if ok, _, reason := TriggerVerdict(TriggerLine{Dir: SideLong, Price: 100}, 99); ok || reason == "" {
 		t.Fatalf("below the buy line must be refused with a reason")
 	}
-	// after a reversal the zone between old (100) and new (97) lines is no-trade
-	tl := TriggerLine{Dir: SideShort, Price: 97, OldPrice: 100, OldDir: SideLong}
+	// B1 (10-03 ruling): there is ONE line — a reversal moves it, the old line
+	// is gone; the no-trade zone lives between an FTGL and the buy line (see
+	// triggerBoxZoneVerdict tests), NOT between two trigger lines.
+	tl := TriggerLine{Dir: SideShort, Price: 97}
 	if ok, _, reason := TriggerVerdict(tl, 98.5); ok || reason == "" {
-		t.Fatalf("between two lines must be no-trade")
+		t.Fatalf("above the sell line must be refused with a reason")
 	}
-	// R4: the zone INCLUDES the lines themselves — price sitting exactly ON
-	// either line is still no-trade [D3.4 p1 @ 16:56–17:17].
-	for _, p := range []float64{100, 97} {
-		if ok, _, reason := TriggerVerdict(tl, p); ok || reason == "" {
-			t.Fatalf("price exactly on a zone line (%v) must be no-trade", p)
-		}
+	if ok, side, _ := TriggerVerdict(tl, 97); !ok || side != SideShort {
+		t.Fatalf("exactly ON the sell line is allowed (no second line); ok=%v side=%q", ok, side)
 	}
 	if ok, side, _ := TriggerVerdict(tl, 96); !ok || side != SideShort {
-		t.Fatalf("below the new sell line: ok=%v side=%q", ok, side)
+		t.Fatalf("below the sell line: ok=%v side=%q", ok, side)
 	}
-	// above the old buy line is the WRONG side of the current (sell) line —
-	// still refused, but for the wrong-side reason, not the zone.
 	if ok, _, reason := TriggerVerdict(tl, 101); ok || reason == "" {
-		t.Fatalf("above the current sell line must be refused")
+		t.Fatalf("above the sell line must be refused")
 	}
 }
 
@@ -169,29 +167,40 @@ func TestTriggerLineOnRecorded5mTape(t *testing.T) {
 	t.Logf("recorded 5m tape: line %q @ %.2f", got.Dir, got.Price)
 }
 
-// TestISBConflictVerdict — §5.3 / §12 [D4.2 p1 @ 13:59, 14:35]: a live 5m ISB
-// and a live 15m churn in OPPOSITE directions → no trade at all.
+// TestISBConflictVerdict — B8 [D4.2 p1 @ 14:24–14:52; D5.1 p2 @ 01:55]: a live
+// 5m ISB and a live 15m ISB (the REAL 15m TF, not three 5m bars) in OPPOSITE
+// directions → no trade at all. Directions are the inside candle's colour
+// (candle 1); a doji candle 1 is no ISB.
 func TestISBConflictVerdict(t *testing.T) {
-	// 15m churn: bars 0-2 inside bar 0's range, bar 0 direction long.
-	// 5m ISB: bar 3 inside bar 2, bar 3 direction short → conflict.
-	bars := []market.Kline{
-		{Open: 100, Close: 110, High: 112, Low: 98}, // 15m first (long)
-		{Open: 104, Close: 108, High: 111, Low: 100},
-		{Open: 105, Close: 109, High: 110, Low: 101}, // 15m ends
-		{Open: 109, Close: 106, High: 110, Low: 102}, // 5m ISB (short) inside bar 2
-	}
-	if !ISBConflictVerdict(bars) {
-		t.Fatal("opposite 15m/5m ISB directions must conflict")
+	// 5m pair: p5 green inside bar, c5 breaks out of it (body inside p5's
+	// range) → 5m ISB direction LONG.
+	p5 := market.Kline{Open: 104, Close: 108, High: 111, Low: 100}
+	c5 := market.Kline{Open: 109, Close: 106, High: 110, Low: 102}
+	// 15m pair: p15 red inside bar → 15m ISB direction SHORT.
+	p15 := market.Kline{Open: 110, Close: 105, High: 112, Low: 98}
+	c15 := market.Kline{Open: 106, Close: 108, High: 111, Low: 99}
+	if !ISBConflictVerdict([]market.Kline{p5, c5}, []market.Kline{p15, c15}) {
+		t.Fatal("opposite 5m/15m ISB directions must conflict")
 	}
 	// same direction → no conflict
-	bars[3] = market.Kline{Open: 106, Close: 109.5, High: 110, Low: 102} // long
-	if ISBConflictVerdict(bars) {
+	p15b := market.Kline{Open: 105, Close: 110, High: 112, Low: 98}
+	if ISBConflictVerdict([]market.Kline{p5, c5}, []market.Kline{p15b, c15}) {
 		t.Fatal("same-direction ISBs must not conflict")
 	}
-	// no 5m ISB → no conflict even with a churn
-	bars[3] = market.Kline{Open: 102, Close: 113, High: 114, Low: 101} // body escapes
-	if ISBConflictVerdict(bars) {
+	// no 5m ISB → no conflict (c5's body escapes p5's range)
+	c5b := market.Kline{Open: 102, Close: 113, High: 114, Low: 101}
+	if ISBConflictVerdict([]market.Kline{p5, c5b}, []market.Kline{p15, c15}) {
 		t.Fatal("no live 5m ISB must never conflict")
+	}
+	// no 15m ISB → no conflict
+	c15b := market.Kline{Open: 95, Close: 114, High: 115, Low: 94}
+	if ISBConflictVerdict([]market.Kline{p5, c5}, []market.Kline{p15, c15b}) {
+		t.Fatal("no live 15m ISB must never conflict")
+	}
+	// doji candle 1 → no ISB → no conflict
+	p5d := market.Kline{Open: 106, Close: 106, High: 111, Low: 100}
+	if ISBConflictVerdict([]market.Kline{p5d, c5}, []market.Kline{p15, c15}) {
+		t.Fatal("a doji candle 1 is no ISB — must not conflict")
 	}
 }
 

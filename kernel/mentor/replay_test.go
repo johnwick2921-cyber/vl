@@ -15,9 +15,9 @@ import (
 func TestThirtyDayReplaySeconds(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
-	var bars1m, bars1h []market.Kline
+	var bars1m []market.Kline
 	cl := 20000.0
-	for d := 0; d < 31; d++ {
+	for d := 0; d < 35; d++ {
 		// RTH 1m: 08:30–15:00 CT = 390 bars/day
 		for m := 0; m < 390; m++ {
 			ot := ctMs(t, d, 8, 30) + int64(m)*60_000
@@ -25,19 +25,12 @@ func TestThirtyDayReplaySeconds(t *testing.T) {
 			bars1m = append(bars1m, mkBar(cl-0.125, cl, ot, 1))
 		}
 	}
-	// 19 days of 1h candles around the clock (RTH filtered inside the walk):
-	// 114 closed 4h buckets — past the 102 warm-up.
-	for d := 0; d < 19; d++ {
-		for h := 0; h < 24; h++ {
-			ot := ctMs(t, d, h, 0)
-			c := 20000 + float64(d)*12 + float64(h)
-			bars1h = append(bars1h, mkBar(c-0.5, c, ot, 60))
-		}
-	}
-	now := ctMs(t, 30, 15, 0)
+	// The 4h warm-up is derived from the 1m history (P1): 35 RTH days of 1m
+	// aggregate into >=102 closed 4h buckets on the 17:00 CT anchor.
+	now := ctMs(t, 34, 15, 0)
 
 	e := New(cfg)
-	if m := Seed(e, bars1m, bars1h, now); len(m) != 0 {
+	if m := Seed(e, bars1m, now); len(m) != 0 {
 		t.Fatalf("30-day store must be warm, got %v", m)
 	}
 

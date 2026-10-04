@@ -45,27 +45,49 @@ func emaSetupAllowed(e *Evaluator, lvl Level, bars []market.Kline, cfg Config) b
 	return true
 }
 
-// emaLossTick — E2: after an EMA34 stop entry is emitted, the pending stop is
-// watched on closed candles. Stop-out BEFORE the fill = one loss at the line →
-// the EMA is blocked for new setups until a closed candle whose range does NOT
-// touch the line (the departure) — the same rule as the level lost-box.
-func emaLossTick(e *Evaluator, emaPrice float64, cur market.Kline) {
+// emaLossTick — E2 (CTO 12:50:13Z, precise reading): the block is a LOSS at
+// the line, not a missed order. The entry must FILL first (price reaches the
+// stop-entry); only THEN does a stop touch block the EMA. Three cases on
+// closed candles:
+//
+//	(a) entry touched (filled), then the stop touched  → EMA blocked until a
+//	    departure candle (a closed candle whose range does not touch the line);
+//	(b) entry never touched before the expiry        → NOT blocked (the order
+//	    expired: no position, no loss);
+//	(c) entry filled, then the target reached first  → NOT blocked (a win).
+func emaLossTick(e *Evaluator, emaPrice float64, cur market.Kline, now int64) {
 	if e.State.EmaPendingSide != "" {
-		// A STOP entry fills when price REACHES the entry (high for longs, low
-		// for shorts); it is stopped out when the stop trades without that.
-		filled := e.State.EmaPendingSide == SideLong && cur.High >= e.State.EmaPendingEntry ||
-			e.State.EmaPendingSide == SideShort && cur.Low <= e.State.EmaPendingEntry
-		stopped := e.State.EmaPendingSide == SideLong && cur.Low <= e.State.EmaPendingStop ||
-			e.State.EmaPendingSide == SideShort && cur.High >= e.State.EmaPendingStop
-		if filled {
-			e.State.EmaPendingSide = "" // filled first: the trade is live, not a loss
-		} else if stopped {
-			e.State.EmaBlocked = true // one loss at the line
-			e.State.EmaPendingSide = ""
+		s := &e.State
+		touchEntry := s.EmaPendingSide == SideLong && cur.High >= s.EmaPendingEntry ||
+			s.EmaPendingSide == SideShort && cur.Low <= s.EmaPendingEntry
+		touchStop := s.EmaPendingSide == SideLong && cur.Low <= s.EmaPendingStop ||
+			s.EmaPendingSide == SideShort && cur.High >= s.EmaPendingStop
+		touchTarget := s.EmaPendingSide == SideLong && cur.High >= s.EmaPendingTarget ||
+			s.EmaPendingSide == SideShort && cur.Low <= s.EmaPendingTarget
+		switch {
+		case !s.EmaPendingFilled && touchEntry:
+			s.EmaPendingFilled = true // filled: the position is live
+		case !s.EmaPendingFilled && now > s.EmaPendingExpiry:
+			s.EmaPendingSide = "" // (b) expired unfilled — no loss, no block
+		case s.EmaPendingFilled && touchStop:
+			s.EmaBlocked = true // (a) one loss at the line
+			s.EmaLossPrice = s.EmaPendingStop
+			s.EmaLossBarTime = cur.CloseTime
+			s.EmaPendingSide = ""
+			s.EmaPendingFilled = false
+		case s.EmaPendingFilled && touchTarget:
+			s.EmaPendingSide = "" // (c) target first — not a loss
+			s.EmaPendingFilled = false
 		}
 	}
-	if e.State.EmaBlocked && (cur.High < emaPrice || cur.Low > emaPrice) {
-		e.State.EmaBlocked = false // departure: the line is left alone
+	// Departure (CTO 13:24:53Z, ONE rule with G2): a CLOSED candle AFTER the
+	// loss candle whose |close - loss price| reaches LossDeparturePts lifts
+	// the block. The loss candle itself is never its own departure (R-a).
+	if e.State.EmaBlocked &&
+		cur.CloseTime > e.State.EmaLossBarTime &&
+		e.Cfg.LossDeparturePts > 0 &&
+		abs(cur.Close-e.State.EmaLossPrice) >= e.Cfg.LossDeparturePts {
+		e.State.EmaBlocked = false
 	}
 }
 

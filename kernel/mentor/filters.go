@@ -18,11 +18,6 @@ type TriggerLine struct {
 	Dir   Side    // allowed direction ("" before the first break)
 	Price float64 // the broken extreme (wick included)
 
-	// OldPrice/oldDir are the line from BEFORE the last reversal move; the
-	// zone strictly between the two lines is the no-trade zone [@ 16:38].
-	OldPrice float64
-	OldDir   Side
-
 	// B2: persistence — the last PROCESSED bucket (clock-aligned open) and
 	// its bar. TriggerTick processes only newer buckets; the forming bucket
 	// may fire a break once and is never re-applied.
@@ -86,34 +81,24 @@ func applyBreak(next TriggerLine, before, cur market.Kline) TriggerLine {
 			next.Dir, next.Price = SideShort, before.Low
 		}
 	case next.Dir == SideLong && brokeLow: // reversal: move the line once
-		next.OldDir, next.OldPrice = next.Dir, next.Price
+		// B1 (10-03 ruling): ONE line, moved on a reversal — the old line is
+		// gone, not kept as a second line [D3.4 p1 @11:11–12:40].
 		next.Dir, next.Price = SideShort, before.Low
 	case next.Dir == SideShort && brokeHigh: // reversal: move the line once
-		next.OldDir, next.OldPrice = next.Dir, next.Price
 		next.Dir, next.Price = SideLong, before.High
 	}
 	// same-direction breaks (including repeats) never move the line
 	return next
 }
 
-// TriggerVerdict filters an entry by the trigger line: allowed side only,
-// nothing between two opposing lines [@ 16:38].
+// TriggerVerdict filters an entry by the trigger line: allowed side only.
+// B1 (10-03 ruling): there is ONE line, moved on a reversal — the no-trade
+// zone "between two trigger lines" was a misread; the real zone sits between
+// an FTGL and the buy line (mirror: FTGH and the sell line) and lives in
+// triggerBoxZoneVerdict (eval.go), where the boxes are known.
 func TriggerVerdict(t TriggerLine, price float64) (ok bool, side Side, reason string) {
 	if t.Dir == "" {
 		return true, "", ""
-	}
-	// R4 (RULES FIX v3, D3.4 p1 @ 16:56–17:17 [A]): between two opposing
-	// trigger lines there is NO trade at all, ISB included — and the zone
-	// INCLUDES the lines themselves ("KHỎI ĐÁNH… đợi nó thoát ra khỏi 2
-	// cái"). Price must escape BOTH before anything may trade.
-	if t.OldPrice != 0 {
-		lo, hi := t.Price, t.OldPrice
-		if lo > hi {
-			lo, hi = hi, lo
-		}
-		if price >= lo && price <= hi {
-			return false, "", "between two opposing trigger lines — no trade at all, ISB included [D3.4 p1 @ 16:56–17:17]"
-		}
 	}
 	if t.Dir == SideLong && price < t.Price {
 		return false, "", "below the buy trigger line — do nothing [D3.4 p1 @ 06:22]"
@@ -129,49 +114,24 @@ func TriggerVerdict(t TriggerLine, price float64) (ok bool, side Side, reason st
 // [@ 00:00]. Same direction → trade; OPPOSITE directions → DO NOT TRADE AT ALL
 // [@ 14:35].
 
-// Is5mISB reports a 5m inside bar (the 1m body rule applied to 5m bars).
-func Is5mISB(prev, cur market.Kline) bool {
-	return IsISB(prev, cur)
-}
-
-// Is15mChurn is the 15m-ISB proxy (DS-108 §2.1): 3 consecutive 5m bars each
-// inside the FIRST one's range.
-func Is15mChurn(bars5m []market.Kline) bool {
-	if len(bars5m) < 3 {
+// ISBConflictVerdict — B8 (10-03 fix, D4.2 p1 @14:24–14:52; D5.1 p2
+// @01:55): the 15m read is the REAL 15m TF (aggregated CLOSED buckets), not
+// three 5m bars standing in for it — he says "mình nhắm theo khung 15 phút…
+// đánh theo khung 15 phút thật sự". A live 5m ISB and a live 15m ISB with
+// OPPOSITE directions → no trade at all [D4.2 p1 @ 14:35 "làm ơn đừng trade
+// luôn… 2 khung giờ lớn đang ngược chiều nhau"]. Both directions are the
+// INSIDE candle's colour (candle 1; ISBDirection), doji = no ISB at all.
+// The conflict is ISB-path only — its call site runs inside the IsISB gate.
+func ISBConflictVerdict(bars5m, bars15m []market.Kline) bool {
+	if len(bars5m) < 2 || len(bars15m) < 2 {
 		return false
 	}
-	first := bars5m[len(bars5m)-3]
-	last := bars5m[len(bars5m)-1]
-	for _, b := range bars5m[len(bars5m)-2:] {
-		if b.High > first.High || b.Low < first.Low {
-			return false
-		}
-	}
-	_ = last
-	return true
-}
-
-// barDir is a candle's own direction (body up/down) — the "inside bar's
-// direction" read in §5.3.
-func barDir(b market.Kline) Side {
-	if b.Close > b.Open {
-		return SideLong
-	}
-	return SideShort
-}
-
-// ISBConflictVerdict: a live 5m ISB and a live 15m churn with OPPOSITE
-// directions → no trade at all [D4.2 p1 @ 14:35]. The 5m ISB is the most
-// recent pair; the 15m read is the last 3 5m bars.
-func ISBConflictVerdict(bars5m []market.Kline) (conflict bool) {
-	if len(bars5m) < 3 {
+	p5, c5 := bars5m[len(bars5m)-2], bars5m[len(bars5m)-1]
+	p15, c15 := bars15m[len(bars15m)-2], bars15m[len(bars15m)-1]
+	if !IsISB(p5, c5) || !IsISB(p15, c15) {
 		return false
 	}
-	last, prev := bars5m[len(bars5m)-1], bars5m[len(bars5m)-2]
-	if !Is5mISB(prev, last) || !Is15mChurn(bars5m) {
-		return false
-	}
-	return barDir(last) != barDir(bars5m[len(bars5m)-3])
+	return ISBDirection(p5) != ISBDirection(p15)
 }
 
 // ── mid-range [§12, D3.2 p2 @ 08:34; D3.4 p3 @ 01:44] ───────────────────────

@@ -11,10 +11,10 @@ import (
 // once that candle has completed [X5 @01:52, 06:29]. Pre-market bars never
 // draw it.
 func TestORBDrawsAfterTheFirst2mCandle(t *testing.T) {
-	day := int64(19645) * 24 * 60 * 60_000 // 2026-09-15 CT
 	mk := func(hh, mm int, h, l, c float64) market.Kline {
-		t0 := day + int64(hh*60+mm)*60_000
-		return market.Kline{OpenTime: t0, CloseTime: t0 + 59_999, High: h, Low: l, Close: c}
+		// real-UTC epochs (EPOCH RULING): 2026-09-15 CT bars.
+		ot := auditMs(2026, 9, 15, hh, mm, 0)
+		return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, High: h, Low: l, Close: c}
 	}
 	bars := []market.Kline{
 		mk(8, 0, 30000, 29000, 29500), // pre-market — never draws the ORB
@@ -22,14 +22,39 @@ func TestORBDrawsAfterTheFirst2mCandle(t *testing.T) {
 		mk(8, 31, 24830, 24816, 24820),
 	}
 	// at 08:31:59 the candle has NOT completed
-	orb := ORBAdvance(ORB{}, bars, day+(8*60+31)*60_000+59_999)
+	orb := ORBAdvance(ORB{}, bars, auditMs(2026, 9, 15, 8, 31, 59))
 	if orb.Drawn {
 		t.Fatal("the ORB must not be drawn before 08:32")
 	}
 	// at 08:32:00 it is drawn from the 08:30+08:31 bars only
-	orb = ORBAdvance(ORB{}, bars, day+(8*60+32)*60_000)
+	orb = ORBAdvance(ORB{}, bars, auditMs(2026, 9, 15, 8, 32, 0))
 	if !orb.Drawn || orb.High != 24844 || orb.Low != 24814 {
 		t.Fatalf("ORB = %+v, want drawn 24844/24814", orb)
+	}
+}
+
+// TestORBDrawsAndTestsTheSameClosedCandle — P5: the ORB is drawn at the
+// 08:32 tick (the tick processing the bar that closed at 08:32) and the
+// escape test must run on that SAME closed candle, not the next one.
+// Range-day shape: the ORB's high comes from the 08:30 bar and the 08:32
+// bar's BODY closes above it → the escape latches at 08:32, not 08:33.
+func TestORBDrawsAndTestsTheSameClosedCandle(t *testing.T) {
+	mk := func(hh, mm int, o, h, l, c float64) market.Kline {
+		ot := auditMs(2026, 9, 15, hh, mm, 0)
+		return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(8, 30, 24820, 24844, 24814, 24830), // ORB high 24844, low 24814
+		mk(8, 31, 24830, 24836, 24816, 24820),
+		mk(8, 32, 24840, 24870, 24830, 24860), // BODY closes above the high → escape
+	}
+	// the 08:32 tick: the 08:32 bar just closed at 08:32:59.999
+	orb := ORBAdvance(ORB{}, bars, auditMs(2026, 9, 15, 8, 33, 0)-1)
+	if !orb.Drawn || orb.High != 24844 || orb.Low != 24814 {
+		t.Fatalf("ORB = %+v, want drawn 24844/24814", orb)
+	}
+	if orb.Escaped != SideLong {
+		t.Fatalf("escape = %q, want long at the 08:32 tick — the drawing candle itself is tested [P5]", orb.Escaped)
 	}
 }
 
@@ -43,8 +68,8 @@ func TestORBGateWorkedExample(t *testing.T) {
 	if !cfg.OrbGateEnabled {
 		t.Fatal("orb_gate_enabled must default ON")
 	}
-	day := int64(1) * 24 * 60 * 60_000
-	orb := ORB{Day: day, High: 24844, Low: 24814, Drawn: true}
+	day := auditMs(2026, 9, 15, 9, 0, 0)
+	orb := ORB{Day: dayStartCT(day), High: 24844, Low: 24814, Drawn: true}
 	// before the escape: nothing anywhere
 	for _, p := range []float64{24830, 24850, 24800} {
 		if ok, _ := ORBVerdict(orb, SideLong, p, cfg); ok {
@@ -77,7 +102,7 @@ func TestORBGateWorkedExample(t *testing.T) {
 		{Action: CancelArm, Reason: "stacking"},
 		{Action: PlaceStopEntry, Side: SideShort, Price: 24810, Reason: "swing §8: reject touch"},
 	}
-	got := orbGateFilter(ints, orb, cfg)
+	got, _ := orbGateFilter(ints, orb, cfg)
 	if len(got) != 4 {
 		t.Fatalf("gate kept %d intents, want 4 (long PHL, long ISB, cancel, exempt swing; short PLH dropped): %+v", len(got), got)
 	}
@@ -97,9 +122,9 @@ func TestORBNotDrawnBlocksEverything(t *testing.T) {
 		t.Fatal("orb_gate_enabled=false must not gate")
 	}
 	// a new day resets the ORB
-	orb := ORB{Day: 1, High: 100, Low: 90, Drawn: true, Escaped: SideLong}
-	day2 := int64(2) * 24 * 60 * 60_000
-	next := ORBAdvance(orb, nil, day2)
+	orb := ORB{Day: dayStartCT(auditMs(2026, 9, 15, 9, 0, 0)), High: 100, Low: 90, Drawn: true, Escaped: SideLong}
+	day2 := dayStartCT(auditMs(2026, 9, 16, 9, 0, 0))
+	next := ORBAdvance(orb, nil, auditMs(2026, 9, 16, 9, 0, 0))
 	if next.Drawn || next.Escaped != "" || next.Day != day2 {
 		t.Fatalf("a new session day must reset the ORB: %+v", next)
 	}

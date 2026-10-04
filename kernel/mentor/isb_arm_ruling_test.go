@@ -3,6 +3,7 @@ package mentor
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -14,18 +15,24 @@ import (
 func TestISBOneArmFiveCandleSequence(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
-	head := market.Kline{Open: 121, High: 121.5, Low: 120.5, Close: 120, CloseTime: 1}
-	mother := market.Kline{Open: 98, High: 106, Low: 97, Close: 105, CloseTime: 60_000 - 1} // green
-	c1 := market.Kline{Open: 103, High: 104, Low: 99, Close: 100, CloseTime: 119_999}       // red, body inside mother
-	c2 := market.Kline{Open: 100, High: 101.5, Low: 99.5, Close: 101, CloseTime: 179_999}
-	c3 := market.Kline{Open: 100, High: 101.5, Low: 99.5, Close: 101, CloseTime: 239_999}
-	c4 := market.Kline{Open: 100, High: 101.5, Low: 99.5, Close: 101, CloseTime: 299_999}
+	// real-UTC epochs (EPOCH RULING): RTH bars on 2026-09-15 CT.
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		ot := auditMs(2026, 9, 15, 9, 0, 0) + int64(i)*60_000
+		return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: o, High: h, Low: l, Close: c}
+	}
+	head := mk(0, 121, 121.5, 120.5, 120)
+	mother := mk(1, 98, 106, 97, 105) // green
+	c1 := mk(2, 103, 104, 99, 100)    // red, body inside mother
+	c2 := mk(3, 100, 101.5, 99.5, 101)
+	c3 := mk(4, 100, 101.5, 99.5, 101)
+	c4 := mk(5, 100, 101.5, 99.5, 101)
 	bars := []market.Kline{head, mother, c1, c2, c3, c4}
 
 	e := New(cfg)
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
-	e.State.ORB = ORB{Day: 0, High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+	e.State.ORB = ORB{Day: dayStartCT(head.OpenTime), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(head.OpenTime).In(ctime())), Verdict: DayTrade}
 
 	placements, extends, cancels := 0, 0, 0
 	for i := 2; i <= len(bars); i++ {

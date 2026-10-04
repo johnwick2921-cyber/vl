@@ -31,7 +31,7 @@ func mkBar(open, close float64, openMs int64, tfMin int) market.Kline {
 // TestSeedMissingColdStart: an empty store names every source, fail-closed.
 func TestSeedMissingColdStart(t *testing.T) {
 	now := ctMs(t, 0, 10, 0)
-	got := SeedMissing(nil, nil, now)
+	got := SeedMissing(nil, now)
 	if len(got) != 5 {
 		t.Fatalf("want 5 missing sources, got %d: %v", len(got), got)
 	}
@@ -42,7 +42,7 @@ func TestSeedMissingColdStart(t *testing.T) {
 	}
 
 	e := New(DefaultConfig())
-	if m := Seed(e, nil, nil, now); len(m) != 5 {
+	if m := Seed(e, nil, now); len(m) != 5 {
 		t.Fatalf("Seed returned %d missing, want 5", len(m))
 	}
 	if len(e.SourcesMissing()) != 5 {
@@ -53,8 +53,9 @@ func TestSeedMissingColdStart(t *testing.T) {
 // TestSeedKeyLevelsGolden: SeedLevels == a full key-level walk over the same
 // stored 1h candles (the rebuild golden).
 func TestSeedKeyLevelsGolden(t *testing.T) {
-	var bars1h []market.Kline
-	// 8 days × 7 RTH candles (08:00..14:00 CT), alternating colours each candle.
+	// 8 days × 7 RTH hours (08:00..14:00 CT) of 1m bars, one colour per hour —
+	// Seed builds the 1h walk from the 1m aggregation (P1: 1m only).
+	var bars1m []market.Kline
 	for d := 0; d < 8; d++ {
 		for h := 8; h < 15; h++ {
 			open := 1000.0 + float64(d*10+h)
@@ -62,15 +63,17 @@ func TestSeedKeyLevelsGolden(t *testing.T) {
 			if (d+h)%2 == 1 {
 				cl = open - 2
 			}
-			bars1h = append(bars1h, mkBar(open, cl, ctMs(t, d, h, 0), 60))
+			for m := 0; m < 60; m++ {
+				bars1m = append(bars1m, mkBar(open, cl, ctMs(t, d, h, m), 1))
+			}
 		}
 	}
 	now := ctMs(t, 8, 9, 0)
 
 	e := New(DefaultConfig())
-	Seed(e, nil, bars1h, now)
+	Seed(e, bars1m, now)
 
-	want := keyLevelsFromCandles(keyLevel1HBars(bars1h), e.Cfg.KeyLevelPrunePts)
+	want := keyLevelsFromCandles(keyLevel1HBars(bars1m), e.Cfg.KeyLevelPrunePts)
 	if len(e.State.SeedLevels) != len(want) {
 		t.Fatalf("SeedLevels len %d, rebuild %d", len(e.State.SeedLevels), len(want))
 	}
@@ -97,7 +100,7 @@ func TestSeedIncrementalEMA(t *testing.T) {
 	}
 	nowMid := bars[49].CloseTime
 	e := New(cfg)
-	Seed(e, bars[:50], nil, nowMid)
+	Seed(e, bars[:50], nowMid)
 	if e.State.EMA34 == 0 || e.State.EMA9 == 0 {
 		t.Fatal("seed did not set the 1m EMAs")
 	}
@@ -125,7 +128,7 @@ func TestSeedFailClosed(t *testing.T) {
 		{Action: CancelArm, ArmID: "a"},
 		{Action: ExtendArm, ArmID: "a", ExpiryMs: 123},
 	}
-	got := failClosedFilter(ins)
+	got, _ := failClosedFilter(ins)
 	if len(got) != 2 || got[0].Action != CancelArm || got[1].Action != ExtendArm {
 		t.Fatalf("failClosedFilter kept %v", got)
 	}
@@ -135,37 +138,17 @@ func TestSeedFailClosed(t *testing.T) {
 // EMA recurrence over all closed 4h candles, bucket start = the current one.
 func TestSeedSwingLineWarm(t *testing.T) {
 	cfg := DefaultConfig()
-	var bars1h []market.Kline
-	cl := 20000.0
-	day, hour := 0, 0
-	for i := 0; i < 19*24; i++ {
-		cl += 2
-		if i%5 == 0 {
-			cl -= 3
-		}
-		bars1h = append(bars1h, mkBar(cl-0.5, cl, ctMs(t, day, hour, 0), 60))
-		hour++
-		if hour == 24 {
-			hour, day = 0, day+1
-		}
-	}
+	// 19 days of around-the-clock 1m bars: Seed builds the 1h aggregation and
+	// the 4h buckets (17:00 CT anchor) from it (P1: 1m only).
+	bars1m := minuteTape(t, 19)
 	now := ctMs(t, 18, 20, 0) // day 18, 20:00 CT — inside the 17:00–21:00 bucket
-	closed := fourHClosedBuckets(bars1h, now)
+	closed := fourHClosedBuckets(barsTF(bars1m, 60), now)
 	if len(closed) < FourHEMA34Min {
 		t.Fatalf("fixture too short: %d closed 4h candles", len(closed))
 	}
 
-	// today's 1m tape: 110 closed bars at 17:15 CT onward — inside the
-	// truncated-epoch session day that contains 20:00 CT (dayStartCT truncates
-	// on the UTC boundary, not CT midnight), and past the 102 warm-up.
-	var bars1m []market.Kline
-	for i := 0; i < 110; i++ {
-		c := 20500 + float64(i)
-		bars1m = append(bars1m, mkBar(c-0.25, c, ctMs(t, 18, 17, 15)+int64(i)*60_000, 1))
-	}
-
 	e := New(cfg)
-	if m := Seed(e, bars1m, bars1h, now); len(m) != 0 {
+	if m := Seed(e, bars1m, now); len(m) != 0 {
 		t.Fatalf("unexpected missing: %v", m)
 	}
 	var closes []float64
@@ -189,20 +172,12 @@ func TestSeedSwingLineWarm(t *testing.T) {
 // EMA recurrence (not a cold recompute) — parity with a full rebuild.
 func TestSeedSwingFlipIncremental(t *testing.T) {
 	cfg := DefaultConfig()
-	var bars1h []market.Kline
-	cl := 20000.0
-	day, hour := 0, 0
-	for i := 0; i < 9*24; i++ {
-		cl += 2
-		bars1h = append(bars1h, mkBar(cl-0.5, cl, ctMs(t, day, hour, 0), 60))
-		hour++
-		if hour == 24 {
-			hour, day = 0, day+1
-		}
-	}
+	// 9 days of around-the-clock 1m bars (P1: 1m only — the 4h buckets are
+	// aggregated with the 17:00 CT anchor).
+	bars1m := minuteTape(t, 9)
 	now := ctMs(t, 8, 20, 0)
 	e := New(cfg)
-	Seed(e, nil, bars1h, now)
+	Seed(e, bars1m, now)
 	line0 := e.State.Swing.Line
 	count0 := e.State.Swing.EmaCount
 
@@ -249,7 +224,7 @@ func TestSeedSwingFlipIncremental(t *testing.T) {
 // TestSeedLineNamesDepths: the one-liner reports per-source depths.
 func TestSeedLineNamesDepths(t *testing.T) {
 	e := New(DefaultConfig())
-	Seed(e, nil, nil, ctMs(t, 0, 9, 0))
+	Seed(e, nil, ctMs(t, 0, 9, 0))
 	l := e.seedLine
 	for _, want := range []string{"4h EMA34 0/102", "1m EMA34 0/102", "1H RTH levels 0 candles", "levels 0"} {
 		if !strings.Contains(l, want) {
@@ -262,17 +237,11 @@ func TestSeedLineNamesDepths(t *testing.T) {
 // (102) the source is still REFUSED and named with the warm-up denominator —
 // a barely-formed EMA must never trade (CTO 07:00 ruling).
 func TestSeedWarmupGate(t *testing.T) {
-	short := hourTape(t, 9) // 55 closed 4h candles: above 34, below 102
-	long := hourTape(t, 19) // 114 closed 4h candles: warm
-
+	short := minuteTape(t, 9) // 55 closed 4h candles: above 34, below 102
+	long := minuteTape(t, 19) // 114 closed 4h candles: warm
 	now := ctMs(t, 18, 20, 0)
-	var bars1m []market.Kline
-	for i := 0; i < 110; i++ {
-		c := 20500 + float64(i)
-		bars1m = append(bars1m, mkBar(c-0.25, c, ctMs(t, 18, 17, 15)+int64(i)*60_000, 1))
-	}
 
-	miss := SeedMissing(bars1m, short, now)
+	miss := SeedMissing(short, now)
 	want := "bar history depth: 4h EMA34 warm-up (55/102 4h candles)"
 	found := false
 	for _, s := range miss {
@@ -284,9 +253,29 @@ func TestSeedWarmupGate(t *testing.T) {
 		t.Fatalf("55 4h candles must be refused as %q, got %v", want, miss)
 	}
 
-	if m := SeedMissing(bars1m, long, now); len(m) != 0 {
+	if m := SeedMissing(long, now); len(m) != 0 {
 		t.Fatalf("114 4h candles must be warm, got %v", m)
 	}
+}
+
+// minuteTape builds days of around-the-clock 1m bars — the P1 seed input
+// (1m only, every higher timeframe aggregated from it).
+func minuteTape(t *testing.T, days int) []market.Kline {
+	t.Helper()
+	var bars []market.Kline
+	cl := 20000.0
+	for d := 0; d < days; d++ {
+		for h := 0; h < 24; h++ {
+			for m := 0; m < 60; m++ {
+				cl += 0.05
+				if (d+h+m)%5 == 0 {
+					cl -= 0.1
+				}
+				bars = append(bars, mkBar(cl-0.05, cl, ctMs(t, d, h, m), 1))
+			}
+		}
+	}
+	return bars
 }
 
 func hourTape(t *testing.T, days int) []market.Kline {
@@ -315,12 +304,12 @@ func hourTape(t *testing.T, days int) []market.Kline {
 func TestSeedFailClosedTick(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
-	head := market.Kline{Open: 121, High: 121.5, Low: 120.5, Close: 120, CloseTime: 1}
-	mother := market.Kline{Open: 98, High: 106, Low: 97, Close: 105, CloseTime: 60_000 - 1}
-	c1 := market.Kline{Open: 103, High: 104, Low: 99, Close: 100, CloseTime: 119_999}
-	c2 := market.Kline{Open: 100, High: 101.5, Low: 99.5, Close: 101, CloseTime: 179_999}
-	c3 := market.Kline{Open: 100, High: 101.5, Low: 99.5, Close: 101, CloseTime: 239_999}
-	c4 := market.Kline{Open: 100, High: 101.5, Low: 99.5, Close: 101, CloseTime: 299_999}
+	head := rthBars(0, 121, 121.5, 120.5, 120)
+	mother := rthBars(1, 98, 106, 97, 105)
+	c1 := rthBars(2, 103, 104, 99, 100)
+	c2 := rthBars(3, 100, 101.5, 99.5, 101)
+	c3 := rthBars(4, 100, 101.5, 99.5, 101)
+	c4 := rthBars(5, 100, 101.5, 99.5, 101)
 	bars := []market.Kline{head, mother, c1, c2, c3, c4}
 
 	count := func(e *Evaluator) (placements, cancels int) {
@@ -342,7 +331,8 @@ func TestSeedFailClosedTick(t *testing.T) {
 		e := New(cfg)
 		e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
 		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
-		e.State.ORB = ORB{Day: 0, High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+		e.State.ORB = ORB{Day: dayStartCT(rthBars(0, 0, 0, 0, 0).OpenTime), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+		e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(rthBars(0, 0, 0, 0, 0).OpenTime).In(ctime())), Verdict: DayTrade}
 		return e
 	}
 
@@ -356,7 +346,7 @@ func TestSeedFailClosedTick(t *testing.T) {
 	// Seeded with a missing source: the same tape must refuse entries, but
 	// the ISB stacking cancel still flows.
 	seeded := setup()
-	Seed(seeded, nil, nil, bars[len(bars)-1].CloseTime)
+	Seed(seeded, nil, bars[len(bars)-1].CloseTime)
 	if len(seeded.SourcesMissing()) == 0 {
 		t.Fatal("nil bars must leave every source missing")
 	}
@@ -366,5 +356,37 @@ func TestSeedFailClosedTick(t *testing.T) {
 	}
 	if c == 0 {
 		t.Fatalf("seeded-missing cancels = 0, want the stacking cancel to flow")
+	}
+}
+
+// TestSeed1hEquals1mAggregation — P1 (CTO 12:47:11Z): Seed reads 1m ONLY. The
+// seeded 1h walk must equal the 1m aggregation, and the 4h buckets must equal
+// the all-hours 1h aggregation bucketed on the 17:00 CT anchor.
+func TestSeed1hEquals1mAggregation(t *testing.T) {
+	bars1m := minuteTape(t, 9)
+	now := ctMs(t, 8, 20, 0)
+
+	e := New(DefaultConfig())
+	Seed(e, bars1m, now)
+
+	// 1h: the level walk equals keyLevel1HBars over the same 1m tape.
+	wantLevels := keyLevelsFromCandles(keyLevel1HBars(bars1m), e.Cfg.KeyLevelPrunePts)
+	if len(e.State.SeedLevels) != len(wantLevels) {
+		t.Fatalf("seeded levels %d != 1m-aggregated walk %d",
+			len(e.State.SeedLevels), len(wantLevels))
+	}
+	for i := range wantLevels {
+		if e.State.SeedLevels[i].Price != wantLevels[i].Price {
+			t.Fatalf("level %d: seeded %.2f, 1m-aggregated %.2f",
+				i, e.State.SeedLevels[i].Price, wantLevels[i].Price)
+		}
+	}
+
+	// 4h: the swing's consumed count equals the all-hours 1h aggregation
+	// bucketed on the 17:00 CT anchor.
+	want4h := fourHClosedBuckets(barsTF(bars1m, 60), now)
+	if e.State.Swing.EmaCount != len(want4h) {
+		t.Fatalf("seeded 4h count %d != all-hours aggregation %d",
+			e.State.Swing.EmaCount, len(want4h))
 	}
 }

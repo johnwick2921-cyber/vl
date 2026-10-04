@@ -157,10 +157,10 @@ func TestEvaluatorInvalidLevelBlocksPHL(t *testing.T) {
 // swing_respects_5m_zone (default false) turns the zone gate on at the
 // runSwing call site [C]: not stated in the method.
 func TestSwingZoneGateKnob(t *testing.T) {
-	tl := TriggerLine{Dir: SideShort, Price: 97, OldPrice: 100, OldDir: SideLong}
+	tl := TriggerLine{Dir: SideShort, Price: 97}
 	ints := []Intent{
-		{Action: PlaceStopEntry, Reason: "swing §8: reject touch", Price: 98.5}, // inside the two-trigger zone
-		{Action: PlaceStopEntry, Reason: "swing §8: reject touch", Price: 96},   // escaped below — allowed
+		{Action: PlaceStopEntry, Reason: "swing §8: reject touch", Price: 98.5}, // wrong trigger side
+		{Action: PlaceStopEntry, Reason: "swing §8: reject touch", Price: 96},   // on the trigger side — allowed
 	}
 	if DefaultSwingCfg().Respects5mZone {
 		t.Fatal("swing_respects_5m_zone default must be false")
@@ -174,12 +174,12 @@ func TestSwingZoneGateKnob(t *testing.T) {
 	}
 }
 
-// TestEvaluatorRefusesEverythingInTriggerZone — R4 (RULES FIX v3, verified in
-// the transcript, D3.4 p1 @ 16:56–17:17): between two opposing trigger lines
-// there is NO trade at all, ISB included, and the zone INCLUDES the lines.
-// The evaluator's ISB branch gates on TriggerVerdict(cur.Close) BEFORE any
-// other check, so an ISB whose close is in the zone emits nothing.
-func TestEvaluatorRefusesEverythingInTriggerZone(t *testing.T) {
+// TestEvaluatorRefusesWrongTriggerSide — B2 (10-03 ruling): every entry,
+// ISB included, must be on the trigger side (longs above the buy line,
+// shorts below the sell line). The old two-line band is gone (B1): price
+// exactly ON the line is now allowed when no box builds the FTGL/buy zone
+// (see trigger_zone_test.go for the zone itself).
+func TestEvaluatorRefusesWrongTriggerSide(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	mk := func(i int, o, h, l, c float64) market.Kline {
@@ -188,21 +188,23 @@ func TestEvaluatorRefusesEverythingInTriggerZone(t *testing.T) {
 	// an ISB pair: cur's body inside prev's full range (wicks included).
 	prev := mk(0, 99, 101, 96, 99)
 	for _, tc := range []struct {
-		name  string
-		close float64
+		name        string
+		close       float64
+		wantRefused bool
 	}{
-		{"strictly between", 98.5},
-		{"exactly on the new sell line", 97},
-		{"exactly on the old buy line", 100},
+		{"strictly above the sell line", 98.5, true},
+		{"exactly on the sell line — allowed, no box zone", 97, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := New(cfg)
-			e.State.Trigger = TriggerLine{Dir: SideShort, Price: 97, OldPrice: 100, OldDir: SideLong}
+			e.State.Trigger = TriggerLine{Dir: SideShort, Price: 97}
 			bars := []market.Kline{prev, mk(1, 97.5, 98.5, 96.5, tc.close)}
 			intents := e.Tick(bars, bars[1].OpenTime+59_999)
-			for _, in := range intents {
-				if in.Action == PlaceStopEntry {
-					t.Fatalf("entry emitted inside the two-trigger zone: %+v", in)
+			if tc.wantRefused {
+				for _, in := range intents {
+					if in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry {
+						t.Fatalf("entry emitted on the wrong trigger side: %+v", in)
+					}
 				}
 			}
 		})

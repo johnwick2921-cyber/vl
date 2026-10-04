@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"sync"
 	"time"
 
 	"vl/market"
@@ -30,6 +31,11 @@ import (
 const (
 	globexOpenMin  = 17 * 60   // 17:00 CT
 	globexCloseMin = 8*60 + 30 // 08:30 CT
+	// globexCoverToleranceMs (A6): the feed's earliest in-window bar may
+	// open this far after the session open and still count as full
+	// coverage — bar-alignment slack only. A 240-bar feed at the 08:30
+	// latch starts ~04:30, hours past the tolerance, and is refused.
+	globexCoverToleranceMs = 30 * 60_000
 )
 
 // DayVerdict is one row of the §7 table.
@@ -80,9 +86,17 @@ type DayLatch struct {
 // ctime loads America/Chicago (the mentor quotes all times in US Central
 // [D4.4 p1 @ 01:45 "em tính giờ Texas"]). Falls back to a fixed −6h zone if
 // tzdata is unavailable.
+var chicagoOnce sync.Once
+var chicagoLoc *time.Location
+var chicagoErr error
+
 func ctime() *time.Location {
-	if loc, err := time.LoadLocation("America/Chicago"); err == nil {
-		return loc
+	// LoadLocation per call is the replay killer: bucketOpen/rthHourAnchor/
+	// rthMinuteOf call ctime() PER BAR, and O(n) per tick over 12k ticks is
+	// O(n^2) LoadLocation calls. Load once; the rest is a cached pointer.
+	chicagoOnce.Do(func() { chicagoLoc, chicagoErr = time.LoadLocation("America/Chicago") })
+	if chicagoErr == nil {
+		return chicagoLoc
 	}
 	return time.FixedZone("CST6", -6*3600)
 }
@@ -129,12 +143,14 @@ func GlobexRun(bars []market.Kline, now int64, loc *time.Location) (run float64,
 
 	hi, lo := 0.0, 0.0
 	n := 0
+	var earliest int64
 	for _, b := range bars {
 		if b.OpenTime < loMs || b.OpenTime >= hiMs {
 			continue
 		}
 		if n == 0 {
 			hi, lo = b.High, b.Low
+			earliest = b.OpenTime
 		} else {
 			if b.High > hi {
 				hi = b.High
@@ -146,6 +162,14 @@ func GlobexRun(bars []market.Kline, now int64, loc *time.Location) (run float64,
 		n++
 	}
 	if n < 2 {
+		return 0, false
+	}
+	// A6 coverage guard [D5.1 p1 @17:44-17:56]: the run is the FULL
+	// Globex session (Asia high -> pre-market low). A feed that starts
+	// mid-window under-measures it and would fabricate a "normal" day —
+	// the day gate must read not-measured instead (fail closed, §12).
+	// The tolerance is bar-alignment slack only, not a measurement window.
+	if earliest > loMs+globexCoverToleranceMs {
 		return 0, false
 	}
 	return hi - lo, true
@@ -227,4 +251,18 @@ func CapTargetForDay(in Intent, v DayVerdict, g DayGate) Intent {
 		in.Target = in.Price + g.TargetCapPts
 	}
 	return in
+}
+
+// dayGateRefusal — A10 (CTO 20:15:49Z): ONE day gate for every intraday
+// setup. Returns the ledger reason for a verdict that forbids trading today,
+// "" otherwise. Each emit site composes its own counter key from it
+// ("isb_" + dayGateRefusal(...)) so the blocked setup is always named.
+func dayGateRefusal(v DayVerdict) string {
+	switch v {
+	case DayOff:
+		return "day_off"
+	case DayNotMeasured:
+		return "day_not_measured"
+	}
+	return ""
 }

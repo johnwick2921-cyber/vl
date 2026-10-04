@@ -37,12 +37,12 @@ func TestBoxBanFilter(t *testing.T) {
 		{Action: PlaceStopEntry, Price: 101},                // entry outside, candle inside
 		{Action: CancelArm, Reason: "test"},                 // cancels are never banned
 	}
-	got := boxBanFilter(ints, boxes, cur)
+	got, _ := boxBanFilter(ints, boxes, cur)
 	if len(got) != 1 || got[0].Action != CancelArm {
 		t.Fatalf("inside-box entries must all be dropped, cancels kept: %+v", got)
 	}
 	// no boxes at all: everything passes through
-	if got := boxBanFilter(ints, nil, cur); len(got) != len(ints) {
+	if got, _ := boxBanFilter(ints, nil, cur); len(got) != len(ints) {
 		t.Fatalf("no boxes must ban nothing: %d vs %d", len(got), len(ints))
 	}
 }

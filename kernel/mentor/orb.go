@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"strings"
+	"time"
 
 	"vl/market"
 )
@@ -19,9 +20,12 @@ type ORB struct {
 	Escaped Side    `json:"escaped"` // "" = not escaped yet; else the escape direction
 }
 
-// dayStartCT floors a CT-based epoch-millis time to its CT day start.
+// dayStartCT floors a REAL-UTC epoch-millis time to its CT-midnight epoch
+// (EPOCH RULING 2026-10-03: one convention = real UTC everywhere; wall
+// arithmetic shifts by 5h/6h with DST).
 func dayStartCT(t int64) int64 {
-	return (t / (24 * 60 * 60_000)) * (24 * 60 * 60_000)
+	tt := time.UnixMilli(t).In(ctime())
+	return time.Date(tt.Year(), tt.Month(), tt.Day(), 0, 0, 0, 0, ctime()).UnixMilli()
 }
 
 // ORBAdvance draws the ORB once the 08:30 2-minute candle has completed and
@@ -50,8 +54,12 @@ func ORBAdvance(orb ORB, bars []market.Kline, now int64) ORB {
 			orb.High = maxf(b1.High, b2.High)
 			orb.Low = minf(b1.Low, b2.Low)
 			orb.Drawn = true
+		} else {
+			return orb
 		}
-		return orb
+		// P5 (493c7ead8): fall through — the escape test runs on the SAME closed
+		// candle that completed the 2m ORB. Returning here skipped the 08:32
+		// escape candle and latched one tick late (08:33).
 	}
 	if orb.Escaped != "" {
 		return orb
@@ -101,11 +109,11 @@ func ORBVerdict(orb ORB, side Side, price float64, cfg Config) (ok bool, reason 
 // orbGateFilter applies the ORB gate to every intraday entry intent. The §8
 // swing is EXEMPT (its reasons start with "swing") — the ORB is a gate on
 // intraday entries only.
-func orbGateFilter(ints []Intent, orb ORB, cfg Config) []Intent {
+func orbGateFilter(ints []Intent, orb ORB, cfg Config) (out []Intent, refusals []string) {
 	if !cfg.OrbGateEnabled {
-		return ints
+		return ints, nil
 	}
-	out := make([]Intent, 0, len(ints))
+	out = make([]Intent, 0, len(ints))
 	for _, in := range ints {
 		if in.Action != PlaceStopEntry && in.Action != PlaceStopLimitEntry {
 			out = append(out, in)
@@ -117,9 +125,29 @@ func orbGateFilter(ints []Intent, orb ORB, cfg Config) []Intent {
 		}
 		if ok, _ := ORBVerdict(orb, in.Side, in.Price, cfg); ok {
 			out = append(out, in)
+		} else {
+			refusals = append(refusals, orbRefusalStage(orb, in.Side, in.Price, cfg))
 		}
 	}
-	return out
+	return out, refusals
+}
+
+// orbRefusalStage names the B-rules funnel stage an ORB refusal lands in
+// (the long reason strings stay in ORBVerdict).
+func orbRefusalStage(orb ORB, side Side, price float64, cfg Config) string {
+	if !cfg.OrbGateEnabled {
+		return ""
+	}
+	if !orb.Drawn {
+		return "orb_not_drawn"
+	}
+	if orb.Escaped == "" {
+		return "orb_not_escaped"
+	}
+	if side != orb.Escaped {
+		return "orb_wrong_side"
+	}
+	return "orb_inside"
 }
 
 func maxf(a, b float64) float64 {

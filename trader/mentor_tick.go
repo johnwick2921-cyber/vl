@@ -671,11 +671,10 @@ func mentorSourceDepth(name string) (int, bool) {
 // per-source loop names the short source on the same numbers).
 
 const (
-	// mentorSeedBars1mN / mentorSeedBars1hN cap the store read. Retention
-	// bounds what the read can return (1m 90d, 1h forever); these caps only
-	// bound memory. Both are far above every seed floor (102 closed candles).
+	// mentorSeedBars1mN caps the store read. Retention bounds what the read
+	// can return (1m 90d); the cap only bounds memory. Far above every seed
+	// floor (102 closed 4h candles ≈ 17 days of 1m bars ≈ 24500 rows).
 	mentorSeedBars1mN = 50000
-	mentorSeedBars1hN = 10000
 )
 
 // mentorSeedDepths is the seeded per-source depth snapshot (nil until the
@@ -718,27 +717,63 @@ func (at *AutoTrader) mentorSeedAtStart() {
 		mentorCount("seed_store_read_error")
 		rows1m = nil
 	}
-	rows1h, err1h := bh.LastNBarsCurrentContract("MNQ", "1h", mentorSeedBars1hN)
-	if err1h != nil {
-		at.logWarnf("🧑‍🏫 mentor seed: 1h store read failed (%v) — seeding with nothing (refusing)", err1h)
-		mentorCount("seed_store_read_error")
-		rows1h = nil
-	}
 	bars1m := storeBarsToKlines(rows1m, 60_000)
-	bars1h := storeBarsToKlines(rows1h, 3_600_000)
-	missing := mentor.Seed(at.mentorEval, bars1m, bars1h, now)
+	// P1 (CTO 12:44:08Z / 12:47:11Z): ONE bar source — the seed aggregates
+	// every higher timeframe from 1m; the store's native 1h is never read.
+	// The trader-side 1h aggregation mirrors kernel barsTF(bars1m, 60)
+	// exactly (epoch-aligned buckets) for the per-source depth seam.
+	bars1h := mentorAgg1H(bars1m)
+	missing := mentor.Seed(at.mentorEval, bars1m, now)
 	depths := mentor.SeedDepths(bars1m, bars1h, now)
 	mentorSeedDepths = depths
 	mentorSourceDepthSource = func(name string) (int, bool) {
 		d, ok := mentorSeedDepths[name]
 		return d, ok
 	}
-	at.logInfof("🧑‍🏫 %s", mentor.SeedLine(at.mentorEval.State, bars1m, bars1h, now))
+	at.logInfof("🧑‍🏫 %s", mentor.SeedLine(at.mentorEval.State, bars1m, now))
 	at.logInfof("%s", mentorSeamBootLine())
 	if len(missing) > 0 {
 		mentorCount("seed_missing")
 		at.logErrorf("🧑‍🏫 mentor seed REFUSING entries — missing: %s", strings.Join(missing, "; "))
 	}
+}
+
+// mentorAgg1H aggregates 1m bars into clock-aligned 1h buckets on epoch
+// boundaries — a byte-for-byte mirror of kernel mentor.barsTF(bars1m, 60)
+// (the kernel's non-4h buckets are epoch-aligned; only the 4h bucket uses the
+// 17:00 CT anchor). Used for the SeedDepths depth seam; the kernel's Seed
+// aggregates its own copy from the same 1m input.
+func mentorAgg1H(bars []market.Kline) []market.Kline {
+	const hourMs = int64(3600_000)
+	out := make([]market.Kline, 0, len(bars)/60)
+	var cur *market.Kline
+	flush := func() {
+		if cur != nil {
+			out = append(out, *cur)
+			cur = nil
+		}
+	}
+	for _, b := range bars {
+		bucket := b.OpenTime / hourMs * hourMs
+		if cur == nil || bucket != cur.OpenTime {
+			flush()
+			c := b
+			c.OpenTime = bucket
+			c.CloseTime = bucket + hourMs - 1
+			cur = &c
+			continue
+		}
+		if b.High > cur.High {
+			cur.High = b.High
+		}
+		if b.Low < cur.Low {
+			cur.Low = b.Low
+		}
+		cur.Close = b.Close
+		cur.Volume += b.Volume
+	}
+	flush()
+	return out
 }
 
 // mentorSourcesMissing names every mentor source that is not wired. With

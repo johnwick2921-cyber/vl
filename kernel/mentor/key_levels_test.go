@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -85,10 +86,11 @@ func TestKeyLevels1HAnchoredRTHOnly(t *testing.T) {
 	cfg.Enabled = true
 	cfg.KeyLevelPrunePts = 0.5
 	ms := int64(60_000)
-	// 2026-09-15 in epoch minutes (CT basis): 19645 days.
+	// real-UTC epoch ms for 2026-09-15 CT wall times (EPOCH RULING:
+	// America/Chicago via auditMs — never wall minutes on the epoch).
 	mk := func(hh, mm int, o, h, l, c float64) market.Kline {
-		return market.Kline{OpenTime: (int64(19645)*24*60 + int64(hh*60+mm)) * ms,
-			CloseTime: (int64(19645)*24*60+int64(hh*60+mm))*ms + 59_999, Open: o, High: h, Low: l, Close: c}
+		ot := auditMs(2026, time.September, 15, hh, mm, 0)
+		return market.Kline{OpenTime: ot, CloseTime: ot + ms - 1, Open: o, High: h, Low: l, Close: c}
 	}
 	bars := []market.Kline{}
 	// ETH candle 07:30–08:29: RED overall. Colour changes on ETH candles are
@@ -180,8 +182,10 @@ func TestKeyLevelDeletedBy1HBodyCloseOnly(t *testing.T) {
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1 // draw the level deterministically on the 1m walk; the DELETION runs on the anchored 1H RTH candles either way
 	ms := int64(60_000)
+	_ = ms
 	mk := func(hh, mm int, o, h, l, c float64) market.Kline {
-		t0 := (int64(19645)*24*60 + int64(hh*60+mm)) * ms // 2026-09-15 CT
+		// real-UTC epochs (EPOCH RULING): 2026-09-15 CT bars.
+		t0 := auditMs(2026, 9, 15, hh, mm, 0)
 		return market.Kline{OpenTime: t0, CloseTime: t0 + 59_999, Open: o, High: h, Low: l, Close: c}
 	}
 	// 08:30–08:31 red→green change draws the level at the 08:31 OPEN = 100.

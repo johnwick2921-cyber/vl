@@ -239,9 +239,11 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 			continue // the box does not outlive its day
 		}
 		b.Touches = countBoxTouches(tfBars, *b, seq[extreme].idx, cfg)
-		if escaped(tfBars, *b, seq[extreme].idx) {
-			continue // price escaped → deleted [D3.4 p2 @ 12:11]
-		}
+		// B4 (10-03 ruling, PLAN.md: "NEVER deleted during the session… delete
+		// at the end of the day" [D4.1 p2 @02:39–03:09]): an escaped body does
+		// NOT delete the box — v3's "delete on escape" mixed in the 5m ISB box
+		// rule and killed every box trade. The tradingDayKey check above is the
+		// box's only death.
 		b.Key = "ftgh:" + fnum(b.Top) + ":" + fnum(b.Bottom)
 		if b.Kind == FTGL {
 			b.Key = "ftgl:" + fnum(b.Top) + ":" + fnum(b.Bottom)
