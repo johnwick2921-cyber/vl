@@ -145,9 +145,11 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		Kind:      "stop_entry",
 		Condition: in.Setup,
 		ExpiryMs:  in.ExpiryMs,
-		// Origin: the bundle-2 bind commit stamps store.ArmOriginMentor here
-		// (the column lands with fix/stop-limit-r2, not on p3); the stop-limit
-		// origin routing then keys off it.
+		// P0 bind wiring step 1 (CTO 02:56Z): the ONLY author of the mentor
+		// origin — the stop-limit origin routing (stop_limit.go isMentorArmOrigin)
+		// and DS-106's admission gate both key off it. Every other author leaves
+		// it empty.
+		Origin: store.ArmOriginMentor,
 	}
 	if err := ledger.UpsertArm(&row); err != nil {
 		mentorCount("placement_refused_upsert")
