@@ -219,11 +219,12 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 	if s.Pending != nil && s.Pending.ExpiryMs > 0 && now >= s.Pending.ExpiryMs {
 		s.Pending = nil
 	}
+	warm := s.EmaCount >= FourHEMA34Min
 	line, bucketStart, ok := swingLine(bars5m, now, cfg, loc)
 	if !ok {
 		// Seeded warm line: the local slice is too short to recompute the 4h
 		// EMA — KEEP the seeded line, never wipe a warm line to 0 (P0 seed).
-		if s.EmaCount >= FourHEMA34Min {
+		if warm {
 			return out
 		}
 		s.Line, s.BucketStart = 0, bucketStart
@@ -235,7 +236,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		// P0: a warm line continues the SAME EMA recurrence incrementally
 		// (exact parity with a full-history rebuild) instead of a cold
 		// recompute from the ~2-day slice.
-		if s.EmaCount >= FourHEMA34Min {
+		if warm {
 			if nc := bucketClose(bars5m, s.BucketStart); nc != 0 {
 				k := 2.0 / float64(cfg.EMAPeriod+1)
 				s.Line = s.Line + k*(nc-s.Line)
