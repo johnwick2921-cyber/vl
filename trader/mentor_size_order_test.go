@@ -13,6 +13,7 @@ package trader
 import (
 	"testing"
 
+	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 )
 
@@ -113,5 +114,53 @@ func TestMentorArmWithoutCountRefused(t *testing.T) {
 	}
 	if len(pl.calls) != 0 {
 		t.Fatalf("a mentor arm without a count must never reach the wire, got %d calls", len(pl.calls))
+	}
+}
+
+// TestMaterializeArmedEntryUsesFillQuantity (N2, must ship with B2): a 5-lot
+// mentor fill materializes an OPEN position of quantity 5 — the broker holds 5
+// and the ledger must agree, or reconcile freezes on the 1-vs-N mismatch.
+// Mutant: build the position with 1 again → RED.
+func TestMaterializeArmedEntryUsesFillQuantity(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
+	at.id = "mentor-fill"
+	row := store.ArmedOrderDB{
+		TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR",
+		Scenario: "isb-1", Side: "long", EntryPx: 29650, StopPx: 29640, TargetPx: 29670,
+		State: "filled", SignalID: "sig-fill5", FillPrice: 29645,
+		Origin: store.ArmOriginMentor, Contracts: store.IntPtr(5),
+	}
+	u := ntwire.OrderUpdatePayload{State: "filled", SignalID: "sig-fill5", Account: "Sim101", FillPrice: 29645, Quantity: 5}
+	at.materializeArmedEntry(row, u)
+	pos, err := st.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), "LONG")
+	if err != nil || pos == nil {
+		t.Fatalf("open row not materialized: %v", err)
+	}
+	if pos.Quantity != 5 || pos.EntryQuantity != 5 {
+		t.Fatalf("materialized position qty = %.0f / entry %.0f, want 5/5 (N2: the fill quantity is the truth)", pos.Quantity, pos.EntryQuantity)
+	}
+}
+
+// TestMaterializeArmedEntryGrowsOnPartFill (N2): a part-fill then a later
+// part-fill grows the position to the sum, never ignored.
+func TestMaterializeArmedEntryGrowsOnPartFill(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
+	at.id = "mentor-partfill"
+	row := store.ArmedOrderDB{
+		TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR",
+		Scenario: "isb-2", Side: "long", EntryPx: 29650, StopPx: 29640, TargetPx: 29670,
+		State: "partfilled", SignalID: "sig-part", FillPrice: 29645,
+		Origin: store.ArmOriginMentor, Contracts: store.IntPtr(5),
+	}
+	u1 := ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-part", Account: "Sim101", FillPrice: 29645, Quantity: 2}
+	at.materializeArmedEntry(row, u1)
+	u2 := ntwire.OrderUpdatePayload{State: "partfilled", SignalID: "sig-part", Account: "Sim101", FillPrice: 29646, Quantity: 3}
+	at.materializeArmedEntry(row, u2)
+	pos, err := st.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), "LONG")
+	if err != nil || pos == nil {
+		t.Fatalf("open row not materialized: %v", err)
+	}
+	if pos.Quantity != 5 || pos.EntryQuantity != 5 {
+		t.Fatalf("position qty after part-fills = %.0f / entry %.0f, want 5/5", pos.Quantity, pos.EntryQuantity)
 	}
 }

@@ -2439,11 +2439,29 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 	if side == "" {
 		return
 	}
+	// N2 (2026-10-04): the fill frame's quantity is the truth. A fill delivers
+	// at least one contract, so an absent/zero quantity floors at 1 rather than
+	// materializing an empty position.
+	qty := u.Quantity
+	if qty < 1 {
+		qty = 1
+	}
+	isPart := strings.EqualFold(u.State, "partfilled")
+	// PART-FILL: a position already materialized by a prior partial fill (or
+	// reconcile winning the race) is GROWN by this fill's quantity — with B2
+	// the order is N contracts and each part-fill counts. A full fill with a
+	// position already present is reconcile's truth and is left untouched.
 	if pos, err := at.store.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), side); err == nil && pos != nil {
-		return // already materialized (reconcile won the race)
+		if isPart {
+			at.growMaterializedEntry(pos, r, u, float64(qty))
+		}
+		return
 	}
 	if pos, err := at.store.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), strings.ToLower(side)); err == nil && pos != nil {
-		return // legacy lowercase row already exists for the same fill
+		if isPart {
+			at.growMaterializedEntry(pos, r, u, float64(qty))
+		}
+		return
 	}
 	tradeDate := r.PlanID
 	if i := strings.Index(r.PlanID, ":"); i > 0 {
@@ -2456,8 +2474,8 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 		ExchangePositionID: fmt.Sprintf("armed_%s_%d", r.SignalID, nowMs),
 		Symbol:             at.futuresSymbol(),
 		Side:               side,
-		Quantity:           1,
-		EntryQuantity:      1,
+		Quantity:           float64(qty),
+		EntryQuantity:      float64(qty),
 		EntryPrice:         u.FillPrice,
 		EntryTime:          nowMs,
 		EntryOrderID:       r.SignalID,
@@ -2481,6 +2499,18 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 	// E1 (wave 1A) — the excursion row's entry half. An armed fill carries its
 	// own levels in the ledger row, so nothing has to be resolved later.
 	at.excursionOnOpen(row, r.StopPx, r.TargetPx, plannerATR5m(at.futuresSymbol()))
+}
+
+// growMaterializedEntry (N2, 2026-10-04) grows an already-open position by a
+// part-fill's quantity and folds its price into the weighted entry average —
+// the broker holds N contracts and the ledger must agree, or reconcile freezes
+// the trader on the 1-vs-N mismatch.
+func (at *AutoTrader) growMaterializedEntry(pos *store.TraderPosition, r store.ArmedOrderDB, u ntwire.OrderUpdatePayload, addQty float64) {
+	if err := at.store.Position().UpdatePositionQuantityAndPrice(pos.ID, addQty, u.FillPrice, 0); err != nil {
+		at.logWarnf("🧩 armed fill %s part-fill grow failed (pos %d): %v", r.Scenario, pos.ID, err)
+		return
+	}
+	at.logInfof("🧩 armed fill %s part-fill grew position %d by %.0f @ %.2f", r.Scenario, pos.ID, addQty, u.FillPrice)
 }
 
 // stampArmedFillLineage links the freshly-filled position row to the plan the
