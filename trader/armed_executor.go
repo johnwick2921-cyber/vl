@@ -1893,22 +1893,21 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 	// so everything after it is the send itself. An error before it is a
 	// refusal (build, account, permit, B3, the ledger CAS) — provably unsent.
 	stamped := false
-	// MENTOR STOP-LIMIT (PR B, 2026-10-03, REVIEW-313 F3): the routing reads
-	// the arm's EXPLICIT origin, never the expiry as a proxy. The mentor
-	// injector stamps origin=mentor and expiry_ms (DS-102, #316):
-	//   mentor + knob ON + expiry > 0  -> the limit variant (the AddOn builds
+	// MENTOR STOP-LIMIT (PR B, 2026-10-03, REVIEW-313 F3; ALWAYS ON since
+	// 2026-10-04): the routing reads the arm's EXPLICIT origin, never the
+	// expiry as a proxy, and NO environment variable. The mentor injector
+	// stamps origin=mentor and expiry_ms (DS-102, #316):
+	//   mentor + expiry > 0  -> the limit variant (the AddOn builds
 	//     OrderType.StopLimit with LimitPrice == StopPrice: the entry fills at
-	//     its price or misses, never a stop-MARKET).
-	//   mentor + knob ON + no expiry -> REFUSED fail-closed: a counted
-	//     refusal, the arm stays armed, and there is NO stop-market fallback —
-	//     a mentor arm without its expiry must never rest unbounded.
-	//   non-mentor -> today's path (stop-market) whatever the expiry; the knob
-	//     OFF is also today's path for everyone.
-	// Default OFF keeps the wire byte-identical. The send itself and the
-	// beforeSend callback are shared verbatim: the only difference is the
-	// stop_limit frame flag behind the far-side floor.
+	//     its price or misses, never a stop-MARKET) [D1.4 p1 @24:41–24:55].
+	//   mentor + no expiry -> REFUSED fail-closed: a counted refusal, the arm
+	//     stays armed, and there is NO stop-market fallback — a mentor arm
+	//     without its expiry must never rest unbounded.
+	//   non-mentor -> today's path (stop-market) whatever the expiry.
+	// The send itself and the beforeSend callback are shared verbatim: the only
+	// difference is the stop_limit frame flag behind the far-side floor.
 	placeStopFn := pl.PlaceStopEntry
-	if isMentorArmOrigin(r) && stopLimitEntriesEnabled() {
+	if isMentorArmOrigin(r) {
 		if r.ExpiryMs <= 0 {
 			if armRefusalChanged(&at.armRefusalLast, armKey, "stop_entry:stop_limit_no_expiry") {
 				shown := at.countStopEntryRefusal(r, "stop_entry:stop_limit_no_expiry", now)
