@@ -61,10 +61,6 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
   },
   'Swing max stop': { settingId: 'SwingCfg.MaxStopPts', live: true },
   'Swing entry buffer': { settingId: 'SwingCfg.EntryBufferPts', live: false },
-  'Swing target fallback': {
-    settingId: 'SwingCfg.TargetFallbackPts',
-    live: false,
-  },
   'Swing target EMA period': {
     settingId: 'SwingCfg.TargetEMA5mPeriod',
     live: false,
@@ -908,18 +904,6 @@ export const mentor: GuideSection = {
           systemDefault: '0',
           recommended: '0 — R8: the order sits tight on the candle.',
           whenToTouch: 'Never — R8 removed the buffer.',
-          perSession: 'No.',
-        },
-        {
-          label: 'Swing target fallback',
-          where: 'Strategy → Mentor mode → SWING4H',
-          what: 'First target when no 5m EMA 34 is available.',
-          trader: '50 pts.',
-          consumer: 'kernel/mentor/swing4h.go SwingCfg.TargetFallbackPts',
-          range: 'pts',
-          systemDefault: '50',
-          recommended: '50 — D5.2 table.',
-          whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
         {

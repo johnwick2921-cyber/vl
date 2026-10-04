@@ -152,6 +152,68 @@ func TestSwing4hThroughCancelsThenISB(t *testing.T) {
 	}
 }
 
+// TestSwing4hRejectTargetIsOneRFloor — item 24 (R43): the swing first target is
+// max(1R, the 5m EMA 34) [D5.2 p2 @11:00 "TARGET 1-1 TRƯỚC"]. The old 50-pt
+// fallback made a swing with a >50-pt stop carry a target SMALLER than its stop
+// and the trader's R9 refused it. With a short tape (no EMA) the target is 1R,
+// never the 50-pt fallback.
+func TestSwing4hRejectTargetIsOneRFloor(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	// ref.Low 10143 sits ~25 pts below the line → stop ~55 pts > 50: the old
+	// 50-pt fallback target was smaller than the stop and R9 refused the swing.
+	cur := []market.Kline{
+		mk5m(t, 15, 5, 0, 10145, 10150, 10140, 10145), // prev below the line
+		mk5m(t, 15, 5, 5, 10150, 10165, 10143, 10145), // touches, closes back below (reject)
+	}
+	bars := swingTape(t, cur)
+	s := &SwingState{}
+	out := SwingTick(s, bars, cfg, cur[1].OpenTime+60_000)
+	if len(out) != 1 || out[0].Side != SideShort {
+		t.Fatalf("intents = %+v, want one SHORT reject stop entry", out)
+	}
+	in := out[0]
+	risk := abs(in.Stop - in.Price)
+	if risk <= 50 {
+		t.Fatalf("fixture: the stop must exceed 50 pts to exercise the regression (risk=%.2f)", risk)
+	}
+	if d := abs(in.Target - in.Price); d < risk {
+		t.Fatalf("target distance %.2f must be ≥ risk %.2f — R9 must never refuse a swing for a nearer target", d, risk)
+	}
+	if abs(in.Target-(in.Price-risk)) > 0.01 {
+		t.Fatalf("target = %.2f, want 1R = %.2f (never the old 50-pt fallback)", in.Target, in.Price-risk)
+	}
+}
+
+// TestSwingFirstTarget — the pure max(1R, 5m EMA 34) rule: the EMA wins only
+// when it sits FURTHER than 1R on the profitable side; nearer, absent or
+// wrong-side EMA falls back to 1R.
+func TestSwingFirstTarget(t *testing.T) {
+	cases := []struct {
+		name        string
+		side        Side
+		entry, stop float64
+		ema         float64
+		want        float64
+	}{
+		{"long ema absent", SideLong, 100, 90, 0, 110},
+		{"long ema nearer than 1R", SideLong, 100, 90, 105, 110},
+		{"long ema further than 1R", SideLong, 100, 90, 120, 120},
+		{"long ema wrong side", SideLong, 100, 90, 95, 110},
+		{"short ema absent", SideShort, 100, 110, 0, 90},
+		{"short ema nearer than 1R", SideShort, 100, 110, 95, 90},
+		{"short ema further than 1R", SideShort, 100, 110, 80, 80},
+		{"short ema wrong side", SideShort, 100, 110, 105, 90},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := swingFirstTarget(tc.side, tc.entry, tc.stop, tc.ema); abs(got-tc.want) > 1e-9 {
+				t.Fatalf("swingFirstTarget(%s, entry %.0f, stop %.0f, ema %.0f) = %.2f, want %.2f",
+					tc.side, tc.entry, tc.stop, tc.ema, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSwingTickWarmLineIsAuthoritativeWithinBucket(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	bars := []market.Kline{
