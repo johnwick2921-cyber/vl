@@ -272,6 +272,26 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) {
 	if mentorNowSource != nil {
 		now = mentorNowSource()
 	}
+	// N7 part 4 (CTO, release #4): a row that was NEVER SENT ends cancelled
+	// at once — a cancel_pending row with no signal id can never settle and
+	// would WARN every pass forever. CAS: if a placement stamped a signal id
+	// in the meantime, fall through and cancel the placed order normally.
+	if strings.TrimSpace(r.SignalID) == "" {
+		done, err := ledger.CancelUnplaced(r.ID, "mentor: "+in.Reason+" — never placed")
+		if err == nil && done {
+			at.clearMentorLevelArmLocked(in.ArmID)
+			mentorCount("cancel_unplaced")
+			at.logInfof("🧑‍🏫 mentor cancel for ArmID %q: never placed — row cancelled directly (%s)", in.ArmID, in.Reason)
+			return
+		}
+		if err != nil {
+			at.logWarnf("🧑‍🏫 mentor unplaced cancel write failed for ArmID %q: %v", in.ArmID, err)
+		}
+		if rerr := ledger.DB().First(&r, arm.RowID).Error; rerr != nil || store.IsTerminalArmState(r.State) {
+			at.clearMentorLevelArmLocked(in.ArmID)
+			return
+		}
+	}
 	if strings.TrimSpace(r.SignalID) != "" {
 		if v := at.cancelSafetyFor(r, now); !v.Allow {
 			at.logWarnf("🛟 mentor cancel REFUSED: %s %s — %s", r.Session, r.Scenario, v.Why)

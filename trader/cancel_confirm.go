@@ -176,6 +176,13 @@ func cancelSettled(
 	for i := range book {
 		o := book[i]
 		if !o.IsWorking() {
+			// N7 part 5 (CTO, release #4): a FILLED entry is terminal but it is
+			// not a cancel — the fill path owns that row. Settling it here would
+			// mark a filled entry cancelled before its fill frame lands, and the
+			// N7 forget would then drop the latch's in-flight protection.
+			if entryFilledInBook(o, signalID) {
+				return false, "filled at the broker (" + o.State + ") — the filled path owns it"
+			}
 			continue
 		}
 		if _, ok := orderBelongsToSlot(o.Name, []string{signalID}); ok {
@@ -183,6 +190,40 @@ func cancelSettled(
 		}
 	}
 	return true, "absent from a fresh book"
+}
+
+// entryFilledInBook reports whether o is the slot's ENTRY order (named exactly
+// after the signal — never a "-sl"/"-tp" child) in a filled terminal state.
+func entryFilledInBook(o nt.NT8Order, signalID string) bool {
+	if !strings.EqualFold(strings.TrimSpace(o.Name), strings.TrimSpace(signalID)) {
+		return false
+	}
+	switch strings.ToLower(strings.ReplaceAll(strings.TrimSpace(o.State), " ", "")) {
+	case "filled", "partfilleddone":
+		return true
+	}
+	return false
+}
+
+// cancelSeenInBook (N7 part 5) is the POSITIVE cancel proof the latch forget
+// needs: the slot's entry order is in the fresh book as Cancelled / Rejected /
+// Expired. Mere absence settles the ROW (cancelSettled) but never clears the
+// broker-side pending marker — the 45s sweep owns that.
+func cancelSeenInBook(book []nt.NT8Order, signalID string) bool {
+	if strings.TrimSpace(signalID) == "" {
+		return false
+	}
+	for i := range book {
+		o := book[i]
+		if !strings.EqualFold(strings.TrimSpace(o.Name), strings.TrimSpace(signalID)) {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(o.State)) {
+		case "cancelled", "canceled", "rejected", "expired":
+			return true
+		}
+	}
+	return false
 }
 
 // shortID keeps a log line readable without inventing a value.
@@ -560,7 +601,9 @@ func (at *AutoTrader) confirmPendingCancels(ledger *store.ArmedOrderStore, cance
 					at.logWarnf("🧾 cancel confirm: re-arm write failed for %s: %v", r.Scenario, err)
 					continue
 				}
-				at.forgetPendingEntry(r.SignalID)
+				if cancelSeenInBook(book, r.SignalID) {
+					at.forgetPendingEntry(r.SignalID) // N7 part 5: positive cancel only
+				}
 				settled++
 				at.logInfof("🧾 cancel CONFIRMED %s signal=%s — %s (snapshot %d, book age %s, attempts %d) — returned to armed-unplaced, re-placeable",
 					r.Scenario, shortID(r.SignalID), why, snapID, age.Round(time.Second), r.CancelAttempts)
@@ -575,7 +618,9 @@ func (at *AutoTrader) confirmPendingCancels(ledger *store.ArmedOrderStore, cance
 				at.logWarnf("🧾 cancel confirm: ledger write failed for %s: %v", r.Scenario, err)
 				continue
 			}
-			at.forgetPendingEntry(r.SignalID)
+			if cancelSeenInBook(book, r.SignalID) {
+				at.forgetPendingEntry(r.SignalID) // N7 part 5: positive cancel only
+			}
 			settled++
 			at.logInfof("🧾 cancel CONFIRMED %s signal=%s — %s (snapshot %d, book age %s, attempts %d)",
 				r.Scenario, shortID(r.SignalID), why, snapID, age.Round(time.Second), r.CancelAttempts)
