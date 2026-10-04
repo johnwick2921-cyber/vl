@@ -135,7 +135,10 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}
 	emitMs := time.Now().UnixMilli()
-	intents := at.mentorEval.Tick(bars, last.OpenTime)
+	// The evaluator's clock is the instant the last bar CLOSED: every closedness
+	// test inside Tick then reads the just-closed bar as closed, never as forming
+	// (an OpenTime clock made the ORB escape unreachable and lagged every gate).
+	intents := at.mentorEval.Tick(bars, mentor.BarCloseInstant(last))
 	// S9 (D5.2 p2 @05:21): strong-day detection from the recent CLOSED 5m bars
 	// — 50–80 pt candles cut every tier to 1–2.
 	strongDay := false
@@ -262,7 +265,7 @@ func mentorIntentExpiry(in mentor.Intent, barCloseMs int64) int64 {
 		return in.ExpiryMs
 	}
 	if strings.EqualFold(in.Setup, "SWING4H") {
-		return mentorSwingExpiry(barCloseMs)
+		return mentorSwingExpiry(barCloseMs + 1) // +1: the instant the bar closed, so a 4h-boundary bar reads the NEW 4h candle
 	}
 	return barCloseMs + 60_000 // the close of the NEXT 1m candle
 }

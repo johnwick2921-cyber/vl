@@ -187,6 +187,18 @@ func rthHourAnchor(ms int64) int64 {
 	return time.Date(t.Year(), t.Month(), t.Day(), h, 30, 0, 0, ctime()).UnixMilli()
 }
 
+// keyLevel1HCandleCloseTime returns the scheduled close of an RTH hour candle.
+// The final 14:30 candle closes at the 15:00 RTH boundary.
+func keyLevel1HCandleCloseTime(openMs int64) int64 {
+	t := time.UnixMilli(openMs).In(ctime())
+	closeMs := t.Add(time.Hour).UnixMilli()
+	rthEnd := time.Date(t.Year(), t.Month(), t.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
+	if closeMs > rthEnd {
+		return rthEnd
+	}
+	return closeMs
+}
+
 // candleColour: green iff close > open, red otherwise (§4.3 step 2).
 func candleColour(b market.Kline) bool {
 	return b.Close > b.Open
@@ -207,8 +219,12 @@ func candleColour(b market.Kline) bool {
 // the b60 lifecycle (seeded: State.Seed1HBars, incremental; cold: one
 // keyLevel1HBars per tick).
 func levelDeletedBy1HBody(lvl Level, b60 []market.Kline, now int64) bool {
-	if len(b60) > 0 && b60[len(b60)-1].CloseTime >= now {
-		b60 = b60[:len(b60)-1] // the forming 1H candle has not closed
+	// The forming test uses the candle's SCHEDULED close: keyLevel1HBars gives a
+	// candle the CloseTime of its last 1m bar, which is not proof the hour is
+	// over (a mid-hour candle would read as closed when now is the instant the
+	// last 1m bar closed).
+	if n := len(b60); n > 0 && keyLevel1HCandleCloseTime(b60[n-1].OpenTime) > now {
+		b60 = b60[:n-1] // the forming 1H candle has not closed
 	}
 	for _, b := range b60 {
 		if b.CloseTime < lvl.AtTime {
