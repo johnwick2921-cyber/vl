@@ -680,6 +680,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			} else {
 				out = append(out, Intent{Action: CancelArm, Reason: "15m/5m ISB conflict — no trade [D4.2 p1 @ 14:35]"})
 			}
+		} else {
+			e.refuse("isb_trigger_side")
 		}
 	}
 
@@ -772,6 +774,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		// filter off for LEVEL rejects (the box path honours it separately).
 		if e.Cfg.LocTriggerFilter && e.Cfg.TriggerSchool != 1 {
 			if dirOK, trigSide, _ := TriggerVerdict(e.State.Trigger, price); !dirOK || trigSide != "" && trigSide != side {
+				e.refuse("isb_trigger_side")
 				continue
 			}
 		}
@@ -925,6 +928,23 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			if e.State.ISBBox != nil && bars[r.RefBar].Close > e.State.ISBBox.Low && bars[r.RefBar].Close < e.State.ISBBox.High {
 				e.refuse("box_isb_ban")
 				continue
+			}
+			if !BoxReturnReject(b, bars[r.RefBar]) {
+				continue
+			}
+			// C5: name the trigger-side drop that boxEntryIntent also gates.
+			if e.Cfg.LocTriggerFilter && e.Cfg.TriggerSchool != 1 {
+				var tSide Side
+				var tPrice float64
+				if b.Kind == FTGL {
+					tSide, tPrice = SideLong, bars[r.RefBar].High
+				} else {
+					tSide, tPrice = SideShort, bars[r.RefBar].Low
+				}
+				if ok, ts, _ := TriggerVerdict(e.State.Trigger, tPrice); !ok || ts != "" && ts != tSide {
+					e.refuse("isb_trigger_side")
+					continue
+				}
 			}
 			for _, in := range boxEntryIntent(bars[r.RefBar], b, boxes, levels, e.State.Trigger, bars, e.Cfg) {
 				// B9 [D5.1 p1 @16:24, @19:11–20:07]: box trades obey
@@ -1178,7 +1198,12 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 			ints[i].ExpiryMs = swingExpiry(now)
 		}
 	}
-	return swingZoneGate(ints, e.State.Trigger, e.Cfg.Swing.Respects5mZone)
+	kept, dropped := swingZoneGate(ints, e.State.Trigger, e.Cfg.Swing.Respects5mZone)
+	// C5: the trigger-zone drop names its reason.
+	for i := 0; i < dropped; i++ {
+		e.refuse("isb_trigger_side")
+	}
+	return kept
 }
 
 // swingExpiry is the close of the CURRENT 4h candle (session-anchored at
@@ -1189,18 +1214,20 @@ func swingExpiry(now int64) int64 {
 
 // swingZoneGate drops swing intents whose entry price sits between two
 // opposing trigger lines, but ONLY when the knob is on (respect = true).
-func swingZoneGate(ints []Intent, t TriggerLine, respect bool) []Intent {
+func swingZoneGate(ints []Intent, t TriggerLine, respect bool) ([]Intent, int) {
 	if !respect {
-		return ints
+		return ints, 0
 	}
 	out := make([]Intent, 0, len(ints))
+	dropped := 0
 	for _, in := range ints {
 		if ok, _, _ := TriggerVerdict(t, in.Price); !ok {
-			continue // in the two-trigger zone — no trade at all there
+			dropped++ // in the two-trigger zone — no trade at all there
+			continue
 		}
 		out = append(out, in)
 	}
-	return out
+	return out, dropped
 }
 
 // seededLevels is the Tick level source after Seed: SeedLevels (full stored

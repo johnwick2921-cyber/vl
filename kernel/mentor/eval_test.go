@@ -165,12 +165,12 @@ func TestSwingZoneGateKnob(t *testing.T) {
 	if DefaultSwingCfg().Respects5mZone {
 		t.Fatal("swing_respects_5m_zone default must be false")
 	}
-	if got := swingZoneGate(ints, tl, false); len(got) != 2 {
-		t.Fatalf("knob off: the zone gate must be OFF, got %d intents", len(got))
+	if got, dropped := swingZoneGate(ints, tl, false); len(got) != 2 || dropped != 0 {
+		t.Fatalf("knob off: the zone gate must be OFF, got %d intents, %d dropped", len(got), dropped)
 	}
-	got := swingZoneGate(ints, tl, true)
-	if len(got) != 1 || got[0].Price != 96 {
-		t.Fatalf("knob on: the zone-price swing must be dropped, got %+v", got)
+	got, dropped := swingZoneGate(ints, tl, true)
+	if len(got) != 1 || got[0].Price != 96 || dropped != 1 {
+		t.Fatalf("knob on: the zone-price swing must be dropped, got %+v, dropped=%d", got, dropped)
 	}
 }
 
@@ -186,26 +186,39 @@ func TestEvaluatorRefusesWrongTriggerSide(t *testing.T) {
 		return market.Kline{OpenTime: int64(i) * 60_000, Open: o, High: h, Low: l, Close: c}
 	}
 	// an ISB pair: cur's body inside prev's full range (wicks included).
-	prev := mk(0, 99, 101, 96, 99)
 	for _, tc := range []struct {
 		name        string
 		close       float64
 		wantRefused bool
 	}{
-		{"strictly above the sell line", 98.5, true},
-		{"exactly on the sell line — allowed, no box zone", 97, false},
+		{"2025-05-07 09:21 sell ISB above sell line", 19949.25, true},
+		{"exactly on the sell line — allowed, no box zone", 19931, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := New(cfg)
-			e.State.Trigger = TriggerLine{Dir: SideShort, Price: 97}
-			bars := []market.Kline{prev, mk(1, 97.5, 98.5, 96.5, tc.close)}
-			intents := e.Tick(bars, bars[1].OpenTime+59_999)
+			bars := make([]market.Kline, 10)
+			for i := range bars {
+				bars[i] = mk(i+5, 19940, 19950, 19935, 19945)
+			}
+			bars[0] = mk(5, 19940, 19960, 19931, 19950)
+			bars[5] = mk(10, 19940, 19950, 19930, 19942)
+			bars[8] = mk(13, 19950, 19960, 19920, 19940)
+			bars[9] = mk(14, 19942, 19950, 19930, tc.close)
+			intents := e.Tick(bars, bars[9].OpenTime+59_999)
+			if e.State.Trigger.Dir != SideShort || e.State.Trigger.Price != 19931 {
+				t.Fatalf("fixture: want a sell line at 19931, got %+v", e.State.Trigger)
+			}
 			if tc.wantRefused {
+				if e.State.Refusals["isb_trigger_side"] != 1 {
+					t.Fatalf("trigger-side drop must be counted once as isb_trigger_side, ledger = %v", e.State.Refusals)
+				}
 				for _, in := range intents {
 					if in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry {
 						t.Fatalf("entry emitted on the wrong trigger side: %+v", in)
 					}
 				}
+			} else if e.State.Refusals["isb_trigger_side"] != 0 {
+				t.Fatalf("trigger line itself must allow equality, ledger = %v", e.State.Refusals)
 			}
 		})
 	}
