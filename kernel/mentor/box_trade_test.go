@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -16,7 +17,10 @@ func TestBoxReturnBarsEveryVisit(t *testing.T) {
 	cfg := DefaultBoxCfg()
 	b := Box{Kind: FTGH, Top: 105, Bottom: 102}
 	bars := []market.Kline{
-		{}, // formedAt = 0
+		// the formation candle (formedAt = 0); closed INSIDE, so the B10 T1
+		// seeding rule (spell state from the FormedAt candle's close) keeps
+		// outside=false for the walk.
+		{Close: 104},
 		{High: 105.1, Low: 102.5, Close: 104, CloseTime: 1}, // touch, no outside first → not a visit
 		{High: 101, Low: 99, Close: 100.5, CloseTime: 2},    // close below 102 → outside
 		{High: 105.0, Low: 100, Close: 101.5, CloseTime: 3}, // REJECT: touch + close below 102 → visit 1, the trade reference
@@ -42,6 +46,42 @@ func TestBoxReturnBarsEveryVisit(t *testing.T) {
 	}
 	if BoxReturnReject(b, bars[4]) || BoxReturnReject(b, bars[6]) {
 		t.Fatal("a touch closing inside the box is a CANCEL, not a reject")
+	}
+}
+
+// TestBoxFullAndIncrementalWalksAgree — B10 T1 FOLD (CTO 21:16Z): ONE
+// seeding rule for both walks. For every box on the fixture tapes the full
+// walk (BoxReturnBars from FormedAt) and the live walk (BoxReturnBarsFrom
+// from FormedAt+1) must agree visit-for-visit. Mutant (re-implement the
+// full walk with outside=false instead of delegating) → RED.
+func TestBoxFullAndIncrementalWalksAgree(t *testing.T) {
+	cfg := DefaultBoxCfg()
+	tapes := []string{
+		"mnq_1m_2026-09-13_boxframe",
+		"mnq_1m_2026-09-15_rth",
+		"mnq_1m_2026-08-28_rth",
+	}
+	boxesSeen := 0
+	for _, name := range tapes {
+		bars := loadFixture(t, name, "1m")
+		now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000)
+		for _, b := range BoxesBuild(bars, cfg, now) {
+			boxesSeen++
+			full := BoxReturnBars(bars, b, b.FormedAt, cfg)
+			incr := BoxReturnBarsFrom(bars, b, b.FormedAt+1, cfg)
+			if len(full) != len(incr) {
+				t.Fatalf("%s %s: full walk %d returns, incremental %d", name, b.Key, len(full), len(incr))
+			}
+			for i := range full {
+				if full[i] != incr[i] {
+					t.Fatalf("%s %s: return %d differs: full %+v vs incremental %+v",
+						name, b.Key, i, full[i], incr[i])
+				}
+			}
+		}
+	}
+	if boxesSeen == 0 {
+		t.Fatal("no boxes built on any fixture tape — the pin tests nothing")
 	}
 }
 
