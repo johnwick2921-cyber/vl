@@ -1146,10 +1146,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				continue
 			}
 			// C5: name the trigger-side drop that boxEntryIntent also gates.
+			// D14 "Uno Reverse": the trigger side is the box's CURRENT role —
+			// a flipped FTGH checks the LONG side.
 			if e.Cfg.LocTriggerFilter && e.Cfg.TriggerSchool != 1 {
 				var tSide Side
 				var tPrice float64
-				if b.Kind == FTGL {
+				if boxEffectiveKind(b) == FTGL {
 					tSide, tPrice = SideLong, bars[r.RefBar].High
 				} else {
 					tSide, tPrice = SideShort, bars[r.RefBar].Low
