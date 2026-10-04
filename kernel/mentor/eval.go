@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -620,7 +621,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 
 	if IsISB(prev, cur) {
-		if dirOK, _, _ := TriggerVerdict(e.State.Trigger, cur.Close); dirOK {
+		if dirOK, trigSide, _ := TriggerVerdict(e.State.Trigger, cur.Close); dirOK {
 			// B4: the 15m/5m conflict reads CLOSED buckets only — the
 			// still-forming 5m bucket is dropped [D4.2 p1 @ 05:10: "a
 			// 15-minute candle is only confirmed once CLOSED; trade from
@@ -660,6 +661,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					} else if boxBlocked {
 						// R5: an opposite-direction ISB inside the box — no entry
 						e.refuse("isb_box_blocked")
+					} else if e.State.ISBBox == nil && trigSide != "" && side != "" && side != trigSide {
+						// I1: while NO R5 5m ISB box stands, the LIVE 5m trigger
+						// line governs the ISB side — a short ISB above a buy line
+						// (or a long below a sell line) is refused [D3.4 p1
+						// @09:30–10:38, @17:39; p3 @02:24; D4.3 @14:40]. While a
+						// box stands, that box's direction governs instead — the
+						// R5 box rule [isb_box.go: ISBBoxAllows, D3.4 p2
+						// @00:14–13:00] already refused an opposite-direction ISB
+						// above (boxBlocked), so this check is skipped entirely.
+						e.refuse("isb_trigger_side_mismatch")
 					} else if side != "" && htfSide != "" && side != htfSide {
 						// ISB direction against the 4h — no entry
 						e.refuse("isb_htf_side_mismatch")
@@ -1047,8 +1058,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 
 	// ORB gate ("ĐIỀU BẮT BUỘC" [X11 @16:43]): every intraday entry is gated
-	// on the opening range; the §8 swing is exempt (orbGateFilter).
-	out, refused = orbGateFilter(out, e.State.ORB, e.Cfg)
+	// on the opening range; the §8 swing is exempt (orbGateFilter). No ORB for
+	// pre-market [X5 @05:42] — before the 08:30 CT RTH open it does not block.
+	out, refused = orbGateFilter(out, e.State.ORB, now, e.Cfg)
 	for _, r := range refused {
 		e.refuse(r)
 	}
@@ -1242,6 +1254,10 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 			ints[i].ExpiryMs = swingExpiry(now)
 		}
 	}
+	// S2: a boot/reload must never turn OLD touches into live orders — drop
+	// any swing entry whose reference candle is older than the newest closed
+	// 5m bar (00-METHOD.md §8: "Wait for a LITERAL touch" [p2 @ 09:15]).
+	ints = dropStaleSwingIntents(ints, closed)
 	kept, dropped := swingZoneGate(ints, e.State.Trigger, e.Cfg.Swing.Respects5mZone)
 	// C5: the trigger-zone drop names its reason.
 	for i := 0; i < dropped; i++ {
@@ -1254,6 +1270,28 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 // 17:00 CT): an unfilled swing order lives until then (CTO 1791008594562).
 func swingExpiry(now int64) int64 {
 	return bucketOpen(now, 240) + 240*60_000 - 1
+}
+
+// dropStaleSwingIntents (S2) drops swing entry intents whose reference candle
+// (the ArmID's embedded 5m bar time) is older than the newest closed 5m bar.
+// The seed stamps Swing.LastBarTime so the first tick never WALKS the old
+// bars; this is the second line of defence — even if the watermark is missing,
+// an old touch must never become a live order.
+func dropStaleSwingIntents(ints []Intent, closed []market.Kline) []Intent {
+	if len(closed) == 0 {
+		return ints
+	}
+	newest := closed[len(closed)-1].OpenTime
+	out := make([]Intent, 0, len(ints))
+	for _, in := range ints {
+		if in.Action == PlaceStopEntry && in.Setup == "SWING4H" && in.ArmID != "" {
+			if ref, err := strconv.ParseInt(strings.TrimPrefix(in.ArmID, "swing-"), 10, 64); err == nil && ref < newest {
+				continue
+			}
+		}
+		out = append(out, in)
+	}
+	return out
 }
 
 // swingZoneGate drops swing intents whose entry price sits between two

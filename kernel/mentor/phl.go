@@ -110,13 +110,14 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 		setup = "PLH"
 	}
 	return Intent{
-		Action: PlaceStopEntry,
-		Setup:  setup,
-		Side:   side,
-		Price:  price,
-		Stop:   stop,
-		Target: target,
-		Reason: "PHL/PLH: buy stop at the previous candle's high, stop at the broken candle's low, target near the old extreme [D2.2 p1 @ 19:34, 04:58, 07:33]",
+		Action:   PlaceStopEntry,
+		Setup:    setup,
+		Side:     side,
+		Price:    price,
+		Stop:     stop,
+		Target:   target,
+		RefBarMs: t.RefBar.CloseTime,
+		Reason:   "PHL/PLH: buy stop at the previous candle's high, stop at the broken candle's low, target near the old extreme [D2.2 p1 @ 19:34, 04:58, 07:33]",
 	}, true, ""
 }
 

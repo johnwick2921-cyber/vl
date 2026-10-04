@@ -20,7 +20,7 @@ import (
 // plan version change, re-armed only by a NEW authorization).
 // ArmOriginMentor (REVIEW-313 F3) is the ONLY origin value the stop-limit
 // routing reads as "mentor-authored". The mentor injector stamps it; every
-// other author leaves the origin ''.
+// other author leaves the origin ”.
 const ArmOriginMentor = "mentor"
 
 type ArmedOrderDB struct {
@@ -54,14 +54,20 @@ type ArmedOrderDB struct {
 	// evaluator's intent authors when it places a stop-limit. The armed pass
 	// cancels an unfilled order at now >= expiry_ms. 0 = no expiry authored =
 	// this code never auto-cancels the row.
-	ExpiryMs     int64 `gorm:"default:0"`
+	ExpiryMs int64 `gorm:"default:0"`
 	// Origin (REVIEW-313 F3, 2026-10-03): who authored this arm. The mentor
 	// injector (DS-102, #316) sets ArmOriginMentor; every other author leaves
 	// it ''. The stop-limit routing reads THIS field, never the expiry as a
 	// proxy: mentor + knob ON + expiry > 0 routes to the limit variant; a
 	// mentor arm with the knob ON and no expiry is REFUSED fail-closed; a
 	// non-mentor arm takes today's path whatever its expiry.
-	Origin       string `gorm:"default:''"`
+	Origin string `gorm:"default:''"`
+	// Contracts (B2 mentor size, 2026-10-04): the mentor-signed contract count
+	// the armed pass must send. NULL = ABSENT (absent ≠ 0) — only the mentor
+	// injector stamps it; every historical and non-mentor row is NULL. The
+	// armed pass sends this count for origin=mentor rows (clamped to the
+	// trader's max) and REFUSES a mentor row without one — never sent as 1.
+	Contracts    *int
 	FillPrice    float64
 	FillQuantity int
 
@@ -300,6 +306,10 @@ func (s *ArmedOrderStore) Migrate() error {
 			// injector stamps ArmOriginMentor; '' on every historical
 			// row = not a mentor arm, which is the truth for them.
 			{"origin", "TEXT NOT NULL DEFAULT ''"},
+			// B2 MENTOR SIZE (2026-10-04): the mentor-signed contract count.
+			// NULL = ABSENT on every historical and non-mentor row — a mentor
+			// row without one is REFUSED by the armed pass, never sent as 1.
+			{"contracts", "INTEGER"},
 			// W3 market_in_zone (2026-09-23): NULLable where 0 would be a
 			// fabricated value (absent ≠ 0); '' where the text is a label.
 			{"policy", "TEXT NOT NULL DEFAULT ''"},

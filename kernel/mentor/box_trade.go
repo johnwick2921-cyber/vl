@@ -207,6 +207,7 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 		Price:      price,
 		Stop:       stop,
 		Target:     target,
+		RefBarMs:   ref.CloseTime,
 		Confluence: fl.On,
 		Reason:     "box edge return: reject close outside → stop order with the rejecting candle as the reference [D3.2 p1 @ 21:04–21:33; D3.4 p3 @ 07:02]",
 	}}

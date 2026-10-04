@@ -28,8 +28,7 @@ func TestAckTimeoutHoldsCancelPendingNotCancelled(t *testing.T) {
 	at, rt := flatFixture(t, now, false, store.StateWorking, "sig-timeout", silent)
 
 	n, unacked := at.cancelArmedOrdersSyncWith("session close — EOD flat",
-		10*time.Millisecond, at.armedSyncSeam.Cancel, at.armedSyncSeam.Stream)
-
+		10*time.Millisecond, at.armedSyncSeam.Cancel, at.armedSyncSeam.Stream, nil)
 	if len(rt.events) == 0 {
 		t.Fatal("the cancel must still be SENT — this fix is about what we RECORD, not about skipping the wire")
 	}
@@ -65,8 +64,7 @@ func TestFillDuringDrainIsNotCountedAsACancel(t *testing.T) {
 	acks <- ntwire.OrderUpdatePayload{SignalID: "sig-fill", State: "filled", FillPrice: 29950, Quantity: 1}
 
 	n, unacked := at.cancelArmedOrdersSyncWith("session close — EOD flat",
-		300*time.Millisecond, at.armedSyncSeam.Cancel, at.armedSyncSeam.Stream)
-
+		300*time.Millisecond, at.armedSyncSeam.Cancel, at.armedSyncSeam.Stream, nil)
 	rows, err := at.store.ArmedOrders().ListForPlan("2026-08-18:NY:trader-1")
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("read back: err=%v rows=%d", err, len(rows))
@@ -93,7 +91,7 @@ func TestNoLinkFallbackHoldsPendingAndReportsUnsettled(t *testing.T) {
 	at.armedSyncSeam = nil // force the no-link fallback
 	at.trader = nil
 
-	retired, unsettled := at.cancelArmedOrders("session close — EOD flat")
+	retired, unsettled := at.cancelArmedOrders("session close — EOD flat", nil)
 
 	rows, err := at.store.ArmedOrders().ListForPlan("2026-08-18:NY:trader-1")
 	if err != nil || len(rows) != 1 {
@@ -117,7 +115,7 @@ func TestNoLinkFallbackStillRetiresNeverPlacedRows(t *testing.T) {
 	at.armedSyncSeam = nil
 	at.trader = nil
 
-	retired, unsettled := at.cancelArmedOrders("session close — EOD flat")
+	retired, unsettled := at.cancelArmedOrders("session close — EOD flat", nil)
 	if retired != 1 || unsettled != 0 {
 		t.Fatalf("a never-placed row is retired, not held: want 1/0, got %d/%d", retired, unsettled)
 	}

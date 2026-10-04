@@ -379,6 +379,10 @@ type AutoTrader struct {
 	// only consulted when the per-strategy mentor_mode is ON.
 	mentorEval         *mentor.Evaluator
 	mentorLastTickOpen int64
+	// mentorEvalMu serializes the evaluator: the scan loop (mentorTick) and the
+	// event loop (mentorEventPassAt) both call mentorEvalOnce, whose Tick
+	// mutates the evaluator's maps — N11 (DS-104). One mutex, both callers.
+	mentorEvalMu     sync.Mutex
 	mentorFinalArrival atomic.Int64 // ms — when the FINAL frame hit the sink
 	// MENTOR B20 — the chosen exit branch per open position (keyed by side:
 	// "long"/"short"), set at placement from the entry-time fork (A/B/C/swing)
@@ -386,6 +390,9 @@ type AutoTrader struct {
 	// branch. Size is never touched by the upgrade.
 	mentorExitMu    sync.Mutex
 	mentorExitModes map[string]string
+	// mentorFunnel is the N12 visibility counter (read-only): one INFO line per
+	// 15 minutes + on change, session-day scoped (17:00 CT). Never gates a trade.
+	mentorFunnel    mentorFunnel
 	fastTapePending atomic.Bool
 	// lastClockHealthSession: which session the last clock-health line was
 	// logged for (PHASE 3.5) — one line per session roll, not per tick.

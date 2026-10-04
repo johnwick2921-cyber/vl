@@ -35,6 +35,26 @@ func (f *fakeMentorPositionReader) GetOpenOrders(symbol string) ([]types.OpenOrd
 // test goes RED.
 func TestMentorProductionWiring(t *testing.T) {
 	st := mentorSeedStore(t)
+	// B1: migrate the positions table and seed closed rows so the day-net /
+	// closed-profit seams read a deterministic session day. Rows close inside
+	// the current CME session day (exit_time = now − a minute).
+	if err := store.NewPositionStore(st.GormDB()).InitTables(); err != nil {
+		t.Fatalf("positions migrate: %v", err)
+	}
+	nowMs := time.Now().UnixMilli()
+	seedClosed := func(id int64, exitMs int64, realized float64, corrected *float64) {
+		row := &store.TraderPosition{
+			TraderID: "t-wire", Account: "Sim101", Symbol: "MNQ", Side: "LONG",
+			Quantity: 1, EntryPrice: 100, ExitPrice: 100 + realized, RealizedPnL: realized,
+			PnlCorrected: corrected, Status: "CLOSED", CloseReason: "sync", Source: "sync",
+			EntryTime: exitMs - 60_000, ExitTime: exitMs, CreatedAt: exitMs, UpdatedAt: exitMs,
+		}
+		if err := st.GormDB().Create(row).Error; err != nil {
+			t.Fatalf("create closed row %d: %v", id, err)
+		}
+	}
+	plus30 := 30.0
+	seedClosed(1, nowMs-60_000, 30, &plus30)
 	fake := &fakeMentorPositionReader{
 		positions: []map[string]interface{}{
 			{"symbol": "MNQ", "side": "SHORT", "quantity": 1.0},
@@ -58,6 +78,8 @@ func TestMentorProductionWiring(t *testing.T) {
 		mentorNowSource = nil
 		mentorConfluenceForIntent = nil
 		mentorSetArmExpiryWire = nil
+		mentorDayNetSource = nil
+		mentorClosedProfitSource = nil
 	})
 
 	// every seam bound and answering from the fake snapshot.
@@ -109,9 +131,30 @@ func TestMentorProductionWiring(t *testing.T) {
 		t.Fatal("a non-positive expiry must be refused")
 	}
 
-	// boot line: everything wired.
-	if line := mentorSeamBootLine(); !textHas(line, "open_stop=wired") || textHas(line, "=missing") {
+	// boot line: everything wired, including the B1 day-net / closed-profit
+	// seams (they are in mentorSeamNames now).
+	if line := mentorSeamBootLine(); !textHas(line, "open_stop=wired") ||
+		!textHas(line, "day_net=wired") || !textHas(line, "closed_profit=wired") ||
+		textHas(line, "=missing") {
 		t.Fatalf("boot line must show every seam wired: %q", line)
+	}
+
+	// B1: day net / closed profit are bound to the strict-corrected read. With
+	// one profitable close and no unresolved row, the day resolves to +30 / won.
+	if net, ok := mentorDayNetSource(); !ok || net != 30 {
+		t.Fatalf("day net seam = %.2f/%v, want 30/true", net, ok)
+	}
+	if closed, ok := mentorClosedProfitSource(); !ok || !closed {
+		t.Fatalf("closed-profit seam = %v/%v, want true/true", closed, ok)
+	}
+	// A NULL pnl_corrected closed row today → UNRESOLVED → both seams answer
+	// not-ok (fail closed), never a coerced value.
+	seedClosed(2, nowMs-30_000, 100, nil)
+	if net, ok := mentorDayNetSource(); ok || net != 0 {
+		t.Fatalf("day net seam must fail closed on a NULL row: %.2f/%v", net, ok)
+	}
+	if closed, ok := mentorClosedProfitSource(); ok || closed {
+		t.Fatalf("closed-profit seam must fail closed on a NULL row: %v/%v", closed, ok)
 	}
 
 	// a failing snapshot must answer not-ok, never a fabricated value.
