@@ -5,7 +5,11 @@ vi.mock('../httpClient', () => ({
   httpClient: { request: mocks.request },
 }))
 
-import { effectiveByPath, strategyEffectiveApi } from './strategyEffective'
+import {
+  effectiveByPath,
+  strategyEffectiveApi,
+  studioEffective,
+} from './strategyEffective'
 
 describe('strategyEffectiveApi.getStrategyEffective', () => {
   beforeEach(() => {
@@ -68,5 +72,27 @@ describe('effectiveByPath', () => {
       coverage: { resolved: 1, total: 1, unresolved: [], not_enumerated: [] },
     })
     expect(m['day_plan.plan_mode']).toBe(row)
+  })
+})
+
+describe('studioEffective mentorPlace', () => {
+  const reply = (session: string | null, mentor_place?: boolean) => ({
+    strategy_id: 's',
+    session,
+    venue: null,
+    settings: [],
+    coverage: { resolved: 0, total: 0, unresolved: [], not_enumerated: [] },
+    ...(mentor_place === undefined ? {} : { mentor_place }),
+  })
+
+  it('carries the MENTOR_PLACE gate of the strategy-level reply, true and false', () => {
+    expect(studioEffective(reply(null, true), {}).mentorPlace).toBe(true)
+    expect(studioEffective(reply(null, false), {}).mentorPlace).toBe(false)
+  })
+
+  it('leaves it absent (unknown) when the server did not send it or the reply is session-scoped', () => {
+    expect('mentorPlace' in studioEffective(reply(null), {})).toBe(false)
+    expect('mentorPlace' in studioEffective(reply('NY', true), {})).toBe(false)
+    expect('mentorPlace' in studioEffective(null, {})).toBe(false)
   })
 })

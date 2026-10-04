@@ -66,11 +66,18 @@ Each number is a real depth against its floor (from `mentor.SeedLine`,
 - `levels n` — key levels drawn from that history.
 
 If anything is missing, the same boot prints a refusal line naming each short
-source:
+source and which entry kinds it blocks:
 
 ```
-🧑‍🏫 mentor seed REFUSING entries — missing: bar history depth: 4h EMA34 warm-up (50/102 4h candles); ...
+🧑‍🏫 mentor seed REFUSING SWING4H entries only (intraday entries allowed) — missing: bar history depth: 4h EMA34 warm-up (94/102 4h candles) [blocks SWING4H entries only]
+🧑‍🏫 mentor seed REFUSING ALL entries — missing: bar history depth: 1m EMA34 warm-up (50/102 1m bars) [blocks ALL entries]; ...
 ```
+
+The 4h EMA 34 feeds ONLY the swing line (`State.Swing.Line`), so a short 4h EMA
+blocks SWING4H entries only (counter `seed_missing_4h_ema_warmup`); the
+intraday setups (ISB, PHL/PLH, box, level touches) read the 1m EMA 34 and the
+1H level set and keep trading. Every other missing source blocks ALL entries
+(counter `seed_missing_source`). Cancels always pass.
 
 The missing-source strings are exactly these (from `mentor.SeedMissing`):
 - `bar history depth: 4h EMA34 warm-up (n/102 4h candles)` — not enough 4h
@@ -83,10 +90,23 @@ The missing-source strings are exactly these (from `mentor.SeedMissing`):
 - `bar history depth: today's session` — no 1m bar of the current CT day yet.
 - `bar history depth: closed 15m candle (n)` — no closed 15m candle yet.
 
-While any of these is missing, the evaluator refuses every entry
-(fail-closed, `failClosedFilter` in `kernel/mentor/eval.go`) AND the injector
-refuses at placement naming the short source (`mentorSourcesMissing`,
-`history: <name> (n/min)`). Do not bypass either; wait for the tape.
+While any of these is missing, the evaluator refuses the entries it blocks
+(fail-closed, `scopedFailClosedFilter` in `kernel/mentor/seed.go`, called from
+`Tick`) AND the injector refuses at placement naming the short source
+(`mentorSourcesBlocking`, `history: <name> (n/min)`). Do not bypass either;
+wait for the tape.
+
+No restart is needed: the depth is re-checked after every tick from the
+evaluator's own state (`advanceDepth` in `kernel/mentor/seed.go`,
+`mentorRefreshDepths` in `trader/mentor_tick.go`). Each observed 4h rollover
+adds one closed 4h candle, and when every source meets its floor the trader
+logs ONE line and entries are allowed:
+
+```
+🧑‍🏫 mentor seed: depth met — entries allowed
+```
+
+The floors are never lowered (102 closed 4h candles, 102 closed 1m bars).
 
 ## 4. First-session checks
 

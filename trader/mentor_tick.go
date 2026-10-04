@@ -36,6 +36,10 @@ func mentorPlaceEnv() bool {
 	return false
 }
 
+// MentorPlacementEnabled reports the MENTOR_PLACE placement gate (read-only; the
+// Studio status line reads it — a name and a flag, never a secret).
+func MentorPlacementEnabled() bool { return mentorPlaceEnv() }
+
 // mentorBars1mDepth is the 1m history depth the mentor fetch asks for (P0 A6
 // routing, CTO 1791058624275): the §7 Globex run window (17:00→08:30 CT) is
 // 930 bars and the full RTH day to 15:00 CT is 1320 — 1500 covers both with
@@ -54,11 +58,32 @@ func (at *AutoTrader) mentorTick(ctx *kernel.Context) {
 	if market.FuturesBarsProvider == nil {
 		return
 	}
-	bars := market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth)
+	bars := mentorClosedBars(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth))
 	if len(bars) == 0 {
 		return
 	}
+	// Same once-per-bar watermark as the event pass: Tick is not idempotent
+	// per bar (a repeat tick re-emits intents and double-counts refusals).
+	if bars[len(bars)-1].OpenTime <= at.mentorLastTickOpen {
+		return
+	}
 	at.mentorEvalOnce(bars)
+}
+
+// mentorClosedBars drops the FORMING tail bar. The NT8 cache's newest bar is
+// usually still building (trader/ninjatrader/bars_market_bridge.go
+// barsToKlines). Evaluating it reads a half-built candle as the current one,
+// and the mentorLastTickOpen dedup then skips that bar's FINAL for good, so the
+// bar is never evaluated closed. A bar is closed when NT8 marked it Final OR a
+// newer bar exists (NT8 has started the next one, so this one is complete even
+// if its Final frame was lost). The bot's wall clock is deliberately NOT used:
+// a clock ahead of NT8's, or a Final frame that lags, would let an unfinished
+// bar through and stamp the watermark on it.
+func mentorClosedBars(bars []market.Kline) []market.Kline {
+	if n := len(bars); n > 0 && !bars[n-1].Final {
+		return bars[:n-1]
+	}
+	return bars
 }
 
 // noteLiveBarsForMentorPass is the sink's mentor half: a FINAL 1m/5m frame
@@ -100,7 +125,7 @@ func (at *AutoTrader) mentorEventPassAt(now time.Time) bool {
 	if market.FuturesBarsProvider == nil {
 		return false
 	}
-	bars := market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth)
+	bars := mentorClosedBars(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth))
 	if len(bars) == 0 {
 		return false
 	}
@@ -135,11 +160,18 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}
 	emitMs := time.Now().UnixMilli()
-	intents := at.mentorEval.Tick(bars, last.OpenTime)
+	// The evaluator's clock is the instant the last bar CLOSED: every closedness
+	// test inside Tick then reads the just-closed bar as closed, never as forming
+	// (an OpenTime clock made the ORB escape unreachable and lagged every gate).
+	intents := at.mentorEval.Tick(bars, mentor.BarCloseInstant(last))
+	// The seed depth moves with the bars: re-check after every tick, so a
+	// source that was short at boot (94/102 closed 4h candles) clears on its
+	// own instead of needing a restart.
+	at.mentorRefreshDepths()
 	// S9 (D5.2 p2 @05:21): strong-day detection from the recent CLOSED 5m bars
 	// — 50–80 pt candles cut every tier to 1–2.
 	strongDay := false
-	if bars5 := market.FuturesBarsProvider("MNQ", "5m", 12); len(bars5) > 0 && mentorStrongDayFrom5m(bars5) {
+	if bars5 := mentorClosedBars(market.FuturesBarsProvider("MNQ", "5m", 12)); len(bars5) > 0 && mentorStrongDayFrom5m(bars5) {
 		strongDay = true
 	}
 	for _, in := range intents {
@@ -173,9 +205,9 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
 func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64) {
 	// WIRING PROOF (fail-closed): with any mentor source seam missing, EVERY
 	// entry refuses here — the boot line logs it, this line enforces it.
-	if missing := at.mentorSourcesMissing(); len(missing) > 0 {
+	if missing := at.mentorSourcesBlocking(in.Setup); len(missing) > 0 {
 		mentorCount("mentor_sources_missing")
-		at.logErrorf("🧑‍🏫 mentor sources MISSING [%s] — refusing the entry (fail-closed)", strings.Join(missing, ", "))
+		at.logErrorf("🧑‍🏫 mentor sources MISSING [%s] — refusing the %s entry (fail-closed)", strings.Join(missing, ", "), in.Setup)
 		return
 	}
 	// STOP RULES (owner ruling 00:1x CT, "exactly like he said") — class
@@ -262,7 +294,7 @@ func mentorIntentExpiry(in mentor.Intent, barCloseMs int64) int64 {
 		return in.ExpiryMs
 	}
 	if strings.EqualFold(in.Setup, "SWING4H") {
-		return mentorSwingExpiry(barCloseMs)
+		return mentorSwingExpiry(barCloseMs + 1) // +1: the instant the bar closed, so a 4h-boundary bar reads the NEW 4h candle
 	}
 	return barCloseMs + 60_000 // the close of the NEXT 1m candle
 }
@@ -505,7 +537,8 @@ func (at *AutoTrader) mentorNewsGate() (bool, string) {
 
 // (b) TRADING WINDOW [D1.2 p1 @23:52–24:59]: a fixed window — when it ends, no
 // new entries. Default 08:30–09:30 CT, 60 minutes; knobs for the start and the
-// length (30/60/90/120; 0 disables the window). The SWING setup is exempt
+// length (30/60/90/120; -1 disables the window — a stored 0 is "unset", so it
+// resolves to the default 60). The SWING setup is exempt
 // (D5.2: the swing may be at any hour).
 const (
 	mentorWindowDefaultStart   = "08:30"
@@ -528,9 +561,14 @@ func (at *AutoTrader) mentorWindowKnobs() (start string, minutes int) {
 }
 
 // mentorWindowActive is the pure window check: now inside [start, start+len)
-// CT. A bad start string refuses fail-closed (why carries the refusal).
+// CT, where start is the most recent occurrence of the start time at or before
+// now (today's, or yesterday's when today's is still ahead) — so a window that
+// crosses midnight (23:00 + 120) is active at 00:30. minutes <= 0 disables the
+// window (entries at any hour); the knob stores -1 for that, because a stored 0
+// means "unset → default 60" (mentorWindowKnobs). A bad start string refuses
+// fail-closed (why carries the refusal).
 func mentorWindowActive(start string, minutes int, now time.Time) (active bool, why string) {
-	if minutes == 0 {
+	if minutes <= 0 {
 		return true, "" // the window is disabled
 	}
 	hour, minute, ok := parseMentorWindowStart(start)
@@ -540,6 +578,9 @@ func mentorWindowActive(start string, minutes int, now time.Time) (active bool, 
 	loc := kernel.CTLocation()
 	ct := now.In(loc)
 	open := time.Date(ct.Year(), ct.Month(), ct.Day(), hour, minute, 0, 0, loc)
+	if open.After(now) {
+		open = time.Date(ct.Year(), ct.Month(), ct.Day()-1, hour, minute, 0, 0, loc)
+	}
 	end := open.Add(time.Duration(minutes) * time.Minute)
 	if !now.Before(open) && now.Before(end) {
 		return true, ""
@@ -726,12 +767,48 @@ const (
 	mentorSeedBars1mN = 50000
 )
 
-// mentorSeedDepths is the seeded per-source depth snapshot (nil until the
-// splice runs) — the same numbers SeedLine prints.
-var mentorSeedDepths map[string]int
+// mentorSeedDepths is the per-source depth snapshot (nil until the splice
+// runs): the seeded numbers SeedLine prints, then advanced after every
+// evaluator tick (mentorRefreshDepths) so a source that was short at boot
+// clears without a restart. Guarded by mentorSeedDepthsMu — the seam is read
+// from the placement path while the tick path writes it.
+var (
+	mentorSeedDepths   map[string]int
+	mentorSeedDepthsMu sync.RWMutex
+)
+
+// mentorRefreshDepths advances the depth snapshot from the evaluator's live
+// depth (never lowering a number) and logs the ONE "depth met" line when the
+// evaluator stops refusing entries. A nil snapshot (no splice ran: tests with
+// a stub seam) is left alone.
+func (at *AutoTrader) mentorRefreshDepths() {
+	if at == nil || at.mentorEval == nil {
+		return
+	}
+	if line := at.mentorEval.TakeDepthMet(); line != "" {
+		at.logInfof("🧑‍🏫 %s", line)
+	}
+	live := at.mentorEval.Depths()
+	if live == nil {
+		return
+	}
+	mentorSeedDepthsMu.Lock()
+	defer mentorSeedDepthsMu.Unlock()
+	if mentorSeedDepths == nil {
+		return
+	}
+	for name, d := range live {
+		if d > mentorSeedDepths[name] {
+			mentorSeedDepths[name] = d
+		}
+	}
+}
 
 // storeBarsToKlines converts persisted closed bars to market.Kline (CloseTime
-// = open + tf; every stored row is a CLOSED bar by the persistence contract).
+// = open + tf − 1, the live-bar convention; every stored row is a CLOSED bar
+// by the persistence contract). open + tf would make a seeded candle "close"
+// exactly at the next candle's open, so the 1H body-cross deletion would also
+// test the candle BEFORE a level's own candle.
 func storeBarsToKlines(rows []store.BarHistoryDB, tfMs int64) []market.Kline {
 	out := make([]market.Kline, 0, len(rows))
 	for _, r := range rows {
@@ -742,7 +819,7 @@ func storeBarsToKlines(rows []store.BarHistoryDB, tfMs int64) []market.Kline {
 			Low:       r.L,
 			Close:     r.C,
 			Volume:    r.V,
-			CloseTime: r.OpenTimeMs + tfMs,
+			CloseTime: r.OpenTimeMs + tfMs - 1,
 		})
 	}
 	return out
@@ -774,8 +851,12 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	bars1h := mentorAgg1H(bars1m)
 	missing := mentor.Seed(at.mentorEval, bars1m, now)
 	depths := mentor.SeedDepths(bars1m, bars1h, now)
+	mentorSeedDepthsMu.Lock()
 	mentorSeedDepths = depths
+	mentorSeedDepthsMu.Unlock()
 	mentorSourceDepthSource = func(name string) (int, bool) {
+		mentorSeedDepthsMu.RLock()
+		defer mentorSeedDepthsMu.RUnlock()
 		d, ok := mentorSeedDepths[name]
 		return d, ok
 	}
@@ -783,8 +864,29 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	at.logInfof("%s", mentorSeamBootLine())
 	if len(missing) > 0 {
 		mentorCount("seed_missing")
-		at.logErrorf("🧑‍🏫 mentor seed REFUSING entries — missing: %s", strings.Join(missing, "; "))
+		at.logErrorf("%s", mentorSeedRefusalLine(missing))
 	}
+}
+
+// mentorSeedRefusalLine prints every missing source and which entry kinds it
+// blocks: a short 4h EMA 34 blocks SWING4H entries only (it feeds only the
+// swing line); any other missing source blocks all entries.
+func mentorSeedRefusalLine(missing []string) string {
+	all := false
+	parts := make([]string, 0, len(missing))
+	for _, m := range missing {
+		if strings.HasPrefix(m, "bar history depth: 4h EMA34") {
+			parts = append(parts, m+" [blocks SWING4H entries only]")
+			continue
+		}
+		all = true
+		parts = append(parts, m+" [blocks ALL entries]")
+	}
+	scope := "SWING4H entries only (intraday entries allowed)"
+	if all {
+		scope = "ALL entries"
+	}
+	return fmt.Sprintf("🧑‍🏫 mentor seed REFUSING %s — missing: %s", scope, strings.Join(parts, "; "))
 }
 
 // mentorAgg1H aggregates 1m bars into clock-aligned 1h buckets on epoch
@@ -829,6 +931,19 @@ func mentorAgg1H(bars []market.Kline) []market.Kline {
 // mentor_mode ON a missing source refuses the arm (fail-closed); the boot line
 // reports them in ONE error line.
 func (at *AutoTrader) mentorSourcesMissing() []string {
+	return at.mentorMissingSources(true)
+}
+
+// mentorSourcesBlocking is the set of missing sources that block THIS setup's
+// entry. The 4h EMA 34 feeds only the swing line, so a short 4h EMA blocks
+// SWING4H entries only; every other missing source blocks every entry.
+func (at *AutoTrader) mentorSourcesBlocking(setup string) []string {
+	return at.mentorMissingSources(strings.EqualFold(setup, "SWING4H"))
+}
+
+// mentorMissingSources lists the missing sources; includeSwingOnly adds the
+// ones that block only the swing (the 4h EMA 34 depth).
+func (at *AutoTrader) mentorMissingSources(includeSwingOnly bool) []string {
 	var missing []string
 	for _, n := range mentorSeamMissing() {
 		missing = append(missing, "seam: "+n)
@@ -846,6 +961,9 @@ func (at *AutoTrader) mentorSourcesMissing() []string {
 		missing = append(missing, "5m feed")
 	}
 	for _, req := range mentorDepthRequirements {
+		if req.Name == "4h EMA34" && !includeSwingOnly {
+			continue
+		}
 		min := req.Min
 		// the EMA 34 floors are the warm-up constants (safe default 3×34): the
 		// 4h one is DS-103's stated warm-up via SetMentor4hEMA34Warmup, the 1m
@@ -880,9 +998,13 @@ func MentorSourcesBootLine(loaded map[string]*AutoTrader) string {
 		if at == nil || !at.mentorEnabled() {
 			continue
 		}
-		if missing := at.mentorSourcesMissing(); len(missing) > 0 {
+		if missing := at.mentorSourcesBlocking("ISB"); len(missing) > 0 {
 			logger.Errorf("🧑‍🏫 mentor sources MISSING for trader %s: [%s] — mentor_mode refuses to arm (fail-closed)", id, strings.Join(missing, ", "))
 			lines = append(lines, fmt.Sprintf("🧑‍🏫 mentor sources MISSING for trader %s: [%s] — mentor_mode refuses to arm (fail-closed)", id, strings.Join(missing, ", ")))
+		} else if swingOnly := at.mentorSourcesMissing(); len(swingOnly) > 0 {
+			// only the swing-only source (4h EMA 34) is short: intraday entries
+			// are allowed, SWING4H entries are refused until it warms up.
+			lines = append(lines, fmt.Sprintf("🧑‍🏫 mentor sources wired for trader %s — intraday entries allowed; SWING4H entries refused until: [%s]", id, strings.Join(swingOnly, ", ")))
 		} else {
 			var depths []string
 			for _, req := range mentorDepthRequirements {

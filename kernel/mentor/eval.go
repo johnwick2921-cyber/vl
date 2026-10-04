@@ -48,6 +48,11 @@ type State struct {
 	// ISBBox is the R5 5m-ISB rest box (nil = none standing). Rebuildable by
 	// replaying the closed 5m buckets + 1m escapes.
 	ISBBox *ISBBox `json:"isb_box,omitempty"`
+	// LastISBBoxAt is the 5m ISB candle open of the last box built. After an
+	// escape the same closed pair is still the latest one until the next 5m
+	// candle closes, so without it the escaped box is rebuilt on the very
+	// next tick and flaps on and off (CTO parity ruling 2026-10-04).
+	LastISBBoxAt int64 `json:"last_isb_box_at,omitempty"`
 	// SchoolOneSide / SchoolOneUpgraded — B20 flip tracking: a school-1 entry
 	// was emitted without the 5m trigger agreeing; when the trigger later
 	// flips to that side the evaluator emits ConfluenceUpgrade once.
@@ -129,9 +134,14 @@ type Evaluator struct {
 	State State
 
 	// P0 seeding: seeded/missing set by Seed; seedLine is the one-line report.
-	seeded   bool
-	missing  []string
-	seedLine string
+	seeded  bool
+	missing []string
+	// depth / depth4hBucket / depthMet: the live per-source depth the
+	// fail-closed gate re-checks every Tick (advanceDepth).
+	depth         seedDepth
+	depth4hBucket int64
+	depthMet      string
+	seedLine      string
 }
 
 func New(cfg Config) *Evaluator {
@@ -147,11 +157,20 @@ func New(cfg Config) *Evaluator {
 // Levels computes the full mentor level set from the 1m history: colour-change
 // key levels (§4.3), EMA 34/9 (§8/§11), and the old highs/lows — the bot's own
 // swing levels reused [DS-106 §1: kernel/levels_swing.go SwingPointLevels].
+// swingPointNow is the clock handed to kernel.SwingPointLevels. That function
+// drops a bucket whose CloseTime >= now, and kernel.aggregateBars gives a
+// bucket CloseTime = open+interval (exclusive end, unlike barsTF's -1). With
+// now = the instant the last bar closed (CloseTime+1 of the 1m bar) that bucket
+// would still read as forming for one more bar, so the mentor passes now+1.
+// Mentor-local on purpose: aggregateBars is shared with the live structure
+// engine and must not change.
+func swingPointNow(now int64) int64 { return now + 1 }
+
 func Levels(bars []market.Kline, cfg Config, now int64) []Level {
 	var out []Level
 	out = append(out, KeyLevels(bars, cfg)...)
 	out = append(out, EMALevels(bars, cfg)...)
-	for _, d := range kernel.SwingPointLevels(bars, time.UnixMilli(now)) {
+	for _, d := range kernel.SwingPointLevels(bars, time.UnixMilli(swingPointNow(now))) {
 		switch d.Kind {
 		case kernel.KindSWGH, kernel.KindSWGL:
 			out = append(out, Level{
@@ -454,6 +473,15 @@ func stampLeave(out []Intent, verdict DayVerdict) ([]Intent, []string) {
 	return kept, refusals
 }
 
+// BarCloseInstant is the evaluator clock for a just-closed 1m bar: the instant
+// it closed (CloseTime is the bar's last millisecond, so +1). Every closedness
+// test inside Tick (CloseTime >= now), every time-of-day gate (08:32 ORB, 15:00
+// window end, 4h boundary) and every order expiry reads `now` as THAT instant,
+// so a bar is always evaluated as CLOSED and no gate shifts by a minute.
+// Production (trader mentorEvalOnce) and every replay/harness driver call Tick
+// with this value — never with the bar's OpenTime.
+func BarCloseInstant(last market.Kline) int64 { return last.CloseTime + 1 }
+
 func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// A5 + P0 sizing gap (CTO 20:13:25Z): ONE stamp where intents LEAVE Tick —
 	// the geometry (StopPts/TargetPts), the spent-day flag, and the
@@ -582,8 +610,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.State.ISBBox = nil
 		}
 	} else if cb := closedBuckets(bars, now, e.Cfg); len(cb) >= 2 {
-		if bx, ok := ISBBoxFrom5m(cb[len(cb)-2], cb[len(cb)-1]); ok {
+		// One box per 5m ISB pair: an escaped box is gone for good [D3.4 p2
+		// @ 12:02], so the same pair never builds it again.
+		if bx, ok := ISBBoxFrom5m(cb[len(cb)-2], cb[len(cb)-1]); ok && bx.AtTime != e.State.LastISBBoxAt {
 			e.State.ISBBox = &bx
+			e.State.LastISBBoxAt = bx.AtTime
 		}
 	}
 
@@ -655,6 +686,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 								e.refuse("isb_target_below_floor")
 							} else {
+								// The emitted intent carries the CAPPED target: `capped`
+								// above fed only the floor check, so a spent-day ISB went
+								// out with the full target (CapTargetForDay changes the
+								// target only; Price and Stop are untouched).
+								chosen.Target = capped.Target
 								// ISB size flags for the injector: rule 2 (at an old
 								// high/low → REDUCE SIZE) and rule 3 (in a range → REDUCE
 								// SIZE, "Khi trade isb in-range bắt buộc giảm size" [D4.1 p1
@@ -1016,10 +1052,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.refuse(r)
 	}
 
-	// P0 fail-closed: seeded with a missing source → no ENTRIES, ever (cancels
-	// still flow — an arm left open must be closable).
+	// Seed depth advances from the evaluator's own state as bars arrive, so a
+	// source that was short at boot clears without a restart.
+	if e.seeded {
+		e.advanceDepth(bars, now)
+	}
+	// P0 fail-closed: seeded with a missing source → no ENTRIES until every
+	// source meets its warm-up (cancels still flow — an arm left open must be
+	// closable). A short 4h EMA blocks only SWING4H entries (it feeds only the
+	// swing line); any other missing source blocks all entries.
 	if e.seeded && len(e.missing) > 0 {
-		out, refused = failClosedFilter(out)
+		out, refused = scopedFailClosedFilter(out, e.missing)
 		for _, r := range refused {
 			e.refuse(r)
 		}
@@ -1251,6 +1294,7 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 		e.State.EMA34 += k34 * (b.Close - e.State.EMA34)
 		e.State.EMA9 += k9 * (b.Close - e.State.EMA9)
 		e.State.Seed1mWatermark = b.CloseTime
+		e.depth.oneM++
 	}
 
 	// Extend the 1H RTH key-level walk with the candles that closed since the
@@ -1263,7 +1307,7 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 		return rthHourAnchor(bars[i].OpenTime) > e.State.Seed1HWatermark
 	})
 	for _, c := range keyLevel1HBars(bars[start:]) {
-		if c.OpenTime <= e.State.Seed1HWatermark || c.CloseTime > now {
+		if c.OpenTime <= e.State.Seed1HWatermark || keyLevel1HCandleCloseTime(c.OpenTime) > now {
 			continue
 		}
 		e.State.SeedLevels, e.State.Seed1HLastColour =
@@ -1276,7 +1320,7 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 	out = append(out, e.State.SeedLevels...)
 	out = append(out, Level{Key: string(KindEMA34), Kind: KindEMA34, Price: e.State.EMA34})
 	out = append(out, Level{Key: string(KindEMA9), Kind: KindEMA9, Price: e.State.EMA9})
-	for _, d := range kernel.SwingPointLevels(bars, time.UnixMilli(now)) {
+	for _, d := range kernel.SwingPointLevels(bars, time.UnixMilli(swingPointNow(now))) {
 		switch d.Kind {
 		case kernel.KindSWGH, kernel.KindSWGL:
 			out = append(out, Level{

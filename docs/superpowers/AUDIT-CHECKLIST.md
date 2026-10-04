@@ -7886,3 +7886,138 @@ job on recovery_needed; after the release the CTO acquires for the
 RELEASE-marker commit as usual. Reference:
 internal/updaterworker/steps.go ensureMainTreeLock +
 runner.go finish failure edges + stepReleaseHold.
+
+## CLASS NN (assigned at merge) — a computed guard value used only for a check, never for the emit (pin passed vacuously)
+
+symptom: B9 pins (2026-10-04, DS-106): the ISB spent-day cap was computed
+(`capped := CapTargetForDay(chosen, ...)`) and fed ONLY the 1:1 floor check;
+the intent appended was the uncapped `chosen`, so a spent-day ISB went out with
+its full target. The existing pin (TestISBSpentDayTargetCap) never saw it: its
+fixture's natural target (10.56 pts) sat inside the 15-pt cap, so the assertion
+held with the cap removed — it could never go RED. probe: for every
+`x := guard(in)` ask where `x` goes — if it only feeds a condition and the
+emit reads `in`, the guard is decorative; and for every pin of a CAP / CLAMP /
+FLOOR, check that the fixture's natural value is PAST the limit (a control run
+without the guard must violate the assertion). rule: emit the guarded value
+(`chosen.Target = capped.Target`), pin the VALUE not the count, and keep a
+control that proves the unguarded value is beyond the limit. Reference:
+kernel/mentor/eval.go ISB branch (`chosen.Target = capped.Target`) +
+kernel/mentor/b9_isb_cap_test.go TestB9ISBOnSpentDayEmitsExactlyTheCap.
+
+## CLASS NN (assigned at merge) — a per-bar dedup watermark set on a FORMING bar skips that bar's close for good
+
+symptom: CTO parity review (2026-10-04): the mentor evaluator was handed the
+NT8 cache tail, whose newest 1m bar is usually still FORMING
+(bars_market_bridge.go barsToKlines). The 2-minute scan fallback evaluated
+that forming bar as the "current" candle and stamped `mentorLastTickOpen` with
+its open. When its FINAL frame arrived, the event pass saw the same OpenTime
+and skipped it. That bar was decided on a half-built candle and never
+evaluated closed. Mentor mode was OFF, so there was no live effect. probe: for
+every "evaluate once per bar" guard, ask which bar the watermark is stamped
+from. If the input can end in a forming bar, the watermark must be stamped
+from the last CLOSED bar (Final, or scheduled close passed); otherwise the
+guard turns one early look into a permanent skip. rule: trim trailing forming
+bars BEFORE the dedup check, on every path that feeds the evaluator.
+Reference: trader/mentor_tick.go mentorClosedBars (both mentorTick and
+mentorEventPassAt); pin TestMentorEvaluatesClosedBarsOnly.
+
+## CLASS NN (assigned at merge) — an input-shape sniff that reads the first elements, not the series
+
+symptom: DS-106 (2026-10-04): `keyLevel1HBars` decided "this input is
+pre-bucketed 1H candles" from the gap between the FIRST TWO bars. The MNQ
+12-26 seed window begins with two sparse `historical_import` snapshots (09-07
+12:00, 09-08 16:00), so on 17 days every 1m bar in 08:00–14:59 became a "1H
+candle" (1171 candles from 1172 bars in the pin) and the level walk drew
+garbage. probe: grep every `[0]`/`[1]` read that classifies a whole slice
+(sampling interval, units, ordering, "is this already aggregated") and ask what
+the real source puts at its head — imports, snapshots and gap-fills live at the
+ends. rule: classify over the whole series (majority of gaps, one pass, no
+allocation on a per-tick path), and pin with the production-shaped window that
+STARTS with the odd elements, plus a control that the legitimate shape (here
+pre-bucketed 1H fixtures) still works. Reference:
+kernel/mentor/key_levels.go isPreBucketed1H +
+kernel/mentor/key_levels_sparse_head_test.go.
+
+## CLASS NN (assigned at merge) — the evaluator's clock label is not the instant the bar closed
+
+symptom: the mentor evaluator was ticked with `Tick(bars, last.OpenTime)` while
+every closedness test inside it is written `CloseTime >= now` / `CloseTime > now`
+with CloseTime = the bar's LAST millisecond (open+59_999). Under an OpenTime
+clock `cur.CloseTime > now` is always true, so the ORB escape (orb.go) never
+latched and the ORB gate (default ON) refused every entry; the other gates each
+slipped by one bar (closed 5m/15m buckets, the B6 15:00 window-end cancel, the
+4h swing flip, the incremental 1m EMA, the 1H key-level extension, pending-order
+expiry, and a swing order decided on a 4h-boundary bar was born expired). Found
+in the CTO clock audit (2026-10-04, DS-107) while chasing a parity diff that
+looked like a dump difference. probe: list every comparison against `now` in the
+evaluator, evaluate each under the clock production really passes AND under
+CloseTime+1, and drive the PRODUCTION call (not a hand-built `now`) — most unit
+tests used CloseTime+1 or an invented clock, which is why the bug was invisible.
+rule: a bar is evaluated at the instant it closed (`mentor.BarCloseInstant`:
+CloseTime+1); the same instant feeds the trader gates in a harness. Mixed
+conventions on the same value are a bug: kernel.aggregateBars gives CloseTime =
+open+interval (exclusive) while barsTF gives open+interval-1, so the mentor
+hands SwingPointLevels now+1 rather than editing the shared aggregator. A
+closedness test on an aggregated candle uses its SCHEDULED close, never the
+CloseTime of its last member bar. Reference: kernel/mentor/eval.go
+BarCloseInstant/swingPointNow, key_levels.go keyLevel1HCandleCloseTime +
+levelDeletedBy1HBody, trader/mentor_tick.go mentorEvalOnce; pins in
+kernel/mentor/clock_close_instant_test.go and trader/mentor_clock_test.go.
+
+## CLASS NN (assigned at merge) — an exit signal fired before the state its restart will read is persisted
+
+symptom: the 2026-10-04 Update-button install (job de4cf900) ended
+recovery_needed: "worker_swapped ran 3 times without finishing". The worker
+swapped its own binary and CLOSED the exit channel inside the step; serve()
+returned before the swap receipt and the worker_swapped -> complete transition
+were written. Each restarted worker found worker_swapped/started, took the
+"already swapped" branch, signalled the exit AGAIN and exited again before
+persisting, until the attempts cap fired; the hold and the main-tree lock were
+never released. probe: for every exit / restart / hand-off signal in a durable
+state machine, ask whether the process can leave before the write the next
+process will read; and for every idempotent "already done" branch ask whether
+it re-emits the side effect (the exit) its first run emitted. rule: signal AFTER
+the job is finished (receipt, terminal transition and cleanup persisted); the
+already-done branch emits nothing; pin it on the REAL job history with a crash
+seam at the effect boundary and N restarts, and keep a mutant per branch.
+Reference: internal/updaterworker/worker_self_update.go (swapPending),
+runner.go finished(); pins worker_swap_restart_test.go.
+
+## CLASS NN (assigned at merge) — a "measured, never inferred" gate with no measurement in the never-observed state
+
+symptom: the nt8_absent (closed-NT8) install path required the AddOn link to
+have been down 60 s, measured from the closing connection's disconnect stamp. A
+bot that booted with NT8 already closed has no connection record, so no stamp:
+the path was never eligible and preflight fell to the connected-world legs, which
+refused "api_positions … NT8 account positions unknown" until the owner opened
+NT8 (job de4cf900, 07:27). The documented owner flow ("close NT8 first") was
+unreachable after any bot or WSL restart with NT8 off. probe: for every gate that
+measures a duration or state from an event, enumerate the states in which no
+event has ever been observed (fresh process, first boot) and ask whether
+"nothing observed since I started watching" is itself a measurement. rule: seed
+the measurement with the start of observation (the moment the listener came up),
+keep a measured event stamp authoritative over the seed, fail closed for shapes
+that cannot be measured at all, and pin the three shapes (never-connected after
+the window, inside the window, connected-then-lost) at the production call site
+with the real leg that failed. Reference: provider/ninjatrader/maintenance_wire.go
+LinkDownSince; trader/installation_gate.go; pins
+installation_gate_nt8absent_never_connected_test.go.
+
+## CLASS NN (assigned at merge) — a fail-closed readiness gate computed once at boot and never re-evaluated
+
+symptom: DS-106 (2026-10-04): the mentor evaluator's `e.missing` was set ONCE in
+`Seed`, and the trader's per-source depth snapshot behind
+`mentorSourcesMissing` froze at the same moment. The live MNQ store had 94 of
+the 102 closed 4h candles at boot, so every entry stayed refused until a
+restart, even after the 102nd candle had closed. probe: for every
+"refuse while X is short" gate, find where X is measured and ask whether
+anything re-measures it as the world moves — a gate that can only open at boot
+is a restart requirement, and a warm-up that needs a restart is invisible until
+the owner is waiting on it. rule: advance the depth from the owner's own state
+each tick (never lower a floor), clear the gate when every source meets its
+floor, log ONE line on the flip, and pin the whole sequence at the production
+call site (seed short → tick → entries allowed) with mutants for "never
+re-check" and for each frozen copy (the kernel flag AND the trader snapshot).
+Reference: kernel/mentor/seed.go advanceDepth + trader/mentor_tick.go
+mentorRefreshDepths + kernel/mentor/seed_recheck_test.go +
+trader/mentor_seed_recheck_test.go.
