@@ -755,7 +755,10 @@ const (
 var mentorSeedDepths map[string]int
 
 // storeBarsToKlines converts persisted closed bars to market.Kline (CloseTime
-// = open + tf; every stored row is a CLOSED bar by the persistence contract).
+// = open + tf − 1, the live-bar convention; every stored row is a CLOSED bar
+// by the persistence contract). open + tf would make a seeded candle "close"
+// exactly at the next candle's open, so the 1H body-cross deletion would also
+// test the candle BEFORE a level's own candle.
 func storeBarsToKlines(rows []store.BarHistoryDB, tfMs int64) []market.Kline {
 	out := make([]market.Kline, 0, len(rows))
 	for _, r := range rows {
@@ -766,7 +769,7 @@ func storeBarsToKlines(rows []store.BarHistoryDB, tfMs int64) []market.Kline {
 			Low:       r.L,
 			Close:     r.C,
 			Volume:    r.V,
-			CloseTime: r.OpenTimeMs + tfMs,
+			CloseTime: r.OpenTimeMs + tfMs - 1,
 		})
 	}
 	return out
