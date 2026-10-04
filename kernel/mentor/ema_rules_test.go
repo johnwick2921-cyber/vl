@@ -68,6 +68,7 @@ func TestEMAVisitReclassifies(t *testing.T) {
 // before the expiry → NOT blocked; (c) filled, then target first → NOT blocked.
 func TestEmaLossTick(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.LossDeparturePts = 20 // B22 (CTO 20:29:07Z): the knob default is OFF — E2's numeric departure is pinned here explicitly
 	e := New(cfg)
 
 	armLong := func(entry, stop, target, expiry float64) {
