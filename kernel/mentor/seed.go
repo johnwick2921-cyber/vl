@@ -29,49 +29,75 @@ const (
 	Closed15mMin = 1
 )
 
-// SeedMissing checks the per-source history depth at boot. Every short source
-// is named (the same strings the injector's mentorSourcesMissing expects).
-func SeedMissing(bars1m []market.Kline, now int64) []string {
+// seedDepth is one evaluator's per-source history depth: measured from the
+// stored bars at Seed, then advanced by the evaluator's own state as bars
+// arrive (advanceDepth), so the fail-closed gate can clear without a restart.
+type seedDepth struct {
+	fourH int // closed 4h candles (17:00 CT anchor)
+	oneM  int // closed 1m bars
+	oneH  int // 1H RTH level-set candles
+	today int // 1 once a bar of the current session exists
+	m15   int // closed 15m candles
+}
+
+// seedDepthOf measures every source's depth from the stored 1m bars.
+func seedDepthOf(bars1m []market.Kline, now int64) seedDepth {
 	// P1 (CTO 12:44:08Z / 12:47:11Z): ONE bar source — every higher timeframe
 	// is AGGREGATED FROM 1m; the store's native 1h is never read. The LEVEL
 	// walk uses the RTH-filtered 1h aggregation; the 4h EMA uses the ALL-HOURS
 	// 1h aggregation (keyLevel1HBars drops non-RTH candles, which would gut the
 	// Globex 4h buckets).
-	bars1hRTH := keyLevel1HBars(bars1m)
-	bars1hAll := barsTF(bars1m, 60)
-	var missing []string
-	// 4h EMA 34: 4h buckets from the 1h history, 17:00 CT anchor, closed only.
-	// The gate reads the WARM-UP (102), not the bare minimum (34).
-	if n := len(fourHClosedBuckets(bars1hAll, now)); n < FourHEMA34Warmup {
-		missing = append(missing, fmt.Sprintf("bar history depth: 4h EMA34 warm-up (%d/%d 4h candles)", n, FourHEMA34Warmup))
-	}
-	// 1m EMA 34.
-	if n := closedCount(bars1m, now); n < OneMEMA34Warmup {
-		missing = append(missing, fmt.Sprintf("bar history depth: 1m EMA34 warm-up (%d/%d 1m bars)", n, OneMEMA34Warmup))
-	}
-	// 1H RTH level set.
-	if n := len(bars1hRTH); n < OneHRTHLevelsMin {
-		missing = append(missing, fmt.Sprintf("bar history depth: 1H RTH level history (%d candles)", n))
+	d := seedDepth{
+		fourH: len(fourHClosedBuckets(barsTF(bars1m, 60), now)),
+		oneM:  closedCount(bars1m, now),
+		oneH:  len(keyLevel1HBars(bars1m)),
+		m15:   len(closedBucketsTF(bars1m, 15, now)),
 	}
 	// Today's session: at least one 1m bar whose trading-day key (17:00 CT
 	// flip, EPOCH RULING: real UTC ms through America/Chicago) matches the
 	// current session's key — covers both the overnight and the RTH half.
 	key := sessionKeyCT(now)
-	haveToday := false
 	for _, b := range bars1m {
 		if sessionKeyCT(b.OpenTime) == key {
-			haveToday = true
+			d.today = 1
 			break
 		}
 	}
-	if !haveToday {
+	return d
+}
+
+// missingFromDepth names every source below its warm-up. The floors are the
+// constants above and are never lowered; the strings are the ones the
+// injector's mentorSourcesMissing expects.
+func missingFromDepth(d seedDepth) []string {
+	var missing []string
+	// 4h EMA 34: 4h buckets from the 1h history, 17:00 CT anchor, closed only.
+	// The gate reads the WARM-UP (102), not the bare minimum (34).
+	if d.fourH < FourHEMA34Warmup {
+		missing = append(missing, fmt.Sprintf("bar history depth: 4h EMA34 warm-up (%d/%d 4h candles)", d.fourH, FourHEMA34Warmup))
+	}
+	// 1m EMA 34.
+	if d.oneM < OneMEMA34Warmup {
+		missing = append(missing, fmt.Sprintf("bar history depth: 1m EMA34 warm-up (%d/%d 1m bars)", d.oneM, OneMEMA34Warmup))
+	}
+	// 1H RTH level set.
+	if d.oneH < OneHRTHLevelsMin {
+		missing = append(missing, fmt.Sprintf("bar history depth: 1H RTH level history (%d candles)", d.oneH))
+	}
+	if d.today == 0 {
 		missing = append(missing, "bar history depth: today's session")
 	}
 	// Closed 15m candle.
-	if n := len(closedBucketsTF(bars1m, 15, now)); n < Closed15mMin {
-		missing = append(missing, fmt.Sprintf("bar history depth: closed 15m candle (%d)", n))
+	if d.m15 < Closed15mMin {
+		missing = append(missing, fmt.Sprintf("bar history depth: closed 15m candle (%d)", d.m15))
 	}
 	return missing
+}
+
+// SeedMissing checks the per-source history depth at boot. Every short source
+// is named (the same strings the injector's mentorSourcesMissing expects).
+func SeedMissing(bars1m []market.Kline, now int64) []string {
+	return missingFromDepth(seedDepthOf(bars1m, now))
 }
 
 // sessionKeyCT returns the trading-day key (17:00 CT flip, EPOCH RULING:
@@ -118,7 +144,10 @@ func Seed(e *Evaluator, bars1m []market.Kline, now int64) []string {
 	// The level walk is RTH-filtered; the 4h EMA uses the all-hours aggregation.
 	bars1h := keyLevel1HBars(bars1m)
 	e.seeded = true
-	e.missing = SeedMissing(bars1m, now)
+	e.depth = seedDepthOf(bars1m, now)
+	e.depth4hBucket = fourHBucketStart(now, ctime())
+	e.missing = missingFromDepth(e.depth)
+	e.depthMet = ""
 
 	// 1H RTH key levels from the FULL stored history (F7, no cap).
 	candles1h := bars1h
@@ -177,6 +206,70 @@ func SeedLine(s State, bars1m []market.Kline, now int64) string {
 	parts = append(parts, fmt.Sprintf("1H RTH levels %d candles", len(keyLevel1HBars(bars1m))))
 	parts = append(parts, fmt.Sprintf("levels %d", len(s.SeedLevels)))
 	return strings.Join(parts, " ")
+}
+
+// depthMetLine is the ONE line logged when the seeded depth floors are met
+// after boot (the evaluator stops refusing entries).
+const depthMetLine = "mentor seed: depth met — entries allowed"
+
+// advanceDepth moves every source's depth forward from the evaluator's own
+// state as bars arrive, and clears e.missing once every source meets its
+// warm-up. Called every Tick on a seeded evaluator (O(1) in the steady state).
+// The floors are never lowered; a source only ever gains depth.
+func (e *Evaluator) advanceDepth(bars []market.Kline, now int64) {
+	// 4h: each observed 4h-bucket rollover closes one more 4h candle
+	// (fourHClosedBuckets counts the buckets before the current one).
+	if bs := fourHBucketStart(now, ctime()); bs > e.depth4hBucket {
+		if e.depth4hBucket != 0 {
+			e.depth.fourH++
+		}
+		e.depth4hBucket = bs
+	}
+	// 1H RTH level set: Seed1HBars grows as 1H candles close.
+	if n := len(e.State.Seed1HBars); n > e.depth.oneH {
+		e.depth.oneH = n
+	}
+	// today's session / closed 15m only need to be observed once.
+	if e.depth.today == 0 && len(bars) > 0 && sessionKeyCT(bars[len(bars)-1].OpenTime) == sessionKeyCT(now) {
+		e.depth.today = 1
+	}
+	if e.depth.m15 < Closed15mMin {
+		if n := len(closedBucketsTF(bars, 15, now)); n > e.depth.m15 {
+			e.depth.m15 = n
+		}
+	}
+	// 1m: counted where the EMA consumes the bars (seededLevels).
+	if len(e.missing) > 0 {
+		if m := missingFromDepth(e.depth); len(m) == 0 {
+			e.missing = nil
+			e.depthMet = depthMetLine
+		} else {
+			e.missing = m
+		}
+	}
+}
+
+// Depths reports the live per-source depth under the names of SeedDepths /
+// the injector's mentorDepthRequirements; nil when the evaluator is unseeded.
+func (e *Evaluator) Depths() map[string]int {
+	if !e.seeded {
+		return nil
+	}
+	return map[string]int{
+		"4h EMA34":      e.depth.fourH,
+		"1m EMA34":      e.depth.oneM,
+		"1h level set":  e.depth.oneH,
+		"today session": e.depth.today,
+		"closed 15m":    e.depth.m15,
+	}
+}
+
+// TakeDepthMet returns the one-shot "depth met" line the first time the
+// seeded floors are met after boot, then "" — the caller logs it once.
+func (e *Evaluator) TakeDepthMet() string {
+	l := e.depthMet
+	e.depthMet = ""
+	return l
 }
 
 // SourcesMissing reports the seeded-but-missing sources (nil when unseeded or

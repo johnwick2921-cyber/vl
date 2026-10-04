@@ -136,6 +136,10 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
 	}
 	emitMs := time.Now().UnixMilli()
 	intents := at.mentorEval.Tick(bars, last.OpenTime)
+	// The seed depth moves with the bars: re-check after every tick, so a
+	// source that was short at boot (94/102 closed 4h candles) clears on its
+	// own instead of needing a restart.
+	at.mentorRefreshDepths()
 	// S9 (D5.2 p2 @05:21): strong-day detection from the recent CLOSED 5m bars
 	// — 50–80 pt candles cut every tier to 1–2.
 	strongDay := false
@@ -726,9 +730,42 @@ const (
 	mentorSeedBars1mN = 50000
 )
 
-// mentorSeedDepths is the seeded per-source depth snapshot (nil until the
-// splice runs) — the same numbers SeedLine prints.
-var mentorSeedDepths map[string]int
+// mentorSeedDepths is the per-source depth snapshot (nil until the splice
+// runs): the seeded numbers SeedLine prints, then advanced after every
+// evaluator tick (mentorRefreshDepths) so a source that was short at boot
+// clears without a restart. Guarded by mentorSeedDepthsMu — the seam is read
+// from the placement path while the tick path writes it.
+var (
+	mentorSeedDepths   map[string]int
+	mentorSeedDepthsMu sync.RWMutex
+)
+
+// mentorRefreshDepths advances the depth snapshot from the evaluator's live
+// depth (never lowering a number) and logs the ONE "depth met" line when the
+// evaluator stops refusing entries. A nil snapshot (no splice ran: tests with
+// a stub seam) is left alone.
+func (at *AutoTrader) mentorRefreshDepths() {
+	if at == nil || at.mentorEval == nil {
+		return
+	}
+	if line := at.mentorEval.TakeDepthMet(); line != "" {
+		at.logInfof("🧑‍🏫 %s", line)
+	}
+	live := at.mentorEval.Depths()
+	if live == nil {
+		return
+	}
+	mentorSeedDepthsMu.Lock()
+	defer mentorSeedDepthsMu.Unlock()
+	if mentorSeedDepths == nil {
+		return
+	}
+	for name, d := range live {
+		if d > mentorSeedDepths[name] {
+			mentorSeedDepths[name] = d
+		}
+	}
+}
 
 // storeBarsToKlines converts persisted closed bars to market.Kline (CloseTime
 // = open + tf; every stored row is a CLOSED bar by the persistence contract).
@@ -774,8 +811,12 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	bars1h := mentorAgg1H(bars1m)
 	missing := mentor.Seed(at.mentorEval, bars1m, now)
 	depths := mentor.SeedDepths(bars1m, bars1h, now)
+	mentorSeedDepthsMu.Lock()
 	mentorSeedDepths = depths
+	mentorSeedDepthsMu.Unlock()
 	mentorSourceDepthSource = func(name string) (int, bool) {
+		mentorSeedDepthsMu.RLock()
+		defer mentorSeedDepthsMu.RUnlock()
 		d, ok := mentorSeedDepths[name]
 		return d, ok
 	}

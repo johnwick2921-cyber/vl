@@ -129,9 +129,14 @@ type Evaluator struct {
 	State State
 
 	// P0 seeding: seeded/missing set by Seed; seedLine is the one-line report.
-	seeded   bool
-	missing  []string
-	seedLine string
+	seeded  bool
+	missing []string
+	// depth / depth4hBucket / depthMet: the live per-source depth the
+	// fail-closed gate re-checks every Tick (advanceDepth).
+	depth         seedDepth
+	depth4hBucket int64
+	depthMet      string
+	seedLine      string
 }
 
 func New(cfg Config) *Evaluator {
@@ -1016,8 +1021,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.refuse(r)
 	}
 
-	// P0 fail-closed: seeded with a missing source → no ENTRIES, ever (cancels
-	// still flow — an arm left open must be closable).
+	// Seed depth advances from the evaluator's own state as bars arrive, so a
+	// source that was short at boot clears without a restart.
+	if e.seeded {
+		e.advanceDepth(bars, now)
+	}
+	// P0 fail-closed: seeded with a missing source → no ENTRIES until every
+	// source meets its warm-up (cancels still flow — an arm left open must be
+	// closable).
 	if e.seeded && len(e.missing) > 0 {
 		out, refused = failClosedFilter(out)
 		for _, r := range refused {
@@ -1251,6 +1262,7 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 		e.State.EMA34 += k34 * (b.Close - e.State.EMA34)
 		e.State.EMA9 += k9 * (b.Close - e.State.EMA9)
 		e.State.Seed1mWatermark = b.CloseTime
+		e.depth.oneM++
 	}
 
 	// Extend the 1H RTH key-level walk with the candles that closed since the

@@ -88,6 +88,18 @@ While any of these is missing, the evaluator refuses every entry
 refuses at placement naming the short source (`mentorSourcesMissing`,
 `history: <name> (n/min)`). Do not bypass either; wait for the tape.
 
+No restart is needed: the depth is re-checked after every tick from the
+evaluator's own state (`advanceDepth` in `kernel/mentor/seed.go`,
+`mentorRefreshDepths` in `trader/mentor_tick.go`). Each observed 4h rollover
+adds one closed 4h candle, and when every source meets its floor the trader
+logs ONE line and entries are allowed:
+
+```
+🧑‍🏫 mentor seed: depth met — entries allowed
+```
+
+The floors are never lowered (102 closed 4h candles, 102 closed 1m bars).
+
 ## 4. First-session checks
 
 With `MENTOR_PLACE=1` and the seed line complete, verify these in order:
