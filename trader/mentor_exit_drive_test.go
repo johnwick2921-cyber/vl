@@ -7,6 +7,7 @@ import (
 
 	"vl/kernel/mentor"
 	"vl/market"
+	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 	nttrader "vl/trader/ninjatrader"
 )
@@ -16,6 +17,8 @@ import (
 // The pure rules (mentorRR11Stop / mentorLegStopB) are pinned directly; the
 // loop (mentorExitDrivePos / mentorExitDrive) is pinned at the per-leg signal
 // move seam so "which signal moved to which stop" is asserted, not inferred.
+// dev's entry is ONE row → ONE position, so the live position is a SINGLE leg
+// (Legs[0] = the whole position, Final = the runner).
 
 type driveMove struct {
 	signalID string
@@ -48,7 +51,9 @@ func newDriveAT(t *testing.T) (*AutoTrader, func() []driveMove) {
 	return at, func() []driveMove { mu.Lock(); defer mu.Unlock(); return append([]driveMove(nil), moves...) }
 }
 
-func bPos(mode, side string, entry, stop, target, leg1TP float64, leg1Qty, runnerQty int) *mentorLivePos {
+// bPos builds a SINGLE-leg live position: Legs[0] = the whole position (the
+// runner, Final=true), Legs[1] empty — dev's one-row entry.
+func bPos(mode, side string, entry, stop, target float64, qty int) *mentorLivePos {
 	return &mentorLivePos{
 		Pos: mentorPosition{
 			Symbol:  "MNQ",
@@ -59,14 +64,14 @@ func bPos(mode, side string, entry, stop, target, leg1TP float64, leg1Qty, runne
 			Target:  target,
 			R:       2,
 			Mode:    mode,
-			Leg1:    leg1Qty,
-			Leg2:    runnerQty,
-			Leg1TP:  leg1TP,
+			Leg1:    qty,
+			Leg2:    0,
+			Leg1TP:  target,
 			ArmedBE: mode == "A-resonance",
 		},
 		Legs: [2]mentorLeg{
-			{SignalID: "leg1", Qty: leg1Qty, TP: leg1TP, Stop: stop},
-			{SignalID: "runner", Qty: runnerQty, TP: 0, Stop: stop},
+			{SignalID: "entry", Qty: qty, TP: target, Stop: stop, Final: true},
+			{},
 		},
 	}
 }
@@ -108,54 +113,72 @@ func TestMentorRR11Stop(t *testing.T) {
 
 // The runner takes the TIGHTER of the 1:1 rule and the candle trail.
 func TestMentorLegStopB_RunnerTrailTighter(t *testing.T) {
-	// long: 1:1 = 2·18−20 = 16; trail = low 15 → tighter is 16.
 	if got := mentorLegStopB("long", 10, 18, 20, 15, true); got != 16 {
 		t.Fatalf("long 1:1+trail → %v, want 16", got)
 	}
-	// long: trail low 17.5 beats 1:1 16 → 17.5 (tighter).
 	if got := mentorLegStopB("long", 10, 18, 20, 17.5, true); got != 17.5 {
 		t.Fatalf("long trail tighter → %v, want 17.5", got)
 	}
-	// short: 1:1 = 2·12−10 = 14; trail = high 15 → tighter is 14.
 	if got := mentorLegStopB("short", 20, 12, 10, 15, true); got != 14 {
 		t.Fatalf("short 1:1+trail → %v, want 14", got)
 	}
-	// no trail: the runner's trail is never applied when applyTrail is false.
 	if got := mentorLegStopB("long", 10, 18, 20, 17.5, false); got != 16 {
 		t.Fatalf("long no-trail → %v, want 16", got)
 	}
 }
 
-// B BE: both legs' stops move to entry once price covers half the distance to
-// the trade target.
-func TestMentorExitDrivePosB_ArmsBEOnBothLegs(t *testing.T) {
+// B BE on the single leg: the stop moves to entry once price covers half the
+// distance to the trade target.
+func TestMentorExitDrivePosB_ArmsBE(t *testing.T) {
 	at, moves := newDriveAT(t)
-	p := bPos("B", "long", 10, 9, 13, 12, 2, 3) // half = (13−10)/2 = 1.5 → BE at 11.5
-	// close 11.0 keeps the 1:1 rule at/below entry (2·11−12 = 10, 2·11−13 = 9),
-	// so the candle arms BE only — the 1:1 tightening is pinned on later candles.
-	at.mentorExitDrivePos(nil, p, 11.0, 11.8, 10.8)
-	assertMoves(t, moves(), driveMove{"leg1", "long", 10}, driveMove{"runner", "long", 10})
-	if !p.Pos.ArmedBE || p.Pos.Scaled {
-		t.Fatalf("ArmedBE=%v Scaled=%v, want true/false", p.Pos.ArmedBE, p.Pos.Scaled)
+	p := bPos("B", "long", 10, 9, 13, 5)            // half = (13−10)/2 = 1.5 → BE at 11.5
+	at.mentorExitDrivePos(nil, p, 11.0, 11.8, 10.8) // high 11.8 arms it
+	assertMoves(t, moves(), driveMove{"entry", "long", 10})
+	if !p.Pos.ArmedBE {
+		t.Fatalf("ArmedBE = false, want true")
 	}
 }
 
-// The runner trails each closed candle AFTER leg 1's TP — on the next candle.
-func TestMentorExitDrivePosB_RunnerTrailsAfterLeg1TP(t *testing.T) {
+// The single leg trails every closed candle AFTER BE: the TIGHTER of the live
+// 1:1 and the candle extreme.
+func TestMentorExitDrivePosB_SingleLegTrails(t *testing.T) {
 	at, moves := newDriveAT(t)
-	p := bPos("B", "long", 10, 10, 16, 12, 2, 3)
+	p := bPos("B", "long", 10, 10, 16, 5)
 	p.Pos.ArmedBE = true
-	p.Pos.Scaled = true
-	p.Legs[0].Final = true // leg 1 already exited at its native TP
 	// 1:1 = 2·14−16 = 12; trail = low 13.5 → 13.5.
 	at.mentorExitDrivePos(nil, p, 14, 14.5, 13.5)
-	assertMoves(t, moves(), driveMove{"runner", "long", 13.5})
+	assertMoves(t, moves(), driveMove{"entry", "long", 13.5})
+}
+
+// e2e pin (CTO 2026-10-04): ONE filled row registers the single-leg live
+// position, and the next closed candle at half the distance to the trade target
+// arms BE. The wiring is the point: fill callback → registerMentorLivePos →
+// mentorLivePositions → exit-drive loop.
+func TestMentorExitDriveE2E_SingleRowFillRegistersAndDrives(t *testing.T) {
+	at, moves := newDriveAT(t)
+	at.mentorExitModes = map[string]string{"long": "B"}
+	row := store.ArmedOrderDB{ID: 1, SignalID: "sig-1", Side: "long", StopPx: 9, TargetPx: 13, FillQuantity: 5, Condition: "PHL"}
+	u := ntwire.OrderUpdatePayload{State: "filled", SignalID: "sig-1", Account: "Sim101", FillPrice: 10, Quantity: 5}
+	at.registerMentorLivePos(row, u)
+
+	lp, ok := at.mentorLivePos["sig-1"]
+	if !ok || lp == nil {
+		t.Fatalf("live position not registered under the entry signal id")
+	}
+	if lp.Legs[0].Qty != 5 || !lp.Legs[0].Final || lp.Legs[1].SignalID != "" {
+		t.Fatalf("single leg = whole position (Final runner, Legs[1] empty): %+v", lp.Legs)
+	}
+	at.mentorExitDrivePos(nil, lp, 11.0, 11.8, 10.8)
+	assertMoves(t, moves(), driveMove{"sig-1", "long", 10})
+	if !lp.Pos.ArmedBE {
+		t.Fatalf("ArmedBE = false, want true")
+	}
 }
 
 // Mode C (confluence): the stop NEVER moves [D4.2 p1 @14:57].
 func TestMentorExitDrivePosC_NeverMoves(t *testing.T) {
 	at, moves := newDriveAT(t)
-	p := bPos("C", "long", 10, 9, 16, 12, 2, 3)
+	p := bPos("C", "long", 10, 9, 16, 5)
 	at.mentorExitDrivePos(nil, p, 15, 16, 14)
 	assertMoves(t, moves())
 }
@@ -163,7 +186,7 @@ func TestMentorExitDrivePosC_NeverMoves(t *testing.T) {
 // Mode A (resonance): no trail, no 1:1 tightening [D2.4 p1].
 func TestMentorExitDrivePosA_NoMoves(t *testing.T) {
 	at, moves := newDriveAT(t)
-	p := bPos("A-resonance", "long", 10, 10, 16, 12, 2, 3)
+	p := bPos("A-resonance", "long", 10, 10, 16, 5)
 	p.Pos.ArmedBE = true
 	at.mentorExitDrivePos(nil, p, 15, 16, 14)
 	assertMoves(t, moves())
@@ -172,33 +195,17 @@ func TestMentorExitDrivePosA_NoMoves(t *testing.T) {
 // SWING: no moves — the swing rules own it.
 func TestMentorExitDrivePosSwing_NoMoves(t *testing.T) {
 	at, moves := newDriveAT(t)
-	p := bPos("swing", "long", 10, 9, 0, 0, 2, 3)
+	p := bPos("swing", "long", 10, 9, 0, 5)
 	at.mentorExitDrivePos(nil, p, 15, 16, 14)
 	assertMoves(t, moves())
-}
-
-// Mode D (spent day): the runner ≤ 2 is ASSERTED (counted), never reduced.
-func TestMentorExitDrivePosSpentDay_AssertsRunnerOverCap(t *testing.T) {
-	at, moves := newDriveAT(t)
-	p := bPos("B", "long", 10, 9, 13, 12, 2, 4) // runner 4 > cap 2
-	p.SpentDay = true
-	at.mentorExitDrivePos(nil, p, 11.0, 11.8, 10.8)
-	if c := MentorCountSnapshot()["spent_day_runner_over_cap"]; c != 1 {
-		t.Fatalf("spent_day_runner_over_cap = %d, want 1", c)
-	}
-	if p.Legs[1].Qty != 4 {
-		t.Fatalf("runner qty changed to %d — the loop must never reduce", p.Legs[1].Qty)
-	}
-	// The BE still arms (stops still move; size is never touched).
-	assertMoves(t, moves(), driveMove{"leg1", "long", 10}, driveMove{"runner", "long", 10})
 }
 
 // The loop never acts on a FORMING bar.
 func TestMentorExitDriveRefusesFormingBar(t *testing.T) {
 	at, moves := newDriveAT(t)
-	p := bPos("B", "long", 10, 9, 13, 12, 2, 3)
+	p := bPos("B", "long", 10, 9, 13, 5)
 	p.FillBarOpen = 0
-	at.mentorRegisterLivePos("leg1", p)
+	at.mentorRegisterLivePos("sig-1", p)
 	bars := []market.Kline{
 		{OpenTime: 1, Close: 10, High: 10.5, Low: 9.5, Final: true},
 		{OpenTime: 2, Close: 12, High: 12.5, Low: 11, Final: false}, // forming: would arm BE if driven
@@ -210,26 +217,27 @@ func TestMentorExitDriveRefusesFormingBar(t *testing.T) {
 // The never-widen guard refuses a widening leg move before the wire.
 func TestMentorMoveLegStop_NeverWidens(t *testing.T) {
 	at, moves := newDriveAT(t)
-	err := at.mentorMoveLegStop(nil, "long", &mentorLeg{SignalID: "leg1", Stop: 12}, 10)
+	err := at.mentorMoveLegStop(nil, "long", &mentorLeg{SignalID: "sig-1", Stop: 12}, 10)
 	if err == nil || !strings.Contains(err.Error(), "widen") {
 		t.Fatalf("widen move not refused: %v", err)
 	}
 	assertMoves(t, moves())
 }
 
-// A same-side ISB within 3 candles of a PHL/PLH fill arms mode A: both legs to
-// BE now, and the leg-1 TP modify (out to the runner target) is LOGGED, unwired.
+// A same-side ISB within 3 candles of a PHL/PLH fill arms mode A: the single
+// leg to BE now, and the leg-1 TP modify (out to the runner target) is LOGGED,
+// unwired.
 func TestMentorArmResonanceOnISB(t *testing.T) {
 	at, moves := newDriveAT(t)
-	p := bPos("B", "long", 10, 9, 16, 12, 2, 3)
+	p := bPos("B", "long", 10, 9, 16, 5)
 	p.Pos.Origin = "PHL"
 	p.BarsSinceFill = 1
-	at.mentorRegisterLivePos("leg1", p)
+	at.mentorRegisterLivePos("sig-1", p)
 	at.mentorArmResonanceOnISB("long")
 	if p.Pos.Mode != "A-resonance" || !p.Pos.ArmedBE {
 		t.Fatalf("resonance not armed: mode=%s armed=%v", p.Pos.Mode, p.Pos.ArmedBE)
 	}
-	assertMoves(t, moves(), driveMove{"leg1", "long", 10}, driveMove{"runner", "long", 10})
+	assertMoves(t, moves(), driveMove{"entry", "long", 10})
 	snap := MentorCountSnapshot()
 	if snap["resonance_armed"] != 1 || snap["modify_bracket_resonance_logged"] != 1 {
 		t.Fatalf("resonance counters: armed=%d modify_logged=%d, want 1/1", snap["resonance_armed"], snap["modify_bracket_resonance_logged"])

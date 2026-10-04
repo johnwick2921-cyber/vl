@@ -11,6 +11,7 @@ import (
 	"vl/mcp"
 	_ "vl/mcp/provider"
 	"vl/store"
+	"vl/trader"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -426,6 +427,11 @@ func (s *Server) handleUpdateStrategy(c *gin.Context) {
 					logger.Infof("⚠️ Strategy %s saved but trader reload failed: %v (config persisted; restart to apply)", strategyID, rErr)
 				} else {
 					logger.Infof("✓ Strategy %s saved → reloaded %d running trader(s) to apply the new config immediately: %v", strategyID, len(reloaded), reloaded)
+					// B1 (DS-104): re-print the mentor sources line when a save
+					// arms (or re-arms) a mentor-mode trader — not only at boot.
+					if line := trader.MentorSourcesReloadLine(s.traderManager.GetAllTraders(), reloaded); line != "" {
+						logger.Infof("%s", line)
+					}
 				}
 			}
 		}

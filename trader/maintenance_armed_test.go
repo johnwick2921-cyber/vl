@@ -160,13 +160,13 @@ func TestArmedStopCallerSkipsTheLatchOnAHoldRefusal(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := string(b)
-	i := strings.Index(src, "func (at *AutoTrader) runArmedPlacementAt(")
+	i := strings.Index(src, "func (at *AutoTrader) runArmedPlacementAtFiltered(")
 	j := strings.Index(src[i:], "\n}\n")
 	body := src[i : i+j]
 	call := strings.Index(body, "if at.placeOneStopEntry(")
 	latch := strings.Index(body, "placedThisPass = true\n\t\t\t\tat.cancelOtherArmsInPlan(ledger, rows, r, now)\n\t\t\t\tcontinue")
 	if call < 0 {
-		t.Fatal("runArmedPlacementAt must branch on placeOneStopEntry's hold report (`if at.placeOneStopEntry(`)")
+		t.Fatal("runArmedPlacementAtFiltered must branch on placeOneStopEntry's hold report (`if at.placeOneStopEntry(`)")
 	}
 	if latch < 0 || call > latch {
 		t.Fatalf("the hold branch (%d) must come before the stop path's latch + sibling cancel (%d)", call, latch)

@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"time"
 
 	"vl/kernel"
 	"vl/kernel/mentor"
@@ -343,6 +344,27 @@ func (at *AutoTrader) mentorAdmitRefusal(in admitIntent) string {
 		return ""
 	}
 	return "mentor_mode: AI entries are OFF — every entry comes from the mentor evaluator"
+}
+
+// mentorPastDailyHaltCutoff (B3 N6) is the mentor's one hard last-entry: no new
+// mentor entry after 15:45 CT — the 15-minute lead into the 16:00 CT daily
+// maintenance break (which CMEClosedReason then refuses 16:00–17:00).
+func (at *AutoTrader) mentorPastDailyHaltCutoff(now time.Time) (string, bool) {
+	ct := now.In(kernel.CTLocation())
+	if ct.Hour() == 15 && ct.Minute() >= 45 {
+		return "past 15:45 CT (CME daily halt) — no new mentor entries until the 17:00 reopen", true
+	}
+	return "", false
+}
+
+// isSwingPosition (N4) reports whether an open position is a SWING4H mentor
+// position (identified by its cited arm id "swing-…"), which is EXEMPT from the
+// intraday EOD flat.
+func isSwingPosition(p *store.TraderPosition) bool {
+	if p == nil {
+		return false
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(p.CitedScenarioID)), "swing-")
 }
 
 // mentorRuleGate is the injector-side R8/R9 gate: it refuses intents the

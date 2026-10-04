@@ -129,6 +129,9 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	// candle: the runner's trail begins on the NEXT candle after leg 1's TP
 	// (never on the candle that crosses it).
 	scaledBefore := pos.Scaled
+	// wasArmed is whether BE was ALREADY armed on a PRIOR candle: the candle
+	// that arms BE only arms BE — the 1:1/trail starts on the NEXT candle.
+	wasArmed := pos.ArmedBE
 
 	// leg 1's target: ISB → the fill-candle close (logged-only until Q2 is
 	// proven); otherwise its own resting TP (+1R default when unset).
@@ -186,8 +189,9 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	}
 
 	// ── (3) leg 1's TP crossing → leg 1 exits at its native TP; the runner's
-	// trail begins NEXT candle. Mark it BEFORE the 1:1 loop so leg 1 never
-	// gets a 1:1 move past its own take-profit. ─────────────────────────────
+	// trail begins NEXT candle. Mark Scaled BEFORE the 1:1 loop so leg 1 never
+	// gets a 1:1 move past its own take-profit. (Final does NOT mean "exited" —
+	// canonical semantics: Final marks the RUNNER.) ──────────────────────────
 	if runnerPresent && !pos.Scaled {
 		hit := false
 		if long {
@@ -197,21 +201,25 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		}
 		if hit {
 			pos.Scaled = true
-			p.Legs[0].Final = true // leg 1 exits at its own native TP
 			mentorCount("leg1_at_target")
 		}
 	}
 
 	// ── (4) the 1:1 rule on every closed candle (+ the runner's trail). ────
-	if pos.ArmedBE {
+	// Skipped on the candle that JUST armed BE (wasArmed=false): the course is
+	// "BE at half the distance, THEN live 1:1 on every closed candle".
+	if pos.ArmedBE && wasArmed {
 		for i := range p.Legs {
 			leg := &p.Legs[i]
-			if leg.SignalID == "" || leg.Qty <= 0 || leg.Final {
+			if leg.SignalID == "" || leg.Qty <= 0 {
 				continue
 			}
-			isRunner := i == 1
-			if !runnerPresent && i == 0 {
-				isRunner = true // n=1: the single leg is the whole position
+			// Canonical semantics: Final marks the RUNNER (the leg that holds
+			// to the trade target). Leg 1 (Final=false) is the partial that
+			// exits at its own TP — once Scaled its stop is moot.
+			isRunner := leg.Final
+			if !isRunner && pos.Scaled {
+				continue
 			}
 			target := leg1Target
 			applyTrail := false
@@ -220,7 +228,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 				target = runnerTarget
 				applyTrail = trail
 				if runnerPresent {
-					applyTrail = scaledBefore // wait for leg 1's TP (prior candle)
+					applyTrail = trail && scaledBefore // wait for leg 1's TP (prior candle)
 				}
 				if applyTrail {
 					if long {
