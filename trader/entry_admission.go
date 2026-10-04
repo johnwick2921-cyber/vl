@@ -297,13 +297,21 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 		// T1 + per-session trade cap), refusal only — the arm pass's own caller
 		// keeps its band-time cancel of resting arms.
 		if risk := at.sessionRiskGateAt(now); risk.Refuse {
-			return at.admitRefuse(in, risk.Class, risk.Reason, func() {
-				at.logWarnf("🛑 session risk: %s %s REFUSED — %s", sym, act, risk.Reason)
-				if risk.Class == "consecutive_loss" {
-					at.emitAlert("P0", "halt", "halt:"+kernel.CMESessionDayKey(now),
-						"🛑 Consecutive-loss halt", risk.Reason)
-				}
-			})
+			// B3 (release #3b) Q1 + N5: a MENTOR arm waives ONLY the lunch and
+			// first-N windows. The consecutive-loss breaker, the red-news T1
+			// blackout, the per-session trade cap, the force-flat windows and
+			// outside-session/session-off all still refuse.
+			if in.Path == admitArm && in.MentorArm && mentorWaivesSessionBand(risk) {
+				// lunch / first-N: the mentor has its own window/day rules.
+			} else {
+				return at.admitRefuse(in, risk.Class, risk.Reason, func() {
+					at.logWarnf("🛑 session risk: %s %s REFUSED — %s", sym, act, risk.Reason)
+					if risk.Class == "consecutive_loss" {
+						at.emitAlert("P0", "halt", "halt:"+kernel.CMESessionDayKey(now),
+							"🛑 Consecutive-loss halt", risk.Reason)
+					}
+				})
+			}
 		}
 	}
 
@@ -311,7 +319,16 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 	// time (default 13:00 CT = 14:00 ET). Gated on day_plan → dormant by default.
 	// ALL paths (CTO Q4): an arm placed between the cutoff and the EOD flat is
 	// the class of bug W-EXEC-TRUTH exists for.
-	if reason, blocked := at.entryBlockedByLastEntryAt(now); blocked {
+	// B3 N6: a MENTOR arm is exempt from the per-session last-entry cutoff (its
+	// window is any hour); the only hard cutoff left is the CME daily halt — no
+	// new mentor entries after 15:45 CT (15 min before the 16:00 break).
+	if in.Path == admitArm && in.MentorArm {
+		if reason, blocked := at.mentorPastDailyHaltCutoff(now); blocked {
+			return at.admitRefuse(in, "last_entry", "last_entry_cutoff: "+reason, func() {
+				at.logWarnf("🕒 mentor last-entry cutoff: %s %s REFUSED — %s.", sym, act, reason)
+			})
+		}
+	} else if reason, blocked := at.entryBlockedByLastEntryAt(now); blocked {
 		return at.admitRefuse(in, "last_entry", "last_entry_cutoff: "+reason, func() {
 			at.logWarnf("🕒 last-entry cutoff: %s %s REFUSED — %s. Entries reopen next session.", sym, act, reason)
 		})
