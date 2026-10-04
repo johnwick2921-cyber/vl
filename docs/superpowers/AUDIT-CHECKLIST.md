@@ -7886,3 +7886,20 @@ job on recovery_needed; after the release the CTO acquires for the
 RELEASE-marker commit as usual. Reference:
 internal/updaterworker/steps.go ensureMainTreeLock +
 runner.go finish failure edges + stepReleaseHold.
+
+## CLASS NN (assigned at merge) — a computed guard value used only for a check, never for the emit (pin passed vacuously)
+
+symptom: B9 pins (2026-10-04, DS-106): the ISB spent-day cap was computed
+(`capped := CapTargetForDay(chosen, ...)`) and fed ONLY the 1:1 floor check;
+the intent appended was the uncapped `chosen`, so a spent-day ISB went out with
+its full target. The existing pin (TestISBSpentDayTargetCap) never saw it: its
+fixture's natural target (10.56 pts) sat inside the 15-pt cap, so the assertion
+held with the cap removed — it could never go RED. probe: for every
+`x := guard(in)` ask where `x` goes — if it only feeds a condition and the
+emit reads `in`, the guard is decorative; and for every pin of a CAP / CLAMP /
+FLOOR, check that the fixture's natural value is PAST the limit (a control run
+without the guard must violate the assertion). rule: emit the guarded value
+(`chosen.Target = capped.Target`), pin the VALUE not the count, and keep a
+control that proves the unguarded value is beyond the limit. Reference:
+kernel/mentor/eval.go ISB branch (`chosen.Target = capped.Target`) +
+kernel/mentor/b9_isb_cap_test.go TestB9ISBOnSpentDayEmitsExactlyTheCap.
