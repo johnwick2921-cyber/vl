@@ -2378,6 +2378,13 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 			at.materializeArmedEntry(r, u)
 			at.stampArmedFillLineage(r, u.FillPrice)
 			at.logInfof("⚡ armed fill %s @ %.2f (entry_class=armed_fill — stale_reeval NOT applied)", r.Scenario, u.FillPrice)
+			// MENTOR EXIT DRIVE (DS-107): a mentor-origin fill pokes the event
+			// loop so the exit drive wakes on the fill instead of waiting for
+			// the next FINAL bar (the fill registers the live position — DS-103's
+			// part 1 — and the drive picks it up promptly).
+			if isMentorArmOrigin(r) {
+				at.pokeMentorExitDrive()
+			}
 		case "cancelled":
 			// CANCEL-REPORT REGIME (2026-10-03, knob default OFF): for a row
 			// awaiting cancel confirmation, the AddOn's positive report is

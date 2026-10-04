@@ -386,6 +386,11 @@ type AutoTrader struct {
 	// branch. Size is never touched by the upgrade.
 	mentorExitMu    sync.Mutex
 	mentorExitModes map[string]string
+	// mentorLivePos is the exit-drive's input: every FILLED mentor position,
+	// keyed by the leg-1 signal id, registered at the fill callback (DS-103's
+	// part-1 shape) and driven by the exit-drive loop (DS-107's part 2).
+	// Guarded by mentorExitMu.
+	mentorLivePos   map[string]*mentorLivePos
 	fastTapePending atomic.Bool
 	// lastClockHealthSession: which session the last clock-health line was
 	// logged for (PHASE 3.5) — one line per session roll, not per tick.
