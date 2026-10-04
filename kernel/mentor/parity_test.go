@@ -24,10 +24,15 @@ package mentor
 // route, not harness bugs): the replay's 5m trigger flips at the intrabar
 // break minute while the Go line moves at the bucket open; the Go 5m-ISB
 // box is deleted on escape while the replay state dump keeps the last-born
-// box; Go has no (b) trading-window / (a) done-after-win stop rules; Go has
-// no R10 re-entry; Go's REVISB knob defaults OFF (the v5_base run had it
-// OFF too); Go's R1 ISB skips only the twenties ([20,30)) while the replay
-// currently skips every stop >= 20.
+// box; Go has no R10 re-entry; Go's REVISB knob defaults OFF (the v5_base
+// run had it OFF too); Go's R1 ISB skips only the twenties ([20,30)) while
+// the replay currently skips every stop >= 20.
+//
+// C3 CLASS LABEL (CTO 2026-10-04 03:03Z): the trading-window rule is a
+// TRADER-layer gate (trader/mentor_tick.go 557-598, knobs mentor_window_
+// start/minutes), NOT a kernel rule — the parity harness runs the kernel
+// evaluator only, so replay orders placed after the 60-min window are
+// labeled C3 "trader-layer gate, outside kernel parity", never a Go gap.
 
 import (
 	"bufio"
