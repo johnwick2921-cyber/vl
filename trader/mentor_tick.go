@@ -143,6 +143,10 @@ func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 	cfg.Enabled = true
 	rc := at.mentorRiskControl()
 	cfg.LossDeparturePts = mentorLossDeparturePts(rc)
+	// The resolvers are nil-safe and return the ruled default for an unset field.
+	cfg.LegBudgetEnabled = mentorLegBudgetEnabled(rc)
+	cfg.LegResetOn = mentorLegResetOn(rc)
+	cfg.LocTriggerFilter = mentorLocationTriggerFilter(rc)
 	if rc != nil {
 		cfg.LvlRevisitMinPts = mentorLvlRevisitMinPts(rc)
 		cfg.EmaMaxCross30m = mentorEmaMaxCross30m(rc)

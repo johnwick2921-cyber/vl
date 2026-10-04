@@ -3,6 +3,7 @@ package mentor
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -64,6 +65,105 @@ func TestEvaluatorOnRecordedDaysEmitsOnlyCompleteIntents(t *testing.T) {
 			// here: 09-15's tape provably produces §8 swing intents.
 			t.Fatalf("%s: no swing intents emitted — runSwing not wired into Tick", day)
 		}
+	}
+}
+
+func TestEvaluatorTickWarmSwingEntryUsesSeededLine(t *testing.T) {
+	loc := ctime()
+	bar := func(day, hour, minute int, o, h, l, c float64) market.Kline {
+		open := time.Date(2026, time.September, day, hour, minute, 0, 0, loc)
+		return market.Kline{OpenTime: open.UnixMilli(), CloseTime: open.UnixMilli() + 59_999,
+			Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		bar(14, 17, 5, 1000, 1000, 1000, 1000),
+		bar(14, 21, 5, 1600, 1600, 1600, 1600),
+		bar(15, 1, 5, 1000, 1000, 1000, 1000),
+		bar(15, 5, 0, 900, 905, 895, 900),
+		bar(15, 5, 5, 900, 1100, 900, 1100),
+		bar(15, 5, 10, 970, 1020, 930, 940),
+		bar(15, 5, 15, 940, 945, 935, 940),
+	}
+	now := bars[len(bars)-1].CloseTime + 1
+	bucket := fourHBucketStart(now, loc)
+	e := New(DefaultConfig())
+	e.Cfg.Enabled = true
+	e.State.Swing = SwingState{
+		Line:        950,
+		BucketStart: bucket,
+		LastBarTime: bars[3].OpenTime,
+		EmaCount:    FourHEMA34Min,
+		FirstTouch:  &swingTouch{Approach: SideShort, Through: true},
+		LeewayLeft:  2,
+	}
+
+	var swings []Intent
+	for _, in := range e.Tick(bars, now) {
+		if in.Setup == "SWING4H" {
+			swings = append(swings, in)
+		}
+	}
+	if len(swings) != 1 {
+		t.Fatalf("warm seeded swing should emit one entry, got %+v", swings)
+	}
+	if swings[0].Action != PlaceStopEntry || swings[0].Side != SideShort {
+		t.Fatalf("swing intent = %+v, want short stop entry", swings[0])
+	}
+	if swings[0].Stop != e.State.Swing.Line {
+		t.Fatalf("entry stop %.6f, want authoritative warm line %.6f", swings[0].Stop, e.State.Swing.Line)
+	}
+	if local, _, ok := swingLine(closedBuckets(bars, now, e.Cfg), now, e.Cfg.Swing, loc); !ok || abs(local-e.State.Swing.Line) <= e.Cfg.Swing.LineOffsetPts {
+		t.Fatalf("fixture local line %.6f must differ from warm line %.6f beyond touch tolerance %.2f", local, e.State.Swing.Line, e.Cfg.Swing.LineOffsetPts)
+	}
+}
+
+func TestEvaluatorTickWarmSwingEntryUsesIncrementedLineAfterFlip(t *testing.T) {
+	loc := ctime()
+	bar := func(day, hour, minute int, o, h, l, c float64) market.Kline {
+		open := time.Date(2026, time.September, day, hour, minute, 0, 0, loc)
+		return market.Kline{OpenTime: open.UnixMilli(), CloseTime: open.UnixMilli() + 59_999,
+			Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		bar(14, 17, 5, 1000, 1000, 1000, 1000),
+		bar(14, 21, 5, 1600, 1600, 1600, 1600),
+		bar(15, 1, 5, 1000, 1000, 1000, 1000),
+		bar(15, 5, 0, 1190, 1200, 1180, 1190),
+		bar(15, 8, 55, 1190, 1200, 1180, 1200),
+		bar(15, 9, 0, 900, 905, 895, 900),
+		bar(15, 9, 5, 900, 1100, 900, 1100),
+		bar(15, 9, 10, 970, 1020, 930, 940),
+		bar(15, 9, 15, 940, 945, 935, 940),
+	}
+	now := bars[len(bars)-1].CloseTime + 1
+	oldBucket := fourHBucketStart(bars[3].OpenTime, loc)
+	e := New(DefaultConfig())
+	e.Cfg.Enabled = true
+	e.State.Swing = SwingState{
+		Line:        950,
+		BucketStart: oldBucket,
+		LastBarTime: bars[4].OpenTime,
+		EmaCount:    FourHEMA34Min,
+	}
+	wantLine := 950 + (2.0/35.0)*(1200-950)
+
+	var swings []Intent
+	for _, in := range e.Tick(bars, now) {
+		if in.Setup == "SWING4H" {
+			swings = append(swings, in)
+		}
+	}
+	if e.State.Swing.Line != wantLine {
+		t.Fatalf("bucket flip line %.6f, want incremented warm line %.6f", e.State.Swing.Line, wantLine)
+	}
+	if len(swings) != 1 {
+		t.Fatalf("flipped warm swing should emit one entry, got %+v", swings)
+	}
+	if swings[0].Action != PlaceStopEntry || swings[0].Side != SideShort {
+		t.Fatalf("swing intent = %+v, want short stop entry", swings[0])
+	}
+	if swings[0].Stop != wantLine {
+		t.Fatalf("entry stop %.6f, want incremented line %.6f", swings[0].Stop, wantLine)
 	}
 }
 

@@ -51,6 +51,24 @@ func HTFConflict(h HTF) bool {
 	return h.FourH.Dir != "" && h.OneH.Dir != "" && h.OneH.Dir != h.FourH.Dir
 }
 
+// HTFAgrees reports whether the 4h AND the 1h trigger BOTH stand and point
+// the entry's side — case 1 of the mentor's screen [D4.4 p1 @16:00]. Case 2
+// (1h "ko có gì hết", follow the 4h) trades but is not agreement; case 3
+// (opposite) never reaches an entry. It gates the 20-contract size tier.
+func HTFAgrees(h HTF, side Side) bool {
+	return side != "" && h.FourH.Dir == side && h.OneH.Dir == side
+}
+
+// stampHTFAgree stamps HTFAgree on every ENTRY intent from the evaluator's
+// 4h/1h state, where the intents leave Tick (next to stampLeave).
+func stampHTFAgree(out []Intent, h HTF) {
+	for i := range out {
+		if out[i].Action == PlaceStopEntry || out[i].Action == PlaceStopLimitEntry {
+			out[i].HTFAgree = HTFAgrees(h, out[i].Side)
+		}
+	}
+}
+
 // HTFSideIsOK reports whether an entry side obeys the HTF gate. The trigger
 // having FIRED sets the direction — price need NOT sit on the trigger side of
 // the line [D4.4 p2 @ 03:51: "Price need NOT be on the 'right' side of the

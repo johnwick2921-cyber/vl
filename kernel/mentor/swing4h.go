@@ -244,6 +244,10 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		s.LeewayLeft = 0
 		s.ClearLongAt, s.ClearShortAt = 0, 0
 	}
+	if s.EmaCount >= FourHEMA34Min {
+		// The seeded recurrence has full history; the local slice is only a fallback.
+		line = s.Line
+	}
 
 	for i := 1; i < len(bars5m); i++ {
 		b := bars5m[i]
