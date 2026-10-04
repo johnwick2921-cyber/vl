@@ -426,7 +426,7 @@ func TestMentorCancelArmReachesTheBroker(t *testing.T) {
 // stop to the registered ENTRY price through mentorMoveStop (never-widen
 // guarded). Mutant: dropping the dispatch case leaves the spy uncalled.
 func TestMentorMoveStopBEReachesMoveStopWire(t *testing.T) {
-	at, _, _, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
 	mentorOpenStopSource = func() (float64, bool) { return 29595, true } // current stop below entry: BE is not a widen
 	t.Cleanup(func() { mentorOpenStopSource = nil })
 	var mu sync.Mutex
@@ -439,7 +439,13 @@ func TestMentorMoveStopBEReachesMoveStopWire(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { moveStopWire = oldWire })
-	mentorRegisterLiveArm("swing-1", 42, "long", 29600)
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-1",
+		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateFilled, SignalID: "swing-1-sig", FillPrice: 29600, FillQuantity: 1}
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-1", row.ID, "long", 29600)
 	resetMentorCounters()
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-1", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
 	mu.Lock()
@@ -455,8 +461,14 @@ func TestMentorMoveStopBEReachesMoveStopWire(t *testing.T) {
 // TestMentorClosePositionReachesTheBroker — the swing's hold-close intent
 // closes the registered side at the broker.
 func TestMentorClosePositionReachesTheBroker(t *testing.T) {
-	at, _, _, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
-	mentorRegisterLiveArm("swing-1", 42, "short", 29600)
+	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-1",
+		Side: "short", EntryPx: 29600, StopPx: 29630, TargetPx: 29540, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateFilled, SignalID: "swing-1-sig", FillPrice: 29600, FillQuantity: 1}
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-1", row.ID, "short", 29600)
 	resetMentorCounters()
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionClosePosition, ArmID: "swing-1", Reason: "hold to the 2nd 4h close"}, mentorTierInputs{}, 1000, 1100)
 	if !sawMentorFrame(t, frames, ntwire.FrameClosePosition, 1*time.Second) {
@@ -533,5 +545,54 @@ func TestMentorChainIntentToWireToExpiryCancel(t *testing.T) {
 	}
 	if row.State != store.StateCancelPending {
 		t.Fatalf("step 3: the lapsed row must be cancel_pending on the SAME pass, got %q", row.State)
+	}
+}
+
+// TestMentorClosePositionRefusesUnfilledArm (S1 pin, production call site
+// mentorDispatchIntent): a swing ClosePosition for an arm that never FILLED
+// must be refused NAMED and must NOT flatten an open position on the same
+// side. Mutant: close on any registered arm (skip the fill check) → the
+// close_sent counter fires and this turns RED.
+func TestMentorClosePositionRefusesUnfilledArm(t *testing.T) {
+	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-uf",
+		Side: "short", EntryPx: 29600, StopPx: 29630, TargetPx: 29540, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateWorking, SignalID: "swing-uf-sig"} // resting, NOT filled
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-uf", row.ID, "short", 29600)
+	resetMentorCounters()
+	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionClosePosition, ArmID: "swing-uf", Reason: "hold to the 2nd 4h close"}, mentorTierInputs{}, 1000, 1100)
+	if sawMentorFrame(t, frames, ntwire.FrameClosePosition, 500*time.Millisecond) {
+		t.Fatal("an unfilled swing must NOT send a close")
+	}
+	if c := MentorCountSnapshot()["close_refused_not_filled"]; c != 1 {
+		t.Fatalf("close_refused_not_filled = %d, want 1", c)
+	}
+}
+
+// TestMentorMoveStopBERefusesUnfilledArm (S1 pin): a swing MoveStopBE for an
+// arm that never FILLED must be refused and must NOT move another trade's stop.
+func TestMentorMoveStopBERefusesUnfilledArm(t *testing.T) {
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-uf-be",
+		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateCancelled, SignalID: "swing-uf-be-sig"} // cancelled, never filled
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-uf-be", row.ID, "long", 29600)
+	resetMentorCounters()
+	oldWire := moveStopWire
+	moved := false
+	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error { moved = true; return nil }
+	t.Cleanup(func() { moveStopWire = oldWire })
+	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-uf-be", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
+	if moved {
+		t.Fatal("an unfilled swing must NOT move a stop")
+	}
+	if c := MentorCountSnapshot()["move_be_refused_not_filled"]; c != 1 {
+		t.Fatalf("move_be_refused_not_filled = %d, want 1", c)
 	}
 }

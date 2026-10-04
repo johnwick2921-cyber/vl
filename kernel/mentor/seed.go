@@ -196,6 +196,15 @@ func Seed(e *Evaluator, bars1m []market.Kline, now int64) []string {
 		e.State.Swing.EmaCount = len(closes4)
 	}
 
+	// S2: the swing must never replay OLD touches at boot. Stamp the newest
+	// closed 5m bar as the watermark, so the first tick walks only NEW bars —
+	// a 25h tape containing an old touch stays silent instead of turning the
+	// old touch into a live order (00-METHOD.md §8: "Wait for a LITERAL
+	// touch" [p2 @ 09:15] — the touch is observed live, never reconstructed).
+	if b5 := closedBuckets(bars1m, now, e.Cfg); len(b5) > 0 {
+		e.State.Swing.LastBarTime = b5[len(b5)-1].OpenTime
+	}
+
 	e.seedLine = SeedLine(e.State, bars1m, now)
 	return e.missing
 }

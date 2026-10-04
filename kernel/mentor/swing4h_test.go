@@ -291,3 +291,44 @@ func TestSwing4hBEAndHold(t *testing.T) {
 		t.Fatalf("no close at the 2nd-4h-candle hold limit; got %+v", out2)
 	}
 }
+
+// TestSwingNeverFillsSendsNoManage (S1 pin, production call site SwingTick):
+// a swing intent that never fills must never send MoveStopBE / ClosePosition —
+// the hold close is a phantom that would flatten a DIFFERENT mentor position on
+// the same side. Mutant: openPosition at emit again (s.Pos = p) → the hold
+// close fires and this turns RED.
+func TestSwingNeverFillsSendsNoManage(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	cfg.Hold4hBars = 1 // hold to the close of the 1st 4h candle after entry
+	entryBars := swingTape(t, []market.Kline{
+		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),     // prev below
+		mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160), // short entry 10155 (resting, not filled)
+	})
+	s := &SwingState{}
+	out := SwingTick(s, entryBars, cfg, entryBars[len(entryBars)-1].OpenTime+60_000)
+	entries := 0
+	for _, in := range out {
+		if in.Action == PlaceStopEntry {
+			entries++
+		}
+	}
+	if entries != 1 {
+		t.Fatalf("setup entries = %d, want 1; got %+v", entries, out)
+	}
+	if s.Pending == nil || s.Pos != nil {
+		t.Fatalf("the swing must rest PENDING before any fill: pending=%v pos=%v", s.Pending, s.Pos)
+	}
+	// Bars that NEVER trade through the entry (low > 10155) across the hold
+	// limit (Hold4hBars=1 → the 05:00 bucket holds to 09:00). The doji at
+	// 10156 neither fills the 10155 sell stop nor touches the flipped line.
+	late := append(entryBars, mk5m(t, 15, 9, 5, 10156, 10156, 10156, 10156))
+	out2 := SwingTick(s, late, cfg, late[len(late)-1].OpenTime+60_000)
+	for _, in := range out2 {
+		if in.Action == ActionMoveStopBE || in.Action == ActionClosePosition {
+			t.Fatalf("an unfilled swing must never send %s; got %+v", in.Action, out2)
+		}
+	}
+	if s.Pos != nil {
+		t.Fatalf("the unfilled swing must not open a position, got %+v", s.Pos)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1241,6 +1242,10 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 			ints[i].ExpiryMs = swingExpiry(now)
 		}
 	}
+	// S2: a boot/reload must never turn OLD touches into live orders — drop
+	// any swing entry whose reference candle is older than the newest closed
+	// 5m bar (00-METHOD.md §8: "Wait for a LITERAL touch" [p2 @ 09:15]).
+	ints = dropStaleSwingIntents(ints, closed)
 	kept, dropped := swingZoneGate(ints, e.State.Trigger, e.Cfg.Swing.Respects5mZone)
 	// C5: the trigger-zone drop names its reason.
 	for i := 0; i < dropped; i++ {
@@ -1253,6 +1258,28 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 // 17:00 CT): an unfilled swing order lives until then (CTO 1791008594562).
 func swingExpiry(now int64) int64 {
 	return bucketOpen(now, 240) + 240*60_000 - 1
+}
+
+// dropStaleSwingIntents (S2) drops swing entry intents whose reference candle
+// (the ArmID's embedded 5m bar time) is older than the newest closed 5m bar.
+// The seed stamps Swing.LastBarTime so the first tick never WALKS the old
+// bars; this is the second line of defence — even if the watermark is missing,
+// an old touch must never become a live order.
+func dropStaleSwingIntents(ints []Intent, closed []market.Kline) []Intent {
+	if len(closed) == 0 {
+		return ints
+	}
+	newest := closed[len(closed)-1].OpenTime
+	out := make([]Intent, 0, len(ints))
+	for _, in := range ints {
+		if in.Action == PlaceStopEntry && in.Setup == "SWING4H" && in.ArmID != "" {
+			if ref, err := strconv.ParseInt(strings.TrimPrefix(in.ArmID, "swing-"), 10, 64); err == nil && ref < newest {
+				continue
+			}
+		}
+		out = append(out, in)
+	}
+	return out
 }
 
 // swingZoneGate drops swing intents whose entry price sits between two
