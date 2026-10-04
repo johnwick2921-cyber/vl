@@ -234,6 +234,59 @@ func TestEntryLatchUnwiredAllowsAndReportsUnwired(t *testing.T) {
 	}
 }
 
+// N7 part 1 — ForgetPending (the confirmed-cancel hook) drops the queued-entry
+// marker. A cancelled entry otherwise holds the latch as "queued_entry" until a
+// fill, a rejection, or the 45s stale sweep — none of which a cancel produces —
+// so the entry that follows the cancel would be refused and lost. The pin
+// proves the pending marker outlives the 60s recent-send window on its own, and
+// that ForgetPending is what clears it.
+func TestForgetPendingClearsQueuedEntry(t *testing.T) {
+	w := newLatchWire(t)
+	tr := w.trader(t)
+	fx := &latchFixture{now: time.Now()}
+	tr.SetEntryLatchSource(fx.source())
+	order, err := tr.OpenLong("MNQ", 1, 1)
+	if err != nil {
+		t.Fatalf("the first entry must go: %v", err)
+	}
+	sid, _ := order["signal_id"].(string)
+	if _, err := tr.PlaceLimitEntry("MNQ", "long", 1, 29100, 29000, 29200); !IsEntryLatched(err) || !strings.Contains(err.Error(), "queued_entry") {
+		t.Fatalf("an unfilled entry must hold the latch (queued_entry), got %v", err)
+	}
+	// Past the recent-send window the pending marker ALONE still holds the
+	// latch: t.pending is cleared only by fill/reject, the 45s sweep, or
+	// ForgetPending — never by a cancel.
+	fx.now = fx.now.Add(EntryLatchRecentWindow + time.Second)
+	if _, err := tr.PlaceLimitEntry("MNQ", "long", 1, 29100, 29000, 29200); !IsEntryLatched(err) || !strings.Contains(err.Error(), "queued_entry") {
+		t.Fatalf("the pending marker must outlive the recent window (queued_entry), got %v", err)
+	}
+	// The confirmed cancel settles the entry — the next one must be admitted.
+	tr.ForgetPending(sid)
+	if _, err := tr.PlaceLimitEntry("MNQ", "long", 1, 29100, 29000, 29200); err != nil {
+		t.Fatalf("after ForgetPending the next entry must be admitted, got %v", err)
+	}
+}
+
+// N7 part 1b — a confirmed cancel is not a duplicate-send risk, so ForgetPending
+// must also drop the recent-send stamp: a new entry 10s after the confirmed
+// cancel must NOT be refused by the 60s window.
+func TestForgetPendingClearsRecentSendWindow(t *testing.T) {
+	w := newLatchWire(t)
+	tr := w.trader(t)
+	fx := &latchFixture{now: time.Now()}
+	tr.SetEntryLatchSource(fx.source())
+	order, err := tr.OpenLong("MNQ", 1, 1)
+	if err != nil {
+		t.Fatalf("the first entry must go: %v", err)
+	}
+	sid, _ := order["signal_id"].(string)
+	tr.ForgetPending(sid)
+	fx.now = fx.now.Add(10 * time.Second)
+	if _, err := tr.PlaceLimitEntry("MNQ", "long", 1, 29100, 29000, 29200); err != nil {
+		t.Fatalf("10s after a confirmed cancel the next entry must be admitted, got %v", err)
+	}
+}
+
 // Protection, management and exits never take the latch: with the book live
 // they all still reach the wire.
 func TestEntryLatchDoesNotGateProtectionManagementOrExits(t *testing.T) {

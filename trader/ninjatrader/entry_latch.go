@@ -99,6 +99,18 @@ func (ls *latchState) keyLock(key string) *sync.Mutex {
 	return m
 }
 
+// clearSent drops the recent-send stamp (and the dedupe of the last refusal) for
+// a key. It is called ONLY from TCPTrader.ForgetPending when a queued entry has
+// SETTLED CANCELLED: a confirmed cancel is not a duplicate-send risk, so the
+// EntryLatchRecentWindow must not hold the next entry. The caller holds the key
+// lock (keyLock), serializing this against acquireEntryLatch's send/stamp.
+func (ls *latchState) clearSent(key string) {
+	ls.mu.Lock()
+	delete(ls.sent, key)
+	delete(ls.lastR, key)
+	ls.mu.Unlock()
+}
+
 // SetEntryLatchSource installs the latch's evidence (production: wireNT8EntryLatch).
 func (t *TCPTrader) SetEntryLatchSource(src *EntryLatchSource) {
 	t.mu.Lock()

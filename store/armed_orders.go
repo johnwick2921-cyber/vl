@@ -729,6 +729,24 @@ func (s *ArmedOrderStore) BeginPlacement(id int64, signalID string) error {
 	return nil
 }
 
+// CancelUnplaced (N7 part 4, CTO release #4) ends a row that was NEVER SENT —
+// armed, no signal id — straight in 'cancelled'. A cancel_pending row with an
+// empty signal id can never settle (no regime has an id to look for), so the
+// request path would strand it forever. The WHERE is the CAS: a placement that
+// stamped a signal id in the meantime (BeginPlacement) makes this a no-op
+// (false), and the caller must then cancel the placed order the normal way.
+func (s *ArmedOrderStore) CancelUnplaced(id int64, reason string) (bool, error) {
+	if s == nil || s.db == nil {
+		return false, nil
+	}
+	r := s.db.Model(&ArmedOrderDB{}).Where("id = ? AND state = ? AND (signal_id = '' OR signal_id IS NULL)", id, StateArmed).
+		Updates(map[string]any{"state": StateCancelled, "state_reason": reason})
+	if r.Error != nil {
+		return false, r.Error
+	}
+	return r.RowsAffected == 1, nil
+}
+
 // SetArmExpiry (PR B stop-limit, 2026-10-03) stamps the per-order expiry the
 // evaluator's intent authored when it placed the order (DS-102). Only an
 // unfilled, non-terminal row can carry one: once filled or terminal the

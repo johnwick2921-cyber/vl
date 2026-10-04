@@ -32,23 +32,37 @@ func HTFAdvance(h HTF, bars4h, bars1h []market.Kline, cfg Config) HTF {
 //     1h flips to the 4h ("Ngồi chờ khi nào 1h trigger buy theo khung 4h
 //     thì trade").
 //
+// The 1h "ko có gì hết" case includes a 1h line that fired BEFORE the 4h
+// (oneHSilent): an earlier 1h trigger is ignored [D4.4 p1 @18:36; p2 @03:10].
+//
 // With no 4h trigger at all there is no direction to follow — refuse
 // (fail-closed: the read always starts from the 4-hour).
 func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 	if h.FourH.Dir == "" {
 		return false, "", "no 4h trigger yet — the 4-hour is read first, before the 1-hour [D4.4 p1 @ 02:53]"
 	}
-	if h.OneH.Dir == "" || h.OneH.Dir == h.FourH.Dir {
+	if oneHSilent(h) || h.OneH.Dir == h.FourH.Dir {
 		return true, h.FourH.Dir, ""
 	}
 	return false, "", "case 3: 1h trigger opposite the 4h — sit out until the 1h flips to the 4h [D4.4 p1 @ 16:00; §12]"
+}
+
+// oneHSilent reports whether the 1h has nothing NEW to say after the 4h:
+// either it never drew a line, or its last move is OLDER than the 4h line's
+// last move — an earlier 1h trigger is ignored and the 1h reads "silent", so
+// case 2 follows the 4h [D4.4 p1 @18:36; p2 @03:10] (D4.4-05, item 19).
+func oneHSilent(h HTF) bool {
+	return h.OneH.Dir == "" || h.OneH.MovedAt < h.FourH.MovedAt
 }
 
 // HTFConflict reports the §7 / §12 conflict: both lines drawn and opposite
 // [D4.4 p1 @ 13:18 "4-hour and 1-hour triggers in conflict — especially with
 // the daily range already spent"; D5.1 p1 @ 19:22].
 func HTFConflict(h HTF) bool {
-	return h.FourH.Dir != "" && h.OneH.Dir != "" && h.OneH.Dir != h.FourH.Dir
+	if h.FourH.Dir == "" || oneHSilent(h) {
+		return false
+	}
+	return h.OneH.Dir != h.FourH.Dir
 }
 
 // HTFAgrees reports whether the 4h AND the 1h trigger BOTH stand and point
@@ -56,7 +70,7 @@ func HTFConflict(h HTF) bool {
 // (1h "ko có gì hết", follow the 4h) trades but is not agreement; case 3
 // (opposite) never reaches an entry. It gates the 20-contract size tier.
 func HTFAgrees(h HTF, side Side) bool {
-	return side != "" && h.FourH.Dir == side && h.OneH.Dir == side
+	return side != "" && h.FourH.Dir == side && !oneHSilent(h) && h.OneH.Dir == side
 }
 
 // stampHTFAgree stamps HTFAgree on every ENTRY intent from the evaluator's
