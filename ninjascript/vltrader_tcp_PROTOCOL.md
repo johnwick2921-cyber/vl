@@ -618,11 +618,12 @@ its ISO-date prefix, because the capability floors compare it bytewise.
 The `signal` payload gains `stop_limit` (bool, omitempty). When true and
 `order_type` is `stop_entry`, the AddOn builds `OrderType.StopLimit` with
 `LimitPrice == StopPrice` — the entry fills at its price or misses, never a
-stop-MARKET (D1.4 p1 @24:41, p2 @00:00). Go sets the flag only when its
-`MENTOR_STOP_LIMIT` knob is ON and the far side proves
-`MinAddonBuildStopLimit` = `2026-10-03-c2` (fail-closed: an older AddOn would
-build StopMarket and fill sloppily). With the knob OFF the wire is
-byte-identical.
+stop-MARKET (D1.4 p1 @24:41, p2 @00:00). Go sets the flag for EVERY
+mentor-origin stop entry (since 2026-10-04 no environment variable gates it) and
+only when the far side proves `MinAddonBuildStopLimit` = `2026-10-03-c2`
+(fail-closed: an older AddOn would build StopMarket and fill sloppily, so the
+arm is refused instead). A non-mentor stop entry keeps the byte-identical
+stop-market wire.
 
 N12: with limit == stop and Day time-in-force, a gap through the trigger leaves
 a RESTING limit that can fill later at a stale price. Go closes that window

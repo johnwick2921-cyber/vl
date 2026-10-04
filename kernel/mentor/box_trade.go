@@ -221,14 +221,9 @@ type ConfluenceFlag struct {
 }
 
 // ConfluenceVerdict evaluates the R2 confluence test [00-METHOD Risk-reward,
-// D3.4 p3 @ 07:38] for one box trade setup:
-//
-//	LONG  = an FTGL box (support) AND a key level inside the box or within
-//	        2 pts of its edge AND the 5m BUY trigger agrees.
-//	SHORT = FTGH + key level + 5m SELL trigger.
-//
-// side is the trade side; trig is the 5m trigger line. Fail-closed: no
-// trigger line (empty direction) can never agree, so confluence stays off.
+// D3.4 p3 @ 07:38] for one box trade setup. side is the trade side; trig is the
+// 5m trigger line. Fail-closed: no trigger line (empty direction) can never
+// agree, so confluence stays off.
 // ConfluenceVerdict is B3 (10-03 ruling, D3.4 p3 @07:38–08:22): confluence
 // = an FTGL/FTGH entry + the 5m trigger agrees — NO key-level condition. LONG
 // = FTGL (support); SHORT = FTGH. Feeds DS-102's exit-C / size-10.
