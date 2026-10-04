@@ -1,8 +1,8 @@
 package trader
 
 import (
-	"vl/kernel"
 	"time"
+	"vl/kernel"
 
 	ntwire "vl/provider/ninjatrader"
 )

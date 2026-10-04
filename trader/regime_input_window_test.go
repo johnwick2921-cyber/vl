@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"path/filepath"
 	"vl/kernel"
 	"vl/market"
-	"path/filepath"
 )
 
 // ── OWNER-CONDITION PINS, BARS HORIZON D3 (ruling 2026-09-09 18:18 CT) ──────

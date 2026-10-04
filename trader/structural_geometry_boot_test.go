@@ -1,11 +1,11 @@
 package trader
 
 import (
-	"vl/kernel"
-	"vl/store"
 	"strings"
 	"testing"
 	"time"
+	"vl/kernel"
+	"vl/store"
 )
 
 func TestStructuralGeometryBootReadsPolicyAndDurableCounts(t *testing.T) {

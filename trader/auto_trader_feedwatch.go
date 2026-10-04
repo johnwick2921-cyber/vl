@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
+	"strings"
 	"vl/kernel"
 	"vl/market"
-	"strings"
 )
 
 // U1 (stale-bar dispatch 2026-08-19) — FEED PROBLEMS BECOME LOUD.

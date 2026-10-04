@@ -105,7 +105,7 @@ func TestWireStopRoundsAwayFromEntryStopEntry(t *testing.T) {
 				time.Sleep(10 * time.Millisecond)
 			}
 			tr := NewTCPTrader(s, "MNQ", "Sim101")
-			if _, err := tr.PlaceStopEntry("MNQ", c.side, 1, c.entry, c.sl, c.tp); err != nil {
+			if _, err := tr.PlaceStopEntry("MNQ", c.side, 1, c.entry, c.sl, c.tp, 0, 0); err != nil {
 				t.Fatalf("PlaceStopEntry: %v", err)
 			}
 			assertWireStop(t, "stop-entry "+c.name, c, awaitFrame(t, frames, c.name))

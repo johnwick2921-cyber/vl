@@ -2,10 +2,10 @@ package trader
 
 import (
 	"fmt"
-	"vl/trader/types"
 	"sync"
 	"testing"
 	"time"
+	"vl/trader/types"
 )
 
 // MockTrader is a minimal trader implementation for testing balance defer logic.

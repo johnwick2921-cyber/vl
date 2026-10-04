@@ -1,9 +1,9 @@
 package trader
 
 import (
-	"vl/store"
 	"testing"
 	"time"
+	"vl/store"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"

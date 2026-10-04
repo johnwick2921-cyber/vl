@@ -2,8 +2,8 @@ package trader
 
 import (
 	"fmt"
-	"vl/kernel"
 	"time"
+	"vl/kernel"
 
 	"vl/mcp"
 	"vl/store"

@@ -773,8 +773,8 @@ func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limit
 // same bracket-on-fill contract as limits. stopPx is the TRIGGER price (the
 // tick offset is applied by the caller). Back-compat law: the frame is
 // additive JSON — only send it when the far-side AddOn has proven it.
-func (t *TCPTrader) PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, beforeSend ...func(string) error) (string, error) {
-	return t.placeStopEntry(symbol, side, quantity, stopPx, sl, tp, false, beforeSend...)
+func (t *TCPTrader) PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
+	return t.placeStopEntry(symbol, side, quantity, stopPx, sl, tp, false, leg1Qty, leg1TP, beforeSend...)
 }
 
 // PlaceStopEntryWithLimit (MENTOR STOP-LIMIT, PR B 2026-10-03) is PlaceStopEntry
@@ -784,11 +784,11 @@ func (t *TCPTrader) PlaceStopEntry(symbol, side string, quantity float64, stopPx
 // the order's expiry (expiry_ms, authored by the evaluator's intent) cancels it
 // unfilled when it lapses. Fail-closed: refused when the far side does not
 // prove MinAddonBuildStopLimit (an older AddOn would build StopMarket).
-func (t *TCPTrader) PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, beforeSend ...func(string) error) (string, error) {
-	return t.placeStopEntry(symbol, side, quantity, stopPx, sl, tp, true, beforeSend...)
+func (t *TCPTrader) PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
+	return t.placeStopEntry(symbol, side, quantity, stopPx, sl, tp, true, leg1Qty, leg1TP, beforeSend...)
 }
 
-func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, stopLimit bool, beforeSend ...func(string) error) (string, error) {
+func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, stopLimit bool, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
 	// CAPABILITY HANDSHAKE — the far-side AddOn must PROVE, by a build_id that
 	// arrived on the wire, that it will BUILD this order correctly. Two distinct
 	// failures live behind this one gate:
@@ -872,8 +872,10 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 		OrderType:  "stop_entry",
 		StopPrice:  entry,
 		StopLimit:  stopLimit,
-		// REVIEW-353 TODO(next step): thread the row's Leg1Qty/Leg1TP through
-		// PlaceStopEntry → this payload (0 today = single-bracket legacy, safe).
+		// REVIEW-353: the split rides the ONE frame — leg1_qty + leg1_tp tell
+		// the AddOn to place TWO OCO pairs on the one fill (0 = single bracket).
+		Leg1Qty: leg1Qty,
+		Leg1TP:  leg1TP,
 	}
 	if err := assertBoundAccount("stop-entry", symbol, payload.Account, t.boundAccount); err != nil {
 		logger.Errorf("🚨 %v — REFUSING to submit stop-entry", err)

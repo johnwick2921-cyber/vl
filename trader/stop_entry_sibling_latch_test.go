@@ -145,7 +145,7 @@ type stampThenFailPlacer struct {
 	stopLimitUsed bool
 }
 
-func (p *stampThenFailPlacer) PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, beforeSend ...func(string) error) (string, error) {
+func (p *stampThenFailPlacer) PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
 	p.calls++
 	for _, register := range beforeSend {
 		if err := register("sid-ambiguous"); err != nil {
@@ -155,9 +155,9 @@ func (p *stampThenFailPlacer) PlaceStopEntry(symbol, side string, quantity float
 	return "", fmt.Errorf("send stop-entry signal: write tcp: simulated")
 }
 
-func (p *stampThenFailPlacer) PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, beforeSend ...func(string) error) (string, error) {
+func (p *stampThenFailPlacer) PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
 	p.stopLimitUsed = true
-	return p.PlaceStopEntry(symbol, side, quantity, stopPx, sl, tp, beforeSend...)
+	return p.PlaceStopEntry(symbol, side, quantity, stopPx, sl, tp, leg1Qty, leg1TP, beforeSend...)
 }
 
 // The outcome placeOneStopEntry reports is exactly "did a send start":
