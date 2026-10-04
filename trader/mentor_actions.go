@@ -279,6 +279,10 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) {
 			at.logWarnf("✕ mentor cancel SEND failed: %s %s: %v", r.Session, r.Scenario, cerr)
 		}
 	}
+	// D2-44 (item 11): the injector cancels a level arm — clear the evaluator's
+	// LevelArms entry so it stops believing the order rests. The caller
+	// (mentorEvalOnce) holds mentorEvalMu, so this is the lock-free half.
+	at.clearMentorLevelArmLocked(in.ArmID)
 	at.armLifecycleWrite("request_cancel(mentor)", r,
 		ledger.RequestCancel(r.ID, "mentor: "+in.Reason, now.UnixMilli()))
 	mentorCount("cancel_requested")

@@ -177,8 +177,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Entries become stop-LIMIT',
-          body: 'Every mentor entry goes out as a stop-LIMIT with the limit at the stop price ("đừng đặt buy stop market nữa…") — always, no setting turns it off. Each order carries an expiry (the close of the next 1m candle for a level touch or an ISB; the close of the current 4h candle for the swing) and the armed pass cancels it unfilled when it lapses. A mentor entry without an expiry is refused, never sent as a stop-market. Other (non-mentor) orders keep their own order types.',
-          cite: 'D1.4 p1 @ 24:41–24:55 · trader/armed_executor.go placeOneStopEntry',
+          body: 'Every mentor entry goes out as a stop-LIMIT with the limit at the stop price ("đừng đặt buy stop market nữa…") — always, no setting turns it off. Each order carries an expiry: a LEVEL (PHL/PLH/EMA) order RESTS until the RTH window end at 15:00 CT (or until a later candle closes through the level, whichever comes first); an ISB expires at the close of the next 1m candle; the swing at the close of the current 4h candle. The armed pass cancels an unfilled order when it lapses. A mentor entry without an expiry is refused, never sent as a stop-market. Other (non-mentor) orders keep their own order types.',
+          cite: 'D2.3 p1 @ 17:42–18:14 · trader/mentor_tick.go mentorIntentExpiry · kernel/mentor/eval.go levelArmCancels',
         },
       ],
     },
