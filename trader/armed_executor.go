@@ -1428,8 +1428,9 @@ func (at *AutoTrader) runArmedPlacementAt(bars []market.Kline, sinceMs int64, no
 				}
 				// D3 (2026-09-04): the window belongs to the E7 FALLBACK only.
 				// A reclaim's buy stop IS the entry — waiting for a no-retest
-				// window would miss the reclaim it exists to catch.
-				if stopEntryNeedsRetestWindow(r.Condition) &&
+				// window would miss the reclaim it exists to catch. A MENTOR
+				// row's stop is the evaluator's own entry (P0-b): no window.
+				if !mentorAuthoredRow(r) && stopEntryNeedsRetestWindow(r.Condition) &&
 					!stopEntryFallbackDue(bars, int64(r.EntryPx), sinceMs, now.UnixMilli()) {
 					continue // still inside the retest window
 				}

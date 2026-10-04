@@ -450,12 +450,6 @@ type mentorPosition struct {
 	Leg1TP    float64 // leg 1's TP (0 → the +1R default: entry ± R)
 }
 
-// mentorStopEntryPlacer is the broker's stop-entry surface (E7 frame on the
-// NT8 TCP trader). A broker without it refuses the mentor entry fail-closed.
-type mentorStopEntryPlacer interface {
-	PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64) (map[string]interface{}, error)
-}
-
 // ── SPLIT LEGS AT ENTRY (CTO ruling 2026-10-03 05:42Z) ─────────────────────
 //
 // Size n from the tier table → leg 1 (ceil(n/2), its OWN TP at +1R) + leg 2

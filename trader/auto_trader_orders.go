@@ -609,25 +609,13 @@ func (at *AutoTrader) openEntryWithRecord(decision *kernel.Decision, actionRecor
 		manual.brokerCalled = true
 	}
 	var order map[string]interface{}
-	// MENTOR P3 — a mentor-sourced decision rests a STOP-ENTRY at the
-	// evaluator's trigger price. Every gate above (admission, one-contract,
-	// sizing) has already run; only the wire hop differs from the AI's market
-	// entry. A broker without PlaceStopEntry refuses fail-closed (no trade).
-	if decision.MentorSourced && decision.EntryPrice > 0 {
-		sp, ok := at.trader.(mentorStopEntryPlacer)
-		if !ok {
-			mentorCount("refused_no_stop_entry_frame")
-			telemetry.IncGateBlock(at.id, "mentor_no_stop_entry_frame")
-			return fmt.Errorf("mentor stop-entry: the broker carries no PlaceStopEntry frame — refusing rather than market-filling a stop order")
-		}
-		order, err = sp.PlaceStopEntry(decision.Symbol, side, quantity,
-			decision.EntryPrice, decision.StopLoss, decision.TakeProfit)
-		if err == nil {
-			at.logInfof("🧑‍🏫 mentor stop-entry resting: %s %s %.0f @ %.2f (stop %.2f, target %.2f)",
-				decision.Symbol, side, quantity, decision.EntryPrice, decision.StopLoss, decision.TakeProfit)
-			mentorCount("stop_entry_placed")
-		}
-	} else if carries {
+	// P0-a / P0-b (mentor injector, CTO 1791040400571): mentor-sourced
+	// decisions no longer take this route — the injector authors an ARMED
+	// LEDGER row and the armed executor places it (stop-limit by the origin
+	// rule, slot guard, c2 floor, expiry). The old direct stop-entry hop here
+	// asserted an interface the real broker never satisfied, so every mentor
+	// entry was refused.
+	if carries {
 		order, err = carrier.OpenWithBracket(decision.Symbol, side, quantity, decision.StopLoss, decision.TakeProfit)
 	} else {
 		order, err = open(decision.Symbol, quantity, decision.Leverage)

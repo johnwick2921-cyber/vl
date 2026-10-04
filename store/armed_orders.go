@@ -718,7 +718,13 @@ func (s *ArmedOrderStore) SetArmExpiry(id int64, expiryMs int64) error {
 	if expiryMs <= 0 {
 		return fmt.Errorf("armed_orders: expiry must be a positive ms timestamp")
 	}
-	r := s.db.Model(&ArmedOrderDB{}).Where("id = ? AND (state = ? OR state = ?)", id, StateArmed, StatePlacePending).
+	// The stamp set = the due predicate's set: non-terminal and not
+	// cancel_pending, with working allowed only while UNFILLED (a resting
+	// stop-limit at NT8 IS working — the evaluator extends its expiry while
+	// the candles stay inside). Canonical SQL helpers, never a re-typed list.
+	r := s.db.Model(&ArmedOrderDB{}).Where(
+		"id = ? AND (("+NonTerminalArmStateSQL()+" AND state <> ? AND state <> ?) OR (state = ? AND fill_quantity = 0))",
+		id, StateCancelPending, StateWorking, StateWorking).
 		Update("expiry_ms", expiryMs)
 	if r.Error != nil {
 		return r.Error
