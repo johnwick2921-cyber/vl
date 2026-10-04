@@ -219,8 +219,12 @@ func candleColour(b market.Kline) bool {
 // the b60 lifecycle (seeded: State.Seed1HBars, incremental; cold: one
 // keyLevel1HBars per tick).
 func levelDeletedBy1HBody(lvl Level, b60 []market.Kline, now int64) bool {
-	if len(b60) > 0 && b60[len(b60)-1].CloseTime >= now {
-		b60 = b60[:len(b60)-1] // the forming 1H candle has not closed
+	// The forming test uses the candle's SCHEDULED close: keyLevel1HBars gives a
+	// candle the CloseTime of its last 1m bar, which is not proof the hour is
+	// over (a mid-hour candle would read as closed when now is the instant the
+	// last 1m bar closed).
+	if n := len(b60); n > 0 && keyLevel1HCandleCloseTime(b60[n-1].OpenTime) > now {
+		b60 = b60[:n-1] // the forming 1H candle has not closed
 	}
 	for _, b := range b60 {
 		if b.CloseTime < lvl.AtTime {

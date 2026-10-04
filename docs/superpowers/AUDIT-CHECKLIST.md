@@ -7920,3 +7920,29 @@ without the guard must violate the assertion). rule: emit the guarded value
 control that proves the unguarded value is beyond the limit. Reference:
 kernel/mentor/eval.go ISB branch (`chosen.Target = capped.Target`) +
 kernel/mentor/b9_isb_cap_test.go TestB9ISBOnSpentDayEmitsExactlyTheCap.
+
+## CLASS NN (assigned at merge) — the evaluator's clock label is not the instant the bar closed
+
+symptom: the mentor evaluator was ticked with `Tick(bars, last.OpenTime)` while
+every closedness test inside it is written `CloseTime >= now` / `CloseTime > now`
+with CloseTime = the bar's LAST millisecond (open+59_999). Under an OpenTime
+clock `cur.CloseTime > now` is always true, so the ORB escape (orb.go) never
+latched and the ORB gate (default ON) refused every entry; the other gates each
+slipped by one bar (closed 5m/15m buckets, the B6 15:00 window-end cancel, the
+4h swing flip, the incremental 1m EMA, the 1H key-level extension, pending-order
+expiry, and a swing order decided on a 4h-boundary bar was born expired). Found
+in the CTO clock audit (2026-10-04, DS-107) while chasing a parity diff that
+looked like a dump difference. probe: list every comparison against `now` in the
+evaluator, evaluate each under the clock production really passes AND under
+CloseTime+1, and drive the PRODUCTION call (not a hand-built `now`) — most unit
+tests used CloseTime+1 or an invented clock, which is why the bug was invisible.
+rule: a bar is evaluated at the instant it closed (`mentor.BarCloseInstant`:
+CloseTime+1); the same instant feeds the trader gates in a harness. Mixed
+conventions on the same value are a bug: kernel.aggregateBars gives CloseTime =
+open+interval (exclusive) while barsTF gives open+interval-1, so the mentor
+hands SwingPointLevels now+1 rather than editing the shared aggregator. A
+closedness test on an aggregated candle uses its SCHEDULED close, never the
+CloseTime of its last member bar. Reference: kernel/mentor/eval.go
+BarCloseInstant/swingPointNow, key_levels.go keyLevel1HCandleCloseTime +
+levelDeletedBy1HBody, trader/mentor_tick.go mentorEvalOnce; pins in
+kernel/mentor/clock_close_instant_test.go and trader/mentor_clock_test.go.

@@ -596,7 +596,7 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 	var rowOrder []string
 	for i := 1; i <= len(bars); i++ {
 		cur := bars[i-1]
-		now := cur.CloseTime + 1 // first instant after this closed bar
+		now := BarCloseInstant(cur)
 		start := i - productionTickBars
 		if start < 0 {
 			start = 0
