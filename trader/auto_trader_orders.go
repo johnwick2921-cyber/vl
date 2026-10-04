@@ -245,7 +245,9 @@ func (at *AutoTrader) executeDecisionWithRecordAt(decision *kernel.Decision, act
 
 // reconcileFlattenTimeout / PollInterval bound the flatten-first await in
 // reconcileBeforeOpenNT — the auto-flatten polls NT8 net until flat, then opens.
-const (
+// Vars (not consts) so a test can shrink the real-clock wait; the production
+// values below are the shipped defaults and nothing reassigns them at run time.
+var (
 	// Heartbeat-aware backstop: the primary confirmation is the fill-confirmed
 	// position_close FRAME (arrives ~instantly), so this timeout is only hit when no
 	// frame comes — in which case we must give the 30s all-account positions
