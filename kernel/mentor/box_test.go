@@ -377,6 +377,52 @@ func TestBoxTopTwoCandleNeverWalked(t *testing.T) {
 	}
 }
 
+// TestBoxesFormedAtBornOnConfirmation — B10 T1 FOLD (CTO 21:16Z): when the
+// EXTREME is the LATER pairing candle, FormedAt must be extreme+1 (the box
+// is born when the confirming bar closes), and the confirming bar is never
+// walked as a return. Mutant M3 (FormedAt = seq[extreme].idx, drop the +1)
+// → RED: FormedAt becomes 5 and the confirming bar is walked as return 1.
+func TestBoxesFormedAtBornOnConfirmation(t *testing.T) {
+	cfg := DefaultBoxCfg()
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(0, 110, 111, 108, 109),
+		mk(1, 109, 110, 107, 108),
+		mk(2, 108, 108.5, 104, 105),
+		mk(3, 105, 106, 103, 104.5),
+		mk(4, 104, 104.5, 101.5, 103),   // the nearest low (left-only, unconfirmed)
+		mk(5, 103.5, 104, 100, 103.6),   // the EXTREME — the later pairing candle; closes outside
+		mk(6, 102, 103.2, 101.5, 102.2), // the confirming bar (higher low) — touches while outside
+		mk(7, 102.5, 104, 102, 103.5),
+		mk(8, 103, 104.5, 102.8, 104), // the first return visit
+		mk(9, 104, 104.5, 103.2, 104.2),
+	}
+	now := time.UnixMilli(bars[len(bars)-1].OpenTime + 60_000).In(ctime())
+	boxes := BoxesBuild(bars, cfg, now)
+	if len(boxes) != 1 {
+		t.Fatalf("boxes = %d (%+v), want exactly one FTGL [100, 103]", len(boxes), boxes)
+	}
+	b := boxes[0]
+	if b.Kind != FTGL || b.Bottom != 100 || b.Top != 103 {
+		t.Fatalf("box = %+v, want FTGL bottom 100 top 103", b)
+	}
+	if b.FormedAt != 6 {
+		t.Fatalf("FormedAt = %d, want 6 = extreme idx 5 + 1 — born when the confirming bar closes", b.FormedAt)
+	}
+	ret := BoxReturnBarsFrom(bars, b, b.FormedAt+1, cfg)
+	if len(ret) != 1 || ret[0].RefBar != 8 {
+		t.Fatalf("returns = %+v, want exactly one return at RefBar 8", ret)
+	}
+	for _, r := range ret {
+		if r.RefBar <= 6 {
+			t.Fatalf("return RefBar %d — the confirming bar (6) was walked", r.RefBar)
+		}
+	}
+}
+
 // TestBoxesGolden13SepFrame — the course frame (D3.3 FTGH/FTGL
 // part1_06-25.jpg, verified by the CTO): two 1m boxes on Sun 13 Sep 2026,
 // FTGL ≈ 28,982 → 29,015 and FTGH ≈ 29,097 → 29,105. The builder must draw

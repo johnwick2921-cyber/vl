@@ -148,10 +148,11 @@ type Config struct {
 	// Default 0: any closed candle that did not touch ends the visit ("he never
 	// states one"). Key-level touch references are per VISIT, not per day.
 	LvlRevisitMinPts float64
-	// LossDeparturePts — departure rule for loss blocks (CTO 13:24:53Z):
-	// a closed candle AFTER the loss candle whose |close - loss price| reaches
-	// this distance lifts the block. Default 20 ("leave the area", no number
-	// from the mentor). ONE rule for E2 (EMA) and G2 (levels/boxes).
+	// LossDeparturePts — B22 fallback knob (default OFF): the structural
+	// departure (swing break / wave break / box exit) is primary. Only for a
+	// swing-less place (no old extreme beyond the entry) does this numeric
+	// fallback apply when > 0: a closed candle |close - loss price| >= knob
+	// frees the place.
 	LossDeparturePts float64
 	// LocTriggerFilter — mirror of the replay row v5_loc_notrig (CTO
 	// 13:20:22Z): true (default) keeps the 5m-trigger filter on LEVEL and BOX
@@ -240,7 +241,7 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:   25,
 		RoomMultiple:     2,
-		LossDeparturePts: 20,
+		LossDeparturePts: 0, // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter: true,
 		RangeGapPts:      0,
 
