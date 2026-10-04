@@ -210,20 +210,9 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 	defer at.armedPassMu.Unlock()
 	defer armedPassEntered(at.id)()
 	scope := opts.scope
-	// B3 (release #3b): mentor placement does NOT depend on the AI day plan.
-	// With mentor mode ON the pass falls through to the mentor-only placement
-	// path even when the day plan master is off or no AI plan is active.
-	mentor := at.mentorEnabled()
-	if at.store == nil || at.exchange != "ninjatrader" {
+	if at.store == nil || at.exchange != "ninjatrader" || at.armedPassDormant() {
+		at.dayPlanOffPassHead(now) // W5 R8 settle, then D21
 		return
-	}
-	if !at.dayPlanEnabled() {
-		if !mentor {
-			at.dayPlanOffPassHead(now) // W5 R8 settle, then D21
-			return
-		}
-		// mentor: fall through — mentor rows are governed by mentor mode + their
-		// own expiry + the evaluator's CancelArm/ExtendArm, never the day plan.
 	}
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
@@ -255,6 +244,11 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 		at.consumeArmedOrderUpdates(nt, ledger)
 	}
 	pictureHandOffSweepHook(at, now) // W5 D17 — the interrupted-hand-off sweep, once per pass (Builder A binds it)
+
+	// B3 (release #3b): mentor placement does NOT depend on the AI day plan.
+	// Mentor rows are governed by mentor mode + their own expiry + the evaluator's
+	// CancelArm/ExtendArm — never the AI plan's lifecycle.
+	mentor := at.mentorEnabled()
 
 	// 1.4 — plan → dormant/no_trade/absent = ALL its armed orders cancelled
 	// instantly. Re-arm does NOT auto-re-arm (fresh AI authorization required).
@@ -2699,6 +2693,14 @@ func (at *AutoTrader) cancelIntradayMentorArms() {
 	if unacked > 0 {
 		at.logWarnf("⚠️ EOD-FLAT (mentor intraday): %d unacked after retry — held cancel_pending, the settlement pass owns them", unacked)
 	}
+}
+
+// armedPassDormant reports whether the armed pass has nothing to run on: the
+// day plan is OFF and mentor mode is OFF. B3 (release #3b): mentor mode ON alone
+// keeps the pass alive through the mentor-only placement path, so the day-plan
+// gate must not return for a mentor-mode trader.
+func (at *AutoTrader) armedPassDormant() bool {
+	return !at.dayPlanEnabled() && !at.mentorEnabled()
 }
 
 // mentorOnlyPlacementPass is the B3 (release #3b) mentor-only placement path.
