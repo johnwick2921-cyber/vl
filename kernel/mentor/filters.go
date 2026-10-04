@@ -28,20 +28,23 @@ type TriggerLine struct {
 // TriggerTick advances the trigger state over the closed buckets newer than
 // LastBucket (B2). The trigger candle need not close [@ 08:19]; a bucket that
 // exists (even forming) may fire a break, is committed once, and is never
-// re-applied. Buckets are compared only with the immediately PREVIOUS bucket
-// of the SAME timeframe (tfMin minutes — law 2 compares adjacent candles).
+// re-applied. Buckets are compared with the previous bucket of the SAME
+// timeframe that EXISTS — "the previous candle" on his chart [D3.4 p1 @04:02,
+// @08:04], never "the previous clock bucket" (CTO ruling 2026-10-04, [B]): the
+// first candle after the 16:00–17:00 CT halt, a weekend, a holiday or a data
+// hole is compared with the candle before the gap, so a Sunday-open break is
+// not missed. tfMin is kept for the callers' signature.
 func TriggerTick(prev TriggerLine, bars []market.Kline, tfMin int, cfg Config) TriggerLine {
 	if !cfg.Enabled || len(bars) == 0 {
 		return prev
 	}
 	next := prev
-	ms := int64(tfMin) * 60_000
 	for i, b := range bars {
 		if b.OpenTime <= next.LastBucket {
 			continue // a committed bucket
 		}
 		last := next.LastBar
-		if last.OpenTime > 0 && b.OpenTime == last.OpenTime+ms {
+		if last.OpenTime > 0 && b.OpenTime > last.OpenTime {
 			next = applyBreak(next, last, b)
 		}
 		// Only NON-tail buckets commit. The LAST bucket is the forming one: it
@@ -66,11 +69,16 @@ func applyBreak(next TriggerLine, before, cur market.Kline) TriggerLine {
 	brokeLow := cur.Low < before.Low
 	if brokeHigh && brokeLow {
 		// broke BOTH: draw both lines, keep the one price is NOW beyond
-		// [D3.4 p2 @ 18:49].
-		if cur.Close > before.High {
+		// [D3.4 p2 @ 18:49]. A close INSIDE the prior range is beyond
+		// neither extreme: the bar moves nothing and the next bar decides
+		// (CTO parity ruling 2026-10-04 Q2).
+		switch {
+		case cur.Close > before.High:
 			brokeLow = false
-		} else {
+		case cur.Close < before.Low:
 			brokeHigh = false
+		default:
+			return next
 		}
 	}
 	switch {

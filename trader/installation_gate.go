@@ -65,7 +65,10 @@ type InstallationGate struct {
 	// NT8Absent is the nt8_absent verdict (UPDATER-NT8-CLOSED): present when
 	// an NT8 TCP trader exists to measure the link; eligible when the link
 	// has been down ≥ nt8AbsentMinLinkDown continuously, measured from the
-	// server's per-connection record (never inferred from a stale ack).
+	// server's per-connection record (never inferred from a stale ack): the
+	// closing connection's disconnect stamp, or — when no AddOn has connected
+	// since the listener came up (a bot booted with NT8 closed) — the moment the
+	// listener came up.
 	// Ready only when eligible AND every ledger leg passes on its own
 	// evidence. Legs stay ABSENT (not []) when not eligible — an uncomputed
 	// leg list is absent, never fabricated (canon 49/53).
@@ -130,7 +133,10 @@ var installationWireView = func(nts []*AutoTrader) (installationWire, bool) {
 		}
 		age, has := rec.AckAge()
 		wire := installationWire{Rec: rec, Connected: connected, Queued: queued, HasAck: has, AckAge: age}
-		if dat, ok := rec.DisconnectedAt(); ok {
+		// The link-down stamp: the closing connection's disconnect stamp, or —
+		// for a bot that has NEVER seen the AddOn connect since its listener
+		// came up (booted with NT8 closed) — the moment the listener came up.
+		if dat, ok := rec.LinkDownSince(connected); ok {
 			wire.DisconnectedAt, wire.HaveDisconnectedAt = dat, true
 		}
 		return wire, true

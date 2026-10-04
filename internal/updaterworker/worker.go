@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"vl/internal/updaterjob"
@@ -79,9 +80,17 @@ type Worker struct {
 	resume  map[string]bool // attended resume signals, consumed by the runner
 	wake    chan struct{}
 
-	// swapDone closes exactly once, when a worker-self-update swap completed.
-	// cmd/vl-updater serve exits on it so systemd restarts the worker on the
-	// new binary (the unit's Restart= policy decides — see the PR body).
+	// swapPending is set by the swap step once the worker binary was replaced
+	// on disk. It does NOT exit the worker: the job must first persist the
+	// swap receipt and run its terminal effects (hold + lock release).
+	swapPending atomic.Bool
+	// swapDone closes exactly once, when a job that swapped the worker binary
+	// has FINISHED (finished()). cmd/vl-updater serve exits on it so systemd
+	// restarts the worker on the new binary (the unit's Restart= policy
+	// decides — see the PR body). Closing it any earlier lets the process
+	// exit before the swap receipt and the complete transition are written,
+	// and the restarted worker then re-runs worker_swapped until the attempts
+	// cap sends the job to recovery_needed (job de4cf900, 2026-10-04).
 	swapDone chan struct{}
 
 	// crash is a TEST SEAM: called at every boundary with a point name

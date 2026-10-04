@@ -81,12 +81,34 @@ func KeyLevels(bars []market.Kline, cfg Config) []Level {
 	return out
 }
 
+// isPreBucketed1H reports whether the input is a series of ready-made 1H
+// candles. The decision reads the WHOLE series — most consecutive gaps >= 60
+// min — never the first two bars: the MNQ seed window starts with two sparse
+// `historical_import` snapshots (09-07 12:00, 09-08 16:00), and the old
+// first-two-bars rule read the entire 1m history behind them as 1H candles,
+// so every 1m bar in 08:00–14:59 became a "candle" and the level walk drew
+// garbage. One pass, no allocation (the cold path calls this every tick).
+func isPreBucketed1H(bars []market.Kline) bool {
+	if len(bars) < 2 {
+		return false
+	}
+	const hourMs = 60 * 60_000
+	wide := 0
+	for i := 1; i < len(bars); i++ {
+		if bars[i].OpenTime-bars[i-1].OpenTime >= hourMs {
+			wide++
+		}
+	}
+	return 2*wide > len(bars)-1
+}
+
 // keyLevel1HBars buckets the 1m history into 1H candles ANCHORED AT THE
 // MARKET OPEN 08:30 CT (KEY-LEVEL RULING item 1): the first candle is
 // 08:30–09:29. Only candles OPENING inside RTH survive and bars opening at or
 // after 15:00 CT are dropped (external minutes never contaminate the 14:30
-// candle). A PRE-BUCKETED 1H input (bars already ~60m apart, e.g. the
-// recorded 1h fixtures) cannot reconstruct the 08:30 anchor: each bar is a
+// candle). A PRE-BUCKETED 1H input (most consecutive bars >= 60m apart, e.g.
+// the recorded 1h fixtures — judged over the WHOLE series, see
+// isPreBucketed1H) cannot reconstruct the 08:30 anchor: each bar is a
 // candle and the RTH filter keeps candles opening in [08:00, 15:00) — the
 // hour that contains the market open. The evaluator always feeds 1m bars.
 func keyLevel1HBars(bars []market.Kline) []market.Kline {
@@ -95,7 +117,7 @@ func keyLevel1HBars(bars []market.Kline) []market.Kline {
 		rthEnd    = 15 * 60   // 15:00 CT
 	)
 	// pre-bucketed 1H input: every bar is already a candle
-	if len(bars) >= 2 && bars[1].OpenTime-bars[0].OpenTime >= 60*60_000 {
+	if isPreBucketed1H(bars) {
 		// Fresh slice: filtering into bars[:0] MUTATES the caller's backing
 		// array (Seed ran the 4h aggregation over a half-filtered tape —
 		// 81 buckets from the same 216 bars a clean call buckets into 53).
@@ -187,6 +209,18 @@ func rthHourAnchor(ms int64) int64 {
 	return time.Date(t.Year(), t.Month(), t.Day(), h, 30, 0, 0, ctime()).UnixMilli()
 }
 
+// keyLevel1HCandleCloseTime returns the scheduled close of an RTH hour candle.
+// The final 14:30 candle closes at the 15:00 RTH boundary.
+func keyLevel1HCandleCloseTime(openMs int64) int64 {
+	t := time.UnixMilli(openMs).In(ctime())
+	closeMs := t.Add(time.Hour).UnixMilli()
+	rthEnd := time.Date(t.Year(), t.Month(), t.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
+	if closeMs > rthEnd {
+		return rthEnd
+	}
+	return closeMs
+}
+
 // candleColour: green iff close > open, red otherwise (§4.3 step 2).
 func candleColour(b market.Kline) bool {
 	return b.Close > b.Open
@@ -207,8 +241,12 @@ func candleColour(b market.Kline) bool {
 // the b60 lifecycle (seeded: State.Seed1HBars, incremental; cold: one
 // keyLevel1HBars per tick).
 func levelDeletedBy1HBody(lvl Level, b60 []market.Kline, now int64) bool {
-	if len(b60) > 0 && b60[len(b60)-1].CloseTime >= now {
-		b60 = b60[:len(b60)-1] // the forming 1H candle has not closed
+	// The forming test uses the candle's SCHEDULED close: keyLevel1HBars gives a
+	// candle the CloseTime of its last 1m bar, which is not proof the hour is
+	// over (a mid-hour candle would read as closed when now is the instant the
+	// last 1m bar closed).
+	if n := len(b60); n > 0 && keyLevel1HCandleCloseTime(b60[n-1].OpenTime) > now {
+		b60 = b60[:n-1] // the forming 1H candle has not closed
 	}
 	for _, b := range b60 {
 		if b.CloseTime < lvl.AtTime {

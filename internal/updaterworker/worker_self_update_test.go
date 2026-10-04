@@ -168,8 +168,11 @@ func TestWorkerSwapSuccessIsAtomicAndReceipted(t *testing.T) {
 	}
 	select {
 	case <-w.SwapDone():
+		t.Fatal("SwapDone closed by the step — the exit signal belongs to finished(), after the receipt and complete are persisted")
 	default:
-		t.Fatal("SwapDone not closed after a successful swap")
+	}
+	if !w.swapPending.Load() {
+		t.Fatal("swapPending not set after a successful swap")
 	}
 }
 
@@ -304,8 +307,11 @@ func TestWorkerSwapSecondRunDoesNotSwap(t *testing.T) {
 	}
 	select {
 	case <-w.SwapDone():
+		t.Fatal("SwapDone closed on the already-swapped path — the restarted worker would exit again and loop (job de4cf900)")
 	default:
-		t.Fatal("SwapDone not closed on the already-swapped path")
+	}
+	if w.swapPending.Load() {
+		t.Fatal("swapPending set on the already-swapped path: nothing was swapped")
 	}
 }
 

@@ -1,4 +1,10 @@
 // Dispatch 102 freezes load-bearing identifiers, including their surrounding guards.
+// Wire baseline advanced 2026-10-04 for the UPDATER-NT8-CLOSED never-connected
+// seed (fix/updater-nt8-never-connected, DS-101):
+//   provider/ninjatrader/tcp_server.go   sha256 5451949a… — Start records the
+//     listener-up stamp (maint.listening / maint.listenMono, under maint.mu) and
+//     SetListeningSinceForTest (tests only). Additive; no identifier renamed, no
+//     frame, handshake, order or position path touched.
 // Wire baselines advanced 2026-10-03 for PR A (cancel-confirm report regime,
 // feat/cancel-confirm-a, DS-101):
 //   provider/ninjatrader/tcp_framing.go  sha256 d3a570e4… — SignalPayload gains
@@ -442,4 +448,4 @@ it('preserves every existing TypeScript import target in changed files', async (
       )
     }
   }
-})
+}, 30_000) // explicit timeout: the git/ts walk took 5089 ms on CI vs vitest's 5 s default (flake seen on #321, #288)
