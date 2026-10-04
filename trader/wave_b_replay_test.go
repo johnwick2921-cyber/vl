@@ -121,7 +121,7 @@ func TestStopEntryGuardHasAProductionCallSite(t *testing.T) {
 	// cancel-confirmation (2026-09-06) added the slot guard as the call's last
 	// argument. The assertion keeps its purpose — the dispatch is made HERE and
 	// nowhere else — and now also pins that the guard is adjudicated at the call.
-	if !strings.Contains(src, "at.placeOneStopEntry(nt, ledger, r, d, price, now, at.armSlotGuard(rows, r, now))") {
+	if !strings.Contains(src, "at.placeOneStopEntry(nt, ledger, r, d, price, now, at.armSlotGuard(rows, r, now), entryGroupSiblingSignalIDs(rows, r))") {
 		t.Error("the stop-entry branch does not dispatch the decision — nothing acts on the verdict")
 	}
 	if strings.Contains(src, "limitMarketableWrongSide(price, trigger,") {

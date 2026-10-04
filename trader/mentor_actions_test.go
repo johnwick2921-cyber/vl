@@ -484,9 +484,10 @@ func TestMentorClosePositionReachesTheBroker(t *testing.T) {
 	}
 }
 
-// TestMentorIntentYieldsExactlyOneArmedRow — DS-102's merge check: one
-// mentor intent authors exactly one ledger row, and the row carries the
-// intent's expiry as the ledger write itself (no double stamping seam).
+// TestMentorIntentYieldsExactlyOneArmedRow — DS-102's merge check, extended
+// for DS-103 split legs: one mentor intent of n ≥ 2 contracts authors exactly
+// TWO ledger rows (one per leg, a shared EntryGroup), and every row carries
+// the intent's expiry as the ledger write itself (no double stamping seam).
 func TestMentorIntentYieldsExactlyOneArmedRow(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "on")
 	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
@@ -498,11 +499,19 @@ func TestMentorIntentYieldsExactlyOneArmedRow(t *testing.T) {
 	if err := ledger.DB().Where("scenario LIKE ?", "isb-one-%").Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 {
-		t.Fatalf("one mentor intent must yield exactly one armed row, got %d", len(rows))
+	if len(rows) != 2 {
+		t.Fatalf("one 5-contract mentor intent must author exactly two leg rows, got %d", len(rows))
 	}
-	if rows[0].ExpiryMs != expiry || rows[0].State != store.StateArmed {
-		t.Fatalf("the row must carry the intent's expiry as the ledger write: expiry=%d state=%q", rows[0].ExpiryMs, rows[0].State)
+	if rows[0].EntryGroup == "" || rows[0].EntryGroup != rows[1].EntryGroup {
+		t.Fatalf("the two legs must share one EntryGroup: %q / %q", rows[0].EntryGroup, rows[1].EntryGroup)
+	}
+	if rows[0].LegIndex != 0 || rows[1].LegIndex != 1 || rows[0].LegCount != 2 || rows[1].LegCount != 2 {
+		t.Fatalf("the legs must be indexed 0/1 of 2: got (idx,count) (%d,%d) (%d,%d)", rows[0].LegIndex, rows[0].LegCount, rows[1].LegIndex, rows[1].LegCount)
+	}
+	for i := range rows {
+		if rows[i].ExpiryMs != expiry || rows[i].State != store.StateArmed {
+			t.Fatalf("leg %d must carry the intent's expiry as the ledger write: expiry=%d state=%q", i, rows[i].ExpiryMs, rows[i].State)
+		}
 	}
 }
 

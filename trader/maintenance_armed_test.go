@@ -164,7 +164,7 @@ func TestArmedStopCallerSkipsTheLatchOnAHoldRefusal(t *testing.T) {
 	j := strings.Index(src[i:], "\n}\n")
 	body := src[i : i+j]
 	call := strings.Index(body, "if at.placeOneStopEntry(")
-	latch := strings.Index(body, "placedThisPass = true\n\t\t\t\tat.cancelOtherArmsInPlan(ledger, rows, r, now)\n\t\t\t\tcontinue")
+	latch := strings.Index(body, "placedThisPass = true\n\t\t\t\tplacedGroup = r.EntryGroup\n\t\t\t\tat.cancelOtherArmsInPlan(ledger, rows, r, now)\n\t\t\t\tcontinue")
 	if call < 0 {
 		t.Fatal("runArmedPlacementAtFiltered must branch on placeOneStopEntry's hold report (`if at.placeOneStopEntry(`)")
 	}
