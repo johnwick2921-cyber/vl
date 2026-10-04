@@ -155,7 +155,7 @@ export const mentor: GuideSection = {
   num: 17,
   title: 'Mentor Mode',
   tagline:
-    "The mentor's method: three setups, four locations, hard filters, small and patient.",
+    "The mentor's method: three setups, five locations, hard filters, small and patient.",
   asBuiltRev: GUIDE_BUILT_REV,
   blocks: [
     {
@@ -205,7 +205,7 @@ export const mentor: GuideSection = {
     },
     {
       kind: 'h',
-      text: 'The four locations',
+      text: 'The five locations',
     },
     {
       kind: 'table',
@@ -232,6 +232,11 @@ export const mentor: GuideSection = {
           'Box edge',
           'FTGH/FTGL boxes, 1m regular candles, paired by role with no tolerance — the extreme (lowest low / highest high) pairs with the NEXT confirmed swing AFTER it that fails to exceed it (a higher low / lower high); the trade is the 3rd touch',
           'A box edge is used again and again; an escape (a 1m BODY closes outside) does NOT kill the box — it stays and every later return trades [B4]; boxes die at day end only',
+        ],
+        [
+          'Trendline',
+          'Two same-role swings joined — a low and a HIGHER low (support) or a high and a LOWER high (resistance); never horizontal',
+          'Exists at 2 points; becomes a location only after the 3rd touch [DAY-3 p2 @03:45-04:07]; a break confirmed by a 5m close discards it (a break is NOT an entry). Box beats trendline',
         ],
       ],
     },
