@@ -195,6 +195,31 @@ func TestB3EODFlatRunsWithMentorDayPlanOff(t *testing.T) {
 	}
 }
 
+// ── Minor note (first review): the EOD intraday-mentor cancel
+// (cancelIntradayMentorArms in the armed pass) must run with mentor mode ON and
+// the day plan OFF — mentor ON is enough. SWING4H survives; intraday is
+// cancelled. ───────────────────────────────────────────────────────────────────
+func TestB3EODIntradayMentorCancelRunsWithDayPlanOff(t *testing.T) {
+	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	// mentorLoopback (not mentorB3Rig): MentorMode ON, DayPlan nil → day plan OFF.
+	at, st, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	b3SessionRegistry(t, st, "TEST", "00:00", "10:00") // session ended before now
+	now := b3Clock(11, 0)
+	seedSwingMentorArmedRow(t, at, ledger, "swing-minor", now.UnixMilli()+60_000)
+	seedMentorArmedRow(t, at, ledger, "intraday-minor", now.UnixMilli()+60_000)
+
+	at.maybeManageArmedOrdersAtOpts(nil, now, armedPassOpts{})
+
+	swing := readArmRow(t, ledger, "swing-minor")
+	if store.IsTerminalArmState(swing.State) {
+		t.Fatalf("SWING4H mentor arm must survive the EOD flat, got state=%q", swing.State)
+	}
+	intraday := readArmRow(t, ledger, "intraday-minor")
+	if intraday.State != store.StateCancelled {
+		t.Fatalf("intraday mentor arm must be cancelled at EOD with the day plan OFF, got state=%q", intraday.State)
+	}
+}
+
 // ── N6 (production): mentor placed at 14:40, refused at 15:50. ────────────────
 func TestB3MentorPlacedBefore1545(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "on")
