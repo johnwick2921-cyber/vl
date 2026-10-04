@@ -53,3 +53,22 @@ func TestORBBlocksAfterRTHOpenUntilEscape(t *testing.T) {
 		t.Fatalf("escaped long outside the ORB must pass; got %d, refused %v", len(got), refused)
 	}
 }
+
+// TestORBNotGatedAfterRTHClose — pin 3: after the 15:00 CT RTH close (the
+// evening Globex session) the ORB gate does not filter, whatever the morning
+// escape side latched [EXTRAS P2].
+func TestORBNotGatedAfterRTHClose(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	// The morning ORB escaped LONG; an evening SHORT would be orb_wrong_side if
+	// the gate still applied after the RTH close.
+	orb := ORB{Day: dayStartCT(auditMs(2026, 9, 15, 9, 0, 0)), High: 24844, Low: 24814, Drawn: true, Escaped: SideLong}
+	for _, hhmm := range []struct{ hh, mm int }{{15, 30}, {19, 0}} {
+		at := auditMs(2026, 9, 15, hhmm.hh, hhmm.mm, 0)
+		got, refused := orbGateFilter([]Intent{orbEntry(SideShort, 24810)}, orb, at, cfg)
+		if len(refused) != 0 || len(got) != 1 {
+			t.Fatalf("%02d:%02d CT entry must not be ORB-gated (morning escape is long); got %d, refused %v",
+				hhmm.hh, hhmm.mm, len(got), refused)
+		}
+	}
+}
