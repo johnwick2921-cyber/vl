@@ -58,6 +58,7 @@ const (
 	// Seed PR numbers).
 	warmupFourHBuckets = 102
 	warmupOneMBars     = 102
+	productionTickBars = 1500
 )
 
 type parityDay struct {
@@ -295,11 +296,10 @@ func fnumOrEmpty(v float64) string {
 	return fnum(v)
 }
 
-// emitGoState builds the per-minute Go state row the way the evaluator sees
-// the world at the close of bar cur (index i in bars, exclusive end).
-func emitGoState(e *Evaluator, bars []market.Kline, i int, cfg Config) goStateRow {
-	cur := bars[i-1]
-	prev := bars[i-2]
+// emitGoState builds the state row from the same bounded bar window Tick saw.
+func emitGoState(e *Evaluator, bars []market.Kline, cfg Config) goStateRow {
+	cur := bars[len(bars)-1]
+	prev := bars[len(bars)-2]
 	now := cur.OpenTime // the production Tick clock (mentorEvalOnce)
 	row := goStateRow{
 		minCT: minCTFromBar(cur),
@@ -357,7 +357,7 @@ func emitGoState(e *Evaluator, bars []market.Kline, i int, cfg Config) goStateRo
 	if e.seeded {
 		levels = append(levels, e.State.SeedLevels...)
 	} else {
-		levels = Levels(bars[:i], cfg, now)
+		levels = Levels(bars, cfg, now)
 	}
 	// Tick has already updated DeletedLevels before this state snapshot.
 	levels = withoutDeleted(levels, e.State.DeletedLevels)
@@ -377,7 +377,7 @@ func emitGoState(e *Evaluator, bars []market.Kline, i int, cfg Config) goStateRo
 	row.levelAbov = fnumOrEmpty(above)
 
 	// 1m EMA34 (the v5_base run config: ema34_tf='1m').
-	row.ema34 = fnum(emaValue(bars[:i], cfg.EMAPeriod34))
+	row.ema34 = fnum(emaValue(bars, cfg.EMAPeriod34))
 
 	// the 5m ISB rest box as the evaluator currently holds it (active only —
 	// the replay dump keeps the last-born box; an escaped box diverges here).
@@ -580,34 +580,29 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 	t.Logf("WARMUP %-8s: prefix %d bars / %d days / 4h buckets %d / 1h buckets %d before %s",
 		d.name, len(prefix), prefixDays(prefix), len(fourHBuckets), oneH, d.day)
 
-	// Drive the evaluator minute by minute; record target-day placements and
-	// RTH state rows.
+	// Production seeds once at target-day midnight from stored history.
 	e := New(cfg)
+	seedAt := bars[firstTarget].OpenTime
+	if missing := Seed(e, prefix, seedAt); len(missing) > 0 {
+		t.Errorf("%s: seed at %s missing sources %v — entries would be refused (fail-closed)",
+			d.name, time.UnixMilli(seedAt).In(ctime()).Format("2006-01-02 15:04"), missing)
+	}
+
+	// Tick only target-day bars, passing the same bounded tail production
+	// fetches on each call. State dumps use this identical window.
 	goRows := map[string]goStateRow{}
 	placements := map[string]armKey{} // deduped Go arms, keyed by arm key
 	unknownSetups := map[string]int{}
 	var rowOrder []string
-	for i := 2; i <= len(bars); i++ {
+	for i := firstTarget + 1; i <= len(bars); i++ {
 		cur := bars[i-1]
-		// PRODUCTION CALL SITES (canon 53): the bot seeds ONCE from stored
-		// history (trader/mentor_tick.go → mentor.Seed), then ticks every
-		// CLOSED 1m bar with now = that bar's OpenTime (mentorEvalOnce:
-		// Tick(bars, last.OpenTime)). Seeding at 00:00 CT of the target day
-		// leaves no 1H RTH candle forming at the seed instant. The cold
-		// ticks before it build the trigger/HTF/box state minute by minute,
-		// the way a bot that has been running all along holds it.
-		if i-1 == firstTarget {
-			if missing := Seed(e, bars[:firstTarget], cur.OpenTime); len(missing) > 0 {
-				t.Errorf("%s: seed at %s missing sources %v — entries would be refused (fail-closed)",
-					d.name, time.UnixMilli(cur.OpenTime).In(ctime()).Format("2006-01-02 15:04"), missing)
-			}
-		}
 		now := cur.OpenTime
-		if time.UnixMilli(cur.OpenTime).In(ctime()).Format("2006-01-02") != d.day {
-			e.Tick(bars[:i], now)
-			continue
+		start := i - productionTickBars
+		if start < 0 {
+			start = 0
 		}
-		intents := e.Tick(bars[:i], now)
+		tickBars := bars[start:i]
+		intents := e.Tick(tickBars, now)
 		minute := minCTFromBar(cur)
 		placedThisMinute, cancelledThisMinute := 0, 0
 		for _, in := range intents {
@@ -635,7 +630,7 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 		// RTH minutes only, like the replay's 390-row state files.
 		m := ctMinuteOfDay(cur.OpenTime)
 		if m >= 8*60+30 && m < 15*60 {
-			row := emitGoState(e, bars, i, cfg)
+			row := emitGoState(e, tickBars, cfg)
 			row.armsPlac = strconv.Itoa(placedThisMinute)
 			row.armsCanc = strconv.Itoa(cancelledThisMinute)
 			if _, seen := goRows[row.minCT]; !seen {
