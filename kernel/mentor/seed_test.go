@@ -512,3 +512,58 @@ func TestSeedClosedHistoryAtMidnightIsByteIdentical(t *testing.T) {
 		t.Fatalf("closed-history seed changed at midnight:\n got %s\nwant %s", got, want)
 	}
 }
+
+func TestSeedDropsScheduledFormingCandleWithClosedStoredBars(t *testing.T) {
+	seedBars := formingSeedTape(t, 10*60+14, 101, 105, 103)
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	e := New(cfg)
+	Seed(e, seedBars, ctMs(t, 0, 10, 15)+30_000)
+
+	for _, c := range e.State.Seed1HBars {
+		if c.OpenTime == ctMs(t, 0, 9, 30) {
+			t.Fatalf("Seed included scheduled-forming 09:30 candle ending at %d", c.CloseTime)
+		}
+	}
+
+	bars := formingSeedTape(t, 10*60+31, 101, 105, 103)
+	for i := len(seedBars); i < len(bars); i++ {
+		e.Tick(bars[:i+1], bars[i].OpenTime)
+	}
+	var found int
+	for _, c := range e.State.Seed1HBars {
+		if c.OpenTime != ctMs(t, 0, 9, 30) {
+			continue
+		}
+		found++
+		if c.Open != 100 || c.High != 105 || c.Low != 100 || c.Close != 103 ||
+			c.CloseTime != ctMs(t, 0, 10, 29)+59_999 {
+			t.Fatalf("09:30 candle = %+v, want full 09:30–10:29 OHLC 100/105/100/103", c)
+		}
+	}
+	if found != 1 {
+		t.Fatalf("09:30 candle occurrence count = %d, want exactly one", found)
+	}
+}
+
+func TestSeed14h30CandleClosesAt1500(t *testing.T) {
+	bars := formingSeedTape(t, 14*60+59, 101, 101, 101)
+	e := New(DefaultConfig())
+	Seed(e, bars, ctMs(t, 0, 15, 0))
+
+	var found int
+	for _, c := range e.State.Seed1HBars {
+		if c.OpenTime >= ctMs(t, 0, 15, 0) {
+			t.Fatalf("post-close candle entered RTH seed: %+v", c)
+		}
+		if c.OpenTime == ctMs(t, 0, 14, 30) {
+			found++
+			if c.CloseTime != ctMs(t, 0, 14, 59)+59_999 {
+				t.Fatalf("14:30 candle CloseTime = %d, want last stored minute close %d", c.CloseTime, ctMs(t, 0, 14, 59)+59_999)
+			}
+		}
+	}
+	if found != 1 {
+		t.Fatalf("14:30 candle count at 15:00 = %d, want one", found)
+	}
+}

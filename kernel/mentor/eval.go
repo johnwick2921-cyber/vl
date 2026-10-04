@@ -1263,7 +1263,7 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 		return rthHourAnchor(bars[i].OpenTime) > e.State.Seed1HWatermark
 	})
 	for _, c := range keyLevel1HBars(bars[start:]) {
-		if c.OpenTime <= e.State.Seed1HWatermark || c.CloseTime > now {
+		if c.OpenTime <= e.State.Seed1HWatermark || keyLevel1HCandleCloseTime(c.OpenTime) > now {
 			continue
 		}
 		e.State.SeedLevels, e.State.Seed1HLastColour =
