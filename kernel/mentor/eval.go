@@ -638,13 +638,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 	}
 
+	// DS-103 item 4 (D4.2-06): the 15m/5m conflict and the MTF-alignment
+	// mode-C read use the SAME CLOSED buckets — computed once per tick.
+	cb5 := closedBuckets(bars, now, e.Cfg)
+	cb15 := closedBucketsTF(bars, 15, now)
 	if IsISB(prev, cur) {
 		if dirOK, trigSide, _ := TriggerVerdict(e.State.Trigger, cur.Close); dirOK {
 			// B4: the 15m/5m conflict reads CLOSED buckets only — the
 			// still-forming 5m bucket is dropped [D4.2 p1 @ 05:10: "a
 			// 15-minute candle is only confirmed once CLOSED; trade from
 			// the next one"]. B8: the 15m side is the REAL 15m TF.
-			if conflict := ISBConflictVerdict(closedBuckets(bars, now, e.Cfg), closedBucketsTF(bars, 15, now)); !conflict {
+			if conflict := ISBConflictVerdict(cb5, cb15); !conflict {
 				// OWNER RULING 2026-10-03 ("exactly like he said"): the ISB is
 				// NOT location-gated — "inside bar lúc nào cũng có thể take
 				// risk… trong range, trên range, ngoài range, dưới range"
@@ -738,6 +742,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								e.State.ISBArms[id] = ISBArm{FirstBar: cur, Inside: 0, Side: side}
 								justPlaced[id] = true
 								chosen.ArmID = id
+								// D4.2-06 part 1: mode C also fires on timeframe
+								// agreement — 15m = 5m = entry side AND the 5m
+								// trigger agrees [D4.2 p1 @14:57].
+								chosen.Confluence = MTFConfluence(side, e.State.Trigger, chosen.Price, cb5, cb15)
 								out = append(out, chosen)
 							}
 						}
@@ -932,6 +940,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		if lvl.Kind == KindEMA34 || lvl.Kind == KindEMA9 || lvl.Kind == KindEMA34HTF {
 			in.Anchor = in.Stop
 		}
+		// D2-49 / D2.4 p1 @01:56: the mode-A runner target goes BEYOND the
+		// old high ("resonance breaks the old high 70–80%"). Stamp the next
+		// level beyond the old extreme; 0 = none → the runner's native TP
+		// is removed (exit = BE stop or EOD flat).
+		in.RunnerTarget = nextLevelBeyond(levels, ex.level.Price, side)
 		if e.State.LevelArms == nil {
 			e.State.LevelArms = map[string]LevelArm{}
 		}
@@ -952,6 +965,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.State.EmaPendingExpiry = in.ExpiryMs
 			e.State.EmaPendingFilled = false
 		}
+		// D4.2-06 part 1: mode C also fires on timeframe agreement —
+		// 15m = 5m = entry side AND the 5m trigger agrees [D4.2 p1 @14:57].
+		in.Confluence = MTFConfluence(in.Side, e.State.Trigger, in.Price, cb5, cb15)
 		out = append(out, in)
 	}
 

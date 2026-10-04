@@ -891,27 +891,38 @@ const mentorResonanceMaxCandles = 3
 // the REST's stop goes to BREAK-EVEN immediately, NO candle trail. R-RES
 // (CTO 1791040643329, D2.4 p1 @02:17-02:29 "@03:36-03:45"): the resonance
 // STILL takes the 1:1 partial — "RISK REWARD 1-1 toi van se ban bot" — so
-// leg 1's +1R TP STAYS (no modify, returned 0); leg 2 runs with its stop at
-// BE. Returns whether it armed and the modify-bracket TP (0 = no modify).
-func mentorMaybeArmResonance(pos *mentorPosition, isbSide string, barsSinceFill int) (armed bool, modifyTP float64) {
+// leg 1's +1R TP STAYS (no modify).
+//
+// D2-49 (D2.4 p1 @01:56 "resonance breaks the old high 70–80%"): in mode A
+// the RUNNER's target goes BEYOND the old high. runnerTarget is the next
+// level beyond the old extreme (stamped by the evaluator as Intent.RunnerTarget).
+// > 0 → the runner's native TP moves there; 0 → the runner's native TP is
+// REMOVED (the exit is the BE stop or EOD flat, never a near-old-high cap).
+// Returns (armed, modifyLeg1TP, modifyLeg2TP): leg 1's TP modify is always 0;
+// the runner's TP modify is the third value (0 = remove).
+func mentorMaybeArmResonance(pos *mentorPosition, isbSide string, barsSinceFill int, runnerTarget float64) (armed bool, modifyLeg1TP, modifyLeg2TP float64) {
 	if pos == nil || pos.Mode == "A-resonance" {
-		return false, 0
+		return false, 0, 0
 	}
 	if pos.Origin != "PHL" && pos.Origin != "PLH" {
-		return false, 0 // only a PHL/PLH fill can resonate
+		return false, 0, 0 // only a PHL/PLH fill can resonate
 	}
 	if barsSinceFill < 1 || barsSinceFill > mentorResonanceMaxCandles {
-		return false, 0
+		return false, 0, 0
 	}
 	if !strings.EqualFold(pos.Side, isbSide) {
-		return false, 0
+		return false, 0, 0
 	}
 	pos.Mode = "A-resonance"
 	pos.ArmedBE = true
 	pos.Stop = pos.Entry
+	// D2-49: the runner aims past the old high — move its TP beyond, or remove
+	// it when no level sits beyond (fail-closed: the runner then exits only via
+	// the BE stop or EOD flat, never capped at the near-old-high).
+	pos.Target = runnerTarget
 	mentorCount("resonance_armed")
-	// R-RES: leg 1's +1R take-profit STAYS resting — no TP modify.
-	return true, 0
+	// R-RES: leg 1's +1R take-profit STAYS resting — no leg-1 TP modify.
+	return true, 0, runnerTarget
 }
 
 // mentorExitHold applies the stop-only holds: the stop NEVER moves and nothing

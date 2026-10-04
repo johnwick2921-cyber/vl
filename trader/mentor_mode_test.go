@@ -478,7 +478,7 @@ func TestMentorISBFillCandleExit(t *testing.T) {
 func TestMentorResonanceFork(t *testing.T) {
 	ResetMentorCountersForTest()
 	pos := &mentorPosition{Symbol: "MNQ", Side: "long", Origin: "PHL", Entry: 100, Stop: 90, Target: 130, R: 10, Leg1TP: 110, Mode: "B"}
-	armed, modifyTP := mentorMaybeArmResonance(pos, "long", 2)
+	armed, modifyTP, modifyLeg2TP := mentorMaybeArmResonance(pos, "long", 2, 140)
 	if !armed {
 		t.Fatal("ISB same side within 3 candles of a PHL fill must arm resonance")
 	}
@@ -487,6 +487,10 @@ func TestMentorResonanceFork(t *testing.T) {
 	// the runner's target (the old X2) → RED.
 	if modifyTP != 0 {
 		t.Fatalf("the resonance flip must NOT modify leg 1's TP (R-RES), got modifyTP %.2f", modifyTP)
+	}
+	// D2-49: the runner's target goes BEYOND the old high (140 > 130).
+	if modifyLeg2TP != 140 || pos.Target != 140 {
+		t.Fatalf("mode A must move the runner's TP beyond the old high: modifyLeg2TP=%.2f target=%.2f", modifyLeg2TP, pos.Target)
 	}
 	if pos.Leg1TP != 110 {
 		t.Fatalf("after the flip leg 1's +1R TP must be UNCHANGED (110), got %.2f", pos.Leg1TP)
@@ -509,19 +513,19 @@ func TestMentorResonanceFork(t *testing.T) {
 	}
 	// refused arms: too late (4th candle), wrong side, non-PHL/PLH origin, the
 	// fill bar itself, already-armed.
-	if armed, _ := mentorMaybeArmResonance(pos, "long", 4); armed {
+	if armed, _, _ := mentorMaybeArmResonance(pos, "long", 4, 0); armed {
 		t.Fatal("an ISB 4 candles after the fill must NOT arm resonance")
 	}
-	if armed, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "PHL", Mode: "B"}, "short", 2); armed {
+	if armed, _, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "PHL", Mode: "B"}, "short", 2, 0); armed {
 		t.Fatal("an ISB against the position must NOT arm resonance")
 	}
-	if armed, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "PHL", Mode: "B"}, "long", 0); armed {
+	if armed, _, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "PHL", Mode: "B"}, "long", 0, 0); armed {
 		t.Fatal("the fill bar itself must NOT arm resonance (within 3 candles AFTER the fill)")
 	}
-	if armed, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "ISB", Mode: "B"}, "long", 2); armed {
+	if armed, _, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "ISB", Mode: "B"}, "long", 2, 0); armed {
 		t.Fatal("a non-PHL/PLH origin must NOT arm resonance")
 	}
-	if armed, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "PLH", Mode: "A-resonance"}, "long", 2); armed {
+	if armed, _, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "PLH", Mode: "A-resonance"}, "long", 2, 0); armed {
 		t.Fatal("an already-resonant position must NOT re-arm")
 	}
 }
@@ -810,9 +814,9 @@ func TestMentorExitFork(t *testing.T) {
 		Origin: "PHL", Side: "long", Entry: 100, Stop: 95, Target: 112, R: 5,
 		Mode: "B", Leg1TP: 105,
 	}
-	armed, modTP := mentorMaybeArmResonance(pos, "long", 2)
-	if !armed || pos.Mode != "A-resonance" || pos.Stop != pos.Entry || modTP != 0 || pos.Leg1TP != 105 {
-		t.Fatalf("the A flip must arm: armed=%v mode=%s stop=%.2f modTP=%.2f leg1TP=%.2f", armed, pos.Mode, pos.Stop, modTP, pos.Leg1TP)
+	armed, modTP, modLeg2 := mentorMaybeArmResonance(pos, "long", 2, 120)
+	if !armed || pos.Mode != "A-resonance" || pos.Stop != pos.Entry || modTP != 0 || pos.Leg1TP != 105 || modLeg2 != 120 || pos.Target != 120 {
+		t.Fatalf("the A flip must arm and move the runner beyond the old high: armed=%v mode=%s stop=%.2f modTP=%.2f leg1TP=%.2f modLeg2=%.2f target=%.2f", armed, pos.Mode, pos.Stop, modTP, pos.Leg1TP, modLeg2, pos.Target)
 	}
 }
 

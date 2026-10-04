@@ -300,8 +300,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Intraday confluence (exit C, size 10)',
-          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. Then: hold at least 1:2, the stop is never moved up (exit C), size 10; size 20 only when 4h AND 1h both point the entry’s side (a silent 1h does not count), room ≥ 2× the risk and target ≥ 30 pts.',
-          cite: 'R2 · D3.4 p3 @07:38',
+          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. It also fires on timeframe agreement: the 15m ISB, the 5m ISB and the entry side all align AND the 5m trigger agrees (an ISB/PHL/PLH, not just a box) [D4.2 p1 @14:57]. Then: hold at least 1:2, the stop is never moved up (exit C), size 10; size 20 only when 4h AND 1h both point the entry’s side (a silent 1h does not count), room ≥ 2× the risk and target ≥ 30 pts.',
+          cite: 'R2 · D3.4 p3 @07:38 · D4.2 p1 @14:57',
         },
         {
           title: 'A loss at a place blocks it',
@@ -420,7 +420,7 @@ export const mentor: GuideSection = {
       rows: [
         [
           'A — resonance',
-          'A PHL/PLH filled and then an ISB in the SAME direction within 3 candles: the moment that ISB appears, the stop goes to break-even and the trade rides (do not trail it)',
+          'A PHL/PLH filled and then an ISB in the SAME direction within 3 candles: the moment that ISB appears, the stop goes to break-even and the trade rides (do not trail it); the runner’s target moves beyond the old high (removed when no level sits beyond)',
         ],
         [
           'B — normal',
