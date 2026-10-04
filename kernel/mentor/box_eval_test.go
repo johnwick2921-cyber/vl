@@ -19,7 +19,7 @@ func TestBoxEntryIntentRejectPlacesStopOrder(t *testing.T) {
 	b := Box{Kind: FTGH, Top: 105, Bottom: 102}
 	ref := market.Kline{High: 104.5, Low: 100.5, Close: 101} // touch + close below = reject
 	levels := []Level{{Kind: KindKeyLevel, Price: 98}}
-	out := boxEntryIntent(ref, b, []Box{b}, levels, TriggerLine{}, cfg)
+	out := boxEntryIntent(ref, b, []Box{b}, levels, TriggerLine{}, nil, cfg)
 	if len(out) != 1 {
 		t.Fatalf("reject return = %d intents, want 1", len(out))
 	}
@@ -40,7 +40,7 @@ func TestBoxEntryIntentInsideCloseCancels(t *testing.T) {
 	cfg.Enabled = true
 	b := Box{Kind: FTGH, Top: 105, Bottom: 102}
 	ref := market.Kline{High: 105.1, Low: 103, Close: 104} // touch, close inside = cancel [D3.2 p1 @ 21:04–21:33]
-	if out := boxEntryIntent(ref, b, []Box{b}, nil, TriggerLine{}, cfg); len(out) != 0 {
+	if out := boxEntryIntent(ref, b, []Box{b}, nil, TriggerLine{}, nil, cfg); len(out) != 0 {
 		t.Fatalf("inside close = %d intents, want 0 (cancel)", len(out))
 	}
 }
@@ -52,7 +52,7 @@ func TestBoxEntryIntentTriggerBlock(t *testing.T) {
 	ref := market.Kline{High: 104.5, Low: 100.5, Close: 101}
 	levels := []Level{{Kind: KindKeyLevel, Price: 98}}
 	trig := TriggerLine{Dir: SideLong, Price: 106} // short entry below the buy line → blocked
-	if out := boxEntryIntent(ref, b, []Box{b}, levels, trig, cfg); len(out) != 0 {
+	if out := boxEntryIntent(ref, b, []Box{b}, levels, trig, nil, cfg); len(out) != 0 {
 		t.Fatalf("wrong-side trigger = %d intents, want 0", len(out))
 	}
 }
@@ -71,7 +71,7 @@ func TestBoxEntryIntentConfluenceFlag(t *testing.T) {
 		{Kind: KindKeyLevel, Price: 99.5}, // target ladder
 	}
 	trig := TriggerLine{Dir: SideLong, Price: 95}
-	out := boxEntryIntent(ref, b, []Box{b}, levels, trig, cfg)
+	out := boxEntryIntent(ref, b, []Box{b}, levels, trig, nil, cfg)
 	if len(out) != 1 {
 		t.Fatalf("reject return = %d intents, want 1", len(out))
 	}
@@ -80,14 +80,14 @@ func TestBoxEntryIntentConfluenceFlag(t *testing.T) {
 	}
 
 	// The same setup without the trigger line: confluence stays off.
-	if o := boxEntryIntent(ref, b, []Box{b}, levels, TriggerLine{}, cfg); len(o) != 1 || o[0].Confluence {
+	if o := boxEntryIntent(ref, b, []Box{b}, levels, TriggerLine{}, nil, cfg); len(o) != 1 || o[0].Confluence {
 		t.Fatalf("no trigger line can never agree — got %+v", o)
 	}
 
 	// B3: the key levels are irrelevant — even with only the far target level
 	// in the set, the FTGL + buy trigger still confluences.
 	far := []Level{{Kind: KindKeyLevel, Price: 99.5}}
-	if o := boxEntryIntent(ref, b, []Box{b}, far, trig, cfg); len(o) != 1 || !o[0].Confluence {
+	if o := boxEntryIntent(ref, b, []Box{b}, far, trig, nil, cfg); len(o) != 1 || !o[0].Confluence {
 		t.Fatalf("FTGL + buy trigger must confluence without a key level in the box — got %+v", o)
 	}
 }
@@ -221,15 +221,15 @@ func TestPingPongVerdict(t *testing.T) {
 	floor := Box{Kind: FTGL, Top: 100, Bottom: 90, Key: "ftgl"}
 	ceil := Box{Kind: FTGH, Top: 210, Bottom: 150, Key: "ftgh"}
 
-	if ok, _ := pingPongVerdict([]Box{floor}, 110); !ok {
+	if ok, _ := pingPongVerdict([]Box{floor}, nil, 110, Config{}); !ok {
 		t.Fatal("a single box around the price is not a ping-pong context")
 	}
-	if ok, _ := pingPongVerdict([]Box{floor, ceil}, 110); !ok {
+	if ok, _ := pingPongVerdict([]Box{floor, ceil}, nil, 110, Config{}); !ok {
 		t.Fatalf("gap 50 (150-100) must be allowed, got refused")
 	}
 	narrow := ceil
 	narrow.Bottom = 140 // gap 40
-	if ok, reason := pingPongVerdict([]Box{floor, narrow}, 110); ok {
+	if ok, reason := pingPongVerdict([]Box{floor, narrow}, nil, 110, Config{}); ok {
 		t.Fatal("gap 40 must be refused")
 	} else if reason != "ping_pong_range_too_small" {
 		t.Fatalf("reason = %q, want ping_pong_range_too_small", reason)
@@ -249,14 +249,14 @@ func TestBoxEntryPingPongRange(t *testing.T) {
 	levels := []Level{{Key: "k", Kind: KindKeyLevel, Price: 160}}
 	trig := TriggerLine{Dir: SideLong, Price: 95}
 
-	out := boxEntryIntent(ref, floor, []Box{floor, ceil}, levels, trig, cfg)
+	out := boxEntryIntent(ref, floor, []Box{floor, ceil}, levels, trig, nil, cfg)
 	if len(out) != 1 {
 		t.Fatalf("gap 50 must fire one entry, got %d", len(out))
 	}
 
 	narrow := ceil
 	narrow.Bottom = 140 // gap 40
-	out = boxEntryIntent(ref, floor, []Box{floor, narrow}, levels, trig, cfg)
+	out = boxEntryIntent(ref, floor, []Box{floor, narrow}, levels, trig, nil, cfg)
 	if len(out) != 0 {
 		t.Fatalf("gap 40 must refuse, got %+v", out)
 	}
@@ -273,12 +273,13 @@ func TestLocTriggerFilterBox(t *testing.T) {
 	levels := []Level{{Key: "k", Kind: KindKeyLevel, Price: 160}}
 	// the long entry sits BELOW a sell trigger: the filter refuses it.
 	sellTrig := TriggerLine{Dir: SideShort, Price: 105}
+	cfg.TriggerSchool = 2 // school 2: the box path waits for the trigger (B20)
 
-	if out := boxEntryIntent(ref, floor, []Box{floor}, levels, sellTrig, cfg); len(out) != 0 {
+	if out := boxEntryIntent(ref, floor, []Box{floor}, levels, sellTrig, nil, cfg); len(out) != 0 {
 		t.Fatalf("trigger filter ON must refuse the against-trigger box entry, got %+v", out)
 	}
 	cfg.LocTriggerFilter = false
-	if out := boxEntryIntent(ref, floor, []Box{floor}, levels, sellTrig, cfg); len(out) != 1 {
+	if out := boxEntryIntent(ref, floor, []Box{floor}, levels, sellTrig, nil, cfg); len(out) != 1 {
 		t.Fatalf("LocTriggerFilter=false must allow the box entry, got %+v", out)
 	}
 }
@@ -289,13 +290,14 @@ func TestWrongTriggerSideBox(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0.05
+	cfg.TriggerSchool = 2 // B20 school 2: the box path waits for the 5m trigger
 	floor := Box{Kind: FTGL, Top: 100, Bottom: 90, Key: "ftgl:100.00:90.00"}
 	ref := market.Kline{High: 101, Low: 99, Close: 101}
 	levels := []Level{{Key: "k", Kind: KindKeyLevel, Price: 160}}
 	// a sell trigger at 120: the entry price (~99) sits on the WRONG side.
 	trig := TriggerLine{Dir: SideShort, Price: 120}
 
-	out := boxEntryIntent(ref, floor, []Box{floor}, levels, trig, cfg)
+	out := boxEntryIntent(ref, floor, []Box{floor}, levels, trig, nil, cfg)
 	if len(out) != 0 {
 		t.Fatalf("entry on the wrong trigger side must refuse, got %+v", out)
 	}
@@ -340,7 +342,7 @@ func TestBoxPathRecordedTape13Sep(t *testing.T) {
 		for _, r := range BoxReturnBars(bars, b, b.FormedAt, cfg.Box) {
 			returns++
 			ref := bars[r.RefBar]
-			census[censusBoxReturn(ref, b, boxes, levels, e.State.Trigger, cfg)]++
+			census[censusBoxReturn(ref, b, boxes, levels, e.State.Trigger, bars, cfg)]++
 		}
 	}
 	// Census verdict: every death must be one of the ruling-sanctioned
@@ -354,7 +356,8 @@ func TestBoxPathRecordedTape13Sep(t *testing.T) {
 	}
 	for gate, n := range census {
 		switch gate {
-		case "reject (close inside the box)", "trigger verdict", "room":
+		case "reject (close inside the box)", "trigger verdict", "room",
+			"ping_pong_range_too_small", "ping_pong_candle_too_big":
 		default:
 			t.Fatalf("recorded tape: %d returns died at an UNEXPECTED gate %q (full census %v)",
 				n, gate, census)
@@ -366,7 +369,7 @@ func TestBoxPathRecordedTape13Sep(t *testing.T) {
 
 // censusBoxReturn names the first gate that kills a box return (for the death
 // census when a recorded tape fires nothing).
-func censusBoxReturn(ref market.Kline, b Box, boxes []Box, levels []Level, trig TriggerLine, cfg Config) string {
+func censusBoxReturn(ref market.Kline, b Box, boxes []Box, levels []Level, trig TriggerLine, bars []market.Kline, cfg Config) string {
 	if !BoxReturnReject(b, ref) {
 		return "reject (close inside the box)"
 	}
@@ -375,12 +378,12 @@ func censusBoxReturn(ref market.Kline, b Box, boxes []Box, levels []Level, trig 
 	if b.Kind != FTGL {
 		price, side = ref.Low, SideShort
 	}
-	if cfg.LocTriggerFilter {
+	if cfg.LocTriggerFilter && cfg.TriggerSchool != 1 {
 		if ok, ts, _ := TriggerVerdict(trig, price); !ok || ts != "" && ts != side {
 			return "trigger verdict"
 		}
 	}
-	if ok, reason := pingPongVerdict(boxes, price); !ok {
+	if ok, reason := pingPongVerdict(boxes, bars, price, cfg); !ok {
 		return reason
 	}
 	if InsideAnyBox(boxes, price) {
@@ -431,7 +434,7 @@ func TestBoxPathRecordedTapeWeekdayRTH(t *testing.T) {
 		for _, r := range BoxReturnBars(bars, b, b.FormedAt, cfg.Box) {
 			returns++
 			ref := bars[r.RefBar]
-			gate := censusBoxReturn(ref, b, boxes, levels, e.State.Trigger, cfg)
+			gate := censusBoxReturn(ref, b, boxes, levels, e.State.Trigger, bars, cfg)
 			if gate == "trigger verdict" && cfg.LocTriggerFilter {
 				gate = "trigger verdict"
 			}

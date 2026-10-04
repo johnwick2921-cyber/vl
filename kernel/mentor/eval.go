@@ -48,6 +48,15 @@ type State struct {
 	// ISBBox is the R5 5m-ISB rest box (nil = none standing). Rebuildable by
 	// replaying the closed 5m buckets + 1m escapes.
 	ISBBox *ISBBox `json:"isb_box,omitempty"`
+	// SchoolOneSide / SchoolOneUpgraded — B20 flip tracking: a school-1 entry
+	// was emitted without the 5m trigger agreeing; when the trigger later
+	// flips to that side the evaluator emits ConfluenceUpgrade once.
+	SchoolOneSide     Side `json:"school_one_side,omitempty"`
+	SchoolOneUpgraded bool `json:"school_one_upgraded,omitempty"`
+	// Visits / VisitsDay — B23 per-day visit counts per level key ("knock
+	// knock", D1.3 p1 @10:32–11:43). Rebuilt by replaying the touch loop.
+	Visits    map[string]int `json:"visits,omitempty"`
+	VisitsDay string         `json:"visits_day,omitempty"`
 	// ORB is the §7 step 0 opening-range gate state (drawn at 08:32 CT, escape
 	// latches on the first 1m body close outside). Per-session-day.
 	ORB ORB `json:"orb,omitempty"`
@@ -499,6 +508,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	dg := DayGate{SpentPts: e.Cfg.DayGateSpentPts, TargetCapPts: e.Cfg.DayGateTargetCapPts}
 	run, haveRun := GlobexRun(bars, now, ctime())
 	e.State.Day = LatchDay(e.State.Day, now, ctime(), run, haveRun, HTFConflict(e.State.HTF), dg)
+	// B23: the visit counters belong to the latched trading day — a new day
+	// starts every level's cap over.
+	if e.State.Day.Key != e.State.VisitsDay {
+		e.State.Visits = map[string]int{}
+		e.State.VisitsDay = e.State.Day.Key
+	}
 
 	// the location set grows by the trigger-line retest and the EMA 34
 	// location line (fold item 1; R3: 1m default).
@@ -536,8 +551,18 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		// a MOVING line (EMA) that drifted away from where it was touched is
 		// a fresh line for touch purposes — reset the classification.
 		tr = freshTouch(tr, lvl)
+		wasNone := tr.Outcome == TouchNone
 		intents := visitTick(&tr, lvl, bars[len(bars)-2], bars[len(bars)-1], e.Cfg)
 		e.State.Touches[lvl.Key] = tr
+		// B23: each NEW reject classification is one visit of that level
+		// today (a revisit can only classify after the departure reset, so
+		// None -> Reject is exactly one visit).
+		if wasNone && tr.Outcome == TouchReject {
+			if e.State.Visits == nil {
+				e.State.Visits = map[string]int{}
+			}
+			e.State.Visits[lvl.Key]++
+		}
 		out = append(out, handleTouchIntents(e, lvl, intents)...)
 	}
 
@@ -723,6 +748,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		if tr.Outcome != TouchReject || e.State.ISBOnly[lvl.Key] {
 			continue
 		}
+		// B23 visit cap ("knock knock", D1.3 p1 @10:32–11:43): the first
+		// LevelMaxVisits visits of the day trade; the rest refuse.
+		if e.Cfg.LevelMaxVisits > 0 && e.State.Visits[lvl.Key] > e.Cfg.LevelMaxVisits {
+			e.refuse("level_visit_cap")
+			continue
+		}
 		// E2 + E4: the EMA34 setup is gated on the loss block and the
 		// 30-minute crossing knob.
 		if isEMA34(lvl) && !emaSetupAllowed(e, lvl, bars, e.Cfg) {
@@ -739,8 +770,32 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 		// LocTriggerFilter (CTO 13:20:22Z): false switches the 5m-trigger
 		// filter off for LEVEL rejects (the box path honours it separately).
-		if e.Cfg.LocTriggerFilter {
+		if e.Cfg.LocTriggerFilter && e.Cfg.TriggerSchool != 1 {
 			if dirOK, trigSide, _ := TriggerVerdict(e.State.Trigger, price); !dirOK || trigSide != "" && trigSide != side {
+				continue
+			}
+		}
+		// B21 X4 (@06:31–08:52): the gap between the touched level and the
+		// next level must exceed the largest 1m candle of the last 30 closed
+		// bars — a candle as big as the rank of the two levels: sit out. The
+		// scan is strict (beyond the touched level, excluding the level itself).
+		if e.Cfg.PingPongCandleMaxPts > 0 {
+			var next float64
+			for _, l2 := range levels {
+				// The pair is the touched level and the next KEY level he
+				// drew — EMA lines, trigger retests, box edges and bare tape
+				// swings are not part of the rank between two levels (X4).
+				if l2.Key == lvl.Key || l2.Kind != KindKeyLevel {
+					continue
+				}
+				if side == SideLong && l2.Price > lvl.Price && (next == 0 || l2.Price < next) {
+					next = l2.Price
+				} else if side == SideShort && l2.Price < lvl.Price && (next == 0 || l2.Price > next) {
+					next = l2.Price
+				}
+			}
+			if next != 0 && abs(next-lvl.Price) <= largestCandlePts(bars, e.Cfg.PingPongCandleLookback) {
+				e.refuse("keypair_candle_too_big")
 				continue
 			}
 		}
@@ -812,6 +867,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.State.LevelArms = map[string]LevelArm{}
 		}
 		e.State.LevelArms[lvl.Key] = LevelArm{ArmID: id, Side: in.Side, LevelPrice: lvl.Price, PlacedAt: cur.CloseTime}
+		// B20: a school-1 entry taken without trigger agreement arms the
+		// flip upgrade.
+		if e.Cfg.TriggerSchool == 1 {
+			if ok, ts, _ := TriggerVerdict(e.State.Trigger, in.Price); !ok || ts != in.Side {
+				e.State.SchoolOneSide = in.Side
+				e.State.SchoolOneUpgraded = false
+			}
+		}
 		if isEMA34(lvl) {
 			e.State.EmaPendingSide = in.Side
 			e.State.EmaPendingEntry = in.Price
@@ -863,7 +926,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				e.refuse("box_isb_ban")
 				continue
 			}
-			for _, in := range boxEntryIntent(bars[r.RefBar], b, boxes, levels, e.State.Trigger, e.Cfg) {
+			for _, in := range boxEntryIntent(bars[r.RefBar], b, boxes, levels, e.State.Trigger, bars, e.Cfg) {
 				// B9 [D5.1 p1 @16:24, @19:11–20:07]: box trades obey
 				// the same day/HTF gates as every other setup —
 				// the 4h/1h direction, the day-off and the spent cap.
@@ -879,9 +942,31 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						e.refuse("box_target_below_floor")
 					} else {
 						out = append(out, capped)
+						// B20: school-1 box entry without trigger agreement
+						// arms the flip upgrade.
+						if e.Cfg.TriggerSchool == 1 {
+							if ok, ts, _ := TriggerVerdict(e.State.Trigger, capped.Price); !ok || ts != capped.Side {
+								e.State.SchoolOneSide = capped.Side
+								e.State.SchoolOneUpgraded = false
+							}
+						}
 					}
 				}
 			}
+		}
+	}
+
+	// B20 flip upgrade: a school-1 entry is pending trigger agreement — the
+	// 5m trigger has now flipped to that side → confluence (once).
+	if e.State.SchoolOneSide != "" && !e.State.SchoolOneUpgraded {
+		if ok, ts, _ := TriggerVerdict(e.State.Trigger, cur.Close); ok && ts == e.State.SchoolOneSide {
+			out = append(out, Intent{
+				Action: ConfluenceUpgrade,
+				Side:   e.State.SchoolOneSide,
+				Price:  cur.Close,
+				Reason: "5m trigger flipped to the school-1 entry side — confluence upgrade (hold >= 1:2, exit C) [D3.4 p3 @10:14–11:05]",
+			})
+			e.State.SchoolOneUpgraded = true
 		}
 	}
 

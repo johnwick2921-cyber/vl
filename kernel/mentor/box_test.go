@@ -371,7 +371,7 @@ func TestBoxTopTwoCandleNeverWalked(t *testing.T) {
 	c.RoomMultiple = 0.05
 	c.LocTriggerFilter = false
 	levels := []Level{{Key: "k", Kind: KindKeyLevel, Price: 100}}
-	out := boxEntryIntent(bars[5], *b, []Box{*b}, levels, TriggerLine{}, c)
+	out := boxEntryIntent(bars[5], *b, []Box{*b}, levels, TriggerLine{}, nil, c)
 	if len(out) != 1 || out[0].Action != PlaceStopEntry || out[0].Side != SideShort {
 		t.Fatalf("top-2 candle eligibility = %+v, want one SHORT stop entry (proves the walk must exclude it)", out)
 	}
