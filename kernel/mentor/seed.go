@@ -82,6 +82,28 @@ func sessionKeyCT(ms int64) string {
 	return tradingDayKey(time.UnixMilli(ms).In(ctime()))
 }
 
+// SeedDepths reports each source's seeded depth, keyed by the names the
+// injector's per-source refusal prints (mentorDepthRequirements). The values
+// are the SAME numbers SeedMissing compares against its floors — one source
+// of truth for the seed depth and the refusal line.
+func SeedDepths(bars1m, bars1h []market.Kline, now int64) map[string]int {
+	today := dayStartCT(now)
+	todayN := 0
+	for _, b := range bars1m {
+		if b.OpenTime >= today && b.OpenTime < today+24*60*60_000 {
+			todayN = 1
+			break
+		}
+	}
+	return map[string]int{
+		"4h EMA34":      len(fourHClosedBuckets(bars1h, now)),
+		"1m EMA34":      closedCount(bars1m, now),
+		"1h level set":  len(keyLevel1HBars(bars1h)),
+		"today session": todayN,
+		"closed 15m":    len(closedBucketsTF(bars1m, 15, now)),
+	}
+}
+
 // Seed warms the evaluator state from the STORED bars (1m + 1h; the 4h series
 // is built from 1h, session-anchored at 17:00 CT). It returns the missing
 // sources ("" names are never returned) — while any are missing the evaluator

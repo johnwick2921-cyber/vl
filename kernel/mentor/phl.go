@@ -105,8 +105,13 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if reward < cfg.RoomMultiple*risk {
 		return Intent{}, false, "room rule: reward < " + fnum(cfg.RoomMultiple) + "x risk — not enough room [D5.3 p1 @ 09:16]"
 	}
+	setup := "PHL"
+	if side == SideShort {
+		setup = "PLH"
+	}
 	return Intent{
 		Action: PlaceStopEntry,
+		Setup:  setup,
 		Side:   side,
 		Price:  price,
 		Stop:   stop,
@@ -197,11 +202,10 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 	} else if side != in.Side {
 		return in, false, "HTF direction gate: entry side " + string(in.Side) + " against the " + string(side) + " trigger — entries only with the 4h direction [D4.4 p1 @ 16:00]"
 	}
-	if day == DayOff {
-		return in, false, "day gate: spent + 4h/1h conflict at the pre-open read — 'TẮT MÁY NGHỈ LUÔN CHO EM', no trades today [D5.1 p1 @ 19:22]"
-	}
-	if day == DayNotMeasured {
-		return in, false, "day gate: day run not measured — no mentor entries ('any trade you are vague about — don't' [§12])"
+	// A10 (CTO 20:15:49Z): ONE day gate — DayOff AND DayNotMeasured refuse
+	// every intraday setup through the same helper (dayGateRefusal).
+	if r := dayGateRefusal(day); r != "" {
+		return in, false, "day gate: " + r
 	}
 	if day == DaySpent {
 		risk := in.Price - in.Stop

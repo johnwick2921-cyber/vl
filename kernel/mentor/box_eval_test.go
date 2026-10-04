@@ -125,7 +125,7 @@ func TestEvaluatorBoxPathEveryReturnTrades(t *testing.T) {
 	// B9 presets: box entries obey the HTF/day gates (D5.1 p1 @16:24,
 	// @19:11–20:07) — 4h long (1h silent), a normal measured day.
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 93}}
-	e.State.Day = DayLatch{Verdict: DayTrade}
+	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
 	boxIntents := func(ins []Intent) []Intent {
 		var out []Intent
 		for _, in := range ins {
@@ -181,7 +181,7 @@ func TestBoxReturnExactlyOneEntry(t *testing.T) {
 	// mutant): trigger long, 4h long (1h silent), day measured OK.
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 93}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 93}}
-	e.State.Day = DayLatch{Verdict: DayTrade}
+	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
 
 	ins := e.Tick(bars[:8], now)
 	entries := 0

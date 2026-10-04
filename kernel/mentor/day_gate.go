@@ -252,3 +252,17 @@ func CapTargetForDay(in Intent, v DayVerdict, g DayGate) Intent {
 	}
 	return in
 }
+
+// dayGateRefusal — A10 (CTO 20:15:49Z): ONE day gate for every intraday
+// setup. Returns the ledger reason for a verdict that forbids trading today,
+// "" otherwise. Each emit site composes its own counter key from it
+// ("isb_" + dayGateRefusal(...)) so the blocked setup is always named.
+func dayGateRefusal(v DayVerdict) string {
+	switch v {
+	case DayOff:
+		return "day_off"
+	case DayNotMeasured:
+		return "day_not_measured"
+	}
+	return ""
+}

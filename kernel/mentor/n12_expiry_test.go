@@ -3,6 +3,7 @@ package mentor
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -15,14 +16,15 @@ func TestISBIntentCarriesNextCandleExpiry(t *testing.T) {
 	cfg.Enabled = true
 	// a head bar with a high close so the EMA target clears the E-2 1:1
 	// floor ("the target is never smaller than the stop" [D1.2 p1 @ 07:48]).
-	head := market.Kline{Open: 121, High: 121.5, Low: 120.5, Close: 120, CloseTime: 0}
-	prev := market.Kline{Open: 99, High: 106, Low: 98.5, Close: 106, CloseTime: 60_000 - 1}
-	cur := market.Kline{Open: 101, High: 102.1, Low: 100.9, Close: 102, CloseTime: 119_999}
+	head := market.Kline{Open: 121, High: 121.5, Low: 120.5, Close: 120, OpenTime: auditMs(2026, 9, 15, 9, 0, 0), CloseTime: auditMs(2026, 9, 15, 9, 0, 0) + 59_999}
+	prev := market.Kline{Open: 99, High: 106, Low: 98.5, Close: 106, OpenTime: auditMs(2026, 9, 15, 9, 1, 0), CloseTime: auditMs(2026, 9, 15, 9, 1, 0) + 59_999}
+	cur := market.Kline{Open: 101, High: 102.1, Low: 100.9, Close: 102, OpenTime: auditMs(2026, 9, 15, 9, 2, 0), CloseTime: auditMs(2026, 9, 15, 9, 2, 0) + 59_999}
 	now := cur.CloseTime + 1
 	e := New(cfg)
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
 	e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
 	ints := e.Tick([]market.Kline{head, prev, cur}, now)
 	found := false
 	for _, in := range ints {

@@ -332,6 +332,7 @@ func TestSeedFailClosedTick(t *testing.T) {
 		e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
 		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
 		e.State.ORB = ORB{Day: dayStartCT(rthBars(0, 0, 0, 0, 0).OpenTime), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+		e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(rthBars(0, 0, 0, 0, 0).OpenTime).In(ctime())), Verdict: DayTrade}
 		return e
 	}
 

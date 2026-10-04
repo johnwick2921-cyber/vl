@@ -177,6 +177,13 @@ type Decision struct {
 	// or "off-plan". Empty when day_plan is inactive. Advisory only: it never
 	// gates the trade (plan restricts, never compels; hard gates outrank).
 	CitedScenario string `json:"cited_scenario,omitempty"`
+
+	// MENTOR P3 — synthetic decisions from the mentor evaluator. EntryPrice is
+	// the stop-entry trigger (0 for the AI's market entries); MentorSourced is
+	// how the mentor-mode switches (AI-entry suppression, mentor max-contracts)
+	// recognise their own decisions.
+	EntryPrice    float64 `json:"entry_price,omitempty"`
+	MentorSourced bool    `json:"-"`
 }
 
 // FullDecision AI's complete decision (including chain of thought)

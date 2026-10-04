@@ -420,7 +420,31 @@ func freshTouch(tr Touch, lvl Level) Touch {
 // Tick evaluates the newest closed 1m candle. bars is the closed history up to
 // now (the bot's BarCache slice); now is the current time for the swing
 // detector's closed-bar filter. Returns the intents for this candle.
-func (e *Evaluator) Tick(bars []market.Kline, now int64) []Intent {
+func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
+	// A5 + P0 sizing gap (CTO 20:13:25Z): ONE stamp where intents LEAVE Tick —
+	// the geometry (StopPts/TargetPts), the spent-day flag, and the
+	// untagged-setup drop. The defer covers every return path, including the
+	// early ISB missing-target return.
+	defer func() {
+		if out == nil {
+			return
+		}
+		spent := e.State.Day.Verdict == DaySpent
+		kept := out[:0]
+		for _, in := range out {
+			if in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry {
+				if in.Setup == "" {
+					e.refuse("untagged_setup")
+					continue
+				}
+				in.StopPts = abs(in.Price - in.Stop)
+				in.TargetPts = abs(in.Target - in.Price)
+			}
+			in.SpentDay = spent
+			kept = append(kept, in)
+		}
+		out = kept
+	}()
 	if !e.Cfg.Enabled || len(bars) < 2 {
 		return nil
 	}
@@ -448,8 +472,6 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) []Intent {
 		}
 	}
 	levels = withoutDeleted(levels, e.State.DeletedLevels)
-
-	var out []Intent
 
 	// 5m trigger line advances every 1m close (aggregated 5m bars).
 	e.State.Trigger = TriggerTick(e.State.Trigger, barsTF(bars, 5), 5, e.Cfg)
@@ -569,9 +591,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) []Intent {
 					} else if side != "" && htfSide != "" && side != htfSide {
 						// ISB direction against the 4h — no entry
 						e.refuse("isb_htf_side_mismatch")
-					} else if e.State.Day.Verdict == DayOff {
-						// day off — no mentor entries today
-						e.refuse("isb_day_off")
+					} else if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
+						// A10: day off OR not-measured — no intraday mentor
+						// entries today (named per setup).
+						e.refuse("isb_" + r)
 					} else {
 						// §6 [D3.3 p1 @ 05:07]: "TARGET LÀ VỀ NHỮNG LEVEL KẾ
 						// TIẾP" — a setup gives entry, stop AND target
@@ -624,7 +647,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) []Intent {
 	// at EMA 9 — an ISB that points AGAINST the trend with price at the EMA 9
 	// trades WITH the trend [D5.4].
 	if e.Cfg.ISBReverseEMA9Enabled && IsISB(prev, cur) {
-		if in, ok, _ := ReverseISBAtEMA9(prev, cur, emaValue(bars, e.Cfg.EMAPeriod9), e.State.Trigger.Dir, e.Cfg); ok {
+		if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
+			e.refuse("isbrev_" + r)
+		} else if in, ok, _ := ReverseISBAtEMA9(prev, cur, emaValue(bars, e.Cfg.EMAPeriod9), e.State.Trigger.Dir, e.Cfg); ok {
 			// N12: an R7 reverse ISB fills by the close of the NEXT 1m candle
 			// (the R1 family rule).
 			in.ExpiryMs = cur.CloseTime + 60_000
@@ -809,6 +834,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) []Intent {
 			if r.RefBar <= last {
 				continue
 			}
+			// A10: the day gate fires BEFORE any box state is recorded
+			// (BoxRefs), and names the blocked setup.
+			if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
+				e.refuse("box_" + r)
+				continue
+			}
 			e.State.BoxRefs[b.Key] = r.RefBar
 			// B11 [D3.4 p2 @07:58–08:21]: inside the standing 5m-ISB box only
 			// a same-direction ISB trades ("em chỉ đánh inside bar cùng
@@ -825,8 +856,6 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) []Intent {
 					e.refuse("box_htf_blocked")
 				} else if in.Side != "" && htfSide != "" && in.Side != htfSide {
 					e.refuse("box_htf_side_mismatch")
-				} else if e.State.Day.Verdict == DayOff {
-					e.refuse("box_day_off")
 				} else {
 					capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
 					if capped.Target != in.Target && !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
@@ -968,9 +997,9 @@ func phlRefusalKey(reason string) string {
 		return "phl_degenerate_geometry"
 	case strings.HasPrefix(reason, "HTF direction gate"):
 		return "phl_htf_blocked"
-	case strings.HasPrefix(reason, "day gate: spent"):
+	case strings.HasPrefix(reason, "day gate: day_off"):
 		return "phl_day_off"
-	case strings.HasPrefix(reason, "day gate: day run not measured"):
+	case strings.HasPrefix(reason, "day gate: day_not_measured"):
 		return "phl_day_not_measured"
 	case strings.HasPrefix(reason, "spent day: stop over the 15-pt cap"):
 		return "phl_spent_stop_cap"

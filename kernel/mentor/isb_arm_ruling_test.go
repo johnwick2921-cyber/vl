@@ -3,6 +3,7 @@ package mentor
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -31,6 +32,7 @@ func TestISBOneArmFiveCandleSequence(t *testing.T) {
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
 	e.State.ORB = ORB{Day: dayStartCT(head.OpenTime), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(head.OpenTime).In(ctime())), Verdict: DayTrade}
 
 	placements, extends, cancels := 0, 0, 0
 	for i := 2; i <= len(bars); i++ {

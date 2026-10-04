@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -32,6 +33,7 @@ func TestISBNotLocationGated(t *testing.T) {
 	// (these tests are about the location rule, not the ORB).
 	e.State.ORB = ORB{Day: dayStartCT(cur.CloseTime + 1), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
 	now := cur.CloseTime + 1
+	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
 	intents := e.Tick(bars, now)
 	// sanity: this ISB has NO location — the old gate would refuse it here.
 	levels := Levels(bars, cfg, now)
@@ -61,6 +63,7 @@ func TestISBBoxGatesTheEvaluator(t *testing.T) {
 		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
 		e.State.ISBBox = &box
 		e.State.ORB = ORB{Day: dayStartCT(auditMs(2026, 9, 15, 9, 0, 0)), High: 90, Low: 85, Drawn: true, Escaped: esc}
+		e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(auditMs(2026, 9, 15, 9, 0, 0)).In(ctime())), Verdict: DayTrade}
 		return e
 	}
 	tick := func(e *Evaluator, bars []market.Kline) []Intent {

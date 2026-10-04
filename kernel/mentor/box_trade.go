@@ -184,6 +184,7 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 		AnchorKey:  base,
 		Anchor:     (b.Top + b.Bottom) / 2,
 		Action:     PlaceStopEntry,
+		Setup:      "BOX",
 		Side:       side,
 		Price:      price,
 		Stop:       stop,

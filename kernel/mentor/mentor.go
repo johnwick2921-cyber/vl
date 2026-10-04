@@ -108,6 +108,16 @@ type Intent struct {
 	// CancelArm / LevelInvalid fields.
 	ArmID    string
 	LevelKey string
+
+	// P3 size-tier inputs (the trader's mentorContractsFor reads these).
+	Setup     string  // "ISB", "PHL", "PLH", "BOX" (SWING4H when it lands)
+	StopPts   float64 // |entry - stop|
+	TargetPts float64 // |target - entry|
+	// SpentDay is the A5 flag (CTO 1791041016051): the §7 verdict for the
+	// trading day is DaySpent ("already run 300-400+ before the open"). The
+	// evaluator stamps it on EVERY intent; the injector's size table then
+	// holds 1-2 (spent_day tier) and the R9 15-pt stop cap applies.
+	SpentDay bool
 }
 
 // Config is every knob. Enabled is mentor_mode and defaults to false (L4):

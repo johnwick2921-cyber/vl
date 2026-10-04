@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -89,12 +90,13 @@ func TestRefusalLedgerInTick(t *testing.T) {
 	Seed(e, nil, 0) // every source missing → fail-closed
 
 	bars := []market.Kline{
-		{Open: 121, High: 121.5, Low: 120.5, Close: 120, CloseTime: 1},
-		{Open: 98, High: 106, Low: 97, Close: 105, CloseTime: 60_000 - 1},
-		{Open: 103, High: 104, Low: 99, Close: 100, CloseTime: 119_999},
+		{Open: 121, High: 121.5, Low: 120.5, Close: 120, OpenTime: auditMs(2026, 9, 15, 9, 0, 0), CloseTime: auditMs(2026, 9, 15, 9, 0, 0) + 59_999},
+		{Open: 98, High: 106, Low: 97, Close: 105, OpenTime: auditMs(2026, 9, 15, 9, 1, 0), CloseTime: auditMs(2026, 9, 15, 9, 1, 0) + 59_999},
+		{Open: 103, High: 104, Low: 99, Close: 100, OpenTime: auditMs(2026, 9, 15, 9, 2, 0), CloseTime: auditMs(2026, 9, 15, 9, 2, 0) + 59_999},
 	}
 	now := bars[2].CloseTime + 1
 	e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
 	e.Tick(bars, now)
 	if e.State.Refusals["seed_missing_source"] == 0 {
 		t.Fatalf("Tick must record the fail-closed refusal; ledger = %v", e.State.Refusals)
