@@ -379,6 +379,10 @@ type AutoTrader struct {
 	// only consulted when the per-strategy mentor_mode is ON.
 	mentorEval         *mentor.Evaluator
 	mentorLastTickOpen int64
+	// R-F: a contract roll awaiting its evaluator rebuild (nil = none) and the
+	// once-only roll-listener registration.
+	mentorRollPending  atomic.Pointer[mentorRollEvent]
+	mentorRollWired    atomic.Bool
 	mentorFinalArrival atomic.Int64 // ms — when the FINAL frame hit the sink
 	// MENTOR B20 — the chosen exit branch per open position (keyed by side:
 	// "long"/"short"), set at placement from the entry-time fork (A/B/C/swing)

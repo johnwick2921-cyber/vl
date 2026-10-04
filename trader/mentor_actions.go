@@ -2,6 +2,7 @@ package trader
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +41,19 @@ func mentorRegisterLiveArm(armID string, rowID int64, side string, entry float64
 	mentorLiveMu.Lock()
 	mentorLiveArms[armID] = mentorLiveArm{RowID: rowID, Side: side, Entry: entry}
 	mentorLiveMu.Unlock()
+}
+
+// mentorLiveArmIDs lists every registered ArmID (sorted) — the roll rebuild
+// retires them all.
+func mentorLiveArmIDs() []string {
+	mentorLiveMu.Lock()
+	defer mentorLiveMu.Unlock()
+	ids := make([]string, 0, len(mentorLiveArms))
+	for id := range mentorLiveArms {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func mentorLiveArmFor(armID string) (mentorLiveArm, bool) {
