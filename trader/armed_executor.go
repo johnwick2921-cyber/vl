@@ -1886,7 +1886,23 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		}
 		placeStopFn = pl.PlaceStopEntryWithLimit
 	}
-	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, 1, d.Trigger, r.StopPx, r.TargetPx, func(sid string) error {
+	// B2 MENTOR SIZE (2026-10-04): the mentor arm carries its signed contract
+	// count on the row. A mentor row WITHOUT one is REFUSED (counted + logged),
+	// never sent as 1 (absent ≠ 0). Non-mentor rows stay 1.
+	qty := 1.0
+	if isMentorArmOrigin(r) {
+		n, why := at.mentorArmQuantity(r)
+		if why != "" {
+			if armRefusalChanged(&at.armRefusalLast, armKey, "stop_entry:mentor_no_contracts") {
+				shown := at.countStopEntryRefusal(r, "stop_entry:mentor_no_contracts", now)
+				at.logWarnf("📛 armed %s mentor stop-entry REFUSED [guard=mentor_contracts verdict=%s] %s stop-limit trigger=%.2f: %s%s",
+					r.Scenario, d.Verdict, strings.ToUpper(d.Side), d.Trigger, why, shown)
+			}
+			return stopPlaceNotSent
+		}
+		qty = n
+	}
+	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, r.TargetPx, func(sid string) error {
 		if err := ledger.BeginPlacement(r.ID, sid); err != nil {
 			return err
 		}
@@ -2433,11 +2449,26 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 	if side == "" {
 		return
 	}
+	// N2 (2026-10-04): the AddOn's fill frame quantity is CUMULATIVE (e.Filled)
+	// and its price is the running AVERAGE (e.AverageFillPrice) — it emits ONE
+	// partfilled frame then ONE filled frame per state. So the ledger SETS the
+	// position to the frame's cumulative values, never adds. An absent/zero
+	// quantity floors at 1 (a fill delivers at least one contract).
+	qty := u.Quantity
+	if qty < 1 {
+		qty = 1
+	}
+	// A position already materialized (a prior partfill, or reconcile winning
+	// the race) is SET to this frame's cumulative quantity, monotonic and
+	// idempotent — a duplicate or out-of-order frame must never shrink it or
+	// double-count it.
 	if pos, err := at.store.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), side); err == nil && pos != nil {
-		return // already materialized (reconcile won the race)
+		at.setMaterializedEntry(pos, r, u, float64(qty))
+		return
 	}
 	if pos, err := at.store.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), strings.ToLower(side)); err == nil && pos != nil {
-		return // legacy lowercase row already exists for the same fill
+		at.setMaterializedEntry(pos, r, u, float64(qty))
+		return
 	}
 	tradeDate := r.PlanID
 	if i := strings.Index(r.PlanID, ":"); i > 0 {
@@ -2450,8 +2481,8 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 		ExchangePositionID: fmt.Sprintf("armed_%s_%d", r.SignalID, nowMs),
 		Symbol:             at.futuresSymbol(),
 		Side:               side,
-		Quantity:           1,
-		EntryQuantity:      1,
+		Quantity:           float64(qty),
+		EntryQuantity:      float64(qty),
 		EntryPrice:         u.FillPrice,
 		EntryTime:          nowMs,
 		EntryOrderID:       r.SignalID,
@@ -2475,6 +2506,22 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 	// E1 (wave 1A) — the excursion row's entry half. An armed fill carries its
 	// own levels in the ledger row, so nothing has to be resolved later.
 	at.excursionOnOpen(row, r.StopPx, r.TargetPx, plannerATR5m(at.futuresSymbol()))
+}
+
+// setMaterializedEntry (N2, 2026-10-04) sets an already-open position to the
+// fill frame's CUMULATIVE quantity and average price. Monotonic and idempotent:
+// a frame whose quantity is not larger than the current one is ignored (the
+// AddOn dedupes per state, but a duplicate or out-of-order frame must never
+// shrink the position or double-count it).
+func (at *AutoTrader) setMaterializedEntry(pos *store.TraderPosition, r store.ArmedOrderDB, u ntwire.OrderUpdatePayload, qty float64) {
+	if qty <= pos.Quantity {
+		return // monotonic: never decrease; a duplicate frame keeps the position
+	}
+	if err := at.store.Position().SetPositionQuantityAndPrice(pos.ID, qty, u.FillPrice); err != nil {
+		at.logWarnf("🧩 armed fill %s cumulative-set failed (pos %d): %v", r.Scenario, pos.ID, err)
+		return
+	}
+	at.logInfof("🧩 armed fill %s set position %d to %.0f @ %.2f (cumulative)", r.Scenario, pos.ID, qty, u.FillPrice)
 }
 
 // stampArmedFillLineage links the freshly-filled position row to the plan the

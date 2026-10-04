@@ -17,10 +17,12 @@ import (
 // production call site (placeOneStopEntry): the discriminator is the arm's
 // EXPLICIT origin, never the expiry as a proxy and never an environment
 // variable [D1.4 p1 @24:41–24:55: never a stop-market].
-//   mentor + expiry > 0  -> the limit variant, WHATEVER MENTOR_STOP_LIMIT says.
-//   mentor + no expiry   -> REFUSED: NOT_SENT, zero wire calls, the arm
-//     untouched (no stop-market fallback for an expiry-less mentor arm).
-//   non-mentor           -> today's stop-market path whatever the expiry.
+//
+//	mentor + expiry > 0  -> the limit variant, WHATEVER MENTOR_STOP_LIMIT says.
+//	mentor + no expiry   -> REFUSED: NOT_SENT, zero wire calls, the arm
+//	  untouched (no stop-market fallback for an expiry-less mentor arm).
+//	non-mentor           -> today's stop-market path whatever the expiry.
+//
 // Mutants: gating the limit route on MENTOR_STOP_LIMIT again (M-env), dropping
 // the origin gate (M-a), dropping the no-expiry refusal (M-b), or gating on
 // expiry instead of origin (M-c) each turn a case RED.
@@ -30,19 +32,20 @@ func TestMentorArmsAlwaysRouteThroughTheLimitVariant(t *testing.T) {
 		env         string
 		origin      string
 		expiryMs    int64
+		contracts   *int
 		wantOutcome stopPlaceOutcome
 		wantLimit   int
 		wantMarket  int
 	}{
-		{"env-unset-planner", "", "", 0, stopPlaceCommitted, 0, 1},
-		{"env-unset-planner-with-expiry", "", "", 90_000, stopPlaceCommitted, 0, 1}, // non-mentor: today's path, whatever the expiry
-		{"env-on-planner-with-expiry", "1", "", 90_000, stopPlaceCommitted, 0, 1},
-		{"env-unset-mentor-with-expiry", "", store.ArmOriginMentor, 90_000, stopPlaceCommitted, 1, 0},
-		{"env-off-mentor-with-expiry", "0", store.ArmOriginMentor, 90_000, stopPlaceCommitted, 1, 0},
-		{"env-on-mentor-with-expiry", "1", store.ArmOriginMentor, 90_000, stopPlaceCommitted, 1, 0},
-		{"env-unset-mentor-no-expiry-refused", "", store.ArmOriginMentor, 0, stopPlaceNotSent, 0, 0},
-		{"env-on-mentor-no-expiry-refused", "1", store.ArmOriginMentor, 0, stopPlaceNotSent, 0, 0},
-		{"odd-cased-mentor-with-expiry", "", " Mentor ", 90_000, stopPlaceCommitted, 1, 0}, // the predicate case-folds
+		{"env-unset-planner", "", "", 0, nil, stopPlaceCommitted, 0, 1},
+		{"env-unset-planner-with-expiry", "", "", 90_000, nil, stopPlaceCommitted, 0, 1}, // non-mentor: today's path, whatever the expiry
+		{"env-on-planner-with-expiry", "1", "", 90_000, nil, stopPlaceCommitted, 0, 1},
+		{"env-unset-mentor-with-expiry", "", store.ArmOriginMentor, 90_000, store.IntPtr(5), stopPlaceCommitted, 1, 0},
+		{"env-off-mentor-with-expiry", "0", store.ArmOriginMentor, 90_000, store.IntPtr(5), stopPlaceCommitted, 1, 0},
+		{"env-on-mentor-with-expiry", "1", store.ArmOriginMentor, 90_000, store.IntPtr(5), stopPlaceCommitted, 1, 0},
+		{"env-unset-mentor-no-expiry-refused", "", store.ArmOriginMentor, 0, store.IntPtr(5), stopPlaceNotSent, 0, 0},
+		{"env-on-mentor-no-expiry-refused", "1", store.ArmOriginMentor, 0, store.IntPtr(5), stopPlaceNotSent, 0, 0},
+		{"odd-cased-mentor-with-expiry", "", " Mentor ", 90_000, store.IntPtr(5), stopPlaceCommitted, 1, 0}, // the predicate case-folds
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("MENTOR_STOP_LIMIT", tc.env)
@@ -52,7 +55,7 @@ func TestMentorArmsAlwaysRouteThroughTheLimitVariant(t *testing.T) {
 				ID: 8, TraderID: at.id, PlanID: "2026-09-23:NY", Version: 1,
 				Session: "TEST-R", Scenario: "TEST-R", Side: "long",
 				EntryPx: 29650, StopPx: 29640, TargetPx: 29670,
-				Origin: tc.origin, ExpiryMs: tc.expiryMs,
+				Origin: tc.origin, ExpiryMs: tc.expiryMs, Contracts: tc.contracts,
 			}
 			d := decideStopEntry("LONG", r.EntryPx, testOffset(), testTick, 99)
 			if d.Action != stopEntryPlace {
