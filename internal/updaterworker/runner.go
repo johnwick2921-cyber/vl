@@ -98,6 +98,12 @@ func (w *Worker) finished(j updaterjob.Job) {
 		w.stopped = "recovery_needed: " + j.JobID
 	}
 	w.logf("updater: job %s → %s", j.JobID, j.State)
+	// The worker binary was swapped during this job: only NOW, with the swap
+	// receipt and the terminal effects persisted, may serve() exit for the
+	// unit restart.
+	if w.swapPending.Load() {
+		closeSwapDone(w)
+	}
 }
 
 // retry counts one more run of the started step on disk (persisted before the
