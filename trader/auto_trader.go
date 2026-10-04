@@ -386,6 +386,9 @@ type AutoTrader struct {
 	// branch. Size is never touched by the upgrade.
 	mentorExitMu    sync.Mutex
 	mentorExitModes map[string]string
+	// mentorFunnel is the N12 visibility counter (read-only): one INFO line per
+	// 15 minutes + on change, session-day scoped (17:00 CT). Never gates a trade.
+	mentorFunnel    mentorFunnel
 	fastTapePending atomic.Bool
 	// lastClockHealthSession: which session the last clock-health line was
 	// logged for (PHASE 3.5) — one line per session roll, not per tick.

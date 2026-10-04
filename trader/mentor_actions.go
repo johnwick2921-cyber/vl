@@ -156,6 +156,7 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	}
 	mentorRegisterLiveArm(armID, row.ID, side, in.Price)
 	mentorCount("armed_" + choice.Tier)
+	at.mentorFunnel.bumpAuthored() // N12 funnel stage: the arm row was authored
 	ackMs := time.Now().UnixMilli()
 	recordMentorLatency(barCloseMs, at.mentorFinalArrival.Load(), emitMs, ackMs)
 	at.logInfof("🧑‍🏫 mentor arm authored: %s %s %d contracts (tier %s) — row %d, the armed pass places it (stop-limit by the origin rule), expiry %d",

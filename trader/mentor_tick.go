@@ -198,6 +198,8 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
 		// every arm action; an unknown action is refused, never silent.
 		at.mentorDispatchIntent(in, extra, last.CloseTime, emitMs)
 	}
+	// N12 funnel visibility (read-only): one closed bar + this tick's intents.
+	at.mentorFunnelTick(1, len(intents))
 }
 
 // mentorPlaceIntent runs the placement gates (sources wired, stop rules,
