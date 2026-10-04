@@ -315,7 +315,7 @@ func TestLimitsBoxReturnLossBlocksWholeBox(t *testing.T) {
 	ref := market.Kline{Open: 75, High: 78, Low: 74, Close: 121}
 	prev := limitsK(94, 96, 94, 95, 0)
 
-	intent := boxEntryIntent(ref, b, []Box{b}, levels, TriggerLine{}, cfg)
+	intent := boxEntryIntent(ref, b, []Box{b}, levels, TriggerLine{}, nil, cfg)
 	if len(intent) != 1 {
 		t.Fatalf("boxEntryIntent: want 1 intent, got %d", len(intent))
 	}
@@ -328,12 +328,12 @@ func TestLimitsBoxReturnLossBlocksWholeBox(t *testing.T) {
 		t.Fatalf("loss: want a box place under the unsuffixed key, got %+v", l.Places)
 	}
 	// A wick still touching the box (high 119 inside [80,120]) → blocked.
-	out3 := applyLevels(&l, boxEntryIntent(ref, b, []Box{b}, levels, TriggerLine{}, cfg), limitsK(77, 79, 73, 75, 2), limitsK(74, 119, 73, 78, 3), 3, cfg, levels)
+	out3 := applyLevels(&l, boxEntryIntent(ref, b, []Box{b}, levels, TriggerLine{}, nil, cfg), limitsK(77, 79, 73, 75, 2), limitsK(74, 119, 73, 78, 3), 3, cfg, levels)
 	if len(out3) != 0 {
 		t.Fatalf("wick-touching re-entry: want 0 entries, got %d", len(out3))
 	}
 	// Fully outside, wicks included → freed.
-	out4 := applyLevels(&l, boxEntryIntent(ref, b, []Box{b}, levels, TriggerLine{}, cfg), limitsK(74, 119, 73, 78, 3), limitsK(74, 79, 73, 78, 4), 4, cfg, levels)
+	out4 := applyLevels(&l, boxEntryIntent(ref, b, []Box{b}, levels, TriggerLine{}, nil, cfg), limitsK(74, 119, 73, 78, 3), limitsK(74, 79, 73, 78, 4), 4, cfg, levels)
 	if len(out4) != 1 {
 		t.Fatalf("fully-outside re-entry: want 1 entry, got %d", len(out4))
 	}

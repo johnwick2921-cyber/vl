@@ -2043,9 +2043,8 @@ type RiskControlConfig struct {
 	//   MentorEmaMaxCross30m — E4 "xien len xien xuong" (0 = OFF, base);
 	//   MentorLocationTriggerFilter — the 5m trigger filter at locations
 	//     (nil → ON, L3: keep it ON in the base).
-	//   MentorLossDeparturePts — the ONE departure rule (CTO 13:24:53Z): a
-	//     blocked place unblocks on a closed candle AFTER the loss candle with
-	//     |close − loss price| ≥ this (default 20, "leave the area").
+	//   MentorLossDeparturePts — optional fixed-points fallback for B22's
+	//     structural loss-area departure (default 0 = OFF).
 	MentorLegBudgetEnabled      *bool   `json:"mentor_leg_budget_enabled,omitempty"`
 	MentorLegResetOn            string  `json:"mentor_leg_reset_on,omitempty"`
 	MentorLvlRevisitMinPts      float64 `json:"mentor_lvl_revisit_min_pts,omitempty"`

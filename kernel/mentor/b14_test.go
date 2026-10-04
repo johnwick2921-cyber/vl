@@ -20,6 +20,7 @@ func b14Fixture(oldHighLevels []Level, refLow float64) (*Evaluator, []market.Kli
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
+	cfg.EMALocationTFMinutes = 0 // no EMA34 location line: the pair is K ↔ the old high
 	cfg.RoomMultiple = 2
 	cfg.PHLMinCandlesFromExtreme = 2
 	cfg.PHLTargetShyPts = 0
@@ -36,8 +37,8 @@ func b14Fixture(oldHighLevels []Level, refLow float64) (*Evaluator, []market.Kli
 	bars := []market.Kline{
 		mk(0, 101, 101.5, 101, 101.3),
 		mk(1, 101, 101.4, 100, 100.5),
-		mk(2, 100, 106.2, 98, 99),   // SWGL 98 @2 (the tape's prior low) + SWGH 106.2 @2 (the near old high)
-		mk(3, 99.5, 130, 99.2, 129), // SWGH 130 @3 — the far old high
+		mk(2, 100, 106.2, 98, 99),      // SWGL 98 @2 (the tape's prior low) + SWGH 106.2 @2 (the near old high)
+		mk(3, 99.5, 130, 129.5, 129.7), // SWGH 130 @3 — the far old high (thin: a candle as big as the pair gap must not trigger B21 X4)
 		mk(4, 104.5, 105.4, 104.2, 104.8),
 		mk(5, 102, 104.2, refLow, 103.9), // the reject-touch reference (green, keeps the 5m trigger long)
 	}

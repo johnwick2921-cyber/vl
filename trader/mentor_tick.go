@@ -110,14 +110,13 @@ func (at *AutoTrader) mentorEventPassAt(now time.Time) bool {
 	return true
 }
 
-// mentorEvaluatorConfig builds the evaluator config with the strategy's knob
-// overrides (defaults as ruled, CTO 1791033257041). The G1 / location-filter
-// knobs wire in when their evaluator fields land (DS-107's limits,
-// DS-103's location trigger knob) — the resolvers already pin the defaults.
+// mentorEvaluatorConfig applies strategy overrides to the evaluator. B22's
+// structural departure remains primary; the fixed-points fallback is opt-in.
 func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true
 	rc := at.mentorRiskControl()
+	cfg.LossDeparturePts = mentorLossDeparturePts(rc)
 	if rc != nil {
 		cfg.LvlRevisitMinPts = mentorLvlRevisitMinPts(rc)
 		cfg.EmaMaxCross30m = mentorEmaMaxCross30m(rc)
@@ -149,7 +148,7 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
 		// UNCHANGED (the table is never re-run for an upgrade). The emit
 		// itself is DS-103's (kernel/mentor is his). It rides its own path:
 		// the dispatch below sizes and places ENTRIES only.
-		if in.Action == mentorActionConfluenceUpgrade {
+		if in.Action == mentor.ConfluenceUpgrade {
 			mentorCount("intent_" + string(in.Action))
 			at.mentorConfluenceUpgrade(in)
 			continue
@@ -326,14 +325,6 @@ func mentorNoChase(side mentor.Side, latest float64, trigger float64) (skip bool
 var mentorPlaceRecorderForTest func(in mentor.Intent, contracts int)
 
 // ── B20 CONFLUENCE UPGRADE (trader half; the emit is DS-103's kernel) ───────
-
-// mentorActionConfluenceUpgrade is the action NAME the evaluator emits when a
-// live school-1 entry's 5m trigger LATER flips to the trade's side (FIXES.md
-// B20, D3.4 p3 @09:17–12:59: "a later flip to the trade's side upgrades it to
-// confluence (hold ≥1:2, exit C)"). It is a consumer-side constant of DS-103's
-// type — kernel/mentor is his, and the eval-loop case matches by string, so
-// his emit lands the moment the action constant appears.
-const mentorActionConfluenceUpgrade mentor.Action = "confluence_upgrade"
 
 // mentorExitMode / setMentorExitMode read/write the per-position exit branch
 // registered at placement (A/B/C/swing). The P1 exit loop drives the branch;
