@@ -72,6 +72,11 @@ const (
 	// KindTriggerRetest is the 5m trigger-line retest location (§5.1
 	// [D3.4 p2 @ 20:51]: the retest is a level confirm).
 	KindTriggerRetest LevelKind = "trigger_retest"
+	// KindTrendline is an intraday trendline location (X9 slide 27, D2.3,
+	// DAY-3 row 27): two same-role swings joined, valid as a location only
+	// after the 3rd touch; discarded by a 5m close through. Location only,
+	// never a target.
+	KindTrendline LevelKind = "trendline"
 )
 
 // Level is one mentor level line. Lo/Hi are equal (a line); AtTime is the bar

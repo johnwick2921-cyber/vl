@@ -526,6 +526,9 @@ func suppressSamePairCounterISB(out []Intent, in Intent, refBarMs int64) (kept [
 func nextLevelBeyond(levels []Level, price float64, side Side) float64 {
 	best := 0.0
 	for _, l := range levels {
+		if l.Kind == KindTrendline {
+			continue // a trendline is a location, never a target (X9)
+		}
 		switch side {
 		case SideLong:
 			if l.Price > price && (best == 0 || l.Price < best) {
@@ -557,7 +560,8 @@ func freshTouch(tr Touch, lvl Level) Touch {
 // makes a line dead for good [D5.2 p2 @20:48]). Key levels are stable and keep
 // ISB-only until the session day rolls or a closed 1H body deletes them.
 func isMovingLineKey(key string) bool {
-	return key == string(KindEMA34) || key == string(KindEMA34HTF) || key == string(KindTriggerRetest)
+	return key == string(KindEMA34) || key == string(KindEMA34HTF) || key == string(KindTriggerRetest) ||
+		strings.HasPrefix(key, string(KindTrendline)+":")
 }
 
 // Tick evaluates the newest closed 1m candle. bars is the closed history up to
@@ -686,6 +690,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// interior bans entries.
 	boxes := BoxesBuild(bars, e.Cfg.Box, time.UnixMilli(now))
 	levels = append(levels, BoxEdgeLocations(boxes)...)
+
+	// X9 (slide 27) + DAY-3 row 27: trendlines as LOCATIONS — two same-role
+	// swings joined, valid only after the 3rd touch, discarded by a 5m close
+	// through. They join the level set location-only (never a target); a
+	// trendline next to a box edge is suppressed (box beats trendline).
+	trendlines := TrendlinesBuild(bars, time.UnixMilli(now))
+	levels = append(levels, TrendlineLevels(trendlines, boxes, bars)...)
 
 	// §3: first-touch classification per level. BOX edges are OUT of this
 	// loop (BOX PATH DECISION, CTO 12:38:50Z): the box path is DS-106's

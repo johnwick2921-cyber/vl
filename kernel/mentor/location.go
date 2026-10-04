@@ -54,6 +54,12 @@ func LocationVerdict(ref market.Kline, levels []Level, trigger TriggerLine, bars
 			if touchesPrice(ref, l.Price, cfg.TouchBandPts) {
 				return true, "box_edge"
 			}
+		case KindTrendline:
+			// X9 slide 27 + DAY-3 row 27: a VALID trendline (3rd touch passed)
+			// is a location. The level's Price is the line's current value.
+			if touchesPrice(ref, l.Price, cfg.TouchBandPts) {
+				return true, "trendline"
+			}
 		}
 		// KindEMA9 is deliberately NOT a location (reverse-ISB only, §10).
 	}
@@ -88,7 +94,7 @@ func touchesPrice(ref market.Kline, price, band float64) bool {
 // is NOT a location (fold item 1).
 func levelIsLocation(lvl Level, levels []Level) bool {
 	switch lvl.Kind {
-	case KindKeyLevel, KindEMA34HTF, KindTriggerRetest, KindFTGHEdge, KindFTGLEdge:
+	case KindKeyLevel, KindEMA34HTF, KindTriggerRetest, KindFTGHEdge, KindFTGLEdge, KindTrendline:
 		return true
 	case KindOldExtreme:
 		return coincidesWithKeyLevel(lvl, levels)
