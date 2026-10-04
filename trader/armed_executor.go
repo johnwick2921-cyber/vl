@@ -1390,16 +1390,26 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 		// the existing settlement path; no expiry stored → this code never
 		// sweeps it (additive, OFF by absence).
 		//
-		// A working order with a PARTIAL fill is a trade in progress: expiry
-		// never cancels it — it is logged once and left to the position logic
-		// (the bot is one contract per leg anyway).
+		// N3 P1 (2026-10-04): a working order with a PARTIAL fill cancels the
+		// REMAINDER at expiry (never "keep forever") — the filled part keeps
+		// its bracket; only the unfilled contracts are cancelled.
 		if r.ExpiryMs > 0 && now.UnixMilli() >= r.ExpiryMs &&
 			r.State == store.StateWorking && r.FillQuantity > 0 {
-			expKey := "expiry_partial_fill:" + strconv.FormatInt(r.ID, 10)
-			if armRefusalChanged(&at.armRefusalLast, expKey, "partial_fill_kept") {
-				at.logWarnf("⏳ armed %s row %d working with a partial fill at its expiry — KEPT (never auto-cancelled by expiry); the position logic owns it",
-					r.Scenario, r.ID)
+			if remain := mentorRemainderToCancel(r); remain > 0 {
+				total := *r.Contracts
+				if strings.TrimSpace(r.SignalID) != "" {
+					if v := at.cancelSafetyFor(r, now); !v.Allow {
+						at.logWarnf("🛟 armed remainder cancel REFUSED: %s %s signal=%s — %s", r.Session, r.Scenario, shortID(r.SignalID), v.Why)
+					} else if cerr := nt.CancelOrder(r.SignalID); cerr != nil {
+						at.logWarnf("✕ armed remainder cancel SEND failed: %s %s: %v", r.Session, r.Scenario, cerr)
+					}
+				}
+				at.armLifecycleWrite("request_cancel(remainder)", r,
+					ledger.RequestCancel(r.ID, fmt.Sprintf("stop-limit expiry: remainder cancelled %d of %d", remain, total), now.UnixMilli()))
+				at.logInfof("⏳ armed %s row %d partial fill at expiry — remainder cancelled %d of %d (the filled part keeps its bracket)",
+					r.Scenario, r.ID, remain, total)
 			}
+			continue
 		}
 		if armExpired(r, now.UnixMilli()) {
 			// REVIEW-313 F2: an expired row that was NEVER SENT (armed, no
@@ -2420,7 +2430,25 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 			continue
 		}
 		switch strings.ToLower(u.State) {
-		case "filled", "partfilled":
+		case "filled", "partfilled", "partial":
+			// N3 P0 (partial fills): the AddOn emits "partial" for a part-fill
+			// (VLTraderTCPClient.cs:1545) and "filled" only when complete; the
+			// wire comment named "partfilled". A PARTIAL fill (< the row's
+			// signed contracts) keeps the row WORKING — only a FULL fill is
+			// terminal. u.Quantity is CUMULATIVE (e.Filled, .cs:2006).
+			total := 1
+			if r.Contracts != nil && *r.Contracts > 0 {
+				total = *r.Contracts
+			}
+			if !mentorFillIsFull(u.State, u.Quantity, total) {
+				at.armLifecycleWrite("set_fill_quantity(part)", r, ledger.SetFillQuantity(r.ID, u.Quantity))
+				at.armLifecycleWrite("set_fill_price", r, ledger.SetFillPrice(r.ID, u.FillPrice))
+				at.armLifecycleWrite("touch", r, ledger.Touch(r.ID))
+				at.materializeArmedEntry(r, u)
+				at.logInfof("⚡ armed PART fill %s @ %.2f (%d/%d) — row stays working; the remainder is cancelled at expiry",
+					r.Scenario, u.FillPrice, u.Quantity, total)
+				return
+			}
 			at.armLifecycleWrite("set_state(filled)", r, ledger.SetState(r.ID, "filled", "fill@"+strconv.FormatFloat(u.FillPrice, 'f', 2, 64)))
 			at.armLifecycleWrite("set_fill_price", r, ledger.SetFillPrice(r.ID, u.FillPrice))
 			at.armLifecycleWrite("touch", r, ledger.Touch(r.ID))
@@ -2489,25 +2517,27 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 	if side == "" {
 		return
 	}
-	// N2 (2026-10-04): the AddOn's fill frame quantity is CUMULATIVE (e.Filled)
-	// and its price is the running AVERAGE (e.AverageFillPrice) — it emits ONE
-	// partfilled frame then ONE filled frame per state. So the ledger SETS the
-	// position to the frame's cumulative values, never adds. An absent/zero
-	// quantity floors at 1 (a fill delivers at least one contract).
+	// N2/N3 (2026-10-04, CTO ruling): the AddOn's fill frame quantity is
+	// CUMULATIVE (e.Filled) and its price the running AVERAGE
+	// (e.AverageFillPrice). The DELTA is measured against the arm row's LAST
+	// RECORDED cumulative fill (r.FillQuantity) — never the current position
+	// quantity — because an exit can take the position to 0 while a late
+	// cumulative frame still arrives (3 filled → exit → late 5 → position 2,
+	// not 5). A delta ≤ 0 is a duplicate/out-of-order frame and is ignored.
 	qty := u.Quantity
 	if qty < 1 {
 		qty = 1
 	}
-	// A position already materialized (a prior partfill, or reconcile winning
-	// the race) is SET to this frame's cumulative quantity, monotonic and
-	// idempotent — a duplicate or out-of-order frame must never shrink it or
-	// double-count it.
+	delta := qty - r.FillQuantity
+	if delta <= 0 {
+		return
+	}
 	if pos, err := at.store.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), side); err == nil && pos != nil {
-		at.setMaterializedEntry(pos, r, u, float64(qty))
+		at.growMaterializedEntry(pos, r, u, qty, delta)
 		return
 	}
 	if pos, err := at.store.Position().GetOpenPositionBySymbol(at.id, at.futuresSymbol(), strings.ToLower(side)); err == nil && pos != nil {
-		at.setMaterializedEntry(pos, r, u, float64(qty))
+		at.growMaterializedEntry(pos, r, u, qty, delta)
 		return
 	}
 	tradeDate := r.PlanID
@@ -2521,8 +2551,8 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 		ExchangePositionID: fmt.Sprintf("armed_%s_%d", r.SignalID, nowMs),
 		Symbol:             at.futuresSymbol(),
 		Side:               side,
-		Quantity:           float64(qty),
-		EntryQuantity:      float64(qty),
+		Quantity:           float64(delta),
+		EntryQuantity:      float64(delta),
 		EntryPrice:         u.FillPrice,
 		EntryTime:          nowMs,
 		EntryOrderID:       r.SignalID,
@@ -2542,26 +2572,32 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 		at.logWarnf("🧩 armed fill %s materialize OPEN failed: %v", r.Scenario, err)
 		return
 	}
+	if err := at.store.ArmedOrders().SetFillQuantity(r.ID, qty); err != nil {
+		at.logWarnf("🧩 armed fill %s fill_quantity stamp failed: %v", r.Scenario, err)
+	}
 	at.logInfof("🧩 armed fill %s @ %.2f materialized OPEN (source=armed_entry — sub-60s round-trips are ledger-visible)", r.Scenario, u.FillPrice)
 	// E1 (wave 1A) — the excursion row's entry half. An armed fill carries its
 	// own levels in the ledger row, so nothing has to be resolved later.
 	at.excursionOnOpen(row, r.StopPx, r.TargetPx, plannerATR5m(at.futuresSymbol()))
 }
 
-// setMaterializedEntry (N2, 2026-10-04) sets an already-open position to the
-// fill frame's CUMULATIVE quantity and average price. Monotonic and idempotent:
-// a frame whose quantity is not larger than the current one is ignored (the
-// AddOn dedupes per state, but a duplicate or out-of-order frame must never
-// shrink the position or double-count it).
-func (at *AutoTrader) setMaterializedEntry(pos *store.TraderPosition, r store.ArmedOrderDB, u ntwire.OrderUpdatePayload, qty float64) {
-	if qty <= pos.Quantity {
-		return // monotonic: never decrease; a duplicate frame keeps the position
-	}
-	if err := at.store.Position().SetPositionQuantityAndPrice(pos.ID, qty, u.FillPrice); err != nil {
-		at.logWarnf("🧩 armed fill %s cumulative-set failed (pos %d): %v", r.Scenario, pos.ID, err)
+// growMaterializedEntry (N2/N3, 2026-10-04) grows an already-open position by
+// the DELTA between the frame's cumulative fill quantity and the arm row's last
+// recorded cumulative fill (r.FillQuantity). The delta is computed by the
+// caller; here it is applied and the arm row's fill_quantity is stamped to the
+// new cumulative AFTER the grow, so the next frame measures against the right
+// baseline. The entry price is SET to the frame's running average
+// (e.AverageFillPrice) — not re-weighted — because the broker's cumulative
+// price already averages every contract.
+func (at *AutoTrader) growMaterializedEntry(pos *store.TraderPosition, r store.ArmedOrderDB, u ntwire.OrderUpdatePayload, qty, delta int) {
+	if err := at.store.Position().SetPositionQuantityAndPrice(pos.ID, pos.Quantity+float64(delta), u.FillPrice); err != nil {
+		at.logWarnf("🧩 armed fill %s part-fill grow failed (pos %d): %v", r.Scenario, pos.ID, err)
 		return
 	}
-	at.logInfof("🧩 armed fill %s set position %d to %.0f @ %.2f (cumulative)", r.Scenario, pos.ID, qty, u.FillPrice)
+	if err := at.store.ArmedOrders().SetFillQuantity(r.ID, qty); err != nil {
+		at.logWarnf("🧩 armed fill %s fill_quantity stamp failed (pos %d): %v", r.Scenario, pos.ID, err)
+	}
+	at.logInfof("🧩 armed fill %s grew position %d to %.0f @ %.2f (cumulative %d)", r.Scenario, pos.ID, pos.Quantity+float64(delta), u.FillPrice, qty)
 }
 
 // stampArmedFillLineage links the freshly-filled position row to the plan the
@@ -2587,12 +2623,10 @@ func (at *AutoTrader) stampArmedFillLineage(r store.ArmedOrderDB, fillPrice floa
 	if err := at.store.Position().SetPlanLinkFull(pos.ID, r.Version, r.Scenario, true, "armed_fill", r.PlanID, tradeDate, r.Session); err != nil {
 		at.logWarnf("⚡ armed fill lineage stamp failed: %v", err)
 	}
-	// F3 (2026-09-03) — the contracts the fill delivered, on the same path that
-	// stamps lineage. Row 35 read filled with fill_quantity=0 beside a position
-	// of quantity 1.
-	if err := at.store.ArmedOrders().SetFillQuantity(r.ID, int(pos.Quantity)); err != nil {
-		at.logWarnf("⚡ armed fill quantity stamp failed: %v", err)
-	}
+	// fill_quantity is stamped by materializeArmedEntry (the cumulative frame
+	// quantity, in BOTH the create and grow paths) — do not re-stamp
+	// pos.Quantity here: after an exit + late cumulative frame the position is
+	// the DELTA (2), and re-stamping 2 would corrupt the cumulative baseline.
 	// F2 (2026-09-03) — the fill line names the version the arm BELONGS to,
 	// not whatever version is live by the time it fills.
 	at.logInfof("⚡ armed fill %s: armed under v%d %s %s (%s) · qty %.0f",
