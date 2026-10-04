@@ -36,6 +36,10 @@ func mentorPlaceEnv() bool {
 	return false
 }
 
+// MentorPlacementEnabled reports the MENTOR_PLACE placement gate (read-only; the
+// Studio status line reads it — a name and a flag, never a secret).
+func MentorPlacementEnabled() bool { return mentorPlaceEnv() }
+
 // mentorBars1mDepth is the 1m history depth the mentor fetch asks for (P0 A6
 // routing, CTO 1791058624275): the §7 Globex run window (17:00→08:30 CT) is
 // 930 bars and the full RTH day to 15:00 CT is 1320 — 1500 covers both with

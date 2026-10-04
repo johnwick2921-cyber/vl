@@ -13,6 +13,7 @@ import {
   EffectiveSavedNote,
   effectiveValueText,
 } from './EffectiveChip'
+import { MentorModeToggle } from './MentorModeToggle'
 
 // ClampedNumberInput edits a single clamped number (e.g. min R/R). It holds the
 // RAW typed text in local state WHILE editing — so clearing + retyping work — and
@@ -89,6 +90,8 @@ interface RiskControlEditorProps {
   // /api/strategies/:id/effective). Optional: absent → no chips, and a row the
   // map does not carry renders nothing extra.
   effective?: StudioEffective
+  // Shown in the Mentor mode confirmation.
+  strategyName?: string
 }
 
 const RC_PATH = 'ai_config.risk_control.'
@@ -216,6 +219,7 @@ export function RiskControlEditor({
   language,
   isFutures = false,
   effective,
+  strategyName,
 }: RiskControlEditorProps) {
   // W1 (g) — one server row per schema path; undefined → no chip.
   const eff = (leaf: string) => effective?.byPath[RC_PATH + leaf]
@@ -236,6 +240,14 @@ export function RiskControlEditor({
   return (
     <div className="space-y-6">
       {effective && <EffectiveSavedNote language={language} />}
+      <MentorModeToggle
+        on={config.mentor_mode === true}
+        onChange={(v) => updateField('mentor_mode', v)}
+        disabled={disabled}
+        language={language}
+        strategyName={strategyName}
+        orderGate={effective?.mentorPlace}
+      />
       {/* Hold discipline (hold-lock) — applies to futures + crypto; default OFF */}
       <div
         className="p-4 rounded-lg"

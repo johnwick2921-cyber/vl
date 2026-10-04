@@ -299,6 +299,9 @@ export interface RiskControlConfig {
   // === Strategy Studio Phase 1 — prop-firm guardrails (Chunks 2-5; surfaced in Chunk 6).
   // The kernel gate reads these exact fields; the toggle (…_enabled) governs enforcement. ===
   guardrails_enabled?: boolean // master switch (default ON)
+  // Mentor mode (🧑‍🏫) — per strategy, default OFF. Placements also need the
+  // server env MENTOR_PLACE=1; without it every intent is a dry run.
+  mentor_mode?: boolean
   // Hold-lock: once in a position, suppress AI-initiated closes so the trade
   // rides to the AI's stop/target (a real OCO bracket at the exchange). Default OFF.
   hold_discipline?: boolean
