@@ -432,6 +432,12 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 		mentorSizeForHook()
 	}
 	extra.Setup = in.Setup
+	// ISB size rules 2 and 3 (D4.1 p1 @08:05/09:40, written): the evaluator
+	// stamps Intent.Flag on an ISB at an old high/low or inside a range; here
+	// the flags reach the size table, which cuts both to tier 3. Set at the ONE
+	// sizing call site so no caller can forget them.
+	extra.ISBOldExtreme = extra.ISBOldExtreme || mentor.HasFlag(in.Flag, mentor.FlagISBAtOldExtreme)
+	extra.ISBInRange = extra.ISBInRange || mentor.HasFlag(in.Flag, mentor.FlagISBInRange)
 	// Defence in depth (CTO 1791058442006): the tier inputs are the GEOMETRY
 	// (abs(Price−Stop), abs(Target−Price)), never a bare intent field an
 	// emit site forgot to set — a swing sized as a base trade is the bug this

@@ -238,8 +238,13 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Smaller size at an old high/low',
-          body: 'An ISB at an old high/low trades the reduced size.',
-          cite: 'coming with Mentor mode',
+          body: 'An ISB right at an old high/low trades the reduced size (3 contracts), not the base size. Written rule 2 [D4.1 p1 @08:05] — wired: the evaluator flags the ISB and the size table cuts it.',
+          cite: 'trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlags',
+        },
+        {
+          title: 'Smaller size when the ISB is in a range',
+          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). Written rule 3 [D4.1 p1 @09:40]. A spent day (2) still wins; the cut beats the confluence size.',
+          cite: 'trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlags',
         },
         {
           title: 'Skip a stop in the twenties',

@@ -342,10 +342,10 @@ func isbArmActive(arms map[string]ISBArm, side Side) bool {
 func isbFlags(cur market.Kline, levels []Level, boxes []Box) string {
 	var flags []string
 	if touchesOldExtreme(cur, levels) {
-		flags = append(flags, "isb_at_old_extreme")
+		flags = append(flags, FlagISBAtOldExtreme)
 	}
 	if midRangeBoxed(boxes, cur.Close) {
-		flags = append(flags, "isb_in_range")
+		flags = append(flags, FlagISBInRange)
 	}
 	return strings.Join(flags, "|")
 }
