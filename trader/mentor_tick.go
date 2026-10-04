@@ -207,6 +207,15 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) {
 // The no-chase rule runs FIRST: a stop entry whose price is already through
 // the trigger is skipped — he never enters at market (§3).
 func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64) {
+	// N10 (stale intent): an entry whose reference candle is not the newest
+	// closed bar came from a reload replay of stale box/ISB/PHL state — never
+	// a live order. The swing is exempt (RefBarMs 0 — gated by its own 5m
+	// watermark). Counted, never silent.
+	if in.RefBarMs != 0 && in.RefBarMs != barCloseMs {
+		mentorCount("stale_intent")
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — stale %s intent: reference bar close %d ≠ newest closed bar %d", in.Setup, in.RefBarMs, barCloseMs)
+		return
+	}
 	// WIRING PROOF (fail-closed): with any mentor source seam missing, EVERY
 	// entry refuses here — the boot line logs it, this line enforces it.
 	if missing := at.mentorSourcesBlocking(in.Setup); len(missing) > 0 {

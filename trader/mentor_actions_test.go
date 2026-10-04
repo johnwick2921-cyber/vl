@@ -624,7 +624,7 @@ func TestMentorSwingFillQuantityResolution(t *testing.T) {
 				t.Fatal(err)
 			}
 			resetMentorCounters()
-			qty, ok := at.mentorSwingFill(mentorLiveArm{RowID: row.ID, Side: "short", Entry: 29600})
+			_, qty, ok := at.mentorSwingFill(mentorLiveArm{RowID: row.ID, Side: "short", Entry: 29600})
 			if qty != tc.wantQty || ok != tc.wantOK {
 				t.Fatalf("mentorSwingFill = (%v, %v), want (%v, %v)", qty, ok, tc.wantQty, tc.wantOK)
 			}
@@ -657,5 +657,74 @@ func TestMentorClosePositionRefusesUnknownQty(t *testing.T) {
 	}
 	if c := MentorCountSnapshot()["close_refused_not_filled"]; c != 1 {
 		t.Fatalf("close_refused_not_filled = %d, want 1", c)
+	}
+}
+
+// TestMentorPlaceIntentRefusesStaleBox (N10 pin): an entry whose reference
+// candle is not the newest closed bar came from a reload replay of stale box
+// state — refused, counted "stale_intent", never a live order.
+func TestMentorPlaceIntentRefusesStaleBox(t *testing.T) {
+	at, _, _, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	resetMentorCounters()
+	in := mentor.Intent{Action: mentor.PlaceStopEntry, Setup: "BOX", Side: mentor.SideLong,
+		Price: 15260, Stop: 15240, Target: 15320, RefBarMs: 1_700_000_000_000} // stale: far older than barCloseMs
+	at.mentorPlaceIntent(in, mentorSizeChoice{}, 1_800_000_000_000, 1_800_000_000_000)
+	if c := MentorCountSnapshot()["stale_intent"]; c != 1 {
+		t.Fatalf("stale_intent = %d, want 1", c)
+	}
+}
+
+// TestMentorSwingBEUsesLegOwnStop (S1 fold-in): with NO STOP_MARKET row in the
+// ledger, the swing BE move is still guarded by the swing leg's OWN recorded
+// stop (the arm row's StopPx) and still goes through — never refused because
+// the ledger's open-orders list is empty.
+func TestMentorSwingBEUsesLegOwnStop(t *testing.T) {
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	mentorOpenStopSource = func() (float64, bool) { return 0, false } // no STOP_MARKET row
+	t.Cleanup(func() { mentorOpenStopSource = nil })
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-be",
+		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateFilled, SignalID: "swing-be-sig", FillPrice: 29600, FillQuantity: 1}
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-be", row.ID, "long", 29600)
+	oldWire := moveStopWire
+	var moved []float64
+	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error {
+		moved = append(moved, newStop)
+		return nil
+	}
+	t.Cleanup(func() { moveStopWire = oldWire })
+	resetMentorCounters()
+	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-be", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
+	if len(moved) != 1 || moved[0] != 29600 {
+		t.Fatalf("the BE move must go through on the leg's own stop even with no STOP_MARKET row; got %v", moved)
+	}
+}
+
+// TestMentorMoveStopBERefusesUnknownOwnStop (S1 fold-in): a filled swing arm
+// with no recorded stop (StopPx 0) refuses the BE move fail-closed — the widen
+// guard is never skipped.
+func TestMentorMoveStopBERefusesUnknownOwnStop(t *testing.T) {
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-nostop",
+		Side: "long", EntryPx: 29600, StopPx: 0, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateFilled, SignalID: "swing-nostop-sig", FillPrice: 29600, FillQuantity: 1}
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("swing-nostop", row.ID, "long", 29600)
+	oldWire := moveStopWire
+	moved := false
+	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error { moved = true; return nil }
+	t.Cleanup(func() { moveStopWire = oldWire })
+	resetMentorCounters()
+	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-nostop", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
+	if moved {
+		t.Fatal("an unknown own stop must NOT move a stop")
+	}
+	if c := MentorCountSnapshot()["move_be_refused_no_stop"]; c != 1 {
+		t.Fatalf("move_be_refused_no_stop = %d, want 1", c)
 	}
 }
