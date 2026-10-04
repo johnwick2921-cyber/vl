@@ -268,15 +268,13 @@ func mentorLocationTriggerFilter(rc *store.RiskControlConfig) bool {
 	return rc == nil || rc.MentorLocationTriggerFilter == nil || *rc.MentorLocationTriggerFilter
 }
 
-// mentorLossDeparturePts — the ONE departure rule (CTO 13:24:53Z): a blocked
-// place unblocks on a closed candle AFTER the loss candle whose |close − loss
-// price| ≥ this. Default 20 ("leave the area", he never gives a number);
-// values ≤ 0 fail closed to 20.
+// mentorLossDeparturePts is the optional fixed-points fallback for the B22
+// structural departure rule. Zero (unset) leaves the fallback OFF.
 func mentorLossDeparturePts(rc *store.RiskControlConfig) float64 {
 	if rc != nil && rc.MentorLossDeparturePts > 0 {
 		return rc.MentorLossDeparturePts
 	}
-	return 20
+	return 0
 }
 
 // mentorSuppressAIEntry is the AI-entries-off half of the mode switch: a

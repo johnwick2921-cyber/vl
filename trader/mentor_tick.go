@@ -110,14 +110,13 @@ func (at *AutoTrader) mentorEventPassAt(now time.Time) bool {
 	return true
 }
 
-// mentorEvaluatorConfig builds the evaluator config with the strategy's knob
-// overrides (defaults as ruled, CTO 1791033257041). The G1 / location-filter
-// knobs wire in when their evaluator fields land (DS-107's limits,
-// DS-103's location trigger knob) — the resolvers already pin the defaults.
+// mentorEvaluatorConfig applies strategy overrides to the evaluator. B22's
+// structural departure remains primary; the fixed-points fallback is opt-in.
 func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true
 	rc := at.mentorRiskControl()
+	cfg.LossDeparturePts = mentorLossDeparturePts(rc)
 	if rc != nil {
 		cfg.LvlRevisitMinPts = mentorLvlRevisitMinPts(rc)
 		cfg.EmaMaxCross30m = mentorEmaMaxCross30m(rc)
