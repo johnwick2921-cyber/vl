@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -64,4 +65,42 @@ func TestISBFlagsForWidensInRange(t *testing.T) {
 	if f := e.isbFlagsFor(cur2, nil, nil); f != "" {
 		t.Fatalf("outside the box with no other range the flags must be empty, got %q", f)
 	}
+}
+
+// TestISBInRangeFlagOnTick — item 21 (D4.1-06) Tick-level pin at the emit call
+// site (`chosen.Flag = e.isbFlagsFor(cur, levels, boxes)`): an ISB whose candle
+// sits inside the standing 5m ISB box emits with isb_in_range. The unit pin
+// (TestISBFlagsForWidensInRange) exercises the resolver directly; this pin
+// catches a revert of the CALL SITE to the old `isbFlags`. Mutant
+// (`chosen.Flag = isbFlags(cur, levels, boxes)`) → RED: the ISB emits with an
+// empty flag.
+func TestISBInRangeFlagOnTick(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	box := ISBBox{High: 103, Low: 97, Dir: SideLong, AtTime: auditMs(2026, 9, 15, 9, 0, 0)}
+	// a head bar with a high close so the EMA 34 target sits well beyond the
+	// entry (the setup must carry a target: §6).
+	head := rthBars(0, 121, 121.5, 120.5, 120)
+	prev := rthBars(1, 98, 102.9, 97.5, 99) // green candle-1 → long, matches box.Dir
+	cur := rthBars(2, 99.5, 101, 98, 100)   // the ISB: close 100 inside [97, 103]
+	if !IsISB(prev, cur) || ISBDirection(prev) != SideLong {
+		t.Fatal("fixture: green candle-1 ISB")
+	}
+	bars := []market.Kline{head, prev, cur}
+	e := New(cfg)
+	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
+	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
+	e.State.ISBBox = &box
+	e.State.ORB = ORB{Day: dayStartCT(auditMs(2026, 9, 15, 9, 0, 0)), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(auditMs(2026, 9, 15, 9, 0, 0)).In(ctime())), Verdict: DayTrade}
+	ins := e.Tick(bars, cur.CloseTime+1)
+	for _, in := range ins {
+		if in.Action == PlaceStopLimitEntry && in.Setup == "ISB" {
+			if !HasFlag(in.Flag, FlagISBInRange) {
+				t.Fatalf("an ISB inside the standing 5m box must emit with isb_in_range, got flag %q: %+v", in.Flag, in)
+			}
+			return
+		}
+	}
+	t.Fatalf("the same-direction ISB must emit inside the box; got %+v", ins)
 }
