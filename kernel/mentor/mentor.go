@@ -142,6 +142,12 @@ type Intent struct {
 	// when 4h AND 1h agree and room ≥ 30 pts"). A silent 1h (case 2: follow the
 	// 4h) is NOT agreement.
 	HTFAgree bool
+	// RunnerTarget is the mode-A runner target BEYOND the old high (D2-49 /
+	// D2.4 p1 @01:56: "resonance breaks the old high 70–80%"). The PHL/PLH
+	// emit site stamps the next level beyond the old extreme (nextLevelBeyond);
+	// 0 = none — in mode A the runner's native TP is removed and the exit is
+	// the BE stop or EOD flat. The trader's resonance arming consumes it.
+	RunnerTarget float64
 }
 
 // Config is every knob. Enabled is mentor_mode and defaults to false (L4):
