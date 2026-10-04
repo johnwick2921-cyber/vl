@@ -2,8 +2,10 @@ package trader
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"vl/kernel/mentor"
@@ -35,6 +37,17 @@ var (
 	mentorLiveMu   sync.Mutex
 	mentorLiveArms = map[string]mentorLiveArm{}
 )
+
+// N1 (DS-104): the evaluator's ArmSeq restarts at 0 after a reload/restart, so
+// a bare ArmID ("isb-1") collides with a TERMINAL ledger row from the prior
+// evaluator/process and UpsertArm silently no-ops it (row id 0 → never placed).
+// Each trader construction bumps this epoch (mentorSeedAtStart), so the ledger
+// scenario is unique per process AND per reload.
+var mentorArmEpoch atomic.Int64
+
+func bumpMentorArmEpoch() {
+	mentorArmEpoch.Store(time.Now().UnixNano())
+}
 
 func mentorRegisterLiveArm(armID string, rowID int64, side string, entry float64) {
 	mentorLiveMu.Lock()
@@ -123,6 +136,11 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	if armID == "" {
 		armID = fmt.Sprintf("mentor-%d", time.Now().UnixNano())
 	}
+	// N1 (DS-104): the ledger scenario is the evaluator's ArmID prefixed with
+	// the per-construction epoch. The in-memory registry stays keyed by the
+	// UNPREFIXED armID, so ExtendArm / CancelArm / MoveStopBE / ClosePosition
+	// still resolve by the evaluator's id.
+	scenario := fmt.Sprintf("%s-%s", armID, strconv.FormatInt(mentorArmEpoch.Load(), 10))
 	side := strings.ToLower(strings.TrimSpace(string(in.Side)))
 	if side != "long" && side != "short" {
 		mentorCount("placement_refused_bad_side")
@@ -134,7 +152,7 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		PlanID:    "mentor",
 		Version:   1,
 		Session:   "MENTOR",
-		Scenario:  armID,
+		Scenario:  scenario,
 		Side:      side,
 		State:     store.StateArmed,
 		EntryPx:   in.Price,
@@ -152,6 +170,13 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	if err := ledger.UpsertArm(&row); err != nil {
 		mentorCount("placement_refused_upsert")
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm upsert failed: %v", err)
+		return
+	}
+	// N1 (DS-104): a terminal row with the same scenario makes UpsertArm a
+	// no-op that leaves row.ID at 0. Refuse + log — never register a phantom.
+	if row.ID == 0 {
+		mentorCount("placement_refused_arm_id_zero")
+		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm %q authored no row (id 0)", armID)
 		return
 	}
 	mentorRegisterLiveArm(armID, row.ID, side, in.Price)
