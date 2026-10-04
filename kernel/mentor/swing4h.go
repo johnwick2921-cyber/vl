@@ -63,8 +63,12 @@ type SwingCfg struct {
 	EntryBufferPts    float64 // R8: NO buffer — order sits tight on the candle; default 0
 	TargetFallbackPts float64 // first target when no 5m EMA34; default 50
 	TargetEMA5mPeriod int     // first target EMA period on 5m; default 34
-	LeewayCandles     int     // ISB window after a through-close; default 2
-	Hold4hBars        int     // hold to the close of the N-th 4h candle after entry; default 2 [C]
+	// LeewayCandles is the reference-leeway knob (R26, P2): the first OR
+	// second touching candle may be the reference. It is NOT the ISB window —
+	// R34 rules that the ISB watch after a through-close stays open until the
+	// 4h flip (no candle limit). Currently unused by the swing tick.
+	LeewayCandles int
+	Hold4hBars    int // hold to the close of the N-th 4h candle after entry; default 2 [C]
 	// Respects5mZone — gate swing entries on the 5m trigger-line zone.
 	// Default false: §8 is a self-contained 4h → 5m procedure; nothing in
 	// D5.2 ties it to the 5m trigger lines. [C] not stated in the method —
@@ -100,10 +104,9 @@ type SwingState struct {
 	BucketStart  int64   // ms, the 4h bucket the line belongs to
 	LastBarTime  int64   // ms, last closed 5m bar processed
 	FirstTouch   *swingTouch
-	LeewayLeft   int     // candles left in the ISB window after a through-close
-	EmaCount     int     // 4h closes consumed by Line — ≥ FourHEMA34Min means warm (seed path)
-	ClearLongAt  float64 // price ≤ this re-arms longs (line − stop)
-	ClearShortAt float64 // price ≥ this re-arms shorts (line + stop)
+	EmaCount     int            // 4h closes consumed by Line — ≥ FourHEMA34Min means warm (seed path)
+	ClearLongAt  float64        // price ≤ this re-arms longs (line − stop)
+	ClearShortAt float64        // price ≥ this re-arms shorts (line + stop)
 	Pending      *swingPosition // S1: the resting stop order, not yet filled
 	Pos          *swingPosition // S1: the FILLED swing leg (BE/hold management)
 }
@@ -249,7 +252,6 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		}
 		s.BucketStart = bucketStart
 		s.FirstTouch = nil
-		s.LeewayLeft = 0
 		s.ClearLongAt, s.ClearShortAt = 0, 0
 	}
 	if warm {
@@ -293,20 +295,21 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		if b.Low <= line-cfg.StopBeyondLinePts {
 			s.ClearLongAt = 0
 		}
-		if s.FirstTouch != nil && s.LeewayLeft > 0 {
-			s.LeewayLeft--
-			// closes back after a through-close → the 5m INSIDE BAR entry
+		// R32 + R34 [D5.2 p2 @20:48, @10:30] — once a touch closed THROUGH the
+		// line the level is INVALID for this whole 4h candle. Only an inside
+		// bar may trade it now (never a normal reject / PHL / PLH again), and
+		// the ISB watch stays open until the 4h flip — it is NOT time-limited
+		// to LeewayCandles. The flip (bucketStart change above) resets it.
+		if s.FirstTouch != nil && s.FirstTouch.Through {
+			// closes back after the through-close → the 5m INSIDE BAR entry
 			// with the stop AT the level [D5.2 p3 @ 21:56].
-			if s.FirstTouch.Through && closedBack(s.FirstTouch.Approach, b.Close, line) {
-				if IsISB(prev, b) {
-					if in, eok := swingISBIntent(s.FirstTouch, b, line, cfg); eok {
-						s.FirstTouch = nil
-						s.LeewayLeft = 0
-						in.ArmID = "swing-" + strconv.FormatInt(b.OpenTime, 10)
-						s.openPosition(in, now)
-						out = append(out, in)
-						continue
-					}
+			if closedBack(s.FirstTouch.Approach, b.Close, line) && IsISB(prev, b) {
+				if in, eok := swingISBIntent(s.FirstTouch, b, line, cfg); eok {
+					s.FirstTouch = nil
+					in.ArmID = "swing-" + strconv.FormatInt(b.OpenTime, 10)
+					s.openPosition(in, now)
+					out = append(out, in)
+					continue
 				}
 			}
 			continue
@@ -339,7 +342,6 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			}
 			out = append(out, cancel)
 			s.FirstTouch = &swingTouch{RefBar: b, Approach: approach, Through: true}
-			s.LeewayLeft = cfg.LeewayCandles
 			continue
 		}
 		in, eok := swingRejectIntent(approach, b, line, cfg)

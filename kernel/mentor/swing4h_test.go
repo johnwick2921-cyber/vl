@@ -152,6 +152,41 @@ func TestSwing4hThroughCancelsThenISB(t *testing.T) {
 	}
 }
 
+// TestSwing4hISBWatchOpenUntilFlip — R34 [D5.2 p2 @10:30]: after a through-close
+// the ISB watch stays open until the 4h flip, NOT time-limited to LeewayCandles
+// (2). An inside bar that closes back FOUR candles after the through-close still
+// enters, with the stop AT the level.
+func TestSwing4hISBWatchOpenUntilFlip(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	cur := []market.Kline{
+		mk5m(t, 15, 5, 0, 10200, 10220, 10190, 10210),  // prev close above the line (Long approach)
+		mk5m(t, 15, 5, 5, 10200, 10200, 10140, 10150),  // touches, closes THROUGH (below) → invalid
+		mk5m(t, 15, 5, 10, 10150, 10160, 10140, 10145), // below, no ISB (candle 1)
+		mk5m(t, 15, 5, 15, 10145, 10155, 10135, 10140), // below, no ISB (candle 2 — the old window ends)
+		mk5m(t, 15, 5, 20, 10180, 10190, 10120, 10130), // wide, below (candle 3)
+		mk5m(t, 15, 5, 25, 10130, 10185, 10125, 10180), // closes back above, ISB of candle 3 → LONG entry
+	}
+	bars := swingTape(t, cur)
+	s := &SwingState{}
+	out := SwingTick(s, bars, cfg, cur[5].OpenTime+60_000)
+	if len(out) != 2 {
+		t.Fatalf("intents = %d, want cancel + ISB entry (the watch is not 2-candle limited); got %+v", len(out), out)
+	}
+	if out[0].Action != CancelArm {
+		t.Fatalf("first intent = %+v, want CancelArm for the through-close", out[0])
+	}
+	in := out[1]
+	if in.Action != PlaceStopEntry || in.Side != SideLong {
+		t.Fatalf("ISB intent = %+v, want a LONG stop entry (support close-back)", in)
+	}
+	if abs(in.Stop-swingLineGolden) > 0.01 {
+		t.Fatalf("ISB stop = %.2f, want %.2f (AT the level)", in.Stop, swingLineGolden)
+	}
+	if abs(in.Price-10185) > 0.01 {
+		t.Fatalf("ISB entry = %.2f, want 10185 (the ISB candle's high, tight R8)", in.Price)
+	}
+}
+
 func TestSwingTickWarmLineIsAuthoritativeWithinBucket(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	bars := []market.Kline{
@@ -172,7 +207,6 @@ func TestSwingTickWarmLineIsAuthoritativeWithinBucket(t *testing.T) {
 		LastBarTime: bars[2].OpenTime,
 		EmaCount:    FourHEMA34Min,
 		FirstTouch:  &swingTouch{Approach: SideShort, Through: true},
-		LeewayLeft:  2,
 	}
 	out := SwingTick(s, bars, cfg, now)
 	if len(out) != 0 {
@@ -216,8 +250,10 @@ func TestSwing4hHardInvariantCounter(t *testing.T) {
 
 // TestSwing4hOneSetupPerApproach — one setup per approach: no new one until
 // price has left the line by at least the stop distance and comes back. The
-// return path crosses through (cancel), the leeway expires, and the next
-// below-the-line touch is the new setup.
+// return path crosses through (cancel) and marks the level INVALID (R32
+// [D5.2 p2 @20:48]): the later below-line touch is REFUSED — an invalid level
+// may only trade an inside bar, never a normal reject, for the rest of the 4h
+// candle.
 func TestSwing4hOneSetupPerApproach(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	cur := []market.Kline{
@@ -225,11 +261,11 @@ func TestSwing4hOneSetupPerApproach(t *testing.T) {
 		mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160),  // first setup (short)
 		mk5m(t, 15, 5, 10, 10160, 10175, 10155, 10160), // same approach again — blocked
 		mk5m(t, 15, 5, 15, 10190, 10210, 10190, 10205), // leaves the line by ≥ 30 (entirely above)
-		mk5m(t, 15, 5, 20, 10200, 10200, 10150, 10160), // crosses back through → cancel
-		mk5m(t, 15, 5, 25, 10195, 10205, 10150, 10155), // leeway candle 1 (closes below → no ISB)
-		mk5m(t, 15, 5, 30, 10195, 10205, 10150, 10155), // leeway candle 2 (closes below → no ISB)
+		mk5m(t, 15, 5, 20, 10200, 10200, 10150, 10160), // crosses back through → cancel, level INVALID
+		mk5m(t, 15, 5, 25, 10195, 10205, 10150, 10155), // below the line — no ISB close-back
+		mk5m(t, 15, 5, 30, 10195, 10205, 10150, 10155), // below the line — no ISB close-back
 		mk5m(t, 15, 5, 35, 10060, 10100, 10050, 10060), // back below without touching
-		mk5m(t, 15, 5, 40, 10160, 10175, 10155, 10160), // below-line touch → new setup
+		mk5m(t, 15, 5, 40, 10160, 10175, 10155, 10160), // below-line touch → REFUSED (invalid level)
 	}
 	bars := swingTape(t, cur)
 	s := &SwingState{}
@@ -243,8 +279,8 @@ func TestSwing4hOneSetupPerApproach(t *testing.T) {
 			cancels++
 		}
 	}
-	if entries != 2 {
-		t.Fatalf("stop entries = %d, want 2 (the blocked repeat produces none); got %+v", entries, out)
+	if entries != 1 {
+		t.Fatalf("stop entries = %d, want 1 (the invalid level refuses the later below-line touch); got %+v", entries, out)
 	}
 	if cancels != 1 {
 		t.Fatalf("cancels = %d, want 1 (the through-cross back); got %+v", cancels, out)
@@ -263,7 +299,7 @@ func TestSwing4hFlipOnNewBucket(t *testing.T) {
 	bars := swingTape(t, cur)
 	s := &SwingState{}
 	SwingTick(s, bars, cfg, cur[1].OpenTime+60_000)
-	if s.FirstTouch == nil || s.LeewayLeft == 0 {
+	if s.FirstTouch == nil || !s.FirstTouch.Through {
 		t.Fatalf("setup: pending touch not armed: %+v", s.FirstTouch)
 	}
 	// advance into the NEXT 4h bucket (09:00), one more closed bucket close
