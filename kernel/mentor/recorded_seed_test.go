@@ -60,7 +60,7 @@ func TestSeedIncrementalMatchesRebuildRecordedDay(t *testing.T) {
 	}
 
 	// Rebuild: seed the whole tape at the end time.
-	endTime := full[len(full)-1].CloseTime
+	endTime := full[len(full)-1].CloseTime + 1 // match Tick: now advances one millisecond after the final closed bar
 	reb := New(cfg)
 	Seed(reb, full, endTime)
 
