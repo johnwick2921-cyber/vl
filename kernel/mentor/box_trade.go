@@ -29,25 +29,13 @@ type BoxReturn struct {
 // on the approach side (the REJECT candle, fact 4: that is exactly the
 // trade reference). Consecutive touching candles are the same visit; a
 // candle closing outside the box (approach side) opens the next visit.
+//
+// B10 T1 FOLD (CTO 21:16Z): ONE seeding rule for both walks — the full walk
+// delegates to the incremental form, so both seed the outside-spell state
+// from the FormedAt candle's close and a return on the very next bar is
+// never lost.
 func BoxReturnBars(bars []market.Kline, b Box, formedAt int, cfg BoxCfg) []BoxReturn {
-	var out []BoxReturn
-	outside := false
-	for i := formedAt + 1; i < len(bars); i++ {
-		c := bars[i]
-		if c.CloseTime == 0 {
-			continue
-		}
-		if touchesEdge(b, c, cfg) && outside {
-			out = append(out, BoxReturn{N: len(out) + 1, RefBar: i})
-		}
-		switch b.Kind {
-		case FTGH:
-			outside = c.Close < b.Bottom
-		case FTGL:
-			outside = c.Close > b.Top
-		}
-	}
-	return out
+	return BoxReturnBarsFrom(bars, b, formedAt+1, cfg)
 }
 
 // BoxReturnBarsFrom is the INCREMENTAL call used by Tick: the same walk as
