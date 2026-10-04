@@ -82,9 +82,13 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 		}
 		return n
 	}
-	if in.SpentDay {
-		return mentorSizeChoice{Contracts: clamp(spentCap), Tier: "spent_day", Why: "§7 spent day — hold 1–2 only [D5.1 p1 @ 16:13]"}, nil
-	}
+	// R09 (owner ruling 2026-10-04, D5.1 p1 @16:13–16:35): a range/spent day
+	// cuts the RUNNER and the TARGET only — never the whole trade. Size
+	// normally here; the spent-day cut rides the 15-pt target cap
+	// (DayGateTargetCapPts, applied by the evaluator) and the runner cap
+	// (mentorSpentDayRunnerCap) in the exit drive. spentCap remains the
+	// spent-day knob value for DS-103's split redesign.
+	_ = spentCap
 	// ISB at an old high/low → reduce size, tier 3 (owner ruling 00:1x CT,
 	// written rule 2, D4.1 p1). The flag comes from DS-103's evaluator and is
 	// only ever set for ISB setups. It beats big/confluence — the location
