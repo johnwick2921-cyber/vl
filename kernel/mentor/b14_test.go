@@ -91,17 +91,18 @@ func TestB14bNearestOldHighOnly(t *testing.T) {
 	}
 }
 
-// TestB14aPriorSwingFromTape — B14a [D2.2 p3 @04:06]: the higher-low check
-// reads the nearest PRIOR same-role swing of the TAPE ("đối chiếu với cái
-// đáy bên tay trái"), not the old-extreme level set. The stop (97) is not
-// higher than the tape's prior low (98) → refused, named. The old read
-// (priorSameRole over the level set, which holds only HIGHs here) skipped
-// the check and emitted the far high.
-func TestB14aPriorSwingFromTape(t *testing.T) {
-	oldHighs := []Level{
+// TestB14aHigherLowAgainstTheLeftLow — D2-28 [D2.2 p3 @02:30–04:18]: the
+// higher-low check reads the STRUCTURAL opposite-role extreme LEFT of the old
+// high — the low the leg to the old high started from ("Đối chiếu với những
+// cái ĐÁY bên tay trái… SHIFT CẤU TRÚC") — not the previous pullback candle's
+// 3-bar fractal low. With the left low (98) seeded as an old extreme: a stop
+// at 97 (not higher) is refused; a stop at 99.5 (higher) emits.
+func TestB14aHigherLowAgainstTheLeftLow(t *testing.T) {
+	oldLevels := []Level{
+		{Key: "old-low:98", Kind: KindOldExtreme, Price: 98},
 		{Key: "old-high:130", Kind: KindOldExtreme, Price: 130},
 	}
-	e, bars, now, _ := b14Fixture(oldHighs, 97)
+	e, bars, now, _ := b14Fixture(oldLevels, 97)
 	ins := e.Tick(bars, now)
 	if n := b14Entries(ins); n != 0 {
 		t.Fatalf("not-a-higher-low touch emitted %d entries, want 0: %+v", n, ins)
@@ -109,9 +110,8 @@ func TestB14aPriorSwingFromTape(t *testing.T) {
 	if e.State.Refusals["phl_not_higher_low"] == 0 {
 		t.Fatalf("ledger = %v, want phl_not_higher_low counted", e.State.Refusals)
 	}
-	// Sanity: the same tape with a genuinely higher low emits (the floor
-	// still fails vs 130? entry 104.2, stop 99.5, target 130 → passes).
-	e2, bars2, now2, _ := b14Fixture(oldHighs, 99.5)
+	// Sanity: the same tape with a genuinely higher low emits.
+	e2, bars2, now2, _ := b14Fixture(oldLevels, 99.5)
 	ins2 := e2.Tick(bars2, now2)
 	if n := b14Entries(ins2); n != 1 {
 		t.Fatalf("higher-low touch emitted %d entries, want 1: %+v", n, ins2)

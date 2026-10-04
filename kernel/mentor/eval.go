@@ -778,9 +778,6 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// §2.2: PHL/PLH from a fresh reject touch against an old extreme,
 	// gated by trigger side, mid-range and the setup's own gates.
 	oldExtremes := oldExtremeIndexes(levels, bars)
-	// B14a: one tape-swing scan per tick — the prior same-role swing for the
-	// higher-low / lower-high check reads the tape, not the level set.
-	sw := swings3(bars)
 	// E2: watch the last emitted EMA stop; block the EMA line on a loss.
 	emaPrice := 0.0
 	for _, lvl := range levels {
@@ -890,10 +887,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.refuse("phl_no_old_extreme_on_side")
 			continue
 		}
-		// B14a: the higher-low / lower-high check reads the nearest
-		// PRIOR same-role swing of the tape ("đối chiếu với cái
-		// đáy/đỉnh bên tay trái" [D2.2 p3 @04:06]).
-		prior := priorSwingOnTape(sw, side == SideShort, len(bars)-1)
+		// D2-28: the higher-low / lower-high check reads the STRUCTURAL
+		// opposite-role extreme LEFT of the old high/low — the low the leg
+		// to the old high started from ("Đối chiếu với những cái ĐÁY bên tay
+		// trái… SHIFT CẤU TRÚC" [D2.2 p3 @02:30–04:18]) — not the previous
+		// pullback candle's 3-bar fractal low.
+		prior := priorOppositeRole(ex, oldExtremes)
 		in, ok, reason := PHLPLHGatedR2Levels(tr, ex.level, ex.idx, len(bars)-1, prior, levels, e.Cfg, e.State.HTF, e.State.Day.Verdict, dg)
 		if !ok {
 			// B-rules (13:51:31Z): EVERY drop names a reason and counts it.
@@ -1151,6 +1150,27 @@ func priorSameRole(ex oldExtreme, extremes []oldExtreme) float64 {
 	return 0
 }
 
+// priorOppositeRole — D2-28 [D2.2 p3 @02:30–04:18]: the higher-low / lower-high
+// check compares the touch candle against the STRUCTURAL opposite-role extreme
+// LEFT of the old high/low — for a long, the last swing LOW before the old high
+// (the low the leg to the old high started from); for a short, the last swing
+// HIGH before the old low. The extreme is right-side confirmed (kernel swing
+// point, mapped via oldExtremeIndexes). 0 = none.
+func priorOppositeRole(ex oldExtreme, extremes []oldExtreme) float64 {
+	best := -1
+	for _, o := range extremes {
+		if o.idx < ex.idx && o.isHigh != ex.isHigh && o.idx > best {
+			best = o.idx
+		}
+	}
+	for _, o := range extremes {
+		if o.idx == best {
+			return o.level.Price
+		}
+	}
+	return 0
+}
+
 // phlRefusalKey names every PHL/PLH drop for the refusal ledger
 // (B-rules 13:51:31Z — the E-2 floor, the B14 skip and every gate).
 func phlRefusalKey(reason string) string {
@@ -1184,35 +1204,6 @@ func phlRefusalKey(reason string) string {
 	default:
 		return "phl_refused"
 	}
-}
-
-// priorSwingOnTape — B14a [D2.2 p3 @04:06]: the higher-low / lower-high check
-// reads the nearest PRIOR same-role swing of the TAPE ("đối chiếu với cái
-// đáy/đỉnh bên tay trái"), not the old-extreme level set (which the swing
-// significance filter may have pruned). wantHigh = the PLH's prior high.
-// beforeIdx excludes the touch bar itself. 0 = none.
-func priorSwingOnTape(swings []swingPairAt, wantHigh bool, beforeIdx int) float64 {
-	best := -1
-	for _, s := range swings {
-		if s.idx >= beforeIdx {
-			continue
-		}
-		if (wantHigh && s.kind != kernel.KindSWGH) || (!wantHigh && s.kind != kernel.KindSWGL) {
-			continue
-		}
-		if s.idx > best {
-			best = s.idx
-		}
-	}
-	if best < 0 {
-		return 0
-	}
-	for _, s := range swings {
-		if s.idx == best {
-			return s.price
-		}
-	}
-	return 0
 }
 
 // nearestOldExtremeOnSide — B14b [D2.2 p2 @03:07–03:14]: the target is the
