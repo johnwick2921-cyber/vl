@@ -81,12 +81,34 @@ func KeyLevels(bars []market.Kline, cfg Config) []Level {
 	return out
 }
 
+// isPreBucketed1H reports whether the input is a series of ready-made 1H
+// candles. The decision reads the WHOLE series — most consecutive gaps >= 60
+// min — never the first two bars: the MNQ seed window starts with two sparse
+// `historical_import` snapshots (09-07 12:00, 09-08 16:00), and the old
+// first-two-bars rule read the entire 1m history behind them as 1H candles,
+// so every 1m bar in 08:00–14:59 became a "candle" and the level walk drew
+// garbage. One pass, no allocation (the cold path calls this every tick).
+func isPreBucketed1H(bars []market.Kline) bool {
+	if len(bars) < 2 {
+		return false
+	}
+	const hourMs = 60 * 60_000
+	wide := 0
+	for i := 1; i < len(bars); i++ {
+		if bars[i].OpenTime-bars[i-1].OpenTime >= hourMs {
+			wide++
+		}
+	}
+	return 2*wide > len(bars)-1
+}
+
 // keyLevel1HBars buckets the 1m history into 1H candles ANCHORED AT THE
 // MARKET OPEN 08:30 CT (KEY-LEVEL RULING item 1): the first candle is
 // 08:30–09:29. Only candles OPENING inside RTH survive and bars opening at or
 // after 15:00 CT are dropped (external minutes never contaminate the 14:30
-// candle). A PRE-BUCKETED 1H input (bars already ~60m apart, e.g. the
-// recorded 1h fixtures) cannot reconstruct the 08:30 anchor: each bar is a
+// candle). A PRE-BUCKETED 1H input (most consecutive bars >= 60m apart, e.g.
+// the recorded 1h fixtures — judged over the WHOLE series, see
+// isPreBucketed1H) cannot reconstruct the 08:30 anchor: each bar is a
 // candle and the RTH filter keeps candles opening in [08:00, 15:00) — the
 // hour that contains the market open. The evaluator always feeds 1m bars.
 func keyLevel1HBars(bars []market.Kline) []market.Kline {
@@ -95,7 +117,7 @@ func keyLevel1HBars(bars []market.Kline) []market.Kline {
 		rthEnd    = 15 * 60   // 15:00 CT
 	)
 	// pre-bucketed 1H input: every bar is already a candle
-	if len(bars) >= 2 && bars[1].OpenTime-bars[0].OpenTime >= 60*60_000 {
+	if isPreBucketed1H(bars) {
 		// Fresh slice: filtering into bars[:0] MUTATES the caller's backing
 		// array (Seed ran the 4h aggregation over a half-filtered tape —
 		// 81 buckets from the same 216 bars a clean call buckets into 53).
