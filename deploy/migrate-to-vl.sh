@@ -672,22 +672,30 @@ steps_1_5() {
 #                      mode=rerun:   the already-migrated branch (no rollback)
 #
 # B2/B3 (R2 attempt-3): the bot needs seconds to write BOOT INTEGRITY OK and
-# serve :8080. Each deciding leg polls every 2 s up to VL_MIGRATE_VERIFY_WAIT_S
-# seconds (default 90; the env is a TEST SEAM only) and passes the moment it is
-# true, fails only at the deadline, and prints how long it took.
+# serve :8080. Each deciding leg polls up to VL_MIGRATE_VERIFY_WAIT_S seconds
+# (default 90; the env is a TEST SEAM only) and passes the moment it is true,
+# fails only at the deadline, and prints how long it took.
 verify_wait_secs() {
   local v="${VL_MIGRATE_VERIFY_WAIT_S:-90}"
   case "$v" in ''|*[!0-9]*) echo 90 ;; *) echo "$v" ;; esac
 }
 
-# wait_leg <secs> <probe...> — polls every 2 s until the probe exits 0; prints
-# the seconds waited on success, the seconds at the deadline on failure; rc 0 =
-# passed within the deadline.
+# poll_secs reads the wait_leg poll-interval test seam. Production polls every
+# 2 s; VL_MIGRATE_POLL_S (a positive integer) shrinks it — a TEST SEAM only.
+poll_secs() {
+  local p="${VL_MIGRATE_POLL_S:-2}"
+  case "$p" in ''|*[!0-9]*|0*) echo 2 ;; *) echo "$p" ;; esac
+}
+
+# wait_leg <secs> <probe...> — polls every poll_secs until the probe exits 0;
+# prints the seconds waited on success, the seconds at the deadline on failure;
+# rc 0 = passed within the deadline.
 wait_leg() {
-  local max="$1" waited=0; shift
+  local max="$1" waited=0 poll; shift
+  poll="$(poll_secs)"
   while [ "$waited" -lt "$max" ]; do
     if "$@" >/dev/null 2>&1; then printf '%s' "$waited"; return 0; fi
-    sleep 2; waited=$((waited+2))
+    sleep "$poll"; waited=$((waited+poll))
   done
   printf '%s' "$waited"; return 1
 }

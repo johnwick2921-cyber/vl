@@ -1581,14 +1581,21 @@ func TestForwardBootLinePassesWithLogMtimeEqualToTheStepMark(t *testing.T) {
 // "rollback DONE" (B3).
 func TestRollbackDelayedOldBootSaysDone(t *testing.T) {
 	fe := newFakeEnv(t)
+	// Shrink the real-clock waits: the pin is that the rollback poll WAITS for a
+	// delayed old boot (B3), which holds at any poll interval. 1 s poll × 2 s
+	// deadline × 1 s boot delay keeps the poll's first probe a miss and the
+	// second a hit, so the wait is still genuinely exercised.
 	out, code := runWithEnv(t, fe, []string{
 		"BOT_SHA12=" + strings.Repeat("c", 12),
-		"BOT_DELAY_S=4",
-		"VL_MIGRATE_VERIFY_WAIT_S=6",
+		"BOT_DELAY_S=1",
+		"VL_MIGRATE_VERIFY_WAIT_S=2",
+		"VL_MIGRATE_POLL_S=1",
 	}, fe.argsForward()...)
 	if code == 0 {
 		t.Fatalf("expected verify failure, got success\n%s", out)
 	}
 	mustContain(t, out, "automatic rollback")
+	// B3 pin: the rollback poll must WAIT for the delayed old boot, then DONE.
+	mustContain(t, out, "rollback: OLD boot line OK after")
 	mustContain(t, out, "rollback DONE")
 }
