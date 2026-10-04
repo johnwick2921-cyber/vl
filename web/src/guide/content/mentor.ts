@@ -244,6 +244,11 @@ export const mentor: GuideSection = {
           cite: 'trigger zone filter — merged',
         },
         {
+          title: 'The 5m trigger side still gates',
+          body: 'After a buy trigger, entries are long only and above the line ("BẤT KỲ TRƯỜNG HỢP NÀO") — a short ISB above a buy line (or a long below a sell line) is refused. While a 5m ISB box stands, the box direction governs instead.',
+          cite: 'D3.4 p1 @09:30–10:38 · D4.3 @14:40',
+        },
+        {
           title: 'Only same-direction inside a 5m ISB box',
           body: 'The latest 5m ISB candle is boxed; only a same-direction 1m ISB trades inside it.',
           cite: 'ISB rest box filter — merged',

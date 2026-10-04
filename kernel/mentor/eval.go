@@ -621,7 +621,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 
 	if IsISB(prev, cur) {
-		if dirOK, _, _ := TriggerVerdict(e.State.Trigger, cur.Close); dirOK {
+		if dirOK, trigSide, _ := TriggerVerdict(e.State.Trigger, cur.Close); dirOK {
 			// B4: the 15m/5m conflict reads CLOSED buckets only — the
 			// still-forming 5m bucket is dropped [D4.2 p1 @ 05:10: "a
 			// 15-minute candle is only confirmed once CLOSED; trade from
@@ -661,6 +661,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					} else if boxBlocked {
 						// R5: an opposite-direction ISB inside the box — no entry
 						e.refuse("isb_box_blocked")
+					} else if e.State.ISBBox == nil && trigSide != "" && side != "" && side != trigSide {
+						// I1: while NO R5 5m ISB box stands, the LIVE 5m trigger
+						// line governs the ISB side — a short ISB above a buy line
+						// (or a long below a sell line) is refused [D3.4 p1
+						// @09:30–10:38, @17:39; p3 @02:24; D4.3 @14:40]. While a
+						// box stands, that box's direction governs instead — the
+						// R5 box rule [isb_box.go: ISBBoxAllows, D3.4 p2
+						// @00:14–13:00] already refused an opposite-direction ISB
+						// above (boxBlocked), so this check is skipped entirely.
+						e.refuse("isb_trigger_side_mismatch")
 					} else if side != "" && htfSide != "" && side != htfSide {
 						// ISB direction against the 4h — no entry
 						e.refuse("isb_htf_side_mismatch")
