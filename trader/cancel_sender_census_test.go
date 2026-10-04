@@ -74,9 +74,9 @@ var exemptSenders = map[string]string{
 	// defence in depth on the paths where refusing is cheap; these are not
 	// those paths. Named here rather than silently passing, so the trade is
 	// visible to whoever reads this next.
-	"cancelArmedOrdersSync": "session-close/news flatten — a refusal leaves arms live into an EOD flatten or a news halt",
+	"cancelArmedOrdersSync":         "session-close/news flatten — a refusal leaves arms live into an EOD flatten or a news halt",
 	"cancelArmedOrdersSyncFiltered": "session-close/news flatten — a refusal leaves arms live into an EOD flatten or a news halt (B3: the origin-filtered form of cancelArmedOrdersSync)",
-	"sweepPreBootArms":      "class-33 orphan sweep — a refusal leaves a dead process's orders resting; it defers on a missing link instead",
+	"sweepPreBootArms":              "class-33 orphan sweep — a refusal leaves a dead process's orders resting; it defers on a missing link instead",
 }
 
 // stripGoLineComments blanks // comments while preserving line numbering.
