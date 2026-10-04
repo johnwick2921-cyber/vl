@@ -399,9 +399,18 @@ func (at *AutoTrader) mentorReconcileLevelArms() {
 		return
 	}
 	for key, arm := range at.mentorEval.State.LevelArms {
+		// CTO fixup (release #4 gate): resolve the row through the arm
+		// registry, never by scenario. The ledger scenario is the ArmID
+		// PREFIXED with the epoch (N1, mentorArmIntent), so a scenario =
+		// ArmID lookup never matched a production row and cleared every
+		// resting level arm on every tick. Not registered = never authored
+		// (refused at dispatch) or a previous process — not resting.
 		var r store.ArmedOrderDB
-		err := ledger.DB().Where("trader_id = ? AND scenario = ?", at.id, arm.ArmID).First(&r).Error
-		resting := err == nil &&
+		found := false
+		if live, ok := mentorLiveArmFor(arm.ArmID); ok {
+			found = ledger.DB().Where("trader_id = ?", at.id).First(&r, live.RowID).Error == nil
+		}
+		resting := found &&
 			(r.State == store.StateArmed || r.State == store.StatePlacePending || r.State == store.StateWorking)
 		if !resting {
 			delete(at.mentorEval.State.LevelArms, key)

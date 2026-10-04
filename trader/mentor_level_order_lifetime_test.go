@@ -103,3 +103,51 @@ func TestMentorTickReconcilesTerminalLevelArm(t *testing.T) {
 		t.Fatalf("the tick must reconcile the terminal level arm out of LevelArms; got %+v", at.mentorEval.State.LevelArms)
 	}
 }
+
+// CTO fixup (release #4 gate, canon 53): the reconcile must find a RESTING level
+// row that the PRODUCTION author wrote. mentorArmIntent prefixes the ledger
+// scenario with the arm epoch (N1), so a reconcile that looked rows up by
+// scenario == ArmID never matched and cleared every resting level arm on every
+// tick (the level then re-emits each candle). This pin authors the row through
+// mentorArmIntent itself — not a hand-built row — and requires the arm to SURVIVE
+// the tick while the row rests, then to clear once the row is terminal.
+func TestMentorTickKeepsAProductionAuthoredRestingLevelArm(t *testing.T) {
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	mentorWireSeams(t, at, ledger)
+	at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
+	now := mentorLifetimeClock(10, 30)
+	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "lvl-77", Side: mentor.SideLong,
+		Price: 29392, Stop: 29385, Target: 29430, Setup: "PHL"}
+	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 1}, now.UnixMilli(), now.UnixMilli())
+	live, ok := mentorLiveArmFor("lvl-77")
+	if !ok {
+		t.Fatal("mentorArmIntent must register the arm")
+	}
+	var row store.ArmedOrderDB
+	if err := ledger.DB().First(&row, live.RowID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.Scenario == "lvl-77" {
+		t.Fatalf("precondition: the production scenario is epoch-prefixed, got %q", row.Scenario)
+	}
+	at.mentorEval.State.LevelArms = map[string]mentor.LevelArm{
+		"L": {ArmID: "lvl-77", Side: mentor.SideLong, LevelPrice: 29385},
+	}
+	bars := []market.Kline{
+		{OpenTime: now.Add(-2 * time.Minute).UnixMilli(), CloseTime: now.Add(-2*time.Minute).UnixMilli() + 59_999, Open: 29390, High: 29395, Low: 29388, Close: 29393, Final: true},
+		{OpenTime: now.Add(-time.Minute).UnixMilli(), CloseTime: now.Add(-time.Minute).UnixMilli() + 59_999, Open: 29393, High: 29398, Low: 29391, Close: 29396, Final: true},
+	}
+	at.mentorEvalOnce(bars)
+	if _, kept := at.mentorEval.State.LevelArms["L"]; !kept {
+		t.Fatalf("a resting production-authored level row must keep its LevelArm; row %d state %s scenario %q", row.ID, row.State, row.Scenario)
+	}
+
+	if err := ledger.SetState(live.RowID, store.StateCancelled, "test: cancelled at the broker"); err != nil {
+		t.Fatal(err)
+	}
+	bars = append(bars, market.Kline{OpenTime: now.UnixMilli(), CloseTime: now.UnixMilli() + 59_999, Open: 29396, High: 29399, Low: 29394, Close: 29397, Final: true})
+	at.mentorEvalOnce(bars)
+	if _, kept := at.mentorEval.State.LevelArms["L"]; kept {
+		t.Fatal("a terminal level row must clear its LevelArm on the next tick")
+	}
+}
