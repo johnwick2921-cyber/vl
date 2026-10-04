@@ -498,9 +498,11 @@ func TestMentorPlacementCarriesExpiry(t *testing.T) {
 }
 
 // TestMentorHistoryDepthGate (P0): mentor mode must never trade on a cold EMA
-// or truncated levels — with any history source short or unknown EVERY entry
-// refuses (fail-closed) and the boot line names the gap. The mutant that drops
-// the per-source depth loop makes the recorder fire on a short history.
+// or truncated levels — with a non-4h history source short or unknown EVERY
+// entry refuses (fail-closed) and the boot line names the gap; a short 4h EMA
+// refuses the SWING4H entry only (it feeds only the swing line). The mutant
+// that drops the per-source depth loop makes the recorder fire on a short
+// history; the mutant that widens the 4h scope to every entry fails (b).
 func TestMentorHistoryDepthGate(t *testing.T) {
 	ResetMentorCountersForTest()
 	// pin the 4h floor at the absolute minimum for this test's (33/34) row —
@@ -526,7 +528,27 @@ func TestMentorHistoryDepthGate(t *testing.T) {
 	if placed != 1 {
 		t.Fatalf("with every source seeded the placement must proceed, placed=%d", placed)
 	}
-	// one source short (the 4h EMA 34 at 33) → refuses + names it.
+	// (a) a short NON-4h source (the 1m EMA 34 at 33/102) → refuses the ISB
+	// entry, is counted, and the boot line names it.
+	mentorSourceDepthSource = func(name string) (int, bool) {
+		if name == "1m EMA34" {
+			return 33, true
+		}
+		return 9999, true
+	}
+	at.mentorPlaceIntent(in, choice, 1000, 1100)
+	if placed != 1 {
+		t.Fatalf("a short 1m EMA history must refuse the ISB entry, placed=%d", placed)
+	}
+	if got := MentorCountSnapshot()["mentor_sources_missing"]; got != 1 {
+		t.Fatalf("the depth refusal must be counted once, got %d", got)
+	}
+	line := MentorSourcesBootLine(map[string]*AutoTrader{"t1": at})
+	if !textHas(line, "1m EMA34 (33/102)") || !textHas(line, "refuses to arm") {
+		t.Fatalf("the boot line must name the short source and say it refuses: %q", line)
+	}
+	// (b) a short 4h EMA 34 (33/34) refuses the SWING4H intent ONLY — it feeds
+	// only the swing line — and lets the ISB through.
 	mentorSourceDepthSource = func(name string) (int, bool) {
 		if name == "4h EMA34" {
 			return 33, true
@@ -534,15 +556,21 @@ func TestMentorHistoryDepthGate(t *testing.T) {
 		return 9999, true
 	}
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
-	if placed != 1 {
-		t.Fatalf("a short 4h EMA history must refuse the entry, placed=%d", placed)
+	if placed != 2 {
+		t.Fatalf("a short 4h EMA history must NOT refuse the ISB entry, placed=%d", placed)
 	}
-	if got := MentorCountSnapshot()["mentor_sources_missing"]; got != 1 {
-		t.Fatalf("the depth refusal must be counted once, got %d", got)
+	swing := in
+	swing.Setup = "SWING4H"
+	at.mentorPlaceIntent(swing, choice, 1000, 1100)
+	if placed != 2 {
+		t.Fatalf("a short 4h EMA history must refuse the SWING4H entry, placed=%d", placed)
 	}
-	line := MentorSourcesBootLine(map[string]*AutoTrader{"t1": at})
-	if !textHas(line, "4h EMA34 (33/34)") {
-		t.Fatalf("the boot line must name the short source: %q", line)
+	if got := MentorCountSnapshot()["mentor_sources_missing"]; got != 2 {
+		t.Fatalf("the swing refusal must be counted (2 total), got %d", got)
+	}
+	line = MentorSourcesBootLine(map[string]*AutoTrader{"t1": at})
+	if !textHas(line, "4h EMA34 (33/34)") || !textHas(line, "intraday entries allowed") || textHas(line, "refuses to arm") {
+		t.Fatalf("the boot line must name the short 4h source and say intraday entries are allowed: %q", line)
 	}
 	// an unknown source (not seeded yet) refuses too, printed as n/a.
 	mentorSourceDepthSource = func(name string) (int, bool) {
@@ -552,7 +580,7 @@ func TestMentorHistoryDepthGate(t *testing.T) {
 		return 9999, true
 	}
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
-	if placed != 1 {
+	if placed != 2 {
 		t.Fatalf("an unknown level-set source must refuse the entry, placed=%d", placed)
 	}
 	if line := MentorSourcesBootLine(map[string]*AutoTrader{"t1": at}); !textHas(line, "1h level set (n/a)") {
@@ -561,7 +589,7 @@ func TestMentorHistoryDepthGate(t *testing.T) {
 	// restore → proceeds again.
 	mentorSourceDepthSource = func(name string) (int, bool) { return 9999, true }
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
-	if placed != 2 {
+	if placed != 3 {
 		t.Fatalf("with the source restored the placement must proceed, placed=%d", placed)
 	}
 }
