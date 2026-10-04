@@ -41,7 +41,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"sort"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -246,6 +246,7 @@ type goStateRow struct {
 	isbDir     string
 	armsPlac   string
 	armsCanc   string
+	armDetails string
 	o, h, l, c string
 }
 
@@ -259,7 +260,6 @@ var stateColumnNames = []string{
 	"level_below", "level_above", "ema34",
 	"box_top", "box_bot", "box_dir",
 	"isb", "mother_hi", "mother_lo", "isb_dir",
-	"arms_placed", "arms_cancelled",
 }
 
 func goStateColumns(r goStateRow) map[string]string {
@@ -276,6 +276,7 @@ func goStateColumns(r goStateRow) map[string]string {
 		"isb_dir":        r.isbDir,
 		"arms_placed":    r.armsPlac,
 		"arms_cancelled": r.armsCanc,
+		"arm_details":    r.armDetails,
 	}
 }
 
@@ -510,8 +511,10 @@ func setupFor(in Intent) string {
 // The strict test
 
 func TestStrictReplayParity(t *testing.T) {
-	allOrders := loadOrderRows(t, frozenDir+"/orders_v5_base.csv")
-	allTrades := loadTradeRows(t, frozenDir+"/trades_v5_base.csv")
+	replayDir := parityReplayDir()
+	allOrders := loadOrderRows(t, filepath.Join(replayDir, "orders_v5_base.csv"))
+	allTrades := loadTradeRows(t, filepath.Join(replayDir, "trades_v5_base.csv"))
+	t.Logf("REPLAY INPUTS %s", replayDir)
 
 	// per-day buckets
 	ordersByDay := map[string][]orderRow{}
@@ -591,8 +594,8 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 	// minute's Tick. Warm the evaluator from the tape start, then Seed levels
 	// and EMA once at target-day midnight from the full current-contract prefix.
 	goRows := map[string]goStateRow{}
-	placements := map[string]armKey{} // deduped Go arms, keyed by arm key
-	unknownSetups := map[string]int{}
+	orderCollector := newR6GoOrderCollector()
+	preRTHLegs := map[Side]r6LegSnapshot{}
 	var rowOrder []string
 	for i := 1; i <= len(bars); i++ {
 		cur := bars[i-1]
@@ -609,49 +612,45 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 					d.name, time.UnixMilli(seedNow).In(ctime()).Format("2006-01-02 15:04"), missing)
 			}
 		}
+		limitRefusalsBefore := copyR6Counts(e.State.Limits.Refusals)
 		intents := e.Tick(tickBars, now)
-		if time.UnixMilli(cur.OpenTime).In(ctime()).Format("2006-01-02") != d.day {
+		currentDay := time.UnixMilli(cur.OpenTime).In(ctime()).Format("2006-01-02")
+		minute := minCTFromBar(cur)
+		minuteOfDay := ctMinuteOfDay(cur.OpenTime)
+		targetRTH := currentDay == d.day && r6InRTHMinute(minuteOfDay)
+		orderCollector.consume(cur, intents, d.day)
+		if currentDay == d.day && minuteOfDay < r6RTHStart {
+			preRTHLegs = snapshotR6Legs(e.State.Limits)
+		}
+		if targetRTH {
+			orderCollector.collectCarriedLegRefusals(
+				minute, limitRefusalsBefore, e.State.Limits.Refusals,
+				preRTHLegs, snapshotR6Legs(e.State.Limits))
+		}
+		if currentDay != d.day || !r6InRTHMinute(minuteOfDay) {
 			continue
 		}
-		minute := minCTFromBar(cur)
-		placedThisMinute, cancelledThisMinute := 0, 0
-		for _, in := range intents {
-			switch in.Action {
-			case PlaceStopEntry, PlaceStopLimitEntry:
-				k := armKey{
-					setup:     setupFor(in),
-					side:      replaySideNum(in.Side),
-					entry:     in.Price,
-					stop:      in.Stop,
-					placedMin: minute,
-				}
-				if k.setup == "UNKNOWN" {
-					unknownSetups[in.Reason]++
-				}
-				key := armKeyString(k)
-				if _, seen := placements[key]; !seen {
-					placements[key] = k
-					placedThisMinute++
-				}
-			case CancelArm:
-				cancelledThisMinute++
-			}
+		row := emitGoState(e, tickBars, cfg, now)
+		row.armsPlac = strconv.Itoa(orderCollector.placedCountAt(minute))
+		row.armsCanc = strconv.Itoa(orderCollector.cancelledCountAt(minute))
+		row.armDetails = orderCollector.detailsAt(minute)
+		if _, seen := goRows[row.minCT]; !seen {
+			rowOrder = append(rowOrder, row.minCT)
 		}
-		// RTH minutes only, like the replay's 390-row state files.
-		m := ctMinuteOfDay(cur.OpenTime)
-		if m >= 8*60+30 && m < 15*60 {
-			row := emitGoState(e, tickBars, cfg, now)
-			row.armsPlac = strconv.Itoa(placedThisMinute)
-			row.armsCanc = strconv.Itoa(cancelledThisMinute)
-			if _, seen := goRows[row.minCT]; !seen {
-				rowOrder = append(rowOrder, row.minCT)
-			}
-			goRows[row.minCT] = row
-		}
+		goRows[row.minCT] = row
 	}
 
-	t.Logf("GO %-8s %s: %d placements (%d unique arms), %d RTH state rows, evaluator %s",
-		d.name, d.day, len(placements), len(placements), len(goRows), time.Since(t0).Round(time.Millisecond))
+	t.Logf("GO %-8s %s: %d RTH placements, %d RTH state rows, evaluator %s",
+		d.name, d.day, len(orderCollector.rthOrders), len(goRows), time.Since(t0).Round(time.Millisecond))
+	for _, event := range orderCollector.carriedEvents {
+		t.Logf("CARRIED %-8s %s: %s", d.name, d.day, event)
+	}
+	for _, event := range orderCollector.carriedLegRefusals {
+		t.Logf("CARRIED-LEG %-8s %s: %s", d.name, d.day, event)
+	}
+	for _, problem := range orderCollector.problems {
+		t.Errorf("%s: Go order collector: %s", d.name, problem)
+	}
 
 	if warmupFailed {
 		return true
@@ -660,7 +659,7 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 	failed := false
 
 	// ── state comparison: first divergent minute per column.
-	statePath := frozenDir + "/state_v5_" + d.day + ".csv"
+	statePath := filepath.Join(parityReplayDir(), "state_v5_"+d.day+".csv")
 	state, stateHeader := loadStateRows(t, statePath)
 	stateSkipped := false
 	if len(state) == 0 {
@@ -743,6 +742,8 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 		t.Logf("INTRADAY FIRST DIVERGENCE %-8s %s: class=%s column=%s minute=%s go=%q replay=%q",
 			d.name, d.day, stateMismatchClass(firstColumn, firstReplayValue),
 			firstColumn, firstMinute, firstGoValue, firstReplayValue)
+		t.Logf("GO ARM STATE %-8s %s %s: %s", d.name, d.day, firstMinute,
+			goCols[firstMinute]["arm_details"])
 	} else {
 		t.Logf("INTRADAY FIRST DIVERGENCE %-8s %s: none", d.name, d.day)
 	}
@@ -779,83 +780,17 @@ func runParityDay(t *testing.T, d parityDay, cfg Config, orders []orderRow, trad
 	}
 	t.Logf("STATE %-8s %s: %d/%d columns diverged", d.name, d.day, diverged, len(stateColumnNames))
 
-	// ── arms vs orders: exact keying (minute, setup, side, entry, stop),
-	// reported independently for intraday and SWING4H.
-	orderKeys := map[string]orderRow{}
-	for _, o := range orders {
-		k := armKey{
-			setup:     o.setup,
-			side:      o.side,
-			entry:     o.entry,
-			stop:      o.stop,
-			placedMin: o.placedMinCT,
-		}
-		orderKeys[armKeyString(k)] = o
-	}
-	goSetByClass := map[string]map[string]bool{
-		"INTRADAY": {}, "SWING4H": {},
-	}
-	orderKeysByClass := map[string]map[string]orderRow{
-		"INTRADAY": {}, "SWING4H": {},
-	}
-	for key, k := range placements {
-		goSetByClass[parityArmClass(k.setup)][key] = true
-	}
-	for key, o := range orderKeys {
-		orderKeysByClass[parityArmClass(o.setup)][key] = o
-	}
-	for _, class := range []string{"INTRADAY", "SWING4H"} {
-		goSet := goSetByClass[class]
-		replaySet := orderKeysByClass[class]
-		var goOnlyArms, replayOnlyArms []armKey
-		for key := range goSet {
-			if _, ok := replaySet[key]; !ok {
-				goOnlyArms = append(goOnlyArms, placements[key])
-			}
-		}
-		for key, o := range replaySet {
-			if !goSet[key] {
-				replayOnlyArms = append(replayOnlyArms, armKey{
-					setup: o.setup, side: o.side, entry: o.entry, stop: o.stop,
-					placedMin: o.placedMinCT,
-				})
-			}
-		}
-		sort.Slice(goOnlyArms, func(i, j int) bool { return goOnlyArms[i].placedMin < goOnlyArms[j].placedMin })
-		sort.Slice(replayOnlyArms, func(i, j int) bool { return replayOnlyArms[i].placedMin < replayOnlyArms[j].placedMin })
-		matched := len(goSet) - len(goOnlyArms)
-		t.Logf("%s ARMS %-8s %s: matched=%d go-only=%d replay-only=%d",
-			class, d.name, d.day, matched, len(goOnlyArms), len(replayOnlyArms))
-		if len(goOnlyArms) > 0 {
-			t.Errorf("%s %s GO arms unmatched: %d (first %s %s side=%d entry=%s stop=%s)",
-				d.name, class, len(goOnlyArms), goOnlyArms[0].placedMin,
-				goOnlyArms[0].setup, goOnlyArms[0].side,
-				fnum(goOnlyArms[0].entry), fnum(goOnlyArms[0].stop))
-			failed = true
-			for _, k := range goOnlyArms[:min(5, len(goOnlyArms))] {
-				t.Logf("  GO-ONLY   %s %-12s side=%d entry=%s stop=%s",
-					k.placedMin, k.setup, k.side, fnum(k.entry), fnum(k.stop))
-			}
-		}
-		if len(replayOnlyArms) > 0 {
-			t.Errorf("%s %s replay orders unmatched: %d (first %s %s side=%d entry=%s stop=%s)",
-				d.name, class, len(replayOnlyArms), replayOnlyArms[0].placedMin,
-				replayOnlyArms[0].setup, replayOnlyArms[0].side,
-				fnum(replayOnlyArms[0].entry), fnum(replayOnlyArms[0].stop))
-			failed = true
-			for _, k := range replayOnlyArms[:min(5, len(replayOnlyArms))] {
-				t.Logf("  REPLAY-ONLY %s %-12s side=%d entry=%s stop=%s",
-					k.placedMin, k.setup, k.side, fnum(k.entry), fnum(k.stop))
-			}
-		}
-	}
-	for reason, n := range unknownSetups {
-		t.Logf("  UNKNOWN-SETUP %3d x %s", n, reason)
+	// ── real RTH Go orders vs replay orders; unfilled evaluator signals and
+	// pre-RTH carried orders are not part of this comparison.
+	replayRTHOrders := r6ReplayOrders(t, d.day, orders)
+	if compareR6Orders(t, d.name, d.day, orderCollector.rthOrders,
+		orderCollector.rthCancellations, replayRTHOrders) {
+		failed = true
 	}
 
 	// ── fills vs trades (replay-internal cross-check; Go has no fill sim).
 	filled := 0
-	for _, o := range orders {
+	for _, o := range replayRTHOrders {
 		if strings.TrimSpace(o.fillMinCT) != "" {
 			filled++
 		}
