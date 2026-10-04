@@ -107,3 +107,90 @@ it('a read-only (default) strategy cannot be toggled', () => {
   expect(screen.queryByTestId('mentor-confirm')).not.toBeInTheDocument()
   expect(onChange).not.toHaveBeenCalled()
 })
+
+// ── trading window controls (mentor_window_start / mentor_window_minutes) ──
+
+it('shows the default window (08:30, 60 min) when nothing is stored', () => {
+  renderEditor({})
+  expect(screen.getByTestId('mentor-window-start')).toHaveValue('08:30')
+  expect(screen.getByTestId('mentor-window-minutes')).toHaveValue('60')
+  expect(screen.getByTestId('mentor-window-preview')).toHaveTextContent(
+    'Mentor trades 08:30–09:30 CT'
+  )
+})
+
+it('renders the stored window and previews a window that crosses midnight', () => {
+  renderEditor({ mentor_window_start: '23:00', mentor_window_minutes: 120 })
+  expect(screen.getByTestId('mentor-window-start')).toHaveValue('23:00')
+  expect(screen.getByTestId('mentor-window-minutes')).toHaveValue('120')
+  expect(screen.getByTestId('mentor-window-preview')).toHaveTextContent(
+    'Mentor trades 23:00–01:00 CT'
+  )
+})
+
+it('a valid HH:MM start is saved on the same path', () => {
+  const { onChange, full } = renderEditor({})
+  fireEvent.change(screen.getByTestId('mentor-window-start'), {
+    target: { value: '09:15' },
+  })
+  expect(onChange).toHaveBeenCalledWith({
+    ...full,
+    mentor_window_start: '09:15',
+  })
+})
+
+it('an invalid start is NOT saved and says why', () => {
+  const { onChange } = renderEditor({})
+  fireEvent.change(screen.getByTestId('mentor-window-start'), {
+    target: { value: '' },
+  })
+  expect(onChange).not.toHaveBeenCalled()
+  expect(screen.getByTestId('mentor-window-start-error')).toHaveTextContent(
+    'HH:MM'
+  )
+})
+
+it('the length select saves 30/90/120 and "no window" as -1', () => {
+  const { onChange, full } = renderEditor({})
+  const select = screen.getByTestId('mentor-window-minutes')
+  fireEvent.change(select, { target: { value: '90' } })
+  expect(onChange).toHaveBeenLastCalledWith({
+    ...full,
+    mentor_window_minutes: 90,
+  })
+  fireEvent.change(select, { target: { value: '-1' } })
+  expect(onChange).toHaveBeenLastCalledWith({
+    ...full,
+    mentor_window_minutes: -1,
+  })
+})
+
+it('a stored no-window (-1) reads "any hour" in the select and the preview', () => {
+  renderEditor({ mentor_window_minutes: -1 })
+  expect(screen.getByTestId('mentor-window-minutes')).toHaveValue('-1')
+  expect(screen.getByTestId('mentor-window-preview')).toHaveTextContent(
+    'Mentor trades at any hour'
+  )
+})
+
+it('a stored length outside the presets is still shown, not silently replaced', () => {
+  renderEditor({ mentor_window_minutes: 45 })
+  expect(screen.getByTestId('mentor-window-minutes')).toHaveValue('45')
+  expect(screen.getByTestId('mentor-window-preview')).toHaveTextContent(
+    'Mentor trades 08:30–09:15 CT'
+  )
+})
+
+it('the window controls are inert on a read-only strategy', () => {
+  const onChange = vi.fn()
+  render(
+    <RiskControlEditor
+      config={{ max_positions: 1 } as RiskControlConfig}
+      onChange={onChange}
+      language="en"
+      disabled
+    />
+  )
+  expect(screen.getByTestId('mentor-window-start')).toBeDisabled()
+  expect(screen.getByTestId('mentor-window-minutes')).toBeDisabled()
+})

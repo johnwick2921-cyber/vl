@@ -302,6 +302,10 @@ export interface RiskControlConfig {
   // Mentor mode (🧑‍🏫) — per strategy, default OFF. Placements also need the
   // server env MENTOR_PLACE=1; without it every intent is a dry run.
   mentor_mode?: boolean
+  // Mentor trading window (CT): start HH:MM (default "08:30") and length in
+  // minutes (unset/0 → 60; -1 = no window, entries at any hour). SWING is exempt.
+  mentor_window_start?: string
+  mentor_window_minutes?: number
   // Hold-lock: once in a position, suppress AI-initiated closes so the trade
   // rides to the AI's stop/target (a real OCO bracket at the exchange). Default OFF.
   hold_discipline?: boolean

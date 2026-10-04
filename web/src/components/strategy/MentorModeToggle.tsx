@@ -42,7 +42,64 @@ const COPY = {
   confirmStrategy: { zh: '策略', en: 'Strategy', es: 'Estrategia' },
   confirmOk: { zh: '开启', en: 'Turn ON', es: 'Activar' },
   confirmCancel: { zh: '取消', en: 'Cancel', es: 'Cancelar' },
+  windowStart: {
+    zh: '交易窗口开始（CT）',
+    en: 'Trading window start (CT)',
+    es: 'Inicio de la ventana (CT)',
+  },
+  windowLength: {
+    zh: '窗口长度',
+    en: 'Window length',
+    es: 'Duración de la ventana',
+  },
+  windowNone: {
+    zh: '无窗口（任何时间）',
+    en: 'No window (any hour)',
+    es: 'Sin ventana (cualquier hora)',
+  },
+  windowMinutes: { zh: '分钟', en: 'min', es: 'min' },
+  windowBadStart: {
+    zh: '请按 HH:MM 输入时间（00:00–23:59）。',
+    en: 'Enter the time as HH:MM (00:00–23:59).',
+    es: 'Introduce la hora como HH:MM (00:00–23:59).',
+  },
+  windowPreviewAny: {
+    zh: '导师在任何时间交易',
+    en: 'Mentor trades at any hour',
+    es: 'El mentor opera a cualquier hora',
+  },
+  windowPreview: {
+    zh: '导师交易时段',
+    en: 'Mentor trades',
+    es: 'El mentor opera',
+  },
+  windowNote: {
+    zh: '窗口之外不开新入场；SWING 不受窗口限制。与开关一样，保存后生效。',
+    en: 'Outside the window no new entries; the SWING setup ignores the window. Saved and applied like the switch above.',
+    es: 'Fuera de la ventana no hay entradas nuevas; el SWING ignora la ventana. Se guarda y aplica como el interruptor.',
+  },
 } satisfies Record<string, Copy>
+
+// Stored defaults (trader/mentor_tick.go mentorWindowDefaultStart/Minutes). An
+// unset or 0 length resolves to 60; the stored value -1 means "no window".
+export const MENTOR_WINDOW_DEFAULT_START = '08:30'
+export const MENTOR_WINDOW_DEFAULT_MINUTES = 60
+export const MENTOR_WINDOW_NONE = -1
+const WINDOW_LENGTHS = [30, 60, 90, 120]
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
+
+export function mentorWindowPreview(
+  start: string,
+  minutes: number,
+  language: string
+): string {
+  if (minutes < 0) return tr(COPY.windowPreviewAny, language)
+  const [h, m] = start.split(':').map(Number)
+  const total = (h * 60 + m + minutes) % (24 * 60)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const end = `${pad(Math.floor(total / 60))}:${pad(total % 60)}`
+  return `${tr(COPY.windowPreview, language)} ${start}–${end} CT`
+}
 
 function tr(entry: Copy, language: string): string {
   return (entry as unknown as Record<string, string>)[language] ?? entry.en
@@ -56,6 +113,11 @@ interface MentorModeToggleProps {
   strategyName?: string
   // The server's MENTOR_PLACE gate; undefined = unknown (older server / failed read).
   orderGate?: boolean
+  // Stored window knobs (mentor_window_start / mentor_window_minutes); absent = default.
+  windowStart?: string
+  windowMinutes?: number
+  onWindowStartChange: (start: string) => void
+  onWindowMinutesChange: (minutes: number) => void
 }
 
 export function MentorModeToggle({
@@ -65,8 +127,22 @@ export function MentorModeToggle({
   language,
   strategyName,
   orderGate,
+  windowStart,
+  windowMinutes,
+  onWindowStartChange,
+  onWindowMinutesChange,
 }: MentorModeToggleProps) {
   const [confirming, setConfirming] = useState(false)
+  const [startDraft, setStartDraft] = useState<string | null>(null)
+  const shownStart = (windowStart || '').trim() || MENTOR_WINDOW_DEFAULT_START
+  const shownMinutes = windowMinutes
+    ? windowMinutes
+    : MENTOR_WINDOW_DEFAULT_MINUTES
+  const startInvalid = startDraft !== null && !HHMM.test(startDraft)
+  const lengths =
+    WINDOW_LENGTHS.includes(shownMinutes) || shownMinutes < 0
+      ? WINDOW_LENGTHS
+      : [...WINDOW_LENGTHS, shownMinutes].sort((a, b) => a - b)
   const gateText =
     orderGate === undefined
       ? tr(COPY.gateUnknown, language)
@@ -123,6 +199,84 @@ export function MentorModeToggle({
       >
         {gateText}
       </p>
+      <div
+        className="mt-3 pt-3 flex flex-col gap-2"
+        style={{ borderTop: '1px solid #2B3139' }}
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-xs" style={{ color: '#EAECEF' }}>
+            {tr(COPY.windowStart, language)}
+            <input
+              type="time"
+              data-testid="mentor-window-start"
+              disabled={disabled}
+              value={startDraft ?? shownStart}
+              onChange={(e) => {
+                if (disabled) return
+                const v = e.target.value
+                setStartDraft(v)
+                if (HHMM.test(v)) {
+                  setStartDraft(null)
+                  onWindowStartChange(v)
+                }
+              }}
+              onBlur={() => setStartDraft(null)}
+              className="ml-2 px-2 py-1 rounded"
+              style={{
+                background: '#1E2329',
+                border: '1px solid #2B3139',
+                color: '#EAECEF',
+              }}
+            />
+          </label>
+          <label className="text-xs" style={{ color: '#EAECEF' }}>
+            {tr(COPY.windowLength, language)}
+            <select
+              data-testid="mentor-window-minutes"
+              disabled={disabled}
+              value={shownMinutes < 0 ? MENTOR_WINDOW_NONE : shownMinutes}
+              onChange={(e) =>
+                !disabled && onWindowMinutesChange(Number(e.target.value))
+              }
+              className="ml-2 px-2 py-1 rounded"
+              style={{
+                background: '#1E2329',
+                border: '1px solid #2B3139',
+                color: '#EAECEF',
+              }}
+            >
+              {lengths.map((n) => (
+                <option key={n} value={n}>
+                  {n} {tr(COPY.windowMinutes, language)}
+                </option>
+              ))}
+              <option value={MENTOR_WINDOW_NONE}>
+                {tr(COPY.windowNone, language)}
+              </option>
+            </select>
+          </label>
+        </div>
+        {startInvalid && (
+          <p
+            className="text-xs"
+            style={{ color: '#F6465D' }}
+            role="alert"
+            data-testid="mentor-window-start-error"
+          >
+            {tr(COPY.windowBadStart, language)}
+          </p>
+        )}
+        <p
+          className="text-xs font-mono"
+          style={{ color: '#EAECEF' }}
+          data-testid="mentor-window-preview"
+        >
+          {mentorWindowPreview(shownStart, shownMinutes, language)}
+        </p>
+        <p className="text-xs" style={{ color: '#848E9C' }}>
+          {tr(COPY.windowNote, language)}
+        </p>
+      </div>
       {confirming && (
         <div
           role="alertdialog"

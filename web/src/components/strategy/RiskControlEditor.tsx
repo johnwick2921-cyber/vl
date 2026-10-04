@@ -247,6 +247,10 @@ export function RiskControlEditor({
         language={language}
         strategyName={strategyName}
         orderGate={effective?.mentorPlace}
+        windowStart={config.mentor_window_start}
+        windowMinutes={config.mentor_window_minutes}
+        onWindowStartChange={(v) => updateField('mentor_window_start', v)}
+        onWindowMinutesChange={(v) => updateField('mentor_window_minutes', v)}
       />
       {/* Hold discipline (hold-lock) — applies to futures + crypto; default OFF */}
       <div

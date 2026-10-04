@@ -1078,9 +1078,11 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Trading window start',
-          where: 'Strategy → Mentor mode → stop rules',
+          where:
+            'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode → "Trading window start (CT)"',
           what: 'The CT time when the entry window opens; the rule blocks new entries outside the window.',
-          trader: '08:30 CT by default; SWING4H is exempt.',
+          trader:
+            '08:30 CT by default; SWING4H is exempt. A time box under the Mentor mode switch: type or pick HH:MM (anything else is not saved and the box says so). A line under it previews the window ("Mentor trades 08:30–09:30 CT"). Press Save like the switch: the running trader reloads, no restart. The window may cross midnight: 23:00 with 120 minutes is open until 01:00 CT the next day.',
           consumer: 'trader/mentor_tick.go mentorWindowGate',
           range: 'HH:MM CT',
           systemDefault: '08:30',
@@ -1090,12 +1092,13 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Trading window length',
-          where: 'Strategy → Mentor mode → stop rules',
+          where:
+            'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode → "Window length"',
           what: 'How long the entry window stays open after its start time; SWING4H is exempt.',
           trader:
-            '60 minutes by default; an unset/zero strategy value inherits 60.',
+            '60 minutes by default; an unset/zero strategy value inherits 60. The "Window length" box offers 30 / 60 / 90 / 120 minutes or "No window (any hour)", which saves -1 and lets mentor entries through at any hour (a stored 0 cannot mean "no window" because 0 means unset). Same Save, same reload as the switch.',
           consumer: 'trader/mentor_tick.go mentorWindowGate',
-          range: '30 / 60 / 90 / 120 minutes',
+          range: '30 / 60 / 90 / 120 minutes, or -1 = no window',
           systemDefault: '60',
           recommended: '60 minutes — owner ruling.',
           whenToTouch: 'Only when the approved trading window changes.',
