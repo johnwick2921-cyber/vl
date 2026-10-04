@@ -872,6 +872,8 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 		OrderType:  "stop_entry",
 		StopPrice:  entry,
 		StopLimit:  stopLimit,
+		// REVIEW-353 TODO(next step): thread the row's Leg1Qty/Leg1TP through
+		// PlaceStopEntry → this payload (0 today = single-bracket legacy, safe).
 	}
 	if err := assertBoundAccount("stop-entry", symbol, payload.Account, t.boundAccount); err != nil {
 		logger.Errorf("🚨 %v — REFUSING to submit stop-entry", err)

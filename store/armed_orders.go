@@ -67,7 +67,14 @@ type ArmedOrderDB struct {
 	// injector stamps it; every historical and non-mentor row is NULL. The
 	// armed pass sends this count for origin=mentor rows (clamped to the
 	// trader's max) and REFUSES a mentor row without one — never sent as 1.
-	Contracts    *int
+	Contracts *int
+	// Leg1Qty / Leg1TP (REVIEW-353 redesign, 2026-10-04): the split AT ENTRY
+	// rides the ONE entry frame — leg 1 = ceil(n/2) with its OWN TP at +1R (or
+	// ≥2R for mode C), leg 2 = the runner (TP = TargetPx). NULL / 0 = the
+	// single-bracket legacy path (byte-identical wire). Only the mentor
+	// injector stamps them; the AddOn places TWO OCO pairs on the one fill.
+	Leg1Qty      *int
+	Leg1TP       float64 `gorm:"default:0"`
 	FillPrice    float64
 	FillQuantity int
 
@@ -310,6 +317,10 @@ func (s *ArmedOrderStore) Migrate() error {
 			// NULL = ABSENT on every historical and non-mentor row — a mentor
 			// row without one is REFUSED by the armed pass, never sent as 1.
 			{"contracts", "INTEGER"},
+			// REVIEW-353 split-at-entry redesign: leg 1 qty + its own TP ride
+			// the ONE entry frame. NULL/0 = single-bracket legacy.
+			{"leg1_qty", "INTEGER"},
+			{"leg1_tp", "REAL NOT NULL DEFAULT 0"},
 			// W3 market_in_zone (2026-09-23): NULLable where 0 would be a
 			// fabricated value (absent ≠ 0); '' where the text is a label.
 			{"policy", "TEXT NOT NULL DEFAULT ''"},

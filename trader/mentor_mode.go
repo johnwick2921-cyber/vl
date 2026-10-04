@@ -549,6 +549,36 @@ func mentorSplitLegs(n, runnerCap int) (leg1, leg2 int) {
 // mentorSpentDayRunnerCap is D: at most 2 contracts run after leg 1.
 const mentorSpentDayRunnerCap = 2
 
+// mentorLeg1ForFrame is the REVIEW-353 split-at-entry math feeding the ONE
+// entry frame: leg 1 = ceil(n/2) with its OWN TP, leg 2 = the runner with
+// the trade target. Returns the leg-1 qty + TP for the wire (leg1_qty /
+// leg1_tp); (0, 0) = the single-bracket legacy path (n <= 1 or swing).
+// forkTP is the exit fork leg-1 target (non-zero only for mode C, >=2R);
+// 0 -> the +1R default (entry +/- R). Spent day caps the runner at 2 (D).
+func mentorLeg1ForFrame(in mentor.Intent, n int, forkMode string, forkTP float64) (leg1Qty int, leg1TP float64) {
+	if forkMode == "swing" || n <= 1 {
+		return 0, 0
+	}
+	runnerCap := 0
+	if in.SpentDay {
+		runnerCap = mentorSpentDayRunnerCap
+	}
+	leg1, leg2 := mentorSplitLegs(n, runnerCap)
+	if leg2 <= 0 {
+		return 0, 0 // n = 1 -> a single leg, no scale-out
+	}
+	tp := forkTP
+	if tp == 0 {
+		r := mentorIntentRisk(in)
+		if in.Side == mentor.SideShort {
+			tp = in.Price - r
+		} else {
+			tp = in.Price + r
+		}
+	}
+	return leg1, tp
+}
+
 // mentorLeg1TPForC is the C (confluence) leg-1 target: hold to at least 1:2 —
 // leg 1's TP at 2× risk, set AT ENTRY; the stop never moves up.
 func mentorLeg1TPForC(entry, r float64, side string) float64 {

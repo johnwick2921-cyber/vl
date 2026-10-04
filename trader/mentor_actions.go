@@ -125,7 +125,7 @@ func mentorAuthoredRow(r store.ArmedOrderDB) bool {
 // never a stop-market fallback), the stop-limit origin routing and, at
 // expiry, the F1 cancel — all on the one path. The ArmID registry records
 // the row for CancelArm / ExtendArm / MoveStopBE / ClosePosition.
-func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64) {
+func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64, forkMode string, forkTP float64) {
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
 		mentorCount("placement_refused_no_ledger")
@@ -170,6 +170,14 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		// pass sends it (never 1). The sizing table already clamped it to
 		// mentor_max_contracts.
 		Contracts: store.IntPtr(choice.Contracts),
+	}
+	// REVIEW-353: the split AT ENTRY rides the ONE frame — leg1_qty + leg1_tp
+	// go on the wire; the AddOn places TWO OCO pairs on the one fill. (0, 0)
+	// = the single-bracket legacy path (n <= 1 or swing).
+	leg1Qty, leg1TP := mentorLeg1ForFrame(in, choice.Contracts, forkMode, forkTP)
+	if leg1Qty > 0 {
+		row.Leg1Qty = store.IntPtr(leg1Qty)
+		row.Leg1TP = leg1TP
 	}
 	if err := ledger.UpsertArm(&row); err != nil {
 		mentorCount("placement_refused_upsert")

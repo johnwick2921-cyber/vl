@@ -47,8 +47,14 @@ type SignalPayload struct {
 	Entry      float64 `json:"entry"` // tick-rounded
 	StopLoss   float64 `json:"stop_loss"`
 	TakeProfit float64 `json:"take_profit"`
-	SignalID   string  `json:"signal_id"` // UUID
-	Timestamp  string  `json:"timestamp"` // RFC3339
+	// Leg1Qty / Leg1TP (REVIEW-353, wire v4): the split AT ENTRY rides the ONE
+	// entry frame — leg 1 = ceil(n/2) with its own TP, leg 2 = the runner with
+	// TakeProfit. omitempty → a pre-v4 AddOn sees the single-bracket frame
+	// byte-identical. leg1_qty == 0 → the AddOn places ONE OCO pair as today.
+	Leg1Qty   int     `json:"leg1_qty,omitempty"`
+	Leg1TP    float64 `json:"leg1_tp,omitempty"`
+	SignalID  string  `json:"signal_id"` // UUID
+	Timestamp string  `json:"timestamp"` // RFC3339
 	// A2 (G1, wire v3) — identity stamp. trader_id is the OWNING trader; seq is the
 	// server's monotonic per-connection op counter. The AddOn ECHOES (trader_id,
 	// account, seq) on the paired ack/fill/close/reject so Go can verify the AddOn
@@ -239,9 +245,11 @@ type ModifyBracketPayload struct {
 	SignalID      string  `json:"signal_id"`
 	NewStopLoss   float64 `json:"new_stop_loss,omitempty"`
 	NewTakeProfit float64 `json:"new_take_profit,omitempty"`
-	Account       string  `json:"account,omitempty"`
-	TraderID      string  `json:"trader_id,omitempty"`
-	Seq           uint64  `json:"seq,omitempty"`
+	// Leg (REVIEW-353, wire v4): 1 = leg 1 only, 2 = leg 2 only, absent/0 = all.
+	Leg      int    `json:"leg,omitempty"`
+	Account  string `json:"account,omitempty"`
+	TraderID string `json:"trader_id,omitempty"`
+	Seq      uint64 `json:"seq,omitempty"`
 }
 
 // OrderUpdatePayload is every NT8 order-state change (deduped per order name)
@@ -683,6 +691,8 @@ type MoveStopPayload struct {
 	SignalID    string  `json:"signal_id"`     // the entry's signal_id (the bracket key)
 	NewStopLoss float64 `json:"new_stop_loss"` // tick-rounded new stop price
 	Timestamp   string  `json:"timestamp"`     // RFC3339
+	// Leg (REVIEW-353, wire v4): 1 = leg 1 only, 2 = leg 2 only, absent/0 = all.
+	Leg int `json:"leg,omitempty"`
 	// A2 (G1, wire v3) — identity stamp: target account + owning trader + op seq.
 	Account  string `json:"account,omitempty"`
 	TraderID string `json:"trader_id,omitempty"`
