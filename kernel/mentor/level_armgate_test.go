@@ -33,12 +33,13 @@ func TestLevelOrderRestsAndCancels(t *testing.T) {
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 29300}}
 
 	bars := []market.Kline{
+		rthBars(-1, 29340, 29420, 29335, 29415), // D2-28: the low the leg to the old high started from (29335, the course's own example)
 		rthBars(0, 29420, 29431.75, 29410, 29425), // the old high (extreme)
 		rthBars(1, 29405, 29408, 29395, 29402),
 		rthBars(2, 29392, 29402, 29370, 29396),
 		rthBars(3, 29390, 29392, 29385, 29391), // reject touch of L=29385 (low touches, close above)
 	}
-	now := bars[3].CloseTime + 1
+	now := bars[4].CloseTime + 1
 	e.State.ORB = ORB{Day: dayStartCT(now), High: 29300, Low: 29200, Drawn: true, Escaped: SideLong}
 	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
 

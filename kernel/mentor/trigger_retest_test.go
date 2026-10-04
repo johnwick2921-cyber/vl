@@ -47,7 +47,7 @@ func TestTriggerRetestWrongWayRefused(t *testing.T) {
 	// blocker is the row-56 direction gate); bar 3 pulls back below 29300; bar
 	// 4 touches 29300 and closes BACK below it → resistance reject → SELL.
 	bars := []market.Kline{
-		rthBars(0, 29250, 29260, 29200, 29240), // the old low (extreme)
+		rthBars(0, 29390, 29400, 29200, 29240), // the old low (extreme); D2-28: the leg down to it started at this candle's 29400 high
 		rthBars(1, 29260, 29280, 29240, 29270),
 		rthBars(2, 29270, 29320, 29310, 29315), // prior swing high ABOVE the line
 		rthBars(3, 29312, 29295, 29285, 29287), // pull back below 29300
