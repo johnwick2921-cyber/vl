@@ -3,6 +3,7 @@ package trader
 import (
 	"math"
 	"strings"
+	"sync"
 
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
@@ -30,6 +31,8 @@ type mentorLivePos struct {
 	FillBarOpen   int64          // the fill candle's OpenTime
 	FillBarClose  float64        // the fill candle's close (ISB leg-1 TP)
 	BarsSinceFill int            // closed 1m candles since the fill
+	FlatReads     int            // consecutive closed candles the account read flat on this side
+	RunnerTarget  float64        // #360 item 5: the level beyond the old high (resonance runner target); 0 = none
 	SpentDay      bool           // §7 spent day → mode D (runner ≤ 2)
 	Confluence    bool           // R2 confluence flag → mode C
 }
@@ -68,6 +71,9 @@ func (at *AutoTrader) registerMentorLivePos(r store.ArmedOrderDB, u ntwire.Order
 		Leg1TP:    r.TargetPx,
 	}
 	lp := &mentorLivePos{Pos: pos}
+	if v, ok := mentorRunnerTargets.Load(r.Scenario); ok {
+		lp.RunnerTarget, _ = v.(float64)
+	}
 	lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: n, TP: r.TargetPx, Stop: r.StopPx, Final: true}
 	at.mentorRegisterLivePos(r.SignalID, lp)
 }
@@ -112,3 +118,8 @@ func (at *AutoTrader) mentorLivePosList() []*mentorLivePos {
 	}
 	return out
 }
+
+// mentorRunnerTargets carries an intent's RunnerTarget (#360, item 5) from the
+// authoring (mentorArmIntent, keyed by the ledger scenario) to the fill-time
+// live position, without a schema change.
+var mentorRunnerTargets sync.Map

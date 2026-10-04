@@ -144,6 +144,9 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	// UNPREFIXED armID, so ExtendArm / CancelArm / MoveStopBE / ClosePosition
 	// still resolve by the evaluator's id.
 	scenario := fmt.Sprintf("%s-%s", armID, strconv.FormatInt(mentorArmEpoch.Load(), 10))
+	if in.RunnerTarget > 0 {
+		mentorRunnerTargets.Store(scenario, in.RunnerTarget)
+	}
 	side := strings.ToLower(strings.TrimSpace(string(in.Side)))
 	if side != "long" && side != "short" {
 		mentorCount("placement_refused_bad_side")

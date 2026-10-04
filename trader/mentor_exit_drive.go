@@ -86,14 +86,66 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 		return
 	}
 	c, h, l := last.Close, last.High, last.Low
+	// CTO gate (release #4): the loop must drop a position once the account
+	// is flat on its side — nothing else ever unregistered it, so a closed
+	// trade kept sending move_stop every candle. A read error proves
+	// nothing (keep); a just-filled position may not be in the snapshot yet,
+	// so it takes TWO consecutive flat reads after the fill candle.
+	openSides, sidesOK := mentorDriveOpenSides(at)
 	for _, p := range at.mentorLivePosList() {
 		if p == nil || p.Pos.Symbol == "" {
 			continue
 		}
 		p.BarsSinceFill++
+		if sidesOK && !openSides[p.Pos.Side] {
+			p.FlatReads++
+			if p.BarsSinceFill >= 2 && p.FlatReads >= 2 {
+				at.mentorUnregisterLivePos(p.Legs[0].SignalID)
+				mentorCount("exit_drive_flat_unregistered")
+				at.logInfof("🧑‍🏫 mentor exit-drive: %s %s is flat — dropped from the loop", p.Pos.Symbol, p.Pos.Side)
+			}
+			continue
+		}
+		p.FlatReads = 0
 		at.mentorExitDrivePos(nt, p, c, h, l)
 		at.mentorLogPositionState(&p.Pos, "exit-drive")
 	}
+}
+
+// mentorDriveOpenSides is the loop's open-side read (a seam so the call-site
+// pin can drive flat/open without a live broker).
+var mentorDriveOpenSides = func(at *AutoTrader) (map[string]bool, bool) { return at.mentorOpenSidesForDrive() }
+
+// mentorOpenSidesForDrive reads the account's open position sides from the
+// broker book. ok=false on any read error — never a confident "flat".
+func (at *AutoTrader) mentorOpenSidesForDrive() (map[string]bool, bool) {
+	if at == nil || at.trader == nil {
+		return nil, false
+	}
+	pos, err := at.trader.GetPositions()
+	if err != nil {
+		return nil, false
+	}
+	out := map[string]bool{}
+	for _, p := range pos {
+		side, _ := p["side"].(string)
+		qty := 0.0
+		switch v := p["positionAmt"].(type) {
+		case float64:
+			qty = v
+		case int:
+			qty = float64(v)
+		}
+		if qty == 0 {
+			if q, ok := p["quantity"].(float64); ok {
+				qty = q
+			}
+		}
+		if s := strings.ToLower(strings.TrimSpace(side)); (s == "long" || s == "short") && qty != 0 {
+			out[s] = true
+		}
+	}
+	return out, true
 }
 
 // mentorExitDrivePos drives ONE position on one closed candle (c/h/l).
@@ -192,12 +244,24 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	// trail begins NEXT candle. Mark Scaled BEFORE the 1:1 loop so leg 1 never
 	// gets a 1:1 move past its own take-profit. (Final does NOT mean "exited" —
 	// canonical semantics: Final marks the RUNNER.) ──────────────────────────
-	if runnerPresent && !pos.Scaled {
+	// The 1:1 point: leg 1's own TP when a runner exists; for a SINGLE leg
+	// (n = 1, or before the split lands) entry ± R — the point where leg 1
+	// would have left. The runner trails only after this printed on a PRIOR
+	// candle (CTO gate: a single leg used to trail straight after BE).
+	if !pos.Scaled {
+		scaleAt := leg1Target
+		if !runnerPresent {
+			if long {
+				scaleAt = pos.Entry + pos.R
+			} else {
+				scaleAt = pos.Entry - pos.R
+			}
+		}
 		hit := false
 		if long {
-			hit = h >= leg1Target
+			hit = h >= scaleAt
 		} else {
-			hit = l <= leg1Target
+			hit = l <= scaleAt
 		}
 		if hit {
 			pos.Scaled = true
@@ -226,15 +290,14 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			trailPrice := 0.0
 			if isRunner {
 				target = runnerTarget
-				applyTrail = trail
-				if runnerPresent {
-					applyTrail = trail && scaledBefore // wait for leg 1's TP (prior candle)
-				}
+				applyTrail = trail && scaledBefore // the 1:1 point printed on a PRIOR candle
 				if applyTrail {
+					// Item 7 ruling [X8 @15:40–17:13]: 1 tick BEYOND the closed
+					// candle's low (long) / high (short), never exactly at it.
 					if long {
-						trailPrice = l
+						trailPrice = l - at.mentorInstrumentTick()
 					} else {
-						trailPrice = h
+						trailPrice = h + at.mentorInstrumentTick()
 					}
 				}
 			}
@@ -296,7 +359,7 @@ func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 		if p == nil {
 			continue
 		}
-		armed, _ := mentorMaybeArmResonance(&p.Pos, isbSide, p.BarsSinceFill)
+		armed, _, _ := mentorMaybeArmResonance(&p.Pos, isbSide, p.BarsSinceFill, p.RunnerTarget)
 		if !armed {
 			continue
 		}
@@ -346,4 +409,12 @@ func isISBEntryIntent(in mentor.Intent) bool {
 		return false
 	}
 	return in.Action == mentor.PlaceStopEntry || in.Action == mentor.PlaceStopLimitEntry
+}
+
+// mentorInstrumentTick is the instrument tick for the exit drive (MNQ 0.25 fallback).
+func (at *AutoTrader) mentorInstrumentTick() float64 {
+	if t := market.FuturesTickSize(at.futuresSymbol()); t > 0 {
+		return t
+	}
+	return 0.25
 }

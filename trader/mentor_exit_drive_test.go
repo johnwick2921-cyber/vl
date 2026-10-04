@@ -139,15 +139,26 @@ func TestMentorExitDrivePosB_ArmsBE(t *testing.T) {
 	}
 }
 
-// The single leg trails every closed candle AFTER BE: the TIGHTER of the live
-// 1:1 and the candle extreme.
+// The single leg trails only AFTER the 1:1 point (entry + R) printed on a
+// PRIOR candle (CTO gate, release #4: the course trails the runner after the
+// 1:1 point), then takes the TIGHTER of the live 1:1 and the candle trail, the
+// trail sitting 1 TICK beyond the candle's low (item 7 ruling [X8 @15:40–17:13]).
+// Mutants: trail straight after BE (candle 1 moves to 11.75) → RED; trail at
+// the low exactly (13.5) → RED.
 func TestMentorExitDrivePosB_SingleLegTrails(t *testing.T) {
 	at, moves := newDriveAT(t)
-	p := bPos("B", "long", 10, 10, 16, 5)
+	p := bPos("B", "long", 10, 10, 16, 5) // R = 2 → the 1:1 point is 12
 	p.Pos.ArmedBE = true
-	// 1:1 = 2·14−16 = 12; trail = low 13.5 → 13.5.
+	// Candle 1 prints the 1:1 point (high 13 ≥ 12): no trail yet; the live
+	// 1:1 (2·12.5−16 = 9) is below the BE stop → no move.
+	at.mentorExitDrivePos(nil, p, 12.5, 13, 12)
+	assertMoves(t, moves())
+	if !p.Pos.Scaled {
+		t.Fatal("the 1:1 point printed — Scaled must be set")
+	}
+	// Candle 2: 1:1 = 2·14−16 = 12; trail = low 13.5 − 1 tick = 13.25 → 13.25.
 	at.mentorExitDrivePos(nil, p, 14, 14.5, 13.5)
-	assertMoves(t, moves(), driveMove{"entry", "long", 13.5})
+	assertMoves(t, moves(), driveMove{"entry", "long", 13.25})
 }
 
 // e2e pin (CTO 2026-10-04): ONE filled row registers the single-leg live
@@ -257,5 +268,66 @@ func TestIsISBEntryIntent(t *testing.T) {
 	}
 	if isISBEntryIntent(mentor.Intent{Setup: "ISB", Action: mentor.CancelArm}) {
 		t.Fatal("a cancel is not the ISB trigger")
+	}
+}
+
+// CTO gate (release #4): the PRODUCTION loop drops a position once the account
+// reads flat on its side for two consecutive closed candles after the fill —
+// nothing else ever unregistered it. A read error keeps it; an open side keeps
+// it. Mutant: never unregister → RED.
+func TestMentorExitDriveDropsAFlatPosition(t *testing.T) {
+	at, moves := newDriveAT(t)
+	p := bPos("B", "long", 10, 9, 13, 1)
+	at.mentorRegisterLivePos("entry", p)
+	sides := map[string]bool{"long": true}
+	readOK := true
+	old := mentorDriveOpenSides
+	mentorDriveOpenSides = func(*AutoTrader) (map[string]bool, bool) { return sides, readOK }
+	t.Cleanup(func() { mentorDriveOpenSides = old })
+	bar := func(i int) []market.Kline {
+		return []market.Kline{{OpenTime: int64(i) * 60_000, Close: 10.2, High: 10.3, Low: 10.1, Final: true}}
+	}
+	at.mentorExitDrive(bar(1)) // open → kept
+	if len(at.mentorLivePosList()) != 1 {
+		t.Fatal("an open position must stay in the loop")
+	}
+	sides = map[string]bool{}
+	readOK = false
+	at.mentorExitDrive(bar(2)) // read error proves nothing → kept
+	at.mentorExitDrive(bar(3))
+	if len(at.mentorLivePosList()) != 1 {
+		t.Fatal("a failed position read must never drop the position")
+	}
+	readOK = true
+	at.mentorExitDrive(bar(4)) // flat read 1
+	if len(at.mentorLivePosList()) != 1 {
+		t.Fatal("one flat read is not enough (the fill may not be in the snapshot yet)")
+	}
+	at.mentorExitDrive(bar(5)) // flat read 2 → dropped
+	if n := len(at.mentorLivePosList()); n != 0 {
+		t.Fatalf("a position flat for two candles must leave the loop; %d left", n)
+	}
+	_ = moves
+}
+
+// CTO gate (release #4, canon 53): a FULL fill of a mentor-origin row, through
+// the PRODUCTION order_update handler onArmedOrderUpdate, registers the live
+// position the exit drive manages. Every other exit-drive pin registers by
+// hand; without this one, dropping the fill-callback registration survived.
+func TestMentorFullFillRegistersTheLivePositionAtTheFillHandler(t *testing.T) {
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "lvl-3-0",
+		Side: "long", EntryPx: 29600, StopPx: 29590, TargetPx: 29630, Kind: "stop_entry", Condition: "PHL",
+		State: store.StateWorking, SignalID: "sig-fill-1", Origin: store.ArmOriginMentor, Contracts: store.IntPtr(2)}
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	at.onArmedOrderUpdate(ntwire.OrderUpdatePayload{SignalID: "sig-fill-1", State: "filled", Quantity: 2, FillPrice: 29600, Account: "Sim101"}, ledger)
+	got := at.mentorLivePosList()
+	if len(got) != 1 {
+		t.Fatalf("a full mentor fill must register ONE live position, got %d", len(got))
+	}
+	if got[0].Legs[0].SignalID != "sig-fill-1" || got[0].Legs[0].Qty != 2 || got[0].Pos.Entry != 29600 {
+		t.Fatalf("registered leg = %+v entry %.2f, want sig-fill-1 ×2 @29600", got[0].Legs[0], got[0].Pos.Entry)
 	}
 }
