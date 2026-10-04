@@ -26,6 +26,7 @@ func PnLSurfaces() []PnLSurface {
 		{Name: "GetPositionStats", File: "store/position_query.go"},
 		{Name: "CountConsecutiveLossesSince", File: "store/position_query.go"},
 		{Name: "GetSessionDayActivity", File: "store/position_query.go"},
+		{Name: "MentorDayActivity", File: "store/position_query.go"},
 		{Name: "GetLedgerDayTotal", File: "store/pnl_surface_guard.go"},
 		{Name: "GetFullStats", File: "store/position_query.go"},
 		{Name: "GetRecentTrades", File: "store/position_query.go"},

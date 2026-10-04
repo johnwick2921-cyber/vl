@@ -1,27 +1,10 @@
 package trader
 
 import (
-	"os"
 	"strings"
 
 	"vl/store"
 )
-
-// stopLimitEntriesEnabled reads the mentor stop-limit knob (PR B, 2026-10-03).
-// Default OFF — L4: additive and fail-closed. With the knob ON, an adjudicated
-// stop-entry arm routes through PlaceStopEntryWithLimit: the AddOn builds
-// OrderType.StopLimit (LimitPrice == StopPrice) instead of StopMarket, so the
-// entry fills at its price or misses (D1.4 p1 @24:41, p2 @00:00); the order's
-// expiry (expiry_ms) is authored by the evaluator's intent (DS-102) and the
-// armed pass cancels it when it lapses unfilled (N12). Go sets the frame flag
-// only when the far side proves MinAddonBuildStopLimit.
-func stopLimitEntriesEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("MENTOR_STOP_LIMIT"))) {
-	case "1", "true", "on", "yes":
-		return true
-	}
-	return false
-}
 
 // isMentorArmOrigin (REVIEW-313 F3) reports whether the arm carries the
 // mentor origin. The routing reads THIS, never the expiry as a proxy for
@@ -62,4 +45,31 @@ func armExpired(r store.ArmedOrderDB, nowMs int64) bool {
 	}
 	// armed / place_pending: the only other known non-terminal states.
 	return true
+}
+
+// mentorFillIsFull (N3 P0, 2026-10-04) reports whether an order_update is a FULL
+// fill — terminal — given the row's signed contract count and the CUMULATIVE
+// fill quantity (e.Filled). The AddOn emits "partial" for a part-fill
+// (VLTraderTCPClient.cs:1545) and "filled" only when complete; a
+// "partfilled"/"partial" state with quantity >= total is treated full
+// (defensive — it can never be wider than the signed count).
+func mentorFillIsFull(state string, quantity, total int) bool {
+	isPart := strings.EqualFold(state, "partfilled") || strings.EqualFold(state, "partial")
+	if !isPart {
+		return true
+	}
+	return quantity >= total
+}
+
+// mentorRemainderToCancel (N3 P1, 2026-10-04) returns the unfilled remainder of
+// a partially filled working row — the contracts to cancel at expiry — or 0 when
+// there is nothing to cancel (no signed count, no fill, or already full).
+func mentorRemainderToCancel(r store.ArmedOrderDB) int {
+	if r.Contracts == nil || *r.Contracts <= 0 {
+		return 0
+	}
+	if r.FillQuantity <= 0 || r.FillQuantity >= *r.Contracts {
+		return 0
+	}
+	return *r.Contracts - r.FillQuantity
 }

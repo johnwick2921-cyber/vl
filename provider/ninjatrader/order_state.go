@@ -102,6 +102,7 @@ var orderStateLiveness = map[string]OrderLiveness{
 	"working":    LivenessLive,
 	"suspended":  LivenessLive,
 	"partfilled": LivenessLive,
+	"partial":    LivenessLive, // N3 P0: the AddOn emits "partial" (VLTraderTCPClient.cs:1545)
 
 	// held on this PC — NOT at the exchange
 	"triggerpending": LivenessLocal,

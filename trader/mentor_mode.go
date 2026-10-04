@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"time"
 
 	"vl/kernel"
 	"vl/kernel/mentor"
@@ -345,6 +346,27 @@ func (at *AutoTrader) mentorAdmitRefusal(in admitIntent) string {
 	return "mentor_mode: AI entries are OFF — every entry comes from the mentor evaluator"
 }
 
+// mentorPastDailyHaltCutoff (B3 N6) is the mentor's one hard last-entry: no new
+// mentor entry after 15:45 CT — the 15-minute lead into the 16:00 CT daily
+// maintenance break (which CMEClosedReason then refuses 16:00–17:00).
+func (at *AutoTrader) mentorPastDailyHaltCutoff(now time.Time) (string, bool) {
+	ct := now.In(kernel.CTLocation())
+	if ct.Hour() == 15 && ct.Minute() >= 45 {
+		return "past 15:45 CT (CME daily halt) — no new mentor entries until the 17:00 reopen", true
+	}
+	return "", false
+}
+
+// isSwingPosition (N4) reports whether an open position is a SWING4H mentor
+// position (identified by its cited arm id "swing-…"), which is EXEMPT from the
+// intraday EOD flat.
+func isSwingPosition(p *store.TraderPosition) bool {
+	if p == nil {
+		return false
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(p.CitedScenarioID)), "swing-")
+}
+
 // mentorRuleGate is the injector-side R8/R9 gate: it refuses intents the
 // evaluator should never have let through, fail-closed, before any sizing.
 // (R8) SWING4H: stop 30–60 allowed, ≥100 refused, exempt from the 25-pt
@@ -438,6 +460,12 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 		mentorSizeForHook()
 	}
 	extra.Setup = in.Setup
+	// ISB size rules 2 and 3 (D4.1 p1 @08:05/09:40, written): the evaluator
+	// stamps Intent.Flag on an ISB at an old high/low or inside a range; here
+	// the flags reach the size table, which cuts both to tier 3. Set at the ONE
+	// sizing call site so no caller can forget them.
+	extra.ISBOldExtreme = extra.ISBOldExtreme || mentor.HasFlag(in.Flag, mentor.FlagISBAtOldExtreme)
+	extra.ISBInRange = extra.ISBInRange || mentor.HasFlag(in.Flag, mentor.FlagISBInRange)
 	// Defence in depth (CTO 1791058442006): the tier inputs are the GEOMETRY
 	// (abs(Price−Stop), abs(Target−Price)), never a bare intent field an
 	// emit site forgot to set — a swing sized as a base trade is the bug this
@@ -554,11 +582,16 @@ func mentorConfluenceFlag(in mentor.Intent) bool {
 // A5 (CTO 1791041016051): the §7 spent-day flag rides the intent (stamped by
 // the evaluator) — before this line the flag existed in the table but was
 // never SET, so the spent_day tier (2) and the R9 15-pt stop cap never fired.
+// The 4h+1h agreement rides the intent the same way (HTFAgree).
 func mentorExtraFor(in mentor.Intent, strongDay bool) mentorTierInputs {
 	return mentorTierInputs{
 		StrongDay:  strongDay,
 		Confluence: mentorConfluenceFlag(in),
 		SpentDay:   in.SpentDay,
+		// the evaluator stamps the 4h+1h agreement on the entry intent; before
+		// this line HTFAgree was never set, so the 20-contract tier was
+		// unreachable (SETTINGS-VS-LESSONS-1004 P1-2).
+		HTFAgree: in.HTFAgree,
 	}
 }
 

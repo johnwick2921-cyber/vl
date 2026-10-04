@@ -50,8 +50,8 @@ func TestMentorNoChaseRule(t *testing.T) {
 // test that targets a later gate.
 func wireMentorPlacementSeams(t *testing.T) {
 	t.Helper()
-	mentorDayNetSource = func() float64 { return 0 }
-	mentorClosedProfitSource = func() bool { return false }
+	mentorDayNetSource = func() (float64, bool) { return 0, true }
+	mentorClosedProfitSource = func() (bool, bool) { return false, true }
 	mentorOpenStopSource = func() (float64, bool) { return 0, false }
 	mentorOpenSideSource = func() string { return "" }
 	mentorLegProtectedSource = func(leg string) bool { return true }
@@ -195,8 +195,8 @@ func TestMentorDoneAfterWinGateAtPlacementCallSite(t *testing.T) {
 	wireMentorPlacementSeams(t)
 	ct := kernel.CTLocation()
 	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
-	mentorDayNetSource = func() float64 { return 120 }
-	mentorClosedProfitSource = func() bool { return true }
+	mentorDayNetSource = func() (float64, bool) { return 120, true }
+	mentorClosedProfitSource = func() (bool, bool) { return true, true }
 	t.Cleanup(func() {
 		mentorNowSource = nil
 		mentorDayNetSource = nil
@@ -220,7 +220,7 @@ func TestMentorDoneAfterWinGateAtPlacementCallSite(t *testing.T) {
 		t.Fatalf("the done-after-win refusal must be counted once, got %d", got)
 	}
 	// no winning close → proceeds.
-	mentorClosedProfitSource = func() bool { return false }
+	mentorClosedProfitSource = func() (bool, bool) { return false, true }
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
 	if placed != 1 {
 		t.Fatalf("without a winning close the entry must proceed, placed=%d", placed)
@@ -228,7 +228,7 @@ func TestMentorDoneAfterWinGateAtPlacementCallSite(t *testing.T) {
 	// the knob explicitly OFF → proceeds even after a win.
 	off := false
 	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = &off
-	mentorClosedProfitSource = func() bool { return true }
+	mentorClosedProfitSource = func() (bool, bool) { return true, true }
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
 	if placed != 2 {
 		t.Fatalf("with the knob explicitly OFF the entry must proceed, placed=%d", placed)
@@ -236,7 +236,7 @@ func TestMentorDoneAfterWinGateAtPlacementCallSite(t *testing.T) {
 	// day net <= 0 → proceeds (knob back ON).
 	on := true
 	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = &on
-	mentorDayNetSource = func() float64 { return -50 }
+	mentorDayNetSource = func() (float64, bool) { return -50, true }
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
 	if placed != 3 {
 		t.Fatalf("a negative day must not end the mentor's day, placed=%d", placed)
@@ -673,8 +673,8 @@ func TestMentor4hEMA34WarmupGate(t *testing.T) {
 func TestMentorSourcesBootLine(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	wireAll := func() {
-		mentorDayNetSource = func() float64 { return 0 }
-		mentorClosedProfitSource = func() bool { return false }
+		mentorDayNetSource = func() (float64, bool) { return 0, true }
+		mentorClosedProfitSource = func() (bool, bool) { return false, true }
 		mentorOpenStopSource = func() (float64, bool) { return 0, false }
 		mentorOpenSideSource = func() string { return "" }
 		mentorLegProtectedSource = func(leg string) bool { return true }
@@ -716,8 +716,8 @@ func TestMentorSourcesBootLine(t *testing.T) {
 		clear func()
 		want  string
 	}{
-		{"day net", func() { mentorDayNetSource = nil }, "day net"},
-		{"closed profit", func() { mentorClosedProfitSource = nil }, "closed profit"},
+		{"day_net", func() { mentorDayNetSource = nil }, "day_net"},
+		{"closed_profit", func() { mentorClosedProfitSource = nil }, "closed_profit"},
 		{"open stop", func() { mentorOpenStopSource = nil }, "open_stop"},
 		{"open side", func() { mentorOpenSideSource = nil }, "open_side"},
 		{"news events", func() { mentorDayEventsForTest = nil }, "news events"},
@@ -743,6 +743,30 @@ func TestMentorSourcesBootLine(t *testing.T) {
 	// a non-mentor trader is not reported.
 	if line := MentorSourcesBootLine(map[string]*AutoTrader{"off": mentoredTrader(t, store.RiskControlConfig{})}); textHas(line, "off") {
 		t.Fatalf("a non-mentor trader must not be reported: %q", line)
+	}
+}
+
+// TestMentorSourcesReloadLine (B1): a strategy reload re-prints the sources
+// line for exactly the reloaded traders — the same facts as the boot line.
+func TestMentorSourcesReloadLine(t *testing.T) {
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	wireMentorPlacementSeams(t)
+	loaded := map[string]*AutoTrader{
+		"t1": at,
+		"t2": mentoredTrader(t, store.RiskControlConfig{}),
+	}
+
+	// Only t1 is a mentor trader; the reload line names only t1, wired.
+	if line := MentorSourcesReloadLine(loaded, []string{"t1"}); !textHas(line, "t1") || !textHas(line, "wired") {
+		t.Fatalf("reload line must report the reloaded mentor trader: %q", line)
+	}
+	// A reloaded non-mentor trader → nothing to report.
+	if line := MentorSourcesReloadLine(loaded, []string{"t2"}); line != "" {
+		t.Fatalf("a non-mentor reload must report nothing: %q", line)
+	}
+	// An id that is not loaded → nothing to report.
+	if line := MentorSourcesReloadLine(loaded, []string{"ghost"}); line != "" {
+		t.Fatalf("an unloaded id must report nothing: %q", line)
 	}
 }
 

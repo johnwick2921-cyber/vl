@@ -104,7 +104,8 @@ type SwingState struct {
 	EmaCount     int     // 4h closes consumed by Line — ≥ FourHEMA34Min means warm (seed path)
 	ClearLongAt  float64 // price ≤ this re-arms longs (line − stop)
 	ClearShortAt float64 // price ≥ this re-arms shorts (line + stop)
-	Pos          *swingPosition
+	Pending      *swingPosition // S1: the resting stop order, not yet filled
+	Pos          *swingPosition // S1: the FILLED swing leg (BE/hold management)
 }
 
 type swingTouch struct {
@@ -122,6 +123,7 @@ type swingPosition struct {
 	EntryBucket int64
 	ArmID       string
 	MovedBE     bool
+	ExpiryMs    int64 // S1: the resting order's expiry (close of the current 4h candle)
 }
 
 // fourHBucketStart returns the start (ms) of the 4h bucket a bar belongs to.
@@ -209,14 +211,20 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 	if s == nil {
 		s = &SwingState{}
 	}
-	if s.Pos != nil {
-		out = append(out, manageSwingPosition(s, bars5m, cfg)...)
+	// S1: a resting swing order that reached its expiry without filling is
+	// dropped — it can never grow into a phantom position that later closes
+	// a different mentor trade (00-METHOD.md §8: "Enter on the 5-minute,
+	// HOLD according to the 4-hour" [p1 @ 05:48] — the hold applies only to
+	// a FILLED entry).
+	if s.Pending != nil && s.Pending.ExpiryMs > 0 && now >= s.Pending.ExpiryMs {
+		s.Pending = nil
 	}
+	warm := s.EmaCount >= FourHEMA34Min
 	line, bucketStart, ok := swingLine(bars5m, now, cfg, loc)
 	if !ok {
 		// Seeded warm line: the local slice is too short to recompute the 4h
 		// EMA — KEEP the seeded line, never wipe a warm line to 0 (P0 seed).
-		if s.EmaCount >= FourHEMA34Min {
+		if warm {
 			return out
 		}
 		s.Line, s.BucketStart = 0, bucketStart
@@ -228,7 +236,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		// P0: a warm line continues the SAME EMA recurrence incrementally
 		// (exact parity with a full-history rebuild) instead of a cold
 		// recompute from the ~2-day slice.
-		if s.EmaCount >= FourHEMA34Min {
+		if warm {
 			if nc := bucketClose(bars5m, s.BucketStart); nc != 0 {
 				k := 2.0 / float64(cfg.EMAPeriod+1)
 				s.Line = s.Line + k*(nc-s.Line)
@@ -244,6 +252,10 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		s.LeewayLeft = 0
 		s.ClearLongAt, s.ClearShortAt = 0, 0
 	}
+	if warm {
+		// The seeded recurrence has full history; the local slice is only a fallback.
+		line = s.Line
+	}
 
 	for i := 1; i < len(bars5m); i++ {
 		b := bars5m[i]
@@ -251,6 +263,27 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			continue
 		}
 		s.LastBarTime = b.OpenTime
+		// S1: the swing position opens only on the FILL of its own resting
+		// order — the first bar that trades through the entry fills it.
+		if s.Pending != nil && fillsSwingEntry(s.Pending, b) {
+			s.Pos = s.Pending
+			s.Pos.MovedBE = false
+			s.Pending = nil
+		}
+		// R31 [D5.2 p1 @15:48–16:24 "1 cây nến sau đó đóng ở trên level…
+		// không đặt lệnh"]: while a reject order rests, any later 5m close
+		// THROUGH the line kills it — the level went invalid, so the stop
+		// order must not keep holding the account slot against a line price
+		// has already cut through. The fill check above wins: a filled order
+		// is a position, not a resting order to cancel.
+		if s.Pending != nil && closesThroughPendingLine(s.Pending.Side, b.Close, line) {
+			out = append(out, Intent{
+				Action: CancelArm,
+				ArmID:  s.Pending.ArmID,
+				Reason: "swing: a later 5m close cut through the line — cancel the resting order [D5.2 p1 @15:48–16:24]",
+			})
+			s.Pending = nil
+		}
 		prev := bars5m[i-1]
 		// one-setup-per-approach re-arm: price left the line by the stop
 		// distance and has room to come back.
@@ -270,7 +303,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 						s.FirstTouch = nil
 						s.LeewayLeft = 0
 						in.ArmID = "swing-" + strconv.FormatInt(b.OpenTime, 10)
-						s.openPosition(in, b.OpenTime)
+						s.openPosition(in, now)
 						out = append(out, in)
 						continue
 					}
@@ -292,11 +325,19 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			continue // not yet re-armed
 		}
 		if !closedBack(approach, b.Close, line) {
-			// closes THROUGH → CANCEL [D5.2 p3 @ 21:30, corrected §3]
-			out = append(out, Intent{
+			// closes THROUGH → CANCEL [D5.2 p3 @ 21:30, corrected §3].
+			// S1: name the resting swing arm so the cancel reaches the right
+			// order, and clear the pending — a cancelled order must never
+			// grow into a phantom position.
+			cancel := Intent{
 				Action: CancelArm,
 				Reason: "swing: touch closed through the line — cancel, invalid for this approach [D5.2 p3 @ 21:30, corrected §3]",
-			})
+			}
+			if s.Pending != nil {
+				cancel.ArmID = s.Pending.ArmID
+				s.Pending = nil
+			}
+			out = append(out, cancel)
 			s.FirstTouch = &swingTouch{RefBar: b, Approach: approach, Through: true}
 			s.LeewayLeft = cfg.LeewayCandles
 			continue
@@ -316,20 +357,51 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			s.ClearShortAt = line + cfg.StopBeyondLinePts
 		}
 		s.FirstTouch = &swingTouch{RefBar: b, Approach: approach}
-		s.openPosition(in, b.OpenTime)
+		s.openPosition(in, now)
 		out = append(out, in)
+	}
+	// S1: BE/hold management runs AFTER the bar walk, so a fill that happened
+	// THIS tick is managed against the fill bar's close — not one bar late.
+	if s.Pos != nil {
+		out = append(out, manageSwingPosition(s, bars5m, cfg)...)
 	}
 	return out
 }
 
-// openPosition records the entry for the BE/hold management.
-func (s *SwingState) openPosition(in Intent, at int64) {
-	p := &swingPosition{Side: in.Side, Entry: in.Price, Stop: in.Stop, Target: in.Target, EntryBucket: s.BucketStart, ArmID: in.ArmID}
+// fillsSwingEntry reports whether a closed bar trades through the resting
+// swing order's entry — the stop order fills when price reaches the trigger.
+func fillsSwingEntry(p *swingPosition, b market.Kline) bool {
+	if p == nil {
+		return false
+	}
+	if p.Side == SideLong {
+		return b.High >= p.Entry
+	}
+	return b.Low <= p.Entry
+}
+
+// closesThroughPendingLine reports whether a closed 5m bar cut through the
+// line a resting swing order sits against [D5.2 p1 @15:48–16:24]: a short
+// rests BELOW the resistance (a close above = through), a long rests ABOVE
+// the support (a close below = through). Either invalidates the level.
+func closesThroughPendingLine(side Side, close, line float64) bool {
+	if side == SideShort {
+		return close > line
+	}
+	return close < line
+}
+
+// openPosition records the RESTING swing order (not yet filled). S1: the
+// swing position must open only on the FILL of its own ArmID — a resting,
+// expired or cancelled order must never drive BE/hold management, or it
+// would close a DIFFERENT mentor trade after the hold.
+func (s *SwingState) openPosition(in Intent, now int64) {
+	p := &swingPosition{Side: in.Side, Entry: in.Price, Stop: in.Stop, Target: in.Target, EntryBucket: s.BucketStart, ArmID: in.ArmID, ExpiryMs: swingExpiry(now)}
 	p.Risk = in.Stop - in.Price
 	if in.Side == SideShort {
 		p.Risk = in.Price - in.Stop
 	}
-	s.Pos = p
+	s.Pending = p
 }
 
 // swingTargetEMA is the first target: the 5m EMA 34 [table].

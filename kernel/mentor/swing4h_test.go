@@ -152,6 +152,37 @@ func TestSwing4hThroughCancelsThenISB(t *testing.T) {
 	}
 }
 
+func TestSwingTickWarmLineIsAuthoritativeWithinBucket(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	bars := []market.Kline{
+		mk5m(t, 14, 1, 5, 1000, 1000, 1000, 1000),
+		mk5m(t, 14, 5, 5, 1600, 1600, 1600, 1600),
+		mk5m(t, 14, 9, 0, 950, 1100, 900, 1000),
+		mk5m(t, 14, 9, 5, 1000, 1050, 950, 1000),
+	}
+	now := bars[3].OpenTime + 60_000
+	localLine, bucketStart, ok := swingLine(bars, now, cfg, ctime())
+	if !ok || localLine <= bars[3].Close || localLine-bars[3].Low >= cfg.MaxStopPts {
+		t.Fatalf("test setup local line %.2f, want a line above close with a valid stop distance", localLine)
+	}
+
+	s := &SwingState{
+		Line:        950,
+		BucketStart: bucketStart,
+		LastBarTime: bars[2].OpenTime,
+		EmaCount:    FourHEMA34Min,
+		FirstTouch:  &swingTouch{Approach: SideShort, Through: true},
+		LeewayLeft:  2,
+	}
+	out := SwingTick(s, bars, cfg, now)
+	if len(out) != 0 {
+		t.Fatalf("warm line %.2f must govern the same-bucket close; local line %.2f emitted %+v", s.Line, localLine, out)
+	}
+	if s.Line != 950 {
+		t.Fatalf("warm line changed within its bucket: got %.2f, want 950", s.Line)
+	}
+}
+
 // TestSwing4hStopCeiling100 — R8: 30–60 is allowed, ~100 → DO NOT ENTER
 // [table].
 func TestSwing4hStopCeiling100(t *testing.T) {
@@ -289,5 +320,65 @@ func TestSwing4hBEAndHold(t *testing.T) {
 	}
 	if !closed {
 		t.Fatalf("no close at the 2nd-4h-candle hold limit; got %+v", out2)
+	}
+}
+
+// TestSwingNeverFillsSendsNoManage (S1 pin, production call site SwingTick):
+// a swing intent that never fills must never send MoveStopBE / ClosePosition —
+// the hold close is a phantom that would flatten a DIFFERENT mentor position on
+// the same side. Mutant: openPosition at emit again (s.Pos = p) → the hold
+// close fires and this turns RED.
+// TestSwingNeverFillsSendsNoManage (S1 pin, production call site SwingTick):
+// a swing intent that never fills must never send MoveStopBE / ClosePosition —
+// the hold close is a phantom that would flatten a DIFFERENT mentor position on
+// the same side. It also pins that the position opens only on a FILL: the
+// no-fill bar between emit and the hold boundary must leave s.Pos nil. Mutants:
+// open at emit again (s.Pos = p) OR promote without a fill check → the hold
+// close fires and this turns RED.
+func TestSwingNeverFillsSendsNoManage(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	cfg.Hold4hBars = 1 // hold to the close of the 1st 4h candle after entry
+	entryBars := swingTape(t, []market.Kline{
+		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),     // prev below
+		mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160), // short entry 10155 (resting, not filled)
+	})
+	s := &SwingState{}
+	out := SwingTick(s, entryBars, cfg, entryBars[len(entryBars)-1].OpenTime+60_000)
+	entries := 0
+	for _, in := range out {
+		if in.Action == PlaceStopEntry {
+			entries++
+		}
+	}
+	if entries != 1 {
+		t.Fatalf("setup entries = %d, want 1; got %+v", entries, out)
+	}
+	if s.Pending == nil || s.Pos != nil {
+		t.Fatalf("the swing must rest PENDING before any fill: pending=%v pos=%v", s.Pending, s.Pos)
+	}
+	// A no-fill bar INSIDE the same 4h bucket (before the expiry): low 10156
+	// never trades through the 10155 sell stop, high 10160 never touches the
+	// line. A promote-without-fill mutant opens s.Pos here.
+	rest := append(entryBars, mk5m(t, 15, 5, 10, 10158, 10160, 10156, 10158))
+	out2 := SwingTick(s, rest, cfg, rest[len(rest)-1].OpenTime+60_000)
+	for _, in := range out2 {
+		if in.Action == ActionMoveStopBE || in.Action == ActionClosePosition {
+			t.Fatalf("an unfilled swing must never send %s; got %+v", in.Action, out2)
+		}
+	}
+	if s.Pos != nil {
+		t.Fatalf("a bar that does not trade through the entry must not open a position, got %+v", s.Pos)
+	}
+	// The hold boundary (Hold4hBars=1 → the 05:00 bucket holds to 09:00): the
+	// doji at 10156 neither fills the sell stop nor touches the flipped line.
+	late := append(rest, mk5m(t, 15, 9, 5, 10156, 10156, 10156, 10156))
+	out3 := SwingTick(s, late, cfg, late[len(late)-1].OpenTime+60_000)
+	for _, in := range out3 {
+		if in.Action == ActionMoveStopBE || in.Action == ActionClosePosition {
+			t.Fatalf("an unfilled swing must never send %s across the hold; got %+v", in.Action, out3)
+		}
+	}
+	if s.Pos != nil {
+		t.Fatalf("the unfilled swing must not open a position across the hold, got %+v", s.Pos)
 	}
 }

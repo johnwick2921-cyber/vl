@@ -4,8 +4,10 @@ import (
 	"strings"
 	"time"
 
+	"vl/kernel"
 	"vl/kernel/mentor"
 	"vl/market"
+	"vl/store"
 	"vl/trader/types"
 )
 
@@ -28,6 +30,7 @@ type mentorPositionReader interface {
 var mentorSeamNames = []string{
 	"open_stop", "open_side", "leg_protection",
 	"latest_price", "now", "confluence", "arm_expiry",
+	"day_net", "closed_profit",
 }
 
 // mentorSeamBound reports whether one named seam is non-nil (the truth the
@@ -48,6 +51,10 @@ func mentorSeamBound(name string) bool {
 		return mentorConfluenceForIntent != nil
 	case "arm_expiry":
 		return mentorSetArmExpiryWire != nil
+	case "day_net":
+		return mentorDayNetSource != nil
+	case "closed_profit":
+		return mentorClosedProfitSource != nil
 	}
 	return false
 }
@@ -60,7 +67,9 @@ func mentorSeamBound(name string) bool {
 //	now — time.Now;
 //	leg protection — a working bracket stop at the broker;
 //	confluence — the evaluator intent's Confluence flag;
-//	arm expiry — store.SetArmExpiry (dev via #313).
+//	arm expiry — store.SetArmExpiry (dev via #313);
+//	day net / closed profit — the strict-corrected session-day P&L read
+//	  (pnl_corrected only; a NULL row → unresolved → fail closed).
 func (at *AutoTrader) mentorWireProductionSeams() {
 	if pr, ok := at.trader.(mentorPositionReader); ok {
 		mentorOpenStopSource = func() (float64, bool) {
@@ -120,6 +129,40 @@ func (at *AutoTrader) mentorWireProductionSeams() {
 	mentorNowSource = func() time.Time { return time.Now() }
 
 	mentorConfluenceForIntent = func(in mentor.Intent) bool { return in.Confluence }
+
+	// B1 (DS-104): day net + closed profit — the session-day closed-trade P&L
+	// read (pnl_corrected only). A NULL pnl_corrected closed row today is
+	// UNRESOLVED → the seam returns ok=false → the gate fails CLOSED.
+	if at.store != nil {
+		ps := at.store.Position()
+		dayActivity := func() (store.MentorDayActivity, bool) {
+			sinceMs := kernel.CMESessionDayStart(mentorClockNow()).UnixMilli()
+			act, err := ps.MentorDayActivity(at.id, sinceMs, at.currentAccountName())
+			if err != nil {
+				at.logWarnf("🧑‍🏫 mentor done-after-win day read failed (%v) — refusing (fail-closed)", err)
+				return store.MentorDayActivity{}, false
+			}
+			if act.Unresolved > 0 {
+				at.logWarnf("🧑‍🏫 mentor done-after-win day UNRESOLVED (%d closed row(s) with NULL pnl_corrected today) — refusing (fail-closed)", act.Unresolved)
+				return store.MentorDayActivity{}, false
+			}
+			return act, true
+		}
+		mentorDayNetSource = func() (float64, bool) {
+			act, ok := dayActivity()
+			if !ok {
+				return 0, false
+			}
+			return act.DayNetPnl, true
+		}
+		mentorClosedProfitSource = func() (bool, bool) {
+			act, ok := dayActivity()
+			if !ok {
+				return false, false
+			}
+			return act.ClosedInProfit, true
+		}
+	}
 
 	if at.store != nil && at.store.ArmedOrders() != nil {
 		arms := at.store.ArmedOrders()
