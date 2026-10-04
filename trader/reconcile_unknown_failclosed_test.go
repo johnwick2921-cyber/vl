@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestReconcileBeforeOpenNTUnknownPositionsRefuses(t *testing.T) {
@@ -73,6 +74,12 @@ func (s *flattenWaitStub) GetPositions() ([]map[string]interface{}, error) {
 // RED = the m10 mutant (drop the hErr guard): the loop returns (true, nil)
 // "flattened + confirmed flat" on the FIRST unknown read.
 func TestReconcileFlattenWaitNeverDeclaresFlatOnUnknown(t *testing.T) {
+	// Shrink the real-clock wait: the production 35 s deadline × 500 ms poll is a
+	// fixed sleep; the fail-closed contract this pins is the SAME at any timeout.
+	prevTimeout, prevPoll := reconcileFlattenTimeout, reconcileFlattenPollInterval
+	reconcileFlattenTimeout, reconcileFlattenPollInterval = 100*time.Millisecond, 5*time.Millisecond
+	t.Cleanup(func() { reconcileFlattenTimeout, reconcileFlattenPollInterval = prevTimeout, prevPoll })
+
 	stub := &flattenWaitStub{}
 	at := &AutoTrader{id: "recon-wait-unknown", exchange: "ninjatrader", trader: stub}
 	flattenSent, err := at.reconcileBeforeOpenNTReport("MNQ", "long")

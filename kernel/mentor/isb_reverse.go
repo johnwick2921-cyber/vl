@@ -3,7 +3,7 @@ package mentor
 import "vl/market"
 
 // R7 — the reverse ISB at EMA 9 (RULES-FIX-v3, a setup behind its OWN knob
-// ISBReverseEMA9Enabled, default OFF) [D5.4]:
+// ISBReverseEMA9Enabled, default ON since the 2026-10-04 owner ruling) [D5.4]:
 //
 //   - price must actually reach EMA 9 (a loose touch is OK);
 //   - in an uptrend, an ISB that points SHORT at EMA 9 → go LONG with a buy
@@ -21,7 +21,7 @@ import "vl/market"
 // ISB, no EMA-9 touch, or the ISB already points WITH the trend).
 func ReverseISBAtEMA9(prev, cur market.Kline, ema9 float64, trend Side, cfg Config) (Intent, bool, string) {
 	if !cfg.ISBReverseEMA9Enabled {
-		return Intent{}, false, "reverse ISB at EMA 9: knob off [D5.4; L4]"
+		return Intent{}, false, "reverse ISB at EMA 9: knob off [D5.4]"
 	}
 	if !IsISB(prev, cur) {
 		return Intent{}, false, "reverse ISB at EMA 9: not an ISB [D5.4]"

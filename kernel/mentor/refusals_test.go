@@ -51,8 +51,9 @@ func TestEveryRefusalNamesReason(t *testing.T) {
 		t.Fatalf("fail-closed refusal = %v", r)
 	}
 
-	// G1 leg budget: a filled leg refuses the second PHL.
-	l := &Limits{Long: &Leg{Side: SideLong, Extreme: 120, Entries: 1}}
+	// G1 leg budget: a leg whose PHL already filled refuses the second PHL
+	// (X15-4: an ISB-filled leg does NOT — only the PHL fill does).
+	l := &Limits{Long: &Leg{Side: SideLong, Extreme: 120, Entries: 1, PHLFilled: true}}
 	out := l.Apply([]Intent{entry(SideLong, 100)}, market.Kline{}, market.Kline{}, 0,
 		[]Level{{Key: "k", Kind: KindKeyLevel, Price: 95}}, cfg)
 	if len(out) != 0 || l.Refusals["leg_budget_second_phl"] != 1 {
