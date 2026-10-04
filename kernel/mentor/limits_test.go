@@ -177,8 +177,8 @@ func TestLimitsLossBlocksUntilDeparture(t *testing.T) {
 	exp := limitsNow(60) + 86400_000
 
 	applyAtG2(&l, []Intent{limitsPHLAt(90, 88, 99, exp, "key_level:97", 97)}, prev, limitsK(93, 94, 92, 93, 1), 1, cfg)
-	applyAtG2(&l, nil, limitsK(93, 94, 92, 93, 1), limitsK(89, 91, 88.5, 89, 2), 2, cfg)   // fill
-	applyAtG2(&l, nil, limitsK(89, 91, 88.5, 89, 2), limitsK(70, 72, 59, 70, 3), 3, cfg)  // stop-out → loss; wave low = 59
+	applyAtG2(&l, nil, limitsK(93, 94, 92, 93, 1), limitsK(89, 91, 88.5, 89, 2), 2, cfg) // fill
+	applyAtG2(&l, nil, limitsK(89, 91, 88.5, 89, 2), limitsK(70, 72, 59, 70, 3), 3, cfg) // stop-out → loss; wave low = 59
 
 	// PIN 1: close 70 = 27 pts from the loss price 97, still INSIDE the
 	// wave (70 > 59) and below the swing (100) → stays blocked.
@@ -210,7 +210,7 @@ func TestLimitsEMALossBlocksAfterMove(t *testing.T) {
 	exp := limitsNow(60) + 86400_000
 
 	applyLevels(&l, []Intent{limitsPHLAt(90, 88, 99, exp, "ema34", 100)}, prev, limitsK(93, 94, 92, 93, 1), 1, cfg, levels)
-	applyLevels(&l, nil, limitsK(93, 94, 92, 93, 1), limitsK(89, 91, 88.5, 89, 2), 2, cfg, levels)  // fill
+	applyLevels(&l, nil, limitsK(93, 94, 92, 93, 1), limitsK(89, 91, 88.5, 89, 2), 2, cfg, levels) // fill
 	applyLevels(&l, nil, limitsK(89, 91, 88.5, 89, 2), limitsK(70, 72, 59, 70, 3), 3, cfg, levels) // stop → loss at the EMA
 
 	// The line moved to 105; a close inside the wave keeps the EMA blocked
@@ -242,7 +242,7 @@ func TestLimitsOldExtremeLossBlocksCoincidentKeyLevel(t *testing.T) {
 	exp := limitsNow(60) + 86400_000
 
 	applyLevels(&l, []Intent{limitsPHLAt(90, 88, 99, exp, "old_extreme:100.00", 100)}, prev, limitsK(93, 94, 92, 93, 1), 1, cfg, levels)
-	applyLevels(&l, nil, limitsK(93, 94, 92, 93, 1), limitsK(89, 91, 88.5, 89, 2), 2, cfg, levels)  // fill
+	applyLevels(&l, nil, limitsK(93, 94, 92, 93, 1), limitsK(89, 91, 88.5, 89, 2), 2, cfg, levels) // fill
 	applyLevels(&l, nil, limitsK(89, 91, 88.5, 89, 2), limitsK(70, 72, 59, 70, 3), 3, cfg, levels) // stop → loss at the coincident key level
 	if l.Places == nil || l.Places["key_level:99.5:1"] == nil {
 		t.Fatalf("loss: want it under the coincident key level, got %+v", l.Places)
@@ -352,14 +352,14 @@ func TestLimitsTwoLossesOffForDay(t *testing.T) {
 	// Loss 1 at the key level 97 (the loss candle never counts as the
 	// departure).
 	applyAtG2(&l, []Intent{limitsPHLAt(90, 88, 99, exp, "key_level:97", 97)}, prev, limitsK(93, 94, 92, 93, 1), 1, cfg)
-	applyAtG2(&l, nil, limitsK(93, 94, 92, 93, 1), limitsK(89, 91, 88.5, 89, 2), 2, cfg)  // fill
+	applyAtG2(&l, nil, limitsK(93, 94, 92, 93, 1), limitsK(89, 91, 88.5, 89, 2), 2, cfg) // fill
 	applyAtG2(&l, nil, limitsK(89, 91, 88.5, 89, 2), limitsK(70, 72, 59, 70, 3), 3, cfg) // stop → loss 1
 	// The swing break frees the place; re-enter → loss 2.
 	if out := applyAtG2(&l, []Intent{limitsPHLAt(90, 88, 99, exp, "key_level:97", 97)}, limitsK(70, 72, 59, 70, 3), limitsK(107, 108.5, 106, 108, 4), 4, cfg); len(out) != 1 {
 		t.Fatalf("re-entry after the swing break: want 1 entry, got %d", len(out))
 	}
 	applyAtG2(&l, nil, limitsK(107, 108.5, 106, 108, 4), limitsK(89, 91, 88.5, 89, 5), 5, cfg) // fill
-	applyAtG2(&l, nil, limitsK(89, 91, 88.5, 89, 5), limitsK(70, 72, 59, 70, 6), 6, cfg)     // stop → loss 2
+	applyAtG2(&l, nil, limitsK(89, 91, 88.5, 89, 5), limitsK(70, 72, 59, 70, 6), 6, cfg)       // stop → loss 2
 	if l.Places == nil || l.Places["key_level:97"] == nil || !l.Places["key_level:97"].OffDay {
 		t.Fatalf("place after two losses: want OffDay=true, got %+v", l.Places)
 	}
