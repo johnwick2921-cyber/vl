@@ -7920,3 +7920,20 @@ guard turns one early look into a permanent skip. rule: trim trailing forming
 bars BEFORE the dedup check, on every path that feeds the evaluator.
 Reference: trader/mentor_tick.go mentorClosedBars (both mentorTick and
 mentorEventPassAt); pin TestMentorEvaluatesClosedBarsOnly.
+
+## CLASS NN (assigned at merge) — an input-shape sniff that reads the first elements, not the series
+
+symptom: DS-106 (2026-10-04): `keyLevel1HBars` decided "this input is
+pre-bucketed 1H candles" from the gap between the FIRST TWO bars. The MNQ
+12-26 seed window begins with two sparse `historical_import` snapshots (09-07
+12:00, 09-08 16:00), so on 17 days every 1m bar in 08:00–14:59 became a "1H
+candle" (1171 candles from 1172 bars in the pin) and the level walk drew
+garbage. probe: grep every `[0]`/`[1]` read that classifies a whole slice
+(sampling interval, units, ordering, "is this already aggregated") and ask what
+the real source puts at its head — imports, snapshots and gap-fills live at the
+ends. rule: classify over the whole series (majority of gaps, one pass, no
+allocation on a per-tick path), and pin with the production-shaped window that
+STARTS with the odd elements, plus a control that the legitimate shape (here
+pre-bucketed 1H fixtures) still works. Reference:
+kernel/mentor/key_levels.go isPreBucketed1H +
+kernel/mentor/key_levels_sparse_head_test.go.
