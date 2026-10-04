@@ -268,6 +268,53 @@ func TestMentorLegsForPlacement(t *testing.T) {
 	}
 }
 
+// TestMentorArmRows pins the armed-ledger rows the injector Upserts for the
+// split AT PLACEMENT: one row per leg, each with its own Contracts + TP.
+func TestMentorArmRows(t *testing.T) {
+	in := mentor.Intent{Side: mentor.SideLong, Setup: "ISB", Price: 100, Stop: 90, Target: 115, ExpiryMs: 1700000000000}
+	rows := mentorArmRows(in, mentorSizeChoice{Contracts: 5, Tier: "base"}, "B", 0, "mentor-1")
+	if len(rows) != 2 {
+		t.Fatalf("5-lot split rows = %d, want 2", len(rows))
+	}
+	leg1, leg2 := rows[0], rows[1]
+	if leg1.LegIndex != 0 || leg2.LegIndex != 1 {
+		t.Fatalf("leg indexes = (%d, %d), want (0, 1)", leg1.LegIndex, leg2.LegIndex)
+	}
+	if leg1.LegCount != 2 || leg2.LegCount != 2 {
+		t.Fatalf("leg count = (%d, %d), want (2, 2)", leg1.LegCount, leg2.LegCount)
+	}
+	if leg1.EntryGroup != "mentor-1" || leg2.EntryGroup != "mentor-1" {
+		t.Fatalf("both rows must share the EntryGroup; got %q / %q", leg1.EntryGroup, leg2.EntryGroup)
+	}
+	if leg1.Contracts == nil || *leg1.Contracts != 3 || leg2.Contracts == nil || *leg2.Contracts != 2 {
+		t.Fatalf("Contracts = (%v, %v), want (3, 2)", leg1.Contracts, leg2.Contracts)
+	}
+	if leg1.TargetPx != 110 || leg2.TargetPx != 115 {
+		t.Fatalf("leg TPs = (%.2f, %.2f), want (110 = entry+R, 115 = target)", leg1.TargetPx, leg2.TargetPx)
+	}
+	if leg1.StopPx != 90 || leg2.StopPx != 90 {
+		t.Fatalf("both legs share the stop; got %.2f / %.2f", leg1.StopPx, leg2.StopPx)
+	}
+	if leg1.Origin != store.ArmOriginMentor || leg2.Origin != store.ArmOriginMentor {
+		t.Fatalf("both rows must carry the mentor origin")
+	}
+
+	// n = 1 → a single row (LegCount 0), the single contract holds to target.
+	single := mentorArmRows(in, mentorSizeChoice{Contracts: 1, Tier: "base"}, "B", 0, "mentor-2")
+	if len(single) != 1 || single[0].LegCount != 0 {
+		t.Fatalf("1-lot rows = %d (LegCount %d), want 1 row (LegCount 0)", len(single), single[0].LegCount)
+	}
+	if single[0].Contracts == nil || *single[0].Contracts != 1 || single[0].TargetPx != 115 {
+		t.Fatalf("single leg = {Contracts %v, TP %.2f}, want {1, 115}", single[0].Contracts, single[0].TargetPx)
+	}
+
+	// C → leg 1's TP is 2R at entry.
+	cRows := mentorArmRows(in, mentorSizeChoice{Contracts: 5, Tier: "confluence"}, "C", mentorLeg1TPForC(100, 10, "long"), "mentor-3")
+	if cRows[0].TargetPx != 120 {
+		t.Fatalf("C leg-1 TP = %.2f, want 120 (2R)", cRows[0].TargetPx)
+	}
+}
+
 // TestMentorLeg1TPForC: C sets leg 1's TP at ≥1:2 AT ENTRY.
 func TestMentorLeg1TPForC(t *testing.T) {
 	if got := mentorLeg1TPForC(100, 10, "long"); got != 120 {

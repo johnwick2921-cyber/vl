@@ -610,6 +610,50 @@ func mentorLegsForPlacement(in mentor.Intent, n int, mode string, leg1TP float64
 	return mentorLeg{Qty: l1, TP: tp1, Stop: stop}, mentorLeg{Qty: l2, TP: target, Stop: stop, Final: true}
 }
 
+// mentorArmRows builds the armed-ledger rows for the split AT PLACEMENT: one row
+// per leg (two for n ≥ 2; one for n = 1 / swing), each carrying its OWN
+// Contracts (the B2 requested count), TargetPx (the leg's native bracket TP),
+// StopPx (the shared stop), EntryGroup (the shared group id = the intent's
+// ArmID) and LegIndex/LegCount. Pure — no I/O; mentorArmIntent Upserts these.
+//
+// For a single leg (n = 1 / swing) the runner leg is absent, so LegCount stays
+// 0 (the legacy single-arm form) and the one row is LegIndex 0.
+func mentorArmRows(in mentor.Intent, choice mentorSizeChoice, mode string, leg1TP float64, armID string) []store.ArmedOrderDB {
+	side := strings.ToLower(strings.TrimSpace(string(in.Side)))
+	leg1, leg2 := mentorLegsForPlacement(in, choice.Contracts, mode, leg1TP)
+	base := store.ArmedOrderDB{
+		PlanID:     "mentor",
+		Version:    1,
+		Session:    "MENTOR",
+		Scenario:   armID,
+		Side:       side,
+		EntryPx:    in.Price,
+		Kind:       "stop_entry",
+		Condition:  in.Setup,
+		ExpiryMs:   in.ExpiryMs,
+		Origin:     store.ArmOriginMentor,
+		EntryGroup: armID,
+	}
+	legCount := 0
+	if leg2.Qty > 0 {
+		legCount = 2
+	}
+	rows := make([]store.ArmedOrderDB, 0, 2)
+	for i, leg := range []mentorLeg{leg1, leg2} {
+		if leg.Qty <= 0 {
+			continue
+		}
+		r := base
+		r.LegIndex = i
+		r.LegCount = legCount
+		r.StopPx = leg.Stop
+		r.TargetPx = leg.TP
+		r.Contracts = store.IntPtr(leg.Qty)
+		rows = append(rows, r)
+	}
+	return rows
+}
+
 // mentorConfluenceForIntent is the R2 STUB (CTO 1791029620038: "use a stub
 // flag until DS-106's lands"): reports whether the intent carries the
 // confluence flag (box edge + key level inside the box or within 2 pts of its
