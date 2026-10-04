@@ -7903,3 +7903,20 @@ without the guard must violate the assertion). rule: emit the guarded value
 control that proves the unguarded value is beyond the limit. Reference:
 kernel/mentor/eval.go ISB branch (`chosen.Target = capped.Target`) +
 kernel/mentor/b9_isb_cap_test.go TestB9ISBOnSpentDayEmitsExactlyTheCap.
+
+## CLASS NN (assigned at merge) — a per-bar dedup watermark set on a FORMING bar skips that bar's close for good
+
+symptom: CTO parity review (2026-10-04): the mentor evaluator was handed the
+NT8 cache tail, whose newest 1m bar is usually still FORMING
+(bars_market_bridge.go barsToKlines). The 2-minute scan fallback evaluated
+that forming bar as the "current" candle and stamped `mentorLastTickOpen` with
+its open. When its FINAL frame arrived, the event pass saw the same OpenTime
+and skipped it. That bar was decided on a half-built candle and never
+evaluated closed. Mentor mode was OFF, so there was no live effect. probe: for
+every "evaluate once per bar" guard, ask which bar the watermark is stamped
+from. If the input can end in a forming bar, the watermark must be stamped
+from the last CLOSED bar (Final, or scheduled close passed); otherwise the
+guard turns one early look into a permanent skip. rule: trim trailing forming
+bars BEFORE the dedup check, on every path that feeds the evaluator.
+Reference: trader/mentor_tick.go mentorClosedBars (both mentorTick and
+mentorEventPassAt); pin TestMentorEvaluatesClosedBarsOnly.

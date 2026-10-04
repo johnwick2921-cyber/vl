@@ -727,7 +727,7 @@ func TestMentorEventPassDedup(t *testing.T) {
 	open := int64(1_700_000_000_000)
 	market.FuturesBarsProvider = func(symbol, tf string, n int) []market.Kline {
 		return []market.Kline{
-			{OpenTime: open, CloseTime: open + 59_000, Open: 100, High: 101, Low: 99, Close: 100.5},
+			{OpenTime: open, CloseTime: open + 59_000, Open: 100, High: 101, Low: 99, Close: 100.5, Final: true},
 		}
 	}
 	if !at.mentorEventPassAt(time.Now()) {
@@ -888,5 +888,64 @@ func TestMentorNewsGateAtPlacementCallSite(t *testing.T) {
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
 	if placed != 2 {
 		t.Fatalf("no calendar outside the window must proceed, placed=%d", placed)
+	}
+}
+
+// TestMentorEvaluatesClosedBarsOnly: the NT8 cache's newest 1m bar is usually
+// FORMING. The event pass and the scan evaluate the last CLOSED bar, each bar
+// exactly ONCE across both paths (Tick is not idempotent per bar), and never a
+// tail bar NT8 has not marked Final, whatever the bot's clock says.
+func TestMentorEvaluatesClosedBarsOnly(t *testing.T) {
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	old := market.FuturesBarsProvider
+	t.Cleanup(func() { market.FuturesBarsProvider = old })
+	now := time.Now()
+	minute := now.Truncate(time.Minute).UnixMilli()
+	bar := func(open int64, final bool) market.Kline {
+		return market.Kline{OpenTime: open, CloseTime: open + 59_999, Open: 100, High: 101, Low: 99, Close: 100.5, Final: final}
+	}
+	a := bar(minute-180_000, true)
+	b := bar(minute-120_000, true)
+	var served []market.Kline
+	market.FuturesBarsProvider = func(symbol, tf string, n int) []market.Kline { return served }
+
+	// 1. the forming tail is never evaluated; the last CLOSED bar is.
+	served = []market.Kline{a, b, bar(minute, false)}
+	if !at.mentorEventPassAt(now) {
+		t.Fatal("the pass must run on the new CLOSED bar")
+	}
+	if at.mentorLastTickOpen != b.OpenTime {
+		t.Fatalf("evaluated bar open %d, want the last CLOSED bar %d", at.mentorLastTickOpen, b.OpenTime)
+	}
+	// 2. the scan must NOT evaluate the same bar again (evaluator dropped to
+	// prove whether mentorEvalOnce ran: it rebuilds a nil evaluator).
+	at.mentorEval = nil
+	at.mentorTick(nil)
+	if at.mentorEval != nil {
+		t.Fatal("the scan re-evaluated a bar the event pass already evaluated")
+	}
+	// 3. a tail bar whose clock close has PASSED but has no Final frame (NT8
+	// lag / bot clock ahead) is not evaluated by either path.
+	c := bar(minute-60_000, false)
+	served = []market.Kline{a, b, c}
+	if at.mentorEventPassAt(now) || at.mentorLastTickOpen == c.OpenTime {
+		t.Fatalf("a non-Final tail bar was evaluated (watermark %d)", at.mentorLastTickOpen)
+	}
+	at.mentorTick(nil)
+	if at.mentorLastTickOpen == c.OpenTime {
+		t.Fatal("the scan evaluated a non-Final tail bar")
+	}
+	// 4. its FINAL arrives → evaluated now, once.
+	c.Final = true
+	served = []market.Kline{a, b, c}
+	if !at.mentorEventPassAt(now) || at.mentorLastTickOpen != c.OpenTime {
+		t.Fatalf("the bar's FINAL must be evaluated once it arrives (watermark %d)", at.mentorLastTickOpen)
+	}
+	// 5. a LOST Final frame: once NT8 starts the next bar, the bar before it
+	// is complete and is evaluated.
+	d := bar(minute, false) // Final frame never came
+	served = []market.Kline{a, b, c, d, bar(minute+60_000, false)}
+	if !at.mentorEventPassAt(now) || at.mentorLastTickOpen != d.OpenTime {
+		t.Fatalf("a bar followed by a newer bar must count as closed (watermark %d)", at.mentorLastTickOpen)
 	}
 }
