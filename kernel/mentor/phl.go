@@ -204,7 +204,7 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 	}
 	if htfOK, side, htfReason := HTFVerdict(htf); !htfOK {
 		return in, false, "HTF direction gate: no trade — " + htfReason
-	} else if side != in.Side {
+	} else if side != "" && side != in.Side {
 		return in, false, "HTF direction gate: entry side " + string(in.Side) + " against the " + string(side) + " trigger — entries only with the 4h direction [D4.4 p1 @ 16:00]"
 	}
 	// A10 (CTO 20:15:49Z): ONE day gate — DayOff AND DayNotMeasured refuse

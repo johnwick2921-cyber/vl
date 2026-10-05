@@ -260,6 +260,14 @@ type Config struct {
 	RoomMultiple   float64 // room rule: reward >= RoomMultiple x risk; default 2 [D5.3 p1 @ 09:16]
 	RangeGapPts    float64 // mid-range: levels bracketing price within this gap both sides; default 0 = disabled
 
+	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h
+	// direction gate is for NEWS first, not ordinary trading yet
+	// ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI. ĐỪNG SỬ DỤNG CHO [trade]
+	// THƯỜNG"). Default true: the HTF gate applies only inside the 07:20–07:35
+	// CT news window; ordinary intraday entries are not HTF-gated. false =
+	// the legacy all-day gate.
+	HTFGateNewsOnly bool
+
 	// NearBoxRoomMultiple — Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: a setup
 	// whose nearest box edge IN the trade direction is closer than this × its
 	// own risk is refused ("sát box"); 0 disables. Default 2 — the same 2R
@@ -336,6 +344,7 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
+		HTFGateNewsOnly:        true,
 		NearBoxRoomMultiple:    2, // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
 		LossDeparturePts:       0, // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,

@@ -171,6 +171,7 @@ func TestTargetFloorOK(t *testing.T) {
 func TestISBSilentDropsAllNamed(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.HTFGateNewsOnly = false // these pins exercise the direction gate itself (all-day)
 
 	t.Run("twenties", func(t *testing.T) {
 		e := newISBEval(cfg)
