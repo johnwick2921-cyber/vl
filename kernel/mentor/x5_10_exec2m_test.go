@@ -72,3 +72,26 @@ func TestX5_10Exec2mAfter30mSwitchesISBReadTo2m(t *testing.T) {
 func barAt(openMs int64, o, h, l, c float64) market.Kline {
 	return market.Kline{OpenTime: openMs, CloseTime: openMs + 59_999, Open: o, High: h, Low: l, Close: c}
 }
+
+// TestX5_10Exec2mReadsClosedBucketsNotTheFormingOne — P1: on a 1m close that
+// OPENS a 2m bucket, the read must be the previous two CLOSED 2m candles, not
+// the half-formed one (barsTF would flush the partial bucket and the ISB would
+// read a half-built candle). The fixture ends at 09:04 — the FIRST minute of
+// the [09:04,09:05] bucket. The closed 2m read is (doji A, B) → no ISB; the
+// barsTF read would be (B, half-formed 09:04) → ISB.
+func TestX5_10Exec2mReadsClosedBucketsNotTheFormingOne(t *testing.T) {
+	bars := []market.Kline{
+		rthBars(0, 140, 141, 139, 140), // bucket A open 140
+		rthBars(1, 140, 141, 139, 140), // bucket A close 140 → 2m doji
+		rthBars(2, 99, 106, 98.5, 106), // bucket B (green)
+		rthBars(3, 101, 105, 100, 104), // bucket B close 104
+		rthBars(4, 103, 104, 102, 103), // 09:04 — first minute of the next 2m bucket
+	}
+	now := bars[len(bars)-1].CloseTime + 1 // 09:04 CT
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.Exec2mAfter30m = true
+	if got := x5_10Emits(newISBEval(cfg), bars, now); got != 0 {
+		t.Fatalf("the 2m read must use CLOSED buckets (candle 1 is a doji), got %d ISB", got)
+	}
+}

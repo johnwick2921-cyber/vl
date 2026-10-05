@@ -1956,6 +1956,10 @@ type MentorTuning struct {
 	// HTFGateNewsOnly (D4.4-11): the 4h/1h direction gate only inside the
 	// 07:20–07:35 CT news window (nil → OFF = the all-day gate; U-6 open).
 	HTFGateNewsOnly *bool `json:"htf_gate_news_only,omitempty"`
+	// Exec2mAfter30m (X5-10): after the first 30 minutes of RTH (09:00 CT)
+	// the ISB entry is read on the 2m chart (nil → OFF; the course trades the
+	// 1m throughout).
+	Exec2mAfter30m *bool `json:"exec_2m_after_30m,omitempty"`
 	// Spent-day gate (METHOD §7 table, D5.1 p1 @14:21–15:57): a run of at
 	// least SpentPts before the open = spent; the target cap then applies,
 	// and any setup whose stop is over the cap is skipped (R9).
@@ -2086,9 +2090,6 @@ type RiskControlConfig struct {
 	MentorEmaMaxCross30m        int     `json:"mentor_ema_max_cross_30m,omitempty"`
 	MentorLocationTriggerFilter *bool   `json:"mentor_loc_trigger_filter,omitempty"`
 	MentorLossDeparturePts      float64 `json:"mentor_loss_departure_pts,omitempty"`
-	// MentorExec2mAfter30m — X5-10 optional knob (nil → OFF): after the first
-	// 30 minutes of RTH (09:00 CT) the ISB entry is read on the 2m chart.
-	MentorExec2mAfter30m *bool `json:"mentor_exec_2m_after_30m,omitempty"`
 	// MentorTuning — the owner-tunable mentor method numbers (K3, OWNER RULING
 	// 2026-10-04 "do all as mentor"). EVERY field unset (nil/0) resolves to the
 	// ruled default in kernel/mentor DefaultConfig, so an absent block runs

@@ -267,14 +267,6 @@ func mentorEmaMaxCross30m(rc *store.RiskControlConfig) int {
 	return 2
 }
 
-// mentorExec2mAfter30m — X5-10 optional knob (nil → OFF): after the first 30
-// minutes of RTH (09:00 CT) the ISB entry is read on the 2m chart instead of
-// the 1m ("sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:17; X11
-// @17:06–17:32]). The course trades the 1m throughout, so it stays OFF.
-func mentorExec2mAfter30m(rc *store.RiskControlConfig) bool {
-	return rc != nil && rc.MentorExec2mAfter30m != nil && *rc.MentorExec2mAfter30m
-}
-
 // mentorLocationTriggerFilter — the 5m trigger filter at locations (L3: kept
 // ON in the base). nil → ON.
 func mentorLocationTriggerFilter(rc *store.RiskControlConfig) bool {

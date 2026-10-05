@@ -854,12 +854,8 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 	if v := mentorLossDeparturePts(nil); v != 0 {
 		t.Fatalf("loss departure fallback default = %.2f, want 0 (OFF)", v)
 	}
-	if mentorExec2mAfter30m(nil) {
-		t.Fatal("X5-10 2m execution default must be OFF")
-	}
 
 	f := false
-	tt := true
 	rc := &store.RiskControlConfig{
 		MentorLegBudgetEnabled:      &f,
 		MentorLegResetOn:            "touch",
@@ -867,7 +863,6 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 		MentorEmaMaxCross30m:        4,
 		MentorLocationTriggerFilter: &f,
 		MentorLossDeparturePts:      25,
-		MentorExec2mAfter30m:        &tt,
 	}
 	if mentorLegBudgetEnabled(rc) || mentorLocationTriggerFilter(rc) {
 		t.Fatal("explicit false must turn the ON-default knobs OFF")
@@ -883,12 +878,6 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 	}
 	if v := mentorLossDeparturePts(rc); v != 25 {
 		t.Fatalf("loss departure = %.2f, want 25", v)
-	}
-	if !mentorExec2mAfter30m(rc) {
-		t.Fatal("explicit true must turn X5-10 2m execution ON")
-	}
-	if mentorExec2mAfter30m(&store.RiskControlConfig{MentorExec2mAfter30m: &f}) {
-		t.Fatal("explicit false must keep X5-10 2m execution OFF")
 	}
 	if v := mentorLossDeparturePts(&store.RiskControlConfig{MentorLossDeparturePts: 0}); v != 0 {
 		t.Fatalf("an unset departure fallback must stay OFF, got %.2f", v)
@@ -910,17 +899,16 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 	// The evaluator config builder carries explicit strategy knobs, including
 	// B22's opt-in numeric fallback.
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true,
-		MentorLvlRevisitMinPts: 3, MentorEmaMaxCross30m: 4, MentorLossDeparturePts: 25,
-		MentorExec2mAfter30m: &tt})
+		MentorLvlRevisitMinPts: 3, MentorEmaMaxCross30m: 4, MentorLossDeparturePts: 25})
 	cfg := at.mentorEvaluatorConfig()
-	if !cfg.Enabled || cfg.LvlRevisitMinPts != 3 || cfg.EmaMaxCross30m != 4 || cfg.LossDeparturePts != 25 || !cfg.Exec2mAfter30m {
-		t.Fatalf("evaluator config: enabled=%v revisit=%.2f cross=%d loss_departure=%.2f exec2m=%v — want true/3/4/25/true",
-			cfg.Enabled, cfg.LvlRevisitMinPts, cfg.EmaMaxCross30m, cfg.LossDeparturePts, cfg.Exec2mAfter30m)
+	if !cfg.Enabled || cfg.LvlRevisitMinPts != 3 || cfg.EmaMaxCross30m != 4 || cfg.LossDeparturePts != 25 {
+		t.Fatalf("evaluator config: enabled=%v revisit=%.2f cross=%d loss_departure=%.2f — want true/3/4/25",
+			cfg.Enabled, cfg.LvlRevisitMinPts, cfg.EmaMaxCross30m, cfg.LossDeparturePts)
 	}
 	naked := (&AutoTrader{id: "t-naked"}).mentorEvaluatorConfig()
-	if !naked.Enabled || naked.LvlRevisitMinPts != 0 || naked.EmaMaxCross30m != 2 || naked.LossDeparturePts != 0 || naked.Exec2mAfter30m {
-		t.Fatalf("no strategy → evaluator defaults: enabled=%v revisit=%.2f cross=%d loss_departure=%.2f exec2m=%v — want true/0/2/0/false (cross default ON, item 16; exec2m OFF, X5-10)",
-			naked.Enabled, naked.LvlRevisitMinPts, naked.EmaMaxCross30m, naked.LossDeparturePts, naked.Exec2mAfter30m)
+	if !naked.Enabled || naked.LvlRevisitMinPts != 0 || naked.EmaMaxCross30m != 2 || naked.LossDeparturePts != 0 {
+		t.Fatalf("no strategy → evaluator defaults: enabled=%v revisit=%.2f cross=%d loss_departure=%.2f — want true/0/2/0 (cross default ON, item 16)",
+			naked.Enabled, naked.LvlRevisitMinPts, naked.EmaMaxCross30m, naked.LossDeparturePts)
 	}
 }
 

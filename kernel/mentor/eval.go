@@ -902,7 +902,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// byte-identical to the 1m-only build.
 	execPrev, execCur, execTFMin := prev, cur, 1
 	if e.Cfg.Exec2mAfter30m && rthMinuteOf(now) >= 9*60 {
-		if b2 := barsTF(bars, 2); len(b2) >= 2 {
+		// closedBucketsTF drops the still-forming last 2m bucket: on a 1m close
+		// that OPENS a 2m bucket, barsTF would flush a half-formed 2m candle and
+		// the ISB would read it. The read must be the previous two CLOSED 2m
+		// candles (the cb15/cb30 helper path).
+		if b2 := closedBucketsTF(bars, 2, now); len(b2) >= 2 {
 			execPrev, execCur = b2[len(b2)-2], b2[len(b2)-1]
 			execTFMin = 2
 		}

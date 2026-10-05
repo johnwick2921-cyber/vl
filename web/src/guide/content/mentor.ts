@@ -41,6 +41,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.htf_gate_news_only',
     live: true,
   },
+  '2m ISB execution after 09:00 CT': {
+    settingId: 'risk_control.mentor_tuning.exec_2m_after_30m',
+    live: true,
+  },
   'PHL min candles from old extreme': {
     settingId: 'Config.PHLMinCandlesFromExtreme',
     live: false,
@@ -751,6 +755,21 @@ export const mentor: GuideSection = {
           recommended:
             'OFF until the owner rules U-6; ON trades more (the replay\u2019s zero days were blocked mostly by isb_htf_blocked).',
           whenToTouch: 'Only on an owner ruling of U-6.',
+          perSession: 'No.',
+        },
+        {
+          label: '2m ISB execution after 09:00 CT',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'X5-10: OFF (default) = the ISB entry is read on the 1m chart all day, as the course trades. ON = after the first 30 minutes of RTH (09:00 CT) the ISB entry is read on the 2m chart instead ("sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:17; X11 @17:06–17:32]) — the 1m wicks sweep stops, so the 2m read is quieter. Only the ISB pair swaps; the higher-TF lines, the boxes and the ORB escape always stay on the 1m.',
+          trader:
+            'OFF — the course trades the 1m throughout; optional and knob-gated.',
+          consumer:
+            'kernel/mentor/eval.go Tick (Exec2mAfter30m → closedBucketsTF(bars, 2, now)) · trader/mentor_tuning.go mentorTuningResolve',
+          range: 'true / false',
+          systemDefault: 'false',
+          recommended:
+            'Leave OFF unless the owner wants the quieter 2m read after the opening 30 minutes.',
+          whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },
         {
