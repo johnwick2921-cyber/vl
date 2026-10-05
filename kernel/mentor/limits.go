@@ -494,6 +494,20 @@ func (l *Limits) takePend(armID string) *pendOrder {
 	return nil
 }
 
+// FillOutcome is RecordFill's result (FU-1): whether the receipt was consumed
+// (registered from the pend or the row, deduped, counted, or refused) or
+// deferred (the row fallback needs the evaluator's levels, which the first
+// Tick has not set yet — R1).
+type FillOutcome int
+
+const (
+	// FillConsumed — the receipt is done; do not re-queue it.
+	FillConsumed FillOutcome = iota
+	// FillDefer — the row fallback needs State.Levels, still empty; re-queue
+	// for the next drain (after the first Tick has set the levels).
+	FillDefer
+)
+
 // RecordFill registers a REAL broker fill for a pending mentor entry (FU-1):
 // the trader's fill callback delivers it through the queued drain in
 // mentorEvalOnce, under mentorEvalMu. It is the G1 leg budget + G2 loss box
@@ -506,29 +520,36 @@ func (l *Limits) takePend(armID string) *pendOrder {
 // pends — never drop a real fill), else counted, never fabricated. lo/hi seed
 // the B22 wave (the fill candle's low/high); levels feeds the row-fallback's
 // old-extreme resolution.
-func (l *Limits) RecordFill(receiptID, armID string, lo, hi float64, row *FillRow, levels []Level) {
+func (l *Limits) RecordFill(receiptID, armID string, lo, hi float64, row *FillRow, levels []Level) FillOutcome {
 	if receiptID == "" {
 		l.count("record_fill_no_receipt") // P2-5: empty receipt id, counted
-		return
+		return FillConsumed
 	}
 	if l.filled[receiptID] {
-		return // dedupe: one receipt registers once (partial-then-full / replay)
+		return FillConsumed // dedupe: one receipt registers once (partial-then-full / replay)
 	}
 	p := l.takePend(armID)
 	if p != nil {
 		l.fill(p, lo, hi, nil)
 		l.markFilled(receiptID)
-		return
+		return FillConsumed
 	}
 	if row != nil && row.Entry > 0 {
+		if len(levels) == 0 {
+			// R1: the first post-restart Tick has not set State.Levels yet —
+			// the row fallback's old-extreme resolution would early-return and
+			// the G1 leg would go unspent. Defer for the next drain.
+			return FillDefer
+		}
 		// P1-2: no pend — a restart dropped the in-memory pends. The armed row
 		// reached the broker: register from it, never drop a real fill.
 		l.fillRow(row, lo, hi, levels)
 		l.count("record_fill_from_row")
 		l.markFilled(receiptID)
-		return
+		return FillConsumed
 	}
 	l.refuse("record_fill_no_pend")
+	return FillConsumed
 }
 
 func (l *Limits) markFilled(receiptID string) {

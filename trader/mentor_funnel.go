@@ -68,6 +68,7 @@ func (at *AutoTrader) mentorFunnelTick(bars, intents int) {
 	now := time.Now()
 	dayKey := kernel.CMESessionDayKey(now)
 	kernelRefusals := mentorKernelRefusals(at)
+	kernelFills := mentorKernelFills(at)
 	traderRefusals := mentorTraderRefusals()
 
 	f := &at.mentorFunnel
@@ -79,7 +80,7 @@ func (at *AutoTrader) mentorFunnelTick(bars, intents int) {
 	f.intents += intents
 	// The fingerprint is the MEANINGFUL part — refusals + stages, never the bar
 	// count (bars change every tick; emitting on that would flood the log).
-	fp := mentorFunnelFingerprint(kernelRefusals, traderRefusals, f.authored, f.placed, f.filled)
+	fp := mentorFunnelFingerprint(kernelRefusals, kernelFills, traderRefusals, f.authored, f.placed, f.filled)
 	emit := f.lastFp == "" || now.Sub(f.lastEmit) >= mentorFunnelEmitInterval || fp != f.lastFp
 	if !emit {
 		f.mu.Unlock()
@@ -87,16 +88,16 @@ func (at *AutoTrader) mentorFunnelTick(bars, intents int) {
 	}
 	f.lastEmit = now
 	f.lastFp = fp
-	line := mentorFunnelLine(f.bars, f.intents, kernelRefusals, traderRefusals, f.authored, f.placed, f.filled)
+	line := mentorFunnelLine(f.bars, f.intents, kernelRefusals, kernelFills, traderRefusals, f.authored, f.placed, f.filled)
 	f.mu.Unlock()
 
 	at.logInfof("%s", line)
 }
 
 // mentorFunnelLine renders the funnel line (pure — the pins assert its content).
-func mentorFunnelLine(bars, intents int, kref, tref map[string]int, authored, placed, filled int) string {
-	return fmt.Sprintf("🧑‍🏫 mentor funnel [15m]: bars %d · intents %d · kernel refusals %s · trader refusals %s · authored %d · placed %d · filled %d",
-		bars, intents, mentorRefusalString(kref), mentorRefusalString(tref), authored, placed, filled)
+func mentorFunnelLine(bars, intents int, kref, kfills, tref map[string]int, authored, placed, filled int) string {
+	return fmt.Sprintf("🧑‍🏫 mentor funnel [15m]: bars %d · intents %d · kernel refusals %s · kernel fills %s · trader refusals %s · authored %d · placed %d · filled %d",
+		bars, intents, mentorRefusalString(kref), mentorRefusalString(kfills), mentorRefusalString(tref), authored, placed, filled)
 }
 
 // mentorKernelRefusals merges the evaluator's two B-rules refusal ledgers into
@@ -112,8 +113,19 @@ func mentorKernelRefusals(at *AutoTrader) map[string]int {
 	for k, v := range at.mentorEval.State.Limits.Refusals {
 		out[k] += v
 	}
+	return out
+}
+
+// mentorKernelFills returns the kernel's FU-1 fill-path COUNTERS (registered
+// from the row / empty receipt) — a separate funnel segment so a counted fill
+// never reads as a refusal (R2).
+func mentorKernelFills(at *AutoTrader) map[string]int {
+	out := map[string]int{}
+	if at == nil || at.mentorEval == nil {
+		return out
+	}
 	for k, v := range at.mentorEval.State.Limits.Counters {
-		out[k] += v
+		out[k] = v
 	}
 	return out
 }
@@ -150,8 +162,8 @@ func mentorTraderRefusalKey(key string) bool {
 }
 
 // mentorFunnelFingerprint is the stable string the on-change emit compares.
-func mentorFunnelFingerprint(kref, tref map[string]int, authored, placed, filled int) string {
-	return fmt.Sprintf("%s|%s|a=%d|p=%d|f=%d", mentorRefusalString(kref), mentorRefusalString(tref), authored, placed, filled)
+func mentorFunnelFingerprint(kref, kfills, tref map[string]int, authored, placed, filled int) string {
+	return fmt.Sprintf("%s|%s|%s|a=%d|p=%d|f=%d", mentorRefusalString(kref), mentorRefusalString(kfills), mentorRefusalString(tref), authored, placed, filled)
 }
 
 // mentorRefusalString renders a refusal map deterministically: {} or

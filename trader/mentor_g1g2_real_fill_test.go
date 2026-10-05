@@ -226,3 +226,28 @@ func TestMentorFillAfterRestartRegistersFromRow(t *testing.T) {
 	}
 }
 
+// TestMentorFillAfterRestartDefersUntilLevels is the FU-1 R1 drain pin: a
+// row-fallback receipt that arrives BEFORE the first Tick (State.Levels empty)
+// is parked and resolved on the next drain, after the first Tick has set the
+// levels — exactly one leg, not zero. MUTANT: drop the defer → the receipt is
+// consumed with no leg → RED.
+func TestMentorFillAfterRestartDefersUntilLevels(t *testing.T) {
+	at, _, ledger := realFillAT(t)
+	at.mentorEval.State.Levels = nil // before the first Tick
+	fillMentorRow(t, at, ledger, "lvl-14", "sig-fill-14")
+	at.mentorDrainFills()
+	if at.mentorEval.State.Limits.Long != nil {
+		t.Fatalf("before the first Tick sets levels, the row fallback must defer, not under-count")
+	}
+	// The first Tick sets the levels; the next drain resolves the deferred receipt.
+	at.mentorEval.State.Levels = []mentor.Level{{Key: "old_extreme:29650", Kind: mentor.KindOldExtreme, Price: 29650}}
+	at.mentorDrainFills()
+	l := at.mentorEval.State.Limits.Long
+	if l == nil || l.Entries != 1 {
+		t.Fatalf("after the first Tick the deferred row fill must register one leg, got %+v", l)
+	}
+	if n := at.mentorEval.State.Limits.Counters["record_fill_from_row"]; n != 1 {
+		t.Fatalf("the row fallback must be counted once, got %v", at.mentorEval.State.Limits.Counters)
+	}
+}
+

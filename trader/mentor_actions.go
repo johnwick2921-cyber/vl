@@ -148,10 +148,29 @@ func (at *AutoTrader) mentorDrainFills() {
 	if at == nil || at.mentorFillCh == nil || at.mentorEval == nil {
 		return
 	}
+	apply := func(f mentorFillReceipt) mentor.FillOutcome {
+		return at.mentorEval.State.Limits.RecordFill(f.receiptID, f.armID, f.lo, f.hi, f.row, at.mentorEval.State.Levels)
+	}
+	// R1: deferred receipts (row fallback waiting for the first Tick's levels)
+	// are retried first; a still-empty level set re-defers them.
+	if len(at.mentorDeferredFills) > 0 {
+		kept := at.mentorDeferredFills[:0]
+		for _, f := range at.mentorDeferredFills {
+			if apply(f) == mentor.FillDefer {
+				kept = append(kept, f)
+			}
+		}
+		at.mentorDeferredFills = kept
+	}
 	for {
 		select {
 		case f := <-at.mentorFillCh:
-			at.mentorEval.State.Limits.RecordFill(f.receiptID, f.armID, f.lo, f.hi, f.row, at.mentorEval.State.Levels)
+			if apply(f) == mentor.FillDefer {
+				// R1: the row fallback needs State.Levels, still empty — park
+				// the receipt for the next drain (after the first Tick sets
+				// the levels) and keep draining the pend-backed receipts.
+				at.mentorDeferredFills = append(at.mentorDeferredFills, f)
+			}
 		default:
 			return
 		}

@@ -138,4 +138,35 @@ func TestLimitsRecordFillFromRow(t *testing.T) {
 	if l.Refusals["record_fill_no_pend"] != 0 {
 		t.Fatalf("a row fallback must not count a no-pend refusal, got %v", l.Refusals)
 	}
+	if len(l.open) != 1 {
+		t.Fatalf("a row fallback must open one loss trade, got %d", len(l.open))
+	}
+}
+
+// TestLimitsRecordFillFromRowDefersWithoutLevels is the FU-1 R1 pin: a
+// row-fallback receipt with EMPTY levels (before the first post-restart Tick)
+// defers instead of early-returning the leg; once the levels arrive, the same
+// receipt resolves to exactly one leg + one loss trade. MUTANT: drop the
+// FillDefer branch → the first call consumes the receipt with no leg → RED.
+func TestLimitsRecordFillFromRowDefersWithoutLevels(t *testing.T) {
+	var l Limits
+	row := &FillRow{Side: SideLong, Entry: 90, Stop: 88, Target: 99, ISB: false}
+	if out := l.RecordFill("sig-d", "lvl-d", 90, 93, row, nil); out != FillDefer {
+		t.Fatalf("a row fallback with no levels must defer, got %v", out)
+	}
+	if l.Long != nil {
+		t.Fatalf("a deferred fill must not register a leg")
+	}
+	if out := l.RecordFill("sig-d", "lvl-d", 90, 93, row, limitsLvls); out != FillConsumed {
+		t.Fatalf("a row fallback with levels must consume, got %v", out)
+	}
+	if l.Long == nil || l.Long.Entries != 1 {
+		t.Fatalf("the resolved row fallback must register one leg, got %+v", l.Long)
+	}
+	if len(l.open) != 1 {
+		t.Fatalf("the row fallback must open one loss trade, got %d", len(l.open))
+	}
+	if l.Counters["record_fill_from_row"] != 1 {
+		t.Fatalf("the row fallback must be counted, got %v", l.Counters)
+	}
 }

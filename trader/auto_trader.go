@@ -400,6 +400,10 @@ type AutoTrader struct {
 	// cross-goroutine evaluator mutation. Bounded; a full channel drops the
 	// receipt (counted).
 	mentorFillCh chan mentorFillReceipt
+	// mentorDeferredFills holds FU-1 receipts whose row fallback needs
+	// State.Levels (R1: the first post-restart Tick has not set them yet).
+	// Only the drain, under mentorEvalMu, touches it.
+	mentorDeferredFills []mentorFillReceipt
 	// mentorFunnel is the N12 visibility counter (read-only): one INFO line per
 	// 15 minutes + on change, session-day scoped (17:00 CT). Never gates a trade.
 	mentorFunnel mentorFunnel
