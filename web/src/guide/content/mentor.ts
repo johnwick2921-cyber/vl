@@ -41,6 +41,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.htf_gate_news_only',
     live: true,
   },
+  '2m ISB execution after 09:00 CT': {
+    settingId: 'risk_control.mentor_tuning.exec_2m_after_30m',
+    live: true,
+  },
   'PHL min candles from old extreme': {
     settingId: 'Config.PHLMinCandlesFromExtreme',
     live: false,
@@ -381,6 +385,11 @@ export const mentor: GuideSection = {
           'News 07:30 CT (print)',
           'A mentor entry is refused through the print window (07:20–07:35 CT). At print −10m on a red-folder print day, live INTRADAY mentor arms are cancelled by ArmID and intraday mentor positions are flattened before the 07:30 print — the SWING4H is exempt (held by the 4h). The 07:30 print candle never moves the 1h/4h trigger lines: the evaluator drops the print-window bars from the higher-timeframe feed, so a news spike is not a real break.',
           'F11 · R12 · D4.4 p1 @18:13, @22:15, @20:44–21:46',
+        ],
+        [
+          '2m execution after 09:00 CT (optional)',
+          'OFF by default — the course trades the 1m throughout. Turn it on and, after the first 30 minutes of RTH (09:00 CT), the ISB entry is read on the 2m chart instead of the 1m ("sau 30 phút em sẽ chuyển qua khung 2 phút" — the 1m wicks sweep stops, so the 2m read is quieter). Before 09:00 CT the 1m read is unchanged. The higher-timeframe lines, the boxes and the ORB escape always stay on the 1m.',
+          'mentor_exec_2m_after_30m = false (default OFF) · X5 @00:41–01:17 · X11 @17:06–17:32',
         ],
       ],
     },
@@ -746,6 +755,21 @@ export const mentor: GuideSection = {
           recommended:
             'OFF until the owner rules U-6; ON trades more (the replay\u2019s zero days were blocked mostly by isb_htf_blocked).',
           whenToTouch: 'Only on an owner ruling of U-6.',
+          perSession: 'No.',
+        },
+        {
+          label: '2m ISB execution after 09:00 CT',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'X5-10: OFF (default) = the ISB entry is read on the 1m chart all day, as the course trades. ON = after the first 30 minutes of RTH (09:00 CT) the ISB entry is read on the 2m chart instead ("sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:17; X11 @17:06–17:32]) — the 1m wicks sweep stops, so the 2m read is quieter. Only the ISB pair swaps; the higher-TF lines, the boxes and the ORB escape always stay on the 1m.',
+          trader:
+            'OFF — the course trades the 1m throughout; optional and knob-gated.',
+          consumer:
+            'kernel/mentor/eval.go Tick (Exec2mAfter30m → closedBucketsTF(bars, 2, now)) · trader/mentor_tuning.go mentorTuningResolve',
+          range: 'true / false',
+          systemDefault: 'false',
+          recommended:
+            'Leave OFF unless the owner wants the quieter 2m read after the opening 30 minutes.',
+          whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },
         {

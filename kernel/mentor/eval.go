@@ -892,6 +892,26 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// colour, not the trigger line (RULES-FIX-v3).
 	prev, cur := bars[len(bars)-2], bars[len(bars)-1]
 
+	// X5-10 (optional, knob default OFF): after the first 30 minutes of RTH
+	// (09:00 CT) the ISB entry is read on the 2m chart instead of the 1m —
+	// "sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:17; X11
+	// @17:06–17:32]. The 1m wicks sweep stops, so the 2m read is quieter.
+	// The box/ORB escapes and every higher-TF read stay 1m (they are defined
+	// on the 1m body close); only the ISB pair swaps. While the knob is OFF,
+	// or before 09:00 CT, execPrev/execCur == prev/cur and the read is
+	// byte-identical to the 1m-only build.
+	execPrev, execCur, execTFMin := prev, cur, 1
+	if e.Cfg.Exec2mAfter30m && rthMinuteOf(now) >= 9*60 {
+		// closedBucketsTF drops the still-forming last 2m bucket: on a 1m close
+		// that OPENS a 2m bucket, barsTF would flush a half-formed 2m candle and
+		// the ISB would read it. The read must be the previous two CLOSED 2m
+		// candles (the cb15/cb30 helper path).
+		if b2 := closedBucketsTF(bars, 2, now); len(b2) >= 2 {
+			execPrev, execCur = b2[len(b2)-2], b2[len(b2)-1]
+			execTFMin = 2
+		}
+	}
+
 	// arms placed on THIS tick are skipped by the stacking loop below.
 	justPlaced := map[string]bool{}
 
@@ -957,7 +977,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		out = append(out, e.conflictArmCancels()...)
 	}
 
-	if !conflict && IsISB(prev, cur) {
+	if !conflict && IsISB(execPrev, execCur) {
 		// D4.1-23: while the 5m ISB rest box stands, the box — not the 5m
 		// trigger line — governs the 1m ISB. The trigger PRICE-side filter is
 		// skipped entirely ("khung 5 phút kêu làm gì, làm cái đó" [D4.1 p2
@@ -995,7 +1015,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// allowed ISB still falls through to the emit below.
 					boxBlocked := false
 					if e.State.ISBBox != nil && !crossingISBs(cb5, 3) {
-						if allowed, r := ISBBoxAllows(*e.State.ISBBox, prev, cur); !allowed {
+						if allowed, r := ISBBoxAllows(*e.State.ISBBox, execPrev, execCur); !allowed {
 							boxBlocked, _ = true, r
 						}
 					}
@@ -1006,7 +1026,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// are crossing.
 					box15Blocked := false
 					if e.State.ISBBox15m != nil && !crossingISBs(cb15, 3) {
-						if allowed, r := ISBBoxAllows(*e.State.ISBBox15m, prev, cur); !allowed {
+						if allowed, r := ISBBoxAllows(*e.State.ISBBox15m, execPrev, execCur); !allowed {
 							box15Blocked, _ = true, r
 						}
 					}
@@ -1015,11 +1035,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// 30m ISBs are crossing.
 					box30Blocked := false
 					if e.State.ISBBox30m != nil && !crossingISBs(cb30, 3) {
-						if allowed, r := ISBBoxAllows(*e.State.ISBBox30m, prev, cur); !allowed {
+						if allowed, r := ISBBoxAllows(*e.State.ISBBox30m, execPrev, execCur); !allowed {
 							box30Blocked, _ = true, r
 						}
 					}
-					side, chosen, ok, _ := ISBStopLimitOrder(prev, cur, e.Cfg)
+					side, chosen, ok, _ := ISBStopLimitOrder(execPrev, execCur, e.Cfg)
 					if !ok {
 						e.refuse("isb_stop_twenties")
 					} else if isbArmActive(e.State.ISBArms, side) {
@@ -1093,16 +1113,18 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								// SIZE, "Khi trade isb in-range bắt buộc giảm size" [D4.1 p1
 								// @ 08:05/09:40]) — the range is the same mid-range test as
 								// the PHL/PLH ban.
-								chosen.Flag = e.isbFlagsFor(cur, levels, boxes)
-								// N12: a single ISB fills by the close of the NEXT 1m candle
-								// or it is cancelled ("cancel if the next candle does not
-								// fill" [D1.4 p1 @ 18:32–18:45]); stacking extends it below.
-								chosen.ExpiryMs = cur.CloseTime + 60_000
+								chosen.Flag = e.isbFlagsFor(execCur, levels, boxes)
+								// N12: a single ISB fills by the close of the NEXT
+								// candle on the execution timeframe (1m default; 2m
+								// under X5-10) or it is cancelled ("cancel if the
+								// next candle does not fill" [D1.4 p1 @
+								// 18:32–18:45]); stacking extends it below.
+								chosen.ExpiryMs = execCur.CloseTime + int64(execTFMin)*60_000
 								e.State.ArmSeq++
 								id := fmt.Sprintf("isb-%d", e.State.ArmSeq)
 								// the ISB candle is the 1st inside candle (Inside=1), so the
 								// stacking loop must skip this arm on the placement bar.
-								e.State.ISBArms[id] = ISBArm{FirstBar: cur, Inside: 0, Side: side}
+								e.State.ISBArms[id] = ISBArm{FirstBar: execCur, Inside: 0, Side: side}
 								justPlaced[id] = true
 								chosen.ArmID = id
 								// D4.2-06 part 1: mode C also fires on timeframe
@@ -1123,20 +1145,20 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// R7 (RULES-FIX-v3, behind its own knob, default ON since R-C): the reverse
 	// ISB at EMA 9 — an ISB that points AGAINST the trend with price at the EMA 9
 	// trades WITH the trend [D5.4].
-	if e.Cfg.ISBReverseEMA9Enabled && IsISB(prev, cur) {
+	if e.Cfg.ISBReverseEMA9Enabled && IsISB(execPrev, execCur) {
 		if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
 			e.refuse("isbrev_" + r)
-		} else if in, ok, _ := ReverseISBAtEMA9(prev, cur, emaValue(bars, e.Cfg.EMAPeriod9), e.State.Trigger.Dir, e.Cfg); ok {
-			// N12: an R7 reverse ISB fills by the close of the NEXT 1m candle
-			// (the R1 family rule).
-			in.ExpiryMs = cur.CloseTime + 60_000
+		} else if in, ok, _ := ReverseISBAtEMA9(execPrev, execCur, emaValue(bars, e.Cfg.EMAPeriod9), e.State.Trigger.Dir, e.Cfg); ok {
+			// N12: an R7 reverse ISB fills by the close of the NEXT candle on
+			// the execution timeframe (the R1 family rule).
+			in.ExpiryMs = execCur.CloseTime + int64(execTFMin)*60_000
 			// R85 (CTO, release #4): now that the reverse ISB can place, it
 			// runs through the SAME gates as the normal ISB — the twenties
 			// stop skip [D4.1 p1 @ 05:41], the 4h HTF verdict and side, and
 			// the near-box rule (row 24) — before any target is set.
 			htfOK, htfSide, _ := HTFVerdict(e.State.HTF)
 			target := 0.0
-			if _, stopOK, _ := ISBStopVerdict(cur, e.Cfg); !stopOK {
+			if _, stopOK, _ := ISBStopVerdict(execCur, e.Cfg); !stopOK {
 				e.refuse("isbrev_stop_twenties")
 			} else if !htfOK {
 				e.refuse("isbrev_htf_blocked")
@@ -1167,7 +1189,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// stop orders on one candle) — drop any same-pair normal ISB
 					// already emitted this tick AND unregister its arm.
 					var suppressed []string
-					out, suppressed = suppressSamePairCounterISB(out, in, cur.CloseTime)
+					out, suppressed = suppressSamePairCounterISB(out, in, execCur.CloseTime)
 					for _, id := range suppressed {
 						delete(e.State.ISBArms, id)
 						delete(justPlaced, id)

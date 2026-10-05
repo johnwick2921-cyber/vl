@@ -1956,6 +1956,10 @@ type MentorTuning struct {
 	// HTFGateNewsOnly (D4.4-11): the 4h/1h direction gate only inside the
 	// 07:20–07:35 CT news window (nil → OFF = the all-day gate; U-6 open).
 	HTFGateNewsOnly *bool `json:"htf_gate_news_only,omitempty"`
+	// Exec2mAfter30m (X5-10): after the first 30 minutes of RTH (09:00 CT)
+	// the ISB entry is read on the 2m chart (nil → OFF; the course trades the
+	// 1m throughout).
+	Exec2mAfter30m *bool `json:"exec_2m_after_30m,omitempty"`
 	// Spent-day gate (METHOD §7 table, D5.1 p1 @14:21–15:57): a run of at
 	// least SpentPts before the open = spent; the target cap then applies,
 	// and any setup whose stop is over the cap is skipped (R9).
