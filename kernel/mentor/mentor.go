@@ -72,6 +72,20 @@ const (
 	// KindTriggerRetest is the 5m trigger-line retest location (§5.1
 	// [D3.4 p2 @ 20:51]: the retest is a level confirm).
 	KindTriggerRetest LevelKind = "trigger_retest"
+	// KindTrendline is an intraday trendline location (X9 slide 27, D2.3,
+	// DAY-3 row 27): two same-role swings joined, valid as a location only
+	// after the 3rd touch; discarded by a 5m close through. Location only,
+	// never a target.
+	KindTrendline LevelKind = "trendline"
+	// KindHTFTrigger is the 4h/1h trigger line as a TARGET-LADDER level only
+	// (D4.4-15): it joins the level set so nextLevelBeyond can pick it, but it
+	// is never touched, never located and never a PHL/PLH place.
+	KindHTFTrigger LevelKind = "htf_trigger"
+	// KindWickMicroscalp is the D4.3 wick-microscalp target (D4.3-02/-07): the
+	// rejecting 5m candles' far wick, target-only — it joins the level set so
+	// nextLevelBeyond can pick it, but it is never touched and never a
+	// PHL/PLH location.
+	KindWickMicroscalp LevelKind = "wick_microscalp"
 )
 
 // Level is one mentor level line. Lo/Hi are equal (a line); AtTime is the bar
@@ -212,8 +226,12 @@ type Config struct {
 	LevelMaxVisits int
 	// EmaMaxCross30m — E4 knob (CTO 12:27:25Z): refuse the EMA34 setup when the
 	// close crossed the line this many times over the last 30 closed 1m candles
-	// ("xien len xien xuong", D4.2 p1 @ 22:27 — he never gives a number).
-	// Default 0 = OFF (base). Sensitivity rows: v5_ema_cross2 / v5_ema_cross4.
+	// ("xien len xien xuong", D4.2 p1 @ 22:27). Default ON (item 16, CTO
+	// 23:49Z): 2 — the most conservative of the replay sensitivity rows
+	// v5_ema_cross2 / v5_ema_cross4. MENTOR QUESTION OPEN: the course states no
+	// count and no window — at the exact second he says "xiên lên xiên xuống"
+	// the frame D4.2 p1 @22:28 shows the indicator already OFF the chart, so
+	// 2 is our reading, not his number (reread OPEN-NUMBERS Q4). 0 = OFF.
 	EmaMaxCross30m int
 
 	// ISB (PLAN v1 §3).
@@ -225,10 +243,17 @@ type Config struct {
 	// (RULES-FIX-v3, its own knob per the dispatch). Default ON — OWNER RULING
 	// 2026-10-04 R-C "do all as mentor": it is the mentor's own reading [D5.4].
 	ISBReverseEMA9Enabled bool
+	// WickMicroscalpEnabled turns on the D4.3 wick microscalp (advanced —
+	// "đừng có tập khúc này đầu tiên" [D4.3 @04:55]): 2+ consecutive CLOSED 5m
+	// candles rejecting with wicks the SAME way (lower wicks in an uptrend,
+	// upper wicks in a downtrend) put a bounded target at the rejecting
+	// candles' far wick. Default OFF (advanced, behind a knob per D4.3-02).
+	WickMicroscalpEnabled bool
 
 	// PHL/PLH (PLAN v1 §3).
 	PHLMinCandlesFromExtreme int     // entry at least N candles from the old extreme; default 3 [D4.1 p1 @ 09:40 written]
 	PHLTargetShyPts          float64 // target this far short of the old extreme; default 5 (Q2 knob; worked example 5–15 [D2.2 p1 @ 06:50])
+	PHLEntryBufferPts        float64 // entry buffer beyond the candle extreme (outward); default 1.0 [D2.2 p1 @ 06:50 drawn: high 29,396.25 → entry 29,397.25]
 
 	// Filters (PLAN v1 §4).
 	StopCeilingPts float64 // hard stop ceiling; default 25 [D3.3 p1 @ 02:04]
@@ -245,6 +270,14 @@ type Config struct {
 	// routed Config integration lands.
 	DayGateSpentPts     float64 // run >= this before the open = spent; default 300 [D5.1 p1 @ 15:57]
 	DayGateTargetCapPts float64 // spent-day target cap; default 15 ("15 điểm bán, 10 điểm bán")
+
+	// PrintWindows (item 18 part 1) lists the day's red-folder 07:30 print
+	// windows (FromMs inclusive, ToMs exclusive). The evaluator skips HTF
+	// breaks from 1m bars whose open falls inside any listed window — the
+	// 07:30 print candle never moves the 1h/4h trigger lines [D4.4 p1 @18:13,
+	// @22:15]. The trader plumbs it from the calendar before each Tick; empty
+	// = no print today, and the HTF feed is byte-identical.
+	PrintWindows []PrintWindow
 
 	// §8 SWING4H knobs (DS-106): the method defaults. The 5m-zone gate
 	// lives in SwingCfg.Respects5mZone (default false, [C]) and is wired
@@ -295,8 +328,11 @@ func DefaultConfig() Config {
 
 		ISBReverseEMA9Enabled: true,
 
+		WickMicroscalpEnabled: false, // D4.3 advanced wick read — OFF by default
+
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
+		PHLEntryBufferPts:        1.0,
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
@@ -308,6 +344,7 @@ func DefaultConfig() Config {
 		PingPongCandleMaxPts:   20, // B21: "nến tầm mười mấy điểm" (D4.2 p2 @05:17–06:37)
 		PingPongCandleLookback: 30, // B21 [C: ours]: keeps the on-camera rejection @06:21
 		LevelMaxVisits:         3,  // B23: first 3 visits/day trade, the 4th refuses
+		EmaMaxCross30m:         2,  // E4 (item 16): default ON, most conservative — mentor question open (no count in the course)
 		RangeGapPts:            0,
 
 		DayGateSpentPts:     300,

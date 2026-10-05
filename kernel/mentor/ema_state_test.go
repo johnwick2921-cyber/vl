@@ -2,8 +2,6 @@ package mentor
 
 import (
 	"testing"
-
-	"vl/market"
 )
 
 // TestEMAStateKeysStayStable — the EMA 34/9 lines are ONE line each even
@@ -33,28 +31,5 @@ func TestEMAStateKeysStayStable(t *testing.T) {
 	}
 	if emaTouches > 2 || emaInvalid > 2 {
 		t.Fatalf("EMA state fragmented: %d touch keys, %d invalid keys (want <= 2 each)", emaTouches, emaInvalid)
-	}
-}
-
-// TestEMATouchResetsWhenLineDrifts — a touch against the EMA at one price is
-// not a touch of the same line after it moved away: freshTouch resets the
-// classification when the line drifts more than a tick from where it was
-// touched.
-func TestEMATouchResetsWhenLineDrifts(t *testing.T) {
-	tr := Touch{LevelKey: string(KindEMA34), Outcome: TouchWrongWay, RefBar: market.Kline{High: 100}, PriceAtTouch: 100}
-	// same price → keep the classification
-	kept := freshTouch(tr, Level{Key: string(KindEMA34), Kind: KindEMA34, Price: 100})
-	if kept.Outcome != TouchWrongWay {
-		t.Fatalf("same-price tick reset the touch: %+v", kept)
-	}
-	// drifted 6 pts → reset to an untouched state keyed to the level
-	got := freshTouch(tr, Level{Key: string(KindEMA34), Kind: KindEMA34, Price: 106})
-	if got.Outcome != TouchNone || got.LevelKey != string(KindEMA34) {
-		t.Fatalf("drifted line kept the stale classification: %+v", got)
-	}
-	// static levels (key levels) never drift: price equality always keeps
-	static := freshTouch(tr, Level{Key: "k1", Kind: KindKeyLevel, Price: 100})
-	if static.Outcome != TouchWrongWay {
-		t.Fatalf("static level touch was reset: %+v", static)
 	}
 }

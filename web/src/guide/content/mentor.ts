@@ -155,7 +155,7 @@ export const mentor: GuideSection = {
   num: 17,
   title: 'Mentor Mode',
   tagline:
-    "The mentor's method: three setups, four locations, hard filters, small and patient.",
+    "The mentor's method: three setups, five locations, hard filters, small and patient.",
   asBuiltRev: GUIDE_BUILT_REV,
   blocks: [
     {
@@ -205,7 +205,7 @@ export const mentor: GuideSection = {
     },
     {
       kind: 'h',
-      text: 'The four locations',
+      text: 'The five locations',
     },
     {
       kind: 'table',
@@ -230,8 +230,13 @@ export const mentor: GuideSection = {
         ],
         [
           'Box edge',
-          'FTGH/FTGL boxes, 1m regular candles, paired by role with no tolerance',
+          'FTGH/FTGL boxes, 1m regular candles, paired by role with no tolerance — the extreme (lowest low / highest high) pairs with the NEXT confirmed swing AFTER it that fails to exceed it (a higher low / lower high); the trade is the 3rd touch',
           'A box edge is used again and again; an escape (a 1m BODY closes outside) does NOT kill the box — it stays and every later return trades [B4]; boxes die at day end only',
+        ],
+        [
+          'Trendline',
+          'Two same-role swings joined — a low and a HIGHER low (support) or a high and a LOWER high (resistance); never horizontal',
+          'Exists at 2 points; becomes a location only after the 3rd touch [DAY-3 p2 @03:45-04:07]; a break confirmed by a 5m close discards it (a break is NOT an entry). Box beats trendline',
         ],
       ],
     },
@@ -266,8 +271,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Smaller size when the ISB is in a range',
-          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). Written rule 3 [D4.1 p1 @09:40]. A spent day (2) still wins; the cut beats the confluence size.',
-          cite: 'trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlags',
+          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). "In range" means: between an FTGL below and an FTGH above; inside the standing 5m ISB rest box; between two key levels closer than the ping-pong minimum (50 pts); and — once built — a 15m ISB range. Written rule 3 [D4.1 p1 @09:40]. A spent day (2) still wins; the cut beats the confluence size.',
+          cite: 'trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlagsFor',
         },
         {
           title: 'Skip a stop in the twenties',
@@ -282,7 +287,7 @@ export const mentor: GuideSection = {
       items: [
         {
           title: 'Per-visit level references',
-          body: 'A level reference lasts until a closed candle departs the level; every NEW visit (a closed candle not touching it since the last reference) gets its own reference candle and stop. One level no longer blocks itself for the whole day. A wrong-way close marks a level ISB-only (only ISBs may trade there): a moving line (EMA / trigger retest) clears that mark when the line drifts or the visit departs; a key level clears it at the next session day.',
+          body: 'A level reference lasts until a closed candle departs the level; every NEW visit (a closed candle not touching it since the last reference) gets its own reference candle and stop. One level no longer blocks itself for the whole day. A wrong-way close marks a level ISB-only (only ISBs may trade there): a moving line (EMA / trigger retest) clears that mark only when the visit departs (the touching candle is gone) — never on drift alone, because the EMA re-prices every tick; a key level clears it at the next session day.',
           cite: 'L1 — lvl_revisit_min_pts, default 0 · D5.2 p2 @20:48 (item 22)',
         },
         {
@@ -292,8 +297,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Every box return trades',
-          body: 'Each new visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). EVERY return trades, the first one included — there is no touch count to wait for. An escape does not delete the box; boxes die at end of day only.',
-          cite: 'R1 · D3.2 p2 @06:25',
+          body: 'The box is drawn from two touches — the extreme and the next confirmed swing after it that failed to exceed it ("lần thứ 3 mới vô lệnh": the 3rd touch is the trade). Each return visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). EVERY return trades, the first one included. An escape does not delete the box; boxes die at end of day only. After a body escape the role flips (Uno Reverse): a broken FTGH becomes support and a broken FTGL becomes resistance, and the next returns come from the new side with the same reject rule and gates.',
+          cite: 'R1 · D3.2 p2 @06:25 · D14 slide 17 · X2 @02:36–03:25',
         },
         {
           title: 'Intraday confluence (exit C, size 10)',
@@ -352,9 +357,9 @@ export const mentor: GuideSection = {
           'orb_gate_enabled = true (default ON) · X5 @01:52, 02:36, 03:29–03:47, 05:42',
         ],
         [
-          'Not live yet — coming',
-          'News 07:30 CT — a mentor entry is refused through the print (07:20–07:35), but resting arms are not yet cancelled and an open position is not yet flattened before the print (R12). The EMA 34 cut-through gate is not wired (D4.2-09). The persistent 15m/5m conflict and the 15m ISB rest box land with item 15 (live: no — coming).',
-          '—',
+          'News 07:30 CT (print)',
+          'A mentor entry is refused through the print window (07:20–07:35 CT). At print −10m on a red-folder print day, live INTRADAY mentor arms are cancelled by ArmID and intraday mentor positions are flattened before the 07:30 print — the SWING4H is exempt (held by the 4h). The 07:30 print candle never moves the 1h/4h trigger lines: the evaluator drops the print-window bars from the higher-timeframe feed, so a news spike is not a real break.',
+          'F11 · R12 · D4.4 p1 @18:13, @22:15, @20:44–21:46',
         ],
       ],
     },
@@ -731,7 +736,7 @@ export const mentor: GuideSection = {
         {
           label: 'Room multiple',
           where: 'Strategy → Mentor mode → risk',
-          what: 'The room to target must be at least this × the risk.',
+          what: 'The room to target must be at least this × the risk. Applies to PHL/PLH, the ISB, the reverse ISB, and the swing reject.',
           trader: '2×.',
           consumer: 'kernel/mentor/mentor.go RoomMultiple',
           range: '×',
@@ -1049,12 +1054,12 @@ export const mentor: GuideSection = {
           label: 'EMA 34 cross cap (30m)',
           where: 'Strategy → Mentor mode → EMA34',
           what: 'Cap crossings around the EMA line in a 30m window (“xien len xien xuong”). The mentor gave no number, so the question is open (Q21).',
-          trader: 'OFF — no number stated yet.',
+          trader: 'ON — 2 crosses in 30m refuse the EMA34 setup (the most conservative reading).',
           consumer: 'kernel/mentor ema_max_cross_30m',
           range: 'int / off',
-          systemDefault: 'off',
+          systemDefault: '2',
           recommended:
-            'off — E4 ruling 2026-10-03, default OFF; sensitivity rows v5_ema_cross2/4 exist in the replay.',
+            '2 — item 16 (2026-10-04): gate the line that trades, default ON; the course states no count (frame D4.2 p1 @22:28 shows the indicator OFF), so 2 = the most conservative of v5_ema_cross2/4 and stays flagged mentor-question-open.',
           whenToTouch: 'Only when the mentor answers Q21.',
           perSession: 'No.',
         },

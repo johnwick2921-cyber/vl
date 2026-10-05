@@ -96,10 +96,10 @@ func TestPHLPLHGatedSpentDayCapsTarget(t *testing.T) {
 	if !ok {
 		t.Fatal("spent+agree (1h silent = follow the 4h) must still trade")
 	}
-	if in.Target != 29_410.75 {
-		t.Fatalf("target = %.2f, want the 15-pt cap 29410.75 (entry 29395.75 + 15)", in.Target)
+	if in.Target != 29_411.75 {
+		t.Fatalf("target = %.2f, want the 15-pt cap 29411.75 (entry 29396.75 + 15)", in.Target)
 	}
-	if in.Stop != 29_387.5 || in.Price != 29_395.75 {
+	if in.Stop != 29_387.5 || in.Price != 29_396.75 {
 		t.Fatalf("the cap must only touch the target: %+v", in)
 	}
 }

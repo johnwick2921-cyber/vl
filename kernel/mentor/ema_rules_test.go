@@ -1,7 +1,9 @@
 package mentor
 
 import (
+	"math"
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -21,15 +23,15 @@ func TestEMARoomRule(t *testing.T) {
 		RefBar:         market.Kline{High: 101, Low: 100},
 	}
 
-	// Old high 107.5: target 102.5 (shy 5) → reward 1.5 < 2x risk 1 → refuse.
+	// Old high 107.5: target 102.5 (shy 5) → reward 0.5 < 2x risk 2 → refuse.
 	if in, ok, reason := PHLPLHR2(tr, Level{Price: 107.5}, 0, 10, 0, cfg); ok {
 		t.Fatalf("EMA room rule did not refuse (T < R): %+v", in)
 	} else if reason == "" {
 		t.Fatal("empty refusal reason")
 	}
 
-	// Old high 110: target 105 (shy 5) → reward 4 ≥ 2 → pass.
-	if _, ok, reason := PHLPLHR2(tr, Level{Price: 110}, 0, 10, 0, cfg); !ok {
+	// Old high 112: target 107 (shy 5) → reward 5 ≥ 2x risk 2 (4) → pass.
+	if _, ok, reason := PHLPLHR2(tr, Level{Price: 112}, 0, 10, 0, cfg); !ok {
 		t.Fatalf("EMA with room refused: %s", reason)
 	}
 }
@@ -174,5 +176,74 @@ func TestEmaCross30Window(t *testing.T) {
 	}
 	if got := emaCross30(bars, 99.5); got != 30 {
 		t.Fatalf("cross count = %d, want 30 (window cap)", got)
+	}
+}
+
+// TestEmaCrossingGatesTradedLine — item 16 (CTO 23:49Z) Tick pin through the
+// production PHL path: the gate must sit on the line that TRADES
+// (KindEMA34HTF, the location-gate line), default ON. A reject touch at the
+// EMA34HTF line with crossing noise (close crossed the line >= EmaMaxCross30m
+// over the last 30m) emits NO entry. Mutant (isEMA34 = KindEMA34 only) → RED:
+// the same touch emits a PHL.
+func TestEmaCrossingGatesTradedLine(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.KeyLevelTFMinutes = 1
+	cfg.EMAPeriod34 = 0
+	cfg.EMAPeriod9 = 0
+	cfg.EMALocationTFMinutes = 0 // no auto EMA location line: the HTF line is seeded below
+	cfg.RoomMultiple = 2
+	cfg.PHLMinCandlesFromExtreme = 2
+	cfg.PHLTargetShyPts = 0
+	cfg.ISBBufferPts = 0
+	cfg.LocTriggerFilter = false
+	// EmaMaxCross30m stays at its item-16 default (2 = ON).
+
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(0, 101, 101.5, 101, 101.3),
+		mk(1, 101, 101.4, 100, 100.5),
+		mk(2, 100, 101, 98, 99),        // the left structural low 98 (D2-28 prior)
+		mk(3, 99.5, 130, 129.5, 129.7), // the far old high 130 — the PHL target
+		// crossing noise: closes 101/99/101/99 cross the EMA 100 four times.
+		// Lows are flat 99 so no second swing low forms (no FTGL box), and the
+		// 9-bar tape has only ONE closed 5m bucket → no 5m/15m ISB boxes.
+		mk(4, 100.5, 101.5, 99, 101),
+		mk(5, 99.5, 100.5, 99, 99),
+		mk(6, 100.5, 101.5, 99, 101),
+		mk(7, 99.5, 100.5, 99, 99),
+	}
+	// the reject reference: low touches 100, closes above → long reject.
+	refBar := mk(8, 100.1, 100.8, 99.6, 100.5)
+	bars = append(bars, refBar)
+	now := bars[len(bars)-1].OpenTime + 59_999
+
+	if n := emaCross30(bars, 100); n < cfg.EmaMaxCross30m {
+		t.Fatalf("fixture: emaCross30 = %d, want >= %d (the gate must fire)", n, cfg.EmaMaxCross30m)
+	}
+
+	e := New(cfg)
+	e.seeded = true
+	e.State.Seed1mWatermark = math.MaxInt64
+	e.State.Seed1HWatermark = math.MaxInt64
+	e.State.SeedLevels = []Level{
+		{Key: string(KindEMA34HTF), Kind: KindEMA34HTF, Price: 100},
+		{Key: "old-high:130", Kind: KindOldExtreme, Price: 130},
+	}
+	e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
+	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
+	e.State.Touches = map[string]Touch{
+		string(KindEMA34HTF): {LevelKey: string(KindEMA34HTF), Outcome: TouchReject, ApproachedFrom: SideLong, RefBar: refBar, PriceAtTouch: 100},
+	}
+
+	ins := e.Tick(bars, now)
+	for _, in := range ins {
+		if in.Action == PlaceStopEntry {
+			t.Fatalf("an EMA34HTF setup with crossing noise must be gated OFF (item 16); got %+v", in)
+		}
 	}
 }

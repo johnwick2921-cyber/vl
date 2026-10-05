@@ -49,12 +49,11 @@ func TestBoxTriggerSideDropIsCounted(t *testing.T) {
 		mk(0, 100, 101, 99, 100),
 		mk(1, 100, 102, 99, 101),
 		mk(2, 101, 103, 95, 96),
-		mk(3, 97.3, 98.3, 96.5, 97.5),
-		mk(4, 97, 98, 94, 95),
-		mk(5, 98, 98.2, 96.5, 97.2),
-		mk(6, 96.5, 97.1, 95.9, 97),
-		mk(7, 97.7, 97.9, 95.9, 96.9),
-		mk(8, 98.2, 98.5, 97, 98.4),
+		mk(3, 96.5, 97, 96, 96.8), // confirms the extreme (low 96 > 95)
+		mk(4, 96.8, 97, 96.2, 96.8),
+		mk(5, 96.8, 97, 95.5, 96),   // bottom 2: later confirmed higher low
+		mk(6, 96.2, 97, 95.8, 96.8), // confirms bottom 2
+		mk(7, 96.5, 97.1, 95.9, 97), // return 1
 	}
 	e := New(cfg)
 	now := bars[len(bars)-1].OpenTime + 59_999

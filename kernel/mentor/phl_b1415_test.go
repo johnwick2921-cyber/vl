@@ -21,14 +21,14 @@ import (
 func TestPHLPLHR2LevelsFirstObstacleTarget(t *testing.T) {
 	cfg := workedCfg()
 	levels := []Level{
-		{Key: "key_level:29415", Kind: KindKeyLevel, Price: 29_415},
+		{Key: "key_level:29420", Kind: KindKeyLevel, Price: 29_420},
 	}
 	in, ok, reason := PHLPLHR2Levels(workedTouch(), Level{Kind: KindOldExtreme, Price: 29_431.75}, 0, 3, 29_380, levels, cfg)
 	if !ok {
 		t.Fatalf("first-obstacle PHL refused: %s", reason)
 	}
-	if in.Target != 29_415 {
-		t.Fatalf("target = %.2f, want the key level 29415 in the way", in.Target)
+	if in.Target != 29_420 {
+		t.Fatalf("target = %.2f, want the key level 29420 in the way", in.Target)
 	}
 }
 
@@ -83,17 +83,17 @@ func TestPHLPLHR2LevelsShortObstacle(t *testing.T) {
 	shortTouch := workedTouch()
 	shortTouch.ApproachedFrom = SideShort
 	shortTouch.RefBar = market.Kline{Open: 29_410, High: 29_412, Low: 29_407, Close: 29_410} // sell stop at the low
-	// short: entry = RefBar.Low = 29_407, stop = RefBar.High = 29_412
-	// (risk 5), old extreme below (old low), key level 29_396 in the way.
+	// short: entry = RefBar.Low − 1.0 = 29_406, stop = RefBar.High = 29_412
+	// (risk 6), old extreme below (old low), key level 29_390 in the way.
 	levels := []Level{
-		{Key: "key_level:29396", Kind: KindKeyLevel, Price: 29_396},
+		{Key: "key_level:29390", Kind: KindKeyLevel, Price: 29_390},
 	}
 	in, ok, reason := PHLPLHR2Levels(shortTouch, Level{Kind: KindOldExtreme, Price: 29_380}, 0, 3, 29_415, levels, cfg)
 	if !ok {
 		t.Fatalf("short obstacle PHL refused: %s", reason)
 	}
-	if in.Target != 29_396 {
-		t.Fatalf("short target = %.2f, want the key level 29396 in the way", in.Target)
+	if in.Target != 29_390 {
+		t.Fatalf("short target = %.2f, want the key level 29390 in the way", in.Target)
 	}
 }
 

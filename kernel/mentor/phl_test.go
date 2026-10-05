@@ -7,10 +7,11 @@ import (
 )
 
 // TestPHLPLHWorkedExampleGeometry — §2.2 [D2.2 p1 @ 06:50, R2 @ 19:34]:
-// the buy stop sits at the PREVIOUS candle's high (29,395.75, no buffer),
-// stop = the low of that broken candle (29,387.50), target 29,425.75 —
-// visibly below the old high 29,430–29,440. The setup must PASS the room
-// rule (reward 30 vs risk 8.25 = 3.6R ≥ 2×) and the stop ceiling.
+// the buy stop sits at the PREVIOUS candle's high + the course buffer
+// (29,396.75 = high 29,395.75 + 1.0, D2-15), stop = the low of that broken
+// candle (29,387.50), target 29,425.75 — visibly below the old high
+// 29,430–29,440. The setup must PASS the room rule (reward 29 vs risk
+// 9.25 = 3.1R ≥ 2×) and the stop ceiling.
 func TestPHLPLHWorkedExampleGeometry(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
@@ -26,8 +27,8 @@ func TestPHLPLHWorkedExampleGeometry(t *testing.T) {
 	if !ok {
 		t.Fatalf("worked example refused: %s", reason)
 	}
-	if in.Side != SideLong || in.Price != 29_395.75 || in.Stop != 29_387.5 {
-		t.Fatalf("entry = %+v, want long price 29395.75 stop 29387.50 (R2: tight on the previous candle)", in)
+	if in.Side != SideLong || in.Price != 29_396.75 || in.Stop != 29_387.5 {
+		t.Fatalf("entry = %+v, want long price 29396.75 (high 29395.75 + 1.0 buffer) stop 29387.50", in)
 	}
 	// target = old high − shy = 29,425.75
 	if in.Target != 29_425.75 {
@@ -35,6 +36,32 @@ func TestPHLPLHWorkedExampleGeometry(t *testing.T) {
 	}
 	if !(29_425.75 < 29_431.75) {
 		t.Fatalf("target must sit BEFORE the old high [D4.1 p1 @ 07:27]")
+	}
+}
+
+// TestPHLEntryBufferKnob — D2-15 [D2.2 p1 @06:50 drawn]: the PHL entry is the
+// candle extreme PLUS the course buffer (default 1.0; high 29,396.25 → entry
+// 29,397.25), outward. The STOP stays at the broken candle's extreme (the
+// frame draws it AT the low). The knob moves the entry; the stop is untouched.
+// MUTANT: drop the +cfg.PHLEntryBufferPts on the entry → the 2.0-knob entry
+// comes back at 100 instead of 102 → RED.
+func TestPHLEntryBufferKnob(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.PHLEntryBufferPts = 2.0
+	touch := Touch{
+		Outcome: TouchReject, RefBar: market.Kline{High: 100, Low: 95},
+		ApproachedFrom: SideLong,
+	}
+	in, ok, reason := PHLPLH(touch, Level{Kind: KindOldExtreme, Price: 130}, 0, 3, cfg)
+	if !ok {
+		t.Fatalf("buffered PHL refused: %s", reason)
+	}
+	if in.Price != 102 {
+		t.Fatalf("entry = %.2f, want high 100 + 2.0 buffer = 102", in.Price)
+	}
+	if in.Stop != 95 {
+		t.Fatalf("stop = %.2f, want the candle low 95 (no stop buffer)", in.Stop)
 	}
 }
 

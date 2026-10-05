@@ -382,3 +382,22 @@ func TestMentorFullFillRegistersTheLivePositionAtTheFillHandler(t *testing.T) {
 		t.Fatalf("registered leg = %+v entry %.2f, want sig-fill-1 ×2 @29600", got[0].Legs[0], got[0].Pos.Entry)
 	}
 }
+
+// CTO pin (#390 gate): the ISB partial resolves on the FILL candle's close
+// ONLY (candle 3). Later candles never re-fire it, even when leg 1 has not
+// scaled. Mutant: drop the BarsSinceFill == 1 gate → a second log → RED.
+func TestMentorExitDrivePosISB_PartialOnlyOnTheFillCandle(t *testing.T) {
+	at, _ := newDriveAT(t)
+	p := bPos("B", "long", 10, 8, 20, 4) // R = 2 (bPos fixes R at 2): +1R = 12
+	p.Pos.Origin = "ISB"
+	p.BarsSinceFill = 1
+	at.mentorExitDrivePos(nil, p, 11.0, 11.5, 10.5) // fill candle closes in profit below +1R
+	if got := MentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
+		t.Fatalf("the fill-candle close must resolve the partial once, got %d", got)
+	}
+	p.BarsSinceFill = 2
+	at.mentorExitDrivePos(nil, p, 11.4, 11.8, 11.1) // still below +1R, still in profit
+	if got := MentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
+		t.Fatalf("a later candle must not re-fire the ISB partial, got %d logs", got)
+	}
+}

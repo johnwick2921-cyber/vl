@@ -56,10 +56,14 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	}
 	// R2: the buy stop sits at the PREVIOUS candle's high; stop = the low
 	// of that broken candle. The previous candle = the touch reference.
-	price := t.RefBar.High
+	// D2-15 [D2.2 p1 @06:50 drawn]: the entry sits ~1 pt BEYOND the candle
+	// extreme (high 29,396.25 → entry 29,397.25) — the course buffer. The
+	// stop stays at the broken candle's extreme (the frame draws it AT the
+	// low; the +0.25 offset is a quarter-tick artefact, not a stated rule).
+	price := t.RefBar.High + cfg.PHLEntryBufferPts
 	stop := t.RefBar.Low
 	if side == SideShort {
-		price = t.RefBar.Low
+		price = t.RefBar.Low - cfg.PHLEntryBufferPts
 		stop = t.RefBar.High
 	}
 	if priorSwing != 0 {
@@ -102,8 +106,8 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if reward < risk {
 		return Intent{}, false, targetCloserThanStopReason
 	}
-	if reward < cfg.RoomMultiple*risk {
-		return Intent{}, false, "room rule: reward < " + fnum(cfg.RoomMultiple) + "x risk — not enough room [D5.3 p1 @ 09:16]"
+	if refuse, why := roomRefusal(price, stop, target, cfg.RoomMultiple); refuse {
+		return Intent{}, false, why
 	}
 	setup := "PHL"
 	if side == SideShort {

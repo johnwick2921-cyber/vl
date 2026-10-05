@@ -585,6 +585,11 @@ func TestMentorRuleGateR8R9(t *testing.T) {
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 88, Target: 124, StopPts: 12, TargetPts: 24}, mentorTierInputs{SpentDay: true}); why != "" {
 		t.Fatalf("a spent day with a 12-pt stop must pass: %q", why)
 	}
+	// R13: DayOff does not stop the swing, so the spent-day cap must not
+	// either — a SWING4H with a >15-pt stop trades through a spent day.
+	if why := mentorRuleGate(mentor.Intent{Setup: "SWING4H", Side: "long", Price: 100, Stop: 60, StopPts: 40, TargetPts: 80}, mentorTierInputs{SpentDay: true}); why != "" {
+		t.Fatalf("a spent day must NOT refuse the swing (R13): %q", why)
+	}
 	// a targetless intraday entry is BAD GEOMETRY now (CTO 1791058631982) —
 	// the kernel always tags the ISB target, so a zero target is a bug
 	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 94, StopPts: 5.75}, mentorTierInputs{}); why == "" || !strings.HasPrefix(why, "bad geometry") {
@@ -841,8 +846,8 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 	if v := mentorLvlRevisitMinPts(nil); v != 0 {
 		t.Fatalf("lvl revisit default = %.2f, want 0", v)
 	}
-	if v := mentorEmaMaxCross30m(nil); v != 0 {
-		t.Fatalf("ema max cross default = %d, want 0 (OFF)", v)
+	if v := mentorEmaMaxCross30m(nil); v != 2 {
+		t.Fatalf("ema max cross default = %d, want 2 (ON, most conservative — item 16)", v)
 	}
 	if v := mentorLossDeparturePts(nil); v != 0 {
 		t.Fatalf("loss departure fallback default = %.2f, want 0 (OFF)", v)
@@ -899,8 +904,8 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 			cfg.Enabled, cfg.LvlRevisitMinPts, cfg.EmaMaxCross30m, cfg.LossDeparturePts)
 	}
 	naked := (&AutoTrader{id: "t-naked"}).mentorEvaluatorConfig()
-	if !naked.Enabled || naked.LvlRevisitMinPts != 0 || naked.EmaMaxCross30m != 0 || naked.LossDeparturePts != 0 {
-		t.Fatalf("no strategy → evaluator defaults: enabled=%v revisit=%.2f cross=%d loss_departure=%.2f — want true/0/0/0 (fallback OFF)",
+	if !naked.Enabled || naked.LvlRevisitMinPts != 0 || naked.EmaMaxCross30m != 2 || naked.LossDeparturePts != 0 {
+		t.Fatalf("no strategy → evaluator defaults: enabled=%v revisit=%.2f cross=%d loss_departure=%.2f — want true/0/2/0 (cross default ON, item 16)",
 			naked.Enabled, naked.LvlRevisitMinPts, naked.EmaMaxCross30m, naked.LossDeparturePts)
 	}
 }

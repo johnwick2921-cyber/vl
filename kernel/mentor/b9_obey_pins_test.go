@@ -25,6 +25,7 @@ func b9BoxFixture(htf HTF, verdict DayVerdict) (*Evaluator, []market.Kline, int6
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
+	cfg.EMALocationTFMinutes = 0 // no EMA34 location line: the seeded level is the only target
 	cfg.RoomMultiple = 0.05
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {
@@ -33,16 +34,15 @@ func b9BoxFixture(htf HTF, verdict DayVerdict) (*Evaluator, []market.Kline, int6
 	bars := []market.Kline{
 		mk(0, 100, 101, 99, 100),
 		mk(1, 100, 102, 99, 101),
-		mk(2, 101, 103, 95, 96),
-		mk(3, 97.3, 98.3, 96.5, 97.5),
-		mk(4, 97, 98, 94, 95),
-		mk(5, 98, 98.2, 96.5, 97.2),
-		mk(6, 96.5, 97.1, 95.9, 97), // FTGL reject return → LONG
-		mk(7, 97.7, 97.9, 95.9, 96.9),
-		mk(8, 98.2, 98.5, 97, 98.4),
+		mk(2, 101, 103, 95, 96),   // bottom 1: the extreme low 95
+		mk(3, 96.5, 97, 96, 96.8), // confirms the extreme
+		mk(4, 96.8, 97, 96.2, 96.8),
+		mk(5, 96.8, 97, 95.5, 96),   // bottom 2: later confirmed higher low
+		mk(6, 96.2, 97, 95.8, 96.8), // confirms bottom 2
+		mk(7, 96.5, 97.1, 95.9, 97), // FTGL reject return → LONG
 	}
 	e := New(cfg)
-	now := bars[8].OpenTime + 59_999
+	now := bars[7].OpenTime + 59_999
 	// One far key level above: the box target is the next level beyond the
 	// entry, so the uncapped target sits well past the 15-pt cap.
 	e.seeded = true
@@ -50,6 +50,10 @@ func b9BoxFixture(htf HTF, verdict DayVerdict) (*Evaluator, []market.Kline, int6
 	e.State.Seed1HWatermark = math.MaxInt64
 	e.State.SeedLevels = []Level{{Key: "far", Kind: KindKeyLevel, Price: 125}}
 	e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+	// Freeze the 5m trigger BELOW the entry so the trigger-retest level does
+	// not sit between the entry and the far key level — the box target must
+	// read the seeded far level (125), not a trigger line drawn from the tape.
+	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 80, LastBucket: t0 + 5*60_000}
 	e.State.HTF = htf
 	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: verdict}
 	return e, bars, now
