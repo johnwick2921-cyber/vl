@@ -733,7 +733,7 @@ export const mentor: GuideSection = {
         {
           label: 'Reverse ISB at EMA 9',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'R7: an ISB pointing AGAINST the trend at EMA 9 reverses — uptrend → long buy stop above the ISB high; downtrend → the mirror. Requires price to actually reach EMA 9. It carries a target (the next level beyond, with the 1:1 floor and the spent-day cap) and runs through the normal ISB gates — twenties skip, 4h side, near-box room — before it can place; with it ON, the normal ISB does not arm the opposite side on the same candle pair.',
+          what: 'R7: an ISB pointing AGAINST the trend at EMA 9 reverses — uptrend → long buy stop above the ISB high + 1.5-pt buffer; downtrend → the mirror (sell stop below the ISB low − 1.5-pt buffer). The entry buffer is mandatory on the 1m [D1.4 p1 @ 22:26–23:26]. Requires price to actually reach EMA 9. It carries a target (the next level beyond, with the 1:1 floor and the spent-day cap) and runs through the normal ISB gates — twenties skip, 4h side, near-box room — before it can place; with it ON, the normal ISB does not arm the opposite side on the same candle pair.',
           trader: 'ON — R-C owner ruling 2026-10-04.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (ISBReverseEMA9Enabled) · kernel/mentor/eval.go (reverse ISB emit)',
