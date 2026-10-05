@@ -3015,6 +3015,9 @@ namespace NinjaTrader.NinjaScript.AddOns
                     var toCancel = new List<Order>();
                     if (pb.SlOrder != null) toCancel.Add(pb.SlOrder);
                     if (pb.TpOrder != null) toCancel.Add(pb.TpOrder);
+                    // P0-2: the netting-flat sweep must cancel leg 2 too.
+                    if (pb.SlOrder2 != null) toCancel.Add(pb.SlOrder2);
+                    if (pb.TpOrder2 != null) toCancel.Add(pb.TpOrder2);
                     if (toCancel.Count > 0 && ba != null)
                     {
                         try

@@ -33,7 +33,7 @@ func TestSplitAddonPlacesTwoOCOPairs(t *testing.T) {
 		"var sl2 = ba.CreateOrder(",
 		"var tp2 = ba.CreateOrder(",
 		"ba.Submit(new[] { sl1, tp1, sl2, tp2 });",
-		"Leg1Qty = leg1Qty, Leg2Qty = leg2Qty, Leg1Tp = b.Leg1Tp, RunnerTp = b.Tp,",
+		"Leg1Qty = b.Leg1Qty, Leg2Qty = leg2Qty, Leg1Tp = b.Leg1Tp, RunnerTp = b.Tp,",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("AddOn lost the two-OCO-pair placement: missing %q", want)
@@ -111,6 +111,41 @@ func TestSplitAddonLeg2ExitReportsSameSignalID(t *testing.T) {
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("AddOn lost the leg-2 exit name parse: missing %q", want)
+		}
+	}
+}
+
+// TestSplitAddonNettingFlatSweepCancelsLeg2 pins CancelAllBracketsFor (the
+// netting-flat sweep): leg 2's stop/TP are cancelled too. Mutant: leg 2 omitted
+// from the sweep → RED.
+func TestSplitAddonNettingFlatSweepCancelsLeg2(t *testing.T) {
+	src := readSplitAddonSource(t)
+	n := strings.Count(src, "// P0-2: the netting-flat sweep must cancel leg 2 too.")
+	if n != 1 {
+		t.Fatalf("the netting-flat sweep must carry exactly one P0-2 leg-2 marker, got %d", n)
+	}
+	for _, want := range []string{
+		"if (pb.SlOrder2 != null) toCancel.Add(pb.SlOrder2);",
+		"if (pb.TpOrder2 != null) toCancel.Add(pb.TpOrder2);",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("the netting-flat sweep lost a leg-2 cancel: missing %q", want)
+		}
+	}
+}
+
+// TestIsBracketChildKnowsLeg2 pins the Go side of P0-2: -sl2/-tp2 are protective
+// children (never "working entries"), so the one-contract guard does not count
+// an orphaned leg-2 stop as an entry. Mutant: drop -sl2/-tp2 → RED.
+func TestIsBracketChildKnowsLeg2(t *testing.T) {
+	for _, name := range []string{"x-sl2", "X-TP2", "x-sl", "x-tp", "x-lx"} {
+		if !isBracketChild(name) {
+			t.Errorf("isBracketChild(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"x-entry", "x", "stoplimit-x"} {
+		if isBracketChild(name) {
+			t.Errorf("isBracketChild(%q) = true, want false", name)
 		}
 	}
 }
