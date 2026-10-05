@@ -46,9 +46,9 @@ func TestSplitAddonPlacesTwoOCOPairs(t *testing.T) {
 func TestSplitAddonPartialFillLeg1First(t *testing.T) {
 	src := readSplitAddonSource(t)
 	for _, want := range []string{
-		"int leg1Qty = Math.Min(pb.Leg1Qty, filledQty);",
-		"int leg2Qty = Math.Max(0, filledQty - leg1Qty);",
-		"// Leg 2's pair was never placed (partial first fill): create it now.",
+		"int leg1Qty = leg1Gone ? 0 : Math.Min(pb.Leg1Qty, filledQty);",
+		"int leg2Qty = leg1Gone ? Math.Max(0, filledQty - pb.Leg1Exited)",
+		"// Leg 2's pair was never placed (partial first fill, or leg 1",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("AddOn lost the leg-1-first partial-fill allocation: missing %q", want)
@@ -165,7 +165,8 @@ func TestSplitAddonPositionCloseLegField(t *testing.T) {
 	for _, want := range []string{
 		`string acctName = "", int leg = 0)`,
 		`["leg"]           = leg,`,
-		`if (orderName.EndsWith("-sl2") || orderName.EndsWith("-tp2")) closeLeg = 2;`,
+		`if (orderName.EndsWith("-sl2") || orderName.EndsWith("-tp2"))`,
+		"closeLeg = 2;",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("AddOn lost the position_close leg field: missing %q", want)
@@ -188,5 +189,36 @@ func TestSplitAddonOrderUpdateStripsLeg2(t *testing.T) {
 		if !strings.Contains(src, want) {
 			t.Errorf("AddOn lost the order_update leg-2 strip: missing %q", want)
 		}
+	}
+}
+
+// TestSplitAddonLeg1ExitFold pins the REVIEW-SPLIT-2 P1 C# fold (CTO 02:07:41Z):
+// (a) a leg-1 exit records Leg1Exited + LastStop and NEVER zeroes Leg1Qty;
+// (b) AmendBracketQuantity routes a later fill under leg 2 once leg 1 is gone;
+// (c) the record survives a leg exit while the entry order is still working;
+// plus closeLeg = 0 for a single bracket. Mutant: zero Leg1Qty / drop the
+// leg1Gone path / remove on exit / report single-bracket -sl as leg 1 → RED.
+func TestSplitAddonLeg1ExitFold(t *testing.T) {
+	src := readSplitAddonSource(t)
+	for _, want := range []string{
+		"public int         Leg1Exited;",
+		"public double      LastStop;",
+		"pb.Leg1Exited = e.Filled;",
+		"if (pb.SlOrder != null) pb.LastStop = pb.SlOrder.StopPrice;",
+		"bool leg1Gone = pb.SlOrder == null && pb.TpOrder == null && pb.Leg1Exited > 0;",
+		"int leg2Qty = leg1Gone ? Math.Max(0, filledQty - pb.Leg1Exited)",
+		"double stop = pb.LastStop;",
+		"bool entryWorking = workingEntries.ContainsKey(signalId);",
+		"if (!live1 && !live2 && !entryWorking)",
+		"wasSplit = cb.Leg1Qty > 0;",
+		"closeLeg = wasSplit ? 1 : 0;",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("AddOn lost the leg-1-exit fold: missing %q", want)
+		}
+	}
+	// Leg1Qty must never be assigned 0 inside the exit-fill leg handler.
+	if strings.Contains(src, "pb.Leg1Qty = 0") {
+		t.Error("AddOn still zeroes Leg1Qty on an exit — the split path would collapse")
 	}
 }
