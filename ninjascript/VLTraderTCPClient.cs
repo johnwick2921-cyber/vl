@@ -2578,7 +2578,9 @@ namespace NinjaTrader.NinjaScript.AddOns
 
                 // REVIEW-353: the split AT ENTRY — leg 1 (ceil(n/2), its OWN TP)
                 // + leg 2 (the runner, TP = b.Tp), BOTH under the one entry signal id.
-                bool splitWanted = b.Leg1Qty > 0 && b.Leg1Tp > 0;
+                // P0-1: treat Leg1Qty >= Qty as a single bracket; a first fill at or
+                // below leg1_qty must NOT submit a 0-qty leg-2 pair.
+                bool splitWanted = b.Leg1Qty > 0 && b.Leg1Tp > 0 && b.Leg1Qty < b.Qty;
                 int leg1Qty = splitWanted ? Math.Min(b.Leg1Qty, filledQty) : 0;
                 int leg2Qty = splitWanted ? Math.Max(0, filledQty - leg1Qty) : 0;
 
@@ -2613,7 +2615,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                             + " avg_fill=" + avgFillPx
                             + " entry_oco=<none> exit_oco=" + exitOco + " tif=Gtc");
                 }
-                else
+                else if (leg2Qty > 0)
                 {
                     // REVIEW-353: TWO OCO pairs under the ONE entry signal id —
                     // leg 1 (leg1_qty, TP=leg1_tp) + leg 2 (runner, TP=b.Tp).
@@ -2643,7 +2645,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                             SlOrder = sl1, TpOrder = tp1, SlOrder2 = sl2, TpOrder2 = tp2,
                             Account = ba, Instrument = b.Instrument, ExitAction = b.ExitAction,
                             Qty = filledQty, ExitOco = exitOco1, ExitOco2 = exitOco2, TickSize = tick,
-                            Leg1Qty = leg1Qty, Leg2Qty = leg2Qty, Leg1Tp = b.Leg1Tp, RunnerTp = b.Tp,
+                            Leg1Qty = b.Leg1Qty, Leg2Qty = leg2Qty, Leg1Tp = b.Leg1Tp, RunnerTp = b.Tp,
                         };
                     }
                     LogInfo("VLTraderTCPClient: placed SPLIT bracket signal_id=" + signalId
@@ -2651,6 +2653,35 @@ namespace NinjaTrader.NinjaScript.AddOns
                             + " leg2=" + leg2Qty + "@" + b.Tp
                             + " sl=" + b.Sl + " avg_fill=" + avgFillPx
                             + " oco1=" + exitOco1 + " oco2=" + exitOco2 + " tif=Gtc");
+                }
+                else
+                {
+                    // P0-1: a first fill at or below leg1_qty — place LEG 1 ONLY
+                    // (TP = leg1_tp) and record the INTENDED split so a later fill
+                    // grows leg 2 via AmendBracketQuantity's create branch. Never
+                    // submit a 0-qty leg-2 pair.
+                    string exitOco1 = signalId + "-exit";
+                    var sl1 = ba.CreateOrder(
+                        b.Instrument, b.ExitAction, OrderType.StopMarket, OrderEntry.Manual,
+                        TimeInForce.Gtc, leg1Qty, 0, b.Sl, exitOco1, signalId + "-sl",
+                        Core.Globals.MaxDate, null);
+                    var tp1 = ba.CreateOrder(
+                        b.Instrument, b.ExitAction, OrderType.Limit, OrderEntry.Manual,
+                        TimeInForce.Gtc, leg1Qty, b.Leg1Tp, 0, exitOco1, signalId + "-tp",
+                        Core.Globals.MaxDate, null);
+                    ba.Submit(new[] { sl1, tp1 });
+                    lock (signalMapLock)
+                    {
+                        placedBrackets[signalId] = new PlacedBracket
+                        {
+                            SlOrder = sl1, TpOrder = tp1, Account = ba, Instrument = b.Instrument,
+                            ExitAction = b.ExitAction, Qty = filledQty, ExitOco = exitOco1, TickSize = tick,
+                            Leg1Qty = b.Leg1Qty, Leg2Qty = 0, Leg1Tp = b.Leg1Tp, RunnerTp = b.Tp,
+                        };
+                    }
+                    LogInfo("VLTraderTCPClient: placed LEG-1-ONLY bracket (partial first fill) signal_id=" + signalId
+                            + " leg1=" + leg1Qty + "@" + b.Leg1Tp + " intended_leg1=" + b.Leg1Qty
+                            + " sl=" + b.Sl + " avg_fill=" + avgFillPx + " tif=Gtc");
                 }
             }
             catch (Exception ex)

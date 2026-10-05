@@ -1971,6 +1971,16 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 	if isMentorArmOrigin(r) && r.Leg1Qty != nil {
 		leg1Qty = *r.Leg1Qty
 		leg1TP = r.Leg1TP
+		// P0-1: recompute leg 1 from the quantity actually SENT (mentorArmQuantity
+		// clamps to the trader max; the row's Leg1Qty was sized from the UNclamped
+		// intent). ceil(sent/2); drop the split when leg1 >= sent (no runner).
+		if sent := int(qty); leg1Qty > 0 {
+			if leg1 := (sent + 1) / 2; leg1 >= sent {
+				leg1Qty, leg1TP = 0, 0
+			} else {
+				leg1Qty = leg1
+			}
+		}
 	}
 	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, r.TargetPx, leg1Qty, leg1TP, func(sid string) error {
 		if err := ledger.BeginPlacement(r.ID, sid); err != nil {
