@@ -99,3 +99,18 @@ func TestSplitAddonLegFieldOnMoveModify(t *testing.T) {
 		}
 	}
 }
+
+// TestSplitAddonLeg2ExitReportsSameSignalID pins the exit-fill name parse: leg 2's
+// -sl2/-tp2 orders strip to the SAME entry signal id (its residual qty drives
+// ApplyNT8Exit's partial path). Mutant: no -sl2/-tp2 parse → RED.
+func TestSplitAddonLeg2ExitReportsSameSignalID(t *testing.T) {
+	src := readSplitAddonSource(t)
+	for _, want := range []string{
+		`if (signalId.EndsWith("-sl2")) { exitReason = "sl"; signalId = signalId.Substring(0, signalId.Length - 4); }`,
+		`if (signalId.EndsWith("-tp2")) { exitReason = "tp"; signalId = signalId.Substring(0, signalId.Length - 4); }`,
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("AddOn lost the leg-2 exit name parse: missing %q", want)
+		}
+	}
+}

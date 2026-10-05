@@ -1474,7 +1474,11 @@ namespace NinjaTrader.NinjaScript.AddOns
             string ocoId     = e.Order.Oco ?? "";
             string signalId  = orderName.Length > 0 ? orderName : ocoId;
             string exitReason = null;
-            if (signalId.EndsWith("-sl")) { exitReason = "sl"; signalId = signalId.Substring(0, signalId.Length - 3); }
+            // REVIEW-353: leg 2's pair is named -sl2/-tp2 but reports the SAME
+            // entry signal id (its residual qty drives ApplyNT8Exit's partial path).
+            if (signalId.EndsWith("-sl2")) { exitReason = "sl"; signalId = signalId.Substring(0, signalId.Length - 4); }
+            else if (signalId.EndsWith("-tp2")) { exitReason = "tp"; signalId = signalId.Substring(0, signalId.Length - 4); }
+            else if (signalId.EndsWith("-sl")) { exitReason = "sl"; signalId = signalId.Substring(0, signalId.Length - 3); }
             else if (signalId.EndsWith("-tp")) { exitReason = "tp"; signalId = signalId.Substring(0, signalId.Length - 3); }
             else if (signalId.EndsWith("-lx"))
             {
