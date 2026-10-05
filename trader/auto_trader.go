@@ -597,8 +597,8 @@ type AutoTrader struct {
 	lastCitation planCitation
 
 	// W3 — throttle for the calendar producer (retry the FF fetch ≤1/hour on
-	// outage; a stored slice short-circuits it). Touched only from runCycle.
-	lastCalFetch time.Time
+	// outage; a stored slice short-circuits it). Persisted ACROSS reconstruction
+	// by the package-level calFetchThrottle (keyed by trader id), not this struct.
 	// P0.6 (2026-08-19) — calendar fail-closed alert, once per trade date.
 	lastCalFailClosedAlert string
 	// F6 (2026-08-30) — clock-hold T1-widening warn line, once per trade date.

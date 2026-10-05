@@ -24,6 +24,7 @@ func f0Trader(t *testing.T) (*AutoTrader, *store.Store) {
 	}
 	t.Cleanup(func() { st.Close() })
 	at := &AutoTrader{
+		id:       t.Name(), // unique per test so the package-level fetch throttle never collides
 		exchange: "ninjatrader",
 		store:    st,
 		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{
@@ -141,7 +142,7 @@ func TestF0StaleLiveSliceRefreshesWhenChanged(t *testing.T) {
 	}
 
 	// unchanged second fetch (same fixture) must NOT rewrite the row.
-	at.lastCalFetch = time.Time{} // clear throttle
+	calFetchThrottle.Delete(at.id) // clear the persisted throttle
 	at.calFetch = func() ([]byte, error) { return ffFixture("2026-08-19"), nil }
 	before := slice.EventsJSON
 	at.maybeFetchCalendar(now)
@@ -174,7 +175,7 @@ func TestF0StaticUpgradesToLive(t *testing.T) {
 	}
 
 	// but a LIVE row is frozen: a second fetch with different content must not rewrite it.
-	at.lastCalFetch = time.Time{} // clear throttle
+	calFetchThrottle.Delete(at.id) // clear the persisted throttle
 	at.lastCalSkipDate = ""       // clear latch
 	at.calFetch = func() ([]byte, error) {
 		t.Fatal("live slice is fresh — must skip, not refetch")
