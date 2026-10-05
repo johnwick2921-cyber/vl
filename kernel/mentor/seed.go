@@ -341,6 +341,16 @@ func closedCount(bars []market.Kline, now int64) int {
 	return n
 }
 
+// closedBucketsTF aggregates to tfMin and drops the still-forming tail bucket.
+// Shared by the X5-10 2m ISB read and the 15m/30m box reads.
+//
+// CONTRACT (FU-3): `now` must be an instant STRICTLY AFTER the newest closed
+// 1m bar's close — in the Tick path that is BarCloseInstant(last) =
+// last.CloseTime + 1 (see eval.go BarCloseInstant); at seed it is the wall
+// clock (also after the newest closed bar). A bucket whose recorded close
+// equals the newest closed bar's close is KEPT (its CloseTime < now); only a
+// bucket whose close is still in the FUTURE is dropped. A caller passing
+// last.CloseTime VERBATIM (no +1) would over-drop the just-completed bucket.
 func closedBucketsTF(bars []market.Kline, tfMin int, now int64) []market.Kline {
 	agg := barsTF(bars, tfMin)
 	if len(agg) > 0 && agg[len(agg)-1].CloseTime >= now {

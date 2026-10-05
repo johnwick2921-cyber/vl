@@ -136,6 +136,9 @@ func (at *AutoTrader) mentorEventPassAt(now time.Time) bool {
 func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true
+	// FU-1: live G1/G2 are fed from REAL broker fills (Limits.RecordFill via
+	// the queued drain), never the simulated candle-touch fill.
+	cfg.RealFillOnly = true
 	rc := at.mentorRiskControl()
 	cfg.LossDeparturePts = mentorLossDeparturePts(rc)
 	// The resolvers are nil-safe and return the ruled default for an unset field.
@@ -212,6 +215,10 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	last := bars[len(bars)-1]
 	at.mentorEvalMu.Lock()
 	defer at.mentorEvalMu.Unlock()
+	// FU-1: drain queued REAL fills first, under the mutex — a fill that
+	// arrived since the last tick registers before this tick's placement
+	// decisions read the leg budget / loss box.
+	at.mentorDrainFills()
 	if last.OpenTime <= at.mentorLastTickOpen {
 		return false // already ticked (the other goroutine won the race)
 	}
@@ -1125,7 +1132,10 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}
-	now := time.Now().UnixMilli()
+	// The seed clock reads the mentor seam (mentorNowSource) so tests can pin a
+	// fixed mid-session instant; production defaults to time.Now() (X-07-follow,
+	// FLAKE-SEED-CLOCK). Same wall clock, same behaviour.
+	now := mentorClockNow().UnixMilli()
 	bh := store.NewBarHistoryStore(at.store.GormDB())
 	rows1m, err1m := bh.LastNBarsCurrentContract("MNQ", "1m", mentorSeedBars1mN)
 	if err1m != nil {

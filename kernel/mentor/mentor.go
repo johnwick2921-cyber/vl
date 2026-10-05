@@ -321,6 +321,15 @@ type Config struct {
 	// the prior extreme. "close" (default): the previous candle's CLOSE
 	// strictly beyond the extreme; "touch": this candle's wick reaching it.
 	LegResetOn string
+
+	// RealFillOnly — FU-1 (CTO 2026-10-05): when true, the G1 leg budget and
+	// the G2 loss box are fed ONLY from real broker fills (Limits.RecordFill,
+	// delivered by the trader's fill callback), never from the simulated
+	// candle-touch fill — a never-placed order can then never phantom-fill and
+	// spend the budget. The trader sets this true for LIVE; false keeps the
+	// simulated fill for the kernel's parity tests and any backtest. Default
+	// false (zero value).
+	RealFillOnly bool
 }
 
 // DefaultConfig returns the mentor defaults per PLAN v1 (knob values start from

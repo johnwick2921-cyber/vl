@@ -24,7 +24,7 @@ func funnelAT(t *testing.T) *AutoTrader {
 
 // Pin: a tick with an ORB refusal shows orb_not_drawn:1 in the funnel line.
 func TestMentorFunnelLineShowsOrbRefusal(t *testing.T) {
-	line := mentorFunnelLine(1, 2, map[string]int{"orb_not_drawn": 1}, map[string]int{}, 0, 0, 0)
+	line := mentorFunnelLine(1, 2, map[string]int{"orb_not_drawn": 1}, map[string]int{}, map[string]int{}, 0, 0, 0)
 	if !strings.Contains(line, "orb_not_drawn:1") {
 		t.Fatalf("funnel line missing orb_not_drawn:1: %q", line)
 	}
@@ -39,6 +39,26 @@ func TestMentorKernelRefusalsMergesBothLedgers(t *testing.T) {
 	got := mentorKernelRefusals(at)
 	if got["orb_not_drawn"] != 1 || got["loss_box_blocked"] != 2 {
 		t.Fatalf("kernel refusals = %v, want orb_not_drawn:1 + loss_box_blocked:2", got)
+	}
+}
+
+// Pin (FU-1 R2): a kernel fill counter (record_fill_from_row) renders under
+// "kernel fills", never under "kernel refusals".
+func TestMentorFunnelSeparatesKernelFills(t *testing.T) {
+	at := funnelAT(t)
+	at.mentorEval.State.Limits.Counters = map[string]int{"record_fill_from_row": 1}
+	if got := mentorKernelRefusals(at); got["record_fill_from_row"] != 0 {
+		t.Fatalf("a fill counter must not render as a kernel refusal: %v", got)
+	}
+	if fills := mentorKernelFills(at); fills["record_fill_from_row"] != 1 {
+		t.Fatalf("a fill counter must render under kernel fills: %v", fills)
+	}
+	line := mentorFunnelLine(1, 2, map[string]int{}, map[string]int{"record_fill_from_row": 1}, map[string]int{}, 0, 0, 0)
+	if !strings.Contains(line, "kernel fills {record_fill_from_row:1}") {
+		t.Fatalf("funnel line missing the kernel fills segment: %q", line)
+	}
+	if strings.Contains(line, "kernel refusals {record_fill_from_row:1}") {
+		t.Fatalf("a fill counter must not render under kernel refusals: %q", line)
 	}
 }
 

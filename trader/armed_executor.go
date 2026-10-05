@@ -2503,6 +2503,13 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 				at.materializeArmedEntry(r, u)
 				at.logInfof("⚡ armed PART fill %s @ %.2f (%d/%d) — row stays working; the remainder is cancelled at expiry",
 					r.Scenario, u.FillPrice, u.Quantity, total)
+				// FU-1 P1-1: a PARTIAL fill is a real fill — enqueue on the
+				// FIRST fill of any size; the receipt dedupe makes a later full
+				// a no-op. (A partial then expiry-cancel must still count one
+				// leg.)
+				if isMentorArmOrigin(r) {
+					at.mentorEnqueueFill(r, u)
+				}
 				return
 			}
 			at.armLifecycleWrite("set_state(filled)", r, ledger.SetState(r.ID, "filled", "fill@"+strconv.FormatFloat(u.FillPrice, 'f', 2, 64)))
@@ -2525,6 +2532,9 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 				at.mentorFunnel.bumpFilled()
 				at.registerMentorLivePos(r, u)
 				at.pokeMentorExitDrive()
+				// FU-1: feed G1/G2 from the REAL fill — the receipt is queued
+				// and drained inside mentorEvalOnce under mentorEvalMu.
+				at.mentorEnqueueFill(r, u)
 			}
 		case "cancelled":
 			// CANCEL-REPORT REGIME (2026-10-03, knob default OFF): for a row

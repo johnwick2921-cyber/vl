@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"vl/kernel/mentor"
+	"vl/market"
+	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 )
 
@@ -61,6 +63,118 @@ func mentorLiveArmFor(armID string) (mentorLiveArm, bool) {
 	defer mentorLiveMu.Unlock()
 	a, ok := mentorLiveArms[armID]
 	return a, ok
+}
+
+// mentorFillReceipt is a REAL fill receipt queued from the fill callback
+// (the executor goroutine) to the evaluator drain (FU-1). receiptID dedupes
+// (the entry signal id); armID is the evaluator's bare ArmID; lo/hi seed the
+// B22 wave (the fill candle's low/high); row is the armed-row fallback for a
+// fill with no pend (a restart dropped the pends — P1-2).
+type mentorFillReceipt struct {
+	receiptID string
+	armID     string
+	lo, hi    float64
+	row       *mentor.FillRow
+}
+
+// mentorArmIDFromScenario strips the per-construction epoch suffix the ledger
+// scenario carries ("<armID>-<epoch>") back to the evaluator's bare ArmID. A
+// scenario with no trailing digit suffix (a foreign author) is returned
+// unchanged.
+func mentorArmIDFromScenario(scenario string) string {
+	s := strings.TrimSpace(scenario)
+	if i := strings.LastIndex(s, "-"); i > 0 {
+		suffix := s[i+1:]
+		if isDecimalDigits(suffix) {
+			return s[:i]
+		}
+	}
+	return s
+}
+
+func isDecimalDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// mentorEnqueueFill queues a REAL fill receipt from the armed fill callback
+// (FU-1). SWING exempt (the swing never enters Limits — it runs its own
+// machine). Non-blocking: a full queue drops the receipt (counted) rather
+// than stalling the executor goroutine.
+func (at *AutoTrader) mentorEnqueueFill(r store.ArmedOrderDB, u ntwire.OrderUpdatePayload) {
+	if at == nil || at.mentorFillCh == nil {
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(r.Condition), "SWING4H") {
+		return // swing exempt
+	}
+	armID := mentorArmIDFromScenario(r.Scenario)
+	if armID == "" {
+		return
+	}
+	lo, hi := u.FillPrice, u.FillPrice
+	if market.FuturesBarsProvider != nil {
+		if bars := market.FuturesBarsProvider(at.futuresSymbol(), "1m", 1); len(bars) > 0 {
+			lo, hi = bars[len(bars)-1].Low, bars[len(bars)-1].High
+		}
+	}
+	// P1-2: carry the armed-row fallback so a fill with no pend (a restart
+	// dropped the in-memory pends) registers from the row, never dropped.
+	row := &mentor.FillRow{
+		Side:   mentor.Side(strings.ToLower(strings.TrimSpace(r.Side))),
+		Entry:  r.EntryPx,
+		Stop:   r.StopPx,
+		Target: r.TargetPx,
+		ISB:    strings.EqualFold(strings.TrimSpace(r.Condition), "ISB"),
+	}
+	select {
+	case at.mentorFillCh <- mentorFillReceipt{receiptID: u.SignalID, armID: armID, lo: lo, hi: hi, row: row}:
+	default:
+		mentorCount("record_fill_queue_full")
+	}
+}
+
+// mentorDrainFills drains the real-fill queue into the evaluator's Limits
+// (FU-1). It MUST be called with mentorEvalMu held — mentorEvalOnce is the
+// production caller (the drain is the lock-safe seam the CTO named). Nil-safe.
+func (at *AutoTrader) mentorDrainFills() {
+	if at == nil || at.mentorFillCh == nil || at.mentorEval == nil {
+		return
+	}
+	apply := func(f mentorFillReceipt) mentor.FillOutcome {
+		return at.mentorEval.State.Limits.RecordFill(f.receiptID, f.armID, f.lo, f.hi, f.row, at.mentorEval.State.Levels)
+	}
+	// R1: deferred receipts (row fallback waiting for the first Tick's levels)
+	// are retried first; a still-empty level set re-defers them.
+	if len(at.mentorDeferredFills) > 0 {
+		kept := at.mentorDeferredFills[:0]
+		for _, f := range at.mentorDeferredFills {
+			if apply(f) == mentor.FillDefer {
+				kept = append(kept, f)
+			}
+		}
+		at.mentorDeferredFills = kept
+	}
+	for {
+		select {
+		case f := <-at.mentorFillCh:
+			if apply(f) == mentor.FillDefer {
+				// R1: the row fallback needs State.Levels, still empty — park
+				// the receipt for the next drain (after the first Tick sets
+				// the levels) and keep draining the pend-backed receipts.
+				at.mentorDeferredFills = append(at.mentorDeferredFills, f)
+			}
+		default:
+			return
+		}
+	}
 }
 
 // mentorDispatchEntry is the ONE mentor entry path (X-07, refactored out of

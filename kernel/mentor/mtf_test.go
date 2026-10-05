@@ -95,8 +95,8 @@ func TestMTFConfluenceWiredAtTheEmitSites(t *testing.T) {
 	for _, want := range []string{
 		"chosen.Confluence = MTFConfluence(side, e.State.Trigger, chosen.Price, cb5, cb15)",
 		"in.Confluence = MTFConfluence(in.Side, e.State.Trigger, in.Price, cb5, cb15)",
-		"cb5 := closedBuckets(bars, now, e.Cfg)",
-		"cb15 := closedBucketsTF(bars, 15, now)",
+		"cb5 := e.closedBucketsMemo(bars, now)",
+		"cb15 := e.closedBucketsTFMemo(bars, 15, now)",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("eval.go lost the D4.2-06 wiring: missing %q", want)
