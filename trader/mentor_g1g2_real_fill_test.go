@@ -171,3 +171,58 @@ func TestMentorRealFillConcurrentEnqueueDrain(t *testing.T) {
 	}
 }
 
+// TestMentorPartialFillRegistersOneLeg is the FU-1 P1-1 pin: a PARTIAL fill is
+// a real fill — it enqueues on the FIRST fill of any size (the receipt dedupe
+// makes a later full a no-op), so a partial-then-expiry-cancel still counts
+// exactly one leg. MUTANT: drop the partial-branch enqueue → no leg → RED.
+func TestMentorPartialFillRegistersOneLeg(t *testing.T) {
+	at, _, ledger := realFillAT(t)
+	seedRealFillPend(t, at, "lvl-12")
+	row := store.ArmedOrderDB{
+		TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR",
+		Scenario: "lvl-12-123", Side: "long", EntryPx: 29600, StopPx: 29590,
+		TargetPx: 29630, Kind: "stop_entry", Condition: "PHL",
+		State: store.StateWorking, SignalID: "sig-fill-12",
+		Origin: store.ArmOriginMentor, Contracts: store.IntPtr(2),
+	}
+	if err := ledger.DB().Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	// 1 of 2 contracts — a PARTIAL fill.
+	at.onArmedOrderUpdate(ntwire.OrderUpdatePayload{
+		SignalID: "sig-fill-12", State: "partfilled", Quantity: 1, FillPrice: 29600, Account: "Sim101",
+	}, ledger)
+	at.mentorDrainFills()
+	if l := at.mentorEval.State.Limits.Long; l == nil || l.Entries != 1 {
+		t.Fatalf("a partial fill must register exactly one leg, got %+v", l)
+	}
+	// The remainder is cancelled at expiry — no full fill follows.
+	at.onArmedOrderUpdate(ntwire.OrderUpdatePayload{
+		SignalID: "sig-fill-12", State: "cancelled", Account: "Sim101",
+	}, ledger)
+	at.mentorDrainFills()
+	if l := at.mentorEval.State.Limits.Long; l == nil || l.Entries != 1 {
+		t.Fatalf("a partial-then-cancel must stay at one leg, got %+v", l)
+	}
+}
+
+// TestMentorFillAfterRestartRegistersFromRow is the FU-1 P1-2 pin: a real fill
+// with NO pend (a restart dropped the in-memory pends) registers from the armed
+// ROW — counted, never dropped. MUTANT: drop the row fallback in RecordFill →
+// no leg → RED.
+func TestMentorFillAfterRestartRegistersFromRow(t *testing.T) {
+	at, _, ledger := realFillAT(t)
+	// Fresh Limits: no pend seeded. The evaluator's last levels supply the
+	// old-extreme fallback for the leg.
+	at.mentorEval.State.Levels = []mentor.Level{{Key: "old_extreme:29650", Kind: mentor.KindOldExtreme, Price: 29650}}
+	fillMentorRow(t, at, ledger, "lvl-13", "sig-fill-13")
+	at.mentorDrainFills()
+	l := at.mentorEval.State.Limits.Long
+	if l == nil || l.Entries != 1 {
+		t.Fatalf("a fill after restart must register from the row, got %+v", l)
+	}
+	if n := at.mentorEval.State.Limits.Counters["record_fill_from_row"]; n != 1 {
+		t.Fatalf("the row fallback must be counted, got %v", at.mentorEval.State.Limits.Counters)
+	}
+}
+

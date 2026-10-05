@@ -68,11 +68,13 @@ func mentorLiveArmFor(armID string) (mentorLiveArm, bool) {
 // mentorFillReceipt is a REAL fill receipt queued from the fill callback
 // (the executor goroutine) to the evaluator drain (FU-1). receiptID dedupes
 // (the entry signal id); armID is the evaluator's bare ArmID; lo/hi seed the
-// B22 wave (the fill candle's low/high).
+// B22 wave (the fill candle's low/high); row is the armed-row fallback for a
+// fill with no pend (a restart dropped the pends — P1-2).
 type mentorFillReceipt struct {
 	receiptID string
 	armID     string
 	lo, hi    float64
+	row       *mentor.FillRow
 }
 
 // mentorArmIDFromScenario strips the per-construction epoch suffix the ledger
@@ -123,8 +125,17 @@ func (at *AutoTrader) mentorEnqueueFill(r store.ArmedOrderDB, u ntwire.OrderUpda
 			lo, hi = bars[len(bars)-1].Low, bars[len(bars)-1].High
 		}
 	}
+	// P1-2: carry the armed-row fallback so a fill with no pend (a restart
+	// dropped the in-memory pends) registers from the row, never dropped.
+	row := &mentor.FillRow{
+		Side:   mentor.Side(strings.ToLower(strings.TrimSpace(r.Side))),
+		Entry:  r.EntryPx,
+		Stop:   r.StopPx,
+		Target: r.TargetPx,
+		ISB:    strings.EqualFold(strings.TrimSpace(r.Condition), "ISB"),
+	}
 	select {
-	case at.mentorFillCh <- mentorFillReceipt{receiptID: u.SignalID, armID: armID, lo: lo, hi: hi}:
+	case at.mentorFillCh <- mentorFillReceipt{receiptID: u.SignalID, armID: armID, lo: lo, hi: hi, row: row}:
 	default:
 		mentorCount("record_fill_queue_full")
 	}
@@ -140,7 +151,7 @@ func (at *AutoTrader) mentorDrainFills() {
 	for {
 		select {
 		case f := <-at.mentorFillCh:
-			at.mentorEval.State.Limits.RecordFill(f.receiptID, f.armID, f.lo, f.hi)
+			at.mentorEval.State.Limits.RecordFill(f.receiptID, f.armID, f.lo, f.hi, f.row, at.mentorEval.State.Levels)
 		default:
 			return
 		}

@@ -33,6 +33,10 @@ type State struct {
 	BoxRefs map[string]int `json:"box_refs,omitempty"`
 	// Limits is the G1 leg budget + G2 loss box state machine (DS-107).
 	Limits Limits `json:"limits,omitempty"`
+	// Levels is the last tick's level set (FU-1 P1-2): the fill drain reads it
+	// to resolve a row-fallback fill's leg extreme via the old-extreme fallback
+	// when the in-memory pend was dropped by a restart.
+	Levels []Level `json:"levels,omitempty"`
 	// Refusals is the B-rules refusal ledger (CTO 13:51:31Z): every filter
 	// that DROPS an intent names its reason and counts it, like the replay
 	// funnel stages — DS-105 diffs these against the replay.
@@ -747,6 +751,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 	}
 	levels = withoutDeleted(levels, e.State.DeletedLevels)
+	e.State.Levels = levels // FU-1 P1-2: the fill drain reads this for the row fallback
 
 	// 5m trigger line advances every 1m close (aggregated 5m bars).
 	e.State.Trigger = TriggerTick(e.State.Trigger, barsTF(bars, 5), 5, e.Cfg)

@@ -112,6 +112,9 @@ func mentorKernelRefusals(at *AutoTrader) map[string]int {
 	for k, v := range at.mentorEval.State.Limits.Refusals {
 		out[k] += v
 	}
+	for k, v := range at.mentorEval.State.Limits.Counters {
+		out[k] += v
+	}
 	return out
 }
 
@@ -137,6 +140,7 @@ func mentorTraderRefusalKey(key string) bool {
 	for _, kw := range []string{
 		"refused", "suppressed", "missing", "no_source", "no_data", "no_calendar",
 		"held", "no_chase", "short", "bad_value", "failed", "unwired", "error", "hold",
+		"queue_full", // FU-1 P2-4: record_fill_queue_full (a dropped fill receipt)
 	} {
 		if strings.Contains(key, kw) {
 			return true
