@@ -34,7 +34,11 @@ func f1SeedStaleLive(t *testing.T, st *store.Store, dateCT string) {
 		TradeDate:  dateCT,
 		Source:     "forexfactory",
 		EventsJSON: string(js),
-		CreatedAt:  time.Now().Add(-4 * time.Hour).UnixMilli(),
+		// F1-SEED-WALLCLOCK (CTO 2026-10-05): anchor the seed to the TEST clock
+		// (nowOnCT), not time.Now(). A wall-clock seed reads FRESH once the real
+		// clock passes 16:00 CT on the seed date, flipping the test to skip-fresh
+		// (no fetch) and going RED every future CI/release run.
+		CreatedAt: nowOnCT(t, dateCT).Add(-4 * time.Hour).UnixMilli(),
 	})
 	if err != nil || !ok {
 		t.Fatalf("seed stale slice: wrote=%v err=%v", ok, err)
