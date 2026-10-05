@@ -470,6 +470,16 @@ func (l *Limits) dropPend(armID string) {
 	l.pend = keep
 }
 
+// DropArm removes the still-pending simulated order for an ArmID (X-07): the
+// TRADER calls it when it refuses an emitted entry intent (R8 25-pt ceiling,
+// window, done-after-win, news, no-chase, N4, MENTOR_PLACE off), so a
+// trader-side refusal never phantom-fills on a later candle and spends the G1
+// leg budget or opens a G2 loss box. Already-filled orders live in `open` and
+// are NOT undone — a fill that happened is real.
+func (l *Limits) DropArm(armID string) {
+	l.dropPend(armID)
+}
+
 func (l *Limits) leg(side Side) *Leg {
 	if side == SideLong {
 		return l.Long

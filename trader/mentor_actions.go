@@ -63,40 +63,70 @@ func mentorLiveArmFor(armID string) (mentorLiveArm, bool) {
 	return a, ok
 }
 
+// mentorDispatchEntry is the ONE mentor entry path (X-07, refactored out of
+// the dispatch switch). A single deferred guard drops the kernel's pending
+// G1/G2 sim fill for the intent's ArmID on EVERY refusal inside this
+// function: a trader-side refusal (R8 25-pt ceiling, window, done-after-win,
+// news, no-chase, N4, MENTOR_PLACE off) must not phantom-fill on a later
+// candle and spend the leg budget / open a loss box. An intent that reached
+// mentorRegisterLiveArm (mentorLiveArmFor) is accepted — no drop.
+func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInputs, lastCloseTime, emitMs int64) {
+	defer func() {
+		if in.ArmID == "" {
+			return
+		}
+		if _, ok := mentorLiveArmFor(in.ArmID); ok {
+			return
+		}
+		at.mentorDropEvalArm(in.ArmID)
+	}()
+	// ONE MENTOR ENTRY PATH: the order type differs only inside the
+	// evaluator; the injector always rests a stop-limit. The confluence
+	// flag feeds the size tier (10/20) and the exit fork (C).
+	extra.Confluence = mentorConfluenceFlag(in)
+	tuned := mentorTuningResolve(at.mentorRiskControl())
+	extra.SwingMaxStopPts = tuned.SwingMaxStopPts
+	extra.SpentDayStopCapPts = tuned.DayGateTargetCapPts
+	if why := mentorRuleGate(in, extra); why != "" {
+		rule := "other"
+		if i := strings.Index(why, ":"); i > 0 {
+			rule = strings.ToLower(strings.TrimSpace(why[:i]))
+		}
+		mentorCount("refused_" + rule)
+		at.logWarnf("🧑‍🏫 mentor intent REFUSED — %s", why)
+		return
+	}
+	choice, err := at.mentorSizeFor(in, extra)
+	if err != nil {
+		return
+	}
+	mentorCount("intent_" + in.Setup)
+	if !mentorPlaceEnv() {
+		at.logInfof("🧑‍🏫 mentor intent SIZED, NOT PLACED (MENTOR_PLACE env off — set MENTOR_PLACE=1 to place): %s %s %d contracts @ %.2f (stop %.2f, target %.2f, tier %s)",
+			in.Setup, in.Side, choice.Contracts, in.Price, in.Stop, in.Target, choice.Tier)
+		mentorCount("placement_held")
+		return
+	}
+	at.mentorPlaceIntent(in, choice, lastCloseTime, emitMs)
+}
+
+// mentorDropEvalArm drops the kernel G1/G2 sim pend for a refused entry
+// (X-07). Nil-safe: a direct dispatch in a test may run before the evaluator
+// exists (the guard no-ops there — nothing was simulated).
+func (at *AutoTrader) mentorDropEvalArm(armID string) {
+	if at == nil || at.mentorEval == nil {
+		return
+	}
+	at.mentorEval.State.Limits.DropArm(armID)
+}
+
 // mentorDispatchIntent is the injector's action switch as ONE call (the eval
 // loop delegates here so every action is testable at the call site). Never
 // silent: every action either executes, or refuses with a named counter.
 func (at *AutoTrader) mentorDispatchIntent(in mentor.Intent, extra mentorTierInputs, lastCloseTime, emitMs int64) {
 	switch in.Action {
 	case mentor.PlaceStopEntry, mentor.PlaceStopLimitEntry:
-		// ONE MENTOR ENTRY PATH: the order type differs only inside the
-		// evaluator; the injector always rests a stop-limit. The confluence
-		// flag feeds the size tier (10/20) and the exit fork (C).
-		extra.Confluence = mentorConfluenceFlag(in)
-		tuned := mentorTuningResolve(at.mentorRiskControl())
-		extra.SwingMaxStopPts = tuned.SwingMaxStopPts
-		extra.SpentDayStopCapPts = tuned.DayGateTargetCapPts
-		if why := mentorRuleGate(in, extra); why != "" {
-			rule := "other"
-			if i := strings.Index(why, ":"); i > 0 {
-				rule = strings.ToLower(strings.TrimSpace(why[:i]))
-			}
-			mentorCount("refused_" + rule)
-			at.logWarnf("🧑‍🏫 mentor intent REFUSED — %s", why)
-			return
-		}
-		choice, err := at.mentorSizeFor(in, extra)
-		if err != nil {
-			return
-		}
-		mentorCount("intent_" + in.Setup)
-		if !mentorPlaceEnv() {
-			at.logInfof("🧑‍🏫 mentor intent SIZED, NOT PLACED (MENTOR_PLACE env off — set MENTOR_PLACE=1 to place): %s %s %d contracts @ %.2f (stop %.2f, target %.2f, tier %s)",
-				in.Setup, in.Side, choice.Contracts, in.Price, in.Stop, in.Target, choice.Tier)
-			mentorCount("placement_held")
-			return
-		}
-		at.mentorPlaceIntent(in, choice, lastCloseTime, emitMs)
+		at.mentorDispatchEntry(in, extra, lastCloseTime, emitMs)
 	case mentor.ExtendArm:
 		at.mentorExtendArm(in)
 	case mentor.CancelArm:
