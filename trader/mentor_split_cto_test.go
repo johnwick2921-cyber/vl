@@ -32,8 +32,8 @@ func TestMentorLeg1ForFrameSpentDayCapsTheWireRunner(t *testing.T) {
 	normal := spent
 	normal.SpentDay = false
 	for _, c := range []struct {
-		in       mentor.Intent
-		n, want  int
+		in      mentor.Intent
+		n, want int
 	}{
 		{spent, 7, 5}, {spent, 6, 4}, {spent, 5, 3}, {spent, 4, 2}, {spent, 2, 1},
 		{normal, 7, 4}, {normal, 6, 3}, {normal, 5, 3},

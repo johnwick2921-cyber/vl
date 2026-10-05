@@ -58,8 +58,8 @@ type TCPTrader struct {
 	// exit drive registers two legs ONLY from this record (SentSplit), so it
 	// never addresses a leg 2 the AddOn was never told to build.
 	splitBySignal map[string]SentSplit
-	takePrft     map[string]float64
-	guard        *orderGuard // B3: dupe-drop + rate breaker at the order-submission chokepoint
+	takePrft      map[string]float64
+	guard         *orderGuard // B3: dupe-drop + rate breaker at the order-submission chokepoint
 	// openOrdersSrc (class 33) — the ledger-backed working-order source for
 	// GetOpenOrders (flat-gate leg 4). nil = unwired = the leg FAILS.
 	openOrdersSrc func(symbol string) ([]types.OpenOrder, error)
