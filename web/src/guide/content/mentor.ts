@@ -37,6 +37,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.isb_reverse_ema9_enabled',
     live: true,
   },
+  '4h/1h gate only in the news window': {
+    settingId: 'risk_control.mentor_tuning.htf_gate_news_only',
+    live: true,
+  },
   'PHL min candles from old extreme': {
     settingId: 'Config.PHLMinCandlesFromExtreme',
     live: false,
@@ -728,6 +732,20 @@ export const mentor: GuideSection = {
           systemDefault: 'true',
           recommended: 'ON — [D5.4], R-C ruling.',
           whenToTouch: 'Rarely.',
+          perSession: 'No.',
+        },
+        {
+          label: '4h/1h gate only in the news window',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D4.4-11: OFF (default) = the 4h/1h direction gate runs ALL DAY, as today — no 4h trigger means nothing to follow, and a 1h against the 4h sits out. ON = the gate applies only inside the 07:20–07:35 CT news window; ordinary intraday entries are then not HTF-gated. The course says to use the HTF read "for news first, not ordinary trading yet" (D4.4 p1 @13:44–14:06), while the later D5.1 routine reads 4h then 1h for the whole day — that conflict (U-6) is open, so the all-day gate stays the default.',
+          trader: 'OFF — CTO default 2026-10-04 (U-6 open).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (HTFGateNewsOnly) · kernel/mentor/htf_direction.go HTFGateActive / HTFVerdict',
+          range: 'true / false',
+          systemDefault: 'false',
+          recommended:
+            'OFF until the owner rules U-6; ON trades more (the replay\u2019s zero days were blocked mostly by isb_htf_blocked).',
+          whenToTouch: 'Only on an owner ruling of U-6.',
           perSession: 'No.',
         },
         {

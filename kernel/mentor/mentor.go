@@ -263,9 +263,11 @@ type Config struct {
 	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h
 	// direction gate is for NEWS first, not ordinary trading yet
 	// ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI. ĐỪNG SỬ DỤNG CHO [trade]
-	// THƯỜNG"). Default true: the HTF gate applies only inside the 07:20–07:35
-	// CT news window; ordinary intraday entries are not HTF-gated. false =
-	// the legacy all-day gate.
+	// THƯỜNG"). true: the HTF gate applies only inside the 07:20–07:35 CT
+	// news window; ordinary intraday entries are not HTF-gated. Default false
+	// = the all-day gate (CTO 2026-10-04: U-6 is open — D5.1's later
+	// pre-session routine reads 4h/1h for the whole day). Studio switch:
+	// risk_control.mentor_tuning.htf_gate_news_only.
 	HTFGateNewsOnly bool
 
 	// NearBoxRoomMultiple — Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: a setup
@@ -344,9 +346,9 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
-		HTFGateNewsOnly:        true,
-		NearBoxRoomMultiple:    2, // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
-		LossDeparturePts:       0, // B22: structural departure; the numeric fallback is OFF
+		HTFGateNewsOnly:        false, // U-6 open: D5.1's later routine runs the 4h/1h read all day — the all-day gate stays the default (Studio switch)
+		NearBoxRoomMultiple:    2,     // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
+		LossDeparturePts:       0,     // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
 		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30

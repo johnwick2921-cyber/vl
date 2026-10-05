@@ -24,6 +24,7 @@ type mentorTuned struct {
 	LevelMaxVisits         int
 	OrbGateEnabled         bool
 	ISBReverseEMA9Enabled  bool
+	HTFGateNewsOnly        bool
 	DayGateSpentPts        float64
 	DayGateTargetCapPts    float64
 	SwingMaxStopPts        float64
@@ -39,6 +40,7 @@ func mentorTuningResolve(rc *store.RiskControlConfig) mentorTuned {
 		LevelMaxVisits:         d.LevelMaxVisits,
 		OrbGateEnabled:         d.OrbGateEnabled,
 		ISBReverseEMA9Enabled:  d.ISBReverseEMA9Enabled,
+		HTFGateNewsOnly:        d.HTFGateNewsOnly,
 		DayGateSpentPts:        d.DayGateSpentPts,
 		DayGateTargetCapPts:    d.DayGateTargetCapPts,
 		SwingMaxStopPts:        d.Swing.MaxStopPts,
@@ -92,6 +94,9 @@ func mentorTuningResolve(rc *store.RiskControlConfig) mentorTuned {
 	if t.ISBReverseEMA9Enabled != nil {
 		out.ISBReverseEMA9Enabled = *t.ISBReverseEMA9Enabled
 	}
+	if t.HTFGateNewsOnly != nil {
+		out.HTFGateNewsOnly = *t.HTFGateNewsOnly
+	}
 	return out
 }
 
@@ -105,6 +110,7 @@ func applyMentorTuning(cfg *mentor.Config, rc *store.RiskControlConfig) {
 	cfg.LevelMaxVisits = t.LevelMaxVisits
 	cfg.OrbGateEnabled = t.OrbGateEnabled
 	cfg.ISBReverseEMA9Enabled = t.ISBReverseEMA9Enabled
+	cfg.HTFGateNewsOnly = t.HTFGateNewsOnly
 	cfg.DayGateSpentPts = t.DayGateSpentPts
 	cfg.DayGateTargetCapPts = t.DayGateTargetCapPts
 	cfg.Swing.MaxStopPts = t.SwingMaxStopPts

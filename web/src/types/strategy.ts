@@ -285,6 +285,7 @@ export interface MentorTuning {
   level_max_visits?: number // explicit 0 = no per-day cap
   orb_gate_enabled?: boolean
   isb_reverse_ema9_enabled?: boolean
+  htf_gate_news_only?: boolean // D4.4-11 — unset = OFF (the all-day 4h/1h gate)
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number
   swing_max_stop_pts?: number

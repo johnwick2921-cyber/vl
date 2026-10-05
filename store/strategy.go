@@ -1953,6 +1953,9 @@ type MentorTuning struct {
 	OrbGateEnabled *bool `json:"orb_gate_enabled,omitempty"`
 	// ISBReverseEMA9Enabled: the reverse ISB at EMA 9 (D5.4; nil → ON, R-C).
 	ISBReverseEMA9Enabled *bool `json:"isb_reverse_ema9_enabled,omitempty"`
+	// HTFGateNewsOnly (D4.4-11): the 4h/1h direction gate only inside the
+	// 07:20–07:35 CT news window (nil → OFF = the all-day gate; U-6 open).
+	HTFGateNewsOnly *bool `json:"htf_gate_news_only,omitempty"`
 	// Spent-day gate (METHOD §7 table, D5.1 p1 @14:21–15:57): a run of at
 	// least SpentPts before the open = spent; the target cap then applies,
 	// and any setup whose stop is over the cap is skipped (R9).
