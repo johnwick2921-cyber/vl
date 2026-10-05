@@ -156,6 +156,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             public string      ExitOco2;
             public int         Leg1Exited; // REVIEW-SPLIT-2 P1 fold: leg-1 contracts already exited (Leg1Qty is NEVER zeroed)
             public double      LastStop;   // last known leg-1 stop price (leg-2 creation after leg 1 exits)
+            public double      InitialStop; // the entry's stop price (b.Sl) at bracket creation — leg-2 fallback
         }
         private readonly Dictionary<string, PlacedBracket> placedBrackets = new Dictionary<string, PlacedBracket>();
 
@@ -2642,6 +2643,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                             // intended split so a later fill grows leg 2 (AmendBracketQuantity).
                             Leg1Qty = splitWanted ? b.Leg1Qty : 0, Leg1Tp = splitWanted ? b.Leg1Tp : 0,
                             RunnerTp = b.Tp,
+                            InitialStop = b.Sl,
                         };
                     }
                     LogInfo("VLTraderTCPClient: placed protective bracket signal_id=" + signalId
@@ -2681,6 +2683,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                             Account = ba, Instrument = b.Instrument, ExitAction = b.ExitAction,
                             Qty = filledQty, ExitOco = exitOco1, ExitOco2 = exitOco2, TickSize = tick,
                             Leg1Qty = b.Leg1Qty, Leg2Qty = leg2Qty, Leg1Tp = b.Leg1Tp, RunnerTp = b.Tp,
+                            InitialStop = b.Sl,
                         };
                     }
                     LogInfo("VLTraderTCPClient: placed SPLIT bracket signal_id=" + signalId
@@ -2712,6 +2715,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                             SlOrder = sl1, TpOrder = tp1, Account = ba, Instrument = b.Instrument,
                             ExitAction = b.ExitAction, Qty = filledQty, ExitOco = exitOco1, TickSize = tick,
                             Leg1Qty = b.Leg1Qty, Leg2Qty = 0, Leg1Tp = b.Leg1Tp, RunnerTp = b.Tp,
+                            InitialStop = b.Sl,
                         };
                     }
                     LogInfo("VLTraderTCPClient: placed LEG-1-ONLY bracket (partial first fill) signal_id=" + signalId
@@ -2769,8 +2773,13 @@ namespace NinjaTrader.NinjaScript.AddOns
                             // exited before leg 2 existed): create it now at the last known
                             // leg-1 stop price.
                             string oco2 = signalId + "-exit2";
-                            double stop = pb.LastStop;
-                            if (stop <= 0 && pb.SlOrder != null) stop = pb.SlOrder.StopPrice;
+                            double stop = pb.LastStop > 0 ? pb.LastStop : pb.InitialStop;
+                            if (stop <= 0)
+                            {
+                                LogError("VLTraderTCPClient: leg-2 bracket NOT created for " + signalId
+                                         + " — no known stop price; position holds " + leg2Qty + " unprotected");
+                                return;
+                            }
                             var sl2 = ba.CreateOrder(pb.Instrument, pb.ExitAction, OrderType.StopMarket, OrderEntry.Manual,
                                 TimeInForce.Gtc, leg2Qty, 0, stop, oco2, signalId + "-sl2", Core.Globals.MaxDate, null);
                             var tp2 = ba.CreateOrder(pb.Instrument, pb.ExitAction, OrderType.Limit, OrderEntry.Manual,
@@ -3409,6 +3418,11 @@ namespace NinjaTrader.NinjaScript.AddOns
         private static void LogWarn(string msg)
         {
             try { NinjaScript.Log(msg, LogLevel.Warning); } catch { }
+        }
+
+        private static void LogError(string msg)
+        {
+            try { NinjaScript.Log(msg, LogLevel.Error); } catch { }
         }
 
         // ==============================================================
