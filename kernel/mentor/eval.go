@@ -939,7 +939,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 
 	if !conflict && IsISB(prev, cur) {
-		if dirOK, trigSide, _ := TriggerVerdict(e.State.Trigger, cur.Close); dirOK {
+		// D4.1-23: while the 5m ISB rest box stands, the box — not the 5m
+		// trigger line — governs the 1m ISB. The trigger PRICE-side filter is
+		// skipped entirely ("khung 5 phút kêu làm gì, làm cái đó" [D4.1 p2
+		// @04:06–06:45]; METHOD §5.2 "do not use the trigger line while it
+		// stands"); the box's own direction gate (ISBBoxAllows) runs below.
+		var trigSide Side
+		dirOK := true
+		if e.State.ISBBox == nil {
+			dirOK, trigSide, _ = TriggerVerdict(e.State.Trigger, cur.Close)
+		}
+		if dirOK {
 			// The conflict reads the standing boxes above (D4.2-03); the
 			// still-forming 5m bucket is dropped [D4.2 p1 @ 05:10: "a
 			// 15-minute candle is only confirmed once CLOSED; trade from
