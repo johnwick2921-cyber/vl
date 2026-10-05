@@ -89,3 +89,23 @@ func TestMentorDailyLossGateUnconfiguredPasses(t *testing.T) {
 		t.Fatalf("master OFF must allow, got refuse (%q)", why)
 	}
 }
+
+// CTO fold (release 10-05-1): an UNRESOLVED close today (pnl_corrected NULL,
+// canon 40) refuses the placement — an unknown loss is not a confident "under
+// the limit". Mutant: drop the unresolved branch → allowed → RED.
+func TestMentorDailyLossGateRefusesOnUnresolvedClose(t *testing.T) {
+	ResetMentorCountersForTest()
+	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{DailyLossLimitUSD: 100}}
+	at, st := resetTrader(t, cfg)
+	now := dailyLossNow()
+	exit := now.Add(-5 * time.Minute)
+	row := &store.TraderPosition{TraderID: at.id, Account: "Sim101", Symbol: "MNQ", Side: "LONG",
+		Quantity: 1, EntryPrice: 100, ExitPrice: 99, Status: "CLOSED", CloseReason: "sync",
+		EntryTime: exit.Add(-5 * time.Minute).UnixMilli(), ExitTime: exit.UnixMilli()} // PnlCorrected nil = unresolved
+	if err := st.GormDB().Create(row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if refuse, why := at.mentorDailyLossGate(now); !refuse {
+		t.Fatalf("an unresolved close today must refuse (fail-closed), got allow (%q)", why)
+	}
+}

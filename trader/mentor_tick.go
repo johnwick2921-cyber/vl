@@ -827,10 +827,18 @@ func (at *AutoTrader) mentorDailyLossGate(now time.Time) (bool, string) {
 	if !enforced || limit <= 0 {
 		return false, ""
 	}
+	// CTO fold (release 10-05-1): fail CLOSED on an UNRESOLVED close today
+	// (pnl NULL — canon 40): an unknown loss is not a confident "under the
+	// limit" — the same rule as the B1 day-net source. The 60s sweep is a
+	// backstop, not the gate.
 	if at.store == nil {
-		return false, "" // no store → no daily P&L read → fail-open (the 60s sweep still enforces)
+		return false, "" // no store exists only in unit fixtures; production always has one
 	}
-	realized, _, _ := at.deskRealizedToday(now)
+	realized, _, unresolved := at.deskRealizedToday(now)
+	if unresolved > 0 {
+		mentorCount("daily_loss_refused")
+		return true, fmt.Sprintf("daily loss limit enforced but %d close(s) today have unresolved P&L — no new entry (fail-closed) [guardrail]", unresolved)
+	}
 	if realized <= -limit {
 		mentorCount("daily_loss_refused")
 		return true, fmt.Sprintf("daily loss limit hit at placement (realized today=%.2f, limit=-%.2f) — no new entry [guardrail]", realized, limit)
