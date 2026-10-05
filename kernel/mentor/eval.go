@@ -173,6 +173,11 @@ type Evaluator struct {
 	depth4hBucket int64
 	depthMet      string
 	seedLine      string
+	// tfMemo caches barsTF aggregations within ONE Tick (FU-2): one build per
+	// (tf, slice identity) per Tick, cleared at the start of each Tick.
+	// Evaluator-owned on purpose — two traders run two evaluators, each with
+	// its own memo (a package-global cache would cross the streams).
+	tfMemo map[int]tfMemoEntry
 }
 
 func New(cfg Config) *Evaluator {
@@ -535,6 +540,54 @@ func closedBuckets(bars []market.Kline, now int64, cfg Config) []market.Kline {
 	return b5
 }
 
+// tfMemoEntry is one barsTF memo slot: the input slice identity (length +
+// first/last OpenTime) plus the built buckets. The identity guard makes a hit
+// byte-identical to a fresh barsTF — a DIFFERENT slice with the same tf (e.g.
+// the HTF feed vs the raw 1m tape) never reads another slice's buckets.
+type tfMemoEntry struct {
+	n      int
+	first  int64
+	last   int64
+	bucket []market.Kline
+}
+
+// barsTFMemo returns barsTF(bars, tfMin), built at most once per Tick for a
+// given (tf, slice identity). tfMin <= 1 and empty slices fall through to
+// barsTF's own early return (no memo). Cleared at the start of each Tick.
+func (e *Evaluator) barsTFMemo(bars []market.Kline, tfMin int) []market.Kline {
+	if tfMin <= 1 || len(bars) == 0 {
+		return bars
+	}
+	first, last := bars[0].OpenTime, bars[len(bars)-1].OpenTime
+	if en, ok := e.tfMemo[tfMin]; ok && en.n == len(bars) && en.first == first && en.last == last {
+		return en.bucket
+	}
+	b := barsTF(bars, tfMin)
+	if e.tfMemo == nil {
+		e.tfMemo = make(map[int]tfMemoEntry, 4)
+	}
+	e.tfMemo[tfMin] = tfMemoEntry{n: len(bars), first: first, last: last, bucket: b}
+	return b
+}
+
+// closedBucketsMemo is closedBuckets reading the per-Tick memo.
+func (e *Evaluator) closedBucketsMemo(bars []market.Kline, now int64) []market.Kline {
+	b5 := e.barsTFMemo(bars, 5)
+	if len(b5) > 0 && b5[len(b5)-1].CloseTime >= now {
+		return b5[:len(b5)-1]
+	}
+	return b5
+}
+
+// closedBucketsTFMemo is closedBucketsTF reading the per-Tick memo.
+func (e *Evaluator) closedBucketsTFMemo(bars []market.Kline, tfMin int, now int64) []market.Kline {
+	agg := e.barsTFMemo(bars, tfMin)
+	if len(agg) > 0 && agg[len(agg)-1].CloseTime >= now {
+		agg = agg[:len(agg)-1]
+	}
+	return agg
+}
+
 // nextLevelBeyond is the §6 target ladder [D3.3 p1 @ 05:07]: the NEAREST level
 // beyond price in the trade direction ("the first thing standing in your way").
 // 0 = no level beyond.
@@ -713,6 +766,9 @@ func stampLeave(out []Intent, verdict DayVerdict) ([]Intent, []string) {
 func BarCloseInstant(last market.Kline) int64 { return last.CloseTime + 1 }
 
 func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
+	// FU-2: the per-Tick barsTF memo is scoped to ONE Tick — clear it before
+	// anything aggregates, so a new bar always rebuilds the buckets it must.
+	e.tfMemo = nil
 	// A5 + P0 sizing gap (CTO 20:13:25Z): ONE stamp where intents LEAVE Tick —
 	// the geometry (StopPts/TargetPts), the spent-day flag, and the
 	// untagged-setup drop. The defer covers every return path, including the
@@ -757,7 +813,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	levels = withoutDeleted(levels, e.State.DeletedLevels)
 
 	// 5m trigger line advances every 1m close (aggregated 5m bars).
-	e.State.Trigger = TriggerTick(e.State.Trigger, barsTF(bars, 5), 5, e.Cfg)
+	e.State.Trigger = TriggerTick(e.State.Trigger, e.barsTFMemo(bars, 5), 5, e.Cfg)
 
 	// §5.4 HTF direction (DS-106, fold item 3): the 4h/1h lines advance with
 	// the same bar history. Item 18 part 1: a red-folder 07:30 print candle
@@ -765,7 +821,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// day's print windows (plumbed from the trader's calendar) are dropped
 	// from the HTF feed. Empty windows = no print today = byte-identical.
 	htfBars := htfFeedBars(bars, e.Cfg.PrintWindows)
-	e.State.HTF = HTFAdvance(e.State.HTF, barsTF(htfBars, 240), barsTF(htfBars, 60), e.Cfg)
+	e.State.HTF = HTFAdvance(e.State.HTF, e.barsTFMemo(htfBars, 240), e.barsTFMemo(htfBars, 60), e.Cfg)
 	// D4.4-11: the HTF direction gate applies only in the news window (the
 	// course uses the HTF read for news first, not ordinary trading).
 	e.State.HTF.GateOff = !HTFGateActive(now, e.Cfg)
@@ -811,7 +867,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// candles rejecting with same-way wicks put a bounded target at their far
 	// wick — target-only (the touch loop skips KindWickMicroscalp).
 	if e.Cfg.WickMicroscalpEnabled {
-		if wl, ok := wickMicroscalpLevel(closedBuckets(bars, now, e.Cfg), e.State.Trigger.Dir); ok {
+		if wl, ok := wickMicroscalpLevel(e.closedBucketsMemo(bars, now), e.State.Trigger.Dir); ok {
 			levels = append(levels, wl)
 		}
 	}
@@ -914,7 +970,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		// that OPENS a 2m bucket, barsTF would flush a half-formed 2m candle and
 		// the ISB would read it. The read must be the previous two CLOSED 2m
 		// candles (the cb15/cb30 helper path).
-		if b2 := closedBucketsTF(bars, 2, now); len(b2) >= 2 {
+		if b2 := e.closedBucketsTFMemo(bars, 2, now); len(b2) >= 2 {
 			execPrev, execCur = b2[len(b2)-2], b2[len(b2)-1]
 			execTFMin = 2
 		}
@@ -931,7 +987,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		if escaped, _ := ISBBoxEscape(*e.State.ISBBox, cur); escaped {
 			e.State.ISBBox = nil
 		}
-	} else if cb := closedBuckets(bars, now, e.Cfg); len(cb) >= 2 {
+	} else if cb := e.closedBucketsMemo(bars, now); len(cb) >= 2 {
 		// One box per 5m ISB pair: an escaped box is gone for good [D3.4 p2
 		// @ 12:02], so the same pair never builds it again.
 		if bx, ok := ISBBoxFrom5m(cb[len(cb)-2], cb[len(cb)-1]); ok && bx.AtTime != e.State.LastISBBoxAt {
@@ -942,9 +998,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 
 	// DS-103 item 4 (D4.2-06): the 15m/5m conflict and the MTF-alignment
 	// mode-C read use the SAME CLOSED buckets — computed once per tick.
-	cb5 := closedBuckets(bars, now, e.Cfg)
-	cb15 := closedBucketsTF(bars, 15, now)
-	cb30 := closedBucketsTF(bars, 30, now)
+	cb5 := e.closedBucketsMemo(bars, now)
+	cb15 := e.closedBucketsTFMemo(bars, 15, now)
+	cb30 := e.closedBucketsTFMemo(bars, 30, now)
 
 	// D4.1-25: the 15m ISB rest box — box the latest CLOSED 15m inside-bar
 	// candle (the REAL 15m TF, B8) and keep it until a 1m BODY closes outside.
