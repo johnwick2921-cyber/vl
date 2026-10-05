@@ -352,8 +352,13 @@ export const mentor: GuideSection = {
           'orb_gate_enabled = true (default ON) · X5 @01:52, 02:36, 03:29–03:47, 05:42',
         ],
         [
+          'News 07:30 CT print',
+          'A mentor entry is refused through the print (07:20–07:35 CT). At the print the machine now cancels resting intraday arms and flattens open intraday positions (SWING4H exempt), and the 4h/1h direction lines are frozen — a break made by the print candle does not move a line (R12).',
+          '—',
+        ],
+        [
           'Not live yet — coming',
-          'News 07:30 CT — a mentor entry is refused through the print (07:20–07:35), but resting arms are not yet cancelled and an open position is not yet flattened before the print (R12). The EMA 34 cut-through gate is not wired (D4.2-09). The persistent 15m/5m conflict and the 15m ISB rest box land with item 15 (live: no — coming).',
+          'The EMA 34 cut-through gate is not wired (D4.2-09). The persistent 15m/5m conflict and the 15m ISB rest box land with item 15 (live: no — coming).',
           '—',
         ],
       ],
