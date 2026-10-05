@@ -42,8 +42,10 @@ func TestItem22DriftDoesNotReInvalidate(t *testing.T) {
 		rthBars(1, 101, 101.2, 98, 98.5), // touches 100, closes below → wrong way
 	}
 	li, ca := countActions(e.Tick(bars, bars[1].CloseTime+1))
-	if li != 1 || ca != 1 {
-		t.Fatalf("first wrong-way close: level_invalid=%d cancel_arm=%d, want 1 and 1", li, ca)
+	// No order rests at the retest line, so the wrong-way close cancels
+	// nothing (CTO replay-noise fix): 1 level_invalid, 0 id-less cancels.
+	if li != 1 || ca != 0 {
+		t.Fatalf("first wrong-way close: level_invalid=%d cancel_arm=%d, want 1 and 0", li, ca)
 	}
 	if !e.State.ISBOnly[string(KindTriggerRetest)] {
 		t.Fatalf("precondition: trigger retest must be ISB-only; state=%v", e.State.ISBOnly)
@@ -79,8 +81,10 @@ func TestItem22DepartAndReturnRearms(t *testing.T) {
 		rthBars(1, 101, 101.2, 98, 98.5), // wrong way → ISB-only
 	}
 	li, ca := countActions(e.Tick(bars, bars[1].CloseTime+1))
-	if li != 1 || ca != 1 {
-		t.Fatalf("first wrong-way close: level_invalid=%d cancel_arm=%d, want 1 and 1", li, ca)
+	// No order rests at the retest line, so the wrong-way close cancels
+	// nothing (CTO replay-noise fix): 1 level_invalid, 0 id-less cancels.
+	if li != 1 || ca != 0 {
+		t.Fatalf("first wrong-way close: level_invalid=%d cancel_arm=%d, want 1 and 0", li, ca)
 	}
 
 	// Departure: a candle entirely below the band ends the visit.
@@ -97,8 +101,8 @@ func TestItem22DepartAndReturnRearms(t *testing.T) {
 	// closes through → a new wrong-way visit → re-armed.
 	bars = append(bars, rthBars(3, 94, 101.5, 93.5, 101))
 	li3, ca3 := countActions(e.Tick(bars, bars[3].CloseTime+1))
-	if li3 != 1 || ca3 != 1 {
-		t.Fatalf("return wrong-way close must re-arm: level_invalid=%d cancel_arm=%d, want 1 and 1", li3, ca3)
+	if li3 != 1 || ca3 != 0 {
+		t.Fatalf("return wrong-way close must re-arm: level_invalid=%d cancel_arm=%d, want 1 and 0 (nothing rests)", li3, ca3)
 	}
 	if !e.State.ISBOnly[string(KindTriggerRetest)] {
 		t.Fatalf("return wrong-way close must re-set ISB-only; state=%v", e.State.ISBOnly)

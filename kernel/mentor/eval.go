@@ -219,6 +219,18 @@ func withoutDeleted(levels []Level, deleted map[string]bool) []Level {
 func handleTouchIntents(e *Evaluator, lvl Level, intents []Intent) []Intent {
 	var out []Intent
 	for _, in := range intents {
+		// CTO (release 10-05-1, replay noise): the wrong-way touch's CancelArm
+		// names no order. Bind it to the level's RESTING order when one exists;
+		// with none resting there is nothing to cancel, so emit nothing — an
+		// id-less cancel only became a "REFUSED: unknown ArmID" WARN in the
+		// trader, thousands per day once moving lines re-arm per visit.
+		if in.Action == CancelArm && in.ArmID == "" {
+			arm, resting := e.State.LevelArms[lvl.Key]
+			if !resting || arm.ArmID == "" {
+				continue
+			}
+			in.ArmID = arm.ArmID
+		}
 		if in.Action == LevelInvalid {
 			if isBoxEdge(lvl) {
 				continue
