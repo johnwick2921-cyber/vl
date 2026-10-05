@@ -77,6 +77,7 @@ func TestISBFlagsForWidensInRange(t *testing.T) {
 func TestISBInRangeFlagOnTick(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.RoomMultiple = 0 // item 25: this fixture pins the in-range flag, not the room rule
 	box := ISBBox{High: 103, Low: 97, Dir: SideLong, AtTime: auditMs(2026, 9, 15, 9, 0, 0)}
 	// a head bar with a high close so the EMA 34 target sits well beyond the
 	// entry (the setup must carry a target: §6).

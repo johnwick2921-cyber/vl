@@ -65,6 +65,7 @@ func wickFixture(t *testing.T) (*Evaluator, []market.Kline, int64) {
 	cfg.ISBBufferPts = 0
 	cfg.LocTriggerFilter = false
 	cfg.WickMicroscalpEnabled = true
+	cfg.RoomMultiple = 0 // item 25: this fixture pins the wick TARGET selection, not the room rule
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}

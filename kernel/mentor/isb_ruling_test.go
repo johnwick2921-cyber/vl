@@ -54,6 +54,7 @@ func TestISBNotLocationGated(t *testing.T) {
 func TestISBBoxGatesTheEvaluator(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.RoomMultiple = 0 // item 25: this fixture pins the R5 box gate, not the room rule
 	// a box standing with Dir long
 	box := ISBBox{High: 103, Low: 97, Dir: SideLong, AtTime: auditMs(2026, 9, 15, 9, 0, 0)}
 

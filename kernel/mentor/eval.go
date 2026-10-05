@@ -507,6 +507,26 @@ func targetFloorOK(entry, stop, target float64) bool {
 	return abs(target-entry) >= abs(entry-stop)
 }
 
+// roomRefusal is the D5.3 room rule [@09:16] shared by every setup that has a
+// target: the room to target (|target−entry|) must be at least roomMultiple ×
+// the risk (|entry−stop|). roomMultiple <= 0 disables the check. One counter
+// "room" for every path (ISB, reverse ISB, swing reject, PHL/PLH). The same
+// 2R arithmetic the near-box rule (row 24) applies to box-edge distance.
+func roomRefusal(price, stop, target, roomMultiple float64) (refuse bool, why string) {
+	if roomMultiple <= 0 {
+		return false, ""
+	}
+	risk := abs(stop - price)
+	reward := abs(target - price)
+	if risk <= 0 || reward <= 0 {
+		return true, "degenerate stop/target geometry"
+	}
+	if reward < roomMultiple*risk {
+		return true, fmt.Sprintf("room rule: reward %.2f pts < %.2f pts (%.2fx risk) [D5.3 p1 @ 09:16]", reward, roomMultiple*risk, roomMultiple)
+	}
+	return false, ""
+}
+
 // triggerBoxZoneVerdict is the B1 no-trade zone (10-03 ruling, D3.4 p1
 // @16:38–17:19): between an FTGL below and the BUY trigger line above there
 // is NO trade ("khỏi đánh, đợi nó thoát ra khỏi 2 cái") — mirror: an FTGH
@@ -975,6 +995,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							capped := CapTargetForDay(chosen, e.State.Day.Verdict, dg)
 							if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 								e.refuse("isb_target_below_floor")
+							} else if refuse, _ := roomRefusal(capped.Price, capped.Stop, capped.Target, e.Cfg.RoomMultiple); refuse {
+								// Item 25 [D5.3 p1 @09:16]: the ISB now obeys the
+								// room rule too — reward to the (capped) target must
+								// be at least RoomMultiple × risk. One counter "room".
+								e.refuse("room")
 							} else {
 								// The emitted intent carries the CAPPED target: `capped`
 								// above fed only the floor check, so a spent-day ISB went
@@ -1049,6 +1074,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
 				if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 					e.refuse("isbrev_target_below_floor")
+				} else if refuse, _ := roomRefusal(capped.Price, capped.Stop, capped.Target, e.Cfg.RoomMultiple); refuse {
+					// Item 25: the reverse ISB runs the same room rule as the
+					// normal ISB. One counter "room".
+					e.refuse("room")
 				} else {
 					in.Target = capped.Target
 					// R85: with the reverse ON, the normal ISB must not arm the
@@ -1593,7 +1622,7 @@ func phlRefusalKey(reason string) string {
 	case strings.HasPrefix(reason, "old extreme not on the target side"):
 		return "phl_extreme_wrong_side"
 	case strings.HasPrefix(reason, "room rule"):
-		return "phl_room_rule"
+		return "room"
 	case strings.HasPrefix(reason, "stop over the 25-pt ceiling"):
 		return "phl_stop_ceiling"
 	case strings.HasPrefix(reason, "degenerate stop/target"):
@@ -1661,7 +1690,22 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 	for i := 0; i < dropped; i++ {
 		e.refuse("isb_trigger_side")
 	}
-	return kept
+	// Item 25 [D5.3 p1 @09:16]: the swing REJECT now obeys the room rule —
+	// reward to the chosen target (5m EMA34 when on-side, else the fallback)
+	// must be at least RoomMultiple × risk. One counter "room". The swing ISB
+	// (through-close re-entry, stop AT the line "even if it feels big" [table])
+	// is exempt — the method's own big-stop rule governs that entry.
+	out := make([]Intent, 0, len(kept))
+	for _, in := range kept {
+		if in.Action == PlaceStopEntry && in.Setup == "SWING4H" && strings.Contains(in.Reason, "reject touch") {
+			if refuse, _ := roomRefusal(in.Price, in.Stop, in.Target, e.Cfg.RoomMultiple); refuse {
+				e.refuse("room")
+				continue
+			}
+		}
+		out = append(out, in)
+	}
+	return out
 }
 
 // swingExpiry is the close of the CURRENT 4h candle (session-anchored at
