@@ -67,6 +67,33 @@ func mentorLegStopB(side string, stop, close, target, trailPrice float64, applyT
 	return next
 }
 
+// mentorISBPartialTP (item 8) resolves the ISB leg-1 exit point ONCE, on the
+// fill candle's close: +1R if the fill candle reached it first, else the
+// candle-3 (fill-candle) close when that is in profit. A losing close resolves
+// to 0 — no scale-out there, the stop rules own a losing leg [D1.4 p1
+// @11:59–13:28; D2.2 p3 @12:13]. The "whichever comes first" is read off the
+// candle's high (long) / low (short): a high past +1R means +1R printed before
+// the close.
+func mentorISBPartialTP(pos mentorPosition, c, h, l float64) float64 {
+	long := pos.Side == "long"
+	if long {
+		if h >= pos.Entry+pos.R {
+			return pos.Entry + pos.R
+		}
+		if c > pos.Entry {
+			return c
+		}
+		return 0
+	}
+	if l <= pos.Entry-pos.R {
+		return pos.Entry - pos.R
+	}
+	if c < pos.Entry {
+		return c
+	}
+	return 0
+}
+
 // mentorExitDrive runs the exit rules on every filled mentor position for the
 // just-closed 1m candle. It is called right after the evaluator Tick, once per
 // CLOSED bar (the forming-bar guard below is defence in depth — the caller
@@ -185,14 +212,9 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	// that arms BE only arms BE — the 1:1/trail starts on the NEXT candle.
 	wasArmed := pos.ArmedBE
 
-	// leg 1's target: ISB → the fill-candle close (logged-only until Q2 is
-	// proven); otherwise its own resting TP (+1R default when unset).
+	// leg 1's target: its own resting TP (+1R default when unset). For an ISB
+	// fill it is RESOLVED once on the fill candle's close (item 8, step (2)).
 	leg1Target := p.Legs[0].TP
-	if pos.Origin == "ISB" {
-		if p.FillBarClose > 0 {
-			leg1Target = p.FillBarClose
-		}
-	}
 	if leg1Target == 0 {
 		if long {
 			leg1Target = pos.Entry + pos.R
@@ -203,6 +225,20 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	runnerTarget := pos.Target
 	if runnerTarget == 0 {
 		runnerTarget = leg1Target
+	}
+
+	// ── (2) ISB partial (item 8): leg 1 IS the partial — it leaves at +1R TP
+	// or at the candle-3 close (the fill candle's close), whichever comes
+	// first, ONCE — and the close only when in profit. modify_bracket is
+	// LOG-only (Q2 unproven). The resolution reads the JUST-closed fill candle
+	// (BarsSinceFill == 1): its high/low decides whether +1R printed first.
+	if pos.Origin == "ISB" && !pos.Scaled && p.BarsSinceFill == 1 {
+		if tp := mentorISBPartialTP(*pos, c, h, l); tp > 0 {
+			p.Legs[0].TP = tp
+			leg1Target = tp
+			at.logInfof("🧑‍🏫 mentor ISB leg1 modify_bracket WOULD set TP %.2f (candle-3 close / +1R, whichever first) — UNWIRED (Q2 unproven), logged not sent", tp)
+			mentorCount("modify_bracket_isb_logged")
+		}
 	}
 
 	// ── (1) B BE: arm both legs' stops to entry once price covers HALF the
@@ -231,13 +267,6 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			pos.Stop = pos.Entry
 			mentorCount("be_armed_both_legs")
 		}
-	}
-
-	// ── (2) ISB / A modify_bracket: UNWIRED for live until Q2 is proven —
-	// LOG the TP change we WOULD make (fail-closed). Stops still move. ─────
-	if pos.Origin == "ISB" {
-		at.logInfof("🧑‍🏫 mentor ISB leg1 modify_bracket WOULD set TP %.2f (fill-candle close) — UNWIRED (Q2 unproven), logged not sent", leg1Target)
-		mentorCount("modify_bracket_isb_logged")
 	}
 
 	// ── (3) leg 1's TP crossing → leg 1 exits at its native TP; the runner's
@@ -320,8 +349,8 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 // mentorMoveStopForSignalWire is the last hop for a signal-keyed mentor stop
 // move (the seam tests substitute to capture per-leg moves; production binds
 // it to TCPTrader.MoveStopForSignal — the SAME move_stop frame, no C# change).
-var mentorMoveStopForSignalWire = func(nt *ntTrader.TCPTrader, signalID, side string, newStop float64) error {
-	return nt.MoveStopForSignal(signalID, side, newStop)
+var mentorMoveStopForSignalWire = func(nt *ntTrader.TCPTrader, signalID, side string, newStop float64, leg int) error {
+	return nt.MoveStopForSignalLeg(signalID, side, newStop, leg)
 }
 
 // mentorMoveLegStop sends one leg's stop move through the signal-keyed
@@ -334,7 +363,7 @@ func (at *AutoTrader) mentorMoveLegStop(nt *ntTrader.TCPTrader, side string, leg
 		mentorCount("widen_refused")
 		return fmt.Errorf("mentor leg stop move refused: %s", why)
 	}
-	if err := mentorMoveStopForSignalWire(nt, leg.SignalID, side, newStop); err != nil {
+	if err := mentorMoveStopForSignalWire(nt, leg.SignalID, side, newStop, leg.Wire); err != nil {
 		mentorCount("move_stop_failed")
 		return err
 	}

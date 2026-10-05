@@ -54,6 +54,26 @@ type State struct {
 	// candle closes, so without it the escaped box is rebuilt on the very
 	// next tick and flaps on and off (CTO parity ruling 2026-10-04).
 	LastISBBoxAt int64 `json:"last_isb_box_at,omitempty"`
+	// LatchedBoxes pins the FIRST FTGH and FIRST FTGL drawn per trading day —
+	// never redrawn on a later higher high / lower low ("không vẽ cái box
+	// khác… y nguyên đó tới cuối ngày" [D4.1 p2 @02:39–02:57]). Keyed by
+	// role ("ftgh"/"ftgl"); the box lives until the day ends.
+	LatchedBoxes map[string]Box `json:"latched_boxes,omitempty"`
+	// LatchedBoxesDay is the trading day the latch belongs to; on a new day
+	// the latch is cleared and the first box of the new day is drawn.
+	LatchedBoxesDay string `json:"latched_boxes_day,omitempty"`
+	// ISBBox15m is the 15m ISB rest box (D4.1-25): the latest CLOSED 15m
+	// inside-bar candle, boxed like R5. Nil = none standing. Rebuildable by
+	// replaying the closed 15m buckets + 1m escapes.
+	ISBBox15m *ISBBox `json:"isb_box_15m,omitempty"`
+	// LastISBBox15mAt is the 15m ISB candle open of the last box built (the
+	// same flap guard as LastISBBoxAt).
+	LastISBBox15mAt int64 `json:"last_isb_box_15m_at,omitempty"`
+	// ISBBox30m is the 30m ISB rest box (D4.2-07): the latest CLOSED 30m
+	// inside-bar candle, boxed like R5. Nil = none standing.
+	ISBBox30m *ISBBox `json:"isb_box_30m,omitempty"`
+	// LastISBBox30mAt is the 30m ISB candle open of the last box built.
+	LastISBBox30mAt int64 `json:"last_isb_box_30m_at,omitempty"`
 	// SchoolOneSide / SchoolOneUpgraded — B20 flip tracking: a school-1 entry
 	// was emitted without the 5m trigger agreeing; when the trigger later
 	// flips to that side the evaluator emits ConfluenceUpgrade once.
@@ -63,6 +83,13 @@ type State struct {
 	// knock", D1.3 p1 @10:32–11:43). Rebuilt by replaying the touch loop.
 	Visits    map[string]int `json:"visits,omitempty"`
 	VisitsDay string         `json:"visits_day,omitempty"`
+	// VisitCapRefused — B23 visit-cap refusal ONCE per visit (CTO 01:19Z,
+	// DS-105): the PHL/PLH reject path re-reads a capped rejected level every
+	// tick, so the per-tick e.refuse inflated level_visit_cap (12,375 for a
+	// handful of real refusals) and hid real refusals in the funnel line. A
+	// per-level mark makes it fire once; the touch loop clears the mark on
+	// visit departure so a NEW visit re-arms it.
+	VisitCapRefused map[string]bool `json:"visit_cap_refused,omitempty"`
 	// ORB is the §7 step 0 opening-range gate state (drawn at 08:32 CT, escape
 	// latches on the first 1m body close outside). Per-session-day.
 	ORB ORB `json:"orb,omitempty"`
@@ -114,6 +141,9 @@ func UnmarshalState(b []byte) (State, error) {
 	if s.ISBOnly == nil {
 		s.ISBOnly = map[string]bool{}
 	}
+	if s.VisitCapRefused == nil {
+		s.VisitCapRefused = map[string]bool{}
+	}
 	if s.DeletedLevels == nil {
 		s.DeletedLevels = map[string]bool{}
 	}
@@ -147,11 +177,12 @@ type Evaluator struct {
 
 func New(cfg Config) *Evaluator {
 	return &Evaluator{Cfg: cfg, State: State{
-		Touches:       map[string]Touch{},
-		ISBOnly:       map[string]bool{},
-		DeletedLevels: map[string]bool{},
-		ISBArms:       map[string]ISBArm{},
-		BoxRefs:       map[string]int{},
+		Touches:         map[string]Touch{},
+		ISBOnly:         map[string]bool{},
+		VisitCapRefused: map[string]bool{},
+		DeletedLevels:   map[string]bool{},
+		ISBArms:         map[string]ISBArm{},
+		BoxRefs:         map[string]int{},
 	}}
 }
 
@@ -207,6 +238,18 @@ func withoutDeleted(levels []Level, deleted map[string]bool) []Level {
 func handleTouchIntents(e *Evaluator, lvl Level, intents []Intent) []Intent {
 	var out []Intent
 	for _, in := range intents {
+		// CTO (release 10-05-1, replay noise): the wrong-way touch's CancelArm
+		// names no order. Bind it to the level's RESTING order when one exists;
+		// with none resting there is nothing to cancel, so emit nothing — an
+		// id-less cancel only became a "REFUSED: unknown ArmID" WARN in the
+		// trader, thousands per day once moving lines re-arm per visit.
+		if in.Action == CancelArm && in.ArmID == "" {
+			arm, resting := e.State.LevelArms[lvl.Key]
+			if !resting || arm.ArmID == "" {
+				continue
+			}
+			in.ArmID = arm.ArmID
+		}
 		if in.Action == LevelInvalid {
 			if isBoxEdge(lvl) {
 				continue
@@ -254,6 +297,25 @@ func (e *Evaluator) ClearLevelArm(armID string) {
 // @23:48]: a resting level order is cancelled when a LATER closed candle
 // CLOSES THROUGH the level ("Minh cancel"), or at the RTH window end
 // (15:00 CT). The placement candle itself never cancels.
+// conflictArmCancels cancels every live mentor arm BY ArmID when the D4.2-03
+// 15m/5m conflict fires. The old one-shot veto emitted a CancelArm with NO
+// ArmID and the trader refused it as "unknown arm" — a resting arm survived
+// the conflict and could fill against it.
+func (e *Evaluator) conflictArmCancels() []Intent {
+	var out []Intent
+	for id := range e.State.ISBArms {
+		out = append(out, Intent{Action: CancelArm, ArmID: id,
+			Reason: "15m/5m ISB conflict — cancel all arms [D4.2 p1 @ 13:59–14:53]"})
+		delete(e.State.ISBArms, id)
+	}
+	for key, arm := range e.State.LevelArms {
+		out = append(out, Intent{Action: CancelArm, ArmID: arm.ArmID,
+			Reason: "15m/5m ISB conflict — cancel all arms [D4.2 p1 @ 13:59–14:53]"})
+		delete(e.State.LevelArms, key)
+	}
+	return out
+}
+
 func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
 	if len(e.State.LevelArms) == 0 {
 		return nil
@@ -343,6 +405,54 @@ func midRangeBoxed(boxes []Box, price float64) bool {
 	return floor && ceil
 }
 
+// inNarrowRange (item 21, D4.1-06) reports whether price sits between two KEY
+// levels closer than minPts (the ping-pong minimum, 50) — a too-small range
+// ("range quá nhỏ" [D4.2 p2 @06:25–06:43]) is still a range for the ISB size
+// cut: the market is running inside a range too small to touch.
+func inNarrowRange(price float64, levels []Level, minPts float64) bool {
+	if minPts <= 0 {
+		return false
+	}
+	floor, ceil := 0.0, 0.0
+	for _, l := range levels {
+		if l.Kind != KindKeyLevel {
+			continue
+		}
+		if l.Price < price && l.Price > floor {
+			floor = l.Price
+		}
+		if l.Price > price && (ceil == 0 || l.Price < ceil) {
+			ceil = l.Price
+		}
+	}
+	if floor <= 0 || ceil <= 0 {
+		return false
+	}
+	return ceil-floor < minPts
+}
+
+// isbInRange (item 21, D4.1-06) reports whether an ISB's candle sits "in range"
+// — the compulsory size cut [D4.1 p1 written rule 3 "Khi trade isb in-range bắt
+// buộc giảm size"]. The range is WIDER than midRangeBoxed:
+//   - between an FTGL below and an FTGH above (midRangeBoxed, unchanged);
+//   - inside the standing 5m ISB rest box (State.ISBBox);
+//   - between two key levels closer than the ping-pong minimum;
+//   - (once built) inside a 15m ISB range (D4.1-25) — add that condition here.
+func isbInRange(price float64, levels []Level, boxes []Box, isbBox *ISBBox, pingPongMin float64) bool {
+	if midRangeBoxed(boxes, price) {
+		return true
+	}
+	if isbBox != nil && price >= isbBox.Low && price <= isbBox.High {
+		return true
+	}
+	if inNarrowRange(price, levels, pingPongMin) {
+		return true
+	}
+	// A 15m ISB range (D4.1-25) is not built yet; when it lands, price inside
+	// it must also set the in-range flag.
+	return false
+}
+
 // isbArmActive reports whether an ISB arm for the SAME side is still live
 // (CTO parity ruling 1791008332386 #1: ONE active ISB arm per side — the
 // reference is the FIRST ISB; a new arm forms only after the previous one is
@@ -367,6 +477,24 @@ func isbFlags(cur market.Kline, levels []Level, boxes []Box) string {
 		flags = append(flags, FlagISBInRange)
 	}
 	return strings.Join(flags, "|")
+}
+
+// isbFlagsFor is the production flag resolver: isbFlags plus the WIDENED rule-3
+// "in range" (item 21) — the standing 5m ISB box and the narrow (< ping-pong
+// minimum) range also set isb_in_range, so an ISB inside them gets the
+// compulsory size cut [D4.1 p1 written rule 3].
+func (e *Evaluator) isbFlagsFor(cur market.Kline, levels []Level, boxes []Box) string {
+	flags := isbFlags(cur, levels, boxes)
+	if HasFlag(flags, FlagISBInRange) {
+		return flags
+	}
+	if isbInRange(cur.Close, levels, boxes, e.State.ISBBox, e.Cfg.PingPongMinGapPts) {
+		if flags != "" {
+			flags += "|"
+		}
+		flags += FlagISBInRange
+	}
+	return flags
 }
 
 // touchesOldExtreme reports whether the candle's range reaches an old high/low
@@ -408,6 +536,26 @@ func closedBuckets(bars []market.Kline, now int64, cfg Config) []market.Kline {
 // tighten a target but never loosens this floor.
 func targetFloorOK(entry, stop, target float64) bool {
 	return abs(target-entry) >= abs(entry-stop)
+}
+
+// roomRefusal is the D5.3 room rule [@09:16] shared by every setup that has a
+// target: the room to target (|target−entry|) must be at least roomMultiple ×
+// the risk (|entry−stop|). roomMultiple <= 0 disables the check. One counter
+// "room" for every path (ISB, reverse ISB, swing reject, PHL/PLH). The same
+// 2R arithmetic the near-box rule (row 24) applies to box-edge distance.
+func roomRefusal(price, stop, target, roomMultiple float64) (refuse bool, why string) {
+	if roomMultiple <= 0 {
+		return false, ""
+	}
+	risk := abs(stop - price)
+	reward := abs(target - price)
+	if risk <= 0 || reward <= 0 {
+		return true, "degenerate stop/target geometry"
+	}
+	if reward < roomMultiple*risk {
+		return true, fmt.Sprintf("room rule: reward %.2f pts < %.2f pts (%.2fx risk) [D5.3 p1 @ 09:16]", reward, roomMultiple*risk, roomMultiple)
+	}
+	return false, ""
 }
 
 // triggerBoxZoneVerdict is the B1 no-trade zone (10-03 ruling, D3.4 p1
@@ -460,6 +608,9 @@ func suppressSamePairCounterISB(out []Intent, in Intent, refBarMs int64) (kept [
 func nextLevelBeyond(levels []Level, price float64, side Side) float64 {
 	best := 0.0
 	for _, l := range levels {
+		if l.Kind == KindTrendline {
+			continue // a trendline is a location, never a target (X9)
+		}
 		switch side {
 		case SideLong:
 			if l.Price > price && (best == 0 || l.Price < best) {
@@ -474,24 +625,46 @@ func nextLevelBeyond(levels []Level, price float64, side Side) float64 {
 	return best
 }
 
-// freshTouch resets a classified touch when the level's price has moved away
-// from where it was touched (the EMA case): a touch against the line at one
-// price is not a touch of the same line after it drifted.
-func freshTouch(tr Touch, lvl Level) Touch {
-	if tr.Outcome != TouchNone && abs(lvl.Price-tr.PriceAtTouch) > 0.01 {
-		return Touch{LevelKey: lvl.Key}
+// nextLevelBeyondRoom is nextLevelBeyond for the room-checked paths (ISB,
+// reverse ISB, box). REL-5 audit #2: a TARGET-ONLY level (4h trigger, wick
+// microscalp) closer than roomMultiple × risk is skipped and the search falls
+// through to the next level beyond; a key level or box edge inside 2R still
+// becomes the target (and the room rule then refuses it). The 4h line stays a
+// valid target whenever it is ≥ 2R away [D4.4 p2 @05:04].
+func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMultiple float64) float64 {
+	risk := abs(entry - stop)
+	best := 0.0
+	for _, l := range levels {
+		if l.Kind == KindTrendline {
+			continue // a trendline is a location, never a target (X9)
+		}
+		onSide := side == SideLong && l.Price > entry || side == SideShort && l.Price < entry
+		if !onSide {
+			continue
+		}
+		if (l.Kind == KindHTFTrigger || l.Kind == KindWickMicroscalp) && roomMultiple > 0 && risk > 0 {
+			if abs(l.Price-entry) < roomMultiple*risk {
+				continue // target-only level too close to hold 2R room — fall through
+			}
+		}
+		if best == 0 || (side == SideLong && l.Price < best) || (side == SideShort && l.Price > best) {
+			best = l.Price
+		}
 	}
-	return tr
+	return best
 }
 
 // isMovingLineKey (item 22) reports whether a level key is one of the MOVING
 // lines — the 1m EMA34, the EMA34HTF location line, or the trigger-retest line.
 // These are re-priced every bar, so their wrong-way "invalid" state is scoped to
-// the touching candle: a drift or a visit departure clears it (the course never
-// makes a line dead for good [D5.2 p2 @20:48]). Key levels are stable and keep
-// ISB-only until the session day rolls or a closed 1H body deletes them.
+// the touching candle: a visit DEPARTURE clears it (the course never makes a
+// line dead for good [D5.2 p2 @20:48]). Drift alone does NOT clear it — the EMA
+// drifts every tick and a drift reset re-invalidates every tick (item 22 fix).
+// Key levels are stable and keep ISB-only until the session day rolls or a
+// closed 1H body deletes them.
 func isMovingLineKey(key string) bool {
-	return key == string(KindEMA34) || key == string(KindEMA34HTF) || key == string(KindTriggerRetest)
+	return key == string(KindEMA34) || key == string(KindEMA34HTF) || key == string(KindTriggerRetest) ||
+		strings.HasPrefix(key, string(KindTrendline)+":")
 }
 
 // Tick evaluates the newest closed 1m candle. bars is the closed history up to
@@ -579,8 +752,15 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	e.State.Trigger = TriggerTick(e.State.Trigger, barsTF(bars, 5), 5, e.Cfg)
 
 	// §5.4 HTF direction (DS-106, fold item 3): the 4h/1h lines advance with
-	// the same bar history.
-	e.State.HTF = HTFAdvance(e.State.HTF, barsTF(bars, 240), barsTF(bars, 60), e.Cfg)
+	// the same bar history. Item 18 part 1: a red-folder 07:30 print candle
+	// must not move the 1h/4h trigger lines [D4.4 p1 @18:13, @22:15] — the
+	// day's print windows (plumbed from the trader's calendar) are dropped
+	// from the HTF feed. Empty windows = no print today = byte-identical.
+	htfBars := htfFeedBars(bars, e.Cfg.PrintWindows)
+	e.State.HTF = HTFAdvance(e.State.HTF, barsTF(htfBars, 240), barsTF(htfBars, 60), e.Cfg)
+	// D4.4-11: the HTF direction gate applies only in the news window (the
+	// course uses the HTF read for news first, not ordinary trading).
+	e.State.HTF.GateOff = !HTFGateActive(now, e.Cfg)
 
 	// §7 day gate (fold item 4): Globex run → per-trading-day latch (L1/L2).
 	dg := DayGate{SpentPts: e.Cfg.DayGateSpentPts, TargetCapPts: e.Cfg.DayGateTargetCapPts}
@@ -593,7 +773,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.State.VisitsDay = e.State.Day.Key
 		// item 22: a KEY level's ISB-only invalidity is scoped to the session
 		// day (the course never makes a level dead for good [D5.2 p2 @20:48]).
-		// The moving lines reset on drift/departure in the touch loop below,
+		// The moving lines reset on visit departure in the touch loop below,
 		// so only the stable keys reset here.
 		for key := range e.State.ISBOnly {
 			if !isMovingLineKey(key) {
@@ -607,6 +787,26 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.State.Trigger.Dir != "" && e.State.Trigger.Price != 0 {
 		levels = append(levels, Level{Key: string(KindTriggerRetest), Kind: KindTriggerRetest, Price: e.State.Trigger.Price})
 	}
+	// D4.4-15: the 4h/1h trigger lines join the TARGET LADDER (never the
+	// location set) — a trade's target can be the higher-TF trigger line when
+	// it sits between the entry and the next level [D4.4 p2 @05:04–06:02
+	// "TARGET MÌNH VỀ LẠI 4 GIỜ nè anh chị… CÁI LỆNH TRĂM ĐIỂM của mình LÀ VỀ
+	// ĐÂY"]. Target-only: the touch loop skips KindHTFTrigger and
+	// levelIsLocation returns false for it.
+	if e.State.HTF.FourH.Dir != "" && e.State.HTF.FourH.Price != 0 {
+		levels = append(levels, Level{Key: "htf_4h_trigger", Kind: KindHTFTrigger, Price: e.State.HTF.FourH.Price})
+	}
+	if e.State.HTF.OneH.Dir != "" && e.State.HTF.OneH.Price != 0 {
+		levels = append(levels, Level{Key: "htf_1h_trigger", Kind: KindHTFTrigger, Price: e.State.HTF.OneH.Price})
+	}
+	// D4.3 wick microscalp (advanced, knob OFF by default): 2+ consecutive 5m
+	// candles rejecting with same-way wicks put a bounded target at their far
+	// wick — target-only (the touch loop skips KindWickMicroscalp).
+	if e.Cfg.WickMicroscalpEnabled {
+		if wl, ok := wickMicroscalpLevel(closedBuckets(bars, now, e.Cfg), e.State.Trigger.Dir); ok {
+			levels = append(levels, wl)
+		}
+	}
 	if el, ok := EMALocationLevel(bars, e.Cfg); ok {
 		levels = append(levels, el)
 	}
@@ -619,7 +819,22 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// join the level set as locations (used again and again) and the box
 	// interior bans entries.
 	boxes := BoxesBuild(bars, e.Cfg.Box, time.UnixMilli(now))
+	// D4.1-22: the first box per role per day is latched — never redrawn on a
+	// later higher high / lower low ("không vẽ cái box khác… y nguyên đó tới
+	// cuối ngày" [D4.1 p2 @02:39–02:57]). A new trading day clears the latch.
+	if e.State.LatchedBoxesDay != e.State.Day.Key {
+		e.State.LatchedBoxes = nil
+		e.State.LatchedBoxesDay = e.State.Day.Key
+	}
+	boxes = e.latchBoxes(boxes, bars, e.Cfg.Box)
 	levels = append(levels, BoxEdgeLocations(boxes)...)
+
+	// X9 (slide 27) + DAY-3 row 27: trendlines as LOCATIONS — two same-role
+	// swings joined, valid only after the 3rd touch, discarded by a 5m close
+	// through. They join the level set location-only (never a target); a
+	// trendline next to a box edge is suppressed (box beats trendline).
+	trendlines := TrendlinesBuild(bars, time.UnixMilli(now))
+	levels = append(levels, TrendlineLevels(trendlines, boxes, bars)...)
 
 	// §3: first-touch classification per level. BOX edges are OUT of this
 	// loop (BOX PATH DECISION, CTO 12:38:50Z): the box path is DS-106's
@@ -628,31 +843,34 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// an approach from above). The edges stay in `levels` for location /
 	// InsideAnyBox / boxBanFilter / midRangeBoxed checks.
 	for _, lvl := range levels {
-		if lvl.Kind == KindFTGHEdge || lvl.Kind == KindFTGLEdge {
+		if lvl.Kind == KindFTGHEdge || lvl.Kind == KindFTGLEdge || lvl.Kind == KindHTFTrigger || lvl.Kind == KindWickMicroscalp {
 			continue
 		}
 		moving := isMovingLineKey(lvl.Key)
 		tr := e.State.Touches[lvl.Key]
 		// item 22: a KEY level stays ISB-only for the session day (frozen touch,
 		// no re-read); a MOVING line keeps its visit machinery running so a
-		// drift or departure can clear the invalidity — the course scopes
-		// "invalid" to the touching candle [D5.2 p2 @20:48], never the line.
+		// DEPARTURE can clear the invalidity — the course scopes "invalid" to
+		// the touching candle [D5.2 p2 @20:48], never the line. Item 22 fix
+		// (CTO 00:19Z, DS-105 replay): drift alone NEVER resets a moving line —
+		// the EMA drifts every tick, and a drift reset re-touches and
+		// re-invalidates every tick (level_invalid 40→446/day, visit cap
+		// 293→14,875). The reset is only the visit-departure below.
 		if e.State.ISBOnly[lvl.Key] && !moving {
 			continue // invalid key level: no PHL/PLH, and touches need no re-read
 		}
-		// a MOVING line (EMA) that drifted away from where it was touched is
-		// a fresh line — reset the classification AND its ISB-only state.
-		before := tr
-		tr = freshTouch(tr, lvl)
-		if before.Outcome != TouchNone && tr.Outcome == TouchNone && moving {
-			delete(e.State.ISBOnly, lvl.Key)
-		}
 		wasNone := tr.Outcome == TouchNone
 		intents := visitTick(&tr, lvl, bars[len(bars)-2], bars[len(bars)-1], e.Cfg)
-		if !wasNone && tr.Outcome == TouchNone && moving {
-			// visit departure: the touching candle is gone — clear the ISB-only
-			// state scoped to that visit.
-			delete(e.State.ISBOnly, lvl.Key)
+		if !wasNone && tr.Outcome == TouchNone {
+			// visit departure: the touching candle is gone. Clear the visit-cap
+			// refusal mark for EVERY level (a new visit re-arms the once-per-visit
+			// level_visit_cap), and clear the ISB-only state ONLY for a moving
+			// line (the ONLY reset for a moving line — drift alone keeps the
+			// classification, item 22 fix).
+			delete(e.State.VisitCapRefused, lvl.Key)
+			if moving {
+				delete(e.State.ISBOnly, lvl.Key)
+			}
 		}
 		e.State.Touches[lvl.Key] = tr
 		if e.State.ISBOnly[lvl.Key] {
@@ -673,6 +891,26 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// §2.1: ISB on the last closed pair. R1: the direction is the CANDLE-1
 	// colour, not the trigger line (RULES-FIX-v3).
 	prev, cur := bars[len(bars)-2], bars[len(bars)-1]
+
+	// X5-10 (optional, knob default OFF): after the first 30 minutes of RTH
+	// (09:00 CT) the ISB entry is read on the 2m chart instead of the 1m —
+	// "sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:17; X11
+	// @17:06–17:32]. The 1m wicks sweep stops, so the 2m read is quieter.
+	// The box/ORB escapes and every higher-TF read stay 1m (they are defined
+	// on the 1m body close); only the ISB pair swaps. While the knob is OFF,
+	// or before 09:00 CT, execPrev/execCur == prev/cur and the read is
+	// byte-identical to the 1m-only build.
+	execPrev, execCur, execTFMin := prev, cur, 1
+	if e.Cfg.Exec2mAfter30m && rthMinuteOf(now) >= 9*60 {
+		// closedBucketsTF drops the still-forming last 2m bucket: on a 1m close
+		// that OPENS a 2m bucket, barsTF would flush a half-formed 2m candle and
+		// the ISB would read it. The read must be the previous two CLOSED 2m
+		// candles (the cb15/cb30 helper path).
+		if b2 := closedBucketsTF(bars, 2, now); len(b2) >= 2 {
+			execPrev, execCur = b2[len(b2)-2], b2[len(b2)-1]
+			execTFMin = 2
+		}
+	}
 
 	// arms placed on THIS tick are skipped by the stacking loop below.
 	justPlaced := map[string]bool{}
@@ -698,13 +936,64 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// mode-C read use the SAME CLOSED buckets — computed once per tick.
 	cb5 := closedBuckets(bars, now, e.Cfg)
 	cb15 := closedBucketsTF(bars, 15, now)
-	if IsISB(prev, cur) {
-		if dirOK, trigSide, _ := TriggerVerdict(e.State.Trigger, cur.Close); dirOK {
-			// B4: the 15m/5m conflict reads CLOSED buckets only — the
+	cb30 := closedBucketsTF(bars, 30, now)
+
+	// D4.1-25: the 15m ISB rest box — box the latest CLOSED 15m inside-bar
+	// candle (the REAL 15m TF, B8) and keep it until a 1m BODY closes outside.
+	// While it stands, entries may only go its direction and PHL/PLH + box
+	// returns are refused inside it [D4.1 p2 @07:35–08:11; D4.2 p1 @01:06,
+	// 04:49].
+	if e.State.ISBBox15m != nil {
+		if escaped, _ := ISBBoxEscape(*e.State.ISBBox15m, cur); escaped {
+			e.State.ISBBox15m = nil
+		}
+	} else if len(cb15) >= 2 {
+		if bx, ok := ISBBoxFrom5m(cb15[len(cb15)-2], cb15[len(cb15)-1]); ok && bx.AtTime != e.State.LastISBBox15mAt {
+			e.State.ISBBox15m = &bx
+			e.State.LastISBBox15mAt = bx.AtTime
+		}
+	}
+
+	// D4.2-07: the 30m ISB rest box — the same machinery as the 15m box on the
+	// 30m TF. "Never trade against a 15m/30m ISB inside its range" [D4.2 p1
+	// @16:28–16:46, 18:02–18:36].
+	if e.State.ISBBox30m != nil {
+		if escaped, _ := ISBBoxEscape(*e.State.ISBBox30m, cur); escaped {
+			e.State.ISBBox30m = nil
+		}
+	} else if len(cb30) >= 2 {
+		if bx, ok := ISBBoxFrom5m(cb30[len(cb30)-2], cb30[len(cb30)-1]); ok && bx.AtTime != e.State.LastISBBox30mAt {
+			e.State.ISBBox30m = &bx
+			e.State.LastISBBox30mAt = bx.AtTime
+		}
+	}
+
+	// D4.2-03: the 15m/5m conflict is a standing STATE, not a one-shot pair
+	// veto. Opposite 15m and 5m box directions → "làm ơn đừng trade luôn" —
+	// cancel every live arm BY ArmID and refuse ALL setups until one of the
+	// two boxes escapes [D4.2 p1 @13:59–14:53, @07:37–08:00].
+	conflict := mtfConflict(e.State.ISBBox, e.State.ISBBox15m)
+	if conflict {
+		out = append(out, e.conflictArmCancels()...)
+	}
+
+	if !conflict && IsISB(execPrev, execCur) {
+		// D4.1-23: while the 5m ISB rest box stands, the box — not the 5m
+		// trigger line — governs the 1m ISB. The trigger PRICE-side filter is
+		// skipped entirely ("khung 5 phút kêu làm gì, làm cái đó" [D4.1 p2
+		// @04:06–06:45]; METHOD §5.2 "do not use the trigger line while it
+		// stands"); the box's own direction gate (ISBBoxAllows) runs below.
+		var trigSide Side
+		dirOK := true
+		if e.State.ISBBox == nil {
+			dirOK, trigSide, _ = TriggerVerdict(e.State.Trigger, cur.Close)
+		}
+		if dirOK {
+			// The conflict reads the standing boxes above (D4.2-03); the
 			// still-forming 5m bucket is dropped [D4.2 p1 @ 05:10: "a
 			// 15-minute candle is only confirmed once CLOSED; trade from
 			// the next one"]. B8: the 15m side is the REAL 15m TF.
-			if conflict := ISBConflictVerdict(cb5, cb15); !conflict {
+			{
 				// OWNER RULING 2026-10-03 ("exactly like he said"): the ISB is
 				// NOT location-gated — "inside bar lúc nào cũng có thể take
 				// risk… trong range, trên range, ngoài range, dưới range"
@@ -725,20 +1014,48 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// SAME-direction 1m ISB — compute the verdict up front so an
 					// allowed ISB still falls through to the emit below.
 					boxBlocked := false
-					if e.State.ISBBox != nil {
-						if allowed, r := ISBBoxAllows(*e.State.ISBBox, prev, cur); !allowed {
+					if e.State.ISBBox != nil && !crossingISBs(cb5, 3) {
+						if allowed, r := ISBBoxAllows(*e.State.ISBBox, execPrev, execCur); !allowed {
 							boxBlocked, _ = true, r
 						}
 					}
-					side, chosen, ok, _ := ISBStopLimitOrder(prev, cur, e.Cfg)
+					// D4.1-25: the 15m box gates the ISB exactly like the 5m box —
+					// inside it only a 1m ISB in the 15m box's direction [D4.1 p2
+					// @07:35–08:11; D4.2 p1 @03:40–04:45]. The escalation ladder
+					// (D3.4 p2 @17:07–17:49) skips this gate when the 15m ISBs
+					// are crossing.
+					box15Blocked := false
+					if e.State.ISBBox15m != nil && !crossingISBs(cb15, 3) {
+						if allowed, r := ISBBoxAllows(*e.State.ISBBox15m, execPrev, execCur); !allowed {
+							box15Blocked, _ = true, r
+						}
+					}
+					// D4.2-07: the 30m box gates the ISB the same way — never
+					// trade against a 30m ISB inside its range; skipped when the
+					// 30m ISBs are crossing.
+					box30Blocked := false
+					if e.State.ISBBox30m != nil && !crossingISBs(cb30, 3) {
+						if allowed, r := ISBBoxAllows(*e.State.ISBBox30m, execPrev, execCur); !allowed {
+							box30Blocked, _ = true, r
+						}
+					}
+					side, chosen, ok, _ := ISBStopLimitOrder(execPrev, execCur, e.Cfg)
 					if !ok {
 						e.refuse("isb_stop_twenties")
 					} else if isbArmActive(e.State.ISBArms, side) {
 						// ONE ARM PER SIDE (CTO parity ruling 1791008332386 #1):
 						// stacking extends the EXISTING arm — no new arm.
+						// REL-5 audit #3: name the skip instead of a silent drop.
+						e.refuse("isb_arm_active")
 					} else if boxBlocked {
 						// R5: an opposite-direction ISB inside the box — no entry
 						e.refuse("isb_box_blocked")
+					} else if box15Blocked {
+						// D4.1-25: an ISB against the 15m box direction — no entry
+						e.refuse("isb_box_blocked_15m")
+					} else if box30Blocked {
+						// D4.2-07: an ISB against the 30m box direction — no entry
+						e.refuse("isb_box_blocked_30m")
 					} else if e.State.ISBBox == nil && trigSide != "" && side != "" && side != trigSide {
 						// I1: while NO R5 5m ISB box stands, the LIVE 5m trigger
 						// line governs the ISB side — a short ISB above a buy line
@@ -767,7 +1084,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						// [D4.1 p1 @ 01:39]; no level beyond → no trade — a
 						// missing (or sub-1:1) target skips ONLY this ISB, never
 						// the rest of the tick (CTO E-1/E-2 2026-10-03T15:12Z).
-						target := nextLevelBeyond(levels, chosen.Price, side)
+						target := nextLevelBeyondRoom(levels, chosen.Price, chosen.Stop, side, e.Cfg.RoomMultiple)
 						if target == 0 {
 							e.refuse("isb_missing_target")
 						} else if !targetFloorOK(chosen.Price, chosen.Stop, target) {
@@ -780,6 +1097,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							capped := CapTargetForDay(chosen, e.State.Day.Verdict, dg)
 							if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 								e.refuse("isb_target_below_floor")
+							} else if refuse, _ := roomRefusal(capped.Price, capped.Stop, capped.Target, e.Cfg.RoomMultiple); refuse {
+								// Item 25 [D5.3 p1 @09:16]: the ISB now obeys the
+								// room rule too — reward to the (capped) target must
+								// be at least RoomMultiple × risk. One counter "room".
+								e.refuse("room")
 							} else {
 								// The emitted intent carries the CAPPED target: `capped`
 								// above fed only the floor check, so a spent-day ISB went
@@ -791,16 +1113,18 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								// SIZE, "Khi trade isb in-range bắt buộc giảm size" [D4.1 p1
 								// @ 08:05/09:40]) — the range is the same mid-range test as
 								// the PHL/PLH ban.
-								chosen.Flag = isbFlags(cur, levels, boxes)
-								// N12: a single ISB fills by the close of the NEXT 1m candle
-								// or it is cancelled ("cancel if the next candle does not
-								// fill" [D1.4 p1 @ 18:32–18:45]); stacking extends it below.
-								chosen.ExpiryMs = cur.CloseTime + 60_000
+								chosen.Flag = e.isbFlagsFor(execCur, levels, boxes)
+								// N12: a single ISB fills by the close of the NEXT
+								// candle on the execution timeframe (1m default; 2m
+								// under X5-10) or it is cancelled ("cancel if the
+								// next candle does not fill" [D1.4 p1 @
+								// 18:32–18:45]); stacking extends it below.
+								chosen.ExpiryMs = execCur.CloseTime + int64(execTFMin)*60_000
 								e.State.ArmSeq++
 								id := fmt.Sprintf("isb-%d", e.State.ArmSeq)
 								// the ISB candle is the 1st inside candle (Inside=1), so the
 								// stacking loop must skip this arm on the placement bar.
-								e.State.ISBArms[id] = ISBArm{FirstBar: cur, Inside: 0, Side: side}
+								e.State.ISBArms[id] = ISBArm{FirstBar: execCur, Inside: 0, Side: side}
 								justPlaced[id] = true
 								chosen.ArmID = id
 								// D4.2-06 part 1: mode C also fires on timeframe
@@ -812,8 +1136,6 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						}
 					}
 				}
-			} else {
-				out = append(out, Intent{Action: CancelArm, Reason: "15m/5m ISB conflict — no trade [D4.2 p1 @ 14:35]"})
 			}
 		} else {
 			e.refuse("isb_trigger_side")
@@ -823,20 +1145,20 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// R7 (RULES-FIX-v3, behind its own knob, default ON since R-C): the reverse
 	// ISB at EMA 9 — an ISB that points AGAINST the trend with price at the EMA 9
 	// trades WITH the trend [D5.4].
-	if e.Cfg.ISBReverseEMA9Enabled && IsISB(prev, cur) {
+	if e.Cfg.ISBReverseEMA9Enabled && IsISB(execPrev, execCur) {
 		if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
 			e.refuse("isbrev_" + r)
-		} else if in, ok, _ := ReverseISBAtEMA9(prev, cur, emaValue(bars, e.Cfg.EMAPeriod9), e.State.Trigger.Dir, e.Cfg); ok {
-			// N12: an R7 reverse ISB fills by the close of the NEXT 1m candle
-			// (the R1 family rule).
-			in.ExpiryMs = cur.CloseTime + 60_000
+		} else if in, ok, _ := ReverseISBAtEMA9(execPrev, execCur, emaValue(bars, e.Cfg.EMAPeriod9), e.State.Trigger.Dir, e.Cfg); ok {
+			// N12: an R7 reverse ISB fills by the close of the NEXT candle on
+			// the execution timeframe (the R1 family rule).
+			in.ExpiryMs = execCur.CloseTime + int64(execTFMin)*60_000
 			// R85 (CTO, release #4): now that the reverse ISB can place, it
 			// runs through the SAME gates as the normal ISB — the twenties
 			// stop skip [D4.1 p1 @ 05:41], the 4h HTF verdict and side, and
 			// the near-box rule (row 24) — before any target is set.
 			htfOK, htfSide, _ := HTFVerdict(e.State.HTF)
 			target := 0.0
-			if _, stopOK, _ := ISBStopVerdict(cur, e.Cfg); !stopOK {
+			if _, stopOK, _ := ISBStopVerdict(execCur, e.Cfg); !stopOK {
 				e.refuse("isbrev_stop_twenties")
 			} else if !htfOK {
 				e.refuse("isbrev_htf_blocked")
@@ -844,7 +1166,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				e.refuse("isbrev_htf_side_mismatch")
 			} else if refuse, _ := nearBoxRefusal(boxes, in.Price, in.Side, e.Cfg.NearBoxRoomMultiple, abs(in.Price-in.Stop)); refuse {
 				e.refuse("near_box")
-			} else if target = nextLevelBeyond(levels, in.Price, in.Side); target == 0 {
+			} else if target = nextLevelBeyondRoom(levels, in.Price, in.Stop, in.Side, e.Cfg.RoomMultiple); target == 0 {
 				// Item 26 / R81 (RELEASE #4): the reverse ISB needs a target —
 				// Q7 open → the normal ISB target rule: the next level beyond
 				// in the trade direction, with the 1:1 floor and the cap.
@@ -856,6 +1178,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
 				if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 					e.refuse("isbrev_target_below_floor")
+				} else if refuse, _ := roomRefusal(capped.Price, capped.Stop, capped.Target, e.Cfg.RoomMultiple); refuse {
+					// Item 25: the reverse ISB runs the same room rule as the
+					// normal ISB. One counter "room".
+					e.refuse("room")
 				} else {
 					in.Target = capped.Target
 					// R85: with the reverse ON, the normal ISB must not arm the
@@ -863,7 +1189,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// stop orders on one candle) — drop any same-pair normal ISB
 					// already emitted this tick AND unregister its arm.
 					var suppressed []string
-					out, suppressed = suppressSamePairCounterISB(out, in, cur.CloseTime)
+					out, suppressed = suppressSamePairCounterISB(out, in, execCur.CloseTime)
 					for _, id := range suppressed {
 						delete(e.State.ISBArms, id)
 						delete(justPlaced, id)
@@ -906,200 +1232,236 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// gated by trigger side, mid-range and the setup's own gates.
 	oldExtremes := oldExtremeIndexes(levels, bars)
 	// E2: watch the last emitted EMA stop; block the EMA line on a loss.
+	// Item 16 (CTO 23:49Z): watch the line that TRADES — KindEMA34HTF first,
+	// the plain KindEMA34 as a fallback.
 	emaPrice := 0.0
 	for _, lvl := range levels {
-		if lvl.Kind == KindEMA34 {
+		if lvl.Kind == KindEMA34HTF {
 			emaPrice = lvl.Price
 			break
+		}
+	}
+	if emaPrice == 0 {
+		for _, lvl := range levels {
+			if lvl.Kind == KindEMA34 {
+				emaPrice = lvl.Price
+				break
+			}
 		}
 	}
 	if emaPrice != 0 {
 		emaLossTick(e, emaPrice, cur, now)
 	}
 
-	for _, lvl := range levels {
-		tr := e.State.Touches[lvl.Key]
-		if tr.Outcome != TouchReject || e.State.ISBOnly[lvl.Key] {
-			continue
-		}
-		// B23 visit cap ("knock knock", D1.3 p1 @10:32–11:43): the first
-		// LevelMaxVisits visits of the day trade; the rest refuse.
-		if e.Cfg.LevelMaxVisits > 0 && e.State.Visits[lvl.Key] > e.Cfg.LevelMaxVisits {
-			e.refuse("level_visit_cap")
-			continue
-		}
-		// E2 + E4: the EMA34 setup is gated on the loss block and the
-		// 30-minute crossing knob.
-		if isEMA34(lvl) && !emaSetupAllowed(e, lvl, bars, e.Cfg) {
-			continue
-		}
-		// LOCATION GATE (fold item 1): a PHL/PLH entry level must be a real
-		// location — a bare old high/low is not one.
-		if !levelIsLocation(lvl, levels) {
-			continue
-		}
-		side, price, ok := RejectEntry(tr, e.Cfg)
-		if !ok {
-			continue
-		}
-		// LocTriggerFilter (CTO 13:20:22Z): false switches the 5m-trigger
-		// filter off for LEVEL rejects (the box path honours it separately).
-		if e.Cfg.LocTriggerFilter && e.Cfg.TriggerSchool != 1 {
-			if dirOK, trigSide, _ := TriggerVerdict(e.State.Trigger, price); !dirOK || trigSide != "" && trigSide != side {
-				e.refuse("isb_trigger_side")
+	// D4.2-03: while the 15m/5m conflict stands, NO setup trades — PHL/PLH
+	// included (the old one-shot veto covered only the ISB path).
+	if !conflict {
+		for _, lvl := range levels {
+			tr := e.State.Touches[lvl.Key]
+			if tr.Outcome != TouchReject || e.State.ISBOnly[lvl.Key] {
 				continue
 			}
-		}
-		// B21 X4 (@06:31–08:52): the gap between the touched level and the
-		// next level must exceed the largest 1m candle of the last 30 closed
-		// bars — a candle as big as the rank of the two levels: sit out. The
-		// scan is strict (beyond the touched level, excluding the level itself).
-		if e.Cfg.PingPongCandleMaxPts > 0 {
-			var next float64
-			for _, l2 := range levels {
-				// The pair is the touched level and the next KEY level he
-				// drew — EMA lines, trigger retests, box edges and bare tape
-				// swings are not part of the rank between two levels (X4).
-				if l2.Key == lvl.Key || l2.Kind != KindKeyLevel {
+			// B23 visit cap ("knock knock", D1.3 p1 @10:32–11:43): the first
+			// LevelMaxVisits visits of the day trade; the rest refuse. The
+			// refusal counts ONCE per visit (CTO 01:19Z, DS-105): a capped
+			// rejected level is re-read every tick while it sits in TouchReject,
+			// so a bare e.refuse inflated the counter (12,375 refusals for a
+			// handful of capped levels) and hid real refusals in the funnel.
+			// VisitCapRefused marks the level once; the touch loop clears it on
+			// visit departure so a NEW visit re-arms the refusal.
+			if e.Cfg.LevelMaxVisits > 0 && e.State.Visits[lvl.Key] > e.Cfg.LevelMaxVisits {
+				if !e.State.VisitCapRefused[lvl.Key] {
+					e.refuse("level_visit_cap")
+					e.State.VisitCapRefused[lvl.Key] = true
+				}
+				continue
+			}
+			// E2 + E4: the EMA34 setup is gated on the loss block and the
+			// 30-minute crossing knob.
+			if isEMA34(lvl) && !emaSetupAllowed(e, lvl, bars, e.Cfg) {
+				continue
+			}
+			// LOCATION GATE (fold item 1): a PHL/PLH entry level must be a real
+			// location — a bare old high/low is not one.
+			if !levelIsLocation(lvl, levels) {
+				continue
+			}
+			side, price, ok := RejectEntry(tr, e.Cfg)
+			if !ok {
+				continue
+			}
+			// LocTriggerFilter (CTO 13:20:22Z): false switches the 5m-trigger
+			// filter off for LEVEL rejects (the box path honours it separately).
+			if e.Cfg.LocTriggerFilter && e.Cfg.TriggerSchool != 1 {
+				if dirOK, trigSide, _ := TriggerVerdict(e.State.Trigger, price); !dirOK || trigSide != "" && trigSide != side {
+					e.refuse("isb_trigger_side")
 					continue
 				}
-				if side == SideLong && l2.Price > lvl.Price && (next == 0 || l2.Price < next) {
-					next = l2.Price
-				} else if side == SideShort && l2.Price < lvl.Price && (next == 0 || l2.Price > next) {
-					next = l2.Price
+			}
+			// B21 X4 (@06:31–08:52): the gap between the touched level and the
+			// next level must exceed the largest 1m candle of the last 30 closed
+			// bars — a candle as big as the rank of the two levels: sit out. The
+			// scan is strict (beyond the touched level, excluding the level itself).
+			if e.Cfg.PingPongCandleMaxPts > 0 {
+				var next float64
+				for _, l2 := range levels {
+					// The pair is the touched level and the next KEY level he
+					// drew — EMA lines, trigger retests, box edges and bare tape
+					// swings are not part of the rank between two levels (X4).
+					if l2.Key == lvl.Key || l2.Kind != KindKeyLevel {
+						continue
+					}
+					if side == SideLong && l2.Price > lvl.Price && (next == 0 || l2.Price < next) {
+						next = l2.Price
+					} else if side == SideShort && l2.Price < lvl.Price && (next == 0 || l2.Price > next) {
+						next = l2.Price
+					}
+				}
+				if next != 0 && abs(next-lvl.Price) <= largestCandlePts(bars, e.Cfg.PingPongCandleLookback) {
+					e.refuse("keypair_candle_too_big")
+					continue
 				}
 			}
-			if next != 0 && abs(next-lvl.Price) <= largestCandlePts(bars, e.Cfg.PingPongCandleLookback) {
-				e.refuse("keypair_candle_too_big")
+			if allowed, _ := SetupPermittedVerdict("PHL", levels, price, e.Cfg); !allowed {
+				// REL-5 audit #1: name the drop instead of a silent continue.
+				e.refuse("phl_mid_range")
 				continue
 			}
-		}
-		if allowed, _ := SetupPermittedVerdict("PHL", levels, price, e.Cfg); !allowed {
-			continue
-		}
-		// MID-RANGE ban via boxes (CTO 1791003862333): between an FTGL
-		// below and an FTGH above there is NO PHL, NO PLH, regardless of
-		// width — only the ISB.
-		if midRangeBoxed(boxes, price) {
-			continue
-		}
-		// R5: nothing trades inside the standing 5m-ISB box except a
-		// same-direction 1m ISB — PHL/PLH never.
-		if e.State.ISBBox != nil && cur.Close > e.State.ISBBox.Low && cur.Close < e.State.ISBBox.High {
-			continue
-		}
-		// B16 (10-03 ruling, D5.3 p1 @20:40–22:12): ONE intent per reference —
-		// while a level order RESTS at this level, the level is not re-emitted
-		// (no double size on repeated touches).
-		if _, resting := e.State.LevelArms[lvl.Key]; resting {
-			continue
-		}
-		// B14b: the target is the NEAREST old extreme on the trade side —
-		// a failed nearest high is a SKIP, never a farther old high
-		// [D2.2 p2 @03:07–03:14].
-		side, _, sideOK := RejectEntry(tr, e.Cfg)
-		if !sideOK {
-			e.refuse("phl_no_reject_entry")
-			continue
-		}
-		// DS-107 patch (20:54:52Z): ONE nearest target-side extreme, picked
-		// above the touch candle (long: > RefBar.High / short: < RefBar.Low);
-		// a failed nearest is a SKIP, never a farther old extreme.
-		tref := tr.RefBar.High
-		if side == SideShort {
-			tref = tr.RefBar.Low
-		}
-		ex, found := nearestOldExtremeOnSide(oldExtremes, tref, side)
-		if !found {
-			e.refuse("phl_no_old_extreme_on_side")
-			continue
-		}
-		// B14b: the NEAREST target-side extreme must sit at least
-		// PHLMinCandlesFromExtreme candles from the touch bar — the same
-		// "too close" refusal phlPLHR2 raises. Checked here so the near-box
-		// rule (next) does not pre-empt this structural skip.
-		if len(bars)-1-ex.idx < e.Cfg.PHLMinCandlesFromExtreme {
-			e.refuse("phl_too_close_to_extreme")
-			continue
-		}
-		// Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: refuse a setup whose nearest
-		// box edge IN the trade direction is closer than NearBoxRoomMultiple ×
-		// its own risk; between two boxes (row 25) is exempt. It fires BEFORE
-		// the room rule — the room rule's target reads the box edge as the
-		// first obstacle, so the same proximity would otherwise surface as
-		// phl_room_rule instead of the near_box counter.
-		if refuse, _ := nearBoxRefusal(boxes, tref, side, e.Cfg.NearBoxRoomMultiple, tr.RefBar.High-tr.RefBar.Low); refuse {
-			e.refuse("near_box")
-			continue
-		}
-		// D2-28 (CTO fold, release #4): the higher-low / lower-high check
-		// reads the STRUCTURAL low the leg to the old high started from —
-		// "Đối chiếu với những cái ĐÁY bên tay trái… SHIFT CẤU TRÚC"
-		// [D2.2 p3 @02:30–04:18] — taken from the TAPE (the level set is
-		// pruned by the significance filter), and it fails CLOSED: no left
-		// bars means no check is possible, so the PHL is refused rather than
-		// emitted unchecked.
-		prior, okLeft := priorLeftExtremeOnTape(bars, ex, oldExtremes)
-		if !okLeft {
-			e.refuse("phl_no_left_low")
-			continue
-		}
-		in, ok, reason := PHLPLHGatedR2Levels(tr, ex.level, ex.idx, len(bars)-1, prior, levels, e.Cfg, e.State.HTF, e.State.Day.Verdict, dg)
-		if !ok {
-			// B-rules (13:51:31Z): EVERY drop names a reason and counts it.
-			e.refuse(phlRefusalKey(reason))
-			continue
-		}
-		// Row 56 (a) [D3.2 p1 @ 21:53–23:08]: a trigger-retest level trades
-		// ONLY in the trigger's direction, whatever the school — a buy-line
-		// retest rejecting from below is NOT a short [CTO ruling 2026-10-04].
-		if lvl.Kind == KindTriggerRetest && in.Side != e.State.Trigger.Dir {
-			e.refuse("trigger_retest_wrong_way")
-			continue
-		}
-		// B6 (10-03 ruling): a LEVEL order RESTS — the one-candle expiry is
-		// the ISB rule only [D1.4 p1 @18:32]. ExpiryMs stays 0; the cancel
-		// sweep (levelArmCancels) closes it through the level or at the
-		// window end.
-		// G2 place (CTO R-b): the setup's PLACE — the touch level. For the
-		// EMA the anchor is the loss-time price (the stop, K1).
-		e.State.ArmSeq++
-		id := fmt.Sprintf("lvl-%d", e.State.ArmSeq)
-		in.ArmID = id
-		in.AnchorKey = lvl.Key
-		in.Anchor = lvl.Price
-		if lvl.Kind == KindEMA34 || lvl.Kind == KindEMA9 || lvl.Kind == KindEMA34HTF {
-			in.Anchor = in.Stop
-		}
-		// D2-49 / D2.4 p1 @01:56: the mode-A runner target goes BEYOND the
-		// old high ("resonance breaks the old high 70–80%"). Stamp the next
-		// level beyond the old extreme; 0 = none → the runner's native TP
-		// is removed (exit = BE stop or EOD flat).
-		in.RunnerTarget = nextLevelBeyond(levels, ex.level.Price, side)
-		if e.State.LevelArms == nil {
-			e.State.LevelArms = map[string]LevelArm{}
-		}
-		e.State.LevelArms[lvl.Key] = LevelArm{ArmID: id, Side: in.Side, LevelPrice: lvl.Price, PlacedAt: cur.CloseTime}
-		// B20: a school-1 entry taken without trigger agreement arms the
-		// flip upgrade.
-		if e.Cfg.TriggerSchool == 1 {
-			if ok, ts, _ := TriggerVerdict(e.State.Trigger, in.Price); !ok || ts != in.Side {
-				e.State.SchoolOneSide = in.Side
-				e.State.SchoolOneUpgraded = false
+			// MID-RANGE ban via boxes (CTO 1791003862333): between an FTGL
+			// below and an FTGH above there is NO PHL, NO PLH, regardless of
+			// width — only the ISB.
+			if midRangeBoxed(boxes, price) {
+				continue
 			}
+			// R5: nothing trades inside the standing 5m-ISB box except a
+			// same-direction 1m ISB — PHL/PLH never.
+			if e.State.ISBBox != nil && cur.Close > e.State.ISBBox.Low && cur.Close < e.State.ISBBox.High {
+				continue
+			}
+			// D4.1-25: the 15m box refuses PHL/PLH inside it too ("đợi nó thoát
+			// khỏi range khung 15 phút rồi mới trade").
+			if e.State.ISBBox15m != nil && cur.Close > e.State.ISBBox15m.Low && cur.Close < e.State.ISBBox15m.High {
+				e.refuse("phl_15m_box_ban")
+				continue
+			}
+			// D4.2-07: the 30m box refuses PHL/PLH inside it too.
+			if e.State.ISBBox30m != nil && cur.Close > e.State.ISBBox30m.Low && cur.Close < e.State.ISBBox30m.High {
+				e.refuse("phl_30m_box_ban")
+				continue
+			}
+			// B16 (10-03 ruling, D5.3 p1 @20:40–22:12): ONE intent per reference —
+			// while a level order RESTS at this level, the level is not re-emitted
+			// (no double size on repeated touches).
+			if _, resting := e.State.LevelArms[lvl.Key]; resting {
+				continue
+			}
+			// B14b: the target is the NEAREST old extreme on the trade side —
+			// a failed nearest high is a SKIP, never a farther old high
+			// [D2.2 p2 @03:07–03:14].
+			side, _, sideOK := RejectEntry(tr, e.Cfg)
+			if !sideOK {
+				e.refuse("phl_no_reject_entry")
+				continue
+			}
+			// DS-107 patch (20:54:52Z): ONE nearest target-side extreme, picked
+			// above the touch candle (long: > RefBar.High / short: < RefBar.Low);
+			// a failed nearest is a SKIP, never a farther old extreme.
+			tref := tr.RefBar.High
+			if side == SideShort {
+				tref = tr.RefBar.Low
+			}
+			ex, found := nearestOldExtremeOnSide(oldExtremes, tref, side)
+			if !found {
+				e.refuse("phl_no_old_extreme_on_side")
+				continue
+			}
+			// B14b: the NEAREST target-side extreme must sit at least
+			// PHLMinCandlesFromExtreme candles from the touch bar — the same
+			// "too close" refusal phlPLHR2 raises. Checked here so the near-box
+			// rule (next) does not pre-empt this structural skip.
+			if len(bars)-1-ex.idx < e.Cfg.PHLMinCandlesFromExtreme {
+				e.refuse("phl_too_close_to_extreme")
+				continue
+			}
+			// Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: refuse a setup whose nearest
+			// box edge IN the trade direction is closer than NearBoxRoomMultiple ×
+			// its own risk; between two boxes (row 25) is exempt. It fires BEFORE
+			// the room rule — the room rule's target reads the box edge as the
+			// first obstacle, so the same proximity would otherwise surface as
+			// phl_room_rule instead of the near_box counter.
+			if refuse, _ := nearBoxRefusal(boxes, tref, side, e.Cfg.NearBoxRoomMultiple, tr.RefBar.High-tr.RefBar.Low); refuse {
+				e.refuse("near_box")
+				continue
+			}
+			// D2-28 (CTO fold, release #4): the higher-low / lower-high check
+			// reads the STRUCTURAL low the leg to the old high started from —
+			// "Đối chiếu với những cái ĐÁY bên tay trái… SHIFT CẤU TRÚC"
+			// [D2.2 p3 @02:30–04:18] — taken from the TAPE (the level set is
+			// pruned by the significance filter), and it fails CLOSED: no left
+			// bars means no check is possible, so the PHL is refused rather than
+			// emitted unchecked.
+			prior, okLeft := priorLeftExtremeOnTape(bars, ex, oldExtremes)
+			if !okLeft {
+				e.refuse("phl_no_left_low")
+				continue
+			}
+			in, ok, reason := PHLPLHGatedR2Levels(tr, ex.level, ex.idx, len(bars)-1, prior, levels, e.Cfg, e.State.HTF, e.State.Day.Verdict, dg)
+			if !ok {
+				// B-rules (13:51:31Z): EVERY drop names a reason and counts it.
+				e.refuse(phlRefusalKey(reason))
+				continue
+			}
+			// Row 56 (a) [D3.2 p1 @ 21:53–23:08]: a trigger-retest level trades
+			// ONLY in the trigger's direction, whatever the school — a buy-line
+			// retest rejecting from below is NOT a short [CTO ruling 2026-10-04].
+			if lvl.Kind == KindTriggerRetest && in.Side != e.State.Trigger.Dir {
+				e.refuse("trigger_retest_wrong_way")
+				continue
+			}
+			// B6 (10-03 ruling): a LEVEL order RESTS — the one-candle expiry is
+			// the ISB rule only [D1.4 p1 @18:32]. ExpiryMs stays 0; the cancel
+			// sweep (levelArmCancels) closes it through the level or at the
+			// window end.
+			// G2 place (CTO R-b): the setup's PLACE — the touch level. For the
+			// EMA the anchor is the loss-time price (the stop, K1).
+			e.State.ArmSeq++
+			id := fmt.Sprintf("lvl-%d", e.State.ArmSeq)
+			in.ArmID = id
+			in.AnchorKey = lvl.Key
+			in.Anchor = lvl.Price
+			if lvl.Kind == KindEMA34 || lvl.Kind == KindEMA9 || lvl.Kind == KindEMA34HTF {
+				in.Anchor = in.Stop
+			}
+			// D2-49 / D2.4 p1 @01:56: the mode-A runner target goes BEYOND the
+			// old high ("resonance breaks the old high 70–80%"). Stamp the next
+			// level beyond the old extreme; 0 = none → the runner's native TP
+			// is removed (exit = BE stop or EOD flat).
+			in.RunnerTarget = nextLevelBeyond(levels, ex.level.Price, side)
+			if e.State.LevelArms == nil {
+				e.State.LevelArms = map[string]LevelArm{}
+			}
+			e.State.LevelArms[lvl.Key] = LevelArm{ArmID: id, Side: in.Side, LevelPrice: lvl.Price, PlacedAt: cur.CloseTime}
+			// B20: a school-1 entry taken without trigger agreement arms the
+			// flip upgrade.
+			if e.Cfg.TriggerSchool == 1 {
+				if ok, ts, _ := TriggerVerdict(e.State.Trigger, in.Price); !ok || ts != in.Side {
+					e.State.SchoolOneSide = in.Side
+					e.State.SchoolOneUpgraded = false
+				}
+			}
+			if isEMA34(lvl) {
+				e.State.EmaPendingSide = in.Side
+				e.State.EmaPendingEntry = in.Price
+				e.State.EmaPendingStop = in.Stop
+				e.State.EmaPendingTarget = in.Target
+				e.State.EmaPendingExpiry = in.ExpiryMs
+				e.State.EmaPendingFilled = false
+			}
+			// D4.2-06 part 1: mode C also fires on timeframe agreement —
+			// 15m = 5m = entry side AND the 5m trigger agrees [D4.2 p1 @14:57].
+			in.Confluence = MTFConfluence(in.Side, e.State.Trigger, in.Price, cb5, cb15)
+			out = append(out, in)
 		}
-		if isEMA34(lvl) {
-			e.State.EmaPendingSide = in.Side
-			e.State.EmaPendingEntry = in.Price
-			e.State.EmaPendingStop = in.Stop
-			e.State.EmaPendingTarget = in.Target
-			e.State.EmaPendingExpiry = in.ExpiryMs
-			e.State.EmaPendingFilled = false
-		}
-		// D4.2-06 part 1: mode C also fires on timeframe agreement —
-		// 15m = 5m = entry side AND the 5m trigger agrees [D4.2 p1 @14:57].
-		in.Confluence = MTFConfluence(in.Side, e.State.Trigger, in.Price, cb5, cb15)
-		out = append(out, in)
 	}
 
 	// B6 cancel sweep: a resting level order dies when a later candle
@@ -1116,71 +1478,100 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.State.BoxRefs = map[string]int{}
 	}
 	boxCfg := DefaultBoxCfg()
-	for _, b := range boxes {
-		last := e.State.BoxRefs[b.Key]
-		// Incremental walk from the last evaluated reference (O(new bars) per
-		// tick, not O(tape)) — the full BoxReturnBars walk was the 437s replay.
-		start := b.FormedAt + 1
-		if last+1 > start {
-			start = last + 1
-		}
-		for _, r := range BoxReturnBarsFrom(bars, b, start, boxCfg) {
-			if r.RefBar <= last {
-				continue
+	// D4.2-03: while the 15m/5m conflict stands, NO setup trades — box
+	// returns included (the old one-shot veto covered only the ISB path).
+	if !conflict {
+		for _, b := range boxes {
+			last := e.State.BoxRefs[b.Key]
+			// Incremental walk from the last evaluated reference (O(new bars) per
+			// tick, not O(tape)) — the full BoxReturnBars walk was the 437s replay.
+			start := b.FormedAt + 1
+			if last+1 > start {
+				start = last + 1
 			}
-			// A10: the day gate fires BEFORE any box state is recorded
-			// (BoxRefs), and names the blocked setup.
-			if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
-				e.refuse("box_" + r)
-				continue
-			}
-			e.State.BoxRefs[b.Key] = r.RefBar
-			// B11 [D3.4 p2 @07:58–08:21]: inside the standing 5m-ISB box only
-			// a same-direction ISB trades ("em chỉ đánh inside bar cùng
-			// chiều") — box trades never.
-			if e.State.ISBBox != nil && bars[r.RefBar].Close > e.State.ISBBox.Low && bars[r.RefBar].Close < e.State.ISBBox.High {
-				e.refuse("box_isb_ban")
-				continue
-			}
-			if !BoxReturnReject(b, bars[r.RefBar]) {
-				continue
-			}
-			// C5: name the trigger-side drop that boxEntryIntent also gates.
-			if e.Cfg.LocTriggerFilter && e.Cfg.TriggerSchool != 1 {
-				var tSide Side
-				var tPrice float64
-				if b.Kind == FTGL {
-					tSide, tPrice = SideLong, bars[r.RefBar].High
-				} else {
-					tSide, tPrice = SideShort, bars[r.RefBar].Low
-				}
-				if ok, ts, _ := TriggerVerdict(e.State.Trigger, tPrice); !ok || ts != "" && ts != tSide {
-					e.refuse("isb_trigger_side")
+			for _, r := range BoxReturnBarsFrom(bars, b, start, boxCfg) {
+				if r.RefBar <= last {
 					continue
 				}
-			}
-			for _, in := range boxEntryIntent(bars[r.RefBar], b, boxes, levels, e.State.Trigger, bars, e.Cfg) {
-				// B9 [D5.1 p1 @16:24, @19:11–20:07]: box trades obey
-				// the same day/HTF gates as every other setup —
-				// the 4h/1h direction, the day-off and the spent cap.
-				if htfOK, htfSide, _ := HTFVerdict(e.State.HTF); !htfOK {
-					e.refuse("box_htf_blocked")
-				} else if in.Side != "" && htfSide != "" && in.Side != htfSide {
-					e.refuse("box_htf_side_mismatch")
-				} else {
-					capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
-					if capped.Target != in.Target && !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
-						// the CAP pulled the target inside the stop distance —
-						// refuse rather than emit a sub-floor intent.
-						e.refuse("box_target_below_floor")
+				// A10: the day gate fires BEFORE any box state is recorded
+				// (BoxRefs), and names the blocked setup.
+				if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
+					e.refuse("box_" + r)
+					continue
+				}
+				e.State.BoxRefs[b.Key] = r.RefBar
+				// B11 [D3.4 p2 @07:58–08:21]: inside the standing 5m-ISB box only
+				// a same-direction ISB trades ("em chỉ đánh inside bar cùng
+				// chiều") — box trades never.
+				if e.State.ISBBox != nil && bars[r.RefBar].Close > e.State.ISBBox.Low && bars[r.RefBar].Close < e.State.ISBBox.High {
+					e.refuse("box_isb_ban")
+					continue
+				}
+				// D4.1-25: the 15m box refuses box returns inside it too.
+				if e.State.ISBBox15m != nil && bars[r.RefBar].Close > e.State.ISBBox15m.Low && bars[r.RefBar].Close < e.State.ISBBox15m.High {
+					e.refuse("box_isb_ban_15m")
+					continue
+				}
+				// D4.2-07: the 30m box refuses box returns inside it too.
+				if e.State.ISBBox30m != nil && bars[r.RefBar].Close > e.State.ISBBox30m.Low && bars[r.RefBar].Close < e.State.ISBBox30m.High {
+					e.refuse("box_isb_ban_30m")
+					continue
+				}
+				if !BoxReturnReject(b, bars[r.RefBar]) {
+					continue
+				}
+				// D4.3-04: no box return against the 5m trend — "từ trái qua
+				// phải TREND ĐANG TĂNG. [Vẽ] FAILURE TO GO HIGHER SAO ĐÁNH?"
+				// [D4.3 @08:53–09:06]. The box's CURRENT role (D14 flip) sets
+				// the side: effective FTGH → short (refused in an uptrend),
+				// effective FTGL → long (refused in a downtrend).
+				if e.State.Trigger.Dir == SideLong && boxEffectiveKind(b) == FTGH {
+					e.refuse("box_against_5m_trend")
+					continue
+				}
+				if e.State.Trigger.Dir == SideShort && boxEffectiveKind(b) == FTGL {
+					e.refuse("box_against_5m_trend")
+					continue
+				}
+				// C5: name the trigger-side drop that boxEntryIntent also gates.
+				// D14 "Uno Reverse": the trigger side is the box's CURRENT role —
+				// a flipped FTGH checks the LONG side.
+				if e.Cfg.LocTriggerFilter && e.Cfg.TriggerSchool != 1 {
+					var tSide Side
+					var tPrice float64
+					if boxEffectiveKind(b) == FTGL {
+						tSide, tPrice = SideLong, bars[r.RefBar].High
 					} else {
-						out = append(out, capped)
-						// B20: school-1 box entry without trigger agreement
-						// arms the flip upgrade.
-						if e.Cfg.TriggerSchool == 1 {
-							if ok, ts, _ := TriggerVerdict(e.State.Trigger, capped.Price); !ok || ts != capped.Side {
-								e.State.SchoolOneSide = capped.Side
-								e.State.SchoolOneUpgraded = false
+						tSide, tPrice = SideShort, bars[r.RefBar].Low
+					}
+					if ok, ts, _ := TriggerVerdict(e.State.Trigger, tPrice); !ok || ts != "" && ts != tSide {
+						e.refuse("isb_trigger_side")
+						continue
+					}
+				}
+				for _, in := range boxEntryIntent(bars[r.RefBar], b, boxes, levels, e.State.Trigger, bars, e.Cfg) {
+					// B9 [D5.1 p1 @16:24, @19:11–20:07]: box trades obey
+					// the same day/HTF gates as every other setup —
+					// the 4h/1h direction, the day-off and the spent cap.
+					if htfOK, htfSide, _ := HTFVerdict(e.State.HTF); !htfOK {
+						e.refuse("box_htf_blocked")
+					} else if in.Side != "" && htfSide != "" && in.Side != htfSide {
+						e.refuse("box_htf_side_mismatch")
+					} else {
+						capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
+						if capped.Target != in.Target && !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
+							// the CAP pulled the target inside the stop distance —
+							// refuse rather than emit a sub-floor intent.
+							e.refuse("box_target_below_floor")
+						} else {
+							out = append(out, capped)
+							// B20: school-1 box entry without trigger agreement
+							// arms the flip upgrade.
+							if e.Cfg.TriggerSchool == 1 {
+								if ok, ts, _ := TriggerVerdict(e.State.Trigger, capped.Price); !ok || ts != capped.Side {
+									e.State.SchoolOneSide = capped.Side
+									e.State.SchoolOneUpgraded = false
+								}
 							}
 						}
 					}
@@ -1257,7 +1648,29 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 		intraday = append(intraday, in)
 	}
-	out = append(e.State.Limits.Apply(intraday, bars[len(bars)-2], bars[len(bars)-1], now, levels, e.Cfg), swings...)
+	// REL-5 audit #3: a leg-budget / loss-box drop must not leave a stale
+	// ISBArms entry (a stale arm suppresses a legitimate same-side ISB via
+	// isbArmActive). Snapshot the emitted ISB ArmIDs, then delete the arms the
+	// limits hook dropped.
+	emittedISB := map[string]bool{}
+	for _, in := range intraday {
+		if in.Setup == "ISB" && in.ArmID != "" {
+			emittedISB[in.ArmID] = true
+		}
+	}
+	keptIntraday := e.State.Limits.Apply(intraday, bars[len(bars)-2], bars[len(bars)-1], now, levels, e.Cfg)
+	keptISB := map[string]bool{}
+	for _, in := range keptIntraday {
+		if in.Setup == "ISB" && in.ArmID != "" {
+			keptISB[in.ArmID] = true
+		}
+	}
+	for id := range emittedISB {
+		if !keptISB[id] {
+			delete(e.State.ISBArms, id)
+		}
+	}
+	out = append(keptIntraday, swings...)
 
 	return out
 }
@@ -1369,7 +1782,7 @@ func phlRefusalKey(reason string) string {
 	case strings.HasPrefix(reason, "old extreme not on the target side"):
 		return "phl_extreme_wrong_side"
 	case strings.HasPrefix(reason, "room rule"):
-		return "phl_room_rule"
+		return "room"
 	case strings.HasPrefix(reason, "stop over the 25-pt ceiling"):
 		return "phl_stop_ceiling"
 	case strings.HasPrefix(reason, "degenerate stop/target"):
@@ -1437,7 +1850,27 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 	for i := 0; i < dropped; i++ {
 		e.refuse("isb_trigger_side")
 	}
-	return kept
+	// Item 25 [D5.3 p1 @09:16] (CTO fold): the swing REJECT obeys the room
+	// rule as the course states it — "room to the obstacle ≥ ~2× the target
+	// you want" (R68). The swing's target is the 1:1 first (R43, "TARGET 1-1
+	// TRƯỚC"), so its obstacle — the 5m EMA34 when it sits on the trade side —
+	// must be at least RoomMultiple × risk away. No on-side EMA = no obstacle
+	// on record = no room refusal (comparing the 1R TARGET itself against 2R
+	// would refuse every swing). One counter "room". The swing ISB
+	// (through-close re-entry, stop AT the line "even if it feels big" [table])
+	// is exempt — the method's own big-stop rule governs that entry.
+	obstacle := swingTargetEMA(closed, e.Cfg.Swing)
+	out := make([]Intent, 0, len(kept))
+	for _, in := range kept {
+		if in.Action == PlaceStopEntry && in.Setup == "SWING4H" && strings.Contains(in.Reason, "reject touch") {
+			if swingRoomRefused(in, obstacle, e.Cfg.RoomMultiple) {
+				e.refuse("room")
+				continue
+			}
+		}
+		out = append(out, in)
+	}
+	return out
 }
 
 // swingExpiry is the close of the CURRENT 4h candle (session-anchored at
@@ -1544,4 +1977,15 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 		}
 	}
 	return out
+}
+
+// swingRoomRefused is the swing reject's room rule (item 25 + R68, CTO fold):
+// the obstacle — the 5m EMA34 when it sits on the trade side — must be at
+// least roomMultiple × risk from the entry. No on-side obstacle = no refusal.
+func swingRoomRefused(in Intent, obstacle, roomMultiple float64) bool {
+	if obstacle == 0 || !targetOnSide(in.Side, in.Price, obstacle) {
+		return false
+	}
+	refuse, _ := roomRefusal(in.Price, in.Stop, obstacle, roomMultiple)
+	return refuse
 }

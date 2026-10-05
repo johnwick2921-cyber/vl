@@ -1,6 +1,8 @@
 package mentor
 
 import (
+	"time"
+
 	"vl/market"
 )
 
@@ -12,6 +14,10 @@ import (
 type HTF struct {
 	FourH TriggerLine
 	OneH  TriggerLine
+	// GateOff — D4.4-11: the 4h/1h DIRECTION gate is off outside the news
+	// window (the course uses the HTF read for news first, not ordinary
+	// trading yet). Transient, recomputed every tick; never persisted.
+	GateOff bool `json:"-"`
 }
 
 // HTFAdvance feeds the closed 4h/1h bars since the last tick into the two
@@ -38,6 +44,9 @@ func HTFAdvance(h HTF, bars4h, bars1h []market.Kline, cfg Config) HTF {
 // With no 4h trigger at all there is no direction to follow — refuse
 // (fail-closed: the read always starts from the 4-hour).
 func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
+	if h.GateOff {
+		return true, "", "" // D4.4-11: the HTF direction gate is off outside the news window
+	}
 	if h.FourH.Dir == "" {
 		return false, "", "no 4h trigger yet — the 4-hour is read first, before the 1-hour [D4.4 p1 @ 02:53]"
 	}
@@ -45,6 +54,20 @@ func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 		return true, h.FourH.Dir, ""
 	}
 	return false, "", "case 3: 1h trigger opposite the 4h — sit out until the 1h flips to the 4h [D4.4 p1 @ 16:00; §12]"
+}
+
+// HTFGateActive — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: reports whether the
+// 4h/1h direction gate APPLIES at `now`. With HTFGateNewsOnly on (the course
+// default) the gate applies only inside the 07:20–07:35 CT news window (the
+// T1 print window time; the calendar-day refinement is the trader's news
+// seam — DS-102 item 18). With the knob off the gate applies all day (legacy).
+func HTFGateActive(now int64, cfg Config) bool {
+	if !cfg.HTFGateNewsOnly {
+		return true
+	}
+	t := time.UnixMilli(now).In(ctime())
+	mins := t.Hour()*60 + t.Minute()
+	return mins >= 7*60+20 && mins <= 7*60+35 // 07:20–07:35 CT
 }
 
 // oneHSilent reports whether the 1h has nothing NEW to say after the 4h:

@@ -10,8 +10,12 @@ import (
 // TestThirtyDayReplaySeconds: the CTO's parity gate — 30 days of 1m bars
 // replayed through the SEEDED evaluator must finish in seconds, not the
 // 10-minute timeout DS-105 hit on the unseeded (quadratic) Tick. Duration is
-// logged (measure, not a hard assert); a hard ceiling of 120s guards the
-// regression class.
+// logged (measure, not a hard assert); a hard ceiling guards the regression
+// class. Ceiling 240s (CTO 2026-10-04, release #5): the quadratic class it
+// guards ran 600s+; on this box the test measures 36.9s at release #4 and
+// 43.1s at release #5 (+17%, linear: the 15m/30m box ladder + closed-bucket
+// reads), and the GitHub runner is ~3x slower — 127.7s tripped the old 120s
+// cap on a linear cost. Follow-up: memoize barsTF per Tick (14% of the run).
 func TestThirtyDayReplaySeconds(t *testing.T) {
 	if raceEnabled {
 		t.Skip("wall-clock threshold is meaningless under -race; the non-race suite enforces it")
@@ -46,7 +50,7 @@ func TestThirtyDayReplaySeconds(t *testing.T) {
 	}
 	elapsed := time.Since(start)
 	t.Logf("30-day seeded replay: %d ticks, %d intents, %s", len(bars1m)-1, intents, elapsed)
-	if elapsed > 120*time.Second {
+	if elapsed > 240*time.Second {
 		t.Fatalf("30-day replay took %s — the quadratic class is back", elapsed)
 	}
 }

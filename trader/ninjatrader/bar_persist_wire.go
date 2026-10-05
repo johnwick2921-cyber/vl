@@ -3,9 +3,9 @@ package ninjatrader
 import (
 	"errors"
 	"fmt"
-	"vl/market"
 	"sync"
 	"time"
+	"vl/market"
 
 	"vl/kernel"
 	"vl/logger"

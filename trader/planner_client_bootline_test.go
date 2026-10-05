@@ -3,8 +3,8 @@ package trader
 import (
 	"strings"
 
-	"vl/mcp"
 	"testing"
+	"vl/mcp"
 )
 
 // Class 37 (C7), RENAMED by R2 (2026-09-02) — the per-trader boot line carries

@@ -1,8 +1,8 @@
 package trader
 
 import (
-	nt "vl/provider/ninjatrader"
 	"testing"
+	nt "vl/provider/ninjatrader"
 )
 
 // F12 (port of #117 52134afc) — A "-sl" NAME IS INTENT, NOT COVERAGE.

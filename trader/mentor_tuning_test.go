@@ -36,6 +36,8 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 		LevelMaxVisits:         intPtr(5),
 		OrbGateEnabled:         &off,
 		ISBReverseEMA9Enabled:  &off,
+		HTFGateNewsOnly:        &on,
+		Exec2mAfter30m:         &on,
 		DayGateSpentPts:        420,
 		DayGateTargetCapPts:    12,
 		SwingMaxStopPts:        80,
@@ -51,6 +53,8 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 		{"level_max_visits=5", cfg.LevelMaxVisits == 5},
 		{"orb_gate_enabled=false", !cfg.OrbGateEnabled},
 		{"isb_reverse_ema9_enabled=false", !cfg.ISBReverseEMA9Enabled},
+		{"htf_gate_news_only=true (D4.4-11 Studio switch)", cfg.HTFGateNewsOnly},
+		{"exec_2m_after_30m=true (X5-10 Studio switch)", cfg.Exec2mAfter30m},
 		{"day_gate_spent_pts=420", cfg.DayGateSpentPts == 420},
 		{"day_gate_target_cap_pts=12", cfg.DayGateTargetCapPts == 12},
 		{"swing_max_stop_pts=80 (SwingCfg.MaxStopPts)", cfg.Swing.MaxStopPts == 80},
@@ -84,6 +88,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 		want := mentorTuned{
 			TriggerSchool: 1, PingPongMinGapPts: 50, PingPongCandleMaxPts: 20, PingPongCandleLookback: 30,
 			LevelMaxVisits: 3, OrbGateEnabled: true, ISBReverseEMA9Enabled: true,
+			HTFGateNewsOnly: false, // D4.4-11: the all-day 4h/1h gate stays the default (U-6 open)
+			Exec2mAfter30m:  false, // X5-10: the 1m ISB read stays the default (course trades the 1m)
 			DayGateSpentPts: 300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
 		}
 		if got != want {

@@ -1953,6 +1953,13 @@ type MentorTuning struct {
 	OrbGateEnabled *bool `json:"orb_gate_enabled,omitempty"`
 	// ISBReverseEMA9Enabled: the reverse ISB at EMA 9 (D5.4; nil → ON, R-C).
 	ISBReverseEMA9Enabled *bool `json:"isb_reverse_ema9_enabled,omitempty"`
+	// HTFGateNewsOnly (D4.4-11): the 4h/1h direction gate only inside the
+	// 07:20–07:35 CT news window (nil → OFF = the all-day gate; U-6 open).
+	HTFGateNewsOnly *bool `json:"htf_gate_news_only,omitempty"`
+	// Exec2mAfter30m (X5-10): after the first 30 minutes of RTH (09:00 CT)
+	// the ISB entry is read on the 2m chart (nil → OFF; the course trades the
+	// 1m throughout).
+	Exec2mAfter30m *bool `json:"exec_2m_after_30m,omitempty"`
 	// Spent-day gate (METHOD §7 table, D5.1 p1 @14:21–15:57): a run of at
 	// least SpentPts before the open = spent; the target cap then applies,
 	// and any setup whose stop is over the cap is skipped (R9).
@@ -2070,7 +2077,9 @@ type RiskControlConfig struct {
 	//   MentorLegBudgetEnabled — G1 leg budget (nil → ON);
 	//   MentorLegResetOn — G1 parity ("close" default | "touch"; bad → close);
 	//   MentorLvlRevisitMinPts — L1 per-visit departure (default 0);
-	//   MentorEmaMaxCross30m — E4 "xien len xien xuong" (0 = OFF, base);
+	//   MentorEmaMaxCross30m — E4 "xien len xien xuong" (default ON = 2,
+	//     the most conservative; 0 = OFF; mentor question open — no count in
+	//     the course);
 	//   MentorLocationTriggerFilter — the 5m trigger filter at locations
 	//     (nil → ON, L3: keep it ON in the base).
 	//   MentorLossDeparturePts — optional fixed-points fallback for B22's

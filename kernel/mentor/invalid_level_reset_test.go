@@ -11,8 +11,10 @@ import (
 // ── item 22 (invalid levels reset) — the course scopes "invalid" (ISB-only)
 // to the touching candle / the session day, never the line for good
 // [D5.2 p2 @20:48]. A MOVING line (EMA34 / EMA34HTF / trigger retest) clears
-// its ISB-only state on a drift or a visit departure; a KEY level keeps it
-// until the session day rolls or a closed 1H body deletes the level. ──────────
+// its ISB-only state on a visit DEPARTURE — never on drift alone (the EMA
+// drifts every tick; a drift reset re-invalidates every tick, item 22 fix).
+// A KEY level keeps it until the session day rolls or a closed 1H body
+// deletes the level. ──────────
 
 func TestIsMovingLineKey(t *testing.T) {
 	for _, k := range []string{string(KindEMA34), string(KindEMA34HTF), string(KindTriggerRetest)} {
@@ -43,6 +45,7 @@ func seedEmptySeeded() *Evaluator {
 
 func triggerRetestFixture() *Evaluator {
 	e := seedEmptySeeded()
+	e.Cfg.EMALocationTFMinutes = 0 // no EMA34HTF location line — only the trigger retest
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 100}
 	return e
 }
@@ -70,31 +73,8 @@ func TestMovingLineISBOnlyResetsOnDeparture(t *testing.T) {
 	}
 }
 
-// The trigger-retest line drifts to a new price (the trigger re-based): the old
-// wrong-way classification is about a candle at the OLD price — the ISB-only
-// state must clear with the drift.
-func TestMovingLineISBOnlyResetsOnDrift(t *testing.T) {
-	e := triggerRetestFixture()
-	bars := []market.Kline{
-		rthBars(0, 101, 101.5, 100.9, 101.2),
-		rthBars(1, 101, 101.2, 98, 98.5), // wrong-way close → ISB-only
-	}
-	now := bars[1].CloseTime + 1
-	e.Tick(bars, now)
-	if !e.State.ISBOnly[string(KindTriggerRetest)] {
-		t.Fatalf("precondition: ISB-only must be set; state=%v", e.State.ISBOnly)
-	}
-	// The line re-bases to 110; the next tick sees the drift and clears.
-	e.State.Trigger.Price = 110
-	bars = append(bars, rthBars(2, 98, 99, 97.5, 98.5))
-	e.Tick(bars, bars[2].CloseTime+1)
-	if e.State.ISBOnly[string(KindTriggerRetest)] {
-		t.Fatalf("a moving line's ISB-only state must clear when the line drifts; still set: %v", e.State.ISBOnly)
-	}
-}
-
 // A KEY level's ISB-only state resets when the trading day rolls, while the
-// moving lines keep theirs (they reset on drift/departure instead).
+// moving lines keep theirs (they reset on departure instead).
 func TestKeyLevelISBOnlyResetsOnNewSessionDay(t *testing.T) {
 	e := seedEmptySeeded()
 	// Stale visit-day: the per-day reset fires on the first tick.
@@ -118,6 +98,6 @@ func TestKeyLevelISBOnlyResetsOnNewSessionDay(t *testing.T) {
 		t.Fatalf("a key level's ISB-only state must reset on a new session day; still set: %v", e.State.ISBOnly)
 	}
 	if !e.State.ISBOnly[string(KindEMA34)] || !e.State.ISBOnly[string(KindTriggerRetest)] {
-		t.Fatalf("moving lines must NOT reset with the session day (they reset on drift/departure): %v", e.State.ISBOnly)
+		t.Fatalf("moving lines must NOT reset with the session day (they reset on departure): %v", e.State.ISBOnly)
 	}
 }

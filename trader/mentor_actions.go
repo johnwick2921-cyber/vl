@@ -2,6 +2,7 @@ package trader
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -62,40 +63,70 @@ func mentorLiveArmFor(armID string) (mentorLiveArm, bool) {
 	return a, ok
 }
 
+// mentorDispatchEntry is the ONE mentor entry path (X-07, refactored out of
+// the dispatch switch). A single deferred guard drops the kernel's pending
+// G1/G2 sim fill for the intent's ArmID on EVERY refusal inside this
+// function: a trader-side refusal (R8 25-pt ceiling, window, done-after-win,
+// news, no-chase, N4, MENTOR_PLACE off) must not phantom-fill on a later
+// candle and spend the leg budget / open a loss box. An intent that reached
+// mentorRegisterLiveArm (mentorLiveArmFor) is accepted — no drop.
+func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInputs, lastCloseTime, emitMs int64) {
+	defer func() {
+		if in.ArmID == "" {
+			return
+		}
+		if _, ok := mentorLiveArmFor(in.ArmID); ok {
+			return
+		}
+		at.mentorDropEvalArm(in.ArmID)
+	}()
+	// ONE MENTOR ENTRY PATH: the order type differs only inside the
+	// evaluator; the injector always rests a stop-limit. The confluence
+	// flag feeds the size tier (10/20) and the exit fork (C).
+	extra.Confluence = mentorConfluenceFlag(in)
+	tuned := mentorTuningResolve(at.mentorRiskControl())
+	extra.SwingMaxStopPts = tuned.SwingMaxStopPts
+	extra.SpentDayStopCapPts = tuned.DayGateTargetCapPts
+	if why := mentorRuleGate(in, extra); why != "" {
+		rule := "other"
+		if i := strings.Index(why, ":"); i > 0 {
+			rule = strings.ToLower(strings.TrimSpace(why[:i]))
+		}
+		mentorCount("refused_" + rule)
+		at.logWarnf("🧑‍🏫 mentor intent REFUSED — %s", why)
+		return
+	}
+	choice, err := at.mentorSizeFor(in, extra)
+	if err != nil {
+		return
+	}
+	mentorCount("intent_" + in.Setup)
+	if !mentorPlaceEnv() {
+		at.logInfof("🧑‍🏫 mentor intent SIZED, NOT PLACED (MENTOR_PLACE env off — set MENTOR_PLACE=1 to place): %s %s %d contracts @ %.2f (stop %.2f, target %.2f, tier %s)",
+			in.Setup, in.Side, choice.Contracts, in.Price, in.Stop, in.Target, choice.Tier)
+		mentorCount("placement_held")
+		return
+	}
+	at.mentorPlaceIntent(in, choice, lastCloseTime, emitMs)
+}
+
+// mentorDropEvalArm drops the kernel G1/G2 sim pend for a refused entry
+// (X-07). Nil-safe: a direct dispatch in a test may run before the evaluator
+// exists (the guard no-ops there — nothing was simulated).
+func (at *AutoTrader) mentorDropEvalArm(armID string) {
+	if at == nil || at.mentorEval == nil {
+		return
+	}
+	at.mentorEval.State.Limits.DropArm(armID)
+}
+
 // mentorDispatchIntent is the injector's action switch as ONE call (the eval
 // loop delegates here so every action is testable at the call site). Never
 // silent: every action either executes, or refuses with a named counter.
 func (at *AutoTrader) mentorDispatchIntent(in mentor.Intent, extra mentorTierInputs, lastCloseTime, emitMs int64) {
 	switch in.Action {
 	case mentor.PlaceStopEntry, mentor.PlaceStopLimitEntry:
-		// ONE MENTOR ENTRY PATH: the order type differs only inside the
-		// evaluator; the injector always rests a stop-limit. The confluence
-		// flag feeds the size tier (10/20) and the exit fork (C).
-		extra.Confluence = mentorConfluenceFlag(in)
-		tuned := mentorTuningResolve(at.mentorRiskControl())
-		extra.SwingMaxStopPts = tuned.SwingMaxStopPts
-		extra.SpentDayStopCapPts = tuned.DayGateTargetCapPts
-		if why := mentorRuleGate(in, extra); why != "" {
-			rule := "other"
-			if i := strings.Index(why, ":"); i > 0 {
-				rule = strings.ToLower(strings.TrimSpace(why[:i]))
-			}
-			mentorCount("refused_" + rule)
-			at.logWarnf("🧑‍🏫 mentor intent REFUSED — %s", why)
-			return
-		}
-		choice, err := at.mentorSizeFor(in, extra)
-		if err != nil {
-			return
-		}
-		mentorCount("intent_" + in.Setup)
-		if !mentorPlaceEnv() {
-			at.logInfof("🧑‍🏫 mentor intent SIZED, NOT PLACED (MENTOR_PLACE env off — set MENTOR_PLACE=1 to place): %s %s %d contracts @ %.2f (stop %.2f, target %.2f, tier %s)",
-				in.Setup, in.Side, choice.Contracts, in.Price, in.Stop, in.Target, choice.Tier)
-			mentorCount("placement_held")
-			return
-		}
-		at.mentorPlaceIntent(in, choice, lastCloseTime, emitMs)
+		at.mentorDispatchEntry(in, extra, lastCloseTime, emitMs)
 	case mentor.ExtendArm:
 		at.mentorExtendArm(in)
 	case mentor.CancelArm:
@@ -128,7 +159,7 @@ func mentorAuthoredRow(r store.ArmedOrderDB) bool {
 // never a stop-market fallback), the stop-limit origin routing and, at
 // expiry, the F1 cancel — all on the one path. The ArmID registry records
 // the row for CancelArm / ExtendArm / MoveStopBE / ClosePosition.
-func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64) {
+func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64, forkMode string, forkTP float64) {
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
 		mentorCount("placement_refused_no_ledger")
@@ -177,6 +208,14 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		// mentor_max_contracts.
 		Contracts: store.IntPtr(choice.Contracts),
 	}
+	// REVIEW-353: the split AT ENTRY rides the ONE frame — leg1_qty + leg1_tp
+	// go on the wire; the AddOn places TWO OCO pairs on the one fill. (0, 0)
+	// = the single-bracket legacy path (n <= 1 or swing).
+	leg1Qty, leg1TP := mentorLeg1ForFrame(in, choice.Contracts, forkMode, forkTP)
+	if leg1Qty > 0 {
+		row.Leg1Qty = store.IntPtr(leg1Qty)
+		row.Leg1TP = leg1TP
+	}
 	if err := ledger.UpsertArm(&row); err != nil {
 		mentorCount("placement_refused_upsert")
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm upsert failed: %v", err)
@@ -217,6 +256,62 @@ func (at *AutoTrader) mentorArmQuantity(r store.ArmedOrderDB) (float64, string) 
 		return float64(mx), ""
 	}
 	return float64(n), ""
+}
+
+// mentorWireLeg1 is the leg-1 size the ONE entry frame carries when `sent`
+// contracts go out for row r (0 = the single bracket). Leg 1 = ceil(sent/2),
+// except that the runner never exceeds the row's own runner (contracts −
+// leg1_qty, which already carries the spent-day cap D) — the clamp to the
+// trader max shrinks both legs, never grows the runner. No runner → no split.
+func mentorWireLeg1(r store.ArmedOrderDB, sent int) int {
+	if r.Leg1Qty == nil || *r.Leg1Qty <= 0 || sent <= 1 {
+		return 0
+	}
+	rowN := sent
+	if r.Contracts != nil && *r.Contracts > 0 {
+		rowN = *r.Contracts
+	}
+	runner := sent - (sent+1)/2
+	if rowRunner := rowN - *r.Leg1Qty; runner > rowRunner {
+		runner = rowRunner
+	}
+	if runner <= 0 {
+		return 0
+	}
+	return sent - runner
+}
+
+// mentorWireLeg1TP re-bases leg 1's TP on the wire trigger, keeping its
+// R-multiple: k = (leg1TP − entry) / (entry − stop) at the authored entry,
+// then trigger + k·(trigger − stop). 1R stays 1R and mode C's 2R stays 2R
+// measured from where the order actually fills. Degenerate input (no risk,
+// no TP, a TP on the loss side) returns the authored TP unchanged — the wire
+// check (wireLeg1TP) still refuses a loss-side TP.
+func mentorWireLeg1TP(entry, trigger, stop, leg1TP float64) float64 {
+	risk := entry - stop
+	if leg1TP == 0 || risk == 0 || trigger == 0 {
+		return leg1TP
+	}
+	k := (leg1TP - entry) / risk
+	if k <= 0 {
+		return leg1TP
+	}
+	return trigger + k*(trigger-stop)
+}
+
+// mentorWireOneRFloor re-bases a target authored at EXACTLY 1:1 (within half
+// a tick — the 1R floor, derived from the entry) to the 1:1 point at the wire
+// trigger. Any other target (a level, or > 1R) is returned unchanged and the
+// N4 check judges it as a fixed price.
+func mentorWireOneRFloor(entry, trigger, stop, target, tick float64) float64 {
+	risk := math.Abs(entry - stop)
+	if risk == 0 || target == 0 || trigger == 0 || tick <= 0 {
+		return target
+	}
+	if math.Abs(math.Abs(target-entry)-risk) > tick/2 {
+		return target // not on the floor — a level target never moves
+	}
+	return mentorWireLeg1TP(entry, trigger, stop, target)
 }
 
 // mentorExtendArm pushes a resting arm's expiry forward (ISB stacking, N12).
@@ -315,8 +410,46 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) {
 // mentorRecordLevelInvalid records the evaluator's level-invalidation intent
 // (only ISBs may trade there after — the evaluator owns that rule; the
 // injector records it, never silently).
+// mentorInvalidLogWindow is how long one LevelKey's invalid log is held before
+// the next line (item 18 noise gate, DS-105 replay: level_invalid ~240/day is
+// course-correct — each new visit is a new first touch — but the per-event INFO
+// line flooded the journal).
+const mentorInvalidLogWindow = 15 * time.Minute
+
+// mentorInvalidLogState is the per-LevelKey rate-limit state.
+type mentorInvalidLogState struct {
+	lastLogMs  int64
+	suppressed int
+}
+
+// mentorInvalidLogDecision is the pure rate-limit: logNow when the window has
+// elapsed since the last emit (or this is the first — lastLogMs 0), and
+// `suppressed` is how many events were held back in the just-ended window.
+func mentorInvalidLogDecision(st mentorInvalidLogState, nowMs int64) (logNow bool, suppressed int, next mentorInvalidLogState) {
+	if st.lastLogMs == 0 || nowMs-st.lastLogMs >= mentorInvalidLogWindow.Milliseconds() {
+		return true, st.suppressed, mentorInvalidLogState{lastLogMs: nowMs}
+	}
+	return false, 0, mentorInvalidLogState{lastLogMs: st.lastLogMs, suppressed: st.suppressed + 1}
+}
+
 func (at *AutoTrader) mentorRecordLevelInvalid(in mentor.Intent) {
-	mentorCount("intent_" + string(in.Action))
+	mentorCount("intent_" + string(in.Action)) // the counter fires on EVERY event
+	now := mentorClockNow().UnixMilli()
+	at.mentorInvalidLogMu.Lock()
+	if at.mentorInvalidLog == nil {
+		at.mentorInvalidLog = map[string]mentorInvalidLogState{}
+	}
+	st := at.mentorInvalidLog[in.LevelKey]
+	logNow, suppressed, next := mentorInvalidLogDecision(st, now)
+	at.mentorInvalidLog[in.LevelKey] = next
+	at.mentorInvalidLogMu.Unlock()
+	if !logNow {
+		return
+	}
+	if suppressed > 0 {
+		at.logInfof("🧑‍🏫 mentor level invalidated: %s — %s (%d more suppressed in the last 15m)", in.LevelKey, in.Reason, suppressed)
+		return
+	}
 	at.logInfof("🧑‍🏫 mentor level invalidated: %s — %s", in.LevelKey, in.Reason)
 }
 

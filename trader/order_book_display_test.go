@@ -1,10 +1,10 @@
 package trader
 
 import (
-	nt "vl/provider/ninjatrader"
-	nttrader "vl/trader/ninjatrader"
 	"testing"
 	"time"
+	nt "vl/provider/ninjatrader"
+	nttrader "vl/trader/ninjatrader"
 )
 
 func TestOrderBookDisplayScopesAndDatesReceipt(t *testing.T) {

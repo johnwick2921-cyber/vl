@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"time"
 	"vl/kernel"
 	"vl/levelidentity"
 	"vl/researchsnapshot"
 	"vl/store"
-	"time"
 )
 
 // Caller transfers the completed local detector slices; no worker reads a live

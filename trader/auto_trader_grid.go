@@ -3,12 +3,12 @@ package trader
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
+	"time"
 	"vl/kernel"
 	"vl/logger"
 	"vl/market"
 	"vl/store"
-	"sync"
-	"time"
 )
 
 // ============================================================================

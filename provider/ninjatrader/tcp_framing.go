@@ -47,8 +47,14 @@ type SignalPayload struct {
 	Entry      float64 `json:"entry"` // tick-rounded
 	StopLoss   float64 `json:"stop_loss"`
 	TakeProfit float64 `json:"take_profit"`
-	SignalID   string  `json:"signal_id"` // UUID
-	Timestamp  string  `json:"timestamp"` // RFC3339
+	// Leg1Qty / Leg1TP (REVIEW-353, wire v4): the split AT ENTRY rides the ONE
+	// entry frame — leg 1 = ceil(n/2) with its own TP, leg 2 = the runner with
+	// TakeProfit. omitempty → a pre-v4 AddOn sees the single-bracket frame
+	// byte-identical. leg1_qty == 0 → the AddOn places ONE OCO pair as today.
+	Leg1Qty   int     `json:"leg1_qty,omitempty"`
+	Leg1TP    float64 `json:"leg1_tp,omitempty"`
+	SignalID  string  `json:"signal_id"` // UUID
+	Timestamp string  `json:"timestamp"` // RFC3339
 	// A2 (G1, wire v3) — identity stamp. trader_id is the OWNING trader; seq is the
 	// server's monotonic per-connection op counter. The AddOn ECHOES (trader_id,
 	// account, seq) on the paired ack/fill/close/reject so Go can verify the AddOn
@@ -239,9 +245,11 @@ type ModifyBracketPayload struct {
 	SignalID      string  `json:"signal_id"`
 	NewStopLoss   float64 `json:"new_stop_loss,omitempty"`
 	NewTakeProfit float64 `json:"new_take_profit,omitempty"`
-	Account       string  `json:"account,omitempty"`
-	TraderID      string  `json:"trader_id,omitempty"`
-	Seq           uint64  `json:"seq,omitempty"`
+	// Leg (REVIEW-353, wire v4): 1 = leg 1 only, 2 = leg 2 only, absent/0 = all.
+	Leg      int    `json:"leg,omitempty"`
+	Account  string `json:"account,omitempty"`
+	TraderID string `json:"trader_id,omitempty"`
+	Seq      uint64 `json:"seq,omitempty"`
 }
 
 // OrderUpdatePayload is every NT8 order-state change (deduped per order name)
@@ -343,6 +351,13 @@ const FarSideBuildE7 = "2026-08-30-e7"
 // TRUE, so an older same-date build would satisfy a newer same-date minimum.
 // Every future minimum MUST advance the ISO DATE, never only the suffix.
 const MinAddonBuildStopSlot = "2026-09-05-g2"
+
+// MinAddonBuildSplitLegs is the minimum AddOn build that splits ONE entry into
+// TWO OCO pairs under the one signal id (REVIEW-353, wire v4: leg1_qty + leg1_tp).
+// A pre-v4 AddOn ignores leg1_qty and places a single bracket — the Go side
+// therefore ZEROES the split (single bracket, byte-identical) until the far side
+// proves this build.
+const MinAddonBuildSplitLegs = "2026-10-04-d1"
 
 // MinAddonBuildStopLimit is the minimum AddOn build that builds a stop_entry
 // as OrderType.StopLimit (LimitPrice == StopPrice) when the signal carries
@@ -547,6 +562,10 @@ type PositionClosePayload struct {
 	Quantity     int     `json:"quantity"`
 	ExitReason   string  `json:"exit_reason"` // "sl" | "tp" | "manual"
 	ExitTime     string  `json:"exit_time"`   // RFC3339
+	// Leg (REVIEW-SPLIT-2 P1-2, wire v4): which split leg exited — 1 = leg 1,
+	// 2 = leg 2, 0/absent = whole position (single bracket / manual). Included
+	// in the receipt identity so two same-ms stop exits (2+2) both apply.
+	Leg int `json:"leg,omitempty"`
 	// Account: the NT8 sub-account this close is on. The C# AddOn already SENDS it
 	// (SendPositionCloseFrame ["account"]); Go simply wasn't parsing it. Used by
 	// close-sync owner-routing to match the close to the trader that OWNS the row.
@@ -683,6 +702,8 @@ type MoveStopPayload struct {
 	SignalID    string  `json:"signal_id"`     // the entry's signal_id (the bracket key)
 	NewStopLoss float64 `json:"new_stop_loss"` // tick-rounded new stop price
 	Timestamp   string  `json:"timestamp"`     // RFC3339
+	// Leg (REVIEW-353, wire v4): 1 = leg 1 only, 2 = leg 2 only, absent/0 = all.
+	Leg int `json:"leg,omitempty"`
 	// A2 (G1, wire v3) — identity stamp: target account + owning trader + op seq.
 	Account  string `json:"account,omitempty"`
 	TraderID string `json:"trader_id,omitempty"`
