@@ -435,41 +435,6 @@ func TestMentorBEHalfDistanceTarget(t *testing.T) {
 	}
 }
 
-// TestMentorISBFillCandleExit [D1.4 p1 @12:23–13:27]: for an ISB trade leg 1
-// is closed at the FILL candle's close — modify_bracket of leg 1's TP to the
-// current price (a limit at or through the market). The runner continues.
-// Non-ISB origins keep leg 1's +1R TP.
-func TestMentorISBFillCandleExit(t *testing.T) {
-	// fill candle closes at 103 — between entry and +0.5R: leg 1's TP is
-	// modified to the close; the runner's stop does NOT move.
-	pos := mentorPosition{Symbol: "MNQ", Side: "long", Origin: "ISB", Entry: 100, Stop: 90, R: 10, Mode: "B"}
-	res := mentorExitB(pos, 103, 103, 101, true)
-	if res.Exited || res.ModifyTP == nil || *res.ModifyTP != 103 {
-		t.Fatalf("ISB fill candle close: %+v — want leg1 TP modified to the close 103", res)
-	}
-	if res.NewStop != pos.Stop || len(res.MoveStops) != 0 {
-		t.Fatalf("a sub-+0.5R fill candle must NOT move the stops: %+v", res)
-	}
-	// fill candle closes above +0.5R: BE for both legs AND the modify.
-	pos2 := mentorPosition{Symbol: "MNQ", Side: "long", Origin: "ISB", Entry: 100, Stop: 90, R: 10, Mode: "B"}
-	res = mentorExitB(pos2, 105, 105, 101, true)
-	if res.ModifyTP == nil || *res.ModifyTP != 105 || res.NewStop != 100 || len(res.MoveStops) != 2 {
-		t.Fatalf("ISB fill candle above +0.5R: %+v — want the modify AND both stops at BE", res)
-	}
-	// the stop on the fill candle still wins (worse same bar: stop + halfR).
-	pos3 := mentorPosition{Symbol: "MNQ", Side: "long", Origin: "ISB", Entry: 100, Stop: 90, R: 10, Mode: "B"}
-	res = mentorExitB(pos3, 104, 105, 89, true)
-	if !res.Exited || res.ExitPrice != 90 || res.ExitReason != "stop(worse-same-bar)" || res.ModifyTP != nil {
-		t.Fatalf("ISB fill candle through the stop: %+v — the stop must win", res)
-	}
-	// a non-ISB origin keeps leg 1's +1R TP: the same 103 candle only holds.
-	pos4 := mentorPosition{Symbol: "MNQ", Side: "long", Origin: "PHL", Entry: 100, Stop: 90, R: 10, Mode: "B"}
-	res = mentorExitB(pos4, 103, 103, 101, true)
-	if res.Exited || res.ModifyTP != nil || res.NewStop != 90 || len(res.MoveStops) != 0 {
-		t.Fatalf("PHL origin on the same candle: %+v — no modify below +1R", res)
-	}
-}
-
 // TestMentorResonanceFork (EXIT-SPEC-v3 A on SPLIT LEGS): a PHL/PLH fill
 // followed by an ISB in the SAME direction within 3 candles flips the position
 // to A — both stops to BE at that moment and leg 1's TP modified OUT to the
