@@ -315,8 +315,46 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) {
 // mentorRecordLevelInvalid records the evaluator's level-invalidation intent
 // (only ISBs may trade there after — the evaluator owns that rule; the
 // injector records it, never silently).
+// mentorInvalidLogWindow is how long one LevelKey's invalid log is held before
+// the next line (item 18 noise gate, DS-105 replay: level_invalid ~240/day is
+// course-correct — each new visit is a new first touch — but the per-event INFO
+// line flooded the journal).
+const mentorInvalidLogWindow = 15 * time.Minute
+
+// mentorInvalidLogState is the per-LevelKey rate-limit state.
+type mentorInvalidLogState struct {
+	lastLogMs  int64
+	suppressed int
+}
+
+// mentorInvalidLogDecision is the pure rate-limit: logNow when the window has
+// elapsed since the last emit (or this is the first — lastLogMs 0), and
+// `suppressed` is how many events were held back in the just-ended window.
+func mentorInvalidLogDecision(st mentorInvalidLogState, nowMs int64) (logNow bool, suppressed int, next mentorInvalidLogState) {
+	if st.lastLogMs == 0 || nowMs-st.lastLogMs >= mentorInvalidLogWindow.Milliseconds() {
+		return true, st.suppressed, mentorInvalidLogState{lastLogMs: nowMs}
+	}
+	return false, 0, mentorInvalidLogState{lastLogMs: st.lastLogMs, suppressed: st.suppressed + 1}
+}
+
 func (at *AutoTrader) mentorRecordLevelInvalid(in mentor.Intent) {
-	mentorCount("intent_" + string(in.Action))
+	mentorCount("intent_" + string(in.Action)) // the counter fires on EVERY event
+	now := mentorClockNow().UnixMilli()
+	at.mentorInvalidLogMu.Lock()
+	if at.mentorInvalidLog == nil {
+		at.mentorInvalidLog = map[string]mentorInvalidLogState{}
+	}
+	st := at.mentorInvalidLog[in.LevelKey]
+	logNow, suppressed, next := mentorInvalidLogDecision(st, now)
+	at.mentorInvalidLog[in.LevelKey] = next
+	at.mentorInvalidLogMu.Unlock()
+	if !logNow {
+		return
+	}
+	if suppressed > 0 {
+		at.logInfof("🧑‍🏫 mentor level invalidated: %s — %s (%d more suppressed in the last 15m)", in.LevelKey, in.Reason, suppressed)
+		return
+	}
 	at.logInfof("🧑‍🏫 mentor level invalidated: %s — %s", in.LevelKey, in.Reason)
 }
 
