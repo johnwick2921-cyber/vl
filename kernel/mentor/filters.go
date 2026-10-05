@@ -169,6 +169,12 @@ func MidRange(levels []Level, price float64, cfg Config) bool {
 	}
 	above, below := false, false
 	for _, l := range levels {
+		// REL-5 audit #1: target-only levels (4h trigger, wick microscalp) and
+		// trendlines are never range boundaries — they are locations or target
+		// ladders, not the key levels a mid-range sits between.
+		if l.Kind == KindHTFTrigger || l.Kind == KindWickMicroscalp || l.Kind == KindTrendline {
+			continue
+		}
 		d := l.Price - price
 		switch {
 		case d > 0 && d <= cfg.RangeGapPts:

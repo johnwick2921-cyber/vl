@@ -216,7 +216,7 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 	if risk > cfg.StopCeilingPts {
 		return nil
 	}
-	target := nextLevelBeyond(levels, price, side)
+	target := nextLevelBeyondRoom(levels, price, stop, side, cfg.RoomMultiple)
 	if target == 0 {
 		return nil // no level beyond → no setup [D4.1 p1 @ 01:45]
 	}
