@@ -123,6 +123,20 @@ func mentorWireSeams(t *testing.T, at *AutoTrader, ledger *store.ArmedOrderStore
 	})
 }
 
+// mentorPinClockToRTH pins the mentor clock seam to a FIXED RTH instant (10:30
+// CT — a non-news instant) for the duration of the test. The F11 news gate
+// holds a placement FAIL-CLOSED inside the 07:20–07:35 CT window when today's
+// calendar is missing (the static fallback only covers a bounded date range),
+// so a test that places a mentor entry must pin the clock to a non-news
+// instant instead of inheriting the real wall clock (FLAKE-NEWS-WINDOW,
+// class 110 — the same seam #406 pinned for the seed test).
+func mentorPinClockToRTH(t *testing.T) {
+	t.Helper()
+	fixed := rthInstant()
+	mentorNowSource = func() time.Time { return fixed }
+	t.Cleanup(func() { mentorNowSource = nil })
+}
+
 // sawMentorFrame drains frames until deadline and reports whether want arrived.
 func sawMentorFrame(t *testing.T, frames chan ntwire.FrameType, want ntwire.FrameType, within time.Duration) bool {
 	t.Helper()
@@ -182,6 +196,7 @@ func TestMentorEntryIsAlwaysStopLimit(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "") // ALWAYS stop-limit: the env is not read, an unset env must still route the limit variant
 	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
 	mentorWireSeams(t, at, ledger)
+	mentorPinClockToRTH(t)
 	resetMentorCounters()
 
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-1", Setup: "ISB", Side: mentor.SideLong,
@@ -312,6 +327,7 @@ func TestMentorEntryFrameCarriesStopLimitTrue(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "") // the env is not read (always stop-limit)
 	at, ledger, raw := mentorLoopbackRaw(t, ntwire.MinAddonBuildStopLimit)
 	mentorWireSeams(t, at, ledger)
+	mentorPinClockToRTH(t)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-raw", Setup: "ISB", Side: mentor.SideLong,
 		Price: 29600, Stop: 29595, Target: 29610, StopPts: 5, TargetPts: 10, ExpiryMs: rthInstant().UnixMilli() + 60_000}, mentorTierInputs{}, 1000, 1100)
 	now := rthInstant()
@@ -345,6 +361,7 @@ func TestMentorEntryRefusesBelowC2(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "")                                            // the env is not read (always stop-limit)
 	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildCancelReport) // c1 < c2
 	mentorWireSeams(t, at, ledger)
+	mentorPinClockToRTH(t)
 	resetMentorCounters()
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-c1", Setup: "ISB", Side: mentor.SideLong,
 		Price: 29600, Stop: 29595, Target: 29610, StopPts: 5, TargetPts: 10, ExpiryMs: rthInstant().UnixMilli() + 60_000}
@@ -491,6 +508,7 @@ func TestMentorIntentYieldsExactlyOneArmedRow(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "on")
 	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
 	mentorWireSeams(t, at, ledger)
+	mentorPinClockToRTH(t)
 	expiry := time.Now().UnixMilli() + 60_000
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-one", Setup: "ISB", Side: mentor.SideLong,
 		Price: 29600, Stop: 29595, Target: 29610, StopPts: 5, TargetPts: 10, ExpiryMs: expiry}, mentorTierInputs{}, 1000, 1100)
@@ -514,6 +532,7 @@ func TestMentorChainIntentToWireToExpiryCancel(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "") // the env is not read (always stop-limit)
 	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
 	mentorWireSeams(t, at, ledger)
+	mentorPinClockToRTH(t)
 	t0 := rthInstant()
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-chain", Setup: "ISB", Side: mentor.SideLong,
 		Price: 29600, Stop: 29595, Target: 29610, StopPts: 5, TargetPts: 10, ExpiryMs: t0.UnixMilli() + 60_000}, mentorTierInputs{}, 1000, 1100)
