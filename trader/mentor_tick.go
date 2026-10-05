@@ -146,6 +146,7 @@ func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 	if rc != nil {
 		cfg.LvlRevisitMinPts = mentorLvlRevisitMinPts(rc)
 		cfg.EmaMaxCross30m = mentorEmaMaxCross30m(rc)
+		cfg.Exec2mAfter30m = mentorExec2mAfter30m(rc)
 	}
 	return cfg
 }

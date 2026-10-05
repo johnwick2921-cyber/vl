@@ -361,6 +361,11 @@ export const mentor: GuideSection = {
           'A mentor entry is refused through the print window (07:20–07:35 CT). At print −10m on a red-folder print day, live INTRADAY mentor arms are cancelled by ArmID and intraday mentor positions are flattened before the 07:30 print — the SWING4H is exempt (held by the 4h). The 07:30 print candle never moves the 1h/4h trigger lines: the evaluator drops the print-window bars from the higher-timeframe feed, so a news spike is not a real break.',
           'F11 · R12 · D4.4 p1 @18:13, @22:15, @20:44–21:46',
         ],
+        [
+          '2m execution after 09:00 CT (optional)',
+          'OFF by default — the course trades the 1m throughout. Turn it on and, after the first 30 minutes of RTH (09:00 CT), the ISB entry is read on the 2m chart instead of the 1m ("sau 30 phút em sẽ chuyển qua khung 2 phút" — the 1m wicks sweep stops, so the 2m read is quieter). Before 09:00 CT the 1m read is unchanged. The higher-timeframe lines, the boxes and the ORB escape always stay on the 1m.',
+          'mentor_exec_2m_after_30m = false (default OFF) · X5 @00:41–01:17 · X11 @17:06–17:32',
+        ],
       ],
     },
     {

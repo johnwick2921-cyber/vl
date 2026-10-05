@@ -2083,6 +2083,9 @@ type RiskControlConfig struct {
 	MentorEmaMaxCross30m        int     `json:"mentor_ema_max_cross_30m,omitempty"`
 	MentorLocationTriggerFilter *bool   `json:"mentor_loc_trigger_filter,omitempty"`
 	MentorLossDeparturePts      float64 `json:"mentor_loss_departure_pts,omitempty"`
+	// MentorExec2mAfter30m — X5-10 optional knob (nil → OFF): after the first
+	// 30 minutes of RTH (09:00 CT) the ISB entry is read on the 2m chart.
+	MentorExec2mAfter30m *bool `json:"mentor_exec_2m_after_30m,omitempty"`
 	// MentorTuning — the owner-tunable mentor method numbers (K3, OWNER RULING
 	// 2026-10-04 "do all as mentor"). EVERY field unset (nil/0) resolves to the
 	// ruled default in kernel/mentor DefaultConfig, so an absent block runs
