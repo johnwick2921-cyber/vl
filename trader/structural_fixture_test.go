@@ -1,9 +1,9 @@
 package trader
 
 import (
+	"time"
 	"vl/kernel"
 	"vl/store"
-	"time"
 )
 
 // Fixed, explicit machine identities for unrelated historical gate fixtures.

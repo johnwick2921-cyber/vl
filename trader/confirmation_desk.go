@@ -3,10 +3,10 @@ package trader
 import (
 	"encoding/json"
 	"fmt"
-	"vl/kernel"
-	"vl/store"
 	"strings"
 	"time"
+	"vl/kernel"
+	"vl/store"
 )
 
 // deskConfirmation reads the same versioned record as the plan card. It never

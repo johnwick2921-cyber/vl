@@ -643,3 +643,42 @@ armed pass sends the cancel_order frame on the SAME pass (an expired arm that
 was never placed — armed, no signal id — ends terminal 'expired' in the
 ledger); a row with no expiry is never auto-cancelled. The AddOn needs no new
 frame for this.
+
+## Split legs (REVIEW-353 / REVIEW-SPLIT-2, wire v4) — build `2026-10-04-d1`
+
+One mentor entry of n contracts takes half off at its own target and runs the
+rest. It stays ONE entry order and ONE signal id; the AddOn builds TWO OCO
+pairs on the fill. Go sends the split only when the far side has proven
+`MinAddonBuildSplitLegs` (`2026-10-04-d1`); an older AddOn gets the single
+bracket, byte-identical.
+
+**`signal` (Go → AddOn), additive:**
+
+- `leg1_qty` (int): leg 1's contracts. Absent/0 = the single bracket. The
+  runner (leg 2) is `filled − leg1_qty`, so Go sends `leg1_qty = n − runner`.
+  With the spent-day cap (runner ≤ 2), the contracts the cap removes from the
+  runner go to leg 1. The AddOn builds the leg-2 pair only once the fill
+  exceeds `leg1_qty`.
+- `leg1_tp` (float): leg 1's own take-profit, rounded to the nearest tick by
+  Go and on the profit side of the entry. A leg-1 TP that fails either check
+  drops the split; the single bracket is sent instead.
+
+**Order names under the one signal id:** leg 1 = `<sid>-sl` / `<sid>-tp`
+(one OCO pair), leg 2 = `<sid>-sl2` / `<sid>-tp2` (a second OCO pair).
+
+**`move_stop` / `modify_bracket` (Go → AddOn), additive:**
+
+- `leg` (int): 1 = leg 1 only, 2 = leg 2 only, absent/0 = every live leg.
+- A terminal leg (e.g. leg 1 after its TP filled) is skipped. The frame errors
+  only when no selected leg is live.
+- Go's stop-widen ban is judged per leg (`<sid>#leg1` / `<sid>#leg2`).
+
+**`position_close` (AddOn → Go), additive:**
+
+- `leg` (int): which leg exited — 1 (`-sl`/`-tp`) or 2 (`-sl2`/`-tp2`). 0 or
+  absent means the whole position (manual close, flatten, or a single bracket).
+- Go adds the leg to the exit-receipt identity only when it is > 0. Two
+  same-time stop exits of equal size (2+2) then stay two receipts, and a
+  single-bracket receipt key is unchanged from before the split.
+- The exit-drive record for the signal is kept while either leg is live; it
+  is dropped when the last leg exits.

@@ -3,10 +3,10 @@ package trader
 import (
 	"encoding/json"
 	"fmt"
-	"vl/store"
 	"strings"
 	"testing"
 	"time"
+	"vl/store"
 
 	"vl/kernel"
 	"vl/market"

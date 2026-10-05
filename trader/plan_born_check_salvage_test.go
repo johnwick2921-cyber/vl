@@ -20,9 +20,9 @@ func TestFpSalvageDropsBornDeadScenarioAndPublishesTheRest(t *testing.T) {
 	_, bars, read, publish := loadW2WriteFixture(t)
 	at := w2Trader(t, bars)
 	cand := w2Candidate(t, []string{
-		"5m close above 31085.00",    // breached between read and publish → born dead
-		"5m close above 31095.00",    // clean
-		"2x5m close above 31100.00",  // clean
+		"5m close above 31085.00",   // breached between read and publish → born dead
+		"5m close above 31095.00",   // clean
+		"2x5m close above 31100.00", // clean
 	}, nil)
 	ver, lc, err, prompts := w2Run(at, "LONDON", "2026-09-23", read, publish, cand)
 	if err != nil || ver != 1 || lc != "active" || len(prompts) != 1 {
@@ -183,9 +183,9 @@ func TestFpSalvageNeverPublishesGrammarRefusal(t *testing.T) {
 	_, bars, read, publish := loadW2WriteFixture(t)
 	at := w2Trader(t, bars)
 	cand := w2Candidate(t, []string{
-		"1m close below 31000.00",  // outside the invalidation grammar → refusal
-		"5m close above 31085.00",  // born dead between read and publish
-		"5m close above 31095.00",  // survives
+		"1m close below 31000.00", // outside the invalidation grammar → refusal
+		"5m close above 31085.00", // born dead between read and publish
+		"5m close above 31095.00", // survives
 	}, nil)
 	_, lc, err, prompts := w2Run(at, "LONDON", "2026-09-23", read, publish, cand, cand)
 	if err != nil {

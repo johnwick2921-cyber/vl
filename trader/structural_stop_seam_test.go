@@ -2,12 +2,12 @@ package trader
 
 import (
 	"encoding/json"
-	"vl/kernel"
-	"vl/market"
-	"vl/store"
 	"strings"
 	"testing"
 	"time"
+	"vl/kernel"
+	"vl/market"
+	"vl/store"
 )
 
 // These pins enter the existing production arm cycle. JSON knob input lets the

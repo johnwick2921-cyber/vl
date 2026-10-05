@@ -44,7 +44,7 @@ func TestMentorNewsCancelFlattenAtEvalOnceCallSite(t *testing.T) {
 				Setup: setup, ExpiryMs: now.UnixMilli() + 60_000,
 			},
 			mentorSizeChoice{Contracts: 1, Tier: "base"},
-			now.UnixMilli(), now.UnixMilli(),
+			now.UnixMilli(), now.UnixMilli(), "B", 0,
 		)
 	}
 	author("isb-news", "ISB")       // intraday — must be cancelled before the print

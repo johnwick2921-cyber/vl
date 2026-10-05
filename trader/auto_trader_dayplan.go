@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	ntTrader "vl/trader/ninjatrader"
 	"sync"
 	"time"
+	ntTrader "vl/trader/ninjatrader"
 
 	"vl/kernel"
 	"vl/market"

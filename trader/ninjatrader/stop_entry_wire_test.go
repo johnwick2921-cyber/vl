@@ -95,7 +95,7 @@ func TestPlaceStopEntryFrameOnLoopback(t *testing.T) {
 		var sid string
 		var err error
 		for i := 0; i < 50; i++ {
-			sid, err = tr.PlaceStopEntry("MNQ", tc.side, 1, tc.trigger, tc.sl, tc.tp)
+			sid, err = tr.PlaceStopEntry("MNQ", tc.side, 1, tc.trigger, tc.sl, tc.tp, 0, 0)
 			if err == nil || !strings.Contains(err.Error(), "no NT client connected") {
 				break
 			}
@@ -149,7 +149,7 @@ func TestPlaceStopEntryRefusedWithoutFarSideBuild(t *testing.T) {
 
 	var err error
 	for i := 0; i < 50; i++ {
-		_, err = tr.PlaceStopEntry("MNQ", "short", 1, 28700.00, 28850.00, 28500.00)
+		_, err = tr.PlaceStopEntry("MNQ", "short", 1, 28700.00, 28850.00, 28500.00, 0, 0)
 		if err == nil || !strings.Contains(err.Error(), "no NT client connected") {
 			break
 		}
@@ -188,7 +188,7 @@ func TestPlaceStopEntryRefusedWithoutFarSideBuild(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	for i := 0; i < 50; i++ {
-		_, err = tr.PlaceStopEntry("MNQ", "short", 1, 28700.00, 28850.00, 28500.00)
+		_, err = tr.PlaceStopEntry("MNQ", "short", 1, 28700.00, 28850.00, 28500.00, 0, 0)
 		if err == nil || !strings.Contains(err.Error(), "no NT client connected") {
 			break
 		}
@@ -250,7 +250,7 @@ func TestStopEntryRefusedOnPreStopSlotBuild(t *testing.T) {
 
 	var err error
 	for i := 0; i < 50; i++ {
-		_, err = tr.PlaceStopEntry("MNQ", "short", 1, 29590.50, 29650.00, 29481.50)
+		_, err = tr.PlaceStopEntry("MNQ", "short", 1, 29590.50, 29650.00, 29481.50, 0, 0)
 		if err == nil || !strings.Contains(err.Error(), "no NT client connected") {
 			break
 		}

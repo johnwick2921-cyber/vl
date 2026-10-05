@@ -38,10 +38,16 @@ func newDriveAT(t *testing.T) (*AutoTrader, func() []driveMove) {
 	var mu sync.Mutex
 	var moves []driveMove
 	old := mentorMoveStopForSignalWire
-	mentorMoveStopForSignalWire = func(nt *nttrader.TCPTrader, signalID, side string, newStop float64) error {
+	driveLegsMu.Lock()
+	driveLegs = nil
+	driveLegsMu.Unlock()
+	mentorMoveStopForSignalWire = func(nt *nttrader.TCPTrader, signalID, side string, newStop float64, leg int) error {
 		mu.Lock()
 		moves = append(moves, driveMove{signalID, side, newStop})
 		mu.Unlock()
+		driveLegsMu.Lock()
+		driveLegs = append(driveLegs, leg)
+		driveLegsMu.Unlock()
 		return nil
 	}
 	t.Cleanup(func() {

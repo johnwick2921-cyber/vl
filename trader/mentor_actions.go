@@ -128,7 +128,7 @@ func mentorAuthoredRow(r store.ArmedOrderDB) bool {
 // never a stop-market fallback), the stop-limit origin routing and, at
 // expiry, the F1 cancel — all on the one path. The ArmID registry records
 // the row for CancelArm / ExtendArm / MoveStopBE / ClosePosition.
-func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64) {
+func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64, forkMode string, forkTP float64) {
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
 		mentorCount("placement_refused_no_ledger")
@@ -177,6 +177,14 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		// mentor_max_contracts.
 		Contracts: store.IntPtr(choice.Contracts),
 	}
+	// REVIEW-353: the split AT ENTRY rides the ONE frame — leg1_qty + leg1_tp
+	// go on the wire; the AddOn places TWO OCO pairs on the one fill. (0, 0)
+	// = the single-bracket legacy path (n <= 1 or swing).
+	leg1Qty, leg1TP := mentorLeg1ForFrame(in, choice.Contracts, forkMode, forkTP)
+	if leg1Qty > 0 {
+		row.Leg1Qty = store.IntPtr(leg1Qty)
+		row.Leg1TP = leg1TP
+	}
 	if err := ledger.UpsertArm(&row); err != nil {
 		mentorCount("placement_refused_upsert")
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm upsert failed: %v", err)
@@ -217,6 +225,47 @@ func (at *AutoTrader) mentorArmQuantity(r store.ArmedOrderDB) (float64, string) 
 		return float64(mx), ""
 	}
 	return float64(n), ""
+}
+
+// mentorWireLeg1 is the leg-1 size the ONE entry frame carries when `sent`
+// contracts go out for row r (0 = the single bracket). Leg 1 = ceil(sent/2),
+// except that the runner never exceeds the row's own runner (contracts −
+// leg1_qty, which already carries the spent-day cap D) — the clamp to the
+// trader max shrinks both legs, never grows the runner. No runner → no split.
+func mentorWireLeg1(r store.ArmedOrderDB, sent int) int {
+	if r.Leg1Qty == nil || *r.Leg1Qty <= 0 || sent <= 1 {
+		return 0
+	}
+	rowN := sent
+	if r.Contracts != nil && *r.Contracts > 0 {
+		rowN = *r.Contracts
+	}
+	runner := sent - (sent+1)/2
+	if rowRunner := rowN - *r.Leg1Qty; runner > rowRunner {
+		runner = rowRunner
+	}
+	if runner <= 0 {
+		return 0
+	}
+	return sent - runner
+}
+
+// mentorWireLeg1TP re-bases leg 1's TP on the wire trigger, keeping its
+// R-multiple: k = (leg1TP − entry) / (entry − stop) at the authored entry,
+// then trigger + k·(trigger − stop). 1R stays 1R and mode C's 2R stays 2R
+// measured from where the order actually fills. Degenerate input (no risk,
+// no TP, a TP on the loss side) returns the authored TP unchanged — the wire
+// check (wireLeg1TP) still refuses a loss-side TP.
+func mentorWireLeg1TP(entry, trigger, stop, leg1TP float64) float64 {
+	risk := entry - stop
+	if leg1TP == 0 || risk == 0 || trigger == 0 {
+		return leg1TP
+	}
+	k := (leg1TP - entry) / risk
+	if k <= 0 {
+		return leg1TP
+	}
+	return trigger + k*(trigger-stop)
 }
 
 // mentorExtendArm pushes a resting arm's expiry forward (ISB stacking, N12).

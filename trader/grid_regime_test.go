@@ -1,8 +1,8 @@
 package trader
 
 import (
-	"vl/market"
 	"testing"
+	"vl/market"
 )
 
 func TestClassifyRegimeLevel(t *testing.T) {

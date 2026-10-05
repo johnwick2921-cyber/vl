@@ -5,10 +5,10 @@ import (
 	"strings"
 	"sync"
 
+	"time"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 	"vl/trader/types"
-	"time"
 )
 
 // ── CLASS 33 (2026-09-02) — BOOT-TIME ARM SWEEP ──────────────────────────────

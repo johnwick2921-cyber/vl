@@ -2,12 +2,12 @@ package trader
 
 import (
 	"encoding/json"
-	"vl/kernel"
-	"vl/market"
-	"vl/store"
 	"strings"
 	"testing"
 	"time"
+	"vl/kernel"
+	"vl/market"
+	"vl/store"
 )
 
 func confirmationTrader(t *testing.T) (*AutoTrader, *store.Store, *kernel.ActivePlan, *[]market.Kline, time.Time) {

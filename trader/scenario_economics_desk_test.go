@@ -2,11 +2,11 @@ package trader
 
 import (
 	"encoding/json"
-	"vl/kernel"
 	"os"
 	"strings"
 	"testing"
 	"time"
+	"vl/kernel"
 )
 
 func TestScenarioEconomicsOnProductionDesk(t *testing.T) {

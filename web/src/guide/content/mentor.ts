@@ -408,7 +408,11 @@ export const mentor: GuideSection = {
           'mentor_reduced_contracts',
         ],
         ['SWING4H', '3', 'mentor_swing4h_contracts'],
-        ['Spent day (§7)', '2', 'mentor_spent_day_contracts'],
+        [
+          'Spent day (§7)',
+          'normal — the runner/target are cut, not the size (15-pt target cap + runner cap 2) [R09]',
+          'mentor_spent_day_contracts',
+        ],
       ],
     },
     {
@@ -426,16 +430,19 @@ export const mentor: GuideSection = {
         ],
         [
           'B — normal',
-          'Single leg (no partial). The stop moves to break-even at HALF the distance to the target; live 1:1 keeps the stop at 1:1 behind the target; after the 1:1 point is printed the stop trails 1 tick beyond each closed candle (trail_tf: 1m default, 30s/45s allowed, off = legacy)',
+          '2 or more contracts: ONE entry with two exits — leg 1 (half, rounded up) takes profit at 1:1 measured from the actual entry price, the runner holds to the target (1 contract = a single leg). Both stops move to break-even at HALF the distance to the target; live 1:1 keeps the stop at 1:1 behind the target; after the 1:1 point is printed the runner’s stop trails 1 tick beyond each closed candle (trail_tf: 1m default, 30s/45s allowed, off = legacy). Spent day: at most 2 contracts run — the rest leave with leg 1. Needs the AddOn build 2026-10-04-d1; an older AddOn gets one bracket for the whole position',
         ],
-        ['C — confluence', 'Hold to at least 1:2 — the stop does not move up'],
+        [
+          'C — confluence',
+          'Leg 1 holds to at least 1:2 — the stop does not move up',
+        ],
         [
           'SWING4H',
           'First target = the 5m EMA 34 (or the 50-pt fallback); BE at +1R; hold to the close of the 2nd 4h candle after entry',
         ],
         [
           'ISB partial',
-          'The ISB follows the same single-leg drive as B (BE at half the distance, live 1:1, trail 1 tick beyond after the 1:1 point) — the old three-part partial is gone',
+          'The ISB follows B: leg 1 (half) exits at 1:1 from the actual entry, the runner takes the B drive (BE at half the distance, live 1:1, trail 1 tick beyond after the 1:1 point). The course’s candle-3-close exit for leg 1 is only LOGGED (not sent) until it is proven on SIM',
         ],
       ],
     },
@@ -1054,7 +1061,8 @@ export const mentor: GuideSection = {
           label: 'EMA 34 cross cap (30m)',
           where: 'Strategy → Mentor mode → EMA34',
           what: 'Cap crossings around the EMA line in a 30m window (“xien len xien xuong”). The mentor gave no number, so the question is open (Q21).',
-          trader: 'ON — 2 crosses in 30m refuse the EMA34 setup (the most conservative reading).',
+          trader:
+            'ON — 2 crosses in 30m refuse the EMA34 setup (the most conservative reading).',
           consumer: 'kernel/mentor ema_max_cross_30m',
           range: 'int / off',
           systemDefault: '2',

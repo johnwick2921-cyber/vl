@@ -378,7 +378,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		mentorPlaceRecorderForTest(in, choice.Contracts)
 		return // test seam: the real pipeline is never reached from a test
 	}
-	at.mentorArmIntent(in, choice, barCloseMs, emitMs)
+	at.mentorArmIntent(in, choice, barCloseMs, emitMs, forkMode, forkTP)
 }
 
 // mentorExpiryGuard is the F3 fail-closed pin (CTO 1791035117415): a mentor

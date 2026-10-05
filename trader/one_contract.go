@@ -99,7 +99,8 @@ func (v contractVerdict) Refusal() string {
 // W0: -lx was missing, so a resting limit exit read as a working entry).
 func isBracketChild(name string) bool {
 	n := strings.ToLower(strings.TrimSpace(name))
-	return strings.HasSuffix(n, "-sl") || strings.HasSuffix(n, "-tp") || strings.HasSuffix(n, "-lx")
+	return strings.HasSuffix(n, "-sl") || strings.HasSuffix(n, "-tp") || strings.HasSuffix(n, "-lx") ||
+		strings.HasSuffix(n, "-sl2") || strings.HasSuffix(n, "-tp2")
 }
 
 // adjudicateAccountContract is the whole decision as a PURE function: book in,
