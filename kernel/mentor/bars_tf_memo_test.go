@@ -87,3 +87,26 @@ func TestBarsTFMemoClearedPerTick(t *testing.T) {
 		}
 	}
 }
+
+// PIN 4 — no consumer may mutate a memo'd bucket: after a Tick, every memo slot
+// must still equal a fresh barsTF of the SAME input. A consumer that writes the
+// shared backing array (append, b[i]=, b[i].Field=, sort) turns this pin red.
+func TestBarsTFMemoUncorruptedAfterTick(t *testing.T) {
+	e := New(DefaultConfig())
+	e.Cfg.Enabled = true
+	bars := tape(300)
+	e.Tick(bars, bars[len(bars)-1].CloseTime+1)
+	if len(e.tfMemo) == 0 {
+		t.Fatalf("precondition: Tick must populate the memo")
+	}
+	for tf, en := range e.tfMemo {
+		// Empty print windows make the HTF feed byte-identical to the raw tape,
+		// so every memo slot derives from `bars`.
+		if en.n != len(bars) || en.first != bars[0].OpenTime || en.last != bars[len(bars)-1].OpenTime {
+			t.Fatalf("tf=%d: memo slot is not the raw tape (n=%d first=%d last=%d)", tf, en.n, en.first, en.last)
+		}
+		if !reflect.DeepEqual(en.bucket, barsTF(bars, tf)) {
+			t.Fatalf("tf=%d: memo bucket was mutated during Tick", tf)
+		}
+	}
+}
