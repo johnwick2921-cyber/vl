@@ -519,6 +519,14 @@ func isBoxEdge(l Level) bool {
 
 // closedBuckets returns the 5m buckets with the still-forming one dropped
 // (B4): a bucket whose close time has not been reached by `now` is forming.
+//
+// CONTRACT (FU-3): `now` must be an instant STRICTLY AFTER the newest closed
+// 1m bar's close — in the Tick path that is BarCloseInstant(last) =
+// last.CloseTime + 1 (see eval.go BarCloseInstant); at seed it is the wall
+// clock (also after the newest closed bar). A bucket whose recorded close
+// equals the newest closed bar's close is KEPT (its CloseTime < now); only a
+// bucket whose close is still in the FUTURE is dropped. A caller passing
+// last.CloseTime VERBATIM (no +1) would over-drop the just-completed bucket.
 func closedBuckets(bars []market.Kline, now int64, cfg Config) []market.Kline {
 	b5 := barsTF(bars, 5)
 	if len(b5) > 0 && b5[len(b5)-1].CloseTime >= now {
