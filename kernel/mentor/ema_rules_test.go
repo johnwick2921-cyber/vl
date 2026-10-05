@@ -23,15 +23,15 @@ func TestEMARoomRule(t *testing.T) {
 		RefBar:         market.Kline{High: 101, Low: 100},
 	}
 
-	// Old high 107.5: target 102.5 (shy 5) → reward 1.5 < 2x risk 1 → refuse.
+	// Old high 107.5: target 102.5 (shy 5) → reward 0.5 < 2x risk 2 → refuse.
 	if in, ok, reason := PHLPLHR2(tr, Level{Price: 107.5}, 0, 10, 0, cfg); ok {
 		t.Fatalf("EMA room rule did not refuse (T < R): %+v", in)
 	} else if reason == "" {
 		t.Fatal("empty refusal reason")
 	}
 
-	// Old high 110: target 105 (shy 5) → reward 4 ≥ 2 → pass.
-	if _, ok, reason := PHLPLHR2(tr, Level{Price: 110}, 0, 10, 0, cfg); !ok {
+	// Old high 112: target 107 (shy 5) → reward 5 ≥ 2x risk 2 (4) → pass.
+	if _, ok, reason := PHLPLHR2(tr, Level{Price: 112}, 0, 10, 0, cfg); !ok {
 		t.Fatalf("EMA with room refused: %s", reason)
 	}
 }
