@@ -47,6 +47,7 @@ func isbReverseFixture(t *testing.T) (*Evaluator, []market.Kline, int64) {
 	t.Helper()
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.HTFGateNewsOnly = false // these pins exercise the direction gate itself (all-day)
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 9
