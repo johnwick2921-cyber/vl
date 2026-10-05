@@ -562,6 +562,10 @@ type PositionClosePayload struct {
 	Quantity     int     `json:"quantity"`
 	ExitReason   string  `json:"exit_reason"` // "sl" | "tp" | "manual"
 	ExitTime     string  `json:"exit_time"`   // RFC3339
+	// Leg (REVIEW-SPLIT-2 P1-2, wire v4): which split leg exited — 1 = leg 1,
+	// 2 = leg 2, 0/absent = whole position (single bracket / manual). Included
+	// in the receipt identity so two same-ms stop exits (2+2) both apply.
+	Leg int `json:"leg,omitempty"`
 	// Account: the NT8 sub-account this close is on. The C# AddOn already SENDS it
 	// (SendPositionCloseFrame ["account"]); Go simply wasn't parsing it. Used by
 	// close-sync owner-routing to match the close to the trader that OWNS the row.
