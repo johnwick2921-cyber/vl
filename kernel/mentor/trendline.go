@@ -159,8 +159,9 @@ func (t Trendline) key() string {
 }
 
 // TrendlineLevels exports each VALID, live trendline as a Level whose Price
-// is the line's value at the current bar (a moving line — the touch loop's
-// freshTouch resets the classification as the line drifts). A trendline is a
+// is the line's value at the current bar (a moving line — the touch loop
+// clears its classification only on a visit departure, never on drift alone,
+// item 22). A trendline is a
 // LOCATION only (never a target): after the 3rd touch it enters the set; a
 // 5m close through removes it. BOX BEATS TRENDLINE [DAY-3 row 27 rec
 // @04:38]: a trendline whose current price sits within ±2 pts of a box edge
