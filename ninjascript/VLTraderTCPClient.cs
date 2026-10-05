@@ -154,6 +154,8 @@ namespace NinjaTrader.NinjaScript.AddOns
             public Order       SlOrder2;
             public Order       TpOrder2;
             public string      ExitOco2;
+            public int         Leg1Exited; // REVIEW-SPLIT-2 P1 fold: leg-1 contracts already exited (Leg1Qty is NEVER zeroed)
+            public double      LastStop;   // last known leg-1 stop price (leg-2 creation after leg 1 exits)
         }
         private readonly Dictionary<string, PlacedBracket> placedBrackets = new Dictionary<string, PlacedBracket>();
 
@@ -1534,9 +1536,24 @@ namespace NinjaTrader.NinjaScript.AddOns
                     string exitAcct = e.Order.Account != null ? e.Order.Account.Name
                                       : (account != null ? account.Name : "");
                     // P1-2: name which leg exited so the receipt identity stays distinct.
+                    // A single bracket's -sl/-tp is the WHOLE position (leg 0); only a
+                    // split bracket's -sl/-tp is leg 1.
                     int closeLeg = 0;
-                    if (orderName.EndsWith("-sl2") || orderName.EndsWith("-tp2")) closeLeg = 2;
-                    else if (orderName.EndsWith("-sl") || orderName.EndsWith("-tp")) closeLeg = 1;
+                    if (orderName.EndsWith("-sl2") || orderName.EndsWith("-tp2"))
+                    {
+                        closeLeg = 2;
+                    }
+                    else if (orderName.EndsWith("-sl") || orderName.EndsWith("-tp"))
+                    {
+                        PlacedBracket cb;
+                        bool wasSplit = false;
+                        lock (signalMapLock)
+                        {
+                            if (placedBrackets.TryGetValue(signalId, out cb) && cb != null)
+                                wasSplit = cb.Leg1Qty > 0;
+                        }
+                        closeLeg = wasSplit ? 1 : 0;
+                    }
                     SendPositionCloseFrame(signalId, rootSymbol, positionSide,
                                            e.AverageFillPrice, e.Filled, exitReason ?? "manual", exitAcct, closeLeg);
                     // P1-1: clear ONLY the filled leg's references; drop the record
@@ -1551,12 +1568,24 @@ namespace NinjaTrader.NinjaScript.AddOns
                             bool isLeg2 = orderName.EndsWith("-sl2") || orderName.EndsWith("-tp2");
                             bool isLeg1 = orderName.EndsWith("-sl") || orderName.EndsWith("-tp");
                             if (isLeg2) { pb.SlOrder2 = null; pb.TpOrder2 = null; pb.Leg2Qty = 0; }
-                            else if (isLeg1) { pb.SlOrder = null; pb.TpOrder = null; pb.Leg1Qty = 0; }
-                            else { pb.SlOrder = null; pb.TpOrder = null; pb.SlOrder2 = null; pb.TpOrder2 = null; pb.Leg1Qty = 0; pb.Leg2Qty = 0; } // manual/flatten: whole position
+                            else if (isLeg1)
+                            {
+                                // (a) NEVER zero Leg1Qty — AmendBracketQuantity's split
+                                // path gates on it. Record the exit qty + the last resting
+                                // stop so a later entry fill can still protect under leg 2.
+                                pb.Leg1Exited = e.Filled;
+                                if (pb.SlOrder != null) pb.LastStop = pb.SlOrder.StopPrice;
+                                pb.SlOrder = null; pb.TpOrder = null;
+                            }
+                            else { pb.SlOrder = null; pb.TpOrder = null; pb.SlOrder2 = null; pb.TpOrder2 = null; } // manual/flatten: whole position
 
                             bool live1 = pb.SlOrder != null || pb.TpOrder != null;
                             bool live2 = pb.SlOrder2 != null || pb.TpOrder2 != null;
-                            if (!live1 && !live2)
+                            // (c) remove only when no leg is live AND the entry is no longer
+                            // working — a still-working entry can fill again and must find
+                            // its bracket record (AmendBracketQuantity).
+                            bool entryWorking = workingEntries.ContainsKey(signalId);
+                            if (!live1 && !live2 && !entryWorking)
                             {
                                 placedBrackets.Remove(signalId);
                                 signalIdentity.Remove(signalId);
@@ -2721,17 +2750,27 @@ namespace NinjaTrader.NinjaScript.AddOns
                 if (pb.Leg1Qty > 0)
                 {
                     // REVIEW-353: allocate leg 1 FIRST up to its qty, then leg 2.
-                    int leg1Qty = Math.Min(pb.Leg1Qty, filledQty);
-                    int leg2Qty = Math.Max(0, filledQty - leg1Qty);
-                    if (pb.SlOrder != null) { pb.SlOrder.QuantityChanged = leg1Qty; changed.Add(pb.SlOrder); }
-                    if (pb.TpOrder != null) { pb.TpOrder.QuantityChanged = leg1Qty; changed.Add(pb.TpOrder); }
+                    // REVIEW-SPLIT-2 P1 fold (b): when leg 1 is GONE (its exit
+                    // already filled), every later fill protects under leg 2.
+                    bool leg1Gone = pb.SlOrder == null && pb.TpOrder == null && pb.Leg1Exited > 0;
+                    int leg1Qty = leg1Gone ? 0 : Math.Min(pb.Leg1Qty, filledQty);
+                    int leg2Qty = leg1Gone ? Math.Max(0, filledQty - pb.Leg1Exited)
+                                           : Math.Max(0, filledQty - leg1Qty);
+                    if (!leg1Gone)
+                    {
+                        if (pb.SlOrder != null) { pb.SlOrder.QuantityChanged = leg1Qty; changed.Add(pb.SlOrder); }
+                        if (pb.TpOrder != null) { pb.TpOrder.QuantityChanged = leg1Qty; changed.Add(pb.TpOrder); }
+                    }
                     if (leg2Qty > 0)
                     {
                         if (pb.SlOrder2 == null || pb.TpOrder2 == null)
                         {
-                            // Leg 2's pair was never placed (partial first fill): create it now.
+                            // Leg 2's pair was never placed (partial first fill, or leg 1
+                            // exited before leg 2 existed): create it now at the last known
+                            // leg-1 stop price.
                             string oco2 = signalId + "-exit2";
-                            double stop = pb.SlOrder != null ? pb.SlOrder.StopPrice : 0.0;
+                            double stop = pb.LastStop;
+                            if (stop <= 0 && pb.SlOrder != null) stop = pb.SlOrder.StopPrice;
                             var sl2 = ba.CreateOrder(pb.Instrument, pb.ExitAction, OrderType.StopMarket, OrderEntry.Manual,
                                 TimeInForce.Gtc, leg2Qty, 0, stop, oco2, signalId + "-sl2", Core.Globals.MaxDate, null);
                             var tp2 = ba.CreateOrder(pb.Instrument, pb.ExitAction, OrderType.Limit, OrderEntry.Manual,
@@ -2752,7 +2791,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                     lock (signalMapLock) { pb.Qty = filledQty; pb.Leg2Qty = leg2Qty; }
                     LogInfo("VLTraderTCPClient: SPLIT bracket amended signal_id=" + signalId
                             + " qty " + was + " -> " + filledQty
-                            + " leg1=" + leg1Qty + " leg2=" + leg2Qty + " (leg 1 filled first)");
+                            + " leg1=" + leg1Qty + " leg2=" + leg2Qty + (leg1Gone ? " (leg 1 already exited)" : " (leg 1 filled first)"));
                     return;
                 }
                 if (pb.SlOrder != null) { pb.SlOrder.QuantityChanged = filledQty; changed.Add(pb.SlOrder); }
