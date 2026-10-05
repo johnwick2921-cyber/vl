@@ -692,8 +692,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	e.State.Trigger = TriggerTick(e.State.Trigger, barsTF(bars, 5), 5, e.Cfg)
 
 	// §5.4 HTF direction (DS-106, fold item 3): the 4h/1h lines advance with
-	// the same bar history.
-	e.State.HTF = HTFAdvance(e.State.HTF, barsTF(bars, 240), barsTF(bars, 60), e.Cfg)
+	// the same bar history. Item 18 part 1: the 07:20–07:35 CT print window
+	// is dropped from the HTF feed — the 07:30 print candle must not move the
+	// 1h/4h trigger lines [D4.4 p1 @18:13, @22:15].
+	htfBars := htfFeedBars(bars)
+	e.State.HTF = HTFAdvance(e.State.HTF, barsTF(htfBars, 240), barsTF(htfBars, 60), e.Cfg)
 
 	// §7 day gate (fold item 4): Globex run → per-trading-day latch (L1/L2).
 	dg := DayGate{SpentPts: e.Cfg.DayGateSpentPts, TargetCapPts: e.Cfg.DayGateTargetCapPts}
