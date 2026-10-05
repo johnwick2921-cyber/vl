@@ -54,6 +54,14 @@ type State struct {
 	// candle closes, so without it the escaped box is rebuilt on the very
 	// next tick and flaps on and off (CTO parity ruling 2026-10-04).
 	LastISBBoxAt int64 `json:"last_isb_box_at,omitempty"`
+	// LatchedBoxes pins the FIRST FTGH and FIRST FTGL drawn per trading day —
+	// never redrawn on a later higher high / lower low ("không vẽ cái box
+	// khác… y nguyên đó tới cuối ngày" [D4.1 p2 @02:39–02:57]). Keyed by
+	// role ("ftgh"/"ftgl"); the box lives until the day ends.
+	LatchedBoxes map[string]Box `json:"latched_boxes,omitempty"`
+	// LatchedBoxesDay is the trading day the latch belongs to; on a new day
+	// the latch is cleared and the first box of the new day is drawn.
+	LatchedBoxesDay string `json:"latched_boxes_day,omitempty"`
 	// ISBBox15m is the 15m ISB rest box (D4.1-25): the latest CLOSED 15m
 	// inside-bar candle, boxed like R5. Nil = none standing. Rebuildable by
 	// replaying the closed 15m buckets + 1m escapes.
@@ -808,6 +816,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// join the level set as locations (used again and again) and the box
 	// interior bans entries.
 	boxes := BoxesBuild(bars, e.Cfg.Box, time.UnixMilli(now))
+	// D4.1-22: the first box per role per day is latched — never redrawn on a
+	// later higher high / lower low ("không vẽ cái box khác… y nguyên đó tới
+	// cuối ngày" [D4.1 p2 @02:39–02:57]). A new trading day clears the latch.
+	if e.State.LatchedBoxesDay != e.State.Day.Key {
+		e.State.LatchedBoxes = nil
+		e.State.LatchedBoxesDay = e.State.Day.Key
+	}
+	boxes = e.latchBoxes(boxes, bars, e.Cfg.Box)
 	levels = append(levels, BoxEdgeLocations(boxes)...)
 
 	// X9 (slide 27) + DAY-3 row 27: trendlines as LOCATIONS — two same-role
