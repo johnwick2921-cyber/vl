@@ -379,6 +379,10 @@ type AutoTrader struct {
 	// only consulted when the per-strategy mentor_mode is ON.
 	mentorEval         *mentor.Evaluator
 	mentorLastTickOpen int64
+	// mentorPrintPreflightDone is the item-18 latch: the CT date (YYYY-MM-DD)
+	// of the 07:30 print whose pre-flight already ran, so the cancel+flatten
+	// fires ONCE per print day, in the 07:20–07:30 window.
+	mentorPrintPreflightDone string
 	// mentorEvalMu serializes the evaluator: the scan loop (mentorTick) and the
 	// event loop (mentorEventPassAt) both call mentorEvalOnce, whose Tick
 	// mutates the evaluator's maps — N11 (DS-104). One mutex, both callers.

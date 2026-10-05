@@ -217,6 +217,10 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	}
 	at.mentorLastTickOpen = last.OpenTime
 
+	// ITEM 18 (D4.4-08): at 07:20 CT on a T1 print day, cancel intraday mentor
+	// arms and flatten intraday mentor positions (swing exempt), once per print.
+	at.mentorPrintPreflight(mentorClockNow())
+
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}
@@ -565,6 +569,27 @@ func mentorNewsWindowActive(now time.Time) bool {
 	return !now.Before(printAt.Add(-mentorNewsPreWindow)) && now.Before(printAt.Add(mentorNewsPostWindow))
 }
 
+// mentorNewsPrintAt returns the 07:30 CT print instant on `now`'s day when any
+// stored event is a T1 CPI/PPI/Unemployment print at 07:30 CT, else the zero
+// time. It is the "is today a print day" half of mentorNewsHold, factored out
+// so the print pre-flight keys off the same day (item 18).
+func mentorNewsPrintAt(events []calendar.Event, now time.Time) (printAt time.Time, title string) {
+	loc := kernel.CTLocation()
+	ct := now.In(loc)
+	for _, e := range events {
+		if e.Impact != calendar.T1 || kernel.CloseHHMMCT(e.Time) != "07:30" {
+			continue
+		}
+		t := strings.ToLower(e.Title)
+		for _, tok := range mentorNewsPrintTitleTokens {
+			if strings.Contains(t, tok) {
+				return time.Date(ct.Year(), ct.Month(), ct.Day(), 7, 30, 0, 0, loc), e.Title
+			}
+		}
+	}
+	return time.Time{}, ""
+}
+
 // mentorNewsHold is the pure gate: with the day's calendar events, reports
 // whether a placement at `now` would rest through a 07:30 CT T1 CPI/PPI/
 // Unemployment print.
@@ -572,16 +597,8 @@ func mentorNewsHold(events []calendar.Event, now time.Time) (hold bool, why stri
 	if !mentorNewsWindowActive(now) {
 		return false, ""
 	}
-	for _, e := range events {
-		if e.Impact != calendar.T1 || kernel.CloseHHMMCT(e.Time) != "07:30" {
-			continue
-		}
-		title := strings.ToLower(e.Title)
-		for _, tok := range mentorNewsPrintTitleTokens {
-			if strings.Contains(title, tok) {
-				return true, fmt.Sprintf("news: %s prints 07:30 CT — no resting order through the print [F11]", e.Title)
-			}
-		}
+	if printAt, title := mentorNewsPrintAt(events, now); !printAt.IsZero() {
+		return true, fmt.Sprintf("news: %s prints 07:30 CT — no resting order through the print [F11]", title)
 	}
 	return false, ""
 }
@@ -640,6 +657,66 @@ func (at *AutoTrader) mentorNewsGate() (bool, string) {
 		mentorCount("news_hold")
 	}
 	return hold, why
+}
+
+// mentorPrintPreflight (item 18, D4.4-08): at 07:20 CT (print − 10 min) on a T1
+// CPI/PPI/Unemployment print day, cancel every live INTRADAY mentor arm and
+// flatten every open INTRADAY mentor position. The SWING is exempt (U-5, open —
+// ruled default): its arm and its position keep their stop. Fires once per
+// print day (latched by mentorPrintPreflightDone).
+func (at *AutoTrader) mentorPrintPreflight(now time.Time) {
+	if at == nil || at.store == nil || at.trader == nil {
+		return
+	}
+	events, ok := at.mentorDayEvents()
+	if !ok {
+		return // no calendar → the news gate already holds fail-closed; nothing to preflight
+	}
+	printAt, _ := mentorNewsPrintAt(events, now)
+	if printAt.IsZero() {
+		return
+	}
+	cut := printAt.Add(-mentorNewsPreWindow)
+	if now.Before(cut) || !now.Before(printAt) {
+		return // before the cut or at/past the print — only fire in the pre-print window
+	}
+	day := printAt.Format("2006-01-02")
+	if at.mentorPrintPreflightDone == day {
+		return // already fired for this print
+	}
+	at.mentorPrintPreflightDone = day
+
+	// (a) cancel every live INTRADAY mentor arm; SWING4H arms are exempt
+	// (skipSwingArms — the course holds the swing by the 4h).
+	if n, unacked := at.cancelArmedOrdersSyncFiltered("news print preflight — intraday mentor arm [D4.4 p1 @20:44]", skipSwingArms); n > 0 || unacked > 0 {
+		at.logWarnf("🧑‍🏫 news print preflight: %d intraday mentor arm(s) cancelled, %d unacked — SWING4H arms exempt [D4.4 p1 @20:44–21:46]", n, unacked)
+	}
+
+	// (b) flatten every open INTRADAY mentor position; the swing keeps its stop.
+	positions, err := at.store.Position().GetOpenPositions(at.id)
+	if err != nil {
+		at.logWarnf("🧑‍🏫 news print preflight: open positions read failed: %v", err)
+		return
+	}
+	for _, p := range positions {
+		if p == nil || isSwingPosition(p) {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(p.Side)) {
+		case "long":
+			if _, ferr := at.trader.CloseLong(p.Symbol, 0); ferr != nil {
+				at.logWarnf("🧑‍🏫 news print preflight: flatten long %s failed: %v", p.Symbol, ferr)
+			} else {
+				at.logWarnf("🧑‍🏫 news print preflight: flattened intraday long %s (swing exempt) [D4.4 p1 @20:44]", p.Symbol)
+			}
+		case "short":
+			if _, ferr := at.trader.CloseShort(p.Symbol, 0); ferr != nil {
+				at.logWarnf("🧑‍🏫 news print preflight: flatten short %s failed: %v", p.Symbol, ferr)
+			} else {
+				at.logWarnf("🧑‍🏫 news print preflight: flattened intraday short %s (swing exempt) [D4.4 p1 @20:44]", p.Symbol)
+			}
+		}
+	}
 }
 
 // ── STOP RULES (owner ruling 00:1x CT, "exactly like he said") ─────────────
