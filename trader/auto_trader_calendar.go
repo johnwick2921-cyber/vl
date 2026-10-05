@@ -5,12 +5,34 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"vl/calendar"
 	"vl/kernel"
 	"vl/store"
 )
+
+// calFetchThrottle persists the calendar-fetch throttle ACROSS trader
+// reconstruction (P2, CTO 2026-10-05): keyed by trader id, so an NT8 reconnect
+// that rebuilds the AutoTrader (and zeroes its instance fields) does not re-hit
+// the FF feed inside the 1h window. Package-level, one entry per trader id.
+var calFetchThrottle sync.Map // calFetchThrottleKey(trader id, trade date) → time.Time (last fetch)
+
+// calFetchThrottleKey scopes the throttle to (trader, trade date): a fetch
+// attempt just before the date roll must never delay the NEW date's first
+// fetch (DS-102 #409 review (d), P2).
+func calFetchThrottleKey(traderID, tradeDate string) string { return traderID + "|" + tradeDate }
+
+// resetCalFetchThrottleForTest clears every throttle entry of one trader.
+func resetCalFetchThrottleForTest(traderID string) {
+	calFetchThrottle.Range(func(k, _ any) bool {
+		if ks, ok := k.(string); ok && strings.HasPrefix(ks, traderID+"|") {
+			calFetchThrottle.Delete(k)
+		}
+		return true
+	})
+}
 
 // W3 — the calendar PRODUCER (the audit's dead wire): fetch the ForexFactory
 // weekly feed and store one slice per CT trade-date, so the planner's GetSlice
@@ -32,6 +54,8 @@ func (at *AutoTrader) maybeFetchCalendar(now time.Time) {
 	// cancellations, impact changes) propagate instead of freezing the morning
 	// snapshot. Past dates stay frozen (replay integrity).
 	const liveFreshness = 3 * time.Hour
+	staleLive := false
+	var staleAge time.Duration
 	if slice, _ := at.store.Calendar().GetSlice(tradeDate); slice != nil && slice.Source == string(calendar.SourceLive) {
 		age := now.Sub(time.UnixMilli(slice.CreatedAt))
 		if age < liveFreshness {
@@ -44,12 +68,20 @@ func (at *AutoTrader) maybeFetchCalendar(now time.Time) {
 			}
 			return
 		}
-		at.logInfof("📅 calendar: live slice for %s is %s old — re-fetching for same-day corrections", tradeDate, age.Truncate(time.Minute))
+		staleLive = true
+		staleAge = age
 	}
-	if !at.lastCalFetch.IsZero() && now.Sub(at.lastCalFetch) < time.Hour {
-		return // throttle outage retries
+	if v, ok := calFetchThrottle.Load(calFetchThrottleKey(at.id, tradeDate)); ok {
+		if now.Sub(v.(time.Time)) < time.Hour {
+			return // throttle (P2: persisted across trader reconstruction)
+		}
 	}
-	at.lastCalFetch = now
+	calFetchThrottle.Store(calFetchThrottleKey(at.id, tradeDate), now)
+	// P2 — the re-fetch line fires only when the fetch ACTUALLY runs (it used to
+	// log every cycle before the throttle, reading as a 2-min hammer).
+	if staleLive {
+		at.logInfof("📅 calendar: live slice for %s is %s old — re-fetching for same-day corrections", tradeDate, staleAge.Truncate(time.Minute))
+	}
 
 	fetch := at.calFetch // test seam (F0); nil → live FF fetch
 	if fetch == nil {
@@ -98,6 +130,11 @@ func (at *AutoTrader) maybeFetchCalendar(now time.Time) {
 	switch {
 	case res.Source == calendar.SourceLive && upgraded > 0:
 		at.logInfof("📅 calendar: fetched %d events — %d day slice(s) stored, %d upgraded (src forexfactory)", fetched, stored, upgraded)
+	case res.Source == calendar.SourceLive && stored == 0:
+		// P3 (CTO 2026-10-05): "0 stored" here means every fetched day already has
+		// a frozen forexfactory slice and the payload is unchanged — nothing to do,
+		// not an error.
+		at.logInfof("📅 calendar: fetched %d events — all frozen/unchanged, nothing to store (src forexfactory)", fetched)
 	case res.Source == calendar.SourceLive:
 		at.logInfof("📅 calendar: fetched %d events — %d day slice(s) stored (src forexfactory)", fetched, stored)
 	case stored > 0:
@@ -167,45 +204,81 @@ func (at *AutoTrader) t1WindowsFor(tradeDate string, sess *kernel.SessionDef) []
 		return nil
 	}
 	slice, err := at.store.Calendar().GetSlice(tradeDate)
-	var evs []calendar.Event
-	fromStatic := false
-	if err != nil || slice == nil || json.Unmarshal([]byte(slice.EventsJSON), &evs) != nil {
-		// P0.6 fail-closed: static T1 fallback + alert instead of silent nil.
-		evs = calendarStaticLoader()
-		fromStatic = true
-		if at.firstFor(&at.lastCalFailClosedAlert, tradeDate) {
-			at.emitAlert("P0", "calendar-slice-missing",
-				fmt.Sprintf("calendar-fail-closed:%s:%s", tradeDate, sess.Name),
-				"Calendar slice missing",
-				fmt.Sprintf("No stored calendar slice for %s — session %s is now BLACKED OUT around the static T1 fallback times (fail-closed). Fix the calendar feed; this alert repeats daily until the slice exists.",
-					tradeDate, sess.Name))
+	if err == nil && slice != nil {
+		var evs []calendar.Event
+		if json.Unmarshal([]byte(slice.EventsJSON), &evs) == nil {
+			// W-T1-CURRENCIES (2026-09-18): the ONE split — only events in the
+			// strategy's t1_currencies set (default USD) open HARD windows; the
+			// rest are advisory lines the plan-write path renders (plannerT1Lines)
+			// and this gate never sees. An event WITHOUT a currency fails closed
+			// to hard and is named once per trade date.
+			split := kernel.SplitT1(sessionPlannerEvents(evs, sess.Name), at.t1Currencies())
+			if len(split.Uncurrencied) > 0 && at.firstFor(&at.lastT1NoCurrencyWarn, tradeDate) {
+				for _, title := range split.Uncurrencied {
+					at.logWarnf("⚠️ T1 event without currency treated as hard: %s (%s %s, t1_currencies=%s)",
+						title, tradeDate, sess.Name, kernel.T1CurrencySetLabel(at.t1Currencies()))
+				}
+			}
+			return at.widenT1Windows(split.Hard, tradeDate, sess)
 		}
 	}
-	// W-T1-CURRENCIES (2026-09-18): the ONE split — only events in the
-	// strategy's t1_currencies set (default USD) open HARD windows; the rest
-	// are advisory lines the plan-write path renders (plannerT1Lines) and
-	// this gate never sees. An event WITHOUT a currency fails closed to hard
-	// and is named once per trade date.
-	split := kernel.SplitT1(sessionPlannerEvents(evs, sess.Name), at.t1Currencies())
-	windows := split.Hard
-	if len(split.Uncurrencied) > 0 && at.firstFor(&at.lastT1NoCurrencyWarn, tradeDate) {
-		for _, title := range split.Uncurrencied {
-			at.logWarnf("⚠️ T1 event without currency treated as hard: %s (%s %s, t1_currencies=%s)",
-				title, tradeDate, sess.Name, kernel.T1CurrencySetLabel(at.t1Currencies()))
+	// P0.6 fail-closed: no slice (or undecodable) → date-aware fallback.
+	if at.firstFor(&at.lastCalFailClosedAlert, tradeDate) {
+		at.emitAlert("P0", "calendar-slice-missing",
+			fmt.Sprintf("calendar-fail-closed:%s:%s", tradeDate, sess.Name),
+			"Calendar slice missing",
+			fmt.Sprintf("No stored calendar slice for %s — session %s is now BLACKED OUT around the fallback times (fail-closed). Fix the calendar feed; this alert repeats daily until the slice exists.",
+				tradeDate, sess.Name))
+	}
+	return at.widenT1Windows(at.calendarFallbackWindows(tradeDate, sess), tradeDate, sess)
+}
+
+// calendarFallbackWindows is the DATE-AWARE static fallback (P1, CTO 2026-10-05):
+// the frozen static file must NEVER apply another week's HH:MM schedule to a
+// date it does not cover. For a trade date with no live slice:
+//
+//	(a) a date the static file COVERS → that date's own static events (the
+//	    existing ±T1BlackoutMinutes split);
+//	(b) a non-trading date (CME closed — Saturday, or Sunday under the 17:00 CT
+//	    session-day mapping in kernel/mentor/day_gate.go tradingDayKey, or a
+//	    holiday) → NO windows, logged as such;
+//	(c) any other uncovered TRADING date → ONE conservative window: the standard
+//	    07:30 CT T1 print [07:20, 07:35) (mentorNewsPreWindow / mentorNewsPostWindow),
+//	    logged as such — not September's list.
+func (at *AutoTrader) calendarFallbackWindows(tradeDate string, sess *kernel.SessionDef) []kernel.CTWindow {
+	loc := kernel.CTLocation()
+	// (a) covered: only that date's static events.
+	static := calendarStaticLoader()
+	var day []calendar.Event
+	for _, e := range static {
+		if e.Time.In(loc).Format("2006-01-02") == tradeDate {
+			day = append(day, e)
 		}
 	}
-	if fromStatic {
-		at.logWarnf("📅 calendar FAIL-CLOSED: no slice for %s — using the static T1 fallback (%d window(s)) instead of zero protection",
-			tradeDate, len(windows))
+	if len(day) > 0 {
+		split := kernel.SplitT1(sessionPlannerEvents(day, sess.Name), at.t1Currencies())
+		at.logWarnf("📅 calendar FAIL-CLOSED: no slice for %s — the static file covers this date; using its %d event(s) (%d window(s))",
+			tradeDate, len(day), len(split.Hard))
+		return split.Hard
 	}
-	// F6 — widen the hard no-trade windows by the measured clock drift so the
-	// red-news blackout survives a skewed clock (same decision the authoring
-	// gate uses; the warn line fires once per session-day, not per cycle).
-	// CLASS 145 (2026-09-17): the widening goes through the CAPPED
-	// kernel.WidenCTWindows — the SAME function the plan-write path uses — so
-	// a halt's or gap's feed age (a large POSITIVE "drift") can never open the
-	// band by more than ClockWidenCapMinutes; the signed measurement is passed
-	// so the label rule sees the sign.
+	// (b) non-trading date → no windows.
+	if d, err := time.ParseInLocation("2006-01-02", tradeDate, loc); err == nil {
+		noon := time.Date(d.Year(), d.Month(), d.Day(), 12, 0, 0, 0, loc)
+		if closed, reason := kernel.CMEClosedReason(noon); closed {
+			at.logInfof("📅 calendar FAIL-CLOSED: no slice for %s and it is a non-trading day (%s) — no news windows",
+				tradeDate, reason)
+			return nil
+		}
+	}
+	// (c) uncovered trading date → ONE conservative 07:30 CT print window.
+	at.logWarnf("📅 calendar FAIL-CLOSED: no slice for %s and the static file does not cover it — holding the standard 07:30 CT T1 print window (07:20–07:35) instead of the static schedule",
+		tradeDate)
+	return []kernel.CTWindow{{Start: 7*60 + 20, End: 7*60 + 35, Label: "standard 07:30 CT T1 print (fallback, uncovered date)"}}
+}
+
+// widenT1Windows is the F6 clock-drift widening shared by the live and the
+// fallback paths (CLASS 145: capped by kernel.ClockWidenCapMinutes).
+func (at *AutoTrader) widenT1Windows(windows []kernel.CTWindow, tradeDate string, sess *kernel.SessionDef) []kernel.CTWindow {
 	if drift, ok := clockHoldDriftFn(at.futuresSymbol()); ok {
 		if _, widen := kernel.ClockHoldDecision(drift, true, kernel.ClockWarnMs(), kernel.C2ToleranceMs()); widen > 0 {
 			windows = kernel.WidenCTWindows(windows, drift)
