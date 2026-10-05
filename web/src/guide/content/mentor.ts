@@ -437,6 +437,10 @@ export const mentor: GuideSection = {
           'Leg 1 holds to at least 1:2 — the stop does not move up',
         ],
         [
+          'Wire 1:1 check',
+          'The stop entry goes out 2 ticks past the planned price. A target sitting at exactly 1R (the floor, e.g. the swing’s first target) moves with it, so the trade is still exactly 1:1 from the real entry; a LEVEL target cannot move — if the real entry would leave it under 1:1 the entry is refused (stop_entry:wire_rr_below_1) [D1.2 p1 @08:02–08:33]',
+        ],
+        [
           'SWING4H',
           'First target = the 5m EMA 34 (or the 50-pt fallback); BE at +1R; hold to the close of the 2nd 4h candle after entry',
         ],

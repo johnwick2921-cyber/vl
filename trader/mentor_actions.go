@@ -2,6 +2,7 @@ package trader
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -266,6 +267,21 @@ func mentorWireLeg1TP(entry, trigger, stop, leg1TP float64) float64 {
 		return leg1TP
 	}
 	return trigger + k*(trigger-stop)
+}
+
+// mentorWireOneRFloor re-bases a target authored at EXACTLY 1:1 (within half
+// a tick — the 1R floor, derived from the entry) to the 1:1 point at the wire
+// trigger. Any other target (a level, or > 1R) is returned unchanged and the
+// N4 check judges it as a fixed price.
+func mentorWireOneRFloor(entry, trigger, stop, target, tick float64) float64 {
+	risk := math.Abs(entry - stop)
+	if risk == 0 || target == 0 || trigger == 0 || tick <= 0 {
+		return target
+	}
+	if math.Abs(math.Abs(target-entry)-risk) > tick/2 {
+		return target // not on the floor — a level target never moves
+	}
+	return mentorWireLeg1TP(entry, trigger, stop, target)
 }
 
 // mentorExtendArm pushes a resting arm's expiry forward (ISB stacking, N12).
