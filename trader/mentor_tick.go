@@ -1125,7 +1125,10 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}
-	now := time.Now().UnixMilli()
+	// The seed clock reads the mentor seam (mentorNowSource) so tests can pin a
+	// fixed mid-session instant; production defaults to time.Now() (X-07-follow,
+	// FLAKE-SEED-CLOCK). Same wall clock, same behaviour.
+	now := mentorClockNow().UnixMilli()
 	bh := store.NewBarHistoryStore(at.store.GormDB())
 	rows1m, err1m := bh.LastNBarsCurrentContract("MNQ", "1m", mentorSeedBars1mN)
 	if err1m != nil {

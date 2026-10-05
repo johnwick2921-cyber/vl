@@ -268,15 +268,19 @@ func TestWatchIsRedOnAPreKillBootLineAndGreenOnAPostKillOne(t *testing.T) {
 		t.Fatalf("refusal must name the failing leg, got: %v", err)
 	}
 
-	// GREEN: append a line written NOW.
+	// GREEN: append a line written AFTER a kill instant captured here. The line
+	// timestamp is relative to that anchor AND the same anchor is passed as
+	// Since, so no amount of load (>1s between the write and the Watch) can put
+	// the line before the kill and flake the boot-line leg.
+	anchor := time.Now()
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Fprintf(f, "%s [INFO] booted %s\n", time.Now().Add(time.Second).Format("01-02 15:04:05"), sha)
+	fmt.Fprintf(f, "%s [INFO] booted %s\n", anchor.Add(time.Second).Format("01-02 15:04:05"), sha)
 	f.Close()
 
-	rc, err := Watch(Release{SHA: sha}, Identity{PID: 1}, WatchOpts{LogPath: logPath, HealthURL: srv.URL, Within: 3 * time.Second})
+	rc, err := Watch(Release{SHA: sha}, Identity{PID: 1}, WatchOpts{LogPath: logPath, HealthURL: srv.URL, Within: 3 * time.Second, Since: anchor})
 	if err != nil {
 		t.Fatalf("Watch refused a genuine post-restart boot: %v", err)
 	}
@@ -350,8 +354,12 @@ func TestWatchAcceptsTheShortRevBootLineTheBotWrites(t *testing.T) {
 	full := "aabbccddeeff00112233445566778899aabbccdd"
 	short := full[:12]
 	logPath := filepath.Join(t.TempDir(), "vl_2026-09-23.log")
+	// The boot line is written relative to a kill instant captured here, and
+	// the SAME anchor is passed as Since — load can never put it before the
+	// kill (FLAKE fix; the old time.Now().Add(1s) margin flaked under load).
+	anchor := time.Now()
 	line := fmt.Sprintf("%s [INFO] 🔐 BOOT INTEGRITY OK — rev %s · built x\n",
-		time.Now().Add(time.Second).Format("01-02 15:04:05"), short)
+		anchor.Add(time.Second).Format("01-02 15:04:05"), short)
 	if err := os.WriteFile(logPath, []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +368,7 @@ func TestWatchAcceptsTheShortRevBootLineTheBotWrites(t *testing.T) {
 	}))
 	defer srv.Close()
 	withSystem(t, &system{Now: time.Now, Sleep: func(time.Duration) {}})
-	rc, err := Watch(Release{SHA: full}, Identity{PID: 1}, WatchOpts{LogPath: logPath, HealthURL: srv.URL, Within: 2 * time.Second})
+	rc, err := Watch(Release{SHA: full}, Identity{PID: 1}, WatchOpts{LogPath: logPath, HealthURL: srv.URL, Within: 2 * time.Second, Since: anchor})
 	if err != nil {
 		t.Fatalf("Watch refused a genuine boot proven by the forms the bot actually emits: %v", err)
 	}
