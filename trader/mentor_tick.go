@@ -324,6 +324,13 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
 	}
+	// §5(a) — the daily loss limit is checked AT PLACEMENT, not only by the
+	// 60s sweep: a placement while the session-day's realized loss is already
+	// at/past the limit is refused and counted.
+	if refuse, why := at.mentorDailyLossGate(mentorClockNow()); refuse {
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		return
+	}
 	// N12 per-order expiry (PR #313): the stop-limit is cancelled when
 	// unfilled at its expiry. An intent-carried expiry (evaluator rules,
 	// stacking extensions) wins; otherwise the injector sets the setup's
@@ -799,6 +806,34 @@ func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
 	if strings.EqualFold(open, string(in.Side)) {
 		mentorCount("add_refused")
 		return true, fmt.Sprintf("never add/average [D1.1 p1 @17:06–17:44]: %s already open — the resonance ISB is a hold signal, not an entry", open)
+	}
+	return false, ""
+}
+
+// mentorDailyLossGate is the §5(a) placement-time daily-loss check: the daily
+// loss limit is enforced HERE, not only by the 60s sweep. A placement while the
+// session-day's realized loss is already at/past the limit is refused and
+// counted. It reads the SAME production readers the desk strip uses
+// (deskGuardrail for the enforced limit, deskRealizedToday for the corrected
+// session-day P&L) — one definition, no second copy (A24).
+//
+// FAIL-OPEN on a read error (deskRealizedToday returns 0 when the store read
+// fails) — the 60s sweep still enforces the flatten, and a circuit breaker that
+// trips on a DB hiccup is worse than the gap it closes (sessionRiskGateAt's
+// contract). The limit is only checked when BOTH toggles are on and a value is
+// configured (deskGuardrail returns enforced=false otherwise).
+func (at *AutoTrader) mentorDailyLossGate(now time.Time) (bool, string) {
+	limit, _, enforced := at.deskGuardrail()
+	if !enforced || limit <= 0 {
+		return false, ""
+	}
+	if at.store == nil {
+		return false, "" // no store → no daily P&L read → fail-open (the 60s sweep still enforces)
+	}
+	realized, _, _ := at.deskRealizedToday(now)
+	if realized <= -limit {
+		mentorCount("daily_loss_refused")
+		return true, fmt.Sprintf("daily loss limit hit at placement (realized today=%.2f, limit=-%.2f) — no new entry [guardrail]", realized, limit)
 	}
 	return false, ""
 }
