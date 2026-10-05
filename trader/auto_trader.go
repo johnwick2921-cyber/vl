@@ -382,7 +382,7 @@ type AutoTrader struct {
 	// mentorEvalMu serializes the evaluator: the scan loop (mentorTick) and the
 	// event loop (mentorEventPassAt) both call mentorEvalOnce, whose Tick
 	// mutates the evaluator's maps — N11 (DS-104). One mutex, both callers.
-	mentorEvalMu     sync.Mutex
+	mentorEvalMu       sync.Mutex
 	mentorFinalArrival atomic.Int64 // ms — when the FINAL frame hit the sink
 	// MENTOR B20 — the chosen exit branch per open position (keyed by side:
 	// "long"/"short"), set at placement from the entry-time fork (A/B/C/swing)
@@ -396,8 +396,14 @@ type AutoTrader struct {
 	mentorLivePos map[string]*mentorLivePos
 	// mentorFunnel is the N12 visibility counter (read-only): one INFO line per
 	// 15 minutes + on change, session-day scoped (17:00 CT). Never gates a trade.
-	mentorFunnel    mentorFunnel
-	fastTapePending atomic.Bool
+	mentorFunnel mentorFunnel
+	// mentorInvalidLog is the item-18 noise gate (DS-105 replay): the last INFO
+	// emit instant + the suppressed count per LevelKey, so a busy level's
+	// level_invalid logs at most once per 15 minutes while the counter still
+	// fires on every event. Guarded by mentorInvalidLogMu.
+	mentorInvalidLogMu sync.Mutex
+	mentorInvalidLog   map[string]mentorInvalidLogState
+	fastTapePending    atomic.Bool
 	// lastClockHealthSession: which session the last clock-health line was
 	// logged for (PHASE 3.5) — one line per session roll, not per tick.
 	lastClockHealthSession string
