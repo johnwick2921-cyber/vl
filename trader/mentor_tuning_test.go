@@ -166,3 +166,14 @@ func TestMentorRuleGateSwingDefaultIs100(t *testing.T) {
 		t.Error("SWING4H 100-pt stop must be skipped (R-D: skip at >= 100)")
 	}
 }
+
+// FU-1 (CTO gate): the LIVE evaluator is real-fill-only — the G1 leg budget and
+// the G2 loss box are fed by the broker's real fill, never by a candle touching
+// a never-placed (or refused) arm. Pinned at the production tick that builds
+// the evaluator (mentorEvalOnce → mentorEvaluatorConfig). Mutant: set
+// RealFillOnly false in mentorEvaluatorConfig → RED (phantom fills return).
+func TestMentorLiveEvaluatorIsRealFillOnly(t *testing.T) {
+	if cfg := tuningTick(t, nil); !cfg.RealFillOnly {
+		t.Fatal("the live mentor evaluator must be RealFillOnly (FU-1): a candle touch must never fill a live arm")
+	}
+}
