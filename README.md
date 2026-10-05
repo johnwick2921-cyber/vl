@@ -1,238 +1,94 @@
-<h1 align="center">VL Intelligent</h1>
+<h1 align="center">VL Trader</h1>
 
 <p align="center">
-  <strong>Your personal AI trading assistant.</strong><br/>
-  <strong>Any market. Any model.</strong>
+  <strong>An AI day-trading bot for CME micro futures.</strong><br/>
+  <strong>NinjaTrader SIM only — never live.</strong>
 </p>
 
-> **Operator's manual + full UI reference (verified against code):**
-> [docs/README-VL-SYSTEM.md](docs/README-VL-SYSTEM.md)
-
 <p align="center">
-  <a href="https://golang.org/"><img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go" alt="Go"></a>
+  <a href="https://golang.org/"><img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go" alt="Go"></a>
   <a href="https://reactjs.org/"><img src="https://img.shields.io/badge/React-18+-61DAFB?style=flat&logo=react" alt="React"></a>
 </p>
 
-<p align="center">
-  <a href="README.md">English</a> ·
-  <a href="docs/i18n/zh-CN/README.md">中文</a> ·
-  <a href="docs/i18n/ja/README.md">日本語</a> ·
-  <a href="docs/i18n/ko/README.md">한국어</a> ·
-  <a href="docs/i18n/ru/README.md">Русский</a> ·
-  <a href="docs/i18n/uk/README.md">Українська</a> ·
-  <a href="docs/i18n/vi/README.md">Tiếng Việt</a>
-</p>
+> **Operator's manual + full UI reference:** [docs/README-VL-SYSTEM.md](docs/README-VL-SYSTEM.md).
+> That manual was last refreshed to running rev **`717acd34` (2026-08-27)** and is **stale** against the current
+> rev — treat its file/line cites as pointers, not truth; the code wins where they disagree.
 
 ---
 
-VL Intelligent is an open-source **autonomous** AI trading assistant. Unlike traditional AI tools that require you to manually configure models, manage API keys, and wire up data sources — VL Intelligent's AI **perceives markets, selects models, and fetches data entirely on its own**. Zero human intervention. You set the strategy, the AI handles everything else.
+## What it is
 
-**Fully autonomous**: The AI decides which model to use, what market data to pull, when to trade — all by itself. No manual model configuration.
+VL Trader is a single-instrument, level-anchored **AI day-trading bot for CME micro futures**.
+It trades **MNQ** (the ES bar feed also streams) end-to-end on a **NinjaTrader 8 SIM account** —
+there is no live path: `isAccountTradeable` hard-blocks every non-SIM account.
 
+Data **and** execution ride the same channel: NinjaTrader 8 streams real-time bars, account,
+positions and orders to the Go bot through the bundled **VL AddOn** (`ninjascript/*.cs`) over TCP.
+The bot never calls a crypto exchange and never routes an order outside NinjaTrader SIM.
 
----
+## The pipeline, in plain words
 
-## Quick Demo
+1. **NT8 bars in** — the AddOn pushes real-time MNQ bars (1m up to 6h) over TCP into the Go **BarCache**.
+2. **AI planner** — the bot asks the model (DeepSeek) for one **day plan per session**
+   (**ASIA / LONDON / NY**): scenarios, levels, direction, budgets.
+3. **Executor + armed entries** — plans become **resting stop-entry (stop-limit) orders** at levels;
+   nothing is placed at market.
+4. **Mentor mode** — the owner's course rules (a Studio switch) decide *which* setups place:
+   ISB, PHL/PLH, box returns, SWING4H — with their own filters and sizes.
+5. **Risk gates** — daily-loss limit (checked at placement, fail-closed on an unresolved close),
+   the 07:30 CT news window, the per-session gate, and the R:R floor all run before an order leaves.
+6. **OCO brackets on NT8 SIM** — a filled entry carries one OCO pair (or, on 2+ contracts, the
+   **1:1 split**: leg 1 takes +1R, the runner holds to the target).
+7. **Exits** — break-even moves both stops, the runner trails behind each closed candle, and the
+   swing holds its own 4h path.
 
-<p align="center">
-  <a href="https://drive.google.com/file/d/1frzw-HDZ3viQvLOQKsAJGc9bT0dXs68D/view">
-    <img src="screenshots/demo-cover.png" alt="VL Intelligent quick demo video" width="900"/>
-  </a>
-</p>
+## Control surfaces (web UI)
 
-<p align="center">
-  Click the cover image to watch the demo video.
-</p>
+| Page | What it does |
+| --- | --- |
+| **Dashboard** | Live positions, P/L, AI decision logs, per-trader view |
+| **Strategy Studio** | Build the strategy: indicators, risk controls, mentor mode |
+| **Settings** | Accounts, models, guardrails, per-trader configuration |
+| **Chat** | Conversational AI assistant for the bot |
+| **Updates** | Signed releases, one-button install |
+| **Guide** | The full rulebook — every knob, its default, and where it lives in code |
 
----
+The bot serves the API **and** the built web UI on **http://127.0.0.1:8080**; `npm run dev` serves a live-reload dev UI on **:3000**.
 
-## What It Does
-
-| Feature             | Description                                                               |
-| **Multi-AI**        | DeepSeek, Qwen, GPT, Claude, Gemini, Grok, Kimi, MiniMax — switch anytime |
-| **Strategy Studio** | Visual builder — coin sources, indicators, risk controls                  |
-| **AI Competition**  | AIs compete in real-time, leaderboard ranks performance                   |
-| **Telegram Agent**  | Chat with your trading assistant — streaming, tool calling, memory        |
-| **Dashboard**       | Live positions, P/L, AI decision logs with Chain of Thought               |
-
-### Markets
-
-Crypto · US Stocks · Forex · Metals
-
-### AI Models (API Key Mode)
-
-| AI Model                                                                                                         | Status | Get API Key                                         |
-| <img src="web/public/icons/deepseek.svg" width="20" height="20" style="vertical-align: middle;"/> **DeepSeek**   |   ✅   | [Get API Key](https://platform.deepseek.com)        |
-| <img src="web/public/icons/qwen.svg" width="20" height="20" style="vertical-align: middle;"/> **Qwen**           |   ✅   | [Get API Key](https://dashscope.console.aliyun.com) |
-| <img src="web/public/icons/openai.svg" width="20" height="20" style="vertical-align: middle;"/> **OpenAI (GPT)** |   ✅   | [Get API Key](https://platform.openai.com)          |
-| <img src="web/public/icons/claude.svg" width="20" height="20" style="vertical-align: middle;"/> **Claude**       |   ✅   | [Get API Key](https://console.anthropic.com)        |
-| <img src="web/public/icons/gemini.svg" width="20" height="20" style="vertical-align: middle;"/> **Gemini**       |   ✅   | [Get API Key](https://aistudio.google.com)          |
-| <img src="web/public/icons/grok.svg" width="20" height="20" style="vertical-align: middle;"/> **Grok**           |   ✅   | [Get API Key](https://console.x.ai)                 |
-| <img src="web/public/icons/kimi.svg" width="20" height="20" style="vertical-align: middle;"/> **Kimi**           |   ✅   | [Get API Key](https://platform.moonshot.cn)         |
-| <img src="web/public/icons/minimax.svg" width="20" height="20" style="vertical-align: middle;"/> **MiniMax**     |   ✅   | [Get API Key](https://platform.minimaxi.com)        |
-
----
-
-## Screenshots
-
-<details>
-<summary><b>Config Page</b></summary>
-
-|                    AI Models & Exchanges                     |                         Traders List                         |
-| <img src="screenshots/config-ai-exchanges.png" width="400"/> | <img src="screenshots/config-traders-list.png" width="400"/> |
-
-</details>
-
-<details>
-<summary><b>Dashboard</b></summary>
-
-|                        Overview                         |                          Market Chart                           |
-| <img src="screenshots/dashboard-page.png" width="400"/> | <img src="screenshots/dashboard-market-chart.png" width="400"/> |
-
-|                          Trading Stats                           |                          Position History                           |
-| <img src="screenshots/dashboard-trading-stats.png" width="400"/> | <img src="screenshots/dashboard-position-history.png" width="400"/> |
-
-|                          Positions                           |                    Trader Details                     |
-| <img src="screenshots/dashboard-positions.png" width="400"/> | <img src="screenshots/details-page.png" width="400"/> |
-
-</details>
-
-<details>
-<summary><b>Strategy Studio</b></summary>
-
-|                     Strategy Editor                      |                      Indicators Config                       |
-| <img src="screenshots/strategy-studio.png" width="400"/> | <img src="screenshots/strategy-indicators.png" width="400"/> |
-
-</details>
-
-<details>
-<summary><b>Competition</b></summary>
-
-|                     Competition Mode                      |
-| <img src="screenshots/competition-page.png" width="400"/> |
-
-</details>
-
----
-
-## Install
-
-### From Source
-
-In a checkout of this repository:
+## Run it
 
 ```bash
-# Prerequisites: Go 1.21+, Node.js 18+, TA-Lib
-# macOS: brew install ta-lib
-# Ubuntu: sudo apt-get install libta-lib0-dev
+# Prerequisites: Go 1.25+, Node.js 18+
 
-go build -o vl-bin && ./vl-bin          # backend
-cd web && npm install && npm run dev  # frontend (new terminal)
+go build -o vl-bin . && ./vl-bin     # backend (SQLite at data/data.db)
+cd web && npm install && npm run dev   # live-reload dev UI (new terminal)
 ```
 
----
+**NinjaTrader AddOn** (required — it is the data source and the execution path):
 
-## Setup
+1. Copy `ninjascript/*.cs` to `C:\Users\<you>\Documents\NinjaTrader 8\bin\Custom\AddOns\`
+2. F5-compile inside NinjaTrader's NinjaScript editor
+3. **Fully restart NT8** (AddOns do not hot-reload)
 
-**Beginner mode**: First-time users get a guided onboarding flow — select beginner mode at registration and the system walks you through AI, exchange, and strategy setup step by step.
-
-**Advanced mode**:
-
-1. **AI** — Add API keys
-2. **Exchange** — Connect exchange API credentials
-3. **Strategy** — Build in Strategy Studio
-4. **Trader** — Combine AI + Exchange + Strategy
-5. **Trade** — Launch from the dashboard
-
-Everything through the web UI at **http://127.0.0.1:3000**.
-
----
-
-## Deploy to Server
-
-**HTTPS (Cloudflare):**
-
-1. Add domain to [Cloudflare](https://dash.cloudflare.com) (free plan)
-2. A record → your server IP (Proxied)
-3. SSL/TLS → Flexible
-4. Set `TRANSPORT_ENCRYPTION=true` in `.env`
-
----
-
-## Architecture
-
-```
-                              VL Intelligent
-    ┌─────────────────────────────────────────────────┐
-    │                 Web Dashboard                     │
-    │           React + TypeScript + TradingView        │
-    ├─────────────────────────────────────────────────┤
-    │                  API Server (Go)                  │
-    ├──────────┬──────────┬──────────┬────────────────┤
-    │  Strategy  │      Telegram       │
-    │   Engine   │       Agent         │
-    ├──────────┴──────────┴──────────┴────────────────┤
-    │               MCP AI Client Layer                │
-    │    ┌───────────┐  ┌───────────┐  ┌───────────┐  │
-    │    │  API Key   │  │           │  │           │  │
-    │    │ DeepSeek   │  │           │  │           │  │
-    │    │ GPT,Claude │  │           │  │           │  │
-    │    └───────────┘  └───────────┘  └───────────┘  │
-    ├─────────────────────────────────────────────────┤
-    │             Exchange Connectors                   │
-    │                                                   │
-    │                                                   │
-    └─────────────────────────────────────────────────┘
-```
-
----
+**Releases** install with the **Update** button on the Updates page (signed, one click).
 
 ## Docs
 
-| [Architecture](docs/architecture/README.md)             | System design and module index        |
-| [Strategy Module](docs/architecture/STRATEGY_MODULE.md) | Coin selection, AI prompts, execution |
-| [FAQ](docs/faq/README.md)                               | Common questions                      |
-| [Getting Started](docs/getting-started/README.md)       | Deployment guide                      |
-
----
+| Doc | What it covers |
+| --- | --- |
+| [Operator's manual](docs/README-VL-SYSTEM.md) | The full system + UI reference (note the stale-rev warning above) |
+| [Pipeline map](docs/PIPELINE-MAP.md) | End-to-end data/decision/execution flow |
+| [Decision anatomy](docs/DECISION-ANATOMY.md) | What the AI is asked and what it answers |
 
 ## Contributing
 
-See [Contributing Guide](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security Policy](SECURITY.md)
-
-### Contributor Airdrop Program
-
-All contributions are tracked. When VL Intelligent generates revenue, contributors receive airdrops.
-
-| Contribution      | Weight |
-| Pinned Issue PRs  | ★★★★★★ |
-| Code (Merged PRs) | ★★★★★  |
-| Bug Fixes         |  ★★★★  |
-| Feature Ideas     |  ★★★   |
-| Bug Reports       |   ★★   |
-| Documentation     |   ★★   |
+See [Contributing Guide](CONTRIBUTING.md) — the operational contract for shipping changes to `vl`.
 
 ---
 
-> **Risk Warning**: AI auto-trading carries significant risks. Recommended for learning/research or small amounts only.
-
----
-
-## Sponsors
-
-<a href="https://github.com/pjl914335852-ux"><img src="https://github.com/pjl914335852-ux.png" width="50" height="50" style="border-radius:50%"/></a>
-<a href="https://github.com/cat9999aaa"><img src="https://github.com/cat9999aaa.png" width="50" height="50" style="border-radius:50%"/></a>
-<a href="https://github.com/1733055465"><img src="https://github.com/1733055465.png" width="50" height="50" style="border-radius:50%"/></a>
-<a href="https://github.com/kolal2020"><img src="https://github.com/kolal2020.png" width="50" height="50" style="border-radius:50%"/></a>
-<a href="https://github.com/CyberFFarm"><img src="https://github.com/CyberFFarm.png" width="50" height="50" style="border-radius:50%"/></a>
-<a href="https://github.com/vip3001003"><img src="https://github.com/vip3001003.png" width="50" height="50" style="border-radius:50%"/></a>
-<a href="https://github.com/mrtluh"><img src="https://github.com/mrtluh.png" width="50" height="50" style="border-radius:50%"/></a>
-<a href="https://github.com/cpcp1117-source"><img src="https://github.com/cpcp1117-source.png" width="50" height="50" style="border-radius:50%"/></a>
-<a href="https://github.com/match-007"><img src="https://github.com/match-007.png" width="50" height="50" style="border-radius:50%"/></a>
-<a href="https://github.com/leiwuhen1715"><img src="https://github.com/leiwuhen1715.png" width="50" height="50" style="border-radius:50%"/></a>
-<a href="https://github.com/SHAOXIA1991"><img src="https://github.com/SHAOXIA1991.png" width="50" height="50" style="border-radius:50%"/></a>
+> **Risk Warning**: AI auto-trading carries significant risk. This bot is SIM-only by design;
+> it is built for learning, research, and simulation.
 
 ## License
 
 [AGPL-3.0](LICENSE)
-
