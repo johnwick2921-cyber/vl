@@ -736,7 +736,7 @@ export const mentor: GuideSection = {
         {
           label: 'Room multiple',
           where: 'Strategy → Mentor mode → risk',
-          what: 'The room to target must be at least this × the risk.',
+          what: 'The room to target must be at least this × the risk. Applies to PHL/PLH, the ISB, the reverse ISB, and the swing reject.',
           trader: '2×.',
           consumer: 'kernel/mentor/mentor.go RoomMultiple',
           range: '×',

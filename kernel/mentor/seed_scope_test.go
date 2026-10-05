@@ -48,6 +48,7 @@ func scopeSwingTick(t *testing.T, d seedDepth, mutate func(e *Evaluator, now int
 	t.Helper()
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.RoomMultiple = 0 // item 25: this fixture pins SEED scoping, not the swing room rule
 	cur := []market.Kline{
 		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),
 		mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160), // touches the line, closes back below

@@ -86,6 +86,7 @@ func TestEveryRefusalNamesReason(t *testing.T) {
 func TestRefusalLedgerInTick(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.RoomMultiple = 0 // item 25: this fixture pins the seed fail-closed ledger, not the room rule
 	e := New(cfg)
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}

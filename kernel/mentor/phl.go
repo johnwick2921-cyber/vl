@@ -102,8 +102,8 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if reward < risk {
 		return Intent{}, false, targetCloserThanStopReason
 	}
-	if reward < cfg.RoomMultiple*risk {
-		return Intent{}, false, "room rule: reward < " + fnum(cfg.RoomMultiple) + "x risk — not enough room [D5.3 p1 @ 09:16]"
+	if refuse, why := roomRefusal(price, stop, target, cfg.RoomMultiple); refuse {
+		return Intent{}, false, why
 	}
 	setup := "PHL"
 	if side == SideShort {

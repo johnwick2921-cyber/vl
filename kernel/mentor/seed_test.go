@@ -306,6 +306,7 @@ func hourTape(t *testing.T, days int) []market.Kline {
 func TestSeedFailClosedTick(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.RoomMultiple = 0 // item 25: this fixture pins the seed fail-closed sweep, not the room rule
 	head := rthBars(0, 121, 121.5, 120.5, 120)
 	mother := rthBars(1, 98, 106, 97, 105)
 	c1 := rthBars(2, 103, 104, 99, 100)
