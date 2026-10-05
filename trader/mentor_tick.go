@@ -220,6 +220,11 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}
+	// item 18 part 1: plumb the day's red-folder 07:30 print windows from the
+	// calendar into the evaluator so the print candle never moves the 1h/4h
+	// trigger lines [D4.4 p1 @18:13, @22:15]. No calendar / no print today →
+	// empty → the HTF feed is byte-identical.
+	at.mentorEval.Cfg.PrintWindows = at.mentorNewsPrintWindows()
 	emitMs := time.Now().UnixMilli()
 	// The evaluator's clock is the instant the last bar CLOSED: every closedness
 	// test inside Tick then reads the just-closed bar as closed, never as forming
@@ -244,6 +249,13 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	if bars5 := mentorClosedBars(market.FuturesBarsProvider("MNQ", "5m", 12)); len(bars5) > 0 && mentorStrongDayFrom5m(bars5) {
 		strongDay = true
 	}
+	// item 18 part 2 (R12): at print −10m on a red-folder print day, cancel
+	// live INTRADAY mentor arms by ArmID and flatten intraday mentor positions
+	// BEFORE the 07:30 print. SWING4H arms and positions are exempt (the course
+	// holds the swing by the 4h [D5.2]). Idempotent: retried each bar in the
+	// window; no-ops once flat. Runs under the N11 mutex so the ArmID cancel
+	// can clear the evaluator's LevelArms safely.
+	at.mentorNewsCancelFlattenAt(mentorClockNow())
 	for _, in := range intents {
 		// B20 trader half (CTO 1791058836784, FIXES.md B20): the trigger
 		// LATER flipped to the trade's side — the OPEN position upgrades
@@ -593,6 +605,47 @@ func mentorNewsHold(events []calendar.Event, now time.Time) (hold bool, why stri
 	return false, ""
 }
 
+// mentorNewsPrintWindowsFromEvents is the pure window builder (item 18 part 1):
+// one [printAt−10m, printAt+5m) window per T1 CPI/PPI/Unemployment 07:30 CT
+// print — the same events and the same window the hold above uses. No match →
+// nil (a non-print day is byte-identical).
+func mentorNewsPrintWindowsFromEvents(events []calendar.Event) []mentor.PrintWindow {
+	var out []mentor.PrintWindow
+	for _, e := range events {
+		if e.Impact != calendar.T1 || kernel.CloseHHMMCT(e.Time) != "07:30" {
+			continue
+		}
+		title := strings.ToLower(e.Title)
+		matched := false
+		for _, tok := range mentorNewsPrintTitleTokens {
+			if strings.Contains(title, tok) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		out = append(out, mentor.PrintWindow{
+			FromMs: e.Time.Add(-mentorNewsPreWindow).UnixMilli(),
+			ToMs:   e.Time.Add(mentorNewsPostWindow).UnixMilli(),
+		})
+	}
+	return out
+}
+
+// mentorNewsPrintWindows returns the day's red-folder print windows from the
+// stored calendar. ok=false (missing/unreadable calendar) → nil: the HTF feed
+// stays byte-identical (the destructive news flat below is the half that needs
+// the calendar to fire).
+func (at *AutoTrader) mentorNewsPrintWindows() []mentor.PrintWindow {
+	evs, ok := at.mentorDayEvents()
+	if !ok {
+		return nil
+	}
+	return mentorNewsPrintWindowsFromEvents(evs)
+}
+
 // mentorNowSource is the clock seam for every mentor time gate (tests).
 var mentorNowSource func() time.Time
 
@@ -647,6 +700,80 @@ func (at *AutoTrader) mentorNewsGate() (bool, string) {
 		mentorCount("news_hold")
 	}
 	return hold, why
+}
+
+// mentorNewsCancelFlattenAt (item 18 part 2, R12) cancels live INTRADAY mentor
+// arms by ArmID and flattens intraday mentor positions at print −10m on a
+// red-folder print day [D4.4 p1 @20:44–21:46]. It is the DESTRUCTIVE half of
+// the news window: the hold above refuses NEW placements through the print;
+// this sweep clears what already REMAINS before the 07:30 print. SWING4H arms
+// and positions are exempt (the course holds the swing by the 4h [D5.2]).
+// Idempotent by construction: an already-cancelled arm and an already-closed
+// position both no-op, so the sweep may run on every bar of the window.
+// The calendar is REQUIRED — a destructive flatten must not fire on a
+// guess; with no readable calendar the hold still blocks placements fail-closed
+// but nothing is force-closed. Returns whether it acted.
+func (at *AutoTrader) mentorNewsCancelFlattenAt(now time.Time) bool {
+	if !at.mentorEnabled() || at.store == nil || at.trader == nil {
+		return false
+	}
+	evs, ok := at.mentorDayEvents()
+	if !ok {
+		return false // cannot name a print day — no force-close on a guess
+	}
+	if hold, _ := mentorNewsHold(evs, now); !hold {
+		return false // not inside a print window on a print day
+	}
+	acted := at.cancelLiveIntradayMentorArms()
+	positions, err := at.store.Position().GetOpenPositions(at.id)
+	if err != nil {
+		at.logWarnf("🧑‍🏫 news flat: open-position read failed (%v) — flatness UNVERIFIED before the print", err)
+		return acted
+	}
+	if len(positions) > 0 {
+		at.logWarnf("🧑‍🏫 news flat: print −10m — flattening %d intraday mentor position(s) (SWING4H exempt)", len(positions))
+	}
+	for _, p := range positions {
+		if isSwingPosition(p) {
+			at.logInfof("🧑‍🏫 news flat: SWING4H position %d (%s) EXEMPT — held by the 4h", p.ID, p.CitedScenarioID)
+			continue
+		}
+		at.flattenPosition(p, "🧑‍🏫 NEWS FLAT")
+		acted = true
+	}
+	return acted
+}
+
+// cancelLiveIntradayMentorArms cancels every live (current-process) INTRADAY
+// mentor arm by its ArmID — SWING4H arms ("swing-…") are exempt. It resolves
+// through the injector's live-arm registry and the real mentorCancelArm path,
+// so each cancel is named and the evaluator's LevelArms entry is cleared.
+// Returns whether any cancel was requested.
+func (at *AutoTrader) cancelLiveIntradayMentorArms() bool {
+	ids := make([]string, 0, len(mentorLiveArms))
+	mentorLiveMu.Lock()
+	for id := range mentorLiveArms {
+		ids = append(ids, id)
+	}
+	mentorLiveMu.Unlock()
+	acted := false
+	cancelled := 0
+	for _, id := range ids {
+		if strings.HasPrefix(strings.TrimSpace(id), "swing-") {
+			continue // SWING4H arm — held by the 4h
+		}
+		at.mentorCancelArm(mentor.Intent{
+			Action: mentor.CancelArm,
+			ArmID:  id,
+			Reason: "news 07:30 print — cancel intraday mentor arm before the print [D4.4 p1 @20:44]",
+		})
+		acted = true
+		cancelled++
+	}
+	if acted {
+		at.logWarnf("🧑‍🏫 news flat: cancelled %d live intraday mentor arm(s) (SWING4H exempt)", cancelled)
+	}
+	return acted
 }
 
 // ── STOP RULES (owner ruling 00:1x CT, "exactly like he said") ─────────────

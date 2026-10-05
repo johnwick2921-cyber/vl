@@ -357,9 +357,9 @@ export const mentor: GuideSection = {
           'orb_gate_enabled = true (default ON) · X5 @01:52, 02:36, 03:29–03:47, 05:42',
         ],
         [
-          'Not live yet — coming',
-          'News 07:30 CT — a mentor entry is refused through the print (07:20–07:35), but resting arms are not yet cancelled and an open position is not yet flattened before the print (R12). The persistent 15m/5m conflict and the 15m ISB rest box land with item 15 (live: no — coming).',
-          '—',
+          'News 07:30 CT (print)',
+          'A mentor entry is refused through the print window (07:20–07:35 CT). At print −10m on a red-folder print day, live INTRADAY mentor arms are cancelled by ArmID and intraday mentor positions are flattened before the 07:30 print — the SWING4H is exempt (held by the 4h). The 07:30 print candle never moves the 1h/4h trigger lines: the evaluator drops the print-window bars from the higher-timeframe feed, so a news spike is not a real break.',
+          'F11 · R12 · D4.4 p1 @18:13, @22:15, @20:44–21:46',
         ],
       ],
     },
