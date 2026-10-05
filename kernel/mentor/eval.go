@@ -1128,11 +1128,21 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// gated by trigger side, mid-range and the setup's own gates.
 	oldExtremes := oldExtremeIndexes(levels, bars)
 	// E2: watch the last emitted EMA stop; block the EMA line on a loss.
+	// Item 16 (CTO 23:49Z): watch the line that TRADES — KindEMA34HTF first,
+	// the plain KindEMA34 as a fallback.
 	emaPrice := 0.0
 	for _, lvl := range levels {
-		if lvl.Kind == KindEMA34 {
+		if lvl.Kind == KindEMA34HTF {
 			emaPrice = lvl.Price
 			break
+		}
+	}
+	if emaPrice == 0 {
+		for _, lvl := range levels {
+			if lvl.Kind == KindEMA34 {
+				emaPrice = lvl.Price
+				break
+			}
 		}
 	}
 	if emaPrice != 0 {

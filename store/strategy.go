@@ -2070,7 +2070,9 @@ type RiskControlConfig struct {
 	//   MentorLegBudgetEnabled — G1 leg budget (nil → ON);
 	//   MentorLegResetOn — G1 parity ("close" default | "touch"; bad → close);
 	//   MentorLvlRevisitMinPts — L1 per-visit departure (default 0);
-	//   MentorEmaMaxCross30m — E4 "xien len xien xuong" (0 = OFF, base);
+	//   MentorEmaMaxCross30m — E4 "xien len xien xuong" (default ON = 2,
+	//     the most conservative; 0 = OFF; mentor question open — no count in
+	//     the course);
 	//   MentorLocationTriggerFilter — the 5m trigger filter at locations
 	//     (nil → ON, L3: keep it ON in the base).
 	//   MentorLossDeparturePts — optional fixed-points fallback for B22's
