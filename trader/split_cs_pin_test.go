@@ -46,9 +46,9 @@ func TestSplitAddonPlacesTwoOCOPairs(t *testing.T) {
 func TestSplitAddonPartialFillLeg1First(t *testing.T) {
 	src := readSplitAddonSource(t)
 	for _, want := range []string{
-		"int leg1Qty = Math.Min(pb.Leg1Qty, filledQty);",
-		"int leg2Qty = Math.Max(0, filledQty - leg1Qty);",
-		"// Leg 2's pair was never placed (partial first fill): create it now.",
+		"int leg1Qty = leg1Gone ? 0 : Math.Min(pb.Leg1Qty, filledQty);",
+		"int leg2Qty = leg1Gone ? Math.Max(0, filledQty - pb.Leg1Exited)",
+		"// Leg 2's pair was never placed (partial first fill, or leg 1",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("AddOn lost the leg-1-first partial-fill allocation: missing %q", want)
@@ -59,18 +59,25 @@ func TestSplitAddonPartialFillLeg1First(t *testing.T) {
 // TestSplitAddonFlatOnlyAccountRemoval pins positionAccountBySymbol: it is
 // removed only when the account's instrument position is FLAT. Mutant: remove on
 // any exit fill → RED.
+// TestSplitAddonFlatOnlyAccountRemoval pins positionAccountBySymbol: it is
+// removed only in OnPositionUpdate (the position has settled) and only when
+// the account that went flat is the recorded owner. REVIEW-SPLIT-2 P2-2 moved
+// this out of the exit-fill handler, where e.Order.Account.Positions can still
+// show the pre-fill quantity and wrongly keep the mapping. Mutant: remove on
+// any exit fill → RED.
 func TestSplitAddonFlatOnlyAccountRemoval(t *testing.T) {
 	src := readSplitAddonSource(t)
-	if !strings.Contains(src, "pos.Quantity != 0 && pos.MarketPosition != MarketPosition.Flat") {
-		t.Error("AddOn lost the flat-only guard — positionAccountBySymbol could be removed on a partial exit")
-	}
-	if !strings.Contains(src, "// PHASE 4: drop the account ownership ONLY when that account's") {
-		t.Error("AddOn lost the REVIEW-353 flat-only account-removal comment")
+	for _, want := range []string{
+		"// REVIEW-SPLIT-2 P2-2: drop the account-ownership mapping HERE,",
+		"positionAccountBySymbol.TryGetValue(flatRoot, out owner)",
+		"string.Equals(owner.Name, acc.Name, StringComparison.OrdinalIgnoreCase)",
+		"positionAccountBySymbol.Remove(flatRoot);",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("AddOn lost the settled flat-only account-removal: missing %q", want)
+		}
 	}
 }
-
-// TestSplitAddonCancelAllBrackets pins CancelBracketsFor: EVERY bracket of the
-// signal is cancelled (leg 1 + leg 2). Mutant: only leg 1 → RED.
 func TestSplitAddonCancelAllBrackets(t *testing.T) {
 	src := readSplitAddonSource(t)
 	for _, want := range []string{
@@ -147,5 +154,71 @@ func TestIsBracketChildKnowsLeg2(t *testing.T) {
 		if isBracketChild(name) {
 			t.Errorf("isBracketChild(%q) = true, want false", name)
 		}
+	}
+}
+
+// TestSplitAddonPositionCloseLegField pins the P1-2 wire field: the
+// position_close frame carries `leg` so the Go receipt identity can tell two
+// same-ms stop exits (leg 2 then leg 1) apart. Mutant: drop ["leg"] → RED.
+func TestSplitAddonPositionCloseLegField(t *testing.T) {
+	src := readSplitAddonSource(t)
+	for _, want := range []string{
+		`string acctName = "", int leg = 0)`,
+		`["leg"]           = leg,`,
+		`if (orderName.EndsWith("-sl2") || orderName.EndsWith("-tp2"))`,
+		"closeLeg = 2;",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("AddOn lost the position_close leg field: missing %q", want)
+		}
+	}
+}
+
+// TestSplitAddonOrderUpdateStripsLeg2 pins SendOrderUpdateFrame: it strips
+// -sl2/-tp2 BEFORE -sl/-tp so an order_update for a leg-2 bracket reports the
+// base signal id the Go side tracks. Mutant: -sl2 not stripped → RED.
+func TestSplitAddonOrderUpdateStripsLeg2(t *testing.T) {
+	src := readSplitAddonSource(t)
+	if !strings.Contains(src, "// REVIEW-SPLIT-2 P2-3: strip the leg-2 suffixes first") {
+		t.Error("AddOn lost the order_update leg-2 strip marker")
+	}
+	for _, want := range []string{
+		`if (signalId.EndsWith("-sl2") || signalId.EndsWith("-tp2"))`,
+		`signalId = signalId.Substring(0, signalId.Length - 4);`,
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("AddOn lost the order_update leg-2 strip: missing %q", want)
+		}
+	}
+}
+
+// TestSplitAddonLeg1ExitFold pins the REVIEW-SPLIT-2 P1 C# fold (CTO 02:07:41Z):
+// (a) a leg-1 exit records Leg1Exited + LastStop and NEVER zeroes Leg1Qty;
+// (b) AmendBracketQuantity routes a later fill under leg 2 once leg 1 is gone;
+// (c) the record survives a leg exit while the entry order is still working;
+// plus closeLeg = 0 for a single bracket. Mutant: zero Leg1Qty / drop the
+// leg1Gone path / remove on exit / report single-bracket -sl as leg 1 → RED.
+func TestSplitAddonLeg1ExitFold(t *testing.T) {
+	src := readSplitAddonSource(t)
+	for _, want := range []string{
+		"public int         Leg1Exited;",
+		"public double      LastStop;",
+		"pb.Leg1Exited = e.Filled;",
+		"if (pb.SlOrder != null) pb.LastStop = pb.SlOrder.StopPrice;",
+		"bool leg1Gone = pb.SlOrder == null && pb.TpOrder == null && pb.Leg1Exited > 0;",
+		"int leg2Qty = leg1Gone ? Math.Max(0, filledQty - pb.Leg1Exited)",
+		"double stop = pb.LastStop;",
+		"bool entryWorking = workingEntries.ContainsKey(signalId);",
+		"if (!live1 && !live2 && !entryWorking)",
+		"wasSplit = cb.Leg1Qty > 0;",
+		"closeLeg = wasSplit ? 1 : 0;",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("AddOn lost the leg-1-exit fold: missing %q", want)
+		}
+	}
+	// Leg1Qty must never be assigned 0 inside the exit-fill leg handler.
+	if strings.Contains(src, "pb.Leg1Qty = 0") {
+		t.Error("AddOn still zeroes Leg1Qty on an exit — the split path would collapse")
 	}
 }
