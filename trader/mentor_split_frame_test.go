@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"vl/kernel/mentor"
+	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 )
 
@@ -76,5 +77,38 @@ func TestMentorSplitOneRowOneFrame(t *testing.T) {
 	}
 	if r.TargetPx != 110 {
 		t.Fatalf("the runner target must be the trade target 110, got %.2f", r.TargetPx)
+	}
+}
+
+// TestRegisterMentorLivePosRegistersBothLegs — P2-4: a filled arm row that
+// carries a split (Leg1Qty set) registers Legs[0] = leg 1 (its own TP) and
+// Legs[1] = the runner, so the exit-drive sees the two legs separately and a
+// leg-1 exit never flattens the runner's drive. Mutant: register one leg → RED.
+func TestRegisterMentorLivePosRegistersBothLegs(t *testing.T) {
+	at, _ := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
+	row := store.ArmedOrderDB{
+		SignalID:  "split-live",
+		Side:      "long",
+		StopPx:    95,
+		TargetPx:  110,
+		Condition: "ISB",
+		Leg1Qty:   store.IntPtr(3),
+		Leg1TP:    105,
+	}
+	u := ntwire.OrderUpdatePayload{Quantity: 5, FillPrice: 100}
+	at.registerMentorLivePos(row, u)
+	list := at.mentorLivePosList()
+	if len(list) != 1 {
+		t.Fatalf("want 1 live pos, got %d", len(list))
+	}
+	lp := list[0]
+	if lp.Pos.Leg1 != 3 || lp.Pos.Leg2 != 2 || lp.Pos.Leg1TP != 105 {
+		t.Fatalf("pos legs = (%d, %d, tp %.2f), want (3, 2, 105.00)", lp.Pos.Leg1, lp.Pos.Leg2, lp.Pos.Leg1TP)
+	}
+	if lp.Legs[0].Qty != 3 || lp.Legs[0].TP != 105 || lp.Legs[0].Final {
+		t.Fatalf("Legs[0] = %+v, want leg 1 (qty 3, tp 105, not final)", lp.Legs[0])
+	}
+	if lp.Legs[1].Qty != 2 || lp.Legs[1].TP != 110 || !lp.Legs[1].Final {
+		t.Fatalf("Legs[1] = %+v, want runner (qty 2, tp 110, final)", lp.Legs[1])
 	}
 }

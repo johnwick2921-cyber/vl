@@ -59,18 +59,25 @@ func TestSplitAddonPartialFillLeg1First(t *testing.T) {
 // TestSplitAddonFlatOnlyAccountRemoval pins positionAccountBySymbol: it is
 // removed only when the account's instrument position is FLAT. Mutant: remove on
 // any exit fill → RED.
+// TestSplitAddonFlatOnlyAccountRemoval pins positionAccountBySymbol: it is
+// removed only in OnPositionUpdate (the position has settled) and only when
+// the account that went flat is the recorded owner. REVIEW-SPLIT-2 P2-2 moved
+// this out of the exit-fill handler, where e.Order.Account.Positions can still
+// show the pre-fill quantity and wrongly keep the mapping. Mutant: remove on
+// any exit fill → RED.
 func TestSplitAddonFlatOnlyAccountRemoval(t *testing.T) {
 	src := readSplitAddonSource(t)
-	if !strings.Contains(src, "pos.Quantity != 0 && pos.MarketPosition != MarketPosition.Flat") {
-		t.Error("AddOn lost the flat-only guard — positionAccountBySymbol could be removed on a partial exit")
-	}
-	if !strings.Contains(src, "// PHASE 4: drop the account ownership ONLY when that account's") {
-		t.Error("AddOn lost the REVIEW-353 flat-only account-removal comment")
+	for _, want := range []string{
+		"// REVIEW-SPLIT-2 P2-2: drop the account-ownership mapping HERE,",
+		"positionAccountBySymbol.TryGetValue(flatRoot, out owner)",
+		"string.Equals(owner.Name, acc.Name, StringComparison.OrdinalIgnoreCase)",
+		"positionAccountBySymbol.Remove(flatRoot);",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("AddOn lost the settled flat-only account-removal: missing %q", want)
+		}
 	}
 }
-
-// TestSplitAddonCancelAllBrackets pins CancelBracketsFor: EVERY bracket of the
-// signal is cancelled (leg 1 + leg 2). Mutant: only leg 1 → RED.
 func TestSplitAddonCancelAllBrackets(t *testing.T) {
 	src := readSplitAddonSource(t)
 	for _, want := range []string{
@@ -146,6 +153,40 @@ func TestIsBracketChildKnowsLeg2(t *testing.T) {
 	for _, name := range []string{"x-entry", "x", "stoplimit-x"} {
 		if isBracketChild(name) {
 			t.Errorf("isBracketChild(%q) = true, want false", name)
+		}
+	}
+}
+
+// TestSplitAddonPositionCloseLegField pins the P1-2 wire field: the
+// position_close frame carries `leg` so the Go receipt identity can tell two
+// same-ms stop exits (leg 2 then leg 1) apart. Mutant: drop ["leg"] → RED.
+func TestSplitAddonPositionCloseLegField(t *testing.T) {
+	src := readSplitAddonSource(t)
+	for _, want := range []string{
+		`string acctName = "", int leg = 0)`,
+		`["leg"]           = leg,`,
+		`if (orderName.EndsWith("-sl2") || orderName.EndsWith("-tp2")) closeLeg = 2;`,
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("AddOn lost the position_close leg field: missing %q", want)
+		}
+	}
+}
+
+// TestSplitAddonOrderUpdateStripsLeg2 pins SendOrderUpdateFrame: it strips
+// -sl2/-tp2 BEFORE -sl/-tp so an order_update for a leg-2 bracket reports the
+// base signal id the Go side tracks. Mutant: -sl2 not stripped → RED.
+func TestSplitAddonOrderUpdateStripsLeg2(t *testing.T) {
+	src := readSplitAddonSource(t)
+	if !strings.Contains(src, "// REVIEW-SPLIT-2 P2-3: strip the leg-2 suffixes first") {
+		t.Error("AddOn lost the order_update leg-2 strip marker")
+	}
+	for _, want := range []string{
+		`if (signalId.EndsWith("-sl2") || signalId.EndsWith("-tp2"))`,
+		`signalId = signalId.Substring(0, signalId.Length - 4);`,
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("AddOn lost the order_update leg-2 strip: missing %q", want)
 		}
 	}
 }

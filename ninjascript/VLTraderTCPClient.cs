@@ -1539,37 +1539,6 @@ namespace NinjaTrader.NinjaScript.AddOns
                     else if (orderName.EndsWith("-sl") || orderName.EndsWith("-tp")) closeLeg = 1;
                     SendPositionCloseFrame(signalId, rootSymbol, positionSide,
                                            e.AverageFillPrice, e.Filled, exitReason ?? "manual", exitAcct, closeLeg);
-                    // PHASE 4: drop the account ownership ONLY when that account's
-                    // instrument position is FLAT. REVIEW-353: a leg-1 partial TP
-                    // fills as an exit, but the runner (leg 2) still holds — the
-                    // mapping must survive so the later runner close goes to the BOUND
-                    // account, not the active one.
-                    if (!string.IsNullOrEmpty(rootSymbol))
-                    {
-                        bool flat = true;
-                        Account exitAccount = e.Order.Account ?? account;
-                        if (exitAccount != null)
-                        {
-                            try
-                            {
-                                lock (exitAccount.Positions)
-                                {
-                                    foreach (Position pos in exitAccount.Positions)
-                                    {
-                                        if (pos == null) continue;
-                                        string pRoot = "";
-                                        try { pRoot = pos.Instrument.MasterInstrument.Name; } catch { }
-                                        if (string.Equals(pRoot, rootSymbol, StringComparison.OrdinalIgnoreCase)
-                                            && pos.Quantity != 0 && pos.MarketPosition != MarketPosition.Flat)
-                                        { flat = false; break; }
-                                    }
-                                }
-                            }
-                            catch { flat = false; } // fail-closed: keep the mapping
-                        }
-                        if (flat)
-                            lock (posAcctLock) { positionAccountBySymbol.Remove(rootSymbol); }
-                    }
                     // P1-1: clear ONLY the filled leg's references; drop the record
                     // and the A2 identity only when NO live leg remains. A leg-1 TP
                     // fill must not untrack the runner (leg 2) — its BE/trail
@@ -2079,7 +2048,12 @@ namespace NinjaTrader.NinjaScript.AddOns
                     lastOrderState[key] = state;
                 }
                 string signalId = orderName.Length > 0 ? orderName : (e.Order.Oco ?? "");
-                if (signalId.EndsWith("-sl") || signalId.EndsWith("-tp") || signalId.EndsWith("-lx"))
+                // REVIEW-SPLIT-2 P2-3: strip the leg-2 suffixes first so an
+                // order_update for -sl2/-tp2 reports the SAME base signal id the
+                // Go side tracks (it never sees a dangling "-sl2").
+                if (signalId.EndsWith("-sl2") || signalId.EndsWith("-tp2"))
+                    signalId = signalId.Substring(0, signalId.Length - 4);
+                else if (signalId.EndsWith("-sl") || signalId.EndsWith("-tp") || signalId.EndsWith("-lx"))
                     signalId = signalId.Substring(0, signalId.Length - 3);
                 string sym = "";
                 try { sym = e.Order.Instrument.MasterInstrument.Name; } catch { }
@@ -3006,6 +2980,20 @@ namespace NinjaTrader.NinjaScript.AddOns
                     if (!string.IsNullOrEmpty(flatRoot))
                     {
                         CancelAllBracketsFor(flatRoot, acc != null ? acc.Name : "");
+                        // REVIEW-SPLIT-2 P2-2: drop the account-ownership mapping HERE,
+                        // where the position has already settled. In the exit-fill handler
+                        // e.Order.Account.Positions can still show the pre-fill quantity,
+                        // which wrongly kept the mapping alive past a full close.
+                        lock (posAcctLock)
+                        {
+                            Account owner;
+                            if (positionAccountBySymbol.TryGetValue(flatRoot, out owner)
+                                && owner != null && acc != null
+                                && string.Equals(owner.Name, acc.Name, StringComparison.OrdinalIgnoreCase))
+                            {
+                                positionAccountBySymbol.Remove(flatRoot);
+                            }
+                        }
                     }
                 }
             }

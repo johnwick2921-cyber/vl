@@ -867,6 +867,12 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 	if leg1Qty > 0 && !ntwire.FarSideProven(t.server.FarSideBuildID(), ntwire.MinAddonBuildSplitLegs) {
 		leg1Qty, leg1TP = 0, 0
 	}
+	// REVIEW-SPLIT-2 P2-1: leg1_tp rides the wire like any other price —
+	// round it to the tick grid (nearest, like a target) so NT8 never
+	// rejects the second OCO pair for an off-grid leg-1 target.
+	if leg1Qty > 0 {
+		leg1TP = RoundToTick(leg1TP, tick)
+	}
 	tid := t.traderID
 	signalID := uuid.NewString()
 	payload := ntwire.SignalPayload{

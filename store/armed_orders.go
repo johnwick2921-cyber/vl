@@ -532,6 +532,9 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 				"side": row.Side, "entry_px": row.EntryPx, "stop_px": row.StopPx,
 				"target_px": row.TargetPx, "updated_at": row.UpdatedAt,
 				"leg_count": row.LegCount, "kind": row.Kind,
+				// REVIEW-SPLIT-2 P2-5: the B2 mentor size and the split legs follow
+				// the re-authorization like every other entry field.
+				"contracts": row.Contracts, "leg1_qty": row.Leg1Qty, "leg1_tp": row.Leg1TP,
 				// W3 — the entry policy and its zone follow the authorization.
 				// A legacy row writes '' / NULL over '' / NULL.
 				"policy": row.Policy, "zone_lo": row.ZoneLo, "zone_hi": row.ZoneHi,
@@ -578,6 +581,8 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 			"armed_under_version": row.Version,
 			"side":                row.Side, "entry_px": row.EntryPx, "stop_px": row.StopPx,
 			"target_px": row.TargetPx, "leg_count": row.LegCount, "kind": row.Kind,
+			// REVIEW-SPLIT-2 P2-5: the split legs follow the re-authorization.
+			"contracts": row.Contracts, "leg1_qty": row.Leg1Qty, "leg1_tp": row.Leg1TP,
 			"created_at": row.CreatedAt, "updated_at": row.UpdatedAt,
 			// class 33: a re-authorized row belongs to THIS process.
 			"boot_id": ProcessBootID(),

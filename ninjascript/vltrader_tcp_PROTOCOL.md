@@ -43,6 +43,8 @@ Outgoing trade signal. Each numeric field is tick-rounded by the Go side before 
     "symbol": "MNQ",
     "side": "long",
     "quantity": 1,
+    "leg1_qty": 0,
+    "leg1_tp": 0,
     "entry": 21500.25,
     "stop_loss": 21450.0,
     "take_profit": 21550.0,
@@ -57,6 +59,14 @@ Outgoing trade signal. Each numeric field is tick-rounded by the Go side before 
 - `symbol`: NT8 instrument symbol (e.g. `MNQ`, `NQ`, `ES`, `MES`).
 - `side`: `long` (buy) or `short` (sell short).
 - `quantity`: number of contracts.
+- `leg1_qty` (REVIEW-353 split redesign, wire v4): contracts in leg 1 of the
+  split AT ENTRY. `> 0` tells the AddOn to place TWO OCO pairs on the ONE
+  entry fill — leg 1 (`-sl`/`-tp`, qty = leg1_qty) + leg 2 (`-sl2`/`-tp2`,
+  qty = quantity − leg1_qty) — under the same `signal_id`. `0`/absent = one
+  bracket (byte-identical legacy framing). An older AddOn ignores it → the
+  split degrades to a single bracket, never half-applies.
+- `leg1_tp` (wire v4): leg 1's own take-profit (tick-rounded, like a target).
+  Only meaningful when `leg1_qty > 0`; the runner (leg 2) keeps `take_profit`.
 - `entry`: market entry reference (NT8 uses market orders; this is the AI's planned entry — used only for slippage attribution in the fill frame).
 - `stop_loss`: stop price (tick-rounded).
 - `take_profit`: limit price (tick-rounded).
@@ -361,7 +371,7 @@ Used by auto-breakeven (once the trade is +N points in profit → stop → entry
 ```json
 { "type": "move_stop",
   "payload": { "symbol": "MNQ", "signal_id": "<entry uuid>",
-               "new_stop_loss": 30352.00, "timestamp": "RFC3339" } }
+               "new_stop_loss": 30352.00, "leg": 0, "timestamp": "RFC3339" } }
 ```
 
 - The AddOn finds the live bracket by `signal_id` and MODIFIES THE SAME resting
@@ -374,6 +384,9 @@ Used by auto-breakeven (once the trade is +N points in profit → stop → entry
   new stop both died → NAKED position. Proven live 2026-08-07 11:25:05 (signal
   `b846e082…`: `-tp` Cancelled + both `-sl` orders Cancelled). `account.Change`
   never issues a cancel, so no cascade is possible.
+- `leg` (wire v4): `1` = move leg 1's stop only, `2` = leg 2 only, `0`/absent = ALL
+  live legs. Terminal legs (already filled) are skipped; an error is raised only
+  when NO selected leg is live (REVIEW-SPLIT-2 P1-1b).
 - Guards: only acts when the stop is in a changeable state (`Working`/`Accepted`);
   no-op if the bracket already exited or the stop is already at that price (½-tick
   idempotency); on a non-changeable stop or a `Change` exception it replies
@@ -383,6 +396,31 @@ Used by auto-breakeven (once the trade is +N points in profit → stop → entry
   ignores it — the original stop keeps protecting the trade. Activating breakeven
   therefore REQUIRES the paired redeploy (cp `ninjascript/*.cs` → AddOns → F5 →
   clean NT8 restart).
+
+### 11. `position_close` (C# AddOn → Go server) — exit receipt
+
+Emitted when an exit fill lands (SL/TP/limit/manual flatten). Correlates the
+exit to the entry row by `signal_id`.
+
+```json
+{ "type": "position_close",
+  "payload": { "signal_id": "<entry uuid>", "symbol": "MNQ",
+               "position_side": "long", "exit_price": 21510.00,
+               "quantity": 1, "exit_reason": "sl",
+               "account": "Sim101", "leg": 0, "exit_time": "RFC3339" } }
+```
+
+- `leg` (wire v4, REVIEW-SPLIT-2 P1-2): which split leg exited — `1` = leg 1
+  (`-sl`/`-tp`), `2` = leg 2 (`-sl2`/`-tp2`), `0`/absent = whole position (single
+  bracket / manual). Included in the Go receipt identity so two same-ms stop
+  exits (leg 2 then leg 1) both apply instead of colliding on one id.
+- The leg-2 suffixes are stripped to the SAME base `signal_id` everywhere (exit
+  fill routing AND `order_update`), so every reader keys on the one entry id.
+
+### 12. `modify_bracket` (Go server → C# AddOn) — split-leg price change
+
+Same shape as `move_stop` but may also change the target; `leg` selects 1 / 2 /
+all with the same terminal-leg skip + no-live-leg error (REVIEW-SPLIT-2 P1-1b).
 
 ## Failure modes
 

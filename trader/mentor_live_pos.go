@@ -56,6 +56,21 @@ func (at *AutoTrader) registerMentorLivePos(r store.ArmedOrderDB, u ntwire.Order
 		n = 1
 	}
 	entry := u.FillPrice
+	// REVIEW-SPLIT-2 P2-4: when the armed row carries a split (Leg1Qty set),
+	// register BOTH legs — Legs[0] = leg 1 (its own TP), Legs[1] = the runner —
+	// so a leg-1 exit does not flatten the runner's exit-drive.
+	leg1Qty := 0
+	if r.Leg1Qty != nil {
+		leg1Qty = *r.Leg1Qty
+	}
+	if leg1Qty >= n {
+		leg1Qty = 0
+	}
+	leg1TP := r.Leg1TP
+	if leg1Qty > 0 && leg1TP == 0 {
+		leg1TP = r.TargetPx
+	}
+	runnerQty := n - leg1Qty
 	pos := mentorPosition{
 		Symbol:    at.futuresSymbol(),
 		Side:      side,
@@ -65,16 +80,25 @@ func (at *AutoTrader) registerMentorLivePos(r store.ArmedOrderDB, u ntwire.Order
 		Target:    r.TargetPx,
 		R:         math.Abs(entry - r.StopPx),
 		Contracts: n,
-		Leg1:      n, // the whole position is one leg
-		Leg2:      0,
+		Leg1:      leg1Qty,
+		Leg2:      runnerQty,
 		Mode:      at.mentorExitMode(side),
-		Leg1TP:    r.TargetPx,
+		Leg1TP:    leg1TP,
+	}
+	if leg1Qty == 0 {
+		pos.Leg1 = n // no split: the whole position is one leg
+		pos.Leg1TP = r.TargetPx
 	}
 	lp := &mentorLivePos{Pos: pos}
 	if v, ok := mentorRunnerTargets.Load(r.Scenario); ok {
 		lp.RunnerTarget, _ = v.(float64)
 	}
-	lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: n, TP: r.TargetPx, Stop: r.StopPx, Final: true}
+	if leg1Qty > 0 {
+		lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: leg1Qty, TP: leg1TP, Stop: r.StopPx, Final: false}
+		lp.Legs[1] = mentorLeg{SignalID: r.SignalID, Qty: runnerQty, TP: r.TargetPx, Stop: r.StopPx, Final: true}
+	} else {
+		lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: n, TP: r.TargetPx, Stop: r.StopPx, Final: true}
+	}
 	at.mentorRegisterLivePos(r.SignalID, lp)
 }
 
