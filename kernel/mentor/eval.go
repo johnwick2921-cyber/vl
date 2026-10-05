@@ -617,6 +617,35 @@ func nextLevelBeyond(levels []Level, price float64, side Side) float64 {
 	return best
 }
 
+// nextLevelBeyondRoom is nextLevelBeyond for the room-checked paths (ISB,
+// reverse ISB, box). REL-5 audit #2: a TARGET-ONLY level (4h trigger, wick
+// microscalp) closer than roomMultiple × risk is skipped and the search falls
+// through to the next level beyond; a key level or box edge inside 2R still
+// becomes the target (and the room rule then refuses it). The 4h line stays a
+// valid target whenever it is ≥ 2R away [D4.4 p2 @05:04].
+func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMultiple float64) float64 {
+	risk := abs(entry - stop)
+	best := 0.0
+	for _, l := range levels {
+		if l.Kind == KindTrendline {
+			continue // a trendline is a location, never a target (X9)
+		}
+		onSide := side == SideLong && l.Price > entry || side == SideShort && l.Price < entry
+		if !onSide {
+			continue
+		}
+		if (l.Kind == KindHTFTrigger || l.Kind == KindWickMicroscalp) && roomMultiple > 0 && risk > 0 {
+			if abs(l.Price-entry) < roomMultiple*risk {
+				continue // target-only level too close to hold 2R room — fall through
+			}
+		}
+		if best == 0 || (side == SideLong && l.Price < best) || (side == SideShort && l.Price > best) {
+			best = l.Price
+		}
+	}
+	return best
+}
+
 // isMovingLineKey (item 22) reports whether a level key is one of the MOVING
 // lines — the 1m EMA34, the EMA34HTF location line, or the trigger-retest line.
 // These are re-priced every bar, so their wrong-way "invalid" state is scoped to
@@ -967,6 +996,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					} else if isbArmActive(e.State.ISBArms, side) {
 						// ONE ARM PER SIDE (CTO parity ruling 1791008332386 #1):
 						// stacking extends the EXISTING arm — no new arm.
+						// REL-5 audit #3: name the skip instead of a silent drop.
+						e.refuse("isb_arm_active")
 					} else if boxBlocked {
 						// R5: an opposite-direction ISB inside the box — no entry
 						e.refuse("isb_box_blocked")
@@ -1004,7 +1035,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						// [D4.1 p1 @ 01:39]; no level beyond → no trade — a
 						// missing (or sub-1:1) target skips ONLY this ISB, never
 						// the rest of the tick (CTO E-1/E-2 2026-10-03T15:12Z).
-						target := nextLevelBeyond(levels, chosen.Price, side)
+						target := nextLevelBeyondRoom(levels, chosen.Price, chosen.Stop, side, e.Cfg.RoomMultiple)
 						if target == 0 {
 							e.refuse("isb_missing_target")
 						} else if !targetFloorOK(chosen.Price, chosen.Stop, target) {
@@ -1084,7 +1115,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				e.refuse("isbrev_htf_side_mismatch")
 			} else if refuse, _ := nearBoxRefusal(boxes, in.Price, in.Side, e.Cfg.NearBoxRoomMultiple, abs(in.Price-in.Stop)); refuse {
 				e.refuse("near_box")
-			} else if target = nextLevelBeyond(levels, in.Price, in.Side); target == 0 {
+			} else if target = nextLevelBeyondRoom(levels, in.Price, in.Stop, in.Side, e.Cfg.RoomMultiple); target == 0 {
 				// Item 26 / R81 (RELEASE #4): the reverse ISB needs a target —
 				// Q7 open → the normal ISB target rule: the next level beyond
 				// in the trade direction, with the 1:1 floor and the cap.
@@ -1241,6 +1272,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				}
 			}
 			if allowed, _ := SetupPermittedVerdict("PHL", levels, price, e.Cfg); !allowed {
+				// REL-5 audit #1: name the drop instead of a silent continue.
+				e.refuse("phl_mid_range")
 				continue
 			}
 			// MID-RANGE ban via boxes (CTO 1791003862333): between an FTGL
@@ -1551,7 +1584,29 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 		intraday = append(intraday, in)
 	}
-	out = append(e.State.Limits.Apply(intraday, bars[len(bars)-2], bars[len(bars)-1], now, levels, e.Cfg), swings...)
+	// REL-5 audit #3: a leg-budget / loss-box drop must not leave a stale
+	// ISBArms entry (a stale arm suppresses a legitimate same-side ISB via
+	// isbArmActive). Snapshot the emitted ISB ArmIDs, then delete the arms the
+	// limits hook dropped.
+	emittedISB := map[string]bool{}
+	for _, in := range intraday {
+		if in.Setup == "ISB" && in.ArmID != "" {
+			emittedISB[in.ArmID] = true
+		}
+	}
+	keptIntraday := e.State.Limits.Apply(intraday, bars[len(bars)-2], bars[len(bars)-1], now, levels, e.Cfg)
+	keptISB := map[string]bool{}
+	for _, in := range keptIntraday {
+		if in.Setup == "ISB" && in.ArmID != "" {
+			keptISB[in.ArmID] = true
+		}
+	}
+	for id := range emittedISB {
+		if !keptISB[id] {
+			delete(e.State.ISBArms, id)
+		}
+	}
+	out = append(keptIntraday, swings...)
 
 	return out
 }
