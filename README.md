@@ -28,7 +28,7 @@ The bot never calls a crypto exchange and never routes an order outside NinjaTra
 
 ## The pipeline, in plain words
 
-1. **NT8 bars in** — the AddOn pushes real-time 1-minute MNQ bars over TCP into the Go **BarCache**.
+1. **NT8 bars in** — the AddOn pushes real-time MNQ bars (1m up to 6h) over TCP into the Go **BarCache**.
 2. **AI planner** — the bot asks the model (DeepSeek) for one **day plan per session**
    (**ASIA / LONDON / NY**): scenarios, levels, direction, budgets.
 3. **Executor + armed entries** — plans become **resting stop-entry (stop-limit) orders** at levels;
@@ -53,15 +53,15 @@ The bot never calls a crypto exchange and never routes an order outside NinjaTra
 | **Updates** | Signed releases, one-button install |
 | **Guide** | The full rulebook — every knob, its default, and where it lives in code |
 
-Everything runs locally at **http://127.0.0.1:3000** (frontend) against the Go API on `:8080`.
+The bot serves the API **and** the built web UI on **http://127.0.0.1:8080**; `npm run dev` serves a live-reload dev UI on **:3000**.
 
 ## Run it
 
 ```bash
 # Prerequisites: Go 1.25+, Node.js 18+
 
-go build -o vl && ./vl           # backend (SQLite at data/data.db)
-cd web && npm install && npm run dev   # frontend (new terminal)
+go build -o vl-bin . && ./vl-bin     # backend (SQLite at data/data.db)
+cd web && npm install && npm run dev   # live-reload dev UI (new terminal)
 ```
 
 **NinjaTrader AddOn** (required — it is the data source and the execution path):
@@ -74,6 +74,8 @@ cd web && npm install && npm run dev   # frontend (new terminal)
 
 ## Docs
 
+| Doc | What it covers |
+| --- | --- |
 | [Operator's manual](docs/README-VL-SYSTEM.md) | The full system + UI reference (note the stale-rev warning above) |
 | [Pipeline map](docs/PIPELINE-MAP.md) | End-to-end data/decision/execution flow |
 | [Decision anatomy](docs/DECISION-ANATOMY.md) | What the AI is asked and what it answers |
