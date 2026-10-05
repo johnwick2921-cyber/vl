@@ -8,9 +8,11 @@ package trader
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+	"vl/kernel"
 
 	"vl/calendar"
 	"vl/logger"
@@ -70,7 +72,7 @@ func TestF1RefetchLogFiresOnlyWhenFetchRuns(t *testing.T) {
 // P2: a rebuilt AutoTrader with the SAME trader id must inherit the throttle.
 func TestF1CalFetchThrottlePersistsAcrossReconstruction(t *testing.T) {
 	const tid = "f1-throttle-persist"
-	calFetchThrottle.Delete(tid) // start clean
+	resetCalFetchThrottleForTest(tid) // start clean
 
 	// Instance 1 fetches (the seeded slice stays stale, so this is a REAL fetch).
 	at1, st := f0Trader(t)
@@ -92,5 +94,36 @@ func TestF1CalFetchThrottlePersistsAcrossReconstruction(t *testing.T) {
 	at2.maybeFetchCalendar(nowOnCT(t, "2026-10-05"))
 	if calls != 1 {
 		t.Fatalf("rebuilt trader re-fetched (calls=%d) — throttle did not persist across reconstruction", calls)
+	}
+}
+
+// TestF1CalFetchThrottleIsPerTradeDate — DS-102 #409 review (d): the throttle is
+// scoped to (trader, trade date). An attempt at 23:50 CT on 10-05 must NOT delay
+// the first fetch of 10-06 at 00:05 CT, 15 minutes later. Mutant: key the
+// throttle by trader id only → the 10-06 fetch is suppressed → RED.
+func TestF1CalFetchThrottleIsPerTradeDate(t *testing.T) {
+	const tid = "f1-throttle-per-date"
+	resetCalFetchThrottleForTest(tid)
+	t.Cleanup(func() { resetCalFetchThrottleForTest(tid) })
+
+	at, st := f0Trader(t)
+	at.id = tid
+	f1SeedStaleLive(t, st, "2026-10-05")
+	calls := 0
+	at.calFetch = func() ([]byte, error) { calls++; return nil, fmt.Errorf("feed down") }
+
+	loc := kernel.CTLocation()
+	at.maybeFetchCalendar(time.Date(2026, 10, 5, 23, 50, 0, 0, loc))
+	if calls != 1 {
+		t.Fatalf("10-05 23:50 attempt ran %d times, want 1", calls)
+	}
+	at.maybeFetchCalendar(time.Date(2026, 10, 6, 0, 5, 0, 0, loc))
+	if calls != 2 {
+		t.Fatalf("the first fetch of the NEW trade date was throttled by the previous date's attempt (calls=%d, want 2)", calls)
+	}
+	// Same date, inside the hour → still throttled.
+	at.maybeFetchCalendar(time.Date(2026, 10, 6, 0, 20, 0, 0, loc))
+	if calls != 2 {
+		t.Fatalf("same-date retry inside 1h was not throttled (calls=%d, want 2)", calls)
 	}
 }

@@ -17,7 +17,22 @@ import (
 // reconstruction (P2, CTO 2026-10-05): keyed by trader id, so an NT8 reconnect
 // that rebuilds the AutoTrader (and zeroes its instance fields) does not re-hit
 // the FF feed inside the 1h window. Package-level, one entry per trader id.
-var calFetchThrottle sync.Map // trader id → time.Time (last fetch)
+var calFetchThrottle sync.Map // calFetchThrottleKey(trader id, trade date) → time.Time (last fetch)
+
+// calFetchThrottleKey scopes the throttle to (trader, trade date): a fetch
+// attempt just before the date roll must never delay the NEW date's first
+// fetch (DS-102 #409 review (d), P2).
+func calFetchThrottleKey(traderID, tradeDate string) string { return traderID + "|" + tradeDate }
+
+// resetCalFetchThrottleForTest clears every throttle entry of one trader.
+func resetCalFetchThrottleForTest(traderID string) {
+	calFetchThrottle.Range(func(k, _ any) bool {
+		if ks, ok := k.(string); ok && strings.HasPrefix(ks, traderID+"|") {
+			calFetchThrottle.Delete(k)
+		}
+		return true
+	})
+}
 
 // W3 — the calendar PRODUCER (the audit's dead wire): fetch the ForexFactory
 // weekly feed and store one slice per CT trade-date, so the planner's GetSlice
@@ -56,12 +71,12 @@ func (at *AutoTrader) maybeFetchCalendar(now time.Time) {
 		staleLive = true
 		staleAge = age
 	}
-	if v, ok := calFetchThrottle.Load(at.id); ok {
+	if v, ok := calFetchThrottle.Load(calFetchThrottleKey(at.id, tradeDate)); ok {
 		if now.Sub(v.(time.Time)) < time.Hour {
 			return // throttle (P2: persisted across trader reconstruction)
 		}
 	}
-	calFetchThrottle.Store(at.id, now)
+	calFetchThrottle.Store(calFetchThrottleKey(at.id, tradeDate), now)
 	// P2 — the re-fetch line fires only when the fetch ACTUALLY runs (it used to
 	// log every cycle before the throttle, reading as a 2-min hammer).
 	if staleLive {
