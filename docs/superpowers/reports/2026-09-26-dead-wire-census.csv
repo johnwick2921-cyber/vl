@@ -1,0 +1,613 @@
+path,line,kind,symbol,class,why
+agent/agent.go,87,func,Agent.SetAIClient,KEEP(tests),"9 test refs only, e.g. 155:	a.SetAIClient(sentinel)"
+agent/agent.go,422,func,Agent.HandleMessage,KEEP(wired),"6 non-test refs, e.g. 114:	resp, err := w.agent.HandleMessageForStoreUser(ctx, sto"
+agent/agent.go,470,func,Agent.HandleMessageStream,KEEP(wired),"2 non-test refs, e.g. 169:	resp, err := w.agent.HandleMessageStreamForStoreUser(ct"
+agent/agent.go,549,func,Agent.buildSystemPrompt,KEEP(wired),"5 non-test refs, e.g. 27:		return pb.buildSystemPromptZH()"
+agent/agent.go,832,func,Agent.getTradersSummary,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/atomic_skill_executor.go,64,func,Agent.executeAtomicSkillTaskOutcome,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/atomic_skill_executor.go,68,func,Agent.executeAtomicSkillTaskOutcomeWithSession,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/config_validation.go,434,func,unmarshalStringList,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/entity_field_catalog.go,46,func,fieldKeysByCapability,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/entity_field_catalog.go,56,func,keywordsForField,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/entity_field_catalog.go,65,func,manualTraderEditableFieldKeys,KEEP(wired),"1 non-test refs, e.g. 45:		for _, field := range manualTraderEditableFieldKeys() {"
+agent/entity_field_catalog.go,71,func,agentTraderUpdatableFieldKeys,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/entity_field_catalog.go,77,func,manualModelEditableFieldKeys,KEEP(wired),"1 non-test refs, e.g. 33:		for _, field := range manualModelEditableFieldKeys() {"
+agent/entity_field_catalog.go,83,func,agentModelUpdatableFieldKeys,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/entity_field_catalog.go,89,func,manualExchangeEditableFieldKeys,KEEP(wired),"1 non-test refs, e.g. 38:		for _, field := range manualExchangeEditableFieldKeys()"
+agent/entity_field_catalog.go,95,func,agentExchangeUpdatableFieldKeys,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/entity_field_catalog.go,101,func,traderFieldKeywords,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/entity_field_catalog.go,105,func,modelFieldKeywords,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/entity_field_catalog.go,109,func,exchangeFieldKeywords,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/execution_state.go,632,func,appendDynamicSnapshot,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/history.go,91,func,chatHistory.CleanOld,KEEP(wired),"5 non-test refs, e.g. 148:// CleanOldRecords cleans old records from N days ago"
+agent/llm_flow_extractor.go,131,func,filterLLMFlowExtractionFields,KEEP(tests),"1 test refs only, e.g. 1964:	filtered := filterLLMFlowExtractionFields(result, []ll"
+agent/llm_flow_extractor.go,186,func,skillSessionExtractionContext,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/llm_flow_extractor.go,294,func,currentFieldValuesForSkillSession,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/llm_skill_router.go,571,func,hasAnyActiveContext,KEEP(wired),"5 non-test refs, e.g. 831:	} else if a.hasAnyActiveContext(userID) {"
+agent/model_provider_catalog.go,76,func,supportedModelProviderIDs,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/model_provider_catalog.go,214,func,modelProviderCredentialGuidance,KEEP(tests),"1 test refs only, e.g. 31:	msg := modelProviderCredentialGuidance(""zh"", ""claw402"")"
+agent/onboard.go,37,func,Agent.needsSetup,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,45,func,Agent.getSetupState,KEEP(tests),"3 test refs only, e.g. 288:	if second.getSetupState(42).Step != ""test-step"" {"
+agent/onboard.go,66,func,Agent.saveSetupState,KEEP(tests),"2 test refs only, e.g. 287:	first.saveSetupState(42, &SetupState{Step: ""test-step""}"
+agent/onboard.go,85,func,getConfig,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,90,func,setConfig,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,94,func,cloneSetupState,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,104,func,Agent.handleSetupFlow,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,108,func,Agent.handleSetupFlowForStoreUser,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,220,func,isDirectSetupCommand,KEEP(tests),"2 test refs only, e.g. 23:		if got := isDirectSetupCommand(tc.text); got != tc.want"
+agent/onboard.go,233,func,Agent.handleExchangeChoice,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,261,func,Agent.handleAIChoice,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,306,func,Agent.finishSetup,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,360,func,Agent.createTraderFromSetup,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,364,func,Agent.createTraderFromSetupForStoreUser,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,432,func,Agent.saveSetupExchange,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,484,func,Agent.saveSetupAIModel,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,510,func,maskKey,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,517,func,needsPassphrase,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/onboard.go,599,func,Agent.setupMsg,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,166,func,isStrategyIntent,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,571,func,Agent.executeReadFastPath,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,1026,func,isTraderCreateWaitingState,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,2898,func,Agent.createExecutionPlan,KEEP(tests),"6 test refs only, e.g. 681:	_, err := a.createExecutionPlan(context.Background(), u"
+agent/planner_runtime.go,3008,func,parseExecutionPlanJSON,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,3388,func,Agent.replanAfterStep,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,3431,func,parseReplannerDecisionJSON,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,3452,func,normalizeReplannerDecision,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,3472,func,applyReplannerDecision,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,3524,func,shouldAttemptReplan,KEEP(tests),"3 test refs only, e.g. 342:	if !shouldAttemptReplan(state, PlanStep{"
+agent/planner_runtime.go,3545,func,hasPendingWorkAfterStep,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,3554,func,toolActionMayChangePlan,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,3564,func,toolResultIndicatesError,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,3569,func,toolResultSignalsDependencyGap,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,3632,func,formatReplanStatus,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/planner_runtime.go,3948,func,Agent.thinkAndActLegacy,KEEP(tests),"2 test refs only, e.g. 487:	resp, err := a.thinkAndActLegacy(context.Background(), "
+agent/reference_memory.go,76,func,Agent.semanticReferenceHistory,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_dag.go,285,func,listSkillDAGs,KEEP(tests),"1 test refs only, e.g. 33:	for _, dag := range listSkillDAGs() {"
+agent/skill_dag_runtime.go,31,func,clearSkillDAGStep,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_dispatcher.go,222,func,choosePreferredOption,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_dispatcher.go,411,func,Agent.rerouteRejectedSkillFlow,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_dispatcher.go,866,func,enabledTraderSkillOptions,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_dispatcher.go,876,func,resolveSemanticExistingTraderDependency,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_dispatcher.go,1068,func,formatAmbiguousTargetPrompt,KEEP(wired),"1 non-test refs, e.g. 2629:	return formatAmbiguousTargetPrompt(lang, ambiguous)"
+agent/skill_dispatcher.go,1081,func,sharedAmbiguousOptionName,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_dispatcher.go,1097,func,formatDisambiguationOptionList,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_dispatcher.go,1123,func,shortOptionIDSuffix,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,221,func,Agent.executeAtomicSkillWithSession,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,228,func,parseLooseTextValue,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,253,func,parseStandaloneTraderUpdateArgs,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,328,func,modelUpdatePatch.hasAny,KEEP(wired),"16 non-test refs, e.g. 831:	} else if a.hasAnyActiveContext(userID) {"
+agent/skill_execution_handlers.go,391,func,exchangeUpdatePatch.hasAny,KEEP(wired),"16 non-test refs, e.g. 831:	} else if a.hasAnyActiveContext(userID) {"
+agent/skill_execution_handlers.go,1074,func,parseSourceTypeValue,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,1090,func,extractSymbolList,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,1112,func,looksLikeCoinSymbol,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,1125,func,normalizeCoinSymbol,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,1139,func,extractIntegerList,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,1164,func,extractDurationValue,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,1198,func,extractLongSegmentAfterKeywords,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,1228,func,extractDelimitedSegmentAfterKeywords,KEEP(wired),"1 non-test refs, e.g. 1311:	if value := extractDelimitedSegmentAfterKeywords(text,"
+agent/skill_execution_handlers.go,1242,func,extractModelNameValue,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,1261,func,sanitizeExtractedURL,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,1275,func,strategyFieldKeywords,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,1358,func,matchesStrategyFieldKeywords,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,1366,func,strategyFieldExplicitlyMentioned,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,2736,func,extractLabeledInt,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,2753,func,extractTimeframeAfterKeywords,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,2768,func,extractTimeframes,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,3118,func,nonZeroPositions,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,3128,func,joinAnyLines,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,3144,func,valueOrUnset,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_execution_handlers.go,3148,func,modelName,KEEP(wired),"26 non-test refs, e.g. 1294:				modelName := at.config.CustomModelName"
+agent/skill_execution_handlers.go,3155,func,modelProvider,KEEP(wired),"37 non-test refs, e.g. 29:				""- 候选 provider："" + modelProviderSummaryList(lang),"
+agent/skill_execution_handlers.go,3166,func,exchangeName,KEEP(wired),"21 non-test refs, e.g. 2081:	exchangeNames := map[string]string{}"
+agent/skill_execution_handlers.go,3177,func,strategyName,KEEP(wired),"3 non-test refs, e.g. 39:		var strategyName string"
+agent/skill_management_handlers.go,24,func,extractURL,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_management_handlers.go,151,func,resolveTargetFromText,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_management_handlers.go,173,func,isSimpleEntityMutationAction,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_management_handlers.go,606,func,strategyCreateHasExplicitConfigBeyondType,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_management_handlers.go,1043,func,formatStrategyCreateDraftSummary,KEEP(tests),"1 test refs only, e.g. 1206:	reply := formatStrategyCreateDraftSummary(""zh"", ""我的网格策"
+agent/skill_management_handlers.go,1290,func,inferCreateDisplayName,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_management_handlers.go,1541,func,hasExplicitStrategyDetailIntent,KEEP(wired),"2 non-test refs, e.g. 946:		case containsAny(lower, []string{""详情"", ""配置"", ""参数"", ""wh"
+agent/skill_management_handlers.go,1556,func,shouldPreferStrategyQueryDetail,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_management_handlers.go,1567,func,shouldExplainStrategyRuntimeBoundary,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_management_handlers.go,1584,func,wantsDefaultStrategyConfig,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_management_handlers.go,1844,func,Agent.describeDefaultStrategyConfig,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_management_handlers.go,2340,func,inferModelCredentialFromText,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_management_handlers.go,2360,func,credentialLooksCompatibleWithProvider,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_management_handlers.go,2628,func,Agent.askLLMAmbiguousTargetQuestion,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_registry.go,184,func,listSkillNames,KEEP(tests),"1 test refs only, e.g. 6:	names := listSkillNames()"
+agent/skill_registry.go,193,func,buildSkillRoutingSummary,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_registry.go,223,func,buildSkillDefinitionSummary,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_registry.go,271,func,defaultManagementSkillNames,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_registry.go,365,func,buildSkillForbiddenSummary,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_registry.go,400,func,buildManagementSkillContext,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_registry.go,425,func,buildManagementSkillRoutingContext,KEEP(wired),"2 non-test refs, e.g. 2903:	skillContext := buildManagementSkillRoutingContext(lan"
+agent/skill_registry.go,472,func,buildManagementSkillRoutingContextWithSession,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_semantic_gate.go,10,func,Agent.skillVisibleFieldSummary,KEEP(tests),"3 test refs only, e.g. 347:	summary := a.skillVisibleFieldSummary(""default"", ""zh"", "
+agent/skill_semantic_gate.go,100,func,Agent.skillVisibleOptionSummary,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_semantic_gate.go,115,func,Agent.modelSkillOptionSummary,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_semantic_gate.go,122,func,Agent.exchangeSkillOptionSummary,KEEP(tests),"1 test refs only, e.g. 257:	summary := a.exchangeSkillOptionSummary(""zh"")"
+agent/skill_semantic_gate.go,191,func,Agent.traderSkillOptionSummary,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_semantic_gate.go,200,func,Agent.strategySkillOptionSummary,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_semantic_gate.go,215,func,formatSkillOptionList,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/skill_semantic_gate.go,236,func,filterNonEmptyStrings,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/strategy_field_catalog.go,155,func,agentStrategyUpdatableFieldKeys,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/trade.go,120,func,parseTradeCommand,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/trade.go,506,func,formatTradeConfirmation,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/trade.go,698,func,marshalTradeAction,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,425,func,Agent.decomposeWorkflowIntent,KEEP(tests),"1 test refs only, e.g. 24:	out := a.decomposeWorkflowIntentFallback(""把策略删了，再把交易所改名"""
+agent/workflow.go,437,func,looksLikeMultiTaskIntent,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,459,func,looksLikeCompoundStrategyIntent,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,472,func,looksLikeCompoundTraderIntent,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,484,func,looksLikeCompoundModelIntent,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,495,func,looksLikeCompoundExchangeIntent,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,506,func,Agent.decomposeWorkflowIntentWithLLM,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,544,func,parseWorkflowDecomposition,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,587,func,Agent.decomposeWorkflowIntentFallback,KEEP(tests),"1 test refs only, e.g. 24:	out := a.decomposeWorkflowIntentFallback(""把策略删了，再把交易所改名"""
+agent/workflow.go,620,func,classifyCompoundWorkflowTasksWithContext,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,633,func,classifyCompoundWorkflowTasks,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,654,func,classifyContextualStrategyWorkflowTasks,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,682,func,classifyContextualTraderWorkflowTasks,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,706,func,classifyWorkflowTaskWithContext,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,723,func,classifyCompoundStrategyWorkflowTasks,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,760,func,classifyCompoundTraderWorkflowTasks,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,789,func,classifyCompoundModelWorkflowTasks,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,815,func,classifyCompoundExchangeWorkflowTasks,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+agent/workflow.go,840,func,splitWorkflowSegments,KEEP(tests),"1 test refs only, e.g. 6:	got := splitWorkflowSegments(""把策略删了，再把交易所改名"")"
+agent/workflow.go,859,func,classifyWorkflowTask,KEEP(tests),"3 test refs only, e.g. 13:	task, ok := classifyWorkflowTask(""把策略删了"")"
+api/crypto_handler.go,99,func,isValidPrivateKey,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+api/handler_competition.go,108,func,Server.handleCompetition,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+api/handler_klines_roll_derive.go,30,func,ChartRollStitchResolved,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+api/handler_plan.go,1379,func,Server.transitionState,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+api/handler_trader.go,268,func,describeTraderLoadError,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+api/handler_trader_status.go,427,func,Server.pollAndUpdateOrderStatus,KEEP(wired),"1 non-test refs, e.g. 1555:	// AND pollAndUpdateOrderStatus (handler_trader_status"
+api/handler_trader_status.go,515,func,Server.pollLighterTradeHistory,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+api/handler_updates.go,85,func,Server.SetUpdateVerifier,KEEP(tests),"5 test refs only, e.g. 294:		e.s.SetUpdateVerifier(c.v)"
+api/handler_updates.go,93,func,Server.SetUpdateStarter,KEEP(tests),"2 test refs only, e.g. 295:		e.s.SetUpdateStarter(c.start)"
+api/release_dir.go,33,func,resetReleaseDirForTest,KEEP(tests),"6 test refs only, e.g. 14:	resetReleaseDirForTest()"
+api/utils.go,19,func,SanitizeModelConfigForLog,KEEP(tests),"2 test refs only, e.g. 50:func TestSanitizeModelConfigForLog(t *testing.T) {"
+api/utils.go,38,func,SanitizeExchangeConfigForLog,KEEP(tests),"2 test refs only, e.g. 90:func TestSanitizeExchangeConfigForLog(t *testing.T) {"
+api/utils.go,91,func,MaskEmail,KEEP(tests),"3 test refs only, e.g. 163:func TestMaskEmail(t *testing.T) {"
+crypto/crypto.go,361,func,GenerateKeyPair,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+crypto/crypto.go,389,func,GenerateDataKey,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+discipline/freeze.go,69,func,ResetFreezeForTest,KEEP(tests),"10 test refs only, e.g. 184:	discipline.ResetFreezeForTest()"
+discipline/reentry_cooldown.go,134,func,ResetReentryForTest,KEEP(tests),"12 test refs only, e.g. 22:	discipline.ResetReentryForTest()"
+docs/superpowers/research/2026-09-12-backtest-structure-fade/harness/eval.go,164,func,first5mTouch,KEEP(harness),standalone research harness (own main)
+docs/superpowers/research/2026-09-12-backtest-structure-fade/harness/eval.go,326,func,aggregate5m,KEEP(harness),standalone research harness (own main)
+docs/superpowers/research/2026-09-12-backtest-structure-fade/harness/main.go,139,func,holdCode,KEEP(harness),standalone research harness (own main)
+docs/superpowers/research/2026-09-12-backtest-structure-fade/harness/stats.go,26,func,diffCI,KEEP(harness),standalone research harness (own main)
+docs/superpowers/research/2026-09-12-backtest-structure-fade/harness/stats.go,115,func,sdOf,KEEP(harness),standalone research harness (own main)
+docs/superpowers/research/2026-09-12-backtest-structure-fade/harness/stats.go,140,func,rng.intn,KEEP(harness),standalone research harness (own main)
+docs/superpowers/research/2026-09-12-backtest-zone-fade/harness/eval.go,158,func,first5mTouch,KEEP(harness),standalone research harness (own main)
+docs/superpowers/research/2026-09-12-backtest-zone-fade/harness/eval.go,256,func,aggregate5m,KEEP(harness),standalone research harness (own main)
+docs/superpowers/research/2026-09-12-backtest-zone-fade/harness/stats.go,115,func,sdOf,KEEP(harness),standalone research harness (own main)
+hook/hooks.go,30,func,RegisterHook,KEEP(tests),"4 test refs only, e.g. 121:	hook.RegisterHook(hook.SET_HTTP_CLIENT, func(args ...an"
+hook/ip_hook.go,10,func,IpResult.Error,KEEP(wired),"3982 non-test refs, e.g. 79:				logger.Errorf(""Failed to create data directory: %v"", "
+hook/ip_hook.go,14,func,IpResult.GetResult,KEEP(wired),"7 non-test refs, e.g. 68:	if hookRes != nil && hookRes.GetResult() != nil {"
+internal/censuswalk/censuswalk.go,56,func,SkippedAtRoot,KEEP(tests),"5 test refs only, e.g. 161:	// children of the module root (SkippedAtRoot). This ce"
+internal/censuswalk/censuswalk.go,59,func,RootSkips,KEEP(tests),"3 test refs only, e.g. 36:	for _, n := range RootSkips() {"
+internal/censuswalk/censuswalk.go,73,func,NestedProbeDirs,KEEP(tests),"30 test refs only, e.g. 40:	for _, d := range NestedProbeDirs() {"
+internal/censuswalk/censuswalk.go,82,func,PackageName,KEEP(tests),"20 test refs only, e.g. 41:		write(t, root, d+""/a.go"", ""package ""+PackageName(d)+""\n"
+internal/censuswalk/censuswalk.go,103,func,NonTestGoFiles,KEEP(tests),"30 test refs only, e.g. 47:	files, err := NonTestGoFiles(root)"
+internal/censuswalk/censuswalk.go,141,func,underRootSkip,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+internal/censuswalk/censuswalk.go,164,func,goCommand,KEEP(tests),"10 test refs only, e.g. 160:	cmd := goCommand(root, ""list"", ""-e"", ""-json=ImportPath,"
+internal/censuswalk/censuswalk.go,184,func,ListPackages,KEEP(tests),"6 test refs only, e.g. 252:	linked, err := ListPackages(root, true, ""."", ""./cmd/..."
+internal/censuswalk/censuswalk.go,233,func,ModulePath,KEEP(tests),"9 test refs only, e.g. 198:	module, err := ModulePath(root)"
+internal/censuswalk/censuswalk.go,255,func,ToolchainUncovered,KEEP(tests),"6 test refs only, e.g. 82:	uncovered, roots, err := ToolchainUncovered(root)"
+internal/installpath/releasedir.go,71,func,ResetReleaseDirForTest,KEEP(wired),"1 non-test refs, e.g. 33:func resetReleaseDirForTest() { installpath.ResetReleaseD"
+internal/updaterbootstrap/bootstrap.go,78,func,DataDirFor,KEEP(wired),"4 non-test refs, e.g. 15:// hold CLI (internal/holdcli.DataDirFor) and the attende"
+internal/updaterbootstrap/bootstrap.go,83,func,DBFileFor,KEEP(wired),"3 non-test refs, e.g. 37:// DBFileFor is the bot database the same resolver points"
+internal/updaterjob/states.go,128,func,AllStates,KEEP(tests),"6 test refs only, e.g. 59:	if got := AllStates(); !reflect.DeepEqual(got, wantOrder"
+internal/updaterwire/paths.go,49,func,SocketPathFor,KEEP(tests),"7 test refs only, e.g. 21:	got, err := SocketPathFor(inst)"
+internal/updaterwire/wire.go,64,func,Verbs,KEEP(tests),"16 test refs only, e.g. 471:	""Verbs"":            true, // the fixed verb list"
+internal/updaterwire/wireserver/server.go,208,func,Listener.Path,KEEP(wired),"957 non-test refs, e.g. 68:		cfg.DBPath = os.Args[1]"
+internal/updaterworker/orphans.go,133,func,QuarantineInterruptedFetches,KEEP(tests),"4 test refs only, e.g. 70:	if moved, err := QuarantineInterruptedFetches(root, r.da"
+internal/updaterworker/releasefixture/releasefixture.go,36,func,SSHKeygen,KEEP(tests),test-support package; reachable via tests only
+internal/updaterworker/releasefixture/releasefixture.go,46,func,KeygenEnv,KEEP(tests),test-support package; reachable via tests only
+internal/updaterworker/releasefixture/releasefixture.go,51,func,RunKeygen,KEEP(tests),test-support package; reachable via tests only
+internal/updaterworker/releasefixture/releasefixture.go,69,func,NewSigner,KEEP(tests),test-support package; reachable via tests only
+internal/updaterworker/releasefixture/releasefixture.go,81,func,Signer.Fingerprint,KEEP(tests),test-support package; reachable via tests only
+internal/updaterworker/releasefixture/releasefixture.go,92,func,Signer.Sign,KEEP(tests),test-support package; reachable via tests only
+internal/updaterworker/releasefixture/releasefixture.go,106,func,WriteAllowedSigners,KEEP(tests),test-support package; reachable via tests only
+internal/updaterworker/releasefixture/releasefixture.go,123,func,RepoRoot,KEEP(tests),test-support package; reachable via tests only
+internal/updaterworker/releasefixture/releasefixture.go,145,func,WriteFiles,KEEP(tests),test-support package; reachable via tests only
+internal/updaterworker/releasefixture/releasefixture.go,160,func,ReleaseSource,KEEP(tests),test-support package; reachable via tests only
+internal/updaterworker/releasefixture/releasefixture.go,182,func,RunIn,KEEP(tests),test-support package; reachable via tests only
+internal/updaterworker/releasefixture/releasefixture.go,231,func,Build,KEEP(tests),test-support package; reachable via tests only
+internal/updaterworker/releasefixture/releasefixture.go,280,func,InjectSelfEntry,KEEP(tests),test-support package; reachable via tests only
+kernel/adherence.go,134,func,inFirst5m,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/armed.go,37,func,ArmedEntryPx,KEEP(tests),"9 test refs only, e.g. 259:	if px := ArmedEntryPx(sc, 0, 0.25); px != 29657.64 {"
+kernel/bar_horizon.go,147,func,resetBarHorizonMemo,KEEP(tests),"5 test refs only, e.g. 134:	t.Cleanup(func() { barHorizonScanCap = orig; resetBarHo"
+kernel/boot_integrity.go,195,func,SetTradingRefusedForTest,KEEP(tests),"11 test refs only, e.g. 12:	t.Cleanup(func() { SetTradingRefusedForTest(false, """") }"
+kernel/breakdown_continue.go,52,func,bdMaxPullbackFrac,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/breakdown_continue.go,299,func,BreakdownContinueEntryPx,KEEP(wired),"1 non-test refs, e.g. 61:		return BreakdownContinueEntryPx(sc, tick)"
+kernel/calendar_blackout.go,117,func,T1AdvisoryLines,KEEP(tests),"2 test refs only, e.g. 104:		if adv := T1AdvisoryLines(evs, set); len(adv) != 0 {"
+kernel/class45_feeds_forward.go,214,func,planDocGapDownMessage,KEEP(tests),"2 test refs only, e.g. 88:	if !strings.Contains(planDocGapDownMessage(), ""SHORT-dir"
+kernel/clock_drift.go,126,func,LastClockDrift,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/detector_d1prime.go,73,func,DetectorDeltaDays,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/detector_d1prime.go,199,func,HoldRate,KEEP(wired),"1 non-test refs, e.g. 293:// HoldRateBy returns hold/(hold+break) with n and the e"
+kernel/detector_d1prime.go,235,func,FormatHoldRate,KEEP(tests),"2 test refs only, e.g. 169:	s := FormatHoldRate(eps)"
+kernel/detector_d1prime.go,250,func,ambSuffix,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/detector_d1prime.go,258,func,MeanAbsIncrementOf,KEEP(tests),"1 test refs only, e.g. 107:	delta := MeanAbsIncrementOf(tape.Increments)"
+kernel/engine_analysis.go,50,func,GetFullDecision,KEEP(wired),"6 non-test refs, e.g. 126:	// stamped at data assembly (P7 — GetFullDecisionWithSt"
+kernel/entry_law.go,95,func,ValidatePictureHtfRule,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/fade_permission.go,213,func,hasExclusion,KEEP(tests),"3 test refs only, e.g. 78:	if !hasExclusion(late, ""ib_held"") {"
+kernel/fade_permission.go,215,func,hasUnknown,KEEP(tests),"1 test refs only, e.g. 136:	if !hasUnknown(v, ""t1_news"") {"
+kernel/fade_permission.go,224,func,findExclusion,KEEP(tests),"1 test refs only, e.g. 152:	ex := findExclusion(v, ""or_wide"")"
+kernel/fade_permission.go,235,func,fadeFactsHasField,KEEP(tests),"1 test refs only, e.g. 174:		if fadeFactsHasField(banned) {"
+kernel/follow_plan.go,83,func,FollowIsFinal,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,20,func,FormatContextForAI,KEEP(wired),"1 non-test refs, e.g. 35:	formattedData := FormatContextForAI(ctx, pb.lang)"
+kernel/formatter.go,34,func,FormatContextDataOnly,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,39,func,formatContextData,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,107,func,formatHeaderZH,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,113,func,formatAccountZH,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,135,func,formatTradingStatsZH,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,197,func,formatRecentTradesZH,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,232,func,formatCurrentPositionsZH,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,275,func,formatCandidateCoinsZH,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,324,func,formatKlineDataZH,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,365,func,getOIInterpretationZH,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,380,func,formatHeaderEN,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,386,func,formatAccountEN,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,408,func,formatTradingStatsEN,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,471,func,formatRecentTradesEN,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,505,func,formatCurrentPositionsEN,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,546,func,formatCandidateCoinsEN,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,591,func,formatKlineDataEN,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/formatter.go,635,func,getOIInterpretationEN,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/level_stats_calc.go,119,func,GradeOutcomeBuckets,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/levels_assemble.go,22,func,BuildKeyLevelsBlock,KEEP(wired),"2 non-test refs, e.g. 430:			klBlock = BuildKeyLevelsBlockOpts(ctx.TraderID, snaps"
+kernel/levels_assemble.go,205,func,AssembleScoredLevelsFullMinGrade,KEEP(wired),"1 non-test refs, e.g. 414:// The read itself uses the price that AssembleScoredLev"
+kernel/levels_assemble.go,319,func,HTFDetectionReport.TFsWithLevels,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/levels_assemble.go,335,func,DetectHTFLevelsReport,KEEP(tests),"4 test refs only, e.g. 189:	levels, report := DetectHTFLevelsReport(fetchFor(""1d"", "
+kernel/levels_assemble.go,347,func,DetectHTFLevelsExport,KEEP(wired),"1 non-test refs, e.g. 105:	levels, rep := kernel.DetectHTFLevelsExport(fetch, kern"
+kernel/levels_role.go,134,func,touchCount,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/levels_score.go,306,func,IsTier1Kind,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/levels_score.go,655,func,ScoreLevelsMinGrade,KEEP(wired),"4 non-test refs, e.g. 195:	scored, _ = ScoreLevelsMinGradeFullSeats(all, price, dA"
+kernel/levels_score.go,666,func,ScoreLevelsMinGradeFull,KEEP(wired),"4 non-test refs, e.g. 195:	scored, _ = ScoreLevelsMinGradeFullSeats(all, price, dA"
+kernel/map_candidates.go,371,func,RenderIdentityMapBlock,KEEP(wired),"1 non-test refs, e.g. 608:		mb := RenderIdentityMapBlockContract(candidates, in.Pr"
+kernel/no_trade_band.go,172,func,LiveNoTradeWindows,KEEP(tests),"6 test refs only, e.g. 126:	if n := len(LiveNoTradeWindows(got)); n != 0 {"
+kernel/picture_htf.go,182,func,SweepReclaim4H,KEEP(tests),"3 test refs only, e.g. 240:func TestSweepReclaim4HSupportRejection(t *testing.T) {"
+kernel/plan_doc.go,547,func,ParsePlanDocCappedWithMinRR,KEEP(tests),"8 test refs only, e.g. 23:// and ParsePlanDocCappedWithMinRR (the planner write sit"
+kernel/plan_doc.go,619,func,ValidatePlanDoc,KEEP(wired),"19 non-test refs, e.g. 15:// write loop and in the shadow A/B verdict — never in Va"
+kernel/plan_doc.go,1149,func,ValidatePlanDocWithFacts,KEEP(wired),"5 non-test refs, e.g. 259:			Site:       ""plan_doc.go FlipLineBeyondPrice / DeathL"
+kernel/plan_doc.go,1430,func,StampMachineGrades,KEEP(tests),"3 test refs only, e.g. 58:// T2 golden — StampMachineGrades covers the FULL pool (p"
+kernel/plan_doc.go,1461,func,CarryMachineGrades,KEEP(tests),"4 test refs only, e.g. 81:func TestT2CarryMachineGradesTolerance(t *testing.T) {"
+kernel/plan_lifecycle.go,63,func,PlanIsDead,KEEP(wired),"5 non-test refs, e.g. 29://   - touch, displacement (BD_MIN_DISP_ATR), plan death "
+kernel/plan_lifecycle.go,382,func,PlanDeathOrFlipSince,KEEP(wired),"1 non-test refs, e.g. 629:	killer, fired, skipped := kernel.PlanDeathOrFlipSinceFr"
+kernel/plan_lifecycle.go,412,func,PlanDeathOrFlipSinceFresh,KEEP(wired),"1 non-test refs, e.g. 629:	killer, fired, skipped := kernel.PlanDeathOrFlipSinceFr"
+kernel/plan_lifecycle.go,423,func,PlanDeathOrFlipSinceFreshHold,KEEP(wired),"1 non-test refs, e.g. 629:	killer, fired, skipped := kernel.PlanDeathOrFlipSinceFr"
+kernel/planner_prompt.go,808,func,plannerOutputContract,KEEP(wired),"1 non-test refs, e.g. 356:		if err := ValidatePromptContracts(plannerOutputContrac"
+kernel/prompt_builder.go,20,func,NewPromptBuilder,KEEP(tests),"12 test refs only, e.g. 11:	t.Run(""NewPromptBuilder"", func(t *testing.T) {"
+kernel/prompt_builder.go,25,func,PromptBuilder.BuildSystemPrompt,KEEP(wired),"9 non-test refs, e.g. 548:	systemPrompt := engine.BuildSystemPrompt(ctx.Account.To"
+kernel/prompt_builder.go,33,func,PromptBuilder.BuildUserPrompt,KEEP(wired),"6 non-test refs, e.g. 117:		// before BuildUserPrompt/the AI — so the AI could nev"
+kernel/prompt_builder.go,46,func,PromptBuilder.buildSystemPromptZH,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/prompt_builder.go,125,func,PromptBuilder.getDecisionRequirementsZH,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/prompt_builder.go,181,func,PromptBuilder.buildSystemPromptEN,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/prompt_builder.go,260,func,PromptBuilder.getDecisionRequirementsEN,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/prompt_builder.go,317,func,FormatDecisionExample,KEEP(tests),"4 test refs only, e.g. 336:// TestFormatDecisionExample 测试决策示例格式化"
+kernel/prompt_builder.go,334,func,ValidateDecisionFormat,KEEP(tests),"12 test refs only, e.g. 143:// TestValidateDecisionFormat 测试决策格式验证"
+kernel/regime_baseline.go,52,func,RVBaselineFrom5m,KEEP(wired),"8 non-test refs, e.g. 31:	// RVBaselineFrom5m(min5Long, 20, 5) over about SEVEN co"
+kernel/risk_limits.go,88,func,RiskLimits.Classify,KEEP(wired),"38 non-test refs, e.g. 309:// ClassifyCitation resolves the executor's cited_scenar"
+kernel/risk_limits.go,197,func,ClearDailyForceFlat,KEEP(tests),"9 test refs only, e.g. 57:	ClearDailyForceFlat(""trader-same"")"
+kernel/risk_limits.go,469,func,ClampStageAContracts,KEEP(tests),"4 test refs only, e.g. 21:				if want := ClampStageAContracts(map[bool]int{true: pe"
+kernel/scenario_facts.go,16,func,MarkConsumedScenarios,KEEP(wired),"1 non-test refs, e.g. 2858:	return kernel.MarkConsumedScenarios(d, consumed)"
+kernel/scenario_facts.go,38,func,pricesInText,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/scenario_facts.go,235,func,DistanceTicks,KEEP(wired),"4 non-test refs, e.g. 74://	contracts = floor( riskDollars / (stopDistanceTicks * "
+kernel/schema.go,36,func,BilingualFieldDef.GetName,KEEP(wired),"23 non-test refs, e.g. 1205:// GetName gets trader name"
+kernel/schema.go,44,func,BilingualFieldDef.GetFormula,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/schema.go,52,func,BilingualFieldDef.GetDesc,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/schema.go,232,func,BilingualRuleDef.GetDesc,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/schema.go,240,func,BilingualRuleDef.GetReason,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/session_calendar.go,292,func,SessionEarlyCloseCT,KEEP(wired),"3 non-test refs, e.g. 238:	if early, ok := SessionEarlyCloseCTForKey(sessionDayKey"
+kernel/structure.go,130,func,SimpleATR14,KEEP(wired),"6 non-test refs, e.g. 36:// s1SimpleATR14 is the verbatim port of S1's simpleATR14"
+kernel/touch_telemetry.go,89,func,ResolvedTouchBandPoints,KEEP(wired),"1 non-test refs, e.g. 23:	// stats shape; measurement consumers use kernel.Resolve"
+kernel/tz.go,36,func,NowCT,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/void_scope.go,105,func,VoidScopeOf,KEEP(tests),"7 test refs only, e.g. 236:	scope := VoidScopeOf(tape, time.UnixMilli(now))"
+kernel/void_scope.go,122,func,ResolveVoidScopeOf,KEEP(tests),"4 test refs only, e.g. 66:	sc := kernel.ResolveVoidScopeOf(bars, time.Now())"
+kernel/weekly_knobs.go,98,func,WeeklyCounterMode,KEEP(tests),"2 test refs only, e.g. 145:	if WeeklyCounterMode() != ""warn"" {"
+kernel/weekly_knobs.go,110,func,WeeklyInvalidationTFDefault,KEEP(tests),"1 test refs only, e.g. 153:	if WeeklyInvalidationTFDefault() != ""1h"" {"
+kernel/weekly_prompt.go,372,func,ApplyWeeklyDOA,KEEP(wired),"1 non-test refs, e.g. 342:// them. The pure helpers (ApplyWeeklyDOA / WeeklyInvali"
+kernel/weekly_prompt.go,392,func,WeeklyInvalidationBasisTF,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+kernel/weekly_prompt.go,406,func,WeeklyInvalidationCrossed,KEEP(wired),"1 non-test refs, e.g. 342:// them. The pure helpers (ApplyWeeklyDOA / WeeklyInvali"
+kernel/weekly_prompt.go,513,func,WeeklyCounterClauses,KEEP(tests),"5 test refs only, e.g. 78:	clauses := WeeklyCounterClauses(""bull"", ""high"", ""short"","
+kernel/weekly_prompt.go,546,func,WeeklyDrawAlignTag,KEEP(wired),"1 non-test refs, e.g. 474:// row. The kernel.WeeklyDrawAlignTag helper stays for t"
+logger/logger.go,115,func,Shutdown,KEEP(wired),"5 non-test refs, e.g. 699:	logger.Info(""📴 Shutdown signal received, closing system"
+logger/logger.go,127,func,WithFields,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+logger/logger.go,132,func,WithField,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+logger/logger.go,137,func,Debug,KEEP(wired),"37 non-test refs, e.g. 1388:// DebugPlaceTestTrade places a deterministic 1-contrac"
+logger/logger.go,145,func,Warn,KEEP(wired),"1033 non-test refs, e.g. 84:	closeResearch := researchsnapshot.Start(cfg.DBPath+"".res"
+logger/logger.go,161,func,Error,KEEP(wired),"3978 non-test refs, e.g. 79:				logger.Errorf(""Failed to create data directory: %v"", "
+logger/logger.go,169,func,Fatal,KEEP(wired),"28 non-test refs, e.g. 60:		logger.Fatalf(""❌ Failed to initialize encryption servic"
+logger/logger.go,177,func,Panic,KEEP(wired),"9 non-test refs, e.g. 52:	return []logrus.Level{logrus.WarnLevel, logrus.ErrorLeve"
+logger/logger.go,181,func,Panicf,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+manager/trader_manager.go,82,func,TraderManager.GetTraderIDs,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+manager/trader_manager.go,94,func,TraderManager.StartAll,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+manager/trader_manager.go,125,func,TraderManager.GetComparisonData,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+market/api_client.go,38,func,APIClient.GetExchangeInfo,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+market/api_client.go,59,func,APIClient.GetKlines,KEEP(wired),"2 non-test refs, e.g. 16:// GetKlinesRange fetches K-line series within specified "
+market/api_client.go,103,func,parseKline,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+market/api_client.go,126,func,APIClient.GetCurrentPrice,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+market/bar_resolver.go,285,func,StampAligned,KEEP(tests),"3 test refs only, e.g. 260:func TestStampAlignedCatchesOffsetSeries(t *testing.T) {"
+market/data.go,792,func,parseFloat,KEEP(wired),"25 non-test refs, e.g. 47:	idrBalance := parseFloat(result.Balance[""idr""])"
+market/data_freshness.go,43,func,DefaultFreshnessConfig,KEEP(wired),"1 non-test refs, e.g. 245:	// with timeframe-aware thresholds — market.DefaultFres"
+market/data_freshness.go,73,func,IsFresh,KEEP(tests),"4 test refs only, e.g. 246:func TestUIBootLineIsFreshByRevEvenWhenTheBundleIsOlder("
+market/data_freshness.go,89,func,IsDriftSuspicious,KEEP(tests),"3 test refs only, e.g. 33:func TestIsDriftSuspicious(t *testing.T) {"
+market/data_freshness.go,112,func,CheckDataHealth,KEEP(tests),"3 test refs only, e.g. 63:func TestCheckDataHealth(t *testing.T) {"
+market/data_freshness.go,149,func,IsRTH,KEEP(tests),"3 test refs only, e.g. 138:func TestIsRTH(t *testing.T) {"
+market/data_indicators.go,228,func,ExportCalculateDonchian,KEEP(tests),"4 test refs only, e.g. 514:	upper, lower := ExportCalculateDonchian(klines, 5)"
+market/data_indicators.go,233,func,ExportCalculateBoxData,KEEP(tests),"1 test refs only, e.g. 571:	box := ExportCalculateBoxData(klines, 100.0)"
+market/decimal_safe.go,29,func,PriceToTicks,KEEP(tests),"19 test refs only, e.g. 8:// TestPriceToTicks verifies round-trip conversion for rea"
+market/decimal_safe.go,38,func,TicksToPrice,KEEP(tests),"4 test refs only, e.g. 30:			back := TicksToPrice(got, tick)"
+market/decimal_safe.go,46,func,SafeAdd,KEEP(tests),"10 test refs only, e.g. 131:// TestSafeAdd_NoDrift — proves repeated SafeAdd never d"
+market/decimal_safe.go,54,func,SafeSubtract,KEEP(tests),"4 test refs only, e.g. 169:// TestSafeSubtract_NoDrift — same shape as SafeAdd, but"
+market/decimal_safe.go,64,func,SafeMultiply,KEEP(tests),"6 test refs only, e.g. 179:// TestSafeMultiply_Ticks — ""entry + 12 ticks"" style ops"
+market/decimal_safe.go,82,func,PositionSize,KEEP(wired),"78 non-test refs, e.g. 278:		""PositionSizeLimit"": {"
+market/futures_symbol.go,171,func,isQuarterlyMonth,KEEP(wired),"1 non-test refs, e.g. 404:func isQuarterlyMonthStore(b byte) bool {"
+market/historical.go,17,func,GetKlinesRange,KEEP(tests),"1 test refs only, e.g. 26:	""market/historical.go:binanceFuturesKlinesURL"": ""GetKlin"
+market/timeframe.go,26,func,NormalizeTimeframe,KEEP(wired),"1 non-test refs, e.g. 19:	normTF, err := NormalizeTimeframe(timeframe)"
+market/timeframe.go,38,func,TFDuration,KEEP(wired),"11 non-test refs, e.g. 62:	if ms, ok := TFDurationMs(tf); ok {"
+market/timeframe.go,47,func,MustNormalizeTimeframe,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+market/timeframe.go,56,func,SupportedTimeframes,KEEP(wired),"8 non-test refs, e.g. 561:// handleGetSupportedTimeframes returns the single sourc"
+mcp/client.go,237,func,classifyAIError,KEEP(wired),"5 non-test refs, e.g. 461:	record.ErrorClass = classifyAIError(err)"
+mcp/client.go,261,func,httpStatusFrom,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/client.go,765,func,ApplyMaxTokens,KEEP(tests),"4 test refs only, e.g. 8:// F1a (LONDON-FORENSICS 2026-08-28) — ApplyMaxTokens over"
+mcp/logger.go,16,func,noopLogger.Debugf,KEEP(wired),"26 non-test refs, e.g. 149:func Debugf(format string, args ...interface{}) {"
+mcp/logger.go,17,func,noopLogger.Infof,KEEP(wired),"1330 non-test refs, e.g. 84:	closeResearch := researchsnapshot.Start(cfg.DBPath+"".res"
+mcp/logger.go,18,func,noopLogger.Warnf,KEEP(wired),"746 non-test refs, e.g. 84:	closeResearch := researchsnapshot.Start(cfg.DBPath+"".res"
+mcp/logger.go,19,func,noopLogger.Errorf,KEEP(wired),"2380 non-test refs, e.g. 79:				logger.Errorf(""Failed to create data directory: %v"", "
+mcp/logger.go,22,func,NewNoopLogger,KEEP(tests),"4 test refs only, e.g. 10:	logger := mcp.NewNoopLogger()"
+mcp/options.go,20,func,WithLogger,KEEP(wired),"2 non-test refs, e.g. 151://	client := mcp.NewClient(mcp.WithLogger(customLogger))"
+mcp/options.go,74,func,WithRetryWaitBase,KEEP(tests),"3 test refs only, e.g. 395:		WithRetryWaitBase(time.Hour),"
+mcp/options.go,89,func,WithMaxTokens,KEEP(wired),"2 non-test refs, e.g. 138:// WithMaxTokens sets maximum token count"
+mcp/options.go,102,func,WithMaxContext,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/options.go,124,func,WithAPIKey,KEEP(tests),"28 test refs only, e.g. 306:		WithAPIKey(""sk-test-key""),"
+mcp/options.go,152,func,WithUseFullURL,KEEP(tests),"3 test refs only, e.g. 299:				WithUseFullURL(tt.useFullURL),"
+mcp/options.go,167,func,WithDeepSeekConfig,KEEP(wired),"1 non-test refs, e.g. 158://	    mcp.WithDeepSeekConfig(""sk-xxx""),"
+mcp/options.go,181,func,WithQwenConfig,KEEP(wired),"1 non-test refs, e.g. 22:	// Default Qwen configuration (used by WithQwenConfig co"
+mcp/options.go,195,func,WithMiniMaxConfig,KEEP(wired),"1 non-test refs, e.g. 26:	// Default MiniMax configuration (used by WithMiniMaxCon"
+mcp/request.go,75,func,NewMessage,KEEP(wired),"6 non-test refs, e.g. 179:			sent, err := bot.Send(tgbotapi.NewMessage(chatID, ""⏳"""
+mcp/request.go,99,func,NewAssistantMessage,KEEP(wired),"1 non-test refs, e.g. 87:		b.messages = append(b.messages, NewAssistantMessage(con"
+mcp/request_builder.go,43,func,RequestBuilder.WithModel,KEEP(wired),"11 non-test refs, e.g. 112:		mcp.WithModel(DefaultClaw402Model),"
+mcp/request_builder.go,49,func,RequestBuilder.WithStream,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/request_builder.go,67,func,RequestBuilder.WithUserPrompt,KEEP(tests),"18 test refs only, e.g. 20:		WithUserPrompt(""Hello"")."
+mcp/request_builder.go,75,func,RequestBuilder.AddSystemMessage,KEEP(tests),"2 test refs only, e.g. 58:		AddSystemMessage(""You are helpful"")."
+mcp/request_builder.go,80,func,RequestBuilder.AddUserMessage,KEEP(tests),"5 test refs only, e.g. 59:		AddUserMessage(""What is Go?"")."
+mcp/request_builder.go,85,func,RequestBuilder.AddAssistantMessage,KEEP(tests),"2 test refs only, e.g. 60:		AddAssistantMessage(""Go is a programming language"")."
+mcp/request_builder.go,93,func,RequestBuilder.AddMessage,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/request_builder.go,101,func,RequestBuilder.AddMessages,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/request_builder.go,113,func,RequestBuilder.ClearMessages,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/request_builder.go,124,func,RequestBuilder.WithTemperature,KEEP(wired),"4 non-test refs, e.g. 37:		mcp.WithTemperature(1.0), // Kimi K2.5 only allows temp"
+mcp/request_builder.go,139,func,RequestBuilder.WithMaxTokens,KEEP(wired),"3 non-test refs, e.g. 84:// WithMaxTokens sets maximum token count"
+mcp/request_builder.go,148,func,RequestBuilder.WithTopP,KEEP(tests),"2 test refs only, e.g. 126:func TestRequestBuilder_WithTopP(t *testing.T) {"
+mcp/request_builder.go,157,func,RequestBuilder.WithFrequencyPenalty,KEEP(tests),"1 test refs only, e.g. 144:		WithFrequencyPenalty(0.5)."
+mcp/request_builder.go,166,func,RequestBuilder.WithPresencePenalty,KEEP(tests),"1 test refs only, e.g. 145:		WithPresencePenalty(0.6)."
+mcp/request_builder.go,175,func,RequestBuilder.WithStopSequences,KEEP(tests),"2 test refs only, e.g. 157:func TestRequestBuilder_WithStopSequences(t *testing.T) "
+mcp/request_builder.go,181,func,RequestBuilder.AddStopSequence,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/request_builder.go,199,func,RequestBuilder.AddFunction,KEEP(tests),"3 test refs only, e.g. 210:func TestRequestBuilder_AddFunction(t *testing.T) {"
+mcp/request_builder.go,264,func,RequestBuilder.MustBuild,KEEP(tests),"20 test refs only, e.g. 62:		MustBuild()"
+mcp/request_builder.go,277,func,ForChat,KEEP(tests),"6 test refs only, e.g. 240:func TestRequestBuilder_ForChat(t *testing.T) {"
+mcp/request_builder.go,289,func,ForCodeGeneration,KEEP(tests),"4 test refs only, e.g. 262:func TestRequestBuilder_ForCodeGeneration(t *testing.T) "
+mcp/request_builder.go,303,func,ForCreativeWriting,KEEP(tests),"5 test refs only, e.g. 276:func TestRequestBuilder_ForCreativeWriting(t *testing.T)"
+mcp/payment/claw402.go,104,func,NewClaw402Client,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/payment/x402.go,554,func,X402Call,KEEP(wired),"2 non-test refs, e.g. 173:	return X402CallStream(c.Client, c.signPayment, ""Claw402"
+mcp/provider/claude.go,48,func,NewClaudeClient,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/provider/deepseek.go,24,func,NewDeepSeekClient,KEEP(tests),"7 test refs only, e.g. 12:	client := NewDeepSeekClientWithOptions("
+mcp/provider/gemini.go,27,func,NewGeminiClient,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/provider/grok.go,27,func,NewGrokClient,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/provider/kimi.go,27,func,NewKimiClient,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/provider/minimax.go,27,func,NewMiniMaxClient,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/provider/openai.go,27,func,NewOpenAIClient,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+mcp/provider/qwen.go,29,func,NewQwenClient,KEEP(tests),"3 test refs only, e.g. 50:	client := NewQwenClientWithOptions("
+provider/alpaca/kline.go,57,func,NewClientWithKeys,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/base_coin.go,10,func,CoinankClient.ListCoin,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/base_coin.go,33,func,CoinankClient.ListSymbols,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/coinank_http.go,41,func,NewCoinankClient,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/coinank_http.go,46,func,CoinankClient.Get,KEEP(wired),"2356 non-test refs, e.g. 53:	cfg := config.Get()"
+provider/coinank/coinank_http.go,70,func,CoinankClient.Post,KEEP(wired),"125 non-test refs, e.g. 89:		dbType = store.DBTypePostgres"
+provider/coinank/instrument_agg_rank.go,11,func,CoinankClient.VisualScreener,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/instrument_agg_rank.go,30,func,CoinankClient.OiRank,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/instrument_agg_rank.go,51,func,CoinankClient.LongShortRank,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/instrument_agg_rank.go,72,func,CoinankClient.LiquidationRank,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/instrument_agg_rank.go,93,func,CoinankClient.PriceRank,KEEP(wired),"58 non-test refs, e.g. 478:	if ctx.PriceRankingData != nil {"
+provider/coinank/instrument_agg_rank.go,114,func,CoinankClient.VolumeRank,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/instrument_agg_rank.go,134,func,CoinankClient.rankParam,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/instruments.go,10,func,CoinankClient.GetLastPrice,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/instruments.go,32,func,CoinankClient.GetCoinMarketCap,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/kline.go,11,func,CoinankClient.Kline,KEEP(wired),"840 non-test refs, e.g. 31:func PlannerFreshTape(bars1m []market.Kline, read, publis"
+provider/coinank/liquidation.go,11,func,CoinankClient.LiquidationExchangeStatistics,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/liquidation.go,30,func,CoinankClient.LiquidationCoinAggHistory,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/liquidation.go,53,func,CoinankClient.LiquidationHistory,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/liquidation.go,77,func,CoinankClient.LiquidationOrders,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/net_positions.go,11,func,CoinankClient.NetPositions,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/open_interest.go,11,func,CoinankClient.OpenInterestAll,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/open_interest.go,30,func,CoinankClient.OpenInterestChartV2,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/open_interest.go,58,func,CoinankClient.OpenInterestSymbolChart,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/open_interest.go,85,func,CoinankClient.OpenInterestKline,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/open_interest.go,112,func,CoinankClient.OpenInterestAggKline,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/open_interest.go,138,func,CoinankClient.TickersTopOIByEx,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/open_interest.go,157,func,CoinankClient.InstrumentsOiVsMc,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/coinank_api/base_coin.go,11,func,BaseCoinSymbols,KEEP(tests),"6 test refs only, e.g. 9:func TestBaseCoinSymbolsNoArgs(t *testing.T) {"
+provider/coinank/coinank_api/depth_ws.go,19,func,DepthWsConn,KEEP(tests),"1 test refs only, e.g. 14:	ws, err := DepthWsConn(ctx)"
+provider/coinank/coinank_api/depth_ws.go,32,func,DepthWs.Subscribe,KEEP(wired),"126 non-test refs, e.g. 108:	if age, anyTF, ok := FreshestSubscribedAge(md, nowMs); "
+provider/coinank/coinank_api/depth_ws.go,50,func,DepthWs.UnSubscribe,KEEP(wired),"2 non-test refs, e.g. 55:// UnSubscribe unsubscribe kline"
+provider/coinank/coinank_api/depth_ws.go,68,func,DepthWs.Close,KEEP(wired),"1952 non-test refs, e.g. 104:	defer st.Close()"
+provider/coinank/coinank_api/depth_ws.go,72,func,depth_ws,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/coinank_api/depth_ws.go,86,func,depth_read,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/coinank_api/kline_ws.go,23,func,WsConn,KEEP(wired),"2 non-test refs, e.g. 18:// DepthWsConn connect ws , read data from DepthV3Ch"
+provider/coinank/coinank_api/kline_ws.go,38,func,KlineWs.Subscribe,KEEP(wired),"125 non-test refs, e.g. 108:	if age, anyTF, ok := FreshestSubscribedAge(md, nowMs); "
+provider/coinank/coinank_api/kline_ws.go,56,func,KlineWs.UnSubscribe,KEEP(wired),"2 non-test refs, e.g. 49:// UnSubscribe unsubscribe depth"
+provider/coinank/coinank_api/kline_ws.go,74,func,KlineWs.Close,KEEP(wired),"1951 non-test refs, e.g. 104:	defer st.Close()"
+provider/coinank/coinank_api/kline_ws.go,78,func,ws,KEEP(wired),"2540 non-test refs, e.g. 130:	// the 37 wrong recorded-PnL rows (originals preserved;"
+provider/coinank/coinank_api/kline_ws.go,92,func,read,KEEP(wired),"4045 non-test refs, e.g. 39:	// (logger.Init reads no environment variable, so config"
+provider/coinank/coinank_api/kline_ws.go,105,func,handleResponse,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/coinank_api/kline_ws.go,154,func,toInt64,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/coinank/coinank_api/kline_ws.go,159,func,toFloat64,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/databento/client.go,47,func,DefaultClient,KEEP(wired),"9 non-test refs, e.g. 74:	// Use http.DefaultClient for the request"
+provider/databento/client.go,69,func,Client.SetAPIKey,KEEP(wired),"27 non-test refs, e.g. 391:				client.SetAPIKey(apiKey, model.CustomAPIURL, model.C"
+provider/databento/mock_server.go,33,func,NewMockServer,KEEP(tests),"7 test refs only, e.g. 21:// against a captured-shape NDJSON fixture served by NewM"
+provider/databento/mock_server.go,49,func,serveFixture,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/hyperliquid/coins.go,221,func,CoinProvider.ForceRefresh,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/hyperliquid/kline.go,64,func,NewTestnetClient,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/hyperliquid/kline.go,190,func,Client.GetMeta,KEEP(tests),"2 test refs only, e.g. 133:func TestGetMeta(t *testing.T) {"
+provider/hyperliquid/kline.go,244,func,NormalizeCoin,KEEP(tests),"3 test refs only, e.g. 153:func TestNormalizeCoin(t *testing.T) {"
+provider/hyperliquid/kline.go,357,func,IsStockPerp,KEEP(tests),"4 test refs only, e.g. 147:		if IsStockPerp(asset.Name) {"
+provider/ninjatrader/bar_live_sink.go,174,func,LiveSinkDrops,KEEP(tests),"4 test refs only, e.g. 79:	before := LiveSinkDrops()"
+provider/ninjatrader/bar_persist.go,211,func,rollPersistCounters,KEEP(tests),"1 test refs only, e.g. 94:	rollPersistCounters()"
+provider/ninjatrader/history_rerequest.go,108,func,TCPServer.markFeedConnectedForTest,KEEP(tests),"3 test refs only, e.g. 48:	s.markFeedConnectedForTest(true)"
+provider/ninjatrader/tcp_client_mock.go,89,func,MockTCPClient.IsConnected,KEEP(wired),"7 non-test refs, e.g. 1252:// IsConnected reports whether the NT8 C# AddOn's TCP s"
+provider/ninjatrader/tcp_client_mock.go,97,func,MockTCPClient.SignalsReceived,KEEP(tests),"2 test refs only, e.g. 143:	case got := <-client.SignalsReceived():"
+provider/ninjatrader/tcp_client_mock.go,101,func,MockTCPClient.SendFill,KEEP(wired),"2 non-test refs, e.g. 33://     guard-reject path sends account """" (SendFillFrame'"
+provider/ninjatrader/tcp_client_mock.go,112,func,MockTCPClient.SendAck,KEEP(tests),"1 test refs only, e.g. 174:// The pattern mirrors SendFill / SendAck in tcp_client_"
+provider/ninjatrader/tcp_client_mock.go,128,func,MockTCPClient.sendFrameForTest,KEEP(tests),"1 test refs only, e.g. 178:	return client.sendFrameForTest(frameType, payload)"
+provider/ninjatrader/tcp_server.go,896,func,TCPServer.currentBarsSubscribe,KEEP(tests),"2 test refs only, e.g. 12:// frame whose content equals the pre-P5 single payload ("
+provider/ninjatrader/tcp_server.go,1636,func,TCPServer.captureBarTruthReplay,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/nofxos/client.go,37,func,DefaultClient,KEEP(wired),"8 non-test refs, e.g. 74:	// Use http.DefaultClient for the request"
+provider/nofxos/client.go,152,func,ExtractAuthKey,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/nofxos/coin.go,107,func,FormatQuantDataForAI,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/nofxos/coin.go,118,func,formatQuantDataZH,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/nofxos/coin.go,168,func,formatQuantDataEN,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+provider/twelvedata/kline.go,88,func,NewClientWithKey,KEEP(wired),"2 non-test refs, e.g. 56:// NewClientWithKeys creates a new Alpaca client with pro"
+provider/twelvedata/kline.go,148,func,Client.GetQuote,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+researchsnapshot/recorder.go,52,func,NewRecorder,KEEP(wired),"1 non-test refs, e.g. 104:	r := NewRecorderWithInfo(a, 128, warnEmit, emit)"
+safe/go.go,51,func,Must,KEEP(wired),"118 non-test refs, e.g. 58:	verdictSHA40Re  = regexp.MustCompile(`^[0-9a-f]{40}$`)"
+store/attribution.go,42,func,PlanLinkState.String,KEEP(wired),"1851 non-test refs, e.g. 56:	// Initialize encryption service BEFORE database (so Enc"
+store/attribution.go,55,func,ClassifyPlanLink,KEEP(tests),"3 test refs only, e.g. 51:		if got := ClassifyPlanLink(c.planID); got != c.want {"
+store/attribution.go,68,func,IsPlanLinked,KEEP(tests),"3 test refs only, e.g. 55:	if IsPlanLinked(PlanUnresolvable) || IsPlanLinked("""") {"
+store/attribution.go,72,func,StampUnresolvableLineage,KEEP(tests),"1 test refs only, e.g. 73:	StampUnresolvableLineage(row) // what reconcile must cal"
+store/bar_contract_key.go,106,func,BarsKeyHasContract,KEEP(tests),"5 test refs only, e.g. 29:	if !store.BarsKeyHasContract() {"
+store/bar_history.go,549,func,RetentionCutoffMs,KEEP(tests),"1 test refs only, e.g. 119:	n, err := st.PruneOlderThan(RetentionCutoffMs(time.Now("
+store/bar_source.go,158,func,IsReadableSource,KEEP(tests),"3 test refs only, e.g. 88:	if IsReadableSource(rows[0].Source) {"
+store/bar_source.go,171,func,IsBacktestReadable,KEEP(tests),"1 test refs only, e.g. 85:	if !IsBacktestReadable(rows[0].Source) {"
+store/class47_counters.go,41,func,WakeCounterCount,KEEP(tests),"4 test refs only, e.g. 233:	if got := store.WakeCounterCount(st, tid, date, ""NY"", s"
+store/continuous.go,37,func,BuildContinuous,KEEP(wired),"1 non-test refs, e.g. 166:	// by BuildContinuous with an explicit per-seam basis —"
+store/death_reread_counters.go,27,func,DeathRereadCount,KEEP(tests),"2 test refs only, e.g. 225:	if n := store.DeathRereadCount(st, at.id, td, ""NY""); n "
+store/driver.go,41,func,NewDBDriver,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+store/driver.go,65,func,NewDBDriverFromEnv,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+store/driver.go,172,func,openSQLite,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+store/driver.go,210,func,openPostgres,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+store/driver.go,235,func,getEnv,KEEP(wired),"28 non-test refs, e.g. 220:	cfg.TradingMode = getEnvOrDefault(""TRADING_MODE"", ""cryp"
+store/driver.go,244,func,convertQuery,KEEP(wired),"1 non-test refs, e.g. 686:	return convertQuery(query, s.DBType())"
+store/driver.go,270,func,boolDefault,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+store/gorm.go,17,func,DB,KEEP(wired),"1171 non-test refs, e.g. 68:		cfg.DBPath = os.Args[1]"
+store/gorm.go,123,func,ForUser,KEEP(wired),"14 non-test refs, e.g. 1171:	if owned, err := at.store.OwnerLevel().ListActiveForUs"
+store/gorm.go,130,func,ForTrader,KEEP(wired),"91 non-test refs, e.g. 779:	f, err := at.store.Order().LatestFillForTrader(at.id)"
+store/gorm.go,137,func,OpenPositions,KEEP(wired),"40 non-test refs, e.g. 538:			// sources from GetOpenPositions), and MAE/MFE + adhe"
+store/gorm.go,144,func,ClosedPositions,KEEP(wired),"26 non-test refs, e.g. 546:	rows, err := at.store.Position().GetClosedPositions(at."
+store/gorm.go,151,func,OrderByCreatedDesc,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+store/gorm.go,158,func,OrderByUpdatedDesc,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+store/gorm.go,165,func,Paginate,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+store/immediate_tx.go,44,func,SetImmediateTxBusyTimeoutForTest,KEEP(tests),"2 test refs only, e.g. 24:	store.SetImmediateTxBusyTimeoutForTest(120) // 5 tries ≈"
+store/immediate_tx.go,47,func,ResetImmediateTxBusyTimeoutForTest,KEEP(tests),"2 test refs only, e.g. 25:	defer store.ResetImmediateTxBusyTimeoutForTest()"
+store/maintenance_hold.go,82,func,resetMaintenanceHoldCacheForTest,KEEP(tests),"1 test refs only, e.g. 83:	resetMaintenanceHoldCacheForTest()"
+store/one_setup.go,409,func,FollowNet,KEEP(wired),"2 non-test refs, e.g. 155:	FollowNet10         *float64 // pts at the 10th closed "
+store/position.go,51,func,getPriceDecimalPlaces,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+store/position.go,64,func,formatDuration,KEEP(wired),"1 non-test refs, e.g. 324:			t.HoldDuration = formatDurationMs(durationMs)"
+store/position_builder.go,208,func,quantitiesMatch,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+store/post_loss_counter.go,45,func,PostLossReArmCount,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+store/repair_counters.go,54,func,RepairOutcomeSummary,KEEP(tests),"1 test refs only, e.g. 42:	if s := store.RepairOutcomeSummary(st2); s != ""ok=1 cont"
+store/store.go,139,func,NewFromDB,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+store/store.go,685,func,Store.q,KEEP(wired),"7883 non-test refs, e.g. 76:	if cfg.DBType == ""sqlite"" {"
+store/strategy.go,404,func,isQuarterlyMonthStore,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+store/strategy.go,1612,func,wakeBoolPtr,KEEP(tests),"4 test refs only, e.g. 33:		WakeOn15mZone:            wakeBoolPtr(true),"
+store/strategy.go,1618,func,IntPtr,KEEP(tests),"68 test refs only, e.g. 49:		ConsecutiveLossHalt: store.IntPtr(2), ReentryCooldownMi"
+store/zerob_counters.go,67,func,ArmRefusalCount,KEEP(wired),"2 non-test refs, e.g. 15:// ShadowedArmRefusalCount returns the running count (boo"
+store/sqlitedriver/sqlitedriver.go,68,func,Backend,KEEP(wired),"15 non-test refs, e.g. 80:	sb.WriteString(""## CODE ENFORCED (Backend validation, ca"
+telegram/session/memory.go,58,func,Memory.Reset,KEEP(wired),"154 non-test refs, e.g. 68:// ResetReleaseDirForTest lets a test vary the environmen"
+telemetry/experience.go,78,func,GetInstallationID,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/experience.go,87,func,SetEnabled,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/experience.go,163,func,TrackStartup,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/far_arms.go,37,func,FarArmCounts,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/gate_blocks.go,57,func,IncBreakdownGapNoted,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/gate_blocks.go,141,func,resetGateBlocksForTest,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/planner_wave.go,17,func,RepairRegressionCount,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/research_snapshot.go,22,func,ResearchSnapshotDrops,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/research_snapshot.go,25,func,ResearchSnapshotRows,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/shadow_conditions.go,16,func,ShadowedArmRefusalCount,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/weekly.go,35,func,IncWeeklyCounter,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/weekly.go,42,func,IncWeeklyCounterBlock,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/weekly.go,49,func,IncWeeklyCounterResize,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/weekly.go,61,func,WeeklyCounterSnapshot,EXCLUDED(DS-104 counters),telemetry pkg
+telemetry/weekly.go,72,func,ResetWeeklyCounters,EXCLUDED(DS-104 counters),telemetry pkg
+trader/accepted_risk_hook.go,152,func,isCancelInFlight,KEEP(tests),"2 test refs only, e.g. 186:		if !isCancelInFlight(s) {"
+trader/armed_executor.go,2391,func,AutoTrader.armGateVerdict,KEEP(wired),"10 non-test refs, e.g. 278:			Site:       ""trader/auto_trader_planner.go write-time"
+trader/auto_trader_clock.go,268,func,timeReachedCT,KEEP(tests),"4 test refs only, e.g. 15:// (timeReachedCT(now, ""13:00"")) stayed true from 13:00 C"
+trader/auto_trader_clock.go,312,func,effectiveEODFlatCT,KEEP(tests),"5 test refs only, e.g. 99:	eff := effectiveEODFlatCT(reg, key, ny.FlatCT)"
+trader/auto_trader_decision.go,496,func,AutoTrader.recordPositionChange,KEEP(tests),"2 test refs only, e.g. 47:	w.at.recordPositionChange(""sig-open"", ""MNQ"", ""LONG"", ""op"
+trader/auto_trader_grid.go,212,func,AutoTrader.updateDailyPnL,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/auto_trader_orders.go,279,func,AutoTrader.reconcileBeforeOpenNT,KEEP(wired),"4 non-test refs, e.g. 11:// and of reconcileBeforeOpenNT reading a held short as f"
+trader/auto_trader_orders.go,790,func,isBootIntegrityGatedAction,KEEP(tests),"2 test refs only, e.g. 35:		if isBootIntegrityGatedAction(act) {"
+trader/auto_trader_planner.go,187,func,AutoTrader.maybeRunSessionReads,KEEP(wired),"3 non-test refs, e.g. 100:	fired := at.maybeRunSessionReadsAt(now)"
+trader/auto_trader_planner.go,648,func,AutoTrader.flipHoldAnchor,KEEP(tests),"4 test refs only, e.g. 171:	if h := at.flipHoldAnchor(row); h.Source != kernel.Flip"
+trader/auto_trader_planner.go,1588,func,AutoTrader.runPlannerReadCore,KEEP(tests),"49 test refs only, e.g. 19:		{""trader/auto_trader_planner.go"", ""runPlannerReadCoreOb"
+trader/auto_trader_planner.go,1594,func,AutoTrader.runPlannerReadCoreWithTrigger,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/auto_trader_planner.go,1602,func,AutoTrader.runPlannerReadCoreWithFacts,KEEP(tests),"32 test refs only, e.g. 14:// real attempt loop (runPlannerReadCoreWithFactsGrades) "
+trader/auto_trader_planner.go,1875,func,repairUnparseableLine,KEEP(tests),"2 test refs only, e.g. 22:	line := repairUnparseableLine(raw, reason, errors.New(""p"
+trader/auto_trader_planner.go,2035,func,AutoTrader.runPlannerReadCoreWithFactsGrades,KEEP(tests),"32 test refs only, e.g. 14:// real attempt loop (runPlannerReadCoreWithFactsGrades) "
+trader/auto_trader_planner.go,2039,func,AutoTrader.runPlannerReadCoreWithFactsGradesClock,KEEP(tests),"22 test refs only, e.g. 64:	ver, lc, err := at.runPlannerReadCoreWithFactsGradesCloc"
+trader/auto_trader_planner.go,2849,func,AutoTrader.demoteConsumedScenarios,KEEP(wired),"1 non-test refs, e.g. 421:	// demoteConsumedScenarios BEFORE validation, so reject"
+trader/auto_trader_planner.go,2910,func,AutoTrader.assemblePlannerInput,KEEP(wired),"5 non-test refs, e.g. 4:// assemblePlannerInputWithCtx's detection feed at the res"
+trader/auto_trader_risk.go,331,func,getSideFromAction,KEEP(wired),"5 non-test refs, e.g. 379:		Side:            getSideFromAction(orderAction),"
+trader/auto_trader_session.go,31,func,AutoTrader.sessionEntryBlocked,KEEP(wired),"5 non-test refs, e.g. 28:// sessionEntryBlocked. An arm could be placed at 12:15 C"
+trader/auto_trader_session.go,35,func,AutoTrader.sessionEntryBlockedAt,KEEP(tests),"4 test refs only, e.g. 64:			if _, blocked := at.sessionEntryBlockedAt(cand); block"
+trader/auto_trader_weekly.go,439,func,AutoTrader.weeklyScenarioGradeAt,KEEP(tests),"5 test refs only, e.g. 99:	// The production key derivation, verbatim from weeklySc"
+trader/bars_store_depth.go,76,func,BarsWithStoreDepth,KEEP(wired),"3 non-test refs, e.g. 18:// (BarsWithStoreDepth). The CHART keeps historical_impor"
+trader/cancel_confirm.go,501,func,ResetCancelReconcileForTest,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/cancel_confirm.go,504,func,LastReconcile,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/cancel_confirm.go,625,func,ResetBookOutageForTest,KEEP(tests),"1 test refs only, e.g. 108:	ResetBookOutageForTest()"
+trader/class33_boot_sweep.go,45,func,ResetBootSweepForTest,KEEP(tests),"3 test refs only, e.g. 15:	ResetBootSweepForTest()"
+trader/class47_wake_cadence.go,191,func,WakeCadenceDecision.Reason,KEEP(wired),"888 non-test refs, e.g. 267:			Account: p.Account, BuildID: p.BuildID, Reason: p.Rea"
+trader/effective_settings.go,522,func,envIntSet,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/entry_barrier.go,63,func,EntryBarrier.Hold,KEEP(wired),"493 non-test refs, e.g. 59:	EffectHold        Effect = ""hold""         // the ONLY ho"
+trader/entry_barrier.go,134,func,EntryBarrier.resetForTest,KEEP(wired),"1 non-test refs, e.g. 23:func resetMaintenanceBarrierForTest() { maintenanceBarrie"
+trader/exit_mechs_suspend.go,75,func,ResetExitMechSuspendNoticeForTest,KEEP(tests),"2 test refs only, e.g. 173:	ResetExitMechSuspendNoticeForTest()"
+trader/f12_leg4.go,153,func,OverrideAllowedAt,KEEP(tests),"5 test refs only, e.g. 175:	ok, reason := OverrideAllowedAt(c, ""Sim101"", ""MNQ"", 294"
+trader/grid_regime.go,16,func,classifyRegimeLevel,KEEP(tests),"1 test refs only, e.g. 23:			result := classifyRegimeLevel(tt.bollingerWidth, tt.at"
+trader/grid_regime.go,37,func,getRegimeLeverageLimit,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/grid_regime.go,65,func,getRegimePositionLimit,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/helpers.go,9,func,SafeFloat64,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/helpers.go,37,func,SafeString,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/helpers.go,54,func,SafeInt,KEEP(wired),"79 non-test refs, e.g. 24:		SafeInternalError(c, ""failed to read the stream-cut rec"
+trader/maintenance_gate.go,23,func,resetMaintenanceBarrierForTest,KEEP(tests),"4 test refs only, e.g. 20:	resetMaintenanceBarrierForTest()"
+trader/maintenance_planner.go,25,func,resetPlannerHoldNotedForTest,KEEP(tests),"2 test refs only, e.g. 21:	resetPlannerHoldNotedForTest()"
+trader/position_rebuild.go,42,func,RebuildPositionsFromTrades,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/position_rebuild.go,92,func,determinePositionSide,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/position_rebuild.go,122,func,buildClosedPosition,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/position_snapshot.go,18,func,CreatePositionSnapshot,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/protection_reconciler.go,201,func,UnprotectedFound,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/reaper_snapshot.go,38,func,reaperVerdict.String,KEEP(wired),"1851 non-test refs, e.g. 56:	// Initialize encryption service BEFORE database (so Enc"
+trader/roster_test_seam.go,12,func,NewAutoTraderOnBrokerForTest,KEEP(tests),"3 test refs only, e.g. 23:	atMNQ := trader.NewAutoTraderOnBrokerForTest(""b-nt8-mnq"""
+trader/structural_geometry.go,32,func,ResolveEntryGeometryZone,KEEP(tests),"2 test refs only, e.g. 298:	if idx, why := ResolveEntryGeometryZone(doc, sc); why ="
+trader/structural_geometry.go,43,func,ArmGeometryVerdict,KEEP(wired),"3 non-test refs, e.g. 31:// `ArmGeometryVerdict(doc, sc, cfg.DayPlan.GeometryRefID"
+trader/structural_geometry.go,177,func,nullWidthMapLine,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/structural_geometry.go,242,func,ComposeLevelFadeGeometry,KEEP(wired),"1 non-test refs, e.g. 81:		r := ComposeLevelFadeGeometryWith(in.Doc, in.Scenario, "
+trader/watchdog_fire_wire.go,62,func,WatchdogFireTable,KEEP(tests),"3 test refs only, e.g. 59:func TestWatchdogFireTable(t *testing.T) {"
+trader/hyperliquid/trader_sync.go,15,func,HyperliquidTrader.refreshMetaIfNeeded,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/ninjatrader/bar_persist_wire.go,413,func,resetAfterBackfillHookForTest,KEEP(tests),"2 test refs only, e.g. 13:	resetAfterBackfillHookForTest()"
+trader/ninjatrader/entry_latch.go,54,func,IsEntryLatched,KEEP(tests),"9 test refs only, e.g. 145:				if !IsEntryLatched(err) || !strings.Contains(err.Err"
+trader/ninjatrader/order_guard.go,93,func,orderGuard.admit,KEEP(wired),"185 non-test refs, e.g. 234:// stepHold writes THIS job's hold through the census-ad"
+trader/ninjatrader/tcp_trader.go,427,func,TCPTrader.activeAccountName,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
+trader/ninjatrader/tcp_trader.go,472,func,TCPTrader.feedNowUTC,KEEP(wired),"1 non-test refs, e.g. 57:// tcp_trader.go feedNowUTC), so a skewed local clock can"
+trader/testutil/test_suite.go,25,func,NewTraderTestSuite,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,34,func,TraderTestSuite.Cleanup,EXCLUDED(DS-104 prune-callers),prune/cleanup symbol
+trader/testutil/test_suite.go,42,func,TraderTestSuite.RunAllTests,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,71,func,TraderTestSuite.TestGetBalance,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,104,func,TraderTestSuite.TestGetPositions,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,141,func,TraderTestSuite.TestGetMarketPrice,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,180,func,TraderTestSuite.TestSetLeverage,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,214,func,TraderTestSuite.TestSetMarginMode,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,248,func,TraderTestSuite.TestFormatQuantity,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,292,func,TraderTestSuite.TestCancelAllOrders,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,322,func,TraderTestSuite.TestOpenLong,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,371,func,TraderTestSuite.TestOpenShort,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,420,func,TraderTestSuite.TestCloseLong,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,463,func,TraderTestSuite.TestCloseShort,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,510,func,TraderTestSuite.TestSetStopLoss,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,550,func,TraderTestSuite.TestSetTakeProfit,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,590,func,TraderTestSuite.TestCancelStopOrders,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,616,func,TraderTestSuite.TestCancelStopLossOrders,KEEP(tests),test-support package; reachable via tests only
+trader/testutil/test_suite.go,642,func,TraderTestSuite.TestCancelTakeProfitOrders,KEEP(tests),test-support package; reachable via tests only
+trader/types/interface.go,177,func,NewGridTraderAdapter,KEEP(wired),"4 non-test refs, e.g. 63:		gridTrader = NewGridTraderAdapter(at.trader)"
+trader/types/interface.go,183,func,GridTraderAdapter.PlaceLimitOrder,KEEP(wired),"21 non-test refs, e.g. 416:// PlaceLimitOrder places a limit order for grid trading"
+trader/types/interface.go,217,func,GridTraderAdapter.CancelOrder,KEEP(wired),"73 non-test refs, e.g. 251:				_, err := t.client.NewCancelOrderService()."
+trader/types/interface.go,235,func,GridTraderAdapter.GetOrderBook,KEEP(wired),"16 non-test refs, e.g. 504:// GetOrderBook gets the order book for a symbol"
+wallet/balance_cache.go,61,func,InvalidateBalanceCache,REMOVE-CANDIDATE,zero refs anywhere (non-test+test)
