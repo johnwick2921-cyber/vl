@@ -1533,8 +1533,12 @@ namespace NinjaTrader.NinjaScript.AddOns
                     try { rootSymbol = e.Order.Instrument.MasterInstrument.Name; } catch { }
                     string exitAcct = e.Order.Account != null ? e.Order.Account.Name
                                       : (account != null ? account.Name : "");
+                    // P1-2: name which leg exited so the receipt identity stays distinct.
+                    int closeLeg = 0;
+                    if (orderName.EndsWith("-sl2") || orderName.EndsWith("-tp2")) closeLeg = 2;
+                    else if (orderName.EndsWith("-sl") || orderName.EndsWith("-tp")) closeLeg = 1;
                     SendPositionCloseFrame(signalId, rootSymbol, positionSide,
-                                           e.AverageFillPrice, e.Filled, exitReason ?? "manual", exitAcct);
+                                           e.AverageFillPrice, e.Filled, exitReason ?? "manual", exitAcct, closeLeg);
                     // PHASE 4: drop the account ownership ONLY when that account's
                     // instrument position is FLAT. REVIEW-353: a leg-1 partial TP
                     // fills as an exit, but the runner (leg 2) still holds — the
@@ -1566,9 +1570,34 @@ namespace NinjaTrader.NinjaScript.AddOns
                         if (flat)
                             lock (posAcctLock) { positionAccountBySymbol.Remove(rootSymbol); }
                     }
-                    // Position closed → drop its bracket tracking (auto-breakeven) and
-                    // its A2 identity (echoed on the close frame just sent above).
-                    lock (signalMapLock) { placedBrackets.Remove(signalId); signalIdentity.Remove(signalId); }
+                    // P1-1: clear ONLY the filled leg's references; drop the record
+                    // and the A2 identity only when NO live leg remains. A leg-1 TP
+                    // fill must not untrack the runner (leg 2) — its BE/trail
+                    // would silently vanish.
+                    lock (signalMapLock)
+                    {
+                        PlacedBracket pb;
+                        if (placedBrackets.TryGetValue(signalId, out pb) && pb != null)
+                        {
+                            bool isLeg2 = orderName.EndsWith("-sl2") || orderName.EndsWith("-tp2");
+                            bool isLeg1 = orderName.EndsWith("-sl") || orderName.EndsWith("-tp");
+                            if (isLeg2) { pb.SlOrder2 = null; pb.TpOrder2 = null; pb.Leg2Qty = 0; }
+                            else if (isLeg1) { pb.SlOrder = null; pb.TpOrder = null; pb.Leg1Qty = 0; }
+                            else { pb.SlOrder = null; pb.TpOrder = null; pb.SlOrder2 = null; pb.TpOrder2 = null; pb.Leg1Qty = 0; pb.Leg2Qty = 0; } // manual/flatten: whole position
+
+                            bool live1 = pb.SlOrder != null || pb.TpOrder != null;
+                            bool live2 = pb.SlOrder2 != null || pb.TpOrder2 != null;
+                            if (!live1 && !live2)
+                            {
+                                placedBrackets.Remove(signalId);
+                                signalIdentity.Remove(signalId);
+                            }
+                        }
+                        else
+                        {
+                            signalIdentity.Remove(signalId);
+                        }
+                    }
                 }
                 else if (e.OrderState == OrderState.Rejected)
                 {
@@ -2403,37 +2432,36 @@ namespace NinjaTrader.NinjaScript.AddOns
                     if (pb.TpOrder2 != null) tpLegs.Add(pb.TpOrder2);
                 }
 
+                // P1-1b: skip terminal legs (e.g. leg 1 already filled); error only
+                // when NO selected leg is live.
+                bool anyLive = false;
+                var all = new List<Order>();
                 if (newSl > 0)
                 {
                     foreach (var sl in slLegs)
                     {
-                        OrderState st = sl.OrderState;
-                        if (!IsLiveAtExchange(st))
-                        {
-                            LogWarn("VLTraderTCPClient: modify_bracket refused — stop not changeable (state=" + st + ") for " + signalId);
-                            SendAck("modify_bracket_error");
-                            return;
-                        }
+                        if (!IsLiveAtExchange(sl.OrderState)) continue;
+                        anyLive = true;
                         sl.StopPriceChanged = newSl;
+                        all.Add(sl);
                     }
                 }
                 if (newTp > 0)
                 {
                     foreach (var tp in tpLegs)
                     {
-                        OrderState st = tp.OrderState;
-                        if (!IsLiveAtExchange(st))
-                        {
-                            LogWarn("VLTraderTCPClient: modify_bracket refused — target not changeable (state=" + st + ") for " + signalId);
-                            SendAck("modify_bracket_error");
-                            return;
-                        }
+                        if (!IsLiveAtExchange(tp.OrderState)) continue;
+                        anyLive = true;
                         tp.LimitPriceChanged = newTp;
+                        all.Add(tp);
                     }
                 }
-                var all = new List<Order>();
-                if (newSl > 0) all.AddRange(slLegs);
-                if (newTp > 0) all.AddRange(tpLegs);
+                if (!anyLive)
+                {
+                    LogWarn("VLTraderTCPClient: modify_bracket refused — no live leg for " + signalId);
+                    SendAck("modify_bracket_error");
+                    return;
+                }
                 if (all.Count > 0) ba.Change(all.ToArray());
                 LogInfo("VLTraderTCPClient: modify_bracket → SL=" + newSl + " TP=" + newTp + " leg=" + leg + " for " + signalId + " (in-place Change — OCO preserved)");
                 SendAck("modify_bracket");
@@ -2481,18 +2509,16 @@ namespace NinjaTrader.NinjaScript.AddOns
                 if (leg != 2 && pb.SlOrder != null) stops.Add(pb.SlOrder);
                 if (leg != 1 && pb.SlOrder2 != null) stops.Add(pb.SlOrder2);
 
+                bool anyLive = false;
                 bool moved = false;
                 foreach (var sl in stops)
                 {
-                    if (Math.Abs(sl.StopPrice - newStop) < (pb.TickSize / 2.0))
-                        continue; // this leg is already there
                     OrderState st = sl.OrderState;
                     if (!IsLiveAtExchange(st))
-                    {
-                        LogWarn("VLTraderTCPClient: move_stop refused — stop not changeable (state=" + st + ") for " + signalId);
-                        SendAck("move_stop_error");
-                        return;
-                    }
+                        continue; // P1-1b: skip terminal legs (e.g. leg 1 already filled)
+                    anyLive = true;
+                    if (Math.Abs(sl.StopPrice - newStop) < (pb.TickSize / 2.0))
+                        continue; // this leg is already there
                     // IN-PLACE modification (fix 2026-08-07): move the SAME resting stop's price
                     // via Account.Change — same Order object, same OCO group, NO new order and
                     // NO cancel. The target and the OCO group are NEVER disturbed.
@@ -2508,6 +2534,12 @@ namespace NinjaTrader.NinjaScript.AddOns
                         SendAck("move_stop_error");
                         return;
                     }
+                }
+                if (!anyLive)
+                {
+                    LogWarn("VLTraderTCPClient: move_stop refused — no live stop for " + signalId);
+                    SendAck("move_stop_error");
+                    return;
                 }
                 if (!moved)
                 { LogInfo("VLTraderTCPClient: move_stop no-op (stop already ~" + newStop + ")"); return; }
@@ -2780,7 +2812,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private void SendPositionCloseFrame(string signalId, string symbol,
                                             string positionSide, double exitPrice,
                                             int qty, string exitReason,
-                                            string acctName = "")
+                                            string acctName = "", int leg = 0)
         {
             var payload = new Dictionary<string, object>
             {
@@ -2794,6 +2826,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // has the field). e.Order.Account from the caller; "" → Go keeps today's
                 // in-place-row behavior (the entry row already holds the account).
                 ["account"]       = acctName ?? "",
+                // REVIEW-SPLIT-2 P1-2: which leg exited (1/2/0=whole position).
+                ["leg"]           = leg,
                 ["exit_time"]     = DateTime.UtcNow.ToString("o")
             };
             StampIdentity(payload, signalId); // A2 (G1) — echo trader_id + seq (entry identity)
