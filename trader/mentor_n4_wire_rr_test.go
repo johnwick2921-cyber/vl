@@ -56,3 +56,52 @@ func TestMentorWireRRPassesAtOrAboveOneToOne(t *testing.T) {
 		t.Fatalf("the mentor order must route through the limit variant once, got %d", pl.stopLimitCalls)
 	}
 }
+
+// N4's twin for the split (CTO 2026-10-04): the leg-1 TP keeps its R-multiple
+// at the WIRE trigger. Authored 1R (entry 100, stop 90 → leg 1 at 110); the
+// 0.5-pt offset puts the trigger at 100.5, so the true 1:1 from the fill is
+// 100.5 + 10.5 = 111. Mutant: send the authored leg1_tp → 110 (0.905R) → RED.
+func TestMentorWireLeg1TPKeepsOneToOneAtTheTrigger(t *testing.T) {
+	at, _ := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
+	at.id = "n4-wire-leg1"
+	r := store.ArmedOrderDB{
+		ID: 11, TraderID: at.id, PlanID: "2026-09-23:NY", Version: 1,
+		Session: "TEST-N4L", Scenario: "TEST-N4L", Side: "long",
+		EntryPx: 100, StopPx: 90, TargetPx: 125,
+		Origin: store.ArmOriginMentor, ExpiryMs: 90_000, Contracts: store.IntPtr(5),
+		Leg1Qty: store.IntPtr(3), Leg1TP: 110,
+	}
+	d := decideStopEntry("LONG", r.EntryPx, testOffset(), testTick, 99)
+	pl := &fakePlacer{}
+	if got := at.placeOneStopEntry(pl, &fakeLedger{}, r, d, 99, rthInstant(), freeSlot()); got != stopPlaceCommitted {
+		t.Fatalf("outcome = %d, want committed", got)
+	}
+	if len(pl.calls) != 1 {
+		t.Fatalf("calls = %d, want 1", len(pl.calls))
+	}
+	c := pl.calls[0]
+	want := d.Trigger + (d.Trigger - r.StopPx) // 1R measured from the wire trigger
+	if c.leg1Qty != 3 || c.leg1TP != want {
+		t.Fatalf("leg 1 on the wire = (%d, %.2f), want (3, %.2f) — 1:1 from the trigger %.2f", c.leg1Qty, c.leg1TP, want, d.Trigger)
+	}
+}
+
+// mentorWireLeg1TP is a pure R-multiple re-base: 1R stays 1R, 2R stays 2R,
+// both sides; degenerate input returns the authored TP.
+func TestMentorWireLeg1TPRebase(t *testing.T) {
+	for _, c := range []struct {
+		name                        string
+		entry, trigger, stop, tp, w float64
+	}{
+		{"long 1R", 100, 100.5, 90, 110, 111},
+		{"long 2R (mode C)", 100, 100.5, 90, 120, 121.5},
+		{"short 1R", 100, 99.5, 110, 90, 89},
+		{"no offset", 100, 100, 90, 110, 110},
+		{"no TP", 100, 100.5, 90, 0, 0},
+		{"loss-side TP left for the wire check", 100, 100.5, 90, 95, 95},
+	} {
+		if got := mentorWireLeg1TP(c.entry, c.trigger, c.stop, c.tp); got != c.w {
+			t.Errorf("%s: mentorWireLeg1TP = %.2f, want %.2f", c.name, got, c.w)
+		}
+	}
+}
