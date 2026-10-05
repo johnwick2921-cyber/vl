@@ -65,11 +65,11 @@ Welcome to the VL documentation! This page helps you find the right documentatio
 
 **Documentation in other languages**
 
+The upstream translated READMEs were removed in the VL rename — the product ships
+one canonical README in English.
+
 | Language | Main README | Status |
 |----------|-------------|--------|
-| 🇨🇳 Chinese (中文) | [README.md](i18n/zh-CN/README.md) | ✅ Complete |
-| 🇷🇺 Russian (Русский) | [README.md](i18n/ru/README.md) | ✅ Complete |
-| 🇺🇦 Ukrainian (Українська) | [README.md](i18n/uk/README.md) | ✅ Complete |
 | 🇬🇧 English | [README.md](../README.md) | ✅ Complete |
 
 ---
