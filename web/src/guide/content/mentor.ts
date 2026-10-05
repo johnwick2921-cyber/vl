@@ -408,7 +408,11 @@ export const mentor: GuideSection = {
           'mentor_reduced_contracts',
         ],
         ['SWING4H', '3', 'mentor_swing4h_contracts'],
-        ['Spent day (§7)', '2', 'mentor_spent_day_contracts'],
+        [
+          'Spent day (§7)',
+          'normal — the runner/target are cut, not the size (15-pt target cap + runner cap 2) [R09]',
+          'mentor_spent_day_contracts',
+        ],
       ],
     },
     {

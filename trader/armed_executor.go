@@ -1964,6 +1964,24 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		}
 		qty = n
 	}
+	// N4 (2026-10-04, DAY-1 #15/#42): the +2-tick wire offset moves the entry
+	// 0.5 pt against the trade (trigger = entry ± offset, stop and target
+	// stay), so a mentor intent that passed the 1:1 floor at the authored
+	// price can land UNDER 1:1 at the wire. Re-check R at the WIRE trigger and
+	// refuse (counted) rather than send a sub-1:1 mentor entry [D1.2 p1
+	// @08:02–08:33: "risk reward phải là 1-1 trong bất kỳ tình huống nào"].
+	if isMentorArmOrigin(r) && r.TargetPx > 0 && r.StopPx > 0 {
+		reward := math.Abs(r.TargetPx - d.Trigger)
+		risk := math.Abs(d.Trigger - r.StopPx)
+		if reward < risk {
+			if armRefusalChanged(&at.armRefusalLast, armKey, "stop_entry:wire_rr_below_1") {
+				shown := at.countStopEntryRefusal(r, "stop_entry:wire_rr_below_1", now)
+				at.logWarnf("📛 armed %s mentor stop-entry REFUSED [guard=wire_rr verdict=%s] %s stop-limit trigger=%.2f stop=%.2f target=%.2f: the 2-tick offset pushes the wire R:R under 1:1 (%.2f < %.2f)%s",
+					r.Scenario, d.Verdict, strings.ToUpper(d.Side), d.Trigger, r.StopPx, r.TargetPx, reward, risk, shown)
+			}
+			return stopPlaceNotSent
+		}
+	}
 	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, r.TargetPx, func(sid string) error {
 		if err := ledger.BeginPlacement(r.ID, sid); err != nil {
 			return err

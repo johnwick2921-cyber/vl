@@ -49,7 +49,8 @@ func TestMentorContractsForSizeTable(t *testing.T) {
 		// confluence sizing — 3, never 10/20.
 		{"twenties cut beats confluence", mentorTierInputs{Setup: "PHL", StopPts: 22, TargetPts: 30, Confluence: true}, mentorSizeChoice{3, "reduced", ""}},
 		{"twenties cut beats big", mentorTierInputs{Setup: "PHL", StopPts: 22, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{3, "reduced", ""}},
-		{"spent day beats twenties", mentorTierInputs{Setup: "PLH", StopPts: 23, TargetPts: 46, SpentDay: true}, mentorSizeChoice{2, "spent_day", ""}},
+		{"spent day no longer overrides twenties", mentorTierInputs{Setup: "PLH", StopPts: 23, TargetPts: 46, SpentDay: true}, mentorSizeChoice{3, "reduced", ""}},
+		{"spent day sizes base normally", mentorTierInputs{Setup: "PLH", StopPts: 11.25, TargetPts: 22.5, SpentDay: true}, mentorSizeChoice{5, "base", ""}},
 		{"SWING4H", mentorTierInputs{Setup: "SWING4H", StopPts: 12, TargetPts: 24}, mentorSizeChoice{3, "swing4h", ""}},
 		{"hard cap", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{20, "big", ""}},
 		// S9 (D5.2 p2 @05:21–05:57, S15 ruling): a strong day cuts the SWING
@@ -62,13 +63,13 @@ func TestMentorContractsForSizeTable(t *testing.T) {
 		{"ISB at old extreme → 3", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, ISBOldExtreme: true}, mentorSizeChoice{3, "isb_old_extreme", ""}},
 		{"old extreme beats confluence", mentorTierInputs{Setup: "ISB", StopPts: 11.25, Confluence: true, ISBOldExtreme: true}, mentorSizeChoice{3, "isb_old_extreme", ""}},
 		{"strong day does not beat old extreme (swing-only)", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, StrongDay: true, ISBOldExtreme: true}, mentorSizeChoice{3, "isb_old_extreme", ""}},
-		{"spent day beats old extreme", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, SpentDay: true, ISBOldExtreme: true}, mentorSizeChoice{2, "spent_day", ""}},
+		{"spent day no longer overrides old extreme", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, SpentDay: true, ISBOldExtreme: true}, mentorSizeChoice{3, "isb_old_extreme", ""}},
 		// ISB in a range → reduce size, tier 3 (written rule 3, D4.1 p1
 		// @08:05/09:40) — same rank as the old-extreme reduction.
 		{"ISB in range → 3", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, ISBInRange: true}, mentorSizeChoice{3, "isb_in_range", ""}},
 		{"in range beats confluence", mentorTierInputs{Setup: "ISB", StopPts: 11.25, Confluence: true, ISBInRange: true}, mentorSizeChoice{3, "isb_in_range", ""}},
 		{"strong day does not beat in range (swing-only)", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, StrongDay: true, ISBInRange: true}, mentorSizeChoice{3, "isb_in_range", ""}},
-		{"spent day beats in range", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, SpentDay: true, ISBInRange: true}, mentorSizeChoice{2, "spent_day", ""}},
+		{"spent day no longer overrides in range", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, SpentDay: true, ISBInRange: true}, mentorSizeChoice{3, "isb_in_range", ""}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -85,8 +86,9 @@ func TestMentorContractsForSizeTable(t *testing.T) {
 
 // TestMentorExtraForCopiesSpentDay — A5 (CTO 1791041016051): the spent-day
 // flag rides the intent (stamped by the evaluator) and must reach the size
-// table. Dropping the SpentDay copy here would silently kill the spent_day
-// tier (2) and the R9 15-pt stop cap in production.
+// table (which, per R09, no longer sizes the whole trade to 2 — the flag feeds
+// the 15-pt stop cap and the runner cap). Dropping the SpentDay copy here
+// would silently kill the R9 15-pt stop cap in production.
 func TestMentorExtraForCopiesSpentDay(t *testing.T) {
 	old := mentorConfluenceForIntent
 	mentorConfluenceForIntent = func(in mentor.Intent) bool { return true }

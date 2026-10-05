@@ -45,11 +45,13 @@ func TestMentorISBSizeCutsAtSizingCallSite(t *testing.T) {
 		})
 	}
 
-	// precedence stays as the table states: spent day (2) wins; the cut beats confluence.
+	// R09: a spent day no longer wins over the ISB cuts — it sizes normally
+	// (the old-extreme flag still cuts to 3); the spent-day cut rides the
+	// 15-pt target cap and the runner cap instead.
 	spent := isbIntent(mentor.FlagISBAtOldExtreme)
 	spent.SpentDay = true
-	if got, _ := at.mentorSizeFor(spent, mentorExtraFor(spent, false)); got.Tier != "spent_day" {
-		t.Fatalf("spent day must still win: %+v", got)
+	if got, _ := at.mentorSizeFor(spent, mentorExtraFor(spent, false)); got.Tier != "isb_old_extreme" || got.Contracts != 3 {
+		t.Fatalf("R09: spent day must NOT win over the old-extreme cut: %+v", got)
 	}
 	conf := isbIntent(mentor.FlagISBInRange)
 	extra := mentorExtraFor(conf, false)
