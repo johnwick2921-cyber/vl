@@ -325,6 +325,33 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 	return out
 }
 
+// latchBoxes pins the first box per role per trading day (D4.1-22):
+// BoxesBuild re-picks the MOST extreme confirmed swing every tick, so a later
+// higher high would rebuild the FTGH with a new key and drop the first box.
+// The course says no — "không vẽ cái box khác… y nguyên đó tới cuối ngày"
+// [D4.1 p2 @02:39–02:57]: the first box drawn for a role stands to the end of
+// the day. Only the touch count keeps advancing (recomputed from the full
+// history against the LATCHED edges), so a latched box never freezes its
+// touches and never changes its key.
+func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []Box {
+	if e.State.LatchedBoxes == nil {
+		e.State.LatchedBoxes = map[string]Box{}
+	}
+	tfBars := barsForTF(bars, cfg.TF)
+	out := make([]Box, 0, len(fresh))
+	for _, b := range fresh {
+		role := string(b.Kind)
+		if latched, ok := e.State.LatchedBoxes[role]; ok {
+			latched.Touches = countBoxTouches(tfBars, latched, latched.FormedAt, cfg)
+			out = append(out, latched)
+			continue
+		}
+		e.State.LatchedBoxes[role] = b
+		out = append(out, b)
+	}
+	return out
+}
+
 // boxFromPair builds the zone from the extreme and its nearest same-role
 // swing: FTGH: [nearest high's upper body edge, extreme's highest wick];
 // FTGL: [extreme's lowest wick, nearest low's lower body edge].
