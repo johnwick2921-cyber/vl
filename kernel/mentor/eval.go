@@ -1407,6 +1407,19 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				if !BoxReturnReject(b, bars[r.RefBar]) {
 					continue
 				}
+				// D4.3-04: no box return against the 5m trend — "từ trái qua
+				// phải TREND ĐANG TĂNG. [Vẽ] FAILURE TO GO HIGHER SAO ĐÁNH?"
+				// [D4.3 @08:53–09:06]. The box's CURRENT role (D14 flip) sets
+				// the side: effective FTGH → short (refused in an uptrend),
+				// effective FTGL → long (refused in a downtrend).
+				if e.State.Trigger.Dir == SideLong && boxEffectiveKind(b) == FTGH {
+					e.refuse("box_against_5m_trend")
+					continue
+				}
+				if e.State.Trigger.Dir == SideShort && boxEffectiveKind(b) == FTGL {
+					e.refuse("box_against_5m_trend")
+					continue
+				}
 				// C5: name the trigger-side drop that boxEntryIntent also gates.
 				// D14 "Uno Reverse": the trigger side is the box's CURRENT role —
 				// a flipped FTGH checks the LONG side.
