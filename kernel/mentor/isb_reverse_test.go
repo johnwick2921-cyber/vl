@@ -3,6 +3,7 @@ package mentor
 import (
 	"testing"
 
+	"vl/kernel"
 	"vl/market"
 )
 
@@ -39,18 +40,23 @@ func TestReverseISBAtEMA9DefaultIsOn(t *testing.T) {
 
 func TestReverseISBAtEMA9LongAndShort(t *testing.T) {
 	cfg := reverseCfg()
+	// The kernel-side entry offset is the knob buffer MINUS the stop-entry wire
+	// offset the executor re-adds (StopEntryOffsetTicks × MNQ tick), so the WIRE
+	// lands at exactly the extreme ± the buffer (CTO ruling, trade #627/#628).
+	wireOffset := float64(kernel.StopEntryOffsetTicks()) * market.FuturesTickSize("MNQ")
+	entryPts := cfg.ISBBufferPts - wireOffset
 	// uptrend, ISB points SHORT (red candle 1), EMA 9 inside the ISB range
 	redPrev := market.Kline{Open: 106, Close: 100, High: 106.5, Low: 99.5}
 	cur := market.Kline{Open: 102, Close: 104, High: 104.5, Low: 99.5}
 	in, ok, reason := ReverseISBAtEMA9(redPrev, cur, 101, SideLong, cfg)
-	if !ok || in.Side != SideLong || in.Price != 104.5 || in.Stop != 99.5-cfg.ISBBufferPts {
-		t.Fatalf("uptrend reverse: %+v ok=%v reason=%q — want long buy stop at the ISB high, stop other side minus buffer [D5.4]", in, ok, reason)
+	if !ok || in.Side != SideLong || in.Price != 104.5+entryPts || in.Stop != 99.5-cfg.ISBBufferPts {
+		t.Fatalf("uptrend reverse: %+v ok=%v reason=%q — want long buy stop at the ISB high + buffer (wire), stop other side minus buffer [D5.4, D1.4 p1 @ 22:26–23:26]", in, ok, reason)
 	}
 	// downtrend, ISB points LONG (green candle 1)
 	greenPrev := market.Kline{Open: 100, Close: 106, High: 106.5, Low: 99.5}
 	in, ok, _ = ReverseISBAtEMA9(greenPrev, cur, 101, SideShort, cfg)
-	if !ok || in.Side != SideShort || in.Price != 99.5 || in.Stop != 104.5+cfg.ISBBufferPts {
-		t.Fatalf("downtrend reverse: %+v ok=%v — want short sell stop at the ISB low [D5.4]", in, ok)
+	if !ok || in.Side != SideShort || in.Price != 99.5-entryPts || in.Stop != 104.5+cfg.ISBBufferPts {
+		t.Fatalf("downtrend reverse: %+v ok=%v — want short sell stop at the ISB low − buffer (wire) [D5.4, D1.4 p1 @ 22:26–23:26]", in, ok)
 	}
 }
 
