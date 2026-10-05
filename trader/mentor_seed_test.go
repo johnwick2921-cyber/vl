@@ -49,48 +49,83 @@ func TestMentorSeedAtStart(t *testing.T) {
 	})
 
 	t.Run("seeded store passes", func(t *testing.T) {
-		st := mentorSeedStore(t)
-		now := time.Now().UnixMilli()
-		bh := store.NewBarHistoryStore(st.GormDB())
-		rows1m := mentorSeedBars1m(now)
-		if err := bh.InsertBars(rows1m); err != nil {
-			t.Fatalf("InsertBars: %v", err)
-		}
-		// the exact closed 1m count the seed must report (the fixture seam
-		// returns 9999 — a mutant that fails to wire the seed's depths keeps
-		// that value and must go RED here).
-		n1mClosed := 0
-		for _, r := range rows1m {
-			if r.OpenTimeMs+60_000 <= now {
-				n1mClosed++
-			}
-		}
-		at := &AutoTrader{
-			id: "t-seed-warm",
-			config: AutoTraderConfig{
-				StrategyConfig: &store.StrategyConfig{
-					RiskControl: store.RiskControlConfig{MentorMode: true},
-				},
-			},
-			store: st,
-		}
-		wireMentorPlacementSeams(t)
-		at.mentorSeedAtStart()
+		// FLAKE-SEED-CLOCK: the seed reads the wall clock. Pin it at fixed
+		// mid-session instants through the mentorNowSource seam so the result
+		// is deterministic across the midnight CT rollover. Three instants:
+		// 00:30 (the current 4h bucket started 21:00 yesterday, so the
+		// calendar-day depth is empty without the fixture's midnight bar),
+		// 12:00 (plain mid-session) and 16:30 (right before the 17:00 Globex
+		// flip).
+		for _, tc := range mentorSeedClockInstants(t) {
+			t.Run(tc.name, func(t *testing.T) {
+				st := mentorSeedStore(t)
+				now := tc.instant.UnixMilli()
+				mentorNowSource = func() time.Time { return tc.instant }
+				t.Cleanup(func() { mentorNowSource = nil })
+				bh := store.NewBarHistoryStore(st.GormDB())
+				rows1m := mentorSeedBars1m(now)
+				if err := bh.InsertBars(rows1m); err != nil {
+					t.Fatalf("InsertBars: %v", err)
+				}
+				// the exact closed 1m count the seed must report (the fixture seam
+				// returns 9999 — a mutant that fails to wire the seed's depths keeps
+				// that value and must go RED here).
+				n1mClosed := 0
+				for _, r := range rows1m {
+					if r.OpenTimeMs+60_000 <= now {
+						n1mClosed++
+					}
+				}
+				at := &AutoTrader{
+					id: "t-seed-warm",
+					config: AutoTraderConfig{
+						StrategyConfig: &store.StrategyConfig{
+							RiskControl: store.RiskControlConfig{MentorMode: true},
+						},
+					},
+					store: st,
+				}
+				wireMentorPlacementSeams(t)
+				at.mentorSeedAtStart()
 
-		if ms := at.mentorEval.SourcesMissing(); len(ms) != 0 {
-			t.Fatalf("a seeded store must leave no missing source: %v", ms)
-		}
-		if missing := strings.Join(at.mentorSourcesMissing(), ", "); textHas(missing, "history:") {
-			t.Fatalf("a seeded store must not refuse on history depth: %q", missing)
-		}
-		// the seam serves the seed's own depths (not the test fallback 9999)
-		if d, ok := mentorSourceDepth("1m EMA34"); !ok || d != n1mClosed {
-			t.Fatalf("1m EMA34 depth from the seed: %d/%v, want %d/true", d, ok, n1mClosed)
-		}
-		if d, ok := mentorSourceDepth("4h EMA34"); !ok || d < 102 || d > 110 {
-			t.Fatalf("4h EMA34 depth from the seed: %d/%v, want 102..110/true", d, ok)
+				if ms := at.mentorEval.SourcesMissing(); len(ms) != 0 {
+					t.Fatalf("a seeded store must leave no missing source: %v", ms)
+				}
+				if missing := strings.Join(at.mentorSourcesMissing(), ", "); textHas(missing, "history:") {
+					t.Fatalf("a seeded store must not refuse on history depth: %q", missing)
+				}
+				// the seam serves the seed's own depths (not the test fallback 9999)
+				if d, ok := mentorSourceDepth("1m EMA34"); !ok || d != n1mClosed {
+					t.Fatalf("1m EMA34 depth from the seed: %d/%v, want %d/true", d, ok, n1mClosed)
+				}
+				if d, ok := mentorSourceDepth("4h EMA34"); !ok || d < 102 || d > 110 {
+					t.Fatalf("4h EMA34 depth from the seed: %d/%v, want 102..110/true", d, ok)
+				}
+			})
 		}
 	})
+}
+
+// mentorSeedClockInstants is the FLAKE-SEED-CLOCK proof matrix: three fixed
+// mid-session instants on one CT day, pinned through mentorNowSource. The date
+// is FIXED IN THE PAST (the same convention as the other seed fixtures) so the
+// test is deterministic forever — and so the mutant that drops the seam reads
+// the real wall-clock day, finds no fixture bars on that day, and goes RED.
+func mentorSeedClockInstants(t *testing.T) []struct {
+	name    string
+	instant time.Time
+} {
+	t.Helper()
+	ct := kernel.CTLocation()
+	at := func(h, m int) time.Time { return time.Date(2026, time.September, 16, h, m, 0, 0, ct) }
+	return []struct {
+		name    string
+		instant time.Time
+	}{
+		{"00_30_after_midnight", at(0, 30)},
+		{"12_00_midsession", at(12, 0)},
+		{"16_30_before_globex_flip", at(16, 30)},
+	}
 }
 
 // mentorSeedStore builds an in-memory Store with ONLY the bars table (read-only
@@ -173,6 +208,31 @@ func mentorSeedBars1mHours(now int64, hours int64) []store.BarHistoryDB {
 			Source: store.BarSourceLive, OpenTimeMs: extra,
 			O: 29999, H: 30004, L: 29994, C: 30001, V: 1,
 		})
+	}
+	// FLAKE-SEED-CLOCK: the per-source DEPTH seam ("today session" in
+	// SeedDepths) reads the CALENDAR day (dayStartCT, midnight CT) while the
+	// refusal check (seedDepthOf) reads the trading-day key (17:00 CT flip).
+	// In the 00:00–01:00 CT window the current 4h bucket started 21:00 the
+	// day before, so the regular bars stop short of midnight and the depth
+	// seam reports "today session (0/1)" — add one bar at 00:01 CT of the
+	// calendar day so both readers agree at every instant.
+	cal := time.UnixMilli(now).In(kernel.CTLocation())
+	calBar := time.Date(cal.Year(), cal.Month(), cal.Day(), 0, 1, 0, 0, kernel.CTLocation()).UnixMilli()
+	if calBar < now {
+		haveCal := false
+		for _, r := range rows {
+			if r.OpenTimeMs == calBar {
+				haveCal = true
+				break
+			}
+		}
+		if !haveCal {
+			rows = append(rows, store.BarHistoryDB{
+				Symbol: "MNQ", TF: "1m", Contract: "MNQ 12-26",
+				Source: store.BarSourceLive, OpenTimeMs: calBar,
+				O: 29998, H: 30003, L: 29993, C: 30000, V: 1,
+			})
+		}
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].OpenTimeMs < rows[j].OpenTimeMs })
 	return rows
