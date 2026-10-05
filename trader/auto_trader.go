@@ -394,6 +394,16 @@ type AutoTrader struct {
 	// keyed by its entry signal id, registered at the fill callback and driven
 	// by the exit-drive loop (DS-107). Guarded by mentorExitMu.
 	mentorLivePos map[string]*mentorLivePos
+	// mentorFillCh carries REAL mentor fill receipts from the fill callback
+	// (the executor goroutine) to the evaluator (mentorEvalOnce, under
+	// mentorEvalMu) for FU-1: G1/G2 fed from real fills, never a
+	// cross-goroutine evaluator mutation. Bounded; a full channel drops the
+	// receipt (counted).
+	mentorFillCh chan mentorFillReceipt
+	// mentorDeferredFills holds FU-1 receipts whose row fallback needs
+	// State.Levels (R1: the first post-restart Tick has not set them yet).
+	// Only the drain, under mentorEvalMu, touches it.
+	mentorDeferredFills []mentorFillReceipt
 	// mentorFunnel is the N12 visibility counter (read-only): one INFO line per
 	// 15 minutes + on change, session-day scoped (17:00 CT). Never gates a trade.
 	mentorFunnel mentorFunnel
@@ -860,6 +870,7 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		positionFirstSeenTime: make(map[string]int64),
 		positionMentorOwned:   make(map[string]bool),
 		kickCh:                make(chan string, 4),
+		mentorFillCh:          make(chan mentorFillReceipt, 256),
 		monitorWg:             sync.WaitGroup{},
 		peakPnLCache:          make(map[string]float64),
 		peakPnLCacheMutex:     sync.RWMutex{},

@@ -61,10 +61,19 @@ type Limits struct {
 	// leg_budget_full / loss_box_blocked / loss_box_off_day /
 	// orphan_not_location.
 	Refusals map[string]int
+	// Counters is the FU-1 fill-path counter ledger (not drops): a real fill
+	// registered from the armed ROW (record_fill_from_row, after a restart
+	// dropped the in-memory pend), and an empty receipt id that was dropped
+	// before any lookup (record_fill_no_receipt). Surfaced in the funnel
+	// beside Refusals.
+	Counters map[string]int
 
 	dayKey string
 	pend   []*pendOrder
 	open   []*openTrade
+	// filled is the FU-1 receipt dedupe: the entry signal ids whose REAL fill
+	// has already registered (a partial-then-full, or a replay, registers once).
+	filled map[string]bool
 }
 
 // Leg is one G1 leg per side.
@@ -112,6 +121,10 @@ type pendOrder struct {
 	box    bool
 	lo     float64 // box bounds (box)
 	hi     float64
+	// realFill (FU-1): the pend is filled ONLY by RecordFill (the broker's
+	// real fill callback), never by simulate's candle-touch fill. A
+	// never-placed order can then never phantom-fill and spend the budget.
+	realFill bool
 }
 
 type openTrade struct {
@@ -139,6 +152,15 @@ func (l *Limits) refuse(reason string) {
 	l.Refusals[reason]++
 }
 
+// count records a non-drop FU-1 fill-path event (a fill registered from the
+// row, an empty receipt id) in the Counters ledger.
+func (l *Limits) count(reason string) {
+	if l.Counters == nil {
+		l.Counters = map[string]int{}
+	}
+	l.Counters[reason]++
+}
+
 func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels []Level, cfg Config) []Intent {
 	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
 	if l.dayKey != "" && l.dayKey != day {
@@ -149,6 +171,8 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 		l.Places = nil
 		l.pend = nil
 		l.open = nil
+		l.filled = nil  // FU-1: the receipt dedupe dies with the trading day
+		l.Counters = nil // FU-1: the fill-path counters die with the day
 	} else if l.dayKey == "" {
 		l.dayKey = day
 	}
@@ -236,6 +260,7 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 				box:    ref.box,
 				lo:     ref.lo,
 				hi:     ref.hi,
+				realFill: cfg.RealFillOnly, // FU-1: live arms fill by the real fill, never the candle
 			})
 		case PlaceStopLimitEntry:
 			if cfg.LegBudgetEnabled {
@@ -269,6 +294,7 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 				box:    true,
 				lo:     math.Min(in.Price, in.Stop),
 				hi:     math.Max(in.Price, in.Stop),
+				realFill: cfg.RealFillOnly, // FU-1: live arms fill by the real fill, never the candle
 			})
 		default:
 			if in.Action == CancelArm {
@@ -306,29 +332,28 @@ func (l *Limits) resetBreaks(prev, cur market.Kline, cfg Config) {
 func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 	keepP := l.pend[:0]
 	for _, p := range l.pend {
+		if p.realFill {
+			// FU-1: a real-fill pend is filled ONLY by RecordFill (the
+			// broker's real fill callback), never by a candle touching the
+			// entry. A never-placed order can then never phantom-fill and
+			// spend the budget. Expiry still applies (the broker cancels an
+			// unfilled order at the same time).
+			if p.expiry != 0 && now >= p.expiry {
+				continue // expired unfilled — NOT a loss (case b)
+			}
+			if p.expiry == 0 {
+				continue // one-candle rest (mirror of the sim path below)
+			}
+			keepP = append(keepP, p)
+			continue
+		}
 		filled := p.side == SideLong && cur.High >= p.entry ||
 			p.side == SideShort && cur.Low <= p.entry
 		if filled {
 			// Entry touched = filled. A stop-out on the SAME candle is a
 			// loss (the trade existed for the span of the candle) — the
 			// open-trade loop below catches it.
-			l.registerLeg(p.side, p.legExt, levels, p.entry, p.isISB)
-			wave := cur.Low
-			if p.side == SideShort {
-				wave = cur.High
-			}
-			l.open = append(l.open, &openTrade{
-				side:   p.side,
-				stop:   p.stop,
-				target: p.target,
-				anchor: p.anchor,
-				place:  p.place,
-				swing:  p.swing,
-				box:    p.box,
-				lo:     p.lo,
-				hi:     p.hi,
-				wave:   wave, // the fill candle is the entry candle
-			})
+			l.fill(p, cur.Low, cur.High, levels)
 			continue
 		}
 		if p.expiry != 0 && now >= p.expiry {
@@ -369,6 +394,169 @@ func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 		keepO = append(keepO, t)
 	}
 	l.open = keepO
+}
+
+// fill converts a pending order into a FILL: it registers the G1 leg and
+// opens the G2 loss trade. lo/hi seed the B22 wave (the fill candle's
+// low/high); levels feeds registerLeg's old-extreme fallback when the pend
+// carries no leg extreme (nil for a real fill — the pend's legExt wins).
+func (l *Limits) fill(p *pendOrder, lo, hi float64, levels []Level) {
+	l.registerLeg(p.side, p.legExt, levels, p.entry, p.isISB)
+	wave := lo
+	if p.side == SideShort {
+		wave = hi
+	}
+	t := &openTrade{
+		side:   p.side,
+		stop:   p.stop,
+		target: p.target,
+		anchor: p.anchor,
+		place:  p.place,
+		swing:  p.swing,
+		box:    p.box,
+		lo:     p.lo,
+		hi:     p.hi,
+		wave:   wave, // the fill candle is the entry candle
+	}
+	if stopOutOn(t, lo, hi) {
+		// P2-3: the fill candle already crossed the stop (a late drain misses
+		// the same-candle stop-out) — register the G2 loss immediately.
+		l.loss(t)
+		return
+	}
+	l.open = append(l.open, t)
+}
+
+// FillRow is the FU-1 row-fallback evidence (P1-2): when a real fill has no
+// pend (a restart dropped the in-memory pends), the armed ledger ROW still
+// carries the trade. A fill registered from the row must never be dropped.
+type FillRow struct {
+	Side   Side
+	Entry  float64
+	Stop   float64
+	Target float64
+	ISB    bool
+}
+
+// fillRow registers a REAL fill from the armed row (no pend — a restart) the
+// same way fill does, reconstructing the G2 place from the row: an ISB boxes
+// its entry-to-stop band; every other setup keys on the quarter-tick entry.
+// legExt is left 0 so registerLeg's old-extreme fallback resolves it against
+// levels.
+func (l *Limits) fillRow(row *FillRow, lo, hi float64, levels []Level) {
+	isISB := row.ISB
+	anchor := row.Entry
+	place := ""
+	box := isISB
+	var blo, bhi float64
+	if isISB {
+		place = isbBandKey(row.Entry, row.Stop)
+		blo, bhi = math.Min(row.Entry, row.Stop), math.Max(row.Entry, row.Stop)
+	}
+	p := &pendOrder{
+		side:   row.Side,
+		entry:  row.Entry,
+		stop:   row.Stop,
+		target: row.Target,
+		isISB:  isISB,
+		anchor: anchor,
+		place:  place,
+		box:    box,
+		lo:     blo,
+		hi:     bhi,
+		// swing is left 0: without the intent's AnchorKey the B22 swing
+		// departure is unavailable; the wave break still frees the place.
+	}
+	l.fill(p, lo, hi, levels)
+}
+
+// stopOutOn reports whether the fill candle (lo/hi) already crossed the trade's
+// stop — a same-candle stop-out the open-trade loop would otherwise miss when
+// the drain runs a bar late.
+func stopOutOn(t *openTrade, lo, hi float64) bool {
+	return t.side == SideLong && lo <= t.stop ||
+		t.side == SideShort && hi >= t.stop
+}
+
+// takePend removes and returns ONE still-pending order with the given ArmID
+// (FU-1). It is the RecordFill half of dropPend: the real fill consumes the
+// placeholder the placement registered.
+func (l *Limits) takePend(armID string) *pendOrder {
+	if armID == "" {
+		return nil
+	}
+	for i, p := range l.pend {
+		if p.armID == armID {
+			l.pend = append(l.pend[:i], l.pend[i+1:]...)
+			return p
+		}
+	}
+	return nil
+}
+
+// FillOutcome is RecordFill's result (FU-1): whether the receipt was consumed
+// (registered from the pend or the row, deduped, counted, or refused) or
+// deferred (the row fallback needs the evaluator's levels, which the first
+// Tick has not set yet — R1).
+type FillOutcome int
+
+const (
+	// FillConsumed — the receipt is done; do not re-queue it.
+	FillConsumed FillOutcome = iota
+	// FillDefer — the row fallback needs State.Levels, still empty; re-queue
+	// for the next drain (after the first Tick has set the levels).
+	FillDefer
+)
+
+// RecordFill registers a REAL broker fill for a pending mentor entry (FU-1):
+// the trader's fill callback delivers it through the queued drain in
+// mentorEvalOnce, under mentorEvalMu. It is the G1 leg budget + G2 loss box
+// input for a real-fill-only evaluator — the simulated candle-touch fill is
+// NOT consulted for these arms, so a never-placed order can never spend the
+// budget. Idempotent per receipt id (the entry signal id): the first receipt
+// registers the leg and opens the loss trade; a retransmit or a
+// partial-then-full is a no-op. A receipt whose pend is already gone is
+// registered from the armed ROW when one is supplied (a restart dropped the
+// pends — never drop a real fill), else counted, never fabricated. lo/hi seed
+// the B22 wave (the fill candle's low/high); levels feeds the row-fallback's
+// old-extreme resolution.
+func (l *Limits) RecordFill(receiptID, armID string, lo, hi float64, row *FillRow, levels []Level) FillOutcome {
+	if receiptID == "" {
+		l.count("record_fill_no_receipt") // P2-5: empty receipt id, counted
+		return FillConsumed
+	}
+	if l.filled[receiptID] {
+		return FillConsumed // dedupe: one receipt registers once (partial-then-full / replay)
+	}
+	p := l.takePend(armID)
+	if p != nil {
+		l.fill(p, lo, hi, nil)
+		l.markFilled(receiptID)
+		return FillConsumed
+	}
+	if row != nil && row.Entry > 0 {
+		if len(levels) == 0 {
+			// R1: the first post-restart Tick has not set State.Levels yet —
+			// the row fallback's old-extreme resolution would early-return and
+			// the G1 leg would go unspent. Defer for the next drain.
+			return FillDefer
+		}
+		// P1-2: no pend — a restart dropped the in-memory pends. The armed row
+		// reached the broker: register from it, never drop a real fill.
+		l.fillRow(row, lo, hi, levels)
+		l.count("record_fill_from_row")
+		l.markFilled(receiptID)
+		return FillConsumed
+	}
+	l.refuse("record_fill_no_pend")
+	return FillConsumed
+}
+
+func (l *Limits) markFilled(receiptID string) {
+	if l.filled == nil {
+		l.filled = map[string]bool{}
+	}
+	l.filled[receiptID] = true
 }
 
 // registerLeg records a FILL in the side's leg, creating the leg at the
