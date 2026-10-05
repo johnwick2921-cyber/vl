@@ -579,8 +579,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	e.State.Trigger = TriggerTick(e.State.Trigger, barsTF(bars, 5), 5, e.Cfg)
 
 	// §5.4 HTF direction (DS-106, fold item 3): the 4h/1h lines advance with
-	// the same bar history.
-	e.State.HTF = HTFAdvance(e.State.HTF, barsTF(bars, 240), barsTF(bars, 60), e.Cfg)
+	// the same bar history. ITEM 18 (D4.4-03): frozen during the 07:30 CT T1
+	// print — a break made by the print candle never moves a line ("kệ nó").
+	if e.Cfg.HTFFreezeTo == 0 || now < e.Cfg.HTFFreezeFrom || now >= e.Cfg.HTFFreezeTo {
+		e.State.HTF = HTFAdvance(e.State.HTF, barsTF(bars, 240), barsTF(bars, 60), e.Cfg)
+	}
 
 	// §7 day gate (fold item 4): Globex run → per-trading-day latch (L1/L2).
 	dg := DayGate{SpentPts: e.Cfg.DayGateSpentPts, TargetCapPts: e.Cfg.DayGateTargetCapPts}

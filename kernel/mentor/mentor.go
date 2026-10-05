@@ -246,6 +246,15 @@ type Config struct {
 	DayGateSpentPts     float64 // run >= this before the open = spent; default 300 [D5.1 p1 @ 15:57]
 	DayGateTargetCapPts float64 // spent-day target cap; default 15 ("15 điểm bán, 10 điểm bán")
 
+	// HTFFreezeFrom / HTFFreezeTo (item 18, D4.4-03) freeze the 4h/1h trigger
+	// lines during the 07:30 CT T1 print: while `now` is in [From, To) the HTF
+	// advance is SKIPPED, so a break made by the print candle never moves a
+	// line ("kệ nó" — what the print does is ignored [D4.4 p1 @18:13, @22:15]).
+	// Both zero = no freeze (every non-print day). The trader stamps them per
+	// tick from the calendar; the evaluator is pure and just obeys.
+	HTFFreezeFrom int64
+	HTFFreezeTo   int64
+
 	// §8 SWING4H knobs (DS-106): the method defaults. The 5m-zone gate
 	// lives in SwingCfg.Respects5mZone (default false, [C]) and is wired
 	// at the runSwing call site (CTO swing ruling 2026-10-03).

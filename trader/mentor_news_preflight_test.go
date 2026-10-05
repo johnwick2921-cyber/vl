@@ -94,6 +94,23 @@ func countEv(rt *wireRecorder, prefix string) int {
 	return n
 }
 
+// TestMentorHTFFreezeWindow — the D4.4-03 freeze is [printAt, printAt+5m) on a
+// T1 print day, (0,0) otherwise.
+func TestMentorHTFFreezeWindow(t *testing.T) {
+	loc := kernel.CTLocation()
+	now := time.Date(2026, 10, 5, 7, 0, 0, 0, loc)
+	cpi := calendar.Event{Time: time.Date(2026, 10, 5, 7, 30, 0, 0, loc), Impact: calendar.T1, Title: "CPI m/m"}
+	printAt := cpi.Time
+
+	from, to := mentorHTFFreezeWindow([]calendar.Event{cpi}, now)
+	if from != printAt.UnixMilli() || to != printAt.Add(mentorNewsPostWindow).UnixMilli() {
+		t.Fatalf("freeze = [%d,%d), want [%d,%d)", from, to, printAt.UnixMilli(), printAt.Add(mentorNewsPostWindow).UnixMilli())
+	}
+	if from, to := mentorHTFFreezeWindow(nil, now); from != 0 || to != 0 {
+		t.Fatalf("no print day must freeze nothing, got [%d,%d)", from, to)
+	}
+}
+
 // TestMentorPrintPreflightCancelsIntradayFlattensIntradaySwingExempt — the
 // D4.4-08 call-site pin: at 07:20 CT on a T1 CPI print day, the intraday arm is
 // cancelled and the intraday position flattened; the SWING arm and position keep

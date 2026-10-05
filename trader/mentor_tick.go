@@ -224,6 +224,12 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}
+	// ITEM 18 (D4.4-03): freeze the 4h/1h trigger lines during the 07:30 CT T1
+	// print so a break made by the print candle never moves a line ("kệ nó").
+	// Stamped per tick from the calendar; (0,0) on a non-print day.
+	if evs, ok := at.mentorDayEvents(); ok {
+		at.mentorEval.Cfg.HTFFreezeFrom, at.mentorEval.Cfg.HTFFreezeTo = mentorHTFFreezeWindow(evs, mentorClockNow())
+	}
 	emitMs := time.Now().UnixMilli()
 	// The evaluator's clock is the instant the last bar CLOSED: every closedness
 	// test inside Tick then reads the just-closed bar as closed, never as forming
@@ -601,6 +607,18 @@ func mentorNewsHold(events []calendar.Event, now time.Time) (hold bool, why stri
 		return true, fmt.Sprintf("news: %s prints 07:30 CT — no resting order through the print [F11]", title)
 	}
 	return false, ""
+}
+
+// mentorHTFFreezeWindow (item 18, D4.4-03) returns the 4h/1h freeze window on a
+// T1 CPI/PPI/Unemployment print day: [printAt, printAt + post window). While
+// the evaluator's `now` is inside it, the HTF advance is skipped — a break made
+// by the print candle never moves a line. (0,0) on every non-print day.
+func mentorHTFFreezeWindow(events []calendar.Event, now time.Time) (from, to int64) {
+	printAt, _ := mentorNewsPrintAt(events, now)
+	if printAt.IsZero() {
+		return 0, 0
+	}
+	return printAt.UnixMilli(), printAt.Add(mentorNewsPostWindow).UnixMilli()
 }
 
 // mentorNowSource is the clock seam for every mentor time gate (tests).
