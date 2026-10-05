@@ -75,6 +75,13 @@ type State struct {
 	// knock", D1.3 p1 @10:32–11:43). Rebuilt by replaying the touch loop.
 	Visits    map[string]int `json:"visits,omitempty"`
 	VisitsDay string         `json:"visits_day,omitempty"`
+	// VisitCapRefused — B23 visit-cap refusal ONCE per visit (CTO 01:19Z,
+	// DS-105): the PHL/PLH reject path re-reads a capped rejected level every
+	// tick, so the per-tick e.refuse inflated level_visit_cap (12,375 for a
+	// handful of real refusals) and hid real refusals in the funnel line. A
+	// per-level mark makes it fire once; the touch loop clears the mark on
+	// visit departure so a NEW visit re-arms it.
+	VisitCapRefused map[string]bool `json:"visit_cap_refused,omitempty"`
 	// ORB is the §7 step 0 opening-range gate state (drawn at 08:32 CT, escape
 	// latches on the first 1m body close outside). Per-session-day.
 	ORB ORB `json:"orb,omitempty"`
@@ -126,6 +133,9 @@ func UnmarshalState(b []byte) (State, error) {
 	if s.ISBOnly == nil {
 		s.ISBOnly = map[string]bool{}
 	}
+	if s.VisitCapRefused == nil {
+		s.VisitCapRefused = map[string]bool{}
+	}
 	if s.DeletedLevels == nil {
 		s.DeletedLevels = map[string]bool{}
 	}
@@ -159,11 +169,12 @@ type Evaluator struct {
 
 func New(cfg Config) *Evaluator {
 	return &Evaluator{Cfg: cfg, State: State{
-		Touches:       map[string]Touch{},
-		ISBOnly:       map[string]bool{},
-		DeletedLevels: map[string]bool{},
-		ISBArms:       map[string]ISBArm{},
-		BoxRefs:       map[string]int{},
+		Touches:         map[string]Touch{},
+		ISBOnly:         map[string]bool{},
+		VisitCapRefused: map[string]bool{},
+		DeletedLevels:   map[string]bool{},
+		ISBArms:         map[string]ISBArm{},
+		BoxRefs:         map[string]int{},
 	}}
 }
 
@@ -802,11 +813,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 		wasNone := tr.Outcome == TouchNone
 		intents := visitTick(&tr, lvl, bars[len(bars)-2], bars[len(bars)-1], e.Cfg)
-		if !wasNone && tr.Outcome == TouchNone && moving {
-			// visit departure: the touching candle is gone — clear the ISB-only
-			// state scoped to that visit. This is the ONLY reset for a moving
-			// line; drift alone keeps the classification (item 22 fix).
-			delete(e.State.ISBOnly, lvl.Key)
+		if !wasNone && tr.Outcome == TouchNone {
+			// visit departure: the touching candle is gone. Clear the visit-cap
+			// refusal mark for EVERY level (a new visit re-arms the once-per-visit
+			// level_visit_cap), and clear the ISB-only state ONLY for a moving
+			// line (the ONLY reset for a moving line — drift alone keeps the
+			// classification, item 22 fix).
+			delete(e.State.VisitCapRefused, lvl.Key)
+			if moving {
+				delete(e.State.ISBOnly, lvl.Key)
+			}
 		}
 		e.State.Touches[lvl.Key] = tr
 		if e.State.ISBOnly[lvl.Key] {
@@ -1164,9 +1180,18 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				continue
 			}
 			// B23 visit cap ("knock knock", D1.3 p1 @10:32–11:43): the first
-			// LevelMaxVisits visits of the day trade; the rest refuse.
+			// LevelMaxVisits visits of the day trade; the rest refuse. The
+			// refusal counts ONCE per visit (CTO 01:19Z, DS-105): a capped
+			// rejected level is re-read every tick while it sits in TouchReject,
+			// so a bare e.refuse inflated the counter (12,375 refusals for a
+			// handful of capped levels) and hid real refusals in the funnel.
+			// VisitCapRefused marks the level once; the touch loop clears it on
+			// visit departure so a NEW visit re-arms the refusal.
 			if e.Cfg.LevelMaxVisits > 0 && e.State.Visits[lvl.Key] > e.Cfg.LevelMaxVisits {
-				e.refuse("level_visit_cap")
+				if !e.State.VisitCapRefused[lvl.Key] {
+					e.refuse("level_visit_cap")
+					e.State.VisitCapRefused[lvl.Key] = true
+				}
 				continue
 			}
 			// E2 + E4: the EMA34 setup is gated on the loss block and the
