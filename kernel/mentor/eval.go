@@ -1690,15 +1690,20 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 	for i := 0; i < dropped; i++ {
 		e.refuse("isb_trigger_side")
 	}
-	// Item 25 [D5.3 p1 @09:16]: the swing REJECT now obeys the room rule —
-	// reward to the chosen target (5m EMA34 when on-side, else the fallback)
-	// must be at least RoomMultiple × risk. One counter "room". The swing ISB
+	// Item 25 [D5.3 p1 @09:16] (CTO fold): the swing REJECT obeys the room
+	// rule as the course states it — "room to the obstacle ≥ ~2× the target
+	// you want" (R68). The swing's target is the 1:1 first (R43, "TARGET 1-1
+	// TRƯỚC"), so its obstacle — the 5m EMA34 when it sits on the trade side —
+	// must be at least RoomMultiple × risk away. No on-side EMA = no obstacle
+	// on record = no room refusal (comparing the 1R TARGET itself against 2R
+	// would refuse every swing). One counter "room". The swing ISB
 	// (through-close re-entry, stop AT the line "even if it feels big" [table])
 	// is exempt — the method's own big-stop rule governs that entry.
+	obstacle := swingTargetEMA(closed, e.Cfg.Swing)
 	out := make([]Intent, 0, len(kept))
 	for _, in := range kept {
 		if in.Action == PlaceStopEntry && in.Setup == "SWING4H" && strings.Contains(in.Reason, "reject touch") {
-			if refuse, _ := roomRefusal(in.Price, in.Stop, in.Target, e.Cfg.RoomMultiple); refuse {
+			if swingRoomRefused(in, obstacle, e.Cfg.RoomMultiple) {
 				e.refuse("room")
 				continue
 			}
@@ -1812,4 +1817,15 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 		}
 	}
 	return out
+}
+
+// swingRoomRefused is the swing reject's room rule (item 25 + R68, CTO fold):
+// the obstacle — the 5m EMA34 when it sits on the trade side — must be at
+// least roomMultiple × risk from the entry. No on-side obstacle = no refusal.
+func swingRoomRefused(in Intent, obstacle, roomMultiple float64) bool {
+	if obstacle == 0 || !targetOnSide(in.Side, in.Price, obstacle) {
+		return false
+	}
+	refuse, _ := roomRefusal(in.Price, in.Stop, obstacle, roomMultiple)
+	return refuse
 }

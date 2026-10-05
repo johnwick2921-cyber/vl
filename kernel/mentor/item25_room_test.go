@@ -54,14 +54,14 @@ func TestISBRoomRuleRefused(t *testing.T) {
 	}
 }
 
-// TestSwingRejectRoomRuleRefused — a swing reject whose chosen target (fallback
-// 50 vs its 30-pt stop, or a sub-2R 5m EMA) emits NO entry and counts "room".
-// Mutant: delete the swing room filter in runSwing → RED (the swing emits).
-func TestSwingRejectRoomRuleRefused(t *testing.T) {
+// TestSwingRejectRoomRule (item 25 + R68, CTO fold) — the room is measured to
+// the OBSTACLE (the on-side 5m EMA34), never to the swing's own 1:1 first
+// target (R43). With no on-side obstacle the 1R-target swing reject trades.
+// Mutant: compare the 1R target against 2R (the pre-fold rule) → the swing is
+// refused → RED.
+func TestSwingRejectRoomRule(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
-	// RoomMultiple stays 2; the swing's fallback target is 50 vs a 30-pt stop
-	// (1.67R) → refused "room".
 	cur := []market.Kline{
 		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),
 		mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160), // touches the line, closes back below
@@ -73,11 +73,30 @@ func TestSwingRejectRoomRuleRefused(t *testing.T) {
 	seededWith(e, fullDepth, now)
 
 	ins := e.Tick(bars, now)
-	if entriesOf(ins, "SWING4H") != 0 {
-		t.Fatalf("the swing reject must be refused by the room rule; got %+v; refusals=%v", ins, e.State.Refusals)
+	if entriesOf(ins, "SWING4H") != 1 {
+		t.Fatalf("a 1:1-target swing reject with no on-side obstacle must trade; got %+v; refusals=%v", ins, e.State.Refusals)
 	}
-	if e.State.Refusals["room"] == 0 {
-		t.Fatalf("room refusal not counted; refusals=%v", e.State.Refusals)
+}
+
+// TestSwingRoomRefusedAgainstTheObstacle — the helper the swing filter calls:
+// an on-side obstacle closer than RoomMultiple × risk refuses; 2R+ away, an
+// off-side obstacle, or none at all does not. Mutant: drop the filter → RED.
+func TestSwingRoomRefusedAgainstTheObstacle(t *testing.T) {
+	short := Intent{Side: SideShort, Price: 100, Stop: 110} // risk 10
+	cases := []struct {
+		name     string
+		obstacle float64
+		want     bool
+	}{
+		{"on-side 15 pts (1.5R) → refused", 85, true},
+		{"on-side 25 pts (2.5R) → allowed", 75, false},
+		{"off-side → allowed", 120, false},
+		{"none → allowed", 0, false},
+	}
+	for _, c := range cases {
+		if got := swingRoomRefused(short, c.obstacle, 2); got != c.want {
+			t.Fatalf("%s: got %v", c.name, got)
+		}
 	}
 }
 
