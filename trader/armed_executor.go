@@ -2525,6 +2525,9 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 				at.mentorFunnel.bumpFilled()
 				at.registerMentorLivePos(r, u)
 				at.pokeMentorExitDrive()
+				// FU-1: feed G1/G2 from the REAL fill — the receipt is queued
+				// and drained inside mentorEvalOnce under mentorEvalMu.
+				at.mentorEnqueueFill(r, u)
 			}
 		case "cancelled":
 			// CANCEL-REPORT REGIME (2026-10-03, knob default OFF): for a row

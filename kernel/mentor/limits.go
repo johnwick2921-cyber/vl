@@ -65,6 +65,9 @@ type Limits struct {
 	dayKey string
 	pend   []*pendOrder
 	open   []*openTrade
+	// filled is the FU-1 receipt dedupe: the entry signal ids whose REAL fill
+	// has already registered (a partial-then-full, or a replay, registers once).
+	filled map[string]bool
 }
 
 // Leg is one G1 leg per side.
@@ -112,6 +115,10 @@ type pendOrder struct {
 	box    bool
 	lo     float64 // box bounds (box)
 	hi     float64
+	// realFill (FU-1): the pend is filled ONLY by RecordFill (the broker's
+	// real fill callback), never by simulate's candle-touch fill. A
+	// never-placed order can then never phantom-fill and spend the budget.
+	realFill bool
 }
 
 type openTrade struct {
@@ -149,6 +156,7 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 		l.Places = nil
 		l.pend = nil
 		l.open = nil
+		l.filled = nil // FU-1: the receipt dedupe dies with the trading day
 	} else if l.dayKey == "" {
 		l.dayKey = day
 	}
@@ -236,6 +244,7 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 				box:    ref.box,
 				lo:     ref.lo,
 				hi:     ref.hi,
+				realFill: cfg.RealFillOnly, // FU-1: live arms fill by the real fill, never the candle
 			})
 		case PlaceStopLimitEntry:
 			if cfg.LegBudgetEnabled {
@@ -269,6 +278,7 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 				box:    true,
 				lo:     math.Min(in.Price, in.Stop),
 				hi:     math.Max(in.Price, in.Stop),
+				realFill: cfg.RealFillOnly, // FU-1: live arms fill by the real fill, never the candle
 			})
 		default:
 			if in.Action == CancelArm {
@@ -306,29 +316,28 @@ func (l *Limits) resetBreaks(prev, cur market.Kline, cfg Config) {
 func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 	keepP := l.pend[:0]
 	for _, p := range l.pend {
+		if p.realFill {
+			// FU-1: a real-fill pend is filled ONLY by RecordFill (the
+			// broker's real fill callback), never by a candle touching the
+			// entry. A never-placed order can then never phantom-fill and
+			// spend the budget. Expiry still applies (the broker cancels an
+			// unfilled order at the same time).
+			if p.expiry != 0 && now >= p.expiry {
+				continue // expired unfilled — NOT a loss (case b)
+			}
+			if p.expiry == 0 {
+				continue // one-candle rest (mirror of the sim path below)
+			}
+			keepP = append(keepP, p)
+			continue
+		}
 		filled := p.side == SideLong && cur.High >= p.entry ||
 			p.side == SideShort && cur.Low <= p.entry
 		if filled {
 			// Entry touched = filled. A stop-out on the SAME candle is a
 			// loss (the trade existed for the span of the candle) — the
 			// open-trade loop below catches it.
-			l.registerLeg(p.side, p.legExt, levels, p.entry, p.isISB)
-			wave := cur.Low
-			if p.side == SideShort {
-				wave = cur.High
-			}
-			l.open = append(l.open, &openTrade{
-				side:   p.side,
-				stop:   p.stop,
-				target: p.target,
-				anchor: p.anchor,
-				place:  p.place,
-				swing:  p.swing,
-				box:    p.box,
-				lo:     p.lo,
-				hi:     p.hi,
-				wave:   wave, // the fill candle is the entry candle
-			})
+			l.fill(p, cur.Low, cur.High, levels)
 			continue
 		}
 		if p.expiry != 0 && now >= p.expiry {
@@ -369,6 +378,79 @@ func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 		keepO = append(keepO, t)
 	}
 	l.open = keepO
+}
+
+// fill converts a pending order into a FILL: it registers the G1 leg and
+// opens the G2 loss trade. lo/hi seed the B22 wave (the fill candle's
+// low/high); levels feeds registerLeg's old-extreme fallback when the pend
+// carries no leg extreme (nil for a real fill — the pend's legExt wins).
+func (l *Limits) fill(p *pendOrder, lo, hi float64, levels []Level) {
+	l.registerLeg(p.side, p.legExt, levels, p.entry, p.isISB)
+	wave := lo
+	if p.side == SideShort {
+		wave = hi
+	}
+	l.open = append(l.open, &openTrade{
+		side:   p.side,
+		stop:   p.stop,
+		target: p.target,
+		anchor: p.anchor,
+		place:  p.place,
+		swing:  p.swing,
+		box:    p.box,
+		lo:     p.lo,
+		hi:     p.hi,
+		wave:   wave, // the fill candle is the entry candle
+	})
+}
+
+// takePend removes and returns ONE still-pending order with the given ArmID
+// (FU-1). It is the RecordFill half of dropPend: the real fill consumes the
+// placeholder the placement registered.
+func (l *Limits) takePend(armID string) *pendOrder {
+	if armID == "" {
+		return nil
+	}
+	for i, p := range l.pend {
+		if p.armID == armID {
+			l.pend = append(l.pend[:i], l.pend[i+1:]...)
+			return p
+		}
+	}
+	return nil
+}
+
+// RecordFill registers a REAL broker fill for a pending mentor entry (FU-1):
+// the trader's fill callback delivers it through the queued drain in
+// mentorEvalOnce, under mentorEvalMu. It is the G1 leg budget + G2 loss box
+// input for a real-fill-only evaluator — the simulated candle-touch fill is
+// NOT consulted for these arms, so a never-placed order can never spend the
+// budget. Idempotent per receipt id (the entry signal id): the first receipt
+// registers the leg and opens the loss trade; a retransmit or a
+// partial-then-full is a no-op. A receipt whose pend is already gone
+// (expired, cancelled, or a foreign arm) is counted, never fabricated.
+// lo/hi seed the B22 wave (the fill candle's low/high).
+func (l *Limits) RecordFill(receiptID, armID string, lo, hi float64) {
+	if receiptID == "" {
+		return
+	}
+	if l.filled[receiptID] {
+		return // dedupe: one receipt registers once (partial-then-full / replay)
+	}
+	p := l.takePend(armID)
+	if p == nil {
+		l.refuse("record_fill_no_pend")
+		return
+	}
+	l.fill(p, lo, hi, nil)
+	l.markFilled(receiptID)
+}
+
+func (l *Limits) markFilled(receiptID string) {
+	if l.filled == nil {
+		l.filled = map[string]bool{}
+	}
+	l.filled[receiptID] = true
 }
 
 // registerLeg records a FILL in the side's leg, creating the leg at the
