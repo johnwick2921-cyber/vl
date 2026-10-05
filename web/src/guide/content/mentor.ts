@@ -42,6 +42,8 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     live: false,
   },
   'PHL target shy': { settingId: 'Config.PHLTargetShyPts', live: false },
+  'PHL entry buffer': { settingId: 'Config.PHLEntryBufferPts', live: false },
+  'Wick microscalp': { settingId: 'Config.WickMicroscalpEnabled', live: false },
   'Stop ceiling': { settingId: 'Config.StopCeilingPts', live: false },
   'Room multiple': { settingId: 'Config.RoomMultiple', live: false },
   'Near-box room': { settingId: 'Config.NearBoxRoomMultiple', live: false },
@@ -235,8 +237,8 @@ export const mentor: GuideSection = {
         ],
         [
           'Trendline',
-          'Two same-role swings joined — a low and a HIGHER low (support) or a high and a LOWER high (resistance); never horizontal',
-          'Exists at 2 points; becomes a location only after the 3rd touch [DAY-3 p2 @03:45-04:07]; a break confirmed by a 5m close discards it (a break is NOT an entry). Box beats trendline',
+          'Two CONFIRMED two-sided structural swings (left fractal + the next bar confirms it), at least 5 bars apart, joined — a low and a HIGHER low (support) or a high and a LOWER high (resistance); never horizontal. One live line per side: the two MOST RECENT qualifying swings pair, a newer pair replaces the older',
+          'Becomes a location only after the 3rd touch [DAY-3 p2 @03:45-04:07]; a break confirmed by a 5m close discards it (a break is NOT an entry). Box beats trendline: a trendline whose price sits inside a live box\u2019s [Bottom, Top] is NOT a location',
         ],
       ],
     },
@@ -299,6 +301,21 @@ export const mentor: GuideSection = {
           title: 'Every box return trades',
           body: 'The box is drawn from two touches — the extreme and the next confirmed swing after it that failed to exceed it ("lần thứ 3 mới vô lệnh": the 3rd touch is the trade). Each return visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). EVERY return trades, the first one included. An escape does not delete the box; boxes die at end of day only. After a body escape the role flips (Uno Reverse): a broken FTGH becomes support and a broken FTGL becomes resistance, and the next returns come from the new side with the same reject rule and gates.',
           cite: 'R1 · D3.2 p2 @06:25 · D14 slide 17 · X2 @02:36–03:25',
+        },
+        {
+          title: '15m and 30m ISB rest boxes + the escalation ladder',
+          body: 'Like the 5m ISB rest box, the latest CLOSED 15m and 30m inside-bar candles are boxed and extended right. Inside a standing box, nothing trades against that box\u2019s direction — a 1m ISB is gated on the box direction, PHL/PLH and box returns inside are banned. When a timeframe\u2019s ISBs are CROSSING (2 opposite ISBs within the last 3 closed buckets) that timeframe is unreadable and its box gate is skipped — the next timeframe up governs (5m → 15m → 30m). A 1m BODY close outside deletes the box.',
+          cite: 'D4.1 p2 @07:35–08:11 · D4.2 p1 @16:28–16:46 · D3.4 p2 @17:07–17:49',
+        },
+        {
+          title: 'The 4h/1h trigger line is a target, never a location',
+          body: 'The 4h (and 1h) trigger line joins the target ladder as target-only: the next-level target can land on it when it sits between the entry and the next key level, but it is never a PHL/PLH location and the touch loop never classifies it.',
+          cite: 'D4.4 p2 @05:04–06:02 · htf_target.go',
+        },
+        {
+          title: 'Wick microscalp (advanced, OFF by default)',
+          body: '2+ consecutive CLOSED 5m candles rejecting with wicks the SAME way (lower wicks in an uptrend, upper wicks in a downtrend) put a bounded target at their far wick — target-only, never a location. OFF by default ("đừng có tập khúc này đầu tiên").',
+          cite: 'D4.3 @00:00–03:20, @09:27–09:46 · WickMicroscalpEnabled',
         },
         {
           title: 'Intraday confluence (exit C, size 10)',
@@ -376,6 +393,11 @@ export const mentor: GuideSection = {
           title: 'Trading window 08:30–09:30 CT',
           body: 'The day is only 08:30–09:30 CT. The SWING4H is exempt.',
           cite: 'mentor_window_start / mentor_window_minutes — live',
+        },
+        {
+          title: 'Daily loss is checked at placement',
+          body: 'An entry is refused the moment the session-day\u2019s realized loss is already at/past the daily-loss limit — before the 60-second force-flat sweep can act. An unresolved close (pnl_corrected NULL) is not a confident "under the limit": it FAILS CLOSED and the placement is refused (counted daily_loss_refused).',
+          cite: 'trader/mentor_actions.go mentorDailyLossGate — live',
         },
         {
           title: 'Never widen a stop, never add',
@@ -726,6 +748,32 @@ export const mentor: GuideSection = {
           systemDefault: '5',
           recommended: '5 — D2.2 p1 @ 06:50.',
           whenToTouch: 'Rarely.',
+          perSession: 'No.',
+        },
+        {
+          label: 'PHL entry buffer',
+          where: 'Strategy → Mentor mode → PHL/PLH',
+          what: 'The PHL/PLH order sits this far BEYOND the candle extreme (outward) — the course draws the entry ~1 pt past the broken candle\u2019s high/low, never exactly at it. The stop stays at the candle\u2019s extreme.',
+          trader: '1.0 pt.',
+          consumer:
+            'kernel/mentor/mentor.go PHLEntryBufferPts · kernel/mentor/phl.go',
+          range: 'pts',
+          systemDefault: '1.0',
+          recommended:
+            '1.0 — D2.2 p1 @ 06:50 drawn (high 29,396.25 → entry 29,397.25).',
+          whenToTouch: 'Rarely.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Wick microscalp',
+          where: 'Strategy → Mentor mode → setups',
+          what: 'D4.3 advanced wick read: 2+ consecutive CLOSED 5m candles rejecting with wicks the SAME way (lower wicks in an uptrend, upper wicks in a downtrend) put a bounded target at their far wick — target-only, never a location. OFF by default ("đừng có tập khúc này đầu tiên").',
+          trader: 'OFF.',
+          consumer: 'kernel/mentor/mentor.go WickMicroscalpEnabled',
+          range: 'true / false',
+          systemDefault: 'OFF',
+          recommended: 'OFF — advanced; the course says practise it later.',
+          whenToTouch: 'Only after the core setups are proven on SIM.',
           perSession: 'No.',
         },
         {
