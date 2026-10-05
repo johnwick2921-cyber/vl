@@ -299,7 +299,14 @@ func (t *TCPTrader) recordCloseOrdered(
 	// Receipt identity: stable for idempotent replay of the SAME frame, and
 	// distinct for a partial vs a final close of the same bracket leg (qty +
 	// exit time are part of the identity when no broker exit-order id exists).
-	identity, _ := json.Marshal([]any{p.Account, symbol, side, p.SignalID, leg, p.Leg, p.Seq, qty, exitMs})
+	// A split bracket's two legs share the signal id, reason, qty and (RFC3339)
+	// second, so the bracket leg joins the identity — appended ONLY when set, so
+	// every single-bracket key stays byte-identical to the pre-split receipts.
+	parts := []any{p.Account, symbol, side, p.SignalID, leg, p.Seq, qty, exitMs}
+	if p.Leg > 0 {
+		parts = append(parts, p.Leg)
+	}
+	identity, _ := json.Marshal(parts)
 	key := fmt.Sprintf("nt8-exit-v2-%x", sha256.Sum256(identity))
 	receipt := store.NT8ExitReceipt{
 		ID: key, Account: p.Account, Symbol: symbol, Side: side, SignalID: p.SignalID,

@@ -227,6 +227,29 @@ func (at *AutoTrader) mentorArmQuantity(r store.ArmedOrderDB) (float64, string) 
 	return float64(n), ""
 }
 
+// mentorWireLeg1 is the leg-1 size the ONE entry frame carries when `sent`
+// contracts go out for row r (0 = the single bracket). Leg 1 = ceil(sent/2),
+// except that the runner never exceeds the row's own runner (contracts −
+// leg1_qty, which already carries the spent-day cap D) — the clamp to the
+// trader max shrinks both legs, never grows the runner. No runner → no split.
+func mentorWireLeg1(r store.ArmedOrderDB, sent int) int {
+	if r.Leg1Qty == nil || *r.Leg1Qty <= 0 || sent <= 1 {
+		return 0
+	}
+	rowN := sent
+	if r.Contracts != nil && *r.Contracts > 0 {
+		rowN = *r.Contracts
+	}
+	runner := sent - (sent+1)/2
+	if rowRunner := rowN - *r.Leg1Qty; runner > rowRunner {
+		runner = rowRunner
+	}
+	if runner <= 0 {
+		return 0
+	}
+	return sent - runner
+}
+
 // mentorExtendArm pushes a resting arm's expiry forward (ISB stacking, N12).
 // The row may be place_pending or working (resting at NT8) — SetArmExpiry
 // accepts both, working only while unfilled.

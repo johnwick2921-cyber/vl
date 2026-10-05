@@ -622,10 +622,14 @@ func mentorLeg1ForFrame(in mentor.Intent, n int, forkMode string, forkTP float64
 	if in.SpentDay {
 		runnerCap = mentorSpentDayRunnerCap
 	}
-	leg1, leg2 := mentorSplitLegs(n, runnerCap)
+	_, leg2 := mentorSplitLegs(n, runnerCap)
 	if leg2 <= 0 {
 		return 0, 0 // n = 1 -> a single leg, no scale-out
 	}
+	// The AddOn sizes the runner as fill - leg1_qty, so the frame's leg 1 is
+	// n - runner: with the spent-day cap (D) the contracts the cap takes off
+	// the runner go to leg 1 — never a runner above the cap on the wire.
+	leg1 := n - leg2
 	tp := forkTP
 	if tp == 0 {
 		r := mentorIntentRisk(in)

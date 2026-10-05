@@ -7,6 +7,7 @@ import (
 
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
+	ntTrader "vl/trader/ninjatrader"
 )
 
 // ── MENTOR LIVE POSITION REGISTRY (the exit-drive's input) ─────────────────
@@ -23,11 +24,12 @@ type mentorLeg struct {
 	TP       float64 // the leg's own take-profit (leg 1 = +1R / fill-candle close; runner = the trade target)
 	Stop     float64 // the leg's CURRENT resting stop (the loop writes back here)
 	Final    bool    // marks the RUNNER — the leg that holds to the trade target
+	Wire     int     // the AddOn leg this addresses on move_stop: 1 (-sl), 2 (-sl2); 0 = the single bracket (every leg)
 }
 
 type mentorLivePos struct {
 	Pos           mentorPosition // the exit-driver state (mode, entry, stop, R, …)
-	Legs          [2]mentorLeg   // [0] = the whole position (single leg); [1] reserved for the split redesign
+	Legs          [2]mentorLeg   // single bracket: [0] = the whole position; split: [0] = leg 1, [1] = the runner
 	FillBarOpen   int64          // the fill candle's OpenTime
 	FillBarClose  float64        // the fill candle's close (ISB leg-1 TP)
 	BarsSinceFill int            // closed 1m candles since the fill
@@ -75,7 +77,30 @@ func (at *AutoTrader) registerMentorLivePos(r store.ArmedOrderDB, u ntwire.Order
 		lp.RunnerTarget, _ = v.(float64)
 	}
 	lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: n, TP: r.TargetPx, Stop: r.StopPx, Final: true}
+	// REVIEW-SPLIT-2 P2: the split the entry frame ACTUALLY carried (after the
+	// far-side gate and the leg1_tp check) registers as two legs under the one
+	// signal id — leg 1 (-sl/-tp, its own TP) and the runner (-sl2/-tp2, the
+	// trade target) — so every stop move names its leg. No record (single
+	// bracket, or a restart lost it) → the single-leg view, whose leg-less
+	// move_stop moves every live leg together (tightening only, never a widen).
+	if split, ok := mentorSentSplit(at, r.SignalID); ok && split.Leg1Qty < n {
+		leg1, runner := split.Leg1Qty, n-split.Leg1Qty
+		lp.Pos.Leg1, lp.Pos.Leg2, lp.Pos.Leg1TP = leg1, runner, split.Leg1TP
+		lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: leg1, TP: split.Leg1TP, Stop: r.StopPx, Final: false, Wire: 1}
+		lp.Legs[1] = mentorLeg{SignalID: r.SignalID, Qty: runner, TP: r.TargetPx, Stop: r.StopPx, Final: true, Wire: 2}
+		mentorCount("exit_drive_split_registered")
+	}
 	at.mentorRegisterLivePos(r.SignalID, lp)
+}
+
+// mentorSentSplit reads the split the entry frame carried (a seam so the
+// registration pin can drive it without a live AddOn connection).
+var mentorSentSplit = func(at *AutoTrader, signalID string) (ntTrader.SentSplit, bool) {
+	nt := at.armedTrader()
+	if nt == nil {
+		return ntTrader.SentSplit{}, false
+	}
+	return nt.SplitSentFor(signalID)
 }
 
 // mentorRegisterLivePos stores a filled position under its signal id. A nil

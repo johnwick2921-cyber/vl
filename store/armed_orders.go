@@ -540,6 +540,10 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 				// planner row writes '' / NULL over '' / NULL).
 				"source": row.Source, "source_ref": row.SourceRef, "source_rule": row.SourceRule,
 				"eligible_until_ms": row.EligibleUntilMs, "source_run_epoch": row.SourceRunEpoch,
+				// REVIEW-SPLIT-2 P2: the mentor size and split follow the
+				// authorization — leg1_tp moves with a re-armed stop. Every
+				// other author writes NULL / 0 over NULL / 0.
+				"contracts": row.Contracts, "leg1_qty": row.Leg1Qty, "leg1_tp": row.Leg1TP,
 			}).Error
 		}
 		// MANUAL-CANCEL-WINS (2026-08-30 E7 incident): a TERMINAL row is
@@ -591,6 +595,8 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 			// W5 — the new authorization's machine source ('' on planner rows).
 			"source": row.Source, "source_ref": row.SourceRef, "source_rule": row.SourceRule,
 			"eligible_until_ms": row.EligibleUntilMs, "source_run_epoch": row.SourceRunEpoch,
+			// REVIEW-SPLIT-2 P2: the new authorization's mentor size and split.
+			"contracts": row.Contracts, "leg1_qty": row.Leg1Qty, "leg1_tp": row.Leg1TP,
 		}).Error
 	}
 	if err != gorm.ErrRecordNotFound {

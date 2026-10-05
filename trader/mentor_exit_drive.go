@@ -320,8 +320,8 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 // mentorMoveStopForSignalWire is the last hop for a signal-keyed mentor stop
 // move (the seam tests substitute to capture per-leg moves; production binds
 // it to TCPTrader.MoveStopForSignal — the SAME move_stop frame, no C# change).
-var mentorMoveStopForSignalWire = func(nt *ntTrader.TCPTrader, signalID, side string, newStop float64) error {
-	return nt.MoveStopForSignal(signalID, side, newStop)
+var mentorMoveStopForSignalWire = func(nt *ntTrader.TCPTrader, signalID, side string, newStop float64, leg int) error {
+	return nt.MoveStopForSignalLeg(signalID, side, newStop, leg)
 }
 
 // mentorMoveLegStop sends one leg's stop move through the signal-keyed
@@ -334,7 +334,7 @@ func (at *AutoTrader) mentorMoveLegStop(nt *ntTrader.TCPTrader, side string, leg
 		mentorCount("widen_refused")
 		return fmt.Errorf("mentor leg stop move refused: %s", why)
 	}
-	if err := mentorMoveStopForSignalWire(nt, leg.SignalID, side, newStop); err != nil {
+	if err := mentorMoveStopForSignalWire(nt, leg.SignalID, side, newStop, leg.Wire); err != nil {
 		mentorCount("move_stop_failed")
 		return err
 	}
