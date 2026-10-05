@@ -231,7 +231,7 @@ func (s *TCPServer) SetOrderSnapshotSink(fn func(OrderSnapshotPayload)) { s.orde
 // running an older compile, and a line that read this constant as if it were
 // the running build would report success for a change that never landed
 // (class 6 — proof is a RECEIVED frame).
-const ExpectedAddonBuild = "2026-10-03-c2"
+const ExpectedAddonBuild = "2026-10-04-d1"
 
 // AddonBuildLine renders the build-id half of the boot line. `received` comes
 // from TCPServer.FarSideBuildID() — a value that arrived on the wire.

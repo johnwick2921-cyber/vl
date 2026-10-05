@@ -352,6 +352,13 @@ const FarSideBuildE7 = "2026-08-30-e7"
 // Every future minimum MUST advance the ISO DATE, never only the suffix.
 const MinAddonBuildStopSlot = "2026-09-05-g2"
 
+// MinAddonBuildSplitLegs is the minimum AddOn build that splits ONE entry into
+// TWO OCO pairs under the one signal id (REVIEW-353, wire v4: leg1_qty + leg1_tp).
+// A pre-v4 AddOn ignores leg1_qty and places a single bracket — the Go side
+// therefore ZEROES the split (single bracket, byte-identical) until the far side
+// proves this build.
+const MinAddonBuildSplitLegs = "2026-10-04-d1"
+
 // MinAddonBuildStopLimit is the minimum AddOn build that builds a stop_entry
 // as OrderType.StopLimit (LimitPrice == StopPrice) when the signal carries
 // stop_limit=true — the mentor's no-stop-MARKET rule (D1.4 p1 @24:41). Below

@@ -861,6 +861,12 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 	if rerr != nil {
 		return "", fmt.Errorf("ninjatrader/tcp: refusing stop-entry %s on %s: %w", side, symbol, rerr)
 	}
+	// REVIEW-353: only send the split when the far side proves the two-OCO-pair
+	// build. An older AddOn ignores leg1_qty → single bracket, byte-identical
+	// (fail-closed: the split degrades, never half-applies).
+	if leg1Qty > 0 && !ntwire.FarSideProven(t.server.FarSideBuildID(), ntwire.MinAddonBuildSplitLegs) {
+		leg1Qty, leg1TP = 0, 0
+	}
 	tid := t.traderID
 	signalID := uuid.NewString()
 	payload := ntwire.SignalPayload{

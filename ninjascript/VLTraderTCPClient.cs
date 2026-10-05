@@ -59,7 +59,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         // + the hello epoch fields. 2026-09-23-m21 (M2.1): census `settled`,
         // no nested census locks, source_hash at activation. The ISO-date
         // prefix is kept (CTO ruling Q3).
-        private const string  VL_BUILD_ID             = "2026-10-03-c2";
+        private const string  VL_BUILD_ID             = "2026-10-04-d1";
         private const int    MAX_FRAME_BYTES         = 1 << 20; // 1 MB, spec L4376
 
         // === State ===
@@ -123,6 +123,10 @@ namespace NinjaTrader.NinjaScript.AddOns
             public double      Sl;
             public double      Tp;
             public Account     Account;   // PHASE 3: the routed submit account (SL/TP follow the entry)
+            // REVIEW-353: the split AT ENTRY — leg 1 = ceil(n/2) with its OWN TP;
+            // leg 2 = the runner with TP = Tp. 0 = the single-bracket legacy path.
+            public int         Leg1Qty;
+            public double      Leg1Tp;
         }
 
         // A bracket whose entry has FILLED and whose SL/TP now rest at the exchange,
@@ -141,6 +145,15 @@ namespace NinjaTrader.NinjaScript.AddOns
             public int         Qty;
             public string      ExitOco;     // the OCO group the SL + TP share
             public double      TickSize;
+            // REVIEW-353: leg 2's OCO pair (leg 1 rides SlOrder/TpOrder).
+            // Leg2Qty == 0 → the single-bracket legacy shape.
+            public int         Leg1Qty;
+            public int         Leg2Qty;
+            public double      Leg1Tp;
+            public double      RunnerTp;   // leg 2's TP (the trade target)
+            public Order       SlOrder2;
+            public Order       TpOrder2;
+            public string      ExitOco2;
         }
         private readonly Dictionary<string, PlacedBracket> placedBrackets = new Dictionary<string, PlacedBracket>();
 
@@ -802,6 +815,8 @@ namespace NinjaTrader.NinjaScript.AddOns
             double entry;
             double sl;
             double tp;
+            int    leg1Qty = 0;
+            double leg1Tp  = 0.0;
             string signalId;
             string ts;
             // PHASE 2 armed orders (additive, back-compat): order_type
@@ -819,6 +834,11 @@ namespace NinjaTrader.NinjaScript.AddOns
                 entry    = GetDouble(p, "entry");
                 sl       = GetDouble(p, "stop_loss");
                 tp       = GetDouble(p, "take_profit");
+                // REVIEW-353 (wire v4, optional): the split AT ENTRY —
+                // leg1_qty > 0 → the AddOn places TWO OCO pairs on the one
+                // fill; 0/absent → the single-bracket legacy path (byte-identical).
+                leg1Qty = GetInt(p, "leg1_qty");
+                leg1Tp  = GetDouble(p, "leg1_tp");
                 signalId = GetString(p, "signal_id");
                 ts       = GetString(p, "timestamp");
                 string ot = GetString(p, "order_type");
@@ -1152,6 +1172,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                         Sl         = sl,
                         Tp         = tp,
                         Account    = submitAccount,   // PHASE 3: the bracket follows the entry's account
+                        Leg1Qty    = leg1Qty,         // REVIEW-353 split
+                        Leg1Tp     = leg1Tp,
                     };
                     // PHASE 2 armed orders — resting limit entries are cancelable.
                     if (isLimit) { workingEntries[signalId] = entryOrder; }
@@ -1243,6 +1265,9 @@ namespace NinjaTrader.NinjaScript.AddOns
                     var toCancel = new List<Order>();
                     if (pb.SlOrder != null) toCancel.Add(pb.SlOrder);
                     if (pb.TpOrder != null) toCancel.Add(pb.TpOrder);
+                    // REVIEW-353: cancel leg 2's pair too — EVERY bracket of the signal.
+                    if (pb.SlOrder2 != null) toCancel.Add(pb.SlOrder2);
+                    if (pb.TpOrder2 != null) toCancel.Add(pb.TpOrder2);
                     if (toCancel.Count > 0 && ba != null)
                     {
                         try
@@ -1506,9 +1531,37 @@ namespace NinjaTrader.NinjaScript.AddOns
                                       : (account != null ? account.Name : "");
                     SendPositionCloseFrame(signalId, rootSymbol, positionSide,
                                            e.AverageFillPrice, e.Filled, exitReason ?? "manual", exitAcct);
-                    // PHASE 4: the position closed → drop its account ownership.
+                    // PHASE 4: drop the account ownership ONLY when that account's
+                    // instrument position is FLAT. REVIEW-353: a leg-1 partial TP
+                    // fills as an exit, but the runner (leg 2) still holds — the
+                    // mapping must survive so the later runner close goes to the BOUND
+                    // account, not the active one.
                     if (!string.IsNullOrEmpty(rootSymbol))
-                        lock (posAcctLock) { positionAccountBySymbol.Remove(rootSymbol); }
+                    {
+                        bool flat = true;
+                        Account exitAccount = e.Order.Account ?? account;
+                        if (exitAccount != null)
+                        {
+                            try
+                            {
+                                lock (exitAccount.Positions)
+                                {
+                                    foreach (Position pos in exitAccount.Positions)
+                                    {
+                                        if (pos == null) continue;
+                                        string pRoot = "";
+                                        try { pRoot = pos.Instrument.MasterInstrument.Name; } catch { }
+                                        if (string.Equals(pRoot, rootSymbol, StringComparison.OrdinalIgnoreCase)
+                                            && pos.Quantity != 0 && pos.MarketPosition != MarketPosition.Flat)
+                                        { flat = false; break; }
+                                    }
+                                }
+                            }
+                            catch { flat = false; } // fail-closed: keep the mapping
+                        }
+                        if (flat)
+                            lock (posAcctLock) { positionAccountBySymbol.Remove(rootSymbol); }
+                    }
                     // Position closed → drop its bracket tracking (auto-breakeven) and
                     // its A2 identity (echoed on the close frame just sent above).
                     lock (signalMapLock) { placedBrackets.Remove(signalId); signalIdentity.Remove(signalId); }
@@ -2315,6 +2368,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 string signalId = GetString(p, "signal_id");
                 if (string.IsNullOrEmpty(signalId)) { LogWarn("VLTraderTCPClient: modify_bracket missing signal_id"); return; }
                 double newSl = 0.0, newTp = 0.0;
+                int    leg   = GetInt(p, "leg");   // 1 = leg 1, 2 = leg 2, 0/absent = ALL
                 try { newSl = GetDouble(p, "new_stop_loss"); } catch { }
                 try { newTp = GetDouble(p, "new_take_profit"); } catch { }
                 if (newSl <= 0 && newTp <= 0) { LogWarn("VLTraderTCPClient: modify_bracket nothing to change"); return; }
@@ -2330,31 +2384,54 @@ namespace NinjaTrader.NinjaScript.AddOns
                     }
                 }
                 Account ba = pb.Account ?? account;
-                if (newSl > 0 && pb.SlOrder != null)
+
+                // REVIEW-353: honour `leg` — 1 = leg 1 only, 2 = leg 2 only, 0/absent = ALL brackets.
+                var slLegs = new List<Order>();
+                var tpLegs = new List<Order>();
+                if (leg != 2)
                 {
-                    OrderState st = pb.SlOrder.OrderState;
-                    if (!IsLiveAtExchange(st))
-                    {
-                        LogWarn("VLTraderTCPClient: modify_bracket refused — stop not changeable (state=" + st + ") for " + signalId);
-                        SendAck("modify_bracket_error");
-                        return;
-                    }
-                    pb.SlOrder.StopPriceChanged = newSl;
-                    ba.Change(new[] { pb.SlOrder });
+                    if (pb.SlOrder != null) slLegs.Add(pb.SlOrder);
+                    if (pb.TpOrder != null) tpLegs.Add(pb.TpOrder);
                 }
-                if (newTp > 0 && pb.TpOrder != null)
+                if (leg != 1)
                 {
-                    OrderState st = pb.TpOrder.OrderState;
-                    if (!IsLiveAtExchange(st))
-                    {
-                        LogWarn("VLTraderTCPClient: modify_bracket refused — target not changeable (state=" + st + ") for " + signalId);
-                        SendAck("modify_bracket_error");
-                        return;
-                    }
-                    pb.TpOrder.LimitPriceChanged = newTp;
-                    ba.Change(new[] { pb.TpOrder });
+                    if (pb.SlOrder2 != null) slLegs.Add(pb.SlOrder2);
+                    if (pb.TpOrder2 != null) tpLegs.Add(pb.TpOrder2);
                 }
-                LogInfo("VLTraderTCPClient: modify_bracket → SL=" + newSl + " TP=" + newTp + " for " + signalId + " (in-place Change — OCO preserved)");
+
+                if (newSl > 0)
+                {
+                    foreach (var sl in slLegs)
+                    {
+                        OrderState st = sl.OrderState;
+                        if (!IsLiveAtExchange(st))
+                        {
+                            LogWarn("VLTraderTCPClient: modify_bracket refused — stop not changeable (state=" + st + ") for " + signalId);
+                            SendAck("modify_bracket_error");
+                            return;
+                        }
+                        sl.StopPriceChanged = newSl;
+                    }
+                }
+                if (newTp > 0)
+                {
+                    foreach (var tp in tpLegs)
+                    {
+                        OrderState st = tp.OrderState;
+                        if (!IsLiveAtExchange(st))
+                        {
+                            LogWarn("VLTraderTCPClient: modify_bracket refused — target not changeable (state=" + st + ") for " + signalId);
+                            SendAck("modify_bracket_error");
+                            return;
+                        }
+                        tp.LimitPriceChanged = newTp;
+                    }
+                }
+                var all = new List<Order>();
+                if (newSl > 0) all.AddRange(slLegs);
+                if (newTp > 0) all.AddRange(tpLegs);
+                if (all.Count > 0) ba.Change(all.ToArray());
+                LogInfo("VLTraderTCPClient: modify_bracket → SL=" + newSl + " TP=" + newTp + " leg=" + leg + " for " + signalId + " (in-place Change — OCO preserved)");
                 SendAck("modify_bracket");
             }
             catch (Exception ex)
@@ -2382,6 +2459,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 if (p == null) { LogWarn("VLTraderTCPClient: move_stop empty payload"); return; }
                 string signalId = GetString(p, "signal_id");
                 double newStop  = GetDouble(p, "new_stop_loss");
+                int    leg      = GetInt(p, "leg");   // 1 = leg 1, 2 = leg 2, 0/absent = ALL
                 if (string.IsNullOrEmpty(signalId) || newStop <= 0)
                 { LogWarn("VLTraderTCPClient: move_stop bad payload (signal_id/new_stop_loss)"); return; }
 
@@ -2391,44 +2469,45 @@ namespace NinjaTrader.NinjaScript.AddOns
                     if (!placedBrackets.TryGetValue(signalId, out pb))
                     { LogWarn("VLTraderTCPClient: move_stop no live bracket for " + signalId + " (already exited?)"); return; }
                 }
-                if (pb.SlOrder != null && Math.Abs(pb.SlOrder.StopPrice - newStop) < (pb.TickSize / 2.0))
-                { LogInfo("VLTraderTCPClient: move_stop no-op (stop already ~" + newStop + ")"); return; }
 
                 Account ba = pb.Account ?? account;
 
-                // GUARD: only a resting stop (Working/Accepted) can be modified in place.
-                // A Filled/Cancelled/pending stop means the position is already exiting or
-                // the order is gone — do NOT touch it; error-ACK so Go knows the move did
-                // not happen (it re-arms and retries on the next cycle).
-                OrderState st = pb.SlOrder != null ? pb.SlOrder.OrderState : OrderState.Unknown;
-                if (pb.SlOrder == null || !IsLiveAtExchange(st))
-                {
-                    LogWarn("VLTraderTCPClient: move_stop refused — stop not changeable (state=" + st + ") for " + signalId);
-                    SendAck("move_stop_error");
-                    return;
-                }
+                // REVIEW-353: honour `leg` — 1 = leg 1 only, 2 = leg 2 only, 0/absent = ALL brackets.
+                var stops = new List<Order>();
+                if (leg != 2 && pb.SlOrder != null) stops.Add(pb.SlOrder);
+                if (leg != 1 && pb.SlOrder2 != null) stops.Add(pb.SlOrder2);
 
-                // IN-PLACE modification (fix 2026-08-07): move the SAME resting stop's price
-                // via Account.Change — same Order object, same OCO group, NO new order and
-                // NO cancel. The target and the OCO group are NEVER disturbed.
-                //
-                // The previous code created a NEW stop INTO THE SAME OCO group (pb.ExitOco)
-                // and then cancelled the old stop. NT8 OCO cancels the WHOLE group when any
-                // member is cancelled, so the target AND the freshly-submitted stop both
-                // died → NAKED position. Proven live 2026-08-07 11:25:05 (signal b846e082…:
-                // -tp Cancelled + both -sl orders Cancelled within ~215ms → naked).
-                try
+                bool moved = false;
+                foreach (var sl in stops)
                 {
-                    pb.SlOrder.StopPriceChanged = newStop;
-                    ba.Change(new[] { pb.SlOrder });
+                    if (Math.Abs(sl.StopPrice - newStop) < (pb.TickSize / 2.0))
+                        continue; // this leg is already there
+                    OrderState st = sl.OrderState;
+                    if (!IsLiveAtExchange(st))
+                    {
+                        LogWarn("VLTraderTCPClient: move_stop refused — stop not changeable (state=" + st + ") for " + signalId);
+                        SendAck("move_stop_error");
+                        return;
+                    }
+                    // IN-PLACE modification (fix 2026-08-07): move the SAME resting stop's price
+                    // via Account.Change — same Order object, same OCO group, NO new order and
+                    // NO cancel. The target and the OCO group are NEVER disturbed.
+                    try
+                    {
+                        sl.StopPriceChanged = newStop;
+                        ba.Change(new[] { sl });
+                        moved = true;
+                    }
+                    catch (Exception cx)
+                    {
+                        LogWarn("VLTraderTCPClient: move_stop Change failed: " + cx.Message + " for " + signalId);
+                        SendAck("move_stop_error");
+                        return;
+                    }
                 }
-                catch (Exception cx)
-                {
-                    LogWarn("VLTraderTCPClient: move_stop Change failed: " + cx.Message + " for " + signalId);
-                    SendAck("move_stop_error");
-                    return;
-                }
-                LogInfo("VLTraderTCPClient: move_stop → " + newStop + " for signal_id=" + signalId + " (auto-breakeven, in-place Change — target + OCO preserved)");
+                if (!moved)
+                { LogInfo("VLTraderTCPClient: move_stop no-op (stop already ~" + newStop + ")"); return; }
+                LogInfo("VLTraderTCPClient: move_stop → " + newStop + " for signal_id=" + signalId + " leg=" + leg + " (auto-breakeven, in-place Change — target + OCO preserved)");
                 SendAck("move_stop");
             }
             catch (Exception ex)
@@ -2481,7 +2560,6 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // PHASE 3: the protective bracket is placed on the SAME account the entry
                 // routed to (stored in PendingBracket), not necessarily the active one.
                 Account ba = b.Account ?? account;
-                string exitOco = signalId + "-exit";
                 // D6 (2026-09-07) — PROTECTIVE ORDERS ARE GTC.
                 //
                 // These were TimeInForce.Day. A Day order is dropped at session
@@ -2491,31 +2569,85 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // calendar instead of by a cancel. The ENTRY stays Day (see
                 // HandleSignal): an unfilled entry must die with its session
                 // rather than wake up and fire into a market its plan never saw.
-                var slOrder = ba.CreateOrder(
-                    b.Instrument, b.ExitAction, OrderType.StopMarket, OrderEntry.Manual,
-                    TimeInForce.Gtc, filledQty, 0, b.Sl, exitOco, signalId + "-sl",
-                    Core.Globals.MaxDate, null);
-                var tpOrder = ba.CreateOrder(
-                    b.Instrument, b.ExitAction, OrderType.Limit, OrderEntry.Manual,
-                    TimeInForce.Gtc, filledQty, b.Tp, 0, exitOco, signalId + "-tp",
-                    Core.Globals.MaxDate, null);
-                ba.Submit(new[] { slOrder, tpOrder });
-                // Track the live SL order so auto-breakeven can move it later.
                 double tick = 0.25;
                 try { tick = b.Instrument.MasterInstrument.TickSize; } catch { }
-                lock (signalMapLock)
+
+                // REVIEW-353: the split AT ENTRY — leg 1 (ceil(n/2), its OWN TP)
+                // + leg 2 (the runner, TP = b.Tp), BOTH under the one entry signal id.
+                bool splitWanted = b.Leg1Qty > 0 && b.Leg1Tp > 0;
+                int leg1Qty = splitWanted ? Math.Min(b.Leg1Qty, filledQty) : 0;
+                int leg2Qty = splitWanted ? Math.Max(0, filledQty - leg1Qty) : 0;
+
+                if (!splitWanted)
                 {
-                    placedBrackets[signalId] = new PlacedBracket
+                    // Single bracket (legacy / n=1 / swing): one SL+TP pair.
+                    string exitOco = signalId + "-exit";
+                    var slOrder = ba.CreateOrder(
+                        b.Instrument, b.ExitAction, OrderType.StopMarket, OrderEntry.Manual,
+                        TimeInForce.Gtc, filledQty, 0, b.Sl, exitOco, signalId + "-sl",
+                        Core.Globals.MaxDate, null);
+                    var tpOrder = ba.CreateOrder(
+                        b.Instrument, b.ExitAction, OrderType.Limit, OrderEntry.Manual,
+                        TimeInForce.Gtc, filledQty, b.Tp, 0, exitOco, signalId + "-tp",
+                        Core.Globals.MaxDate, null);
+                    ba.Submit(new[] { slOrder, tpOrder });
+                    lock (signalMapLock)
                     {
-                        SlOrder = slOrder, TpOrder = tpOrder, Account = ba, Instrument = b.Instrument,
-                        ExitAction = b.ExitAction, Qty = filledQty, ExitOco = exitOco, TickSize = tick,
-                    };
+                        placedBrackets[signalId] = new PlacedBracket
+                        {
+                            SlOrder = slOrder, TpOrder = tpOrder, Account = ba, Instrument = b.Instrument,
+                            ExitAction = b.ExitAction, Qty = filledQty, ExitOco = exitOco, TickSize = tick,
+                            // REVIEW-353: a partial FIRST fill of a split entry still records the
+                            // intended split so a later fill grows leg 2 (AmendBracketQuantity).
+                            Leg1Qty = splitWanted ? b.Leg1Qty : 0, Leg1Tp = splitWanted ? b.Leg1Tp : 0,
+                            RunnerTp = b.Tp,
+                        };
+                    }
+                    LogInfo("VLTraderTCPClient: placed protective bracket signal_id=" + signalId
+                            + " sl=" + b.Sl + " tp=" + b.Tp
+                            + " qty=" + filledQty + " (requested " + b.Qty + ")"
+                            + " avg_fill=" + avgFillPx
+                            + " entry_oco=<none> exit_oco=" + exitOco + " tif=Gtc");
                 }
-                LogInfo("VLTraderTCPClient: placed protective bracket signal_id=" + signalId
-                        + " sl=" + b.Sl + " tp=" + b.Tp
-                        + " qty=" + filledQty + " (requested " + b.Qty + ")"
-                        + " avg_fill=" + avgFillPx
-                        + " entry_oco=<none> exit_oco=" + exitOco + " tif=Gtc");
+                else
+                {
+                    // REVIEW-353: TWO OCO pairs under the ONE entry signal id —
+                    // leg 1 (leg1_qty, TP=leg1_tp) + leg 2 (runner, TP=b.Tp).
+                    string exitOco1 = signalId + "-exit";
+                    string exitOco2 = signalId + "-exit2";
+                    var sl1 = ba.CreateOrder(
+                        b.Instrument, b.ExitAction, OrderType.StopMarket, OrderEntry.Manual,
+                        TimeInForce.Gtc, leg1Qty, 0, b.Sl, exitOco1, signalId + "-sl",
+                        Core.Globals.MaxDate, null);
+                    var tp1 = ba.CreateOrder(
+                        b.Instrument, b.ExitAction, OrderType.Limit, OrderEntry.Manual,
+                        TimeInForce.Gtc, leg1Qty, b.Leg1Tp, 0, exitOco1, signalId + "-tp",
+                        Core.Globals.MaxDate, null);
+                    var sl2 = ba.CreateOrder(
+                        b.Instrument, b.ExitAction, OrderType.StopMarket, OrderEntry.Manual,
+                        TimeInForce.Gtc, leg2Qty, 0, b.Sl, exitOco2, signalId + "-sl2",
+                        Core.Globals.MaxDate, null);
+                    var tp2 = ba.CreateOrder(
+                        b.Instrument, b.ExitAction, OrderType.Limit, OrderEntry.Manual,
+                        TimeInForce.Gtc, leg2Qty, b.Tp, 0, exitOco2, signalId + "-tp2",
+                        Core.Globals.MaxDate, null);
+                    ba.Submit(new[] { sl1, tp1, sl2, tp2 });
+                    lock (signalMapLock)
+                    {
+                        placedBrackets[signalId] = new PlacedBracket
+                        {
+                            SlOrder = sl1, TpOrder = tp1, SlOrder2 = sl2, TpOrder2 = tp2,
+                            Account = ba, Instrument = b.Instrument, ExitAction = b.ExitAction,
+                            Qty = filledQty, ExitOco = exitOco1, ExitOco2 = exitOco2, TickSize = tick,
+                            Leg1Qty = leg1Qty, Leg2Qty = leg2Qty, Leg1Tp = b.Leg1Tp, RunnerTp = b.Tp,
+                        };
+                    }
+                    LogInfo("VLTraderTCPClient: placed SPLIT bracket signal_id=" + signalId
+                            + " leg1=" + leg1Qty + "@" + b.Leg1Tp
+                            + " leg2=" + leg2Qty + "@" + b.Tp
+                            + " sl=" + b.Sl + " avg_fill=" + avgFillPx
+                            + " oco1=" + exitOco1 + " oco2=" + exitOco2 + " tif=Gtc");
+                }
             }
             catch (Exception ex)
             {
@@ -2545,6 +2677,43 @@ namespace NinjaTrader.NinjaScript.AddOns
             try
             {
                 var changed = new List<Order>();
+                if (pb.Leg1Qty > 0)
+                {
+                    // REVIEW-353: allocate leg 1 FIRST up to its qty, then leg 2.
+                    int leg1Qty = Math.Min(pb.Leg1Qty, filledQty);
+                    int leg2Qty = Math.Max(0, filledQty - leg1Qty);
+                    if (pb.SlOrder != null) { pb.SlOrder.QuantityChanged = leg1Qty; changed.Add(pb.SlOrder); }
+                    if (pb.TpOrder != null) { pb.TpOrder.QuantityChanged = leg1Qty; changed.Add(pb.TpOrder); }
+                    if (leg2Qty > 0)
+                    {
+                        if (pb.SlOrder2 == null || pb.TpOrder2 == null)
+                        {
+                            // Leg 2's pair was never placed (partial first fill): create it now.
+                            string oco2 = signalId + "-exit2";
+                            double stop = pb.SlOrder != null ? pb.SlOrder.StopPrice : 0.0;
+                            var sl2 = ba.CreateOrder(pb.Instrument, pb.ExitAction, OrderType.StopMarket, OrderEntry.Manual,
+                                TimeInForce.Gtc, leg2Qty, 0, stop, oco2, signalId + "-sl2", Core.Globals.MaxDate, null);
+                            var tp2 = ba.CreateOrder(pb.Instrument, pb.ExitAction, OrderType.Limit, OrderEntry.Manual,
+                                TimeInForce.Gtc, leg2Qty, pb.RunnerTp, 0, oco2, signalId + "-tp2", Core.Globals.MaxDate, null);
+                            ba.Submit(new[] { sl2, tp2 });
+                            pb.SlOrder2 = sl2; pb.TpOrder2 = tp2; pb.ExitOco2 = oco2;
+                            LogInfo("VLTraderTCPClient: leg-2 bracket created signal_id=" + signalId
+                                    + " qty=" + leg2Qty + " tp=" + pb.RunnerTp + " oco=" + oco2);
+                        }
+                        else
+                        {
+                            pb.SlOrder2.QuantityChanged = leg2Qty; changed.Add(pb.SlOrder2);
+                            pb.TpOrder2.QuantityChanged = leg2Qty; changed.Add(pb.TpOrder2);
+                        }
+                    }
+                    if (changed.Count > 0) ba.Change(changed.ToArray());
+                    int was = pb.Qty;
+                    lock (signalMapLock) { pb.Qty = filledQty; pb.Leg2Qty = leg2Qty; }
+                    LogInfo("VLTraderTCPClient: SPLIT bracket amended signal_id=" + signalId
+                            + " qty " + was + " -> " + filledQty
+                            + " leg1=" + leg1Qty + " leg2=" + leg2Qty + " (leg 1 filled first)");
+                    return;
+                }
                 if (pb.SlOrder != null) { pb.SlOrder.QuantityChanged = filledQty; changed.Add(pb.SlOrder); }
                 if (pb.TpOrder != null) { pb.TpOrder.QuantityChanged = filledQty; changed.Add(pb.TpOrder); }
                 if (changed.Count == 0)
@@ -2554,10 +2723,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                     return;
                 }
                 ba.Change(changed.ToArray());
-                int was = pb.Qty;
+                int was2 = pb.Qty;
                 lock (signalMapLock) { pb.Qty = filledQty; }
                 LogInfo("VLTraderTCPClient: bracket amended signal_id=" + signalId
-                        + " qty " + was + " -> " + filledQty
+                        + " qty " + was2 + " -> " + filledQty
                         + " legs=" + changed.Count + " exit_oco=" + pb.ExitOco
                         + " (cumulative fill from the event)");
             }
