@@ -594,22 +594,14 @@ func nextLevelBeyond(levels []Level, price float64, side Side) float64 {
 	return best
 }
 
-// freshTouch resets a classified touch when the level's price has moved away
-// from where it was touched (the EMA case): a touch against the line at one
-// price is not a touch of the same line after it drifted.
-func freshTouch(tr Touch, lvl Level) Touch {
-	if tr.Outcome != TouchNone && abs(lvl.Price-tr.PriceAtTouch) > 0.01 {
-		return Touch{LevelKey: lvl.Key}
-	}
-	return tr
-}
-
 // isMovingLineKey (item 22) reports whether a level key is one of the MOVING
 // lines — the 1m EMA34, the EMA34HTF location line, or the trigger-retest line.
 // These are re-priced every bar, so their wrong-way "invalid" state is scoped to
-// the touching candle: a drift or a visit departure clears it (the course never
-// makes a line dead for good [D5.2 p2 @20:48]). Key levels are stable and keep
-// ISB-only until the session day rolls or a closed 1H body deletes them.
+// the touching candle: a visit DEPARTURE clears it (the course never makes a
+// line dead for good [D5.2 p2 @20:48]). Drift alone does NOT clear it — the EMA
+// drifts every tick and a drift reset re-invalidates every tick (item 22 fix).
+// Key levels are stable and keep ISB-only until the session day rolls or a
+// closed 1H body deletes them.
 func isMovingLineKey(key string) bool {
 	return key == string(KindEMA34) || key == string(KindEMA34HTF) || key == string(KindTriggerRetest) ||
 		strings.HasPrefix(key, string(KindTrendline)+":")
@@ -714,7 +706,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.State.VisitsDay = e.State.Day.Key
 		// item 22: a KEY level's ISB-only invalidity is scoped to the session
 		// day (the course never makes a level dead for good [D5.2 p2 @20:48]).
-		// The moving lines reset on drift/departure in the touch loop below,
+		// The moving lines reset on visit departure in the touch loop below,
 		// so only the stable keys reset here.
 		for key := range e.State.ISBOnly {
 			if !isMovingLineKey(key) {
@@ -783,23 +775,21 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		tr := e.State.Touches[lvl.Key]
 		// item 22: a KEY level stays ISB-only for the session day (frozen touch,
 		// no re-read); a MOVING line keeps its visit machinery running so a
-		// drift or departure can clear the invalidity — the course scopes
-		// "invalid" to the touching candle [D5.2 p2 @20:48], never the line.
+		// DEPARTURE can clear the invalidity — the course scopes "invalid" to
+		// the touching candle [D5.2 p2 @20:48], never the line. Item 22 fix
+		// (CTO 00:19Z, DS-105 replay): drift alone NEVER resets a moving line —
+		// the EMA drifts every tick, and a drift reset re-touches and
+		// re-invalidates every tick (level_invalid 40→446/day, visit cap
+		// 293→14,875). The reset is only the visit-departure below.
 		if e.State.ISBOnly[lvl.Key] && !moving {
 			continue // invalid key level: no PHL/PLH, and touches need no re-read
-		}
-		// a MOVING line (EMA) that drifted away from where it was touched is
-		// a fresh line — reset the classification AND its ISB-only state.
-		before := tr
-		tr = freshTouch(tr, lvl)
-		if before.Outcome != TouchNone && tr.Outcome == TouchNone && moving {
-			delete(e.State.ISBOnly, lvl.Key)
 		}
 		wasNone := tr.Outcome == TouchNone
 		intents := visitTick(&tr, lvl, bars[len(bars)-2], bars[len(bars)-1], e.Cfg)
 		if !wasNone && tr.Outcome == TouchNone && moving {
 			// visit departure: the touching candle is gone — clear the ISB-only
-			// state scoped to that visit.
+			// state scoped to that visit. This is the ONLY reset for a moving
+			// line; drift alone keeps the classification (item 22 fix).
 			delete(e.State.ISBOnly, lvl.Key)
 		}
 		e.State.Touches[lvl.Key] = tr
