@@ -828,18 +828,11 @@ func mentorExitB(pos mentorPosition, c, h, l float64, trail bool) mentorExitResu
 			res.ExitPrice, res.ExitReason, res.Exited = pos.Stop, "stop", true
 			return res
 		}
-		// ISB EXIT [D1.4]: the fill candle's close closes leg 1 — modify its
-		// TP to the current price (a limit at or through the market). The
-		// runner continues.
-		if pos.Origin == "ISB" {
-			tp := c
-			res.ModifyTP = &tp
-			if hitHalfR {
-				res.NewStop = pos.Entry
-				res.MoveStops = []string{"leg1", "leg2"} // BE for BOTH legs
-			}
-			return res
-		}
+		// NOTE (item 8, 2026-10-05): the old "ISB EXIT" branch that re-fired a
+		// leg-1 TP modify to the CURRENT close on EVERY candle (and could book
+		// a loss) is DELETED. The ISB partial is now resolved ONCE at the fill
+		// candle's close in the live drive loop (mentorISBPartialTP): +1R if it
+		// printed first, else the candle-3 close only when in profit.
 		if hit1R {
 			// one candle crossed both +0.5R and +1R: BE for both legs and leg
 			// 1's +1R TP is hit (the runner trails from the NEXT candle).
