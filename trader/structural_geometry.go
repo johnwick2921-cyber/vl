@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
+	"time"
 	"vl/kernel"
 	"vl/store"
 	ntTrader "vl/trader/ninjatrader"
-	"strings"
-	"time"
 )
 
 func geometryNumber(v float64) *float64 { return &v }

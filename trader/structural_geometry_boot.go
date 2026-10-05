@@ -2,10 +2,10 @@ package trader
 
 import (
 	"fmt"
-	"vl/kernel"
-	"vl/store"
 	"strings"
 	"time"
+	"vl/kernel"
+	"vl/store"
 )
 
 func StructuralGeometryBootLine(st *store.Store, now time.Time, traderIDs ...string) string {

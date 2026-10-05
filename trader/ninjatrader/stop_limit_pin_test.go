@@ -21,7 +21,7 @@ func TestStopLimitFloorRefusesAnAddOnBelowIt(t *testing.T) {
 	s, frames := allFramesServer(t) // proves 2026-09-20-p1: ≥ stop-slot, < stop-limit
 	tr := NewTCPTrader(s, "MNQ", "Sim101")
 	tr.traderID = "floor-pin"
-	_, err := tr.PlaceStopEntryWithLimit("MNQ", "long", 1, 100, 99, 102)
+	_, err := tr.PlaceStopEntryWithLimit("MNQ", "long", 1, 100, 99, 102, 0, 0)
 	if !errors.Is(err, ntwire.ErrAddonBuildTooOld) {
 		t.Fatalf("a stop-limit on an AddOn below the floor must refuse with ErrAddonBuildTooOld, got %v", err)
 	}
@@ -113,7 +113,7 @@ func TestStopLimitFloorValueRefusesCancelReportBuild(t *testing.T) {
 			s, frames := proveBuildServer(t, tc.build)
 			tr := NewTCPTrader(s, "MNQ", "Sim101")
 			tr.traderID = "floor-value-pin"
-			_, err := tr.PlaceStopEntryWithLimit("MNQ", "long", 1, 100, 99, 102)
+			_, err := tr.PlaceStopEntryWithLimit("MNQ", "long", 1, 100, 99, 102, 0, 0)
 			if tc.wantRefused {
 				if !errors.Is(err, ntwire.ErrAddonBuildTooOld) {
 					t.Fatalf("a stop-limit on the c1 (cancel-report) AddOn must refuse with ErrAddonBuildTooOld, got %v", err)

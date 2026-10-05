@@ -113,7 +113,7 @@ func latchedCalls(tr *TCPTrader, stamp func(string) error) map[string]func() err
 			return err
 		},
 		"PlaceStopEntry": func() error {
-			_, err := tr.PlaceStopEntry("MNQ", "long", 1, 29150, 29000, 29300, stamp)
+			_, err := tr.PlaceStopEntry("MNQ", "long", 1, 29150, 29000, 29300, 0, 0, stamp)
 			return err
 		},
 	}

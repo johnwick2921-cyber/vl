@@ -118,7 +118,7 @@ func TestMentorTickKeepsAProductionAuthoredRestingLevelArm(t *testing.T) {
 	now := mentorLifetimeClock(10, 30)
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "lvl-77", Side: mentor.SideLong,
 		Price: 29392, Stop: 29385, Target: 29430, Setup: "PHL"}
-	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 1}, now.UnixMilli(), now.UnixMilli())
+	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 1}, now.UnixMilli(), now.UnixMilli(), "B", 0)
 	live, ok := mentorLiveArmFor("lvl-77")
 	if !ok {
 		t.Fatal("mentorArmIntent must register the arm")

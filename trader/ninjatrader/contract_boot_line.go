@@ -2,10 +2,10 @@ package ninjatrader
 
 import (
 	"fmt"
-	"vl/kernel"
 	"sort"
 	"strings"
 	"time"
+	"vl/kernel"
 
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
