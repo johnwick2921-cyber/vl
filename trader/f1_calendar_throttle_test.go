@@ -7,13 +7,37 @@ package trader
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
+	"vl/calendar"
 	"vl/logger"
 	"vl/store"
 )
+
+// f1SeedStaleLive stores a forexfactory slice whose EventsJSON is EXACTLY what
+// the producer will re-marshal for the same feed (so the first fetch sees
+// changed=false and the slice STAYS stale, forcing the throttle path on call 2).
+func f1SeedStaleLive(t *testing.T, st *store.Store, dateCT string) {
+	t.Helper()
+	res := calendar.FetchWeek(func() ([]byte, error) { return ffFixture(dateCT), nil }, nil)
+	evs := res.Days[dateCT]
+	js, err := json.Marshal(evs)
+	if err != nil {
+		t.Fatalf("marshal seed: %v", err)
+	}
+	ok, err := st.Calendar().SaveSliceIfAbsent(&store.CalendarSliceDB{
+		TradeDate:  dateCT,
+		Source:     "forexfactory",
+		EventsJSON: string(js),
+		CreatedAt:  time.Now().Add(-4 * time.Hour).UnixMilli(),
+	})
+	if err != nil || !ok {
+		t.Fatalf("seed stale slice: wrote=%v err=%v", ok, err)
+	}
+}
 
 // TestF1RefetchLogFiresOnlyWhenFetchRuns pins the log-ordering half of P2. The
 // "drop the throttle move" mutant (log-before-throttle) fires "re-fetching" on
@@ -21,18 +45,7 @@ import (
 func TestF1RefetchLogFiresOnlyWhenFetchRuns(t *testing.T) {
 	at, st := f0Trader(t)
 	at.id = "f1-refetch-log" // unique id so the package throttle never collides
-
-	// Pre-store a STALE live slice (4h old) so the skip-fresh branch is not taken
-	// and the stale-live path (where the re-fetch log lives) is exercised.
-	ok, err := st.Calendar().SaveSliceIfAbsent(&store.CalendarSliceDB{
-		TradeDate:  "2026-10-05",
-		Source:     "forexfactory",
-		EventsJSON: string(ffFixture("2026-10-05")),
-		CreatedAt:  time.Now().Add(-4 * time.Hour).UnixMilli(),
-	})
-	if err != nil || !ok {
-		t.Fatalf("seed stale slice: wrote=%v err=%v", ok, err)
-	}
+	f1SeedStaleLive(t, st, "2026-10-05")
 
 	var buf bytes.Buffer
 	prev := logger.Log.Out
@@ -59,15 +72,10 @@ func TestF1CalFetchThrottlePersistsAcrossReconstruction(t *testing.T) {
 	const tid = "f1-throttle-persist"
 	calFetchThrottle.Delete(tid) // start clean
 
-	// Instance 1 fetches.
+	// Instance 1 fetches (the seeded slice stays stale, so this is a REAL fetch).
 	at1, st := f0Trader(t)
 	at1.id = tid
-	st.Calendar().SaveSliceIfAbsent(&store.CalendarSliceDB{
-		TradeDate:  "2026-10-05",
-		Source:     "forexfactory",
-		EventsJSON: string(ffFixture("2026-10-05")),
-		CreatedAt:  time.Now().Add(-4 * time.Hour).UnixMilli(),
-	})
+	f1SeedStaleLive(t, st, "2026-10-05")
 	calls := 0
 	fetch := func() ([]byte, error) { calls++; return ffFixture("2026-10-05"), nil }
 	at1.calFetch = fetch
