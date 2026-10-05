@@ -33,10 +33,14 @@ func TestLimitsRealFillOnlyFeedsG1G2(t *testing.T) {
 	if l.Long == nil || l.Long.Entries != 1 || !l.Long.PHLFilled {
 		t.Fatalf("real fill: want one PHL leg entry, got %+v", l.Long)
 	}
-	// Dedupe: the same receipt (a partial-then-full / retransmit) is a no-op.
+	// Dedupe: the same receipt (a partial-then-full / retransmit) is a no-op
+	// and must NOT count a spurious refusal.
 	l.RecordFill("sig-1", "lvl-7", 90, 93)
 	if l.Long.Entries != 1 {
 		t.Fatalf("dedupe: a repeated receipt must not double-register, entries=%d", l.Long.Entries)
+	}
+	if l.Refusals["record_fill_no_pend"] != 0 {
+		t.Fatalf("dedupe: a repeated receipt must not count a no-pend refusal, refusals=%v", l.Refusals)
 	}
 }
 

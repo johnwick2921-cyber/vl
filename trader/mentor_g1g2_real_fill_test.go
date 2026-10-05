@@ -96,19 +96,22 @@ func TestMentorRealFillRegistersOneLegThroughTheQueue(t *testing.T) {
 
 // TestMentorRealFillDedupeOnReplay is the FU-1 mutant kill ("double-record on
 // replay"): two fill receipts with the SAME signal id (a partial-then-full, or
-// a retransmit) register once. MUTANT: remove the receipt dedupe in RecordFill
-// → entries=2 → RED.
+// a retransmit) register once and count no spurious refusal. MUTANT: remove
+// the receipt dedupe in RecordFill → the replay counts a no-pend refusal → RED.
 func TestMentorRealFillDedupeOnReplay(t *testing.T) {
 	at, _, ledger := realFillAT(t)
 	seedRealFillPend(t, at, "lvl-10")
 	fillMentorRow(t, at, ledger, "lvl-10", "sig-fill-10")
-	// A retransmit of the SAME receipt must not double-register.
-	at.onArmedOrderUpdate(ntwire.OrderUpdatePayload{
-		SignalID: "sig-fill-10", State: "filled", Quantity: 2, FillPrice: 29600, Account: "Sim101",
-	}, ledger)
+	// A retransmit of the SAME receipt must not double-register or count a
+	// refusal — it is deduped by receipt id in RecordFill.
+	at.mentorFillCh <- mentorFillReceipt{receiptID: "sig-fill-10", armID: "lvl-10", lo: 29580, hi: 29620}
 	at.mentorDrainFills()
-	if l := at.mentorEval.State.Limits.Long; l == nil || l.Entries != 1 {
+	l := at.mentorEval.State.Limits.Long
+	if l == nil || l.Entries != 1 {
 		t.Fatalf("a retransmitted receipt must register once, got %+v", l)
+	}
+	if n := at.mentorEval.State.Limits.Refusals["record_fill_no_pend"]; n != 0 {
+		t.Fatalf("a deduped receipt must not count a no-pend refusal, got %d", n)
 	}
 }
 
