@@ -220,6 +220,11 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}
+	// item 18 part 1: plumb the day's red-folder 07:30 print windows from the
+	// calendar into the evaluator so the print candle never moves the 1h/4h
+	// trigger lines [D4.4 p1 @18:13, @22:15]. No calendar / no print today →
+	// empty → the HTF feed is byte-identical.
+	at.mentorEval.Cfg.PrintWindows = at.mentorNewsPrintWindows()
 	emitMs := time.Now().UnixMilli()
 	// The evaluator's clock is the instant the last bar CLOSED: every closedness
 	// test inside Tick then reads the just-closed bar as closed, never as forming
@@ -598,6 +603,47 @@ func mentorNewsHold(events []calendar.Event, now time.Time) (hold bool, why stri
 		}
 	}
 	return false, ""
+}
+
+// mentorNewsPrintWindowsFromEvents is the pure window builder (item 18 part 1):
+// one [printAt−10m, printAt+5m) window per T1 CPI/PPI/Unemployment 07:30 CT
+// print — the same events and the same window the hold above uses. No match →
+// nil (a non-print day is byte-identical).
+func mentorNewsPrintWindowsFromEvents(events []calendar.Event) []mentor.PrintWindow {
+	var out []mentor.PrintWindow
+	for _, e := range events {
+		if e.Impact != calendar.T1 || kernel.CloseHHMMCT(e.Time) != "07:30" {
+			continue
+		}
+		title := strings.ToLower(e.Title)
+		matched := false
+		for _, tok := range mentorNewsPrintTitleTokens {
+			if strings.Contains(title, tok) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		out = append(out, mentor.PrintWindow{
+			FromMs: e.Time.Add(-mentorNewsPreWindow).UnixMilli(),
+			ToMs:   e.Time.Add(mentorNewsPostWindow).UnixMilli(),
+		})
+	}
+	return out
+}
+
+// mentorNewsPrintWindows returns the day's red-folder print windows from the
+// stored calendar. ok=false (missing/unreadable calendar) → nil: the HTF feed
+// stays byte-identical (the destructive news flat below is the half that needs
+// the calendar to fire).
+func (at *AutoTrader) mentorNewsPrintWindows() []mentor.PrintWindow {
+	evs, ok := at.mentorDayEvents()
+	if !ok {
+		return nil
+	}
+	return mentorNewsPrintWindowsFromEvents(evs)
 }
 
 // mentorNowSource is the clock seam for every mentor time gate (tests).

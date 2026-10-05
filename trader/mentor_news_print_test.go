@@ -31,6 +31,32 @@ func newsClock(h, m int) time.Time {
 	return b3Clock(h, m) // Wed 2026-09-23 CT
 }
 
+// TestMentorNewsPrintWindowsFromEvents — the part-1 plumbing: a T1 07:30
+// CPI print produces ONE window [print−10m, print+5m); a T2 or non-07:30 event
+// produces none; no events produce none (a non-print day is byte-identical).
+func TestMentorNewsPrintWindowsFromEvents(t *testing.T) {
+	cpi := calendar.Event{Time: time.Date(2026, 9, 23, 7, 30, 0, 0, kernel.CTLocation()), Title: "CPI m/m", Impact: calendar.T1}
+	got := mentorNewsPrintWindowsFromEvents([]calendar.Event{cpi})
+	if len(got) != 1 {
+		t.Fatalf("one T1 CPI print = one window, got %d", len(got))
+	}
+	ct := kernel.CTLocation()
+	wantFrom := time.Date(2026, 9, 23, 7, 20, 0, 0, ct).UnixMilli()
+	wantTo := time.Date(2026, 9, 23, 7, 35, 0, 0, ct).UnixMilli()
+	if got[0].FromMs != wantFrom || got[0].ToMs != wantTo {
+		t.Fatalf("window = [%d,%d), want [%d,%d)", got[0].FromMs, got[0].ToMs, wantFrom, wantTo)
+	}
+
+	t2 := calendar.Event{Time: time.Date(2026, 9, 23, 7, 30, 0, 0, ct), Title: "CPI m/m", Impact: calendar.T2}
+	not0730 := calendar.Event{Time: time.Date(2026, 9, 23, 9, 0, 0, 0, ct), Title: "FOMC", Impact: calendar.T1}
+	if got := mentorNewsPrintWindowsFromEvents([]calendar.Event{t2, not0730}); len(got) != 0 {
+		t.Fatalf("T2 / non-07:30 events must produce no window, got %+v", got)
+	}
+	if got := mentorNewsPrintWindowsFromEvents(nil); len(got) != 0 {
+		t.Fatalf("no events must produce no window, got %+v", got)
+	}
+}
+
 // TestMentorNewsCancelFlattenCancelsIntradayArms — the production call site:
 // inside the print window on a print day, a live INTRADAY arm is cancelled by
 // ArmID; a SWING4H arm survives. The mutant that skips the sweep leaves the

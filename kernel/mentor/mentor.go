@@ -271,6 +271,14 @@ type Config struct {
 	DayGateSpentPts     float64 // run >= this before the open = spent; default 300 [D5.1 p1 @ 15:57]
 	DayGateTargetCapPts float64 // spent-day target cap; default 15 ("15 điểm bán, 10 điểm bán")
 
+	// PrintWindows (item 18 part 1) lists the day's red-folder 07:30 print
+	// windows (FromMs inclusive, ToMs exclusive). The evaluator skips HTF
+	// breaks from 1m bars whose open falls inside any listed window — the
+	// 07:30 print candle never moves the 1h/4h trigger lines [D4.4 p1 @18:13,
+	// @22:15]. The trader plumbs it from the calendar before each Tick; empty
+	// = no print today, and the HTF feed is byte-identical.
+	PrintWindows []PrintWindow
+
 	// §8 SWING4H knobs (DS-106): the method defaults. The 5m-zone gate
 	// lives in SwingCfg.Respects5mZone (default false, [C]) and is wired
 	// at the runSwing call site (CTO swing ruling 2026-10-03).
