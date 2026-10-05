@@ -14,12 +14,14 @@ import (
 func TestMentorWireRRRefusesSubOneToOne(t *testing.T) {
 	at, _ := resetTrader(t, store.StrategyConfig{})
 	at.id = "n4-wire-rr"
-	// Authored exactly 1:1: risk 10 (100 → 90), reward 10 (100 → 110). The
-	// 0.5-pt offset makes the wire 9.5 / 10.5 < 1:1.
+	// A LEVEL target just above 1:1: risk 10 (100 → 90), reward 10.5 (100 →
+	// 110.5). The level cannot move; the 0.5-pt offset makes the wire
+	// 10.0 / 10.5 < 1:1. (A target at EXACTLY 1R is the floor and is re-based
+	// instead — TestMentorWireOneRFloorRebasedNotRefused.)
 	r := store.ArmedOrderDB{
 		ID: 9, TraderID: at.id, PlanID: "2026-09-23:NY", Version: 1,
 		Session: "TEST-N4", Scenario: "TEST-N4", Side: "long",
-		EntryPx: 100, StopPx: 90, TargetPx: 110,
+		EntryPx: 100, StopPx: 90, TargetPx: 110.5,
 		Origin: store.ArmOriginMentor, ExpiryMs: 90_000, Contracts: store.IntPtr(5),
 	}
 	d := decideStopEntry("LONG", r.EntryPx, testOffset(), testTick, 99)
@@ -102,6 +104,49 @@ func TestMentorWireLeg1TPRebase(t *testing.T) {
 	} {
 		if got := mentorWireLeg1TP(c.entry, c.trigger, c.stop, c.tp); got != c.w {
 			t.Errorf("%s: mentorWireLeg1TP = %.2f, want %.2f", c.name, got, c.w)
+		}
+	}
+}
+
+// The 1R floor (CTO 2026-10-04, DS-105 replay b5: 48/461 entries, all SWING4H,
+// refused by N4): a target authored at EXACTLY 1:1 is derived from the entry,
+// so it moves to the 1:1 point at the wire trigger and the entry is PLACED.
+// Mutant: drop the re-base → refused (outcome not-sent) → RED.
+func TestMentorWireOneRFloorRebasedNotRefused(t *testing.T) {
+	at, _ := resetTrader(t, store.StrategyConfig{})
+	at.id = "n4-wire-floor"
+	r := store.ArmedOrderDB{
+		ID: 12, TraderID: at.id, PlanID: "2026-09-23:NY", Version: 1,
+		Session: "TEST-N4F", Scenario: "TEST-N4F", Side: "long",
+		EntryPx: 100, StopPx: 90, TargetPx: 110,
+		Origin: store.ArmOriginMentor, ExpiryMs: 90_000, Contracts: store.IntPtr(1),
+	}
+	d := decideStopEntry("LONG", r.EntryPx, testOffset(), testTick, 99)
+	pl := &fakePlacer{}
+	if got := at.placeOneStopEntry(pl, &fakeLedger{}, r, d, 99, rthInstant(), freeSlot()); got != stopPlaceCommitted {
+		t.Fatalf("outcome = %d, want committed (the 1R floor is re-based, not refused)", got)
+	}
+	want := d.Trigger + (d.Trigger - r.StopPx)
+	if len(pl.calls) != 1 || pl.calls[0].tp != want {
+		t.Fatalf("target on the wire = %+v, want %.2f (1:1 from the trigger %.2f)", pl.calls, want, d.Trigger)
+	}
+}
+
+// mentorWireOneRFloor moves ONLY a target on the 1R floor; a level target
+// (anything off the floor by more than half a tick) never moves.
+func TestMentorWireOneRFloorOnlyMovesTheFloor(t *testing.T) {
+	for _, c := range []struct {
+		name                        string
+		entry, trigger, stop, tp, w float64
+	}{
+		{"long floor", 100, 100.5, 90, 110, 111},
+		{"short floor", 100, 99.5, 110, 90, 89},
+		{"long level 1.05R stays", 100, 100.5, 90, 110.5, 110.5},
+		{"long 2R stays", 100, 100.5, 90, 120, 120},
+		{"no target", 100, 100.5, 90, 0, 0},
+	} {
+		if got := mentorWireOneRFloor(c.entry, c.trigger, c.stop, c.tp, 0.25); got != c.w {
+			t.Errorf("%s: mentorWireOneRFloor = %.2f, want %.2f", c.name, got, c.w)
 		}
 	}
 }

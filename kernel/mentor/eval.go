@@ -758,6 +758,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// from the HTF feed. Empty windows = no print today = byte-identical.
 	htfBars := htfFeedBars(bars, e.Cfg.PrintWindows)
 	e.State.HTF = HTFAdvance(e.State.HTF, barsTF(htfBars, 240), barsTF(htfBars, 60), e.Cfg)
+	// D4.4-11: the HTF direction gate applies only in the news window (the
+	// course uses the HTF read for news first, not ordinary trading).
+	e.State.HTF.GateOff = !HTFGateActive(now, e.Cfg)
 
 	// §7 day gate (fold item 4): Globex run → per-trading-day latch (L1/L2).
 	dg := DayGate{SpentPts: e.Cfg.DayGateSpentPts, TargetCapPts: e.Cfg.DayGateTargetCapPts}

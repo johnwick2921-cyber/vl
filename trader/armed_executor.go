@@ -1970,16 +1970,28 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 	// price can land UNDER 1:1 at the wire. Re-check R at the WIRE trigger and
 	// refuse (counted) rather than send a sub-1:1 mentor entry [D1.2 p1
 	// @08:02–08:33: "risk reward phải là 1-1 trong bất kỳ tình huống nào"].
+	//
+	// The 1R FLOOR is re-based, not refused (CTO 2026-10-04, DS-105 replay b5:
+	// 48 of 461 entries, ALL SWING4H — R43's first target = max(1R, EMA34) sat
+	// on the floor and every one was refused; 2026-09-28 went to zero). A
+	// target authored at exactly 1:1 is DERIVED from the entry, so it moves
+	// with the entry to the 1:1 point at the trigger; a LEVEL target is a
+	// price that cannot move and is still refused under 1:1.
+	targetPx := r.TargetPx
 	if isMentorArmOrigin(r) && r.TargetPx > 0 && r.StopPx > 0 {
-		reward := math.Abs(r.TargetPx - d.Trigger)
+		targetPx = mentorWireOneRFloor(r.EntryPx, d.Trigger, r.StopPx, r.TargetPx, at.mentorInstrumentTick())
+		reward := math.Abs(targetPx - d.Trigger)
 		risk := math.Abs(d.Trigger - r.StopPx)
 		if reward < risk {
 			if armRefusalChanged(&at.armRefusalLast, armKey, "stop_entry:wire_rr_below_1") {
 				shown := at.countStopEntryRefusal(r, "stop_entry:wire_rr_below_1", now)
 				at.logWarnf("📛 armed %s mentor stop-entry REFUSED [guard=wire_rr verdict=%s] %s stop-limit trigger=%.2f stop=%.2f target=%.2f: the 2-tick offset pushes the wire R:R under 1:1 (%.2f < %.2f)%s",
-					r.Scenario, d.Verdict, strings.ToUpper(d.Side), d.Trigger, r.StopPx, r.TargetPx, reward, risk, shown)
+					r.Scenario, d.Verdict, strings.ToUpper(d.Side), d.Trigger, r.StopPx, targetPx, reward, risk, shown)
 			}
 			return stopPlaceNotSent
+		}
+		if targetPx != r.TargetPx {
+			mentorCount("wire_target_1r_rebased")
 		}
 	}
 	// REVIEW-353: the split rides the ONE frame — leg1_qty + leg1_tp (0, 0)
@@ -1996,7 +2008,7 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 			leg1TP = mentorWireLeg1TP(r.EntryPx, d.Trigger, r.StopPx, r.Leg1TP)
 		}
 	}
-	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, r.TargetPx, leg1Qty, leg1TP, func(sid string) error {
+	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, targetPx, leg1Qty, leg1TP, func(sid string) error {
 		if err := ledger.BeginPlacement(r.ID, sid); err != nil {
 			return err
 		}

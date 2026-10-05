@@ -321,6 +321,7 @@ import { expect, it } from 'vitest'
 // TOKEN-IAT-SAME-SECOND (owner order 2026-10-02 "one merge per update"; DS-101 #302 f16954d0f/c54792d98, bundled in #305): auth/auth.go re-pinned 2026-10-02 — every mint carries a distinct jti + auth.Now clock seam
 // RENAME-R5 (owner order 2026-10-02 'finish rename'; DS-104, integrated head): the three pre-rename deploy scripts deleted — keys removed, renamed vl-*.sh re-pinned from the merged tree 2026-10-02
 // SPLIT REDESIGN (owner order 2026-10-04 "with everything"; REVIEW-353 + REVIEW-SPLIT-2, DS-103 C# + CTO Go, release/2026-10-05-1): ninjascript/VLTraderTCPClient.cs + provider/ninjatrader/tcp_framing.go re-pinned 2026-10-04 — two OCO pairs per entry (leg1_qty/leg1_tp), leg on move_stop/modify_bracket/position_close; ADDITIVE wire fields, VL_BUILD_ID 2026-10-04-d1 (owner copy + F5 + NT8 restart)
+// SPLIT REVIEW FOLDS (DS-104 review → DS-103 4dddb0993 + 07f562b2b): ninjascript/VLTraderTCPClient.cs re-pinned 2026-10-04 — leg-1 exit keeps Leg1Qty (Leg1Exited/LastStop), later fills protect under leg 2, InitialStop fallback, never a 0-priced stop; same build id d1 (not yet installed anywhere)
 import baseline from './test/brand-scope-baseline.json'
 
 function verifyScope(path: string, bytes: Buffer, expected: string) {

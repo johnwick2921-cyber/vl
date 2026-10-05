@@ -22,6 +22,7 @@ const b9CapPts = 15.0
 func b9BoxFixture(htf HTF, verdict DayVerdict) (*Evaluator, []market.Kline, int64) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.HTFGateNewsOnly = false // these pins exercise the direction gate itself (all-day)
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0

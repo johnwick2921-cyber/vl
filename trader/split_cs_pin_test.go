@@ -207,7 +207,7 @@ func TestSplitAddonLeg1ExitFold(t *testing.T) {
 		"if (pb.SlOrder != null) pb.LastStop = pb.SlOrder.StopPrice;",
 		"bool leg1Gone = pb.SlOrder == null && pb.TpOrder == null && pb.Leg1Exited > 0;",
 		"int leg2Qty = leg1Gone ? Math.Max(0, filledQty - pb.Leg1Exited)",
-		"double stop = pb.LastStop;",
+		"double stop = pb.LastStop > 0 ? pb.LastStop : pb.InitialStop;",
 		"bool entryWorking = workingEntries.ContainsKey(signalId);",
 		"if (!live1 && !live2 && !entryWorking)",
 		"wasSplit = cb.Leg1Qty > 0;",
@@ -220,5 +220,31 @@ func TestSplitAddonLeg1ExitFold(t *testing.T) {
 	// Leg1Qty must never be assigned 0 inside the exit-fill leg handler.
 	if strings.Contains(src, "pb.Leg1Qty = 0") {
 		t.Error("AddOn still zeroes Leg1Qty on an exit — the split path would collapse")
+	}
+}
+
+// TestSplitAddonLeg2StopFallback pins the DS-104 review P1 fix: the runner's
+// stop never defaults to 0. InitialStop is recorded at bracket creation, the
+// leg-2 create uses LastStop > 0 ? LastStop : InitialStop, and a missing stop
+// price logs + refuses instead of submitting a 0-priced stop. Mutant: drop
+// InitialStop / keep the dead SlOrder fallback → RED.
+func TestSplitAddonLeg2StopFallback(t *testing.T) {
+	src := readSplitAddonSource(t)
+	for _, want := range []string{
+		"public double      InitialStop;",
+		"double stop = pb.LastStop > 0 ? pb.LastStop : pb.InitialStop;",
+		"LogError(\"VLTraderTCPClient: leg-2 bracket NOT created for \" + signalId",
+		"— no known stop price; position holds \" + leg2Qty + \" unprotected\");",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("AddOn lost the leg-2 stop fallback: missing %q", want)
+		}
+	}
+	if n := strings.Count(src, "InitialStop = b.Sl,"); n != 3 {
+		t.Errorf("InitialStop must be recorded at all three bracket creations, got %d", n)
+	}
+	// The old dead fallback (SlOrder is null in the leg1Gone branch) must be gone.
+	if strings.Contains(src, "if (stop <= 0 && pb.SlOrder != null)") {
+		t.Error("AddOn still carries the dead SlOrder stop fallback")
 	}
 }
