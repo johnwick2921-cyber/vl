@@ -77,6 +77,11 @@ export const planStrings = {
   // ── bias ──
   bias: { en: 'Bias', zh: '倾向', id: 'Bias' },
   biasLong: { en: 'LONG', zh: '做多', id: 'LONG' },
+  mentorAdviceOnly: {
+    en: 'AI planner — advice only (mentor mode places the trades)',
+    zh: 'AI 规划 — 仅供参考（mentor 模式负责下单）',
+    id: 'AI planner — saran saja (mode mentor yang mengeksekusi)',
+  },
   biasShort: { en: 'SHORT', zh: '做空', id: 'SHORT' },
   biasNeutral: { en: 'NEUTRAL', zh: '中性', id: 'NETRAL' },
   conviction: { en: 'conviction', zh: '信心', id: 'keyakinan' },

@@ -20,6 +20,8 @@ import { DeskStrip } from './DeskStrip'
 import { GateBlocksPanel } from './GateBlocksPanel'
 import { ExpectancyPanel } from './ExpectancyPanel'
 import { InstrumentsDrawer } from './InstrumentsDrawer'
+import { MentorTruthCard } from '../mentor/MentorTruthCard'
+import { traderApi, type MentorTruth } from '../../lib/api/traders'
 import { SESSION_BANDS, type SessionName } from './sessionConfig'
 
 interface Props {
@@ -54,6 +56,25 @@ export function PlanCard({
     traderId,
     selected ?? undefined
   )
+  // MENTOR-TRUTH PANEL: the live evaluator truth ("what trades"), fetched once.
+  // mentor mode OFF → enabled=false → the card hides and the AI bias card keeps
+  // its unchanged label.
+  const [mentor, setMentor] = useState<MentorTruth | null>(null)
+  useEffect(() => {
+    if (!traderId) return
+    let alive = true
+    traderApi
+      .getMentorTruth(traderId)
+      .then((t) => {
+        if (alive) setMentor(t)
+      })
+      .catch(() => {
+        if (alive) setMentor(null)
+      })
+    return () => {
+      alive = false
+    }
+  }, [traderId])
 
   // Which session is LIVE right now (server-told), independent of what tab the
   // owner is looking at.
@@ -176,7 +197,9 @@ export function PlanCard({
         versions={versions}
         latestVersion={latestVersion}
         onSelectVersion={(v) => setViewVersion(v === latestVersion ? null : v)}
+        mentorOn={mentor?.enabled ?? false}
       />
+      <MentorTruthCard truth={mentor} />
     </div>
   )
 }
