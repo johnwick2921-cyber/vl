@@ -452,6 +452,10 @@ export const mentor: GuideSection = {
       ],
     },
     {
+      kind: 'p',
+      text: 'The risk-control max_contracts_per_order knob does NOT apply in mentor mode: mentor entries size from this table, capped only by mentor_max_contracts (default 20).',
+    },
+    {
       kind: 'h',
       text: 'The exits',
     },
@@ -550,7 +554,7 @@ export const mentor: GuideSection = {
         {
           label: 'Max contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'The hard ceiling across all tiers.',
+          what: 'The hard ceiling across all tiers. The risk-control max_contracts_per_order knob is NOT applied in mentor mode — this is the cap that governs.',
           trader: 'No mentor position ever exceeds this.',
           consumer: 'trader/mentor_mode.go:31',
           range: 'int',

@@ -659,13 +659,30 @@ func buildEffectiveResolvers() map[string]effResolver {
 		origin := explicitZeroOrigin(x, store.KnobBreaker, src, src == store.SourceSaved)
 		return effResult{value: n, origin: origin, scope: scopeForSource(src, x.session, ScopeStrategy)}
 	})
-	add(rcPath+"max_contracts_per_order", "trader.(*AutoTrader).resolveMaxContracts → kernel.ResolveMaxContracts", func(x *effCtx) effResult {
+	add(rcPath+"max_contracts_per_order", "trader.(*AutoTrader).resolveMaxContracts", func(x *effCtx) effResult {
+		// MENTOR-SIZE-TRUTH (DS-105 R2 P2): in mentor mode resolveMaxContracts
+		// returns mentor_max_contracts (default 20), NOT this knob — the 0B
+		// 2-contract clamp does not apply to a mentor-mode trader.
+		if x.at != nil && x.at.mentorEnabled() {
+			return effResult{
+				value:  "not applied in mentor mode",
+				origin: "mentor table → mentor_max_contracts (default 20)",
+				scope:  ScopeStrategy,
+			}
+		}
 		n, src := kernel.ResolveMaxContractsWithSource(x.rc().MaxContractsPerOrder, int(maxFuturesContracts))
 		scope := ScopeFutures
 		if strings.HasPrefix(src, "env ") || strings.HasPrefix(src, "clamp") {
 			scope = ScopeProcessEnv
 		}
 		return effResult{value: n, origin: src, scope: scope}
+	})
+	add(rcPath+"mentor_max_contracts", "trader.(*AutoTrader).mentorMaxContracts (the mentor-mode ceiling resolveMaxContracts actually returns)", func(x *effCtx) effResult {
+		if x.at == nil || !x.at.mentorEnabled() {
+			return effResult{value: "— (AI mode; not applied)", origin: "mentor_mode off", scope: ScopeStrategy}
+		}
+		mx, _ := x.at.mentorMaxContracts()
+		return effResult{value: mx, origin: presenceOrigin(x, mx, store.SourceShippedDefault), scope: ScopeStrategy}
 	})
 	add(rcPath+"max_notional_leverage", "kernel.ResolveNotionalLeverage (trader.enforcePositionValueRatio)", func(x *effCtx) effResult {
 		v, src := kernel.ResolveNotionalLeverageWithSource(x.rc().MaxNotionalLeverage, futuresMaxNotionalLeverage)

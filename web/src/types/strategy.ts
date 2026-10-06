@@ -353,7 +353,7 @@ export interface RiskControlConfig {
   consecutive_loss_halt?: number | null
   reentry_cooldown_minutes?: number // B7: after a stop-loss, block same-dir re-entry for N min or until price moves ≥1×ATR15 from the stop (0=off; futures-only)
   max_contracts_per_order?: number // futures contracts-per-order clamp
-  max_contracts_enabled?: boolean // default ON
+  max_contracts_enabled?: boolean // parse-only — no consumer (knob registry KnobIneffective)
   max_notional_leverage?: number // futures notional ceiling = equity × this (default 20)
   notional_cap_enabled?: boolean // default ON
   blackout_enabled?: boolean // default OFF
