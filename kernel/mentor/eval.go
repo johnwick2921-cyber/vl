@@ -1632,6 +1632,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							// the CAP pulled the target inside the stop distance —
 							// refuse rather than emit a sub-floor intent.
 							e.refuse("box_target_below_floor")
+						} else if refuse, _ := roomRefusal(capped.Price, capped.Stop, capped.Target, e.Cfg.RoomMultiple); refuse {
+							// B7 (L13): the room rule reads the ACTUAL (capped)
+							// target — the same after-cap measure the ISB runs
+							// [D5.3 p1 @ 09:16; D5.1 p1 @ 16:24, @ 19:11–20:07].
+							e.refuse("room")
 						} else {
 							out = append(out, capped)
 							// B20: school-1 box entry without trigger agreement

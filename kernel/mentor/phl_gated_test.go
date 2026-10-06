@@ -89,18 +89,37 @@ func TestPHLPLHGatedNotMeasuredRefuses(t *testing.T) {
 
 // TestPHLPLHGatedSpentDayCapsTarget — spent + agree: the target distance is
 // capped at 15 pts ("15 điểm bán, 10 điểm bán" [D5.1 p1 @ 15:57]). The
-// worked example targets 30 pts away; the cap pulls it to 29,410.75.
+// fixture uses a 7.5-pt stop so the capped 15-pt target still clears the room
+// rule (2× risk) — the B7 (L13) consistency: room reads the CAPPED target.
 func TestPHLPLHGatedSpentDayCapsTarget(t *testing.T) {
 	htf := HTF{FourH: TriggerLine{Dir: SideLong, Price: 29400}}
-	in, ok, _ := PHLPLHGated(workedTouch(), Level{Kind: KindOldExtreme, Price: 29_431.75}, 0, 3, workedCfg(), htf, DaySpent, DefaultDayGate())
+	// tight stop: risk 7.5 → the 15-pt capped target is exactly 2× risk.
+	touch := Touch{Outcome: TouchReject, ApproachedFrom: SideLong,
+		RefBar: market.Kline{High: 29_395.75, Low: 29_389.25, Close: 29_392.0}}
+	in, ok, _ := PHLPLHGated(touch, Level{Kind: KindOldExtreme, Price: 29_431.75}, 0, 3, workedCfg(), htf, DaySpent, DefaultDayGate())
 	if !ok {
-		t.Fatal("spent+agree (1h silent = follow the 4h) must still trade")
+		t.Fatal("spent+agree with a 7.5-pt stop must still trade (capped 15 ≥ 2×risk)")
 	}
 	if in.Target != 29_411.75 {
 		t.Fatalf("target = %.2f, want the 15-pt cap 29411.75 (entry 29396.75 + 15)", in.Target)
 	}
-	if in.Stop != 29_387.5 || in.Price != 29_396.75 {
+	if in.Stop != 29_389.25 || in.Price != 29_396.75 {
 		t.Fatalf("the cap must only touch the target: %+v", in)
+	}
+}
+
+// TestPHLPLHGatedSpentDayCappedTargetRoom is the B7 (L13) call-site pin: on a
+// spent day the room rule must be measured on the CAPPED target, not the
+// uncapped one. The worked example (risk 9.25) has a 30-pt uncapped target
+// (room passes) but the 15-pt cap leaves 15 < 2×9.25 → the room rule refuses.
+// MUTANT: drop the capped-target room re-check in phlPLHGatedR2 → the setup
+// ships with the capped target → RED.
+func TestPHLPLHGatedSpentDayCappedTargetRoom(t *testing.T) {
+	htf := HTF{FourH: TriggerLine{Dir: SideLong, Price: 29400}}
+	if in, ok, reason := PHLPLHGated(workedTouch(), Level{Kind: KindOldExtreme, Price: 29_431.75}, 0, 3, workedCfg(), htf, DaySpent, DefaultDayGate()); ok {
+		t.Fatalf("spent-day PHL whose capped 15-pt target is below 2×risk shipped: %+v", in)
+	} else if reason == "" {
+		t.Fatal("the refusal must carry a reason")
 	}
 }
 
