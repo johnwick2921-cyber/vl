@@ -103,6 +103,57 @@ func TestMentorSeedAtStart(t *testing.T) {
 	})
 }
 
+// TestMentorSeedAtStartFirstTickDoesNotReAdvance (DS-105 P3 call-site pin) —
+// after mentorSeedAtStart seeds the trigger/HTF lines via SeedFull, the FIRST
+// evaluator tick over the tail window (a subset of the seeded history) must not
+// re-advance the committed buckets. The kernel pins Seed+Tick directly; this
+// drives the trader call site (mentorSeedAtStart → SeedFull) and then ticks the
+// evaluator the way the tick path does.
+func TestMentorSeedAtStartFirstTickDoesNotReAdvance(t *testing.T) {
+	st := mentorSeedStore(t)
+	now := time.Date(2026, time.September, 16, 12, 0, 0, 0, kernel.CTLocation())
+	mentorNowSource = func() time.Time { return now }
+	t.Cleanup(func() { mentorNowSource = nil })
+
+	bh := store.NewBarHistoryStore(st.GormDB())
+	rows := mentorSeedBars1m(now.UnixMilli())
+	if err := bh.InsertBars(rows); err != nil {
+		t.Fatalf("InsertBars: %v", err)
+	}
+	at := &AutoTrader{
+		id: "t-seed-tick",
+		config: AutoTraderConfig{
+			StrategyConfig: &store.StrategyConfig{
+				RiskControl: store.RiskControlConfig{MentorMode: true},
+			},
+		},
+		store: st,
+	}
+	wireMentorPlacementSeams(t)
+	at.mentorSeedAtStart()
+
+	if at.mentorEval == nil {
+		t.Fatal("mentorSeedAtStart must build the evaluator")
+	}
+	beforeTrigger := at.mentorEval.State.Trigger.LastBucket
+	before4h := at.mentorEval.State.HTF.FourH.LastBucket
+	if beforeTrigger == 0 || before4h == 0 {
+		t.Fatalf("the seed must commit trigger/HTF buckets: trigger=%d 4h=%d", beforeTrigger, before4h)
+	}
+
+	// The first tick: the tail window, the same subset the live tick passes.
+	kline := storeBarsToKlines(rows, 60_000)
+	tail := kline[len(kline)-1500:]
+	at.mentorEval.Tick(tail, now.UnixMilli())
+
+	if at.mentorEval.State.Trigger.LastBucket != beforeTrigger {
+		t.Fatalf("first tick re-advanced 5m buckets: %d -> %d", beforeTrigger, at.mentorEval.State.Trigger.LastBucket)
+	}
+	if at.mentorEval.State.HTF.FourH.LastBucket != before4h {
+		t.Fatalf("first tick re-advanced 4h buckets: %d -> %d", before4h, at.mentorEval.State.HTF.FourH.LastBucket)
+	}
+}
+
 // mentorSeedClockInstants is the FLAKE-SEED-CLOCK proof matrix: three fixed
 // mid-session instants on one CT day, pinned through mentorNowSource. The date
 // is FIXED IN THE PAST (the same convention as the other seed fixtures) so the
