@@ -958,6 +958,19 @@ func (t *TCPTrader) SplitSentFor(signalID string) (SentSplit, bool) {
 	return s, ok && s.Leg1Qty > 0
 }
 
+// ForgetSignalMaps (I9 / U3) drops the split record for signalID. Callers must
+// call it ONLY once the armed row is TERMINAL — while the row is still working
+// its REMAINDER may still be at the broker, and a premature forget would leave
+// a later re-registration without its split legs.
+func (t *TCPTrader) ForgetSignalMaps(signalID string) {
+	if t == nil || signalID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.splitBySignal, signalID)
+}
+
 // wireLeg1TP rounds leg 1's TP to the nearest tick and checks it sits on the
 // profit side of the (wire) entry. why != "" = refuse the split.
 func wireLeg1TP(side string, entry, leg1TP, tick float64) (float64, string) {

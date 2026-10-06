@@ -76,7 +76,7 @@ func TestMentorSplitScaledOnlyOnBrokerTPReceipt(t *testing.T) {
 
 	// BE candle: high 13.2 ≥ half (13) AND ≥ leg 1's TP (12). The candle arms BE
 	// but must NOT mark Scaled for a split (the old candle-price guess is gone).
-	at.mentorExitDrivePos(nil, lp, 12.8, 13.2, 12)
+	at.mentorExitDrivePos(nil, lp, 12.8, 13.2, 12, 0)
 	if lp.Pos.Scaled {
 		t.Fatal("B2: a candle-price cross of leg 1's TP must not mark Scaled for a split")
 	}

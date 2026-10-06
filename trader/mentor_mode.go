@@ -590,6 +590,12 @@ type mentorPosition struct {
 	ArmedBE   bool    // stops are at entry (B: half the target distance seen; A: resonance armed)
 	Scaled    bool    // leg 1's +1R TP candle seen → the runner's trail begins
 	Leg1TP    float64 // leg 1's TP (0 → the +1R default: entry ± R)
+	// Leg1ExitedAtMs (I6) is the instant leg 1's exit was CONFIRMED (the broker
+	// TP receipt, or the I7 broker-snapshot fallback). 0 = no confirmation yet.
+	// The runner's trail may begin only on candles that OPEN after this time —
+	// a receipt that lands MID-candle starts the trail NEXT candle, never on the
+	// crossing candle.
+	Leg1ExitedAtMs int64
 }
 
 // ── SPLIT LEGS AT ENTRY (CTO ruling 2026-10-03 05:42Z) ─────────────────────
