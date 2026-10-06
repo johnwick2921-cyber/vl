@@ -284,6 +284,13 @@ func (e *Evaluator) TakeDepthMet() string {
 	return l
 }
 
+// DepthMet returns the live depth line WITHOUT consuming it (read-only, for the
+// dashboard's "what trades" panel). The tick's mentorRefreshDepths consumes it
+// via TakeDepthMet; a read path must never steal that line.
+func (e *Evaluator) DepthMet() string {
+	return e.depthMet
+}
+
 // SourcesMissing reports the seeded-but-missing sources (nil when unseeded or
 // complete).
 func (e *Evaluator) SourcesMissing() []string {
