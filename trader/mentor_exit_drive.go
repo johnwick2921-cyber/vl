@@ -203,11 +203,13 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		at.logWarnf("🧑‍🏫 mentor spent-day runner %d over the cap %d — asserting, not reducing [D5.1]", p.Legs[1].Qty, mentorSpentDayRunnerCap)
 	}
 
-	runnerPresent := p.Legs[1].Qty > 0 && p.Legs[1].SignalID != ""
-	// scaledBefore is whether leg 1's TP had ALREADY been crossed on a PRIOR
-	// candle: the runner's trail begins on the NEXT candle after leg 1's TP
-	// (never on the candle that crosses it).
+	// scaledBefore is whether leg 1's TP was ALREADY confirmed exited on a
+	// PRIOR candle (the broker receipt set Scaled): the runner's trail begins
+	// on the NEXT candle after leg 1's TP (never on the candle that crosses it).
 	scaledBefore := pos.Scaled
+	// runnerPresent distinguishes the split (leg 1 + runner) from the single
+	// bracket: only the split has a broker leg-1 TP to wait for.
+	runnerPresent := p.Legs[1].Qty > 0 && p.Legs[1].SignalID != ""
 	// wasArmed is whether BE was ALREADY armed on a PRIOR candle: the candle
 	// that arms BE only arms BE — the 1:1/trail starts on the NEXT candle.
 	wasArmed := pos.ArmedBE
@@ -269,30 +271,20 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		}
 	}
 
-	// ── (3) leg 1's TP crossing → leg 1 exits at its native TP; the runner's
-	// trail begins NEXT candle. Mark Scaled BEFORE the 1:1 loop so leg 1 never
-	// gets a 1:1 move past its own take-profit. (Final does NOT mean "exited" —
-	// canonical semantics: Final marks the RUNNER.) ──────────────────────────
-	// The 1:1 point: leg 1's own TP when a runner exists; for a SINGLE leg
-	// (n = 1, or before the split lands) entry ± R — the point where leg 1
-	// would have left. The runner trails only after this printed on a PRIOR
-	// candle (CTO gate: a single leg used to trail straight after BE).
-	if !pos.Scaled {
-		scaleAt := leg1Target
-		if !runnerPresent {
-			if long {
-				scaleAt = pos.Entry + pos.R
-			} else {
-				scaleAt = pos.Entry - pos.R
-			}
+	// ── (3) the 1:1 point → the runner's trail begins NEXT candle. For a
+	// SPLIT, leg 1 exits at its native TP and Scaled is marked ONLY on the
+	// broker's position_close receipt of leg 1's TP (B2, BUILD-ALL L9) — the
+	// candle-price guess that used to set it here is GONE, so the trail never
+	// begins before the broker actually confirms leg 1 exited. A SINGLE leg has
+	// no broker leg-1 TP to wait for, so its 1:1 point stays candle-priced.
+	// (Final does NOT mean "exited" — canonical semantics: Final marks the
+	// RUNNER.)
+	if !pos.Scaled && !runnerPresent {
+		scaleAt := pos.Entry + pos.R
+		if !long {
+			scaleAt = pos.Entry - pos.R
 		}
-		hit := false
-		if long {
-			hit = h >= scaleAt
-		} else {
-			hit = l <= scaleAt
-		}
-		if hit {
+		if (long && h >= scaleAt) || (!long && l <= scaleAt) {
 			pos.Scaled = true
 			mentorCount("leg1_at_target")
 		}

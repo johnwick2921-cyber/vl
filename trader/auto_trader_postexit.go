@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	ntwire "vl/provider/ninjatrader"
 	ntTrader "vl/trader/ninjatrader"
 )
 
@@ -47,8 +48,9 @@ func postExitDelayMs() int64 {
 // postExitRegistry routes close notifications (which carry only a traderID)
 // back to the live AutoTrader instances.
 var (
-	postExitRegistry sync.Map // traderID -> *AutoTrader
-	postExitHookOnce sync.Once
+	postExitRegistry    sync.Map // traderID -> *AutoTrader
+	postExitHookOnce    sync.Once
+	postExitLegHookOnce sync.Once
 )
 
 func registerPostExitDispatch(at *AutoTrader) {
@@ -57,6 +59,8 @@ func registerPostExitDispatch(at *AutoTrader) {
 	// traders' Run() racing an idempotent assignment was still a data race by
 	// the memory model; close-sync goroutines read it concurrently).
 	postExitHookOnce.Do(func() { ntTrader.OnPositionClosed = dispatchPositionClosed })
+	// B2 (BUILD-ALL): the leg-aware hook is likewise written exactly once.
+	postExitLegHookOnce.Do(func() { ntTrader.OnPositionLegClosed = dispatchPositionLegClosed })
 }
 
 func unregisterPostExitDispatch(at *AutoTrader) {
@@ -91,6 +95,15 @@ func runningTraderIDs() []string {
 func dispatchPositionClosed(traderID string, positionID int64) {
 	if v, ok := postExitRegistry.Load(traderID); ok {
 		v.(*AutoTrader).notifyPositionClosed(positionID)
+	}
+}
+
+// dispatchPositionLegClosed (B2, BUILD-ALL) routes the leg-aware position_close
+// payload back to the owning trader so the exit drive marks leg 1 scaled only
+// on the broker's TP receipt.
+func dispatchPositionLegClosed(traderID string, p ntwire.PositionClosePayload) {
+	if v, ok := postExitRegistry.Load(traderID); ok {
+		v.(*AutoTrader).mentorMarkLeg1Scaled(p)
 	}
 }
 
