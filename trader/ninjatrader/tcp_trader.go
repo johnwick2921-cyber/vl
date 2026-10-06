@@ -958,11 +958,11 @@ func (t *TCPTrader) SplitSentFor(signalID string) (SentSplit, bool) {
 	return s, ok && s.Leg1Qty > 0
 }
 
-// ForgetSignalMaps (UR-FIX U3) drops the per-signal mentor records — the split
-// and the per-leg live stops — once the signal is FULLY closed (both legs flat).
-// The mentor exit drive calls this from its flat-unregister, never on a leg-1
-// partial close: the runner still needs the split record (SplitSentFor) and its
-// per-leg stop (MoveStopForSignalLeg) while it is open.
+// ForgetSignalMaps (UR-FIX U3 + I9) drops the per-signal mentor records — the
+// split and the per-leg live stops. Callers must call it ONLY once the signal is
+// FULLY closed AND its armed row is TERMINAL: the runner still needs the split
+// record (SplitSentFor) and its per-leg stop (MoveStopForSignalLeg) while open,
+// and while the row is still working its REMAINDER may still be at the broker.
 func (t *TCPTrader) ForgetSignalMaps(signalID string) {
 	if t == nil || signalID == "" {
 		return
@@ -1567,6 +1567,14 @@ func (t *TCPTrader) GetPositions() ([]map[string]interface{}, error) {
 	// reflects positions opened MANUALLY in NT8 (the AddOn emits a `positions`
 	// snapshot on select / connect / PositionUpdate).
 	acct := t.boundAccount
+	// Release #9 integration (CTO): a TCPTrader with no server (a fixture, or a
+	// trader built before the TCP server is wired) has no NT8 snapshot — fall to
+	// the fill-derived cache below (UNKNOWN when there is no fill), never a nil
+	// dereference. The mentor exit drive's I7 leg-1-gone check now reads this
+	// every closed candle.
+	if t.server == nil {
+		goto fillDerived
+	}
 	if snap, received, entryAfter, ok := t.server.PositionsForExecutionReceipt(acct, t.symbol); ok &&
 		(entryAfter.IsZero() || received.After(entryAfter)) {
 		// W117 F1 — a snapshot received at-or-before the latest entry receipt
@@ -1604,6 +1612,7 @@ func (t *TCPTrader) GetPositions() ([]map[string]interface{}, error) {
 	}
 
 	// Fallback (no NT8 snapshot yet): the single fill-derived position.
+fillDerived:
 	t.mu.Lock()
 	if !t.hasFill {
 		t.mu.Unlock()

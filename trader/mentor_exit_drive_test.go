@@ -168,7 +168,7 @@ func TestMentorExitDrivePosISB_PartialResolvedOnce(t *testing.T) {
 	p.Pos.ArmedBE = true
 	p.BarsSinceFill = 1 // the fill candle just closed
 	// fill candle high 12 >= +1R (entry 10 + R 2 = 12): +1R printed first.
-	at.mentorExitDrivePos(nil, p, 11.0, 12.0, 10.8)
+	at.mentorExitDrivePos(nil, p, 11.0, 12.0, 10.8, 0)
 	if p.Legs[0].TP != 12 {
 		t.Fatalf("leg1 TP = %.2f, want 12 (+1R first)", p.Legs[0].TP)
 	}
@@ -178,7 +178,7 @@ func TestMentorExitDrivePosISB_PartialResolvedOnce(t *testing.T) {
 	assertMoves(t, moves())
 	// a later candle must NOT re-fire the ISB partial.
 	p.BarsSinceFill = 2
-	at.mentorExitDrivePos(nil, p, 12.5, 13, 12)
+	at.mentorExitDrivePos(nil, p, 12.5, 13, 12, 0)
 	if got := MentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
 		t.Fatalf("modify_bracket_isb_logged = %d after a later candle, want 1 (no re-fire)", got)
 	}
@@ -189,7 +189,7 @@ func TestMentorExitDrivePosISB_PartialResolvedOnce(t *testing.T) {
 func TestMentorExitDrivePosB_ArmsBE(t *testing.T) {
 	at, moves := newDriveAT(t)
 	p := bPos("B", "long", 10, 9, 13, 5)            // half = (13−10)/2 = 1.5 → BE at 11.5
-	at.mentorExitDrivePos(nil, p, 11.0, 11.8, 10.8) // high 11.8 arms it
+	at.mentorExitDrivePos(nil, p, 11.0, 11.8, 10.8, 0) // high 11.8 arms it
 	assertMoves(t, moves(), driveMove{"entry", "long", 10})
 	if !p.Pos.ArmedBE {
 		t.Fatalf("ArmedBE = false, want true")
@@ -208,13 +208,13 @@ func TestMentorExitDrivePosB_SingleLegTrails(t *testing.T) {
 	p.Pos.ArmedBE = true
 	// Candle 1 prints the 1:1 point (high 13 ≥ 12): no trail yet; the live
 	// 1:1 (2·12.5−16 = 9) is below the BE stop → no move.
-	at.mentorExitDrivePos(nil, p, 12.5, 13, 12)
+	at.mentorExitDrivePos(nil, p, 12.5, 13, 12, 0)
 	assertMoves(t, moves())
 	if !p.Pos.Scaled {
 		t.Fatal("the 1:1 point printed — Scaled must be set")
 	}
 	// Candle 2: 1:1 = 2·14−16 = 12; trail = low 13.5 − 1 tick = 13.25 → 13.25.
-	at.mentorExitDrivePos(nil, p, 14, 14.5, 13.5)
+	at.mentorExitDrivePos(nil, p, 14, 14.5, 13.5, 0)
 	assertMoves(t, moves(), driveMove{"entry", "long", 13.25})
 }
 
@@ -236,7 +236,7 @@ func TestMentorExitDriveE2E_SingleRowFillRegistersAndDrives(t *testing.T) {
 	if lp.Legs[0].Qty != 5 || !lp.Legs[0].Final || lp.Legs[1].SignalID != "" {
 		t.Fatalf("single leg = whole position (Final runner, Legs[1] empty): %+v", lp.Legs)
 	}
-	at.mentorExitDrivePos(nil, lp, 11.0, 11.8, 10.8)
+	at.mentorExitDrivePos(nil, lp, 11.0, 11.8, 10.8, 0)
 	assertMoves(t, moves(), driveMove{"sig-1", "long", 10})
 	if !lp.Pos.ArmedBE {
 		t.Fatalf("ArmedBE = false, want true")
@@ -247,7 +247,7 @@ func TestMentorExitDriveE2E_SingleRowFillRegistersAndDrives(t *testing.T) {
 func TestMentorExitDrivePosC_NeverMoves(t *testing.T) {
 	at, moves := newDriveAT(t)
 	p := bPos("C", "long", 10, 9, 16, 5)
-	at.mentorExitDrivePos(nil, p, 15, 16, 14)
+	at.mentorExitDrivePos(nil, p, 15, 16, 14, 0)
 	assertMoves(t, moves())
 }
 
@@ -256,7 +256,7 @@ func TestMentorExitDrivePosA_NoMoves(t *testing.T) {
 	at, moves := newDriveAT(t)
 	p := bPos("A-resonance", "long", 10, 10, 16, 5)
 	p.Pos.ArmedBE = true
-	at.mentorExitDrivePos(nil, p, 15, 16, 14)
+	at.mentorExitDrivePos(nil, p, 15, 16, 14, 0)
 	assertMoves(t, moves())
 }
 
@@ -264,7 +264,7 @@ func TestMentorExitDrivePosA_NoMoves(t *testing.T) {
 func TestMentorExitDrivePosSwing_NoMoves(t *testing.T) {
 	at, moves := newDriveAT(t)
 	p := bPos("swing", "long", 10, 9, 0, 5)
-	at.mentorExitDrivePos(nil, p, 15, 16, 14)
+	at.mentorExitDrivePos(nil, p, 15, 16, 14, 0)
 	assertMoves(t, moves())
 }
 
@@ -341,6 +341,11 @@ func TestMentorExitDriveDropsAFlatPosition(t *testing.T) {
 	old := mentorDriveOpenSides
 	mentorDriveOpenSides = func(*AutoTrader) (map[string]bool, bool) { return sides, readOK }
 	t.Cleanup(func() { mentorDriveOpenSides = old })
+	// The I7 qty seam must be substituted too — the zero-value TCPTrader has no
+	// server, so the production reader would panic on GetPositions.
+	oldQty := mentorDriveOpenQty
+	mentorDriveOpenQty = func(*AutoTrader) (map[string]float64, bool) { return map[string]float64{"long": 5}, readOK }
+	t.Cleanup(func() { mentorDriveOpenQty = oldQty })
 	bar := func(i int) []market.Kline {
 		return []market.Kline{{OpenTime: int64(i) * 60_000, Close: 10.2, High: 10.3, Low: 10.1, Final: true}}
 	}
@@ -397,12 +402,12 @@ func TestMentorExitDrivePosISB_PartialOnlyOnTheFillCandle(t *testing.T) {
 	p := bPos("B", "long", 10, 8, 20, 4) // R = 2 (bPos fixes R at 2): +1R = 12
 	p.Pos.Origin = "ISB"
 	p.BarsSinceFill = 1
-	at.mentorExitDrivePos(nil, p, 11.0, 11.5, 10.5) // fill candle closes in profit below +1R
+	at.mentorExitDrivePos(nil, p, 11.0, 11.5, 10.5, 0) // fill candle closes in profit below +1R
 	if got := MentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
 		t.Fatalf("the fill-candle close must resolve the partial once, got %d", got)
 	}
 	p.BarsSinceFill = 2
-	at.mentorExitDrivePos(nil, p, 11.4, 11.8, 11.1) // still below +1R, still in profit
+	at.mentorExitDrivePos(nil, p, 11.4, 11.8, 11.1, 0) // still below +1R, still in profit
 	if got := MentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
 		t.Fatalf("a later candle must not re-fire the ISB partial, got %d logs", got)
 	}
@@ -435,10 +440,14 @@ func TestMentorExitDriveForgetsSignalMapsOnFullCloseOnly(t *testing.T) {
 	}
 	at.mentorRegisterLivePos(sid, p)
 
-	// Leg-1-only close: the leg-1 TP candle scales leg 1; the runner stays open.
-	at.mentorExitDrivePos(nt, p, 11.0, 11.5, 10.5) // h=11.5 ≥ leg1Target 11 → Scaled
+	// Leg-1-only close: since B2/I6 a SPLIT position's leg 1 is scaled only by
+	// the broker's leg-1 TP confirmation (never a candle guess) — latch it the
+	// way the receipt does; the runner stays open.
+	if !at.mentorLatchLeg1Scaled(sid, 1) {
+		t.Fatal("the leg-1 TP receipt must scale leg 1")
+	}
 	if !p.Pos.Scaled {
-		t.Fatal("the leg-1 TP candle must scale leg 1")
+		t.Fatal("the leg-1 TP receipt must scale leg 1")
 	}
 	if _, ok := nt.SplitSentFor(sid); !ok {
 		t.Fatal("a leg-1-only close must NOT drop the split record (the runner still needs it)")

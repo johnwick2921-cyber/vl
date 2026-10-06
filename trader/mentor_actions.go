@@ -554,6 +554,10 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 	at.clearMentorLevelArmLocked(in.ArmID)
 	at.armLifecycleWrite("request_cancel(mentor)", r,
 		ledger.RequestCancel(r.ID, "mentor: "+in.Reason, now.UnixMilli()))
+	// I4 (BUILD-ALL): a PARTIALLY filled arm whose remainder is cancelled here
+	// must still hand its FILLED quantity to the exit drive — the B1 expiry path
+	// covers only the expiry sweep, not this B3 day-stop / never-add cancel.
+	at.mentorRegisterPartialFillIfAbsent(r)
 	mentorCount("cancel_requested")
 	at.logInfof("🧑‍🏫 mentor cancel requested for ArmID %q: %s", in.ArmID, in.Reason)
 	return true

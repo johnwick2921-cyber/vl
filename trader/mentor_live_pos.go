@@ -4,6 +4,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"time"
 
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
@@ -96,12 +97,24 @@ func (at *AutoTrader) mentorBuildLivePos(r store.ArmedOrderDB, u ntwire.OrderUpd
 	// trade target) — so every stop move names its leg. No record (single
 	// bracket, or a restart lost it) → the single-leg view, whose leg-less
 	// move_stop moves every live leg together (tightening only, never a widen).
-	if split, ok := mentorSentSplit(at, r.SignalID); ok && split.Leg1Qty < n {
-		leg1, runner := split.Leg1Qty, n-split.Leg1Qty
-		lp.Pos.Leg1, lp.Pos.Leg2, lp.Pos.Leg1TP = leg1, runner, split.Leg1TP
-		lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: leg1, TP: split.Leg1TP, Stop: r.StopPx, Final: false, Wire: 1}
-		lp.Legs[1] = mentorLeg{SignalID: r.SignalID, Qty: runner, TP: r.TargetPx, Stop: r.StopPx, Final: true, Wire: 2}
-		mentorCount("exit_drive_split_registered")
+	if split, ok := mentorSentSplit(at, r.SignalID); ok {
+		if split.Leg1Qty < n {
+			// Full split: leg 1 (-sl/-tp, its own TP) + the runner (-sl2/-tp2,
+			// the trade target).
+			leg1, runner := split.Leg1Qty, n-split.Leg1Qty
+			lp.Pos.Leg1, lp.Pos.Leg2, lp.Pos.Leg1TP = leg1, runner, split.Leg1TP
+			lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: leg1, TP: split.Leg1TP, Stop: r.StopPx, Final: false, Wire: 1}
+			lp.Legs[1] = mentorLeg{SignalID: r.SignalID, Qty: runner, TP: r.TargetPx, Stop: r.StopPx, Final: true, Wire: 2}
+			mentorCount("exit_drive_split_registered")
+		} else {
+			// I10: a partial fill ≤ leg 1's quantity means ONLY leg 1 is live —
+			// the wire holds only the leg-1 bracket at 1:1. Register leg 1 only,
+			// with Leg1TP = split.Leg1TP (the 1:1 target), NOT the trade target.
+			lp.Pos.Leg1, lp.Pos.Leg2 = n, 0
+			lp.Pos.Leg1TP = split.Leg1TP
+			lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: n, TP: split.Leg1TP, Stop: r.StopPx, Final: false, Wire: 1}
+			mentorCount("exit_drive_leg1_only_registered")
+		}
 	}
 	// I13 (merge of #423 into the #422 build/register split): the staged exit
 	// branch has been read into lp.Pos.Mode above, so it is consumed — prune it
@@ -166,14 +179,99 @@ func (at *AutoTrader) mentorUnregisterLivePos(key string) {
 	at.mentorExitMu.Lock()
 	delete(at.mentorLivePos, key)
 	at.mentorExitMu.Unlock()
-	// UR-FIX U3: both legs are flat — drop the TCPTrader's per-signal split and
-	// per-leg stop records so they do not grow for the life of the process.
-	// This function IS the full-close path; a leg-1 partial close never reaches
-	// it (the runner keeps the side open), so the split record the runner still
-	// needs for SplitSentFor / MoveStopForSignalLeg survives until the full flat.
-	if nt := at.armedTrader(); nt != nil {
-		nt.ForgetSignalMaps(key)
+	// I9 (U3): forget the split record ONLY when the armed row is TERMINAL.
+	// While the row is still working its REMAINDER may still be at the broker —
+	// a forget here would leave a later re-registration without its split legs.
+	if at.mentorArmedRowTerminal(key) {
+		if nt := at.armedTrader(); nt != nil {
+			nt.ForgetSignalMaps(key)
+		}
 	}
+}
+
+// mentorArmedRowTerminal reports whether the armed row carrying signalID has
+// reached a TERMINAL state. An unknown/unreadable row reads terminal (fail-safe
+// for the forget — a read failure never blocks the unregister).
+func (at *AutoTrader) mentorArmedRowTerminal(signalID string) bool {
+	if at == nil || signalID == "" || at.store == nil {
+		return true
+	}
+	ledger := at.store.ArmedOrders()
+	if ledger == nil {
+		return true
+	}
+	var r store.ArmedOrderDB
+	if err := ledger.DB().Where("signal_id = ?", signalID).First(&r).Error; err != nil {
+		return true
+	}
+	return store.IsTerminalArmState(r.State)
+}
+
+// mentorCloseReceiptMs resolves the receipt instant from the position_close
+// payload: the broker's ExitTime (RFC3339) when parseable, else the clock now.
+func mentorCloseReceiptMs(p ntwire.PositionClosePayload) int64 {
+	if ts, err := time.Parse(time.RFC3339, strings.TrimSpace(p.ExitTime)); err == nil {
+		return ts.UnixMilli()
+	}
+	return mentorClockNow().UnixMilli()
+}
+
+// mentorLeg1ExitedBefore (I6) is the pure next-candle rule: leg 1 counts as
+// "exited on a PRIOR candle" only when its confirmation instant predates the
+// candle's OPEN. exitedAtMs <= 0 means no confirmation (a single bracket, which
+// is candle-marked) — treated as prior, so the single-leg trail keeps its old
+// timing.
+func mentorLeg1ExitedBefore(exitedAtMs, candleOpenMs int64) bool {
+	if exitedAtMs <= 0 {
+		return true
+	}
+	return exitedAtMs < candleOpenMs
+}
+
+// mentorScaledState reads the shared Scaled/Leg1ExitedAtMs under mentorExitMu —
+// the receipt (mentorMarkLeg1Scaled) and the I7 fallback write them from other
+// goroutines, so an unlocked read races (I6).
+func (at *AutoTrader) mentorScaledState(p *mentorLivePos) (scaled bool, exitedAtMs int64) {
+	if at == nil || p == nil {
+		return false, 0
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	return p.Pos.Scaled, p.Pos.Leg1ExitedAtMs
+}
+
+// mentorSetScaledCandle marks Scaled for the SINGLE-leg candle-priced 1:1 point
+// (no confirmation instant — Leg1ExitedAtMs stays 0). Guarded because Pos is
+// shared. Returns true when this call FIRST marked it.
+func (at *AutoTrader) mentorSetScaledCandle(p *mentorLivePos) bool {
+	if at == nil || p == nil {
+		return false
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	if p.Pos.Scaled {
+		return false
+	}
+	p.Pos.Scaled = true
+	return true
+}
+
+// mentorLatchLeg1Scaled marks a live position's leg 1 as scaled (confirmed
+// exited) at the given instant, under mentorExitMu. Idempotent — a later latch
+// never rewinds an earlier one. Returns true when this call FIRST marked it.
+func (at *AutoTrader) mentorLatchLeg1Scaled(key string, atMs int64) bool {
+	if at == nil || key == "" {
+		return false
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	lp, ok := at.mentorLivePos[key]
+	if !ok || lp == nil || lp.Pos.Scaled {
+		return false
+	}
+	lp.Pos.Scaled = true
+	lp.Pos.Leg1ExitedAtMs = atMs
+	return true
 }
 
 // mentorMarkLeg1Scaled (B2, BUILD-ALL L9 bookkeeping half) marks a live position
@@ -181,20 +279,37 @@ func (at *AutoTrader) mentorUnregisterLivePos(key string) {
 // position close (leg 0), a runner close (leg 2), a stop exit, or a manual close
 // is NOT a scale-out and leaves Scaled untouched. The candle-price guess that
 // used to set Scaled in the exit drive is gone — the trail now begins only once
-// the broker confirms leg 1 actually exited.
+// the broker confirms leg 1 actually exited (and only on candles that OPEN after
+// that confirmation, I6).
 func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
 	if at == nil || p.Leg != 1 || p.ExitReason != "tp" || p.SignalID == "" {
 		return
 	}
-	at.mentorExitMu.Lock()
-	defer at.mentorExitMu.Unlock()
-	lp, ok := at.mentorLivePos[p.SignalID]
-	if !ok || lp == nil || lp.Pos.Scaled {
-		return
+	if at.mentorLatchLeg1Scaled(p.SignalID, mentorCloseReceiptMs(p)) {
+		mentorCount("leg1_at_target")
+		at.logInfof("🧑‍🏫 mentor leg 1 scaled on the broker TP receipt: %s (%s)", p.SignalID, p.PositionSide)
 	}
-	lp.Pos.Scaled = true
-	mentorCount("leg1_at_target")
-	at.logInfof("🧑‍🏫 mentor leg 1 scaled on the broker TP receipt: %s (%s)", p.SignalID, p.PositionSide)
+}
+
+// mentorRegisterPartialFillIfAbsent (B1 + I4) registers a partially filled
+// mentor arm's FILLED quantity in the exit drive (register-if-absent) and pokes
+// the drive + bumps the funnel. No-op unless the row is a partially filled
+// mentor arm with a signal id. Returns true when it registered.
+func (at *AutoTrader) mentorRegisterPartialFillIfAbsent(r store.ArmedOrderDB) bool {
+	if !isMentorArmOrigin(r) || strings.TrimSpace(r.SignalID) == "" || r.FillQuantity <= 0 || mentorRemainderToCancel(r) <= 0 {
+		return false
+	}
+	lp := at.mentorBuildLivePos(r, ntwire.OrderUpdatePayload{
+		SignalID:  r.SignalID,
+		Quantity:  r.FillQuantity,
+		FillPrice: r.FillPrice,
+	})
+	if lp == nil || !at.mentorRegisterLivePosIfAbsent(r.SignalID, lp) {
+		return false
+	}
+	at.pokeMentorExitDrive()
+	at.mentorFunnel.bumpFilled()
+	return true
 }
 
 // mentorLivePosList returns every live mentor position (the exit-drive loop
