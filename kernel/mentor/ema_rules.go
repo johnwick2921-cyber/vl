@@ -1,6 +1,10 @@
 package mentor
 
-import "vl/market"
+import (
+	"time"
+
+	"vl/market"
+)
 
 // emaCross30 counts how many times the close CROSSED the EMA line over the
 // last 30 closed 1m candles (sign changes of close - ema between consecutive
@@ -57,6 +61,17 @@ func emaSetupAllowed(e *Evaluator, lvl Level, bars []market.Kline, cfg Config) b
 //	    expired: no position, no loss);
 //	(c) entry filled, then the target reached first  → NOT blocked (a win).
 func emaLossTick(e *Evaluator, emaPrice float64, cur market.Kline, now int64) {
+	// B8 (L10): the E2 block resets at the 17:00 CT session-day boundary, like
+	// the G2 loss boxes (Limits.Apply clears Places at the trading-day rollover)
+	// — a loss at the EMA line must not switch the location off until a restart
+	// / strategy save.
+	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
+	if e.State.EmaBlocked && e.State.EmaBlockDayKey != "" && e.State.EmaBlockDayKey != day {
+		e.State.EmaBlocked = false
+		e.State.EmaLossPrice = 0
+		e.State.EmaLossBarTime = 0
+		e.State.EmaBlockDayKey = ""
+	}
 	if e.State.EmaPendingSide != "" {
 		s := &e.State
 		touchEntry := s.EmaPendingSide == SideLong && cur.High >= s.EmaPendingEntry ||
@@ -74,6 +89,7 @@ func emaLossTick(e *Evaluator, emaPrice float64, cur market.Kline, now int64) {
 			s.EmaBlocked = true // (a) one loss at the line
 			s.EmaLossPrice = s.EmaPendingStop
 			s.EmaLossBarTime = cur.CloseTime
+			s.EmaBlockDayKey = day // B8: reset at the next 17:00 CT rollover
 			s.EmaPendingSide = ""
 			s.EmaPendingFilled = false
 		case s.EmaPendingFilled && touchTarget:

@@ -123,6 +123,9 @@ type State struct {
 	EmaLossPrice     float64 `json:"ema_loss_price,omitempty"`
 	EmaLossBarTime   int64   `json:"ema_loss_bar_time,omitempty"`
 	EmaBlocked       bool    `json:"ema_blocked,omitempty"`
+	// EmaBlockDayKey is the 17:00 CT session-day key of the E2 block (B8): the
+	// block lifts at the next rollover, like the G2 loss boxes.
+	EmaBlockDayKey string `json:"ema_block_day_key,omitempty"`
 	// ArmSeq names the next arm.
 	ArmSeq int `json:"arm_seq"`
 	// LevelArms are the RESTING level orders (B6, 10-03 ruling): a level
