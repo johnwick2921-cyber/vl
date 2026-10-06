@@ -75,6 +75,11 @@ type Box struct {
 	// candle nor its confirmation is ever walked as a return (item 12
 	// ruling 23:06Z, folding B10 T1 + T3).
 	FormedAt int
+	// FormedAtMs is the OpenTime of the formation bar — the STABLE anchor
+	// (UR-FIX U1): the live window slides (the provider returns the last
+	// 2000 bars), so FormedAt the index shifts by 1 each new 1m bar. Every
+	// tick the latched box re-resolves its index from FormedAtMs.
+	FormedAtMs int64
 	// Flipped marks a box whose BODY escaped (a closed candle's whole body
 	// outside on the far side) — D14 "Uno Reverse" [slide 17; X2 @02:36–
 	// 03:25]: "Kháng cự bị phá → sẽ thành hỗ trợ khi backtest. Hỗ trợ bị
@@ -315,6 +320,7 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 		// seq[nearest].idx + 1; the partner candle itself (bottom/high 2)
 		// is a formation candle and is never walked as a return.
 		b.FormedAt = seq[nearest].idx + 1
+		b.FormedAtMs = tfBars[b.FormedAt].OpenTime // UR-FIX U1: the stable anchor
 		// D14 "Uno Reverse" [slide 17; X2 @02:36–03:25]: a BODY escape flips
 		// the role — a broken FTGH becomes support, a broken FTGL becomes
 		// resistance. The box is NOT deleted (B4); it stays and trades the
@@ -342,7 +348,19 @@ func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []B
 	for _, b := range fresh {
 		role := string(b.Kind)
 		if latched, ok := e.State.LatchedBoxes[role]; ok {
-			latched.Touches = countBoxTouches(tfBars, latched, latched.FormedAt, cfg)
+			// UR-FIX U1: the latched box re-resolves its formation index from
+			// the TIME anchor every tick (the live window slides), then
+			// refreshes BOTH the touch count AND the D14 flip — the flip was
+			// previously frozen at latch time and never fired live. Absent
+			// anchor (the formation bar scrolled out of the window) → fail
+			// closed: keep the last known values, never recompute on a stale
+			// index.
+			if idx, ok := resolveBarIndex(tfBars, latched.FormedAtMs); ok {
+				latched.Touches = countBoxTouches(tfBars, latched, idx, cfg)
+				latched.Flipped = escaped(tfBars, latched, idx)
+				latched.FormedAt = idx
+			}
+			e.State.LatchedBoxes[role] = latched // write the refreshed copy back
 			out = append(out, latched)
 			continue
 		}
@@ -350,6 +368,22 @@ func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []B
 		out = append(out, b)
 	}
 	return out
+}
+
+// resolveBarIndex returns the index of the bar with the given OpenTime in the
+// CURRENT window (UR-FIX U1/U2): the stable time anchor is resolved to the
+// sliding window's index each tick. ok=false when the bar has scrolled out —
+// callers fail closed.
+func resolveBarIndex(bars []market.Kline, openTimeMs int64) (int, bool) {
+	if openTimeMs == 0 || len(bars) == 0 {
+		return 0, false
+	}
+	for i, b := range bars {
+		if b.OpenTime == openTimeMs {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // boxFromPair builds the zone from the extreme and its nearest same-role

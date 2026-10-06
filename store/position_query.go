@@ -181,6 +181,7 @@ func (s *PositionStore) GetSessionDayActivity(traderID string, sinceMs int64, ac
 type MentorDayActivity struct {
 	DayNetPnl      float64
 	ClosedInProfit bool
+	ClosedInLoss   bool
 	Unresolved     int
 }
 
@@ -211,6 +212,9 @@ func (s *PositionStore) MentorDayActivity(traderID string, sinceMs int64, accoun
 		out.DayNetPnl += pnl
 		if pnl > 0 {
 			out.ClosedInProfit = true
+		}
+		if pnl < 0 {
+			out.ClosedInLoss = true
 		}
 	}
 	return out, nil

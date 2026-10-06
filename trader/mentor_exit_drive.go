@@ -2,6 +2,7 @@ package trader
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"vl/kernel/mentor"
@@ -119,6 +120,7 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 	// nothing (keep); a just-filled position may not be in the snapshot yet,
 	// so it takes TWO consecutive flat reads after the fill candle.
 	openSides, sidesOK := mentorDriveOpenSides(at)
+	openQty, qtyOK := mentorDriveOpenQty(at)
 	for _, p := range at.mentorLivePosList() {
 		if p == nil || p.Pos.Symbol == "" {
 			continue
@@ -134,7 +136,14 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 			continue
 		}
 		p.FlatReads = 0
-		at.mentorExitDrivePos(nt, p, c, h, l)
+		// I7 fail-safe: the broker's own snapshot shows the side reduced to the
+		// runner's qty (leg 1 gone) while leg 1's TP receipt never arrived — a
+		// parked/failed/no-owner close. Latch Scaled with the SAME next-candle
+		// rule; NEVER latch on a price guess alone.
+		if qtyOK {
+			at.mentorLatchLeg1GoneIfRunnerRemains(p, openQty[p.Pos.Side])
+		}
+		at.mentorExitDrivePos(nt, p, c, h, l, last.OpenTime)
 		at.mentorLogPositionState(&p.Pos, "exit-drive")
 	}
 }
@@ -142,6 +151,11 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 // mentorDriveOpenSides is the loop's open-side read (a seam so the call-site
 // pin can drive flat/open without a live broker).
 var mentorDriveOpenSides = func(at *AutoTrader) (map[string]bool, bool) { return at.mentorOpenSidesForDrive() }
+
+// mentorDriveOpenQty is the loop's per-side QUANTITY read (I7 fail-safe: detect
+// leg 1 gone when the broker's qty drops to the runner's qty). ok=false on any
+// read error — never a confident "leg 1 gone". A seam so the pin can drive it.
+var mentorDriveOpenQty = func(at *AutoTrader) (map[string]float64, bool) { return at.mentorOpenQtyForDrive() }
 
 // mentorOpenSidesForDrive reads the account's open position sides from the
 // broker book. ok=false on any read error — never a confident "flat".
@@ -175,8 +189,64 @@ func (at *AutoTrader) mentorOpenSidesForDrive() (map[string]bool, bool) {
 	return out, true
 }
 
+// mentorOpenQtyForDrive reads the account's per-side open quantity (the I7
+// leg-1-gone evidence). Sums every row on a side; ok=false on any read error.
+func (at *AutoTrader) mentorOpenQtyForDrive() (map[string]float64, bool) {
+	if at == nil || at.trader == nil {
+		return nil, false
+	}
+	pos, err := at.trader.GetPositions()
+	if err != nil {
+		return nil, false
+	}
+	out := map[string]float64{}
+	for _, p := range pos {
+		side, _ := p["side"].(string)
+		s := strings.ToLower(strings.TrimSpace(side))
+		if s != "long" && s != "short" {
+			continue
+		}
+		qty := 0.0
+		switch v := p["positionAmt"].(type) {
+		case float64:
+			qty = v
+		case int:
+			qty = float64(v)
+		}
+		if qty == 0 {
+			if q, ok := p["quantity"].(float64); ok {
+				qty = q
+			}
+		}
+		// P2 (rel9 review): positionAmt is SIGNED (short < 0) — Abs so the
+		// leg-1-gone comparison reads a magnitude, never a negative qty.
+		out[s] += math.Abs(qty)
+	}
+	return out, true
+}
+
+// mentorLatchLeg1GoneIfRunnerRemains (I7) latches Scaled when the broker snapshot
+// shows the side reduced to the runner's qty — leg 1 is gone even though its TP
+// receipt never arrived (a parked/failed/no-owner close). Only for a SPLIT with
+// a live runner; never latches on a price guess. Uses the same next-candle latch
+// (Leg1ExitedAtMs = now) as the receipt path.
+func (at *AutoTrader) mentorLatchLeg1GoneIfRunnerRemains(p *mentorLivePos, qty float64) {
+	if p == nil || p.Legs[0].Wire != 1 || p.Pos.Leg2 <= 0 {
+		return // single bracket or no runner — nothing to latch
+	}
+	if qty <= 0 || qty > float64(p.Pos.Leg2) {
+		return // side flat (handled above) or leg 1 still present
+	}
+	if at.mentorLatchLeg1Scaled(p.Legs[0].SignalID, mentorClockNow().UnixMilli()) {
+		mentorCount("leg1_at_target")
+		at.logInfof("🧑‍🏫 mentor leg 1 gone on the broker snapshot (qty %.0f ≤ runner %d) — Scaled latched [I7]", qty, p.Pos.Leg2)
+	}
+}
+
 // mentorExitDrivePos drives ONE position on one closed candle (c/h/l).
-func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64) {
+// candleOpenMs is the candle's OpenTime (ms) — the I6 next-candle rule compares
+// leg 1's confirmation instant against it.
+func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64, candleOpenMs int64) {
 	pos := &p.Pos
 	side := pos.Side
 	long := side == "long"
@@ -203,11 +273,18 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		at.logWarnf("🧑‍🏫 mentor spent-day runner %d over the cap %d — asserting, not reducing [D5.1]", p.Legs[1].Qty, mentorSpentDayRunnerCap)
 	}
 
-	runnerPresent := p.Legs[1].Qty > 0 && p.Legs[1].SignalID != ""
-	// scaledBefore is whether leg 1's TP had ALREADY been crossed on a PRIOR
-	// candle: the runner's trail begins on the NEXT candle after leg 1's TP
-	// (never on the candle that crosses it).
-	scaledBefore := pos.Scaled
+	// scaledNow / exitedAtMs are read ONCE under mentorExitMu (I6): the receipt
+	// (mentorMarkLeg1Scaled) and the I7 fallback write Scaled/Leg1ExitedAtMs from
+	// other goroutines, so an unlocked read races.
+	scaledNow, exitedAtMs := at.mentorScaledState(p)
+	// scaledBefore is whether leg 1's exit was confirmed on a PRIOR candle: the
+	// runner's trail begins on the NEXT candle after the confirmation, never on
+	// the candle that crosses it (I6 next-candle rule).
+	scaledBefore := scaledNow && mentorLeg1ExitedBefore(exitedAtMs, candleOpenMs)
+	// leg1OnWire: leg 1 has its OWN bracket on the wire (a split was sent), so
+	// its exit is confirmed by the broker receipt — never candle-marked. A single
+	// bracket (Wire 0) has no leg-1 receipt and keeps the candle-priced 1:1.
+	leg1OnWire := p.Legs[0].Wire == 1
 	// wasArmed is whether BE was ALREADY armed on a PRIOR candle: the candle
 	// that arms BE only arms BE — the 1:1/trail starts on the NEXT candle.
 	wasArmed := pos.ArmedBE
@@ -232,7 +309,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	// first, ONCE — and the close only when in profit. modify_bracket is
 	// LOG-only (Q2 unproven). The resolution reads the JUST-closed fill candle
 	// (BarsSinceFill == 1): its high/low decides whether +1R printed first.
-	if pos.Origin == "ISB" && !pos.Scaled && p.BarsSinceFill == 1 {
+	if pos.Origin == "ISB" && !scaledNow && p.BarsSinceFill == 1 {
 		if tp := mentorISBPartialTP(*pos, c, h, l); tp > 0 {
 			p.Legs[0].TP = tp
 			leg1Target = tp
@@ -269,32 +346,21 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		}
 	}
 
-	// ── (3) leg 1's TP crossing → leg 1 exits at its native TP; the runner's
-	// trail begins NEXT candle. Mark Scaled BEFORE the 1:1 loop so leg 1 never
-	// gets a 1:1 move past its own take-profit. (Final does NOT mean "exited" —
-	// canonical semantics: Final marks the RUNNER.) ──────────────────────────
-	// The 1:1 point: leg 1's own TP when a runner exists; for a SINGLE leg
-	// (n = 1, or before the split lands) entry ± R — the point where leg 1
-	// would have left. The runner trails only after this printed on a PRIOR
-	// candle (CTO gate: a single leg used to trail straight after BE).
-	if !pos.Scaled {
-		scaleAt := leg1Target
-		if !runnerPresent {
-			if long {
-				scaleAt = pos.Entry + pos.R
-			} else {
-				scaleAt = pos.Entry - pos.R
+	// ── (3) the 1:1 point → the runner's trail begins NEXT candle. For a SPLIT
+	// (leg1OnWire), leg 1 exits at its native TP and Scaled is marked ONLY on the
+	// broker's confirmation (position_close receipt or the I7 snapshot fallback) —
+	// the candle-price guess is GONE. A SINGLE bracket (Wire 0) has no leg-1
+	// receipt, so its 1:1 point stays candle-priced (entry ± R). (Final does NOT
+	// mean "exited" — canonical semantics: Final marks the RUNNER.)
+	if !scaledNow && !leg1OnWire {
+		scaleAt := pos.Entry + pos.R
+		if !long {
+			scaleAt = pos.Entry - pos.R
+		}
+		if (long && h >= scaleAt) || (!long && l <= scaleAt) {
+			if at.mentorSetScaledCandle(p) {
+				mentorCount("leg1_at_target")
 			}
-		}
-		hit := false
-		if long {
-			hit = h >= scaleAt
-		} else {
-			hit = l <= scaleAt
-		}
-		if hit {
-			pos.Scaled = true
-			mentorCount("leg1_at_target")
 		}
 	}
 
@@ -311,7 +377,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			// to the trade target). Leg 1 (Final=false) is the partial that
 			// exits at its own TP — once Scaled its stop is moot.
 			isRunner := leg.Final
-			if !isRunner && pos.Scaled {
+			if !isRunner && scaledNow {
 				continue
 			}
 			target := leg1Target

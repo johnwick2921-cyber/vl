@@ -31,9 +31,10 @@ import (
 // find the real order. In-memory only: an ArmID from a previous process does
 // not resolve — every handler refuses that NAMED, never silent.
 type mentorLiveArm struct {
-	RowID int64
-	Side  string  // "long" | "short"
-	Entry float64 // the arm's entry price (MoveStopBE target)
+	TraderID string // the trader that authored the arm (I5: the sweep acts on its own trader's arms only)
+	RowID    int64
+	Side     string  // "long" | "short"
+	Entry    float64 // the arm's entry price (MoveStopBE target)
 }
 
 var (
@@ -52,9 +53,18 @@ func bumpMentorArmEpoch() {
 	mentorArmEpoch.Store(time.Now().UnixNano())
 }
 
-func mentorRegisterLiveArm(armID string, rowID int64, side string, entry float64) {
+func mentorRegisterLiveArm(armID string, traderID string, rowID int64, side string, entry float64) {
 	mentorLiveMu.Lock()
-	mentorLiveArms[armID] = mentorLiveArm{RowID: rowID, Side: side, Entry: entry}
+	mentorLiveArms[armID] = mentorLiveArm{TraderID: traderID, RowID: rowID, Side: side, Entry: entry}
+	mentorLiveMu.Unlock()
+}
+
+// mentorUnregisterLiveArm prunes one arm from the registry (I5) — called when
+// its row goes terminal, so the sweeps stop re-iterating a dead arm and stop
+// counting a cancel that never happened.
+func mentorUnregisterLiveArm(armID string) {
+	mentorLiveMu.Lock()
+	delete(mentorLiveArms, armID)
 	mentorLiveMu.Unlock()
 }
 
@@ -266,6 +276,26 @@ func mentorAuthoredRow(r store.ArmedOrderDB) bool {
 	return isMentorArmOrigin(r)
 }
 
+// mentorResolveArmID trims the evaluator's ArmID and supplies the fallback
+// identity for a missing one. mentorPlaceIntent calls it ONCE before the exit
+// branch is registered, so mentorArmIntent authors the row under the SAME
+// identity the mode was stored under (B5/L8).
+func mentorResolveArmID(armID string) string {
+	armID = strings.TrimSpace(armID)
+	if armID == "" {
+		armID = fmt.Sprintf("mentor-%d", time.Now().UnixNano())
+	}
+	return armID
+}
+
+// mentorScenarioFor builds the ledger scenario (the per-arm signal identity):
+// the resolved ArmID prefixed with the per-construction epoch. The exit branch
+// is registered under THIS key, so the placement-time write and the fill-time
+// read name the same arm.
+func mentorScenarioFor(armID string) string {
+	return fmt.Sprintf("%s-%s", armID, strconv.FormatInt(mentorArmEpoch.Load(), 10))
+}
+
 // mentorArmIntent is the ONE mentor entry path (P0-b, CTO 1791040400571): it
 // creates an ARMED LEDGER row — kind stop_entry, the intent's expiry — and
 // lets the armed executor place it. No direct wire call here: the armed
@@ -280,15 +310,12 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — no armed ledger")
 		return
 	}
-	armID := strings.TrimSpace(in.ArmID)
-	if armID == "" {
-		armID = fmt.Sprintf("mentor-%d", time.Now().UnixNano())
-	}
+	armID := mentorResolveArmID(in.ArmID)
 	// N1 (DS-104): the ledger scenario is the evaluator's ArmID prefixed with
 	// the per-construction epoch. The in-memory registry stays keyed by the
 	// UNPREFIXED armID, so ExtendArm / CancelArm / MoveStopBE / ClosePosition
 	// still resolve by the evaluator's id.
-	scenario := fmt.Sprintf("%s-%s", armID, strconv.FormatInt(mentorArmEpoch.Load(), 10))
+	scenario := mentorScenarioFor(armID)
 	if in.RunnerTarget > 0 {
 		mentorRunnerTargets.Store(scenario, in.RunnerTarget)
 	}
@@ -342,7 +369,7 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm %q authored no row (id 0)", armID)
 		return
 	}
-	mentorRegisterLiveArm(armID, row.ID, side, in.Price)
+	mentorRegisterLiveArm(armID, at.id, row.ID, side, in.Price)
 	mentorCount("armed_" + choice.Tier)
 	at.mentorFunnel.bumpAuthored() // N12 funnel stage: the arm row was authored
 	ackMs := time.Now().UnixMilli()
@@ -457,28 +484,65 @@ func (at *AutoTrader) mentorExtendArm(in mentor.Intent) {
 	at.logInfof("🧑‍🏫 mentor arm %q expiry extended to %d — %s", in.ArmID, in.ExpiryMs, in.Reason)
 }
 
+// mentorPrunableTerminalState reports whether a row's state means the registry
+// entry should be pruned: terminal EXCEPT filled. A FILLED arm is a live
+// position — its registry entry must survive so the swing's MoveStopBE /
+// ClosePosition resolve (P1). Cancelled / canceled / rejected / expired /
+// superseded / shadowed prune.
+func mentorPrunableTerminalState(state string) bool {
+	s := strings.ToLower(strings.TrimSpace(state))
+	return s != store.StateFilled && store.IsTerminalArmState(s)
+}
+
 // mentorCancelArm is the REAL broker cancel — the F1 shape: safety gate,
 // wire cancel on the SAME pass, then the ledger request the settlement path
 // owns. An unknown ArmID or a terminal row refuses NAMED, never silent.
-func (at *AutoTrader) mentorCancelArm(in mentor.Intent) {
+//
+// It returns whether a cancel was ACTUALLY requested (unplaced → cancelled
+// directly, or placed → wire cancel + RequestCancel). A refusal (unknown arm,
+// unavailable ledger/broker, already-terminal row) returns false — the caller
+// counts and logs only real cancels, never an inference (I5).
+func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 	arm, ok := mentorLiveArmFor(in.ArmID)
 	if !ok {
 		mentorCount("cancel_refused_unknown_arm")
 		at.logWarnf("🧑‍🏫 mentor CancelArm REFUSED — ArmID %q not in this process's registry: %s", in.ArmID, in.Reason)
-		return
+		return false
 	}
 	ledger := at.store.ArmedOrders()
 	nt := at.armedTrader()
 	if ledger == nil || nt == nil {
 		mentorCount("cancel_refused_unavailable")
 		at.logWarnf("🧑‍🏫 mentor CancelArm REFUSED — ledger/broker unavailable: %s", in.Reason)
-		return
+		return false
 	}
 	var r store.ArmedOrderDB
-	if err := ledger.DB().First(&r, arm.RowID).Error; err != nil || store.IsTerminalArmState(r.State) {
+	if err := ledger.DB().First(&r, arm.RowID).Error; err != nil {
+		// P3: a DB read error must NOT prune a resting arm — log and retry next
+		// tick.
+		mentorCount("cancel_refused_read_error")
+		at.logWarnf("🧑‍🏫 mentor CancelArm for ArmID %q — row read failed: %v (retrying next tick)", in.ArmID, err)
+		return false
+	}
+	// P1: a FILLED row is a live position — never prune it, never cancel it,
+	// and count/log NOTHING (the never-add sweep reaches here for a just-filled
+	// swing; its registry entry must survive for MoveStopBE / ClosePosition).
+	if strings.EqualFold(r.State, store.StateFilled) {
+		return false
+	}
+	// P5 (I5b): a cancel already in flight needs no new request and must not be
+	// re-counted.
+	if strings.EqualFold(r.State, store.StateCancelPending) {
+		mentorCount("cancel_already_pending")
+		at.logInfof("🧑‍🏫 mentor CancelArm for ArmID %q — already cancel_pending; no re-request (%s)", in.ArmID, in.Reason)
+		return false
+	}
+	if mentorPrunableTerminalState(r.State) {
 		mentorCount("cancel_refused_row_gone")
 		at.logInfof("🧑‍🏫 mentor CancelArm for ArmID %q — the row is already terminal; nothing to cancel (%s)", in.ArmID, in.Reason)
-		return
+		mentorUnregisterLiveArm(in.ArmID)   // I5: prune the terminal entry
+		at.deleteMentorExitMode(r.Scenario) // P3: delete by the ROW's own scenario, not the package epoch
+		return false
 	}
 	now := time.Now()
 	if mentorNowSource != nil {
@@ -492,16 +556,25 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) {
 		done, err := ledger.CancelUnplaced(r.ID, "mentor: "+in.Reason+" — never placed")
 		if err == nil && done {
 			at.clearMentorLevelArmLocked(in.ArmID)
+			mentorUnregisterLiveArm(in.ArmID)   // I5: the row is now cancelled (terminal)
+			at.deleteMentorExitMode(r.Scenario) // P3: delete by the ROW's own scenario
 			mentorCount("cancel_unplaced")
 			at.logInfof("🧑‍🏫 mentor cancel for ArmID %q: never placed — row cancelled directly (%s)", in.ArmID, in.Reason)
-			return
+			return true
 		}
 		if err != nil {
 			at.logWarnf("🧑‍🏫 mentor unplaced cancel write failed for ArmID %q: %v", in.ArmID, err)
 		}
-		if rerr := ledger.DB().First(&r, arm.RowID).Error; rerr != nil || store.IsTerminalArmState(r.State) {
+		if rerr := ledger.DB().First(&r, arm.RowID).Error; rerr != nil {
+			// P3: a re-read error must not prune — retry next tick.
+			at.logWarnf("🧑‍🏫 mentor CancelArm for ArmID %q — row re-read failed: %v (retrying next tick)", in.ArmID, rerr)
+			return false
+		}
+		if mentorPrunableTerminalState(r.State) {
 			at.clearMentorLevelArmLocked(in.ArmID)
-			return
+			mentorUnregisterLiveArm(in.ArmID)   // I5: the row is terminal now
+			at.deleteMentorExitMode(r.Scenario) // P3: delete by the ROW's own scenario
+			return false
 		}
 	}
 	if strings.TrimSpace(r.SignalID) != "" {
@@ -517,8 +590,13 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) {
 	at.clearMentorLevelArmLocked(in.ArmID)
 	at.armLifecycleWrite("request_cancel(mentor)", r,
 		ledger.RequestCancel(r.ID, "mentor: "+in.Reason, now.UnixMilli()))
+	// I4 (BUILD-ALL): a PARTIALLY filled arm whose remainder is cancelled here
+	// must still hand its FILLED quantity to the exit drive — the B1 expiry path
+	// covers only the expiry sweep, not this B3 day-stop / never-add cancel.
+	at.mentorRegisterPartialFillIfAbsent(r)
 	mentorCount("cancel_requested")
 	at.logInfof("🧑‍🏫 mentor cancel requested for ArmID %q: %s", in.ArmID, in.Reason)
+	return true
 }
 
 // mentorRecordLevelInvalid records the evaluator's level-invalidation intent

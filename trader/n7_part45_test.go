@@ -22,7 +22,7 @@ func TestMentorCancelArmUnplacedRowEndsCancelled(t *testing.T) {
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	mentorRegisterLiveArm("lvl-5", row.ID, "long", 29600)
+	mentorRegisterLiveArm("lvl-5", at.id, row.ID, "long", 29600)
 	resetMentorCounters()
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.CancelArm, ArmID: "lvl-5", Reason: "close-through"}, mentorTierInputs{}, 1000, 1100)
 	if sawMentorFrame(t, frames, ntwire.FrameCancelOrder, 300*time.Millisecond) {

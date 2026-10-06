@@ -27,10 +27,13 @@ type State struct {
 	DeletedLevels map[string]bool `json:"deleted_levels,omitempty"`
 	// ISBArms are the live inside-bar orders (stacking counter, §2.1).
 	ISBArms map[string]ISBArm `json:"isb_arms,omitempty"`
-	// BoxRefs records, per live box key, the bar index of the last return
+	// BoxRefs records, per live box key, the OpenTime (ms) of the last return
 	// visit already evaluated — every return trades (R1, D3.2 p2 @ 06:25),
-	// each exactly once.
-	BoxRefs map[string]int `json:"box_refs,omitempty"`
+	// each exactly once. UR-FIX class: the value is a TIME anchor, not a bar
+	// index — the live window slides (the provider returns the last ~1500
+	// closed bars), so a stored INDEX drifted one bar per new 1m close and
+	// the incremental walk stalled after the newest bar.
+	BoxRefs map[string]int64 `json:"box_refs,omitempty"`
 	// Limits is the G1 leg budget + G2 loss box state machine (DS-107).
 	Limits Limits `json:"limits,omitempty"`
 	// Levels is the last tick's level set (FU-1 P1-2): the fill drain reads it
@@ -123,6 +126,9 @@ type State struct {
 	EmaLossPrice     float64 `json:"ema_loss_price,omitempty"`
 	EmaLossBarTime   int64   `json:"ema_loss_bar_time,omitempty"`
 	EmaBlocked       bool    `json:"ema_blocked,omitempty"`
+	// EmaBlockDayKey is the 17:00 CT session-day key of the E2 block (B8): the
+	// block lifts at the next rollover, like the G2 loss boxes.
+	EmaBlockDayKey string `json:"ema_block_day_key,omitempty"`
 	// ArmSeq names the next arm.
 	ArmSeq int `json:"arm_seq"`
 	// LevelArms are the RESTING level orders (B6, 10-03 ruling): a level
@@ -155,7 +161,7 @@ func UnmarshalState(b []byte) (State, error) {
 		s.ISBArms = map[string]ISBArm{}
 	}
 	if s.BoxRefs == nil {
-		s.BoxRefs = map[string]int{}
+		s.BoxRefs = map[string]int64{}
 	}
 	return s, err
 }
@@ -191,7 +197,7 @@ func New(cfg Config) *Evaluator {
 		VisitCapRefused: map[string]bool{},
 		DeletedLevels:   map[string]bool{},
 		ISBArms:         map[string]ISBArm{},
-		BoxRefs:         map[string]int{},
+		BoxRefs:         map[string]int64{},
 	}}
 }
 
@@ -1214,9 +1220,19 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// R7 (RULES-FIX-v3, behind its own knob, default ON since R-C): the reverse
 	// ISB at EMA 9 — an ISB that points AGAINST the trend with price at the EMA 9
 	// trades WITH the trend [D5.4].
-	if e.Cfg.ISBReverseEMA9Enabled && IsISB(execPrev, execCur) {
+	//
+	// B6 (L14): the reverse ISB must stand behind the SAME standing gates as the
+	// normal ISB — the 15m/5m conflict, the ISB boxes, and the trigger side — and
+	// fail closed when the 5m trigger has no direction yet (it used to fall
+	// through to SHORT unconditionally).
+	if !conflict && e.Cfg.ISBReverseEMA9Enabled && IsISB(execPrev, execCur) {
 		if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
 			e.refuse("isbrev_" + r)
+		} else if e.State.Trigger.Dir == "" {
+			// B6: with no 5m trigger there is no trend to reverse — R7 always
+			// resolved to SHORT here before. Fail closed [D5.4: "đánh theo xu
+			// hướng" — the trend must exist].
+			e.refuse("isbrev_no_trigger")
 		} else if in, ok, _ := ReverseISBAtEMA9(execPrev, execCur, emaValue(bars, e.Cfg.EMAPeriod9), e.State.Trigger.Dir, e.Cfg); ok {
 			// N12: an R7 reverse ISB fills by the close of the NEXT candle on
 			// the execution timeframe (the R1 family rule).
@@ -1225,14 +1241,45 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// runs through the SAME gates as the normal ISB — the twenties
 			// stop skip [D4.1 p1 @ 05:41], the 4h HTF verdict and side, and
 			// the near-box rule (row 24) — before any target is set.
+			// B6: plus the SAME ISB-box gates (R5 / D4.1-25 / D4.2-07) and the
+			// trigger-side guard the normal ISB runs.
+			boxBlocked := false
+			if e.State.ISBBox != nil && !crossingISBs(cb5, 3) {
+				if allowed, _ := ISBBoxAllows(*e.State.ISBBox, execPrev, execCur); !allowed {
+					boxBlocked = true
+				}
+			}
+			box15Blocked := false
+			if e.State.ISBBox15m != nil && !crossingISBs(cb15, 3) {
+				if allowed, _ := ISBBoxAllows(*e.State.ISBBox15m, execPrev, execCur); !allowed {
+					box15Blocked = true
+				}
+			}
+			box30Blocked := false
+			if e.State.ISBBox30m != nil && !crossingISBs(cb30, 3) {
+				if allowed, _ := ISBBoxAllows(*e.State.ISBBox30m, execPrev, execCur); !allowed {
+					box30Blocked = true
+				}
+			}
 			htfOK, htfSide, _ := HTFVerdict(e.State.HTF)
 			target := 0.0
 			if _, stopOK, _ := ISBStopVerdict(execCur, e.Cfg); !stopOK {
 				e.refuse("isbrev_stop_twenties")
+			} else if boxBlocked {
+				e.refuse("isbrev_box_blocked")
+			} else if box15Blocked {
+				e.refuse("isbrev_box_blocked_15m")
+			} else if box30Blocked {
+				e.refuse("isbrev_box_blocked_30m")
 			} else if !htfOK {
 				e.refuse("isbrev_htf_blocked")
 			} else if htfSide != "" && in.Side != htfSide {
 				e.refuse("isbrev_htf_side_mismatch")
+			} else if in.Side != e.State.Trigger.Dir {
+				// B6: the 5m trigger side governs [D3.4 p1 @ 09:30–10:38] —
+				// defensive (R7 already builds in.Side == Trigger.Dir once the
+				// direction is set), kept for parity with the normal ISB.
+				e.refuse("isbrev_trigger_side_mismatch")
 			} else if refuse, _ := nearBoxRefusal(boxes, in.Price, in.Side, e.Cfg.NearBoxRoomMultiple, abs(in.Price-in.Stop)); refuse {
 				e.refuse("near_box")
 			} else if target = nextLevelBeyondRoom(levels, in.Price, in.Stop, in.Side, e.Cfg.RoomMultiple); target == 0 {
@@ -1253,6 +1300,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					e.refuse("room")
 				} else {
 					in.Target = capped.Target
+					// B6: the same size flags as the normal ISB — rule 2 (at an
+					// old high/low → reduce) and rule 3 (in range → reduce)
+					// [D4.1 p1 @ 08:05/09:40].
+					in.Flag = e.isbFlagsFor(execCur, levels, boxes)
 					// R85: with the reverse ON, the normal ISB must not arm the
 					// counter-trend side on the same candle pair (two opposite
 					// stop orders on one candle) — drop any same-pair normal ISB
@@ -1544,22 +1595,34 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// once, on the tick its reference candle closes. The box edges are OUT of
 	// the level touch loop above, so a return emits exactly ONE entry.
 	if e.State.BoxRefs == nil {
-		e.State.BoxRefs = map[string]int{}
+		e.State.BoxRefs = map[string]int64{}
 	}
 	boxCfg := DefaultBoxCfg()
 	// D4.2-03: while the 15m/5m conflict stands, NO setup trades — box
 	// returns included (the old one-shot veto covered only the ISB path).
 	if !conflict {
 		for _, b := range boxes {
-			last := e.State.BoxRefs[b.Key]
+			// UR-FIX REL9: BoxRefs stores the last evaluated reference's
+			// OpenTime (ms), not its bar index. Re-resolve the index against
+			// the CURRENT (sliding) window each tick; an anchor that slid out
+			// of the window is fail-closed — the last reference is older than
+			// every bar in this window, so nothing here was evaluated before
+			// and the walk restarts at the formation bar (lastIdx = -1).
+			lastMs := e.State.BoxRefs[b.Key]
+			lastIdx := -1
+			if lastMs != 0 {
+				if idx, ok := resolveBarIndex(bars, lastMs); ok {
+					lastIdx = idx
+				}
+			}
 			// Incremental walk from the last evaluated reference (O(new bars) per
 			// tick, not O(tape)) — the full BoxReturnBars walk was the 437s replay.
 			start := b.FormedAt + 1
-			if last+1 > start {
-				start = last + 1
+			if lastIdx+1 > start {
+				start = lastIdx + 1
 			}
 			for _, r := range BoxReturnBarsFrom(bars, b, start, boxCfg) {
-				if r.RefBar <= last {
+				if r.RefBar <= lastIdx {
 					continue
 				}
 				// A10: the day gate fires BEFORE any box state is recorded
@@ -1568,7 +1631,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					e.refuse("box_" + r)
 					continue
 				}
-				e.State.BoxRefs[b.Key] = r.RefBar
+				e.State.BoxRefs[b.Key] = bars[r.RefBar].OpenTime
 				// B11 [D3.4 p2 @07:58–08:21]: inside the standing 5m-ISB box only
 				// a same-direction ISB trades ("em chỉ đánh inside bar cùng
 				// chiều") — box trades never.
@@ -1632,6 +1695,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							// the CAP pulled the target inside the stop distance —
 							// refuse rather than emit a sub-floor intent.
 							e.refuse("box_target_below_floor")
+						} else if refuse, _ := roomRefusal(capped.Price, capped.Stop, capped.Target, e.Cfg.RoomMultiple); refuse {
+							// B7 (L13): the room rule reads the ACTUAL (capped)
+							// target — the same after-cap measure the ISB runs
+							// [D5.3 p1 @ 09:16; D5.1 p1 @ 16:24, @ 19:11–20:07].
+							e.refuse("room")
 						} else {
 							out = append(out, capped)
 							// B20: school-1 box entry without trigger agreement

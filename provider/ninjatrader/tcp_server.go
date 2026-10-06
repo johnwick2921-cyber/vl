@@ -1208,6 +1208,11 @@ func (s *TCPServer) Start(ctx context.Context) error {
 	go s.drainBarIngest(cctx)
 	// U1 3.3 — wire-liveness line every 60s (not wg-tracked: exits with ctx).
 	go s.livenessReporter(cctx)
+	// B11 (L15) — read-idle detector: close a half-open link (no frame while the
+	// CME session is open). wg-tracked so Stop() joins it (the test seams reset
+	// only after Stop).
+	s.wg.Add(1)
+	go s.linkIdleWatcher(cctx)
 	// W-ONE-BUTTON M2 site 7 — push the installation hold (silent when unheld).
 	s.maint.mu.Lock()
 	s.maint.tick, s.maint.resend = maintenanceTick, maintenanceResend
@@ -1582,6 +1587,7 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 		}
 		s.conn = c
 		s.lastAckTime = time.Now()
+		s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // B11: a fresh conn restarts the read-idle clock
 		s.connMu.Unlock()
 		s.beginConnectionRecord(c, time.Now()) // W-ONE-BUTTON M2 site 7
 		s.attempted.noteReconnect(time.Now())  // FIX-DOUBLE-ENTRY: reconnect instant for fresh-truth checks

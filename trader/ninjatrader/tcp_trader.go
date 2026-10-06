@@ -958,6 +958,27 @@ func (t *TCPTrader) SplitSentFor(signalID string) (SentSplit, bool) {
 	return s, ok && s.Leg1Qty > 0
 }
 
+// ForgetSignalMaps (UR-FIX U3 + I9) drops the per-signal mentor records — the
+// split and the per-leg live stops. Callers must call it ONLY once the signal is
+// FULLY closed AND its armed row is TERMINAL: the runner still needs the split
+// record (SplitSentFor) and its per-leg stop (MoveStopForSignalLeg) while open,
+// and while the row is still working its REMAINDER may still be at the broker.
+func (t *TCPTrader) ForgetSignalMaps(signalID string) {
+	if t == nil || signalID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.splitBySignal != nil {
+		delete(t.splitBySignal, signalID)
+	}
+	if t.stopBySignal != nil {
+		delete(t.stopBySignal, signalID)
+		delete(t.stopBySignal, signalID+"#leg1")
+		delete(t.stopBySignal, signalID+"#leg2")
+	}
+}
+
 // wireLeg1TP rounds leg 1's TP to the nearest tick and checks it sits on the
 // profit side of the (wire) entry. why != "" = refuse the split.
 func wireLeg1TP(side string, entry, leg1TP, tick float64) (float64, string) {
@@ -1416,6 +1437,48 @@ func (t *TCPTrader) EntryBracketMapsForTest() (stops, targets map[string]float64
 	return stops, targets
 }
 
+// SignalMapsForTest (UR-FIX U3) copies the per-signal mentor maps — the split
+// that went on the wire and the per-leg live stops. Read-only; the mirror of
+// EntryBracketMapsForTest, so the exit-drive full-close pin can assert both are
+// emptied without touching the private fields.
+func (t *TCPTrader) SignalMapsForTest() (splits map[string]SentSplit, stops map[string]float64) {
+	if t == nil {
+		return map[string]SentSplit{}, map[string]float64{}
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	splits = make(map[string]SentSplit, len(t.splitBySignal))
+	for k, v := range t.splitBySignal {
+		splits[k] = v
+	}
+	stops = make(map[string]float64, len(t.stopBySignal))
+	for k, v := range t.stopBySignal {
+		stops[k] = v
+	}
+	return splits, stops
+}
+
+// SeedSignalMapsForTest (UR-FIX U3) stamps the per-signal mentor maps directly.
+// Test-only: the production writers are PlaceStopEntry (splitBySignal) and
+// MoveStopForSignalLeg (stopBySignal), both of which need a connected AddOn.
+func (t *TCPTrader) SeedSignalMapsForTest(signalID string, split SentSplit, stops map[string]float64) {
+	if t == nil || signalID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.splitBySignal == nil {
+		t.splitBySignal = map[string]SentSplit{}
+	}
+	t.splitBySignal[signalID] = split
+	if t.stopBySignal == nil {
+		t.stopBySignal = map[string]float64{}
+	}
+	for k, v := range stops {
+		t.stopBySignal[k] = v
+	}
+}
+
 func (t *TCPTrader) CancelAllOrders(symbol string) error {
 	return fmt.Errorf("ninjatrader/tcp: CancelAllOrders not supported")
 }
@@ -1504,6 +1567,14 @@ func (t *TCPTrader) GetPositions() ([]map[string]interface{}, error) {
 	// reflects positions opened MANUALLY in NT8 (the AddOn emits a `positions`
 	// snapshot on select / connect / PositionUpdate).
 	acct := t.boundAccount
+	// Release #9 integration (CTO): a TCPTrader with no server (a fixture, or a
+	// trader built before the TCP server is wired) has no NT8 snapshot — fall to
+	// the fill-derived cache below (UNKNOWN when there is no fill), never a nil
+	// dereference. The mentor exit drive's I7 leg-1-gone check now reads this
+	// every closed candle.
+	if t.server == nil {
+		goto fillDerived
+	}
 	if snap, received, entryAfter, ok := t.server.PositionsForExecutionReceipt(acct, t.symbol); ok &&
 		(entryAfter.IsZero() || received.After(entryAfter)) {
 		// W117 F1 — a snapshot received at-or-before the latest entry receipt
@@ -1541,6 +1612,7 @@ func (t *TCPTrader) GetPositions() ([]map[string]interface{}, error) {
 	}
 
 	// Fallback (no NT8 snapshot yet): the single fill-derived position.
+fillDerived:
 	t.mu.Lock()
 	if !t.hasFill {
 		t.mu.Unlock()
@@ -1594,8 +1666,12 @@ func (t *TCPTrader) positionMap(symbol, side string, qty, entry float64, uPnLOve
 		// Fallback (multi-position / no account snapshot yet): mark off the latest
 		// 5m BarCache close. Less precise than NT8's live uPnL but self-contained.
 		mark = entry
-		if bars := t.server.BarCache().Get(symbol, "5m"); len(bars) > 0 {
-			mark = bars[len(bars)-1].C
+		// P3 (rel9): a nil server (the GetPositions fillDerived path) has no bar
+		// cache — guard it so the mark falls back to entry, never a nil deref.
+		if t.server != nil {
+			if bars := t.server.BarCache().Get(symbol, "5m"); len(bars) > 0 {
+				mark = bars[len(bars)-1].C
+			}
 		}
 		uPnL = (mark - entry) * dir * qty * pv
 		if entry > 0 {

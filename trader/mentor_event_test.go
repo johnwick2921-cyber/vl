@@ -255,6 +255,110 @@ func TestMentorDoneAfterWinGateAtPlacementCallSite(t *testing.T) {
 	}
 }
 
+// TestMentorStopAfterLossGateAtPlacementCallSite — STOP-AFTER-LOSS (owner "ok"
+// 2026-10-05): a mentor trade closed today with a net loss ends the mentor's
+// day, but only with the switch ON (nil → OFF). A breakeven close (no loss)
+// proceeds. The mutant that drops the gate makes the recorder fire after a loss
+// and this test goes RED.
+func TestMentorStopAfterLossGateAtPlacementCallSite(t *testing.T) {
+	ResetMentorCountersForTest()
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	wireMentorPlacementSeams(t)
+	ct := kernel.CTLocation()
+	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
+	mentorClosedLossSource = func() (bool, bool) { return true, true }
+	t.Cleanup(func() {
+		mentorNowSource = nil
+		mentorClosedLossSource = nil
+	})
+
+	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,
+		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
+	choice := mentorSizeChoice{Contracts: 5, Tier: "base", Why: "test"}
+
+	var placed int
+	mentorPlaceRecorderForTest = func(i mentor.Intent, n int) { placed++ }
+	t.Cleanup(func() { mentorPlaceRecorderForTest = nil })
+
+	// nil knob (OFF) → proceeds despite a closed loss.
+	at.mentorPlaceIntent(in, choice, 1000, 1100)
+	if placed != 1 {
+		t.Fatalf("with the knob OFF (nil) a loss must NOT stop the day, placed=%d", placed)
+	}
+	// knob ON + a closed loss → refused and counted.
+	on := true
+	at.config.StrategyConfig.RiskControl.MentorStopAfterLoss = &on
+	at.mentorPlaceIntent(in, choice, 1000, 1100)
+	if placed != 1 {
+		t.Fatalf("with the knob ON a loss must stop the day, placed=%d", placed)
+	}
+	if got := MentorCountSnapshot()["stop_after_loss_refused"]; got != 1 {
+		t.Fatalf("the stop-after-loss refusal must be counted once, got %d", got)
+	}
+	// knob ON + a breakeven close (no loss) → proceeds.
+	mentorClosedLossSource = func() (bool, bool) { return false, true }
+	at.mentorPlaceIntent(in, choice, 1000, 1100)
+	if placed != 2 {
+		t.Fatalf("a breakeven close is not a loss — the entry must proceed, placed=%d", placed)
+	}
+	// FAIL-CLOSED: a missing closed-loss source refuses (asserted on the gate).
+	mentorClosedLossSource = nil
+	ResetMentorCountersForTest()
+	if refuse, why := at.mentorStopAfterLossGate(); !refuse || why == "" {
+		t.Fatalf("missing closed-loss source must refuse (fail-closed): refuse=%v why=%q", refuse, why)
+	}
+	if got := MentorCountSnapshot()["stop_after_loss_no_data"]; got != 1 {
+		t.Fatalf("the fail-closed refusal must be counted stop_after_loss_no_data once, got %d", got)
+	}
+	// a NIL StrategyConfig reads OFF, exactly like a nil knob — the gate must
+	// not run (and cannot refuse) when there is no config to carry the switch.
+	mentorClosedLossSource = func() (bool, bool) { return true, true }
+	saved := at.config.StrategyConfig
+	at.config.StrategyConfig = nil
+	ResetMentorCountersForTest()
+	if refuse, why := at.mentorStopAfterLossGate(); refuse || why != "" {
+		t.Fatalf("a nil StrategyConfig must read OFF (no refusal): refuse=%v why=%q", refuse, why)
+	}
+	at.config.StrategyConfig = saved
+}
+
+// TestMentorStopAfterLossTrippedHook — the B3 day-stop-sweep hook trips ONLY on
+// a DEFINITE loss (knob ON + a resolved closed loss). OFF, breakeven or an
+// unresolved read is "unknown", not a trip: the sweep never force-cancels a
+// resting arm on it (same contract as mentorDoneAfterWinTripped).
+func TestMentorStopAfterLossTrippedHook(t *testing.T) {
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	mentorClosedLossSource = func() (bool, bool) { return true, true }
+	t.Cleanup(func() { mentorClosedLossSource = nil })
+
+	// knob OFF (nil) → no trip.
+	if trip, why := at.mentorStopAfterLossTrip(); trip || why != "" {
+		t.Fatalf("knob OFF must not trip: trip=%v why=%q", trip, why)
+	}
+	// knob ON + a resolved closed loss → DEFINITE trip.
+	on := true
+	at.config.StrategyConfig.RiskControl.MentorStopAfterLoss = &on
+	if trip, why := at.mentorStopAfterLossTrip(); !trip || why == "" {
+		t.Fatalf("knob ON + a closed loss must trip: trip=%v why=%q", trip, why)
+	}
+	// knob ON + breakeven (no loss) → no trip.
+	mentorClosedLossSource = func() (bool, bool) { return false, true }
+	if trip, _ := at.mentorStopAfterLossTrip(); trip {
+		t.Fatal("a breakeven close must not trip the sweep")
+	}
+	// knob ON + unresolved → no trip (the placement gate stays fail-closed, but
+	// the sweep never force-cancels on an unknown).
+	mentorClosedLossSource = func() (bool, bool) { return false, false }
+	if trip, _ := at.mentorStopAfterLossTrip(); trip {
+		t.Fatal("an unresolved close must not trip the sweep")
+	}
+	// knob ON + unwired source → no trip.
+	mentorClosedLossSource = nil
+	if trip, _ := at.mentorStopAfterLossTrip(); trip {
+		t.Fatal("an unwired source must not trip the sweep")
+	}
+}
+
 // TestMentorNeverWidenAtStopMoveCallSite (c): a stop amendment that increases
 // open risk never reaches the wire. The mutant that drops the guard makes the
 // widened stop reach moveStopWire and this test goes RED.

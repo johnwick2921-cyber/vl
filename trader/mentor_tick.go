@@ -263,6 +263,12 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// window; no-ops once flat. Runs under the N11 mutex so the ArmID cancel
 	// can clear the evaluator's LevelArms safely.
 	at.mentorNewsCancelFlattenAt(mentorClockNow())
+	// B3 (L4): the day-stop gates below (done-after-win, the news hold, the
+	// trading-window end, and the stop-after-loss hook) used to run ONLY while
+	// an entry was being WRITTEN — so a resting arm could still fill after the
+	// day was shut. This sweep trips them every tick and cancels the resting
+	// unfilled intraday arms. Logged + counted; fail-closed.
+	at.mentorDayStopSweep(mentorClockNow())
 	for _, in := range intents {
 		// B20 trader half (CTO 1791058836784, FIXES.md B20): the trigger
 		// LATER flipped to the trade's side — the OPEN position upgrades
@@ -335,6 +341,10 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
 	}
+	if refuse, why := at.mentorStopAfterLossGate(); refuse {
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		return
+	}
 	if hold, why := at.mentorNewsGate(); hold {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
@@ -377,10 +387,21 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// branch per fill. A PHL/PLH starts as B with the resonance watch armed.
 	forkMode, forkTP, forkWhy := mentorExitFork(in, mentorConfluenceFlag(in))
 	mentorCount("exit_fork_" + forkMode)
-	at.logInfof("🧑‍🏫 mentor exit fork: %s — %s (leg 1 TP %.2f)", forkMode, forkWhy, forkTP)
+	if forkTP != 0 {
+		at.logInfof("🧑‍🏫 mentor exit fork: %s — %s (leg 1 TP %.2f)", forkMode, forkWhy, forkTP)
+	} else {
+		// mode B/SWING4H: leg 1's TP is computed later (mentorWireLeg1TP at
+		// placement / the +1R default) — don't print a misleading 0.00.
+		at.logInfof("🧑‍🏫 mentor exit fork: %s — %s", forkMode, forkWhy)
+	}
 	// B20: the chosen branch is REGISTERED per open position — a later
 	// confluence upgrade switches it to C (hold ≥ 1:2, size untouched).
-	at.setMentorExitMode(strings.ToLower(string(in.Side)), forkMode)
+	// B5 (L8): it is registered PER ARM (the scenario/signal id), never per
+	// SIDE — a later same-side arm must not rewrite an earlier arm's branch
+	// before it fills. Resolve the arm identity ONCE so mentorArmIntent
+	// authors the row under the SAME key.
+	in.ArmID = mentorResolveArmID(in.ArmID)
+	at.setMentorExitMode(mentorScenarioFor(in.ArmID), forkMode)
 	if mentorPlaceRecorderForTest != nil {
 		mentorPlaceRecorderForTest(in, choice.Contracts)
 		return // test seam: the real pipeline is never reached from a test
@@ -494,9 +515,11 @@ var mentorPlaceRecorderForTest func(in mentor.Intent, contracts int)
 
 // ── B20 CONFLUENCE UPGRADE (trader half; the emit is DS-103's kernel) ───────
 
-// mentorExitMode / setMentorExitMode read/write the per-position exit branch
-// registered at placement (A/B/C/swing). The P1 exit loop drives the branch;
-// B20 switches it to C.
+// mentorExitMode / setMentorExitMode read/write the per-ARM exit branch
+// registered at placement (A/B/C/swing), keyed by the arm's SCENARIO (the
+// signal id) — B5 (L8): never by side, so a later same-side arm cannot
+// rewrite an earlier arm's branch before it fills. The P1 exit loop reads the
+// branch at fill (keyed by the row's scenario); B20 switches it to C.
 func (at *AutoTrader) mentorExitMode(key string) string {
 	at.mentorExitMu.Lock()
 	defer at.mentorExitMu.Unlock()
@@ -510,6 +533,15 @@ func (at *AutoTrader) setMentorExitMode(key, mode string) {
 		at.mentorExitModes = map[string]string{}
 	}
 	at.mentorExitModes[key] = mode
+}
+
+// deleteMentorExitMode prunes one staged exit branch (I13) — called when the
+// arm's staged branch is consumed (the fill copies it onto the live-position
+// struct) or the arm goes terminal without ever filling.
+func (at *AutoTrader) deleteMentorExitMode(key string) {
+	at.mentorExitMu.Lock()
+	delete(at.mentorExitModes, key)
+	at.mentorExitMu.Unlock()
 }
 
 // mentorConfluenceUpgradeMode is the pure B20 switch: an upgrade moves the
@@ -535,22 +567,72 @@ func mentorConfluenceUpgradeMode(current string) (mode string, why string) {
 // the intent's side: the exit branch moves to C (hold ≥ 1:2), the stop and the
 // size stay exactly as placed. A no-position or already-C intent is counted
 // and logged, never silent.
+//
+// B5 (L8): the branch is stored PER ARM, not per side. The OPEN (filled)
+// position's branch lives on its live-position struct — the exit drive reads
+// the struct, so the switch moves it there. A school-1 arm that is STILL
+// RESTING has no live position yet; its staged branch (keyed by the arm's
+// scenario) is switched so the fill registers C. A side that names neither is
+// a no-op.
 func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
-	key := strings.ToLower(string(in.Side))
-	next, why := mentorConfluenceUpgradeMode(at.mentorExitMode(key))
-	if next == "" {
+	side := strings.ToLower(string(in.Side))
+	found := false
+	for _, lp := range at.mentorLivePosList() {
+		if lp == nil || lp.Pos.Side != side {
+			continue
+		}
+		found = true
+		next, why := mentorConfluenceUpgradeMode(lp.Pos.Mode)
+		if next == "" {
+			mentorCount("exit_upgrade_no_position")
+			at.logWarnf("🧑‍🏫 mentor confluence upgrade IGNORED — %s (%s)", why, in.Reason)
+			continue
+		}
+		if next == lp.Pos.Mode {
+			mentorCount("exit_upgrade_noop")
+			at.logInfof("🧑‍🏫 mentor confluence upgrade: %s (%s) — %s", side, why, in.Reason)
+			continue
+		}
+		lp.Pos.Mode = next
+		mentorCount("exit_upgrade_c")
+		at.logInfof("🧑‍🏫 mentor confluence upgrade: %s %s (size unchanged) — %s", side, why, in.Reason)
+	}
+	// A school-1 arm that is still RESTING: switch its staged branch so the
+	// fill registers C. The live-arm registry names the arm by its ArmID; its
+	// scenario is the key the placement registered under. I3/I5: the entries
+	// are COPIED under mentorLiveMu before iterating (a concurrent write must
+	// not race the iteration), and only THIS trader's arms are considered.
+	type restingArm struct{ id, side string }
+	resting := make([]restingArm, 0)
+	mentorLiveMu.Lock()
+	for id, arm := range mentorLiveArms {
+		if arm.TraderID == at.id {
+			resting = append(resting, restingArm{id: id, side: arm.Side})
+		}
+	}
+	mentorLiveMu.Unlock()
+	for _, ra := range resting {
+		if !strings.EqualFold(ra.side, side) {
+			continue
+		}
+		scenario := mentorScenarioFor(ra.id)
+		cur := at.mentorExitMode(scenario)
+		if cur == "" {
+			continue // no staged branch for this arm — nothing to switch
+		}
+		found = true
+		next, why := mentorConfluenceUpgradeMode(cur)
+		if next == "" || next == cur {
+			continue
+		}
+		at.setMentorExitMode(scenario, next)
+		mentorCount("exit_upgrade_c")
+		at.logInfof("🧑‍🏫 mentor confluence upgrade (resting %s): %s %s (size unchanged) — %s", ra.id, side, why, in.Reason)
+	}
+	if !found {
 		mentorCount("exit_upgrade_no_position")
-		at.logWarnf("🧑‍🏫 mentor confluence upgrade IGNORED — %s (%s)", why, in.Reason)
-		return
+		at.logWarnf("🧑‍🏫 mentor confluence upgrade IGNORED — no open or resting mentor position on the %s side (%s)", side, in.Reason)
 	}
-	if next == at.mentorExitMode(key) {
-		mentorCount("exit_upgrade_noop")
-		at.logInfof("🧑‍🏫 mentor confluence upgrade: %s (%s) — %s", key, why, in.Reason)
-		return
-	}
-	at.setMentorExitMode(key, next)
-	mentorCount("exit_upgrade_c")
-	at.logInfof("🧑‍🏫 mentor confluence upgrade: %s %s (size unchanged) — %s", key, why, in.Reason)
 }
 
 // ── STRONG DAY (S9) ────────────────────────────────────────────────────────
@@ -757,30 +839,195 @@ func (at *AutoTrader) mentorNewsCancelFlattenAt(now time.Time) bool {
 // so each cancel is named and the evaluator's LevelArms entry is cleared.
 // Returns whether any cancel was requested.
 func (at *AutoTrader) cancelLiveIntradayMentorArms() bool {
-	ids := make([]string, 0, len(mentorLiveArms))
+	return at.cancelLiveIntradayMentorArmsWith("news 07:30 print — cancel intraday mentor arm before the print [D4.4 p1 @20:44]")
+}
+
+// cancelLiveIntradayMentorArmsWith is the B3-generalized sweep: the same
+// intraday cancel, with the tripping gate named in each cancel's reason (so the
+// ledger history records WHICH day-stop gate cleared the arm). The "news flat"
+// logging above becomes one caller of many.
+func (at *AutoTrader) cancelLiveIntradayMentorArmsWith(reason string) bool {
+	return at.cancelLiveMentorArms(reason, true)
+}
+
+// cancelAllLiveMentorArmsWith cancels EVERY live mentor arm — intraday AND
+// SWING4H — by its ArmID. The never-add sweep's fail-closed shape: the course's
+// never-add [D1.1 p1 @17:06–17:44] names no swing exception (it is silent on
+// whether a swing may coexist with an intraday position), so one position at a
+// time means the swing is cancelled too.
+func (at *AutoTrader) cancelAllLiveMentorArmsWith(reason string) bool {
+	return at.cancelLiveMentorArms(reason, false)
+}
+
+// cancelLiveMentorArms is the shared sweep body. swingExempt skips "swing-…"
+// arms (the news/window/day-stop cancels hold the swing by the 4h [D5.2]); the
+// never-add sweep passes false (no exemption).
+//
+// I5/I3: the entries are COPIED under mentorLiveMu before iterating (a
+// concurrent write must not race the iteration or the len), the sweep acts only
+// on THIS trader's arms, and only a cancel that was ACTUALLY requested is
+// counted or logged (mentorCancelArm returns false for a refused / already-
+// terminal row).
+func (at *AutoTrader) cancelLiveMentorArms(reason string, swingExempt bool) bool {
+	type entry struct{ id, traderID string }
+	entries := make([]entry, 0)
 	mentorLiveMu.Lock()
-	for id := range mentorLiveArms {
-		ids = append(ids, id)
+	for id, arm := range mentorLiveArms {
+		entries = append(entries, entry{id: id, traderID: arm.TraderID})
 	}
 	mentorLiveMu.Unlock()
-	acted := false
 	cancelled := 0
-	for _, id := range ids {
-		if strings.HasPrefix(strings.TrimSpace(id), "swing-") {
+	for _, e := range entries {
+		if e.traderID != at.id {
+			continue // not this trader's arm (the registry is process-global)
+		}
+		if swingExempt && strings.HasPrefix(strings.TrimSpace(e.id), "swing-") {
 			continue // SWING4H arm — held by the 4h
 		}
-		at.mentorCancelArm(mentor.Intent{
+		if at.mentorCancelArm(mentor.Intent{
 			Action: mentor.CancelArm,
-			ArmID:  id,
-			Reason: "news 07:30 print — cancel intraday mentor arm before the print [D4.4 p1 @20:44]",
-		})
-		acted = true
-		cancelled++
+			ArmID:  e.id,
+			Reason: reason,
+		}) {
+			cancelled++
+		}
 	}
-	if acted {
-		at.logWarnf("🧑‍🏫 news flat: cancelled %d live intraday mentor arm(s) (SWING4H exempt)", cancelled)
+	if cancelled > 0 {
+		if swingExempt {
+			at.logWarnf("🧑‍🏫 day-stop cancel: cancelled %d live intraday mentor arm(s) (SWING4H exempt) — %s", cancelled, reason)
+		} else {
+			at.logWarnf("🧑‍🏫 never-add cancel: cancelled %d live mentor arm(s) (SWING4H included — fail-closed) — %s", cancelled, reason)
+		}
 	}
-	return acted
+	return cancelled > 0
+}
+
+// mentorOpenPositionActive reports whether a mentor position is open. The
+// open-side seam is the primary read (the P1 driver wires it to the bound
+// account's position snapshot); the account position count is the fail-closed
+// backstop — an unreadable position list counts as OPEN, never flat.
+func (at *AutoTrader) mentorOpenPositionActive() bool {
+	if mentorOpenSideSource != nil && mentorOpenSideSource() != "" {
+		return true
+	}
+	return at.openPositionCount() != 0
+}
+
+// ── B3 (L4) DAY-STOP SWEEP ────────────────────────────────────────────────
+//
+// The day-stop gates below used to run ONLY while an entry was being written
+// (the placement path), so a resting arm placed earlier could still fill after
+// the day had been shut. This sweep trips them EVERY TICK and cancels the
+// resting unfilled intraday arms. Idempotent: an already-cancelled arm no-ops.
+// SWING4H is exempt (the course holds the swing by the 4h [D5.2]).
+//
+// The sweep cancels only on a DEFINITE trip. An UNRESOLVED read (done-after-win
+// day data missing, or a NULL pnl_corrected row) does NOT force-cancel — the
+// placement gate still fails closed for NEW entries, but an unknown is not
+// evidence the day is over, and destroying a resting arm on a data gap is worse
+// than the gap it closes.
+func (at *AutoTrader) mentorDayStopSweep(now time.Time) {
+	if !at.mentorEnabled() || at.store == nil || at.trader == nil {
+		return
+	}
+	if trip, why := at.mentorDoneAfterWinTripped(); trip {
+		if at.cancelLiveIntradayMentorArmsWith("day-stop done-after-win: " + why) {
+			mentorCount("day_stop_cancel_done_after_win")
+		}
+	}
+	if ended, why := at.mentorWindowEnded(now); ended {
+		if at.cancelLiveIntradayMentorArmsWith("day-stop window end: " + why) {
+			mentorCount("day_stop_cancel_window_end")
+		}
+	}
+	if hold, why := at.mentorNewsGate(); hold {
+		if at.cancelLiveIntradayMentorArmsWith("day-stop news hold: " + why) {
+			mentorCount("day_stop_cancel_news")
+		}
+	}
+	// NEVER-ADD [D1.1 p1 @17:06–17:44], now enforced while a position is OPEN,
+	// not only at write time (L4): with B4 more mentor arms rest at the broker
+	// at once, so a second fill while a position is open would ADD (same side)
+	// or REDUCE/FLIP (opposite side) it. Cancel the resting unfilled mentor
+	// arms on BOTH sides, once per open-position episode. SWING4H: the course
+	// is silent on a swing coexisting with an intraday position, so it is
+	// cancelled too (fail-closed: one position at a time).
+	if at.mentorOpenPositionActive() {
+		if !at.mentorNeverAddCancelDone {
+			if at.cancelAllLiveMentorArmsWith("day-stop never-add: a mentor position is open — one position at a time, cancel both sides [D1.1 p1 @17:06–17:44]") {
+				mentorCount("day_stop_cancel_never_add")
+			}
+			at.mentorNeverAddCancelDone = true
+		}
+	} else {
+		at.mentorNeverAddCancelDone = false
+	}
+	if mentorStopAfterLossTripped != nil {
+		if stop, why := mentorStopAfterLossTripped(); stop {
+			if at.cancelLiveIntradayMentorArmsWith("day-stop stop-after-loss: " + why) {
+				mentorCount("day_stop_cancel_stop_after_loss")
+			}
+		}
+	}
+}
+
+// mentorDoneAfterWinTripped reports the DEFINITE done-after-win trip only — a
+// trade closed in profit AND the day is net positive. An unwired or unresolved
+// source is "unknown", not a trip: the placement gate still refuses fail-closed,
+// but the sweep does NOT force-cancel a resting arm on an unknown.
+func (at *AutoTrader) mentorDoneAfterWinTripped() (bool, string) {
+	if at.config.StrategyConfig != nil {
+		if v := at.config.StrategyConfig.RiskControl.MentorDoneAfterWin; v != nil && !*v {
+			return false, "" // the knob is explicitly OFF
+		}
+	}
+	if mentorDayNetSource == nil || mentorClosedProfitSource == nil {
+		return false, ""
+	}
+	net, okNet := mentorDayNetSource()
+	closed, okClosed := mentorClosedProfitSource()
+	if !okNet || !okClosed {
+		return false, ""
+	}
+	if mentorDoneAfterWin(net, closed) {
+		return true, "a trade closed in profit and the day is net positive — no entries until the next trading day (17:00 CT) [D1.2 p1 @20:53–21:16]"
+	}
+	return false, ""
+}
+
+// mentorWindowEnded reports the window-END half of the window gate: the window
+// is ENDED when minutes > 0, the window is not currently active, and the most
+// recent window that OPENED at or before now (today's open if it has passed,
+// else yesterday's) has closed. This reads ENDED at 01:30 for a 23:00/120
+// cross-midnight window (the most recent open was yesterday 23:00, ended 01:00)
+// and NOT ended at 00:30 (still active). A pre-open 07:00 with an 08:30/60
+// window reads ENDED (yesterday's window) — but no intraday arm can be authored
+// outside the window (mentorWindowGate refuses it; only the SWING is exempt and
+// the sweep skips it), so a pre-open resting arm can only come from an ended
+// window. minutes <= 0 disables the window (no end to trip).
+func (at *AutoTrader) mentorWindowEnded(now time.Time) (bool, string) {
+	start, minutes := at.mentorWindowKnobs()
+	if minutes <= 0 {
+		return false, ""
+	}
+	if active, _ := mentorWindowActive(start, minutes, now); active {
+		return false, "" // the window is open right now
+	}
+	hour, minute, ok := parseMentorWindowStart(start)
+	if !ok {
+		return false, "" // unparseable start: the placement gate refuses; no force-cancel on a guess
+	}
+	loc := kernel.CTLocation()
+	ct := now.In(loc)
+	open := time.Date(ct.Year(), ct.Month(), ct.Day(), hour, minute, 0, 0, loc)
+	if open.After(now) {
+		open = time.Date(ct.Year(), ct.Month(), ct.Day()-1, hour, minute, 0, 0, loc)
+	}
+	end := open.Add(time.Duration(minutes) * time.Minute)
+	if !now.Before(end) {
+		return true, fmt.Sprintf("the trading window ended at %s CT [D1.2 p1 @23:52–24:59]", kernel.CloseHHMMCT(end))
+	}
+	return false, ""
 }
 
 // ── STOP RULES (owner ruling 00:1x CT, "exactly like he said") ─────────────
@@ -887,6 +1134,7 @@ func mentorDoneAfterWin(dayNetPnl float64, closedInProfit bool) bool {
 var (
 	mentorDayNetSource       func() (float64, bool)
 	mentorClosedProfitSource func() (bool, bool)
+	mentorClosedLossSource   func() (bool, bool)
 )
 
 // mentorDoneAfterWinGate is the call-site half of (a); the knob is default ON
@@ -913,6 +1161,69 @@ func (at *AutoTrader) mentorDoneAfterWinGate() (bool, string) {
 	if mentorDoneAfterWin(net, closed) {
 		mentorCount("done_after_win_refused")
 		return true, "done for the day after a win — a trade closed in profit and the day is net positive; no new entries until the next trading day (17:00 CT) [D1.2 p1 @20:53–21:16]"
+	}
+	return false, ""
+}
+
+// mentorStopAfterLossGate — STOP-AFTER-LOSS (owner "ok" 2026-10-05): once a
+// MENTOR trade closes today (17:00 CT session-day) with a net LOSS (both legs
+// combined; pnl_corrected < 0), refuse new mentor entries until the next
+// session day [D1.2 p1 @ 23:34]. A breakeven close (0) is NOT a loss. The
+// knob is default OFF (nil → OFF; byte-identical while off). FAIL-CLOSED like
+// done-after-win: an unwired source or an UNRESOLVED close refuses, with its
+// own counters.
+func (at *AutoTrader) mentorStopAfterLossGate() (bool, string) {
+	if at.config.StrategyConfig == nil {
+		return false, "" // no config → the knob reads OFF (nil → OFF, the default)
+	}
+	if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v == nil || !*v {
+		return false, "" // the knob is OFF (nil → OFF, the default)
+	}
+	if mentorClosedLossSource == nil {
+		mentorCount("stop_after_loss_no_data")
+		at.logWarnf("🧑‍🏫 mentor stop-after-loss source missing (closed loss) — refusing the entry (fail-closed)")
+		return true, "stop-after-loss: closed-loss source not wired — an unknown is not 'no loss'; refusing (fail-closed) [D1.2 p1 @ 23:34]"
+	}
+	closed, ok := mentorClosedLossSource()
+	if !ok {
+		mentorCount("stop_after_loss_unresolved")
+		at.logWarnf("🧑‍🏫 mentor stop-after-loss day UNRESOLVED (a NULL pnl_corrected closed row or a read error) — refusing the entry (fail-closed)")
+		return true, "stop-after-loss: day unresolved (a NULL pnl_corrected closed row) — an unknown is not 'no loss'; refusing (fail-closed) [D1.2 p1 @ 23:34]"
+	}
+	if closed {
+		mentorCount("stop_after_loss_refused")
+		return true, "stop for the day after a loss — a mentor trade closed today with a net loss; no new entries until the next trading day (17:00 CT) [D1.2 p1 @ 23:34]"
+	}
+	return false, ""
+}
+
+// mentorStopAfterLossTripped is the B3 day-stop-sweep hook for the
+// stop-after-loss gate (wired in mentorWireProductionSeams next to
+// mentorClosedLossSource). nil → unwired (the sweep does not trip). It returns
+// (true, why) ONLY on a DEFINITE loss (the knob ON and a resolved closed loss);
+// an unwired or unresolved read returns (false, "") — the placement gate stays
+// fail-closed, but the sweep never force-cancels a resting arm on an unknown
+// (the same contract as mentorDoneAfterWinTripped).
+var mentorStopAfterLossTripped func() (bool, string)
+
+// mentorStopAfterLossTrip is the DEFINITE-trip computation behind the B3 sweep
+// hook: the knob ON and a resolved closed loss, nothing else.
+func (at *AutoTrader) mentorStopAfterLossTrip() (bool, string) {
+	if at.config.StrategyConfig == nil {
+		return false, ""
+	}
+	if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v == nil || !*v {
+		return false, "" // the knob is OFF (nil → OFF, the default)
+	}
+	if mentorClosedLossSource == nil {
+		return false, ""
+	}
+	closed, ok := mentorClosedLossSource()
+	if !ok {
+		return false, ""
+	}
+	if closed {
+		return true, "a mentor trade closed today with a net loss — no entries until the next trading day (17:00 CT) [D1.2 p1 @ 23:34]"
 	}
 	return false, ""
 }

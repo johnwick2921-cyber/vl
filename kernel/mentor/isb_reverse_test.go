@@ -60,6 +60,21 @@ func TestReverseISBAtEMA9LongAndShort(t *testing.T) {
 	}
 }
 
+// TestReverseISBAtEMA9NoTrendFailsClosed is the B6 (L14) call-site pin: with
+// no trend direction the reverse ISB used to fall through to SHORT
+// unconditionally (the `if trend == SideLong … return short` tail). MUTANT:
+// delete the trend=="" guard → ok=true with Side=short → RED.
+func TestReverseISBAtEMA9NoTrendFailsClosed(t *testing.T) {
+	cfg := reverseCfg()
+	// ISB points LONG (green candle 1); trend is unset.
+	greenPrev := market.Kline{Open: 100, Close: 106, High: 106.5, Low: 99.5}
+	cur := market.Kline{Open: 102, Close: 104, High: 104.5, Low: 99.5}
+	in, ok, reason := ReverseISBAtEMA9(greenPrev, cur, 101, "", cfg)
+	if ok || in.Side != "" || in.Action != "" {
+		t.Fatalf("no trend → fail closed, never SHORT: got %+v ok=%v reason=%q [D5.4, B6]", in, ok, reason)
+	}
+}
+
 func TestReverseISBAtEMA9Refusals(t *testing.T) {
 	cfg := reverseCfg()
 	redPrev := market.Kline{Open: 106, Close: 100, High: 106.5, Low: 99.5}

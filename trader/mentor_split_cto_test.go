@@ -3,6 +3,7 @@ package trader
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"vl/kernel/mentor"
 	ntwire "vl/provider/ninjatrader"
@@ -78,6 +79,12 @@ func TestMentorWireLeg1KeepsTheRowRunnerCeiling(t *testing.T) {
 func TestMentorSplitRegistersTwoLegsAndMovesEachByLeg(t *testing.T) {
 	at, moves := newDriveAT(t)
 	at.mentorExitModes = map[string]string{"long": "B"}
+	// Pin the clock so the receipt (ExitTime empty → mentorClockNow) lands at a
+	// deterministic instant between the BE candle and the trail candle.
+	T := int64(1_000_000)
+	oldNow := mentorNowSource
+	mentorNowSource = func() time.Time { return time.UnixMilli(T) }
+	t.Cleanup(func() { mentorNowSource = oldNow })
 	old := mentorSentSplit
 	mentorSentSplit = func(_ *AutoTrader, sid string) (nttrader.SentSplit, bool) {
 		if sid == "sig-split" {
@@ -101,14 +108,20 @@ func TestMentorSplitRegistersTwoLegsAndMovesEachByLeg(t *testing.T) {
 	}
 
 	// R = 2, target 16 → half the distance = 3 → BE arms when high ≥ 13.
-	at.mentorExitDrivePos(nil, lp, 12.8, 13.2, 12)
+	at.mentorExitDrivePos(nil, lp, 12.8, 13.2, 12, T-2)
 	assertMoves(t, moves(), driveMove{"sig-split", "long", 10}, driveMove{"sig-split", "long", 10})
 	if got := capturedDriveLegs(); len(got) != 2 || got[0] != 1 || got[1] != 2 {
 		t.Fatalf("BE legs = %v, want [1 2] (each OCO pair addressed by its own leg)", got)
 	}
-	// Next candle: leg 1's TP (12) already crossed on the BE candle → Scaled;
-	// the 1:1 + trail runs on the RUNNER only.
-	at.mentorExitDrivePos(nil, lp, 14, 14.5, 13.5)
+	// Next candle: leg 1's TP (12) already crossed on the BE candle, but B2
+	// (L9) says a candle-price cross does NOT mark Scaled for a split — only
+	// the BROKER's position_close receipt of leg 1's TP does. Feed the receipt
+	// first, then the 1:1 + trail runs on the RUNNER only.
+	at.mentorMarkLeg1Scaled(ntwire.PositionClosePayload{SignalID: "sig-split", PositionSide: "long", ExitReason: "tp", Leg: 1})
+	if !lp.Pos.Scaled {
+		t.Fatalf("leg 1's TP receipt must mark Scaled (B2)")
+	}
+	at.mentorExitDrivePos(nil, lp, 14, 14.5, 13.5, T+1)
 	legs := capturedDriveLegs()
 	for _, l := range legs[2:] {
 		if l != 2 {
@@ -134,7 +147,7 @@ func TestMentorNoSentSplitRegistersSingleLegLegZero(t *testing.T) {
 	if lp == nil || lp.Legs[1].Qty != 0 || lp.Legs[0].Wire != 0 || lp.Legs[0].Qty != 5 {
 		t.Fatalf("no sent split must register the single leg (wire 0): %+v", lp)
 	}
-	at.mentorExitDrivePos(nil, lp, 11.0, 11.8, 10.8)
+	at.mentorExitDrivePos(nil, lp, 11.0, 11.8, 10.8, 0)
 	assertMoves(t, moves(), driveMove{"sig-one", "long", 10})
 	if got := capturedDriveLegs(); len(got) != 1 || got[0] != 0 {
 		t.Fatalf("single-leg move legs = %v, want [0]", got)

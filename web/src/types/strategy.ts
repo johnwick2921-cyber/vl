@@ -321,6 +321,10 @@ export interface RiskControlConfig {
   // minutes (unset/0 → 60; -1 = no window, entries at any hour). SWING is exempt.
   mentor_window_start?: string
   mentor_window_minutes?: number
+  // Stop-after-loss (mentor day-stop): once a mentor trade closes today with a
+  // net loss, refuse new entries until the next trading day (17:00 CT).
+  // Absent = OFF (byte-identical to the prior config).
+  mentor_stop_after_loss?: boolean
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning
