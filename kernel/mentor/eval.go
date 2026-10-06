@@ -27,10 +27,13 @@ type State struct {
 	DeletedLevels map[string]bool `json:"deleted_levels,omitempty"`
 	// ISBArms are the live inside-bar orders (stacking counter, §2.1).
 	ISBArms map[string]ISBArm `json:"isb_arms,omitempty"`
-	// BoxRefs records, per live box key, the bar index of the last return
+	// BoxRefs records, per live box key, the OpenTime (ms) of the last return
 	// visit already evaluated — every return trades (R1, D3.2 p2 @ 06:25),
-	// each exactly once.
-	BoxRefs map[string]int `json:"box_refs,omitempty"`
+	// each exactly once. UR-FIX class: the value is a TIME anchor, not a bar
+	// index — the live window slides (the provider returns the last ~1500
+	// closed bars), so a stored INDEX drifted one bar per new 1m close and
+	// the incremental walk stalled after the newest bar.
+	BoxRefs map[string]int64 `json:"box_refs,omitempty"`
 	// Limits is the G1 leg budget + G2 loss box state machine (DS-107).
 	Limits Limits `json:"limits,omitempty"`
 	// Levels is the last tick's level set (FU-1 P1-2): the fill drain reads it
@@ -158,7 +161,7 @@ func UnmarshalState(b []byte) (State, error) {
 		s.ISBArms = map[string]ISBArm{}
 	}
 	if s.BoxRefs == nil {
-		s.BoxRefs = map[string]int{}
+		s.BoxRefs = map[string]int64{}
 	}
 	return s, err
 }
@@ -194,7 +197,7 @@ func New(cfg Config) *Evaluator {
 		VisitCapRefused: map[string]bool{},
 		DeletedLevels:   map[string]bool{},
 		ISBArms:         map[string]ISBArm{},
-		BoxRefs:         map[string]int{},
+		BoxRefs:         map[string]int64{},
 	}}
 }
 
@@ -1592,22 +1595,34 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// once, on the tick its reference candle closes. The box edges are OUT of
 	// the level touch loop above, so a return emits exactly ONE entry.
 	if e.State.BoxRefs == nil {
-		e.State.BoxRefs = map[string]int{}
+		e.State.BoxRefs = map[string]int64{}
 	}
 	boxCfg := DefaultBoxCfg()
 	// D4.2-03: while the 15m/5m conflict stands, NO setup trades — box
 	// returns included (the old one-shot veto covered only the ISB path).
 	if !conflict {
 		for _, b := range boxes {
-			last := e.State.BoxRefs[b.Key]
+			// UR-FIX REL9: BoxRefs stores the last evaluated reference's
+			// OpenTime (ms), not its bar index. Re-resolve the index against
+			// the CURRENT (sliding) window each tick; an anchor that slid out
+			// of the window is fail-closed — the last reference is older than
+			// every bar in this window, so nothing here was evaluated before
+			// and the walk restarts at the formation bar (lastIdx = -1).
+			lastMs := e.State.BoxRefs[b.Key]
+			lastIdx := -1
+			if lastMs != 0 {
+				if idx, ok := resolveBarIndex(bars, lastMs); ok {
+					lastIdx = idx
+				}
+			}
 			// Incremental walk from the last evaluated reference (O(new bars) per
 			// tick, not O(tape)) — the full BoxReturnBars walk was the 437s replay.
 			start := b.FormedAt + 1
-			if last+1 > start {
-				start = last + 1
+			if lastIdx+1 > start {
+				start = lastIdx + 1
 			}
 			for _, r := range BoxReturnBarsFrom(bars, b, start, boxCfg) {
-				if r.RefBar <= last {
+				if r.RefBar <= lastIdx {
 					continue
 				}
 				// A10: the day gate fires BEFORE any box state is recorded
@@ -1616,7 +1631,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					e.refuse("box_" + r)
 					continue
 				}
-				e.State.BoxRefs[b.Key] = r.RefBar
+				e.State.BoxRefs[b.Key] = bars[r.RefBar].OpenTime
 				// B11 [D3.4 p2 @07:58–08:21]: inside the standing 5m-ISB box only
 				// a same-direction ISB trades ("em chỉ đánh inside bar cùng
 				// chiều") — box trades never.
