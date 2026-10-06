@@ -293,3 +293,41 @@ func TestEffectiveConditionStatusRow(t *testing.T) {
 		t.Fatalf("origin %q scope %q", row.Origin, row.Scope)
 	}
 }
+
+// MENTOR-SIZE-TRUTH (DS-105 R2 P2): in mentor mode resolveMaxContracts returns
+// mentor_max_contracts, NOT max_contracts_per_order — the W1 rows must say so
+// instead of reporting the per-order cap as effective.
+func TestEffectiveMaxContractsMentorModeTruth(t *testing.T) {
+	mentorRaw := `{"strategy_type":"ai_trading","ai_config":{"risk_control":{
+		"mentor_mode":true,"max_contracts_per_order":2}}}`
+	rows := effRowsFor(t, mentorRaw, "ninjatrader", "NY")
+
+	mcp := rows[rcPath+"max_contracts_per_order"]
+	if got := jsonVal(t, mcp.Effective); got != "not applied in mentor mode" {
+		t.Fatalf("mentor mode: max_contracts_per_order effective = %v, want 'not applied in mentor mode'", got)
+	}
+	if !strings.Contains(mcp.Origin, "mentor_max_contracts") {
+		t.Fatalf("mentor mode: max_contracts_per_order origin = %q, want it to name mentor_max_contracts", mcp.Origin)
+	}
+
+	mmc, ok := rows[rcPath+"mentor_max_contracts"]
+	if !ok {
+		t.Fatalf("no mentor_max_contracts row")
+	}
+	if got := jsonVal(t, mmc.Effective); got != float64(20) {
+		t.Fatalf("mentor mode: mentor_max_contracts effective = %v, want 20", got)
+	}
+
+	// AI mode is unchanged: the per-order cap still maps to resolveMaxContracts
+	// (whose production value here is the Stage-A 1-contract clamp, not the raw 2).
+	aiRaw := `{"strategy_type":"ai_trading","ai_config":{"risk_control":{"mentor_mode":false,"max_contracts_per_order":2}}}`
+	aiRows := effRowsFor(t, aiRaw, "ninjatrader", "NY")
+	aiParsed, _ := (&store.Strategy{Config: aiRaw}).ParseConfig()
+	aiAT := &AutoTrader{exchange: "ninjatrader", config: AutoTraderConfig{StrategyConfig: aiParsed}}
+	if got := jsonVal(t, aiRows[rcPath+"max_contracts_per_order"].Effective); got != float64(aiAT.resolveMaxContracts()) {
+		t.Fatalf("ai mode: max_contracts_per_order effective = %v, want production resolveMaxContracts = %v", got, aiAT.resolveMaxContracts())
+	}
+	if got := jsonVal(t, aiRows[rcPath+"mentor_max_contracts"].Effective); got != "\u2014 (AI mode; not applied)" {
+		t.Fatalf("ai mode: mentor_max_contracts effective = %v, want the not-applied marker", got)
+	}
+}

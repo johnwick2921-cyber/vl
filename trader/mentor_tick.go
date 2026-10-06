@@ -759,7 +759,7 @@ func (at *AutoTrader) mentorDayEvents() ([]calendar.Event, bool) {
 	if at.store == nil {
 		return nil, false
 	}
-	slice, err := at.store.Calendar().GetSlice(plannerTradeDateCT(time.Now()))
+	slice, err := at.store.Calendar().GetSlice(plannerTradeDateCT(mentorClockNow()))
 	if err != nil || slice == nil {
 		return nil, false
 	}
