@@ -245,3 +245,82 @@ func TestB3SweepCountsOnlyActualCancelsAndPrunes(t *testing.T) {
 		t.Fatal("no cancel was actually requested — the counter must stay 0")
 	}
 }
+
+// TestB3DayStopStopAfterLossCancelsRestingArm — the stop-after-loss half of the
+// day-stop sweep (DS-105 I1): with the knob ON and a resolved closed loss, a
+// resting intraday arm is cancelled while the SWING4H arm survives.
+func TestB3DayStopStopAfterLossCancelsRestingArm(t *testing.T) {
+	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	at, _, ledger, _ := mentorB3Rig(t)
+	mentorWireSeams(t, at, ledger)
+	ResetMentorCountersForTest()
+
+	on := true
+	at.config.StrategyConfig.RiskControl.MentorStopAfterLoss = &on
+	mentorClosedLossSource = func() (bool, bool) { return true, true } // a resolved closed loss
+	mentorStopAfterLossTripped = at.mentorStopAfterLossTrip
+	t.Cleanup(func() {
+		mentorClosedLossSource = nil
+		mentorStopAfterLossTripped = nil
+	})
+
+	now := b3Clock(10, 30)
+	mentorNowSource = func() time.Time { return now }
+	t.Cleanup(func() { mentorNowSource = nil })
+
+	intradayRow := authorMentorArmForDayStop(t, at, "isb-b3-salloss", "ISB", now)
+	swingRow := authorMentorArmForDayStop(t, at, "swing-b3-salloss", "SWING4H", now)
+
+	bar := func(m int) market.Kline {
+		ot := now.UnixMilli() + int64(m)*60_000
+		return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: 100, High: 101, Low: 99, Close: 100, Final: true}
+	}
+	at.mentorEvalOnce([]market.Kline{bar(0), bar(1), bar(2)})
+
+	if got := readMentorArmRowByID(t, ledger, intradayRow); got.State != store.StateCancelled {
+		t.Fatalf("stop-after-loss trip must cancel the resting intraday arm, got state=%q", got.State)
+	}
+	if got := readMentorArmRowByID(t, ledger, swingRow); store.IsTerminalArmState(got.State) {
+		t.Fatalf("the SWING4H arm must survive the stop-after-loss sweep, got state=%q", got.State)
+	}
+	if mentorCounters["day_stop_cancel_stop_after_loss"] < 1 {
+		t.Fatalf("day_stop_cancel_stop_after_loss counter must record the cancel, got %v", mentorCounters)
+	}
+}
+
+// TestB3DayStopStopAfterLossOffCancelsNothing — the knob OFF (nil) is not a trip:
+// the sweep must not cancel a resting arm.
+func TestB3DayStopStopAfterLossOffCancelsNothing(t *testing.T) {
+	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	at, _, ledger, _ := mentorB3Rig(t)
+	mentorWireSeams(t, at, ledger)
+	ResetMentorCountersForTest()
+
+	// knob OFF (nil), but a resolved closed loss — the hook is wired and returns
+	// false, so nothing cancels.
+	mentorClosedLossSource = func() (bool, bool) { return true, true }
+	mentorStopAfterLossTripped = at.mentorStopAfterLossTrip
+	t.Cleanup(func() {
+		mentorClosedLossSource = nil
+		mentorStopAfterLossTripped = nil
+	})
+
+	now := b3Clock(10, 30)
+	mentorNowSource = func() time.Time { return now }
+	t.Cleanup(func() { mentorNowSource = nil })
+
+	intradayRow := authorMentorArmForDayStop(t, at, "isb-b3-saloff", "ISB", now)
+
+	bar := func(m int) market.Kline {
+		ot := now.UnixMilli() + int64(m)*60_000
+		return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: 100, High: 101, Low: 99, Close: 100, Final: true}
+	}
+	at.mentorEvalOnce([]market.Kline{bar(0), bar(1), bar(2)})
+
+	if got := readMentorArmRowByID(t, ledger, intradayRow); store.IsTerminalArmState(got.State) {
+		t.Fatalf("the knob OFF must cancel nothing, got state=%q", got.State)
+	}
+	if mentorCounters["day_stop_cancel_stop_after_loss"] != 0 {
+		t.Fatalf("day_stop_cancel_stop_after_loss must stay 0 with the knob OFF, got %v", mentorCounters)
+	}
+}
