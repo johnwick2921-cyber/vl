@@ -71,6 +71,22 @@ func denseSession1m(y int, mo time.Month, d int, n int, o, c float64) []market.K
 	return bars
 }
 
+// rthRange1m builds consecutive 1m bars from (y,mo,d) hh:mm:00 CT to
+// (y,mo,d) toHH:toMM:00 CT (exclusive), constant OHLC.
+func rthRange1m(y int, mo time.Month, d, fromHH, fromMM, toHH, toMM int, o, c float64) []market.Kline {
+	start := auditMs(y, mo, d, fromHH, fromMM, 0)
+	end := auditMs(y, mo, d, toHH, toMM, 0)
+	var bars []market.Kline
+	for ot := start; ot < end; ot += 60_000 {
+		hi, lo := o, c
+		if c < o {
+			hi, lo = o, c
+		}
+		bars = append(bars, market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: o, High: hi, Low: lo, Close: c})
+	}
+	return bars
+}
+
 // TestRollDayKeyFindsFirstDenseSessionDay — the roll is the FIRST session day
 // (17:00 CT flip) with >= denseFront1mMin 1m bars; sparse snapshots before it
 // never count.
@@ -168,6 +184,69 @@ func TestRollStitcherNoHoleFromSparseSnapshots(t *testing.T) {
 	}
 	if !adj {
 		t.Fatal("older 09-14 bars must be back-adjusted by +10 (open 101 → 111)")
+	}
+}
+
+// TestRollStitcherSameDayContinuation (REL10-STITCH-CUT) — the older contract
+// ends MID-SESSION at 09-14 10:33 CT (where the store stopped recording it) and
+// the newer contract already has bars that day from 09:56. The cut is at the
+// older's LAST STORED BAR: the stitched series is continuous across 10:33 (no
+// gap, no duplicate minute) and 09-14 has its full 08:30–15:00 RTH candles. The
+// OLD session-key cut dropped the newer's 09-14 bars (key 09-14 < roll day
+// 09-15) and left a ~6.5 h hole.
+func TestRollStitcherSameDayContinuation(t *testing.T) {
+	// Older 09-26: 09-14 RTH 08:30 → 10:33 (its last stored bar).
+	older := rthRange1m(2026, 9, 14, 8, 30, 10, 34, 98, 99)
+	older1h := native1hSession(2026, 9, 10, 17, 100, 100) // session 09-11 (gap day)
+	// Newer 12-26: 09-14 from 09:56 → 15:00 (same-day continuation), plus the
+	// dense session 09-15 (roll day). Native 1h on 09-11 for the gap.
+	newer := rthRange1m(2026, 9, 14, 9, 56, 15, 0, 110, 111)
+	newer = append(newer, denseSession1m(2026, 9, 14, 1380, 112, 113)...)
+	newer1h := append(
+		native1hSession(2026, 9, 10, 17, 110, 110),
+		native1hSession(2026, 9, 14, 17, 110, 110)...)
+
+	stitched, full1h, gaps, stopped := StitchKeyLevelHistory([]Contract1M{
+		{Contract: "MNQ 09-26", Bars: older, Bars1H: older1h},
+		{Contract: "MNQ 12-26", Bars: newer, Bars1H: newer1h},
+	})
+	if stopped != "" {
+		t.Fatalf("stitch stopped at %q, want full", stopped)
+	}
+	if len(gaps) != 1 || gaps[0].Gap != 10 {
+		t.Fatalf("gaps = %+v, want one gap 10", gaps)
+	}
+
+	// 09-14 1m must be continuous 08:30 → 14:59: no gap > 60s, no duplicate.
+	seen := map[int64]bool{}
+	var prev int64
+	for _, b := range stitched {
+		if sessionKeyCT(b.OpenTime) != "2026-09-14" {
+			continue
+		}
+		if seen[b.OpenTime] {
+			t.Fatalf("duplicate minute %d in the stitched 09-14 series", b.OpenTime)
+		}
+		seen[b.OpenTime] = true
+		if prev != 0 && b.OpenTime-prev != 60_000 {
+			t.Fatalf("gap in the stitched 09-14 series: %d → %d (not 60s)", prev, b.OpenTime)
+		}
+		prev = b.OpenTime
+	}
+	if prev != auditMs(2026, 9, 14, 14, 59, 0) {
+		t.Fatalf("stitched 09-14 series ends at %d, want 14:59 (the last RTH minute)", prev)
+	}
+
+	// 09-14 must have its complete 1H RTH candle set: 08:30, 09:30, 10:30,
+	// 11:30, 12:30, 13:30, 14:30 = 7 candles.
+	n0914 := 0
+	for _, c := range full1h {
+		if sessionKeyCT(c.OpenTime) == "2026-09-14" {
+			n0914++
+		}
+	}
+	if n0914 != 7 {
+		t.Fatalf("09-14 1H RTH candle count = %d, want 7 (08:30..14:30)", n0914)
 	}
 }
 

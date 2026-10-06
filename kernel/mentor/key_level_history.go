@@ -74,22 +74,12 @@ func rollDayKey(bars []market.Kline) (string, bool) {
 	return best, best != ""
 }
 
-// sessionRange keeps bars whose session-day key is in [from, to). to == ""
-// means no upper bound. It allocates a fresh slice (never mutates the
-// caller's backing array).
-func sessionRange(bars []market.Kline, from, to string) []market.Kline {
-	out := make([]market.Kline, 0, len(bars))
-	for _, b := range bars {
-		k := sessionKeyCT(b.OpenTime)
-		if k < from {
-			continue
-		}
-		if to != "" && k >= to {
-			continue
-		}
-		out = append(out, b)
-	}
-	return out
+// trimAfter keeps the bars whose OpenTime is STRICTLY after cutoff — the
+// head's continuation past the older contract's last stored bar. bars is
+// ascending, so this is a binary search (no allocation).
+func trimAfter(bars []market.Kline, cutoff int64) []market.Kline {
+	n := sort.Search(len(bars), func(i int) bool { return bars[i].OpenTime > cutoff })
+	return bars[n:]
 }
 
 // lastFullOverlapBefore returns the most recent session-day key strictly
@@ -171,10 +161,11 @@ func backAdjust(bars []market.Kline, gap float64) []market.Kline {
 
 // RollStitcher accumulates the full stitched history contract-by-contract,
 // NEWEST→OLDEST, stopping at the first roll whose gap cannot be measured.
-// Each contract contributes its bars in [its own roll day, the next-newer
-// contract's roll day): its sparse pre-roll snapshots are dropped, and the
-// next-newer contract supplies every bar from its roll day — so the cut never
-// leaves a hole where the older contract's real sessions were.
+// CUT (CTO REL10-STITCH-CUT): the older contract supplies every bar up to and
+// including ITS OWN LAST STORED BAR; the newer contract supplies every bar
+// STRICTLY AFTER that instant. The newer's sparse pre-roll snapshots lie
+// before the older's last bar and so are dropped, while the newer's same-day
+// continuation is kept — no mid-session hole.
 type RollStitcher struct {
 	stitched1m   []market.Kline // stitched 1m, newest scale, ascending
 	head1h       []market.Kline // head contract's NATIVE 1h (own scale)
@@ -185,9 +176,15 @@ type RollStitcher struct {
 	stoppedAt    string
 }
 
-// NewRollStitcher starts the stitch from the NEWEST contract (own scale).
+// NewRollStitcher starts the stitch from the NEWEST contract (own scale). The
+// newest's bars are kept FULL here — the cut to "strictly after the older's
+// last bar" happens in Add, when the older contract is known.
 func NewRollStitcher(newest Contract1M) *RollStitcher {
-	s := &RollStitcher{}
+	s := &RollStitcher{
+		stitched1m:   newest.Bars,
+		head1h:       newest.Bars1H,
+		headContract: newest.Contract,
+	}
 	rd, ok := rollDayKey(newest.Bars)
 	if !ok {
 		// A contract that never reaches the dense-front threshold has no
@@ -195,10 +192,7 @@ func NewRollStitcher(newest Contract1M) *RollStitcher {
 		s.stoppedAt = newest.Contract
 		return s
 	}
-	s.stitched1m = sessionRange(newest.Bars, rd, "")
-	s.head1h = newest.Bars1H
 	s.headRollDay = rd
-	s.headContract = newest.Contract
 	return s
 }
 
@@ -221,17 +215,24 @@ func (s *RollStitcher) Add(older Contract1M) bool {
 		return false
 	}
 	pair.Pair = older.Contract + "→" + s.headContract
-	olderRD, ok := rollDayKey(older.Bars)
-	if !ok {
+	if len(older.Bars) == 0 {
 		s.stoppedAt = older.Contract + "→" + s.headContract
 		return false
 	}
-	// The older contract supplies every bar from ITS roll day to the head's
-	// roll day (exclusive); the head supplies every bar from its roll day.
-	// Back-adjust onto the NEWEST scale by the cumulative gap.
+	// The older's own roll day is needed only for the NEXT pair's gap
+	// measurement. A contract that never went dense (e.g. a mid-session tail
+	// in a fixture) can still be stitched; its "" roll day then makes the next
+	// Add()'s measurement day "" → the stitch stops there.
+	olderRD, _ := rollDayKey(older.Bars)
+	// CUT (CTO REL10-STITCH-CUT): older supplies every bar up to and including
+	// its own last stored bar (where the store stopped recording it); the head
+	// supplies every bar STRICTLY AFTER that instant. Back-adjust onto the
+	// NEWEST scale by the cumulative gap.
 	total := pair.Gap + s.cumGap
-	pre := backAdjust(sessionRange(older.Bars, olderRD, s.headRollDay), total)
-	s.stitched1m = append(pre, s.stitched1m...)
+	cutTime := older.Bars[len(older.Bars)-1].OpenTime
+	pre := backAdjust(older.Bars, total)     // every bar ≤ cutTime (the whole older series)
+	head := trimAfter(s.stitched1m, cutTime) // strictly after the older's last bar
+	s.stitched1m = append(pre, head...)
 	s.gaps = append(s.gaps, pair)
 	s.head1h = older.Bars1H
 	s.headRollDay = olderRD
