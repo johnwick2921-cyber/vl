@@ -85,6 +85,30 @@ describe('MentorTruthCard', () => {
     )
     expect(screen.queryByText(/stale — last update/i)).toBeNull()
   })
+
+  it('renders the computing text (no throw) when levels/depth are ABSENT', () => {
+    // The evaluator has not built yet: the server omits levels/depth and sets
+    // computing=true. The card must not dereference a null list.
+    const t = truth({ levels: undefined, depth: undefined, computing: true })
+    expect(() =>
+      render(
+        <LanguageProvider>
+          <MentorTruthCard truth={t} />
+        </LanguageProvider>
+      )
+    ).not.toThrow()
+    expect(screen.getByText(/levels: computing \(first 1m bar\)/i)).toBeTruthy()
+  })
+
+  it('renders "no levels" when the evaluator built with an empty level set', () => {
+    const t = truth({ levels: [], depth: {}, computing: false })
+    render(
+      <LanguageProvider>
+        <MentorTruthCard truth={t} />
+      </LanguageProvider>
+    )
+    expect(screen.getByText('no levels')).toBeTruthy()
+  })
 })
 
 describe('BiasBlock advice-only label', () => {

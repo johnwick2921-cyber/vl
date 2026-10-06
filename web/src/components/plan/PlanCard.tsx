@@ -22,12 +22,16 @@ import { ExpectancyPanel } from './ExpectancyPanel'
 import { InstrumentsDrawer } from './InstrumentsDrawer'
 import { MentorTruthCard } from '../mentor/MentorTruthCard'
 import { useMentorTruth } from '../mentor/useMentorTruth'
+import type { MentorTruth } from '../../lib/api/traders'
 import { SESSION_BANDS, type SessionName } from './sessionConfig'
 
 interface Props {
   traderId?: string
   symbol?: string
   exchange?: string
+  /** P2-1: when the page renders its own live card, pass its truth down so
+   * PlanCard does NOT poll or render a second card. undefined = fetch own. */
+  mentorTruth?: MentorTruth | null
 }
 
 const ALL_SESSIONS: SessionName[] = ['ASIA', 'LONDON', 'NY']
@@ -36,6 +40,7 @@ export function PlanCard({
   traderId,
   symbol = 'MNQ',
   exchange = 'ninjatrader',
+  mentorTruth,
 }: Props) {
   const { language } = useLanguage()
   // W15.B — `selected` now drives the FETCH, not just the highlight. Before this
@@ -57,11 +62,18 @@ export function PlanCard({
     selected ?? undefined
   )
   // MENTOR-TRUTH PANEL: the live evaluator truth ("what trades"), refreshed
-  // every 30s + on focus (see useMentorTruth). mentor mode OFF → enabled=false
-  // → the card hides and the AI bias card keeps its unchanged label. A failed
-  // refresh keeps the last good payload (marked stale), so the advice-only
-  // label never flips off on a blip.
-  const { truth: mentor, stale: mentorStale } = useMentorTruth(traderId)
+  // every 30s + on focus (see useMentorTruth). When the page passes its own
+  // truth down (mentorTruth !== undefined), PlanCard uses it and does NOT poll
+  // or render a second card — the page-level card is the single source.
+  // mentor mode OFF → enabled=false → the card hides and the AI bias card keeps
+  // its unchanged label. A failed refresh keeps the last good payload (marked
+  // stale), so the advice-only label never flips off on a blip.
+  const externalMentor = mentorTruth !== undefined
+  const { truth: ownMentor, stale: mentorStale } = useMentorTruth(
+    traderId,
+    !externalMentor
+  )
+  const mentor = externalMentor ? mentorTruth : ownMentor
 
   // Which session is LIVE right now (server-told), independent of what tab the
   // owner is looking at.
@@ -186,7 +198,9 @@ export function PlanCard({
         onSelectVersion={(v) => setViewVersion(v === latestVersion ? null : v)}
         mentorOn={mentor?.enabled ?? false}
       />
-      <MentorTruthCard truth={mentor} stale={mentorStale} />
+      {!externalMentor && (
+        <MentorTruthCard truth={mentor} stale={mentorStale} />
+      )}
     </div>
   )
 }

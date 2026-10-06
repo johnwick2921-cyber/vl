@@ -9,6 +9,10 @@ import {
 } from '@testing-library/react'
 import { TraderDashboardPage } from './TraderDashboardPage'
 const lifecycle = vi.hoisted(() => ({ mounts: 0, unmounts: 0 }))
+const mentorPollers = vi.hoisted(() => ({
+  calls: [] as (boolean | undefined)[],
+}))
+const planProps = vi.hoisted(() => ({ mentorTruth: undefined as unknown }))
 vi.mock('../contexts/LanguageContext', () => ({
   useLanguage: () => ({ language: 'en' }),
 }))
@@ -25,7 +29,14 @@ vi.mock('../components/charts/EquityChart', () => ({
   EquityChart: () => <div data-testid="equity-chart" />,
 }))
 vi.mock('../components/plan/PlanCard', () => ({
-  PlanCard: ({ symbol }: { symbol: string }) => {
+  PlanCard: ({
+    symbol,
+    mentorTruth,
+  }: {
+    symbol: string
+    mentorTruth?: unknown
+  }) => {
+    planProps.mentorTruth = mentorTruth
     const [draft, setDraft] = useState('')
     useEffect(() => {
       lifecycle.mounts++
@@ -46,10 +57,13 @@ vi.mock('../components/plan/PlanCard', () => ({
   },
 }))
 vi.mock('../components/mentor/MentorTruthCard', () => ({
-  MentorTruthCard: () => null,
+  MentorTruthCard: () => <div data-testid="mentor-truth-card" />,
 }))
 vi.mock('../components/mentor/useMentorTruth', () => ({
-  useMentorTruth: () => ({ truth: null, stale: false }),
+  useMentorTruth: (_traderId: string | undefined, poll?: boolean) => {
+    mentorPollers.calls.push(poll)
+    return { truth: null, stale: false }
+  },
 }))
 vi.mock('../components/trader/AccountSelector', () => ({
   AccountSelector: () => null,
@@ -122,6 +136,7 @@ function props(futures = true): ComponentProps<typeof TraderDashboardPage> {
 beforeEach(() => {
   lifecycle.mounts = 0
   lifecycle.unmounts = 0
+  mentorPollers.calls = []
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => ({ json: async () => ({ status: 'ok', symbols: [] }) }))
@@ -146,6 +161,16 @@ describe('Dashboard production composition', () => {
       equity.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
     expect(screen.getByText(/ID: test-123/)).toBeInTheDocument()
+  })
+  it('renders exactly one mentor-truth card and one enabled poller on futures', async () => {
+    render(<TraderDashboardPage {...props()} />)
+    await screen.findByTestId('market-chart')
+    expect(screen.getAllByTestId('mentor-truth-card')).toHaveLength(1)
+    // The page feeds its live truth down to PlanCard (so PlanCard must not
+    // start a second poller — pinned in PlanCard.mentor.test.tsx).
+    expect(planProps.mentorTruth).not.toBeUndefined()
+    // The page-level hook is the enabled poller.
+    expect(mentorPollers.calls.some((p) => p !== false)).toBe(true)
   })
   it('preserves the same PlanCard instance and draft while Overview is CSS-hidden', async () => {
     render(<TraderDashboardPage {...props()} />)

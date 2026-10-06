@@ -18,13 +18,18 @@ export interface MentorTruthState {
   stale: boolean
 }
 
-export function useMentorTruth(traderId: string | undefined): MentorTruthState {
+export function useMentorTruth(
+  traderId: string | undefined,
+  poll = true
+): MentorTruthState {
   const [state, setState] = useState<MentorTruthState>({
     truth: null,
     stale: false,
   })
 
   useEffect(() => {
+    // poll=false → the caller owns the truth (passes it down); do not fetch.
+    if (!poll) return
     if (!traderId) {
       setState({ truth: null, stale: false })
       return
@@ -63,7 +68,7 @@ export function useMentorTruth(traderId: string | undefined): MentorTruthState {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVis)
     }
-  }, [traderId])
+  }, [traderId, poll])
 
   return state
 }

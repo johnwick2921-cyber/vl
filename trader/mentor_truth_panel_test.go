@@ -74,3 +74,25 @@ func TestMentorTruthSnapshotDisabledWhenMentorOff(t *testing.T) {
 		t.Fatalf("mentor OFF must return ok=false enabled=false, got ok=%v %+v", ok, p)
 	}
 }
+
+// Mentor ON but the evaluator not built yet (mentorEval == nil) → the payload is
+// enabled=true with `computing=true` and Levels/Depth ABSENT (nil), never a
+// fabricated `[]`/`{}`. The card keys off `computing` instead of dereferencing
+// a null list (canon: absent ≠ []). Mutant: return `[]`/`{}` here → RED.
+func TestMentorTruthSnapshotComputingWhenEvaluatorNotBuilt(t *testing.T) {
+	at := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}}}}
+	// mentorEval left nil — the lazy-build window before the first 1m bar.
+	p, ok := at.MentorTruthSnapshot(time.Now())
+	if !ok || !p.Enabled {
+		t.Fatalf("mentor ON with nil evaluator must be enabled, got ok=%v enabled=%v", ok, p.Enabled)
+	}
+	if !p.Computing {
+		t.Fatalf("nil evaluator must set computing=true, got %+v", p)
+	}
+	if p.Levels != nil {
+		t.Fatalf("nil evaluator levels must be ABSENT (nil), got %#v", p.Levels)
+	}
+	if p.Depth != nil {
+		t.Fatalf("nil evaluator depth must be ABSENT (nil), got %#v", p.Depth)
+	}
+}

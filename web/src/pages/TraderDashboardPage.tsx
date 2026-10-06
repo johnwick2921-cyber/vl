@@ -785,6 +785,7 @@ export function TraderDashboardPage({
                   selectedTrader.exchange_id,
                   exchanges
                 )}
+                mentorTruth={mentor}
               />
             </section>
           )}
