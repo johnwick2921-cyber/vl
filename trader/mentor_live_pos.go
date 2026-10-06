@@ -69,7 +69,7 @@ func (at *AutoTrader) registerMentorLivePos(r store.ArmedOrderDB, u ntwire.Order
 		Contracts: n,
 		Leg1:      n, // the whole position is one leg
 		Leg2:      0,
-		Mode:      at.mentorExitMode(side),
+		Mode:      at.mentorExitMode(r.Scenario), // B5 (L8): per arm/signal id, never per side
 		Leg1TP:    r.TargetPx,
 	}
 	lp := &mentorLivePos{Pos: pos}

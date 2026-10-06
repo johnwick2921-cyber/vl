@@ -47,7 +47,9 @@ func TestMentorConfluenceUpgradeModePure(t *testing.T) {
 func TestMentorConfluenceUpgradeHandler(t *testing.T) {
 	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	at.setMentorExitMode("long", "B")
+	// B5 (L8): the OPEN position carries its branch on its live-position
+	// struct (set at fill). The upgrade moves it there.
+	at.mentorRegisterLivePos("sig-long", &mentorLivePos{Pos: mentorPosition{Side: "long", Mode: "B"}})
 
 	sized := false
 	mentorSizeForHook = func() { sized = true }
@@ -57,7 +59,7 @@ func TestMentorConfluenceUpgradeHandler(t *testing.T) {
 		Reason: "trigger flipped to the long side [B20, D3.4 p3 @09:17]"}
 	at.mentorConfluenceUpgrade(in)
 
-	if got := at.mentorExitMode("long"); got != "C" {
+	if got := at.mentorLivePos["sig-long"].Pos.Mode; got != "C" {
 		t.Fatalf("the upgrade must switch the branch to C, got %q", got)
 	}
 	if sized {
@@ -94,7 +96,7 @@ func TestMentorConfluenceUpgradeHandler(t *testing.T) {
 func TestMentorConfluenceUpgradeEndToEnd(t *testing.T) {
 	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	at.setMentorExitMode("long", "B")
+	at.mentorRegisterLivePos("sig-long", &mentorLivePos{Pos: mentorPosition{Side: "long", Mode: "B"}})
 
 	sized := false
 	mentorSizeForHook = func() { sized = true }
@@ -131,7 +133,7 @@ func TestMentorConfluenceUpgradeEndToEnd(t *testing.T) {
 	if e.State.Trigger.Dir != mentor.SideLong || !e.State.SchoolOneUpgraded {
 		t.Fatalf("kernel did not process the long 5m flip: trigger=%+v upgraded=%v", e.State.Trigger, e.State.SchoolOneUpgraded)
 	}
-	if got := at.mentorExitMode("long"); got != "C" {
+	if got := at.mentorLivePos["sig-long"].Pos.Mode; got != "C" {
 		t.Fatalf("the kernel upgrade must switch the open position to exit C, got %q", got)
 	}
 	if sized {
@@ -153,7 +155,7 @@ func TestMentorPlacementRegistersExitBranch(t *testing.T) {
 	t.Cleanup(func() { mentorNowSource = nil })
 
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,
-		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
+		ArmID: "isb-test", Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
 	choice := mentorSizeChoice{Contracts: 5, Tier: "base", Why: "test"}
 
 	var placed int
@@ -166,7 +168,8 @@ func TestMentorPlacementRegistersExitBranch(t *testing.T) {
 	if placed != 1 {
 		t.Fatalf("a safe-price ISB entry must reach the placement path, placed=%d", placed)
 	}
-	if got := at.mentorExitMode("long"); got != "B" {
-		t.Fatalf("an ISB entry forks B at entry and registers it, got %q", got)
+	// B5 (L8): the branch is registered per ARM (the scenario), never per side.
+	if got := at.mentorExitMode(mentorScenarioFor("isb-test")); got != "B" {
+		t.Fatalf("an ISB entry forks B at entry and registers it per arm, got %q", got)
 	}
 }

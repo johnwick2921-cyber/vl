@@ -266,6 +266,26 @@ func mentorAuthoredRow(r store.ArmedOrderDB) bool {
 	return isMentorArmOrigin(r)
 }
 
+// mentorResolveArmID trims the evaluator's ArmID and supplies the fallback
+// identity for a missing one. mentorPlaceIntent calls it ONCE before the exit
+// branch is registered, so mentorArmIntent authors the row under the SAME
+// identity the mode was stored under (B5/L8).
+func mentorResolveArmID(armID string) string {
+	armID = strings.TrimSpace(armID)
+	if armID == "" {
+		armID = fmt.Sprintf("mentor-%d", time.Now().UnixNano())
+	}
+	return armID
+}
+
+// mentorScenarioFor builds the ledger scenario (the per-arm signal identity):
+// the resolved ArmID prefixed with the per-construction epoch. The exit branch
+// is registered under THIS key, so the placement-time write and the fill-time
+// read name the same arm.
+func mentorScenarioFor(armID string) string {
+	return fmt.Sprintf("%s-%s", armID, strconv.FormatInt(mentorArmEpoch.Load(), 10))
+}
+
 // mentorArmIntent is the ONE mentor entry path (P0-b, CTO 1791040400571): it
 // creates an ARMED LEDGER row — kind stop_entry, the intent's expiry — and
 // lets the armed executor place it. No direct wire call here: the armed
@@ -280,15 +300,12 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — no armed ledger")
 		return
 	}
-	armID := strings.TrimSpace(in.ArmID)
-	if armID == "" {
-		armID = fmt.Sprintf("mentor-%d", time.Now().UnixNano())
-	}
+	armID := mentorResolveArmID(in.ArmID)
 	// N1 (DS-104): the ledger scenario is the evaluator's ArmID prefixed with
 	// the per-construction epoch. The in-memory registry stays keyed by the
 	// UNPREFIXED armID, so ExtendArm / CancelArm / MoveStopBE / ClosePosition
 	// still resolve by the evaluator's id.
-	scenario := fmt.Sprintf("%s-%s", armID, strconv.FormatInt(mentorArmEpoch.Load(), 10))
+	scenario := mentorScenarioFor(armID)
 	if in.RunnerTarget > 0 {
 		mentorRunnerTargets.Store(scenario, in.RunnerTarget)
 	}

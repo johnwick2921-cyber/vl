@@ -380,7 +380,12 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	at.logInfof("🧑‍🏫 mentor exit fork: %s — %s (leg 1 TP %.2f)", forkMode, forkWhy, forkTP)
 	// B20: the chosen branch is REGISTERED per open position — a later
 	// confluence upgrade switches it to C (hold ≥ 1:2, size untouched).
-	at.setMentorExitMode(strings.ToLower(string(in.Side)), forkMode)
+	// B5 (L8): it is registered PER ARM (the scenario/signal id), never per
+	// SIDE — a later same-side arm must not rewrite an earlier arm's branch
+	// before it fills. Resolve the arm identity ONCE so mentorArmIntent
+	// authors the row under the SAME key.
+	in.ArmID = mentorResolveArmID(in.ArmID)
+	at.setMentorExitMode(mentorScenarioFor(in.ArmID), forkMode)
 	if mentorPlaceRecorderForTest != nil {
 		mentorPlaceRecorderForTest(in, choice.Contracts)
 		return // test seam: the real pipeline is never reached from a test
@@ -494,9 +499,11 @@ var mentorPlaceRecorderForTest func(in mentor.Intent, contracts int)
 
 // ── B20 CONFLUENCE UPGRADE (trader half; the emit is DS-103's kernel) ───────
 
-// mentorExitMode / setMentorExitMode read/write the per-position exit branch
-// registered at placement (A/B/C/swing). The P1 exit loop drives the branch;
-// B20 switches it to C.
+// mentorExitMode / setMentorExitMode read/write the per-ARM exit branch
+// registered at placement (A/B/C/swing), keyed by the arm's SCENARIO (the
+// signal id) — B5 (L8): never by side, so a later same-side arm cannot
+// rewrite an earlier arm's branch before it fills. The P1 exit loop reads the
+// branch at fill (keyed by the row's scenario); B20 switches it to C.
 func (at *AutoTrader) mentorExitMode(key string) string {
 	at.mentorExitMu.Lock()
 	defer at.mentorExitMu.Unlock()
@@ -535,22 +542,61 @@ func mentorConfluenceUpgradeMode(current string) (mode string, why string) {
 // the intent's side: the exit branch moves to C (hold ≥ 1:2), the stop and the
 // size stay exactly as placed. A no-position or already-C intent is counted
 // and logged, never silent.
+//
+// B5 (L8): the branch is stored PER ARM, not per side. The OPEN (filled)
+// position's branch lives on its live-position struct — the exit drive reads
+// the struct, so the switch moves it there. A school-1 arm that is STILL
+// RESTING has no live position yet; its staged branch (keyed by the arm's
+// scenario) is switched so the fill registers C. A side that names neither is
+// a no-op.
 func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
-	key := strings.ToLower(string(in.Side))
-	next, why := mentorConfluenceUpgradeMode(at.mentorExitMode(key))
-	if next == "" {
+	side := strings.ToLower(string(in.Side))
+	found := false
+	for _, lp := range at.mentorLivePosList() {
+		if lp == nil || lp.Pos.Side != side {
+			continue
+		}
+		found = true
+		next, why := mentorConfluenceUpgradeMode(lp.Pos.Mode)
+		if next == "" {
+			mentorCount("exit_upgrade_no_position")
+			at.logWarnf("🧑‍🏫 mentor confluence upgrade IGNORED — %s (%s)", why, in.Reason)
+			continue
+		}
+		if next == lp.Pos.Mode {
+			mentorCount("exit_upgrade_noop")
+			at.logInfof("🧑‍🏫 mentor confluence upgrade: %s (%s) — %s", side, why, in.Reason)
+			continue
+		}
+		lp.Pos.Mode = next
+		mentorCount("exit_upgrade_c")
+		at.logInfof("🧑‍🏫 mentor confluence upgrade: %s %s (size unchanged) — %s", side, why, in.Reason)
+	}
+	// A school-1 arm that is still RESTING: switch its staged branch so the
+	// fill registers C. The live-arm registry names the arm by its ArmID; its
+	// scenario is the key the placement registered under.
+	for id, arm := range mentorLiveArms {
+		if !strings.EqualFold(arm.Side, side) {
+			continue
+		}
+		scenario := mentorScenarioFor(id)
+		cur := at.mentorExitMode(scenario)
+		if cur == "" {
+			continue // no staged branch for this arm — nothing to switch
+		}
+		found = true
+		next, why := mentorConfluenceUpgradeMode(cur)
+		if next == "" || next == cur {
+			continue
+		}
+		at.setMentorExitMode(scenario, next)
+		mentorCount("exit_upgrade_c")
+		at.logInfof("🧑‍🏫 mentor confluence upgrade (resting %s): %s %s (size unchanged) — %s", id, side, why, in.Reason)
+	}
+	if !found {
 		mentorCount("exit_upgrade_no_position")
-		at.logWarnf("🧑‍🏫 mentor confluence upgrade IGNORED — %s (%s)", why, in.Reason)
-		return
+		at.logWarnf("🧑‍🏫 mentor confluence upgrade IGNORED — no open or resting mentor position on the %s side (%s)", side, in.Reason)
 	}
-	if next == at.mentorExitMode(key) {
-		mentorCount("exit_upgrade_noop")
-		at.logInfof("🧑‍🏫 mentor confluence upgrade: %s (%s) — %s", key, why, in.Reason)
-		return
-	}
-	at.setMentorExitMode(key, next)
-	mentorCount("exit_upgrade_c")
-	at.logInfof("🧑‍🏫 mentor confluence upgrade: %s %s (size unchanged) — %s", key, why, in.Reason)
 }
 
 // ── STRONG DAY (S9) ────────────────────────────────────────────────────────
