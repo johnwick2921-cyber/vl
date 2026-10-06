@@ -1206,6 +1206,19 @@ export const mentor: GuideSection = {
           perSession: 'No — per strategy.',
         },
         {
+          label: 'Stop after a loss',
+          where: 'Strategy → Mentor mode → stop rules',
+          what: 'STOP-AFTER-LOSS: once a mentor trade closes today with a net LOSS (both legs combined, pnl_corrected < 0), refuse new mentor entries until the next session day (17:00 CT) [D1.2 p1 @ 23:34]. A breakeven close (0) is NOT a loss. Fail-closed while ON: an unwired source or an unresolved close (NULL pnl_corrected) refuses.',
+          trader: 'OFF by default (unset = OFF); an explicit true enables.',
+          consumer: 'trader/mentor_tick.go mentorStopAfterLossGate',
+          range: 'true / false',
+          systemDefault: 'false (unset = OFF)',
+          recommended:
+            'OFF — enabled only on an owner ruling (the loss-stop is his personal routine).',
+          whenToTouch: 'Only on an owner ruling.',
+          perSession: 'No — per strategy.',
+        },
+        {
           label: 'Trading window start',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode → "Trading window start (CT)"',
