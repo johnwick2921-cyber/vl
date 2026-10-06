@@ -91,6 +91,9 @@ func (at *AutoTrader) registerMentorLivePos(r store.ArmedOrderDB, u ntwire.Order
 		mentorCount("exit_drive_split_registered")
 	}
 	at.mentorRegisterLivePos(r.SignalID, lp)
+	// I13: the staged exit branch has been consumed by the fill — prune it so
+	// the per-arm map does not grow for the life of the process.
+	at.deleteMentorExitMode(r.Scenario)
 }
 
 // mentorSentSplit reads the split the entry frame carried (a seam so the

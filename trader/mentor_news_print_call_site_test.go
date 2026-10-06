@@ -62,6 +62,18 @@ func TestMentorNewsCancelFlattenAtEvalOnceCallSite(t *testing.T) {
 		}
 		return r
 	}
+	// I5: the sweep now PRUNES a cancelled arm from the registry, so capture
+	// the row ids BEFORE the sweep, then read rows by id.
+	isbRow := readByArmID("isb-news")
+	swingRow := readByArmID("swing-news")
+	readRowByID := func(rowID int64) store.ArmedOrderDB {
+		t.Helper()
+		var r store.ArmedOrderDB
+		if err := ledger.DB().First(&r, rowID).Error; err != nil {
+			t.Fatalf("row %d unreadable: %v", rowID, err)
+		}
+		return r
+	}
 
 	// The authoring event: a NEW 1m close at 07:20.
 	bar := func(m int) market.Kline {
@@ -70,10 +82,16 @@ func TestMentorNewsCancelFlattenAtEvalOnceCallSite(t *testing.T) {
 	}
 	at.mentorEvalOnce([]market.Kline{bar(0), bar(1), bar(2)})
 
-	if got := readByArmID("isb-news"); got.State != store.StateCancelled {
+	if got := readRowByID(isbRow.ID); got.State != store.StateCancelled {
 		t.Fatalf("the 07:20 tick must cancel the intraday mentor arm, got state=%q", got.State)
 	}
-	if got := readByArmID("swing-news"); store.IsTerminalArmState(got.State) {
+	if got := readRowByID(swingRow.ID); store.IsTerminalArmState(got.State) {
 		t.Fatalf("the SWING4H arm must survive the news sweep, got state=%q", got.State)
+	}
+	if _, ok := mentorLiveArmFor("isb-news"); ok {
+		t.Fatal("the cancelled intraday arm must be pruned from the registry (I5)")
+	}
+	if _, ok := mentorLiveArmFor("swing-news"); !ok {
+		t.Fatal("the surviving swing arm must stay in the registry")
 	}
 }
