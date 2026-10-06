@@ -960,6 +960,37 @@ func (at *AutoTrader) mentorStopAfterLossGate() (bool, string) {
 	return false, ""
 }
 
+// mentorStopAfterLossTripped is the B3 day-stop-sweep hook for the
+// stop-after-loss gate (wired in mentorWireProductionSeams next to
+// mentorClosedLossSource). nil → unwired (the sweep does not trip). It returns
+// (true, why) ONLY on a DEFINITE loss (the knob ON and a resolved closed loss);
+// an unwired or unresolved read returns (false, "") — the placement gate stays
+// fail-closed, but the sweep never force-cancels a resting arm on an unknown
+// (the same contract as mentorDoneAfterWinTripped).
+var mentorStopAfterLossTripped func() (bool, string)
+
+// mentorStopAfterLossTrip is the DEFINITE-trip computation behind the B3 sweep
+// hook: the knob ON and a resolved closed loss, nothing else.
+func (at *AutoTrader) mentorStopAfterLossTrip() (bool, string) {
+	if at.config.StrategyConfig == nil {
+		return false, ""
+	}
+	if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v == nil || !*v {
+		return false, "" // the knob is OFF (nil → OFF, the default)
+	}
+	if mentorClosedLossSource == nil {
+		return false, ""
+	}
+	closed, ok := mentorClosedLossSource()
+	if !ok {
+		return false, ""
+	}
+	if closed {
+		return true, "a mentor trade closed today with a net loss — no entries until the next trading day (17:00 CT) [D1.2 p1 @ 23:34]"
+	}
+	return false, ""
+}
+
 // (d) NEVER ADD / AVERAGE [D1.1 p1 @17:06–17:44]: no second same-direction
 // fill while a position is open. The resonance ISB is a hold signal, not an
 // entry.

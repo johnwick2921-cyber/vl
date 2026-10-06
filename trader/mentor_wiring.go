@@ -169,6 +169,9 @@ func (at *AutoTrader) mentorWireProductionSeams() {
 			}
 			return act.ClosedInLoss, true
 		}
+		// B3 day-stop-sweep hook: trips ONLY on a DEFINITE loss (the placement
+		// gate is fail-closed; the sweep never force-cancels on an unknown).
+		mentorStopAfterLossTripped = at.mentorStopAfterLossTrip
 	}
 
 	if at.store != nil && at.store.ArmedOrders() != nil {
