@@ -543,13 +543,13 @@ func (at *AutoTrader) deskGuardrail() (limit float64, source string, enforced bo
 // rules, and COUNTS what it had to exclude rather than hiding it.
 func (at *AutoTrader) deskRealizedToday(now time.Time) (total float64, n int, unresolved int) {
 	dayMs := kernel.CMESessionDayStart(now).UnixMilli()
-	// P3-4 (rel10): scope to the BOUND account, the same scope the done-after-win
-	// day-P&L gate uses (MentorDayActivity) — two gates, one account, one day sum.
-	// The 500-row limit reads the newest 500 closes overall; a session-day with
-	// >500 closes would truncate today's sum, but no live path can produce that
-	// (mentor caps entries per day; the AI path caps 3/day) — documented, not a
-	// live truncation.
-	rows, err := at.store.Position().GetClosedPositions(at.id, 500, at.currentAccountName())
+	// KNOWN LIMIT (owner ruling 10-05, "whatever risk control leave"): this read is
+	// trader-WIDE (no account filter), while the done-after-win day-P&L gate
+	// (MentorDayActivity) is account-scoped — the two day gates can differ on a
+	// trader with more than one account's history. The 500-row limit reads the
+	// newest 500 closes overall, so a session-day with >500 closes would truncate
+	// today's sum; no live path produces that. Documented, not changed.
+	rows, err := at.store.Position().GetClosedPositions(at.id, 500)
 	if err != nil {
 		return 0, 0, 0
 	}
