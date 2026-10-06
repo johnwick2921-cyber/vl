@@ -936,10 +936,11 @@ func (at *AutoTrader) mentorDoneAfterWinGate() (bool, string) {
 // done-after-win: an unwired source or an UNRESOLVED close refuses, with its
 // own counters.
 func (at *AutoTrader) mentorStopAfterLossGate() (bool, string) {
-	if at.config.StrategyConfig != nil {
-		if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v == nil || !*v {
-			return false, "" // the knob is OFF (nil → OFF, the default)
-		}
+	if at.config.StrategyConfig == nil {
+		return false, "" // no config → the knob reads OFF (nil → OFF, the default)
+	}
+	if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v == nil || !*v {
+		return false, "" // the knob is OFF (nil → OFF, the default)
 	}
 	if mentorClosedLossSource == nil {
 		mentorCount("stop_after_loss_no_data")

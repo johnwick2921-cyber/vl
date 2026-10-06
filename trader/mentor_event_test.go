@@ -310,6 +310,16 @@ func TestMentorStopAfterLossGateAtPlacementCallSite(t *testing.T) {
 	if got := MentorCountSnapshot()["stop_after_loss_no_data"]; got != 1 {
 		t.Fatalf("the fail-closed refusal must be counted stop_after_loss_no_data once, got %d", got)
 	}
+	// a NIL StrategyConfig reads OFF, exactly like a nil knob — the gate must
+	// not run (and cannot refuse) when there is no config to carry the switch.
+	mentorClosedLossSource = func() (bool, bool) { return true, true }
+	saved := at.config.StrategyConfig
+	at.config.StrategyConfig = nil
+	ResetMentorCountersForTest()
+	if refuse, why := at.mentorStopAfterLossGate(); refuse || why != "" {
+		t.Fatalf("a nil StrategyConfig must read OFF (no refusal): refuse=%v why=%q", refuse, why)
+	}
+	at.config.StrategyConfig = saved
 }
 
 // TestMentorNeverWidenAtStopMoveCallSite (c): a stop amendment that increases
