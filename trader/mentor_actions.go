@@ -484,6 +484,16 @@ func (at *AutoTrader) mentorExtendArm(in mentor.Intent) {
 	at.logInfof("🧑‍🏫 mentor arm %q expiry extended to %d — %s", in.ArmID, in.ExpiryMs, in.Reason)
 }
 
+// mentorPrunableTerminalState reports whether a row's state means the registry
+// entry should be pruned: terminal EXCEPT filled. A FILLED arm is a live
+// position — its registry entry must survive so the swing's MoveStopBE /
+// ClosePosition resolve (P1). Cancelled / canceled / rejected / expired /
+// superseded / shadowed prune.
+func mentorPrunableTerminalState(state string) bool {
+	s := strings.ToLower(strings.TrimSpace(state))
+	return s != store.StateFilled && store.IsTerminalArmState(s)
+}
+
 // mentorCancelArm is the REAL broker cancel — the F1 shape: safety gate,
 // wire cancel on the SAME pass, then the ledger request the settlement path
 // owns. An unknown ArmID or a terminal row refuses NAMED, never silent.
@@ -507,11 +517,31 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 		return false
 	}
 	var r store.ArmedOrderDB
-	if err := ledger.DB().First(&r, arm.RowID).Error; err != nil || store.IsTerminalArmState(r.State) {
+	if err := ledger.DB().First(&r, arm.RowID).Error; err != nil {
+		// P3: a DB read error must NOT prune a resting arm — log and retry next
+		// tick.
+		mentorCount("cancel_refused_read_error")
+		at.logWarnf("🧑‍🏫 mentor CancelArm for ArmID %q — row read failed: %v (retrying next tick)", in.ArmID, err)
+		return false
+	}
+	// P1: a FILLED row is a live position — never prune it, never cancel it,
+	// and count/log NOTHING (the never-add sweep reaches here for a just-filled
+	// swing; its registry entry must survive for MoveStopBE / ClosePosition).
+	if strings.EqualFold(r.State, store.StateFilled) {
+		return false
+	}
+	// P5 (I5b): a cancel already in flight needs no new request and must not be
+	// re-counted.
+	if strings.EqualFold(r.State, store.StateCancelPending) {
+		mentorCount("cancel_already_pending")
+		at.logInfof("🧑‍🏫 mentor CancelArm for ArmID %q — already cancel_pending; no re-request (%s)", in.ArmID, in.Reason)
+		return false
+	}
+	if mentorPrunableTerminalState(r.State) {
 		mentorCount("cancel_refused_row_gone")
 		at.logInfof("🧑‍🏫 mentor CancelArm for ArmID %q — the row is already terminal; nothing to cancel (%s)", in.ArmID, in.Reason)
-		mentorUnregisterLiveArm(in.ArmID)                    // I5: prune the terminal entry
-		at.deleteMentorExitMode(mentorScenarioFor(in.ArmID)) // I13: prune the staged branch too
+		mentorUnregisterLiveArm(in.ArmID)   // I5: prune the terminal entry
+		at.deleteMentorExitMode(r.Scenario) // P3: delete by the ROW's own scenario, not the package epoch
 		return false
 	}
 	now := time.Now()
@@ -526,8 +556,8 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 		done, err := ledger.CancelUnplaced(r.ID, "mentor: "+in.Reason+" — never placed")
 		if err == nil && done {
 			at.clearMentorLevelArmLocked(in.ArmID)
-			mentorUnregisterLiveArm(in.ArmID)                    // I5: the row is now cancelled (terminal)
-			at.deleteMentorExitMode(mentorScenarioFor(in.ArmID)) // I13: prune the staged branch too
+			mentorUnregisterLiveArm(in.ArmID)   // I5: the row is now cancelled (terminal)
+			at.deleteMentorExitMode(r.Scenario) // P3: delete by the ROW's own scenario
 			mentorCount("cancel_unplaced")
 			at.logInfof("🧑‍🏫 mentor cancel for ArmID %q: never placed — row cancelled directly (%s)", in.ArmID, in.Reason)
 			return true
@@ -535,9 +565,15 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 		if err != nil {
 			at.logWarnf("🧑‍🏫 mentor unplaced cancel write failed for ArmID %q: %v", in.ArmID, err)
 		}
-		if rerr := ledger.DB().First(&r, arm.RowID).Error; rerr != nil || store.IsTerminalArmState(r.State) {
+		if rerr := ledger.DB().First(&r, arm.RowID).Error; rerr != nil {
+			// P3: a re-read error must not prune — retry next tick.
+			at.logWarnf("🧑‍🏫 mentor CancelArm for ArmID %q — row re-read failed: %v (retrying next tick)", in.ArmID, rerr)
+			return false
+		}
+		if mentorPrunableTerminalState(r.State) {
 			at.clearMentorLevelArmLocked(in.ArmID)
-			mentorUnregisterLiveArm(in.ArmID) // I5: the row is terminal now
+			mentorUnregisterLiveArm(in.ArmID)   // I5: the row is terminal now
+			at.deleteMentorExitMode(r.Scenario) // P3: delete by the ROW's own scenario
 			return false
 		}
 	}

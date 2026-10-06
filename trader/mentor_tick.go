@@ -995,16 +995,23 @@ func (at *AutoTrader) mentorDoneAfterWinTripped() (bool, string) {
 	return false, ""
 }
 
-// mentorWindowEnded reports the window-END half of the window gate: it returns
-// true ONLY between today's window end and the next open. Before today's open
-// it is false — the window has not started, and arms that legitimately rest
-// before the open must not be swept (I11: the old roll-back-to-yesterday made a
-// pre-open 07:00 read "ended" and cancelled every pre-open arm each tick).
-// minutes <= 0 disables the window (no end to trip).
+// mentorWindowEnded reports the window-END half of the window gate: the window
+// is ENDED when minutes > 0, the window is not currently active, and the most
+// recent window that OPENED at or before now (today's open if it has passed,
+// else yesterday's) has closed. This reads ENDED at 01:30 for a 23:00/120
+// cross-midnight window (the most recent open was yesterday 23:00, ended 01:00)
+// and NOT ended at 00:30 (still active). A pre-open 07:00 with an 08:30/60
+// window reads ENDED (yesterday's window) — but no intraday arm can be authored
+// outside the window (mentorWindowGate refuses it; only the SWING is exempt and
+// the sweep skips it), so a pre-open resting arm can only come from an ended
+// window. minutes <= 0 disables the window (no end to trip).
 func (at *AutoTrader) mentorWindowEnded(now time.Time) (bool, string) {
 	start, minutes := at.mentorWindowKnobs()
 	if minutes <= 0 {
 		return false, ""
+	}
+	if active, _ := mentorWindowActive(start, minutes, now); active {
+		return false, "" // the window is open right now
 	}
 	hour, minute, ok := parseMentorWindowStart(start)
 	if !ok {
@@ -1014,7 +1021,7 @@ func (at *AutoTrader) mentorWindowEnded(now time.Time) (bool, string) {
 	ct := now.In(loc)
 	open := time.Date(ct.Year(), ct.Month(), ct.Day(), hour, minute, 0, 0, loc)
 	if open.After(now) {
-		return false, "" // today's window has not opened — nothing has ended yet
+		open = time.Date(ct.Year(), ct.Month(), ct.Day()-1, hour, minute, 0, 0, loc)
 	}
 	end := open.Add(time.Duration(minutes) * time.Minute)
 	if !now.Before(end) {
