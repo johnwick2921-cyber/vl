@@ -69,7 +69,7 @@ func TestMentorNewsCancelFlattenCancelsIntradayArms(t *testing.T) {
 	// live intraday arm (never placed → SignalID empty → cancel settles now).
 	seedMentorArmedRow(t, at, ledger, "intraday-news", newsClock(7, 25).UnixMilli()+60_000)
 	intraday := readArmRow(t, ledger, "intraday-news")
-	mentorRegisterLiveArm("isb-news", intraday.ID, "long", intraday.EntryPx)
+	mentorRegisterLiveArm("isb-news", at.id, intraday.ID, "long", intraday.EntryPx)
 	t.Cleanup(func() {
 		mentorLiveMu.Lock()
 		mentorLiveArms = map[string]mentorLiveArm{}
@@ -79,7 +79,7 @@ func TestMentorNewsCancelFlattenCancelsIntradayArms(t *testing.T) {
 	// live SWING4H arm — exempt (held by the 4h).
 	seedSwingMentorArmedRow(t, at, ledger, "swing-news", newsClock(7, 25).UnixMilli()+60_000)
 	swing := readArmRow(t, ledger, "swing-news")
-	mentorRegisterLiveArm("swing-news", swing.ID, "long", swing.EntryPx)
+	mentorRegisterLiveArm("swing-news", at.id, swing.ID, "long", swing.EntryPx)
 
 	at.mentorNewsCancelFlattenAt(newsClock(7, 25))
 
@@ -146,7 +146,7 @@ func TestMentorNewsCancelFlattenNoOpOutsideWindow(t *testing.T) {
 
 	seedMentorArmedRow(t, at, ledger, "intraday-keep", newsClock(8, 0).UnixMilli()+60_000)
 	intraday := readArmRow(t, ledger, "intraday-keep")
-	mentorRegisterLiveArm("isb-keep", intraday.ID, "long", intraday.EntryPx)
+	mentorRegisterLiveArm("isb-keep", at.id, intraday.ID, "long", intraday.EntryPx)
 	t.Cleanup(func() {
 		mentorLiveMu.Lock()
 		mentorLiveArms = map[string]mentorLiveArm{}
