@@ -194,3 +194,48 @@ it('the window controls are inert on a read-only strategy', () => {
   expect(screen.getByTestId('mentor-window-start')).toBeDisabled()
   expect(screen.getByTestId('mentor-window-minutes')).toBeDisabled()
 })
+
+// ── stop-after-loss switch (mentor_stop_after_loss, absent = OFF) ──
+
+it('an absent mentor_stop_after_loss reads OFF', () => {
+  renderEditor({})
+  expect(screen.getByTestId('mentor-stop-after-loss')).toHaveAttribute(
+    'aria-checked',
+    'false'
+  )
+})
+
+it('turning the stop-after-loss switch ON saves mentor_stop_after_loss=true', () => {
+  const { onChange, full } = renderEditor({})
+  fireEvent.click(screen.getByTestId('mentor-stop-after-loss'))
+  expect(onChange).toHaveBeenCalledWith({
+    ...full,
+    mentor_stop_after_loss: true,
+  })
+  // The save payload carries the key as true, not merely an omitted/absent one.
+  expect(JSON.stringify(onChange.mock.calls[0][0])).toContain(
+    '"mentor_stop_after_loss":true'
+  )
+})
+
+it('the stop-after-loss switch reads ON only when the stored value is true', () => {
+  renderEditor({ mentor_stop_after_loss: true })
+  expect(screen.getByTestId('mentor-stop-after-loss')).toHaveAttribute(
+    'aria-checked',
+    'true'
+  )
+})
+
+it('the stop-after-loss switch is inert on a read-only strategy', () => {
+  const onChange = vi.fn()
+  render(
+    <RiskControlEditor
+      config={{ max_positions: 1 } as RiskControlConfig}
+      onChange={onChange}
+      language="en"
+      disabled
+    />
+  )
+  fireEvent.click(screen.getByTestId('mentor-stop-after-loss'))
+  expect(onChange).not.toHaveBeenCalled()
+})
