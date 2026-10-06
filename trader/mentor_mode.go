@@ -716,7 +716,7 @@ func mentorIntentTargetPts(in mentor.Intent) float64 {
 //	C     — the confluence flag: hold ≥ 1:2, stop never moves up, size 10
 //	        (20 with 4h+1h agree + room ≥ 2× + target ≥ 30). Leg 1's TP at
 //	        2× risk is set AT ENTRY (mentorLeg1TPForC).
-//	B     — normal: BE once price covers half the distance to leg 1's target,
+//	B     — normal: BE once price covers half the distance to the TRADE's target,
 //	        leg 1 exits at its +1R TP, the runner trails each closed 1m
 //	        candle. A PHL/PLH fill starts as B with the resonance watch armed:
 //	        a same-direction ISB within 3 candles flips it to A
@@ -735,7 +735,7 @@ func mentorExitFork(in mentor.Intent, confluence bool) (mode string, leg1TP floa
 	case in.Setup == "PHL" || in.Setup == "PLH":
 		return "B", 0, "PHL/PLH: B at entry, resonance watch armed — a same-direction ISB within 3 candles flips to A (BE, no trail, no 1:1 scale-out)"
 	default:
-		return "B", 0, "normal: BE at half the distance to leg 1's target, leg 1 TP +1R, runner trails each closed 1m candle"
+		return "B", 0, "normal: BE at half the distance to the TRADE's target, leg 1 TP +1R, runner trails each closed 1m candle"
 	}
 }
 
@@ -834,7 +834,7 @@ func mentorBEHalfDistance(pos mentorPosition) float64 {
 // mentorExitB applies the v3 B rules to ONE closed 1m candle (pure) on the
 // SPLIT-LEGS model: leg 1 carries its own TP at +1R set AT ENTRY, so the
 // driver never scales — it only arms BE once price has covered HALF THE
-// DISTANCE TO LEG 1'S TARGET (mentorBEHalfDistance — +0.5R only for a 1:1
+// DISTANCE TO THE TRADE'S TARGET (mentorBEHalfDistance — +0.5R only for a 1:1
 // target; BOTH legs), records leg 1's +1R crossing (the runner's trail begins
 // on the NEXT candle), and trails the runner behind each CLOSED candle (long:
 // the candle's low, short: its high) unless trail is off (video-8 legacy
@@ -846,7 +846,7 @@ func mentorBEHalfDistance(pos mentorPosition) float64 {
 func mentorExitB(pos mentorPosition, c, h, l float64, trail bool) mentorExitResult {
 	res := mentorExitResult{NewStop: pos.Stop}
 	long := pos.Side == "long"
-	half := mentorBEHalfDistance(pos) // half the distance to leg 1's target
+	half := mentorBEHalfDistance(pos) // half the distance to the trade's target
 	var hitStop, hitHalfR, hit1R bool
 	if long {
 		hitStop = l <= pos.Stop

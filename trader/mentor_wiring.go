@@ -162,6 +162,13 @@ func (at *AutoTrader) mentorWireProductionSeams() {
 			}
 			return act.ClosedInProfit, true
 		}
+		mentorClosedLossSource = func() (bool, bool) {
+			act, ok := dayActivity()
+			if !ok {
+				return false, false
+			}
+			return act.ClosedInLoss, true
+		}
 	}
 
 	if at.store != nil && at.store.ArmedOrders() != nil {

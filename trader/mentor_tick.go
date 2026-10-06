@@ -335,6 +335,10 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
 	}
+	if refuse, why := at.mentorStopAfterLossGate(); refuse {
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		return
+	}
 	if hold, why := at.mentorNewsGate(); hold {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
@@ -377,7 +381,13 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// branch per fill. A PHL/PLH starts as B with the resonance watch armed.
 	forkMode, forkTP, forkWhy := mentorExitFork(in, mentorConfluenceFlag(in))
 	mentorCount("exit_fork_" + forkMode)
-	at.logInfof("🧑‍🏫 mentor exit fork: %s — %s (leg 1 TP %.2f)", forkMode, forkWhy, forkTP)
+	if forkTP != 0 {
+		at.logInfof("🧑‍🏫 mentor exit fork: %s — %s (leg 1 TP %.2f)", forkMode, forkWhy, forkTP)
+	} else {
+		// mode B/SWING4H: leg 1's TP is computed later (mentorWireLeg1TP at
+		// placement / the +1R default) — don't print a misleading 0.00.
+		at.logInfof("🧑‍🏫 mentor exit fork: %s — %s", forkMode, forkWhy)
+	}
 	// B20: the chosen branch is REGISTERED per open position — a later
 	// confluence upgrade switches it to C (hold ≥ 1:2, size untouched).
 	// B5 (L8): it is registered PER ARM (the scenario/signal id), never per
@@ -933,6 +943,7 @@ func mentorDoneAfterWin(dayNetPnl float64, closedInProfit bool) bool {
 var (
 	mentorDayNetSource       func() (float64, bool)
 	mentorClosedProfitSource func() (bool, bool)
+	mentorClosedLossSource   func() (bool, bool)
 )
 
 // mentorDoneAfterWinGate is the call-site half of (a); the knob is default ON
@@ -959,6 +970,37 @@ func (at *AutoTrader) mentorDoneAfterWinGate() (bool, string) {
 	if mentorDoneAfterWin(net, closed) {
 		mentorCount("done_after_win_refused")
 		return true, "done for the day after a win — a trade closed in profit and the day is net positive; no new entries until the next trading day (17:00 CT) [D1.2 p1 @20:53–21:16]"
+	}
+	return false, ""
+}
+
+// mentorStopAfterLossGate — STOP-AFTER-LOSS (owner "ok" 2026-10-05): once a
+// MENTOR trade closes today (17:00 CT session-day) with a net LOSS (both legs
+// combined; pnl_corrected < 0), refuse new mentor entries until the next
+// session day [D1.2 p1 @ 23:34]. A breakeven close (0) is NOT a loss. The
+// knob is default OFF (nil → OFF; byte-identical while off). FAIL-CLOSED like
+// done-after-win: an unwired source or an UNRESOLVED close refuses, with its
+// own counters.
+func (at *AutoTrader) mentorStopAfterLossGate() (bool, string) {
+	if at.config.StrategyConfig != nil {
+		if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v == nil || !*v {
+			return false, "" // the knob is OFF (nil → OFF, the default)
+		}
+	}
+	if mentorClosedLossSource == nil {
+		mentorCount("stop_after_loss_no_data")
+		at.logWarnf("🧑‍🏫 mentor stop-after-loss source missing (closed loss) — refusing the entry (fail-closed)")
+		return true, "stop-after-loss: closed-loss source not wired — an unknown is not 'no loss'; refusing (fail-closed) [D1.2 p1 @ 23:34]"
+	}
+	closed, ok := mentorClosedLossSource()
+	if !ok {
+		mentorCount("stop_after_loss_unresolved")
+		at.logWarnf("🧑‍🏫 mentor stop-after-loss day UNRESOLVED (a NULL pnl_corrected closed row or a read error) — refusing the entry (fail-closed)")
+		return true, "stop-after-loss: day unresolved (a NULL pnl_corrected closed row) — an unknown is not 'no loss'; refusing (fail-closed) [D1.2 p1 @ 23:34]"
+	}
+	if closed {
+		mentorCount("stop_after_loss_refused")
+		return true, "stop for the day after a loss — a mentor trade closed today with a net loss; no new entries until the next trading day (17:00 CT) [D1.2 p1 @ 23:34]"
 	}
 	return false, ""
 }

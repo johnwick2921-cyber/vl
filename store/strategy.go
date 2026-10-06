@@ -2068,7 +2068,12 @@ type RiskControlConfig struct {
 	// (b) the trading window: MentorWindowStart (HH:MM CT) + MentorWindowMinutes
 	//     (30/60/90/120; unset → 60). The SWING setup is exempt.
 	// (c)/(d) never-widen / never-add are guards, not knobs.
-	MentorDoneAfterWin  *bool  `json:"mentor_done_after_win,omitempty"`
+	MentorDoneAfterWin *bool `json:"mentor_done_after_win,omitempty"`
+	// MentorStopAfterLoss — STOP-AFTER-LOSS (owner "ok" 2026-10-05): once a
+	// mentor trade closes today with a net LOSS (pnl_corrected < 0, both legs
+	// combined), refuse new mentor entries until the next session day
+	// [D1.2 p1 @ 23:34]. nil → OFF (byte-identical while off).
+	MentorStopAfterLoss *bool  `json:"mentor_stop_after_loss,omitempty"`
 	MentorWindowStart   string `json:"mentor_window_start,omitempty"`
 	MentorWindowMinutes int    `json:"mentor_window_minutes,omitempty"`
 	// Knob routing (CTO 1791033257041): the evaluator's G1/L1/E4/location
