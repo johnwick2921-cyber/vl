@@ -149,6 +149,13 @@ export function MentorTruthCard({
               <span className="vl-num" style={{ color: 'var(--vl-warn)' }}>
                 {l.price.toFixed(2)}
               </span>
+              <span
+                className="vl-num"
+                style={{ color: 'var(--vl-faint)' }}
+                title="drawn at"
+              >
+                {fmtTime(l.drawn_at)}
+              </span>
               <span className="vl-num" style={{ color: 'var(--vl-faint)' }}>
                 {l.visits_today} visits
               </span>

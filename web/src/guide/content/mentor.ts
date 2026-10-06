@@ -248,7 +248,7 @@ export const mentor: GuideSection = {
         [
           'Key levels',
           '1H RTH colour changes — a line at the OPEN of the new-colour candle (never the wick), from the market open',
-          'Full stored history (every contract, stitched onto the current contract’s scale through measured roll gaps); pruned < 20 pts apart (keep the more recent); deleted when a 1H candle CLOSES through it',
+          'Full stored history of the current contract plus older contracts back-adjusted while a roll gap can be measured (today: from 2026-06-03, 2 contracts); pruned < 20 pts apart (keep the more recent); deleted when a 1H candle CLOSES through it',
         ],
         [
           'EMA 34',

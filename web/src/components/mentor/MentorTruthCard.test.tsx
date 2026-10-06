@@ -66,6 +66,8 @@ describe('MentorTruthCard', () => {
     expect(screen.getByText('follow LONG')).toBeTruthy()
     expect(screen.getByText('key_level')).toBeTruthy()
     expect(screen.getByText('30000.00')).toBeTruthy()
+    // P3-2 (GUIDE CONTENT LAW): the key-level row renders the drawn-at column.
+    expect(screen.getByTitle('drawn at')).toBeTruthy()
   })
 
   it('shows the stale marker when the refresh failed, and none when fresh', () => {
