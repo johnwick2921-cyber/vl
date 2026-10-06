@@ -191,13 +191,14 @@ func TestB3DayStopNeverAddCancelsRestingArms(t *testing.T) {
 	}
 }
 
-// TestB3MentorWindowEndedPreOpenIsFalse — I11: the window-END half must return
-// false BEFORE today's window opens, so arms that legitimately rest before the
-// open are not swept. The old roll-back-to-yesterday made a 07:00 read "ended".
-func TestB3MentorWindowEndedPreOpenIsFalse(t *testing.T) {
+// TestB3MentorWindowEnded — the window END reads correctly: a pre-open 07:00
+// reads ENDED (yesterday's window; no intraday arm can be authored outside the
+// window, so a pre-open arm can only come from an ended window), inside is NOT
+// ended, after the end IS ended.
+func TestB3MentorWindowEnded(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorWindowStart: "08:30", MentorWindowMinutes: 60})
-	if ended, _ := at.mentorWindowEnded(b3Clock(7, 0)); ended {
-		t.Fatal("before today's window opens, mentorWindowEnded must be false")
+	if ended, _ := at.mentorWindowEnded(b3Clock(7, 0)); !ended {
+		t.Fatal("07:00 with an 08:30/60 window must read ended (yesterday's window)")
 	}
 	if ended, _ := at.mentorWindowEnded(b3Clock(9, 0)); ended {
 		t.Fatal("inside the window, mentorWindowEnded must be false")
