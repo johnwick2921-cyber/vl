@@ -1209,7 +1209,9 @@ func (s *TCPServer) Start(ctx context.Context) error {
 	// U1 3.3 — wire-liveness line every 60s (not wg-tracked: exits with ctx).
 	go s.livenessReporter(cctx)
 	// B11 (L15) — read-idle detector: close a half-open link (no frame while the
-	// CME session is open). Not wg-tracked: exits with ctx.
+	// CME session is open). wg-tracked so Stop() joins it (the test seams reset
+	// only after Stop).
+	s.wg.Add(1)
 	go s.linkIdleWatcher(cctx)
 	// W-ONE-BUTTON M2 site 7 — push the installation hold (silent when unheld).
 	s.maint.mu.Lock()

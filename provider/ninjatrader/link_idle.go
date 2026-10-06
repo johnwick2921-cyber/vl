@@ -40,8 +40,10 @@ var (
 // read-idle detector for a half-open link — a socket that is not closed, so the
 // TCP close path never fires, but nothing flows. Never fires in the CME daily
 // break (16:00–17:00 CT) or the weekend — kernel.IsCMEOpen reuses the session
-// calendar. Not wg-tracked: exits with ctx, like livenessReporter.
+// calendar. wg-tracked so Stop() joins it before returning (the test seams are
+// reset only after Stop).
 func (s *TCPServer) linkIdleWatcher(ctx context.Context) {
+	defer s.wg.Done()
 	tick := time.NewTicker(linkIdleTick)
 	defer tick.Stop()
 	for {
@@ -69,8 +71,29 @@ func (s *TCPServer) checkLinkIdle(now time.Time) {
 	if !kernel.IsCMEOpen(now) {
 		return // daily break / weekend / holiday — never fire
 	}
+	// P3-1 + P3-2: snapshot the connection under connMu, re-check the age, and
+	// close ONLY that connection. A disconnected link (s.conn == nil) stays
+	// quiet — no log, no close. An accept that installs a NEW conn between the
+	// snapshot and the close must not be closed: the fresh conn restarted the
+	// stamp on accept, so the re-check below is fresh and we return.
+	s.connMu.Lock()
+	c := s.conn
+	if c == nil {
+		s.connMu.Unlock()
+		return // P3-1: no connection — nothing to close, stay quiet
+	}
+	if now.UnixMilli()-s.lastFrameUnixMs.Load() <= linkIdleTimeoutSeconds()*1000 {
+		s.connMu.Unlock()
+		return // a frame arrived while we checked the session — no longer idle
+	}
+	_ = c.Close()
+	s.conn = nil
+	s.maint.mu.Lock()
+	s.maint.rec.DisconnectedMonoMs = monoMs(time.Now())
+	s.maint.mu.Unlock()
+	s.farSideBuild.Store("")
+	s.connMu.Unlock()
 	s.logger.Warn("tcp_server: link idle — no inbound frame, closing",
 		"age", time.Duration(ageMs)*time.Millisecond,
 		"timeout_seconds", linkIdleTimeoutSeconds())
-	s.closeConn()
 }
