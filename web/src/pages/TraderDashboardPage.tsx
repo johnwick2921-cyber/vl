@@ -1,6 +1,6 @@
 import { PRODUCT_NAME } from '../constants/branding'
 import { LedgerDayPnl } from '../components/trader/LedgerDayPnl'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { mutate } from 'swr'
 import { api } from '../lib/api'
 import { planApi } from '../lib/api/plan'
@@ -26,6 +26,8 @@ import { VlSelect } from '../components/ui/select'
 import { GridRiskPanel } from '../components/strategy/GridRiskPanel'
 import { PlanCard } from '../components/plan/PlanCard'
 import { PictureHtfPanel } from '../components/trader/PictureHtfPanel'
+import { MentorTruthCard } from '../components/mentor/MentorTruthCard'
+import { useMentorTruth } from '../components/mentor/useMentorTruth'
 import type {
   SystemStatus,
   AccountInfo,
@@ -173,6 +175,19 @@ export function TraderDashboardPage({
     }
   }, [selectedTraderId])
   const chartSectionRef = useRef<HTMLDivElement>(null)
+  // MENTOR-TRUTH PANEL — the live evaluator truth ("what trades"), refreshed
+  // every 30s + on focus. The levels are also drawn on the dashboard chart.
+  const { truth: mentor, stale: mentorStale } = useMentorTruth(
+    selectedTrader?.trader_id
+  )
+  const mentorLevels = useMemo(
+    () =>
+      (mentor?.levels ?? []).map((l) => ({
+        price: l.price,
+        label: `mentor ${l.kind}`,
+      })),
+    [mentor]
+  )
   // Plan 4 Task 23.4 — Dashboard tab switcher (Overview / Decisions).
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'decisions'>(
     'overview'
@@ -741,6 +756,7 @@ export function TraderDashboardPage({
                 selectedTrader.exchange_id,
                 exchanges
               )}
+              mentorLevels={mentorLevels}
             />
           </div>
 
@@ -750,6 +766,13 @@ export function TraderDashboardPage({
           >
             <EquityChart traderId={selectedTrader.trader_id} />
           </section>
+          {/* MENTOR-TRUTH PANEL — the live evaluator truth on the dashboard,
+                above the planner card. Hides itself when mentor mode is OFF. */}
+          {isFutures && selectedTrader.trader_id && (
+            <div className="min-w-0 lg:col-span-2">
+              <MentorTruthCard truth={mentor} stale={mentorStale} />
+            </div>
+          )}
           {/* Day Plan card — futures only (day_plan is a futures feature);
                 additive + dormant: renders its no-plan state until a plan arms. */}
           {isFutures && selectedTrader.trader_id && (

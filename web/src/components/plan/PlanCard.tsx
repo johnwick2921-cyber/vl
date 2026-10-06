@@ -20,6 +20,8 @@ import { DeskStrip } from './DeskStrip'
 import { GateBlocksPanel } from './GateBlocksPanel'
 import { ExpectancyPanel } from './ExpectancyPanel'
 import { InstrumentsDrawer } from './InstrumentsDrawer'
+import { MentorTruthCard } from '../mentor/MentorTruthCard'
+import { useMentorTruth } from '../mentor/useMentorTruth'
 import { SESSION_BANDS, type SessionName } from './sessionConfig'
 
 interface Props {
@@ -54,6 +56,12 @@ export function PlanCard({
     traderId,
     selected ?? undefined
   )
+  // MENTOR-TRUTH PANEL: the live evaluator truth ("what trades"), refreshed
+  // every 30s + on focus (see useMentorTruth). mentor mode OFF → enabled=false
+  // → the card hides and the AI bias card keeps its unchanged label. A failed
+  // refresh keeps the last good payload (marked stale), so the advice-only
+  // label never flips off on a blip.
+  const { truth: mentor, stale: mentorStale } = useMentorTruth(traderId)
 
   // Which session is LIVE right now (server-told), independent of what tab the
   // owner is looking at.
@@ -176,7 +184,9 @@ export function PlanCard({
         versions={versions}
         latestVersion={latestVersion}
         onSelectVersion={(v) => setViewVersion(v === latestVersion ? null : v)}
+        mentorOn={mentor?.enabled ?? false}
       />
+      <MentorTruthCard truth={mentor} stale={mentorStale} />
     </div>
   )
 }

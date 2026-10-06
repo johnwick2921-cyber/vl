@@ -191,6 +191,27 @@ export const mentor: GuideSection = {
       ],
     },
     {
+      kind: 'callout',
+      title: 'Mentor — what trades (live truth panel)',
+      items: [
+        {
+          title: 'Read-only live evaluator state',
+          body: 'The planner page and the trader dashboard show a card titled "Mentor — what trades". It is read-only and reports what the mentor evaluator holds RIGHT NOW: the 4h trigger direction and since-when, the 1h trigger, the 5m trigger (price + since), the HTF verdict (follow / sit-out / no-trigger) and whether the HTF gate is active (htf_gate_news_only), the mentor key levels in effect (price, kind, drawn-at, visits today), the history depth line, and the next-window / day-stop state (done-after-win, stop-after-loss, window). It never mutates the evaluator — it reads under the existing locks and never blocks the tick.',
+          cite: 'trader/mentor_truth_panel.go MentorTruthSnapshot · api/handler_mentor_truth.go',
+        },
+        {
+          title: 'The AI planner bias is advice-only when mentor is ON',
+          body: 'When mentor mode is ON, the AI planner bias card is re-labelled "AI planner — advice only (mentor mode places the trades)". The mentor engine places the entries; the AI planner only supplies the bias. When mentor mode is OFF the bias card keeps its unchanged label.',
+          cite: 'web/src/components/plan/BiasBlock.tsx adviceOnly · web/src/components/plan/PlanCard.tsx',
+        },
+        {
+          title: 'Live refresh + chart levels',
+          body: 'The card refreshes every 30s and on window focus, and stamps each snapshot "as of HH:MM:SS CT" (server as_of_ms). The mentor key levels are also drawn on the dashboard price chart as dashed amber lines labelled "mentor", distinct from the solid order lines.',
+          cite: 'web/src/components/mentor/useMentorTruth.ts · web/src/components/charts/AdvancedChart.tsx mentorLevels',
+        },
+      ],
+    },
+    {
       kind: 'h',
       text: 'The three setups',
     },

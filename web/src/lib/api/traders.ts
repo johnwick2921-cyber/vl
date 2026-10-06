@@ -7,6 +7,37 @@ import type {
 import { API_BASE, httpClient } from './helpers'
 import { ApiError } from '../httpClient'
 
+/** Mentor "what trades" panel — the live evaluator state (release #10). */
+export interface MentorTruth {
+  enabled: boolean
+  as_of_ms: number
+  htf: {
+    four_h_dir: string
+    four_h_since: number
+    one_h_dir: string
+    one_h_since: number
+    verdict: string
+    verdict_why?: string
+    verdict_side?: string
+    gate_active: boolean
+  }
+  trigger_5m: { dir: string; price: number; since: number }
+  levels: {
+    key: string
+    kind: string
+    price: number
+    drawn_at: number
+    visits_today: number
+  }[]
+  depth: Record<string, number>
+  depth_line: string
+  window: { start: string; minutes: number; active: boolean; ended: boolean }
+  done_after_win: boolean
+  done_after_win_why?: string
+  stop_after_loss: boolean
+  stop_after_loss_why?: string
+}
+
 function throwApiError(
   message: string,
   errorKey?: string,
@@ -133,6 +164,17 @@ export const traderApi = {
     )
     if (!result.success) throw new Error('Failed to fetch trader config')
     return result.data!
+  },
+
+  async getMentorTruth(traderId: string, silent = true): Promise<MentorTruth> {
+    const result = await httpClient.request<MentorTruth>(
+      `${API_BASE}/traders/${traderId}/mentor-truth`,
+      { method: 'GET', silent }
+    )
+    if (!result.success || !result.data) {
+      throw new Error('Failed to fetch mentor truth panel')
+    }
+    return result.data
   },
 
   async updateTrader(
