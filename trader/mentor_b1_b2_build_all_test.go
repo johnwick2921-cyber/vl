@@ -98,3 +98,47 @@ func TestMentorSplitScaledOnlyOnBrokerTPReceipt(t *testing.T) {
 		t.Fatal("B2: Scaled must stay marked after the TP receipt")
 	}
 }
+
+// TestMentorPartFillExpiryDoesNotResetRegisteredPos is the B1 defensive-fold pin
+// (CTO 2026-10-05): when the signal is ALREADY registered (any present or future
+// path), the expiry partial-fill path must NOT overwrite it — the in-flight
+// position's BE-armed / Scaled / trail state survives. MUTANT: make the B1 call
+// register unconditionally → the pre-registered state is reset → RED.
+func TestMentorPartFillExpiryDoesNotResetRegisteredPos(t *testing.T) {
+	t.Setenv("STOP_ENTRY_SEAM", "on")
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	now := time.Now()
+	row := store.ArmedOrderDB{
+		TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR",
+		Scenario: "isb-b1r", Side: "long", EntryPx: 29600, StopPx: 29590, TargetPx: 29630,
+		Kind: "stop_entry", Condition: "ISB",
+		State: store.StateWorking, SignalID: "sig-b1r", FillPrice: 29600, FillQuantity: 2,
+		Origin: store.ArmOriginMentor, Contracts: store.IntPtr(5),
+		ExpiryMs: now.UnixMilli() - 1,
+	}
+	if err := ledger.UpsertArm(&row); err != nil {
+		t.Fatal(err)
+	}
+	// The signal is ALREADY live — BE armed, leg 1 scaled, 99 contracts — from
+	// any earlier path. The expiry sweep must leave this state untouched.
+	at.mentorRegisterLivePos("sig-b1r", &mentorLivePos{
+		Pos: mentorPosition{
+			Symbol: "MNQ", Side: "long", Entry: 29600, Stop: 29590, Target: 29630,
+			R: 10, Contracts: 99, Leg1: 99, Leg1TP: 29630, ArmedBE: true, Scaled: true,
+		},
+		Legs: [2]mentorLeg{{SignalID: "sig-b1r", Qty: 99, TP: 29630, Stop: 29590, Final: true}, {}},
+	})
+
+	at.runArmedPlacementAtFiltered(nil, 0, now, nil, isMentorArmOrigin)
+
+	lp := at.mentorLivePos["sig-b1r"]
+	if lp == nil {
+		t.Fatal("the pre-registered position must survive the expiry sweep")
+	}
+	if lp.Pos.Contracts != 99 || lp.Pos.Leg1 != 99 {
+		t.Fatalf("B1 fold: contracts = %d / leg1 %d, want 99/99 (the expiry partial path must not overwrite the registered position)", lp.Pos.Contracts, lp.Pos.Leg1)
+	}
+	if !lp.Pos.ArmedBE || !lp.Pos.Scaled {
+		t.Fatalf("B1 fold: ArmedBE=%v Scaled=%v, want both true (in-flight state must be preserved)", lp.Pos.ArmedBE, lp.Pos.Scaled)
+	}
+}

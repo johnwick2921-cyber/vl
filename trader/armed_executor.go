@@ -1432,14 +1432,18 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 				// still be handed to the mentor exit drive (BE / 1:1 / trail) — the
 				// filled quantity is the FINAL position, register it now. G1/G2 was
 				// already fed at first fill via mentorEnqueueFill, so no re-enqueue.
+				// Defensive fold (CTO 2026-10-05): register ONLY when the signal is
+				// not already live — never reset an in-flight position's BE/1:1/
+				// trail state.
 				if isMentorArmOrigin(r) && strings.TrimSpace(r.SignalID) != "" {
-					at.registerMentorLivePos(r, ntwire.OrderUpdatePayload{
+					if lp := at.mentorBuildLivePos(r, ntwire.OrderUpdatePayload{
 						SignalID:  r.SignalID,
 						Quantity:  r.FillQuantity,
 						FillPrice: r.FillPrice,
-					})
-					at.pokeMentorExitDrive()
-					at.mentorFunnel.bumpFilled()
+					}); lp != nil && at.mentorRegisterLivePosIfAbsent(r.SignalID, lp) {
+						at.pokeMentorExitDrive()
+						at.mentorFunnel.bumpFilled()
+					}
 				}
 			}
 			continue

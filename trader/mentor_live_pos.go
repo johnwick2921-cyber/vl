@@ -42,13 +42,26 @@ type mentorLivePos struct {
 // registerMentorLivePos (DS-107, one-row entry) builds the single-leg live
 // position from the ONE filled mentor arm row and registers it under the entry
 // signal id. Legs[0] = the whole position (Final = the runner); Legs[1] empty.
+// Unconditional: the FULL-fill path owns the authoritative (re)registration —
+// a completing fill frame may grow the position, so an overwrite is correct.
 func (at *AutoTrader) registerMentorLivePos(r store.ArmedOrderDB, u ntwire.OrderUpdatePayload) {
+	if lp := at.mentorBuildLivePos(r, u); lp != nil {
+		at.mentorRegisterLivePos(r.SignalID, lp)
+	}
+}
+
+// mentorBuildLivePos builds the single-leg live position from the ONE filled
+// mentor arm row WITHOUT registering it (nil when the row names no side or
+// signal). Split from registerMentorLivePos so the B1 expiry path can register
+// the built position only when the signal is not already live (register-if-
+// absent) instead of overwriting an in-flight position's BE/1:1/trail state.
+func (at *AutoTrader) mentorBuildLivePos(r store.ArmedOrderDB, u ntwire.OrderUpdatePayload) *mentorLivePos {
 	if r.SignalID == "" {
-		return
+		return nil
 	}
 	side := strings.ToLower(strings.TrimSpace(r.Side))
 	if side == "" {
-		return
+		return nil
 	}
 	n := u.Quantity
 	if n < 1 && r.FillQuantity > 0 {
@@ -90,7 +103,7 @@ func (at *AutoTrader) registerMentorLivePos(r store.ArmedOrderDB, u ntwire.Order
 		lp.Legs[1] = mentorLeg{SignalID: r.SignalID, Qty: runner, TP: r.TargetPx, Stop: r.StopPx, Final: true, Wire: 2}
 		mentorCount("exit_drive_split_registered")
 	}
-	at.mentorRegisterLivePos(r.SignalID, lp)
+	return lp
 }
 
 // mentorSentSplit reads the split the entry frame carried (a seam so the
@@ -116,6 +129,28 @@ func (at *AutoTrader) mentorRegisterLivePos(key string, p *mentorLivePos) {
 		at.mentorLivePos = map[string]*mentorLivePos{}
 	}
 	at.mentorLivePos[key] = p
+}
+
+// mentorRegisterLivePosIfAbsent (B1 defensive fold, CTO 2026-10-05) registers a
+// position ONLY when the signal is not already live — an atomic check-and-set
+// under mentorExitMu. Returns true when it wrote. The B1 expiry path calls this
+// so a partial-then-expiry registration can never reset an ALREADY-registered
+// position's BE-armed / Scaled / trail state mid-trade (the full-fill path owns
+// the authoritative overwrite and is unchanged).
+func (at *AutoTrader) mentorRegisterLivePosIfAbsent(key string, p *mentorLivePos) bool {
+	if at == nil || key == "" || p == nil {
+		return false
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	if at.mentorLivePos == nil {
+		at.mentorLivePos = map[string]*mentorLivePos{}
+	}
+	if _, exists := at.mentorLivePos[key]; exists {
+		return false
+	}
+	at.mentorLivePos[key] = p
+	return true
 }
 
 // mentorUnregisterLivePos removes a position when its side goes flat.
