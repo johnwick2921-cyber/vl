@@ -310,6 +310,53 @@ func TestMentorStopAfterLossGateAtPlacementCallSite(t *testing.T) {
 	if got := MentorCountSnapshot()["stop_after_loss_no_data"]; got != 1 {
 		t.Fatalf("the fail-closed refusal must be counted stop_after_loss_no_data once, got %d", got)
 	}
+	// a NIL StrategyConfig reads OFF, exactly like a nil knob — the gate must
+	// not run (and cannot refuse) when there is no config to carry the switch.
+	mentorClosedLossSource = func() (bool, bool) { return true, true }
+	saved := at.config.StrategyConfig
+	at.config.StrategyConfig = nil
+	ResetMentorCountersForTest()
+	if refuse, why := at.mentorStopAfterLossGate(); refuse || why != "" {
+		t.Fatalf("a nil StrategyConfig must read OFF (no refusal): refuse=%v why=%q", refuse, why)
+	}
+	at.config.StrategyConfig = saved
+}
+
+// TestMentorStopAfterLossTrippedHook — the B3 day-stop-sweep hook trips ONLY on
+// a DEFINITE loss (knob ON + a resolved closed loss). OFF, breakeven or an
+// unresolved read is "unknown", not a trip: the sweep never force-cancels a
+// resting arm on it (same contract as mentorDoneAfterWinTripped).
+func TestMentorStopAfterLossTrippedHook(t *testing.T) {
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	mentorClosedLossSource = func() (bool, bool) { return true, true }
+	t.Cleanup(func() { mentorClosedLossSource = nil })
+
+	// knob OFF (nil) → no trip.
+	if trip, why := at.mentorStopAfterLossTrip(); trip || why != "" {
+		t.Fatalf("knob OFF must not trip: trip=%v why=%q", trip, why)
+	}
+	// knob ON + a resolved closed loss → DEFINITE trip.
+	on := true
+	at.config.StrategyConfig.RiskControl.MentorStopAfterLoss = &on
+	if trip, why := at.mentorStopAfterLossTrip(); !trip || why == "" {
+		t.Fatalf("knob ON + a closed loss must trip: trip=%v why=%q", trip, why)
+	}
+	// knob ON + breakeven (no loss) → no trip.
+	mentorClosedLossSource = func() (bool, bool) { return false, true }
+	if trip, _ := at.mentorStopAfterLossTrip(); trip {
+		t.Fatal("a breakeven close must not trip the sweep")
+	}
+	// knob ON + unresolved → no trip (the placement gate stays fail-closed, but
+	// the sweep never force-cancels on an unknown).
+	mentorClosedLossSource = func() (bool, bool) { return false, false }
+	if trip, _ := at.mentorStopAfterLossTrip(); trip {
+		t.Fatal("an unresolved close must not trip the sweep")
+	}
+	// knob ON + unwired source → no trip.
+	mentorClosedLossSource = nil
+	if trip, _ := at.mentorStopAfterLossTrip(); trip {
+		t.Fatal("an unwired source must not trip the sweep")
+	}
 }
 
 // TestMentorNeverWidenAtStopMoveCallSite (c): a stop amendment that increases

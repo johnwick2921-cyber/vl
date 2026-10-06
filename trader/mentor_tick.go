@@ -1093,10 +1093,11 @@ func (at *AutoTrader) mentorDoneAfterWinGate() (bool, string) {
 // done-after-win: an unwired source or an UNRESOLVED close refuses, with its
 // own counters.
 func (at *AutoTrader) mentorStopAfterLossGate() (bool, string) {
-	if at.config.StrategyConfig != nil {
-		if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v == nil || !*v {
-			return false, "" // the knob is OFF (nil → OFF, the default)
-		}
+	if at.config.StrategyConfig == nil {
+		return false, "" // no config → the knob reads OFF (nil → OFF, the default)
+	}
+	if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v == nil || !*v {
+		return false, "" // the knob is OFF (nil → OFF, the default)
 	}
 	if mentorClosedLossSource == nil {
 		mentorCount("stop_after_loss_no_data")
@@ -1112,6 +1113,37 @@ func (at *AutoTrader) mentorStopAfterLossGate() (bool, string) {
 	if closed {
 		mentorCount("stop_after_loss_refused")
 		return true, "stop for the day after a loss — a mentor trade closed today with a net loss; no new entries until the next trading day (17:00 CT) [D1.2 p1 @ 23:34]"
+	}
+	return false, ""
+}
+
+// mentorStopAfterLossTripped is the B3 day-stop-sweep hook for the
+// stop-after-loss gate (wired in mentorWireProductionSeams next to
+// mentorClosedLossSource). nil → unwired (the sweep does not trip). It returns
+// (true, why) ONLY on a DEFINITE loss (the knob ON and a resolved closed loss);
+// an unwired or unresolved read returns (false, "") — the placement gate stays
+// fail-closed, but the sweep never force-cancels a resting arm on an unknown
+// (the same contract as mentorDoneAfterWinTripped).
+var mentorStopAfterLossTripped func() (bool, string)
+
+// mentorStopAfterLossTrip is the DEFINITE-trip computation behind the B3 sweep
+// hook: the knob ON and a resolved closed loss, nothing else.
+func (at *AutoTrader) mentorStopAfterLossTrip() (bool, string) {
+	if at.config.StrategyConfig == nil {
+		return false, ""
+	}
+	if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v == nil || !*v {
+		return false, "" // the knob is OFF (nil → OFF, the default)
+	}
+	if mentorClosedLossSource == nil {
+		return false, ""
+	}
+	closed, ok := mentorClosedLossSource()
+	if !ok {
+		return false, ""
+	}
+	if closed {
+		return true, "a mentor trade closed today with a net loss — no entries until the next trading day (17:00 CT) [D1.2 p1 @ 23:34]"
 	}
 	return false, ""
 }
