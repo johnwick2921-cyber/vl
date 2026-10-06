@@ -794,9 +794,10 @@ const risk: KnobSpec[] = [
     where: 'Strategy → Risk Control → Guardrails',
     what: 'Minimum minutes between a close and the next entry.',
     trader: 'Prevents immediately re-entering after being stopped.',
-    consumer: 'kernel/risk_limits.go (guardrail soft set)',
-    range: 'minutes · enabled with master',
-    systemDefault: 'ON (with master)',
+    consumer:
+      'trader/entry_admission.go:457 reentryCooldownMinutes (arm/picture) · kernel/engine_analysis.go:629 applyReentryCooldown (decision)',
+    range: 'minutes · 0 = OFF; NOT gated by the master switch',
+    systemDefault: 'OFF (0) until a strategy value is saved — not master-gated',
     recommended: '⭐ ON — 5–15 minutes.',
     whenToTouch: "Tune to the strategy's average re-arm time.",
     perSession: 'No.',

@@ -231,6 +231,14 @@ func TestMentorLeg1TPForC(t *testing.T) {
 func TestMentorApplyExitResult(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	ResetMentorCountersForTest()
+	// The unwired path needs moveStopWire nil — but it carries a PRODUCTION
+	// default (exit_mechs_suspend.go:50), so this test must nil it explicitly
+	// to exercise the unwired branch (pre-existing merged-HEAD breakage: the
+	// first block read the production default as "wired" and counted
+	// move_stop_failed instead of move_stop_unwired).
+	oldMoveStopWire := moveStopWire
+	moveStopWire = nil
+	t.Cleanup(func() { moveStopWire = oldMoveStopWire })
 	tp := 103.0
 
 	// unwired: both actions counted, never sent.
@@ -528,29 +536,15 @@ func TestMentorTrailTFKnob(t *testing.T) {
 
 // TestMentorExitMechSuspensionAppliesToAIOnly: EXIT_MECHS_SUSPENDED (0B)
 // suspends the AI mechanisms but never the mentor stop moves — the same last
-// hop, two different gates.
+// hop, two different gates. The dead mentorMoveStop path (rel10) was removed;
+// the LIVE mentor stop moves are mentorMoveLegStop (signal-keyed move_stop) and
+// mentorMoveStopBE (moveStopWire) — neither calls exitMechSuspendedRefuse, so
+// the AI suspension never leaks into the mentor path. This test pins that the
+// AI half still refuses when suspended.
 func TestMentorExitMechSuspensionAppliesToAIOnly(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	ResetExitMechSuspendNoticeForTest()
 
-	// the never-widen guard needs a wired open stop (99 → 100.25 tightens).
-	mentorOpenStopSource = func() (float64, bool) { return 99, true }
-	t.Cleanup(func() { mentorOpenStopSource = nil })
-
-	var sent string
-	var sentPx float64
-	moveStopWire = func(nt *ntTrader.TCPTrader, side string, newStop float64) error {
-		sent, sentPx = side, newStop
-		return nil
-	}
-	t.Cleanup(func() { moveStopWire = nil })
-
-	if err := at.mentorMoveStop(&ntTrader.TCPTrader{}, "long", 100.25); err != nil {
-		t.Fatal(err)
-	}
-	if sent != "long" || sentPx != 100.25 {
-		t.Fatalf("mentor stop move did not reach the wire (suspended leak): sent=%q px=%.2f", sent, sentPx)
-	}
 	if !at.exitMechSuspendedRefuse("be40", "test trigger") {
 		t.Fatal("the AI suspension must STILL apply to the AI mechanisms")
 	}

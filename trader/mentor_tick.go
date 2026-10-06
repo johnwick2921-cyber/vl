@@ -1263,10 +1263,12 @@ func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
 // session-day P&L) — one definition, no second copy (A24).
 //
 // FAIL-OPEN on a read error (deskRealizedToday returns 0 when the store read
-// fails) — the 60s sweep still enforces the flatten, and a circuit breaker that
-// trips on a DB hiccup is worse than the gap it closes (sessionRiskGateAt's
-// contract). The limit is only checked when BOTH toggles are on and a value is
-// configured (deskGuardrail returns enforced=false otherwise).
+// fails) — a circuit breaker that trips on a DB hiccup is worse than the gap it
+// closes (sessionRiskGateAt's contract). NOTE: the 60s sweep does NOT enforce
+// the dollar limit — it enforces the consecutive-loss breaker and the force-flat
+// windows. The dollar limit is enforced only here, and only when the guardrails
+// master AND daily_loss_enabled are both ON (deskGuardrail returns
+// enforced=false otherwise).
 func (at *AutoTrader) mentorDailyLossGate(now time.Time) (bool, string) {
 	limit, _, enforced := at.deskGuardrail()
 	if !enforced || limit <= 0 {

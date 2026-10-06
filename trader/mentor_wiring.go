@@ -28,7 +28,7 @@ type mentorPositionReader interface {
 
 // mentorSeamNames is the canonical seam order for the boot line and refusals.
 var mentorSeamNames = []string{
-	"open_stop", "open_side", "leg_protection",
+	"open_side", "leg_protection",
 	"latest_price", "now", "confluence", "arm_expiry",
 	"day_net", "closed_profit",
 }
@@ -37,8 +37,6 @@ var mentorSeamNames = []string{
 // boot line and the refusal read — test injection counts as bound).
 func mentorSeamBound(name string) bool {
 	switch name {
-	case "open_stop":
-		return mentorOpenStopSource != nil
 	case "open_side":
 		return mentorOpenSideSource != nil
 	case "leg_protection":
@@ -72,19 +70,6 @@ func mentorSeamBound(name string) bool {
 //	  (pnl_corrected only; a NULL row → unresolved → fail closed).
 func (at *AutoTrader) mentorWireProductionSeams() {
 	if pr, ok := at.trader.(mentorPositionReader); ok {
-		mentorOpenStopSource = func() (float64, bool) {
-			orders, err := pr.GetOpenOrders("MNQ")
-			if err != nil {
-				return 0, false
-			}
-			for _, o := range orders {
-				if o.Type == "STOP_MARKET" && o.StopPrice > 0 {
-					return o.StopPrice, true
-				}
-			}
-			return 0, false
-		}
-
 		mentorOpenSideSource = func() string {
 			pos, err := pr.GetPositions()
 			if err != nil {

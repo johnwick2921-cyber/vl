@@ -4,7 +4,9 @@ import (
 	"testing"
 	"time"
 
+	ntwire "vl/provider/ninjatrader"
 	"vl/store"
+	ntTrader "vl/trader/ninjatrader"
 )
 
 // §5(a) — the daily loss limit is checked AT PLACEMENT, not only by the 60s
@@ -87,6 +89,36 @@ func TestMentorDailyLossGateUnconfiguredPasses(t *testing.T) {
 
 	if refuse, why := at.mentorDailyLossGate(now); refuse {
 		t.Fatalf("master OFF must allow, got refuse (%q)", why)
+	}
+}
+
+// P3-4 (rel10): deskRealizedToday scopes to the BOUND account — the same scope
+// the done-after-win day-P&L gate (MentorDayActivity) uses. Two accounts' rows
+// on the same session day: only the bound account's loss is summed. Mutant:
+// drop the account arg → both accounts summed → RED.
+func TestDeskRealizedTodayScopesToBoundAccount(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{})
+	at.trader = ntTrader.NewTCPTrader(ntwire.NewTCPServer(nil), "MNQ", "Sim101")
+	if got := at.currentAccountName(); got != "Sim101" {
+		t.Fatalf("bound account = %q, want Sim101", got)
+	}
+	now := dailyLossNow()
+	exit := now.Add(-5 * time.Minute)
+	seed := func(account string, pnl float64) {
+		row := &store.TraderPosition{TraderID: at.id, Account: account, Symbol: "MNQ", Side: "LONG",
+			Quantity: 1, EntryPrice: 100, ExitPrice: 99, RealizedPnL: pnl, PnlCorrected: &pnl,
+			Status: "CLOSED", CloseReason: "sync",
+			EntryTime: exit.Add(-5 * time.Minute).UnixMilli(), ExitTime: exit.UnixMilli()}
+		if err := st.GormDB().Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed("Sim101", -150)
+	seed("Sim102", -300)
+
+	total, n, unresolved := at.deskRealizedToday(now)
+	if n != 1 || total != -150 || unresolved != 0 {
+		t.Fatalf("deskRealizedToday must sum only the bound account: n=%d total=%.2f unresolved=%d", n, total, unresolved)
 	}
 }
 

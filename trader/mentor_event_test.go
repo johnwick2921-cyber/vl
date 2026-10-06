@@ -11,7 +11,6 @@ import (
 	"vl/kernel/mentor"
 	"vl/market"
 	"vl/store"
-	ntTrader "vl/trader/ninjatrader"
 )
 
 // TestMentorNoChaseRule pins the pure rule: AT OR BEYOND the trigger the
@@ -52,7 +51,6 @@ func wireMentorPlacementSeams(t *testing.T) {
 	t.Helper()
 	mentorDayNetSource = func() (float64, bool) { return 0, true }
 	mentorClosedProfitSource = func() (bool, bool) { return false, true }
-	mentorOpenStopSource = func() (float64, bool) { return 0, false }
 	mentorOpenSideSource = func() string { return "" }
 	mentorLegProtectedSource = func(leg string) bool { return true }
 	mentorLatestPriceSource = func() (float64, bool) { return 0, false } // bound, inert: no-chase sees no price
@@ -64,7 +62,6 @@ func wireMentorPlacementSeams(t *testing.T) {
 	t.Cleanup(func() {
 		mentorDayNetSource = nil
 		mentorClosedProfitSource = nil
-		mentorOpenStopSource = nil
 		mentorOpenSideSource = nil
 		mentorLegProtectedSource = nil
 		mentorLatestPriceSource = nil
@@ -359,11 +356,11 @@ func TestMentorStopAfterLossTrippedHook(t *testing.T) {
 	}
 }
 
-// TestMentorNeverWidenAtStopMoveCallSite (c): a stop amendment that increases
-// open risk never reaches the wire. The mutant that drops the guard makes the
-// widened stop reach moveStopWire and this test goes RED.
-func TestMentorNeverWidenAtStopMoveCallSite(t *testing.T) {
-	// pure
+// TestMentorNeverWidenPure (c): a stop amendment that increases open risk is
+// refused. The LIVE call sites are mentorMoveLegStop (pinned by
+// TestMentorMoveLegStop_NeverWidens) and mentorMoveStopBE (pinned by its own
+// swing tests); the dead mentorMoveStop path was removed (rel10).
+func TestMentorNeverWidenPure(t *testing.T) {
 	if refuse, why := mentorNeverWiden("long", 100, 99); !refuse || why == "" {
 		t.Fatalf("a lower long stop must be refused: refuse=%v why=%q", refuse, why)
 	}
@@ -378,38 +375,6 @@ func TestMentorNeverWidenAtStopMoveCallSite(t *testing.T) {
 	}
 	if refuse, _ := mentorNeverWiden("short", 100, 99); refuse {
 		t.Fatal("a lower short stop must pass")
-	}
-	// call site: the widening move never reaches the wire.
-	ResetMentorCountersForTest()
-	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	// FAIL-CLOSED: no open-stop source (mentor mode ON) refuses the move.
-	if err := at.mentorMoveStop(&ntTrader.TCPTrader{}, "long", 99); err == nil {
-		t.Fatal("a stop move with no open-stop source must be refused (fail-closed)")
-	}
-	if got := MentorCountSnapshot()["stop_move_no_source"]; got != 1 {
-		t.Fatalf("the fail-closed stop-move refusal must be counted once, got %d", got)
-	}
-	var sentSide string
-	var sentPx float64
-	moveStopWire = func(nt *ntTrader.TCPTrader, side string, newStop float64) error {
-		sentSide, sentPx = side, newStop
-		return nil
-	}
-	t.Cleanup(func() { moveStopWire = nil })
-	mentorOpenStopSource = func() (float64, bool) { return 100, true }
-	t.Cleanup(func() { mentorOpenStopSource = nil })
-
-	if err := at.mentorMoveStop(&ntTrader.TCPTrader{}, "long", 99); err == nil {
-		t.Fatal("a widening long move must be refused")
-	}
-	if sentPx != 0 {
-		t.Fatalf("the widened stop must not reach the wire, got %.2f", sentPx)
-	}
-	if got := MentorCountSnapshot()["widen_refused"]; got != 1 {
-		t.Fatalf("the widen refusal must be counted once, got %d", got)
-	}
-	if err := at.mentorMoveStop(&ntTrader.TCPTrader{}, "long", 101); err != nil || sentSide != "long" || sentPx != 101 {
-		t.Fatalf("a tightening move must reach the wire: err=%v side=%q px=%.2f", err, sentSide, sentPx)
 	}
 }
 
@@ -485,7 +450,7 @@ func TestMentorSourcesMissingRefusesPlacement(t *testing.T) {
 		t.Fatalf("all seams wired: the placement must proceed, placed=%d", placed)
 	}
 	// one seam missing → every entry refuses at the placement call site.
-	mentorOpenStopSource = nil
+	mentorOpenSideSource = nil
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
 	if placed != 1 {
 		t.Fatalf("a missing seam must refuse every entry, placed=%d", placed)
@@ -494,7 +459,7 @@ func TestMentorSourcesMissingRefusesPlacement(t *testing.T) {
 		t.Fatalf("the placement-level refusal must be counted mentor_sources_missing once, got %d", got)
 	}
 	// restore → proceeds again.
-	mentorOpenStopSource = func() (float64, bool) { return 0, false }
+	mentorOpenSideSource = func() string { return "" }
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
 	if placed != 2 {
 		t.Fatalf("with the seam restored the placement must proceed, placed=%d", placed)
@@ -779,7 +744,6 @@ func TestMentorSourcesBootLine(t *testing.T) {
 	wireAll := func() {
 		mentorDayNetSource = func() (float64, bool) { return 0, true }
 		mentorClosedProfitSource = func() (bool, bool) { return false, true }
-		mentorOpenStopSource = func() (float64, bool) { return 0, false }
 		mentorOpenSideSource = func() string { return "" }
 		mentorLegProtectedSource = func(leg string) bool { return true }
 		mentorLatestPriceSource = func() (float64, bool) { return 0, false }
@@ -793,7 +757,6 @@ func TestMentorSourcesBootLine(t *testing.T) {
 	clearAll := func() {
 		mentorDayNetSource = nil
 		mentorClosedProfitSource = nil
-		mentorOpenStopSource = nil
 		mentorOpenSideSource = nil
 		mentorLegProtectedSource = nil
 		mentorLatestPriceSource = nil
@@ -822,7 +785,6 @@ func TestMentorSourcesBootLine(t *testing.T) {
 	}{
 		{"day_net", func() { mentorDayNetSource = nil }, "day_net"},
 		{"closed_profit", func() { mentorClosedProfitSource = nil }, "closed_profit"},
-		{"open stop", func() { mentorOpenStopSource = nil }, "open_stop"},
 		{"open side", func() { mentorOpenSideSource = nil }, "open_side"},
 		{"news events", func() { mentorDayEventsForTest = nil }, "news events"},
 		{"5m feed", func() { market.FuturesBarsProvider = nil }, "5m feed"},
