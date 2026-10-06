@@ -674,7 +674,11 @@ func nextLevelBeyond(levels []Level, price float64, side Side) float64 {
 	best := 0.0
 	for _, l := range levels {
 		if l.Kind == KindTrendline {
-			continue // a trendline is a location, never a target (X9)
+			// a trendline is a location, never a target in the level ladder.
+			// The ONE exception is the FLAG-TARGET pass [X9 @ 05:47–06:12]: a
+			// trade taken INSIDE a flag targets the opposite wall — that runs
+			// in applyFlagWallTarget (flag_wall.go), not here.
+			continue
 		}
 		switch side {
 		case SideLong:
@@ -701,7 +705,11 @@ func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMul
 	best := 0.0
 	for _, l := range levels {
 		if l.Kind == KindTrendline {
-			continue // a trendline is a location, never a target (X9)
+			// a trendline is a location, never a target in the level ladder.
+			// The ONE exception is the FLAG-TARGET pass [X9 @ 05:47–06:12]: a
+			// trade taken INSIDE a flag targets the opposite wall — that runs
+			// in applyFlagWallTarget (flag_wall.go), not here.
+			continue
 		}
 		onSide := side == SideLong && l.Price > entry || side == SideShort && l.Price < entry
 		if !onSide {
@@ -773,6 +781,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// FU-2: the per-Tick barsTF memo is scoped to ONE Tick — clear it before
 	// anything aggregates, so a new bar always rebuilds the buckets it must.
 	e.tfMemo = nil
+	// FLAG-TARGET: the live flag walls and the current bar's open time are
+	// captured for the defer's target pass (assigned below at the trendline
+	// build; zero until then, so an early return leaves them inert).
+	var liveFlagWalls flagWalls
+	var curBarOpenTime int64
 	// A5 + P0 sizing gap (CTO 20:13:25Z): ONE stamp where intents LEAVE Tick —
 	// the geometry (StopPts/TargetPts), the spent-day flag, and the
 	// untagged-setup drop. The defer covers every return path, including the
@@ -786,6 +799,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.refuse(r)
 		}
 		out = kept
+		out = applyFlagWallTarget(out, liveFlagWalls, curBarOpenTime, e.Cfg, e.refuse)
 		stampHTFAgree(out, e.State.HTF)
 	}()
 	if !e.Cfg.Enabled || len(bars) < 2 {
@@ -904,6 +918,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// trendline next to a box edge is suppressed (box beats trendline).
 	trendlines := TrendlinesBuild(bars, time.UnixMilli(now))
 	levels = append(levels, TrendlineLevels(trendlines, boxes, bars)...)
+	// FLAG-TARGET: capture the live flag walls for the defer's target pass
+	// (projected at the current bar's open time).
+	liveFlagWalls = buildFlagWalls(trendlines)
+	curBarOpenTime = bars[len(bars)-1].OpenTime
 
 	// §3: first-touch classification per level. BOX edges are OUT of this
 	// loop (BOX PATH DECISION, CTO 12:38:50Z): the box path is DS-106's

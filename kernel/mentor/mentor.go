@@ -307,6 +307,16 @@ type Config struct {
 	// knob and OFF by default; while OFF the ISB read is byte-identical.
 	Exec2mAfter30m bool
 
+	// FlagWallTarget — FLAG-TARGET (owner "ok do it" 2026-10-05 22:3x): when
+	// ON, a trade taken INSIDE a live flag (both trendlines exist and are
+	// unbroken, the entry strictly between them) gets the OPPOSITE flag wall
+	// as a target candidate — the target is the NEAREST of {the existing
+	// target, the wall}, and the wall can only bring it CLOSER [X9 @ 05:47–
+	// 06:12: "target của anh chị là chỉ là trên cái đỉnh của cái flag… vẫn
+	// scalping được, không sai"]. A wall that leaves < 1:1 refuses the entry
+	// (flag_wall_room). Default OFF — byte-identical while off.
+	FlagWallTarget bool
+
 	// OrbGateEnabled turns on the §7 step 0 ORB gate (default ON): the high and
 	// low of the FIRST 2-minute candle of the regular session gate every
 	// intraday entry — nothing inside, no reversal at the edges, only the

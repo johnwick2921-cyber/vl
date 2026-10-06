@@ -773,6 +773,20 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
+          label: 'Flag wall as target inside a flag',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'FLAG-TARGET: OFF (default) = the trendline stays a location only. ON = a trade taken INSIDE a live flag (both 1m trendlines unbroken, the entry between them) targets the NEAREST of {the existing target, the opposite flag wall} — a long targets the upper edge, a short the lower edge ("target của anh chị là chỉ là trên cái đỉnh của cái flag… vẫn scalping được, không sai" [X9 @ 05:47–06:12]). The wall can only bring the target CLOSER; a wall that leaves < 1:1 refuses the entry (flag_wall_room). The flag break itself stays untraded (D4.1 @ 16:06).',
+          trader: 'OFF — default; byte-identical while off.',
+          consumer:
+            'kernel/mentor/eval.go Tick (applyFlagWallTarget) · kernel/mentor/flag_wall.go · trader/mentor_tuning.go mentorTuningResolve',
+          range: 'true / false',
+          systemDefault: 'false',
+          recommended:
+            'Decide from the 30-day replay (OFF vs ON, per-entry diff + net R).',
+          whenToTouch: 'Only on an owner ruling after the replay evidence.',
+          perSession: 'No.',
+        },
+        {
           label: 'PHL min candles from old extreme',
           where: 'Strategy → Mentor mode → PHL/PLH',
           what: 'The entry must be at least this many candles from the old extreme (wait 1–2 more pullback candles).',
