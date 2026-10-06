@@ -535,6 +535,15 @@ func (at *AutoTrader) setMentorExitMode(key, mode string) {
 	at.mentorExitModes[key] = mode
 }
 
+// deleteMentorExitMode prunes one staged exit branch (I13) — called when the
+// arm's staged branch is consumed (the fill copies it onto the live-position
+// struct) or the arm goes terminal without ever filling.
+func (at *AutoTrader) deleteMentorExitMode(key string) {
+	at.mentorExitMu.Lock()
+	delete(at.mentorExitModes, key)
+	at.mentorExitMu.Unlock()
+}
+
 // mentorConfluenceUpgradeMode is the pure B20 switch: an upgrade moves the
 // open position's exit branch to C — hold ≥ 1:2, the stop untouched. The SIZE
 // is never re-read (the upgrade never touches the size table). A no-position
@@ -590,12 +599,23 @@ func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
 	}
 	// A school-1 arm that is still RESTING: switch its staged branch so the
 	// fill registers C. The live-arm registry names the arm by its ArmID; its
-	// scenario is the key the placement registered under.
+	// scenario is the key the placement registered under. I3/I5: the entries
+	// are COPIED under mentorLiveMu before iterating (a concurrent write must
+	// not race the iteration), and only THIS trader's arms are considered.
+	type restingArm struct{ id, side string }
+	resting := make([]restingArm, 0)
+	mentorLiveMu.Lock()
 	for id, arm := range mentorLiveArms {
-		if !strings.EqualFold(arm.Side, side) {
+		if arm.TraderID == at.id {
+			resting = append(resting, restingArm{id: id, side: arm.Side})
+		}
+	}
+	mentorLiveMu.Unlock()
+	for _, ra := range resting {
+		if !strings.EqualFold(ra.side, side) {
 			continue
 		}
-		scenario := mentorScenarioFor(id)
+		scenario := mentorScenarioFor(ra.id)
 		cur := at.mentorExitMode(scenario)
 		if cur == "" {
 			continue // no staged branch for this arm — nothing to switch
@@ -607,7 +627,7 @@ func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
 		}
 		at.setMentorExitMode(scenario, next)
 		mentorCount("exit_upgrade_c")
-		at.logInfof("🧑‍🏫 mentor confluence upgrade (resting %s): %s %s (size unchanged) — %s", id, side, why, in.Reason)
+		at.logInfof("🧑‍🏫 mentor confluence upgrade (resting %s): %s %s (size unchanged) — %s", ra.id, side, why, in.Reason)
 	}
 	if !found {
 		mentorCount("exit_upgrade_no_position")
@@ -950,11 +970,6 @@ func (at *AutoTrader) mentorDayStopSweep(now time.Time) {
 		}
 	}
 }
-
-// mentorStopAfterLossTripped is the B3 hook for DS-105's stop-after-loss gate.
-// nil → unwired (the gate does not trip). DS-105 wires it when its gate merges;
-// the hook needs no other change here.
-var mentorStopAfterLossTripped func() (bool, string)
 
 // mentorDoneAfterWinTripped reports the DEFINITE done-after-win trip only — a
 // trade closed in profit AND the day is net positive. An unwired or unresolved

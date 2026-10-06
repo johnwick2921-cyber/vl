@@ -31,7 +31,7 @@ import (
 // find the real order. In-memory only: an ArmID from a previous process does
 // not resolve — every handler refuses that NAMED, never silent.
 type mentorLiveArm struct {
-	TraderID string  // the trader that authored the arm (I5: the sweep acts on its own trader's arms only)
+	TraderID string // the trader that authored the arm (I5: the sweep acts on its own trader's arms only)
 	RowID    int64
 	Side     string  // "long" | "short"
 	Entry    float64 // the arm's entry price (MoveStopBE target)
@@ -510,7 +510,8 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 	if err := ledger.DB().First(&r, arm.RowID).Error; err != nil || store.IsTerminalArmState(r.State) {
 		mentorCount("cancel_refused_row_gone")
 		at.logInfof("🧑‍🏫 mentor CancelArm for ArmID %q — the row is already terminal; nothing to cancel (%s)", in.ArmID, in.Reason)
-		mentorUnregisterLiveArm(in.ArmID) // I5: prune the terminal entry
+		mentorUnregisterLiveArm(in.ArmID)                    // I5: prune the terminal entry
+		at.deleteMentorExitMode(mentorScenarioFor(in.ArmID)) // I13: prune the staged branch too
 		return false
 	}
 	now := time.Now()
@@ -525,7 +526,8 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 		done, err := ledger.CancelUnplaced(r.ID, "mentor: "+in.Reason+" — never placed")
 		if err == nil && done {
 			at.clearMentorLevelArmLocked(in.ArmID)
-			mentorUnregisterLiveArm(in.ArmID) // I5: the row is now cancelled (terminal)
+			mentorUnregisterLiveArm(in.ArmID)                    // I5: the row is now cancelled (terminal)
+			at.deleteMentorExitMode(mentorScenarioFor(in.ArmID)) // I13: prune the staged branch too
 			mentorCount("cancel_unplaced")
 			at.logInfof("🧑‍🏫 mentor cancel for ArmID %q: never placed — row cancelled directly (%s)", in.ArmID, in.Reason)
 			return true

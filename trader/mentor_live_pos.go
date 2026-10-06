@@ -103,6 +103,11 @@ func (at *AutoTrader) mentorBuildLivePos(r store.ArmedOrderDB, u ntwire.OrderUpd
 		lp.Legs[1] = mentorLeg{SignalID: r.SignalID, Qty: runner, TP: r.TargetPx, Stop: r.StopPx, Final: true, Wire: 2}
 		mentorCount("exit_drive_split_registered")
 	}
+	// I13 (merge of #423 into the #422 build/register split): the staged exit
+	// branch has been read into lp.Pos.Mode above, so it is consumed — prune it
+	// here so the per-arm map does not grow for the life of the process (every
+	// registration path — full fill, B1 expiry, I4 cancel — goes through here).
+	at.deleteMentorExitMode(r.Scenario)
 	return lp
 }
 
