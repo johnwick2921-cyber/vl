@@ -48,6 +48,15 @@ type mentorLivePos struct {
 func (at *AutoTrader) registerMentorLivePos(r store.ArmedOrderDB, u ntwire.OrderUpdatePayload) {
 	if lp := at.mentorBuildLivePos(r, u); lp != nil {
 		at.mentorRegisterLivePos(r.SignalID, lp)
+		// I13 (rel9 fix): a FULL fill consumes the staged exit branch — prune it
+		// HERE, never in the shared builder (a partial-fill build must leave the
+		// staged C/swing mode for the remainder's full fill to read).
+		at.deleteMentorExitMode(r.Scenario)
+		// P3 (rel9): the shape counter fires on an ACTUAL registration.
+		at.mentorCountRegistrationShape(lp)
+		// A full fill proves the position is OPEN — clear any flat tombstone the
+		// drive wrote on a stale flat read, so later partial sweeps stay correct.
+		at.mentorClearFlatSignal(r.SignalID)
 	}
 }
 
@@ -105,7 +114,6 @@ func (at *AutoTrader) mentorBuildLivePos(r store.ArmedOrderDB, u ntwire.OrderUpd
 			lp.Pos.Leg1, lp.Pos.Leg2, lp.Pos.Leg1TP = leg1, runner, split.Leg1TP
 			lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: leg1, TP: split.Leg1TP, Stop: r.StopPx, Final: false, Wire: 1}
 			lp.Legs[1] = mentorLeg{SignalID: r.SignalID, Qty: runner, TP: r.TargetPx, Stop: r.StopPx, Final: true, Wire: 2}
-			mentorCount("exit_drive_split_registered")
 		} else {
 			// I10: a partial fill ≤ leg 1's quantity means ONLY leg 1 is live —
 			// the wire holds only the leg-1 bracket at 1:1. Register leg 1 only,
@@ -113,14 +121,14 @@ func (at *AutoTrader) mentorBuildLivePos(r store.ArmedOrderDB, u ntwire.OrderUpd
 			lp.Pos.Leg1, lp.Pos.Leg2 = n, 0
 			lp.Pos.Leg1TP = split.Leg1TP
 			lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: n, TP: split.Leg1TP, Stop: r.StopPx, Final: false, Wire: 1}
-			mentorCount("exit_drive_leg1_only_registered")
 		}
 	}
-	// I13 (merge of #423 into the #422 build/register split): the staged exit
-	// branch has been read into lp.Pos.Mode above, so it is consumed — prune it
-	// here so the per-arm map does not grow for the life of the process (every
-	// registration path — full fill, B1 expiry, I4 cancel — goes through here).
-	at.deleteMentorExitMode(r.Scenario)
+	// NOTE (I13 rel9 fix): the staged exit branch has been READ into lp.Pos.Mode
+	// above but is NOT pruned here — the prune moved to the REGISTRATION sites
+	// (registerMentorLivePos after a FULL fill, and mentorCancelArm's terminal
+	// branches). Pruning in this shared builder lost the staged C/swing mode when
+	// a partial fill (B1 expiry / I4 cancel) built the position and the remainder
+	// then filled before the cancel settled — the full-fill rebuild read Mode "".
 	return lp
 }
 
@@ -178,14 +186,70 @@ func (at *AutoTrader) mentorUnregisterLivePos(key string) {
 	}
 	at.mentorExitMu.Lock()
 	delete(at.mentorLivePos, key)
+	// P3 (rel9): tombstone the signal so a stale partial-fill sweep (B1 expiry /
+	// I4 cancel, re-run every bar while the row is cancel_pending) can never
+	// RE-register a position the drive already dropped as flat.
+	if at.mentorFlatSignals == nil {
+		at.mentorFlatSignals = map[string]struct{}{}
+	}
+	at.mentorFlatSignals[key] = struct{}{}
 	at.mentorExitMu.Unlock()
 	// I9 (U3): forget the split record ONLY when the armed row is TERMINAL.
 	// While the row is still working its REMAINDER may still be at the broker —
 	// a forget here would leave a later re-registration without its split legs.
 	if at.mentorArmedRowTerminal(key) {
-		if nt := at.armedTrader(); nt != nil {
-			nt.ForgetSignalMaps(key)
-		}
+		at.mentorForgetSplitMaps(key)
+	}
+}
+
+// mentorForgetSplitMaps forgets the split record for a signal (the U3 cleanup).
+// Called from the flat-unregister (terminal rows only) and the cancel-settlement
+// path (P3 rel9: a row still cancel_pending at flat-unregister is forgotten HERE
+// once it later settles terminal).
+func (at *AutoTrader) mentorForgetSplitMaps(signalID string) {
+	if at == nil || signalID == "" {
+		return
+	}
+	if nt := at.armedTrader(); nt != nil {
+		nt.ForgetSignalMaps(signalID)
+	}
+}
+
+// mentorFlatSignal reports whether the drive unregistered the signal as flat
+// (a tombstone, so a stale partial-fill sweep cannot resurrect it).
+func (at *AutoTrader) mentorFlatSignal(key string) bool {
+	if at == nil || key == "" {
+		return false
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	_, ok := at.mentorFlatSignals[key]
+	return ok
+}
+
+// mentorClearFlatSignal clears the flat tombstone (a full fill proves the
+// position is OPEN again).
+func (at *AutoTrader) mentorClearFlatSignal(key string) {
+	if at == nil || key == "" {
+		return
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	delete(at.mentorFlatSignals, key)
+}
+
+// mentorCountRegistrationShape fires the leg-shape counter for a position that
+// was ACTUALLY registered. Called only from the two registration sites — never
+// from the shared builder, so a register-if-absent miss never bumps the counter
+// (canon 35, "counters record, never infer").
+func (at *AutoTrader) mentorCountRegistrationShape(lp *mentorLivePos) {
+	if lp == nil {
+		return
+	}
+	if lp.Legs[1].Qty > 0 && lp.Legs[1].SignalID != "" {
+		mentorCount("exit_drive_split_registered")
+	} else if lp.Legs[0].Wire == 1 {
+		mentorCount("exit_drive_leg1_only_registered")
 	}
 }
 
@@ -299,6 +363,11 @@ func (at *AutoTrader) mentorRegisterPartialFillIfAbsent(r store.ArmedOrderDB) bo
 	if !isMentorArmOrigin(r) || strings.TrimSpace(r.SignalID) == "" || r.FillQuantity <= 0 || mentorRemainderToCancel(r) <= 0 {
 		return false
 	}
+	// P3 (rel9): never RE-register a position the drive already unregistered as
+	// flat (the side closed; a stale partial-fill sweep must not resurrect it).
+	if at.mentorFlatSignal(r.SignalID) {
+		return false
+	}
 	lp := at.mentorBuildLivePos(r, ntwire.OrderUpdatePayload{
 		SignalID:  r.SignalID,
 		Quantity:  r.FillQuantity,
@@ -307,6 +376,10 @@ func (at *AutoTrader) mentorRegisterPartialFillIfAbsent(r store.ArmedOrderDB) bo
 	if lp == nil || !at.mentorRegisterLivePosIfAbsent(r.SignalID, lp) {
 		return false
 	}
+	// P3 (rel9): the shape counter fires ONLY when a registration actually
+	// happened — the sweep re-runs every bar while the row is cancel_pending,
+	// and a register-if-absent miss must not bump the counter (canon 35).
+	at.mentorCountRegistrationShape(lp)
 	at.pokeMentorExitDrive()
 	at.mentorFunnel.bumpFilled()
 	return true

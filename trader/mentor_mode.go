@@ -1080,8 +1080,20 @@ func (at *AutoTrader) mentorMoveStop(nt *ntTrader.TCPTrader, side string, newSto
 	return moveStopWire(nt, side, newStop)
 }
 
-// mentorLogPositionState dumps the driver state for the daily log.
+// mentorLogPositionState dumps the driver state for the daily log. It snapshots
+// the shared fields under mentorExitMu — the receipt (mentorMarkLeg1Scaled) and
+// the I7 fallback write Scaled/Leg1ExitedAtMs from other goroutines, so an
+// unlocked read of pos.Scaled races (P3 rel9 review).
 func (at *AutoTrader) mentorLogPositionState(pos *mentorPosition, event string) {
+	if pos == nil {
+		return
+	}
+	at.mentorExitMu.Lock()
+	sym, side, origin := pos.Symbol, pos.Side, pos.Origin
+	entry, stop, r, mode := pos.Entry, pos.Stop, pos.R, pos.Mode
+	contracts := pos.Contracts
+	armedBE, scaled := pos.ArmedBE, pos.Scaled
+	at.mentorExitMu.Unlock()
 	at.logInfof("🧑‍🏫 mentor exit driver [%s]: %s side=%s origin=%s entry=%.2f stop=%.2f R=%.2f contracts=%d mode=%s armedBE=%v scaled=%v",
-		event, pos.Symbol, pos.Side, pos.Origin, pos.Entry, pos.Stop, pos.R, pos.Contracts, pos.Mode, pos.ArmedBE, pos.Scaled)
+		event, sym, side, origin, entry, stop, r, contracts, mode, armedBE, scaled)
 }

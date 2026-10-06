@@ -399,6 +399,12 @@ type AutoTrader struct {
 	// keyed by its entry signal id, registered at the fill callback and driven
 	// by the exit-drive loop (DS-107). Guarded by mentorExitMu.
 	mentorLivePos map[string]*mentorLivePos
+	// mentorFlatSignals tombstones signal ids the exit drive unregistered as
+	// FLAT — a stale partial-fill sweep (B1 expiry / I4 cancel, re-run every bar
+	// while the row is cancel_pending) must not resurrect them. Guarded by
+	// mentorExitMu. Cleared by a full fill (the position is provably open) and
+	// by the cancel-settlement forget (the row is terminal).
+	mentorFlatSignals map[string]struct{}
 	// mentorFillCh carries REAL mentor fill receipts from the fill callback
 	// (the executor goroutine) to the evaluator (mentorEvalOnce, under
 	// mentorEvalMu) for FU-1: G1/G2 fed from real fills, never a

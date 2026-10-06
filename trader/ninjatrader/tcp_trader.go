@@ -1666,8 +1666,12 @@ func (t *TCPTrader) positionMap(symbol, side string, qty, entry float64, uPnLOve
 		// Fallback (multi-position / no account snapshot yet): mark off the latest
 		// 5m BarCache close. Less precise than NT8's live uPnL but self-contained.
 		mark = entry
-		if bars := t.server.BarCache().Get(symbol, "5m"); len(bars) > 0 {
-			mark = bars[len(bars)-1].C
+		// P3 (rel9): a nil server (the GetPositions fillDerived path) has no bar
+		// cache — guard it so the mark falls back to entry, never a nil deref.
+		if t.server != nil {
+			if bars := t.server.BarCache().Get(symbol, "5m"); len(bars) > 0 {
+				mark = bars[len(bars)-1].C
+			}
 		}
 		uPnL = (mark - entry) * dir * qty * pv
 		if entry > 0 {
