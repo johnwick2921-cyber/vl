@@ -123,3 +123,36 @@ func TestPrintCandleMovesHTFWhenNoPrintWindow(t *testing.T) {
 		t.Fatalf("a non-print break must draw the 1h line (long @ 100), got %+v", e.State.HTF.OneH)
 	}
 }
+
+// TestSeedDropsPrintWindowAt1730 (REL10-PRINT-SEED) — the seed at 17:30 CT must
+// drop the 07:30 print candle from the HTF feed, the SAME as a live tick. The
+// old session-key scoping (htfFeedBarsToday) dropped NOTHING at a 17:30 boot:
+// the 07:30 bar's session key is "09-15" while now's is "09-16", so the print
+// candle moved the seeded 1h line and the seed disagreed with the live tick.
+func TestSeedDropsPrintWindowAt1730(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
+	e := New(cfg)
+	bars := newsTape(6, 0, 105) // spike at 07:30, inside the 07:20–07:35 window
+	now := auditMs(2026, 9, 15, 17, 30, 0)
+	Seed(e, bars, now)
+	if e.State.HTF.OneH.Dir != "" || e.State.HTF.OneH.Price != 0 {
+		t.Fatalf("the 07:30 print candle moved the seeded 1h line at a 17:30 boot: %+v", e.State.HTF.OneH)
+	}
+}
+
+// TestSeedNoWindowUnchanged — with no window the seed's HTF feed is the input
+// itself (htfFeedBars returns it untouched), so the 07:30 spike is a real break
+// and draws the 1h line — the no-window path is unchanged.
+func TestSeedNoWindowUnchanged(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	e := New(cfg)
+	bars := newsTape(6, 0, 105)
+	now := auditMs(2026, 9, 15, 17, 30, 0)
+	Seed(e, bars, now)
+	if e.State.HTF.OneH.Dir != SideLong || e.State.HTF.OneH.Price != 100 {
+		t.Fatalf("with no window the 07:30 spike must move the seeded 1h line (long @ 100), got %+v", e.State.HTF.OneH)
+	}
+}

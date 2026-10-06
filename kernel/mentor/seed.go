@@ -245,10 +245,12 @@ func seed(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int
 	// TriggerTick commits only non-tail buckets, so the last, possibly
 	// incomplete bucket is left for the first tick, exactly as on the live path.
 	e.State.Trigger = TriggerTick(e.State.Trigger, barsTF(bars1m, 5), 5, e.Cfg)
-	// Print windows: the trader plumbs only TODAY's windows — apply them to
-	// today's bars only. Historical print candles are NOT removed from the
-	// seeded history (see htfFeedBarsToday).
-	htfBars := htfFeedBarsToday(bars1m, e.Cfg.PrintWindows, now)
+	// Print windows: the SAME htfFeedBars the tick path uses. The windows are
+	// absolute instants for today's prints only, so no session-day scoping is
+	// needed — the seed and the live tick must agree on which bars move the
+	// HTF lines (a historical bar at a different absolute time never matches
+	// today's window).
+	htfBars := htfFeedBars(bars1m, e.Cfg.PrintWindows)
 	e.State.HTF = HTFAdvance(e.State.HTF, barsTF(htfBars, 240), barsTF(htfBars, 60), e.Cfg)
 
 	e.seedLine = SeedLine(e.State, bars1m, now)
