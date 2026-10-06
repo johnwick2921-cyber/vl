@@ -58,8 +58,10 @@ export function PlanCard({
   )
   // MENTOR-TRUTH PANEL: the live evaluator truth ("what trades"), refreshed
   // every 30s + on focus (see useMentorTruth). mentor mode OFF → enabled=false
-  // → the card hides and the AI bias card keeps its unchanged label.
-  const mentor = useMentorTruth(traderId)
+  // → the card hides and the AI bias card keeps its unchanged label. A failed
+  // refresh keeps the last good payload (marked stale), so the advice-only
+  // label never flips off on a blip.
+  const { truth: mentor, stale: mentorStale } = useMentorTruth(traderId)
 
   // Which session is LIVE right now (server-told), independent of what tab the
   // owner is looking at.
@@ -184,7 +186,7 @@ export function PlanCard({
         onSelectVersion={(v) => setViewVersion(v === latestVersion ? null : v)}
         mentorOn={mentor?.enabled ?? false}
       />
-      <MentorTruthCard truth={mentor} />
+      <MentorTruthCard truth={mentor} stale={mentorStale} />
     </div>
   )
 }

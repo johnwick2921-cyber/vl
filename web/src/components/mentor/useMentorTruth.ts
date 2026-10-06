@@ -4,18 +4,29 @@
 // would show stale truth (the exact class this wave exists to fix). This hook
 // refreshes on a 30s interval AND on window focus; the server stamps each
 // payload with `as_of_ms` so the card can show "as of HH:MM:SS CT".
+//
+// A failed refresh must NOT blank the card (and must not flip the bias card's
+// "advice only" label): the hook keeps the last good payload and marks it
+// stale. Only a successful payload with enabled=false hides the card.
 
 import { useEffect, useState } from 'react'
 import { traderApi, type MentorTruth } from '../../lib/api/traders'
 
-export function useMentorTruth(
-  traderId: string | undefined
-): MentorTruth | null {
-  const [truth, setTruth] = useState<MentorTruth | null>(null)
+export interface MentorTruthState {
+  truth: MentorTruth | null
+  /** true when the most recent refresh failed and `truth` is the last good one. */
+  stale: boolean
+}
+
+export function useMentorTruth(traderId: string | undefined): MentorTruthState {
+  const [state, setState] = useState<MentorTruthState>({
+    truth: null,
+    stale: false,
+  })
 
   useEffect(() => {
     if (!traderId) {
-      setTruth(null)
+      setState({ truth: null, stale: false })
       return
     }
 
@@ -24,10 +35,14 @@ export function useMentorTruth(
       traderApi
         .getMentorTruth(traderId)
         .then((t) => {
-          if (alive) setTruth(t)
+          if (alive) setState({ truth: t, stale: false })
         })
         .catch(() => {
-          if (alive) setTruth(null)
+          // Keep the last good payload; only mark it stale.
+          if (alive)
+            setState((prev) =>
+              prev.truth ? { truth: prev.truth, stale: true } : prev
+            )
         })
     }
 
@@ -50,5 +65,5 @@ export function useMentorTruth(
     }
   }, [traderId])
 
-  return truth
+  return state
 }

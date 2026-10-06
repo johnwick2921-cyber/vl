@@ -49,7 +49,7 @@ vi.mock('../components/mentor/MentorTruthCard', () => ({
   MentorTruthCard: () => null,
 }))
 vi.mock('../components/mentor/useMentorTruth', () => ({
-  useMentorTruth: () => null,
+  useMentorTruth: () => ({ truth: null, stale: false }),
 }))
 vi.mock('../components/trader/AccountSelector', () => ({
   AccountSelector: () => null,

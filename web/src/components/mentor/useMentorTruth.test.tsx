@@ -5,7 +5,7 @@
 // fetch, and that a window focus triggers another.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, act, cleanup } from '@testing-library/react'
+import { render, act, cleanup, screen } from '@testing-library/react'
 import { useMentorTruth } from './useMentorTruth'
 
 const getMentorTruth = vi.fn()
@@ -17,15 +17,19 @@ vi.mock('../../lib/api/traders', () => ({
 }))
 
 function Harness({ traderId }: { traderId: string }) {
-  const truth = useMentorTruth(traderId)
-  return <span data-testid="enabled">{String(truth?.enabled ?? 'null')}</span>
+  const { truth, stale } = useMentorTruth(traderId)
+  return (
+    <div>
+      <span data-testid="enabled">{String(truth?.enabled ?? 'null')}</span>
+      <span data-testid="stale">{String(stale)}</span>
+    </div>
+  )
 }
 
 describe('useMentorTruth', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     getMentorTruth.mockReset()
-    getMentorTruth.mockResolvedValue({ enabled: true, levels: [], depth: {} })
   })
 
   afterEach(() => {
@@ -34,6 +38,7 @@ describe('useMentorTruth', () => {
   })
 
   it('fetches once on mount, then again when the 30s timer advances', async () => {
+    getMentorTruth.mockResolvedValue({ enabled: true, levels: [], depth: {} })
     render(<Harness traderId="t1" />)
     expect(getMentorTruth).toHaveBeenCalledTimes(1)
 
@@ -44,6 +49,7 @@ describe('useMentorTruth', () => {
   })
 
   it('fetches again on window focus', async () => {
+    getMentorTruth.mockResolvedValue({ enabled: true, levels: [], depth: {} })
     render(<Harness traderId="t1" />)
     expect(getMentorTruth).toHaveBeenCalledTimes(1)
 
@@ -55,9 +61,36 @@ describe('useMentorTruth', () => {
   })
 
   it('does not fetch without a traderId', async () => {
+    getMentorTruth.mockResolvedValue({ enabled: true, levels: [], depth: {} })
     const { rerender } = render(<Harness traderId="" />)
     expect(getMentorTruth).not.toHaveBeenCalled()
     rerender(<Harness traderId="t1" />)
     expect(getMentorTruth).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the last good payload (stale) on error, then clears on success', async () => {
+    getMentorTruth
+      .mockResolvedValueOnce({ enabled: true, levels: [], depth: {} })
+      .mockRejectedValueOnce(new Error('blip'))
+      .mockResolvedValueOnce({ enabled: true, levels: [], depth: {} })
+
+    render(<Harness traderId="t1" />)
+    await act(async () => {})
+    expect(screen.getByTestId('enabled').textContent).toBe('true')
+    expect(screen.getByTestId('stale').textContent).toBe('false')
+
+    // 30s refresh fails → keep truth, mark stale.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000)
+    })
+    expect(screen.getByTestId('enabled').textContent).toBe('true')
+    expect(screen.getByTestId('stale').textContent).toBe('true')
+
+    // Next 30s refresh succeeds → stale cleared.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000)
+    })
+    expect(screen.getByTestId('enabled').textContent).toBe('true')
+    expect(screen.getByTestId('stale').textContent).toBe('false')
   })
 })

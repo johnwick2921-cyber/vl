@@ -67,6 +67,22 @@ describe('MentorTruthCard', () => {
     expect(screen.getByText('key_level')).toBeTruthy()
     expect(screen.getByText('30000.00')).toBeTruthy()
   })
+
+  it('shows the stale marker when the refresh failed, and none when fresh', () => {
+    const { rerender } = render(
+      <LanguageProvider>
+        <MentorTruthCard truth={truth({})} stale />
+      </LanguageProvider>
+    )
+    expect(screen.getByText(/stale — last update/i)).toBeTruthy()
+
+    rerender(
+      <LanguageProvider>
+        <MentorTruthCard truth={truth({})} stale={false} />
+      </LanguageProvider>
+    )
+    expect(screen.queryByText(/stale — last update/i)).toBeNull()
+  })
 })
 
 describe('BiasBlock advice-only label', () => {

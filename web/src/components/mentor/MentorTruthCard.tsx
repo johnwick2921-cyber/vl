@@ -42,7 +42,13 @@ function dirColor(dir: string): string {
   return 'var(--vl-muted)'
 }
 
-export function MentorTruthCard({ truth }: { truth: MentorTruth | null }) {
+export function MentorTruthCard({
+  truth,
+  stale = false,
+}: {
+  truth: MentorTruth | null
+  stale?: boolean
+}) {
   if (!truth || !truth.enabled) return null
 
   return (
@@ -66,6 +72,15 @@ export function MentorTruthCard({ truth }: { truth: MentorTruth | null }) {
           {fmtAsOf(truth.as_of_ms)} CT
         </span>
       </div>
+
+      {stale && (
+        <div
+          className="text-[10px] font-semibold"
+          style={{ color: 'var(--vl-warn)' }}
+        >
+          stale — last update {fmtAsOf(truth.as_of_ms)} CT
+        </div>
+      )}
 
       {/* trigger directions */}
       <div className="flex gap-4 text-[11px]">

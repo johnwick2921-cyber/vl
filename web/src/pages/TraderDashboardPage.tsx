@@ -177,7 +177,9 @@ export function TraderDashboardPage({
   const chartSectionRef = useRef<HTMLDivElement>(null)
   // MENTOR-TRUTH PANEL — the live evaluator truth ("what trades"), refreshed
   // every 30s + on focus. The levels are also drawn on the dashboard chart.
-  const mentor = useMentorTruth(selectedTrader?.trader_id)
+  const { truth: mentor, stale: mentorStale } = useMentorTruth(
+    selectedTrader?.trader_id
+  )
   const mentorLevels = useMemo(
     () =>
       (mentor?.levels ?? []).map((l) => ({
@@ -768,7 +770,7 @@ export function TraderDashboardPage({
                 above the planner card. Hides itself when mentor mode is OFF. */}
           {isFutures && selectedTrader.trader_id && (
             <div className="min-w-0 lg:col-span-2">
-              <MentorTruthCard truth={mentor} />
+              <MentorTruthCard truth={mentor} stale={mentorStale} />
             </div>
           )}
           {/* Day Plan card — futures only (day_plan is a futures feature);
