@@ -133,6 +133,7 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'mentor_done_after_win',
     live: true,
   },
+  'Stop after a loss': { settingId: 'mentor_stop_after_loss', live: true },
   'Trading window start': { settingId: 'mentor_window_start', live: true },
   'Trading window length': { settingId: 'mentor_window_minutes', live: true },
 }
