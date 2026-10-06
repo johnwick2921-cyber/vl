@@ -92,7 +92,6 @@ func mentorLoopback(t *testing.T, buildID string) (at *AutoTrader, st *store.Sto
 // reads, so the entry path can reach the wire.
 func mentorWireSeams(t *testing.T, at *AutoTrader, ledger *store.ArmedOrderStore) {
 	t.Helper()
-	mentorOpenStopSource = func() (float64, bool) { return 0, false }
 	mentorOpenSideSource = func() string { return "" } // no open position: the never-add gate passes
 	mentorLegProtectedSource = func(leg string) bool { return false }
 	mentorLatestPriceSource = func() (float64, bool) { return 29590, true } // below the long trigger: the no-chase rule passes
@@ -107,7 +106,6 @@ func mentorWireSeams(t *testing.T, at *AutoTrader, ledger *store.ArmedOrderStore
 		return []market.Kline{{Open: 1, High: 2, Low: 0.5, Close: 1.5, OpenTime: time.Now().UnixMilli()}}
 	}
 	t.Cleanup(func() {
-		mentorOpenStopSource = nil
 		mentorOpenSideSource = nil
 		mentorLegProtectedSource = nil
 		mentorLatestPriceSource = nil
@@ -449,8 +447,6 @@ func TestMentorCancelArmReachesTheBroker(t *testing.T) {
 // guarded). Mutant: dropping the dispatch case leaves the spy uncalled.
 func TestMentorMoveStopBEReachesMoveStopWire(t *testing.T) {
 	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
-	mentorOpenStopSource = func() (float64, bool) { return 29595, true } // current stop below entry: BE is not a widen
-	t.Cleanup(func() { mentorOpenStopSource = nil })
 	var mu sync.Mutex
 	var moved []float64
 	oldWire := moveStopWire
@@ -704,8 +700,6 @@ func TestMentorPlaceIntentRefusesStaleBox(t *testing.T) {
 // the ledger's open-orders list is empty.
 func TestMentorSwingBEUsesLegOwnStop(t *testing.T) {
 	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
-	mentorOpenStopSource = func() (float64, bool) { return 0, false } // no STOP_MARKET row
-	t.Cleanup(func() { mentorOpenStopSource = nil })
 	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-be",
 		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
 		State: store.StateFilled, SignalID: "swing-be-sig", FillPrice: 29600, FillQuantity: 1}
