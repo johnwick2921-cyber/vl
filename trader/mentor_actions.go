@@ -537,7 +537,8 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 		}
 		if rerr := ledger.DB().First(&r, arm.RowID).Error; rerr != nil || store.IsTerminalArmState(r.State) {
 			at.clearMentorLevelArmLocked(in.ArmID)
-			mentorUnregisterLiveArm(in.ArmID) // I5: the row is terminal now
+			mentorUnregisterLiveArm(in.ArmID)                    // I5: the row is terminal now
+			at.deleteMentorExitMode(mentorScenarioFor(in.ArmID)) // I13: prune the staged branch too (rel9 fix — every terminal branch prunes)
 			return false
 		}
 	}

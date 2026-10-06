@@ -616,6 +616,10 @@ func (at *AutoTrader) confirmPendingCancels(ledger *store.ArmedOrderStore, cance
 			if cancelSeenInBook(book, r.SignalID) {
 				at.forgetPendingEntry(r.SignalID) // N7 part 5: positive cancel only
 			}
+			// P3 (rel9): a row still cancel_pending when the side went flat was
+			// unregistered WITHOUT its split-record forget — forget it here, now
+			// that it settles TERMINAL.
+			at.mentorForgetSplitMaps(r.SignalID)
 			settled++
 			at.logInfof("🧾 cancel CONFIRMED %s signal=%s — %s (snapshot %d, book age %s, attempts %d)",
 				r.Scenario, shortID(r.SignalID), why, snapID, age.Round(time.Second), r.CancelAttempts)
@@ -727,6 +731,9 @@ func (at *AutoTrader) confirmPendingCancelsReport(ledger *store.ArmedOrderStore,
 			continue
 		}
 		at.forgetPendingEntry(r.SignalID)
+		// P3 (rel9): forget the split record on the TERMINAL settle — the
+		// flat-unregister may have skipped it while the row was still pending.
+		at.mentorForgetSplitMaps(r.SignalID)
 		settled++
 		settledIDs[r.ID] = true
 		at.logInfof("🧾 cancel-report CONFIRMED %s signal=%s — %s (report_ms=%d state=%s attempts=%d)",

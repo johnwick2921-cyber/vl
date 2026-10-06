@@ -2,6 +2,7 @@ package trader
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"vl/kernel/mentor"
@@ -217,7 +218,9 @@ func (at *AutoTrader) mentorOpenQtyForDrive() (map[string]float64, bool) {
 				qty = q
 			}
 		}
-		out[s] += qty
+		// P2 (rel9 review): positionAmt is SIGNED (short < 0) — Abs so the
+		// leg-1-gone comparison reads a magnitude, never a negative qty.
+		out[s] += math.Abs(qty)
 	}
 	return out, true
 }
