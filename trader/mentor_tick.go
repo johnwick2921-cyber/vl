@@ -1129,15 +1129,6 @@ func (at *AutoTrader) mentorStopAfterLossGate() (bool, string) {
 	return false, ""
 }
 
-// mentorStopAfterLossTripped is the B3 day-stop-sweep hook for the
-// stop-after-loss gate (wired in mentorWireProductionSeams next to
-// mentorClosedLossSource). nil → unwired (the sweep does not trip). It returns
-// (true, why) ONLY on a DEFINITE loss (the knob ON and a resolved closed loss);
-// an unwired or unresolved read returns (false, "") — the placement gate stays
-// fail-closed, but the sweep never force-cancels a resting arm on an unknown
-// (the same contract as mentorDoneAfterWinTripped).
-var mentorStopAfterLossTripped func() (bool, string)
-
 // mentorStopAfterLossTrip is the DEFINITE-trip computation behind the B3 sweep
 // hook: the knob ON and a resolved closed loss, nothing else.
 func (at *AutoTrader) mentorStopAfterLossTrip() (bool, string) {
