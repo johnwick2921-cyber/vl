@@ -140,10 +140,14 @@ func Seed(e *Evaluator, bars1m []market.Kline, now int64) []string {
 }
 
 // SeedFull is Seed with the 1H RTH key-level walk fed from a PRE-STITCHED
-// full-history series (KEYLEVEL-FULL-HISTORY, release #10): bars1m stays the
-// CURRENT contract's 1m (1m EMAs, 4h EMA, swing, depth); full1HRTH overrides
-// ONLY the 1H RTH key-level walk (levels + BODY-close deletion). The trader
-// builds full1HRTH from ALL contracts' 1m via StitchKeyLevelHistory.
+// full-history series (KEYLEVEL-FULL-HISTORY, release #10). FIX 3: bars1m is
+// now the STITCHED, back-adjusted 1m series (same gap + cut as full1HRTH), NOT
+// the current contract's 1m — so the 4h EMA 34, the #435 seeded 5m/4h/1h
+// trigger lines and the depth seam ALL run on the same full history. The 1m
+// EMA 34/9 tail is unchanged by construction (the stitched tail IS the
+// current contract's recent bars). full1HRTH overrides ONLY the 1H RTH
+// key-level walk (levels + BODY-close deletion). The trader builds both from
+// the same RollStitcher result.
 func SeedFull(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int64) []string {
 	return seed(e, bars1m, full1HRTH, now)
 }

@@ -8,10 +8,8 @@ import (
 	"vl/market"
 )
 
-// KEYLEVEL-FULL-HISTORY (release #10) tests. Fixtures are real-UTC epoch ms
-// through America/Chicago (EPOCH RULING 2026-10-03): two contracts overlap on
-// a roll DAY (same OpenTimes, different price scale = the basis), and the
-// older contract's PRE-roll history exists only on its own scale.
+// KEYLEVEL-FULL-HISTORY (release #10) tests — post REL10-438-FIXES. Fixtures
+// are real-UTC epoch ms through America/Chicago (EPOCH RULING 2026-10-03).
 
 // rthHour1m builds the 60 1m bars of one RTH hour (hh:30 anchor) with constant
 // open/close — a GREEN candle when c>o, RED when c<o.
@@ -40,118 +38,209 @@ func native1h(y int, mo time.Month, d, hh int, o, c float64) market.Kline {
 	return market.Kline{OpenTime: ot, CloseTime: ot + 3600_000 - 1, Open: o, High: hi, Low: lo, Close: c}
 }
 
-func TestRollGapMedianAndBackAdjust(t *testing.T) {
-	newer := []market.Kline{
-		{OpenTime: 1000, Close: 110},
-		{OpenTime: 2000, Close: 111},
-		{OpenTime: 3000, Close: 112},
+// native1hSession builds one native 1h bar per hour across a Globex session
+// (23 hours, 17:00 CT → next day 16:00 CT), so a session has 23 overlapping
+// native 1h bars.
+func native1hSession(y int, mo time.Month, d, hh int, o, c float64) []market.Kline {
+	return native1hN(y, mo, d, hh, 23, o, c)
+}
+
+// native1hN builds n hourly native 1h bars starting at (y,mo,d) hh:00 CT.
+func native1hN(y int, mo time.Month, d, hh, n int, o, c float64) []market.Kline {
+	out := make([]market.Kline, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, native1h(y, mo, d, hh+i, o, c))
 	}
-	older := []market.Kline{
-		{OpenTime: 2000, Open: 100, Close: 101}, // diff 10
-		{OpenTime: 3000, Open: 101, Close: 102}, // diff 10
-		{OpenTime: 4000, Open: 99, Close: 100},  // no overlap
+	return out
+}
+
+// denseSession1m builds n consecutive 1m bars starting at (y,mo,d) 17:00 CT
+// (the Globex session open). A full session is 23*60 = 1380 bars; sessionKey
+// of those bars is (y,mo,d+1).
+func denseSession1m(y int, mo time.Month, d int, n int, o, c float64) []market.Kline {
+	start := auditMs(y, mo, d, 17, 0, 0)
+	bars := make([]market.Kline, n)
+	for i := 0; i < n; i++ {
+		ot := start + int64(i)*60_000
+		hi, lo := o, c
+		if c < o {
+			hi, lo = o, c
+		}
+		bars[i] = market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: o, High: hi, Low: lo, Close: c}
 	}
-	gap, n, ok := rollGap(newer, older)
-	if !ok || n != 2 || gap != 10 {
-		t.Fatalf("rollGap = (%v, %d, %v), want (10, 2, true)", gap, n, ok)
-	}
-	adj := backAdjust(older, gap)
-	if adj[0].Close != 111 || adj[1].Close != 112 || adj[0].Open != 110 {
-		t.Fatalf("backAdjust = %+v, want closes 111/112 and open 110", adj)
+	return bars
+}
+
+// TestRollDayKeyFindsFirstDenseSessionDay — the roll is the FIRST session day
+// (17:00 CT flip) with >= denseFront1mMin 1m bars; sparse snapshots before it
+// never count.
+func TestRollDayKeyFindsFirstDenseSessionDay(t *testing.T) {
+	// One sparse snapshot on session 09-11, dense from session 09-15.
+	bars := append(
+		[]market.Kline{{OpenTime: auditMs(2026, 9, 10, 17, 0, 0), Open: 1, High: 1, Low: 1, Close: 1}},
+		denseSession1m(2026, 9, 14, denseFront1mMin, 100, 101)...)
+	day, ok := rollDayKey(bars)
+	if !ok || day != "2026-09-15" {
+		t.Fatalf("rollDayKey = (%q, %v), want (2026-09-15, true)", day, ok)
 	}
 }
 
-func TestRollGapNoOverlapNotOk(t *testing.T) {
-	newer := []market.Kline{{OpenTime: 1000, Close: 110}}
-	older := []market.Kline{{OpenTime: 999, Close: 100}}
-	if _, _, ok := rollGap(newer, older); ok {
-		t.Fatal("rollGap with no shared OpenTime must be ok=false — never guess a gap")
+// TestMeasureRollGapLastFullSessionBeforeRoll — the gap is the median over the
+// LAST FULL session day before the roll (>=10 overlapping native 1h bars), NOT
+// the whole overlap. Session 09-14 has 9 bars (<10) and must be skipped in
+// favour of 09-11 (23 bars).
+func TestMeasureRollGapLastFullSessionBeforeRoll(t *testing.T) {
+	// Session 09-11: 23 overlapping native 1h bars. Session 09-14: only 9
+	// (17:00→01:00, the live MNQ 09-26 tail shape) — below the 10-bar floor.
+	newer1h := append(
+		native1hSession(2026, 9, 10, 17, 110, 110),
+		native1hN(2026, 9, 13, 17, 9, 110, 110)...)
+	older1h := append(
+		native1hSession(2026, 9, 10, 17, 100, 100),
+		native1hN(2026, 9, 13, 17, 9, 100, 100)...)
+	rollDay := "2026-09-15"
+
+	got := lastFullOverlapBefore(newer1h, older1h, rollDay)
+	if got != "2026-09-11" {
+		t.Fatalf("lastFullOverlapBefore = %q, want 2026-09-11 (09-14 has <10 bars)", got)
+	}
+	gap, ok := measureRollGap(newer1h, older1h, got)
+	if !ok || gap.N != 23 || gap.Gap != 10 {
+		t.Fatalf("measureRollGap = %+v, %v; want N=23 gap=10", gap, ok)
+	}
+	if gap.Min != 10 || gap.Max != 10 {
+		t.Fatalf("spread = [%.2f..%.2f], want [10..10]", gap.Min, gap.Max)
+	}
+	// The 9-bar day must NOT produce a measured gap.
+	if _, ok := measureRollGap(newer1h, older1h, "2026-09-14"); ok {
+		t.Fatal("measureRollGap on the 9-bar day must be ok=false")
 	}
 }
 
-// TestStitchKeyLevelHistoryBackAdjustsOlderContract — the named RED: a level
-// drawn on the OLDER contract's pre-roll day appears in the stitched series at
-// the BACK-ADJUSTED price. Reverting the trader to LastNBarsCurrentContract
-// (50000) drops the older day entirely, so this level is gone — the test fails.
-func TestStitchKeyLevelHistoryBackAdjustsOlderContract(t *testing.T) {
-	// Roll day 2026-09-15: both contracts have 08:30 RTH 1m bars.
-	// Older: 08:30 red (102→101). Newer: 08:30 green (112→113). Basis = +12.
-	// Older pre-roll day 2026-09-14: 08:30 green (98→99), 09:30 red (100→99)
-	// → a green→red colour change draws a level at the 09:30 open = 100,
-	// back-adjusted to 112.
-	older := append(
-		rthHour1m(2026, time.September, 14, 8, 98, 99),   // green
-		rthHour1m(2026, time.September, 14, 9, 100, 99)..., // red → level at 100
-	)
-	older = append(older, rthHour1m(2026, time.September, 15, 8, 102, 101)...) // overlap day
-	newer := rthHour1m(2026, time.September, 15, 8, 112, 113)                  // overlap day, +12 basis
+// TestRollStitcherNoHoleFromSparseSnapshots (FIX 2) — the OLD cut kept older
+// bars only before the newer contract's FIRST 1m bar, so the newer's sparse
+// pre-roll snapshots dropped ~4 real sessions of the older contract. The new
+// cut keeps every older bar BEFORE the roll day and every newer bar FROM it:
+// the older contract's real sessions survive (no hole).
+func TestRollStitcherNoHoleFromSparseSnapshots(t *testing.T) {
+	// Older 09-26: real full sessions on 09-11 and 09-14.
+	olderBars := append(
+		denseSession1m(2026, 9, 10, 1380, 100, 101),
+		denseSession1m(2026, 9, 13, 1380, 101, 102)...)
+	older1h := append(
+		native1hSession(2026, 9, 10, 17, 100, 100),
+		native1hSession(2026, 9, 13, 17, 100, 100)...)
+	// Newer 12-26: ONE sparse 1m snapshot on session 09-11 (the old cut's
+	// "first bar"), dense from session 09-15 (roll day). Its native 1h is
+	// dense on 09-11 (the measurement day), like the live next-contract 1h.
+	newerBars := append(
+		[]market.Kline{{OpenTime: auditMs(2026, 9, 10, 17, 0, 0), Open: 1, High: 1, Low: 1, Close: 1}},
+		denseSession1m(2026, 9, 14, 1380, 110, 111)...)
+	newer1h := append(
+		native1hSession(2026, 9, 10, 17, 110, 110),
+		native1hSession(2026, 9, 14, 17, 110, 110)...)
 
-	stitched, gaps, stopped := StitchKeyLevelHistory([]Contract1M{
-		{Contract: "MNQ 06-26", Bars: older, Bars1H: []market.Kline{
-			native1h(2026, time.September, 14, 8, 98, 99),
-			native1h(2026, time.September, 14, 9, 100, 99),
-			native1h(2026, time.September, 15, 8, 102, 101), // overlap hour
-		}},
-		{Contract: "MNQ 09-26", Bars: newer, Bars1H: []market.Kline{
-			native1h(2026, time.September, 15, 8, 112, 113), // overlap hour, +12 basis
-		}},
+	stitched, _, gaps, stopped := StitchKeyLevelHistory([]Contract1M{
+		{Contract: "MNQ 09-26", Bars: olderBars, Bars1H: older1h},
+		{Contract: "MNQ 12-26", Bars: newerBars, Bars1H: newer1h},
 	})
 	if stopped != "" {
 		t.Fatalf("stitch stopped at %q, want full", stopped)
 	}
-	if len(gaps) != 1 || gaps[0] != 12 {
-		t.Fatalf("gaps = %v, want [12]", gaps)
+	if len(gaps) != 1 || gaps[0].Gap != 10 || gaps[0].Day != "2026-09-11" {
+		t.Fatalf("gaps = %+v, want one gap 10 on 2026-09-11", gaps)
 	}
-	// The stitched 1H RTH series must contain a candle whose OPEN is the
-	// back-adjusted 09:30 level (112) — the older contract's pre-roll colour
-	// change, now on the newest scale.
-	found := false
-	for _, c := range stitched {
-		if c.OpenTime == auditMs(2026, time.September, 14, 9, 30, 0) && c.Open == 112 {
-			found = true
+	// No hole: the older contract's REAL sessions (09-11 AND 09-14) survive
+	// the cut, back-adjusted onto the newest scale (+10).
+	seen := map[string]bool{}
+	for _, b := range stitched {
+		seen[sessionKeyCT(b.OpenTime)] = true
+	}
+	if !seen["2026-09-11"] || !seen["2026-09-14"] || !seen["2026-09-15"] {
+		t.Fatalf("stitched sessions = %v, want 09-11, 09-14 (older) and 09-15 (newer) all present — no hole", seen)
+	}
+	// Back-adjustment: an older 09-14 bar at open 101 lands at 111.
+	adj := false
+	for _, b := range stitched {
+		if sessionKeyCT(b.OpenTime) == "2026-09-14" && b.Open == 111 {
+			adj = true
 		}
 	}
-	if !found {
-		t.Fatalf("stitched series missing the back-adjusted older-contract level at 112: %+v", stitched)
+	if !adj {
+		t.Fatal("older 09-14 bars must be back-adjusted by +10 (open 101 → 111)")
 	}
 }
 
-// TestStitchKeyLevelHistoryStopsAtNoOverlap — the first roll with no shared
-// timestamp must STOP the stitch (never guess a gap) and the boot line names it.
-func TestStitchKeyLevelHistoryStopsAtNoOverlap(t *testing.T) {
-	older := rthHour1m(2026, time.September, 14, 8, 98, 99)  // day 1 only
-	newer := rthHour1m(2026, time.September, 15, 8, 112, 113) // day 2 only, no overlap
-	stitched, gaps, stopped := StitchKeyLevelHistory([]Contract1M{
-		{Contract: "MNQ 06-26", Bars: older, Bars1H: []market.Kline{native1h(2026, time.September, 14, 8, 98, 99)}},
-		{Contract: "MNQ 09-26", Bars: newer, Bars1H: []market.Kline{native1h(2026, time.September, 15, 8, 112, 113)}},
+// TestRollStitcherStopsAtNoMeasuredGap — when no session day before the roll
+// has >=10 overlapping native 1h bars, the stitch STOPS and names the pair.
+func TestRollStitcherStopsAtNoMeasuredGap(t *testing.T) {
+	// Newer has dense 1m from session 09-15; older has 1h only on 09-01
+	// (no overlap with newer's 1h before the roll).
+	olderBars := denseSession1m(2026, 8, 31, 1380, 100, 101) // session 09-01
+	older1h := native1hSession(2026, 8, 31, 17, 100, 100)
+	newerBars := denseSession1m(2026, 9, 14, 1380, 110, 111) // session 09-15
+	newer1h := native1hSession(2026, 9, 14, 17, 110, 110)
+
+	stitched, _, gaps, stopped := StitchKeyLevelHistory([]Contract1M{
+		{Contract: "MNQ 09-26", Bars: olderBars, Bars1H: older1h},
+		{Contract: "MNQ 12-26", Bars: newerBars, Bars1H: newer1h},
 	})
-	if stopped != "MNQ 06-26→MNQ 09-26" {
-		t.Fatalf("stopped = %q, want the no-overlap roll named", stopped)
+	if stopped != "MNQ 09-26→MNQ 12-26" {
+		t.Fatalf("stopped = %q, want the unmeasurable roll named", stopped)
 	}
 	if len(gaps) != 0 {
-		t.Fatalf("gaps = %v, want none (the gap was never measured)", gaps)
+		t.Fatalf("gaps = %+v, want none (the gap was never measured)", gaps)
 	}
-	if len(stitched) != 1 {
-		t.Fatalf("stitched = %d candles, want only the newest contract's 1 candle", len(stitched))
+	if len(stitched) == 0 {
+		t.Fatal("stitched must still hold the newest contract's bars")
 	}
 	line := KeyLevelHistoryLine([]Contract1M{
-		{Contract: "MNQ 06-26"}, {Contract: "MNQ 09-26"},
-	}, stitched, gaps, stopped)
-	if !strings.Contains(line, "stopped at MNQ 06-26→MNQ 09-26: no overlap") {
-		t.Fatalf("boot line %q does not name the no-overlap roll", line)
+		{Contract: "MNQ 09-26"}, {Contract: "MNQ 12-26"},
+	}, keyLevel1HBars(stitched), gaps, stopped)
+	if !strings.Contains(line, "stopped at MNQ 09-26→MNQ 12-26: no measured gap") {
+		t.Fatalf("boot line %q does not name the unmeasurable roll", line)
+	}
+}
+
+// TestSeedFull4HEMA34FromStitchedHistory (FIX 3) — SeedFull must seed the 4h
+// EMA 34 (and the depth seam) from the STITCHED, back-adjusted 1m, so a boot
+// with full history reaches >=102 closed 4h candles and does NOT refuse
+// SWING4H. Named RED: feed only the current contract's tail (~2 weeks) and the
+// count drops below 102 (the live "95/102", "100/102" refusal).
+func TestSeedFull4HEMA34FromStitchedHistory(t *testing.T) {
+	// 20 sessions of dense 1m (each 1380 bars) ≈ 120 4h buckets.
+	stitched := denseSession1m(2026, 8, 17, 20*1380, 100, 101)
+	now := stitched[len(stitched)-1].CloseTime + 1
+
+	cfg := enabledCfg()
+	e := New(cfg)
+	SeedFull(e, stitched, keyLevel1HBars(stitched), now)
+	if d := e.Depths()["4h EMA34"]; d < FourHEMA34Warmup {
+		t.Fatalf("stitched seed 4h EMA34 = %d, want >= %d", d, FourHEMA34Warmup)
+	}
+	for _, m := range e.missing {
+		if strings.HasPrefix(m, "bar history depth: 4h EMA34") {
+			t.Fatalf("stitched seed must not refuse SWING4H; missing=%v", e.missing)
+		}
+	}
+
+	// Named RED: the current-contract tail (last ~2 weeks) is what the OLD
+	// input fed the 4h EMA — it cannot reach 102.
+	tail := stitched[len(stitched)-14*1380:]
+	e2 := New(cfg)
+	SeedFull(e2, tail, keyLevel1HBars(tail), now)
+	if d := e2.Depths()["4h EMA34"]; d >= FourHEMA34Warmup {
+		t.Fatalf("current-contract tail 4h EMA34 = %d, want < %d (this is the refusal the fix removes)", d, FourHEMA34Warmup)
 	}
 }
 
 // TestSeedFullDeletionOverFullHistory — a level whose BODY was closed through
 // TWO MONTHS before the seed must still be deleted at seed: the deletion is
 // computed ONCE over the full seeded history, not just the recent window.
-// (The old path — last 50000 1m bars ≈ 3.5 weeks — would miss this and the
-// dead level would reappear.)
 func TestSeedFullDeletionOverFullHistory(t *testing.T) {
-	// Three 1H RTH candles, July 1 2026, all closed; now is 2 months later.
-	c1 := market.Kline{OpenTime: auditMs(2026, time.July, 1, 8, 30, 0), Open: 98, Close: 99}   // green
-	c2 := market.Kline{OpenTime: auditMs(2026, time.July, 1, 9, 30, 0), Open: 100, Close: 99}  // red → level at 100
-	c3 := market.Kline{OpenTime: auditMs(2026, time.July, 1, 10, 30, 0), Open: 99, Close: 101} // green, body crosses 100
+	c1 := market.Kline{OpenTime: auditMs(2026, time.July, 1, 8, 30, 0), Open: 98, Close: 99}
+	c2 := market.Kline{OpenTime: auditMs(2026, time.July, 1, 9, 30, 0), Open: 100, Close: 99}
+	c3 := market.Kline{OpenTime: auditMs(2026, time.July, 1, 10, 30, 0), Open: 99, Close: 101}
 	c1.CloseTime = keyLevel1HCandleCloseTime(c1.OpenTime)
 	c2.CloseTime = keyLevel1HCandleCloseTime(c2.OpenTime)
 	c3.CloseTime = keyLevel1HCandleCloseTime(c3.OpenTime)
@@ -160,7 +249,7 @@ func TestSeedFullDeletionOverFullHistory(t *testing.T) {
 	cfg.Enabled = true
 	cfg.KeyLevelPrunePts = 0.5
 	e := New(cfg)
-	now := auditMs(2026, time.September, 30, 12, 0, 0) // two months later
+	now := auditMs(2026, time.September, 30, 12, 0, 0)
 	SeedFull(e, nil, []market.Kline{c1, c2, c3}, now)
 
 	var lvl *Level
@@ -177,12 +266,9 @@ func TestSeedFullDeletionOverFullHistory(t *testing.T) {
 	}
 }
 
-// TestNative1HStoreCannotAnchorRTHCandles — the parity finding: the native 1h
-// store is WHOLE-HOUR aligned, so its candles open at 08:00/09:00/10:00 — NOT
-// the 08:30/09:30/10:30 RTH anchors the 1m aggregation produces. The level walk
-// draws a line at the candle OPEN, so whole-hour candles would draw levels at
-// the wrong prices. Hence 1m wins for the key-level SERIES by construction; the
-// native 1h feeds ONLY the roll-gap measurement.
+// TestNative1HStoreCannotAnchorRTHCandles — the native 1h store is WHOLE-HOUR
+// aligned, so it cannot build the 08:30 RTH candles; 1m wins for the key-level
+// SERIES by construction; the native 1h feeds ONLY the roll-gap measurement.
 func TestNative1HStoreCannotAnchorRTHCandles(t *testing.T) {
 	native := []market.Kline{
 		{OpenTime: auditMs(2026, 9, 15, 8, 0, 0), Open: 100, High: 101, Low: 99, Close: 100.5},
@@ -207,29 +293,32 @@ func TestNative1HStoreCannotAnchorRTHCandles(t *testing.T) {
 // level that only the OLDER contract carries appears in the seeded set at its
 // back-adjusted price.
 func TestSeedFullDrawsLevelFromOlderContract(t *testing.T) {
-	older := append(
-		rthHour1m(2026, time.September, 14, 8, 98, 99),    // green
-		rthHour1m(2026, time.September, 14, 9, 100, 99)..., // red → level at 100
-	)
-	older = append(older, rthHour1m(2026, time.September, 15, 8, 102, 101)...)
-	newer := rthHour1m(2026, time.September, 15, 8, 112, 113)
-	stitched, _, _ := StitchKeyLevelHistory([]Contract1M{
-		{Contract: "MNQ 06-26", Bars: older, Bars1H: []market.Kline{
-			native1h(2026, time.September, 14, 8, 98, 99),
-			native1h(2026, time.September, 14, 9, 100, 99),
-			native1h(2026, time.September, 15, 8, 102, 101),
-		}},
-		{Contract: "MNQ 09-26", Bars: newer, Bars1H: []market.Kline{
-			native1h(2026, time.September, 15, 8, 112, 113),
-		}},
+	// Older 09-26: a dense session on 09-11 (its roll day), then two RTH hours
+	// on 09-14 — green (08:30) then red (09:30) → a level at the 09:30 open
+	// (100), back-adjusted +12 → 112 on the newest scale.
+	older := denseSession1m(2026, 9, 10, 1380, 100, 101) // session 09-11, dense
+	older = append(older, rthHour1m(2026, time.September, 14, 8, 98, 99)...)
+	older = append(older, rthHour1m(2026, time.September, 14, 9, 100, 99)...)
+	// The gap is measured on 09-11: older native 1h closes 100, newer 112.
+	older1h := native1hSession(2026, 9, 10, 17, 100, 100)
+	// Newer 12-26: dense from 09-15 (roll day); native 1h on 09-11 for the gap.
+	newer := denseSession1m(2026, 9, 14, 1380, 112, 113)
+	newer1h := native1hSession(2026, 9, 10, 17, 112, 112)
+
+	stitched, full1h, _, stopped := StitchKeyLevelHistory([]Contract1M{
+		{Contract: "MNQ 09-26", Bars: older, Bars1H: older1h},
+		{Contract: "MNQ 12-26", Bars: newer, Bars1H: newer1h},
 	})
+	if stopped != "" {
+		t.Fatalf("stitch stopped at %q, want full", stopped)
+	}
 
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.KeyLevelPrunePts = 0.5
 	e := New(cfg)
-	now := auditMs(2026, time.September, 15, 9, 0, 0) // after all fixtures closed
-	SeedFull(e, newer, stitched, now)                 // missing sources refuse entries, not levels
+	now := auditMs(2026, time.September, 15, 9, 0, 0)
+	SeedFull(e, stitched, full1h, now)
 	found := false
 	for _, l := range e.State.SeedLevels {
 		if l.Kind == KindKeyLevel && l.Price == 112 {

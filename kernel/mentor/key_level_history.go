@@ -17,6 +17,22 @@ import (
 // @11:20), so older contracts are stitched onto today's contract price scale
 // through a MEASURED roll gap — never a guessed one.
 
+// Roll-gap rule (CTO REL10-438-FIXES #1):
+//   - The ROLL of a pair = the first session day (17:00 CT flip) on which the
+//     NEWER contract has >= denseFront1mMin 1m bars (dense live/front).
+//   - The gap = the median of (newer.close − older.close) over the overlapping
+//     NATIVE 1h bars of the last FULL session day before the roll — the last
+//     session day before the roll day with at least minRollOverlap overlapping
+//     1h bars. The whole-overlap median is wrong: the spread ranges widely
+//     (measured 258.25..352.25 over 1493 bars), so the gap must be read at the
+//     roll boundary, not across three months.
+//   - Fewer than minRollOverlap overlapping bars → no measured gap → the
+//     stitch STOPS (never guess a gap).
+const (
+	denseFront1mMin = 1000
+	minRollOverlap  = 10
+)
+
 // Contract1M is one contract's 1m history (ascending OpenTime), on its OWN
 // price scale, plus its native 1h history (used ONLY for the roll-gap
 // measurement: the native 1h store has longer retention than 1m, so adjacent
@@ -27,26 +43,116 @@ type Contract1M struct {
 	Bars1H   []market.Kline // native 1h, ascending (whole-hour aligned)
 }
 
-// rollGap returns the median of (newer.Close − older.Close) over bars of both
-// contracts at the SAME OpenTime — the roll overlap. ok=false when the two
-// contracts share no timestamp (no overlap: the gap is UNKNOWN and must not be
-// guessed).
-func rollGap(newer, older []market.Kline) (gap float64, n int, ok bool) {
-	m := make(map[int64]float64, len(newer))
-	for _, b := range newer {
-		m[b.OpenTime] = b.Close
+// RollGap records one measured roll: the NATIVE pair gap (median of
+// newer.close − older.close on the measurement day), the session day it was
+// measured on, that day's spread, and the pair. The gap places the older
+// contract onto the newer contract's scale; the stitch accumulates pair gaps
+// onto the newest scale.
+type RollGap struct {
+	Gap  float64
+	Day  string // session-day key (17:00 CT flip, "2006-01-02")
+	N    int
+	Min  float64
+	Max  float64
+	Pair string // "older→newer"
+}
+
+// rollDayKey returns the FIRST session-day key (17:00 CT flip) on which the
+// contract has >= denseFront1mMin 1m bars — the day it became the dense
+// live/front series. ok=false when no session day reaches the threshold.
+func rollDayKey(bars []market.Kline) (string, bool) {
+	counts := make(map[string]int, 64)
+	for _, b := range bars {
+		counts[sessionKeyCT(b.OpenTime)]++
+	}
+	best := ""
+	for k, n := range counts {
+		if n >= denseFront1mMin && (best == "" || k < best) {
+			best = k
+		}
+	}
+	return best, best != ""
+}
+
+// sessionRange keeps bars whose session-day key is in [from, to). to == ""
+// means no upper bound. It allocates a fresh slice (never mutates the
+// caller's backing array).
+func sessionRange(bars []market.Kline, from, to string) []market.Kline {
+	out := make([]market.Kline, 0, len(bars))
+	for _, b := range bars {
+		k := sessionKeyCT(b.OpenTime)
+		if k < from {
+			continue
+		}
+		if to != "" && k >= to {
+			continue
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
+// lastFullOverlapBefore returns the most recent session-day key strictly
+// before rollDay with at least minRollOverlap overlapping native 1h bars
+// (same OpenTime) between newer1h and older1h. "" when no such day exists —
+// the roll gap is then unmeasurable and the stitch must stop.
+func lastFullOverlapBefore(newer1h, older1h []market.Kline, rollDay string) string {
+	m := make(map[int64]float64, len(newer1h))
+	for _, b := range newer1h {
+		if sessionKeyCT(b.OpenTime) < rollDay {
+			m[b.OpenTime] = b.Close
+		}
+	}
+	counts := make(map[string]int, 64)
+	for _, b := range older1h {
+		k := sessionKeyCT(b.OpenTime)
+		if k >= rollDay {
+			continue
+		}
+		if _, ok := m[b.OpenTime]; ok {
+			counts[k]++
+		}
+	}
+	best := ""
+	for k, n := range counts {
+		if n >= minRollOverlap && k > best {
+			best = k
+		}
+	}
+	return best
+}
+
+// measureRollGap returns the median of (newer.close − older.close) over the
+// native 1h bars of both contracts at the SAME OpenTime on the given session
+// day, plus that day's min/max spread. ok=false when fewer than
+// minRollOverlap bars overlap that day.
+func measureRollGap(newer1h, older1h []market.Kline, day string) (RollGap, bool) {
+	m := make(map[int64]float64, len(newer1h))
+	for _, b := range newer1h {
+		if sessionKeyCT(b.OpenTime) == day {
+			m[b.OpenTime] = b.Close
+		}
 	}
 	var diffs []float64
-	for _, b := range older {
+	for _, b := range older1h {
+		if sessionKeyCT(b.OpenTime) != day {
+			continue
+		}
 		if nc, has := m[b.OpenTime]; has {
 			diffs = append(diffs, nc-b.Close)
 		}
 	}
-	if len(diffs) == 0 {
-		return 0, 0, false
+	if len(diffs) < minRollOverlap {
+		return RollGap{}, false
 	}
 	sort.Float64s(diffs)
-	return diffs[len(diffs)/2], len(diffs), true
+	return RollGap{
+		Gap: diffs[len(diffs)/2],
+		Day: day,
+		N:   len(diffs),
+		Min: diffs[0],
+		Max: diffs[len(diffs)-1],
+	}, true
 }
 
 // backAdjust shifts every OHLC of bars by gap onto the newest contract's
@@ -63,70 +169,106 @@ func backAdjust(bars []market.Kline, gap float64) []market.Kline {
 	return out
 }
 
-// barsBefore returns the prefix of ascending bars with OpenTime < cutoff — the
-// pre-overlap history of an older contract. cutoff < 0 (no shared minute) means
-// NO overlap: every bar is pre-overlap, so the whole series is returned.
-func barsBefore(older []market.Kline, cutoff int64) []market.Kline {
-	if cutoff < 0 {
-		return older
-	}
-	n := sort.Search(len(older), func(i int) bool { return older[i].OpenTime >= cutoff })
-	return older[:n]
+// RollStitcher accumulates the full stitched history contract-by-contract,
+// NEWEST→OLDEST, stopping at the first roll whose gap cannot be measured.
+// Each contract contributes its bars in [its own roll day, the next-newer
+// contract's roll day): its sparse pre-roll snapshots are dropped, and the
+// next-newer contract supplies every bar from its roll day — so the cut never
+// leaves a hole where the older contract's real sessions were.
+type RollStitcher struct {
+	stitched1m   []market.Kline // stitched 1m, newest scale, ascending
+	head1h       []market.Kline // head contract's NATIVE 1h (own scale)
+	headRollDay  string         // roll day of the head contract
+	headContract string
+	cumGap       float64 // cumulative gap from the head contract to the newest
+	gaps         []RollGap
+	stoppedAt    string
 }
 
-// StitchKeyLevelHistory builds the full 08:30-anchored 1H RTH candle series
-// (the key-level walk input) from per-contract 1m histories, OLDEST→NEWEST.
-// The newest contract stays on its own scale. Each older contract's roll gap
-// is measured on the NATIVE 1H bars (both contracts at the same hour — the 1h
-// store outlives 1m retention, so adjacent contracts overlap on far more 1h
-// bars) against the ALREADY-STITCHED series' 1h (which lives on the newest
-// scale), so one back-adjustment places the older 1m directly on the newest
-// scale. The older 1m bars EARLIER than the stitched series' first bar are
-// prepended; the overlap minutes stay the newer series' (duplicating them
-// would merge into garbage candles). The stitch STOPS at the first roll
-// (walking backward) whose 1h gap cannot be measured — no overlap, never a
-// guess. The full series then goes through keyLevel1HBars (08:30 anchor, RTH
-// only).
-//
-// It returns the stitched 1H RTH series, the per-contract gaps actually
-// applied (oldest→newest, cumulative onto the newest scale), and the roll
-// (contract pair) where it stopped — "" means every contract stitched (full).
-func StitchKeyLevelHistory(contracts []Contract1M) (bars []market.Kline, gaps []float64, stoppedAt string) {
+// NewRollStitcher starts the stitch from the NEWEST contract (own scale).
+func NewRollStitcher(newest Contract1M) *RollStitcher {
+	s := &RollStitcher{}
+	rd, ok := rollDayKey(newest.Bars)
+	if !ok {
+		// A contract that never reaches the dense-front threshold has no
+		// measurable roll; nothing can be stitched onto it.
+		s.stoppedAt = newest.Contract
+		return s
+	}
+	s.stitched1m = sessionRange(newest.Bars, rd, "")
+	s.head1h = newest.Bars1H
+	s.headRollDay = rd
+	s.headContract = newest.Contract
+	return s
+}
+
+// Add stitches one OLDER contract onto the accumulated series. It returns
+// false when the roll gap cannot be measured (fewer than minRollOverlap
+// overlapping native 1h bars on the last full session day before the head's
+// roll) — the stitch STOPS and the caller reads no older contract (FIX 5).
+func (s *RollStitcher) Add(older Contract1M) bool {
+	if s.stoppedAt != "" || len(s.stitched1m) == 0 {
+		return false
+	}
+	measDay := lastFullOverlapBefore(s.head1h, older.Bars1H, s.headRollDay)
+	if measDay == "" {
+		s.stoppedAt = older.Contract + "→" + s.headContract
+		return false
+	}
+	pair, ok := measureRollGap(s.head1h, older.Bars1H, measDay)
+	if !ok {
+		s.stoppedAt = older.Contract + "→" + s.headContract
+		return false
+	}
+	pair.Pair = older.Contract + "→" + s.headContract
+	olderRD, ok := rollDayKey(older.Bars)
+	if !ok {
+		s.stoppedAt = older.Contract + "→" + s.headContract
+		return false
+	}
+	// The older contract supplies every bar from ITS roll day to the head's
+	// roll day (exclusive); the head supplies every bar from its roll day.
+	// Back-adjust onto the NEWEST scale by the cumulative gap.
+	total := pair.Gap + s.cumGap
+	pre := backAdjust(sessionRange(older.Bars, olderRD, s.headRollDay), total)
+	s.stitched1m = append(pre, s.stitched1m...)
+	s.gaps = append(s.gaps, pair)
+	s.head1h = older.Bars1H
+	s.headRollDay = olderRD
+	s.headContract = older.Contract
+	s.cumGap = total
+	return true
+}
+
+// Result returns the stitched 1m series (newest scale), the 08:30-anchored 1H
+// RTH key-level walk series, the per-pair gaps (measurement order: newest
+// pair first), and the roll where the stitch stopped ("" = full).
+func (s *RollStitcher) Result() (stitched1m, bars1hRTH []market.Kline, gaps []RollGap, stoppedAt string) {
+	return s.stitched1m, keyLevel1HBars(s.stitched1m), s.gaps, s.stoppedAt
+}
+
+// StitchKeyLevelHistory builds the full stitched history from a PRE-LOADED
+// contract slice (oldest→newest). The trader uses RollStitcher directly so it
+// can stop READING at the first failed roll (FIX 5); this wrapper serves
+// tests and degenerate callers that already hold every contract.
+func StitchKeyLevelHistory(contracts []Contract1M) (stitched1m, bars1hRTH []market.Kline, gaps []RollGap, stoppedAt string) {
 	if len(contracts) == 0 {
-		return nil, nil, ""
+		return nil, nil, nil, ""
 	}
-	all := append([]market.Kline(nil), contracts[len(contracts)-1].Bars...) // newest 1m, own scale
-	all1h := append([]market.Kline(nil), contracts[len(contracts)-1].Bars1H...)
-	if len(all) == 0 {
-		return nil, nil, ""
-	}
-	gaps = make([]float64, 0, len(contracts)-1)
+	s := NewRollStitcher(contracts[len(contracts)-1])
 	for i := len(contracts) - 2; i >= 0; i-- {
-		older := contracts[i]
-		gap, n, ok := rollGap(all1h, older.Bars1H) // all1h is already on the newest scale
-		if !ok || n == 0 {
-			return keyLevel1HBars(all), gaps, older.Contract + "→" + contracts[i+1].Contract
+		if !s.Add(contracts[i]) {
+			break
 		}
-		// Prepend the older 1m bars EARLIER than the stitched series' first
-		// bar (the overlap minutes — when they exist — stay the newer series').
-		// The 1m stores often do NOT share exact minutes across a roll (sparse
-		// import snapshots, maintenance gaps), so "first shared minute" is the
-		// wrong boundary: it can be -1 and empty the whole older history.
-		pre := backAdjust(barsBefore(older.Bars, all[0].OpenTime), gap)
-		gaps = append([]float64{gap}, gaps...) // oldest→newest order
-		all = append(pre, all...)
-		// extend the 1h reference with the older contract's 1h, back-adjusted,
-		// pre-overlap — keeps the next gap measurement on the same newest scale.
-		pre1h := backAdjust(barsBefore(older.Bars1H, all1h[0].OpenTime), gap)
-		all1h = append(pre1h, all1h...)
 	}
-	return keyLevel1HBars(all), gaps, ""
+	return s.Result()
 }
 
 // KeyLevelHistoryLine renders the release-#10 boot line: the full-history 1H
-// RTH key-level seed's depth, contract span, roll gaps, and whether the
-// stitch reached every contract or stopped at a no-overlap roll.
-func KeyLevelHistoryLine(contracts []Contract1M, stitched []market.Kline, gaps []float64, stoppedAt string) string {
+// RTH key-level seed's depth, contract span, roll gaps (with their day and
+// min/max spread), and whether the stitch reached every contract or stopped
+// at a no-measured-gap roll.
+func KeyLevelHistoryLine(contracts []Contract1M, stitched []market.Kline, gaps []RollGap, stoppedAt string) string {
 	from := "n/a"
 	if len(stitched) > 0 {
 		from = time.UnixMilli(stitched[0].OpenTime).In(ctime()).Format("2006-01-02")
@@ -137,11 +279,11 @@ func KeyLevelHistoryLine(contracts []Contract1M, stitched []market.Kline, gaps [
 	}
 	gapStrs := make([]string, len(gaps))
 	for i, g := range gaps {
-		gapStrs[i] = fmt.Sprintf("%.1f", g)
+		gapStrs[i] = fmt.Sprintf("%.1f@%s[%.2f..%.2f]", g.Gap, g.Day, g.Min, g.Max)
 	}
 	stop := "full"
 	if stoppedAt != "" {
-		stop = fmt.Sprintf("stopped at %s: no overlap", stoppedAt)
+		stop = fmt.Sprintf("stopped at %s: no measured gap", stoppedAt)
 	}
 	return fmt.Sprintf("🧑‍🏫 key-level history: from %s · %d 1H RTH candles · contracts %s · gaps %s · %s",
 		from, len(stitched), strings.Join(names, ","), strings.Join(gapStrs, ","), stop)
