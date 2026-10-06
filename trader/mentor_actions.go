@@ -31,9 +31,10 @@ import (
 // find the real order. In-memory only: an ArmID from a previous process does
 // not resolve — every handler refuses that NAMED, never silent.
 type mentorLiveArm struct {
-	RowID int64
-	Side  string  // "long" | "short"
-	Entry float64 // the arm's entry price (MoveStopBE target)
+	TraderID string  // the trader that authored the arm (I5: the sweep acts on its own trader's arms only)
+	RowID    int64
+	Side     string  // "long" | "short"
+	Entry    float64 // the arm's entry price (MoveStopBE target)
 }
 
 var (
@@ -52,9 +53,18 @@ func bumpMentorArmEpoch() {
 	mentorArmEpoch.Store(time.Now().UnixNano())
 }
 
-func mentorRegisterLiveArm(armID string, rowID int64, side string, entry float64) {
+func mentorRegisterLiveArm(armID string, traderID string, rowID int64, side string, entry float64) {
 	mentorLiveMu.Lock()
-	mentorLiveArms[armID] = mentorLiveArm{RowID: rowID, Side: side, Entry: entry}
+	mentorLiveArms[armID] = mentorLiveArm{TraderID: traderID, RowID: rowID, Side: side, Entry: entry}
+	mentorLiveMu.Unlock()
+}
+
+// mentorUnregisterLiveArm prunes one arm from the registry (I5) — called when
+// its row goes terminal, so the sweeps stop re-iterating a dead arm and stop
+// counting a cancel that never happened.
+func mentorUnregisterLiveArm(armID string) {
+	mentorLiveMu.Lock()
+	delete(mentorLiveArms, armID)
 	mentorLiveMu.Unlock()
 }
 
@@ -359,7 +369,7 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm %q authored no row (id 0)", armID)
 		return
 	}
-	mentorRegisterLiveArm(armID, row.ID, side, in.Price)
+	mentorRegisterLiveArm(armID, at.id, row.ID, side, in.Price)
 	mentorCount("armed_" + choice.Tier)
 	at.mentorFunnel.bumpAuthored() // N12 funnel stage: the arm row was authored
 	ackMs := time.Now().UnixMilli()
@@ -477,25 +487,31 @@ func (at *AutoTrader) mentorExtendArm(in mentor.Intent) {
 // mentorCancelArm is the REAL broker cancel — the F1 shape: safety gate,
 // wire cancel on the SAME pass, then the ledger request the settlement path
 // owns. An unknown ArmID or a terminal row refuses NAMED, never silent.
-func (at *AutoTrader) mentorCancelArm(in mentor.Intent) {
+//
+// It returns whether a cancel was ACTUALLY requested (unplaced → cancelled
+// directly, or placed → wire cancel + RequestCancel). A refusal (unknown arm,
+// unavailable ledger/broker, already-terminal row) returns false — the caller
+// counts and logs only real cancels, never an inference (I5).
+func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 	arm, ok := mentorLiveArmFor(in.ArmID)
 	if !ok {
 		mentorCount("cancel_refused_unknown_arm")
 		at.logWarnf("🧑‍🏫 mentor CancelArm REFUSED — ArmID %q not in this process's registry: %s", in.ArmID, in.Reason)
-		return
+		return false
 	}
 	ledger := at.store.ArmedOrders()
 	nt := at.armedTrader()
 	if ledger == nil || nt == nil {
 		mentorCount("cancel_refused_unavailable")
 		at.logWarnf("🧑‍🏫 mentor CancelArm REFUSED — ledger/broker unavailable: %s", in.Reason)
-		return
+		return false
 	}
 	var r store.ArmedOrderDB
 	if err := ledger.DB().First(&r, arm.RowID).Error; err != nil || store.IsTerminalArmState(r.State) {
 		mentorCount("cancel_refused_row_gone")
 		at.logInfof("🧑‍🏫 mentor CancelArm for ArmID %q — the row is already terminal; nothing to cancel (%s)", in.ArmID, in.Reason)
-		return
+		mentorUnregisterLiveArm(in.ArmID) // I5: prune the terminal entry
+		return false
 	}
 	now := time.Now()
 	if mentorNowSource != nil {
@@ -509,16 +525,18 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) {
 		done, err := ledger.CancelUnplaced(r.ID, "mentor: "+in.Reason+" — never placed")
 		if err == nil && done {
 			at.clearMentorLevelArmLocked(in.ArmID)
+			mentorUnregisterLiveArm(in.ArmID) // I5: the row is now cancelled (terminal)
 			mentorCount("cancel_unplaced")
 			at.logInfof("🧑‍🏫 mentor cancel for ArmID %q: never placed — row cancelled directly (%s)", in.ArmID, in.Reason)
-			return
+			return true
 		}
 		if err != nil {
 			at.logWarnf("🧑‍🏫 mentor unplaced cancel write failed for ArmID %q: %v", in.ArmID, err)
 		}
 		if rerr := ledger.DB().First(&r, arm.RowID).Error; rerr != nil || store.IsTerminalArmState(r.State) {
 			at.clearMentorLevelArmLocked(in.ArmID)
-			return
+			mentorUnregisterLiveArm(in.ArmID) // I5: the row is terminal now
+			return false
 		}
 	}
 	if strings.TrimSpace(r.SignalID) != "" {
@@ -536,6 +554,7 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) {
 		ledger.RequestCancel(r.ID, "mentor: "+in.Reason, now.UnixMilli()))
 	mentorCount("cancel_requested")
 	at.logInfof("🧑‍🏫 mentor cancel requested for ArmID %q: %s", in.ArmID, in.Reason)
+	return true
 }
 
 // mentorRecordLevelInvalid records the evaluator's level-invalidation intent

@@ -61,7 +61,7 @@ func TestMentorCancelArmClearsEvaluatorLevelArm(t *testing.T) {
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	mentorRegisterLiveArm("lvl-9", row.ID, "long", 29392)
+	mentorRegisterLiveArm("lvl-9", at.id, row.ID, "long", 29392)
 
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.CancelArm, ArmID: "lvl-9", Reason: "test close-through"}, mentorTierInputs{}, 1000, 1100)
 

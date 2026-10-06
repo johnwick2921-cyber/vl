@@ -152,3 +152,96 @@ func TestB3MentorDoneAfterWinTrippedUnknownIsNotTrip(t *testing.T) {
 		t.Fatal("a net-positive day with a closed profit MUST trip the done-after-win sweep")
 	}
 }
+
+// TestB3DayStopNeverAddCancelsRestingArms — the CTO's L4 never-add pin: while a
+// mentor position is OPEN, a resting level arm (and the swing, fail-closed)
+// must be cancelled on BOTH sides so a second fill cannot ADD or REDUCE/FLIP
+// the position. Drives the production call site (mentorEvalOnce →
+// mentorDayStopSweep) on a tick with NO entry being written.
+func TestB3DayStopNeverAddCancelsRestingArms(t *testing.T) {
+	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	at, _, ledger, _ := mentorB3Rig(t)
+	mentorWireSeams(t, at, ledger)
+
+	now := b3Clock(10, 30)
+	mentorNowSource = func() time.Time { return now }
+	t.Cleanup(func() { mentorNowSource = nil })
+
+	// A mentor position is OPEN (the P1 driver wires this from the account).
+	mentorOpenSideSource = func() string { return "long" }
+	t.Cleanup(func() { mentorOpenSideSource = nil })
+
+	levelRow := authorMentorArmForDayStop(t, at, "lvl-neveradd", "PHL", now)
+	swingRow := authorMentorArmForDayStop(t, at, "swing-neveradd", "SWING4H", now)
+
+	bar := func(m int) market.Kline {
+		ot := now.UnixMilli() + int64(m)*60_000
+		return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: 100, High: 101, Low: 99, Close: 100, Final: true}
+	}
+	at.mentorEvalOnce([]market.Kline{bar(0), bar(1), bar(2)})
+
+	if got := readMentorArmRowByID(t, ledger, levelRow); got.State != store.StateCancelled {
+		t.Fatalf("a resting level arm must be cancelled while a mentor position is open, got state=%q", got.State)
+	}
+	if got := readMentorArmRowByID(t, ledger, swingRow); got.State != store.StateCancelled {
+		t.Fatalf("the SWING4H arm must be cancelled too (the course is silent — fail-closed: one position at a time), got state=%q", got.State)
+	}
+	if mentorCounters["day_stop_cancel_never_add"] < 1 {
+		t.Fatalf("day_stop_cancel_never_add counter must record the cancel, got %v", mentorCounters)
+	}
+}
+
+// TestB3MentorWindowEndedPreOpenIsFalse — I11: the window-END half must return
+// false BEFORE today's window opens, so arms that legitimately rest before the
+// open are not swept. The old roll-back-to-yesterday made a 07:00 read "ended".
+func TestB3MentorWindowEndedPreOpenIsFalse(t *testing.T) {
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorWindowStart: "08:30", MentorWindowMinutes: 60})
+	if ended, _ := at.mentorWindowEnded(b3Clock(7, 0)); ended {
+		t.Fatal("before today's window opens, mentorWindowEnded must be false")
+	}
+	if ended, _ := at.mentorWindowEnded(b3Clock(9, 0)); ended {
+		t.Fatal("inside the window, mentorWindowEnded must be false")
+	}
+	if ended, _ := at.mentorWindowEnded(b3Clock(9, 31)); !ended {
+		t.Fatal("after the window ends, mentorWindowEnded must be true")
+	}
+}
+
+// TestB3SweepCountsOnlyActualCancelsAndPrunes — I5: the sweep counts and logs
+// only a cancel ACTUALLY requested (an already-terminal row is pruned, not
+// counted), and it acts only on THIS trader's arms.
+func TestB3SweepCountsOnlyActualCancelsAndPrunes(t *testing.T) {
+	at, _, ledger, _ := mentorB3Rig(t)
+	mentorWireSeams(t, at, ledger)
+	ResetMentorCountersForTest()
+
+	// A live arm for THIS trader, already terminal (the old code re-counted it
+	// as a "cancel" every tick).
+	now := b3Clock(10, 30)
+	termRow := store.ArmedOrderDB{
+		TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR",
+		Scenario: "isb-terminal", Side: "long", EntryPx: 29600, StopPx: 29590, TargetPx: 29620,
+		Kind: "stop_entry", Condition: "ISB", ExpiryMs: now.UnixMilli() + 60_000,
+		State: store.StateCancelled, Origin: store.ArmOriginMentor,
+	}
+	if err := ledger.DB().Create(&termRow).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArm("isb-terminal", at.id, termRow.ID, "long", 29600)
+
+	// Another trader's arm — must NOT be touched.
+	mentorRegisterLiveArm("isb-other", "other-trader", 999999, "long", 29600)
+
+	if at.cancelLiveMentorArms("test sweep", false) {
+		t.Fatal("a sweep with only terminal/other-trader arms must report no actual cancel")
+	}
+	if _, ok := mentorLiveArmFor("isb-terminal"); ok {
+		t.Fatal("the terminal arm must be pruned from the registry")
+	}
+	if _, ok := mentorLiveArmFor("isb-other"); !ok {
+		t.Fatal("another trader's arm must NOT be pruned by this trader's sweep")
+	}
+	if MentorCountSnapshot()["cancel_requested"] != 0 {
+		t.Fatal("no cancel was actually requested — the counter must stay 0")
+	}
+}

@@ -827,30 +827,70 @@ func (at *AutoTrader) cancelLiveIntradayMentorArms() bool {
 // ledger history records WHICH day-stop gate cleared the arm). The "news flat"
 // logging above becomes one caller of many.
 func (at *AutoTrader) cancelLiveIntradayMentorArmsWith(reason string) bool {
-	ids := make([]string, 0, len(mentorLiveArms))
+	return at.cancelLiveMentorArms(reason, true)
+}
+
+// cancelAllLiveMentorArmsWith cancels EVERY live mentor arm — intraday AND
+// SWING4H — by its ArmID. The never-add sweep's fail-closed shape: the course's
+// never-add [D1.1 p1 @17:06–17:44] names no swing exception (it is silent on
+// whether a swing may coexist with an intraday position), so one position at a
+// time means the swing is cancelled too.
+func (at *AutoTrader) cancelAllLiveMentorArmsWith(reason string) bool {
+	return at.cancelLiveMentorArms(reason, false)
+}
+
+// cancelLiveMentorArms is the shared sweep body. swingExempt skips "swing-…"
+// arms (the news/window/day-stop cancels hold the swing by the 4h [D5.2]); the
+// never-add sweep passes false (no exemption).
+//
+// I5/I3: the entries are COPIED under mentorLiveMu before iterating (a
+// concurrent write must not race the iteration or the len), the sweep acts only
+// on THIS trader's arms, and only a cancel that was ACTUALLY requested is
+// counted or logged (mentorCancelArm returns false for a refused / already-
+// terminal row).
+func (at *AutoTrader) cancelLiveMentorArms(reason string, swingExempt bool) bool {
+	type entry struct{ id, traderID string }
+	entries := make([]entry, 0)
 	mentorLiveMu.Lock()
-	for id := range mentorLiveArms {
-		ids = append(ids, id)
+	for id, arm := range mentorLiveArms {
+		entries = append(entries, entry{id: id, traderID: arm.TraderID})
 	}
 	mentorLiveMu.Unlock()
-	acted := false
 	cancelled := 0
-	for _, id := range ids {
-		if strings.HasPrefix(strings.TrimSpace(id), "swing-") {
+	for _, e := range entries {
+		if e.traderID != at.id {
+			continue // not this trader's arm (the registry is process-global)
+		}
+		if swingExempt && strings.HasPrefix(strings.TrimSpace(e.id), "swing-") {
 			continue // SWING4H arm — held by the 4h
 		}
-		at.mentorCancelArm(mentor.Intent{
+		if at.mentorCancelArm(mentor.Intent{
 			Action: mentor.CancelArm,
-			ArmID:  id,
+			ArmID:  e.id,
 			Reason: reason,
-		})
-		acted = true
-		cancelled++
+		}) {
+			cancelled++
+		}
 	}
-	if acted {
-		at.logWarnf("🧑‍🏫 day-stop cancel: cancelled %d live intraday mentor arm(s) (SWING4H exempt) — %s", cancelled, reason)
+	if cancelled > 0 {
+		if swingExempt {
+			at.logWarnf("🧑‍🏫 day-stop cancel: cancelled %d live intraday mentor arm(s) (SWING4H exempt) — %s", cancelled, reason)
+		} else {
+			at.logWarnf("🧑‍🏫 never-add cancel: cancelled %d live mentor arm(s) (SWING4H included — fail-closed) — %s", cancelled, reason)
+		}
 	}
-	return acted
+	return cancelled > 0
+}
+
+// mentorOpenPositionActive reports whether a mentor position is open. The
+// open-side seam is the primary read (the P1 driver wires it to the bound
+// account's position snapshot); the account position count is the fail-closed
+// backstop — an unreadable position list counts as OPEN, never flat.
+func (at *AutoTrader) mentorOpenPositionActive() bool {
+	if mentorOpenSideSource != nil && mentorOpenSideSource() != "" {
+		return true
+	}
+	return at.openPositionCount() != 0
 }
 
 // ── B3 (L4) DAY-STOP SWEEP ────────────────────────────────────────────────
@@ -884,6 +924,23 @@ func (at *AutoTrader) mentorDayStopSweep(now time.Time) {
 		if at.cancelLiveIntradayMentorArmsWith("day-stop news hold: " + why) {
 			mentorCount("day_stop_cancel_news")
 		}
+	}
+	// NEVER-ADD [D1.1 p1 @17:06–17:44], now enforced while a position is OPEN,
+	// not only at write time (L4): with B4 more mentor arms rest at the broker
+	// at once, so a second fill while a position is open would ADD (same side)
+	// or REDUCE/FLIP (opposite side) it. Cancel the resting unfilled mentor
+	// arms on BOTH sides, once per open-position episode. SWING4H: the course
+	// is silent on a swing coexisting with an intraday position, so it is
+	// cancelled too (fail-closed: one position at a time).
+	if at.mentorOpenPositionActive() {
+		if !at.mentorNeverAddCancelDone {
+			if at.cancelAllLiveMentorArmsWith("day-stop never-add: a mentor position is open — one position at a time, cancel both sides [D1.1 p1 @17:06–17:44]") {
+				mentorCount("day_stop_cancel_never_add")
+			}
+			at.mentorNeverAddCancelDone = true
+		}
+	} else {
+		at.mentorNeverAddCancelDone = false
 	}
 	if mentorStopAfterLossTripped != nil {
 		if stop, why := mentorStopAfterLossTripped(); stop {
@@ -923,10 +980,11 @@ func (at *AutoTrader) mentorDoneAfterWinTripped() (bool, string) {
 	return false, ""
 }
 
-// mentorWindowEnded reports the window-END half of the window gate: now is at or
-// past the window's close (the gate also refuses before the open, but a
-// before-open refusal names no resting arm from this session-day — the sweep
-// fires on the END, when a resting arm placed in-window could still fill).
+// mentorWindowEnded reports the window-END half of the window gate: it returns
+// true ONLY between today's window end and the next open. Before today's open
+// it is false — the window has not started, and arms that legitimately rest
+// before the open must not be swept (I11: the old roll-back-to-yesterday made a
+// pre-open 07:00 read "ended" and cancelled every pre-open arm each tick).
 // minutes <= 0 disables the window (no end to trip).
 func (at *AutoTrader) mentorWindowEnded(now time.Time) (bool, string) {
 	start, minutes := at.mentorWindowKnobs()
@@ -941,7 +999,7 @@ func (at *AutoTrader) mentorWindowEnded(now time.Time) (bool, string) {
 	ct := now.In(loc)
 	open := time.Date(ct.Year(), ct.Month(), ct.Day(), hour, minute, 0, 0, loc)
 	if open.After(now) {
-		open = time.Date(ct.Year(), ct.Month(), ct.Day()-1, hour, minute, 0, 0, loc)
+		return false, "" // today's window has not opened — nothing has ended yet
 	}
 	end := open.Add(time.Duration(minutes) * time.Minute)
 	if !now.Before(end) {
