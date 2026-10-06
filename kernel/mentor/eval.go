@@ -1217,9 +1217,19 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// R7 (RULES-FIX-v3, behind its own knob, default ON since R-C): the reverse
 	// ISB at EMA 9 — an ISB that points AGAINST the trend with price at the EMA 9
 	// trades WITH the trend [D5.4].
-	if e.Cfg.ISBReverseEMA9Enabled && IsISB(execPrev, execCur) {
+	//
+	// B6 (L14): the reverse ISB must stand behind the SAME standing gates as the
+	// normal ISB — the 15m/5m conflict, the ISB boxes, and the trigger side — and
+	// fail closed when the 5m trigger has no direction yet (it used to fall
+	// through to SHORT unconditionally).
+	if !conflict && e.Cfg.ISBReverseEMA9Enabled && IsISB(execPrev, execCur) {
 		if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
 			e.refuse("isbrev_" + r)
+		} else if e.State.Trigger.Dir == "" {
+			// B6: with no 5m trigger there is no trend to reverse — R7 always
+			// resolved to SHORT here before. Fail closed [D5.4: "đánh theo xu
+			// hướng" — the trend must exist].
+			e.refuse("isbrev_no_trigger")
 		} else if in, ok, _ := ReverseISBAtEMA9(execPrev, execCur, emaValue(bars, e.Cfg.EMAPeriod9), e.State.Trigger.Dir, e.Cfg); ok {
 			// N12: an R7 reverse ISB fills by the close of the NEXT candle on
 			// the execution timeframe (the R1 family rule).
@@ -1228,14 +1238,45 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// runs through the SAME gates as the normal ISB — the twenties
 			// stop skip [D4.1 p1 @ 05:41], the 4h HTF verdict and side, and
 			// the near-box rule (row 24) — before any target is set.
+			// B6: plus the SAME ISB-box gates (R5 / D4.1-25 / D4.2-07) and the
+			// trigger-side guard the normal ISB runs.
+			boxBlocked := false
+			if e.State.ISBBox != nil && !crossingISBs(cb5, 3) {
+				if allowed, _ := ISBBoxAllows(*e.State.ISBBox, execPrev, execCur); !allowed {
+					boxBlocked = true
+				}
+			}
+			box15Blocked := false
+			if e.State.ISBBox15m != nil && !crossingISBs(cb15, 3) {
+				if allowed, _ := ISBBoxAllows(*e.State.ISBBox15m, execPrev, execCur); !allowed {
+					box15Blocked = true
+				}
+			}
+			box30Blocked := false
+			if e.State.ISBBox30m != nil && !crossingISBs(cb30, 3) {
+				if allowed, _ := ISBBoxAllows(*e.State.ISBBox30m, execPrev, execCur); !allowed {
+					box30Blocked = true
+				}
+			}
 			htfOK, htfSide, _ := HTFVerdict(e.State.HTF)
 			target := 0.0
 			if _, stopOK, _ := ISBStopVerdict(execCur, e.Cfg); !stopOK {
 				e.refuse("isbrev_stop_twenties")
+			} else if boxBlocked {
+				e.refuse("isbrev_box_blocked")
+			} else if box15Blocked {
+				e.refuse("isbrev_box_blocked_15m")
+			} else if box30Blocked {
+				e.refuse("isbrev_box_blocked_30m")
 			} else if !htfOK {
 				e.refuse("isbrev_htf_blocked")
 			} else if htfSide != "" && in.Side != htfSide {
 				e.refuse("isbrev_htf_side_mismatch")
+			} else if in.Side != e.State.Trigger.Dir {
+				// B6: the 5m trigger side governs [D3.4 p1 @ 09:30–10:38] —
+				// defensive (R7 already builds in.Side == Trigger.Dir once the
+				// direction is set), kept for parity with the normal ISB.
+				e.refuse("isbrev_trigger_side_mismatch")
 			} else if refuse, _ := nearBoxRefusal(boxes, in.Price, in.Side, e.Cfg.NearBoxRoomMultiple, abs(in.Price-in.Stop)); refuse {
 				e.refuse("near_box")
 			} else if target = nextLevelBeyondRoom(levels, in.Price, in.Stop, in.Side, e.Cfg.RoomMultiple); target == 0 {
@@ -1256,6 +1297,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					e.refuse("room")
 				} else {
 					in.Target = capped.Target
+					// B6: the same size flags as the normal ISB — rule 2 (at an
+					// old high/low → reduce) and rule 3 (in range → reduce)
+					// [D4.1 p1 @ 08:05/09:40].
+					in.Flag = e.isbFlagsFor(execCur, levels, boxes)
 					// R85: with the reverse ON, the normal ISB must not arm the
 					// counter-trend side on the same candle pair (two opposite
 					// stop orders on one candle) — drop any same-pair normal ISB
