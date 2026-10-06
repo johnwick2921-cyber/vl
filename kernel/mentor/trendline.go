@@ -153,9 +153,13 @@ func trendlineScan(bars []market.Kline, tl Trendline, now time.Time) (validAt in
 	return 0, false
 }
 
-// key returns the stable level key (state joins on it).
+// key returns the stable level key (state joins on it). UR-FIX U2: keyed on
+// the swing OpenTimes (P0T/P1T), NOT the bar indices — the live window slides
+// (the provider returns the last 2000 bars), so P0Idx/P1Idx shift by 1 each
+// new 1m bar and a key that embedded them changed every tick, so per-level
+// state (Visits, LevelArms, ISBOnly, VisitCapRefused) never carried over.
 func (t Trendline) key() string {
-	return fmt.Sprintf("%s:%s:%d:%d", KindTrendline, t.Side, t.P0Idx, t.P1Idx)
+	return fmt.Sprintf("%s:%s:%d:%d", KindTrendline, t.Side, t.P0T, t.P1T)
 }
 
 // TrendlineLevels exports each VALID, live trendline as a Level whose Price
