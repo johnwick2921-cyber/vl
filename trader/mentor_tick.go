@@ -263,6 +263,12 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// window; no-ops once flat. Runs under the N11 mutex so the ArmID cancel
 	// can clear the evaluator's LevelArms safely.
 	at.mentorNewsCancelFlattenAt(mentorClockNow())
+	// B3 (L4): the day-stop gates below (done-after-win, the news hold, the
+	// trading-window end, and the stop-after-loss hook) used to run ONLY while
+	// an entry was being WRITTEN — so a resting arm could still fill after the
+	// day was shut. This sweep trips them every tick and cancels the resting
+	// unfilled intraday arms. Logged + counted; fail-closed.
+	at.mentorDayStopSweep(mentorClockNow())
 	for _, in := range intents {
 		// B20 trader half (CTO 1791058836784, FIXES.md B20): the trigger
 		// LATER flipped to the trade's side — the OPEN position upgrades
@@ -813,6 +819,14 @@ func (at *AutoTrader) mentorNewsCancelFlattenAt(now time.Time) bool {
 // so each cancel is named and the evaluator's LevelArms entry is cleared.
 // Returns whether any cancel was requested.
 func (at *AutoTrader) cancelLiveIntradayMentorArms() bool {
+	return at.cancelLiveIntradayMentorArmsWith("news 07:30 print — cancel intraday mentor arm before the print [D4.4 p1 @20:44]")
+}
+
+// cancelLiveIntradayMentorArmsWith is the B3-generalized sweep: the same
+// intraday cancel, with the tripping gate named in each cancel's reason (so the
+// ledger history records WHICH day-stop gate cleared the arm). The "news flat"
+// logging above becomes one caller of many.
+func (at *AutoTrader) cancelLiveIntradayMentorArmsWith(reason string) bool {
 	ids := make([]string, 0, len(mentorLiveArms))
 	mentorLiveMu.Lock()
 	for id := range mentorLiveArms {
@@ -828,15 +842,112 @@ func (at *AutoTrader) cancelLiveIntradayMentorArms() bool {
 		at.mentorCancelArm(mentor.Intent{
 			Action: mentor.CancelArm,
 			ArmID:  id,
-			Reason: "news 07:30 print — cancel intraday mentor arm before the print [D4.4 p1 @20:44]",
+			Reason: reason,
 		})
 		acted = true
 		cancelled++
 	}
 	if acted {
-		at.logWarnf("🧑‍🏫 news flat: cancelled %d live intraday mentor arm(s) (SWING4H exempt)", cancelled)
+		at.logWarnf("🧑‍🏫 day-stop cancel: cancelled %d live intraday mentor arm(s) (SWING4H exempt) — %s", cancelled, reason)
 	}
 	return acted
+}
+
+// ── B3 (L4) DAY-STOP SWEEP ────────────────────────────────────────────────
+//
+// The day-stop gates below used to run ONLY while an entry was being written
+// (the placement path), so a resting arm placed earlier could still fill after
+// the day had been shut. This sweep trips them EVERY TICK and cancels the
+// resting unfilled intraday arms. Idempotent: an already-cancelled arm no-ops.
+// SWING4H is exempt (the course holds the swing by the 4h [D5.2]).
+//
+// The sweep cancels only on a DEFINITE trip. An UNRESOLVED read (done-after-win
+// day data missing, or a NULL pnl_corrected row) does NOT force-cancel — the
+// placement gate still fails closed for NEW entries, but an unknown is not
+// evidence the day is over, and destroying a resting arm on a data gap is worse
+// than the gap it closes.
+func (at *AutoTrader) mentorDayStopSweep(now time.Time) {
+	if !at.mentorEnabled() || at.store == nil || at.trader == nil {
+		return
+	}
+	if trip, why := at.mentorDoneAfterWinTripped(); trip {
+		if at.cancelLiveIntradayMentorArmsWith("day-stop done-after-win: " + why) {
+			mentorCount("day_stop_cancel_done_after_win")
+		}
+	}
+	if ended, why := at.mentorWindowEnded(now); ended {
+		if at.cancelLiveIntradayMentorArmsWith("day-stop window end: " + why) {
+			mentorCount("day_stop_cancel_window_end")
+		}
+	}
+	if hold, why := at.mentorNewsGate(); hold {
+		if at.cancelLiveIntradayMentorArmsWith("day-stop news hold: " + why) {
+			mentorCount("day_stop_cancel_news")
+		}
+	}
+	if mentorStopAfterLossTripped != nil {
+		if stop, why := mentorStopAfterLossTripped(); stop {
+			if at.cancelLiveIntradayMentorArmsWith("day-stop stop-after-loss: " + why) {
+				mentorCount("day_stop_cancel_stop_after_loss")
+			}
+		}
+	}
+}
+
+// mentorStopAfterLossTripped is the B3 hook for DS-105's stop-after-loss gate.
+// nil → unwired (the gate does not trip). DS-105 wires it when its gate merges;
+// the hook needs no other change here.
+var mentorStopAfterLossTripped func() (bool, string)
+
+// mentorDoneAfterWinTripped reports the DEFINITE done-after-win trip only — a
+// trade closed in profit AND the day is net positive. An unwired or unresolved
+// source is "unknown", not a trip: the placement gate still refuses fail-closed,
+// but the sweep does NOT force-cancel a resting arm on an unknown.
+func (at *AutoTrader) mentorDoneAfterWinTripped() (bool, string) {
+	if at.config.StrategyConfig != nil {
+		if v := at.config.StrategyConfig.RiskControl.MentorDoneAfterWin; v != nil && !*v {
+			return false, "" // the knob is explicitly OFF
+		}
+	}
+	if mentorDayNetSource == nil || mentorClosedProfitSource == nil {
+		return false, ""
+	}
+	net, okNet := mentorDayNetSource()
+	closed, okClosed := mentorClosedProfitSource()
+	if !okNet || !okClosed {
+		return false, ""
+	}
+	if mentorDoneAfterWin(net, closed) {
+		return true, "a trade closed in profit and the day is net positive — no entries until the next trading day (17:00 CT) [D1.2 p1 @20:53–21:16]"
+	}
+	return false, ""
+}
+
+// mentorWindowEnded reports the window-END half of the window gate: now is at or
+// past the window's close (the gate also refuses before the open, but a
+// before-open refusal names no resting arm from this session-day — the sweep
+// fires on the END, when a resting arm placed in-window could still fill).
+// minutes <= 0 disables the window (no end to trip).
+func (at *AutoTrader) mentorWindowEnded(now time.Time) (bool, string) {
+	start, minutes := at.mentorWindowKnobs()
+	if minutes <= 0 {
+		return false, ""
+	}
+	hour, minute, ok := parseMentorWindowStart(start)
+	if !ok {
+		return false, "" // unparseable start: the placement gate refuses; no force-cancel on a guess
+	}
+	loc := kernel.CTLocation()
+	ct := now.In(loc)
+	open := time.Date(ct.Year(), ct.Month(), ct.Day(), hour, minute, 0, 0, loc)
+	if open.After(now) {
+		open = time.Date(ct.Year(), ct.Month(), ct.Day()-1, hour, minute, 0, 0, loc)
+	}
+	end := open.Add(time.Duration(minutes) * time.Minute)
+	if !now.Before(end) {
+		return true, fmt.Sprintf("the trading window ended at %s CT [D1.2 p1 @23:52–24:59]", kernel.CloseHHMMCT(end))
+	}
+	return false, ""
 }
 
 // ── STOP RULES (owner ruling 00:1x CT, "exactly like he said") ─────────────
