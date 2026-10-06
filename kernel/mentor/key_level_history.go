@@ -82,6 +82,19 @@ func trimAfter(bars []market.Kline, cutoff int64) []market.Kline {
 	return bars[n:]
 }
 
+// trimPreRoll drops the newest contract's sparse pre-roll import snapshots —
+// the bars BEFORE its dense roll day (the first session day with >=
+// denseFront1mMin bars). Used ONLY when no older contract was stitched, so the
+// Add-time cut (which normally drops them) never ran.
+func trimPreRoll(bars []market.Kline) []market.Kline {
+	rd, ok := rollDayKey(bars)
+	if !ok {
+		return bars
+	}
+	n := sort.Search(len(bars), func(i int) bool { return sessionKeyCT(bars[i].OpenTime) >= rd })
+	return bars[n:]
+}
+
 // lastFullOverlapBefore returns the most recent session-day key strictly
 // before rollDay with at least minRollOverlap overlapping native 1h bars
 // (same OpenTime) between newer1h and older1h. "" when no such day exists —
@@ -245,7 +258,15 @@ func (s *RollStitcher) Add(older Contract1M) bool {
 // RTH key-level walk series, the per-pair gaps (measurement order: newest
 // pair first), and the roll where the stitch stopped ("" = full).
 func (s *RollStitcher) Result() (stitched1m, bars1hRTH []market.Kline, gaps []RollGap, stoppedAt string) {
-	return s.stitched1m, keyLevel1HBars(s.stitched1m), s.gaps, s.stoppedAt
+	stitched1m = s.stitched1m
+	// When NO older contract was stitched (the first pair's gap was
+	// unmeasurable, or the store holds one contract), the Add-time cut never
+	// ran, so the newest's sparse pre-roll import snapshots would still be in
+	// the walk and could draw bogus single-bar 1H candles. Drop them here.
+	if len(s.gaps) == 0 && len(stitched1m) > 0 {
+		stitched1m = trimPreRoll(stitched1m)
+	}
+	return stitched1m, keyLevel1HBars(stitched1m), s.gaps, s.stoppedAt
 }
 
 // StitchKeyLevelHistory builds the full stitched history from a PRE-LOADED

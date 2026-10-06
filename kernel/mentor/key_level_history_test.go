@@ -250,6 +250,42 @@ func TestRollStitcherSameDayContinuation(t *testing.T) {
 	}
 }
 
+// TestRollStitcherSingleContractDropsSparseSnapshots — when NO older contract
+// is stitched (one-contract store, or the first pair's gap is unmeasurable),
+// the newest's sparse pre-roll import snapshots (1 bar/day) must not reach the
+// level walk: a single 1m bar on an otherwise-empty day would bucket into a
+// bogus 1H candle and draw a colour-change level. Result() drops them before
+// the newest's dense roll day.
+func TestRollStitcherSingleContractDropsSparseSnapshots(t *testing.T) {
+	// Newest only: sparse snapshots on 09-07..09-10 (one 1m bar each), dense
+	// from session 09-15.
+	newest := []market.Kline{
+		{OpenTime: auditMs(2026, 9, 7, 12, 0, 0), Open: 1, High: 2, Low: 1, Close: 2},
+		{OpenTime: auditMs(2026, 9, 8, 12, 0, 0), Open: 2, High: 2, Low: 1, Close: 1},
+		{OpenTime: auditMs(2026, 9, 9, 12, 0, 0), Open: 1, High: 2, Low: 1, Close: 2},
+		{OpenTime: auditMs(2026, 9, 10, 12, 0, 0), Open: 2, High: 2, Low: 1, Close: 1},
+	}
+	newest = append(newest, denseSession1m(2026, 9, 14, 1380, 110, 111)...)
+
+	_, full1h, _, _ := StitchKeyLevelHistory([]Contract1M{
+		{Contract: "MNQ 12-26", Bars: newest},
+	})
+	for _, c := range full1h {
+		if k := sessionKeyCT(c.OpenTime); k < "2026-09-15" {
+			t.Fatalf("sparse pre-roll snapshot day %s produced a 1H candle: open=%d", k, c.OpenTime)
+		}
+	}
+	found := false
+	for _, c := range full1h {
+		if sessionKeyCT(c.OpenTime) == "2026-09-15" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the dense session 09-15 must still produce 1H candles")
+	}
+}
+
 // TestRollStitcherStopsAtNoMeasuredGap — when no session day before the roll
 // has >=10 overlapping native 1h bars, the stitch STOPS and names the pair.
 func TestRollStitcherStopsAtNoMeasuredGap(t *testing.T) {
