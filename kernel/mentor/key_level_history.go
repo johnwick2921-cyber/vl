@@ -261,12 +261,18 @@ func (s *RollStitcher) Result() (stitched1m, bars1hRTH []market.Kline, gaps []Ro
 	stitched1m = s.stitched1m
 	// When NO older contract was stitched (the first pair's gap was
 	// unmeasurable, or the store holds one contract), the Add-time cut never
-	// ran, so the newest's sparse pre-roll import snapshots would still be in
-	// the walk and could draw bogus single-bar 1H candles. Drop them here.
+	// ran, so the newest's sparse pre-roll import snapshots could draw bogus
+	// single-bar 1H candles in the LEVEL WALK. Drop them from the level walk
+	// ONLY: the stitched 1m itself must keep every closed bar, because the 4h
+	// EMA 34 warm-up depth counts the closed 4h buckets in it — trimming a
+	// DENSE partial first session (a fresh install's first day) would deflate
+	// the warm-up count and stall the SWING4H gate (REL10 P1: 99/102 at a
+	// 17:00-CT-adjacent clock position).
+	levelWalk := stitched1m
 	if len(s.gaps) == 0 && len(stitched1m) > 0 {
-		stitched1m = trimPreRoll(stitched1m)
+		levelWalk = trimPreRoll(stitched1m)
 	}
-	return stitched1m, keyLevel1HBars(stitched1m), s.gaps, s.stoppedAt
+	return stitched1m, keyLevel1HBars(levelWalk), s.gaps, s.stoppedAt
 }
 
 // StitchKeyLevelHistory builds the full stitched history from a PRE-LOADED
