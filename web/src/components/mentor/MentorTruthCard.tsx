@@ -19,6 +19,17 @@ const fmtTime = (ms: number) =>
       })
     : '—'
 
+const fmtAsOf = (ms: number) =>
+  ms > 0
+    ? new Date(ms).toLocaleTimeString('en-US', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZone: 'America/Chicago',
+      })
+    : '—'
+
 function dirWord(dir: string): string {
   if (dir === 'long') return 'LONG'
   if (dir === 'short') return 'SHORT'
@@ -51,7 +62,8 @@ export function MentorTruthCard({ truth }: { truth: MentorTruth | null }) {
           Mentor — what trades
         </span>
         <span className="text-[10px]" style={{ color: 'var(--vl-faint)' }}>
-          {truth.htf.gate_active ? 'HTF gate ON' : 'HTF gate OFF'}
+          {truth.htf.gate_active ? 'HTF gate ON' : 'HTF gate OFF'} · as of{' '}
+          {fmtAsOf(truth.as_of_ms)} CT
         </span>
       </div>
 

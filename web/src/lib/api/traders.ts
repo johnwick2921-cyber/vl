@@ -10,6 +10,7 @@ import { ApiError } from '../httpClient'
 /** Mentor "what trades" panel — the live evaluator state (release #10). */
 export interface MentorTruth {
   enabled: boolean
+  as_of_ms: number
   htf: {
     four_h_dir: string
     four_h_since: number

@@ -14,6 +14,7 @@ import { LanguageProvider } from '../../contexts/LanguageContext'
 
 const truth = (over: Partial<MentorTruth>): MentorTruth => ({
   enabled: true,
+  as_of_ms: 1_700_000_000_000,
   htf: {
     four_h_dir: 'long',
     four_h_since: 1000,
