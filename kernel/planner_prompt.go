@@ -435,6 +435,11 @@ func BuildPlannerCandleTablesAt(bars1m []market.Kline, asked1m int, now time.Tim
 	// D1 (BARS HORIZON 2026-09-09) — the block declares the tape it is built
 	// from BEFORE any table, because the prompt disclosed its depth nowhere.
 	b.WriteString(candleTapeLine(HorizonOf(bars1m, "1m", asked1m, now)) + "\n")
+	// Anchor disclosure: the 4h table is 17:00 CT session-anchored (the SAME
+	// series the mentor's HTF gate + SWING4H 4h EMA34 read); 15m/1h are
+	// epoch-floored, daily = session-day. A 4h candle here and the mentor's 4h
+	// candle are the same bar.
+	b.WriteString("## anchors: 15m/1h epoch-floored · 4h = 17:00 CT session-anchored (same as the mentor's HTF/swing 4h) · daily = session-day\n")
 	b.WriteString(candleMarkerLegend + "\n\n")
 
 	// TAIL-TRIM FIRST, THEN MEASURE. The trim used to run after coverage was
@@ -469,7 +474,14 @@ func BuildPlannerCandleTablesAt(bars1m []market.Kline, asked1m int, now time.Tim
 	}
 	agg("15m", 15*60*1000, 12)
 	agg("1h", 60*60*1000, 12)
-	agg("4h", 240*60*1000, 8)
+	// 4h is the ONLY table on the 17:00 CT anchor — the same bucket function
+	// the mentor's HTF gate + SWING4H read (Aggregate4HCT → FourHBucketStart).
+	const fourH = int64(4 * time.Hour / time.Millisecond)
+	ct4hKey := func(ot int64) int64 { return FourHBucketStart(ot, CTLocation()) }
+	rows4h := tail(Aggregate4HCT(bars1m), 8)
+	render("4h", "4h", rows4h,
+		aggregateCoverageBy(bars1m, rows4h, fourH, ct4hKey, now),
+		absentAggregateRowsBy(rows4h, fourH, ct4hKey), 8)
 
 	daily := tail(DailySessionBars(bars1m), 8)
 	render("daily session candles", "session-day", daily, sessionCoverage(bars1m, daily, now), absentSessionRows(daily), 8)
