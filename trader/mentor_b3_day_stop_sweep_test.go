@@ -152,3 +152,41 @@ func TestB3MentorDoneAfterWinTrippedUnknownIsNotTrip(t *testing.T) {
 		t.Fatal("a net-positive day with a closed profit MUST trip the done-after-win sweep")
 	}
 }
+
+// TestB3DayStopNeverAddCancelsRestingArms — the CTO's L4 never-add pin: while a
+// mentor position is OPEN, a resting level arm (and the swing, fail-closed)
+// must be cancelled on BOTH sides so a second fill cannot ADD or REDUCE/FLIP
+// the position. Drives the production call site (mentorEvalOnce →
+// mentorDayStopSweep) on a tick with NO entry being written.
+func TestB3DayStopNeverAddCancelsRestingArms(t *testing.T) {
+	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	at, _, ledger, _ := mentorB3Rig(t)
+	mentorWireSeams(t, at, ledger)
+
+	now := b3Clock(10, 30)
+	mentorNowSource = func() time.Time { return now }
+	t.Cleanup(func() { mentorNowSource = nil })
+
+	// A mentor position is OPEN (the P1 driver wires this from the account).
+	mentorOpenSideSource = func() string { return "long" }
+	t.Cleanup(func() { mentorOpenSideSource = nil })
+
+	levelRow := authorMentorArmForDayStop(t, at, "lvl-neveradd", "PHL", now)
+	swingRow := authorMentorArmForDayStop(t, at, "swing-neveradd", "SWING4H", now)
+
+	bar := func(m int) market.Kline {
+		ot := now.UnixMilli() + int64(m)*60_000
+		return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: 100, High: 101, Low: 99, Close: 100, Final: true}
+	}
+	at.mentorEvalOnce([]market.Kline{bar(0), bar(1), bar(2)})
+
+	if got := readMentorArmRowByID(t, ledger, levelRow); got.State != store.StateCancelled {
+		t.Fatalf("a resting level arm must be cancelled while a mentor position is open, got state=%q", got.State)
+	}
+	if got := readMentorArmRowByID(t, ledger, swingRow); got.State != store.StateCancelled {
+		t.Fatalf("the SWING4H arm must be cancelled too (the course is silent — fail-closed: one position at a time), got state=%q", got.State)
+	}
+	if mentorCounters["day_stop_cancel_never_add"] < 1 {
+		t.Fatalf("day_stop_cancel_never_add counter must record the cancel, got %v", mentorCounters)
+	}
+}
