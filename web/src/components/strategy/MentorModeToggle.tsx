@@ -78,6 +78,16 @@ const COPY = {
     en: 'Outside the window no new entries; the SWING setup ignores the window. Saved and applied like the switch above.',
     es: 'Fuera de la ventana no hay entradas nuevas; el SWING ignora la ventana. Se guarda y aplica como el interruptor.',
   },
+  stopAfterLoss: {
+    zh: '亏损后当日停止',
+    en: 'Stop for the day after a losing trade',
+    es: 'Detenerse el día tras una operación perdedora',
+  },
+  stopAfterLossHelp: {
+    zh: '默认关闭。开启后：导师交易今日以净亏损平仓，则在 17:00 CT 前不再新开导师入场；已挂的入场单会被撤销 [D1.2 @23:34]。',
+    en: 'OFF by default. ON: after a mentor trade closes today with a net loss, no new mentor entries until 17:00 CT; resting entry orders are cancelled [D1.2 @23:34].',
+    es: 'OFF por defecto. ON: tras una operación mentor cerrada hoy con pérdida neta, no hay nuevas entradas mentor hasta las 17:00 CT; las órdenes de entrada en reposo se cancelan [D1.2 @23:34].',
+  },
 } satisfies Record<string, Copy>
 
 // Stored defaults (trader/mentor_tick.go mentorWindowDefaultStart/Minutes). An
@@ -118,6 +128,9 @@ interface MentorModeToggleProps {
   windowMinutes?: number
   onWindowStartChange: (start: string) => void
   onWindowMinutesChange: (minutes: number) => void
+  // Stop-after-loss knob (mentor_stop_after_loss); absent = OFF.
+  stopAfterLoss?: boolean
+  onStopAfterLossChange: (on: boolean) => void
 }
 
 export function MentorModeToggle({
@@ -131,6 +144,8 @@ export function MentorModeToggle({
   windowMinutes,
   onWindowStartChange,
   onWindowMinutesChange,
+  stopAfterLoss,
+  onStopAfterLossChange,
 }: MentorModeToggleProps) {
   const [confirming, setConfirming] = useState(false)
   const [startDraft, setStartDraft] = useState<string | null>(null)
@@ -275,6 +290,41 @@ export function MentorModeToggle({
         </p>
         <p className="text-xs" style={{ color: '#848E9C' }}>
           {tr(COPY.windowNote, language)}
+        </p>
+      </div>
+      <div
+        className="mt-3 pt-3 flex flex-col gap-2"
+        style={{ borderTop: '1px solid #2B3139' }}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <label className="text-xs" style={{ color: '#EAECEF' }}>
+            {tr(COPY.stopAfterLoss, language)}
+          </label>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={stopAfterLoss === true}
+            aria-label={tr(COPY.stopAfterLoss, language)}
+            disabled={disabled}
+            data-testid="mentor-stop-after-loss"
+            onClick={() => {
+              if (disabled) return
+              onStopAfterLossChange(!(stopAfterLoss === true))
+            }}
+            className="relative inline-block w-9 h-5 rounded-full transition-colors shrink-0"
+            style={{
+              background: stopAfterLoss === true ? '#0ECB81' : '#2B3139',
+              opacity: disabled ? 0.5 : 1,
+            }}
+          >
+            <span
+              className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all"
+              style={{ left: stopAfterLoss === true ? '18px' : '2px' }}
+            />
+          </button>
+        </div>
+        <p className="text-xs" style={{ color: '#848E9C' }}>
+          {tr(COPY.stopAfterLossHelp, language)}
         </p>
       </div>
       {confirming && (

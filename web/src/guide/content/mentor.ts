@@ -1195,7 +1195,8 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Done after a winning day',
-          where: 'Strategy → Mentor mode → stop rules',
+          where:
+            'No Studio control — ON by default (owner ruling); the strategy setting mentor_done_after_win=false turns it off',
           what: 'Stop new mentor entries for the trading day after a winning trade closes and the day’s net P&L is positive.',
           trader: 'ON by default; an explicit false disables this stop rule.',
           consumer: 'trader/mentor_tick.go mentorDoneAfterWinGate',
@@ -1208,9 +1209,11 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Stop after a loss',
-          where: 'Strategy → Mentor mode → stop rules',
+          where:
+            'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode → "Stop for the day after a losing trade"',
           what: 'STOP-AFTER-LOSS: once a mentor trade closes today with a net LOSS (both legs combined, pnl_corrected < 0), refuse new mentor entries until the next session day (17:00 CT) [D1.2 p1 @ 23:34]. A breakeven close (0) is NOT a loss. Fail-closed while ON: an unwired source or an unresolved close (NULL pnl_corrected) refuses.',
-          trader: 'OFF by default (unset = OFF); an explicit true enables.',
+          trader:
+            'OFF by default (the switch reads ON only when the value is true). Flip the switch to turn it ON, then press Save: the running trader reloads on save, so no restart is needed. An explicit false turns it back OFF.',
           consumer: 'trader/mentor_tick.go mentorStopAfterLossGate',
           range: 'true / false',
           systemDefault: 'false (unset = OFF)',
