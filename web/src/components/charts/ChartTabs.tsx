@@ -15,6 +15,8 @@ interface ChartTabsProps {
   updateKey?: number // Force update key
   exchangeId?: string // Exchange ID
   selectedAccount?: string // F31 — dashboard account scope for the order snapshot
+  /** MENTOR-TRUTH PANEL — mentor key levels drawn on the price chart. */
+  mentorLevels?: { price: number; label: string }[]
 }
 
 type ChartTab = 'equity' | 'kline'
@@ -125,6 +127,7 @@ export function ChartTabs({
   updateKey,
   exchangeId,
   selectedAccount,
+  mentorLevels,
 }: ChartTabsProps) {
   const { language } = useLanguage()
   const [activeTab, setActiveTab] = useState<ChartTab>('equity')
@@ -490,6 +493,7 @@ export function ChartTabs({
                 // Dynamic auto-sizing via ResizeObserver
                 exchange={currentExchange}
                 onSymbolChange={setChartSymbol}
+                mentorLevels={mentorLevels}
               />
             </motion.div>
           )}
