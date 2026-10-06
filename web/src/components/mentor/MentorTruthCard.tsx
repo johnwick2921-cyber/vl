@@ -131,8 +131,14 @@ export function MentorTruthCard({
         )}
       </div>
 
-      {/* mentor key levels (distinct style: the levels that actually trade) */}
-      {truth.levels.length > 0 && (
+      {/* mentor key levels (distinct style: the levels that actually trade).
+          levels is ABSENT while the evaluator computes its first bar, and `[]`
+          once it has built with nothing drawn — never dereference a null. */}
+      {truth.computing ? (
+        <div className="text-[11px]" style={{ color: 'var(--vl-muted)' }}>
+          levels: computing (first 1m bar)
+        </div>
+      ) : (truth.levels ?? []).length > 0 ? (
         <div className="flex flex-col gap-0.5">
           <span
             className="text-[10px] uppercase tracking-widest"
@@ -140,7 +146,7 @@ export function MentorTruthCard({
           >
             Key levels in effect
           </span>
-          {truth.levels.map((l) => (
+          {(truth.levels ?? []).map((l) => (
             <div
               key={l.key}
               className="flex items-baseline justify-between text-[11px]"
@@ -155,13 +161,17 @@ export function MentorTruthCard({
             </div>
           ))}
         </div>
+      ) : (
+        <div className="text-[11px]" style={{ color: 'var(--vl-muted)' }}>
+          no levels
+        </div>
       )}
 
       {/* history depth */}
-      {(truth.depth_line || Object.keys(truth.depth).length > 0) && (
+      {(truth.depth_line || Object.keys(truth.depth ?? {}).length > 0) && (
         <div className="text-[10px]" style={{ color: 'var(--vl-faint)' }}>
           {truth.depth_line ||
-            Object.entries(truth.depth)
+            Object.entries(truth.depth ?? {})
               .map(([k, v]) => `${k}=${v}`)
               .join(' · ')}
         </div>

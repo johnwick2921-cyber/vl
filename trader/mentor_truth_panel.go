@@ -12,30 +12,34 @@ import (
 // other lanes are rewriting. mentorEnabled() == false returns Enabled=false and
 // zeroes, so the frontend can hide the card without a second call.
 type MentorTruthPanel struct {
-	Enabled    bool              `json:"enabled"`
-	AsOfMs     int64             `json:"as_of_ms"` // server stamp; the card shows "as of HH:MM:SS CT"
-	HTF        MentorHTFView     `json:"htf"`
-	Trigger5m  MentorTriggerView `json:"trigger_5m"`
-	Levels     []MentorLevelView `json:"levels"`
-	Depth      map[string]int    `json:"depth"`
-	DepthLine  string            `json:"depth_line"`
-	Window     MentorWindowView  `json:"window"`
-	DoneAfterWin  bool              `json:"done_after_win"`
-	DoneAfterWinWhy string         `json:"done_after_win_why,omitempty"`
-	StopAfterLoss  bool            `json:"stop_after_loss"`
-	StopAfterLossWhy string        `json:"stop_after_loss_why,omitempty"`
+	Enabled   bool              `json:"enabled"`
+	AsOfMs    int64             `json:"as_of_ms"` // server stamp; the card shows "as of HH:MM:SS CT"
+	HTF       MentorHTFView     `json:"htf"`
+	Trigger5m MentorTriggerView `json:"trigger_5m"`
+	// Levels/Depth are ABSENT (omitempty) while the evaluator has not been
+	// built yet, and `Computing` flags that state; once the evaluator exists an
+	// empty level set is `[]` and an empty depth is `{}` (canon: absent ≠ []).
+	Levels           []MentorLevelView `json:"levels,omitempty"`
+	Depth            map[string]int    `json:"depth,omitempty"`
+	Computing        bool              `json:"computing,omitempty"`
+	DepthLine        string            `json:"depth_line"`
+	Window           MentorWindowView  `json:"window"`
+	DoneAfterWin     bool              `json:"done_after_win"`
+	DoneAfterWinWhy  string            `json:"done_after_win_why,omitempty"`
+	StopAfterLoss    bool              `json:"stop_after_loss"`
+	StopAfterLossWhy string            `json:"stop_after_loss_why,omitempty"`
 }
 
 // MentorHTFView is the §5.4 4h/1h direction state + the gate verdict.
 type MentorHTFView struct {
-	FourHDir    string `json:"four_h_dir"`     // "long" | "short" | "" (no line)
-	FourHSince  int64  `json:"four_h_since"`   // ms since the 4h line last moved
+	FourHDir    string `json:"four_h_dir"`   // "long" | "short" | "" (no line)
+	FourHSince  int64  `json:"four_h_since"` // ms since the 4h line last moved
 	OneHDir     string `json:"one_h_dir"`
 	OneHSince   int64  `json:"one_h_since"`
-	Verdict     string `json:"verdict"`        // "follow" | "sit-out" | "no-trigger"
+	Verdict     string `json:"verdict"` // "follow" | "sit-out" | "no-trigger"
 	VerdictWhy  string `json:"verdict_why,omitempty"`
 	VerdictSide string `json:"verdict_side,omitempty"` // the side to follow when ok
-	GateActive  bool   `json:"gate_active"`    // HTFGateActive at now
+	GateActive  bool   `json:"gate_active"`            // HTFGateActive at now
 }
 
 // MentorTriggerView is the §5.1 5m trigger line.
@@ -47,11 +51,11 @@ type MentorTriggerView struct {
 
 // MentorLevelView is one mentor key level in effect, with today's visits.
 type MentorLevelView struct {
-	Key        string  `json:"key"`
-	Kind       string  `json:"kind"`
-	Price      float64 `json:"price"`
-	DrawnAt    int64   `json:"drawn_at"` // AtTime ms
-	VisitsToday int    `json:"visits_today"`
+	Key         string  `json:"key"`
+	Kind        string  `json:"kind"`
+	Price       float64 `json:"price"`
+	DrawnAt     int64   `json:"drawn_at"` // AtTime ms
+	VisitsToday int     `json:"visits_today"`
 }
 
 // MentorWindowView is the trading-window knob's live state.
@@ -67,7 +71,11 @@ type MentorWindowView struct {
 // section the tick takes) and released before the pure gate helpers run.
 // ok=false = mentor mode OFF (or the evaluator has not been built yet).
 func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool) {
-	p := MentorTruthPanel{AsOfMs: now.UnixMilli()}
+	p := MentorTruthPanel{
+		AsOfMs: now.UnixMilli(),
+		Levels: []MentorLevelView{},
+		Depth:  map[string]int{},
+	}
 	if at == nil {
 		return p, false
 	}
@@ -136,6 +144,12 @@ func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool
 	}
 
 	if ev == nil {
+		// Evaluator not built yet (first 1m bar hasn't closed): levels/depth are
+		// ABSENT (not `[]`/`{}`) and `computing` tells the card to say so, so the
+		// frontend never dereferences a null list.
+		p.Computing = true
+		p.Levels = nil
+		p.Depth = nil
 		return p, true
 	}
 	return p, true

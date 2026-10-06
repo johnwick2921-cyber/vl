@@ -22,14 +22,18 @@ export interface MentorTruth {
     gate_active: boolean
   }
   trigger_5m: { dir: string; price: number; since: number }
-  levels: {
+  /** ABSENT (undefined) while the evaluator has not built yet — see `computing`. */
+  levels?: {
     key: string
     kind: string
     price: number
     drawn_at: number
     visits_today: number
   }[]
-  depth: Record<string, number>
+  /** ABSENT (undefined) while the evaluator has not built yet. */
+  depth?: Record<string, number>
+  /** true when mentor is ON but the evaluator has not built yet (first 1m bar). */
+  computing?: boolean
   depth_line: string
   window: { start: string; minutes: number; active: boolean; ended: boolean }
   done_after_win: boolean

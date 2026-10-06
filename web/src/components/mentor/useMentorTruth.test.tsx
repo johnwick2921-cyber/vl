@@ -16,8 +16,8 @@ vi.mock('../../lib/api/traders', () => ({
   },
 }))
 
-function Harness({ traderId }: { traderId: string }) {
-  const { truth, stale } = useMentorTruth(traderId)
+function Harness({ traderId, poll = true }: { traderId: string; poll?: boolean }) {
+  const { truth, stale } = useMentorTruth(traderId, poll)
   return (
     <div>
       <span data-testid="enabled">{String(truth?.enabled ?? 'null')}</span>
@@ -66,6 +66,18 @@ describe('useMentorTruth', () => {
     expect(getMentorTruth).not.toHaveBeenCalled()
     rerender(<Harness traderId="t1" />)
     expect(getMentorTruth).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fetch (and does not poll) when poll=false — caller owns the truth', async () => {
+    getMentorTruth.mockResolvedValue({ enabled: true, levels: [], depth: {} })
+    render(<Harness traderId="t1" poll={false} />)
+    expect(getMentorTruth).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000)
+    })
+    expect(getMentorTruth).not.toHaveBeenCalled()
+    expect(screen.getByTestId('enabled').textContent).toBe('null')
   })
 
   it('keeps the last good payload (stale) on error, then clears on success', async () => {
