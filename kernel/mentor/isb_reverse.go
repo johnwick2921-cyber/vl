@@ -52,6 +52,12 @@ func ReverseISBAtEMA9(prev, cur market.Kline, ema9 float64, trend Side, cfg Conf
 	if !IsISB(prev, cur) {
 		return Intent{}, false, "reverse ISB at EMA 9: not an ISB [D5.4]"
 	}
+	if trend == "" {
+		// B6 (L14): with no trend direction the reverse ISB used to fall
+		// through to SHORT unconditionally. Fail closed [D5.4: "đánh theo xu
+		// hướng" — the trend must exist].
+		return Intent{}, false, "reverse ISB at EMA 9: no trend direction — fail-closed [D5.4, B6]"
+	}
 	dir := ISBDirection(prev)
 	if dir == trend {
 		return Intent{}, false, "reverse ISB at EMA 9: the ISB already points with the trend — no reverse [D5.4]"
