@@ -34,9 +34,13 @@ func TestMentorTruthSnapshotReflectsSeededEvaluator(t *testing.T) {
 	ev.State.Levels = []mentor.Level{{Key: "kl:30000@d", Kind: mentor.KindKeyLevel, Price: 30000, AtTime: 4000}}
 	ev.State.Visits = map[string]int{"kl:30000@d": 2}
 
-	p, ok := at.MentorTruthSnapshot(time.Now())
+	now := time.Now()
+	p, ok := at.MentorTruthSnapshot(now)
 	if !ok || !p.Enabled {
 		t.Fatalf("mentor-mode snapshot must be enabled, got ok=%v enabled=%v", ok, p.Enabled)
+	}
+	if p.AsOfMs != now.UnixMilli() {
+		t.Fatalf("as_of_ms = %d, want the server stamp %d", p.AsOfMs, now.UnixMilli())
 	}
 	if p.HTF.FourHDir != "long" || p.HTF.FourHSince != 1000 {
 		t.Fatalf("4h = %q@%d, want long@1000", p.HTF.FourHDir, p.HTF.FourHSince)

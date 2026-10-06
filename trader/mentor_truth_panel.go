@@ -13,6 +13,7 @@ import (
 // zeroes, so the frontend can hide the card without a second call.
 type MentorTruthPanel struct {
 	Enabled    bool              `json:"enabled"`
+	AsOfMs     int64             `json:"as_of_ms"` // server stamp; the card shows "as of HH:MM:SS CT"
 	HTF        MentorHTFView     `json:"htf"`
 	Trigger5m  MentorTriggerView `json:"trigger_5m"`
 	Levels     []MentorLevelView `json:"levels"`
@@ -66,7 +67,7 @@ type MentorWindowView struct {
 // section the tick takes) and released before the pure gate helpers run.
 // ok=false = mentor mode OFF (or the evaluator has not been built yet).
 func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool) {
-	p := MentorTruthPanel{}
+	p := MentorTruthPanel{AsOfMs: now.UnixMilli()}
 	if at == nil {
 		return p, false
 	}
