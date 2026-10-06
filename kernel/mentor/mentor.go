@@ -186,7 +186,7 @@ type Config struct {
 	EMALocationTFMinutes int
 
 	// Touch / close-side (PLAN v1 §2).
-	TouchBandPts float64 // literal-touch band around a level; default 4.0 (the bot's 16-tick touch band)
+	TouchBandPts float64 // literal-touch band around a level; default 0 = literal touch only (L2 CTO 12:19:20Z); key levels never widen beyond 0
 	// LvlRevisitMinPts — L1 knob (CTO 12:19:20Z): the extra departure distance
 	// (from the level close) a closed non-touching candle needs to END a visit.
 	// Default 0: any closed candle that did not touch ends the visit ("he never
@@ -389,10 +389,12 @@ func DefaultConfig() Config {
 	}
 }
 
-// barsTF aggregates 1m bars into the given timeframe on CLOCK-ALIGNED buckets
-// to the CME session open 17:00 CT (17–21, 21–01, 01–05, 05–09, 09–13, 13–16)
-// the way NT8 draws them. Buckets never re-anchor when the window slides or a
-// gap appears.
+// barsTF aggregates 1m bars into the given timeframe. Every TF except 240 is
+// EPOCH-aligned (UTC) — identical to a 17:00 CT anchor for every TF used here
+// (1/3/5/15/30/60 all divide 60 minutes, and 17:00 CT sits on a whole UTC
+// hour). Only the 240 bucket is 17:00 CT session-anchored (fourHBucketStart:
+// 17–21, 21–01, 01–05, 05–09, 09–13, 13–16), the way NT8 draws the 4h. Buckets
+// never re-anchor when the window slides or a gap appears.
 func barsTF(bars []market.Kline, tfMin int) []market.Kline {
 	if tfMin <= 1 || len(bars) == 0 {
 		return bars

@@ -113,10 +113,14 @@ func sessionKeyCT(ms int64) string {
 // are the SAME numbers SeedMissing compares against its floors — one source
 // of truth for the seed depth and the refusal line.
 func SeedDepths(bars1m, bars1h []market.Kline, now int64) map[string]int {
-	today := dayStartCT(now)
+	// P3-1 (ENGINE-AUDIT-R2 DS-104): "today session" is the 17:00 CT Globex
+	// session — the SAME definition seedDepthOf (the fail-closed gate) reads —
+	// not the calendar day. One definition for one name, so the boot depth
+	// line and the gate can never disagree on what "today" means.
 	todayN := 0
+	key := sessionKeyCT(now)
 	for _, b := range bars1m {
-		if b.OpenTime >= today && b.OpenTime < today+24*60*60_000 {
+		if sessionKeyCT(b.OpenTime) == key {
 			todayN = 1
 			break
 		}
