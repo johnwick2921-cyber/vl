@@ -106,8 +106,14 @@ func TestMentorSplitRegistersTwoLegsAndMovesEachByLeg(t *testing.T) {
 	if got := capturedDriveLegs(); len(got) != 2 || got[0] != 1 || got[1] != 2 {
 		t.Fatalf("BE legs = %v, want [1 2] (each OCO pair addressed by its own leg)", got)
 	}
-	// Next candle: leg 1's TP (12) already crossed on the BE candle → Scaled;
-	// the 1:1 + trail runs on the RUNNER only.
+	// Next candle: leg 1's TP (12) already crossed on the BE candle, but B2
+	// (L9) says a candle-price cross does NOT mark Scaled for a split — only
+	// the BROKER's position_close receipt of leg 1's TP does. Feed the receipt
+	// first, then the 1:1 + trail runs on the RUNNER only.
+	at.mentorMarkLeg1Scaled(ntwire.PositionClosePayload{SignalID: "sig-split", PositionSide: "long", ExitReason: "tp", Leg: 1})
+	if !lp.Pos.Scaled {
+		t.Fatalf("leg 1's TP receipt must mark Scaled (B2)")
+	}
 	at.mentorExitDrivePos(nil, lp, 14, 14.5, 13.5)
 	legs := capturedDriveLegs()
 	for _, l := range legs[2:] {

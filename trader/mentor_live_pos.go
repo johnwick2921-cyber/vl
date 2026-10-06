@@ -128,6 +128,27 @@ func (at *AutoTrader) mentorUnregisterLivePos(key string) {
 	delete(at.mentorLivePos, key)
 }
 
+// mentorMarkLeg1Scaled (B2, BUILD-ALL L9 bookkeeping half) marks a live position
+// scaled ONLY on the broker's position_close receipt of LEG 1's TP. A whole-
+// position close (leg 0), a runner close (leg 2), a stop exit, or a manual close
+// is NOT a scale-out and leaves Scaled untouched. The candle-price guess that
+// used to set Scaled in the exit drive is gone — the trail now begins only once
+// the broker confirms leg 1 actually exited.
+func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
+	if at == nil || p.Leg != 1 || p.ExitReason != "tp" || p.SignalID == "" {
+		return
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	lp, ok := at.mentorLivePos[p.SignalID]
+	if !ok || lp == nil || lp.Pos.Scaled {
+		return
+	}
+	lp.Pos.Scaled = true
+	mentorCount("leg1_at_target")
+	at.logInfof("🧑‍🏫 mentor leg 1 scaled on the broker TP receipt: %s (%s)", p.SignalID, p.PositionSide)
+}
+
 // mentorLivePosList returns every live mentor position (the exit-drive loop
 // iterates it). The slice is a fresh copy; the pointed-to structs are the live
 // state the loop owns the write-back for.

@@ -1428,6 +1428,19 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 					ledger.RequestCancel(r.ID, fmt.Sprintf("stop-limit expiry: remainder cancelled %d of %d", remain, total), now.UnixMilli()))
 				at.logInfof("⏳ armed %s row %d partial fill at expiry — remainder cancelled %d of %d (the filled part keeps its bracket)",
 					r.Scenario, r.ID, remain, total)
+				// B1 (L2): a PART fill whose remainder is cancelled at expiry must
+				// still be handed to the mentor exit drive (BE / 1:1 / trail) — the
+				// filled quantity is the FINAL position, register it now. G1/G2 was
+				// already fed at first fill via mentorEnqueueFill, so no re-enqueue.
+				if isMentorArmOrigin(r) && strings.TrimSpace(r.SignalID) != "" {
+					at.registerMentorLivePos(r, ntwire.OrderUpdatePayload{
+						SignalID:  r.SignalID,
+						Quantity:  r.FillQuantity,
+						FillPrice: r.FillPrice,
+					})
+					at.pokeMentorExitDrive()
+					at.mentorFunnel.bumpFilled()
+				}
 			}
 			continue
 		}

@@ -208,6 +208,12 @@ func (t *TCPTrader) recordClose(
 		if OnPositionClosed != nil {
 			OnPositionClosed(owner.TraderID, owner.ID)
 		}
+		// B2 (BUILD-ALL): notify the owning trader with the FULL close payload
+		// (leg + exit reason) so the exit drive marks leg 1 scaled on the
+		// broker's TP receipt, not on a candle-price guess.
+		if OnPositionLegClosed != nil {
+			OnPositionLegClosed(owner.TraderID, p)
+		}
 		// T7 (2026-08-27) — the close path stamps pnl_corrected on the
 		// row immediately (same recompute the readers COALESCE to), so the
 		// column is non-NULL on every NEW close. The Δ≥$0.50 class-killer
@@ -434,6 +440,12 @@ func (t *TCPTrader) RetryPendingNT8Exits(st *store.Store) {
 // position close (close_sync priced close, reconcile priced/flat close)
 // triggers exactly one post-exit rescan for the OWNING trader. Nil = no-op.
 var OnPositionClosed func(traderID string, positionID int64)
+
+// OnPositionLegClosed (B2, BUILD-ALL) is the package-level hook fired with the
+// FULL position_close payload (leg + exit reason) so the mentor exit drive can
+// mark leg 1 "scaled" ONLY on the broker's receipt of leg 1's TP — never on a
+// candle-price guess that precedes the actual exit. Nil = no-op.
+var OnPositionLegClosed func(traderID string, p ntwire.PositionClosePayload)
 
 // buildExitFill constructs the deterministic trader_fills row for an NT8 exit
 // (4.2). The exchange_trade_id is keyed on the owning position row id — one
