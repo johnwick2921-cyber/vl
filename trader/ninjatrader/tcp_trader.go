@@ -958,6 +958,27 @@ func (t *TCPTrader) SplitSentFor(signalID string) (SentSplit, bool) {
 	return s, ok && s.Leg1Qty > 0
 }
 
+// ForgetSignalMaps (UR-FIX U3) drops the per-signal mentor records — the split
+// and the per-leg live stops — once the signal is FULLY closed (both legs flat).
+// The mentor exit drive calls this from its flat-unregister, never on a leg-1
+// partial close: the runner still needs the split record (SplitSentFor) and its
+// per-leg stop (MoveStopForSignalLeg) while it is open.
+func (t *TCPTrader) ForgetSignalMaps(signalID string) {
+	if t == nil || signalID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.splitBySignal != nil {
+		delete(t.splitBySignal, signalID)
+	}
+	if t.stopBySignal != nil {
+		delete(t.stopBySignal, signalID)
+		delete(t.stopBySignal, signalID+"#leg1")
+		delete(t.stopBySignal, signalID+"#leg2")
+	}
+}
+
 // wireLeg1TP rounds leg 1's TP to the nearest tick and checks it sits on the
 // profit side of the (wire) entry. why != "" = refuse the split.
 func wireLeg1TP(side string, entry, leg1TP, tick float64) (float64, string) {
@@ -1414,6 +1435,48 @@ func (t *TCPTrader) EntryBracketMapsForTest() (stops, targets map[string]float64
 		targets[k] = v
 	}
 	return stops, targets
+}
+
+// SignalMapsForTest (UR-FIX U3) copies the per-signal mentor maps — the split
+// that went on the wire and the per-leg live stops. Read-only; the mirror of
+// EntryBracketMapsForTest, so the exit-drive full-close pin can assert both are
+// emptied without touching the private fields.
+func (t *TCPTrader) SignalMapsForTest() (splits map[string]SentSplit, stops map[string]float64) {
+	if t == nil {
+		return map[string]SentSplit{}, map[string]float64{}
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	splits = make(map[string]SentSplit, len(t.splitBySignal))
+	for k, v := range t.splitBySignal {
+		splits[k] = v
+	}
+	stops = make(map[string]float64, len(t.stopBySignal))
+	for k, v := range t.stopBySignal {
+		stops[k] = v
+	}
+	return splits, stops
+}
+
+// SeedSignalMapsForTest (UR-FIX U3) stamps the per-signal mentor maps directly.
+// Test-only: the production writers are PlaceStopEntry (splitBySignal) and
+// MoveStopForSignalLeg (stopBySignal), both of which need a connected AddOn.
+func (t *TCPTrader) SeedSignalMapsForTest(signalID string, split SentSplit, stops map[string]float64) {
+	if t == nil || signalID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.splitBySignal == nil {
+		t.splitBySignal = map[string]SentSplit{}
+	}
+	t.splitBySignal[signalID] = split
+	if t.stopBySignal == nil {
+		t.stopBySignal = map[string]float64{}
+	}
+	for k, v := range stops {
+		t.stopBySignal[k] = v
+	}
 }
 
 func (t *TCPTrader) CancelAllOrders(symbol string) error {

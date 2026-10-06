@@ -159,8 +159,16 @@ func (at *AutoTrader) mentorUnregisterLivePos(key string) {
 		return
 	}
 	at.mentorExitMu.Lock()
-	defer at.mentorExitMu.Unlock()
 	delete(at.mentorLivePos, key)
+	at.mentorExitMu.Unlock()
+	// UR-FIX U3: both legs are flat — drop the TCPTrader's per-signal split and
+	// per-leg stop records so they do not grow for the life of the process.
+	// This function IS the full-close path; a leg-1 partial close never reaches
+	// it (the runner keeps the side open), so the split record the runner still
+	// needs for SplitSentFor / MoveStopForSignalLeg survives until the full flat.
+	if nt := at.armedTrader(); nt != nil {
+		nt.ForgetSignalMaps(key)
+	}
 }
 
 // mentorMarkLeg1Scaled (B2, BUILD-ALL L9 bookkeeping half) marks a live position

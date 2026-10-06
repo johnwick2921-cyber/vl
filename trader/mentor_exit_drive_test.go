@@ -407,3 +407,70 @@ func TestMentorExitDrivePosISB_PartialOnlyOnTheFillCandle(t *testing.T) {
 		t.Fatalf("a later candle must not re-fire the ISB partial, got %d logs", got)
 	}
 }
+
+// UR-FIX U3: splitBySignal + stopBySignal must be dropped on the FULL close
+// (both legs flat) — the exit-drive flat-unregister is the call site — and must
+// SURVIVE a leg-1-only close (the runner still needs SplitSentFor and
+// MoveStopForSignalLeg). Mutant: delete on the leg-1 scale → the runner's split
+// record vanishes mid-trade → RED; mutant: never delete → both maps never clear
+// → RED.
+func TestMentorExitDriveForgetsSignalMapsOnFullCloseOnly(t *testing.T) {
+	at, _ := newDriveAT(t)
+	nt := at.trader.(*nttrader.TCPTrader)
+	sid := "entry"
+	nt.SeedSignalMapsForTest(sid, nttrader.SentSplit{Leg1Qty: 2, Leg1TP: 11},
+		map[string]float64{sid: 9, sid + "#leg1": 9, sid + "#leg2": 9})
+
+	// A SPLIT long: leg 1 TP at 11 (1:1), the runner to 14. Both legs carry the
+	// one entry signal id.
+	p := &mentorLivePos{
+		Pos: mentorPosition{
+			Symbol: "MNQ", Side: "long", Origin: "PHL", Entry: 10, Stop: 9,
+			Target: 14, R: 1, Mode: "B", Leg1: 2, Leg2: 2, Leg1TP: 11,
+		},
+		Legs: [2]mentorLeg{
+			{SignalID: sid, Qty: 2, TP: 11, Stop: 9, Final: false, Wire: 1},
+			{SignalID: sid, Qty: 2, TP: 14, Stop: 9, Final: true, Wire: 2},
+		},
+	}
+	at.mentorRegisterLivePos(sid, p)
+
+	// Leg-1-only close: the leg-1 TP candle scales leg 1; the runner stays open.
+	at.mentorExitDrivePos(nt, p, 11.0, 11.5, 10.5) // h=11.5 ≥ leg1Target 11 → Scaled
+	if !p.Pos.Scaled {
+		t.Fatal("the leg-1 TP candle must scale leg 1")
+	}
+	if _, ok := nt.SplitSentFor(sid); !ok {
+		t.Fatal("a leg-1-only close must NOT drop the split record (the runner still needs it)")
+	}
+
+	// Full close: the flat drive unregisters after two consecutive flat reads.
+	sides := map[string]bool{}
+	old := mentorDriveOpenSides
+	mentorDriveOpenSides = func(*AutoTrader) (map[string]bool, bool) { return sides, true }
+	t.Cleanup(func() { mentorDriveOpenSides = old })
+	bar := func(i int) []market.Kline {
+		return []market.Kline{{OpenTime: int64(i) * 60_000, Close: 10.2, High: 10.3, Low: 10.1, Final: true}}
+	}
+	p.BarsSinceFill = 2
+	at.mentorExitDrive(bar(1)) // flat read 1 — still held
+	if n := len(at.mentorLivePosList()); n != 1 {
+		t.Fatalf("one flat read must not drop the position; %d left", n)
+	}
+	at.mentorExitDrive(bar(2)) // flat read 2 → dropped + maps forgotten
+	if n := len(at.mentorLivePosList()); n != 0 {
+		t.Fatalf("a flat position must leave the loop; %d left", n)
+	}
+	if _, ok := nt.SplitSentFor(sid); ok {
+		t.Fatal("the full close must drop the split record")
+	}
+	splits, stops := nt.SignalMapsForTest()
+	if _, ok := splits[sid]; ok {
+		t.Fatal("the full close must clear splitBySignal")
+	}
+	for _, k := range []string{sid, sid + "#leg1", sid + "#leg2"} {
+		if _, ok := stops[k]; ok {
+			t.Fatalf("the full close must clear stopBySignal[%s]", k)
+		}
+	}
+}
