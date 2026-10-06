@@ -222,5 +222,17 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 			return in, false, "spent day: stop over the 15-pt cap — skip the setup [R9, D1.2 p1 @ 07:48–09:00]"
 		}
 	}
-	return CapTargetForDay(in, day, dg), true, ""
+	capped := CapTargetForDay(in, day, dg)
+	if capped.Target != in.Target {
+		// B7 (L13): measure the room on the ACTUAL (capped) target — the room
+		// rule is "reward to the target ≥ RoomMultiple × risk" [D5.3 p1 @ 09:16]
+		// and on a spent day the target IS the 15-pt cap [D5.1 p1 @ 16:24,
+		// @ 19:11–20:07]. The ISB and reverse ISB already run this on the capped
+		// target; the PHL/PLH used to measure the uncapped target and then emit
+		// a capped target whose reward no longer clears the room.
+		if refuse, why := roomRefusal(capped.Price, capped.Stop, capped.Target, cfg.RoomMultiple); refuse {
+			return in, false, why
+		}
+	}
+	return capped, true, ""
 }
