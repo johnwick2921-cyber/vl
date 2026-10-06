@@ -205,19 +205,52 @@ func Seed(e *Evaluator, bars1m []market.Kline, now int64) []string {
 		e.State.Swing.LastBarTime = b5[len(b5)-1].OpenTime
 	}
 
+	// F2 (release #10): seed the 5m trigger line and the 4h/1h HTF trigger
+	// lines from the SAME closed 1m history with the SAME functions and
+	// aggregation as the tick path (TriggerTick / HTFAdvance over barsTF;
+	// bucketOpen keeps the 4h on the 17:00 CT anchor) — so the watermarks line
+	// up and the first tick consumes only NEWER bars (no double-advance).
+	// TriggerTick commits only non-tail buckets, so the last, possibly
+	// incomplete bucket is left for the first tick, exactly as on the live path.
+	e.State.Trigger = TriggerTick(e.State.Trigger, barsTF(bars1m, 5), 5, e.Cfg)
+	// Print windows: the trader plumbs only TODAY's windows — apply them to
+	// today's bars only. Historical print candles are NOT removed from the
+	// seeded history (see htfFeedBarsToday).
+	htfBars := htfFeedBarsToday(bars1m, e.Cfg.PrintWindows, now)
+	e.State.HTF = HTFAdvance(e.State.HTF, barsTF(htfBars, 240), barsTF(htfBars, 60), e.Cfg)
+
 	e.seedLine = SeedLine(e.State, bars1m, now)
 	return e.missing
 }
 
 // SeedLine is the one boot/arm line: the seeded depth per source, n/a when
-// unknown.
+// unknown, plus the seeded trigger directions (F2: the lines are warmed from
+// history now, so the line says what they are — not "none until the first
+// tick").
 func SeedLine(s State, bars1m []market.Kline, now int64) string {
 	parts := []string{"mentor seed:"}
 	parts = append(parts, fmt.Sprintf("4h EMA34 %d/%d", len(fourHClosedBuckets(barsTF(bars1m, 60), now)), FourHEMA34Warmup))
 	parts = append(parts, fmt.Sprintf("1m EMA34 %d/%d", closedCount(bars1m, now), OneMEMA34Warmup))
 	parts = append(parts, fmt.Sprintf("1H RTH levels %d candles", len(keyLevel1HBars(bars1m))))
 	parts = append(parts, fmt.Sprintf("levels %d", len(s.SeedLevels)))
+	parts = append(parts, triggerLinePart("4h", s.HTF.FourH, true))
+	parts = append(parts, triggerLinePart("1h", s.HTF.OneH, false))
+	parts = append(parts, triggerLinePart("5m", s.Trigger, false))
 	return strings.Join(parts, " ")
+}
+
+// triggerLinePart renders one seeded trigger line for the boot line: "<name>
+// trigger <dir>" (and, for the 4h, "since <bucket time>"). An unset direction
+// is "none".
+func triggerLinePart(name string, t TriggerLine, since bool) string {
+	dir := string(t.Dir)
+	if dir == "" {
+		dir = "none"
+	}
+	if since && t.MovedAt > 0 {
+		return fmt.Sprintf("%s trigger %s since %s", name, dir, time.UnixMilli(t.MovedAt).In(ctime()).Format("2006-01-02T15:04"))
+	}
+	return fmt.Sprintf("%s trigger %s", name, dir)
 }
 
 // depthMetLine is the ONE line logged when the seeded depth floors are met
