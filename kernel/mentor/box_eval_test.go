@@ -101,6 +101,7 @@ func TestEvaluatorBoxPathEveryReturnTrades(t *testing.T) {
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
+	cfg.EMALocationTFMinutes = 0 // no EMA34 location line: the seeded level is the only target
 	cfg.RoomMultiple = 0.05
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {
@@ -109,22 +110,36 @@ func TestEvaluatorBoxPathEveryReturnTrades(t *testing.T) {
 	bars := []market.Kline{
 		mk(0, 100, 101, 99, 100),
 		mk(1, 100, 102, 99, 101),
-		mk(2, 101, 103, 95, 96), // swing low @2
-		mk(3, 97.3, 98.3, 96.5, 97.5),
-		mk(4, 97, 98, 94, 95), // swing low @4 — the extreme; FTGL [94, 96]
-		mk(5, 98, 98.2, 96.5, 97.2),
-		mk(6, 96.5, 97.1, 95.9, 97),   // REJECT return 1 (literal touch: low ≤ 96, close above 96)
-		mk(7, 97.7, 97.9, 95.9, 96.9), // REJECT return 2
-		mk(8, 98.2, 98.5, 97, 98.4),
+		mk(2, 101, 103, 95, 96),   // bottom 1: the extreme low 95
+		mk(3, 96.5, 97, 96, 96.8), // confirms the extreme
+		mk(4, 96.8, 97, 96.2, 96.8),
+		mk(5, 96.8, 97, 95.5, 96),      // bottom 2: later confirmed higher low
+		mk(6, 96.2, 97, 95.8, 96.8),    // confirms bottom 2
+		mk(7, 96.8, 97, 96.2, 96.8),    // no touch
+		mk(8, 96.8, 97, 96.3, 96.9),    // no touch
+		mk(9, 96.9, 97, 96.4, 96.9),    // no touch (5m bucket 2 ends; high 97 keeps returns out of the ISB box)
+		mk(10, 96.5, 97.1, 95.9, 97),   // REJECT return 1
+		mk(11, 97.5, 97.9, 97.1, 97.6), // outside
+		mk(12, 96.5, 97.2, 95.9, 97),   // REJECT return 2
 	}
 	e := New(cfg)
-	now := bars[8].OpenTime + 59_999
+	now := bars[12].OpenTime + 59_999
+	// Seed one far key level above the entry so the box has a target (the
+	// tape's own key level sits below the entry).
+	e.seeded = true
+	e.State.Seed1mWatermark = maxInt64
+	e.State.Seed1HWatermark = maxInt64
+	e.State.SeedLevels = []Level{{Key: "far", Kind: KindKeyLevel, Price: 125}}
 	// ORB preset (the §7 gate is drawn+escaped long; the tape alone never
 	// draws an ORB and the gate would refuse every intraday entry).
 	e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
 	// B9 presets: box entries obey the HTF/day gates (D5.1 p1 @16:24,
 	// @19:11–20:07) — 4h long (1h silent), a normal measured day.
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 93}}
+	// Freeze the 5m trigger BELOW the entry: the B1 trigger zone must not
+	// refuse an FTGL entry above its buy line, and the retest level below
+	// the entry must not shadow the seeded target.
+	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 80, LastBucket: t0 + 5*60_000}
 	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
 	boxIntents := func(ins []Intent) []Intent {
 		var out []Intent
@@ -135,19 +150,19 @@ func TestEvaluatorBoxPathEveryReturnTrades(t *testing.T) {
 		}
 		return out
 	}
-	first := boxIntents(e.Tick(bars[:9], now))
+	first := boxIntents(e.Tick(bars[:13], now))
 	if len(first) != 2 {
 		t.Fatalf("tick 1 box intents = %d (%+v), want 2 — every return trades [D3.2 p2 @ 06:25]", len(first), first)
 	}
-	if first[0].Price != 97.1 || first[0].Side != SideLong || first[0].Stop != 95.9 || first[0].Target != 98.2 {
-		t.Fatalf("return 1 = %+v, want LONG 97.1 / stop 95.9 / target 98.2", first[0])
+	if first[0].Price != 97.1 || first[0].Side != SideLong || first[0].Stop != 95.9 {
+		t.Fatalf("return 1 = %+v, want LONG 97.1 / stop 95.9", first[0])
 	}
-	if first[1].Price != 97.9 {
-		t.Fatalf("return 2 = %+v, want entry 97.9", first[1])
+	if first[1].Price != 97.2 {
+		t.Fatalf("return 2 = %+v, want entry 97.2", first[1])
 	}
 	// Next tick: no new candle — the same returns must not re-emit.
-	bars2 := append(bars, mk(9, 98.5, 98.8, 97.5, 98.6))
-	second := boxIntents(e.Tick(bars2[:10], bars2[9].OpenTime+59_999))
+	bars2 := append(bars, mk(13, 98.5, 98.8, 97.5, 98.6))
+	second := boxIntents(e.Tick(bars2[:14], bars2[13].OpenTime+59_999))
 	if len(second) != 0 {
 		t.Fatalf("tick 2 box intents = %d (%+v), want 0 — a return is evaluated once", len(second), second)
 	}
@@ -170,8 +185,10 @@ func TestBoxReturnExactlyOneEntry(t *testing.T) {
 	}
 	bars := []market.Kline{
 		mk(0, 100, 101, 99, 100), mk(1, 100, 102, 99, 101), mk(2, 101, 103, 95, 96),
-		mk(3, 97.3, 98.3, 96.5, 97.5), mk(4, 97, 98, 94, 95), mk(5, 98, 98.2, 96.5, 97.2),
-		mk(6, 97.5, 98, 96.7, 97.6), // spacer: the return sits >=3 candles from the extreme
+		mk(3, 96.5, 97, 96, 96.8), // confirms the extreme (low 96 > 95)
+		mk(4, 96.8, 97, 96.2, 96.8),
+		mk(5, 96.8, 97, 95.5, 96),   // bottom 2: the later confirmed higher low
+		mk(6, 96.2, 97, 95.8, 96.8), // confirms bottom 2
 		mk(7, 96.5, 97.1, 95.9, 97), // the ONE reject return (touches 96, closes above)
 	}
 	e := New(cfg)
@@ -212,6 +229,68 @@ func TestBoxReturnExactlyOneEntry(t *testing.T) {
 		if !boxOne {
 			t.Fatalf("the single entry is not the box path's: %+v", ins)
 		}
+	}
+}
+
+// TestBoxThirdTouchIsTheTrade — item 12 (CTO ruling 23:06Z): "the FAILURE
+// defines the box… the trade is the 3rd touch." Tick-level pin through the
+// production path: the bottom-2 candle itself (the touch that completes the
+// pair) is a formation candle — the box is born only at bottom 2's
+// confirmation, so the bottom-2 touch emits NOTHING; the FIRST return after
+// formation (the 3rd touch overall) is the trade. Mutant (FormedAt =
+// seq[nearest].idx, walk the confirming bar) → RED: an entry fires on the
+// confirming bar before the return.
+func TestBoxThirdTouchIsTheTrade(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.KeyLevelTFMinutes = 1
+	cfg.EMAPeriod34 = 0
+	cfg.EMAPeriod9 = 0
+	cfg.RoomMultiple = 0.05
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(0, 100, 101, 99, 100),
+		mk(1, 100, 102, 99, 101),
+		mk(2, 101, 103, 95, 96),   // bottom 1: the extreme low 95
+		mk(3, 96.5, 97, 96, 96.8), // confirms the extreme
+		mk(4, 96.8, 97, 96.2, 96.8),
+		mk(5, 96.8, 97, 95.5, 96),   // bottom 2: touches the future top edge (close 96)
+		mk(6, 96.2, 97, 95.8, 96.8), // bottom 2's confirming bar — box born here
+		mk(7, 96.5, 97.1, 95.9, 97), // the first return = the 3rd touch
+	}
+	e := New(cfg)
+	preset := func(now int64) {
+		e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 93}}
+		e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
+	}
+	boxEntries := func(ins []Intent) []Intent {
+		var out []Intent
+		for _, in := range ins {
+			if strings.HasPrefix(in.Reason, "box edge return") && in.Action == PlaceStopEntry {
+				out = append(out, in)
+			}
+		}
+		return out
+	}
+
+	// Tick through the bottom-2 candle (bar 5): the pair is not yet formed —
+	// no box, no entry. The bottom-2 touch is never the trade.
+	now := bars[5].OpenTime + 59_999
+	preset(now)
+	if got := boxEntries(e.Tick(bars[:6], now)); len(got) != 0 {
+		t.Fatalf("bottom-2 tick emitted %d box entries, want 0 — the bottom-2 touch is a formation candle", len(got))
+	}
+
+	// Tick through the return (bar 7): the first return after formation is
+	// the trade — exactly one box entry.
+	now = bars[7].OpenTime + 59_999
+	preset(now)
+	if got := boxEntries(e.Tick(bars[:8], now)); len(got) != 1 {
+		t.Fatalf("return tick emitted %d box entries, want 1 — the 3rd touch is the trade", len(got))
 	}
 }
 
@@ -466,6 +545,7 @@ func TestBoxEntryDayAndHTFGates(t *testing.T) {
 	fixture := func(htf HTF, day DayLatch) (*Evaluator, []market.Kline, int64) {
 		cfg := DefaultConfig()
 		cfg.Enabled = true
+		cfg.HTFGateNewsOnly = false // these pins exercise the direction gate itself (all-day)
 		cfg.KeyLevelTFMinutes = 1
 		cfg.EMAPeriod34 = 0
 		cfg.EMAPeriod9 = 0
@@ -478,15 +558,14 @@ func TestBoxEntryDayAndHTFGates(t *testing.T) {
 			mk(0, 100, 101, 99, 100),
 			mk(1, 100, 102, 99, 101),
 			mk(2, 101, 103, 95, 96),
-			mk(3, 97.3, 98.3, 96.5, 97.5),
-			mk(4, 97, 98, 94, 95),
-			mk(5, 98, 98.2, 96.5, 97.2),
-			mk(6, 96.5, 97.1, 95.9, 97), // FTGL reject return 1 → LONG
-			mk(7, 97.7, 97.9, 95.9, 96.9),
-			mk(8, 98.2, 98.5, 97, 98.4),
+			mk(3, 96.5, 97, 96, 96.8), // confirms the extreme (low 96 > 95)
+			mk(4, 96.8, 97, 96.2, 96.8),
+			mk(5, 96.8, 97, 95.5, 96),   // bottom 2: later confirmed higher low
+			mk(6, 96.2, 97, 95.8, 96.8), // confirms bottom 2
+			mk(7, 96.5, 97.1, 95.9, 97), // FTGL reject return → LONG
 		}
 		e := New(cfg)
-		now := bars[8].OpenTime + 59_999
+		now := bars[7].OpenTime + 59_999
 		e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
 		// Frozen per-trading-day latch so Tick's recompute keeps the preset
 		// (a zero-Key latch re-reads as not-measured on this synthetic tape).
@@ -534,11 +613,11 @@ func TestBoxEntryDayAndHTFGates(t *testing.T) {
 		t.Fatalf("ledger = %v, want box_day_off counted", e.State.Refusals)
 	}
 
-	// (d) DaySpent + HTF long → the entries emit (the cap path does not
+	// (d) DaySpent + HTF long → the entry emits (the cap path does not
 	// refuse); the spent cap value itself is pinned on the ISB path.
 	e, bars, now = fixture(HTF{FourH: TriggerLine{Dir: SideLong, Price: 93}}, DayLatch{Verdict: DaySpent})
-	if got := boxEntries(e.Tick(bars, now)); len(got) != 2 {
-		t.Fatalf("spent-day tick emitted %d box entries, want 2 (cap, not refusal)", len(got))
+	if got := boxEntries(e.Tick(bars, now)); len(got) != 1 {
+		t.Fatalf("spent-day tick emitted %d box entries, want 1 (cap, not refusal)", len(got))
 	}
 }
 
@@ -560,15 +639,14 @@ func TestBoxEntryBannedInsideISBBox(t *testing.T) {
 			mk(0, 100, 101, 99, 100),
 			mk(1, 100, 102, 99, 101),
 			mk(2, 101, 103, 95, 96),
-			mk(3, 97.3, 98.3, 96.5, 97.5),
-			mk(4, 97, 98, 94, 95),
-			mk(5, 98, 98.2, 96.5, 97.2),
-			mk(6, 96.5, 97.1, 95.9, 97),
-			mk(7, 97.7, 97.9, 95.9, 96.9),
-			mk(8, 98.2, 98.5, 97, 98.4),
+			mk(3, 96.5, 97, 96, 96.8), // confirms the extreme (low 96 > 95)
+			mk(4, 96.8, 97, 96.2, 96.8),
+			mk(5, 96.8, 97, 95.5, 96),   // bottom 2: later confirmed higher low
+			mk(6, 96.2, 97, 95.8, 96.8), // confirms bottom 2
+			mk(7, 96.5, 97.1, 95.9, 97), // the return
 		}
 		e := New(cfg)
-		now := bars[8].OpenTime + 59_999
+		now := bars[7].OpenTime + 59_999
 		e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
 		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 93}}
 		e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
@@ -584,15 +662,15 @@ func TestBoxEntryBannedInsideISBBox(t *testing.T) {
 		return out
 	}
 
-	// No ISB box: the two returns trade.
+	// No ISB box: the return trades.
 	e, bars, now := fixture()
-	if got := boxEntries(e.Tick(bars, now)); len(got) != 2 {
-		t.Fatalf("no-ISB-box tick emitted %d box entries, want 2", len(got))
+	if got := boxEntries(e.Tick(bars, now)); len(got) != 1 {
+		t.Fatalf("no-ISB-box tick emitted %d box entries, want 1", len(got))
 	}
 
-	// A standing 5m-ISB box covering the returns (ref closes 97 / 96.9 are
-	// inside [95, 100]; the last candle's body stays inside too, so the box
-	// does not escape on this tick): box trades refused, named + counted.
+	// A standing 5m-ISB box covering the return (ref close 97 is inside
+	// [95, 100]; the last candle's body stays inside too, so the box does
+	// not escape on this tick): the box trade is refused, named + counted.
 	e, bars, now = fixture()
 	e.State.ISBBox = &ISBBox{High: 100, Low: 95}
 	if got := boxEntries(e.Tick(bars, now)); len(got) != 0 {
@@ -602,10 +680,10 @@ func TestBoxEntryBannedInsideISBBox(t *testing.T) {
 		t.Fatalf("ledger = %v, want box_isb_ban counted", e.State.Refusals)
 	}
 
-	// ISB box elsewhere: entries fire again.
+	// ISB box elsewhere: the entry fires again.
 	e, bars, now = fixture()
 	e.State.ISBBox = &ISBBox{High: 105, Low: 103}
-	if got := boxEntries(e.Tick(bars, now)); len(got) != 2 {
-		t.Fatalf("elsewhere-ISB-box tick emitted %d box entries, want 2", len(got))
+	if got := boxEntries(e.Tick(bars, now)); len(got) != 1 {
+		t.Fatalf("elsewhere-ISB-box tick emitted %d box entries, want 1", len(got))
 	}
 }

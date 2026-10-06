@@ -33,7 +33,7 @@ func TestLevelOrderRestsAndCancels(t *testing.T) {
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 29300}}
 
 	bars := []market.Kline{
-		rthBars(-1, 29340, 29420, 29335, 29415), // D2-28: the low the leg to the old high started from (29335, the course's own example)
+		rthBars(-1, 29340, 29420, 29335, 29415),   // D2-28: the low the leg to the old high started from (29335, the course's own example)
 		rthBars(0, 29420, 29431.75, 29410, 29425), // the old high (extreme)
 		rthBars(1, 29405, 29408, 29395, 29402),
 		rthBars(2, 29392, 29402, 29370, 29396),
@@ -46,13 +46,13 @@ func TestLevelOrderRestsAndCancels(t *testing.T) {
 	ints := e.Tick(bars, now)
 	armed := false
 	for _, in := range ints {
-		if in.Action == PlaceStopEntry && in.Setup == "PHL" && in.Side == SideLong && in.Price == 29392 {
+		if in.Action == PlaceStopEntry && in.Setup == "PHL" && in.Side == SideLong && in.Price == 29393 {
 			armed = true
 			break
 		}
 	}
 	if !armed {
-		t.Fatalf("B6 precondition: expected a LONG PHL stop-entry at 29392 before testing rest/cancel behavior; intents=%+v refusals=%v", ints, e.State.Refusals)
+		t.Fatalf("B6 precondition: expected a LONG PHL stop-entry at 29393 (high 29392 + 1.0 buffer) before testing rest/cancel behavior; intents=%+v refusals=%v", ints, e.State.Refusals)
 	}
 	phl := 0
 	for _, in := range ints {

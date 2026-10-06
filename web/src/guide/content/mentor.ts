@@ -37,11 +37,21 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.isb_reverse_ema9_enabled',
     live: true,
   },
+  '4h/1h gate only in the news window': {
+    settingId: 'risk_control.mentor_tuning.htf_gate_news_only',
+    live: true,
+  },
+  '2m ISB execution after 09:00 CT': {
+    settingId: 'risk_control.mentor_tuning.exec_2m_after_30m',
+    live: true,
+  },
   'PHL min candles from old extreme': {
     settingId: 'Config.PHLMinCandlesFromExtreme',
     live: false,
   },
   'PHL target shy': { settingId: 'Config.PHLTargetShyPts', live: false },
+  'PHL entry buffer': { settingId: 'Config.PHLEntryBufferPts', live: false },
+  'Wick microscalp': { settingId: 'Config.WickMicroscalpEnabled', live: false },
   'Stop ceiling': { settingId: 'Config.StopCeilingPts', live: false },
   'Room multiple': { settingId: 'Config.RoomMultiple', live: false },
   'Near-box room': { settingId: 'Config.NearBoxRoomMultiple', live: false },
@@ -155,7 +165,7 @@ export const mentor: GuideSection = {
   num: 17,
   title: 'Mentor Mode',
   tagline:
-    "The mentor's method: three setups, four locations, hard filters, small and patient.",
+    "The mentor's method: three setups, five locations, hard filters, small and patient.",
   asBuiltRev: GUIDE_BUILT_REV,
   blocks: [
     {
@@ -205,7 +215,7 @@ export const mentor: GuideSection = {
     },
     {
       kind: 'h',
-      text: 'The four locations',
+      text: 'The five locations',
     },
     {
       kind: 'table',
@@ -230,8 +240,13 @@ export const mentor: GuideSection = {
         ],
         [
           'Box edge',
-          'FTGH/FTGL boxes, 1m regular candles, paired by role with no tolerance',
+          'FTGH/FTGL boxes, 1m regular candles, paired by role with no tolerance — the extreme (lowest low / highest high) pairs with the NEXT confirmed swing AFTER it that fails to exceed it (a higher low / lower high); the trade is the 3rd touch',
           'A box edge is used again and again; an escape (a 1m BODY closes outside) does NOT kill the box — it stays and every later return trades [B4]; boxes die at day end only',
+        ],
+        [
+          'Trendline',
+          'Two CONFIRMED two-sided structural swings (left fractal + the next bar confirms it), at least 5 bars apart, joined — a low and a HIGHER low (support) or a high and a LOWER high (resistance); never horizontal. One live line per side: the two MOST RECENT qualifying swings pair, a newer pair replaces the older',
+          'Becomes a location only after the 3rd touch [DAY-3 p2 @03:45-04:07]; a break confirmed by a 5m close discards it (a break is NOT an entry). Box beats trendline: a trendline whose price sits inside a live box\u2019s [Bottom, Top] is NOT a location',
         ],
       ],
     },
@@ -266,8 +281,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Smaller size when the ISB is in a range',
-          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). Written rule 3 [D4.1 p1 @09:40]. A spent day (2) still wins; the cut beats the confluence size.',
-          cite: 'trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlags',
+          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). "In range" means: between an FTGL below and an FTGH above; inside the standing 5m ISB rest box; between two key levels closer than the ping-pong minimum (50 pts); and — once built — a 15m ISB range. Written rule 3 [D4.1 p1 @09:40]. A spent day (2) still wins; the cut beats the confluence size.',
+          cite: 'trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlagsFor',
         },
         {
           title: 'Skip a stop in the twenties',
@@ -282,7 +297,7 @@ export const mentor: GuideSection = {
       items: [
         {
           title: 'Per-visit level references',
-          body: 'A level reference lasts until a closed candle departs the level; every NEW visit (a closed candle not touching it since the last reference) gets its own reference candle and stop. One level no longer blocks itself for the whole day. A wrong-way close marks a level ISB-only (only ISBs may trade there): a moving line (EMA / trigger retest) clears that mark when the line drifts or the visit departs; a key level clears it at the next session day.',
+          body: 'A level reference lasts until a closed candle departs the level; every NEW visit (a closed candle not touching it since the last reference) gets its own reference candle and stop. One level no longer blocks itself for the whole day. A wrong-way close marks a level ISB-only (only ISBs may trade there): a moving line (EMA / trigger retest) clears that mark only when the visit departs (the touching candle is gone) — never on drift alone, because the EMA re-prices every tick; a key level clears it at the next session day.',
           cite: 'L1 — lvl_revisit_min_pts, default 0 · D5.2 p2 @20:48 (item 22)',
         },
         {
@@ -292,8 +307,23 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Every box return trades',
-          body: 'Each new visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). EVERY return trades, the first one included — there is no touch count to wait for. An escape does not delete the box; boxes die at end of day only.',
-          cite: 'R1 · D3.2 p2 @06:25',
+          body: 'The box is drawn from two touches — the extreme and the next confirmed swing after it that failed to exceed it ("lần thứ 3 mới vô lệnh": the 3rd touch is the trade). Each return visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). EVERY return trades, the first one included. An escape does not delete the box; boxes die at end of day only. After a body escape the role flips (Uno Reverse): a broken FTGH becomes support and a broken FTGL becomes resistance, and the next returns come from the new side with the same reject rule and gates.',
+          cite: 'R1 · D3.2 p2 @06:25 · D14 slide 17 · X2 @02:36–03:25',
+        },
+        {
+          title: '15m and 30m ISB rest boxes + the escalation ladder',
+          body: 'Like the 5m ISB rest box, the latest CLOSED 15m and 30m inside-bar candles are boxed and extended right. Inside a standing box, nothing trades against that box\u2019s direction — a 1m ISB is gated on the box direction, PHL/PLH and box returns inside are banned. When a timeframe\u2019s ISBs are CROSSING (2 opposite ISBs within the last 3 closed buckets) that timeframe is unreadable and its box gate is skipped — the next timeframe up governs (5m → 15m → 30m). A 1m BODY close outside deletes the box.',
+          cite: 'D4.1 p2 @07:35–08:11 · D4.2 p1 @16:28–16:46 · D3.4 p2 @17:07–17:49',
+        },
+        {
+          title: 'The 4h/1h trigger line is a target, never a location',
+          body: 'The 4h (and 1h) trigger line joins the target ladder as target-only: the next-level target can land on it when it sits between the entry and the next key level, but it is never a PHL/PLH location and the touch loop never classifies it.',
+          cite: 'D4.4 p2 @05:04–06:02 · htf_target.go',
+        },
+        {
+          title: 'Wick microscalp (advanced, OFF by default)',
+          body: '2+ consecutive CLOSED 5m candles rejecting with wicks the SAME way (lower wicks in an uptrend, upper wicks in a downtrend) put a bounded target at their far wick — target-only, never a location. OFF by default ("đừng có tập khúc này đầu tiên").',
+          cite: 'D4.3 @00:00–03:20, @09:27–09:46 · WickMicroscalpEnabled',
         },
         {
           title: 'Intraday confluence (exit C, size 10)',
@@ -352,9 +382,14 @@ export const mentor: GuideSection = {
           'orb_gate_enabled = true (default ON) · X5 @01:52, 02:36, 03:29–03:47, 05:42',
         ],
         [
-          'Not live yet — coming',
-          'News 07:30 CT — a mentor entry is refused through the print (07:20–07:35), but resting arms are not yet cancelled and an open position is not yet flattened before the print (R12). The EMA 34 cut-through gate is not wired (D4.2-09). The persistent 15m/5m conflict and the 15m ISB rest box land with item 15 (live: no — coming).',
-          '—',
+          'News 07:30 CT (print)',
+          'A mentor entry is refused through the print window (07:20–07:35 CT). At print −10m on a red-folder print day, live INTRADAY mentor arms are cancelled by ArmID and intraday mentor positions are flattened before the 07:30 print — the SWING4H is exempt (held by the 4h). The 07:30 print candle never moves the 1h/4h trigger lines: the evaluator drops the print-window bars from the higher-timeframe feed, so a news spike is not a real break.',
+          'F11 · R12 · D4.4 p1 @18:13, @22:15, @20:44–21:46',
+        ],
+        [
+          '2m execution after 09:00 CT (optional)',
+          'OFF by default — the course trades the 1m throughout. Turn it on and, after the first 30 minutes of RTH (09:00 CT), the ISB entry is read on the 2m chart instead of the 1m ("sau 30 phút em sẽ chuyển qua khung 2 phút" — the 1m wicks sweep stops, so the 2m read is quieter). Before 09:00 CT the 1m read is unchanged. The higher-timeframe lines, the boxes and the ORB escape always stay on the 1m.',
+          'mentor_exec_2m_after_30m = false (default OFF) · X5 @00:41–01:17 · X11 @17:06–17:32',
         ],
       ],
     },
@@ -371,6 +406,11 @@ export const mentor: GuideSection = {
           title: 'Trading window 08:30–09:30 CT',
           body: 'The day is only 08:30–09:30 CT. The SWING4H is exempt.',
           cite: 'mentor_window_start / mentor_window_minutes — live',
+        },
+        {
+          title: 'Daily loss is checked at placement',
+          body: 'An entry is refused the moment the session-day\u2019s realized loss is already at/past the daily-loss limit — before the 60-second force-flat sweep can act. An unresolved close (pnl_corrected NULL) is not a confident "under the limit": it FAILS CLOSED and the placement is refused (counted daily_loss_refused).',
+          cite: 'trader/mentor_actions.go mentorDailyLossGate — live',
         },
         {
           title: 'Never widen a stop, never add',
@@ -403,7 +443,11 @@ export const mentor: GuideSection = {
           'mentor_reduced_contracts',
         ],
         ['SWING4H', '3', 'mentor_swing4h_contracts'],
-        ['Spent day (§7)', '2', 'mentor_spent_day_contracts'],
+        [
+          'Spent day (§7)',
+          'normal — the runner/target are cut, not the size (15-pt target cap + runner cap 2) [R09]',
+          'mentor_spent_day_contracts',
+        ],
       ],
     },
     {
@@ -421,16 +465,23 @@ export const mentor: GuideSection = {
         ],
         [
           'B — normal',
-          'Single leg (no partial). The stop moves to break-even at HALF the distance to the target; live 1:1 keeps the stop at 1:1 behind the target; after the 1:1 point is printed the stop trails 1 tick beyond each closed candle (trail_tf: 1m default, 30s/45s allowed, off = legacy)',
+          '2 or more contracts: ONE entry with two exits — leg 1 (half, rounded up) takes profit at 1:1 measured from the actual entry price, the runner holds to the target (1 contract = a single leg). Both stops move to break-even at HALF the distance to the target; live 1:1 keeps the stop at 1:1 behind the target; after the 1:1 point is printed the runner’s stop trails 1 tick beyond each closed candle (trail_tf: 1m default, 30s/45s allowed, off = legacy). Spent day: at most 2 contracts run — the rest leave with leg 1. Needs the AddOn build 2026-10-04-d1; an older AddOn gets one bracket for the whole position',
         ],
-        ['C — confluence', 'Hold to at least 1:2 — the stop does not move up'],
+        [
+          'C — confluence',
+          'Leg 1 holds to at least 1:2 — the stop does not move up',
+        ],
+        [
+          'Wire 1:1 check',
+          'The stop entry goes out 2 ticks past the planned price. A target sitting at exactly 1R (the floor, e.g. the swing’s first target) moves with it, so the trade is still exactly 1:1 from the real entry; a LEVEL target cannot move — if the real entry would leave it under 1:1 the entry is refused (stop_entry:wire_rr_below_1) [D1.2 p1 @08:02–08:33]',
+        ],
         [
           'SWING4H',
           'First target = the 5m EMA 34 (or the 50-pt fallback); BE at +1R; hold to the close of the 2nd 4h candle after entry',
         ],
         [
           'ISB partial',
-          'The ISB follows the same single-leg drive as B (BE at half the distance, live 1:1, trail 1 tick beyond after the 1:1 point) — the old three-part partial is gone',
+          'The ISB follows B: leg 1 (half) exits at 1:1 from the actual entry, the runner takes the B drive (BE at half the distance, live 1:1, trail 1 tick beyond after the 1:1 point). The course’s candle-3-close exit for leg 1 is only LOGGED (not sent) until it is proven on SIM',
         ],
       ],
     },
@@ -693,6 +744,35 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
+          label: '4h/1h gate only in the news window',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D4.4-11: OFF (default) = the 4h/1h direction gate runs ALL DAY, as today — no 4h trigger means nothing to follow, and a 1h against the 4h sits out. ON = the gate applies only inside the 07:20–07:35 CT news window; ordinary intraday entries are then not HTF-gated. The course says to use the HTF read "for news first, not ordinary trading yet" (D4.4 p1 @13:44–14:06), while the later D5.1 routine reads 4h then 1h for the whole day — that conflict (U-6) is open, so the all-day gate stays the default.',
+          trader: 'OFF — CTO default 2026-10-04 (U-6 open).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (HTFGateNewsOnly) · kernel/mentor/htf_direction.go HTFGateActive / HTFVerdict',
+          range: 'true / false',
+          systemDefault: 'false',
+          recommended:
+            'OFF until the owner rules U-6; ON trades more (the replay\u2019s zero days were blocked mostly by isb_htf_blocked).',
+          whenToTouch: 'Only on an owner ruling of U-6.',
+          perSession: 'No.',
+        },
+        {
+          label: '2m ISB execution after 09:00 CT',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'X5-10: OFF (default) = the ISB entry is read on the 1m chart all day, as the course trades. ON = after the first 30 minutes of RTH (09:00 CT) the ISB entry is read on the 2m chart instead ("sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:17; X11 @17:06–17:32]) — the 1m wicks sweep stops, so the 2m read is quieter. Only the ISB pair swaps; the higher-TF lines, the boxes and the ORB escape always stay on the 1m.',
+          trader:
+            'OFF — the course trades the 1m throughout; optional and knob-gated.',
+          consumer:
+            'kernel/mentor/eval.go Tick (Exec2mAfter30m → closedBucketsTF(bars, 2, now)) · trader/mentor_tuning.go mentorTuningResolve',
+          range: 'true / false',
+          systemDefault: 'false',
+          recommended:
+            'Leave OFF unless the owner wants the quieter 2m read after the opening 30 minutes.',
+          whenToTouch: 'Only on an owner ruling.',
+          perSession: 'No.',
+        },
+        {
           label: 'PHL min candles from old extreme',
           where: 'Strategy → Mentor mode → PHL/PLH',
           what: 'The entry must be at least this many candles from the old extreme (wait 1–2 more pullback candles).',
@@ -717,6 +797,32 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
+          label: 'PHL entry buffer',
+          where: 'Strategy → Mentor mode → PHL/PLH',
+          what: 'The PHL/PLH order sits this far BEYOND the candle extreme (outward) — the course draws the entry ~1 pt past the broken candle\u2019s high/low, never exactly at it. The stop stays at the candle\u2019s extreme.',
+          trader: '1.0 pt.',
+          consumer:
+            'kernel/mentor/mentor.go PHLEntryBufferPts · kernel/mentor/phl.go',
+          range: 'pts',
+          systemDefault: '1.0',
+          recommended:
+            '1.0 — D2.2 p1 @ 06:50 drawn (high 29,396.25 → entry 29,397.25).',
+          whenToTouch: 'Rarely.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Wick microscalp',
+          where: 'Strategy → Mentor mode → setups',
+          what: 'D4.3 advanced wick read: 2+ consecutive CLOSED 5m candles rejecting with wicks the SAME way (lower wicks in an uptrend, upper wicks in a downtrend) put a bounded target at their far wick — target-only, never a location. OFF by default ("đừng có tập khúc này đầu tiên").',
+          trader: 'OFF.',
+          consumer: 'kernel/mentor/mentor.go WickMicroscalpEnabled',
+          range: 'true / false',
+          systemDefault: 'OFF',
+          recommended: 'OFF — advanced; the course says practise it later.',
+          whenToTouch: 'Only after the core setups are proven on SIM.',
+          perSession: 'No.',
+        },
+        {
           label: 'Stop ceiling',
           where: 'Strategy → Mentor mode → risk',
           what: 'Hard stop ceiling for PHL/PLH and ISB stops.',
@@ -731,7 +837,7 @@ export const mentor: GuideSection = {
         {
           label: 'Room multiple',
           where: 'Strategy → Mentor mode → risk',
-          what: 'The room to target must be at least this × the risk.',
+          what: 'The room to target must be at least this × the risk. Applies to PHL/PLH, the ISB, the reverse ISB, and the swing reject.',
           trader: '2×.',
           consumer: 'kernel/mentor/mentor.go RoomMultiple',
           range: '×',
@@ -1049,12 +1155,13 @@ export const mentor: GuideSection = {
           label: 'EMA 34 cross cap (30m)',
           where: 'Strategy → Mentor mode → EMA34',
           what: 'Cap crossings around the EMA line in a 30m window (“xien len xien xuong”). The mentor gave no number, so the question is open (Q21).',
-          trader: 'OFF — no number stated yet.',
+          trader:
+            'ON — 2 crosses in 30m refuse the EMA34 setup (the most conservative reading).',
           consumer: 'kernel/mentor ema_max_cross_30m',
           range: 'int / off',
-          systemDefault: 'off',
+          systemDefault: '2',
           recommended:
-            'off — E4 ruling 2026-10-03, default OFF; sensitivity rows v5_ema_cross2/4 exist in the replay.',
+            '2 — item 16 (2026-10-04): gate the line that trades, default ON; the course states no count (frame D4.2 p1 @22:28 shows the indicator OFF), so 2 = the most conservative of v5_ema_cross2/4 and stays flagged mentor-question-open.',
           whenToTouch: 'Only when the mentor answers Q21.',
           perSession: 'No.',
         },

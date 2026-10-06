@@ -60,8 +60,14 @@ func TestBoxEdgeExemptFromInvalidLevel(t *testing.T) {
 	}
 	e := New(cfg)
 	edge := Level{Key: "ftgh:100:90:top", Kind: KindFTGHEdge, Price: 100}
+	// A resting order at each level, so the wrong-way cancel binds to it (an
+	// id-less cancel with nothing resting is dropped — CTO replay-noise fix).
+	e.State.LevelArms = map[string]LevelArm{
+		edge.Key:          {ArmID: "lvl-1"},
+		"key_level:100:1": {ArmID: "lvl-2"},
+	}
 	out := handleTouchIntents(e, edge, wrongWay)
-	if len(out) != 1 || out[0].Action != CancelArm {
+	if len(out) != 1 || out[0].Action != CancelArm || out[0].ArmID != "lvl-1" {
 		t.Fatalf("box edge must not emit level_invalid: %+v", out)
 	}
 	if e.State.ISBOnly[edge.Key] {
@@ -71,5 +77,29 @@ func TestBoxEdgeExemptFromInvalidLevel(t *testing.T) {
 	out = handleTouchIntents(e, key, wrongWay)
 	if len(out) != 2 || !e.State.ISBOnly[key.Key] {
 		t.Fatalf("key level wrong-way must emit level_invalid + ISB-only: %+v state=%v", out, e.State.ISBOnly)
+	}
+}
+
+// CTO (release 10-05-1, replay noise): a wrong-way touch with NO resting order
+// at the level emits no CancelArm (nothing to cancel); with one resting, the
+// cancel carries that order's ArmID. Mutant: keep the id-less cancel → RED.
+func TestWrongWayCancelBindsToTheRestingOrderOrIsDropped(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	wrongWay := []Intent{
+		{Action: CancelArm, Reason: "close through"},
+		{Action: LevelInvalid, LevelKey: "k"},
+	}
+	key := Level{Key: "key_level:100:1", Kind: KindKeyLevel, Price: 100}
+	e := New(cfg)
+	out := handleTouchIntents(e, key, wrongWay)
+	if len(out) != 1 || out[0].Action != LevelInvalid {
+		t.Fatalf("nothing resting: only level_invalid may go out, got %+v", out)
+	}
+	e2 := New(cfg)
+	e2.State.LevelArms = map[string]LevelArm{key.Key: {ArmID: "lvl-9"}}
+	out = handleTouchIntents(e2, key, wrongWay)
+	if len(out) != 2 || out[0].Action != CancelArm || out[0].ArmID != "lvl-9" {
+		t.Fatalf("a resting order: the cancel must carry its ArmID, got %+v", out)
 	}
 }

@@ -11,8 +11,8 @@
   "deploy/vl.service": "4ae36a9c97e7d5f4dc0f054690dbe087a70081609531b036749f9746b0c0f95e",
   "go.mod": "333ba3d39d489c921667a2222dda51247059e4f48bbb243ad3d01c1d8fb754b7",
   "logger/logger.go": "7409af084ddaacd31cd2fd32d71d6cb71018be4aafd5391ccfe7ebfd9389df22",
-  "ninjascript/VLTraderTCPClient.cs": "81f7352bad23eeb9dfea89f8cbb1534ba98fe0d94e8ac12ad1cb14d3f92b2dbd",
-  "provider/ninjatrader/tcp_framing.go": "e46c12bedb2ebdd9b4d002bd3102b1242ae6edc2fbc3272f3489e30b5b920d33",
+  "ninjascript/VLTraderTCPClient.cs": "6376016d23349ae52d9559d35e76b2fec6837585102571b88d9c2ba6402de5c3",
+  "provider/ninjatrader/tcp_framing.go": "03d1c0553a79a6d2d49d760b0c9d678ced4d57e9600424047f1ac7243fd7fbf7",
   "provider/ninjatrader/tcp_server.go": "5451949ad27968dd2c106575be81f381d2a89cbf9b11d695f5861adbd40519d4",
   "web/src/lib/agentChatStorage.ts": "d9cf46bcdb732c2b49e8d23b15e1de3316158a25101ee9056ff089b63d13a1eb"
 }

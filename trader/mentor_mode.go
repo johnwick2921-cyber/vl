@@ -82,9 +82,13 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 		}
 		return n
 	}
-	if in.SpentDay {
-		return mentorSizeChoice{Contracts: clamp(spentCap), Tier: "spent_day", Why: "§7 spent day — hold 1–2 only [D5.1 p1 @ 16:13]"}, nil
-	}
+	// R09 (owner ruling 2026-10-04, D5.1 p1 @16:13–16:35): a range/spent day
+	// cuts the RUNNER and the TARGET only — never the whole trade. Size
+	// normally here; the spent-day cut rides the 15-pt target cap
+	// (DayGateTargetCapPts, applied by the evaluator) and the runner cap
+	// (mentorSpentDayRunnerCap) in the exit drive. spentCap remains the
+	// spent-day knob value for DS-103's split redesign.
+	_ = spentCap
 	// ISB at an old high/low → reduce size, tier 3 (owner ruling 00:1x CT,
 	// written rule 2, D4.1 p1). The flag comes from DS-103's evaluator and is
 	// only ever set for ISB setups. It beats big/confluence — the location
@@ -253,12 +257,14 @@ func mentorLvlRevisitMinPts(rc *store.RiskControlConfig) float64 {
 
 // mentorEmaMaxCross30m — E4 knob: refuse the EMA34 setup when the close
 // crossed the line this many times over the last 30 closed 1m candles.
-// Default 0 = OFF (base).
+// Default ON (item 16, CTO 23:49Z): 2 — the most conservative of the replay
+// rows v5_ema_cross2/4. MENTOR QUESTION OPEN: the course states no count
+// (frame D4.2 p1 @22:28 shows the indicator OFF); 0 = OFF.
 func mentorEmaMaxCross30m(rc *store.RiskControlConfig) int {
 	if rc != nil && rc.MentorEmaMaxCross30m > 0 {
 		return rc.MentorEmaMaxCross30m
 	}
-	return 0
+	return 2
 }
 
 // mentorLocationTriggerFilter — the 5m trigger filter at locations (L3: kept
@@ -492,7 +498,9 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 	if spentCap <= 0 {
 		spentCap = mentor.DefaultConfig().DayGateTargetCapPts
 	}
-	if extra.SpentDay && stop > spentCap {
+	// R13 [D5.2 §6]: DayOff does not stop the swing, so the spent-day stop cap
+	// must not either — the overnight SWING4H is exempt from the R9 cap.
+	if extra.SpentDay && !swing && stop > spentCap {
 		return fmt.Sprintf("R9: spent day cap %.0f — stop %.1f pts skips", spentCap, stop)
 	}
 	return ""
@@ -607,6 +615,40 @@ func mentorSplitLegs(n, runnerCap int) (leg1, leg2 int) {
 
 // mentorSpentDayRunnerCap is D: at most 2 contracts run after leg 1.
 const mentorSpentDayRunnerCap = 2
+
+// mentorLeg1ForFrame is the REVIEW-353 split-at-entry math feeding the ONE
+// entry frame: leg 1 = ceil(n/2) with its OWN TP, leg 2 = the runner with
+// the trade target. Returns the leg-1 qty + TP for the wire (leg1_qty /
+// leg1_tp); (0, 0) = the single-bracket legacy path (n <= 1 or swing).
+// forkTP is the exit fork leg-1 target (non-zero only for mode C, >=2R);
+// 0 -> the +1R default (entry +/- R). Spent day caps the runner at 2 (D).
+func mentorLeg1ForFrame(in mentor.Intent, n int, forkMode string, forkTP float64) (leg1Qty int, leg1TP float64) {
+	if forkMode == "swing" || n <= 1 {
+		return 0, 0
+	}
+	runnerCap := 0
+	if in.SpentDay {
+		runnerCap = mentorSpentDayRunnerCap
+	}
+	_, leg2 := mentorSplitLegs(n, runnerCap)
+	if leg2 <= 0 {
+		return 0, 0 // n = 1 -> a single leg, no scale-out
+	}
+	// The AddOn sizes the runner as fill - leg1_qty, so the frame's leg 1 is
+	// n - runner: with the spent-day cap (D) the contracts the cap takes off
+	// the runner go to leg 1 — never a runner above the cap on the wire.
+	leg1 := n - leg2
+	tp := forkTP
+	if tp == 0 {
+		r := mentorIntentRisk(in)
+		if in.Side == mentor.SideShort {
+			tp = in.Price - r
+		} else {
+			tp = in.Price + r
+		}
+	}
+	return leg1, tp
+}
 
 // mentorLeg1TPForC is the C (confluence) leg-1 target: hold to at least 1:2 —
 // leg 1's TP at 2× risk, set AT ENTRY; the stop never moves up.
@@ -824,18 +866,11 @@ func mentorExitB(pos mentorPosition, c, h, l float64, trail bool) mentorExitResu
 			res.ExitPrice, res.ExitReason, res.Exited = pos.Stop, "stop", true
 			return res
 		}
-		// ISB EXIT [D1.4]: the fill candle's close closes leg 1 — modify its
-		// TP to the current price (a limit at or through the market). The
-		// runner continues.
-		if pos.Origin == "ISB" {
-			tp := c
-			res.ModifyTP = &tp
-			if hitHalfR {
-				res.NewStop = pos.Entry
-				res.MoveStops = []string{"leg1", "leg2"} // BE for BOTH legs
-			}
-			return res
-		}
+		// NOTE (item 8, 2026-10-05): the old "ISB EXIT" branch that re-fired a
+		// leg-1 TP modify to the CURRENT close on EVERY candle (and could book
+		// a loss) is DELETED. The ISB partial is now resolved ONCE at the fill
+		// candle's close in the live drive loop (mentorISBPartialTP): +1R if it
+		// printed first, else the candle-3 close only when in profit.
 		if hit1R {
 			// one candle crossed both +0.5R and +1R: BE for both legs and leg
 			// 1's +1R TP is hit (the runner trails from the NEXT candle).

@@ -27,7 +27,7 @@ func TestStopLimitWireFlagCarriesTheKnob(t *testing.T) {
 	tr.traderID = "wire-flag-pin"
 
 	// M6: the limit variant on a c2 AddOn carries stop_limit:true.
-	if _, err := tr.PlaceStopEntryWithLimit("MNQ", "long", 1, 100, 99, 102); err != nil {
+	if _, err := tr.PlaceStopEntryWithLimit("MNQ", "long", 1, 100, 99, 102, 0, 0); err != nil {
 		t.Fatalf("place with limit failed: %v", err)
 	}
 	raw := readRawFrame(t, rawFrames)
@@ -48,7 +48,7 @@ func TestStopLimitWireFlagCarriesTheKnob(t *testing.T) {
 	// M19: the market variant sends the key ABSENT — the knob-off wire.
 	// (short side: the B3 guard dedupes the identical long key within the
 	// window, and a second long would be dropped as the first's duplicate.)
-	if _, err := tr.PlaceStopEntry("MNQ", "short", 1, 100, 102, 98); err != nil {
+	if _, err := tr.PlaceStopEntry("MNQ", "short", 1, 100, 102, 98, 0, 0); err != nil {
 		t.Fatalf("place stop entry failed: %v", err)
 	}
 	raw2 := readRawFrame(t, rawFrames)

@@ -3,11 +3,11 @@ package trader
 import (
 	"fmt"
 
-	"vl/kernel"
-	"vl/store"
 	"os"
 	"strings"
 	"sync"
+	"vl/kernel"
+	"vl/store"
 
 	ntTrader "vl/trader/ninjatrader"
 )

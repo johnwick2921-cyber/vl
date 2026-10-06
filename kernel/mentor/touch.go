@@ -58,7 +58,11 @@ func touchesLevel(level Level, approach Side, bar market.Kline, cfg Config) bool
 			return bar.High >= level.Price || bar.Low <= level.Price
 		}
 	}
-	return !(bar.Low > level.Price+cfg.TouchBandPts || bar.High < level.Price-cfg.TouchBandPts)
+	band := cfg.TouchBandPts
+	if level.Kind == KindTrendline {
+		band = trendlineTouchBandPts // a diagonal line gets the wider band
+	}
+	return !(bar.Low > level.Price+band || bar.High < level.Price-band)
 }
 
 // TouchTick evaluates one closed 1m candle against one level (§3 steps 1–3,
@@ -105,6 +109,9 @@ func TouchTick(t *Touch, level Level, prevClose float64, bar market.Kline, cfg C
 	}
 	if t.Outcome != TouchWrongWay {
 		return nil
+	}
+	if level.Kind == KindTrendline {
+		return nil // a 1m close through is NOT a trendline death — the 5m close is
 	}
 	return []Intent{
 		{

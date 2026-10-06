@@ -74,7 +74,7 @@ func TestSourceBootLineIsReadNotLiteral(t *testing.T) {
 		"MNQ live=51087 historical=5 mixed=3 off-scale=0 null=0",
 		"unverified-replay-held=on",
 		"replay-hold: held=0 released=0 discarded=2000",
-			"threshold=0.50%[env:default] AND 20x[env:default] median body [I]",
+		"threshold=0.50%[env:default] AND 20x[env:default] median body [I]",
 		"1m@22:40:12 CT Δ=290.00 (replay 29068.25 vs live 29358.25, 2000 dropped)",
 	} {
 		if !strings.Contains(line, want) {

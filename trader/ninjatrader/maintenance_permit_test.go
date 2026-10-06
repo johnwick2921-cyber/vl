@@ -118,7 +118,7 @@ func TestEntryPermitRefusedBlocksAllFourEntryFunctions(t *testing.T) {
 			return err
 		},
 		"PlaceStopEntry": func() error {
-			_, err := tr.PlaceStopEntry("MNQ", "long", 1, 29150, 29000, 29300, stamp)
+			_, err := tr.PlaceStopEntry("MNQ", "long", 1, 29150, 29000, 29300, 0, 0, stamp)
 			return err
 		},
 	}
@@ -237,7 +237,7 @@ func TestEntryPermitRefusalNeverConsumesTheDedupeSlotInAnyEntryFunction(t *testi
 			return err
 		},
 		"PlaceStopEntry": func(tr *TCPTrader) error {
-			_, err := tr.PlaceStopEntry("MNQ", "long", 1, 29150, 29000, 29300)
+			_, err := tr.PlaceStopEntry("MNQ", "long", 1, 29150, 29000, 29300, 0, 0)
 			return err
 		},
 	}

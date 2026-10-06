@@ -3,9 +3,9 @@ package trader
 import (
 	"fmt"
 	"math"
+	"time"
 	"vl/logger"
 	"vl/market"
-	"time"
 )
 
 // ============================================================================

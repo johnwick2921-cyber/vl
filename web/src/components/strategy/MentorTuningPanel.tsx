@@ -17,7 +17,11 @@ type NumKey =
   | 'day_gate_target_cap_pts'
   | 'swing_max_stop_pts'
 
-type BoolKey = 'orb_gate_enabled' | 'isb_reverse_ema9_enabled'
+type BoolKey =
+  | 'orb_gate_enabled'
+  | 'isb_reverse_ema9_enabled'
+  | 'htf_gate_news_only'
+  | 'exec_2m_after_30m'
 
 const COPY = {
   title: {
@@ -57,6 +61,16 @@ const COPY = {
     zh: 'EMA 9 反向 ISB',
     en: 'Reverse ISB at EMA 9',
     es: 'ISB inverso en EMA 9',
+  },
+  htfNews: {
+    zh: '4h/1h 方向闸门仅限新闻窗口',
+    en: '4h/1h direction gate only in the news window',
+    es: 'Compuerta 4h/1h solo en la ventana de noticias',
+  },
+  exec2m: {
+    zh: '09:00 CT 后改用 2 分钟执行 ISB',
+    en: 'Read the ISB on the 2m after 09:00 CT',
+    es: 'Leer el ISB en 2m después de las 09:00 CT',
   },
   pingGap: {
     zh: '箱体乒乓最小宽度（点）',
@@ -109,6 +123,8 @@ export const MENTOR_TUNING_DEFAULTS = {
   level_max_visits: 3,
   orb_gate_enabled: true,
   isb_reverse_ema9_enabled: true,
+  htf_gate_news_only: false,
+  exec_2m_after_30m: false,
   day_gate_spent_pts: 300,
   day_gate_target_cap_pts: 15,
   swing_max_stop_pts: 100,
@@ -247,6 +263,8 @@ export function MentorTuningPanel({
         </label>
         {boolField('orb_gate_enabled', COPY.orb)}
         {boolField('isb_reverse_ema9_enabled', COPY.isbRev)}
+        {boolField('htf_gate_news_only', COPY.htfNews)}
+        {boolField('exec_2m_after_30m', COPY.exec2m)}
         {numField('ping_pong_min_gap_pts', COPY.pingGap)}
         {numField('ping_pong_candle_max_pts', COPY.pingCandle)}
         {numField('ping_pong_candle_lookback', COPY.pingLookback, true)}

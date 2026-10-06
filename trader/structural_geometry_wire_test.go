@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"gorm.io/gorm"
+	"testing"
+	"time"
 	"vl/kernel"
 	"vl/market"
 	"vl/store"
-	"testing"
-	"time"
 )
 
 func TestStructuralStopF4RefusalRetiresAuthorizationAndSendsNoOrder(t *testing.T) {

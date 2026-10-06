@@ -1836,8 +1836,8 @@ func decideStopEntry(rawSide string, entryPx, offset, tick, price float64) stopE
 // A29's "built ≠ wired ≠ used" is proven here by a FAKE that records what was
 // sent, not by grepping this file for the call's spelling.
 type stopEntryPlacer interface {
-	PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, beforeSend ...func(string) error) (string, error)
-	PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, beforeSend ...func(string) error) (string, error)
+	PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error)
+	PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error)
 }
 
 // armStateWriter is the ledger seam: atomic pre-send registration plus refusal.
@@ -1964,7 +1964,51 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		}
 		qty = n
 	}
-	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, r.TargetPx, func(sid string) error {
+	// N4 (2026-10-04, DAY-1 #15/#42): the +2-tick wire offset moves the entry
+	// 0.5 pt against the trade (trigger = entry ± offset, stop and target
+	// stay), so a mentor intent that passed the 1:1 floor at the authored
+	// price can land UNDER 1:1 at the wire. Re-check R at the WIRE trigger and
+	// refuse (counted) rather than send a sub-1:1 mentor entry [D1.2 p1
+	// @08:02–08:33: "risk reward phải là 1-1 trong bất kỳ tình huống nào"].
+	//
+	// The 1R FLOOR is re-based, not refused (CTO 2026-10-04, DS-105 replay b5:
+	// 48 of 461 entries, ALL SWING4H — R43's first target = max(1R, EMA34) sat
+	// on the floor and every one was refused; 2026-09-28 went to zero). A
+	// target authored at exactly 1:1 is DERIVED from the entry, so it moves
+	// with the entry to the 1:1 point at the trigger; a LEVEL target is a
+	// price that cannot move and is still refused under 1:1.
+	targetPx := r.TargetPx
+	if isMentorArmOrigin(r) && r.TargetPx > 0 && r.StopPx > 0 {
+		targetPx = mentorWireOneRFloor(r.EntryPx, d.Trigger, r.StopPx, r.TargetPx, at.mentorInstrumentTick())
+		reward := math.Abs(targetPx - d.Trigger)
+		risk := math.Abs(d.Trigger - r.StopPx)
+		if reward < risk {
+			if armRefusalChanged(&at.armRefusalLast, armKey, "stop_entry:wire_rr_below_1") {
+				shown := at.countStopEntryRefusal(r, "stop_entry:wire_rr_below_1", now)
+				at.logWarnf("📛 armed %s mentor stop-entry REFUSED [guard=wire_rr verdict=%s] %s stop-limit trigger=%.2f stop=%.2f target=%.2f: the 2-tick offset pushes the wire R:R under 1:1 (%.2f < %.2f)%s",
+					r.Scenario, d.Verdict, strings.ToUpper(d.Side), d.Trigger, r.StopPx, targetPx, reward, risk, shown)
+			}
+			return stopPlaceNotSent
+		}
+		if targetPx != r.TargetPx {
+			mentorCount("wire_target_1r_rebased")
+		}
+	}
+	// REVIEW-353: the split rides the ONE frame — leg1_qty + leg1_tp (0, 0)
+	// = the single-bracket legacy path. Only the mentor origin stamps them.
+	leg1Qty := 0
+	leg1TP := 0.0
+	if isMentorArmOrigin(r) {
+		// P0-1: leg 1 from the quantity actually SENT (mentorArmQuantity clamps
+		// to the trader max; the row was sized from the UNclamped intent).
+		// The leg-1 TP keeps its R-multiple at the WIRE trigger: the +2-tick
+		// offset moves the entry, so entry ± R from the authored price would
+		// take the half off UNDER 1:1 from the fill (N4's twin for leg 1).
+		if leg1Qty = mentorWireLeg1(r, int(qty)); leg1Qty > 0 {
+			leg1TP = mentorWireLeg1TP(r.EntryPx, d.Trigger, r.StopPx, r.Leg1TP)
+		}
+	}
+	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, targetPx, leg1Qty, leg1TP, func(sid string) error {
 		if err := ledger.BeginPlacement(r.ID, sid); err != nil {
 			return err
 		}
@@ -3281,7 +3325,7 @@ func (at *AutoTrader) TestArmPlaceStop(side string, trigger, stop, target float6
 	if trigger <= 0 || stop <= 0 || target <= 0 {
 		return out, fmt.Errorf("entry(trigger)/stop/target must be > 0")
 	}
-	sid, perr := nt.PlaceStopEntry(at.futuresSymbol(), side, 1, trigger, stop, target, func(sid string) error {
+	sid, perr := nt.PlaceStopEntry(at.futuresSymbol(), side, 1, trigger, stop, target, 0, 0, func(sid string) error {
 		row := &store.ArmedOrderDB{
 			TraderID: at.id,
 			PlanID:   "TEST-E7:" + sid,

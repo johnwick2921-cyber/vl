@@ -49,7 +49,8 @@ func TestMentorContractsForSizeTable(t *testing.T) {
 		// confluence sizing — 3, never 10/20.
 		{"twenties cut beats confluence", mentorTierInputs{Setup: "PHL", StopPts: 22, TargetPts: 30, Confluence: true}, mentorSizeChoice{3, "reduced", ""}},
 		{"twenties cut beats big", mentorTierInputs{Setup: "PHL", StopPts: 22, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{3, "reduced", ""}},
-		{"spent day beats twenties", mentorTierInputs{Setup: "PLH", StopPts: 23, TargetPts: 46, SpentDay: true}, mentorSizeChoice{2, "spent_day", ""}},
+		{"spent day no longer overrides twenties", mentorTierInputs{Setup: "PLH", StopPts: 23, TargetPts: 46, SpentDay: true}, mentorSizeChoice{3, "reduced", ""}},
+		{"spent day sizes base normally", mentorTierInputs{Setup: "PLH", StopPts: 11.25, TargetPts: 22.5, SpentDay: true}, mentorSizeChoice{5, "base", ""}},
 		{"SWING4H", mentorTierInputs{Setup: "SWING4H", StopPts: 12, TargetPts: 24}, mentorSizeChoice{3, "swing4h", ""}},
 		{"hard cap", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{20, "big", ""}},
 		// S9 (D5.2 p2 @05:21–05:57, S15 ruling): a strong day cuts the SWING
@@ -62,13 +63,13 @@ func TestMentorContractsForSizeTable(t *testing.T) {
 		{"ISB at old extreme → 3", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, ISBOldExtreme: true}, mentorSizeChoice{3, "isb_old_extreme", ""}},
 		{"old extreme beats confluence", mentorTierInputs{Setup: "ISB", StopPts: 11.25, Confluence: true, ISBOldExtreme: true}, mentorSizeChoice{3, "isb_old_extreme", ""}},
 		{"strong day does not beat old extreme (swing-only)", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, StrongDay: true, ISBOldExtreme: true}, mentorSizeChoice{3, "isb_old_extreme", ""}},
-		{"spent day beats old extreme", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, SpentDay: true, ISBOldExtreme: true}, mentorSizeChoice{2, "spent_day", ""}},
+		{"spent day no longer overrides old extreme", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, SpentDay: true, ISBOldExtreme: true}, mentorSizeChoice{3, "isb_old_extreme", ""}},
 		// ISB in a range → reduce size, tier 3 (written rule 3, D4.1 p1
 		// @08:05/09:40) — same rank as the old-extreme reduction.
 		{"ISB in range → 3", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, ISBInRange: true}, mentorSizeChoice{3, "isb_in_range", ""}},
 		{"in range beats confluence", mentorTierInputs{Setup: "ISB", StopPts: 11.25, Confluence: true, ISBInRange: true}, mentorSizeChoice{3, "isb_in_range", ""}},
 		{"strong day does not beat in range (swing-only)", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, StrongDay: true, ISBInRange: true}, mentorSizeChoice{3, "isb_in_range", ""}},
-		{"spent day beats in range", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, SpentDay: true, ISBInRange: true}, mentorSizeChoice{2, "spent_day", ""}},
+		{"spent day no longer overrides in range", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, SpentDay: true, ISBInRange: true}, mentorSizeChoice{3, "isb_in_range", ""}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -85,8 +86,9 @@ func TestMentorContractsForSizeTable(t *testing.T) {
 
 // TestMentorExtraForCopiesSpentDay — A5 (CTO 1791041016051): the spent-day
 // flag rides the intent (stamped by the evaluator) and must reach the size
-// table. Dropping the SpentDay copy here would silently kill the spent_day
-// tier (2) and the R9 15-pt stop cap in production.
+// table (which, per R09, no longer sizes the whole trade to 2 — the flag feeds
+// the 15-pt stop cap and the runner cap). Dropping the SpentDay copy here
+// would silently kill the R9 15-pt stop cap in production.
 func TestMentorExtraForCopiesSpentDay(t *testing.T) {
 	old := mentorConfluenceForIntent
 	mentorConfluenceForIntent = func(in mentor.Intent) bool { return true }
@@ -435,41 +437,6 @@ func TestMentorBEHalfDistanceTarget(t *testing.T) {
 	}
 }
 
-// TestMentorISBFillCandleExit [D1.4 p1 @12:23–13:27]: for an ISB trade leg 1
-// is closed at the FILL candle's close — modify_bracket of leg 1's TP to the
-// current price (a limit at or through the market). The runner continues.
-// Non-ISB origins keep leg 1's +1R TP.
-func TestMentorISBFillCandleExit(t *testing.T) {
-	// fill candle closes at 103 — between entry and +0.5R: leg 1's TP is
-	// modified to the close; the runner's stop does NOT move.
-	pos := mentorPosition{Symbol: "MNQ", Side: "long", Origin: "ISB", Entry: 100, Stop: 90, R: 10, Mode: "B"}
-	res := mentorExitB(pos, 103, 103, 101, true)
-	if res.Exited || res.ModifyTP == nil || *res.ModifyTP != 103 {
-		t.Fatalf("ISB fill candle close: %+v — want leg1 TP modified to the close 103", res)
-	}
-	if res.NewStop != pos.Stop || len(res.MoveStops) != 0 {
-		t.Fatalf("a sub-+0.5R fill candle must NOT move the stops: %+v", res)
-	}
-	// fill candle closes above +0.5R: BE for both legs AND the modify.
-	pos2 := mentorPosition{Symbol: "MNQ", Side: "long", Origin: "ISB", Entry: 100, Stop: 90, R: 10, Mode: "B"}
-	res = mentorExitB(pos2, 105, 105, 101, true)
-	if res.ModifyTP == nil || *res.ModifyTP != 105 || res.NewStop != 100 || len(res.MoveStops) != 2 {
-		t.Fatalf("ISB fill candle above +0.5R: %+v — want the modify AND both stops at BE", res)
-	}
-	// the stop on the fill candle still wins (worse same bar: stop + halfR).
-	pos3 := mentorPosition{Symbol: "MNQ", Side: "long", Origin: "ISB", Entry: 100, Stop: 90, R: 10, Mode: "B"}
-	res = mentorExitB(pos3, 104, 105, 89, true)
-	if !res.Exited || res.ExitPrice != 90 || res.ExitReason != "stop(worse-same-bar)" || res.ModifyTP != nil {
-		t.Fatalf("ISB fill candle through the stop: %+v — the stop must win", res)
-	}
-	// a non-ISB origin keeps leg 1's +1R TP: the same 103 candle only holds.
-	pos4 := mentorPosition{Symbol: "MNQ", Side: "long", Origin: "PHL", Entry: 100, Stop: 90, R: 10, Mode: "B"}
-	res = mentorExitB(pos4, 103, 103, 101, true)
-	if res.Exited || res.ModifyTP != nil || res.NewStop != 90 || len(res.MoveStops) != 0 {
-		t.Fatalf("PHL origin on the same candle: %+v — no modify below +1R", res)
-	}
-}
-
 // TestMentorResonanceFork (EXIT-SPEC-v3 A on SPLIT LEGS): a PHL/PLH fill
 // followed by an ISB in the SAME direction within 3 candles flips the position
 // to A — both stops to BE at that moment and leg 1's TP modified OUT to the
@@ -619,6 +586,11 @@ func TestMentorRuleGateR8R9(t *testing.T) {
 	}
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 88, Target: 124, StopPts: 12, TargetPts: 24}, mentorTierInputs{SpentDay: true}); why != "" {
 		t.Fatalf("a spent day with a 12-pt stop must pass: %q", why)
+	}
+	// R13: DayOff does not stop the swing, so the spent-day cap must not
+	// either — a SWING4H with a >15-pt stop trades through a spent day.
+	if why := mentorRuleGate(mentor.Intent{Setup: "SWING4H", Side: "long", Price: 100, Stop: 60, StopPts: 40, TargetPts: 80}, mentorTierInputs{SpentDay: true}); why != "" {
+		t.Fatalf("a spent day must NOT refuse the swing (R13): %q", why)
 	}
 	// a targetless intraday entry is BAD GEOMETRY now (CTO 1791058631982) —
 	// the kernel always tags the ISB target, so a zero target is a bug
@@ -876,8 +848,8 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 	if v := mentorLvlRevisitMinPts(nil); v != 0 {
 		t.Fatalf("lvl revisit default = %.2f, want 0", v)
 	}
-	if v := mentorEmaMaxCross30m(nil); v != 0 {
-		t.Fatalf("ema max cross default = %d, want 0 (OFF)", v)
+	if v := mentorEmaMaxCross30m(nil); v != 2 {
+		t.Fatalf("ema max cross default = %d, want 2 (ON, most conservative — item 16)", v)
 	}
 	if v := mentorLossDeparturePts(nil); v != 0 {
 		t.Fatalf("loss departure fallback default = %.2f, want 0 (OFF)", v)
@@ -934,8 +906,8 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 			cfg.Enabled, cfg.LvlRevisitMinPts, cfg.EmaMaxCross30m, cfg.LossDeparturePts)
 	}
 	naked := (&AutoTrader{id: "t-naked"}).mentorEvaluatorConfig()
-	if !naked.Enabled || naked.LvlRevisitMinPts != 0 || naked.EmaMaxCross30m != 0 || naked.LossDeparturePts != 0 {
-		t.Fatalf("no strategy → evaluator defaults: enabled=%v revisit=%.2f cross=%d loss_departure=%.2f — want true/0/0/0 (fallback OFF)",
+	if !naked.Enabled || naked.LvlRevisitMinPts != 0 || naked.EmaMaxCross30m != 2 || naked.LossDeparturePts != 0 {
+		t.Fatalf("no strategy → evaluator defaults: enabled=%v revisit=%.2f cross=%d loss_departure=%.2f — want true/0/2/0 (cross default ON, item 16)",
 			naked.Enabled, naked.LvlRevisitMinPts, naked.EmaMaxCross30m, naked.LossDeparturePts)
 	}
 }

@@ -3,10 +3,10 @@ package trader
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 	"vl/kernel"
 	"vl/levelidentity"
 	"vl/store"
-	"time"
 )
 
 // Recording only: even a panic cannot refuse a plan or interrupt evaluation.

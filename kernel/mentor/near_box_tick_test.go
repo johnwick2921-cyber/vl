@@ -8,19 +8,23 @@ import (
 	"vl/market"
 )
 
-// ftghFixture builds the 8-bar tape that draws exactly one FTGH [104, 106]
-// (the box survives its escape candle — TestBoxSurvivesEscape). Used by the
-// F2 Tick pins to put a real box on the tape.
+// ftghFixture builds the 9-bar tape that draws exactly one FTGH [104, 106]
+// (a clean double-top). Item 12: the partner is the LATER confirmed lower
+// high (top 2 @5, body edge 104), never the earlier adjacent high. No escape
+// candle here — the F2 Tick pins append their own bars after index 8, and a
+// higher-high escape candle would become the extreme once confirmed. Used by
+// the F2 Tick pins to put a real box on the tape.
 func ftghFixture(mk func(int, float64, float64, float64, float64) market.Kline) []market.Kline {
 	return []market.Kline{
 		mk(0, 100, 101, 99, 100),
 		mk(1, 100, 102, 99, 101),
-		mk(2, 101, 105, 100, 104),
-		mk(3, 103, 104, 102, 103),
-		mk(4, 102, 106, 101, 105),
-		mk(5, 105, 105.8, 99, 100),
-		mk(6, 106.2, 106.5, 105, 106.4),
-		mk(7, 106, 106.6, 105.5, 106.1),
+		mk(2, 101, 106, 100, 105), // top 1: the extreme high 106
+		mk(3, 104, 105, 102, 104), // confirms top 1 (high 105 < 106)
+		mk(4, 103, 104, 102, 103),
+		mk(5, 104, 105.5, 102, 103.5),   // top 2: swing high 105.5, body edge 104
+		mk(6, 103, 104.5, 102.5, 103.5), // confirms top 2
+		mk(7, 103, 104, 102.5, 103),     // filler — no new swing high
+		mk(8, 103, 104, 102.5, 103),     // filler — no new swing high
 	}
 }
 
@@ -49,8 +53,8 @@ func TestNearBoxISBTickRefused(t *testing.T) {
 		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
 	}
 	bars := append(ftghFixture(mk),
-		mk(8, 90, 93, 89, 92),       // mother: green (90 < 92)
-		mk(9, 91, 92.5, 89.5, 91.5), // inside: body [91, 91.5] in mother wick [89, 93]; range 3 → risk 6
+		mk(9, 90, 93, 89, 92),        // mother: green (90 < 92)
+		mk(10, 91, 92.5, 89.5, 91.5), // inside: body [91, 91.5] in mother wick [89, 93]; range 3 → risk 6
 	)
 	now := bars[len(bars)-1].CloseTime + 1
 
@@ -86,8 +90,8 @@ func TestNearBoxPHLTickRefused(t *testing.T) {
 		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
 	}
 	bars := append(ftghFixture(mk),
-		mk(8, 94, 95, 92, 93),   // pull-back above the key level
-		mk(9, 93, 96, 90, 92),   // touches L=90 from above, closes back above → LONG reject
+		mk(9, 94, 95, 92, 93),  // pull-back above the key level
+		mk(10, 93, 96, 90, 92), // touches L=90 from above, closes back above → LONG reject
 	)
 	now := bars[len(bars)-1].CloseTime + 1
 

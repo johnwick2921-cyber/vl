@@ -47,7 +47,13 @@ func BoxReturnBars(bars []market.Kline, b Box, formedAt int, cfg BoxCfg) []BoxRe
 // extreme+1)) and the walk starts after it — so the FIRST walk seeds the
 // spell state from that formation candle's close (start-1 == FormedAt), and
 // a return visit on the very next bar is not lost.
+//
+// D14 "Uno Reverse" [slide 17; X2 @02:36–03:25]: the approach side is the
+// box's CURRENT role. A flipped FTGH (broken ceiling → support) is walked as
+// an FTGL — returns come from ABOVE the Top; a flipped FTGL is walked as an
+// FTGH.
 func BoxReturnBarsFrom(bars []market.Kline, b Box, start int, cfg BoxCfg) []BoxReturn {
+	k := boxEffectiveKind(b)
 	var out []BoxReturn
 	if start >= len(bars) {
 		return out
@@ -55,7 +61,7 @@ func BoxReturnBarsFrom(bars []market.Kline, b Box, start int, cfg BoxCfg) []BoxR
 	outside := false
 	if start-1 >= b.FormedAt && start-1 < len(bars) {
 		c := bars[start-1]
-		switch b.Kind {
+		switch k {
 		case FTGH:
 			outside = c.Close < b.Bottom
 		case FTGL:
@@ -67,10 +73,10 @@ func BoxReturnBarsFrom(bars []market.Kline, b Box, start int, cfg BoxCfg) []BoxR
 		if c.CloseTime == 0 {
 			continue
 		}
-		if touchesEdge(b, c, cfg) && outside {
+		if touchesEdgeKind(k, b, c, cfg) && outside {
 			out = append(out, BoxReturn{N: len(out) + 1, RefBar: i})
 		}
-		switch b.Kind {
+		switch k {
 		case FTGH:
 			outside = c.Close < b.Bottom
 		case FTGL:
@@ -83,14 +89,32 @@ func BoxReturnBarsFrom(bars []market.Kline, b Box, start int, cfg BoxCfg) []BoxR
 // BoxReturnReject classifies a return's reference candle [D3.2 p1
 // @ 21:04–21:33]: close OUTSIDE the box on the approach side → the reject
 // (the trade reference; place the stop order); close INSIDE → cancel.
+// D14 "Uno Reverse": the approach side is the box's CURRENT role — a flipped
+// FTGH rejects like an FTGL (close back above the Top), and vice versa.
 func BoxReturnReject(b Box, ref market.Kline) bool {
-	switch b.Kind {
+	switch boxEffectiveKind(b) {
 	case FTGH:
 		return ref.Close < b.Bottom
 	case FTGL:
 		return ref.Close > b.Top
 	}
 	return false
+}
+
+// boxEffectiveKind returns the box's CURRENT role for return/reject/entry
+// purposes. D14 "Uno Reverse" [slide 17; X2 @02:36–03:25]: after a BODY
+// escape the role flips — "Kháng cự bị phá → sẽ thành hỗ trợ khi backtest.
+// Hỗ trợ bị phá → sẽ thành kháng cự khi backtest" — a broken FTGH (ceiling)
+// becomes SUPPORT (FTGL) and a broken FTGL (floor) becomes RESISTANCE
+// (FTGH). The edges do not move; only the role flips.
+func boxEffectiveKind(b Box) BoxKind {
+	if !b.Flipped {
+		return b.Kind
+	}
+	if b.Kind == FTGH {
+		return FTGL
+	}
+	return FTGH
 }
 
 // pingPongVerdict — PING PONG (CTO 13:24:53Z): when the entry sits between
@@ -121,7 +145,9 @@ func largestCandlePts(bars []market.Kline, lookback int) float64 {
 func pingPongVerdict(boxes []Box, bars []market.Kline, price float64, cfg Config) (ok bool, reason string) {
 	var floor, ceil *Box
 	for i := range boxes {
-		switch boxes[i].Kind {
+		// D14 "Uno Reverse": a box's ping-pong role is its CURRENT role — a
+		// flipped FTGH is the floor (support) and a flipped FTGL the ceiling.
+		switch boxEffectiveKind(boxes[i]) {
 		case FTGL:
 			if boxes[i].Top < price && (floor == nil || boxes[i].Top > floor.Top) {
 				floor = &boxes[i]
@@ -162,9 +188,12 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 	if !BoxReturnReject(b, ref) {
 		return nil // close inside the box = cancel
 	}
+	// D14 "Uno Reverse": the entry side is the box's CURRENT role — a flipped
+	// FTGH (broken ceiling → support) enters LONG, a flipped FTGL enters SHORT.
+	k := boxEffectiveKind(b)
 	var side Side
 	var price, stop float64
-	if b.Kind == FTGL {
+	if k == FTGL {
 		side, price, stop = SideLong, ref.High, ref.Low
 	} else {
 		side, price, stop = SideShort, ref.Low, ref.High
@@ -187,7 +216,7 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 	if risk > cfg.StopCeilingPts {
 		return nil
 	}
-	target := nextLevelBeyond(levels, price, side)
+	target := nextLevelBeyondRoom(levels, price, stop, side, cfg.RoomMultiple)
 	if target == 0 {
 		return nil // no level beyond → no setup [D4.1 p1 @ 01:45]
 	}
@@ -239,13 +268,16 @@ func ConfluenceVerdict(b Box, side Side, trig TriggerLine) ConfluenceFlag {
 	if ok, trigSide, _ := TriggerVerdict(trig, entry); !ok || trigSide == "" || trigSide != side {
 		return ConfluenceFlag{}
 	}
+	// D14 "Uno Reverse": the role check is the box's CURRENT role — a flipped
+	// FTGH entering LONG reads as FTGL (support), a flipped FTGL entering
+	// SHORT reads as FTGH (resistance).
 	switch side {
 	case SideLong:
-		if b.Kind != FTGL {
+		if boxEffectiveKind(b) != FTGL {
 			return ConfluenceFlag{}
 		}
 	case SideShort:
-		if b.Kind != FTGH {
+		if boxEffectiveKind(b) != FTGH {
 			return ConfluenceFlag{}
 		}
 	}

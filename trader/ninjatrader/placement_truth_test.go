@@ -38,11 +38,13 @@ func TestEntryCommandClockAndReceivedRejection(t *testing.T) {
 				}
 				register := func(sid string) error { return ledger.BeginPlacement(row.ID, sid) }
 				before := time.Now().UTC().Truncate(time.Millisecond)
-				place := tr.PlaceLimitEntry
+				var sid string
+				var err error
 				if kind == "stop_entry" {
-					place = tr.PlaceStopEntry
+					sid, err = tr.PlaceStopEntry("MNQ", "long", 1, bar.C, row.StopPx, row.TargetPx, 0, 0, register)
+				} else {
+					sid, err = tr.PlaceLimitEntry("MNQ", "long", 1, bar.C, row.StopPx, row.TargetPx, register)
 				}
-				sid, err := place("MNQ", "long", 1, bar.C, row.StopPx, row.TargetPx, register)
 				if err != nil {
 					t.Fatal(err)
 				}

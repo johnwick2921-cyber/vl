@@ -28,10 +28,11 @@ func emaCross30(bars []market.Kline, ema float64) int {
 }
 
 // emaSetupAllowed — the EMA34 setup seam (E2 + E4, CTO 12:27:25Z, moved to
-// DS-103 12:33:43Z). Only the EMA34 line is gated here; key levels keep their
-// own rules.
+// DS-103 12:33:43Z). Item 16 (CTO 23:49Z): the gate applies to the line that
+// TRADES — KindEMA34HTF (the location-gate line), not only KindEMA34 (which is
+// never a location). Key levels keep their own rules.
 func emaSetupAllowed(e *Evaluator, lvl Level, bars []market.Kline, cfg Config) bool {
-	if lvl.Kind != KindEMA34 {
+	if !isEMA34(lvl) {
 		return true
 	}
 	// E2: one loss at the line blocks the EMA until a departure.
@@ -92,5 +93,5 @@ func emaLossTick(e *Evaluator, emaPrice float64, cur market.Kline, now int64) {
 }
 
 func isEMA34(lvl Level) bool {
-	return lvl.Kind == KindEMA34
+	return lvl.Kind == KindEMA34 || lvl.Kind == KindEMA34HTF
 }
