@@ -248,7 +248,7 @@ export const mentor: GuideSection = {
         [
           'Key levels',
           '1H RTH colour changes — a line at the OPEN of the new-colour candle (never the wick), from the market open',
-          'Pruned < 20 pts apart (keep the more recent); deleted when a 1H candle CLOSES through it',
+          'Full stored history (every contract, stitched onto the current contract’s scale through measured roll gaps); pruned < 20 pts apart (keep the more recent); deleted when a 1H candle CLOSES through it',
         ],
         [
           'EMA 34',
@@ -390,7 +390,7 @@ export const mentor: GuideSection = {
         ],
         [
           '4h/1h direction',
-          'Entries only WITH the 4h trigger. The 1h counts only when it fired at or after the 4h (an earlier 1h trigger is ignored — it is silent): 1h agreeing or silent → follow the 4h; 1h opposite → sit out until it flips. No 4h trigger → nothing to follow',
+          'Entries only WITH the 4h trigger. The 1h counts only when it fired at or after the 4h (an earlier 1h trigger is ignored — it is silent): 1h agreeing or silent → follow the 4h; 1h opposite → sit out until it flips. No 4h trigger → nothing to follow. The 4h/1h lines (and the 5m trigger line) are seeded from history at boot, so the direction carries over a restart instead of rebuilding from the recent window.',
           '—',
         ],
         [

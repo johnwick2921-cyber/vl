@@ -140,21 +140,39 @@ func SeedDepths(bars1m, bars1h []market.Kline, now int64) map[string]int {
 // REFUSES entries (fail-closed: never trade on a cold EMA or truncated
 // levels). Seeding is deterministic: the same bars rebuild the same state.
 func Seed(e *Evaluator, bars1m []market.Kline, now int64) []string {
+	return seed(e, bars1m, keyLevel1HBars(bars1m), now)
+}
+
+// SeedFull is Seed with the 1H RTH key-level walk fed from a PRE-STITCHED
+// full-history series (KEYLEVEL-FULL-HISTORY, release #10). FIX 3: bars1m is
+// now the STITCHED, back-adjusted 1m series (same gap + cut as full1HRTH), NOT
+// the current contract's 1m — so the 4h EMA 34, the #435 seeded 5m/4h/1h
+// trigger lines and the depth seam ALL run on the same full history. The 1m
+// EMA 34/9 tail is unchanged by construction (the stitched tail IS the
+// current contract's recent bars). full1HRTH overrides ONLY the 1H RTH
+// key-level walk (levels + BODY-close deletion). The trader builds both from
+// the same RollStitcher result.
+func SeedFull(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int64) []string {
+	return seed(e, bars1m, full1HRTH, now)
+}
+
+func seed(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int64) []string {
 	// Defensive copy: the 15m depth check filters in place over the caller's
 	// backing array.
 	bars1m = append([]market.Kline(nil), bars1m...)
-	// P1 (CTO 12:44:08Z / 12:47:11Z): Seed takes 1m ONLY and builds 1h
-	// (clock-aligned aggregation) and the 4h buckets (17:00 CT anchor) from it.
-	// The level walk is RTH-filtered; the 4h EMA uses the all-hours aggregation.
-	bars1h := keyLevel1HBars(bars1m)
+	// P1 (CTO 12:44:08Z / 12:47:11Z): the higher timeframes are AGGREGATED
+	// FROM 1m (the store's native 1h is never read for the EMAs/4h). The level
+	// walk is the RTH-filtered 1h aggregation — or the full stitched history
+	// when SeedFull was called; the 4h EMA uses the all-hours aggregation.
 	e.seeded = true
 	e.depth = seedDepthOf(bars1m, now)
+	e.depth.oneH = len(full1HRTH) // full stitched history when SeedFull called
 	e.depth4hBucket = fourHBucketStart(now, ctime())
 	e.missing = missingFromDepth(e.depth)
 	e.depthMet = ""
 
 	// 1H RTH key levels from the FULL closed stored history (F7, no cap).
-	candles1h := bars1h
+	candles1h := full1HRTH
 	if n := len(candles1h); n > 0 && keyLevel1HCandleCloseTime(candles1h[n-1].OpenTime) > now {
 		candles1h = candles1h[:n-1]
 	}
@@ -166,6 +184,16 @@ func Seed(e *Evaluator, bars1m []market.Kline, now int64) []string {
 		// extension compares against false and draws a phantom level whenever
 		// the last seeded candle was green.
 		e.State.Seed1HLastColour = candleColour(candles1h[n-1])
+		// KEY-LEVEL RULING (KEYLEVEL-FULL-HISTORY, release #10): the BODY-close
+		// deletion is computed ONCE over the FULL closed history at seed, then
+		// advanced incrementally per tick past this watermark. The forming
+		// candle was already dropped above, so candles1h is all-closed.
+		for _, l := range e.State.SeedLevels {
+			if levelDeletedBy1HBody(l, candles1h, now) {
+				e.State.DeletedLevels[l.Key] = true
+			}
+		}
+		e.State.Seed1HDeletionWatermark = candles1h[n-1].OpenTime
 	}
 
 	// 1m EMA 34/9 from the closed 1m history (full recompute at seed, once).
@@ -209,19 +237,52 @@ func Seed(e *Evaluator, bars1m []market.Kline, now int64) []string {
 		e.State.Swing.LastBarTime = b5[len(b5)-1].OpenTime
 	}
 
+	// F2 (release #10): seed the 5m trigger line and the 4h/1h HTF trigger
+	// lines from the SAME closed 1m history with the SAME functions and
+	// aggregation as the tick path (TriggerTick / HTFAdvance over barsTF;
+	// bucketOpen keeps the 4h on the 17:00 CT anchor) — so the watermarks line
+	// up and the first tick consumes only NEWER bars (no double-advance).
+	// TriggerTick commits only non-tail buckets, so the last, possibly
+	// incomplete bucket is left for the first tick, exactly as on the live path.
+	e.State.Trigger = TriggerTick(e.State.Trigger, barsTF(bars1m, 5), 5, e.Cfg)
+	// Print windows: the trader plumbs only TODAY's windows — apply them to
+	// today's bars only. Historical print candles are NOT removed from the
+	// seeded history (see htfFeedBarsToday).
+	htfBars := htfFeedBarsToday(bars1m, e.Cfg.PrintWindows, now)
+	e.State.HTF = HTFAdvance(e.State.HTF, barsTF(htfBars, 240), barsTF(htfBars, 60), e.Cfg)
+
 	e.seedLine = SeedLine(e.State, bars1m, now)
 	return e.missing
 }
 
 // SeedLine is the one boot/arm line: the seeded depth per source, n/a when
-// unknown.
+// unknown, plus the seeded trigger directions (F2: the lines are warmed from
+// history now, so the line says what they are — not "none until the first
+// tick").
 func SeedLine(s State, bars1m []market.Kline, now int64) string {
 	parts := []string{"mentor seed:"}
 	parts = append(parts, fmt.Sprintf("4h EMA34 %d/%d", len(fourHClosedBuckets(barsTF(bars1m, 60), now)), FourHEMA34Warmup))
 	parts = append(parts, fmt.Sprintf("1m EMA34 %d/%d", closedCount(bars1m, now), OneMEMA34Warmup))
-	parts = append(parts, fmt.Sprintf("1H RTH levels %d candles", len(keyLevel1HBars(bars1m))))
+	parts = append(parts, fmt.Sprintf("1H RTH levels %d candles", len(s.Seed1HBars)))
 	parts = append(parts, fmt.Sprintf("levels %d", len(s.SeedLevels)))
+	parts = append(parts, triggerLinePart("4h", s.HTF.FourH, true))
+	parts = append(parts, triggerLinePart("1h", s.HTF.OneH, false))
+	parts = append(parts, triggerLinePart("5m", s.Trigger, false))
 	return strings.Join(parts, " ")
+}
+
+// triggerLinePart renders one seeded trigger line for the boot line: "<name>
+// trigger <dir>" (and, for the 4h, "since <bucket time>"). An unset direction
+// is "none".
+func triggerLinePart(name string, t TriggerLine, since bool) string {
+	dir := string(t.Dir)
+	if dir == "" {
+		dir = "none"
+	}
+	if since && t.MovedAt > 0 {
+		return fmt.Sprintf("%s trigger %s since %s", name, dir, time.UnixMilli(t.MovedAt).In(ctime()).Format("2006-01-02T15:04"))
+	}
+	return fmt.Sprintf("%s trigger %s", name, dir)
 }
 
 // depthMetLine is the ONE line logged when the seeded depth floors are met

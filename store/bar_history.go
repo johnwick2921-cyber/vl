@@ -609,6 +609,21 @@ func (s *BarHistoryStore) LastNBarsOn(symbol, tf, contract string, n int) ([]Bar
 	return desc, nil
 }
 
+// CurrentContract returns the contract of the newest non-mixed row for
+// (symbol, tf), or "" on a cold store. Read-only.
+func (s *BarHistoryStore) CurrentContract(symbol, tf string) (string, error) {
+	if s == nil || s.db == nil {
+		return "", fmt.Errorf("store required")
+	}
+	var newest BarHistoryDB
+	if err := s.db.Where("symbol = ? AND tf = ? AND contract <> '' AND COALESCE(source, '') NOT IN (?, ?)",
+		symbol, tf, BarSourceMixed, BarSourceOffScale).
+		Order("open_time_ms DESC").Limit(1).Find(&newest).Error; err != nil {
+		return "", err
+	}
+	return newest.Contract, nil
+}
+
 // LastNBarsCurrentContract returns the NEWEST n bars for (symbol, tf) on the
 // CURRENT contract only — the contract of the newest non-mixed row. One price
 // scale across a roll: rows written before the contract column existed carry
@@ -631,6 +646,46 @@ func (s *BarHistoryStore) LastNBarsCurrentContract(symbol, tf string, n int) ([]
 		return nil, nil
 	}
 	return s.LastNBarsOn(symbol, tf, newest.Contract, n)
+}
+
+// AllBarsOn returns EVERY stored bar for (symbol, tf, contract) ascending —
+// the full-history read for the mentor key-level seed (KEYLEVEL-FULL-HISTORY).
+// No N cap: the caller bounds memory by the symbol's own retention. A read
+// error is returned, never swallowed.
+func (s *BarHistoryStore) AllBarsOn(symbol, tf, contract string) ([]BarHistoryDB, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("store required")
+	}
+	var asc []BarHistoryDB
+	if err := s.db.Where("symbol = ? AND tf = ? AND contract = ? AND COALESCE(source, '') NOT IN (?, ?)",
+		symbol, tf, contract, BarSourceMixed, BarSourceOffScale).
+		Order("open_time_ms ASC").Find(&asc).Error; err != nil {
+		return nil, err
+	}
+	return asc, nil
+}
+
+// ContractSpan is one contract's (symbol, tf) coverage: its name and the
+// first/last open time it holds.
+type ContractSpan struct {
+	Contract string
+	FirstMs  int64
+	LastMs   int64
+	N        int64
+}
+
+// ContractSpans lists every contract the store holds for (symbol, tf), OLDEST
+// first (by first bar), with its first/last open time and row count. The roll
+// order is the span order.
+func (s *BarHistoryStore) ContractSpans(symbol, tf string) ([]ContractSpan, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("store required")
+	}
+	var rows []ContractSpan
+	err := s.db.Raw(`SELECT contract, MIN(open_time_ms) AS first_ms, MAX(open_time_ms) AS last_ms, COUNT(*) AS n
+		FROM bars WHERE symbol = ? AND tf = ? AND contract != '' AND contract != ? AND COALESCE(source,'') NOT IN (?, ?)
+		GROUP BY contract ORDER BY MIN(open_time_ms)`, symbol, tf, ContractMixed, BarSourceMixed, BarSourceOffScale).Scan(&rows).Error
+	return rows, err
 }
 
 // ImportSnapshotTimes returns the open times of historical_import rows for

@@ -67,15 +67,6 @@ func TestMentorSeedAtStart(t *testing.T) {
 				if err := bh.InsertBars(rows1m); err != nil {
 					t.Fatalf("InsertBars: %v", err)
 				}
-				// the exact closed 1m count the seed must report (the fixture seam
-				// returns 9999 — a mutant that fails to wire the seed's depths keeps
-				// that value and must go RED here).
-				n1mClosed := 0
-				for _, r := range rows1m {
-					if r.OpenTimeMs+60_000 <= now {
-						n1mClosed++
-					}
-				}
 				at := &AutoTrader{
 					id: "t-seed-warm",
 					config: AutoTraderConfig{
@@ -94,9 +85,15 @@ func TestMentorSeedAtStart(t *testing.T) {
 				if missing := strings.Join(at.mentorSourcesMissing(), ", "); textHas(missing, "history:") {
 					t.Fatalf("a seeded store must not refuse on history depth: %q", missing)
 				}
-				// the seam serves the seed's own depths (not the test fallback 9999)
-				if d, ok := mentorSourceDepth("1m EMA34"); !ok || d != n1mClosed {
-					t.Fatalf("1m EMA34 depth from the seed: %d/%v, want %d/true", d, ok, n1mClosed)
+				// the seam serves the seed's own depths (not the test fallback
+				// 9999): the 1m EMA 34 depth is the evaluator's own closed-1m
+				// count, which since REL10-438-FIXES #3 is read from the
+				// stitched series (the stitched tail is the current contract,
+				// so the EMA value is unchanged; the count drops the newest
+				// contract's pre-roll sparse snapshots).
+				want1m := at.mentorEval.Depths()["1m EMA34"]
+				if d, ok := mentorSourceDepth("1m EMA34"); !ok || d != want1m {
+					t.Fatalf("1m EMA34 depth from the seed: %d/%v, want %d/true", d, ok, want1m)
 				}
 				if d, ok := mentorSourceDepth("4h EMA34"); !ok || d < 102 || d > 110 {
 					t.Fatalf("4h EMA34 depth from the seed: %d/%v, want 102..110/true", d, ok)

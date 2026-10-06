@@ -29,6 +29,36 @@ func inPrintWindows(openMs int64, windows []PrintWindow) bool {
 	return false
 }
 
+// htfFeedBarsToday is htfFeedBars scoped to the SEED: the trader plumbs only
+// TODAY's print windows, so the drop applies to today's bars ONLY. Historical
+// print candles are NOT removed from the seeded history — the course's
+// historical 4h/1h chart includes them; only the LIVE print must not move the
+// lines [D4.4 p1 @18:13, @22:15].
+func htfFeedBarsToday(bars []market.Kline, windows []PrintWindow, now int64) []market.Kline {
+	if len(windows) == 0 {
+		return bars
+	}
+	key := sessionKeyCT(now)
+	drop := false
+	for i := range bars {
+		if sessionKeyCT(bars[i].OpenTime) == key && inPrintWindows(bars[i].OpenTime, windows) {
+			drop = true
+			break
+		}
+	}
+	if !drop {
+		return bars
+	}
+	out := make([]market.Kline, 0, len(bars))
+	for i := range bars {
+		if sessionKeyCT(bars[i].OpenTime) == key && inPrintWindows(bars[i].OpenTime, windows) {
+			continue
+		}
+		out = append(out, bars[i])
+	}
+	return out
+}
+
 // htfFeedBars returns the 1m feed for the HTF trigger lines: every bar EXCEPT
 // the print-window bars (item 18 part 1). It allocates only when a print bar
 // is actually present — a non-print-day tape (no windows, or no bar inside a
