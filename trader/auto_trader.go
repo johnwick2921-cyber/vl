@@ -390,6 +390,11 @@ type AutoTrader struct {
 	// branch. Size is never touched by the upgrade.
 	mentorExitMu    sync.Mutex
 	mentorExitModes map[string]string
+	// mentorNeverAddCancelDone is the B3 never-add latch: the never-add cancel
+	// fires once per open-position episode and re-arms when the account is flat
+	// again. Read/written ONLY inside mentorDayStopSweep (serialized under
+	// mentorEvalMu).
+	mentorNeverAddCancelDone bool
 	// mentorLivePos is the exit-drive's input: every FILLED mentor position,
 	// keyed by its entry signal id, registered at the fill callback and driven
 	// by the exit-drive loop (DS-107). Guarded by mentorExitMu.
