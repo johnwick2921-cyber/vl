@@ -1490,7 +1490,7 @@ func (at *AutoTrader) mentorSeedAtStart() {
 		d, ok := mentorSeedDepths[name]
 		return d, ok
 	}
-	at.logInfof("🧑‍🏫 %s", mentor.SeedLine(at.mentorEval.State, bars1m, now))
+	at.logInfof("🧑‍🏫 %s", at.mentorEval.SeedLine(len(contracts)))
 	at.logInfof("%s", mentorSeamBootLine())
 	if len(missing) > 0 {
 		mentorCount("seed_missing")
