@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"vl/kernel"
 	"vl/kernel/mentor"
 	"vl/market"
 	"vl/store"
@@ -16,9 +17,29 @@ import (
 // until a restart even after the evaluator had warmed. This pin runs the
 // production sequence — seed from the store, then mentorEvalOnce per tick —
 // and requires the placement gate to clear by itself.
+//
+// REL10 P1: after #438/#435 the gate stalled at 99/102 at a 17:00-CT-adjacent
+// clock position (the seed's 4h count was deflated by the level-walk pre-roll
+// trim). The clock is pinned through mentorNowSource so the bad position fails
+// deterministically instead of only after 17:00 CT.
 func TestMentorSeedDepthRecheckClearsPlacementGateWithoutRestart(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		now  time.Time
+	}{
+		{"17_01_CT_bad_position", time.Date(2026, 10, 6, 17, 1, 0, 0, kernel.CTLocation())},
+		{"15_30_CT_good_position", time.Date(2026, 10, 6, 15, 30, 0, 0, kernel.CTLocation())},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mentorNowSource = func() time.Time { return tc.now }
+			t.Cleanup(func() { mentorNowSource = nil })
+			runMentorSeedDepthRecheck(t, tc.now.UnixMilli())
+		})
+	}
+}
+
+func runMentorSeedDepthRecheck(t *testing.T, now int64) {
 	st := mentorSeedStore(t)
-	now := time.Now().UnixMilli()
 
 	// the history length (hours) that seeds exactly 94 closed 4h candles
 	var rows []store.BarHistoryDB

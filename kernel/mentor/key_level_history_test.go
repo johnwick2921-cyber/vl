@@ -254,8 +254,8 @@ func TestRollStitcherSameDayContinuation(t *testing.T) {
 // is stitched (one-contract store, or the first pair's gap is unmeasurable),
 // the newest's sparse pre-roll import snapshots (1 bar/day) must not reach the
 // level walk: a single 1m bar on an otherwise-empty day would bucket into a
-// bogus 1H candle and draw a colour-change level. Result() drops them before
-// the newest's dense roll day.
+// bogus 1H candle and draw a colour-change level. Result() drops the
+// SNAPSHOT-LIKE days (< minSnapshotSessionBars), not the dense roll day.
 func TestRollStitcherSingleContractDropsSparseSnapshots(t *testing.T) {
 	// Newest only: sparse snapshots on 09-07..09-10 (one 1m bar each), dense
 	// from session 09-15.
@@ -283,6 +283,40 @@ func TestRollStitcherSingleContractDropsSparseSnapshots(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("the dense session 09-15 must still produce 1H candles")
+	}
+}
+
+// TestRollStitcherSingleContractKeepsPartialFirstSession — a genuine PARTIAL
+// first session (the bot started recording mid-session: 400 dense bars, below
+// the roll-day floor but far above the snapshot floor) must be KEPT: it
+// contributes real 4h buckets to the EMA warm-up depth. Only snapshot-like
+// days (< minSnapshotSessionBars) are dropped.
+func TestRollStitcherSingleContractKeepsPartialFirstSession(t *testing.T) {
+	// First session day 09-21: a dense partial session (400 bars, 10:20→17:00).
+	partial := rthRange1m(2026, 9, 21, 10, 20, 17, 0, 98, 99)
+	newest := append(partial, denseSession1m(2026, 9, 21, 1380, 110, 111)...) // session 09-22 (dense)
+
+	stitched, full1h, _, _ := StitchKeyLevelHistory([]Contract1M{
+		{Contract: "MNQ 12-26", Bars: newest},
+	})
+
+	found := false
+	for _, b := range stitched {
+		if sessionKeyCT(b.OpenTime) == "2026-09-21" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the partial first session (400 bars) must be kept in the stitched 1m")
+	}
+	found = false
+	for _, c := range full1h {
+		if sessionKeyCT(c.OpenTime) == "2026-09-21" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the partial first session must contribute 1H RTH candles")
 	}
 }
 

@@ -82,16 +82,36 @@ func trimAfter(bars []market.Kline, cutoff int64) []market.Kline {
 	return bars[n:]
 }
 
+// minSnapshotSessionBars is the snapshot-detection floor: a session day with
+// FEWER than this many 1m bars is a sparse import SNAPSHOT (1 bar/day), not a
+// real session. It must NOT reuse the roll-day density threshold
+// (denseFront1mMin): a genuine PARTIAL first session (the bot started
+// recording mid-session, e.g. 425 bars) would be misread as "sparse" and
+// dropped, deflating the 4h EMA warm-up depth (REL10 P1).
+const minSnapshotSessionBars = 30
+
 // trimPreRoll drops the newest contract's sparse pre-roll import snapshots —
-// the bars BEFORE its dense roll day (the first session day with >=
-// denseFront1mMin bars). Used ONLY when no older contract was stitched, so the
-// Add-time cut (which normally drops them) never ran.
+// the LEADING session days with fewer than minSnapshotSessionBars 1m bars
+// (the 1-bar/day snapshots that would draw bogus single-bar 1H candles). A
+// genuine partial first session has hundreds of bars and is KEPT. Used only
+// when no older contract was stitched, so the Add-time cut (which normally
+// drops the newer's snapshots) never ran.
 func trimPreRoll(bars []market.Kline) []market.Kline {
-	rd, ok := rollDayKey(bars)
-	if !ok {
-		return bars
+	counts := make(map[string]int, 64)
+	for _, b := range bars {
+		counts[sessionKeyCT(b.OpenTime)]++
 	}
-	n := sort.Search(len(bars), func(i int) bool { return sessionKeyCT(bars[i].OpenTime) >= rd })
+	first := ""
+	for _, b := range bars { // ascending: the first session day with a real bar count
+		if k := sessionKeyCT(b.OpenTime); counts[k] >= minSnapshotSessionBars {
+			first = k
+			break
+		}
+	}
+	if first == "" {
+		return bars // every session day is snapshot-like; keep them
+	}
+	n := sort.Search(len(bars), func(i int) bool { return sessionKeyCT(bars[i].OpenTime) >= first })
 	return bars[n:]
 }
 
@@ -261,8 +281,9 @@ func (s *RollStitcher) Result() (stitched1m, bars1hRTH []market.Kline, gaps []Ro
 	stitched1m = s.stitched1m
 	// When NO older contract was stitched (the first pair's gap was
 	// unmeasurable, or the store holds one contract), the Add-time cut never
-	// ran, so the newest's sparse pre-roll import snapshots would still be in
-	// the walk and could draw bogus single-bar 1H candles. Drop them here.
+	// ran, so the newest's sparse pre-roll import snapshots could draw bogus
+	// single-bar 1H candles. Drop them (snapshot detection, not the roll-day
+	// density threshold — trimPreRoll keeps a genuine partial first session).
 	if len(s.gaps) == 0 && len(stitched1m) > 0 {
 		stitched1m = trimPreRoll(stitched1m)
 	}
