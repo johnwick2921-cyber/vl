@@ -71,7 +71,6 @@ func TestMentorProductionWiring(t *testing.T) {
 	at := &AutoTrader{id: "t-wire", trader: fake, store: st}
 	at.mentorWireProductionSeams()
 	t.Cleanup(func() {
-		mentorOpenStopSource = nil
 		mentorOpenSideSource = nil
 		mentorLegProtectedSource = nil
 		mentorLatestPriceSource = nil
@@ -85,10 +84,6 @@ func TestMentorProductionWiring(t *testing.T) {
 	// every seam bound and answering from the fake snapshot.
 	if missing := mentorSeamMissing(); len(missing) != 0 {
 		t.Fatalf("no seam may be missing after production wiring: %v", missing)
-	}
-	px, ok := mentorOpenStopSource()
-	if !ok || px != 105.5 {
-		t.Fatalf("open stop = %.2f/%v, want 105.5/true", px, ok)
 	}
 	if side := mentorOpenSideSource(); side != "short" {
 		t.Fatalf("open side = %q, want short", side)
@@ -133,8 +128,7 @@ func TestMentorProductionWiring(t *testing.T) {
 
 	// boot line: everything wired, including the B1 day-net / closed-profit
 	// seams (they are in mentorSeamNames now).
-	if line := mentorSeamBootLine(); !textHas(line, "open_stop=wired") ||
-		!textHas(line, "day_net=wired") || !textHas(line, "closed_profit=wired") ||
+	if line := mentorSeamBootLine(); !textHas(line, "day_net=wired") || !textHas(line, "closed_profit=wired") ||
 		textHas(line, "=missing") {
 		t.Fatalf("boot line must show every seam wired: %q", line)
 	}
@@ -159,7 +153,7 @@ func TestMentorProductionWiring(t *testing.T) {
 
 	// a failing snapshot must answer not-ok, never a fabricated value.
 	fake.err = errors.New("snapshot down")
-	if _, ok := mentorOpenStopSource(); ok {
-		t.Fatal("a snapshot error must answer not-ok")
+	if side := mentorOpenSideSource(); side != "" {
+		t.Fatalf("a snapshot error must answer empty side, got %q", side)
 	}
 }

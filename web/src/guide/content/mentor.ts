@@ -191,6 +191,27 @@ export const mentor: GuideSection = {
       ],
     },
     {
+      kind: 'callout',
+      title: 'Mentor — what trades (live truth panel)',
+      items: [
+        {
+          title: 'Read-only live evaluator state',
+          body: 'The planner page and the trader dashboard show a card titled "Mentor — what trades". It is read-only and reports what the mentor evaluator holds RIGHT NOW: the 4h trigger direction and since-when, the 1h trigger, the 5m trigger (price + since), the HTF verdict (follow / sit-out / no-trigger) and whether the HTF gate is active (htf_gate_news_only), the mentor key levels in effect (price, kind, drawn-at, visits today), the history depth line, and the next-window / day-stop state (done-after-win, stop-after-loss, window). It never mutates the evaluator — it reads under the existing locks and never blocks the tick.',
+          cite: 'trader/mentor_truth_panel.go MentorTruthSnapshot · api/handler_mentor_truth.go',
+        },
+        {
+          title: 'The AI planner bias is advice-only when mentor is ON',
+          body: 'When mentor mode is ON, the AI planner bias card is re-labelled "AI planner — advice only (mentor mode places the trades)". The mentor engine places the entries; the AI planner only supplies the bias. When mentor mode is OFF the bias card keeps its unchanged label.',
+          cite: 'web/src/components/plan/BiasBlock.tsx adviceOnly · web/src/components/plan/PlanCard.tsx',
+        },
+        {
+          title: 'Live refresh + chart levels',
+          body: 'The card refreshes every 30s and on window focus, and stamps each snapshot "as of HH:MM:SS CT" (server as_of_ms). The mentor key levels are also drawn on the dashboard price chart as dashed amber lines labelled "mentor", distinct from the solid order lines.',
+          cite: 'web/src/components/mentor/useMentorTruth.ts · web/src/components/charts/AdvancedChart.tsx mentorLevels',
+        },
+      ],
+    },
+    {
       kind: 'h',
       text: 'The three setups',
     },
@@ -227,7 +248,7 @@ export const mentor: GuideSection = {
         [
           'Key levels',
           '1H RTH colour changes — a line at the OPEN of the new-colour candle (never the wick), from the market open',
-          'Pruned < 20 pts apart (keep the more recent); deleted when a 1H candle CLOSES through it',
+          'Full stored history of the current contract plus older contracts back-adjusted while a roll gap can be measured (today: from 2026-06-03, 2 contracts); pruned < 20 pts apart (keep the more recent); deleted when a 1H candle CLOSES through it',
         ],
         [
           'EMA 34',
@@ -369,7 +390,7 @@ export const mentor: GuideSection = {
         ],
         [
           '4h/1h direction',
-          'Entries only WITH the 4h trigger. The 1h counts only when it fired at or after the 4h (an earlier 1h trigger is ignored — it is silent): 1h agreeing or silent → follow the 4h; 1h opposite → sit out until it flips. No 4h trigger → nothing to follow',
+          'Entries only WITH the 4h trigger. The 1h counts only when it fired at or after the 4h (an earlier 1h trigger is ignored — it is silent): 1h agreeing or silent → follow the 4h; 1h opposite → sit out until it flips. No 4h trigger → nothing to follow. The 4h/1h lines (and the 5m trigger line) are seeded from history at boot, so the direction carries over a restart instead of rebuilding from the recent window.',
           '—',
         ],
         [
@@ -450,6 +471,10 @@ export const mentor: GuideSection = {
           'mentor_spent_day_contracts',
         ],
       ],
+    },
+    {
+      kind: 'p',
+      text: 'The risk-control max_contracts_per_order knob does NOT apply in mentor mode: mentor entries size from this table, capped only by mentor_max_contracts (default 20).',
     },
     {
       kind: 'h',
@@ -550,7 +575,7 @@ export const mentor: GuideSection = {
         {
           label: 'Max contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'The hard ceiling across all tiers.',
+          what: 'The hard ceiling across all tiers. The risk-control max_contracts_per_order knob is NOT applied in mentor mode — this is the cap that governs.',
           trader: 'No mentor position ever exceeds this.',
           consumer: 'trader/mentor_mode.go:31',
           range: 'int',

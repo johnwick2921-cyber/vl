@@ -226,6 +226,9 @@ NOTE: The id field is "trader_id" (NOT "id"). Always read trader_id from this en
 			s.routeWithSchema(protected, "GET", "/traders/:id/config", "Get full trader configuration",
 				`:id = trader_id from GET /api/my-traders`,
 				s.handleGetTraderConfig)
+			s.routeWithSchema(protected, "GET", "/traders/:id/mentor-truth", "Mentor 'what trades' panel (live evaluator state, read-only)",
+				`:id = trader_id from GET /api/my-traders. Returns the 4h/1h/5m trigger directions, HTF verdict, mentor key levels + today's visits, history depth, and window/day-stop state. mentor mode OFF -> {"enabled":false}.`,
+				s.handleMentorTruth)
 			s.routeWithSchema(protected, "POST", "/traders", "Create a new AI trader",
 				`Body: {"name":"<string, required>","ai_model_id":"<EXACT id field from GET /api/models — e.g. 'abc123_deepseek', NOT the provider name 'deepseek'>","exchange_id":"<EXACT id field from GET /api/exchanges — e.g. '05785d3b-841e-...', NOT the type name>","strategy_id":"<EXACT id field from GET /api/strategies>","scan_interval_minutes":<int, default 3, minimum 3>}
 IMPORTANT: ai_model_id and exchange_id must be the full "id" value from the Account State, not the provider/type name.`,

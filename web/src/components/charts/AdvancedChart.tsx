@@ -63,6 +63,8 @@ interface AdvancedChartProps {
   exchange?: string // Exchange type: ninjatrader only in the vl product.
   onSymbolChange?: (symbol: string) => void // Symbol change callback
   selectedAccount?: string // Dashboard-selected account; open orders stay trader-bound (F31)
+  /** MENTOR-TRUTH PANEL — mentor key levels, drawn in a distinct "mentor" style. */
+  mentorLevels?: { price: number; label: string }[]
 }
 
 // Indicator configuration
@@ -118,6 +120,7 @@ export function AdvancedChart({
   exchange = 'ninjatrader', // Default to ninjatrader (the only venue)
   onSymbolChange: _onSymbolChange, // Available for future use
   selectedAccount,
+  mentorLevels,
 }: AdvancedChartProps) {
   void _onSymbolChange // Prevent unused warning
   const { language } = useLanguage()
@@ -135,6 +138,7 @@ export function AdvancedChart({
     Map<number, { volume: number; quoteVolume: number }>
   >(new Map()) // Store kline extra data
   const priceLinesRef = useRef<any[]>([]) // Store open order price lines
+  const mentorPriceLinesRef = useRef<any[]>([]) // MENTOR-TRUTH PANEL key-level lines
   const latestKlinesRef = useRef<Kline[]>([]) // Most recent klines, for indicator re-render on toggle (1b)
 
   // F31 — an open-order snapshot belongs to the view that requested it.
@@ -1220,6 +1224,38 @@ export function AdvancedChart({
       clearInterval(openOrdersInterval)
     }
   }, [symbol, interval, traderID, exchange, selectedAccount])
+
+  // MENTOR-TRUTH PANEL — draw the mentor key levels as price lines in a
+  // distinct style (reuses the same createPriceLine overlay the open orders
+  // use; labelled "mentor"). Cleared and redrawn whenever the levels, the
+  // symbol, or the interval change.
+  useEffect(() => {
+    const series = candlestickSeriesRef.current
+    mentorPriceLinesRef.current.forEach((line) => {
+      try {
+        series?.removePriceLine(line)
+      } catch {
+        // Ignore clear error
+      }
+    })
+    mentorPriceLinesRef.current = []
+
+    const levels = mentorLevels ?? []
+    if (!series || levels.length === 0) return
+
+    levels.forEach((lv) => {
+      if (!(lv.price > 0)) return
+      const line = series.createPriceLine({
+        price: lv.price,
+        color: '#E8A33D', // distinct mentor amber — not the order yellow/green/red
+        lineWidth: 1,
+        lineStyle: 2, // dashed, distinct from the solid order lines
+        axisLabelVisible: true,
+        title: lv.label || 'mentor',
+      })
+      if (line) mentorPriceLinesRef.current.push(line)
+    })
+  }, [mentorLevels, symbol, interval])
 
   // Handle order marker show/hide separately to avoid reloading data
   useEffect(() => {

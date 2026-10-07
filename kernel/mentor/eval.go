@@ -111,7 +111,13 @@ type State struct {
 	// is O(levels x bars) and timed the replay out.
 	Seed1HBars       []market.Kline `json:"seed_1h_bars,omitempty"`
 	Seed1HLastColour bool           `json:"seed_1h_last_colour,omitempty"`
-	Seed1mWatermark  int64          `json:"seed_1m_watermark,omitempty"`
+	// Seed1HDeletionWatermark is the OpenTime of the last 1H RTH candle whose
+	// BODY-close deletion has been evaluated (KEYLEVEL-FULL-HISTORY, release
+	// #10): deletion is computed ONCE over the full seeded history, then only
+	// the NEW candles past this watermark are walked per tick — never the
+	// whole series per level per tick (the O(levels x bars) replay killer).
+	Seed1HDeletionWatermark int64  `json:"seed_1h_deletion_watermark,omitempty"`
+	Seed1mWatermark         int64  `json:"seed_1m_watermark,omitempty"`
 	EMA34            float64        `json:"ema34,omitempty"` // 1m EMA 34 (incremental)
 	EMA9             float64        `json:"ema9,omitempty"`  // 1m EMA 9 (incremental)
 
@@ -806,18 +812,21 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// closed through a key level DELETES it; a 1H wick through does not. The
 	// deletion is permanent for the session and the level leaves the set at
 	// once — it can no longer be touched, located, or laddered to.
-	var b60 []market.Kline
 	if e.seeded {
-		b60 = e.State.Seed1HBars // incremental (seed + ticks), O(new) per tick
+		// KEYLEVEL-FULL-HISTORY (release #10): deletion was computed ONCE over
+		// the full seeded history; per tick only the NEW closed 1H candles past
+		// the watermark are walked — never the whole series per level.
+		e.advanceKeyLevelDeletion(levels, now)
 	} else {
-		b60 = keyLevel1HBars(bars) // cold: one aggregation per tick
-	}
-	for _, l := range levels {
-		if l.Kind != KindKeyLevel || e.State.DeletedLevels[l.Key] {
-			continue
-		}
-		if levelDeletedBy1HBody(l, b60, now) {
-			e.State.DeletedLevels[l.Key] = true
+		// Cold path (no Seed): one aggregation per tick, full walk.
+		b60 := keyLevel1HBars(bars)
+		for _, l := range levels {
+			if l.Kind != KindKeyLevel || e.State.DeletedLevels[l.Key] {
+				continue
+			}
+			if levelDeletedBy1HBody(l, b60, now) {
+				e.State.DeletedLevels[l.Key] = true
+			}
 		}
 	}
 	levels = withoutDeleted(levels, e.State.DeletedLevels)
@@ -2114,6 +2123,41 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 		}
 	}
 	return out
+}
+
+// advanceKeyLevelDeletion walks the KEY-LEVEL deletion over only the NEW
+// closed 1H RTH candles past Seed1HDeletionWatermark (KEYLEVEL-FULL-HISTORY,
+// release #10). At Seed the deletion is computed ONCE over the full history;
+// from then on each candle is checked exactly once, when it closes. A level is
+// deleted when ANY later closed candle's BODY crossed it (open one side, close
+// the other — a wick through does NOT delete). The watermark advances with the
+// walk, so the steady-state cost is O(new candles x levels), never the old
+// O(levels x bars) full-series scan per level per tick.
+func (e *Evaluator) advanceKeyLevelDeletion(levels []Level, now int64) {
+	b60 := e.State.Seed1HBars
+	if n := len(b60); n > 0 && keyLevel1HCandleCloseTime(b60[n-1].OpenTime) > now {
+		b60 = b60[:n-1] // the forming candle has not closed
+	}
+	start := sort.Search(len(b60), func(i int) bool {
+		return b60[i].OpenTime > e.State.Seed1HDeletionWatermark
+	})
+	for i := start; i < len(b60); i++ {
+		b := b60[i]
+		for _, l := range levels {
+			if l.Kind != KindKeyLevel || e.State.DeletedLevels[l.Key] {
+				continue
+			}
+			if b.CloseTime < l.AtTime {
+				continue // this 1H candle closed before the level existed
+			}
+			crossed := b.Open < l.Price && b.Close > l.Price ||
+				b.Open > l.Price && b.Close < l.Price
+			if crossed {
+				e.State.DeletedLevels[l.Key] = true
+			}
+		}
+		e.State.Seed1HDeletionWatermark = b.OpenTime
+	}
 }
 
 // swingRoomRefused is the swing reject's room rule (item 25 + R68, CTO fold):

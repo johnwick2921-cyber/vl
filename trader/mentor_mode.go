@@ -1049,37 +1049,6 @@ func mentorNeverWiden(side string, curStop, newStop float64) (refuse bool, why s
 	return false, ""
 }
 
-// mentorOpenStopSource is the current open stop for the never-widen guard
-// (nil → no open mentor position known; the live driver sets it from the
-// position registry at P1).
-var mentorOpenStopSource func() (float64, bool)
-
-// mentorMoveStop sends a mentor stop move through the SAME last hop the AI
-// mechanisms use, but WITHOUT the 0B suspension gate: EXIT_MECHS_SUSPENDED does
-// NOT apply to mentor mode (the AI mechanisms keep it — both sides are pinned
-// by TestMentorExitMechSuspensionAppliesToAIOnly). Every move passes the
-// never-widen guard (c) first: an amendment that increases open risk never
-// reaches the wire.
-func (at *AutoTrader) mentorMoveStop(nt *ntTrader.TCPTrader, side string, newStop float64) error {
-	// FAIL-CLOSED (c): with mentor mode ON and no open-stop source, refuse the
-	// move — the stop stays where it is.
-	if at.mentorEnabled() && mentorOpenStopSource == nil {
-		mentorCount("stop_move_no_source")
-		at.logWarnf("🧑‍🏫 mentor stop move refused: open-stop source not wired (fail-closed) — the stop stays where it is")
-		return fmt.Errorf("mentor stop move refused: open-stop source not wired (fail-closed)")
-	}
-	if mentorOpenStopSource != nil {
-		if cur, ok := mentorOpenStopSource(); ok {
-			if refuse, why := mentorNeverWiden(side, cur, newStop); refuse {
-				mentorCount("widen_refused")
-				at.logWarnf("🧑‍🏫 %s", why)
-				return fmt.Errorf("mentor stop move refused: %s", why)
-			}
-		}
-	}
-	return moveStopWire(nt, side, newStop)
-}
-
 // mentorLogPositionState dumps the driver state for the daily log. It snapshots
 // the shared fields under mentorExitMu — the receipt (mentorMarkLeg1Scaled) and
 // the I7 fallback write Scaled/Leg1ExitedAtMs from other goroutines, so an

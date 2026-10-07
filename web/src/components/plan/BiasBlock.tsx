@@ -8,9 +8,12 @@ import type { PlanBias } from '../../lib/api/plan'
 export function BiasBlock({
   bias,
   language,
+  adviceOnly = false,
 }: {
   bias: PlanBias
   language: Language
+  /** mentor mode ON → this card is advice only; the mentor places the trades. */
+  adviceOnly?: boolean
 }) {
   const dir = (bias.direction || 'neutral').toLowerCase()
   const color =
@@ -35,6 +38,14 @@ export function BiasBlock({
         >
           {tp('bias', language)}
         </span>
+        {adviceOnly && (
+          <span
+            className="text-[10px] uppercase tracking-widest"
+            style={{ color: 'var(--vl-warn)', fontFamily: 'var(--vl-font-ui)' }}
+          >
+            {tp('mentorAdviceOnly', language)}
+          </span>
+        )}
         <span
           style={{
             color,

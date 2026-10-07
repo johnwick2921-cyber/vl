@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"vl/kernel"
 	"vl/market"
 )
 
@@ -128,12 +129,13 @@ type swingPosition struct {
 }
 
 // fourHBucketStart returns the start (ms) of the 4h bucket a bar belongs to.
-// Buckets are anchored at 17:00 CT (the Globex session open), DST-aware via
-// America/Chicago. The minute-keyed cache keeps the per-bar cost to a map
-// lookup (barsTF(240) buckets every bar on every tick — without it the
-// time.Date path made the 30-day replay 16x slower: 27s -> 437s). The key is
-// the bar's UTC minute, so distinct buckets can never collide (a 17:00 CT
-// bucket may straddle two UTC 4h spans).
+// The ANCHOR itself lives in kernel.FourHBucketStart (one definition, shared
+// with the planner's 4h candle table); this wrapper only adds the per-bar
+// cache. The minute-keyed cache keeps the per-bar cost to a map lookup
+// (barsTF(240) buckets every bar on every tick — without it the time.Date path
+// made the 30-day replay 16x slower: 27s -> 437s). The key is the bar's UTC
+// minute, so distinct buckets can never collide (a 17:00 CT bucket may straddle
+// two UTC 4h spans).
 var fourHBucketCache sync.Map // utcMinute -> bucket start ms
 
 func fourHBucketStart(ot int64, loc *time.Location) int64 {
@@ -144,14 +146,7 @@ func fourHBucketStart(ot int64, loc *time.Location) int64 {
 	if v, ok := fourHBucketCache.Load(key); ok {
 		return v.(int64)
 	}
-	t := time.UnixMilli(ot).In(loc)
-	anchor := time.Date(t.Year(), t.Month(), t.Day(), globexOpenMin/60, globexOpenMin%60, 0, 0, loc)
-	if t.Before(anchor) {
-		anchor = anchor.AddDate(0, 0, -1)
-	}
-	delta := t.Sub(anchor)
-	step := 4 * time.Hour
-	res := anchor.Add(delta - delta%step).UnixMilli()
+	res := kernel.FourHBucketStart(ot, loc)
 	fourHBucketCache.Store(key, res)
 	return res
 }

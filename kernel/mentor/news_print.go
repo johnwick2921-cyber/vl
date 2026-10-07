@@ -32,7 +32,10 @@ func inPrintWindows(openMs int64, windows []PrintWindow) bool {
 // htfFeedBars returns the 1m feed for the HTF trigger lines: every bar EXCEPT
 // the print-window bars (item 18 part 1). It allocates only when a print bar
 // is actually present — a non-print-day tape (no windows, or no bar inside a
-// window) returns the input slice untouched, byte-identical.
+// window) returns the input slice untouched, byte-identical. The windows are
+// ABSOLUTE instants for today's prints only, so a historical bar at a
+// different absolute time never matches — no day scoping is needed, and the
+// seed and the live tick share this one definition.
 func htfFeedBars(bars []market.Kline, windows []PrintWindow) []market.Kline {
 	if len(windows) == 0 {
 		return bars

@@ -759,7 +759,7 @@ func (at *AutoTrader) mentorDayEvents() ([]calendar.Event, bool) {
 	if at.store == nil {
 		return nil, false
 	}
-	slice, err := at.store.Calendar().GetSlice(plannerTradeDateCT(time.Now()))
+	slice, err := at.store.Calendar().GetSlice(plannerTradeDateCT(mentorClockNow()))
 	if err != nil || slice == nil {
 		return nil, false
 	}
@@ -1263,10 +1263,12 @@ func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
 // session-day P&L) — one definition, no second copy (A24).
 //
 // FAIL-OPEN on a read error (deskRealizedToday returns 0 when the store read
-// fails) — the 60s sweep still enforces the flatten, and a circuit breaker that
-// trips on a DB hiccup is worse than the gap it closes (sessionRiskGateAt's
-// contract). The limit is only checked when BOTH toggles are on and a value is
-// configured (deskGuardrail returns enforced=false otherwise).
+// fails) — a circuit breaker that trips on a DB hiccup is worse than the gap it
+// closes (sessionRiskGateAt's contract). NOTE: the 60s sweep does NOT enforce
+// the dollar limit — it enforces the consecutive-loss breaker and the force-flat
+// windows. The dollar limit is enforced only here, and only when the guardrails
+// master AND daily_loss_enabled are both ON (deskGuardrail returns
+// enforced=false otherwise).
 func (at *AutoTrader) mentorDailyLossGate(now time.Time) (bool, string) {
 	limit, _, enforced := at.deskGuardrail()
 	if !enforced || limit <= 0 {
@@ -1456,12 +1458,29 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	}
 	bars1m := storeBarsToKlines(rows1m, 60_000)
 	// P1 (CTO 12:44:08Z / 12:47:11Z): ONE bar source — the seed aggregates
-	// every higher timeframe from 1m; the store's native 1h is never read.
-	// The trader-side 1h aggregation mirrors kernel barsTF(bars1m, 60)
-	// exactly (epoch-aligned buckets) for the per-source depth seam.
-	bars1h := mentorAgg1H(bars1m)
-	missing := mentor.Seed(at.mentorEval, bars1m, now)
-	depths := mentor.SeedDepths(bars1m, bars1h, now)
+	// every higher timeframe from 1m; the store's native 1h is never read
+	// (except for the roll-gap measurement, which is a separate concern).
+
+	// KEYLEVEL-FULL-HISTORY (release #10): the 1H RTH key-level walk seeds from
+	// the FULL stitched history — every contract's 1m, back-adjusted through
+	// measured roll gaps — not the current contract's last 50000 bars. The
+	// stitched 1m also feeds the 4h EMA 34 and the #435 seeded trigger/HTF
+	// lines (FIX 3): all three run on the SAME back-adjusted series, so every
+	// boot sees >=102 closed 4h candles instead of the current contract's ~95.
+	// The 1m EMA 34/9 tail is identical (the stitched tail IS the current
+	// contract's recent bars). A stitch that produces nothing degrades to the
+	// current-contract walk (cold store / read error already refused above).
+	stitched1m, full1HRTH, contracts, gaps, stoppedAt := at.mentorFullKeyLevelHistory(bh)
+	var missing []string
+	if len(full1HRTH) > 0 {
+		missing = mentor.SeedFull(at.mentorEval, stitched1m, full1HRTH, now)
+		at.logInfof("%s", mentor.KeyLevelHistoryLine(contracts, full1HRTH, gaps, stoppedAt))
+	} else {
+		missing = mentor.Seed(at.mentorEval, bars1m, now)
+	}
+	// The evaluator's own depth (computed from the stitched series) is the
+	// single source of truth for the per-source refusal seam.
+	depths := at.mentorEval.Depths()
 	mentorSeedDepthsMu.Lock()
 	mentorSeedDepths = depths
 	mentorSeedDepthsMu.Unlock()
@@ -1477,6 +1496,68 @@ func (at *AutoTrader) mentorSeedAtStart() {
 		mentorCount("seed_missing")
 		at.logErrorf("%s", mentorSeedRefusalLine(missing))
 	}
+}
+
+// mentorFullKeyLevelHistory reads the contracts' 1m NEWEST→OLDEST and stitches
+// the full 08:30-anchored 1H RTH series for the key-level seed
+// (KEYLEVEL-FULL-HISTORY, release #10). It returns the stitched 1m series
+// (newest scale), the 1H RTH key-level walk, the contracts stitched (oldest
+// first), the measured roll gaps, and the roll where the stitch stopped
+// ("" = full). FIX 5: it STOPS READING at the first roll whose gap cannot be
+// measured instead of reading every contract. A cold store / read error
+// returns nil and the caller degrades to the current-contract walk.
+func (at *AutoTrader) mentorFullKeyLevelHistory(bh *store.BarHistoryStore) (stitched1m, full1HRTH []market.Kline, contracts []mentor.Contract1M, gaps []mentor.RollGap, stoppedAt string) {
+	if at == nil || bh == nil {
+		return nil, nil, nil, nil, ""
+	}
+	spans, err := bh.ContractSpans("MNQ", "1m")
+	if err != nil || len(spans) == 0 {
+		if err != nil {
+			at.logWarnf("🧑‍🏫 key-level history: contract span read failed (%v) — falling back to current contract", err)
+		}
+		return nil, nil, nil, nil, ""
+	}
+	read := func(contract string) (mentor.Contract1M, bool) {
+		rows, err := bh.AllBarsOn("MNQ", "1m", contract)
+		if err != nil {
+			at.logWarnf("🧑‍🏫 key-level history: %s 1m read failed (%v) — stopping the stitch", contract, err)
+			return mentor.Contract1M{}, false
+		}
+		if len(rows) == 0 {
+			return mentor.Contract1M{}, false
+		}
+		c := mentor.Contract1M{Contract: contract, Bars: storeBarsToKlines(rows, 60_000)}
+		// The native 1h store feeds ONLY the roll-gap measurement (its 1h is
+		// whole-hour aligned, so it cannot build the 08:30 RTH candles — 1m
+		// wins for the series by construction; KEY DB FINDING). 1h retention
+		// outlives 1m, so adjacent contracts overlap on more 1h bars.
+		if rows1h, err := bh.AllBarsOn("MNQ", "1h", contract); err == nil {
+			c.Bars1H = storeBarsToKlines(rows1h, 3600_000)
+		}
+		return c, true
+	}
+	newest, ok := read(spans[len(spans)-1].Contract)
+	if !ok {
+		return nil, nil, nil, nil, ""
+	}
+	s := mentor.NewRollStitcher(newest)
+	contracts = append(contracts, newest)
+	for i := len(spans) - 2; i >= 0; i-- {
+		c, ok := read(spans[i].Contract)
+		if !ok {
+			break
+		}
+		if !s.Add(c) {
+			break
+		}
+		contracts = append(contracts, c)
+	}
+	stitched1m, full1HRTH, gaps, stoppedAt = s.Result()
+	// Oldest-first, so the boot line reads left-to-right from the earliest date.
+	for i, j := 0, len(contracts)-1; i < j; i, j = i+1, j-1 {
+		contracts[i], contracts[j] = contracts[j], contracts[i]
+	}
+	return
 }
 
 // mentorSeedRefusalLine prints every missing source and which entry kinds it

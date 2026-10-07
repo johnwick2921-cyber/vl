@@ -67,15 +67,6 @@ func TestMentorSeedAtStart(t *testing.T) {
 				if err := bh.InsertBars(rows1m); err != nil {
 					t.Fatalf("InsertBars: %v", err)
 				}
-				// the exact closed 1m count the seed must report (the fixture seam
-				// returns 9999 — a mutant that fails to wire the seed's depths keeps
-				// that value and must go RED here).
-				n1mClosed := 0
-				for _, r := range rows1m {
-					if r.OpenTimeMs+60_000 <= now {
-						n1mClosed++
-					}
-				}
 				at := &AutoTrader{
 					id: "t-seed-warm",
 					config: AutoTraderConfig{
@@ -94,9 +85,15 @@ func TestMentorSeedAtStart(t *testing.T) {
 				if missing := strings.Join(at.mentorSourcesMissing(), ", "); textHas(missing, "history:") {
 					t.Fatalf("a seeded store must not refuse on history depth: %q", missing)
 				}
-				// the seam serves the seed's own depths (not the test fallback 9999)
-				if d, ok := mentorSourceDepth("1m EMA34"); !ok || d != n1mClosed {
-					t.Fatalf("1m EMA34 depth from the seed: %d/%v, want %d/true", d, ok, n1mClosed)
+				// the seam serves the seed's own depths (not the test fallback
+				// 9999): the 1m EMA 34 depth is the evaluator's own closed-1m
+				// count, which since REL10-438-FIXES #3 is read from the
+				// stitched series (the stitched tail is the current contract,
+				// so the EMA value is unchanged; the count drops the newest
+				// contract's pre-roll sparse snapshots).
+				want1m := at.mentorEval.Depths()["1m EMA34"]
+				if d, ok := mentorSourceDepth("1m EMA34"); !ok || d != want1m {
+					t.Fatalf("1m EMA34 depth from the seed: %d/%v, want %d/true", d, ok, want1m)
 				}
 				if d, ok := mentorSourceDepth("4h EMA34"); !ok || d < 102 || d > 110 {
 					t.Fatalf("4h EMA34 depth from the seed: %d/%v, want 102..110/true", d, ok)
@@ -104,6 +101,57 @@ func TestMentorSeedAtStart(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestMentorSeedAtStartFirstTickDoesNotReAdvance (DS-105 P3 call-site pin) —
+// after mentorSeedAtStart seeds the trigger/HTF lines via SeedFull, the FIRST
+// evaluator tick over the tail window (a subset of the seeded history) must not
+// re-advance the committed buckets. The kernel pins Seed+Tick directly; this
+// drives the trader call site (mentorSeedAtStart → SeedFull) and then ticks the
+// evaluator the way the tick path does.
+func TestMentorSeedAtStartFirstTickDoesNotReAdvance(t *testing.T) {
+	st := mentorSeedStore(t)
+	now := time.Date(2026, time.September, 16, 12, 0, 0, 0, kernel.CTLocation())
+	mentorNowSource = func() time.Time { return now }
+	t.Cleanup(func() { mentorNowSource = nil })
+
+	bh := store.NewBarHistoryStore(st.GormDB())
+	rows := mentorSeedBars1m(now.UnixMilli())
+	if err := bh.InsertBars(rows); err != nil {
+		t.Fatalf("InsertBars: %v", err)
+	}
+	at := &AutoTrader{
+		id: "t-seed-tick",
+		config: AutoTraderConfig{
+			StrategyConfig: &store.StrategyConfig{
+				RiskControl: store.RiskControlConfig{MentorMode: true},
+			},
+		},
+		store: st,
+	}
+	wireMentorPlacementSeams(t)
+	at.mentorSeedAtStart()
+
+	if at.mentorEval == nil {
+		t.Fatal("mentorSeedAtStart must build the evaluator")
+	}
+	beforeTrigger := at.mentorEval.State.Trigger.LastBucket
+	before4h := at.mentorEval.State.HTF.FourH.LastBucket
+	if beforeTrigger == 0 || before4h == 0 {
+		t.Fatalf("the seed must commit trigger/HTF buckets: trigger=%d 4h=%d", beforeTrigger, before4h)
+	}
+
+	// The first tick: the tail window, the same subset the live tick passes.
+	kline := storeBarsToKlines(rows, 60_000)
+	tail := kline[len(kline)-1500:]
+	at.mentorEval.Tick(tail, now.UnixMilli())
+
+	if at.mentorEval.State.Trigger.LastBucket != beforeTrigger {
+		t.Fatalf("first tick re-advanced 5m buckets: %d -> %d", beforeTrigger, at.mentorEval.State.Trigger.LastBucket)
+	}
+	if at.mentorEval.State.HTF.FourH.LastBucket != before4h {
+		t.Fatalf("first tick re-advanced 4h buckets: %d -> %d", before4h, at.mentorEval.State.HTF.FourH.LastBucket)
+	}
 }
 
 // mentorSeedClockInstants is the FLAKE-SEED-CLOCK proof matrix: three fixed
