@@ -11,20 +11,36 @@ import (
 )
 
 // ── FIX-MENTOR-PHANTOM-ARM — call-site pins ─────────────────────────────────
-// When the trader refuses a placement as a DEAD setup, mentorPlaceIntent must
-// report it back via Evaluator.DropArm so the evaluator forgets the setup at
-// once instead of keeping a phantom arm that suppresses the next same-side
-// setup and emits follow-up ExtendArm/CancelArm/MoveStopBE for an order that
-// was never authored.
+// The trader refuses a DEAD setup inside mentorDispatchEntry, whose deferred
+// guard drops EVERY evaluator trace of the intent (the G1/G2 sim pend AND the
+// ISB arm / swing Pending) unless the arm reached mentorRegisterLiveArm. The
+// one guard lives in mentorDropEvalArm — no scattered per-gate calls — so no
+// refusal path can leave a phantom that suppresses the next same-side setup or
+// emits a follow-up ExtendArm/CancelArm/MoveStopBE for an order never authored.
 
-// TestMentorPlaceIntentDropArmOnNeverAdd — the named RED: the never-add refusal
-// (open long + long intent) drops the evaluator's ISB arm, so the next same-side
-// ISB is NOT refused isb_arm_active. Revert the DropArm call → the arm survives
-// and the test fails.
-func TestMentorPlaceIntentDropArmOnNeverAdd(t *testing.T) {
+// resetMentorLiveArms clears the live-arm registry for a dispatch test.
+func resetMentorLiveArms(t *testing.T) {
+	t.Helper()
+	mentorLiveMu.Lock()
+	mentorLiveArms = map[string]mentorLiveArm{}
+	mentorLiveMu.Unlock()
+	t.Cleanup(func() {
+		mentorLiveMu.Lock()
+		mentorLiveArms = map[string]mentorLiveArm{}
+		mentorLiveMu.Unlock()
+	})
+}
+
+// TestMentorDispatchDropArmOnNeverAdd — the named RED: the never-add refusal
+// (open long + long intent) drops the evaluator's ISB arm, so the next
+// same-side ISB is NOT refused isb_arm_active. Revert the drop guard (remove
+// the mentorDropEvalArm call from the defer) → the arm survives → FAIL.
+func TestMentorDispatchDropArmOnNeverAdd(t *testing.T) {
+	t.Setenv("MENTOR_PLACE", "1")
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	at.mentorEval = mentor.New(mentor.Config{})
 	at.mentorEval.State.ISBArms["isb-test"] = mentor.ISBArm{Inside: 0, Side: mentor.SideLong}
+	resetMentorLiveArms(t)
 	wireMentorPlacementSeams(t)
 	// never-add: an open LONG position + a LONG intent → the add gate refuses.
 	mentorOpenSideSource = func() string { return "long" }
@@ -35,22 +51,23 @@ func TestMentorPlaceIntentDropArmOnNeverAdd(t *testing.T) {
 
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-test", Side: mentor.SideLong,
 		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12, ExpiryMs: now.UnixMilli() + 60_000}
-	at.mentorPlaceIntent(in, mentorSizeChoice{Contracts: 1, Tier: "base"}, 1000, 1100)
+	at.mentorDispatchIntent(in, mentorTierInputs{}, 1000, 1100)
 
 	if _, ok := at.mentorEval.State.ISBArms["isb-test"]; ok {
 		t.Fatalf("the never-add refusal must drop the evaluator's ISB arm")
 	}
 }
 
-// TestMentorPlaceIntentDropArmOnDoneAfterWinSwing — the done-after-win refusal
-// on a SWING drops the evaluator's swing Pending, so a later 5m close through
-// the line emits NO CancelArm for that id (the phantom follow-up the CTO saw:
-// "+1R → stop to break-even" on a swing arm that was never placed). Revert the
-// DropArm call in the done-after-win branch → the Pending survives and the
-// second SwingTick emits the CancelArm → this test goes RED.
-func TestMentorPlaceIntentDropArmOnDoneAfterWinSwing(t *testing.T) {
+// TestMentorDispatchDropArmOnDoneAfterWinSwing — the done-after-win refusal on
+// a SWING drops the evaluator's swing Pending, so a later 5m close through the
+// line emits NO CancelArm for that id (the phantom follow-up the CTO saw:
+// "+1R → stop to break-even" on a swing arm never placed). Revert the drop
+// guard → the Pending survives and the second SwingTick emits the CancelArm.
+func TestMentorDispatchDropArmOnDoneAfterWinSwing(t *testing.T) {
+	t.Setenv("MENTOR_PLACE", "1")
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	at.mentorEval = mentor.New(mentor.Config{})
+	resetMentorLiveArms(t)
 	wireMentorPlacementSeams(t)
 	ct := kernel.CTLocation()
 	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
@@ -83,8 +100,9 @@ func TestMentorPlaceIntentDropArmOnDoneAfterWinSwing(t *testing.T) {
 	swing := out[0]
 	at.mentorEval.State.Swing = *sw
 
-	// The done-after-win gate refuses the swing placement and drops the arm.
-	at.mentorPlaceIntent(swing, mentorSizeChoice{Contracts: 1, Tier: "swing4h"}, 1000, 1100)
+	// The done-after-win gate refuses the swing placement; the deferred guard
+	// drops the pending arm on the way out.
+	at.mentorDispatchIntent(swing, mentorTierInputs{}, 1000, 1100)
 	if at.mentorEval.State.Swing.Pending != nil {
 		t.Fatalf("the done-after-win refusal must drop the swing Pending for %q", swing.ArmID)
 	}
@@ -102,27 +120,90 @@ func TestMentorPlaceIntentDropArmOnDoneAfterWinSwing(t *testing.T) {
 	}
 }
 
-// TestMentorPlaceIntentDropArmOnStaleData — the #449 stale-data refusal AT
+// TestMentorDispatchDropArmOnStaleData — the #449 stale-data refusal AT
 // AUTHORING drops the arm (a setup computed on stale prices is not a setup),
 // while the armed-pass keep-the-row behaviour is unchanged (its tests stay green).
-func TestMentorPlaceIntentDropArmOnStaleData(t *testing.T) {
+func TestMentorDispatchDropArmOnStaleData(t *testing.T) {
+	t.Setenv("MENTOR_PLACE", "1")
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	at.mentorEval = mentor.New(mentor.Config{})
 	at.mentorEval.State.ISBArms["isb-stale"] = mentor.ISBArm{Inside: 0, Side: mentor.SideLong}
-	now := time.Date(2026, 9, 23, 9, 0, 0, 0, kernel.CTLocation())
+	resetMentorLiveArms(t)
+	now := mentorStaleBlockClock(9, 0)
 	mentorNowSource = func() time.Time { return now }
 	t.Cleanup(func() { mentorNowSource = nil })
-	// stale 1m feed: the newest bar is 3 min old.
-	market.FuturesBarsProvider = func(symbol, tf string, n int) []market.Kline {
-		return []market.Kline{{OpenTime: now.UnixMilli() - 3*60_000, CloseTime: now.UnixMilli() - 2*60_000 - 1}}
-	}
-	t.Cleanup(func() { market.FuturesBarsProvider = nil })
+	wireMentorPlacementSeams(t)
+	mentorStaleBlockFeed(t, now, 3*time.Minute) // stale: ~3 min old, CME open
 
-	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-stale", Side: mentor.SideLong,
-		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", ExpiryMs: now.UnixMilli() + 60_000}
-	at.mentorPlaceIntent(in, mentorSizeChoice{Contracts: 1, Tier: "base"}, 1000, 1100)
+	at.mentorDispatchIntent(mentorStaleBlockIntent(), mentorTierInputs{}, 1000, 1100)
 
 	if _, ok := at.mentorEval.State.ISBArms["isb-stale"]; ok {
 		t.Fatalf("the stale-data authoring refusal must drop the evaluator's ISB arm")
+	}
+}
+
+// TestMentorDispatchDropArmOnRuleGateRefusal — a mentorRuleGate refusal (the
+// untagged-setup refusal) also drops the arm through the ONE deferred guard:
+// it fires BEFORE mentorPlaceIntent, so a scattered per-gate call would have
+// missed it entirely.
+func TestMentorDispatchDropArmOnRuleGateRefusal(t *testing.T) {
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	at.mentorEval = mentor.New(mentor.Config{})
+	at.mentorEval.State.ISBArms["isb-rule"] = mentor.ISBArm{Inside: 0, Side: mentor.SideLong}
+	resetMentorLiveArms(t)
+
+	// Empty Setup → "untagged setup" refusal at the top of mentorDispatchEntry.
+	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-rule", Side: mentor.SideLong,
+		Price: 21000, Stop: 20988, Target: 21024}
+	at.mentorDispatchIntent(in, mentorTierInputs{}, 1000, 1100)
+
+	if _, ok := at.mentorEval.State.ISBArms["isb-rule"]; ok {
+		t.Fatalf("the rule-gate refusal must drop the evaluator's ISB arm")
+	}
+}
+
+// TestMentorDispatchDropArmOnStaleIntent — the N10 stale-intent refusal (a
+// reference bar that is not the newest closed bar) drops the arm through the
+// same deferred guard.
+func TestMentorDispatchDropArmOnStaleIntent(t *testing.T) {
+	t.Setenv("MENTOR_PLACE", "1")
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	at.mentorEval = mentor.New(mentor.Config{})
+	at.mentorEval.State.ISBArms["isb-n10"] = mentor.ISBArm{Inside: 0, Side: mentor.SideLong}
+	resetMentorLiveArms(t)
+	now := time.Date(2026, 9, 23, 9, 0, 0, 0, kernel.CTLocation())
+	mentorNowSource = func() time.Time { return now }
+	t.Cleanup(func() { mentorNowSource = nil })
+	wireMentorPlacementSeams(t)
+
+	// RefBarMs 2000 ≠ barCloseMs 1000 → the N10 stale-intent refusal.
+	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-n10", Side: mentor.SideLong,
+		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12,
+		RefBarMs: 2000, ExpiryMs: now.UnixMilli() + 60_000}
+	at.mentorDispatchIntent(in, mentorTierInputs{}, 1000, 1100)
+
+	if _, ok := at.mentorEval.State.ISBArms["isb-n10"]; ok {
+		t.Fatalf("the N10 stale-intent refusal must drop the evaluator's ISB arm")
+	}
+}
+
+// TestMentorDispatchRegisteredLiveArmNotDropped — a REGISTERED live arm (the
+// row was authored) is NOT dropped on a later refusal: the deferred guard's
+// mentorLiveArmFor check exempts it. Named RED: removing the check makes the
+// refusal drop the registered arm → FAIL.
+func TestMentorDispatchRegisteredLiveArmNotDropped(t *testing.T) {
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	at.mentorEval = mentor.New(mentor.Config{})
+	at.mentorEval.State.ISBArms["isb-reg"] = mentor.ISBArm{Inside: 0, Side: mentor.SideLong}
+	resetMentorLiveArms(t)
+	mentorRegisterLiveArm("isb-reg", at.id, 1, "long", 21000)
+
+	// A refusal (untagged setup) on an arm that IS registered must NOT drop it.
+	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-reg", Side: mentor.SideLong,
+		Price: 21000, Stop: 20988, Target: 21024}
+	at.mentorDispatchIntent(in, mentorTierInputs{}, 1000, 1100)
+
+	if _, ok := at.mentorEval.State.ISBArms["isb-reg"]; !ok {
+		t.Fatalf("a REGISTERED live arm must NOT be dropped on a refusal")
 	}
 }
