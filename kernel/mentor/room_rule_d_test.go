@@ -48,6 +48,35 @@ func TestRoomRuleReadsTheLeg1Definition(t *testing.T) {
 	}
 }
 
+// TestPHLRoomRefusalCountsRoomKey — the B-rules ledger names a PHL room drop
+// "room" (the shared room counter the ISB / reverse-ISB / box paths use), NOT
+// "phl_refused". The room-rule-d reason-text fold ("room rule" → "room: …")
+// broke the phlRefusalKey prefix, so every PHL room refusal fell through to the
+// default "phl_refused" (DS-104 flag 1). MUTANT: drop/rename the room case in
+// phlRefusalKey → this test goes RED.
+func TestPHLRoomRefusalCountsRoomKey(t *testing.T) {
+	cfg := workedCfg()
+	levels := []Level{
+		{Key: "key_level:29410", Kind: KindKeyLevel, Price: 29_410}, // reward 14.25 < 2×8.25
+	}
+	_, ok, reason := PHLPLHR2Levels(workedTouch(), Level{Kind: KindOldExtreme, Price: 29_431.75}, 0, 3, 29_380, levels, cfg)
+	if ok {
+		t.Fatal("room to the obstacle must refuse; got ok")
+	}
+	if !strings.HasPrefix(reason, "room") {
+		t.Fatalf("the PHL room refusal must keep the new room reason text; got %q", reason)
+	}
+	// The evaluator's call site: e.refuse(phlRefusalKey(reason)).
+	e := New(cfg)
+	e.refuse(phlRefusalKey(reason))
+	if e.State.Refusals["room"] != 1 {
+		t.Fatalf("PHL room refusal must count under the shared \"room\" key; refusals=%v", e.State.Refusals)
+	}
+	if e.State.Refusals["phl_refused"] != 0 {
+		t.Fatalf("PHL room refusal must NOT count under phl_refused; refusals=%v", e.State.Refusals)
+	}
+}
+
 // TestBoxConfluenceRoomIs4RAtTheCallSite — the box path is the natural
 // confluence carrier (box + trigger agree). stop 10, first level 30 (2R < 30 <
 // 4R) → REFUSED (named RED: the old 2R check ADMITTED it); first level 40 →

@@ -1945,7 +1945,11 @@ func phlRefusalKey(reason string) string {
 		return "phl_too_close_to_extreme"
 	case strings.HasPrefix(reason, "old extreme not on the target side"):
 		return "phl_extreme_wrong_side"
-	case strings.HasPrefix(reason, "room rule"):
+	case strings.HasPrefix(reason, "room:"):
+		// The D5.3 room refusal — the reason text is "room: reward …" (the
+		// room-rule-d fold renamed the old "room rule:" prefix). Map it to the
+		// shared "room" counter the ISB / reverse-ISB / box paths use, so a PHL
+		// room drop never falls through to the default "phl_refused".
 		return "room"
 	case strings.HasPrefix(reason, "stop over the 25-pt ceiling"):
 		return "phl_stop_ceiling"
