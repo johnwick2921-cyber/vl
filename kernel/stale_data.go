@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"vl/logger"
 	"vl/market"
@@ -85,6 +86,21 @@ func barIsStale(newestBarMs, intervalMs, nowMs int64) bool {
 	}
 	expectedOpen := (nowMs / intervalMs) * intervalMs
 	return newestBarMs < expectedOpen-intervalMs-staleBarGraceMs()
+}
+
+// StaleEntryGateFeed is the MENTOR stale-data block's ONE definition (release
+// #11): the SAME barIsStale formula B4 applies on the AI path — the
+// expected-open − interval − grace rule, ~75 s for the 1m — plus the SAME
+// CME-open/halt awareness. While CME is closed (the daily 16:00–17:00 break,
+// weekends, holidays) no bars arrive, so the formula must not fire there or it
+// would false-refuse every halt. The planner path already inherits this
+// awareness (it only runs during an open session); the mentor tick runs around
+// the clock and needs it explicit. Unknown bar → fail-open (not stale).
+func StaleEntryGateFeed(newestBarOpenMs int64, now time.Time) bool {
+	if !IsCMEOpen(now) {
+		return false
+	}
+	return barIsStale(newestBarOpenMs, 60_000, now.UnixMilli())
 }
 
 // staleEntryFeed reports whether the freshest intraday feed (1m preferred, else
