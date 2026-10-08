@@ -189,6 +189,11 @@ func (at *AutoTrader) excursionOnClose(p *store.TraderPosition) {
 		if err != nil || row == nil {
 			return err // no entry half: a pre-wave position, nothing to close
 		}
+		if row.ExitTs != nil {
+			// Already closed — never re-close (LOG-NOISE-2: a position whose
+			// excursion row already carries its exit half is not re-processed).
+			return nil
+		}
 		exitMs := p.ExitTime
 		if exitMs <= 0 {
 			exitMs = time.Now().UnixMilli()

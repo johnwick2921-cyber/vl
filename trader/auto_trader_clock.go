@@ -857,6 +857,16 @@ func (at *AutoTrader) recordClosedTradeAnalyticsAt(now time.Time, p *store.Trade
 	if p == nil || p.AdherenceGrade != "" { // already processed
 		return
 	}
+	// SEAM ROWS ARE NEVER GRADED (owner ruling 2026-09-03) — skip them BEFORE the
+	// excursion path. A test-seam close never receives a grade (the grade flag is
+	// this path's idempotency marker), so without this guard the loop poll
+	// re-processes the same seam row every cycle and floods the log with three
+	// lines each cycle — "no 1m coverage" WARN + "excursion closed" INFO +
+	// "adherence SKIPPED" INFO (row 572 logged 251..1167 times per boot). A seam
+	// row is never a real trade; it is skipped silently here.
+	if store.IsSeamSource(p.Source) || store.IsSeamSource(p.CloseReason) {
+		return
+	}
 	if !at.dayPlanEnabled() || at.store == nil || market.FuturesBarsProvider == nil {
 		return
 	}
@@ -886,16 +896,6 @@ func (at *AutoTrader) recordClosedTradeAnalyticsAt(now time.Time, p *store.Trade
 	// EVERY exit path (AI close, NT8 OCO, EOD-flat, manual), which is why the
 	// hook lives here and not in one of them.
 	at.excursionOnClose(p)
-
-	// SEAM ROWS ARE NEVER GRADED (owner ruling 2026-09-03). W5 skips the grader
-	// entirely rather than grading and discarding: row 572 is an ARMED_TEST_SEAM
-	// experiment that this path promoted to an A on the 15:02 boot, where it
-	// outscored most real trades in the adherence table. The store refuses the
-	// write too, so this is defence in depth, not the only guard.
-	if store.IsSeamSource(p.Source) {
-		at.logInfof("🧪 adherence SKIPPED for %s pos %d — source %q is a test seam, never a real trade", p.Symbol, p.ID, p.Source)
-		return
-	}
 
 	// P5.5 — ADHERENCE GRADE (A–F), separate from P&L.
 	inKZ, inNoTrade := kernel.SessionWindowFacts(at.sessionRegistry(now), time.UnixMilli(p.EntryTime))

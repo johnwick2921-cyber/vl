@@ -318,12 +318,14 @@ func (s *PositionStore) EntryOrderIDInUse(entryOrderID string) (bool, error) {
 // GetUngradedClosedPositions returns a trader's closed positions that have NO
 // adherence grade yet and closed at/after sinceMs (W5 — the loop poll grades every
 // real exit; the epoch excludes pre-day-plan history). Oldest exit first.
+// LOG-NOISE-2: test-seam rows are excluded — a seam close never receives a
+// grade, so it would otherwise be selected forever and re-processed every cycle.
 func (s *PositionStore) GetUngradedClosedPositions(traderID string, sinceMs int64, limit int) ([]*TraderPosition, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	var rows []*TraderPosition
-	err := s.db.Where("trader_id = ? AND status = ? AND adherence_grade = '' AND exit_time >= ?", traderID, "CLOSED", sinceMs).
+	err := s.db.Where("trader_id = ? AND status = ? AND adherence_grade = '' AND exit_time >= ? AND NOT ("+seamSQLPredicate+")", traderID, "CLOSED", sinceMs).
 		Order("exit_time ASC").Limit(limit).Find(&rows).Error
 	if err != nil {
 		return nil, err
