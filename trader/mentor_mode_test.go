@@ -29,7 +29,7 @@ func mentoredTrader(t *testing.T, rc store.RiskControlConfig) *AutoTrader {
 // TestMentorContractsForSizeTable pins EVERY tier at the production call site
 // (mentorContractsFor). A size tier off by one — the CTO's mutant — fails this.
 func TestMentorContractsForSizeTable(t *testing.T) {
-	base, conf, big, reduced, swing4h, spentCap, mx := 5, 10, 20, 3, 3, 2, 20
+	base, conf, big, reduced, swing4h, spentCap, mx := 5, 10, 20, 3, 1, 2, 20
 	cases := []struct {
 		name string
 		in   mentorTierInputs
@@ -51,13 +51,13 @@ func TestMentorContractsForSizeTable(t *testing.T) {
 		{"twenties cut beats big", mentorTierInputs{Setup: "PHL", StopPts: 22, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{3, "reduced", ""}},
 		{"spent day no longer overrides twenties", mentorTierInputs{Setup: "PLH", StopPts: 23, TargetPts: 46, SpentDay: true}, mentorSizeChoice{3, "reduced", ""}},
 		{"spent day sizes base normally", mentorTierInputs{Setup: "PLH", StopPts: 11.25, TargetPts: 22.5, SpentDay: true}, mentorSizeChoice{5, "base", ""}},
-		{"SWING4H", mentorTierInputs{Setup: "SWING4H", StopPts: 12, TargetPts: 24}, mentorSizeChoice{3, "swing4h", ""}},
+		{"SWING4H", mentorTierInputs{Setup: "SWING4H", StopPts: 12, TargetPts: 24}, mentorSizeChoice{1, "swing4h", ""}},
 		{"hard cap", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{20, "big", ""}},
 		// S9 (D5.2 p2 @05:21–05:57, S15 ruling): a strong day cuts the SWING
 		// only — "nhưng chỉ cùng 4 giờ". Other setups keep their tiers.
 		{"strong day does NOT cut big (swing-only)", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true, StrongDay: true}, mentorSizeChoice{20, "big", ""}},
 		{"strong day does NOT cut base (swing-only)", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, StrongDay: true}, mentorSizeChoice{5, "base", ""}},
-		{"strong day cuts the SWING to 2", mentorTierInputs{Setup: "SWING4H", StopPts: 30, StrongDay: true}, mentorSizeChoice{2, "strong_day", ""}},
+		{"strong day does NOT raise the SWING above the 1-MNQ base", mentorTierInputs{Setup: "SWING4H", StopPts: 30, StrongDay: true}, mentorSizeChoice{1, "strong_day", ""}},
 		// ISB at an old high/low → reduce size, tier 3 (owner ruling 00:1x CT,
 		// D4.1 p1 written rule 2).
 		{"ISB at old extreme → 3", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, ISBOldExtreme: true}, mentorSizeChoice{3, "isb_old_extreme", ""}},
@@ -81,6 +81,31 @@ func TestMentorContractsForSizeTable(t *testing.T) {
 				t.Fatalf("got (%d, %s, %q), want (%d, %s)", got.Contracts, got.Tier, got.Why, c.want.Contracts, c.want.Tier)
 			}
 		})
+	}
+}
+
+// TestMentorKnobsSwingDefaultIsOne — FIX-SWING-SIZE-LESSON: the swing tier's
+// shipped default is 1 MNQ, not 3. D5.2 p1 @00:38–00:47 "Em vô đúng 1 MNQ thôi,
+// em không vô nhiều" (I enter exactly 1 MNQ, I don't enter many). Named RED:
+// revert mentorSwing4HContractsDefault to 3 → swing4h != 1 → this fails.
+func TestMentorKnobsSwingDefaultIsOne(t *testing.T) {
+	at := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{}}}}
+	base, conf, big, reduced, swing4h, _, mx := at.mentorKnobs()
+	if base != 5 || conf != 10 || big != 20 || reduced != 3 || swing4h != 1 || mx != 20 {
+		t.Fatalf("default knobs = (%d,%d,%d,%d,%d,_,%d), want (5,10,20,3,1,_,20)", base, conf, big, reduced, swing4h, mx)
+	}
+}
+
+// TestStrongDayCapsAtTwoEvenWithRaisedSwingBase — the strong-day band is 1–2,
+// so a RAISED swing knob must never push the strong-day cut above 2 (and never
+// above the base). Base 1 → 1; base 3 → min(2, 3) = 2.
+func TestStrongDayCapsAtTwoEvenWithRaisedSwingBase(t *testing.T) {
+	in := mentorTierInputs{Setup: "SWING4H", StopPts: 30, StrongDay: true}
+	if got, err := mentorContractsFor(in, 5, 10, 20, 3, 1, 2, 20); err != nil || got.Contracts != 1 || got.Tier != "strong_day" {
+		t.Fatalf("strong day with base 1 = (%d,%s,%v), want (1,strong_day,nil)", got.Contracts, got.Tier, err)
+	}
+	if got, err := mentorContractsFor(in, 5, 10, 20, 3, 3, 2, 20); err != nil || got.Contracts != 2 || got.Tier != "strong_day" {
+		t.Fatalf("strong day with base 3 = (%d,%s,%v), want (2,strong_day,nil)", got.Contracts, got.Tier, err)
 	}
 }
 

@@ -30,7 +30,7 @@ const (
 	mentorConfluenceContractsDefault = 10
 	mentorBigContractsDefault        = 20 // the hard cap
 	mentorReducedContractsDefault    = 3
-	mentorSwing4HContractsDefault    = 3
+	mentorSwing4HContractsDefault    = 1 // 1 MNQ, not 3 [D5.2 p1 @00:38–00:47 "Em vô đúng 1 MNQ thôi"]
 	mentorSpentDayContractsDefault   = 2
 	mentorMaxContractsDefault        = 20
 
@@ -120,13 +120,19 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	}
 	if strings.EqualFold(in.Setup, "SWING4H") {
 		// S9 (D5.2 p2 @05:21–05:57): a strong day — 5m candles running 50–80
-		// pts — cuts the SWING to 1–2 ("50–60 điểm cứ vô 1-2 men kill... nhưng
-		// chỉ cùng 4 giờ"): the cut was said of the swing entry, not every
-		// setup. The table takes 2, the top of the band.
+		// pts — cuts the SWING to 1–2. The swing base is 1 MNQ (D5.2 p1), so
+		// the strong-day cut must NEVER RAISE the size above the base:
+		// min(2, swing base). With the default base 1 this is 1; a raised
+		// knob (e.g. 3) still caps at 2, the top of the course band.
 		if in.StrongDay {
-			return mentorSizeChoice{Contracts: clamp(2), Tier: "strong_day", Why: "strong day — the SWING sizes 1–2 [D5.2 p2 @05:21–05:57]"}, nil
+			strong := swing4h
+			if strong > 2 {
+				strong = 2
+			}
+			return mentorSizeChoice{Contracts: clamp(strong), Tier: "strong_day", Why: fmt.Sprintf(
+				"strong day — the SWING sizes min(2, base %d) = %d, never above the 1-MNQ base [D5.2 p2 @05:21–05:57]", swing4h, strong)}, nil
 		}
-		return mentorSizeChoice{Contracts: clamp(swing4h), Tier: "swing4h", Why: "SWING4H setup — 3 [D5.2 p1]"}, nil
+		return mentorSizeChoice{Contracts: clamp(swing4h), Tier: "swing4h", Why: "SWING4H setup — 1 MNQ [D5.2 p1 @00:38–00:47 'Em vô đúng 1 MNQ thôi']"}, nil
 	}
 	return mentorSizeChoice{Contracts: clamp(base), Tier: "base", Why: fmt.Sprintf(
 		"base setup at a location (setup %s, stop %.1f pts)", in.Setup, in.StopPts)}, nil
