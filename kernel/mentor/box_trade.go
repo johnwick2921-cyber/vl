@@ -220,10 +220,12 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 	if target == 0 {
 		return nil // no level beyond → no setup [D4.1 p1 @ 01:45]
 	}
-	if abs(target-price) < cfg.RoomMultiple*risk {
+	// Confluence is computed BEFORE the room check: a confluence box's leg 1 is
+	// 2R, so its room is RoomMultiple × 2R (4R).
+	fl := ConfluenceVerdict(b, side, trig)
+	if abs(target-price) < cfg.RoomMultiple*risk*Leg1RiskMultiple(fl.On) {
 		return nil
 	}
-	fl := ConfluenceVerdict(b, side, trig)
 	// G2 place (CTO R-b / 13:20:08Z): a box is ONE place — the key WITHOUT the
 	// ":top"/":bottom" suffix, the anchor is the box MIDPOINT (the replay's).
 	base := strings.TrimSuffix(strings.TrimSuffix(b.Key, ":top"), ":bottom")
