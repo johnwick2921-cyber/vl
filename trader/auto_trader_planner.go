@@ -2742,9 +2742,10 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 		at.logWarnf("⚠️ flip/death line side-of-price UNJUDGED: authoring price unknown (facts absent) — the write site never invents a price; the line may sit on the wrong side of price")
 	}
 	docJSON, _ := json.Marshal(doc)
+	planID := at.store.Plan().ResolvePlanID(tradeDate, session, at.id)
 	version, err := at.store.Plan().AppendPlan(&store.PlanDB{
 		CreatedAt:       authoredAt,
-		PlanID:          at.store.Plan().ResolvePlanID(tradeDate, session, at.id),
+		PlanID:          planID,
 		StrategyID:      at.id,
 		TradeDate:       tradeDate,
 		Session:         session,
@@ -2765,9 +2766,19 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 		at.logErrorf("🗓️ planner: write plan row failed for %s %s: %v", tradeDate, session, err)
 		return 0, lifecycle, err
 	}
-	at.recordPlanIdentity(at.store.Plan().ResolvePlanID(tradeDate, session, at.id), version, identityWarnings, doc, authoredAt)
-	researchTrace.Published(at.store.Plan().ResolvePlanID(tradeDate, session, at.id), version, string(docJSON))
+	at.recordPlanIdentity(planID, version, identityWarnings, doc, authoredAt)
+	researchTrace.Published(planID, version, string(docJSON))
 	at.logInfof("🗓️ PLAN written %s %s v%d (model %s, lifecycle %s, prompt %s, ai_config %s)", tradeDate, session, version, modelID, lifecycle, promptHash, aiConfigHash)
+	// FIX-READ-FACTS-PLAN-ID (DS-103): bind the read that produced this plan to
+	// its plan_id+version, so planner_read_facts ↔ plans joins by id. Bound at
+	// WRITE time (never read time) because AppendPlan assigns the version inside
+	// its single-writer queue — the version cannot be known when the facts row
+	// is written. Idempotent; a read that produced no plan stays unbound.
+	if at.store != nil {
+		if n := at.store.PlannerReadFacts().BindPlanToLatestReadFact(at.id, tradeDate, session, planID, version); n > 0 {
+			at.logInfof("📓 read facts bound to plan %s v%d", planID, version)
+		}
+	}
 	at.logPlannerReadLine(session, lastAttempt, rejectHistory, bornCheck.ReadClockPtr(), bornCheck.PublishClockPtr(), lifecycle)
 	// W-EXEC-TRUTH W5 (CTO 1790191033566) — the AI read that supersedes a
 	// version carrying LIVE Picture scenarios re-appends each of them to the

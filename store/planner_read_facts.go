@@ -170,6 +170,39 @@ func EncodeVoidLevels(v []VoidLevelRecord) string {
 	return string(b)
 }
 
+// BindPlanToLatestReadFact stamps the newest plan_id-empty read-facts row for
+// (trader_id, trade_date, session) with the plan it produced. Called at
+// PLAN-WRITE time (after AppendPlan assigned the version), never at read time:
+// the version is only known once the plan row lands, so a read-time bind could
+// only guess it.
+//
+// The WHERE plan_id = '' guard makes the bind idempotent and leaves earlier
+// read attempts that never produced a plan unbound: a row is bound at most
+// once, to the plan its read actually wrote. Returns the number of rows
+// updated (0 when no matching unbound row exists — the facts row was trimmed by
+// the cap, or the write path had no preceding read).
+func (s *PlannerReadFactsStore) BindPlanToLatestReadFact(traderID, tradeDate, session, planID string, version int) int64 {
+	if s == nil || s.db == nil || traderID == "" || planID == "" || version <= 0 {
+		return 0
+	}
+	var target struct {
+		ID uint
+	}
+	err := s.db.Model(&PlannerReadFact{}).
+		Select("id").
+		Where("trader_id = ? AND trade_date = ? AND session = ? AND plan_id = ''", traderID, tradeDate, session).
+		Order("id DESC").
+		Limit(1).
+		Scan(&target).Error
+	if err != nil || target.ID == 0 {
+		return 0
+	}
+	res := s.db.Model(&PlannerReadFact{}).
+		Where("id = ?", target.ID).
+		Updates(map[string]any{"plan_id": planID, "version": version})
+	return res.RowsAffected
+}
+
 // LatestReadFact returns the newest row (nil, gorm.ErrRecordNotFound when empty).
 func (s *PlannerReadFactsStore) LatestReadFact() (*PlannerReadFact, error) {
 	if s == nil || s.db == nil {
