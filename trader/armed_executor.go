@@ -2900,6 +2900,14 @@ func (at *AutoTrader) armedPassDormant() bool {
 // supersede. The consecutive-loss breaker stays a mentor safety; the lunch /
 // first-N band and the force-flat windows do NOT refuse mentor rows (Q1).
 func (at *AutoTrader) mentorOnlyPlacementPass(now time.Time, scope *armedPassScope) {
+	// STALE-DATA BLOCK (release #11): the armed pass does NOT place a mentor row
+	// while the live 1m feed is stale (B4's formula). Rows stay armed and retry
+	// when the feed is fresh — nothing is cancelled by this (resting broker
+	// orders are untouched; that is a separate decision).
+	if at.mentorStaleDataBlocked(now) {
+		scope.note(scope.scenarioOrEmpty(), "refused: stale_data")
+		return
+	}
 	var bars []market.Kline
 	if market.FuturesBarsProvider != nil {
 		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)

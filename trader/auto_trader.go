@@ -418,6 +418,12 @@ type AutoTrader struct {
 	// mentorFunnel is the N12 visibility counter (read-only): one INFO line per
 	// 15 minutes + on change, session-day scoped (17:00 CT). Never gates a trade.
 	mentorFunnel mentorFunnel
+	// mentorStaleDataBlock (release #11): the episode state of the mentor
+	// stale-data gate. mentorStaleMu guards it — the authoring gate runs under
+	// mentorEvalMu but the placement pass (armed executor goroutine) does not,
+	// so the episode flag gets its own mutex (never a data race).
+	mentorStaleMu      sync.Mutex
+	mentorStaleEpisode bool
 	// mentorInvalidLog is the item-18 noise gate (DS-105 replay): the last INFO
 	// emit instant + the suppressed count per LevelKey, so a busy level's
 	// level_invalid logs at most once per 15 minutes while the counter still

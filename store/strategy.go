@@ -2076,6 +2076,12 @@ type RiskControlConfig struct {
 	MentorStopAfterLoss *bool  `json:"mentor_stop_after_loss,omitempty"`
 	MentorWindowStart   string `json:"mentor_window_start,omitempty"`
 	MentorWindowMinutes int    `json:"mentor_window_minutes,omitempty"`
+	// MentorStaleDataBlock — the mentor stale-data block (release #11): refuse
+	// NEW mentor arms (authoring + placement) while the live 1m feed is stale
+	// (B4's formula, ~75 s). nil → ON (fail-closed, the same default posture as
+	// B4 on the AI path); explicit false disables. Never blocks exits or
+	// protection; resting broker orders are NOT cancelled.
+	MentorStaleDataBlock *bool `json:"mentor_stale_data_block,omitempty"`
 	// Knob routing (CTO 1791033257041): the evaluator's G1/L1/E4/location
 	// knobs ride the strategy config like the other mentor knobs, defaults as
 	// ruled:

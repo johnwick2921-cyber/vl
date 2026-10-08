@@ -153,6 +153,7 @@ func mentorTraderRefusalKey(key string) bool {
 		"refused", "suppressed", "missing", "no_source", "no_data", "no_calendar",
 		"held", "no_chase", "short", "bad_value", "failed", "unwired", "error", "hold",
 		"queue_full", // FU-1 P2-4: record_fill_queue_full (a dropped fill receipt)
+		"stale_data", // release #11: the mentor stale-data block refusal
 	} {
 		if strings.Contains(key, kw) {
 			return true

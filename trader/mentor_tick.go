@@ -313,6 +313,13 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 // The no-chase rule runs FIRST: a stop entry whose price is already through
 // the trigger is skipped — he never enters at market (§3).
 func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64) {
+	// STALE-DATA BLOCK (release #11): refuse to AUTHOR a new arm while the live
+	// 1m feed is stale (B4's formula). Counted + WARN'd once per episode inside
+	// mentorStaleDataBlocked. Exits / protection are never gated; resting broker
+	// orders are never cancelled by this.
+	if at.mentorStaleDataBlocked(mentorClockNow()) {
+		return
+	}
 	// N10 (stale intent): an entry whose reference candle is not the newest
 	// closed bar came from a reload replay of stale box/ISB/PHL state — never
 	// a live order. The swing is exempt (RefBarMs 0 — gated by its own 5m
@@ -1492,6 +1499,7 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	}
 	at.logInfof("🧑‍🏫 %s", at.mentorEval.SeedLine(len(contracts)))
 	at.logInfof("%s", mentorSeamBootLine())
+	at.logInfof("%s", at.mentorStaleDataBlockBootLine())
 	if len(missing) > 0 {
 		mentorCount("seed_missing")
 		at.logErrorf("%s", mentorSeedRefusalLine(missing))
