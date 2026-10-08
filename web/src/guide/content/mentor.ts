@@ -470,7 +470,7 @@ export const mentor: GuideSection = {
           '3',
           'mentor_reduced_contracts',
         ],
-        ['SWING4H', '3', 'mentor_swing4h_contracts'],
+        ['SWING4H', '1', 'mentor_swing4h_contracts — lesson 5.2: “Em vô đúng 1 MNQ thôi” (enter exactly 1 MNQ)'],
         [
           'Spent day (§7)',
           'normal — the runner/target are cut, not the size (15-pt target cap + runner cap 2) [R09]',
