@@ -130,128 +130,130 @@ export function MentorTruthCard({
 
       {open && (
         <>
-      {/* trigger directions */}
-      <div className="flex gap-4 text-[11px]">
-        {[
-          ['4h', truth.htf.four_h_dir, truth.htf.four_h_since],
-          ['1h', truth.htf.one_h_dir, truth.htf.one_h_since],
-          ['5m', truth.trigger_5m.dir, truth.trigger_5m.since],
-        ].map(([tf, dir, since]) => (
-          <div key={tf as string} className="flex flex-col gap-0.5">
-            <span style={{ color: 'var(--vl-faint)' }}>{tf}</span>
-            <span
-              className="text-[12px] font-semibold"
-              style={{ color: dirColor(dir as string) }}
-            >
-              {dirWord(dir as string)}
-            </span>
-            <span
-              className="vl-num text-[10px]"
-              style={{ color: 'var(--vl-muted)' }}
-            >
-              {fmtTime(since as number)}
-            </span>
+          {/* trigger directions */}
+          <div className="flex gap-4 text-[11px]">
+            {[
+              ['4h', truth.htf.four_h_dir, truth.htf.four_h_since],
+              ['1h', truth.htf.one_h_dir, truth.htf.one_h_since],
+              ['5m', truth.trigger_5m.dir, truth.trigger_5m.since],
+            ].map(([tf, dir, since]) => (
+              <div key={tf as string} className="flex flex-col gap-0.5">
+                <span style={{ color: 'var(--vl-faint)' }}>{tf}</span>
+                <span
+                  className="text-[12px] font-semibold"
+                  style={{ color: dirColor(dir as string) }}
+                >
+                  {dirWord(dir as string)}
+                </span>
+                <span
+                  className="vl-num text-[10px]"
+                  style={{ color: 'var(--vl-muted)' }}
+                >
+                  {fmtTime(since as number)}
+                </span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* HTF verdict */}
-      <div className="text-[11px]">
-        <span style={{ color: 'var(--vl-faint)' }}>HTF verdict: </span>
-        <span
-          className="font-semibold"
-          style={{
-            color:
-              truth.htf.verdict === 'follow'
-                ? 'var(--vl-long)'
-                : truth.htf.verdict === 'sit-out'
-                  ? 'var(--vl-short)'
-                  : 'var(--vl-muted)',
-          }}
-        >
-          {truth.htf.verdict}
-          {truth.htf.verdict_side ? ` ${dirWord(truth.htf.verdict_side)}` : ''}
-        </span>
-        {truth.htf.verdict_why && (
-          <div className="text-[10px]" style={{ color: 'var(--vl-faint)' }}>
-            {truth.htf.verdict_why}
+          {/* HTF verdict */}
+          <div className="text-[11px]">
+            <span style={{ color: 'var(--vl-faint)' }}>HTF verdict: </span>
+            <span
+              className="font-semibold"
+              style={{
+                color:
+                  truth.htf.verdict === 'follow'
+                    ? 'var(--vl-long)'
+                    : truth.htf.verdict === 'sit-out'
+                      ? 'var(--vl-short)'
+                      : 'var(--vl-muted)',
+              }}
+            >
+              {truth.htf.verdict}
+              {truth.htf.verdict_side
+                ? ` ${dirWord(truth.htf.verdict_side)}`
+                : ''}
+            </span>
+            {truth.htf.verdict_why && (
+              <div className="text-[10px]" style={{ color: 'var(--vl-faint)' }}>
+                {truth.htf.verdict_why}
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* mentor key levels (distinct style: the levels that actually trade).
+          {/* mentor key levels (distinct style: the levels that actually trade).
           levels is ABSENT while the evaluator computes its first bar, and `[]`
           once it has built with nothing drawn — never dereference a null. */}
-      {truth.computing ? (
-        <div className="text-[11px]" style={{ color: 'var(--vl-muted)' }}>
-          levels: computing (first 1m bar)
-        </div>
-      ) : (truth.levels ?? []).length > 0 ? (
-        <div className="flex flex-col gap-0.5">
-          <span
-            className="text-[10px] uppercase tracking-widest"
-            style={{ color: 'var(--vl-faint)' }}
-          >
-            Key levels in effect
-          </span>
-          {(truth.levels ?? []).map((l) => (
-            <div
-              key={l.key}
-              className="flex items-baseline justify-between text-[11px]"
-            >
-              <span style={{ color: 'var(--vl-muted)' }}>{l.kind}</span>
-              <span className="vl-num" style={{ color: 'var(--vl-warn)' }}>
-                {l.price.toFixed(2)}
-              </span>
-              <span
-                className="vl-num"
-                style={{ color: 'var(--vl-faint)' }}
-                title="drawn at"
-              >
-                {fmtTime(l.drawn_at)}
-              </span>
-              <span className="vl-num" style={{ color: 'var(--vl-faint)' }}>
-                {l.visits_today} visits
-              </span>
+          {truth.computing ? (
+            <div className="text-[11px]" style={{ color: 'var(--vl-muted)' }}>
+              levels: computing (first 1m bar)
             </div>
-          ))}
-        </div>
-      ) : (
-        <div className="text-[11px]" style={{ color: 'var(--vl-muted)' }}>
-          no levels
-        </div>
-      )}
+          ) : (truth.levels ?? []).length > 0 ? (
+            <div className="flex flex-col gap-0.5">
+              <span
+                className="text-[10px] uppercase tracking-widest"
+                style={{ color: 'var(--vl-faint)' }}
+              >
+                Key levels in effect
+              </span>
+              {(truth.levels ?? []).map((l) => (
+                <div
+                  key={l.key}
+                  className="flex items-baseline justify-between text-[11px]"
+                >
+                  <span style={{ color: 'var(--vl-muted)' }}>{l.kind}</span>
+                  <span className="vl-num" style={{ color: 'var(--vl-warn)' }}>
+                    {l.price.toFixed(2)}
+                  </span>
+                  <span
+                    className="vl-num"
+                    style={{ color: 'var(--vl-faint)' }}
+                    title="drawn at"
+                  >
+                    {fmtTime(l.drawn_at)}
+                  </span>
+                  <span className="vl-num" style={{ color: 'var(--vl-faint)' }}>
+                    {l.visits_today} visits
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-[11px]" style={{ color: 'var(--vl-muted)' }}>
+              no levels
+            </div>
+          )}
 
-      {/* history depth */}
-      {(truth.depth_line || Object.keys(truth.depth ?? {}).length > 0) && (
-        <div className="text-[10px]" style={{ color: 'var(--vl-faint)' }}>
-          {truth.depth_line ||
-            Object.entries(truth.depth ?? {})
-              .map(([k, v]) => `${k}=${v}`)
-              .join(' · ')}
-        </div>
-      )}
+          {/* history depth */}
+          {(truth.depth_line || Object.keys(truth.depth ?? {}).length > 0) && (
+            <div className="text-[10px]" style={{ color: 'var(--vl-faint)' }}>
+              {truth.depth_line ||
+                Object.entries(truth.depth ?? {})
+                  .map(([k, v]) => `${k}=${v}`)
+                  .join(' · ')}
+            </div>
+          )}
 
-      {/* window + day-stop */}
-      <div
-        className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]"
-        style={{ color: 'var(--vl-muted)' }}
-      >
-        <span>
-          window {truth.window.start}/{truth.window.minutes}:
-          {truth.window.active
-            ? ' open'
-            : truth.window.ended
-              ? ' ended'
-              : ' disabled'}
-        </span>
-        {truth.done_after_win && (
-          <span style={{ color: 'var(--vl-warn)' }}>done-after-win</span>
-        )}
-        {truth.stop_after_loss && (
-          <span style={{ color: 'var(--vl-warn)' }}>stop-after-loss</span>
-        )}
-      </div>
+          {/* window + day-stop */}
+          <div
+            className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]"
+            style={{ color: 'var(--vl-muted)' }}
+          >
+            <span>
+              window {truth.window.start}/{truth.window.minutes}:
+              {truth.window.active
+                ? ' open'
+                : truth.window.ended
+                  ? ' ended'
+                  : ' disabled'}
+            </span>
+            {truth.done_after_win && (
+              <span style={{ color: 'var(--vl-warn)' }}>done-after-win</span>
+            )}
+            {truth.stop_after_loss && (
+              <span style={{ color: 'var(--vl-warn)' }}>stop-after-loss</span>
+            )}
+          </div>
         </>
       )}
     </div>
