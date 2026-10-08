@@ -114,7 +114,7 @@ func TestPlannerBornDeadRetryCarriesTheFreshTape(t *testing.T) {
 		func() time.Time { return publish }, // publish clock — the fixture refusal clock
 		nil,
 		"ASIA", "2026-09-23", "owner_reset", "deepseek-v4-pro", "hashA6", "", "", "", "FULLPROMPT",
-		facts, nil, machine, nil, true,
+		facts, nil, machine, nil, true, 0,
 		func(userPrompt string) (string, error) {
 			blocks = append(blocks, userPrompt)
 			if len(blocks) == 1 {
@@ -171,7 +171,7 @@ func TestPlannerBornDeadRetryKnobOffIsByteIdenticalToday(t *testing.T) {
 		func() time.Time { return publish }, // publish clock
 		nil,
 		"ASIA", "2026-09-23", "owner_reset", "deepseek-v4-pro", "hashA6off", "", "", "", "FULLPROMPT",
-		facts, nil, machine, nil, true,
+		facts, nil, machine, nil, true, 0,
 		func(userPrompt string) (string, error) {
 			blocks = append(blocks, userPrompt)
 			if len(blocks) == 1 {
