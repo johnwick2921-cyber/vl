@@ -33,6 +33,57 @@ func TestClassifyClockDrift(t *testing.T) {
 	}
 }
 
+// TestRollSafeClockDriftMs is the CLOCK-HEALTH-ROLL decision pin: the roll at
+// boundary+5s must read ~5s (no WARN) even when the newest bar is the in-flight
+// FORMING one, a 10-min-old bar must still be CRITICAL, and a mid-minute feed
+// whose freshest closed bar is 40s old must still fire EARLY-WARNING.
+//
+// Named RED: revert rollSafeClockDriftMs to the old `now − (newestOpen + 60s)`
+// and the "forming bar at the roll" case reads |drift| ≈ 55s → EARLY-WARNING —
+// the exact false alarm this wave removes.
+func TestRollSafeClockDriftMs(t *testing.T) {
+	const boundary = int64(1_700_000_040_000) // minute-aligned (× 60_000)
+	const warn, tol = int64(30_000), int64(60_000)
+
+	cases := []struct {
+		name       string
+		nowMs      int64
+		newestOpen int64
+		wantDrift  int64
+		wantClass  string
+	}{
+		{
+			"roll at boundary+5s, just-closed bar newest",
+			boundary + 5_000, boundary - 60_000,
+			+5_000, "",
+		},
+		{
+			"roll at boundary+5s, forming bar newest (the false alarm)",
+			boundary + 5_000, boundary,
+			+5_000, "",
+		},
+		{
+			"10-min-old newest bar still fires CRITICAL",
+			boundary + 40_000, boundary - 600_000,
+			boundary + 40_000 - (boundary - 600_000 + 60_000), "critical",
+		},
+		{
+			"40s-late feed mid-minute still fires EARLY-WARNING",
+			boundary + 40_000, boundary - 60_000,
+			+40_000, "warn",
+		},
+	}
+	for _, c := range cases {
+		got := rollSafeClockDriftMs(c.nowMs, c.newestOpen)
+		if got != c.wantDrift {
+			t.Errorf("%s: drift = %d, want %d", c.name, got, c.wantDrift)
+		}
+		if cls := classifyClockDrift(absI64(got), warn, tol); cls != c.wantClass {
+			t.Errorf("%s: class = %q, want %q (drift %d)", c.name, cls, c.wantClass, got)
+		}
+	}
+}
+
 func TestClockWarnMsEnvOverride(t *testing.T) {
 	if got := clockWarnMs(); got != 30_000 {
 		t.Fatalf("default CLOCK_WARN_MS must be 30000 (50%% of C2 tolerance), got %d", got)
@@ -59,6 +110,15 @@ func TestLogClockHealthWithInjectedDriftDoesNotPanic(t *testing.T) {
 		}
 		LogClockHealth("test-fake-drift", "MNQ")
 	}
+
+	// The roll-race case this wave fixes: the newest bar is the FORMING one
+	// (open == the current minute boundary) — must not panic and must not be
+	// misclassified as a false WARN (the pure pin above asserts the value).
+	market.FuturesBarsProvider = func(string, string, int) []market.Kline {
+		nowMs := time.Now().UnixMilli()
+		return []market.Kline{{OpenTime: (nowMs / 60_000) * 60_000}}
+	}
+	LogClockHealth("test-roll-forming", "MNQ")
 }
 
 // P1.4 — the boot block must read the guard's state JSON and never error when
