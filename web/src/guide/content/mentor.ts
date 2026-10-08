@@ -136,6 +136,7 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
   'Stop after a loss': { settingId: 'mentor_stop_after_loss', live: true },
   'Trading window start': { settingId: 'mentor_window_start', live: true },
   'Trading window length': { settingId: 'mentor_window_minutes', live: true },
+  'Stale-data block': { settingId: 'mentor_stale_data_block', live: true },
 }
 
 // Evaluator settings that have no Studio control and no store field: the
@@ -1273,6 +1274,22 @@ export const mentor: GuideSection = {
           systemDefault: '60',
           recommended: '60 minutes — owner ruling.',
           whenToTouch: 'Only when the approved trading window changes.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Stale-data block',
+          where:
+            'No Studio control — ON by default; the strategy setting mentor_stale_data_block=false turns it off',
+          what: 'Refuse NEW mentor arms (authoring and the armed placement pass) while the live 1m feed is stale — the same B4 formula the AI path uses (expected-open − 1 bar − 15s grace ≈ 75 s). While CME is closed (the daily 16:00–17:00 break, weekends) the gate never fires. Exits and protection are never blocked, and already-resting broker orders are not cancelled by it.',
+          trader:
+            'ON by default (nil → ON, fail-closed — the same default posture as B4); an explicit false disables it. One WARN and one "stale_data" funnel refusal per stale episode, never per tick.',
+          consumer:
+            'trader/mentor_mode.go mentorStaleDataBlocked · kernel/stale_data.go StaleEntryGateFeed',
+          range: 'true / false',
+          systemDefault: 'true (unset = ON)',
+          recommended:
+            'ON — never trade on a delayed 1m feed; B4 already refuses the AI path the same way.',
+          whenToTouch: 'Rarely — only to explicitly disable the block.',
           perSession: 'No — per strategy.',
         },
       ]),
