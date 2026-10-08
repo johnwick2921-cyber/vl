@@ -372,3 +372,71 @@ func TestLoggerCaptureNeverSpawnsAWriterScanner(t *testing.T) {
 		t.Fatal("a leaked log writerScanner blocked logging — the capture pattern must use logger.Log.Out, never logger.Log.Writer()")
 	}
 }
+
+// TestStampPlanIdentityRefAnchorLevelDoesNotPanic (FIX-LEVEL-IDENTITY-NIL) — a
+// reference-anchor ("ref|") level has formed_close_ms NULL by construction
+// (LevelByReferenceID: the formation close is unknown). stampPlanIdentity's
+// "🪪 scenario" log line must render it as NULL, not dereference it — the
+// pre-fix code panicked (contained) and lost the line. Named RED: revert the
+// int64PtrText guard → the line panics, "recording panic contained" is emitted
+// and "formed_close_ms=NULL" never prints.
+func TestStampPlanIdentityRefAnchorLevelDoesNotPanic(t *testing.T) {
+	refID := "ref|1c275fee1d9006ce39cf34c4a66b3385ea4ffa9f1c9f0f764382fc343a6a2861"
+	kind, tf := "ONL", "1m"
+	candidates := []kernel.MapCandidate{{
+		ID:    &refID,
+		Price: 31290,
+		Identity: kernel.PlanLevel{
+			ID: &refID, Kind: &kind, TF: &tf, Price: 31290, Label: "ONL",
+			FormedCloseMs: nil, // reference-anchor: formation close unknown
+		},
+	}}
+	doc := kernel.PlanDoc{
+		Scenarios: []kernel.PlanScenario{{ID: "S1", LevelID: &refID}},
+	}
+	at := mkTrader("ninjatrader", nil, "5m")
+	at.id = "t-fix"
+
+	var buf syncLogBuf
+	old := logger.Log.Out
+	logger.Log.SetOutput(&buf)
+	t.Cleanup(func() { logger.Log.SetOutput(old) })
+
+	at.stampPlanIdentity(&doc, candidates)
+
+	out := buf.String()
+	if !strings.Contains(out, "🪪 scenario S1") || !strings.Contains(out, "formed_close_ms=NULL") {
+		t.Fatalf("the scenario line must print formed_close_ms=NULL for a ref| level, got:\n%s", out)
+	}
+	if strings.Contains(out, "recording panic contained") {
+		t.Fatalf("a ref| level must NOT panic the identity recorder, got:\n%s", out)
+	}
+}
+
+// TestIdentityPtrTextHelpers — the nil-rendering helpers (int64PtrText /
+// stringPtrText / float64PtrText / levelPriceText) print NULL for nil and the
+// value otherwise, so the identity log lines never dereference an optional
+// field.
+func TestIdentityPtrTextHelpers(t *testing.T) {
+	if int64PtrText(nil) != "NULL" {
+		t.Fatalf("int64PtrText(nil) = %q, want NULL", int64PtrText(nil))
+	}
+	var i int64 = 123
+	if int64PtrText(&i) != "123" {
+		t.Fatalf("int64PtrText(123) = %q", int64PtrText(&i))
+	}
+	s := "1m"
+	if stringPtrText(nil) != "NULL" || stringPtrText(&s) != "1m" {
+		t.Fatalf("stringPtrText mismatch: nil=%q set=%q", stringPtrText(nil), stringPtrText(&s))
+	}
+	if float64PtrText(nil) != "NULL" {
+		t.Fatalf("float64PtrText(nil) = %q, want NULL", float64PtrText(nil))
+	}
+	if levelPriceText(kernel.ScenarioIdentity{Level: nil}) != "NULL" {
+		t.Fatalf("levelPriceText(nil level) must be NULL")
+	}
+	l := kernel.PlanLevel{Price: 31290}
+	if levelPriceText(kernel.ScenarioIdentity{Level: &l}) != "31290.00" {
+		t.Fatalf("levelPriceText(31290) = %q", levelPriceText(kernel.ScenarioIdentity{Level: &l}))
+	}
+}
