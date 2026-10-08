@@ -253,23 +253,29 @@ func seed(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int
 	htfBars := htfFeedBars(bars1m, e.Cfg.PrintWindows)
 	e.State.HTF = HTFAdvance(e.State.HTF, barsTF(htfBars, 240), barsTF(htfBars, 60), e.Cfg)
 
-	e.seedLine = SeedLine(e.State, bars1m, now)
+	e.seedLine = e.SeedLine(0)
 	return e.missing
 }
 
-// SeedLine is the one boot/arm line: the seeded depth per source, n/a when
-// unknown, plus the seeded trigger directions (F2: the lines are warmed from
+// SeedLine is the one boot/arm line: the seeded depth per source — read from
+// the evaluator's OWN seeded depth (e.depth, the SAME numbers the fail-closed
+// gate reads and Depths() serves), never recomputed from a caller-supplied bar
+// series — plus the seeded trigger directions (F2: the lines are warmed from
 // history now, so the line says what they are — not "none until the first
-// tick").
-func SeedLine(s State, bars1m []market.Kline, now int64) string {
+// tick"). contracts is the number of contracts stitched into the full history
+// (0 omits the count; the trader passes len(contracts)).
+func (e *Evaluator) SeedLine(contracts int) string {
 	parts := []string{"mentor seed:"}
-	parts = append(parts, fmt.Sprintf("4h EMA34 %d/%d", len(fourHClosedBuckets(barsTF(bars1m, 60), now)), FourHEMA34Warmup))
-	parts = append(parts, fmt.Sprintf("1m EMA34 %d/%d", closedCount(bars1m, now), OneMEMA34Warmup))
-	parts = append(parts, fmt.Sprintf("1H RTH levels %d candles", len(s.Seed1HBars)))
-	parts = append(parts, fmt.Sprintf("levels %d", len(s.SeedLevels)))
-	parts = append(parts, triggerLinePart("4h", s.HTF.FourH, true))
-	parts = append(parts, triggerLinePart("1h", s.HTF.OneH, false))
-	parts = append(parts, triggerLinePart("5m", s.Trigger, false))
+	parts = append(parts, fmt.Sprintf("4h EMA34 %d/%d", e.depth.fourH, FourHEMA34Warmup))
+	parts = append(parts, fmt.Sprintf("1m EMA34 %d/%d", e.depth.oneM, OneMEMA34Warmup))
+	parts = append(parts, fmt.Sprintf("1H RTH levels %d candles", e.depth.oneH))
+	parts = append(parts, fmt.Sprintf("levels %d", len(e.State.SeedLevels)))
+	if contracts > 0 {
+		parts = append(parts, fmt.Sprintf("contracts %d", contracts))
+	}
+	parts = append(parts, triggerLinePart("4h", e.State.HTF.FourH, true))
+	parts = append(parts, triggerLinePart("1h", e.State.HTF.OneH, false))
+	parts = append(parts, triggerLinePart("5m", e.State.Trigger, false))
 	return strings.Join(parts, " ")
 }
 
