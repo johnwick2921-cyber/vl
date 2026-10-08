@@ -8,42 +8,38 @@ import (
 	"vl/market"
 )
 
-// FIX-ROOM-RULE-LESSON (release #13): the room rule, the R:R floor and the
-// confluence tier are THREE separate checks, each with its own funnel key:
+// SCRATCH option B — the faithful D5.3 room rule [@09:16–10:17]: room = the
+// distance from entry to the FIRST available opposing level; the take-profit
+// is placed at min(current target, half the room), never below 1R; refuse when
+// half the room < 1R. Plus the two unchanged gates:
 //
-//   - rr_floor       — D1.2 p1 @07:41–08:45: target >= stop (1:1 is the
-//     universal minimum).
-//   - room_vs_target — D5.3 p1 @09:16–10:17: the free room from entry to the
-//     NEXT opposing level must be >= RoomMultiple × the planned target
-//     distance ("dù target của em là 15 điểm, từ chỗ em xuống target nó phải
-//     từ 30 điểm đổ lên").
-//   - rr_confluence  — D3.4 p3 @07:52–08:07: ONLY the confluence tier demands
-//     1:2 ("risk reward 1-2 … trường hợp đặc biệt … cộng hưởng").
-//
-// The old single "room" key (reward >= 2× risk, everywhere) is GONE.
+//   - rr_floor       — D1.2 p1 @07:41–08:45: target >= stop (1:1 floor).
+//   - rr_confluence  — D3.4 p3 @07:52–08:07: 1:2 ONLY for the confluence tier.
 
-// TestRoomVsTargetRefusalPure — the exact lesson arithmetic, on the pure helper.
-func TestRoomVsTargetRefusalPure(t *testing.T) {
-	cases := []struct {
-		name   string
-		entry  float64
-		target float64
-		room   float64 // the next opposing level (0 = none)
-		want   bool
-	}{
-		{"stop 5 / target 20 / room 25 → refused (25 < 40)", 100, 120, 125, true},
-		{"stop 15 / target 15 / room 30 → admitted (30 = 2×15)", 100, 115, 130, false},
-		{"no next level on record → room unbounded → admitted", 100, 120, 0, false},
-		{"roomMultiple off → admitted", 100, 120, 125, false}, // exercised with rm=0 below
+// TestRoomFaithfulBPure — the faithful arithmetic on the pure helper.
+func TestRoomFaithfulBPure(t *testing.T) {
+	// stop 5 / target 20 / room 25: TP = min(20, 12.5) = 12.5, admitted.
+	tp, ok, _ := roomFaithfulB(100, 95, 120, 125, 2, SideLong)
+	if !ok || tp != 112.5 {
+		t.Fatalf("stop 5 / TP 20 / room 25: got tp=%.2f ok=%v, want 112.5 admitted", tp, ok)
 	}
-	for _, c := range cases {
-		rm := 2.0
-		if c.name == "roomMultiple off → admitted" {
-			rm = 0
-		}
-		if refuse, _ := roomVsTargetRefusal(c.entry, c.target, c.room, rm); refuse != c.want {
-			t.Fatalf("%s: got refuse=%v, want %v", c.name, refuse, c.want)
-		}
+	// stop 15 / target 15 / room 30: TP = min(15, 15) = 15, admitted.
+	tp, ok, _ = roomFaithfulB(100, 85, 115, 130, 2, SideLong)
+	if !ok || tp != 115 {
+		t.Fatalf("stop 15 / TP 15 / room 30: got tp=%.2f ok=%v, want 115 admitted", tp, ok)
+	}
+	// half the room < 1R → refused (stop 10, room 15 → half 7.5 < 10).
+	if _, ok, _ := roomFaithfulB(100, 90, 130, 115, 2, SideLong); ok {
+		t.Fatal("half the room 7.5 < 1R 10 must refuse")
+	}
+	// no first level on record → target unchanged.
+	if tp, ok, _ := roomFaithfulB(100, 90, 120, 0, 2, SideLong); !ok || tp != 120 {
+		t.Fatalf("no first level: got tp=%.2f ok=%v, want 120 unchanged", tp, ok)
+	}
+	// short side mirrors.
+	tp, ok, _ = roomFaithfulB(100, 105, 80, 75, 2, SideShort)
+	if !ok || tp != 87.5 {
+		t.Fatalf("short: got tp=%.2f ok=%v, want 87.5", tp, ok)
 	}
 }
 
@@ -101,44 +97,12 @@ func isbRoomFixture(t *testing.T, mother, inside market.Kline, seed []Level) (*E
 	return e, bars, now
 }
 
-// TestISBRoomVsTargetRefusedAtCallSite — stop 5 / target 20 / room 25: the
-// free room (25) is less than 2× the target (40) → refused with the
-// room_vs_target key. The OLD code (reward >= 2× risk = 10) ADMITTED this —
-// the named RED.
-func TestISBRoomVsTargetRefusedAtCallSite(t *testing.T) {
-	// mother green, inside: entry 104, stop 99 → risk 5.
+// TestISBRoomFaithfulBHalvesTarget — stop 5, first level 16 pts away (entry 104
+// → 120): TP = min(16, 8) = 8 ≥ 1R(5) → ADMITTED at entry+8 = 112.
+func TestISBRoomFaithfulBHalvesTarget(t *testing.T) {
 	mother := rthBars(0, 98, 106, 97, 105)
-	inside := rthBars(1, 103, 104, 99, 100)
-	// target 124 (entry + 20), room 129 (entry + 25).
-	seed := []Level{
-		{Key: "target", Kind: KindKeyLevel, Price: 124},
-		{Key: "room", Kind: KindKeyLevel, Price: 129},
-	}
-	e, bars, now := isbRoomFixture(t, mother, inside, seed)
-
-	ins := e.Tick(bars, now)
-	for _, in := range ins {
-		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" {
-			t.Fatalf("the ISB must be refused by the room rule (room 25 < 2× target 20); got %+v; refusals=%v", in, e.State.Refusals)
-		}
-	}
-	if e.State.Refusals["room_vs_target"] == 0 {
-		t.Fatalf("room_vs_target refusal not counted; refusals=%v", e.State.Refusals)
-	}
-}
-
-// TestISBRoomVsTargetAdmittedAtCallSite — stop 15 / target 15 / room 30: the
-// 1:1 floor passes and the room is exactly 2× the target → ADMITTED. The OLD
-// code (reward 15 < 2× risk 30) REFUSED this — the named RED.
-func TestISBRoomVsTargetAdmittedAtCallSite(t *testing.T) {
-	// mother green, inside: entry 105, stop 90 → risk 15.
-	mother := rthBars(0, 90, 106, 85, 100)
-	inside := rthBars(1, 100, 105, 90, 95)
-	// target 120 (entry + 15), room 135 (entry + 30).
-	seed := []Level{
-		{Key: "target", Kind: KindKeyLevel, Price: 120},
-		{Key: "room", Kind: KindKeyLevel, Price: 135},
-	}
+	inside := rthBars(1, 103, 104, 99, 100) // entry 104, stop 99 → risk 5
+	seed := []Level{{Key: "first", Kind: KindKeyLevel, Price: 120}}
 	e, bars, now := isbRoomFixture(t, mother, inside, seed)
 
 	ins := e.Tick(bars, now)
@@ -146,12 +110,32 @@ func TestISBRoomVsTargetAdmittedAtCallSite(t *testing.T) {
 	for _, in := range ins {
 		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" {
 			found = true
-			if in.Target != 120 {
-				t.Fatalf("admitted ISB target = %.2f, want 120", in.Target)
+			if in.Target != 112 {
+				t.Fatalf("option B must halve the TP to entry+8=112, got %.2f", in.Target)
 			}
 		}
 	}
 	if !found {
-		t.Fatalf("the ISB must be admitted (1:1 floor + room 30 = 2× target 15); refusals=%v", e.State.Refusals)
+		t.Fatalf("option B must admit the ISB (half room 8 >= 1R 5); refusals=%v", e.State.Refusals)
+	}
+}
+
+// TestISBRoomFaithfulBRefusesHalfRoomUnder1R — stop 15, first level 20 pts away
+// (entry 105 → 125): the floor passes (20 >= 15) but half the room (10) < 1R
+// (15) → REFUSED room_vs_target.
+func TestISBRoomFaithfulBRefusesHalfRoomUnder1R(t *testing.T) {
+	mother := rthBars(0, 90, 106, 85, 100)
+	inside := rthBars(1, 100, 105, 90, 95) // entry 105, stop 90 → risk 15
+	seed := []Level{{Key: "first", Kind: KindKeyLevel, Price: 125}}
+	e, bars, now := isbRoomFixture(t, mother, inside, seed)
+
+	ins := e.Tick(bars, now)
+	for _, in := range ins {
+		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" {
+			t.Fatalf("option B must refuse when half the room < 1R; got %+v", in)
+		}
+	}
+	if e.State.Refusals["room_vs_target"] == 0 {
+		t.Fatalf("room_vs_target refusal not counted; refusals=%v", e.State.Refusals)
 	}
 }

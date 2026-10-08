@@ -21,6 +21,7 @@ import (
 // extreme minus the shy → this test goes RED.
 func TestPHLPLHR2LevelsFirstObstacleTarget(t *testing.T) {
 	cfg := workedCfg()
+	cfg.RoomMultiple = 0 // option B: this pin tests target selection, not the room halving
 	levels := []Level{
 		{Key: "key_level:29420", Kind: KindKeyLevel, Price: 29_420},
 	}
@@ -37,6 +38,7 @@ func TestPHLPLHR2LevelsFirstObstacleTarget(t *testing.T) {
 // target — the cap holds ("gần đỉnh cũ", D2.2 p1 @06:11).
 func TestPHLPLHR2LevelsCapAtExtremeShy(t *testing.T) {
 	cfg := workedCfg()
+	cfg.RoomMultiple = 0 // option B: this pin tests the cap, not the room halving
 	levels := []Level{
 		{Key: "key_level:29430", Kind: KindKeyLevel, Price: 29_430},
 	}
@@ -86,6 +88,7 @@ func TestPHLPLHR2LevelsFloorToObstacle(t *testing.T) {
 // targets that level.
 func TestPHLPLHR2LevelsShortObstacle(t *testing.T) {
 	cfg := workedCfg()
+	cfg.RoomMultiple = 0 // option B: this pin tests target selection, not the room halving
 	shortTouch := workedTouch()
 	shortTouch.ApproachedFrom = SideShort
 	shortTouch.RefBar = market.Kline{Open: 29_410, High: 29_412, Low: 29_407, Close: 29_410} // sell stop at the low

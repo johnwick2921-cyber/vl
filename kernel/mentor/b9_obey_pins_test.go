@@ -27,7 +27,7 @@ func b9BoxFixture(htf HTF, verdict DayVerdict) (*Evaluator, []market.Kline, int6
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
 	cfg.EMALocationTFMinutes = 0 // no EMA34 location line: the seeded level is the only target
-	cfg.RoomMultiple = 0.05
+	cfg.RoomMultiple = 0        // option B: these pins test the cap, not the room halving
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}

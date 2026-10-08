@@ -646,29 +646,35 @@ func rrConfluenceRefusal(price, stop, target float64) (refuse bool, why string) 
 	return false, ""
 }
 
-// roomVsTargetRefusal is the D5.3 room rule [@09:16–10:17]: the free room from
-// entry to the NEXT opposing level must be >= roomMultiple × the planned target
-// distance — "dù target của em là 15 điểm … từ chỗ em xuống target nó phải từ
-// 30 điểm đổ lên thì em mới chấp nhận". roomLevel is the price of the next
-// opposing level beyond the target (0 = no next level on record = the room is
-// unbounded = pass). roomMultiple <= 0 disables the check. One counter
-// "room_vs_target" for every path (ISB, reverse ISB, box, PHL/PLH, swing).
-func roomVsTargetRefusal(entry, target, roomLevel, roomMultiple float64) (refuse bool, why string) {
+// roomFaithfulB is the SCRATCH option-B reading of the D5.3 room rule
+// [@09:16–10:17] (NOT shipped — #462's option A uses the second-level proxy).
+// The settled rule: room = the distance from entry to the FIRST available
+// opposing level; the take-profit must sit at ≤ half that room and never below
+// 1R — "dù target của em là 15 điểm … từ chỗ em xuống target nó phải từ 30
+// điểm đổ lên". roomLevel is the price of the FIRST opposing level beyond the
+// entry (0 = no first level on record = the room is unbounded = the target is
+// unchanged). It returns the adjusted target; ok=false = refuse (half the room
+// is under 1R).
+func roomFaithfulB(entry, stop, currentTarget, roomLevel, roomMultiple float64, side Side) (newTarget float64, ok bool, why string) {
 	if roomMultiple <= 0 {
-		return false, ""
-	}
-	targetDist := abs(target - entry)
-	if targetDist <= 0 {
-		return true, "degenerate target geometry"
+		return currentTarget, true, "" // room rule off (scratch knob: RoomMultiple 0)
 	}
 	if roomLevel == 0 {
-		return false, "" // no next opposing level on record — room unbounded
+		return currentTarget, true, "" // no first opposing level on record
 	}
-	room := abs(roomLevel - entry)
-	if room < roomMultiple*targetDist {
-		return true, fmt.Sprintf("room_vs_target: room %.2f pts < %.2f pts (%.2fx target) [D5.3 p1 @ 09:16–10:17]", room, roomMultiple*targetDist, roomMultiple)
+	risk := abs(stop - entry)
+	half := abs(roomLevel - entry) / 2
+	if half < risk {
+		return 0, false, fmt.Sprintf("room_vs_target: half the room %.2f pts < 1R %.2f pts [D5.3 p1 @ 09:16–10:17]", half, risk)
 	}
-	return false, ""
+	tp := abs(currentTarget - entry)
+	if half < tp {
+		tp = half
+	}
+	if side == SideShort {
+		return entry - tp, true, ""
+	}
+	return entry + tp, true, ""
 }
 
 // triggerBoxZoneVerdict is the B1 no-trade zone (10-03 ruling, D3.4 p1
@@ -1218,23 +1224,22 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							// D4.2-06 part 1: confluence is computed BEFORE the R:R
 							// gates — only the confluence tier demands 1:2 [D3.4 p3].
 							confluence := MTFConfluence(side, e.State.Trigger, chosen.Price, cb5, cb15)
-							confluenceRefuse, _ := rrConfluenceRefusal(capped.Price, capped.Stop, capped.Target)
+							// Option B (scratch): TP = min(capped target, half the
+							// room to the FIRST available opposing level), floor 1R.
+							bTarget, roomOK, _ := roomFaithfulB(capped.Price, capped.Stop, capped.Target, nextLevelBeyond(levels, capped.Price, side), e.Cfg.RoomMultiple, side)
+							confluenceRefuse, _ := rrConfluenceRefusal(capped.Price, capped.Stop, bTarget)
 							if refuse, _ := rrFloorRefusal(capped.Price, capped.Stop, capped.Target); refuse {
 								e.refuse("rr_floor")
-							} else if refuse, _ := roomVsTargetRefusal(capped.Price, capped.Target, nextLevelBeyond(levels, capped.Target, side), e.Cfg.RoomMultiple); refuse {
-								// D5.3 [@09:16–10:17]: the free room from entry to
-								// the next opposing level must be >= RoomMultiple ×
-								// the planned target distance.
+							} else if !roomOK {
+								// D5.3 [@09:16–10:17]: half the room is under 1R.
 								e.refuse("room_vs_target")
 							} else if confluence && confluenceRefuse {
 								// D3.4 p3 [@07:52–08:07]: the confluence tier demands 1:2.
 								e.refuse("rr_confluence")
 							} else {
-								// The emitted intent carries the CAPPED target: `capped`
-								// above fed only the floor check, so a spent-day ISB went
-								// out with the full target (CapTargetForDay changes the
-								// target only; Price and Stop are untouched).
-								chosen.Target = capped.Target
+								// The emitted intent carries the B-adjusted CAPPED
+								// target (half the room, never below 1R).
+								chosen.Target = bTarget
 								// ISB size flags for the injector: rule 2 (at an old
 								// high/low → REDUCE SIZE) and rule 3 (in a range → REDUCE
 								// SIZE, "Khi trade isb in-range bắt buộc giảm size" [D4.1 p1
@@ -1345,18 +1350,20 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				in.Target = target
 				capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
 				confluence := MTFConfluence(in.Side, e.State.Trigger, in.Price, cb5, cb15)
-				confluenceRefuse, _ := rrConfluenceRefusal(capped.Price, capped.Stop, capped.Target)
+				// Option B (scratch): TP = min(capped target, half the room to
+				// the FIRST available opposing level), floor 1R.
+				bTarget, roomOK, _ := roomFaithfulB(capped.Price, capped.Stop, capped.Target, nextLevelBeyond(levels, capped.Price, in.Side), e.Cfg.RoomMultiple, in.Side)
+				confluenceRefuse, _ := rrConfluenceRefusal(capped.Price, capped.Stop, bTarget)
 				if refuse, _ := rrFloorRefusal(capped.Price, capped.Stop, capped.Target); refuse {
 					e.refuse("rr_floor")
-				} else if refuse, _ := roomVsTargetRefusal(capped.Price, capped.Target, nextLevelBeyond(levels, capped.Target, in.Side), e.Cfg.RoomMultiple); refuse {
-					// D5.3 [@09:16–10:17]: the free room from entry to the next
-					// opposing level must be >= RoomMultiple × the target.
+				} else if !roomOK {
+					// D5.3 [@09:16–10:17]: half the room is under 1R.
 					e.refuse("room_vs_target")
 				} else if confluence && confluenceRefuse {
 					// D3.4 p3 [@07:52–08:07]: the confluence tier demands 1:2.
 					e.refuse("rr_confluence")
 				} else {
-					in.Target = capped.Target
+					in.Target = bTarget
 					// B6: the same size flags as the normal ISB — rule 2 (at an
 					// old high/low → reduce) and rule 3 (in range → reduce)
 					// [D4.1 p1 @ 08:05/09:40].
@@ -1749,25 +1756,27 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						e.refuse("box_htf_side_mismatch")
 					} else {
 						capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
+						// Option B (scratch): TP = min(capped target, half the room
+						// to the FIRST available opposing level), floor 1R.
+						bTarget, roomOK, _ := roomFaithfulB(capped.Price, capped.Stop, capped.Target, nextLevelBeyond(levels, capped.Price, in.Side), e.Cfg.RoomMultiple, in.Side)
 						refuseFloor, _ := rrFloorRefusal(capped.Price, capped.Stop, capped.Target)
-						refuseRoom, _ := roomVsTargetRefusal(capped.Price, capped.Target, nextLevelBeyond(levels, capped.Target, in.Side), e.Cfg.RoomMultiple)
 						refuseConfluence := false
 						if capped.Confluence {
-							refuseConfluence, _ = rrConfluenceRefusal(capped.Price, capped.Stop, capped.Target)
+							refuseConfluence, _ = rrConfluenceRefusal(capped.Price, capped.Stop, bTarget)
 						}
 						if refuseFloor {
 							// the cap (or the setup's own target) pulled the target
 							// inside the stop distance — refuse rather than emit a
 							// sub-floor intent.
 							e.refuse("rr_floor")
-						} else if refuseRoom {
-							// D5.3 [@09:16–10:17]: the free room to the next
-							// opposing level must be >= RoomMultiple × target.
+						} else if !roomOK {
+							// D5.3 [@09:16–10:17]: half the room is under 1R.
 							e.refuse("room_vs_target")
 						} else if refuseConfluence {
 							// D3.4 p3 [@07:52–08:07]: the confluence tier demands 1:2.
 							e.refuse("rr_confluence")
 						} else {
+							capped.Target = bTarget
 							out = append(out, capped)
 							// B20: school-1 box entry without trigger agreement
 							// arms the flip upgrade.
@@ -2230,11 +2239,9 @@ func swingRoomRefused(in Intent, obstacle, roomMultiple float64) bool {
 	if obstacle == 0 || !targetOnSide(in.Side, in.Price, obstacle) {
 		return false
 	}
-	// Planned target distance = the 1R first target (R43): entry ± risk.
-	target := in.Price + abs(in.Stop-in.Price)
-	if in.Side == SideShort {
-		target = in.Price - abs(in.Stop-in.Price)
-	}
-	refuse, _ := roomVsTargetRefusal(in.Price, target, obstacle, roomMultiple)
-	return refuse
+	// Option B faithful form: the swing's leg-1 target is "at least 1:1" (R43),
+	// so "half the room (the obstacle) >= 1R" collapses to "obstacle >=
+	// roomMultiple × risk" — the pre-fix form. The swing's own TP is not halved
+	// here (its table rules the swing target separately).
+	return abs(obstacle-in.Price) < roomMultiple*abs(in.Stop-in.Price)
 }

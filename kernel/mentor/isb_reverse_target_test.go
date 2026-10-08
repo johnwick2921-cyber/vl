@@ -90,6 +90,7 @@ func isbReverseFixture(t *testing.T) (*Evaluator, []market.Kline, int64) {
 // gate no longer refuses it. Mutant: drop the target assignment → RED.
 func TestReverseISBEmitsWithTarget(t *testing.T) {
 	e, bars, now := isbReverseFixture(t)
+	e.Cfg.RoomMultiple = 0 // option B: this pin tests the target assignment, not the room halving
 	ins := e.Tick(bars, now)
 	var reverse *Intent
 	for i := range ins {

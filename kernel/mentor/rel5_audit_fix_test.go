@@ -123,8 +123,9 @@ func TestPHLMidRangeNamedRefusal(t *testing.T) {
 
 // TestISBRoomFallsThroughTargetOnly — REL-5 #2: a target-only 4h trigger closer
 // than 2R is skipped and the room search falls through to the next key level.
-// Mutant: replace nextLevelBeyondRoom with nextLevelBeyond → RED (the ISB is
-// refused "room").
+// OPTION B: the 4h line is still skipped as a TARGET, but it is the FIRST
+// opposing level for the room rule — half the room (1 pt) < 1R (5) → the ISB is
+// refused room_vs_target (it cannot clear even 1:1 before the 4h line).
 func TestISBRoomFallsThroughTargetOnly(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
@@ -135,27 +136,21 @@ func TestISBRoomFallsThroughTargetOnly(t *testing.T) {
 	cfg.ISBBufferPts = 0
 	cfg.LocTriggerFilter = false
 	// RoomMultiple 2. Entry 104, stop 99 → risk 5, 2R = 10. 4h line at 106 is
-	// 2 pts away (< 10) → skipped; the key level at 120 is 16 pts away (>= 10)
-	// → the target.
+	// 2 pts away (< 10) → skipped as a target; the key level at 120 is 16 pts
+	// away. Option B: half the room to the 4h line = 1 < 1R → refuse.
 	e, bars, now := rel5ISBEval(t, cfg,
 		[]Level{{Key: "far", Kind: KindKeyLevel, Price: 120}},
 		106,
 	)
 
 	ins := e.Tick(bars, now)
-	var isb *Intent
-	for i := range ins {
-		in := &ins[i]
+	for _, in := range ins {
 		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" {
-			isb = in
-			break
+			t.Fatalf("option B must refuse (half the room to the 4h line < 1R); got %+v refusals %v", in, e.State.Refusals)
 		}
 	}
-	if isb == nil {
-		t.Fatalf("the ISB must emit (fall through the <2R 4h target); intents %+v refusals %v", ins, e.State.Refusals)
-	}
-	if isb.Target != 120 {
-		t.Fatalf("ISB target = %.2f, want 120 (skip the <2R 4h line); refusals=%v", isb.Target, e.State.Refusals)
+	if e.State.Refusals["room_vs_target"] == 0 {
+		t.Fatalf("room_vs_target refusal not counted; refusals=%v", e.State.Refusals)
 	}
 }
 
