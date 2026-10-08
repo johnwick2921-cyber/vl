@@ -20,7 +20,7 @@ import (
 //     the current 4h bar: closed buckets only, and the line FLIPS when a 4h
 //     candle finishes — "do not wait for a retest" [p3 @ 12:30].
 //  2. "Switch STRAIGHT DOWN TO THE 5-MINUTE — not the 1-minute" [p1 @ 05:30].
-//  3. "Wait for a LITERAL touch. 'KHÔNG ĐƯỢC GẦN ĐỤNG'" [p2 @ 09:15] — the
+//  3. "Wait for a LITERAL touch. 'KHÔNG ĐƯỢC GẦN ĐỤNG'" [D5.2 p2 @ 18:36–18:41] — the
 //     only setup where a near-touch is not accepted. R8: the line placement
 //     offset (5–10 pts) sits TOWARD the approaching price — the touch band
 //     is on the approach side only.
@@ -295,7 +295,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		// to LeewayCandles. The flip (bucketStart change above) resets it.
 		if s.FirstTouch != nil && s.FirstTouch.Through {
 			// closes back after the through-close → the 5m INSIDE BAR entry
-			// with the stop AT the level [D5.2 p3 @ 21:56].
+			// with the stop AT the level [D5.2 p1 @ 21:43–21:49].
 			if closedBack(s.FirstTouch.Approach, b.Close, line) && IsISB(prev, b) {
 				if in, eok := swingISBIntent(s.FirstTouch, b, line, cfg); eok {
 					s.FirstTouch = nil
@@ -449,7 +449,7 @@ func swingFirstTarget(side Side, entry, stop, ema5m float64) float64 {
 // placement offset (5–10 pts) sits TOWARD the approaching price, so the
 // line is drawn at line−offset for a below-approach (resistance) and at
 // line+offset for an above-approach (support); the candle must reach the
-// placed line — "KHÔNG ĐƯỢC GẦN ĐỤNG" [D5.2 p2 @ 09:15].
+	// placed line — "KHÔNG ĐƯỢC GẦN ĐỤNG" [D5.2 p2 @ 18:36–18:41].
 func touchesLineApproach(b market.Kline, line, offset float64, approach Side) bool {
 	if approach == SideShort { // price comes from below → line at line−offset
 		return b.Low <= line-offset && b.High >= line-offset
@@ -534,7 +534,7 @@ func swingISBIntent(t *swingTouch, ref market.Kline, line float64, cfg SwingCfg)
 		log.Printf("swing4h: hard invariant broken — ISB entry %s %.2f stop %.2f refused", in.Side, in.Price, in.Stop)
 		return Intent{}, false
 	}
-	in.Reason = "swing §8: through-close, then closes back → 5m inside bar with the stop AT the level [D5.2 p3 @ 21:56, table]"
+	in.Reason = "swing §8: through-close, then closes back → 5m inside bar with the stop AT the level [D5.2 p1 @ 21:43–21:49, table]"
 	return in, true
 }
 

@@ -219,7 +219,7 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 		}
 		// R9: on a spent day (cap 15), skip any setup whose stop is over 15
 		if risk > dg.TargetCapPts {
-			return in, false, "spent day: stop over the 15-pt cap — skip the setup [R9, D1.2 p1 @ 07:48–09:00]"
+			return in, false, "spent day: stop over the 15-pt cap — skip the setup [derived: D5.1 p1 @20:00 '15 điểm bán' cap + D1.2 p1 @07:48 1:1 floor ⇒ stop ≤ 15]"
 		}
 	}
 	capped := CapTargetForDay(in, day, dg)
