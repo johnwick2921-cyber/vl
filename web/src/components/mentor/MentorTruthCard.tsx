@@ -6,7 +6,30 @@
 // key levels in effect (with today's visits), the history depth, and the
 // window / day-stop state. It renders nothing when mentor mode is OFF.
 
+import { useState } from 'react'
 import type { MentorTruth } from '../../lib/api/traders'
+
+// MENTOR-CARD-EXPAND (release #12): the owner's last choice persists per
+// browser under this key. Read/write are try/catch-guarded — a storage
+// failure (private mode, quota) must fall back to EXPANDED, never crash.
+const STORAGE_KEY = 'vl.mentorCard.open'
+
+function readStoredOpen(): boolean {
+  try {
+    const v = localStorage.getItem(STORAGE_KEY)
+    return v !== 'false' // absent or anything but "false" → expanded
+  } catch {
+    return true
+  }
+}
+
+function writeStoredOpen(open: boolean): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, String(open))
+  } catch {
+    // ignore — persistence is best-effort
+  }
+}
 
 const fmtTime = (ms: number) =>
   ms > 0
@@ -49,6 +72,12 @@ export function MentorTruthCard({
   truth: MentorTruth | null
   stale?: boolean
 }) {
+  const [open, setOpen] = useState<boolean>(readStoredOpen)
+  const toggle = () => {
+    const next = !open
+    writeStoredOpen(next)
+    setOpen(next)
+  }
   if (!truth || !truth.enabled) return null
 
   return (
@@ -60,18 +89,35 @@ export function MentorTruthCard({
         fontFamily: 'var(--vl-font-ui)',
       }}
     >
-      <div className="flex items-baseline justify-between">
-        <span
-          className="text-[10px] uppercase tracking-widest"
-          style={{ color: 'var(--vl-warn)' }}
-        >
-          Mentor — what trades
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={toggle}
+        className="flex w-full items-center justify-between text-left"
+        style={{
+          background: 'none',
+          border: 'none',
+          padding: 0,
+          cursor: 'pointer',
+          font: 'inherit',
+        }}
+      >
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden style={{ width: '0.75em', flex: 'none' }}>
+            {open ? '▾' : '▸'}
+          </span>
+          <span
+            className="text-[10px] uppercase tracking-widest"
+            style={{ color: 'var(--vl-warn)' }}
+          >
+            Mentor — what trades
+          </span>
         </span>
         <span className="text-[10px]" style={{ color: 'var(--vl-faint)' }}>
           {truth.htf.gate_active ? 'HTF gate ON' : 'HTF gate OFF'} · as of{' '}
           {fmtAsOf(truth.as_of_ms)} CT
         </span>
-      </div>
+      </button>
 
       {stale && (
         <div
@@ -82,6 +128,8 @@ export function MentorTruthCard({
         </div>
       )}
 
+      {open && (
+        <>
       {/* trigger directions */}
       <div className="flex gap-4 text-[11px]">
         {[
@@ -204,6 +252,8 @@ export function MentorTruthCard({
           <span style={{ color: 'var(--vl-warn)' }}>stop-after-loss</span>
         )}
       </div>
+        </>
+      )}
     </div>
   )
 }

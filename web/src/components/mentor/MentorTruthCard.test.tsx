@@ -4,8 +4,8 @@
 //              labelled "advice only".
 // mentor OFF → the card is absent and the AI bias card keeps its unchanged label.
 
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MentorTruthCard } from './MentorTruthCard'
 import { BiasBlock } from '../plan/BiasBlock'
 import type { MentorTruth } from '../../lib/api/traders'
@@ -108,6 +108,89 @@ describe('MentorTruthCard', () => {
       </LanguageProvider>
     )
     expect(screen.getByText('no levels')).toBeTruthy()
+  })
+})
+
+describe('MentorTruthCard expand/collapse', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    localStorage.clear()
+  })
+
+  it('renders expanded by default', () => {
+    render(
+      <LanguageProvider>
+        <MentorTruthCard truth={truth({})} />
+      </LanguageProvider>
+    )
+    const btn = screen.getByRole('button', { name: /Mentor — what trades/i })
+    expect(btn.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText(/HTF verdict/i)).toBeTruthy()
+    expect(screen.getByText('Key levels in effect')).toBeTruthy()
+  })
+
+  it('collapse hides the body and flips aria-expanded; click again restores', () => {
+    render(
+      <LanguageProvider>
+        <MentorTruthCard truth={truth({})} />
+      </LanguageProvider>
+    )
+    const btn = screen.getByRole('button', { name: /Mentor — what trades/i })
+    fireEvent.click(btn)
+    expect(btn.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText(/HTF verdict/i)).toBeNull()
+    expect(screen.queryByText('Key levels in effect')).toBeNull()
+    // the header itself stays
+    expect(screen.getByText('Mentor — what trades')).toBeTruthy()
+
+    fireEvent.click(btn)
+    expect(btn.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText(/HTF verdict/i)).toBeTruthy()
+    expect(screen.getByText('Key levels in effect')).toBeTruthy()
+  })
+
+  it('keeps the stale warning visible while collapsed', () => {
+    render(
+      <LanguageProvider>
+        <MentorTruthCard truth={truth({})} stale />
+      </LanguageProvider>
+    )
+    const btn = screen.getByRole('button', { name: /Mentor — what trades/i })
+    fireEvent.click(btn)
+    expect(btn.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByText(/stale — last update/i)).toBeTruthy()
+    expect(screen.queryByText(/HTF verdict/i)).toBeNull()
+  })
+
+  it('starts collapsed when the stored choice is "false"', () => {
+    localStorage.setItem('vl.mentorCard.open', 'false')
+    render(
+      <LanguageProvider>
+        <MentorTruthCard truth={truth({})} />
+      </LanguageProvider>
+    )
+    const btn = screen.getByRole('button', { name: /Mentor — what trades/i })
+    expect(btn.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText(/HTF verdict/i)).toBeNull()
+  })
+
+  it('falls back to expanded (no crash) when localStorage throws', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('storage denied')
+    })
+    expect(() =>
+      render(
+        <LanguageProvider>
+          <MentorTruthCard truth={truth({})} />
+        </LanguageProvider>
+      )
+    ).not.toThrow()
+    const btn = screen.getByRole('button', { name: /Mentor — what trades/i })
+    expect(btn.getAttribute('aria-expanded')).toBe('true')
   })
 })
 

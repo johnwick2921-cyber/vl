@@ -210,6 +210,11 @@ export const mentor: GuideSection = {
           body: 'The card refreshes every 30s and on window focus, and stamps each snapshot "as of HH:MM:SS CT" (server as_of_ms). The mentor key levels are also drawn on the dashboard price chart as dashed amber lines labelled "mentor", distinct from the solid order lines.',
           cite: 'web/src/components/mentor/useMentorTruth.ts · web/src/components/charts/AdvancedChart.tsx mentorLevels',
         },
+        {
+          title: 'Fold it away',
+          body: 'Click the card title to fold it away or open it again; the page remembers your choice.',
+          cite: 'web/src/components/mentor/MentorTruthCard.tsx localStorage vl.mentorCard.open',
+        },
       ],
     },
     {
