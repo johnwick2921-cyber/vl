@@ -318,6 +318,9 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// mentorStaleDataBlocked. Exits / protection are never gated; resting broker
 	// orders are never cancelled by this.
 	if at.mentorStaleDataBlocked(mentorClockNow()) {
+		// A setup computed on stale prices is not a setup — drop the evaluator's
+		// arm so it is not retried later and does not suppress the next setup.
+		at.mentorEval.DropArm(in.ArmID)
 		return
 	}
 	// N10 (stale intent): an entry whose reference candle is not the newest
@@ -341,22 +344,27 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// the day after a win, F11 news 07:30, (d) never add/average. Then the
 	// no-chase rule.
 	if refuse, why := at.mentorWindowGate(in); refuse {
+		at.mentorEval.DropArm(in.ArmID)
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
 	}
 	if refuse, why := at.mentorDoneAfterWinGate(); refuse {
+		at.mentorEval.DropArm(in.ArmID)
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
 	}
 	if refuse, why := at.mentorStopAfterLossGate(); refuse {
+		at.mentorEval.DropArm(in.ArmID)
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
 	}
 	if hold, why := at.mentorNewsGate(); hold {
+		at.mentorEval.DropArm(in.ArmID)
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
 	}
 	if refuse, why := at.mentorAddGate(in); refuse {
+		at.mentorEval.DropArm(in.ArmID)
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
 	}
@@ -364,6 +372,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// 60s sweep: a placement while the session-day's realized loss is already
 	// at/past the limit is refused and counted.
 	if refuse, why := at.mentorDailyLossGate(mentorClockNow()); refuse {
+		at.mentorEval.DropArm(in.ArmID)
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
 	}
@@ -379,6 +388,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// without one is REFUSED fail-closed (it must never sit unexpiring).
 	if refuse, why := mentorExpiryGuard(in.ExpiryMs); refuse {
 		mentorCount("expiry_missing_refused")
+		at.mentorEval.DropArm(in.ArmID)
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
 	}

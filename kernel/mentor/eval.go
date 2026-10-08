@@ -116,10 +116,10 @@ type State struct {
 	// #10): deletion is computed ONCE over the full seeded history, then only
 	// the NEW candles past this watermark are walked per tick — never the
 	// whole series per level per tick (the O(levels x bars) replay killer).
-	Seed1HDeletionWatermark int64  `json:"seed_1h_deletion_watermark,omitempty"`
-	Seed1mWatermark         int64  `json:"seed_1m_watermark,omitempty"`
-	EMA34            float64        `json:"ema34,omitempty"` // 1m EMA 34 (incremental)
-	EMA9             float64        `json:"ema9,omitempty"`  // 1m EMA 9 (incremental)
+	Seed1HDeletionWatermark int64   `json:"seed_1h_deletion_watermark,omitempty"`
+	Seed1mWatermark         int64   `json:"seed_1m_watermark,omitempty"`
+	EMA34                   float64 `json:"ema34,omitempty"` // 1m EMA 34 (incremental)
+	EMA9                    float64 `json:"ema9,omitempty"`  // 1m EMA 9 (incremental)
 
 	// E2 (CTO 12:27:25Z): the EMA34 loss machinery — the pending stop of the
 	// last emitted EMA setup, and the one-loss block until a departure.
@@ -485,6 +485,27 @@ func isbArmActive(arms map[string]ISBArm, side Side) bool {
 		}
 	}
 	return false
+}
+
+// DropArm removes the evaluator's arm for an ArmID whose placement the trader
+// refused as a DEAD setup (never-add, done-after-win, stop-after-loss, window,
+// news, daily-loss, expiry-missing, bad side, or the stale-data authoring
+// refusal). Dropping the arm lets the next same-side setup proceed instead of
+// being suppressed by isb_arm_active / a phantom swing Pending, and stops the
+// follow-up ExtendArm/CancelArm/MoveStopBE intents for an order that was never
+// authored. It touches nothing else — a FILLED swing position (Swing.Pos) is
+// never dropped here.
+func (e *Evaluator) DropArm(armID string) {
+	if e == nil || armID == "" {
+		return
+	}
+	if _, ok := e.State.ISBArms[armID]; ok {
+		delete(e.State.ISBArms, armID)
+		return
+	}
+	if e.State.Swing.Pending != nil && e.State.Swing.Pending.ArmID == armID {
+		e.State.Swing.Pending = nil
+	}
 }
 
 // isbFlags returns the ISB size flags for the injector (rule 2: at an old

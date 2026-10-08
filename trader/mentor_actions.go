@@ -322,6 +322,7 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	side := strings.ToLower(strings.TrimSpace(string(in.Side)))
 	if side != "long" && side != "short" {
 		mentorCount("placement_refused_bad_side")
+		at.mentorEval.DropArm(in.ArmID)
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — unknown side %q", in.Side)
 		return
 	}
