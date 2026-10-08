@@ -147,6 +147,7 @@ func TestB9PHLSpentDayCappedDayOffRefused(t *testing.T) {
 	oldHighs := []Level{{Key: "old-high:130", Kind: KindOldExtreme, Price: 130}}
 
 	ctl, cbars, cnow, _ := b14Fixture(oldHighs, 99.5)
+	ctl.Cfg.RoomMultiple = 0 // this pin is about the cap value, not the room rule
 	cins := ctl.Tick(cbars, cnow)
 	var base *Intent
 	for i := range cins {
@@ -159,6 +160,7 @@ func TestB9PHLSpentDayCappedDayOffRefused(t *testing.T) {
 	}
 
 	e, bars, now, _ := b14Fixture(oldHighs, 99.5)
+	e.Cfg.RoomMultiple = 0
 	e.State.Day.Verdict = DaySpent
 	var got *Intent
 	ins := e.Tick(bars, now)

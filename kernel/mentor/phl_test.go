@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"strings"
 	"testing"
 
 	"vl/market"
@@ -87,24 +88,36 @@ func TestPHLPLHRequiresThreeCandlesFromOldExtreme(t *testing.T) {
 	}
 }
 
-// TestPHLPLHRoomRule — §6 [D5.3 p1 @ 09:16]: reward must be at least 2× risk.
-// A 1:1 shape is refused.
+// TestPHLPLHRoomRule — the D1.2 floor [@07:41–08:45] and the D5.3 room-vs-target
+// rule [@09:16–10:17] on the PHL path. A sub-1:1 target is refused by the floor;
+// a 1:1 target whose next opposing level sits closer than 2× the target is
+// refused by the room rule.
 func TestPHLPLHRoomRule(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 0
-	// entry 110 (buy stop above ref high 108.5 + 1.5), stop 103 (ref low 104.5 − 1.5)
+	// entry 101 (ref high 100 + 1.0 buffer), stop 95 → risk 6.
 	touch := Touch{
-		Outcome: TouchReject, RefBar: market.Kline{High: 108.5, Low: 104.5},
+		Outcome: TouchReject, RefBar: market.Kline{High: 100, Low: 95},
 		ApproachedFrom: SideLong,
 	}
-	// target 115: reward 5, risk 7 → 0.71R < 2 → refused
-	if _, ok, _ := PHLPLH(touch, Level{Kind: KindOldExtreme, Price: 115}, 0, 3, cfg); ok {
-		t.Fatal("1:1-ish trade passed the room rule")
+	// Floor: target 102 → reward 1 < risk 6 → refused by the 1:1 floor.
+	if _, ok, reason := PHLPLH(touch, Level{Kind: KindOldExtreme, Price: 102}, 0, 3, cfg); ok {
+		t.Fatal("sub-1:1 PHL passed the floor")
+	} else if !strings.HasPrefix(reason, "rr_floor") {
+		t.Fatalf("floor refusal reason = %q, want rr_floor prefix", reason)
 	}
-	// target 125: reward 15, risk 7 → 2.14R → accepted
-	if _, ok, reason := PHLPLH(touch, Level{Kind: KindOldExtreme, Price: 125}, 0, 3, cfg); !ok {
-		t.Fatalf("2.14R trade refused: %s", reason)
+	// Room: target = key level 107 (reward 6 = risk 6, floor passes); the next
+	// opposing level beyond the old extreme's anchor is 111 → room 10 < 2×6 = 12
+	// → refused by the room rule.
+	levels := []Level{
+		{Key: "k", Kind: KindKeyLevel, Price: 107},
+		{Key: "room", Kind: KindKeyLevel, Price: 111},
+	}
+	if _, ok, reason := PHLPLHR2Levels(touch, Level{Kind: KindOldExtreme, Price: 108}, 0, 3, 0, levels, cfg); ok {
+		t.Fatal("PHL whose room (10) is under 2× target (12) passed the room rule")
+	} else if !strings.HasPrefix(reason, "room_vs_target") {
+		t.Fatalf("room refusal reason = %q, want room_vs_target prefix", reason)
 	}
 }
 

@@ -216,12 +216,13 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 	if risk > cfg.StopCeilingPts {
 		return nil
 	}
-	target := nextLevelBeyondRoom(levels, price, stop, side, cfg.RoomMultiple)
+	// The target is the first level beyond the entry [D3.3 p1 @ 05:07]. The
+	// floor, the room-vs-target rule and the confluence 1:2 are enforced at the
+	// evaluator call site (eval.go) on the CAPPED target — not here, where the
+	// spent-day cap has not been applied yet.
+	target := nextLevelBeyond(levels, price, side)
 	if target == 0 {
 		return nil // no level beyond → no setup [D4.1 p1 @ 01:45]
-	}
-	if abs(target-price) < cfg.RoomMultiple*risk {
-		return nil
 	}
 	fl := ConfluenceVerdict(b, side, trig)
 	// G2 place (CTO R-b / 13:20:08Z): a box is ONE place — the key WITHOUT the

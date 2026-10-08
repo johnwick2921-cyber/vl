@@ -136,7 +136,7 @@ func TestISBTargetBelowFloorRefused(t *testing.T) {
 	e.State.EMA9 = 0
 
 	ints := e.Tick(bars, now)
-	if e.State.Refusals["isb_target_below_floor"] == 0 {
+	if e.State.Refusals["rr_floor"] == 0 {
 		t.Fatalf("a sub-1:1 ISB target must be refused by name; ledger = %v", e.State.Refusals)
 	}
 	if len(e.State.ISBArms) != 0 {
@@ -238,6 +238,7 @@ func TestISBSilentDropsAllNamed(t *testing.T) {
 func TestISBSpentDayTargetCap(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.RoomMultiple = 0 // this pin is about the cap value, not the room rule
 	cfg.DayGateSpentPts = 300
 	cfg.DayGateTargetCapPts = 15
 	e := newISBEval(cfg)

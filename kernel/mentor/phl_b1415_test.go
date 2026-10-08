@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"strings"
 	"testing"
 
 	"vl/market"
@@ -48,17 +49,22 @@ func TestPHLPLHR2LevelsCapAtExtremeShy(t *testing.T) {
 	}
 }
 
-// The room rule is measured to the OBSTACLE, not the old extreme (D5.3 p1
-// @09:16-10:13: entry→target must be ≥ 2× the take).
+// The room rule (D5.3 p1 @09:16–10:17): the free room from entry to the NEXT
+// opposing level must be ≥ RoomMultiple × the target distance. The target is
+// the first obstacle (29,410); the next opposing level (29,420) sits only
+// 23.25 pts from the entry — under 2× the 14.25-pt target (28.5) → refused.
 // MUTANT: measure the room to the old extreme minus the shy instead → the
 // setup ships → this test goes RED.
 func TestPHLPLHR2LevelsRoomToObstacle(t *testing.T) {
 	cfg := workedCfg()
 	levels := []Level{
-		{Key: "key_level:29410", Kind: KindKeyLevel, Price: 29_410}, // reward 14.25 < 2×8.25
+		{Key: "key_level:29410", Kind: KindKeyLevel, Price: 29_410}, // first obstacle: reward 14.25
+		{Key: "key_level:29420", Kind: KindKeyLevel, Price: 29_420}, // next opposing level: room 23.25
 	}
 	if _, ok, reason := PHLPLHR2Levels(workedTouch(), Level{Kind: KindOldExtreme, Price: 29_431.75}, 0, 3, 29_380, levels, cfg); ok {
-		t.Fatalf("room to the obstacle must refuse; got ok, reason=%q", reason)
+		t.Fatalf("room to the next level must refuse; got ok, reason=%q", reason)
+	} else if !strings.HasPrefix(reason, "room_vs_target") {
+		t.Fatalf("room refusal reason = %q, want room_vs_target prefix", reason)
 	}
 }
 

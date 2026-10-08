@@ -44,6 +44,7 @@ func TestX5_10Exec2mAfter30mSwitchesISBReadTo2m(t *testing.T) {
 	// OFF (default): the 1m read emits the ISB.
 	cfgOff := DefaultConfig()
 	cfgOff.Enabled = true
+	cfgOff.RoomMultiple = 0 // this pin is about the 2m switch, not the room rule
 	if got := x5_10Emits(newISBEval(cfgOff), bars, now); got != 1 {
 		t.Fatalf("knob OFF (1m read) must emit the ISB, got %d", got)
 	}
@@ -52,6 +53,7 @@ func TestX5_10Exec2mAfter30mSwitchesISBReadTo2m(t *testing.T) {
 	cfgOn := DefaultConfig()
 	cfgOn.Enabled = true
 	cfgOn.Exec2mAfter30m = true
+	cfgOn.RoomMultiple = 0
 	if got := x5_10Emits(newISBEval(cfgOn), bars, now); got != 0 {
 		t.Fatalf("knob ON (2m read) must drop the ISB, got %d", got)
 	}

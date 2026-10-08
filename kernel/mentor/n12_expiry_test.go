@@ -14,6 +14,7 @@ import (
 func TestISBIntentCarriesNextCandleExpiry(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.RoomMultiple = 0 // this pin is about expiry, not the room rule
 	// a head bar with a high close so the EMA target clears the E-2 1:1
 	// floor ("the target is never smaller than the stop" [D1.2 p1 @ 07:48]).
 	head := market.Kline{Open: 121, High: 121.5, Low: 120.5, Close: 120, OpenTime: auditMs(2026, 9, 15, 9, 0, 0), CloseTime: auditMs(2026, 9, 15, 9, 0, 0) + 59_999}

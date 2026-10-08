@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"strings"
 	"testing"
 
 	"vl/market"
@@ -110,16 +111,17 @@ func TestPHLPLHGatedSpentDayCapsTarget(t *testing.T) {
 
 // TestPHLPLHGatedSpentDayCappedTargetRoom is the B7 (L13) call-site pin: on a
 // spent day the room rule must be measured on the CAPPED target, not the
-// uncapped one. The worked example (risk 9.25) has a 30-pt uncapped target
-// (room passes) but the 15-pt cap leaves 15 < 2×9.25 → the room rule refuses.
-// MUTANT: drop the capped-target room re-check in phlPLHGatedR2 → the setup
-// ships with the capped target → RED.
+// uncapped one. The capped 15-pt target's next opposing level (29,421.75) sits
+// 25 pts from the entry — under 2× the 15-pt target (30) → room_vs_target
+// refuses. MUTANT: drop the capped-target room re-check in phlPLHGatedR2 → the
+// setup ships with the capped target → RED.
 func TestPHLPLHGatedSpentDayCappedTargetRoom(t *testing.T) {
 	htf := HTF{FourH: TriggerLine{Dir: SideLong, Price: 29400}}
-	if in, ok, reason := PHLPLHGated(workedTouch(), Level{Kind: KindOldExtreme, Price: 29_431.75}, 0, 3, workedCfg(), htf, DaySpent, DefaultDayGate()); ok {
-		t.Fatalf("spent-day PHL whose capped 15-pt target is below 2×risk shipped: %+v", in)
-	} else if reason == "" {
-		t.Fatal("the refusal must carry a reason")
+	levels := []Level{{Key: "key_level:29421.75", Kind: KindKeyLevel, Price: 29_421.75}}
+	if in, ok, reason := PHLPLHGatedR2Levels(workedTouch(), Level{Kind: KindOldExtreme, Price: 29_431.75}, 0, 3, 29_380, levels, workedCfg(), htf, DaySpent, DefaultDayGate()); ok {
+		t.Fatalf("spent-day PHL whose capped target's room is under 2× target shipped: %+v", in)
+	} else if !strings.HasPrefix(reason, "room_vs_target") {
+		t.Fatalf("refusal reason = %q, want room_vs_target prefix", reason)
 	}
 }
 

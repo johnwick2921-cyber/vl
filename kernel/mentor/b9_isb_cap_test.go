@@ -23,6 +23,7 @@ func TestB9ISBOnSpentDayEmitsExactlyTheCap(t *testing.T) {
 		cfg.EMAPeriod34 = 0
 		cfg.EMAPeriod9 = 0
 		cfg.EMALocationTFMinutes = 0 // no EMA34 location line: the seeded level is the only target
+		cfg.RoomMultiple = 0        // this pin is about the cap value, not the room rule
 		cfg.DayGateSpentPts = 300
 		cfg.DayGateTargetCapPts = b9CapPts
 		e := newISBEval(cfg)

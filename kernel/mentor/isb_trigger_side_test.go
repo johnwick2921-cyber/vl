@@ -80,6 +80,7 @@ func TestISBTriggerSideMismatchRefused(t *testing.T) {
 func TestISBTriggerSideMatchPlaced(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.RoomMultiple = 0 // this pin is about the trigger side, not the room rule
 	e := newISBEval(cfg) // trigger long, 4h long, ORB escaped long
 	bars := isbFixture()
 
@@ -103,6 +104,7 @@ func TestISBTriggerSideMatchPlaced(t *testing.T) {
 func TestISBNoTriggerLineUnchanged(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.RoomMultiple = 0 // this pin is about the trigger line, not the room rule
 	e := newISBEval(cfg)
 	e.State.Trigger = TriggerLine{} // no live 5m trigger line
 	bars := isbFixture()

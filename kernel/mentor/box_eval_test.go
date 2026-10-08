@@ -48,6 +48,7 @@ func TestBoxEntryIntentInsideCloseCancels(t *testing.T) {
 func TestBoxEntryIntentTriggerBlock(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.TriggerSchool = 2 // school 2: the box path waits for the 5m trigger (B20)
 	b := Box{Kind: FTGH, Top: 105, Bottom: 102}
 	ref := market.Kline{High: 104.5, Low: 100.5, Close: 101}
 	levels := []Level{{Kind: KindKeyLevel, Price: 98}}
@@ -435,7 +436,7 @@ func TestBoxPathRecordedTape13Sep(t *testing.T) {
 	}
 	for gate, n := range census {
 		switch gate {
-		case "reject (close inside the box)", "trigger verdict", "room",
+		case "reject (close inside the box)", "trigger verdict", "room_vs_target",
 			"ping_pong_range_too_small", "ping_pong_candle_too_big":
 		default:
 			t.Fatalf("recorded tape: %d returns died at an UNEXPECTED gate %q (full census %v)",
@@ -474,7 +475,7 @@ func censusBoxReturn(ref market.Kline, b Box, boxes []Box, levels []Level, trig 
 	if nextLevelBeyond(levels, price, side) == 0 {
 		return "no level beyond"
 	}
-	return "room"
+	return "room_vs_target"
 }
 
 func chooseStop(ref market.Kline, side Side) float64 {
@@ -529,7 +530,7 @@ func TestBoxPathRecordedTapeWeekdayRTH(t *testing.T) {
 	}
 	for gate, n := range census {
 		switch gate {
-		case "reject (close inside the box)", "trigger verdict", "room",
+		case "reject (close inside the box)", "trigger verdict", "room_vs_target",
 			"no level beyond", "stop ceiling", "ping_pong_range_too_small", "inside a box":
 		default:
 			t.Fatalf("weekday RTH tape: %d returns died at an UNEXPECTED gate %q (census %v)",

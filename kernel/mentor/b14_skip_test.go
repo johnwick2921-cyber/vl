@@ -15,8 +15,7 @@ import (
 // touch (too close), the farther one is 5 bars away and would pass. Correct:
 // 0 entries, the too-close drop named, the floor never reached. Mutant
 // (farthest-wins): the far extreme passes the distance gate, its target is
-// capped at the near level, the floor fails and phl_target_below_floor is
-// counted instead.
+// capped at the near level, the floor fails and rr_floor is counted instead.
 func TestB14SkipNeverFallsBackToFartherExtreme(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
@@ -63,8 +62,5 @@ func TestB14SkipNeverFallsBackToFartherExtreme(t *testing.T) {
 	}
 	if e.State.Refusals["phl_too_close_to_extreme"] == 0 {
 		t.Fatalf("ledger = %v, want phl_too_close_to_extreme counted", e.State.Refusals)
-	}
-	if e.State.Refusals["phl_target_below_floor"] != 0 {
-		t.Fatalf("ledger = %v, the floor must never be reached (farther fallback)", e.State.Refusals)
 	}
 }

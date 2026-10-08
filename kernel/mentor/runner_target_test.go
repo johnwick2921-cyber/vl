@@ -13,6 +13,7 @@ func TestPHLRunnerTargetIsTheNearestLevelBeyondTheOldHigh(t *testing.T) {
 		{Key: "beyond:140", Kind: KindKeyLevel, Price: 140},
 	}
 	e, bars, now, _ := b14Fixture(oldHighs, 99.5)
+	e.Cfg.RoomMultiple = 0 // this pin is about the runner target, not the room rule
 	var got *Intent
 	for _, in := range e.Tick(bars, now) {
 		if in.Action == PlaceStopEntry {

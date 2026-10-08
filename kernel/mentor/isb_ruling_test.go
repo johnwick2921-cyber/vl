@@ -16,6 +16,7 @@ import (
 func TestISBNotLocationGated(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.RoomMultiple = 0 // this fixture pins the location rule, not the room rule
 	// a head bar with a high close so the EMA 34 target sits well BEYOND the
 	// entry: the E-2 floor ("the target is never smaller than the stop"
 	// [D1.2 p1 @ 07:48]) refuses a sub-1:1 target.

@@ -103,10 +103,10 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	// target is closer than the stop, the floor is the binding constraint
 	// and is the reason the ledger names (the room rule cannot pass when
 	// the floor fails; roomMultiple >= 2).
-	if reward < risk {
-		return Intent{}, false, targetCloserThanStopReason
+	if refuse, why := rrFloorRefusal(price, stop, target); refuse {
+		return Intent{}, false, why
 	}
-	if refuse, why := roomRefusal(price, stop, target, cfg.RoomMultiple); refuse {
+	if refuse, why := roomVsTargetRefusal(price, target, phlRoomLevel(oldExtreme, target, side, levels, cfg), cfg.RoomMultiple); refuse {
 		return Intent{}, false, why
 	}
 	setup := "PHL"
@@ -130,6 +130,29 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 // to the refusal ledger (CTO E-2 2026-10-03T15:12Z: the floor holds for
 // EVERY setup's intent).
 const targetCloserThanStopReason = "target closer than the stop — the target is never smaller than the stop [D1.2 p1 @ 07:48]"
+
+// phlRoomLevel is the PHL/PLH "next opposing level" for the D5.3 room rule
+// [@09:16–10:17]: the first target-ladder level strictly beyond the target's
+// anchor. The old extreme is the target's ANCHOR ("target gần đỉnh cũ") — when
+// the target IS the old-extreme-shy value, the old extreme is the target itself
+// and the ladder starts beyond the old extreme; when a closer key level became
+// the target (B15 first obstacle), the old extreme is a real opposing level and
+// the ladder starts beyond that closer target. 0 = no next level on record =
+// room unbounded.
+func phlRoomLevel(oldExtreme Level, target float64, side Side, levels []Level, cfg Config) float64 {
+	if levels == nil {
+		return 0
+	}
+	anchor := target
+	shyTarget := oldExtreme.Price - cfg.PHLTargetShyPts
+	if side == SideShort {
+		shyTarget = oldExtreme.Price + cfg.PHLTargetShyPts
+	}
+	if abs(target-shyTarget) < 0.001 {
+		anchor = oldExtreme.Price
+	}
+	return nextLevelBeyond(levels, anchor, side)
+}
 
 // phlTarget — B15 (CTO 20:48:40Z): the target is the FIRST obstacle in the
 // way [D3.3 p1 @05:18-05:34] — the nearest level beyond the entry (the same
@@ -225,12 +248,12 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 	capped := CapTargetForDay(in, day, dg)
 	if capped.Target != in.Target {
 		// B7 (L13): measure the room on the ACTUAL (capped) target — the room
-		// rule is "reward to the target ≥ RoomMultiple × risk" [D5.3 p1 @ 09:16]
-		// and on a spent day the target IS the 15-pt cap [D5.1 p1 @ 16:24,
-		// @ 19:11–20:07]. The ISB and reverse ISB already run this on the capped
-		// target; the PHL/PLH used to measure the uncapped target and then emit
-		// a capped target whose reward no longer clears the room.
-		if refuse, why := roomRefusal(capped.Price, capped.Stop, capped.Target, cfg.RoomMultiple); refuse {
+		// rule is "the free room to the next opposing level ≥ RoomMultiple ×
+		// target" [D5.3 p1 @ 09:16–10:17] and on a spent day the target IS the
+		// 15-pt cap [D5.1 p1 @ 16:24, @ 19:11–20:07]. The ISB and reverse ISB
+		// already run this on the capped target; the PHL/PLH used to measure the
+		// uncapped target and then emit a capped target the room no longer holds.
+		if refuse, why := roomVsTargetRefusal(capped.Price, capped.Target, phlRoomLevel(oldExtreme, capped.Target, in.Side, levels, cfg), cfg.RoomMultiple); refuse {
 			return in, false, why
 		}
 	}

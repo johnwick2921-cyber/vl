@@ -13,6 +13,7 @@ func htfAgreeISB(t *testing.T, h HTF) Intent {
 	t.Helper()
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.RoomMultiple = 0 // this pin is about HTFAgree stamping, not the room rule
 	e := newISBEval(cfg)
 	e.State.HTF = h
 	bars := isbFixture()

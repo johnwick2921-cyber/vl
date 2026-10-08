@@ -1,58 +1,20 @@
 package mentor
 
 import (
-	"math"
 	"testing"
 	"time"
 
 	"vl/market"
 )
 
-// Item 25 (RELEASE #4): the D5.3 room rule [@09:16] on the ISB path, the swing
-// reject and the reverse ISB — reward to the target must be at least
-// RoomMultiple × risk. One shared helper roomRefusal, one counter "room".
-// These three Evaluator.Tick pins each refuse a sub-2R setup and count "room".
-
-// TestISBRoomRuleRefused — an ISB whose target sits between the 1:1 floor and
-// 2R emits NO intent and counts "room" = 1. Mutant: delete the ISB room check
-// in eval.go → RED (the ISB emits).
-func TestISBRoomRuleRefused(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.Enabled = true
-	cfg.EMAPeriod34 = 0
-	cfg.EMAPeriod9 = 0
-	cfg.EMALocationTFMinutes = 0 // the target is the seeded key level, not the EMA
-	cfg.ISBReverseEMA9Enabled = false
-	cfg.ISBBufferPts = 0
-	cfg.LocTriggerFilter = false
-	// RoomMultiple stays 2 (the default).
-
-	bars := []market.Kline{
-		rthBars(0, 98, 106, 97, 105),  // mother green → ISB long
-		rthBars(1, 103, 104, 99, 100), // inside: entry 104, stop 99 → risk 5
-	}
-	now := bars[1].CloseTime + 1
-	e := New(cfg)
-	e.seeded = true
-	e.State.Seed1mWatermark = math.MaxInt64
-	e.State.Seed1HWatermark = math.MaxInt64
-	// Target 110 → reward 6 >= risk 5 (floor ok) but 6 < 2R (10) → room refuses.
-	e.State.SeedLevels = []Level{{Key: "target", Kind: KindKeyLevel, Price: 110}}
-	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
-	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
-	e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
-	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
-
-	ins := e.Tick(bars, now)
-	for _, in := range ins {
-		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" {
-			t.Fatalf("the ISB must be refused by the room rule; got %+v; refusals=%v", in, e.State.Refusals)
-		}
-	}
-	if e.State.Refusals["room"] == 0 {
-		t.Fatalf("room refusal not counted; refusals=%v", e.State.Refusals)
-	}
-}
+// Item 25 (RELEASE #4, re-scoped by FIX-ROOM-RULE-LESSON): the swing reject's
+// room rule lives in swingRoomRefused — the obstacle (the on-side 5m EMA34)
+// must be at least RoomMultiple × risk from the entry. The swing's leg-1 target
+// is "at least 1:1" (R43), so under the D5.3 lesson (room >= RoomMultiple ×
+// target) the planned target distance equals the risk and the two forms
+// coincide. The ISB / reverse-ISB / box / PHL room checks are pinned in
+// room_rule_lesson_test.go with the new room_vs_target / rr_floor /
+// rr_confluence keys.
 
 // TestSwingRejectRoomRule (item 25 + R68, CTO fold) — the room is measured to
 // the OBSTACLE (the on-side 5m EMA34), never to the swing's own 1:1 first
@@ -97,22 +59,5 @@ func TestSwingRoomRefusedAgainstTheObstacle(t *testing.T) {
 		if got := swingRoomRefused(short, c.obstacle, 2); got != c.want {
 			t.Fatalf("%s: got %v", c.name, got)
 		}
-	}
-}
-
-// TestReverseISBRoomRuleRefused — a reverse ISB whose target sits between the
-// floor and 2R emits NO reverse entry and counts "room". Mutant: delete the
-// reverse-ISB room check in eval.go → RED (the reverse emits).
-func TestReverseISBRoomRuleRefused(t *testing.T) {
-	e, bars, now := isbReverseFixture(t)
-	e.Cfg.RoomMultiple = 2 // default room; the reverse target (110) is 5.5 pts on a 5-pt risk → < 2R
-	ins := e.Tick(bars, now)
-	for _, in := range ins {
-		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" && in.Side == SideLong {
-			t.Fatalf("the reverse ISB must be refused by the room rule; got %+v; refusals=%v", in, e.State.Refusals)
-		}
-	}
-	if e.State.Refusals["room"] == 0 {
-		t.Fatalf("room refusal not counted; refusals=%v", e.State.Refusals)
 	}
 }

@@ -43,10 +43,12 @@ func TestEvaluatorUnoReverseBrokenFTGHTradesLong(t *testing.T) {
 		// return: it re-approaches the broken ceiling from ABOVE, touches 106
 		// (low 105.9), and closes back above it (106.3 > 106) = the reject.
 		mk(9, 106.4, 106.7, 105.9, 106.3),
-		// bar 10: the target key level (colour flip → open 106.8); its high
-		// 106.9 also blocks bar 9, so neither escape candle becomes the new
-		// extreme and the box stays [104, 106].
-		mk(10, 106.8, 106.9, 106.6, 106.85),
+		// bar 10: the target key level (colour flip → open 108.5); its high
+		// 108.6 also blocks bar 9, so neither escape candle becomes the new
+		// extreme and the box stays [104, 106]. The tape's 5m trigger agrees
+		// LONG so the return is confluence; open 108.5 gives a 1.8-pt reward
+		// (>= 2× the 0.8-pt risk) so the new D3.4 confluence 1:2 admits it.
+		mk(10, 108.5, 108.6, 106.6, 108.55),
 	}
 	e := New(cfg)
 	now := bars[10].OpenTime + 59_999
@@ -71,7 +73,7 @@ func TestEvaluatorUnoReverseBrokenFTGHTradesLong(t *testing.T) {
 		t.Fatalf("flipped FTGH return = %d box intents (%+v), want 1 — a broken FTGH re-approached from above trades LONG [D14, slide 17; X2 @02:36–03:25]", len(first), first)
 	}
 	in := first[0]
-	if in.Side != SideLong || in.Price != 106.7 || in.Stop != 105.9 || in.Target != 106.8 {
-		t.Fatalf("flipped FTGH intent = %+v, want LONG entry 106.7 / stop 105.9 / target 106.8", in)
+	if in.Side != SideLong || in.Price != 106.7 || in.Stop != 105.9 || in.Target != 108.5 {
+		t.Fatalf("flipped FTGH intent = %+v, want LONG entry 106.7 / stop 105.9 / target 108.5", in)
 	}
 }

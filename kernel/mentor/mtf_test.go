@@ -93,7 +93,7 @@ func TestMTFConfluenceWiredAtTheEmitSites(t *testing.T) {
 	}
 	src := string(b)
 	for _, want := range []string{
-		"chosen.Confluence = MTFConfluence(side, e.State.Trigger, chosen.Price, cb5, cb15)",
+		"confluence := MTFConfluence(side, e.State.Trigger, chosen.Price, cb5, cb15)",
 		"in.Confluence = MTFConfluence(in.Side, e.State.Trigger, in.Price, cb5, cb15)",
 		"cb5 := e.closedBucketsMemo(bars, now)",
 		"cb15 := e.closedBucketsTFMemo(bars, 15, now)",

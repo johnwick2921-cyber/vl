@@ -18,6 +18,7 @@ func TestLevelOrderRestsAndCancels(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 6
+	cfg.RoomMultiple = 0 // this pin is about arm rest/cancel, not the room rule
 
 	e := New(cfg)
 	e.seeded = true

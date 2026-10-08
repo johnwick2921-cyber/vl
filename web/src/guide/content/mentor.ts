@@ -355,7 +355,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Intraday confluence (exit C, size 10)',
-          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. It also fires on timeframe agreement: the 15m ISB, the 5m ISB and the entry side all align AND the 5m trigger agrees (an ISB/PHL/PLH, not just a box) [D4.2 p1 @14:57]. Then: hold at least 1:2, the stop is never moved up (exit C), size 10; size 20 only when 4h AND 1h both point the entry’s side (a silent 1h does not count), room ≥ 2× the risk and target ≥ 30 pts.',
+          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. It also fires on timeframe agreement: the 15m ISB, the 5m ISB and the entry side all align AND the 5m trigger agrees (an ISB/PHL/PLH, not just a box) [D4.2 p1 @14:57]. Then: hold at least 1:2, the stop is never moved up (exit C), size 10; size 20 only when 4h AND 1h both point the entry’s side (a silent 1h does not count), room ≥ 2× the target and target ≥ 30 pts.',
           cite: 'R2 · D3.4 p3 @07:38 · D4.2 p1 @14:57',
         },
         {
@@ -401,7 +401,7 @@ export const mentor: GuideSection = {
         ],
         [
           'Room rule',
-          'The room to target must be at least 2× the risk; the stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
+          'Three separate gates. (1) 1:1 floor — the target is never smaller than the stop [D1.2 p1 @07:41–08:45]. (2) Room — the free room from entry to the NEXT opposing level must be at least 2× the planned target [D5.3 p1 @09:16–10:17]. (3) Confluence 1:2 — ONLY the confluence tier demands a 1:2 R:R [D3.4 p3 @07:52–08:07]. The stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
           'RoomMultiple 2 · StopCeilingPts 25',
         ],
         [
@@ -569,7 +569,7 @@ export const mentor: GuideSection = {
         {
           label: 'Big contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'The big tier — the largest deliberate size. Only when 4h AND 1h both point the entry’s side (a silent 1h does not count), room ≥ 2× the risk and target ≥ 30 pts.',
+          what: 'The big tier — the largest deliberate size. Only when 4h AND 1h both point the entry’s side (a silent 1h does not count), room ≥ 2× the target and target ≥ 30 pts.',
           trader: '20 contracts max on a big tier.',
           consumer: 'trader/mentor_mode.go:27',
           range: 'int',
@@ -869,7 +869,7 @@ export const mentor: GuideSection = {
         {
           label: 'Room multiple',
           where: 'Strategy → Mentor mode → risk',
-          what: 'The room to target must be at least this × the risk. Applies to PHL/PLH, the ISB, the reverse ISB, and the swing reject.',
+          what: 'The free room from entry to the NEXT opposing level must be at least this × the planned target distance [D5.3 p1 @09:16–10:17]. Applies to PHL/PLH, the ISB, the reverse ISB, the box and the swing reject. Separate from the 1:1 floor [D1.2 p1 @07:41–08:45] and the confluence 1:2 [D3.4 p3 @07:52–08:07].',
           trader: '2×.',
           consumer: 'kernel/mentor/mentor.go RoomMultiple',
           range: '×',
@@ -883,7 +883,7 @@ export const mentor: GuideSection = {
           where: 'Strategy → Mentor mode → risk',
           what: 'Refuse an ISB or PHL/PLH whose nearest box edge in the trade direction is closer than this × its own risk — the setup is "sát box". Exempt only between two DIFFERENT boxes: one wholly above the entry and another wholly below. A price inside a single box is not exempt.',
           trader:
-            '2× — the same room the target rule demands. A setup between two different boxes is allowed.',
+            '2× — the near-box rule is 2× the risk (row 24), its own rule, not the room-to-target rule. A setup between two different boxes is allowed.',
           consumer: 'kernel/mentor/mentor.go NearBoxRoomMultiple',
           range: '× (0 = off)',
           systemDefault: '2',

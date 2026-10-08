@@ -75,7 +75,7 @@ func b14Entries(ins []Intent) int {
 // NEAREST old extreme on the trade side; a failed nearest high is a SKIP,
 // never a farther old high. Nearest old high 106.2 fails the 1:1 floor
 // (reward 2 < risk 4.7); the farther 130 would pass — the old loop emitted
-// it, the new one refuses with phl_target_below_floor.
+// it, the new one refuses with rr_floor.
 func TestB14bNearestOldHighOnly(t *testing.T) {
 	oldHighs := []Level{
 		{Key: "old-high:130", Kind: KindOldExtreme, Price: 130},
@@ -86,8 +86,8 @@ func TestB14bNearestOldHighOnly(t *testing.T) {
 	if n := b14Entries(ins); n != 0 {
 		t.Fatalf("failed nearest high emitted %d entries, want 0: %+v", n, ins)
 	}
-	if e.State.Refusals["phl_target_below_floor"] == 0 {
-		t.Fatalf("ledger = %v, want phl_target_below_floor counted", e.State.Refusals)
+	if e.State.Refusals["rr_floor"] == 0 {
+		t.Fatalf("ledger = %v, want rr_floor counted", e.State.Refusals)
 	}
 }
 
