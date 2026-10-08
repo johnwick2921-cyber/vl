@@ -51,6 +51,10 @@ type PlannerInput struct {
 	MinHoldMin         int
 	Zones              *LevelZoneMap // Uncut presentation snapshot; never used as trading inputs.
 	ResearchSnapshotID string        `json:"-"` // record link, never prompt content
+	// ReadFactID is the planner_read_facts row this read wrote (FIX-READ-FACTS-
+	// PLAN-ID). 0 = no facts row was written; the plan write then leaves the
+	// plan unbound rather than guess. Record link, never prompt content.
+	ReadFactID uint `json:"-"`
 	TradeDate          string
 	Session            string    // NY | ASIA | LONDON
 	Now                time.Time // labelled CT clock line (zero → omitted)

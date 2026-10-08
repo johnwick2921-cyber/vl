@@ -123,9 +123,10 @@ func TestLegacyRowsReadUnknownNotZero(t *testing.T) {
 	}
 }
 
-// FIX-READ-FACTS-PLAN-ID — the bind stamps only the newest UNBOUND row for the
-// (trader, date, session) key, and never re-binds a row that already has a plan.
-func TestBindPlanToLatestReadFact(t *testing.T) {
+// FIX-READ-FACTS-PLAN-ID — the bind is BY EXACT ID, never "newest unbound".
+// A failed read's facts row (written, no plan) must stay empty even when a
+// later plan lands: only the id the read returned can bind.
+func TestBindPlanToReadFact(t *testing.T) {
 	st, err := New(filepath.Join(t.TempDir(), "bind.db"))
 	if err != nil {
 		t.Fatalf("store: %v", err)
@@ -133,37 +134,46 @@ func TestBindPlanToLatestReadFact(t *testing.T) {
 	defer st.Close()
 	rf := st.PlannerReadFacts()
 
-	// Read 1 → plan v1: the newest unbound row is read 1's.
-	if err := rf.SaveReadFact(&PlannerReadFact{TraderID: "t1", TradeDate: "2026-10-08", Session: "NY", PromptHash: "h1"}); err != nil {
-		t.Fatalf("save read 1: %v", err)
+	// A FAILED read: its facts row was written, but it produced no plan.
+	failed := &PlannerReadFact{TraderID: "t1", TradeDate: "2026-10-08", Session: "NY", PromptHash: "h-failed"}
+	if err := rf.SaveReadFact(failed); err != nil {
+		t.Fatalf("save failed read: %v", err)
 	}
-	if n := rf.BindPlanToLatestReadFact("t1", "2026-10-08", "NY", "2026-10-08:NY:t1", 1); n != 1 {
-		t.Fatalf("bind read 1: rows=%d want 1", n)
+	failedID := failed.ID
+
+	// A later plan lands from a path with its OWN read (a new facts row).
+	good := &PlannerReadFact{TraderID: "t1", TradeDate: "2026-10-08", Session: "NY", PromptHash: "h-good"}
+	if err := rf.SaveReadFact(good); err != nil {
+		t.Fatalf("save good read: %v", err)
 	}
 
-	// Read 2 → plan v2: read 1 is already bound, so the newest unbound is read 2.
-	if err := rf.SaveReadFact(&PlannerReadFact{TraderID: "t1", TradeDate: "2026-10-08", Session: "NY", PromptHash: "h2"}); err != nil {
-		t.Fatalf("save read 2: %v", err)
-	}
-	if n := rf.BindPlanToLatestReadFact("t1", "2026-10-08", "NY", "2026-10-08:NY:t1", 2); n != 1 {
-		t.Fatalf("bind read 2: rows=%d want 1", n)
+	// Bind the GOOD read's id → only that row is stamped.
+	if n := rf.BindPlanToReadFact(good.ID, "2026-10-08:NY:t1", 2); n != 1 {
+		t.Fatalf("bind good read: rows=%d want 1", n)
 	}
 
-	// No unbound row remains → a third bind is a no-op (idempotent).
-	if n := rf.BindPlanToLatestReadFact("t1", "2026-10-08", "NY", "2026-10-08:NY:t1", 3); n != 0 {
-		t.Fatalf("bind after all bound: rows=%d want 0", n)
+	// The failed read's row must still be empty — the exact-id bind never
+	// reaches it. (RED for the old "newest unbound" heuristic, which WOULD have
+	// bound failedID as the newest empty row.)
+	var failedRow PlannerReadFact
+	if err := st.gdb.Where("id = ?", failedID).First(&failedRow).Error; err != nil {
+		t.Fatalf("read failed row: %v", err)
+	}
+	if failedRow.PlanID != "" || failedRow.Version != 0 {
+		t.Fatalf("failed read's row was bound to a plan it did not produce: %q v%d", failedRow.PlanID, failedRow.Version)
 	}
 
-	// Read back by id: v1 ↔ h1, v2 ↔ h2.
-	var rows []PlannerReadFact
-	if err := st.gdb.Order("id ASC").Find(&rows).Error; err != nil {
-		t.Fatalf("read all: %v", err)
+	// Re-binding the already-bound good row is a no-op (WHERE plan_id = '').
+	if n := rf.BindPlanToReadFact(good.ID, "2026-10-08:NY:t1", 3); n != 0 {
+		t.Fatalf("re-bind bound row: rows=%d want 0", n)
 	}
-	if len(rows) != 2 || rows[0].PromptHash != "h1" || rows[0].Version != 1 || rows[0].PlanID != "2026-10-08:NY:t1" {
-		t.Fatalf("read 1 row wrong: %+v", rows)
+
+	// Unknown id / zero id bind nothing.
+	if n := rf.BindPlanToReadFact(0, "2026-10-08:NY:t1", 1); n != 0 {
+		t.Fatalf("zero-id bind: rows=%d want 0", n)
 	}
-	if rows[1].PromptHash != "h2" || rows[1].Version != 2 || rows[1].PlanID != "2026-10-08:NY:t1" {
-		t.Fatalf("read 2 row wrong: %+v", rows)
+	if n := rf.BindPlanToReadFact(999999, "2026-10-08:NY:t1", 1); n != 0 {
+		t.Fatalf("unknown-id bind: rows=%d want 0", n)
 	}
 }
 
@@ -171,7 +181,7 @@ func TestBindPlanToLatestReadFact(t *testing.T) {
 // at.store, but the store method itself must never panic).
 func TestBindPlanNilStoreIsSafe(t *testing.T) {
 	var rf *PlannerReadFactsStore
-	if n := rf.BindPlanToLatestReadFact("t", "d", "NY", "p", 1); n != 0 {
+	if n := rf.BindPlanToReadFact(1, "p", 1); n != 0 {
 		t.Fatalf("nil store bind must no-op, got %d", n)
 	}
 }

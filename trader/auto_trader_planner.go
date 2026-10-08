@@ -1434,7 +1434,7 @@ func (at *AutoTrader) runPlannerReadWithTriggerClaimedCtx(now time.Time, session
 	researchTrace := &researchsnapshot.PlanTrace{SnapshotID: input.ResearchSnapshotID, Model: modelID, ConfigVersion: input.AIConfigHash, SystemPrompt: plannerSystemPrompt}
 	// P15 — the authoring clock is the caller's instant, not a fresh wall read.
 	// P15 revert: `now` is the READ instant only; the publish clock stays live.
-	at.runPlannerReadCoreObserved(func() time.Time { return now }, nil, researchTrace, session, tradeDate, triggerOverride, modelID, hash, input.IndicatorsBlock, input.AIConfigHash, requiredBias, prompt, facts, machineGrades, machineLabels, htfLabels(input), failClosed, func(userPrompt string) (string, error) {
+	at.runPlannerReadCoreObserved(func() time.Time { return now }, nil, researchTrace, session, tradeDate, triggerOverride, modelID, hash, input.IndicatorsBlock, input.AIConfigHash, requiredBias, prompt, facts, machineGrades, machineLabels, htfLabels(input), failClosed, input.ReadFactID, func(userPrompt string) (string, error) {
 		mcp.ApplyThinking(client, pMode, pEffort)
 		// PLANNER SPEED WAVE 4 (2026-08-31) — the session planner now rides the
 		// SSE streaming client with the idle watchdog (split deadlines). The
@@ -2039,7 +2039,7 @@ func (at *AutoTrader) runPlannerReadCoreWithFactsGrades(session, tradeDate, trig
 }
 
 func (at *AutoTrader) runPlannerReadCoreWithFactsGradesClock(authoringClock func() time.Time, session, tradeDate, triggerOverride, modelID, promptHash, indicatorsBlock, aiConfigHash, requiredBias, prompt string, facts kernel.PlanFacts, machineGrades map[float64]string, machineLabels map[float64]string, htfLabels map[float64]string, failClosed bool, call func(userPrompt string) (string, error), extraNoTrade ...string) (int, string, error) {
-	return at.runPlannerReadCoreObserved(authoringClock, nil, nil, session, tradeDate, triggerOverride, modelID, promptHash, indicatorsBlock, aiConfigHash, requiredBias, prompt, facts, machineGrades, machineLabels, htfLabels, failClosed, call, extraNoTrade...)
+	return at.runPlannerReadCoreObserved(authoringClock, nil, nil, session, tradeDate, triggerOverride, modelID, promptHash, indicatorsBlock, aiConfigHash, requiredBias, prompt, facts, machineGrades, machineLabels, htfLabels, failClosed, 0, call, extraNoTrade...)
 }
 
 // plannerMaxAttempts is the single source of the attempt-loop bound
@@ -2051,7 +2051,7 @@ const plannerMaxAttempts = 3
 // instant is a SEPARATE clock — nil means the live wall clock — because a
 // frozen publish makes AuthoredBornGroups(read, publish) empty on every seamed
 // read and stamps a CreatedAt that lies by the AI call's duration.
-func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock func() time.Time, researchTrace *researchsnapshot.PlanTrace, session, tradeDate, triggerOverride, modelID, promptHash, indicatorsBlock, aiConfigHash, requiredBias, prompt string, facts kernel.PlanFacts, machineGrades map[float64]string, machineLabels map[float64]string, htfLabels map[float64]string, failClosed bool, call func(userPrompt string) (string, error), extraNoTrade ...string) (int, string, error) {
+func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock func() time.Time, researchTrace *researchsnapshot.PlanTrace, session, tradeDate, triggerOverride, modelID, promptHash, indicatorsBlock, aiConfigHash, requiredBias, prompt string, facts kernel.PlanFacts, machineGrades map[float64]string, machineLabels map[float64]string, htfLabels map[float64]string, failClosed bool, readFactID uint, call func(userPrompt string) (string, error), extraNoTrade ...string) (int, string, error) {
 	// H4/H5 — validation must accept EXACTLY what the config allows: the resolved
 	// max_levels / scenario_cap (hard ceilings 12/5). Before this the parse
 	// hardcoded 8/3, so raising either setting made EVERY read fail-closed into a
@@ -2769,14 +2769,20 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 	at.recordPlanIdentity(planID, version, identityWarnings, doc, authoredAt)
 	researchTrace.Published(planID, version, string(docJSON))
 	at.logInfof("🗓️ PLAN written %s %s v%d (model %s, lifecycle %s, prompt %s, ai_config %s)", tradeDate, session, version, modelID, lifecycle, promptHash, aiConfigHash)
-	// FIX-READ-FACTS-PLAN-ID (DS-103): bind the read that produced this plan to
-	// its plan_id+version, so planner_read_facts ↔ plans joins by id. Bound at
-	// WRITE time (never read time) because AppendPlan assigns the version inside
-	// its single-writer queue — the version cannot be known when the facts row
-	// is written. Idempotent; a read that produced no plan stays unbound.
+	// FIX-READ-FACTS-PLAN-ID (DS-103): bind the read that produced this plan BY
+	// EXACT ID — the id the read's insert returned — so planner_read_facts ↔
+	// plans joins by id. Bound at WRITE time (never read) because AppendPlan
+	// assigns the version inside its single-writer queue. A plan written by a
+	// path with no facts row (readFactID == 0) stays unbound and says so once;
+	// never fall back to "newest unbound row" — that would bind a FAILED read's
+	// facts to a later plan the failed read did not produce.
 	if at.store != nil {
-		if n := at.store.PlannerReadFacts().BindPlanToLatestReadFact(at.id, tradeDate, session, planID, version); n > 0 {
-			at.logInfof("📓 read facts bound to plan %s v%d", planID, version)
+		if readFactID > 0 {
+			if n := at.store.PlannerReadFacts().BindPlanToReadFact(readFactID, planID, version); n > 0 {
+				at.logInfof("📓 read facts id=%d bound to plan %s v%d", readFactID, planID, version)
+			}
+		} else {
+			at.logWarnf("📓 plan %s v%d has no read facts row — unbound", planID, version)
 		}
 	}
 	at.logPlannerReadLine(session, lastAttempt, rejectHistory, bornCheck.ReadClockPtr(), bornCheck.PublishClockPtr(), lifecycle)
@@ -3356,24 +3362,27 @@ func (at *AutoTrader) assemblePlannerInputWithCtx(now time.Time, session, tradeD
 	at.logInfof("%s", zoneView.Render())
 	in.ResearchSnapshotID = researchID
 	recordResearchCandidates(in.ResearchSnapshotID, symbol, researchRaw, scored, now)
-	at.persistReadFacts(in, voidScope, voidScopeLevels, voidScopeATR, now)
+	in.ReadFactID = at.persistReadFacts(in, voidScope, voidScopeLevels, voidScopeATR, now)
 	return in
 }
 
 // persistReadFacts writes one planner_read_facts row per read. Loud on failure,
-// never fatal.
-func (at *AutoTrader) persistReadFacts(in kernel.PlannerInput, scope kernel.VoidScope, void []kernel.VoidBreakdownLevel, atr5m float64, now time.Time) {
+// never fatal. Returns the inserted row's id (0 when nothing was written), which
+// the plan write carries back so it can bind the facts row to the plan BY ID
+// (FIX-READ-FACTS-PLAN-ID) instead of guessing the newest unbound row.
+func (at *AutoTrader) persistReadFacts(in kernel.PlannerInput, scope kernel.VoidScope, void []kernel.VoidBreakdownLevel, atr5m float64, now time.Time) uint {
 	if at == nil || at.store == nil {
-		return
+		return 0
 	}
 	row := buildReadFactRow(at.id, in, scope, void, atr5m, now)
 	if err := at.store.PlannerReadFacts().SaveReadFact(row); err != nil {
 		at.logWarnf("📓 read-facts write failed: %v", err)
-		return
+		return 0
 	}
-	at.logInfof("📓 read facts: void=%d · floor=%.1f pts (%.1f×ATR5m %.2f) · scope=%s×%d since=%d (cap %d) · horizon %s",
+	at.logInfof("📓 read facts: void=%d · floor=%.1f pts (%.1f×ATR5m %.2f) · scope=%s×%d since=%d (cap %d) · horizon %s · id=%d",
 		row.VoidCount, row.StopFloorPts, row.StopFloorMlt, row.ATR5m, row.ScopeIntv, row.ScopeBars,
-		row.ScopeSinceMs, store.PlannerReadFactsCap, scope.Horizon.Line())
+		row.ScopeSinceMs, store.PlannerReadFactsCap, scope.Horizon.Line(), row.ID)
+	return row.ID
 }
 
 // maybeWriteDigests writes the 3-line session digest at each enabled session's

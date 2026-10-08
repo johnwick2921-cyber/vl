@@ -111,7 +111,7 @@ func w2Candidate(t *testing.T, invalids []string, mutate func(map[string]any)) s
 
 func w2Run(at *AutoTrader, session, date string, read, publish time.Time, replies ...string) (int, string, error, []string) {
 	var prompts []string
-	ver, lc, err := at.runPlannerReadCoreObserved(func() time.Time { return read }, func() time.Time { return publish }, nil, session, date, "", "model", "hash", "", "", "", "FULLPROMPT", kernel.PlanFacts{ReadAt: read}, nil, nil, nil, true, func(p string) (string, error) {
+	ver, lc, err := at.runPlannerReadCoreObserved(func() time.Time { return read }, func() time.Time { return publish }, nil, session, date, "", "model", "hash", "", "", "", "FULLPROMPT", kernel.PlanFacts{ReadAt: read}, nil, nil, nil, true, 0, func(p string) (string, error) {
 		prompts = append(prompts, p)
 		i := len(prompts) - 1
 		if i >= len(replies) {
