@@ -84,11 +84,11 @@ The message says the evaluator rebuilds from cache. Cache recovery does not alon
 
 Next: replay or load-test this burst through the production queue with completed-frame timestamps; assert latest-bar recovery, Mentor/armed wakeups and deadline outcomes. Measure slow work in the shared sink before choosing a fix. Do not increase queue capacity and declare the issue solved without the timing proof.
 
-### 6. Frontend production dependency advisory — P3 maintenance, PROVEN [A]
+### 6. Dependency advisories in production and development tooling — P2 maintenance, PROVEN [A]
 
 `npm audit --omit=dev --json` reports **one low-severity production dependency issue**, KaTeX, advisory `GHSA-238p-pmpm-9mq7` (existing prototype pollution can bypass trust restrictions). Latest-source `web/package.json` declares `katex ^0.16.27`; audit's vulnerable range is `>=0.11.0 <0.18.2`. Audit proposes 0.19.0 as a breaking-version fix.
 
-This proves a dependency advisory match, not a reachable exploit in this app. No exploitation or full frontend data-flow review was performed. Review upstream fix compatibility and regression-test rendered math before upgrading. Do not run a forced audit fix blindly. Development-only dependencies and Go module vulnerability scanning were not covered by this production npm audit.
+This proves a dependency advisory match, not a reachable exploit in this app. No exploitation or full frontend data-flow review was performed. Review upstream fix compatibility and regression-test rendered math before upgrading. Do not run a forced audit fix blindly. A subsequent full `npm audit --json` found **10 affected-package entries: 7 high, 2 moderate and 1 low**. These include transitive/metavulnerability chains, not necessarily ten independent advisories. The production-only result remains one low entry. `source-map-js` 1.2.1 and `postcss-selector-parser` 6.1.4 are marked `dev: true` in the lockfile. GitHub independently lists three open alerts: #116 PostCSS selector parsing CPU exhaustion (`GHSA-rj75-hqrm-r3gf`, medium), #117 source-map-js event-loop denial of service (`GHSA-68fv-2mgg-jv7q`, high), and #118 KaTeX (low). The full npm result also includes braces/chokidar/fast-glob/lint-staged/micromatch/postcss-nested/tailwindcss chains. This requires dependency triage for build and development environments; it is not evidence of a remotely reachable production exploit. Go module vulnerability scanning remains UNVERIFIED.
 
 ## Other observations and non-findings
 
@@ -122,6 +122,7 @@ This proves a dependency advisory match, not a reachable exploit in this app. No
 | Targeted race: `TestMentorStaleDataBlock*` and `TestSeedLine*` | latest trader and kernel/mentor | exit 0; no race report; not a full repository race run |
 | Audit reference-identity panic probe | actual running source | exit 0 **means defect reproduced**, not fixed |
 | Production npm dependency audit | latest web | exit 1 for the one low advisory above |
+| Full npm dependency audit | latest web | exit 1; 7 high, 2 moderate, 1 low affected-package entries, including development chains |
 | Backup gzip integrity | latest 05:00 archive | exit 0 |
 
 The initial plain `npm run build` correctly refused because `VITE_GUIDE_BUILT_REV` was absent. Re-running with `VITE_GUIDE_BUILT_REV=207759877aa7f8de8ee7291b41de4168616297f3` succeeded. This is a working release-provenance guard, not a build defect. Web tests printed jsdom canvas warnings but finished successfully.
@@ -134,6 +135,6 @@ Reproduction artifacts are local `/tmp/vl-audit-20261008-*` logs. A compact veri
 2. Activate release #11 only through the established attended cutover. Verify running revision, AddOn compatibility, actual data readiness, unchanged SIM binding and post-boot receipts. Passing source tests does not itself activate the release.
 3. Fix nullable identity logging and dynamic warning keys together with production-call-site regression tests. Keep numerical timing detail in log fields rather than deduplication keys.
 4. Investigate the shared live-sink burst with queue/timing evidence. Demonstrate whether any final frame's loss can delay a Mentor/armed trigger beyond its allowed window; repair the scheduling path if so.
-5. Clean up misleading zero-drop and historical-excursion warning text, and plan the KaTeX dependency update.
+5. Clean up misleading zero-drop and historical-excursion warning text, and triage the production/development dependency advisories with controlled upgrades.
 
 No production files, configuration, account binding, DB rows, orders or services were changed by this scan. The audit branch contains reporting/probe text only. No blanket claim that the system is fully verified end-to-end is made: broker protection during faults, actual rendered chart coverage, full restore, and natural-market behavior of release #11 remain outside the proof collected here.
