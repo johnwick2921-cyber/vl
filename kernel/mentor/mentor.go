@@ -164,6 +164,19 @@ type Intent struct {
 	RunnerTarget float64
 }
 
+// Leg1RiskMultiple is the leg-1 take-profit distance in units of R — the ONE
+// definition the exit drive (trader/mentor_mode.go mentorLeg1TPForC) and the
+// room check (eval.go roomRefusal) BOTH read. Normal = 1 (the 1:1 first
+// partial, "bán bớt ở 1:1" [D2.2 p3 @12:13; D1.2 p1 @07:41–08:45]); confluence
+// (mode C) = 2 (hold to 1:2 [D3.4 p3 @07:52–08:07]). The room rule reads this,
+// so a future leg-1 change can never drift from the room check.
+func Leg1RiskMultiple(confluence bool) float64 {
+	if confluence {
+		return 2
+	}
+	return 1
+}
+
 // Config is every knob. Enabled is mentor_mode and defaults to false (L4):
 // while false the evaluator is never consulted and the bot is byte-identical.
 type Config struct {

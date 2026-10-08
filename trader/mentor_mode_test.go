@@ -216,13 +216,15 @@ func TestMentorSplitLegs(t *testing.T) {
 	}
 }
 
-// TestMentorLeg1TPForC: C sets leg 1's TP at ≥1:2 AT ENTRY.
+// TestMentorLeg1TPForC: C sets leg 1's TP at ≥1:2 AT ENTRY. The 2× is the ONE
+// definition — mentor.Leg1RiskMultiple(true) — that the room check also reads,
+// so a future leg-1 change can never drift from the room rule.
 func TestMentorLeg1TPForC(t *testing.T) {
-	if got := mentorLeg1TPForC(100, 10, "long"); got != 120 {
-		t.Fatalf("C leg-1 TP long = %.2f, want 120 (2R)", got)
+	if got := mentorLeg1TPForC(100, 10, "long"); got != 100+10*mentor.Leg1RiskMultiple(true) {
+		t.Fatalf("C leg-1 TP long = %.2f, want 120 (entry + r × Leg1RiskMultiple(true))", got)
 	}
-	if got := mentorLeg1TPForC(100, 10, "short"); got != 80 {
-		t.Fatalf("C leg-1 TP short = %.2f, want 80 (2R)", got)
+	if got := mentorLeg1TPForC(100, 10, "short"); got != 100-10*mentor.Leg1RiskMultiple(true) {
+		t.Fatalf("C leg-1 TP short = %.2f, want 80", got)
 	}
 }
 

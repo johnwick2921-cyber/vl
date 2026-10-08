@@ -401,7 +401,7 @@ export const mentor: GuideSection = {
         ],
         [
           'Room rule',
-          'The room to target must be at least 2× the risk; the stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
+          'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. The stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
           'RoomMultiple 2 · StopCeilingPts 25',
         ],
         [
@@ -869,7 +869,7 @@ export const mentor: GuideSection = {
         {
           label: 'Room multiple',
           where: 'Strategy → Mentor mode → risk',
-          what: 'The room to target must be at least this × the risk. Applies to PHL/PLH, the ISB, the reverse ISB, and the swing reject.',
+          what: 'The room to the FIRST available level must be at least this × the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. Applies to PHL/PLH, the ISB, the reverse ISB, the box and the swing reject.',
           trader: '2×.',
           consumer: 'kernel/mentor/mentor.go RoomMultiple',
           range: '×',

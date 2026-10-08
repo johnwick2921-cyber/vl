@@ -705,21 +705,22 @@ func mentorLeg1ForFrame(in mentor.Intent, n int, forkMode string, forkTP float64
 	if tp == 0 {
 		r := mentorIntentRisk(in)
 		if in.Side == mentor.SideShort {
-			tp = in.Price - r
+			tp = in.Price - r*mentor.Leg1RiskMultiple(false)
 		} else {
-			tp = in.Price + r
+			tp = in.Price + r*mentor.Leg1RiskMultiple(false)
 		}
 	}
 	return leg1, tp
 }
 
 // mentorLeg1TPForC is the C (confluence) leg-1 target: hold to at least 1:2 —
-// leg 1's TP at 2× risk, set AT ENTRY; the stop never moves up.
+// leg 1's TP at 2× risk, set AT ENTRY; the stop never moves up. The 2× is the
+// ONE definition (mentor.Leg1RiskMultiple(true)) the room check reads too.
 func mentorLeg1TPForC(entry, r float64, side string) float64 {
 	if side == "short" {
-		return entry - 2*r
+		return entry - r*mentor.Leg1RiskMultiple(true)
 	}
-	return entry + 2*r
+	return entry + r*mentor.Leg1RiskMultiple(true)
 }
 
 // mentorConfluenceForIntent is the R2 STUB (CTO 1791029620038: "use a stub
