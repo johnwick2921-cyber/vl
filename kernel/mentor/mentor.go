@@ -270,7 +270,7 @@ type Config struct {
 
 	// Filters (PLAN v1 §4).
 	StopCeilingPts float64 // hard stop ceiling; default 25 [D3.3 p1 @ 02:04]
-	RoomMultiple   float64 // room rule: reward >= RoomMultiple x risk; default 2 [D5.3 p1 @ 09:16]
+	RoomMultiple   float64 // room rule: first level >= RoomMultiple x leg-1 distance (leg 1 = 1R -> 2R; confluence leg 1 = 2R -> 4R) [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13]; default 2
 	RangeGapPts    float64 // mid-range: levels bracketing price within this gap both sides; default 0 = disabled
 
 	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h
