@@ -342,14 +342,28 @@ func closedBarsOnly(bars []Bar, tf string) []Bar {
 // intra-bar updates only (closed bars are re-derived from the cache tail
 // after the drain, so a dropped CLOSE is impossible here BY CONSTRUCTION),
 // and the persist queue reports queue_drops and closes_dropped separately.
+//
+// LOG-NOISE-2 (2026-10-08): the WARN used to fire every minute even when every
+// drop counter was 0 (the clean path calls it on every send), and it read the
+// SESSION peak without resetting, so "peak_depth=4096/4096" repeated forever.
+// Now a zero-drop minute is silent, and the line reports the peak for THAT
+// minute (the high-water mark is reset after the line).
 func ingestDropSummary() {
 	now := time.Now().Unix()
 	if now-ingestLastSum.Load() < 60 {
 		return
 	}
 	if ingestLastSum.CompareAndSwap(ingestLastSum.Load(), now) {
+		old := ingestDropOld.Swap(0)
+		cur := ingestDropCur.Swap(0)
+		hist := ingestDropHist.Swap(0)
+		if old == 0 && cur == 0 && hist == 0 {
+			// Zero-drop minute: silent (the peak keeps sampling for the next
+			// non-zero minute; no line).
+			return
+		}
 		logger.Warnf("bars: ingest drop summary: intrabar_dropped=%d current_dropped=%d historical_dropped=%d peak_depth=%d/%d (1-line/min; intra-bar drops self-heal on the next tick — closed bars are NEVER dropped on this path)",
-			ingestDropOld.Swap(0), ingestDropCur.Swap(0), ingestDropHist.Swap(0),
-			ingestPeakDepth.Load(), ingestQueueCap())
+			old, cur, hist,
+			ingestPeakDepth.Swap(0), ingestQueueCap())
 	}
 }

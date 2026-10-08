@@ -886,7 +886,10 @@ func (at *AutoTrader) recordClosedTradeAnalyticsAt(now time.Time, p *store.Trade
 	if !path.Computed {
 		// No coverage. The columns stay NULL: an uncomputed excursion is not a
 		// zero, and writing 0 here is what made 517 closed rows unreadable.
-		at.logWarnf("📐 excursion for %s pos=%d has no 1m coverage — mae/mfe left NULL, not zeroed", p.Symbol, p.ID)
+		// LOG-NOISE-2: the wording no longer claims mae/mfe were "left NULL" —
+		// a row may already carry stored values; this window just has no 1m
+		// coverage, so the stored values are KEPT, not re-computed.
+		at.logWarnf("📐 excursion for %s pos=%d has no 1m coverage for this window — stored values kept / not computed", p.Symbol, p.ID)
 	} else if err := at.store.Position().UpdateExcursion(p.ID, path.MAEPts, path.MFEPts); err != nil {
 		at.logWarnf("📐 excursion update failed for %s: %v", p.Symbol, err)
 		return
