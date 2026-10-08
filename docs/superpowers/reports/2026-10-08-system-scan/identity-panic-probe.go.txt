@@ -1,0 +1,22 @@
+package trader
+import (
+ "strings"
+ "testing"
+ "vl/kernel"
+ "vl/logger"
+)
+// Audit-only probe: passes when the current defect is reproduced.
+func TestAuditReferenceIdentityPanicProbe(t *testing.T) {
+ lvl:=kernel.DetectedLevel{Kind:"ONH",Price:29897,Lo:29897,Hi:29897,Label:"ONH",OriginDate:"2026-09-17",FormationTF:"1m",IdentitySymbol:"MNQ"}
+ cs:=kernel.BuildMapCandidates([]kernel.ScoredLevel{{DetectedLevel:lvl,Grade:"A",Score:1}},29890,10,kernel.MapCandidateOpts{})
+ kernel.EnsureReferenceLevelIDs(cs)
+ if len(cs)!=1 || cs[0].ID==nil {t.Fatal("fixture needs reference identity")}
+ doc:=&kernel.PlanDoc{Scenarios:[]kernel.PlanScenario{{ID:"audit-ref",LevelID:cs[0].ID}}}
+ var buf syncLogBuf
+ old:=logger.Log.Out;logger.Log.SetOutput(&buf);defer logger.Log.SetOutput(old)
+ at:=&AutoTrader{}
+ out:=at.stampPlanIdentity(doc,cs)
+ if out.Named!=1 {t.Fatalf("expected resolved reference, got %+v",out)}
+ if !strings.Contains(buf.String(),"level identity recording panic contained") {t.Fatalf("defect not reproduced: %s",buf.String())}
+ t.Log("REPRODUCED: valid reference identity causes a contained logging panic at production stampPlanIdentity")
+}
