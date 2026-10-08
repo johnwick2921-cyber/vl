@@ -38,9 +38,11 @@ func TestClassifyClockDrift(t *testing.T) {
 // FORMING one, a 10-min-old bar must still be CRITICAL, and a mid-minute feed
 // whose freshest closed bar is 40s old must still fire EARLY-WARNING.
 //
-// Named RED: revert rollSafeClockDriftMs to the old `now − (newestOpen + 60s)`
-// and the "forming bar at the roll" case reads |drift| ≈ 55s → EARLY-WARNING —
-// the exact false alarm this wave removes.
+// Named RED (CLOCK-HEALTH-FORMING-BAR): with newestOpen == expectedOpen, the
+// #456 version measured now − boundary (which grows 0..60 s across the minute,
+// so the 17:00:58 roll read 58314 ms and WARNed). This version measures against
+// the forming bar's EmittedAt, so a fresh forming bar at boundary+58s reads ~1s
+// → no WARN.
 func TestRollSafeClockDriftMs(t *testing.T) {
 	const boundary = int64(1_700_000_040_000) // minute-aligned (× 60_000)
 	const warn, tol = int64(30_000), int64(60_000)
@@ -49,47 +51,56 @@ func TestRollSafeClockDriftMs(t *testing.T) {
 		name       string
 		nowMs      int64
 		newestOpen int64
+		emittedAt  int64
 		wantDrift  int64
+		wantRef    string
 		wantClass  string
 	}{
 		{
 			"roll at boundary+5s, just-closed bar newest",
-			boundary + 5_000, boundary - 60_000,
-			+5_000, "",
+			boundary + 5_000, boundary - 60_000, 0,
+			+5_000, "closed_close", "",
 		},
 		{
-			"roll at boundary+5s, forming bar newest (the false alarm)",
-			boundary + 5_000, boundary,
-			+5_000, "",
+			"roll at boundary+58s, forming bar with fresh EmittedAt (the #456 false alarm)",
+			boundary + 58_000, boundary, boundary + 57_000,
+			+1_000, "forming.EmittedAt", "",
+		},
+		{
+			"forming bar with no EmittedAt → 0, no tick time",
+			boundary + 58_000, boundary, 0,
+			0, "forming.no_tick_time", "",
 		},
 		{
 			"10-min-old newest bar still fires CRITICAL",
-			boundary + 40_000, boundary - 600_000,
-			boundary + 40_000 - (boundary - 600_000 + 60_000), "critical",
+			boundary + 40_000, boundary - 600_000, 0,
+			boundary + 40_000 - (boundary - 600_000 + 60_000), "closed_close", "critical",
 		},
 		{
 			"40s-late feed mid-minute still fires EARLY-WARNING",
-			boundary + 40_000, boundary - 60_000,
-			+40_000, "warn",
+			boundary + 40_000, boundary - 60_000, 0,
+			+40_000, "closed_close", "warn",
 		},
 		{
-			// The CTO P1 fold: a local clock BEHIND the feed (newest bar open in
-			// our future) must alarm, never be clamped away. Named RED: the first
-			// version clamped newestOpenMs >= expectedOpen → no alarm.
+			// A local clock BEHIND the feed (newest bar open in our future) must
+			// alarm, never be clamped away.
 			"local clock ~3min behind the feed still fires CRITICAL",
-			boundary + 20_000, boundary + 180_000,
-			-160_000, "critical",
+			boundary + 20_000, boundary + 180_000, 0,
+			-160_000, "future_open", "critical",
 		},
 		{
 			"local clock 40s behind the feed still fires EARLY-WARNING",
-			boundary + 20_000, boundary + 60_000,
-			-40_000, "warn",
+			boundary + 20_000, boundary + 60_000, 0,
+			-40_000, "future_open", "warn",
 		},
 	}
 	for _, c := range cases {
-		got := rollSafeClockDriftMs(c.nowMs, c.newestOpen)
+		got, ref := rollSafeClockDriftMs(c.nowMs, c.newestOpen, c.emittedAt)
 		if got != c.wantDrift {
 			t.Errorf("%s: drift = %d, want %d", c.name, got, c.wantDrift)
+		}
+		if ref != c.wantRef {
+			t.Errorf("%s: ref = %q, want %q", c.name, ref, c.wantRef)
 		}
 		if cls := classifyClockDrift(absI64(got), warn, tol); cls != c.wantClass {
 			t.Errorf("%s: class = %q, want %q (drift %d)", c.name, cls, c.wantClass, got)
@@ -125,11 +136,12 @@ func TestLogClockHealthWithInjectedDriftDoesNotPanic(t *testing.T) {
 	}
 
 	// The roll-race case this wave fixes: the newest bar is the FORMING one
-	// (open == the current minute boundary) — must not panic and must not be
-	// misclassified as a false WARN (the pure pin above asserts the value).
+	// (open == the current minute boundary) with a fresh EmittedAt — must not
+	// panic and must not be misclassified as a false WARN (the pure pin above
+	// asserts the value).
 	market.FuturesBarsProvider = func(string, string, int) []market.Kline {
 		nowMs := time.Now().UnixMilli()
-		return []market.Kline{{OpenTime: (nowMs / 60_000) * 60_000}}
+		return []market.Kline{{OpenTime: (nowMs / 60_000) * 60_000, EmittedAt: nowMs - 1_000}}
 	}
 	LogClockHealth("test-roll-forming", "MNQ")
 }

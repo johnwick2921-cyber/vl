@@ -30,7 +30,7 @@ const (
 	mentorConfluenceContractsDefault = 10
 	mentorBigContractsDefault        = 20 // the hard cap
 	mentorReducedContractsDefault    = 3
-	mentorSwing4HContractsDefault    = 3
+	mentorSwing4HContractsDefault    = 1 // 1 MNQ, not 3 [D5.2 p1 @00:38–00:47 "Em vô đúng 1 MNQ thôi"]
 	mentorSpentDayContractsDefault   = 2
 	mentorMaxContractsDefault        = 20
 
@@ -51,8 +51,8 @@ type mentorTierInputs struct {
 	HTFAgree      bool    // 4h AND 1h agree
 	SpentDay      bool    // §7 spent day
 	StrongDay     bool    // S9: 5m candles running 50–80 pts → size 1–2
-	ISBOldExtreme bool    // ISB at an old high/low → reduce size, tier 3 [D4.1 p1 rule 2]
-	ISBInRange    bool    // ISB traded inside a range → reduce size, tier 3 [D4.1 p1 rule 3]
+	ISBOldExtreme bool    // ISB at an old high/low → reduce size, tier 3 [D4.1 p1 @04:37–05:04 rule 2]
+	ISBInRange    bool    // ISB traded inside a range → reduce size, tier 3 [D4.1 p1 @04:37–05:04 rule 3]
 
 	// Rule-gate limits resolved from the strategy (mentorTuningResolve): the
 	// SAME numbers the evaluator reads. Zero (a bare table test) falls back to
@@ -91,17 +91,18 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	// spent-day knob value for DS-103's split redesign.
 	_ = spentCap
 	// ISB at an old high/low → reduce size, tier 3 (owner ruling 00:1x CT,
-	// written rule 2, D4.1 p1). The flag comes from DS-103's evaluator and is
+	// written rule 2, D4.1 p1 @04:37–05:04: "ở ngay đỉnh hoặc đáy cũ… giảm size…
+	// là cái thứ 2"). The flag comes from DS-103's evaluator and is
 	// only ever set for ISB setups. It beats big/confluence — the location
 	// REDUCES whatever the setup would otherwise earn.
 	if in.ISBOldExtreme {
-		return mentorSizeChoice{Contracts: clamp(3), Tier: "isb_old_extreme", Why: "ISB at an old high/low → reduce size, tier 3 [D4.1 p1 written rule 2]"}, nil
+		return mentorSizeChoice{Contracts: clamp(3), Tier: "isb_old_extreme", Why: "ISB at an old high/low → reduce size, tier 3 [D4.1 p1 @04:37–05:04 written rule 2]"}, nil
 	}
 	// ISB traded inside a range → reduce size, tier 3 (written rule 3, D4.1 p1
-	// @08:05/09:40: "Khi trade isb in-range bắt buộc giảm size"). Ranks the
+	// @04:37–05:04: "Khi trade isb in-range bắt buộc giảm size"). Ranks the
 	// same as the old-extreme reduction; strong day and spent day (2) win.
 	if in.ISBInRange {
-		return mentorSizeChoice{Contracts: clamp(3), Tier: "isb_in_range", Why: "ISB traded inside a range → reduce size, tier 3 [D4.1 p1 written rule 3 @08:05/09:40]"}, nil
+		return mentorSizeChoice{Contracts: clamp(3), Tier: "isb_in_range", Why: "ISB traded inside a range → reduce size, tier 3 [D4.1 p1 @04:37–05:04 written rule 3]"}, nil
 	}
 	// B12 (CTO 1791041016051): a stop in the twenties cuts to 3 and wins over
 	// confluence sizing — "reduce size or don't trade" [D3.3 p1 @ 01:09] is a
@@ -120,13 +121,19 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	}
 	if strings.EqualFold(in.Setup, "SWING4H") {
 		// S9 (D5.2 p2 @05:21–05:57): a strong day — 5m candles running 50–80
-		// pts — cuts the SWING to 1–2 ("50–60 điểm cứ vô 1-2 men kill... nhưng
-		// chỉ cùng 4 giờ"): the cut was said of the swing entry, not every
-		// setup. The table takes 2, the top of the band.
+		// pts — cuts the SWING to 1–2. The swing base is 1 MNQ (D5.2 p1), so
+		// the strong-day cut must NEVER RAISE the size above the base:
+		// min(2, swing base). With the default base 1 this is 1; a raised
+		// knob (e.g. 3) still caps at 2, the top of the course band.
 		if in.StrongDay {
-			return mentorSizeChoice{Contracts: clamp(2), Tier: "strong_day", Why: "strong day — the SWING sizes 1–2 [D5.2 p2 @05:21–05:57]"}, nil
+			strong := swing4h
+			if strong > 2 {
+				strong = 2
+			}
+			return mentorSizeChoice{Contracts: clamp(strong), Tier: "strong_day", Why: fmt.Sprintf(
+				"strong day — the SWING sizes min(2, base %d) = %d, never above the 1-MNQ base [D5.2 p2 @05:21–05:57]", swing4h, strong)}, nil
 		}
-		return mentorSizeChoice{Contracts: clamp(swing4h), Tier: "swing4h", Why: "SWING4H setup — 3 [D5.2 p1]"}, nil
+		return mentorSizeChoice{Contracts: clamp(swing4h), Tier: "swing4h", Why: "SWING4H setup — 1 MNQ [D5.2 p1 @00:38–00:47 'Em vô đúng 1 MNQ thôi']"}, nil
 	}
 	return mentorSizeChoice{Contracts: clamp(base), Tier: "base", Why: fmt.Sprintf(
 		"base setup at a location (setup %s, stop %.1f pts)", in.Setup, in.StopPts)}, nil
@@ -576,7 +583,7 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 		mentorSizeForHook()
 	}
 	extra.Setup = in.Setup
-	// ISB size rules 2 and 3 (D4.1 p1 @08:05/09:40, written): the evaluator
+	// ISB size rules 2 and 3 (D4.1 p1 @04:37–05:04, written): the evaluator
 	// stamps Intent.Flag on an ISB at an old high/low or inside a range; here
 	// the flags reach the size table, which cuts both to tier 3. Set at the ONE
 	// sizing call site so no caller can forget them.
@@ -705,21 +712,22 @@ func mentorLeg1ForFrame(in mentor.Intent, n int, forkMode string, forkTP float64
 	if tp == 0 {
 		r := mentorIntentRisk(in)
 		if in.Side == mentor.SideShort {
-			tp = in.Price - r
+			tp = in.Price - r*mentor.Leg1RiskMultiple(false)
 		} else {
-			tp = in.Price + r
+			tp = in.Price + r*mentor.Leg1RiskMultiple(false)
 		}
 	}
 	return leg1, tp
 }
 
 // mentorLeg1TPForC is the C (confluence) leg-1 target: hold to at least 1:2 —
-// leg 1's TP at 2× risk, set AT ENTRY; the stop never moves up.
+// leg 1's TP at 2× risk, set AT ENTRY; the stop never moves up. The 2× is the
+// ONE definition (mentor.Leg1RiskMultiple(true)) the room check reads too.
 func mentorLeg1TPForC(entry, r float64, side string) float64 {
 	if side == "short" {
-		return entry - 2*r
+		return entry - r*mentor.Leg1RiskMultiple(true)
 	}
-	return entry + 2*r
+	return entry + r*mentor.Leg1RiskMultiple(true)
 }
 
 // mentorConfluenceForIntent is the R2 STUB (CTO 1791029620038: "use a stub
@@ -1093,15 +1101,16 @@ func mentorSpentDayClamp(contracts, spentCap int) int {
 	return contracts
 }
 
-// mentorNeverWiden is the pure guard (owner ruling (c), D1.2 p2 @00:08): a
+// mentorNeverWiden is the pure guard (owner ruling (c), D2.3 p1 @18:08
+// "Không bao giờ được dời lệnh buy stop của mình xuống cây nến kế tiếp"): a
 // stop amendment that increases open risk is refused — a long stop may only
 // move UP, a short stop only DOWN. Equal is not a widen.
 func mentorNeverWiden(side string, curStop, newStop float64) (refuse bool, why string) {
 	switch {
 	case side == "long" && newStop < curStop:
-		return true, fmt.Sprintf("stop widen refused: long stop %.2f → %.2f increases open risk [D1.2 p2 @00:08]", curStop, newStop)
+		return true, fmt.Sprintf("stop widen refused: long stop %.2f → %.2f increases open risk [D2.3 p1 @18:08]", curStop, newStop)
 	case side == "short" && newStop > curStop:
-		return true, fmt.Sprintf("stop widen refused: short stop %.2f → %.2f increases open risk [D1.2 p2 @00:08]", curStop, newStop)
+		return true, fmt.Sprintf("stop widen refused: short stop %.2f → %.2f increases open risk [D2.3 p1 @18:08]", curStop, newStop)
 	}
 	return false, ""
 }

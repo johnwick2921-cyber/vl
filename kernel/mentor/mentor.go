@@ -164,6 +164,19 @@ type Intent struct {
 	RunnerTarget float64
 }
 
+// Leg1RiskMultiple is the leg-1 take-profit distance in units of R — the ONE
+// definition the exit drive (trader/mentor_mode.go mentorLeg1TPForC) and the
+// room check (eval.go roomRefusal) BOTH read. Normal = 1 (the 1:1 first
+// partial, "bán bớt ở 1:1" [D2.2 p3 @12:13; D1.2 p1 @07:41–08:45]); confluence
+// (mode C) = 2 (hold to 1:2 [D3.4 p3 @07:52–08:07]). The room rule reads this,
+// so a future leg-1 change can never drift from the room check.
+func Leg1RiskMultiple(confluence bool) float64 {
+	if confluence {
+		return 2
+	}
+	return 1
+}
+
 // Config is every knob. Enabled is mentor_mode and defaults to false (L4):
 // while false the evaluator is never consulted and the bot is byte-identical.
 type Config struct {
@@ -257,7 +270,7 @@ type Config struct {
 
 	// Filters (PLAN v1 §4).
 	StopCeilingPts float64 // hard stop ceiling; default 25 [D3.3 p1 @ 02:04]
-	RoomMultiple   float64 // room rule: reward >= RoomMultiple x risk; default 2 [D5.3 p1 @ 09:16]
+	RoomMultiple   float64 // room rule: first level >= RoomMultiple x leg-1 distance (leg 1 = 1R -> 2R; confluence leg 1 = 2R -> 4R) [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13]; default 2
 	RangeGapPts    float64 // mid-range: levels bracketing price within this gap both sides; default 0 = disabled
 
 	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h

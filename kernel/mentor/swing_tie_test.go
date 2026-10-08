@@ -51,8 +51,9 @@ func TestSwing4hTieTouchProducesNothing(t *testing.T) {
 	bars := append(closed, a, c1, c2, touch)
 	s := &SwingState{}
 	out := SwingTick(s, bars, cfg, touch.OpenTime+60_000)
-	// exactly the ONE cancel from A — the tie touch produced nothing.
-	if len(out) != 1 || out[0].Action != CancelArm {
+	// nothing: bar A's through-close has no resting order (no empty-ArmID
+	// cancel), and the tie touch produced nothing.
+	if len(out) != 0 {
 		t.Fatalf("tie touch must produce nothing: got %+v", out)
 	}
 }

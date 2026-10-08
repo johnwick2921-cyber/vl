@@ -318,6 +318,8 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// mentorStaleDataBlocked. Exits / protection are never gated; resting broker
 	// orders are never cancelled by this.
 	if at.mentorStaleDataBlocked(mentorClockNow()) {
+		// A setup computed on stale prices is not a setup. The deferred guard in
+		// mentorDispatchEntry drops the evaluator's arm on this refusal.
 		return
 	}
 	// N10 (stale intent): an entry whose reference candle is not the newest

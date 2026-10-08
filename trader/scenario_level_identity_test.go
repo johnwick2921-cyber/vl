@@ -56,7 +56,7 @@ func TestIdentityE1AuthoringToEpisodeAndE3WarnProduction(t *testing.T) {
 				raw = strings.Replace(raw, `"id": "S1"`, `"id": "S1", "level_id": "`+id+`"`, 1)
 			}
 			calls := 0
-			version, lc, err := at.runPlannerReadCoreObserved(func() time.Time { return now }, nil, nil, "NY", "2026-09-10", "", "fixture", "hash", "", "", "", "fixture", kernel.PlanFacts{IdentityMap: candidates}, nil, nil, nil, true, func(string) (string, error) { calls++; return raw, nil })
+			version, lc, err := at.runPlannerReadCoreObserved(func() time.Time { return now }, nil, nil, "NY", "2026-09-10", "", "fixture", "hash", "", "", "", "fixture", kernel.PlanFacts{IdentityMap: candidates}, nil, nil, nil, true, 0, func(string) (string, error) { calls++; return raw, nil })
 			if mode == "disagreed" || mode == "unresolved" {
 				// REFUSED at write on every attempt → the existing fail-closed path.
 				if err != nil || lc != "no_trade" || calls != 3 {

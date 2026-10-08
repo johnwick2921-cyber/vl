@@ -232,7 +232,7 @@ func seed(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int
 	// closed 5m bar as the watermark, so the first tick walks only NEW bars —
 	// a 25h tape containing an old touch stays silent instead of turning the
 	// old touch into a live order (00-METHOD.md §8: "Wait for a LITERAL
-	// touch" [p2 @ 09:15] — the touch is observed live, never reconstructed).
+	// touch" [D5.2 p2 @ 18:36–18:41] — the touch is observed live, never reconstructed).
 	if b5 := closedBuckets(bars1m, now, e.Cfg); len(b5) > 0 {
 		e.State.Swing.LastBarTime = b5[len(b5)-1].OpenTime
 	}

@@ -257,7 +257,8 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		// SWING: no moves — the swing rules own it [D4.2].
 		return
 	case "C":
-		// C (confluence): the stop NEVER moves [D4.2 p1 @14:57]. No action.
+		// C (confluence): the stop NEVER moves [D3.4 p3 @07:38: "hold… at least
+		// risk reward 1-2"]. No action.
 		return
 	case "A-resonance":
 		// A (resonance): both stops already at BE, leg 1's TP out to the
@@ -420,7 +421,7 @@ var mentorMoveStopForSignalWire = func(nt *ntTrader.TCPTrader, signalID, side st
 }
 
 // mentorMoveLegStop sends one leg's stop move through the signal-keyed
-// move_stop frame, guarded by mentorNeverWiden (never widen, D1.2 p2 @00:08).
+// move_stop frame, guarded by mentorNeverWiden (never widen, D2.3 p1 @18:08).
 func (at *AutoTrader) mentorMoveLegStop(nt *ntTrader.TCPTrader, side string, leg *mentorLeg, newStop float64) error {
 	if leg == nil || leg.SignalID == "" {
 		return fmt.Errorf("mentor leg stop move: no leg signal id")

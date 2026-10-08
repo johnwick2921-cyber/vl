@@ -34,31 +34,44 @@ func clockDriftMs(nowMs, freshestBarMs, intervalMs int64) int64 {
 	return nowMs - (freshestBarMs + intervalMs)
 }
 
-// rollSafeClockDriftMs is the CLOCK-HEALTH-ROLL fix (2026-10-08): the freshest
-// bar from the wire is usually the FORMING one, whose open is the current minute
-// boundary and whose scheduled close (open + 1m) is still in the FUTURE. The old
-// `now − (open + 60s)` therefore measured against a future close and read |drift|
-// ≈ 55–60 s at every session roll — a false "fix WSL2 time-sync NOW".
+// rollSafeClockDriftMs is the CLOCK-HEALTH-ROLL fix (2026-10-08), completed by
+// the CLOCK-HEALTH-FORMING-BAR fix: the freshest bar from the wire is usually
+// the FORMING one, whose open is the current minute boundary and whose scheduled
+// close (open + 1m) is still in the FUTURE. The old `now − (open + 60s)` read
+// |drift| ≈ 55–60 s at every roll — a false "fix WSL2 time-sync NOW".
 //
 // The fix uses the SAME expected-open boundary the B4 stale gate uses
 // (kernel/stale_data.go: expectedOpen = floor(now/interval)×interval):
-//   - newestOpen == expectedOpen → the in-flight FORMING bar of this minute;
-//     the freshest CLOSED bar closed at the boundary, so measure against it.
+//   - newestOpen == expectedOpen → the in-flight FORMING bar: the feed IS
+//     current. Measure against its freshest evidence — the AddOn's emission
+//     clock (EmittedAt) — else 0 with a "no tick time" ref. now − boundary was
+//     the WRONG reference (it grows 0..60 s across the minute, so any roll
+//     check >30 s in false-alarms: the 17:00:58 drift 58314 ms class).
 //   - newestOpen >  expectedOpen → the newest bar's open is in OUR future: the
 //     local clock is BEHIND the feed. Return the honest (negative) drift so
-//     |drift| still alarms — this must never be clamped away.
+//     |drift| still alarms — never clamped away.
 //   - newestOpen <  expectedOpen → a closed bar (or an old/late feed): the
 //     honest close, so a 10-min-old feed still fires EARLY-WARNING/CRITICAL.
-func rollSafeClockDriftMs(nowMs, newestOpenMs int64) int64 {
+//
+// ref names which reference produced the drift (printed in the log line).
+func rollSafeClockDriftMs(nowMs, newestOpenMs, emittedAtMs int64) (drift int64, ref string) {
 	const interval = int64(60_000)
 	expectedOpen := (nowMs / interval) * interval
 	switch {
 	case newestOpenMs == expectedOpen:
-		return nowMs - expectedOpen
+		// The in-flight FORMING bar of the current minute: the feed IS current.
+		// Measuring against the boundary grows 0..60 s across the minute and
+		// false-alarms any roll check that runs >30 s in (the 17:00:58 drift
+		// 58314 ms class). Measure against the forming bar's freshest evidence
+		// — the AddOn's emission clock — instead; no emission clock → 0.
+		if emittedAtMs > 0 {
+			return nowMs - emittedAtMs, "forming.EmittedAt"
+		}
+		return 0, "forming.no_tick_time"
 	case newestOpenMs > expectedOpen:
-		return nowMs - newestOpenMs // negative: local clock behind the feed
+		return nowMs - newestOpenMs, "future_open" // negative: local clock behind the feed
 	default:
-		return nowMs - (newestOpenMs + interval)
+		return nowMs - (newestOpenMs + interval), "closed_close"
 	}
 }
 
@@ -170,7 +183,7 @@ func FeedClockDriftMs(symbol string) (int64, bool) {
 		return 0, false
 	}
 	last := bars[len(bars)-1]
-	drift := rollSafeClockDriftMs(time.Now().UnixMilli(), last.OpenTime)
+	drift, _ := rollSafeClockDriftMs(time.Now().UnixMilli(), last.OpenTime, last.EmittedAt)
 	RecordClockDrift(drift, true)
 	return drift, true
 }
