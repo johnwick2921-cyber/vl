@@ -84,8 +84,10 @@ func LogClockHealth(tag, symbol string) {
 	if market.FuturesBarsProvider != nil {
 		if bars := market.FuturesBarsProvider(symbol, "1m", 3); len(bars) > 0 {
 			last := bars[len(bars)-1]
-			nt8Ms := last.OpenTime + 60_000 // close of the freshest 1m bar
-			drift = now.UnixMilli() - nt8Ms
+			// Roll-safe: never measure against a FORMING bar's future close —
+			// rollSafeClockDriftMs clamps the reference to the current boundary.
+			drift = rollSafeClockDriftMs(now.UnixMilli(), last.OpenTime)
+			nt8Ms := now.UnixMilli() - drift // the reference close measured against
 			haveBar = true
 			line += " nt8_last_bar=" + ClockCTAndUTC(time.UnixMilli(nt8Ms)) +
 				" drift_ms=" + i64str(drift)

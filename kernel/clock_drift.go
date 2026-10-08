@@ -34,6 +34,34 @@ func clockDriftMs(nowMs, freshestBarMs, intervalMs int64) int64 {
 	return nowMs - (freshestBarMs + intervalMs)
 }
 
+// rollSafeClockDriftMs is the CLOCK-HEALTH-ROLL fix (2026-10-08): the freshest
+// bar from the wire is usually the FORMING one, whose open is the current minute
+// boundary and whose scheduled close (open + 1m) is still in the FUTURE. The old
+// `now − (open + 60s)` therefore measured against a future close and read |drift|
+// ≈ 55–60 s at every session roll — a false "fix WSL2 time-sync NOW".
+//
+// The fix uses the SAME expected-open boundary the B4 stale gate uses
+// (kernel/stale_data.go: expectedOpen = floor(now/interval)×interval):
+//   - newestOpen == expectedOpen → the in-flight FORMING bar of this minute;
+//     the freshest CLOSED bar closed at the boundary, so measure against it.
+//   - newestOpen >  expectedOpen → the newest bar's open is in OUR future: the
+//     local clock is BEHIND the feed. Return the honest (negative) drift so
+//     |drift| still alarms — this must never be clamped away.
+//   - newestOpen <  expectedOpen → a closed bar (or an old/late feed): the
+//     honest close, so a 10-min-old feed still fires EARLY-WARNING/CRITICAL.
+func rollSafeClockDriftMs(nowMs, newestOpenMs int64) int64 {
+	const interval = int64(60_000)
+	expectedOpen := (nowMs / interval) * interval
+	switch {
+	case newestOpenMs == expectedOpen:
+		return nowMs - expectedOpen
+	case newestOpenMs > expectedOpen:
+		return nowMs - newestOpenMs // negative: local clock behind the feed
+	default:
+		return nowMs - (newestOpenMs + interval)
+	}
+}
+
 // freshestIntradayBar returns the newest 1m (else 5m) bar time and its interval,
 // (0,0) if neither is present.
 func freshestIntradayBar(md *market.Data) (barMs, intervalMs int64) {
@@ -142,7 +170,7 @@ func FeedClockDriftMs(symbol string) (int64, bool) {
 		return 0, false
 	}
 	last := bars[len(bars)-1]
-	drift := time.Now().UnixMilli() - (last.OpenTime + 60_000)
+	drift := rollSafeClockDriftMs(time.Now().UnixMilli(), last.OpenTime)
 	RecordClockDrift(drift, true)
 	return drift, true
 }
