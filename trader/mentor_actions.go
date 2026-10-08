@@ -234,14 +234,20 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 	at.mentorPlaceIntent(in, choice, lastCloseTime, emitMs)
 }
 
-// mentorDropEvalArm drops the kernel G1/G2 sim pend for a refused entry
-// (X-07). Nil-safe: a direct dispatch in a test may run before the evaluator
-// exists (the guard no-ops there — nothing was simulated).
+// mentorDropEvalArm drops EVERY evaluator trace of a refused entry (X-07 +
+// FIX-MENTOR-PHANTOM-ARM): the kernel G1/G2 sim pend AND the evaluator's own
+// ISB arm / swing Pending for that id. It is the ONE guard the deferred drop
+// in mentorDispatchEntry runs on every refusal, so a refused placement can
+// never leave a phantom that suppresses the next same-side setup or emits a
+// follow-up ExtendArm/CancelArm/MoveStopBE for an order that was never
+// authored. Nil-safe: a direct dispatch in a test may run before the
+// evaluator exists (the guard no-ops there — nothing was simulated).
 func (at *AutoTrader) mentorDropEvalArm(armID string) {
 	if at == nil || at.mentorEval == nil {
 		return
 	}
 	at.mentorEval.State.Limits.DropArm(armID)
+	at.mentorEval.DropArm(armID)
 }
 
 // mentorDispatchIntent is the injector's action switch as ONE call (the eval

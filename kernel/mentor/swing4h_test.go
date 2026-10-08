@@ -134,13 +134,10 @@ func TestSwing4hThroughCancelsThenISB(t *testing.T) {
 	bars := swingTape(t, cur)
 	s := &SwingState{}
 	out := SwingTick(s, bars, cfg, cur[2].OpenTime+60_000)
-	if len(out) != 2 {
-		t.Fatalf("intents = %d, want cancel + ISB entry; got %+v", len(out), out)
+	if len(out) != 1 {
+		t.Fatalf("intents = %d, want just the ISB entry (no empty-ArmID cancel for a through-close with nothing resting); got %+v", len(out), out)
 	}
-	if out[0].Action != CancelArm {
-		t.Fatalf("first intent = %+v, want CancelArm for the through-close", out[0])
-	}
-	in := out[1]
+	in := out[0]
 	if in.Action != PlaceStopEntry || in.Side != SideShort {
 		t.Fatalf("ISB intent = %+v, want a SHORT stop entry", in)
 	}
@@ -169,13 +166,10 @@ func TestSwing4hISBWatchOpenUntilFlip(t *testing.T) {
 	bars := swingTape(t, cur)
 	s := &SwingState{}
 	out := SwingTick(s, bars, cfg, cur[5].OpenTime+60_000)
-	if len(out) != 2 {
-		t.Fatalf("intents = %d, want cancel + ISB entry (the watch is not 2-candle limited); got %+v", len(out), out)
+	if len(out) != 1 {
+		t.Fatalf("intents = %d, want just the ISB entry (the watch is not 2-candle limited; no empty-ArmID cancel); got %+v", len(out), out)
 	}
-	if out[0].Action != CancelArm {
-		t.Fatalf("first intent = %+v, want CancelArm for the through-close", out[0])
-	}
-	in := out[1]
+	in := out[0]
 	if in.Action != PlaceStopEntry || in.Side != SideLong {
 		t.Fatalf("ISB intent = %+v, want a LONG stop entry (support close-back)", in)
 	}
@@ -350,8 +344,8 @@ func TestSwing4hOneSetupPerApproach(t *testing.T) {
 	if entries != 1 {
 		t.Fatalf("stop entries = %d, want 1 (the invalid level refuses the later below-line touch); got %+v", entries, out)
 	}
-	if cancels != 1 {
-		t.Fatalf("cancels = %d, want 1 (the through-cross back); got %+v", cancels, out)
+	if cancels != 0 {
+		t.Fatalf("cancels = %d, want 0 (the through-cross back has nothing resting — no empty-ArmID cancel); got %+v", cancels, out)
 	}
 }
 

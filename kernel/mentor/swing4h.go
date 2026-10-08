@@ -327,16 +327,16 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			// closes THROUGH → CANCEL [D5.2 p3 @ 21:30, corrected §3].
 			// S1: name the resting swing arm so the cancel reaches the right
 			// order, and clear the pending — a cancelled order must never
-			// grow into a phantom position.
-			cancel := Intent{
-				Action: CancelArm,
-				Reason: "swing: touch closed through the line — cancel, invalid for this approach [D5.2 p3 @ 21:30, corrected §3]",
-			}
+			// grow into a phantom position. A through-close with NOTHING
+			// resting must not emit an ArmID "" cancel (FIX-MENTOR-PHANTOM-ARM).
 			if s.Pending != nil {
-				cancel.ArmID = s.Pending.ArmID
+				out = append(out, Intent{
+					Action: CancelArm,
+					ArmID:  s.Pending.ArmID,
+					Reason: "swing: touch closed through the line — cancel, invalid for this approach [D5.2 p3 @ 21:30, corrected §3]",
+				})
 				s.Pending = nil
 			}
-			out = append(out, cancel)
 			s.FirstTouch = &swingTouch{RefBar: b, Approach: approach, Through: true}
 			continue
 		}
