@@ -51,8 +51,8 @@ type mentorTierInputs struct {
 	HTFAgree      bool    // 4h AND 1h agree
 	SpentDay      bool    // §7 spent day
 	StrongDay     bool    // S9: 5m candles running 50–80 pts → size 1–2
-	ISBOldExtreme bool    // ISB at an old high/low → reduce size, tier 3 [D4.1 p1 rule 2]
-	ISBInRange    bool    // ISB traded inside a range → reduce size, tier 3 [D4.1 p1 rule 3]
+	ISBOldExtreme bool    // ISB at an old high/low → reduce size, tier 3 [D4.1 p1 @04:37–05:04 rule 2]
+	ISBInRange    bool    // ISB traded inside a range → reduce size, tier 3 [D4.1 p1 @04:37–05:04 rule 3]
 
 	// Rule-gate limits resolved from the strategy (mentorTuningResolve): the
 	// SAME numbers the evaluator reads. Zero (a bare table test) falls back to
@@ -91,17 +91,18 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	// spent-day knob value for DS-103's split redesign.
 	_ = spentCap
 	// ISB at an old high/low → reduce size, tier 3 (owner ruling 00:1x CT,
-	// written rule 2, D4.1 p1). The flag comes from DS-103's evaluator and is
+	// written rule 2, D4.1 p1 @04:37–05:04: "ở ngay đỉnh hoặc đáy cũ… giảm size…
+	// là cái thứ 2"). The flag comes from DS-103's evaluator and is
 	// only ever set for ISB setups. It beats big/confluence — the location
 	// REDUCES whatever the setup would otherwise earn.
 	if in.ISBOldExtreme {
-		return mentorSizeChoice{Contracts: clamp(3), Tier: "isb_old_extreme", Why: "ISB at an old high/low → reduce size, tier 3 [D4.1 p1 written rule 2]"}, nil
+		return mentorSizeChoice{Contracts: clamp(3), Tier: "isb_old_extreme", Why: "ISB at an old high/low → reduce size, tier 3 [D4.1 p1 @04:37–05:04 written rule 2]"}, nil
 	}
 	// ISB traded inside a range → reduce size, tier 3 (written rule 3, D4.1 p1
-	// @08:05/09:40: "Khi trade isb in-range bắt buộc giảm size"). Ranks the
+	// @04:37–05:04: "Khi trade isb in-range bắt buộc giảm size"). Ranks the
 	// same as the old-extreme reduction; strong day and spent day (2) win.
 	if in.ISBInRange {
-		return mentorSizeChoice{Contracts: clamp(3), Tier: "isb_in_range", Why: "ISB traded inside a range → reduce size, tier 3 [D4.1 p1 written rule 3 @08:05/09:40]"}, nil
+		return mentorSizeChoice{Contracts: clamp(3), Tier: "isb_in_range", Why: "ISB traded inside a range → reduce size, tier 3 [D4.1 p1 @04:37–05:04 written rule 3]"}, nil
 	}
 	// B12 (CTO 1791041016051): a stop in the twenties cuts to 3 and wins over
 	// confluence sizing — "reduce size or don't trade" [D3.3 p1 @ 01:09] is a
@@ -582,7 +583,7 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 		mentorSizeForHook()
 	}
 	extra.Setup = in.Setup
-	// ISB size rules 2 and 3 (D4.1 p1 @08:05/09:40, written): the evaluator
+	// ISB size rules 2 and 3 (D4.1 p1 @04:37–05:04, written): the evaluator
 	// stamps Intent.Flag on an ISB at an old high/low or inside a range; here
 	// the flags reach the size table, which cuts both to tier 3. Set at the ONE
 	// sizing call site so no caller can forget them.
@@ -1099,15 +1100,16 @@ func mentorSpentDayClamp(contracts, spentCap int) int {
 	return contracts
 }
 
-// mentorNeverWiden is the pure guard (owner ruling (c), D1.2 p2 @00:08): a
+// mentorNeverWiden is the pure guard (owner ruling (c), D2.3 p1 @18:08
+// "Không bao giờ được dời lệnh buy stop của mình xuống cây nến kế tiếp"): a
 // stop amendment that increases open risk is refused — a long stop may only
 // move UP, a short stop only DOWN. Equal is not a widen.
 func mentorNeverWiden(side string, curStop, newStop float64) (refuse bool, why string) {
 	switch {
 	case side == "long" && newStop < curStop:
-		return true, fmt.Sprintf("stop widen refused: long stop %.2f → %.2f increases open risk [D1.2 p2 @00:08]", curStop, newStop)
+		return true, fmt.Sprintf("stop widen refused: long stop %.2f → %.2f increases open risk [D2.3 p1 @18:08]", curStop, newStop)
 	case side == "short" && newStop > curStop:
-		return true, fmt.Sprintf("stop widen refused: short stop %.2f → %.2f increases open risk [D1.2 p2 @00:08]", curStop, newStop)
+		return true, fmt.Sprintf("stop widen refused: short stop %.2f → %.2f increases open risk [D2.3 p1 @18:08]", curStop, newStop)
 	}
 	return false, ""
 }

@@ -1216,7 +1216,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								// ISB size flags for the injector: rule 2 (at an old
 								// high/low → REDUCE SIZE) and rule 3 (in a range → REDUCE
 								// SIZE, "Khi trade isb in-range bắt buộc giảm size" [D4.1 p1
-								// @ 08:05/09:40]) — the range is the same mid-range test as
+								// @ 04:37–05:04]) — the range is the same mid-range test as
 								// the PHL/PLH ban.
 								chosen.Flag = e.isbFlagsFor(execCur, levels, boxes)
 								// N12: a single ISB fills by the close of the NEXT
@@ -1332,7 +1332,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					in.Target = capped.Target
 					// B6: the same size flags as the normal ISB — rule 2 (at an
 					// old high/low → reduce) and rule 3 (in range → reduce)
-					// [D4.1 p1 @ 08:05/09:40].
+					// [D4.1 p1 @ 04:37–05:04].
 					in.Flag = e.isbFlagsFor(execCur, levels, boxes)
 					// R85: with the reverse ON, the normal ISB must not arm the
 					// counter-trend side on the same candle pair (two opposite
@@ -2010,7 +2010,7 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 	}
 	// S2: a boot/reload must never turn OLD touches into live orders — drop
 	// any swing entry whose reference candle is older than the newest closed
-	// 5m bar (00-METHOD.md §8: "Wait for a LITERAL touch" [p2 @ 09:15]).
+	// 5m bar (00-METHOD.md §8: "Wait for a LITERAL touch" [D5.2 p2 @ 18:36–18:41]).
 	ints = dropStaleSwingIntents(ints, closed)
 	kept, dropped := swingZoneGate(ints, e.State.Trigger, e.Cfg.Swing.Respects5mZone)
 	// C5: the trigger-zone drop names its reason.
