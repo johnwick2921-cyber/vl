@@ -9,6 +9,7 @@ import (
 
 	"vl/kernel"
 	"vl/kernel/mentor"
+	"vl/market"
 	"vl/store"
 	"vl/telemetry"
 	ntTrader "vl/trader/ninjatrader"
@@ -218,6 +219,62 @@ func (at *AutoTrader) mentorRiskControl() *store.RiskControlConfig {
 		return nil
 	}
 	return &at.config.StrategyConfig.RiskControl
+}
+
+// mentorStaleDataBlockEnabled — the mentor stale-data block knob: nil → ON
+// (fail-closed, the same default posture as B4 on the AI path); explicit false
+// turns it OFF. Byte-identical to B4's default.
+func mentorStaleDataBlockEnabled(rc *store.RiskControlConfig) bool {
+	return rc == nil || rc.MentorStaleDataBlock == nil || *rc.MentorStaleDataBlock
+}
+
+// mentorStaleDataBlocked is the mentor stale-data block (release #11): refuse
+// NEW mentor work (arm authoring + the armed pass placement) while the live 1m
+// feed is stale, reusing B4's ONE formula (kernel.StaleEntryGateFeed →
+// barIsStale, ~75 s, CME-open/halt aware). One WARN + one mentorCount("stale_data")
+// per stale EPISODE (the fresh→stale transition), never per tick.
+//
+// NEVER blocks exits or protection: the exit drive, BE/stop moves, closes and
+// cancels do not consult this. Already-resting broker orders are NOT cancelled
+// here — that is a separate decision. Fail-open when the provider is absent
+// (crypto / test) or the cache is empty (the seed + FEED DOWN alert own cold).
+func (at *AutoTrader) mentorStaleDataBlocked(now time.Time) bool {
+	if at == nil {
+		return false
+	}
+	if rc := at.mentorRiskControl(); !mentorStaleDataBlockEnabled(rc) {
+		return false
+	}
+	if market.FuturesBarsProvider == nil {
+		return false
+	}
+	newestOpen := int64(0)
+	if bars := market.FuturesBarsProvider(at.futuresSymbol(), "1m", 1); len(bars) > 0 {
+		newestOpen = bars[len(bars)-1].OpenTime
+	}
+	stale := kernel.StaleEntryGateFeed(newestOpen, now)
+	at.mentorStaleMu.Lock()
+	changed := stale != at.mentorStaleEpisode
+	if changed {
+		at.mentorStaleEpisode = stale
+	}
+	at.mentorStaleMu.Unlock()
+	if changed && stale {
+		age := now.UnixMilli() - (newestOpen + 60_000)
+		mentorCount("stale_data")
+		at.logWarnf("🧑‍🏫 mentor stale-data block: 1m feed stale (newest bar age %ds, B4 threshold ~75s) — refusing NEW mentor arms; exits and protection are unaffected; resting orders are NOT cancelled.", age/1000)
+	}
+	return stale
+}
+
+// mentorStaleDataBlockBootLine renders the boot line for the mentor stale-data
+// block knob (release #11).
+func (at *AutoTrader) mentorStaleDataBlockBootLine() string {
+	state := "ON"
+	if at != nil && !mentorStaleDataBlockEnabled(at.mentorRiskControl()) {
+		state = "OFF"
+	}
+	return fmt.Sprintf("🧑‍🏫 mentor stale-data block: %s (threshold = B4's, ~75 s)", state)
 }
 
 // ── KNOB ROUTING (CTO 1791033257041) — defaults as ruled ───────────────────
