@@ -41,21 +41,25 @@ func clockDriftMs(nowMs, freshestBarMs, intervalMs int64) int64 {
 // ≈ 55–60 s at every session roll — a false "fix WSL2 time-sync NOW".
 //
 // The fix uses the SAME expected-open boundary the B4 stale gate uses
-// (kernel/stale_data.go: expectedOpen = floor(now/interval)×interval): when the
-// newest bar opened AT or AFTER that boundary (it is the in-flight forming bar),
-// the freshest CLOSED bar closed at the boundary, so measure against the
-// boundary — never against a forming bar's future close. A genuinely late feed
-// (newest bar older than the boundary) keeps the honest close, so a 10-min-old
-// feed still fires EARLY-WARNING and CRITICAL.
+// (kernel/stale_data.go: expectedOpen = floor(now/interval)×interval):
+//   - newestOpen == expectedOpen → the in-flight FORMING bar of this minute;
+//     the freshest CLOSED bar closed at the boundary, so measure against it.
+//   - newestOpen >  expectedOpen → the newest bar's open is in OUR future: the
+//     local clock is BEHIND the feed. Return the honest (negative) drift so
+//     |drift| still alarms — this must never be clamped away.
+//   - newestOpen <  expectedOpen → a closed bar (or an old/late feed): the
+//     honest close, so a 10-min-old feed still fires EARLY-WARNING/CRITICAL.
 func rollSafeClockDriftMs(nowMs, newestOpenMs int64) int64 {
 	const interval = int64(60_000)
 	expectedOpen := (nowMs / interval) * interval
-	if newestOpenMs >= expectedOpen {
-		// In-flight forming bar (or a clock-skew future label): the freshest
-		// closed bar's close is the current boundary.
+	switch {
+	case newestOpenMs == expectedOpen:
 		return nowMs - expectedOpen
+	case newestOpenMs > expectedOpen:
+		return nowMs - newestOpenMs // negative: local clock behind the feed
+	default:
+		return nowMs - (newestOpenMs + interval)
 	}
-	return nowMs - (newestOpenMs + interval)
 }
 
 // freshestIntradayBar returns the newest 1m (else 5m) bar time and its interval,

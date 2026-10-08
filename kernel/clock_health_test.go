@@ -72,6 +72,19 @@ func TestRollSafeClockDriftMs(t *testing.T) {
 			boundary + 40_000, boundary - 60_000,
 			+40_000, "warn",
 		},
+		{
+			// The CTO P1 fold: a local clock BEHIND the feed (newest bar open in
+			// our future) must alarm, never be clamped away. Named RED: the first
+			// version clamped newestOpenMs >= expectedOpen → no alarm.
+			"local clock ~3min behind the feed still fires CRITICAL",
+			boundary + 20_000, boundary + 180_000,
+			-160_000, "critical",
+		},
+		{
+			"local clock 40s behind the feed still fires EARLY-WARNING",
+			boundary + 20_000, boundary + 60_000,
+			-40_000, "warn",
+		},
 	}
 	for _, c := range cases {
 		got := rollSafeClockDriftMs(c.nowMs, c.newestOpen)
