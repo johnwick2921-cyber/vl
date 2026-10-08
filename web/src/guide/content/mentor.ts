@@ -300,7 +300,7 @@ export const mentor: GuideSection = {
         {
           title: 'Only same-direction inside a 5m ISB box',
           body: 'The latest 5m ISB candle is boxed; only a same-direction 1m ISB trades inside it.',
-          cite: 'D3.4 p2 @12:02 — ISB rest box, same-direction only · ISB rest box filter — merged',
+          cite: 'D3.4 p2 @09:09–09:39 — ISB rest box, same-direction only · ISB rest box filter — merged',
         },
         {
           title: 'Smaller size at an old high/low',
@@ -433,7 +433,7 @@ export const mentor: GuideSection = {
         {
           title: 'Trading window 08:30–09:30 CT',
           body: 'The day is only 08:30–09:30 CT. The SWING4H is exempt.',
-          cite: 'Owner setting — window 08:30 + 60 (D1.2 p1 @23:52 "đặt một cái timer… đúng một tiếng") · mentor_window_start / mentor_window_minutes — live',
+          cite: 'Owner setting — window 08:30 + 60 (D1.2 p1 @24:04–24:15 "đặt một cái timer… đúng một tiếng") · mentor_window_start / mentor_window_minutes — live',
         },
         {
           title: 'Daily loss is checked at placement',
