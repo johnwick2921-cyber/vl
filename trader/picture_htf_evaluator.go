@@ -3,6 +3,7 @@ package trader
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -139,7 +140,11 @@ func (e *PictureHtfEvaluator) noteSilent(stage, reason string) {
 	if e.watchReasons == nil {
 		e.watchReasons = make(map[string]int64)
 	}
-	key := stage + "|" + reason
+	// LOG-NOISE-2: the counter key is the reason SHAPE, not the literal text —
+	// every digit-run collapses to "<n>", so "age 63066ms" and "age 596496ms"
+	// share ONE counter and ONE first-occurrence WARN instead of one per frame
+	// (9076 WARNs in 6 min). The DEBUG line keeps the real numbers.
+	key := stage + "|" + reasonShape(reason)
 	n := e.watchReasons[key] + 1
 	e.watchReasons[key] = n
 	if n == 1 {
@@ -147,6 +152,31 @@ func (e *PictureHtfEvaluator) noteSilent(stage, reason string) {
 	} else {
 		logger.Debugf("picture-htf: %s — %s (count %d)", stage, reason, n)
 	}
+}
+
+// reasonShape collapses every digit-run in a reason string into a single "<n>"
+// placeholder. Reasons that differ only in numbers ("age 63066ms" vs
+// "age 596496ms") dedupe to one counter and one WARN.
+func reasonShape(s string) string {
+	if !strings.ContainsAny(s, "0123456789") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	inDigits := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= '0' && c <= '9' {
+			if !inDigits {
+				b.WriteString("<n>")
+				inDigits = true
+			}
+			continue
+		}
+		b.WriteByte(c)
+		inDigits = false
+	}
+	return b.String()
 }
 
 // pictureHtfSubmitSeam is the hand-off seam: since W5 the production wiring
