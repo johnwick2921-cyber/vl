@@ -2069,6 +2069,13 @@ type RiskControlConfig struct {
 	//     (30/60/90/120; unset → 60). The SWING setup is exempt.
 	// (c)/(d) never-widen / never-add are guards, not knobs.
 	MentorDoneAfterWin *bool `json:"mentor_done_after_win,omitempty"`
+	// MentorDoneAfterWinDayStart — the done-after-win "day" boundary, "HH:MM"
+	// CT (owner ruling 2026-10-09): the mentor's day is the NY day (08:30 CT),
+	// not the CME session day (17:00 CT). nil/"" → "08:30". "17:00" restores
+	// the pre-2026-10-09 behaviour. A win at 18:06 CT no longer blocks the next
+	// NY open; a NY win at 10:00 blocks until 08:30 the next day (the evening
+	// session included).
+	MentorDoneAfterWinDayStart string `json:"mentor_done_after_win_day_start,omitempty"`
 	// MentorStopAfterLoss — STOP-AFTER-LOSS (owner "ok" 2026-10-05): once a
 	// mentor trade closes today with a net LOSS (pnl_corrected < 0, both legs
 	// combined), refuse new mentor entries until the next session day
