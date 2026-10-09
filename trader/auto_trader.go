@@ -232,6 +232,39 @@ func (at *AutoTrader) autoBEMentorBlockedOnce(symbol, side string, pts float64) 
 		symbol, side, pts)
 }
 
+// drawdownMentorBlockedCount is the session counter for "drawdown emergency close
+// not applied because mentor mode is ON" (owner ruling 2026-10-09). Visible to
+// tests and reports via DrawdownMentorBlockedCount.
+var drawdownMentorBlockedCount atomic.Int64
+
+// DrawdownMentorBlockedCount returns the session count of drawdown emergency
+// closes refused because the trader runs mentor mode ON.
+func DrawdownMentorBlockedCount() int64 { return drawdownMentorBlockedCount.Load() }
+
+// resetDrawdownMentorBlockedCountForTest clears the process-wide counter.
+func resetDrawdownMentorBlockedCountForTest() { drawdownMentorBlockedCount.Store(0) }
+
+// drawdownMentorBlockedOnce logs ONCE per position that the AI-era drawdown
+// emergency close was not applied because mentor mode is ON (the mentor's exits
+// own the trade), and bumps the visible counter. Idempotent per "symbol_side"
+// via drawdownMentorBlocked.
+func (at *AutoTrader) drawdownMentorBlockedOnce(symbol, side string, profitPct, peakPct, drawdownPct float64) {
+	key := symbol + "_" + side
+	at.breakevenMu.Lock()
+	if at.drawdownMentorBlocked == nil {
+		at.drawdownMentorBlocked = make(map[string]bool)
+	}
+	if at.drawdownMentorBlocked[key] {
+		at.breakevenMu.Unlock()
+		return
+	}
+	at.drawdownMentorBlocked[key] = true
+	at.breakevenMu.Unlock()
+	drawdownMentorBlockedCount.Add(1)
+	logger.Warnf("🎯 drawdown emergency close: not applied — mentor mode ON (the mentor's exits own the trade) [%s %s profit %.2f%% peak %.2f%% drawdown %.2f%%]",
+		symbol, side, profitPct, peakPct, drawdownPct)
+}
+
 // defaultBreakevenTriggerPoints is the shipped auto-breakeven trigger (points in
 // profit) when the strategy leaves breakeven_trigger_points unset or ≤ 0.
 const defaultBreakevenTriggerPoints = 50.0
@@ -283,6 +316,11 @@ func (at *AutoTrader) pruneBreakevenDone(openKeys map[string]bool) {
 	for k := range at.autoBEMentorBlocked {
 		if !openKeys[k] {
 			delete(at.autoBEMentorBlocked, k)
+		}
+	}
+	for k := range at.drawdownMentorBlocked {
+		if !openKeys[k] {
+			delete(at.drawdownMentorBlocked, k)
 		}
 	}
 }
@@ -573,6 +611,7 @@ type AutoTrader struct {
 	peakPnLCacheMutex     sync.RWMutex           // Cache read-write lock
 	breakevenDone         map[string]bool        // auto-breakeven: "symbol_side" already moved to breakeven (idempotent; reset on flat)
 	autoBEMentorBlocked   map[string]bool        // auto-breakeven: "symbol_side" already logged "not applied — mentor mode ON" (idempotent; reset on flat)
+	drawdownMentorBlocked map[string]bool        // drawdown emergency close: "symbol_side" already logged "not applied — mentor mode ON" (idempotent; reset on flat)
 	entryTheses           map[string]entryThesis // Phase 3: original entry decision per "symbol_side" (run-loop goroutine)
 	watchStates           map[string]*watchState // Phase 3: watcher hysteresis state per "symbol_side" (run-loop goroutine)
 	trailStates           map[string]*trailState // Phase 3B: trailing-stop state per "symbol_SIDE" (guarded by trailMu — monitor + watcher goroutines)

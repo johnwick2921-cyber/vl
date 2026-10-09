@@ -527,6 +527,17 @@ export const mentor: GuideSection = {
       ],
     },
     {
+      kind: 'callout',
+      title: 'AI-era exits are off in mentor mode',
+      items: [
+        {
+          title: 'Auto-breakeven · trailing · drawdown emergency close',
+          body: 'While mentor mode is ON these AI-era mechanics do not apply to a mentor trade — the mentor’s exits own the stop (owner ruling 2026-10-09). The 60-second monitor’s drawdown emergency close (profit > 5% AND drawdown ≥ 40% from the peak) logs "not applied — mentor mode ON" instead of closing the position.',
+          cite: 'Owner ruling 2026-10-09 · trader/auto_trader.go maybeMoveStopToBreakeven · trader/auto_trader_trailing.go maybeTrailStop · trader/auto_trader_risk.go checkPositionDrawdown',
+        },
+      ],
+    },
+    {
       kind: 'h',
       text: 'Every knob, with its default and source',
     },
