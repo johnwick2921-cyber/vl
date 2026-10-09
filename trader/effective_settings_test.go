@@ -331,3 +331,42 @@ func TestEffectiveMaxContractsMentorModeTruth(t *testing.T) {
 		t.Fatalf("ai mode: mentor_max_contracts effective = %v, want the not-applied marker", got)
 	}
 }
+
+// FIX-AUTOBE-OFF-IN-MENTOR (owner ruling 2026-10-09): the breakeven_enabled /
+// trailing_enabled effective rows must say "not applied while mentor mode is
+// ON" in mentor mode, and resolve normally (with the 0B seam open) in AI mode.
+// RED (named): making the exitMech mentor branch `if false && …` leaves the
+// mentor rows reporting the raw strategy value instead of the marker.
+func TestEffectiveSettingsExitMechNotAppliedInMentorMode(t *testing.T) {
+	t.Setenv("EXIT_MECHS_SUSPENDED", "0") // seam open: the AI-mode rows resolve to the strategy value
+
+	mentorRaw := `{"strategy_type":"ai_trading","ai_config":{"risk_control":{
+		"mentor_mode":true,"breakeven_enabled":true,"breakeven_trigger_points":40,
+		"trailing_enabled":true,"trailing_arm":"immediate"}}}`
+	rows := effRowsFor(t, mentorRaw, "ninjatrader", "NY")
+
+	for _, path := range []string{"breakeven_enabled", "trailing_enabled"} {
+		k := rcPath + path
+		if got := jsonVal(t, rows[k].Effective); got != "not applied while mentor mode is ON (owner ruling 2026-10-09)" {
+			t.Fatalf("mentor mode: %s effective = %v, want the not-applied marker", k, got)
+		}
+		if !strings.HasPrefix(rows[k].Origin, "mentor_mode on") {
+			t.Fatalf("mentor mode: %s origin = %q, want it to start with 'mentor_mode on'", k, rows[k].Origin)
+		}
+	}
+
+	aiRaw := `{"strategy_type":"ai_trading","ai_config":{"risk_control":{
+		"mentor_mode":false,"breakeven_enabled":true,"breakeven_trigger_points":40,
+		"trailing_enabled":true,"trailing_arm":"immediate"}}}`
+	aiRows := effRowsFor(t, aiRaw, "ninjatrader", "NY")
+
+	if got := jsonVal(t, aiRows[rcPath+"breakeven_enabled"].Effective); got != true {
+		t.Fatalf("ai mode: breakeven_enabled effective = %v, want true", got)
+	}
+	if got := jsonVal(t, aiRows[rcPath+"trailing_enabled"].Effective); got != true {
+		t.Fatalf("ai mode: trailing_enabled effective = %v, want true", got)
+	}
+	if got := jsonVal(t, aiRows[rcPath+"breakeven_trigger_points"].Effective); got != float64(40) {
+		t.Fatalf("ai mode: breakeven_trigger_points effective = %v, want 40", got)
+	}
+}
