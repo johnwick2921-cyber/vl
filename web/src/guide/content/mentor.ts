@@ -1255,13 +1255,14 @@ export const mentor: GuideSection = {
           label: 'Done after a winning day',
           where:
             'No Studio control — ON by default (owner ruling); the strategy setting mentor_done_after_win=false turns it off',
-          what: 'Stop new mentor entries for the trading day after a winning trade closes and the day’s net P&L is positive.',
-          trader: 'ON by default; an explicit false disables this stop rule.',
+          what: 'Stop new mentor entries for the mentor\u2019s NY day after a winning trade closes and the day\u2019s net P&L is positive. The day boundary is 08:30 CT (the NY open) — owner ruling 2026-10-09; a win at 18:06 CT no longer blocks the next NY open.',
+          trader:
+            'ON by default; an explicit false disables this stop rule. The day boundary is the knob mentor_done_after_win_day_start ("HH:MM" CT; unset → 08:30, the NY open). Set it to 17:00 to restore the old CME-session-day behaviour.',
           consumer: 'trader/mentor_tick.go mentorDoneAfterWinGate',
           range: 'true / false',
           systemDefault: 'true (unset = ON)',
           recommended:
-            'ON — owner ruling; stop after a win on a net-positive day.',
+            'ON — owner ruling; stop after a win on a net-positive day. Day boundary: 08:30 CT (owner ruling 2026-10-09).',
           whenToTouch: 'Rarely.',
           perSession: 'No — per strategy.',
         },

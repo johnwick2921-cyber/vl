@@ -999,7 +999,7 @@ func (at *AutoTrader) mentorDoneAfterWinTripped() (bool, string) {
 		return false, ""
 	}
 	if mentorDoneAfterWin(net, closed) {
-		return true, "a trade closed in profit and the day is net positive — no entries until the next trading day (17:00 CT) [D1.2 p1 @20:53–21:16]"
+		return true, at.mentorDoneAfterWinReason()
 	}
 	return false, ""
 }
@@ -1130,9 +1130,54 @@ func (at *AutoTrader) mentorWindowGate(in mentor.Intent) (bool, string) {
 
 // (a) DONE FOR THE DAY AFTER A WIN [D1.2 p1 @20:53–21:16; p2 @05:28–06:27]:
 // once a trade closes in profit and the day's net P&L is above 0 → no new
-// mentor entries until the next trading day (17:00 CT).
+// mentor entries until the next NY open (08:30 CT; day boundary = owner ruling
+// 2026-10-09 — the mentor's "day" is the NY day, not the CME 17:00 session day).
 func mentorDoneAfterWin(dayNetPnl float64, closedInProfit bool) bool {
 	return closedInProfit && dayNetPnl > 0
+}
+
+// mentorDoneAfterWinDayStartDefault is the done-after-win day boundary (owner
+// ruling 2026-10-09): 08:30 CT — the NY open. A win at 18:06 CT belongs to the
+// day that started 08:30 and no longer blocks the next NY open; a NY win at
+// 10:00 blocks until 08:30 the next day (the evening session included).
+const mentorDoneAfterWinDayStartDefault = "08:30"
+
+// mentorDoneAfterWinDayStart resolves the knob (""/nil → the 08:30 default).
+func (at *AutoTrader) mentorDoneAfterWinDayStart() string {
+	start := mentorDoneAfterWinDayStartDefault
+	if at.config.StrategyConfig != nil {
+		if v := strings.TrimSpace(at.config.StrategyConfig.RiskControl.MentorDoneAfterWinDayStart); v != "" {
+			start = v
+		}
+	}
+	return start
+}
+
+// mentorDayStartAt returns the most recent occurrence of the "HH:MM" CT day
+// start at or before now (today's, or yesterday's when today's is still ahead).
+// ok=false on an unparseable start (the caller fails closed).
+func mentorDayStartAt(start string, now time.Time) (time.Time, bool) {
+	hour, minute, ok := parseMentorWindowStart(start)
+	if !ok {
+		return time.Time{}, false
+	}
+	loc := kernel.CTLocation()
+	ct := now.In(loc)
+	d := time.Date(ct.Year(), ct.Month(), ct.Day(), hour, minute, 0, 0, loc)
+	if d.After(now) {
+		d = time.Date(ct.Year(), ct.Month(), ct.Day()-1, hour, minute, 0, 0, loc)
+	}
+	return d, true
+}
+
+// mentorDoneAfterWinReason renders the refusal with the resolved boundary.
+func (at *AutoTrader) mentorDoneAfterWinReason() string {
+	start := at.mentorDoneAfterWinDayStart()
+	label := "the next NY open (" + start + " CT)"
+	if start != mentorDoneAfterWinDayStartDefault {
+		label = "the next trading day (" + start + " CT)"
+	}
+	return fmt.Sprintf("done for the day after a win — a trade closed in profit and the day is net positive; no new entries until %s [D1.2 p1 @20:53–21:16; day boundary = owner ruling 2026-10-09]", label)
 }
 
 // mentorDayNetSource / mentorClosedProfitSource are the session seams for (a).
@@ -1169,7 +1214,7 @@ func (at *AutoTrader) mentorDoneAfterWinGate() (bool, string) {
 	}
 	if mentorDoneAfterWin(net, closed) {
 		mentorCount("done_after_win_refused")
-		return true, "done for the day after a win — a trade closed in profit and the day is net positive; no new entries until the next trading day (17:00 CT) [D1.2 p1 @20:53–21:16]"
+		return true, at.mentorDoneAfterWinReason()
 	}
 	return false, ""
 }
