@@ -154,6 +154,14 @@ func (at *AutoTrader) checkPositionDrawdown() {
 
 		// Check close position condition: profit > 5% and drawdown >= 40%
 		if currentPnLPct > 5.0 && drawdownPct >= 40.0 {
+			// FIX-EMERGENCY-CLOSE-OFF-IN-MENTOR (owner ruling 2026-10-09):
+			// with mentor mode ON, a mentor trade follows ONLY the mentor's
+			// exits — the AI-era drawdown emergency close must not close a
+			// mentor-owned position. Log ONCE per position + a visible counter.
+			if at.mentorEnabled() {
+				at.drawdownMentorBlockedOnce(symbol, side, currentPnLPct, peakPnLPct, drawdownPct)
+				continue
+			}
 			logger.Infof("🚨 Drawdown close position condition triggered: %s %s | Current profit: %.2f%% | Peak profit: %.2f%% | Drawdown: %.2f%%",
 				symbol, side, currentPnLPct, peakPnLPct, drawdownPct)
 
