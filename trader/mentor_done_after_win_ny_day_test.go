@@ -131,3 +131,46 @@ func TestDoneAfterWinUnresolvedStillRefuses(t *testing.T) {
 		t.Fatalf("(e) an unresolved day must refuse fail-closed, got refuse=%v why=%q", refuse, why)
 	}
 }
+
+// TestStopAfterLossKeepsCMEDay (FOLD-468, CTO M2): stop-after-loss must KEEP the
+// CME 17:00 session day — a loss at 10:00 CT refuses at 16:30 (same CME day) and
+// does NOT refuse at 17:30 (the CME day rolled), even though the NY-day (08:30)
+// boundary would still count it. RED (named): wiring lossDayActivity to
+// mentorDayStartAt(08:30) makes the 17:30 case refuse.
+func TestStopAfterLossKeepsCMEDay(t *testing.T) {
+	at, st := doneAfterWinRig(t, "") // NY-day knob is the DEFAULT 08:30; the loss gate must NOT follow it
+	at.config.StrategyConfig.RiskControl.MentorStopAfterLoss = bp(true)
+
+	// A mentor loss closed at 10:00 CT.
+	if err := st.GormDB().Create(&store.TraderPosition{
+		TraderID: at.id, Account: "", Symbol: "MNQ", Side: "LONG",
+		Quantity: 1, EntryPrice: 100, ExitPrice: 60, RealizedPnL: -40,
+		PnlCorrected: fp(-40), Status: "CLOSED", CloseReason: "sync", Source: "sync",
+		EntryTime: nyDayClock(8, 10, 0).UnixMilli() - 60_000,
+		ExitTime:  nyDayClock(8, 10, 0).UnixMilli(),
+		CreatedAt: nyDayClock(8, 10, 0).UnixMilli(),
+		UpdatedAt: nyDayClock(8, 10, 0).UnixMilli(),
+	}).Error; err != nil {
+		t.Fatalf("seed closed loss: %v", err)
+	}
+
+	// 16:30 same day: the CME day (17:00 → 17:00) still holds the 10:00 loss.
+	pinDoneAfterWinClock(t, 8, 16, 30)
+	if refuse, _ := at.mentorStopAfterLossGate(); !refuse {
+		t.Fatal("16:30 same CME day: the 10:00 loss must still refuse")
+	}
+
+	// 17:30: the CME day rolled at 17:00 — the loss is yesterday's.
+	pinDoneAfterWinClock(t, 8, 17, 30)
+	if refuse, _ := at.mentorStopAfterLossGate(); refuse {
+		t.Fatal("17:30 new CME day: the 10:00 loss must NOT refuse (boundary is 17:00, not 08:30)")
+	}
+
+	// Distinguishing assertion: the NY-day (08:30) boundary WOULD still count the
+	// 10:00 loss at 17:30 (08:30 ≤ 10:00 < next 08:30), so a drift to the NY-day
+	// boundary would flip the 17:30 case to refuse — this test catches that drift.
+	nySince, ok := mentorDayStartAt(mentorDoneAfterWinDayStartDefault, nyDayClock(8, 17, 30))
+	if !ok || nySince.After(nyDayClock(8, 10, 0)) {
+		t.Fatalf("NY-day boundary at 17:30 = %v — the 10:00 loss would be excluded, so the distinguishing assertion is broken", nySince)
+	}
+}
