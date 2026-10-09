@@ -145,6 +145,7 @@ func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 	cfg.LegBudgetEnabled = mentorLegBudgetEnabled(rc)
 	cfg.LegResetOn = mentorLegResetOn(rc)
 	cfg.LocTriggerFilter = mentorLocationTriggerFilter(rc)
+	cfg.DayOffRecheck = mentorDayOffRecheck(rc)
 	applyMentorTuning(&cfg, rc)
 	if rc != nil {
 		cfg.LvlRevisitMinPts = mentorLvlRevisitMinPts(rc)
@@ -237,6 +238,21 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// test inside Tick then reads the just-closed bar as closed, never as forming
 	// (an OpenTime clock made the ORB escape unreachable and lagged every gate).
 	intents := at.mentorEval.Tick(bars, mentor.BarCloseInstant(last))
+	// Day-gate report (owner ruling 2026-10-09): ONE INFO line per trading day,
+	// emitted at the 08:30 decision, with the gate's own inputs (the 08:30
+	// decision was silent in the log — only the refusal counters showed it).
+	if rep := at.mentorEval.State.DayGateReport; rep.Key != "" && rep.Key != at.mentorDayGateReportLogged {
+		at.mentorDayGateReportLogged = rep.Key
+		at.logInfof("%s", mentorDayGateLine(rep))
+	}
+	// Day-off recheck (owner ruling 2026-10-09): when the evaluator cleared a
+	// latched DayOff this tick, WARN + count ONCE (per process per trading day
+	// — the kernel clear is one-way, so ClearedAt is a stable dedup key).
+	if rc := at.mentorEval.State.DayRecheck; rc.ClearedAt != 0 && rc.ClearedAt != at.mentorDayOffClearLogged {
+		at.mentorDayOffClearLogged = rc.ClearedAt
+		mentorCount("day_off_recheck_cleared")
+		at.logWarnf("🧑‍🏫 day-off cleared: 4h and 1h now agree (%s) at %s CT — trading resumes in that direction [owner ruling 2026-10-09; D5.1 p1 @19:22 premise no longer holds]", rc.ClearedDir, kernel.ClockHHMMCT(time.UnixMilli(rc.ClearedAt)))
+	}
 	// The seed depth moves with the bars: re-check after every tick, so a
 	// source that was short at boot (94/102 closed 4h candles) clears on its
 	// own instead of needing a restart.
@@ -304,6 +320,47 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// after the event placement so this tick's placements are counted.
 	at.mentorFunnelTick(1, len(intents))
 	return true
+}
+
+// mentorDayGateVerdictLabel maps the §7 day-gate verdict to the label the
+// once-per-day line prints (owner ruling 2026-10-09: TRADE | DAY OFF | SPENT).
+// DayNotMeasured is fail-closed and unmeasurable → n/a.
+func mentorDayGateVerdictLabel(v mentor.DayVerdict) string {
+	switch v {
+	case mentor.DayOff:
+		return "DAY OFF"
+	case mentor.DaySpent:
+		return "SPENT"
+	case mentor.DayNotMeasured:
+		return "n/a"
+	default:
+		return "TRADE"
+	}
+}
+
+// mentorDayGateLine renders the once-per-day day-gate INFO line from the
+// report the evaluator captured at the 08:30 latch — the gate's OWN inputs,
+// with n/a for anything the gate did not know (owner ruling 2026-10-09).
+func mentorDayGateLine(r mentor.DayGateReport) string {
+	run, hi, lo := "n/a", "n/a", "n/a"
+	if r.HaveRun {
+		run = fmt.Sprintf("%.0f", r.RunPts)
+		hi = fmt.Sprintf("%.2f @%s", r.HiPx, kernel.ClockHHMMCT(time.UnixMilli(r.HiAt)))
+		lo = fmt.Sprintf("%.2f @%s", r.LoPx, kernel.ClockHHMMCT(time.UnixMilli(r.LoAt)))
+	}
+	four, one := string(r.FourHDir), string(r.OneHDir)
+	if four == "" {
+		four = "n/a"
+	}
+	if one == "" {
+		one = "n/a"
+	}
+	conflict := "no"
+	if r.Conflict {
+		conflict = "yes"
+	}
+	return fmt.Sprintf("🧑‍🏫 day gate @08:30 CT: %s — overnight run %s pts (hi %s, lo %s, line %.0f) · 4h %s · 1h %s · conflict %s [D5.1 p1 @19:22]",
+		mentorDayGateVerdictLabel(r.Verdict), run, hi, lo, r.SpentPts, four, one, conflict)
 }
 
 // mentorPlaceIntent runs the placement gates (sources wired, stop rules,

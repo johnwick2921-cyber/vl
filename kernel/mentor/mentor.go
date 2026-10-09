@@ -294,6 +294,13 @@ type Config struct {
 	DayGateSpentPts     float64 // run >= this before the open = spent; default 300 [D5.1 p1 @ 15:57]
 	DayGateTargetCapPts float64 // spent-day target cap; default 15 ("15 điểm bán, 10 điểm bán")
 
+	// DayOffRecheck (owner ruling 2026-10-09): after a DayOff latch freezes at
+	// the open, re-read the 4h/1h trigger directions on every CLOSED 1h bar;
+	// the moment they AGREE the DayOff clears for the rest of the trading day
+	// (one-way — the day lands on DaySpent, so the §7 spent target cap still
+	// applies). false = today's whole-day latch (the pre-ruling behaviour).
+	DayOffRecheck bool
+
 	// PrintWindows (item 18 part 1) lists the day's red-folder 07:30 print
 	// windows (FromMs inclusive, ToMs exclusive). The evaluator skips HTF
 	// breaks from 1m bars whose open falls inside any listed window — the
@@ -390,6 +397,7 @@ func DefaultConfig() Config {
 
 		DayGateSpentPts:     300,
 		DayGateTargetCapPts: 15,
+		DayOffRecheck:       true,
 
 		Swing: DefaultSwingCfg(),
 

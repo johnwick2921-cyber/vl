@@ -452,8 +452,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Spent 300+ overnight AND 4h/1h disagree at 08:30 → day OFF',
-          body: 'The day gate reads the Globex run at 08:30 CT. If the overnight daily candle already ran 300+ pts AND the 4h and 1h disagree, the machine is OFF for the day (latched at 08:30) — no box/ISB trades all day, the swing exempt.',
-          cite: 'Ngày 5.1 p1 @19:22 — "Còn nếu như 2 khung giờ đang ngược nhau / Mà khung daily nó đã chạy được 300-400 điểm rồi / Tắt máy nghỉ luôn cho em"',
+          body: 'The day gate reads the Globex run at 08:30 CT. If the overnight daily candle already ran 300+ pts AND the 4h and 1h disagree, the machine is OFF for the day (latched at 08:30) — no box/ISB trades all day, the swing exempt. Owner ruling 2026-10-09: the OFF is re-checked on every closed 1h bar — the moment the 4h and 1h AGREE, the day re-opens (one-way, never re-latched that day; the spent-day target cap still applies) and trading resumes in that direction.',
+          cite: 'Ngày 5.1 p1 @19:22 — "Còn nếu như 2 khung giờ đang ngược nhau / Mà khung daily nó đã chạy được 300-400 điểm rồi / Tắt máy nghỉ luôn cho em" · Owner ruling 2026-10-09 (mentor_day_off_recheck, nil → ON)',
         },
       ],
     },
