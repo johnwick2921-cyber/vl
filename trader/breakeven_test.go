@@ -1,9 +1,11 @@
 package trader
 
 import (
+	"strings"
 	"testing"
 
 	"vl/store"
+	ntTrader "vl/trader/ninjatrader"
 )
 
 func bePtr(b bool) *bool { return &b }
@@ -77,5 +79,98 @@ func TestBreakevenTrigger_NT8UppercaseNotInverted(t *testing.T) {
 	// A losing short (-62.5) MUST NOT arm.
 	if fire, _ := breakevenTrigger(rc, "SHORT", 29515.75, 29578.25); fire {
 		t.Fatalf("losing SHORT: want fire=false")
+	}
+}
+
+// TestAutoBEBlockedInMentorMode (FIX-AUTOBE-OFF-IN-MENTOR, owner ruling
+// 2026-10-09): with mentor mode ON the AI-era auto-BE must NOT move a
+// mentor-owned stop. RED (named): delete the mentorEnabled check in
+// maybeMoveStopToBreakeven and moveStopWire fires.
+func TestAutoBEBlockedInMentorMode(t *testing.T) {
+	t.Setenv("EXIT_MECHS_SUSPENDED", "0") // seam open: removing the mentor gate must make this MOVE (the RED)
+	on := bePtr(true)
+	at := &AutoTrader{
+		id:       "autobe-mentor",
+		exchange: "ninjatrader",
+		trader:   &ntTrader.TCPTrader{},
+		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{
+			RiskControl: store.RiskControlConfig{
+				MentorMode:            true,
+				BreakevenEnabled:      on,
+				BreakevenTriggerPoints: 40,
+			},
+		}},
+	}
+	oldWire := moveStopWire
+	moved := false
+	moveStopWire = func(nt *ntTrader.TCPTrader, side string, newStop float64) error {
+		moved = true
+		return nil
+	}
+	t.Cleanup(func() { moveStopWire = oldWire })
+	resetAutoBEMentorBlockedCountForTest()
+
+	get := warnPlusCapture(t)
+
+	// +45 pts ≥ 40 → the trigger WOULD fire; mentor mode ON blocks the wire.
+	at.maybeMoveStopToBreakeven("MNQ", "LONG", 31023.50, 31068.50)
+	if moved {
+		t.Fatal("mentor mode ON: the auto-BE must NOT move the stop")
+	}
+	if c := AutoBEMentorBlockedCount(); c != 1 {
+		t.Fatalf("auto-BE mentor-blocked counter = %d, want 1", c)
+	}
+	if !hasLine(get(), "auto-breakeven: not applied — mentor mode ON") {
+		t.Fatalf("expected the one 'not applied' WARN line, got %v", get())
+	}
+
+	// 2nd tick on the SAME position: no new log line, no re-count.
+	at.maybeMoveStopToBreakeven("MNQ", "LONG", 31023.50, 31070.00)
+	if c := AutoBEMentorBlockedCount(); c != 1 {
+		t.Fatalf("2nd tick re-counted: %d, want still 1", c)
+	}
+	n := 0
+	for _, l := range get() {
+		if strings.Contains(l, "auto-breakeven: not applied — mentor mode ON") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("2nd tick logged a new line: %d lines, want 1 (lines=%v)", n, get())
+	}
+}
+
+// TestAutoBEFiresWhenMentorModeOff — mentor OFF keeps the auto-BE byte-identical:
+// +45 pts ≥ 40 moves the stop to entry exactly as before.
+func TestAutoBEFiresWhenMentorModeOff(t *testing.T) {
+	t.Setenv("EXIT_MECHS_SUSPENDED", "0") // the 0B seam must be open for the wire move
+	on := bePtr(true)
+	at := &AutoTrader{
+		id:       "autobe-ai",
+		exchange: "ninjatrader",
+		trader:   &ntTrader.TCPTrader{},
+		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{
+			RiskControl: store.RiskControlConfig{
+				MentorMode:            false,
+				BreakevenEnabled:      on,
+				BreakevenTriggerPoints: 40,
+			},
+		}},
+	}
+	oldWire := moveStopWire
+	var movedTo []float64
+	moveStopWire = func(nt *ntTrader.TCPTrader, side string, newStop float64) error {
+		movedTo = append(movedTo, newStop)
+		return nil
+	}
+	t.Cleanup(func() { moveStopWire = oldWire })
+	resetAutoBEMentorBlockedCountForTest()
+
+	at.maybeMoveStopToBreakeven("MNQ", "LONG", 31023.50, 31068.50) // +45 ≥ 40
+	if len(movedTo) != 1 || movedTo[0] != 31023.50 {
+		t.Fatalf("mentor OFF: auto-BE must move the stop to entry 31023.50; got %v", movedTo)
+	}
+	if c := AutoBEMentorBlockedCount(); c != 0 {
+		t.Fatalf("mentor OFF: the mentor-blocked counter must stay 0, got %d", c)
 	}
 }

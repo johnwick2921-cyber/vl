@@ -154,6 +154,15 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 	if !fire {
 		return
 	}
+	// FIX-AUTOBE-OFF-IN-MENTOR (owner ruling 2026-10-09): with mentor mode ON,
+	// a mentor trade follows ONLY the mentor's exits — the AI-era auto-BE must
+	// not move a mentor-owned stop. Log ONCE per position + a visible counter.
+	// Checked before the 0B suspension: mentor trades bypass the 0B seam, so the
+	// mentor gate must be the first thing that decides this is a mentor trade.
+	if at.mentorEnabled() {
+		at.autoBEMentorBlockedOnce(symbol, side, pts)
+		return
+	}
 	// 0B — SUSPENDED: the trigger fired, the wire stays untouched.
 	if at.exitMechSuspendedRefuse("auto-breakeven", fmt.Sprintf("%s %s +%.1f pts, stop would move to entry %.2f", symbol, side, pts, entryPrice)) {
 		return
@@ -187,6 +196,40 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 	// moving" false alarm was exactly this line being invisible).
 	logger.Warnf("🎯 auto-breakeven: %s %s +%.1f pts in profit → stop moved to breakeven (entry %.2f)",
 		symbol, side, pts, entryPrice)
+}
+
+// autoBEMentorBlockedCount is the session counter for "auto-BE not applied
+// because mentor mode is ON" (owner ruling 2026-10-09). Visible to tests and
+// reports via AutoBEMentorBlockedCount.
+var autoBEMentorBlockedCount atomic.Int64
+
+// AutoBEMentorBlockedCount returns the session count of auto-BE applications
+// refused because the trader runs mentor mode ON.
+func AutoBEMentorBlockedCount() int64 { return autoBEMentorBlockedCount.Load() }
+
+// resetAutoBEMentorBlockedCountForTest clears the process-wide counter.
+func resetAutoBEMentorBlockedCountForTest() { autoBEMentorBlockedCount.Store(0) }
+
+// autoBEMentorBlockedOnce logs ONCE per position that the AI-era auto-BE was
+// not applied because mentor mode is ON (the mentor's exits own the stop), and
+// bumps the visible counter. Idempotent per "symbol_side" via autoBEMentorBlocked.
+func (at *AutoTrader) autoBEMentorBlockedOnce(symbol, side string, pts float64) {
+	key := symbol + "_" + side
+	at.breakevenMu.Lock()
+	if at.autoBEMentorBlocked == nil {
+		at.autoBEMentorBlocked = make(map[string]bool)
+	}
+	if at.autoBEMentorBlocked[key] {
+		at.breakevenMu.Unlock()
+		return
+	}
+	at.autoBEMentorBlocked[key] = true
+	at.breakevenMu.Unlock()
+	autoBEMentorBlockedCount.Add(1)
+	// WARN (same visibility rule as the success line): an owner-visible event
+	// must reach the log_events DB sink + dashboard even when INFO is flooded.
+	logger.Warnf("🎯 auto-breakeven: not applied — mentor mode ON (the mentor's exits own the stop) [%s %s +%.1f pts]",
+		symbol, side, pts)
 }
 
 // defaultBreakevenTriggerPoints is the shipped auto-breakeven trigger (points in
@@ -235,6 +278,11 @@ func (at *AutoTrader) pruneBreakevenDone(openKeys map[string]bool) {
 	for k := range at.breakevenDone {
 		if !openKeys[k] {
 			delete(at.breakevenDone, k)
+		}
+	}
+	for k := range at.autoBEMentorBlocked {
+		if !openKeys[k] {
+			delete(at.autoBEMentorBlocked, k)
 		}
 	}
 }
@@ -515,6 +563,7 @@ type AutoTrader struct {
 	peakPnLCache          map[string]float64     // Peak profit cache (symbol -> peak P&L percentage)
 	peakPnLCacheMutex     sync.RWMutex           // Cache read-write lock
 	breakevenDone         map[string]bool        // auto-breakeven: "symbol_side" already moved to breakeven (idempotent; reset on flat)
+	autoBEMentorBlocked   map[string]bool        // auto-breakeven: "symbol_side" already logged "not applied — mentor mode ON" (idempotent; reset on flat)
 	entryTheses           map[string]entryThesis // Phase 3: original entry decision per "symbol_side" (run-loop goroutine)
 	watchStates           map[string]*watchState // Phase 3: watcher hysteresis state per "symbol_side" (run-loop goroutine)
 	trailStates           map[string]*trailState // Phase 3B: trailing-stop state per "symbol_SIDE" (guarded by trailMu — monitor + watcher goroutines)

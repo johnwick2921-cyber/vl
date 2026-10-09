@@ -475,7 +475,11 @@ export const mentor: GuideSection = {
           '3',
           'mentor_reduced_contracts',
         ],
-        ['SWING4H', '1', 'mentor_swing4h_contracts — lesson 5.2: “Em vô đúng 1 MNQ thôi” (enter exactly 1 MNQ)'],
+        [
+          'SWING4H',
+          '1',
+          'mentor_swing4h_contracts — lesson 5.2: “Em vô đúng 1 MNQ thôi” (enter exactly 1 MNQ)',
+        ],
         [
           'Spent day (§7)',
           'normal — the runner/target are cut, not the size (15-pt target cap + runner cap 2) [R09]',
@@ -533,7 +537,7 @@ export const mentor: GuideSection = {
           label: 'Mentor mode',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode (per strategy), top of the section',
-          what: 'Turns the mentor method on for this strategy. SIM only.',
+          what: 'Turns the mentor method on for this strategy. SIM only. While ON, the AI-era exit mechanics — auto-breakeven and trailing — are not applied to mentor trades: the mentor\u2019s exits own the stop (owner ruling 2026-10-09).',
           trader:
             'A switch at the top of Risk control. Turning it ON asks you to confirm (it names the strategy and the order gate); turning it OFF is immediate. Press Save: the running trader reloads on save, so no restart is needed. A second, read-only line under it shows the order gate: "Orders: DRY RUN (MENTOR_PLACE off)" means every mentor entry is only sized and logged, nothing is sent; "Orders: SIM orders ON (MENTOR_PLACE=1)" means mentor entries are placed on the SIM account. The two are separate: the switch picks the method, MENTOR_PLACE (a server setting, not a button) allows orders. Start with the dry run. While Mentor mode is ON, a funnel line logs every 15 minutes (and on change): bars · intents · kernel refusals · trader refusals · authored · placed · filled — the visibility for why entries were dropped (e.g. orb_not_drawn).',
           consumer:
@@ -579,7 +583,8 @@ export const mentor: GuideSection = {
           consumer: 'trader/mentor_mode.go:27',
           range: 'int',
           systemDefault: '20',
-          recommended: '20 — Owner setting: CTO shipped size table (P3); also the hard cap.',
+          recommended:
+            '20 — Owner setting: CTO shipped size table (P3); also the hard cap.',
           whenToTouch: 'Never above the hard cap.',
           perSession: 'No.',
         },
@@ -591,7 +596,8 @@ export const mentor: GuideSection = {
           consumer: 'trader/mentor_mode.go:31',
           range: 'int',
           systemDefault: '20',
-          recommended: '20 — Owner setting: CTO shipped size table (P3); the big tier and the hard cap.',
+          recommended:
+            '20 — Owner setting: CTO shipped size table (P3); the big tier and the hard cap.',
           whenToTouch: 'To tighten the cap.',
           perSession: 'No.',
         },
@@ -603,7 +609,8 @@ export const mentor: GuideSection = {
           consumer: 'trader/mentor_mode.go:28',
           range: 'int',
           systemDefault: '3',
-          recommended: '3 — Owner setting: CTO shipped size table (P3); the reduced tier for twenties/spent stops.',
+          recommended:
+            '3 — Owner setting: CTO shipped size table (P3); the reduced tier for twenties/spent stops.',
           whenToTouch: 'With the twenties/spent tier rules.',
           perSession: 'No.',
         },
@@ -628,7 +635,8 @@ export const mentor: GuideSection = {
           consumer: 'trader/mentor_mode.go:30',
           range: 'int',
           systemDefault: '2',
-          recommended: '2 — Owner setting: CTO shipped size table (P3); the §7 spent-day tier.',
+          recommended:
+            '2 — Owner setting: CTO shipped size table (P3); the §7 spent-day tier.',
           whenToTouch: 'With DayGateSpentPts.',
           perSession: 'No.',
         },
@@ -640,7 +648,8 @@ export const mentor: GuideSection = {
           consumer: 'trader/mentor_mode.go:449 mentorTrailTFDefault',
           range: '1m / 30s / 45s / off',
           systemDefault: '1m',
-          recommended: '1m — the course frame [D2.4 p1 @08:35 move-stop; X8 @15:40].',
+          recommended:
+            '1m — the course frame [D2.4 p1 @08:35 move-stop; X8 @15:40].',
           whenToTouch: 'off = the video-8 legacy, kept as a knob.',
           perSession: 'No.',
         },
@@ -689,7 +698,8 @@ export const mentor: GuideSection = {
           consumer: 'kernel/mentor/mentor.go EMAPeriod34',
           range: 'period',
           systemDefault: '34',
-          recommended: '34 — Engineering rule: the method names it exactly, not from the course.',
+          recommended:
+            '34 — Engineering rule: the method names it exactly, not from the course.',
           whenToTouch: 'Never — the method names it.',
           perSession: 'No.',
         },
@@ -701,7 +711,8 @@ export const mentor: GuideSection = {
           consumer: 'kernel/mentor/mentor.go EMAPeriod9',
           range: 'period',
           systemDefault: '9',
-          recommended: '9 — Engineering rule: the method names it (the reverse-ISB home), not from the course.',
+          recommended:
+            '9 — Engineering rule: the method names it (the reverse-ISB home), not from the course.',
           whenToTouch: 'Never.',
           perSession: 'No.',
         },
@@ -713,7 +724,8 @@ export const mentor: GuideSection = {
           consumer: 'kernel/mentor/mentor.go EMATFMinutes',
           range: 'minutes',
           systemDefault: '1',
-          recommended: '1 — Engineering rule: the EMA lines are computed on the 1m, not from the course.',
+          recommended:
+            '1 — Engineering rule: the EMA lines are computed on the 1m, not from the course.',
           whenToTouch: 'Experimentation only.',
           perSession: 'No.',
         },
@@ -726,7 +738,8 @@ export const mentor: GuideSection = {
           consumer: 'kernel/mentor/mentor.go EMALocationTFMinutes',
           range: 'minutes',
           systemDefault: '1',
-          recommended: '1 — D5.4 p1 @ 05:16–05:25 "Đụng EMA chính đi rồi vô lệnh" (the intraday chart).',
+          recommended:
+            '1 — D5.4 p1 @ 05:16–05:25 "Đụng EMA chính đi rồi vô lệnh" (the intraday chart).',
           whenToTouch: 'Experimentation only.',
           perSession: 'No.',
         },
@@ -738,7 +751,8 @@ export const mentor: GuideSection = {
           consumer: 'kernel/mentor/mentor.go TouchBandPts',
           range: 'pts',
           systemDefault: '0',
-          recommended: '0 — the literal touch [D3.3 p1 @00:13; D5.2 p2 @18:36 "KHÔNG ĐƯỢC GẦN ĐỤNG"].',
+          recommended:
+            '0 — the literal touch [D3.3 p1 @00:13; D5.2 p2 @18:36 "KHÔNG ĐƯỢC GẦN ĐỤNG"].',
           whenToTouch: 'Never — the literal touch is the method.',
           perSession: 'No.',
         },
@@ -855,7 +869,8 @@ export const mentor: GuideSection = {
           consumer: 'kernel/mentor/mentor.go WickMicroscalpEnabled',
           range: 'true / false',
           systemDefault: 'OFF',
-          recommended: 'OFF — D4.3 @00:00–03:20 advanced; the course says practise it later.',
+          recommended:
+            'OFF — D4.3 @00:00–03:20 advanced; the course says practise it later.',
           whenToTouch: 'Only after the core setups are proven on SIM.',
           perSession: 'No.',
         },
@@ -906,7 +921,8 @@ export const mentor: GuideSection = {
           consumer: 'kernel/mentor/filters.go Config.RangeGapPts',
           range: 'pts (0 = off)',
           systemDefault: '0 (disabled)',
-          recommended: '0 — Engineering rule: code constant (optional proximity filter), not from the course.',
+          recommended:
+            '0 — Engineering rule: code constant (optional proximity filter), not from the course.',
           whenToTouch:
             'Only when deliberately tuning the level-distance filter.',
           perSession: 'No.',
@@ -1013,7 +1029,8 @@ export const mentor: GuideSection = {
             'trader/mentor_tuning.go mentorTuningResolve (OrbGateEnabled)',
           range: 'true / false',
           systemDefault: 'true',
-          recommended: 'ON — X5 @01:52, 02:36, 03:29–03:47 (§7 step-0 gate, extras).',
+          recommended:
+            'ON — X5 @01:52, 02:36, 03:29–03:47 (§7 step-0 gate, extras).',
           whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
@@ -1025,7 +1042,8 @@ export const mentor: GuideSection = {
           consumer: 'kernel/mentor/swing4h.go SwingCfg.EMAPeriod',
           range: 'period',
           systemDefault: '34',
-          recommended: '34 — Engineering rule: the swing line period, not from the course.',
+          recommended:
+            '34 — Engineering rule: the swing line period, not from the course.',
           whenToTouch: 'Never.',
           perSession: 'No.',
         },
@@ -1086,7 +1104,8 @@ export const mentor: GuideSection = {
           consumer: 'kernel/mentor/swing4h.go SwingCfg.TargetEMA5mPeriod',
           range: 'period',
           systemDefault: '34',
-          recommended: '34 — D5.2 p2 @11:17 "TARGET 1-1 TRƯỚC" (first target = the warmed 5m EMA 34).',
+          recommended:
+            '34 — D5.2 p2 @11:17 "TARGET 1-1 TRƯỚC" (first target = the warmed 5m EMA 34).',
           whenToTouch: 'Never.',
           perSession: 'No.',
         },
@@ -1110,7 +1129,8 @@ export const mentor: GuideSection = {
           consumer: 'kernel/mentor/swing4h.go SwingCfg.Hold4hBars',
           range: '4h candles',
           systemDefault: '2',
-          recommended: '2 [C] — Engineering rule: the method does not state the hold length, not from the course.',
+          recommended:
+            '2 [C] — Engineering rule: the method does not state the hold length, not from the course.',
           whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
@@ -1123,7 +1143,8 @@ export const mentor: GuideSection = {
           consumer: 'kernel/mentor/swing4h.go SwingCfg.Respects5mZone',
           range: 'true / false',
           systemDefault: 'false',
-          recommended: 'false [C] — Engineering rule: not stated in the method, not from the course.',
+          recommended:
+            'false [C] — Engineering rule: not stated in the method, not from the course.',
           whenToTouch: 'Experimentation only.',
           perSession: 'No.',
         },
@@ -1147,7 +1168,8 @@ export const mentor: GuideSection = {
           consumer: 'kernel/mentor/box.go BoxCfg.TouchBandPts',
           range: 'pts',
           systemDefault: '0.25',
-          recommended: '0.25 — Engineering rule: code constant (wick touch tolerance), not from the course.',
+          recommended:
+            '0.25 — Engineering rule: code constant (wick touch tolerance), not from the course.',
           whenToTouch: 'Rarely.',
           perSession: 'No.',
         },

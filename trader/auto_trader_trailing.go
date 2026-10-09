@@ -116,6 +116,12 @@ func (at *AutoTrader) maybeTrailStop(symbol, side string, entryPrice, markPrice 
 	if at.exchange != "ninjatrader" || at.config.StrategyConfig == nil {
 		return
 	}
+	// FIX-AUTOBE-OFF-IN-MENTOR (owner ruling 2026-10-09): trailing is an AI-mode
+	// stop mover. With mentor mode ON, mentor trades follow ONLY the mentor's
+	// exits — the AI-era trail must not move a mentor-owned stop.
+	if at.mentorEnabled() {
+		return
+	}
 	enabled, mult, period, arm, armPts := trailingConfig(at.config.StrategyConfig.RiskControl)
 	if !enabled {
 		return
