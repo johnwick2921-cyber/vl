@@ -54,6 +54,10 @@ type State struct {
 	// latched DayOff clears the moment the 4h/1h directions agree on a later
 	// closed 1h bar — once cleared, never re-latched.
 	DayRecheck DayRecheck `json:"day_recheck,omitempty"`
+	// DayGateReport is the once-per-day record of the §7 day-gate decision
+	// (owner ruling 2026-10-09): the gate's own inputs, captured the moment the
+	// 08:30 latch freezes, so the per-day INFO line reads them.
+	DayGateReport DayGateReport `json:"day_gate_report,omitempty"`
 	// Swing is the §8 4h-EMA34 swing state (DS-106 slice; rebuildable by
 	// replaying bars through SwingTick).
 	Swing SwingState `json:"swing,omitempty"`
@@ -879,8 +883,28 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 
 	// §7 day gate (fold item 4): Globex run → per-trading-day latch (L1/L2).
 	dg := DayGate{SpentPts: e.Cfg.DayGateSpentPts, TargetCapPts: e.Cfg.DayGateTargetCapPts}
-	run, haveRun := GlobexRun(bars, now, ctime())
-	e.State.Day = LatchDay(e.State.Day, now, ctime(), run, haveRun, HTFConflict(e.State.HTF), dg)
+	m := GlobexMeasure(bars, now, ctime())
+	e.State.Day = LatchDay(e.State.Day, now, ctime(), m.Run, m.OK, HTFConflict(e.State.HTF), dg)
+	// Owner ruling 2026-10-09: the per-day day-gate log line reads the gate's
+	// OWN inputs — record them the instant the 08:30 latch freezes (once per
+	// trading day; the freeze is the first tick where the Day latch carries a
+	// key for a day it has not yet reported).
+	if e.State.Day.Key != "" && e.State.DayGateReport.Key != e.State.Day.Key {
+		e.State.DayGateReport = DayGateReport{
+			Key:      e.State.Day.Key,
+			Verdict:  e.State.Day.Verdict,
+			RunPts:   m.Run,
+			HaveRun:  m.OK,
+			HiPx:     m.Hi,
+			HiAt:     m.HiAt,
+			LoPx:     m.Lo,
+			LoAt:     m.LoAt,
+			FourHDir: e.State.HTF.FourH.Dir,
+			OneHDir:  e.State.HTF.OneH.Dir,
+			Conflict: HTFConflict(e.State.HTF),
+			SpentPts: dg.SpentPts,
+		}
+	}
 	// Owner ruling 2026-10-09: a latched DayOff re-reads the 4h/1h directions
 	// on every CLOSED 1h bar and clears the moment they agree (one-way). The
 	// closed 1h bars are the same print-filtered feed the HTF lines advanced

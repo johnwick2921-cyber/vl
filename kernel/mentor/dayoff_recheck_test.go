@@ -188,3 +188,62 @@ func TestDayOffRecheckReopensEntries(t *testing.T) {
 		t.Fatalf("cleared (DaySpent) short ISB emitted no entries — the day gate must reopen")
 	}
 }
+
+// TestDayGateReportRecordedOnceAtFreeze — owner ruling 2026-10-09: the
+// once-per-day day-gate line reads the gate's OWN inputs, captured the moment
+// the 08:30 latch freezes. A spent+conflict overnight (run 310) with a 4h short
+// / 1h long conflict must record DayOff, run 310, hi/lo and their bar times, the
+// 300-pt line and the two directions — exactly once (a second tick leaves it).
+func TestDayGateReportRecordedOnceAtFreeze(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.HTFGateNewsOnly = false
+	cfg.KeyLevelTFMinutes = 1
+	cfg.EMAPeriod34 = 0
+	cfg.EMAPeriod9 = 0
+	cfg.EMALocationTFMinutes = 0
+	e := New(cfg)
+	// Freeze the HTF lines: LastBucket pins the tape's own buckets so the
+	// overnight bars below never re-draw the pre-seeded short/long conflict.
+	e.State.HTF.FourH = TriggerLine{Dir: SideShort, Price: 400, MovedAt: auditMs(2026, 10, 7, 21, 0, 0), LastBucket: fourHBucketStart(auditMs(2026, 10, 8, 8, 30, 0), ctime())}
+	e.State.HTF.OneH = TriggerLine{Dir: SideLong, Price: 300, MovedAt: auditMs(2026, 10, 8, 7, 0, 0), LastBucket: (auditMs(2026, 10, 8, 8, 30, 0) / 3_600_000) * 3_600_000}
+
+	mk := func(y int, mo time.Month, d, hh, mm int, o, h, l, c float64) market.Kline {
+		ot := auditMs(y, mo, d, hh, mm, 0)
+		return market.Kline{OpenTime: ot, CloseTime: ot + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(2026, 10, 7, 17, 0, 497, 500, 495, 497),  // overnight hi 500
+		mk(2026, 10, 8, 8, 29, 193, 198, 190, 193),  // overnight lo 190 → run 310
+		mk(2026, 10, 8, 8, 30, 194, 199, 191, 194),  // the latch tick (after the session close)
+	}
+	now := auditMs(2026, 10, 8, 8, 31, 0)
+
+	e.Tick(bars, now)
+	rep := e.State.DayGateReport
+	if rep.Key != "2026-10-08" {
+		t.Fatalf("report key = %q, want 2026-10-08", rep.Key)
+	}
+	if rep.Verdict != DayOff {
+		t.Fatalf("verdict = %v, want DayOff (spent 310 + conflict)", rep.Verdict)
+	}
+	if !rep.HaveRun || rep.RunPts != 310 {
+		t.Fatalf("run = %.2f haveRun=%v, want 310 true", rep.RunPts, rep.HaveRun)
+	}
+	if rep.HiPx != 500 || rep.LoPx != 190 {
+		t.Fatalf("hi/lo = %.2f/%.2f, want 500/190", rep.HiPx, rep.LoPx)
+	}
+	if rep.FourHDir != SideShort || rep.OneHDir != SideLong || !rep.Conflict {
+		t.Fatalf("dirs = %s/%s conflict=%v, want short/long true", rep.FourHDir, rep.OneHDir, rep.Conflict)
+	}
+	if rep.SpentPts != 300 {
+		t.Fatalf("spent line = %.0f, want 300", rep.SpentPts)
+	}
+
+	// once: a second tick (same day) must not overwrite the report.
+	bars2 := append(append([]market.Kline{}, bars...), mk(2026, 10, 8, 9, 0, 194, 199, 191, 194))
+	e.Tick(bars2, auditMs(2026, 10, 8, 9, 1, 0))
+	if e.State.DayGateReport != rep {
+		t.Fatalf("report changed on the second tick:\n  first %+v\n  now   %+v", rep, e.State.DayGateReport)
+	}
+}

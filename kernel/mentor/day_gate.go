@@ -103,6 +103,24 @@ type DayRecheck struct {
 	Last1HClose int64 `json:"last_1h_close,omitempty"`
 }
 
+// DayGateReport is the once-per-day record of the §7 day-gate decision
+// (owner ruling 2026-10-09): captured the moment the 08:30 latch freezes so
+// the per-day INFO line reads the gate's OWN inputs — not a later re-read.
+type DayGateReport struct {
+	Key      string     `json:"key,omitempty"`
+	Verdict  DayVerdict `json:"verdict"`
+	RunPts   float64    `json:"run_pts,omitempty"`
+	HaveRun  bool       `json:"have_run"`
+	HiPx     float64    `json:"hi_px,omitempty"`
+	HiAt     int64      `json:"hi_at,omitempty"`
+	LoPx     float64    `json:"lo_px,omitempty"`
+	LoAt     int64      `json:"lo_at,omitempty"`
+	FourHDir Side       `json:"fourh_dir,omitempty"`
+	OneHDir  Side       `json:"oneh_dir,omitempty"`
+	Conflict bool       `json:"conflict,omitempty"`
+	SpentPts float64    `json:"spent_pts,omitempty"`
+}
+
 // recheckDayOff (owner ruling 2026-10-09) runs the one-way DayOff recheck:
 // after a DayOff latches at the open, every NEW closed 1h bar re-reads the
 // 4h/1h directions; the moment they AGREE the latch clears for the rest of the
@@ -184,16 +202,28 @@ func sessionBounds(now int64, loc *time.Location) (openMs, closeMs int64) {
 	return open.UnixMilli(), close.UnixMilli()
 }
 
-// GlobexRun measures the §7 step-2 run [D5.1 p1 @ 18:36]. Before 08:30 CT the
-// window is the CURRENT session from 17:00 CT to NOW (the "current daily
-// candle" is still being drawn); from 08:30 CT on, the value is the frozen
-// 17:00→08:30 high−low of the session that just ended (CTO review E2).
-// ok=false when fewer than 2 bars cover the window — the gate then reads
-// DayNotMeasured, never a spent day.
-func GlobexRun(bars []market.Kline, now int64, loc *time.Location) (run float64, ok bool) {
+// GlobexMeasurement is the §7 step-2 run WITH its own extremes (owner ruling
+// 2026-10-09: the per-day day-gate log line reads the gate's own inputs — run,
+// hi/lo and their bar times).
+type GlobexMeasurement struct {
+	Run  float64
+	OK   bool
+	Hi   float64
+	HiAt int64 // OpenTime (ms) of the bar whose high set Hi
+	Lo   float64
+	LoAt int64 // OpenTime (ms) of the bar whose low set Lo
+}
+
+// GlobexMeasure is GlobexRun plus the extremes the run is made of. Before
+// 08:30 CT the window is the CURRENT session from 17:00 CT to NOW; from 08:30
+// CT on it is the frozen 17:00→08:30 high−low of the session that just ended
+// (CTO review E2). OK=false when fewer than 2 bars cover the window (or the
+// coverage guard trips) — the gate then reads DayNotMeasured.
+func GlobexMeasure(bars []market.Kline, now int64, loc *time.Location) GlobexMeasurement {
 	if loc == nil {
 		loc = ctime()
 	}
+	var m GlobexMeasurement
 	openMs, closeMs := sessionBounds(now, loc)
 	hiMs := now
 	if !time.UnixMilli(now).In(loc).Before(time.UnixMilli(closeMs).In(loc)) {
@@ -201,7 +231,6 @@ func GlobexRun(bars []market.Kline, now int64, loc *time.Location) (run float64,
 	}
 	loMs := openMs
 
-	hi, lo := 0.0, 0.0
 	n := 0
 	var earliest int64
 	for _, b := range bars {
@@ -209,20 +238,21 @@ func GlobexRun(bars []market.Kline, now int64, loc *time.Location) (run float64,
 			continue
 		}
 		if n == 0 {
-			hi, lo = b.High, b.Low
+			m.Hi, m.HiAt = b.High, b.OpenTime
+			m.Lo, m.LoAt = b.Low, b.OpenTime
 			earliest = b.OpenTime
 		} else {
-			if b.High > hi {
-				hi = b.High
+			if b.High > m.Hi {
+				m.Hi, m.HiAt = b.High, b.OpenTime
 			}
-			if b.Low < lo {
-				lo = b.Low
+			if b.Low < m.Lo {
+				m.Lo, m.LoAt = b.Low, b.OpenTime
 			}
 		}
 		n++
 	}
 	if n < 2 {
-		return 0, false
+		return m
 	}
 	// A6 coverage guard [D5.1 p1 @17:44-17:56]: the run is the FULL
 	// Globex session (Asia high -> pre-market low). A feed that starts
@@ -230,9 +260,17 @@ func GlobexRun(bars []market.Kline, now int64, loc *time.Location) (run float64,
 	// the day gate must read not-measured instead (fail closed, §12).
 	// The tolerance is bar-alignment slack only, not a measurement window.
 	if earliest > loMs+globexCoverToleranceMs {
-		return 0, false
+		return m
 	}
-	return hi - lo, true
+	m.Run = m.Hi - m.Lo
+	m.OK = true
+	return m
+}
+
+// GlobexRun measures the §7 step-2 run [D5.1 p1 @ 18:36]. See GlobexMeasure.
+func GlobexRun(bars []market.Kline, now int64, loc *time.Location) (run float64, ok bool) {
+	m := GlobexMeasure(bars, now, loc)
+	return m.Run, m.OK
 }
 
 // DayGateVerdict applies the §7 table. conflict is HTFConflict(htf):
