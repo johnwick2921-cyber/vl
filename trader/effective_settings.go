@@ -694,6 +694,12 @@ func buildEffectiveResolvers() map[string]effResolver {
 	})
 	exitMech := func(path, name string, on func(store.RiskControlConfig) bool) {
 		add(rcPath+path, name, func(x *effCtx) effResult {
+			// FIX-AUTOBE-OFF-IN-MENTOR (owner ruling 2026-10-09): with mentor
+			// mode ON, the AI-era stop movers do not apply to mentor trades —
+			// the mentor's exits own the stop.
+			if x.at != nil && x.at.mentorEnabled() {
+				return effResult{value: "not applied while mentor mode is ON (owner ruling 2026-10-09)", origin: "mentor_mode on", scope: ScopeStrategy}
+			}
 			v := on(x.rc())
 			if v && exitMechsSuspended() {
 				return effResult{value: false, origin: OriginSuspended, scope: ScopeProcessEnv}
