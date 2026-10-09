@@ -88,6 +88,17 @@ func HTFConflict(h HTF) bool {
 	return h.OneH.Dir != h.FourH.Dir
 }
 
+// HTFAgreement reports §5.4 case 1: BOTH the 4h and the 1h trigger stand and
+// point the SAME direction (the 1h is not silent). It is the exact inverse of
+// HTFConflict — the premise a DayOff latch was built on. Owner ruling
+// 2026-10-09: a latched DayOff clears the moment this becomes true.
+func HTFAgreement(h HTF) (ok bool, dir Side) {
+	if h.FourH.Dir == "" || oneHSilent(h) || h.OneH.Dir != h.FourH.Dir {
+		return false, ""
+	}
+	return true, h.FourH.Dir
+}
+
 // HTFAgrees reports whether the 4h AND the 1h trigger BOTH stand and point
 // the entry's side — case 1 of the mentor's screen [D4.4 p1 @16:00]. Case 2
 // (1h "ko có gì hết", follow the 4h) trades but is not agreement; case 3

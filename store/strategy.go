@@ -2069,6 +2069,13 @@ type RiskControlConfig struct {
 	//     (30/60/90/120; unset → 60). The SWING setup is exempt.
 	// (c)/(d) never-widen / never-add are guards, not knobs.
 	MentorDoneAfterWin *bool `json:"mentor_done_after_win,omitempty"`
+	// MentorDoneAfterWinDayStart — the done-after-win "day" boundary, "HH:MM"
+	// CT (owner ruling 2026-10-09): the mentor's day is the NY day (08:30 CT),
+	// not the CME session day (17:00 CT). nil/"" → "08:30". "17:00" restores
+	// the pre-2026-10-09 behaviour. A win at 18:06 CT no longer blocks the next
+	// NY open; a NY win at 10:00 blocks until 08:30 the next day (the evening
+	// session included).
+	MentorDoneAfterWinDayStart string `json:"mentor_done_after_win_day_start,omitempty"`
 	// MentorStopAfterLoss — STOP-AFTER-LOSS (owner "ok" 2026-10-05): once a
 	// mentor trade closes today with a net LOSS (pnl_corrected < 0, both legs
 	// combined), refuse new mentor entries until the next session day
@@ -2082,6 +2089,12 @@ type RiskControlConfig struct {
 	// B4 on the AI path); explicit false disables. Never blocks exits or
 	// protection; resting broker orders are NOT cancelled.
 	MentorStaleDataBlock *bool `json:"mentor_stale_data_block,omitempty"`
+	// MentorDayOffRecheck — owner ruling 2026-10-09: once the §7 day gate
+	// latches DayOff at the 08:30 read, re-read the 4h/1h trigger directions
+	// on every closed 1h bar; the moment they AGREE the DayOff clears for the
+	// rest of the trading day (one-way). nil → ON; false = today's whole-day
+	// latch (the pre-ruling behaviour).
+	MentorDayOffRecheck *bool `json:"mentor_day_off_recheck,omitempty"`
 	// Knob routing (CTO 1791033257041): the evaluator's G1/L1/E4/location
 	// knobs ride the strategy config like the other mentor knobs, defaults as
 	// ruled:

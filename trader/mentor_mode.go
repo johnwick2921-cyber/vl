@@ -337,6 +337,14 @@ func mentorLocationTriggerFilter(rc *store.RiskControlConfig) bool {
 	return rc == nil || rc.MentorLocationTriggerFilter == nil || *rc.MentorLocationTriggerFilter
 }
 
+// mentorDayOffRecheck — owner ruling 2026-10-09: after a DayOff latch freezes
+// at the open, re-read the 4h/1h directions on every closed 1h bar and clear
+// the latch the moment they agree (one-way). nil → ON; false = today's
+// whole-day latch.
+func mentorDayOffRecheck(rc *store.RiskControlConfig) bool {
+	return rc == nil || rc.MentorDayOffRecheck == nil || *rc.MentorDayOffRecheck
+}
+
 // mentorLossDeparturePts is the optional fixed-points fallback for the B22
 // structural departure rule. Zero (unset) leaves the fallback OFF.
 func mentorLossDeparturePts(rc *store.RiskControlConfig) float64 {
