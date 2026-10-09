@@ -53,6 +53,33 @@ func TestMentorDayGateLineRealInputs(t *testing.T) {
 	}
 }
 
+// TestMentorDayGateLineSpent — a spent+agree day reads SPENT (the owner's
+// three-way label: TRADE | DAY OFF | SPENT).
+func TestMentorDayGateLineSpent(t *testing.T) {
+	line := mentorDayGateLine(mentor.DayGateReport{
+		Key:      "2026-10-08",
+		Verdict:  mentor.DaySpent,
+		RunPts:   346.25,
+		HaveRun:  true,
+		HiPx:     31465.75,
+		HiAt:     ctMs(2026, 10, 7, 21, 34),
+		LoPx:     31119.5,
+		LoAt:     ctMs(2026, 10, 8, 5, 34),
+		FourHDir: mentor.SideShort,
+		OneHDir:  mentor.SideShort,
+		Conflict: false,
+		SpentPts: 300,
+	})
+	for _, want := range []string{"SPENT", "conflict no", "4h short", "1h short"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("line %q missing %q", line, want)
+		}
+	}
+	if strings.Contains(line, "DAY OFF") || strings.Contains(line, "TRADE ") {
+		t.Fatalf("a spent day must read SPENT, not TRADE/DAY OFF: %q", line)
+	}
+}
+
 // TestMentorDayGateLineUnknownReadsNA — a not-measured gate prints n/a for
 // every value it did not know (never fabricated zeros).
 func TestMentorDayGateLineUnknownReadsNA(t *testing.T) {

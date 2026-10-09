@@ -322,14 +322,15 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	return true
 }
 
-// mentorDayGateVerdictLabel maps the §7 day-gate verdict to the two-word label
-// the once-per-day line prints. DaySpent trades (with the 15-pt cap) so it
-// reads TRADE — the "spent" is visible in the run number; DayNotMeasured is
-// fail-closed and unmeasurable → n/a.
+// mentorDayGateVerdictLabel maps the §7 day-gate verdict to the label the
+// once-per-day line prints (owner ruling 2026-10-09: TRADE | DAY OFF | SPENT).
+// DayNotMeasured is fail-closed and unmeasurable → n/a.
 func mentorDayGateVerdictLabel(v mentor.DayVerdict) string {
 	switch v {
 	case mentor.DayOff:
 		return "DAY OFF"
+	case mentor.DaySpent:
+		return "SPENT"
 	case mentor.DayNotMeasured:
 		return "n/a"
 	default:

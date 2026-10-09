@@ -247,3 +247,64 @@ func TestDayGateReportRecordedOnceAtFreeze(t *testing.T) {
 		t.Fatalf("report changed on the second tick:\n  first %+v\n  now   %+v", rep, e.State.DayGateReport)
 	}
 }
+
+// TestDayOffRecheckReal1008HourlySequence — the real 10-08 hourly shape the CTO
+// settled (RECONCILE SETTLED, 2026-10-09): 4h SHORT all day; 1h LONG drawn at
+// 08:00, then the 10:00 hour's low 31169.75 breaks the 09:00 hour's low
+// 31189.50 (no high break: 10:00 high 31273 ≤ 09:00 high 31280) → the 1h flips
+// SHORT at the 10:00 bar's CLOSE (11:00 CT). The recheck must clear there, dir
+// SHORT — the production e.State.HTF (with the broke-both tie-break) path.
+func TestDayOffRecheckReal1008HourlySequence(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.HTFGateNewsOnly = false
+	cfg.DayOffRecheck = true
+	cfg.KeyLevelTFMinutes = 1
+	cfg.EMAPeriod34 = 0
+	cfg.EMAPeriod9 = 0
+	cfg.EMALocationTFMinutes = 0
+	e := New(cfg)
+
+	// 4h SHORT since 10-07 21:00, frozen at the tape's own 4h bucket.
+	now9 := auditMs(2026, 10, 8, 9, 0, 0)
+	fh := fourHBucketStart(now9, ctime())
+	e.State.HTF.FourH = TriggerLine{Dir: SideShort, Price: 31371.75, MovedAt: auditMs(2026, 10, 7, 21, 0, 0), LastBucket: fh, LastBar: market.Kline{OpenTime: fh - 240*60_000, High: 31466, Low: 31119, Close: 31120}}
+	// 1h LONG drawn at 08:00 (after the 4h) → conflict.
+	h8 := (auditMs(2026, 10, 8, 8, 0, 0) / 3_600_000) * 3_600_000
+	e.State.HTF.OneH = TriggerLine{Dir: SideLong, Price: 31210.75, MovedAt: h8, LastBucket: h8, LastBar: market.Kline{OpenTime: h8, High: 31300, Low: 31100, Close: 31210}}
+	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now9).In(ctime())), Verdict: DayOff}
+
+	mkHour := func(hh int, hi, lo, cl float64) []market.Kline {
+		t0 := auditMs(2026, 10, 8, hh, 0, 0)
+		out := make([]market.Kline, 0, 60)
+		for m := 0; m < 60; m++ {
+			ot := t0 + int64(m)*60_000
+			out = append(out, market.Kline{OpenTime: ot, CloseTime: ot + 59_000, Open: cl, High: hi, Low: lo, Close: cl})
+		}
+		return out
+	}
+	hour9 := mkHour(9, 31280, 31189.50, 31220)  // 09:00 — no low break vs 08:00 low 31100
+	hour10 := mkHour(10, 31273, 31169.75, 31170) // 10:00 — low breaks 31189.50, high 31273 ≤ 31280
+	bars0910 := append(append([]market.Kline{}, hour9...), hour10...)
+
+	// Tick 1: the 09:00 1h bar closes (now 10:00 CT) — the 1h is still LONG.
+	e.Tick(hour9, auditMs(2026, 10, 8, 10, 0, 0))
+	if e.State.Day.Verdict != DayOff {
+		t.Fatalf("after the 09:00 close verdict = %v, want DayOff (still conflicting)", e.State.Day.Verdict)
+	}
+
+	// Tick 2: the 10:00 1h bar closes (now 11:00 CT) — the 1h flips SHORT and
+	// agrees with the 4h → the recheck clears, direction SHORT.
+	e.Tick(bars0910, auditMs(2026, 10, 8, 11, 0, 0))
+	if e.State.Day.Verdict != DaySpent {
+		t.Fatalf("after the 10:00 close verdict = %v, want DaySpent (cleared)", e.State.Day.Verdict)
+	}
+	rc := e.State.DayRecheck
+	if rc.Clears != 1 || rc.ClearedDir != SideShort {
+		t.Fatalf("recheck = %+v, want Clears=1 ClearedDir=short (11:00 CT, dir SHORT)", rc)
+	}
+	// The clear fired on the 10:00 bar's close — 11:00 CT.
+	if got := time.UnixMilli(rc.ClearedAt).In(ctime()).Format("15:04"); got != "11:00" {
+		t.Fatalf("ClearedAt = %s CT, want 11:00", got)
+	}
+}

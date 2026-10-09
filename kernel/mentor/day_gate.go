@@ -94,7 +94,9 @@ type DayRecheck struct {
 	Key string `json:"key,omitempty"`
 	// ClearedDir is the direction the 4h/1h agreed on when the clear fired.
 	ClearedDir Side `json:"cleared_dir,omitempty"`
-	// ClearedAt is the CloseTime (ms) of the closed 1h bar the clear fired on.
+	// ClearedAt is the close BOUNDARY (CloseTime + 1) of the closed 1h bar the
+	// clear fired on — the same convention as BarCloseInstant, so the WARN line
+	// prints "11:00" for the 10:00 bar's close.
 	ClearedAt int64 `json:"cleared_at,omitempty"`
 	// Clears is the per-day clear count (always 0 or 1 — one-way).
 	Clears int `json:"clears,omitempty"`
@@ -154,7 +156,7 @@ func recheckDayOff(l DayLatch, rc *DayRecheck, h HTF, bars1h []market.Kline, now
 	rc.Last1HClose = newest
 	if ok, dir := HTFAgreement(h); ok {
 		rc.ClearedDir = dir
-		rc.ClearedAt = newest
+		rc.ClearedAt = newest + 1 // the close boundary, like BarCloseInstant
 		rc.Clears++
 		return DayLatch{Key: key, Verdict: DaySpent}
 	}
