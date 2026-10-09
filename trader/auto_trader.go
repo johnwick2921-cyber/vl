@@ -427,6 +427,11 @@ type AutoTrader struct {
 	// only consulted when the per-strategy mentor_mode is ON.
 	mentorEval         *mentor.Evaluator
 	mentorLastTickOpen int64
+	// mentorDayOffClearLogged is the DayRecheck.ClearedAt value last WARN'd +
+	// counted. The recheck clears at most once per trading day, so the value
+	// is a stable per-process dedup key. Read/written only inside
+	// mentorEvalOnce under mentorEvalMu.
+	mentorDayOffClearLogged int64
 	// mentorEvalMu serializes the evaluator: the scan loop (mentorTick) and the
 	// event loop (mentorEventPassAt) both call mentorEvalOnce, whose Tick
 	// mutates the evaluator's maps — N11 (DS-104). One mutex, both callers.

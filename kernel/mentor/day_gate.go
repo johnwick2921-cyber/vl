@@ -83,6 +83,66 @@ type DayLatch struct {
 	Verdict DayVerdict
 }
 
+// DayRecheck is the one-way DayOff recheck bookkeeping (owner ruling
+// 2026-10-09). A DayOff latch freezes at the 08:30 CT read; from then on the
+// recheck re-reads the 4h/1h directions on every CLOSED 1h bar and clears the
+// latch the moment they agree. Once cleared, the day never re-latches. The
+// whole struct is derived deterministically from bars + config, so it rebuilds
+// under Replay.
+type DayRecheck struct {
+	// Key is the trading day this recheck state belongs to ("" = none).
+	Key string `json:"key,omitempty"`
+	// ClearedDir is the direction the 4h/1h agreed on when the clear fired.
+	ClearedDir Side `json:"cleared_dir,omitempty"`
+	// ClearedAt is the CloseTime (ms) of the closed 1h bar the clear fired on.
+	ClearedAt int64 `json:"cleared_at,omitempty"`
+	// Clears is the per-day clear count (always 0 or 1 — one-way).
+	Clears int `json:"clears,omitempty"`
+	// Last1HClose is the CloseTime of the newest closed 1h bar the recheck has
+	// already evaluated — the recheck runs once per NEW closed 1h bar.
+	Last1HClose int64 `json:"last_1h_close,omitempty"`
+}
+
+// recheckDayOff (owner ruling 2026-10-09) runs the one-way DayOff recheck:
+// after a DayOff latches at the open, every NEW closed 1h bar re-reads the
+// 4h/1h directions; the moment they AGREE the latch clears for the rest of the
+// trading day — never re-latched. The cleared day lands on DaySpent, not
+// DayTrade: the run is still spent (that is why it latched), only the conflict
+// is gone, so the §7 "trade, but don't target big" cap still applies.
+func recheckDayOff(l DayLatch, rc *DayRecheck, h HTF, bars1h []market.Kline, now int64, loc *time.Location) DayLatch {
+	if loc == nil {
+		loc = ctime()
+	}
+	key := tradingDayKey(time.UnixMilli(now).In(loc))
+	// The recheck only touches a latched DayOff for TODAY.
+	if l.Key != key || l.Verdict != DayOff {
+		if rc.Key != key {
+			*rc = DayRecheck{Key: key}
+		}
+		return l
+	}
+	if rc.Key != key {
+		*rc = DayRecheck{Key: key}
+	}
+	var newest int64
+	for _, b := range bars1h {
+		if b.CloseTime > newest {
+			newest = b.CloseTime
+		}
+	}
+	if newest == 0 || newest <= rc.Last1HClose {
+		return l // no new closed 1h bar since the last recheck
+	}
+	rc.Last1HClose = newest
+	if ok, dir := HTFAgreement(h); ok {
+		rc.ClearedDir = dir
+		rc.ClearedAt = newest
+		rc.Clears++
+		return DayLatch{Key: key, Verdict: DaySpent}
+	}
+	return l
+}
+
 // ctime loads America/Chicago (the mentor quotes all times in US Central
 // [D4.4 p1 @ 01:45 "em tính giờ Texas"]). Falls back to a fixed −6h zone if
 // tzdata is unavailable.

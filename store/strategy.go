@@ -2082,6 +2082,12 @@ type RiskControlConfig struct {
 	// B4 on the AI path); explicit false disables. Never blocks exits or
 	// protection; resting broker orders are NOT cancelled.
 	MentorStaleDataBlock *bool `json:"mentor_stale_data_block,omitempty"`
+	// MentorDayOffRecheck — owner ruling 2026-10-09: once the §7 day gate
+	// latches DayOff at the 08:30 read, re-read the 4h/1h trigger directions
+	// on every closed 1h bar; the moment they AGREE the DayOff clears for the
+	// rest of the trading day (one-way). nil → ON; false = today's whole-day
+	// latch (the pre-ruling behaviour).
+	MentorDayOffRecheck *bool `json:"mentor_day_off_recheck,omitempty"`
 	// Knob routing (CTO 1791033257041): the evaluator's G1/L1/E4/location
 	// knobs ride the strategy config like the other mentor knobs, defaults as
 	// ruled:
