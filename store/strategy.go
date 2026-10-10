@@ -1960,6 +1960,10 @@ type MentorTuning struct {
 	// the ISB entry is read on the 2m chart (nil → OFF; the course trades the
 	// 1m throughout).
 	Exec2mAfter30m *bool `json:"exec_2m_after_30m,omitempty"`
+	// FlagWallTarget (FLAG-TARGET, owner "ok do it" 2026-10-05): the flag
+	// wall as a target/room limit for a trade taken inside the flag
+	// [X9 @ 05:47–06:12]. nil → OFF.
+	FlagWallTarget *bool `json:"flag_wall_target,omitempty"`
 	// Spent-day gate (METHOD §7 table, D5.1 p1 @14:21–15:57): a run of at
 	// least SpentPts before the open = spent; the target cap then applies,
 	// and any setup whose stop is over the cap is skipped (R9).

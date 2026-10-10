@@ -26,6 +26,7 @@ type mentorTuned struct {
 	ISBReverseEMA9Enabled  bool
 	HTFGateNewsOnly        bool
 	Exec2mAfter30m         bool
+	FlagWallTarget         bool
 	DayGateSpentPts        float64
 	DayGateTargetCapPts    float64
 	SwingMaxStopPts        float64
@@ -43,6 +44,7 @@ func mentorTuningResolve(rc *store.RiskControlConfig) mentorTuned {
 		ISBReverseEMA9Enabled:  d.ISBReverseEMA9Enabled,
 		HTFGateNewsOnly:        d.HTFGateNewsOnly,
 		Exec2mAfter30m:         d.Exec2mAfter30m,
+		FlagWallTarget:         d.FlagWallTarget,
 		DayGateSpentPts:        d.DayGateSpentPts,
 		DayGateTargetCapPts:    d.DayGateTargetCapPts,
 		SwingMaxStopPts:        d.Swing.MaxStopPts,
@@ -102,6 +104,9 @@ func mentorTuningResolve(rc *store.RiskControlConfig) mentorTuned {
 	if t.Exec2mAfter30m != nil {
 		out.Exec2mAfter30m = *t.Exec2mAfter30m
 	}
+	if t.FlagWallTarget != nil {
+		out.FlagWallTarget = *t.FlagWallTarget
+	}
 	return out
 }
 
@@ -117,6 +122,7 @@ func applyMentorTuning(cfg *mentor.Config, rc *store.RiskControlConfig) {
 	cfg.ISBReverseEMA9Enabled = t.ISBReverseEMA9Enabled
 	cfg.HTFGateNewsOnly = t.HTFGateNewsOnly
 	cfg.Exec2mAfter30m = t.Exec2mAfter30m
+	cfg.FlagWallTarget = t.FlagWallTarget
 	cfg.DayGateSpentPts = t.DayGateSpentPts
 	cfg.DayGateTargetCapPts = t.DayGateTargetCapPts
 	cfg.Swing.MaxStopPts = t.SwingMaxStopPts
