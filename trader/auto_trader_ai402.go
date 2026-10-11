@@ -42,14 +42,28 @@ func classifyAIError(err error) string {
 // ai402EventID names the CURRENT outage (latched start instant) — the alert
 // bus dedupes on it, so cycle #2..#139 of one outage are silent no-ops.
 func (at *AutoTrader) ai402EventID() string {
-	return "ai402:" + time.UnixMilli(at.ai402OutageStartMs).UTC().Format("2006-01-02T15:04")
+	return "ai402:" + time.UnixMilli(at.ai402OutageStartMs.Load()).UTC().Format("2006-01-02T15:04")
+}
+
+// ai402ClearAllOn is the F5 (REL17) kill-switch: default ON. ON = recovery
+// acks EVERY open ai-payment alert for this trader (restart-safe) and the
+// planner / watch call sites join the decision path in raising (402) and
+// clearing (success) the outage. OFF restores the pre-REL17 behaviour
+// (in-memory event-id ack only; decision path is the only caller).
+func ai402ClearAllOn() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("AI402_CLEAR_ALL"))) {
+	case "0", "false", "off", "no":
+		return false
+	default:
+		return true
+	}
 }
 
 // on402Failure latches the outage and raises the one P0 banner.
 func (at *AutoTrader) on402Failure(now time.Time, err error) {
-	first := at.ai402OutageStartMs == 0
+	first := at.ai402OutageStartMs.Load() == 0
 	if first {
-		at.ai402OutageStartMs = now.UnixMilli()
+		at.ai402OutageStartMs.Store(now.UnixMilli())
 	}
 	at.emitAlert("P0", "ai-payment", at.ai402EventID(),
 		"AI CREDIT EXHAUSTED — no decisions until topped up",
@@ -61,18 +75,39 @@ func (at *AutoTrader) on402Failure(now time.Time, err error) {
 }
 
 // onAISuccess clears a latched 402 outage: recovery log + banner auto-ack.
+// F5 (REL17, 2026-10-11): with the kill-switch ON it is RESTART-SAFE — it acks
+// EVERY open (acked=0) ai-payment alert for this trader, not only the
+// in-memory event id, so a fresh process (latch == 0) still clears a banner
+// the previous process raised. OFF keeps the pre-REL17 behaviour byte-identical.
 func (at *AutoTrader) onAISuccess(now time.Time) {
-	if at.ai402OutageStartMs == 0 {
+	latched := at.ai402OutageStartMs.Load() != 0
+	var dur time.Duration
+	var eventID string
+	if latched {
+		dur = now.Sub(time.UnixMilli(at.ai402OutageStartMs.Load())).Round(time.Minute)
+		eventID = at.ai402EventID()
+		at.ai402OutageStartMs.Store(0)
+	}
+	if at.store == nil {
 		return
 	}
-	dur := now.Sub(time.UnixMilli(at.ai402OutageStartMs)).Round(time.Minute)
-	eventID := at.ai402EventID()
-	at.ai402OutageStartMs = 0
-	if at.store != nil {
-		if n, err := at.store.Alert().AckByEvent(at.id, eventID); err != nil {
-			at.logWarnf("⚠️ ai-402 recovery: banner auto-ack failed: %v", err)
-		} else if n > 0 {
-			at.logInfof("✅ AI PAYMENT RECOVERED after %s — 402 banner cleared automatically.", dur)
+	var n int64
+	var err error
+	if ai402ClearAllOn() {
+		n, err = at.store.Alert().AckAllByKind(at.id, "ai-payment")
+	} else {
+		if !latched {
+			return
+		}
+		n, err = at.store.Alert().AckByEvent(at.id, eventID)
+	}
+	if err != nil {
+		at.logWarnf("⚠️ ai-402 recovery: banner auto-ack failed: %v", err)
+	} else if n > 0 {
+		if latched {
+			at.logInfof("✅ AI PAYMENT RECOVERED after %s — %d 402 banner(s) cleared automatically.", dur, n)
+		} else {
+			at.logInfof("✅ AI PAYMENT RECOVERED (restart-safe) — %d stale 402 banner(s) cleared automatically.", n)
 		}
 	}
 }

@@ -103,6 +103,18 @@ func (s *AlertStore) AckByEvent(traderID, eventID string) (int64, error) {
 	return res.RowsAffected, res.Error
 }
 
+// AckAllByKind acknowledges every unacked alert of one kind for a trader.
+// F5 (REL17, 2026-10-11) — ai-payment recovery is RESTART-SAFE: a fresh
+// process has no in-memory outage latch, so it must clear every open banner
+// of the kind rather than only the one event id the dead process remembered.
+// Returns rows acked.
+func (s *AlertStore) AckAllByKind(traderID, kind string) (int64, error) {
+	res := s.db.Model(&AlertDB{}).
+		Where("trader_id = ? AND kind = ? AND acked = ?", traderID, kind, false).
+		Update("acked", true)
+	return res.RowsAffected, res.Error
+}
+
 // Ack marks an alert acknowledged (unscoped; internal callers only).
 func (s *AlertStore) Ack(id int64) error {
 	return s.db.Model(&AlertDB{}).Where("id = ?", id).Update("acked", true).Error

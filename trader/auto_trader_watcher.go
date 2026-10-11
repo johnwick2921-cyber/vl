@@ -371,6 +371,13 @@ func (at *AutoTrader) runWatchCycle(ctx *kernel.Context, record *store.DecisionR
 		at.saveDecision(record)
 		return nil
 	}
+	// F5 (REL17) — a successful observer call clears any latched 402 outage,
+	// same as the decision path (the watch path already raises on 402 via
+	// classifyWatchCallError). Gated on the kill-switch; a parse error below
+	// is still a successful DeepSeek call and still clears.
+	if ai402ClearAllOn() {
+		at.onAISuccess(time.Now())
+	}
 
 	a, parseErr := kernel.ParseObserverAssessment(raw)
 	if parseErr != nil {
