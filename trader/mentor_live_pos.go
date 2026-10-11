@@ -430,6 +430,12 @@ var mentorRebuildBook = func(at *AutoTrader, now time.Time) ([]ntwire.NT8Order, 
 	return at.liveBook(now)
 }
 
+// mentorRebuildOpenPositions is the boot-rebuild's positions source (a seam so
+// tests can pin an unreadable positions table). Production reads the store.
+var mentorRebuildOpenPositions = func(at *AutoTrader) ([]*store.TraderPosition, error) {
+	return at.store.Position().GetOpenPositions(at.id)
+}
+
 // mentorRebuildLivePosOnce is the boot hook, called at the top of
 // mentorExitDrive before the first pass. It retries every candle until a FRESH
 // broker book lets the rebuild run, then latches done.
@@ -443,14 +449,16 @@ func (at *AutoTrader) mentorRebuildLivePosOnce(now time.Time) {
 	if done {
 		return
 	}
-	rebuilt, refused, ran := at.mentorRebuildLivePosAtBoot(now)
+	_, _, ran := at.mentorRebuildLivePosAtBoot(now)
 	if !ran {
 		return // no fresh book yet — retry on the next candle
 	}
 	at.mentorRebuildMu.Lock()
 	at.mentorRebuildDone = true
 	at.mentorRebuildMu.Unlock()
-	at.logInfof("🧑‍🏫 mentor positions rebuilt: %d (refused %d)", rebuilt, refused)
+	// L7: the boot line is READ from the counters, never literal.
+	snap := MentorCountSnapshot()
+	at.logInfof("🧑‍🏫 mentor positions rebuilt: %d (refused %d)", snap["rebuild_ok"], snap["rebuild_refused"])
 }
 
 // mentorRebuildLivePosAtBoot rebuilds every open mentor position from the
@@ -464,11 +472,14 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 	if !have || (snapshotMaxAge() > 0 && age > snapshotMaxAge()) {
 		return 0, 0, false
 	}
-	ran = true
-	positions, err := at.store.Position().GetOpenPositions(at.id)
+	positions, err := mentorRebuildOpenPositions(at)
 	if err != nil {
-		return 0, 0, true
+		// DS-105 P2: an unreadable positions table must NOT latch done — the
+		// rebuild retries next candle (ran=false). WARN once per boot.
+		at.mentorRebuildWarnPositionsOnce(err)
+		return 0, 0, false
 	}
+	ran = true
 	for _, pos := range positions {
 		if pos == nil || pos.EntryOrderID == "" || !strings.EqualFold(pos.Symbol, at.futuresSymbol()) {
 			continue
@@ -486,6 +497,7 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 		}
 		lp, missing := at.mentorBuildLivePosFromBook(*row, pos, book)
 		if missing != "" {
+			mentorCount("rebuild_refused")
 			refused++
 			at.logErrorf("🧑‍🏫 mentor position %s NOT under exit management after restart — %s; manage by hand", row.SignalID, missing)
 			at.emitAlert("P0", "mentor-restart-rebuild", "mentor-rebuild-"+row.SignalID,
@@ -495,10 +507,24 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 		}
 		at.mentorRegisterLivePos(pos.EntryOrderID, lp)
 		at.mentorCountRegistrationShape(lp)
+		mentorCount("rebuild_ok")
 		rebuilt++
 		at.logInfof("🧑‍🏫 mentor restart rebuild: %s %s %d contracts under exit management (mode %s)", pos.Symbol, side, lp.Pos.Contracts, lp.Pos.Mode)
 	}
 	return rebuilt, refused, true
+}
+
+// mentorRebuildWarnPositionsOnce logs the unreadable-positions WARN once per
+// boot (the rebuild retries every candle until the table reads).
+func (at *AutoTrader) mentorRebuildWarnPositionsOnce(err error) {
+	at.mentorRebuildMu.Lock()
+	if at.mentorRebuildPositionsWarned {
+		at.mentorRebuildMu.Unlock()
+		return
+	}
+	at.mentorRebuildPositionsWarned = true
+	at.mentorRebuildMu.Unlock()
+	at.logWarnf("🧑‍🏫 mentor restart rebuild: open positions unreadable — will retry: %v", err)
 }
 
 // mentorLivePosExists reports whether a signal is already registered (guarded).
