@@ -23,7 +23,7 @@ func TestProtectionRequiresOrderShapeDespiteStopName(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o := nt.NT8Order{Symbol: "MNQ", Name: "fixture-sl", Action: tc.action, Type: tc.typ, State: "Accepted", Quantity: 1, StopPrice: 29500}
-			v := adjudicateProtection("MNQ", "LONG", 1, []nt.NT8Order{o}, true, nil, 29500)
+			v := adjudicateProtection("MNQ", "LONG", 1, []nt.NT8Order{o}, true, nil, 29500, nil, nil)
 			if v.Action != tc.want {
 				t.Fatalf("action=%s want=%s: %s", v.Action, tc.want, v.Why)
 			}

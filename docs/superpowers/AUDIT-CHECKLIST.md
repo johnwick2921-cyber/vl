@@ -8136,3 +8136,86 @@ trader/mentor_exit_drive.go mentorVerifyPendingStopMoves +
 mentorRecordPendingStopMove + mentorAdoptBrokerStop,
 trader/ninjatrader/tcp_trader.go OrderSnapshotBook,
 provider/ninjatrader/order_snapshot.go, trader/mentor_stop_move_verify_test.go.
+
+## CLASS NN (assigned at merge) — protection net re-places the ORIGINAL stop
+
+symptom: DS-104 (2026-10-11, REL17-F4): the protection reconciler, when an open
+mentor position is naked at the broker, placed a stop at the ACCEPTED-RISK price
+(or the plan's composed stop) — the ORIGINAL entry stop. The mentor exit drive
+had already moved that stop (break-even / 1:1 / trail) in its own in-memory
+state, so the "protection" the reconciler placed was looser than the stop the
+driver believed it was managing, and if price was already through the moved
+stop the reconciler would place a stop BEHIND the market (it would fill
+instantly, or should have filled). probe: for every safety re-placer, ask which
+copy of the truth it reads — the original or the CURRENT one — and whether
+"through the current stop" is handled at all. rule: when the position is a
+registered mentor live position, place at the driver's CURRENT tightest leg
+stop, and if the last price is through it, FLATTEN at market (P0) instead of
+placing; keep the old path for non-mentor positions. Pin the whole sequence at
+the call sites (naked mentor after BE → place at entry; price through → flatten;
+non-mentor → unchanged) with mutants for "always the accepted-risk stop" and
+"drop the flatten". Reference: trader/protection_reconciler.go
+mentorDriverCurrentStop + adjudicateProtection + actOnProtection,
+trader/protection_reconciler_test.go TestProtectionUsesMentorDriverStop.
+
+## CLASS NN (assigned at merge) — a live-price through-check reads a fallback
+
+symptom: DS-104 (2026-10-11, REL17-F4 P0): the same through-check read
+p["markPrice"], and for NT8 the mark is the newest 5m close which FALLS BACK TO
+ENTRY when the cache has no 5m bars. A mentor break-even stop == entry, so right
+after a restart / reconnect re-seed / feed drop a LONG at BE read
+lastPrice(=entry) <= stop(=entry) → "through" → the reconciler FLATTENED a
+healthy position at market. Even with bars, a stale close can do the same.
+probe: for every comparison that can DESTROY (flatten / force-close / cancel /
+stop-move), name the exact price and ask whether it can be a fallback or a stale
+value. rule: a destructive through-check uses ONLY a FRESH price — the newest 1m
+BarCache close age-checked against the same staleness rule the mentor stale-data
+block uses (kernel.StaleEntryGateFeed, ~75 s); never markPrice, never the entry
+fallback; equal-to-stop counts as through ONLY with a fresh price; no fresh
+price → do NOT flatten, act safely and say the side could not be checked.
+Reference: trader/protection_reconciler.go protectionFreshPrice +
+reconcileProtectionAt + adjudicateProtection,
+trader/protection_reconciler_test.go
+TestProtectionFreshPriceNoFlattenOnStaleOrMissing (no bars / stale / fresh).
+
+## CLASS NN (assigned at merge) — a per-minute P0 alert with a timestamped event id
+
+symptom: DS-104 (2026-10-11, REL17-F4 P2): the flatten alert's event id carried
+now.UnixMilli() and the flatten branch had no `changed` guard, so a failing
+flatten re-raised a NEW P0 and re-sent a close every 60 s. The alert bus is
+idempotent ON THE EVENT ID — a changing timestamp defeats the dedupe. probe: for
+every recurring alert, check (a) whether the event id is stable per episode, and
+(b) whether the raise sits behind the action-transition throttle. rule: dedupe
+the alert per (symbol, side, episode) with a STABLE event id (no timestamp) fired
+only on the transition; keep the retrying ACTION (the close), and log the retry
+count. Reference: trader/protection_reconciler.go actOnProtection
+protectionFlatten + protectionFlattenRetries.
+
+
+## CLASS NN (assigned at merge) — a recovery alert deduped on a STABLE id (only the first episode ever fires)
+
+symptom: DS-102 (2026-10-11, REL17-F4 P1-a): the protection-reconciler flatten
+P0 was deduped per (trader, symbol, side) with a STABLE event id. AlertStore.Emit
+refuses any existing (trader_id, event_id) forever, so after the first flatten
+episode in the life of the DB every later episode was silent. probe: for every
+alert whose condition is EPISODIC (it can clear and recur), the event id must
+change per episode — a stable id means "one ever", not "one per occurrence".
+rule: stamp the episode start (the transition INTO the state) into the event id
+and clear it when the state is left; reset the per-episode retry counter on the
+same edge. Reference: trader/protection_reconciler.go actOnProtection
+(protectionFlattenEpisode + protectionFlattenRetries),
+store/alert.go Emit (permanent (trader_id, event_id) dedupe).
+
+## CLASS NN (assigned at merge) — a freshness gate that fail-opens while the market is closed
+
+symptom: DS-102 (2026-10-11, REL17-F4 P1-b): the through-check's freshness came
+from kernel.StaleEntryGateFeed, which returns "not stale" whenever !IsCMEOpen(now)
+so entries are not false-refused during a halt. Reused as a SAFETY-flatten gate,
+that fail-open inverted: during the 16:00–17:00 break or the weekend an hours-old
+close read as fresh and could flatten (or place) a SWING4H held across the break.
+probe: a staleness rule that fail-opens for one purpose (entry gating) must not
+be reused unmodified for the opposite purpose (a destructive auto-action). rule:
+a destructive action's freshness check requires the market to be OPEN, judged
+BEFORE the age check. Reference: trader/protection_reconciler.go
+protectionFreshPrice (IsCMEOpen first, then StaleEntryGateFeed),
+kernel/stale_data.go StaleEntryGateFeed.
