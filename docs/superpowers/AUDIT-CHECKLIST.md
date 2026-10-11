@@ -8039,3 +8039,20 @@ dropped, copy dropped). Reference: kernel/mentor/htf_direction.go HTFAgrees +
 stampHTFAgree (called from the Tick defer), trader/mentor_mode.go
 mentorExtraFor, kernel/mentor/htf_agree_test.go,
 trader/mentor_htfagree_test.go.
+
+## CLASS NN (assigned at merge) — ordered close path skipped the leg-closed hook
+
+symptom: DS-106 (2026-10-11, REL17-SAFETY F3): OnPositionLegClosed fired only
+from the legacy recordClose path (trader/ninjatrader/close_sync.go:214).
+Ordered-owned close frames return early (close_sync.go:52-55) and
+recordCloseOrdered fired only OnPositionClosed (close_sync.go:384), so the
+leg-1 TP receipt latch was dead on the live ordered path. October logs: 0
+"scaled on the broker TP receipt" lines; #641 latched by the I7 snapshot
+fallback at 17:15:00, 24 s after its 17:14:36 TP. probe: every hook fired on
+the legacy close path is also fired on the ordered path. rule: fire the
+leg-closed hook at the same point in recordCloseOrdered as recordClose — after
+the PENDING and refused returns, so it runs only for an APPLIED receipt — and
+pin the three verdicts at the call site (APPLIED fires once; PENDING and
+refused never fire) with a mutant for removing the call. Reference:
+trader/ninjatrader/close_sync.go recordCloseOrdered +
+trader/ninjatrader/leg1_receipt_ordered_test.go.
