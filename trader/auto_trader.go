@@ -500,6 +500,11 @@ type AutoTrader struct {
 	// mentorExitMu. Cleared by a full fill (the position is provably open) and
 	// by the cancel-settlement forget (the row is terminal).
 	mentorFlatSignals map[string]struct{}
+	// mentorPendingStopMoves is the F1 stop-move TRUTH registry: one entry per
+	// (signal, wire leg) stop move that has been SENT but not yet VERIFIED
+	// against the broker's order book. Keyed "<signalID>#<wireLeg>". Guarded by
+	// mentorExitMu.
+	mentorPendingStopMoves map[string]*mentorPendingStopMove
 	// mentorFillCh carries REAL mentor fill receipts from the fill callback
 	// (the executor goroutine) to the evaluator (mentorEvalOnce, under
 	// mentorEvalMu) for FU-1: G1/G2 fed from real fills, never a

@@ -1127,7 +1127,7 @@ func mentorNeverWiden(side string, curStop, newStop float64) (refuse bool, why s
 // the shared fields under mentorExitMu — the receipt (mentorMarkLeg1Scaled) and
 // the I7 fallback write Scaled/Leg1ExitedAtMs from other goroutines, so an
 // unlocked read of pos.Scaled races (P3 rel9 review).
-func (at *AutoTrader) mentorLogPositionState(pos *mentorPosition, event string) {
+func (at *AutoTrader) mentorLogPositionState(pos *mentorPosition, event string, brokerStop float64, brokerKnown bool) {
 	if pos == nil {
 		return
 	}
@@ -1137,6 +1137,12 @@ func (at *AutoTrader) mentorLogPositionState(pos *mentorPosition, event string) 
 	contracts := pos.Contracts
 	armedBE, scaled := pos.ArmedBE, pos.Scaled
 	at.mentorExitMu.Unlock()
-	at.logInfof("🧑‍🏫 mentor exit driver [%s]: %s side=%s origin=%s entry=%.2f stop=%.2f R=%.2f contracts=%d mode=%s armedBE=%v scaled=%v",
-		event, sym, side, origin, entry, stop, r, contracts, mode, armedBE, scaled)
+	// F1: the driver's belief (stop) and the broker's truth (broker) are now
+	// BOTH on the line — a field we cannot know yet prints n/a, never a guess.
+	broker := "n/a"
+	if brokerKnown {
+		broker = fmt.Sprintf("%.2f", brokerStop)
+	}
+	at.logInfof("🧑‍🏫 mentor exit driver [%s]: %s side=%s origin=%s entry=%.2f stop=%.2f broker=%s R=%.2f contracts=%d mode=%s armedBE=%v scaled=%v",
+		event, sym, side, origin, entry, stop, broker, r, contracts, mode, armedBE, scaled)
 }
