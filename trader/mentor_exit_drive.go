@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"vl/kernel/mentor"
 	"vl/market"
@@ -114,6 +115,10 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 		return
 	}
 	c, h, l := last.Close, last.High, last.Low
+	// REL17-F2: rebuild open mentor positions at boot (once, after the first
+	// fresh broker book) BEFORE the first exit-drive pass — otherwise a
+	// restart leaves an open mentor position with no BE/1:1/trail.
+	at.mentorRebuildLivePosOnce(time.Now())
 	// CTO gate (release #4): the loop must drop a position once the account
 	// is flat on its side — nothing else ever unregistered it, so a closed
 	// trade kept sending move_stop every candle. A read error proves

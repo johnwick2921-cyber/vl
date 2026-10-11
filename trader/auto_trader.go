@@ -500,6 +500,12 @@ type AutoTrader struct {
 	// mentorExitMu. Cleared by a full fill (the position is provably open) and
 	// by the cancel-settlement forget (the row is terminal).
 	mentorFlatSignals map[string]struct{}
+	// REL17-F2 restart rebuild: one boot-time pass that rebuilds open mentor
+	// positions from the broker book before the first exit-drive pass. The
+	// pass retries on every candle until it has run with a FRESH book, then
+	// mentorRebuildDone latches true. Guarded by mentorRebuildMu.
+	mentorRebuildMu   sync.Mutex
+	mentorRebuildDone bool
 	// mentorFillCh carries REAL mentor fill receipts from the fill callback
 	// (the executor goroutine) to the evaluator (mentorEvalOnce, under
 	// mentorEvalMu) for FU-1: G1/G2 fed from real fills, never a
