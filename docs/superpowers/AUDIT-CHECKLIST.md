@@ -8039,3 +8039,24 @@ dropped, copy dropped). Reference: kernel/mentor/htf_direction.go HTFAgrees +
 stampHTFAgree (called from the Tick defer), trader/mentor_mode.go
 mentorExtraFor, kernel/mentor/htf_agree_test.go,
 trader/mentor_htfagree_test.go.
+
+## CLASS NN (assigned at merge) — stop move believed without broker confirmation
+
+symptom: the AddOn's move_stop handler replies with NO ack on a refused move
+("no live bracket"), and the Go wire seam's nil return only proves the frame was
+SENT. The mentor driver wrote leg.Stop = next on faith, so the bot believed a
+stop NT8 never applied — the position's recorded stop tightened while the broker
+still rested the old (wider) stop, and the gap was invisible until the next
+order_update that never came. probe: for every write-back of a broker-side value
+(stop, TP, quantity) from a wire seam, ask whether a nil return proves the
+BROKER accepted it or only that the FRAME left — a fire-and-forget move with no
+ack is a belief with no evidence. rule: record a pending check on every sent
+move, re-read the broker's own book (order_snapshot, every 30 s) on the first
+snapshot newer than send+2s, render one verdict (CONFIRMED / NOT-APPLIED + one
+re-send / belief = broker truth on the second miss), never widen, and pin the
+whole sequence at the production call site with mutants for "drop the re-send",
+"drop the belief correction" and "accept any price". Reference:
+trader/mentor_exit_drive.go mentorVerifyPendingStopMoves +
+mentorRecordPendingStopMove + mentorAdoptBrokerStop,
+trader/ninjatrader/tcp_trader.go OrderSnapshotBook,
+provider/ninjatrader/order_snapshot.go, trader/mentor_stop_move_verify_test.go.

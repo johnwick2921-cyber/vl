@@ -215,6 +215,11 @@ export const mentor: GuideSection = {
           body: 'Click the card title to fold it away or open it again; the page remembers your choice.',
           cite: 'Engineering rule — frontend UI (fold), not from the course · web/src/components/mentor/MentorTruthCard.tsx localStorage vl.mentorCard.open',
         },
+        {
+          title: 'Stop moves are verified against the broker',
+          body: 'Every mentor stop move is re-checked against the broker\u2019s own order book (order_snapshot every 30 s) — an NT8 refusal replies with NO ack, so a sent frame is not proof it applied. Applied → "🧑‍🏫 stop move CONFIRMED at NT8". Not applied → "🚨 STOP MOVE NOT APPLIED at NT8" + a P0 alert + ONE re-send of the same price. Still not applied → the bot adopts the broker\u2019s actual stop as its belief + a second P0 "manage by hand". A stale book delays the verdict, never guesses. The exit-driver line now prints broker=… beside stop=….',
+          cite: 'Engineering rule — broker-book verification, not from the course · trader/mentor_exit_drive.go mentorVerifyPendingStopMoves · provider/ninjatrader/order_snapshot.go',
+        },
       ],
     },
     {
