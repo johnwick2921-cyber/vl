@@ -504,8 +504,9 @@ type AutoTrader struct {
 	// positions from the broker book before the first exit-drive pass. The
 	// pass retries on every candle until it has run with a FRESH book, then
 	// mentorRebuildDone latches true. Guarded by mentorRebuildMu.
-	mentorRebuildMu   sync.Mutex
-	mentorRebuildDone bool
+	mentorRebuildMu               sync.Mutex
+	mentorRebuildDone             bool
+	mentorRebuildPositionsWarned  bool
 	// mentorFillCh carries REAL mentor fill receipts from the fill callback
 	// (the executor goroutine) to the evaluator (mentorEvalOnce, under
 	// mentorEvalMu) for FU-1: G1/G2 fed from real fills, never a

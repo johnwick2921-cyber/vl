@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -297,6 +298,48 @@ func TestMentorArmIntentPersistsExitMode(t *testing.T) {
 	}
 	if r.ExitMode == nil || *r.ExitMode != "B" {
 		t.Fatalf("exit_mode after re-author = %v, want B", r.ExitMode)
+	}
+}
+
+func TestMentorRebuildPositionsUnreadableRetries(t *testing.T) {
+	at, st := f2Trader(t)
+	sig := "aa07e583-0000-0000-0000-000000000008"
+	arm := f2Arm(sig, "ISB", 2, 0, 31020, 31000, 31040, nil)
+	if err := st.ArmedOrders().UpsertArm(arm); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Position().CreateOpenPosition(f2Pos(sig, 2, 2, 31020)); err != nil {
+		t.Fatal(err)
+	}
+	f2PinBook(t, []ntwire.NT8Order{
+		f2StopOrder(sig+"-sl", 31020, 2),
+		f2TPOrder(sig+"-tp", 31040),
+	}, true, 0)
+
+	prev := mentorRebuildOpenPositions
+	mentorRebuildOpenPositions = func(at *AutoTrader) ([]*store.TraderPosition, error) {
+		return nil, errors.New("positions table unreadable")
+	}
+	t.Cleanup(func() { mentorRebuildOpenPositions = prev })
+
+	at.mentorRebuildLivePosOnce(time.Now())
+	if at.mentorRebuildDone {
+		t.Fatal("must NOT latch done when positions are unreadable")
+	}
+	if _, ok := at.mentorLivePos[sig]; ok {
+		t.Fatal("nothing may be registered on a failed pass")
+	}
+
+	// Restore the real source: the next pass rebuilds and latches.
+	mentorRebuildOpenPositions = func(at *AutoTrader) ([]*store.TraderPosition, error) {
+		return at.store.Position().GetOpenPositions(at.id)
+	}
+	at.mentorRebuildLivePosOnce(time.Now())
+	if !at.mentorRebuildDone {
+		t.Fatal("must latch done once the positions read")
+	}
+	if _, ok := at.mentorLivePos[sig]; !ok {
+		t.Fatal("position not rebuilt on the retry pass")
 	}
 }
 
