@@ -486,6 +486,17 @@ func (t *TCPTrader) OrderSnapshotLookup(signalID string) (ntwire.NT8Order, bool)
 	return zero, false
 }
 
+// OrderSnapshotBook returns the broker's latest received order book for the
+// bound account and its local receipt instant — the broker truth the mentor
+// stop-move verifier (F1) reads. ok=false when no snapshot has arrived yet
+// ("no book" and "a book of age 0" must never render as the same one).
+func (t *TCPTrader) OrderSnapshotBook() (ntwire.OrderSnapshotPayload, time.Time, bool) {
+	if t == nil || t.server == nil {
+		return ntwire.OrderSnapshotPayload{}, time.Time{}, false
+	}
+	return t.server.OrderSnapshots().LatestReceived(t.boundAccount)
+}
+
 // feedNowUTC is the latest market bar close, falling back to wall time when
 // absent. It is a market fact, never the creation timestamp of an entry command.
 func (t *TCPTrader) feedNowUTC(symbol string) time.Time {

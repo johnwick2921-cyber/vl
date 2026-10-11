@@ -1,13 +1,16 @@
 package trader
 
 import (
+	"errors"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"time"
 
 	"vl/kernel/mentor"
 	"vl/market"
+	ntwire "vl/provider/ninjatrader"
 	ntTrader "vl/trader/ninjatrader"
 )
 
@@ -114,11 +117,15 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 	if nt == nil {
 		return
 	}
-	c, h, l := last.Close, last.High, last.Low
 	// REL17-F2: rebuild open mentor positions at boot (once, after the first
 	// fresh broker book) BEFORE the first exit-drive pass — otherwise a
 	// restart leaves an open mentor position with no BE/1:1/trail.
 	at.mentorRebuildLivePosOnce(time.Now())
+	// F1 STOP-MOVE TRUTH: render verdicts on any pending stop move against the
+	// broker's latest book BEFORE this candle's drive computes new moves — a
+	// just-corrected belief feeds the 1:1/trail math, not a stale one.
+	at.mentorVerifyPendingStopMoves(nt)
+	c, h, l := last.Close, last.High, last.Low
 	// CTO gate (release #4): the loop must drop a position once the account
 	// is flat on its side — nothing else ever unregistered it, so a closed
 	// trade kept sending move_stop every candle. A read error proves
@@ -149,7 +156,8 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 			at.mentorLatchLeg1GoneIfRunnerRemains(p, openQty[p.Pos.Side])
 		}
 		at.mentorExitDrivePos(nt, p, c, h, l, last.OpenTime)
-		at.mentorLogPositionState(&p.Pos, "exit-drive")
+		brokerStop, brokerKnown := at.mentorBrokerStopForPos(nt, p)
+		at.mentorLogPositionState(&p.Pos, "exit-drive", brokerStop, brokerKnown)
 	}
 }
 
@@ -341,7 +349,9 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 					continue
 				}
 				if err := at.mentorMoveLegStop(nt, side, leg, pos.Entry); err != nil {
-					at.logWarnf("🧑‍🏫 mentor BE leg %d move FAILED: %v", i, err)
+					if !errors.Is(err, errMentorStopManual) {
+						at.logWarnf("🧑‍🏫 mentor BE leg %d move FAILED: %v", i, err)
+					}
 					continue
 				}
 				leg.Stop = pos.Entry
@@ -407,7 +417,9 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 				continue
 			}
 			if err := at.mentorMoveLegStop(nt, side, leg, next); err != nil {
-				at.logWarnf("🧑‍🏫 mentor %s leg %d stop move FAILED: %v", side, i, err)
+				if !errors.Is(err, errMentorStopManual) {
+					at.logWarnf("🧑‍🏫 mentor %s leg %d stop move FAILED: %v", side, i, err)
+				}
 				continue
 			}
 			leg.Stop = next
@@ -425,11 +437,21 @@ var mentorMoveStopForSignalWire = func(nt *ntTrader.TCPTrader, signalID, side st
 	return nt.MoveStopForSignalLeg(signalID, side, newStop, leg)
 }
 
+// errMentorStopManual is the sentinel a latched leg returns from
+// mentorMoveLegStop: the leg is under manual management, nothing is sent, and
+// the callers skip the WARN (the latch message already logged once).
+var errMentorStopManual = errors.New("mentor stop move: leg under manual management")
+
 // mentorMoveLegStop sends one leg's stop move through the signal-keyed
 // move_stop frame, guarded by mentorNeverWiden (never widen, D2.3 p1 @18:08).
+// A latched leg (two broker refusals) sends NOTHING — the belief is the broker
+// truth and the owner manages it by hand.
 func (at *AutoTrader) mentorMoveLegStop(nt *ntTrader.TCPTrader, side string, leg *mentorLeg, newStop float64) error {
 	if leg == nil || leg.SignalID == "" {
 		return fmt.Errorf("mentor leg stop move: no leg signal id")
+	}
+	if at != nil && at.mentorStopMoveManualBlocked(leg.SignalID, leg.Wire) {
+		return errMentorStopManual
 	}
 	if refuse, why := mentorNeverWiden(side, leg.Stop, newStop); refuse {
 		mentorCount("widen_refused")
@@ -440,7 +462,489 @@ func (at *AutoTrader) mentorMoveLegStop(nt *ntTrader.TCPTrader, side string, leg
 		return err
 	}
 	mentorCount("move_stop_sent")
+	// F1: the wire seam returned nil, but NT8 may still refuse the move (no
+	// live bracket) and reply with NO ack — so a nil return only proves the
+	// frame was SENT, not that the stop moved. Record a pending check for the
+	// broker-book verdict before the caller writes leg.Stop = newStop.
+	if mentorStopMoveVerifyEnabled() {
+		at.mentorRecordPendingStopMove(leg.SignalID, side, leg.Wire, newStop)
+	}
 	return nil
+}
+
+// ── F1 STOP-MOVE TRUTH ──────────────────────────────────────────────────────
+//
+// The wire seam returning nil only proves the move_stop frame was SENT — NT8
+// replies with NO ack on a refused move (no live bracket), so the Go side used
+// to write leg.Stop = next on faith and the bot believed a stop NT8 never
+// applied. This verifier closes that hole: every sent move records a pending
+// check, and on the first snapshot NEWER than send+2s it reads the broker's own
+// book and renders one verdict:
+//
+//	within half a tick of X            → CONFIRMED (INFO)
+//	exists but at another price Y       → NOT APPLIED (ERROR + P0 + re-send ONCE)
+//	still at Y after the re-send        → belief = broker truth, P0 "manage by hand"
+//	no live stop order for the leg      → leave to the protection net (F4), WARN once
+//	book older than snapshotMaxAge      → no verdict yet, WARN once
+//
+// Never widen: the verifier never sends a price wider than the broker's current
+// stop — it either re-sends the SAME wanted price or adopts the broker's price.
+
+// mentorStopMoveVerifyEnabled is the F1 kill-switch (default ON).
+func mentorStopMoveVerifyEnabled() bool {
+	switch strings.ToLower(os.Getenv("MENTOR_STOP_MOVE_VERIFY")) {
+	case "off", "0", "false", "disabled":
+		return false
+	}
+	return true
+}
+
+// mentorPendingStopMove is one SENT but not-yet-VERIFIED stop move, keyed
+// "<signalID>#<wireLeg>" (wireLeg 0 = the single bracket's own stop).
+type mentorPendingStopMove struct {
+	signalID      string
+	side          string
+	wireLeg       int
+	want          float64   // the price the loop asked NT8 for (X)
+	sendAt        time.Time // when the frame was SENT (the seam returned nil)
+	noOrderWarned bool      // the no-stop-order WARN fired once
+	staleWarned   bool      // the stale-book WARN fired once
+}
+
+// mentorStopMoveEpisode is the F1 miss-count ledger for one (signal, wire leg).
+// It SURVIVES a superseding move (mentorRecordPendingStopMove never resets it)
+// so a drive that re-sends a fresh want every candle still accumulates misses
+// and reaches "manage by hand" on the second consecutive miss. Reset only on a
+// CONFIRMED verdict or a tighter-broker adoption.
+type mentorStopMoveEpisode struct {
+	misses  int   // consecutive wider misses since the last CONFIRM
+	startMs int64 // the episode start (the P0 event id is keyed on it, so one P0 per episode)
+}
+
+// mentorStopMoveManual is the F1 manual-management latch for one (signal, wire
+// leg): after two misses the drive sends NOTHING more for it until the position
+// is gone, or the owner moves the broker stop by hand (see mentorSweepManualLatches).
+type mentorStopMoveManual struct {
+	signalID    string
+	wireLeg     int
+	logged      bool    // the "under manual management" line fired once
+	adoptedPrice float64 // the broker price adopted at latch time (owner-override change detection)
+}
+
+// mentorStopMoveKey builds the shared "<signalID>#<wireLeg>" key.
+func mentorStopMoveKey(signalID string, wireLeg int) string {
+	return fmt.Sprintf("%s#%d", signalID, wireLeg)
+}
+
+// mentorStopMoveManualBlocked reports whether a leg is latched, logging the
+// manual-management line ONCE on the first blocked attempt.
+func (at *AutoTrader) mentorStopMoveManualBlocked(signalID string, wireLeg int) bool {
+	if at == nil || at.mentorStopMoveManual == nil {
+		return false
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	m, ok := at.mentorStopMoveManual[mentorStopMoveKey(signalID, wireLeg)]
+	if !ok {
+		return false
+	}
+	if !m.logged {
+		m.logged = true
+		at.logWarnf("🧑‍🏫 mentor leg %s#%d under manual management — no automatic stop moves", signalID, wireLeg)
+	}
+	return true
+}
+
+// mentorClearStopMoveLatch removes the manual latch for a leg (a snapshot showed
+// broker == belief again, or the position is gone).
+func (at *AutoTrader) mentorClearStopMoveLatch(key string) {
+	if at == nil {
+		return
+	}
+	at.mentorExitMu.Lock()
+	delete(at.mentorStopMoveManual, key)
+	at.mentorExitMu.Unlock()
+}
+
+// mentorResetStopMoveEpisode drops the miss count (a CONFIRM or a tighter-broker
+// adoption ended the episode).
+func (at *AutoTrader) mentorResetStopMoveEpisode(key string) {
+	if at == nil {
+		return
+	}
+	at.mentorExitMu.Lock()
+	delete(at.mentorStopMoveEpisodes, key)
+	at.mentorExitMu.Unlock()
+}
+
+// mentorBumpStopMoveEpisode increments the miss count and returns the episode's
+// startMs (creating the episode at the first miss). Callers must hold no lock.
+func (at *AutoTrader) mentorBumpStopMoveEpisode(key string) (misses int, startMs int64) {
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	if at.mentorStopMoveEpisodes == nil {
+		at.mentorStopMoveEpisodes = map[string]*mentorStopMoveEpisode{}
+	}
+	ep := at.mentorStopMoveEpisodes[key]
+	if ep == nil {
+		ep = &mentorStopMoveEpisode{startMs: time.Now().UnixMilli()}
+		at.mentorStopMoveEpisodes[key] = ep
+	}
+	ep.misses++
+	return ep.misses, ep.startMs
+}
+
+// mentorRecordPendingStopMove registers a sent move for the broker-book verdict.
+// A newer move for the same (signal, wire leg) supersedes the older one — the
+// newest want is the only one that matters.
+func (at *AutoTrader) mentorRecordPendingStopMove(signalID, side string, wireLeg int, want float64) {
+	if at == nil || signalID == "" {
+		return
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	if at.mentorPendingStopMoves == nil {
+		at.mentorPendingStopMoves = map[string]*mentorPendingStopMove{}
+	}
+	at.mentorPendingStopMoves[mentorStopMoveKey(signalID, wireLeg)] = &mentorPendingStopMove{
+		signalID: signalID,
+		side:     side,
+		wireLeg:  wireLeg,
+		want:     want,
+		sendAt:   time.Now(),
+	}
+}
+
+// mentorDeletePendingStopMove drops a verdict-rendered entry.
+func (at *AutoTrader) mentorDeletePendingStopMove(key string) {
+	if at == nil {
+		return
+	}
+	at.mentorExitMu.Lock()
+	delete(at.mentorPendingStopMoves, key)
+	at.mentorExitMu.Unlock()
+}
+
+// mentorStopBook is the broker-book read seam for F1: the latest snapshot and
+// its local receipt instant. Production binds to TCPTrader.OrderSnapshotBook;
+// tests substitute a fixed book.
+var mentorStopBook = func(nt *ntTrader.TCPTrader) (ntwire.OrderSnapshotPayload, time.Time, bool) {
+	if nt == nil {
+		return ntwire.OrderSnapshotPayload{}, time.Time{}, false
+	}
+	return nt.OrderSnapshotBook()
+}
+
+// mentorBrokerStopOrders returns the broker's live stop order(s) for a signal
+// wire leg: wire 1 → "<signal>-sl", wire 2 → "<signal>-sl2", wire 0 (single
+// bracket) → every live -sl/-sl2 of the signal (a leg-less move_stop moves them
+// together).
+func mentorBrokerStopOrders(book ntwire.OrderSnapshotPayload, signalID string, wireLeg int) []ntwire.NT8Order {
+	if signalID == "" {
+		return nil
+	}
+	var names []string
+	switch wireLeg {
+	case 1:
+		names = []string{signalID + "-sl"}
+	case 2:
+		names = []string{signalID + "-sl2"}
+	default:
+		names = []string{signalID + "-sl", signalID + "-sl2"}
+	}
+	out := make([]ntwire.NT8Order, 0, 2)
+	for _, o := range book.Orders {
+		for _, n := range names {
+			if o.Name == n {
+				out = append(out, o)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// mentorAdoptBrokerStop writes the broker's price into the driver's leg belief
+// (the runner also mirrors into pos.Stop). Never widens: the adopted price IS
+// the broker truth, so nothing is ever sent to a wider level. Returns false
+// when no live leg matched (the position is gone).
+func (at *AutoTrader) mentorAdoptBrokerStop(signalID string, wireLeg int, brokerStop float64) bool {
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	p := at.mentorLivePos[signalID]
+	if p == nil {
+		return false
+	}
+	adopted := false
+	for i := range p.Legs {
+		leg := &p.Legs[i]
+		if leg.SignalID != signalID || leg.Qty <= 0 || leg.Wire != wireLeg {
+			continue
+		}
+		leg.Stop = brokerStop
+		if leg.Final {
+			p.Pos.Stop = brokerStop
+		}
+		adopted = true
+	}
+	return adopted
+}
+
+// mentorBrokerStopForPos reports the broker's resting stop for the state line's
+// leg — the runner when split, the single bracket when Wire 0. ok=false when
+// the book or the order is unknown (renders n/a, never a guess).
+func (at *AutoTrader) mentorBrokerStopForPos(nt *ntTrader.TCPTrader, p *mentorLivePos) (float64, bool) {
+	if p == nil {
+		return 0, false
+	}
+	leg := &p.Legs[0]
+	for i := range p.Legs {
+		if p.Legs[i].Final && p.Legs[i].Qty > 0 {
+			leg = &p.Legs[i]
+			break
+		}
+	}
+	if leg.SignalID == "" || leg.Qty <= 0 {
+		return 0, false
+	}
+	book, _, ok := mentorStopBook(nt)
+	if !ok {
+		return 0, false
+	}
+	orders := mentorBrokerStopOrders(book, leg.SignalID, leg.Wire)
+	if len(orders) == 0 {
+		return 0, false
+	}
+	return orders[0].StopPrice, true
+}
+
+// mentorLatchStopMoveManual latches a leg into manual management: the drive
+// sends nothing more for it until the latch clears.
+func (at *AutoTrader) mentorLatchStopMoveManual(signalID string, wireLeg int, adoptedPrice float64) {
+	if at == nil {
+		return
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	if at.mentorStopMoveManual == nil {
+		at.mentorStopMoveManual = map[string]*mentorStopMoveManual{}
+	}
+	at.mentorStopMoveManual[mentorStopMoveKey(signalID, wireLeg)] = &mentorStopMoveManual{
+		signalID:     signalID,
+		wireLeg:      wireLeg,
+		adoptedPrice: adoptedPrice,
+	}
+}
+
+// mentorSweepManualLatches clears a manual latch only when (a) the position is
+// gone (unregistered, or Qty ≤ 0 on that leg), or (b) the owner moved the broker
+// stop BY HAND — the broker price CHANGES from the price adopted at latch time,
+// which the drive re-adopts into the belief WITHOUT sending anything.
+func (at *AutoTrader) mentorSweepManualLatches(nt *ntTrader.TCPTrader) {
+	if at == nil {
+		return
+	}
+	at.mentorExitMu.Lock()
+	if len(at.mentorStopMoveManual) == 0 {
+		at.mentorExitMu.Unlock()
+		return
+	}
+	type man struct {
+		key string
+		m   *mentorStopMoveManual
+	}
+	list := make([]man, 0, len(at.mentorStopMoveManual))
+	for k, v := range at.mentorStopMoveManual {
+		list = append(list, man{k, v})
+	}
+	at.mentorExitMu.Unlock()
+
+	book, recvAt, ok := mentorStopBook(nt)
+	if !ok || recvAt.IsZero() || time.Since(recvAt) > snapshotMaxAge() {
+		return // no fresh book → can't clear anything
+	}
+	halfTick := at.mentorInstrumentTick() / 2
+	for _, e := range list {
+		at.mentorExitMu.Lock()
+		p := at.mentorLivePos[e.m.signalID]
+		at.mentorExitMu.Unlock()
+		if p == nil {
+			at.mentorClearStopMoveLatch(e.key)
+			continue
+		}
+		// Leg gone (Qty ≤ 0) → the latch is moot.
+		found := false
+		for i := range p.Legs {
+			if p.Legs[i].SignalID == e.m.signalID && p.Legs[i].Wire == e.m.wireLeg && p.Legs[i].Qty > 0 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			at.mentorClearStopMoveLatch(e.key)
+			continue
+		}
+		// Owner override: the broker stop CHANGED from the adopted-at-latch price
+		// (the owner moved it by hand) → clear the latch and re-adopt, no send.
+		stops := mentorBrokerStopOrders(book, e.m.signalID, e.m.wireLeg)
+		if len(stops) > 0 && math.Abs(stops[0].StopPrice-e.m.adoptedPrice) > halfTick {
+			newPrice := stops[0].StopPrice
+			at.mentorClearStopMoveLatch(e.key)
+			if at.mentorAdoptBrokerStop(e.m.signalID, e.m.wireLeg, newPrice) {
+				at.logInfof("🧑‍🏫 mentor leg %s#%d manual management cleared — broker stop changed to %.2f (re-adopted, nothing sent)", e.m.signalID, e.m.wireLeg, newPrice)
+			}
+		}
+	}
+}
+
+// mentorVerifyPendingStopMoves renders one verdict per pending stop move against
+// the broker's latest order book. Called once per CLOSED candle, BEFORE the
+// per-position drive, so a just-corrected belief feeds the 1:1/trail math.
+func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
+	if at == nil || !mentorStopMoveVerifyEnabled() {
+		return
+	}
+	at.mentorExitMu.Lock()
+	hasPending := len(at.mentorPendingStopMoves) > 0
+	type entry struct {
+		key string
+		mv  *mentorPendingStopMove
+	}
+	list := make([]entry, 0, len(at.mentorPendingStopMoves))
+	for k, v := range at.mentorPendingStopMoves {
+		list = append(list, entry{k, v})
+	}
+	at.mentorExitMu.Unlock()
+
+	if !hasPending {
+		at.mentorSweepManualLatches(nt)
+		return
+	}
+
+	book, recvAt, ok := mentorStopBook(nt)
+	now := time.Now()
+	// No book at all → no verdict; the protection net (F4) owns the move.
+	if !ok || recvAt.IsZero() {
+		return
+	}
+	stale := now.Sub(recvAt) > snapshotMaxAge()
+	halfTick := at.mentorInstrumentTick() / 2
+
+	for _, e := range list {
+		mv := e.mv
+		key := e.key
+		// A verdict needs the FIRST snapshot NEWER than send+2s; an older one
+		// proves nothing (the move may not have reached NT8 yet).
+		if !recvAt.After(mv.sendAt.Add(2 * time.Second)) {
+			continue
+		}
+		if stale {
+			// No fresh book → no verdict yet; warn once and wait.
+			if !mv.staleWarned {
+				mv.staleWarned = true
+				mentorCount("stop_move_stale_book")
+				at.logWarnf("🧑‍🏫 mentor stop-move verify: stale book (%s old) — no verdict yet for %s leg %d", now.Sub(recvAt).Round(time.Second), mv.signalID, mv.wireLeg)
+			}
+			continue
+		}
+
+		stops := mentorBrokerStopOrders(book, mv.signalID, mv.wireLeg)
+		if len(stops) == 0 {
+			// No live stop order → leave it to the protection net (F4); warn
+			// once, then stop managing this move.
+			if !mv.noOrderWarned {
+				mentorCount("stop_move_no_order")
+				at.logWarnf("🧑‍🏫 mentor stop-move verify: NO live stop order for %s leg %d — leaving to the protection net (F4)", mv.signalID, mv.wireLeg)
+			}
+			at.mentorDeletePendingStopMove(key)
+			continue
+		}
+
+		// All matching stops must be within half a tick of the wanted price.
+		applied := true
+		brokerPrice := 0.0
+		for _, o := range stops {
+			if math.Abs(o.StopPrice-mv.want) > halfTick {
+				applied = false
+				brokerPrice = o.StopPrice
+				break
+			}
+			brokerPrice = o.StopPrice
+		}
+		if applied {
+			mentorCount("stop_move_confirmed")
+			at.logInfof("\U0001F9D1\u200D\U0001F3EB stop move CONFIRMED at NT8: %s leg %d stop %.2f", mv.signalID, mv.wireLeg, mv.want)
+			at.mentorDeletePendingStopMove(key)
+			at.mentorResetStopMoveEpisode(key)
+			at.mentorClearStopMoveLatch(key)
+			continue
+		}
+
+		// Mismatch. A broker stop TIGHTER than the wanted price is adopted at
+		// once — never re-sent (a re-send would WIDEN it). Tighter means the
+		// broker sits closer to the position than the loop wanted: long → above,
+		// short → below.
+		tighter := false
+		switch mv.side {
+		case "long":
+			tighter = brokerPrice > mv.want+halfTick
+		case "short":
+			tighter = brokerPrice < mv.want-halfTick
+		}
+		if tighter {
+			mentorCount("stop_move_broker_tighter")
+			if at.mentorAdoptBrokerStop(mv.signalID, mv.wireLeg, brokerPrice) {
+				at.logWarnf("🧑‍🏫 stop move: broker stop %.2f is TIGHTER than wanted %.2f — kept", brokerPrice, mv.want)
+			}
+			at.mentorDeletePendingStopMove(key)
+			at.mentorResetStopMoveEpisode(key)
+			at.mentorClearStopMoveLatch(key)
+			continue
+		}
+
+		// Wider (a refusing NT8): the frame was sent but NOT applied. Misses are
+		// counted per (signal, leg) and SURVIVE superseding moves, so a fresh
+		// want every candle still reaches "manage by hand" on the second miss.
+		misses, startMs := at.mentorBumpStopMoveEpisode(key)
+		if misses == 1 {
+			mentorCount("stop_move_not_applied")
+			at.logErrorf("🚨 STOP MOVE NOT APPLIED at NT8: %s leg %d want %.2f broker %.2f", mv.signalID, mv.wireLeg, mv.want, brokerPrice)
+			// ONE P0 per episode (the event id keys on the episode start, never
+			// on the wanted price — a fresh want must not fire a fresh P0).
+			at.emitAlert("P0", "stop-move-not-applied",
+				fmt.Sprintf("stop-move:%s#%d:%d", mv.signalID, mv.wireLeg, startMs),
+				"Stop move not applied at NT8",
+				fmt.Sprintf("%s leg %d: wanted %.2f, broker at %.2f", mv.signalID, mv.wireLeg, mv.want, brokerPrice))
+			// Re-send the SAME wanted price ONCE (wider case only).
+			if err := mentorMoveStopForSignalWire(nt, mv.signalID, mv.side, mv.want, mv.wireLeg); err != nil {
+				mentorCount("stop_move_resend_failed")
+				at.logErrorf("🚨 mentor stop-move re-send FAILED for %s leg %d: %v", mv.signalID, mv.wireLeg, err)
+				continue // keep the pending check; the next candle re-renders
+			}
+			mentorCount("stop_move_resend_sent")
+			// Rewind the send clock so the re-send is re-verified next snapshot.
+			at.mentorExitMu.Lock()
+			if cur := at.mentorPendingStopMoves[key]; cur != nil {
+				cur.sendAt = now
+			}
+			at.mentorExitMu.Unlock()
+			continue
+		}
+
+		// Second consecutive miss → broker truth wins; manage by hand + latch.
+		mentorCount("stop_move_not_applied_twice")
+		at.emitAlert("P0", "stop-move-not-applied-twice",
+			fmt.Sprintf("stop-move-twice:%s#%d:%d", mv.signalID, mv.wireLeg, startMs),
+			"Stop not applied twice — manage by hand",
+			fmt.Sprintf("%s leg %d: wanted %.2f, broker at %.2f", mv.signalID, mv.wireLeg, mv.want, brokerPrice))
+		if at.mentorAdoptBrokerStop(mv.signalID, mv.wireLeg, brokerPrice) {
+			at.logErrorf("🚨 mentor stop-move: %s leg %d belief corrected to broker stop %.2f — manage by hand", mv.signalID, mv.wireLeg, brokerPrice)
+		}
+		at.mentorLatchStopMoveManual(mv.signalID, mv.wireLeg, brokerPrice)
+		at.mentorDeletePendingStopMove(key)
+	}
+
+	at.mentorSweepManualLatches(nt)
 }
 
 // mentorArmResonanceOnISB flips an open PHL/PLH position into mode A the moment
@@ -472,7 +976,9 @@ func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 				continue
 			}
 			if err := at.mentorMoveLegStop(nt, p.Pos.Side, leg, p.Pos.Entry); err != nil {
-				at.logWarnf("🧑‍🏫 mentor resonance BE leg %d move FAILED: %v", i, err)
+				if !errors.Is(err, errMentorStopManual) {
+					at.logWarnf("🧑‍🏫 mentor resonance BE leg %d move FAILED: %v", i, err)
+				}
 				continue
 			}
 			leg.Stop = p.Pos.Entry
