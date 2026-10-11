@@ -234,6 +234,35 @@ func TestMentorRebuildPersistedModeWins(t *testing.T) {
 	}
 }
 
+func TestMentorRebuildOnceWiresAndLatches(t *testing.T) {
+	at, st := f2Trader(t)
+	sig := "aa07e583-0000-0000-0000-000000000007"
+	arm := f2Arm(sig, "ISB", 2, 0, 31020, 31000, 31040, nil)
+	if err := st.ArmedOrders().UpsertArm(arm); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Position().CreateOpenPosition(f2Pos(sig, 2, 2, 31020)); err != nil {
+		t.Fatal(err)
+	}
+	f2PinBook(t, []ntwire.NT8Order{
+		f2StopOrder(sig+"-sl", 31020, 2),
+		f2TPOrder(sig+"-tp", 31040),
+	}, true, 0)
+
+	at.mentorRebuildLivePosOnce(time.Now())
+	if _, ok := at.mentorLivePos[sig]; !ok {
+		t.Fatal("the Once hook did not rebuild the position")
+	}
+	if !at.mentorRebuildDone {
+		t.Fatal("the Once hook did not latch done")
+	}
+	// Idempotent: a second call is a no-op (no double registration, no reset).
+	at.mentorRebuildLivePosOnce(time.Now())
+	if n := len(at.mentorLivePos); n != 1 {
+		t.Fatalf("registered %d positions, want 1", n)
+	}
+}
+
 func TestMentorRebuildNoFreshBookRetries(t *testing.T) {
 	at, st := f2Trader(t)
 	sig := "aa07e583-0000-0000-0000-000000000006"
