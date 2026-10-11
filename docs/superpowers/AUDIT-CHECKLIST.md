@@ -8039,3 +8039,24 @@ dropped, copy dropped). Reference: kernel/mentor/htf_direction.go HTFAgrees +
 stampHTFAgree (called from the Tick defer), trader/mentor_mode.go
 mentorExtraFor, kernel/mentor/htf_agree_test.go,
 trader/mentor_htfagree_test.go.
+
+## CLASS NN (assigned at merge) — protection net re-places the ORIGINAL stop
+
+symptom: DS-104 (2026-10-11, REL17-F4): the protection reconciler, when an open
+mentor position is naked at the broker, placed a stop at the ACCEPTED-RISK price
+(or the plan's composed stop) — the ORIGINAL entry stop. The mentor exit drive
+had already moved that stop (break-even / 1:1 / trail) in its own in-memory
+state, so the "protection" the reconciler placed was looser than the stop the
+driver believed it was managing, and if price was already through the moved
+stop the reconciler would place a stop BEHIND the market (it would fill
+instantly, or should have filled). probe: for every safety re-placer, ask which
+copy of the truth it reads — the original or the CURRENT one — and whether
+"through the current stop" is handled at all. rule: when the position is a
+registered mentor live position, place at the driver's CURRENT tightest leg
+stop, and if the last price is through it, FLATTEN at market (P0) instead of
+placing; keep the old path for non-mentor positions. Pin the whole sequence at
+the call sites (naked mentor after BE → place at entry; price through → flatten;
+non-mentor → unchanged) with mutants for "always the accepted-risk stop" and
+"drop the flatten". Reference: trader/protection_reconciler.go
+mentorDriverCurrentStop + adjudicateProtection + actOnProtection,
+trader/protection_reconciler_test.go TestProtectionUsesMentorDriverStop.

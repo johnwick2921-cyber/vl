@@ -3,12 +3,14 @@ package trader
 import (
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	nt "vl/provider/ninjatrader"
+	"vl/store"
 )
 
 // ── D5 — A POSITION WITHOUT PROTECTION (2026-09-07) ──────────────────────────
@@ -41,6 +43,7 @@ const (
 	protectionUnknown
 	protectionPlace
 	protectionAlertOnly
+	protectionFlatten
 )
 
 func (a protectionAction) String() string {
@@ -51,6 +54,8 @@ func (a protectionAction) String() string {
 		return "place"
 	case protectionAlertOnly:
 		return "alert-only"
+	case protectionFlatten:
+		return "flatten"
 	}
 	return "unknown"
 }
@@ -90,10 +95,63 @@ func sameSymbolLoose(a, b string) bool {
 	return a == b || strings.HasPrefix(a, b) || strings.HasPrefix(b, a)
 }
 
+// protectionMentorStopEnabled — PROTECTION_MENTOR_STOP (default ON, REL17-F4
+// safety fix). "0"/"false"/"off"/"no" disables the mentor-driver stop override
+// and the through-price flatten; everything else (or unset) ships the fix.
+func protectionMentorStopEnabled() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("PROTECTION_MENTOR_STOP")))
+	return v != "0" && v != "false" && v != "off" && v != "no"
+}
+
+// mentorDriverCurrentStop returns the tightest CURRENT resting stop of the
+// registered mentor live position for (symbol, side), and whether one exists.
+// "Tightest" = the live leg stop closest to price in the protective direction:
+// for a long the HIGHEST leg stop, for a short the LOWEST leg stop. Legs with no
+// quantity do not carry a stop. It reads the registry under mentorExitMu (via
+// mentorLivePosList) so it never races the exit-drive loop's write-back.
+func (at *AutoTrader) mentorDriverCurrentStop(symbol, side string) (float64, bool) {
+	if at == nil || !protectionMentorStopEnabled() {
+		return 0, false
+	}
+	best := 0.0
+	found := false
+	long := strings.EqualFold(side, "LONG")
+	for _, lp := range at.mentorLivePosList() {
+		if lp == nil || lp.Pos.Contracts <= 0 {
+			continue
+		}
+		if !strings.EqualFold(lp.Pos.Symbol, symbol) || !strings.EqualFold(lp.Pos.Side, side) {
+			continue
+		}
+		for _, leg := range lp.Legs {
+			if leg.Qty <= 0 || leg.Stop <= 0 {
+				continue
+			}
+			if !found {
+				best, found = leg.Stop, true
+				continue
+			}
+			if long {
+				if leg.Stop > best {
+					best = leg.Stop
+				}
+			} else {
+				if leg.Stop < best {
+					best = leg.Stop
+				}
+			}
+		}
+	}
+	return best, found
+}
+
 // adjudicateProtection is PURE. It answers one question: does the broker hold a
-// live stop covering this open position?
+// live stop covering this open position? When the position is a registered
+// mentor live position, the price to place is the driver's CURRENT stop (the
+// tightest live leg stop) instead of the accepted-risk / plan stop, and a stop
+// already through the last price flattens rather than places.
 func adjudicateProtection(symbol, side string, posQty int, book []nt.NT8Order, haveBook bool,
-	acceptedStop *float64, planStop float64) protectionVerdict {
+	acceptedStop *float64, planStop float64, mentorStop *float64, lastPrice float64) protectionVerdict {
 
 	if posQty <= 0 {
 		return protectionVerdict{Action: protectionOK, Why: "no open position"}
@@ -174,6 +232,21 @@ func adjudicateProtection(symbol, side string, posQty int, book []nt.NT8Order, h
 	notProtection := ""
 	if localOnly > 0 || dying > 0 {
 		notProtection = fmt.Sprintf(" (%d held locally by NT8 and %d being cancelled — present, but not protection at the exchange)", localOnly, dying)
+	}
+	// REL17-F4: a registered mentor live position places at the driver's CURRENT
+	// stop, never the original. If the last price is already through that stop,
+	// the stop would have filled — flatten at market instead of placing a stop
+	// that is already behind the market.
+	if mentorStop != nil && *mentorStop > 0 && lastPrice > 0 {
+		long := strings.EqualFold(side, "LONG")
+		through := (long && lastPrice <= *mentorStop) || (!long && lastPrice >= *mentorStop)
+		if through {
+			return protectionVerdict{Action: protectionFlatten, StopPx: *mentorStop,
+				NeedQty: posQty,
+				Why: fmt.Sprintf("NO protective order at the broker and the mentor driver's stop %.2f is already through the last price %.2f — the stop would have filled, so the position is flattened", *mentorStop, lastPrice)}
+		}
+		return protectionVerdict{Action: protectionPlace, StopPx: *mentorStop, Source: "mentor_driver",
+			NeedQty: posQty, Why: "NO protective order at the broker for an open mentor position" + notProtection + " — placing the driver's CURRENT (moved BE/1:1/trail) stop, not the original"}
 	}
 	if acceptedStop != nil && *acceptedStop > 0 {
 		return protectionVerdict{Action: protectionPlace, StopPx: *acceptedStop, Source: "accepted_risk",
@@ -307,8 +380,16 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 		if qty <= 0 || symbol == "" || side == "" {
 			continue
 		}
+		lastPrice, _ := p["markPrice"].(float64)
 		signalID, acceptedStop, planStop := at.protectionPricesFor(symbol, side)
-		v := adjudicateProtection(symbol, side, qty, book, have, acceptedStop, planStop)
+		// REL17-F4: the registered mentor live position's CURRENT driver stop
+		// wins over the accepted-risk / plan stop when a stop must be placed.
+		mentorStop, hasMentorStop := at.mentorDriverCurrentStop(symbol, side)
+		var mentorStopP *float64
+		if hasMentorStop {
+			mentorStopP = &mentorStop
+		}
+		v := adjudicateProtection(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, lastPrice)
 		at.actOnProtection(v, symbol, side, qty, signalID, trigger, age, now)
 	}
 }
@@ -381,6 +462,16 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		}
 		at.logWarnf("🧷 protective stop SENT: %s %s ×%d stop=%.2f source=%s signal=%s — SENT is not CONFIRMED; the next pass reads the book",
 			side, symbol, qty, v.StopPx, v.Source, shortID(signalID))
+
+	case protectionFlatten:
+		incUnprotected(at.id)
+		at.emitAlert("P0", "unprotected_position",
+			fmt.Sprintf("flatten:%s:%s:%d", symbol, side, now.UnixMilli()),
+			"Open position was naked and the stop is already behind the market — flattening",
+			fmt.Sprintf("%s %s ×%d. %s Closing the position at market now.", side, symbol, qty, v.Why))
+		at.logErrorf("🧷 protection: price already through the intended stop %.2f — flattened (%s %s ×%d): %s",
+			v.StopPx, side, symbol, qty, v.Why)
+		at.flattenPosition(&store.TraderPosition{Symbol: symbol, Side: side}, "protection-through-stop")
 	}
 }
 
