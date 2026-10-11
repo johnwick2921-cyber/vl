@@ -424,6 +424,12 @@ func mentorRestartRebuildOn() bool {
 	return true
 }
 
+// mentorRebuildBook is the boot-rebuild's book source (a seam so tests can pin
+// the book without a live TCP link). Production = liveBook.
+var mentorRebuildBook = func(at *AutoTrader, now time.Time) ([]ntwire.NT8Order, bool, time.Duration) {
+	return at.liveBook(now)
+}
+
 // mentorRebuildLivePosOnce is the boot hook, called at the top of
 // mentorExitDrive before the first pass. It retries every candle until a FRESH
 // broker book lets the rebuild run, then latches done.
@@ -454,7 +460,7 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 	if at == nil || at.store == nil || !at.mentorEnabled() {
 		return 0, 0, false
 	}
-	book, have, age := at.liveBook(now)
+	book, have, age := mentorRebuildBook(at, now)
 	if !have || (snapshotMaxAge() > 0 && age > snapshotMaxAge()) {
 		return 0, 0, false
 	}
