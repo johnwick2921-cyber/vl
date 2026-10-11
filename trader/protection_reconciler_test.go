@@ -8,6 +8,7 @@ import (
 	"vl/kernel"
 	"vl/market"
 	nt "vl/provider/ninjatrader"
+	"vl/store"
 )
 
 func px(v float64) *float64 { return &v }
@@ -267,5 +268,95 @@ func TestBracketsBootLineReadsRatherThanAsserts(t *testing.T) {
 	}
 	if got := BracketsBootLine(bad, true, "2026-09-07-h1", 0); !strings.Contains(got, "entry-oco=SHARED(") {
 		t.Errorf("an entry sharing its bracket's OCO group did not show as SHARED:\n  %s", got)
+	}
+}
+
+// P1-b (REL17) — a CME-closed clock must NOT treat an hours-old close as fresh:
+// StaleEntryGateFeed fail-opens when the CME is closed, so the CME-open check
+// runs FIRST inside protectionFreshPrice. (e) closed + old bar through the stop
+// → NO fresh price → place, never flatten. (A SWING4H held across the break.)
+func TestProtectionFreshPriceCMEClosedNoFlatten(t *testing.T) {
+	const sym, side = "MNQ", "LONG"
+	now := time.Date(2026, 6, 20, 12, 0, 0, 0, chicagoLoc()) // Saturday, CME closed
+	if kernel.IsCMEOpen(now) {
+		t.Fatalf("test premise: %v should be CME-closed", now)
+	}
+	orig := market.FuturesBarsProvider
+	t.Cleanup(func() { market.FuturesBarsProvider = orig })
+	// an hours-old close, through the driver's BE stop == entry
+	market.FuturesBarsProvider = func(symbol, tf string, count int) []market.Kline {
+		return []market.Kline{{OpenTime: now.Add(-3 * time.Hour).UnixMilli(), Close: 31100}}
+	}
+	if _, ok := protectionFreshPrice(sym, now); ok {
+		t.Fatal("(e) CME closed must yield no fresh price, whatever the bar's age")
+	}
+	original, entry := 31188.0, 31163.0
+	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, px(entry), nil); v.Action != protectionPlace {
+		t.Fatalf("(e) CME closed + old bar: got %s, want place (never flatten) — %s", v.Action, v.Why)
+	}
+}
+
+// P1-a (REL17) — two separate flatten episodes (flatten → leaves flatten →
+// flatten) raise TWO P0s: the episode start carries into the event id, so the
+// second episode is not suppressed by the first's stable id.
+func TestProtectionTwoFlattenEpisodesTwoAlerts(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}})
+	at.id = "f4-episodes" // distinct id: the protection state maps are package-level and must not leak between tests
+	at.exchange = "ninjatrader"
+	at.trader = &MockTrader{}
+	flat := protectionVerdict{Action: protectionFlatten, StopPx: 31163, NeedQty: 1, Why: "through the fresh last price"}
+	ok := protectionVerdict{Action: protectionOK, Why: "protected again"}
+
+	now1 := time.Now()
+	now2 := now1.Add(2 * time.Minute)
+	at.actOnProtection(flat, "MNQ", "LONG", 1, "sig", "t", 0, now1)
+	at.actOnProtection(ok, "MNQ", "LONG", 1, "sig", "t", 0, now1)   // leaves flatten
+	at.actOnProtection(flat, "MNQ", "LONG", 1, "sig", "t", 0, now2) // a NEW episode
+
+	alerts, err := st.Alert().List(at.id, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, a := range alerts {
+		if a.Kind == "unprotected_position" && strings.HasPrefix(a.EventID, "flatten:MNQ:LONG:") {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Fatalf("(f) two flatten episodes must raise TWO P0s, got %d", n)
+	}
+}
+
+// P1-a (REL17) — ONE episode across three passes raises ONE P0 and counts the
+// close re-sends (retry #2 and #3 are logged by the counter).
+func TestProtectionOneEpisodeThreePassesOneAlert(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}})
+	at.id = "f4-one-episode" // distinct id: the protection state maps are package-level and must not leak between tests
+	at.exchange = "ninjatrader"
+	at.trader = &MockTrader{}
+	flat := protectionVerdict{Action: protectionFlatten, StopPx: 31163, NeedQty: 1, Why: "through the fresh last price"}
+
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		at.actOnProtection(flat, "MNQ", "LONG", 1, "sig", "t", 0, now)
+	}
+
+	alerts, err := st.Alert().List(at.id, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, a := range alerts {
+		if a.Kind == "unprotected_position" && strings.HasPrefix(a.EventID, "flatten:MNQ:LONG:") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("(g) one episode across 3 passes must raise ONE P0, got %d", n)
+	}
+	key := at.id + "|MNQ|LONG"
+	if v, ok := protectionFlattenRetries.Load(key); !ok || v.(int64) != 3 {
+		t.Fatalf("(g) the retry counter must be 3 after 3 passes, got %v", v)
 	}
 }

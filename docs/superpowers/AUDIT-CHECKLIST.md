@@ -8094,3 +8094,31 @@ only on the transition; keep the retrying ACTION (the close), and log the retry
 count. Reference: trader/protection_reconciler.go actOnProtection
 protectionFlatten + protectionFlattenRetries.
 
+
+## CLASS NN (assigned at merge) — a recovery alert deduped on a STABLE id (only the first episode ever fires)
+
+symptom: DS-102 (2026-10-11, REL17-F4 P1-a): the protection-reconciler flatten
+P0 was deduped per (trader, symbol, side) with a STABLE event id. AlertStore.Emit
+refuses any existing (trader_id, event_id) forever, so after the first flatten
+episode in the life of the DB every later episode was silent. probe: for every
+alert whose condition is EPISODIC (it can clear and recur), the event id must
+change per episode — a stable id means "one ever", not "one per occurrence".
+rule: stamp the episode start (the transition INTO the state) into the event id
+and clear it when the state is left; reset the per-episode retry counter on the
+same edge. Reference: trader/protection_reconciler.go actOnProtection
+(protectionFlattenEpisode + protectionFlattenRetries),
+store/alert.go Emit (permanent (trader_id, event_id) dedupe).
+
+## CLASS NN (assigned at merge) — a freshness gate that fail-opens while the market is closed
+
+symptom: DS-102 (2026-10-11, REL17-F4 P1-b): the through-check's freshness came
+from kernel.StaleEntryGateFeed, which returns "not stale" whenever !IsCMEOpen(now)
+so entries are not false-refused during a halt. Reused as a SAFETY-flatten gate,
+that fail-open inverted: during the 16:00–17:00 break or the weekend an hours-old
+close read as fresh and could flatten (or place) a SWING4H held across the break.
+probe: a staleness rule that fail-opens for one purpose (entry gating) must not
+be reused unmodified for the opposite purpose (a destructive auto-action). rule:
+a destructive action's freshness check requires the market to be OPEN, judged
+BEFORE the age check. Reference: trader/protection_reconciler.go
+protectionFreshPrice (IsCMEOpen first, then StaleEntryGateFeed),
+kernel/stale_data.go StaleEntryGateFeed.

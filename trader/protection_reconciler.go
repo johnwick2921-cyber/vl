@@ -152,7 +152,16 @@ func (at *AutoTrader) mentorDriverCurrentStop(symbol, side string) (float64, boo
 // mentor stale-data block uses (kernel.StaleEntryGateFeed, ~75 s, CME-open/halt
 // aware). No provider / no 1m bars / a stale feed → (0, false): the protective
 // side cannot be judged, so the caller must NOT flatten.
+//
+// P1-b (REL17): StaleEntryGateFeed fail-opens (returns "not stale") whenever the
+// CME is closed — during the 16:00–17:00 halt or the weekend an hours-old close
+// would read as fresh. So the CME-open check is made FIRST: while the CME is
+// closed there is no fresh price, full stop, and the caller places (never
+// flattens) — a SWING4H held across the break is never flattened on a stale close.
 func protectionFreshPrice(symbol string, now time.Time) (float64, bool) {
+	if !kernel.IsCMEOpen(now) {
+		return 0, false
+	}
 	if market.FuturesBarsProvider == nil {
 		return 0, false
 	}
@@ -305,6 +314,12 @@ var protectionLastAction sync.Map // trader id + symbol + side → string
 // pass (REL17-F4 P2: the alert is deduped, the close retry is not).
 var protectionFlattenRetries sync.Map // trader id + symbol + side → int64
 
+// protectionFlattenEpisode records the per-(trader,symbol,side) episode start
+// (Unix ms) on the transition INTO flatten, so the P0 event id can carry it
+// (P1-a: a STABLE id would suppress every later episode forever). Cleared when
+// the verdict leaves flatten.
+var protectionFlattenEpisode sync.Map // trader id + symbol + side → int64
+
 // UnprotectedFound is the boot line's figure — READ from the counter (A11).
 func UnprotectedFound(traderID string) int64 {
 	if v, ok := protectionUnprotected.Load(traderID); ok {
@@ -439,8 +454,21 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 
 	key := at.id + "|" + symbol + "|" + side
 	prev, _ := protectionLastAction.Load(key)
-	changed := prev == nil || prev.(string) != v.Action.String()
+	prevAction := ""
+	if prev != nil {
+		prevAction = prev.(string)
+	}
+	changed := prevAction != v.Action.String()
 	protectionLastAction.Store(key, v.Action.String())
+
+	// P1-a (REL17): the flatten episode is bounded by the verdict LEAVING
+	// flatten. A later flatten is a NEW episode and must raise a NEW P0 (its
+	// event id carries the new episode start). Leaving clears both the episode
+	// start and the retry count, so a new episode counts from 1.
+	if v.Action != protectionFlatten && prevAction == "flatten" {
+		protectionFlattenEpisode.Delete(key)
+		protectionFlattenRetries.Delete(key)
+	}
 
 	switch v.Action {
 	case protectionOK:
@@ -505,12 +533,17 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 
 	case protectionFlatten:
 		incUnprotected(at.id)
-		// REL17-F4 P2: the P0 is deduped per (symbol, side) episode. The event id
-		// is STABLE (no timestamp) and the alert fires only on the transition into
-		// flatten; the close retry still runs every pass, with its count logged.
+		// REL17-F4 P2/P1-a: the P0 is deduped per (symbol, side) EPISODE. The
+		// episode start (Unix ms) is stamped on the transition INTO flatten and
+		// carries into the event id, so a later episode raises a NEW P0 while
+		// repeats inside one episode stay silent. The close retry still runs
+		// every pass, with its count logged; the count resets per episode.
 		if changed {
+			episodeStart := now.UnixMilli()
+			protectionFlattenEpisode.Store(key, episodeStart)
+			protectionFlattenRetries.Delete(key)
 			at.emitAlert("P0", "unprotected_position",
-				fmt.Sprintf("flatten:%s:%s", symbol, side),
+				fmt.Sprintf("flatten:%s:%s:%d", symbol, side, episodeStart),
 				"Open position was naked and the stop is already behind the market — flattening",
 				fmt.Sprintf("%s %s ×%d. %s Closing the position at market now.", side, symbol, qty, v.Why))
 			at.logErrorf("🧷 protection: price already through the intended stop %.2f — flattened (%s %s ×%d): %s",
