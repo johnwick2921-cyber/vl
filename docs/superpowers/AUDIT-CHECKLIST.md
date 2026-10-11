@@ -8039,3 +8039,26 @@ dropped, copy dropped). Reference: kernel/mentor/htf_direction.go HTFAgrees +
 stampHTFAgree (called from the Tick defer), trader/mentor_mode.go
 mentorExtraFor, kernel/mentor/htf_agree_test.go,
 trader/mentor_htfagree_test.go.
+
+## CLASS NN (assigned at merge) — display-string timestamp parsed with new Date()
+
+symptom: DS-103 (2026-10-10, REL17-F6): the dashboard equity curve's x-axis
+showed "Invalid Date" on all 10 ticks. GET /api/equity-history sent `timestamp`
+as a display string (`kernel.FormatCT` → "2026-09-17 14:12 CT"), and the web
+ran `new Date(point.timestamp)` on it — a non-ISO display string parses to
+Invalid Date in every browser. Broken since 08-18 ("CT canonical everywhere")
+and invisible until the chart was opened. probe: every API time field the web
+turns into a Date must be epoch ms or ISO-8601; `kernel.FormatCT` strings are
+display-only and must never be parsed — grep each `new Date(`/`Date.parse` call
+in web/src and confirm its input is numeric (epoch s/ms) or ISO, and grep every
+API field built with `kernel.FormatCT` to confirm no consumer parses it. rule:
+when an API field is both shown and used as a time, send a parseable `*_ms`
+(epoch ms) field beside the display string (additive — keep the old field for
+older clients); the web formatter prefers the epoch, falls back to hand-parsing
+the display string, and renders "—" (never "Invalid Date") on anything
+unparseable. Pin at the production call site with a RED on today's code
+(`new Date('YYYY-MM-DD HH:mm CT')` is Invalid Date). Reference:
+api/handler_competition.go handleEquityHistory (TimestampMs), web/src/lib/
+chartTime.ts formatEquityTimestamp/formatCTDisplayString, web/src/components/
+charts/EquityChart.tsx, api/equity_history_timestamp_test.go,
+web/src/lib/chartTime.test.ts.
