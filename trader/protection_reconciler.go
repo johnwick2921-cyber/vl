@@ -236,17 +236,25 @@ func adjudicateProtection(symbol, side string, posQty int, book []nt.NT8Order, h
 	// REL17-F4: a registered mentor live position places at the driver's CURRENT
 	// stop, never the original. If the last price is already through that stop,
 	// the stop would have filled — flatten at market instead of placing a stop
-	// that is already behind the market.
-	if mentorStop != nil && *mentorStop > 0 && lastPrice > 0 {
-		long := strings.EqualFold(side, "LONG")
-		through := (long && lastPrice <= *mentorStop) || (!long && lastPrice >= *mentorStop)
-		if through {
-			return protectionVerdict{Action: protectionFlatten, StopPx: *mentorStop,
-				NeedQty: posQty,
-				Why: fmt.Sprintf("NO protective order at the broker and the mentor driver's stop %.2f is already through the last price %.2f — the stop would have filled, so the position is flattened", *mentorStop, lastPrice)}
+	// that is already behind the market. The "last price" is the broker position
+	// mark the position map already carries (NT8 live uPnL-derived, falling back
+	// to the latest 5m BarCache close — trader/ninjatrader/tcp_trader.go
+	// GetPositions markPrice). No last price: still place at the driver's stop,
+	// and the P0 names that the protective side could not be checked.
+	if mentorStop != nil && *mentorStop > 0 {
+		if lastPrice > 0 {
+			long := strings.EqualFold(side, "LONG")
+			through := (long && lastPrice <= *mentorStop) || (!long && lastPrice >= *mentorStop)
+			if through {
+				return protectionVerdict{Action: protectionFlatten, StopPx: *mentorStop,
+					NeedQty: posQty,
+					Why: fmt.Sprintf("NO protective order at the broker and the mentor driver's stop %.2f is already through the last price %.2f — the stop would have filled, so the position is flattened", *mentorStop, lastPrice)}
+			}
+			return protectionVerdict{Action: protectionPlace, StopPx: *mentorStop, Source: "mentor_driver",
+				NeedQty: posQty, Why: "NO protective order at the broker for an open mentor position" + notProtection + " — placing the driver's CURRENT (moved BE/1:1/trail) stop, not the original"}
 		}
 		return protectionVerdict{Action: protectionPlace, StopPx: *mentorStop, Source: "mentor_driver",
-			NeedQty: posQty, Why: "NO protective order at the broker for an open mentor position" + notProtection + " — placing the driver's CURRENT (moved BE/1:1/trail) stop, not the original"}
+			NeedQty: posQty, Why: "NO protective order at the broker for an open mentor position" + notProtection + " — no last price available, so the protective side could NOT be checked; placing the driver's CURRENT (moved BE/1:1/trail) stop anyway, not the original"}
 	}
 	if acceptedStop != nil && *acceptedStop > 0 {
 		return protectionVerdict{Action: protectionPlace, StopPx: *acceptedStop, Source: "accepted_risk",

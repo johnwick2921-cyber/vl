@@ -117,10 +117,14 @@ func TestProtectionUsesMentorDriverStop(t *testing.T) {
 		t.Fatalf("non-mentor: got %s stop=%.2f source=%q — %s", v.Action, v.StopPx, v.Source, v.Why)
 	}
 
-	// a last price of zero (no mark) must NOT flatten and must NOT override the
-	// accepted stop — it falls back to the old path.
-	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, px(entry), 0); v.Action != protectionPlace || v.StopPx != original {
-		t.Fatalf("no last price must keep old behaviour: got %s stop=%.2f", v.Action, v.StopPx)
+	// no last price (no mark): do NOT flatten, still place at the driver's stop
+	// (never fall back to the wider original), and the Why names that the side
+	// could not be checked.
+	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, px(entry), 0); v.Action != protectionPlace || v.StopPx != entry || v.Source != "mentor_driver" {
+		t.Fatalf("no last price: got %s stop=%.2f source=%q — %s", v.Action, v.StopPx, v.Source, v.Why)
+	}
+	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, px(entry), 0); !strings.Contains(v.Why, "could NOT be checked") {
+		t.Fatalf("no last price must say the side could not be checked: %s", v.Why)
 	}
 }
 
