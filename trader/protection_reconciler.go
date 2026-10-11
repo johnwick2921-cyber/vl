@@ -386,6 +386,39 @@ func (at *AutoTrader) protectionPricesFor(symbol, side string) (signalID string,
 	return signalID, acceptedStop, planStop
 }
 
+// sweepStaleProtectionState deletes this trader's per-(symbol, side) protection
+// state — protectionLastAction, protectionFlattenEpisode, protectionFlattenRetries —
+// for every key whose (symbol, side) is NOT in the positions just read. It runs
+// only on a successful positions read, so a read error never forgets state (A24).
+func (at *AutoTrader) sweepStaleProtectionState(positions []map[string]interface{}) {
+	live := make(map[string]bool)
+	for _, p := range positions {
+		symbol, _ := p["symbol"].(string)
+		side, _ := p["side"].(string)
+		if symbol == "" || side == "" {
+			continue
+		}
+		live[symbol+"|"+side] = true
+	}
+	prefix := at.id + "|"
+	sweep := func(m *sync.Map) {
+		m.Range(func(k, _ any) bool {
+			key, ok := k.(string)
+			if !ok || !strings.HasPrefix(key, prefix) {
+				return true
+			}
+			rest := strings.TrimPrefix(key, prefix) // symbol|side
+			if !live[rest] {
+				m.Delete(k)
+			}
+			return true
+		})
+	}
+	sweep(&protectionLastAction)
+	sweep(&protectionFlattenEpisode)
+	sweep(&protectionFlattenRetries)
+}
+
 // reconcileProtectionAt is the D5 pass. It runs on the 1-minute monitor beat and
 // on the reconnect edge. now is the caller's clock (A28).
 //
@@ -409,6 +442,14 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 		at.logWarnf("🧷 protection UNVERIFIED (%s): positions unreadable: %v — no action taken", trigger, err)
 		return
 	}
+	// P1-c (REL17-F4): after a SUCCESSFUL positions read (including the empty
+	// case), drop this trader's protection state for every (symbol, side) that
+	// is no longer held. Without this, a side that flattened stays "flatten" in
+	// protectionLastAction forever — the position closed, so no later pass ever
+	// visits the key — and the NEXT naked-and-through episode on that side reads
+	// changed=false and flattens SILENTLY (no P0, no episode stamp). A read error
+	// changes nothing (A24: an unreadable book is not a licence to forget state).
+	at.sweepStaleProtectionState(positions)
 	if len(positions) == 0 {
 		return
 	}

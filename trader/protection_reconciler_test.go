@@ -360,3 +360,44 @@ func TestProtectionOneEpisodeThreePassesOneAlert(t *testing.T) {
 		t.Fatalf("(g) the retry counter must be 3 after 3 passes, got %v", v)
 	}
 }
+
+// P1-c (REL17) — a flatten closes the position, so no later pass visits the key
+// and protectionLastAction would stay "flatten" forever; the NEXT naked-through
+// episode would then read changed=false and flatten silently. The successful
+// positions read must sweep the state of every (symbol, side) no longer held.
+// (h) flatten episode 1 (one P0) → a pass with NO position (keys cleared) → a
+// new naked-through position on the same side → a SECOND P0 with a new episode.
+func TestProtectionFlattenClearsWhenPositionCloses(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}})
+	at.id = "f4-clear"
+	at.exchange = "ninjatrader"
+	mt := &MockTrader{positions: []map[string]interface{}{}}
+	at.trader = mt
+	flat := protectionVerdict{Action: protectionFlatten, StopPx: 31163, NeedQty: 1, Why: "through the fresh last price"}
+
+	// episode 1 — the side is open and through its stop.
+	now1 := time.Now()
+	at.actOnProtection(flat, "MNQ", "LONG", 1, "sig", "t", 0, now1)
+
+	// the position closes: the next pass reads NO positions and sweeps the state.
+	now2 := now1.Add(time.Minute)
+	at.reconcileProtectionAt(now2, "t")
+
+	// a new naked-through position on the same side — a NEW episode, a NEW P0.
+	now3 := now2.Add(time.Minute)
+	at.actOnProtection(flat, "MNQ", "LONG", 1, "sig", "t", 0, now3)
+
+	alerts, err := st.Alert().List(at.id, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, a := range alerts {
+		if a.Kind == "unprotected_position" && strings.HasPrefix(a.EventID, "flatten:MNQ:LONG:") {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Fatalf("(h) flatten after a position-closing pass must raise a SECOND P0, got %d", n)
+	}
+}
