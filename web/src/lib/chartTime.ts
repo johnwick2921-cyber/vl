@@ -62,6 +62,46 @@ export function ctCrosshairTimeFormatter(time: number): string {
   })
 }
 
+// ── F6 equity-chart "Invalid Date" (2026-10-10) ────────────────────────────
+// The equity-history API used to send ONLY a display string (kernel.FormatCT →
+// "2026-09-17 14:12 CT"). `new Date()` on that string returns Invalid Date on
+// every browser, so every axis label rendered "Invalid Date" since 08-18.
+// The API now also sends timestamp_ms (epoch ms); the chart must prefer it and
+// NEVER parse the display string with new Date(). The string fallback is parsed
+// BY HAND (its parts are already CT) for older servers.
+
+/** Reformat a kernel.FormatCT string ("YYYY-MM-DD HH:mm CT") to "MM/DD HH:mm"
+ *  by hand — never via new Date(). Unparseable → "—". */
+export function formatCTDisplayString(s: string | undefined | null): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}) CT$/.exec(
+    (s ?? '').trim()
+  )
+  if (!m) return '—'
+  return `${m[2]}/${m[3]} ${m[4]}:${m[5]}`
+}
+
+/** The one equity-point time label: epoch ms (preferred) formatted in CT as
+ *  "MM/DD HH:mm"; else the hand-parsed CT display string; else "—". */
+export function formatEquityTimestamp(
+  ms: number | undefined | null,
+  ctFallback?: string | null
+): string {
+  if (typeof ms === 'number' && ms > 0) {
+    // zh-CN renders "MM/DD HH:mm" with a space (en-US inserts a comma) — the
+    // same shape ctCrosshairTimeFormatter pins, so axis and tooltip agree.
+    return new Date(ms).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: CHART_TZ,
+    })
+  }
+  if (ctFallback) return formatCTDisplayString(ctFallback)
+  return '—'
+}
+
 /** Dev-only diagnosis (dispatch 2.3): raw epoch, UTC render, CT render of the
  *  newest bar — the next mismatch becomes a one-glance read. */
 export function logBarDebug(tag: string, epochMs: number | undefined): void {

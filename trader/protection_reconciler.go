@@ -3,12 +3,16 @@ package trader
 import (
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"vl/kernel"
+	"vl/market"
 	nt "vl/provider/ninjatrader"
+	"vl/store"
 )
 
 // ── D5 — A POSITION WITHOUT PROTECTION (2026-09-07) ──────────────────────────
@@ -41,6 +45,7 @@ const (
 	protectionUnknown
 	protectionPlace
 	protectionAlertOnly
+	protectionFlatten
 )
 
 func (a protectionAction) String() string {
@@ -51,6 +56,8 @@ func (a protectionAction) String() string {
 		return "place"
 	case protectionAlertOnly:
 		return "alert-only"
+	case protectionFlatten:
+		return "flatten"
 	}
 	return "unknown"
 }
@@ -90,10 +97,92 @@ func sameSymbolLoose(a, b string) bool {
 	return a == b || strings.HasPrefix(a, b) || strings.HasPrefix(b, a)
 }
 
+// protectionMentorStopEnabled — PROTECTION_MENTOR_STOP (default ON, REL17-F4
+// safety fix). "0"/"false"/"off"/"no" disables the mentor-driver stop override
+// and the through-price flatten; everything else (or unset) ships the fix.
+func protectionMentorStopEnabled() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("PROTECTION_MENTOR_STOP")))
+	return v != "0" && v != "false" && v != "off" && v != "no"
+}
+
+// mentorDriverCurrentStop returns the tightest CURRENT resting stop of the
+// registered mentor live position for (symbol, side), and whether one exists.
+// "Tightest" = the live leg stop closest to price in the protective direction:
+// for a long the HIGHEST leg stop, for a short the LOWEST leg stop. Legs with no
+// quantity do not carry a stop. It reads the registry under mentorExitMu (via
+// mentorLivePosList) so it never races the exit-drive loop's write-back.
+func (at *AutoTrader) mentorDriverCurrentStop(symbol, side string) (float64, bool) {
+	if at == nil || !protectionMentorStopEnabled() {
+		return 0, false
+	}
+	best := 0.0
+	found := false
+	long := strings.EqualFold(side, "LONG")
+	for _, lp := range at.mentorLivePosList() {
+		if lp == nil || lp.Pos.Contracts <= 0 {
+			continue
+		}
+		if !strings.EqualFold(lp.Pos.Symbol, symbol) || !strings.EqualFold(lp.Pos.Side, side) {
+			continue
+		}
+		for _, leg := range lp.Legs {
+			if leg.Qty <= 0 || leg.Stop <= 0 {
+				continue
+			}
+			if !found {
+				best, found = leg.Stop, true
+				continue
+			}
+			if long {
+				if leg.Stop > best {
+					best = leg.Stop
+				}
+			} else {
+				if leg.Stop < best {
+					best = leg.Stop
+				}
+			}
+		}
+	}
+	return best, found
+}
+
+// protectionFreshPrice returns the newest 1m bar CLOSE as the "last price" for
+// the F4 through-check, but ONLY when it is FRESH — the same staleness rule the
+// mentor stale-data block uses (kernel.StaleEntryGateFeed, ~75 s, CME-open/halt
+// aware). No provider / no 1m bars / a stale feed → (0, false): the protective
+// side cannot be judged, so the caller must NOT flatten.
+//
+// P1-b (REL17): StaleEntryGateFeed fail-opens (returns "not stale") whenever the
+// CME is closed — during the 16:00–17:00 halt or the weekend an hours-old close
+// would read as fresh. So the CME-open check is made FIRST: while the CME is
+// closed there is no fresh price, full stop, and the caller places (never
+// flattens) — a SWING4H held across the break is never flattened on a stale close.
+func protectionFreshPrice(symbol string, now time.Time) (float64, bool) {
+	if !kernel.IsCMEOpen(now) {
+		return 0, false
+	}
+	if market.FuturesBarsProvider == nil {
+		return 0, false
+	}
+	bars := market.FuturesBarsProvider(symbol, "1m", 1)
+	if len(bars) == 0 {
+		return 0, false
+	}
+	newest := bars[len(bars)-1]
+	if kernel.StaleEntryGateFeed(newest.OpenTime, now) {
+		return 0, false
+	}
+	return newest.Close, true
+}
+
 // adjudicateProtection is PURE. It answers one question: does the broker hold a
-// live stop covering this open position?
+// live stop covering this open position? When the position is a registered
+// mentor live position, the price to place is the driver's CURRENT stop (the
+// tightest live leg stop) instead of the accepted-risk / plan stop, and a stop
+// already through the FRESH last price flattens rather than places.
 func adjudicateProtection(symbol, side string, posQty int, book []nt.NT8Order, haveBook bool,
-	acceptedStop *float64, planStop float64) protectionVerdict {
+	acceptedStop *float64, planStop float64, mentorStop *float64, freshPrice *float64) protectionVerdict {
 
 	if posQty <= 0 {
 		return protectionVerdict{Action: protectionOK, Why: "no open position"}
@@ -175,6 +264,29 @@ func adjudicateProtection(symbol, side string, posQty int, book []nt.NT8Order, h
 	if localOnly > 0 || dying > 0 {
 		notProtection = fmt.Sprintf(" (%d held locally by NT8 and %d being cancelled — present, but not protection at the exchange)", localOnly, dying)
 	}
+	// REL17-F4: a registered mentor live position places at the driver's CURRENT
+	// stop, never the original. If a FRESH last price is already through that
+	// stop, the stop would have filled — flatten at market instead of placing a
+	// stop that is already behind the market. The only price that may flatten is
+	// the newest 1m BarCache close that passes the mentor stale-data freshness
+	// rule (~75 s); markPrice / the entry fallback / a stale close must NOT
+	// flatten (a BE stop equals entry, so the entry fallback would false-flatten
+	// a healthy position right after a restart or a feed drop).
+	if mentorStop != nil && *mentorStop > 0 {
+		if freshPrice != nil && *freshPrice > 0 {
+			long := strings.EqualFold(side, "LONG")
+			through := (long && *freshPrice <= *mentorStop) || (!long && *freshPrice >= *mentorStop)
+			if through {
+				return protectionVerdict{Action: protectionFlatten, StopPx: *mentorStop,
+					NeedQty: posQty,
+					Why:     fmt.Sprintf("NO protective order at the broker and the mentor driver's stop %.2f is already through the fresh last price %.2f — the stop would have filled, so the position is flattened", *mentorStop, *freshPrice)}
+			}
+			return protectionVerdict{Action: protectionPlace, StopPx: *mentorStop, Source: "mentor_driver",
+				NeedQty: posQty, Why: "NO protective order at the broker for an open mentor position" + notProtection + " — placing the driver's CURRENT (moved BE/1:1/trail) stop, not the original"}
+		}
+		return protectionVerdict{Action: protectionPlace, StopPx: *mentorStop, Source: "mentor_driver",
+			NeedQty: posQty, Why: "NO protective order at the broker for an open mentor position" + notProtection + " — no fresh last price, so the protective side could NOT be checked; placing the driver's CURRENT (moved BE/1:1/trail) stop anyway, not the original"}
+	}
 	if acceptedStop != nil && *acceptedStop > 0 {
 		return protectionVerdict{Action: protectionPlace, StopPx: *acceptedStop, Source: "accepted_risk",
 			NeedQty: posQty, Why: "NO protective order at the broker for an open position" + notProtection + " — placing the stop the broker itself accepted"}
@@ -196,6 +308,17 @@ var protectionUnprotected sync.Map // trader id → *int64
 // protectionLastAction throttles the log: a verdict repeats every minute while
 // the condition lasts, and only a CHANGE is worth a line.
 var protectionLastAction sync.Map // trader id + symbol + side → string
+
+// protectionFlattenRetries counts the per-(trader,symbol,side) flatten close
+// re-sends, so a failing flatten logs its retry count instead of a new P0 each
+// pass (REL17-F4 P2: the alert is deduped, the close retry is not).
+var protectionFlattenRetries sync.Map // trader id + symbol + side → int64
+
+// protectionFlattenEpisode records the per-(trader,symbol,side) episode start
+// (Unix ms) on the transition INTO flatten, so the P0 event id can carry it
+// (P1-a: a STABLE id would suppress every later episode forever). Cleared when
+// the verdict leaves flatten.
+var protectionFlattenEpisode sync.Map // trader id + symbol + side → int64
 
 // UnprotectedFound is the boot line's figure — READ from the counter (A11).
 func UnprotectedFound(traderID string) int64 {
@@ -263,6 +386,39 @@ func (at *AutoTrader) protectionPricesFor(symbol, side string) (signalID string,
 	return signalID, acceptedStop, planStop
 }
 
+// sweepStaleProtectionState deletes this trader's per-(symbol, side) protection
+// state — protectionLastAction, protectionFlattenEpisode, protectionFlattenRetries —
+// for every key whose (symbol, side) is NOT in the positions just read. It runs
+// only on a successful positions read, so a read error never forgets state (A24).
+func (at *AutoTrader) sweepStaleProtectionState(positions []map[string]interface{}) {
+	live := make(map[string]bool)
+	for _, p := range positions {
+		symbol, _ := p["symbol"].(string)
+		side, _ := p["side"].(string)
+		if symbol == "" || side == "" {
+			continue
+		}
+		live[symbol+"|"+side] = true
+	}
+	prefix := at.id + "|"
+	sweep := func(m *sync.Map) {
+		m.Range(func(k, _ any) bool {
+			key, ok := k.(string)
+			if !ok || !strings.HasPrefix(key, prefix) {
+				return true
+			}
+			rest := strings.TrimPrefix(key, prefix) // symbol|side
+			if !live[rest] {
+				m.Delete(k)
+			}
+			return true
+		})
+	}
+	sweep(&protectionLastAction)
+	sweep(&protectionFlattenEpisode)
+	sweep(&protectionFlattenRetries)
+}
+
 // reconcileProtectionAt is the D5 pass. It runs on the 1-minute monitor beat and
 // on the reconnect edge. now is the caller's clock (A28).
 //
@@ -286,6 +442,14 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 		at.logWarnf("🧷 protection UNVERIFIED (%s): positions unreadable: %v — no action taken", trigger, err)
 		return
 	}
+	// P1-c (REL17-F4): after a SUCCESSFUL positions read (including the empty
+	// case), drop this trader's protection state for every (symbol, side) that
+	// is no longer held. Without this, a side that flattened stays "flatten" in
+	// protectionLastAction forever — the position closed, so no later pass ever
+	// visits the key — and the NEXT naked-and-through episode on that side reads
+	// changed=false and flattens SILENTLY (no P0, no episode stamp). A read error
+	// changes nothing (A24: an unreadable book is not a licence to forget state).
+	at.sweepStaleProtectionState(positions)
 	if len(positions) == 0 {
 		return
 	}
@@ -308,7 +472,20 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 			continue
 		}
 		signalID, acceptedStop, planStop := at.protectionPricesFor(symbol, side)
-		v := adjudicateProtection(symbol, side, qty, book, have, acceptedStop, planStop)
+		// REL17-F4: the registered mentor live position's CURRENT driver stop
+		// wins over the accepted-risk / plan stop when a stop must be placed.
+		mentorStop, hasMentorStop := at.mentorDriverCurrentStop(symbol, side)
+		var mentorStopP *float64
+		if hasMentorStop {
+			mentorStopP = &mentorStop
+		}
+		// The through-check may only use a FRESH 1m close (never markPrice, never
+		// the entry fallback). nil = no fresh price → the caller must not flatten.
+		var freshPriceP *float64
+		if fp, ok := protectionFreshPrice(symbol, now); ok {
+			freshPriceP = &fp
+		}
+		v := adjudicateProtection(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, freshPriceP)
 		at.actOnProtection(v, symbol, side, qty, signalID, trigger, age, now)
 	}
 }
@@ -318,8 +495,21 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 
 	key := at.id + "|" + symbol + "|" + side
 	prev, _ := protectionLastAction.Load(key)
-	changed := prev == nil || prev.(string) != v.Action.String()
+	prevAction := ""
+	if prev != nil {
+		prevAction = prev.(string)
+	}
+	changed := prevAction != v.Action.String()
 	protectionLastAction.Store(key, v.Action.String())
+
+	// P1-a (REL17): the flatten episode is bounded by the verdict LEAVING
+	// flatten. A later flatten is a NEW episode and must raise a NEW P0 (its
+	// event id carries the new episode start). Leaving clears both the episode
+	// start and the retry count, so a new episode counts from 1.
+	if v.Action != protectionFlatten && prevAction == "flatten" {
+		protectionFlattenEpisode.Delete(key)
+		protectionFlattenRetries.Delete(key)
+	}
 
 	switch v.Action {
 	case protectionOK:
@@ -381,6 +571,36 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		}
 		at.logWarnf("🧷 protective stop SENT: %s %s ×%d stop=%.2f source=%s signal=%s — SENT is not CONFIRMED; the next pass reads the book",
 			side, symbol, qty, v.StopPx, v.Source, shortID(signalID))
+
+	case protectionFlatten:
+		incUnprotected(at.id)
+		// REL17-F4 P2/P1-a: the P0 is deduped per (symbol, side) EPISODE. The
+		// episode start (Unix ms) is stamped on the transition INTO flatten and
+		// carries into the event id, so a later episode raises a NEW P0 while
+		// repeats inside one episode stay silent. The close retry still runs
+		// every pass, with its count logged; the count resets per episode.
+		if changed {
+			episodeStart := now.UnixMilli()
+			protectionFlattenEpisode.Store(key, episodeStart)
+			protectionFlattenRetries.Delete(key)
+			at.emitAlert("P0", "unprotected_position",
+				fmt.Sprintf("flatten:%s:%s:%d", symbol, side, episodeStart),
+				"Open position was naked and the stop is already behind the market — flattening",
+				fmt.Sprintf("%s %s ×%d. %s Closing the position at market now.", side, symbol, qty, v.Why))
+			at.logErrorf("🧷 protection: price already through the intended stop %.2f — flattened (%s %s ×%d): %s",
+				v.StopPx, side, symbol, qty, v.Why)
+		}
+		retries := int64(0)
+		if prevN, ok := protectionFlattenRetries.Load(key); ok {
+			retries = prevN.(int64)
+		}
+		retries++
+		protectionFlattenRetries.Store(key, retries)
+		if retries > 1 {
+			at.logWarnf("🧷 protection flatten retry #%d: %s %s ×%d — close re-sent (P0 alert deduped, not re-raised)",
+				retries, side, symbol, qty)
+		}
+		at.flattenPosition(&store.TraderPosition{Symbol: symbol, Side: side}, "protection-through-stop")
 	}
 }
 

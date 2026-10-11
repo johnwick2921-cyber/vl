@@ -215,6 +215,11 @@ export const mentor: GuideSection = {
           body: 'Click the card title to fold it away or open it again; the page remembers your choice.',
           cite: 'Engineering rule — frontend UI (fold), not from the course · web/src/components/mentor/MentorTruthCard.tsx localStorage vl.mentorCard.open',
         },
+        {
+          title: 'Stop moves are verified against the broker',
+          body: 'Every mentor stop move is re-checked against the broker\u2019s own order book (order_snapshot every 30 s) — an NT8 refusal replies with NO ack, so a sent frame is not proof it applied. Applied → "🧑‍🏫 stop move CONFIRMED at NT8". A broker stop TIGHTER than wanted is kept as-is, never widened. Not applied (wider) → "🚨 STOP MOVE NOT APPLIED at NT8" + ONE P0 per episode + ONE re-send of the same price. Still not applied → the bot adopts the broker\u2019s actual stop as its belief, fires one "manage by hand" P0, and latches the leg — no automatic stop moves until a snapshot shows the broker matching the belief again. A stale book delays the verdict, never guesses. The exit-driver line now prints broker=… beside stop=….',
+          cite: 'Engineering rule — broker-book verification, not from the course · trader/mentor_exit_drive.go mentorVerifyPendingStopMoves · provider/ninjatrader/order_snapshot.go',
+        },
       ],
     },
     {
@@ -523,6 +528,10 @@ export const mentor: GuideSection = {
         [
           'ISB partial',
           'The ISB follows B: leg 1 (half) exits at 1:1 from the actual entry, the runner takes the B drive (BE at half the distance, live 1:1, trail 1 tick beyond after the 1:1 point). The course’s candle-3-close exit for leg 1 is only LOGGED (not sent) until it is proven on SIM',
+        ],
+        [
+          'Restart rebuild',
+          'At boot the bot rebuilds every open mentor position from the broker’s own book (the -sl/-sl2 stops and -tp/-tp2 targets), so break-even, 1:1 and the trail resume after a restart instead of being lost. If the book has no stop for a position the bot manages nothing and raises a P0 (never guesses a stop). The boot line reads "🧑‍🏫 mentor positions rebuilt: N (refused M)". Server switch MENTOR_RESTART_REBUILD=off disables the rebuild.',
         ],
       ],
     },

@@ -384,6 +384,16 @@ func (t *TCPTrader) recordCloseOrdered(
 	if OnPositionClosed != nil {
 		OnPositionClosed(owner.TraderID, owner.ID)
 	}
+	// F3 (REL17): fire the leg-closed hook on the ordered-owned APPLIED path
+	// too. This is the broker's TP receipt — the mentor marks leg 1 scaled on
+	// it ("mentor leg 1 scaled on the broker TP receipt") instead of waiting
+	// for the I7 snapshot fallback (#641 latched 24s late). PENDING and refused
+	// receipts returned above, so this fires only for an APPLIED receipt. The
+	// latch is idempotent (mentorLatchLeg1Scaled); the legacy recordClose keeps
+	// its own call.
+	if OnPositionLegClosed != nil {
+		OnPositionLegClosed(owner.TraderID, p)
+	}
 	if strings.EqualFold(p.ExitReason, "sl") {
 		discipline.NoteStopLossExit(owner.TraderID, symbol, side, p.ExitPrice, exitMs)
 		logger.Infof("⏳ re-entry cooldown armed: %s %s stop=%.2f (owner=%s)", symbol, side, p.ExitPrice, owner.TraderID)

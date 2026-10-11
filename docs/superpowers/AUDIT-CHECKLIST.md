@@ -8039,3 +8039,183 @@ dropped, copy dropped). Reference: kernel/mentor/htf_direction.go HTFAgrees +
 stampHTFAgree (called from the Tick defer), trader/mentor_mode.go
 mentorExtraFor, kernel/mentor/htf_agree_test.go,
 trader/mentor_htfagree_test.go.
+
+## CLASS NN (assigned at merge) — ordered close path skipped the leg-closed hook
+
+symptom: DS-106 (2026-10-11, REL17-SAFETY F3): OnPositionLegClosed fired only
+from the legacy recordClose path (trader/ninjatrader/close_sync.go:214).
+Ordered-owned close frames return early (close_sync.go:52-55) and
+recordCloseOrdered fired only OnPositionClosed (close_sync.go:384), so the
+leg-1 TP receipt latch was dead on the live ordered path. October logs: 0
+"scaled on the broker TP receipt" lines; #641 latched by the I7 snapshot
+fallback at 17:15:00, 24 s after its 17:14:36 TP. probe: every hook fired on
+the legacy close path is also fired on the ordered path. rule: fire the
+leg-closed hook at the same point in recordCloseOrdered as recordClose — after
+the PENDING and refused returns, so it runs only for an APPLIED receipt — and
+pin the three verdicts at the call site (APPLIED fires once; PENDING and
+refused never fire) with a mutant for removing the call. Reference:
+trader/ninjatrader/close_sync.go recordCloseOrdered +
+trader/ninjatrader/leg1_receipt_ordered_test.go.
+
+## CLASS NN (assigned at merge) — display-string timestamp parsed with new Date()
+
+symptom: DS-103 (2026-10-10, REL17-F6): the dashboard equity curve's x-axis
+showed "Invalid Date" on all 10 ticks. GET /api/equity-history sent `timestamp`
+as a display string (`kernel.FormatCT` → "2026-09-17 14:12 CT"), and the web
+ran `new Date(point.timestamp)` on it — a non-ISO display string parses to
+Invalid Date in every browser. Broken since 08-18 ("CT canonical everywhere")
+and invisible until the chart was opened. probe: every API time field the web
+turns into a Date must be epoch ms or ISO-8601; `kernel.FormatCT` strings are
+display-only and must never be parsed — grep each `new Date(`/`Date.parse` call
+in web/src and confirm its input is numeric (epoch s/ms) or ISO, and grep every
+API field built with `kernel.FormatCT` to confirm no consumer parses it. rule:
+when an API field is both shown and used as a time, send a parseable `*_ms`
+(epoch ms) field beside the display string (additive — keep the old field for
+older clients); the web formatter prefers the epoch, falls back to hand-parsing
+the display string, and renders "—" (never "Invalid Date") on anything
+unparseable. Pin at the production call site with a RED on today's code
+(`new Date('YYYY-MM-DD HH:mm CT')` is Invalid Date). Reference:
+api/handler_competition.go handleEquityHistory (TimestampMs), web/src/lib/
+chartTime.ts formatEquityTimestamp/formatCTDisplayString, web/src/components/
+charts/EquityChart.tsx, api/equity_history_timestamp_test.go,
+web/src/lib/chartTime.test.ts.
+
+## CLASS NN (assigned at merge) — 402 outage latch is in-memory and single-caller (banner never clears)
+
+symptom: DS-102 (2026-10-11, REL17-F5): the "AI CREDIT EXHAUSTED" P0 banner was
+raised by `on402Failure` and cleared only by `onAISuccess` — whose sole caller
+was the AI DECISION path (`trader/auto_trader_loop.go:701`). Mentor mode skips
+that path, and the latch `ai402OutageStartMs` lived only in memory, so after any
+restart nothing could ack an open banner. Live: day_plan_alerts id 1205
+(kind ai-payment, 10-07 05:40 CT) stayed acked=0 dismissed=0 for days and
+toasted on every dashboard load. probe: for every alert/banner that is
+auto-cleared on recovery, grep the clear function's callers — a clear with one
+caller (or keyed to an in-memory latch) is a banner that survives the very event
+that should end it. rule: recovery clears by PERSISTED predicate (trader + kind,
+acked=0), not by an in-memory event id; every success call site raises/clears
+through one function; make the latch atomic when other goroutines join. Reference:
+trader/auto_trader_ai402.go (onAISuccess/on402Failure/ai402ClearAllOn) +
+store/alert.go (AckAllByKind) + trader/auto_trader_planner.go (planner call
+site) + trader/auto_trader_watcher.go (watch call site) +
+trader/ai402_test.go (TestOnAISuccessRestartSafeAcksOpenBanner,
+TestPlanner402RaisesOutageBanner, TestPlannerSuccessClearsBanner).
+
+## CLASS NN (assigned at merge) — restart loses exit management (REL17-F2)
+
+symptom: DS-101 (2026-10-11, REL17-SAFETY F2): mentor live positions were
+registered only from in-process fill events, so after a restart the open mentor
+position got no break-even, no 1:1 and no trail. probe: for every piece of
+in-memory state that drives money (the exit-mode map, the live-position
+registry), ask "what rebuilds it after a restart?" — a map that is only written
+on an event is empty on the first pass after boot. rule: rebuild it once at
+boot from the broker's own book (the -sl/-sl2 stops, -tp/-tp2 targets), persist
+the per-arm exit branch at placement (a nullable column), derive it from the
+setup for pre-change rows and log the derivation, and raise a P0 + register
+NOTHING when a needed field is missing — never guess a stop. Reference:
+trader/mentor_live_pos.go mentorRebuildLivePosAtBoot +
+mentorBuildLivePosFromBook, store/armed_orders.go exit_mode column,
+trader/mentor_rebuild_test.go.
+
+## CLASS NN (assigned at merge) — stop move believed without broker confirmation
+
+symptom: the AddOn's move_stop handler replies with NO ack on a refused move
+("no live bracket"), and the Go wire seam's nil return only proves the frame was
+SENT. The mentor driver wrote leg.Stop = next on faith, so the bot believed a
+stop NT8 never applied — the position's recorded stop tightened while the broker
+still rested the old (wider) stop, and the gap was invisible until the next
+order_update that never came. probe: for every write-back of a broker-side value
+(stop, TP, quantity) from a wire seam, ask whether a nil return proves the
+BROKER accepted it or only that the FRAME left — a fire-and-forget move with no
+ack is a belief with no evidence. rule: record a pending check on every sent
+move, re-read the broker's own book (order_snapshot, every 30 s) on the first
+snapshot newer than send+2s, render one verdict (CONFIRMED / NOT-APPLIED + one
+re-send / belief = broker truth on the second miss), never widen, and pin the
+whole sequence at the production call site with mutants for "drop the re-send",
+"drop the belief correction" and "accept any price". Reference:
+trader/mentor_exit_drive.go mentorVerifyPendingStopMoves +
+mentorRecordPendingStopMove + mentorAdoptBrokerStop,
+trader/ninjatrader/tcp_trader.go OrderSnapshotBook,
+provider/ninjatrader/order_snapshot.go, trader/mentor_stop_move_verify_test.go.
+
+## CLASS NN (assigned at merge) — protection net re-places the ORIGINAL stop
+
+symptom: DS-104 (2026-10-11, REL17-F4): the protection reconciler, when an open
+mentor position is naked at the broker, placed a stop at the ACCEPTED-RISK price
+(or the plan's composed stop) — the ORIGINAL entry stop. The mentor exit drive
+had already moved that stop (break-even / 1:1 / trail) in its own in-memory
+state, so the "protection" the reconciler placed was looser than the stop the
+driver believed it was managing, and if price was already through the moved
+stop the reconciler would place a stop BEHIND the market (it would fill
+instantly, or should have filled). probe: for every safety re-placer, ask which
+copy of the truth it reads — the original or the CURRENT one — and whether
+"through the current stop" is handled at all. rule: when the position is a
+registered mentor live position, place at the driver's CURRENT tightest leg
+stop, and if the last price is through it, FLATTEN at market (P0) instead of
+placing; keep the old path for non-mentor positions. Pin the whole sequence at
+the call sites (naked mentor after BE → place at entry; price through → flatten;
+non-mentor → unchanged) with mutants for "always the accepted-risk stop" and
+"drop the flatten". Reference: trader/protection_reconciler.go
+mentorDriverCurrentStop + adjudicateProtection + actOnProtection,
+trader/protection_reconciler_test.go TestProtectionUsesMentorDriverStop.
+
+## CLASS NN (assigned at merge) — a live-price through-check reads a fallback
+
+symptom: DS-104 (2026-10-11, REL17-F4 P0): the same through-check read
+p["markPrice"], and for NT8 the mark is the newest 5m close which FALLS BACK TO
+ENTRY when the cache has no 5m bars. A mentor break-even stop == entry, so right
+after a restart / reconnect re-seed / feed drop a LONG at BE read
+lastPrice(=entry) <= stop(=entry) → "through" → the reconciler FLATTENED a
+healthy position at market. Even with bars, a stale close can do the same.
+probe: for every comparison that can DESTROY (flatten / force-close / cancel /
+stop-move), name the exact price and ask whether it can be a fallback or a stale
+value. rule: a destructive through-check uses ONLY a FRESH price — the newest 1m
+BarCache close age-checked against the same staleness rule the mentor stale-data
+block uses (kernel.StaleEntryGateFeed, ~75 s); never markPrice, never the entry
+fallback; equal-to-stop counts as through ONLY with a fresh price; no fresh
+price → do NOT flatten, act safely and say the side could not be checked.
+Reference: trader/protection_reconciler.go protectionFreshPrice +
+reconcileProtectionAt + adjudicateProtection,
+trader/protection_reconciler_test.go
+TestProtectionFreshPriceNoFlattenOnStaleOrMissing (no bars / stale / fresh).
+
+## CLASS NN (assigned at merge) — a per-minute P0 alert with a timestamped event id
+
+symptom: DS-104 (2026-10-11, REL17-F4 P2): the flatten alert's event id carried
+now.UnixMilli() and the flatten branch had no `changed` guard, so a failing
+flatten re-raised a NEW P0 and re-sent a close every 60 s. The alert bus is
+idempotent ON THE EVENT ID — a changing timestamp defeats the dedupe. probe: for
+every recurring alert, check (a) whether the event id is stable per episode, and
+(b) whether the raise sits behind the action-transition throttle. rule: dedupe
+the alert per (symbol, side, episode) with a STABLE event id (no timestamp) fired
+only on the transition; keep the retrying ACTION (the close), and log the retry
+count. Reference: trader/protection_reconciler.go actOnProtection
+protectionFlatten + protectionFlattenRetries.
+
+
+## CLASS NN (assigned at merge) — a recovery alert deduped on a STABLE id (only the first episode ever fires)
+
+symptom: DS-102 (2026-10-11, REL17-F4 P1-a): the protection-reconciler flatten
+P0 was deduped per (trader, symbol, side) with a STABLE event id. AlertStore.Emit
+refuses any existing (trader_id, event_id) forever, so after the first flatten
+episode in the life of the DB every later episode was silent. probe: for every
+alert whose condition is EPISODIC (it can clear and recur), the event id must
+change per episode — a stable id means "one ever", not "one per occurrence".
+rule: stamp the episode start (the transition INTO the state) into the event id
+and clear it when the state is left; reset the per-episode retry counter on the
+same edge. Reference: trader/protection_reconciler.go actOnProtection
+(protectionFlattenEpisode + protectionFlattenRetries),
+store/alert.go Emit (permanent (trader_id, event_id) dedupe).
+
+## CLASS NN (assigned at merge) — a freshness gate that fail-opens while the market is closed
+
+symptom: DS-102 (2026-10-11, REL17-F4 P1-b): the through-check's freshness came
+from kernel.StaleEntryGateFeed, which returns "not stale" whenever !IsCMEOpen(now)
+so entries are not false-refused during a halt. Reused as a SAFETY-flatten gate,
+that fail-open inverted: during the 16:00–17:00 break or the weekend an hours-old
+close read as fresh and could flatten (or place) a SWING4H held across the break.
+probe: a staleness rule that fail-opens for one purpose (entry gating) must not
+be reused unmodified for the opposite purpose (a destructive auto-action). rule:
+a destructive action's freshness check requires the market to be OPEN, judged
+BEFORE the age check. Reference: trader/protection_reconciler.go
+protectionFreshPrice (IsCMEOpen first, then StaleEntryGateFeed),
+kernel/stale_data.go StaleEntryGateFeed.
