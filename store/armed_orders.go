@@ -554,6 +554,9 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 				// authorization — leg1_tp moves with a re-armed stop. Every
 				// other author writes NULL / 0 over NULL / 0.
 				"contracts": row.Contracts, "leg1_qty": row.Leg1Qty, "leg1_tp": row.Leg1TP,
+				// REL17-F2: the persisted exit branch follows the re-authorization
+				// (a re-armed stop re-chooses the fork).
+				"exit_mode": row.ExitMode,
 			}).Error
 		}
 		// MANUAL-CANCEL-WINS (2026-08-30 E7 incident): a TERMINAL row is
@@ -607,6 +610,8 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 			"eligible_until_ms": row.EligibleUntilMs, "source_run_epoch": row.SourceRunEpoch,
 			// REVIEW-SPLIT-2 P2: the new authorization's mentor size and split.
 			"contracts": row.Contracts, "leg1_qty": row.Leg1Qty, "leg1_tp": row.Leg1TP,
+			// REL17-F2: the new authorization's persisted exit branch.
+			"exit_mode": row.ExitMode,
 		}).Error
 	}
 	if err != gorm.ErrRecordNotFound {

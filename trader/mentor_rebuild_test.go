@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"vl/kernel/mentor"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 )
@@ -260,6 +261,42 @@ func TestMentorRebuildOnceWiresAndLatches(t *testing.T) {
 	at.mentorRebuildLivePosOnce(time.Now())
 	if n := len(at.mentorLivePos); n != 1 {
 		t.Fatalf("registered %d positions, want 1", n)
+	}
+}
+
+// M4 RED: the exit mode must be persisted AT ITS PRODUCTION CALL SITE
+// (mentorArmIntent), and the re-authorization branch of UpsertArm must update
+// the column too — a mutant that drops `ExitMode:` at placement (or drops
+// exit_mode from the update map) must fail here.
+func TestMentorArmIntentPersistsExitMode(t *testing.T) {
+	at, st := f2Trader(t)
+	now := time.Now().UnixMilli()
+	in := mentor.Intent{
+		Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Symbol: "MNQ",
+		Price: 31020, Stop: 31000, Target: 31040, ExpiryMs: now + 60000,
+		ArmID: "arm-persist", Setup: "ISB",
+	}
+	choice := mentorSizeChoice{Contracts: 2, Tier: "base"}
+	ledger := st.ArmedOrders()
+	scenario := mentorScenarioFor("arm-persist")
+
+	at.mentorArmIntent(in, choice, now, now, "C", 0)
+	var r store.ArmedOrderDB
+	if err := ledger.DB().Where("trader_id = ? AND scenario = ?", at.id, scenario).First(&r).Error; err != nil {
+		t.Fatalf("row not found: %v", err)
+	}
+	if r.ExitMode == nil || *r.ExitMode != "C" {
+		t.Fatalf("exit_mode = %v, want C (persisted at placement)", r.ExitMode)
+	}
+
+	// Re-authorization (same plan/scenario/leg, still armed) → the update
+	// branch must write the new fork.
+	at.mentorArmIntent(in, choice, now, now, "B", 0)
+	if err := ledger.DB().Where("trader_id = ? AND scenario = ?", at.id, scenario).First(&r).Error; err != nil {
+		t.Fatalf("row not found after re-author: %v", err)
+	}
+	if r.ExitMode == nil || *r.ExitMode != "B" {
+		t.Fatalf("exit_mode after re-author = %v, want B", r.ExitMode)
 	}
 }
 
