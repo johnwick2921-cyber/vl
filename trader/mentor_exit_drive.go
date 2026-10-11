@@ -518,13 +518,13 @@ type mentorStopMoveEpisode struct {
 }
 
 // mentorStopMoveManual is the F1 manual-management latch for one (signal, wire
-// leg): after two misses the drive sends NOTHING more for it until a snapshot
-// shows broker == belief again or the position is gone.
+// leg): after two misses the drive sends NOTHING more for it until the position
+// is gone, or the owner moves the broker stop by hand (see mentorSweepManualLatches).
 type mentorStopMoveManual struct {
-	signalID string
-	wireLeg  int
-	logged   bool // the "under manual management" line fired once
-	fresh    bool // set on the latch pass; the sweep skips it once (belief == broker by construction)
+	signalID    string
+	wireLeg     int
+	logged      bool    // the "under manual management" line fired once
+	adoptedPrice float64 // the broker price adopted at latch time (owner-override change detection)
 }
 
 // mentorStopMoveKey builds the shared "<signalID>#<wireLeg>" key.
@@ -716,7 +716,7 @@ func (at *AutoTrader) mentorBrokerStopForPos(nt *ntTrader.TCPTrader, p *mentorLi
 
 // mentorLatchStopMoveManual latches a leg into manual management: the drive
 // sends nothing more for it until the latch clears.
-func (at *AutoTrader) mentorLatchStopMoveManual(signalID string, wireLeg int) {
+func (at *AutoTrader) mentorLatchStopMoveManual(signalID string, wireLeg int, adoptedPrice float64) {
 	if at == nil {
 		return
 	}
@@ -726,14 +726,16 @@ func (at *AutoTrader) mentorLatchStopMoveManual(signalID string, wireLeg int) {
 		at.mentorStopMoveManual = map[string]*mentorStopMoveManual{}
 	}
 	at.mentorStopMoveManual[mentorStopMoveKey(signalID, wireLeg)] = &mentorStopMoveManual{
-		signalID: signalID,
-		wireLeg:  wireLeg,
-		fresh:    true,
+		signalID:     signalID,
+		wireLeg:      wireLeg,
+		adoptedPrice: adoptedPrice,
 	}
 }
 
-// mentorSweepManualLatches clears a manual latch the moment a fresh snapshot
-// shows the broker stop matching the belief again, or the position is gone.
+// mentorSweepManualLatches clears a manual latch only when (a) the position is
+// gone (unregistered, or Qty ≤ 0 on that leg), or (b) the owner moved the broker
+// stop BY HAND — the broker price CHANGES from the price adopted at latch time,
+// which the drive re-adopts into the belief WITHOUT sending anything.
 func (at *AutoTrader) mentorSweepManualLatches(nt *ntTrader.TCPTrader) {
 	if at == nil {
 		return
@@ -766,23 +768,10 @@ func (at *AutoTrader) mentorSweepManualLatches(nt *ntTrader.TCPTrader) {
 			at.mentorClearStopMoveLatch(e.key)
 			continue
 		}
-		// A latch set THIS pass (belief == broker by construction) must survive
-		// one full snapshot before it can clear — clear it now and it never
-		// holds. Mark it seen and skip this pass.
-		at.mentorExitMu.Lock()
-		fresh := e.m.fresh
-		if fresh {
-			e.m.fresh = false
-		}
-		at.mentorExitMu.Unlock()
-		if fresh {
-			continue
-		}
-		belief := 0.0
+		// Leg gone (Qty ≤ 0) → the latch is moot.
 		found := false
 		for i := range p.Legs {
-			if p.Legs[i].SignalID == e.m.signalID && p.Legs[i].Qty > 0 && p.Legs[i].Wire == e.m.wireLeg {
-				belief = p.Legs[i].Stop
+			if p.Legs[i].SignalID == e.m.signalID && p.Legs[i].Wire == e.m.wireLeg && p.Legs[i].Qty > 0 {
 				found = true
 				break
 			}
@@ -791,10 +780,15 @@ func (at *AutoTrader) mentorSweepManualLatches(nt *ntTrader.TCPTrader) {
 			at.mentorClearStopMoveLatch(e.key)
 			continue
 		}
+		// Owner override: the broker stop CHANGED from the adopted-at-latch price
+		// (the owner moved it by hand) → clear the latch and re-adopt, no send.
 		stops := mentorBrokerStopOrders(book, e.m.signalID, e.m.wireLeg)
-		if len(stops) > 0 && math.Abs(stops[0].StopPrice-belief) <= halfTick {
+		if len(stops) > 0 && math.Abs(stops[0].StopPrice-e.m.adoptedPrice) > halfTick {
+			newPrice := stops[0].StopPrice
 			at.mentorClearStopMoveLatch(e.key)
-			at.logInfof("🧑‍🏫 mentor leg %s#%d manual management cleared — broker stop matches the belief again", e.m.signalID, e.m.wireLeg)
+			if at.mentorAdoptBrokerStop(e.m.signalID, e.m.wireLeg, newPrice) {
+				at.logInfof("🧑‍🏫 mentor leg %s#%d manual management cleared — broker stop changed to %.2f (re-adopted, nothing sent)", e.m.signalID, e.m.wireLeg, newPrice)
+			}
 		}
 	}
 }
@@ -942,7 +936,7 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 		if at.mentorAdoptBrokerStop(mv.signalID, mv.wireLeg, brokerPrice) {
 			at.logErrorf("🚨 mentor stop-move: %s leg %d belief corrected to broker stop %.2f — manage by hand", mv.signalID, mv.wireLeg, brokerPrice)
 		}
-		at.mentorLatchStopMoveManual(mv.signalID, mv.wireLeg)
+		at.mentorLatchStopMoveManual(mv.signalID, mv.wireLeg, brokerPrice)
 		at.mentorDeletePendingStopMove(key)
 	}
 

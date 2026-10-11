@@ -58,6 +58,15 @@ func f1SetStopBook(book ntwire.OrderSnapshotPayload, recvAt time.Time, ok bool) 
 	return func() { mentorStopBook = orig }
 }
 
+// f1SetStopBookFn binds a LIVE book supplier (mutable across verify passes).
+func f1SetStopBookFn(fn func() ntwire.OrderSnapshotPayload) func() {
+	orig := mentorStopBook
+	mentorStopBook = func(*ntTrader.TCPTrader) (ntwire.OrderSnapshotPayload, time.Time, bool) {
+		return fn(), time.Now(), true
+	}
+	return func() { mentorStopBook = orig }
+}
+
 // f1CaptureMoves substitutes the wire seam and returns a pointer to the captured
 // (signalID, wireLeg, price) re-sends.
 func f1CaptureMoves() (*[]moveCapture, func()) {
@@ -225,8 +234,10 @@ func TestStopMoveWiderCorrectsBeliefAfterTwoMisses(t *testing.T) {
 	}
 }
 
-// TestStopMoveLatchBlocksFurtherMoves: once latched, a further drive move sends
-// NOTHING (mentorMoveLegStop returns errMentorStopManual) — no fourth send.
+// TestStopMoveLatchBlocksFurtherMoves: once latched, FIVE more closed candles
+// with the drive wanting new stops → ZERO further sends (mentorMoveLegStop
+// returns errMentorStopManual), and the latch holds (the broker stop has NOT
+// changed).
 func TestStopMoveLatchBlocksFurtherMoves(t *testing.T) {
 	at := f1StopVerifyTrader(t)
 	moves, restore := f1CaptureMoves()
@@ -244,17 +255,81 @@ func TestStopMoveLatchBlocksFurtherMoves(t *testing.T) {
 		t.Fatalf("exactly ONE re-send total, got %d", len(*moves))
 	}
 
-	// A third drive move (want 102) must be blocked by the latch — no send.
-	leg := &mentorLeg{SignalID: "sig1", Qty: 1, Stop: 99, Final: true, Wire: 1}
-	err := at.mentorMoveLegStop(nil, "long", leg, 102.0)
-	if !errors.Is(err, errMentorStopManual) {
-		t.Fatalf("a latched leg must return errMentorStopManual, got %v", err)
+	// Five more closed candles: each sweep must NOT clear the latch (broker still
+	// at the adopted 99.0), and each drive move must send nothing.
+	for i := 0; i < 5; i++ {
+		at.mentorVerifyPendingStopMoves(nil)
+		leg := &mentorLeg{SignalID: "sig1", Qty: 1, Stop: 99, Final: true, Wire: 1}
+		if err := at.mentorMoveLegStop(nil, "long", leg, 102.0+float64(i)); !errors.Is(err, errMentorStopManual) {
+			t.Fatalf("candle %d: a latched leg must return errMentorStopManual, got %v", i, err)
+		}
 	}
 	if len(*moves) != 1 {
-		t.Fatalf("the latch must block further sends, got %d sends", len(*moves))
+		t.Fatalf("the latch must block all further sends, got %d sends", len(*moves))
+	}
+	if _, latched := at.mentorStopMoveManual[mentorStopMoveKey("sig1", 1)]; !latched {
+		t.Fatal("the latch must HOLD while the broker stop is unchanged")
 	}
 	if at.mentorLivePos["sig1"].Legs[0].Stop != 99.0 {
 		t.Fatalf("belief must stay at the broker stop 99.0, got %.2f", at.mentorLivePos["sig1"].Legs[0].Stop)
+	}
+}
+
+// TestStopMoveLatchClearsWhenPositionGone: the latch clears the moment the
+// position is unregistered (or the leg's Qty drops to zero).
+func TestStopMoveLatchClearsWhenPositionGone(t *testing.T) {
+	at := f1StopVerifyTrader(t)
+	_, restore := f1CaptureMoves()
+	defer restore()
+	restoreBook := f1SetStopBook(f1Book(99.0), time.Now(), true)
+	defer restoreBook()
+
+	f1RecordPending(at, "sig1", "long", 1, 100.0, time.Now().Add(-3*time.Second))
+	at.mentorVerifyPendingStopMoves(nil)
+	f1RecordPending(at, "sig1", "long", 1, 101.0, time.Now().Add(-3*time.Second))
+	at.mentorVerifyPendingStopMoves(nil)
+	if _, latched := at.mentorStopMoveManual[mentorStopMoveKey("sig1", 1)]; !latched {
+		t.Fatal("precondition: the leg must be latched")
+	}
+
+	delete(at.mentorLivePos, "sig1") // the position is gone
+	at.mentorVerifyPendingStopMoves(nil)
+
+	if _, latched := at.mentorStopMoveManual[mentorStopMoveKey("sig1", 1)]; latched {
+		t.Fatal("the latch must clear when the position is gone")
+	}
+}
+
+// TestStopMoveLatchClearsOnOwnerOverride: if the owner moves the broker stop by
+// hand (the price CHANGES from the adopted-at-latch price), the latch clears and
+// the new broker price is re-adopted WITHOUT sending anything.
+func TestStopMoveLatchClearsOnOwnerOverride(t *testing.T) {
+	at := f1StopVerifyTrader(t)
+	moves, restore := f1CaptureMoves()
+	defer restore()
+	book := f1Book(99.0)
+	restoreBook := f1SetStopBookFn(func() ntwire.OrderSnapshotPayload { return book })
+	defer restoreBook()
+
+	f1RecordPending(at, "sig1", "long", 1, 100.0, time.Now().Add(-3*time.Second))
+	at.mentorVerifyPendingStopMoves(nil)
+	f1RecordPending(at, "sig1", "long", 1, 101.0, time.Now().Add(-3*time.Second))
+	at.mentorVerifyPendingStopMoves(nil)
+	if _, latched := at.mentorStopMoveManual[mentorStopMoveKey("sig1", 1)]; !latched {
+		t.Fatal("precondition: the leg must be latched")
+	}
+
+	book = f1Book(100.5) // the owner moved the broker stop by hand
+	at.mentorVerifyPendingStopMoves(nil)
+
+	if _, latched := at.mentorStopMoveManual[mentorStopMoveKey("sig1", 1)]; latched {
+		t.Fatal("the latch must clear when the owner moves the broker stop")
+	}
+	if at.mentorLivePos["sig1"].Legs[0].Stop != 100.5 {
+		t.Fatalf("the new broker stop must be re-adopted at 100.5, got %.2f", at.mentorLivePos["sig1"].Legs[0].Stop)
+	}
+	if len(*moves) != 1 {
+		t.Fatalf("the owner override must re-adopt WITHOUT sending, got %d sends", len(*moves))
 	}
 }
 
