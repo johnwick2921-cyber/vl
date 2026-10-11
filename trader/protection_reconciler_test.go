@@ -3,7 +3,10 @@ package trader
 import (
 	"strings"
 	"testing"
+	"time"
 
+	"vl/kernel"
+	"vl/market"
 	nt "vl/provider/ninjatrader"
 )
 
@@ -69,7 +72,7 @@ func TestProtectionAdjudication(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			v := adjudicateProtection(sym, side, c.posQty, c.book, c.haveBook, c.accepted, c.planStop, nil, 0)
+			v := adjudicateProtection(sym, side, c.posQty, c.book, c.haveBook, c.accepted, c.planStop, nil, nil)
 			if v.Action != c.wantAction {
 				t.Fatalf("action = %s, want %s (why: %s)", v.Action, c.wantAction, v.Why)
 			}
@@ -97,34 +100,89 @@ func TestProtectionUsesMentorDriverStop(t *testing.T) {
 
 	// naked (no protective order), last price still above the BE stop → place at
 	// the driver's CURRENT stop (entry), not the original.
-	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, px(entry), 31180); v.Action != protectionPlace || v.StopPx != entry || v.Source != "mentor_driver" {
+	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, px(entry), px(31180)); v.Action != protectionPlace || v.StopPx != entry || v.Source != "mentor_driver" {
 		t.Fatalf("naked mentor after BE: got %s stop=%.2f source=%q — %s", v.Action, v.StopPx, v.Source, v.Why)
 	}
 
 	// last price through the BE stop → flatten, never place a stop behind the
 	// market.
-	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, px(entry), 31162); v.Action != protectionFlatten {
+	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, px(entry), px(31162)); v.Action != protectionFlatten {
 		t.Fatalf("price through the BE stop: got %s, want flatten — %s", v.Action, v.Why)
 	}
 
 	// short: tightest = the LOWEST stop; last price below it flattens.
-	if v := adjudicateProtection(sym, "SHORT", 1, nil, true, px(original), original, px(31100), 31110); v.Action != protectionFlatten {
+	if v := adjudicateProtection(sym, "SHORT", 1, nil, true, px(original), original, px(31100), px(31110)); v.Action != protectionFlatten {
 		t.Fatalf("short through its stop: got %s, want flatten — %s", v.Action, v.Why)
 	}
 
 	// no mentor stop → today's behaviour (accepted-risk stop) unchanged.
-	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, nil, 31180); v.Action != protectionPlace || v.StopPx != original || v.Source != "accepted_risk" {
+	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, nil, px(31180)); v.Action != protectionPlace || v.StopPx != original || v.Source != "accepted_risk" {
 		t.Fatalf("non-mentor: got %s stop=%.2f source=%q — %s", v.Action, v.StopPx, v.Source, v.Why)
 	}
 
 	// no last price (no mark): do NOT flatten, still place at the driver's stop
 	// (never fall back to the wider original), and the Why names that the side
 	// could not be checked.
-	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, px(entry), 0); v.Action != protectionPlace || v.StopPx != entry || v.Source != "mentor_driver" {
-		t.Fatalf("no last price: got %s stop=%.2f source=%q — %s", v.Action, v.StopPx, v.Source, v.Why)
+	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, px(entry), nil); v.Action != protectionPlace || v.StopPx != entry || v.Source != "mentor_driver" {
+		t.Fatalf("no fresh price: got %s stop=%.2f source=%q — %s", v.Action, v.StopPx, v.Source, v.Why)
 	}
-	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, px(entry), 0); !strings.Contains(v.Why, "could NOT be checked") {
+	if v := adjudicateProtection(sym, side, 1, nil, true, px(original), original, px(entry), nil); !strings.Contains(v.Why, "could NOT be checked") {
 		t.Fatalf("no last price must say the side could not be checked: %s", v.Why)
+	}
+}
+
+// REL17-F4 P0 — the through-check may only use a FRESH 1m close. No bars, or a
+// stale bar, means NO fresh price and therefore NO flatten; a fresh bar through
+// the stop flattens. (The false-flatten regression: a BE stop == entry, and the
+// old markPrice fell back to entry — so a naked healthy LONG read "through".)
+func TestProtectionFreshPriceNoFlattenOnStaleOrMissing(t *testing.T) {
+	t.Setenv("STALE_BAR_GRACE_S", "15")
+	const sym, side = "MNQ", "LONG"
+	now := time.Date(2026, 10, 13, 10, 0, 0, 0, kernel.CTLocation()) // Tuesday, CME open
+	if !kernel.IsCMEOpen(now) {
+		t.Fatalf("test premise: %v should be CME-open", now)
+	}
+	openMs := now.UnixMilli()           // the current 1m bar opens on this minute boundary
+	original, entry := 31188.0, 31163.0 // the driver's BE stop == entry
+
+	orig := market.FuturesBarsProvider
+	t.Cleanup(func() { market.FuturesBarsProvider = orig })
+
+	adjudicate := func() (protectionVerdict, bool) {
+		fp, ok := protectionFreshPrice(sym, now)
+		var fpp *float64
+		if ok {
+			fpp = &fp
+		}
+		return adjudicateProtection(sym, side, 1, nil, true, px(original), original, px(entry), fpp), ok
+	}
+
+	// (a) no bars + BE stop == entry → PLACE at entry, no flatten, no fresh price.
+	market.FuturesBarsProvider = func(symbol, tf string, count int) []market.Kline { return nil }
+	v, ok := adjudicate()
+	if ok || v.Action != protectionPlace || v.StopPx != entry || v.Source != "mentor_driver" {
+		t.Fatalf("(a) no bars: got ok=%v %s stop=%.2f source=%q — %s", ok, v.Action, v.StopPx, v.Source, v.Why)
+	}
+	if !strings.Contains(v.Why, "could NOT be checked") {
+		t.Fatalf("(a) must name that the stop side could not be checked: %s", v.Why)
+	}
+
+	// (b) a STALE bar whose close is through the stop → no fresh price → no flatten.
+	market.FuturesBarsProvider = func(symbol, tf string, count int) []market.Kline {
+		return []market.Kline{{OpenTime: openMs - 5*60_000, Close: entry - 10}} // 5 min old, through the BE stop
+	}
+	v, ok = adjudicate()
+	if ok || v.Action != protectionPlace {
+		t.Fatalf("(b) stale bar: got ok=%v %s, want place (no flatten) — %s", ok, v.Action, v.Why)
+	}
+
+	// (c) a FRESH bar whose close is through the stop → flatten.
+	market.FuturesBarsProvider = func(symbol, tf string, count int) []market.Kline {
+		return []market.Kline{{OpenTime: openMs, Close: entry - 10}}
+	}
+	v, ok = adjudicate()
+	if !ok || v.Action != protectionFlatten {
+		t.Fatalf("(c) fresh bar through stop: got ok=%v %s, want flatten — %s", ok, v.Action, v.Why)
 	}
 }
 
@@ -162,11 +220,11 @@ func TestMentorDriverCurrentStopTightest(t *testing.T) {
 func TestShortPositionProtectionIsRecognised(t *testing.T) {
 	book := []nt.NT8Order{{Symbol: "MNQ", Name: "whatever", Action: "BuyToCover", Type: "StopMarket",
 		State: "Accepted", StopPrice: 29700, Quantity: 1}}
-	if v := adjudicateProtection("MNQ", "SHORT", 1, book, true, nil, 0, nil, 0); v.Action != protectionOK {
+	if v := adjudicateProtection("MNQ", "SHORT", 1, book, true, nil, 0, nil, nil); v.Action != protectionOK {
 		t.Fatalf("a buy stop above a SHORT is its protection; got %s — %s", v.Action, v.Why)
 	}
 	// the same order does NOT protect a long
-	if v := adjudicateProtection("MNQ", "LONG", 1, book, true, nil, 29500, nil, 0); v.Action != protectionPlace {
+	if v := adjudicateProtection("MNQ", "LONG", 1, book, true, nil, 29500, nil, nil); v.Action != protectionPlace {
 		t.Fatalf("a BUY stop was counted as protection for a LONG; got %s", v.Action)
 	}
 }

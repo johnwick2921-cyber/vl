@@ -8060,3 +8060,37 @@ non-mentor → unchanged) with mutants for "always the accepted-risk stop" and
 "drop the flatten". Reference: trader/protection_reconciler.go
 mentorDriverCurrentStop + adjudicateProtection + actOnProtection,
 trader/protection_reconciler_test.go TestProtectionUsesMentorDriverStop.
+
+## CLASS NN (assigned at merge) — a live-price through-check reads a fallback
+
+symptom: DS-104 (2026-10-11, REL17-F4 P0): the same through-check read
+p["markPrice"], and for NT8 the mark is the newest 5m close which FALLS BACK TO
+ENTRY when the cache has no 5m bars. A mentor break-even stop == entry, so right
+after a restart / reconnect re-seed / feed drop a LONG at BE read
+lastPrice(=entry) <= stop(=entry) → "through" → the reconciler FLATTENED a
+healthy position at market. Even with bars, a stale close can do the same.
+probe: for every comparison that can DESTROY (flatten / force-close / cancel /
+stop-move), name the exact price and ask whether it can be a fallback or a stale
+value. rule: a destructive through-check uses ONLY a FRESH price — the newest 1m
+BarCache close age-checked against the same staleness rule the mentor stale-data
+block uses (kernel.StaleEntryGateFeed, ~75 s); never markPrice, never the entry
+fallback; equal-to-stop counts as through ONLY with a fresh price; no fresh
+price → do NOT flatten, act safely and say the side could not be checked.
+Reference: trader/protection_reconciler.go protectionFreshPrice +
+reconcileProtectionAt + adjudicateProtection,
+trader/protection_reconciler_test.go
+TestProtectionFreshPriceNoFlattenOnStaleOrMissing (no bars / stale / fresh).
+
+## CLASS NN (assigned at merge) — a per-minute P0 alert with a timestamped event id
+
+symptom: DS-104 (2026-10-11, REL17-F4 P2): the flatten alert's event id carried
+now.UnixMilli() and the flatten branch had no `changed` guard, so a failing
+flatten re-raised a NEW P0 and re-sent a close every 60 s. The alert bus is
+idempotent ON THE EVENT ID — a changing timestamp defeats the dedupe. probe: for
+every recurring alert, check (a) whether the event id is stable per episode, and
+(b) whether the raise sits behind the action-transition throttle. rule: dedupe
+the alert per (symbol, side, episode) with a STABLE event id (no timestamp) fired
+only on the transition; keep the retrying ACTION (the close), and log the retry
+count. Reference: trader/protection_reconciler.go actOnProtection
+protectionFlatten + protectionFlattenRetries.
+
