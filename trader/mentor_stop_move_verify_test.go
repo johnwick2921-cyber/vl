@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -14,10 +15,17 @@ import (
 // against the broker's own order book, because the AddOn replies with NO ack on
 // a refused move and a nil wire return only proves the frame was SENT.
 //
+// Direction reference (long: stop below entry moves UP toward BE; short: stop
+// above entry moves DOWN):
+//   - TIGHTER broker stop = closer to the position than wanted (long: above X;
+//     short: below X) → adopted at once, NEVER re-sent (a re-send would WIDEN).
+//   - WIDER broker stop = further from the position (long: below X; short: above
+//     X) → the refusing-NT8 path: re-send once, then adopt + latch.
+//
 // Named RED mutants each test catches:
-//   - drop the re-send          → TestStopMoveRefusalReSendsOnce fails (no re-send captured)
-//   - drop the belief correction → TestStopMoveRefusalCorrectsBelief / TestStopMoveTighterBrokerKept fail
-//   - accept any price          → TestStopMoveRefusalReSendsOnce fails (would CONFIRM, no re-send)
+//   - drop the tighter check          → TestStopMoveTighterBrokerKeptLong/Short fail
+//   - drop the miss-count persistence → TestStopMoveWiderCorrectsBeliefAfterTwoMisses fails
+//   - drop the latch                  → TestStopMoveLatchBlocksFurtherMoves fails
 
 func f1StopVerifyTrader(t *testing.T) *AutoTrader {
 	t.Helper()
@@ -69,8 +77,8 @@ type moveCapture struct {
 	leg      int
 }
 
-func f1RecordPending(at *AutoTrader, signalID string, wireLeg int, want float64, sendAt time.Time) {
-	at.mentorRecordPendingStopMove(signalID, "long", wireLeg, want)
+func f1RecordPending(at *AutoTrader, signalID, side string, wireLeg int, want float64, sendAt time.Time) {
+	at.mentorRecordPendingStopMove(signalID, side, wireLeg, want)
 	// Rewind the send time so the "first snapshot NEWER than send+2s" gate opens.
 	at.mentorExitMu.Lock()
 	at.mentorPendingStopMoves[mentorStopMoveKey(signalID, wireLeg)].sendAt = sendAt
@@ -90,7 +98,7 @@ func TestStopMoveAppliedConfirms(t *testing.T) {
 	restoreBook := f1SetStopBook(f1Book(100.0), time.Now(), true)
 	defer restoreBook()
 
-	f1RecordPending(at, "sig1", 1, 100.0, time.Now().Add(-3*time.Second))
+	f1RecordPending(at, "sig1", "long", 1, 100.0, time.Now().Add(-3*time.Second))
 
 	at.mentorVerifyPendingStopMoves(nil)
 
@@ -102,49 +110,106 @@ func TestStopMoveAppliedConfirms(t *testing.T) {
 	}
 }
 
-// TestStopMoveRefusalReSendsOnce: a broker stop at another price renders NOT
-// APPLIED and re-sends the SAME wanted price exactly once.
-func TestStopMoveRefusalReSendsOnce(t *testing.T) {
+// TestStopMoveTighterBrokerKeptLong: a LONG broker stop ABOVE the wanted price
+// (tighter) is adopted at once — zero re-sends, no P0, no widen.
+func TestStopMoveTighterBrokerKeptLong(t *testing.T) {
 	at := f1StopVerifyTrader(t)
 	moves, restore := f1CaptureMoves()
 	defer restore()
 	restoreBook := f1SetStopBook(f1Book(101.0), time.Now(), true)
 	defer restoreBook()
 
-	f1RecordPending(at, "sig1", 1, 100.0, time.Now().Add(-3*time.Second))
+	f1RecordPending(at, "sig1", "long", 1, 100.0, time.Now().Add(-3*time.Second))
+	at.mentorVerifyPendingStopMoves(nil)
 
+	if len(*moves) != 0 {
+		t.Fatalf("a tighter broker stop must NOT re-send (a re-send would widen), got %d", len(*moves))
+	}
+	if at.mentorLivePos["sig1"].Legs[0].Stop != 101.0 {
+		t.Fatalf("tighter broker stop must be adopted at 101.0, got %.2f", at.mentorLivePos["sig1"].Legs[0].Stop)
+	}
+	if len(at.mentorPendingStopMoves) != 0 {
+		t.Fatalf("pending entry must be deleted on a tighter adopt, got %d", len(at.mentorPendingStopMoves))
+	}
+}
+
+// TestStopMoveTighterBrokerKeptShort: a SHORT broker stop BELOW the wanted price
+// (tighter) is adopted at once — zero re-sends.
+func TestStopMoveTighterBrokerKeptShort(t *testing.T) {
+	at := f1StopVerifyTrader(t)
+	moves, restore := f1CaptureMoves()
+	defer restore()
+	restoreBook := f1SetStopBook(f1Book(99.0), time.Now(), true)
+	defer restoreBook()
+
+	f1RecordPending(at, "sig1", "short", 1, 100.0, time.Now().Add(-3*time.Second))
+	at.mentorVerifyPendingStopMoves(nil)
+
+	if len(*moves) != 0 {
+		t.Fatalf("a tighter (short) broker stop must NOT re-send, got %d", len(*moves))
+	}
+	if at.mentorLivePos["sig1"].Legs[0].Stop != 99.0 {
+		t.Fatalf("tighter (short) broker stop must be adopted at 99.0, got %.2f", at.mentorLivePos["sig1"].Legs[0].Stop)
+	}
+}
+
+// TestStopMoveWiderRefusalReSendsOnce: a LONG broker stop BELOW the wanted price
+// (wider) renders NOT APPLIED and re-sends the SAME wanted price exactly once.
+func TestStopMoveWiderRefusalReSendsOnce(t *testing.T) {
+	at := f1StopVerifyTrader(t)
+	moves, restore := f1CaptureMoves()
+	defer restore()
+	restoreBook := f1SetStopBook(f1Book(99.0), time.Now(), true)
+	defer restoreBook()
+
+	f1RecordPending(at, "sig1", "long", 1, 100.0, time.Now().Add(-3*time.Second))
 	at.mentorVerifyPendingStopMoves(nil)
 
 	if len(*moves) != 1 {
-		t.Fatalf("first refusal must re-send ONCE, got %d re-sends", len(*moves))
+		t.Fatalf("first wider refusal must re-send ONCE, got %d re-sends", len(*moves))
 	}
 	if (*moves)[0].price != 100.0 {
 		t.Fatalf("re-send must be the SAME wanted price 100.0, got %.2f", (*moves)[0].price)
 	}
-	// The pending entry stays — the re-send needs a verdict too.
 	if len(at.mentorPendingStopMoves) != 1 {
-		t.Fatalf("pending entry must survive the first refusal, got %d", len(at.mentorPendingStopMoves))
+		t.Fatalf("pending entry must survive the first wider refusal, got %d", len(at.mentorPendingStopMoves))
 	}
 }
 
-// TestStopMoveRefusalCorrectsBelief: the SECOND disagreement adopts the broker's
-// price as the driver belief and stops managing the move (no third send).
-func TestStopMoveRefusalCorrectsBelief(t *testing.T) {
+// TestStopMoveWiderShortRefusalReSendsOnce: a SHORT broker stop ABOVE the wanted
+// price (wider) re-sends once.
+func TestStopMoveWiderShortRefusalReSendsOnce(t *testing.T) {
 	at := f1StopVerifyTrader(t)
 	moves, restore := f1CaptureMoves()
 	defer restore()
 	restoreBook := f1SetStopBook(f1Book(101.0), time.Now(), true)
 	defer restoreBook()
 
-	f1RecordPending(at, "sig1", 1, 100.0, time.Now().Add(-3*time.Second))
-	at.mentorVerifyPendingStopMoves(nil) // first miss → re-send
+	f1RecordPending(at, "sig1", "short", 1, 100.0, time.Now().Add(-3*time.Second))
+	at.mentorVerifyPendingStopMoves(nil)
 
-	// Rewind again: the re-send set sendAt = now, so open the gate for a fresh
-	// snapshot that STILL shows the broker at 101.
-	at.mentorExitMu.Lock()
-	at.mentorPendingStopMoves[mentorStopMoveKey("sig1", 1)].sendAt = time.Now().Add(-3 * time.Second)
-	at.mentorExitMu.Unlock()
-	at.mentorVerifyPendingStopMoves(nil) // second miss → adopt broker truth
+	if len(*moves) != 1 {
+		t.Fatalf("first wider (short) refusal must re-send ONCE, got %d", len(*moves))
+	}
+}
+
+// TestStopMoveWiderCorrectsBeliefAfterTwoMisses: the SECOND wider miss adopts the
+// broker's price and latches the leg (the miss count SURVIVES a superseding
+// move, so a fresh want every candle still reaches manage-by-hand).
+func TestStopMoveWiderCorrectsBeliefAfterTwoMisses(t *testing.T) {
+	at := f1StopVerifyTrader(t)
+	moves, restore := f1CaptureMoves()
+	defer restore()
+	restoreBook := f1SetStopBook(f1Book(99.0), time.Now(), true)
+	defer restoreBook()
+
+	f1RecordPending(at, "sig1", "long", 1, 100.0, time.Now().Add(-3*time.Second))
+	at.mentorVerifyPendingStopMoves(nil) // first wider miss → re-send
+
+	// A fresh drive move supersedes the pending (new want 101) but the episode
+	// miss count SURVIVES — the second wider miss must still adopt + latch.
+	f1RecordPending(at, "sig1", "long", 1, 101.0, time.Now().Add(-3*time.Second))
+	at.mentorVerifyPendingStopMoves(nil) // second wider miss → adopt + latch
 
 	if len(*moves) != 1 {
 		t.Fatalf("exactly ONE re-send total, got %d", len(*moves))
@@ -152,35 +217,44 @@ func TestStopMoveRefusalCorrectsBelief(t *testing.T) {
 	if len(at.mentorPendingStopMoves) != 0 {
 		t.Fatalf("pending entry must be deleted after the second miss, got %d", len(at.mentorPendingStopMoves))
 	}
-	leg := at.mentorLivePos["sig1"].Legs[0]
-	if leg.Stop != 101.0 {
-		t.Fatalf("belief must be corrected to the broker stop 101.0, got %.2f", leg.Stop)
+	if at.mentorLivePos["sig1"].Legs[0].Stop != 99.0 {
+		t.Fatalf("belief must be corrected to the broker stop 99.0, got %.2f", at.mentorLivePos["sig1"].Legs[0].Stop)
+	}
+	if _, latched := at.mentorStopMoveManual[mentorStopMoveKey("sig1", 1)]; !latched {
+		t.Fatal("the leg must be latched into manual management after two misses")
 	}
 }
 
-// TestStopMoveTighterBrokerKept: when the broker sits TIGHTER than the wanted
-// price through two misses, the belief adopts the broker's price — never widened
-// back to the wanted level.
-func TestStopMoveTighterBrokerKept(t *testing.T) {
+// TestStopMoveLatchBlocksFurtherMoves: once latched, a further drive move sends
+// NOTHING (mentorMoveLegStop returns errMentorStopManual) — no fourth send.
+func TestStopMoveLatchBlocksFurtherMoves(t *testing.T) {
 	at := f1StopVerifyTrader(t)
 	moves, restore := f1CaptureMoves()
 	defer restore()
 	restoreBook := f1SetStopBook(f1Book(99.0), time.Now(), true)
 	defer restoreBook()
 
-	f1RecordPending(at, "sig1", 1, 100.0, time.Now().Add(-3*time.Second))
-	at.mentorVerifyPendingStopMoves(nil) // first miss → re-send
-	at.mentorExitMu.Lock()
-	at.mentorPendingStopMoves[mentorStopMoveKey("sig1", 1)].sendAt = time.Now().Add(-3 * time.Second)
-	at.mentorExitMu.Unlock()
-	at.mentorVerifyPendingStopMoves(nil) // second miss → adopt
+	// Want 100 → first wider miss (re-send); want 101 → second wider miss (adopt+latch).
+	f1RecordPending(at, "sig1", "long", 1, 100.0, time.Now().Add(-3*time.Second))
+	at.mentorVerifyPendingStopMoves(nil)
+	f1RecordPending(at, "sig1", "long", 1, 101.0, time.Now().Add(-3*time.Second))
+	at.mentorVerifyPendingStopMoves(nil)
 
-	leg := at.mentorLivePos["sig1"].Legs[0]
-	if leg.Stop != 99.0 {
-		t.Fatalf("tighter broker stop must be KEPT at 99.0, got %.2f", leg.Stop)
-	}
 	if len(*moves) != 1 {
 		t.Fatalf("exactly ONE re-send total, got %d", len(*moves))
+	}
+
+	// A third drive move (want 102) must be blocked by the latch — no send.
+	leg := &mentorLeg{SignalID: "sig1", Qty: 1, Stop: 99, Final: true, Wire: 1}
+	err := at.mentorMoveLegStop(nil, "long", leg, 102.0)
+	if !errors.Is(err, errMentorStopManual) {
+		t.Fatalf("a latched leg must return errMentorStopManual, got %v", err)
+	}
+	if len(*moves) != 1 {
+		t.Fatalf("the latch must block further sends, got %d sends", len(*moves))
+	}
+	if at.mentorLivePos["sig1"].Legs[0].Stop != 99.0 {
+		t.Fatalf("belief must stay at the broker stop 99.0, got %.2f", at.mentorLivePos["sig1"].Legs[0].Stop)
 	}
 }
 
@@ -191,10 +265,10 @@ func TestStopMoveStaleBookNoVerdict(t *testing.T) {
 	moves, restore := f1CaptureMoves()
 	defer restore()
 	// Snapshot received 61s ago (older than 2×30s) — but still AFTER send+2s.
-	restoreBook := f1SetStopBook(f1Book(101.0), time.Now().Add(-61*time.Second), true)
+	restoreBook := f1SetStopBook(f1Book(99.0), time.Now().Add(-61*time.Second), true)
 	defer restoreBook()
 
-	f1RecordPending(at, "sig1", 1, 100.0, time.Now().Add(-70*time.Second))
+	f1RecordPending(at, "sig1", "long", 1, 100.0, time.Now().Add(-70*time.Second))
 	at.mentorVerifyPendingStopMoves(nil)
 
 	if len(at.mentorPendingStopMoves) != 1 {
