@@ -151,6 +151,7 @@ func (s *Server) handleEquityHistory(c *gin.Context) {
 	// Build return rate historical data points
 	type EquityPoint struct {
 		Timestamp        string  `json:"timestamp"`
+		TimestampMs      int64   `json:"timestamp_ms"`       // epoch ms — the chart's parseable source; `timestamp` stays the display string
 		TotalEquity      float64 `json:"total_equity"`
 		AvailableBalance float64 `json:"available_balance"` // Available balance
 		TotalPnL         float64 `json:"total_pnl"`         // Total PnL (unrealized PnL)
@@ -175,6 +176,7 @@ func (s *Server) handleEquityHistory(c *gin.Context) {
 
 		history = append(history, EquityPoint{
 			Timestamp:        kernel.FormatCT(snap.Timestamp),
+			TimestampMs:      snap.Timestamp.UnixMilli(),
 			TotalEquity:      snap.TotalEquity,
 			AvailableBalance: snap.Balance,
 			TotalPnL:         snap.UnrealizedPnL,
