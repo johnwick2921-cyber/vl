@@ -8079,3 +8079,23 @@ api/handler_competition.go handleEquityHistory (TimestampMs), web/src/lib/
 chartTime.ts formatEquityTimestamp/formatCTDisplayString, web/src/components/
 charts/EquityChart.tsx, api/equity_history_timestamp_test.go,
 web/src/lib/chartTime.test.ts.
+
+## CLASS NN (assigned at merge) — 402 outage latch is in-memory and single-caller (banner never clears)
+
+symptom: DS-102 (2026-10-11, REL17-F5): the "AI CREDIT EXHAUSTED" P0 banner was
+raised by `on402Failure` and cleared only by `onAISuccess` — whose sole caller
+was the AI DECISION path (`trader/auto_trader_loop.go:701`). Mentor mode skips
+that path, and the latch `ai402OutageStartMs` lived only in memory, so after any
+restart nothing could ack an open banner. Live: day_plan_alerts id 1205
+(kind ai-payment, 10-07 05:40 CT) stayed acked=0 dismissed=0 for days and
+toasted on every dashboard load. probe: for every alert/banner that is
+auto-cleared on recovery, grep the clear function's callers — a clear with one
+caller (or keyed to an in-memory latch) is a banner that survives the very event
+that should end it. rule: recovery clears by PERSISTED predicate (trader + kind,
+acked=0), not by an in-memory event id; every success call site raises/clears
+through one function; make the latch atomic when other goroutines join. Reference:
+trader/auto_trader_ai402.go (onAISuccess/on402Failure/ai402ClearAllOn) +
+store/alert.go (AckAllByKind) + trader/auto_trader_planner.go (planner call
+site) + trader/auto_trader_watcher.go (watch call site) +
+trader/ai402_test.go (TestOnAISuccessRestartSafeAcksOpenBanner,
+TestPlanner402RaisesOutageBanner, TestPlannerSuccessClearsBanner).

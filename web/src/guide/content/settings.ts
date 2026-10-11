@@ -233,6 +233,22 @@ const dayPlan: KnobSpec[] = [
     perSession: 'No — process-wide.',
   },
   {
+    label: '402 banner clear (restart-safe)',
+    where: 'Environment (AI402_CLEAR_ALL) — not a Strategy knob',
+    what: 'How the "AI CREDIT EXHAUSTED" P0 banner clears. ON (default, release #17): every successful DeepSeek call — the decision path, the in-position watch observer, and the planner read — acknowledges EVERY open ai-payment banner for this trader, so the banner clears even after a restart (the old in-memory outage latch is gone on a fresh process). The planner path also RAISES the banner on its own 402s (it was silent before). OFF: the pre-release-#17 behaviour — only the decision path clears, and only by the in-memory event id, so a banner raised before a restart can never clear itself.',
+    trader:
+      'Mentor mode skips the decision path, so the planner read is the call that must clear the banner in mentor mode.',
+    consumer:
+      'trader/auto_trader_ai402.go (onAISuccess, on402Failure, ai402ClearAllOn) · store/alert.go (AckAllByKind) · trader/auto_trader_planner.go (planner call site) · trader/auto_trader_watcher.go (watch call site) · log line ✅ AI PAYMENT RECOVERED',
+    range: 'on | off',
+    systemDefault: 'ON',
+    recommended:
+      '⭐ ON — a stuck P0 banner is worse than a slightly eager ack.',
+    whenToTouch:
+      'Turn OFF only if a kill-switch is needed while the call-site wiring is audited.',
+    perSession: 'No — process-wide.',
+  },
+  {
     label: 'Min scenario quality',
     where: 'Strategy → Day Plan → A/B/C',
     what: 'Lowest grade the planner may write. Judged against the min_scenario_quality floor that MinScenarioQualityFor (store/strategy.go) resolves per session; at the floor it resolves to today nothing is refused for quality, and raising it makes the arm-time gate refuse a below-floor scenario.',

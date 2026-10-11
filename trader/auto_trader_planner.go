@@ -1471,6 +1471,16 @@ func (at *AutoTrader) runPlannerReadWithTriggerClaimedCtx(now time.Time, session
 			at.logWarnf("🛰 planner call FAILED class=%s provider_row=%s model=%s http_status=%d request_id=%q elapsed=%.1fs idle=%ds total=%ds — %v",
 				mcp.LastErrClass(client), at.config.AIModelID, modelID, mcp.LastHTTPStatus(client), mcp.LastRequestID(client),
 				time.Since(start).Seconds(), int(plannerStreamIdle().Seconds()), int(plannerStreamTotal().Seconds()), err)
+			// F5 (REL17) — a planner 402 raises the SAME P0 outage banner the
+			// decision and watch paths already do (it was silent on this path).
+			if ai402ClearAllOn() && classifyAIError(err) == "ai_payment_402" {
+				at.on402Failure(time.Now(), err)
+			}
+		} else if ai402ClearAllOn() {
+			// F5 (REL17) — a successful planner read clears any latched 402
+			// outage (the planner is the one DeepSeek call mentor mode still
+			// makes, so it is the path that must clear the banner).
+			at.onAISuccess(time.Now())
 		}
 		at.logInfof("🧠 planner call (reasoning=%s wire=%s/%s cap=%d stream idle=%ds total=%ds) completed in %.1fs", modeLabel, pMode, pEffort, cap, int(plannerStreamIdle().Seconds()), int(plannerStreamTotal().Seconds()), time.Since(start).Seconds())
 		// root-fix part B: the live side of the A/B pair.

@@ -560,7 +560,7 @@ type AutoTrader struct {
 	pictureHtfMu       sync.Mutex
 	pictureHtfSig      string
 	pictureHtf         *PictureHtfEvaluator
-	ai402OutageStartMs int64 // P5 402-outage latch (0 = no outage) — one banner per outage
+	ai402OutageStartMs atomic.Int64 // P5 402-outage latch (0 = no outage) — one banner per outage; atomic (F5: planner/watcher clear from other goroutines)
 	// G4 (regime wave 2026-08-21) — transition stand-down state + the G4.6 MSS
 	// wake dedupe key (plan:version:eventInstant — one planner wake per MSS).
 	transition           kernel.TransitionState
