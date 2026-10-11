@@ -2,6 +2,7 @@ package trader
 
 import (
 	"math"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -405,3 +406,284 @@ func (at *AutoTrader) mentorLivePosList() []*mentorLivePos {
 // authoring (mentorArmIntent, keyed by the ledger scenario) to the fill-time
 // live position, without a schema change.
 var mentorRunnerTargets sync.Map
+
+// ── REL17-F2 RESTART REBUILD ────────────────────────────────────────────────
+//
+// The exit-drive's input (mentorLivePos) is built only from IN-PROCESS fill
+// events. After a restart the open mentor position gets no BE, no 1:1 and no
+// trail. This pass rebuilds it once at boot from the broker's own book, before
+// the first exit-drive pass, and never guesses a stop.
+
+// mentorRestartRebuildOn resolves the kill-switch (env MENTOR_RESTART_REBUILD,
+// default ON). Safety fixes ship ON; the switch lets the owner turn it off
+// without a release.
+func mentorRestartRebuildOn() bool {
+	if v := strings.TrimSpace(os.Getenv("MENTOR_RESTART_REBUILD")); v != "" {
+		return !strings.EqualFold(v, "off") && v != "0" && !strings.EqualFold(v, "false")
+	}
+	return true
+}
+
+// mentorRebuildLivePosOnce is the boot hook, called at the top of
+// mentorExitDrive before the first pass. It retries every candle until a FRESH
+// broker book lets the rebuild run, then latches done.
+func (at *AutoTrader) mentorRebuildLivePosOnce(now time.Time) {
+	if at == nil || !mentorRestartRebuildOn() {
+		return
+	}
+	at.mentorRebuildMu.Lock()
+	done := at.mentorRebuildDone
+	at.mentorRebuildMu.Unlock()
+	if done {
+		return
+	}
+	rebuilt, refused, ran := at.mentorRebuildLivePosAtBoot(now)
+	if !ran {
+		return // no fresh book yet — retry on the next candle
+	}
+	at.mentorRebuildMu.Lock()
+	at.mentorRebuildDone = true
+	at.mentorRebuildMu.Unlock()
+	at.logInfof("🧑‍🏫 mentor positions rebuilt: %d (refused %d)", rebuilt, refused)
+}
+
+// mentorRebuildLivePosAtBoot rebuilds every open mentor position from the
+// broker book. ran=false when there is no fresh book yet (the caller retries).
+// Returns (rebuilt, refused, ran).
+func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refused int, ran bool) {
+	if at == nil || at.store == nil || !at.mentorEnabled() {
+		return 0, 0, false
+	}
+	book, have, age := at.liveBook(now)
+	if !have || (snapshotMaxAge() > 0 && age > snapshotMaxAge()) {
+		return 0, 0, false
+	}
+	ran = true
+	positions, err := at.store.Position().GetOpenPositions(at.id)
+	if err != nil {
+		return 0, 0, true
+	}
+	for _, pos := range positions {
+		if pos == nil || pos.EntryOrderID == "" || !strings.EqualFold(pos.Symbol, at.futuresSymbol()) {
+			continue
+		}
+		side := strings.ToLower(strings.TrimSpace(pos.Side))
+		if side != "long" && side != "short" {
+			continue
+		}
+		if at.mentorLivePosExists(pos.EntryOrderID) {
+			continue // already under management (a reconnect, not a restart)
+		}
+		row, ok := at.mentorArmedRowForSignal(pos.EntryOrderID)
+		if !ok || !isMentorArmOrigin(*row) {
+			continue // not a mentor arm
+		}
+		lp, missing := at.mentorBuildLivePosFromBook(*row, pos, book)
+		if missing != "" {
+			refused++
+			at.logErrorf("🧑‍🏫 mentor position %s NOT under exit management after restart — %s; manage by hand", row.SignalID, missing)
+			at.emitAlert("P0", "mentor-restart-rebuild", "mentor-rebuild-"+row.SignalID,
+				"mentor position not under exit management after restart",
+				"manage by hand — "+missing+" (signal "+row.SignalID+")")
+			continue
+		}
+		at.mentorRegisterLivePos(pos.EntryOrderID, lp)
+		at.mentorCountRegistrationShape(lp)
+		rebuilt++
+		at.logInfof("🧑‍🏫 mentor restart rebuild: %s %s %d contracts under exit management (mode %s)", pos.Symbol, side, lp.Pos.Contracts, lp.Pos.Mode)
+	}
+	return rebuilt, refused, true
+}
+
+// mentorLivePosExists reports whether a signal is already registered (guarded).
+func (at *AutoTrader) mentorLivePosExists(key string) bool {
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	_, ok := at.mentorLivePos[key]
+	return ok
+}
+
+// mentorArmedRowForSignal fetches the armed row by signal id.
+func (at *AutoTrader) mentorArmedRowForSignal(signalID string) (*store.ArmedOrderDB, bool) {
+	if at == nil || at.store == nil || signalID == "" {
+		return nil, false
+	}
+	ledger := at.store.ArmedOrders()
+	if ledger == nil {
+		return nil, false
+	}
+	var r store.ArmedOrderDB
+	if err := ledger.DB().Where("signal_id = ?", signalID).First(&r).Error; err != nil {
+		return nil, false
+	}
+	return &r, true
+}
+
+// mentorRebuildExitMode resolves the exit branch for a rebuilt position: the
+// persisted column when present, else derived from the setup (SWING4H → swing;
+// everything else → B). derived=true means the mode was NOT persisted and the
+// caller must log that it was derived.
+func mentorRebuildExitMode(r store.ArmedOrderDB) (mode string, derived bool) {
+	if r.ExitMode != nil && strings.TrimSpace(*r.ExitMode) != "" {
+		return *r.ExitMode, false
+	}
+	if strings.EqualFold(strings.TrimSpace(r.Condition), "SWING4H") {
+		return "swing", true
+	}
+	return "B", true
+}
+
+// mentorBuildLivePosFromBook rebuilds a live position from an armed row, its
+// OPEN position row, and the broker book. missing != "" is the fail-closed
+// reason — the caller registers NOTHING and raises a P0. Never guesses a stop.
+func (at *AutoTrader) mentorBuildLivePosFromBook(r store.ArmedOrderDB, pos *store.TraderPosition, book []ntwire.NT8Order) (*mentorLivePos, string) {
+	side := strings.ToLower(strings.TrimSpace(r.Side))
+	if side != "long" && side != "short" {
+		return nil, "no readable side"
+	}
+	total := int(pos.EntryQuantity)
+	if total < 1 {
+		total = int(pos.Quantity)
+	}
+	if total < 1 {
+		total = 1
+	}
+	residual := int(pos.Quantity)
+	if residual < 1 {
+		residual = 1
+	}
+	entry := pos.EntryPrice
+	if entry <= 0 {
+		entry = r.FillPrice
+	}
+	if entry <= 0 {
+		return nil, "no entry price"
+	}
+
+	// Bracket children: -sl/-sl2 carry StopPrice, -tp/-tp2 carry LimitPrice.
+	// Only orders LIVE AT THE EXCHANGE count (a dying order is not protection).
+	var stop1, stop2, tp1, tp2 float64
+	var qty1, qty2 int
+	for i := range book {
+		o := book[i]
+		if !strings.HasPrefix(o.Name, r.SignalID) || !o.IsLiveAtExchange() {
+			continue
+		}
+		switch {
+		case strings.HasSuffix(strings.ToLower(o.Name), "-sl2"):
+			mentorSetIfZero(&stop2, o.StopPrice)
+			if o.Quantity > 0 {
+				qty2 = o.Quantity
+			}
+		case strings.HasSuffix(strings.ToLower(o.Name), "-sl"):
+			mentorSetIfZero(&stop1, o.StopPrice)
+			if o.Quantity > 0 {
+				qty1 = o.Quantity
+			}
+		case strings.HasSuffix(strings.ToLower(o.Name), "-tp2"):
+			mentorSetIfZero(&tp2, o.LimitPrice)
+		case strings.HasSuffix(strings.ToLower(o.Name), "-tp"):
+			mentorSetIfZero(&tp1, o.LimitPrice)
+		}
+	}
+
+	// Split detection: the row's persisted split, or a leg-2 bracket in the book.
+	splitLive := false
+	if r.Leg1Qty != nil && *r.Leg1Qty > 0 && *r.Leg1Qty < total {
+		splitLive = true
+	}
+	if stop2 > 0 || tp2 > 0 {
+		splitLive = true
+	}
+
+	var leg1Qty, leg2Qty int
+	var leg1Stop, leg2Stop float64
+	var leg1TP, leg2TP float64
+	if splitLive {
+		if r.Leg1Qty != nil && *r.Leg1Qty > 0 {
+			leg1Qty = *r.Leg1Qty
+		} else if qty1 > 0 {
+			leg1Qty = qty1
+		} else {
+			leg1Qty = (total + 1) / 2
+		}
+		leg2Qty = total - leg1Qty
+		if leg2Qty <= 0 {
+			leg2Qty = qty2
+		}
+		leg1Stop, leg2Stop = stop1, stop2
+		leg1TP = tp1
+		if leg1TP <= 0 {
+			leg1TP = r.Leg1TP
+		}
+		leg2TP = tp2
+		if leg2TP <= 0 {
+			leg2TP = r.TargetPx
+		}
+	} else {
+		leg1Qty, leg2Qty = total, 0
+		leg1Stop, leg2Stop = stop1, 0
+		leg1TP = tp1
+		if leg1TP <= 0 {
+			leg1TP = r.TargetPx
+		}
+		leg2TP = 0
+	}
+
+	// The runner's stop is the one the exit drive moves (BE / 1:1 / trail).
+	runnerStop := leg2Stop
+	if !splitLive {
+		runnerStop = leg1Stop
+	}
+	if runnerStop <= 0 {
+		return nil, "no live protective stop in the broker book"
+	}
+
+	mode, derived := mentorRebuildExitMode(r)
+	if derived {
+		at.logInfof("🧑‍🏫 mentor restart rebuild: exit mode derived from setup (%s) for %s", mode, r.SignalID)
+	}
+
+	// ArmedBE: the runner stop is at or through the entry (on the protective
+	// side). Scaled: leg 1 already gone (broker qty is down to the runner).
+	armedBE := false
+	if side == "long" {
+		armedBE = runnerStop >= entry
+	} else {
+		armedBE = runnerStop <= entry
+	}
+	scaled := splitLive && residual <= leg2Qty
+
+	pos2 := mentorPosition{
+		Symbol:   at.futuresSymbol(),
+		Side:     side,
+		Origin:   r.Condition,
+		Entry:    entry,
+		Stop:     runnerStop,
+		Target:   r.TargetPx,
+		R:        math.Abs(entry - r.StopPx),
+		Contracts: total,
+		Leg1:     leg1Qty,
+		Leg2:     leg2Qty,
+		Mode:     mode,
+		ArmedBE:  armedBE,
+		Scaled:   scaled,
+		Leg1TP:   leg1TP,
+	}
+	lp := &mentorLivePos{Pos: pos2}
+	if splitLive {
+		lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: leg1Qty, TP: leg1TP, Stop: leg1Stop, Final: false, Wire: 1}
+		lp.Legs[1] = mentorLeg{SignalID: r.SignalID, Qty: leg2Qty, TP: leg2TP, Stop: leg2Stop, Final: true, Wire: 2}
+	} else {
+		lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: total, TP: leg1TP, Stop: leg1Stop, Final: true, Wire: 0}
+	}
+	return lp, ""
+}
+
+// mentorSetIfZero writes v into dst only when dst is unset (0) and v is
+// positive — first-live-wins for a bracket child the book may show once.
+func mentorSetIfZero(dst *float64, v float64) {
+	if *dst <= 0 && v > 0 {
+		*dst = v
+	}
+}

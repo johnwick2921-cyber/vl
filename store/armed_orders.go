@@ -62,6 +62,12 @@ type ArmedOrderDB struct {
 	// mentor arm with the knob ON and no expiry is REFUSED fail-closed; a
 	// non-mentor arm takes today's path whatever its expiry.
 	Origin string `gorm:"default:''"`
+	// ExitMode (REL17-F2 restart-rebuild, 2026-10-11): the per-arm exit
+	// branch (A/B/C/swing) persisted at placement so a restart can rebuild an
+	// open mentor position with the SAME exit mode it was entered under. NULL
+	// on every pre-change row = the mode was never persisted — the rebuild
+	// derives it from the setup and logs that it did (absent ≠ fabricated).
+	ExitMode *string `gorm:"column:exit_mode"`
 	// Contracts (B2 mentor size, 2026-10-04): the mentor-signed contract count
 	// the armed pass must send. NULL = ABSENT (absent ≠ 0) — only the mentor
 	// injector stamps it; every historical and non-mentor row is NULL. The
@@ -313,6 +319,10 @@ func (s *ArmedOrderStore) Migrate() error {
 			// injector stamps ArmOriginMentor; '' on every historical
 			// row = not a mentor arm, which is the truth for them.
 			{"origin", "TEXT NOT NULL DEFAULT ''"},
+			// REL17-F2 (2026-10-11): the per-arm exit branch persisted at
+			// placement (A/B/C/swing). NULL on every historical row = the
+			// mode was never persisted; the restart rebuild derives it.
+			{"exit_mode", "TEXT"},
 			// B2 MENTOR SIZE (2026-10-04): the mentor-signed contract count.
 			// NULL = ABSENT on every historical and non-mentor row — a mentor
 			// row without one is REFUSED by the armed pass, never sent as 1.

@@ -309,6 +309,17 @@ func mentorScenarioFor(armID string) string {
 // never a stop-market fallback), the stop-limit origin routing and, at
 // expiry, the F1 cancel — all on the one path. The ArmID registry records
 // the row for CancelArm / ExtendArm / MoveStopBE / ClosePosition.
+// mentorExitModePtr (REL17-F2) returns a heap pointer to the exit branch for
+// persistence on the armed row. A blank mode returns nil (absent ≠ fabricated):
+// the restart rebuild derives the mode from the setup for those rows.
+func mentorExitModePtr(mode string) *string {
+	if mode == "" {
+		return nil
+	}
+	m := mode
+	return &m
+}
+
 func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64, forkMode string, forkTP float64) {
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
@@ -350,6 +361,10 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		// and DS-106's admission gate both key off it. Every other author leaves
 		// it empty.
 		Origin: store.ArmOriginMentor,
+		// REL17-F2: persist the exit branch (A/B/C/swing) chosen at placement so
+		// a restart can rebuild the open position with the SAME mode. A blank
+		// fork never persists (absent ≠ fabricated); the rebuild derives it.
+		ExitMode: mentorExitModePtr(forkMode),
 		// B2 (2026-10-04): the signed contract count rides the row so the armed
 		// pass sends it (never 1). The sizing table already clamped it to
 		// mentor_max_contracts.
