@@ -8039,3 +8039,19 @@ dropped, copy dropped). Reference: kernel/mentor/htf_direction.go HTFAgrees +
 stampHTFAgree (called from the Tick defer), trader/mentor_mode.go
 mentorExtraFor, kernel/mentor/htf_agree_test.go,
 trader/mentor_htfagree_test.go.
+
+## CLASS NN (assigned at merge) — restart loses exit management (REL17-F2)
+
+symptom: DS-101 (2026-10-11, REL17-SAFETY F2): mentor live positions were
+registered only from in-process fill events, so after a restart the open mentor
+position got no break-even, no 1:1 and no trail. probe: for every piece of
+in-memory state that drives money (the exit-mode map, the live-position
+registry), ask "what rebuilds it after a restart?" — a map that is only written
+on an event is empty on the first pass after boot. rule: rebuild it once at
+boot from the broker's own book (the -sl/-sl2 stops, -tp/-tp2 targets), persist
+the per-arm exit branch at placement (a nullable column), derive it from the
+setup for pre-change rows and log the derivation, and raise a P0 + register
+NOTHING when a needed field is missing — never guess a stop. Reference:
+trader/mentor_live_pos.go mentorRebuildLivePosAtBoot +
+mentorBuildLivePosFromBook, store/armed_orders.go exit_mode column,
+trader/mentor_rebuild_test.go.
