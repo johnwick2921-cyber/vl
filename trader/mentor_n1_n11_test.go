@@ -62,6 +62,74 @@ func TestMentorArmIDUniqueAcrossRestarts(t *testing.T) {
 	}
 }
 
+// TestMentorReloadSeedPathBumpsEpoch (N1 at the production call site): a
+// reloaded evaluator restarts ArmSeq at 0, so the new "isb-1" must not collide
+// with the prior run's TERMINAL ledger row. Unlike
+// TestMentorArmIDUniqueAcrossRestarts (which sets at.mentorArmEpoch directly),
+// this drives the epoch through mentorSeedAtStart — the production seed path a
+// real reload takes. Mutant (CTO M3): hardcode `at.mentorArmEpoch = 1` in the
+// seed path → both runs mint scenario "isb-1-1" → UpsertArm hits the terminal
+// row (same version, no signal) and no-ops (row id 0) → this turns RED.
+func TestMentorReloadSeedPathBumpsEpoch(t *testing.T) {
+	mentorLiveMu.Lock()
+	mentorLiveArms = map[string]mentorLiveArm{}
+	mentorLiveMu.Unlock()
+	wireMentorPlacementSeams(t)
+	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}}
+	_, st := resetTrader(t, cfg)
+
+	// RUN 1 — a trader is seeded through the production path (mentorSeedAtStart,
+	// exactly what construction does), which sets the arm epoch.
+	at1 := &AutoTrader{id: "trader-1", store: st, exchange: "ninjatrader"}
+	at1.config.StrategyConfig = &cfg
+	at1.mentorSeedAtStart()
+	epoch1 := at1.mentorArmEpoch
+	if epoch1 == 0 {
+		t.Fatal("the production seed path must set a non-zero arm epoch")
+	}
+
+	// The prior run's TERMINAL row for this ArmID under THIS run's scenario —
+	// what a previous process (same epoch) would have left behind.
+	scenario1 := fmt.Sprintf("isb-1-%d", epoch1)
+	old := store.ArmedOrderDB{
+		TraderID: at1.id, PlanID: mentorPlanID(at1.id), Version: 1, Session: "MENTOR",
+		Scenario: scenario1, LegIndex: 0, Side: "LONG",
+		State: store.StateCancelled, EntryPx: 100, StopPx: 99, TargetPx: 102,
+		Kind: "stop_entry",
+	}
+	if err := st.ArmedOrders().DB().Create(&old).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// RUN 2 (reload) — a NEW trader over the SAME store, seeded the same way.
+	// The epoch MUST move, or the new isb-1 re-hits scenario1 and dies on the
+	// terminal row.
+	at2 := &AutoTrader{id: "trader-1", store: st, exchange: "ninjatrader"}
+	at2.config.StrategyConfig = &cfg
+	time.Sleep(time.Millisecond) // two seeds must land on different wall-clock nanos
+	at2.mentorSeedAtStart()
+	if at2.mentorArmEpoch == epoch1 {
+		t.Fatalf("a reload through mentorSeedAtStart must bump the arm epoch (got %d twice)", epoch1)
+	}
+
+	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-1", Setup: "ISB",
+		Side: mentor.SideLong, Price: 200, Stop: 199, Target: 204, StopPts: 1, TargetPts: 4,
+		ExpiryMs: time.Now().UnixMilli() + 60_000}
+	at2.mentorArmIntent(in, mentorSizeChoice{Contracts: 5, Tier: "base", Why: "test"}, 1000, 1100, "B", 0)
+
+	arm, ok := at2.mentorLiveArmFor("isb-1")
+	if !ok || arm.RowID == 0 || arm.RowID == old.ID {
+		t.Fatalf("the reloaded arm must be authored on its OWN new row, got %+v ok=%v (old row %d)", arm, ok, old.ID)
+	}
+	var row store.ArmedOrderDB
+	if err := st.ArmedOrders().DB().First(&row, arm.RowID).Error; err != nil {
+		t.Fatalf("the new arm row must exist: %v", err)
+	}
+	if row.State != store.StateArmed || row.Scenario == old.Scenario {
+		t.Fatalf("reloaded arm state=%q scenario=%q, want armed on a fresh scenario", row.State, row.Scenario)
+	}
+}
+
 // TestMentorArmRowZeroRefuses (N1 fail-safe): when UpsertArm authors no row
 // (a same-scenario terminal-row collision leaves id 0), the arm is REFUSED +
 // counted + logged — never registered as a phantom row 0. Mutant: disable the
