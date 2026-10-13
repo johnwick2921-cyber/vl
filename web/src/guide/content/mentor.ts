@@ -211,6 +211,11 @@ export const mentor: GuideSection = {
           cite: 'Engineering rule — frontend refresh + chart levels, not from the course · web/src/components/mentor/useMentorTruth.ts · web/src/components/charts/AdvancedChart.tsx mentorLevels',
         },
         {
+          title: 'Old highs/lows closer than 20 pts are drawn as one line',
+          body: 'The panel and the chart draw ONE line where old highs/lows sit closer than 20 pts apart — the most recent is kept and the folded-away prices are listed in the line\u2019s tooltip ("old low 31043.00 · also 31058.00, 31050.00"). An old high/low within 20 pts of a key level is folded INTO that key level (the key wins). This is the display only: the bot still reduces the ISB size (3 contracts) at any of the merged old highs/lows, and the target ladder still reads them — trading is unchanged.',
+          cite: 'Course 5.3 @15:59–16:50 — two lines under 20 pts → delete one, keep the more recent · kernel/mentor/level_display.go DisplayLevels · mentor.Level.MergedFrom',
+        },
+        {
           title: 'Fold it away',
           body: 'Click the card title to fold it away or open it again; the page remembers your choice.',
           cite: 'Engineering rule — frontend UI (fold), not from the course · web/src/components/mentor/MentorTruthCard.tsx localStorage vl.mentorCard.open',
@@ -359,8 +364,8 @@ export const mentor: GuideSection = {
           cite: 'D4.3 @00:00–03:20, @09:27–09:46 · WickMicroscalpEnabled',
         },
         {
-          title: 'Intraday confluence (exit C, size 10)',
-          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. It also fires on timeframe agreement: the 15m ISB, the 5m ISB and the entry side all align AND the 5m trigger agrees (an ISB/PHL/PLH, not just a box) [D4.2 p1 @14:57]. Then: hold at least 1:2, the stop is never moved up (exit C), size 10; size 20 only when 4h AND 1h both point the entry’s side (a silent 1h does not count), room ≥ 2× the risk and target ≥ 30 pts.',
+          title: 'Intraday confluence (exit C, size 5)',
+          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. It also fires on timeframe agreement: the 15m ISB, the 5m ISB and the entry side all align AND the 5m trigger agrees (an ISB/PHL/PLH, not just a box) [D4.2 p1 @14:57]. Then: hold at least 1:2, the stop is never moved up (exit C), size 5 — the confluence and big tiers no longer add contracts (owner order 2026-10-13, course 1.1 L1103 “Cái sizing của em Cố định là 5 MNQ”).',
           cite: 'R2 · D3.4 p3 @07:38 · D4.2 p1 @14:57',
         },
         {
@@ -472,8 +477,8 @@ export const mentor: GuideSection = {
       head: ['Tier', 'Default contracts', 'Knob'],
       rows: [
         ['Base', '5', 'mentor_base_contracts'],
-        ['Confluence (many things agree)', '10', 'mentor_confluence_contracts'],
-        ['Big (the hard tier)', '20', 'mentor_big_contracts'],
+        ['Confluence (many things agree)', '5', 'mentor_confluence_contracts'],
+        ['Big (the hard tier)', '5', 'mentor_big_contracts'],
         ['Hard cap', '20', 'mentor_max_contracts'],
         [
           'Reduced (stop in the twenties / spent day)',
@@ -586,25 +591,27 @@ export const mentor: GuideSection = {
           label: 'Confluence contracts',
           where: 'Strategy → Mentor mode → sizing',
           what: 'Size when many things agree (the confluence path).',
-          trader: '10 contracts when everything lines up.',
-          consumer: 'trader/mentor_mode.go:26',
+          trader:
+            '5 contracts when everything lines up — the tier still reports WHY, but the count stays 5.',
+          consumer: 'trader/mentor_mode.go:36',
           range: 'int',
-          systemDefault: '10',
+          systemDefault: '5',
           recommended:
-            '10 — Owner setting: CTO shipped size table (P3); the confluence tier.',
-          whenToTouch: 'With the confluence exit path.',
+            '5 — Owner order 2026-10-13 (course 1.1 p2 L1103: fixed 5 MNQ); the confluence tier no longer adds contracts.',
+          whenToTouch: 'Only if the owner re-sizes the method deliberately.',
           perSession: 'No.',
         },
         {
           label: 'Big contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'The big tier — the largest deliberate size. Only when 4h AND 1h both point the entry’s side (a silent 1h does not count), room ≥ 2× the risk and target ≥ 30 pts.',
-          trader: '20 contracts max on a big tier.',
-          consumer: 'trader/mentor_mode.go:27',
+          what: 'The big tier — it still reports WHY the setup qualified (4h AND 1h both point the entry’s side, a silent 1h does not count, room ≥ 2× the risk, target ≥ 30 pts), but the count is 5.',
+          trader:
+            '5 contracts on a big tier — the tier no longer adds contracts.',
+          consumer: 'trader/mentor_mode.go:37',
           range: 'int',
-          systemDefault: '20',
+          systemDefault: '5',
           recommended:
-            '20 — Owner setting: CTO shipped size table (P3); also the hard cap.',
+            '5 — Owner order 2026-10-13 (course 1.1 p2 L1103: fixed 5 MNQ); mentor_max_contracts (20) is a ceiling only.',
           whenToTouch: 'Never above the hard cap.',
           perSession: 'No.',
         },
@@ -613,11 +620,11 @@ export const mentor: GuideSection = {
           where: 'Strategy → Mentor mode → sizing',
           what: 'The hard ceiling across all tiers. The risk-control max_contracts_per_order knob is NOT applied in mentor mode — this is the cap that governs.',
           trader: 'No mentor position ever exceeds this.',
-          consumer: 'trader/mentor_mode.go:31',
+          consumer: 'trader/mentor_mode.go:41',
           range: 'int',
           systemDefault: '20',
           recommended:
-            '20 — Owner setting: CTO shipped size table (P3); the big tier and the hard cap.',
+            '20 — Owner setting: CTO shipped size table (P3); a ceiling only, no tier sizes to it by default.',
           whenToTouch: 'To tighten the cap.',
           perSession: 'No.',
         },

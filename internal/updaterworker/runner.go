@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"vl/internal/updaterjob"
+	"vl/logger"
 )
 
 // ── the runner ──────────────────────────────────────────────────────────────
@@ -430,12 +431,14 @@ func logPrefixForBinary(binPath string) string {
 	return "vl_"
 }
 
-// predictedLog is <install>/data/<prefix><local date of t>.log — the bot's
-// logger names its file by its BOOT date in its own local zone (logger.go),
+// predictedLog is <install>/data/<prefix><CT date of t>.log — the bot's logger
+// names its file by its BOOT date in America/Chicago (logger.LogFileNameFor),
 // and the worker refuses to run with TZ set so its zone is the bot's. The
-// prefix is chosen from the binary that will run (logPrefixForBinary).
+// prefix is chosen from the binary that will run (logPrefixForBinary). The date
+// comes from logger.CTDate — the SAME function the writer uses — so the file the
+// updater predicts and the file the bot writes agree on any machine zone.
 func (w *Worker) predictedLog(t time.Time, binPath string) string {
-	return filepath.Join(w.cfg.Target.LogDir, logPrefixForBinary(binPath)+t.In(time.Local).Format("2006-01-02")+".log")
+	return filepath.Join(w.cfg.Target.LogDir, logPrefixForBinary(binPath)+logger.CTDate(t)+".log")
 }
 
 // fileSize is the size of path, 0 when absent (a log the new boot creates).

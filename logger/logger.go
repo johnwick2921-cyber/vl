@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -17,7 +18,36 @@ var (
 	Log *logrus.Logger
 	// logFile holds the current log file handle
 	logFile *os.File
+
+	ctLocOnce sync.Once
+	ctLoc     *time.Location
 )
+
+// CTLocation returns the cached America/Chicago location for log rendering.
+// logger cannot import kernel (kernel imports logger — an import cycle), so it
+// owns its own copy of the canonical-zone load with the SAME fail-closed
+// fallback kernel.CTLocation uses: UTC only when the zone database is missing,
+// never local time. Every log line timestamp and every log-file date routes
+// through this one location.
+func CTLocation() *time.Location {
+	ctLocOnce.Do(func() {
+		loc, err := time.LoadLocation("America/Chicago")
+		if err != nil {
+			loc = time.UTC
+		}
+		ctLoc = loc
+	})
+	return ctLoc
+}
+
+// CTDate renders t as "2006-01-02" in the canonical America/Chicago zone. It is
+// the single date source for the log-file name: the writer (LogFileNameFor) and
+// the updater's predictor (internal/updaterworker.predictedLog) both call it so
+// the file the bot writes and the file the updater reads are the same CT date
+// on any machine zone.
+func CTDate(t time.Time) string {
+	return t.In(CTLocation()).Format("2006-01-02")
+}
 
 // compactFormatter is a custom formatter for cleaner log output
 type compactFormatter struct {
@@ -26,7 +56,7 @@ type compactFormatter struct {
 
 func (f *compactFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	level := strings.ToUpper(entry.Level.String())[0:4]
-	timestamp := entry.Time.Format("01-02 15:04:05")
+	timestamp := entry.Time.In(CTLocation()).Format("01-02 15:04:05")
 
 	// Skip frames to find actual caller (skip logrus + our wrapper functions)
 	caller := ""
@@ -61,12 +91,14 @@ func init() {
 // Initialization functions
 // ============================================================================
 
-// LogFileNameFor builds the bot's log file name for the given local date:
-// <dir>/vl_<YYYY-MM-DD>.log. The updater's boot-line prediction
-// (logPrefixForBinary in internal/updaterworker) must agree with the prefix
-// this function writes — a parity test pins the pair.
+// LogFileNameFor builds the bot's log file name for the given instant's
+// America/Chicago date: <dir>/vl_<YYYY-MM-DD>.log. The date is CT, not the host
+// zone, so the file a boot writes and the line times inside it agree on any
+// machine clock. The updater's boot-line prediction (logPrefixForBinary in
+// internal/updaterworker) must agree with the prefix this function writes — a
+// parity test pins the pair.
 func LogFileNameFor(dir string, t time.Time) string {
-	return filepath.Join(dir, fmt.Sprintf("vl_%s.log", t.Format("2006-01-02")))
+	return filepath.Join(dir, fmt.Sprintf("vl_%s.log", CTDate(t)))
 }
 
 // Init initializes the global logger

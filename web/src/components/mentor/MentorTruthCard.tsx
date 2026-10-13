@@ -202,7 +202,15 @@ export function MentorTruthCard({
                   className="flex items-baseline justify-between text-[11px]"
                 >
                   <span style={{ color: 'var(--vl-muted)' }}>{l.kind}</span>
-                  <span className="vl-num" style={{ color: 'var(--vl-warn)' }}>
+                  <span
+                    className="vl-num"
+                    style={{ color: 'var(--vl-warn)' }}
+                    title={
+                      l.merged_from && l.merged_from.length > 0
+                        ? `also ${l.merged_from.map((p) => p.toFixed(2)).join(', ')}`
+                        : undefined
+                    }
+                  >
                     {l.price.toFixed(2)}
                   </span>
                   <span
@@ -217,6 +225,17 @@ export function MentorTruthCard({
                   </span>
                 </div>
               ))}
+              {(truth.levels ?? []).some(
+                (l) => l.merged_from && l.merged_from.length > 0,
+              ) && (
+                <div
+                  className="text-[10px]"
+                  style={{ color: 'var(--vl-faint)' }}
+                >
+                  Hover a price to see the old highs/lows folded into it (closer
+                  than 20 pts = one line).
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-[11px]" style={{ color: 'var(--vl-muted)' }}>

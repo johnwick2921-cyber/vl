@@ -51,11 +51,12 @@ type MentorTriggerView struct {
 
 // MentorLevelView is one mentor key level in effect, with today's visits.
 type MentorLevelView struct {
-	Key         string  `json:"key"`
-	Kind        string  `json:"kind"`
-	Price       float64 `json:"price"`
-	DrawnAt     int64   `json:"drawn_at"` // AtTime ms
-	VisitsToday int     `json:"visits_today"`
+	Key         string    `json:"key"`
+	Kind        string    `json:"kind"`
+	Price       float64   `json:"price"`
+	DrawnAt     int64     `json:"drawn_at"` // AtTime ms
+	VisitsToday int       `json:"visits_today"`
+	MergedFrom  []float64 `json:"merged_from,omitempty"` // raw old-extreme prices this drawn line absorbed
 }
 
 // MentorWindowView is the trading-window knob's live state.
@@ -110,14 +111,18 @@ func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool
 		// §5.1 5m trigger line.
 		p.Trigger5m = MentorTriggerView{Dir: string(st.Trigger.Dir), Price: st.Trigger.Price, Since: st.Trigger.MovedAt}
 
-		// Key levels in effect + today's visits (copied, not shared).
-		for _, lv := range st.Levels {
+		// Drawn levels: the DISPLAY set (course 5.3 @15:59–16:50 — lines closer
+		// than 20 pts are one line). TRADING still reads st.Levels (raw); only
+		// the panel draws the cleaned view, with every absorbed price named in
+		// merged_from.
+		for _, lv := range mentor.DisplayLevels(st.Levels, ev.Cfg.KeyLevelPrunePts) {
 			p.Levels = append(p.Levels, MentorLevelView{
 				Key:         lv.Key,
 				Kind:        string(lv.Kind),
 				Price:       lv.Price,
 				DrawnAt:     lv.AtTime,
 				VisitsToday: st.Visits[lv.Key],
+				MergedFrom:  lv.MergedFrom,
 			})
 		}
 

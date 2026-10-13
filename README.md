@@ -58,7 +58,7 @@ The bot serves the API **and** the built web UI on **http://127.0.0.1:8080**; `n
 ## Run it
 
 ```bash
-# Prerequisites: Go 1.25+, Node.js 18+
+# Prerequisites: Go 1.26+, Node.js 18+
 
 go build -o vl-bin . && ./vl-bin     # backend (SQLite at data/data.db)
 cd web && npm install && npm run dev   # live-reload dev UI (new terminal)
