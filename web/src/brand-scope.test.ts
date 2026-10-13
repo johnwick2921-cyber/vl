@@ -327,6 +327,7 @@ import { expect, it } from 'vitest'
 // SPLIT REVIEW FOLDS (DS-104 review → DS-103 4dddb0993 + 07f562b2b): ninjascript/VLTraderTCPClient.cs re-pinned 2026-10-04 — leg-1 exit keeps Leg1Qty (Leg1Exited/LastStop), later fills protect under leg 2, InitialStop fallback, never a 0-priced stop; same build id d1 (not yet installed anywhere)
 // B11 LINK-IDLE (owner order 2026-10-05 "build all"; DS-102 #428, release/2026-10-06-1): provider/ninjatrader/tcp_server.go re-pinned 2026-10-06 — read-idle watcher (NT8_LINK_IDLE_SECONDS, default 60) drops a silent AddOn link outside the CME break and the weekend; wire schema unchanged
 // B11 LINK-IDLE FOLD (CTO verification review 2026-10-06; DS-102 #431): provider/ninjatrader/tcp_server.go re-pinned 2026-10-06 — the read-idle watcher is wg-tracked so Stop() joins it (one line at Start)
+// REL19 (owner merge #485 2026-10-13, DS-101 #484): ninjascript/VLTraderTCPClient.cs re-pinned 2026-10-13 — SendAllOrderSnapshots (every SIM + bound account; connect/periodic/account_register), VL_BUILD_ID 2026-10-04-d1 -> 2026-10-13-a (owner copy + F5 + NT8 restart)
 import baseline from './test/brand-scope-baseline.json'
 
 function verifyScope(path: string, bytes: Buffer, expected: string) {
