@@ -59,7 +59,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         // + the hello epoch fields. 2026-09-23-m21 (M2.1): census `settled`,
         // no nested census locks, source_hash at activation. The ISO-date
         // prefix is kept (CTO ruling Q3).
-        private const string  VL_BUILD_ID             = "2026-10-04-d1";
+        private const string  VL_BUILD_ID             = "2026-10-13-a";
         private const int    MAX_FRAME_BYTES         = 1 << 20; // 1 MB, spec L4376
 
         // === State ===
@@ -238,6 +238,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                 sessionAccountsDeclared = true;
             }
             LogInfo("VLTraderTCPClient: account_register allowlist declared (" + parsed.Count + " accounts)");
+            // REL19-ADDON — a newly bound account must get an order_snapshot NOW,
+            // not on the next 30s heartbeat (the update gate + broker-book readers
+            // key by bound account and read NOTHING until the first frame).
+            SendAllOrderSnapshots("account_register");
         }
 
         // Plan 4.4 Stage 1 — multi-timeframe BarsRequest subscriptions. Owns
@@ -628,6 +632,12 @@ namespace NinjaTrader.NinjaScript.AddOns
                     // active account's (companion to the Phase 0 reconnect fix + the
                     // BUG A all-account positions fix).
                     SendAllOpenPositions();
+                    // REL19-ADDON — snapshot EVERY SIM account's working orders on
+                    // (re)connect, not just the active account's (companion to the
+                    // all-account positions/balances fixes). A trader bound to a
+                    // non-active account otherwise reads its book as EMPTY between
+                    // order events → stop moves/cancels unconfirmed.
+                    SendAllOrderSnapshots("connect");
                     RunReadLoop(ct);
                 }
                 catch (Exception ex)
@@ -3285,6 +3295,41 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
         }
 
+        // Stream EVERY target account's working orders — the order-snapshot
+        // analogue of SendAllOpenPositions / SendAllAccountBalances. The periodic
+        // snapshot and the per-order state_change snapshot were active-account-only,
+        // so a trader bound to a NON-active account (e.g. SimAccount1 while the
+        // active account is Sim101) saw NOTHING between its own order events: the
+        // update gate's working_orders leg could not evaluate it, and every
+        // broker-book reader (F1 stop-move verify, cancel-confirm, slot guard, F4
+        // protection, leg 4) read an empty book → stop moves/cancels unconfirmed.
+        // SendOrderSnapshot(acc) already tags each frame with acc.Name and
+        // enumerates acc.Orders under lock, so it is account-correct per call; here
+        // we call it for every target account. (REL19-ADDON.)
+        private void SendAllOrderSnapshots(string reason)
+        {
+            lock (Account.All)
+            {
+                foreach (var a in Account.All)
+                {
+                    if (a == null) continue;
+                    // Target = every SIM account, plus any account the Go side
+                    // DECLARED bound (account_register allowlist), even a non-SIM
+                    // one. Before the allowlist is declared we fail OPEN to the
+                    // SIM set (mirrors SendAllOpenPositions; never brick trading).
+                    bool target = IsSimAccount(a);
+                    if (!target)
+                    {
+                        lock (sessionAccountsLock)
+                        {
+                            target = sessionAccountsDeclared && sessionAccounts.Contains(a.Name);
+                        }
+                    }
+                    if (target) SendOrderSnapshot(a, reason ?? "periodic");
+                }
+            }
+        }
+
         private void OnAccountItemUpdate(object sender, AccountItemEventArgs e)
         {
             // Emit only on cash/PnL changes to limit frame churn.
@@ -3364,7 +3409,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // but another thing to get out of step. If the periods ever
                 // diverge this needs its own timer, and the constants sit beside
                 // each other so that is visible.
-                try { SendOrderSnapshot(account, "periodic"); }
+                // REL19-ADDON — stream EVERY target account (all SIM + declared
+                // bound accounts), not just the active one, so a non-active-account
+                // trader gets a fresh working-order book every heartbeat.
+                try { SendAllOrderSnapshots("periodic"); }
                 catch (Exception exSnap)
                 {
                     LogWarn("RunHeartbeatLoop: order_snapshot failed (will retry): " + exSnap.Message);

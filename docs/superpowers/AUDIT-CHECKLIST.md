@@ -8238,3 +8238,27 @@ resolve another owner's entry is REFUSED (WARN naming both) and never acted on.
 Reference: trader/mentor_actions.go (mentorArmKey, mentorLiveArmFor, mentorPlanID,
 mentorRegisterLiveArmForTest), store/armed_orders.go UpsertArm (plan_id carries
 the trader), trader/armed_ledger_loud.go (fail key +trader_id).
+
+## CLASS NN (assigned at merge) — a per-account snapshot streamed for one account only
+
+symptom: REL19-ADDON (2026-10-13, owner runs two SIM accounts Sim101 +
+SimAccount1): the AddOn sent the PERIODIC order_snapshot only for its single
+active account (account.txt else Sim101); a non-active account got a snapshot
+only on an order state change. The update gate's working_orders leg refused
+(`snapshots are arriving on this link but none for SimAccount1/MNQ`), and every
+broker-book reader keyed by bound account (F1 stop-move verify, cancel-confirm,
+slot guard, F4 protection, leg 4) read NOTHING between order events for a
+non-active-account trader → stop moves/cancels unconfirmed.
+probe: when one link serves MULTIPLE accounts, every per-account frame that was
+extended for positions/balances must also be extended for the working-order
+snapshot — a reader keyed by bound account reads an EMPTY book (not "no answer")
+when its account's frames stop flowing.
+rule: the all-account snapshot enumerates every target account (all SIM + every
+account Go declared bound via account_register) on connect, in the periodic
+heartbeat, and after account_register; the per-order state_change snapshot stays.
+Frame shape is unchanged (the Account field was already there) — no protocol bump.
+Reference: ninjascript/VLTraderTCPClient.cs (SendAllOrderSnapshots, heartbeat
+:3367, connect SendAllOrderSnapshots("connect"), HandleAccountRegister
+SendAllOrderSnapshots("account_register")); Go side already keyed by account —
+provider/ninjatrader/order_snapshot.go OrderSnapshotCache (snapKey per account),
+trader/ninjatrader/tcp_trader.go OrderSnapshotBook → LatestReceived(boundAccount).
