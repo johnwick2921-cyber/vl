@@ -31,7 +31,7 @@ type mentorTuned struct {
 	SwingMaxStopPts        float64
 }
 
-func mentorTuningResolve(rc *store.RiskControlConfig) mentorTuned {
+func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTuned {
 	d := mentor.DefaultConfig()
 	out := mentorTuned{
 		TriggerSchool:          d.TriggerSchool,
@@ -51,7 +51,7 @@ func mentorTuningResolve(rc *store.RiskControlConfig) mentorTuned {
 		return out
 	}
 	t := rc.MentorTuning
-	bad := func() { mentorCount("tuning_bad_value") }
+	bad := func() { at.mentorCount("tuning_bad_value") }
 
 	if t.TriggerSchool != 0 {
 		if t.TriggerSchool == 1 || t.TriggerSchool == 2 {
@@ -106,8 +106,8 @@ func mentorTuningResolve(rc *store.RiskControlConfig) mentorTuned {
 }
 
 // applyMentorTuning writes the resolved numbers onto an evaluator config.
-func applyMentorTuning(cfg *mentor.Config, rc *store.RiskControlConfig) {
-	t := mentorTuningResolve(rc)
+func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControlConfig) {
+	t := mentorTuningResolve(at, rc)
 	cfg.TriggerSchool = t.TriggerSchool
 	cfg.PingPongMinGapPts = t.PingPongMinGapPts
 	cfg.PingPongCandleMaxPts = t.PingPongCandleMaxPts

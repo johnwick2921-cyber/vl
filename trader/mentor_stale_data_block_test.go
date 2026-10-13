@@ -51,12 +51,11 @@ func mentorStaleBlockIntent() mentor.Intent {
 // while CME is open must refuse to AUTHOR a new arm (the placement recorder
 // never fires) and name the refusal ("stale_data") in the funnel counter.
 func TestMentorStaleDataBlockRefusesAuthoring(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	now := mentorStaleBlockClock(9, 0)
 	mentorNowSource = func() time.Time { return now }
 	t.Cleanup(func() { mentorNowSource = nil })
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	mentorStaleBlockFeed(t, now, 3*time.Minute) // stale: ~3 min old (AFTER the seams, which own their own feed)
 
 	var placed []mentor.Intent
@@ -68,7 +67,7 @@ func TestMentorStaleDataBlockRefusesAuthoring(t *testing.T) {
 	if len(placed) != 0 {
 		t.Fatalf("a stale feed must NOT author a new arm, but %d placement(s) reached the recorder", len(placed))
 	}
-	if got := MentorCountSnapshot()["stale_data"]; got != 1 {
+	if got := at.mentorCountSnapshot()["stale_data"]; got != 1 {
 		t.Fatalf("the refusal must be counted once as stale_data, got %d", got)
 	}
 }
@@ -76,12 +75,11 @@ func TestMentorStaleDataBlockRefusesAuthoring(t *testing.T) {
 // TestMentorStaleDataBlockAllowsFresh — a 1m bar 30 s old is normal: the gate
 // does NOT fire and the placement proceeds (the recorder fires once).
 func TestMentorStaleDataBlockAllowsFresh(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	now := mentorStaleBlockClock(9, 0)
 	mentorNowSource = func() time.Time { return now }
 	t.Cleanup(func() { mentorNowSource = nil })
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	mentorStaleBlockFeed(t, now, 30*time.Second) // fresh: 30 s old (AFTER the seams, which own their own feed)
 
 	var placed []mentor.Intent
@@ -93,7 +91,7 @@ func TestMentorStaleDataBlockAllowsFresh(t *testing.T) {
 	if len(placed) != 1 {
 		t.Fatalf("a fresh feed must reach the placement path, placed=%v", placed)
 	}
-	if got := MentorCountSnapshot()["stale_data"]; got != 0 {
+	if got := at.mentorCountSnapshot()["stale_data"]; got != 0 {
 		t.Fatalf("a fresh feed must NOT count a stale_data refusal, got %d", got)
 	}
 }
@@ -102,7 +100,6 @@ func TestMentorStaleDataBlockAllowsFresh(t *testing.T) {
 // never false-refuse: CME is closed, so the gate (B4's own halt awareness) does
 // not fire and no stale_data refusal is counted.
 func TestMentorStaleDataBlockHaltNoFalseRefusal(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	now := mentorStaleBlockClock(16, 30) // inside the 16:00–17:00 daily break
 	mentorNowSource = func() time.Time { return now }
@@ -112,7 +109,7 @@ func TestMentorStaleDataBlockHaltNoFalseRefusal(t *testing.T) {
 	if at.mentorStaleDataBlocked(now) {
 		t.Fatalf("the daily halt must not trip the stale-data block (B4's halt rule)")
 	}
-	if got := MentorCountSnapshot()["stale_data"]; got != 0 {
+	if got := at.mentorCountSnapshot()["stale_data"]; got != 0 {
 		t.Fatalf("the halt must not count a stale_data refusal, got %d", got)
 	}
 }
@@ -139,14 +136,14 @@ func TestMentorStaleDataBlockDoesNotBlockExitDrive(t *testing.T) {
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	mentorRegisterLiveArm("swing-stale", at.id, row.ID, "long", 29600)
+	mentorRegisterLiveArmForTest("swing-stale", at.id, row.ID, "long", 29600)
 
 	now := mentorStaleBlockClock(10, 0) // CME open, stale feed
 	mentorNowSource = func() time.Time { return now }
 	t.Cleanup(func() { mentorNowSource = nil })
 	mentorStaleBlockFeed(t, now, 3*time.Minute) // stale: ~3 min old
 
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-stale", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
 
 	mu.Lock()

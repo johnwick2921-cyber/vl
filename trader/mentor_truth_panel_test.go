@@ -16,7 +16,6 @@ func truthAT(t *testing.T) *AutoTrader {
 		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}}},
 	}
 	at.mentorEval = mentor.New(mentor.DefaultConfig())
-	t.Cleanup(ResetMentorCountersForTest)
 	return at
 }
 

@@ -20,9 +20,8 @@ import (
 // placement.
 
 func TestB5ExitModeIsPerArmNotPerSide(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	// The confluence flag rides the intent so the two arms fork differently.
 	mentorConfluenceForIntent = func(in mentor.Intent) bool { return in.Confluence }
 	t.Cleanup(func() { mentorConfluenceForIntent = nil })
@@ -54,10 +53,10 @@ func TestB5ExitModeIsPerArmNotPerSide(t *testing.T) {
 	if placed != 2 {
 		t.Fatalf("both same-side arms must reach the placement path, placed=%d", placed)
 	}
-	if got := at.mentorExitMode(mentorScenarioFor("lvl-a")); got != "B" {
+	if got := at.mentorExitMode(at.mentorScenarioFor("lvl-a")); got != "B" {
 		t.Fatalf("the FIRST arm's branch must survive the second same-side arm (want B), got %q", got)
 	}
-	if got := at.mentorExitMode(mentorScenarioFor("lvl-b")); got != "C" {
+	if got := at.mentorExitMode(at.mentorScenarioFor("lvl-b")); got != "C" {
 		t.Fatalf("the second arm must register its own branch C, got %q", got)
 	}
 }

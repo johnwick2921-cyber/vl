@@ -97,7 +97,9 @@ func (at *AutoTrader) mentorBuildLivePos(r store.ArmedOrderDB, u ntwire.OrderUpd
 		Leg1TP:    r.TargetPx,
 	}
 	lp := &mentorLivePos{Pos: pos}
-	if v, ok := mentorRunnerTargets.Load(r.Scenario); ok {
+	// REL18-A #7: the runner target is keyed trader+scenario — two traders mint
+	// the same scenario, and a bare-scenario key would hand B's fill A's target.
+	if v, ok := mentorRunnerTargets.Load(mentorRunnerTargetKey(at.id, r.Scenario)); ok {
 		lp.RunnerTarget, _ = v.(float64)
 	}
 	lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: n, TP: r.TargetPx, Stop: r.StopPx, Final: true}
@@ -248,9 +250,9 @@ func (at *AutoTrader) mentorCountRegistrationShape(lp *mentorLivePos) {
 		return
 	}
 	if lp.Legs[1].Qty > 0 && lp.Legs[1].SignalID != "" {
-		mentorCount("exit_drive_split_registered")
+		at.mentorCount("exit_drive_split_registered")
 	} else if lp.Legs[0].Wire == 1 {
-		mentorCount("exit_drive_leg1_only_registered")
+		at.mentorCount("exit_drive_leg1_only_registered")
 	}
 }
 
@@ -351,7 +353,7 @@ func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
 		return
 	}
 	if at.mentorLatchLeg1Scaled(p.SignalID, mentorCloseReceiptMs(p)) {
-		mentorCount("leg1_at_target")
+		at.mentorCount("leg1_at_target")
 		at.logInfof("🧑‍🏫 mentor leg 1 scaled on the broker TP receipt: %s (%s)", p.SignalID, p.PositionSide)
 	}
 }
@@ -457,7 +459,7 @@ func (at *AutoTrader) mentorRebuildLivePosOnce(now time.Time) {
 	at.mentorRebuildDone = true
 	at.mentorRebuildMu.Unlock()
 	// L7: the boot line is READ from the counters, never literal.
-	snap := MentorCountSnapshot()
+	snap := at.mentorCountSnapshot()
 	at.logInfof("🧑‍🏫 mentor positions rebuilt: %d (refused %d)", snap["rebuild_ok"], snap["rebuild_refused"])
 }
 
@@ -497,7 +499,7 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 		}
 		lp, missing := at.mentorBuildLivePosFromBook(*row, pos, book)
 		if missing != "" {
-			mentorCount("rebuild_refused")
+			at.mentorCount("rebuild_refused")
 			refused++
 			at.logErrorf("🧑‍🏫 mentor position %s NOT under exit management after restart — %s; manage by hand", row.SignalID, missing)
 			at.emitAlert("P0", "mentor-restart-rebuild", "mentor-rebuild-"+row.SignalID,
@@ -507,7 +509,7 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 		}
 		at.mentorRegisterLivePos(pos.EntryOrderID, lp)
 		at.mentorCountRegistrationShape(lp)
-		mentorCount("rebuild_ok")
+		at.mentorCount("rebuild_ok")
 		rebuilt++
 		at.logInfof("🧑‍🏫 mentor restart rebuild: %s %s %d contracts under exit management (mode %s)", pos.Symbol, side, lp.Pos.Contracts, lp.Pos.Mode)
 	}

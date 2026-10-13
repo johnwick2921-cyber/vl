@@ -41,10 +41,10 @@ func TestMentorDispatchDropArmOnNeverAdd(t *testing.T) {
 	at.mentorEval = mentor.New(mentor.Config{})
 	at.mentorEval.State.ISBArms["isb-test"] = mentor.ISBArm{Inside: 0, Side: mentor.SideLong}
 	resetMentorLiveArms(t)
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	// never-add: an open LONG position + a LONG intent → the add gate refuses.
-	mentorOpenSideSource = func() string { return "long" }
-	t.Cleanup(func() { mentorOpenSideSource = nil })
+	at.mentorOpenSideSource = func() string { return "long" }
+	t.Cleanup(func() { at.mentorOpenSideSource = nil })
 	now := time.Date(2026, 9, 23, 9, 0, 0, 0, kernel.CTLocation())
 	mentorNowSource = func() time.Time { return now }
 	t.Cleanup(func() { mentorNowSource = nil })
@@ -68,15 +68,15 @@ func TestMentorDispatchDropArmOnDoneAfterWinSwing(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	at.mentorEval = mentor.New(mentor.Config{})
 	resetMentorLiveArms(t)
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
 	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
-	mentorDayNetSource = func() (float64, bool) { return 120, true }
-	mentorClosedProfitSource = func() (bool, bool) { return true, true }
+	at.mentorDayNetSource = func() (float64, bool) { return 120, true }
+	at.mentorClosedProfitSource = func() (bool, bool) { return true, true }
 	t.Cleanup(func() {
 		mentorNowSource = nil
-		mentorDayNetSource = nil
-		mentorClosedProfitSource = nil
+		at.mentorDayNetSource = nil
+		at.mentorClosedProfitSource = nil
 	})
 
 	// Drive a real SwingTick to produce a resting SHORT swing (the evaluator
@@ -132,7 +132,7 @@ func TestMentorDispatchDropArmOnStaleData(t *testing.T) {
 	now := mentorStaleBlockClock(9, 0)
 	mentorNowSource = func() time.Time { return now }
 	t.Cleanup(func() { mentorNowSource = nil })
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	mentorStaleBlockFeed(t, now, 3*time.Minute) // stale: ~3 min old, CME open
 
 	at.mentorDispatchIntent(mentorStaleBlockIntent(), mentorTierInputs{}, 1000, 1100)
@@ -174,7 +174,7 @@ func TestMentorDispatchDropArmOnStaleIntent(t *testing.T) {
 	now := time.Date(2026, 9, 23, 9, 0, 0, 0, kernel.CTLocation())
 	mentorNowSource = func() time.Time { return now }
 	t.Cleanup(func() { mentorNowSource = nil })
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 
 	// RefBarMs 2000 ≠ barCloseMs 1000 → the N10 stale-intent refusal.
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-n10", Side: mentor.SideLong,
@@ -196,7 +196,7 @@ func TestMentorDispatchRegisteredLiveArmNotDropped(t *testing.T) {
 	at.mentorEval = mentor.New(mentor.Config{})
 	at.mentorEval.State.ISBArms["isb-reg"] = mentor.ISBArm{Inside: 0, Side: mentor.SideLong}
 	resetMentorLiveArms(t)
-	mentorRegisterLiveArm("isb-reg", at.id, 1, "long", 21000)
+	mentorRegisterLiveArmForTest("isb-reg", at.id, 1, "long", 21000)
 
 	// A refusal (untagged setup) on an arm that IS registered must NOT drop it.
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-reg", Side: mentor.SideLong,

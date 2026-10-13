@@ -67,7 +67,7 @@ func TestMentorSeedBarCloseTimeDoesNotDeleteLevelByPriorCandle(t *testing.T) {
 		},
 		store: st,
 	}
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	at.mentorSeedAtStart()
 
 	var lvl *mentor.Level

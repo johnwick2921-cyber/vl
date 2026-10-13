@@ -2,6 +2,7 @@ package trader
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"strings"
@@ -504,9 +505,14 @@ type AutoTrader struct {
 	// positions from the broker book before the first exit-drive pass. The
 	// pass retries on every candle until it has run with a FRESH book, then
 	// mentorRebuildDone latches true. Guarded by mentorRebuildMu.
-	mentorRebuildMu               sync.Mutex
-	mentorRebuildDone             bool
-	mentorRebuildPositionsWarned  bool
+	mentorRebuildMu              sync.Mutex
+	mentorRebuildDone            bool
+	mentorRebuildPositionsWarned bool
+	// REL18-A: the per-trader arm epoch. Each construction (boot/reload) gets
+	// its own epoch so a rebuilt evaluator's "isb-1" never collides with a
+	// prior terminal row — and never with ANOTHER trader's row (the ledger key
+	// carries the trader too). Read once per placement, never shared.
+	mentorArmEpoch int64
 	// mentorPendingStopMoves is the F1 stop-move TRUTH registry: one entry per
 	// (signal, wire leg) stop move that has been SENT but not yet VERIFIED
 	// against the broker's order book. Keyed "<signalID>#<wireLeg>". Guarded by
@@ -536,6 +542,21 @@ type AutoTrader struct {
 	// mentorFunnel is the N12 visibility counter (read-only): one INFO line per
 	// 15 minutes + on change, session-day scoped (17:00 CT). Never gates a trade.
 	mentorFunnel mentorFunnel
+	// REL18-B (two mentor traders in one process): the mentor seams, counters
+	// and seed depths are PER-TRADER. The old package-level vars captured the
+	// last-constructed trader and the global counter map summed both traders'
+	// funnels / rebuild line. Per trader, no fallback.
+	mentorOpenSideSource       func() string
+	mentorLegProtectedSource   func(leg string) bool
+	mentorDayNetSource         func() (float64, bool)
+	mentorClosedProfitSource   func() (bool, bool)
+	mentorClosedLossSource     func() (bool, bool)
+	mentorStopAfterLossTripped func() (bool, string)
+	mentorSourceDepthSource    func(name string) (int, bool)
+	mentorSeedDepthsMu         sync.RWMutex
+	mentorSeedDepths           map[string]int
+	mentorCounterMu            sync.Mutex
+	mentorCounters             map[string]int
 	// mentorStaleDataBlock (release #11): the episode state of the mentor
 	// stale-data gate. mentorStaleMu guards it — the authoring gate runs under
 	// mentorEvalMu but the placement pass (armed executor goroutine) does not,
@@ -600,11 +621,18 @@ type AutoTrader struct {
 	// self-backoff clock (see maybeRereadAfterFlip). Per trader on purpose:
 	// a process-global map keyed by plan id let one trader's (or one test's)
 	// failed launch hold another's retry.
-	flipRereadLaunchAt  sync.Map
-	lastAIBalanceDay    string // P5 daily balance poll throttle (AI_BALANCE_WARN)
-	isRunning           bool
-	isRunningMutex      sync.RWMutex // Mutex to protect isRunning flag
-	limitFlattenMu      sync.Mutex   // W117-F F6: serializes delayed exits with Stop
+	flipRereadLaunchAt sync.Map
+	lastAIBalanceDay   string // P5 daily balance poll throttle (AI_BALANCE_WARN)
+	isRunning          bool
+	isRunningMutex     sync.RWMutex // Mutex to protect isRunning flag
+	// runReadyMu/runReadyCh is the REL18-C FOLD handshake between Run and the
+	// start handler: Run reports nil once it reaches the ordered-execution
+	// install (ready) or the O2 refusal error, so the handler can answer 409
+	// instead of "Trader started". Buffered cap 1; a boot start (no reader)
+	// never blocks.
+	runReadyMu          sync.Mutex
+	runReadyCh          chan error
+	limitFlattenMu      sync.Mutex // W117-F F6: serializes delayed exits with Stop
 	limitFlattenStopped bool
 	limitFlattens       map[int64]*pendingLimitFlatten
 	// pictureGen (W4/D25) opens on every registerPictureHtf and closes on
@@ -1134,13 +1162,26 @@ func (at *AutoTrader) Run() error {
 			at.logInfof("🔄 NinjaTrader close-sync enabled (SL/TP exits → position history)")
 			// W117 F2 (R5) — install the ordered-execution worker registration at
 			// RUN (never at construction); the closure is kept for Stop.
-			at.installNTOrderedExecutions(ntTCP)
+			if err := at.installNTOrderedExecutions(ntTCP); err != nil {
+				// REL18-C O2 — the start FAILS: the duplicate owner was logged,
+				// this trader marked not-running, and the P0 raised. Clean the
+				// per-Run monitor up and exit (same shape as the grid-init error
+				// path) — never fall back to the legacy advisory path.
+				at.signalRunReady(err)
+				at.cancelStopMonitor()
+				return fmt.Errorf("ordered-execution install refused: %w", err)
+			}
 			// Anchor entry_price to the NT8 position average + clear orphan rows
 			// (the 5m-mark entry the AI-decision write records goes stale/frozen).
 			ntTCP.StartPositionReconcile(at.id, at.exchangeID, at.exchange, at.store)
 			at.logInfof("🔧 NinjaTrader position-reconcile enabled (entry→NT8 avg, orphan clear)")
 		}
 	}
+
+	// REL18-C FOLD — the start handler waits on this: nil means the ordered
+	// install is done (or this trader has no ordered install to do); the O2
+	// refusal was already signalled on the error path above.
+	at.signalRunReady(nil)
 
 	ticker := time.NewTicker(at.config.ScanInterval)
 	defer ticker.Stop()
@@ -1262,6 +1303,35 @@ func (at *AutoTrader) setupStopMonitorForTest() {
 // GetID gets trader ID
 func (at *AutoTrader) GetID() string {
 	return at.id
+}
+
+// RunReadyChan returns the per-start channel on which Run reports its ordered
+// install verdict (nil = ready, error = refused by O2). The start handler reads
+// it to keep the 200/409 honest; call it BEFORE spawning Run so both share the
+// same channel. Lazy-created and buffered (cap 1) so a boot start never blocks.
+func (at *AutoTrader) RunReadyChan() <-chan error {
+	at.runReadyMu.Lock()
+	defer at.runReadyMu.Unlock()
+	if at.runReadyCh == nil {
+		at.runReadyCh = make(chan error, 1)
+	}
+	return at.runReadyCh
+}
+
+// signalRunReady publishes Run's install verdict exactly once and clears the
+// channel so the NEXT Run handshakes a fresh one. A nil channel (boot start,
+// no reader) is a no-op.
+func (at *AutoTrader) signalRunReady(err error) {
+	at.runReadyMu.Lock()
+	ch := at.runReadyCh
+	at.runReadyCh = nil
+	at.runReadyMu.Unlock()
+	if ch != nil {
+		select {
+		case ch <- err:
+		default:
+		}
+	}
 }
 
 // GetUnderlyingTrader returns the underlying Trader interface implementation
@@ -1427,12 +1497,17 @@ func (at *AutoTrader) recordBrokerRejection(signalID, brokerReason string) {
 // installNTOrderedExecutions (W117 F2, R5) registers this trader's durable
 // execution consumers with the server's per-(symbol,account) ordered worker at
 // RUN time — never at construction. The unregister closure is kept and called
-// on Stop. A second LIVE owner for the same (symbol, account) is refused
-// loudly by the server; the refusal is logged as an error (never a silent
-// eviction, never a double-application).
-func (at *AutoTrader) installNTOrderedExecutions(nt *ntTrader.TCPTrader) {
+// on Stop.
+//
+// REL18-C O2: a second LIVE owner for the same (symbol, account) is refused
+// loudly and FAILS this trader's start — the trader is stopped, marked
+// not-running, and a P0 names both traders. It must NEVER continue on the
+// legacy advisory path (two traders on one account would double-apply fills).
+// A non-owner install error (nil server/store — impossible at Run) keeps the
+// historical log-only path: those are setup faults, not ownership conflicts.
+func (at *AutoTrader) installNTOrderedExecutions(nt *ntTrader.TCPTrader) error {
 	if at == nil || at.store == nil || nt == nil {
-		return
+		return nil
 	}
 	unreg, err := nt.InstallOrderedExecutions(at.id, at.exchangeID, at.exchange, at.store,
 		func(u ntwire.OrderUpdatePayload) {
@@ -1444,8 +1519,33 @@ func (at *AutoTrader) installNTOrderedExecutions(nt *ntTrader.TCPTrader) {
 			}
 		})
 	if err != nil {
+		if errors.Is(err, ntwire.ErrOrderedOwnerExists) {
+			otherID, _ := nt.OrderedExecutionOwnerID()
+			symbol := at.futuresSymbol()
+			account := nt.BoundAccount()
+			other := otherID
+			if strings.TrimSpace(other) == "" {
+				other = "an already-running trader"
+			}
+			telemetry.IncGateBlock(at.id, "ordered_owner_exists")
+			at.emitAlert("P0", "ordered_owner_conflict",
+				"ordered-owner:"+at.id,
+				"Two traders bound to one account — trader stopped",
+				fmt.Sprintf("Trader %q (%s) tried to start on %s / %s, but %q already owns that ordered-execution slot. %q was STOPPED and marked not-running; it did not fall back to the legacy path.",
+					at.name, at.id, symbol, account, other, at.name))
+			at.logErrorf("❌ ordered-execution install refused (%v) — a running trader (%q) already owns (symbol=%s, account=%s); stopping %q (%s), no legacy fallback",
+				err, other, symbol, account, at.name, at.id)
+			// Mark this trader not-running so the DB matches the refused start.
+			if at.store != nil {
+				if serr := at.store.Trader().UpdateStatus(at.userID, at.id, false); serr != nil {
+					at.logErrorf("❌ ordered-execution refused but the not-running DB write FAILED (%v) — trader %q may still read running", serr, at.id)
+				}
+			}
+			return fmt.Errorf("ordered-execution owner for (symbol=%s, account=%s) already exists (held by %q): %w",
+				symbol, account, other, err)
+		}
 		at.logErrorf("❌ ordered-execution install refused (%v) — the durable consumers stay on the legacy advisory path", err)
-		return
+		return nil
 	}
 	at.orderedExecMu.Lock()
 	// A previous registration (reload edge) is retired before the new one is
@@ -1456,6 +1556,7 @@ func (at *AutoTrader) installNTOrderedExecutions(nt *ntTrader.TCPTrader) {
 	at.orderedExecUnreg = unreg
 	at.orderedExecMu.Unlock()
 	at.logInfof("🧭 ordered execution installed: (symbol,account) worker applies order/fill/close in TCP receive order")
+	return nil
 }
 
 // firstFor reports whether key is new for the dedupe-once field *f and records

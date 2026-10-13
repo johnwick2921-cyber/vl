@@ -9,8 +9,8 @@ import (
 )
 
 type APIErrorResponse struct {
-	Error      string            `json:"error"`
-	ErrorKey   string            `json:"error_key,omitempty"`
+	Error       string            `json:"error"`
+	ErrorKey    string            `json:"error_key,omitempty"`
 	ErrorParams map[string]string `json:"error_params,omitempty"`
 }
 
@@ -60,6 +60,13 @@ func SafeBadRequest(c *gin.Context, msg string) {
 
 func SafeBadRequestWithDetails(c *gin.Context, msg, errorKey string, errorParams map[string]string) {
 	writeAPIError(c, http.StatusBadRequest, msg, errorKey, errorParams)
+}
+
+// SafeConflictWithDetails returns a 409 with a safe, owner-readable message.
+// REL18-C fail-closed rails: the message is ENGLISH (never a leaked internal),
+// carried through the existing error_key / error_params i18n pattern.
+func SafeConflictWithDetails(c *gin.Context, msg, errorKey string, errorParams map[string]string) {
+	writeAPIError(c, http.StatusConflict, msg, errorKey, errorParams)
 }
 
 // SafeNotFound returns a generic not found error

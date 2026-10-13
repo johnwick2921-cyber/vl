@@ -80,18 +80,18 @@ func TestMentorRel9ShapeCounterOnlyOnRegistration(t *testing.T) {
 	t.Cleanup(func() { mentorSentSplit = old })
 	row := store.ArmedOrderDB{ID: 1, SignalID: "rel9-cnt", Side: "long", StopPx: 98, TargetPx: 106,
 		FillQuantity: 4, Condition: "PHL", Origin: store.ArmOriginMentor, Contracts: store.IntPtr(5)}
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	if !at.mentorRegisterPartialFillIfAbsent(row) {
 		t.Fatal("the first partial registration must succeed")
 	}
-	if c := MentorCountSnapshot()["exit_drive_split_registered"]; c != 1 {
+	if c := at.mentorCountSnapshot()["exit_drive_split_registered"]; c != 1 {
 		t.Fatalf("first registration split counter = %d, want 1", c)
 	}
 	// The sweep re-runs while the row is cancel_pending: already registered → no bump.
 	if at.mentorRegisterPartialFillIfAbsent(row) {
 		t.Fatal("a second sweep must not re-register")
 	}
-	if c := MentorCountSnapshot()["exit_drive_split_registered"]; c != 1 {
+	if c := at.mentorCountSnapshot()["exit_drive_split_registered"]; c != 1 {
 		t.Fatalf("a register-if-absent miss bumped the split counter to %d, want 1", c)
 	}
 }

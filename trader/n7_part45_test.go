@@ -22,8 +22,8 @@ func TestMentorCancelArmUnplacedRowEndsCancelled(t *testing.T) {
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	mentorRegisterLiveArm("lvl-5", at.id, row.ID, "long", 29600)
-	resetMentorCounters()
+	mentorRegisterLiveArmForTest("lvl-5", at.id, row.ID, "long", 29600)
+	resetMentorCounters(at)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.CancelArm, ArmID: "lvl-5", Reason: "close-through"}, mentorTierInputs{}, 1000, 1100)
 	if sawMentorFrame(t, frames, ntwire.FrameCancelOrder, 300*time.Millisecond) {
 		t.Fatal("an unplaced row has nothing at the broker — no cancel_order may be sent")
@@ -35,7 +35,7 @@ func TestMentorCancelArmUnplacedRowEndsCancelled(t *testing.T) {
 	if got.State != store.StateCancelled {
 		t.Fatalf("an unplaced row must end cancelled directly, got %q", got.State)
 	}
-	if c := MentorCountSnapshot()["cancel_unplaced"]; c != 1 {
+	if c := at.mentorCountSnapshot()["cancel_unplaced"]; c != 1 {
 		t.Fatalf("cancel_unplaced = %d, want 1", c)
 	}
 }

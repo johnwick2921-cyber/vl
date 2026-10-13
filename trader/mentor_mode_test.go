@@ -257,7 +257,7 @@ func TestMentorLeg1TPForC(t *testing.T) {
 // logged and counted; wired actions reach their wires per leg.
 func TestMentorApplyExitResult(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	// The unwired path needs moveStopWire nil — but it carries a PRODUCTION
 	// default (exit_mechs_suspend.go:50), so this test must nil it explicitly
 	// to exercise the unwired branch (pre-existing merged-HEAD breakage: the
@@ -272,12 +272,12 @@ func TestMentorApplyExitResult(t *testing.T) {
 	at.mentorApplyExitResult(&ntTrader.TCPTrader{}, "long", mentorExitResult{
 		MoveStops: []string{"leg1", "leg2"}, NewStop: 100, ModifyTP: &tp,
 	})
-	snap := MentorCountSnapshot()
+	snap := at.mentorCountSnapshot()
 	if snap["move_stop_unwired"] != 2 || snap["modify_bracket_unwired"] != 1 {
 		t.Fatalf("unwired actions must be counted (2 move_stop, 1 modify): %v", snap)
 	}
 	// wired: each leg moves and the TP modifies.
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	var moved []string
 	var modLeg string
 	var modTP float64
@@ -294,10 +294,10 @@ func TestMentorApplyExitResult(t *testing.T) {
 		t.Fatalf("wired actions: moved=%v modLeg=%q modTP=%.2f", moved, modLeg, modTP)
 	}
 	// a failing modify is counted, not silent.
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	modifyBracketWire = func(leg string, newTP float64) error { return fmt.Errorf("boom") }
 	at.mentorApplyExitResult(&ntTrader.TCPTrader{}, "long", mentorExitResult{ModifyTP: &tp})
-	if got := MentorCountSnapshot()["modify_bracket_failed"]; got != 1 {
+	if got := at.mentorCountSnapshot()["modify_bracket_failed"]; got != 1 {
 		t.Fatalf("the failed modify must be counted once, got %d", got)
 	}
 }
@@ -306,7 +306,7 @@ func TestMentorApplyExitResult(t *testing.T) {
 // on the next snapshot is FLATTENED (that leg only, fail-closed).
 func TestMentorConfirmLegProtection(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	var flattened []string
 	flattenLegWire = func(leg string) error { flattened = append(flattened, leg); return nil }
 	t.Cleanup(func() { flattenLegWire = nil })
@@ -316,15 +316,15 @@ func TestMentorConfirmLegProtection(t *testing.T) {
 	if len(flattened) != 2 {
 		t.Fatalf("nil protection source must flatten both legs, flattened=%v", flattened)
 	}
-	snap := MentorCountSnapshot()
+	snap := at.mentorCountSnapshot()
 	if snap["leg_protection_lost_leg1"] != 1 || snap["leg_protection_lost_leg2"] != 1 {
 		t.Fatalf("the lost protection must be counted per leg: %v", snap)
 	}
 	// leg1 confirmed, leg2 not → only leg2 flattens.
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	flattened = nil
-	mentorLegProtectedSource = func(leg string) bool { return leg == "leg1" }
-	t.Cleanup(func() { mentorLegProtectedSource = nil })
+	at.mentorLegProtectedSource = func(leg string) bool { return leg == "leg1" }
+	t.Cleanup(func() { at.mentorLegProtectedSource = nil })
 	at.mentorConfirmLegProtection([]string{"leg1", "leg2"})
 	if len(flattened) != 1 || flattened[0] != "leg2" {
 		t.Fatalf("only the unconfirmed leg flattens, flattened=%v", flattened)
@@ -478,9 +478,9 @@ func TestMentorBEHalfDistanceTarget(t *testing.T) {
 // runner's target (no 1:1 scale-out). Then A NEVER trails (candles that would
 // trail in B are ignored); it exits only on a BE touch.
 func TestMentorResonanceFork(t *testing.T) {
-	ResetMentorCountersForTest()
+	at := funnelAT(t)
 	pos := &mentorPosition{Symbol: "MNQ", Side: "long", Origin: "PHL", Entry: 100, Stop: 90, Target: 130, R: 10, Leg1TP: 110, Mode: "B"}
-	armed, modifyTP, modifyLeg2TP := mentorMaybeArmResonance(pos, "long", 2, 140)
+	armed, modifyTP, modifyLeg2TP := mentorMaybeArmResonance(at, pos, "long", 2, 140)
 	if !armed {
 		t.Fatal("ISB same side within 3 candles of a PHL fill must arm resonance")
 	}
@@ -500,7 +500,7 @@ func TestMentorResonanceFork(t *testing.T) {
 	if pos.Mode != "A-resonance" || !pos.ArmedBE || pos.Stop != pos.Entry {
 		t.Fatalf("resonance arm: mode=%s armed=%v stop=%.2f — want A-resonance, BE stop 100", pos.Mode, pos.ArmedBE, pos.Stop)
 	}
-	if got := MentorCountSnapshot()["resonance_armed"]; got != 1 {
+	if got := at.mentorCountSnapshot()["resonance_armed"]; got != 1 {
 		t.Fatalf("resonance_armed must be counted once, got %d", got)
 	}
 	// A holds through candles that would trail in B (+1R, +2R highs).
@@ -515,19 +515,19 @@ func TestMentorResonanceFork(t *testing.T) {
 	}
 	// refused arms: too late (4th candle), wrong side, non-PHL/PLH origin, the
 	// fill bar itself, already-armed.
-	if armed, _, _ := mentorMaybeArmResonance(pos, "long", 4, 0); armed {
+	if armed, _, _ := mentorMaybeArmResonance(at, pos, "long", 4, 0); armed {
 		t.Fatal("an ISB 4 candles after the fill must NOT arm resonance")
 	}
-	if armed, _, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "PHL", Mode: "B"}, "short", 2, 0); armed {
+	if armed, _, _ := mentorMaybeArmResonance(at, &mentorPosition{Origin: "PHL", Mode: "B"}, "short", 2, 0); armed {
 		t.Fatal("an ISB against the position must NOT arm resonance")
 	}
-	if armed, _, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "PHL", Mode: "B"}, "long", 0, 0); armed {
+	if armed, _, _ := mentorMaybeArmResonance(at, &mentorPosition{Origin: "PHL", Mode: "B"}, "long", 0, 0); armed {
 		t.Fatal("the fill bar itself must NOT arm resonance (within 3 candles AFTER the fill)")
 	}
-	if armed, _, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "ISB", Mode: "B"}, "long", 2, 0); armed {
+	if armed, _, _ := mentorMaybeArmResonance(at, &mentorPosition{Origin: "ISB", Mode: "B"}, "long", 2, 0); armed {
 		t.Fatal("a non-PHL/PLH origin must NOT arm resonance")
 	}
-	if armed, _, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "PLH", Mode: "A-resonance"}, "long", 2, 0); armed {
+	if armed, _, _ := mentorMaybeArmResonance(at, &mentorPosition{Origin: "PLH", Mode: "A-resonance"}, "long", 2, 0); armed {
 		t.Fatal("an already-resonant position must NOT re-arm")
 	}
 }
@@ -548,12 +548,12 @@ func TestMentorTrailTFKnob(t *testing.T) {
 			t.Fatalf("trail_tf %q → %q, want %q", tc.in, got, tc.want)
 		}
 	}
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	at.config.StrategyConfig.RiskControl.MentorTrailTF = "garbage"
 	if got := at.mentorTrailTF(); got != "off" {
 		t.Fatalf("bad trail_tf → %q, want off (fail-closed, no trail)", got)
 	}
-	if got := MentorCountSnapshot()["trail_tf_bad_value"]; got != 1 {
+	if got := at.mentorCountSnapshot()["trail_tf_bad_value"]; got != 1 {
 		t.Fatalf("the bad trail_tf must be counted once, got %d", got)
 	}
 	if !mentorTrailEnabled("1m") || mentorTrailEnabled("off") {
@@ -754,7 +754,6 @@ func TestMentorSpentDayClamp(t *testing.T) {
 // TestMentorSizeForCountsAndLogsTier: the AutoTrader entry point counts the
 // tier ("which tier and why") — a silent size choice fails this.
 func TestMentorSizeForCountsAndLogsTier(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,
 		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
@@ -765,7 +764,7 @@ func TestMentorSizeForCountsAndLogsTier(t *testing.T) {
 	if choice.Contracts != mentorBaseContractsDefault || choice.Tier != "base" {
 		t.Fatalf("choice = %+v", choice)
 	}
-	if got := MentorCountSnapshot()["tier_base"]; got != 1 {
+	if got := at.mentorCountSnapshot()["tier_base"]; got != 1 {
 		t.Fatalf("the tier must be counted once, got %d", got)
 	}
 	if choice.Why == "" {
@@ -777,6 +776,7 @@ func TestMentorSizeForCountsAndLogsTier(t *testing.T) {
 // branch per case. Mutants: confluence ignored in the fork (C case RED),
 // mentorLeg1TPForC dropped (C leg-1 TP RED).
 func TestMentorExitFork(t *testing.T) {
+	at := funnelAT(t)
 	cases := []struct {
 		name       string
 		in         mentor.Intent
@@ -807,7 +807,7 @@ func TestMentorExitFork(t *testing.T) {
 		Origin: "PHL", Side: "long", Entry: 100, Stop: 95, Target: 112, R: 5,
 		Mode: "B", Leg1TP: 105,
 	}
-	armed, modTP, modLeg2 := mentorMaybeArmResonance(pos, "long", 2, 120)
+	armed, modTP, modLeg2 := mentorMaybeArmResonance(at, pos, "long", 2, 120)
 	if !armed || pos.Mode != "A-resonance" || pos.Stop != pos.Entry || modTP != 0 || pos.Leg1TP != 105 || modLeg2 != 120 || pos.Target != 120 {
 		t.Fatalf("the A flip must arm and move the runner beyond the old high: armed=%v mode=%s stop=%.2f modTP=%.2f leg1TP=%.2f modLeg2=%.2f target=%.2f", armed, pos.Mode, pos.Stop, modTP, pos.Leg1TP, modLeg2, pos.Target)
 	}
@@ -818,9 +818,8 @@ func TestMentorExitFork(t *testing.T) {
 // is observable. Mutant: the fork call removed from mentorPlaceIntent → the
 // counter stays 0 and this test goes RED.
 func TestMentorExitForkAtPlacement(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	ct := time.FixedZone("CT", -5*3600)
 	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
 	t.Cleanup(func() { mentorNowSource = nil })
@@ -840,7 +839,7 @@ func TestMentorExitForkAtPlacement(t *testing.T) {
 	if placed != 1 {
 		t.Fatalf("placement recorder must fire once, got %d", placed)
 	}
-	if got := MentorCountSnapshot()["exit_fork_C"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_fork_C"]; got != 1 {
 		t.Fatalf("exit_fork_C counter = %d, want 1", got)
 	}
 
@@ -851,7 +850,7 @@ func TestMentorExitForkAtPlacement(t *testing.T) {
 		Action: mentor.PlaceStopEntry, Setup: "ISB", Side: mentor.SideShort,
 		Price: 100, Stop: 106, Target: 88, StopPts: 6,
 	}, mentorSizeChoice{Contracts: 5, Tier: "base"}, 0, 0)
-	if got := MentorCountSnapshot()["exit_fork_B"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_fork_B"]; got != 1 {
 		t.Fatalf("exit_fork_B counter = %d, want 1", got)
 	}
 }
@@ -860,10 +859,11 @@ func TestMentorExitForkAtPlacement(t *testing.T) {
 // 1791033257041) at their ruled defaults and the evaluator config wiring.
 // Mutant: any default flipped (e.g. leg budget false) → RED.
 func TestMentorKnobRoutingDefaults(t *testing.T) {
+	at := funnelAT(t)
 	if !mentorLegBudgetEnabled(nil) || !mentorLocationTriggerFilter(nil) {
 		t.Fatal("leg budget and the location trigger filter default ON")
 	}
-	if v := mentorLegResetOn(nil); v != "close" {
+	if v := mentorLegResetOn(at, nil); v != "close" {
 		t.Fatalf("leg reset default = %q, want close", v)
 	}
 	if v := mentorLvlRevisitMinPts(nil); v != 0 {
@@ -888,7 +888,7 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 	if mentorLegBudgetEnabled(rc) || mentorLocationTriggerFilter(rc) {
 		t.Fatal("explicit false must turn the ON-default knobs OFF")
 	}
-	if v := mentorLegResetOn(rc); v != "touch" {
+	if v := mentorLegResetOn(at, rc); v != "touch" {
 		t.Fatalf("leg reset = %q, want touch", v)
 	}
 	if v := mentorLvlRevisitMinPts(rc); v != 3 {
@@ -908,18 +908,18 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 	}
 
 	// a bad leg reset value fails closed to the default and is counted.
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	bad := &store.RiskControlConfig{MentorLegResetOn: "garbage"}
-	if v := mentorLegResetOn(bad); v != "close" {
+	if v := mentorLegResetOn(at, bad); v != "close" {
 		t.Fatalf("bad leg reset = %q, want close (fail closed)", v)
 	}
-	if got := MentorCountSnapshot()["leg_reset_on_bad_value"]; got != 1 {
+	if got := at.mentorCountSnapshot()["leg_reset_on_bad_value"]; got != 1 {
 		t.Fatalf("leg_reset_on_bad_value counter = %d, want 1", got)
 	}
 
 	// The evaluator config builder carries explicit strategy knobs, including
 	// B22's opt-in numeric fallback.
-	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true,
+	at = mentoredTrader(t, store.RiskControlConfig{MentorMode: true,
 		MentorLvlRevisitMinPts: 3, MentorEmaMaxCross30m: 4, MentorLossDeparturePts: 25})
 	cfg := at.mentorEvaluatorConfig()
 	if !cfg.Enabled || cfg.LvlRevisitMinPts != 3 || cfg.EmaMaxCross30m != 4 || cfg.LossDeparturePts != 25 {

@@ -31,7 +31,7 @@ func authorMentorArmForDayStop(t *testing.T, at *AutoTrader, armID, setup string
 		mentorSizeChoice{Contracts: 1, Tier: "base"},
 		now.UnixMilli(), now.UnixMilli(), "B", 0,
 	)
-	live, ok := mentorLiveArmFor(armID)
+		live, ok := at.mentorLiveArmFor(armID)
 	if !ok {
 		t.Fatalf("arm %q not in the live registry", armID)
 	}
@@ -60,11 +60,11 @@ func TestB3DayStopDoneAfterWinCancelsRestingArm(t *testing.T) {
 	t.Cleanup(func() { mentorNowSource = nil })
 
 	// done-after-win DEFINITELY trips: a closed profit and a net-positive day.
-	mentorDayNetSource = func() (float64, bool) { return 100, true }
-	mentorClosedProfitSource = func() (bool, bool) { return true, true }
+	at.mentorDayNetSource = func() (float64, bool) { return 100, true }
+	at.mentorClosedProfitSource = func() (bool, bool) { return true, true }
 	t.Cleanup(func() {
-		mentorDayNetSource = nil
-		mentorClosedProfitSource = nil
+		at.mentorDayNetSource = nil
+		at.mentorClosedProfitSource = nil
 	})
 
 	intradayRow := authorMentorArmForDayStop(t, at, "isb-b3-daystop", "ISB", now)
@@ -84,8 +84,8 @@ func TestB3DayStopDoneAfterWinCancelsRestingArm(t *testing.T) {
 	if got := readMentorArmRowByID(t, ledger, swingRow); store.IsTerminalArmState(got.State) {
 		t.Fatalf("the SWING4H arm must survive the day-stop sweep, got state=%q", got.State)
 	}
-	if mentorCounters["day_stop_cancel_done_after_win"] < 1 {
-		t.Fatalf("day_stop_cancel_done_after_win counter must record the cancel, got %v", mentorCounters)
+	if at.mentorCounters["day_stop_cancel_done_after_win"] < 1 {
+		t.Fatalf("day_stop_cancel_done_after_win counter must record the cancel, got %v", at.mentorCounters)
 	}
 }
 
@@ -121,8 +121,8 @@ func TestB3DayStopWindowEndCancelsRestingArm(t *testing.T) {
 	if got := readMentorArmRowByID(t, ledger, swingRow); store.IsTerminalArmState(got.State) {
 		t.Fatalf("the SWING4H arm must survive the window-end sweep, got state=%q", got.State)
 	}
-	if mentorCounters["day_stop_cancel_window_end"] < 1 {
-		t.Fatalf("day_stop_cancel_window_end counter must record the cancel, got %v", mentorCounters)
+	if at.mentorCounters["day_stop_cancel_window_end"] < 1 {
+		t.Fatalf("day_stop_cancel_window_end counter must record the cancel, got %v", at.mentorCounters)
 	}
 }
 
@@ -136,18 +136,18 @@ func TestB3MentorDoneAfterWinTrippedUnknownIsNotTrip(t *testing.T) {
 		t.Fatal("unwired day sources must NOT trip the done-after-win sweep")
 	}
 	// Wired but unresolved: still not a trip.
-	mentorDayNetSource = func() (float64, bool) { return 0, false }
-	mentorClosedProfitSource = func() (bool, bool) { return false, true }
+	at.mentorDayNetSource = func() (float64, bool) { return 0, false }
+	at.mentorClosedProfitSource = func() (bool, bool) { return false, true }
 	t.Cleanup(func() {
-		mentorDayNetSource = nil
-		mentorClosedProfitSource = nil
+		at.mentorDayNetSource = nil
+		at.mentorClosedProfitSource = nil
 	})
 	if trip, _ := at.mentorDoneAfterWinTripped(); trip {
 		t.Fatal("an unresolved day read must NOT trip the done-after-win sweep")
 	}
 	// Definite: net positive + a closed profit → trip.
-	mentorDayNetSource = func() (float64, bool) { return 50, true }
-	mentorClosedProfitSource = func() (bool, bool) { return true, true }
+	at.mentorDayNetSource = func() (float64, bool) { return 50, true }
+	at.mentorClosedProfitSource = func() (bool, bool) { return true, true }
 	if trip, _ := at.mentorDoneAfterWinTripped(); !trip {
 		t.Fatal("a net-positive day with a closed profit MUST trip the done-after-win sweep")
 	}
@@ -168,8 +168,8 @@ func TestB3DayStopNeverAddCancelsRestingArms(t *testing.T) {
 	t.Cleanup(func() { mentorNowSource = nil })
 
 	// A mentor position is OPEN (the P1 driver wires this from the account).
-	mentorOpenSideSource = func() string { return "long" }
-	t.Cleanup(func() { mentorOpenSideSource = nil })
+	at.mentorOpenSideSource = func() string { return "long" }
+	t.Cleanup(func() { at.mentorOpenSideSource = nil })
 
 	levelRow := authorMentorArmForDayStop(t, at, "lvl-neveradd", "PHL", now)
 	swingRow := authorMentorArmForDayStop(t, at, "swing-neveradd", "SWING4H", now)
@@ -186,8 +186,8 @@ func TestB3DayStopNeverAddCancelsRestingArms(t *testing.T) {
 	if got := readMentorArmRowByID(t, ledger, swingRow); got.State != store.StateCancelled {
 		t.Fatalf("the SWING4H arm must be cancelled too (the course is silent — fail-closed: one position at a time), got state=%q", got.State)
 	}
-	if mentorCounters["day_stop_cancel_never_add"] < 1 {
-		t.Fatalf("day_stop_cancel_never_add counter must record the cancel, got %v", mentorCounters)
+	if at.mentorCounters["day_stop_cancel_never_add"] < 1 {
+		t.Fatalf("day_stop_cancel_never_add counter must record the cancel, got %v", at.mentorCounters)
 	}
 }
 
@@ -214,7 +214,7 @@ func TestB3MentorWindowEnded(t *testing.T) {
 func TestB3SweepCountsOnlyActualCancelsAndPrunes(t *testing.T) {
 	at, _, ledger, _ := mentorB3Rig(t)
 	mentorWireSeams(t, at, ledger)
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 
 	// A live arm for THIS trader, already terminal (the old code re-counted it
 	// as a "cancel" every tick).
@@ -228,21 +228,27 @@ func TestB3SweepCountsOnlyActualCancelsAndPrunes(t *testing.T) {
 	if err := ledger.DB().Create(&termRow).Error; err != nil {
 		t.Fatal(err)
 	}
-	mentorRegisterLiveArm("isb-terminal", at.id, termRow.ID, "long", 29600)
+	mentorRegisterLiveArmForTest("isb-terminal", at.id, termRow.ID, "long", 29600)
 
 	// Another trader's arm — must NOT be touched.
-	mentorRegisterLiveArm("isb-other", "other-trader", 999999, "long", 29600)
+	mentorRegisterLiveArmForTest("isb-other", "other-trader", 999999, "long", 29600)
 
 	if at.cancelLiveMentorArms("test sweep", false) {
 		t.Fatal("a sweep with only terminal/other-trader arms must report no actual cancel")
 	}
-	if _, ok := mentorLiveArmFor("isb-terminal"); ok {
+	if _, ok := at.mentorLiveArmFor("isb-terminal"); ok {
 		t.Fatal("the terminal arm must be pruned from the registry")
 	}
-	if _, ok := mentorLiveArmFor("isb-other"); !ok {
+	if _, ok := at.mentorLiveArmFor("isb-other"); ok {
+		t.Fatal("another trader's arm must NOT resolve to this trader (REL18-A)")
+	}
+	mentorLiveMu.Lock()
+	_, otherStillThere := mentorLiveArms[mentorArmKey("other-trader", "isb-other")]
+	mentorLiveMu.Unlock()
+	if !otherStillThere {
 		t.Fatal("another trader's arm must NOT be pruned by this trader's sweep")
 	}
-	if MentorCountSnapshot()["cancel_requested"] != 0 {
+	if at.mentorCountSnapshot()["cancel_requested"] != 0 {
 		t.Fatal("no cancel was actually requested — the counter must stay 0")
 	}
 }
@@ -254,15 +260,15 @@ func TestB3DayStopStopAfterLossCancelsRestingArm(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "on")
 	at, _, ledger, _ := mentorB3Rig(t)
 	mentorWireSeams(t, at, ledger)
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 
 	on := true
 	at.config.StrategyConfig.RiskControl.MentorStopAfterLoss = &on
-	mentorClosedLossSource = func() (bool, bool) { return true, true } // a resolved closed loss
-	mentorStopAfterLossTripped = at.mentorStopAfterLossTrip
+	at.mentorClosedLossSource = func() (bool, bool) { return true, true } // a resolved closed loss
+	at.mentorStopAfterLossTripped = at.mentorStopAfterLossTrip
 	t.Cleanup(func() {
-		mentorClosedLossSource = nil
-		mentorStopAfterLossTripped = nil
+		at.mentorClosedLossSource = nil
+		at.mentorStopAfterLossTripped = nil
 	})
 
 	now := b3Clock(10, 30)
@@ -284,8 +290,8 @@ func TestB3DayStopStopAfterLossCancelsRestingArm(t *testing.T) {
 	if got := readMentorArmRowByID(t, ledger, swingRow); store.IsTerminalArmState(got.State) {
 		t.Fatalf("the SWING4H arm must survive the stop-after-loss sweep, got state=%q", got.State)
 	}
-	if mentorCounters["day_stop_cancel_stop_after_loss"] < 1 {
-		t.Fatalf("day_stop_cancel_stop_after_loss counter must record the cancel, got %v", mentorCounters)
+	if at.mentorCounters["day_stop_cancel_stop_after_loss"] < 1 {
+		t.Fatalf("day_stop_cancel_stop_after_loss counter must record the cancel, got %v", at.mentorCounters)
 	}
 }
 
@@ -295,15 +301,15 @@ func TestB3DayStopStopAfterLossOffCancelsNothing(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "on")
 	at, _, ledger, _ := mentorB3Rig(t)
 	mentorWireSeams(t, at, ledger)
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 
 	// knob OFF (nil), but a resolved closed loss — the hook is wired and returns
 	// false, so nothing cancels.
-	mentorClosedLossSource = func() (bool, bool) { return true, true }
-	mentorStopAfterLossTripped = at.mentorStopAfterLossTrip
+	at.mentorClosedLossSource = func() (bool, bool) { return true, true }
+	at.mentorStopAfterLossTripped = at.mentorStopAfterLossTrip
 	t.Cleanup(func() {
-		mentorClosedLossSource = nil
-		mentorStopAfterLossTripped = nil
+		at.mentorClosedLossSource = nil
+		at.mentorStopAfterLossTripped = nil
 	})
 
 	now := b3Clock(10, 30)
@@ -321,7 +327,7 @@ func TestB3DayStopStopAfterLossOffCancelsNothing(t *testing.T) {
 	if got := readMentorArmRowByID(t, ledger, intradayRow); store.IsTerminalArmState(got.State) {
 		t.Fatalf("the knob OFF must cancel nothing, got state=%q", got.State)
 	}
-	if mentorCounters["day_stop_cancel_stop_after_loss"] != 0 {
-		t.Fatalf("day_stop_cancel_stop_after_loss must stay 0 with the knob OFF, got %v", mentorCounters)
+	if at.mentorCounters["day_stop_cancel_stop_after_loss"] != 0 {
+		t.Fatalf("day_stop_cancel_stop_after_loss must stay 0 with the knob OFF, got %v", at.mentorCounters)
 	}
 }

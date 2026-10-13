@@ -279,7 +279,7 @@ func TestMentorArmIntentPersistsExitMode(t *testing.T) {
 	}
 	choice := mentorSizeChoice{Contracts: 2, Tier: "base"}
 	ledger := st.ArmedOrders()
-	scenario := mentorScenarioFor("arm-persist")
+	scenario := at.mentorScenarioFor("arm-persist")
 
 	at.mentorArmIntent(in, choice, now, now, "C", 0)
 	var r store.ArmedOrderDB

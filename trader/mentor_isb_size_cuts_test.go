@@ -65,13 +65,12 @@ func TestMentorISBSizeCutsAtSizingCallSite(t *testing.T) {
 // tier counter and the sized-not-placed line carry the cut tier.
 func TestMentorISBSizeCutsThroughDispatch(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "")
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 
 	in := isbIntent(mentor.FlagISBAtOldExtreme)
 	at.mentorDispatchIntent(in, mentorExtraFor(in, false), 1000, 1100)
-	snap := MentorCountSnapshot()
+	snap := at.mentorCountSnapshot()
 	if snap["tier_isb_old_extreme"] != 1 {
 		t.Fatalf("an ISB at an old extreme must be sized at the cut tier: %v", snap)
 	}

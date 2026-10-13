@@ -10,6 +10,9 @@ import type { AccountsResponse } from '../../types'
 interface AccountSelectorProps {
   traderId: string
   onAccountChanged?: () => void
+  /** REL18-C: the dropdown is disabled while the trader runs — the account
+   *  cannot change until the trader is stopped. */
+  isRunning?: boolean
 }
 
 /**
@@ -20,6 +23,7 @@ interface AccountSelectorProps {
 export function AccountSelector({
   traderId,
   onAccountChanged,
+  isRunning = false,
 }: AccountSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isSelecting, setIsSelecting] = useState(false)
@@ -142,12 +146,20 @@ export function AccountSelector({
         ref={handleTriggerRef}
         onClick={() => setIsOpen(!isOpen)}
         onFocus={(e) => setTriggerRect(e.currentTarget.getBoundingClientRect())}
+        disabled={isRunning}
+        title={
+          isRunning
+            ? 'Stop the trader first, then choose the account, then start it.'
+            : undefined
+        }
         className={cn(
           'flex items-center gap-2 px-3 py-2 rounded border transition-all',
           'text-sm font-medium',
-          isOpen
-            ? 'border-vl-neo-gold/50 bg-vl-neo-gold/10 text-vl-neo-gold'
-            : 'border-vl-neo-gold/20 bg-vl-neo-bg/30 text-vl-neo-text hover:border-vl-neo-gold/40 hover:bg-vl-neo-bg/50'
+          isRunning
+            ? 'border-vl-neo-bg/40 bg-vl-neo-bg/10 text-vl-neo-text-muted cursor-not-allowed opacity-70'
+            : isOpen
+              ? 'border-vl-neo-gold/50 bg-vl-neo-gold/10 text-vl-neo-gold'
+              : 'border-vl-neo-gold/20 bg-vl-neo-bg/30 text-vl-neo-text hover:border-vl-neo-gold/40 hover:bg-vl-neo-bg/50'
         )}
       >
         <span className="truncate">
@@ -172,6 +184,11 @@ export function AccountSelector({
       {/* Masquerade guard: the shared NT8 connection streams ONE account's balance /
           positions. If it isn't this trader's bound account, say so explicitly so the
           numbers can't be mistaken for this trader's account. */}
+      {isRunning && (
+        <div className="mt-1 px-2 py-1 rounded bg-vl-neo-bg/20 border border-vl-neo-bg/40 text-[11px] leading-tight text-vl-neo-text-muted">
+          ⛔ Stop the trader first, then choose the account, then start it.
+        </div>
+      )}
       {selectedAccount &&
         currentAccount &&
         currentAccount !== selectedAccount && (

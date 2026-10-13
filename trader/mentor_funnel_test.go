@@ -18,7 +18,6 @@ func funnelAT(t *testing.T) *AutoTrader {
 		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}}},
 	}
 	at.mentorEval = mentor.New(mentor.DefaultConfig())
-	t.Cleanup(ResetMentorCountersForTest)
 	return at
 }
 
@@ -64,13 +63,13 @@ func TestMentorFunnelSeparatesKernelFills(t *testing.T) {
 
 // Pin: trader refusals are the refusal-family counters, never stage/tier/OK.
 func TestMentorTraderRefusalsFilters(t *testing.T) {
-	ResetMentorCountersForTest()
-	mentorCount("refused_no_max")
-	mentorCount("refused_no_max")
-	mentorCount("placement_held")
-	mentorCount("armed_base")
-	mentorCount("tier_base")
-	got := mentorTraderRefusals()
+	at := funnelAT(t)
+	at.mentorCount("refused_no_max")
+	at.mentorCount("refused_no_max")
+	at.mentorCount("placement_held")
+	at.mentorCount("armed_base")
+	at.mentorCount("tier_base")
+	got := at.mentorTraderRefusals()
 	if got["refused_no_max"] != 2 {
 		t.Fatalf("refused_no_max = %d, want 2", got["refused_no_max"])
 	}

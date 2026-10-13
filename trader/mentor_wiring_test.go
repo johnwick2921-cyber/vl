@@ -71,24 +71,24 @@ func TestMentorProductionWiring(t *testing.T) {
 	at := &AutoTrader{id: "t-wire", trader: fake, store: st}
 	at.mentorWireProductionSeams()
 	t.Cleanup(func() {
-		mentorOpenSideSource = nil
-		mentorLegProtectedSource = nil
+		at.mentorOpenSideSource = nil
+		at.mentorLegProtectedSource = nil
 		mentorLatestPriceSource = nil
 		mentorNowSource = nil
 		mentorConfluenceForIntent = nil
 		mentorSetArmExpiryWire = nil
-		mentorDayNetSource = nil
-		mentorClosedProfitSource = nil
+		at.mentorDayNetSource = nil
+		at.mentorClosedProfitSource = nil
 	})
 
 	// every seam bound and answering from the fake snapshot.
-	if missing := mentorSeamMissing(); len(missing) != 0 {
+	if missing := at.mentorSeamMissing(); len(missing) != 0 {
 		t.Fatalf("no seam may be missing after production wiring: %v", missing)
 	}
-	if side := mentorOpenSideSource(); side != "short" {
+	if side := at.mentorOpenSideSource(); side != "short" {
 		t.Fatalf("open side = %q, want short", side)
 	}
-	if !mentorLegProtectedSource("leg2") {
+	if !at.mentorLegProtectedSource("leg2") {
 		t.Fatal("leg protection must report the working bracket stop")
 	}
 	if px, ok := mentorLatestPriceSource(); !ok || px != 100.25 {
@@ -128,32 +128,32 @@ func TestMentorProductionWiring(t *testing.T) {
 
 	// boot line: everything wired, including the B1 day-net / closed-profit
 	// seams (they are in mentorSeamNames now).
-	if line := mentorSeamBootLine(); !textHas(line, "day_net=wired") || !textHas(line, "closed_profit=wired") ||
+	if line := at.mentorSeamBootLine(); !textHas(line, "day_net=wired") || !textHas(line, "closed_profit=wired") ||
 		textHas(line, "=missing") {
 		t.Fatalf("boot line must show every seam wired: %q", line)
 	}
 
 	// B1: day net / closed profit are bound to the strict-corrected read. With
 	// one profitable close and no unresolved row, the day resolves to +30 / won.
-	if net, ok := mentorDayNetSource(); !ok || net != 30 {
+	if net, ok := at.mentorDayNetSource(); !ok || net != 30 {
 		t.Fatalf("day net seam = %.2f/%v, want 30/true", net, ok)
 	}
-	if closed, ok := mentorClosedProfitSource(); !ok || !closed {
+	if closed, ok := at.mentorClosedProfitSource(); !ok || !closed {
 		t.Fatalf("closed-profit seam = %v/%v, want true/true", closed, ok)
 	}
 	// A NULL pnl_corrected closed row today → UNRESOLVED → both seams answer
 	// not-ok (fail closed), never a coerced value.
 	seedClosed(2, nowMs-30_000, 100, nil)
-	if net, ok := mentorDayNetSource(); ok || net != 0 {
+	if net, ok := at.mentorDayNetSource(); ok || net != 0 {
 		t.Fatalf("day net seam must fail closed on a NULL row: %.2f/%v", net, ok)
 	}
-	if closed, ok := mentorClosedProfitSource(); ok || closed {
+	if closed, ok := at.mentorClosedProfitSource(); ok || closed {
 		t.Fatalf("closed-profit seam must fail closed on a NULL row: %v/%v", closed, ok)
 	}
 
 	// a failing snapshot must answer not-ok, never a fabricated value.
 	fake.err = errors.New("snapshot down")
-	if side := mentorOpenSideSource(); side != "" {
+	if side := at.mentorOpenSideSource(); side != "" {
 		t.Fatalf("a snapshot error must answer empty side, got %q", side)
 	}
 }

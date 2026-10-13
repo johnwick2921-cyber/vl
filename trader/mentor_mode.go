@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"sync"
 	"time"
 
 	"vl/kernel"
@@ -140,34 +139,33 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 }
 
 // mentorCounters records every size tier and every refusal for the session
-// ("which tier and why" — the spec's audit trail).
-var (
-	mentorCounterMu sync.Mutex
-	mentorCounters  = map[string]int{}
-)
-
-func mentorCount(kind string) {
-	mentorCounterMu.Lock()
-	mentorCounters[kind]++
-	mentorCounterMu.Unlock()
+// ("which tier and why" — the spec's audit trail). REL18-B: PER-TRADER — two
+// mentor traders in one process must not sum their funnels / rebuild line.
+func (at *AutoTrader) mentorCount(kind string) {
+	at.mentorCounterMu.Lock()
+	if at.mentorCounters == nil {
+		at.mentorCounters = map[string]int{}
+	}
+	at.mentorCounters[kind]++
+	at.mentorCounterMu.Unlock()
 }
 
-// MentorCountSnapshot returns a copy of the mentor counters (tests + reports).
-func MentorCountSnapshot() map[string]int {
-	mentorCounterMu.Lock()
-	defer mentorCounterMu.Unlock()
-	out := make(map[string]int, len(mentorCounters))
-	for k, v := range mentorCounters {
+// mentorCountSnapshot returns a copy of THIS trader's counters (tests + reports).
+func (at *AutoTrader) mentorCountSnapshot() map[string]int {
+	at.mentorCounterMu.Lock()
+	defer at.mentorCounterMu.Unlock()
+	out := make(map[string]int, len(at.mentorCounters))
+	for k, v := range at.mentorCounters {
 		out[k] = v
 	}
 	return out
 }
 
-// ResetMentorCountersForTest clears the per-process mentor counters.
-func ResetMentorCountersForTest() {
-	mentorCounterMu.Lock()
-	mentorCounters = map[string]int{}
-	mentorCounterMu.Unlock()
+// resetMentorCountersForTest clears THIS trader's counters.
+func (at *AutoTrader) resetMentorCountersForTest() {
+	at.mentorCounterMu.Lock()
+	at.mentorCounters = map[string]int{}
+	at.mentorCounterMu.Unlock()
 }
 
 // mentorKnobs resolves the per-strategy size knobs with the CTO defaults.
@@ -238,7 +236,7 @@ func mentorStaleDataBlockEnabled(rc *store.RiskControlConfig) bool {
 // mentorStaleDataBlocked is the mentor stale-data block (release #11): refuse
 // NEW mentor work (arm authoring + the armed pass placement) while the live 1m
 // feed is stale, reusing B4's ONE formula (kernel.StaleEntryGateFeed →
-// barIsStale, ~75 s, CME-open/halt aware). One WARN + one mentorCount("stale_data")
+// barIsStale, ~75 s, CME-open/halt aware). One WARN + one at.mentorCount("stale_data")
 // per stale EPISODE (the fresh→stale transition), never per tick.
 //
 // NEVER blocks exits or protection: the exit drive, BE/stop moves, closes and
@@ -268,7 +266,7 @@ func (at *AutoTrader) mentorStaleDataBlocked(now time.Time) bool {
 	at.mentorStaleMu.Unlock()
 	if changed && stale {
 		age := now.UnixMilli() - (newestOpen + 60_000)
-		mentorCount("stale_data")
+		at.mentorCount("stale_data")
 		at.logWarnf("🧑‍🏫 mentor stale-data block: 1m feed stale (newest bar age %ds, B4 threshold ~75s) — refusing NEW mentor arms; exits and protection are unaffected; resting orders are NOT cancelled.", age/1000)
 	}
 	return stale
@@ -297,14 +295,14 @@ func mentorLegBudgetEnabled(rc *store.RiskControlConfig) bool {
 
 // mentorLegResetOn — G1 parity knob: "close" default; a bad value fails
 // closed to "close" and is counted.
-func mentorLegResetOn(rc *store.RiskControlConfig) string {
+func mentorLegResetOn(at *AutoTrader, rc *store.RiskControlConfig) string {
 	if rc != nil {
 		switch v := strings.ToLower(strings.TrimSpace(rc.MentorLegResetOn)); v {
 		case "close", "touch":
 			return v
 		case "":
 		default:
-			mentorCount("leg_reset_on_bad_value")
+			at.mentorCount("leg_reset_on_bad_value")
 		}
 	}
 	return "close"
@@ -366,7 +364,7 @@ func (at *AutoTrader) mentorSuppressAIEntry(d *kernel.Decision) string {
 	}
 	switch d.Action {
 	case "open_long", "open_short":
-		mentorCount("ai_entry_suppressed")
+		at.mentorCount("ai_entry_suppressed")
 		telemetry.IncGateBlock(at.id, "mentor_ai_entries_off")
 		return "mentor_mode: AI entries are OFF — every entry comes from the mentor evaluator"
 	}
@@ -397,7 +395,7 @@ func (at *AutoTrader) mentorSuppressAIClose(d *kernel.Decision) string {
 	if !at.positionMentorOwned[d.Symbol+"_"+side] {
 		return ""
 	}
-	mentorCount("ai_close_suppressed")
+	at.mentorCount("ai_close_suppressed")
 	telemetry.IncGateBlock(at.id, "mentor_ai_closes_off")
 	return "mentor_mode: AI closes are OFF on a mentor-owned position — the mentor driver owns the exit"
 }
@@ -485,7 +483,7 @@ func (at *AutoTrader) mentorReconcileLevelArms() {
 		// (refused at dispatch) or a previous process — not resting.
 		var r store.ArmedOrderDB
 		found := false
-		if live, ok := mentorLiveArmFor(arm.ArmID); ok {
+		if live, ok := at.mentorLiveArmFor(arm.ArmID); ok {
 			found = ledger.DB().Where("trader_id = ?", at.id).First(&r, live.RowID).Error == nil
 		}
 		resting := found &&
@@ -609,11 +607,11 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 	base, conf, big, reduced, swing4h, spentCap, mx := at.mentorKnobs()
 	choice, err := mentorContractsFor(extra, base, conf, big, reduced, swing4h, spentCap, mx)
 	if err != nil {
-		mentorCount("refused_no_max")
+		at.mentorCount("refused_no_max")
 		at.logErrorf("🧑‍🏫 mentor size refused: %v", err)
 		return mentorSizeChoice{}, err
 	}
-	mentorCount("tier_" + choice.Tier)
+	at.mentorCount("tier_" + choice.Tier)
 	at.logInfof("🧑‍🏫 mentor size: %d contracts (tier %s) — %s [setup %s, stop %.1f pts]",
 		choice.Contracts, choice.Tier, choice.Why, in.Setup, in.StopPts)
 	return choice, nil
@@ -826,8 +824,8 @@ var modifyBracketWire func(leg string, newTP float64) error
 var flattenLegWire func(leg string) error
 
 // mentorLegProtectedSource confirms a leg's protection on the NEXT snapshot
-// (nil → nothing is ever confirmed → the leg is flattened).
-var mentorLegProtectedSource func(leg string) bool
+// (nil → nothing is ever confirmed → the leg is flattened). REL18-B: per-trader
+// field.
 
 // mentorExitResult is one closed candle's driver output.
 type mentorExitResult struct {
@@ -845,26 +843,26 @@ type mentorExitResult struct {
 func (at *AutoTrader) mentorApplyExitResult(nt *ntTrader.TCPTrader, side string, res mentorExitResult) {
 	for _, leg := range res.MoveStops {
 		if moveStopWire == nil {
-			mentorCount("move_stop_unwired")
+			at.mentorCount("move_stop_unwired")
 			at.logWarnf("🧑‍🏫 mentor %s move_stop unwired (stop %.2f) — logged, not sent", leg, res.NewStop)
 			continue
 		}
 		if err := moveStopWire(nt, side, res.NewStop); err != nil {
-			mentorCount("move_stop_failed")
+			at.mentorCount("move_stop_failed")
 			at.logErrorf("🧑‍🏫 mentor %s move_stop FAILED: %v", leg, err)
 			continue
 		}
-		mentorCount("move_stop_sent_" + leg)
+		at.mentorCount("move_stop_sent_" + leg)
 	}
 	if res.ModifyTP != nil {
 		if modifyBracketWire == nil {
-			mentorCount("modify_bracket_unwired")
+			at.mentorCount("modify_bracket_unwired")
 			at.logWarnf("🧑‍🏫 mentor leg1 modify_bracket unwired (TP %.2f) — logged, not sent", *res.ModifyTP)
 		} else if err := modifyBracketWire("leg1", *res.ModifyTP); err != nil {
-			mentorCount("modify_bracket_failed")
+			at.mentorCount("modify_bracket_failed")
 			at.logErrorf("🧑‍🏫 mentor leg1 modify_bracket FAILED: %v", err)
 		} else {
-			mentorCount("modify_bracket_sent")
+			at.mentorCount("modify_bracket_sent")
 		}
 	}
 }
@@ -873,15 +871,15 @@ func (at *AutoTrader) mentorApplyExitResult(nt *ntTrader.TCPTrader, side string,
 // whose protection cannot be confirmed is FLATTENED (that leg only).
 func (at *AutoTrader) mentorConfirmLegProtection(legs []string) {
 	for _, leg := range legs {
-		protected := mentorLegProtectedSource != nil && mentorLegProtectedSource(leg)
+		protected := at.mentorLegProtectedSource != nil && at.mentorLegProtectedSource(leg)
 		if protected {
 			continue
 		}
-		mentorCount("leg_protection_lost_" + leg)
+		at.mentorCount("leg_protection_lost_" + leg)
 		at.logWarnf("🧑‍🏫 mentor %s protection unconfirmed — FLATTENING that leg (fail-closed)", leg)
 		if flattenLegWire != nil {
 			if err := flattenLegWire(leg); err != nil {
-				mentorCount("flatten_leg_failed")
+				at.mentorCount("flatten_leg_failed")
 				at.logErrorf("🧑‍🏫 mentor %s flatten FAILED: %v", leg, err)
 			}
 		}
@@ -1014,7 +1012,7 @@ const mentorResonanceMaxCandles = 3
 // REMOVED (the exit is the BE stop or EOD flat, never a near-old-high cap).
 // Returns (armed, modifyLeg1TP, modifyLeg2TP): leg 1's TP modify is always 0;
 // the runner's TP modify is the third value (0 = remove).
-func mentorMaybeArmResonance(pos *mentorPosition, isbSide string, barsSinceFill int, runnerTarget float64) (armed bool, modifyLeg1TP, modifyLeg2TP float64) {
+func mentorMaybeArmResonance(at *AutoTrader, pos *mentorPosition, isbSide string, barsSinceFill int, runnerTarget float64) (armed bool, modifyLeg1TP, modifyLeg2TP float64) {
 	if pos == nil || pos.Mode == "A-resonance" {
 		return false, 0, 0
 	}
@@ -1034,7 +1032,7 @@ func mentorMaybeArmResonance(pos *mentorPosition, isbSide string, barsSinceFill 
 	// it when no level sits beyond (fail-closed: the runner then exits only via
 	// the BE stop or EOD flat, never capped at the near-old-high).
 	pos.Target = runnerTarget
-	mentorCount("resonance_armed")
+	at.mentorCount("resonance_armed")
 	// R-RES: leg 1's +1R take-profit STAYS resting — no leg-1 TP modify.
 	return true, 0, runnerTarget
 }
@@ -1088,7 +1086,7 @@ func (at *AutoTrader) mentorTrailTF() string {
 	case "1m", "30s", "45s", "off":
 		return v
 	default:
-		mentorCount("trail_tf_bad_value")
+		at.mentorCount("trail_tf_bad_value")
 		at.logWarnf("🧑‍🏫 mentor trail_tf %q invalid (1m/30s/45s/off) — trail refused for safety", raw)
 		return "off"
 	}

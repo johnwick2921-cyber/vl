@@ -3,10 +3,8 @@ package trader
 import (
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"vl/kernel/mentor"
@@ -30,49 +28,98 @@ import (
 // placement created, so CancelArm / ExtendArm / MoveStopBE / ClosePosition can
 // find the real order. In-memory only: an ArmID from a previous process does
 // not resolve — every handler refuses that NAMED, never silent.
+//
+// REL18-A: the registry is keyed by traderID+"|"+armID, and every read verifies
+// TraderID — two mentor traders in one bot mint the same ArmIDs ("isb-1"), and
+// a bare-keyed map let B's cancel/sweep act on A's resting entry.
 type mentorLiveArm struct {
-	TraderID string // the trader that authored the arm (I5: the sweep acts on its own trader's arms only)
+	TraderID string // the trader that authored the arm (REL18-A: the sweep acts on its own trader's arms only)
+	ArmID    string // the evaluator's BARE ArmID (the map key is trader|armID; the bare id rides the entry)
 	RowID    int64
 	Side     string  // "long" | "short"
 	Entry    float64 // the arm's entry price (MoveStopBE target)
+	Scenario string  // the LEDGER scenario this arm authored (REL18-A #8: stored at placement, never recomputed)
 }
 
 var (
 	mentorLiveMu   sync.Mutex
-	mentorLiveArms = map[string]mentorLiveArm{}
+	mentorLiveArms = map[string]mentorLiveArm{} // key mentorArmKey(traderID, armID)
 )
 
-// N1 (DS-104): the evaluator's ArmSeq restarts at 0 after a reload/restart, so
-// a bare ArmID ("isb-1") collides with a TERMINAL ledger row from the prior
-// evaluator/process and UpsertArm silently no-ops it (row id 0 → never placed).
-// Each trader construction bumps this epoch (mentorSeedAtStart), so the ledger
-// scenario is unique per process AND per reload.
-var mentorArmEpoch atomic.Int64
-
-func bumpMentorArmEpoch() {
-	mentorArmEpoch.Store(time.Now().UnixNano())
+// mentorArmKey scopes a bare ArmID to its trader (REL18-A #1).
+func mentorArmKey(traderID, armID string) string {
+	return traderID + "|" + armID
 }
 
-func mentorRegisterLiveArm(armID string, traderID string, rowID int64, side string, entry float64) {
+// mentorPlanID is the ledger plan_id for a mentor trader (REL18-A #2): the
+// trader rides the unique key so two traders authoring the same scenario can
+// never overwrite each other's ARMED row. Readers accept BOTH this form and the
+// legacy "mentor" (pre-change rows).
+func mentorPlanID(traderID string) string {
+	return "mentor:" + traderID
+}
+
+// mentorPlanIDIsMentor reports whether a plan_id is a mentor plan — the legacy
+// "mentor" or the new "mentor:<trader>" (REL18-A #2: readers accept both).
+func mentorPlanIDIsMentor(planID string) bool {
+	return planID == "mentor" || strings.HasPrefix(planID, "mentor:")
+}
+
+// mentorRunnerTargetKey scopes a runner target to its trader (REL18-A #7).
+func mentorRunnerTargetKey(traderID, scenario string) string {
+	return traderID + "|" + scenario
+}
+
+// mentorScenarioFor builds the ledger scenario (the per-arm signal identity):
+// the resolved ArmID prefixed with the CALLING TRADER'S construction epoch.
+// The exit branch is registered under THIS key, so the placement-time write and
+// the fill-time read name the same arm — and a second trader's identical ArmID
+// never collides (its epoch differs, and the ledger key carries its trader too).
+func (at *AutoTrader) mentorScenarioFor(armID string) string {
+	return fmt.Sprintf("%s-%d", armID, at.mentorArmEpoch)
+}
+
+func (at *AutoTrader) mentorRegisterLiveArm(armID string, rowID int64, side string, entry float64, scenario string) {
 	mentorLiveMu.Lock()
-	mentorLiveArms[armID] = mentorLiveArm{TraderID: traderID, RowID: rowID, Side: side, Entry: entry}
+	mentorLiveArms[mentorArmKey(at.id, armID)] = mentorLiveArm{TraderID: at.id, ArmID: armID, RowID: rowID, Side: side, Entry: entry, Scenario: scenario}
 	mentorLiveMu.Unlock()
 }
 
 // mentorUnregisterLiveArm prunes one arm from the registry (I5) — called when
 // its row goes terminal, so the sweeps stop re-iterating a dead arm and stop
-// counting a cancel that never happened.
-func mentorUnregisterLiveArm(armID string) {
+// counting a cancel that never happened. REL18-A: only the CALLER'S entry is
+// pruned; another trader's same-named arm is untouched.
+func (at *AutoTrader) mentorUnregisterLiveArm(armID string) {
 	mentorLiveMu.Lock()
-	delete(mentorLiveArms, armID)
+	delete(mentorLiveArms, mentorArmKey(at.id, armID))
 	mentorLiveMu.Unlock()
 }
 
-func mentorLiveArmFor(armID string) (mentorLiveArm, bool) {
+// mentorLiveArmFor resolves the CALLER's own registry entry. A missing entry,
+// or one whose TraderID is not the caller's (a mis-keyed entry) both read as
+// "not found" — REL18-A: a lookup that would resolve to another trader's entry
+// is REFUSED with a WARN naming both traders, never acted on.
+func (at *AutoTrader) mentorLiveArmFor(armID string) (mentorLiveArm, bool) {
 	mentorLiveMu.Lock()
 	defer mentorLiveMu.Unlock()
-	a, ok := mentorLiveArms[armID]
-	return a, ok
+	a, ok := mentorLiveArms[mentorArmKey(at.id, armID)]
+	if !ok {
+		return mentorLiveArm{}, false
+	}
+	if a.TraderID != at.id {
+		at.logWarnf("🧑‍🏫 mentor arm %q resolves to ANOTHER trader's entry (registry %s, caller %s) — REFUSED, never acting", armID, a.TraderID, at.id)
+		return mentorLiveArm{}, false
+	}
+	return a, true
+}
+
+// mentorRegisterLiveArmForTest registers a live arm under an EXPLICIT trader
+// (test fixtures, including cross-trader fixtures). The scenario defaults to
+// the bare armID — production always uses the trader-scoped method above.
+func mentorRegisterLiveArmForTest(armID, traderID string, rowID int64, side string, entry float64) {
+	mentorLiveMu.Lock()
+	mentorLiveArms[mentorArmKey(traderID, armID)] = mentorLiveArm{TraderID: traderID, ArmID: armID, RowID: rowID, Side: side, Entry: entry, Scenario: armID}
+	mentorLiveMu.Unlock()
 }
 
 // mentorFillReceipt is a REAL fill receipt queued from the fill callback
@@ -147,7 +194,7 @@ func (at *AutoTrader) mentorEnqueueFill(r store.ArmedOrderDB, u ntwire.OrderUpda
 	select {
 	case at.mentorFillCh <- mentorFillReceipt{receiptID: u.SignalID, armID: armID, lo: lo, hi: hi, row: row}:
 	default:
-		mentorCount("record_fill_queue_full")
+		at.mentorCount("record_fill_queue_full")
 	}
 }
 
@@ -199,7 +246,7 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 		if in.ArmID == "" {
 			return
 		}
-		if _, ok := mentorLiveArmFor(in.ArmID); ok {
+		if _, ok := at.mentorLiveArmFor(in.ArmID); ok {
 			return
 		}
 		at.mentorDropEvalArm(in.ArmID)
@@ -208,7 +255,7 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 	// evaluator; the injector always rests a stop-limit. The confluence
 	// flag feeds the size tier (10/20) and the exit fork (C).
 	extra.Confluence = mentorConfluenceFlag(in)
-	tuned := mentorTuningResolve(at.mentorRiskControl())
+	tuned := mentorTuningResolve(at, at.mentorRiskControl())
 	extra.SwingMaxStopPts = tuned.SwingMaxStopPts
 	extra.SpentDayStopCapPts = tuned.DayGateTargetCapPts
 	if why := mentorRuleGate(in, extra); why != "" {
@@ -216,7 +263,7 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 		if i := strings.Index(why, ":"); i > 0 {
 			rule = strings.ToLower(strings.TrimSpace(why[:i]))
 		}
-		mentorCount("refused_" + rule)
+		at.mentorCount("refused_" + rule)
 		at.logWarnf("🧑‍🏫 mentor intent REFUSED — %s", why)
 		return
 	}
@@ -224,11 +271,11 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 	if err != nil {
 		return
 	}
-	mentorCount("intent_" + in.Setup)
+	at.mentorCount("intent_" + in.Setup)
 	if !mentorPlaceEnv() {
 		at.logInfof("🧑‍🏫 mentor intent SIZED, NOT PLACED (MENTOR_PLACE env off — set MENTOR_PLACE=1 to place): %s %s %d contracts @ %.2f (stop %.2f, target %.2f, tier %s)",
 			in.Setup, in.Side, choice.Contracts, in.Price, in.Stop, in.Target, choice.Tier)
-		mentorCount("placement_held")
+		at.mentorCount("placement_held")
 		return
 	}
 	at.mentorPlaceIntent(in, choice, lastCloseTime, emitMs)
@@ -270,7 +317,7 @@ func (at *AutoTrader) mentorDispatchIntent(in mentor.Intent, extra mentorTierInp
 	default:
 		// P0: an action the injector does not know is REFUSED and named —
 		// a silent drop is exactly the failure this wave exists to close.
-		mentorCount("unknown_action_" + strings.ToLower(string(in.Action)))
+		at.mentorCount("unknown_action_" + strings.ToLower(string(in.Action)))
 		at.logWarnf("🧑‍🏫 mentor UNKNOWN action %q REFUSED — never silent: %s", in.Action, in.Reason)
 	}
 }
@@ -294,14 +341,6 @@ func mentorResolveArmID(armID string) string {
 	return armID
 }
 
-// mentorScenarioFor builds the ledger scenario (the per-arm signal identity):
-// the resolved ArmID prefixed with the per-construction epoch. The exit branch
-// is registered under THIS key, so the placement-time write and the fill-time
-// read name the same arm.
-func mentorScenarioFor(armID string) string {
-	return fmt.Sprintf("%s-%s", armID, strconv.FormatInt(mentorArmEpoch.Load(), 10))
-}
-
 // mentorArmIntent is the ONE mentor entry path (P0-b, CTO 1791040400571): it
 // creates an ARMED LEDGER row — kind stop_entry, the intent's expiry — and
 // lets the armed executor place it. No direct wire call here: the armed
@@ -323,28 +362,33 @@ func mentorExitModePtr(mode string) *string {
 func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice, barCloseMs, emitMs int64, forkMode string, forkTP float64) {
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
-		mentorCount("placement_refused_no_ledger")
+		at.mentorCount("placement_refused_no_ledger")
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — no armed ledger")
 		return
 	}
 	armID := mentorResolveArmID(in.ArmID)
-	// N1 (DS-104): the ledger scenario is the evaluator's ArmID prefixed with
-	// the per-construction epoch. The in-memory registry stays keyed by the
-	// UNPREFIXED armID, so ExtendArm / CancelArm / MoveStopBE / ClosePosition
-	// still resolve by the evaluator's id.
-	scenario := mentorScenarioFor(armID)
+	// REL18-A: the ledger scenario is the evaluator's ArmID prefixed with THIS
+	// trader's construction epoch. The in-memory registry stays keyed by
+	// traderID+"|"+armID, so ExtendArm / CancelArm / MoveStopBE / ClosePosition
+	// resolve the CALLER'S OWN row and never another trader's.
+	scenario := at.mentorScenarioFor(armID)
 	if in.RunnerTarget > 0 {
-		mentorRunnerTargets.Store(scenario, in.RunnerTarget)
+		// REL18-A #7: the runner target is keyed trader+scenario — two traders
+		// mint the same scenario, and a bare-scenario key would hand B's fill
+		// A's runner target.
+		mentorRunnerTargets.Store(mentorRunnerTargetKey(at.id, scenario), in.RunnerTarget)
 	}
 	side := strings.ToLower(strings.TrimSpace(string(in.Side)))
 	if side != "long" && side != "short" {
-		mentorCount("placement_refused_bad_side")
+		at.mentorCount("placement_refused_bad_side")
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — unknown side %q", in.Side)
 		return
 	}
 	row := store.ArmedOrderDB{
 		TraderID:  at.id,
-		PlanID:    "mentor",
+		// REL18-A #2: the trader is IN the unique key — two traders authoring
+		// the same scenario can no longer overwrite each other's ARMED row.
+		PlanID:    mentorPlanID(at.id),
 		Version:   1,
 		Session:   "MENTOR",
 		Scenario:  scenario,
@@ -379,19 +423,19 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		row.Leg1TP = leg1TP
 	}
 	if err := ledger.UpsertArm(&row); err != nil {
-		mentorCount("placement_refused_upsert")
+		at.mentorCount("placement_refused_upsert")
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm upsert failed: %v", err)
 		return
 	}
 	// N1 (DS-104): a terminal row with the same scenario makes UpsertArm a
 	// no-op that leaves row.ID at 0. Refuse + log — never register a phantom.
 	if row.ID == 0 {
-		mentorCount("placement_refused_arm_id_zero")
+		at.mentorCount("placement_refused_arm_id_zero")
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm %q authored no row (id 0)", armID)
 		return
 	}
-	mentorRegisterLiveArm(armID, at.id, row.ID, side, in.Price)
-	mentorCount("armed_" + choice.Tier)
+	at.mentorRegisterLiveArm(armID, row.ID, side, in.Price, scenario)
+	at.mentorCount("armed_" + choice.Tier)
 	at.mentorFunnel.bumpAuthored() // N12 funnel stage: the arm row was authored
 	ackMs := time.Now().UnixMilli()
 	recordMentorLatency(barCloseMs, at.mentorFinalArrival.Load(), emitMs, ackMs)
@@ -481,27 +525,27 @@ func mentorWireOneRFloor(entry, trigger, stop, target, tick float64) float64 {
 // accepts both, working only while unfilled.
 func (at *AutoTrader) mentorExtendArm(in mentor.Intent) {
 	if in.ExpiryMs <= 0 {
-		mentorCount("extend_refused_no_expiry")
+		at.mentorCount("extend_refused_no_expiry")
 		at.logWarnf("🧑‍🏫 mentor ExtendArm REFUSED — no new expiry: %s", in.Reason)
 		return
 	}
-	arm, ok := mentorLiveArmFor(in.ArmID)
+	arm, ok := at.mentorLiveArmFor(in.ArmID)
 	if !ok {
-		mentorCount("extend_refused_unknown_arm")
+		at.mentorCount("extend_refused_unknown_arm")
 		at.logWarnf("🧑‍🏫 mentor ExtendArm REFUSED — ArmID %q not in this process's registry: %s", in.ArmID, in.Reason)
 		return
 	}
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
-		mentorCount("extend_refused_no_ledger")
+		at.mentorCount("extend_refused_no_ledger")
 		return
 	}
 	if err := ledger.SetArmExpiry(arm.RowID, in.ExpiryMs); err != nil {
-		mentorCount("extend_refused")
+		at.mentorCount("extend_refused")
 		at.logWarnf("🧑‍🏫 mentor ExtendArm REFUSED for ArmID %q (row %d): %v", in.ArmID, arm.RowID, err)
 		return
 	}
-	mentorCount("extend_ok")
+	at.mentorCount("extend_ok")
 	at.logInfof("🧑‍🏫 mentor arm %q expiry extended to %d — %s", in.ArmID, in.ExpiryMs, in.Reason)
 }
 
@@ -524,16 +568,16 @@ func mentorPrunableTerminalState(state string) bool {
 // unavailable ledger/broker, already-terminal row) returns false — the caller
 // counts and logs only real cancels, never an inference (I5).
 func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
-	arm, ok := mentorLiveArmFor(in.ArmID)
+	arm, ok := at.mentorLiveArmFor(in.ArmID)
 	if !ok {
-		mentorCount("cancel_refused_unknown_arm")
+		at.mentorCount("cancel_refused_unknown_arm")
 		at.logWarnf("🧑‍🏫 mentor CancelArm REFUSED — ArmID %q not in this process's registry: %s", in.ArmID, in.Reason)
 		return false
 	}
 	ledger := at.store.ArmedOrders()
 	nt := at.armedTrader()
 	if ledger == nil || nt == nil {
-		mentorCount("cancel_refused_unavailable")
+		at.mentorCount("cancel_refused_unavailable")
 		at.logWarnf("🧑‍🏫 mentor CancelArm REFUSED — ledger/broker unavailable: %s", in.Reason)
 		return false
 	}
@@ -541,7 +585,7 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 	if err := ledger.DB().First(&r, arm.RowID).Error; err != nil {
 		// P3: a DB read error must NOT prune a resting arm — log and retry next
 		// tick.
-		mentorCount("cancel_refused_read_error")
+		at.mentorCount("cancel_refused_read_error")
 		at.logWarnf("🧑‍🏫 mentor CancelArm for ArmID %q — row read failed: %v (retrying next tick)", in.ArmID, err)
 		return false
 	}
@@ -554,14 +598,14 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 	// P5 (I5b): a cancel already in flight needs no new request and must not be
 	// re-counted.
 	if strings.EqualFold(r.State, store.StateCancelPending) {
-		mentorCount("cancel_already_pending")
+		at.mentorCount("cancel_already_pending")
 		at.logInfof("🧑‍🏫 mentor CancelArm for ArmID %q — already cancel_pending; no re-request (%s)", in.ArmID, in.Reason)
 		return false
 	}
 	if mentorPrunableTerminalState(r.State) {
-		mentorCount("cancel_refused_row_gone")
+		at.mentorCount("cancel_refused_row_gone")
 		at.logInfof("🧑‍🏫 mentor CancelArm for ArmID %q — the row is already terminal; nothing to cancel (%s)", in.ArmID, in.Reason)
-		mentorUnregisterLiveArm(in.ArmID)   // I5: prune the terminal entry
+			at.mentorUnregisterLiveArm(in.ArmID)   // I5: prune the terminal entry
 		at.deleteMentorExitMode(r.Scenario) // P3: delete by the ROW's own scenario, not the package epoch
 		return false
 	}
@@ -577,9 +621,9 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 		done, err := ledger.CancelUnplaced(r.ID, "mentor: "+in.Reason+" — never placed")
 		if err == nil && done {
 			at.clearMentorLevelArmLocked(in.ArmID)
-			mentorUnregisterLiveArm(in.ArmID)   // I5: the row is now cancelled (terminal)
+				at.mentorUnregisterLiveArm(in.ArmID)   // I5: the row is now cancelled (terminal)
 			at.deleteMentorExitMode(r.Scenario) // P3: delete by the ROW's own scenario
-			mentorCount("cancel_unplaced")
+			at.mentorCount("cancel_unplaced")
 			at.logInfof("🧑‍🏫 mentor cancel for ArmID %q: never placed — row cancelled directly (%s)", in.ArmID, in.Reason)
 			return true
 		}
@@ -593,7 +637,7 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 		}
 		if mentorPrunableTerminalState(r.State) {
 			at.clearMentorLevelArmLocked(in.ArmID)
-			mentorUnregisterLiveArm(in.ArmID)   // I5: the row is terminal now
+				at.mentorUnregisterLiveArm(in.ArmID)   // I5: the row is terminal now
 			at.deleteMentorExitMode(r.Scenario) // P3: delete by the ROW's own scenario
 			return false
 		}
@@ -615,7 +659,7 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 	// must still hand its FILLED quantity to the exit drive — the B1 expiry path
 	// covers only the expiry sweep, not this B3 day-stop / never-add cancel.
 	at.mentorRegisterPartialFillIfAbsent(r)
-	mentorCount("cancel_requested")
+	at.mentorCount("cancel_requested")
 	at.logInfof("🧑‍🏫 mentor cancel requested for ArmID %q: %s", in.ArmID, in.Reason)
 	return true
 }
@@ -646,7 +690,7 @@ func mentorInvalidLogDecision(st mentorInvalidLogState, nowMs int64) (logNow boo
 }
 
 func (at *AutoTrader) mentorRecordLevelInvalid(in mentor.Intent) {
-	mentorCount("intent_" + string(in.Action)) // the counter fires on EVERY event
+	at.mentorCount("intent_" + string(in.Action)) // the counter fires on EVERY event
 	now := mentorClockNow().UnixMilli()
 	at.mentorInvalidLogMu.Lock()
 	if at.mentorInvalidLog == nil {
@@ -675,12 +719,12 @@ func (at *AutoTrader) mentorRecordLevelInvalid(in mentor.Intent) {
 func (at *AutoTrader) mentorSwingFill(arm mentorLiveArm) (r store.ArmedOrderDB, qty float64, ok bool) {
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
-		mentorCount("swing_fill_no_ledger")
+		at.mentorCount("swing_fill_no_ledger")
 		at.logErrorf("🧑‍🏫 mentor swing fill check REFUSED — no armed ledger")
 		return store.ArmedOrderDB{}, 0, false
 	}
 	if err := ledger.DB().First(&r, arm.RowID).Error; err != nil {
-		mentorCount("swing_fill_row_gone")
+		at.mentorCount("swing_fill_row_gone")
 		at.logWarnf("🧑‍🏫 mentor swing fill check REFUSED — ArmID row %d gone: %v", arm.RowID, err)
 		return store.ArmedOrderDB{}, 0, false
 	}
@@ -693,7 +737,7 @@ func (at *AutoTrader) mentorSwingFill(arm mentorLiveArm) (r store.ArmedOrderDB, 
 	if r.Contracts != nil && *r.Contracts > 0 {
 		return r, float64(*r.Contracts), true
 	}
-	mentorCount("swing_fill_unknown_qty")
+	at.mentorCount("swing_fill_unknown_qty")
 	at.logWarnf("🧑‍🏫 mentor swing fill REFUSED — ArmID row %d filled but no contracts (FillQuantity=0, Contracts absent): cannot size its own close; never guessed", arm.RowID)
 	return r, 0, false
 }
@@ -703,22 +747,22 @@ func (at *AutoTrader) mentorSwingFill(arm mentorLiveArm) (r store.ArmedOrderDB, 
 // the swing leg's OWN recorded stop (the arm row's StopPx) — never the ledger's
 // open-orders list. Unknown stop → refuse + log (fail closed), never skip.
 func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
-	arm, ok := mentorLiveArmFor(in.ArmID)
+	arm, ok := at.mentorLiveArmFor(in.ArmID)
 	if !ok {
-		mentorCount("move_be_refused_unknown_arm")
+		at.mentorCount("move_be_refused_unknown_arm")
 		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q not in this process's registry: %s", in.ArmID, in.Reason)
 		return
 	}
 	nt := at.armedTrader()
 	if nt == nil {
-		mentorCount("move_be_refused_unavailable")
+		at.mentorCount("move_be_refused_unavailable")
 		return
 	}
 	// S1: a phantom swing (never filled, or an unattributable fill) must not
 	// move another trade's stop.
 	r, _, ok := at.mentorSwingFill(arm)
 	if !ok {
-		mentorCount("move_be_refused_not_filled")
+		at.mentorCount("move_be_refused_not_filled")
 		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q never filled; the swing leg has no position of its own: %s", in.ArmID, in.Reason)
 		return
 	}
@@ -726,21 +770,21 @@ func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 	// ledger mirror = the arm row's StopPx). Fail closed when it is unknown.
 	curStop := r.StopPx
 	if curStop <= 0 {
-		mentorCount("move_be_refused_no_stop")
+		at.mentorCount("move_be_refused_no_stop")
 		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q filled but its own stop is unknown (StopPx=0); never skip the guard: %s", in.ArmID, in.Reason)
 		return
 	}
 	if refuse, why := mentorNeverWiden(arm.Side, curStop, arm.Entry); refuse {
-		mentorCount("widen_refused")
+		at.mentorCount("widen_refused")
 		at.logWarnf("🧑‍🏫 %s", why)
 		return
 	}
 	if err := moveStopWire(nt, arm.Side, arm.Entry); err != nil {
-		mentorCount("move_be_refused")
+		at.mentorCount("move_be_refused")
 		at.logWarnf("🧑‍🏫 mentor stop→BE refused: %v", err)
 		return
 	}
-	mentorCount("move_be_sent")
+	at.mentorCount("move_be_sent")
 	at.logInfof("🧑‍🏫 mentor stop moved to break-even (entry %.2f) for ArmID %q: %s", arm.Entry, in.ArmID, in.Reason)
 }
 
@@ -749,22 +793,22 @@ func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 // close (S1: CloseLong/CloseShort(sym, 0) would flatten a different mentor
 // position open on the same side).
 func (at *AutoTrader) mentorClosePosition(in mentor.Intent) {
-	arm, ok := mentorLiveArmFor(in.ArmID)
+	arm, ok := at.mentorLiveArmFor(in.ArmID)
 	if !ok {
-		mentorCount("close_refused_unknown_arm")
+		at.mentorCount("close_refused_unknown_arm")
 		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q not in this process's registry: %s", in.ArmID, in.Reason)
 		return
 	}
 	nt := at.armedTrader()
 	if nt == nil {
-		mentorCount("close_refused_unavailable")
+		at.mentorCount("close_refused_unavailable")
 		return
 	}
 	// S1: the close must be attributed to the swing leg's own fill, sized by
 	// its own contracts — never a side-wide 0, never guessed.
 	_, qty, ok := at.mentorSwingFill(arm)
 	if !ok {
-		mentorCount("close_refused_not_filled")
+		at.mentorCount("close_refused_not_filled")
 		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q never filled (or its fill has no attributable contracts); a phantom swing must not close another trade: %s", in.ArmID, in.Reason)
 		return
 	}
@@ -775,15 +819,15 @@ func (at *AutoTrader) mentorClosePosition(in mentor.Intent) {
 	case "short":
 		_, err = nt.CloseShort(at.futuresSymbol(), qty)
 	default:
-		mentorCount("close_refused_bad_side")
+		at.mentorCount("close_refused_bad_side")
 		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — unknown side %q for ArmID %q", arm.Side, in.ArmID)
 		return
 	}
 	if err != nil {
-		mentorCount("close_refused")
+		at.mentorCount("close_refused")
 		at.logWarnf("🧑‍🏫 mentor close failed for ArmID %q: %v", in.ArmID, err)
 		return
 	}
-	mentorCount("close_sent")
+	at.mentorCount("close_sent")
 	at.logInfof("🧑‍🏫 mentor position closed (%s, %.0f contracts) for ArmID %q: %s", arm.Side, qty, in.ArmID, in.Reason)
 }
