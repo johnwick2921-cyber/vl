@@ -22,9 +22,9 @@ func doneAfterWinRig(t *testing.T, dayStart string) (*AutoTrader, *store.Store) 
 	at, st := resetTrader(t, store.StrategyConfig{RiskControl: rc})
 	at.mentorWireProductionSeams() // the REAL day-read seams, not test injection
 	t.Cleanup(func() {
-		mentorDayNetSource = nil
-		mentorClosedProfitSource = nil
-		mentorClosedLossSource = nil
+		at.mentorDayNetSource = nil
+		at.mentorClosedProfitSource = nil
+		at.mentorClosedLossSource = nil
 		mentorNowSource = nil
 	})
 	return at, st

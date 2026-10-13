@@ -69,7 +69,7 @@ func (at *AutoTrader) mentorFunnelTick(bars, intents int) {
 	dayKey := kernel.CMESessionDayKey(now)
 	kernelRefusals := mentorKernelRefusals(at)
 	kernelFills := mentorKernelFills(at)
-	traderRefusals := mentorTraderRefusals()
+	traderRefusals := at.mentorTraderRefusals()
 
 	f := &at.mentorFunnel
 	f.mu.Lock()
@@ -130,12 +130,12 @@ func mentorKernelFills(at *AutoTrader) map[string]int {
 	return out
 }
 
-// mentorTraderRefusals returns the TRADER-side refusals from the mentorCount
-// snapshot — every counted drop the injector made, not the stage/tier/OK
-// counters.
-func mentorTraderRefusals() map[string]int {
+// mentorTraderRefusals returns the TRADER-side refusals from THIS trader's
+// mentorCount snapshot — every counted drop the injector made, not the
+// stage/tier/OK counters.
+func (at *AutoTrader) mentorTraderRefusals() map[string]int {
 	out := map[string]int{}
-	for k, v := range MentorCountSnapshot() {
+	for k, v := range at.mentorCountSnapshot() {
 		if mentorTraderRefusalKey(k) {
 			out[k] = v
 		}

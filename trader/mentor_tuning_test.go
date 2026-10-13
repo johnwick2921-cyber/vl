@@ -79,12 +79,13 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 // 2026-10-04 rulings: school 1, spent 300, cap 15 (R-B), ISB reverse ON (R-C),
 // swing max stop 100 (R-D). No block, an empty block and a nil strategy agree.
 func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
+	at := funnelAT(t)
 	for name, rc := range map[string]*store.RiskControlConfig{
 		"nil":   nil,
 		"unset": {MentorMode: true},
 		"empty": {MentorMode: true, MentorTuning: &store.MentorTuning{}},
 	} {
-		got := mentorTuningResolve(rc)
+		got := mentorTuningResolve(at, rc)
 		want := mentorTuned{
 			TriggerSchool: 1, PingPongMinGapPts: 50, PingPongCandleMaxPts: 20, PingPongCandleLookback: 30,
 			LevelMaxVisits: 3, OrbGateEnabled: true, ISBReverseEMA9Enabled: true,
@@ -101,16 +102,16 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 // TestMentorTuningBadValuesFailClosed — out-of-range values keep the default
 // and are counted, never half-applied.
 func TestMentorTuningBadValuesFailClosed(t *testing.T) {
-	ResetMentorCountersForTest()
-	got := mentorTuningResolve(&store.RiskControlConfig{MentorTuning: &store.MentorTuning{
+	at := funnelAT(t)
+	got := mentorTuningResolve(at, &store.RiskControlConfig{MentorTuning: &store.MentorTuning{
 		TriggerSchool: 3, PingPongMinGapPts: -5, PingPongCandleMaxPts: 9999, PingPongCandleLookback: 9999,
 		LevelMaxVisits: intPtr(99), DayGateSpentPts: 1, DayGateTargetCapPts: 500, SwingMaxStopPts: 5,
 	}})
-	want := mentorTuningResolve(nil)
+	want := mentorTuningResolve(at, nil)
 	if got != want {
 		t.Errorf("bad values changed the result: %+v, want defaults %+v", got, want)
 	}
-	if n := MentorCountSnapshot()["tuning_bad_value"]; n != 8 {
+	if n := at.mentorCountSnapshot()["tuning_bad_value"]; n != 8 {
 		t.Errorf("tuning_bad_value = %d, want 8 (one per bad field)", n)
 	}
 }
@@ -133,22 +134,22 @@ func TestMentorTuningOneValueForGateAndKernel(t *testing.T) {
 		return mentor.Intent{Action: mentor.PlaceStopLimitEntry, Setup: "SWING4H", Side: mentor.SideLong,
 			Price: 30000, Stop: 30000 - stop, Target: 30000 + 2*stop, StopPts: stop, TargetPts: 2 * stop, ExpiryMs: 100_000}
 	}
-	resetMentorCounters()
+	resetMentorCounters(at)
 	at.mentorDispatchIntent(swing(80), mentorTierInputs{}, 1000, 1100)
-	if n := MentorCountSnapshot()["refused_r8"]; n != 1 {
+	if n := at.mentorCountSnapshot()["refused_r8"]; n != 1 {
 		t.Errorf("a swing stop of 80 with swing_max_stop_pts=80 must be refused at the gate (refused_r8=%d)", n)
 	}
-	resetMentorCounters()
+	resetMentorCounters(at)
 	at.mentorDispatchIntent(swing(79), mentorTierInputs{}, 1000, 1100)
-	if n := MentorCountSnapshot()["refused_r8"]; n != 0 {
+	if n := at.mentorCountSnapshot()["refused_r8"]; n != 0 {
 		t.Errorf("a swing stop of 79 must pass the R8 gate (refused_r8=%d)", n)
 	}
 
 	spent := mentor.Intent{Action: mentor.PlaceStopLimitEntry, Setup: "PHL", Side: mentor.SideLong,
 		Price: 30000, Stop: 29987, Target: 30026, StopPts: 13, TargetPts: 26, SpentDay: true, ExpiryMs: 100_000}
-	resetMentorCounters()
+	resetMentorCounters(at)
 	at.mentorDispatchIntent(spent, mentorTierInputs{SpentDay: true}, 1000, 1100)
-	if n := MentorCountSnapshot()["refused_r9"]; n != 1 {
+	if n := at.mentorCountSnapshot()["refused_r9"]; n != 1 {
 		t.Errorf("a spent-day stop of 13 with the cap at 12 must be refused (refused_r9=%d)", n)
 	}
 }

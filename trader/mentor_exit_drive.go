@@ -142,7 +142,7 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 			p.FlatReads++
 			if p.BarsSinceFill >= 2 && p.FlatReads >= 2 {
 				at.mentorUnregisterLivePos(p.Legs[0].SignalID)
-				mentorCount("exit_drive_flat_unregistered")
+				at.mentorCount("exit_drive_flat_unregistered")
 				at.logInfof("🧑‍🏫 mentor exit-drive: %s %s is flat — dropped from the loop", p.Pos.Symbol, p.Pos.Side)
 			}
 			continue
@@ -251,7 +251,7 @@ func (at *AutoTrader) mentorLatchLeg1GoneIfRunnerRemains(p *mentorLivePos, qty f
 		return // side flat (handled above) or leg 1 still present
 	}
 	if at.mentorLatchLeg1Scaled(p.Legs[0].SignalID, mentorClockNow().UnixMilli()) {
-		mentorCount("leg1_at_target")
+		at.mentorCount("leg1_at_target")
 		at.logInfof("🧑‍🏫 mentor leg 1 gone on the broker snapshot (qty %.0f ≤ runner %d) — Scaled latched [I7]", qty, p.Pos.Leg2)
 	}
 }
@@ -283,7 +283,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	// ── Mode D guard: the spent-day runner is capped at 2 (placed by DS-103;
 	// the loop ASSERTS it, never reduces). ────────────────────────────────
 	if p.SpentDay && p.Legs[1].Qty > mentorSpentDayRunnerCap {
-		mentorCount("spent_day_runner_over_cap")
+		at.mentorCount("spent_day_runner_over_cap")
 		at.logWarnf("🧑‍🏫 mentor spent-day runner %d over the cap %d — asserting, not reducing [D5.1]", p.Legs[1].Qty, mentorSpentDayRunnerCap)
 	}
 
@@ -328,7 +328,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			p.Legs[0].TP = tp
 			leg1Target = tp
 			at.logInfof("🧑‍🏫 mentor ISB leg1 modify_bracket WOULD set TP %.2f (candle-3 close / +1R, whichever first) — UNWIRED (Q2 unproven), logged not sent", tp)
-			mentorCount("modify_bracket_isb_logged")
+			at.mentorCount("modify_bracket_isb_logged")
 		}
 	}
 
@@ -358,7 +358,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			}
 			pos.ArmedBE = true
 			pos.Stop = pos.Entry
-			mentorCount("be_armed_both_legs")
+			at.mentorCount("be_armed_both_legs")
 		}
 	}
 
@@ -375,7 +375,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		}
 		if (long && h >= scaleAt) || (!long && l <= scaleAt) {
 			if at.mentorSetScaledCandle(p) {
-				mentorCount("leg1_at_target")
+				at.mentorCount("leg1_at_target")
 			}
 		}
 	}
@@ -454,14 +454,14 @@ func (at *AutoTrader) mentorMoveLegStop(nt *ntTrader.TCPTrader, side string, leg
 		return errMentorStopManual
 	}
 	if refuse, why := mentorNeverWiden(side, leg.Stop, newStop); refuse {
-		mentorCount("widen_refused")
+		at.mentorCount("widen_refused")
 		return fmt.Errorf("mentor leg stop move refused: %s", why)
 	}
 	if err := mentorMoveStopForSignalWire(nt, leg.SignalID, side, newStop, leg.Wire); err != nil {
-		mentorCount("move_stop_failed")
+		at.mentorCount("move_stop_failed")
 		return err
 	}
-	mentorCount("move_stop_sent")
+	at.mentorCount("move_stop_sent")
 	// F1: the wire seam returned nil, but NT8 may still refuse the move (no
 	// live bracket) and reply with NO ack — so a nil return only proves the
 	// frame was SENT, not that the stop moved. Record a pending check for the
@@ -842,7 +842,7 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 			// No fresh book → no verdict yet; warn once and wait.
 			if !mv.staleWarned {
 				mv.staleWarned = true
-				mentorCount("stop_move_stale_book")
+				at.mentorCount("stop_move_stale_book")
 				at.logWarnf("🧑‍🏫 mentor stop-move verify: stale book (%s old) — no verdict yet for %s leg %d", now.Sub(recvAt).Round(time.Second), mv.signalID, mv.wireLeg)
 			}
 			continue
@@ -853,7 +853,7 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 			// No live stop order → leave it to the protection net (F4); warn
 			// once, then stop managing this move.
 			if !mv.noOrderWarned {
-				mentorCount("stop_move_no_order")
+				at.mentorCount("stop_move_no_order")
 				at.logWarnf("🧑‍🏫 mentor stop-move verify: NO live stop order for %s leg %d — leaving to the protection net (F4)", mv.signalID, mv.wireLeg)
 			}
 			at.mentorDeletePendingStopMove(key)
@@ -872,7 +872,7 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 			brokerPrice = o.StopPrice
 		}
 		if applied {
-			mentorCount("stop_move_confirmed")
+			at.mentorCount("stop_move_confirmed")
 			at.logInfof("\U0001F9D1\u200D\U0001F3EB stop move CONFIRMED at NT8: %s leg %d stop %.2f", mv.signalID, mv.wireLeg, mv.want)
 			at.mentorDeletePendingStopMove(key)
 			at.mentorResetStopMoveEpisode(key)
@@ -892,7 +892,7 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 			tighter = brokerPrice < mv.want-halfTick
 		}
 		if tighter {
-			mentorCount("stop_move_broker_tighter")
+			at.mentorCount("stop_move_broker_tighter")
 			if at.mentorAdoptBrokerStop(mv.signalID, mv.wireLeg, brokerPrice) {
 				at.logWarnf("🧑‍🏫 stop move: broker stop %.2f is TIGHTER than wanted %.2f — kept", brokerPrice, mv.want)
 			}
@@ -907,7 +907,7 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 		// want every candle still reaches "manage by hand" on the second miss.
 		misses, startMs := at.mentorBumpStopMoveEpisode(key)
 		if misses == 1 {
-			mentorCount("stop_move_not_applied")
+			at.mentorCount("stop_move_not_applied")
 			at.logErrorf("🚨 STOP MOVE NOT APPLIED at NT8: %s leg %d want %.2f broker %.2f", mv.signalID, mv.wireLeg, mv.want, brokerPrice)
 			// ONE P0 per episode (the event id keys on the episode start, never
 			// on the wanted price — a fresh want must not fire a fresh P0).
@@ -917,11 +917,11 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 				fmt.Sprintf("%s leg %d: wanted %.2f, broker at %.2f", mv.signalID, mv.wireLeg, mv.want, brokerPrice))
 			// Re-send the SAME wanted price ONCE (wider case only).
 			if err := mentorMoveStopForSignalWire(nt, mv.signalID, mv.side, mv.want, mv.wireLeg); err != nil {
-				mentorCount("stop_move_resend_failed")
+				at.mentorCount("stop_move_resend_failed")
 				at.logErrorf("🚨 mentor stop-move re-send FAILED for %s leg %d: %v", mv.signalID, mv.wireLeg, err)
 				continue // keep the pending check; the next candle re-renders
 			}
-			mentorCount("stop_move_resend_sent")
+			at.mentorCount("stop_move_resend_sent")
 			// Rewind the send clock so the re-send is re-verified next snapshot.
 			at.mentorExitMu.Lock()
 			if cur := at.mentorPendingStopMoves[key]; cur != nil {
@@ -932,7 +932,7 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 		}
 
 		// Second consecutive miss → broker truth wins; manage by hand + latch.
-		mentorCount("stop_move_not_applied_twice")
+		at.mentorCount("stop_move_not_applied_twice")
 		at.emitAlert("P0", "stop-move-not-applied-twice",
 			fmt.Sprintf("stop-move-twice:%s#%d:%d", mv.signalID, mv.wireLeg, startMs),
 			"Stop not applied twice — manage by hand",
@@ -964,7 +964,7 @@ func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 		if p == nil {
 			continue
 		}
-		armed, _, _ := mentorMaybeArmResonance(&p.Pos, isbSide, p.BarsSinceFill, p.RunnerTarget)
+		armed, _, _ := mentorMaybeArmResonance(at, &p.Pos, isbSide, p.BarsSinceFill, p.RunnerTarget)
 		if !armed {
 			continue
 		}
@@ -992,7 +992,7 @@ func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 		}
 		if runnerTarget > 0 {
 			at.logInfof("🧑‍🏫 mentor resonance leg1 modify_bracket WOULD set TP %.2f (runner target) — UNWIRED (Q2 unproven), logged not sent", runnerTarget)
-			mentorCount("modify_bracket_resonance_logged")
+			at.mentorCount("modify_bracket_resonance_logged")
 		}
 		at.logInfof("🧑‍🏫 mentor resonance ARMED: %s %s → mode A (BE, no trail, no 1:1) [D2.4 p1]", p.Pos.Symbol, p.Pos.Side)
 	}

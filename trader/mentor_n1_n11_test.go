@@ -74,7 +74,6 @@ func TestMentorReloadSeedPathBumpsEpoch(t *testing.T) {
 	mentorLiveMu.Lock()
 	mentorLiveArms = map[string]mentorLiveArm{}
 	mentorLiveMu.Unlock()
-	wireMentorPlacementSeams(t)
 	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}}
 	_, st := resetTrader(t, cfg)
 
@@ -115,6 +114,7 @@ func TestMentorReloadSeedPathBumpsEpoch(t *testing.T) {
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-1", Setup: "ISB",
 		Side: mentor.SideLong, Price: 200, Stop: 199, Target: 204, StopPts: 1, TargetPts: 4,
 		ExpiryMs: time.Now().UnixMilli() + 60_000}
+	wireMentorPlacementSeams(t, at2)
 	at2.mentorArmIntent(in, mentorSizeChoice{Contracts: 5, Tier: "base", Why: "test"}, 1000, 1100, "B", 0)
 
 	arm, ok := at2.mentorLiveArmFor("isb-1")
@@ -140,7 +140,7 @@ func TestMentorArmRowZeroRefuses(t *testing.T) {
 	mentorLiveMu.Unlock()
 	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
 	ledger := st.ArmedOrders()
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 
 	// Pin the epoch and seed a TERMINAL no-signal row for THIS construction's
 	// scenario, so UpsertArm finds it and no-ops (returns nil, id 0).
@@ -165,7 +165,7 @@ func TestMentorArmRowZeroRefuses(t *testing.T) {
 	if _, ok := at.mentorLiveArmFor("isb-1"); ok {
 		t.Fatal("a row-0 arm must NOT be registered")
 	}
-	if c := MentorCountSnapshot()["placement_refused_arm_id_zero"]; c != 1 {
+	if c := at.mentorCountSnapshot()["placement_refused_arm_id_zero"]; c != 1 {
 		t.Fatalf("placement_refused_arm_id_zero = %d, want 1", c)
 	}
 	var n int64

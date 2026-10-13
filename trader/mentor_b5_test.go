@@ -20,9 +20,8 @@ import (
 // placement.
 
 func TestB5ExitModeIsPerArmNotPerSide(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	// The confluence flag rides the intent so the two arms fork differently.
 	mentorConfluenceForIntent = func(in mentor.Intent) bool { return in.Confluence }
 	t.Cleanup(func() { mentorConfluenceForIntent = nil })

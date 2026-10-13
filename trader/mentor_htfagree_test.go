@@ -14,7 +14,7 @@ import (
 // call-site path (mentorExtraFor → mentorSizeFor).
 func TestMentorBigTierReachableOnlyWhen4hAnd1hAgree(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	mentorConfluenceForIntent = func(in mentor.Intent) bool { return true }
 
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "PHL",

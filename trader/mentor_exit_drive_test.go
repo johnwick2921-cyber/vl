@@ -52,7 +52,7 @@ func newDriveAT(t *testing.T) (*AutoTrader, func() []driveMove) {
 	}
 	t.Cleanup(func() {
 		mentorMoveStopForSignalWire = old
-		ResetMentorCountersForTest()
+		at.resetMentorCountersForTest()
 	})
 	return at, func() []driveMove { mu.Lock(); defer mu.Unlock(); return append([]driveMove(nil), moves...) }
 }
@@ -172,14 +172,14 @@ func TestMentorExitDrivePosISB_PartialResolvedOnce(t *testing.T) {
 	if p.Legs[0].TP != 12 {
 		t.Fatalf("leg1 TP = %.2f, want 12 (+1R first)", p.Legs[0].TP)
 	}
-	if got := MentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
+	if got := at.mentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
 		t.Fatalf("modify_bracket_isb_logged = %d, want 1 (ONCE)", got)
 	}
 	assertMoves(t, moves())
 	// a later candle must NOT re-fire the ISB partial.
 	p.BarsSinceFill = 2
 	at.mentorExitDrivePos(nil, p, 12.5, 13, 12, 0)
-	if got := MentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
+	if got := at.mentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
 		t.Fatalf("modify_bracket_isb_logged = %d after a later candle, want 1 (no re-fire)", got)
 	}
 }
@@ -306,7 +306,7 @@ func TestMentorArmResonanceOnISB(t *testing.T) {
 		t.Fatalf("resonance not armed: mode=%s armed=%v", p.Pos.Mode, p.Pos.ArmedBE)
 	}
 	assertMoves(t, moves(), driveMove{"entry", "long", 10})
-	snap := MentorCountSnapshot()
+	snap := at.mentorCountSnapshot()
 	if snap["resonance_armed"] != 1 || snap["modify_bracket_resonance_logged"] != 1 {
 		t.Fatalf("resonance counters: armed=%d modify_logged=%d, want 1/1", snap["resonance_armed"], snap["modify_bracket_resonance_logged"])
 	}
@@ -403,12 +403,12 @@ func TestMentorExitDrivePosISB_PartialOnlyOnTheFillCandle(t *testing.T) {
 	p.Pos.Origin = "ISB"
 	p.BarsSinceFill = 1
 	at.mentorExitDrivePos(nil, p, 11.0, 11.5, 10.5, 0) // fill candle closes in profit below +1R
-	if got := MentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
+	if got := at.mentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
 		t.Fatalf("the fill-candle close must resolve the partial once, got %d", got)
 	}
 	p.BarsSinceFill = 2
 	at.mentorExitDrivePos(nil, p, 11.4, 11.8, 11.1, 0) // still below +1R, still in profit
-	if got := MentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
+	if got := at.mentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
 		t.Fatalf("a later candle must not re-fire the ISB partial, got %d logs", got)
 	}
 }

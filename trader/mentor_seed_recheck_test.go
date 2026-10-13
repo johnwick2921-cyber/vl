@@ -67,11 +67,11 @@ func runMentorSeedDepthRecheck(t *testing.T, now int64) {
 		},
 		store: st,
 	}
-	wireMentorPlacementSeams(t)
-	mentorSourceDepthSource = nil // the real seam, wired by the seed below
+	wireMentorPlacementSeams(t, at)
+	at.mentorSourceDepthSource = nil // the real seam, wired by the seed below
 	t.Cleanup(func() {
-		mentorSourceDepthSource = nil
-		mentorSeedDepths = nil
+		at.mentorSourceDepthSource = nil
+		at.mentorSeedDepths = nil
 	})
 	at.mentorSeedAtStart()
 
@@ -114,7 +114,7 @@ func runMentorSeedDepthRecheck(t *testing.T, now int64) {
 		t.Fatalf("the placement gate never cleared: trader %v, evaluator %v, depths %v",
 			at.mentorSourcesMissing(), at.mentorEval.SourcesMissing(), at.mentorEval.Depths())
 	}
-	if d, ok := mentorSourceDepth("4h EMA34"); !ok || d < 102 {
+	if d, ok := at.mentorSourceDepth("4h EMA34"); !ok || d < 102 {
 		t.Fatalf("4h depth seam after the clear = %d/%v, want >= 102", d, ok)
 	}
 	if l := at.mentorEval.TakeDepthMet(); l != "" {

@@ -40,7 +40,6 @@ func seedClosedLoss(t *testing.T, st *store.Store, traderID string, now time.Tim
 // MUTANT: drop the realized <= -limit comparison (always pass) → this test goes
 // RED (no refusal).
 func TestMentorDailyLossGateRefusesAtLimit(t *testing.T) {
-	ResetMentorCountersForTest()
 	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{DailyLossLimitUSD: 100}}
 	at, st := resetTrader(t, cfg)
 	now := dailyLossNow()
@@ -50,7 +49,7 @@ func TestMentorDailyLossGateRefusesAtLimit(t *testing.T) {
 	if !refuse {
 		t.Fatalf("a $150 loss against a $100 limit must refuse, got allow (%q)", why)
 	}
-	if snap := MentorCountSnapshot(); snap["daily_loss_refused"] != 1 {
+	if snap := at.mentorCountSnapshot(); snap["daily_loss_refused"] != 1 {
 		t.Fatalf("daily_loss_refused must be counted once, got %v", snap)
 	}
 }
@@ -58,7 +57,6 @@ func TestMentorDailyLossGateRefusesAtLimit(t *testing.T) {
 // TestMentorDailyLossGateAllowsBelowLimit pins the pass: a $50 loss against a
 // $100 limit is still inside the limit → allowed, nothing counted.
 func TestMentorDailyLossGateAllowsBelowLimit(t *testing.T) {
-	ResetMentorCountersForTest()
 	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{DailyLossLimitUSD: 100}}
 	at, st := resetTrader(t, cfg)
 	now := dailyLossNow()
@@ -67,7 +65,7 @@ func TestMentorDailyLossGateAllowsBelowLimit(t *testing.T) {
 	if refuse, why := at.mentorDailyLossGate(now); refuse {
 		t.Fatalf("a $50 loss against a $100 limit must allow, got refuse (%q)", why)
 	}
-	if snap := MentorCountSnapshot(); snap["daily_loss_refused"] != 0 {
+	if snap := at.mentorCountSnapshot(); snap["daily_loss_refused"] != 0 {
 		t.Fatalf("daily_loss_refused must NOT be counted, got %v", snap)
 	}
 }
@@ -75,7 +73,6 @@ func TestMentorDailyLossGateAllowsBelowLimit(t *testing.T) {
 // TestMentorDailyLossGateUnconfiguredPasses pins the off case: the guardrails
 // master OFF (even with a configured limit) means the guard is not enforced.
 func TestMentorDailyLossGateUnconfiguredPasses(t *testing.T) {
-	ResetMentorCountersForTest()
 	off := false
 	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{
 		GuardrailsEnabled: &off,
@@ -94,7 +91,6 @@ func TestMentorDailyLossGateUnconfiguredPasses(t *testing.T) {
 // canon 40) refuses the placement — an unknown loss is not a confident "under
 // the limit". Mutant: drop the unresolved branch → allowed → RED.
 func TestMentorDailyLossGateRefusesOnUnresolvedClose(t *testing.T) {
-	ResetMentorCountersForTest()
 	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{DailyLossLimitUSD: 100}}
 	at, st := resetTrader(t, cfg)
 	now := dailyLossNow()
