@@ -47,6 +47,18 @@ func (tm *TraderManager) bootClaimFor(exchangeCfg *store.Exchange, traderCfg *st
 	return "", false
 }
 
+// shouldAutoStart is the REL18-C item-5 gate addTraderFromStore calls before
+// auto-starting a trader marked running. At boot the first trader on a
+// (symbol, account) claims it and starts; a second is refused (not started,
+// marked not-running, P0). Returns false when the trader must NOT auto-start.
+func (tm *TraderManager) shouldAutoStart(exchangeCfg *store.Exchange, traderCfg *store.Trader, st *store.Store) bool {
+	if holder, refused := tm.bootClaimFor(exchangeCfg, traderCfg); refused {
+		tm.refuseBootDuplicate(traderCfg, exchangeCfg, holder, st)
+		return false
+	}
+	return true
+}
+
 // refuseBootDuplicate handles a REL18-C item-5 refusal: a second trader marked
 // running on an already-claimed (symbol, account) at boot is NOT auto-started.
 // It is loaded (stopped), marked not-running in the DB, and a P0 names both
@@ -796,8 +808,7 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 		// (symbol, account). The first by created_at claims the pair; a second
 		// trader marked running on the same pair is refused (not auto-started,
 		// marked not-running, P0 + READ boot line). Per-user reloads skip this.
-		if holder, refused := tm.bootClaimFor(exchangeCfg, traderCfg); refused {
-			tm.refuseBootDuplicate(traderCfg, exchangeCfg, holder, st)
+		if !tm.shouldAutoStart(exchangeCfg, traderCfg, st) {
 			return nil
 		}
 		logger.Infof("%s 🔄 Auto-starting trader (was running before shutdown)...", traderLogTag(traderCfg.ID, traderCfg.Name))
