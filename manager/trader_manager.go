@@ -827,7 +827,9 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 				logger.Warnf("%s trader stopped with error: %v", traderLogTag(traderID, traderName), err)
 				// Update database to reflect stopped state
 				if st != nil {
-					_ = st.Trader().UpdateStatus(userID, traderID, false)
+					if serr := st.Trader().UpdateStatus(userID, traderID, false); serr != nil {
+						logger.Warnf("%s failed to mark trader not-running after it stopped with error: %v", traderLogTag(traderID, traderName), serr)
+					}
 				}
 			}
 		})
