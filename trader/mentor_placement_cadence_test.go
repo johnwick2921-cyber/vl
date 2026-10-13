@@ -23,7 +23,7 @@ func TestMentorPlacementCadencePlacesAnArmAuthoredBetweenScans(t *testing.T) {
 
 	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
 	mentorWireSeams(t, at, ledger)
-	resetMentorCounters()
+	resetMentorCounters(at)
 
 	// Pin the mentor clock to an RTH instant (class 110): the admission chain
 	// asks the calendar on the clock it is GIVEN.

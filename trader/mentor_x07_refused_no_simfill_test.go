@@ -56,9 +56,9 @@ func TestMentorRefusedIntentLeavesNoSimFill(t *testing.T) {
 		})
 
 		at.mentorEval.State.Limits.Apply([]mentor.Intent{seed}, prev, cur, now, levels, cfg)
-		resetMentorCounters()
+		resetMentorCounters(at)
 		at.mentorDispatchIntent(seed, mentorTierInputs{}, 1000, 1100)
-		if got := MentorCountSnapshot()["placement_held"]; got != 1 {
+		if got := at.mentorCountSnapshot()["placement_held"]; got != 1 {
 			t.Fatalf("the intent must be refused via MENTOR_PLACE off (placement_held=1), got %d", got)
 		}
 		at.mentorEval.State.Limits.Apply(nil, prev, fillCur, now+60_000, levels, cfg)

@@ -73,7 +73,6 @@ func TestMentorInvalidLogDecisionPure(t *testing.T) {
 // ONE level within 15 minutes → the counter reads 10 and exactly ONE INFO line
 // is emitted. The mutant that logs every event fails this.
 func TestMentorLevelInvalidLogsOncePer15m(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := &AutoTrader{id: "t-invalid"}
 	now := time.Date(2026, 9, 23, 10, 0, 0, 0, kernel.CTLocation())
 	mentorNowSource = func() time.Time { return now }
@@ -90,7 +89,7 @@ func TestMentorLevelInvalidLogsOncePer15m(t *testing.T) {
 		})
 	}
 
-	if got := MentorCountSnapshot()["intent_level_invalid"]; got != 10 {
+	if got := at.mentorCountSnapshot()["intent_level_invalid"]; got != 10 {
 		t.Fatalf("counter = %d, want 10", got)
 	}
 	if got := hook.count("mentor level invalidated"); got != 1 {

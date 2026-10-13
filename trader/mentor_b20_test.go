@@ -45,7 +45,6 @@ func TestMentorConfluenceUpgradeModePure(t *testing.T) {
 // branch to C and NEVER re-runs the size table (the size-unchanged half of the
 // rule). Mutant: dropping the setMentorExitMode call leaves the branch B → RED.
 func TestMentorConfluenceUpgradeHandler(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	// B5 (L8): the OPEN position carries its branch on its live-position
 	// struct (set at fill). The upgrade moves it there.
@@ -65,17 +64,17 @@ func TestMentorConfluenceUpgradeHandler(t *testing.T) {
 	if sized {
 		t.Fatalf("the upgrade must never re-run the size table")
 	}
-	if got := MentorCountSnapshot()["exit_upgrade_c"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_upgrade_c"]; got != 1 {
 		t.Fatalf("the upgrade must be counted once, got %d", got)
 	}
 
 	// a second upgrade on an already-C position is a counted no-op, never a
 	// second exit_upgrade_c.
 	at.mentorConfluenceUpgrade(in)
-	if got := MentorCountSnapshot()["exit_upgrade_c"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_upgrade_c"]; got != 1 {
 		t.Fatalf("an already-confluence position must not double-count, got %d", got)
 	}
-	if got := MentorCountSnapshot()["exit_upgrade_noop"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_upgrade_noop"]; got != 1 {
 		t.Fatalf("the no-op must be counted once, got %d", got)
 	}
 
@@ -83,7 +82,7 @@ func TestMentorConfluenceUpgradeHandler(t *testing.T) {
 	sh := in
 	sh.Side = mentor.SideShort
 	at.mentorConfluenceUpgrade(sh)
-	if got := MentorCountSnapshot()["exit_upgrade_no_position"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_upgrade_no_position"]; got != 1 {
 		t.Fatalf("a no-position upgrade must be counted once, got %d", got)
 	}
 	if got := at.mentorExitMode("short"); got != "" {
@@ -94,7 +93,6 @@ func TestMentorConfluenceUpgradeHandler(t *testing.T) {
 // TestMentorConfluenceUpgradeEndToEnd exercises the evaluator and trader
 // dispatch together. Mutating the production action link leaves the exit on B.
 func TestMentorConfluenceUpgradeEndToEnd(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	at.mentorRegisterLivePos("sig-long", &mentorLivePos{Pos: mentorPosition{Side: "long", Mode: "B"}})
 
@@ -139,7 +137,7 @@ func TestMentorConfluenceUpgradeEndToEnd(t *testing.T) {
 	if sized {
 		t.Fatal("the confluence upgrade must not re-run the size table")
 	}
-	if got := MentorCountSnapshot()["exit_upgrade_c"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_upgrade_c"]; got != 1 {
 		t.Fatalf("the kernel-to-trader upgrade must be applied once, got %d", got)
 	}
 }
@@ -147,9 +145,8 @@ func TestMentorConfluenceUpgradeEndToEnd(t *testing.T) {
 // TestMentorPlacementRegistersExitBranch: the entry-time fork (B for a plain
 // ISB) is registered per open position — the state a later upgrade switches.
 func TestMentorPlacementRegistersExitBranch(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
 	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
 	t.Cleanup(func() { mentorNowSource = nil })

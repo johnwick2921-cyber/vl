@@ -72,7 +72,7 @@ func TestMentorArmRowZeroRefuses(t *testing.T) {
 	mentorLiveMu.Unlock()
 	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
 	ledger := st.ArmedOrders()
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 
 	// Pin the epoch and seed a TERMINAL no-signal row for THIS construction's
 	// scenario, so UpsertArm finds it and no-ops (returns nil, id 0).
@@ -97,7 +97,7 @@ func TestMentorArmRowZeroRefuses(t *testing.T) {
 	if _, ok := mentorLiveArmFor("isb-1"); ok {
 		t.Fatal("a row-0 arm must NOT be registered")
 	}
-	if c := MentorCountSnapshot()["placement_refused_arm_id_zero"]; c != 1 {
+	if c := at.mentorCountSnapshot()["placement_refused_arm_id_zero"]; c != 1 {
 		t.Fatalf("placement_refused_arm_id_zero = %d, want 1", c)
 	}
 	var n int64

@@ -34,7 +34,7 @@ func TestMentorSeedAtStart(t *testing.T) {
 			},
 			store: st,
 		}
-		wireMentorPlacementSeams(t)
+		wireMentorPlacementSeams(t, at)
 		at.mentorSeedAtStart()
 
 		if ms := at.mentorEval.SourcesMissing(); len(ms) == 0 {
@@ -79,7 +79,7 @@ func TestMentorSeedAtStart(t *testing.T) {
 					},
 					store: st,
 				}
-				wireMentorPlacementSeams(t)
+				wireMentorPlacementSeams(t, at)
 				at.mentorSeedAtStart()
 
 				if ms := at.mentorEval.SourcesMissing(); len(ms) != 0 {
@@ -95,10 +95,10 @@ func TestMentorSeedAtStart(t *testing.T) {
 				// so the EMA value is unchanged; the count drops the newest
 				// contract's pre-roll sparse snapshots).
 				want1m := at.mentorEval.Depths()["1m EMA34"]
-				if d, ok := mentorSourceDepth("1m EMA34"); !ok || d != want1m {
+				if d, ok := at.mentorSourceDepth("1m EMA34"); !ok || d != want1m {
 					t.Fatalf("1m EMA34 depth from the seed: %d/%v, want %d/true", d, ok, want1m)
 				}
-				if d, ok := mentorSourceDepth("4h EMA34"); !ok || d < 102 || d > 110 {
+				if d, ok := at.mentorSourceDepth("4h EMA34"); !ok || d < 102 || d > 110 {
 					t.Fatalf("4h EMA34 depth from the seed: %d/%v, want 102..110/true", d, ok)
 				}
 			})
@@ -132,7 +132,7 @@ func TestMentorSeedAtStartFirstTickDoesNotReAdvance(t *testing.T) {
 		},
 		store: st,
 	}
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	at.mentorSeedAtStart()
 
 	if at.mentorEval == nil {
@@ -315,7 +315,7 @@ func TestMentorSeedAtStartBootLineReadsSeededDepth(t *testing.T) {
 		},
 		store: st,
 	}
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	logBuf := captureTraderLog(t)
 	at.mentorSeedAtStart()
 

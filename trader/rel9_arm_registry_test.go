@@ -33,8 +33,8 @@ func TestRel9FilledSwingSurvivesNeverAddSweep(t *testing.T) {
 	now := b3Clock(10, 30)
 	mentorNowSource = func() time.Time { return now }
 	t.Cleanup(func() { mentorNowSource = nil })
-	mentorOpenSideSource = func() string { return "long" } // a mentor position is OPEN
-	t.Cleanup(func() { mentorOpenSideSource = nil })
+	at.mentorOpenSideSource = func() string { return "long" } // a mentor position is OPEN
+	t.Cleanup(func() { at.mentorOpenSideSource = nil })
 
 	// Author the swing arm through the production path, then fill it.
 	at.mentorArmIntent(
@@ -64,18 +64,18 @@ func TestRel9FilledSwingSurvivesNeverAddSweep(t *testing.T) {
 	if _, ok := mentorLiveArmFor("swing-rel9"); !ok {
 		t.Fatal("a FILLED swing arm must NOT be pruned by the never-add sweep (P1)")
 	}
-	if got := MentorCountSnapshot()["cancel_requested"]; got != 0 {
+	if got := at.mentorCountSnapshot()["cancel_requested"]; got != 0 {
 		t.Fatalf("the never-add sweep must count/log nothing for a filled arm, got cancel_requested=%d", got)
 	}
 
 	// MoveStopBE must still be ACCEPTED — the registry entry survived.
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	at.mentorDispatchIntent(
 		mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-rel9", Reason: "test +1R BE"},
 		mentorTierInputs{}, now.UnixMilli(), now.UnixMilli(),
 	)
-	if got := MentorCountSnapshot()["move_be_sent"]; got != 1 {
-		t.Fatalf("MoveStopBE must be accepted for the filled swing, move_be_sent=%d counters=%v", got, MentorCountSnapshot())
+	if got := at.mentorCountSnapshot()["move_be_sent"]; got != 1 {
+		t.Fatalf("MoveStopBE must be accepted for the filled swing, move_be_sent=%d counters=%v", got, at.mentorCountSnapshot())
 	}
 }
 
@@ -112,11 +112,11 @@ func TestRel9CancelPendingNotRecounted(t *testing.T) {
 	}
 	mentorRegisterLiveArm("lvl-cp", at.id, row.ID, "long", 29600)
 
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	if at.mentorCancelArm(mentor.Intent{Action: mentor.CancelArm, ArmID: "lvl-cp", Reason: "test"}) {
 		t.Fatal("a cancel_pending row must not be re-requested")
 	}
-	if got := MentorCountSnapshot()["cancel_requested"]; got != 0 {
+	if got := at.mentorCountSnapshot()["cancel_requested"]; got != 0 {
 		t.Fatalf("a cancel_pending row must not be re-counted, got cancel_requested=%d", got)
 	}
 	if _, ok := mentorLiveArmFor("lvl-cp"); !ok {
