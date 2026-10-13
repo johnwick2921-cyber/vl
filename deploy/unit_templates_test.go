@@ -67,8 +67,8 @@ func TestVlUserUnitTemplates(t *testing.T) {
 			"Type=oneshot",
 		},
 		"deploy/systemd-user/vl-backup.timer": {
-			"OnCalendar=*-*-* 05:00:00",
-			"OnCalendar=*-*-* 17:30:00",
+			"OnCalendar=*-*-* 05:00:00 America/Chicago",
+			"OnCalendar=*-*-* 17:30:00 America/Chicago",
 		},
 		"deploy/systemd-user/vl-clock-guard.service": {
 			"ExecStart=%h/vl/deploy/vl-clock-guard.sh",

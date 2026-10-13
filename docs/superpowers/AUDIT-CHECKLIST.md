@@ -8262,3 +8262,26 @@ Reference: ninjascript/VLTraderTCPClient.cs (SendAllOrderSnapshots, heartbeat
 SendAllOrderSnapshots("account_register")); Go side already keyed by account —
 provider/ninjatrader/order_snapshot.go OrderSnapshotCache (snapKey per account),
 trader/ninjatrader/tcp_trader.go OrderSnapshotBook → LatestReceived(boundAccount).
+
+## CLASS NN (assigned at merge) — an ops-facing time rendered in the host zone instead of CT
+
+symptom: CT-EVERYWHERE (2026-10-13, owner "why has to make linux system change
+time to chicago"): the trading code is CT-canonical (~45 files route through
+kernel.CTLocation) but two ops surfaces still followed the MACHINE clock —
+(1) vl-backup.timer's OnCalendar had no zone suffix, so the backup fired at
+05:00/17:30 in the host's zone, and (2) the compact log formatter rendered its
+line timestamp and the log-file date in the host zone, so on a non-Chicago box
+the file's date and its line times disagreed near midnight and the updater's
+boot-line predictor (also host-zone) could point at the wrong file and roll
+back a good install.
+probe: grep for the machine-zone forms — time.Local, a bare time.Format of a
+clock/date layout without an explicit .In(zone), an OnCalendar= without a zone
+suffix, `date +%F` in shell — anywhere a rendered time or a named file is read
+by a different component or a person.
+rule: one canonical zone (America/Chicago) for every rendered time AND every
+date-derived FILE NAME; the writer and every predictor/reader of that name
+derive it from the SAME helper (logger.CTDate), never the host clock; systemd
+timers carry an explicit zone suffix.
+Reference: logger/logger.go (ctLocation, CTDate, LogFileNameFor, compactFormatter),
+logger/log_prune.go (pruneOldLogs), internal/updaterworker/runner.go (predictedLog),
+internal/updaterworker/recovery.go (the grep hint), deploy/systemd-user/vl-backup.timer.

@@ -31,8 +31,10 @@ func TestLogPrefixParityWriterPredictor(t *testing.T) {
 		t.Fatalf("PARITY BROKEN: logger writes %q, updater predicts %q — a good install would be rolled back", writerPrefix, predictorPrefix)
 	}
 
-	// predictedLog for the same date must be exactly <dir>/<prefix><date>.log
-	want := filepath.Join("data", "vl_"+fixed.Format("2006-01-02")+".log")
+	// predictedLog for the same instant must be exactly <dir>/<prefix><CT date>.log
+	// — the CT date comes from logger.CTDate, the SAME function the writer uses,
+	// so the pair agrees on any machine zone.
+	want := filepath.Join("data", "vl_"+logger.CTDate(fixed)+".log")
 	if got := (&Worker{cfg: Config{Target: Target{LogDir: "data"}}}).predictedLog(fixed, filepath.Join("some", "install", "vl-bin")); got != want {
 		t.Fatalf("predictedLog = %q, want %q", got, want)
 	}

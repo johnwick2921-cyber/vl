@@ -18,6 +18,7 @@ import (
 
 	"vl/internal/updaterjob"
 	"vl/internal/updaterwire"
+	"vl/logger"
 	"vl/store"
 )
 
@@ -202,7 +203,7 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	}
 	t.Cleanup(func() { os.RemoveAll(root) })
 	b := &box{
-		t: t, clock: &fakeClock{t: time.Date(2026, 9, 24, 10, 0, 0, 0, time.Local)},
+		t: t, clock: &fakeClock{t: time.Date(2026, 9, 24, 10, 0, 0, 0, logger.CTLocation())},
 		inst: filepath.Join(root, "vl"), backupRoot: filepath.Join(root, "vl-backups", "updater"),
 		binName: "vl-bin",
 		id:      Identity{PID: 4242, StartTicks: 1000}, running: boxOld,

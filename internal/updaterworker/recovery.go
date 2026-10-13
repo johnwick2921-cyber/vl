@@ -130,7 +130,7 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 		p("     %s", restartLine)
 		step++
 		p("%d. Prove the boot: the data log must show the OK line for %s, and health must serve it:", step, short)
-			p(`     grep -a "BOOT INTEGRITY OK — rev %s ·" %s/vl_$(date +%%F).log`, short, t.LogDir)
+			p(`     grep -a "BOOT INTEGRITY OK — rev %s ·" %s/vl_$(TZ=America/Chicago date +%%F).log`, short, t.LogDir)
 		p("     curl -s http://127.0.0.1:%d/api/health    (revision must be %s)", t.Port, short)
 	}
 	if j.BackupPath != "" {
