@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +29,8 @@ func calWeekFeed() []byte {
 }
 
 // (a) an event-free weekday inside the fetched week → stored "[]", no windows,
-// no fail-closed alert.
+// no fail-closed alert, and the INFO line fires EXACTLY ONCE per trade date
+// (P3/M2 — the firstFor guard must not be droppable without the test going RED).
 func TestCalEmptyDayStoresEmptySliceAndNoFailClosed(t *testing.T) {
 	at, st := f0Trader(t)
 	at.calFetch = func() ([]byte, error) { return calWeekFeed(), nil }
@@ -38,9 +40,19 @@ func TestCalEmptyDayStoresEmptySliceAndNoFailClosed(t *testing.T) {
 	if err != nil || slice == nil || slice.EventsJSON != "[]" {
 		t.Fatalf("event-free Thu 10-16 must be stored as [], got %+v err=%v", slice, err)
 	}
+
+	logBuf := captureTraderLog(t)
 	got := at.t1WindowsFor("2026-10-16", f1Sess)
 	if len(got) != 0 {
 		t.Fatalf("empty slice must give no windows, got %+v", got)
+	}
+	_ = at.t1WindowsFor("2026-10-16", f1Sess) // second read, same trade date
+
+	if n := strings.Count(logBuf.String(), "no events scheduled"); n != 1 {
+		t.Fatalf("the 'no events scheduled' INFO line must appear exactly once per trade date, got %d\nlog:\n%s", n, logBuf.String())
+	}
+	if !strings.Contains(logBuf.String(), "2026-10-16 fetched — no events scheduled") {
+		t.Fatalf("the INFO line must name the trade date:\n%s", logBuf.String())
 	}
 	for _, a := range calAlerts(st, at.id) {
 		if a.Kind == "calendar-slice-missing" {

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -182,41 +183,86 @@ func groupByCTDate(events []Event, loc *time.Location) map[string][]Event {
 // "feed missing" (canon CLASS 49/53 — an empty computed list is [], an
 // uncomputed one is absent; they must differ).
 //
-// The covered span is the CT calendar week (Mon–Sun) containing the fetched
-// events: the ForexFactory "thisweek" file covers the current Mon–Sun week, and
-// dates are keyed by each event's America/Chicago calendar date (groupByCTDate,
-// the SAME date the store keys trade dates by). The week's Monday is derived
-// from the earliest fetched event's CT date (the ISO week of any date in the
-// week is the same Monday). Only Mon–Fri are filled — a weekend date is not a
-// trading date and stays ABSENT. No events → no date to derive the week from →
-// no fill (a bare feed keeps the gate's existing fail-closed behaviour). A date
-// outside the fetched week is NEVER marked empty.
+// Week convention: the ForexFactory "thisweek" file runs SUNDAY→SATURDAY, so a
+// date's week-Monday is the NEXT day for a Sunday and the Monday on/before it
+// otherwise (a Saturday stays in its own week). The covered week is derived from
+// ALL event dates, not just the earliest — an earliest Sunday belongs to the
+// FOLLOWING Mon–Fri:
+//
+//   - every event maps to the SAME week-Monday → fill that whole Mon–Fri (the FF
+//     file covers the entire Sun→Sat week, so a Monday with no event was still
+//     fetched);
+//   - events map to DIFFERENT week-Mondays (a file spanning two weeks) → fill
+//     only the Mon–Fri dates between the earliest and latest event date,
+//     inclusive, never beyond, and log it once.
+//
+// Only Mon–Fri are ever filled — a weekend date is not a trading date and stays
+// ABSENT. No events → no date to derive the week from → no fill (a bare feed
+// keeps the gate's existing fail-closed behaviour). A date outside the fetched
+// week is NEVER marked empty.
 func fillEmptyTradingDays(days map[string][]Event, loc *time.Location) {
 	if len(days) == 0 {
 		return
 	}
-	earliest := ""
+	type dated struct {
+		t time.Time
+	}
+	dates := make([]dated, 0, len(days))
 	for d := range days {
-		if earliest == "" || d < earliest {
-			earliest = d
-		}
-	}
-	start, err := time.ParseInLocation("2006-01-02", earliest, loc)
-	if err != nil {
-		return
-	}
-	// Monday of the week containing the earliest event (Mon=1 … Sun=7).
-	monday := start.AddDate(0, 0, -((int(start.Weekday()) + 6) % 7))
-	for i := 0; i < 7; i++ {
-		d := monday.AddDate(0, 0, i)
-		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+		t, err := time.ParseInLocation("2006-01-02", d, loc)
+		if err != nil {
 			continue
 		}
-		key := d.Format("2006-01-02")
-		if _, ok := days[key]; !ok {
-			days[key] = []Event{}
+		dates = append(dates, dated{t: t})
+	}
+	if len(dates) == 0 {
+		return
+	}
+	sort.Slice(dates, func(i, j int) bool { return dates[i].t.Before(dates[j].t) })
+	earliest, latest := dates[0].t, dates[len(dates)-1].t
+
+	// FF week-Monday of every event date; all must agree for a whole-week fill.
+	first := ffWeekMonday(earliest)
+	sameWeek := true
+	for _, d := range dates {
+		if !ffWeekMonday(d.t).Equal(first) {
+			sameWeek = false
+			break
 		}
 	}
+
+	fill := func(from, to time.Time) {
+		for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
+			if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+				continue
+			}
+			key := d.Format("2006-01-02")
+			if _, ok := days[key]; !ok {
+				days[key] = []Event{}
+			}
+		}
+	}
+
+	if sameWeek {
+		// Whole FF week: fill Mon–Fri of that Monday (the FF file covers all of it).
+		fill(first, first.AddDate(0, 0, 6))
+		return
+	}
+	// Two-week span: fill only Mon–Fri between earliest and latest, never beyond.
+	log.Printf("calendar: feed spans two ForexFactory weeks (%s .. %s); filling only the trading dates between them",
+		earliest.Format("2006-01-02"), latest.Format("2006-01-02"))
+	fill(earliest, latest)
+}
+
+// ffWeekMonday returns the Monday of the ForexFactory (Sun→Sat) week containing
+// d: a Sunday belongs to the FOLLOWING Mon–Fri (its next day is the Monday);
+// every other weekday belongs to the Monday on/before it (a Saturday stays in
+// its own week).
+func ffWeekMonday(d time.Time) time.Time {
+	if d.Weekday() == time.Sunday {
+		return d.AddDate(0, 0, 1)
+	}
+	return d.AddDate(0, 0, -((int(d.Weekday()) + 6) % 7))
 }
 
 // SessionCurrencies returns the currency filter for a session: USD always; +JPY/
