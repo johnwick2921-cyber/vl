@@ -29,6 +29,7 @@ export interface MentorTruth {
     price: number
     drawn_at: number
     visits_today: number
+    merged_from?: number[]
   }[]
   /** ABSENT (undefined) while the evaluator has not built yet. */
   depth?: Record<string, number>
