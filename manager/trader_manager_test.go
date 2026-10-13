@@ -47,33 +47,39 @@ func TestBootClaimFirstByCreatedAtWins(t *testing.T) {
 	}
 }
 
-// REL18-C item 5 — refusing a boot duplicate marks the second trader not-running
-// in the DB and writes a P0 naming both traders.
-func TestRefuseBootDuplicateMarksNotRunningAndAlerts(t *testing.T) {
-	st, err := store.New(filepath.Join(t.TempDir(), "boot-dup.db"))
+// REL18-C item 5 at the production call site (shouldAutoStart): a boot with two
+// traders marked running on the same (symbol, account) starts the FIRST and
+// refuses the SECOND — marking it not-running and writing a P0 naming both.
+func TestShouldAutoStartBootDuplicateRefused(t *testing.T) {
+	st, err := store.New(filepath.Join(t.TempDir(), "boot-autostart.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
-	if err := st.Trader().Create(&store.Trader{ID: "t1", UserID: "u", Name: "first", Account: "Sim101", IsRunning: true}); err != nil {
+	if err := st.Trader().Create(&store.Trader{ID: "t1", UserID: "u", Name: "first", Account: "Sim101", IsRunning: true, CreatedAt: time.Now().Add(-time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Trader().Create(&store.Trader{ID: "t2", UserID: "u", Name: "second", Account: "Sim101", IsRunning: true}); err != nil {
+	if err := st.Trader().Create(&store.Trader{ID: "t2", UserID: "u", Name: "second", Account: "Sim101", IsRunning: true, CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 
-	tm := &TraderManager{}
-	tm.refuseBootDuplicate(
-		&store.Trader{ID: "t2", UserID: "u", Name: "second", Account: "Sim101"},
-		&store.Exchange{ExchangeType: "ninjatrader", NTInstrumentName: "MNQ"},
-		"t1", st)
+	ex := &store.Exchange{ExchangeType: "ninjatrader", NTInstrumentName: "MNQ"}
+	tm := &TraderManager{startPassClaims: make(map[string]string)}
+
+	// Oldest first — it starts.
+	if !tm.shouldAutoStart(ex, &store.Trader{ID: "t1", UserID: "u", Name: "first", Account: "Sim101", IsRunning: true}, st) {
+		t.Fatal("the first (oldest) trader must auto-start")
+	}
+	// The second on the same (symbol, account) is refused.
+	if tm.shouldAutoStart(ex, &store.Trader{ID: "t2", UserID: "u", Name: "second", Account: "Sim101", IsRunning: true}, st) {
+		t.Fatal("the second trader must be refused")
+	}
 
 	row, _ := st.Trader().GetByID("t2")
 	if row == nil || row.IsRunning {
 		t.Fatalf("the refused trader must be marked not-running, got %+v", row)
 	}
-
 	alerts, _ := st.Alert().List("t2", 10)
 	found := false
 	for _, a := range alerts {
