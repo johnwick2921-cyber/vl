@@ -13,6 +13,7 @@ import (
 	"vl/logger"
 	"vl/safe"
 	"vl/store"
+	"vl/telemetry"
 	"vl/trader"
 )
 
@@ -66,10 +67,11 @@ func (tm *TraderManager) shouldAutoStart(exchangeCfg *store.Exchange, traderCfg 
 func (tm *TraderManager) refuseBootDuplicate(traderCfg *store.Trader, exchangeCfg *store.Exchange, holderID string, st *store.Store) {
 	symbol := strings.TrimSpace(exchangeCfg.NTInstrumentName)
 	account := strings.TrimSpace(traderCfg.Account)
+	telemetry.IncGateBlock(traderCfg.ID, "boot_duplicate_symbol_account")
 	logger.Warnf("⛔ boot: trader %q (%s) NOT auto-started — %s / %s already claimed by trader %q at boot (one trader per symbol,account); marked not-running",
 		traderCfg.Name, traderCfg.ID, symbol, account, holderID)
 	if st != nil {
-		_, _ = st.Alert().Emit(&store.AlertDB{
+		if _, err := st.Alert().Emit(&store.AlertDB{
 			TraderID:  traderCfg.ID,
 			Level:     "P0",
 			Kind:      "boot_duplicate_symbol_account",
@@ -77,8 +79,12 @@ func (tm *TraderManager) refuseBootDuplicate(traderCfg *store.Trader, exchangeCf
 			Title:     "Two traders bound to one account — the second was not started",
 			Body:      fmt.Sprintf("At boot, trader %q (%s) was not started because %s / %s is already owned by trader %q (one trader per symbol, account). It was marked not-running.", traderCfg.Name, traderCfg.ID, symbol, account, holderID),
 			CreatedAt: time.Now().Unix(),
-		})
-		_ = st.Trader().UpdateStatus(traderCfg.UserID, traderCfg.ID, false)
+		}); err != nil {
+			logger.Warnf("⛔ boot: P0 alert EMIT failed for refused duplicate %q (%s): %v", traderCfg.Name, traderCfg.ID, err)
+		}
+		if err := st.Trader().UpdateStatus(traderCfg.UserID, traderCfg.ID, false); err != nil {
+			logger.Warnf("⛔ boot: failed to mark refused duplicate %q (%s) not-running: %v", traderCfg.Name, traderCfg.ID, err)
+		}
 	}
 }
 

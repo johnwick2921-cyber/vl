@@ -11,6 +11,7 @@ import (
 	"vl/logger"
 	"vl/safe"
 	"vl/store"
+	"vl/telemetry"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -713,6 +714,7 @@ func (s *Server) handleStartTrader(c *gin.Context) {
 		symbol := strings.TrimSpace(fullCfg.Exchange.NTInstrumentName)
 		account := strings.TrimSpace(fullCfg.Trader.Account)
 		if otherID, otherName, ok := s.runningTraderOnSameSymbolAccount(userID, traderID, symbol, account); ok {
+			telemetry.IncGateBlock(traderID, "trader_start_duplicate_symbol_account")
 			SafeConflictWithDetails(c,
 				fmt.Sprintf("Trader %q is already running on %s / %s — stop it before starting %q on the same (symbol, account).",
 					otherName, symbol, account, traderName),

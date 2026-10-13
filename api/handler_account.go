@@ -7,6 +7,7 @@ import (
 	"vl/config"
 	"vl/logger"
 	ntwire "vl/provider/ninjatrader"
+	"vl/telemetry"
 	"vl/trader"
 	ntTrader "vl/trader/ninjatrader"
 
@@ -144,6 +145,7 @@ func (s *Server) handleSelectAccount(c *gin.Context) {
 	// bound to its account (the live 00:43 mismatch: the UI showed the new
 	// account while the running trader kept trading the old one).
 	if autoTrader.HealthIsRunning() {
+		telemetry.IncGateBlock(traderID, "account_select_trader_running")
 		SafeConflictWithDetails(c,
 			"Stop the trader first, then choose the account, then start it.",
 			"account.select.trader_running",
@@ -208,6 +210,7 @@ func (s *Server) handleSelectAccount(c *gin.Context) {
 	// that ANOTHER trader already holds on the same symbol (running or not).
 	if thisSymbol, _, _ := s.traderSymbolAccount(userID, traderID); thisSymbol != "" && req.Account != "" {
 		if otherID, otherName, ok := s.otherTraderBoundToSameSymbolAccount(userID, traderID, thisSymbol, req.Account); ok {
+			telemetry.IncGateBlock(traderID, "account_select_account_in_use")
 			SafeConflictWithDetails(c,
 				fmt.Sprintf("Account %s is already bound to trader %q on the same symbol %s — one trader per (symbol, account). Stop or rebind that trader first.",
 					req.Account, otherName, thisSymbol),

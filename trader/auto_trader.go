@@ -1465,6 +1465,7 @@ func (at *AutoTrader) installNTOrderedExecutions(nt *ntTrader.TCPTrader) error {
 			if strings.TrimSpace(other) == "" {
 				other = "an already-running trader"
 			}
+			telemetry.IncGateBlock(at.id, "ordered_owner_exists")
 			at.emitAlert("P0", "ordered_owner_conflict",
 				"ordered-owner:"+at.id,
 				"Two traders bound to one account — trader stopped",
@@ -1474,7 +1475,9 @@ func (at *AutoTrader) installNTOrderedExecutions(nt *ntTrader.TCPTrader) error {
 				err, other, symbol, account, at.name, at.id)
 			// Mark this trader not-running so the DB matches the refused start.
 			if at.store != nil {
-				_ = at.store.Trader().UpdateStatus(at.userID, at.id, false)
+				if serr := at.store.Trader().UpdateStatus(at.userID, at.id, false); serr != nil {
+					at.logErrorf("❌ ordered-execution refused but the not-running DB write FAILED (%v) — trader %q may still read running", serr, at.id)
+				}
 			}
 			return fmt.Errorf("ordered-execution owner for (symbol=%s, account=%s) already exists (held by %q): %w",
 				symbol, account, other, err)
