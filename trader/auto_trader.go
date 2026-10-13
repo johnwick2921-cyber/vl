@@ -621,11 +621,18 @@ type AutoTrader struct {
 	// self-backoff clock (see maybeRereadAfterFlip). Per trader on purpose:
 	// a process-global map keyed by plan id let one trader's (or one test's)
 	// failed launch hold another's retry.
-	flipRereadLaunchAt  sync.Map
-	lastAIBalanceDay    string // P5 daily balance poll throttle (AI_BALANCE_WARN)
-	isRunning           bool
-	isRunningMutex      sync.RWMutex // Mutex to protect isRunning flag
-	limitFlattenMu      sync.Mutex   // W117-F F6: serializes delayed exits with Stop
+	flipRereadLaunchAt sync.Map
+	lastAIBalanceDay   string // P5 daily balance poll throttle (AI_BALANCE_WARN)
+	isRunning          bool
+	isRunningMutex     sync.RWMutex // Mutex to protect isRunning flag
+	// runReadyMu/runReadyCh is the REL18-C FOLD handshake between Run and the
+	// start handler: Run reports nil once it reaches the ordered-execution
+	// install (ready) or the O2 refusal error, so the handler can answer 409
+	// instead of "Trader started". Buffered cap 1; a boot start (no reader)
+	// never blocks.
+	runReadyMu          sync.Mutex
+	runReadyCh          chan error
+	limitFlattenMu      sync.Mutex // W117-F F6: serializes delayed exits with Stop
 	limitFlattenStopped bool
 	limitFlattens       map[int64]*pendingLimitFlatten
 	// pictureGen (W4/D25) opens on every registerPictureHtf and closes on
@@ -1160,6 +1167,7 @@ func (at *AutoTrader) Run() error {
 				// this trader marked not-running, and the P0 raised. Clean the
 				// per-Run monitor up and exit (same shape as the grid-init error
 				// path) — never fall back to the legacy advisory path.
+				at.signalRunReady(err)
 				at.cancelStopMonitor()
 				return fmt.Errorf("ordered-execution install refused: %w", err)
 			}
@@ -1169,6 +1177,11 @@ func (at *AutoTrader) Run() error {
 			at.logInfof("🔧 NinjaTrader position-reconcile enabled (entry→NT8 avg, orphan clear)")
 		}
 	}
+
+	// REL18-C FOLD — the start handler waits on this: nil means the ordered
+	// install is done (or this trader has no ordered install to do); the O2
+	// refusal was already signalled on the error path above.
+	at.signalRunReady(nil)
 
 	ticker := time.NewTicker(at.config.ScanInterval)
 	defer ticker.Stop()
@@ -1290,6 +1303,35 @@ func (at *AutoTrader) setupStopMonitorForTest() {
 // GetID gets trader ID
 func (at *AutoTrader) GetID() string {
 	return at.id
+}
+
+// RunReadyChan returns the per-start channel on which Run reports its ordered
+// install verdict (nil = ready, error = refused by O2). The start handler reads
+// it to keep the 200/409 honest; call it BEFORE spawning Run so both share the
+// same channel. Lazy-created and buffered (cap 1) so a boot start never blocks.
+func (at *AutoTrader) RunReadyChan() <-chan error {
+	at.runReadyMu.Lock()
+	defer at.runReadyMu.Unlock()
+	if at.runReadyCh == nil {
+		at.runReadyCh = make(chan error, 1)
+	}
+	return at.runReadyCh
+}
+
+// signalRunReady publishes Run's install verdict exactly once and clears the
+// channel so the NEXT Run handshakes a fresh one. A nil channel (boot start,
+// no reader) is a no-op.
+func (at *AutoTrader) signalRunReady(err error) {
+	at.runReadyMu.Lock()
+	ch := at.runReadyCh
+	at.runReadyCh = nil
+	at.runReadyMu.Unlock()
+	if ch != nil {
+		select {
+		case ch <- err:
+		default:
+		}
+	}
 }
 
 // GetUnderlyingTrader returns the underlying Trader interface implementation

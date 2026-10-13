@@ -78,6 +78,18 @@ func getOrStartTCPServer() (*ntwire.TCPServer, error) {
 // error.
 func TCPServer() (*ntwire.TCPServer, error) { return getOrStartTCPServer() }
 
+// SetTCPServerForTest installs a server as the process singleton so a
+// production-call-site test can drive NewTraderFromEnv against a controlled
+// wire WITHOUT binding the live 127.0.0.1:36974 port (the live bot may hold
+// it, and the singleton is one-bot-one-listener). TEST-ONLY — never called in
+// production; mirrors SetTraderForTest / SetAddrForTest. Marks the once done so
+// a later getOrStartTCPServer returns the injected instance instead of binding.
+func SetTCPServerForTest(server *ntwire.TCPServer) {
+	tcpServerOnce.Do(func() {})
+	tcpServerInst = server
+	tcpServerErr = nil
+}
+
 // SplitSymbolList parses the P5.2 symbol-as-list config form: the Exchange
 // row's NT instrument field may be a comma-separated list ("MNQ,ES,NQ"). The
 // FIRST element is the PRIMARY (the trading symbol — orders, ticks, gate); the
