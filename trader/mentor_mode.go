@@ -118,12 +118,16 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 			"stop %.1f pts in the twenties → reduce size or don't trade [D3.3 p1 @ 01:09]", in.StopPts)}, nil
 	}
 	if in.Confluence && in.HTFAgree && in.RoomMultiple >= mentorRoomBigMultiple && in.TargetPts >= mentorTargetBigPts {
-		return mentorSizeChoice{Contracts: clamp(big), Tier: "big", Why: fmt.Sprintf(
-			"confluence + 4h&1h agree + room %.1fx ≥ %.0fx + target %.1f pts ≥ %.0f — size stays %d (fixed 5 MNQ, course 1.1 p2 L1103)",
-			in.RoomMultiple, mentorRoomBigMultiple, in.TargetPts, mentorTargetBigPts, clamp(big))}, nil
+		n := clamp(big)
+		return mentorSizeChoice{Contracts: n, Tier: "big", Why: fmt.Sprintf(
+			"confluence + 4h&1h agree + room %.1fx ≥ %.0fx + target %.1f pts ≥ %.0f — size stays %d (tier count; course default 5 MNQ, 1.1 p2 L1103%s)",
+			in.RoomMultiple, mentorRoomBigMultiple, in.TargetPts, mentorTargetBigPts, n, mentorSizeKnobOverrideNote(big, mentorBigContractsDefault))}, nil
 	}
 	if in.Confluence {
-		return mentorSizeChoice{Contracts: clamp(conf), Tier: "confluence", Why: "confluence (hold ≥ 1:2, size stays at the confluence count — fixed 5 MNQ) [3.4 p3 L531]"}, nil
+		n := clamp(conf)
+		return mentorSizeChoice{Contracts: n, Tier: "confluence", Why: fmt.Sprintf(
+			"confluence (hold ≥ 1:2, size stays %d — tier count; course default 5 MNQ, 1.1 p2 L1103%s) [3.4 p3 L531]",
+			n, mentorSizeKnobOverrideNote(conf, mentorConfluenceContractsDefault))}, nil
 	}
 	if strings.EqualFold(in.Setup, "SWING4H") {
 		// S9 (D5.2 p2 @05:21–05:57): a strong day — 5m candles running 50–80
@@ -143,6 +147,18 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	}
 	return mentorSizeChoice{Contracts: clamp(base), Tier: "base", Why: fmt.Sprintf(
 		"base setup at a location (setup %s, stop %.1f pts)", in.Setup, in.StopPts)}, nil
+}
+
+// mentorSizeKnobOverrideNote reports whether a tier count came from an owner
+// knob override rather than the course default. Empty when the value is the
+// default; " (knob override)" when it differs — so a size line is TRUE for
+// every configuration (B-rules): it names the actual count AND where it came
+// from, never a hardcoded "fixed 5".
+func mentorSizeKnobOverrideNote(value, def int) string {
+	if value != def {
+		return " (knob override)"
+	}
+	return ""
 }
 
 // mentorCounters records every size tier and every refusal for the session

@@ -194,6 +194,31 @@ func TestMentorSize5Defaults(t *testing.T) {
 	}
 }
 
+// TestMentorSizeWhyNamesKnobOverride — a size line must be TRUE for every
+// configuration (B-rules): under an owner knob override the Why prints the
+// ACTUAL count and marks the override, never a hardcoded "fixed 5 MNQ".
+func TestMentorSizeWhyNamesKnobOverride(t *testing.T) {
+	mentorConfluenceForIntent = func(in mentor.Intent) bool { return true }
+	t.Cleanup(func() { mentorConfluenceForIntent = nil })
+
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorBigContracts: 10})
+	bigIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "PHL",
+		Price: 21000, Stop: 20988, Target: 21035, StopPts: 12, TargetPts: 35, HTFAgree: true}
+	got, err := at.mentorSizeFor(bigIn, mentorExtraFor(bigIn, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 10 || got.Tier != "big" {
+		t.Fatalf("big with knob 10: got %d %s, want 10 big", got.Contracts, got.Tier)
+	}
+	if !strings.Contains(got.Why, "10") || !strings.Contains(got.Why, "override") {
+		t.Fatalf("override Why must name the count and the override: %q", got.Why)
+	}
+	if strings.Contains(got.Why, "fixed 5") {
+		t.Fatalf("override Why must NOT hardcode fixed 5: %q", got.Why)
+	}
+}
+
 // TestStrongDayCapsAtTwoEvenWithRaisedSwingBase — the strong-day band is 1–2,
 // so a RAISED swing knob must never push the strong-day cut above 2 (and never
 // above the base). Base 1 → 1; base 3 → min(2, 3) = 2.
