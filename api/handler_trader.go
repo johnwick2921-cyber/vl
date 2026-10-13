@@ -11,6 +11,7 @@ import (
 	"vl/logger"
 	"vl/safe"
 	"vl/store"
+	"vl/telemetry"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -703,6 +704,24 @@ func (s *Server) handleStartTrader(c *gin.Context) {
 	if msg, code, params := validateNTAccountBoundForStart(fullCfg, traderName); msg != "" {
 		SafeBadRequestWithDetails(c, msg, code, params)
 		return
+	}
+
+	// REL18-C O3b — one trader per (symbol, account): refuse to start when
+	// ANOTHER RUNNING trader already holds the same (symbol, account). This is
+	// the fail-closed mirror of the ordered-execution owner conflict (O2), and
+	// it fires BEFORE any load/start so the DB is never marked running.
+	if fullCfg != nil && fullCfg.Exchange != nil && fullCfg.Trader != nil {
+		symbol := strings.TrimSpace(fullCfg.Exchange.NTInstrumentName)
+		account := strings.TrimSpace(fullCfg.Trader.Account)
+		if otherID, otherName, ok := s.runningTraderOnSameSymbolAccount(userID, traderID, symbol, account); ok {
+			telemetry.IncGateBlock(traderID, "trader_start_duplicate_symbol_account")
+			SafeConflictWithDetails(c,
+				fmt.Sprintf("Trader %q is already running on %s / %s — stop it before starting %q on the same (symbol, account).",
+					otherName, symbol, account, traderName),
+				"trader.start.duplicate_symbol_account",
+				mapStringPairs("trader_name", traderName, "other_trader", otherName, "other_trader_id", otherID, "symbol", symbol, "account", account))
+			return
+		}
 	}
 
 	// Check if trader exists in memory and if it's running

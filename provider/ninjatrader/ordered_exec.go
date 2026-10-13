@@ -44,10 +44,16 @@ var ErrOrderedOwnerExists = errors.New("an ordered-execution owner for this (sym
 // OrderedExecutionHandlers are the owning trader's durable consumers. Each is
 // called on the owner's worker goroutine, in receive order, exactly once per
 // frame. A nil handler means that frame kind is not consumed by this owner.
+//
+// TraderID identifies the owning trader so a refused duplicate registration
+// can name the trader that already holds the (symbol, account) owner slot
+// (REL18-C O2: the P0 alert names BOTH traders). Empty is allowed — legacy
+// test registrations carry no trader.
 type OrderedExecutionHandlers struct {
-	Order func(OrderUpdatePayload)
-	Fill  func(FillPayload)
-	Close func(PositionClosePayload)
+	TraderID string
+	Order    func(OrderUpdatePayload)
+	Fill     func(FillPayload)
+	Close    func(PositionClosePayload)
 }
 
 type orderedKind uint8
@@ -77,6 +83,7 @@ type orderedOwner struct {
 	wake     chan struct{} // cap 1, coalesced — new work
 	space    chan struct{} // cap 1, coalesced — room dequeued
 	handlers OrderedExecutionHandlers
+	traderID string // owning trader ("" = unknown) — named on a refused duplicate
 	closed   bool
 
 	// overflowCount counts frames that found the queue full (P2-14); the
@@ -101,6 +108,7 @@ func (s *TCPServer) RegisterOrderedExecutionsFor(symbol, account string, h Order
 	}
 	key := subKey(symbol, account)
 	owner := newOrderedOwner(h)
+	owner.traderID = h.TraderID
 	s.orderedMu.Lock()
 	if s.orderedOwners == nil {
 		s.orderedOwners = make(map[string]*orderedOwner)
@@ -137,6 +145,22 @@ func (s *TCPServer) RegisterOrderedExecutionsFor(symbol, account string, h Order
 			}
 		})
 	}, nil
+}
+
+// OrderedOwnerTraderID returns the trader id that CURRENTLY owns the ordered
+// execution worker for (symbol, account), or ("", false) when the slot is
+// free/unknown. Used by REL18-C O2 to name the conflicting trader in the P0.
+func (s *TCPServer) OrderedOwnerTraderID(symbol, account string) (string, bool) {
+	s.orderedMu.Lock()
+	defer s.orderedMu.Unlock()
+	if s.orderedOwners == nil {
+		return "", false
+	}
+	o := s.orderedOwners[subKey(symbol, account)]
+	if o == nil || o.closed {
+		return "", false
+	}
+	return o.traderID, o.traderID != ""
 }
 
 // enqueueOrdered appends one frame to the owner's queue and returns whether an

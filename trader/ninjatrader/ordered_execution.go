@@ -36,8 +36,9 @@ func (t *TCPTrader) InstallOrderedExecutions(traderID, exchangeID, exchangeType 
 	// the row is missing or incomplete — instead of legacy's ProcessTrade
 	// attribution. Both are one funnel per path, but they are different funnels.
 	unreg, err := t.server.RegisterOrderedExecutionsFor(t.symbol, t.boundAccount, ntwire.OrderedExecutionHandlers{
-		Order: orderFn,
-		Fill:  t.handleFillInbound,
+		TraderID: traderID,
+		Order:    orderFn,
+		Fill:     t.handleFillInbound,
 		Close: func(p ntwire.PositionClosePayload) {
 			// R6 — durable apply-or-park ON the worker: the exit is retained
 			// when its cumulative entry update has not landed yet.
@@ -52,4 +53,15 @@ func (t *TCPTrader) InstallOrderedExecutions(traderID, exchangeID, exchangeType 
 	t.st = st
 	t.mu.Unlock()
 	return unreg, nil
+}
+
+// OrderedExecutionOwnerID reports the trader id that CURRENTLY owns the
+// ordered-execution worker for this trader's (symbol, account), or
+// ("", false) when the slot is free/unknown. REL18-C O2 names the conflicting
+// trader when a duplicate registration is refused.
+func (t *TCPTrader) OrderedExecutionOwnerID() (string, bool) {
+	if t == nil || t.server == nil {
+		return "", false
+	}
+	return t.server.OrderedOwnerTraderID(t.symbol, t.boundAccount)
 }
