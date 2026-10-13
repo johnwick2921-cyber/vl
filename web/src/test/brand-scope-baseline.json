@@ -9,7 +9,7 @@
   "deploy/vl-lock.sh": "869c4e498ebc95766f0f22e8f908c56daa861df088993a5b52dbdba6bd7b3189",
   "deploy/vl-web.service": "cfd5dce70aab3056fa633595f50b6f264fc4da2f08d65ec7642e61bb31e4a2b4",
   "deploy/vl.service": "4ae36a9c97e7d5f4dc0f054690dbe087a70081609531b036749f9746b0c0f95e",
-  "go.mod": "333ba3d39d489c921667a2222dda51247059e4f48bbb243ad3d01c1d8fb754b7",
+  "go.mod": "58e9a9bc02629354f5486feffaa9d10086c04028ff010f8cd53851b5b80baf31",
   "logger/logger.go": "7409af084ddaacd31cd2fd32d71d6cb71018be4aafd5391ccfe7ebfd9389df22",
   "ninjascript/VLTraderTCPClient.cs": "6376016d23349ae52d9559d35e76b2fec6837585102571b88d9c2ba6402de5c3",
   "provider/ninjatrader/tcp_framing.go": "03d1c0553a79a6d2d49d760b0c9d678ced4d57e9600424047f1ac7243fd7fbf7",
