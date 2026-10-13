@@ -1,4 +1,7 @@
 // Dispatch 102 freezes load-bearing identifiers, including their surrounding guards.
+// go.mod baseline advanced 2026-10-13 for GO-VULN-1026 (owner order 2026-10-13):
+//   go 1.26.9 + golang.org/x/net v0.60.0 — clears GO-2026-6617/6613/6612.
+//   sha256 58e9a9bc… — toolchain bump only; no identifier, frame or wire change.
 // Wire baseline advanced 2026-10-04 for the UPDATER-NT8-CLOSED never-connected
 // seed (fix/updater-nt8-never-connected, DS-101):
 //   provider/ninjatrader/tcp_server.go   sha256 5451949a… — Start records the
