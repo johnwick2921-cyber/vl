@@ -25,13 +25,20 @@ import (
 // Mentor size-table defaults (CTO defaults; the owner changes them per
 // strategy via the knobs above).
 const (
-	mentorBaseContractsDefault       = 5
-	mentorConfluenceContractsDefault = 10
-	mentorBigContractsDefault        = 20 // the hard cap
+	mentorBaseContractsDefault = 5
+	// MENTOR-SIZE-5 (owner order 2026-10-13, course 1.1 p2 L1103 "Cái sizing
+	// của em Cố định là 5 MNQ" + 3.4 p3 L531 + slide 5): the confluence and big
+	// tiers no longer ADD contracts — the method sizes a FIXED 5 on every
+	// setup. The tiers stay (they still report WHY a trade qualified), but the
+	// count is 5. The knobs mentor_confluence_contracts / mentor_big_contracts
+	// stay so the owner can still choose otherwise; mentor_max_contracts (20)
+	// is a ceiling only.
+	mentorConfluenceContractsDefault = 5
+	mentorBigContractsDefault        = 5
 	mentorReducedContractsDefault    = 3
 	mentorSwing4HContractsDefault    = 1 // 1 MNQ, not 3 [D5.2 p1 @00:38–00:47 "Em vô đúng 1 MNQ thôi"]
 	mentorSpentDayContractsDefault   = 2
-	mentorMaxContractsDefault        = 20
+	mentorMaxContractsDefault        = 20 // ceiling only — no tier sizes to it by default
 
 	mentorTargetBigPts       = 30.0 // target ≥ this for the big tier
 	mentorRoomBigMultiple    = 2.0  // room ≥ this × risk for the big tier
@@ -71,7 +78,7 @@ type mentorSizeChoice struct {
 // Order matters: spent → ISB reductions → twenties → big → confluence →
 // swing4h → base, every branch capped at maxContracts. A non-positive max
 // refuses (fail-closed). B12 (CTO 1791041016051): the stop-in-the-twenties
-// cut wins over confluence sizing — a 20–25 pt stop is 3, never 10/20.
+// cut wins over confluence sizing — a 20–25 pt stop is 3, never a raised tier.
 func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, spentCap, maxContracts int) (mentorSizeChoice, error) {
 	if maxContracts <= 0 {
 		return mentorSizeChoice{}, fmt.Errorf("mentor size: mentor_max_contracts not set (max=%d)", maxContracts)
@@ -105,18 +112,22 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	}
 	// B12 (CTO 1791041016051): a stop in the twenties cuts to 3 and wins over
 	// confluence sizing — "reduce size or don't trade" [D3.3 p1 @ 01:09] is a
-	// rule about the STOP, so it outranks a 10/20 the confluence would earn.
+	// rule about the STOP, so it outranks whatever the confluence tier would earn.
 	if in.StopPts >= mentorStopTwentiesMinPts && in.StopPts <= mentorStopTwentiesMaxPts {
 		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "reduced", Why: fmt.Sprintf(
 			"stop %.1f pts in the twenties → reduce size or don't trade [D3.3 p1 @ 01:09]", in.StopPts)}, nil
 	}
 	if in.Confluence && in.HTFAgree && in.RoomMultiple >= mentorRoomBigMultiple && in.TargetPts >= mentorTargetBigPts {
-		return mentorSizeChoice{Contracts: clamp(big), Tier: "big", Why: fmt.Sprintf(
-			"confluence + 4h&1h agree + room %.1fx ≥ %.0fx + target %.1f pts ≥ %.0f (hard cap %d)",
-			in.RoomMultiple, mentorRoomBigMultiple, in.TargetPts, mentorTargetBigPts, maxContracts)}, nil
+		n := clamp(big)
+		return mentorSizeChoice{Contracts: n, Tier: "big", Why: fmt.Sprintf(
+			"confluence + 4h&1h agree + room %.1fx ≥ %.0fx + target %.1f pts ≥ %.0f — size stays %d (tier count; course default 5 MNQ, 1.1 p2 L1103%s)",
+			in.RoomMultiple, mentorRoomBigMultiple, in.TargetPts, mentorTargetBigPts, n, mentorSizeKnobOverrideNote(big, mentorBigContractsDefault))}, nil
 	}
 	if in.Confluence {
-		return mentorSizeChoice{Contracts: clamp(conf), Tier: "confluence", Why: "box/zone + key level + 5m trigger agreeing (§6)"}, nil
+		n := clamp(conf)
+		return mentorSizeChoice{Contracts: n, Tier: "confluence", Why: fmt.Sprintf(
+			"confluence (hold ≥ 1:2, size stays %d — tier count; course default 5 MNQ, 1.1 p2 L1103%s) [3.4 p3 L531]",
+			n, mentorSizeKnobOverrideNote(conf, mentorConfluenceContractsDefault))}, nil
 	}
 	if strings.EqualFold(in.Setup, "SWING4H") {
 		// S9 (D5.2 p2 @05:21–05:57): a strong day — 5m candles running 50–80
@@ -136,6 +147,18 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	}
 	return mentorSizeChoice{Contracts: clamp(base), Tier: "base", Why: fmt.Sprintf(
 		"base setup at a location (setup %s, stop %.1f pts)", in.Setup, in.StopPts)}, nil
+}
+
+// mentorSizeKnobOverrideNote reports whether a tier count came from an owner
+// knob override rather than the course default. Empty when the value is the
+// default; " (knob override)" when it differs — so a size line is TRUE for
+// every configuration (B-rules): it names the actual count AND where it came
+// from, never a hardcoded "fixed 5".
+func mentorSizeKnobOverrideNote(value, def int) string {
+	if value != def {
+		return " (knob override)"
+	}
+	return ""
 }
 
 // mentorCounters records every size tier and every refusal for the session
