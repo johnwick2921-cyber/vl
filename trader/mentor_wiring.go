@@ -34,13 +34,16 @@ var mentorSeamNames = []string{
 }
 
 // mentorSeamBound reports whether one named seam is non-nil (the truth the
-// boot line and the refusal read — test injection counts as bound).
-func mentorSeamBound(name string) bool {
+// boot line and the refusal read — test injection counts as bound). REL18-B:
+// the per-trader seams (open side, leg protection, day net, closed profit) are
+// read from THIS trader; the process-wide stateless seams (latest price, now,
+// confluence, arm expiry) stay package-level (they are not trader-scoped).
+func (at *AutoTrader) mentorSeamBound(name string) bool {
 	switch name {
 	case "open_side":
-		return mentorOpenSideSource != nil
+		return at.mentorOpenSideSource != nil
 	case "leg_protection":
-		return mentorLegProtectedSource != nil
+		return at.mentorLegProtectedSource != nil
 	case "latest_price":
 		return mentorLatestPriceSource != nil
 	case "now":
@@ -50,9 +53,9 @@ func mentorSeamBound(name string) bool {
 	case "arm_expiry":
 		return mentorSetArmExpiryWire != nil
 	case "day_net":
-		return mentorDayNetSource != nil
+		return at.mentorDayNetSource != nil
 	case "closed_profit":
-		return mentorClosedProfitSource != nil
+		return at.mentorClosedProfitSource != nil
 	}
 	return false
 }
@@ -70,7 +73,7 @@ func mentorSeamBound(name string) bool {
 //	  (pnl_corrected only; a NULL row → unresolved → fail closed).
 func (at *AutoTrader) mentorWireProductionSeams() {
 	if pr, ok := at.trader.(mentorPositionReader); ok {
-		mentorOpenSideSource = func() string {
+		at.mentorOpenSideSource = func() string {
 			pos, err := pr.GetPositions()
 			if err != nil {
 				return ""
@@ -86,7 +89,7 @@ func (at *AutoTrader) mentorWireProductionSeams() {
 			return ""
 		}
 
-		mentorLegProtectedSource = func(leg string) bool {
+		at.mentorLegProtectedSource = func(leg string) bool {
 			orders, err := pr.GetOpenOrders("MNQ")
 			if err != nil {
 				return false
@@ -155,21 +158,21 @@ func (at *AutoTrader) mentorWireProductionSeams() {
 			}
 			return act, true
 		}
-		mentorDayNetSource = func() (float64, bool) {
+		at.mentorDayNetSource = func() (float64, bool) {
 			act, ok := doneAfterWinActivity()
 			if !ok {
 				return 0, false
 			}
 			return act.DayNetPnl, true
 		}
-		mentorClosedProfitSource = func() (bool, bool) {
+		at.mentorClosedProfitSource = func() (bool, bool) {
 			act, ok := doneAfterWinActivity()
 			if !ok {
 				return false, false
 			}
 			return act.ClosedInProfit, true
 		}
-		mentorClosedLossSource = func() (bool, bool) {
+		at.mentorClosedLossSource = func() (bool, bool) {
 			act, ok := lossDayActivity()
 			if !ok {
 				return false, false
@@ -178,7 +181,7 @@ func (at *AutoTrader) mentorWireProductionSeams() {
 		}
 		// B3 day-stop-sweep hook: trips ONLY on a DEFINITE loss (the placement
 		// gate is fail-closed; the sweep never force-cancels on an unknown).
-		mentorStopAfterLossTripped = at.mentorStopAfterLossTrip
+		at.mentorStopAfterLossTripped = at.mentorStopAfterLossTrip
 	}
 
 	if at.store != nil && at.store.ArmedOrders() != nil {
@@ -190,11 +193,11 @@ func (at *AutoTrader) mentorWireProductionSeams() {
 }
 
 // mentorSeamBootLine is the one boot line: every seam, wired or missing.
-func mentorSeamBootLine() string {
+func (at *AutoTrader) mentorSeamBootLine() string {
 	parts := make([]string, 0, len(mentorSeamNames))
 	for _, n := range mentorSeamNames {
 		s := "missing"
-		if mentorSeamBound(n) {
+		if at.mentorSeamBound(n) {
 			s = "wired"
 		}
 		parts = append(parts, n+"="+s)
@@ -204,13 +207,13 @@ func mentorSeamBootLine() string {
 
 // mentorSeamMissing names every seam the placement requires that is unbound —
 // a missing one REFUSES entries, named.
-func mentorSeamMissing() []string {
+func (at *AutoTrader) mentorSeamMissing() []string {
 	var missing []string
 	for _, n := range mentorSeamNames {
 		if n == "now" {
 			continue // mentorClockNow falls back to time.Now — never missing
 		}
-		if !mentorSeamBound(n) {
+		if !at.mentorSeamBound(n) {
 			missing = append(missing, n)
 		}
 	}

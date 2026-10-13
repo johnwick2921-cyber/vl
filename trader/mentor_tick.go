@@ -143,10 +143,10 @@ func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 	cfg.LossDeparturePts = mentorLossDeparturePts(rc)
 	// The resolvers are nil-safe and return the ruled default for an unset field.
 	cfg.LegBudgetEnabled = mentorLegBudgetEnabled(rc)
-	cfg.LegResetOn = mentorLegResetOn(rc)
+	cfg.LegResetOn = mentorLegResetOn(at, rc)
 	cfg.LocTriggerFilter = mentorLocationTriggerFilter(rc)
 	cfg.DayOffRecheck = mentorDayOffRecheck(rc)
-	applyMentorTuning(&cfg, rc)
+	applyMentorTuning(at, &cfg, rc)
 	if rc != nil {
 		cfg.LvlRevisitMinPts = mentorLvlRevisitMinPts(rc)
 		cfg.EmaMaxCross30m = mentorEmaMaxCross30m(rc)
@@ -250,7 +250,7 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// — the kernel clear is one-way, so ClearedAt is a stable dedup key).
 	if rc := at.mentorEval.State.DayRecheck; rc.ClearedAt != 0 && rc.ClearedAt != at.mentorDayOffClearLogged {
 		at.mentorDayOffClearLogged = rc.ClearedAt
-		mentorCount("day_off_recheck_cleared")
+		at.mentorCount("day_off_recheck_cleared")
 		at.logWarnf("🧑‍🏫 day-off cleared: 4h and 1h now agree (%s) at %s CT — trading resumes in that direction [owner ruling 2026-10-09; D5.1 p1 @19:22 premise no longer holds]", rc.ClearedDir, kernel.ClockHHMMCT(time.UnixMilli(rc.ClearedAt)))
 	}
 	// The seed depth moves with the bars: re-check after every tick, so a
@@ -293,7 +293,7 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 		// itself is DS-103's (kernel/mentor is his). It rides its own path:
 		// the dispatch below sizes and places ENTRIES only.
 		if in.Action == mentor.ConfluenceUpgrade {
-			mentorCount("intent_" + string(in.Action))
+			at.mentorCount("intent_" + string(in.Action))
 			at.mentorConfluenceUpgrade(in)
 			continue
 		}
@@ -384,14 +384,14 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// a live order. The swing is exempt (RefBarMs 0 — gated by its own 5m
 	// watermark). Counted, never silent.
 	if in.RefBarMs != 0 && in.RefBarMs != barCloseMs {
-		mentorCount("stale_intent")
+		at.mentorCount("stale_intent")
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — stale %s intent: reference bar close %d ≠ newest closed bar %d", in.Setup, in.RefBarMs, barCloseMs)
 		return
 	}
 	// WIRING PROOF (fail-closed): with any mentor source seam missing, EVERY
 	// entry refuses here — the boot line logs it, this line enforces it.
 	if missing := at.mentorSourcesBlocking(in.Setup); len(missing) > 0 {
-		mentorCount("mentor_sources_missing")
+		at.mentorCount("mentor_sources_missing")
 		at.logErrorf("🧑‍🏫 mentor sources MISSING [%s] — refusing the %s entry (fail-closed)", strings.Join(missing, ", "), in.Setup)
 		return
 	}
@@ -432,18 +432,18 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// default.
 	if in.ExpiryMs == 0 {
 		in.ExpiryMs = mentorIntentExpiry(in, barCloseMs)
-		mentorCount("expiry_defaulted")
+		at.mentorCount("expiry_defaulted")
 	}
 	// F3 (CTO 1791035117415): every mentor arm must carry an expiry — an arm
 	// without one is REFUSED fail-closed (it must never sit unexpiring).
 	if refuse, why := mentorExpiryGuard(in.ExpiryMs); refuse {
-		mentorCount("expiry_missing_refused")
+		at.mentorCount("expiry_missing_refused")
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
 	}
 	if latest, ok := at.mentorLatestPrice(); ok {
 		if skip, why := mentorNoChase(in.Side, latest, in.Price); skip {
-			mentorCount("no_chase_skip")
+			at.mentorCount("no_chase_skip")
 			at.logWarnf("🧑‍🏫 mentor NO-CHASE skip: %s", why)
 			return
 		}
@@ -452,7 +452,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// the intent flags NOW and recorded; the P1 exit loop drives the chosen
 	// branch per fill. A PHL/PLH starts as B with the resonance watch armed.
 	forkMode, forkTP, forkWhy := mentorExitFork(in, mentorConfluenceFlag(in))
-	mentorCount("exit_fork_" + forkMode)
+	at.mentorCount("exit_fork_" + forkMode)
 	if forkTP != 0 {
 		at.logInfof("🧑‍🏫 mentor exit fork: %s — %s (leg 1 TP %.2f)", forkMode, forkWhy, forkTP)
 	} else {
@@ -650,17 +650,17 @@ func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
 		found = true
 		next, why := mentorConfluenceUpgradeMode(lp.Pos.Mode)
 		if next == "" {
-			mentorCount("exit_upgrade_no_position")
+			at.mentorCount("exit_upgrade_no_position")
 			at.logWarnf("🧑‍🏫 mentor confluence upgrade IGNORED — %s (%s)", why, in.Reason)
 			continue
 		}
 		if next == lp.Pos.Mode {
-			mentorCount("exit_upgrade_noop")
+			at.mentorCount("exit_upgrade_noop")
 			at.logInfof("🧑‍🏫 mentor confluence upgrade: %s (%s) — %s", side, why, in.Reason)
 			continue
 		}
 		lp.Pos.Mode = next
-		mentorCount("exit_upgrade_c")
+		at.mentorCount("exit_upgrade_c")
 		at.logInfof("🧑‍🏫 mentor confluence upgrade: %s %s (size unchanged) — %s", side, why, in.Reason)
 	}
 	// A school-1 arm that is still RESTING: switch its staged branch so the
@@ -692,11 +692,11 @@ func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
 			continue
 		}
 		at.setMentorExitMode(scenario, next)
-		mentorCount("exit_upgrade_c")
+		at.mentorCount("exit_upgrade_c")
 		at.logInfof("🧑‍🏫 mentor confluence upgrade (resting %s): %s %s (size unchanged) — %s", ra.id, side, why, in.Reason)
 	}
 	if !found {
-		mentorCount("exit_upgrade_no_position")
+		at.mentorCount("exit_upgrade_no_position")
 		at.logWarnf("🧑‍🏫 mentor confluence upgrade IGNORED — no open or resting mentor position on the %s side (%s)", side, in.Reason)
 	}
 }
@@ -844,7 +844,7 @@ func (at *AutoTrader) mentorNewsGate() (bool, string) {
 	evs, ok := at.mentorDayEvents()
 	if !ok {
 		if mentorNewsWindowActive(now) {
-			mentorCount("news_hold_no_calendar")
+			at.mentorCount("news_hold_no_calendar")
 			at.logWarnf("🧑‍🏫 news: calendar slice missing/unreadable — holding the 07:20–07:35 CT window fail-closed [F11]")
 			return true, "news: calendar slice missing/unreadable — the 07:20–07:35 CT window holds (fail-closed) [F11]"
 		}
@@ -852,7 +852,7 @@ func (at *AutoTrader) mentorNewsGate() (bool, string) {
 	}
 	hold, why := mentorNewsHold(evs, now)
 	if hold {
-		mentorCount("news_hold")
+		at.mentorCount("news_hold")
 	}
 	return hold, why
 }
@@ -973,7 +973,7 @@ func (at *AutoTrader) cancelLiveMentorArms(reason string, swingExempt bool) bool
 // account's position snapshot); the account position count is the fail-closed
 // backstop — an unreadable position list counts as OPEN, never flat.
 func (at *AutoTrader) mentorOpenPositionActive() bool {
-	if mentorOpenSideSource != nil && mentorOpenSideSource() != "" {
+	if at.mentorOpenSideSource != nil && at.mentorOpenSideSource() != "" {
 		return true
 	}
 	return at.openPositionCount() != 0
@@ -998,17 +998,17 @@ func (at *AutoTrader) mentorDayStopSweep(now time.Time) {
 	}
 	if trip, why := at.mentorDoneAfterWinTripped(); trip {
 		if at.cancelLiveIntradayMentorArmsWith("day-stop done-after-win: " + why) {
-			mentorCount("day_stop_cancel_done_after_win")
+			at.mentorCount("day_stop_cancel_done_after_win")
 		}
 	}
 	if ended, why := at.mentorWindowEnded(now); ended {
 		if at.cancelLiveIntradayMentorArmsWith("day-stop window end: " + why) {
-			mentorCount("day_stop_cancel_window_end")
+			at.mentorCount("day_stop_cancel_window_end")
 		}
 	}
 	if hold, why := at.mentorNewsGate(); hold {
 		if at.cancelLiveIntradayMentorArmsWith("day-stop news hold: " + why) {
-			mentorCount("day_stop_cancel_news")
+			at.mentorCount("day_stop_cancel_news")
 		}
 	}
 	// NEVER-ADD [D1.1 p1 @17:06–17:44], now enforced while a position is OPEN,
@@ -1021,17 +1021,17 @@ func (at *AutoTrader) mentorDayStopSweep(now time.Time) {
 	if at.mentorOpenPositionActive() {
 		if !at.mentorNeverAddCancelDone {
 			if at.cancelAllLiveMentorArmsWith("day-stop never-add: a mentor position is open — one position at a time, cancel both sides [D1.1 p1 @17:06–17:44]") {
-				mentorCount("day_stop_cancel_never_add")
+				at.mentorCount("day_stop_cancel_never_add")
 			}
 			at.mentorNeverAddCancelDone = true
 		}
 	} else {
 		at.mentorNeverAddCancelDone = false
 	}
-	if mentorStopAfterLossTripped != nil {
-		if stop, why := mentorStopAfterLossTripped(); stop {
+	if at.mentorStopAfterLossTripped != nil {
+		if stop, why := at.mentorStopAfterLossTripped(); stop {
 			if at.cancelLiveIntradayMentorArmsWith("day-stop stop-after-loss: " + why) {
-				mentorCount("day_stop_cancel_stop_after_loss")
+				at.mentorCount("day_stop_cancel_stop_after_loss")
 			}
 		}
 	}
@@ -1047,11 +1047,11 @@ func (at *AutoTrader) mentorDoneAfterWinTripped() (bool, string) {
 			return false, "" // the knob is explicitly OFF
 		}
 	}
-	if mentorDayNetSource == nil || mentorClosedProfitSource == nil {
+	if at.mentorDayNetSource == nil || at.mentorClosedProfitSource == nil {
 		return false, ""
 	}
-	net, okNet := mentorDayNetSource()
-	closed, okClosed := mentorClosedProfitSource()
+	net, okNet := at.mentorDayNetSource()
+	closed, okClosed := at.mentorClosedProfitSource()
 	if !okNet || !okClosed {
 		return false, ""
 	}
@@ -1181,7 +1181,7 @@ func (at *AutoTrader) mentorWindowGate(in mentor.Intent) (bool, string) {
 	if active {
 		return false, ""
 	}
-	mentorCount("window_refused")
+	at.mentorCount("window_refused")
 	return true, why
 }
 
@@ -1237,16 +1237,11 @@ func (at *AutoTrader) mentorDoneAfterWinReason() string {
 	return fmt.Sprintf("done for the day after a win — a trade closed in profit and the day is net positive; no new entries until %s [D1.2 p1 @20:53–21:16; day boundary = owner ruling 2026-10-09]", label)
 }
 
-// mentorDayNetSource / mentorClosedProfitSource are the session seams for (a).
-// nil → unwired (fail closed). A wired seam that returns ok=false means the
+// at.mentorDayNetSource / at.mentorClosedProfitSource are the session seams for (a).
+// REL18-B: they are per-trader AutoTrader fields (set by the wiring); a nil
+// source → unwired (fail closed). A wired seam that returns ok=false means the
 // day's data is UNRESOLVED (a NULL pnl_corrected closed row or a read error) —
-// an unknown is not "no win", so the gate fails CLOSED. The production wiring
-// (mentorWireProductionSeams) binds both to the strict-corrected day read.
-var (
-	mentorDayNetSource       func() (float64, bool)
-	mentorClosedProfitSource func() (bool, bool)
-	mentorClosedLossSource   func() (bool, bool)
-)
+// an unknown is not "no win", so the gate fails CLOSED.
 
 // mentorDoneAfterWinGate is the call-site half of (a); the knob is default ON
 // (nil → ON, an explicit false disables). FAIL-CLOSED: a missing day-net or
@@ -1257,20 +1252,20 @@ func (at *AutoTrader) mentorDoneAfterWinGate() (bool, string) {
 			return false, "" // the knob is explicitly OFF
 		}
 	}
-	if mentorDayNetSource == nil || mentorClosedProfitSource == nil {
-		mentorCount("done_after_win_no_data")
+	if at.mentorDayNetSource == nil || at.mentorClosedProfitSource == nil {
+		at.mentorCount("done_after_win_no_data")
 		at.logWarnf("🧑‍🏫 mentor done-after-win source missing (day net / closed profit) — refusing the entry (fail-closed)")
 		return true, "done-after-win: day P&L or closed-trade source not wired — an unknown is not 'no win'; refusing (fail-closed) [D1.2 p1 @20:53–21:16]"
 	}
-	net, okNet := mentorDayNetSource()
-	closed, okClosed := mentorClosedProfitSource()
+	net, okNet := at.mentorDayNetSource()
+	closed, okClosed := at.mentorClosedProfitSource()
 	if !okNet || !okClosed {
-		mentorCount("done_after_win_unresolved")
+		at.mentorCount("done_after_win_unresolved")
 		at.logWarnf("🧑‍🏫 mentor done-after-win day UNRESOLVED (a NULL pnl_corrected closed row or a read error) — refusing the entry (fail-closed)")
 		return true, "done-after-win: day P&L unresolved (a NULL pnl_corrected closed row) — an unknown is not 'no win'; refusing (fail-closed) [D1.2 p1 @20:53–21:16]"
 	}
 	if mentorDoneAfterWin(net, closed) {
-		mentorCount("done_after_win_refused")
+		at.mentorCount("done_after_win_refused")
 		return true, at.mentorDoneAfterWinReason()
 	}
 	return false, ""
@@ -1290,32 +1285,31 @@ func (at *AutoTrader) mentorStopAfterLossGate() (bool, string) {
 	if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v == nil || !*v {
 		return false, "" // the knob is OFF (nil → OFF, the default)
 	}
-	if mentorClosedLossSource == nil {
-		mentorCount("stop_after_loss_no_data")
+	if at.mentorClosedLossSource == nil {
+		at.mentorCount("stop_after_loss_no_data")
 		at.logWarnf("🧑‍🏫 mentor stop-after-loss source missing (closed loss) — refusing the entry (fail-closed)")
 		return true, "stop-after-loss: closed-loss source not wired — an unknown is not 'no loss'; refusing (fail-closed) [D1.2 p1 @ 23:34]"
 	}
-	closed, ok := mentorClosedLossSource()
+	closed, ok := at.mentorClosedLossSource()
 	if !ok {
-		mentorCount("stop_after_loss_unresolved")
+		at.mentorCount("stop_after_loss_unresolved")
 		at.logWarnf("🧑‍🏫 mentor stop-after-loss day UNRESOLVED (a NULL pnl_corrected closed row or a read error) — refusing the entry (fail-closed)")
 		return true, "stop-after-loss: day unresolved (a NULL pnl_corrected closed row) — an unknown is not 'no loss'; refusing (fail-closed) [D1.2 p1 @ 23:34]"
 	}
 	if closed {
-		mentorCount("stop_after_loss_refused")
+		at.mentorCount("stop_after_loss_refused")
 		return true, "stop for the day after a loss — a mentor trade closed today with a net loss; no new entries until the next trading day (17:00 CT) [D1.2 p1 @ 23:34]"
 	}
 	return false, ""
 }
 
-// mentorStopAfterLossTripped is the B3 day-stop-sweep hook for the
+// at.mentorStopAfterLossTripped is the B3 day-stop-sweep hook for the
 // stop-after-loss gate (wired in mentorWireProductionSeams next to
-// mentorClosedLossSource). nil → unwired (the sweep does not trip). It returns
-// (true, why) ONLY on a DEFINITE loss (the knob ON and a resolved closed loss);
-// an unwired or unresolved read returns (false, "") — the placement gate stays
-// fail-closed, but the sweep never force-cancels a resting arm on an unknown
-// (the same contract as mentorDoneAfterWinTripped).
-var mentorStopAfterLossTripped func() (bool, string)
+// at.mentorClosedLossSource). REL18-B: per-trader field. nil → unwired (the sweep
+// does not trip). It returns (true, why) ONLY on a DEFINITE loss (the knob ON
+// and a resolved closed loss); an unwired or unresolved read returns (false, "")
+// — the placement gate stays fail-closed, but the sweep never force-cancels a
+// resting arm on an unknown (the same contract as mentorDoneAfterWinTripped).
 
 // mentorStopAfterLossTrip is the DEFINITE-trip computation behind the B3 sweep
 // hook: the knob ON and a resolved closed loss, nothing else.
@@ -1326,10 +1320,10 @@ func (at *AutoTrader) mentorStopAfterLossTrip() (bool, string) {
 	if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v == nil || !*v {
 		return false, "" // the knob is OFF (nil → OFF, the default)
 	}
-	if mentorClosedLossSource == nil {
+	if at.mentorClosedLossSource == nil {
 		return false, ""
 	}
-	closed, ok := mentorClosedLossSource()
+	closed, ok := at.mentorClosedLossSource()
 	if !ok {
 		return false, ""
 	}
@@ -1343,24 +1337,24 @@ func (at *AutoTrader) mentorStopAfterLossTrip() (bool, string) {
 // fill while a position is open. The resonance ISB is a hold signal, not an
 // entry.
 
-// mentorOpenSideSource is the session seam for (d): the side of the open
+// at.mentorOpenSideSource is the session seam for (d): the side of the open
 // mentor position (nil → none open; the live driver fills it at P1).
-var mentorOpenSideSource func() string
+// REL18-B: per-trader field.
 
 // mentorAddGate is the call-site half of (d). FAIL-CLOSED: with no open-side
 // source the entry refuses — an unknown open side could hide a same-direction
 // add.
 func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
-	if mentorOpenSideSource == nil {
-		mentorCount("add_no_source")
+	if at.mentorOpenSideSource == nil {
+		at.mentorCount("add_no_source")
 		return true, "never-add guard: open-position source not wired — refusing the entry (fail-closed) [D1.1 p1 @17:06–17:44]"
 	}
-	open := mentorOpenSideSource()
+	open := at.mentorOpenSideSource()
 	if open == "" {
 		return false, ""
 	}
 	if strings.EqualFold(open, string(in.Side)) {
-		mentorCount("add_refused")
+		at.mentorCount("add_refused")
 		return true, fmt.Sprintf("never add/average [D1.1 p1 @17:06–17:44]: %s already open — the resonance ISB is a hold signal, not an entry", open)
 	}
 	return false, ""
@@ -1394,11 +1388,11 @@ func (at *AutoTrader) mentorDailyLossGate(now time.Time) (bool, string) {
 	}
 	realized, _, unresolved := at.deskRealizedToday(now)
 	if unresolved > 0 {
-		mentorCount("daily_loss_refused")
+		at.mentorCount("daily_loss_refused")
 		return true, fmt.Sprintf("daily loss limit enforced but %d close(s) today have unresolved P&L — no new entry (fail-closed) [guardrail]", unresolved)
 	}
 	if realized <= -limit {
-		mentorCount("daily_loss_refused")
+		at.mentorCount("daily_loss_refused")
 		return true, fmt.Sprintf("daily loss limit hit at placement (realized today=%.2f, limit=-%.2f) — no new entry [guardrail]", realized, limit)
 	}
 	return false, ""
@@ -1455,13 +1449,13 @@ var mentorDepthRequirements = []mentorDepthRequirement{
 // mentorSourceDepthSource reports one source's seeded depth (names as in
 // mentorDepthRequirements). nil or !known → the boot line prints n/a and the
 // gate refuses (fail-closed). The live driver sets it from DS-103's seed.
-var mentorSourceDepthSource func(name string) (depth int, known bool)
+// REL18-B: per-trader field.
 
 // mentorSourceDepth asks the seam, with a 1m BarCache fallback for the 1m
 // source. Unknown means the seed has not provided it yet.
-func mentorSourceDepth(name string) (int, bool) {
-	if mentorSourceDepthSource != nil {
-		return mentorSourceDepthSource(name)
+func (at *AutoTrader) mentorSourceDepth(name string) (int, bool) {
+	if at.mentorSourceDepthSource != nil {
+		return at.mentorSourceDepthSource(name)
 	}
 	if name == "1m EMA34" && market.FuturesBarsProvider != nil {
 		return len(market.FuturesBarsProvider("MNQ", "1m", 34)), true
@@ -1488,12 +1482,9 @@ const (
 // mentorSeedDepths is the per-source depth snapshot (nil until the splice
 // runs): the seeded numbers SeedLine prints, then advanced after every
 // evaluator tick (mentorRefreshDepths) so a source that was short at boot
-// clears without a restart. Guarded by mentorSeedDepthsMu — the seam is read
-// from the placement path while the tick path writes it.
-var (
-	mentorSeedDepths   map[string]int
-	mentorSeedDepthsMu sync.RWMutex
-)
+// clears without a restart. REL18-B: per-trader fields (at.mentorSeedDepths /
+// at.mentorSeedDepthsMu) — the seam is read from the placement path while the
+// tick path writes it.
 
 // mentorRefreshDepths advances the depth snapshot from the evaluator's live
 // depth (never lowering a number) and logs the ONE "depth met" line when the
@@ -1510,14 +1501,14 @@ func (at *AutoTrader) mentorRefreshDepths() {
 	if live == nil {
 		return
 	}
-	mentorSeedDepthsMu.Lock()
-	defer mentorSeedDepthsMu.Unlock()
-	if mentorSeedDepths == nil {
+	at.mentorSeedDepthsMu.Lock()
+	defer at.mentorSeedDepthsMu.Unlock()
+	if at.mentorSeedDepths == nil {
 		return
 	}
 	for name, d := range live {
-		if d > mentorSeedDepths[name] {
-			mentorSeedDepths[name] = d
+		if d > at.mentorSeedDepths[name] {
+			at.mentorSeedDepths[name] = d
 		}
 	}
 }
@@ -1564,7 +1555,7 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	rows1m, err1m := bh.LastNBarsCurrentContract("MNQ", "1m", mentorSeedBars1mN)
 	if err1m != nil {
 		at.logWarnf("🧑‍🏫 mentor seed: 1m store read failed (%v) — seeding with nothing (refusing)", err1m)
-		mentorCount("seed_store_read_error")
+		at.mentorCount("seed_store_read_error")
 		rows1m = nil
 	}
 	bars1m := storeBarsToKlines(rows1m, 60_000)
@@ -1592,20 +1583,20 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	// The evaluator's own depth (computed from the stitched series) is the
 	// single source of truth for the per-source refusal seam.
 	depths := at.mentorEval.Depths()
-	mentorSeedDepthsMu.Lock()
-	mentorSeedDepths = depths
-	mentorSeedDepthsMu.Unlock()
-	mentorSourceDepthSource = func(name string) (int, bool) {
-		mentorSeedDepthsMu.RLock()
-		defer mentorSeedDepthsMu.RUnlock()
-		d, ok := mentorSeedDepths[name]
+	at.mentorSeedDepthsMu.Lock()
+	at.mentorSeedDepths = depths
+	at.mentorSeedDepthsMu.Unlock()
+	at.mentorSourceDepthSource = func(name string) (int, bool) {
+		at.mentorSeedDepthsMu.RLock()
+		defer at.mentorSeedDepthsMu.RUnlock()
+		d, ok := at.mentorSeedDepths[name]
 		return d, ok
 	}
 	at.logInfof("🧑‍🏫 %s", at.mentorEval.SeedLine(len(contracts)))
-	at.logInfof("%s", mentorSeamBootLine())
+	at.logInfof("%s", at.mentorSeamBootLine())
 	at.logInfof("%s", at.mentorStaleDataBlockBootLine())
 	if len(missing) > 0 {
-		mentorCount("seed_missing")
+		at.mentorCount("seed_missing")
 		at.logErrorf("%s", mentorSeedRefusalLine(missing))
 	}
 }
@@ -1749,7 +1740,7 @@ func (at *AutoTrader) mentorSourcesBlocking(setup string) []string {
 // ones that block only the swing (the 4h EMA 34 depth).
 func (at *AutoTrader) mentorMissingSources(includeSwingOnly bool) []string {
 	var missing []string
-	for _, n := range mentorSeamMissing() {
+	for _, n := range at.mentorSeamMissing() {
 		missing = append(missing, "seam: "+n)
 	}
 	if at.store == nil && mentorDayEventsForTest == nil {
@@ -1772,14 +1763,14 @@ func (at *AutoTrader) mentorMissingSources(includeSwingOnly bool) []string {
 		if req.Name == "1m EMA34" {
 			min = mentor1mEMA34Warmup
 		}
-		depth, known := mentorSourceDepth(req.Name)
+		depth, known := at.mentorSourceDepth(req.Name)
 		if !known {
-			mentorCount("history_depth_short")
+			at.mentorCount("history_depth_short")
 			missing = append(missing, fmt.Sprintf("history: %s (n/a)", req.Name))
 			continue
 		}
 		if depth < min {
-			mentorCount("history_depth_short")
+			at.mentorCount("history_depth_short")
 			missing = append(missing, fmt.Sprintf("history: %s (%d/%d)", req.Name, depth, min))
 		}
 	}
@@ -1806,7 +1797,7 @@ func mentorSourcesLine(id string, at *AutoTrader) string {
 	}
 	var depths []string
 	for _, req := range mentorDepthRequirements {
-		depth, known := mentorSourceDepth(req.Name)
+		depth, known := at.mentorSourceDepth(req.Name)
 		if !known {
 			depths = append(depths, fmt.Sprintf("%s=n/a", req.Name))
 		} else {

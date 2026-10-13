@@ -536,6 +536,21 @@ type AutoTrader struct {
 	// mentorFunnel is the N12 visibility counter (read-only): one INFO line per
 	// 15 minutes + on change, session-day scoped (17:00 CT). Never gates a trade.
 	mentorFunnel mentorFunnel
+	// REL18-B (two mentor traders in one process): the mentor seams, counters
+	// and seed depths are PER-TRADER. The old package-level vars captured the
+	// last-constructed trader and the global counter map summed both traders'
+	// funnels / rebuild line. Per trader, no fallback.
+	mentorOpenSideSource       func() string
+	mentorLegProtectedSource   func(leg string) bool
+	mentorDayNetSource         func() (float64, bool)
+	mentorClosedProfitSource   func() (bool, bool)
+	mentorClosedLossSource     func() (bool, bool)
+	mentorStopAfterLossTripped func() (bool, string)
+	mentorSourceDepthSource    func(name string) (int, bool)
+	mentorSeedDepthsMu         sync.RWMutex
+	mentorSeedDepths           map[string]int
+	mentorCounterMu            sync.Mutex
+	mentorCounters             map[string]int
 	// mentorStaleDataBlock (release #11): the episode state of the mentor
 	// stale-data gate. mentorStaleMu guards it — the authoring gate runs under
 	// mentorEvalMu but the placement pass (armed executor goroutine) does not,

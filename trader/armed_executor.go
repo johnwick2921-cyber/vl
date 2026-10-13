@@ -1999,7 +1999,7 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 			return stopPlaceNotSent
 		}
 		if targetPx != r.TargetPx {
-			mentorCount("wire_target_1r_rebased")
+			at.mentorCount("wire_target_1r_rebased")
 		}
 	}
 	// REVIEW-353: the split rides the ONE frame — leg1_qty + leg1_tp (0, 0)
