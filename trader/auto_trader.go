@@ -766,6 +766,9 @@ type AutoTrader struct {
 	// by the package-level calFetchThrottle (keyed by trader id), not this struct.
 	// P0.6 (2026-08-19) — calendar fail-closed alert, once per trade date.
 	lastCalFailClosedAlert string
+	// CAL-EMPTY-DAY — "fetched — no events scheduled" line, once per trade
+	// date, so a stored [] slice is visibly distinct from an ABSENT slice.
+	lastCalEmptyDate string
 	// F6 (2026-08-30) — clock-hold T1-widening warn line, once per trade date.
 	lastClockWidenLog string
 	// W-T1-CURRENCIES (2026-09-18) — "T1 event without currency treated as

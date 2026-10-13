@@ -118,7 +118,14 @@ func FetchWeek(fetch FetchFunc, static StaticLoader) Result {
 	if perr != nil {
 		return fallback(fmt.Sprintf("calendar feed unparseable (%v); used static T1 fallback", perr))
 	}
-	return Result{Days: groupByCTDate(events, loc), Source: SourceLive}
+	days := groupByCTDate(events, loc)
+	// CAL-EMPTY-DAY — a LIVE fetch that parsed successfully covers a whole week:
+	// every trading date inside that week gets an entry, so a date with no
+	// events is stored as [] ("fetched, nothing scheduled") and is never read as
+	// "feed missing". Static/none keep today's behaviour (no empty rows from a
+	// fallback).
+	fillEmptyTradingDays(days, loc)
+	return Result{Days: days, Source: SourceLive}
 }
 
 // parseForexFactory parses + filters raw FF JSON: keep High→T1 / Medium→T2 for
@@ -167,6 +174,49 @@ func groupByCTDate(events []Event, loc *time.Location) map[string][]Event {
 		sort.SliceStable(days[k], func(i, j int) bool { return days[k][i].Time.Before(days[k][j].Time) })
 	}
 	return days
+}
+
+// fillEmptyTradingDays (CAL-EMPTY-DAY) gives every trading date inside the week
+// the feed covers an entry in `days`: a date with no events becomes an EMPTY
+// list ([]), so a fetched event-free day is stored as "[]" and is never read as
+// "feed missing" (canon CLASS 49/53 — an empty computed list is [], an
+// uncomputed one is absent; they must differ).
+//
+// The covered span is the CT calendar week (Mon–Sun) containing the fetched
+// events: the ForexFactory "thisweek" file covers the current Mon–Sun week, and
+// dates are keyed by each event's America/Chicago calendar date (groupByCTDate,
+// the SAME date the store keys trade dates by). The week's Monday is derived
+// from the earliest fetched event's CT date (the ISO week of any date in the
+// week is the same Monday). Only Mon–Fri are filled — a weekend date is not a
+// trading date and stays ABSENT. No events → no date to derive the week from →
+// no fill (a bare feed keeps the gate's existing fail-closed behaviour). A date
+// outside the fetched week is NEVER marked empty.
+func fillEmptyTradingDays(days map[string][]Event, loc *time.Location) {
+	if len(days) == 0 {
+		return
+	}
+	earliest := ""
+	for d := range days {
+		if earliest == "" || d < earliest {
+			earliest = d
+		}
+	}
+	start, err := time.ParseInLocation("2006-01-02", earliest, loc)
+	if err != nil {
+		return
+	}
+	// Monday of the week containing the earliest event (Mon=1 … Sun=7).
+	monday := start.AddDate(0, 0, -((int(start.Weekday()) + 6) % 7))
+	for i := 0; i < 7; i++ {
+		d := monday.AddDate(0, 0, i)
+		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+			continue
+		}
+		key := d.Format("2006-01-02")
+		if _, ok := days[key]; !ok {
+			days[key] = []Event{}
+		}
+	}
 }
 
 // SessionCurrencies returns the currency filter for a session: USD always; +JPY/
