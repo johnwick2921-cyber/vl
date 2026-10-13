@@ -95,6 +95,13 @@ type Level struct {
 	Kind   LevelKind
 	Price  float64
 	AtTime int64
+
+	// MergedFrom lists the RAW old-extreme prices this DISPLAY line absorbed:
+	// an old high/low within KeyLevelPrunePts of a key level is folded into the
+	// key, and two old extremes closer than KeyLevelPrunePts collapse to the
+	// most recent. Populated only by DisplayLevels (the chart / mentor-truth
+	// panel); nil on the TRADING set and on lines that absorbed nothing.
+	MergedFrom []float64 `json:"merged_from,omitempty"`
 }
 
 // Intent is one evaluator output.

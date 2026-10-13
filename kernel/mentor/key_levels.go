@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"vl/market"
@@ -60,12 +61,29 @@ func KeyLevels(bars []market.Kline, cfg Config) []Level {
 	}
 	// newest-first keep: a level survives unless a newer kept level sits
 	// within the prune distance.
+	out := pruneLevelsByRecency(cand, cfg.KeyLevelPrunePts)
+	return out
+}
+
+// pruneLevelsByRecency — the D5.3 <20 rule, ONE algorithm shared by the key
+// levels and the old-extreme lines [D5.3 p1 @15:59–16:50]: two lines closer
+// than prunePts → delete one, keep the MORE RECENT (rightmost). Iterates
+// newest-first, so a level survives unless an already-kept NEWER level sits
+// within prunePts. AtTime is the recency key (strictly increasing for key
+// levels, so the result is identical to the pre-refactor inline loop).
+// Returns the survivors oldest-first.
+func pruneLevelsByRecency(levels []Level, prunePts float64) []Level {
+	if len(levels) < 2 {
+		return levels
+	}
+	sorted := make([]Level, len(levels))
+	copy(sorted, levels)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].AtTime > sorted[j].AtTime })
 	var kept []Level
-	for i := len(cand) - 1; i >= 0; i-- {
-		l := cand[i]
+	for _, l := range sorted {
 		drop := false
 		for _, k := range kept {
-			if abs(l.Price-k.Price) < cfg.KeyLevelPrunePts {
+			if abs(l.Price-k.Price) < prunePts {
 				drop = true
 				break
 			}
@@ -74,11 +92,8 @@ func KeyLevels(bars []market.Kline, cfg Config) []Level {
 			kept = append(kept, l)
 		}
 	}
-	out := make([]Level, len(kept))
-	for i, l := range kept {
-		out[len(kept)-1-i] = l // restore time order
-	}
-	return out
+	sort.SliceStable(kept, func(i, j int) bool { return kept[i].AtTime < kept[j].AtTime })
+	return kept
 }
 
 // isPreBucketed1H reports whether the input is a series of ready-made 1H
