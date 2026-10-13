@@ -8219,3 +8219,22 @@ a destructive action's freshness check requires the market to be OPEN, judged
 BEFORE the age check. Reference: trader/protection_reconciler.go
 protectionFreshPrice (IsCMEOpen first, then StaleEntryGateFeed),
 kernel/stale_data.go StaleEntryGateFeed.
+
+## CLASS NN (assigned at merge) — mentor arm identity shared across traders
+
+symptom: REL18-A (2026-10-13, owner runs two mentor traders in one bot, same
+strategy): the live-arm registry was one process-wide map keyed by the bare
+ArmID ("isb-1"), and the ledger key (plan_id "mentor" + scenario) carried no
+trader. Both evaluators restart ArmSeq at 0, so B minted the same ids on the
+same bars: B's CancelArm / day-stop sweep cancelled A's resting entry ON A'S
+ACCOUNT (C# cancels on working.Account), and B's UpsertArm overwrote A's ARMED
+row in place (prices, contracts, leg split, exit_mode).
+probe: any in-memory identity or DB unique key that names a resource ("arm",
+"slot", "position") by a process-local id must carry the OWNER (trader id) when
+two owners can mint the same id. A reader that matches by the bare id is a
+cross-owner collision waiting to happen.
+rule: key by owner+"|"+id; every read verifies the owner; a lookup that would
+resolve another owner's entry is REFUSED (WARN naming both) and never acted on.
+Reference: trader/mentor_actions.go (mentorArmKey, mentorLiveArmFor, mentorPlanID,
+mentorRegisterLiveArmForTest), store/armed_orders.go UpsertArm (plan_id carries
+the trader), trader/armed_ledger_loud.go (fail key +trader_id).
