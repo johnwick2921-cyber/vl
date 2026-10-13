@@ -31,7 +31,7 @@ func authorMentorArmForDayStop(t *testing.T, at *AutoTrader, armID, setup string
 		mentorSizeChoice{Contracts: 1, Tier: "base"},
 		now.UnixMilli(), now.UnixMilli(), "B", 0,
 	)
-	live, ok := mentorLiveArmFor(armID)
+		live, ok := at.mentorLiveArmFor(armID)
 	if !ok {
 		t.Fatalf("arm %q not in the live registry", armID)
 	}
@@ -228,18 +228,24 @@ func TestB3SweepCountsOnlyActualCancelsAndPrunes(t *testing.T) {
 	if err := ledger.DB().Create(&termRow).Error; err != nil {
 		t.Fatal(err)
 	}
-	mentorRegisterLiveArm("isb-terminal", at.id, termRow.ID, "long", 29600)
+	mentorRegisterLiveArmForTest("isb-terminal", at.id, termRow.ID, "long", 29600)
 
 	// Another trader's arm — must NOT be touched.
-	mentorRegisterLiveArm("isb-other", "other-trader", 999999, "long", 29600)
+	mentorRegisterLiveArmForTest("isb-other", "other-trader", 999999, "long", 29600)
 
 	if at.cancelLiveMentorArms("test sweep", false) {
 		t.Fatal("a sweep with only terminal/other-trader arms must report no actual cancel")
 	}
-	if _, ok := mentorLiveArmFor("isb-terminal"); ok {
+	if _, ok := at.mentorLiveArmFor("isb-terminal"); ok {
 		t.Fatal("the terminal arm must be pruned from the registry")
 	}
-	if _, ok := mentorLiveArmFor("isb-other"); !ok {
+	if _, ok := at.mentorLiveArmFor("isb-other"); ok {
+		t.Fatal("another trader's arm must NOT resolve to this trader (REL18-A)")
+	}
+	mentorLiveMu.Lock()
+	_, otherStillThere := mentorLiveArms[mentorArmKey("other-trader", "isb-other")]
+	mentorLiveMu.Unlock()
+	if !otherStillThere {
 		t.Fatal("another trader's arm must NOT be pruned by this trader's sweep")
 	}
 	if MentorCountSnapshot()["cancel_requested"] != 0 {

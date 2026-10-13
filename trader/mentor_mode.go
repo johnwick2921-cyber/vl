@@ -485,7 +485,7 @@ func (at *AutoTrader) mentorReconcileLevelArms() {
 		// (refused at dispatch) or a previous process — not resting.
 		var r store.ArmedOrderDB
 		found := false
-		if live, ok := mentorLiveArmFor(arm.ArmID); ok {
+		if live, ok := at.mentorLiveArmFor(arm.ArmID); ok {
 			found = ledger.DB().Where("trader_id = ?", at.id).First(&r, live.RowID).Error == nil
 		}
 		resting := found &&

@@ -54,10 +54,10 @@ func TestB5ExitModeIsPerArmNotPerSide(t *testing.T) {
 	if placed != 2 {
 		t.Fatalf("both same-side arms must reach the placement path, placed=%d", placed)
 	}
-	if got := at.mentorExitMode(mentorScenarioFor("lvl-a")); got != "B" {
+	if got := at.mentorExitMode(at.mentorScenarioFor("lvl-a")); got != "B" {
 		t.Fatalf("the FIRST arm's branch must survive the second same-side arm (want B), got %q", got)
 	}
-	if got := at.mentorExitMode(mentorScenarioFor("lvl-b")); got != "C" {
+	if got := at.mentorExitMode(at.mentorScenarioFor("lvl-b")); got != "C" {
 		t.Fatalf("the second arm must register its own branch C, got %q", got)
 	}
 }

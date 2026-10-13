@@ -169,7 +169,7 @@ func TestMentorPlacementRegistersExitBranch(t *testing.T) {
 		t.Fatalf("a safe-price ISB entry must reach the placement path, placed=%d", placed)
 	}
 	// B5 (L8): the branch is registered per ARM (the scenario), never per side.
-	if got := at.mentorExitMode(mentorScenarioFor("isb-test")); got != "B" {
+	if got := at.mentorExitMode(at.mentorScenarioFor("isb-test")); got != "B" {
 		t.Fatalf("an ISB entry forks B at entry and registers it per arm, got %q", got)
 	}
 }

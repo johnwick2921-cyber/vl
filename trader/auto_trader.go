@@ -507,6 +507,11 @@ type AutoTrader struct {
 	mentorRebuildMu               sync.Mutex
 	mentorRebuildDone             bool
 	mentorRebuildPositionsWarned  bool
+	// REL18-A: the per-trader arm epoch. Each construction (boot/reload) gets
+	// its own epoch so a rebuilt evaluator's "isb-1" never collides with a
+	// prior terminal row — and never with ANOTHER trader's row (the ledger key
+	// carries the trader too). Read once per placement, never shared.
+	mentorArmEpoch int64
 	// mentorPendingStopMoves is the F1 stop-move TRUTH registry: one entry per
 	// (signal, wire leg) stop move that has been SENT but not yet VERIFIED
 	// against the broker's order book. Keyed "<signalID>#<wireLeg>". Guarded by
