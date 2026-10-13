@@ -2,6 +2,7 @@ package trader
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"strings"
@@ -504,9 +505,9 @@ type AutoTrader struct {
 	// positions from the broker book before the first exit-drive pass. The
 	// pass retries on every candle until it has run with a FRESH book, then
 	// mentorRebuildDone latches true. Guarded by mentorRebuildMu.
-	mentorRebuildMu               sync.Mutex
-	mentorRebuildDone             bool
-	mentorRebuildPositionsWarned  bool
+	mentorRebuildMu              sync.Mutex
+	mentorRebuildDone            bool
+	mentorRebuildPositionsWarned bool
 	// mentorPendingStopMoves is the F1 stop-move TRUTH registry: one entry per
 	// (signal, wire leg) stop move that has been SENT but not yet VERIFIED
 	// against the broker's order book. Keyed "<signalID>#<wireLeg>". Guarded by
@@ -1134,7 +1135,14 @@ func (at *AutoTrader) Run() error {
 			at.logInfof("🔄 NinjaTrader close-sync enabled (SL/TP exits → position history)")
 			// W117 F2 (R5) — install the ordered-execution worker registration at
 			// RUN (never at construction); the closure is kept for Stop.
-			at.installNTOrderedExecutions(ntTCP)
+			if err := at.installNTOrderedExecutions(ntTCP); err != nil {
+				// REL18-C O2 — the start FAILS: the duplicate owner was logged,
+				// this trader marked not-running, and the P0 raised. Clean the
+				// per-Run monitor up and exit (same shape as the grid-init error
+				// path) — never fall back to the legacy advisory path.
+				at.cancelStopMonitor()
+				return fmt.Errorf("ordered-execution install refused: %w", err)
+			}
 			// Anchor entry_price to the NT8 position average + clear orphan rows
 			// (the 5m-mark entry the AI-decision write records goes stale/frozen).
 			ntTCP.StartPositionReconcile(at.id, at.exchangeID, at.exchange, at.store)
@@ -1427,12 +1435,17 @@ func (at *AutoTrader) recordBrokerRejection(signalID, brokerReason string) {
 // installNTOrderedExecutions (W117 F2, R5) registers this trader's durable
 // execution consumers with the server's per-(symbol,account) ordered worker at
 // RUN time — never at construction. The unregister closure is kept and called
-// on Stop. A second LIVE owner for the same (symbol, account) is refused
-// loudly by the server; the refusal is logged as an error (never a silent
-// eviction, never a double-application).
-func (at *AutoTrader) installNTOrderedExecutions(nt *ntTrader.TCPTrader) {
+// on Stop.
+//
+// REL18-C O2: a second LIVE owner for the same (symbol, account) is refused
+// loudly and FAILS this trader's start — the trader is stopped, marked
+// not-running, and a P0 names both traders. It must NEVER continue on the
+// legacy advisory path (two traders on one account would double-apply fills).
+// A non-owner install error (nil server/store — impossible at Run) keeps the
+// historical log-only path: those are setup faults, not ownership conflicts.
+func (at *AutoTrader) installNTOrderedExecutions(nt *ntTrader.TCPTrader) error {
 	if at == nil || at.store == nil || nt == nil {
-		return
+		return nil
 	}
 	unreg, err := nt.InstallOrderedExecutions(at.id, at.exchangeID, at.exchange, at.store,
 		func(u ntwire.OrderUpdatePayload) {
@@ -1444,8 +1457,30 @@ func (at *AutoTrader) installNTOrderedExecutions(nt *ntTrader.TCPTrader) {
 			}
 		})
 	if err != nil {
+		if errors.Is(err, ntwire.ErrOrderedOwnerExists) {
+			otherID, _ := nt.OrderedExecutionOwnerID()
+			symbol := at.futuresSymbol()
+			account := nt.BoundAccount()
+			other := otherID
+			if strings.TrimSpace(other) == "" {
+				other = "an already-running trader"
+			}
+			at.emitAlert("P0", "ordered_owner_conflict",
+				"ordered-owner:"+at.id,
+				"Two traders bound to one account — trader stopped",
+				fmt.Sprintf("Trader %q (%s) tried to start on %s / %s, but %q already owns that ordered-execution slot. %q was STOPPED and marked not-running; it did not fall back to the legacy path.",
+					at.name, at.id, symbol, account, other, at.name))
+			at.logErrorf("❌ ordered-execution install refused (%v) — a running trader (%q) already owns (symbol=%s, account=%s); stopping %q (%s), no legacy fallback",
+				err, other, symbol, account, at.name, at.id)
+			// Mark this trader not-running so the DB matches the refused start.
+			if at.store != nil {
+				_ = at.store.Trader().UpdateStatus(at.userID, at.id, false)
+			}
+			return fmt.Errorf("ordered-execution owner for (symbol=%s, account=%s) already exists (held by %q): %w",
+				symbol, account, other, err)
+		}
 		at.logErrorf("❌ ordered-execution install refused (%v) — the durable consumers stay on the legacy advisory path", err)
-		return
+		return nil
 	}
 	at.orderedExecMu.Lock()
 	// A previous registration (reload edge) is retired before the new one is
@@ -1456,6 +1491,7 @@ func (at *AutoTrader) installNTOrderedExecutions(nt *ntTrader.TCPTrader) {
 	at.orderedExecUnreg = unreg
 	at.orderedExecMu.Unlock()
 	at.logInfof("🧭 ordered execution installed: (symbol,account) worker applies order/fill/close in TCP receive order")
+	return nil
 }
 
 // firstFor reports whether key is new for the dedupe-once field *f and records

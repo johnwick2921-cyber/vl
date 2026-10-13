@@ -456,6 +456,7 @@ export function TraderDashboardPage({
               {selectedTraderId && (
                 <AccountSelector
                   traderId={selectedTraderId}
+                  isRunning={status?.is_running ?? false}
                   onAccountChanged={() => {
                     // Invalidate every account-scoped SWR key for this trader on
                     // account change so the new account's data is re-fetched.

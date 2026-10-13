@@ -705,6 +705,23 @@ func (s *Server) handleStartTrader(c *gin.Context) {
 		return
 	}
 
+	// REL18-C O3b — one trader per (symbol, account): refuse to start when
+	// ANOTHER RUNNING trader already holds the same (symbol, account). This is
+	// the fail-closed mirror of the ordered-execution owner conflict (O2), and
+	// it fires BEFORE any load/start so the DB is never marked running.
+	if fullCfg != nil && fullCfg.Exchange != nil && fullCfg.Trader != nil {
+		symbol := strings.TrimSpace(fullCfg.Exchange.NTInstrumentName)
+		account := strings.TrimSpace(fullCfg.Trader.Account)
+		if otherID, otherName, ok := s.runningTraderOnSameSymbolAccount(userID, traderID, symbol, account); ok {
+			SafeConflictWithDetails(c,
+				fmt.Sprintf("Trader %q is already running on %s / %s — stop it before starting %q on the same (symbol, account).",
+					otherName, symbol, account, traderName),
+				"trader.start.duplicate_symbol_account",
+				mapStringPairs("trader_name", traderName, "other_trader", otherName, "other_trader_id", otherID, "symbol", symbol, "account", account))
+			return
+		}
+	}
+
 	// Check if trader exists in memory and if it's running
 	existingTrader, _ := s.traderManager.GetTrader(traderID)
 	if existingTrader != nil {

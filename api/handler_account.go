@@ -139,6 +139,18 @@ func (s *Server) handleSelectAccount(c *gin.Context) {
 		return
 	}
 
+	// REL18-C O1 — a RUNNING trader's binding must NOT change. Nothing is
+	// persisted, no cache reset, no binding change: the running TCPTrader stays
+	// bound to its account (the live 00:43 mismatch: the UI showed the new
+	// account while the running trader kept trading the old one).
+	if autoTrader.HealthIsRunning() {
+		SafeConflictWithDetails(c,
+			"Stop the trader first, then choose the account, then start it.",
+			"account.select.trader_running",
+			mapStringPairs("trader_id", traderID))
+		return
+	}
+
 	// Retrieve the full account list to validate and check SIM status
 	accounts, _ := tcpServer.GetAccountsList()
 	var targetAccount *ntwire.AccountInfo
@@ -191,6 +203,20 @@ func (s *Server) handleSelectAccount(c *gin.Context) {
 	// account (tcp_trader.go SignalPayload.Account → the AddOn's per-order routing),
 	// balances AND positions now stream for ALL accounts, and records stamp the
 	// trader's boundAccount (G6) — so nothing needs the shared active account moved.
+
+	// REL18-C O3a — one trader per (symbol, account): refuse to bind an account
+	// that ANOTHER trader already holds on the same symbol (running or not).
+	if thisSymbol, _, _ := s.traderSymbolAccount(userID, traderID); thisSymbol != "" && req.Account != "" {
+		if otherID, otherName, ok := s.otherTraderBoundToSameSymbolAccount(userID, traderID, thisSymbol, req.Account); ok {
+			SafeConflictWithDetails(c,
+				fmt.Sprintf("Account %s is already bound to trader %q on the same symbol %s — one trader per (symbol, account). Stop or rebind that trader first.",
+					req.Account, otherName, thisSymbol),
+				"account.select.account_in_use",
+				mapStringPairs("trader_id", traderID, "other_trader", otherName, "other_trader_id", otherID, "account", req.Account, "symbol", thisSymbol))
+			return
+		}
+	}
+
 	//
 	// Reset THIS trader's own cached fill/position state so its card refreshes to
 	// the (now persisted) binding on the next reload — a self-only effect that never

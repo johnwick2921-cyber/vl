@@ -40,6 +40,16 @@ export const guards: GuideSection = {
       kind: 'p',
       text: "While any position is open, EVERY entry is refused — either side, any plan version, on the arm path and the decision path alike: 'refused: position 591 open (v2 S1 short); no adds, no flips' (owner ruling 2026-09-03). The predecessor guard refused only the OPPOSITE side, because on a netting account an opposite-side fill silently nets the position; a same-side add was explicitly out of scope. The block on re-arming the SAME scenario in the same plan version lives in the store (MANUAL-CANCEL-WINS) and survives a restart, but a NEW plan version re-authorizes a terminal row — so a v3 S1 short could have added to a v2 S1 short position that was still open. An arm explicitly authored as an exit leg is exempt: that is how a position gets flattened.",
     },
+    { kind: 'h', text: 'One trader per (symbol, account)' },
+    {
+      kind: 'p',
+      text: 'Two traders can never trade the same account on the same symbol — a second one would double-apply the same fills. Starting a trader while another running trader already holds its (symbol, account) is refused with a 409 that names the other trader. At boot, if two traders in the database share a (symbol, account) and both are marked running, the first by created_at starts and the second is refused, marked not-running, and a P0 names both. A refused duplicate never falls back to a legacy path.',
+    },
+    { kind: 'h', text: 'Stop before changing the account' },
+    {
+      kind: 'p',
+      text: "A running trader's NT8 account cannot be changed — the account dropdown is disabled while it runs. Selecting an account that is already bound to another trader on the same symbol is refused with a 409 that names that trader. Stop the trader first, then choose the account, then start it.",
+    },
     { kind: 'h', text: 'Invalidation is execution-wired' },
     {
       kind: 'p',
