@@ -2,8 +2,11 @@ package trader
 
 import (
 	"testing"
+	"time"
 
+	"vl/kernel"
 	"vl/kernel/mentor"
+	"vl/store"
 )
 
 // ── REL18-B: mentor per-trader wiring pins ─────────────────────────────────
@@ -175,5 +178,110 @@ func TestMentorSeamBootLineReadsOwnSeams(t *testing.T) {
 	}
 	if !textHas(bl, "day_net=missing") || !textHas(bl, "closed_profit=missing") {
 		t.Fatalf("B boot line must show its own day_net/closed_profit missing (A's wiring must not leak): %q", bl)
+	}
+}
+
+// seedClosedWire inserts one CLOSED row with a resolved corrected P&L.
+func seedClosedWire(t *testing.T, st *store.Store, traderID string, exitMs int64, corrected float64) {
+	t.Helper()
+	row := &store.TraderPosition{
+		TraderID: traderID, Account: "", Symbol: "MNQ", Side: "LONG",
+		Quantity: 1, EntryPrice: 100, ExitPrice: 100 + corrected, RealizedPnL: corrected,
+		PnlCorrected: &corrected, Status: "CLOSED", CloseReason: "sync", Source: "sync",
+		EntryTime: exitMs - 60_000, ExitTime: exitMs, CreatedAt: exitMs, UpdatedAt: exitMs,
+	}
+	if err := st.GormDB().Create(row).Error; err != nil {
+		t.Fatalf("seed closed row for %s: %v", traderID, err)
+	}
+}
+
+// TestMentorProductionWiringReadsOwnTrader drives the PRODUCTION wiring on TWO
+// AutoTraders with DISTINCT fake traders and stores (A flat / no win / a CME-day
+// loss; B long / +120 win / no loss), B wired LAST. It asserts through the
+// production gates that each trader reads ITS OWN positions and ITS OWN session
+// P&L. This is the FOLD the CTO required: the six direct-injection pins never
+// ran the production wiring, so MB1 (a closure capturing the last-wired trader)
+// survived.
+func TestMentorProductionWiringReadsOwnTrader(t *testing.T) {
+	ct := kernel.CTLocation()
+	now := time.Date(2026, 10, 13, 9, 0, 0, 0, ct) // 09:00 CT
+
+	// A: flat, no NY-day win, but one CME-session-day loss (18:00 CT the prior
+	// day — after the 17:00 CT session roll, before today's 08:30 NY boundary).
+	aSt := mentorSeedStore(t)
+	if err := store.NewPositionStore(aSt.GormDB()).InitTables(); err != nil {
+		t.Fatalf("A positions migrate: %v", err)
+	}
+	seedClosedWire(t, aSt, "t-a", time.Date(2026, 10, 12, 18, 0, 0, 0, ct).UnixMilli(), -40)
+
+	// B: long, one NY-day win (08:45 CT today) and no loss.
+	bSt := mentorSeedStore(t)
+	if err := store.NewPositionStore(bSt.GormDB()).InitTables(); err != nil {
+		t.Fatalf("B positions migrate: %v", err)
+	}
+	seedClosedWire(t, bSt, "t-b", time.Date(2026, 10, 13, 8, 45, 0, 0, ct).UnixMilli(), 120)
+
+	on := true
+	a := &AutoTrader{
+		id:     "t-a",
+		trader: &fakeMentorPositionReader{positions: []map[string]interface{}{}}, // flat
+		store:  aSt,
+		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{
+			MentorMode: true, MentorStopAfterLoss: &on,
+		}}},
+	}
+	b := &AutoTrader{
+		id:     "t-b",
+		trader: &fakeMentorPositionReader{positions: []map[string]interface{}{{"side": "long"}}}, // long
+		store:  bSt,
+		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{
+			MentorMode: true, MentorStopAfterLoss: &on,
+		}}},
+	}
+
+	// PRODUCTION wiring, B wired LAST — the exact bug shape MB1 exploits.
+	a.mentorWireProductionSeams()
+	b.mentorWireProductionSeams()
+	// The wiring re-pins mentorNowSource to the wall clock; re-pin the fixed
+	// clock so the day-boundary reads below are deterministic (the closures
+	// read mentorClockNow() lazily at call time).
+	mentorNowSource = func() time.Time { return now }
+	t.Cleanup(func() { mentorNowSource = nil })
+
+	// (audit #4) done-after-win: A has no NY-day win → keeps trading; B has a
+	// +120 win → refused. A mutant that captures the last-wired trader's day
+	// read makes A read B's +120 and refuse here.
+	if refused, why := a.mentorDoneAfterWinGate(); refused {
+		t.Fatalf("A must read A's own NY day (net 0, no win), got refused: %s", why)
+	}
+	if refused, _ := b.mentorDoneAfterWinGate(); !refused {
+		t.Fatal("B with its own +120 win must be refused")
+	}
+
+	// (audit #4) stop-after-loss: A closed a CME-session-day loss → refused;
+	// B closed none → keeps trading. A mutant that captures the last-wired
+	// trader's loss read makes A read B's no-loss and pass here.
+	if refused, why := a.mentorStopAfterLossGate(); !refused {
+		t.Fatalf("A must read A's own CME-day loss and refuse, got allow (%q)", why)
+	}
+	if refused, _ := b.mentorStopAfterLossGate(); refused {
+		t.Fatal("B with no CME-day loss must keep trading")
+	}
+
+	// (audit #5) never-add / open-position-active: A flat → not refused and
+	// not active; B long → refused and active. A mutant that captures the
+	// last-wired trader's positions makes A read B's long and refuse.
+	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, Side: mentor.SideLong}
+	if refused, why := a.mentorAddGate(in); refused {
+		t.Fatalf("A must read A's own (flat) positions, got refused: %s", why)
+	}
+	if refused, _ := b.mentorAddGate(in); !refused {
+		t.Fatal("B with its own long must refuse a same-side add")
+	}
+	if a.mentorOpenPositionActive() {
+		t.Fatal("A must read flat (B's long must never make A look open)")
+	}
+	if !b.mentorOpenPositionActive() {
+		t.Fatal("B with its own long must be active")
 	}
 }
