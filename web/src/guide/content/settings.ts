@@ -1675,7 +1675,7 @@ export const settings: GuideSection = {
         },
         {
           title: 'LOG_RETENTION_DAYS = 0',
-          body: "Age-based prune of data/vl_YYYY-MM-DD.log at logger init. 0 = keep every file (the default — the owner has not ruled on logs). Never deletes today's or the running boot's file.",
+          body: "Age-based prune of data/vl_YYYY-MM-DD.log at logger init, where the date is America/Chicago (CT) — the same zone every log line timestamp renders in, so file date and line times always agree on any machine clock. 0 = keep every file (the default — the owner has not ruled on logs). Never deletes today's or the running boot's file.",
         },
         {
           title: 'PERSIST_STALL_WATCHDOG_S = 60',
