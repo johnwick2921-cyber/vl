@@ -211,6 +211,11 @@ export const mentor: GuideSection = {
           cite: 'Engineering rule — frontend refresh + chart levels, not from the course · web/src/components/mentor/useMentorTruth.ts · web/src/components/charts/AdvancedChart.tsx mentorLevels',
         },
         {
+          title: 'Old highs/lows closer than 20 pts are drawn as one line',
+          body: 'The panel and the chart draw ONE line where old highs/lows sit closer than 20 pts apart — the most recent is kept and the folded-away prices are listed in the line\u2019s tooltip ("old low 31043.00 · also 31058.00, 31050.00"). An old high/low within 20 pts of a key level is folded INTO that key level (the key wins). This is the display only: the bot still reduces the ISB size (3 contracts) at any of the merged old highs/lows, and the target ladder still reads them — trading is unchanged.',
+          cite: 'Course 5.3 @15:59–16:50 — two lines under 20 pts → delete one, keep the more recent · kernel/mentor/level_display.go DisplayLevels · mentor.Level.MergedFrom',
+        },
+        {
           title: 'Fold it away',
           body: 'Click the card title to fold it away or open it again; the page remembers your choice.',
           cite: 'Engineering rule — frontend UI (fold), not from the course · web/src/components/mentor/MentorTruthCard.tsx localStorage vl.mentorCard.open',
