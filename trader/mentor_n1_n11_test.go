@@ -33,7 +33,7 @@ func TestMentorArmIDUniqueAcrossRestarts(t *testing.T) {
 	// An OLD terminal row from a prior process (authored with the OLD
 	// unprefixed scenario, before N1) that never reached the broker.
 	old := store.ArmedOrderDB{
-		TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR",
+		TraderID: at.id, PlanID: mentorPlanID(at.id), Version: 1, Session: "MENTOR",
 		Scenario: "isb-1", LegIndex: 0, Side: "LONG",
 		State: store.StateCancelled, EntryPx: 100, StopPx: 99, TargetPx: 102,
 		Kind: "stop_entry",
@@ -43,13 +43,13 @@ func TestMentorArmIDUniqueAcrossRestarts(t *testing.T) {
 	}
 
 	// A reload/restart bumps the epoch, then the SAME evaluator ArmID arrives.
-	bumpMentorArmEpoch()
+	at.mentorArmEpoch = time.Now().UnixNano()
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-1", Setup: "ISB",
 		Side: mentor.SideLong, Price: 200, Stop: 199, Target: 204, StopPts: 1, TargetPts: 4,
 		ExpiryMs: time.Now().UnixMilli() + 60_000}
 	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 5, Tier: "base", Why: "test"}, 1000, 1100, "B", 0)
 
-	arm, ok := mentorLiveArmFor("isb-1")
+	arm, ok := at.mentorLiveArmFor("isb-1")
 	if !ok || arm.RowID == 0 || arm.RowID == old.ID {
 		t.Fatalf("the new arm must be authored on its own row after a reset, got %+v ok=%v (old row %d)", arm, ok, old.ID)
 	}
@@ -76,10 +76,10 @@ func TestMentorArmRowZeroRefuses(t *testing.T) {
 
 	// Pin the epoch and seed a TERMINAL no-signal row for THIS construction's
 	// scenario, so UpsertArm finds it and no-ops (returns nil, id 0).
-	bumpMentorArmEpoch()
-	scenario := fmt.Sprintf("isb-1-%d", mentorArmEpoch.Load())
+	at.mentorArmEpoch = time.Now().UnixNano()
+	scenario := fmt.Sprintf("isb-1-%d", at.mentorArmEpoch)
 	old := store.ArmedOrderDB{
-		TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR",
+		TraderID: at.id, PlanID: mentorPlanID(at.id), Version: 1, Session: "MENTOR",
 		Scenario: scenario, LegIndex: 0, Side: "LONG",
 		State: store.StateCancelled, EntryPx: 100, StopPx: 99, TargetPx: 102,
 		Kind: "stop_entry",
@@ -94,7 +94,7 @@ func TestMentorArmRowZeroRefuses(t *testing.T) {
 		ExpiryMs: time.Now().UnixMilli() + 60_000}
 	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 5, Tier: "base", Why: "test"}, 1000, 1100, "B", 0)
 
-	if _, ok := mentorLiveArmFor("isb-1"); ok {
+	if _, ok := at.mentorLiveArmFor("isb-1"); ok {
 		t.Fatal("a row-0 arm must NOT be registered")
 	}
 	if c := MentorCountSnapshot()["placement_refused_arm_id_zero"]; c != 1 {

@@ -139,7 +139,7 @@ func TestMentorStaleDataBlockDoesNotBlockExitDrive(t *testing.T) {
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	mentorRegisterLiveArm("swing-stale", at.id, row.ID, "long", 29600)
+	mentorRegisterLiveArmForTest("swing-stale", at.id, row.ID, "long", 29600)
 
 	now := mentorStaleBlockClock(10, 0) // CME open, stale feed
 	mentorNowSource = func() time.Time { return now }

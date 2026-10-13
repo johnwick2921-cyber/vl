@@ -52,7 +52,7 @@ func TestMentorNewsCancelFlattenAtEvalOnceCallSite(t *testing.T) {
 
 	readByArmID := func(armID string) store.ArmedOrderDB {
 		t.Helper()
-		live, ok := mentorLiveArmFor(armID)
+			live, ok := at.mentorLiveArmFor(armID)
 		if !ok {
 			t.Fatalf("arm %q not in the live registry", armID)
 		}
@@ -88,10 +88,10 @@ func TestMentorNewsCancelFlattenAtEvalOnceCallSite(t *testing.T) {
 	if got := readRowByID(swingRow.ID); store.IsTerminalArmState(got.State) {
 		t.Fatalf("the SWING4H arm must survive the news sweep, got state=%q", got.State)
 	}
-	if _, ok := mentorLiveArmFor("isb-news"); ok {
+	if _, ok := at.mentorLiveArmFor("isb-news"); ok {
 		t.Fatal("the cancelled intraday arm must be pruned from the registry (I5)")
 	}
-	if _, ok := mentorLiveArmFor("swing-news"); !ok {
+	if _, ok := at.mentorLiveArmFor("swing-news"); !ok {
 		t.Fatal("the surviving swing arm must stay in the registry")
 	}
 }

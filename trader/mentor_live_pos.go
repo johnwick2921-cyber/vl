@@ -97,7 +97,9 @@ func (at *AutoTrader) mentorBuildLivePos(r store.ArmedOrderDB, u ntwire.OrderUpd
 		Leg1TP:    r.TargetPx,
 	}
 	lp := &mentorLivePos{Pos: pos}
-	if v, ok := mentorRunnerTargets.Load(r.Scenario); ok {
+	// REL18-A #7: the runner target is keyed trader+scenario — two traders mint
+	// the same scenario, and a bare-scenario key would hand B's fill A's target.
+	if v, ok := mentorRunnerTargets.Load(mentorRunnerTargetKey(at.id, r.Scenario)); ok {
 		lp.RunnerTarget, _ = v.(float64)
 	}
 	lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: n, TP: r.TargetPx, Stop: r.StopPx, Final: true}

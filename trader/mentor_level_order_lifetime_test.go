@@ -61,7 +61,7 @@ func TestMentorCancelArmClearsEvaluatorLevelArm(t *testing.T) {
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	mentorRegisterLiveArm("lvl-9", at.id, row.ID, "long", 29392)
+	mentorRegisterLiveArmForTest("lvl-9", at.id, row.ID, "long", 29392)
 
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.CancelArm, ArmID: "lvl-9", Reason: "test close-through"}, mentorTierInputs{}, 1000, 1100)
 
@@ -119,7 +119,7 @@ func TestMentorTickKeepsAProductionAuthoredRestingLevelArm(t *testing.T) {
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "lvl-77", Side: mentor.SideLong,
 		Price: 29392, Stop: 29385, Target: 29430, Setup: "PHL"}
 	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 1}, now.UnixMilli(), now.UnixMilli(), "B", 0)
-	live, ok := mentorLiveArmFor("lvl-77")
+	live, ok := at.mentorLiveArmFor("lvl-77")
 	if !ok {
 		t.Fatal("mentorArmIntent must register the arm")
 	}

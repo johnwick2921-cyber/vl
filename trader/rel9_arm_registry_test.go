@@ -46,7 +46,7 @@ func TestRel9FilledSwingSurvivesNeverAddSweep(t *testing.T) {
 		mentorSizeChoice{Contracts: 1, Tier: "base"},
 		now.UnixMilli(), now.UnixMilli(), "swing", 0,
 	)
-	live, ok := mentorLiveArmFor("swing-rel9")
+	live, ok := at.mentorLiveArmFor("swing-rel9")
 	if !ok {
 		t.Fatal("fixture: swing arm not registered")
 	}
@@ -61,7 +61,7 @@ func TestRel9FilledSwingSurvivesNeverAddSweep(t *testing.T) {
 	// the FILLED swing.
 	at.mentorDayStopSweep(now)
 
-	if _, ok := mentorLiveArmFor("swing-rel9"); !ok {
+	if _, ok := at.mentorLiveArmFor("swing-rel9"); !ok {
 		t.Fatal("a FILLED swing arm must NOT be pruned by the never-add sweep (P1)")
 	}
 	if got := MentorCountSnapshot()["cancel_requested"]; got != 0 {
@@ -83,12 +83,12 @@ func TestRel9FilledSwingSurvivesNeverAddSweep(t *testing.T) {
 // resting arm (log + return false; the next tick retries).
 func TestRel9CancelReadErrorDoesNotPrune(t *testing.T) {
 	at, _, _, _ := mentorB3Rig(t)
-	mentorRegisterLiveArm("lvl-readerr", at.id, 999999, "long", 29600)
+	mentorRegisterLiveArmForTest("lvl-readerr", at.id, 999999, "long", 29600)
 
 	if at.mentorCancelArm(mentor.Intent{Action: mentor.CancelArm, ArmID: "lvl-readerr", Reason: "test"}) {
 		t.Fatal("a read error must not request a cancel")
 	}
-	if _, ok := mentorLiveArmFor("lvl-readerr"); !ok {
+	if _, ok := at.mentorLiveArmFor("lvl-readerr"); !ok {
 		t.Fatal("a read error must NOT prune the registry entry")
 	}
 }
@@ -110,7 +110,7 @@ func TestRel9CancelPendingNotRecounted(t *testing.T) {
 	if err := ledger.SetState(row.ID, store.StateCancelPending, "test"); err != nil {
 		t.Fatal(err)
 	}
-	mentorRegisterLiveArm("lvl-cp", at.id, row.ID, "long", 29600)
+	mentorRegisterLiveArmForTest("lvl-cp", at.id, row.ID, "long", 29600)
 
 	ResetMentorCountersForTest()
 	if at.mentorCancelArm(mentor.Intent{Action: mentor.CancelArm, ArmID: "lvl-cp", Reason: "test"}) {
@@ -119,7 +119,7 @@ func TestRel9CancelPendingNotRecounted(t *testing.T) {
 	if got := MentorCountSnapshot()["cancel_requested"]; got != 0 {
 		t.Fatalf("a cancel_pending row must not be re-counted, got cancel_requested=%d", got)
 	}
-	if _, ok := mentorLiveArmFor("lvl-cp"); !ok {
+	if _, ok := at.mentorLiveArmFor("lvl-cp"); !ok {
 		t.Fatal("a cancel_pending row is non-terminal and must stay registered")
 	}
 }

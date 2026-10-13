@@ -467,7 +467,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// before it fills. Resolve the arm identity ONCE so mentorArmIntent
 	// authors the row under the SAME key.
 	in.ArmID = mentorResolveArmID(in.ArmID)
-	at.setMentorExitMode(mentorScenarioFor(in.ArmID), forkMode)
+	at.setMentorExitMode(at.mentorScenarioFor(in.ArmID), forkMode)
 	if mentorPlaceRecorderForTest != nil {
 		mentorPlaceRecorderForTest(in, choice.Contracts)
 		return // test seam: the real pipeline is never reached from a test
@@ -668,12 +668,14 @@ func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
 	// scenario is the key the placement registered under. I3/I5: the entries
 	// are COPIED under mentorLiveMu before iterating (a concurrent write must
 	// not race the iteration), and only THIS trader's arms are considered.
-	type restingArm struct{ id, side string }
+	// REL18-A: the scenario is the STORED one on the entry, never recomputed
+	// with the current epoch (a reload would break the lookup).
+	type restingArm struct{ id, scenario, side string }
 	resting := make([]restingArm, 0)
 	mentorLiveMu.Lock()
-	for id, arm := range mentorLiveArms {
+	for _, arm := range mentorLiveArms {
 		if arm.TraderID == at.id {
-			resting = append(resting, restingArm{id: id, side: arm.Side})
+			resting = append(resting, restingArm{id: arm.ArmID, scenario: arm.Scenario, side: arm.Side})
 		}
 	}
 	mentorLiveMu.Unlock()
@@ -681,7 +683,7 @@ func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
 		if !strings.EqualFold(ra.side, side) {
 			continue
 		}
-		scenario := mentorScenarioFor(ra.id)
+		scenario := ra.scenario
 		cur := at.mentorExitMode(scenario)
 		if cur == "" {
 			continue // no staged branch for this arm — nothing to switch
@@ -938,8 +940,8 @@ func (at *AutoTrader) cancelLiveMentorArms(reason string, swingExempt bool) bool
 	type entry struct{ id, traderID string }
 	entries := make([]entry, 0)
 	mentorLiveMu.Lock()
-	for id, arm := range mentorLiveArms {
-		entries = append(entries, entry{id: id, traderID: arm.TraderID})
+	for _, arm := range mentorLiveArms {
+		entries = append(entries, entry{id: arm.ArmID, traderID: arm.TraderID})
 	}
 	mentorLiveMu.Unlock()
 	cancelled := 0
@@ -1550,9 +1552,10 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	if at == nil || at.store == nil {
 		return
 	}
-	// N1 (DS-104): each construction (boot or reload) gets its own arm epoch, so
-	// a rebuilt evaluator's "isb-1" never collides with a prior terminal row.
-	bumpMentorArmEpoch()
+	// REL18-A: each construction (boot or reload) gets its OWN arm epoch (a
+	// per-AutoTrader field, never shared), so a rebuilt evaluator's "isb-1"
+	// never collides with a prior terminal row — or another trader's row.
+	at.mentorArmEpoch = time.Now().UnixNano()
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}

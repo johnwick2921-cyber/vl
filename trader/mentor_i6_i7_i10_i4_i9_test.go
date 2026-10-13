@@ -156,7 +156,7 @@ func TestMentorI4CancelArmRegistersPartialFill(t *testing.T) {
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	mentorRegisterLiveArm("i4-arm", at.id, row.ID, "long", 29600)
+	mentorRegisterLiveArmForTest("i4-arm", at.id, row.ID, "long", 29600)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.CancelArm, ArmID: "i4-arm", Reason: "never-add sweep"}, mentorTierInputs{}, 1000, 1100)
 	lp := at.mentorLivePos["i4-can-sig"]
 	if lp == nil {

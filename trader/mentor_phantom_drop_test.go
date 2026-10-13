@@ -196,7 +196,7 @@ func TestMentorDispatchRegisteredLiveArmNotDropped(t *testing.T) {
 	at.mentorEval = mentor.New(mentor.Config{})
 	at.mentorEval.State.ISBArms["isb-reg"] = mentor.ISBArm{Inside: 0, Side: mentor.SideLong}
 	resetMentorLiveArms(t)
-	mentorRegisterLiveArm("isb-reg", at.id, 1, "long", 21000)
+	mentorRegisterLiveArmForTest("isb-reg", at.id, 1, "long", 21000)
 
 	// A refusal (untagged setup) on an arm that IS registered must NOT drop it.
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-reg", Side: mentor.SideLong,
