@@ -21,6 +21,13 @@ const (
 	maxManualAltLeverage = 20
 )
 
+// traderStartReadyTimeout bounds how long handleStartTrader waits for Run's
+// ordered-install verdict before answering 200 (REL18-C FOLD). The install is a
+// local registry write, so it completes in milliseconds; the bound exists so a
+// slow setup can never turn a start into an indefinite HTTP hold. Not a sleep —
+// a select deadline on the ready channel.
+const traderStartReadyTimeout = 5 * time.Second
+
 // AI trader management related structures
 type CreateTraderRequest struct {
 	Name                string  `json:"name" binding:"required"`
@@ -787,6 +794,18 @@ func (s *Server) handleStartTrader(c *gin.Context) {
 		return
 	}
 
+	// REL18-C FOLD — the ordered-install verdict handshake: Run reports nil once
+	// the ordered execution is installed, or the O2 refusal error. Read the
+	// channel BEFORE spawning so both share it; no sleeps-as-sync.
+	ready := trader.RunReadyChan()
+
+	// Mark running BEFORE spawning Run so any later self-refusal (O2 ordered
+	// owner, grid-init error, load error) writes AFTER and always wins the DB
+	// bit — a refused start must never read as running.
+	if err := s.store.Trader().UpdateStatus(userID, traderID, true); err != nil {
+		logger.Warnf("⚠️  Failed to mark trader %s running before start: %v", trader.GetName(), err)
+	}
+
 	// Start trader
 	safe.GoNet("trader-start", traderID, func() {
 		logger.Infof("▶️  Starting trader %s (%s)", traderID, trader.GetName())
@@ -795,10 +814,20 @@ func (s *Server) handleStartTrader(c *gin.Context) {
 		}
 	})
 
-	// Update running status in database
-	err = s.store.Trader().UpdateStatus(userID, traderID, true)
-	if err != nil {
-		logger.Infof("⚠️  Failed to update trader status: %v", err)
+	// Keep the response honest: if Run's ordered install was refused before the
+	// handler returns, answer 409, not "Trader started". A bounded wait only —
+	// if Run has not reached the install yet, the start is assumed to proceed
+	// and the self-refusal above still corrects the DB bit asynchronously.
+	select {
+	case rerr := <-ready:
+		if rerr != nil {
+			SafeConflictWithDetails(c,
+				fmt.Sprintf("Start refused: %s", rerr.Error()),
+				"trader.start.ordered_owner_conflict",
+				mapStringPairs("trader_name", traderName, "trader_id", traderID))
+			return
+		}
+	case <-time.After(traderStartReadyTimeout):
 	}
 
 	logger.Infof("✓ Trader %s started", trader.GetName())
