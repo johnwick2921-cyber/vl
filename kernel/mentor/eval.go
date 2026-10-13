@@ -231,15 +231,36 @@ func Levels(bars []market.Kline, cfg Config, now int64) []Level {
 	var out []Level
 	out = append(out, KeyLevels(bars, cfg)...)
 	out = append(out, EMALevels(bars, cfg)...)
-	for _, d := range kernel.SwingPointLevels(bars, time.UnixMilli(swingPointNow(now))) {
-		switch d.Kind {
-		case kernel.KindSWGH, kernel.KindSWGL:
-			out = append(out, Level{
-				Key:   fmt.Sprintf("%s:%.2f", KindOldExtreme, d.Price),
-				Kind:  KindOldExtreme,
-				Price: d.Price,
-			})
+	out = append(out, swingOldExtremeLevels(bars, now)...)
+	return out
+}
+
+// swingOldExtremeLevels is the RAW old-high/low set (TRADING reads this —
+// byte-identical to before this wave): every 5m+15m swing pivot from
+// kernel.SwingPointLevels, no dedupe, no merge. AtTime carries the pivot
+// confirmation close so the DISPLAY cleanup (DisplayLevels) can keep the most
+// recent; no trading reader consumes AtTime. The chart / mentor-truth panel
+// draws DisplayLevels(levels), which applies the course-5.3 <20 prune.
+func swingOldExtremeLevels(bars []market.Kline, now int64) []Level {
+	swings := kernel.SwingPointLevels(bars, time.UnixMilli(swingPointNow(now)))
+	if len(swings) == 0 {
+		return nil
+	}
+	out := make([]Level, 0, len(swings))
+	for _, d := range swings {
+		if d.Kind != kernel.KindSWGH && d.Kind != kernel.KindSWGL {
+			continue
 		}
+		at := int64(0)
+		if d.FormedCloseMs != nil {
+			at = *d.FormedCloseMs
+		}
+		out = append(out, Level{
+			Key:    fmt.Sprintf("%s:%.2f", KindOldExtreme, d.Price),
+			Kind:   KindOldExtreme,
+			Price:  d.Price,
+			AtTime: at,
+		})
 	}
 	return out
 }
@@ -2192,16 +2213,7 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 	out = append(out, e.State.SeedLevels...)
 	out = append(out, Level{Key: string(KindEMA34), Kind: KindEMA34, Price: e.State.EMA34})
 	out = append(out, Level{Key: string(KindEMA9), Kind: KindEMA9, Price: e.State.EMA9})
-	for _, d := range kernel.SwingPointLevels(bars, time.UnixMilli(swingPointNow(now))) {
-		switch d.Kind {
-		case kernel.KindSWGH, kernel.KindSWGL:
-			out = append(out, Level{
-				Key:   fmt.Sprintf("%s:%.2f", KindOldExtreme, d.Price),
-				Kind:  KindOldExtreme,
-				Price: d.Price,
-			})
-		}
-	}
+	out = append(out, swingOldExtremeLevels(bars, now)...)
 	return out
 }
 

@@ -70,6 +70,32 @@ describe('MentorTruthCard', () => {
     expect(screen.getByTitle('drawn at')).toBeTruthy()
   })
 
+  it('renders the merged_from tooltip on a folded line', () => {
+    render(
+      <LanguageProvider>
+        <MentorTruthCard
+          truth={truth({
+            levels: [
+              {
+                key: 'oe:31043',
+                kind: 'old_extreme',
+                price: 31043,
+                drawn_at: 5000,
+                visits_today: 0,
+                merged_from: [31058, 31050],
+              },
+            ],
+          })}
+        />
+      </LanguageProvider>
+    )
+    // the price carries the "also …" tooltip (the folded-away old highs/lows)
+    expect(
+      screen.getByTitle('also 31058.00, 31050.00')
+    ).toBeTruthy()
+    expect(screen.getByText(/Hover a price to see the old highs/i)).toBeTruthy()
+  })
+
   it('shows the stale marker when the refresh failed, and none when fresh', () => {
     const { rerender } = render(
       <LanguageProvider>
