@@ -137,3 +137,12 @@ func resetGateBlocksForTest() {
 	gateBlockCnts = map[gateBlockKey]int{}
 	gateBlockMu.Unlock()
 }
+
+// ResetGateBlocksForTest clears all gate-block state for a test (test-only —
+// never called from production). The package-global table is otherwise never
+// reset between tests, so a test that asserts an absolute count fails at
+// -count=2+ once a prior iteration (or another test) incremented the same
+// (trader, gate) key.
+func ResetGateBlocksForTest() {
+	resetGateBlocksForTest()
+}
