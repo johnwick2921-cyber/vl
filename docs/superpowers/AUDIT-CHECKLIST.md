@@ -8347,3 +8347,59 @@ GET /api/risk/gate-blocks (`setup_stalls`).
 Reference: telemetry/setup_stall.go (SetupStallAlertDue, RolloverSetupStalls),
 trader/mentor_stall_alarm.go (mentorSetupKind, mentorStallAlarmCheck),
 api/handler_gate_blocks.go (telemetrySetupStallTable).
+
+## CLASS NN (assigned at merge) — a timeout re-opens an outcome the broker already settled
+
+symptom: release #21's Update was refused for 10 minutes on 10-14 (preflight
+ledger_exposure: armed#363 cancel_pending). NT8 confirmed row 363's cancel at
+01:47:29 CT ("✕ armed S1 cancelled in NT8") and the ordered-execution worker
+wrote 'cancelled'; 4 s later the sync-cancel drain timed out ("armed sync cancel
+UNACKED S1 … held cancel_pending") and its RequestCancel moved the row BACK to
+cancel_pending. The drain then re-sent a cancel every pass for an order NT8 no
+longer had (cancel_attempts=8) until a snapshot settled it at 02:05:00. Root:
+the drain re-read the row only when a frame arrived on ITS channel, but the
+frame was owned by the ordered worker (the drain's copy is OrderedOwned, a
+no-op) and the worker applies it only after the post-update order_snapshot; and
+RequestCancel guarded only 'filled', so every other terminal state could be
+re-opened.
+probe: for every "no answer within T → record the intent" branch, ask (a) does
+it READ the row before it writes, and honour a terminal state it reads; (b) can
+the answer arrive on a path the waiter does not watch (another goroutine,
+another consumer, an ordered worker); (c) does the store write itself refuse to
+move a terminal row (a CAS on the canonical terminal predicate), or does it
+trust every caller to have checked.
+rule: a settled outcome is never re-opened by a timeout. The waiter reads the
+row before a re-send and after the drain and honours a terminal state; the
+store's transition is a CAS on NonTerminalArmStateSQL and refuses typed
+(ErrArmCancelTerminal), logged once and counted; the refusal is a refusal, not
+a failed write (no slot latch).
+Reference: trader/armed_executor.go cancelArmedOrdersSyncWith (re-read before
+attempt 2, honour `final`), store/armed_orders.go RequestCancel /
+refuseTerminalCancel (gate-block request_cancel_terminal,
+arm:request_cancel_terminal_refused), trader/cancel_settle.go
+noteSyncCancelSettledOffDrain (arm:sync_cancel_settled_off_drain),
+trader/armed_ledger_loud.go; pins trader/cancel_settle_r22_test.go
+(TestR22Replay363ConfirmedCancelStaysCancelled — real TCPServer + real ordered
+worker), store/request_cancel_terminal_r22_test.go.
+
+## CLASS NN (assigned at merge) — the ledger keeps the authored price, the wire sends another
+
+symptom: armed_orders.stop_px for row 350 was 30882.7763003284 while NT8's
+stop was 30883 (snapshot 109320); row 347's leg1_tp was 30824.25 while NT8's
+-tp was 30825.25 (108678); row 362's 30725.25 vs 30724.25 (110404). The sender
+rounds every bracket (WireBracket: stop away from the entry, target nearest;
+leg-1 TP re-based on the trigger, then rounded) but the row kept the authored
+numbers, so the accepted-risk record, the desk DRIFT line, the protection net's
+plan stop and a restart's leg-1 TP all read prices NT8 never received.
+probe: for every value a sender TRANSFORMS on the way out (rounding, offset,
+re-base, clamp), find where the ledger records it. A ledger written before the
+transform, and never after, disagrees with the broker by construction. A parity
+test must read the frame's bytes and the row — never rebuild both from the same
+inputs.
+rule: after a successful send, the ledger row records exactly what the frame
+carried (store.RecordWirePrices, CAS on the signal id), computed by the SAME
+function the sender runs (or read from the sender's own record, SplitSentFor).
+Reference: trader/arm_wire_truth.go recordArmWirePrices, store/armed_orders.go
+RecordWirePrices; call sites in trader/armed_executor.go (limit, stop-entry, E2
+seams) and trader/zone_placement.go placeZoneRow; pins
+trader/arm_wire_truth_r22_test.go.

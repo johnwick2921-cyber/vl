@@ -303,7 +303,7 @@ export const status: GuideSection = {
         ],
         [
           'DRIFT',
-          'Shown only when the ledger and the broker disagree about the stop. Arm 35 was 3.371527 points apart.',
+          'Shown only when the ledger and the broker disagree about the stop. Arm 35 was 3.371527 points apart. Since release #22 the ledger records the exact tick-rounded stop and target sent to NT8 (the stop rounded away from the entry), so a rounding difference alone no longer shows here — a drift now means the stop really differs from what was sent.',
         ],
         [
           'TARGET',
