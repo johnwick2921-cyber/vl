@@ -40,7 +40,8 @@ const dayPlan: KnobSpec[] = [
   },
   {
     label: 'Planner contract (A3)',
-    where: 'Strategy → Day Plan → Planner contract switch (advanced).',
+    where:
+      'No Studio control — stored setting day_plan.planner_contract (API/config field).',
     what: "WAVE PLANNER A3 (2026-09-25): the prompt, the validator and the executor are ONE contract — breakdown/breakup entries must wait for the tape's confirming close, planned_order is legal only on reject / fvg_entry / sweep_reclaim leg 0, every scenario's economics must carry nonzero risk, and a REJECT fade's stop is composed by the executor from the frozen zone (edge − buffer).",
     trader:
       "ON by default (nil). Turning it OFF restores the pre-A3 prompt text byte-for-byte — the machine still refuses the same violations; only the prompt's contract wording changes.",
@@ -77,16 +78,17 @@ const dayPlan: KnobSpec[] = [
     trader:
       'Higher = tighter card; lower = wider card. Far levels still feed the bias-tree anchors even when unseated.',
     consumer:
-      'kernel/levels_score.go:389 (ScoreLevels proximityK) · trader/auto_trader_planconfig.go:47',
-    range: '0.1 – 3.0 (× daily-range proxy, clamped)',
+      'kernel/levels_score.go ScoreLevels (proximityK) · trader/auto_trader_planconfig.go proximityFilterATR → kernel.ResolveProximityK · kernel/engine_analysis.go (engine path, same resolver)',
+    range:
+      '0.1 – 3.0 (× daily-range proxy); a saved value outside that range is not clamped — it falls back to 1.5',
     systemDefault:
       '1.5 (the code default: kernel.ResolveProximityK falls back to ActivationWindowK 1.5 when nothing is saved)',
     recommended:
-      '⭐ 1 — the value BOTH bound strategies have SAVED (day_plan.proximity_filter_atr = 1, read 2026-10-14 for a5b7662e "MNQ" and 7a853ea3 "mnq 2"); the 1.5 this card used to call the saved value is only the code fallback. Band = K × dATR (the daily-range proxy) on BOTH the bot gate and the engine path; kernel.ResolveProximityK clamps to 0.1–3.0. dATR (release #22) = the mean high−low of the last 2 COMPLETE CME sessions, read from the NT8 daily bars; it used to average a cut-off stub of the oldest day as if complete and fell as low as half the real range (10-14 01:44 CT: 179.62 vs ~380).',
+      '⭐ 1 — the value BOTH bound strategies have SAVED (day_plan.proximity_filter_atr = 1, read 2026-10-14 for a5b7662e "MNQ" and 7a853ea3 "mnq 2"); the 1.5 this card used to call the saved value is only the code fallback. Band = K × dATR (the daily-range proxy) on BOTH the bot gate and the engine path; kernel.ResolveProximityK keeps a value inside 0.1–3.0 and replaces anything outside it (0/unset included) with 1.5 — it does not clamp. dATR (release #22) = the mean high−low of the last 2 COMPLETE CME sessions, read from the NT8 daily bars; it used to average a cut-off stub of the oldest day as if complete and fell as low as half the real range (10-14 01:44 CT: 179.62 vs ~380).',
     whenToTouch:
       'If the card looks too crowded or too empty for the daily range.',
     perSession:
-      'Yes — session override wins; inherit (blank) = the strategy-level value.',
+      'No — strategy-level: proximityFilterATR and the engine path read day_plan.proximity_filter_atr only; a session has no override for it.',
   },
   {
     label: 'Max levels',
@@ -95,13 +97,17 @@ const dayPlan: KnobSpec[] = [
     trader:
       '8 = a table the AI can copy without hallucinating; 12 = wider map but more copy risk.',
     consumer:
-      'kernel/levels_score.go:54 DefaultMaxLevels · trader/auto_trader_planner.go:592 (maxLevels param)',
-    range: '3 – 12',
-    systemDefault: '8 (owner)',
-    recommended: '⭐ 8 — shipped default, verified copy fidelity.',
+      'kernel/levels_score.go DefaultMaxLevels · trader/auto_trader_planner.go resolveSessionPlanCfg (a saved day_plan.max_levels > 0 wins)',
+    range:
+      '3 – 12 in the Studio; the code takes any saved value > 0 with no clamp',
+    systemDefault:
+      '8 (kernel.DefaultMaxLevels, also the Studio default when nothing is saved)',
+    recommended:
+      '⭐ 12 — the value BOTH bound strategies have SAVED (day_plan.max_levels = 12, read 2026-10-14 for a5b7662e "MNQ" and 7a853ea3 "mnq 2"); 8 is only the code default.',
     whenToTouch:
       'Leave alone; raise only if you find the card missing actionable levels.',
-    perSession: 'Yes.',
+    perSession:
+      'No — strategy-level: resolveSessionPlanCfg reads day_plan.max_levels only; a session has no override for it.',
   },
   {
     label: 'HTF seats (structure-first, S3)',
@@ -142,7 +148,7 @@ const dayPlan: KnobSpec[] = [
     what: 'ON = entries are HELD until the owner taps Approve for this CME session-day.',
     trader: 'You are the gate: no approve, no entries, even on-plan.',
     consumer:
-      'trader/auto_trader_orders.go:297 (approval gate) · api/handler_plan.go:129 (approvalRequired)',
+      'trader/entry_admission.go admitChain (approvalRequired / approvalGranted — every entry path) · api/handler_plan.go Server.approvalRequired',
     range: 'ON | OFF',
     systemDefault: 'OFF (fully automatic)',
     recommended: '⭐ OFF — SIM phase; ON is the rehearsal for live.',
@@ -254,7 +260,7 @@ const dayPlan: KnobSpec[] = [
     what: 'Lowest grade the planner may write. Judged against the min_scenario_quality floor that MinScenarioQualityFor (store/strategy.go) resolves per session; at the floor it resolves to today nothing is refused for quality, and raising it makes the arm-time gate refuse a below-floor scenario.',
     trader: 'C = full palette; B/A = the planner filters its own plays.',
     consumer:
-      'trader/auto_trader_planner.go:592 (AssembleScoredLevelsMinGrade)',
+      'kernel/engine_position.go validateDecision → kernel/transition.go MinScenarioQualityVerdict (decision path) · trader/armed_executor.go (arm path: DayPlanConfig.MinScenarioQualityFor(plan.Session)) · store/strategy.go DayPlanConfig.MinScenarioQualityFor',
     range: 'A | B | C',
     systemDefault: 'C',
     recommended: "⭐ C — grade is advisory; don't hide plays with it.",
@@ -264,7 +270,8 @@ const dayPlan: KnobSpec[] = [
   },
   {
     label: 'Write-time feasibility (W-WRITE-TIME-FEASIBILITY)',
-    where: 'Strategy → Day Plan → write_time_feasibility toggle',
+    where:
+      'No Studio control — stored setting day_plan.write_time_feasibility (API/config field)',
     what: 'Before a plan is written, the write site runs the SAME gate-at-arm predicates the executor runs (min-SL 1.5×ATR5m, arm R:R floor, structural-geometry) on every enabled arm — plus the executor\'s stop-side placement guard for stop-entry arms (reclaim): a trigger already through the read-time price cancels at placement, so it is refused at write instead. Attempts 1–2: a scenario that would be refused is sent back as a repair hint naming the refusal, the numbers, and the fix ("widen the stop past the min-SL floor / raise the arm R:R / pick a mapped level with an id" — or for a stop entry: "author the trigger ahead of price, or author a reject/limit at the level"). The last attempt: the unarmable scenarios are written with arm.enabled=false + arm_disabled_reason (stop_side_wrong for wrong-side stop entries), so the plan ships instead of silently never arming. The session-risk band is NOT judged at write (it is time-based).',
     trader:
       "ON = the planner learns why its arm will not trade and can fix it; the last attempt never fail-closes for this — it writes the arm disabled. OFF = today's behaviour: an arm-feasibility WARN is logged and the plan is written as authored (the gate-at-arm chain still refuses at arm time).",
@@ -314,7 +321,7 @@ const dayPlan: KnobSpec[] = [
   {
     label: 'Zone rest cap (W3)',
     where: 'Strategy → Day Plan → zone_rest_max_min (API/config field)',
-    what: 'A market_in_zone limit that has rested longer than this many minutes (measured from its placement) is cancelled "zone rest expired" by the executor — a zone the market walked away from is not left working forever. The rest cap is no longer the only exit: a new plan version or overlay that moves the zone off the resting limit cancels it sooner ("zone moved by vN").',
+    what: 'A market_in_zone limit that has rested longer than this many minutes (measured from its placement) is cancelled "zone rest expired" by the executor — a zone the market walked away from is not left working forever. The rest cap is no longer the only exit: a new plan version or overlay that moves the zone off the resting limit cancels it sooner ("zone moved by vN"). The same number is the TRIGGER age bound (fix F-1): a confirm that went MET longer ago than this, with no newer reaction inside the window, no longer authorizes an arm ("confirm MET but STALE").',
     trader:
       'The limit sits at the far edge of the zone; if price never comes back within the cap the order goes away rather than filling hours later in a different market.',
     consumer:
@@ -408,7 +415,8 @@ const dayPlan: KnobSpec[] = [
   },
   {
     label: 'Planner fresh tape on born-dead retry (PLANNER A6)',
-    where: 'Strategy → Day Plan → planner_fresh_tape toggle',
+    where:
+      'No Studio control — stored setting day_plan.planner_fresh_tape (API/config field)',
     what: "When a planner attempt is refused born-dead or flip-met (the market moved during the 9–15 minute AI read and the validator correctly refused), attempt N+1's prompt carries the COMPLETED bars between the read clock and the refusal — at most the last 30 completed 1m closes and the last 6 completed 5m closes, never the forming bar — plus the breached condition named verbatim, so the re-author reads the tape that exists now instead of retrying blind against the stale read. The born-dead check itself is unchanged: a plan whose lines are already crossed at publication is still refused. ON is the default (nil=ON).",
     trader:
       "ON = a born-dead / flip-met retry re-sights the model on the fresh tape instead of burning attempts 2/3 on the identical stale read. The block is appended to BOTH the repair prompt and the full re-author prompt, and the refusal line logs the read→publish latency. OFF = today's behaviour byte-identical (blind retry).",
@@ -476,10 +484,10 @@ const dayPlan: KnobSpec[] = [
   },
   {
     label: 'Day plan master switch',
-    where: 'Strategy → Day Plan → plan_enabled (API/config field)',
+    where: 'Strategy → Day Plan → "Enable Day Plan" switch (plan_enabled)',
     what: 'The master switch for the day-plan engine on this strategy. Default false = off.',
     trader: 'OFF = no planner authoring, no session machine for this strategy.',
-    consumer: 'store.DayPlanConfig.PlanEnabled (store/strategy.go:968)',
+    consumer: 'store.DayPlanConfig.PlanEnabled (store/strategy.go)',
     range: 'true | false',
     systemDefault: 'false (off)',
     recommended: '⭐ ON once the day-plan flow is configured — OFF until then.',
@@ -488,10 +496,11 @@ const dayPlan: KnobSpec[] = [
   },
   {
     label: 'Planner model',
-    where: 'Strategy → Day Plan → planner_model (API/config field)',
+    where:
+      'Strategy → Day Plan → "Planner model" text field (planner_model; blank = inherit primary)',
     what: 'The reasoner binding from the multi-key registry used for planner reads; empty falls back to the strategy primary model (RECON #9).',
     trader: 'Leave empty unless a dedicated planner reasoner is provisioned.',
-    consumer: 'store.DayPlanConfig.PlannerModel (store/strategy.go:969-971)',
+    consumer: 'store.DayPlanConfig.PlannerModel (store/strategy.go)',
     range: 'any registered model id · empty = strategy primary',
     systemDefault: 'empty → strategy primary model (RECON #9)',
     recommended: '⭐ empty — the primary model is the shipped default.',
@@ -504,8 +513,7 @@ const dayPlan: KnobSpec[] = [
     where: 'Strategy → Day Plan → condition_status map (API/config field)',
     what: 'Per-condition live|shadow map, resolved session override → base → LIVE → SHADOW env → defaults (fvg_entry and breakout_retest default SHADOW per owner ruling). The ARM SEAM is the only enforcement point; authoring/validation/E8 scoring stay untouched.',
     trader: 'SHADOW conditions author and validate but never arm.',
-    consumer:
-      'store.DayPlanConfig.ConditionStatus (store/strategy.go:1154-1158)',
+    consumer: 'store.DayPlanConfig.ConditionStatus (store/strategy.go)',
     range: 'live | shadow per condition',
     systemDefault:
       'LIVE except fvg_entry and breakout_retest (SHADOW, owner ruling)',
@@ -519,7 +527,7 @@ const dayPlan: KnobSpec[] = [
     what: 'Per-session live|shadow override of the strategy-level condition_status map; nil inherits the strategy-level map.',
     trader: 'Use it to shadow a condition in one session only.',
     consumer:
-      'store.DayPlanSessionOverride.ConditionStatus (store/strategy.go:1213)',
+      'store.DayPlanSessionOverride.ConditionStatus (store/strategy.go)',
     range: 'live | shadow per condition · nil = inherit',
     systemDefault: 'nil (inherit the base map)',
     recommended: '⭐ inherit — per-session overrides only with evidence.',
@@ -533,12 +541,102 @@ const dayPlan: KnobSpec[] = [
     what: 'Research buffer beyond the frozen zone, composed into the stop (line − buffer). MNQ unset = 4.5 pt: the C5 calibration (6,181 in-sample HELD first touches, p95 far-edge penetration 4.3675648248 pt rounded OUTWARD to the MNQ tick — a chosen tolerance, not a validated universal buffer). A saved value overrides with owner_override[I]; a missing/uncalibrated saved value refuses.',
     trader: 'The stop composes at the frozen zone line minus this buffer.',
     consumer:
-      'store.ResolveStructuralStop / StructuralBufferMNQDefault (store/structural_geometry.go:32-59)',
+      'store.ResolveStructuralStop / StructuralBufferMNQDefault (store/structural_geometry.go)',
     range: 'points (> 0) · unset = C5 4.5',
     systemDefault: '4.5 (C5-H12-IS-6181-p95-20260912, MNQ only)',
     recommended: '⭐ leave unset — the C5 calibration is the shipped default.',
     whenToTouch:
       'Only to record an owner-researched buffer as an explicit override.',
+    perSession: 'No — strategy-level.',
+  },
+  // ── Release #25 — the loss-fix switches (STRICT-12345 report §7, F-2/F-3/
+  // F-5/F-7). Owner order "do all now": each is a switch that ships OFF
+  // (COMMON-25 knob rule case b — planner numbers the owner has not given).
+  // The "on 649–654" lines are fixtures from the report's numbers, never the
+  // live DB.
+  {
+    label: 'Room gate (F-2)',
+    where:
+      'Strategy → Day Plan → Loss-fix switches → Room gate (planner_room_gate) + minimum R (planner_room_min_r)',
+    what: 'At plan WRITE, every enabled arm is measured: r_to_obstacle = |first obstacle − arm entry| ÷ |arm entry − arm stop| — the economics the planner wrote, recomputed by the machine (the first obstacle is the nearest seated level between entry and target, already checked at write). Below planner_room_min_r: refuse → the arm is refused at write (attempts 1–2 get a repair hint, the last attempt writes it disabled with reason room_gate); tp1_at_obstacle → the arm target (leg 1 on a split) is moved to the first obstacle, and then the normal R:R floor judges the new geometry (with min_risk_reward_ratio 2 such an arm is then refused by the R:R gate, reason rr). An arm whose first obstacle is unknown is refused room_gate in both modes. Logged "🧱 room gate", counted room_gate / room_gate_tp1.',
+    trader:
+      'Every strict-planner loser on 10-14 stalled at its first obstacle: r_to_obstacle was 0.50 (#649), 0.60 (#650), 0.55 (#652), 0.25 (#653), 0.42 (#654) while the targets sat 2.04–3.82R away. On those five, refuse at 1.0 refuses ALL FIVE at write (no trade; the four closed ones lost −$428). tp1_at_obstacle gives an arm R:R of 0.25–0.60, below the 2.0 floor, so the R:R gate refuses them too (the report: armed anyway with the target at the nearest level they would have made +$35.5 on the four closed and +$79.5 on #654).',
+    consumer:
+      'trader/planner_room_gate.go roomGateAtWrite (run at the plan write site, trader/auto_trader_planner.go, before the write-time feasibility verdicts; the hint rides trader/write_time_feasibility.go) · store/planner_knobs.go ResolvePlannerRoomGate / ResolvePlannerRoomMinR · 🧱 per-trader boot line',
+    range:
+      'planner_room_gate: off | refuse | tp1_at_obstacle · planner_room_min_r: 0.1–10 R (read only when the gate is on)',
+    systemDefault: 'off · min R 1.0 (unset)',
+    recommended:
+      '⭐ OFF until the owner rules — the 1.0 is the report’s suggestion, not an owner number. refuse is the honest first step; tp1_at_obstacle mostly ends in an R:R refusal while min_risk_reward_ratio is 2.',
+    whenToTouch:
+      'When you want the planner to stop arming trades whose first obstacle is closer than the risk.',
+    perSession: 'No — strategy-level.',
+  },
+  {
+    label: 'Exit on thesis death (F-3)',
+    where:
+      'Strategy → Day Plan → Loss-fix switches → Exit on thesis death (planner_exit_on_thesis_death)',
+    what: 'On the 60-second monitor beat, for each open PLANNER position (an armed entry linked to a plan): invalidation_only → close at market once a completed 5m close AFTER the fill is beyond the cited scenario’s own invalidation sentence ("5m close above/below <price>", "2x5m close …" — the grammar the write site enforces); all → also when the plan version that authored the trade goes dormant (dormant, superseded:flip, superseded:death) or a newer version of the same plan chain carries the opposite bias. The close is the whole position at market on this trader’s own bound account (the same close path EOD-flat uses) and the bracket is cancelled. Never a mentor position, never a mentor-mode trader, never a manual (origin=manual) position. Logged "🪦 thesis-death EXIT … reason=invalidation|plan_dormant|opposite_plan", counted thesis_death_exit (+ thesis_death_exit_<reason>).',
+    trader:
+      'On 10-14 every loser was held past its own thesis death. invalidation_only: #649 −$60, #650 −$76.5 (its invalidation is its stop), #652 −$19.5, #653 −$82 = −$238 instead of −$428. all: #649 +$1 (plan dormant 21:00:01), #650 −$10.5 (newer v4 short at 00:23:05), #652 −$19.5 (the invalidation close at 03:00 comes before dormant 03:22), #653 −$82 (the invalidation close at 09:00 comes before dormant 09:19:31) = −$110.5 [B — derived from the report’s per-trade exits and timestamps]. #654 was still open.',
+    consumer:
+      'trader/thesis_death_exit.go maybeExitOnThesisDeath (called from trader/auto_trader_risk.go monitorTick, beside auto-breakeven) · kernel.EvaluateAuthoredInvalidationAt · store PlanStore lifecycle / latest version · flattenPosition · store/planner_knobs.go ResolvePlannerExitOnThesisDeath · 🧱 per-trader boot line',
+    range: 'off | invalidation_only | all',
+    systemDefault: 'off (unset)',
+    recommended:
+      '⭐ OFF until the owner rules — it changes the "entries only" rule for planner trades. invalidation_only is the narrower step.',
+    whenToTouch:
+      'When you want a planner trade closed as soon as its own plan says the idea is dead, instead of waiting for the stop.',
+    perSession: 'No — strategy-level.',
+  },
+  {
+    label: 'Enforce no-chase on arms (F-5)',
+    where:
+      'Strategy → Day Plan → Loss-fix switches → Enforce no-chase (planner_no_chase_enforce)',
+    what: 'The arm path’s no-chase leg (measured since 2026-09-02, WARN-first) becomes a refusal: a WOULD_REFUSE verdict refuses the placement and is counted no_chase_refused. OFF = today: it only warns and the entry proceeds. CAVEAT (rescan N4): the arm metric is |live price − cited level| — for a resting limit that is pullback distance, not a chase.',
+    trader:
+      'On 10-14 it would NOT have stopped #653: it printed WOULD_REFUSE at 08:54/08:55 (1.05 and 1.17 × ATR) but would have PASSED at 08:56 (≈0.55 × ATR), just before the dump filled the limit. The report records no WOULD_REFUSE for #649/#650/#652/#654. The momentum-into-zone ceiling below is the switch aimed at #650/#653.',
+    consumer:
+      'trader/no_chase.go EvaluateNoChase · trader/entry_gate.go EntryGate (arm path, entryGateForArm sets NoChaseEnforce) · store/planner_knobs.go ResolvePlannerNoChaseEnforce · 🧱 per-trader boot line',
+    range: 'ON | OFF',
+    systemDefault: 'OFF (unset)',
+    recommended:
+      '⭐ OFF — enforce only after the metric is redefined as momentum into the zone (rescan N4).',
+    whenToTouch: 'Only after the no-chase counts show it separates losers.',
+    perSession: 'No — strategy-level.',
+  },
+  {
+    label: 'Momentum into the zone ceiling (F-5)',
+    where:
+      'Strategy → Day Plan → Loss-fix switches → Momentum-into-zone ceiling (planner_momentum_into_zone_max_atr)',
+    what: 'When > 0, the arm path refuses a placement when price moved TOWARD the zone (long: down into it, short: up into it) over the last 15 minutes (3 × 5m) by more than this many ATR5m (the arm seam’s own ATR5m). Counted momentum_into_zone. 0 = OFF.',
+    trader:
+      'On the report’s numbers: #650 moved 3.5 × ATR5m into its zone (−57.75 pts in 15 min) and #653 1.3 × (−70.75 pts) — any ceiling below 3.5 refuses #650, below 1.3 refuses #653. #652 is not refused (its 15-minute move was −28, away from a short’s zone). #649 and #654: the report gives no ATR5m, so not computed. The live gate judges at the pass that PLACES the order; the fixture is the move into the fill.',
+    consumer:
+      'trader/planner_momentum_gate.go momentumIntoZoneVerdict · trader/entry_gate.go EntryGate (arm path, via entryGateForArm) · armSeamATR5m · store/planner_knobs.go ResolvePlannerMomentumIntoZoneMaxATR · 🧱 per-trader boot line',
+    range: '0 = OFF · 0–10 × ATR5m',
+    systemDefault: '0 (OFF)',
+    recommended:
+      '⭐ OFF until the owner picks a number — the report gives two data points (3.5 and 1.3), not a threshold.',
+    whenToTouch:
+      'When you want to stop buying into a dump / selling into a squeeze.',
+    perSession: 'No — strategy-level.',
+  },
+  {
+    label: 'Cap the ATR stop floor at the authored invalidation (F-7)',
+    where:
+      'Strategy → Day Plan → Loss-fix switches → ATR floor cap (planner_atr_floor_cap_at_invalidation)',
+    what: 'ON: the 1.5 × ATR5m stop floor may widen the stop only up to the authored invalidation = the farther of the planner’s stop and the scenario’s invalidation-line price (when its sentence parses). If the floor lies beyond it, the arm is REFUSED — at write a repair hint / written disabled, at arm a WARN + counter atr_floor_beyond_invalidation — the stop is never widened silently. OFF = today: the floor widens the stop past the authored one ("🛑 arm stop … WIDENED").',
+    trader:
+      'On 10-14: #649 refused (floor 30882.78 past the authored 30873 — the −$79 loss avoided); #653 refused (floor 30427.25 past the authored 30436 — the −$178 loss avoided). #650, #652, #654 unchanged (their stops were not widened).',
+    consumer:
+      'trader/arm_stop_anchor.go atrFloorCapVerdict (after composeArmStop, legacy branch) · trader/write_time_feasibility.go (write) · trader/armed_executor.go (arm pass) · store/planner_knobs.go ResolvePlannerATRFloorCap · 🧱 per-trader boot line',
+    range: 'ON | OFF',
+    systemDefault: 'OFF (unset)',
+    recommended:
+      '⭐ OFF until the owner rules — it trades fewer setups (it refuses instead of widening).',
+    whenToTouch:
+      'When you would rather skip a setup than take a stop wider than the plan’s own invalidation.',
     perSession: 'No — strategy-level.',
   },
 ]
@@ -547,10 +645,11 @@ const risk: KnobSpec[] = [
   {
     label: 'Min confidence',
     where: 'Strategy → Risk Control',
-    what: "Floor on the AI's confidence integer; below = refused. AI DECISION PATH ONLY: it does NOT apply to mentor mode (mentor entries come from the course rules and carry no confidence) or to planner arms (under plan_mode strict, entries only through armed scenarios, this floor never runs). Since release #22 an arm entry's confidence is stored EMPTY (shown n/a), never a fabricated 0.",
+    what: "Floor on the AI's confidence integer; below = refused. AI DECISION PATH ONLY: it does NOT apply to mentor mode (mentor entries come from the course rules and carry no confidence) or to planner arms (under plan_mode strict, entries only through armed scenarios, this floor never runs). Since release #22 an arm entry's confidence is stored EMPTY (shown n/a) instead of a fabricated 0; rows written before release #22 still show 0.",
     trader:
       'The simplest honesty gate: 60 means "be at least 60% sure" — for AI decisions, not for mentor entries or armed plan scenarios.',
-    consumer: 'kernel/engine_position.go:199 (confidence gate, decision path)',
+    consumer:
+      'kernel/engine_position.go validateDecision (confidence gate, decision path)',
     range: '50 – 100',
     systemDefault: '60 (owner)',
     recommended:
@@ -563,7 +662,8 @@ const risk: KnobSpec[] = [
     where: 'Strategy → Risk Control',
     what: 'Max simultaneous open positions.',
     trader: '1 = single position; 3 = diversified.',
-    consumer: 'kernel/engine_analysis.go:125 (max_positions)',
+    consumer:
+      'kernel/engine_analysis.go (ResolveConcurrentCap ← max_positions) · trader/auto_trader_risk.go enforceMaxPositions',
     range: '1 – 3',
     systemDefault: 'blank → 1 [I] (ClampLimits floor); 3 [O] (owner)',
     recommended: '⭐ 3 — matches config; MNQ SIM never needs the extra legs.',
@@ -572,15 +672,19 @@ const risk: KnobSpec[] = [
   },
   {
     label: 'Leverage BTC/ETH / alt',
-    where: 'Strategy → Risk Control',
-    what: 'Leverage multiplier per coin class for futures sizing.',
+    where:
+      'Strategy → Risk Control — CRYPTO strategies only; the Studio hides this row on a futures strategy',
+    what: 'Exchange leverage cap per coin class for CRYPTO entries. CME futures have no exchange leverage — they size by contract count, so it does not change a futures order size.',
     trader:
-      'Code-enforced ceiling is 10/5 (system) even if the page shows up to 20/20.',
-    consumer: 'kernel/engine_analysis.go (btcEthLeverage/altcoinLeverage)',
-    range: '1 – 20 (page) · code-enforced ≤10 BTC/ETH, ≤5 alt',
-    systemDefault: '5 / 5 (owner) · system duality 10/5',
-    recommended: '⭐ 5/5 — current config.',
-    whenToTouch: 'Lower to derisk; page values above 10/5 are inert.',
+      'The code clamps a saved value to 1–20 (store/strategy.go ClampLimits: MaxBTCETHLeverage = MaxAltLeverage = 20) — the same range as the page sliders, so nothing the page can save is cut.',
+    consumer:
+      'kernel/engine_position.go validateDecision (caps the decision’s leverage; futures sizing ignores it) · store/strategy.go ClampLimits',
+    range: '1 – 20 (page and code, both classes)',
+    systemDefault:
+      '5 / 5 (code and page default; both bound strategies store 5 / 5)',
+    recommended: 'n/a on a futures strategy — the row is hidden there.',
+    whenToTouch:
+      'Only on a crypto strategy; on MNQ it does nothing (the row is hidden).',
     perSession: 'No.',
   },
   {
@@ -588,7 +692,8 @@ const risk: KnobSpec[] = [
     where: 'Strategy → Risk Control',
     what: 'The R:R floor every entry must clear (computed on real stop/target).',
     trader: 'Raising this is the single strongest filter on bad entries.',
-    consumer: 'kernel/engine_position.go:122 (validateDecisions minRiskReward)',
+    consumer:
+      'kernel/engine_position.go validateDecision (R:R gate, minRiskReward; counted rr_gate) · trader/entry_gate.go EntryGate (MinRR — the same floor on the arm seam)',
     range: '1 – 10 (step 0.5)',
     systemDefault:
       '3 — the code fallback, used only when the bound strategy saves no value',
@@ -599,54 +704,63 @@ const risk: KnobSpec[] = [
   },
   {
     label: 'Max margin',
-    where: 'Strategy → Risk Control',
-    what: 'Margin ceiling per position (AI-guided).',
-    trader: '90 keeps a single position from eating the account.',
-    consumer: 'kernel/engine_analysis.go:529 (riskConfig.MaxMargin)',
-    range: 'AI-guided (page) · default 90',
-    systemDefault: '90 (owner)',
-    recommended: '⭐ 90 — current config.',
-    whenToTouch: 'Lower in high-vol regimes.',
+    where:
+      'Strategy → Risk Control — CRYPTO strategies only; the Studio hides this row on a futures strategy',
+    what: 'Margin-usage ceiling (AI-guided): it reaches the AI prompt as text ("Max Margin Usage: ≤N%"); no gate reads it. A crypto margin concept — futures margin is a per-contract bond.',
+    trader: 'Prompt guidance for crypto entries only.',
+    consumer:
+      'kernel/engine_prompt.go (prompt text only) · store/strategy.go ClampLimits (10–100%)',
+    range: '10 – 100 % (page and code)',
+    systemDefault: '90 (code and page default; both bound strategies store 90)',
+    recommended: 'n/a on a futures strategy — the row is hidden there.',
+    whenToTouch: 'Only on a crypto strategy; on MNQ it does nothing.',
     perSession: 'No.',
   },
   {
     label: 'Min position size',
-    where: 'Strategy → Risk Control',
-    what: 'Smallest position notional/contract count allowed.',
-    trader: 'Below 12 the economics of the trade stop making sense.',
-    consumer: 'kernel/engine_analysis.go:530 (riskConfig.MinPosition)',
-    range: 'page numeric · default 12',
-    systemDefault: '12 (owner)',
-    recommended: '⭐ 12 — current config.',
-    whenToTouch: 'Leave alone in SIM.',
+    where:
+      'Strategy → Risk Control — CRYPTO strategies only; the Studio hides this row on a futures strategy',
+    what: 'Smallest USD position a CRYPTO entry may open. Futures size by contract count, so the futures order path never reads it.',
+    trader: 'Crypto only; no effect on MNQ.',
+    consumer:
+      'trader/auto_trader_risk.go enforceMinPositionSize (called only on the crypto branch of trader/auto_trader_orders.go) · kernel/engine_prompt.go (prompt text) · store/strategy.go ClampLimits (10–1000)',
+    range: '10 – 1000 USD (page and code)',
+    systemDefault: '12 (code and page default; both bound strategies store 12)',
+    recommended: 'n/a on a futures strategy — the row is hidden there.',
+    whenToTouch: 'Only on a crypto strategy; on MNQ it does nothing.',
     perSession: 'No.',
   },
   {
     label: 'Hold lock',
     where: 'Strategy → Risk Control',
-    what: 'Lock positions against early exit until the hold condition clears.',
-    trader: 'Stops you (and the AI) from cutting winners early.',
-    consumer: 'kernel/engine_position.go (hold lock path)',
+    what: 'While ON and a position is open, an AI-decision close_long / close_short for that symbol and side is SUPPRESSED (logged "🔒 HOLD-LOCK", recorded as a deliberate no-op): the trade rides to its resting stop/target bracket. There is no other hold condition, and opening is untouched.',
+    trader:
+      'Stops the AI from cutting a trade before its own stop/target. It does not hold you back: only AI decisions are gated — Emergency Flat and the drawdown monitor close through the trader directly and bypass it.',
+    consumer:
+      'trader/auto_trader_orders.go holdLockSuppressesClose (asked by the AI decision loop in trader/auto_trader_loop.go for close_long / close_short)',
     range: 'ON | OFF',
-    systemDefault: 'OFF',
-    recommended: '⭐ OFF — the plan already manages exit timing.',
+    systemDefault: 'OFF (an unsaved hold_discipline reads OFF)',
+    recommended:
+      '⭐ OFF — the plan already manages exit timing. Note: BOTH bound strategies store hold_discipline = true (read 2026-10-14 for a5b7662e "MNQ" and 7a853ea3 "mnq 2"), so the lock is ON for the running traders.',
     whenToTouch: "ON if exits keep firing before the plan's own criteria.",
     perSession: 'No.',
   },
   {
     label: 'Wake cadence (class 47)',
     where: 'env WAKE_CUTOFF_MIN · WAKE_COOLDOWN_MIN (no Studio row yet)',
-    what: 'Two OBSERVATIONS on level-event wakes, both WARN-first — nothing is suppressed. CUTOFF: a wake starting within WAKE_CUTOFF_MIN of the session flat logs "would_skip: <n> min to flat" and still runs (25m = the 15m last-entry cutoff plus the ~9.3m p90 planner call, so a read starting inside it lands after the gate has closed). COOLDOWN: a wake within WAKE_COOLDOWN_MIN of the last wake-AUTHORED plan version logs "would_skip: cooldown <m> min" and still runs — measured from the last version a wake actually WROTE, which is what makes it different from wake_min_interval_min (that paces attempts). Both counts are recorded per trader/session-day/session.',
+    what: 'Two cutoffs on level-event wakes, ENFORCING since the owner ruling of 2026-09-03 (they shipped WARN-first, logging "would_skip" and letting the wake run, until then). CUTOFF: a wake starting within WAKE_CUTOFF_MIN of the session flat is SKIPPED ("⏱ wake SKIPPED: <n> min to flat") — 25m = the 15m last-entry cutoff plus the ~9.3m p90 planner call, so a read starting inside it lands after the gate has closed. COOLDOWN: a wake within WAKE_COOLDOWN_MIN of the last wake-AUTHORED plan version is SKIPPED ("⏱ wake SKIPPED: cooldown <m> min …") — measured from the last version a wake actually WROTE, which is what makes it different from wake_min_interval_min (that paces attempts). A fast market waives the COOLDOWN only (WakeCadenceDecision.FastMarketBypass): drift since the last plan write ≥ FAST_MARKET_ATR (default 1.5) × ATR5m. The flip re-read and the death re-read obey the CUTOFF too, never the cooldown. Wake skips are counted per trader/session-day/session; a skipped flip or death re-read is logged, not counted.',
     trader:
-      'Why: 60 wake re-plans in 7 days produced 33 arm rows, 23 ever placed, 9 ever working. On 09-02 the wakes fired every ~30 minutes from 08:42 to 14:20 — the drumbeat of the throttle, not of events — and NY bought 12 plan versions. The 14:20 wake sat 10 minutes from the last-entry cutoff. Nothing is switched off yet: the counters exist so the suppression decision is made on a week of real numbers.',
+      'Why: 60 wake re-plans in 7 days produced 33 arm rows, 23 ever placed, 9 ever working. On 09-02 the wakes fired every ~30 minutes from 08:42 to 14:20 — the drumbeat of the throttle, not of events — and NY bought 12 plan versions. The 14:20 wake sat 10 minutes from the last-entry cutoff. On 2026-09-03 a wake with 24 min to flat wrote LONDON v2 at 08:15:44 for an 08:30 flat, and the owner ruled both cutoffs to enforce.',
     consumer:
-      'trader/class47_wake_cadence.go (resolvers + lines) · trader/auto_trader_wake_levels.go (the wake path) · store/class47_counters.go (recorded counters)',
-    range: 'WAKE_CUTOFF_MIN 0 (off) – 60 · WAKE_COOLDOWN_MIN 0 (off) – 120',
-    systemDefault: '25m cutoff · 30m cooldown — both WARN-only',
+      'trader/class47_wake_cadence.go (resolvers, WakeCadenceDecision, lines) · trader/auto_trader_wake_levels.go (the wake path: both cutoffs) · trader/auto_trader_planner.go maybeRereadAfterFlip + trader/death_reread.go maybeRereadAfterDeath (cutoff only) · trader/auto_trader_loop.go fastMarketATR · store/class47_counters.go (recorded counters)',
+    range:
+      'WAKE_CUTOFF_MIN · WAKE_COOLDOWN_MIN: any whole number ≥ 0 (0 = off; no upper limit); a negative or non-numeric value falls back to the default',
+    systemDefault:
+      '25m cutoff · 30m cooldown — both ENFORCING (0 turns one off); the cooldown is waived at a fast market',
     recommended:
-      '⭐ leave as-is until a week of would_skip counts exists; then rule on suppression.',
+      '⭐ the defaults (25 / 30) — the owner’s enforcing ruling of 2026-09-03.',
     whenToTouch:
-      'Only to widen the observation window, not to suppress — suppression is an owner ruling, not a knob flip.',
+      'Only with an owner ruling: a lower value lets more wakes through, and 0 turns that cutoff off entirely.',
     perSession: 'No.',
   },
   {
@@ -671,7 +785,7 @@ const risk: KnobSpec[] = [
   {
     label: 'Breakeven trigger (AI trades)',
     where: 'Strategy → Risk Control',
-    what: 'AI-plan trades only: once an open NT8 position is this many POINTS in profit (mark vs entry), its stop moves to the entry price, once per position (a move_stop on the live bracket). It moves a stop only when BOTH switches are on: this strategy toggle (breakeven_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0 → seam=ACTIVE; unset → SUSPENDED, the code default). With the seam SUSPENDED the trigger still evaluates, logs "⏸ auto-breakeven SUSPENDED (0B)" once and sends nothing. A mentor-mode trade is NEVER moved by it — the mentor exits own that stop (owner ruling 2026-10-09; see Mentor mode → The exits → mentor_trail_mode).',
+    what: 'AI-plan trades only: once an open NT8 position is this many POINTS in profit (mark vs entry), its stop moves to the entry price, once per position (a move_stop on the live bracket). It moves a stop only when BOTH switches are on: this strategy toggle (breakeven_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0 → seam=ACTIVE; unset → SUSPENDED, the code default). With the seam SUSPENDED the trigger still evaluates, logs "⏸ auto-breakeven SUSPENDED (0B)" once and sends nothing. A SENT move is not assumed: the next fresh NinjaTrader book judges it — "🎯 auto-breakeven CONFIRMED at NT8", or "🚨 auto-breakeven NOT APPLIED at NT8" (a P0, counted; the move is re-sent on the next monitor beat). A mentor-mode trade is NEVER moved by it — the mentor exits own that stop (owner ruling 2026-10-09; see Mentor mode → The exits → mentor_trail_mode). Since release #25 a non-zero breakeven_trigger_r replaces this points trigger with N × the position’s initial risk (see "Breakeven trigger in R (F-8)"); 0/unset keeps this points rule.',
     trader:
       'Read the boot line "🛑 exits: … BE=on|off(strategy) · seam=ACTIVE|SUSPENDED(env)" for what the running bot does — not this card. The live boots of 2026-10-13 18:57/18:58 CT and 2026-10-14 02:10 CT read BE=on · seam=ACTIVE on both traders with breakeven_trigger_points=40: breakeven IS moving AI-trade stops there (the mentor trader is exempt). Turn the toggle off to stop it.',
     consumer:
@@ -684,6 +798,24 @@ const risk: KnobSpec[] = [
       '⭐ only with MFE evidence that the move pays. Wave 1A (2026-09-02) records it: `go run ./cmd/excursions` prints MFE p50/p80/p95 per condition with the n each rests on.',
     whenToTouch:
       'Only with MFE evidence that the move pays — the distribution is in trade_excursions, so this is answerable rather than a judgement call.',
+    perSession: 'No.',
+  },
+  {
+    label: 'Breakeven trigger in R (F-8)',
+    where:
+      'Strategy → Risk Control → Auto-breakeven → Trigger in R (breakeven_trigger_r)',
+    what: 'Release #25 (STRICT-12345 F-8): when > 0, an AI/planner position moves its stop to entry once its profit reaches breakeven_trigger_r × its initial risk (|entry − initial stop|) instead of breakeven_trigger_points. Same switches as the points rule (breakeven_enabled + the server seam), same once-per-position move. An unknown initial risk falls back to the points rule, logged once and counted breakeven_r_unknown_risk — never a guessed risk. A mentor position is never moved by it (mentor mode keeps the R3 rule). 0/unset = OFF = the points rule, byte-identical.',
+    trader:
+      'On 10-14 at 1R: no change on #649–#653 (their best MFE was 0.63R, so neither rule would have moved them — the points rule at 40 did not either). #654’s initial risk is ≈95–113 pts depending on its fill (stop 30551.25; the report gives the placement price 30438.75, not the fill), so 1R needs that much profit; its points-rule BE moved at +40 at 10:08:27. The report’s history figure (+$595 [B] on six planner losers that reached ≥1R and still took a full stop: 623, 599, 620, 595, 607, 621) is the report’s, NOT replayed here.',
+    consumer:
+      'trader/breakeven_r.go breakevenTriggerFor (called by trader/auto_trader.go maybeMoveStopToBreakeven) · store/planner_knobs.go ResolveBreakevenTriggerR · 🧱 per-trader boot line',
+    range:
+      '0 = OFF (points rule) · 0–10 R · moves a stop only with breakeven_enabled ON and env EXIT_MECHS_SUSPENDED=0',
+    systemDefault: '0 (OFF — the points rule)',
+    recommended:
+      '⭐ OFF until the owner rules — the report’s +$595 is a history subset [B], not a replay.',
+    whenToTouch:
+      'When you want breakeven to scale with each trade’s own risk instead of a fixed point distance.',
     perSession: 'No.',
   },
   {
@@ -748,23 +880,25 @@ const risk: KnobSpec[] = [
   },
   {
     label: 'Position value ratio (BTC/ETH / alt)',
-    where: 'Strategy → Risk Control',
-    what: 'position_value ≤ equity × ratio — the CODE-ENFORCED sizing ceiling (page values cannot bypass it).',
+    where:
+      'Strategy → Risk Control — CRYPTO strategies only; the Studio hides these tiles on a futures strategy, and they only display the stored value (no input)',
+    what: 'CRYPTO sizing ceiling: position_value ≤ equity × ratio. A futures entry never uses it — it is capped by the always-on notional cap (equity × max_notional_leverage) instead.',
     trader:
-      '5x BTC/ETH and 1x alt = the bot can size up to 5× equity on majors, 1× on alts.',
+      '5x BTC/ETH and 1x alt = a crypto entry can size up to 5× equity on majors, 1× on alts. No effect on MNQ.',
     consumer:
-      'trader/auto_trader_risk.go:229 (enforcePositionValueRatio) · kernel/engine_analysis.go:527',
-    range: 'page 1–20 · code-enforced 5 / 1',
-    systemDefault: '5 / 1',
-    recommended: '⭐ 5/1 — current config.',
-    whenToTouch: 'Lower to derisk; values above 5/1 are inert (code ceiling).',
+      'trader/auto_trader_risk.go enforcePositionValueRatio (CME futures take the notional cap there) · kernel/engine_position.go validateDecision (posRatio, crypto symbols) · store/strategy.go ClampLimits (0.5–10)',
+    range: 'no page input · the code clamps a stored value to 0.5 – 10',
+    systemDefault: '5 / 1 (code default; both bound strategies store 5 / 1)',
+    recommended: 'n/a on a futures strategy — the tiles are hidden there.',
+    whenToTouch:
+      'Only on a crypto strategy (there is no page input to change it); on MNQ it does nothing.',
     perSession: 'No.',
   },
   {
     label: 'Daily loss limit',
     where:
       'Strategy → Risk Control → Guardrails: the master switch AND the Daily loss row (toggle + $)',
-    what: "OFF unless you turn it on in Strategy Studio → Risk Control: the Guardrails master switch AND the Daily loss limit row's toggle, with the dollar amount in that row's $ field (daily_loss_limit_usd). Both live strategies store both switches OFF, so the $450 there enforces nothing, and a strategy that never saved them reads OFF too (the 🛑 [trader] daily-loss gate boot line says 'OFF (default)' for an unsaved switch and 'off (saved)' for yours). With BOTH switched on, when the bot's OWN session-day P&L — realized + open, MANUAL trades excluded (rows reconcile adopted with no order of ours) — is at or past −limit: (1) every new entry is REFUSED on every path (AI decision, agent chat, planner arms, mentor, Picture), counted daily_loss; (2) the 60-second monitor beat CANCELS every resting ENTRY order (protective stops/targets are never cancelled); (3) it FLATTENS the bot's open positions through the EOD-flat path (a manual position is left alone); (4) it stays LATCHED until 17:00 CT, even if the P&L recovers, and survives a restart. The trip logs '🔴 DAILY LOSS LIMIT HIT' once and counts daily_loss_tripped. An unresolved close today (pnl_corrected NULL) is excluded from the sum and counted; it refuses new MENTOR placements fail-closed (as since release 10-05-1) and never flattens on a guess. Emergency Flat on a trader clears that trader's latch only; if its loss still stands it re-trips on the next beat.",
+    what: "OFF unless you turn it on in Strategy Studio → Risk Control: the Guardrails master switch AND the Daily loss limit row's toggle, with the dollar amount in that row's $ field (daily_loss_limit_usd). Both live strategies store both switches OFF, so the $450 there enforces nothing, and a strategy that never saved them reads OFF too (the 🛑 [trader] daily-loss gate boot line says 'OFF (default)' for an unsaved switch and 'off (saved)' for yours). With BOTH switched on, when the bot's OWN session-day P&L — realized + open, MANUAL trades excluded (rows reconcile adopted with no order of ours) — is at or past −limit: (1) every new entry is REFUSED on every path (AI decision, agent chat, planner arms, mentor, Picture), counted daily_loss; (2) the 60-second monitor beat CANCELS every resting ENTRY order (protective stops/targets are never cancelled); (3) it FLATTENS the bot's open positions through the EOD-flat path (a manual position is left alone); (4) it stays LATCHED until 17:00 CT, even if the P&L recovers, and survives a restart. Switching the gate OFF does NOT lift a latch (the fail-closed default while the owner has not ruled on lifting): entries stay refused and bot positions are re-flattened until 17:00 CT, so the trader's boot line (also printed on a Studio save) reads 'daily-loss gate: LATCHED for session-day <d> (switching the gate OFF does not lift it; Emergency Flat lifts it; it ends at 17:00 CT)' instead of OFF, and GET /api/risk/status says latched with latch_day and latch_lifts. The trip logs '🔴 DAILY LOSS LIMIT HIT' and counts daily_loss_tripped exactly once per trader and session-day, whichever side latched first: the 60-second beat, or the AI decision cycle's guardrail right after a stop-out (before release #24 that second trip was silent). An unresolved close today (pnl_corrected NULL) is excluded from the sum and counted; it refuses new MENTOR placements fail-closed (as since release 10-05-1) and never flattens on a guess. Emergency Flat on a trader clears that trader's latch only; if its loss still stands it re-trips on the next beat.",
     trader: 'The circuit breaker that ends a bad day at a known dollar number.',
     consumer:
       'trader/daily_loss_gate.go (botDayPnLAt — the one P&L read; dailyGuardVerdictAt; dailyLossBeatAt / dailyLossFlattenAt on monitorTick) · trader/entry_admission.go (every path) · kernel/risk_limits.go DailyGuardrails.Check · kernel/engine_analysis.go (AI decision cycle)',
@@ -820,10 +954,10 @@ const risk: KnobSpec[] = [
   {
     label: 'Re-entry cooldown',
     where: 'Strategy → Risk Control → Guardrails',
-    what: 'Minimum minutes between a close and the next entry.',
+    what: 'After a STOP-LOSS exit (NT8 exit reason "sl"; target and manual exits do not arm it), a SAME-direction re-entry on that symbol is refused for this many minutes. On the AI decision path it also unlocks early once price is a full ATR15 away from the stop; the arm and Picture paths unlock on the timer only. The opposite direction and other symbols are never blocked, an agent-chat entry is not checked, and the stop record is in memory only (a restart clears it).',
     trader: 'Prevents immediately re-entering after being stopped.',
     consumer:
-      'trader/entry_admission.go:457 reentryCooldownMinutes (arm/picture) · kernel/engine_analysis.go:629 applyReentryCooldown (decision)',
+      'trader/entry_admission.go admitChain → reentryCooldownMinutes + discipline.ReentryPeek (arm/picture) · kernel/engine_analysis.go applyReentryCooldown (decision)',
     range: 'minutes · 0 = OFF; NOT gated by the master switch',
     systemDefault: 'OFF (0) until a strategy value is saved — not master-gated',
     recommended: '⭐ ON — 5–15 minutes.',
@@ -833,9 +967,10 @@ const risk: KnobSpec[] = [
   {
     label: 'Consistency',
     where: 'Strategy → Risk Control → Guardrails',
-    what: 'Max daily PnL percentage swing before the consistency rule fires.',
-    trader: 'Bounds how much one day may deviate from the norm.',
-    consumer: 'kernel/risk_limits.go:195 (ConsistencyMaxDayPct)',
+    what: 'Today’s realized profit may not reach this % of the all-time total realized profit: while it does, the AI decision cycle HOLDS (no new decisions). It never fires on a losing day or before there is any prior-day profit (kernel/risk_limits.go ConsistencyBreached). Checked on the AI decision cycle only — armed, mentor and Picture entries are not checked against it.',
+    trader: 'Caps how large a share of all-time profit a single day may take.',
+    consumer:
+      'kernel/engine_analysis.go (decision-cycle guardrail block: ConsistencyEnabled + ConsistencyBreached → HOLD, counted strategy_studio_consistency) · kernel/risk_limits.go ConsistencyBreached / ResolveStrategyGuardrails',
     range: 'percent · needs its own toggle AND the master',
     systemDefault:
       'OFF — an unsaved toggle resolves OFF (ResolveStrategyGuardrails: ConsistencyEnabled default false)',
@@ -846,11 +981,15 @@ const risk: KnobSpec[] = [
   {
     label: 'Blackout windows',
     where: 'Strategy → Risk Control → Guardrails',
-    what: 'Configured CT time windows (start+end) with zero entries.',
-    trader: 'Hard blackout — the bot simply will not trade inside it.',
-    consumer: 'kernel/risk_limits.go:193 (BlackoutConfigured / InBlackoutNow)',
-    range: 'start+end CT · enabled with master',
-    systemDefault: 'OFF',
+    what: 'One configured daily CT window (start+end; it may wrap midnight; a malformed or zero-width window never blocks) inside which the AI decision cycle HOLDS — no new decisions.',
+    trader:
+      'Holds the AI decision cycle only. Armed, mentor and Picture entries are NOT checked against it (the one admission chain has no blackout step), so a resting arm can still place or fill inside the window. NT8 stops/targets keep protecting open positions.',
+    consumer:
+      'kernel/engine_analysis.go (decision-cycle guardrail block: BlackoutEnabled + kernel.InBlackoutWindow → HOLD, counted strategy_studio_blackout) · kernel/risk_limits.go ResolveStrategyGuardrails (BlackoutEnabled)',
+    range:
+      'start+end CT · needs its own toggle (blackout_enabled) AND the master',
+    systemDefault:
+      'OFF — an unsaved toggle resolves OFF (ResolveStrategyGuardrails: BlackoutEnabled default false)',
     recommended:
       '⭐ ON with 12:00–13:30 CT — the window kernel.LunchWindowCT() resolves, the same one the lunch gate reads — or your worst hours.',
     whenToTouch: 'Set for your known-bad hours from the journal.',
@@ -868,7 +1007,7 @@ const prompt: KnobSpec[] = [
     trader:
       'The text rides verbatim into the executor prompt ("# Personalized Strategy") AND — since release #22 (owner ruling) — into the PLANNER prompt as a delimited OWNER GUIDANCE block (<<<OWNER_GUIDANCE … OWNER_GUIDANCE>>>) that never overrides the machine rules. Before #22 the planner never saw it, so under plan_mode strict it could not shape a single entry. Every plan write logs only its length and a short hash (🗣️ owner guidance in the planner prompt … len=… sha256=…), never the text.',
     consumer:
-      'store/strategy.go:792 (ai_config.custom_prompt) · kernel/engine_prompt_futures.go (executor) · kernel/owner_guidance.go + kernel/planner_prompt.go (planner)',
+      'store/strategy.go AIStrategyConfig.CustomPrompt (ai_config.custom_prompt) · kernel/engine_prompt_futures.go (executor) · kernel/owner_guidance.go + kernel/planner_prompt.go (planner)',
     range: 'free text · empty = nothing appended',
     systemDefault: 'empty',
     recommended: '⭐ keep it short — it appends verbatim to the prompt.',
@@ -880,7 +1019,7 @@ const prompt: KnobSpec[] = [
     where: 'Strategy → language (ai_config field)',
     what: '"zh" for Chinese, "en" for English — this determines the language used for data formatting AND prompt generation.',
     trader: 'The prompt and every formatted data block follow this language.',
-    consumer: 'store/strategy.go:721-723 (StrategyConfig.Language)',
+    consumer: 'store/strategy.go StrategyConfig.Language',
     range: 'en | zh',
     systemDefault: 'en',
     recommended: '⭐ en — the planner reads English structure best.',
@@ -893,8 +1032,7 @@ const prompt: KnobSpec[] = [
     what: 'The editable role-definition section of the System Prompt (title + description): the AI identity and core objectives.',
     trader:
       'Author the persona; the fixed parts (output format, risk rules) stay.',
-    consumer:
-      'store/strategy.go:1915-1917 (PromptSectionsConfig.RoleDefinition)',
+    consumer: 'store/strategy.go PromptSectionsConfig.RoleDefinition',
     range: 'free text',
     systemDefault: 'shipped default section text',
     recommended:
@@ -908,8 +1046,7 @@ const prompt: KnobSpec[] = [
     what: 'The editable entry-standards section: entry signal conditions and avoidances.',
     trader:
       'Author what qualifies as an entry; the risk gates still hard-block.',
-    consumer:
-      'store/strategy.go:1920-1921 (PromptSectionsConfig.EntryStandards)',
+    consumer: 'store/strategy.go PromptSectionsConfig.EntryStandards',
     range: 'free text',
     systemDefault: 'shipped default section text',
     recommended:
@@ -923,8 +1060,7 @@ const prompt: KnobSpec[] = [
     what: 'The editable decision-process section: how the AI reasons to a decision.',
     trader:
       'Author the reasoning path; the validator and risk gates still decide.',
-    consumer:
-      'store/strategy.go:1922-1923 (PromptSectionsConfig.DecisionProcess)',
+    consumer: 'store/strategy.go PromptSectionsConfig.DecisionProcess',
     range: 'free text',
     systemDefault: 'shipped default section text',
     recommended:
@@ -939,7 +1075,7 @@ const prompt: KnobSpec[] = [
     trader:
       'ON = counter-trend entries are refused while the HTF trend is confirmed.',
     consumer:
-      'store/strategy.go:764-768 (RegimeConfig.HTFVeto) · ResolveHTFVeto',
+      'store/strategy.go RegimeConfig.HTFVeto · store/resolve_source.go ResolveHTFVeto',
     range: 'ON | OFF',
     systemDefault: 'ON (nil/absent = ON)',
     recommended:
@@ -1000,7 +1136,7 @@ const indicators: KnobSpec[] = [
     what: 'Raw OHLCV klines — always enabled; required for AI analysis. The editor force-sets it true on mount (futures included).',
     trader: 'There is no OFF position: the engine needs raw bars.',
     consumer:
-      'store/strategy.go:1938 EnableRawKlines; IndicatorEditor force-set on mount.',
+      'store/strategy.go IndicatorConfig.EnableRawKlines; IndicatorEditor force-set on mount.',
     range: 'true (fixed)',
     systemDefault: 'true',
     recommended: 'Leave it on — it is not optional.',
@@ -1010,13 +1146,14 @@ const indicators: KnobSpec[] = [
   {
     label: 'EMA',
     where: 'Strategy → Indicators → EMA toggle + periods',
-    what: 'Exponential Moving Average block on/off. Default periods [20, 50] (store/strategy.go:1950 + DefaultConfig :2205).',
+    what: 'Exponential Moving Average block on/off. Default periods [20, 50] (store/strategy.go IndicatorConfig.EMAPeriods + GetDefaultStrategyConfig).',
     trader:
       'OFF removes EMA from the AI indicator text. ON prints only WARMED values: a period-P EMA needs about P + 2.3×P bars (EMA200 → 661) before its starting average weighs under 1%; a timeframe without that many bars prints "EMA200: n/a (not warmed — needs 661 bars)" (release #22 — the old 220-bar read printed an SMA200 under the EMA200 label, 20–60 pts off the chart).',
     consumer:
       'engine_prompt.go/engine_analysis.go read Indicators.EMAPeriods; market.EMAWarmupBars sets the fetch depth and the warm-up gate.',
     range: 'bool + comma periods',
-    systemDefault: 'off; periods [20, 50] when on',
+    systemDefault:
+      'ON in the new-strategy template (store/strategy.go GetDefaultStrategyConfig → applyFuturesIndicatorDefaults), periods [20, 50]; an absent field reads off',
     recommended: 'Per strategy taste.',
     whenToTouch: 'To add/remove EMA from analysis.',
     perSession: 'No.',
@@ -1026,9 +1163,9 @@ const indicators: KnobSpec[] = [
     where: 'Strategy → Indicators → MACD toggle',
     what: 'MACD block on/off. The C# export currently returns only the MACD line (one float64); signal/histogram are not exposed.',
     trader: 'OFF removes MACD from the AI indicator text.',
-    consumer: 'store/strategy.go:1941 EnableMACD.',
+    consumer: 'store/strategy.go IndicatorConfig.EnableMACD.',
     range: 'bool',
-    systemDefault: 'off',
+    systemDefault: 'off (also off in the new-strategy template)',
     recommended: 'Per strategy taste.',
     whenToTouch: 'To add/remove MACD.',
     perSession: 'No.',
@@ -1038,9 +1175,11 @@ const indicators: KnobSpec[] = [
     where: 'Strategy → Indicators → RSI toggle + periods',
     what: 'Relative Strength Index block on/off. Default periods [7, 14].',
     trader: 'OFF removes RSI from the AI indicator text.',
-    consumer: 'store/strategy.go:1942 + RSIPeriods default [7,14].',
+    consumer:
+      'store/strategy.go IndicatorConfig.EnableRSI + RSIPeriods default [7,14].',
     range: 'bool + comma periods',
-    systemDefault: 'off; periods [7, 14] when on',
+    systemDefault:
+      'ON in the new-strategy template (store/strategy.go GetDefaultStrategyConfig → applyFuturesIndicatorDefaults), periods [7, 14]; an absent field reads off',
     recommended: 'Per strategy taste.',
     whenToTouch: 'To add/remove RSI.',
     perSession: 'No.',
@@ -1050,9 +1189,11 @@ const indicators: KnobSpec[] = [
     where: 'Strategy → Indicators → ATR toggle + period',
     what: 'Average True Range block on/off. Default period [14].',
     trader: 'OFF removes ATR from the AI indicator text.',
-    consumer: 'store/strategy.go:1943 + ATRPeriods default [14].',
+    consumer:
+      'store/strategy.go IndicatorConfig.EnableATR + ATRPeriods default [14].',
     range: 'bool + comma periods',
-    systemDefault: 'off; period [14] when on',
+    systemDefault:
+      'ON in the new-strategy template (store/strategy.go GetDefaultStrategyConfig → applyFuturesIndicatorDefaults), period [14]; an absent field reads off',
     recommended: 'Per strategy taste.',
     whenToTouch: 'To add/remove ATR.',
     perSession: 'No.',
@@ -1063,9 +1204,10 @@ const indicators: KnobSpec[] = [
     what: 'Bollinger Bands block on/off. Default period [20]; the standard-deviation multiplier is fixed at 2.',
     trader: 'OFF removes BOLL from the AI indicator text.',
     consumer:
-      'store/strategy.go:1944 + BOLLPeriods default [20] (multiplier fixed 2).',
+      'store/strategy.go IndicatorConfig.EnableBOLL + BOLLPeriods default [20] (multiplier fixed 2).',
     range: 'bool + comma periods',
-    systemDefault: 'off; period [20] when on',
+    systemDefault:
+      'off (also off in the new-strategy template); period [20] when on',
     recommended: 'Per strategy taste.',
     whenToTouch: 'To add/remove BOLL.',
     perSession: 'No.',
@@ -1075,9 +1217,10 @@ const indicators: KnobSpec[] = [
     where: 'Strategy → Indicators → Volume toggle',
     what: 'Volume profile block on/off.',
     trader: 'OFF removes the volume block from analysis.',
-    consumer: 'store/strategy.go:1945 EnableVolume.',
+    consumer: 'store/strategy.go IndicatorConfig.EnableVolume.',
     range: 'bool',
-    systemDefault: 'off',
+    systemDefault:
+      'ON in the new-strategy template (store/strategy.go GetDefaultStrategyConfig); an absent field reads off',
     recommended: 'Per strategy taste.',
     whenToTouch: 'To add/remove volume profile.',
     perSession: 'No.',
@@ -1087,9 +1230,10 @@ const indicators: KnobSpec[] = [
     where: 'Strategy → Indicators → OI toggle',
     what: 'Open-interest block on/off.',
     trader: 'OFF removes OI from the AI indicator text.',
-    consumer: 'store/strategy.go:1946 EnableOI.',
+    consumer: 'store/strategy.go IndicatorConfig.EnableOI.',
     range: 'bool',
-    systemDefault: 'off',
+    systemDefault:
+      'off (the new-strategy template turns it off: store/strategy.go applyFuturesIndicatorDefaults)',
     recommended: 'Per strategy taste.',
     whenToTouch: 'To add/remove OI.',
     perSession: 'No.',
@@ -1099,9 +1243,10 @@ const indicators: KnobSpec[] = [
     where: 'Strategy → Indicators → Funding toggle',
     what: 'Funding-rate block on/off. CME futures have no funding rate — the editor hides it on the futures path.',
     trader: 'OFF removes funding rate from the AI text (crypto only).',
-    consumer: 'store/strategy.go:1947 EnableFundingRate.',
+    consumer: 'store/strategy.go IndicatorConfig.EnableFundingRate.',
     range: 'bool',
-    systemDefault: 'off',
+    systemDefault:
+      'ON in the new-strategy template (store/strategy.go GetDefaultStrategyConfig) but inert on futures, where the editor hides it; an absent field reads off',
     recommended: 'Per strategy taste.',
     whenToTouch: 'To add/remove funding rate.',
     perSession: 'No.',
@@ -1112,7 +1257,7 @@ const indicators: KnobSpec[] = [
     what: 'Session volume profile block. Default OFF. When ON, the futures AI prompt gains the POC / value-area (VAH/VAL) line.',
     trader: 'ON adds the SVP line to the futures prompt.',
     consumer:
-      'store/strategy.go:1948 EnableSVP (comment: futures AI prompt line, default OFF).',
+      'store/strategy.go IndicatorConfig.EnableSVP (comment: futures AI prompt line, default OFF).',
     range: 'bool',
     systemDefault: 'OFF',
     recommended: 'OFF until you want volume-at-price context in the prompt.',
@@ -1124,7 +1269,7 @@ const indicators: KnobSpec[] = [
     where: 'Strategy → Indicators → Klines → Primary TF',
     what: 'The primary decision timeframe: "1m" | "3m" | "5m" | "15m" | "1h" | "4h".',
     trader: 'The main bar series the engine decides on.',
-    consumer: 'store/strategy.go:1988 KlineConfig.PrimaryTimeframe.',
+    consumer: 'store/strategy.go KlineConfig.PrimaryTimeframe.',
     range: '1m | 3m | 5m | 15m | 1h | 4h',
     systemDefault: 'per strategy',
     recommended: 'Match your trading horizon.',
@@ -1136,7 +1281,7 @@ const indicators: KnobSpec[] = [
     where: 'Strategy → Indicators → Klines → Primary count',
     what: 'How many primary-timeframe klines feed analysis.',
     trader: 'Fewer bars = less context, more bars = longer prompts.',
-    consumer: 'store/strategy.go:1990 KlineConfig.PrimaryCount.',
+    consumer: 'store/strategy.go KlineConfig.PrimaryCount.',
     range: 'positive int',
     systemDefault: 'per strategy',
     recommended: 'Per strategy taste.',
@@ -1149,7 +1294,7 @@ const indicators: KnobSpec[] = [
     what: 'Whether multi-timeframe analysis is enabled, and the selected timeframe list (supports multi-selection).',
     trader: 'OFF = primary TF only.',
     consumer:
-      'store/strategy.go:1996/1998 EnableMultiTimeframe/SelectedTimeframes.',
+      'store/strategy.go KlineConfig.EnableMultiTimeframe / SelectedTimeframes.',
     range: 'bool + list',
     systemDefault: 'off',
     recommended: 'Per strategy taste.',
@@ -1164,7 +1309,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Symbol',
     what: 'The grid trading pair symbol.',
     trader: 'The market the grid engine trades.',
-    consumer: 'store/strategy.go:1862 GridStrategyConfig.Symbol.',
+    consumer: 'store/strategy.go GridStrategyConfig.Symbol.',
     range: 'symbol string',
     systemDefault: 'empty',
     recommended: 'A liquid pair.',
@@ -1176,7 +1321,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Grid Count',
     what: 'Number of grid levels (5-50).',
     trader: 'More levels = finer spacing, smaller per-level size.',
-    consumer: 'store/strategy.go:1864 GridCount.',
+    consumer: 'store/strategy.go GridStrategyConfig.GridCount.',
     range: '5-50',
     systemDefault: 'per strategy',
     recommended: 'Per volatility taste.',
@@ -1188,7 +1333,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Investment',
     what: 'Total investment for the grid.',
     trader: 'The whole grid is sized from this number.',
-    consumer: 'store/strategy.go:1866 TotalInvestment.',
+    consumer: 'store/strategy.go GridStrategyConfig.TotalInvestment.',
     range: 'amount',
     systemDefault: '0',
     recommended: 'Only what you can afford to grid.',
@@ -1200,7 +1345,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Leverage',
     what: 'Grid leverage (1-20).',
     trader: 'Exchange leverage applied to grid positions.',
-    consumer: 'store/strategy.go:1868 Leverage (comment: 1-20).',
+    consumer: 'store/strategy.go GridStrategyConfig.Leverage (comment: 1-20).',
     range: '1-20',
     systemDefault: 'per strategy',
     recommended: 'Low for grids.',
@@ -1212,7 +1357,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Upper Price',
     what: 'Upper price boundary. 0 = auto-calculate from ATR.',
     trader: 'Grid ceiling.',
-    consumer: 'store/strategy.go:1870 UpperPrice.',
+    consumer: 'store/strategy.go GridStrategyConfig.UpperPrice.',
     range: 'price or 0',
     systemDefault: '0 (ATR auto)',
     recommended: 'Auto unless you want a hard band.',
@@ -1224,7 +1369,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Lower Price',
     what: 'Lower price boundary. 0 = auto-calculate from ATR.',
     trader: 'Grid floor.',
-    consumer: 'store/strategy.go:1872 LowerPrice.',
+    consumer: 'store/strategy.go GridStrategyConfig.LowerPrice.',
     range: 'price or 0',
     systemDefault: '0 (ATR auto)',
     recommended: 'Auto unless you want a hard band.',
@@ -1236,7 +1381,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Auto-calculate Bounds (ATR)',
     what: 'Whether to use ATR to auto-calculate the grid bounds.',
     trader: 'ON computes upper/lower from ATR.',
-    consumer: 'store/strategy.go:1874 UseATRBounds.',
+    consumer: 'store/strategy.go GridStrategyConfig.UseATRBounds.',
     range: 'bool',
     systemDefault: 'false',
     recommended: 'ON for volatility-adaptive grids.',
@@ -1248,7 +1393,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → ATR Multiplier',
     what: 'ATR multiplier for bound calculation (default 2.0).',
     trader: 'Wider multiplier = wider grid band.',
-    consumer: 'store/strategy.go:1876 ATRMultiplier.',
+    consumer: 'store/strategy.go GridStrategyConfig.ATRMultiplier.',
     range: 'float',
     systemDefault: '2.0',
     recommended: '2.0 — the shipped default.',
@@ -1260,7 +1405,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Distribution',
     what: 'Position distribution across grid levels: "uniform" | "gaussian" | "pyramid".',
     trader: 'Shapes per-level sizing.',
-    consumer: 'store/strategy.go:1878 Distribution.',
+    consumer: 'store/strategy.go GridStrategyConfig.Distribution.',
     range: 'uniform | gaussian | pyramid',
     systemDefault: 'per strategy',
     recommended: 'Per strategy taste.',
@@ -1272,7 +1417,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Max Drawdown (%)',
     what: 'Maximum drawdown percentage before emergency exit.',
     trader: 'Triggers the grid emergency exit.',
-    consumer: 'store/strategy.go:1880 MaxDrawdownPct.',
+    consumer: 'store/strategy.go GridStrategyConfig.MaxDrawdownPct.',
     range: 'percent',
     systemDefault: '0',
     recommended: 'Set a real stop for the grid.',
@@ -1284,7 +1429,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Stop Loss (%)',
     what: 'Stop loss percentage per position.',
     trader: 'Per-position grid stop.',
-    consumer: 'store/strategy.go:1882 StopLossPct.',
+    consumer: 'store/strategy.go GridStrategyConfig.StopLossPct.',
     range: 'percent',
     systemDefault: '0',
     recommended: 'Per strategy taste.',
@@ -1296,7 +1441,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Daily Loss Limit (%)',
     what: 'Daily loss limit percentage.',
     trader: 'Halts the grid on a daily loss.',
-    consumer: 'store/strategy.go:1884 DailyLossLimitPct.',
+    consumer: 'store/strategy.go GridStrategyConfig.DailyLossLimitPct.',
     range: 'percent',
     systemDefault: '0',
     recommended: 'Per strategy taste.',
@@ -1308,7 +1453,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Maker Only Orders',
     what: 'Use maker-only orders for lower fees.',
     trader: 'ON = limit orders only.',
-    consumer: 'store/strategy.go:1886 UseMakerOnly.',
+    consumer: 'store/strategy.go GridStrategyConfig.UseMakerOnly.',
     range: 'bool',
     systemDefault: 'false',
     recommended: 'Per fee preference.',
@@ -1320,7 +1465,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Enable Direction Adjust',
     what: 'Enable automatic grid direction adjustment based on box breakouts.',
     trader: 'ON re-biases the grid on breakouts.',
-    consumer: 'store/strategy.go:1888 EnableDirectionAdjust.',
+    consumer: 'store/strategy.go GridStrategyConfig.EnableDirectionAdjust.',
     range: 'bool',
     systemDefault: 'false',
     recommended: 'Per strategy taste.',
@@ -1332,7 +1477,7 @@ const grid: KnobSpec[] = [
     where: 'Strategy → Grid → Bias Strength',
     what: 'Direction bias ratio for long_bias/short_bias modes (default 0.7 = 70%/30%).',
     trader: 'Shapes the long/short split when bias is active.',
-    consumer: 'store/strategy.go:1890 DirectionBiasRatio.',
+    consumer: 'store/strategy.go GridStrategyConfig.DirectionBiasRatio.',
     range: '0-1',
     systemDefault: '0.7',
     recommended: '0.7 (70/30).',
@@ -1347,7 +1492,8 @@ const pictureHtf: KnobSpec[] = [
     where: 'Strategy → Day Plan → Picture HTF → Tick size',
     what: 'One instrument tick (default 0.25 for MNQ); the H1 close must cross by at least one tick.',
     trader: 'Guards the H1 confirmation crossing.',
-    consumer: 'store/strategy.go:931 tick_size (PictureHtfResolved).',
+    consumer:
+      'store/strategy.go PictureHtfConfig.TickSize (tick_size; PictureHtfResolved).',
     range: 'float',
     systemDefault: '0.25 (MNQ)',
     recommended: 'The instrument tick.',
@@ -1359,7 +1505,8 @@ const pictureHtf: KnobSpec[] = [
     where: 'Strategy → Day Plan → Picture HTF → Pivot window',
     what: 'Latest N completed 4H candles for body-pivot discovery (default 120).',
     trader: 'Wider = more pivot context.',
-    consumer: 'store/strategy.go:932 pivot_window.',
+    consumer:
+      'store/strategy.go PictureHtfConfig.PivotWindow (pivot_window; PictureHtfResolved).',
     range: 'int',
     systemDefault: '120',
     recommended: '120 — the shipped default.',
@@ -1371,7 +1518,8 @@ const pictureHtf: KnobSpec[] = [
     where: 'Strategy → Day Plan → Picture HTF → Swing lookback',
     what: 'Preceding N completed 5m candles for the structural swing stop (default 24).',
     trader: 'Shapes the structural swing stop.',
-    consumer: 'store/strategy.go:933 swing_lookback.',
+    consumer:
+      'store/strategy.go PictureHtfConfig.SwingLookback (swing_lookback; PictureHtfResolved).',
     range: 'int',
     systemDefault: '24',
     recommended: '24 — the shipped default.',
@@ -1384,7 +1532,7 @@ const pictureHtf: KnobSpec[] = [
     what: 'Submission allowed within N seconds of the new 5m interval (default 360).',
     trader: 'Limits when a Picture entry may be sent.',
     consumer:
-      'store/strategy.go:934 entry_window_sec (PictureHtfDefaultEntryWindowSec = 360, :921).',
+      'store/strategy.go PictureHtfConfig.EntryWindowSec (entry_window_sec; PictureHtfDefaultEntryWindowSec = 360).',
     range: 'seconds',
     systemDefault: '360',
     recommended: '360 — the shipped default.',
@@ -1397,7 +1545,7 @@ const pictureHtf: KnobSpec[] = [
     what: 'Max accepted age of the freshest bar frame at evaluation and send (default 30s).',
     trader: 'Stale frames are refused.',
     consumer:
-      'store/strategy.go:935 freshness_sec (PictureHtfDefaultFreshnessSec = 30, :922).',
+      'store/strategy.go PictureHtfConfig.FreshnessSec (freshness_sec; PictureHtfDefaultFreshnessSec = 30).',
     range: 'seconds',
     systemDefault: '30',
     recommended: '30 — the shipped default.',
@@ -1409,7 +1557,8 @@ const pictureHtf: KnobSpec[] = [
     where: 'Strategy → Day Plan → Picture HTF → Minimum R:R',
     what: "0 = the strategy's configured minimum R:R; the nearest eligible zone is never skipped to find a better one.",
     trader: 'R:R floor for Picture plays.',
-    consumer: 'store/strategy.go:936 min_rr (PictureHtfResolved).',
+    consumer:
+      'store/strategy.go PictureHtfConfig.MinRR (min_rr; PictureHtfResolved).',
     range: 'float or 0',
     systemDefault: '0 (inherit risk-control floor)',
     recommended: '0 (inherit).',
@@ -1424,9 +1573,9 @@ const sessions: KnobSpec[] = [
     where: 'Strategy → Day Plan → Sessions accordion',
     what: 'Per-session override rows: min grade, min scenario quality, max trades, plan mode, max re-plans (the acceptance-window override row was removed by W-KNOB-PRUNE 2026-09-18 — one rule exists; a stored override is read by nothing). Min grade, quality, max trades and plan mode are tri-state: inherit (blank) = the strategy-level row; an explicit value wins. Stored values that EQUAL the strategy level are auto-migrated to inherit. (min side levels REMOVED — owner ruling 2026-08-31: the per-side count concept is deleted.)',
     trader:
-      'The current rows: min_grade B · min_scenario_quality C · max_trades 7/10/10 (ASIA/LONDON/NY) · plan_mode strict ×3 · max re-plans 4 (a stored acceptance 5m_close ×3 is inert).',
+      'The current rows: min_grade B · min_scenario_quality C · max_trades 7/10/10 (ASIA/LONDON/NY) · plan_mode strict ×3 · max re-plans 4 (a stored acceptance 5m_close ×3 is inert). STRICT-12345 F-9 (release #25 note): 3 of 4 strict-planner losses on 10-14 (#649 #650 #652) were ASIA/LONDON; the switches are in Studio → Day plan → sessions (ASIA/LONDON enable + min_grade + max_trades — the spec default is min_grade A, max_trades 1). No saved value was changed by release #25.',
     consumer:
-      'store/strategy.go:921-975 (per-session resolvers) · trader/auto_trader_planconfig.go:158-168',
+      'store/strategy.go DayPlanSessionOverride + DayPlanConfig.SessionOverride (per-session resolvers) · store/resolve_source.go ResolvePlanMode / ResolveReplanCap · trader/auto_trader_planconfig.go planModeFor',
     range:
       'per-session rows; the four tri-state knobs inherit (blank) = strategy value, explicit = override',
     systemDefault:
@@ -1633,13 +1782,13 @@ export const settings: GuideSection = {
       ],
     },
     { kind: 'h', text: 'Risk Control knobs' },
+    { kind: 'knobs', knobs: risk },
     { kind: 'h', text: 'AI prompt knobs' },
     { kind: 'knobs', knobs: prompt },
     { kind: 'knobs', knobs: coinSource },
     { kind: 'knobs', knobs: indicators },
     { kind: 'knobs', knobs: grid },
     { kind: 'knobs', knobs: pictureHtf },
-    { kind: 'knobs', knobs: risk },
     { kind: 'h', text: 'Session map' },
     { kind: 'knobs', knobs: sessions },
     { kind: 'h', text: 'Env-only knobs (not Studio)' },
@@ -1653,7 +1802,11 @@ export const settings: GuideSection = {
         },
         {
           title: 'HTF_VETO_MODE = cross',
-          body: 'Veto mode: 1h | cross | 4h — LIVE = cross (1h AND 4h must agree; the $352/0 autopsy).',
+          body: "Veto mode: 1h | cross | 4h — LIVE = cross (1h AND 4h must agree; the $352/0 autopsy). The 4h trend is read from the bar cache's native 4h series (F-4 — before it, cross never saw a 4h and never vetoed).",
+        },
+        {
+          title: 'STRUCTURE_ONEWAY_ATR = 1.0',
+          body: "HTF veto only (F-4): a TF whose 3-swing trend is RANGING reads TRENDING when its newest closed bar closed at least this many ATR beyond the last swing extreme (a crash that has not made a new fractal low yet). 1.0 = the repo's displacement unit for a broken level (BD_MIN_DISP_ATR). The boot regime ledger prints the resolved value.",
         },
         {
           title: 'HTF_VETO_TF = 1h',
@@ -1694,7 +1847,7 @@ export const settings: GuideSection = {
         },
         {
           title: 'BARS_HOLE_MIN_GAP_MIN = 3',
-          body: "Bar-hole threshold: this many OPEN-market minutes with no stored 1m bar between two stored bars is a hole, and the bot re-requests NinjaTrader's history for it at +1/+3/+10/+30 min (never while the feed is down), then every 15 min while CME is open after one loud UNFILLED line naming the NT8 history reload. The daily break, weekends and holiday closes never count. The boot line '🕳 bar-hole backfill:' prints the value and its source.",
+          body: "Bar-hole threshold: this many OPEN-market minutes with no stored 1m bar between two stored bars is a hole, and the bot re-requests NinjaTrader's history for it at +1/+3/+10/+30 min (never while the feed is down), then every 15 min while CME is open (8 slow tries per hole in total) after one loud UNFILLED line naming the NT8 history reload; requests go out only in the first 15 s of a minute, and a hole older than NT8's 2000-bar replay reach is retired. The daily break, weekends and holiday closes never count. The boot line '🕳 bar-hole backfill:' prints the value and its source.",
         },
         {
           title: 'PERSIST_STALL_WATCHDOG_S = 60',
@@ -1705,7 +1858,7 @@ export const settings: GuideSection = {
     { kind: 'h', text: 'The save ritual' },
     {
       kind: 'p',
-      text: 'Every Strategy-page change must be SAVED to take effect. Ritual: make the change → press Save → "Strategy saved" toast → the `saved {MM/DD, HH:MM} CT` chip updates. Unsaved changes are inert — and the knob-vs-code truth is: a page value above a code ceiling (e.g. leverage 20 vs system 10) saves but does nothing.',
+      text: 'Every Strategy-page change must be SAVED to take effect. Ritual: make the change → press Save → "Strategy saved" toast → the `saved {MM/DD, HH:MM} CT` chip updates. Unsaved changes are inert — and the knob-vs-code truth is: a value outside the code’s own range is clamped into it when the strategy is saved (store/strategy.go ClampLimits — e.g. min R:R 1–10, max positions 1–3).',
     },
     {
       kind: 'callout',
@@ -1713,13 +1866,13 @@ export const settings: GuideSection = {
       items: [
         {
           title: 'Wired + clamped',
-          body: 'Page value used, code clamps to the system ceiling (leverage 20 → 10/5).',
-          cite: 'kernel/engine_analysis.go:125',
+          body: 'Page value used; the code clamps a saved value into its own range (min R:R 1–10, max positions 1–3; crypto leverage 1–20, the same as its page sliders).',
+          cite: 'store/strategy.go ClampLimits',
         },
         {
           title: 'Wired + per-session',
           body: 'Session override wins over strategy value (plan_mode, proximity, caps).',
-          cite: 'store/strategy.go:921-975',
+          cite: 'store/strategy.go DayPlanConfig.SessionOverride',
         },
         {
           title: 'Inert without master',
@@ -1776,7 +1929,7 @@ export const settings: GuideSection = {
     },
     {
       kind: 'p',
-      text: 'The beginner onboarding route is owner-only (the first-created account, no machine tokens). The boot line now prints the JWT secret state truthfully: configured (custom) or INSECURE DEFAULT with a warning.',
+      text: 'Owner-only routes (today: the Telegram bind code) accept only the box OWNER’s own session, never a machine token. Machine tokens (the Telegram bot’s, gate-jwt’s) may only read and reduce risk — stop, pause, close a position, flatten; every other change answers 403 “the bot may read and reduce risk, not add it” (see Updates → Changing the password). The owner is the account that owns every trader — not simply the first account registered; the first account counts only while there are no traders. When the traders belong to more than one account, or to one that no longer exists, there is no owner and those routes refuse (logged and counted as owner_unresolved in the gate-block table). The 👤 owner boot line names the owner and the rule that chose it. The boot line now prints the JWT secret state truthfully: configured (custom) or INSECURE DEFAULT with a warning.',
     },
   ],
 }

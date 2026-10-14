@@ -80,13 +80,15 @@ export function EmergencyFlatButton({ traderId }: Props) {
               Confirm Emergency Flat
             </h2>
             <p className="text-sm text-vl-neo-text-muted mb-4">
-              This sends ONE market flatten to NinjaTrader for the position of
-              trader{' '}
+              This sends ONE market flatten to NinjaTrader for the bound account
+              of trader{' '}
               <code className="font-mono text-vl-neo-gold">{traderId}</code>{' '}
-              only. It also clears this trader&apos;s daily-loss lock (if its
-              loss still stands, the lock returns on the next 60-second check).
-              It does not pause the trader or cancel resting entry orders — use
-              Pause for that. Cannot be undone.
+              only — no other account is touched. On that account NinjaTrader
+              closes the MNQ position AND cancels every working MNQ order,
+              resting entry orders included. It also clears this trader&apos;s
+              daily-loss lock (if its loss still stands, the lock returns on the
+              next 60-second check). It does not pause the trader — use Pause to
+              stop new entries. Cannot be undone.
             </p>
 
             {result && (

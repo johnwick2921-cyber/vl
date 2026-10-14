@@ -97,3 +97,17 @@ func (g *orderGuard) admit(key string, nowMs int64) (reason string, ok bool) {
 	}
 	return reason, ok
 }
+
+// ageForTest moves every recorded send d into the past — a fixture's way of
+// saying "more than one bar has passed" without sleeping through the 55 s
+// dedupe window. Test seam only; never called by production code.
+func (g *orderGuard) ageForTest(d int64) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for k, v := range g.lastSeen {
+		g.lastSeen[k] = v - d
+	}
+	for i := range g.actionTimes {
+		g.actionTimes[i] -= d
+	}
+}

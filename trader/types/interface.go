@@ -129,6 +129,11 @@ type OpenOrder struct {
 	TargetPrice float64  `json:"target_price,omitempty"`
 	ZoneLo      *float64 `json:"zone_lo,omitempty"`
 	ZoneHi      *float64 `json:"zone_hi,omitempty"`
+	// Leg1TP / Leg1Qty (UG-5, release #24) — a split mentor arm only: leg 1's
+	// own take-profit and its contracts (TargetPrice is then the runner's, for
+	// Quantity − Leg1Qty). Absent on single-bracket rows and venue answers.
+	Leg1TP  float64 `json:"leg1_tp,omitempty"`
+	Leg1Qty int     `json:"leg1_qty,omitempty"`
 }
 
 // LimitOrderRequest represents a limit order request for grid trading

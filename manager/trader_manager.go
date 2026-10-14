@@ -451,6 +451,11 @@ func (tm *TraderManager) RemoveTrader(traderID string) {
 	defer tm.mu.Unlock()
 
 	if t, exists := tm.traders[traderID]; exists {
+		// MENTOR-NY item 3: RETIRE first — an instance whose Run was spawned
+		// but has not claimed the trader yet (is_running still false: the
+		// 10-13 16:35:46 reload race) is refused when it gets there, so a
+		// removed instance can never run beside the one loaded after it.
+		t.Retire()
 		// Stop the trader if it's running (this ensures the goroutine exits)
 		status := t.GetStatus()
 		if isRunning, ok := status["is_running"].(bool); ok && isRunning {
@@ -716,7 +721,11 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 		// r22 RISK-GATES — what the daily-loss gate does for THIS strategy
 		// (OFF, or ENFORCED with its refuse/cancel/flatten/latch), READ from
 		// the resolver the gate runs.
-		logger.Infof("🛑 [%s] %s", traderCfg.Name, trader.DailyLossGateBootLineForStrategy(strategyConfig))
+		// RT-2 (release #24): a held latch reads LATCHED, whatever the switches.
+		logger.Infof("🛑 [%s] %s", traderCfg.Name, trader.DailyLossGateBootLine(st, traderCfg.ID, strategyConfig, time.Now()))
+		// Release #25 planner-knobs — the seven STRICT-12345 loss-fix
+		// switches for THIS strategy, each READ from its resolver + origin.
+		logger.Infof("🧱 [%s] %s", traderCfg.Name, store.PlannerKnobsBootLine(strategyConfig))
 		// W-KNOB-PRUNE (2026-09-18) — every folded knob whose STORED value
 		// differs from its constant, once, so a removed control never keeps
 		// a value silently.

@@ -90,7 +90,9 @@ func (at *AutoTrader) mentorWireProductionSeams() {
 		}
 
 		at.mentorLegProtectedSource = func(leg string) bool {
-			orders, err := pr.GetOpenOrders("MNQ")
+			// UG-2 (release #24): the ledger answers per symbol now — ask
+			// for THIS trader's instrument, never a literal root.
+			orders, err := pr.GetOpenOrders(at.futuresSymbol())
 			if err != nil {
 				return false
 			}
@@ -140,7 +142,7 @@ func (at *AutoTrader) mentorWireProductionSeams() {
 				return store.MentorDayActivity{}, false
 			}
 			if act.Unresolved > 0 {
-				at.logWarnf("🧑‍🏫 mentor done-after-win day UNRESOLVED (%d closed row(s) with NULL pnl_corrected today) — refusing (fail-closed)", act.Unresolved)
+				at.logWarnf("🧑‍🏫 mentor done-after-win day UNRESOLVED (%d closed row(s) today with unknown P&L: pnl_corrected NULL, or a reconcile_flat/unresolved close) — refusing (fail-closed)", act.Unresolved)
 				return store.MentorDayActivity{}, false
 			}
 			return act, true
@@ -153,7 +155,7 @@ func (at *AutoTrader) mentorWireProductionSeams() {
 				return store.MentorDayActivity{}, false
 			}
 			if act.Unresolved > 0 {
-				at.logWarnf("🧑‍🏫 mentor stop-after-loss day UNRESOLVED (%d closed row(s) with NULL pnl_corrected today) — refusing (fail-closed)", act.Unresolved)
+				at.logWarnf("🧑‍🏫 mentor stop-after-loss day UNRESOLVED (%d closed row(s) today with unknown P&L: pnl_corrected NULL, or a reconcile_flat/unresolved close) — refusing (fail-closed)", act.Unresolved)
 				return store.MentorDayActivity{}, false
 			}
 			return act, true

@@ -34,8 +34,16 @@ func fptr(f float64) *float64 { return &f }
 // zoneReachRig builds the standard zone rig with zone_place_within_pts set.
 func zoneReachRig(t *testing.T, id string, pts float64) *zoneRig {
 	t.Helper()
-	r := newZoneRig(t, id, zoneDoc(zoneScenario("S1", kernel.EntryPolicyMarketInZone, zone, false)))
+	// F-1 (planner-touch-fills): a LEVEL play (reject/hold/acceptance) far
+	// beyond a zone it never touched is held at authoring — it has no reaction
+	// to trade. The reach gate is placement mechanics, so its fixture is a
+	// breakout-class play (breakout_retest, declared live here), which F-1
+	// leaves to the gate exactly as before.
+	sc := zoneScenario("S1", kernel.EntryPolicyMarketInZone, zone, false)
+	sc.Condition = "breakout_retest"
+	r := newZoneRig(t, id, zoneDoc(sc))
 	r.at.config.StrategyConfig.DayPlan.ZonePlaceWithinPts = fptr(pts)
+	r.at.config.StrategyConfig.DayPlan.ConditionStatus = map[string]string{"breakout_retest": "live"}
 	return r
 }
 

@@ -231,6 +231,18 @@ func (r ConnectionRecord) AckAge() (time.Duration, bool) {
 	return time.Duration(monoMs(time.Now())-r.AckMonoMs) * time.Millisecond, true
 }
 
+// AcceptedAt is when THIS connection was accepted, on the process's monotonic
+// clock (wireMonoBase). ok=false when no connection was ever accepted. N-C
+// (release #22 rescan): the dead-man watchdog resumes only on snapshots
+// RECEIVED after this instant — a frame from the old link proves nothing
+// about the new one.
+func (r ConnectionRecord) AcceptedAt() (time.Time, bool) {
+	if r.AcceptSeq == 0 {
+		return time.Time{}, false
+	}
+	return wireMonoBase.Add(time.Duration(r.AcceptMonoMs) * time.Millisecond), true
+}
+
 // DisconnectedAt is when THIS connection closed, on the process's monotonic
 // clock (wireMonoBase). ok=false when the record has no disconnect stamp
 // (never connected, or still connected).

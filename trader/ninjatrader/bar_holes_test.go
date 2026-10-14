@@ -241,7 +241,11 @@ func newGHFixture(t *testing.T) *ghFixture {
 		ntwire.SetBarPersister(nil)
 		time.Sleep(400 * time.Millisecond) // a flush already inside the closure (300 ms ticker) finishes
 	})
-	clk := &fakeClock{t: ct(2026, 10, 14, 7, 49).Add(10 * time.Second)}
+	// On a whole minute: the schedule's +1/+3/+10/+30 slots (and the 15 min
+	// slow step) then land in the first seconds of a CT minute, inside the
+	// send window, exactly as one of production's 15 s ticks does
+	// (barHoleSendWindow, #23 review P2-1).
+	clk := &fakeClock{t: ct(2026, 10, 14, 7, 49)}
 	sink := &lineSink{}
 	tr := newBarHoleTracker(bh, serverFn)
 	tr.clock = clk.Now
@@ -469,7 +473,7 @@ func TestNothingFiresWhileTheFeedIsDown(t *testing.T) {
 
 	f.addon.send(ntwire.FrameFeedStatus, ntwire.FeedStatusPayload{PriceStatus: "Connected"})
 	waitFor(t, "the feed status to read Connected", func() bool { return f.srv.FeedStatus() == "Connected" })
-	f.tr.tick(det.Add(91 * time.Second))
+	f.tr.tick(det.Add(2 * time.Minute))
 	f.waitReRequests(1)
 }
 
@@ -530,7 +534,7 @@ func TestUnfilledLineIsSaidOnceThenSlowRetriesPickUpTheReload(t *testing.T) {
 		t.Fatalf("nothing is declared before the last attempt is measured:\n%s", f.sink.dump())
 	}
 	f.tr.tick(det.Add(32*time.Minute + 10*time.Second)) // the measure after #4
-	want := "🚨 bars hole UNFILLED after 4 re-requests: NinjaTrader has no history for 10-14 03:44–07:48 CT (MNQ 1m on MNQ 12-26, 244 open minute(s) still missing): on an MNQ chart right-click → Reload All Historical Data; the bot re-requests on its next attempt"
+	want := "🚨 bars hole UNFILLED after 4 re-requests: NinjaTrader has no history for 10-14 03:44–07:48 CT (MNQ 1m on MNQ 12-26, 244 open minute(s) still missing): on an MNQ chart right-click → Reload All Historical Data; the bot re-requests on its next attempt (every 15m while CME is open, at most 8 more), until the hole leaves NT8's replay window — then it is retired and stays"
 	if f.sink.count(want) != 1 {
 		t.Fatalf("want the unfilled line exactly once:\n%s", f.sink.dump())
 	}
@@ -542,7 +546,7 @@ func TestUnfilledLineIsSaidOnceThenSlowRetriesPickUpTheReload(t *testing.T) {
 	}
 	f.tr.tick(det.Add(40 * time.Minute))
 	f.noNewReRequest(4, "the slow retry waits its 15 minutes")
-	f.tr.tick(det.Add(47*time.Minute + 15*time.Second))
+	f.tr.tick(det.Add(47*time.Minute + 10*time.Second))
 	f.waitReRequests(5)
 	f.tr.tick(det.Add(49*time.Minute + 20*time.Second))
 	if n := f.sink.count("UNFILLED"); n != 1 {
@@ -556,7 +560,7 @@ func TestUnfilledLineIsSaidOnceThenSlowRetriesPickUpTheReload(t *testing.T) {
 	amu.Lock()
 	reloaded = true
 	amu.Unlock()
-	f.tr.tick(det.Add(62*time.Minute + 20*time.Second))
+	f.tr.tick(det.Add(62*time.Minute + 10*time.Second))
 	f.waitReRequests(6)
 	waitFor(t, "the reloaded window to reach the store", func() bool {
 		return f.storedOpen(ct(2026, 10, 14, 3, 44), ct(2026, 10, 14, 7, 48)) == 244
@@ -688,5 +692,206 @@ func TestHoleOnARolledContractIsRetiredNotReRequested(t *testing.T) {
 	}
 	if d := f.delta(); d.Refused != 1 || d.Unfilled != 0 {
 		t.Fatalf("refused +%d unfilled +%d — a retirement is counted as a refusal, never as unfilled", d.Refused, d.Unfilled)
+	}
+}
+
+// ── #23 review P2-1 — a re-request goes out only early in a CT minute ─────
+// The AddOn's rebuild freezes the symbol's forming bars for 20–35 s; a send
+// late in a minute lets that freeze cross the boundary and store the minute
+// truncated as LIVE. A due hole waits for the next tick inside the window.
+
+func TestGapReRequestWaitsForTheStartOfAMinute(t *testing.T) {
+	f := newGHFixture(t)
+	det := f.openHole()                   // 07:49:00 CT; the first slot is due at 07:50:00
+	f.tr.tick(det.Add(100 * time.Second)) // 07:50:40 — due, but late in the minute
+	f.noNewReRequest(0, "a send at :40 would let the rebuild's freeze cross the minute boundary")
+	if hs := f.holes(); len(hs) != 1 || hs[0].Attempts != 0 {
+		t.Fatalf("the hole stays due, untouched: %+v", hs)
+	}
+	if d := f.delta(); d.Deferred != 0 || d.Refused != 0 {
+		t.Fatalf("waiting for the window is not a refusal: deferred +%d refused +%d", d.Deferred, d.Refused)
+	}
+	f.tr.tick(det.Add(2*time.Minute + 5*time.Second)) // 07:51:05 — inside the window
+	f.waitReRequests(1)
+}
+
+// TestSendWindowCatchesEveryTickerPhase — the window equals the tick period,
+// so whatever second the 15 s ticker started on, exactly one tick per minute
+// is inside it. (A 10 s window is missed by every tick of a ticker that
+// started on :10–:14 — the hole would never be asked for.)
+func TestSendWindowCatchesEveryTickerPhase(t *testing.T) {
+	minute := ct(2026, 10, 14, 9, 0)
+	for phase := time.Duration(0); phase < barHoleTickEvery; phase += 250 * time.Millisecond {
+		in := 0
+		for k := time.Duration(0); k < 4; k++ {
+			if barHoleInSendWindow(minute.Add(phase + k*barHoleTickEvery)) {
+				in++
+			}
+		}
+		if in != 1 {
+			t.Fatalf("ticker phase %s: %d ticks per minute inside the send window, want exactly 1", phase, in)
+		}
+	}
+	if barHoleInSendWindow(minute.Add(25 * time.Second)) {
+		t.Fatal(":25 must be outside the window (the review's limit)")
+	}
+}
+
+// ── #23 review P2-3 — a hole no re-request can reach is retired ───────────
+// A re-request replays the last bars_back (2000) 1m bars. A hole that opened
+// before that reach was asked for 4 + 24/day, forever, and the UNFILLED line
+// sent the owner to reload history that no replay could deliver.
+
+func TestHoleOutsideTheReplayWindowIsRetired(t *testing.T) {
+	f := newGHFixture(t)
+	f.stream(ct(2026, 10, 9, 10, 0), ct(2026, 10, 9, 10, 5))   // Fri 10-09
+	f.stream(ct(2026, 10, 14, 7, 48), ct(2026, 10, 14, 7, 49)) // Wed 10-14
+	waitFor(t, "the tracker to open the Fri→Wed hole", func() bool { return len(f.holes()) == 1 })
+	det := f.clk.Now()
+	f.tr.tick(det.Add(61 * time.Second))
+	f.noNewReRequest(0, "a hole beyond the 2000-bar replay reach is never asked for")
+	if hs := f.holes(); len(hs) != 0 {
+		t.Fatalf("the hole must be retired: %+v\n%s", hs, f.sink.dump())
+	}
+	if f.sink.count("bars hole RETIRED: MNQ 1m 10-09 10:06–10-14 07:48 CT on MNQ 12-26 — outside NT8's replay window: a re-request replays the last 2000 1m bars") != 1 ||
+		f.sink.count("so this hole stays") != 1 {
+		t.Fatalf("the retirement must be said once, naming the replay window:\n%s", f.sink.dump())
+	}
+	if d := f.delta(); d.Refused != 1 || d.Unfilled != 0 || d.Rerequests != 0 {
+		t.Fatalf("refused +%d unfilled +%d sent +%d — retired once, counted, never sent", d.Refused, d.Unfilled, d.Rerequests)
+	}
+	f.tr.tick(det.Add(3*time.Minute + 5*time.Second))
+	f.noNewReRequest(0, "a retired hole stays retired")
+}
+
+// countingHoleStore counts the window reads of one hole (the measure).
+type countingHoleStore struct {
+	holeStore
+	mu      sync.Mutex
+	fromMs  int64
+	windows int
+}
+
+func (c *countingHoleStore) BarsBetweenOn(symbol, tf, contract string, fromMs, toMs int64) ([]store.BarHistoryDB, error) {
+	c.mu.Lock()
+	if fromMs == c.fromMs {
+		c.windows++
+	}
+	c.mu.Unlock()
+	return c.holeStore.BarsBetweenOn(symbol, tf, contract, fromMs, toMs)
+}
+
+func (c *countingHoleStore) reads() int { c.mu.Lock(); defer c.mu.Unlock(); return c.windows }
+
+// TestSlowRetriesAreCappedInTotal — after the four scheduled attempts, at most
+// barHoleSlowCapTotal (8) slow re-requests per hole, IN TOTAL (the old cap was
+// 24 per session-day, reset at every 17:00 roll — forever). The spent line is
+// said once, and a spent hole is never read from the store again (#23 review
+// P3-5: the cap is checked before any measure).
+func TestSlowRetriesAreCappedInTotal(t *testing.T) {
+	f := newGHFixture(t)
+	f.addon.setAnswer(func(int, ntwire.BarsSubscribePayload) { f.answerEmpty() })
+	cs := &countingHoleStore{holeStore: f.bh, fromMs: ct(2026, 10, 14, 3, 44).UnixMilli()}
+	f.tr.mu.Lock()
+	f.tr.st = cs
+	f.tr.mu.Unlock()
+	det := f.openHole()
+	for i, at := range []time.Duration{61 * time.Second, 3*time.Minute + 5*time.Second, 10*time.Minute + 5*time.Second, 30*time.Minute + 5*time.Second} {
+		f.tr.tick(det.Add(at))
+		f.waitReRequests(i + 1)
+	}
+	unfilledAt := det.Add(32*time.Minute + 10*time.Second)
+	f.tr.tick(unfilledAt) // the measure after #4 → UNFILLED
+	if f.sink.count("UNFILLED") != 1 {
+		t.Fatalf("fixture: want the hole declared unfilled:\n%s", f.sink.dump())
+	}
+	sent := 4
+	for k := 1; k <= 10; k++ {
+		f.tr.tick(unfilledAt.Add(time.Duration(k) * 15 * time.Minute))
+		if k <= 8 { // the spec'd cap, pinned as a number (not the constant)
+			sent++
+			f.waitReRequests(sent)
+		}
+	}
+	f.noNewReRequest(4+8, "the slow retries are capped at 8 in total")
+	if n := f.sink.count("bars hole slow retries spent: MNQ 1m 10-14 03:44–07:48 CT on MNQ 12-26"); n != 1 {
+		t.Fatalf("the spent line must be said exactly once, said %d:\n%s", n, f.sink.dump())
+	}
+	hs := f.holes()
+	if len(hs) != 1 || hs[0].State != holeStateUnfilled || hs[0].NextAttemptAt != nil {
+		t.Fatalf("a spent hole stays listed as unfilled with no next attempt: %+v", hs)
+	}
+	reads := cs.reads()
+	for k := 11; k <= 14; k++ {
+		f.tr.tick(unfilledAt.Add(time.Duration(k) * 15 * time.Minute))
+	}
+	if got := cs.reads(); got != reads {
+		t.Fatalf("a spent hole must not be re-read from the store: %d window reads → %d", reads, got)
+	}
+}
+
+// ── CTO fold 2 (10-14) — a hole OLDER than the boot is found ──────────────
+// Release #23 booted 11:22:42 CT with ES 1m missing 03:44–07:48 (one stored
+// bar in that span); /api/health bars_holes read []. The first judgement per
+// key looked back only to the stored bar just before the first live minute,
+// so a hole further back in the session was never judged. The boot scan reads
+// back to the session open (17:00 CT) and tracks what it finds like any hole.
+
+func TestBootScanFindsAHoleOlderThanTheBoot(t *testing.T) {
+	f := newGHFixture(t)
+	var rows []store.BarHistoryDB
+	add := func(from, to time.Time) {
+		for m := from; !m.After(to); m = m.Add(time.Minute) {
+			rows = append(rows, store.BarHistoryDB{Symbol: "MNQ", TF: "1m", Contract: ghContract, OpenTimeMs: m.UnixMilli(),
+				O: 30700, H: 30701, L: 30699, C: 30700, V: 10, Source: ntwire.BarSourceHistorical})
+		}
+	}
+	// what the previous process and the boot replay left in the store:
+	// the session up to 03:43, nothing 03:44–07:47, then 07:48–09:00
+	add(ct(2026, 10, 13, 17, 0), ct(2026, 10, 14, 3, 43))
+	add(ct(2026, 10, 14, 7, 48), ct(2026, 10, 14, 9, 0))
+	if err := f.bh.InsertBars(rows); err != nil {
+		t.Fatal(err)
+	}
+	f.stream(ct(2026, 10, 14, 9, 1), ct(2026, 10, 14, 9, 2)) // the first live minutes after the boot
+	waitFor(t, "the boot scan to track the 03:44–07:48 hole", func() bool { return len(f.holes()) == 1 })
+	hs := f.holes()
+	if hs[0].From != ct(2026, 10, 14, 3, 44).Format(time.RFC3339) || hs[0].To != ct(2026, 10, 14, 7, 48).Format(time.RFC3339) || hs[0].MissingMin != 244 {
+		t.Fatalf("boot scan hole = %+v, want [03:44, 07:48) CT, 244 open min", hs[0])
+	}
+	if f.sink.count("🕳 boot hole scan: MNQ 1m on MNQ 12-26 10-13 17:00 → 10-14 09:01 · from the session open (inside the bars_back 2000 replay window) · 1 hole(s) (10-14 03:44–07:48 CT, 244 open min) — tracked like a live hole") != 1 {
+		t.Fatalf("the boot scan must say once what it covered and found:\n%s", f.sink.dump())
+	}
+	if d := f.delta(); d.Detected != 1 {
+		t.Fatalf("bars_hole_detected +%d, want +1", d.Detected)
+	}
+	// tracked exactly like a live hole: asked for at the first slot
+	det := f.clk.Now()
+	f.tr.tick(det.Add(61 * time.Second))
+	f.waitReRequests(1)
+}
+
+// The scan is ONE judgement: later frames judge only their new minutes, and a
+// clean session says "0 hole(s)" once.
+func TestBootScanSaysOnceAndFindsNothingInACleanSession(t *testing.T) {
+	f := newGHFixture(t)
+	var rows []store.BarHistoryDB
+	for m := ct(2026, 10, 13, 17, 0); !m.After(ct(2026, 10, 14, 9, 0)); m = m.Add(time.Minute) {
+		rows = append(rows, store.BarHistoryDB{Symbol: "MNQ", TF: "1m", Contract: ghContract, OpenTimeMs: m.UnixMilli(),
+			O: 30700, H: 30701, L: 30699, C: 30700, V: 10, Source: ntwire.BarSourceHistorical})
+	}
+	if err := f.bh.InsertBars(rows); err != nil {
+		t.Fatal(err)
+	}
+	f.stream(ct(2026, 10, 14, 9, 1), ct(2026, 10, 14, 9, 4))
+	time.Sleep(200 * time.Millisecond)
+	if hs := f.holes(); len(hs) != 0 {
+		t.Fatalf("a clean session has no hole: %+v", hs)
+	}
+	if n := f.sink.count("🕳 boot hole scan: MNQ 1m on MNQ 12-26"); n != 1 {
+		t.Fatalf("the boot scan line is said once per key, said %d:\n%s", n, f.sink.dump())
+	}
+	if f.sink.count("· 0 hole(s)") != 1 {
+		t.Fatalf("a clean scan says 0 hole(s):\n%s", f.sink.dump())
 	}
 }

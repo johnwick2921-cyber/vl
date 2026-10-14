@@ -70,6 +70,9 @@ func reconnectUnseen(t *testing.T, s *ntwire.TCPServer, broker *nttrader.TCPTrad
 		if rec, _, _, _ := broker.MaintenanceView(); rec.AcceptSeq > rec0.AcceptSeq {
 			// The AddOn's connect burst re-sends positions on the new link.
 			s.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{})
+			// N-C: …and an order snapshot (SendAllOrderSnapshots on connect,
+			// release #20) — the watchdog now waits for it on the NEW link.
+			s.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{}}, time.Now())
 			return
 		}
 		if time.Now().After(deadline) {
@@ -117,5 +120,49 @@ func TestMonitorTickDrivesTheDeadManWatchdog(t *testing.T) {
 	at.monitorTick(time.Now())
 	if !at.deadMan.entriesBlocked() {
 		t.Fatal("monitorTick must sample the dead-man watchdog: a link gap between two beats must block NEW entries")
+	}
+}
+
+// N-C (release #22 rescan) — the reconnect → resume wait requires a positions
+// snapshot AND an order snapshot RECEIVED on the new connection. A positions
+// frame alone (or the old link's cached book) is not a reconciliation.
+func TestDeadManResumesOnlyAfterBothSnapshotsOnTheNewLink(t *testing.T) {
+	at, s, broker, conn := deadManLoopback(t)
+	// The OLD link's book: received before the reconnect.
+	s.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{}}, time.Now())
+	at.driveDeadManWatchdog()
+	rec0, _, _, _ := broker.MaintenanceView()
+	_ = conn.Close()
+	for deadline := time.Now().Add(5 * time.Second); s.IsConnected(); {
+		if time.Now().After(deadline) {
+			t.Fatal("fixture: the server never saw the old link close")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	conn2, err := net.Dial("tcp", s.ListenAddrForTest().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitAddonRegistered(t, s)
+	t.Cleanup(func() { _ = conn2.Close() })
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if rec, _, _, _ := broker.MaintenanceView(); rec.AcceptSeq > rec0.AcceptSeq {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("fixture: no new accept sequence")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	s.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{}) // positions on the new link — but NO order snapshot yet
+	if ev := at.driveDeadManWatchdog(); ev != wdReconnected {
+		t.Fatalf("the replaced link must read as a reconnect, got %d", ev)
+	}
+	if ev := at.driveDeadManWatchdog(); ev == wdResumed || !at.deadMan.entriesBlocked() {
+		t.Fatalf("N-C: with no order snapshot on the NEW link entries must stay BLOCKED (event %d)", ev)
+	}
+	s.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{}}, time.Now())
+	if ev := at.driveDeadManWatchdog(); ev != wdResumed || at.deadMan.entriesBlocked() {
+		t.Fatalf("N-C: both snapshots on the new link must resume entries, got event %d blocked=%v", ev, at.deadMan.entriesBlocked())
 	}
 }

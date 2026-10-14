@@ -1,7 +1,9 @@
 package ninjatrader
 
 import (
+	"encoding/binary"
 	"errors"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -120,5 +122,50 @@ func TestGapBackfillSpacingAndSessionDayCap(t *testing.T) {
 	next := time.Date(2026, 10, 14, 22, 1, 0, 0, time.UTC) // 17:01 CT
 	if err := s.RequestGapBackfillAt("MNQ", next); err != nil {
 		t.Fatalf("a new session-day resets the budget: %v", err)
+	}
+}
+
+// TestGapBackfillArmsTheOverlapWindowBeforeTheSend (#23 review P3-2): the
+// window the replay is judged in must be open BEFORE the frame leaves —
+// armed after the write, a reply processed first would miss its verdict.
+// net.Pipe makes it deterministic: the reader holds back the frame's last
+// byte, so WriteFrame cannot have returned, and looks at the window then.
+func TestGapBackfillArmsTheOverlapWindowBeforeTheSend(t *testing.T) {
+	s := NewTCPServer(nil)
+	srv, cli := net.Pipe()
+	t.Cleanup(func() { srv.Close(); cli.Close() })
+	s.conn = srv
+	s.barsSubscribe.Timeframes = []string{"1m"}
+	s.barsSubscribe.BarsBack = 2000
+	s.markFeedConnectedForTest(true)
+	armedMidSend := make(chan bool, 1)
+	go func() {
+		var hdr [4]byte
+		if _, err := io.ReadFull(cli, hdr[:]); err != nil {
+			armedMidSend <- false
+			return
+		}
+		n := binary.BigEndian.Uint32(hdr[:])
+		body := make([]byte, n)
+		if _, err := io.ReadFull(cli, body[:n-1]); err != nil {
+			armedMidSend <- false
+			return
+		}
+		s.barCache.mu.RLock()
+		until, ok := s.barCache.overlapJudgeUntil["MNQ"]
+		s.barCache.mu.RUnlock()
+		armedMidSend <- ok && time.Now().Before(until)
+		_, _ = io.ReadFull(cli, body[n-1:])
+	}()
+	if err := s.RequestGapBackfillAt("MNQ", time.Date(2026, 10, 14, 12, 50, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case armed := <-armedMidSend:
+		if !armed {
+			t.Fatal("the overlap window must be armed BEFORE the bars_subscribe frame is written")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the fake AddOn never read the frame")
 	}
 }

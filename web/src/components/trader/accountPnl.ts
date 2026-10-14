@@ -103,9 +103,30 @@ export function botRecordCard(account: AccountInfo): CardText {
   const n = account.bot_record_trades ?? 0
   const unres = account.bot_record_unresolved ?? 0
   const unresTxt = unres > 0 ? ` (${unres} unresolved excluded)` : ''
+  const scope = botRecordScopeLine(account)
   return {
     value: signedMoney(account.bot_record_pnl),
-    subtitle: `${n} bot trades${unresTxt} · ${manualLine(account.manual_excluded_trades, account.manual_excluded_pnl)}`,
+    subtitle: `${n} bot trades${unresTxt} · ${manualLine(account.manual_excluded_trades, account.manual_excluded_pnl)}${scope ? ` · ${scope}` : ''}`,
     positive: account.bot_record_pnl >= 0,
   }
+}
+
+// botRecordScopeLine (RT-7, release #24) says which scope the card's figure
+// covers. Scoped to the selected account, it names the bot trades on OTHER
+// accounts it leaves out — the server's count, never a literal — because
+// Position History's total is trader-wide and the two used to disagree with
+// no word of why. Which scope is "the record" is an owner decision. '' = an
+// older server that sent no scope.
+export function botRecordScopeLine(account: AccountInfo): string {
+  const k = account.bot_record_other_accounts_trades
+  if (typeof k === 'number') {
+    if (k <= 0) return 'this account only (no bot trades on other accounts)'
+    const pnl = signedMoney(account.bot_record_other_accounts_pnl ?? 0)
+    return `${k} bot trade${k === 1 ? '' : 's'} (${pnl}) on other accounts not counted here`
+  }
+  if (account.bot_record_other_accounts_status) {
+    return `other accounts: ${account.bot_record_other_accounts_status}`
+  }
+  if (account.bot_record_scope === 'all accounts') return 'all accounts'
+  return ''
 }

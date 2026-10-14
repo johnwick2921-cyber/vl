@@ -20,7 +20,9 @@ func TestOwnerVisibleLinesAreWarnOrLouder(t *testing.T) {
 		marker string // unique fragment of the log line's format string
 		want   string // the call that must carry it
 	}{
-		{"auto_trader.go", "auto-breakeven: %s %s +%.1f pts in profit", "logger.Warnf"},
+		// N-G (release #22 rescan): at.logWarnf — still WARN (it calls
+		// logger.Warnf), now carrying the trader tag the 10:08:27 line lacked.
+		{"auto_trader.go", "auto-breakeven: %s %s +%.1f pts in profit", "at.logWarnf"},
 		{"ninjatrader/close_sync.go", "NT position closed: %s %s qty=", "logger.Warnf"},
 		{"auto_trader_decision.go", "Position OPENED [%s] %s %s qty=", "logger.Warnf"},
 		{"position_desync.go", "position_state_desync: store shows", "at.logErrorf"},

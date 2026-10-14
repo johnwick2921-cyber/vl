@@ -98,6 +98,14 @@ type EntryIntent struct {
 	// OnNoChase receives the leg's measurement. WARN-FIRST: the gate NEVER
 	// refuses on it in this wave; the callback records and logs.
 	OnNoChase func(NoChaseVerdict)
+	// Release #25 PK-3 (arm path only — entryGateForArm sets them from the
+	// strategy's switches; zero values = OFF = today, byte-identical).
+	// NoChaseEnforce: the arm-path WOULD_REFUSE refuses. MomentumMaxATR > 0:
+	// the momentum-into-zone leg runs over MomentumBars (1m) at MomentumNowMs.
+	NoChaseEnforce bool
+	MomentumMaxATR float64
+	MomentumBars   []market.Kline
+	MomentumNowMs  int64
 
 	// INVALIDATION (owner ruling 2026-09-03) — the system's OWN verdict, made
 	// execution-wired.
@@ -334,13 +342,26 @@ func EntryGate(in EntryIntent) (reason string, refused bool) {
 	// NO-CHASE LEG (WARN-FIRST, refuses nothing — A24). It runs LAST so it
 	// measures only intents every other leg allowed, and it runs on BOTH paths
 	// because they share this function.
+	// Release #25 PK-3 — MOMENTUM INTO THE ZONE (arm path; OFF unless the
+	// switch is > 0). Before no-chase so no-chase still measures LAST.
+	if in.Path == "arm" && in.MomentumMaxATR > 0 {
+		if mv := momentumIntoZoneVerdict(side, in.MomentumBars, in.MomentumNowMs, in.ATR5m, in.MomentumMaxATR); mv.Refuse {
+			return "entry_gate: " + mv.Why, true
+		}
+	}
 	if in.OnNoChase != nil {
-		in.OnNoChase(EvaluateNoChase(NoChaseInputs{
+		v := EvaluateNoChase(NoChaseInputs{
 			Entry: in.Entry, CitedLevel: in.CitedLevelPx, LevelKind: in.CitedLevelKind,
 			LastTouchPx: in.LastTouchPx, HasTouch: in.HasTouch,
 			ATR5m: in.ATR5m, MinSLMult: in.MinSLMult,
 			LivePx: in.LivePx, LiveRequired: in.Path == "arm", // R22 P2: arms measure from the live price
-		}))
+		})
+		// Release #25 PK-3 — ENFORCED on the arm path when the switch is on.
+		v.Enforced = in.NoChaseEnforce && in.Path == "arm" && v.WouldRefuse
+		in.OnNoChase(v)
+		if v.Enforced {
+			return fmt.Sprintf("entry_gate: %s — %s (planner_no_chase_enforce on)", NoChaseRefusedClass, v.Why), true
+		}
 	}
 
 	return "", false
@@ -441,6 +462,13 @@ func (at *AutoTrader) entryGateForArm(plan *kernel.ActivePlan, sc kernel.PlanSce
 		}
 	}
 	session := plan.Session
+	// Release #25 PK-3 — the two arm-path switches (OFF → zero values).
+	noChaseOn, _ := store.ResolvePlannerNoChaseEnforce(at.dayPlanCfg())
+	momMax, _ := store.ResolvePlannerMomentumIntoZoneMaxATR(at.dayPlanCfg())
+	var momBars []market.Kline
+	if momMax > 0 && market.FuturesBarsProvider != nil {
+		momBars = market.FuturesBarsProvider(at.futuresSymbol(), "1m", MomentumIntoZoneWindowMin+5)
+	}
 	levelPx, levelKind := citedLevelFor(sc, plan)
 	touchPx, hasTouch := at.lastTouchFor(levelPx)
 	return EntryGate(EntryIntent{
@@ -452,6 +480,10 @@ func (at *AutoTrader) entryGateForArm(plan *kernel.ActivePlan, sc kernel.PlanSce
 		HasTouch:       hasTouch,
 		LivePx:         lastTapeClose(at.futuresSymbol()), // R22 P2: the live price at the pass that places
 		OnNoChase:      at.noChaseObserver("arm", sc.ID),
+		NoChaseEnforce: noChaseOn,
+		MomentumMaxATR: momMax,
+		MomentumBars:   momBars,
+		MomentumNowMs:  now.UnixMilli(),
 		// INVALIDATION (owner ruling 2026-09-03) — the arm path, and only it,
 		// judged on the PASS clock every other leg of the pass reads (W1b E3).
 		ScenarioInvalidation:      at.scenarioInvalidationResolverClock(plan, func() time.Time { return now }),

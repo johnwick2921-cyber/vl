@@ -16,8 +16,9 @@ import { planApi } from '../../lib/api/plan'
 
 // Human labels for the gate names telemetry emits. An unknown gate falls back to
 // its raw name rather than being hidden — a refusal we cannot label is still a
-// refusal the owner must see.
-const GATE_LABELS: Record<string, { en: string; icon: string }> = {
+// refusal the owner must see. Exported for the guide's label-list pin
+// (guideTruth.test.ts) — the guide copies these strings, the test proves it.
+export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   feed_down: { en: 'NT8 feed down', icon: '📡' },
   dead_man: { en: 'Dead-man watchdog', icon: '⏱' },
   frozen: { en: 'Trader frozen', icon: '🧊' },
@@ -34,6 +35,10 @@ const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   night_transition: { en: 'Night/day transition', icon: '🌙' },
   maintenance_hold: { en: 'Update hold (maintenance)', icon: '🔒' },
   install_pending: { en: 'Update pending (preflight freeze)', icon: '⏳' },
+  // OPS NEW-2 (10-14): planner arms now ask the stale-data verdict; the AI
+  // path's B4 has counted stale_data all along.
+  stale_data: { en: 'Stale 1m feed', icon: '⛔' },
+  clock_step: { en: 'Clock-step hold (wall clock jumped)', icon: '🕰' },
   maintenance_drop: {
     en: 'Queued entry dropped by the update hold',
     icon: '🔒',
@@ -129,6 +134,21 @@ const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   mentor_daily_guardrail_unverified: {
     en: 'Mentor — daily guardrail unverified',
     icon: '🧑‍🏫',
+  },
+  // Release #25 (STRICT-12345 F-2/F-3/F-5/F-7/F-8) — the loss-fix switches,
+  // all OFF by default; these count only once the owner turns one on.
+  room_gate: { en: 'Room gate — first obstacle under min R', icon: '🧱' },
+  room_gate_tp1: { en: 'Room gate — TP1 moved to the obstacle', icon: '🧱' },
+  thesis_death_exit: { en: 'Thesis-death exit (planner position)', icon: '🪦' },
+  no_chase_refused: { en: 'No-chase enforced (arm refused)', icon: '🚫' },
+  momentum_into_zone: { en: 'Momentum into the zone too fast', icon: '🌊' },
+  atr_floor_beyond_invalidation: {
+    en: 'ATR stop floor past the authored invalidation',
+    icon: '🛑',
+  },
+  breakeven_r_unknown_risk: {
+    en: 'Breakeven in R — initial risk unknown (points rule used)',
+    icon: '🎯',
   },
 }
 

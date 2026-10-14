@@ -450,7 +450,7 @@ func (at *AutoTrader) runWatchCycle(ctx *kernel.Context, record *store.DecisionR
 
 	if at.store != nil {
 		_ = at.store.WatchAssessment().Create(&store.WatchAssessment{
-			TraderID: at.id, PositionID: p.ID, CycleNumber: at.callCount,
+			TraderID: at.id, PositionID: p.ID, CycleNumber: at.aiCallCount(),
 			Timestamp: time.Now().UnixMilli(),
 			Status:    a.ThesisStatus, AcceptedStatus: accepted, Confidence: a.Confidence,
 			InvalidationCited: a.InvalidationCited, Note: a.Note,

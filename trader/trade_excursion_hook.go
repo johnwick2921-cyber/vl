@@ -2,6 +2,7 @@ package trader
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"vl/kernel"
@@ -90,7 +91,7 @@ func (at *AutoTrader) excursionOnBarTick() {
 				continue // no entry half (pre-wave position) — nothing to update
 			}
 			at.resolveExcursionLevels(row, p)
-			at.recomputeExcursionPath(row, p.EntryTime, time.Now().UnixMilli())
+			at.recomputeExcursionPath(row, p.EntryTime, time.Now().UnixMilli(), 0, false) // open: no fill to bound it
 		}
 		return nil
 	})
@@ -124,10 +125,13 @@ const excursionLevelWindowMs int64 = 120_000
 
 // recomputeExcursionPath rebuilds one row's path from the bar store and writes
 // it. A hold with no bar coverage is marked "none" and keeps its NULLs.
-func (at *AutoTrader) recomputeExcursionPath(row *store.TradeExcursion, fromMs, toMs int64) {
+// exitPx is the exit price of a closed hold (0 while the position is open) and
+// oneFill says it is a single fill rather than an average; the exit minute is
+// then bounded by it — see closedHoldPath.
+func (at *AutoTrader) recomputeExcursionPath(row *store.TradeExcursion, fromMs, toMs int64, exitPx float64, oneFill bool) {
 	bars := at.excursionBars(fromMs, toMs)
-	path := kernel.ComputePathExcursion(row.EntryPx, row.Side, row.StopPxInitial, row.TargetPx,
-		bars, fromMs, toMs, "1m")
+	path := closedHoldPath(row.EntryPx, row.Side, row.StopPxInitial, row.TargetPx,
+		bars, fromMs, toMs, exitPx, oneFill)
 	if !path.Computed {
 		if row.Resolution == "" {
 			if err := at.store.TradeExcursions().MarkNoCoverage(row.ID); err != nil {
@@ -178,6 +182,69 @@ func (at *AutoTrader) excursionBars(fromMs, toMs int64) []market.Kline {
 	return out
 }
 
+// closedHoldPath is the path of a hold, with its EXIT MINUTE bounded by the
+// exit fill (RT-8, 2026-10-14). exitPx <= 0 (an open position, or a fill whose
+// time is unknown) is ComputePathExcursion unchanged.
+//
+// Why: the bars table holds CLOSED bars only (ClosedBarsOnly in the persister),
+// and the close hook runs seconds after the fill — inside the exit minute,
+// before that bar has closed — so the exit bar was never on the tape the close
+// read, and a closed row is never recomputed (excursionOnClose returns once
+// exit_ts is set; the bar tick walks OPEN positions only). The leg that took
+// the trade to its stop was lost from mae_pts for good: live #653 stored 68.00
+// against an 89.00-pt stop-out, #652 36.75 against 47.25. When the exit bar IS
+// stored (a late close, the backfill) the opposite error: its post-exit tail
+// was counted (#653 would read 93.25).
+//
+// The position did not exist after the fill, and a bar carries no ordering, so
+// the only price in the exit minute that can be placed inside the hold is the
+// fill, and the exit minute contributes exactly that. For a bar that holds its
+// own fill (barLow <= exitPx <= barHigh — every consistent bar) this is LONG
+// adverse entry − max(barLow, exitPx), favorable min(barHigh, exitPx) − entry,
+// SHORT mirrored; a fill outside its bar is still a price this position traded
+// and is kept. A stored exit bar is replaced by the fill; an absent one has the
+// fill folded in. MFE gets the same bound — a target exit reached its target in
+// the exit minute, and the post-fill tail of that bar is not the trade's.
+//
+// ONE FILL ONLY for the clamp. A multi-lot's exit_price is the quantity-weighted
+// AVERAGE of every partial close (position_builder.go), not the last fill:
+// #635 closed 2@31314.00 then 1@31269.50 and stored 31299.17. Cutting a stored
+// exit bar to an average can cut below where the last contract actually went,
+// so a stored exit bar is replaced only when oneFill (a 1-lot cannot be split).
+// Folding an average into an ABSENT exit bar stays safe for any size: an
+// average of in-hold fills never exceeds the in-hold extreme.
+//
+// It invents nothing: a hold with no stored bar stays uncomputed ("none",
+// NULLs) — never a path built from the fill alone; BarsHeld and AmbiguousBars
+// are the STORED tape's own counts (the fill is a price, not a bar, and an exit
+// bar that reached both levels keeps its C4 count after it is clamped).
+func closedHoldPath(entryPx float64, side string, stopPx, targetPx float64, bars []market.Kline, entryMs, exitMs int64, exitPx float64, oneFill bool) kernel.PathExcursion {
+	stored := kernel.ComputePathExcursion(entryPx, side, stopPx, targetPx, bars, entryMs, exitMs, "1m")
+	if !stored.Computed || exitPx <= 0 {
+		return stored
+	}
+	exitOpen := exitMs - exitMs%60_000
+	fill := market.Kline{OpenTime: exitOpen, Open: exitPx, High: exitPx, Low: exitPx, Close: exitPx}
+	tape := make([]market.Kline, 0, len(bars)+1)
+	exitBarStored := false
+	for _, b := range bars {
+		if b.OpenTime == exitOpen {
+			exitBarStored = true
+			if oneFill {
+				b = fill // the exit bar, bounded by the fill (RT-8)
+			}
+		}
+		tape = append(tape, b)
+	}
+	if !exitBarStored {
+		tape = append(tape, fill) // the exit minute has not closed yet (RT-8)
+		sort.SliceStable(tape, func(i, j int) bool { return tape[i].OpenTime < tape[j].OpenTime })
+	}
+	path := kernel.ComputePathExcursion(entryPx, side, stopPx, targetPx, tape, entryMs, exitMs, "1m")
+	path.BarsHeld, path.AmbiguousBars = stored.BarsHeld, stored.AmbiguousBars
+	return path
+}
+
 // excursionOnClose (E3) writes the exit half and one final path recomputation.
 // The exit is read AGAINST the trade when the closing bar reached both levels.
 func (at *AutoTrader) excursionOnClose(p *store.TraderPosition) {
@@ -195,10 +262,12 @@ func (at *AutoTrader) excursionOnClose(p *store.TraderPosition) {
 			return nil
 		}
 		exitMs := p.ExitTime
+		exitFill := p.ExitPrice
 		if exitMs <= 0 {
 			exitMs = time.Now().UnixMilli()
+			exitFill = 0 // the fill's minute is unknown: do not place it in "now"
 		}
-		at.recomputeExcursionPath(row, row.EntryTs, exitMs)
+		at.recomputeExcursionPath(row, row.EntryTs, exitMs, exitFill, excursionOneFill(p))
 
 		// C4 — did the position close inside a bar that reached BOTH levels?
 		ambiguous := false
@@ -233,4 +302,12 @@ func excursionWholeSize(p *store.TraderPosition) float64 {
 		return p.EntryQuantity
 	}
 	return p.Quantity
+}
+
+// excursionOneFill reports whether a closed position's exit_price is ONE fill
+// (RT-8): a 1-lot cannot be split, so its exit price is where it went out. Any
+// larger or unknown size may carry an averaged exit and does not qualify.
+func excursionOneFill(p *store.TraderPosition) bool {
+	ws := excursionWholeSize(p)
+	return ws > 0 && ws <= 1
 }

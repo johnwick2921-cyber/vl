@@ -67,7 +67,7 @@ func TestMentorStaleDataBlockRefusesAuthoring(t *testing.T) {
 	if len(placed) != 0 {
 		t.Fatalf("a stale feed must NOT author a new arm, but %d placement(s) reached the recorder", len(placed))
 	}
-	if got := at.mentorCountSnapshot()["stale_data"]; got != 1 {
+	if got := at.mentorCountSnapshot()["stale_data_episodes"]; got != 1 {
 		t.Fatalf("the refusal must be counted once as stale_data, got %d", got)
 	}
 }
@@ -91,7 +91,7 @@ func TestMentorStaleDataBlockAllowsFresh(t *testing.T) {
 	if len(placed) != 1 {
 		t.Fatalf("a fresh feed must reach the placement path, placed=%v", placed)
 	}
-	if got := at.mentorCountSnapshot()["stale_data"]; got != 0 {
+	if got := at.mentorCountSnapshot()["stale_data_episodes"]; got != 0 {
 		t.Fatalf("a fresh feed must NOT count a stale_data refusal, got %d", got)
 	}
 }
@@ -109,7 +109,7 @@ func TestMentorStaleDataBlockHaltNoFalseRefusal(t *testing.T) {
 	if at.mentorStaleDataBlocked(now) {
 		t.Fatalf("the daily halt must not trip the stale-data block (B4's halt rule)")
 	}
-	if got := at.mentorCountSnapshot()["stale_data"]; got != 0 {
+	if got := at.mentorCountSnapshot()["stale_data_episodes"]; got != 0 {
 		t.Fatalf("the halt must not count a stale_data refusal, got %d", got)
 	}
 }

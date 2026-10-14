@@ -57,7 +57,7 @@ import (
 // Two tests:
 //
 //	TestFullDayReplayFidelity (default run, ~5 s) — seeds at the LIVE seed
-//	instant (00:59:15 CT 10-13) and must author the SAME 11 ISB LONG arms the
+//	instant (00:59:15 CT 10-13) and must author the SAME ISB LONG arms the
 //	live bot authored 03:28–04:33 CT (armed_orders 329…340, the other trader's
 //	335/341 excluded): minute, side, entry and stop.
 //
@@ -145,10 +145,33 @@ var fdrR22Arms = []fdrLiveArm{
 	{0, "02:09", "r22: live refused isb_target_below_floor on a broken pivot low", "short", 30641.0, 30651.0, 0}, // regular ISB — no wire shift (#516 × #517 integration)
 }
 
-// fdrExpectedArms is the live set plus the deliberate r22 divergences, in
-// bar-close order.
+// fdrR23Dropped — live rows the release #23 build does NOT author, on purpose
+// (MENTOR-SEED-STATE N7: the old-extreme pick tests EVERY pivot of the 12 h /
+// 24 h lookback for unbroken, then takes the nearest — the live bot capped the
+// pivots to the newest 3 per side first). At 03:30–03:42 CT 10-13 the nearest
+// UNBROKEN old high is the 5m pivot 30769.50 (closed 10-12 20:15; first broken
+// ~03:44), which the cap hid behind 3 broken newer highs, so live targeted
+// 30905.50. With the old high 3.25–8.75 pts above these ISB longs' entries the
+// kernel refuses them: isb_target_below_floor at 03:30/03:33/03:38, room at
+// 03:41 (probed on the 10-13 session fixture). Independent oracle:
+// ~/deck-fix-1005/rel22/fixwave/mentor-seed-state/py/oldext.py — "uncapped
+// [30688.0, 30769.5] capped3 [30688.0, 30905.5]" at every one of those bars.
+var fdrR23Dropped = map[int64]string{
+	330: "N7: nearest unbroken old high 30769.50 is 3.25 pts above — isb_target_below_floor",
+	331: "N7: nearest unbroken old high 30769.50 is 7.50 pts above — isb_target_below_floor",
+	332: "N7: nearest unbroken old high 30769.50 is 4.75 pts above — isb_target_below_floor",
+	333: "N7: nearest unbroken old high 30769.50 is 8.75 pts above — room",
+}
+
+// fdrExpectedArms is the live set plus the deliberate r22 divergences, minus
+// the deliberate r23 drops, in bar-close order.
 func fdrExpectedArms() []fdrLiveArm {
-	out := append(append([]fdrLiveArm{}, fdrR22Arms...), fdrLiveArms...)
+	out := append([]fdrLiveArm{}, fdrR22Arms...)
+	for _, a := range fdrLiveArms {
+		if _, dropped := fdrR23Dropped[a.id]; !dropped {
+			out = append(out, a)
+		}
+	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].barCT < out[j].barCT })
 	return out
 }
@@ -226,6 +249,28 @@ func loadReplayStrategy(t *testing.T) *store.StrategyConfig {
 	}
 	if !cfg.RiskControl.MentorMode || cfg.RiskControl.MentorWindowMinutes != -1 {
 		t.Fatalf("strategy fixture is not the live mentor config: %+v", cfg.RiskControl)
+	}
+	// Release #25 planner-knobs: FDR_PLANNER_KNOBS_ON=1 replays the day with
+	// all seven loss-fix switches ON (they ship OFF) — the mentor funnel must
+	// not move (COMMON-25 PROOF: intents/placed with the knobs ON vs OFF).
+	if os.Getenv("FDR_PLANNER_KNOBS_ON") == "1" {
+		if cfg.DayPlan == nil {
+			t.Fatal("FDR_PLANNER_KNOBS_ON: the fixture strategy carries no day_plan")
+		}
+		on, minR := true, 1.0
+		cfg.DayPlan.PlannerRoomGate, cfg.DayPlan.PlannerRoomMinR = store.RoomGateRefuse, &minR
+		cfg.DayPlan.PlannerExitOnThesisDeath, cfg.DayPlan.PlannerNoChaseEnforce = store.ThesisDeathAll, &on
+		cfg.DayPlan.PlannerMomentumIntoZoneMaxATR, cfg.DayPlan.PlannerATRFloorCapAtInvalidation = 1.0, &on
+		cfg.RiskControl.BreakevenTriggerR = 1
+	}
+	// FDR_RC_JSON (release #25 knob replays): a risk_control JSON fragment
+	// merged over the live config, so a knob can be replayed ON vs OFF on the
+	// same tape. Unset = the live config, byte-identical.
+	if extra := os.Getenv("FDR_RC_JSON"); extra != "" {
+		if err := json.Unmarshal([]byte(extra), &cfg.RiskControl); err != nil {
+			t.Fatalf("FDR_RC_JSON: %v", err)
+		}
+		t.Logf("FDR_RC_JSON merged over the live risk_control: %s", extra)
 	}
 	return cfg
 }
@@ -987,6 +1032,7 @@ func TestFullDayReplayFidelity(t *testing.T) {
 	const acct = "SimReplayA"
 	w := newFdrWorld(t, fdrLiveSeedMs, []string{acct}, map[string]bool{acct: false}, "2026-10-04-d1")
 	cfg := loadReplayStrategy(t)
+	fdrPinPre25CourseEntries(cfg) // release #25: the live day ran the pre-#25 course-entry knobs
 	w.setNow(fdrLiveSeedMs)
 	w.cur.Store(int64(w.barIndexAtOrAfter(fdrLiveSeedMs) - 1))
 	ft := &fdrTrader{id: "fdr-hoang", account: acct, levelPx: map[string]float64{}}
@@ -1033,7 +1079,7 @@ func TestFullDayReplayFidelity(t *testing.T) {
 		t.Logf("  %-5s live %-50s | harness %s", mark, lv, hv)
 	}
 	if mismatch != 0 {
-		t.Fatalf("FIDELITY: %d of %d rows differ from the live 11 + %d r22 arms (see the table)", mismatch, n, len(fdrR22Arms))
+		t.Fatalf("FIDELITY: %d of %d rows differ from the live 11 + %d r22 arms − %d r23 drops (see the table)", mismatch, n, len(fdrR22Arms), len(fdrR23Dropped))
 	}
 }
 
@@ -1155,7 +1201,7 @@ func fdrIsPlacementRefusal(k string) bool {
 		return true
 	}
 	switch k {
-	case "no_chase_skip", "stale_intent", "stale_data", "mentor_sources_missing", "add_no_source", "placement_held", "expiry_missing_refused":
+	case "no_chase_skip", "stale_intent", "stale_data_episodes", "mentor_sources_missing", "add_no_source", "placement_held", "expiry_missing_refused":
 		return true
 	}
 	return false
@@ -1229,6 +1275,7 @@ func TestFullDayReplay(t *testing.T) {
 	w := newFdrWorld(t, fdrReplayFromMs, []string{acctA, acctB}, map[string]bool{acctA: true, acctB: true}, fdrAddonBuild)
 	w.storeReplayCalendar()
 	cfg := loadReplayStrategy(t)
+	fdrApplyTuningEnv(t, cfg) // release #25: FDR_PRE25 / FDR_TUNING knob ON-vs-OFF runs
 	start := w.barIndexAtOrAfter(fdrReplayFromMs)
 	end := w.barIndexAtOrAfter(fdrReplayEndMs())
 	w.setNow(fdrReplayFromMs)

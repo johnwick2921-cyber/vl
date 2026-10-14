@@ -734,6 +734,124 @@ export function DayPlanEditor({
             />
           </FieldRow>
 
+          {/* Release #25 (STRICT-12345 F-2/F-3/F-5/F-7) — the loss-fix
+              switches. Every one ships OFF (absent = off, COMMON-25 case b);
+              the owner turns them on here. None is seeded in DEFAULT_DAY_PLAN. */}
+          <div
+            className="mt-1 pt-2"
+            style={{ borderTop: '1px solid var(--vl-hair)' }}
+            data-testid="loss-fix-switches"
+          >
+            <span
+              className="text-[10px] uppercase tracking-widest"
+              style={{ color: 'var(--vl-faint)' }}
+            >
+              {tp('lossFixHeader', language)}
+            </span>
+            <FieldRow
+              label={tp('plannerRoomGate', language)}
+              knob={dpEff('planner_room_gate')}
+            >
+              <Segmented
+                testId="planner-room-gate"
+                options={[
+                  { key: 'off', label: tp('roomGateOff', language) },
+                  { key: 'refuse', label: tp('roomGateRefuse', language) },
+                  {
+                    key: 'tp1_at_obstacle',
+                    label: tp('roomGateTp1', language),
+                  },
+                ]}
+                value={cfg.planner_room_gate || 'off'}
+                onChange={(v) => update('planner_room_gate', v)}
+                disabled={bodyDisabled}
+              />
+            </FieldRow>
+            <FieldRow
+              label={tp('plannerRoomMinR', language)}
+              knob={dpEff('planner_room_min_r')}
+            >
+              <NumberField
+                testId="planner-room-min-r"
+                value={cfg.planner_room_min_r}
+                min={0.1}
+                max={10}
+                step={0.1}
+                placeholder="1.0"
+                onChange={(v) => update('planner_room_min_r', v)}
+                onClear={() => update('planner_room_min_r', undefined)}
+                disabled={
+                  bodyDisabled ||
+                  !cfg.planner_room_gate ||
+                  cfg.planner_room_gate === 'off'
+                }
+              />
+            </FieldRow>
+            <FieldRow
+              label={tp('plannerExitOnThesisDeath', language)}
+              knob={dpEff('planner_exit_on_thesis_death')}
+            >
+              <Segmented
+                testId="planner-exit-on-thesis-death"
+                options={[
+                  { key: 'off', label: tp('thesisOff', language) },
+                  {
+                    key: 'invalidation_only',
+                    label: tp('thesisInvalidationOnly', language),
+                  },
+                  { key: 'all', label: tp('thesisAll', language) },
+                ]}
+                value={cfg.planner_exit_on_thesis_death || 'off'}
+                onChange={(v) => update('planner_exit_on_thesis_death', v)}
+                disabled={bodyDisabled}
+              />
+            </FieldRow>
+            <FieldRow
+              label={tp('plannerNoChaseEnforce', language)}
+              knob={dpEff('planner_no_chase_enforce')}
+            >
+              <Toggle
+                testId="planner-no-chase-enforce-toggle"
+                on={cfg.planner_no_chase_enforce === true}
+                onChange={(v) => update('planner_no_chase_enforce', v)}
+                disabled={bodyDisabled}
+              />
+            </FieldRow>
+            <FieldRow
+              label={tp('plannerMomentumIntoZone', language)}
+              knob={dpEff('planner_momentum_into_zone_max_atr')}
+            >
+              <NumberField
+                testId="planner-momentum-into-zone"
+                value={cfg.planner_momentum_into_zone_max_atr}
+                min={0}
+                max={10}
+                step={0.1}
+                placeholder="0"
+                onChange={(v) =>
+                  update('planner_momentum_into_zone_max_atr', v)
+                }
+                onClear={() =>
+                  update('planner_momentum_into_zone_max_atr', undefined)
+                }
+                disabled={bodyDisabled}
+              />
+            </FieldRow>
+            <FieldRow
+              label={tp('plannerAtrFloorCap', language)}
+              knob={dpEff('planner_atr_floor_cap_at_invalidation')}
+            >
+              <Toggle
+                testId="planner-atr-floor-cap-toggle"
+                on={cfg.planner_atr_floor_cap_at_invalidation === true}
+                onChange={(v) =>
+                  update('planner_atr_floor_cap_at_invalidation', v)
+                }
+                disabled={bodyDisabled}
+              />
+            </FieldRow>
+          </div>
+
           {/* W6 (2026-08-25) — planner wake-up: level-event wakes. W-KNOB-PRUNE
               (2026-09-18): ONE switch (absent = ON, mirrors Go pointer-bool)
               replaces the five per-class toggles. */}

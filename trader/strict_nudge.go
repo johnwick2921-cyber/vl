@@ -65,7 +65,7 @@ func (at *AutoTrader) strictNudgeAt(decision *kernel.Decision, refusal string, n
 		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
 	}
 	// Never nil: a nil snapshot would skip the HTF veto (fail-open).
-	snap := kernel.StructureSnapshot(bars, now.UnixMilli())
+	snap := kernel.StructureSnapshotForVeto(at.futuresSymbol(), bars, now.UnixMilli()) // F-4: + the native 4h the cross veto needs
 	scope := &armedPassScope{Scenario: sc.ID, Trigger: "nudge"}
 	// The FULL pass (CTO D14 ruling): every authoring gate, the admitted set,
 	// then placement — the scope filters placement rows only.

@@ -11,27 +11,115 @@ import (
 	"vl/store"
 )
 
-// boundOneSetup resolves the two knobs from THE STRATEGY BOUND TO A TRADER,
-// via bootRiskFacts' one-bound-strategy discipline (never the file default).
-func boundOneSetup(st *store.Store) (enabled bool, minGrade, src string) {
-	if cfg, _, _, _, ok := bootRiskFacts(st); ok && cfg != nil {
-		en, g, es, gs := store.ResolveOneSetup(cfg)
-		return en, g, es + "/" + gs
+// oneSetupTraderKnobs is one trader's one-setup switch and grade, READ from
+// the strategy bound to THAT trader.
+type oneSetupTraderKnobs struct {
+	name     string
+	ok       bool
+	why      string // the n/a reason when !ok
+	enabled  bool
+	grade    string
+	enSrc    string
+	gradeSrc string
+}
+
+// oneSetupKnobsFor resolves the two knobs for EACH trader from ITS OWN bound
+// strategy row — the row the runtime parsed at load (manager: strategy
+// ParseConfig → at.config.StrategyConfig; armed_executor GetStrategyConfig →
+// oneSetupVerdictsAt → oneSetupConfig → store.ResolveOneSetup). RT-6 (T25,
+// release #24): the line used to ask bootRiskFacts for ONE bound strategy and,
+// with two traders on two strategies, printed the shipped default ON while
+// both stored OFF. A trader whose strategy cannot be read is n/a with the
+// reason — never the shipped default.
+func oneSetupKnobsFor(st *store.Store, traderIDs []string) []oneSetupTraderKnobs {
+	out := make([]oneSetupTraderKnobs, 0, len(traderIDs))
+	for _, id := range traderIDs {
+		k := oneSetupTraderKnobs{name: id}
+		if st == nil || st.GormDB() == nil {
+			k.why = "no store"
+			out = append(out, k)
+			continue
+		}
+		var rows []struct {
+			Name       string
+			StrategyID string
+		}
+		if err := st.GormDB().Raw(`SELECT name, strategy_id FROM traders WHERE id = ?`, id).Scan(&rows).Error; err != nil || len(rows) != 1 {
+			k.why = "trader row unreadable"
+			out = append(out, k)
+			continue
+		}
+		if strings.TrimSpace(rows[0].Name) != "" {
+			k.name = rows[0].Name
+		}
+		var strat []*store.Strategy
+		if strings.TrimSpace(rows[0].StrategyID) == "" {
+			k.why = "no strategy bound"
+		} else if err := st.GormDB().Where("id = ?", rows[0].StrategyID).Find(&strat).Error; err != nil || len(strat) != 1 {
+			k.why = "the bound strategy row is missing"
+		} else if cfg, err := strat[0].ParseConfig(); err != nil || cfg == nil {
+			k.why = "the bound strategy config does not parse"
+		} else {
+			k.ok = true
+			k.enabled, k.grade, k.enSrc, k.gradeSrc = store.ResolveOneSetup(cfg)
+		}
+		out = append(out, k)
 	}
-	en, g, es, _ := store.ResolveOneSetup(nil)
-	return en, g, es + " (no bound strategy readable)"
+	return out
+}
+
+// oneSetupHead folds the per-trader switches into the line's head: ON / OFF
+// when every readable trader agrees, MIXED when they differ, n/a when none is
+// readable; the grade the same way ("per-trader" when they differ).
+func oneSetupHead(ks []oneSetupTraderKnobs) (sw, grade, perTrader string) {
+	var parts []string
+	ons, offs := 0, 0
+	grades := map[string]bool{}
+	for _, k := range ks {
+		if !k.ok {
+			parts = append(parts, fmt.Sprintf("[%s] n/a (%s)", k.name, k.why))
+			continue
+		}
+		v := "OFF"
+		if k.enabled {
+			v = "ON"
+			ons++
+		} else {
+			offs++
+		}
+		grades[k.grade] = true
+		parts = append(parts, fmt.Sprintf("[%s] %s (%s) min-grade %s (%s)", k.name, v, k.enSrc, k.grade, k.gradeSrc))
+	}
+	switch {
+	case ons == 0 && offs == 0:
+		sw = "n/a"
+	case ons > 0 && offs > 0:
+		sw = "MIXED"
+	case ons > 0:
+		sw = "ON"
+	default:
+		sw = "OFF"
+	}
+	grade = "n/a"
+	if len(grades) == 1 {
+		for g := range grades {
+			grade = g
+		}
+	} else if len(grades) > 1 {
+		grade = "per-trader"
+	}
+	if len(parts) == 0 {
+		parts = append(parts, "no trader")
+	}
+	return sw, grade, strings.Join(parts, " · ")
 }
 
 // OneSetupBootLine renders D8. Every count is READ from the counters and the
-// episode table; the switch and the grade from the bound strategy; the two
-// evidence labels are the dispatch's: the fade is [O] (owner-ruled), the
-// follow-plan is [T] (recorded only, round 17).
+// episode table; the switch and the grade from EACH trader's bound strategy
+// (RT-6); the two evidence labels are the dispatch's: the fade is [O]
+// (owner-ruled), the follow-plan is [T] (recorded only, round 17).
 func OneSetupBootLine(st *store.Store, now time.Time, traderIDs []string, bfV store.OneSetupBackfillResult, bfF store.FollowBackfillResult) string {
-	enabled, grade, src := boundOneSetup(st)
-	sw := "OFF"
-	if enabled {
-		sw = "ON"
-	}
+	sw, grade, perTrader := oneSetupHead(oneSetupKnobsFor(st, traderIDs))
 	// The counters are keyed by the PLAN'S trade date (kernel.PlanTradeDateFor
 	// at the seam = the session instance's chain date), so the boot line asks
 	// the same resolver: the active session's chain date, else the calendar
@@ -79,8 +167,8 @@ func OneSetupBootLine(st *store.Store, now time.Time, traderIDs []string, bfV st
 		bf = fmt.Sprintf("backfill verdicts recomputed=%d unrecomputable=%d untouched=%d · follow recomputed=%d unrecomputable=%d untouched=%d",
 			bfV.Recomputed, bfV.Unrecomputable, bfV.Untouched, bfF.Recomputed, bfF.Unrecomputable, bfF.Untouched)
 	}
-	return fmt.Sprintf("🎯 one setup: %s[O] · level=best-near-price(min-grade %s)[O] · play=%s · target=first-distinct-eligible-zone · permission-required=yes · map=untouched · %s · follow-plan=RECORDED-ONLY[T] %s · bias-flip=recorded-only · off-switch=one_setup_enabled (source: %s) · %s",
-		sw, grade, kernel.OneSetupPlay, today, fol, src, bf)
+	return fmt.Sprintf("🎯 one setup: %s[O] · per-trader: %s · level=best-near-price(min-grade %s)[O] · play=%s · target=first-distinct-eligible-zone · permission-required=yes · map=untouched · %s · follow-plan=RECORDED-ONLY[T] %s · bias-flip=recorded-only · off-switch=one_setup_enabled (each trader's own strategy) · %s",
+		sw, perTrader, grade, kernel.OneSetupPlay, today, fol, bf)
 }
 
 // BackfillOneSetupVerdicts — D9 for the verdicts, three-state. For every

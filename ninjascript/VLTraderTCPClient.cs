@@ -59,7 +59,8 @@ namespace NinjaTrader.NinjaScript.AddOns
         // + the hello epoch fields. 2026-09-23-m21 (M2.1): census `settled`,
         // no nested census locks, source_hash at activation. The ISO-date
         // prefix is kept (CTO ruling Q3).
-        private const string  VL_BUILD_ID             = "2026-10-13-a";
+        // 2026-10-14-a (release #24, AC-1): close_position honours its `account` field.
+        private const string  VL_BUILD_ID             = "2026-10-14-a";
         private const int    MAX_FRAME_BYTES         = 1 << 20; // 1 MB, spec L4376
 
         // === State ===
@@ -108,11 +109,20 @@ namespace NinjaTrader.NinjaScript.AddOns
         private readonly HashSet<Account> positionSubscribed = new HashSet<Account>();
         private readonly object positionSubLock = new object();
 
-        // PHASE 4 (per-account close) — which account holds each open position, keyed by
-        // ROOT symbol (e.g. "MNQ"). Populated on entry-fill (from e.Order.Account) and
-        // cleared on exit-fill, so HandleClosePosition flattens the CORRECT account
-        // instead of the active one. Back-compat: one trader → resolves to Sim101.
-        private readonly Dictionary<string, Account> positionAccountBySymbol = new Dictionary<string, Account>();
+        // PHASE 4 (per-account close) — which account(s) hold an open position, keyed by
+        // (ROOT symbol, account name): root (e.g. "MNQ") → account name → Account.
+        // Populated on entry-fill (from e.Order.Account), cleared per ACCOUNT when that
+        // account goes flat (OnPositionUpdate).
+        //
+        // AC-1 (2026-10-14-a, release #24): this map was keyed by ROOT alone, and every
+        // entry fill on ANY account overwrote it. One AddOn serves two MNQ traders on two
+        // SIM accounts, so a close for trader A flattened whichever account filled last —
+        // trader B's. A close that NAMES its account (every Go close since P5.4 stamps the
+        // bound account) no longer reads this map at all; it resolves the named account by
+        // name and fails closed when it cannot. The map serves only the legacy close that
+        // names no account, and a fill on one account can never retarget another's entry.
+        private readonly Dictionary<string, Dictionary<string, Account>> positionAccountByAcctRoot =
+            new Dictionary<string, Dictionary<string, Account>>(StringComparer.OrdinalIgnoreCase);
         private readonly object posAcctLock = new object();
 
         private class PendingBracket
@@ -976,11 +986,8 @@ namespace NinjaTrader.NinjaScript.AddOns
             Account resolved = null;   // PHASE 3: the routed submit target (null = active-account fallback)
             if (!string.IsNullOrEmpty(targetAccount))
             {
-                lock (Account.All)
-                {
-                    foreach (var a in Account.All)
-                        if (a.Name == targetAccount) { resolved = a; break; }
-                }
+                // AC-1: the ONE by-name resolver, shared with HandleClosePosition.
+                resolved = FindAccountByName(targetAccount);
                 if (resolved == null)
                 {
                     LogWarn("VLTraderTCPClient: REFUSING order " + signalId + " — target account '"
@@ -1300,74 +1307,236 @@ namespace NinjaTrader.NinjaScript.AddOns
                 }
             }
         }
+        // === AC-1 (2026-10-14-a, release #24) — close routing by the NAMED account ===
+        //
+        // FindAccountByName is the ONE by-name account resolver: the entry path
+        // (HandleSignal) and the close path (HandleClosePosition) both call it, so "the
+        // account Go named" means the same thing on both. null = no account of exactly
+        // that name exists in Account.All.
+        private Account FindAccountByName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            lock (Account.All)
+            {
+                foreach (var a in Account.All)
+                    if (a.Name == name) return a;
+            }
+            return null;
+        }
+
+        // RecordPositionOwner / ForgetPositionOwner keep positionAccountByAcctRoot per
+        // (root, account). Caller holds posAcctLock. Forget removes ONLY the named
+        // account's entry: another account's open position on the same root survives.
+        private void RecordPositionOwner(Account acct, string root)
+        {
+            if (acct == null || string.IsNullOrEmpty(root)) return;
+            Dictionary<string, Account> byAcct;
+            if (!positionAccountByAcctRoot.TryGetValue(root, out byAcct))
+            {
+                byAcct = new Dictionary<string, Account>(StringComparer.OrdinalIgnoreCase);
+                positionAccountByAcctRoot[root] = byAcct;
+            }
+            byAcct[acct.Name] = acct;
+        }
+
+        private void ForgetPositionOwner(string acctName, string root)
+        {
+            if (string.IsNullOrEmpty(acctName) || string.IsNullOrEmpty(root)) return;
+            Dictionary<string, Account> byAcct;
+            if (positionAccountByAcctRoot.TryGetValue(root, out byAcct) && byAcct != null)
+            {
+                byAcct.Remove(acctName);
+                if (byAcct.Count == 0) positionAccountByAcctRoot.Remove(root);
+            }
+        }
+
+        // TryAccountPosition reads what `acct` holds on exactly `instrument` (the same
+        // contract Flatten acts on). true + Flat/0 = read, nothing held; false = the
+        // read failed (unknown — never treated as flat by a caller that sizes from it).
+        private bool TryAccountPosition(Account acct, Instrument instrument, out MarketPosition mp, out int qty)
+        {
+            mp = MarketPosition.Flat;
+            qty = 0;
+            if (acct == null || instrument == null) return false;
+            try
+            {
+                string want = instrument.FullName;
+                lock (acct.Positions)
+                {
+                    foreach (Position pos in acct.Positions)
+                    {
+                        if (pos == null || pos.Instrument == null) continue;
+                        if (!string.Equals(pos.Instrument.FullName, want, StringComparison.OrdinalIgnoreCase)) continue;
+                        mp = pos.MarketPosition;
+                        qty = pos.Quantity;
+                        return true;
+                    }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogWarn("VLTraderTCPClient: position read on account " + acct.Name + " failed: " + ex.Message);
+                return false;
+            }
+        }
+
+        // RefuseClose — every close this AddOn will not act on is LOUD on both sides: a
+        // WARN here and a position_close_rejected frame to Go (close_sync.go logs
+        // "🚨 NT close REJECTED … STILL OPEN"). The frame carries the account the close
+        // NAMED (else the active account), so it routes to the trader that sent it.
+        private void RefuseClose(string signalId, string root, string side, string acctName, string why)
+        {
+            LogWarn("VLTraderTCPClient: REFUSING close_position " + root + " " + (side ?? "") + " — " + why
+                    + " — position (if any) left OPEN; nothing was flattened");
+            try { SendPositionCloseRejectedFrame(signalId, root, side, why, acctName); }
+            catch (Exception ex) { LogWarn("VLTraderTCPClient: close refusal frame failed: " + ex.Message); }
+        }
+
         private void HandleClosePosition(Dictionary<string, object> p)
         {
             if (p == null) { LogWarn("VLTraderTCPClient: close_position empty payload"); return; }
-            if (account == null) { LogWarn("VLTraderTCPClient: close_position no account"); return; }
+            string symbol = GetString(p, "symbol");
+            string closeSignalId = GetString(p, "signal_id");
+            string sideStr = GetString(p, "side");
+            // AC-1 — the account Go stamped on this close (tcp_trader.go sendCloseAt:
+            // Account = the trader's BOUND account). Read FIRST: when it is named, it is
+            // the ONLY account this close may touch.
+            string namedAccount = GetString(p, "account");
+            string root = symbol ?? "";
             try
             {
-                string symbol = GetString(p, "symbol");
                 string contract = VLContractResolver.ResolveFrontMonthContract(symbol);
                 string how;
                 var instrument = VLInstrumentLookup.Resolve(symbol, LogWarn, out how);
                 if (instrument == null)
                 {
-                    LogWarn("VLTraderTCPClient: close_position instrument not found " + symbol + " (" + contract + ", " + how + ")");
+                    RefuseClose(closeSignalId, root, sideStr, namedAccount,
+                                "instrument not found " + symbol + " (" + contract + ", " + how + ")");
                     return;
                 }
-                // PHASE 4 — resolve the account that actually HOLDS this symbol's open
-                // position (recorded on entry-fill), and flatten THAT account, not the
-                // active one. Back-compat: one trader → the map misses (or returns Sim101)
-                // → byte-identical today. GUARD: never flatten a non-SIM (LIVE) account —
-                // the resolved target must pass IsSimAccount or the close is refused.
+                // The SAME normalized root the entry-fill populate uses (MasterInstrument.Name).
+                try { root = instrument.MasterInstrument.Name; } catch { }
+
                 Account closeTarget = null;
-                // Look up by the SAME normalized root the entry-fill populate used
-                // (MasterInstrument.Name), not the raw wire symbol — so a non-canonical
-                // close symbol can't miss the map and silently fall back to the active
-                // account. Defaults to the raw symbol if MasterInstrument is unavailable.
-                string posKey = symbol;
-                try { posKey = instrument.MasterInstrument.Name; } catch { }
-                lock (posAcctLock) { positionAccountBySymbol.TryGetValue(posKey, out closeTarget); }
-                if (closeTarget == null) closeTarget = account;
-                if (closeTarget == null || !IsSimAccount(closeTarget))
+                string source;
+                if (!string.IsNullOrEmpty(namedAccount))
                 {
-                    LogWarn("VLTraderTCPClient: REFUSING close " + symbol + " — resolved account '"
-                            + (closeTarget != null ? closeTarget.Name : "<null>")
-                            + "' is not a SIM account; position left OPEN");
+                    // NAMED: resolve that account and ONLY that account. Not found =
+                    // REFUSE. Never the map, never the active account: flattening an
+                    // account the frame did not name is the bug this fixes.
+                    closeTarget = FindAccountByName(namedAccount);
+                    source = "payload";
+                    if (closeTarget == null)
+                    {
+                        RefuseClose(closeSignalId, root, sideStr, namedAccount,
+                                    "the named account '" + namedAccount + "' was not found in Account.All"
+                                    + " (fail-closed: no other account is used when one is named)");
+                        return;
+                    }
+                }
+                else
+                {
+                    // LEGACY (no account named — a pre-P5.4 single-trader Go): the one
+                    // account the map records for this root, else the active account.
+                    // Two or more holders = ambiguous = REFUSE (fail-closed): the old
+                    // "last fill wins" pick is exactly the cross-account flatten.
+                    var holders = new List<Account>();
+                    lock (posAcctLock)
+                    {
+                        Dictionary<string, Account> byAcct;
+                        if (positionAccountByAcctRoot.TryGetValue(root, out byAcct) && byAcct != null)
+                            foreach (var a in byAcct.Values) if (a != null) holders.Add(a);
+                    }
+                    if (holders.Count > 1)
+                    {
+                        RefuseClose(closeSignalId, root, sideStr, "",
+                                    "the frame named no account and " + holders.Count + " accounts hold " + root
+                                    + " (ambiguous — fail-closed; a Go that stamps the bound account routes it)");
+                        return;
+                    }
+                    if (holders.Count == 1) { closeTarget = holders[0]; source = "map"; }
+                    else { closeTarget = account; source = "active"; }
+                    if (closeTarget == null)
+                    {
+                        RefuseClose(closeSignalId, root, sideStr, "", "the frame named no account and no active account is resolved");
+                        return;
+                    }
+                }
+                // GUARD: never flatten a non-SIM (LIVE) account, whatever named it.
+                if (!IsSimAccount(closeTarget))
+                {
+                    RefuseClose(closeSignalId, root, sideStr, closeTarget.Name,
+                                "resolved account '" + closeTarget.Name + "' is not a SIM account");
                     return;
                 }
+
+                int askedQty = GetInt(p, "quantity");
+                MarketPosition heldMp;
+                int heldQty;
+                bool heldKnown = TryAccountPosition(closeTarget, instrument, out heldMp, out heldQty);
+                string held = heldKnown ? (heldMp == MarketPosition.Flat || heldQty == 0 ? "flat" : heldMp + " " + heldQty) : "unknown";
+                LogInfo("VLTraderTCPClient: close_position " + root + " → account=" + closeTarget.Name
+                        + " (from " + source + ") side=" + (sideStr ?? "") + " qty=" + askedQty + " holds=" + held);
+
                 // 4.3 limit-then-market: when limit_price > 0, submit a LIMIT exit
-                // (favorable side) instead of an immediate market flatten. Go sends the
-                // market fallback as a later close_position frame WITHOUT limit_price,
-                // whose Flatten cancels this resting limit. The -lx name routes its fill
-                // to position_close with reason "limit" and cancels the bracket legs.
+                // (favorable side) instead of an immediate market flatten, on the SAME
+                // resolved account. Go sends the market fallback as a later
+                // close_position frame WITHOUT limit_price, whose Flatten cancels this
+                // resting limit. The -lx name routes its fill to position_close with
+                // reason "limit" and cancels the bracket legs.
+                //
+                // AC-1 (2026-10-14-a): the limit is sized to the WHOLE position the
+                // account holds on this contract. Go sends quantity 0 here
+                // (auto_trader_clock.go flattenPosition), which this branch used to turn
+                // into ONE contract: a 5-lot got a 1-lot limit, and that 1-lot's -lx fill
+                // cancelled the bracket of the 4 still open. A held side that disagrees
+                // with the frame, a flat account, or an unreadable position takes the
+                // market flatten below instead — a limit is never sized from a guess and
+                // never opens or adds to a position.
                 double limitPrice = GetDouble(p, "limit_price");
                 if (limitPrice > 0)
                 {
-                    try
+                    bool wantLong = string.Equals(sideStr, "long", StringComparison.OrdinalIgnoreCase);
+                    bool sideMatches = heldKnown && heldQty > 0
+                        && ((wantLong && heldMp == MarketPosition.Long) || (!wantLong && heldMp == MarketPosition.Short));
+                    if (!sideMatches)
                     {
-                        string sideStr = GetString(p, "side");
-                        string signalId = GetString(p, "signal_id");
-                        int closeQty = GetInt(p, "quantity");
-                        if (closeQty <= 0) closeQty = 1;
-                        OrderAction exitAction = string.Equals(sideStr, "long", StringComparison.OrdinalIgnoreCase)
-                            ? OrderAction.Sell : OrderAction.BuyToCover;
-                        var limitOrder = closeTarget.CreateOrder(
-                            instrument, exitAction, OrderType.Limit, OrderEntry.Manual,
-                            TimeInForce.Day, closeQty, limitPrice, 0, string.Empty, signalId + "-lx",
-                            Core.Globals.MaxDate, null);
-                        closeTarget.Submit(new[] { limitOrder });
-                        LogInfo("VLTraderTCPClient: limit exit submitted " + symbol + " " + sideStr
-                                + " qty=" + closeQty + " @ " + limitPrice + " on account=" + closeTarget.Name
-                                + " — Go schedules the market fallback (not yet closed)");
-                        return;
+                        LogWarn("VLTraderTCPClient: limit exit NOT placed on account=" + closeTarget.Name + " " + root
+                                + " — frame side=" + (sideStr ?? "") + " but the account holds " + held
+                                + "; market flatten instead");
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        LogWarn("VLTraderTCPClient: limit exit submit failed (" + ex.Message
-                                + ") — falling back to market flatten");
+                        try
+                        {
+                            int closeQty = heldQty;
+                            if (askedQty > 0 && askedQty != heldQty)
+                                LogInfo("VLTraderTCPClient: limit exit sized to the account's whole position " + heldQty
+                                        + " (frame quantity " + askedQty + " ignored: a close is the whole position)");
+                            OrderAction exitAction = wantLong ? OrderAction.Sell : OrderAction.BuyToCover;
+                            var limitOrder = closeTarget.CreateOrder(
+                                instrument, exitAction, OrderType.Limit, OrderEntry.Manual,
+                                TimeInForce.Day, closeQty, limitPrice, 0, string.Empty, closeSignalId + "-lx",
+                                Core.Globals.MaxDate, null);
+                            closeTarget.Submit(new[] { limitOrder });
+                            LogInfo("VLTraderTCPClient: limit exit submitted " + root + " " + sideStr
+                                    + " qty=" + closeQty + " @ " + limitPrice + " on account=" + closeTarget.Name
+                                    + " — Go schedules the market fallback (not yet closed)");
+                            return;
+                        }
+                        catch (Exception ex)
+                        {
+                            LogWarn("VLTraderTCPClient: limit exit submit failed (" + ex.Message
+                                    + ") — falling back to market flatten");
+                        }
                     }
                 }
+                // MARKET close = a full Flatten of THIS contract on THIS account: it closes
+                // the whole position AND cancels every working order for the contract on
+                // the account (bracket legs and resting entries). KNOWN LIMIT: `quantity`
+                // is not honoured here — no Go path sends a smaller market close while
+                // expecting the rest to stay open (see vltrader_tcp_PROTOCOL.md §1b).
                 closeTarget.Flatten(new[] { instrument });
                 // Flatten is async fire-and-forget: the actual fill (or a REJECT, e.g. "no
                 // market data" with the feed down) arrives later in OnOrderUpdate. This log
@@ -1378,7 +1547,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
             catch (Exception ex)
             {
-                LogWarn("VLTraderTCPClient: close_position failed: " + ex.Message);
+                RefuseClose(closeSignalId, root, sideStr, namedAccount, "close_position failed: " + ex.Message);
             }
         }
 
@@ -1658,11 +1827,13 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // PHASE 4: record which account now holds this symbol's open position so a
                 // later close flattens the RIGHT account (not the active one). Sourced from
                 // the order's own account — account-agnostic, correct per routed account.
+                // AC-1: recorded per (root, account) — this fill adds ITS account and never
+                // overwrites another account's entry for the same root.
                 try
                 {
                     string entrySym = e.Order.Instrument.MasterInstrument.Name;
                     if (e.Order.Account != null && !string.IsNullOrEmpty(entrySym))
-                        lock (posAcctLock) { positionAccountBySymbol[entrySym] = e.Order.Account; }
+                        lock (posAcctLock) { RecordPositionOwner(e.Order.Account, entrySym); }
                 }
                 catch (Exception ex)
                 {
@@ -3042,16 +3213,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                         // where the position has already settled. In the exit-fill handler
                         // e.Order.Account.Positions can still show the pre-fill quantity,
                         // which wrongly kept the mapping alive past a full close.
-                        lock (posAcctLock)
-                        {
-                            Account owner;
-                            if (positionAccountBySymbol.TryGetValue(flatRoot, out owner)
-                                && owner != null && acc != null
-                                && string.Equals(owner.Name, acc.Name, StringComparison.OrdinalIgnoreCase))
-                            {
-                                positionAccountBySymbol.Remove(flatRoot);
-                            }
-                        }
+                        // AC-1: only THIS account's (root, account) entry is removed — the
+                        // other account's open position on the same root keeps its owner.
+                        if (acc != null)
+                            lock (posAcctLock) { ForgetPositionOwner(acc.Name, flatRoot); }
                     }
                 }
             }

@@ -77,6 +77,11 @@ func picScenario(id, ref string, now time.Time, epoch int64, g picGeo) kernel.Pl
 // with its authored entry and touch confirm at entry.
 func plannerZone(id string, lo, hi, entry float64) kernel.PlanScenario {
 	sc := zoneScenario(id, kernel.EntryPolicyMarketInZone, []float64{lo, hi}, false)
+	// F-1 (planner-touch-fills): the planner arm here is the Picture/planner
+	// coexistence fixture, short of its zone; a LEVEL play would be held there
+	// until price reached it, so the fixture is a breakout-class play (declared
+	// live by newPicRig), which F-1 leaves as before.
+	sc.Condition = "breakout_retest"
 	sc.Arm.Entry = entry
 	sc.Confirm.RefPrice = entry
 	return sc
@@ -87,7 +92,8 @@ func plannerZone(id string, lo, hi, entry float64) kernel.PlanScenario {
 func newPicRig(t *testing.T, id string, tune func(*store.StrategyConfig)) (*zoneRig, int64) {
 	t.Helper()
 	now := time.Date(2026, time.September, 11, 15, 0, 0, 0, time.UTC) // Thu 10:00 CT
-	cfg := store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}}
+	cfg := store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true,
+		ConditionStatus: map[string]string{"breakout_retest": "live"}}} // plannerZone's F-1-neutral planner arm
 	oneSetupOff(&cfg)
 	structuralTestPolicy(&cfg, .5)
 	cfg.RiskControl.MinRiskRewardRatio = 2

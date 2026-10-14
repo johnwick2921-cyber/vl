@@ -32,7 +32,7 @@ import (
 //
 //  2. CLOCK-STEP HOLD. A sampler compares wall-clock elapsed with monotonic
 //     elapsed between two reads. Any difference at or above CLOCK_STEP_FREEZE_MS
-//     (default 1000 ms) is a STEP: it is logged and counted, and NEW entries
+//     (default 2000 ms — MENTOR-NY item 4, was 1000) is a STEP: it is logged and counted, and NEW entries
 //     are refused for CLOCK_STEP_HOLD_S (default 120 s) of MONOTONIC time after
 //     the last such step. A smaller step (>= CLOCK_STEP_DETECT_MS, default
 //     100 ms) is logged and counted only: it cannot open the gate, because the
@@ -79,7 +79,11 @@ func feedReceiptStale(symbol, tf string, at time.Time) (stale bool, ageMs int64,
 
 const (
 	defaultClockStepDetectMs = 100
-	defaultClockStepFreezeMs = 1000
+	// MENTOR-NY item 4: 2000 ms (was 1000). WSL wall-clock jitter of 1.0–1.2 s
+	// (10-14 RTH: +1025 ms, +1192 ms) sat right at 1000 ms and held entries
+	// 120 s each time; a real step (the 10-14 −125 s / +124 s pair) is far
+	// above 2 s. The hold (120 s) and the receipt leg are unchanged.
+	defaultClockStepFreezeMs = 2000
 	defaultClockStepHoldS    = 120
 	clockStepSamplePeriod    = time.Second
 )

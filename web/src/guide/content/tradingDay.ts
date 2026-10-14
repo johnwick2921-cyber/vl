@@ -39,7 +39,7 @@ export const tradingDay: GuideSection = {
           time: '14:45',
           label: 'EOD flat',
           detail:
-            'Every resting entry is cancelled first (intraday mentor orders included), then open positions are force-flattened at session end — a market close by default; the limit-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0 (default 0; R-A15 ruling). A SWING4H mentor position and its order are exempt (held by the 4h). No new entry is accepted after the flat; mentor mode places no new entry from 15:45 CT until the 17:00 reopen.',
+            'For a Day-Plan or mentor trader, every resting entry is cancelled first (intraday mentor orders included), then open positions are force-flattened at session end — a market close by default; the limit-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0 (default 0; R-A15 ruling). A SWING4H mentor position and its order are exempt (held by the 4h). No new entry is accepted after the flat; mentor mode places no new entry from 15:45 CT until the 17:00 reopen.',
         },
         {
           time: '16:00–17:00',
@@ -60,7 +60,7 @@ export const tradingDay: GuideSection = {
         '3. PROMPT — market facts + the live plan → DeepSeek',
         '4. DECIDE — the AI proposes an action (or none)',
         '5. GATE   — risk gates review (plan_mode, min-conf, min-SL, veto…)',
-        '6. ACT    — Sim101 order, or a documented refusal',
+        '6. ACT    — an order on the trader’s bound SIM account, or a documented refusal',
       ],
     },
     { kind: 'h', text: 'Plans rewrite themselves — the 5 wake triggers' },
@@ -71,27 +71,27 @@ export const tradingDay: GuideSection = {
         {
           title: 'Seated-level invalidation',
           body: 'A seated zone closes beyond its noise band → the plan may be stale.',
-          cite: 'trader/auto_trader_wake_levels.go:279 (trigger_reason="level_event")',
+          cite: 'trader/auto_trader_wake_levels.go maybeWakePlannerOnLevelEventsAt (trigger_reason="level_event")',
         },
         {
           title: 'New 15m / HTF zone',
-          body: 'A fresh 1h/4h supply/demand zone appears in band.',
-          cite: 'trader/auto_trader_wake_levels.go:98-120',
+          body: 'A new zone forms after the active plan version was written: a 15m reversal supply/demand zone, a 15m FVG, or a 1h/4h supply/demand zone of any pattern. No distance-to-price filter applies.',
+          cite: 'trader/auto_trader_wake_levels.go collectLevelWakeCandidates',
         },
         {
           title: 'HTF order block',
-          body: '1h/4h OB forms (OFF by default — Wake on HTF order blocks).',
-          cite: 'store/strategy.go WakeOnHTFOBEnabled',
+          body: '1h/4h OB forms. OFF by default and there is no Studio control: it runs only when the strategy already stores the legacy wake_on_htf_ob=true AND wake_on_level_events is ON.',
+          cite: 'store/strategy.go (*DayPlanConfig).WakeOnHTFOrderBlocks',
         },
         {
           title: 'iFVG inversion',
-          body: 'A filled FVG inverts → the imbalance flipped.',
-          cite: 'store/strategy.go WakeOnIFVGEnabled',
+          body: 'A filled FVG inverts → the imbalance flipped. There is no separate iFVG switch: ONE strategy setting, wake_on_level_events (Strategy → Day Plan → Wake on level events, ON by default), turns the seated-invalidation, 15m/HTF zone, 15m FVG and iFVG wakes on or off together. The MSS wake below is not behind it.',
+          cite: 'store/strategy.go (*DayPlanConfig).WakeOnLevelEventsEnabled · trader/auto_trader_wake_levels.go collectLevelWakeCandidates',
         },
         {
           title: 'Structure MSS',
-          body: 'A bias-timeframe MSS (market-structure shift) event.',
-          cite: 'trader/auto_trader_transition.go:194 (trigger_reason="structure_mss")',
+          body: 'A 15m MSS (market-structure shift) event newer than the active plan version, read from the 15m structure of the 1m snapshot — one wake per MSS event.',
+          cite: 'trader/auto_trader_transition.go maybeWakePlannerOnMSSAt (trigger_reason="structure_mss")',
         },
         {
           title: 'Deferred while a flip line is breached',
@@ -100,10 +100,10 @@ export const tradingDay: GuideSection = {
         },
       ],
     },
-    { kind: 'h', text: 'Your current sessions' },
+    { kind: 'h', text: 'The sessions (shipped clocks)' },
     {
       kind: 'p',
-      text: 'This table renders YOUR live day-plan config (Strategy → Day Plan → Sessions accordion): window, plan_mode, min grade, max trades per session. ASIA ON is the owner ruling — it trades the evening; London is the second shift; NY is the main session.',
+      text: 'This table is static text: it shows the SHIPPED session clocks (kernel/session_registry.go DefaultSessionRegistry) and the default EOD-flat offset of 0 min — not your live config. Your strategy may differ: which sessions run (shipped default: NY only), plan_mode, min grade, max trades and the flat/last-entry offsets per session live in Strategy → Day Plan → Sessions accordion — check Studio. ASIA trades the evening; London is the second shift; NY is the main session.',
     },
     {
       kind: 'table',
@@ -115,10 +115,13 @@ export const tradingDay: GuideSection = {
         ['NY', '08:00', '08:30 → 14:45', 'session end − 0 min (R-A15)'],
       ],
     },
-    { kind: 'h', text: 'The EOD ladder (limit-then-market)' },
+    {
+      kind: 'h',
+      text: 'EOD flat — a market close by default (the limit-then-market ladder is opt-in)',
+    },
     {
       kind: 'p',
-      text: 'At EOD flat (and T1 force-flat), the bot first tries a LIMIT a couple of ticks favorable, then converts to MARKET after a short grace. Knobs: EOD_FLAT_LIMIT_TICKS / EOD_FLAT_MARKET_AFTER_SEC (env, 0 = disabled). Why 14:45: on a half-day (the session calendar lists it — e.g. 12:15 CT on 11-27 and 12-24) the flat is pulled IN to the early close and the last entry to the early close minus its offset, looked up on the date the session closes. At the early close the market is already shut, so the closed-market path runs the same flat (arms cancelled first, then positions) before it idles.',
+      text: 'At EOD flat (and T1 force-flat) a Day-Plan or mentor trader cancels its resting entries first, then closes open positions at MARKET by default. The limit-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0 (default 0): it first works a LIMIT that many ticks favorable of the last 1m close, then goes to MARKET after EOD_FLAT_MARKET_AFTER_SEC (0 or unset = 10 s) (trader/auto_trader_clock.go flattenPosition). Why 14:45: on a half-day (the session calendar lists it — e.g. 12:15 CT on 11-27 and 12-24) the flat is pulled IN to the early close and the last entry to the early close minus its offset, looked up on the date the session closes. At the early close the market is already shut, so for a Day-Plan or mentor trader the closed-market path runs the same flat (arms cancelled first, then positions) before it idles (trader/auto_trader_loop.go retireBookAfterEarlyCloseAt → enforceEODFlatAt, which does nothing unless Day Plan or mentor mode is on).',
     },
   ],
 }

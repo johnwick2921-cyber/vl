@@ -104,6 +104,22 @@ func EvaluateAuthoredInvalidationAt(sc PlanScenario, bars []market.Kline, now ti
 	return out
 }
 
+// AuthoredInvalidationLine (release #25 PK-4) returns the price the scenario's
+// authored invalidation sentence names, when the sentence parses under the ONE
+// grammar above (authoredCloseRule) — never a price mined from free prose.
+// ok=false when the sentence is outside the grammar.
+func AuthoredInvalidationLine(sc PlanScenario) (float64, bool) {
+	m := authoredCloseRule.FindStringSubmatch(strings.TrimSpace(sc.Invalid))
+	if m == nil {
+		return 0, false
+	}
+	ref, err := strconv.ParseFloat(m[3], 64)
+	if err != nil || ref <= 0 || math.IsInf(ref, 0) || math.IsNaN(ref) {
+		return 0, false
+	}
+	return ref, true
+}
+
 // ── W-EXEC-TRUTH W2 A1 + A2 (2026-09-23) — structured invalidation or refuse;
 // publication-time re-validation ─────────────────────────────────────────────
 //

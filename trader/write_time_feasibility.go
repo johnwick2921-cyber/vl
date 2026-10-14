@@ -145,6 +145,12 @@ func (at *AutoTrader) writeTimeFeasibilityVerdicts(d *kernel.PlanDoc, atr5m floa
 			comp := composeArmStop(sc.Direction, leg.Entry, leg.Stop, atr5m,
 				market.FuturesTickSize(at.futuresSymbol()), d.Levels, kernel.MinSLATRMult(),
 				kernel.MinSLTickClearance, armStopAnchorMaxATR())
+			// Release #25 PK-4 — the executor's own cap verdict, at write (OFF → "").
+			if why := at.atrFloorCapVerdictFor(*sc, comp); why != "" {
+				at.noteATRFloorCapAtWrite(session, sc.ID, why)
+				out = append(out, writeTimeFeasibilityIssue{Scenario: sc.ID, Class: ATRFloorBeyondInvalidationClass, Verbose: why, Kind: "gate"})
+				continue
+			}
 			if comp.Stop > 0 {
 				leg.Stop = comp.Stop
 			}
@@ -222,6 +228,11 @@ func writeTimeFeasibilityHint(issues []writeTimeFeasibilityIssue) string {
 				aboveBelow = "below"
 			}
 			b.WriteString(fmt.Sprintf("%s %s trigger %.2f is already %s price %.2f: a stop entry there fills at market on placement — author the trigger ahead of price, or author a reject/limit at the level", is.Scenario, is.Cond, is.Trigger, aboveBelow, is.Price))
+			continue
+		}
+		if is.Kind == "room" {
+			// Release #25 PK-1: the room gate carries its own words + numbers.
+			b.WriteString(fmt.Sprintf("%s %s", is.Scenario, is.Verbose))
 			continue
 		}
 		if is.Kind == "zone" {
@@ -349,9 +360,16 @@ func (at *AutoTrader) zoneLegVerdict(d *kernel.PlanDoc, sc kernel.PlanScenario, 
 	}
 	side := strings.ToLower(strings.TrimSpace(sc.Direction))
 	stop := leg.Stop
-	if comp := composeArmStop(side, v.Near, leg.Stop, atr5m, tick, d.Levels, kernel.MinSLATRMult(),
-		kernel.MinSLTickClearance, armStopAnchorMaxATR()); comp.Stop > 0 {
+	comp := composeArmStop(side, v.Near, leg.Stop, atr5m, tick, d.Levels, kernel.MinSLATRMult(),
+		kernel.MinSLTickClearance, armStopAnchorMaxATR())
+	if comp.Stop > 0 {
 		stop = comp.Stop
+	}
+	// Release #25 PK-4 — the executor's own cap verdict, at write (OFF → "").
+	if why := at.atrFloorCapVerdictFor(sc, comp); why != "" {
+		at.noteATRFloorCapAtWrite(session, sc.ID, why)
+		return writeTimeFeasibilityIssue{Scenario: sc.ID, Class: ATRFloorBeyondInvalidationClass, Kind: "gate", Cond: sc.Condition,
+			Verbose: fmt.Sprintf("market_in_zone stop composed from the zone's near edge %.2f: %s", v.Near, why)}, "", false
 	}
 	far := kernel.PlanArmLeg{Entry: v.Far, Stop: stop, Target: leg.Target}
 	g := at.armGateVerdictFor(sc, far, bias, nil, atr5m, minQuality, cfg, session)

@@ -7,6 +7,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { GUIDE_SECTIONS } from './GuidePage'
 import { MENTOR_NO_STUDIO_CONTROL } from './content/mentor'
+import { GATE_LABELS } from '../components/plan/GateBlocksPanel'
 import type { KnobSpec } from './types'
 
 const repo = (p: string) =>
@@ -98,18 +99,27 @@ describe('T16 — a mentor card names a Studio control only when one exists', ()
   // The controls the Studio really renders, read from the components.
   const editor = web('src/components/strategy/RiskControlEditor.tsx')
   const tuning = web('src/components/strategy/MentorTuningPanel.tsx')
+  // release #25: the course-exits switches (BOOL_KEYS / NUM_KEYS entries and
+  // the EMA 9 select's onChange key).
+  const courseExits = web('src/components/strategy/MentorCourseExitsPanel.tsx')
   const controls = new Set<string>([
+    ...[
+      ...courseExits.matchAll(/(?:^ {2}|onChange\(\s*)'(mentor_[a-z0-9_]+)'/gm),
+    ].map((m) => m[1]),
     ...[...editor.matchAll(/updateField\('(mentor_[a-z0-9_]+)'/g)].map(
       (m) => m[1]
     ),
-    ...[...tuning.matchAll(/(?:numField|boolField)\('([a-z0-9_]+)'/g)].map(
-      (m) => m[1]
-    ),
+    ...[
+      ...tuning.matchAll(
+        /(?:numField|boolField|enumField)\(\s*'([a-z0-9_]+)'/g
+      ),
+    ].map((m) => m[1]),
     ...(tuning.includes('trigger_school') ? ['trigger_school'] : []),
   ])
   it('found the Studio controls (non-vacuous)', () => {
     expect(controls.has('mentor_mode')).toBe(true)
     expect(controls.has('ping_pong_min_gap_pts')).toBe(true)
+    expect(controls.has('15m_ib_requires_5m_isb')).toBe(true) // enumField
   })
   it('every live mentor card agrees with the Studio', () => {
     const live = knobs('mentor').filter((k) => k.live === true && k.settingId)
@@ -233,6 +243,78 @@ describe('T17/T18/T19/T24/T8 — operations text equals the code', () => {
     )
     expect(sectionText('status')).toMatch(
       /build-identity check, not a content check/
+    )
+  })
+})
+
+// r24 ADDON-CLOSE-ROUTING (rescan N-1 / N-2): Emergency Flat and Positions →
+// Close are ONE market close naming the trader's bound account. From AddOn
+// build 2026-10-14-a the AddOn flattens that account only (fail-closed), and
+// NT8's Account.Flatten cancels every working order for the contract on it —
+// resting entries included. The guide, the modal and the 60-second checklist
+// are pinned to the AddOn source and the build floor, never to a sentence.
+describe('ADDON-CLOSE-ROUTING — Emergency Flat says what the AddOn does', () => {
+  const addon = repo('ninjascript/VLTraderTCPClient.cs')
+  const expected = repo('provider/ninjatrader/order_snapshot.go').match(
+    /const ExpectedAddonBuild = "([^"]+)"/
+  )
+  const modal = web('src/components/trader/EmergencyFlatButton.tsx')
+  it('the close is routed by the NAMED account and is a full Flatten (the code the text describes)', () => {
+    expect(addon).toContain('closeTarget = FindAccountByName(namedAccount);')
+    expect(addon).toContain('closeTarget.Flatten(new[] { instrument });')
+    expect(expected).not.toBeNull()
+    // The guide names the routing floor; the build Go expects is at or past it
+    // (build ids compare bytewise — the ISO-date prefix is kept for that).
+    expect(sectionText('buttons')).toContain('build 2026-10-14-a or newer')
+    expect(expected![1] >= '2026-10-14-a').toBe(true)
+  })
+  it('no surface claims Emergency Flat leaves resting entries working', () => {
+    for (const text of [
+      sectionText('buttons'),
+      sectionText('routines'),
+      modal,
+    ]) {
+      expect(text).not.toMatch(
+        /(does NOT|not|never) (pause the trader or )?cancel resting entry orders/i
+      )
+    }
+    expect(sectionText('buttons')).toContain('cancels EVERY working MNQ order')
+    expect(sectionText('routines')).toContain(
+      'cancels every working MNQ order, resting entries included'
+    )
+    expect(modal).toContain('cancels every working MNQ order')
+  })
+  it('the buttons section says another trader is never touched, and Positions → Close is the same routing', () => {
+    const b = sectionText('buttons')
+    expect(b).toContain(
+      "Another trader's account, position and orders are never touched"
+    )
+    expect(b).toContain('routed by the AddOn exactly like Emergency Flat')
+    expect(b).not.toContain('Closes one position now.')
+  })
+})
+
+// C9 (release #24): the guide's "full list" of gate-block labels had 17 of the
+// panel's labels. The list is pinned to the panel's OWN map (imported — the
+// call site the dashboard renders from), and the stated count to its size.
+// Mutant: drop one label from status.ts (or add a GATE_LABELS entry without
+// the guide) → RED.
+describe("C9 — the gate-label list is the panel's own map", () => {
+  it('names every GATE_LABELS label verbatim and states the count', () => {
+    const block = GUIDE_SECTIONS.find((s) => s.id === 'status')?.blocks.find(
+      (b) =>
+        b.kind === 'code' &&
+        /every human label the gate panel has/.test(b.title ?? '')
+    )
+    if (!block || block.kind !== 'code')
+      throw new Error('gate-label block not found')
+    const lines = new Set(block.lines.map((l) => l.trim()))
+    const labels = Object.values(GATE_LABELS).map((g) => g.en)
+    expect(labels.length).toBeGreaterThan(40) // non-vacuous
+    for (const l of labels)
+      expect(lines.has(l), `guide lacks "${l}"`).toBe(true)
+    expect(block.title).toBe(
+      `every human label the gate panel has (${Object.keys(GATE_LABELS).length})`
     )
   })
 })

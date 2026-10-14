@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -340,34 +341,46 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 // the day. Only the touch count keeps advancing (recomputed from the full
 // history against the LATCHED edges), so a latched box never freezes its
 // touches and never changes its key.
+//
+// N3 (release #23): the OUTPUT is the latch, never the fresh scan. `fresh`
+// only latches a role that is not latched yet; EVERY latched role is output on
+// EVERY tick, with its touches and D14 flip refreshed from the window. It used
+// to iterate `fresh` alone, so a latched box vanished on every tick whose scan
+// lacked its role (10-14: the latched FTGL was absent on 50 ticks) — its edges
+// stopped being locations and the interior ban stopped applying. Output order
+// is fixed (FTGL, FTGH — BoxesBuild's role order).
 func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []Box {
 	if e.State.LatchedBoxes == nil {
 		e.State.LatchedBoxes = map[string]Box{}
 	}
-	tfBars := barsForTF(bars, cfg.TF)
-	out := make([]Box, 0, len(fresh))
 	for _, b := range fresh {
 		role := string(b.Kind)
-		if latched, ok := e.State.LatchedBoxes[role]; ok {
-			// UR-FIX U1: the latched box re-resolves its formation index from
-			// the TIME anchor every tick (the live window slides), then
-			// refreshes BOTH the touch count AND the D14 flip — the flip was
-			// previously frozen at latch time and never fired live. Absent
-			// anchor (the formation bar scrolled out of the window) → fail
-			// closed: keep the last known values, never recompute on a stale
-			// index.
-			if idx, ok := resolveBarIndex(tfBars, latched.FormedAtMs); ok {
-				latched.Touches = countBoxTouches(tfBars, latched, idx, cfg)
-				latched.Flipped = escaped(tfBars, latched, idx)
-				latched.FormedAt = idx
-			}
-			e.State.LatchedBoxes[role] = latched // write the refreshed copy back
-			out = append(out, latched)
+		if _, ok := e.State.LatchedBoxes[role]; ok {
 			continue
 		}
 		e.State.LatchedBoxes[role] = b
 		e.note("box latched %s %.2f–%.2f (formed %s CT) — stands to the 17:00 CT session roll, never redrawn [D4.1 p2 @02:39]", strings.ToUpper(role), b.Bottom, b.Top, kernel.TableTimeCT(time.UnixMilli(b.FormedAtMs)))
-		out = append(out, b)
+	}
+	tfBars := barsForTF(bars, cfg.TF)
+	out := make([]Box, 0, len(e.State.LatchedBoxes))
+	for _, kind := range []BoxKind{FTGL, FTGH} {
+		role := string(kind)
+		latched, ok := e.State.LatchedBoxes[role]
+		if !ok {
+			continue
+		}
+		// UR-FIX U1: the latched box re-resolves its formation index from the
+		// TIME anchor every tick (the live window slides), then refreshes BOTH
+		// the touch count AND the D14 flip. Absent anchor (the formation bar
+		// scrolled out of the window) → fail closed: keep the last known
+		// values, never recompute on a stale index.
+		if idx, ok := resolveBarIndex(tfBars, latched.FormedAtMs); ok {
+			latched.Touches = countBoxTouches(tfBars, latched, idx, cfg)
+			latched.Flipped = escaped(tfBars, latched, idx)
+			latched.FormedAt = idx
+		}
+		e.State.LatchedBoxes[role] = latched // write the refreshed copy back
+		out = append(out, latched)
 	}
 	return out
 }
@@ -386,6 +399,21 @@ func resolveBarIndex(bars []market.Kline, openTimeMs int64) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+// resolveBarIndexAtOrBefore returns the index of the NEWEST bar opened at or
+// before openTimeMs in the current window — the BoxRefs walk watermark (P2-N2,
+// release #23). An exact-match read restarted the walk at the box's formation
+// whenever the watermark minute was missing from the window (a ring hole, or a
+// seed watermark the ring never held) and so re-judged every old return; a
+// watermark OLDER than the whole window (slid out) is still ok=false, and the
+// walk restarts at formation exactly as before.
+func resolveBarIndexAtOrBefore(bars []market.Kline, openTimeMs int64) (int, bool) {
+	if openTimeMs == 0 || len(bars) == 0 || bars[0].OpenTime > openTimeMs {
+		return 0, false
+	}
+	i := sort.Search(len(bars), func(i int) bool { return bars[i].OpenTime > openTimeMs })
+	return i - 1, true
 }
 
 // boxFromPair builds the zone from the extreme and its nearest same-role
@@ -557,4 +585,39 @@ func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk fl
 		return true, fmt.Sprintf("near box: nearest box edge %.2f pts < %.2f pts room (%gx risk)", nearest, roomMultiple*risk, roomMultiple)
 	}
 	return false, ""
+}
+
+// structureTrend5m is the CE-8 trend read (release #25, knob
+// d43_trend_source "structure"): the 5m swing STRUCTURE read left to right —
+// "Nhìn từ bên trái qua bên phải… Đỉnh cao, đỉnh thấp hơn, đỉnh thấp hơn — thì
+// nó đang là xu hướng gì — Giảm" [D4.3 @12:43–12:54]. It takes the last two
+// CONFIRMED swing highs and the last two confirmed swing lows on the closed 5m
+// candles (swings3 + swingConfirmed, the box machinery's detector): higher
+// high AND higher low → long; lower high AND lower low → short; anything else
+// (mixed, or fewer than two of each) → "" = no trend, so no box return is
+// refused for being against it.
+func structureTrend5m(closed5m []market.Kline) Side {
+	var highs, lows []float64
+	for _, sw := range swings3(closed5m) {
+		if !swingConfirmed(closed5m, sw) {
+			continue
+		}
+		if sw.kind == kernel.KindSWGH {
+			highs = append(highs, sw.price)
+		} else {
+			lows = append(lows, sw.price)
+		}
+	}
+	if len(highs) < 2 || len(lows) < 2 {
+		return ""
+	}
+	h1, h2 := highs[len(highs)-2], highs[len(highs)-1]
+	l1, l2 := lows[len(lows)-2], lows[len(lows)-1]
+	switch {
+	case h2 > h1 && l2 > l1:
+		return SideLong
+	case h2 < h1 && l2 < l1:
+		return SideShort
+	}
+	return ""
 }

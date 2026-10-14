@@ -130,6 +130,11 @@ func orderedScenarioConfirm(s PlanScenario, bars []market.Kline, sinceMs, nowMs 
 	// sweep of its ref (sweep_trigger.go); every other scenario is unchanged.
 	v1, gated := sweepGatedConfirm(s, bars, sinceMs, nowMs)
 	if !gated {
+		// F-1 (planner-touch-fills): a LEVEL play's part one counts only after
+		// the first touch of the level (touch_trigger.go); breakouts unchanged.
+		v1, gated = touchGatedConfirm(s, bars, sinceMs, nowMs)
+	}
+	if !gated {
 		v1 = evaluateConfirmAfter(*s.Confirm, bars, sinceMs, nowMs, nil)
 	}
 	if s.Confirm2 == nil {

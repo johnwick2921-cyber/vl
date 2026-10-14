@@ -11,6 +11,7 @@ import {
 } from './types'
 import { Example } from './components/Example'
 import { KnobCard } from './components/KnobCard'
+import { guideRevBanner } from './guideRevBanner'
 import { MockPlanCard } from './components/MockPlanCard'
 import { welcome } from './content/welcome'
 import { tradingDay } from './content/tradingDay'
@@ -440,10 +441,6 @@ function BlockView({ block }: { block: GuideBlock }) {
   }
 }
 
-// Both sides truncate to this before comparing: the bot can only ever send a
-// short sha, so a full-length equality test can never succeed.
-const REV_COMPARE_LEN = 12
-
 export function GuidePage() {
   const [query, setQuery] = useState('')
   const [revision, setRevision] = useState<string | undefined>(undefined)
@@ -481,11 +478,9 @@ export function GuidePage() {
   // An empty revision means the boot assertion has not run yet: the bot does
   // not know its own rev, which is not the same as disagreeing with it. Claim
   // drift only when there is a revision to disagree with.
-  const drift =
-    revision !== undefined &&
-    revision !== '' &&
-    revision.slice(0, REV_COMPARE_LEN) !==
-      GUIDE_BUILT_REV.slice(0, REV_COMPARE_LEN)
+  // DR-3 (release #24): 'unknown' and 'dev' bundles get their own sentence
+  // (types.ts resolveGuideBuiltRev), never a generic drift (guideRevBanner).
+  const revBanner = guideRevBanner(GUIDE_BUILT_REV, revision)
 
   return (
     <div
@@ -519,9 +514,9 @@ export function GuidePage() {
         </div>
       )}
 
-      {drift && (
+      {revBanner && (
         <div
-          data-testid="guide-rev-drift"
+          data-testid={`guide-rev-${revBanner.kind}`}
           className="rounded-xl px-3 py-2 text-[12px]"
           style={{
             background: 'rgba(224,168,54,0.08)',
@@ -529,9 +524,7 @@ export function GuidePage() {
             color: 'var(--vl-gold)',
           }}
         >
-          ⚠ REVISION DRIFT — this page bundle was built at {GUIDE_BUILT_REV},
-          the bot reports {revision}: the UI and the bot come from different
-          builds. Reload the page; some cites may be stale until they match.
+          {revBanner.text}
         </div>
       )}
 

@@ -1,6 +1,8 @@
 package mentor
 
 import (
+	"strings"
+
 	"vl/market"
 )
 
@@ -57,4 +59,78 @@ func htfFeedBars(bars []market.Kline, windows []PrintWindow) []market.Kline {
 		}
 	}
 	return out
+}
+
+// ── CE-3 / CE-4 (release #25): the news trade runs from the print to the open ─
+//
+// The course trades news from a read taken BEFORE the print and holds it:
+// "Chứ tính cái lúc trước news, chứ không phải tính cái lúc news ra rồi nha…
+// Còn cái khúc mà news ra rồi thì không tính" [D4.4 p1 @18:18–18:25]; then,
+// after the print, "Đợi canh nó nằm trên hai cái đường line này, kiếm insert
+// bar đu vô… Hoặc anh chị chỉ cần đợi nó nằm ở trên cái đường line 4 giờ"
+// [@21:55–22:12]. The course names no END to that news period; the 08:30 CT
+// RTH open is our [B] bound — the open is read as its own event ("open nó
+// cũng giống news thôi" [D4.4 p2 @00:35]) where price need NOT be on the
+// right side of the line [@03:51]. Both knobs default OFF (COMMON-25 case b).
+
+// newsPeriodEnd is the end of the news period that a print window opens: the
+// 08:30 CT RTH open of the print's CT day (never before the window's own end).
+func newsPeriodEnd(w PrintWindow) int64 {
+	end := dayStartCT(w.FromMs) + int64(globexCloseMin)*60_000
+	if end < w.ToMs {
+		return w.ToMs
+	}
+	return end
+}
+
+// newsHTFWindows is the HTF-feed exclusion the evaluator and the seed read
+// (CE-4, knob news_bars_excluded): OFF → the print windows unchanged (only the
+// 07:20–07:35 bars are dropped, byte-identical); ON → each window runs to the
+// 08:30 CT open, so post-print follow-through cannot move the 1h/4h lines.
+func newsHTFWindows(windows []PrintWindow, cfg Config) []PrintWindow {
+	if !cfg.NewsBarsExcluded || len(windows) == 0 {
+		return windows
+	}
+	out := make([]PrintWindow, len(windows))
+	for i, w := range windows {
+		out[i] = PrintWindow{FromMs: w.FromMs, ToMs: newsPeriodEnd(w)}
+	}
+	return out
+}
+
+// newsWaitFilter is the CE-3 gate (knob news_wait_both_lines): inside a news
+// period (from a print window's start to the 08:30 CT open) an intraday entry
+// needs the last close beyond the 4h trigger line on its side — above it for a
+// long, below it for a short ("or at least the 4h line" — the minimum the
+// lesson states; above both lines implies it). No 4h line → refused
+// (fail-closed). The §8 swing is exempt; cancels and other actions pass.
+func newsWaitFilter(ints []Intent, h HTF, lastClose float64, now int64, cfg Config) (out []Intent, refusals []string) {
+	if !cfg.NewsWaitBothLines || len(cfg.PrintWindows) == 0 {
+		return ints, nil
+	}
+	inNews := false
+	for _, w := range cfg.PrintWindows {
+		if now >= w.FromMs && now < newsPeriodEnd(w) {
+			inNews = true
+			break
+		}
+	}
+	if !inNews {
+		return ints, nil
+	}
+	out = make([]Intent, 0, len(ints))
+	for _, in := range ints {
+		if in.Action != PlaceStopEntry && in.Action != PlaceStopLimitEntry || strings.HasPrefix(in.Reason, "swing") {
+			out = append(out, in)
+			continue
+		}
+		line := h.FourH.Price
+		ok := line > 0 && (in.Side == SideLong && lastClose > line || in.Side == SideShort && lastClose < line)
+		if ok {
+			out = append(out, in)
+			continue
+		}
+		refusals = append(refusals, "news_wait_4h_line")
+	}
+	return out, refusals
 }

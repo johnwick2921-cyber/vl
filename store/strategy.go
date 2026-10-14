@@ -1135,6 +1135,32 @@ type DayPlanConfig struct {
 	// market_in_zone time_hold scenario, refused below it at write (new
 	// authoring only). nil/≤0 = 3 (ResolveMinHoldMin).
 	MinHoldMin *int `json:"min_hold_min,omitempty"`
+	// ── Release #25 lane planner-knobs (owner "do all now", 2026-10-14) — the
+	// STRICT-12345 loss fixes the owner had not ruled on, each its own switch,
+	// ALL DEFAULT OFF (COMMON-25 case b: planner numbers the owner has not
+	// given). Resolvers + boot line: store/planner_knobs.go. Absent = OFF =
+	// today's behaviour byte-identical.
+	//
+	// PlannerRoomGate (F-2): off | refuse | tp1_at_obstacle — judge the room
+	// to the first obstacle (r_to_obstacle) at write.
+	PlannerRoomGate string `json:"planner_room_gate,omitempty"`
+	// PlannerRoomMinR (F-2): the r_to_obstacle floor, used only when the room
+	// gate is on. nil/≤0 = 1.0.
+	PlannerRoomMinR *float64 `json:"planner_room_min_r,omitempty"`
+	// PlannerExitOnThesisDeath (F-3): off | invalidation_only | all — exit an
+	// open planner position at market when its own thesis dies.
+	PlannerExitOnThesisDeath string `json:"planner_exit_on_thesis_death,omitempty"`
+	// PlannerNoChaseEnforce (F-5): the arm path's no-chase WOULD_REFUSE
+	// refuses the placement. nil/false = WARN-first (today).
+	PlannerNoChaseEnforce *bool `json:"planner_no_chase_enforce,omitempty"`
+	// PlannerMomentumIntoZoneMaxATR (F-5): refuse an arm placement when price
+	// moved toward the zone by more than X × ATR5m over the last 15 minutes.
+	// 0 / absent = OFF.
+	PlannerMomentumIntoZoneMaxATR float64 `json:"planner_momentum_into_zone_max_atr,omitempty"`
+	// PlannerATRFloorCapAtInvalidation (F-7): the ATR stop floor never widens
+	// past the authored invalidation; a floor that does not fit refuses the
+	// arm. nil/false = today (the floor widens freely).
+	PlannerATRFloorCapAtInvalidation *bool `json:"planner_atr_floor_cap_at_invalidation,omitempty"`
 }
 
 // DayPlanSessionOverride is a minimal per-session override. Every field is a
@@ -1968,6 +1994,38 @@ type MentorTuning struct {
 	// SwingMaxStopPts: SWING4H skips at a stop >= this (R-D, default 100). The
 	// trader rule gate and the kernel swing gate read this ONE value.
 	SwingMaxStopPts float64 `json:"swing_max_stop_pts,omitempty"`
+
+	// ── Release #25 course-entry knobs (fix/mentor-course-entries). Absent =
+	// the ruled default (kernel/mentor DefaultConfig, COMMON-25 knob rule);
+	// a bad value fails closed to that default and is counted. ──
+	// CE-1: inside a 15m ISB box — "off" | "require_5m_isb" (default) |
+	// "no_trade_until_escape" [D4.2 p1 @17:09–17:13].
+	FifteenMinIBRequires5mISB string `json:"15m_ib_requires_5m_isb,omitempty"`
+	// CE-2: "first_box" (default) | "both_boxes" [D4.2 p1 @07:54–08:02; OQ-2].
+	TFConflictEnd string `json:"tf_conflict_end,omitempty"`
+	// CE-3: after a print, wait for the close beyond the 4h line (nil → OFF).
+	NewsWaitBothLines *bool `json:"news_wait_both_lines,omitempty"`
+	// CE-4: drop print→08:30 bars from the 1h/4h feed (nil → OFF).
+	NewsBarsExcluded *bool `json:"news_bars_excluded,omitempty"`
+	// CE-5: ISB rest-box escape "close" | "body" (default) [D4.1 p1 @20:52].
+	ISBBoxEscape string `json:"isb_box_escape,omitempty"`
+	// CE-6: after an EMA 34 loss — "session" | "until_zone_exit" (default).
+	EMA34LossRelock string `json:"ema34_loss_relock,omitempty"`
+	// CE-7: ORB-edge veto points (0/absent = off; 0.25–50).
+	OrbEdgeVetoPts float64 `json:"orb_edge_veto_pts,omitempty"`
+	// CE-8: D4.3 trend read "trigger_line" (default) | "structure".
+	D43TrendSource string `json:"d43_trend_source,omitempty"`
+	// CE-9: level rejects need the 5m trigger side under school 1 (nil → OFF).
+	LevelEntriesNeedTriggerSide *bool `json:"level_entries_need_trigger_side,omitempty"`
+	// CE-11/B12: a trendline is a target (nil → ON).
+	TrendlineIsTarget *bool `json:"trendline_is_target,omitempty"`
+	// CE-11/B13: trendline rejects may trade between two boxes (nil → OFF).
+	TrendlineBetweenBoxes *bool `json:"trendline_between_boxes,omitempty"`
+	// CE-12: a stopped leg also resets on its wave break (nil → ON).
+	LegResetOnWaveBreak *bool `json:"leg_reset_on_wave_break,omitempty"`
+	// CE-11 (ported #416): inside a live flag the opposite wall is a closer
+	// target candidate [X9 @05:47–06:12] (nil → OFF).
+	FlagWallTarget *bool `json:"flag_wall_target,omitempty"`
 }
 
 // RiskControlConfig risk control configuration
@@ -2128,6 +2186,38 @@ type RiskControlConfig struct {
 	MentorEmaMaxCross30m        int     `json:"mentor_ema_max_cross_30m,omitempty"`
 	MentorLocationTriggerFilter *bool   `json:"mentor_loc_trigger_filter,omitempty"`
 	MentorLossDeparturePts      float64 `json:"mentor_loss_departure_pts,omitempty"`
+	// RELEASE #25 COURSE-EXITS KNOBS (lane mentor-course-exits, owner "do all
+	// now" 2026-10-14). Each item is its own switch; an absent key runs the
+	// COMMON-25 knob-rule default (case a = course, no ruling against → ON;
+	// case b = a ruling / open question against, or course silent → OFF or
+	// today's behaviour). Resolved ONLY in trader/mentor_course_exits.go.
+	//   CX-1 MentorSwingEMA34IsFirstTarget — nil → ON (case a): the 5m EMA 34
+	//        is the swing's first target, never its room obstacle [D5.2 p2 @01:40].
+	//   CX-2 MentorSwingRunner — nil → OFF (case b, sizing is the owner's):
+	//        a swing of ≥ 2 contracts (mentor_swing4h_contracts) splits into
+	//        leg 1 at the first target + a runner held by the 4h.
+	//   CX-3 MentorResonanceRunnerTPOldHigh — nil → ON (case a, a bug fix):
+	//        the mode-A runner's TP really moves past the old high.
+	//   CX-4 MentorBEBeforePartial — nil → OFF (case b, owner ruling R3): BE at
+	//        half-way to +1R BEFORE leg 1's partial fills [D1.2 p1 @12:41].
+	//   CX-5 MentorISBC3PartialAnyProfit — nil → ON = today's rule (the ISB
+	//        candle-3 partial at any profit); false = hold leg 1 for its +1R.
+	//   CX-6 MentorReverseISBAsPHL — nil → OFF (case b, Q-D4 open).
+	//   CX-8 MentorEMA9VisitCap — "" → shared (case b, course silent).
+	//   CX-9 MentorISBMaxPts — 0 → off (case b, course silent on ≥ 25).
+	//   CX-10 MentorKeypairCandleRatio — 0 → 1 (case b, no ratio spoken).
+	//   CX-11 MentorBoxFreshRTHPair — nil → OFF; MentorBoxMaxHeightPts — 0 → off.
+	MentorSwingEMA34IsFirstTarget  *bool   `json:"mentor_swing_ema34_is_first_target,omitempty"`
+	MentorSwingRunner              *bool   `json:"mentor_swing_runner,omitempty"`
+	MentorResonanceRunnerTPOldHigh *bool   `json:"mentor_resonance_runner_tp_old_high,omitempty"`
+	MentorBEBeforePartial          *bool   `json:"mentor_be_before_partial,omitempty"`
+	MentorISBC3PartialAnyProfit    *bool   `json:"mentor_isb_c3_partial_any_profit,omitempty"`
+	MentorReverseISBAsPHL          *bool   `json:"mentor_reverse_isb_as_phl,omitempty"`
+	MentorEMA9VisitCap             string  `json:"mentor_ema9_visit_cap,omitempty"`
+	MentorISBMaxPts                float64 `json:"mentor_isb_max_pts,omitempty"`
+	MentorKeypairCandleRatio       float64 `json:"mentor_keypair_candle_ratio,omitempty"`
+	MentorBoxFreshRTHPair          *bool   `json:"mentor_box_fresh_rth_pair,omitempty"`
+	MentorBoxMaxHeightPts          float64 `json:"mentor_box_max_height_pts,omitempty"`
 	// MentorTuning — the owner-tunable mentor method numbers (K3, OWNER RULING
 	// 2026-10-04 "do all as mentor"). EVERY field unset (nil/0) resolves to the
 	// ruled default in kernel/mentor DefaultConfig, so an absent block runs
@@ -2173,6 +2263,11 @@ type RiskControlConfig struct {
 	// resting bracket in place. New feature → default OFF; trigger defaults to 50.
 	BreakevenEnabled       *bool   `json:"breakeven_enabled,omitempty"`
 	BreakevenTriggerPoints float64 `json:"breakeven_trigger_points,omitempty"`
+	// BreakevenTriggerR (release #25 F-8, owner "do all now"): when > 0 the
+	// auto-breakeven trigger is this many R of the position's INITIAL risk
+	// (|entry − initial stop|) instead of BreakevenTriggerPoints. 0 / absent =
+	// OFF = today's points rule. AI/planner trades only (mentor mode keeps R3).
+	BreakevenTriggerR float64 `json:"breakeven_trigger_r,omitempty"`
 
 	// Trailing profit (final-bundle Phase 3B, 2026-08-19; NT8 futures only).
 	// Mechanical, deterministic, zero AI: once ARMED (per trailing_arm), each 60s

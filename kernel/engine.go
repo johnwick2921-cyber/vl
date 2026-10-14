@@ -66,6 +66,10 @@ type TradingStats struct {
 	AvgWin             float64 `json:"avg_win"`          // Average win
 	AvgLoss            float64 `json:"avg_loss"`         // Average loss
 	MaxDrawdownPct     float64 `json:"max_drawdown_pct"` // Maximum drawdown (%)
+	// RT-4 (release #24): the manual NT8 trades excluded from every figure
+	// above, as the store words them (store.ManualExcluded.Line — READ, never
+	// built here). "" = the caller had no line to give.
+	ManualExcludedLine string `json:"manual_excluded_line,omitempty"`
 }
 
 // RecentOrder recently completed order (for AI input)

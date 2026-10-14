@@ -84,7 +84,7 @@ func TestStrictNudgeCitedButUnconfirmedPlacesNothing(t *testing.T) {
 // short of the zone → "waiting: price below zone …".
 func TestStrictNudgeShortOfZoneWaits(t *testing.T) {
 	r := strictZoneRig(t, "w3-nudge-short", zoneDoc(zoneScenario("S1", kernel.EntryPolicyMarketInZone, zone, false)))
-	r.setTape(zoneTape(99.0, r.now, 0))
+	r.setTape(zoneTapeReacted(99.0, r.now))
 	rec, _ := nudge(r, "S1", r.now)
 	if want := strictRefusal() + " · 🚦 waiting: price below zone 99.50–100.50 (last 99.00)"; rec.Error != want {
 		t.Fatalf("\n got %q\nwant %q", rec.Error, want)

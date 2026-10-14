@@ -171,8 +171,12 @@ func TestR22Replay363ConfirmedCancelStaysCancelled(t *testing.T) {
 	if err := rig.ledger.DB().First(&row, rig.rowID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if row.CancelAttempts != 0 || row.CancelRequestedAtMs != 0 {
-		t.Fatalf("a confirmed cancel must carry no unconfirmed-request stamp: attempts=%d requested_at=%d reason=%q", row.CancelAttempts, row.CancelRequestedAtMs, row.StateReason)
+	// #526 ruling (release #24): the sync sweep now stamps the bot's own
+	// request AT THE SEND (store.StampCancelRequested), so the slot re-arms as
+	// a bot cancel. The pin's subject is unchanged: the F-1 timeout branch must
+	// never re-open the settled row through RequestCancel (attempts stay 0).
+	if row.CancelAttempts != 0 || row.CancelRequestedAtMs <= 0 {
+		t.Fatalf("a confirmed cancel carries the at-send request stamp and no RequestCancel attempt: attempts=%d requested_at=%d reason=%q", row.CancelAttempts, row.CancelRequestedAtMs, row.StateReason)
 	}
 	// Item 4 — the updater's preflight reads this exact leg.
 	g := InstallationGateStatus(nil, rig.st)

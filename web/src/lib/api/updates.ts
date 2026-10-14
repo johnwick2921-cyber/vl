@@ -255,6 +255,9 @@ export interface UpdateJobView {
   timestamps?: Record<string, string>
   receipt_url?: string
   error?: string
+  // UI-GUIDE N-5: the worker's recovery text (stale at start/resume, the
+  // attempts cap) — those set ONLY this, never error.
+  recovery_reason?: string
   status?: number
 }
 

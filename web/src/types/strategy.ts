@@ -170,6 +170,21 @@ export interface DayPlanConfig {
   /** W3 — floor (minutes) on the resolved hold of an ARMED market_in_zone
    *  time_hold scenario, refused at write below it. Absent = 3. */
   min_hold_min?: number
+  /** Release #25 loss-fix switches (STRICT-12345 F-2/F-3/F-5/F-7). Every one
+   *  ships OFF: absent = off (COMMON-25 knob rule case b — planner numbers the
+   *  owner has not given). */
+  /** F-2 room gate — 'off' | 'refuse' | 'tp1_at_obstacle'. Absent = off. */
+  planner_room_gate?: string
+  /** F-2 minimum r_to_obstacle (R). Absent = 1.0; read only when the gate is on. */
+  planner_room_min_r?: number
+  /** F-3 exit on thesis death — 'off' | 'invalidation_only' | 'all'. Absent = off. */
+  planner_exit_on_thesis_death?: string
+  /** F-5 arm no-chase WOULD_REFUSE refuses the placement. Absent = OFF. */
+  planner_no_chase_enforce?: boolean
+  /** F-5 momentum-into-zone ceiling in ATR5m over the last 15 min. 0/absent = OFF. */
+  planner_momentum_into_zone_max_atr?: number
+  /** F-7 the ATR stop floor never widens past the authored invalidation. Absent = OFF. */
+  planner_atr_floor_cap_at_invalidation?: boolean
   sessions?: DayPlanSessionOverride[]
 }
 
@@ -290,6 +305,33 @@ export interface MentorTuning {
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number
   swing_max_stop_pts?: number
+  // Course-entry knobs (release #25). Unset = the ruled default in brackets.
+  // D4.2 p1 — a 1m ISB under a standing 15m box [require_5m_isb]
+  '15m_ib_requires_5m_isb'?: 'off' | 'require_5m_isb' | 'no_trade_until_escape'
+  // D4.2 p1 @07:54 — when a 5m/15m box conflict ends [first_box] (OQ-2)
+  tf_conflict_end?: 'first_box' | 'both_boxes'
+  // D4.4 p1 @21:55 — news day: wait beyond the 4h trigger line until 08:30 [false]
+  news_wait_both_lines?: boolean
+  // D4.4 p1 @18:18 — drop print→08:30 bars from the 1h/4h feed [false]
+  news_bars_excluded?: boolean
+  // D4.1 p1 @20:52 — ISB rest box escape test [body]
+  isb_box_escape?: 'close' | 'body'
+  // D4.2 p2 @01:33 — EMA 34 back after one loss [until_zone_exit]
+  ema34_loss_relock?: 'session' | 'until_zone_exit'
+  // X5 @08:52 — refuse an entry within N pts of the ORB edge [0 = off]
+  orb_edge_veto_pts?: number
+  // D4.3 @12:43 — the box-return 5m trend source [trigger_line]
+  d43_trend_source?: 'trigger_line' | 'structure'
+  // D3.4 p1 @17:48 — the 5m trigger side binds every level reject [false]
+  level_entries_need_trigger_side?: boolean
+  // D3.3 p1 @05:18 — a trendline in the path is a target [true]
+  trendline_is_target?: boolean
+  // D3.2 p2 @10:56 — a trendline reject between two boxes may trade [false]
+  trendline_between_boxes?: boolean
+  // X-FOMO @06:10 — a stopped-out leg also resets on a wave break [true]
+  leg_reset_on_wave_break?: boolean
+  // X9 @05:47 — inside a live flag the opposite wall is a closer target (#416) [false]
+  flag_wall_target?: boolean
 }
 
 export interface RiskControlConfig {
@@ -318,7 +360,8 @@ export interface RiskControlConfig {
   // server env MENTOR_PLACE=1; without it every intent is a dry run.
   mentor_mode?: boolean
   // Mentor trading window (CT): start HH:MM (default "08:30") and length in
-  // minutes (unset/0 → 60; -1 = no window, entries at any hour). SWING is exempt.
+  // minutes (unset/0 → 60; -1 = no time window — the 15:45 CT entry cutoff
+  // and the 14:45 CT EOD flat still apply, never "any hour"). SWING is exempt.
   mentor_window_start?: string
   mentor_window_minutes?: number
   // Stop-after-loss (mentor day-stop): once a mentor trade closes today with a
@@ -329,6 +372,21 @@ export interface RiskControlConfig {
   // break-even once leg 1's 1:1 take-profit is CONFIRMED filled at NT8, then
   // 1 tick beyond each closed candle; "off" = the older half-distance rule.
   mentor_trail_mode?: string
+  // Release #25 course-exits knobs (trader/mentor_course_exits.go). Absent =
+  // the knob-rule default: first-target ON, runner OFF, resonance runner TP ON,
+  // BE-before-partial OFF (ruling R3), candle-3 any-profit ON (today's rule),
+  // reverse-ISB-as-PHL OFF, EMA 9 visits shared, the three numbers off / 1.
+  mentor_swing_ema34_is_first_target?: boolean
+  mentor_swing_runner?: boolean
+  mentor_resonance_runner_tp_old_high?: boolean
+  mentor_be_before_partial?: boolean
+  mentor_isb_c3_partial_any_profit?: boolean
+  mentor_reverse_isb_as_phl?: boolean
+  mentor_ema9_visit_cap?: string
+  mentor_isb_max_pts?: number
+  mentor_keypair_candle_ratio?: number
+  mentor_box_fresh_rth_pair?: boolean
+  mentor_box_max_height_pts?: number
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning
@@ -338,6 +396,9 @@ export interface RiskControlConfig {
   // Auto-breakeven (NT8 futures): once +N pts in profit, move the stop to entry.
   breakeven_enabled?: boolean
   breakeven_trigger_points?: number // default 50
+  // F-8 (release #25): breakeven at N × the position's initial risk instead of
+  // points. 0/absent = OFF = the points rule above. AI/planner trades only.
+  breakeven_trigger_r?: number
   // Trailing profit (Phase 3B, NT8 futures only; default OFF)
   trailing_enabled?: boolean
   trailing_atr_mult?: number // default 2.0

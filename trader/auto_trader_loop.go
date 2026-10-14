@@ -170,7 +170,9 @@ func applyDecisionCallTimeout(mcpClient mcp.AIClient, exchange string) {
 }
 
 func (at *AutoTrader) runCycle() error {
+	at.statusMu.Lock()
 	at.callCount++
+	at.statusMu.Unlock()
 
 	logger.Info("\n" + strings.Repeat("=", 70) + "\n")
 	logger.Infof("⏰ %s - AI decision cycle #%d", kernel.FormatCT(time.Now()), at.callCount)
@@ -374,9 +376,14 @@ func (at *AutoTrader) runCycle() error {
 	// ever writes at.dailyPnL (grep: reset + one display read only) — it is a
 	// permanently-zero display field. Every real daily guard reads the store.
 	// Left as-is: wiring it up is a behavior change outside the timegate train.
-	if time.Since(at.lastResetTime) > 24*time.Hour {
-		at.dailyPnL = 0
+	at.statusMu.Lock()
+	resetDue := time.Since(at.lastResetTime) > 24*time.Hour
+	if resetDue {
 		at.lastResetTime = time.Now()
+	}
+	at.statusMu.Unlock()
+	if resetDue {
+		at.dailyPnL = 0
 		logger.Info("📅 Daily P&L reset")
 	}
 
@@ -401,7 +408,7 @@ func (at *AutoTrader) runCycle() error {
 	// G1/G4/G8's input and future forensics' gold.
 	if market.FuturesBarsProvider != nil {
 		bars1m := market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
-		ctx.Structure = kernel.StructureSnapshot(bars1m, time.Now().UnixMilli())
+		ctx.Structure = kernel.StructureSnapshotForVeto(at.futuresSymbol(), bars1m, time.Now().UnixMilli()) // F-4: + the native 4h the cross veto needs
 		if blob, jerr := json.Marshal(ctx.Structure); jerr == nil {
 			record.StructureJSON = string(blob)
 		}
@@ -1381,7 +1388,14 @@ func (at *AutoTrader) attachTradeContext(ctx *kernel.Context) {
 		AvgWin:             stats.AvgWin,
 		AvgLoss:            stats.AvgLoss,
 		MaxDrawdownPct:     stats.MaxDrawdownPct,
+		// RT-4 (release #24): the manual rows ride as their own counted line,
+		// READ from the store (GetFullStats → ManualExcluded.Line).
+		ManualExcludedLine: stats.ManualExcludedLine,
 	}
-	logger.Infof("🧾 [%s] Track record: %+.2f over %d resolved trades (%d unresolved excluded), %.1f%% win rate, PF=%.2f, Sharpe=%.2f, DD=%.1f%%",
-		at.name, stats.TotalPnL, stats.TotalTrades, stats.UnresolvedExcluded, stats.WinRate, stats.ProfitFactor, stats.SharpeRatio, stats.MaxDrawdownPct)
+	manualLine := stats.ManualExcludedLine
+	if manualLine == "" {
+		manualLine = "Manual (excluded): n/a"
+	}
+	logger.Infof("🧾 [%s] Track record: %+.2f over %d resolved trades (%d unresolved excluded), %.1f%% win rate, PF=%.2f, Sharpe=%.2f, DD=%.1f%% · %s",
+		at.name, stats.TotalPnL, stats.TotalTrades, stats.UnresolvedExcluded, stats.WinRate, stats.ProfitFactor, stats.SharpeRatio, stats.MaxDrawdownPct, manualLine)
 }

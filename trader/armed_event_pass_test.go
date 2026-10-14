@@ -87,7 +87,7 @@ func (r *zoneRig) collectSignals(within time.Duration) []ntwire.SignalPayload {
 // authored and armed, nothing is placed, and the pass caches the zone flag.
 func (r *zoneRig) armZoneRow() {
 	r.t.Helper()
-	r.setTape(zoneTape(99.0, r.now, 0))
+	r.setTape(zoneTapeReacted(99.0, r.now))
 	r.at.maybeManageArmedOrdersAt(nil, r.now)
 	if s, _ := r.drain(); len(s) != 0 {
 		r.t.Fatalf("fixture: short of the zone must not place: %+v", s)

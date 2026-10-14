@@ -366,3 +366,60 @@ func TestOneSetupBackfillIgnoresOverlaysAfterTheOpen(t *testing.T) {
 		t.Fatalf("the episode must read no_scenario_at_level (the late S9 is invisible at the open), got %v", got.OneSetupBackfill)
 	}
 }
+
+// RT-6 (release #24, T25) — THE LIVE SHAPE: two traders, each bound to its
+// own strategy, both saved one_setup_enabled=false (DB a5b7662e / 7a853ea3).
+// The runtime reads each trader's own strategy (armed_executor.go
+// GetStrategyConfig → oneSetupVerdictsAt → oneSetupConfig →
+// store.ResolveOneSetup), so it runs OFF. The boot line used to print
+// "ON[O] … (source: shipped default (no bound strategy readable))" because
+// it asked for ONE bound strategy and fell back to the shipped default when
+// there were two. It now reads each trader's own, names the trader, and
+// never falls back to the shipped default for a trader whose strategy is
+// readable. MUTANT: resolve through the old single-strategy fallback → the
+// line reads ON / shipped default → RED.
+func TestOneSetupBootLineReadsEachTradersOwnStrategy(t *testing.T) {
+	now := time.Date(2026, 10, 14, 8, 22, 51, 0, kernel.CTLocation())
+	st, err := store.New(filepath.Join(t.TempDir(), "boot2.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := st.GormDB()
+	for _, s := range [][2]string{{"a5b7662e", `{"day_plan":{"plan_enabled":true,"one_setup_enabled":false}}`}, {"7a853ea3", `{"day_plan":{"plan_enabled":true,"one_setup_enabled":false}}`}} {
+		if err := g.Exec(`INSERT INTO strategies (id, user_id, name, config) VALUES (?,?,?,?)`, s[0], "u1", "MNQ "+s[0], s[1]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tr := range [][3]string{{"t-hoang", "hoang", "a5b7662e"}, {"t-12345", "12345", "7a853ea3"}} {
+		if err := g.Exec(`INSERT INTO traders (id, user_id, name, strategy_id, ai_model_id, exchange_id, initial_balance) VALUES (?,?,?,?,?,?,?)`,
+			tr[0], "u1", tr[1], tr[2], "m1", "e1", 50000.0).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	line := OneSetupBootLine(st, now, []string{"t-hoang", "t-12345"}, store.OneSetupBackfillResult{}, store.FollowBackfillResult{})
+	for _, want := range []string{"🎯 one setup: OFF[O]", "[hoang] OFF (saved value)", "[12345] OFF (saved value)"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("two bound strategies, both saved OFF: the line must read %q, got:\n%s", want, line)
+		}
+	}
+	for _, bad := range []string{"one setup: ON", "no bound strategy readable"} {
+		if strings.Contains(line, bad) {
+			t.Fatalf("the line must not print %q when every trader's strategy is readable:\n%s", bad, line)
+		}
+	}
+	// Mixed: one trader saved ON → MIXED, each named with its own value.
+	if err := g.Exec(`UPDATE strategies SET config = ? WHERE id = ?`, `{"day_plan":{"plan_enabled":true,"one_setup_enabled":true}}`, "7a853ea3").Error; err != nil {
+		t.Fatal(err)
+	}
+	line = OneSetupBootLine(st, now, []string{"t-hoang", "t-12345"}, store.OneSetupBackfillResult{}, store.FollowBackfillResult{})
+	for _, want := range []string{"🎯 one setup: MIXED[O]", "[hoang] OFF (saved value)", "[12345] ON (saved value)"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("mixed switches must read %q, got:\n%s", want, line)
+		}
+	}
+	// No trader resolvable → n/a with the reason, never the shipped default.
+	line = OneSetupBootLine(st, now, []string{"t-ghost"}, store.OneSetupBackfillResult{}, store.FollowBackfillResult{})
+	if !strings.Contains(line, "🎯 one setup: n/a[O]") || !strings.Contains(line, "[t-ghost] n/a (") {
+		t.Fatalf("an unresolvable trader must read n/a with its reason, got:\n%s", line)
+	}
+}

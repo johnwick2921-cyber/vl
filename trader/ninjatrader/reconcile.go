@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"vl/discipline"
@@ -132,33 +134,15 @@ func (t *TCPTrader) reconcilePositions(traderID, exchangeID, exchangeType string
 	// never produced a fill (NT8 rejected it, or the AddOn dropped the frame)
 	// must not linger as a would-be position. Drop it and alarm; NT8 truth is
 	// what the snapshot below says.
-	t.pendingMu.Lock()
-	var staleSignals []string
-	cutoff := time.Now().UTC().UnixMilli() - entryConfirmGraceMs
-	for sid, atMs := range t.pendingAt {
-		if atMs < cutoff {
-			staleSignals = append(staleSignals, sid)
-		}
-	}
-	for _, sid := range staleSignals {
-		delete(t.pending, sid)
-		delete(t.pendingAt, sid)
-		// Hygiene: a swept signal can never fill, so it must not stay as the
-		// "current entry" for GetOrderStatus either.
-		t.mu.Lock()
-		if t.lastEntrySignalID == sid {
-			t.lastEntrySignalID = ""
-		}
-		t.mu.Unlock()
-	}
-	t.pendingMu.Unlock()
-	if len(staleSignals) > 0 {
-		suffix := "y"
-		if len(staleSignals) > 1 {
-			suffix = "ies"
-		}
-		logger.Warnf("🧹 C8 reconcile: dropped %d UNCONFIRMED pending entr%s (no fill within %ds) — NT8 never confirmed; no position recorded.", len(staleSignals), suffix, entryConfirmGraceMs/1000)
-	}
+	//
+	// N-B (release #22 rescan): "no fill within 45 s" is NOT "NT8 never
+	// confirmed" for a RESTING entry. Rows 366 and 367 were Working at NT8
+	// (snapshots 112370 / 112623) when this sweep dropped their markers and
+	// printed "NT8 never confirmed"; both filled seconds later. A signal whose
+	// entry the latest broker book shows working, or whose armed row is
+	// working / cancel_pending, is KEPT. Only a signal the book provably lacks
+	// is "never confirmed"; one with no book to read is "UNKNOWN".
+	t.sweepUnconfirmedEntries(traderID, st, time.Now())
 
 	// NT8-held positions keyed "SYMBOL|SIDE" → average price (canonical form).
 	held := make(map[string]float64, len(snap))
@@ -501,6 +485,17 @@ func (t *TCPTrader) reconcilePositions(traderID, exchangeID, exchangeType string
 				origin = fmt.Sprintf("UNTAGGED entry (%s)", failed)
 			}
 		}
+		// RT-11 (N11): the ring and the FILLED-arm read are exactly what a
+		// restart takes from an arm that filled while the process was down
+		// (empty ring, ledger still working). Manual needs POSITIVE evidence:
+		// a live bot order of ours on this side keeps the row bot, logged.
+		if manualVerdict {
+			if why, live := liveBotOrderFor(st, traderID, side); live {
+				manualVerdict = false
+				origin = "UNATTRIBUTED entry kept BOT (" + why + ")"
+				keepAdoptedBot(row.ID, sym, side, qty, why)
+			}
+		}
 		if manualVerdict {
 			flagAdoptedManual(st, traderID, row.ID, sym, side, qty)
 		}
@@ -739,4 +734,163 @@ func flagAdoptedManual(st *store.Store, traderID string, rowID int64, sym, side 
 	flagged, _ := telemetry.ManualAdoptionCounts()
 	logger.Warnf("🧾 manual origin: pos %d (%s %s qty=%.0f) adopted from NT8 with no bot order/arm behind it — flagged origin=manual; excluded from the bot record and shown as its own line (manual adoptions since boot=%d)",
 		rowID, sym, side, qty, flagged)
+}
+
+// c8KeptLogged dedupes the "kept: working at NT8" line to once per signal per
+// trader (the sweep runs every 20 s for as long as a limit rests).
+var c8KeptLogged sync.Map // "<trader ptr>|<signal>" → struct{}
+
+// C8 sweep counters — RECORDED, never inferred (checklist 35).
+var (
+	c8KeptWorking       atomic.Int64
+	c8DroppedUnseen     atomic.Int64 // book present and fresh, no such order: "never confirmed"
+	c8DroppedNoEvidence atomic.Int64 // no broker book since the send: confirmation UNKNOWN
+)
+
+// C8SweepCounts returns (kept working, dropped never-confirmed, dropped with
+// no book) for tests and reports.
+func C8SweepCounts() (kept, neverConfirmed, unknown int64) {
+	return c8KeptWorking.Load(), c8DroppedUnseen.Load(), c8DroppedNoEvidence.Load()
+}
+
+// c8EntryEvidence classifies one stale pending signal. live=true keeps it: the
+// broker book shows its entry order still working (not terminal), or its armed
+// row says working / cancel_pending. Otherwise bookSaw reports whether a broker
+// book received AFTER the send exists to prove the order's absence.
+func (t *TCPTrader) c8EntryEvidence(traderID, sid string, sentMs int64, st *store.Store) (live bool, why string, bookSaw bool) {
+	if t.server != nil {
+		if snap, recvAt, ok := t.server.OrderSnapshots().LatestReceived(t.boundAccount); ok {
+			for _, o := range snap.Orders {
+				if o.Name == sid && o.IsWorking() {
+					return true, fmt.Sprintf("broker book shows the entry %s", strings.TrimSpace(o.State)), true
+				}
+			}
+			bookSaw = !recvAt.IsZero() && recvAt.UnixMilli() > sentMs
+		}
+	}
+	if st != nil && traderID != "" {
+		if ao := st.ArmedOrders(); ao != nil {
+			if row, err := ao.FindBySignal(traderID, sid); err == nil && row != nil {
+				// Any NON-TERMINAL row for this signal (working, cancel_pending,
+				// place_pending) says the order may still be at the broker; the
+				// ledger's own placement expiry bounds how long that lasts. One
+				// canonical predicate (checklist 28), never a re-typed set.
+				if !store.IsTerminalArmState(row.State) {
+					return true, fmt.Sprintf("armed row %d is %s", row.ID, row.State), bookSaw
+				}
+			}
+		}
+	}
+	return false, "", bookSaw
+}
+
+// sweepUnconfirmedEntries is the C8 pass (see reconcilePositions). The
+// evidence reads (book + ledger) happen OUTSIDE pendingMu; a signal is dropped
+// only if it is still pending under the same stamp when the lock is retaken.
+func (t *TCPTrader) sweepUnconfirmedEntries(traderID string, st *store.Store, now time.Time) {
+	type cand struct {
+		sid  string
+		atMs int64
+	}
+	cutoff := now.UTC().UnixMilli() - entryConfirmGraceMs
+	t.pendingMu.Lock()
+	var stale []cand
+	for sid, atMs := range t.pendingAt {
+		if atMs < cutoff {
+			stale = append(stale, cand{sid, atMs})
+		}
+	}
+	t.pendingMu.Unlock()
+	if len(stale) == 0 {
+		return
+	}
+	var unseen, noBook []string
+	for _, c := range stale {
+		live, why, bookSaw := t.c8EntryEvidence(traderID, c.sid, c.atMs, st)
+		key := fmt.Sprintf("%p|%s", t, c.sid)
+		if live {
+			if _, seen := c8KeptLogged.LoadOrStore(key, struct{}{}); !seen {
+				c8KeptWorking.Add(1)
+				logger.Infof("🧹 C8 reconcile: entry %s has no fill after %ds but is WORKING at NT8 (%s) — kept; a resting entry is not an unconfirmed one",
+					c.sid, (now.UTC().UnixMilli()-c.atMs)/1000, why)
+			}
+			continue
+		}
+		t.pendingMu.Lock()
+		cur, still := t.pendingAt[c.sid]
+		if still && cur == c.atMs {
+			delete(t.pending, c.sid)
+			delete(t.pendingAt, c.sid)
+		}
+		t.pendingMu.Unlock()
+		if !still || cur != c.atMs {
+			continue // filled / cancelled / re-stamped while the evidence was read
+		}
+		c8KeptLogged.Delete(key)
+		// Hygiene: a swept signal can never fill, so it must not stay as the
+		// "current entry" for GetOrderStatus either.
+		t.mu.Lock()
+		if t.lastEntrySignalID == c.sid {
+			t.lastEntrySignalID = ""
+		}
+		t.mu.Unlock()
+		if bookSaw {
+			unseen = append(unseen, c.sid)
+		} else {
+			noBook = append(noBook, c.sid)
+		}
+	}
+	if len(unseen) > 0 {
+		c8DroppedUnseen.Add(int64(len(unseen)))
+		logger.Warnf("🧹 C8 reconcile: dropped %d UNCONFIRMED pending entr%s %v (no fill within %ds, and the broker book received since the send has NO such order) — NT8 never confirmed; no position recorded.",
+			len(unseen), c8Plural(len(unseen)), unseen, entryConfirmGraceMs/1000)
+	}
+	if len(noBook) > 0 {
+		c8DroppedNoEvidence.Add(int64(len(noBook)))
+		logger.Warnf("🧹 C8 reconcile: dropped %d pending entr%s %v (no fill within %ds, no working armed row, and NO broker book received since the send) — NT8 confirmation UNKNOWN; no position recorded.",
+			len(noBook), c8Plural(len(noBook)), noBook, entryConfirmGraceMs/1000)
+	}
+}
+
+func c8Plural(n int) string {
+	if n == 1 {
+		return "y"
+	}
+	return "ies"
+}
+
+// liveBotOrderFor (RT-11, N11) reports an order of THIS trader that may be
+// resting at the broker on side — the ownership evidence the pre-open
+// reconcile already uses (trader/reconcile_owned.go clause (i)): a placed
+// non-terminal arm (it carries a broker signal), or a Picture row whose send
+// started. A read that fails cannot rule one out, so it answers yes.
+func liveBotOrderFor(st *store.Store, traderID, side string) (string, bool) {
+	arms, err := st.ArmedOrders().ListNonTerminal(traderID)
+	if err != nil {
+		return fmt.Sprintf("armed ledger unreadable (%v) — a resting arm cannot be ruled out", err), true
+	}
+	for _, r := range arms {
+		if strings.TrimSpace(r.SignalID) != "" && store.CanonicalArmSide(r.Side) == side {
+			return fmt.Sprintf("armed #%d %s %s is %s under signal %s — its fill may have landed while the process was down", r.ID, r.Scenario, side, r.State, r.SignalID), true
+		}
+	}
+	pics, err := st.PictureHtfRecoverableByTrader(traderID)
+	if err != nil {
+		return fmt.Sprintf("picture ledger unreadable (%v) — a resting Picture order cannot be ruled out", err), true
+	}
+	for _, p := range pics {
+		if store.PictureSendStarted(p) && store.CanonicalArmSide(p.Direction) == side {
+			return fmt.Sprintf("picture %s %s is %s — its fill may have landed while the process was down", store.RedactPictureOppKey(p.OppKey), side, p.Stage), true
+		}
+	}
+	return "", false
+}
+
+// keepAdoptedBot (RT-11) logs and counts an adoption the no-evidence verdict
+// would have flagged manual while a live bot order could explain it: it STAYS
+// in the bot record (unknown is not manual), never silently.
+func keepAdoptedBot(rowID int64, sym, side string, qty float64, why string) {
+	n := telemetry.IncManualAdoptKeptBot()
+	logger.Warnf("🧾 manual origin: pos %d (%s %s qty=%.0f) has no fill-ring or in-window armed-fill evidence, but %s — kept origin=bot, NOT flagged manual (unknown is not manual; kept-bot adoptions since boot=%d)",
+		rowID, sym, side, qty, why, n)
 }

@@ -3,7 +3,13 @@
 // fields (⚪ inherit / 🔸 override).
 
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import {
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  within,
+} from '@testing-library/react'
 import { DayPlanEditor } from './DayPlanEditor'
 import type { DayPlanConfig } from '../../types/strategy'
 
@@ -565,5 +571,111 @@ describe('DayPlanEditor W1 replan cap', () => {
     const next = onChange.mock.calls[0][0] as DayPlanConfig
     expect(next.replan_cap).toBeNull()
     expect(JSON.stringify(next)).toContain('"replan_cap":null')
+  })
+})
+
+// Release #25 (STRICT-12345 F-2/F-3/F-5/F-7) — the loss-fix switches: every one
+// absent = OFF (COMMON-25 case b), never seeded by the master switch, and each
+// control writes its own day_plan key.
+describe('DayPlanEditor · release #25 loss-fix switches', () => {
+  const renderOn = (cfg: DayPlanConfig = { plan_enabled: true }) => {
+    const onChange = vi.fn()
+    render(<DayPlanEditor config={cfg} onChange={onChange} language="en" />)
+    return onChange
+  }
+  const segActive = (testId: string) => {
+    const seg = screen.getByTestId(testId)
+    return within(seg)
+      .getAllByRole('button')
+      .find((b) => b.style.color === 'var(--vl-gold)')?.textContent
+  }
+
+  it('all six controls render and read OFF when the keys are absent', () => {
+    renderOn()
+    expect(screen.getByTestId('loss-fix-switches')).toBeTruthy()
+    expect(segActive('planner-room-gate')).toBe('OFF')
+    expect(segActive('planner-exit-on-thesis-death')).toBe('OFF')
+    expect(
+      screen
+        .getByTestId('planner-no-chase-enforce-toggle')
+        .getAttribute('aria-checked')
+    ).toBe('false')
+    expect(
+      screen
+        .getByTestId('planner-atr-floor-cap-toggle')
+        .getAttribute('aria-checked')
+    ).toBe('false')
+    const minR = screen.getByTestId('planner-room-min-r') as HTMLInputElement
+    expect(minR.value).toBe('')
+    expect(minR.disabled).toBe(true) // gate off → min R inert
+    const mom = screen.getByTestId(
+      'planner-momentum-into-zone'
+    ) as HTMLInputElement
+    expect(mom.value).toBe('')
+  })
+
+  it('the master switch never seeds them (absent = off)', () => {
+    const onChange = vi.fn()
+    render(
+      <DayPlanEditor config={undefined} onChange={onChange} language="en" />
+    )
+    fireEvent.click(screen.getAllByRole('switch')[0])
+    const next = onChange.mock.calls[0][0] as DayPlanConfig
+    expect(next.planner_room_gate).toBeUndefined()
+    expect(next.planner_room_min_r).toBeUndefined()
+    expect(next.planner_exit_on_thesis_death).toBeUndefined()
+    expect(next.planner_no_chase_enforce).toBeUndefined()
+    expect(next.planner_momentum_into_zone_max_atr).toBeUndefined()
+    expect(next.planner_atr_floor_cap_at_invalidation).toBeUndefined()
+  })
+
+  it('room gate writes planner_room_gate; min R writes planner_room_min_r once on', () => {
+    let onChange = renderOn()
+    fireEvent.click(
+      within(screen.getByTestId('planner-room-gate')).getByText('REFUSE')
+    )
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ planner_room_gate: 'refuse' })
+    )
+    cleanup()
+    onChange = renderOn({ plan_enabled: true, planner_room_gate: 'refuse' })
+    const minR = screen.getByTestId('planner-room-min-r') as HTMLInputElement
+    expect(minR.disabled).toBe(false)
+    fireEvent.change(minR, { target: { value: '1.2' } })
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ planner_room_min_r: 1.2 })
+    )
+  })
+
+  it('thesis death writes planner_exit_on_thesis_death', () => {
+    const onChange = renderOn()
+    fireEvent.click(
+      within(screen.getByTestId('planner-exit-on-thesis-death')).getByText(
+        'INVALIDATION ONLY'
+      )
+    )
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        planner_exit_on_thesis_death: 'invalidation_only',
+      })
+    )
+  })
+
+  it('the two toggles and the momentum ceiling write their own keys', () => {
+    const onChange = renderOn()
+    fireEvent.click(screen.getByTestId('planner-no-chase-enforce-toggle'))
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ planner_no_chase_enforce: true })
+    )
+    fireEvent.click(screen.getByTestId('planner-atr-floor-cap-toggle'))
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ planner_atr_floor_cap_at_invalidation: true })
+    )
+    fireEvent.change(screen.getByTestId('planner-momentum-into-zone'), {
+      target: { value: '1.5' },
+    })
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ planner_momentum_into_zone_max_atr: 1.5 })
+    )
   })
 })

@@ -2549,7 +2549,11 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 		// W-EXEC-TRUTH W3 (c): the market_in_zone zone verdicts join the
 		// feasibility issues — NOT gated by the write_time_feasibility knob
 		// (D5); hinted on attempts < max, the arm disabled on the last.
-		feas := at.writeTimeFeasibilityVerdicts(d, atr5m, at.config.StrategyConfig, session)
+		// Release #25 PK-1 (F-2) — the room gate runs FIRST so a
+		// tp1_at_obstacle move is judged by the R:R floor below (OFF → nil,
+		// the doc untouched).
+		feas := at.roomGateAtWrite(d, tradeDate, session)
+		feas = append(feas, at.writeTimeFeasibilityVerdicts(d, atr5m, at.config.StrategyConfig, session)...)
 		feas = append(feas, at.writeTimeZoneVerdicts(d, atr5m, at.config.StrategyConfig, session)...)
 		if len(feas) > 0 {
 			if attempt < plannerMaxAttempts {

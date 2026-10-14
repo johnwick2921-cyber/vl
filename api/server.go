@@ -963,6 +963,15 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 			}
 		}
 
+		// P2-8 (owner-identity fold): a machine token may READ and REDUCE
+		// risk, never add it — deny by default over every route
+		// (machine_action_guard.go), so a new mutating route is refused
+		// until it is listed on purpose.
+		if claims.IsMachine() && !machineActionAllowed(c.Request.Method, c.FullPath()) {
+			machineActionRefuse(c, claims)
+			return
+		}
+
 		// Store user information in context (user_id, email and the claims
 		// the credential guard reads — credential_guard.go).
 		setAuthContext(c, claims)
@@ -983,28 +992,9 @@ func (s *Server) Start() error {
 	addr := net.JoinHostPort(host, strconv.Itoa(s.port))
 	logger.Infof("🌐 API server starting at http://%s", addr)
 	logger.Infof("📊 API Documentation:")
-	logger.Infof("  • GET  /api/health           - Health check")
-	logger.Infof("  • GET  /api/traders          - Public AI trader leaderboard top 50 (no auth required)")
-	logger.Infof("  • GET  /api/competition      - Public competition data (no auth required)")
-	logger.Infof("  • GET  /api/top-traders      - Top 5 trader data (no auth required, for performance comparison)")
-	logger.Infof("  • GET  /api/equity-history?trader_id=xxx - Public return rate historical data (no auth required, for competition)")
-	logger.Infof("  • GET  /api/equity-history-batch?trader_ids=a,b,c - Batch get historical data (no auth required, performance comparison optimization)")
-	logger.Infof("  • GET  /api/traders/:id/public-config - Public trader config (no auth required, no sensitive info)")
-	logger.Infof("  • POST /api/traders          - Create new AI trader")
-	logger.Infof("  • DELETE /api/traders/:id    - Delete AI trader")
-	logger.Infof("  • POST /api/traders/:id/start - Start AI trader")
-	logger.Infof("  • POST /api/traders/:id/stop  - Stop AI trader")
-	logger.Infof("  • GET  /api/models           - Get AI model config")
-	logger.Infof("  • PUT  /api/models           - Update AI model config")
-	logger.Infof("  • GET  /api/exchanges        - Get exchange config")
-	logger.Infof("  • PUT  /api/exchanges        - Update exchange config")
-	logger.Infof("  • GET  /api/status?trader_id=xxx     - Specified trader's system status")
-	logger.Infof("  • GET  /api/account?trader_id=xxx    - Specified trader's account info")
-	logger.Infof("  • GET  /api/positions?trader_id=xxx  - Specified trader's position list")
-	logger.Infof("  • GET  /api/decisions?trader_id=xxx  - Specified trader's decision log")
-	logger.Infof("  • GET  /api/decisions/latest?trader_id=xxx - Specified trader's latest decisions")
-	logger.Infof("  • GET  /api/statistics?trader_id=xxx - Specified trader's statistics")
-	logger.Infof("  • GET  /api/performance?trader_id=xxx - Specified trader's AI learning performance analysis")
+	for _, d := range apiBootDocs {
+		logger.Infof("%s", d.line())
+	}
 	logger.Info()
 
 	s.httpServer = &http.Server{
@@ -1027,4 +1017,51 @@ func (s *Server) Shutdown() error {
 // SetTelegramReloadCh sets the channel used to signal the Telegram bot to reload
 func (s *Server) SetTelegramReloadCh(ch chan<- struct{}) {
 	s.telegramReloadCh = ch
+}
+
+// apiBootDoc is one line of the boot-time API documentation. RT-9 (release
+// #24, E-4): the list was a block of literals that went stale — it called
+// /api/equity-history "Public … (no auth required)" and the batch endpoint a
+// GET after R22 moved both behind JWT (the batch is a POST), and it listed a
+// /api/performance route that is not registered at all. The access label is
+// now a field, and TestAPIBootDocsMatchTheRouter sends every line's request
+// through the real router: a public line must not answer 401 without a
+// token, a JWT line must, and every method+path must be registered.
+type apiBootDoc struct {
+	Method string
+	Path   string // as registered; a query string after '?' is documentation only
+	Desc   string
+	Public bool // no auth required (the public /api group); false = JWT
+}
+
+func (d apiBootDoc) line() string {
+	access := "JWT required"
+	if d.Public {
+		access = "no auth required"
+	}
+	return fmt.Sprintf("  • %-6s %s - %s (%s)", d.Method, d.Path, d.Desc, access)
+}
+
+var apiBootDocs = []apiBootDoc{
+	{"GET", "/api/health", "Health check", true},
+	{"GET", "/api/traders", "Public AI trader leaderboard top 50", true},
+	{"GET", "/api/competition", "Public competition data", true},
+	{"GET", "/api/top-traders", "Top 5 trader data, for performance comparison", true},
+	{"GET", "/api/equity-history?trader_id=xxx", "Equity history for a trader", false},
+	{"POST", "/api/equity-history-batch", "Batch equity history for several traders", false},
+	{"GET", "/api/traders/:id/public-config", "Public trader config, no sensitive info", true},
+	{"POST", "/api/traders", "Create new AI trader", false},
+	{"DELETE", "/api/traders/:id", "Delete AI trader", false},
+	{"POST", "/api/traders/:id/start", "Start AI trader", false},
+	{"POST", "/api/traders/:id/stop", "Stop AI trader", false},
+	{"GET", "/api/models", "Get AI model config", false},
+	{"PUT", "/api/models", "Update AI model config", false},
+	{"GET", "/api/exchanges", "Get exchange config", false},
+	{"PUT", "/api/exchanges", "Update exchange config", false},
+	{"GET", "/api/status?trader_id=xxx", "Specified trader's system status", false},
+	{"GET", "/api/account?trader_id=xxx", "Specified trader's account info", false},
+	{"GET", "/api/positions?trader_id=xxx", "Specified trader's position list", false},
+	{"GET", "/api/decisions?trader_id=xxx", "Specified trader's decision log", false},
+	{"GET", "/api/decisions/latest?trader_id=xxx", "Specified trader's latest decisions", false},
+	{"GET", "/api/statistics?trader_id=xxx", "Specified trader's statistics", false},
 }

@@ -251,7 +251,7 @@ func ValidateBreakdownContinueScenarios(d *PlanDoc, scope VoidScope, atr5m, pric
 		if !immediate && !st.Leg1Met {
 			// W2: the count is the resolver's — the STORED rule, named with its
 			// source (a 2x5m_close is refused until the tape shows TWO closes).
-			return fmt.Errorf("%s %s: the tape shows NO confirming close beyond %.2f yet (%d confirming close(s) needed — rule %s, displacement + reclaim-check unchanged) — author it only after the displacement exists (or set entry_mode=immediate and accept the confirming-close trigger)",
+			return fmt.Errorf("%s %s: the tape shows NO confirming close beyond %.2f yet (%d confirming close(s) needed — rule %s, displacement + reclaim-check unchanged) — author it only after the displacement exists, or author the conditional thesis now as an acceptance play (confirm 1x5m_close beyond the level, arm wait_confirm:true — nothing is sent until that close prints) (or set entry_mode=immediate and accept the confirming-close trigger)",
 				s.ID, s.Condition, bd.Level, st.Rule.Closes, st.Rule.Label())
 		}
 		displacement := st.BreakLegPts

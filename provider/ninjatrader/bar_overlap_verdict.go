@@ -3,6 +3,8 @@ package ninjatrader
 import (
 	"math"
 	"time"
+
+	"vl/market"
 )
 
 // gapReplayJudgeWindow — how long after a gap re-request its replay is judged
@@ -42,7 +44,7 @@ func (c *BarCache) armOverlapVerdict(symbol string, until time.Time) {
 // own bar for every minute the ring holds live. Same minute, same contract,
 // two feeds — exactly the comparison the 09-10 finding was (live 29358.25 vs
 // replay 29068.25 for the 22:37 minute). When EVERY such pair agrees within
-// ScaleMismatchPct of price, the seed is judged on-scale and SeedVerdict says
+// overlapTolerance (max(8 ticks, 0.05%)), the seed is judged on-scale and SeedVerdict says
 // so; the hold then releases the replay as 'historical' into the minutes live
 // never wrote (the upsert rule still keeps every live row).
 //
@@ -56,11 +58,32 @@ func (c *BarCache) armOverlapVerdict(symbol string, until time.Time) {
 // as before (the first-live-bar check stands), nothing is dropped here, and a
 // seed with no live overlap — every boot replay — is untouched.
 
+// overlapTolTicks / overlapTolPct — the same-minute tolerance (#23 review
+// P3-3). Same instrument, same minute, two feeds: the closes should match to
+// a few ticks. The old bound was ScaleMismatchPct (0.5% ≈ 154 pts on MNQ at
+// 30800), wide enough to pass a replay tens of points off. Now max(8 ticks,
+// 0.05% of price): ≈15 pts on MNQ at 30800, ≈3.4 pts on ES at 6800.
+const (
+	overlapTolTicks = 8
+	overlapTolPct   = 0.0005
+)
+
+// overlapTolerance is the largest |replay − live| close difference that still
+// agrees, in price points, for symbol at price. An unknown tick (no CME root)
+// leaves only the percentage leg — never a wider bound.
+func overlapTolerance(symbol string, price float64) float64 {
+	tick := market.FuturesTickSize(symbol)
+	if tick < 0 {
+		tick = 0
+	}
+	return math.Max(overlapTolTicks*tick, overlapTolPct*math.Abs(price))
+}
+
 // overlapScaleVerdict compares, minute by minute, the incoming replay with the
 // LIVE bars the ring already holds at the same open time. pairs = how many
 // same-minute pairs had a usable close on both sides; agree = every one of
-// them is within ScaleMismatchPct of the live close. Both inputs ascending by T.
-func overlapScaleVerdict(existing, incoming []Bar) (pairs int, agree bool) {
+// them is within overlapTolerance of the live close. Both inputs ascending by T.
+func overlapScaleVerdict(symbol string, existing, incoming []Bar) (pairs int, agree bool) {
 	agree = true
 	i, j := 0, 0
 	for i < len(existing) && j < len(incoming) {
@@ -77,7 +100,7 @@ func overlapScaleVerdict(existing, incoming []Bar) (pairs int, agree bool) {
 				continue
 			}
 			pairs++
-			if math.Abs(in.C-ex.C) > ScaleMismatchPct*math.Abs(ex.C) {
+			if math.Abs(in.C-ex.C) > overlapTolerance(symbol, ex.C) {
 				agree = false
 			}
 		}

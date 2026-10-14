@@ -62,11 +62,11 @@ func dailyLossLatchKey(traderID string) string { return "daily_loss_latch:" + tr
 
 var (
 	dailyLossMu        sync.Mutex
-	dailyLossRestored  = map[*AutoTrader]bool{}  // the persisted latch was read once for this instance
-	dailyLossPersisted = map[string]string{}     // traderID → session-day already written
-	dailyLossFlatSent  = map[string]time.Time{}  // traderID|positionID → last flatten send
-	dailyLossManualLog = map[string]bool{}       // traderID|positionID → manual position logged once
-	dailyLossTripDay   = map[string]string{}     // traderID → session-day the trip was announced
+	dailyLossRestored  = map[*AutoTrader]bool{} // the persisted latch was read once for this instance
+	dailyLossPersisted = map[string]string{}    // traderID → session-day already written
+	dailyLossFlatSent  = map[string]time.Time{} // traderID|positionID → last flatten send
+	dailyLossManualLog = map[string]bool{}      // traderID|positionID → manual position logged once
+	dailyLossTripDay   = map[string]string{}    // traderID → session-day the trip was announced
 )
 
 // ── THE ONE P&L READER ──────────────────────────────────────────────────────
@@ -183,6 +183,13 @@ type dailyGuardVerdict struct {
 // leg OFF → the gate is inert.
 func (at *AutoTrader) dailyGuardVerdictAt(now time.Time) dailyGuardVerdict {
 	if why := at.dailyLossLatchAt(now); why != "" {
+		// RT-1 (release #24): the latch may have been set by ANOTHER side
+		// first — the AI decision cycle's kernel guardrail
+		// (kernel/engine_analysis.go → SetDailyForceFlat) trips 2 s after a
+		// stop-out, before this beat evaluates. Announce it here, once per
+		// (trader, session-day), or that trip is silent: no 🔴 line, no
+		// daily_loss_tripped count, no alert.
+		at.announceDailyLossTrip(why, at.dailyLossLimitText(), now)
 		return dailyGuardVerdict{Refuse: true, Latched: true, Class: "daily_loss",
 			Reason: "daily_loss: " + why + " — latched until the CME session-day ends (17:00 CT)"}
 	}
@@ -250,7 +257,7 @@ func (at *AutoTrader) dailyGuardVerdictAt(now time.Time) dailyGuardVerdict {
 	// admission chain does not refuse on it, see the field).
 	if lossOn && bot.Unresolved > 0 {
 		return dailyGuardVerdict{Refuse: true, Unverified: true, Class: "daily_guardrail_unverified",
-			Reason: fmt.Sprintf("daily_guardrail_unverified: daily loss limit enforced but %d close(s) today have unresolved P&L (pnl_corrected NULL) — no new entry (fail-closed)", bot.Unresolved)}
+			Reason: fmt.Sprintf("daily_guardrail_unverified: daily loss limit enforced but %d close(s) today have unresolved P&L (pnl_corrected NULL, or a reconcile_flat/unresolved close) — no new entry (fail-closed)", bot.Unresolved)}
 	}
 	return dailyGuardVerdict{}
 }
@@ -272,17 +279,42 @@ func (at *AutoTrader) tripDailyLoss(why string, bot botDayPnL, limit float64, no
 		why, bot.Realized, bot.Closed, bot.Open, bot.OpenPositions, bot.ManualExcluded, bot.Unresolved, bot.OpenUnmarked)
 	kernel.SetDailyForceFlatAt(at.id, reason, now)
 	at.persistDailyLossLatch(day, reason)
+	at.announceDailyLossTrip(reason, fmt.Sprintf("-%.2f", limit), now)
+	return reason
+}
+
+// announceDailyLossTrip is THE ONE announcement of a daily-loss trip: one
+// "🔴 DAILY LOSS LIMIT HIT" line, one daily_loss_tripped count and one P0
+// alert per (trader, CME session-day) — whichever side latched first (this
+// gate's own trip, or the AI decision cycle's kernel guardrail that the next
+// verdict finds already latched). A latch restored after a restart was
+// announced by the process that tripped it, so the restore marks the day
+// announced and logs its own RESTORED line instead. limit is the READ value
+// ("-450.00"), or "n/a" when no strategy is readable.
+func (at *AutoTrader) announceDailyLossTrip(reason, limit string, now time.Time) {
+	day := kernel.CMESessionDayKey(now)
 	dailyLossMu.Lock()
 	first := dailyLossTripDay[at.id] != day
 	dailyLossTripDay[at.id] = day
 	dailyLossMu.Unlock()
-	if first {
-		at.logErrorf("🔴 DAILY LOSS LIMIT HIT (limit -%.2f): %s. New entries REFUSED on every path, resting entry orders CANCELLED, bot positions FLATTENED; latched until CME session-day %s ends (17:00 CT).",
-			limit, reason, day)
-		telemetry.IncGateBlock(at.id, "daily_loss_tripped")
-		at.emitAlert("P0", "daily-loss", "daily-loss:"+day, "🔴 Daily loss limit hit", reason)
+	if !first {
+		return
 	}
-	return reason
+	at.logErrorf("🔴 DAILY LOSS LIMIT HIT (limit %s): %s. New entries REFUSED on every path, resting entry orders CANCELLED, bot positions FLATTENED; latched until CME session-day %s ends (17:00 CT).",
+		limit, reason, day)
+	telemetry.IncGateBlock(at.id, "daily_loss_tripped")
+	at.emitAlert("P0", "daily-loss", "daily-loss:"+day, "🔴 Daily loss limit hit", reason)
+}
+
+// dailyLossLimitText is the resolved daily-loss limit as the announcement
+// prints it ("-450.00"), READ from the resolver the gate runs; "n/a" when the
+// trader has no strategy config.
+func (at *AutoTrader) dailyLossLimitText() string {
+	if at.config.StrategyConfig == nil {
+		return "n/a"
+	}
+	gp := kernel.ResolveStrategyGuardrails(at.config.StrategyConfig.RiskControl, kernel.LoadRiskLimitsFromConfig().MaxDailyLossUSD)
+	return fmt.Sprintf("-%.2f", gp.DailyLossLimitUSD)
 }
 
 // ── THE LATCH ───────────────────────────────────────────────────────────────
@@ -433,12 +465,54 @@ func (at *AutoTrader) dailyLossFlattenAt(now time.Time) {
 
 // ── BOOT / STATUS ───────────────────────────────────────────────────────────
 
-// DailyLossGateBootLineForStrategy is the per-trader load line: what the gate
-// does for THIS strategy, every field READ from the resolver the gate runs.
-func DailyLossGateBootLineForStrategy(cfg *store.StrategyConfig) string {
-	if cfg == nil {
-		return "daily-loss gate: n/a (no strategy config)"
+// DailyLossLatchLifts is the one sentence every surface prints beside a held
+// latch (RT-2, release #24). OWNER DECISION PENDING on lifting a latch when the
+// gate is switched OFF; the fail-closed default KEEPS it, so the surfaces must
+// say so instead of the switch's OFF.
+const DailyLossLatchLifts = "switching the gate OFF does not lift it; Emergency Flat lifts it; it ends at 17:00 CT"
+
+// DailyLossLatchStateAt READS a trader's daily-loss latch without evaluating,
+// tripping or restoring anything: the live kernel latch, else the persisted
+// copy a restart restores on the first beat (only when it is stamped with
+// now's CME session-day). day "" = not latched.
+func DailyLossLatchStateAt(st *store.Store, traderID string, now time.Time) (day, reason, source string) {
+	if why := kernel.DailyForceFlatReasonAt(traderID, now); why != "" {
+		return kernel.CMESessionDayKey(now), why, "live"
 	}
+	if st == nil {
+		return "", "", ""
+	}
+	raw, err := st.GetSystemConfig(dailyLossLatchKey(traderID))
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return "", "", ""
+	}
+	d, why, ok := strings.Cut(raw, "|")
+	if !ok || d != kernel.CMESessionDayKey(now) {
+		return "", "", ""
+	}
+	return d, why, "persisted (restored on the first beat)"
+}
+
+// DailyLossGateBootLine is the per-trader load line (trader load, Studio save
+// reload, restart): the posture line of DailyLossGateBootLineForStrategy,
+// UNLESS a latch holds for now's session-day — then it reads LATCHED whatever
+// the switches say, because the latch outlives switching the gate OFF (RT-2).
+func DailyLossGateBootLine(st *store.Store, traderID string, cfg *store.StrategyConfig, now time.Time) string {
+	day, reason, source := DailyLossLatchStateAt(st, traderID, now)
+	if day == "" {
+		return DailyLossGateBootLineForStrategy(cfg)
+	}
+	posture, trades := "n/a (no strategy config)", "max_daily_trades n/a"
+	if cfg != nil {
+		_, posture, trades = dailyLossGatePosture(cfg)
+	}
+	return fmt.Sprintf("daily-loss gate: LATCHED for session-day %s (%s) — new entries REFUSED on every path, resting entry orders CANCELLED, bot positions FLATTENED until then · latch %s: %s · switches now: %s · %s",
+		day, DailyLossLatchLifts, source, reason, posture, trades)
+}
+
+// dailyLossGatePosture reads the resolved switches once: whether the loss leg
+// is enforced, the posture text, and the max_daily_trades text.
+func dailyLossGatePosture(cfg *store.StrategyConfig) (enforced bool, posture, trades string) {
 	gp := kernel.ResolveStrategyGuardrails(cfg.RiskControl, kernel.LoadRiskLimitsFromConfig().MaxDailyLossUSD)
 	onOff := func(b bool) string {
 		if b {
@@ -458,13 +532,25 @@ func DailyLossGateBootLineForStrategy(cfg *store.StrategyConfig) string {
 		}
 		return onOff(resolved) + " (saved)"
 	}
-	posture := fmt.Sprintf("master %s, daily_loss_enabled %s, limit $%.0f (%s)",
+	posture = fmt.Sprintf("master %s, daily_loss_enabled %s, limit $%.0f (%s)",
 		toggle(cfg.RiskControl.GuardrailsEnabled, gp.MasterEnabled), toggle(cfg.RiskControl.DailyLossEnabled, gp.DailyLossEnabled), gp.DailyLossLimitUSD, src)
-	trades := "max_daily_trades off"
+	trades = "max_daily_trades off"
 	if gp.MasterEnabled && gp.MaxDailyTradesEnabled && gp.MaxDailyTrades > 0 {
 		trades = fmt.Sprintf("max_daily_trades %d ENFORCED on every path (mentor included)", gp.MaxDailyTrades)
 	}
-	if !gp.MasterEnabled || !gp.DailyLossEnabled || gp.DailyLossLimitUSD <= 0 {
+	return gp.MasterEnabled && gp.DailyLossEnabled && gp.DailyLossLimitUSD > 0, posture, trades
+}
+
+// DailyLossGateBootLineForStrategy is the per-trader posture line: what the
+// gate does for THIS strategy, every field READ from the resolver the gate
+// runs. It cannot see a latch — DailyLossGateBootLine is the load line.
+func DailyLossGateBootLineForStrategy(cfg *store.StrategyConfig) string {
+	if cfg == nil {
+		return "daily-loss gate: n/a (no strategy config)"
+	}
+	gp := kernel.ResolveStrategyGuardrails(cfg.RiskControl, kernel.LoadRiskLimitsFromConfig().MaxDailyLossUSD)
+	enforced, posture, trades := dailyLossGatePosture(cfg)
+	if !enforced {
 		head := "OFF"
 		if (!gp.MasterEnabled && cfg.RiskControl.GuardrailsEnabled == nil) || (!gp.DailyLossEnabled && cfg.RiskControl.DailyLossEnabled == nil) {
 			head = "OFF (default)"
@@ -476,10 +562,17 @@ func DailyLossGateBootLineForStrategy(cfg *store.StrategyConfig) string {
 
 // DailyLossGateStatus is the gate's live state for GET /api/risk/status.
 type DailyLossGateStatus struct {
-	Enforced       bool     `json:"enforced"`
-	LimitUSD       float64  `json:"limit_usd"`
-	Latched        bool     `json:"latched"`
-	LatchReason    string   `json:"latch_reason"`
+	Enforced    bool    `json:"enforced"`
+	LimitUSD    float64 `json:"limit_usd"`
+	Latched     bool    `json:"latched"`
+	LatchReason string  `json:"latch_reason"`
+	// RT-2 (release #24): a latch outlives switching the gate OFF, so
+	// enforced=false with latched=true is a real state. LatchDay is the CME
+	// session-day it holds for, LatchSource "live" or the persisted copy a
+	// restart restores, LatchLifts the lift rule. All "" when not latched.
+	LatchDay       string   `json:"latch_day"`
+	LatchSource    string   `json:"latch_source"`
+	LatchLifts     string   `json:"latch_lifts"`
 	BotPnLUSD      *float64 `json:"bot_pnl_usd"` // nil = not read (gate off or read failed)
 	ManualExcluded *int     `json:"manual_rows_excluded"`
 	Unresolved     *int     `json:"unresolved_rows"`
@@ -492,8 +585,11 @@ func (at *AutoTrader) DailyLossGateStatusAt(now time.Time) DailyLossGateStatus {
 	if at == nil {
 		return s
 	}
-	s.LatchReason = kernel.DailyForceFlatReasonAt(at.id, now)
-	s.Latched = s.LatchReason != ""
+	s.LatchDay, s.LatchReason, s.LatchSource = DailyLossLatchStateAt(at.store, at.id, now)
+	s.Latched = s.LatchDay != ""
+	if s.Latched {
+		s.LatchLifts = DailyLossLatchLifts
+	}
 	if at.config.StrategyConfig == nil {
 		return s
 	}

@@ -138,6 +138,7 @@ export const updatesStrings = {
   jobStep: { en: 'Step', zh: '步骤', id: 'Langkah' },
   jobBlocker: { en: 'Blocker', zh: '阻塞原因', id: 'Pemblokir' },
   jobError: { en: 'Reason', zh: '原因', id: 'Alasan' },
+  jobRecovery: { en: 'Recovery', zh: '恢复原因', id: 'Pemulihan' },
   installPending: {
     en: 'Install pending',
     zh: '待安装',

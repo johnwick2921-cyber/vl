@@ -231,36 +231,40 @@ func TestISBSilentDropsAllNamed(t *testing.T) {
 	})
 }
 
-// TestISBSpentDayTargetCap — B9 [D5.1 p1 @16:24, @19:11–20:07]: on a spent day
-// the ISB target obeys the cap ("15 điểm bán, 10 điểm bán") like every other
-// setup — the next-level-beyond target is pulled down to entry+15 when it is
-// farther, and the 1:1 floor is re-checked after the cap.
+// TestISBSpentDayTargetCap — B9 [D5.1 p1 @16:24, @19:11–20:07] + the course's
+// spent-day room [D5.3 p1 @09:32–09:50, DS-104 P2-3]. This fixture's natural
+// ISB target is the EMA 34 at 114.16 — 10.56 pts from the 103.60 entry, INSIDE
+// the 15-pt cap, so the take-profit IS the level with no room beyond it. The
+// course refuses exactly that on a spent day: "15 điểm mà nó ngay target luôn
+// thì em lại không chịu nha … dù target của em là 15 điểm … từ điểm entry
+// xuống target nó phải từ 30 điểm đổ lên" (room ≥ 2× the take-profit). So the
+// spent-day tick names a "room" refusal and emits no ISB; the same tick on a
+// TRADE day still emits it (control). The cap's VALUE is pinned by
+// TestB9ISBOnSpentDayEmitsExactlyTheCap (level 36.4 pts out).
 func TestISBSpentDayTargetCap(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.Enabled = true
-	cfg.DayGateSpentPts = 300
-	cfg.DayGateTargetCapPts = 15
-	e := newISBEval(cfg)
-	bars := isbFixture()
-	now := bars[len(bars)-1].CloseTime + 1
-	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DaySpent}
-
-	ins := e.Tick(bars, now)
-	var isb *Intent
-	for i := range ins {
-		if ins[i].Action == PlaceStopLimitEntry {
-			isb = &ins[i]
-			break
+	run := func(v DayVerdict) (*Intent, map[string]int) {
+		cfg := DefaultConfig()
+		cfg.Enabled = true
+		cfg.DayGateSpentPts = 300
+		cfg.DayGateTargetCapPts = 15
+		e := newISBEval(cfg)
+		bars := isbFixture()
+		now := bars[len(bars)-1].CloseTime + 1
+		e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: v}
+		for _, in := range e.Tick(bars, now) {
+			if in.Action == PlaceStopLimitEntry {
+				in := in
+				return &in, e.State.Refusals
+			}
 		}
+		return nil, e.State.Refusals
 	}
-	if isb == nil {
-		t.Fatalf("the long ISB did not emit on a spent day: %v (refusals %v)", ins, e.State.Refusals)
+	if isb, led := run(DayTrade); isb == nil || isb.Target == 0 {
+		t.Fatalf("control: the long ISB must emit with a target on a trade day: %v", led)
 	}
-	if isb.Target == 0 {
-		t.Fatal("ISB emitted without a target")
-	}
-	if abs(isb.Target-isb.Price) > cfg.DayGateTargetCapPts+1e-9 {
-		t.Fatalf("spent-day ISB target = %.2f, %.2f pts from entry — must be capped at %.0f",
-			isb.Target, abs(isb.Target-isb.Price), cfg.DayGateTargetCapPts)
+	if isb, led := run(DaySpent); isb != nil {
+		t.Fatalf("spent day: a take-profit sitting AT the level (10.56 pts, no room beyond) must be refused, got %+v", isb)
+	} else if led["room"] == 0 {
+		t.Fatalf("spent day: the refusal must be named room, ledger %v", led)
 	}
 }

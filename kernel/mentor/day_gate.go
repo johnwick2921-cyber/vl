@@ -127,6 +127,21 @@ type DayGateReport struct {
 	// re-latches later on the HTF state of THAT moment, and the day-gate line
 	// must say so instead of labelling it "@08:30". 0 = unknown.
 	ReadAt int64 `json:"read_at,omitempty"`
+	// MENTOR-NY item 6: BootRead = this process was seeded AFTER the day's
+	// 08:30 (a boot mid-session), so the latch above is the boot's re-read;
+	// OpenFourHDir/OpenOneHDir are what the 08:30 decision read (replayed by
+	// the seed from the same closed history, cut at 08:30). Both READ values.
+	BootRead     bool `json:"boot_read,omitempty"`
+	OpenFourHDir Side `json:"open_fourh_dir,omitempty"`
+	OpenOneHDir  Side `json:"open_oneh_dir,omitempty"`
+}
+
+// OpenHTFRead is the 08:30 read of the 4h/1h directions for trading day Key
+// (MENTOR-NY item 6; see State.OpenHTF).
+type OpenHTFRead struct {
+	Key      string `json:"key,omitempty"`
+	FourHDir Side   `json:"fourh_dir,omitempty"`
+	OneHDir  Side   `json:"oneh_dir,omitempty"`
 }
 
 // OpenAt is the 08:30 CT instant of the report's trading day (0 when the key

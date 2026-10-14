@@ -4,9 +4,13 @@
 import { describe, expect, it } from 'vitest'
 import type { MentorTruth } from '../../lib/api/traders'
 import {
+  chartFuturesRoot,
   mentorChartLines,
+  mentorStaleMark,
   mentorTrendSegments,
   orderPriceLines,
+  ordersForChartSymbol,
+  sameChartSymbol,
 } from './chartOverlays'
 
 const truth = (extra: Partial<MentorTruth>): MentorTruth =>
@@ -139,6 +143,10 @@ describe('mentorChartLines', () => {
   })
 })
 
+// The chart's 5m bars from t0 (UTC seconds) — what AdvancedChart drew.
+const bars = (t0Ms: number, stepMs: number, n: number) =>
+  Array.from({ length: n }, (_, i) => (t0Ms + i * stepMs) / 1000)
+
 describe('mentorTrendSegments', () => {
   it('snaps anchors to the bar grid and re-values them on the same line', () => {
     const t0 = 1789480800000
@@ -155,7 +163,7 @@ describe('mentorTrendSegments', () => {
           in_level: true,
         },
       ],
-      '5m'
+      bars(t0, 300_000, 6)
     )
     expect(seg.label).toBe('mentor trendline (resistance)')
     expect(seg.points.map((p) => p.time)).toEqual([
@@ -183,14 +191,181 @@ describe('mentorTrendSegments', () => {
           in_level: false,
         },
       ],
-      '1m'
+      bars(0, 60_000, 5)
     )
     expect(seg.points).toHaveLength(2)
     expect(seg.label).toContain('not traded')
   })
 })
 
+// UG-6 (release #24): points snap to the bars the chart REALLY drew. The
+// old fixed grid had no 6h/8h/12h/3d/1w (1m fallback: a point between candles)
+// and put 4h on the UTC grid while NT8's 4h bars open on the 17:00 CT session.
+// Mutant: snap with Math.floor(ms / 14_400_000) * 14_400_000 → RED.
+describe('UG-6 mentorTrendSegments snaps to the chart bar times', () => {
+  // Session-aligned 4h bars: 17:00 CT = 22:00 UTC (CDT), so they open at
+  // 22:00, 02:00, 06:00, … UTC — never on the UTC 00/04/08 grid.
+  const open = Date.UTC(2026, 9, 12, 22, 0) // 2026-10-12 22:00 UTC
+  const h4 = bars(open, 4 * 3_600_000, 8)
+  const tl = {
+    side: 'long',
+    p0_ms: open + 5 * 3_600_000, // 03:00 UTC → inside the 02:00 bar
+    p0_px: 100,
+    p1_ms: open + 13 * 3_600_000, // 11:00 UTC → inside the 10:00 bar
+    p1_px: 108,
+    now_ms: open + 21 * 3_600_000, // 19:00 UTC → inside the 18:00 bar
+    now_px: 116,
+    in_level: true,
+  }
+  it('every point is a bar the chart drew (4h, session-aligned)', () => {
+    const [seg] = mentorTrendSegments([tl], h4)
+    const drawn = new Set(h4)
+    expect(seg.points.map((p) => p.time)).toEqual([
+      (open + 4 * 3_600_000) / 1000,
+      (open + 12 * 3_600_000) / 1000,
+      (open + 20 * 3_600_000) / 1000,
+    ])
+    for (const p of seg.points) expect(drawn.has(p.time)).toBe(true)
+    // re-valued on the same line: slope 1 pt/h → 99 at the 02:00 bar open
+    expect(seg.points[0].value).toBeCloseTo(99, 6)
+  })
+  it('a timeframe the old grid lacked (12h) still lands on its bars', () => {
+    const h12 = bars(open, 12 * 3_600_000, 4)
+    const [seg] = mentorTrendSegments([tl], h12)
+    const drawn = new Set(h12)
+    for (const p of seg.points) expect(drawn.has(p.time)).toBe(true)
+    expect(seg.points).toHaveLength(2)
+  })
+  it('no bars yet → nothing drawn (never a guessed grid)', () => {
+    expect(mentorTrendSegments([tl], [])).toEqual([])
+  })
+})
+
+// UG-1 (release #24): the filled swing leg's stop says where it was read.
+describe('UG-1 swing stop label', () => {
+  const sw = (pos: Partial<NonNullable<MentorTruth['swing']>['pos']>) =>
+    mentorChartLines(
+      truth({
+        swing: {
+          line: 29800,
+          pos: {
+            side: 'long',
+            entry: 29810,
+            stop: 29780,
+            target: 29900,
+            ...pos,
+          },
+        },
+      })
+    ).find((l) => l.label.startsWith('swing position SL'))
+  it('a broker stop at the entry is the break-even, drawn at the BE price', () => {
+    const l = sw({ stop: 29810, stop_source: 'broker', moved_be: true })
+    expect(l?.price).toBe(29810)
+    expect(l?.label).toBe('swing position SL · break-even (NT8)')
+  })
+  it('an unread book says it is the entry stop and that a BE move was sent', () => {
+    const l = sw({ stop: 29780, stop_source: 'entry', moved_be: true })
+    expect(l?.price).toBe(29780)
+    expect(l?.label).toBe(
+      'swing position SL · entry stop — BE move sent, NT8 book unread'
+    )
+  })
+})
+
+// UG-3 (release #24): a stale read keeps its lines and marks every one.
+// Mutant: return '' from mentorStaleMark → RED.
+describe('UG-3 stale mentor lines are marked, never hidden', () => {
+  const asOf = Date.UTC(2026, 9, 14, 15, 7) // 10:07 CT
+  const t = truth({
+    as_of_ms: asOf,
+    levels: [
+      {
+        key: 'kl',
+        kind: 'key_level',
+        price: 30000,
+        drawn_at: 0,
+        visits_today: 0,
+      },
+    ],
+    trendlines: [
+      {
+        side: 'long',
+        p0_ms: 0,
+        p0_px: 1,
+        p1_ms: 120_000,
+        p1_px: 3,
+        now_ms: 0,
+        now_px: 0,
+        in_level: true,
+      },
+    ],
+  })
+  it('every horizontal line carries "stale since HH:MM CT"', () => {
+    const lines = mentorChartLines(t, asOf)
+    expect(lines).toHaveLength(1)
+    expect(lines[0].label).toBe('mentor key level · stale since 10:07 CT')
+    expect(lines[0].price).toBe(30000)
+  })
+  it('trendlines carry it too', () => {
+    const [seg] = mentorTrendSegments(t.trendlines, bars(0, 60_000, 4), asOf)
+    expect(seg.label).toContain('stale since 10:07 CT')
+  })
+  it('a fresh read carries no mark', () => {
+    expect(mentorChartLines(t)[0].label).toBe('mentor key level')
+    expect(mentorStaleMark(undefined)).toBe('')
+  })
+})
+
+// UG-2 (release #24): an overlay is a price on ONE instrument.
+// Mutant: make sameChartSymbol return true → RED.
+describe('UG-2 symbol matching', () => {
+  it('reads the CME root of every symbol form', () => {
+    expect(chartFuturesRoot('MNQ')).toBe('MNQ')
+    expect(chartFuturesRoot('mnqz6')).toBe('MNQ')
+    expect(chartFuturesRoot('MNQ 12-26')).toBe('MNQ')
+    expect(chartFuturesRoot('NQ.c.0')).toBe('NQ')
+    expect(chartFuturesRoot('AAPL')).toBe('')
+  })
+  it('matches the same instrument only', () => {
+    expect(sameChartSymbol('MNQ', 'MNQZ6')).toBe(true)
+    expect(sameChartSymbol('NQ', 'MNQ')).toBe(false)
+    expect(sameChartSymbol('ES', 'MNQ')).toBe(false)
+    expect(sameChartSymbol('AAPL', 'MNQ')).toBe(false)
+    expect(sameChartSymbol('MNQ', undefined)).toBe(false)
+  })
+  it('drops order rows that name another instrument', () => {
+    const rows = [{ symbol: 'MNQ', id: 1 }, { symbol: 'ES', id: 2 }, { id: 3 }]
+    expect(ordersForChartSymbol(rows, 'MNQ').map((r) => r.id)).toEqual([1, 3])
+    expect(ordersForChartSymbol(rows, 'ES').map((r) => r.id)).toEqual([2, 3])
+  })
+})
+
 describe('orderPriceLines', () => {
+  // UG-5 (release #24): row 362 — SHORT stop-entry, 3 contracts, leg 1 = 2 at
+  // 30725.25, runner = 1 at 30703. Both TPs are drawn in the label.
+  // Mutant: ignore leg1_tp → RED.
+  it("UG-5: a split mentor stop-entry names both legs' take-profits", () => {
+    const [l] = orderPriceLines({
+      type: 'STOP_MARKET',
+      side: 'SELL',
+      position_side: 'SHORT',
+      price: 30742.75,
+      stop_price: 30760.25,
+      quantity: 3,
+      status: 'NEW',
+      arm_state: 'working',
+      source:
+        'armed_orders ledger (broker acceptance is a separate observation)',
+      target_price: 30703,
+      leg1_tp: 30725.25,
+      leg1_qty: 2,
+    })
+    expect(l.price).toBe(30742.75)
+    expect(l.label).toBe(
+      'Stop entry SELL 3 · SL 30760.25 · TP1 30725.25 ×2 · TP2 30703 ×1'
+    )
+  })
+
   it('keeps a venue STOP order as the SL (non-ledger books are unchanged)', () => {
     expect(
       orderPriceLines({

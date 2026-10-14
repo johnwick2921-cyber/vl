@@ -122,6 +122,7 @@ func (at *AutoTrader) driveDeadManWatchdog() watchdogEvent {
 		} else {
 			at.logWarnf("🔌 dead-man watchdog: NT8 TCP link back UP — sweeping unfilled entries; entries stay BLOCKED until a clean positions/orders reconciliation.")
 		}
+		at.noteFeedLinkUp(time.Now()) // FOLD 3: the FEED DOWN reconnect grace starts here
 		at.cancelUnfilledEntriesAfterReconnect()
 		// D5 (2026-09-07) — C6: nothing rebuilds the bracket after a reconnect.
 		// The AddOn's placedBrackets is in-memory and repopulated from nowhere,
@@ -138,11 +139,14 @@ func (at *AutoTrader) driveDeadManWatchdog() watchdogEvent {
 }
 
 // watchdogReconcileClean is the reconcile probe: the link is considered reconciled
-// when it answers BOTH a positions and an open-orders query without error (the
-// fill-confirmed position source of truth is refreshed by StartPositionReconcile in
-// the background; here we just require the link to respond cleanly). A one-cycle
-// defer after reconnect (see deadManWatchdog.step) lets the 15s positions cache
-// expire and a fresh frame arrive before this probes.
+// when it answers BOTH a positions and an open-orders query without error AND
+// (N-C, release #22 rescan) a positions snapshot and an order snapshot for this
+// trader's account have both been RECEIVED on the current connection — after
+// its accept sequence. Two reads that merely did not error can be answered
+// entirely from the OLD link's cached frames; with runCycle and monitorTick
+// both driving the watchdog the wait could shrink to seconds. Until both
+// snapshots land, entries stay BLOCKED and the missing one is named once per
+// connection.
 func (at *AutoTrader) watchdogReconcileClean() bool {
 	if _, err := at.trader.GetPositions(); err != nil {
 		return false
@@ -150,22 +154,67 @@ func (at *AutoTrader) watchdogReconcileClean() bool {
 	if _, err := at.trader.GetOpenOrders(""); err != nil {
 		return false
 	}
+	if nt, ok := at.trader.(*ntTrader.TCPTrader); ok {
+		pos, ord, seq := nt.SnapshotsSinceAccept()
+		if !pos || !ord {
+			yn := func(b bool) string {
+				if b {
+					return "yes"
+				}
+				return "NO"
+			}
+			state := fmt.Sprintf("%d|%t|%t", seq, pos, ord)
+			if prev, _ := deadManAwaitLogged.Swap(at.id, state); prev != state {
+				deadManAwaitCount.Add(1)
+				at.logWarnf("🔌 dead-man watchdog: NOT resuming yet — on the new connection (accept_seq %d) positions snapshot received: %s · order snapshot received: %s; NEW entries stay BLOCKED until both arrive.",
+					seq, yn(pos), yn(ord))
+			}
+			return false
+		}
+		deadManAwaitLogged.Delete(at.id)
+	}
 	return true
 }
 
-// cancelUnfilledEntriesAfterReconnect sweeps resting UNFILLED entry orders on
-// reconnect. On the live NT8 path this is a documented no-op: entries are MARKET
-// orders that fill or reject instantly (no resting unfilled entries), and the Go
-// side has no order-cancel wire command (CancelAllOrders/CancelStopOrders return
-// "not supported"; GetOpenOrders is empty) — exposing one is a Part A (C# AddOn)
-// change. The real protection is the block-until-reconcile gate. If a future Part A
-// surfaces resting entry orders + a cancel frame, wire the cancellation HERE.
+// deadManAwaitLogged dedupes the "NOT resuming yet" line per trader to one per
+// (accept_seq, positions, orders) state; deadManAwaitCount counts those lines.
+var (
+	deadManAwaitLogged sync.Map // trader id → state string
+	deadManAwaitCount  atomic.Int64
+)
+
+// cancelUnfilledEntriesAfterReconnect reports the resting entry orders the
+// ledger shows working when the link comes back. N-C (release #22 rescan): the
+// old text said entries "are MARKET orders … no-op" and that cancellation was a
+// "Part A AddOn capability". Both are false now — armed entries rest as limits
+// / stops, and cancel_order exists (the withdraw path and #508 use it).
+//
+// WHETHER to cancel resting entries on a reconnect is an OWNER DECISION that
+// this release does not take: they are LEFT resting (unchanged behaviour) and
+// NAMED, so the owner sees exactly what is live while NEW entries are blocked.
 func (at *AutoTrader) cancelUnfilledEntriesAfterReconnect() {
 	orders, err := at.trader.GetOpenOrders("")
-	if err != nil || len(orders) == 0 {
+	if err != nil {
+		at.logWarnf("🔌 dead-man watchdog: post-reconnect working-order read FAILED: %v — resting entries UNKNOWN; NEW entries stay BLOCKED.", err)
 		return
 	}
-	at.logWarnf("dead-man watchdog: %d working order(s) visible post-reconnect — entry cancellation is a Part A AddOn capability (no-op on the current market-order path).", len(orders))
+	if len(orders) == 0 {
+		return
+	}
+	names := make([]string, 0, len(orders))
+	for _, o := range orders {
+		names = append(names, fmt.Sprintf("%s %s %s@%.2f", shortID(o.OrderID), o.PositionSide, o.Type, firstNonZero(o.Price, o.StopPrice)))
+	}
+	at.logWarnf("🔌 dead-man watchdog: %d working entry order(s) visible post-reconnect %v — LEFT RESTING (cancelling resting entries on a reconnect is an owner decision; cancel_order is available). NEW entries stay BLOCKED until the new connection's positions + order snapshots arrive.",
+		len(orders), names)
+}
+
+// firstNonZero returns a when it is non-zero, else b.
+func firstNonZero(a, b float64) float64 {
+	if a != 0 {
+		return a
+	}
+	return b
 }
 
 // maybeMoveStopToBreakeven (auto-breakeven, NT8 futures only): once an open
@@ -178,7 +227,11 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 	if at.exchange != "ninjatrader" || at.config.StrategyConfig == nil {
 		return
 	}
-	fire, pts := breakevenTrigger(at.config.StrategyConfig.RiskControl, side, entryPrice, markPrice)
+	// N-G (release #22 rescan): judge a SENT move on the first fresh book —
+	// before the trigger check, so a position that fell back under the
+	// trigger still gets its verdict.
+	at.verifyPlannerBEMove(symbol+"_"+side, time.Now())
+	fire, pts := at.breakevenTriggerFor(symbol, side, entryPrice, markPrice) // release #25 PK-5 (R=0 → the points rule)
 	if !fire {
 		return
 	}
@@ -212,7 +265,7 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 		return
 	}
 	if err := moveStopWire(ntTCP, side, entryPrice); err != nil {
-		logger.Warnf("⚠️ auto-breakeven: move-stop send failed for %s %s: %v", symbol, side, err)
+		at.logWarnf("⚠️ auto-breakeven: move-stop send failed for %s %s: %v", symbol, side, err)
 		at.breakevenMu.Lock()
 		at.breakevenDone[key] = false // let it retry next cycle
 		at.breakevenMu.Unlock()
@@ -222,8 +275,11 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 	// WARN reaches the log_events DB sink + dashboard even when journald's
 	// frame-flood suppression is dropping INFO lines (the "breakeven not
 	// moving" false alarm was exactly this line being invisible).
-	logger.Warnf("🎯 auto-breakeven: %s %s +%.1f pts in profit → stop moved to breakeven (entry %.2f)",
+	// N-G: at.logWarnf carries the trader tag (the 10:08:27 line had none),
+	// and SENT is not CONFIRMED — the next fresh book judges it.
+	at.logWarnf("🎯 auto-breakeven: %s %s +%.1f pts in profit → stop moved to breakeven (entry %.2f) — SENT; NT8's verdict follows on the next fresh book",
 		symbol, side, pts, entryPrice)
+	at.recordPlannerBEPending(ntTCP, symbol, side, key, entryPrice, time.Now())
 }
 
 // autoBEMentorBlockedCount is the session counter for "auto-BE not applied
@@ -351,6 +407,7 @@ func (at *AutoTrader) pruneBreakevenDone(openKeys map[string]bool) {
 			delete(at.drawdownMentorBlocked, k)
 		}
 	}
+	at.prunePlannerBEPending(openKeys) // N-G: a flat position has no verdict to wait for
 }
 
 // AutoTraderConfig auto trading configuration (simplified version - AI makes all decisions)
@@ -493,11 +550,20 @@ type AutoTrader struct {
 	// only consulted when the per-strategy mentor_mode is ON.
 	mentorEval         *mentor.Evaluator
 	mentorLastTickOpen int64
+	// mentorSeedHistGen (release #23 N1) is the MNQ 1m history-refill
+	// generation this evaluator's state was last seeded at (mentor_reseed.go).
+	mentorSeedHistGen uint64
 	// mentorDayOffClearLogged is the DayRecheck.ClearedAt value last WARN'd +
 	// counted. The recheck clears at most once per trading day, so the value
 	// is a stable per-process dedup key. Read/written only inside
 	// mentorEvalOnce under mentorEvalMu.
 	mentorDayOffClearLogged int64
+	// MENTOR-NY item 5: the ORB lines already logged — the draw once per CT
+	// day, the escape on its first appearance and on every side change (the
+	// evaluator owns the ORB; these only dedup the log, never decide).
+	mentorORBDrawLogged int64
+	mentorORBEscDay     int64
+	mentorORBEscSide    string
 	// mentorDayGateReportLogged is the DayGateReport.Key last INFO-logged — the
 	// once-per-day day-gate line. Read/written only inside mentorEvalOnce
 	// under mentorEvalMu.
@@ -595,6 +661,18 @@ type AutoTrader struct {
 	// so the episode flag gets its own mutex (never a data race).
 	mentorStaleMu      sync.Mutex
 	mentorStaleEpisode bool
+	// mentorStaleSince is when the current episode began, on the gate's own
+	// clock (the seam's now — time.Now() in production, so the END line's
+	// length is a monotonic difference; OPS NEW-8, class 113).
+	mentorStaleSince time.Time
+	mentorStaleWhy   string
+	// feedLinkUpAt is when this trader last saw the NT8 link come (back) UP
+	// (dead-man wdReconnected): with startTime, the anchor of the FEED DOWN
+	// reconnect grace (FOLD 3, 10-14). feedGraceSaid is the anchor whose ⏳
+	// line was already said. Guarded by feedGraceMu.
+	feedGraceMu   sync.Mutex
+	feedLinkUpAt  time.Time
+	feedGraceSaid time.Time
 	// mentorInvalidLog is the item-18 noise gate (DS-105 replay): the last INFO
 	// emit instant + the suppressed count per LevelKey, so a busy level's
 	// level_invalid logs at most once per 15 minutes while the counter still
@@ -657,6 +735,22 @@ type AutoTrader struct {
 	lastAIBalanceDay   string // P5 daily balance poll throttle (AI_BALANCE_WARN)
 	isRunning          bool
 	isRunningMutex     sync.RWMutex // Mutex to protect isRunning flag
+	// statusMu guards callCount and lastResetTime, written by runCycle and
+	// read by GetStatus on another goroutine (release #24: the run-owner
+	// tests made that read concurrent, and -race named it).
+	statusMu sync.Mutex
+	// MENTOR-NY item 3 — retired: removed from the roster (RemoveTrader); its
+	// Run never starts. Guarded by runOwners' mutex (run_owner.go).
+	retired bool
+	// stopGen counts Stops that found the run live (bumped under
+	// isRunningMutex). Run reads it at its CAS: a Stop that lands while Run is
+	// still starting is seen before the loop, and Run tears down what it
+	// started instead of entering the loop.
+	stopGen uint64
+	// DS-104 P2-2 (run_owner.go armRunRetry): a retry is armed after a
+	// handoff timeout; the retry claims only a FREE trader id.
+	runRetryArmed   atomic.Bool
+	retryIfFreeOnly atomic.Bool
 	// runReadyMu/runReadyCh is the REL18-C FOLD handshake between Run and the
 	// start handler: Run reports nil once it reaches the ordered-execution
 	// install (ready) or the O2 refusal error, so the handler can answer 409
@@ -1103,6 +1197,11 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		// ledgers), wired at construction, before Run.
 		wireNT8EntryLatch(at, nt)
 	}
+	// N4 (release #23): pdVWAP / the prior-day profile read the WHOLE prior
+	// session from the store when the 1m ring holds only its tail.
+	if at.exchange == "ninjatrader" && at.store != nil {
+		installPriorSessionProvider(at.store)
+	}
 	// P0 SPLICE (CTO 1791030462901) — a mentor-mode trader seeds the evaluator
 	// from the stored 1m+1h bars at start (read-only); while any source is
 	// missing every mentor entry is refused with the named source.
@@ -1157,10 +1256,48 @@ func (at *AutoTrader) Run() error {
 	at.isRunningMutex.Lock()
 	if at.isRunning {
 		at.isRunningMutex.Unlock()
+		// Logged by every caller ("duplicate start ignored"); counted here.
+		telemetry.IncGateBlock(at.id, "trader_run_duplicate_start")
 		return ErrTraderAlreadyRunning
 	}
 	at.isRunning = true
+	runStopGen := at.stopGen
 	at.isRunningMutex.Unlock()
+
+	// MENTOR-NY item 3 — ONE live run per trader_id (run_owner.go): claim the
+	// trader_id BEFORE anything starts. A retired instance (removed from the
+	// roster by a reload) is refused here with no side effect; an older live
+	// run of the same trader_id is stopped and must EXIT before this one
+	// proceeds. The release runs last, after the Run has fully exited.
+	release, ownErr := at.claimRunOwner()
+	if ownErr != nil {
+		at.isRunningMutex.Lock()
+		at.isRunning = false
+		at.isRunningMutex.Unlock()
+		return ownErr
+	}
+	// PR #522 CI: the claim is released only after EVERYTHING this run
+	// started is torn down — a Run can leave its loop on the running flag
+	// before a concurrent Stop has finished its teardown (ordered slot,
+	// event loop), and the next run must never see that half-stopped state.
+	// Idempotent beside Stop's own teardown.
+	defer func() {
+		at.teardownRunStarted()
+		release()
+	}()
+	// A Run that PANICS out (not a beat — runBeatSafely recovers those) must
+	// not release the claim with its event loop still live: tear down first,
+	// then re-panic (the caller's recovery is unchanged). LIFO: this runs
+	// before release().
+	defer func() {
+		if r := recover(); r != nil {
+			at.teardownRunStarted()
+			at.isRunningMutex.Lock()
+			at.isRunning = false
+			at.isRunningMutex.Unlock()
+			panic(r)
+		}
+	}()
 
 	at.limitFlattenMu.Lock()
 	at.limitFlattenStopped = false
@@ -1169,6 +1306,7 @@ func (at *AutoTrader) Run() error {
 	at.logInfof("🚦 %s", entryLatchBootLine(at)) // W-EXEC-TRUTH W0 (b) — READ, never asserted
 	if at.exchange == "ninjatrader" {
 		if _, ok := kernel.TFDurationMs(at.primaryTimeframe()); !ok {
+			at.teardownRunStarted() // MENTOR-NY item 3: no event loop survives a refused start
 			at.isRunningMutex.Lock()
 			at.isRunning = false
 			at.isRunningMutex.Unlock()
@@ -1225,7 +1363,11 @@ func (at *AutoTrader) Run() error {
 				// per-Run monitor up and exit (same shape as the grid-init error
 				// path) — never fall back to the legacy advisory path.
 				at.signalRunReady(err)
-				at.cancelStopMonitor()
+				// MENTOR-NY item 3: tear down EVERYTHING this Run started —
+				// on 10-13 16:35:48 only the stop monitor was cancelled, so the
+				// refused instance's armed event loop (which drives the mentor
+				// evaluator) ran on beside the owner: two evaluators.
+				at.teardownRunStarted()
 				at.isRunningMutex.Lock()
 				at.isRunning = false
 				at.isRunningMutex.Unlock()
@@ -1243,6 +1385,20 @@ func (at *AutoTrader) Run() error {
 	// refusal was already signalled on the error path above.
 	at.signalRunReady(nil)
 
+	// MENTOR-NY item 3: a Stop (or a reload's Retire+Stop) that landed while
+	// this Run was still starting found little to tear down; whatever Run
+	// started after it (the armed event loop = the mentor evaluator, the
+	// Picture / post-exit registrations, the ordered worker) is torn down here,
+	// so a stopped instance never keeps a live evaluator.
+	at.isRunningMutex.RLock()
+	stoppedWhileStarting := !at.isRunning || at.stopGen != runStopGen
+	at.isRunningMutex.RUnlock()
+	if stoppedWhileStarting {
+		at.logWarnf("⏹ stopped while starting — tearing down this run before its loop (no event loop or mentor evaluator survives)")
+		at.teardownRunStarted()
+		return nil
+	}
+
 	ticker := time.NewTicker(at.config.ScanInterval)
 	defer ticker.Stop()
 
@@ -1252,7 +1408,7 @@ func (at *AutoTrader) Run() error {
 		at.logInfof("🔲 Grid trading strategy detected, initializing grid...")
 		if err := at.InitializeGrid(); err != nil {
 			at.logErrorf("❌ Failed to initialize grid: %v", err)
-			at.cancelStopMonitor() // NOTE-leak fix: the drawdown monitor started above must not orphan on this error path
+			at.teardownRunStarted() // NOTE-leak fix + MENTOR-NY item 3: the monitor AND the event loop / registrations started above must not orphan
 			at.isRunningMutex.Lock()
 			at.isRunning = false
 			at.isRunningMutex.Unlock()
@@ -1321,8 +1477,23 @@ func (at *AutoTrader) Stop() {
 		return
 	}
 	at.isRunning = false
+	at.stopGen++ // MENTOR-NY item 3: a Run still starting sees this before its loop
 	at.isRunningMutex.Unlock()
 
+	at.teardownRunStarted()
+	at.monitorWg.Wait()                   // Wait for monitoring goroutine to finish
+	ntTrader.StopLevelStatsNightly(at.id) // NOTE-leak fix: the 24h-idling nightly goroutine exits on Stop
+	logger.Info("⏹ Automatic trading system stopped")
+}
+
+// teardownRunStarted undoes everything Run starts, in Stop's order: the
+// post-exit routing, the Picture registration and broker consumer, the armed
+// event loop (which also drives the mentor evaluator), the ordered worker and
+// the per-Run stop monitor. Every step is idempotent. It does NOT wait on
+// monitorWg — Run's own error paths call it while their deferred Done is still
+// pending (MENTOR-NY item 3: before this, a refused Run left its armed event
+// loop running = a second live mentor evaluator for the trader_id).
+func (at *AutoTrader) teardownRunStarted() {
 	unregisterPostExitDispatch(at)    // Phase 4: stop routing close events here
 	at.unregisterPictureHtf()         // W4 D25 — no Picture frame after Stop
 	at.stopPictureHtfBrokerConsumer() // P2-15 — the order_update consumer goroutine exits, never leaks across restarts
@@ -1335,10 +1506,7 @@ func (at *AutoTrader) Stop() {
 		at.orderedExecUnreg = nil
 	}
 	at.orderedExecMu.Unlock()
-	at.cancelStopMonitor()                // Notify monitoring goroutine to stop (idempotent per-Run cancel; the grid-init error path may already have called it)
-	at.monitorWg.Wait()                   // Wait for monitoring goroutine to finish
-	ntTrader.StopLevelStatsNightly(at.id) // NOTE-leak fix: the 24h-idling nightly goroutine exits on Stop
-	logger.Info("⏹ Automatic trading system stopped")
+	at.cancelStopMonitor() // Notify monitoring goroutine to stop (idempotent per-Run cancel)
 }
 
 // cancelStopMonitor asks the drawdown monitor (and the run loop's stop select)

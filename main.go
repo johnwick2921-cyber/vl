@@ -123,9 +123,9 @@ func main() {
 		persistState = "on(db)"
 	}
 	if n, err := st.RevokedTokens().Count(); err == nil {
-		logger.Infof("🛡 auth hardening (FIX-SEC): login-rate-limit=on(per-ip+per-account) · onboarding-beginner=owner-only · telegram-bind-code=owner-gated · logout-revocations=%s rows=%d", persistState, n)
+		logger.Infof("🛡 auth hardening (FIX-SEC): login-rate-limit=on(per-ip+per-account) · telegram-bind-code=owner-gated · logout-revocations=%s rows=%d", persistState, n)
 	} else {
-		logger.Warnf("🛡 auth hardening (FIX-SEC): login-rate-limit=on(per-ip+per-account) · onboarding-beginner=owner-only · telegram-bind-code=owner-gated · logout-revocations=%s rows=n/a (read failed: %v)", persistState, err)
+		logger.Warnf("🛡 auth hardening (FIX-SEC): login-rate-limit=on(per-ip+per-account) · telegram-bind-code=owner-gated · logout-revocations=%s rows=n/a (read failed: %v)", persistState, err)
 	}
 
 	// P6 (ledger-close 2026-08-19) — WARN+ERROR→DB log shipping. Attached
@@ -138,6 +138,15 @@ func main() {
 			TraderID: traderID, Message: message, FieldsJSON: fieldsJSON,
 		})
 	})
+	// Owner identity (2026-10-14): who the owner-only routes and the Telegram
+	// bot trust, READ from the one resolver both use (store.ResolveOwner) —
+	// never the first-created account by assumption. NONE is a WARN, printed
+	// after the DB log sink is attached so it also lands in log_events.
+	if owner := st.ResolveOwner(); owner.Resolved() {
+		logger.Infof("%s", owner.BootLine())
+	} else {
+		logger.Warnf("%s", owner.BootLine())
+	}
 	// P2-1 — table retention: WIRED but DISABLED (owner ruling 2026-09-26:
 	// "keep the database, we are testing"). Every RETENTION_*_DAYS knob defaults
 	// to 0 = keep forever, so the boot run prunes nothing; the boot line READS
@@ -280,6 +289,43 @@ func main() {
 		}
 	}
 
+	// R22 PNL-TRUTH — OWNER RULING R1 (2026-10-14): the four manual NT8
+	// shorts (#608 #609 #637 #640) leave the BOT record by EXCLUSION —
+	// origin=manual, nothing deleted. NOT flag-guarded: the owner ordered
+	// it, and an env flag the owner cannot see would leave −4,226 on the
+	// dashboard. Guarded instead by the backup (no backup, no write), by a
+	// WHERE on id AND trader id AND the adoption fingerprint, and by
+	// idempotence (a second boot finds nothing pending and takes no backup).
+	//
+	// RT-10 (release #24): it runs BEFORE LoadTradersFromStore. It used to run
+	// after the traders loaded (live 10-14: traders 08:22:38-40, migration
+	// 08:22:50), so the first cycle read the unmigrated rows — hoang's first
+	// track-record line said -4226.18/168 instead of -1024.18/164. It needs
+	// only the store and cfg.DBPath (no trader), and a backup taken before any
+	// trader runs is a quieter copy. One-shot on this box (Pending is 0); it
+	// matters for a fresh install and the partner repo.
+	{
+		ran, backup := store.ManualOriginCounts{}, ""
+		pending, pErr := st.Position().PendingManualOriginWork()
+		switch {
+		case pErr != nil:
+			logger.Errorf("🧾 manual-origin migration NOT run — pending read failed: %v", pErr)
+		case pending.Pending == 0:
+			ran = pending
+		default:
+			if b, bErr := store.BackupBeforeManualOrigin(cfg.DBPath, time.Now().Format("20060102-150405")); bErr != nil {
+				logger.Errorf("🧾 manual-origin migration ABORTED — backup failed, no backup no write: %v", bErr)
+			} else if c, mErr := st.Position().RunManualOriginMigration(); mErr != nil {
+				backup = b
+				logger.Errorf("🧾 manual-origin migration failed: %v (backup %s)", mErr, b)
+			} else {
+				backup, ran = b, c
+				logger.Warnf("🧾 manual-origin migration: marked %d row(s) %v origin=manual (owner ruling R1; NOTHING deleted, P&L untouched) · already=%d skipped=%d · backup %s",
+					c.Marked, c.MarkedIDs, c.Already, c.Skipped, b)
+			}
+		}
+		logger.Infof("🧾 %s", st.Position().ManualOriginBootLine(ran, backup))
+	}
 	// Load all traders from database to memory (may auto-start traders with IsRunning=true)
 	// F12 SINK — REGISTERED BEFORE THE TRADERS LOAD. LoadTradersFromStore builds
 	// the first trader, which lazily starts the TCP server, which reads this
@@ -534,35 +580,9 @@ func main() {
 			}
 			logger.Infof("📐 %s", st.WaveARecordBootLine(armed, ran, backup))
 		}
-		// R22 PNL-TRUTH — OWNER RULING R1 (2026-10-14): the four manual NT8
-		// shorts (#608 #609 #637 #640) leave the BOT record by EXCLUSION —
-		// origin=manual, nothing deleted. NOT flag-guarded: the owner ordered
-		// it, and an env flag the owner cannot see would leave −4,226 on the
-		// dashboard. Guarded instead by the backup (no backup, no write), by a
-		// WHERE on id AND trader id AND the adoption fingerprint, and by
-		// idempotence (a second boot finds nothing pending and takes no backup).
-		{
-			ran, backup := store.ManualOriginCounts{}, ""
-			pending, pErr := st.Position().PendingManualOriginWork()
-			switch {
-			case pErr != nil:
-				logger.Errorf("🧾 manual-origin migration NOT run — pending read failed: %v", pErr)
-			case pending.Pending == 0:
-				ran = pending
-			default:
-				if b, bErr := store.BackupBeforeManualOrigin(cfg.DBPath, time.Now().Format("20060102-150405")); bErr != nil {
-					logger.Errorf("🧾 manual-origin migration ABORTED — backup failed, no backup no write: %v", bErr)
-				} else if c, mErr := st.Position().RunManualOriginMigration(); mErr != nil {
-					backup = b
-					logger.Errorf("🧾 manual-origin migration failed: %v (backup %s)", mErr, b)
-				} else {
-					backup, ran = b, c
-					logger.Warnf("🧾 manual-origin migration: marked %d row(s) %v origin=manual (owner ruling R1; NOTHING deleted, P&L untouched) · already=%d skipped=%d · backup %s",
-						c.Marked, c.MarkedIDs, c.Already, c.Skipped, b)
-				}
-			}
-			logger.Infof("🧾 %s", st.Position().ManualOriginBootLine(ran, backup))
-		}
+		// R22 PNL-TRUTH manual-origin migration: MOVED before the traders load
+		// (RT-10, release #24) — see "R22 PNL-TRUTH — OWNER RULING R1" above
+		// LoadTradersFromStore.
 		// 1B D7 — the calibrated detector and the two tables that record it.
 		logger.Infof("🔬 %s", kernel.DetectorBootLine(st.TouchOutcomes().CountOutcomes(), st.CandidatePool().CountPool()))
 

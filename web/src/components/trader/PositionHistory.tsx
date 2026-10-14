@@ -154,6 +154,14 @@ export function manualFooterLine(rows: HistoricalPosition[]): string {
 // unknown/test-seam, not a duplicate, not manual, and pnl_corrected present
 // (legacy unverified rows excluded — the A-2 rule).
 //
+// historyScopeLabel (RT-7, release #24): the scope of the history total, as
+// the server names it ("all accounts" — /positions/history reads GetFullStats
+// with no account), so it cannot be mistaken for the account-scoped
+// "Bot P&L (record)" card. An older server sends none: "scope n/a".
+export function historyScopeLabel(scope?: string): string {
+  return scope && scope.trim() !== '' ? scope : 'scope n/a'
+}
+
 // R22 PNL-TRUTH: ONE "today". This used the browser's CT CALENDAR day while
 // every risk gate counts from 17:00 CT; the session-day start now comes from
 // the server (kernel.CMESessionDayStart via /positions/history). Without it
@@ -601,6 +609,7 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
   const [sessionDayStartMs, setSessionDayStartMs] = useState<
     number | undefined
   >(undefined)
+  const [statsScope, setStatsScope] = useState<string | undefined>(undefined)
 
   // Pagination state
   const [pageSize, setPageSize] = useState<number>(20)
@@ -629,6 +638,7 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
         setSymbolStats(data.symbol_stats || [])
         setDirectionStats(data.direction_stats || [])
         setSessionDayStartMs(data.session_day_start_ms)
+        setStatsScope(data.stats_scope)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load history')
       } finally {
@@ -657,6 +667,7 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
     setSymbolStats(data.symbol_stats || [])
     setDirectionStats(data.direction_stats || [])
     setSessionDayStartMs(data.session_day_start_ms)
+    setStatsScope(data.stats_scope)
   }, REFRESH_HISTORY_MS)
 
   // Get unique symbols for filter
@@ -905,7 +916,7 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
               formatNumber(stats.total_pnl || 0)
             }
             color={(stats.total_pnl || 0) >= 0 ? '#0ECB81' : '#F6465D'}
-            subtitle={`Bot trades only · ${stats.manual_excluded_line ?? 'Manual (excluded): n/a'} · ${t('positionHistory.fee', language)}: -${formatNumber(stats.total_fee || 0)}`}
+            subtitle={`Bot trades only · ${historyScopeLabel(statsScope)} · ${stats.manual_excluded_line ?? 'Manual (excluded): n/a'} · ${t('positionHistory.fee', language)}: -${formatNumber(stats.total_fee || 0)}`}
             metricKey="total_return"
             language={language}
           />

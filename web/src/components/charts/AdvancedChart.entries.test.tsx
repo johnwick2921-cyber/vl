@@ -130,12 +130,25 @@ it('draws a working ledger stop-entry as an ENTRY at its entry price with the re
 
 it('draws the mentor trendline as a sloped segment and the other mentor places as labelled lines', async () => {
   vi.useFakeTimers()
+  const t0 = 1789480800000 // a 5m boundary
+  // UG-6 (release #24): the trendline snaps to the bars the chart DREW, so the
+  // chart is fed the 1m bars the line spans (t0 … t0+15m).
+  const minuteBars = {
+    success: true,
+    data: Array.from({ length: 16 }, (_, i) => ({
+      openTime: t0 + i * 60_000,
+      open: 30750,
+      high: 30760,
+      low: 30740,
+      close: 30750,
+      volume: 1,
+    })),
+  }
   state.request.mockImplementation((url: string) =>
     Promise.resolve(
-      url.includes('/open-orders?') ? { success: true, data: [] } : bars
+      url.includes('/open-orders?') ? { success: true, data: [] } : minuteBars
     )
   )
-  const t0 = 1789480800000 // a 5m boundary
   render(
     <AdvancedChart
       symbol="MNQ"
