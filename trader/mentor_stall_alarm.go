@@ -71,6 +71,15 @@ func (at *AutoTrader) mentorCountSetupPlaced(in mentor.Intent) {
 	}
 }
 
+// mentorRecordStallRefusal records the LAST refusal reason for the intent's kind
+// — the reason this placement intent did not reach the ledger. Call it where the
+// refusal is logged/counted (rule gate, sizing, placement hold, ledger refusals).
+func (at *AutoTrader) mentorRecordStallRefusal(in mentor.Intent, reason string) {
+	if k := mentorSetupKind(in); k != "" {
+		telemetry.SetupStallRecordRefusal(at.id, k, reason)
+	}
+}
+
 // mentorStallAlarmCheck fires the stalled-setup P1 alert once per kind per
 // session day. It is alert-only (no trading behaviour changes) and runs after
 // the evaluator's intents are dispatched each tick.
@@ -80,8 +89,12 @@ func (at *AutoTrader) mentorStallAlarmCheck(now time.Time) {
 	}
 	for _, a := range telemetry.SetupStallAlertDue(at.id) {
 		window := kernel.CMESessionDayStart(now).Format("2006-01-02")
+		lastRefusal := a.LastRefusal
+		if lastRefusal == "" {
+			lastRefusal = "none recorded (silent drop)"
+		}
 		title := fmt.Sprintf("Mentor setup stalled: %s", a.Kind)
-		body := fmt.Sprintf("%s: %d emitted, %d reached the ledger since %s 17:00 CT", a.Kind, a.Emitted, a.Placed, window)
+		body := fmt.Sprintf("%s: %d emitted, %d reached the ledger since %s 17:00 CT — last refusal: %s", a.Kind, a.Emitted, a.Placed, window, lastRefusal)
 		at.emitAlert("P1", "mentor-setup-stalled", fmt.Sprintf("mentor-setup-stalled:%s:%s", at.id, a.Kind), title, body)
 		at.logWarnf("🧑‍🏫 mentor setup stalled: %s", body)
 	}

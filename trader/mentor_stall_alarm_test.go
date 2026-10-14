@@ -40,8 +40,9 @@ func stallAlarmTrader(t *testing.T, id string) (*AutoTrader, *store.Store) {
 }
 
 // levelIntent is a resting level order (the 10-13 shape): a PHL at a level with
-// a "lvl-" ArmID. Valid geometry so the rule gate passes and the intent is only
-// HELD (MENTOR_PLACE off in tests), never authored — placed stays 0.
+// a "lvl-" ArmID. Valid geometry so the rule gate passes and the intent SIZES
+// (5 contracts) then is held (MENTOR_PLACE off in tests), never authored —
+// placed stays 0.
 func levelIntent(n int) mentor.Intent {
 	return mentor.Intent{
 		Action: mentor.PlaceStopEntry,
@@ -49,13 +50,33 @@ func levelIntent(n int) mentor.Intent {
 		Side:   mentor.SideLong,
 		ArmID:  fmt.Sprintf("lvl-%d", n),
 		Price:  100,
-		Stop:   98,
-		Target: 104,
+		Stop:   94, // 6-pt stop — the real 10-13 log's "stop 6.0 pts"
+		Target: 112,
 	}
+}
+
+// cancelLevelIntent is the same-tick CancelArm for a level order — in the real
+// 10-13 log the cancel was REFUSED ("ArmID lvl-21 not in this process's
+// registry") because the sized Place never registered.
+func cancelLevelIntent(n int) mentor.Intent {
+	return mentor.Intent{Action: mentor.CancelArm, ArmID: fmt.Sprintf("lvl-%d", n)}
 }
 
 func mentorStallOpenTime() time.Time {
 	return time.Date(2026, 10, 13, 10, 0, 0, 0, kernel.CTLocation()) // Tuesday, CME open
+}
+
+// driveStalledLevelTick dispatches the 10-13 shape for one tick: a SIZED level
+// Place (real tier inputs via mentorExtraFor) followed by the same-tick
+// CancelArm. The Place sizes but never reaches the ledger; the cancel is refused
+// because the arm was never registered. Returns the tier inputs used (so a test
+// can assert they were real, not the zero value).
+func driveStalledLevelTick(at *AutoTrader, n int) mentorTierInputs {
+	in := levelIntent(n)
+	extra := mentorExtraFor(in, false)
+	at.mentorDispatchIntent(in, extra, 0, 0)             // sized, held (MENTOR_PLACE off) — not authored
+	at.mentorDispatchIntent(cancelLevelIntent(n), extra, 0, 0) // refused: arm not in the registry
+	return extra
 }
 
 func TestMentorSetupKindMapping(t *testing.T) {
@@ -83,10 +104,14 @@ func TestMentorStallAlarmFiresOnceForLevel(t *testing.T) {
 	at, st := stallAlarmTrader(t, "t1")
 	now := mentorStallOpenTime()
 
-	// The 10-13 shape: three ticks each emit a level order that never reaches
-	// the ledger (held, not authored — the same-tick cancel keeps placed at 0).
+	// The 10-13 shape: three ticks each emit a level order that sizes but never
+	// reaches the ledger, followed by a same-tick CancelArm that is refused (the
+	// arm was never registered). Placed stays 0 the whole way.
 	for i := 1; i <= 3; i++ {
-		at.mentorDispatchIntent(levelIntent(i), mentorTierInputs{}, 0, 0)
+		extra := driveStalledLevelTick(at, i)
+		if extra.StopPts != 0 || extra.TargetPts != 0 {
+			t.Fatalf("sanity: driveStalledLevelTick must not pre-set StopPts/TargetPts (they come from the geometry), got %+v", extra)
+		}
 	}
 	at.mentorStallAlarmCheck(now)
 
@@ -100,12 +125,13 @@ func TestMentorStallAlarmFiresOnceForLevel(t *testing.T) {
 	if rows[0].Level != "P1" || rows[0].Kind != "mentor-setup-stalled" {
 		t.Fatalf("wrong alert level/kind: %+v", rows[0])
 	}
-	// The body names the kind, the counts and the window.
+	// The body names the kind, the counts, the window and the last refusal.
 	if !strings.Contains(rows[0].Body, "lvl") ||
 		!strings.Contains(rows[0].Body, "3 emitted") ||
 		!strings.Contains(rows[0].Body, "0 reached the ledger") ||
-		!strings.Contains(rows[0].Body, "17:00 CT") {
-		t.Fatalf("alert body must name kind/counts/window, got %q", rows[0].Body)
+		!strings.Contains(rows[0].Body, "17:00 CT") ||
+		!strings.Contains(rows[0].Body, "last refusal:") {
+		t.Fatalf("alert body must name kind/counts/window/last-refusal, got %q", rows[0].Body)
 	}
 
 	// Once per kind per day: a second check must not add a second row.
@@ -121,9 +147,8 @@ func TestMentorStallNoAlertWhenPlaced(t *testing.T) {
 	at, st := stallAlarmTrader(t, "t1")
 
 	for i := 1; i <= 3; i++ {
-		in := levelIntent(i)
-		at.mentorDispatchIntent(in, mentorTierInputs{}, 0, 0)
-		at.mentorCountSetupPlaced(in) // reached the ledger
+		driveStalledLevelTick(at, i)
+		at.mentorCountSetupPlaced(levelIntent(i)) // reached the ledger
 	}
 	at.mentorStallAlarmCheck(mentorStallOpenTime())
 
@@ -149,7 +174,7 @@ func TestMentorStallNoAlertWhenMarketClosed(t *testing.T) {
 	at, st := stallAlarmTrader(t, "t1")
 
 	for i := 1; i <= 3; i++ {
-		at.mentorDispatchIntent(levelIntent(i), mentorTierInputs{}, 0, 0)
+		driveStalledLevelTick(at, i)
 	}
 	// Saturday 12:00 CT — the market is closed; the alarm is silent.
 	at.mentorStallAlarmCheck(time.Date(2026, 10, 10, 12, 0, 0, 0, kernel.CTLocation()))
@@ -165,9 +190,9 @@ func TestMentorStallCountsNeverMixAcrossTraders(t *testing.T) {
 	atB, _ := stallAlarmTrader(t, "tB")
 
 	for i := 1; i <= 3; i++ {
-		atA.mentorDispatchIntent(levelIntent(i), mentorTierInputs{}, 0, 0)
+		driveStalledLevelTick(atA, i)
 	}
-	atB.mentorDispatchIntent(levelIntent(1), mentorTierInputs{}, 0, 0)
+	driveStalledLevelTick(atB, 1)
 
 	atA.mentorStallAlarmCheck(mentorStallOpenTime())
 	if due := telemetry.SetupStallAlertDue("tB"); len(due) != 0 {

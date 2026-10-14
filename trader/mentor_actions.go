@@ -265,10 +265,14 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 		}
 		at.mentorCount("refused_" + rule)
 		at.logWarnf("🧑‍🏫 mentor intent REFUSED — %s", why)
+		// STALLED-SETUP ALARM (release #22): the LAST refusal reason rides the
+		// per-kind tally so a stalled setup's alert names why it died.
+		at.mentorRecordStallRefusal(in, why)
 		return
 	}
 	choice, err := at.mentorSizeFor(in, extra)
 	if err != nil {
+		at.mentorRecordStallRefusal(in, "size: "+err.Error())
 		return
 	}
 	at.mentorCount("intent_" + in.Setup)
@@ -276,6 +280,7 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 		at.logInfof("🧑‍🏫 mentor intent SIZED, NOT PLACED (MENTOR_PLACE env off — set MENTOR_PLACE=1 to place): %s %s %d contracts @ %.2f (stop %.2f, target %.2f, tier %s)",
 			in.Setup, in.Side, choice.Contracts, in.Price, in.Stop, in.Target, choice.Tier)
 		at.mentorCount("placement_held")
+		at.mentorRecordStallRefusal(in, "MENTOR_PLACE off (dry run)")
 		return
 	}
 	at.mentorPlaceIntent(in, choice, lastCloseTime, emitMs)
@@ -368,6 +373,7 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	if ledger == nil {
 		at.mentorCount("placement_refused_no_ledger")
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — no armed ledger")
+		at.mentorRecordStallRefusal(in, "no armed ledger")
 		return
 	}
 	armID := mentorResolveArmID(in.ArmID)
@@ -386,6 +392,7 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	if side != "long" && side != "short" {
 		at.mentorCount("placement_refused_bad_side")
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — unknown side %q", in.Side)
+		at.mentorRecordStallRefusal(in, fmt.Sprintf("unknown side %q", in.Side))
 		return
 	}
 	row := store.ArmedOrderDB{
@@ -429,6 +436,7 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	if err := ledger.UpsertArm(&row); err != nil {
 		at.mentorCount("placement_refused_upsert")
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm upsert failed: %v", err)
+		at.mentorRecordStallRefusal(in, "arm upsert: "+err.Error())
 		return
 	}
 	// N1 (DS-104): a terminal row with the same scenario makes UpsertArm a
@@ -436,6 +444,7 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	if row.ID == 0 {
 		at.mentorCount("placement_refused_arm_id_zero")
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm %q authored no row (id 0)", armID)
+		at.mentorRecordStallRefusal(in, "arm authored no row (id 0)")
 		return
 	}
 	at.mentorRegisterLiveArm(armID, row.ID, side, in.Price, scenario)

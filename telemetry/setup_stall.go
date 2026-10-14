@@ -19,17 +19,19 @@ import (
 
 // SetupStallCount is one kind's seen-vs-placed tally for the current session day.
 type SetupStallCount struct {
-	Emitted int `json:"emitted"`
-	Placed  int `json:"placed"`
+	Emitted     int    `json:"emitted"`
+	Placed      int    `json:"placed"`
+	LastRefusal string `json:"last_refusal,omitempty"` // "" = none recorded (silent drop)
 }
 
 // SetupStallAlert is one kind due for a stalled-setup alert, with the counts at
 // the moment the alert was claimed (so the alert text never races a later
 // increment).
 type SetupStallAlert struct {
-	Kind    string `json:"kind"`
-	Emitted int    `json:"emitted"`
-	Placed  int    `json:"placed"`
+	Kind        string `json:"kind"`
+	Emitted     int    `json:"emitted"`
+	Placed      int    `json:"placed"`
+	LastRefusal string `json:"last_refusal,omitempty"` // "" = none recorded (silent drop)
 }
 
 type setupStallKey struct {
@@ -68,6 +70,24 @@ func IncSetupStallPlaced(traderID, kind string) {
 	setupStallMu.Unlock()
 }
 
+// SetupStallRecordRefusal records the LAST refusal reason for a (trader, kind):
+// the reason the most recently emitted intent of that kind did not reach the
+// ledger. Call it where the refusal is logged/counted. A kind with no refusal
+// ever recorded is a SILENT drop — the alert renders it as
+// "last refusal: none recorded (silent drop)".
+func SetupStallRecordRefusal(traderID, kind, reason string) {
+	if kind == "" || reason == "" {
+		return
+	}
+	setupStallMu.Lock()
+	k := setupStallKey{traderID, kind}
+	if setupStallCounts[k] == nil {
+		setupStallCounts[k] = &SetupStallCount{}
+	}
+	setupStallCounts[k].LastRefusal = reason
+	setupStallMu.Unlock()
+}
+
 // bumpSetupStall increments one counter field, allocating the count on first use.
 func bumpSetupStall(c *SetupStallCount, emitted bool) *SetupStallCount {
 	if c == nil {
@@ -95,7 +115,7 @@ func SetupStallAlertDue(traderID string) []SetupStallAlert {
 		}
 		if c.Emitted >= 3 && c.Placed == 0 && !setupStallAlerted[k] {
 			setupStallAlerted[k] = true
-			due = append(due, SetupStallAlert{Kind: k.kind, Emitted: c.Emitted, Placed: c.Placed})
+			due = append(due, SetupStallAlert{Kind: k.kind, Emitted: c.Emitted, Placed: c.Placed, LastRefusal: c.LastRefusal})
 		}
 	}
 	sort.Slice(due, func(i, j int) bool { return due[i].Kind < due[j].Kind })

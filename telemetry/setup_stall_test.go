@@ -20,8 +20,25 @@ func TestSetupStallAlertDueThresholdAndLatch(t *testing.T) {
 	if len(due) != 1 || due[0].Kind != "lvl" || due[0].Emitted != 3 || due[0].Placed != 0 {
 		t.Fatalf("want one lvl alert {3 emitted, 0 placed}, got %+v", due)
 	}
+	// A silent drop (no refusal ever recorded) renders as the honest fallback.
+	if due[0].LastRefusal != "" {
+		t.Fatalf("no refusal recorded must leave LastRefusal empty, got %q", due[0].LastRefusal)
+	}
 	if due := SetupStallAlertDue("t1"); len(due) != 0 {
 		t.Fatalf("the alert must fire once per kind per day, got %+v", due)
+	}
+}
+
+func TestSetupStallLastRefusalRecorded(t *testing.T) {
+	ResetSetupStallsForTest()
+
+	for i := 0; i < 3; i++ {
+		IncSetupStallEmitted("t1", "lvl")
+	}
+	SetupStallRecordRefusal("t1", "lvl", "bad geometry: missing stop/target — refuse fail-closed")
+	due := SetupStallAlertDue("t1")
+	if len(due) != 1 || due[0].LastRefusal != "bad geometry: missing stop/target — refuse fail-closed" {
+		t.Fatalf("the last refusal must ride the alert, got %+v", due)
 	}
 }
 
