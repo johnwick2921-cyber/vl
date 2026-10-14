@@ -552,6 +552,17 @@ export const mentor: GuideSection = {
       ],
     },
     {
+      kind: 'callout',
+      title: 'Stalled-setup alarm',
+      items: [
+        {
+          title: 'A setup that is seen but never trades raises a P1',
+          body: 'Each mentor setup kind (lvl, isb, isb-reverse, phl/plh, box, swing) is counted per session day: how many entries the evaluator emitted, and how many reached the ledger. If a kind crosses 3 emitted with 0 reached the ledger while the market is open, a P1 alert fires once that day naming the kind, the window and the last refusal reason (e.g. "lvl: 7 emitted, 0 reached the ledger since 10-12 17:00 CT — last refusal: none recorded (silent drop)"). Alert-only — no trading behaviour changes. The per-kind counts are read from the gate-blocks endpoint (setup_stalls). The tally is in-memory: a restart (every release install) and the 17:00 CT session-day rollover both reset it.',
+          cite: 'Engineering rule (release #22, owner order 2026-10-13) — not from the course · trader/mentor_stall_alarm.go · telemetry/setup_stall.go · api/handler_gate_blocks.go',
+        },
+      ],
+    },
+    {
       kind: 'h',
       text: 'Every knob, with its default and source',
     },

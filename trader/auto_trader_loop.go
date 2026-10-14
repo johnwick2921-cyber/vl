@@ -248,6 +248,9 @@ func (at *AutoTrader) runCycle() error {
 	if summary := telemetry.RolloverGateBlocks(kernel.CMESessionDayStart(time.Now()).UnixMilli()); summary != "" {
 		at.logInfof("📊 %s", summary)
 	}
+	// STALLED-SETUP ALARM (release #22): the seen-vs-placed counters roll on the
+	// SAME 17:00 CT session-day boundary (the alert latch resets with them).
+	telemetry.RolloverSetupStalls(kernel.CMESessionDayStart(time.Now()).UnixMilli())
 	// P0-cleanup — the structured error-event day rolls on the same boundary
 	// (idempotent: same-day calls adopt the day; a changed day resets the table).
 	telemetry.SetErrorSessionDay(kernel.CMESessionDayStart(time.Now()).UnixMilli())

@@ -305,6 +305,9 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 		// every arm action; an unknown action is refused, never silent.
 		at.mentorDispatchIntent(in, extra, last.CloseTime, emitMs)
 	}
+	// STALLED-SETUP ALARM (release #22): after this tick's emits are counted,
+	// fire the once-per-day P1 for any kind with emitted >= 3 and placed == 0.
+	at.mentorStallAlarmCheck(mentorClockNow())
 	// B3 (release #3b) item 4: place at the authoring event, not on the 2-min
 	// scan — a 1-candle mentor arm must not expire before the scan runs.
 	if mentorPlaceEnv() {
@@ -377,6 +380,10 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	if at.mentorStaleDataBlocked(mentorClockNow()) {
 		// A setup computed on stale prices is not a setup. The deferred guard in
 		// mentorDispatchEntry drops the evaluator's arm on this refusal.
+		// STALLED-SETUP ALARM (release #22): record the refusal reason so a
+		// stalled kind's alert names "stale_data" instead of "silent drop"
+		// (the 10-11 Sunday NT8 lag refused level orders quietly here).
+		at.mentorRecordStallRefusal(in, "stale_data")
 		return
 	}
 	// N10 (stale intent): an entry whose reference candle is not the newest
