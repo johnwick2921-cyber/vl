@@ -278,7 +278,7 @@ func TestTrendlineBrokenBy5mClose(t *testing.T) {
 func TestTrendlineNeverTarget(t *testing.T) {
 	levels := []Level{
 		{Key: "trendline:long:2:8", Kind: KindTrendline, Price: 98.6},
-		{Key: "old-high:110", Kind: KindOldExtreme, Price: 110},
+		{Key: "old-high:110", Kind: KindOldExtreme, Role: OldHigh, Price: 110},
 	}
 	if got := nextLevelBeyond(levels, 100, SideLong); got != 110 {
 		t.Fatalf("target = %.1f, want 110 (the trendline is not a target)", got)
@@ -305,7 +305,7 @@ func trendlineEval(bars []market.Kline, now int64, key string, priceAt float64) 
 	e.seeded = true
 	e.State.Seed1mWatermark = math.MaxInt64
 	e.State.Seed1HWatermark = math.MaxInt64
-	e.State.SeedLevels = []Level{{Key: "old-high:110", Kind: KindOldExtreme, Price: 110}}
+	e.State.SeedLevels = []Level{{Key: "old-high:110", Kind: KindOldExtreme, Role: OldHigh, Price: 110}}
 	e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
 	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}

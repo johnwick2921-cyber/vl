@@ -144,7 +144,7 @@ func TestB9BoxOnSpentDayCapsTarget(t *testing.T) {
 // (d) PHL at the Tick call site: on a spent day the target is CAPPED at 15
 // pts; on a DayOff day the entry is refused (phl_day_off), zero entries.
 func TestB9PHLSpentDayCappedDayOffRefused(t *testing.T) {
-	oldHighs := []Level{{Key: "old-high:130", Kind: KindOldExtreme, Price: 130}}
+	oldHighs := []Level{{Key: "old-high:130", Kind: KindOldExtreme, Role: OldHigh, Price: 130}}
 
 	ctl, cbars, cnow, _ := b14Fixture(oldHighs, 99.5)
 	cins := ctl.Tick(cbars, cnow)

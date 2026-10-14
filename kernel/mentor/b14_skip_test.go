@@ -43,8 +43,8 @@ func TestB14SkipNeverFallsBackToFartherExtreme(t *testing.T) {
 	now := bars[5].OpenTime + 59_999
 	levels := []Level{
 		{Key: "K", Kind: KindKeyLevel, Price: 97.5},
-		{Key: "old-high:130.5", Kind: KindOldExtreme, Price: 130.5},
-		{Key: "old-high:106.2", Kind: KindOldExtreme, Price: 106.2},
+		{Key: "old-high:130.5", Kind: KindOldExtreme, Role: OldHigh, Price: 130.5},
+		{Key: "old-high:106.2", Kind: KindOldExtreme, Role: OldHigh, Price: 106.2},
 	}
 	e := New(cfg)
 	e.seeded = true
