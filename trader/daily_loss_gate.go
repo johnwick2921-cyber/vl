@@ -170,19 +170,24 @@ func (at *AutoTrader) botDayPnLAt(now time.Time) (botDayPnL, error) {
 			continue
 		}
 		out.OpenPositions++
-		// Partial legs already closed by a broker receipt while the row stays
-		// OPEN are booked on the row (store.ApplyNT8Exit) — real money.
-		out.Open += p.RealizedPnL
-		mark, ok := dailyLossMark(p.Symbol)
 		pv := market.FuturesPointValue(p.Symbol)
 		side := positionSide(p.Side)
-		if !ok || pv <= 0 || side == "" || p.EntryPrice <= 0 || p.Quantity <= 0 {
-			out.OpenUnmarked++
-			continue
-		}
 		dir := 1.0
 		if side == "short" {
 			dir = -1.0
+		}
+		// Partial legs already closed by a broker receipt while the row stays
+		// OPEN (store.ApplyNT8Exit keeps the residual in Quantity and the legs'
+		// average exit in ExitPrice): the SAME receipt math, re-derived from
+		// the row's prices — never the raw realized_pnl column (corrected-
+		// column guard, store/pnl_surface_guard_test.go).
+		if closedLegs := p.EntryQuantity - p.Quantity; closedLegs > 0 && p.ExitPrice > 0 && pv > 0 && side != "" {
+			out.Open += dir * (p.ExitPrice - p.EntryPrice) * closedLegs * pv
+		}
+		mark, ok := dailyLossMark(p.Symbol)
+		if !ok || pv <= 0 || side == "" || p.EntryPrice <= 0 || p.Quantity <= 0 {
+			out.OpenUnmarked++
+			continue
 		}
 		out.Open += dir * (mark - p.EntryPrice) * p.Quantity * pv
 	}

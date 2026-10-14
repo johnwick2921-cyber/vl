@@ -399,3 +399,31 @@ func TestClearDailyLossLatchIsScopedToOneTrader(t *testing.T) {
 		t.Fatal("an Emergency Flat on A must leave B's daily-loss latch intact")
 	}
 }
+
+// 8 — THE OPEN HALF COUNTS A RUNNER'S CLOSED LEGS. The #651 shape: SHORT 3,
+// leg 1 (2 contracts) closed by its TP while the runner (1) stays OPEN. The
+// store keeps the residual in Quantity and the legs' average exit in
+// ExitPrice; the reader re-derives the legs' P&L from those prices (never the
+// raw realized_pnl column) and marks the runner. MUTANT: drop the closed-legs
+// term → Open = the runner only → RED.
+func TestBotDayPnLCountsClosedLegsOfAnOpenRunner(t *testing.T) {
+	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{DailyLossLimitUSD: 100}}
+	at, st := resetTrader(t, cfg)
+	at.id = "dl-runner"
+	now := dailyLossNow()
+	p := &store.TraderPosition{TraderID: at.id, Account: "Sim101", Symbol: "MNQ", Side: "SHORT",
+		EntryQuantity: 3, Quantity: 1, EntryPrice: 30742.25, ExitPrice: 30724.00, Status: "OPEN",
+		EntryTime: now.Add(-10 * time.Minute).UnixMilli(), CreatedAt: now.UnixMilli(), UpdatedAt: now.UnixMilli()}
+	if err := st.GormDB().Create(p).Error; err != nil {
+		t.Fatal(err)
+	}
+	dlMark(t, 30730.00)
+	b, err := at.botDayPnLAt(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// legs: -(30724.00-30742.25)×2×$2 = +73.00 ; runner: -(30730.00-30742.25)×1×$2 = +24.50
+	if b.OpenPositions != 1 || b.Open != 97.50 {
+		t.Fatalf("open P&L must be legs +73.00 + runner +24.50 = +97.50, got %+v", b)
+	}
+}
