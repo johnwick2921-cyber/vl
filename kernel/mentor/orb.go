@@ -29,10 +29,28 @@ func dayStartCT(t int64) int64 {
 }
 
 // ORBAdvance draws the ORB once the 08:30 2-minute candle has completed and
-// latches the escape: a CLOSED 1m candle whose BODY closes outside the box
-// (close beyond the high → longs only; below the low → shorts only). The
-// escape is NOT an entry — it only picks the side [X5 @03:29–03:47]. A new
-// session day resets the ORB.
+// reads the escape on every CLOSED 1m candle.
+//
+// ESCAPE = the candle's BODY wholly outside — OPEN AND CLOSE beyond the edge:
+// "Break là sao? Là một cây nến một phút… nó đóng bên ngoài cái box là AT
+// LEAST… nếu như mà cái THÂN NẾN nó chỉ nằm ở cái thân nến nằm bên ngoài mà
+// cái râu nến nằm bên trong cái box ok bình thường không sao hết. Cái đó là at
+// least" [D4.1 p1 @20:36–21:03] — the course's minimum, the same test as the
+// bot's own box escape (box.go escaped: open AND close outside). X5 asks for
+// more ("COMPLETELY nằm ở ngoài mình mới trade" [X5 @07:04]); the course,
+// later, sets the minimum and calls the whole candle "hoàn toàn hợp lý" — a
+// close one tick outside with the open inside is NOT an escape (the pre-10-14
+// close-only test was looser than both).
+//
+// The side is the side of the LATEST escape: above the high → longs only;
+// below the low → shorts only — "Nó thoát ra khỏi đầu nào, nó sẽ đi theo đầu
+// đó" [X5 @02:57–03:02]. It is NOT locked for the session: a later body
+// escape beyond the OTHER edge switches the side — "Nếu mà không có nằm
+// completely ở ngoài cái box này thì mình đâu có kiếm lệnh short nữa. Mình vẫn
+// sẽ kiếm lệnh long… cho tới khi nào nó crack" [X7 @07:42–07:51]. No source
+// holds the first side all day (the pre-10-14 latch did). The escape is NOT
+// an entry — it only picks the side [X5 @03:29–03:47]. A new session day
+// resets the ORB.
 func ORBAdvance(orb ORB, bars []market.Kline, now int64) ORB {
 	day := dayStartCT(now)
 	if orb.Day != day {
@@ -61,9 +79,6 @@ func ORBAdvance(orb ORB, bars []market.Kline, now int64) ORB {
 		// candle that completed the 2m ORB. Returning here skipped the 08:32
 		// escape candle and latched one tick late (08:33).
 	}
-	if orb.Escaped != "" {
-		return orb
-	}
 	if len(bars) == 0 {
 		return orb
 	}
@@ -71,19 +86,32 @@ func ORBAdvance(orb ORB, bars []market.Kline, now int64) ORB {
 	if cur.CloseTime > now {
 		return orb // the last 1m candle has not closed — no escape test yet
 	}
-	if cur.Close > orb.High {
-		orb.Escaped = SideLong
-	} else if cur.Close < orb.Low {
-		orb.Escaped = SideShort
+	if side := orbBodyEscape(orb, cur); side != "" {
+		orb.Escaped = side // the latest escape picks the side [X5 @02:57; X7 @07:42]
 	}
 	return orb
 }
 
+// orbBodyEscape is the ONE escape test: the 1m candle's BODY wholly beyond an
+// edge — open AND close above the high (long) / below the low (short)
+// [D4.1 p1 @20:36–21:03]. "" = no escape on this candle (inside, or a body
+// that straddles an edge).
+func orbBodyEscape(orb ORB, c market.Kline) Side {
+	switch {
+	case c.Open > orb.High && c.Close > orb.High:
+		return SideLong
+	case c.Open < orb.Low && c.Close < orb.Low:
+		return SideShort
+	}
+	return ""
+}
+
 // ORBVerdict gates one intraday entry on the ORB: nothing trades until the ORB
-// is drawn and price has LEFT it with a 1m body close outside, and after the
-// escape ONLY the escape side trades, and never inside the range
-// [X5 @02:36, 03:29–03:47]. The swing is exempt (it is gated upstream, not
-// here).
+// is drawn and price has LEFT it with a 1m BODY wholly outside, after the
+// escape ONLY the side of the LATEST escape trades (a body escape beyond the
+// other edge switches it — ORBAdvance), and never inside the range
+// [X5 @02:36, 03:29–03:47; X7 @07:42–07:51]. The swing is exempt (it is gated
+// upstream, not here).
 func ORBVerdict(orb ORB, side Side, price float64, cfg Config) (ok bool, reason string) {
 	if !cfg.OrbGateEnabled {
 		return true, ""

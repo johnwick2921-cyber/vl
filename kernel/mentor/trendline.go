@@ -28,14 +28,15 @@ type Trendline struct {
 	P1T      int64 // bars[P1Idx].OpenTime
 	FormedAt int   // P1Idx — the line is drawn when P1 closes
 	ValidAt  int   // bar index of the 3rd touch (0 = not yet a location)
-	Dead     bool  // a closed 5m candle closed through the line
+	Dead     bool  // a closed 5m candle CLOSED through the line (brokenBy5m)
 }
 
 // trendlineTouchBandPts is the wick-touch tolerance for a diagonal line (the
 // course's literal touch [D2-40] on a sloping line needs a small band).
 const trendlineTouchBandPts = 0.5
 
-// priceAt returns the line's value at a bar open time.
+// priceAt returns the line's value at an instant (epoch ms) — a bar's open
+// time for a touch, a 5m candle's close time for the break.
 func (t Trendline) priceAt(tm int64) float64 {
 	return t.P0Px + (t.P1Px-t.P0Px)/float64(t.P1T-t.P0T)*float64(tm-t.P0T)
 }
@@ -46,11 +47,22 @@ func (t Trendline) touch(c market.Kline) bool {
 	return c.High >= p-trendlineTouchBandPts && c.Low <= p+trendlineTouchBandPts
 }
 
-// brokenBy5m reports a 5m candle whose CLOSE is through the line (the break
-// that discards it): support broken by a close BELOW, resistance by a close
-// ABOVE, evaluated at the bucket's open time.
+// brokenBy5m reports a CLOSED 5m candle whose CLOSE is through the line (the
+// break that discards it): support broken by a close BELOW the line, resistance
+// by a close ABOVE it. The course's test is the close: "Em hỏi là bây giờ nến
+// nó đụng level mà nó ĐÓNG DƯỚI level — đó đụng TRENDLINE nó thể hiện việc gì?
+// … Nó GÃY level… Ngay đây nó chỉ gãy thôi chứ không phải đảo chiều… không thể
+// nào nó vừa đóng dưới level là nó đảo chiều được" [D2.3 p1 @14:36–15:17];
+// "đợi khung 5 phút đóng" [X9 @06:25] picks the 5m. X9's stricter "đóng dưới
+// NGUYÊN CÂY" (the whole candle) is an older source the Sep-26 course
+// supersedes — not adopted (CTO fold on #520, 2026-10-14).
+//
+// The line value is read at the candle's CLOSE time — the instant the close
+// is judged. The pre-10-14 read took it at the bucket's OPEN, five minutes of
+// slope early: on a rising support line that under-read the line, so a close
+// already below it at the close was not counted.
 func (t Trendline) brokenBy5m(b market.Kline) bool {
-	p := t.priceAt(b.OpenTime)
+	p := t.priceAt(b.CloseTime)
 	if t.Side == SideLong {
 		return b.Close < p
 	}
@@ -167,7 +179,7 @@ func trendlineCrossed(bars []market.Kline, tl Trendline) bool {
 }
 
 // trendlineScanTF walks the closed bars after formation: any closed 5m candle
-// that closes through the line marks it dead, and the 3rd touch (ValidAt) is
+// that closes through the line (brokenBy5m) marks it dead, and the 3rd touch (ValidAt) is
 // a RETURN — "nó phải VỀ nó test lần thứ 3 thì mới valid" [D3.2 p2 @03:45];
 // "Nó chưa VỀ test một lần nào" [D3.2 p2 @00:52–01:44]; "Nếu như nó VỀ đây, nó
 // test cái trendline một lần rồi…" [D2.3 p1 @02:34–03:16]. "Về" = price comes

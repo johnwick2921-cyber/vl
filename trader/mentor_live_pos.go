@@ -10,6 +10,7 @@ import (
 
 	"vl/kernel"
 	"vl/kernel/mentor"
+	"vl/market"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 	ntTrader "vl/trader/ninjatrader"
@@ -62,6 +63,18 @@ type mentorLivePos struct {
 	// once-per-arm mode line.
 	ModeSource string
 	ModeWhy    string
+	// TrailTFMin is the frame the ENTRY was read on, and so the frame the
+	// runner trails on: "nếu như mình trade khung nào thì mình gồng theo khung
+	// đó, theo cây nến của khung đó" [X8 @18:02–18:14]. 2 = the X5-10 exec-2m
+	// schedule read the ISB on closed 2m candles (carried from the intent's
+	// ExecTFMin via mentorExecFrames); 0 = the 1m (every other entry, and every
+	// entry while exec_2m_after_30m is OFF — byte-identical).
+	TrailTFMin int
+	// trailBar / trailBarOK: the closed TrailTFMin candle THIS drive pass
+	// trails on, set by mentorExitDrive for a 2m position (ok=false while the
+	// 2m candle is still forming — the trail waits for it to close).
+	trailBar   market.Kline
+	trailBarOK bool
 }
 
 // mentorFillExitMode resolves the exit branch a FILLED mentor arm is driven by
@@ -189,6 +202,12 @@ func (at *AutoTrader) mentorBuildLivePos(r store.ArmedOrderDB, u ntwire.OrderUpd
 	// the same scenario, and a bare-scenario key would hand B's fill A's target.
 	if v, ok := mentorRunnerTargets.Load(mentorRunnerTargetKey(at.id, r.Scenario)); ok {
 		lp.RunnerTarget, _ = v.(float64)
+	}
+	// X8 @18:02–18:14: the runner trails on the frame the entry was read on —
+	// carried from the intent's ExecTFMin, keyed trader+scenario like the
+	// runner target. Absent → the 1m (TrailTFMin 0).
+	if v, ok := mentorExecFrames.Load(mentorRunnerTargetKey(at.id, r.Scenario)); ok {
+		lp.TrailTFMin, _ = v.(int)
 	}
 	lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: n, TP: r.TargetPx, Stop: r.StopPx, Final: true}
 	// REVIEW-SPLIT-2 P2: the split the entry frame ACTUALLY carried (after the
@@ -498,6 +517,13 @@ func (at *AutoTrader) mentorLivePosList() []*mentorLivePos {
 // live position, without a schema change.
 var mentorRunnerTargets sync.Map
 
+// mentorExecFrames carries an intent's ExecTFMin (the frame its entry was READ
+// on — 2 under the X5-10 exec-2m schedule) from the authoring
+// (mentorArmIntent, keyed trader+scenario) to the fill-time live position, the
+// same way as mentorRunnerTargets: no schema change. Only a 2m entry is stored;
+// a 1m entry leaves no key (absent = the 1m).
+var mentorExecFrames sync.Map
+
 // ── REL17-F2 RESTART REBUILD ────────────────────────────────────────────────
 //
 // The exit-drive's input (mentorLivePos) is built only from IN-PROCESS fill
@@ -599,6 +625,7 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 				"manage by hand — "+missing+" (signal "+row.SignalID+")")
 			continue
 		}
+		at.mentorRebuildTrailFrame(*row, lp)
 		at.mentorRegisterLivePos(pos.EntryOrderID, lp)
 		at.mentorCountRegistrationShape(lp)
 		at.mentorCount("rebuild_ok")
@@ -625,6 +652,33 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 		}
 	}
 	return rebuilt, refused, true
+}
+
+// mentorRebuildTrailFrame restores a rebuilt position's trail frame (X8
+// @18:02–18:14: the frame the entry was read on). The frame lives in process
+// memory (mentorExecFrames), so a reload keeps it; a real restart does not. An
+// ISB rebuilt while exec_2m_after_30m is ON may have been read on the 2m — the
+// frame is then UNKNOWN: it trails on the 1m (the shipped default; the 1m
+// trail is never wider than the 2m one), WARN'd and counted, never silent.
+func (at *AutoTrader) mentorRebuildTrailFrame(r store.ArmedOrderDB, lp *mentorLivePos) {
+	if lp == nil {
+		return
+	}
+	if v, ok := mentorExecFrames.Load(mentorRunnerTargetKey(at.id, r.Scenario)); ok {
+		lp.TrailTFMin, _ = v.(int)
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(r.Condition), "ISB") || !mentorExec2mKnobOn(at.mentorRiskControl()) {
+		return
+	}
+	at.mentorCount("trail_tf_unknown_after_restart")
+	at.logWarnf("🧑‍🏫 mentor restart rebuild: %s is an ISB entered while exec_2m_after_30m is ON — the frame it was read on (1m or 2m) does not survive a restart; its runner trails on closed 1m candles [X8 @18:02–18:14]", r.SignalID)
+}
+
+// mentorExec2mKnobOn reads the X5-10 exec_2m_after_30m knob as stored (nil →
+// OFF, the DefaultConfig value) without the tuning resolver's side effects.
+func mentorExec2mKnobOn(rc *store.RiskControlConfig) bool {
+	return rc != nil && rc.MentorTuning != nil && rc.MentorTuning.Exec2mAfter30m != nil && *rc.MentorTuning.Exec2mAfter30m
 }
 
 // mentorRebuildSwingArm restores a FILLED swing's two in-memory registries from

@@ -670,7 +670,8 @@ func TestMentorResonanceFork(t *testing.T) {
 	}
 }
 
-// TestMentorTrailTFKnob: the B candle trail runs on 1m (default) and 30s/45s;
+// TestMentorTrailTFKnob: the B candle trail runs on 1m (default); 30s/45s are
+// REFUSED → 1m and counted (no sub-minute bars exist — EXTRAS-ALIGN item 4);
 // off = the video-8 legacy (superseded); an unknown value refuses to trail
 // fail-closed and is counted.
 func TestMentorTrailTFKnob(t *testing.T) {
@@ -679,12 +680,15 @@ func TestMentorTrailTFKnob(t *testing.T) {
 		t.Fatalf("unset knob → %q, want the 1m default", got)
 	}
 	for _, tc := range []struct{ in, want string }{
-		{"1m", "1m"}, {"30s", "30s"}, {"45s", "45s"}, {"off", "off"}, {" OFF ", "off"},
+		{"1m", "1m"}, {"30s", "1m"}, {"45s", "1m"}, {"off", "off"}, {" OFF ", "off"},
 	} {
 		at.config.StrategyConfig.RiskControl.MentorTrailTF = tc.in
 		if got := at.mentorTrailTF(); got != tc.want {
 			t.Fatalf("trail_tf %q → %q, want %q", tc.in, got, tc.want)
 		}
+	}
+	if got := at.mentorCountSnapshot()["trail_tf_subminute_refused"]; got != 2 {
+		t.Fatalf("30s and 45s must each be counted as refused, got %d", got)
 	}
 	at.resetMentorCountersForTest()
 	at.config.StrategyConfig.RiskControl.MentorTrailTF = "garbage"
