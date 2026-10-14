@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
+import type { ChartLineSpec } from './chartOverlays'
+import type { MentorTruth } from '../../lib/api/traders'
 import { EquityChart } from './EquityChart'
 import { AdvancedChart } from './AdvancedChart'
 import { useLanguage } from '../../contexts/LanguageContext'
@@ -15,8 +17,10 @@ interface ChartTabsProps {
   updateKey?: number // Force update key
   exchangeId?: string // Exchange ID
   selectedAccount?: string // F31 — dashboard account scope for the order snapshot
-  /** MENTOR-TRUTH PANEL — mentor key levels drawn on the price chart. */
-  mentorLevels?: { price: number; label: string }[]
+  /** MENTOR-TRUTH PANEL — every horizontal mentor place drawn on the price chart. */
+  mentorLevels?: ChartLineSpec[]
+  /** T7 (release #22) — the mentor's valid trendlines (sloped segments). */
+  mentorTrendlines?: MentorTruth['trendlines']
 }
 
 type ChartTab = 'equity' | 'kline'
@@ -128,6 +132,7 @@ export function ChartTabs({
   exchangeId,
   selectedAccount,
   mentorLevels,
+  mentorTrendlines,
 }: ChartTabsProps) {
   const { language } = useLanguage()
   const [activeTab, setActiveTab] = useState<ChartTab>('equity')
@@ -494,6 +499,7 @@ export function ChartTabs({
                 exchange={currentExchange}
                 onSymbolChange={setChartSymbol}
                 mentorLevels={mentorLevels}
+                mentorTrendlines={mentorTrendlines}
               />
             </motion.div>
           )}

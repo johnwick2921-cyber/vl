@@ -6,6 +6,7 @@ import { api } from '../lib/api'
 import { planApi } from '../lib/api/plan'
 import { EquityChart } from '../components/charts/EquityChart'
 import { ChartTabs } from '../components/charts/ChartTabs'
+import { mentorChartLines } from '../components/charts/chartOverlays'
 import { DecisionCard } from '../components/trader/DecisionCard'
 import { DecisionAudit } from '../components/trader/DecisionAudit'
 import { EmergencyFlatButton } from '../components/trader/EmergencyFlatButton'
@@ -180,14 +181,11 @@ export function TraderDashboardPage({
   const { truth: mentor, stale: mentorStale } = useMentorTruth(
     selectedTrader?.trader_id
   )
-  const mentorLevels = useMemo(
-    () =>
-      (mentor?.levels ?? []).map((l) => ({
-        price: l.price,
-        label: `mentor ${l.kind}`,
-      })),
-    [mentor]
-  )
+  // T7 (release #22): every place the evaluator trades — levels, trigger
+  // lines, EMA34 location, box edges, ISB boxes, ORB, swing — plus the
+  // trendlines as sloped segments; merged old highs/lows are named.
+  const mentorLevels = useMemo(() => mentorChartLines(mentor), [mentor])
+  const mentorTrendlines = mentor?.enabled ? mentor.trendlines : undefined
   // Plan 4 Task 23.4 — Dashboard tab switcher (Overview / Decisions).
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'decisions'>(
     'overview'
@@ -758,6 +756,7 @@ export function TraderDashboardPage({
                 exchanges
               )}
               mentorLevels={mentorLevels}
+              mentorTrendlines={mentorTrendlines}
             />
           </div>
 
