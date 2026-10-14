@@ -702,7 +702,7 @@ func TestHoleOnARolledContractIsRetiredNotReRequested(t *testing.T) {
 
 func TestGapReRequestWaitsForTheStartOfAMinute(t *testing.T) {
 	f := newGHFixture(t)
-	det := f.openHole() // 07:49:00 CT; the first slot is due at 07:50:00
+	det := f.openHole()                   // 07:49:00 CT; the first slot is due at 07:50:00
 	f.tr.tick(det.Add(100 * time.Second)) // 07:50:40 — due, but late in the minute
 	f.noNewReRequest(0, "a send at :40 would let the rebuild's freeze cross the minute boundary")
 	if hs := f.holes(); len(hs) != 1 || hs[0].Attempts != 0 {
@@ -827,5 +827,71 @@ func TestSlowRetriesAreCappedInTotal(t *testing.T) {
 	}
 	if got := cs.reads(); got != reads {
 		t.Fatalf("a spent hole must not be re-read from the store: %d window reads → %d", reads, got)
+	}
+}
+
+// ── CTO fold 2 (10-14) — a hole OLDER than the boot is found ──────────────
+// Release #23 booted 11:22:42 CT with ES 1m missing 03:44–07:48 (one stored
+// bar in that span); /api/health bars_holes read []. The first judgement per
+// key looked back only to the stored bar just before the first live minute,
+// so a hole further back in the session was never judged. The boot scan reads
+// back to the session open (17:00 CT) and tracks what it finds like any hole.
+
+func TestBootScanFindsAHoleOlderThanTheBoot(t *testing.T) {
+	f := newGHFixture(t)
+	var rows []store.BarHistoryDB
+	add := func(from, to time.Time) {
+		for m := from; !m.After(to); m = m.Add(time.Minute) {
+			rows = append(rows, store.BarHistoryDB{Symbol: "MNQ", TF: "1m", Contract: ghContract, OpenTimeMs: m.UnixMilli(),
+				O: 30700, H: 30701, L: 30699, C: 30700, V: 10, Source: ntwire.BarSourceHistorical})
+		}
+	}
+	// what the previous process and the boot replay left in the store:
+	// the session up to 03:43, nothing 03:44–07:47, then 07:48–09:00
+	add(ct(2026, 10, 13, 17, 0), ct(2026, 10, 14, 3, 43))
+	add(ct(2026, 10, 14, 7, 48), ct(2026, 10, 14, 9, 0))
+	if err := f.bh.InsertBars(rows); err != nil {
+		t.Fatal(err)
+	}
+	f.stream(ct(2026, 10, 14, 9, 1), ct(2026, 10, 14, 9, 2)) // the first live minutes after the boot
+	waitFor(t, "the boot scan to track the 03:44–07:48 hole", func() bool { return len(f.holes()) == 1 })
+	hs := f.holes()
+	if hs[0].From != ct(2026, 10, 14, 3, 44).Format(time.RFC3339) || hs[0].To != ct(2026, 10, 14, 7, 48).Format(time.RFC3339) || hs[0].MissingMin != 244 {
+		t.Fatalf("boot scan hole = %+v, want [03:44, 07:48) CT, 244 open min", hs[0])
+	}
+	if f.sink.count("🕳 boot hole scan: MNQ 1m on MNQ 12-26 10-13 17:00 → 10-14 09:01 · from the session open (inside the bars_back 2000 replay window) · 1 hole(s) (10-14 03:44–07:48 CT, 244 open min) — tracked like a live hole") != 1 {
+		t.Fatalf("the boot scan must say once what it covered and found:\n%s", f.sink.dump())
+	}
+	if d := f.delta(); d.Detected != 1 {
+		t.Fatalf("bars_hole_detected +%d, want +1", d.Detected)
+	}
+	// tracked exactly like a live hole: asked for at the first slot
+	det := f.clk.Now()
+	f.tr.tick(det.Add(61 * time.Second))
+	f.waitReRequests(1)
+}
+
+// The scan is ONE judgement: later frames judge only their new minutes, and a
+// clean session says "0 hole(s)" once.
+func TestBootScanSaysOnceAndFindsNothingInACleanSession(t *testing.T) {
+	f := newGHFixture(t)
+	var rows []store.BarHistoryDB
+	for m := ct(2026, 10, 13, 17, 0); !m.After(ct(2026, 10, 14, 9, 0)); m = m.Add(time.Minute) {
+		rows = append(rows, store.BarHistoryDB{Symbol: "MNQ", TF: "1m", Contract: ghContract, OpenTimeMs: m.UnixMilli(),
+			O: 30700, H: 30701, L: 30699, C: 30700, V: 10, Source: ntwire.BarSourceHistorical})
+	}
+	if err := f.bh.InsertBars(rows); err != nil {
+		t.Fatal(err)
+	}
+	f.stream(ct(2026, 10, 14, 9, 1), ct(2026, 10, 14, 9, 4))
+	time.Sleep(200 * time.Millisecond)
+	if hs := f.holes(); len(hs) != 0 {
+		t.Fatalf("a clean session has no hole: %+v", hs)
+	}
+	if n := f.sink.count("🕳 boot hole scan: MNQ 1m on MNQ 12-26"); n != 1 {
+		t.Fatalf("the boot scan line is said once per key, said %d:\n%s", n, f.sink.dump())
+	}
+	if f.sink.count("· 0 hole(s)") != 1 {
+		t.Fatalf("a clean scan says 0 hole(s):\n%s", f.sink.dump())
 	}
 }

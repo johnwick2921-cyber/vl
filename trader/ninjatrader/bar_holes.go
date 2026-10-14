@@ -65,7 +65,7 @@ const (
 	barHoleTF            = "1m"
 	barHoleMinGapDefault = 3
 	barHoleSlowEvery     = 15 * time.Minute
-	barHoleSlowCapTotal  = 8 // slow re-requests per hole, in TOTAL (#23 review P2-3)
+	barHoleSlowCapTotal  = 8               // slow re-requests per hole, in TOTAL (#23 review P2-3)
 	barHoleSettle        = 2 * time.Minute // replay lands + the hold releases on the next live frame
 	barHoleTickEvery     = 15 * time.Second
 	// barHoleSendWindow — sends only while now.In(CT).Second() is below this
@@ -76,8 +76,8 @@ const (
 	// Worst case: a send at :14.9 + a 35 s freeze ends at :50, before the
 	// boundary (the review's limit was "sends after about :25").
 	barHoleSendWindow = barHoleTickEvery
-	barHoleSpacing       = 60 * time.Second // one gap re-request per symbol per minute, at most
-	barHoleMaxOpen       = 32
+	barHoleSpacing    = 60 * time.Second // one gap re-request per symbol per minute, at most
+	barHoleMaxOpen    = 32
 
 	holeStateRefilling = "refilling"
 	holeStateUnfilled  = "unfilled"
@@ -277,7 +277,14 @@ func holeKey(symbol, contract string) string { return symbol + "|" + contract }
 // observeLive is THE DETECTOR, called by the persister after it has written a
 // live frame's closed rows. Only 1m on a named contract is judged; each new
 // newest minute is judged once, against what the store held since the last
-// judged minute (or, the first time this process, the stored bar just before).
+// judged minute. The FIRST judgement per (symbol, contract) this process is
+// the BOOT SCAN (CTO fold 2, 10-14): it reads back over the current CME
+// session day from its 17:00 CT open — or over the replay window when that is
+// shorter (bootScanFromLocked) — and never less far than the stored bar just
+// before the first live minute (the pre-fold reach). Release #23 booted 11:22
+// with ES 1m missing 03:44–07:48 (one stored bar in that span) and health read
+// bars_holes [] — a hole older than the boot was never judged. Holes the scan
+// finds are tracked exactly like a live one; one line says what it covered.
 func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.BarHistoryDB) {
 	if t == nil || tf != barHoleTF || strings.TrimSpace(contract) == "" || len(rows) == 0 {
 		return
@@ -299,6 +306,7 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		return
 	}
 	from := oldest
+	bootScan, bootBound := false, ""
 	if seen {
 		from = last
 	} else {
@@ -310,6 +318,13 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		if ok {
 			from = prev
 		}
+		// the boot scan: as far back as the session open / replay window,
+		// never less far than before the fold
+		scanFrom, bound := t.bootScanFromLocked(newest)
+		if scanFrom < from {
+			from = scanFrom
+		}
+		bootScan, bootBound = true, bound
 	}
 	got, err := t.st.BarsBetweenOn(symbol, barHoleTF, contract, from, newest+1)
 	if err != nil {
@@ -322,7 +337,11 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		times = append(times, r.OpenTimeMs)
 	}
 	now := t.clock()
-	for _, sp := range findBarHoles(times, t.minGap, t.isOpen) {
+	spans := findBarHoles(times, t.minGap, t.isOpen)
+	if bootScan {
+		t.say(bootScanLevel(spans), bootScanLine(symbol, contract, from, newest, bootBound, spans))
+	}
+	for _, sp := range spans {
 		if t.trackedLocked(symbol, contract, sp) {
 			continue
 		}
@@ -343,6 +362,55 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		t.say("WARN", fmt.Sprintf("🕳 bars HOLE detected: %s %s %s on %s — %d open minute(s) with no stored bar (threshold %d, %s); NT8 history re-request scheduled at %s after now, never while the feed is down (gap-backfill)",
 			symbol, barHoleTF, holeWindowCT(sp.FromMs, sp.ToMs), contract, sp.OpenMissing, t.minGap, t.minGapSrc, scheduleText()))
 	}
+}
+
+// bootScanFromLocked is the boot scan's first minute for a key whose newest
+// live minute is newestMs: the current CME session day's open (17:00 CT,
+// kernel.CMESessionDayStart), or — when it is shorter — the oldest minute a
+// bars_back replay reaches (bars_back READ off the wire; absent → the session
+// bound alone). Returns the bound and its name for the boot line.
+func (t *barHoleTracker) bootScanFromLocked(newestMs int64) (int64, string) {
+	const minute = int64(60_000)
+	start := kernel.CMESessionDayStart(time.UnixMilli(newestMs)).UnixMilli()
+	bb := 0
+	if w := t.wire(); w != nil {
+		bb = w.BarsBackAsked()
+	}
+	if bb <= 0 {
+		return start, "the session open (bars_back n/a)"
+	}
+	open := 0
+	for m := newestMs; m >= start; m -= minute {
+		if t.isOpen(time.UnixMilli(m)) {
+			open++
+			if open >= bb {
+				return m, fmt.Sprintf("the replay window (bars_back %d, shorter than the session)", bb)
+			}
+		}
+	}
+	return start, fmt.Sprintf("the session open (inside the bars_back %d replay window)", bb)
+}
+
+func bootScanLevel(spans []barHoleSpan) string {
+	if len(spans) > 0 {
+		return "WARN"
+	}
+	return "INFO"
+}
+
+// bootScanLine is the ONE line per (symbol, contract) per process saying what
+// the boot scan read and what it found — every value read.
+func bootScanLine(symbol, contract string, fromMs, toMs int64, bound string, spans []barHoleSpan) string {
+	found := fmt.Sprintf("%d hole(s)", len(spans))
+	if len(spans) > 0 {
+		parts := make([]string, 0, len(spans))
+		for _, sp := range spans {
+			parts = append(parts, fmt.Sprintf("%s, %d open min", holeWindowCT(sp.FromMs, sp.ToMs), sp.OpenMissing))
+		}
+		found += " (" + strings.Join(parts, "; ") + ") — tracked like a live hole"
+	}
+	return fmt.Sprintf("🕳 boot hole scan: %s %s on %s %s → %s · from %s · %s",
+		symbol, barHoleTF, contract, kernel.TableTimeCT(time.UnixMilli(fromMs)), kernel.TableTimeCT(time.UnixMilli(toMs)), bound, found)
 }
 
 func scheduleText() string {
