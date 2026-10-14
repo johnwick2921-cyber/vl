@@ -517,7 +517,7 @@ func (at *AutoTrader) deskGuardrail() (limit float64, source string, enforced bo
 		return 0, "no strategy config", false
 	}
 	rc := at.config.StrategyConfig.RiskControl
-	if !hlBool(rc.GuardrailsEnabled, true) {
+	if !hlBool(rc.GuardrailsEnabled, false) { // r22: absent = OFF, same as kernel.ResolveStrategyGuardrails
 		return 0, "guardrails master OFF", false
 	}
 	// 2026-09-09 — BOTH TOGGLES, because the GATE requires both.
@@ -530,10 +530,10 @@ func (at *AutoTrader) deskGuardrail() (limit float64, source string, enforced bo
 	// the $450 limit ENFORCED while the gate went on ignoring it. A green word
 	// answering a narrower question than the reader will assume (class 82).
 	//
-	// ABSENT stays true: engine_analysis.go builds the gate with
-	// boolOrDefault(rc.DailyLossEnabled, true), and this must agree with it or
-	// the strip becomes a second, disagreeing definition (A24).
-	if !hlBool(rc.DailyLossEnabled, true) {
+	// ABSENT is OFF (r22 RISK-GATES, owner R4): kernel.ResolveStrategyGuardrails
+	// resolves boolOrDefault(rc.DailyLossEnabled, false), and this must agree
+	// with it or the strip becomes a second, disagreeing definition (A24).
+	if !hlBool(rc.DailyLossEnabled, false) {
 		return 0, "daily_loss_enabled OFF", false
 	}
 	if rc.DailyLossLimitUSD > 0 {
@@ -817,8 +817,8 @@ func deskDailyLimitText(at *AutoTrader, limit float64) string {
 		return "no enforced daily limit (no strategy config)"
 	}
 	rc := at.config.StrategyConfig.RiskControl
-	master := hlBool(rc.GuardrailsEnabled, true)
-	leg := hlBool(rc.DailyLossEnabled, true)
+	master := hlBool(rc.GuardrailsEnabled, false) // r22: absent = OFF (kernel.ResolveStrategyGuardrails)
+	leg := hlBool(rc.DailyLossEnabled, false)
 	if master && leg {
 		return "no enforced daily limit (no limit configured)"
 	}

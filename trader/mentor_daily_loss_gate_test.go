@@ -40,7 +40,7 @@ func seedClosedLoss(t *testing.T, st *store.Store, traderID string, now time.Tim
 // MUTANT: drop the realized <= -limit comparison (always pass) → this test goes
 // RED (no refusal).
 func TestMentorDailyLossGateRefusesAtLimit(t *testing.T) {
-	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{DailyLossLimitUSD: 100}}
+	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{GuardrailsEnabled: boolPtrOn(), DailyLossEnabled: boolPtrOn(), DailyLossLimitUSD: 100}}
 	at, st := resetTrader(t, cfg)
 	now := dailyLossNow()
 	seedClosedLoss(t, st, at.id, now, -150)
@@ -57,7 +57,7 @@ func TestMentorDailyLossGateRefusesAtLimit(t *testing.T) {
 // TestMentorDailyLossGateAllowsBelowLimit pins the pass: a $50 loss against a
 // $100 limit is still inside the limit → allowed, nothing counted.
 func TestMentorDailyLossGateAllowsBelowLimit(t *testing.T) {
-	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{DailyLossLimitUSD: 100}}
+	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{GuardrailsEnabled: boolPtrOn(), DailyLossEnabled: boolPtrOn(), DailyLossLimitUSD: 100}}
 	at, st := resetTrader(t, cfg)
 	now := dailyLossNow()
 	seedClosedLoss(t, st, at.id, now, -50)
@@ -91,7 +91,7 @@ func TestMentorDailyLossGateUnconfiguredPasses(t *testing.T) {
 // canon 40) refuses the placement — an unknown loss is not a confident "under
 // the limit". Mutant: drop the unresolved branch → allowed → RED.
 func TestMentorDailyLossGateRefusesOnUnresolvedClose(t *testing.T) {
-	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{DailyLossLimitUSD: 100}}
+	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{GuardrailsEnabled: boolPtrOn(), DailyLossEnabled: boolPtrOn(), DailyLossLimitUSD: 100}}
 	at, st := resetTrader(t, cfg)
 	now := dailyLossNow()
 	exit := now.Add(-5 * time.Minute)
@@ -105,3 +105,7 @@ func TestMentorDailyLossGateRefusesOnUnresolvedClose(t *testing.T) {
 		t.Fatalf("an unresolved close today must refuse (fail-closed), got allow (%q)", why)
 	}
 }
+
+// boolPtrOn — r22 (owner R4): an absent guardrail toggle reads OFF, so a test
+// of the ENFORCED gate saves both switches ON.
+func boolPtrOn() *bool { on := true; return &on }

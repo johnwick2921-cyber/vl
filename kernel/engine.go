@@ -148,6 +148,14 @@ type Context struct {
 	DailyRealizedPnL float64 `json:"-"`
 	TradesToday      int     `json:"-"`
 	TotalRealizedPnL float64 `json:"-"` // all-time realized P&L (Chunk 5 consistency rule)
+
+	// r22 RISK-GATES — the daily-LOSS leg's P&L: the bot's OWN session-day P&L,
+	// realized + open, manual (non-bot) trades excluded. Resolved by the trader
+	// layer's ONE reader (trader/daily_loss_gate.go botDayPnLAt) so the decision
+	// path and every other entry path judge the loss on the same number. Known
+	// false = not resolved this cycle: the leg falls back to DailyRealizedPnL.
+	DailyLossPnL      float64 `json:"-"`
+	DailyLossPnLKnown bool    `json:"-"`
 }
 
 // Decision AI trading decision

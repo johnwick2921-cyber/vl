@@ -50,10 +50,11 @@ func TestForceFlatSignalAdapterIncrementsCounter(t *testing.T) {
 
 // Tests that the response JSON shape matches the documented schema.
 func TestForceFlatResponseShape(t *testing.T) {
+	zero := 0
 	resp := forceFlatResponse{
 		Triggered:          true,
 		TraderID:           "trader-1",
-		PositionsFlattened: 0,
+		PositionsFlattened: &zero,
 		TimestampUTC:       "2026-05-26T00:00:00Z",
 		LogMessage:         "ok",
 	}
@@ -212,5 +213,30 @@ func TestHandleFreezeListAndClear(t *testing.T) {
 	}
 	if _, frozen := discipline.IsFrozen("trader-frozen"); frozen {
 		t.Fatal("trader must resume (not frozen) after clear")
+	}
+}
+
+// r22 RISK-GATES (T4) — EMERGENCY FLAT ON TRADER A LEAVES TRADER B's DAILY-LOSS
+// BLOCK INTACT. This is the exact kernel call handleForceFlat makes on the TCP
+// bridge (kernel.MaybeForceFlat with the nil-writer adapter). Before r22 it
+// ended in ResetDailyPnL() → clearAllDailyForceFlat(): every trader's trip was
+// lifted, so the panic button on one trader RE-ENABLED trading on another that
+// had hit its own loss limit. MUTANT: restore the global reset
+// (ResetDailyPnLAt(time.Now())) in MaybeForceFlat
+// → B's block is gone → RED.
+func TestEmergencyFlatResetIsScopedToTheTraderActedOn(t *testing.T) {
+	const a, b = "r22-flat-A", "r22-flat-B"
+	kernel.SetDailyForceFlat(a, "daily loss limit hit (A)")
+	kernel.SetDailyForceFlat(b, "daily loss limit hit (B)")
+	t.Cleanup(func() { kernel.ClearDailyForceFlat(a); kernel.ClearDailyForceFlat(b) })
+
+	if err := kernel.MaybeForceFlat(a, &forceFlatSignalAdapter{writer: nil}); err != nil {
+		t.Fatalf("force-flat: %v", err)
+	}
+	if why := kernel.DailyForceFlatReason(b); why == "" {
+		t.Fatal("an Emergency Flat on trader A lifted trader B's daily-loss block — the reset must be scoped to the trader acted on")
+	}
+	if why := kernel.DailyForceFlatReason(a); why != "" {
+		t.Fatalf("the trader acted on is reset (operator resume), still %q", why)
 	}
 }
