@@ -2242,14 +2242,14 @@ func phlRefusalKey(reason string) string {
 // SKIP ("mình xác định ra mình không có target"), never a farther old high.
 //
 // r22 P1-4: only an extreme of the trade's ROLE is a candidate — a long
-// targets an old HIGH, a short an old LOW (oldExtremeRoleFits on the explicit
-// role).
+// targets an old HIGH, a short an old LOW (o.isHigh, which oldExtremeIndexes
+// takes from the level's explicit Role).
 func nearestOldExtremeOnSide(extremes []oldExtreme, price float64, side Side) (oldExtreme, bool) {
 	var best oldExtreme
 	found := false
 	for _, o := range extremes {
-		if !oldExtremeRoleFits(o.level, side) {
-			continue
+		if o.isHigh != (side == SideLong) {
+			continue // a long never targets an old LOW (mirror short)
 		}
 		if side == SideLong && !(o.level.Price > price) {
 			continue

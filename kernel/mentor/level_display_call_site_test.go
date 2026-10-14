@@ -8,12 +8,13 @@ import (
 	"vl/market"
 )
 
-// ── OLD-EXTREME-CLEANUP — CALL-SITE PINS (canon class 53). ────────────────
-// The DisplayLevels fold must NOT touch trading. These two tests drive the real
-// evaluator Tick path with an old extreme that the DRAW set folds away, and
-// assert the TRADING readers (the ISB size-3 flag at eval.go:1285 and the
-// target ladder at eval.go:1254) still read the RAW old extreme. The mutant —
-// feeding DisplayLevels(...) into those call sites — makes both go RED.
+// ── OLD EXTREMES — CALL-SITE PINS (canon class 53, r22 P1). ─────────────────
+// These drive the real evaluator Tick path and assert the TRADING readers (the
+// ISB size-3 flag via isbFlagsFor and the ISB target ladder via
+// nextLevelBeyondRoom) read the ONE nearest UNBROKEN old high: an ISB at it is
+// flagged and targets it; a pivot already traded through is neither (the
+// pre-r22 12-pivot list kept it). Mutant (return every pivot from
+// swingOldExtremeLevels) → TestISBFlagIgnoresABrokenOldHighCallSite goes RED.
 
 // swingHighTape5m returns 25 closed 1m bars (five 5m buckets) with a swing HIGH
 // at the middle bucket (the detector's 2*k+1=5 floor), so SwingPointLevels
@@ -73,17 +74,17 @@ func seededMentorEval(cfg Config, keyPrice, emaPrice float64, bars []market.Klin
 	return e
 }
 
-// TestISBFlagReadsRawOldExtremeCallSite — an ISB whose candle sits at an old
-// extreme that the DRAW set folds into a key level must still carry the
-// isb_at_old_extreme size-3 flag. Mutant (feed DisplayLevels into isbFlagsFor
-// at eval.go:1285) → the folded old extreme is gone → the flag is empty → RED.
-func TestISBFlagReadsRawOldExtremeCallSite(t *testing.T) {
+// TestISBFlagAtTheNearestUnbrokenOldHighCallSite — an ISB whose candle sits
+// within ±2 of the nearest unbroken old high (101.5; the mother candle tops out
+// AT it, no candle traded above it) carries the isb_at_old_extreme size-3 flag
+// [D4.1 p1 @08:05 written rule 2].
+func TestISBFlagAtTheNearestUnbrokenOldHighCallSite(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 
-	swing := swingHighTape5m(101.5)          // swing high 101.5, within 20 of key 85
-	prev := rthBars(26, 98, 103, 97.5, 101.5) // green mother (body 98→101.5)
-	cur := rthBars(27, 100.5, 102, 99, 100)  // inside bar, touches 101.5 (99..102)
+	swing := swingHighTape5m(101.5)            // swing high 101.5
+	prev := rthBars(26, 98, 101.5, 97.5, 101.5) // green mother, tops out AT the old high
+	cur := rthBars(27, 100.5, 102, 99, 100)    // inside bar, touches 101.5 (99..102)
 	if !IsISB(prev, cur) {
 		t.Fatal("fixture: must be an ISB")
 	}
@@ -95,7 +96,7 @@ func TestISBFlagReadsRawOldExtremeCallSite(t *testing.T) {
 	for _, in := range intents {
 		if in.Action == PlaceStopLimitEntry || in.Action == PlaceStopEntry {
 			if !HasFlag(in.Flag, FlagISBAtOldExtreme) {
-				t.Fatalf("ISB at the folded old extreme must carry isb_at_old_extreme, got flag %q (intent %+v)", in.Flag, in)
+				t.Fatalf("ISB at the nearest unbroken old high must carry isb_at_old_extreme, got flag %q (intent %+v)", in.Flag, in)
 			}
 			return
 		}
@@ -103,11 +104,41 @@ func TestISBFlagReadsRawOldExtremeCallSite(t *testing.T) {
 	t.Fatalf("no ISB intent emitted: %+v", intents)
 }
 
-// TestTargetReadsRawOldExtremeCallSite — the ISB target ladder (nextLevelBeyondRoom
-// at eval.go:1254) must use the RAW nearest obstacle: an old extreme folded into
-// a key for the DRAW is still the target. Mutant (feed DisplayLevels) → the
-// target jumps to the farther key → RED.
-func TestTargetReadsRawOldExtremeCallSite(t *testing.T) {
+// TestISBFlagIgnoresABrokenOldHighCallSite — the same ISB, but the mother
+// candle traded ABOVE the pivot high (103 > 101.5) before the inside bar: the
+// pivot is no longer an old high, so the inside bar is not "at an old high" and
+// is not size-cut. The pre-r22 12-pivot list still flagged it.
+func TestISBFlagIgnoresABrokenOldHighCallSite(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+
+	swing := swingHighTape5m(101.5)
+	prev := rthBars(26, 98, 103, 97.5, 101.5) // the mother wicks to 103 — breaks 101.5
+	cur := rthBars(27, 100.5, 102, 99, 100)
+	if !IsISB(prev, cur) {
+		t.Fatal("fixture: must be an ISB")
+	}
+	bars := append(append(swing, prev), cur)
+	now := cur.CloseTime + 1
+	e := seededMentorEval(cfg, 85, 125, bars, now)
+
+	intents := e.Tick(bars, now)
+	for _, in := range intents {
+		if in.Action == PlaceStopLimitEntry || in.Action == PlaceStopEntry {
+			if HasFlag(in.Flag, FlagISBAtOldExtreme) {
+				t.Fatalf("ISB next to a BROKEN pivot high must not carry isb_at_old_extreme (flag %q)", in.Flag)
+			}
+			return
+		}
+	}
+	t.Fatalf("no ISB intent emitted: %+v", intents)
+}
+
+// TestTargetIsTheNearestUnbrokenOldHighCallSite — the ISB target ladder
+// (nextLevelBeyondRoom) takes the nearest unbroken old high (125) as the first
+// obstacle, ahead of the key level at 130 [§6 "nearest old high → EMA 34 → the
+// next level", D3.3 p1 @04:11].
+func TestTargetIsTheNearestUnbrokenOldHighCallSite(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 
@@ -125,7 +156,7 @@ func TestTargetReadsRawOldExtremeCallSite(t *testing.T) {
 	for _, in := range intents {
 		if in.Action == PlaceStopLimitEntry || in.Action == PlaceStopEntry {
 			if in.Target != 125 {
-				t.Fatalf("target = %.2f, want 125 (the RAW old extreme, the nearer obstacle)", in.Target)
+				t.Fatalf("target = %.2f, want 125 (the nearest unbroken old high, the nearer obstacle)", in.Target)
 			}
 			return
 		}
