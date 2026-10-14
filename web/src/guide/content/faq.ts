@@ -130,6 +130,11 @@ export const faq: GuideSection = {
           link: '#routines',
         },
         {
+          q: 'The chart has a gap or a jump after NT8 lost its connection — do I restart?',
+          a: "No. The bot finds the missing minutes itself ('🕳 bars HOLE detected') and asks NinjaTrader for them again at +1/+3/+10/+30 min once the feed is back; '✅ bars hole FILLED' means done. Only if it prints '🚨 bars hole UNFILLED … NinjaTrader has no history for <from>–<to>' does NT8 lack the data: right-click an MNQ chart → Reload All Historical Data, and the bot picks it up on its next 15-minute try. GET /api/health → bars_holes shows what is still open.",
+          link: '#status',
+        },
+        {
           q: "A knob change didn't do anything — why?",
           a: 'Either it wasn\'t saved (toast + saved-chip), the value is above a code ceiling, the guardrail master is OFF, the knob has no reader (the guide card says so), or the reload that Save triggers failed — Save reloads every running trader bound to the strategy, and on a failed reload the log says "saved but trader reload failed … restart to apply".',
           link: '#settings',

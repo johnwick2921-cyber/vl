@@ -237,9 +237,14 @@ func TestReplayHoldIsWiredIntoThePersisterAndTheBackfill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	closure := regexp.MustCompile(`(?s)ntwire\.SetBarPersister\(func\(historical bool.*?\n\t\t\}\)\n`).Find(src)
+	// GAP-BACKFILL (2026-10-14): the closure was lifted into newBarPersister so
+	// a production-call-site test can drive it; WireBarPersistence installs it.
+	closure := regexp.MustCompile(`(?s)func newBarPersister\(.*?\n\}\n`).Find(src)
 	if closure == nil {
-		t.Fatal("could not locate the SetBarPersister closure")
+		t.Fatal("could not locate the persister closure (newBarPersister)")
+	}
+	if !regexp.MustCompile(`ntwire\.SetBarPersister\(newBarPersister\(bh, serverFn\)\)`).Match(src) {
+		t.Fatal("WireBarPersistence no longer installs newBarPersister — the persister closure is unwired")
 	}
 	for _, want := range []string{
 		`barReplayHold.resolve(symbol, tf, checked, offScale, bh.InsertBars)`,
