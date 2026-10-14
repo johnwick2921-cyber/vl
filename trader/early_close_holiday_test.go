@@ -164,3 +164,45 @@ func TestRunCycleClosedSkipPrecedesEODFlat(t *testing.T) {
 		t.Log("enforceEODFlat now runs before the closed skip — the closed-path retirement is belt-and-braces")
 	}
 }
+
+// Christmas Eve 2026 (Thu 12-24, close 12:15 CT) — the same path, the other
+// half-day the calendar lists.
+func TestEarlyCloseDay1224RetiresBook(t *testing.T) {
+	ct := chicagoLoc()
+	at1215 := time.Date(2026, 12, 24, 12, 15, 0, 0, ct)
+	acks := make(chan ntwire.OrderUpdatePayload, 4)
+	at, rt := earlyCloseFixture(t, at1215.Add(-time.Hour), "sig-1224", acks)
+	at1205 := time.Date(2026, 12, 24, 12, 5, 0, 0, ct)
+	setTraderClock(t, at1205)
+	if _, blocked := at.entryBlockedByLastEntryAt(at1205); !blocked {
+		t.Error("12:05 on 12-24 must be past the pulled-in 12:00 last entry")
+	}
+	setTraderClock(t, at1215)
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		acks <- ntwire.OrderUpdatePayload{SignalID: "sig-1224", State: "cancelled"}
+	}()
+	if !at.cmeSessionClosedSkip() {
+		t.Fatal("12:15 CT on 12-24 must take the closed path")
+	}
+	if !hasEvent(rt, "cancel:sig-1224") || !hasEvent(rt, "close_long:MNQ") {
+		t.Errorf("12-24 early close: arm cancel and flatten both required, wire=%v", rt.snapshot())
+	}
+}
+
+// An ORDINARY close (the Friday 16:00 weekend close) is not an early close:
+// the closed path stays a pure skip — no broker round-trips, nothing retired
+// there (the open path already flattened at 14:45).
+func TestOrdinaryCloseClosedPathRetiresNothing(t *testing.T) {
+	ct := chicagoLoc()
+	fri1605 := time.Date(2026, 10, 16, 16, 5, 0, 0, ct)
+	acks := make(chan ntwire.OrderUpdatePayload, 4)
+	at, rt := earlyCloseFixture(t, fri1605.Add(-3*time.Hour), "sig-fri", acks)
+	setTraderClock(t, fri1605)
+	if !at.cmeSessionClosedSkip() {
+		t.Fatal("Friday 16:05 CT is closed")
+	}
+	if ev := rt.snapshot(); len(ev) != 0 {
+		t.Fatalf("an ordinary close must not act on the closed path, wire=%v", ev)
+	}
+}
