@@ -9112,3 +9112,10 @@ rule: resolve "" explicitly at the source with a stated order (staged → persis
 was used, once per object.
 Reference: trader/mentor_live_pos.go mentorFillExitMode / mentorNoteFillExitMode,
 trader/mentor_fill_exit_mode_test.go.
+
+## CLASS NN (assigned at merge) — a test fixture in the machine zone passes only on a Chicago box
+
+symptom: release #22 (#514) moved three production reads to explicit America/Chicago (agent schedulerStep, activation lineTime, the briefs). Every local suite was green: the box runs in Chicago. On the UTC CI runner, PR #518 went red in TestSchedulerStepMissedMinuteCatchesUp and in the updater watch tests (TestWatch*, TestAdapterDelegatesToActivation/Watch). Their fixtures built instants with time.Local, or formatted log stamps with the machine zone. Those were 5 h off from the CT the code now reads.
+probe: whenever production code reads a fixed zone, grep its tests for time.Local, for `.Format(` on a log-stamp layout without `.In(`, and for time.Date(..., time.Local). Then run the package under `TZ=UTC go test` before calling it green.
+rule: a test builds its instants in the zone the production code reads (the logger's CT), never the machine zone. "Green locally" is not green until the suite also passes under TZ=UTC.
+Reference: agent/scheduler_step_test.go, internal/activation/logstamp_ct_test.go, internal/updaterworker/logstamp_ct_test.go (logStampCT).
