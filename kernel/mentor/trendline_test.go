@@ -460,3 +460,38 @@ func TestTrendlineMinBarSpacing(t *testing.T) {
 		t.Fatalf("5-bars-apart lows = %+v, want one line P0=(2,97) P1=(7,97.5)", tls)
 	}
 }
+
+// TestLocationOfNamesTheTouchedPlace — the producer half of the location
+// traceability: LocationOf reads the REAL keys the emit sites stamp as
+// AnchorKey (eval.go: in.AnchorKey = lvl.Key; box_trade.go: the box key) —
+// a trendline built by TrendlinesBuild names its kind AND side, a key level
+// and a box name their kind, no anchor names nothing.
+func TestLocationOfNamesTheTouchedPlace(t *testing.T) {
+	bars, _ := trendlineReturnTape()
+	now := time.UnixMilli(bars[13].OpenTime + 59_999).In(ctime())
+	for _, tc := range []struct {
+		bars []market.Kline
+		want string
+	}{
+		{bars, "trendline long"},
+		{trendlineMirror(bars), "trendline short"},
+	} {
+		tls := TrendlinesBuild(tc.bars, now)
+		lv := TrendlineLevels(tls, BoxesBuild(tc.bars, DefaultBoxCfg(), now), tc.bars)
+		if len(lv) != 1 {
+			t.Fatalf("want one trendline location, got %+v", lv)
+		}
+		if got := LocationOf(lv[0].Key); got != tc.want {
+			t.Fatalf("LocationOf(%q) = %q, want %q", lv[0].Key, got, tc.want)
+		}
+	}
+	if got := LocationOf(keyLevelKey(bars[0])); got != "key_level" {
+		t.Fatalf("key level = %q, want key_level", got)
+	}
+	if bx := BoxesBuild(bars, DefaultBoxCfg(), now); len(bx) == 0 || LocationOf(bx[0].Key) != "ftgl" {
+		t.Fatalf("box location = %+v, want an ftgl box", bx)
+	}
+	if got := LocationOf(""); got != "" {
+		t.Fatalf("no anchor = %q, want empty", got)
+	}
+}
