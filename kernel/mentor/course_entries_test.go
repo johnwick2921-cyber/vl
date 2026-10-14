@@ -452,3 +452,59 @@ func TestCE11FlagWallTarget(t *testing.T) {
 		t.Fatalf("refusals %v, want flag_wall_target_used then flag_wall_room", refused)
 	}
 }
+
+// CE-1 — the OPPOSITE-way 5m ISB (CTO gate fold, PR #532): "Nếu như khung 5
+// phút xuất hiện Insaba cho lệnh short thì em trade" [D4.2 p1 @17:09–17:13] —
+// only a SAME-direction 5m ISB lets a 1m ISB trade inside the 15m box.
+//
+// At the Tick call site a standing 5m box the opposite way to the 15m box IS
+// the D4.2-03 conflict (mtfConflict reads the same two boxes), which refuses
+// every setup BEFORE the ISB path runs — so the 1m short ISB never emits.
+// fifteenMinISBGate's own opposite-box branch is pinned directly below (the
+// Tick never reaches it while both boxes stand; it is the gate's defence if the
+// conflict rule is ever switched or narrowed).
+// MUTANT (CTO): in fifteenMinISBGate, box5 != nil && box5.Dir != box15.Dir →
+// return "" — the direct pin goes RED.
+func TestCE1Opposite5mISBInside15mBox(t *testing.T) {
+	e, bars, now := mtfFixture(t, true) // a 1m SHORT ISB (red candle 1)
+	e.State.ISBBox15m = &ISBBox{High: 110, Low: 95, Dir: SideShort, AtTime: bars[0].OpenTime}
+	e.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: bars[0].OpenTime}
+	shortSide := func(e *Evaluator) {
+		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideShort, Price: 120}}
+		e.State.Trigger = TriggerLine{Dir: SideShort, Price: 101}
+		e.State.ORB = ORB{Day: dayStartCT(now), High: 120, Low: 115, Drawn: true, Escaped: SideShort}
+	}
+	shortSide(e)
+	for _, in := range entryIntents(e.Tick(bars, now)) {
+		if in.Setup == "ISB" {
+			t.Fatalf("15m SHORT + standing 5m LONG: no ISB may trade, got %+v", in)
+		}
+	}
+	// Non-vacuous: the same short ISB DOES trade once the 5m ISB agrees with
+	// the 15m (both SHORT).
+	e2, bars2, now2 := mtfFixture(t, true)
+	shortSide(e2)
+	e2.State.ISBBox15m = &ISBBox{High: 110, Low: 95, Dir: SideShort, AtTime: bars2[0].OpenTime}
+	e2.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideShort, AtTime: bars2[0].OpenTime}
+	var shortISB bool
+	for _, in := range entryIntents(e2.Tick(bars2, now2)) {
+		if in.Setup == "ISB" && in.Side == SideShort {
+			shortISB = true
+		}
+	}
+	if !shortISB {
+		t.Fatalf("control: a same-way 5m ISB must let the short ISB trade; refusals %v", e2.State.Refusals)
+	}
+
+	box15 := &ISBBox{High: 110, Low: 95, Dir: SideShort, AtTime: bars[0].OpenTime}
+	box5 := &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: bars[0].OpenTime}
+	if got := fifteenMinISBGate(FifteenMinRequire5mISB, box15, box5, box5.AtTime, SideLong, ""); got != "15m_needs_5m_isb" {
+		t.Fatalf("require_5m_isb with an opposite standing 5m ISB: gate = %q, want 15m_needs_5m_isb", got)
+	}
+	if got := fifteenMinISBGate(FifteenMinRequire5mISB, box15, &ISBBox{Dir: SideShort, AtTime: box5.AtTime}, box5.AtTime, SideShort, ""); got != "" {
+		t.Fatalf("a same-way standing 5m ISB must pass the gate, got %q", got)
+	}
+	if got := fifteenMinISBGate(FifteenMinOff, box15, box5, box5.AtTime, SideLong, ""); got != "" {
+		t.Fatalf("off = the pre-#25 read: no CE-1 refusal, got %q", got)
+	}
+}
