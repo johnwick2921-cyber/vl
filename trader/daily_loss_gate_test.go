@@ -498,3 +498,33 @@ func TestDailyLossGateAbsentKeysIsOffByDefault(t *testing.T) {
 		t.Fatalf("the live strategies' saved OFF must read as saved, got %q", l)
 	}
 }
+
+// 10 — AN OPEN MANUAL POSITION IS THE OWNER'S. A 20-lot the bot adopted
+// (origin='manual', the ONE manual rule) marked 30 points under water is not
+// in the bot's P&L, and a latched daily-loss flatten leaves it alone (logged,
+// never closed). MUTANT: skip the IsManualOrigin check in the open half → the
+// -1200 counts → RED.
+func TestDailyLossManualOpenPositionNotCounted(t *testing.T) {
+	f := withdrawFixture(t, "dl-manual-open", func(c *store.StrategyConfig) { dlOn(c); c.RiskControl.DailyLossLimitUSD = 450 })
+	t1 := f.now.Add(time.Minute)
+	p := &store.TraderPosition{TraderID: f.at.id, Account: "Sim101", Symbol: "MNQ", Side: "LONG",
+		Quantity: 20, EntryQuantity: 20, EntryPrice: 100, Status: "OPEN", Origin: store.OriginManual,
+		EntryTime: f.now.Add(-10 * time.Minute).UnixMilli(), CreatedAt: f.now.UnixMilli(), UpdatedAt: f.now.UnixMilli()}
+	if err := f.st.GormDB().Create(p).Error; err != nil {
+		t.Fatal(err)
+	}
+	dlMark(t, 70)
+	b, err := f.at.botDayPnLAt(t1)
+	if err != nil || b.Total() != 0 || b.OpenPositions != 0 || b.ManualExcluded != 1 {
+		t.Fatalf("an open MANUAL position is not the bot's: want total 0, 0 bot positions, 1 manual excluded — got %+v (err %v)", b, err)
+	}
+	// Latched for a bot reason: the flatten must still leave the manual position alone.
+	kernel.SetDailyForceFlatAt(f.at.id, "daily loss limit hit (test: bot loss)", t1)
+	f.w.srv.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{{Symbol: "MNQ", Side: "long", Quantity: 20, AvgPrice: 100}})
+	f.at.peakPnLCache = map[string]float64{}
+	f.at.monitorTick(t1)
+	f.w.flush(t)
+	if n := dlClosePositionFrames(f.w); n != 0 {
+		t.Fatalf("the daily-loss flatten must never close a MANUAL position (%d close_position frames)", n)
+	}
+}
