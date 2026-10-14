@@ -393,11 +393,24 @@ func closesThroughPendingLine(side Side, close, line float64) bool {
 // would close a DIFFERENT mentor trade after the hold.
 func (s *SwingState) openPosition(in Intent, now int64) {
 	p := &swingPosition{Side: in.Side, Entry: in.Price, Stop: in.Stop, Target: in.Target, EntryBucket: s.BucketStart, ArmID: in.ArmID, ExpiryMs: swingExpiry(now)}
-	p.Risk = in.Stop - in.Price
-	if in.Side == SideShort {
-		p.Risk = in.Price - in.Stop
-	}
+	// SWING-RISK (release #22): the ONE risk definition. It used to be
+	// Stop−Price for a long and Price−Stop for a short — NEGATIVE for both — so
+	// manageSwingPosition's "+1R" test passed on the fill bar itself.
+	p.Risk = SwingRisk(in.Side, in.Price, in.Stop)
 	s.Pending = p
+}
+
+// SwingRisk is THE swing risk: the distance from the entry to the stop the
+// trade was entered with, on the LOSS side — long: entry − stop; short: stop −
+// entry. Positive for a well-formed swing; ≤ 0 when the stop sits on the wrong
+// side. One definition for both ways a swing position is made — the live fill
+// (openPosition) and the restart rebuild (RebuildSwingPos) — so a swing reaches
+// break-even at the same +1R whether or not the bot restarted in between.
+func SwingRisk(side Side, entry, entryStop float64) float64 {
+	if side == SideShort {
+		return entryStop - entry
+	}
+	return entry - entryStop
 }
 
 // swingTargetEMA is the first target: the 5m EMA 34 [table]. R42 [D5.2 p2
@@ -562,28 +575,47 @@ func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Int
 	return out
 }
 
+// SwingRebuild is the durable record of a FILLED swing the restart path
+// restores from: the armed row's entry and ENTRY stop (the stop the trade was
+// entered with — the risk is measured from it, never from a stop the broker
+// has since moved), NT8's live stop, the 4h bucket of the swing's 5m bar, the
+// arm id, and whether the live stop already sits at break-even.
+type SwingRebuild struct {
+	Side        Side
+	Entry       float64
+	EntryStop   float64
+	LiveStop    float64
+	Target      float64
+	EntryBucket int64
+	ArmID       string
+	MovedBE     bool
+}
+
 // RebuildSwingPos (FIX-SWING-RESTART) restores the FILLED swing leg from
 // durable records (the armed row, the open position and NT8's live stop) so
 // manageSwingPosition resumes break-even + hold-close across a restart. Every
-// field is caller-proven; the kernel invents nothing. A degenerate position
-// (unknown side, entry or risk unreadable) is refused (false) so the caller
-// leaves the stop as it is at NT8 — never a guessed stop or a guessed close.
-func (s *SwingState) RebuildSwingPos(side Side, entry, stop, target, risk float64, entryBucket int64, armID string, movedBE bool) bool {
-	if side != SideLong && side != SideShort {
+// field is caller-proven; the kernel invents nothing. The risk is SwingRisk —
+// the SAME definition the live fill uses (SWING-RISK, release #22). A
+// degenerate position (unknown side, entry unreadable, or a risk ≤ 0) is
+// refused (false) so the caller leaves the stop as it is at NT8 — never a
+// guessed stop or a guessed close.
+func (s *SwingState) RebuildSwingPos(r SwingRebuild) bool {
+	if r.Side != SideLong && r.Side != SideShort {
 		return false
 	}
-	if entry <= 0 || risk <= 0 {
+	risk := SwingRisk(r.Side, r.Entry, r.EntryStop)
+	if r.Entry <= 0 || risk <= 0 {
 		return false
 	}
 	s.Pos = &swingPosition{
-		Side:        side,
-		Entry:       entry,
-		Stop:        stop,
-		Target:      target,
+		Side:        r.Side,
+		Entry:       r.Entry,
+		Stop:        r.LiveStop,
+		Target:      r.Target,
 		Risk:        risk,
-		EntryBucket: entryBucket,
-		ArmID:       armID,
-		MovedBE:     movedBE,
+		EntryBucket: r.EntryBucket,
+		ArmID:       r.ArmID,
+		MovedBE:     r.MovedBE,
 	}
 	return true
 }

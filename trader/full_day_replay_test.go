@@ -763,7 +763,18 @@ type fdrTrader struct {
 	epochs      []int64
 	intents     []fdrTick
 	levelPx     map[string]float64 // lvl ledger scenario → level price (Intent.Anchor)
+	swingBE     []fdrSwingBE       // every swing break-even the evaluator emitted, with its position
 	curBar      int
+}
+
+// fdrSwingBE is one kernel swing break-even intent and the evaluator's swing
+// position at that tick (entry and the stop the position carries).
+type fdrSwingBE struct {
+	barIdx      int
+	armID       string
+	side        mentor.Side
+	entry, stop float64
+	known       bool // the position was readable at the tick
 }
 
 // newFdrTrader builds one mentor AutoTrader the way NewAutoTrader's ninjatrader
@@ -808,6 +819,13 @@ func (w *fdrWorld) newFdrTrader(ft *fdrTrader, cfg *store.StrategyConfig) {
 		ft.intents = append(ft.intents, fdrTick{barIdx: ft.curBar, in: in})
 		if strings.HasPrefix(in.ArmID, "lvl-") && fdrIsPlace(in) && in.Anchor != 0 {
 			ft.levelPx[at.mentorScenarioFor(in.ArmID)] = in.Anchor // keyed by the ledger scenario: ArmSeq restarts per construction
+		}
+		if in.Action == mentor.ActionMoveStopBE && strings.HasPrefix(in.ArmID, "swing-") {
+			be := fdrSwingBE{barIdx: ft.curBar, armID: in.ArmID}
+			if p := at.mentorEval.State.Swing.Pos; p != nil && p.ArmID == in.ArmID {
+				be.side, be.entry, be.stop, be.known = p.Side, p.Entry, p.Stop, true
+			}
+			ft.swingBE = append(ft.swingBE, be)
 		}
 	}
 	at.mentorWireProductionSeams()
@@ -1441,6 +1459,54 @@ func TestFullDayReplay(t *testing.T) {
 		}
 	})
 
+	// ── (c2) every swing break-even comes at ≥ +1R, with and without a restart
+	t.Run("c2_every_swing_break_even_at_or_beyond_1R", func(t *testing.T) {
+		// The course rule is "+1R reached — stop to break-even" [§8]. Every swing
+		// MoveStopBE the evaluator emitted is judged on the 5m close it was
+		// emitted on, against the position's OWN risk |entry − stop| (measured
+		// here independently of the kernel's sign convention). The injected swing
+		// is the restart path (rebuilt from the records); every other swing was
+		// filled — in the kernel's tape simulation — in the same process.
+		var bad []string
+		checked := map[string]int{}
+		for _, ft := range traders {
+			for _, be := range ft.swingBE {
+				path := "no restart"
+				entry, stop, side, known := be.entry, be.stop, be.side, be.known
+				if be.armID == sw.armID && ft.id == sw.traderID {
+					path = "after the restart"
+					entry, stop, side, known = sw.entry, sw.stop, mentor.SideLong, true // the records, not the live (possibly moved) stop
+				}
+				when := fdrCT(w.bars[be.barIdx].CloseTime + 1)
+				if !known || math.Abs(entry-stop) == 0 {
+					bad = append(bad, fmt.Sprintf("%s %s break-even at %s CT with no readable position (entry %.2f stop %.2f)", ft.id, be.armID, when, entry, stop))
+					continue
+				}
+				risk := math.Abs(entry - stop)
+				c5 := fdrLast5mClose(w, be.barIdx)
+				move := c5 - entry
+				if side == mentor.SideShort {
+					move = entry - c5
+				}
+				r := move / risk
+				checked[path]++
+				t.Logf("(c2) %s %s %s: %s entry %.2f stop %.2f (R %.2f), break-even at %s CT on a 5m close %.2f = %+.2fR",
+					ft.id, be.armID, path, side, entry, stop, risk, when, c5, r)
+				if r < 1-1e-9 {
+					bad = append(bad, fmt.Sprintf("%s %s (%s) moved to break-even at %+.2fR (%s CT, close %.2f, entry %.2f, R %.2f) — the rule is +1R",
+						ft.id, be.armID, path, r, when, c5, entry, risk))
+				}
+			}
+		}
+		t.Logf("(c2) swing break-evens checked: %s", fdrSortedKV(checked))
+		if checked["after the restart"] == 0 {
+			t.Fatal("(c2) the restarted swing never broke even — the restart half of the rule is untested")
+		}
+		if len(bad) > 0 {
+			t.Fatalf("(c2) %d swing break-even(s) before +1R:\n  %s", len(bad), strings.Join(bad, "\n  "))
+		}
+	})
+
 	// ── (d) the two traders never mix ──────────────────────────────────────
 	t.Run("d_two_traders_never_mix", func(t *testing.T) {
 		var bad []string
@@ -1591,41 +1657,6 @@ func TestFullDayReplay(t *testing.T) {
 			}
 			t.Logf("(g) %s trader counters: %s", ft.id, fdrSortedKV(traderCounters[ft.id]))
 			t.Logf("(g) %s kernel refusals: %s", ft.id, fdrSortedKV(kernelRefusals[ft.id]))
-		}
-		// The evaluator's OWN swing break-even intents, with the R-multiple the
-		// last closed 5m bar stood at when each was emitted (the course rule is
-		// +1R). Printed, not asserted: see the FOLLOW-UP on SwingState.openPosition.
-		for _, ft := range traders {
-			places := map[string]mentor.Intent{}
-			for _, tk := range ft.intents {
-				if !strings.HasPrefix(tk.in.ArmID, "swing-") {
-					continue
-				}
-				if fdrIsPlace(tk.in) {
-					places[tk.in.ArmID] = tk.in
-					continue
-				}
-				if tk.in.Action != mentor.ActionMoveStopBE {
-					continue
-				}
-				c5 := fdrLast5mClose(w, tk.barIdx)
-				p, ok := places[tk.in.ArmID]
-				if !ok && tk.in.ArmID == sw.armID && ft.id == sw.traderID {
-					p, ok = mentor.Intent{Side: mentor.SideLong, Price: sw.entry, Stop: sw.stop}, true // the injected swing, rebuilt after the restart
-				}
-				if ok {
-					risk := math.Abs(p.Price - p.Stop)
-					move := c5 - p.Price
-					if p.Side == mentor.SideShort {
-						move = p.Price - c5
-					}
-					t.Logf("(g) %s kernel swing BE %s at %s CT: %s entry %.2f stop %.2f (R %.2f), last 5m close %.2f = %+.2fR",
-						ft.id, tk.in.ArmID, fdrCT(w.bars[tk.barIdx].CloseTime+1), p.Side, p.Price, p.Stop, risk, c5, move/risk)
-				} else {
-					t.Logf("(g) %s kernel swing BE %s at %s CT (no Place intent from this construction — a pending carried in by the seed), last 5m close %.2f",
-						ft.id, tk.in.ArmID, fdrCT(w.bars[tk.barIdx].CloseTime+1), c5)
-				}
-			}
 		}
 		// Level (lvl-) intents over the day — the live ledger has ZERO level rows.
 		lvl := map[string]int{}
