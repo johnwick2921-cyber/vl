@@ -119,3 +119,39 @@ func TestUnaskedReplayKeepsTheFirstLiveBarRule(t *testing.T) {
 		t.Fatal("another symbol's window must not judge MNQ")
 	}
 }
+
+// ── #23 review P3-3 — the same-minute tolerance is a few ticks, not 0.5% ──
+// The old bound (ScaleMismatchPct, 0.5% ≈ 154 pts on MNQ at 30800) agreed
+// with a replay 40 points off its own live minutes. Same instrument, same
+// minute: max(8 ticks, 0.05% of price).
+func TestOverlapToleranceIsAFewTicksNotHalfAPercent(t *testing.T) {
+	cases := []struct {
+		name      string
+		symbol    string
+		live, rep float64
+		agree     bool
+	}{
+		{"MNQ 40 pts off (inside the old 0.5%)", "MNQ", 30700, 30740, false},
+		{"MNQ 12 pts off (inside 0.05% ≈ 15.35)", "MNQ", 30700, 30712, true},
+		{"ES 5 pts off (0.05% of 6800 = 3.4)", "ES", 6800, 6805, false},
+		{"ES 3 pts off", "ES", 6800, 6803, true},
+		{"ES 2 pts off (8 ticks)", "ES", 6800, 6802, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewBarCache(0)
+			for _, m := range append(ovRange(0, 13), ovRange(258, 262)...) {
+				c.Upsert(tc.symbol, "1m", ovLive(tc.live, m))
+			}
+			c.armOverlapVerdict(tc.symbol, time.Now().Add(gapReplayJudgeWindow))
+			c.SeedHistorical(tc.symbol, "1m", ovLive(tc.rep, ovRange(0, 262)...))
+			a, d := c.OverlapVerdictCounts()
+			if tc.agree && (a != 1 || d != 0) {
+				t.Fatalf("%s: want agreed, got agreed=%d disagreed=%d", tc.name, a, d)
+			}
+			if !tc.agree && (a != 0 || d != 1) {
+				t.Fatalf("%s: want DISAGREED, got agreed=%d disagreed=%d", tc.name, a, d)
+			}
+		})
+	}
+}

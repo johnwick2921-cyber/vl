@@ -334,7 +334,7 @@ func (c *BarCache) SeedHistorical(symbol, timeframe string, bars []Bar) {
 	if until, armed := c.overlapJudgeUntil[symbol]; !armed || time.Now().After(until) {
 		return
 	}
-	if pairs, agree := overlapScaleVerdict(existing, bars); pairs > 0 {
+	if pairs, agree := overlapScaleVerdict(symbol, existing, bars); pairs > 0 {
 		if agree {
 			if c.liveSeen == nil {
 				c.liveSeen = make(map[string]bool)
