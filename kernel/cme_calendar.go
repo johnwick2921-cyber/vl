@@ -131,6 +131,17 @@ func CMESessionDayKey(now time.Time) string {
 	return CMESessionDayStart(now).Format("2006-01-02")
 }
 
+// CMETradingDateKey returns the TRADING date ("YYYY-MM-DD") of the CME session
+// containing now: the calendar date the session CLOSES on — Monday for the
+// Sunday 17:00 CT open, the same date for any daytime instant. This is the key
+// kernel/session_calendar.json rows use (a shortened day is listed under the
+// date it closes early). R22 P1-B: the early-close lookup used
+// CMESessionDayKey (the session's START date, the day before) and never found
+// 11-27 / 12-24, so the last-entry and EOD flat were never pulled in.
+func CMETradingDateKey(now time.Time) string {
+	return CMESessionDayStart(now).AddDate(0, 0, 1).Format("2006-01-02")
+}
+
 // NextSessionRollCT returns the NEXT 17:00 CT boundary strictly after `now`
 // (the daily roll instant). Used by the B4 level_stats nightly job to sleep
 // until the next evaluation window.
