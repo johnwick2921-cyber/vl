@@ -875,6 +875,8 @@ func plannerOutputContractFor(maxLevels, maxScenarios int, hasHTFZones, has1HSDZ
 		"flip side must oppose the bias: short bias flips long on a close ABOVE; long bias flips short on a close BELOW (a short bias with flip.side below is REJECTED — it could never flip on a rally). " +
 		// W-FLIP-LINE-SIDE-OF-PRICE (2026-09-17): the side is judged against PRICE too.
 		"a flip line must sit on the far side of price at authoring: side above → the line is ABOVE the current price, side below → BELOW it (a line already beyond price on its own side can never be touched from the near side, so it never fires — REJECTED at write); the death line obeys the same law (a death line already crossed is a plan born dead). " +
+		// R22 F3: the plan's own flip line judges its armed entries.
+		FlipCoherenceSentence +
 		"Every scenario's confirm{} is MACHINE-EVALUATED the same way: rule + ref_price + side, and ref_price MUST equal a number written in that scenario's trigger/invalid prose. " +
 		// ENTRY-MECHANICS E1/E2 (2026-08-30) — the per-condition entry law.
 		// 15m confirms are DEAD (schema reject confirm_rule_15m_removed).
@@ -892,6 +894,8 @@ func plannerOutputContractFor(maxLevels, maxScenarios int, hasHTFZones, has1HSDZ
 		// resting order is the fast path); sweep_reclaim retraces chain via
 		// wait_confirm; fantasy targets (planned R > 6) are WARN-flagged.
 		"ARM SPLIT vs ARM SINGLE (class 38 — the validator refuses every other shape): legs[] are the sweep_reclaim SPLIT contract and nothing else — EXACTLY 2 legs, confirm=touch at the sweep ref, leg 1 rests there (wait_confirm false) and leg 2 chains (wait_confirm true) on confirm2 = 1m_mss or 1x5m_close with leg 2's rule EQUAL to confirm2.rule, and the top-level entry/stop/target mirror leg 1. " + ep.armSingleClause() +
+		// R22 F1 (owner R4): the machine holds every sweep-setup leg until its trigger.
+		SweepSetupHoldSentence +
 		"ARMED ORDERS (the resting order IS the fast path — prefer it over a 2-minute debate at the touch). " + entryPolicyPlannedOrderFrag(contractOn) + "" +
 		ep.armsFollowBias() + // W3 (h): the ENTRY POLICY sentence + ARMS FOLLOW THE BIAS
 		"WHICH CONDITIONS CAN BE ARMED — " + ArmableConditionsLineFor(ResolvedConditionStatuses(ep.ConditionStatus, ep.SessionConditionStatus, ShadowConditionsEnv()), ep.Policy) + " " +

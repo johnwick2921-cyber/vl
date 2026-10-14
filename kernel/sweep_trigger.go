@@ -29,6 +29,10 @@ import (
 // reaches NT8 before the trigger. A "touch" confirm is itself the sweep
 // evidence (the bar's range reached the ref), so it is not re-gated.
 
+// SweepSetupHoldSentence is the planner-prompt sentence for the hold (class 45:
+// the prompt states the machine rule it will be judged by).
+const SweepSetupHoldSentence = "SWEEP SETUPS WAIT FOR THEIR TRIGGER (owner rule): for reclaim and sweep_reclaim the machine sends NO order — no leg, whatever wait_confirm says — until the scenario's confirm is machine-MET, and a reclaim close counts only AFTER a closed 1m bar has traded AT or THROUGH the confirm ref_price (the sweep); a close back on the reclaimed side without that sweep is not the trigger. "
+
 // SweepRefusalNoSweep is the verdict refusal code for a sweep setup whose ref
 // has not been traded since the reference instant.
 const SweepRefusalNoSweep = "no_sweep"

@@ -2525,6 +2525,9 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 				kernel.StampAuthoredIdentity(d, facts.IdentityMap)
 			}()
 		}
+		// R22 F3 — flip-line coherence: an arm past its own plan's flip line is
+		// written DISABLED (no repair round-trip; logged + counted on accept).
+		flipOff := kernel.DisableFlipIncoherentArms(d, kernel.FlipIncoherentScenarios(d))
 		// W-EXEC-TRUTH W3 (c): the market_in_zone zone verdicts join the
 		// feasibility issues — NOT gated by the write_time_feasibility knob
 		// (D5); hinted on attempts < max, the arm disabled on the last.
@@ -2545,6 +2548,7 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 			// last attempt — write the unarmable arms disabled, never a silent write.
 			at.applyWriteTimeArmDisable(d, feas, tradeDate, session)
 		}
+		at.noteFlipIncoherentDisabled(flipOff, tradeDate, session)
 		// S5 (autopsy-response wave) — arm-authored counter: one tick per
 		// arm{} spec written; the before/after gauge of the arming mandate.
 		nArms := 0
