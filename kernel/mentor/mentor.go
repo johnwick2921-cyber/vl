@@ -60,8 +60,10 @@ type LevelKind string
 const (
 	// KindKeyLevel is a colour-change OPEN line on RTH bars (§4.3).
 	KindKeyLevel LevelKind = "key_level"
-	// KindOldExtreme is an old high/low — the bot's swing levels reused
-	// (kernel/levels_swing.go SwingPointLevels).
+	// KindOldExtreme is an old high/low: ONE nearest UNBROKEN old high and ONE
+	// nearest UNBROKEN old low (r22 P1, course §6 "nearest old high" / §2.1
+	// rule 2 / §2.2) — picked from the bot's swing pivots
+	// (kernel/levels_swing.go SwingPointLevels) by swingOldExtremeLevels.
 	KindOldExtreme LevelKind = "old_extreme"
 	// KindEMA34 / KindEMA9 — EMA values promoted to levels (§8, §10, §11).
 	KindEMA34 LevelKind = "ema34"
@@ -96,13 +98,24 @@ type Level struct {
 	Price  float64
 	AtTime int64
 
-	// MergedFrom lists the RAW old-extreme prices this DISPLAY line absorbed:
-	// an old high/low within KeyLevelPrunePts of a key level is folded into the
-	// key, and two old extremes closer than KeyLevelPrunePts collapse to the
-	// most recent. Populated only by DisplayLevels (the chart / mentor-truth
-	// panel); nil on the TRADING set and on lines that absorbed nothing.
+	// Role is an old extreme's EXPLICIT role — OldHigh or OldLow — taken from
+	// the swing pivot that drew it (r22 P1-4). "" on every other kind. The
+	// PHL/PLH target pick, the target ladder and the leg extreme read it; the
+	// role is never re-inferred from the tape (a later bar revisiting the
+	// price used to relabel an old HIGH as a "low").
+	Role string `json:"role,omitempty"`
+
+	// MergedFrom lists prices a DISPLAY line absorbed. Since r22 the chart
+	// draws the trading old extremes one-for-one (DisplayLevels), so nothing
+	// fills it; it stays on the panel wire as an always-absent field.
 	MergedFrom []float64 `json:"merged_from,omitempty"`
 }
+
+// Old-extreme roles (Level.Role).
+const (
+	OldHigh = "high"
+	OldLow  = "low"
+)
 
 // Intent is one evaluator output.
 type Intent struct {

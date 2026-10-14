@@ -269,7 +269,11 @@ func (e *Evaluator) SeedLine(contracts int) string {
 	parts = append(parts, fmt.Sprintf("4h EMA34 %d/%d", e.depth.fourH, FourHEMA34Warmup))
 	parts = append(parts, fmt.Sprintf("1m EMA34 %d/%d", e.depth.oneM, OneMEMA34Warmup))
 	parts = append(parts, fmt.Sprintf("1H RTH levels %d candles", e.depth.oneH))
-	parts = append(parts, fmt.Sprintf("levels %d", len(e.State.SeedLevels)))
+	// r22 (P3, "92 levels"): the count is READ from the seeded set split by the
+	// 1H BODY-close deletion — the old "levels N" printed len(SeedLevels), which
+	// INCLUDES deleted levels (10-13 08:49 boot: "levels 92" with 27 live).
+	live, deleted := e.keyLevelCounts()
+	parts = append(parts, fmt.Sprintf("key levels %d live · %d deleted", live, deleted))
 	if contracts > 0 {
 		parts = append(parts, fmt.Sprintf("contracts %d", contracts))
 	}
@@ -277,6 +281,20 @@ func (e *Evaluator) SeedLine(contracts int) string {
 	parts = append(parts, triggerLinePart("1h", e.State.HTF.OneH, false))
 	parts = append(parts, triggerLinePart("5m", e.State.Trigger, false))
 	return strings.Join(parts, " ")
+}
+
+// keyLevelCounts splits the seeded key levels into live and deleted (a closed
+// 1H candle's BODY closed through it — KEY-LEVEL ruling 5b). live + deleted ==
+// len(SeedLevels).
+func (e *Evaluator) keyLevelCounts() (live, deleted int) {
+	for _, l := range e.State.SeedLevels {
+		if e.State.DeletedLevels[l.Key] {
+			deleted++
+		} else {
+			live++
+		}
+	}
+	return live, deleted
 }
 
 // triggerLinePart renders one seeded trigger line for the boot line: "<name>

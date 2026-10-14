@@ -105,6 +105,11 @@ type State struct {
 	// per-level mark makes it fire once; the touch loop clears the mark on
 	// visit departure so a NEW visit re-arms it.
 	VisitCapRefused map[string]bool `json:"visit_cap_refused,omitempty"`
+	// PHLRefusedVisit — r22 (P2-1): the once-per-visit marks of the PHL/PLH
+	// refusals that used to be SILENT (EMA gate, location, 5m box, mid-range,
+	// resting arm). Keyed "<level key>|<reason>"; cleared on the level's visit
+	// departure and at the day rollover.
+	PHLRefusedVisit map[string]bool `json:"phl_refused_visit,omitempty"`
 	// ORB is the §7 step 0 opening-range gate state (drawn at 08:32 CT, escape
 	// latches on the first 1m body close outside). Per-session-day.
 	ORB ORB `json:"orb,omitempty"`
@@ -217,8 +222,9 @@ func New(cfg Config) *Evaluator {
 }
 
 // Levels computes the full mentor level set from the 1m history: colour-change
-// key levels (§4.3), EMA 34/9 (§8/§11), and the old highs/lows — the bot's own
-// swing levels reused [DS-106 §1: kernel/levels_swing.go SwingPointLevels].
+// key levels (§4.3), EMA 34/9 (§8/§11), and the ONE nearest unbroken old high
+// and old low (swingOldExtremeLevels, picked from the bot's own swing pivots
+// [DS-106 §1: kernel/levels_swing.go SwingPointLevels]).
 // swingPointNow is the clock handed to kernel.SwingPointLevels. That function
 // drops a bucket whose CloseTime >= now, and kernel.aggregateBars gives a
 // bucket CloseTime = open+interval (exclusive end, unlike barsTF's -1). With
@@ -236,34 +242,93 @@ func Levels(bars []market.Kline, cfg Config, now int64) []Level {
 	return out
 }
 
-// swingOldExtremeLevels is the RAW old-high/low set (TRADING reads this —
-// byte-identical to before this wave): every 5m+15m swing pivot from
-// kernel.SwingPointLevels, no dedupe, no merge. AtTime carries the pivot
-// confirmation close so the DISPLAY cleanup (DisplayLevels) can keep the most
-// recent; no trading reader consumes AtTime. The chart / mentor-truth panel
-// draws DisplayLevels(levels), which applies the course-5.3 <20 prune.
+// swingOldExtremeLevels is the old-high/low set — the ONE source the trading
+// code AND the chart read (r22 P1). The course has ONE nearest old high above
+// price and ONE nearest old low below it on the 1-minute trading chart: the
+// first rung of the target ladder ("nearest old high → EMA 34 → the next
+// level" [D3.3 p1 @04:11, 07:12]), the PHL/PLH target ("gần đỉnh cũ" [D4.1 p1
+// @07:27]) and ISB written rule 2 ("hạn chế trade isb ở ngay đỉnh hoặc đáy cũ"
+// [D4.1 p1 @08:05 written]). The candidates are the bot's swing pivots
+// (kernel.SwingPointLevels, 5m+15m — every pivot price is a 1m wick); from
+// them it keeps:
+//
+//   - only the UNBROKEN ones: a pivot high is broken once a later CLOSED 1m
+//     candle trades above it (a low: below it) — "a candle that breaks the
+//     previous high" is the wick, the candle need not close [law 2, D3.4 p1
+//     @08:19]. The test reads the 1m tape up to the candle BEFORE the newest
+//     one, so the candle being judged (the ISB candle, the touch) is measured
+//     against the extremes that stood before it;
+//   - the NEAREST unbroken high and the nearest unbroken low. An unbroken high
+//     sits above every later candle, so the nearest is the lowest one (the most
+//     recent); mirror for the low.
+//
+// Each line carries its explicit Role (OldHigh / OldLow) from the pivot kind.
+// A pivot with no confirmation instant cannot be proven unbroken and is
+// skipped (fail closed: no line without evidence). The old build returned all
+// 12 raw pivots (3 highs + 3 lows per TF), duplicated and mostly broken: on
+// 10-13 the ISB "at an old high/low" zone covered 183/390 RTH candles.
 func swingOldExtremeLevels(bars []market.Kline, now int64) []Level {
+	if len(bars) < 2 {
+		return nil
+	}
 	swings := kernel.SwingPointLevels(bars, time.UnixMilli(swingPointNow(now)))
 	if len(swings) == 0 {
 		return nil
 	}
-	out := make([]Level, 0, len(swings))
+	tape := bars[:len(bars)-1] // the closed 1m candles before the newest one
+	var hi, lo Level
 	for _, d := range swings {
-		if d.Kind != kernel.KindSWGH && d.Kind != kernel.KindSWGL {
+		isHigh := d.Kind == kernel.KindSWGH
+		if !isHigh && d.Kind != kernel.KindSWGL {
 			continue
 		}
-		at := int64(0)
-		if d.FormedCloseMs != nil {
-			at = *d.FormedCloseMs
+		if d.FormedCloseMs == nil {
+			continue
 		}
-		out = append(out, Level{
+		at := *d.FormedCloseMs
+		if oldExtremeBroken(tape, d.Price, at, isHigh) {
+			continue
+		}
+		l := Level{
 			Key:    fmt.Sprintf("%s:%.2f", KindOldExtreme, d.Price),
 			Kind:   KindOldExtreme,
 			Price:  d.Price,
 			AtTime: at,
-		})
+			Role:   OldLow,
+		}
+		if isHigh {
+			l.Role = OldHigh
+			if hi.Kind == "" || d.Price < hi.Price || d.Price == hi.Price && at > hi.AtTime {
+				hi = l
+			}
+			continue
+		}
+		if lo.Kind == "" || d.Price > lo.Price || d.Price == lo.Price && at > lo.AtTime {
+			lo = l
+		}
+	}
+	var out []Level
+	if hi.Kind != "" {
+		out = append(out, hi)
+	}
+	if lo.Kind != "" {
+		out = append(out, lo)
 	}
 	return out
+}
+
+// oldExtremeBroken reports whether a closed 1m candle that opened at or after
+// the pivot's confirmation instant traded beyond it — above a high, below a
+// low (a touch AT the price is not a break). The candles between the pivot and
+// its confirmation cannot break it: the fractal requires them to stay inside.
+func oldExtremeBroken(tape []market.Kline, price float64, confirmedAt int64, isHigh bool) bool {
+	i := sort.Search(len(tape), func(i int) bool { return tape[i].OpenTime >= confirmedAt })
+	for ; i < len(tape); i++ {
+		if isHigh && tape[i].High > price || !isHigh && tape[i].Low < price {
+			return true
+		}
+	}
+	return false
 }
 
 // withoutDeleted drops the deleted key levels from the level set (deletion is
@@ -752,6 +817,9 @@ func nextLevelBeyond(levels []Level, price float64, side Side) float64 {
 		if l.Kind == KindTrendline {
 			continue // a trendline is a location, never a target (X9)
 		}
+		if !oldExtremeRoleFits(l, side) {
+			continue // r22 P1-4: a long never targets an old LOW (mirror short)
+		}
 		switch side {
 		case SideLong:
 			if l.Price > price && (best == 0 || l.Price < best) {
@@ -778,6 +846,9 @@ func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMul
 	for _, l := range levels {
 		if l.Kind == KindTrendline {
 			continue // a trendline is a location, never a target (X9)
+		}
+		if !oldExtremeRoleFits(l, side) {
+			continue // r22 P1-4: a long never targets an old LOW (mirror short)
 		}
 		onSide := side == SideLong && l.Price > entry || side == SideShort && l.Price < entry
 		if !onSide {
@@ -806,6 +877,65 @@ func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMul
 func isMovingLineKey(key string) bool {
 	return key == string(KindEMA34) || key == string(KindEMA34HTF) || key == string(KindTriggerRetest) ||
 		strings.HasPrefix(key, string(KindTrendline)+":")
+}
+
+// visitKey is a level's knock-knock identity for the B23 visit cap (r22
+// P1-2). Knock knock is about ONE level being hit again and again — "a level
+// tested many times will certainly break… good support = tested 1, 2, at most
+// 3 times" [D1.3 p1 @10:23–11:43; deck slide 17 "càng test nhiều lần → càng
+// dễ phá"] — one spot hammered on a door. The trigger line is a fixed price
+// only BETWEEN reversals: it moves "only on a reversal — một lần một thôi"
+// [D3.4 p1 @11:48–13:33], and each position is a new support/resistance line
+// [D3.4 p2 @20:27]. So its identity is the key AT ITS PRICE: the old constant
+// key "trigger_retest" counted ~115 line positions per session as ONE level
+// (82 of 88 retest rejects refused on 10-13). Every other level keeps its key
+// (key levels, old extremes, a trendline's own anchors, box edges).
+func visitKey(lvl Level) string {
+	if lvl.Kind == KindTriggerRetest {
+		return fmt.Sprintf("%s@%.2f", lvl.Key, lvl.Price)
+	}
+	return lvl.Key
+}
+
+// visitCapApplies reports whether the B23 visit cap governs a level. The EMA
+// 34 lines are re-priced every candle — never one spot — and the course gives
+// them their OWN repeat rules instead of knock knock: price "xiên lên xiên
+// xuống" across the line → turn it off [D4.2 p1 @20:49–24:29] (E4,
+// EmaMaxCross30m) and after a loss at the line turn it off until price escapes
+// [D4.2 p2 @01:23] (E2, EmaBlocked). Those still gate every EMA reject; the
+// visit count is kept for the panel but never caps the line (r22 P1-2: 59 of 65
+// EMA 34 rejects on 10-13 were refused by a cap that counted every EMA price
+// as one level).
+func visitCapApplies(lvl Level) bool {
+	return lvl.Kind != KindEMA34 && lvl.Kind != KindEMA34HTF
+}
+
+// refuseOncePerVisit counts a PHL/PLH-path refusal ONCE per visit of the
+// level (r22, P2-1): the PHL loop re-reads a rejected level on every tick while
+// its touch stands, so a bare e.refuse would count the same refusal every
+// minute (the level_visit_cap inflation CTO 01:19Z fixed). The mark clears on
+// the level's visit departure (touch loop) and at the day rollover.
+func (e *Evaluator) refuseOncePerVisit(levelKey, reason string) {
+	k := levelKey + "|" + reason
+	if e.State.PHLRefusedVisit[k] {
+		return
+	}
+	if e.State.PHLRefusedVisit == nil {
+		e.State.PHLRefusedVisit = map[string]bool{}
+	}
+	e.State.PHLRefusedVisit[k] = true
+	e.refuse(reason)
+}
+
+// clearPHLRefusedVisit drops every once-per-visit refusal mark of one level
+// (its visit departed — a new visit counts again).
+func (e *Evaluator) clearPHLRefusedVisit(levelKey string) {
+	prefix := levelKey + "|"
+	for k := range e.State.PHLRefusedVisit {
+		if strings.HasPrefix(k, prefix) {
+			delete(e.State.PHLRefusedVisit, k)
+		}
+	}
 }
 
 // Tick evaluates the newest closed 1m candle. bars is the closed history up to
@@ -948,6 +1078,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.State.Day.Key != e.State.VisitsDay {
 		e.State.Visits = map[string]int{}
 		e.State.VisitsDay = e.State.Day.Key
+		e.State.PHLRefusedVisit = nil // r22: a new day re-arms the once-per-visit counters
 		// item 22: a KEY level's ISB-only invalidity is scoped to the session
 		// day (the course never makes a level dead for good [D5.2 p2 @20:48]).
 		// The moving lines reset on visit departure in the touch loop below,
@@ -1045,6 +1176,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// line (the ONLY reset for a moving line — drift alone keeps the
 			// classification, item 22 fix).
 			delete(e.State.VisitCapRefused, lvl.Key)
+			e.clearPHLRefusedVisit(lvl.Key)
 			if moving {
 				delete(e.State.ISBOnly, lvl.Key)
 			}
@@ -1055,12 +1187,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 		// B23: each NEW reject classification is one visit of that level
 		// today (a revisit can only classify after the departure reset, so
-		// None -> Reject is exactly one visit).
+		// None -> Reject is exactly one visit). r22 P1-2: the visit is counted
+		// against the level's REAL identity (visitKey) — the trigger line at
+		// THIS price, not every position the line ever held.
 		if wasNone && tr.Outcome == TouchReject {
 			if e.State.Visits == nil {
 				e.State.Visits = map[string]int{}
 			}
-			e.State.Visits[lvl.Key]++
+			e.State.Visits[visitKey(lvl)]++
 		}
 		out = append(out, handleTouchIntents(e, lvl, intents)...)
 	}
@@ -1505,7 +1639,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// handful of capped levels) and hid real refusals in the funnel.
 			// VisitCapRefused marks the level once; the touch loop clears it on
 			// visit departure so a NEW visit re-arms the refusal.
-			if e.Cfg.LevelMaxVisits > 0 && e.State.Visits[lvl.Key] > e.Cfg.LevelMaxVisits {
+			// r22 P1-2: the cap reads the level's REAL identity (visitKey) and
+			// never applies to the EMA lines (visitCapApplies).
+			if e.Cfg.LevelMaxVisits > 0 && visitCapApplies(lvl) && e.State.Visits[visitKey(lvl)] > e.Cfg.LevelMaxVisits {
 				if !e.State.VisitCapRefused[lvl.Key] {
 					e.refuse("level_visit_cap")
 					e.State.VisitCapRefused[lvl.Key] = true
@@ -1513,17 +1649,24 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				continue
 			}
 			// E2 + E4: the EMA34 setup is gated on the loss block and the
-			// 30-minute crossing knob.
+			// 30-minute crossing knob. r22 (P2-1): named + counted once per visit.
 			if isEMA34(lvl) && !emaSetupAllowed(e, lvl, bars, e.Cfg) {
+				if e.State.EmaBlocked {
+					e.refuseOncePerVisit(lvl.Key, "phl_ema_loss_block")
+				} else {
+					e.refuseOncePerVisit(lvl.Key, "phl_ema_crossing_30m")
+				}
 				continue
 			}
 			// LOCATION GATE (fold item 1): a PHL/PLH entry level must be a real
 			// location — a bare old high/low is not one.
 			if !levelIsLocation(lvl, levels) {
+				e.refuseOncePerVisit(lvl.Key, "phl_not_location")
 				continue
 			}
 			side, price, ok := RejectEntry(tr, e.Cfg)
 			if !ok {
+				e.refuseOncePerVisit(lvl.Key, "phl_no_reject_entry")
 				continue
 			}
 			// LocTriggerFilter (CTO 13:20:22Z): false switches the 5m-trigger
@@ -1567,11 +1710,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// below and an FTGH above there is NO PHL, NO PLH, regardless of
 			// width — only the ISB.
 			if midRangeBoxed(boxes, price) {
+				e.refuseOncePerVisit(lvl.Key, "phl_mid_range_boxed")
 				continue
 			}
 			// R5: nothing trades inside the standing 5m-ISB box except a
-			// same-direction 1m ISB — PHL/PLH never.
+			// same-direction 1m ISB — PHL/PLH never. r22: the course DOES ban
+			// it ("inside a 5-minute ISB box … bans PHL/PLH and permits only
+			// the inside bar" [D3.2 p2 @08:51; D3.4 p2 @07:27; D3.4 p3 @01:44];
+			// "No PHL, no PLH, no opposite ISB" [D3.4 p2 @07:27–10:35]) — the
+			// ban stays, and is now named + counted (was silent, P2-1).
 			if e.State.ISBBox != nil && cur.Close > e.State.ISBBox.Low && cur.Close < e.State.ISBBox.High {
+				e.refuseOncePerVisit(lvl.Key, "phl_5m_box_ban")
 				continue
 			}
 			// D4.1-25: the 15m box refuses PHL/PLH inside it too ("đợi nó thoát
@@ -1589,6 +1738,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// while a level order RESTS at this level, the level is not re-emitted
 			// (no double size on repeated touches).
 			if _, resting := e.State.LevelArms[lvl.Key]; resting {
+				e.refuseOncePerVisit(lvl.Key, "phl_level_arm_resting")
 				continue
 			}
 			// B14b: the target is the NEAREST old extreme on the trade side —
@@ -1946,23 +2096,29 @@ type oldExtreme struct {
 
 // oldExtremeIndexes maps old-extreme levels to the index of their defining bar.
 // The level was drawn at a swing point; the index is the last bar whose high
-// (low) equals the level price — the ≥3-candle distance [D4.1 p1 @ 09:40
-// written] is measured from there.
+// (for an old HIGH) or low (for an old LOW) equals the level price — the
+// ≥3-candle distance [D4.1 p1 @ 09:40 written] is measured from there.
+// r22 P1-4: the role is the level's EXPLICIT Role, never inferred from the
+// tape. The old scan took the role from the LAST bar whose high OR low sat
+// within 0.26 of the price, so a later bar revisiting an old high relabelled
+// it a "low" (40 of 221 PHL target picks on 10-13 had the wrong role, and
+// every one of them was refused as not_higher_low / not_lower_high). A level
+// with no role cannot be a PHL/PLH extreme (fail closed).
 func oldExtremeIndexes(levels []Level, bars []market.Kline) []oldExtreme {
 	var out []oldExtreme
 	for _, l := range levels {
-		if l.Kind != KindOldExtreme {
+		if l.Kind != KindOldExtreme || l.Role != OldHigh && l.Role != OldLow {
 			continue
 		}
+		isHigh := l.Role == OldHigh
 		idx := -1
-		isHigh := false
 		for i := len(bars) - 1; i >= 0; i-- {
-			if abs(bars[i].High-l.Price) < 0.26 {
-				idx, isHigh = i, true
-				break
+			px := bars[i].Low
+			if isHigh {
+				px = bars[i].High
 			}
-			if abs(bars[i].Low-l.Price) < 0.26 {
-				idx, isHigh = i, false
+			if abs(px-l.Price) < 0.26 {
+				idx = i
 				break
 			}
 		}
@@ -1971,6 +2127,19 @@ func oldExtremeIndexes(levels []Level, bars []market.Kline) []oldExtreme {
 		}
 	}
 	return out
+}
+
+// oldExtremeRoleFits reports whether an old extreme can serve a trade in the
+// given direction: a LONG targets an old HIGH, never an old LOW; a SHORT an old
+// LOW, never an old HIGH (r22 P1-4 — "target gần đỉnh cũ", near the OLD HIGH
+// for a PHL [D4.1 p1 @07:27]). Every non-old-extreme level fits; an old
+// extreme with no recorded role fits too (a hand-built level) — the evaluator
+// always stamps the role (swingOldExtremeLevels).
+func oldExtremeRoleFits(l Level, side Side) bool {
+	if l.Kind != KindOldExtreme || l.Role == "" {
+		return true
+	}
+	return (l.Role == OldHigh) == (side == SideLong)
 }
 
 // priorSameRole returns the most recent old extreme BEFORE ex.idx with the
@@ -2071,10 +2240,17 @@ func phlRefusalKey(reason string) string {
 // nearestOldExtremeOnSide — B14b [D2.2 p2 @03:07–03:14]: the target is the
 // NEAREST old extreme on the trade side only; a failed nearest high is a
 // SKIP ("mình xác định ra mình không có target"), never a farther old high.
+//
+// r22 P1-4: only an extreme of the trade's ROLE is a candidate — a long
+// targets an old HIGH, a short an old LOW (oldExtremeRoleFits on the explicit
+// role).
 func nearestOldExtremeOnSide(extremes []oldExtreme, price float64, side Side) (oldExtreme, bool) {
 	var best oldExtreme
 	found := false
 	for _, o := range extremes {
+		if !oldExtremeRoleFits(o.level, side) {
+			continue
+		}
 		if side == SideLong && !(o.level.Price > price) {
 			continue
 		}

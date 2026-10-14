@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -53,7 +54,7 @@ func seededMentorEval(cfg Config, keyPrice, emaPrice float64, bars []market.Klin
 	cfg.EMALocationTFMinutes = 0
 	e := New(cfg)
 	e.seeded = true
-	e.State.SeedLevels = []Level{{Key: "key:" + fmtPriceKey(keyPrice), Kind: KindKeyLevel, Price: keyPrice, AtTime: 1}}
+	e.State.SeedLevels = []Level{{Key: fmt.Sprintf("key:%.2f", keyPrice), Kind: KindKeyLevel, Price: keyPrice, AtTime: 1}}
 	e.State.EMA34 = emaPrice
 	e.State.EMA9 = emaPrice
 	// Freeze the incremental EMA so it stays at the injected price (the ISB's
