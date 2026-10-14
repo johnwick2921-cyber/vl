@@ -66,7 +66,14 @@ export const status: GuideSection = {
         ['maybeWakePlannerOnLevelEvents — the level wake (fixed first)', 'yes'],
         ['weeklyConfluenceShadow — the weekly shadow read', 'yes'],
         ['weeklyScenarioGrade — the active-session grade', 'yes'],
-        ['ResetDailyPnL — the manual daily-window reset', 'yes'],
+        [
+          'SetDailyForceFlat — the daily-loss latch, stamped with its CME session-day',
+          'yes',
+        ],
+        [
+          'DailyForceFlatReason — is the daily-loss latch still holding (lifts at 17:00 CT)',
+          'yes',
+        ],
         ['barPersistSummary — the 60s counter summary', 'yes'],
         [
           'ForceReset poll deadline — a real wait, not a rule',
@@ -109,7 +116,7 @@ export const status: GuideSection = {
     },
     {
       kind: 'p',
-      text: "Every section of this guide shows a rev in its header. That is the commit the guide was BUILT for, and the banner at the top compares it against the bot that is actually running. If they disagree the guide is describing a different build than the one taking your trades, and it says so rather than letting you read the wrong thing. A build that is not a release shows 'dev' — never a real-looking commit id, because a plausible id you cannot check is worse than an honest 'dev'.",
+      text: "Every section of this guide shows a rev in its header. That is the commit the page bundle was BUILT from, and the banner at the top compares it (first 12 characters) against the commit the running bot reports. If they differ, the page and the bot come from different builds and the banner says so. It is a build-identity check, not a content check: a properly built release always matches its own bot, so the banner can never catch a sentence that is wrong about that build — the guide-truth tests (web/src/guide/guideTruth.test.ts and the Go guide pins) are what compare the words to the code. A build that is not a release shows 'dev' — never a real-looking commit id, because a plausible id you cannot check is worse than an honest 'dev'.",
     },
     {
       kind: 'p',
@@ -220,7 +227,8 @@ export const status: GuideSection = {
         '🚦 entry latch: latch=<wired|UNWIRED|n/a> key=<ACCOUNT|SYMBOL> book≤<2×snapshot interval> recent=1m0s — per trader, READ from the NinjaTrader connection: wired means the one entry latch has its book and ledger evidence  ← W-EXEC-TRUTH W0a',
         '🔒 maintenance: hold=<clear|held|unreadable|unconfigured> job=<id|n/a> since=<time|n/a> addon_ack=<held|released job=<id> build=<id>|n/a> — the installation update hold, every field READ. addon_ack is n/a at startup because the NinjaTrader AddOn has not connected yet; an AddOn older than 2026-09-22-m2 never acks, so it stays n/a  ← W-ONE-BUTTON M2',
         '⚠ transport: NT_TRANSPORT UNSET — using the deprecated CSV transport (set NT_TRANSPORT=tcp for the live TCP bridge); effective transport: csv  ← FIX-LEAKS P2-18: printed only when the var is genuinely absent — an explicit csv stays silent, an unknown value refuses',
-        '🧾 P&L surfaces: <N> aggregators strict-corrected, 0 raw (corrected-column guard) — every P&L figure the model and the dashboard read is pnl_corrected; unresolved rows are counted and excluded, never coerced',
+        "🧾 P&L surfaces: <N> aggregators strict-corrected, 0 raw (corrected-column guard; … manual NT8 rows excluded by origin and shown as their own line) — every P&L figure the model and the dashboard read is pnl_corrected over the BOT's trades; unresolved rows are counted and excluded, never coerced",
+        '🧾 manual origin (R1): closed manual rows=<n> Σ=<±x|n/a> (excluded from every bot P&L figure, shown as their own line) · this boot marked=<k> [ids] already=<a> skipped=<s> · backup=<file|none> — every figure READ from trader_positions; the first release-#22 boot marks #608 #609 #637 #640 (backup first, no backup no write) and every later boot marks nothing  ← R22 PNL-TRUTH',
         '🛑 exits: stop=max(anchor+clr, 1.5×ATR5m) · anchor_max=3.0×ATR5m · BE=n/a(strategy) · trail=n/a(strategy) · seam=SUSPENDED(env) · size=1 · re-arm-after-sweep=on (0B) — the whole exit posture, every field READ from the source the mechanics honour: BE/trail print n/a until each trader loads its strategy, then on/off from the strategy toggles; seam comes from env EXIT_MECHS_SUSPENDED (class NN)',
         '⏱ wakes: cutoff=25m(enforce) cooldown=30m(enforce, fast-market≥1.5×ATR exempt) cross-session=on stale-arm-expiry=on (class 47) — ENFORCING since 2026-09-03: a level_event wake with under 25 min to the flat is SKIPPED (its read would land after the last-entry gate closes), and so is one within 30 min of the last wake-authored version — UNLESS price has drifted ≥ FAST_MARKET_ATR (1.5×) from the plan being traded, which bypasses the cooldown and logs "cooldown bypassed: fast market <drift>×ATR". The 25-min cutoff is never exempted: a re-plan with 20 minutes left is a re-plan with 20 minutes left, fast or not. Scheduled reads, death re-plans and owner resets are untouched. cross-session defers WAKES (never scheduled reads) while a planner stream is open; stale-arm expiry retires never-placed arms from superseded plan versions',
         '    · expected <sha> · goldens PASS      ← code matches deploy record',
@@ -228,7 +236,7 @@ export const status: GuideSection = {
         '🧯 ring rehydrated MNQ 1m [O 2026-09-16]: nt8=<n> store_live=<n> store_hist=<n> (post-drop excluded=<bool>) import=<n> (refused at the door — guard iii) total=<t>/<cap> — every number read; then "🧯 ring rehydrate done [O …]: <k> of <n> pairs deepened"  ← dispatch 101',
         '🧮 planner tape [NT8-only, CTO ruling 2026-09-16] @<t>: MNQ 1m contract=<c> · import rows on contract=<n> (excluded from every planner door) · tape NT8-only=<a> rows vs with imports=<b> rows (Δ<a-b>) · regime baseline NT8-only=<x> vs with imports=<y> (Δ<x-y>) · chart keeps imports, labelled  ← 101 follow-up',
         '🗺 structure: off|on(D/4h/1h)|n/a — the S1 structure-table knob, READ from the bound strategy; per read: 🗺 structure @<session>: D=<up|down|range> 4h=… 1h=… zones=<n> pd4h=<0.xx>  ← S1 (2026-09-16)',
-        "📈 chart: across-roll=on[O]|off[env:VL|default] (the bracketed word names the env SOURCE read) · prior contracts fill strictly before the current contract's first live row · step never adjusted · limit max=20000 · decision readers=current-contract-only  ← dispatch 101",
+        "📈 chart: across-roll=on[O]|off[env:VL|default] (the bracketed word names the env SOURCE read) · prior contracts fill strictly before the current contract's first live row · prior-segment stitch=derive+adjust|legacy (READ: api.ChartRollStitchResolved; CHART_ROLL_STITCH=legacy selects legacy) · limit max=20000 · decision readers=current-contract-only  ← dispatch 101",
         '📜 planner playbook: playbook=v2 bias_tree=on …',
         '🛡 plan facts guards: 0-side + empty map fail-closed …',
         '🚀 planner speed wave: retry=repair stream=on stream_idle=30s stream_total=1200s …',
@@ -249,7 +257,7 @@ export const status: GuideSection = {
         '⚙ config diff (studio_save): min_risk_reward_ratio 3 → 2  ← one line per RESOLVED knob a save changed, plus a config_changes row',
         '🛡 boot sweep CANCELLED pre-boot arm (class 33): <session> <S#> … signal=<id> — the process that placed it is gone  ← only when a restart orphaned a resting order',
         "🧷 brackets: entry-oco=<own(none)|SHARED(id)|n/a> · bracket-oco=<on-fill(shared)|MIXED|n/a> · state-source=<broker|none> · protective-tif=<Gtc|Day|n/a> · reconcile-on-reconnect=on · can-place-stop=<yes|no (addon <build>)> · unprotected-found=<n>  ← bracket-OCO separation. At startup most fields read n/a ON PURPOSE: they describe what the NinjaTrader AddOn does, and the bot can only know that from a book it has not received yet. A Go constant asserting the AddOn's behaviour is exactly the failure this line exists to catch — if entry-oco ever reads SHARED(...), the entry is back in its bracket's cancel group and cancelling it can take the stop.",
-        "🛑 session risk: daily=<$N>[O] [DECORATIVE (guardrails master off, daily_loss_enabled off — both must be on)] · breaker=<N|off>[O|E|I] warn=<M>[I] (not master-gated[; never fires on the retained tape, max run 7, ids 585-591]) · no-trade-band=arm+decision · post-loss counter=on(<K>m) · flat@<close>=position+arms+pending  ← session risk limits. Every threshold carries its evidence tier: [O] is an owner ruling (a saved value), [E] is the process environment (e.g. BREAKER_HALT_N, used only when the strategy saved nothing), [I] is invented and not yet measured (the shipped default). The breaker is READ from the one bound strategy (W1): breaker=n/a (<why>) when zero or several strategies are bound — each trader then prints its own '🛑 [trader] breaker=…' line — and the retained-tape clause rides only an N of 8 or more. Beside it at trader load: '🧮 replan cap: strategy=… · NY=… · ASIA=… · LONDON=…' with the same origin tags, and at boot one '🩺 settings truth [<strategy id>]' line per stored strategy (stored value, what the pre-W1 binary enforced, what this one enforces, CHANGED/UNCHANGED) plus a summary; a CHANGED row no Studio save confirmed refuses its trader with a '⛔ settings truth' line. The line says DECORATIVE in those words whenever a limit is configured but not enforced, because a limit that is displayed and not enforced is worse than none — it is a limit someone is relying on.",
+        "🛑 session risk: daily=<$N>[O] [DECORATIVE (guardrails master off, daily_loss_enabled off — both must be on)] · breaker=<N|off>[O|E|I] warn=<M>[I] (not master-gated[; never fires on the retained tape, max run 7, ids 585-591]) · no-trade-band=arm+decision · post-loss counter=on(<K>m) · flat@<close>=position+arms+pending  ← session risk limits. Every threshold carries its evidence tier: [O] is an owner ruling (a saved value), [E] is the process environment (e.g. BREAKER_HALT_N, used only when the strategy saved nothing), [I] is invented and not yet measured (the shipped default). The breaker is READ from the one bound strategy (W1): breaker=n/a (<why>) when zero or several strategies are bound — each trader then prints its own '🛑 [trader] breaker=…' line — and the retained-tape clause rides only an N of 8 or more. Beside it at trader load: '🧮 replan cap: strategy=… · NY=… · ASIA=… · LONDON=…' with the same origin tags, and at boot one '🩺 settings truth [<strategy id>]' line per stored strategy (stored value, what the pre-W1 binary enforced, what this one enforces, CHANGED/UNCHANGED) plus a summary; a CHANGED row no Studio save confirmed refuses its trader with a '⛔ settings truth' line. The line says DECORATIVE in those words whenever a limit is configured but not enforced, because a limit that is displayed and not enforced is worse than none — it is a limit someone is relying on. At trader load each trader also prints '🛑 [trader] daily-loss gate: OFF (…) …' or 'daily-loss gate: ENFORCED (…) — at bot P&L (realized+open, manual excluded) ≤ -limit: refuse new entries on every path, cancel resting entry orders, flatten bot positions, latched until 17:00 CT', with its max_daily_trades posture; a trip logs '🔴 DAILY LOSS LIMIT HIT' once, and GET /api/risk/status carries daily_loss_gate (enforced, limit, latched, the bot P&L it judges, manual rows excluded, unresolved rows).",
         '🎛 volume wave …   ← wave detector knobs',
         '🎯 touch telemetry …',
         '📐 fvg_entry …',
@@ -266,7 +274,7 @@ export const status: GuideSection = {
     },
     {
       kind: 'p',
-      text: 'A date is now one of three things, and the calendar is DATA (kernel/session_calendar.json), not code. CLOSED \u2014 no trading at all. SHORTENED \u2014 a TRADING day: reads fire, arms are allowed, and the bot is flat at the stated early close, the same discipline as 14:45 at an earlier time. NORMAL \u2014 the ordinary weekly rules decide, and a date absent from the file is normal.',
+      text: 'A date is now one of three things, and the calendar is DATA (kernel/session_calendar.json), not code. CLOSED \u2014 no trading at all. SHORTENED \u2014 a TRADING day: reads fire, arms are allowed, new entries stop at the early close minus the last-entry offset (12:00 on a 12:15 day), and the bot is flat at the stated early close, the same discipline as 14:45 at an earlier time. The early close is looked up on the date the session CLOSES (release #22: it used to be looked up on the day before, so 11-27 and 12-24 never pulled anything in), and because the market is already closed at that minute, the closed-market path itself cancels the resting arms and flattens the positions before it idles \u2014 nothing rides over the holiday. SWING4H positions and swing arms keep their own exemption. NORMAL \u2014 the ordinary weekly rules decide, and a date absent from the file is normal.',
     },
     {
       kind: 'p',
@@ -303,7 +311,7 @@ export const status: GuideSection = {
         ],
         [
           'DRIFT',
-          'Shown only when the ledger and the broker disagree about the stop. Arm 35 was 3.371527 points apart.',
+          'Shown only when the ledger and the broker disagree about the stop. Arm 35 was 3.371527 points apart. Since release #22 the ledger records the exact tick-rounded stop and target sent to NT8 (the stop rounded away from the entry), so a rounding difference alone no longer shows here — a drift now means the stop really differs from what was sent.',
         ],
         [
           'TARGET',
@@ -311,7 +319,7 @@ export const status: GuideSection = {
         ],
         [
           'DAY',
-          'Realized P&L on pnl_corrected against the ENFORCED daily limit, naming its source (Studio or the env fallback) and whether the guardrails master is even on. Rows with no corrected P&L are excluded AND counted.',
+          'The BOT\'s realized P&L for the CME session day (from 17:00 CT) on pnl_corrected against the ENFORCED daily limit, naming its source (Studio or the env fallback) and whether the guardrails master is even on. Rows with no corrected P&L are excluded AND counted; manual NT8 trades (origin=manual) are excluded and named on their own line ("Manual (excluded): …"). Until release #22 this line silently dropped every row with an UNRESOLVABLE plan link instead.',
         ],
         [
           'ARMS',
@@ -355,11 +363,18 @@ export const status: GuideSection = {
           'TCP bridge alive + bars flowing — the single source of truth.',
         ],
         ['Boot integrity', 'Running binary == deploy record (goldens PASS).'],
-        ['Dead-man watchdog', 'Kernel heartbeats ok.'],
+        [
+          'Dead-man watchdog',
+          'NT8 link sampled every minute per trader; a reconnect between samples counts as a gap; NEW entries blocked until a clean reconciliation.',
+        ],
         ['Trader frozen', 'The trader loop is stuck — investigate.'],
         [
           'Clock drift',
           'Host clock vs NT8 clock mismatch. Red-news windows widen by at most 2 minutes a side for it (CLASS 145); a reading over 5 minutes is feed age (halt or gap), not the clock.',
+        ],
+        [
+          'Clock steps',
+          'GET /api/health → clock: every wall-clock step the bot itself saw (wall vs monotonic, sampled each second) — backward and forward counts, the largest of each, the last step, and whether NEW entries are held right now. This is the authority; the old timesync{…} field read systemd-timesyncd, which is not running on this box (chrony and Hyper-V TimeSync are), so it measured nothing. The clock-health log line prints the same counters as steps{…}.',
         ],
         [
           '402 banner',
@@ -373,6 +388,7 @@ export const status: GuideSection = {
       title: 'every label the gate panel can show',
       lines: [
         'NT8 feed down · Dead-man watchdog · Trader frozen · Boot integrity',
+        'Update pending (preflight freeze)',
         'Consecutive-loss halt · Past last-entry time · Outside session window',
         'Against the plan · Awaiting approval · Clock drift',
         'Duplicate order dropped · Order rate breaker · Burned level re-touched',
@@ -405,7 +421,7 @@ export const status: GuideSection = {
     { kind: 'h', text: 'Dashboard chart depth — the store, not just the ring' },
     {
       kind: 'p',
-      text: "GET /api/klines for a futures symbol splices the persisted bars table onto the older end of the live ring when the ask exceeds what the ring served (the ring caps at 2,500 bars per symbol+timeframe; the dashboard asks 5,000). The current-contract splice comes first — a ring bar is never replaced by a stored one, an EMPTY ring is never backfilled from the store (no live feed still shows no candles), and a failed store read serves the ring alone. Then, since 2026-09-16 [O], the chart shows EVERY stored contract: prior contracts fill strictly BEFORE the current contract's first live bar, every kline carries its `contract`, and the roll is a visible basis step (MNQ 09-26 → 12-26 was +301.50 at 09-07 04:40 CT) that is never back-adjusted. A 'prior' contract is literally not the current one — the current contract's imported rows that sit in holes of the prior series stay out, so a hole stays a hole rather than becoming a 300-point spike. VL_CHART_ACROSS_ROLL=off restores the current-contract-only chart without a rebuild (the pre-rename name still works until R5 — the VL name wins; R5 removes it); the resolved value and its env source are on the '📈 chart:' boot line. The BOT still decides on the current contract only — the decision readers are contract-pure and no level, plan or arm path reads across the roll.",
+      text: "GET /api/klines for a futures symbol splices the persisted bars table onto the older end of the live ring when the ask exceeds what the ring served (the ring caps at 2,500 bars per symbol+timeframe; the dashboard asks 5,000). The current-contract splice comes first — a ring bar is never replaced by a stored one, an EMPTY ring is never backfilled from the store (no live feed still shows no candles), and a failed store read serves the ring alone. Then, since 2026-09-16 [O], the chart shows EVERY stored contract: prior contracts fill strictly BEFORE the current contract's first live bar, every kline carries its `contract`, and, by DEFAULT since W-ROLL-DAY-CHART (2026-09-19, CHART_ROLL_STITCH unset = derive+adjust), the prior segment is re-derived from that contract's stored 1m rows and the WHOLE prior segment is shifted by the measured roll basis (about +290 for Sep→Dec), so the roll shows no cliff; CHART_ROLL_STITCH=legacy restores the old stored-aggregate stitch, where the roll is a visible, un-adjusted basis step (MNQ 09-26 → 12-26 was +301.50 at 09-07 04:40 CT). The current contract is never touched either way. A 'prior' contract is literally not the current one — the current contract's imported rows that sit in holes of the prior series stay out, so a hole stays a hole rather than becoming a 300-point spike. VL_CHART_ACROSS_ROLL=off restores the current-contract-only chart without a rebuild (the pre-rename name still works until R5 — the VL name wins; R5 removes it); the resolved value and its env source are on the '📈 chart:' boot line. The BOT still decides on the current contract only — the decision readers are contract-pure and no level, plan or arm path reads across the roll.",
     },
     {
       kind: 'h',

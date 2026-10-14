@@ -32,7 +32,7 @@ export const plays: GuideSection = {
       cards: [
         {
           title: 'reclaim',
-          body: 'Setup: level touched → price closes back on the original side → confirm: 1×5m close beyond (rule 1x5m_close) or a 1m-MSS (rule 1m_mss). NEVER 2×5m (2x5m_reserved — the double close is legal only on waterfall-class plays). The planner writes it when a level was lost and re-taken. Expectancy: the bread-and-butter retest play.',
+          body: 'Setup: level touched → price closes back on the original side → confirm: 1×5m close beyond (rule 1x5m_close) or a 1m-MSS (rule 1m_mss). NEVER 2×5m (2x5m_reserved — the double close is legal only on waterfall-class plays). The planner writes it when a level was lost and re-taken. Expectancy: the bread-and-butter retest play. SWEEP SETUPS WAIT FOR THEIR TRIGGER (owner ruling, release #22): the machine sends NO order for a reclaim until its confirm is met, and the close counts only AFTER a closed 1m bar has traded AT or THROUGH the ref (the sweep) — a close already on the reclaimed side with no sweep is not the trigger. Trade #649 filled before its sweep and was graded A; now that entry grades C ("the scenario\'s trigger had NOT happened at the entry"). Each hold is logged ⏳ … HELD and counted (sweep_waits_for_trigger).',
           tag: 'play 1',
         },
         {
@@ -42,7 +42,7 @@ export const plays: GuideSection = {
         },
         {
           title: 'sweep_reclaim',
-          body: 'Setup: level swept (liquidity taken) → close back inside → the SPLIT contract (E4): leg 1 = touch at the sweep ref (resting limit, no confirm), leg 2 = 1m-MSS or the reclaim 1×5m close — never 2×. The house play at ONH/ONL. Expectancy: week 0% / −192 when misplayed as fade-the-poke; the sweep first is what makes it valid.',
+          body: "Setup: level swept (liquidity taken) → close back inside → the SPLIT contract (E4): leg 1 = touch at the sweep ref, leg 2 = 1m-MSS or the reclaim 1×5m close — never 2×. Since release #22 (owner: sweep setups wait for their trigger) NO leg rests before the scenario's whole confirm is machine-MET, whatever wait_confirm the plan wrote. The house play at ONH/ONL. Expectancy: week 0% / −192 when misplayed as fade-the-poke; the sweep first is what makes it valid.",
           tag: 'play 3',
         },
         {
@@ -139,6 +139,10 @@ export const plays: GuideSection = {
     },
     {
       kind: 'p',
+      text: 'FLIP COHERENCE (release #22, no knob): at write, an armed scenario whose entry sits PAST the plan\'s own flip line, against the flip direction — a short entered above a "close above → long" line, a long entered below a "close below → short" line — is written with its arm DISABLED (arm_disabled_reason flip_incoherent): it could only fill where the plan is about to flip against it. Trade #649 was a short entered above its plan\'s flip line; the plan went dormant 7 minutes after the fill. An entry exactly ON the line stays armed. No repair round-trip is spent; the plan card shows "disabled at write: flip_incoherent", the log one ⚔️ arm disabled at write line, the counter arm_disabled_at_write:…:flip_incoherent. Since 2026-09-24, 48 of 231 armed scenarios were strictly past their flip line (31 more sat exactly on it).',
+    },
+    {
+      kind: 'p',
       text: 'On the plan card a market_in_zone leg shows one line: "Entry: around <planned entry> (zone <lo>–<hi>) · <status>", the status being one of Waiting for price · Blocked: <reason> · Armed: <verdict> · Placed at <limit> · Filled <price> (n ticks — the fill vs the limit sent, + worse / − better) · Cancel pending: <reason>. A missing number reads n/a, never 0. Legacy and planned_order legs show no line, and no line appears until the executor writes a ledger row — a market_in_zone arm still waiting on wait_confirm shows only the armed chip.',
     },
     {
@@ -205,7 +209,9 @@ export const plays: GuideSection = {
       title: 'legs[] belong to sweep_reclaim and nothing else',
       lines: [
         'sweep_reclaim   → SPLIT: EXACTLY 2 legs · confirm=touch at the sweep ref',
-        '                  leg 1 rests (wait_confirm false) · leg 2 chains (true)',
+        '                  leg 1 (wait_confirm false) · leg 2 chains (true)',
+        '                  R22: the machine HOLDS every sweep-setup leg (reclaim,',
+        '                  sweep_reclaim) until the confirm is met — the sweep first',
         '                  leg 2 rule = confirm2.rule ∈ 1m_mss | 1x5m_close',
         '                  top-level entry/stop/target mirror leg 1',
         'everything else → SINGLE: arm{} and NO legs',

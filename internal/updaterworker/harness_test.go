@@ -506,7 +506,7 @@ func (b *box) writeBootLine(logPath string) error {
 	now := b.clock.Now().In(time.Local)
 	b.mu.Unlock()
 	line := fmt.Sprintf("%s [%s] main/main.go:322 🔐 BOOT INTEGRITY %s — rev %s · pid %d · built 2026-09-24T00:00:00Z · expected %s · goldens PASS\n",
-		now.Format("01-02 15:04:05"), level, status, sha[:12], pid, sha[:12])
+		logStampCT(now), level, status, sha[:12], pid, sha[:12])
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err

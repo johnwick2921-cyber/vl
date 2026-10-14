@@ -12,7 +12,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.4400000000000002,
-      "confluence": 11,
+      "confluence": 5,
       "distance": -1.1941218603569723,
       "role": "magnet_meanrevert"
     },
@@ -27,7 +27,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.4400000000000002,
-      "confluence": 13,
+      "confluence": 6,
       "distance": 3.940486964493175,
       "role": "magnet_meanrevert"
     },
@@ -103,7 +103,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.36,
-      "confluence": 13,
+      "confluence": 6,
       "distance": 18.62555292817342,
       "role": "react_zone"
     },
@@ -118,7 +118,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.2800000000000002,
-      "confluence": 11,
+      "confluence": 5,
       "distance": 33.32598284129563,
       "role": "pivot"
     },
@@ -134,7 +134,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.36,
-      "confluence": 17,
+      "confluence": 5,
       "distance": 37.72161086362394,
       "role": "react_zone"
     },
@@ -149,7 +149,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.4400000000000002,
-      "confluence": 19,
+      "confluence": 3,
       "distance": -40.5990291038288,
       "role": "magnet_meanrevert"
     },
@@ -164,7 +164,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.6,
-      "confluence": 59,
+      "confluence": 5,
       "distance": 40.897609406387346,
       "role": "react_zone"
     },
@@ -224,7 +224,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.1199999999999999,
-      "confluence": 48,
+      "confluence": 6,
       "distance": -84.64242016387288,
       "role": "liquidity_break"
     },
@@ -239,7 +239,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.2800000000000002,
-      "confluence": 20,
+      "confluence": 6,
       "distance": -90.20778306380089,
       "role": "react_zone"
     },
@@ -255,7 +255,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.36,
-      "confluence": 20,
+      "confluence": 6,
       "distance": -96.31969454231148,
       "role": "react_zone"
     },
@@ -286,7 +286,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.36,
-      "confluence": 17,
+      "confluence": 5,
       "distance": -117.89996832482575,
       "role": "react_zone"
     },
@@ -301,7 +301,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.6,
-      "confluence": 41,
+      "confluence": 5,
       "distance": -123.10340532195914,
       "role": "react_zone"
     },
@@ -378,7 +378,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.4400000000000002,
-      "confluence": 11,
+      "confluence": 5,
       "distance": -1.1941218603569723,
       "role": "magnet_meanrevert"
     },
@@ -393,7 +393,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.4400000000000002,
-      "confluence": 13,
+      "confluence": 6,
       "distance": 3.940486964493175,
       "role": "magnet_meanrevert"
     },
@@ -469,7 +469,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.36,
-      "confluence": 13,
+      "confluence": 6,
       "distance": 18.62555292817342,
       "role": "react_zone"
     },
@@ -484,7 +484,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.2800000000000002,
-      "confluence": 11,
+      "confluence": 5,
       "distance": 33.32598284129563,
       "role": "pivot"
     },
@@ -500,7 +500,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.36,
-      "confluence": 17,
+      "confluence": 5,
       "distance": 37.72161086362394,
       "role": "react_zone"
     },
@@ -515,7 +515,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.4400000000000002,
-      "confluence": 19,
+      "confluence": 3,
       "distance": -40.5990291038288,
       "role": "magnet_meanrevert"
     },
@@ -530,7 +530,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.6,
-      "confluence": 59,
+      "confluence": 5,
       "distance": 40.897609406387346,
       "role": "react_zone"
     },
@@ -551,5 +551,5 @@
     }
   ],
   "Price": 20041.83028958139,
-  "DATR": 165.3772788269216
+  "DATR": 165.60681154128906
 }

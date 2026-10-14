@@ -1081,6 +1081,49 @@ func (t *TCPTrader) ModifyBracket(signalID string, newSL, newTP float64) error {
 	})
 }
 
+// ModifyBracketLeg (release #22, mentor ISB candle-3 partial) modifies ONE leg
+// of a split bracket in place — leg 1 (-sl/-tp), leg 2 (-sl2/-tp2), 0 = every
+// leg — through the SAME modify_bracket frame (its `leg` field is wire v4; the
+// AddOn's HandleModifyBracket already honours it, so no C# change). Unlike the
+// unwired ModifyBracket it never puts an off-grid price on the wire (MATH-
+// EXECUTOR P2-2): a TP rounds to the NEAREST tick (the caller has already
+// rounded in its protective direction, so an on-grid price is unchanged) and a
+// stop goes through WireStop (away from the entry). A price <= 0 is "leave that
+// order untouched" (omitted from the frame). Nothing to change, a bad leg or a
+// bad side is an error — never a guessed frame.
+func (t *TCPTrader) ModifyBracketLeg(signalID, side string, leg int, newSL, newTP float64) error {
+	if strings.TrimSpace(signalID) == "" {
+		return fmt.Errorf("ninjatrader/tcp: modify_bracket needs a signal id")
+	}
+	if leg < 0 || leg > 2 {
+		return fmt.Errorf("ninjatrader/tcp: modify_bracket leg %d is not 0, 1 or 2", leg)
+	}
+	if newSL <= 0 && newTP <= 0 {
+		return fmt.Errorf("ninjatrader/tcp: modify_bracket for %s has nothing to change", signalID)
+	}
+	tick := InstrumentTickSize(t.symbol)
+	if newTP > 0 {
+		newTP = RoundToTick(newTP, tick)
+	}
+	if newSL > 0 {
+		ws, err := WireStop(side, newSL, tick)
+		if err != nil {
+			return err
+		}
+		newSL = ws
+	}
+	if t.server == nil {
+		return fmt.Errorf("ninjatrader/tcp: modify_bracket for %s: no NT8 server", signalID)
+	}
+	t.mu.Lock()
+	tid := t.traderID
+	t.mu.Unlock()
+	return t.server.SendModifyBracket(ntwire.ModifyBracketPayload{
+		Symbol: t.symbol, SignalID: signalID, NewStopLoss: newSL, NewTakeProfit: newTP,
+		Leg: leg, Account: t.boundAccount, TraderID: tid,
+	})
+}
+
 // OrderUpdates returns THIS trader's order_update stream (per symbol+account).
 func (t *TCPTrader) OrderUpdates() <-chan ntwire.OrderUpdatePayload {
 	return t.server.SubscribeOrderUpdatesFor(t.symbol, t.boundAccount)

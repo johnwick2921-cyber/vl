@@ -39,7 +39,11 @@ type WeeklyFacts struct {
 	FactsHash    string
 }
 
-// ComputeWeeklyFacts derives the full evidence package from stored 1m bars.
+// ComputeWeeklyFacts derives the full evidence package from bars stamped at
+// their OPEN: 1m/1h intraday bars, or CME session-day bars from
+// SessionDaysFromNativeDaily (stamped at the 17:00 CT session open). It must
+// NEVER be fed pre-aggregated weekly bars (R22 P1-A: epoch weeks start on a
+// Thursday, and IPDA/NWOG cannot be computed from weeks).
 // Price ≤ 0 → the last bar close. Thin history is stamped, never faked.
 func ComputeWeeklyFacts(bars1m []market.Kline, now time.Time, price float64) WeeklyFacts {
 	f := WeeklyFacts{Now: now, Price: price}
@@ -76,8 +80,14 @@ func RenderWeeklyFactsSections(f WeeklyFacts) string {
 	if !f.RefsOK {
 		b.WriteString("(no completed prior week — thin history)\n")
 	} else {
-		fmt.Fprintf(&b, "weekly_open %.2f · PWH %.2f · PWL %.2f · PWC %.2f\n",
-			f.Refs.WeeklyOpen, f.Refs.PWH, f.Refs.PWL, f.Refs.PWC)
+		// The Sunday 16:30 CT read runs BEFORE the week's first print (17:00
+		// CT), so weekly_open is not known yet: it prints n/a, never 0.00 (L7).
+		wo := "n/a (the week has not opened)"
+		if f.Refs.WeeklyOpen > 0 {
+			wo = fmt.Sprintf("%.2f", f.Refs.WeeklyOpen)
+		}
+		fmt.Fprintf(&b, "weekly_open %s · PWH %.2f · PWL %.2f · PWC %.2f\n",
+			wo, f.Refs.PWH, f.Refs.PWL, f.Refs.PWC)
 	}
 	b.WriteString("\n")
 

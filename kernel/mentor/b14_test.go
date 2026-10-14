@@ -78,8 +78,8 @@ func b14Entries(ins []Intent) int {
 // it, the new one refuses with phl_target_below_floor.
 func TestB14bNearestOldHighOnly(t *testing.T) {
 	oldHighs := []Level{
-		{Key: "old-high:130", Kind: KindOldExtreme, Price: 130},
-		{Key: "old-high:106.2", Kind: KindOldExtreme, Price: 106.2},
+		{Key: "old-high:130", Kind: KindOldExtreme, Role: OldHigh, Price: 130},
+		{Key: "old-high:106.2", Kind: KindOldExtreme, Role: OldHigh, Price: 106.2},
 	}
 	e, bars, now, _ := b14Fixture(oldHighs, 99.5)
 	ins := e.Tick(bars, now)
@@ -99,8 +99,8 @@ func TestB14bNearestOldHighOnly(t *testing.T) {
 // at 97 (not higher) is refused; a stop at 99.5 (higher) emits.
 func TestB14aHigherLowAgainstTheLeftLow(t *testing.T) {
 	oldLevels := []Level{
-		{Key: "old-low:98", Kind: KindOldExtreme, Price: 98},
-		{Key: "old-high:130", Kind: KindOldExtreme, Price: 130},
+		{Key: "old-low:98", Kind: KindOldExtreme, Role: OldLow, Price: 98},
+		{Key: "old-high:130", Kind: KindOldExtreme, Role: OldHigh, Price: 130},
 	}
 	e, bars, now, _ := b14Fixture(oldLevels, 97)
 	ins := e.Tick(bars, now)

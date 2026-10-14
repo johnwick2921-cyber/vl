@@ -85,7 +85,12 @@ func (e *StrategyEngine) BuildObserverSystemPrompt(in ObserverInput, snapshotMs 
 		sb.WriteString(fmt.Sprintf("- your previous assessment: %s\n", in.PrevStatus))
 	}
 	sb.WriteString("\n## THE ORIGINAL ENTRY DECISION (verbatim — this is the ONLY thesis you judge)\n")
-	sb.WriteString(fmt.Sprintf("- direction: %s · stated stop: %.2f · stated target: %.2f · entry confidence: %d\n", dir, in.StopLoss, in.TakeProfit, in.EntryConfidence))
+	// R22 P2: a plan-arm entry has NO AI confidence — say n/a, never a fabricated 0.
+	conf := "n/a (no AI confidence — e.g. a plan-arm entry)"
+	if in.EntryConfidence > 0 {
+		conf = fmt.Sprintf("%d", in.EntryConfidence)
+	}
+	sb.WriteString(fmt.Sprintf("- direction: %s · stated stop: %.2f · stated target: %.2f · entry confidence: %s\n", dir, in.StopLoss, in.TakeProfit, conf))
 	thesis := strings.TrimSpace(in.Thesis)
 	if thesis == "" {
 		thesis = "(no stated thesis recorded — judge only the stated stop/target levels)"

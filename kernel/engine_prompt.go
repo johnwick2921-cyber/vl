@@ -568,7 +568,10 @@ func (e *StrategyEngine) formatMarketData(data *market.Data) string {
 				// can't be 0 for a real instrument; 0 means calculateEMA had <period
 				// bars). Omit it + log, rather than feeding the model a fake zero.
 				if v <= 0 {
-					logger.Infof("ℹ️ current_ema%d omitted for %s — thin bar depth (needs %d bars); EMA not warmed up.", p, data.Symbol, p)
+					// R22 F-2: an unwarmed EMA is printed n/a (L7 — a value not
+					// known prints n/a), never an SMA under an EMA label.
+					logger.Infof("ℹ️ current_ema%d n/a for %s — thin bar depth (needs %d bars for a warmed EMA).", p, data.Symbol, market.EMAWarmupBars(p))
+					sb.WriteString(fmt.Sprintf(", current_ema%d = n/a", p))
 					continue
 				}
 				sb.WriteString(fmt.Sprintf(", current_ema%d = %.3f", p, v))
@@ -816,6 +819,10 @@ func FormatIndicatorState(sb *strings.Builder, data *market.TimeframeSeriesData,
 			for _, p := range periods {
 				if len(data.EMAByPeriod[p]) > 0 {
 					sb.WriteString(fmt.Sprintf("EMA%d: %s\n", p, formatFloatSlice(data.EMAByPeriod[p])))
+				} else {
+					// R22 F-2: configured but not warmed on this TF's depth — say
+					// so; never drop the row silently, never print the SMA seed.
+					sb.WriteString(fmt.Sprintf("EMA%d: n/a (not warmed — needs %d bars)\n", p, market.EMAWarmupBars(p)))
 				}
 			}
 		} else {

@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"fmt"
+	"strings"
 
 	"vl/market"
 )
@@ -67,6 +68,23 @@ func LocationVerdict(ref market.Kline, levels []Level, trigger TriggerLine, bars
 		return true, "trigger_line"
 	}
 	return false, ""
+}
+
+// LocationOf names the place a setup was taken at, read from its G2 AnchorKey
+// (the touched level's key, or the box key): "trendline long", "key_level",
+// "ftgl", "ema34_htf", … — the trader's size log prints it so a trade's
+// location is on the record. A trendline also names its side (support =
+// long, resistance = short). "" = the setup carries no anchor (a plain ISB).
+func LocationOf(anchorKey string) string {
+	if anchorKey == "" {
+		return ""
+	}
+	kind, rest, _ := strings.Cut(anchorKey, ":")
+	if kind == string(KindTrendline) {
+		side, _, _ := strings.Cut(rest, ":")
+		return kind + " " + side
+	}
+	return kind
 }
 
 // LocationCoincidePts is the ±2-pt coincidence for an old high/low next to a

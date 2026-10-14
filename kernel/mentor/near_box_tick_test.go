@@ -100,7 +100,7 @@ func TestNearBoxPHLTickRefused(t *testing.T) {
 	// extreme). No trigger line: no trigger-retest level, no ISB direction.
 	e.State.SeedLevels = []Level{
 		{Key: "L", Kind: KindKeyLevel, Price: 90},
-		{Key: "old-high:106", Kind: KindOldExtreme, Price: 106},
+		{Key: "old-high:106", Kind: KindOldExtreme, Role: OldHigh, Price: 106},
 	}
 	e.State.Trigger = TriggerLine{}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 80}}

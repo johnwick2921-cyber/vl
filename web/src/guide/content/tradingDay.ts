@@ -32,14 +32,14 @@ export const tradingDay: GuideSection = {
           time: '12:00–13:30',
           label: 'Lunch gate',
           detail:
-            'Hard no-entry window. One definition (kernel.LunchWindowCT) read by the entry gate, the adherence grader and the plan card, so all three refuse, score and display the same window. The card only shows it while it can still refuse something.',
+            'Hard no-entry window for AI and planner entries. One definition (kernel.LunchWindowCT) read by the entry gate, the adherence grader and the plan card, so all three refuse, score and display the same window. The card only shows it while it can still refuse something. Mentor mode is exempt: its arms are not refused by the lunch band (trader/session_risk.go mentorWaivesSessionBand).',
           shade: true,
         },
         {
           time: '14:45',
           label: 'EOD flat',
           detail:
-            'Open positions force-flattened at session end (limit-then-market ladder; R-A15 ruling). No new entry is accepted after the flat.',
+            'Every resting entry is cancelled first (intraday mentor orders included), then open positions are force-flattened at session end — a market close by default; the limit-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0 (default 0; R-A15 ruling). A SWING4H mentor position and its order are exempt (held by the 4h). No new entry is accepted after the flat; mentor mode places no new entry from 15:45 CT until the 17:00 reopen.',
         },
         {
           time: '16:00–17:00',
@@ -118,7 +118,7 @@ export const tradingDay: GuideSection = {
     { kind: 'h', text: 'The EOD ladder (limit-then-market)' },
     {
       kind: 'p',
-      text: 'At EOD flat (and T1 force-flat), the bot first tries a LIMIT a couple of ticks favorable, then converts to MARKET after a short grace. Knobs: EOD_FLAT_LIMIT_TICKS / EOD_FLAT_MARKET_AFTER_SEC (env, 0 = disabled). Why 14:45: half-days close at 12:00 CT and the registry pulls the flat time IN automatically (effectiveEODFlatCT).',
+      text: 'At EOD flat (and T1 force-flat), the bot first tries a LIMIT a couple of ticks favorable, then converts to MARKET after a short grace. Knobs: EOD_FLAT_LIMIT_TICKS / EOD_FLAT_MARKET_AFTER_SEC (env, 0 = disabled). Why 14:45: on a half-day (the session calendar lists it — e.g. 12:15 CT on 11-27 and 12-24) the flat is pulled IN to the early close and the last entry to the early close minus its offset, looked up on the date the session closes. At the early close the market is already shut, so the closed-market path runs the same flat (arms cancelled first, then positions) before it idles.',
     },
   ],
 }

@@ -84,7 +84,7 @@ func b21PairFixture(fat bool) (*Evaluator, []market.Kline, int64) {
 	levels := []Level{
 		{Key: "K", Kind: KindKeyLevel, Price: 99.5},
 		{Key: "KL2", Kind: KindKeyLevel, Price: 118},            // the pair's second level: gap 18.5
-		{Key: "old-high:118", Kind: KindOldExtreme, Price: 118}, // the PHL target (matched to the tape swing at bar 3)
+		{Key: "old-high:118", Kind: KindOldExtreme, Role: OldHigh, Price: 118}, // the PHL target (matched to the tape swing at bar 3)
 	}
 	e := New(cfg)
 	e.seeded = true
@@ -198,7 +198,7 @@ func TestB23LevelVisitCap(t *testing.T) {
 // agreeing; when the trigger later flips to the trade's side the evaluator
 // emits ConfluenceUpgrade exactly ONCE.
 func TestB20SchoolOneFlipUpgrade(t *testing.T) {
-	oldHighs := []Level{{Key: "old-high:130", Kind: KindOldExtreme, Price: 130}}
+	oldHighs := []Level{{Key: "old-high:130", Kind: KindOldExtreme, Role: OldHigh, Price: 130}}
 	e, bars, now, _ := b14Fixture(oldHighs, 99.5)
 	if e.Cfg.TriggerSchool != 1 {
 		t.Fatalf("TriggerSchool default = %d, want 1", e.Cfg.TriggerSchool)

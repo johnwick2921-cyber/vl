@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,7 +21,20 @@ import (
 // pins for this prompt are skipped (fork API TODO), so this test is the pin the
 // item-6 mutant requirement names: a persona line reverted to the legacy literal
 // turns it RED.
+//
+// Ordering: on a direct answer tryDirectAnswer fires runPostResponseMaintenanceAsync,
+// whose task-state refresh calls the SAME AI client from a background goroutine.
+// This test used to assert on the fake's last captured prompt, so whenever that
+// refresh landed first it read the task-state prompt instead of the router prompt
+// and failed (CI "Backend Tests" run 38514786928; 1 of 800 local runs). It now waits
+// the refresh out — so every run takes the ordering that flaked — and selects the
+// router call by its persona-independent opening, so a legacy-name mutant is still
+// selected and still turns this RED on the persona assertion.
 func TestDirectAnswerRouterPromptCarriesThePersonaName(t *testing.T) {
+	const (
+		routerPromptOpening    = "You are the first-pass router for "
+		taskStatePromptOpening = "You maintain structured task state"
+	)
 	client := &directReplyAIClient{}
 	a := newTestAgentWithStore(t)
 	a.aiClient = client
@@ -32,12 +46,27 @@ func TestDirectAnswerRouterPromptCarriesThePersonaName(t *testing.T) {
 	if !handled {
 		t.Fatal("expected a greeting to take the direct-answer route")
 	}
-	if !strings.Contains(client.lastSystemPrompt, "first-pass router for "+branding.PersonaName()) {
-		t.Fatalf("router prompt must carry the persona name %q, got %q", branding.PersonaName(), client.lastSystemPrompt)
+
+	// Bounded and non-fatal: this test pins the persona, not the maintenance path.
+	deadline := time.Now().Add(5 * time.Second)
+	for len(client.systemPromptsWithPrefix(taskStatePromptOpening)) == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if len(client.systemPromptsWithPrefix(taskStatePromptOpening)) == 0 {
+		t.Logf("post-response task-state refresh not observed within 5s; asserting without it (calls seen: %q)", client.systemPromptFirstLines())
+	}
+
+	routerPrompts := client.systemPromptsWithPrefix(routerPromptOpening)
+	if len(routerPrompts) != 1 {
+		t.Fatalf("expected exactly one first-pass router call, got %d (calls seen: %q)", len(routerPrompts), client.systemPromptFirstLines())
+	}
+	routerPrompt := routerPrompts[0]
+	if !strings.Contains(routerPrompt, "first-pass router for "+branding.PersonaName()) {
+		t.Fatalf("router prompt must carry the persona name %q, got %q", branding.PersonaName(), routerPrompt)
 	}
 	legacyPersona := "NO" + "FXi"
-	if strings.Contains(client.lastSystemPrompt, legacyPersona) {
-		t.Fatalf("router prompt must not carry the legacy persona literal %q, got %q", legacyPersona, client.lastSystemPrompt)
+	if strings.Contains(routerPrompt, legacyPersona) {
+		t.Fatalf("router prompt must not carry the legacy persona literal %q, got %q", legacyPersona, routerPrompt)
 	}
 }
 
@@ -458,12 +487,47 @@ func (b *blockingAIClient) CallWithRequestFull(*mcp.Request) (*mcp.LLMResponse, 
 	return nil, errors.New("unexpected CallWithRequestFull")
 }
 
+// directReplyAIClient is called from the test goroutine AND from production
+// background goroutines (runPostResponseMaintenanceAsync's task-state refresh),
+// so CallWithRequest writes under mu. Read the captured prompts through the
+// locked systemPromptsWithPrefix, which selects a call by what it IS;
+// lastSystemPrompt is whichever call happened to land last and is not safe to
+// assert on.
 type directReplyAIClient struct {
+	mu                sync.Mutex
+	systemPrompts     []string // every system prompt received, in arrival order
 	lastSystemPrompt  string
 	lastUserPrompt    string
 	routerPrompt      string
 	skillRouterPrompt string
 	plannerPrompt     string
+}
+
+// systemPromptsWithPrefix returns every captured system prompt that starts with
+// prefix, in arrival order.
+func (d *directReplyAIClient) systemPromptsWithPrefix(prefix string) []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var out []string
+	for _, p := range d.systemPrompts {
+		if strings.HasPrefix(p, prefix) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// systemPromptFirstLines is a failure-message aid: the first line of every
+// captured system prompt, in arrival order.
+func (d *directReplyAIClient) systemPromptFirstLines() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([]string, 0, len(d.systemPrompts))
+	for _, p := range d.systemPrompts {
+		first, _, _ := strings.Cut(p, "\n")
+		out = append(out, first)
+	}
+	return out
 }
 
 func (d *directReplyAIClient) SetAPIKey(string, string, string) {}
@@ -473,13 +537,19 @@ func (d *directReplyAIClient) CallWithMessages(string, string) (string, error) {
 	return "", errors.New("unexpected CallWithMessages")
 }
 func (d *directReplyAIClient) CallWithRequest(req *mcp.Request) (string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if len(req.Messages) > 0 {
 		d.lastSystemPrompt = req.Messages[0].Content
+		d.systemPrompts = append(d.systemPrompts, req.Messages[0].Content)
 	}
 	if len(req.Messages) > 1 {
 		d.lastUserPrompt = req.Messages[1].Content
 	}
-	if strings.Contains(d.lastSystemPrompt, "first-pass router for VL") {
+	// Recognise the first-pass router by its persona-independent opening, so a
+	// legacy-name persona mutant still gets the router reply and fails on the
+	// persona assertion rather than on a misrouted call.
+	if strings.HasPrefix(d.lastSystemPrompt, "You are the first-pass router for ") {
 		d.routerPrompt = d.lastSystemPrompt
 		if strings.Contains(d.lastUserPrompt, "你好") {
 			return `{"action":"direct_answer","answer":"你好，我在。想聊策略、配置还是排障？"}`, nil

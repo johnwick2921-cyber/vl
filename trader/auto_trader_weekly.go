@@ -131,27 +131,51 @@ func (at *AutoTrader) barResolver() *market.BarResolver {
 // yields TWO completed weeks, so the card rendered "WEEKLY thin · low" while
 // the NT8 cache held 1500 native DAILY bars back to 2020-11-11.
 //
-// It resolves "1w", whose ladder is 1d → 1m: native 1w is deliberately
-// EXCLUDED because NT8 stamps weekly bars Friday→Thursday while our weekly
-// vocabulary is Monday-governed (market.ExcludedNative("1w") carries the
-// reason). The returned bars are DAILY; CompletedWeekCandles buckets them with
-// weekStartMonday exactly as it bucketed 1m bars — same convention, same
-// output shape, more history. The weekly SIGNAL is untouched by this wave.
+// R22 TIME-WEEKLY (2026-10-14) — P1-A. This used to resolve "1w" and claimed
+// "the returned bars are DAILY". They were not: the resolver rolled the native
+// dailies into 10080-minute buckets floored to the Unix epoch, i.e. weeks
+// starting THURSDAY 00:00 UTC. The live read for week 2026-10-12 logged
+// "17 bar(s) from nt8_agg via 1d → 17 completed week(s)" and wrote PWL
+// 30760.75 / PWC 30969.50 (truth 30792.00 / 31108.75); IPDA and NWOG could
+// never fill from weekly bars.
+//
+// It now hands the facts builder genuine CME SESSION DAYS: the native 1d bars
+// re-stamped at their 17:00 CT session open (kernel.SessionDaysFromNativeDaily),
+// which CompletedWeekCandles / LastNWOGs / IPDA bucket on the CME week —
+// Sunday 17:00 CT open → Friday 16:00 CT close — exactly as they bucket 1m
+// bars. Native 1w stays excluded (market.ExcludedNative("1w")). Fallbacks, in
+// order: native 1h (open-stamped intraday — the facts builder takes it as is),
+// then the persisted 1m table.
 func (at *AutoTrader) weeklyDailyBars(now time.Time) (bars []market.Kline, source string) {
-	s, err := at.barResolver().CompletedBars(at.futuresSymbol(), "1w", 0, now.UnixMilli())
-	if err != nil {
-		at.logWarnf("📅 WEEKLY READ: resolver failed (%v) — falling back to stored 1m", err)
+	r := at.barResolver()
+	sym := at.futuresSymbol()
+	if raw := r.Native(sym, "1d", 0); len(raw) > 0 {
+		if days := kernel.SessionDaysFromNativeDaily(raw); len(days) > 0 {
+			return days, fmt.Sprintf("%s 1d → CME session days", market.SourceNT8Native)
+		}
 	}
-	if len(s.Bars) > 0 {
-		return s.Bars, fmt.Sprintf("%s via %s", s.Source, s.FromTF)
+	if raw := r.Native(sym, "1h", 0); len(raw) > 0 {
+		return raw, fmt.Sprintf("%s 1h (intraday, CME weeks)", market.SourceNT8Native)
 	}
-	// The resolver already tries own-1m as its last rung; reaching here means
-	// nothing anywhere. Fall back to the legacy path so behaviour is never
-	// WORSE than before this wave.
+	// No native daily or hourly bars: the persisted 1m table (the pre-wave
+	// source) — thin, and honestly stamped thin by ComputeWeeklyFacts.
 	if legacy := at.weeklyBars1m(now); len(legacy) > 0 {
 		return legacy, "legacy_own1m"
 	}
 	return nil, "none"
+}
+
+// weeklyReadFacts is the facts half of runWeeklyRead: the bars the read sees
+// and the facts it renders from them. It is split out so the production
+// sequence (source → facts) is testable at its own call site (canon 53) —
+// runWeeklyRead calls exactly this. bars is empty when no rung answered.
+func (at *AutoTrader) weeklyReadFacts(now time.Time) (facts kernel.WeeklyFacts, bars []market.Kline, source string) {
+	bars, source = at.weeklyDailyBars(now)
+	if len(bars) == 0 {
+		return kernel.WeeklyFacts{}, nil, source
+	}
+	price := bars[len(bars)-1].Close
+	return kernel.ComputeWeeklyFacts(bars, now, price), bars, source
 }
 
 // weeklyReadVerdict is the pure W2 decision (fixture-tested): before the
@@ -224,15 +248,13 @@ func (at *AutoTrader) runWeeklyRead(now time.Time, monday string, bootBackfill b
 			at.logErrorf("⚠️ WEEKLY READ panic recovered for %s: %v", monday, r)
 		}
 	}()
-	bars, barSource := at.weeklyDailyBars(now)
+	facts, bars, barSource := at.weeklyReadFacts(now)
 	if len(bars) == 0 {
 		at.logErrorf("⚠️ WEEKLY READ FAILED for %s: no bars from any rung of the 1w ladder %v (thin/cold store)", monday, market.LadderFor("1w"))
 		return
 	}
 	at.logInfof("📅 WEEKLY READ %s: %d bar(s) from %s → %d completed week(s) (ladder %v; native 1w excluded: %s)",
 		monday, len(bars), barSource, kernel.CompletedWeekCount(bars, now), market.LadderFor("1w"), market.ExcludedNative("1w"))
-	price := bars[len(bars)-1].Close
-	facts := kernel.ComputeWeeklyFacts(bars, now, price)
 	prompt := kernel.BuildWeeklyPrompt(facts)
 
 	client, modelID := at.resolvePlannerClient()

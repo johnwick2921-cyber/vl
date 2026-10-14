@@ -270,6 +270,17 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 		})
 	}
 
+	// Release #22 OPS-SAFETY — INSTALL PENDING: while an update job is in a
+	// pre-hold state (requested → preflight), NEW entries are frozen so the
+	// bot stops racing the preflight's flat check (10-14: job 30a8bbf6 was
+	// refused after trader 12345 placed at 01:44:00, 4 min into preflight).
+	// Read-only from the job files; clears when the job ends or times out.
+	if reason, pending := InstallPending(now); pending {
+		return at.admitRefuse(in, "install_pending", "install_pending: "+reason, func() {
+			at.logWarnf("⏳ install pending: %s %s REFUSED — %s. Exits and protection continue.", sym, act, reason)
+		})
+	}
+
 	// P3 (ledger-close 2026-08-19) — CONTRACT-ROLL gate for the continuous
 	// symbol: within ROLL_BLOCK_DAYS_BEFORE_EXPIRY of the ACK-resolved front
 	// contract's third-Friday expiry, NEW entries are refused (the dated-code
@@ -279,6 +290,30 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 		return at.admitRefuse(in, "contract_roll_resolved", "contract_roll: "+reason, func() {
 			at.logWarnf("📅 contract-roll: %s %s REFUSED — %s. Position management continues; the resolver rolls to the next quarterly.", sym, act, reason)
 		})
+	}
+
+	// r22 RISK-GATES — THE DAILY GUARDRAILS, ON EVERY PATH. Decision, agent
+	// door, planner arms, MENTOR arms and Picture all ask the one verdict
+	// (daily_loss_gate.go): the daily loss limit on the bot's own P&L (latched
+	// until 17:00 CT once hit), the daily profit target and max daily trades —
+	// the same kernel Check the AI decision cycle runs. Before r22 only the AI
+	// decision cycle evaluated them, so the mentor path never saw max trades
+	// and a resting arm filled straight through a hit limit. Inert while the
+	// guardrails master is OFF (the owner's live setting). No mentor waiver.
+	// Only a DEFINITE limit refuses here; an unknown (unresolved close, failed
+	// read) refuses at the mentor's authoring gate only, as before r22.
+	if v := at.dailyGuardVerdictAt(now); v.Refuse && !v.Unverified {
+		logf := func() {
+			at.logWarnf("🔴 daily guardrail: %s %s REFUSED — %s", sym, act, v.Reason)
+		}
+		switch v.Class {
+		case "daily_profit_target":
+			return at.admitRefuse(in, "daily_profit_target", v.Reason, logf)
+		case "max_daily_trades":
+			return at.admitRefuse(in, "max_daily_trades", v.Reason, logf)
+		default:
+			return at.admitRefuse(in, "daily_loss", v.Reason, logf)
+		}
 	}
 
 	if in.Path == admitDecision || in.Path == admitAgent {

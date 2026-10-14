@@ -65,3 +65,30 @@ func TestPnlTruthTradeHistoryToolStrictShape(t *testing.T) {
 		}
 	}
 }
+
+// R22 PNL-TRUTH (owner ruling R1): a manual NT8 row is LISTED (origin=manual)
+// but excluded from the bot summary, which carries it as its own line.
+func TestTradeHistoryToolExcludesManualRowsFromTheBotSummary(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	rows := []*store.TraderPosition{
+		{ID: 636, Symbol: "MNQ", Side: "SHORT", Quantity: 5, PnlCorrected: f(-129), CloseReason: "stop", ExitTime: 1_791_380_000_000},
+		{ID: 640, Symbol: "MNQ", Side: "SHORT", Quantity: 20, PnlCorrected: f(-1127.5), CloseReason: "manual", Origin: store.OriginManual, ExitTime: 1_791_467_480_000},
+	}
+	payload := buildTradeHistory([]tradeHistorySource{{Name: "hoang", TID: "8d5c8af5", Positions: rows}}, 10)
+	sum := payload["summary"].(map[string]any)
+	if sum["total_trades"].(int) != 1 || sum["total_pnl"].(float64) != -129 {
+		t.Fatalf("bot summary = %v trades %v, want 1 / −129 (manual #640 excluded)", sum["total_trades"], sum["total_pnl"])
+	}
+	if sum["manual_excluded_trades"].(int) != 1 || sum["manual_excluded_pnl"].(float64) != -1127.5 {
+		t.Fatalf("manual line = %v / %v, want 1 / −1127.50", sum["manual_excluded_trades"], sum["manual_excluded_pnl"])
+	}
+	trades := payload["trades"].([]map[string]any)
+	if len(trades) != 2 {
+		t.Fatalf("both rows stay LISTED, got %d", len(trades))
+	}
+	for _, tr := range trades {
+		if tr["id"].(int64) == 640 && tr["origin"] != store.OriginManual {
+			t.Fatalf("#640 must be listed with origin=manual, got %v", tr["origin"])
+		}
+	}
+}

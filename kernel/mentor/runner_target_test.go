@@ -8,7 +8,7 @@ import "testing"
 // the eval.go RunnerTarget assignment → RED.
 func TestPHLRunnerTargetIsTheNearestLevelBeyondTheOldHigh(t *testing.T) {
 	oldHighs := []Level{
-		{Key: "old-high:130", Kind: KindOldExtreme, Price: 130},
+		{Key: "old-high:130", Kind: KindOldExtreme, Role: OldHigh, Price: 130},
 		{Key: "far:150", Kind: KindKeyLevel, Price: 150},
 		{Key: "beyond:140", Kind: KindKeyLevel, Price: 140},
 	}

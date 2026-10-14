@@ -434,3 +434,22 @@ func zoneProvenanceLabel(doc *kernel.PlanDoc, sc kernel.PlanScenario, lo, hi flo
 	}
 	return fmt.Sprintf("%s:%s[%.2f,%.2f]", kind, names, zl, zh)
 }
+
+// noteFlipIncoherentDisabled (R22 F3) — the accepted doc's flip-incoherent
+// arms, already written disabled by kernel.DisableFlipIncoherentArms before the
+// feasibility verdicts ran: ONE WARN each (same shape as the other
+// arm-disabled-at-write lines) and the same per-class counter
+// arm_disabled_at_write:<trader>:<date>:<session>:flip_incoherent. Runs only
+// for the doc that is written — an attempt rejected later never wrote it.
+func (at *AutoTrader) noteFlipIncoherentDisabled(issues []kernel.FlipIncoherence, tradeDate, session string) {
+	for _, is := range issues {
+		at.logWarnf("⚔️ arm disabled at write: %s %s %s (%s)", session, is.Scenario, kernel.FlipIncoherentClass, is.String())
+		if at.store == nil {
+			continue
+		}
+		key := fmt.Sprintf("arm_disabled_at_write:%s:%s:%s:%s", at.id, tradeDate, session, kernel.FlipIncoherentClass)
+		if _, err := store.IncSystemCounter(at.store, key); err != nil {
+			at.logWarnf("⚔️ arm-disabled counter write failed: %v", err)
+		}
+	}
+}

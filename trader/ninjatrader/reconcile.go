@@ -468,8 +468,15 @@ func (t *TCPTrader) reconcilePositions(traderID, exchangeID, exchangeType string
 		// W1b FOLD-6 — origin is what the 🧩 line below says the position WAS:
 		// "manual/NT8-side" only when nothing evidenced this trader's own entry.
 		origin := "manual/NT8-side entry (no fill-ring or in-window armed-fill evidence of this trader's own entry)"
+		// R22 R1: only the POSITIVE "no evidence of our own entry" verdict
+		// flags the row manual. Every other branch (a tagged fill, a price
+		// match, an UNTAGGED/ambiguous answer) stays bot — fail-closed, since
+		// hiding a real bot trade from the bot record and the bot-only risk
+		// reads is the harmful direction.
+		manualVerdict := true
 		switch f, verdict, why := t.lateEntryFillFor(st, acct, sym, side, firstSeen); verdict {
 		case lateFillOne:
+			manualVerdict = false
 			if sig, what := t.tagLateEntryFill(st, traderID, exchangeID, row.ID, sym, side, f); sig != "" {
 				t.rememberEntryOrderID(sym, side, sig)
 				origin = what
@@ -477,19 +484,25 @@ func (t *TCPTrader) reconcilePositions(traderID, exchangeID, exchangeType string
 				origin = fmt.Sprintf("UNTAGGED entry (fill-ring signal %s %s)", f.SignalID, what)
 			}
 		case lateFillUnresolved:
+			manualVerdict = false
 			logger.Warnf("🔗 attribution: pos %d (%s %s) — fill ring %s — left UNTAGGED; no price-match guess", row.ID, sym, side, why)
 			origin = fmt.Sprintf("UNTAGGED entry (fill ring %s)", why)
 		default:
 			switch stamped, sig, failed := stampArmedLineageInWindow(st, traderID, row.ID, sym, side, avg, firstSeen); {
 			case stamped:
+				manualVerdict = false
 				t.rememberEntryOrderID(sym, side, sig)
 				if sig == "" {
 					sig = "(none)"
 				}
 				origin = fmt.Sprintf("this trader's armed fill matched by price in the window (signal %s)", sig)
 			case failed != "":
+				manualVerdict = false
 				origin = fmt.Sprintf("UNTAGGED entry (%s)", failed)
 			}
+		}
+		if manualVerdict {
+			flagAdoptedManual(st, traderID, row.ID, sym, side, qty)
 		}
 		logger.Warnf("🧩 reconcile: MATERIALIZED untracked NT8 position %s %s qty=%.0f @ %.2f (acct=%s) — %s now tracked; its close will record real P&L", sym, side, qty, avg, acct, origin)
 		delete(t.untrackedSince, key)
@@ -707,4 +720,23 @@ func unassignedOpenForTrader(st *store.Store, traderID, symbol, side string) (*s
 		}
 	}
 	return newest, nil
+}
+
+// flagAdoptedManual (R22 PNL-TRUTH, owner ruling R1) marks an adopted NT8
+// position origin=manual the moment the reconcile verdict says nothing of this
+// trader's own explains it. Logged and counted either way: a failed flag is a
+// manual row left in the bot record, and that must never be silent.
+func flagAdoptedManual(st *store.Store, traderID string, rowID int64, sym, side string, qty float64) {
+	ok, err := st.Position().MarkManualOrigin(rowID, traderID)
+	if err != nil || !ok {
+		telemetry.IncManualAdoptFlagFailed()
+		_, failed := telemetry.ManualAdoptionCounts()
+		logger.Errorf("🧾 manual origin: pos %d (%s %s qty=%.0f) has NO bot order/arm behind it but the origin=manual flag did NOT write (ok=%v err=%v) — it is still in the bot record (flag failures since boot=%d)",
+			rowID, sym, side, qty, ok, err, failed)
+		return
+	}
+	telemetry.IncManualAdopted()
+	flagged, _ := telemetry.ManualAdoptionCounts()
+	logger.Warnf("🧾 manual origin: pos %d (%s %s qty=%.0f) adopted from NT8 with no bot order/arm behind it — flagged origin=manual; excluded from the bot record and shown as its own line (manual adoptions since boot=%d)",
+		rowID, sym, side, qty, flagged)
 }

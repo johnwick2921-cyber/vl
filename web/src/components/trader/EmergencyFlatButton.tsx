@@ -59,7 +59,7 @@ export function EmergencyFlatButton({ traderId }: Props) {
         type="button"
         onClick={() => setOpen(true)}
         className="bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-[0_0_12px_rgba(220,38,38,0.4)]"
-        title="Emergency flat all open positions (operator-initiated kill switch)"
+        title="Emergency flat this trader's position (one market flatten to NinjaTrader)"
       >
         Emergency Flat
       </button>
@@ -80,10 +80,13 @@ export function EmergencyFlatButton({ traderId }: Props) {
               Confirm Emergency Flat
             </h2>
             <p className="text-sm text-vl-neo-text-muted mb-4">
-              This will close all open positions for trader{' '}
-              <code className="font-mono text-vl-neo-gold">{traderId}</code>.
-              The action triggers the kernel kill switch and resets the daily
-              PnL window. Cannot be undone.
+              This sends ONE market flatten to NinjaTrader for the position of
+              trader{' '}
+              <code className="font-mono text-vl-neo-gold">{traderId}</code>{' '}
+              only. It also clears this trader&apos;s daily-loss lock (if its
+              loss still stands, the lock returns on the next 60-second check).
+              It does not pause the trader or cancel resting entry orders — use
+              Pause for that. Cannot be undone.
             </p>
 
             {result && (

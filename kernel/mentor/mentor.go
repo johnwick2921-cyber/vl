@@ -60,8 +60,10 @@ type LevelKind string
 const (
 	// KindKeyLevel is a colour-change OPEN line on RTH bars (§4.3).
 	KindKeyLevel LevelKind = "key_level"
-	// KindOldExtreme is an old high/low — the bot's swing levels reused
-	// (kernel/levels_swing.go SwingPointLevels).
+	// KindOldExtreme is an old high/low: ONE nearest UNBROKEN old high and ONE
+	// nearest UNBROKEN old low (r22 P1, course §6 "nearest old high" / §2.1
+	// rule 2 / §2.2) — picked from the bot's swing pivots
+	// (kernel/levels_swing.go SwingPointLevels) by swingOldExtremeLevels.
 	KindOldExtreme LevelKind = "old_extreme"
 	// KindEMA34 / KindEMA9 — EMA values promoted to levels (§8, §10, §11).
 	KindEMA34 LevelKind = "ema34"
@@ -96,13 +98,24 @@ type Level struct {
 	Price  float64
 	AtTime int64
 
-	// MergedFrom lists the RAW old-extreme prices this DISPLAY line absorbed:
-	// an old high/low within KeyLevelPrunePts of a key level is folded into the
-	// key, and two old extremes closer than KeyLevelPrunePts collapse to the
-	// most recent. Populated only by DisplayLevels (the chart / mentor-truth
-	// panel); nil on the TRADING set and on lines that absorbed nothing.
+	// Role is an old extreme's EXPLICIT role — OldHigh or OldLow — taken from
+	// the swing pivot that drew it (r22 P1-4). "" on every other kind. The
+	// PHL/PLH target pick, the target ladder and the leg extreme read it; the
+	// role is never re-inferred from the tape (a later bar revisiting the
+	// price used to relabel an old HIGH as a "low").
+	Role string `json:"role,omitempty"`
+
+	// MergedFrom lists prices a DISPLAY line absorbed. Since r22 the chart
+	// draws the trading old extremes one-for-one (DisplayLevels), so nothing
+	// fills it; it stays on the panel wire as an always-absent field.
 	MergedFrom []float64 `json:"merged_from,omitempty"`
 }
+
+// Old-extreme roles (Level.Role).
+const (
+	OldHigh = "high"
+	OldLow  = "low"
+)
 
 // Intent is one evaluator output.
 type Intent struct {
@@ -327,12 +340,15 @@ type Config struct {
 	// edges into the location gate and InsideAnyBox into the bans.
 	Box BoxCfg
 
-	// Exec2mAfter30m — X5-10 optional knob (default OFF): after the first 30
-	// minutes of RTH (09:00 CT) the ISB entry is read on the 2m chart instead
-	// of the 1m ("sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:17;
-	// X11 @17:06–17:32]) — the 1m wicks sweep stops, so the 2m read is the
-	// quieter one. The course trades the 1m throughout, so this stays behind a
-	// knob and OFF by default; while OFF the ISB read is byte-identical.
+	// Exec2mAfter30m — X5-10 optional knob (default OFF): the ISB-exec
+	// timeframe schedule (owner order 2026-10-13 ~23:00 CT "fix all"; sources
+	// X5 @00:07–01:17, X11 @17:06–19:35 — ~/mm-course/extra/notes/05-EXTRA.md
+	// :305-311): with the knob ON the ISB reads the 1m ONLY during the RTH
+	// open +30 minutes (08:30 ≤ t < 09:00 CT), and the 2m at every other
+	// minute — overnight and the Europe open (3am Texas) included. "Evening
+	// slow → 5m" is an OPEN COURSE QUESTION (no number for "slow"); left
+	// unimplemented. The course trades the 1m throughout, so this stays behind
+	// a knob and OFF by default; while OFF the ISB read is byte-identical.
 	Exec2mAfter30m bool
 
 	// OrbGateEnabled turns on the §7 step 0 ORB gate (default ON): the high and

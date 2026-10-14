@@ -125,9 +125,9 @@ func LoadRiskLimitsFromConfig() RiskLimits {
 // endpoint and tests have something to call. It DOES NOT yet hook into
 // CME session boundaries (deferred to a follow-up alongside T22 drift).
 //
-// Manual reset path: ResetDailyPnL() — called by the operator via the
-// (future) force-flat API endpoint after they have wired in a fresh
-// session.
+// Manual reset path: ResetDailyPnLAt(now) — the GLOBAL reset (every trader).
+// r22 RISK-GATES: the operator's force-flat endpoint no longer calls it; it
+// clears only the trader acted on (ClearDailyForceFlat via MaybeForceFlat).
 //
 // Automatic check-and-reset path: MaybeResetDaily(now) — called at the
 // top of each decision cycle. If the wall-clock date has changed since
@@ -169,51 +169,109 @@ var (
 //
 // Cleared by the CME session-day reset (ResetDailyPnLAt), so a trip lasts the
 // session-day and lifts with the daily window.
+//
+// r22 RISK-GATES — THE TRIP IS A LATCH STAMPED WITH ITS CME SESSION-DAY.
+// The roll used to be the only thing that lifted it, and the roll
+// (MaybeResetDaily) runs only inside an AI decision cycle — a mentor-only
+// trader never runs one, so its trip had nothing to lift it but a restart or an
+// operator. A trip now carries the session-day it was set on and reads as
+// lifted the moment the clock is on a LATER session-day (17:00 CT), whoever
+// asks. Until then it holds, whatever the P&L does afterwards.
 var (
 	forceFlatMu     sync.RWMutex
-	forceFlatReason = map[string]string{}
+	forceFlatReason = map[string]forceFlatTrip{}
 )
+
+// forceFlatTrip is one latched daily-loss trip: why, and the CME session-day
+// (CMESessionDayKey) it was set on.
+type forceFlatTrip struct {
+	reason string
+	day    string
+}
 
 // SetDailyForceFlat records that traderID tripped its daily loss limit.
 func SetDailyForceFlat(traderID, reason string) {
+	SetDailyForceFlatAt(traderID, reason, time.Now())
+}
+
+// SetDailyForceFlatAt is SetDailyForceFlat on the caller's clock: the latch is
+// stamped with the CME session-day of now.
+func SetDailyForceFlatAt(traderID, reason string, now time.Time) {
+	day := CMESessionDayKey(now)
 	forceFlatMu.Lock()
 	defer forceFlatMu.Unlock()
-	if _, already := forceFlatReason[traderID]; !already {
-		logger.Warnf("🔴 daily force-flat ARMED for trader %s: %s — NEW ENTRIES BLOCKED on both order paths until the daily window resets", traderID, reason)
+	if prev, already := forceFlatReason[traderID]; !already || prev.day != day {
+		logger.Warnf("🔴 daily force-flat ARMED for trader %s: %s — NEW ENTRIES BLOCKED on every order path until the CME session-day %s ends (17:00 CT)", traderID, reason, day)
 	}
-	forceFlatReason[traderID] = reason
+	forceFlatReason[traderID] = forceFlatTrip{reason: reason, day: day}
 }
 
 // DailyForceFlatReason returns the trip reason for traderID, or "" when the
 // daily loss limit has not tripped. "" is the fail-open answer: no evidence of
 // a trip is never a refusal.
 func DailyForceFlatReason(traderID string) string {
-	forceFlatMu.RLock()
-	defer forceFlatMu.RUnlock()
-	return forceFlatReason[traderID]
+	return DailyForceFlatReasonAt(traderID, time.Now())
 }
 
-// ClearDailyForceFlat lifts the trip for one trader (operator resume).
+// DailyForceFlatReasonAt is DailyForceFlatReason on the caller's clock. A trip
+// stamped with an EARLIER session-day than now's has lifted (the 17:00 CT
+// roll) and reads "".
+func DailyForceFlatReasonAt(traderID string, now time.Time) string {
+	forceFlatMu.RLock()
+	defer forceFlatMu.RUnlock()
+	trip, ok := forceFlatReason[traderID]
+	if !ok {
+		return ""
+	}
+	if CMESessionDayKey(now) > trip.day { // "2006-01-02" keys order as dates
+		return ""
+	}
+	return trip.reason
+}
+
+// ClearDailyForceFlat lifts the trip for ONE trader (operator resume: the
+// Emergency Flat on that trader). Every other trader's trip stands.
 func ClearDailyForceFlat(traderID string) {
 	forceFlatMu.Lock()
 	defer forceFlatMu.Unlock()
+	if _, ok := forceFlatReason[traderID]; ok {
+		logger.Infof("daily force-flat cleared for trader %s only (operator reset) — every other trader's trip stands", traderID)
+	}
 	delete(forceFlatReason, traderID)
 }
 
-// clearAllDailyForceFlat lifts every trip; called by the daily reset.
+// clearAllDailyForceFlat lifts every trip; called by the manual global reset.
 func clearAllDailyForceFlat() {
 	forceFlatMu.Lock()
 	defer forceFlatMu.Unlock()
 	if n := len(forceFlatReason); n > 0 {
 		logger.Infof("daily force-flat cleared for %d trader(s) by the daily window reset", n)
 	}
-	forceFlatReason = map[string]string{}
+	forceFlatReason = map[string]forceFlatTrip{}
 }
 
-func ResetDailyPnL() {
-	ResetDailyPnLAt(time.Now())
+// clearDailyForceFlatNotOn lifts every trip NOT stamped with session-day today
+// — the roll's clear. A trip set after the roll (today's) stands: the roll
+// runs at the first AI cycle after 17:00 CT, which can come after a fresh trip.
+func clearDailyForceFlatNotOn(today string) {
+	forceFlatMu.Lock()
+	defer forceFlatMu.Unlock()
+	n := 0
+	for id, trip := range forceFlatReason {
+		if trip.day != today {
+			delete(forceFlatReason, id)
+			n++
+		}
+	}
+	if n > 0 {
+		logger.Infof("daily force-flat cleared for %d trader(s) by the session-day roll to %s", n, today)
+	}
 }
 
+// ResetDailyPnLAt is the manual GLOBAL window reset: it lifts EVERY trader's
+// trip. r22 RISK-GATES (T4): its wall-clock wrapper ResetDailyPnL was removed —
+// its only production caller was MaybeForceFlat (the Emergency Flat), which now
+// clears the ONE trader acted on (ClearDailyForceFlat).
 func ResetDailyPnLAt(now time.Time) {
 	clearAllDailyForceFlat()
 	dailyResetMu.Lock()
@@ -256,7 +314,7 @@ func MaybeResetDaily(now time.Time) bool {
 		// (ResetDailyPnLAt: clear FIRST, then take dailyResetMu) does not use.
 		// One order, both paths.
 		dailyResetMu.Unlock()
-		clearAllDailyForceFlat()
+		clearDailyForceFlatNotOn(today)
 		dailyResetMu.Lock()
 		logger.Infof("Plan 3 T21 / Strategy Studio: daily window reset to CME session-day %s (force-flat trips lifted)", today)
 		return true
@@ -277,6 +335,12 @@ type DailyGuardrails struct {
 
 	DailyRealizedPnL float64 // realized P&L on the CME session-day (negative = net loss)
 	TradesToday      int     // entries taken on the CME session-day
+
+	// r22 RISK-GATES — the LOSS leg's P&L when the caller resolved it: the
+	// bot's own session-day P&L, realized + open, manual trades excluded.
+	// Known=false → the loss leg reads DailyRealizedPnL (the pre-r22 input).
+	DailyLossPnL      float64
+	DailyLossPnLKnown bool
 
 	DailyLossEnabled      bool
 	DailyLossLimitUSD     float64 // positive USD; loss ≥ this trips (force-flat class)
@@ -317,8 +381,15 @@ type StrategyGuardrailPosture struct {
 // (LoadRiskLimitsFromConfig().MaxDailyLossUSD).
 func ResolveStrategyGuardrails(rc store.RiskControlConfig, envDailyLossUSD float64) StrategyGuardrailPosture {
 	return StrategyGuardrailPosture{
-		MasterEnabled:         boolOrDefault(rc.GuardrailsEnabled, true),
-		DailyLossEnabled:      boolOrDefault(rc.DailyLossEnabled, true), // preserve the live daily-loss gate
+		// r22 RISK-GATES (owner R4 + R5, CTO fold 2026-10-14): ABSENT = OFF.
+		// Before r22 an absent master / daily-loss toggle read ON with the env
+		// $500 — decorative then (nothing flattened). Since r22 a breach
+		// refuses, cancels, FLATTENS and latches, so an inherited ON would be
+		// new behaviour nobody ordered. Only the ON/OFF default flips; the $
+		// value keeps its inherit (Studio value → env fallback). Stored values
+		// are untouched.
+		MasterEnabled:         boolOrDefault(rc.GuardrailsEnabled, false),
+		DailyLossEnabled:      boolOrDefault(rc.DailyLossEnabled, false),
 		DailyLossLimitUSD:     firstPositive(rc.DailyLossLimitUSD, envDailyLossUSD),
 		DailyProfitEnabled:    boolOrDefault(rc.DailyProfitEnabled, false),
 		DailyProfitTargetUSD:  rc.DailyProfitTargetUSD,
@@ -335,8 +406,8 @@ func ResolveStrategyGuardrails(rc store.RiskControlConfig, envDailyLossUSD float
 // SEE what the cage would have caught. It never blocks anything.
 func (g DailyGuardrails) CheckSoft() []string {
 	var hits []string
-	if g.DailyLossLimitUSD > 0 && g.DailyRealizedPnL <= -g.DailyLossLimitUSD {
-		hits = append(hits, fmt.Sprintf("daily loss would trip (realized today=%.2f, limit=-%.2f)", g.DailyRealizedPnL, g.DailyLossLimitUSD))
+	if g.DailyLossLimitUSD > 0 && g.lossPnL() <= -g.DailyLossLimitUSD {
+		hits = append(hits, fmt.Sprintf("daily loss would trip (%s today=%.2f, limit=-%.2f)", g.lossPnLLabel(), g.lossPnL(), g.DailyLossLimitUSD))
 	}
 	if g.DailyProfitTargetUSD > 0 && g.DailyRealizedPnL >= g.DailyProfitTargetUSD {
 		hits = append(hits, fmt.Sprintf("daily profit target would trip (realized today=%.2f, target=%.2f)", g.DailyRealizedPnL, g.DailyProfitTargetUSD))
@@ -365,8 +436,8 @@ func (g DailyGuardrails) Check() (RiskLimitDecision, error) {
 	if !g.MasterEnabled {
 		return RiskAllow, nil
 	}
-	if g.DailyLossEnabled && g.DailyLossLimitUSD > 0 && g.DailyRealizedPnL <= -g.DailyLossLimitUSD {
-		return RiskForceFlat, fmt.Errorf("daily loss limit hit (realized today=%.2f, limit=-%.2f)", g.DailyRealizedPnL, g.DailyLossLimitUSD)
+	if g.DailyLossEnabled && g.DailyLossLimitUSD > 0 && g.lossPnL() <= -g.DailyLossLimitUSD {
+		return RiskForceFlat, fmt.Errorf("daily loss limit hit (%s today=%.2f, limit=-%.2f)", g.lossPnLLabel(), g.lossPnL(), g.DailyLossLimitUSD)
 	}
 	if g.DailyProfitEnabled && g.DailyProfitTargetUSD > 0 && g.DailyRealizedPnL >= g.DailyProfitTargetUSD {
 		return RiskBlockEntry, fmt.Errorf("daily profit target reached (realized today=%.2f, target=%.2f)", g.DailyRealizedPnL, g.DailyProfitTargetUSD)
@@ -375,6 +446,23 @@ func (g DailyGuardrails) Check() (RiskLimitDecision, error) {
 		return RiskBlockEntry, fmt.Errorf("max daily trades reached (today=%d, max=%d)", g.TradesToday, g.MaxDailyTrades)
 	}
 	return RiskAllow, nil
+}
+
+// lossPnL is the P&L the LOSS leg judges: the caller-resolved bot P&L
+// (realized + open, manual excluded) when known, else the realized input.
+func (g DailyGuardrails) lossPnL() float64 {
+	if g.DailyLossPnLKnown {
+		return g.DailyLossPnL
+	}
+	return g.DailyRealizedPnL
+}
+
+// lossPnLLabel names which number lossPnL is, for the refusal text.
+func (g DailyGuardrails) lossPnLLabel() string {
+	if g.DailyLossPnLKnown {
+		return "bot P&L realized+open, manual excluded"
+	}
+	return "realized"
 }
 
 // boolOrDefault resolves a three-state *bool toggle: nil → the default value.

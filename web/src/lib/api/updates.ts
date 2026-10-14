@@ -57,9 +57,22 @@ export interface MaintenanceStatusView {
   // withdraw is ABSENT (null) when no hold asks for one — an unread ledger
   // carries the lists absent and unread says why (L7).
   withdraw?: MaintenanceWithdrawView | null
+  // release #22: an update job in a pre-hold state (requested → preflight)
+  // freezes NEW entries until it ends or passes the 30-minute job rule.
+  install_pending?: MaintenanceInstallPendingView
 }
 
-// ── GET /api/health (api/server.go:669 handleHealth) — panel A revision ──
+export interface MaintenanceInstallPendingView {
+  pending: boolean
+  job_id?: string
+  state?: string
+  phase?: string
+  created_at?: string
+  clears_by?: string
+  unread?: number
+}
+
+// ── GET /api/health (api/handler_health.go handleHealth) — panel A revision ──
 export interface HealthStatus {
   status?: string
   time?: string

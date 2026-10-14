@@ -10,7 +10,7 @@ import (
 const maxInt64 = int64(^uint64(0) >> 1)
 
 func TestLevelTriggerSideDropIsCounted(t *testing.T) {
-	oldHighs := []Level{{Key: "old-high:130", Kind: KindOldExtreme, Price: 130}}
+	oldHighs := []Level{{Key: "old-high:130", Kind: KindOldExtreme, Role: OldHigh, Price: 130}}
 	e, bars, now, _ := b14Fixture(oldHighs, 99.5)
 	e.Cfg.LocTriggerFilter = true
 	e.Cfg.TriggerSchool = 2

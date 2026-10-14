@@ -36,8 +36,8 @@ func TestPHLHigherLowValidatesAgainstTheLeftLow(t *testing.T) {
 	e.State.EMA9 = 0
 	e.State.SeedLevels = []Level{
 		{Key: "L", Kind: KindKeyLevel, Price: 29386},                      // the support the broken candle touches
-		{Key: "old-low:29335", Kind: KindOldExtreme, Price: 29335},        // the structural left low
-		{Key: "old-high:29431.75", Kind: KindOldExtreme, Price: 29431.75}, // the old high
+		{Key: "old-low:29335", Kind: KindOldExtreme, Role: OldLow, Price: 29335},        // the structural left low
+		{Key: "old-high:29431.75", Kind: KindOldExtreme, Role: OldHigh, Price: 29431.75}, // the old high
 	}
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 29300}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 29300}}

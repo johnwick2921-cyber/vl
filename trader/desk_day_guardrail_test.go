@@ -46,11 +46,15 @@ func TestDeskGuardrailRequiresBOTHToggles(t *testing.T) {
 	if _, _, enforced := mk(boolp(true), boolp(true)).deskGuardrail(); !enforced {
 		t.Error("both toggles ON must report ENFORCED")
 	}
-	// Absent daily_loss_enabled preserves the shipped default (engine_analysis.go
-	// boolOrDefault(..., true)) so this fix cannot silently disarm a desk that
-	// never set the field.
-	if _, _, enforced := mk(boolp(true), nil).deskGuardrail(); !enforced {
-		t.Error("master ON with daily_loss_enabled ABSENT must stay enforced (default true)")
+	// r22 RISK-GATES (owner R4 + R5): an ABSENT toggle reads OFF — the same
+	// default kernel.ResolveStrategyGuardrails resolves. Since r22 the gate
+	// flattens, so it must never turn itself on for a strategy that never
+	// saved the switch.
+	if _, _, enforced := mk(boolp(true), nil).deskGuardrail(); enforced {
+		t.Error("master ON with daily_loss_enabled ABSENT must read OFF (absent = OFF since r22)")
+	}
+	if _, _, enforced := mk(nil, boolp(true)).deskGuardrail(); enforced {
+		t.Error("guardrails master ABSENT must read OFF (absent = OFF since r22)")
 	}
 }
 

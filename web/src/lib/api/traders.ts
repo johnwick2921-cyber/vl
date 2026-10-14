@@ -41,6 +41,39 @@ export interface MentorTruth {
   done_after_win_why?: string
   stop_after_loss: boolean
   stop_after_loss_why?: string
+  /** T7 (release #22) — ABSENT while computing; `[]` once built. VALID trendlines only. */
+  trendlines?: {
+    side: string // 'long' = support, 'short' = resistance
+    p0_ms: number
+    p0_px: number
+    p1_ms: number
+    p1_px: number
+    now_ms: number
+    now_px: number
+    in_level: boolean // false = inside a box this bar (the box wins)
+  }[]
+  /** T7 — the ISB rest boxes the evaluator holds (5m / 15m / 30m). */
+  isb_boxes?: MentorRange[]
+  /** T7 — the 08:30–08:32 opening range, absent until drawn. */
+  orb?: MentorRange
+  /** T7 — the swing line (4h EMA 34), absent until warm, with its order/leg. */
+  swing?: { line: number; pending?: MentorSwingLeg; pos?: MentorSwingLeg }
+}
+
+export interface MentorRange {
+  label: string
+  high: number
+  low: number
+  dir?: string
+  at_ms?: number
+  status?: string
+}
+
+export interface MentorSwingLeg {
+  side: string
+  entry: number
+  stop: number
+  target: number
 }
 
 function throwApiError(

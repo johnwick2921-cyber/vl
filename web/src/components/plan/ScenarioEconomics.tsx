@@ -1,4 +1,4 @@
-import type { PlanScenario } from '../../lib/api/plan'
+import { armDisabledReasonText, type PlanScenario } from '../../lib/api/plan'
 
 // Legacy missing economics stays UNKNOWN. Existing arm prices may still display,
 // but neither an obstacle nor a newly introduced R field is inferred for legacy.
@@ -66,7 +66,8 @@ export function ScenarioEconomics({ scenario: s }: { scenario: PlanScenario }) {
       {e && !s.arm && <div>Hypothetical geometry · no arm authorization</div>}
       {s.arm?.arm_disabled_reason && (
         <div style={{ color: 'var(--vl-gold)' }}>
-          ⚔️ disabled at write: {s.arm.arm_disabled_reason}
+          ⚔️ disabled at write:{' '}
+          {armDisabledReasonText(s.arm.arm_disabled_reason)}
         </div>
       )}
       <div>

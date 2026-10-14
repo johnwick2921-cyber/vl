@@ -534,6 +534,35 @@ func main() {
 			}
 			logger.Infof("📐 %s", st.WaveARecordBootLine(armed, ran, backup))
 		}
+		// R22 PNL-TRUTH — OWNER RULING R1 (2026-10-14): the four manual NT8
+		// shorts (#608 #609 #637 #640) leave the BOT record by EXCLUSION —
+		// origin=manual, nothing deleted. NOT flag-guarded: the owner ordered
+		// it, and an env flag the owner cannot see would leave −4,226 on the
+		// dashboard. Guarded instead by the backup (no backup, no write), by a
+		// WHERE on id AND trader id AND the adoption fingerprint, and by
+		// idempotence (a second boot finds nothing pending and takes no backup).
+		{
+			ran, backup := store.ManualOriginCounts{}, ""
+			pending, pErr := st.Position().PendingManualOriginWork()
+			switch {
+			case pErr != nil:
+				logger.Errorf("🧾 manual-origin migration NOT run — pending read failed: %v", pErr)
+			case pending.Pending == 0:
+				ran = pending
+			default:
+				if b, bErr := store.BackupBeforeManualOrigin(cfg.DBPath, time.Now().Format("20060102-150405")); bErr != nil {
+					logger.Errorf("🧾 manual-origin migration ABORTED — backup failed, no backup no write: %v", bErr)
+				} else if c, mErr := st.Position().RunManualOriginMigration(); mErr != nil {
+					backup = b
+					logger.Errorf("🧾 manual-origin migration failed: %v (backup %s)", mErr, b)
+				} else {
+					backup, ran = b, c
+					logger.Warnf("🧾 manual-origin migration: marked %d row(s) %v origin=manual (owner ruling R1; NOTHING deleted, P&L untouched) · already=%d skipped=%d · backup %s",
+						c.Marked, c.MarkedIDs, c.Already, c.Skipped, b)
+				}
+			}
+			logger.Infof("🧾 %s", st.Position().ManualOriginBootLine(ran, backup))
+		}
 		// 1B D7 — the calibrated detector and the two tables that record it.
 		logger.Infof("🔬 %s", kernel.DetectorBootLine(st.TouchOutcomes().CountOutcomes(), st.CandidatePool().CountPool()))
 
@@ -611,8 +640,8 @@ func main() {
 			// 101 D2 (2026-09-16) — the chart across the roll. The flag is READ
 			// (A11); the readers it gates live in api/ only and the decision
 			// readers are contract-scoped and untouched (E4).
-			logger.Infof("📈 chart: across-roll=%s · prior contracts fill strictly before the current contract's first live row · step never adjusted · limit max=%d · decision readers=current-contract-only",
-				api.ChartAcrossRollResolved(), 20000)
+			logger.Infof("📈 chart: across-roll=%s · prior contracts fill strictly before the current contract's first live row · prior-segment stitch=%s · limit max=%d · decision readers=current-contract-only",
+				api.ChartAcrossRollResolved(), api.ChartRollStitchResolved(), 20000)
 
 			// ONE SETUP (dispatch 102, 2026-09-10) — D9's two backfills, three-state,
 			// ONE SHOT per trader: verdicts at each episode's OPEN since W2's boot,

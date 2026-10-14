@@ -175,6 +175,12 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 	}
 
 	totalPnL := totalEquity - at.initialBalance
+	// R22 PNL-TRUTH (RISK-PNL P1-2): every account figure under its OWN name.
+	// equity − initial is the account's P&L since the configured start; it is
+	// unknown (absent) without an initial balance.
+	accountVsInitial := totalPnL
+	totalPnLSource := "equity_minus_initial"
+	var nt8Session *float64
 	totalPnLPct := 0.0
 	if at.initialBalance > 0 {
 		totalPnLPct = (totalPnL / at.initialBalance) * 100
@@ -193,6 +199,11 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 		realized, _ := balance["totalRealizedProfit"].(float64)
 		unrealized, _ := balance["totalUnrealizedProfit"].(float64)
 		totalPnL = realized + unrealized
+		// NT8 RESETS RealizedProfitLoss every session: this is the NT8
+		// SESSION figure (10-14: +74.00 = #648 + #651), not a total.
+		sessionPnL := totalPnL
+		nt8Session = &sessionPnL
+		totalPnLSource = "nt8_session"
 		if base := totalEquity - totalPnL; base > 0 {
 			totalPnLPct = (totalPnL / base) * 100
 		} else {
@@ -205,7 +216,7 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 		marginUsedPct = (totalMarginUsed / totalEquity) * 100
 	}
 
-	return map[string]interface{}{
+	out := map[string]interface{}{
 		// Core fields
 		"total_equity":      totalEquity,           // Account equity = wallet + unrealized
 		"wallet_balance":    totalWalletBalance,    // Wallet balance (excluding unrealized P&L)
@@ -222,7 +233,19 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 		"position_count":  len(positions),  // Position count
 		"margin_used":     totalMarginUsed, // Margin used
 		"margin_used_pct": marginUsedPct,   // Margin usage rate
-	}, nil
+
+		// R22: what total_pnl HOLDS — "nt8_session" (NT8's session-reset
+		// realized+unrealized) or "equity_minus_initial".
+		"total_pnl_source": totalPnLSource,
+	}
+	if nt8Session != nil {
+		out["nt8_session_pnl"] = *nt8Session // ACCOUNT figure, as NT8 reports it
+	}
+	if at.initialBalance > 0 {
+		out["account_pnl_vs_initial"] = accountVsInitial // ACCOUNT figure: equity − initial_balance
+		out["account_pnl_vs_initial_pct"] = accountVsInitial / at.initialBalance * 100
+	}
+	return out, nil
 }
 
 // GetPositions gets position list (for API)
@@ -509,7 +532,7 @@ func (at *AutoTrader) recordPositionChangeAs(orderID, symbol, side, action strin
 			EntryTime:       nowMs,
 			Leverage:        leverage,
 			Status:          "OPEN",
-			EntryConfidence: confidence, // P2.4 — capture the AI's entry confidence
+			EntryConfidence: &confidence, // P2.4 — the AI's entry confidence (R22: nil on paths without one)
 			CreatedAt:       nowMs,
 			UpdatedAt:       nowMs,
 		}

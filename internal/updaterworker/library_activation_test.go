@@ -189,7 +189,7 @@ func TestAdapterDelegatesToActivation(t *testing.T) {
 		defer srv.Close()
 		now := time.Now().Truncate(time.Second)
 		logPath := filepath.Join(t.TempDir(), "vl_boot.log")
-		line := now.Format("01-02 15:04:05") + " [INFO] 🔐 BOOT INTEGRITY OK — rev " + sha12 + " · built x · goldens PASS\n"
+		line := logStampCT(now) + " [INFO] 🔐 BOOT INTEGRITY OK — rev " + sha12 + " · built x · goldens PASS\n"
 		if err := os.WriteFile(logPath, []byte(line), 0o600); err != nil {
 			t.Fatal(err)
 		}

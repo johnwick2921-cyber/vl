@@ -17,6 +17,7 @@ import (
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
+	"vl/telemetry"
 )
 
 // ── MENTOR P3 — the cycle hook ─────────────────────────────────────────────
@@ -238,12 +239,25 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// test inside Tick then reads the just-closed bar as closed, never as forming
 	// (an OpenTime clock made the ORB escape unreachable and lagged every gate).
 	intents := at.mentorEval.Tick(bars, mentor.BarCloseInstant(last))
+	// FULL-DAY-REPLAY observer (test-only, nil in production): sees every
+	// intent this tick emitted before anything acts on it.
+	if tap := at.mentorIntentTap; tap != nil {
+		for _, in := range intents {
+			tap(in)
+		}
+	}
 	// Day-gate report (owner ruling 2026-10-09): ONE INFO line per trading day,
 	// emitted at the 08:30 decision, with the gate's own inputs (the 08:30
 	// decision was silent in the log — only the refusal counters showed it).
 	if rep := at.mentorEval.State.DayGateReport; rep.Key != "" && rep.Key != at.mentorDayGateReportLogged {
 		at.mentorDayGateReportLogged = rep.Key
 		at.logInfof("%s", mentorDayGateLine(rep))
+	}
+	// Release #22 LINES-RESTART: every change the evaluator recorded this tick
+	// (4h/1h trigger move, box latched/cleared, trendline valid/dead, swing
+	// line gap fold) is logged once, as it happens — READ values only.
+	for _, n := range at.mentorEval.TakeNotes() {
+		at.logInfof("🧑‍🏫 %s", n)
 	}
 	// Day-off recheck (owner ruling 2026-10-09): when the evaluator cleared a
 	// latched DayOff this tick, WARN + count ONCE (per process per trading day
@@ -305,6 +319,9 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 		// every arm action; an unknown action is refused, never silent.
 		at.mentorDispatchIntent(in, extra, last.CloseTime, emitMs)
 	}
+	// STALLED-SETUP ALARM (release #22): after this tick's emits are counted,
+	// fire the once-per-day P1 for any kind with emitted >= 3 and placed == 0.
+	at.mentorStallAlarmCheck(mentorClockNow())
 	// B3 (release #3b) item 4: place at the authoring event, not on the 2-min
 	// scan — a 1-candle mentor arm must not expire before the scan runs.
 	if mentorPlaceEnv() {
@@ -359,8 +376,19 @@ func mentorDayGateLine(r mentor.DayGateReport) string {
 	if r.Conflict {
 		conflict = "yes"
 	}
-	return fmt.Sprintf("🧑‍🏫 day gate @08:30 CT: %s — overnight run %s pts (hi %s, lo %s, line %.0f) · 4h %s · 1h %s · conflict %s [D5.1 p1 @19:22]",
-		mentorDayGateVerdictLabel(r.Verdict), run, hi, lo, r.SpentPts, four, one, conflict)
+	// Release #22 (P2-3): "@08:30" only when the latch was READ at 08:30. A
+	// restart (or a feed gap) after the open re-latches on the 4h/1h state of
+	// that later moment — the line names the real read instant.
+	when := "@08:30 CT"
+	if !r.ReadAtOpen() {
+		at := "n/a"
+		if r.ReadAt > 0 {
+			at = kernel.ClockHHMMCT(time.UnixMilli(r.ReadAt))
+		}
+		when = fmt.Sprintf("RE-LATCHED @%s CT, not the 08:30 read (restart or feed gap; trading day %s — the 4h/1h below are read at %s)", at, r.Key, at)
+	}
+	return fmt.Sprintf("🧑‍🏫 day gate %s: %s — overnight run %s pts (hi %s, lo %s, line %.0f) · 4h %s · 1h %s · conflict %s [D5.1 p1 @19:22]",
+		when, mentorDayGateVerdictLabel(r.Verdict), run, hi, lo, r.SpentPts, four, one, conflict)
 }
 
 // mentorPlaceIntent runs the placement gates (sources wired, stop rules,
@@ -374,9 +402,29 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// 1m feed is stale (B4's formula). Counted + WARN'd once per episode inside
 	// mentorStaleDataBlocked. Exits / protection are never gated; resting broker
 	// orders are never cancelled by this.
-	if at.mentorStaleDataBlocked(mentorClockNow()) {
+	if stale, why := at.mentorStaleDataBlockedWhy(mentorClockNow()); stale {
 		// A setup computed on stale prices is not a setup. The deferred guard in
-		// mentorDispatchEntry drops the evaluator's arm on this refusal.
+		// mentorDispatchEntry drops the evaluator's arm on this refusal. LOUD:
+		// every sized Place refused here is named and counted (the "never
+		// silent" rule). The bar age is READ from the same source
+		// mentorStaleDataBlocked reads; "n/a" when there is no bar to read.
+		now := mentorClockNow()
+		newestOpen := int64(0)
+		if bars := market.FuturesBarsProvider(at.futuresSymbol(), "1m", 1); len(bars) > 0 {
+			newestOpen = bars[len(bars)-1].OpenTime
+		}
+		age := "n/a"
+		if newestOpen > 0 {
+			age = fmt.Sprintf("%ds", (now.UnixMilli()-(newestOpen+60_000))/1000)
+		}
+		at.mentorCount("placement_refused_stale_data")
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — stale 1m feed (newest bar %s old; %s): %s %s %s @ %.2f — never reaches the ledger",
+			age, why, in.ArmID, in.Setup, in.Side, in.Price)
+		// STALLED-SETUP ALARM (release #22): record the refusal reason so a
+		// stalled kind's alert names "stale_data" instead of "silent drop"
+		// (the 10-11 Sunday NT8 lag refused level orders quietly here).
+		at.mentorRecordStallRefusal(in, "stale_data")
+		at.mentorGateBlock("mentor_stale_data")
 		return
 	}
 	// N10 (stale intent): an entry whose reference candle is not the newest
@@ -386,6 +434,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	if in.RefBarMs != 0 && in.RefBarMs != barCloseMs {
 		at.mentorCount("stale_intent")
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — stale %s intent: reference bar close %d ≠ newest closed bar %d", in.Setup, in.RefBarMs, barCloseMs)
+		at.mentorGateBlock("mentor_stale_intent")
 		return
 	}
 	// WIRING PROOF (fail-closed): with any mentor source seam missing, EVERY
@@ -393,6 +442,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	if missing := at.mentorSourcesBlocking(in.Setup); len(missing) > 0 {
 		at.mentorCount("mentor_sources_missing")
 		at.logErrorf("🧑‍🏫 mentor sources MISSING [%s] — refusing the %s entry (fail-closed)", strings.Join(missing, ", "), in.Setup)
+		at.mentorGateBlock("mentor_sources_missing")
 		return
 	}
 	// STOP RULES (owner ruling 00:1x CT, "exactly like he said") — class
@@ -401,27 +451,33 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// no-chase rule.
 	if refuse, why := at.mentorWindowGate(in); refuse {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorGateBlock("mentor_window")
 		return
 	}
 	if refuse, why := at.mentorDoneAfterWinGate(); refuse {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorGateBlock("mentor_done_after_win")
 		return
 	}
 	if refuse, why := at.mentorStopAfterLossGate(); refuse {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorGateBlock("mentor_stop_after_loss")
 		return
 	}
 	if hold, why := at.mentorNewsGate(); hold {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorGateBlock("mentor_news_hold")
 		return
 	}
 	if refuse, why := at.mentorAddGate(in); refuse {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorGateBlock("mentor_never_add")
 		return
 	}
-	// §5(a) — the daily loss limit is checked AT PLACEMENT, not only by the
-	// 60s sweep: a placement while the session-day's realized loss is already
-	// at/past the limit is refused and counted.
+	// §5(a) — the daily guardrails are checked AT PLACEMENT (r22: daily loss
+	// on the bot's own P&L incl. a latched trip, profit target, max daily
+	// trades), and again at the send by the admission chain; the 60s monitor
+	// beat cancels resting entries and flattens on a daily-loss breach.
 	if refuse, why := at.mentorDailyLossGate(mentorClockNow()); refuse {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		return
@@ -439,12 +495,14 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	if refuse, why := mentorExpiryGuard(in.ExpiryMs); refuse {
 		at.mentorCount("expiry_missing_refused")
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorGateBlock("mentor_expiry_missing")
 		return
 	}
 	if latest, ok := at.mentorLatestPrice(); ok {
 		if skip, why := mentorNoChase(in.Side, latest, in.Price); skip {
 			at.mentorCount("no_chase_skip")
 			at.logWarnf("🧑‍🏫 mentor NO-CHASE skip: %s", why)
+			at.mentorGateBlock("mentor_no_chase")
 			return
 		}
 	}
@@ -964,7 +1022,9 @@ func (at *AutoTrader) cancelLiveMentorArms(reason string, swingExempt bool) bool
 		if swingExempt {
 			at.logWarnf("🧑‍🏫 day-stop cancel: cancelled %d live intraday mentor arm(s) (SWING4H exempt) — %s", cancelled, reason)
 		} else {
-			at.logWarnf("🧑‍🏫 never-add cancel: cancelled %d live mentor arm(s) (SWING4H included — fail-closed) — %s", cancelled, reason)
+			// r22: this all-arms path is shared by the never-add sweep and the
+			// daily-loss breach; the reason names which one acted.
+			at.logWarnf("🧑‍🏫 all-arms cancel: cancelled %d live mentor arm(s) (SWING4H included — fail-closed) — %s", cancelled, reason)
 		}
 	}
 	return cancelled > 0
@@ -1362,42 +1422,46 @@ func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
 	return false, ""
 }
 
-// mentorDailyLossGate is the §5(a) placement-time daily-loss check: the daily
-// loss limit is enforced HERE, not only by the 60s sweep. A placement while the
-// session-day's realized loss is already at/past the limit is refused and
-// counted. It reads the SAME production readers the desk strip uses
-// (deskGuardrail for the enforced limit, deskRealizedToday for the corrected
-// session-day P&L) — one definition, no second copy (A24).
+// mentorDailyLossGate is the §5(a) placement-time daily guardrail check: a
+// mentor placement is refused while the daily loss limit is hit (or latched
+// earlier today), and — r22 RISK-GATES — while the daily profit target or MAX
+// DAILY TRADES is reached. Before r22 this read only the realized loss and the
+// mentor path never evaluated max trades at all (they lived only inside the AI
+// decision cycle, which a mentor trader never runs).
 //
-// FAIL-OPEN on a read error (deskRealizedToday returns 0 when the store read
-// fails) — a circuit breaker that trips on a DB hiccup is worse than the gap it
-// closes (sessionRiskGateAt's contract). NOTE: the 60s sweep does NOT enforce
-// the dollar limit — it enforces the consecutive-loss breaker and the force-flat
-// windows. The dollar limit is enforced only here, and only when the guardrails
-// master AND daily_loss_enabled are both ON (deskGuardrail returns
-// enforced=false otherwise).
+// It asks the ONE verdict every entry path asks (dailyGuardVerdictAt — the
+// same kernel Check, the same resolved posture, the bot-only P&L), so the
+// authoring step and the send-time admission can never disagree. Each refusal
+// is counted per kind (and reaches the gate-block table through mentorCount).
+// FAIL-CLOSED on an unresolved close today (pnl NULL — canon 40, CTO fold
+// release 10-05-1), unchanged. Inert unless the guardrails master AND the leg
+// are ON (the owner's live strategies: both OFF).
 func (at *AutoTrader) mentorDailyLossGate(now time.Time) (bool, string) {
-	limit, _, enforced := at.deskGuardrail()
-	if !enforced || limit <= 0 {
+	v := at.dailyGuardVerdictAt(now)
+	if !v.Refuse {
 		return false, ""
 	}
-	// CTO fold (release 10-05-1): fail CLOSED on an UNRESOLVED close today
-	// (pnl NULL — canon 40): an unknown loss is not a confident "under the
-	// limit" — the same rule as the B1 day-net source. The 60s sweep is a
-	// backstop, not the gate.
-	if at.store == nil {
-		return false, "" // no store exists only in unit fixtures; production always has one
-	}
-	realized, _, unresolved := at.deskRealizedToday(now)
-	if unresolved > 0 {
+	switch v.Class {
+	case "max_daily_trades":
+		at.mentorCount("max_daily_trades_refused")
+	case "daily_profit_target":
+		at.mentorCount("daily_profit_refused")
+	default: // daily_loss, daily_guardrail_unverified
 		at.mentorCount("daily_loss_refused")
-		return true, fmt.Sprintf("daily loss limit enforced but %d close(s) today have unresolved P&L — no new entry (fail-closed) [guardrail]", unresolved)
 	}
-	if realized <= -limit {
-		at.mentorCount("daily_loss_refused")
-		return true, fmt.Sprintf("daily loss limit hit at placement (realized today=%.2f, limit=-%.2f) — no new entry [guardrail]", realized, limit)
-	}
-	return false, ""
+	at.mentorGateBlock("mentor_" + v.Class)
+	return true, v.Reason + " [guardrail]"
+}
+
+// mentorGateBlock files ONE mentor placement refusal in the per-trader
+// gate-block table (GET /api/risk/gate-blocks, the daily summary line) — r22
+// RISK-GATES, review P2-3: before r22 only mentor_ai_entries_off /
+// mentor_ai_closes_off reached it, so 39 done-after-win refusals on 10-12 were
+// absent from that day's summary. Called at each REFUSAL site in
+// mentorPlaceIntent, never from a gate function (the day-stop sweep calls
+// those every tick, and a sweep check is not a refusal — canon 35).
+func (at *AutoTrader) mentorGateBlock(class string) {
+	telemetry.IncGateBlock(at.id, class)
 }
 
 // mentorMin4hEMA34 is the ABSOLUTE minimum 4h-candle floor: 34 is the EMA's
@@ -1546,7 +1610,9 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	// REL18-A: each construction (boot or reload) gets its OWN arm epoch (a
 	// per-AutoTrader field, never shared), so a rebuilt evaluator's "isb-1"
 	// never collides with a prior terminal row — or another trader's row.
-	at.mentorArmEpoch = time.Now().UnixNano()
+	// The epoch reads the mentor seam so a pinned test clock names the seed
+	// instant; production (nil source) is time.Now(), unchanged.
+	at.mentorArmEpoch = mentorClockNow().UnixNano()
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}

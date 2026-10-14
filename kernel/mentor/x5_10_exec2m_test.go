@@ -73,6 +73,99 @@ func barAt(openMs int64, o, h, l, c float64) market.Kline {
 	return market.Kline{OpenTime: openMs, CloseTime: openMs + 59_999, Open: o, High: h, Low: l, Close: c}
 }
 
+// x5BarsAt is the x5_10Bars doji/ISB fixture shifted so the last bar's
+// CloseTime + 1 is exactly `now`: on the 1m chart bars 2–3 form a long ISB
+// (emit), on the 2m chart candle 1 (bars 0–1) is a doji (no ISB). Works at any
+// even-UTC-aligned minute.
+func x5BarsAt(now int64) []market.Kline {
+	o := [4]float64{121, 121, 99, 101}
+	h := [4]float64{122, 121.5, 106, 102.1}
+	l := [4]float64{120, 120, 98.5, 100.9}
+	c := [4]float64{120.5, 121, 106, 102}
+	bars := make([]market.Kline, 4)
+	for i := 0; i < 4; i++ {
+		open := now - int64(4-i)*60_000
+		bars[i] = market.Kline{OpenTime: open, CloseTime: open + 59_999, Open: o[i], High: h[i], Low: l[i], Close: c[i]}
+	}
+	return bars
+}
+
+// TestX5_10Exec2mScheduleAtTick — the schedule AT THE TICK CALL SITE (canon 53):
+// with the knob ON, an overnight / Europe-open ISB is read on the 2m (the doji
+// candle 1 → no ISB → no isb_day_not_measured refusal), while the RTH-open
+// +30 window (08:45 CT) stays on the 1m and EMITS. Knob OFF stays 1m everywhere.
+// MUTANT (CTO): restore `rthMinuteOf(now) >= 9*60` AT eval.go's call site (leave
+// the predicate alone) → the 01:30/03:10 rows read 1m → the ISB forms and the
+// pre-open day gate refuses it (isb_day_not_measured) → RED.
+func TestX5_10Exec2mScheduleAtTick(t *testing.T) {
+	// Overnight + Europe open, knob ON: the 2m read finds NO ISB.
+	for _, c := range []struct {
+		label string
+		now   int64
+	}{
+		{"01:30 CT (overnight)", auditMs(2026, 9, 15, 1, 30, 0)},
+		{"03:10 CT (Europe open)", auditMs(2026, 9, 15, 3, 10, 0)},
+	} {
+		cfg := DefaultConfig()
+		cfg.Enabled = true
+		cfg.Exec2mAfter30m = true
+		e := newISBEval(cfg)
+		e.Tick(x5BarsAt(c.now), c.now)
+		if e.State.Refusals["isb_day_not_measured"] != 0 {
+			t.Fatalf("%s knob ON: the 2m read must find no ISB (no isb_day_not_measured); got %v", c.label, e.State.Refusals)
+		}
+	}
+
+	// Knob OFF at 01:30: the 1m read forms the ISB → the pre-open day gate
+	// refuses it (isb_day_not_measured) — proves the 1m read when OFF.
+	cfgOff := DefaultConfig()
+	cfgOff.Enabled = true
+	eOff := newISBEval(cfgOff)
+	eOff.Tick(x5BarsAt(auditMs(2026, 9, 15, 1, 30, 0)), auditMs(2026, 9, 15, 1, 30, 0))
+	if eOff.State.Refusals["isb_day_not_measured"] == 0 {
+		t.Fatalf("01:30 CT knob OFF: the 1m read must form the ISB (isb_day_not_measured present); got %v", eOff.State.Refusals)
+	}
+
+	// RTH open +30 window (08:45 CT), knob ON: still the 1m read → emits.
+	cfgRth := DefaultConfig()
+	cfgRth.Enabled = true
+	cfgRth.Exec2mAfter30m = true
+	if got := x5_10Emits(newISBEval(cfgRth), x5BarsAt(auditMs(2026, 9, 15, 8, 45, 0)), auditMs(2026, 9, 15, 8, 45, 0)); got != 1 {
+		t.Fatalf("08:45 CT knob ON: the 1m read must emit the ISB, got %d", got)
+	}
+}
+
+// TestExec2mReads2mSchedule — the X5-10 timeframe schedule (owner order
+// 2026-10-13 ~23:00 CT "fix all"; sources X5 @00:07–01:17, X11 @17:06–19:35):
+// with the knob ON the ISB reads the 2m at every minute EXCEPT the RTH open
+// +30 minutes (08:30 ≤ t < 09:00 CT), when it stays on the 1m. Overnight and
+// the Europe open (3am Texas) are 2m. The predicate is the ONE definition the
+// Tick call site reads. MUTANT (CTO): restore `rthMinuteOf(now) >= 9*60` →
+// the 01:30/03:10 rows read 1m → RED.
+func TestExec2mReads2mSchedule(t *testing.T) {
+	cases := []struct {
+		label string
+		now   int64
+		want  bool // true = 2m read
+	}{
+		{"08:29 CT (just before the 1m window)", auditMs(2026, 9, 15, 8, 29, 0), true},
+		{"08:30 CT (RTH open, window start)", auditMs(2026, 9, 15, 8, 30, 0), false},
+		{"08:45 CT (RTH open +15m)", auditMs(2026, 9, 15, 8, 45, 0), false},
+		{"08:59 CT (last minute of the window)", auditMs(2026, 9, 15, 8, 59, 0), false},
+		{"09:00 CT (window end)", auditMs(2026, 9, 15, 9, 0, 0), true},
+		{"09:05 CT (after +30m)", auditMs(2026, 9, 15, 9, 5, 0), true},
+		{"01:30 CT (overnight)", auditMs(2026, 9, 15, 1, 30, 0), true},
+		{"03:10 CT (Europe open)", auditMs(2026, 9, 15, 3, 10, 0), true},
+		{"15:00 CT (RTH close)", auditMs(2026, 9, 15, 15, 0, 0), true},
+		{"23:59 CT (late evening)", auditMs(2026, 9, 15, 23, 59, 0), true},
+	}
+	for _, c := range cases {
+		if got := exec2mReads2m(c.now); got != c.want {
+			t.Fatalf("%s: exec2mReads2m = %v, want %v (2m=%v)", c.label, got, c.want, c.want)
+		}
+	}
+}
+
 // TestX5_10Exec2mReadsClosedBucketsNotTheFormingOne — P1: on a 1m close that
 // OPENS a 2m bucket, the read must be the previous two CLOSED 2m candles, not
 // the half-formed one (barsTF would flush the partial bucket and the ISB would

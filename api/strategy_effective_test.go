@@ -206,8 +206,10 @@ func TestEffectiveEnvOrigins(t *testing.T) {
 	config.Init() // RISK_MAX_DAILY_LOSS_USD is read at boot
 
 	s, st, tok := newEffectiveServer(t)
+	// r22: both guardrail switches saved ON — absent reads OFF since r22, and
+	// this row tests the $ VALUE's env fallback, which needs the gate on.
 	effPutStrategy(t, st, "env", effUser, `{"strategy_type":"ai_trading","ai_config":{"risk_control":{
-		"max_contracts_per_order":5,"breakeven_enabled":true}}}`)
+		"max_contracts_per_order":5,"breakeven_enabled":true,"guardrails_enabled":true,"daily_loss_enabled":true}}}`)
 	r := effGet(t, s, tok, "/api/strategies/env/effective")
 	cfg := runtimeConfig(t, st, effUser, "env")
 
@@ -313,8 +315,10 @@ func TestEffectiveSessionScopedRows(t *testing.T) {
 // OFF: a guardrail switched off reads off, with the switch that did it.
 func TestEffectiveOffReadsOff(t *testing.T) {
 	s, st, tok := newEffectiveServer(t)
+	// r22: the master saved ON so the daily-loss switch is the one that did it
+	// (an absent master reads OFF since r22 and would name itself instead).
 	effPutStrategy(t, st, "off", effUser, `{"strategy_type":"ai_trading","ai_config":{"risk_control":{
-		"daily_loss_limit_usd":450,"daily_loss_enabled":false}}}`)
+		"daily_loss_limit_usd":450,"guardrails_enabled":true,"daily_loss_enabled":false}}}`)
 	row := effRow(t, effGet(t, s, tok, "/api/strategies/off/effective"), "ai_config.risk_control.daily_loss_limit_usd")
 	if row.Effective != "off (daily_loss_enabled OFF)" || row.Origin != "saved value (daily_loss_enabled OFF)" {
 		t.Fatalf("daily loss switched off: %+v", row)

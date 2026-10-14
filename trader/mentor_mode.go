@@ -267,20 +267,29 @@ func mentorStaleDataBlockEnabled(rc *store.RiskControlConfig) bool {
 // here — that is a separate decision. Fail-open when the provider is absent
 // (crypto / test) or the cache is empty (the seed + FEED DOWN alert own cold).
 func (at *AutoTrader) mentorStaleDataBlocked(now time.Time) bool {
+	stale, _ := at.mentorStaleDataBlockedWhy(now)
+	return stale
+}
+
+// mentorStaleDataBlockedWhy is mentorStaleDataBlocked plus the leg that fired
+// (release #22 OPS-SAFETY): kernel.EntryFeedStale = a clock-step hold, OR the
+// B4 wall rule, OR the monotonic receipt age of the 1m feed. The wall rule
+// alone failed OPEN on a backward wall-clock step.
+func (at *AutoTrader) mentorStaleDataBlockedWhy(now time.Time) (bool, string) {
 	if at == nil {
-		return false
+		return false, ""
 	}
 	if rc := at.mentorRiskControl(); !mentorStaleDataBlockEnabled(rc) {
-		return false
+		return false, ""
 	}
 	if market.FuturesBarsProvider == nil {
-		return false
+		return false, ""
 	}
 	newestOpen := int64(0)
 	if bars := market.FuturesBarsProvider(at.futuresSymbol(), "1m", 1); len(bars) > 0 {
 		newestOpen = bars[len(bars)-1].OpenTime
 	}
-	stale := kernel.StaleEntryGateFeed(newestOpen, now)
+	stale, why := kernel.EntryFeedStale(at.futuresSymbol(), newestOpen, now)
 	at.mentorStaleMu.Lock()
 	changed := stale != at.mentorStaleEpisode
 	if changed {
@@ -288,11 +297,10 @@ func (at *AutoTrader) mentorStaleDataBlocked(now time.Time) bool {
 	}
 	at.mentorStaleMu.Unlock()
 	if changed && stale {
-		age := now.UnixMilli() - (newestOpen + 60_000)
 		at.mentorCount("stale_data")
-		at.logWarnf("🧑‍🏫 mentor stale-data block: 1m feed stale (newest bar age %ds, B4 threshold ~75s) — refusing NEW mentor arms; exits and protection are unaffected; resting orders are NOT cancelled.", age/1000)
+		at.logWarnf("🧑‍🏫 mentor stale-data block: %s — refusing NEW mentor arms; exits and protection are unaffected; resting orders are NOT cancelled.", why)
 	}
-	return stale
+	return stale, why
 }
 
 // mentorStaleDataBlockBootLine renders the boot line for the mentor stale-data
@@ -635,8 +643,14 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 		return mentorSizeChoice{}, err
 	}
 	at.mentorCount("tier_" + choice.Tier)
-	at.logInfof("🧑‍🏫 mentor size: %d contracts (tier %s) — %s [setup %s, stop %.1f pts]",
-		choice.Contracts, choice.Tier, choice.Why, in.Setup, in.StopPts)
+	// the trade's location on the record (TRENDLINE-THIRD-TOUCH): the place
+	// the setup was taken at, from its anchor — "at a location: trendline long".
+	where := "no location anchor"
+	if loc := mentor.LocationOf(in.AnchorKey); loc != "" {
+		where = "at a location: " + loc
+	}
+	at.logInfof("🧑‍🏫 mentor size: %d contracts (tier %s) — %s [setup %s, stop %.1f pts, %s]",
+		choice.Contracts, choice.Tier, choice.Why, in.Setup, in.StopPts, where)
 	return choice, nil
 }
 
@@ -817,11 +831,13 @@ func mentorIntentTargetPts(in mentor.Intent) float64 {
 //	        (5 with 4h+1h agree + room ≥ 2× + target ≥ 30 — course default
 //	        5 MNQ, 1.1 p2 L1103). Leg 1's TP at 2× risk is set AT ENTRY
 //	        (mentorLeg1TPForC).
-//	B     — normal: BE once price covers half the distance to the TRADE's target,
-//	        leg 1 exits at its +1R TP, the runner trails each closed 1m
-//	        candle. A PHL/PLH fill starts as B with the resonance watch armed:
-//	        a same-direction ISB within 3 candles flips it to A
-//	        (mentorMaybeArmResonance).
+//	B     — normal: leg 1 exits at its +1R TP; the runner's stop follows
+//	        mentor_trail_mode (R3, release #22): candle (default) = break-even
+//	        once leg 1's partial is CONFIRMED filled at NT8, then 1 tick beyond
+//	        each closed candle; off = BE at half the distance to the TRADE's
+//	        target, live 1:1, trail after the 1:1 point. A PHL/PLH fill starts
+//	        as B with the resonance watch armed: a same-direction ISB within 3
+//	        candles flips it to A (mentorMaybeArmResonance).
 func mentorExitFork(in mentor.Intent, confluence bool) (mode string, leg1TP float64, why string) {
 	switch {
 	case in.Setup == "SWING4H":
@@ -836,13 +852,23 @@ func mentorExitFork(in mentor.Intent, confluence bool) (mode string, leg1TP floa
 	case in.Setup == "PHL" || in.Setup == "PLH":
 		return "B", 0, "PHL/PLH: B at entry, resonance watch armed — a same-direction ISB within 3 candles flips to A (BE, no trail, no 1:1 scale-out)"
 	default:
-		return "B", 0, "normal: BE at half the distance to the TRADE's target, leg 1 TP +1R, runner trails each closed 1m candle"
+		return "B", 0, "normal: leg 1 TP +1R; runner per mentor_trail_mode — candle (default): BE once leg 1's partial FILLS at NT8, then 1 tick beyond each closed 1m candle; off: BE at half the distance to the TRADE's target"
 	}
 }
 
-// modifyBracketWire modifies leg 1's TP (modify_bracket). nil → the action is
-// logged + counted, never sent.
-var modifyBracketWire func(leg string, newTP float64) error
+// modifyBracketWire is the LAST hop for a mentor leg-TP modify (modify_bracket,
+// leg-scoped). Release #22 (P1-2): it is ASSIGNED to the real path —
+// TCPTrader.ModifyBracketLeg, the SAME modify_bracket frame with its wire-v4
+// `leg` field, tick-rounded, no C# change. It was declared nil and never
+// assigned from 10-05 to 10-14, so the ISB candle-3 partial was logged
+// ("WOULD set TP … UNWIRED") and never sent. nil → logged + counted, never
+// sent (tests substitute a recorder; production never nils it).
+var modifyBracketWire = func(nt *ntTrader.TCPTrader, signalID, side string, wireLeg int, newTP float64) error {
+	if nt == nil {
+		return fmt.Errorf("mentor modify_bracket: no NT8 trader for %s", signalID)
+	}
+	return nt.ModifyBracketLeg(signalID, side, wireLeg, 0, newTP)
+}
 
 // flattenLegWire flattens ONE leg (fail-closed on lost protection).
 var flattenLegWire func(leg string) error
@@ -856,6 +882,7 @@ type mentorExitResult struct {
 	NewStop      float64  // the stop for the MoveStops legs
 	MoveStops    []string // legs to move_stop to NewStop
 	ModifyTP     *float64 // modify_bracket leg 1's TP to this (nil = no change)
+	SignalID     string   // the entry signal whose leg-1 TP ModifyTP addresses ("" → refused, never a blank frame)
 	Leg1AtTarget bool     // the candle crossed leg 1's +1R TP (the runner's trail begins next candle)
 	ExitPrice    float64
 	ExitReason   string
@@ -882,7 +909,10 @@ func (at *AutoTrader) mentorApplyExitResult(nt *ntTrader.TCPTrader, side string,
 		if modifyBracketWire == nil {
 			at.mentorCount("modify_bracket_unwired")
 			at.logWarnf("🧑‍🏫 mentor leg1 modify_bracket unwired (TP %.2f) — logged, not sent", *res.ModifyTP)
-		} else if err := modifyBracketWire("leg1", *res.ModifyTP); err != nil {
+		} else if strings.TrimSpace(res.SignalID) == "" {
+			at.mentorCount("modify_bracket_no_signal")
+			at.logWarnf("🧑‍🏫 mentor leg1 modify_bracket (TP %.2f) refused — no entry signal id, nothing sent", *res.ModifyTP)
+		} else if err := modifyBracketWire(nt, res.SignalID, side, 1, *res.ModifyTP); err != nil {
 			at.mentorCount("modify_bracket_failed")
 			at.logErrorf("🧑‍🏫 mentor leg1 modify_bracket FAILED: %v", err)
 		} else {

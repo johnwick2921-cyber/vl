@@ -40,6 +40,12 @@ type State struct {
 	// to resolve a row-fallback fill's leg extreme via the old-extreme fallback
 	// when the in-memory pend was dropped by a restart.
 	Levels []Level `json:"levels,omitempty"`
+	// ChartLevels / ChartTrendlines (release #22, T7) are the SAME tick's set
+	// AFTER every append — Levels plus the trigger lines, the EMA 34 location,
+	// the box edges and the trendlines. DISPLAY ONLY (truth panel / chart);
+	// nothing that trades reads them, so Levels above stays byte-identical.
+	ChartLevels     []Level     `json:"-"`
+	ChartTrendlines []Trendline `json:"-"`
 	// Refusals is the B-rules refusal ledger (CTO 13:51:31Z): every filter
 	// that DROPS an intent names its reason and counts it, like the replay
 	// funnel stages — DS-105 diffs these against the replay.
@@ -105,6 +111,11 @@ type State struct {
 	// per-level mark makes it fire once; the touch loop clears the mark on
 	// visit departure so a NEW visit re-arms it.
 	VisitCapRefused map[string]bool `json:"visit_cap_refused,omitempty"`
+	// PHLRefusedVisit — r22 (P2-1): the once-per-visit marks of the PHL/PLH
+	// refusals that used to be SILENT (EMA gate, location, 5m box, mid-range,
+	// resting arm). Keyed "<level key>|<reason>"; cleared on the level's visit
+	// departure and at the day rollover.
+	PHLRefusedVisit map[string]bool `json:"phl_refused_visit,omitempty"`
 	// ORB is the §7 step 0 opening-range gate state (drawn at 08:32 CT, escape
 	// latches on the first 1m body close outside). Per-session-day.
 	ORB ORB `json:"orb,omitempty"`
@@ -203,6 +214,98 @@ type Evaluator struct {
 	// Evaluator-owned on purpose — two traders run two evaluators, each with
 	// its own memo (a package-global cache would cross the streams).
 	tfMemo map[int]tfMemoEntry
+	// notes are the "changed on this tick" lines (release #22 LINES-RESTART:
+	// a 4h/1h trigger move, a box latched or cleared, a trendline turning
+	// valid or dying, a swing-line gap fold). The trader drains them with
+	// TakeNotes after each Tick and logs each one; capped so a replay that
+	// never drains cannot grow it without bound.
+	notes []string
+	// Trendline change tracking (release #22, R4): the VALID lines seen last
+	// tick (a valid line leaves only by a 5m-close break or the session end —
+	// each is a change line), and the crossed-between-anchors pairs already
+	// counted today. Rebuilt from bars on restart; the first tick after a
+	// restart only initialises them (no burst of "became valid" lines).
+	tlDay     string
+	tlValid   map[string]bool
+	tlCrossed map[string]bool
+}
+
+// maxNotes bounds the undrained note buffer (replays and tests never drain).
+const maxNotes = 64
+
+// note records one change line for the trader to log (READ values only).
+func (e *Evaluator) note(format string, args ...any) {
+	if len(e.notes) >= maxNotes {
+		e.notes = e.notes[1:]
+	}
+	e.notes = append(e.notes, fmt.Sprintf(format, args...))
+}
+
+// noteTriggerMove records a 4h/1h trigger-line move (direction or line price)
+// with the bar that fired it — the live record a later restart line can be
+// checked against (release #22: the moves were never logged, so two boot
+// lines 7 h apart could not be told apart from a restart flip).
+func (e *Evaluator) noteTriggerMove(name string, prev, cur TriggerLine, bars []market.Kline) {
+	if cur.Dir == "" || (cur.Dir == prev.Dir && cur.Price == prev.Price && cur.MovedAt == prev.MovedAt) {
+		return
+	}
+	from := "none"
+	if prev.Dir != "" {
+		from = fmt.Sprintf("%s @%.2f", prev.Dir, prev.Price)
+	}
+	at := "n/a"
+	if n := len(bars); n > 0 {
+		at = kernel.TableTimeCT(time.UnixMilli(bars[n-1].OpenTime))
+	}
+	e.note("%s trigger moved %s → %s @%.2f (bucket %s CT, broke on the %s CT bar, read intrabar) [D3.4 p1 @08:19]",
+		name, from, cur.Dir, cur.Price, kernel.TableTimeCT(time.UnixMilli(cur.MovedAt)), at)
+}
+
+// trackTrendlines counts each crossed-between-anchors pair once per trading
+// day (refusal "trendline_crossed_between_anchors") and records a change line
+// when a line turns VALID (a location) or a valid line is broken by a 5m
+// close. The session roll clears both sets — the lines die at day end
+// [D4.1 p2 @01:17].
+func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int64) {
+	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
+	first := e.tlValid == nil
+	if e.tlDay != day {
+		if e.tlDay != "" && len(e.tlValid) > 0 {
+			e.note("trendlines deleted at the session end: %d valid line(s) of trading day %s [D4.1 p2 @01:17]", len(e.tlValid), e.tlDay)
+		}
+		e.tlDay = day
+		e.tlValid = map[string]bool{}
+		e.tlCrossed = map[string]bool{}
+	}
+	for _, k := range crossed {
+		if !e.tlCrossed[k] {
+			e.tlCrossed[k] = true
+			e.refuse("trendline_crossed_between_anchors")
+		}
+	}
+	for _, tl := range lines {
+		k := tl.key()
+		switch {
+		case tl.ValidAt > 0 && !tl.Dead && !e.tlValid[k]:
+			e.tlValid[k] = true
+			if !first {
+				e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a location until a 5m close breaks it or the session ends [D3.2 p2 @03:45]",
+					tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+			}
+		case tl.Dead && e.tlValid[k]:
+			delete(e.tlValid, k)
+			e.note("trendline BROKEN by a 5m close %s %.2f→%.2f (%s → %s CT) — discarded [X9 @06:20–06:47]",
+				tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+		}
+	}
+}
+
+// TakeNotes returns the change lines recorded since the last call, then
+// clears them — the trader logs each once.
+func (e *Evaluator) TakeNotes() []string {
+	n := e.notes
+	e.notes = nil
+	return n
 }
 
 func New(cfg Config) *Evaluator {
@@ -217,8 +320,9 @@ func New(cfg Config) *Evaluator {
 }
 
 // Levels computes the full mentor level set from the 1m history: colour-change
-// key levels (§4.3), EMA 34/9 (§8/§11), and the old highs/lows — the bot's own
-// swing levels reused [DS-106 §1: kernel/levels_swing.go SwingPointLevels].
+// key levels (§4.3), EMA 34/9 (§8/§11), and the ONE nearest unbroken old high
+// and old low (swingOldExtremeLevels, picked from the bot's own swing pivots
+// [DS-106 §1: kernel/levels_swing.go SwingPointLevels]).
 // swingPointNow is the clock handed to kernel.SwingPointLevels. That function
 // drops a bucket whose CloseTime >= now, and kernel.aggregateBars gives a
 // bucket CloseTime = open+interval (exclusive end, unlike barsTF's -1). With
@@ -236,34 +340,93 @@ func Levels(bars []market.Kline, cfg Config, now int64) []Level {
 	return out
 }
 
-// swingOldExtremeLevels is the RAW old-high/low set (TRADING reads this —
-// byte-identical to before this wave): every 5m+15m swing pivot from
-// kernel.SwingPointLevels, no dedupe, no merge. AtTime carries the pivot
-// confirmation close so the DISPLAY cleanup (DisplayLevels) can keep the most
-// recent; no trading reader consumes AtTime. The chart / mentor-truth panel
-// draws DisplayLevels(levels), which applies the course-5.3 <20 prune.
+// swingOldExtremeLevels is the old-high/low set — the ONE source the trading
+// code AND the chart read (r22 P1). The course has ONE nearest old high above
+// price and ONE nearest old low below it on the 1-minute trading chart: the
+// first rung of the target ladder ("nearest old high → EMA 34 → the next
+// level" [D3.3 p1 @04:11, 07:12]), the PHL/PLH target ("gần đỉnh cũ" [D4.1 p1
+// @07:27]) and ISB written rule 2 ("hạn chế trade isb ở ngay đỉnh hoặc đáy cũ"
+// [D4.1 p1 @08:05 written]). The candidates are the bot's swing pivots
+// (kernel.SwingPointLevels, 5m+15m — every pivot price is a 1m wick); from
+// them it keeps:
+//
+//   - only the UNBROKEN ones: a pivot high is broken once a later CLOSED 1m
+//     candle trades above it (a low: below it) — "a candle that breaks the
+//     previous high" is the wick, the candle need not close [law 2, D3.4 p1
+//     @08:19]. The test reads the 1m tape up to the candle BEFORE the newest
+//     one, so the candle being judged (the ISB candle, the touch) is measured
+//     against the extremes that stood before it;
+//   - the NEAREST unbroken high and the nearest unbroken low. An unbroken high
+//     sits above every later candle, so the nearest is the lowest one (the most
+//     recent); mirror for the low.
+//
+// Each line carries its explicit Role (OldHigh / OldLow) from the pivot kind.
+// A pivot with no confirmation instant cannot be proven unbroken and is
+// skipped (fail closed: no line without evidence). The old build returned all
+// 12 raw pivots (3 highs + 3 lows per TF), duplicated and mostly broken: on
+// 10-13 the ISB "at an old high/low" zone covered 183/390 RTH candles.
 func swingOldExtremeLevels(bars []market.Kline, now int64) []Level {
+	if len(bars) < 2 {
+		return nil
+	}
 	swings := kernel.SwingPointLevels(bars, time.UnixMilli(swingPointNow(now)))
 	if len(swings) == 0 {
 		return nil
 	}
-	out := make([]Level, 0, len(swings))
+	tape := bars[:len(bars)-1] // the closed 1m candles before the newest one
+	var hi, lo Level
 	for _, d := range swings {
-		if d.Kind != kernel.KindSWGH && d.Kind != kernel.KindSWGL {
+		isHigh := d.Kind == kernel.KindSWGH
+		if !isHigh && d.Kind != kernel.KindSWGL {
 			continue
 		}
-		at := int64(0)
-		if d.FormedCloseMs != nil {
-			at = *d.FormedCloseMs
+		if d.FormedCloseMs == nil {
+			continue
 		}
-		out = append(out, Level{
+		at := *d.FormedCloseMs
+		if oldExtremeBroken(tape, d.Price, at, isHigh) {
+			continue
+		}
+		l := Level{
 			Key:    fmt.Sprintf("%s:%.2f", KindOldExtreme, d.Price),
 			Kind:   KindOldExtreme,
 			Price:  d.Price,
 			AtTime: at,
-		})
+			Role:   OldLow,
+		}
+		if isHigh {
+			l.Role = OldHigh
+			if hi.Kind == "" || d.Price < hi.Price || d.Price == hi.Price && at > hi.AtTime {
+				hi = l
+			}
+			continue
+		}
+		if lo.Kind == "" || d.Price > lo.Price || d.Price == lo.Price && at > lo.AtTime {
+			lo = l
+		}
+	}
+	var out []Level
+	if hi.Kind != "" {
+		out = append(out, hi)
+	}
+	if lo.Kind != "" {
+		out = append(out, lo)
 	}
 	return out
+}
+
+// oldExtremeBroken reports whether a closed 1m candle that opened at or after
+// the pivot's confirmation instant traded beyond it — above a high, below a
+// low (a touch AT the price is not a break). The candles between the pivot and
+// its confirmation cannot break it: the fractal requires them to stay inside.
+func oldExtremeBroken(tape []market.Kline, price float64, confirmedAt int64, isHigh bool) bool {
+	i := sort.Search(len(tape), func(i int) bool { return tape[i].OpenTime >= confirmedAt })
+	for ; i < len(tape); i++ {
+		if isHigh && tape[i].High > price || !isHigh && tape[i].Low < price {
+			return true
+		}
+	}
+	return false
 }
 
 // withoutDeleted drops the deleted key levels from the level set (deletion is
@@ -752,6 +915,9 @@ func nextLevelBeyond(levels []Level, price float64, side Side) float64 {
 		if l.Kind == KindTrendline {
 			continue // a trendline is a location, never a target (X9)
 		}
+		if !oldExtremeRoleFits(l, side) {
+			continue // r22 P1-4: a long never targets an old LOW (mirror short)
+		}
 		switch side {
 		case SideLong:
 			if l.Price > price && (best == 0 || l.Price < best) {
@@ -778,6 +944,9 @@ func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMul
 	for _, l := range levels {
 		if l.Kind == KindTrendline {
 			continue // a trendline is a location, never a target (X9)
+		}
+		if !oldExtremeRoleFits(l, side) {
+			continue // r22 P1-4: a long never targets an old LOW (mirror short)
 		}
 		onSide := side == SideLong && l.Price > entry || side == SideShort && l.Price < entry
 		if !onSide {
@@ -806,6 +975,66 @@ func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMul
 func isMovingLineKey(key string) bool {
 	return key == string(KindEMA34) || key == string(KindEMA34HTF) || key == string(KindTriggerRetest) ||
 		strings.HasPrefix(key, string(KindTrendline)+":")
+}
+
+// visitKey is a level's knock-knock identity for the B23 visit cap (r22
+// P1-2). Knock knock is about ONE level being hit again and again — "a level
+// tested many times will certainly break… good support = tested 1, 2, at most
+// 3 times" [D1.3 p1 @10:23–11:43; deck slide 17 "càng test nhiều lần → càng
+// dễ phá"] — one spot hammered on a door. The trigger line is a fixed price
+// only BETWEEN reversals: it moves "only on a reversal — một lần một thôi"
+// [D3.4 p1 @11:48–13:33], and each position is a new support/resistance line
+// [D3.4 p2 @20:27]. So its identity is the key AT ITS PRICE: the old constant
+// key "trigger_retest" counted ~115 line positions per session as ONE level
+// (82 of 88 retest rejects refused on 10-13). Every other touched level keeps
+// its key (key levels, old extremes, a trendline's own anchors; box edges are
+// outside the touch loop and never visit-counted).
+func visitKey(lvl Level) string {
+	if lvl.Kind == KindTriggerRetest {
+		return fmt.Sprintf("%s@%.2f", lvl.Key, lvl.Price)
+	}
+	return lvl.Key
+}
+
+// visitCapApplies reports whether the B23 visit cap governs a level. The EMA
+// 34 lines are re-priced every candle — never one spot — and the course gives
+// them their OWN repeat rules instead of knock knock: price "xiên lên xiên
+// xuống" across the line → turn it off [D4.2 p1 @20:49–24:29] (E4,
+// EmaMaxCross30m) and after a loss at the line turn it off until price escapes
+// [D4.2 p2 @01:23] (E2, EmaBlocked). Those still gate every EMA reject; the
+// visit count is kept for the panel but never caps the line (r22 P1-2: 59 of 65
+// EMA 34 rejects on 10-13 were refused by a cap that counted every EMA price
+// as one level).
+func visitCapApplies(lvl Level) bool {
+	return lvl.Kind != KindEMA34 && lvl.Kind != KindEMA34HTF
+}
+
+// refuseOncePerVisit counts a PHL/PLH-path refusal ONCE per visit of the
+// level (r22, P2-1): the PHL loop re-reads a rejected level on every tick while
+// its touch stands, so a bare e.refuse would count the same refusal every
+// minute (the level_visit_cap inflation CTO 01:19Z fixed). The mark clears on
+// the level's visit departure (touch loop) and at the day rollover.
+func (e *Evaluator) refuseOncePerVisit(levelKey, reason string) {
+	k := levelKey + "|" + reason
+	if e.State.PHLRefusedVisit[k] {
+		return
+	}
+	if e.State.PHLRefusedVisit == nil {
+		e.State.PHLRefusedVisit = map[string]bool{}
+	}
+	e.State.PHLRefusedVisit[k] = true
+	e.refuse(reason)
+}
+
+// clearPHLRefusedVisit drops every once-per-visit refusal mark of one level
+// (its visit departed — a new visit counts again).
+func (e *Evaluator) clearPHLRefusedVisit(levelKey string) {
+	prefix := levelKey + "|"
+	for k := range e.State.PHLRefusedVisit {
+		if strings.HasPrefix(k, prefix) {
+			delete(e.State.PHLRefusedVisit, k)
+		}
+	}
 }
 
 // Tick evaluates the newest closed 1m candle. bars is the closed history up to
@@ -907,7 +1136,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	htfBars := htfFeedBars(bars, e.Cfg.PrintWindows)
 	bars4h := e.barsTFMemo(htfBars, 240)
 	bars1h := e.barsTFMemo(htfBars, 60)
+	prevHTF := e.State.HTF
 	e.State.HTF = HTFAdvance(e.State.HTF, bars4h, bars1h, e.Cfg)
+	e.noteTriggerMove("4h", prevHTF.FourH, e.State.HTF.FourH, bars)
+	e.noteTriggerMove("1h", prevHTF.OneH, e.State.HTF.OneH, bars)
 	// D4.4-11: the HTF direction gate applies only in the news window (the
 	// course uses the HTF read for news first, not ordinary trading).
 	e.State.HTF.GateOff = !HTFGateActive(now, e.Cfg)
@@ -934,6 +1166,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			OneHDir:  e.State.HTF.OneH.Dir,
 			Conflict: HTFConflict(e.State.HTF),
 			SpentPts: dg.SpentPts,
+			ReadAt:   now,
 		}
 	}
 	// Owner ruling 2026-10-09: a latched DayOff re-reads the 4h/1h directions
@@ -948,6 +1181,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.State.Day.Key != e.State.VisitsDay {
 		e.State.Visits = map[string]int{}
 		e.State.VisitsDay = e.State.Day.Key
+		e.State.PHLRefusedVisit = nil // r22: a new day re-arms the once-per-visit counters
 		// item 22: a KEY level's ISB-only invalidity is scoped to the session
 		// day (the course never makes a level dead for good [D5.2 p2 @20:48]).
 		// The moving lines reset on visit departure in the touch loop below,
@@ -999,9 +1233,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// D4.1-22: the first box per role per day is latched — never redrawn on a
 	// later higher high / lower low ("không vẽ cái box khác… y nguyên đó tới
 	// cuối ngày" [D4.1 p2 @02:39–02:57]). A new trading day clears the latch.
-	if e.State.LatchedBoxesDay != e.State.Day.Key {
+	// Release #22 (P2-2): the latch belongs to the TRADING day (17:00 CT
+	// roll, the same tradingDayKey BoxesBuild filters on) — never the day-gate
+	// key, which is "" until 08:30 and so cleared the latch at the RTH open
+	// and redrew both boxes on a higher high / lower low.
+	if boxDay := tradingDayKey(time.UnixMilli(now).In(ctime())); e.State.LatchedBoxesDay != boxDay {
+		if e.State.LatchedBoxesDay != "" && len(e.State.LatchedBoxes) > 0 {
+			e.note("box latch cleared at the 17:00 CT session roll: trading day %s → %s (FTGH/FTGL redraw from the new session only) [D4.1 p2 @02:58]", e.State.LatchedBoxesDay, boxDay)
+		}
 		e.State.LatchedBoxes = nil
-		e.State.LatchedBoxesDay = e.State.Day.Key
+		e.State.LatchedBoxesDay = boxDay
 	}
 	boxes = e.latchBoxes(boxes, bars, e.Cfg.Box)
 	levels = append(levels, BoxEdgeLocations(boxes)...)
@@ -1010,8 +1251,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// swings joined, valid only after the 3rd touch, discarded by a 5m close
 	// through. They join the level set location-only (never a target); a
 	// trendline next to a box edge is suppressed (box beats trendline).
-	trendlines := TrendlinesBuild(bars, time.UnixMilli(now))
+	trendlines, crossed := trendlinesBuild(bars, time.UnixMilli(now))
+	e.trackTrendlines(trendlines, crossed, now)
 	levels = append(levels, TrendlineLevels(trendlines, boxes, bars)...)
+	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
 
 	// §3: first-touch classification per level. BOX edges are OUT of this
 	// loop (BOX PATH DECISION, CTO 12:38:50Z): the box path is DS-106's
@@ -1045,6 +1288,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// line (the ONLY reset for a moving line — drift alone keeps the
 			// classification, item 22 fix).
 			delete(e.State.VisitCapRefused, lvl.Key)
+			e.clearPHLRefusedVisit(lvl.Key)
 			if moving {
 				delete(e.State.ISBOnly, lvl.Key)
 			}
@@ -1055,12 +1299,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 		// B23: each NEW reject classification is one visit of that level
 		// today (a revisit can only classify after the departure reset, so
-		// None -> Reject is exactly one visit).
+		// None -> Reject is exactly one visit). r22 P1-2: the visit is counted
+		// against the level's REAL identity (visitKey) — the trigger line at
+		// THIS price, not every position the line ever held.
 		if wasNone && tr.Outcome == TouchReject {
 			if e.State.Visits == nil {
 				e.State.Visits = map[string]int{}
 			}
-			e.State.Visits[lvl.Key]++
+			e.State.Visits[visitKey(lvl)]++
 		}
 		out = append(out, handleTouchIntents(e, lvl, intents)...)
 	}
@@ -1069,16 +1315,24 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// colour, not the trigger line (RULES-FIX-v3).
 	prev, cur := bars[len(bars)-2], bars[len(bars)-1]
 
-	// X5-10 (optional, knob default OFF): after the first 30 minutes of RTH
-	// (09:00 CT) the ISB entry is read on the 2m chart instead of the 1m —
-	// "sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:17; X11
-	// @17:06–17:32]. The 1m wicks sweep stops, so the 2m read is quieter.
-	// The box/ORB escapes and every higher-TF read stay 1m (they are defined
-	// on the 1m body close); only the ISB pair swaps. While the knob is OFF,
-	// or before 09:00 CT, execPrev/execCur == prev/cur and the read is
-	// byte-identical to the 1m-only build.
+	// X5-10 (optional knob, default OFF) — the ISB-exec timeframe schedule
+	// (owner order 2026-10-13 ~23:00 CT "fix all"; sources X5 @00:07–01:17,
+	// X11 @17:06–19:35 — transcript in ~/mm-course/extra/notes/05-EXTRA.md
+	// :305-311):
+	//   • RTH open +30 minutes (08:30 ≤ t < 09:00 CT) → 1-MINUTE read only
+	//     ("a 2m stop cannot cover the setup at open volume").
+	//   • every other minute → 2-MINUTE read ("khung 2 phút ÍT BỊ QUÉT RÂU" —
+	//     the 1m wicks sweep stops, so the 2m read is quieter), overnight and
+	//     the Europe open (3am Texas) included.
+	// OPEN COURSE QUESTION: the mentor also says "evening slow → 5-minute only"
+	// but gives no number for "slow" — left unimplemented pending the owner's
+	// call; the 2m read stays through the evening.
+	// The box/ORB escapes and every higher-TF read stay 1m (they are defined on
+	// the 1m body close); only the ISB pair swaps. While the knob is OFF,
+	// execPrev/execCur == prev/cur and the read is byte-identical to the
+	// 1m-only build.
 	execPrev, execCur, execTFMin := prev, cur, 1
-	if e.Cfg.Exec2mAfter30m && rthMinuteOf(now) >= 9*60 {
+	if e.Cfg.Exec2mAfter30m && exec2mReads2m(now) {
 		// closedBucketsTF drops the still-forming last 2m bucket: on a 1m close
 		// that OPENS a 2m bucket, barsTF would flush a half-formed 2m candle and
 		// the ISB would read it. The read must be the previous two CLOSED 2m
@@ -1497,7 +1751,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// handful of capped levels) and hid real refusals in the funnel.
 			// VisitCapRefused marks the level once; the touch loop clears it on
 			// visit departure so a NEW visit re-arms the refusal.
-			if e.Cfg.LevelMaxVisits > 0 && e.State.Visits[lvl.Key] > e.Cfg.LevelMaxVisits {
+			// r22 P1-2: the cap reads the level's REAL identity (visitKey) and
+			// never applies to the EMA lines (visitCapApplies).
+			if e.Cfg.LevelMaxVisits > 0 && visitCapApplies(lvl) && e.State.Visits[visitKey(lvl)] > e.Cfg.LevelMaxVisits {
 				if !e.State.VisitCapRefused[lvl.Key] {
 					e.refuse("level_visit_cap")
 					e.State.VisitCapRefused[lvl.Key] = true
@@ -1505,17 +1761,24 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				continue
 			}
 			// E2 + E4: the EMA34 setup is gated on the loss block and the
-			// 30-minute crossing knob.
+			// 30-minute crossing knob. r22 (P2-1): named + counted once per visit.
 			if isEMA34(lvl) && !emaSetupAllowed(e, lvl, bars, e.Cfg) {
+				if e.State.EmaBlocked {
+					e.refuseOncePerVisit(lvl.Key, "phl_ema_loss_block")
+				} else {
+					e.refuseOncePerVisit(lvl.Key, "phl_ema_crossing_30m")
+				}
 				continue
 			}
 			// LOCATION GATE (fold item 1): a PHL/PLH entry level must be a real
 			// location — a bare old high/low is not one.
 			if !levelIsLocation(lvl, levels) {
+				e.refuseOncePerVisit(lvl.Key, "phl_not_location")
 				continue
 			}
 			side, price, ok := RejectEntry(tr, e.Cfg)
 			if !ok {
+				e.refuseOncePerVisit(lvl.Key, "phl_no_reject_entry")
 				continue
 			}
 			// LocTriggerFilter (CTO 13:20:22Z): false switches the 5m-trigger
@@ -1559,11 +1822,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// below and an FTGH above there is NO PHL, NO PLH, regardless of
 			// width — only the ISB.
 			if midRangeBoxed(boxes, price) {
+				e.refuseOncePerVisit(lvl.Key, "phl_mid_range_boxed")
 				continue
 			}
 			// R5: nothing trades inside the standing 5m-ISB box except a
-			// same-direction 1m ISB — PHL/PLH never.
+			// same-direction 1m ISB — PHL/PLH never. r22: the course DOES ban
+			// it ("inside a 5-minute ISB box … bans PHL/PLH and permits only
+			// the inside bar" [D3.2 p2 @08:51; D3.4 p2 @07:27; D3.4 p3 @01:44];
+			// "No PHL, no PLH, no opposite ISB" [D3.4 p2 @07:27–10:35]) — the
+			// ban stays, and is now named + counted (was silent, P2-1).
 			if e.State.ISBBox != nil && cur.Close > e.State.ISBBox.Low && cur.Close < e.State.ISBBox.High {
+				e.refuseOncePerVisit(lvl.Key, "phl_5m_box_ban")
 				continue
 			}
 			// D4.1-25: the 15m box refuses PHL/PLH inside it too ("đợi nó thoát
@@ -1581,6 +1850,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// while a level order RESTS at this level, the level is not re-emitted
 			// (no double size on repeated touches).
 			if _, resting := e.State.LevelArms[lvl.Key]; resting {
+				e.refuseOncePerVisit(lvl.Key, "phl_level_arm_resting")
 				continue
 			}
 			// B14b: the target is the NEAREST old extreme on the trade side —
@@ -1938,23 +2208,30 @@ type oldExtreme struct {
 
 // oldExtremeIndexes maps old-extreme levels to the index of their defining bar.
 // The level was drawn at a swing point; the index is the last bar whose high
-// (low) equals the level price — the ≥3-candle distance [D4.1 p1 @ 09:40
-// written] is measured from there.
+// (for an old HIGH) or low (for an old LOW) equals the level price — the
+// ≥3-candle distance [D4.1 p1 @ 09:40 written] is measured from there.
+// r22 P1-4: the role is the level's EXPLICIT Role, never inferred from the
+// tape. The old scan took the role from the LAST bar whose high OR low sat
+// within 0.26 of the price, so a later bar revisiting an old high relabelled
+// it a "low" (10-13 replay: 42 of 269 PHL target picks had the wrong role —
+// the SETUPS audit counted 40 of 221 — and those picks were refused as
+// not_higher_low / not_lower_high). A level with no role cannot be a PHL/PLH
+// extreme (fail closed).
 func oldExtremeIndexes(levels []Level, bars []market.Kline) []oldExtreme {
 	var out []oldExtreme
 	for _, l := range levels {
-		if l.Kind != KindOldExtreme {
+		if l.Kind != KindOldExtreme || l.Role != OldHigh && l.Role != OldLow {
 			continue
 		}
+		isHigh := l.Role == OldHigh
 		idx := -1
-		isHigh := false
 		for i := len(bars) - 1; i >= 0; i-- {
-			if abs(bars[i].High-l.Price) < 0.26 {
-				idx, isHigh = i, true
-				break
+			px := bars[i].Low
+			if isHigh {
+				px = bars[i].High
 			}
-			if abs(bars[i].Low-l.Price) < 0.26 {
-				idx, isHigh = i, false
+			if abs(px-l.Price) < 0.26 {
+				idx = i
 				break
 			}
 		}
@@ -1963,6 +2240,19 @@ func oldExtremeIndexes(levels []Level, bars []market.Kline) []oldExtreme {
 		}
 	}
 	return out
+}
+
+// oldExtremeRoleFits reports whether an old extreme can serve a trade in the
+// given direction: a LONG targets an old HIGH, never an old LOW; a SHORT an old
+// LOW, never an old HIGH (r22 P1-4 — "target gần đỉnh cũ", near the OLD HIGH
+// for a PHL [D4.1 p1 @07:27]). Every non-old-extreme level fits; an old
+// extreme with no recorded role fits too (a hand-built level) — the evaluator
+// always stamps the role (swingOldExtremeLevels).
+func oldExtremeRoleFits(l Level, side Side) bool {
+	if l.Kind != KindOldExtreme || l.Role == "" {
+		return true
+	}
+	return (l.Role == OldHigh) == (side == SideLong)
 }
 
 // priorSameRole returns the most recent old extreme BEFORE ex.idx with the
@@ -2063,10 +2353,17 @@ func phlRefusalKey(reason string) string {
 // nearestOldExtremeOnSide — B14b [D2.2 p2 @03:07–03:14]: the target is the
 // NEAREST old extreme on the trade side only; a failed nearest high is a
 // SKIP ("mình xác định ra mình không có target"), never a farther old high.
+//
+// r22 P1-4: only an extreme of the trade's ROLE is a candidate — a long
+// targets an old HIGH, a short an old LOW (o.isHigh, which oldExtremeIndexes
+// takes from the level's explicit Role).
 func nearestOldExtremeOnSide(extremes []oldExtreme, price float64, side Side) (oldExtreme, bool) {
 	var best oldExtreme
 	found := false
 	for _, o := range extremes {
+		if o.isHigh != (side == SideLong) {
+			continue // a long never targets an old LOW (mirror short)
+		}
 		if side == SideLong && !(o.level.Price > price) {
 			continue
 		}
@@ -2081,6 +2378,24 @@ func nearestOldExtremeOnSide(extremes []oldExtreme, price float64, side Side) (o
 	return best, found
 }
 
+// dropStaleSwingLineEntries refuses every SWING4H entry while the swing line
+// is stale (a feed gap beyond the slice, F-3) — counted as
+// swing_line_gap_stale; cancels and every other action pass.
+func (e *Evaluator) dropStaleSwingLineEntries(ints []Intent) []Intent {
+	if !e.State.Swing.LineStale {
+		return ints
+	}
+	kept := ints[:0]
+	for _, in := range ints {
+		if in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry {
+			e.refuse("swing_line_gap_stale")
+			continue
+		}
+		kept = append(kept, in)
+	}
+	return kept
+}
+
 // runSwing evaluates the §8 4h-EMA34 swing on FINAL 5m bars (the forming
 // bucket excluded — CTO wiring ruling 2026-10-03) and returns its intents.
 // The swing is NOT gated on the 5m trigger zone by default: §8 is a
@@ -2090,7 +2405,15 @@ func nearestOldExtremeOnSide(extremes []oldExtreme, price float64, side Side) (o
 // 1791001124127 / 1791001760445).
 func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 	closed := closedBuckets(bars, now, e.Cfg)
+	wasStale, prevCount, prevLine := e.State.Swing.LineStale, e.State.Swing.EmaCount, e.State.Swing.Line
 	ints := SwingTick(&e.State.Swing, closed, e.Cfg.Swing, now)
+	if f := e.State.Swing.Folded; f > 1 && e.State.Swing.EmaCount == prevCount+f {
+		e.note("swing 4h EMA34 line folded %d 4h closes after a feed gap: %.2f → %.2f (%d closes) [F-3]", f, prevLine, e.State.Swing.Line, e.State.Swing.EmaCount)
+	}
+	if e.State.Swing.LineStale && !wasStale {
+		e.note("swing 4h EMA34 line STALE: a feed gap longer than the live slice hid 4h closes — SWING4H entries refused until a restart reseeds the line (held at %.2f, %d closes) [F-3]", e.State.Swing.Line, e.State.Swing.EmaCount)
+	}
+	ints = e.dropStaleSwingLineEntries(ints)
 	// SWING EXPIRY (CTO 1791008594562): an unfilled swing order lives until the
 	// close of the CURRENT 4h candle (ruling 1791008277195) — NOT the 2nd
 	// leeway 5m candle. SwingTick still emits its own CancelArm for the leeway.

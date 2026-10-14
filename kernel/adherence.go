@@ -20,7 +20,17 @@ type AdherenceInput struct {
 	// Band (B3/F6, forward-only): the entry's structural verdict against the
 	// cited scenario — "" legacy/unknown | "ok" | "off_band" | "struct".
 	Band string
+	// Trigger (R22 F1/F8): did the cited scenario's REQUIRED trigger (a sweep
+	// setup, or an arm authored wait_confirm) exist at the entry fill?
+	// "" = not required / not verifiable (no change) | TriggerMet | TriggerMissed.
+	Trigger string
 }
+
+// Adherence trigger verdicts (AdherenceInput.Trigger).
+const (
+	TriggerMet    = "met"
+	TriggerMissed = "missed"
+)
 
 // gradeLetters is the A→F ladder; stepDown moves toward F.
 var gradeLetters = []string{"A", "B", "C", "D", "F"}
@@ -52,6 +62,11 @@ func GradeAdherence(in AdherenceInput) (string, []string) {
 	case in.OffPlan || !in.Cited:
 		base = "D"
 		reasons = append(reasons, "off-plan (no scenario cited)")
+	case in.Matched && in.Trigger == TriggerMissed:
+		// R22 F8: #649 graded "A (followed the plan)" although its sweep never
+		// happened. An entry before the scenario's own trigger is not the plan.
+		base = "C"
+		reasons = append(reasons, "cited + direction matched, but the scenario's trigger had NOT happened at the entry")
 	case in.Matched && in.Band == "off_band":
 		// B3 (F6): same direction but the entry sits outside the cited
 		// scenario's activation band — discipline says B, not A.

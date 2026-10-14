@@ -492,8 +492,10 @@ func (at *AutoTrader) placeZoneRow(p zonePass, r store.ArmedOrderDB, side string
 		p.scope.note(r.Scenario, "refused: send: "+perr.Error())
 		return stamped
 	}
+	at.recordArmWirePrices(p.ledger, r, sid, side, r.EntryPx, r.StopPx, r.TargetPx, nil) // F-7: ledger = wire
 	at.logInfof("📌 armed %s leg %d market_in_zone placement requested %s limit %.2f (zone %.2f–%.2f, verdict %s, price %.2f) signal=%s",
 		r.Scenario, r.LegIndex+1, strings.ToUpper(side), r.EntryPx, lo, hi, v, p.price, sid)
+	at.noteVWAPDriftAtPlacement(r, p.bars, p.now) // R22 P2: observability only — the entry is unchanged
 	p.scope.notePlaced(r.Scenario, r.EntryPx, sid)
 	return true
 }

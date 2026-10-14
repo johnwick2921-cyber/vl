@@ -33,8 +33,8 @@ func TestPositionExcursionColumns(t *testing.T) {
 	}
 	p := got[0]
 	// E4 (wave 1A): mae/mfe are nullable now — nil means never computed.
-	if p.EntryConfidence != 72 {
-		t.Fatalf("entry confidence not persisted: %d", p.EntryConfidence)
+	if p.EntryConfidence == nil || *p.EntryConfidence != 72 {
+		t.Fatalf("entry confidence not persisted: %v", p.EntryConfidence)
 	}
 	if p.MAE == nil || p.MFE == nil {
 		t.Fatalf("excursion columns not persisted: mae=%v mfe=%v", p.MAE, p.MFE)

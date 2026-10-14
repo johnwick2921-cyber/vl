@@ -24,6 +24,14 @@ import { httpClient } from '../../lib/httpClient'
 import { REFRESH_CHART_MS, REFRESH_OPEN_ORDERS_MS } from '../../lib/autoRefresh'
 import { t } from '../../i18n/translations'
 import {
+  MENTOR_COLOR,
+  mentorTrendSegments,
+  orderPriceLines,
+  type ChartLineSpec,
+  type ChartOpenOrder,
+} from './chartOverlays'
+import type { MentorTruth } from '../../lib/api/traders'
+import {
   calculateSMA,
   calculateEMA,
   calculateBollingerBands,
@@ -42,18 +50,9 @@ interface OrderMarker {
   symbol: string
 }
 
-// Open orders interface (exchange TP/SL orders)
-interface OpenOrder {
-  order_id: string
-  symbol: string
-  side: string // BUY/SELL
-  position_side: string // LONG/SHORT
-  type: string // LIMIT/STOP_MARKET/TAKE_PROFIT_MARKET
-  price: number // Limit order price
-  stop_price: number // Trigger price (SL/TP)
-  quantity: number
-  status: string
-}
+// Open orders (T5, release #22): the shape and the drawing rule live in
+// ./chartOverlays (orderPriceLines) so the tests pin exactly what is drawn.
+type OpenOrder = ChartOpenOrder
 
 interface AdvancedChartProps {
   symbol: string
@@ -63,8 +62,12 @@ interface AdvancedChartProps {
   exchange?: string // Exchange type: ninjatrader only in the vl product.
   onSymbolChange?: (symbol: string) => void // Symbol change callback
   selectedAccount?: string // Dashboard-selected account; open orders stay trader-bound (F31)
-  /** MENTOR-TRUTH PANEL — mentor key levels, drawn in a distinct "mentor" style. */
-  mentorLevels?: { price: number; label: string }[]
+  /** MENTOR-TRUTH PANEL — every horizontal place the mentor evaluator holds
+   * (levels, trigger lines, box edges, ISB boxes, ORB, swing), drawn in a
+   * distinct "mentor" style (chartOverlays.mentorChartLines). */
+  mentorLevels?: ChartLineSpec[]
+  /** T7 (release #22) — the VALID trendlines, drawn as sloped segments. */
+  mentorTrendlines?: MentorTruth['trendlines']
 }
 
 // Indicator configuration
@@ -121,6 +124,7 @@ export function AdvancedChart({
   onSymbolChange: _onSymbolChange, // Available for future use
   selectedAccount,
   mentorLevels,
+  mentorTrendlines,
 }: AdvancedChartProps) {
   void _onSymbolChange // Prevent unused warning
   const { language } = useLanguage()
@@ -139,6 +143,7 @@ export function AdvancedChart({
   >(new Map()) // Store kline extra data
   const priceLinesRef = useRef<any[]>([]) // Store open order price lines
   const mentorPriceLinesRef = useRef<any[]>([]) // MENTOR-TRUTH PANEL key-level lines
+  const mentorTrendSeriesRef = useRef<ISeriesApi<'Line'>[]>([]) // T7 trendline segments
   const latestKlinesRef = useRef<Kline[]>([]) // Most recent klines, for indicator re-render on toggle (1b)
 
   // F31 — an open-order snapshot belongs to the view that requested it.
@@ -1135,57 +1140,22 @@ export function AdvancedChart({
               (order.status ?? '').startsWith('PENDING')
             if (notAtBroker) return
 
-            // THE PRICE AND THE LABEL MUST COME FROM THE SAME QUESTION. This
-            // took stop_price for the line and the TYPE for the title, so a
-            // resting LIMIT entry (type "LIMIT", stop_price = its protective
-            // stop) drew ONE line at the STOP labelled "Limit" and never drew
-            // the entry at all. A stop line belongs to a STOP order.
-            const isStopKind =
-              order.type.includes('STOP') || order.type.includes('SL')
-            const linePrice =
-              isStopKind && order.stop_price > 0
-                ? order.stop_price
-                : order.price > 0
-                  ? order.price
-                  : order.stop_price
-            if (linePrice <= 0) return
-
-            // Determine order type
-            const isStopLoss =
-              order.type.includes('STOP') || order.type.includes('SL')
-            const isTakeProfit =
-              order.type.includes('TAKE_PROFIT') || order.type.includes('TP')
-            const isLimit = order.type === 'LIMIT'
-
-            // Set price line style
-            let lineColor = '#F0B90B' // Default yellow
-            const lineStyle = 2 // dashed
-            let title = ''
-
-            if (isStopLoss) {
-              lineColor = '#F6465D' // red - stop loss
-              title = `SL ${order.quantity}`
-            } else if (isTakeProfit) {
-              lineColor = '#0ECB81' // green - take profit
-              title = `TP ${order.quantity}`
-            } else if (isLimit) {
-              lineColor = '#F0B90B' // yellow - limit order
-              title = `Limit ${order.side} ${order.quantity}`
-            } else {
-              title = `${order.type} ${order.quantity}`
-            }
-
-            const priceLine = candlestickSeriesRef.current?.createPriceLine({
-              price: linePrice,
-              color: lineColor,
-              lineWidth: 1,
-              lineStyle: lineStyle,
-              axisLabelVisible: true,
-              title: title,
-            })
-
-            if (priceLine) {
-              priceLinesRef.current.push(priceLine)
+            // THE PRICE AND THE LABEL MUST COME FROM THE SAME QUESTION, and a
+            // LEDGER row is an ENTRY (T5, release #22): a working mentor
+            // stop-entry used to draw as a red "SL 1" at its protective stop,
+            // with no entry line and the wrong size. orderPriceLines owns the
+            // rule (entry at price, side + the row's own size, SL/TP in the
+            // title; a venue's own STOP is still the SL).
+            for (const spec of orderPriceLines(order)) {
+              const priceLine = candlestickSeriesRef.current?.createPriceLine({
+                price: spec.price,
+                color: spec.color ?? '#F0B90B',
+                lineWidth: 1,
+                lineStyle: spec.style ?? 2,
+                axisLabelVisible: true,
+                title: spec.label,
+              })
+              if (priceLine) priceLinesRef.current.push(priceLine)
             }
           })
           console.log(
@@ -1247,15 +1217,48 @@ export function AdvancedChart({
       if (!(lv.price > 0)) return
       const line = series.createPriceLine({
         price: lv.price,
-        color: '#E8A33D', // distinct mentor amber — not the order yellow/green/red
+        color: lv.color ?? MENTOR_COLOR, // distinct mentor amber — not the order yellow/green/red
         lineWidth: 1,
-        lineStyle: 2, // dashed, distinct from the solid order lines
+        lineStyle: lv.style ?? 2, // dashed, distinct from the solid order lines
         axisLabelVisible: true,
         title: lv.label || 'mentor',
       })
       if (line) mentorPriceLinesRef.current.push(line)
     })
   }, [mentorLevels, symbol, interval])
+
+  // T7 (release #22) — the mentor's VALID trendlines as sloped segments (the
+  // chart had no two-point drawing at all). Snapped to this chart's bar grid.
+  useEffect(() => {
+    const chart = chartRef.current
+    mentorTrendSeriesRef.current.forEach((sr) => {
+      try {
+        chart?.removeSeries(sr as any)
+      } catch {
+        // Ignore clear error
+      }
+    })
+    mentorTrendSeriesRef.current = []
+    if (!chart) return
+    for (const seg of mentorTrendSegments(mentorTrendlines, interval)) {
+      const sr = chart.addSeries(LineSeries, {
+        color: seg.color,
+        lineWidth: 1,
+        lineStyle: 2,
+        title: seg.label,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+      })
+      sr.setData(
+        seg.points.map((p) => ({
+          time: p.time as UTCTimestamp,
+          value: p.value,
+        }))
+      )
+      mentorTrendSeriesRef.current.push(sr)
+    }
+  }, [mentorTrendlines, symbol, interval])
 
   // Handle order marker show/hide separately to avoid reloading data
   useEffect(() => {

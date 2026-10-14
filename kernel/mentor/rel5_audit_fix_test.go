@@ -101,7 +101,7 @@ func TestPHLMidRangeNamedRefusal(t *testing.T) {
 		{Key: "L", Kind: KindKeyLevel, Price: 100},
 		{Key: "below", Kind: KindKeyLevel, Price: 96},
 		{Key: "above", Kind: KindKeyLevel, Price: 105},
-		{Key: "old-high:130", Kind: KindOldExtreme, Price: 130},
+		{Key: "old-high:130", Kind: KindOldExtreme, Role: OldHigh, Price: 130},
 	}
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
