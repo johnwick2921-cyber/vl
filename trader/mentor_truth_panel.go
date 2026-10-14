@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"vl/kernel/mentor"
+	ntwire "vl/provider/ninjatrader"
+	"vl/store"
 )
 
 // MentorTruthPanel is the read-only "what trades" snapshot the planner page and
@@ -13,8 +15,12 @@ import (
 // other lanes are rewriting. mentorEnabled() == false returns Enabled=false and
 // zeroes, so the frontend can hide the card without a second call.
 type MentorTruthPanel struct {
-	Enabled   bool              `json:"enabled"`
-	AsOfMs    int64             `json:"as_of_ms"` // server stamp; the card shows "as of HH:MM:SS CT"
+	Enabled bool  `json:"enabled"`
+	AsOfMs  int64 `json:"as_of_ms"` // server stamp; the card shows "as of HH:MM:SS CT"
+	// Symbol (UG-2, release #24) is the instrument the evaluator reads (the
+	// trader's futures symbol). The chart draws the mentor overlays only on a
+	// tab showing this symbol — a level is a price on ONE instrument.
+	Symbol    string            `json:"symbol"`
 	HTF       MentorHTFView     `json:"htf"`
 	Trigger5m MentorTriggerView `json:"trigger_5m"`
 	// Levels/Depth are ABSENT (omitempty) while the evaluator has not been
@@ -77,6 +83,13 @@ type MentorSwingLegView struct {
 	Entry  float64 `json:"entry"`
 	Stop   float64 `json:"stop"`
 	Target float64 `json:"target"`
+	// StopSource / MovedBE (UG-1, release #24) — the FILLED leg only. "broker"
+	// = Stop is the leg's working stop read from NinjaTrader's order book;
+	// "entry" = the book could not be read, so Stop is the stop the leg was
+	// entered with (it may already have moved). MovedBE = the evaluator has
+	// emitted its +1R break-even move (a request; the book is the proof).
+	StopSource string `json:"stop_source,omitempty"`
+	MovedBE    bool   `json:"moved_be,omitempty"`
 }
 
 // MentorHTFView is the §5.4 4h/1h direction state + the gate verdict.
@@ -105,7 +118,7 @@ type MentorLevelView struct {
 	Price       float64   `json:"price"`
 	DrawnAt     int64     `json:"drawn_at"` // AtTime ms
 	VisitsToday int       `json:"visits_today"`
-	MergedFrom  []float64 `json:"merged_from,omitempty"` // raw old-extreme prices this drawn line absorbed
+	MergedFrom  []float64 `json:"merged_from,omitempty"` // always empty since r22 (DisplayLevels merges nothing); kept for wire compatibility
 }
 
 // MentorWindowView is the trading-window knob's live state.
@@ -129,12 +142,14 @@ func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool
 	if at == nil {
 		return p, false
 	}
+	p.Symbol = at.futuresSymbol()
 	p.Enabled = at.mentorEnabled()
 	if !p.Enabled {
 		return p, false
 	}
 
 	// ── evaluator state: copied under the tick's own mutex ──────────────────
+	var swingArmID string // UG-1: the filled swing leg's arm, read after the unlock
 	at.mentorEvalMu.Lock()
 	ev := at.mentorEval
 	if ev != nil {
@@ -160,10 +175,10 @@ func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool
 		// §5.1 5m trigger line.
 		p.Trigger5m = MentorTriggerView{Dir: string(st.Trigger.Dir), Price: st.Trigger.Price, Since: st.Trigger.MovedAt}
 
-		// Drawn levels: the DISPLAY set (course 5.3 @15:59–16:50 — lines closer
-		// than 20 pts are one line). TRADING still reads st.Levels (raw); only
-		// the panel draws the cleaned view, with every absorbed price named in
-		// merged_from.
+		// Drawn levels: the DISPLAY set (mentor.DisplayLevels) — since r22 the
+		// levels exactly as the trading code reads them; nothing is merged, so
+		// merged_from is always empty (UG-8, release #24: the old 20-pt merge
+		// comment described code that no longer exists).
 		// T7: the chart set is the tick's set AFTER every append (trigger
 		// lines, EMA 34 location, box edges, trendlines); before the first
 		// Tick it is empty and the trading set is all there is.
@@ -183,6 +198,9 @@ func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool
 		}
 
 		p.Trendlines, p.ISBBoxes, p.ORB, p.Swing = mentorChartObjects(&st, drawn)
+		if p.Swing != nil && p.Swing.Pos != nil && st.Swing.Pos != nil {
+			swingArmID = st.Swing.Pos.ArmID
+		}
 
 		// History depth snapshot (read-only: DepthMet does NOT consume the line).
 		p.Depth = ev.Depths()
@@ -192,6 +210,12 @@ func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool
 		p.DepthLine = ev.DepthMet()
 	}
 	at.mentorEvalMu.Unlock()
+
+	// UG-1: the filled swing leg's stop is drawn where it RESTS (the NT8 book),
+	// read outside the tick's mutex — a DB row and a book snapshot.
+	if p.Swing != nil && p.Swing.Pos != nil {
+		at.mentorSwingStopTruth(p.Swing.Pos, swingArmID)
+	}
 
 	// ── pure gate helpers (no evaluator state; safe outside the lock) ───────
 	start, minutes := at.mentorWindowKnobs()
@@ -266,8 +290,60 @@ func mentorChartObjects(st *mentor.State, drawn []mentor.Level) (*[]MentorTrendl
 			swing.Pending = &MentorSwingLegView{Side: string(o.Side), Entry: o.Entry, Stop: o.Stop, Target: o.Target}
 		}
 		if o := st.Swing.Pos; o != nil {
-			swing.Pos = &MentorSwingLegView{Side: string(o.Side), Entry: o.Entry, Stop: o.Stop, Target: o.Target}
+			swing.Pos = &MentorSwingLegView{Side: string(o.Side), Entry: o.Entry, Stop: o.Stop, Target: o.Target,
+				StopSource: "entry", MovedBE: o.MovedBE}
 		}
 	}
 	return &tls, &boxes, orb, swing
+}
+
+// mentorSwingStopTruth (UG-1, release #24) replaces the filled swing leg's
+// drawn stop with the stop that is really working at NinjaTrader.
+//
+// WHY: the evaluator's swing position keeps the stop it was ENTERED with.
+// Its +1R break-even move (kernel/mentor/swing4h.go manageSwingPosition) sets
+// only MovedBE and emits the intent; the trader's mentorMoveStopBE sends the
+// move to NT8 (moveStopWire) and writes no price anywhere else. So after a BE
+// move the chart kept drawing the original stop. The moved stop lives in ONE
+// place: NT8's order book (the swing row's "<signal>-sl"). The evaluator's
+// Stop is read by nothing but this panel, and it is left untouched — a refused
+// move must keep showing the stop that is really there.
+//
+// No book, no row, no working stop → the entry stop stays, labelled
+// stop_source "entry" — never a guessed break-even.
+func (at *AutoTrader) mentorSwingStopTruth(v *MentorSwingLegView, armID string) {
+	if v == nil {
+		return
+	}
+	v.StopSource = "entry"
+	if px, ok := at.mentorSwingBrokerStop(armID); ok {
+		v.Stop, v.StopSource = px, "broker"
+	}
+}
+
+// mentorSwingBrokerStop reads the swing arm's working stop from the bound
+// account's NT8 order book: registry → ledger row → signal → "<signal>-sl".
+func (at *AutoTrader) mentorSwingBrokerStop(armID string) (float64, bool) {
+	if at == nil || armID == "" || at.store == nil || at.store.ArmedOrders() == nil {
+		return 0, false
+	}
+	arm, ok := at.mentorLiveArmFor(armID)
+	if !ok {
+		return 0, false
+	}
+	var r store.ArmedOrderDB
+	if err := at.store.ArmedOrders().DB().First(&r, arm.RowID).Error; err != nil || r.SignalID == "" {
+		return 0, false
+	}
+	book, _, ok := mentorStopBook(at.armedTrader())
+	if !ok {
+		return 0, false
+	}
+	working := ntwire.OrderSnapshotPayload{Orders: book.WorkingOrders()}
+	for _, o := range mentorBrokerStopOrders(working, r.SignalID, 0) {
+		if o.StopPrice > 0 {
+			return o.StopPrice, true
+		}
+	}
+	return 0, false
 }

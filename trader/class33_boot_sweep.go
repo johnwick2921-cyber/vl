@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"time"
+	"vl/market"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 	"vl/trader/types"
@@ -153,9 +154,18 @@ func BootSweepBootLine(swept, skippedUnplaced int, leg4Source string) string {
 
 // ledgerOpenOrders renders THIS trader's non-terminal rows. Leg 4 separately
 // counts unplaced ARMED rows; placed/unconfirmed rows cross-check the broker.
+//
+// UG-2 (release #24): every row is an order on THIS trader's instrument
+// (at.futuresSymbol()). A query for another symbol — the chart's ES/AAPL/
+// EUR-USD tab — answers `[]` (that symbol has no ledger rows), not this
+// trader's MNQ orders. An EMPTY symbol is the whole-book question (the dead-man
+// reconcile probe, the post-reconnect sweep) and keeps every row.
 func (at *AutoTrader) ledgerOpenOrders(symbol string) ([]types.OpenOrder, error) {
 	if at.store == nil || at.store.ArmedOrders() == nil {
 		return nil, fmt.Errorf("armed_orders ledger unavailable")
+	}
+	if !ledgerSymbolMatches(symbol, at.futuresSymbol()) {
+		return []types.OpenOrder{}, nil
 	}
 	rows, err := at.store.ArmedOrders().ListNonTerminal(at.id)
 	if err != nil {
@@ -202,12 +212,36 @@ func (at *AutoTrader) ledgerOpenOrders(symbol string) ([]types.OpenOrder, error)
 		if r.Contracts != nil && *r.Contracts > 0 {
 			qty = float64(*r.Contracts)
 		}
+		// UG-5 (release #24): a split mentor arm carries leg 1's OWN take-profit
+		// for leg1_qty of its contracts (row 362: 2 of 3 at 30725.25); TargetPx
+		// is the runner's. Both ride the row, so both are served.
+		var leg1TP float64
+		var leg1Qty int
+		if r.Leg1Qty != nil && *r.Leg1Qty > 0 && r.Leg1TP > 0 {
+			leg1TP, leg1Qty = r.Leg1TP, *r.Leg1Qty
+		}
 		out = append(out, types.OpenOrder{
 			OrderID: r.SignalID, Symbol: at.futuresSymbol(), Side: side, PositionSide: posSide,
 			Type: typ, Price: r.EntryPx, StopPrice: r.StopPx, Quantity: qty, Status: status,
 			ArmState: r.State, TargetPrice: r.TargetPx, ZoneLo: r.ZoneLo, ZoneHi: r.ZoneHi,
+			Leg1TP: leg1TP, Leg1Qty: leg1Qty,
 			Source: "armed_orders ledger (broker acceptance is a separate observation)",
 		})
 	}
 	return out, nil
+}
+
+// ledgerSymbolMatches (UG-2) reports whether a queried symbol names the
+// trader's instrument: "" = the whole book; otherwise the same CME root
+// ("MNQ", "MNQZ6", "MNQ 12-26" all name MNQ), and a non-futures symbol only on
+// an exact (case-insensitive) match.
+func ledgerSymbolMatches(query, traderSymbol string) bool {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return true
+	}
+	if qr, tr := market.FuturesRoot(q), market.FuturesRoot(traderSymbol); qr != "" || tr != "" {
+		return qr == tr
+	}
+	return strings.EqualFold(q, strings.TrimSpace(traderSymbol))
 }
