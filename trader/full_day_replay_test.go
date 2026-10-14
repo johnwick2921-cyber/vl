@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"vl/calendar"
 	"vl/kernel"
 	"vl/kernel/mentor"
 	"vl/market"
@@ -28,11 +29,10 @@ import (
 
 // ── FULL-DAY-REPLAY ─────────────────────────────────────────────────────────
 //
-// A REAL recorded trading day (MNQ 12-26, 17:00 CT 10-12 → 16:00 CT 10-13, plus
-// the 10-13 evening the fixture also carries) played through the PRODUCTION
-// mentor path, bar by bar:
+// REAL recorded MNQ 12-26 sessions played through the PRODUCTION mentor path,
+// bar by bar:
 //
-//	seed      mentorSeedAtStart over a store that holds exactly the bars the live
+//	seed      mentorSeedAtStart over a store holding exactly the bars the live
 //	          store held at the seed instant (1m + native 1h, both contracts)
 //	tick      mentorEventPassAt — the event loop's call site — then the 5 s
 //	          placement cadence (mentorPlacementCadencePass) sampled at +5 s/+30 s
@@ -40,23 +40,36 @@ import (
 //	          (maybeManageArmedOrdersAt) → TCPTrader → a loopback TCP server
 //	broker    a fake AddOn on the far side of that socket: it ACKS and RESTS the
 //	          entries it receives, cancels them on cancel_order, moves stops on
-//	          move_stop, records closes, and publishes the order book. It fills
-//	          NOTHING on its own — the one fill of the day is the INJECTED swing
-//	          (no swing ever filled live, so (c) needs one).
+//	          move_stop, closes on close_position (and reports position_close),
+//	          and publishes the order book every step. It fills NOTHING on its
+//	          own — the one fill is the INJECTED swing (no swing ever filled
+//	          live, so (c) needs one).
 //	config    the LIVE hoang strategy (a5b7662e…, trader …_1781246265) through the
 //	          production builder (store.Strategy.ParseConfig → AutoTraderConfig →
 //	          mentorEvaluatorConfig), scrubbed of prose; no keys, no accounts.
+//	clock     the bars are history, so the replay clock is pinned where
+//	          production reads time.Now beside a replay-stamped book: the mentor
+//	          `now` seam, the restart rebuild's book read and the entry latch's
+//	          clock — the SAME evidence functions, only the clock differs. The
+//	          position-reconcile C8 sweep (a wall-clock goroutine in production)
+//	          is played at replay speed (c8Sweep).
 //
 // Two tests:
 //
-//	TestFullDayReplayFidelity (default run, ~15 s) — seeds at the LIVE seed
+//	TestFullDayReplayFidelity (default run, ~5 s) — seeds at the LIVE seed
 //	instant (00:59:15 CT 10-13) and must author the SAME 11 ISB LONG arms the
 //	live bot authored 03:28–04:33 CT (armed_orders 329…340, the other trader's
-//	335/341 excluded), minute, side, entry and stop.
+//	335/341 excluded): minute, side, entry and stop.
 //
-//	TestFullDayReplay (FULL_DAY_REPLAY=1) — the whole day with TWO traders (one
-//	account each), a restart at 21:30 CT and the invariants the 10-13 bugs broke,
-//	each a named sub-test.
+//	TestFullDayReplay (FULL_DAY_REPLAY=1, ~90 s) — 17:00 CT 10-11 (the Sunday
+//	open) → 16:00 CT 10-13 with TWO traders (one SIM account each), a restart
+//	at 21:30 CT 10-12, an injected swing fill at 21:25 CT 10-12, and the
+//	invariants the 10-13 bugs broke, each a named sub-test. It starts at the
+//	Sunday open because the 10-12 session emits ZERO level intents on the real
+//	tape (the kernel refuses every level setup — see the (g) counters), while
+//	the 10-11 evening emits two PHL Places — the same two the live bot sized at
+//	19:49/19:54 CT 10-11 (NT8's ~10-min Sunday-reopen lag; the replay's ring
+//	has no lag, so they land at 19:39/19:44).
 
 const (
 	fdrFixturePath  = "testdata/mnq_1m_2026-10-12_full_day.json.gz"
@@ -66,6 +79,7 @@ const (
 
 	fdrLiveSeedMs     int64 = 1791871155000 // 00:59:15 CT 10-13 — the live hoang reload (data/vl_2026-10-11.log)
 	fdrFidelityStopMs int64 = 1791885600000 // 05:00 CT 10-13
+	fdrReplayFromMs   int64 = 1791756000000 // 17:00 CT 10-11 — the Sunday open the full replay starts at
 	fdrDayStartMs     int64 = 1791842400000 // 17:00 CT 10-12 — the CME session open
 	fdrRestartMs      int64 = 1791858600000 // 21:30 CT 10-12
 	fdrDayEndMs       int64 = 1791925200000 // 16:00 CT 10-13
@@ -227,7 +241,15 @@ func newFdrWorld(t *testing.T, seedMs int64, accounts []string, snapshotAccounts
 	prevNow := mentorNowSource
 	market.FuturesBarsProvider = w.provide
 	mentorNowSource = w.now
+	// The restart rebuild reads the book at time.Now() (mentor_exit_drive.go —
+	// the wall clock); the replay's book is stamped on the replay clock, so the
+	// seam reads the SAME book (liveBook) at the replay clock instead.
+	prevRebuildBook := mentorRebuildBook
+	mentorRebuildBook = func(at *AutoTrader, _ time.Time) ([]ntwire.NT8Order, bool, time.Duration) {
+		return at.liveBook(w.now())
+	}
 	t.Cleanup(func() {
+		mentorRebuildBook = prevRebuildBook
 		market.FuturesBarsProvider = prevProvider
 		mentorNowSource = prevNow
 		mentorLatestPriceSource = nil
@@ -395,13 +417,26 @@ type fdrAddon struct {
 	books     map[string][]ntwire.NT8Order // account → orders resting at the broker
 	snapshots map[string]bool              // accounts whose book the AddOn publishes
 	signals   map[string]ntwire.SignalPayload
+	positions map[string]fdrAddonPos  // account → the open position
+	unfilled  map[string]fdrAddonSend // entry signal → its send (the C8 sweep's input)
 	log       []fdrWire
 	orderSeq  int
 }
 
+type fdrAddonSend struct {
+	account string
+	atMs    int64
+}
+
+type fdrAddonPos struct {
+	signalID, side string
+	qty            int
+	avg            float64
+}
+
 func newFdrAddon(t *testing.T, w *fdrWorld, conn net.Conn, build string, accounts []string, snapshots map[string]bool) *fdrAddon {
 	a := &fdrAddon{t: t, w: w, conn: conn, build: build, done: make(chan struct{}),
-		books: map[string][]ntwire.NT8Order{}, snapshots: snapshots, signals: map[string]ntwire.SignalPayload{}}
+		books: map[string][]ntwire.NT8Order{}, snapshots: snapshots, signals: map[string]ntwire.SignalPayload{}, positions: map[string]fdrAddonPos{}, unfilled: map[string]fdrAddonSend{}}
 	go func() {
 		defer close(a.done)
 		for {
@@ -471,8 +506,7 @@ func (a *fdrAddon) quiesce() {
 
 // settle drains the frames production sent this step and plays the AddOn's
 // part: rest/ack entries, cancel, move stops, record closes; then publishes the
-// book of every snapshot account (receipt stamped on the WALL clock, exactly
-// as the live server stamps it) and persists it the way main.go's sink does.
+// book of every snapshot account and persists it the way main.go's sink does.
 func (a *fdrAddon) settle() {
 	a.quiesce()
 	a.mu.Lock()
@@ -489,6 +523,7 @@ func (a *fdrAddon) settle() {
 				continue
 			}
 			a.signals[p.SignalID] = p
+			a.unfilled[p.SignalID] = fdrAddonSend{account: p.Account, atMs: nowMs}
 			a.log = append(a.log, fdrWire{atMs: nowMs, typ: env.Type, account: p.Account, traderID: p.TraderID,
 				signalID: p.SignalID, side: p.Side, price: p.StopPrice, stop: p.StopLoss, target: p.TakeProfit, qty: p.Quantity})
 			if !a.snapshots[p.Account] {
@@ -551,6 +586,15 @@ func (a *fdrAddon) settle() {
 			}
 			a.books[p.Account] = kept
 			a.w.srv.SeedPositionsForTest(p.Account, []ntwire.OpenPosition{})
+			// …and reports the close like NT8 does (position_close), so the
+			// close-sync records the exit on the trader's position row.
+			if pos, ok := a.positions[p.Account]; ok {
+				delete(a.positions, p.Account)
+				exitPx := a.w.bars[a.w.cur.Load()].Close
+				a.write(ntwire.FramePositionClose, ntwire.PositionClosePayload{SignalID: pos.signalID, Symbol: "MNQ",
+					PositionSide: pos.side, ExitPrice: exitPx, Quantity: pos.qty, ExitReason: "manual",
+					ExitTime: time.UnixMilli(nowMs).UTC().Format(time.RFC3339), Account: p.Account, TraderID: p.TraderID, Seq: p.Seq})
+			}
 		case ntwire.FrameModifyBracket, ntwire.FramePlaceProtectiveStop:
 			a.log = append(a.log, fdrWire{atMs: nowMs, typ: env.Type})
 		}
@@ -572,8 +616,8 @@ func (a *fdrAddon) removeOrder(account, name string) bool {
 	return false
 }
 
-// publish puts every served account's book in the server cache (wall-clock
-// receipt, like the live read loop) and the store (main.go's snapshot sink).
+// publish puts every served account's book in the server cache and the store
+// (main.go's snapshot sink) — the AddOn's periodic order_snapshot.
 func (a *fdrAddon) publish() {
 	for acct, on := range a.snapshots {
 		if !on {
@@ -581,7 +625,10 @@ func (a *fdrAddon) publish() {
 		}
 		orders := append([]ntwire.NT8Order{}, a.books[acct]...)
 		p := ntwire.OrderSnapshotPayload{Account: acct, BuildID: a.build, EmittedMs: a.w.nowMs.Load(), Reason: "periodic", Orders: orders}
-		recv := time.Now()
+		// The receipt rides the REPLAY clock: every book reader on the mentor
+		// path ages the book against the replay `now` it was handed (a wall
+		// stamp would read as a future-dated receipt — F10 — i.e. no book).
+		recv := time.UnixMilli(a.w.nowMs.Load())
 		a.w.srv.OrderSnapshots().PutAt(p, recv)
 		b, _ := json.Marshal(p.Orders)
 		_ = a.w.st.NT8OrderSnapshots().Insert(&store.NT8OrderSnapshot{
@@ -600,6 +647,7 @@ func (a *fdrAddon) fill(account, signalID string, price float64) {
 		a.t.Fatalf("fill of an unknown signal %s", signalID)
 	}
 	a.removeOrder(account, signalID)
+	delete(a.unfilled, signalID)
 	exit := "sell"
 	if strings.EqualFold(p.Side, "short") {
 		exit = "buy"
@@ -611,6 +659,7 @@ func (a *fdrAddon) fill(account, signalID string, price float64) {
 	)
 	a.orderSeq++
 	a.w.srv.SeedPositionsForTest(account, []ntwire.OpenPosition{{Symbol: "MNQ", Side: strings.ToLower(p.Side), Quantity: p.Quantity, AvgPrice: price}})
+	a.positions[account] = fdrAddonPos{signalID: signalID, side: strings.ToLower(p.Side), qty: p.Quantity, avg: price}
 	a.w.srv.FeedOrderUpdateForTest(ntwire.OrderUpdatePayload{SignalID: signalID, State: "filled", FillPrice: price,
 		Quantity: p.Quantity, Symbol: "MNQ", Account: account, TraderID: p.TraderID, Seq: p.Seq})
 	a.w.srv.FeedFillForTest(ntwire.FillPayload{SignalID: signalID, Symbol: "MNQ", Account: account, FillPrice: price,
@@ -643,7 +692,7 @@ type fdrTrader struct {
 	at          *AutoTrader
 	epochs      []int64
 	intents     []fdrTick
-	levelPx     map[string]float64 // lvl ArmID → level price (Intent.Anchor)
+	levelPx     map[string]float64 // lvl ledger scenario → level price (Intent.Anchor)
 	curBar      int
 }
 
@@ -651,10 +700,20 @@ type fdrTrader struct {
 // branch does — the TCP trader bound to its account, the NT8 wiring, then the
 // production mentor seams and the seed — minus NewTraderFromEnv (that would
 // start the process-singleton TCP listener) and minus Run (the replay drives the
-// event-pass call site itself). The production `now` seam is time.Now; the
-// replay re-pins it to the bar clock (the ONLY seam the replay overrides).
+// event-pass call site itself). Every mentor seam is the production binding
+// (mentorWireProductionSeams) except `now`, re-pinned to the bar clock; the
+// entry latch keeps its production evidence on the replay clock.
 func (w *fdrWorld) newFdrTrader(ft *fdrTrader, cfg *store.StrategyConfig) {
 	w.t.Helper()
+	// The traders table row, as the live bot has it: the entry latch resolves
+	// ANOTHER trader's account through it (traderScope) — without it a second
+	// trader's placed row would read as this account's (fail-closed).
+	if _, err := w.st.Trader().GetByID(ft.id); err != nil {
+		if err := w.st.Trader().Create(&store.Trader{ID: ft.id, UserID: "u", Name: ft.id, AIModelID: "m",
+			ExchangeID: "ex", StrategyID: "a5b7662e-7bf7-49bb-9f09-7efa48f95ac8", Account: ft.account, IsRunning: true}); err != nil {
+			w.t.Fatalf("trader row %s: %v", ft.id, err)
+		}
+	}
 	nt := ntTrader.NewTCPTrader(w.srv, "MNQ", ft.account)
 	at := &AutoTrader{
 		id: ft.id, name: ft.id, userID: "u", exchange: "ninjatrader", exchangeID: "ex",
@@ -669,11 +728,16 @@ func (w *fdrWorld) newFdrTrader(ft *fdrTrader, cfg *store.StrategyConfig) {
 	nt.SetRejectSink(at.recordBrokerRejection)
 	wireNT8Maintenance(at, nt)
 	wireNT8EntryLatch(at, nt)
+	// The entry latch's evidence is the production wiring (entryLatchBook +
+	// entryLatchLedgers); its clock is time.Now in production. The replay's book
+	// is stamped on the replay clock, so the latch reads the SAME evidence at
+	// the replay clock (a wall clock would age every replay book past ≤60 s).
+	nt.SetEntryLatchSource(&ntTrader.EntryLatchSource{Book: at.entryLatchBook, Ledgers: at.entryLatchLedgers, Now: w.now})
 	nt.StartCloseSync(at.id, at.exchangeID, at.exchange, w.st) // Run's first NT8 step: stamps the trader on every frame
 	at.mentorIntentTap = func(in mentor.Intent) {
 		ft.intents = append(ft.intents, fdrTick{barIdx: ft.curBar, in: in})
-		if strings.HasPrefix(in.ArmID, "lvl-") && (in.Action == mentor.PlaceStopEntry || in.Action == mentor.PlaceStopLimitEntry) && in.Anchor != 0 {
-			ft.levelPx[in.ArmID] = in.Anchor
+		if strings.HasPrefix(in.ArmID, "lvl-") && fdrIsPlace(in) && in.Anchor != 0 {
+			ft.levelPx[at.mentorScenarioFor(in.ArmID)] = in.Anchor // keyed by the ledger scenario: ArmSeq restarts per construction
 		}
 	}
 	at.mentorWireProductionSeams()
@@ -734,12 +798,40 @@ func fdrCT(ms int64) string {
 
 // ── the drive ───────────────────────────────────────────────────────────────
 
+// c8Sweep plays the position-reconcile goroutine's C8 sweep at REPLAY speed: an
+// entry that has not filled within entryConfirmGraceMs (45 s) leaves the
+// TCPTrader's pending map (it may still rest at the broker — the ledger_open
+// latch leg keeps holding the account until its row is terminal). Production
+// runs it on a wall-clock ticker (StartPositionReconcile, from Run); the whole
+// replayed day lasts under two wall minutes, so it would never fire. The
+// exported clear is ForgetPending, which also drops the latch's 60 s
+// recent-send stamp — at the harness's +0/+5/+30 s pass cadence that can let a
+// re-placement go ≤5 s earlier than production would.
+func (w *fdrWorld) c8Sweep(traders []*fdrTrader) {
+	now := w.nowMs.Load()
+	for sig, snd := range w.addon.unfilled {
+		if now-snd.atMs < 45_000 {
+			continue
+		}
+		for _, ft := range traders {
+			if ft.account == snd.account {
+				if nt := ft.at.armedTrader(); nt != nil {
+					nt.ForgetPending(sig)
+				}
+			}
+		}
+		delete(w.addon.unfilled, sig)
+	}
+}
+
 // step plays one closed 1m bar: the event pass at the bar's close, the AddOn's
 // answers, then the 5 s placement cadence sampled at +5 s and +30 s.
 func (w *fdrWorld) step(i int, traders []*fdrTrader, l *fdrLedger) {
 	w.cur.Store(int64(i))
 	closeMs := w.bars[i].CloseTime + 1
 	w.setNow(closeMs)
+	w.addon.publish() // the AddOn's periodic order_snapshot
+	w.c8Sweep(traders)
 	for _, ft := range traders {
 		ft.curBar = i
 		ft.at.mentorEventPassAt(w.now())
@@ -747,6 +839,7 @@ func (w *fdrWorld) step(i int, traders []*fdrTrader, l *fdrLedger) {
 	w.addon.settle()
 	for _, off := range []int64{5_000, 30_000} {
 		w.setNow(closeMs + off)
+		w.c8Sweep(traders)
 		for _, ft := range traders {
 			ft.at.mentorPlacementCadencePass()
 		}
@@ -813,4 +906,800 @@ func TestFullDayReplayFidelity(t *testing.T) {
 	if mismatch != 0 {
 		t.Fatalf("FIDELITY: %d of %d rows differ from the live 11 (see the table)", mismatch, n)
 	}
+}
+
+// ── TestFullDayReplay (FULL_DAY_REPLAY=1) ───────────────────────────────────
+
+// storeReplayCalendar writes the day's calendar slices. 10-12 is the live slice
+// (no events). 10-13 is the live slice (one T2) PLUS an INJECTED T1 "CPI m/m"
+// at 07:30 CT: the live 10-13 had no red-folder print, and without one the F11
+// news gates (the 07:20–07:35 hold and the print −10m cancel) never run — the
+// replay day is made a print day so invariant (f) is a real check.
+func (w *fdrWorld) storeReplayCalendar() {
+	w.t.Helper()
+	ct := kernel.CTLocation()
+	day13 := []calendar.Event{
+		{Time: time.Date(2026, 10, 13, 21, 10, 0, 0, ct), Currency: "EUR", Title: "ECB President Lagarde Speaks", Impact: calendar.Impact("T2")},
+		{Time: time.Date(2026, 10, 13, 7, 30, 0, 0, ct), Currency: "USD", Title: "CPI m/m (FULL-DAY-REPLAY injected print)", Impact: calendar.T1},
+	}
+	b, _ := json.Marshal(day13)
+	for date, evs := range map[string]string{"2026-10-12": "[]", "2026-10-13": string(b)} {
+		if _, err := w.st.Calendar().SaveSliceIfAbsent(&store.CalendarSliceDB{TradeDate: date, Source: "full-day-replay", EventsJSON: evs, CreatedAt: fdrDayStartMs}); err != nil {
+			w.t.Fatalf("calendar slice %s: %v", date, err)
+		}
+	}
+}
+
+// fdrSwing is the injected swing fill.
+type fdrSwing struct {
+	traderID, account, armID, signalID string
+	rowID                              int64
+	entry, stop, target, risk          float64
+	fillBar                            int
+	entryBucket, holdMs                int64
+}
+
+// injectSwingFill — NO swing ever filled live (the ledger holds 5 SWING4H rows,
+// 0 filled), so invariant (c) needs one. INJECTED at a real bar: the 21:25 CT
+// 5m bar of 10-12, filled at that 1m bar's mid (a price the bar traded). The row
+// is authored the way mentorArmIntent writes a swing (origin mentor, condition
+// SWING4H, exit mode "swing", 1 contract, the swing expiry), placed with the
+// ledger's own BeginPlacement, and FILLED by the fake AddOn — so the position
+// row, the live-pos registration and the bracket (-sl/-tp) all come from the
+// production fill path (onArmedOrderUpdate → materializeArmedEntry).
+func (w *fdrWorld) injectSwingFill(ft *fdrTrader, i int) fdrSwing {
+	w.t.Helper()
+	b := w.bars[i]
+	entry := math.Round((b.High+b.Low)/2*4) / 4
+	sw := fdrSwing{traderID: ft.id, account: ft.account, entry: entry,
+		stop: entry - fdrSwingRiskPts, target: entry + fdrSwingTargetPts, risk: fdrSwingRiskPts, fillBar: i,
+		armID: "swing-" + strconv.FormatInt(b.OpenTime-b.OpenTime%300_000, 10), signalID: "fdr-injected-swing-" + ft.id}
+	sw.entryBucket = kernel.FourHBucketStart(b.OpenTime-b.OpenTime%300_000, kernel.CTLocation())
+	sw.holdMs = sw.entryBucket + int64(ft.at.mentorEval.Cfg.Swing.Hold4hBars)*4*3_600_000
+	ledger := w.st.ArmedOrders()
+	row := &store.ArmedOrderDB{
+		TraderID: ft.id, PlanID: mentorPlanID(ft.id), Version: 1, Session: "MENTOR",
+		Scenario: ft.at.mentorScenarioFor(sw.armID), Side: "long", State: store.StateArmed,
+		EntryPx: sw.entry, StopPx: sw.stop, TargetPx: sw.target, Kind: "stop_entry", Condition: "SWING4H",
+		ExpiryMs: mentorSwingExpiry(b.CloseTime + 1), Origin: store.ArmOriginMentor,
+		ExitMode: mentorExitModePtr("swing"), Contracts: store.IntPtr(1),
+	}
+	if err := ledger.UpsertArm(row); err != nil || row.ID == 0 {
+		w.t.Fatalf("inject swing row: id=%d err=%v", row.ID, err)
+	}
+	sw.rowID = row.ID
+	if err := ledger.BeginPlacement(row.ID, sw.signalID); err != nil {
+		w.t.Fatalf("inject swing placement: %v", err)
+	}
+	w.addon.signals[sw.signalID] = ntwire.SignalPayload{Symbol: "MNQ", Account: ft.account, TraderID: ft.id, Side: "long",
+		Quantity: 1, Entry: sw.entry, StopLoss: sw.stop, TakeProfit: sw.target, SignalID: sw.signalID, OrderType: "stop_entry", StopPrice: sw.entry, StopLimit: true}
+	w.addon.fill(ft.account, sw.signalID, sw.entry)
+	w.t.Logf("INJECTED swing fill (c): trader %s %s LONG 1 @ %.2f stop %.2f target %.2f (R %.0f) on the %s CT bar — arm %s, 4h bucket %s, hold close at %s CT",
+		ft.id, sw.signalID, sw.entry, sw.stop, sw.target, sw.risk, fdrCT(b.OpenTime), sw.armID, fdrCT(sw.entryBucket), fdrCT(sw.holdMs))
+	return sw
+}
+
+// restart drops every trader's in-process state — the mentor registry entries,
+// the runner targets, the AutoTrader itself — and builds fresh AutoTraders over
+// the SAME store and the SAME NT8 link, re-seeded from the bars persisted by
+// now. (The process-constant boot id means the class-33 boot sweep of placed
+// pre-boot arms is NOT replayed: a reload, not a new binary.)
+func (w *fdrWorld) restart(traders []*fdrTrader, cfg *store.StrategyConfig) {
+	w.t.Helper()
+	ids := map[string]bool{}
+	for _, ft := range traders {
+		ids[ft.id] = true
+	}
+	mentorLiveMu.Lock()
+	for k, v := range mentorLiveArms {
+		if ids[v.TraderID] {
+			delete(mentorLiveArms, k)
+		}
+	}
+	mentorLiveMu.Unlock()
+	mentorRunnerTargets.Range(func(k, _ any) bool {
+		if s, ok := k.(string); ok {
+			if i := strings.Index(s, "|"); i > 0 && ids[s[:i]] {
+				mentorRunnerTargets.Delete(k)
+			}
+		}
+		return true
+	})
+	w.storeBarsUpTo(w.nowMs.Load() - 1)
+	for _, ft := range traders {
+		w.newFdrTrader(ft, cfg)
+	}
+}
+
+// fdrIsPlacementRefusal names the trader counters that record a refused ENTRY
+// (the placement gates of mentorDispatchEntry / mentorPlaceIntent /
+// mentorArmIntent). Cancel/extend/move/close refusals are not entry refusals.
+func fdrIsPlacementRefusal(k string) bool {
+	for _, p := range []string{"cancel_", "extend_", "move_be_", "close_", "swing_rebuild", "rebuild_"} {
+		if strings.HasPrefix(k, p) {
+			return false
+		}
+	}
+	switch {
+	case strings.HasPrefix(k, "refused_"), strings.HasPrefix(k, "placement_refused"), strings.HasSuffix(k, "_refused"),
+		strings.HasPrefix(k, "news_hold"), strings.HasSuffix(k, "_no_data"), strings.HasSuffix(k, "_unresolved"):
+		return true
+	}
+	switch k {
+	case "no_chase_skip", "stale_intent", "stale_data", "mentor_sources_missing", "add_no_source", "placement_held", "expiry_missing_refused":
+		return true
+	}
+	return false
+}
+
+func fdrIsPlace(in mentor.Intent) bool {
+	return in.Action == mentor.PlaceStopEntry || in.Action == mentor.PlaceStopLimitEntry
+}
+
+// fdrPlaceOutcome is what became of one Place intent.
+type fdrPlaceOutcome struct {
+	trader  string
+	barIdx  int
+	in      mentor.Intent
+	rowID   int64
+	refusal string // the counters a refusal bumped this tick (several intents may share one)
+	silent  bool   // no row and no named refusal
+	birthCx bool   // the evaluator cancelled it in the SAME tick (the 15:00–23:59 bug)
+}
+
+func fdrCountersDiff(before, after map[string]int) map[string]int {
+	out := map[string]int{}
+	for k, v := range after {
+		if d := v - before[k]; d > 0 {
+			out[k] = d
+		}
+	}
+	return out
+}
+
+func fdrSortedKV(m map[string]int) string {
+	keys := make([]string, 0, len(m))
+	for k, v := range m {
+		if v != 0 {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+"="+strconv.Itoa(m[k]))
+	}
+	if len(parts) == 0 {
+		return "(none)"
+	}
+	return strings.Join(parts, " ")
+}
+
+func fdrHHMM(ms int64) int {
+	t := time.UnixMilli(ms).In(kernel.CTLocation())
+	return t.Hour()*60 + t.Minute()
+}
+
+func fdrReplayEndMs() int64 {
+	if os.Getenv("FULL_DAY_REPLAY_EVENING") == "1" {
+		return fdrEveningEndMs
+	}
+	return fdrDayEndMs
+}
+
+// TestFullDayReplay plays 17:00 CT 10-11 → 16:00 CT 10-13 (FULL_DAY_REPLAY=1;
+// FULL_DAY_REPLAY_EVENING=1 runs on through the 10-13 evening to the fixture's
+// last bar) with TWO mentor traders on the live config, one SIM account each,
+// a restart at 21:30 CT 10-12 and an injected swing fill on trader A at 21:25
+// CT 10-12.
+func TestFullDayReplay(t *testing.T) {
+	if os.Getenv("FULL_DAY_REPLAY") != "1" {
+		t.Skip("the full day (two traders, restart, minutes of wall time) runs with FULL_DAY_REPLAY=1; the default run is TestFullDayReplayFidelity")
+	}
+	const acctA, acctB = "SimReplayA", "SimReplayB"
+	w := newFdrWorld(t, fdrReplayFromMs, []string{acctA, acctB}, map[string]bool{acctA: true, acctB: true}, fdrAddonBuild)
+	w.storeReplayCalendar()
+	cfg := loadReplayStrategy(t)
+	start := w.barIndexAtOrAfter(fdrReplayFromMs)
+	end := w.barIndexAtOrAfter(fdrReplayEndMs())
+	w.setNow(fdrReplayFromMs)
+	w.cur.Store(int64(start - 1))
+	A := &fdrTrader{id: "fdr-a", account: acctA, levelPx: map[string]float64{}}
+	B := &fdrTrader{id: "fdr-b", account: acctB, levelPx: map[string]float64{}}
+	traders := []*fdrTrader{A, B}
+	for _, ft := range traders {
+		w.newFdrTrader(ft, cfg)
+	}
+	l := &fdrLedger{rows: map[int64]*fdrRowLife{}}
+	var outcomes []fdrPlaceOutcome
+	kernelRefusals := map[string]map[string]int{A.id: {}, B.id: {}}
+	traderCounters := map[string]map[string]int{A.id: {}, B.id: {}}
+	foldInstance := func(ft *fdrTrader) {
+		for k, v := range mentorKernelRefusals(ft.at) {
+			kernelRefusals[ft.id][k] += v
+		}
+		for k, v := range ft.at.mentorCountSnapshot() {
+			traderCounters[ft.id][k] += v
+		}
+	}
+	var sw fdrSwing
+	var orphanBook []string // (b) half 2: a working broker order with no live ledger row
+	var registryMix []string
+	wallStart := time.Now()
+	for i := start; i < end; i++ {
+		before := map[string]map[string]int{}
+		for _, ft := range traders {
+			before[ft.id] = ft.at.mentorCountSnapshot()
+		}
+		w.step(i, traders, l)
+		// (b) half 1 — every Place intent this tick has a ledger row or a named refusal.
+		for _, ft := range traders {
+			diff := fdrCountersDiff(before[ft.id], ft.at.mentorCountSnapshot())
+			refusals := map[string]int{}
+			for k, v := range diff {
+				if fdrIsPlacementRefusal(k) {
+					refusals[k] = v
+				}
+			}
+			born := map[string]*fdrRowLife{}
+			for _, life := range l.rows {
+				if life.bornBar == i && life.row.TraderID == ft.id && isMentorArmOrigin(life.row) {
+					born[life.row.Scenario] = life
+				}
+			}
+			cancelled := map[string]bool{}
+			for _, tk := range ft.intents {
+				if tk.barIdx == i && tk.in.Action == mentor.CancelArm {
+					cancelled[tk.in.ArmID] = true
+				}
+			}
+			epoch := ft.epochs[len(ft.epochs)-1]
+			for _, tk := range ft.intents {
+				if tk.barIdx != i || !fdrIsPlace(tk.in) {
+					continue
+				}
+				o := fdrPlaceOutcome{trader: ft.id, barIdx: i, in: tk.in, birthCx: tk.in.ArmID != "" && cancelled[tk.in.ArmID]}
+				if tk.in.ArmID != "" {
+					if life, ok := born[fmt.Sprintf("%s-%d", tk.in.ArmID, epoch)]; ok {
+						o.rowID = life.row.ID
+					}
+				} else {
+					for sc, life := range born {
+						if strings.HasPrefix(sc, "mentor-") && life.row.EntryPx == tk.in.Price && life.row.StopPx == tk.in.Stop {
+							o.rowID = life.row.ID
+							delete(born, sc)
+							break
+						}
+					}
+				}
+				if o.rowID == 0 {
+					o.refusal = fdrSortedKV(refusals)
+					o.silent = len(refusals) == 0
+				}
+				outcomes = append(outcomes, o)
+			}
+		}
+		// (b) half 2 — every working entry at the broker has a live ledger row.
+		for _, ft := range traders {
+			for _, o := range w.addon.workingEntries(ft.account) {
+				live := false
+				for _, life := range l.rows {
+					if life.row.SignalID == o.Name && life.row.TraderID == ft.id && !store.IsTerminalArmState(strings.ToLower(life.row.State)) {
+						live = true
+						break
+					}
+				}
+				if !live {
+					orphanBook = append(orphanBook, fmt.Sprintf("%s %s %s order %s @%.2f has no live %s row", fdrCT(w.nowMs.Load()), ft.account, ft.id, o.Name, o.StopPrice, ft.id))
+				}
+			}
+		}
+		// (d) — the process registry: every entry is keyed by its own trader.
+		mentorLiveMu.Lock()
+		for k, v := range mentorLiveArms {
+			if !strings.HasPrefix(k, v.TraderID+"|") {
+				registryMix = append(registryMix, fmt.Sprintf("%s registry key %q holds trader %s", fdrCT(w.nowMs.Load()), k, v.TraderID))
+			}
+		}
+		mentorLiveMu.Unlock()
+		if w.bars[i].OpenTime == fdrSwingBarMs {
+			sw = w.injectSwingFill(A, i)
+		}
+		if w.bars[i].CloseTime+1 == fdrRestartMs {
+			for _, ft := range traders {
+				foldInstance(ft)
+			}
+			t.Logf("RESTART at %s CT — fresh AutoTraders over the same store and NT8 link (pre-restart counters folded)", fdrCT(fdrRestartMs))
+			w.restart(traders, cfg)
+		}
+	}
+	for _, ft := range traders {
+		foldInstance(ft)
+	}
+	t.Logf("replayed %d bars (%s → %s CT) × %d traders in %s wall", end-start, fdrCT(w.bars[start].OpenTime), fdrCT(w.bars[end-1].CloseTime+1), len(traders), time.Since(wallStart).Round(time.Second))
+
+	lives := l.sorted()
+	rowOf := map[string]*fdrRowLife{} // signal id → row
+	for _, life := range lives {
+		if life.row.SignalID != "" {
+			rowOf[life.row.SignalID] = life
+		}
+	}
+	accountOf := map[string]string{A.id: A.account, B.id: B.account}
+
+	// ── (a) level orders after 15:00 are never cancelled at birth ──────────
+	t.Run("a_level_order_after_1500_rests_until_its_own_1500", func(t *testing.T) {
+		var bad []string
+		lvlRows := 0
+		for _, o := range outcomes {
+			if !strings.HasPrefix(o.in.ArmID, "lvl-") || !o.birthCx {
+				continue
+			}
+			bad = append(bad, fmt.Sprintf("%s %s %s %s @%.2f emitted at %s CT and CANCELLED BY THE EVALUATOR IN THE SAME TICK (row %d)",
+				o.trader, o.in.ArmID, o.in.Setup, o.in.Side, o.in.Price, fdrCT(w.bars[o.barIdx].CloseTime+1), o.rowID))
+		}
+		for _, life := range lives {
+			r := life.row
+			armID := mentorArmIDFromScenario(r.Scenario)
+			if !strings.HasPrefix(armID, "lvl-") {
+				continue
+			}
+			lvlRows++
+			if fdrHHMM(life.bornMs) < 15*60 || life.endBar < 0 {
+				continue
+			}
+			ownExpiry := mentor.LevelArmExpiry(life.bornMs)
+			if r.ExpiryMs != ownExpiry {
+				bad = append(bad, fmt.Sprintf("row %d %s authored %s CT carries expiry %s, not its own next 15:00 (%s)", r.ID, armID, fdrCT(life.bornMs), fdrCT(r.ExpiryMs), fdrCT(ownExpiry)))
+			}
+			if life.endBar == life.bornBar {
+				bad = append(bad, fmt.Sprintf("row %d %s %s authored %s CT went %s IN ITS BIRTH BAR: %q", r.ID, r.TraderID, armID, fdrCT(life.bornMs), life.endState, life.endReason))
+				continue
+			}
+			if life.endMs >= ownExpiry {
+				continue
+			}
+			var level float64
+			have := false
+			for _, ft := range traders {
+				if ft.id == r.TraderID {
+					level, have = ft.levelPx[r.Scenario]
+				}
+			}
+			through := false
+			if have {
+				for j := life.bornBar + 1; j <= life.endBar && j < len(w.bars); j++ {
+					c := w.bars[j].Close
+					if strings.EqualFold(r.Side, "long") && c < level || strings.EqualFold(r.Side, "short") && c > level {
+						through = true
+						break
+					}
+				}
+			}
+			named := false
+			for _, k := range []string{"day-stop", "session ended", "EOD", "15m/5m ISB conflict", "never-add", "news"} {
+				if strings.Contains(life.endReason, k) {
+					named = true
+				}
+			}
+			if !through && !named {
+				bad = append(bad, fmt.Sprintf("row %d %s %s authored %s CT ended %s at %s CT before its own 15:00 with no close-through (level %.2f known=%v): %q",
+					r.ID, r.TraderID, armID, fdrCT(life.bornMs), life.endState, fdrCT(life.endMs), level, have, life.endReason))
+			}
+		}
+		t.Logf("(a) level rows authored over the day: %d", lvlRows)
+		if len(bad) > 0 {
+			t.Fatalf("(a) %d level-order lifetime violation(s):\n  %s", len(bad), strings.Join(bad, "\n  "))
+		}
+	})
+
+	// ── (b) every placement intent has a ledger row; every broker order a live row
+	t.Run("b_intents_have_ledger_rows_and_book_orders_have_live_rows", func(t *testing.T) {
+		var silent []string
+		for _, o := range outcomes {
+			if o.silent {
+				silent = append(silent, fmt.Sprintf("%s %s %s %s @%.2f at %s CT — no ledger row and no named refusal",
+					o.trader, o.in.ArmID, o.in.Setup, o.in.Side, o.in.Price, fdrCT(w.bars[o.barIdx].CloseTime+1)))
+			}
+		}
+		if len(silent) > 0 || len(orphanBook) > 0 {
+			t.Fatalf("(b) %d silent placement intent(s), %d orphan broker order(s):\n  %s\n  %s",
+				len(silent), len(orphanBook), strings.Join(silent, "\n  "), strings.Join(orphanBook, "\n  "))
+		}
+	})
+
+	// ── (c) an open swing across the restart: BE at +1R and the hold close ──
+	t.Run("c_swing_across_restart_gets_be_at_1R_and_hold_close", func(t *testing.T) {
+		if sw.signalID == "" {
+			t.Fatal("the swing was never injected")
+		}
+		// The expected BE: the first 5m bar CLOSING after the restart at ≥ entry+1R.
+		var beAt int64
+		for _, b5 := range fdrAggregate(w.bars[sw.fillBar:end:end], 300_000, math.MaxInt64) {
+			if b5.CloseTime+1 <= fdrRestartMs {
+				continue
+			}
+			if b5.Close >= sw.entry+sw.risk {
+				beAt = b5.CloseTime + 1
+				break
+			}
+		}
+		var moves, closes []fdrWire
+		for _, f := range w.addon.log {
+			switch {
+			case f.typ == ntwire.FrameMoveStop && f.signalID == sw.signalID:
+				moves = append(moves, f)
+			case f.typ == ntwire.FrameClosePosition && f.account == sw.account:
+				closes = append(closes, f)
+			}
+		}
+		t.Logf("(c) injected swing %s: expected BE at %s CT (first 5m close ≥ %.2f after the restart), hold close at %s CT; move_stop frames %d, close frames %d",
+			sw.signalID, fdrCT(beAt), sw.entry+sw.risk, fdrCT(sw.holdMs+300_000), len(moves), len(closes))
+		for _, f := range moves {
+			t.Logf("    move_stop %s CT → %.2f", fdrCT(f.atMs), f.price)
+		}
+		for _, f := range closes {
+			t.Logf("    close_position %s CT %s qty %d", fdrCT(f.atMs), f.side, f.qty)
+		}
+		if beAt == 0 {
+			t.Fatal("the fixture never reaches +1R for the injected swing — pick another injection")
+		}
+		if len(moves) == 0 {
+			t.Fatalf("(c) RED: the restarted swing never got its break-even — no move_stop for %s (expected at %s CT)", sw.signalID, fdrCT(beAt))
+		}
+		if first := moves[0]; first.atMs != beAt || first.price != sw.entry {
+			t.Fatalf("(c) the first stop move for the swing was %.2f at %s CT; want BE %.2f at %s CT (+1R)", first.price, fdrCT(first.atMs), sw.entry, fdrCT(beAt))
+		}
+		if end := w.barIndexAtOrAfter(sw.holdMs + 300_000); end < len(w.bars) && w.bars[end].OpenTime < fdrReplayEndMs() {
+			if len(closes) == 0 {
+				t.Fatalf("(c) RED: the restarted swing never got its hold close (2nd 4h close after entry, %s CT)", fdrCT(sw.holdMs+300_000))
+			}
+			if closes[0].atMs != sw.holdMs+300_000 {
+				t.Fatalf("(c) the swing's hold close came at %s CT; want %s CT (the close of the first 5m bar of the hold boundary)", fdrCT(closes[0].atMs), fdrCT(sw.holdMs+300_000))
+			}
+		}
+	})
+
+	// ── (d) the two traders never mix ──────────────────────────────────────
+	t.Run("d_two_traders_never_mix", func(t *testing.T) {
+		var bad []string
+		epochOK := func(id, scenario string) bool {
+			for _, ft := range traders {
+				if ft.id != id {
+					continue
+				}
+				for _, e := range ft.epochs {
+					if strings.HasSuffix(scenario, "-"+strconv.FormatInt(e, 10)) {
+						return true
+					}
+				}
+			}
+			return false
+		}
+		perTrader := map[string]int{}
+		for _, life := range lives {
+			r := life.row
+			acct, known := accountOf[r.TraderID]
+			if !known {
+				bad = append(bad, fmt.Sprintf("row %d has a foreign trader id %q", r.ID, r.TraderID))
+				continue
+			}
+			perTrader[r.TraderID]++
+			if isMentorArmOrigin(r) && r.PlanID != mentorPlanID(r.TraderID) {
+				bad = append(bad, fmt.Sprintf("row %d trader %s plan_id %q", r.ID, r.TraderID, r.PlanID))
+			}
+			if isMentorArmOrigin(r) && !epochOK(r.TraderID, r.Scenario) {
+				bad = append(bad, fmt.Sprintf("row %d trader %s scenario %q carries another construction's epoch", r.ID, r.TraderID, r.Scenario))
+			}
+			_ = acct
+		}
+		for _, f := range w.addon.log {
+			if f.signalID == "" {
+				continue
+			}
+			life, ok := rowOf[f.signalID]
+			if !ok {
+				if f.typ == ntwire.FrameSignal {
+					bad = append(bad, fmt.Sprintf("%s entry frame %s on %s has no ledger row", fdrCT(f.atMs), f.signalID, f.account))
+				}
+				continue
+			}
+			if f.account != accountOf[life.row.TraderID] || (f.traderID != "" && f.traderID != life.row.TraderID) {
+				bad = append(bad, fmt.Sprintf("%s %s frame for row %d (trader %s) went to account %q trader %q", fdrCT(f.atMs), f.typ, life.row.ID, life.row.TraderID, f.account, f.traderID))
+			}
+		}
+		var positions []store.TraderPosition
+		if err := w.st.GormDB().Find(&positions).Error; err != nil {
+			t.Fatalf("positions read: %v", err)
+		}
+		for _, p := range positions {
+			if acct, ok := accountOf[p.TraderID]; !ok || (p.Account != "" && p.Account != acct) {
+				bad = append(bad, fmt.Sprintf("position %d trader %q account %q", p.ID, p.TraderID, p.Account))
+			}
+		}
+		bad = append(bad, registryMix...)
+		t.Logf("(d) rows per trader %s · positions %d · wire frames %d", fdrSortedKV(perTrader), len(positions), len(w.addon.log))
+		if len(bad) > 0 {
+			t.Fatalf("(d) %d mix(es):\n  %s", len(bad), strings.Join(bad, "\n  "))
+		}
+	})
+
+	// ── (e) is_running stays 1 through the restart's start path ─────────────
+	t.Run("e_is_running_stays_1_after_the_restart_start_path", func(t *testing.T) {
+		flags := fdrStartPathFlags(t, []string{A.id, B.id}, []string{A.account, B.account})
+		t.Logf("(e) DB is_running after boot auto-start + API start of the same trader: %v", flags)
+		for id, on := range flags {
+			if !on {
+				t.Errorf("(e) RED: trader %s reads is_running=0 after a duplicate start of the running instance", id)
+			}
+		}
+	})
+
+	// ── (f) no entry inside the 14:45 EOD or 07:20–07:35 news windows ───────
+	t.Run("f_no_entry_in_eod_or_news_windows", func(t *testing.T) {
+		var bad []string
+		authoredIn := 0
+		for _, f := range w.addon.log {
+			if f.typ != ntwire.FrameSignal || strings.HasPrefix(f.signalID, "fdr-injected") {
+				continue
+			}
+			if hm := fdrHHMM(f.atMs); hm >= 14*60+45 && hm < 17*60 || hm >= 7*60+20 && hm < 7*60+35 {
+				bad = append(bad, fmt.Sprintf("entry %s %s @%.2f SENT at %s CT on %s", f.signalID, f.side, f.price, fdrCT(f.atMs), f.account))
+			}
+		}
+		for _, life := range lives {
+			if hm := fdrHHMM(life.bornMs); hm >= 7*60+20 && hm < 7*60+35 {
+				authoredIn++
+				bad = append(bad, fmt.Sprintf("row %d %s %s AUTHORED at %s CT inside the news hold", life.row.ID, life.row.TraderID, life.row.Scenario, fdrCT(life.bornMs)))
+			}
+		}
+		if len(bad) > 0 {
+			t.Fatalf("(f) %d entr(ies) inside a closed window:\n  %s", len(bad), strings.Join(bad, "\n  "))
+		}
+	})
+
+	// ── (g) the daily counters, printed so a future change shows as a diff ───
+	t.Run("g_daily_counters", func(t *testing.T) {
+		for _, ft := range traders {
+			intents := map[string]int{}
+			for _, tk := range ft.intents {
+				k := string(tk.in.Action)
+				if fdrIsPlace(tk.in) {
+					k = "place_" + tk.in.Setup
+				}
+				intents[k]++
+			}
+			authored, placed, filled, expired, working := 0, 0, 0, 0, 0
+			cancelledBy := map[string]int{}
+			for _, life := range lives {
+				r := life.row
+				if r.TraderID != ft.id {
+					continue
+				}
+				authored++
+				if r.SignalID != "" {
+					placed++
+				}
+				switch strings.ToLower(r.State) {
+				case store.StateFilled:
+					filled++
+				case "expired":
+					expired++
+				case "cancelled", "canceled":
+					reason := strings.TrimPrefix(r.StateReason, "mentor: ")
+					if i := strings.Index(reason, " ["); i > 0 {
+						reason = reason[:i]
+					}
+					if i := strings.Index(reason, " — "); i > 0 {
+						reason = reason[:i]
+					}
+					cancelledBy[reason]++
+				default:
+					working++
+				}
+			}
+			sent := 0
+			for _, f := range w.addon.log {
+				if f.typ == ntwire.FrameSignal && f.account == ft.account {
+					sent++
+				}
+			}
+			t.Logf("(g) %s: authored %d · placed %d (entry frames %d) · filled %d · expired %d · non-terminal at end %d", ft.id, authored, placed, sent, filled, expired, working)
+			t.Logf("(g) %s intents: %s", ft.id, fdrSortedKV(intents))
+			for _, k := range fdrSortedKeys(cancelledBy) {
+				t.Logf("(g) %s cancelled ×%d — %s", ft.id, cancelledBy[k], k)
+			}
+			t.Logf("(g) %s trader counters: %s", ft.id, fdrSortedKV(traderCounters[ft.id]))
+			t.Logf("(g) %s kernel refusals: %s", ft.id, fdrSortedKV(kernelRefusals[ft.id]))
+		}
+		// The evaluator's OWN swing break-even intents, with the R-multiple the
+		// last closed 5m bar stood at when each was emitted (the course rule is
+		// +1R). Printed, not asserted: see the FOLLOW-UP on SwingState.openPosition.
+		for _, ft := range traders {
+			places := map[string]mentor.Intent{}
+			for _, tk := range ft.intents {
+				if !strings.HasPrefix(tk.in.ArmID, "swing-") {
+					continue
+				}
+				if fdrIsPlace(tk.in) {
+					places[tk.in.ArmID] = tk.in
+					continue
+				}
+				if tk.in.Action != mentor.ActionMoveStopBE {
+					continue
+				}
+				c5 := fdrLast5mClose(w, tk.barIdx)
+				if p, ok := places[tk.in.ArmID]; ok {
+					risk := math.Abs(p.Price - p.Stop)
+					move := c5 - p.Price
+					if p.Side == mentor.SideShort {
+						move = p.Price - c5
+					}
+					t.Logf("(g) %s kernel swing BE %s at %s CT: %s entry %.2f stop %.2f (R %.2f), last 5m close %.2f = %+.2fR",
+						ft.id, tk.in.ArmID, fdrCT(w.bars[tk.barIdx].CloseTime+1), p.Side, p.Price, p.Stop, risk, c5, move/risk)
+				} else {
+					t.Logf("(g) %s kernel swing BE %s at %s CT (no Place intent from this construction — a pending carried in by the seed), last 5m close %.2f",
+						ft.id, tk.in.ArmID, fdrCT(w.bars[tk.barIdx].CloseTime+1), c5)
+				}
+			}
+		}
+		// Level (lvl-) intents over the day — the live ledger has ZERO level rows.
+		lvl := map[string]int{}
+		var lines []string
+		for _, o := range outcomes {
+			if !strings.HasPrefix(o.in.ArmID, "lvl-") {
+				continue
+			}
+			state := "authored"
+			if o.rowID == 0 {
+				state = "refused " + o.refusal
+			}
+			if o.birthCx {
+				state += " + CANCELLED IN THE SAME TICK"
+			}
+			lvl[o.trader+" "+o.in.Setup]++
+			lines = append(lines, fmt.Sprintf("%s %s %s %s %s @%.2f stop %.2f — %s", fdrCT(w.bars[o.barIdx].CloseTime+1), o.trader, o.in.ArmID, o.in.Setup, o.in.Side, o.in.Price, o.in.Stop, state))
+		}
+		t.Logf("(g) level (lvl-) Place intents emitted: %d — %s", len(lines), fdrSortedKV(lvl))
+		for _, s := range lines {
+			t.Logf("    %s", s)
+		}
+		for _, ft := range traders {
+			lv := map[string]int{}
+			for k, v := range kernelRefusals[ft.id] {
+				for _, p := range []string{"phl", "plh", "level", "lvl", "trigger_retest", "near_box", "ema"} {
+					if strings.HasPrefix(k, p) {
+						lv[k] += v
+						break
+					}
+				}
+			}
+			t.Logf("(g) %s level-family kernel refusals: %s", ft.id, fdrSortedKV(lv))
+		}
+	})
+}
+
+// fdrLast5mClose is the close of the last 5m bar that had CLOSED when ring bar
+// i closed — the bar manageSwingPosition judges the swing on at that tick.
+func fdrLast5mClose(w *fdrWorld, i int) float64 {
+	from := i - 10
+	if from < 0 {
+		from = 0
+	}
+	agg := fdrAggregate(w.bars[from:i+1:i+1], 300_000, w.bars[i].CloseTime+1)
+	for j := len(agg) - 1; j >= 0; j-- {
+		if agg[j].Final {
+			return agg[j].Close
+		}
+	}
+	return 0
+}
+
+func fdrSortedKeys(m map[string]int) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// fdrStartPathFlags drives the PRODUCTION start path a restart takes, for each
+// trader id/account: Run() as the boot auto-start (manager.addTraderFromStore
+// auto-starts an is_running=1 row), then Run() AGAIN on the SAME object as the
+// owner's API start (api.handleStartTrader loads, then starts) — the duplicate
+// start of 10-13. It returns each trader's DB is_running afterwards. Isolated
+// store and NT8 link: the Run loops must not touch the replay's ledger.
+func fdrStartPathFlags(t *testing.T, ids, accounts []string) map[string]bool {
+	t.Helper()
+	st, err := store.New(filepath.Join(t.TempDir(), "start-path.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	infos := make([]ntwire.AccountInfo, 0, len(accounts))
+	for i, id := range ids {
+		if err := st.Trader().Create(&store.Trader{ID: id, UserID: "u", Name: id, AIModelID: "m", ExchangeID: "ex", StrategyID: "s", Account: accounts[i], IsRunning: true}); err != nil {
+			t.Fatal(err)
+		}
+		infos = append(infos, ntwire.AccountInfo{Name: accounts[i], IsSim: true})
+	}
+	srv := ntwire.NewTCPServer(nil)
+	srv.SetAddrForTest("127.0.0.1:0")
+	srv.SetAccountsList(infos, accounts[0])
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := srv.Start(ctx); err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.Stop(); cancel() })
+	c, err := net.Dial("tcp", srv.ListenAddrForTest().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitAddonRegistered(t, srv)
+	t.Cleanup(func() { _ = c.Close() })
+	if err := ntwire.WriteFrame(c, ntwire.FrameHello, ntwire.HelloPayload{ProtocolVersion: ntwire.ProtocolVersion, Source: "vltrader-addon"}); err != nil {
+		t.Fatal(err)
+	}
+	var running []*AutoTrader
+	var exits []chan struct{}
+	for i, id := range ids {
+		at := &AutoTrader{id: id, name: id, userID: "u", store: st, exchange: "ninjatrader", exchangeID: "ex",
+			trader: ntTrader.NewTCPTrader(srv, "MNQ", accounts[i]), mcpClient: &fakeDecisionClient{}}
+		at.config.StrategyConfig = &store.StrategyConfig{}
+		at.config.ScanInterval = 200 * time.Millisecond
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			defer func() { _ = recover() }() // a bare-fixture cycle panic must not fail the flag check
+			_ = at.Run()                     // the boot auto-start
+		}()
+		deadline := time.Now().Add(10 * time.Second)
+		for !fdrOrderedInstalled(at) && time.Now().Before(deadline) {
+			time.Sleep(2 * time.Millisecond)
+		}
+		if !fdrOrderedInstalled(at) {
+			t.Fatalf("(e) the boot start of %s never installed its ordered execution", id)
+		}
+		_ = at.Run() // the API start of the SAME running object
+		running = append(running, at)
+		exits = append(exits, done)
+	}
+	flags := map[string]bool{}
+	for _, id := range ids {
+		row, err := st.Trader().GetByID(id)
+		flags[id] = err == nil && row != nil && row.IsRunning
+	}
+	// Stop every instance; a Stop that cannot return (the duplicate start
+	// overwrote the first Run's stop context, orphaning its monitor) is
+	// reported, never waited on forever.
+	stopped := make(chan string, len(running))
+	for _, at := range running {
+		at := at
+		go func() { at.Stop(); stopped <- at.id }()
+	}
+	deadline := time.After(5 * time.Second)
+	for range running {
+		select {
+		case <-stopped:
+		case <-deadline:
+			t.Errorf("(e) Stop() of a duplicate-started trader did not return within 5 s (the second Run replaced the first Run's stop context)")
+			return flags
+		}
+	}
+	for i, at := range running {
+		select {
+		case <-exits[i]:
+		case <-time.After(5 * time.Second):
+			t.Errorf("(e) the running instance of %s did not exit after Stop", at.id)
+		}
+	}
+	return flags
+}
+
+func fdrOrderedInstalled(at *AutoTrader) bool {
+	at.orderedExecMu.Lock()
+	defer at.orderedExecMu.Unlock()
+	return at.orderedExecUnreg != nil
 }
