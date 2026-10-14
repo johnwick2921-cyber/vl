@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -177,19 +178,7 @@ func (s *Server) handleAccount(c *gin.Context) {
 			account["ledger_day_start_ms"] = dayStart.UnixMilli()
 			account["ledger_day_source"] = "trader_positions.pnl_corrected (strict; bot rows only; CME session day from 17:00 CT; same rule as the position-history footer)"
 		}
-		// THE BOT'S RECORD — all-time, bot rows only (the dashboard stats / AI
-		// track record figure), with the manual rows as their own line.
-		if rec, rerr := s.store.Position().GetFullStats(traderID, c.Query("account")); rerr != nil {
-			logger.Warnf("🧾 bot record unavailable for %s: %v", traderID, rerr)
-			account["bot_record_status"] = "UNRESOLVED: " + rerr.Error()
-		} else {
-			account["bot_record_pnl"] = rec.TotalPnL
-			account["bot_record_trades"] = rec.TotalTrades
-			account["bot_record_unresolved"] = rec.UnresolvedExcluded
-			account["manual_excluded_trades"] = rec.ManualExcludedTrades
-			account["manual_excluded_pnl"] = rec.ManualExcludedPnL
-			account["manual_excluded_line"] = rec.ManualExcludedLine
-		}
+		s.attachBotRecord(account, traderID, c.Query("account"))
 	}
 
 	logger.Infof("✓ Returning account info [%s]: equity=%.2f, available=%.2f, pnl=%.2f (%.2f%%)",
@@ -199,6 +188,43 @@ func (s *Server) handleAccount(c *gin.Context) {
 		account["total_pnl"],
 		account["total_pnl_pct"])
 	c.JSON(http.StatusOK, account)
+}
+
+// attachBotRecord puts THE BOT'S RECORD on the /api/account response (the
+// "Bot P&L (record)" card), scoped to acct ("" = trader-wide), with its scope
+// and — when scoped — the bot rows on other accounts it leaves out, counted
+// (RT-7). handleAccount is its one caller.
+func (s *Server) attachBotRecord(account map[string]interface{}, traderID, acct string) {
+	// THE BOT'S RECORD — all-time, bot rows only (the dashboard stats / AI
+	// track record figure), with the manual rows as their own line.
+	if rec, rerr := s.store.Position().GetFullStats(traderID, acct); rerr != nil {
+		logger.Warnf("🧾 bot record unavailable for %s: %v", traderID, rerr)
+		account["bot_record_status"] = "UNRESOLVED: " + rerr.Error()
+	} else {
+		account["bot_record_pnl"] = rec.TotalPnL
+		account["bot_record_trades"] = rec.TotalTrades
+		account["bot_record_unresolved"] = rec.UnresolvedExcluded
+		account["manual_excluded_trades"] = rec.ManualExcludedTrades
+		account["manual_excluded_pnl"] = rec.ManualExcludedPnL
+		account["manual_excluded_line"] = rec.ManualExcludedLine
+		// RT-7 (release #24, N1): this card is scoped to the selected
+		// account while Position History's total is trader-wide. Which
+		// scope is "the record" is an OWNER DECISION; until then neither
+		// figure changes and each says its scope, with the bot rows the
+		// scoped figure leaves out COUNTED from the same reader
+		// (trader-wide GetFullStats minus this one), never a literal.
+		if acct == "" {
+			account["bot_record_scope"] = "all accounts"
+		} else if all, aerr := s.store.Position().GetFullStats(traderID); aerr != nil {
+			account["bot_record_scope"] = "this account"
+			account["bot_record_other_accounts_status"] = "UNRESOLVED: " + aerr.Error()
+		} else {
+			account["bot_record_scope"] = "this account"
+			account["bot_record_other_accounts_trades"] = all.TotalTrades - rec.TotalTrades
+			account["bot_record_other_accounts_pnl"] = math.Round((all.TotalPnL-rec.TotalPnL)*100) / 100
+			account["bot_record_other_accounts_unresolved"] = all.UnresolvedExcluded - rec.UnresolvedExcluded
+		}
+	}
 }
 
 // ledgerDayWindow is the dashboard LEDGER_DAY window: the CME session day
@@ -289,6 +315,10 @@ func (s *Server) handlePositionHistory(c *gin.Context) {
 		"stats":            stats,
 		"symbol_stats":     symbolStats,
 		"direction_stats":  directionStats,
+		// RT-7 (release #24, N1): stats above are TRADER-WIDE (GetFullStats
+		// with no account), while the dashboard's "Bot P&L (record)" card is
+		// scoped to the selected account. The scope rides with the figure.
+		"stats_scope": "all accounts",
 		// R22: the ONE "today" — the CME session day from 17:00 CT
 		// (kernel.CMESessionDayStart, the risk gates' boundary). The footer's
 		// day total is computed from this instant, never from a browser clock.

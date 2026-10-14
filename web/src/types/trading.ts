@@ -44,6 +44,14 @@ export interface AccountInfo {
   bot_record_trades?: number
   bot_record_unresolved?: number
   bot_record_status?: string
+  // RT-7 (release #24): the card's scope ("this account" | "all accounts")
+  // and, when scoped, the bot rows on other accounts it leaves out — counted
+  // by the server. Absent = an older server; never rendered as 0.
+  bot_record_scope?: string
+  bot_record_other_accounts_trades?: number
+  bot_record_other_accounts_pnl?: number
+  bot_record_other_accounts_unresolved?: number
+  bot_record_other_accounts_status?: string
   manual_excluded_trades?: number
   manual_excluded_pnl?: number
   manual_excluded_line?: string
@@ -268,6 +276,8 @@ export interface PositionHistoryResponse {
   direction_stats: DirectionStats[]
   // R22: the CME session day start (17:00 CT) the footer's day total uses.
   session_day_start_ms?: number
+  // RT-7 (release #24): the scope of `stats` ("all accounts").
+  stats_scope?: string
 }
 
 // Grid Risk Information for frontend display
