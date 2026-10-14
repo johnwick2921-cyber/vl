@@ -202,19 +202,32 @@ func TestTrendlineSwingInsideTouchBandIsNotALeave(t *testing.T) {
 	}
 }
 
-// TestTrendlineReturnThen5mCloseThroughKills — X9 @06:25 at the call site: the
-// 5m close through still discards the line AFTER the return made it valid. The
-// 09:10 bucket (bars 10–14) closes at 98.1, below the line at its open (98.6)
-// → Dead, no longer valid, not a location. Green on origin/dev too (the kill
-// is unchanged) — a preservation pin.
-func TestTrendlineReturnThen5mCloseThroughKills(t *testing.T) {
+// TestTrendlineReturnThen5mWholeCandleThroughKills — X9 @06:25–06:45 at the
+// call site: a 5m candle WHOLLY through the line ("đóng dưới NGUYÊN CÂY")
+// discards it AFTER the return made it valid. The 09:10 bucket (bars 10–14)
+// closes at 98.1, below the line, but its high 102 is far above it — NOT a
+// break (pre-10-14 the close alone killed it). The 09:15 bucket (bars 15–19)
+// sits wholly below the line at its close (100.6): high 98.4 → Dead, no
+// longer valid, not a location.
+func TestTrendlineReturnThen5mWholeCandleThroughKills(t *testing.T) {
 	bars, mk := trendlineReturnTape()
-	bars = append(bars, mk(14, 101.2, 101.3, 98.0, 98.1)) // bucket 10–14 closes 98.1
-	// the 09:10 5m bucket closes at bars[14].OpenTime+59_999 — now is after it.
+	bars = append(bars, mk(14, 101.2, 101.3, 98.0, 98.1)) // bucket 10–14 closes 98.1, high 102
 	now := time.UnixMilli(bars[14].OpenTime + 60_000).In(ctime())
 	tls := TrendlinesBuild(bars, now)
+	if len(tls) != 1 || tls[0].Dead || tls[0].ValidAt != 13 {
+		t.Fatalf("a 5m close below the line with its high above it = %+v, want alive and VALID at 13 (X9: the WHOLE candle)", tls)
+	}
+	bars = append(bars,
+		mk(15, 98.1, 98.4, 97.9, 98.0), // bucket 15–19: every bar below the line
+		mk(16, 98.0, 98.2, 97.7, 97.8),
+		mk(17, 97.8, 98.0, 97.5, 97.6),
+		mk(18, 97.6, 97.9, 97.3, 97.4),
+		mk(19, 97.4, 97.8, 97.1, 97.2),
+	)
+	now = time.UnixMilli(bars[19].OpenTime + 60_000).In(ctime())
+	tls = TrendlinesBuild(bars, now)
 	if len(tls) != 1 || !tls[0].Dead || tls[0].ValidAt != 0 {
-		t.Fatalf("after the 5m close through = %+v, want Dead=true ValidAt=0", tls)
+		t.Fatalf("after a 5m candle wholly through = %+v, want Dead=true ValidAt=0", tls)
 	}
 	if got := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), bars); len(got) != 0 {
 		t.Fatalf("a dead line is not a location — levels=%+v", got)
@@ -257,19 +270,29 @@ func TestTrendlineFractalNoiseDrawsNoLine(t *testing.T) {
 	}
 }
 
-// TestTrendlineBrokenBy5mClose — X9 @06:25: a 5m candle CLOSING through the
-// line discards it. Direct struct test: support broken by a close below the
-// line at the bucket's open time.
-func TestTrendlineBrokenBy5mClose(t *testing.T) {
+// TestTrendlineBrokenBy5mWholeCandle — X9 @06:25–06:45 "đóng dưới NGUYÊN
+// CÂY": the 5m candle must be WHOLLY through the line, read at the candle's
+// CLOSE time. Line value: 98.6 at 10:00 (the bucket open), ≈99.6 at its close.
+func TestTrendlineBrokenBy5mWholeCandle(t *testing.T) {
 	tl := Trendline{Side: SideLong, P0Idx: 2, P0Px: 97, P0T: 2 * 60_000, P1Idx: 8, P1Px: 98.2, P1T: 8 * 60_000}
 	if got := tl.priceAt(10 * 60_000); math.Abs(got-98.6) > 0.0001 {
 		t.Fatalf("priceAt = %.4f, want 98.6", got)
 	}
-	if tl.brokenBy5m(market.Kline{OpenTime: 10 * 60_000, Close: 98.7}) {
-		t.Fatal("close ABOVE the support line is not a break")
+	b5 := func(h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: 10 * 60_000, CloseTime: 15*60_000 - 1, High: h, Low: l, Close: c}
 	}
-	if !tl.brokenBy5m(market.Kline{OpenTime: 10 * 60_000, Close: 98.5}) {
-		t.Fatal("close BELOW the support line must break it")
+	if tl.brokenBy5m(b5(99.7, 98.0, 98.5)) {
+		t.Fatal("a close below the support line with the HIGH above it is not a break (X9: the whole candle)")
+	}
+	if !tl.brokenBy5m(b5(99.5, 98.0, 99.0)) {
+		t.Fatal("a candle wholly below the line AT ITS CLOSE (high 99.5 < ≈99.6) must break it")
+	}
+	res := Trendline{Side: SideShort, P0Idx: 2, P0Px: 103, P0T: 2 * 60_000, P1Idx: 8, P1Px: 101.8, P1T: 8 * 60_000}
+	if res.brokenBy5m(b5(102, 100.3, 101.5)) {
+		t.Fatal("a close above the resistance line with the LOW below it is not a break")
+	}
+	if !res.brokenBy5m(b5(102, 100.5, 101.0)) {
+		t.Fatal("a candle wholly above the resistance line at its close (low 100.5 > ≈100.4) must break it")
 	}
 }
 
