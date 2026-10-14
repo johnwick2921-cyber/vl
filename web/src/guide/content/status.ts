@@ -355,11 +355,18 @@ export const status: GuideSection = {
           'TCP bridge alive + bars flowing — the single source of truth.',
         ],
         ['Boot integrity', 'Running binary == deploy record (goldens PASS).'],
-        ['Dead-man watchdog', 'Kernel heartbeats ok.'],
+        [
+          'Dead-man watchdog',
+          'NT8 link sampled every minute per trader; a reconnect between samples counts as a gap; NEW entries blocked until a clean reconciliation.',
+        ],
         ['Trader frozen', 'The trader loop is stuck — investigate.'],
         [
           'Clock drift',
           'Host clock vs NT8 clock mismatch. Red-news windows widen by at most 2 minutes a side for it (CLASS 145); a reading over 5 minutes is feed age (halt or gap), not the clock.',
+        ],
+        [
+          'Clock steps',
+          'GET /api/health → clock: every wall-clock step the bot itself saw (wall vs monotonic, sampled each second) — backward and forward counts, the largest of each, the last step, and whether NEW entries are held right now. This is the authority; the old timesync{…} field read systemd-timesyncd, which is not running on this box (chrony and Hyper-V TimeSync are), so it measured nothing. The clock-health log line prints the same counters as steps{…}.',
         ],
         [
           '402 banner',
@@ -373,6 +380,7 @@ export const status: GuideSection = {
       title: 'every label the gate panel can show',
       lines: [
         'NT8 feed down · Dead-man watchdog · Trader frozen · Boot integrity',
+        'Update pending (preflight freeze)',
         'Consecutive-loss halt · Past last-entry time · Outside session window',
         'Against the plan · Awaiting approval · Clock drift',
         'Duplicate order dropped · Order rate breaker · Burned level re-touched',

@@ -29,12 +29,16 @@ export const updates: GuideSection = {
     },
     {
       kind: 'p',
-      text: 'If an AI plan is still running when an update job starts, the job panel shows the live blocker — “waiting for the AI plan (started hh:mm:ss)” — instead of a refusal, and the job continues once the plan finishes.',
+      text: 'If an AI plan is still running when an update job starts, the job panel shows the live blocker — “waiting for the AI plan (started hh:mm:ss)” — instead of a refusal, and the job continues once the plan finishes. Once the updater binary is rebuilt from release #22 (the owner flow — it ships separately from the bot), the plan check is the FIRST one the job reports: before, a plan read running while the bot also held an armed order or a working order was reported as that order, and the job was refused after 10 minutes although its longer wait for the plan was still owed. Every other check must still pass before the hold.',
+    },
+    {
+      kind: 'p',
+      text: 'While an update job is getting ready — requested, downloaded, verified, or in its preflight flat check — the bot FREEZES NEW ENTRIES on every path (AI decisions, armed and mentor orders, Picture HTF, agent chat), so it no longer races the job’s flat check: on 2026-10-14 an order placed four minutes into a preflight got the install refused. Exits, stops, closes, protection and plan reads are never frozen. The freeze reads the updater’s own job files and clears by itself when the job ends (refused or cancelled — or held, when the hold takes over) or 30 minutes after the job was created, whichever comes first, so a stuck updater can never freeze trading for good. The maintenance panel shows “Install pending” with the job, its state and that latest clear time; GET /api/maintenance carries install_pending; each refusal logs “⏳ install pending … REFUSED” and counts as install_pending in the gate-block table. A job file the bot cannot read is skipped and counted (install_pending_unreadable) — the hold stays the hard stop. The freeze lives entirely in the bot and ships with it; it needs no updater change.',
     },
     { kind: 'h', text: 'The hold and the gate' },
     {
       kind: 'p',
-      text: 'The maintenance panel shows the hold state (clear, held, unreadable, or unconfigured), whether the bot has drained its in-flight sends, and the AddOn’s acknowledgement of the current hold. Until an acknowledgement arrives the panel says "no ack yet" — it never turns a missing ack into "false". The installation gate is one verdict for the whole installation, not one trader: every leg the update needs must pass, and each leg’s exact reason text is shown. A leg that could not be evaluated fails. The hold is written and cleared only by the local operator tool or the updater itself — never by this page.',
+      text: 'The maintenance panel shows the hold state (clear, held, unreadable, or unconfigured), whether the bot has drained its in-flight sends, and the AddOn’s acknowledgement of the current hold. Until an acknowledgement arrives the panel says "no ack yet" — it never turns a missing ack into "false". The installation gate is one verdict for the whole installation, not one trader: every leg the update needs must pass, and each leg’s exact reason text is shown. A leg that could not be evaluated fails. The hold is written and cleared only by the local operator tool or the updater itself — never by this page. When a job ends refused, rolled back or in recovery, the job panel shows a Reason row with the server’s exact text (before release #22 the reason was hidden whenever the job had a state — so always — and lived only in the job file).',
     },
     { kind: 'h', text: 'What a receipt proves — and what it cannot' },
     {
