@@ -236,3 +236,50 @@ describe('T17/T18/T19/T24/T8 — operations text equals the code', () => {
     )
   })
 })
+
+// r24 ADDON-CLOSE-ROUTING (rescan N-1 / N-2): Emergency Flat and Positions →
+// Close are ONE market close naming the trader's bound account. From AddOn
+// build 2026-10-14-a the AddOn flattens that account only (fail-closed), and
+// NT8's Account.Flatten cancels every working order for the contract on it —
+// resting entries included. The guide, the modal and the 60-second checklist
+// are pinned to the AddOn source and the build floor, never to a sentence.
+describe('ADDON-CLOSE-ROUTING — Emergency Flat says what the AddOn does', () => {
+  const addon = repo('ninjascript/VLTraderTCPClient.cs')
+  const expected = repo('provider/ninjatrader/order_snapshot.go').match(
+    /const ExpectedAddonBuild = "([^"]+)"/
+  )
+  const modal = web('src/components/trader/EmergencyFlatButton.tsx')
+  it('the close is routed by the NAMED account and is a full Flatten (the code the text describes)', () => {
+    expect(addon).toContain('closeTarget = FindAccountByName(namedAccount);')
+    expect(addon).toContain('closeTarget.Flatten(new[] { instrument });')
+    expect(expected).not.toBeNull()
+    // The guide names the routing floor; the build Go expects is at or past it
+    // (build ids compare bytewise — the ISO-date prefix is kept for that).
+    expect(sectionText('buttons')).toContain('build 2026-10-14-a or newer')
+    expect(expected![1] >= '2026-10-14-a').toBe(true)
+  })
+  it('no surface claims Emergency Flat leaves resting entries working', () => {
+    for (const text of [
+      sectionText('buttons'),
+      sectionText('routines'),
+      modal,
+    ]) {
+      expect(text).not.toMatch(
+        /(does NOT|not|never) (pause the trader or )?cancel resting entry orders/i
+      )
+    }
+    expect(sectionText('buttons')).toContain('cancels EVERY working MNQ order')
+    expect(sectionText('routines')).toContain(
+      'cancels every working MNQ order, resting entries included'
+    )
+    expect(modal).toContain('cancels every working MNQ order')
+  })
+  it('the buttons section says another trader is never touched, and Positions → Close is the same routing', () => {
+    const b = sectionText('buttons')
+    expect(b).toContain(
+      "Another trader's account, position and orders are never touched"
+    )
+    expect(b).toContain('routed by the AddOn exactly like Emergency Flat')
+    expect(b).not.toContain('Closes one position now.')
+  })
+})

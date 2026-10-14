@@ -56,22 +56,21 @@ func TestSplitAddonPartialFillLeg1First(t *testing.T) {
 	}
 }
 
-// TestSplitAddonFlatOnlyAccountRemoval pins positionAccountBySymbol: it is
-// removed only when the account's instrument position is FLAT. Mutant: remove on
-// any exit fill → RED.
-// TestSplitAddonFlatOnlyAccountRemoval pins positionAccountBySymbol: it is
-// removed only in OnPositionUpdate (the position has settled) and only when
-// the account that went flat is the recorded owner. REVIEW-SPLIT-2 P2-2 moved
-// this out of the exit-fill handler, where e.Order.Account.Positions can still
-// show the pre-fill quantity and wrongly keep the mapping. Mutant: remove on
+// TestSplitAddonFlatOnlyAccountRemoval pins the position-owner map: an entry is
+// removed only in OnPositionUpdate (the position has settled), and only the
+// entry of the account that went flat. REVIEW-SPLIT-2 P2-2 moved this out of the
+// exit-fill handler, where e.Order.Account.Positions can still show the pre-fill
+// quantity and wrongly keep the mapping. r24 AC-1 keyed the map by (root,
+// account) — positionAccountByAcctRoot — so the removal names the account and
+// can never drop another account's owner of the same root. Mutant: remove on
 // any exit fill → RED.
 func TestSplitAddonFlatOnlyAccountRemoval(t *testing.T) {
 	src := readSplitAddonSource(t)
 	for _, want := range []string{
 		"// REVIEW-SPLIT-2 P2-2: drop the account-ownership mapping HERE,",
-		"positionAccountBySymbol.TryGetValue(flatRoot, out owner)",
-		"string.Equals(owner.Name, acc.Name, StringComparison.OrdinalIgnoreCase)",
-		"positionAccountBySymbol.Remove(flatRoot);",
+		"lock (posAcctLock) { ForgetPositionOwner(acc.Name, flatRoot); }",
+		"byAcct.Remove(acctName);",
+		"if (byAcct.Count == 0) positionAccountByAcctRoot.Remove(root);",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("AddOn lost the settled flat-only account-removal: missing %q", want)

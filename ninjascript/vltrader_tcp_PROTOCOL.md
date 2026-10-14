@@ -65,8 +65,9 @@ Outgoing trade signal. Each numeric field is tick-rounded by the Go side before 
 
 ### 1b. `close_position` (Go server → C# AddOn)
 
-Flatten a held position. Historical behavior: immediate market flatten +
-working-order cancel. **4.3 (limit-then-market, dormant):** `limit_price > 0`
+Flatten a held position on the account the frame names. Historical behavior:
+immediate market flatten + working-order cancel. **4.3 (limit-then-market,
+on when the bot's env sets `EOD_FLAT_LIMIT_TICKS` > 0; default 0):** `limit_price > 0`
 submits a LIMIT exit at that price instead — the Go side owns the timing and
 sends the market fallback as a later `close_position` frame WITHOUT
 `limit_price`, whose Flatten cancels the resting limit.
@@ -94,7 +95,48 @@ sends the market fallback as a later `close_position` frame WITHOUT
   `<signal_id>-lx`; its fill routes to `position_close` with reason `"limit"`
   and cancels the still-live SL/TP bracket legs (`CancelBracketsFor`) so they
   can never re-enter the now-flat position.
-- All other fields unchanged (identity stamp, account routing, SIM-only guard).
+- `account` — **the routing (AddOn build `2026-10-14-a`, release #24).** Go
+  stamps the trader's BOUND account on every close (`tcp_trader.go`
+  `sendCloseAt`). When it is non-empty the AddOn resolves THAT account by name
+  (`FindAccountByName`, the same resolver the `signal` path uses) and acts on
+  it ONLY. If no account of that name exists, the close is **refused**: a WARN
+  in the NT8 log plus a `position_close_rejected` frame carrying the named
+  account. It never falls back to another account. The SIM guard still
+  applies: a non-SIM resolved account is refused the same way.
+  - Empty/absent `account` (legacy, a pre-P5.4 single-trader Go): the
+    per-(root, account) owner map recorded at entry fill, else the AddOn's
+    active account. Two or more accounts holding the root = ambiguous =
+    **refused**.
+  - Builds before `2026-10-14-a` ignored this field and flattened a root-keyed
+    map (last fill on ANY account wins), then the active account. That was the
+    cross-account flatten (AUDIT-CHECKLIST: "a frame field the receiver never
+    reads").
+  - Every close logs `close_position <root> → account=<name> (from
+    payload|map|active) side=… qty=… holds=…` in the NT8 log.
+- **Market close = full flatten of the instrument on the named account.**
+  `Account.Flatten` closes the whole position on that contract AND cancels
+  every working order for it on that account: bracket legs AND resting entry
+  orders. Go learns of those cancels from the next `order_update` /
+  `order_snapshot`.
+  - KNOWN LIMIT: `quantity` is NOT honoured on the market path. No Go path
+    sends a smaller market close and expects the rest to stay open. The swing
+    hold-close sizes to its own fill, but one open position per instrument per
+    trader is enforced (`entry_gate.go` leg 7, `oneLiveArmGuard`, the mentor
+    never-add sweep), so that fill is the account's whole position.
+  - The chat `execute_trade` close (`agent/trade.go`) can carry a nonzero
+    quantity, and its tool schema says 0 = close all. It still flattens the
+    whole position, and it is refused outright while two traders share the
+    instrument (`resolveCMETrader`).
+- **Limit exit size (`2026-10-14-a`).** The limit is sized to the WHOLE
+  position the resolved account holds on the contract; a smaller frame
+  `quantity` is logged and ignored. Go sends `quantity` 0 here
+  (`flattenPosition`). Older builds turned 0 into ONE contract, so a 5-lot got a
+  1-lot limit and that fill cancelled the bracket of the 4 still open. A flat
+  account, a held side that disagrees with the frame `side`, or an unreadable
+  position skips the limit and takes the market flatten. A limit is never
+  sized from a guess and never opens or adds to a position.
+- All other fields unchanged (identity stamp, SIM-only guard). No field was
+  added for this build.
 
 ### 2. `fill` (C# AddOn → Go server)
 
