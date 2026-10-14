@@ -118,7 +118,7 @@ export const guards: GuideSection = {
         [
           'Stale data / clock step (release #22)',
           'HARD',
-          'A NEW entry needs a fresh 1m feed on two clocks: the bar age on the wall clock (~75 s) AND the arrival of the last live 1m frame on the monotonic clock (135 s). Any wall-clock step of 1 s or more (CLOCK_STEP_FREEZE_MS) holds NEW entries for 120 s of monotonic time (CLOCK_STEP_HOLD_S); smaller steps from 100 ms (CLOCK_STEP_DETECT_MS) are logged and counted only. Exits and protection are never held. Counted as stale_data; every step logs “🕰 clock step”.',
+          'A NEW entry needs a fresh 1m feed on two clocks: the bar age on the wall clock (~75 s) AND the arrival of the last live 1m frame on the monotonic clock (135 s). Any wall-clock step of 2 s or more (CLOCK_STEP_FREEZE_MS, default 2000 ms — raised from 1000 ms because the box’s normal 1.0–1.2 s jitter held entries) holds NEW entries for 120 s of monotonic time (CLOCK_STEP_HOLD_S); smaller steps from 100 ms (CLOCK_STEP_DETECT_MS) are logged and counted only. The boot line “🕰 clock-step guard” and /api/health print the values the bot actually read. Exits and protection are never held. Counted as stale_data; every step logs “🕰 clock step”.',
         ],
         [
           'Unprotected position (2026-09-07, tightened 2026-10-11)',

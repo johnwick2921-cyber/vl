@@ -167,3 +167,50 @@ func grepGoOutside(t *testing.T, root, needle string) []string {
 	}
 	return hits
 }
+
+// MENTOR-NY item 4 — WSL wall-clock jitter of 1.0–1.2 s (10-14: +1025 ms at
+// 09:56:29, +1192 ms at 10:14:59, two 120 s holds) sat right at the old
+// 1000 ms freeze threshold. The default is now 2000 ms: a 1.2 s step is
+// logged and counted, never held; a 2.5 s step still holds NEW entries for the
+// (unchanged) 120 s. The receipt leg never reads the wall clock and is not
+// touched. MUTANT: defaultClockStepFreezeMs back to 1000 → the 1.2 s case RED.
+func TestClockStepDefaultFreezeIs2sWSLJitterIsCountedNotHeld(t *testing.T) {
+	t.Setenv("CLOCK_STEP_FREEZE_MS", "")
+	t.Setenv("CLOCK_STEP_HOLD_S", "")
+	// +1192 ms — the larger of the two 10-14 RTH steps: counted, NOT held.
+	clk := NewSteppedClock(ctOpen())
+	restore := ClockSampleForTest(clk.Sample)
+	ObserveClock()
+	clk.Advance(time.Second)
+	clk.Step(1192 * time.Millisecond)
+	if held, why := EntryFeedStale("MNQ", 0, ctOpen()); held {
+		restore()
+		t.Fatalf("a +1.192 s WSL jitter step must be counted, not held: %q", why)
+	}
+	if v := ClockStepSnapshot(); v.StepsForward != 1 || v.FreezeSteps != 0 {
+		restore()
+		t.Fatalf("the 1.2 s step must be counted (fwd 1) and not frozen: %+v", v)
+	}
+	restore()
+
+	// +2.5 s — a real step: still holds NEW entries for the 120 s window.
+	clk = NewSteppedClock(ctOpen())
+	defer ClockSampleForTest(clk.Sample)()
+	ObserveClock()
+	clk.Advance(time.Second)
+	clk.Step(2500 * time.Millisecond)
+	if held, why := EntryFeedStale("MNQ", 0, ctOpen()); !held || !strings.Contains(why, "clock_step") {
+		t.Fatalf("a +2.5 s step must still hold NEW entries, got held=%v why=%q", held, why)
+	}
+	clk.Advance(119 * time.Second)
+	if held, _ := EntryFeedStale("MNQ", 0, ctOpen()); !held {
+		t.Fatal("the 2.5 s step must hold for the full 120 s")
+	}
+	clk.Advance(2 * time.Second)
+	if held, why := EntryFeedStale("MNQ", 0, ctOpen()); held {
+		t.Fatalf("the hold must clear after 120 s, got %q", why)
+	}
+	if cfg := LoadClockStepConfig(); cfg.FreezeMs != 2000 || cfg.HoldS != 120 {
+		t.Fatalf("defaults = freeze %dms hold %ds, want 2000 ms / 120 s", cfg.FreezeMs, cfg.HoldS)
+	}
+}
