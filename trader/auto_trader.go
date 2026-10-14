@@ -1107,17 +1107,34 @@ func (at *AutoTrader) runBeatSafely(where string, fn func()) {
 	fn()
 }
 
+// ErrTraderAlreadyRunning is returned by Run when the trader is already running
+// in memory: a second start of a running trader is a NO-OP, never a rollback.
+// Callers that write is_running on a Run error must NOT write 0 for this error —
+// the winning instance is live and the DB bit must keep matching it.
+var ErrTraderAlreadyRunning = errors.New("trader is already running")
+
 func (at *AutoTrader) Run() error {
 	at.limitFlattenMu.Lock()
 	at.limitFlattenStopped = false
 	at.limitFlattenMu.Unlock()
+	// FIX-RUNNING-FLAG: idempotent start. A second (concurrent) start of an
+	// already-running trader returns ErrTraderAlreadyRunning BEFORE any
+	// sub-routine or ordered-execution install, so two concurrent starts yield
+	// exactly one running instance and never clobber is_running.
 	at.isRunningMutex.Lock()
+	if at.isRunning {
+		at.isRunningMutex.Unlock()
+		return ErrTraderAlreadyRunning
+	}
 	at.isRunning = true
 	at.isRunningMutex.Unlock()
 	at.startPictureRun()                        // W3 D14 event loop + run epoch, THEN Picture's live-bar routing (W5 R2)
 	at.logInfof("🚦 %s", entryLatchBootLine(at)) // W-EXEC-TRUTH W0 (b) — READ, never asserted
 	if at.exchange == "ninjatrader" {
 		if _, ok := kernel.TFDurationMs(at.primaryTimeframe()); !ok {
+			at.isRunningMutex.Lock()
+			at.isRunning = false
+			at.isRunningMutex.Unlock()
 			return fmt.Errorf("primary_timeframe %q is not in the timeframe table (kernel/timeframes.go) — refusing to run on a corrupt bar clock", at.primaryTimeframe())
 		}
 	}
@@ -1172,6 +1189,9 @@ func (at *AutoTrader) Run() error {
 				// path) — never fall back to the legacy advisory path.
 				at.signalRunReady(err)
 				at.cancelStopMonitor()
+				at.isRunningMutex.Lock()
+				at.isRunning = false
+				at.isRunningMutex.Unlock()
 				return fmt.Errorf("ordered-execution install refused: %w", err)
 			}
 			// Anchor entry_price to the NT8 position average + clear orphan rows
@@ -1196,6 +1216,9 @@ func (at *AutoTrader) Run() error {
 		if err := at.InitializeGrid(); err != nil {
 			at.logErrorf("❌ Failed to initialize grid: %v", err)
 			at.cancelStopMonitor() // NOTE-leak fix: the drawdown monitor started above must not orphan on this error path
+			at.isRunningMutex.Lock()
+			at.isRunning = false
+			at.isRunningMutex.Unlock()
 			return fmt.Errorf("grid initialization failed: %w", err)
 		}
 	}
@@ -1526,6 +1549,15 @@ func (at *AutoTrader) installNTOrderedExecutions(nt *ntTrader.TCPTrader) error {
 			otherID, _ := nt.OrderedExecutionOwnerID()
 			symbol := at.futuresSymbol()
 			account := nt.BoundAccount()
+			// FIX-RUNNING-FLAG: SELF-DUPLICATE — this SAME trader already owns the
+			// slot (a second start of a running trader). It is ALREADY running:
+			// never write is_running=0 and never raise a P0; the losing start just
+			// exits. (Defence-in-depth: Run's idempotent CAS normally catches this
+			// before the install is attempted.)
+			if otherID == at.id {
+				at.logInfof("🔄 duplicate self-start ignored: trader %q (%s) is already running on %s / %s", at.name, at.id, symbol, account)
+				return fmt.Errorf("trader %q already owns the ordered-execution slot for (symbol=%s, account=%s): %w", at.name, symbol, account, ErrTraderAlreadyRunning)
+			}
 			other := otherID
 			if strings.TrimSpace(other) == "" {
 				other = "an already-running trader"
