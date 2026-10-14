@@ -28,7 +28,7 @@ type Trendline struct {
 	P1T      int64 // bars[P1Idx].OpenTime
 	FormedAt int   // P1Idx — the line is drawn when P1 closes
 	ValidAt  int   // bar index of the 3rd touch (0 = not yet a location)
-	Dead     bool  // a closed 5m candle went WHOLLY through the line (brokenBy5m)
+	Dead     bool  // a closed 5m candle CLOSED through the line (brokenBy5m)
 }
 
 // trendlineTouchBandPts is the wick-touch tolerance for a diagonal line (the
@@ -47,25 +47,26 @@ func (t Trendline) touch(c market.Kline) bool {
 	return c.High >= p-trendlineTouchBandPts && c.Low <= p+trendlineTouchBandPts
 }
 
-// brokenBy5m reports a CLOSED 5m candle that is WHOLLY through the line (the
-// break that discards it): a support line is broken when the candle's HIGH is
-// below the line, a resistance line when its LOW is above it — "đợi khung 5
-// phút đóng… ĐÓNG DƯỚI NGUYÊN CÂY luôn. Không đợi khung 15 phút" [X9
-// @06:25–06:45]. The course (D4.1) says only that a trendline is extended and
-// never erased in the session [D4.1 p2 @01:17]; its general break minimum
-// (a 1m BODY outside a BOX [D4.1 p1 @20:36]) is about a box, and it calls the
-// whole candle outside "hoàn toàn hợp lý" — so X9's whole candle decides.
+// brokenBy5m reports a CLOSED 5m candle whose CLOSE is through the line (the
+// break that discards it): support broken by a close BELOW the line, resistance
+// by a close ABOVE it. The course's test is the close: "Em hỏi là bây giờ nến
+// nó đụng level mà nó ĐÓNG DƯỚI level — đó đụng TRENDLINE nó thể hiện việc gì?
+// … Nó GÃY level… Ngay đây nó chỉ gãy thôi chứ không phải đảo chiều… không thể
+// nào nó vừa đóng dưới level là nó đảo chiều được" [D2.3 p1 @14:36–15:17];
+// "đợi khung 5 phút đóng" [X9 @06:25] picks the 5m. X9's stricter "đóng dưới
+// NGUYÊN CÂY" (the whole candle) is an older source the Sep-26 course
+// supersedes — not adopted (CTO fold on #520, 2026-10-14).
 //
 // The line value is read at the candle's CLOSE time — the instant the close
 // is judged. The pre-10-14 read took it at the bucket's OPEN, five minutes of
-// slope early: on a rising support line that under-read the line, so a candle
-// already through it at the close was not counted.
+// slope early: on a rising support line that under-read the line, so a close
+// already below it at the close was not counted.
 func (t Trendline) brokenBy5m(b market.Kline) bool {
 	p := t.priceAt(b.CloseTime)
 	if t.Side == SideLong {
-		return b.High < p
+		return b.Close < p
 	}
-	return b.Low > p
+	return b.Close > p
 }
 
 // TrendlinesBuild is the pure, deterministic trendline scan. The points are
@@ -77,7 +78,7 @@ func (t Trendline) brokenBy5m(b market.Kline) bool {
 // Release #22 (owner ruling R4, course D4.1): EVERY consecutive pair of
 // today's qualifying same-role swings draws a line — at least 5 bars apart,
 // sloped, and NOT crossed by price between its own anchors (see
-// trendlineCrossed). A drawn line stays on the chart until a closed 5m candle wholly through it breaks
+// trendlineCrossed). A drawn line stays on the chart until a 5m close breaks
 // it (Dead) or the session ends: "Extend right; never erase during the
 // session; DELETE at end of day" [D4.1 p2 @01:17]; "nó BREAK QUA rồi thì
 // MÌNH BỎ" [X9 @00:54–01:00]. The old rule kept ONE line per side — the
@@ -86,7 +87,7 @@ func (t Trendline) brokenBy5m(b market.Kline) bool {
 // (swings only append at the right edge), so a line, once drawn, is rebuilt
 // identically on every later tick and after a restart. Only today's swings
 // pair (the session-end death). The line becomes a location on the 3rd touch
-// (a return, trendlineScan) and is discarded by a 5m candle wholly through it.
+// (a return, trendlineScan) and is discarded by a 5m close through.
 func TrendlinesBuild(bars []market.Kline, now time.Time) []Trendline {
 	lines, _ := trendlinesBuild(bars, now)
 	return lines
@@ -178,7 +179,7 @@ func trendlineCrossed(bars []market.Kline, tl Trendline) bool {
 }
 
 // trendlineScanTF walks the closed bars after formation: any closed 5m candle
-// wholly through the line (brokenBy5m) marks it dead, and the 3rd touch (ValidAt) is
+// that closes through the line (brokenBy5m) marks it dead, and the 3rd touch (ValidAt) is
 // a RETURN — "nó phải VỀ nó test lần thứ 3 thì mới valid" [D3.2 p2 @03:45];
 // "Nó chưa VỀ test một lần nào" [D3.2 p2 @00:52–01:44]; "Nếu như nó VỀ đây, nó
 // test cái trendline một lần rồi…" [D2.3 p1 @02:34–03:16]. "Về" = price comes
@@ -266,7 +267,7 @@ func (t Trendline) key() string {
 // clears its classification only on a visit departure, never on drift alone,
 // item 22). A trendline is a
 // LOCATION only (never a target): after the 3rd touch it enters the set; a
-// 5m candle wholly through removes it. BOX BEATS TRENDLINE [DAY-3 row 27 rec
+// 5m close through removes it. BOX BEATS TRENDLINE [DAY-3 row 27 rec
 // @04:38]: a trendline whose current price sits within ±2 pts of a box edge
 // is suppressed — the box wins.
 func TrendlineLevels(trendlines []Trendline, boxes []Box, bars []market.Kline) []Level {

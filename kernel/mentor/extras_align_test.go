@@ -22,8 +22,9 @@ import (
 //      `if side := orbBodyEscape(orb, cur); side != "" {` →
 //      `if side := orbBodyEscape(orb, cur); side != "" && orb.Escaped == "" {`
 //      → TestORBSideFollowsTheLatestEscapeAtTick RED.
-//   E5 close-only break — trendline.go brokenBy5m `return b.High < p` →
-//      `return b.Close < p` → TestTrendlineCloseThroughWithTheWickAboveIsNotABreak RED.
+//   E5 whole-candle break (X9, not adopted) — trendline.go brokenBy5m
+//      `return b.Close < p` → `return b.High < p`
+//      → TestTrendlineCloseThroughIsABreakEvenWithTheWickAbove RED.
 //   E5b open-time line — trendline.go brokenBy5m
 //      `p := t.priceAt(b.CloseTime)` → `p := t.priceAt(b.OpenTime)`
 //      → TestTrendlineBreakReadsTheLineAtTheCloseTime RED.
@@ -131,28 +132,31 @@ func TestORBSideFollowsTheLatestEscapeAtTick(t *testing.T) {
 	}
 }
 
-// TestTrendlineCloseThroughWithTheWickAboveIsNotABreak — item 5 at the call
-// site. "đợi khung 5 phút đóng… ĐÓNG DƯỚI NGUYÊN CÂY luôn" [X9 @06:25–06:45];
-// the course (D4.1) gives no trendline-break rule — it keeps the line all
-// session [D4.1 p2 @01:17] — so X9's whole candle decides. The 09:10 bucket
-// closes at 98.1, below the line, with its high (102) far above it: the line
-// stays VALID. Pre-fix the close alone killed it (RED).
-func TestTrendlineCloseThroughWithTheWickAboveIsNotABreak(t *testing.T) {
+// TestTrendlineCloseThroughIsABreakEvenWithTheWickAbove — item 5 at the call
+// site, the COURSE's test (CTO fold on #520). "Em hỏi là bây giờ nến nó đụng
+// level mà nó ĐÓNG DƯỚI level — đó đụng TRENDLINE nó thể hiện việc gì? … Nó
+// GÃY level… Ngay đây nó chỉ gãy thôi chứ không phải đảo chiều… không thể nào
+// nó vừa đóng dưới level là nó đảo chiều được" [D2.3 p1 @14:36–15:17]: a
+// CLOSE through the line breaks it. X9's older "đóng dưới NGUYÊN CÂY" (the
+// whole candle) is NOT adopted — the Sep-26 course is newer and wins. The
+// 09:10 bucket closes at 98.1, below the line, with its high (102) far above
+// it: the line is dead.
+func TestTrendlineCloseThroughIsABreakEvenWithTheWickAbove(t *testing.T) {
 	bars, mk := trendlineReturnTape()
 	bars = append(bars, mk(14, 101.2, 101.3, 98.0, 98.1))
 	now := time.UnixMilli(bars[14].OpenTime + 60_000).In(ctime())
 	tls := TrendlinesBuild(bars, now)
-	if len(tls) != 1 || tls[0].Dead {
-		t.Fatalf("lines = %+v — a 5m close through with the candle's HIGH above the support line is NOT a break (X9: nguyên cây)", tls)
+	if len(tls) != 1 || !tls[0].Dead || tls[0].ValidAt != 0 {
+		t.Fatalf("lines = %+v — a 5m CLOSE below the support line breaks it even with the candle's HIGH above it (D2.3 p1 @14:36–15:17)", tls)
 	}
 }
 
 // TestTrendlineBreakReadsTheLineAtTheCloseTime — item 5, the line value. The
-// 09:10 bucket (bars 10–14) sits wholly under the rising support line AT ITS
-// CLOSE (line ≈99.6, bucket high 99.4) but closes at 99.0, above the line's
-// value at the bucket OPEN (98.6). Read at the close it is a whole-candle
-// break → Dead. Pre-fix the line was read at the open, five minutes of slope
-// early, and the candle never counted (RED).
+// 09:10 bucket (bars 10–14) closes at 99.0: BELOW the rising support line at
+// its CLOSE time (≈99.6) but ABOVE the line's value at the bucket OPEN (98.6).
+// Read at the close — the instant the close is judged — it is a close through
+// → Dead. Pre-fix the line was read at the open, five minutes of slope early,
+// and the close never counted (RED).
 func TestTrendlineBreakReadsTheLineAtTheCloseTime(t *testing.T) {
 	bars, mk := trendlineBars()
 	bars = append(bars,
@@ -165,6 +169,6 @@ func TestTrendlineBreakReadsTheLineAtTheCloseTime(t *testing.T) {
 	now := time.UnixMilli(bars[14].OpenTime + 60_000).In(ctime())
 	tls := TrendlinesBuild(bars, now)
 	if len(tls) != 1 || !tls[0].Dead {
-		t.Fatalf("lines = %+v — a 5m candle wholly below the line at its CLOSE time must break it", tls)
+		t.Fatalf("lines = %+v — a 5m close below the line at its CLOSE time must break it", tls)
 	}
 }

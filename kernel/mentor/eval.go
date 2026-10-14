@@ -289,12 +289,12 @@ func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int
 		case tl.ValidAt > 0 && !tl.Dead && !e.tlValid[k]:
 			e.tlValid[k] = true
 			if !first {
-				e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a location until a 5m candle wholly through it breaks it or the session ends [D3.2 p2 @03:45]",
+				e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a location until a 5m close breaks it or the session ends [D3.2 p2 @03:45]",
 					tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
 			}
 		case tl.Dead && e.tlValid[k]:
 			delete(e.tlValid, k)
-			e.note("trendline BROKEN by a 5m candle wholly through it %s %.2f→%.2f (%s → %s CT) — discarded [X9 @06:20–06:47]",
+			e.note("trendline BROKEN by a 5m close %s %.2f→%.2f (%s → %s CT) — discarded [X9 @06:20–06:47]",
 				tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
 		}
 	}
