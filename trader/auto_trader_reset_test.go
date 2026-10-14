@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"vl/kernel"
 	"vl/store"
 )
 
@@ -24,6 +25,10 @@ func resetTrader(t *testing.T, cfg store.StrategyConfig) (*AutoTrader, *store.St
 	at := &AutoTrader{id: "trader-1", store: st, exchange: "ninjatrader"}
 	at.config.StrategyConfig = &cfg
 	at.mcpClient = &fakeDecisionClient{} // planner falls back to the primary client
+	// r22 RISK-GATES: the daily-loss latch is process-global per trader id; a
+	// test that trips it must not leak a latch into the next "trader-1" test.
+	// (Cleared at the END only — a test may arm the latch before the fixture.)
+	t.Cleanup(func() { kernel.ClearDailyForceFlat("trader-1") })
 	return at, st
 }
 

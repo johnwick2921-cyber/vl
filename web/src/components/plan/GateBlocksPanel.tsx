@@ -94,6 +94,42 @@ const GATE_LABELS: Record<string, { en: string; icon: string }> = {
     en: 'Mentor mode — AI closes off (mentor-owned position)',
     icon: '🙅',
   },
+  // r22 RISK-GATES — the daily guardrails on every entry path (pinned by
+  // trader/w0b_guide_test.go), and the trip itself.
+  daily_loss: { en: 'Daily loss limit hit (latched to 17:00 CT)', icon: '🔴' },
+  daily_loss_tripped: {
+    en: 'Daily loss limit TRIPPED (entries cancelled, bot flattened)',
+    icon: '🔴',
+  },
+  daily_profit_target: { en: 'Daily profit target reached', icon: '🎯' },
+  max_daily_trades: { en: 'Max daily trades reached', icon: '🔢' },
+  // r22 RISK-GATES (P2-3) — every mentor placement refusal, by gate.
+  mentor_stale_data: { en: 'Mentor — stale 1m feed', icon: '🧑‍🏫' },
+  mentor_stale_intent: { en: 'Mentor — stale intent', icon: '🧑‍🏫' },
+  mentor_sources_missing: { en: 'Mentor — sources missing', icon: '🧑‍🏫' },
+  mentor_window: { en: 'Mentor — outside trading window', icon: '🧑‍🏫' },
+  mentor_done_after_win: {
+    en: 'Mentor — done for the day (win)',
+    icon: '🧑‍🏫',
+  },
+  mentor_stop_after_loss: { en: 'Mentor — stop after a loss', icon: '🧑‍🏫' },
+  mentor_news_hold: { en: 'Mentor — news hold', icon: '🧑‍🏫' },
+  mentor_never_add: { en: 'Mentor — never add', icon: '🧑‍🏫' },
+  mentor_expiry_missing: {
+    en: 'Mentor — order expiry missing',
+    icon: '🧑‍🏫',
+  },
+  mentor_no_chase: { en: 'Mentor — no chase', icon: '🧑‍🏫' },
+  mentor_daily_loss: { en: 'Mentor — daily loss limit', icon: '🧑‍🏫' },
+  mentor_max_daily_trades: { en: 'Mentor — max daily trades', icon: '🧑‍🏫' },
+  mentor_daily_profit_target: {
+    en: 'Mentor — daily profit target',
+    icon: '🧑‍🏫',
+  },
+  mentor_daily_guardrail_unverified: {
+    en: 'Mentor — daily guardrail unverified',
+    icon: '🧑‍🏫',
+  },
 }
 
 export function GateBlocksPanel({

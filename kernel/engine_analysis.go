@@ -155,6 +155,11 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 				MasterEnabled:    gp.MasterEnabled,
 				DailyRealizedPnL: ctx.DailyRealizedPnL,
 				TradesToday:      ctx.TradesToday,
+				// r22 RISK-GATES — the loss leg judges the bot's own P&L
+				// (realized + open, manual excluded) from the trader's one
+				// reader, the same number every other entry path judges.
+				DailyLossPnL:      ctx.DailyLossPnL,
+				DailyLossPnLKnown: ctx.DailyLossPnLKnown,
 
 				DailyLossEnabled:  gp.DailyLossEnabled,
 				DailyLossLimitUSD: gp.DailyLossLimitUSD,
@@ -1104,9 +1109,15 @@ func MaybeForceFlat(traderID string, signaler ForceFlatSignaler) error {
 	if err := signaler.ForceFlat(traderID); err != nil {
 		return fmt.Errorf("force-flat trader %s: %w", traderID, err)
 	}
-	// After a force-flat, reset the daily PnL window so the operator can
-	// resume after they have addressed whatever tripped the kill switch.
-	ResetDailyPnL()
+	// After a force-flat, lift THIS trader's daily-loss trip so the operator
+	// can resume after they have addressed whatever tripped the kill switch.
+	//
+	// r22 RISK-GATES (T4) — this was ResetDailyPnL(), which clears EVERY
+	// trader's trip: an Emergency Flat on trader A re-enabled trading for
+	// trader B after B had hit its own daily loss limit. Scoped to the one
+	// trader acted on. If A's own loss still stands, A's gate re-trips on its
+	// next check — the reset lifts a latch, not the loss.
+	ClearDailyForceFlat(traderID)
 	return nil
 }
 

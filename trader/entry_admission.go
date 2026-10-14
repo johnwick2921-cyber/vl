@@ -292,6 +292,30 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 		})
 	}
 
+	// r22 RISK-GATES — THE DAILY GUARDRAILS, ON EVERY PATH. Decision, agent
+	// door, planner arms, MENTOR arms and Picture all ask the one verdict
+	// (daily_loss_gate.go): the daily loss limit on the bot's own P&L (latched
+	// until 17:00 CT once hit), the daily profit target and max daily trades —
+	// the same kernel Check the AI decision cycle runs. Before r22 only the AI
+	// decision cycle evaluated them, so the mentor path never saw max trades
+	// and a resting arm filled straight through a hit limit. Inert while the
+	// guardrails master is OFF (the owner's live setting). No mentor waiver.
+	// Only a DEFINITE limit refuses here; an unknown (unresolved close, failed
+	// read) refuses at the mentor's authoring gate only, as before r22.
+	if v := at.dailyGuardVerdictAt(now); v.Refuse && !v.Unverified {
+		logf := func() {
+			at.logWarnf("🔴 daily guardrail: %s %s REFUSED — %s", sym, act, v.Reason)
+		}
+		switch v.Class {
+		case "daily_profit_target":
+			return at.admitRefuse(in, "daily_profit_target", v.Reason, logf)
+		case "max_daily_trades":
+			return at.admitRefuse(in, "max_daily_trades", v.Reason, logf)
+		default:
+			return at.admitRefuse(in, "daily_loss", v.Reason, logf)
+		}
+	}
+
 	if in.Path == admitDecision || in.Path == admitAgent {
 		// D1 — consecutive-loss halt: after N consecutive losing closed trades this CME
 		// session-day, block NEW entries until the next session.

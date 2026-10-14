@@ -76,10 +76,19 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	if wd != wdReconnected {
 		at.reconcileProtectionAt(now, "monitor")
 	}
+	// r22 RISK-GATES — the daily-loss gate is evaluated on this wall-clock beat
+	// (mentor or not, day_plan or not): a breach LATCHES here even when no
+	// entry is being attempted, and the mentor's live arms are cancelled. It
+	// runs BEFORE the withdraw so the withdraw sees this beat's latch.
+	at.dailyLossBeatAt(now)
 	// W-EXEC-TRUTH W0 (f) — withdraw resting ENTRIES while a hold asks for it
 	// or a loss limit has tripped. Here, not in the armed pass: that pass does
 	// not run in exactly the windows an update or a halt use.
 	at.withdrawEntriesIfDue(now)
+	// r22 RISK-GATES — then FLATTEN the bot's open positions while the daily
+	// loss latch holds (cancel first, flatten second: a working entry must not
+	// fill after the flat).
+	at.dailyLossFlattenAt(now)
 }
 
 // positionPnLPct computes a position's leveraged P&L percent. Side is normalized:

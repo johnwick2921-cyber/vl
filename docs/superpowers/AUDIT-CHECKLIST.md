@@ -8941,3 +8941,34 @@ Rule (release #22, owner: observability only): log + count the live-vs-plan drif
 at placement (vwap_drift_at_placement:<session>:<measured|live_unknown|mixed_source>);
 the entry is not changed. Re-pricing is an owner call.
 Reference: trader/vwap_drift.go, trader/zone_placement.go placeZoneRow.
+
+## CLASS NN (assigned at merge) — a guardrail evaluated only inside a cycle one mode never runs (r22 RISK-GATES, 2026-10-14)
+
+Symptom: a risk limit the owner can switch ON is enforced on one entry path and
+silently skipped on another, because it lives inside a cycle that a mode
+bypasses. The daily guardrails (loss, profit target, max trades) lived only in
+kernel/engine_analysis.go's AI decision cycle; mentor mode returns before that
+cycle, so a mentor trader never evaluated max trades or the profit target, its
+daily loss was checked only while AUTHORING a new arm (never on an arm already
+resting at the broker), nothing ever flattened (the guide promised a "60-second
+force-flat sweep"), the trip's only clear was a roll that ran inside the same
+AI cycle, and the loss counted MANUAL trades on one reader and not on another.
+Sibling: the Emergency Flat's reset (MaybeForceFlat → ResetDailyPnL) cleared
+EVERY trader's trip, not the one acted on.
+
+Probe: for every limit with an owner switch, list the entry producers (AI
+decision, agent door, planner arm, mentor arm + mentor authoring, Picture) and
+the wall-clock beat; for each, name the line that refuses/acts — a producer with
+no line is the class. Then check what lifts the trip (who runs it, in which
+mode) and whether every reader of the limit's P&L applies the same exclusions.
+
+Rule: a guardrail is ONE verdict asked by the one admission chain (every path)
+and acted on by the wall-clock monitor beat (mode- and day_plan-independent);
+its trip is a latch stamped with its session-day; its P&L is read in one place;
+an operator reset is scoped to the trader acted on.
+
+Reference: trader/daily_loss_gate.go (botDayPnLAt, dailyGuardVerdictAt,
+dailyLossBeatAt, dailyLossFlattenAt), trader/entry_admission.go (daily
+guardrail step), kernel/risk_limits.go (forceFlatTrip, DailyForceFlatReasonAt,
+DailyGuardrails.lossPnL), kernel/engine_analysis.go MaybeForceFlat;
+review-1014 RISK-PNL P1-3 / P2-2 / P2-3, UI-GUIDE-TRUTH T4 / T33.
