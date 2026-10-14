@@ -460,7 +460,10 @@ func newFdrAddon(t *testing.T, w *fdrWorld, conn net.Conn, build string, account
 	if !ntwire.FarSideProven(w.srv.FarSideBuildID(), build) {
 		t.Fatal("fixture: far-side build never proven")
 	}
-	// keep-alive: the real AddOn heartbeats; the wall-clock run lasts minutes.
+	// keep-alive: the real AddOn heartbeats AND acks the server's heartbeat
+	// (FrameAck "heartbeat" refreshes the server's lastAckTime; without it the
+	// server closes the link after TCPHeartbeatAckTimeout — 60 s — which a slow
+	// run, e.g. under -race, outlives).
 	stop := make(chan struct{})
 	go func() {
 		tk := time.NewTicker(time.Second)
@@ -471,6 +474,7 @@ func newFdrAddon(t *testing.T, w *fdrWorld, conn net.Conn, build string, account
 				return
 			case <-tk.C:
 				a.write(ntwire.FrameHeartbeat, ntwire.HeartbeatPayload{BuildID: build})
+				a.write(ntwire.FrameAck, ntwire.AckPayload{Acks: "heartbeat"})
 			}
 		}
 	}()
