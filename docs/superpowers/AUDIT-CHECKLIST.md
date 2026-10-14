@@ -8285,3 +8285,29 @@ timers carry an explicit zone suffix.
 Reference: logger/logger.go (ctLocation, CTDate, LogFileNameFor, compactFormatter),
 logger/log_prune.go (pruneOldLogs), internal/updaterworker/runner.go (predictedLog),
 internal/updaterworker/recovery.go (the grep hint), deploy/systemd-user/vl-backup.timer.
+
+## CLASS NN (assigned at merge) — stalled mentor setup (STALLED-SETUP-ALARM, 2026-10-13)
+
+The mentor evaluator can keep EMITTING a placement intent for a setup kind and
+never get it to the ledger, silently, for days. On 10-08..10-13 the evening
+level-order path (kernel/mentor/eval.go levelArmCancels, fixed in #495) emitted
+level orders and cancelled them in the SAME Tick: 0 level-arm (lvl-) rows reached
+armed_orders while the evaluator kept finding level touches. Nothing counted
+"seen vs placed", so nobody saw the stall.
+
+Fix (release #22): a per-trader, per-setup-kind (lvl / isb / isb-reverse /
+phl/plh / box / swing), per-CME-session-day seen-vs-placed pair of counters.
+The emit half increments at the dispatch call site (trader/mentor_actions.go
+mentorDispatchIntent, the Place* case) — every placement intent the evaluator
+emitted, whatever the rule gate does next. The placed half increments at the
+ledger-author site (trader/mentor_actions.go mentorArmIntent, after the
+armed_orders row is authored). Counters record, never infer (canon 35): neither
+is derived from the other. A P1 alert fires once per kind per day when a kind
+crosses emitted >= 3 and placed == 0 while mentor mode is on and the market is
+open (kernel.IsCMEOpen); the latch resets on the 17:00 CT session-day rollover.
+Alert-only — no trading behaviour changes. Read-only surface on
+GET /api/risk/gate-blocks (`setup_stalls`).
+
+Reference: telemetry/setup_stall.go (SetupStallAlertDue, RolloverSetupStalls),
+trader/mentor_stall_alarm.go (mentorSetupKind, mentorStallAlarmCheck),
+api/handler_gate_blocks.go (telemetrySetupStallTable).
