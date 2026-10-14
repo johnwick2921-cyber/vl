@@ -9182,3 +9182,10 @@ symptom: OPS NEW-2 / UI-GUIDE N-4 (2026-10-14). The stale-data verdict and the c
 probe: for every freshness / hold verdict, list its production callers (grep the verdict function) and compare with the entry producers admitChain serves (decision, agent, arm, picture). A producer with no caller is a finding, and so is a guide sentence that says "every NEW entry".
 rule: one verdict, asked by every producer that sends a price-dependent entry, counted under its own class at that producer, and pinned at the producer's send point (runArmedPlacementAt for arms).
 Reference: trader/entry_admission.go (armFeedStale, the last arm step), trader/arm_stale_gate_test.go, web/src/guide/content/guards.ts (stale data / clock step row).
+
+## CLASS NN (assigned at merge) — a process-wide guard on the real clock leaks into unrelated tests
+
+symptom: OPS-FOLLOWUPS (2026-10-14 15:42:38 CT). The kernel clock-step guard samples the REAL wall clock for the whole process. The box clock stepped +1032 ms during a `TZ=UTC go test ./trader/` run and the guard held NEW entries for 120 s: ~50 placement tests failed together (mentor, planner-arm, Picture, daily-loss, gate parity, the replay fidelity), none of them about clocks. The CT run of the same code minutes earlier was green.
+probe: list every package-level guard that reads time.Now() (or the wall clock) and gates behaviour other tests exercise. Check that the package's TestMain pins it to a steady or injected clock, and that a test which exercises the guard injects its own clock and restores.
+rule: a process-wide safety guard keyed to the real clock gets a steady test clock in TestMain. Only the guard's own tests inject steps. A burst of unrelated failures inside one 2-minute window is read as a clock-step hold first (grep "🕰 clock step" in the run log).
+Reference: trader/testmain_tmpfs_test.go, kernel/feed_clock.go ClockSampleForTest, ~/deck-fix-1005/rel22/fixwave/ops-followups/gate3.log (the failing run), gate4-ct.log / gate4-utc.log (green after).
