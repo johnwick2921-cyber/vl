@@ -714,9 +714,8 @@ func BuildPlannerPrompt(in PlannerInput) string {
 		}
 		b.WriteString("\n")
 	}
-	if strings.TrimSpace(in.OwnerNote) != "" {
-		b.WriteString("## Owner note\n  " + in.OwnerNote + "\n\n")
-	}
+	// R22 R4: OwnerNote = the owner's Studio custom prompt (owner_guidance.go).
+	b.WriteString(OwnerGuidanceBlock(in.OwnerNote))
 	if strings.TrimSpace(in.PriorPlanKiller) != "" {
 		b.WriteString("## Prior plan invalidation (MANDATORY context)\n  " + in.PriorPlanKiller + "\n")
 		if FlipToDirection(in.PriorPlanKiller) != "" {
