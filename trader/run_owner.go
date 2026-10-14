@@ -103,7 +103,8 @@ func (at *AutoTrader) claimRunOwner() (release func(), err error) {
 			// One owner: the OLD run is stopped BEFORE the new one starts.
 			telemetry.IncGateBlock(at.id, "trader_run_replaced_old_instance")
 			at.logWarnf("⏹ a previous run of trader %s (%q) is still live — stopping it and waiting for it to exit before this run starts (counter trader_run_replaced_old_instance)", at.id, at.name)
-			go prev.Stop() // Stop waits for that Run's monitor; never block the claim on it
+			// Stop waits for that Run's monitor; never block the claim on it.
+			prev.goNetted("run-owner-stop-old", prev.Stop)
 		}
 		wait := time.Until(deadline)
 		if wait <= 0 {
