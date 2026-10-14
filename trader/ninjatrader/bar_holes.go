@@ -92,6 +92,7 @@ type holeWire interface {
 	IsConnected() bool
 	IsFeedConnected() bool
 	RequestGapBackfillAt(symbol string, now time.Time) error
+	BarCache() *ntwire.BarCache
 }
 
 // barHoleExpected reports whether CME trades the 1m bar opening at m — the
@@ -382,9 +383,27 @@ func (t *barHoleTracker) declareUnfilledLocked(h *barHole, now time.Time) {
 	h.State = holeStateUnfilled
 	h.nextAttemptAt = now.Add(barHoleSlowEvery)
 	telemetry.IncBarsHoleUnfilled()
-	t.say("ERROR", fmt.Sprintf("🚨 bars hole UNFILLED after %d re-requests: NinjaTrader has no history for %s (%s %s on %s, %d open minute(s) still missing): on an %s chart right-click → Reload All Historical Data; the bot re-requests on its next attempt (every %s while CME is open, up to %d/day)",
+	t.say("ERROR", fmt.Sprintf("🚨 bars hole UNFILLED after %d re-requests: NinjaTrader has no history for %s (%s %s on %s, %d open minute(s) still missing): on an %s chart right-click → Reload All Historical Data; the bot re-requests on its next attempt (every %s while CME is open, up to %d/day)%s",
 		h.Attempts, holeWindowCT(h.FromMs, h.ToMs), h.Symbol, barHoleTF, h.Contract, h.Missing, h.Symbol,
-		strings.TrimSuffix(barHoleSlowEvery.String(), "0s"), barHoleSlowCapPerDay))
+		strings.TrimSuffix(barHoleSlowEvery.String(), "0s"), barHoleSlowCapPerDay, t.overlapNoteLocked()))
+}
+
+// overlapNoteLocked READS the ring's same-minute replay verdicts for the
+// unfilled line: a replay that DISAGREED with the live minutes it overlapped
+// was kept out of the store by the replay-hold, so the window can be empty for
+// a scale reason, not a missing-history one — the line must not send the owner
+// to reload history when the 🚨 scale lines are the story.
+func (t *barHoleTracker) overlapNoteLocked() string {
+	w := t.wire()
+	if w == nil || w.BarCache() == nil {
+		return " · replay overlap verdicts: n/a (no wire)"
+	}
+	agreed, disagreed := w.BarCache().OverlapVerdictCounts()
+	note := fmt.Sprintf(" · replay overlap verdicts this process: agreed %d, disagreed %d", agreed, disagreed)
+	if disagreed > 0 {
+		note += " — a DISAGREEING replay is on another price scale and is held out of the store; read the 🚨 scale lines before reloading history"
+	}
+	return note
 }
 
 // gateLocked names why a re-request may not go out NOW ("" = it may).
@@ -572,4 +591,12 @@ func BarHolesSnapshot() ([]BarHoleView, bool) {
 		return nil, false
 	}
 	return t.snapshot(), true
+}
+
+// SetBarHolesWiredForTest installs an EMPTY tracker (wired, no hole open) and
+// returns the restore — so a handler test can tell [] from absent. TEST-ONLY;
+// mirrors SetTCPServerForTest.
+func SetBarHolesWiredForTest() (restore func()) {
+	prev := barHoles.Swap(newBarHoleTracker(nil, func() *ntwire.TCPServer { return nil }))
+	return func() { barHoles.Store(prev) }
 }

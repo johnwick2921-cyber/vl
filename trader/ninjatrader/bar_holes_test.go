@@ -518,6 +518,9 @@ func TestUnfilledLineIsSaidOnceThenSlowRetriesPickUpTheReload(t *testing.T) {
 	if f.sink.count(want) != 1 {
 		t.Fatalf("want the unfilled line exactly once:\n%s", f.sink.dump())
 	}
+	if f.sink.count("replay overlap verdicts this process: agreed 0, disagreed 0") != 1 {
+		t.Fatalf("the unfilled line must READ the ring's overlap verdicts (no scale story here):\n%s", f.sink.dump())
+	}
 	if hs := f.holes(); len(hs) != 1 || hs[0].State != holeStateUnfilled {
 		t.Fatalf("health must show the hole as unfilled: %+v", hs)
 	}
