@@ -1217,6 +1217,33 @@ func (t *TCPTrader) EntrySignalIDFor(side string) string {
 	return t.resolveEntrySignalID(t.symbol, side)
 }
 
+// SnapshotsSinceAccept (N-C, release #22 rescan) reports whether a positions
+// snapshot AND an order snapshot for the bound account were RECEIVED on the
+// CURRENT connection — after its accept — and that connection's accept
+// sequence. The dead-man watchdog resumes entries only when both are true:
+// "two reads did not error" can be answered entirely from the old link's
+// cached frames.
+func (t *TCPTrader) SnapshotsSinceAccept() (positions, orders bool, acceptSeq uint64) {
+	if t == nil || t.server == nil {
+		return false, false, 0
+	}
+	rec, ok := t.server.ConnectionRecord()
+	if !ok {
+		return false, false, 0
+	}
+	acceptedAt, okA := rec.AcceptedAt()
+	if !okA {
+		return false, false, rec.AcceptSeq
+	}
+	if _, posAt, _, okP := t.server.PositionsForExecutionReceipt(t.boundAccount, t.symbol); okP && posAt.After(acceptedAt) {
+		positions = true
+	}
+	if _, ordAt, okO := t.server.OrderSnapshots().LatestReceived(t.boundAccount); okO && ordAt.After(acceptedAt) {
+		orders = true
+	}
+	return positions, orders, rec.AcceptSeq
+}
+
 // MoveStopToBreakeven asks the AddOn to move the resting stop for THIS trader's
 // current open position (the last entry's signal_id) to newStop, tick-rounded —
 // WITHOUT closing the position. Errors (no-op) if there is no tracked open entry.

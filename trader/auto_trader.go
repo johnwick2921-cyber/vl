@@ -138,11 +138,14 @@ func (at *AutoTrader) driveDeadManWatchdog() watchdogEvent {
 }
 
 // watchdogReconcileClean is the reconcile probe: the link is considered reconciled
-// when it answers BOTH a positions and an open-orders query without error (the
-// fill-confirmed position source of truth is refreshed by StartPositionReconcile in
-// the background; here we just require the link to respond cleanly). A one-cycle
-// defer after reconnect (see deadManWatchdog.step) lets the 15s positions cache
-// expire and a fresh frame arrive before this probes.
+// when it answers BOTH a positions and an open-orders query without error AND
+// (N-C, release #22 rescan) a positions snapshot and an order snapshot for this
+// trader's account have both been RECEIVED on the current connection — after
+// its accept sequence. Two reads that merely did not error can be answered
+// entirely from the OLD link's cached frames; with runCycle and monitorTick
+// both driving the watchdog the wait could shrink to seconds. Until both
+// snapshots land, entries stay BLOCKED and the missing one is named once per
+// connection.
 func (at *AutoTrader) watchdogReconcileClean() bool {
 	if _, err := at.trader.GetPositions(); err != nil {
 		return false
@@ -150,22 +153,67 @@ func (at *AutoTrader) watchdogReconcileClean() bool {
 	if _, err := at.trader.GetOpenOrders(""); err != nil {
 		return false
 	}
+	if nt, ok := at.trader.(*ntTrader.TCPTrader); ok {
+		pos, ord, seq := nt.SnapshotsSinceAccept()
+		if !pos || !ord {
+			yn := func(b bool) string {
+				if b {
+					return "yes"
+				}
+				return "NO"
+			}
+			state := fmt.Sprintf("%d|%t|%t", seq, pos, ord)
+			if prev, _ := deadManAwaitLogged.Swap(at.id, state); prev != state {
+				deadManAwaitCount.Add(1)
+				at.logWarnf("🔌 dead-man watchdog: NOT resuming yet — on the new connection (accept_seq %d) positions snapshot received: %s · order snapshot received: %s; NEW entries stay BLOCKED until both arrive.",
+					seq, yn(pos), yn(ord))
+			}
+			return false
+		}
+		deadManAwaitLogged.Delete(at.id)
+	}
 	return true
 }
 
-// cancelUnfilledEntriesAfterReconnect sweeps resting UNFILLED entry orders on
-// reconnect. On the live NT8 path this is a documented no-op: entries are MARKET
-// orders that fill or reject instantly (no resting unfilled entries), and the Go
-// side has no order-cancel wire command (CancelAllOrders/CancelStopOrders return
-// "not supported"; GetOpenOrders is empty) — exposing one is a Part A (C# AddOn)
-// change. The real protection is the block-until-reconcile gate. If a future Part A
-// surfaces resting entry orders + a cancel frame, wire the cancellation HERE.
+// deadManAwaitLogged dedupes the "NOT resuming yet" line per trader to one per
+// (accept_seq, positions, orders) state; deadManAwaitCount counts those lines.
+var (
+	deadManAwaitLogged sync.Map // trader id → state string
+	deadManAwaitCount  atomic.Int64
+)
+
+// cancelUnfilledEntriesAfterReconnect reports the resting entry orders the
+// ledger shows working when the link comes back. N-C (release #22 rescan): the
+// old text said entries "are MARKET orders … no-op" and that cancellation was a
+// "Part A AddOn capability". Both are false now — armed entries rest as limits
+// / stops, and cancel_order exists (the withdraw path and #508 use it).
+//
+// WHETHER to cancel resting entries on a reconnect is an OWNER DECISION that
+// this release does not take: they are LEFT resting (unchanged behaviour) and
+// NAMED, so the owner sees exactly what is live while NEW entries are blocked.
 func (at *AutoTrader) cancelUnfilledEntriesAfterReconnect() {
 	orders, err := at.trader.GetOpenOrders("")
-	if err != nil || len(orders) == 0 {
+	if err != nil {
+		at.logWarnf("🔌 dead-man watchdog: post-reconnect working-order read FAILED: %v — resting entries UNKNOWN; NEW entries stay BLOCKED.", err)
 		return
 	}
-	at.logWarnf("dead-man watchdog: %d working order(s) visible post-reconnect — entry cancellation is a Part A AddOn capability (no-op on the current market-order path).", len(orders))
+	if len(orders) == 0 {
+		return
+	}
+	names := make([]string, 0, len(orders))
+	for _, o := range orders {
+		names = append(names, fmt.Sprintf("%s %s %s@%.2f", shortID(o.OrderID), o.PositionSide, o.Type, firstNonZero(o.Price, o.StopPrice)))
+	}
+	at.logWarnf("🔌 dead-man watchdog: %d working entry order(s) visible post-reconnect %v — LEFT RESTING (cancelling resting entries on a reconnect is an owner decision; cancel_order is available). NEW entries stay BLOCKED until the new connection's positions + order snapshots arrive.",
+		len(orders), names)
+}
+
+// firstNonZero returns a when it is non-zero, else b.
+func firstNonZero(a, b float64) float64 {
+	if a != 0 {
+		return a
+	}
+	return b
 }
 
 // maybeMoveStopToBreakeven (auto-breakeven, NT8 futures only): once an open
