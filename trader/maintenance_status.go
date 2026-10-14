@@ -39,6 +39,9 @@ type MaintenanceStatusView struct {
 	// entries): which rows are still pending the broker's confirmation and
 	// which are confirmed. null when no hold asks for one (W-EXEC-TRUTH W0 (f)).
 	Withdraw *WithdrawView `json:"withdraw"`
+	// InstallPending (release #22): an update job is in a pre-hold state and
+	// NEW entries are frozen until it ends or times out. Always present.
+	InstallPending InstallPendingView `json:"install_pending"`
 }
 
 // MaintenanceStatus reads the installation's maintenance state. loaded is the
@@ -57,6 +60,7 @@ func MaintenanceStatus(loaded map[string]*AutoTrader) MaintenanceStatusView {
 		}
 	}
 	v.Withdraw = maintenanceWithdrawView(storeOf(loaded))
+	v.InstallPending = InstallPendingStatus()
 	v.InFlightSends = MaintenanceInFlight()
 	v.Drained = MaintenanceDrained()
 	if w, ok := installationWireView(ntTradersOf(loaded)); ok && w.Connected && w.HasAck && w.Rec.Ack != nil {
