@@ -340,3 +340,41 @@ func TestPlannerAutoBEConfirmedNoResend(t *testing.T) {
 		t.Fatalf("N-G: a CONFIRMED move must not be re-sent — move_stop frames = %d, want 1", n)
 	}
 }
+
+// ── N-F — accepted_risk once per signal, quantity from the book order ───────
+
+// TestAcceptedRiskOncePerSignalWithBookQuantity — the AddOn's Accepted then
+// Working frames for one entry (rows 228/229's shape) write ONE row, and its
+// quantity is the broker order's 1, never the cumulative filled count 0.
+func TestAcceptedRiskOncePerSignalWithBookQuantity(t *testing.T) {
+	w := newExecWire(t, "nf-once")
+	led := w.st.ArmedOrders()
+	r := &store.ArmedOrderDB{TraderID: w.at.id, PlanID: "2026-10-14:NY:" + w.at.id, Session: "NY", Scenario: "S1", Version: 1,
+		State: "armed", Side: "SHORT", EntryPx: 30456.50, StopPx: 30551.25, TargetPx: 30257.50}
+	if err := led.UpsertArm(r); err != nil {
+		t.Fatal(err)
+	}
+	sid := "4401cd88-nf"
+	if err := led.BeginPlacement(r.ID, sid); err != nil {
+		t.Fatal(err)
+	}
+	w.s.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{
+		{OrderID: "e1", Symbol: "MNQ", Name: sid, Action: "sell", Type: "limit", LimitPrice: 30456.5, Quantity: 1, State: "Working"},
+	}}, time.Now())
+	for _, state := range []string{"Accepted", "Working"} {
+		w.at.onArmedOrderUpdate(ntwire.OrderUpdatePayload{SignalID: sid, OrderName: sid, State: state, Symbol: "MNQ", Account: "Sim101", Quantity: 0}, led)
+	}
+	rows, err := w.st.AcceptedRisk().ForSignal(sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("N-F: one acceptance must write ONE accepted_risk row, got %d", len(rows))
+	}
+	if rows[0].Quantity != 1 {
+		t.Fatalf("N-F: quantity = %d — it must be the broker order's 1, not the filled count 0", rows[0].Quantity)
+	}
+	if rows[0].AcceptedEntryPx == nil || *rows[0].AcceptedEntryPx != 30456.5 {
+		t.Fatalf("N-F: the broker's entry price must still be recorded: %v", rows[0].AcceptedEntryPx)
+	}
+}
