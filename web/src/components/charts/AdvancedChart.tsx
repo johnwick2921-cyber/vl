@@ -30,6 +30,7 @@ import {
   type Kline,
 } from '../../utils/indicators'
 import { Settings, BarChart2 } from 'lucide-react'
+import { openOrderSideLabel } from './openOrderSide'
 
 // Order marker interface
 interface OrderMarker {
@@ -1170,7 +1171,7 @@ export function AdvancedChart({
               title = `TP ${order.quantity}`
             } else if (isLimit) {
               lineColor = '#F0B90B' // yellow - limit order
-              title = `Limit ${order.side} ${order.quantity}`
+              title = `Limit ${openOrderSideLabel(order)} ${order.quantity}`
             } else {
               title = `${order.type} ${order.quantity}`
             }

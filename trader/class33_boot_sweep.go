@@ -168,7 +168,11 @@ func (at *AutoTrader) ledgerOpenOrders(symbol string) ([]types.OpenOrder, error)
 		}
 		side := "BUY"
 		posSide := "LONG"
-		if r.Side == "short" {
+		// T6 (class 28): UpsertArm stores the side UPPER ("SHORT"); a literal
+		// "short" compare served every SHORT arm as BUY/LONG on
+		// /api/open-orders and the chart. One canonicalizer, read side too
+		// (legacy lowercase rows predate the write-side fix).
+		if store.CanonicalArmSide(r.Side) == "SHORT" {
 			side, posSide = "SELL", "SHORT"
 		}
 		typ := "LIMIT"

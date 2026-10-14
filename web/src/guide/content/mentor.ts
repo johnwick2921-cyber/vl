@@ -20,6 +20,7 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     live: true,
   },
   'Trail timeframe': { settingId: 'mentor_trail_tf', live: true },
+  'Runner exit (trail mode)': { settingId: 'mentor_trail_mode', live: true },
   'Key level timeframe': { settingId: 'Config.KeyLevelTFMinutes', live: false },
   'Key levels RTH only': { settingId: 'Config.KeyLevelRTHOnly', live: false },
   'Key level prune': { settingId: 'Config.KeyLevelPrunePts', live: false },
@@ -247,7 +248,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'SWING4H — 4h EMA 34',
-          body: 'The line is the 4h EMA 34 known at the start of the current 4h bar (17:00 CT anchor), drawn BEFORE price gets there. Switch straight down to the 5m and wait for a LITERAL touch. Reject (closes back on the approach side) → stop order tight on the candle, stop 30 beyond the line. Through-close → cancel; closes back → 5m inside bar with the stop AT the line. Stop ~100 → do not enter. One setup per approach until price leaves the line by the stop distance.',
+          body: 'The line is the 4h EMA 34 known at the start of the current 4h bar (17:00 CT anchor), drawn BEFORE price gets there. Switch straight down to the 5m and wait for a LITERAL touch. Reject (closes back on the approach side) → stop order tight on the candle, stop 30 beyond the line. Through-close → cancel; closes back → 5m inside bar with the stop AT the line. Stop ~100 → do not enter. One setup per approach until price leaves the line by the stop distance. The line folds EVERY closed 4h candle — after a feed gap of 4h or more the candles that opened and closed unseen are folded from the bars on the next tick ("swing 4h EMA34 line folded N 4h closes after a feed gap"). A gap longer than the live slice (~25 h) hides closes the bot cannot read: the line is marked STALE and SWING4H entries are refused (counted swing_line_gap_stale) until a restart reseeds it — never a guessed line.',
           tag: 'D5.2',
         },
       ],
@@ -280,11 +281,11 @@ export const mentor: GuideSection = {
         [
           'Box edge',
           'FTGH/FTGL boxes, 1m regular candles, paired by role with no tolerance — the extreme (lowest low / highest high) pairs with the NEXT confirmed swing AFTER it that fails to exceed it (a higher low / lower high); the trade is the 3rd touch',
-          'A box edge is used again and again; an escape (a 1m BODY closes outside) does NOT kill the box — it stays and every later return trades [B4]; boxes die at day end only',
+          'A box edge is used again and again; an escape (a 1m BODY closes outside) does NOT kill the box — it stays and every later return trades [B4]. The first FTGH and the first FTGL of the trading day are latched until the 17:00 CT session roll — never redrawn at the 08:30 open or on a later higher high / lower low [D4.1 p2 @02:39, @02:58]; the log says "box latched …" and "box latch cleared at the 17:00 CT session roll"',
         ],
         [
           'Trendline',
-          'Two CONFIRMED two-sided structural swings (left fractal + the next bar confirms it), at least 5 bars apart, joined — a low and a HIGHER low (support) or a high and a LOWER high (resistance); never horizontal. One live line per side: the two MOST RECENT qualifying swings pair, a newer pair replaces the older',
+          'Two CONFIRMED two-sided structural swings (left fractal + the next bar confirms it), at least 5 bars apart, joined — a low and a HIGHER low (support) or a high and a LOWER high (resistance); never horizontal. EVERY consecutive pair of today\u2019s qualifying swings draws a line, and a drawn line stays all session — it leaves only when a 5m close breaks it or the session ends (owner ruling R4; "never erase during the session, delete at end of day" [D4.1 p2 @01:17]). A pair that price crossed between its own two points (a 1m wick beyond the line by more than the 0.5-pt touch band) is not a trendline and is not drawn ("TRENDLINE chứ không phải CẦU TUỘT" [X9 @01:22]) — counted once per day as trendline_crossed_between_anchors. The log says when a line turns VALID, when one is BROKEN and when the day\u2019s lines are deleted',
           'Becomes a location only on the 3rd touch, and that touch must be a RETURN ("ph\u1ea3i V\u1ec0 TEST L\u1ea6N TH\u1ee8 3 th\u00ec m\u1edbi VALID" [D3.2 p2 @03:45]): price first LEAVES the line \u2014 a confirmed swing high above a support line, or a confirmed swing low below a resistance line, beyond the touch band \u2014 and then comes BACK to touch it. The bars that confirm the 2nd swing and still sit on the line never count. A break confirmed by a 5m close discards it (a break is NOT an entry). Box beats trendline: a trendline whose price sits inside a live box\u2019s [Bottom, Top] is NOT a location',
         ],
       ],
@@ -407,12 +408,12 @@ export const mentor: GuideSection = {
         ],
         [
           'Day gate (§7)',
-          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
+          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). A restart (or a feed gap) after 08:30 latches on the 4h/1h of THAT moment, and the day-gate log line then reads "day gate RE-LATCHED @HH:MM CT, not the 08:30 read" instead of "@08:30". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
           'DayGateSpentPts 300 · DayGateTargetCapPts 15',
         ],
         [
           '4h/1h direction',
-          'Entries only WITH the 4h trigger. The 1h counts only when it fired at or after the 4h (an earlier 1h trigger is ignored — it is silent): 1h agreeing or silent → follow the 4h; 1h opposite → sit out until it flips. No 4h trigger → nothing to follow. The 4h/1h lines (and the 5m trigger line) are seeded from history at boot, so the direction carries over a restart instead of rebuilding from the recent window.',
+          'Entries only WITH the 4h trigger. The 1h counts only when it fired at or after the 4h (an earlier 1h trigger is ignored — it is silent): 1h agreeing or silent → follow the 4h; 1h opposite → sit out until it flips. No 4h trigger → nothing to follow. The 4h/1h lines (and the 5m trigger line) are seeded from history at boot by replaying every stored 1m bar through the same intrabar break rule the running bot uses, so a restart lands on exactly the line a bot that never stopped would hold — including a candle that broke both sides (which side broke first decides). The boot line prints each line as "<tf> trigger <dir> @<price> since <bucket CT>", and every 4h/1h move is logged as it happens ("4h trigger moved long @… → short @…").',
           '—',
         ],
         [
@@ -522,7 +523,7 @@ export const mentor: GuideSection = {
         ],
         [
           'B — normal',
-          '2 or more contracts: ONE entry with two exits — leg 1 (half, rounded up) takes profit at 1:1 measured from the actual entry price, the runner holds to the target (1 contract = a single leg). Both stops move to break-even at HALF the distance to the target; live 1:1 keeps the stop at 1:1 behind the target; after the 1:1 point is printed the runner’s stop trails 1 tick beyond each closed candle (trail_tf: 1m default, 30s/45s allowed, off = legacy). Spent day: at most 2 contracts run — the rest leave with leg 1. Needs the AddOn build 2026-10-04-d1; an older AddOn gets one bracket for the whole position',
+          '2 or more contracts: ONE entry with two exits — leg 1 (half, rounded up) takes profit at 1:1 measured from the actual entry price, the runner holds to the target (1 contract = a single leg). The runner’s stop follows mentor_trail_mode. candle (the default, owner ruling R3, release #22): NOTHING moves until leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader (the broker’s fill receipt, or its position size dropping to the runner — never a price touch); then the runner’s stop goes to break-even = the entry (an off-grid averaged entry rounds toward profit), on the first close past the entry — if price is back through it, the original stop stays until a close is past it; then on every CLOSED 1m candle it moves to 1 tick beyond that candle’s low (long) / high (short), only when that is tighter — a lower low (long) / higher high (short) moves nothing. off = the older rule: both stops to break-even at HALF the distance to the target, live 1:1 behind the target, trail after the 1:1 point. Either way every move is checked against the stop NinjaTrader actually holds — never wider than it (a stop you tightened by hand is kept), nothing is sent while the broker book is stale, nothing is sent to a leg that is already closed — and each move is confirmed or reported from the next broker book. trail_tf: 1m default, 30s/45s allowed, off = break-even only. Spent day: at most 2 contracts run — the rest leave with leg 1. Needs the AddOn build 2026-10-04-d1; an older AddOn gets one bracket for the whole position, which keeps the older rule',
         ],
         [
           'C — confluence',
@@ -538,11 +539,11 @@ export const mentor: GuideSection = {
         ],
         [
           'ISB partial',
-          'The ISB follows B: leg 1 (half) exits at 1:1 from the actual entry, the runner takes the B drive (BE at half the distance, live 1:1, trail 1 tick beyond after the 1:1 point). The course’s candle-3-close exit for leg 1 is only LOGGED (not sent) until it is proven on SIM',
+          'The ISB follows B, plus the course’s candle-3 rule (“phải BÁN BỚT. Bắt buộc” — you MUST sell part [D1.4 p1 @11:59–13:28]): when the fill candle closes in profit but short of 1:1, leg 1’s take-profit is MOVED to that close at NinjaTrader (a real modify, leg 1 only, rounded toward the entry) and confirmed from the next broker book (“modify_bracket CONFIRMED at NT8”); if 1:1 printed first, the resting 1:1 take-profit does it; a losing close sells nothing. A one-bracket position is never partially modified (it would close the whole trade). After a restart the fill candle is unknown, so the candle-3 step is skipped and leg 1 keeps its 1:1 take-profit. The runner then follows mentor_trail_mode (see B). Live since release #22 — from 10-05 to 10-14 this step was only logged (“WOULD set TP”), never sent',
         ],
         [
           'Restart rebuild',
-          'At boot the bot rebuilds every open mentor position from the broker’s own book (the -sl/-sl2 stops and -tp/-tp2 targets), so break-even, 1:1 and the trail resume after a restart instead of being lost. If the book has no stop for a position the bot manages nothing and raises a P0 (never guesses a stop). The boot line reads "🧑‍🏫 mentor positions rebuilt: N (refused M)". Server switch MENTOR_RESTART_REBUILD=off disables the rebuild.',
+          'At boot the bot rebuilds every open mentor position from the broker’s own book (the -sl/-sl2 stops and -tp/-tp2 targets), so the runner resumes at the right stage instead of being lost: leg 1 gone (broker size down to the runner) and the runner stop short of the entry → break-even next; the runner stop already at/through the entry → the candle trail continues. If the book has no stop for a position the bot manages nothing and raises a P0 (never guesses a stop). The boot line reads "🧑‍🏫 mentor positions rebuilt: N (refused M)". Server switch MENTOR_RESTART_REBUILD=off disables the rebuild.',
         ],
       ],
     },
@@ -695,6 +696,23 @@ export const mentor: GuideSection = {
           recommended:
             '1m — the course frame [D2.4 p1 @08:35 move-stop; X8 @15:40].',
           whenToTouch: 'off = the video-8 legacy, kept as a knob.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Runner exit (trail mode)',
+          where: 'Strategy → Risk Control → 🧑‍🏫 Mentor mode → Runner exit',
+          what: 'What moves the runner’s stop after a split mentor entry (owner ruling R3, release #22). candle: once leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader, the runner goes to break-even (the entry), then trails 1 tick beyond each closed candle’s low (long) / high (short), only ever tighter. off: the older rule — break-even at half the distance to the trade target, live 1:1, trail after the 1:1 point.',
+          trader:
+            'candle — after the 1:1 partial fills, the rest is at break-even within one closed candle, then follows each closed candle [D2.4 p1 @16:17 “CỨ BÁN BỚT, xong rồi mình GỒNG lệnh”; @07:01 “move stop THEO TỪNG CÂY NẾN ĐÃ ĐÓNG XONG”; X8 @15:40 the candle’s low].',
+          consumer:
+            'trader/mentor_trail_r22.go mentorTrailMode · mentorExitDriveCandle (called from trader/mentor_exit_drive.go mentorExitDrivePos)',
+          range:
+            'candle / off · any other value fails closed to candle and is counted (trail_mode_bad_value)',
+          systemDefault: 'candle',
+          recommended:
+            'candle — the owner’s ruling R3 and the course’s normal case. On 10-12 row 313 leg 1 banked 1:1 and the runner, still at its original stop, lost the full 1R a minute later.',
+          whenToTouch:
+            'off only to compare against the pre-release-#22 rule; a one-bracket position (1 contract, or an older AddOn) always uses the older rule.',
           perSession: 'No.',
         },
         {

@@ -42,6 +42,20 @@ type mentorLivePos struct {
 	RunnerTarget  float64        // #360 item 5: the level beyond the old high (resonance runner target); 0 = none
 	SpentDay      bool           // §7 spent day → mode D (runner ≤ 2)
 	Confluence    bool           // R2 confluence flag → mode C
+	// ISBPartialDone (release #22) — the ISB candle-3 partial was resolved (sent,
+	// skipped or refused) and must never run again. A restart-rebuilt position
+	// starts DONE: its fill candle is unknown, so a resolution after the restart
+	// would read the WRONG candle and send a real modify off it (fail-closed:
+	// leg 1 keeps the +1R TP already resting at NT8).
+	ISBPartialDone bool
+	// A SENT leg-1 TP modify awaiting the NT8 verdict (release #22,
+	// mentorVerifyPendingTPModifies). TPModWant 0 = none pending. Guarded by
+	// mentorExitMu.
+	TPModWant        float64
+	TPModSentAt      time.Time
+	TPModStaleWarned bool
+	// BEWaitLogged — the "close not past break-even, BE waits" line fired once.
+	BEWaitLogged bool
 }
 
 // registerMentorLivePos (DS-107, one-row entry) builds the single-leg live
@@ -582,9 +596,13 @@ func (at *AutoTrader) mentorRebuildSwingArm(r store.ArmedOrderDB, pos *store.Tra
 		at.mentorUnregisterLiveArm(armID)
 		return false, "evaluator not constructed"
 	}
-	if !at.mentorEval.State.Swing.RebuildSwingPos(
-		mentor.Side(lp.Pos.Side), lp.Pos.Entry, lp.Pos.Stop, lp.Pos.Target, lp.Pos.R, entryBucket, armID, lp.Pos.ArmedBE,
-	) {
+	// SWING-RISK (release #22): the kernel measures the risk itself
+	// (mentor.SwingRisk) from the row's ENTRY stop — the same definition the
+	// live fill uses — never from NT8's live stop, which may already sit at BE.
+	if !at.mentorEval.State.Swing.RebuildSwingPos(mentor.SwingRebuild{
+		Side: mentor.Side(lp.Pos.Side), Entry: lp.Pos.Entry, EntryStop: r.StopPx, LiveStop: lp.Pos.Stop,
+		Target: lp.Pos.Target, EntryBucket: entryBucket, ArmID: armID, MovedBE: lp.Pos.ArmedBE,
+	}) {
 		at.mentorUnregisterLiveArm(armID)
 		return false, "degenerate swing position (entry or risk unreadable)"
 	}
@@ -779,7 +797,9 @@ func (at *AutoTrader) mentorBuildLivePosFromBook(r store.ArmedOrderDB, pos *stor
 		Scaled:    scaled,
 		Leg1TP:    leg1TP,
 	}
-	lp := &mentorLivePos{Pos: pos2}
+	// Release #22: the fill candle is unknown after a restart — never resolve
+	// the ISB candle-3 partial off a later candle (it is now a REAL modify).
+	lp := &mentorLivePos{Pos: pos2, ISBPartialDone: true}
 	if splitLive {
 		lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: leg1Qty, TP: leg1TP, Stop: leg1Stop, Final: false, Wire: 1}
 		lp.Legs[1] = mentorLeg{SignalID: r.SignalID, Qty: leg2Qty, TP: leg2TP, Stop: leg2Stop, Final: true, Wire: 2}

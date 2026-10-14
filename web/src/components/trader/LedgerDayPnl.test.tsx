@@ -76,7 +76,7 @@ describe('LedgerDayPnl — the header reads the ledger, not NT8 daily_pnl', () =
       }), // unresolved
       row({ id: 5, close_reason: 'e7_farside_test', pnl_corrected: 6 }), // hidden
     ]
-    const footer = computeDayTotal(rows)
+    const footer = computeDayTotal(rows, Date.now() - 3600_000)
     expect(footer).toBe(40)
     // The backend's GetLedgerDayTotal applies the same rule (Go test
     // TestPnlTruthLedgerDayTotalMatchesTheFooterRule); the chip renders it.

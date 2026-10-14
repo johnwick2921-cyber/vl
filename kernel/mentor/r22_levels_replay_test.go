@@ -298,28 +298,55 @@ func TestR22PHLPlacesAtTheTriggerLine1012(t *testing.T) {
 	}
 }
 
+// TestR22PHLPlacesOn1013 — r22 P1-3 on the audit's own day. With the level
+// fixes (and the release #22 trendline wave, #507, merged in) the trading day
+// 10-13 replay places PHL/PLH entries; the live bot placed none.
+func TestR22PHLPlacesOn1013(t *testing.T) {
+	n := 0
+	r22Replay(t, "mnq_1m_2026-10-13_session", r22Open1013, r22Cfg(), func(_ *Evaluator, _ []market.Kline, out []Intent) {
+		for _, in := range out {
+			if in.Action == PlaceStopEntry && (in.Setup == "PHL" || in.Setup == "PLH") {
+				n++
+			}
+		}
+	})
+	if n == 0 {
+		t.Fatal("10-13 replay placed no PHL/PLH")
+	}
+}
+
 // TestR22SilentPHLDropsAreCounted1013 — r22 (P2-1). Every PHL/PLH refusal is
 // named and counted: the 5m ISB-box ban (kept — the course bans PHL/PLH inside
 // it, D3.4 p2 @07:27–10:35), the mid-range boxes, the EMA crossing gate and the
 // location gate used to drop SILENTLY. Each counts once per visit of the level.
+// The two recorded days (10-13, 10-12) between them exercise every one of them.
 func TestR22SilentPHLDropsAreCounted1013(t *testing.T) {
-	visits := 0
-	prev := map[string]TouchOutcome{}
-	e := r22Replay(t, "mnq_1m_2026-10-13_session", r22Open1013, r22Cfg(), func(e *Evaluator, _ []market.Kline, _ []Intent) {
-		for k, tr := range e.State.Touches {
-			if tr.Outcome == TouchReject && prev[k] == TouchNone {
-				visits++
+	seen := map[string]int{}
+	for _, day := range []struct {
+		fixture string
+		open    int64
+	}{{"mnq_1m_2026-10-13_session", r22Open1013}, {"mnq_1m_2026-10-12_session", r22Open1012}} {
+		visits := 0
+		prev := map[string]TouchOutcome{}
+		e := r22Replay(t, day.fixture, day.open, r22Cfg(), func(e *Evaluator, _ []market.Kline, _ []Intent) {
+			for k, tr := range e.State.Touches {
+				if tr.Outcome == TouchReject && prev[k] == TouchNone {
+					visits++
+				}
+				prev[k] = tr.Outcome
 			}
-			prev[k] = tr.Outcome
+		})
+		for _, reason := range []string{"phl_5m_box_ban", "phl_mid_range_boxed", "phl_ema_crossing_30m", "phl_not_location"} {
+			got := e.State.Refusals[reason]
+			if got > visits {
+				t.Fatalf("%s: refusal %q = %d > %d reject visits — it must count once per visit, not per tick", day.fixture, reason, got, visits)
+			}
+			seen[reason] += got
 		}
-	})
+	}
 	for _, reason := range []string{"phl_5m_box_ban", "phl_mid_range_boxed", "phl_ema_crossing_30m", "phl_not_location"} {
-		got := e.State.Refusals[reason]
-		if got == 0 {
-			t.Fatalf("refusal %q never counted on 10-13 — the drop is silent (refusals %v)", reason, e.State.Refusals)
-		}
-		if got > visits {
-			t.Fatalf("refusal %q = %d > %d reject visits — it must count once per visit, not per tick", reason, got, visits)
+		if seen[reason] == 0 {
+			t.Fatalf("refusal %q never counted on 10-13 or 10-12 — the drop is silent (%v)", reason, seen)
 		}
 	}
 }
