@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"vl/branding"
-	"vl/safe"
 	"strings"
 	"sync"
 	"time"
+	"vl/branding"
+	"vl/logger"
+	"vl/safe"
 )
 
 type Scheduler struct {
@@ -39,6 +40,9 @@ type schedulerStamps struct {
 // hour-CHANGE (never only on :00); the risk check keeps its 4h elapsed
 // cadence.
 func schedulerStep(now time.Time, st *schedulerStamps) (daily, cleanup, risk bool) {
+	// R22 P3-3: 21:00 is a CT time. now.Hour() read the clock's own zone (the
+	// MACHINE zone for time.Now()), right only because the box runs in Chicago.
+	now = now.In(logger.CTLocation())
 	day := now.Format("2006-01-02")
 	if now.Hour() >= 21 && st.lastReportDay != day {
 		daily = true

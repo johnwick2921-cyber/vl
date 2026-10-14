@@ -1409,11 +1409,11 @@ export const mentor: GuideSection = {
           label: 'Stale-data block',
           where:
             'No Studio control — ON by default; the strategy setting mentor_stale_data_block=false turns it off',
-          what: 'Refuse NEW mentor arms (authoring and the armed placement pass) while the live 1m feed is stale — the same B4 formula the AI path uses (expected-open − 1 bar − 15s grace ≈ 75 s). While CME is closed (the daily 16:00–17:00 break, weekends) the gate never fires. Exits and protection are never blocked, and already-resting broker orders are not cancelled by it.',
+          what: 'Refuse NEW mentor arms (authoring and the armed placement pass) while the live 1m feed is stale — the same B4 formula the AI path uses (expected-open − 1 bar − 15s grace ≈ 75 s) PLUS, since release #22, two legs that never read the wall clock: the last live 1m frame must have ARRIVED within 135 s on the monotonic clock, and for 120 s after any wall-clock step of 1 s or more NEW entries are held. The wall-clock rule alone failed OPEN when the clock stepped back (2026-10-14: −125 s at 00:23:00): a dead feed read as fresh. While CME is closed (the daily 16:00–17:00 break, weekends) the feed legs never fire. Exits and protection are never blocked, and already-resting broker orders are not cancelled by it.',
           trader:
             'ON by default (nil → ON — the same default posture as B4); an explicit false disables it. One WARN and one "stale_data" funnel refusal per stale episode, never per tick. The block itself fails OPEN when the 1m cache is empty or no bar provider is wired (a cold start — the seed and the FEED DOWN alert own that case).',
           consumer:
-            'trader/mentor_mode.go mentorStaleDataBlocked · kernel/stale_data.go StaleEntryGateFeed',
+            'trader/mentor_mode.go mentorStaleDataBlocked · kernel/feed_clock.go EntryFeedStale (wall rule StaleEntryGateFeed + monotonic receipt age + clock-step hold)',
           range: 'true / false',
           systemDefault: 'true (unset = ON)',
           recommended:

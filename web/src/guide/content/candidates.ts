@@ -98,7 +98,7 @@ export const candidates: GuideSection = {
       cards: [
         {
           title: 'Prior-week high / low',
-          body: 'Read from DAILY bars. These were emitted before but could never appear: the guard needs three full days and the intraday ring holds about 33 hours, so they were silently unreachable. The guard was NOT relaxed — relaxing it would compute a "prior-week high" from a day and a half, which is not one.',
+          body: 'Read from DAILY bars. These were emitted before but could never appear: the guard needs three full days and the intraday ring holds about 33 hours, so they were silently unreachable. The guard was NOT relaxed — relaxing it would compute a "prior-week high" from a day and a half, which is not one. The prior week is the CME week Monday→Friday by TRADING day (release #22): NT8 stamps a daily bar on the calendar day BEFORE its trading day, and the old window took last Tuesday→Friday plus THIS Monday, up to ~250 pts off. From Sunday 17:00 CT the week that just closed is the prior week.',
           tag: 'daily source',
         },
         {

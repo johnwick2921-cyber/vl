@@ -50,6 +50,11 @@ func (at *AutoTrader) startDrawdownMonitor() {
 // cycles themselves, and skip-while-open silenced them while holding — so the
 // decision cycle could never report the outage that mattered most.
 func (at *AutoTrader) monitorTick(now time.Time) {
+	// Release #22 (EXECUTION F-3): the dead-man watchdog is sampled on THIS
+	// per-trader 60 s beat too. runCycle can block for minutes inside a
+	// planner call (402.5 s on 10-14) and a trader holding a position may not
+	// cycle at all; the link check must not depend on either.
+	wd := at.driveDeadManWatchdog()
 	at.checkFeedDown(now)
 	at.checkPositionDrawdown()
 	// TRADE EXCURSION LOGGING (wave 1A, 2026-09-02) — E2. This tick is the
@@ -65,7 +70,12 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	// day_plan, and a safety check a config flag can silence is not one. This
 	// beat is wall-clock and runs while a position is held — which is exactly
 	// the window position 592 spent naked with nothing looking.
-	at.reconcileProtectionAt(now, "monitor")
+	// The watchdog's reconnect edge just ran the "reconnect" pass on this
+	// same goroutine; a second pass now would read the same pre-placement
+	// book and could place a second stop. One pass per beat.
+	if wd != wdReconnected {
+		at.reconcileProtectionAt(now, "monitor")
+	}
 	// W-EXEC-TRUTH W0 (f) — withdraw resting ENTRIES while a hold asks for it
 	// or a loss limit has tripped. Here, not in the armed pass: that pass does
 	// not run in exactly the windows an update or a halt use.

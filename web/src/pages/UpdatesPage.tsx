@@ -287,7 +287,10 @@ export default function UpdatesPage() {
       const err = e as
         | {
             statusCode?: number
-            response?: { status?: number; data?: { error?: string; message?: string } }
+            response?: {
+              status?: number
+              data?: { error?: string; message?: string }
+            }
             message?: string
           }
         | undefined
@@ -352,7 +355,10 @@ export default function UpdatesPage() {
   const releaseId = check?.tag || null
   const availableReady = check?.available === true && check?.ready === true
   const passwordInstallDisabled =
-    installDisabled || installing || !password.trim() || !releaseId ||
+    installDisabled ||
+    installing ||
+    !password.trim() ||
+    !releaseId ||
     !availableReady
 
   const doInstallWithPassword = useCallback(async () => {
@@ -480,10 +486,7 @@ export default function UpdatesPage() {
           </button>
         </div>
         {checkError && (
-          <p
-            className="mt-2 text-xs text-red-400"
-            data-testid="check-error"
-          >
+          <p className="mt-2 text-xs text-red-400" data-testid="check-error">
             {up('checkRefused', language, {
               status: checkError.status ? ` (${checkError.status})` : '',
               reason: checkError.reason,
@@ -656,6 +659,16 @@ export default function UpdatesPage() {
         {maintenance?.since !== undefined && maintenance?.since !== null && (
           <Row label="Since" value={maintenance.since} />
         )}
+        {/* release #22: an update job in preflight freezes NEW entries
+            (exits and protection continue) until it ends or times out. */}
+        {maintenance?.install_pending?.pending && (
+          <div data-testid="install-pending">
+            <Row
+              label={up('installPending', language)}
+              value={`${up('installPendingFrozen', language)} · job=${maintenance.install_pending.job_id ?? na(language)} · ${maintenance.install_pending.state ?? na(language)}/${maintenance.install_pending.phase ?? na(language)} · ${up('installPendingClearsBy', language)} ${maintenance.install_pending.clears_by ?? na(language)}`}
+            />
+          </div>
+        )}
         <Row
           label={up('inFlightSends', language)}
           value={String(maintenance?.in_flight_sends ?? 0)}
@@ -729,6 +742,14 @@ export default function UpdatesPage() {
             {job?.blocker && (
               <div data-testid="job-blocker">
                 <Row label={up('jobBlocker', language)} value={job.blocker} />
+              </div>
+            )}
+            {/* release #22: the failure reason was rendered only when the job
+                had no state, and a refused job always has one — the owner saw
+                "refused" and never why. Shown verbatim whenever present. */}
+            {job?.state && job?.error && (
+              <div data-testid="job-error">
+                <Row label={up('jobError', language)} value={job.error} />
               </div>
             )}
             {job?.timestamps && Object.keys(job.timestamps).length > 0 && (

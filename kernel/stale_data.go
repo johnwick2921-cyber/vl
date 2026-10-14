@@ -156,6 +156,24 @@ func applyStaleDataBlock(fd *FullDecision, ctx *Context, nowMs int64) {
 			continue
 		}
 		md := ctx.MarketDataMap[d.Symbol]
+		// Release #22 OPS-SAFETY: the wall-clock rule below fails OPEN on a
+		// backward wall step. Two legs that never read the wall clock run
+		// FIRST: a clock-step hold around the snapshot, and the monotonic
+		// receipt age of the 1m feed at the snapshot instant.
+		if held, why := clockStepHeldAt(ctx.SnapshotAt); held {
+			b4Refuse(d, ctx, why)
+			continue
+		}
+		if tf, _, _, _ := staleEntryFeed(md, evalMs); tf == "1m" {
+			if stale, age, known := feedReceiptStale(d.Symbol, "1m", ctx.SnapshotAt); known && stale {
+				why := "receipt_age: no live 1m frame received since boot (monotonic)"
+				if age >= 0 {
+					why = fmt.Sprintf("receipt_age: last live 1m frame received %ds before the snapshot on the monotonic clock (> %ds)", age/1000, receiptMaxAgeMs(60_000)/1000)
+				}
+				b4Refuse(d, ctx, why)
+				continue
+			}
+		}
 		if tf, age, limit, stale := staleEntryFeed(md, evalMs); stale {
 			// 2.4 — every discard self-diagnoses: live-feed age + clock drift +
 			// a verdict hint, so "feed or clock or math" is one glance.
@@ -178,6 +196,18 @@ func applyStaleDataBlock(fd *FullDecision, ctx *Context, nowMs int64) {
 			telemetry.RecordError(ctx.TraderID, "entry_refused", "stale-data: "+reason, telemetry.CostTradeLost)
 		}
 	}
+}
+
+// b4Refuse neutralizes one open decision for a monotonic-leg refusal (clock
+// step / receipt age): WARN + the same stale_data gate-block counter and
+// entry_refused error as the wall rule, so every refusal is logged AND
+// counted under the class the gate-block table already shows.
+func b4Refuse(d *Decision, ctx *Context, why string) {
+	logger.Warnf("⛔ stale_bar_discarded %s — %s %s → WAIT (exits unaffected)", why, d.Symbol, d.Action)
+	d.RefusalReason = "stale-data: " + why
+	d.Action = "wait"
+	telemetry.IncGateBlock(ctx.TraderID, "stale_data")
+	telemetry.RecordError(ctx.TraderID, "entry_refused", "stale-data: "+why, telemetry.CostTradeLost)
 }
 
 // liveFeedDiagnostics reads the LIVE bar provider (not the snapshot) for the

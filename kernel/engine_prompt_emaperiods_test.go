@@ -159,7 +159,8 @@ func TestFormatMarketData_CurrentRSIByPeriod(t *testing.T) {
 }
 
 // TestFormatMarketData_EMA200ZeroGuard (F11d): a 0-valued EMA (thin bar depth) must
-// be OMITTED, never rendered as "current_ema200 = 0.000".
+// never be rendered as "current_ema200 = 0.000". R22 F-2 (L7): it prints n/a —
+// a configured value that is not known yet says so rather than vanishing.
 func TestFormatMarketData_EMA200ZeroGuard(t *testing.T) {
 	eng := NewStrategyEngine(&store.StrategyConfig{Indicators: store.IndicatorConfig{EnableEMA: true}})
 
@@ -171,8 +172,8 @@ func TestFormatMarketData_EMA200ZeroGuard(t *testing.T) {
 	if !strings.Contains(out, "current_ema9 = 100.000") {
 		t.Fatalf("warmed EMA9 must render; got:\n%s", out)
 	}
-	if strings.Contains(out, "current_ema200") {
-		t.Fatalf("a 0-valued EMA200 must be OMITTED, not rendered as 0.000; got:\n%s", out)
+	if strings.Contains(out, "current_ema200 = 0") || !strings.Contains(out, "current_ema200 = n/a") {
+		t.Fatalf("a 0-valued (unwarmed) EMA200 must render n/a, never 0.000; got:\n%s", out)
 	}
 
 	// Legacy fallback: CurrentEMA20 = 0 (thin) → omit the current_ema20 line.

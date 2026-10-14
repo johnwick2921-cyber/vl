@@ -81,21 +81,47 @@ func (at *AutoTrader) ninjaLinkConnected() (connected, ok bool) {
 	return ntTCP.IsConnected(), true
 }
 
+// ninjaLinkEpoch is the current NT8 connection's accept sequence (1, 2, 3 …
+// per accept, per process), read from the same server record the
+// installation gate reads. ok=false for a non-NT trader or no server.
+func (at *AutoTrader) ninjaLinkEpoch() (uint64, bool) {
+	if at.exchange != "ninjatrader" {
+		return 0, false
+	}
+	ntTCP, isNT := at.trader.(*ntTrader.TCPTrader)
+	if !isNT {
+		return 0, false
+	}
+	rec, _, _, ok := ntTCP.MaintenanceView()
+	if !ok || rec.AcceptSeq == 0 {
+		return 0, false
+	}
+	return rec.AcceptSeq, true
+}
+
 // driveDeadManWatchdog (B5) advances the dead-man watchdog once per cycle from the
 // NT8 TCP link. A dropped link blocks NEW entries (open-position management/exits
 // are never gated); on reconnect it sweeps any unfilled entries and holds entries
 // blocked until a clean positions/orders reconciliation, then auto-resumes. Called
 // from runCycle; non-NT traders are a no-op.
-func (at *AutoTrader) driveDeadManWatchdog() {
+func (at *AutoTrader) driveDeadManWatchdog() watchdogEvent {
 	connected, ok := at.ninjaLinkConnected()
 	if !ok {
-		return
+		return wdNone
 	}
-	switch at.deadMan.step(connected, at.watchdogReconcileClean) {
+	// Release #22 (EXECUTION F-3): the connection epoch catches a disconnect +
+	// reconnect that both fell between two samples.
+	epoch, epochKnown := at.ninjaLinkEpoch()
+	ev, missed, prev := at.deadMan.stepEpoch(connected, epoch, epochKnown, at.watchdogReconcileClean)
+	switch ev {
 	case wdWentDown:
 		at.logWarnf("🚨 dead-man watchdog: NT8 TCP link DOWN — NEW entries BLOCKED until a clean reconciliation. Open positions & exits are unaffected.")
 	case wdReconnected:
-		at.logWarnf("🔌 dead-man watchdog: NT8 TCP link back UP — sweeping unfilled entries; entries stay BLOCKED until a clean positions/orders reconciliation.")
+		if missed {
+			at.logWarnf("🔌 dead-man watchdog: NT8 TCP link was REPLACED between two samples (accept_seq %d → %d) — a disconnect this trader never saw; treating it as a reconnect: sweeping unfilled entries; entries BLOCKED until a clean positions/orders reconciliation.", prev, epoch)
+		} else {
+			at.logWarnf("🔌 dead-man watchdog: NT8 TCP link back UP — sweeping unfilled entries; entries stay BLOCKED until a clean positions/orders reconciliation.")
+		}
 		at.cancelUnfilledEntriesAfterReconnect()
 		// D5 (2026-09-07) — C6: nothing rebuilds the bracket after a reconnect.
 		// The AddOn's placedBrackets is in-memory and repopulated from nowhere,
@@ -108,6 +134,7 @@ func (at *AutoTrader) driveDeadManWatchdog() {
 	case wdResumed:
 		at.logInfof("✅ dead-man watchdog: clean positions/orders reconciliation — NEW entries RESUMED.")
 	}
+	return ev
 }
 
 // watchdogReconcileClean is the reconcile probe: the link is considered reconciled
@@ -681,7 +708,7 @@ type AutoTrader struct {
 	consecutiveAIFailures int             // Consecutive AI call failures
 	safeMode              bool            // Safe mode: no new positions, protect existing ones
 	safeModeReason        string          // Why safe mode was activated
-	deadMan               deadManWatchdog // B5 dead-man watchdog: NT8 link-gap → block NEW entries until reconciled (zero value = live/allowed; touched only from runCycle)
+	deadMan               deadManWatchdog // B5 dead-man watchdog: NT8 link-gap → block NEW entries until reconciled (zero value = live/allowed; driven from runCycle AND monitorTick, step serialized by its own mutex)
 
 	// armedSyncSeam — fixture seam for the synchronous armed cancel (S-list
 	// closer FIX1): wire cancel + ack stream + timeout. nil = production TCP
@@ -747,6 +774,10 @@ type AutoTrader struct {
 	// nil = not yet observed. Touched only from runCycle (single goroutine), so
 	// no mutex is required.
 	cmePrevOpen *bool
+	// R22 P1-B — the calendar date whose early-close retirement completed on
+	// the closed path (runCycle goroutine only, like cmePrevOpen).
+	earlyCloseRetiredDate string
+	earlyCloseNotedDate   string // the closed-path retirement line is logged once per date
 
 	// P2.1 — bar-close cadence: CloseTime (ms) of the last primary-TF bar we ran
 	// a cycle for. Only meaningful when barCloseCadenceActive() (day_plan futures);

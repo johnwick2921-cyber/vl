@@ -165,3 +165,30 @@ func TestPlannerWaitPassesWhenTheReadEnds(t *testing.T) {
 		t.Fatalf("the drain must pass once the planner read ends; state=%s error=%q", j.State, j.Error)
 	}
 }
+
+// TestPreflightReportsThePlannerFirstSoItsGraceApplies — release #22: with a
+// plan read in flight AND the bot not flat (an arm / working order), the
+// planner is the REPORTED blocker, so the planner budget governs the wait —
+// not the shorter flat budget naming the census/ledger leg (10-14 job
+// 30a8bbf6 was refused at 10 min on ledger_exposure while its planner grace
+// was owed).
+func TestPreflightReportsThePlannerFirstSoItsGraceApplies(t *testing.T) {
+	r := newRig(t, func(b *box) { b.plannerInFlight = true; b.flat = false })
+	r.w.cfg.Budgets.Poll = 10 * time.Millisecond
+	r.w.cfg.Budgets.PreflightFlat = 100 * time.Millisecond
+	r.w.cfg.Budgets.PlannerWait = 400 * time.Millisecond
+	watch := watchBlocker(t, r)
+	if r.runCrashing(t) {
+		t.Fatal("preflight passed although the bot was not flat")
+	}
+	j := r.job()
+	if j.State != updaterjob.StateRefused || r.hold().Present {
+		t.Fatalf("state=%s hold=%v, want refused with no hold", j.State, r.hold().Present)
+	}
+	if !strings.Contains(j.Error, "AI plan still running after") {
+		t.Fatalf("while a plan read runs the planner must be the reported blocker and its budget must govern; got error %q", j.Error)
+	}
+	if !watch() {
+		t.Fatal("the live blocker must read the planner's waiting text")
+	}
+}

@@ -389,7 +389,7 @@ func (at *AutoTrader) entryBlockedByLastEntryAt(now time.Time) (string, bool) {
 	// cutoff in too: the cutoff resolves against early_close_CT − offset when
 	// that is earlier (min semantics, same raw-minute convention as the flat
 	// pull-in). Sessions that end before the early close are unaffected.
-	if adj, adjHHMM, okH := halfDayCutoffMin(at.sessionRegistry(now), kernel.CMESessionDayKey(now), offset); okH && halfDayPullsIn(sess, adj, cutoffMin) {
+	if adj, adjHHMM, okH := halfDayCutoffMin(at.sessionRegistry(now), kernel.CMETradingDateKey(now), offset); okH && halfDayPullsIn(sess, adj, cutoffMin) {
 		cutoffMin, hhmm = adj, adjHHMM
 	}
 	if pastSessionCutoff(now, sess, cutoffMin) {
@@ -400,8 +400,13 @@ func (at *AutoTrader) entryBlockedByLastEntryAt(now time.Time) (string, bool) {
 
 // halfDayCutoffMin resolves "early_close_CT − offset" for the session-day's
 // registered half-day (P4). ok=false when no half-day / unparseable value.
-func halfDayCutoffMin(reg kernel.SessionRegistry, sessionDayKey string, offsetMin int) (int, string, bool) {
-	early, ok := kernel.SessionEarlyCloseCTForKey(sessionDayKey)
+//
+// tradingDateKey MUST be kernel.CMETradingDateKey(now) — the date the
+// session closes on, which is how the calendar lists a shortened day. R22
+// P1-B: both callers passed CMESessionDayKey(now) (the 17:00 START date, the
+// day before), so 2026-09-07 / 11-27 / 12-24 never pulled anything in.
+func halfDayCutoffMin(reg kernel.SessionRegistry, tradingDateKey string, offsetMin int) (int, string, bool) {
+	early, ok := kernel.SessionEarlyCloseCTForKey(tradingDateKey)
 	if !ok || strings.TrimSpace(early) == "" {
 		return 0, "", false
 	}
@@ -452,7 +457,7 @@ func halfDayPullsIn(sess *kernel.SessionDef, adjMin, cutoffMin int) bool {
 // flattened too — that is by definition past the previous session's flat, and
 // it preserves the old rule's one virtue: nothing rides through the close.
 func (at *AutoTrader) enforceEODFlat() bool {
-	return at.enforceEODFlatAt(time.Now())
+	return at.enforceEODFlatAt(traderNow()) // class 32 trader clock (== time.Now() in production)
 }
 
 func (at *AutoTrader) enforceEODFlatAt(now time.Time) bool {
@@ -902,7 +907,9 @@ func (at *AutoTrader) recordClosedTradeAnalyticsAt(now time.Time, p *store.Trade
 
 	// P5.5 — ADHERENCE GRADE (A–F), separate from P&L.
 	inKZ, inNoTrade := kernel.SessionWindowFacts(at.sessionRegistry(now), time.UnixMilli(p.EntryTime))
+	trig, trigWhy := at.entryTriggerVerdict(p, bars) // R22 F8: "" = not required / not verifiable
 	grade, _ := kernel.GradeAdherence(kernel.AdherenceInput{
+		Trigger:    trig,
 		Cited:      p.CitedScenarioID != "",
 		Matched:    p.PlanMatched,
 		OffPlan:    p.CitedScenarioID == "",
@@ -914,8 +921,12 @@ func (at *AutoTrader) recordClosedTradeAnalyticsAt(now time.Time, p *store.Trade
 		at.logWarnf("🎓 adherence grade update failed for %s: %v", p.Symbol, err)
 		return
 	}
-	at.logInfof("📐🎓 %s close: MAE %.2f / MFE %.2f pts · adherence %s (%s) cited=%q matched=%v",
-		p.Symbol, ex.MAE, ex.MFE, grade, kernel.AdherenceLabel(grade), p.CitedScenarioID, p.PlanMatched)
+	at.logInfof("📐🎓 %s close: MAE %.2f / MFE %.2f pts · adherence %s (%s) cited=%q matched=%v trigger=%s",
+		p.Symbol, ex.MAE, ex.MFE, grade, kernel.AdherenceLabel(grade), p.CitedScenarioID, p.PlanMatched, orNA(trig))
+	if trig == kernel.TriggerMissed {
+		telemetry.IncGateBlock(at.id, "adherence_trigger_missed")
+		at.logWarnf("📐🎓 %s pos=%d entered BEFORE its cited scenario's trigger (%s) — graded %s, not \"followed the plan\": %s", p.Symbol, p.ID, p.CitedScenarioID, grade, trigWhy)
+	}
 
 	// W6 — P0 close+P&L alert.
 	at.emitAlert("P0", "close", fmt.Sprintf("close:%d", p.ID),
@@ -1082,7 +1093,7 @@ func (at *AutoTrader) eodSessionFlatAt(reg kernel.SessionRegistry, sess *kernel.
 	if !okC {
 		return "", false, false
 	}
-	if adj, adjHHMM, okH := halfDayCutoffMin(reg, kernel.CMESessionDayKey(now), offset); okH && halfDayPullsIn(sess, adj, flatMin) {
+	if adj, adjHHMM, okH := halfDayCutoffMin(reg, kernel.CMETradingDateKey(now), offset); okH && halfDayPullsIn(sess, adj, flatMin) {
 		flatMin, hhmm = adj, adjHHMM
 	}
 	return hhmm, pastSessionCutoff(now, sess, flatMin), true

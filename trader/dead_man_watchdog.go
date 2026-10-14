@@ -1,6 +1,9 @@
 package trader
 
-import "sync/atomic"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // B5 — dead-man's watchdog. On an NT8 TCP disconnect / missed heartbeats, NEW
 // entries are blocked; a reconnect alone does NOT resume trading — the link must
@@ -26,8 +29,21 @@ const (
 
 // state is atomic (W-EXEC-TRUTH W0 Q15): runCycle is the ONLY writer (step),
 // but the admission gate reads it from Picture's live-bar goroutine too.
+//
+// Release #22 OPS-SAFETY (EXECUTION F-3): a boolean sampled once per decision
+// cycle could not see a disconnect + reconnect that both landed between two
+// samples — on 10-14 trader 12345, holding position #650, never saw either of
+// the two forced link drops at 00:21:35 / 00:22:43. The watchdog now also
+// compares the connection EPOCH (the TCP server's accept sequence): a changed
+// epoch on a live link is a gap we missed, handled exactly like a reconnect.
+// It is driven from monitorTick (every trader, every 60 s) as well as
+// runCycle, so step() is serialized by mu.
 type deadManWatchdog struct {
 	st atomic.Int32
+
+	mu        sync.Mutex // serializes step(): runCycle and monitorTick both drive it
+	epoch     uint64     // accept sequence of the link last seen connected
+	haveEpoch bool
 }
 
 func (w *deadManWatchdog) get() deadManState  { return deadManState(w.st.Load()) }
@@ -82,6 +98,32 @@ const (
 	wdReconnected                      // disconnected → awaiting reconcile: sweep unfilled, stay blocked
 	wdResumed                          // awaiting reconcile → live: clean reconciliation, entries resumed
 )
+
+// stepEpoch is step() plus the connection-epoch check. epochKnown=false (no
+// server / non-NT) is exactly step(). A link that is connected now under a
+// DIFFERENT epoch than the last connected sample was replaced between two
+// samples: it went down and came back unseen. From dmLive that is
+// wdReconnected (entries block, unfilled entries swept, protection re-asked,
+// reconcile on a LATER step); from dmAwaitingReconcile it restarts the wait.
+// missed reports that the event came from the epoch, for the log line.
+func (w *deadManWatchdog) stepEpoch(connected bool, epoch uint64, epochKnown bool, reconcileOK func() bool) (ev watchdogEvent, missed bool, prevEpoch uint64) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	prevEpoch = w.epoch
+	replaced := epochKnown && connected && w.haveEpoch && epoch != w.epoch
+	if epochKnown && connected {
+		w.epoch, w.haveEpoch = epoch, true
+	}
+	if replaced {
+		switch w.get() {
+		case dmLive, dmAwaitingReconcile:
+			w.set(dmAwaitingReconcile)
+			return wdReconnected, true, prevEpoch
+		}
+		// dmDisconnected: the ordinary reconnect path below sees it.
+	}
+	return w.step(connected, reconcileOK), false, prevEpoch
+}
 
 // step advances the watchdog one trading cycle from the current link status and a
 // reconcile probe, returning the event to log/act on. Semantics:

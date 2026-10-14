@@ -23,6 +23,7 @@ func EnsureMarketData(ctx *Context, engine *StrategyEngine) error {
 	}
 	snapshotNow := time.Now()
 	ctx.SnapshotMs = snapshotNow.UnixMilli()
+	ctx.SnapshotAt = snapshotNow
 	if engine != nil {
 		engine.SetPromptSnapshotMs(ctx.SnapshotMs)
 	}

@@ -267,7 +267,7 @@ export const status: GuideSection = {
     },
     {
       kind: 'p',
-      text: 'A date is now one of three things, and the calendar is DATA (kernel/session_calendar.json), not code. CLOSED \u2014 no trading at all. SHORTENED \u2014 a TRADING day: reads fire, arms are allowed, and the bot is flat at the stated early close, the same discipline as 14:45 at an earlier time. NORMAL \u2014 the ordinary weekly rules decide, and a date absent from the file is normal.',
+      text: 'A date is now one of three things, and the calendar is DATA (kernel/session_calendar.json), not code. CLOSED \u2014 no trading at all. SHORTENED \u2014 a TRADING day: reads fire, arms are allowed, new entries stop at the early close minus the last-entry offset (12:00 on a 12:15 day), and the bot is flat at the stated early close, the same discipline as 14:45 at an earlier time. The early close is looked up on the date the session CLOSES (release #22: it used to be looked up on the day before, so 11-27 and 12-24 never pulled anything in), and because the market is already closed at that minute, the closed-market path itself cancels the resting arms and flattens the positions before it idles \u2014 nothing rides over the holiday. SWING4H positions and swing arms keep their own exemption. NORMAL \u2014 the ordinary weekly rules decide, and a date absent from the file is normal.',
     },
     {
       kind: 'p',
@@ -356,11 +356,18 @@ export const status: GuideSection = {
           'TCP bridge alive + bars flowing — the single source of truth.',
         ],
         ['Boot integrity', 'Running binary == deploy record (goldens PASS).'],
-        ['Dead-man watchdog', 'Kernel heartbeats ok.'],
+        [
+          'Dead-man watchdog',
+          'NT8 link sampled every minute per trader; a reconnect between samples counts as a gap; NEW entries blocked until a clean reconciliation.',
+        ],
         ['Trader frozen', 'The trader loop is stuck — investigate.'],
         [
           'Clock drift',
           'Host clock vs NT8 clock mismatch. Red-news windows widen by at most 2 minutes a side for it (CLASS 145); a reading over 5 minutes is feed age (halt or gap), not the clock.',
+        ],
+        [
+          'Clock steps',
+          'GET /api/health → clock: every wall-clock step the bot itself saw (wall vs monotonic, sampled each second) — backward and forward counts, the largest of each, the last step, and whether NEW entries are held right now. This is the authority; the old timesync{…} field read systemd-timesyncd, which is not running on this box (chrony and Hyper-V TimeSync are), so it measured nothing. The clock-health log line prints the same counters as steps{…}.',
         ],
         [
           '402 banner',
@@ -374,6 +381,7 @@ export const status: GuideSection = {
       title: 'every label the gate panel can show',
       lines: [
         'NT8 feed down · Dead-man watchdog · Trader frozen · Boot integrity',
+        'Update pending (preflight freeze)',
         'Consecutive-loss halt · Past last-entry time · Outside session window',
         'Against the plan · Awaiting approval · Clock drift',
         'Duplicate order dropped · Order rate breaker · Burned level re-touched',

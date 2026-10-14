@@ -170,7 +170,11 @@ func protectionFreshPrice(symbol string, now time.Time) (float64, bool) {
 		return 0, false
 	}
 	newest := bars[len(bars)-1]
-	if kernel.StaleEntryGateFeed(newest.OpenTime, now) {
+	// FeedStaleAt = the B4 wall rule OR the monotonic receipt age (release
+	// #22): a backward wall step can no longer make a dead feed's last close
+	// read as fresh. The clock-step entry hold is NOT consulted here —
+	// protection is never frozen by a clock step.
+	if stale, _ := kernel.FeedStaleAt(symbol, newest.OpenTime, now); stale {
 		return 0, false
 	}
 	return newest.Close, true

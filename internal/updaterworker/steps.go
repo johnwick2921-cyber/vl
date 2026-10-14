@@ -51,7 +51,17 @@ const (
 // FRESH census when one exists (a stale held:false release ack is evidence of
 // nothing), and fails on every census content violation; drain's
 // addon_census re-checks a fresh census right after the hold.
-var preflightFlatLegs = []string{"addon_census_prehold", "ledger_exposure", "planner_in_flight", "traders_nt8"}
+//
+// ORDER MATTERS (release #22 OPS-SAFETY): pollPlanner grants the planner
+// grace only to the REPORTED (first failing) blocker. planner_in_flight was
+// third, so whenever a plan read ran AND the bot held an arm or a working
+// order, the census/ledger leg was reported, the 10-min budget applied, and
+// the job was refused while the benign planner wait was still owed (10-14 job
+// 30a8bbf6: planner_in_flight then ledger_exposure, refused at 10 min). The
+// planner leg is now FIRST: while a plan read runs it is the blocker and its
+// grace applies; once it ends, every other leg must still pass within the
+// step's own budget — no leg is weakened, only the report order changes.
+var preflightFlatLegs = []string{"planner_in_flight", "addon_census_prehold", "ledger_exposure", "traders_nt8"}
 
 // drainLegs: drained_acked (C11 + ruling 1790258770876) — held, drained, the
 // AddOn acked THIS job, flat, no working orders, nothing in flight.

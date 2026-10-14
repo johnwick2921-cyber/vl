@@ -105,6 +105,15 @@ func (at *AutoTrader) captureEntryThesis(d *kernel.Decision, side string, fillPr
 }
 
 // thesisFor returns the entry thesis for an open position: memory first, then a
+// confidenceOrZero (R22 P2): the watcher's thesis keeps 0 = "no AI
+// confidence"; the observer prompt renders that as n/a, never as a number.
+func confidenceOrZero(c *int) int {
+	if c == nil {
+		return 0
+	}
+	return *c
+}
+
 // one-time DB reconstruction (restart case) from the decision record whose
 // entry produced this position.
 func (at *AutoTrader) thesisFor(p *store.TraderPosition) entryThesis {
@@ -113,7 +122,7 @@ func (at *AutoTrader) thesisFor(p *store.TraderPosition) entryThesis {
 		return th
 	}
 	th := entryThesis{
-		Symbol: p.Symbol, Entry: p.EntryPrice, Confidence: p.EntryConfidence, EntryMs: p.EntryTime,
+		Symbol: p.Symbol, Entry: p.EntryPrice, Confidence: confidenceOrZero(p.EntryConfidence), EntryMs: p.EntryTime,
 	}
 	// Restart fallback: find the entry decision in the DB (recorded within a
 	// small window around the position's entry time).

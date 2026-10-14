@@ -77,7 +77,7 @@ func mapProjectionsFor(scored []ScoredLevel, bars []market.Kline, symbol string,
 	// (a) prior-week extremes from the DAILY source — never the 1m ring.
 	out = append(out, ProjectPriorWeekExtremes(DailyBarsFor(symbol, MapDailyBarCount), now)...)
 	// (b) round numbers beyond the mapped range.
-	dATR := DailyRangeProxy(bars, now)
+	dATR := DailyRangeProxyFor(symbol, bars, now)
 	if dATR > 0 {
 		out = append(out, ProjectRoundNumbersBeyond(lo, hi, MapRoundNumberStep, dATR)...)
 	}
@@ -106,7 +106,7 @@ func AssembleScoredLevels(traderID string, bars []market.Kline, reg SessionRegis
 	if price <= 0 {
 		return nil, 0, 0
 	}
-	dATR = DailyRangeProxy(bars, now)
+	dATR = DailyRangeProxyFor(symbol, bars, now)
 	if dATR <= 0 {
 		dATR = 0.008 * price // fallback until the map warms
 	}
@@ -161,7 +161,7 @@ func AssembleScoredLevelsMinGrade(traderID string, bars []market.Kline, reg Sess
 	if price <= 0 {
 		return nil, 0, 0
 	}
-	dATR = DailyRangeProxy(bars, now)
+	dATR = DailyRangeProxyFor(symbol, bars, now)
 	if dATR <= 0 {
 		dATR = 0.008 * price // fallback until the map warms
 	}
@@ -218,7 +218,7 @@ func AssembleResearchLevels(traderID string, bars []market.Kline, reg SessionReg
 	if price <= 0 {
 		return nil, nil, 0, 0, nil
 	}
-	dATR = DailyRangeProxy(bars, now)
+	dATR = DailyRangeProxyFor(symbol, bars, now)
 	if dATR <= 0 {
 		dATR = 0.008 * price // fallback until the map warms
 	}
@@ -612,37 +612,52 @@ func tagHTFLevel(l DetectedLevel, tf string, lookbackBars int) DetectedLevel {
 // Improves as the cache / durable store warms forward.
 // S1 (mega-research 2026-08-26) — RENAMED from DailyATRProxy: this is a
 // session-day H−L range mean, NOT an ATR. The name now says so.
+//
+// R22 TIME-WEEKLY (dATR P1): a session-day counts only when the slice holds it
+// WHOLE. The 2,000-bar ring spans ~1.45 sessions, so its oldest day is almost
+// always cut off at the front — and it used to be averaged as if complete
+// (10-14 01:44 CT: a 96-bar stub of range 45.00 halved dATR to 179.62). A day
+// whose first bar opens after its 17:00 CT session start is truncated and is
+// skipped. The planner paths call DailyRangeProxyFor, which reads the complete
+// ranges from the native daily bars and only falls back to this.
 func DailyRangeProxy(bars []market.Kline, now time.Time) float64 {
 	cb := closedBars(bars, now)
 	if len(cb) == 0 {
 		return 0
 	}
-	type dayRange struct{ hi, lo float64 }
+	type dayRange struct {
+		hi, lo float64
+		first  int64
+	}
 	days := map[string]*dayRange{}
+	var order []string
 	for _, b := range cb {
 		key := CMESessionDayKey(time.UnixMilli(b.OpenTime))
 		d := days[key]
 		if d == nil {
-			d = &dayRange{hi: math.Inf(-1), lo: math.Inf(1)}
+			d = &dayRange{hi: math.Inf(-1), lo: math.Inf(1), first: b.OpenTime}
 			days[key] = d
+			order = append(order, key)
 		}
 		d.hi = math.Max(d.hi, b.High)
 		d.lo = math.Min(d.lo, b.Low)
 	}
 	nowFut := CMESessionDayKey(now)
-	var sum float64
-	var n int
-	for key, d := range days {
+	var ranges []float64
+	for _, key := range order {
+		d := days[key]
 		if key == nowFut {
 			continue // developing day is not a completed range
 		}
+		if sessionFrontTruncated(d.first) {
+			continue // the slice cut this day off at the front — not a complete range
+		}
 		if d.hi > d.lo {
-			sum += d.hi - d.lo
-			n++
+			ranges = append(ranges, d.hi-d.lo)
 		}
 	}
-	if n > 0 {
-		return sum / float64(n)
+	if m, ok := meanOfLastSessions(ranges); ok {
+		return m
 	}
 	// Fallback: the developing day's range so far.
 	if d := days[nowFut]; d != nil && d.hi > d.lo {

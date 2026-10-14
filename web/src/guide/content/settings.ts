@@ -82,7 +82,7 @@ const dayPlan: KnobSpec[] = [
     systemDefault:
       '1.5 (the code default: kernel.ResolveProximityK falls back to ActivationWindowK 1.5 when nothing is saved)',
     recommended:
-      '⭐ 1 — the value BOTH bound strategies have SAVED (day_plan.proximity_filter_atr = 1, read 2026-10-14 for a5b7662e "MNQ" and 7a853ea3 "mnq 2"); the 1.5 this card used to call the saved value is only the code fallback. Band = K × dATR (the daily-range proxy) on BOTH the bot gate and the engine path; kernel.ResolveProximityK clamps to 0.1–3.0.',
+      '⭐ 1 — the value BOTH bound strategies have SAVED (day_plan.proximity_filter_atr = 1, read 2026-10-14 for a5b7662e "MNQ" and 7a853ea3 "mnq 2"); the 1.5 this card used to call the saved value is only the code fallback. Band = K × dATR (the daily-range proxy) on BOTH the bot gate and the engine path; kernel.ResolveProximityK clamps to 0.1–3.0. dATR (release #22) = the mean high−low of the last 2 COMPLETE CME sessions, read from the NT8 daily bars; it used to average a cut-off stub of the oldest day as if complete and fell as low as half the real range (10-14 01:44 CT: 179.62 vs ~380).',
     whenToTouch:
       'If the card looks too crowded or too empty for the daily range.',
     perSession:
@@ -547,9 +547,10 @@ const risk: KnobSpec[] = [
   {
     label: 'Min confidence',
     where: 'Strategy → Risk Control',
-    what: "Floor on the AI's confidence integer; below = refused.",
-    trader: 'The simplest honesty gate: 60 means "be at least 60% sure".',
-    consumer: 'kernel/engine_position.go:188 (confidence gate)',
+    what: "Floor on the AI's confidence integer; below = refused. DECISION PATH ONLY: a plan arm carries no AI confidence, so under plan_mode strict (entries only through armed scenarios) this floor never runs. Since release #22 an arm entry's confidence is stored EMPTY (shown n/a), never a fabricated 0.",
+    trader:
+      'The simplest honesty gate: 60 means "be at least 60% sure" — for AI decisions, not for armed plan scenarios.',
+    consumer: 'kernel/engine_position.go:199 (confidence gate, decision path)',
     range: '50 – 100',
     systemDefault: '60 (owner)',
     recommended:
@@ -862,9 +863,9 @@ const prompt: KnobSpec[] = [
     where: 'Strategy → AI config → custom_prompt (ai_config field)',
     what: 'Extra prompt text appended to the System Prompt for a personalized trading style. Empty = nothing appended; the output format and the risk rules are fixed and cannot be overridden from here.',
     trader:
-      'The appended text rides verbatim into every live/planner prompt for this strategy.',
+      'The text rides verbatim into the executor prompt ("# Personalized Strategy") AND — since release #22 (owner ruling) — into the PLANNER prompt as a delimited OWNER GUIDANCE block (<<<OWNER_GUIDANCE … OWNER_GUIDANCE>>>) that never overrides the machine rules. Before #22 the planner never saw it, so under plan_mode strict it could not shape a single entry. Every plan write logs only its length and a short hash (🗣️ owner guidance in the planner prompt … len=… sha256=…), never the text.',
     consumer:
-      'store/strategy.go:792 (ai_config.custom_prompt) · merged into the prompt at build',
+      'store/strategy.go:792 (ai_config.custom_prompt) · kernel/engine_prompt_futures.go (executor) · kernel/owner_guidance.go + kernel/planner_prompt.go (planner)',
     range: 'free text · empty = nothing appended',
     systemDefault: 'empty',
     recommended: '⭐ keep it short — it appends verbatim to the prompt.',
@@ -1007,8 +1008,10 @@ const indicators: KnobSpec[] = [
     label: 'EMA',
     where: 'Strategy → Indicators → EMA toggle + periods',
     what: 'Exponential Moving Average block on/off. Default periods [20, 50] (store/strategy.go:1950 + DefaultConfig :2205).',
-    trader: 'OFF removes EMA from the AI indicator text.',
-    consumer: 'engine_prompt.go/engine_analysis.go read Indicators.EMAPeriods.',
+    trader:
+      'OFF removes EMA from the AI indicator text. ON prints only WARMED values: a period-P EMA needs about P + 2.3×P bars (EMA200 → 661) before its starting average weighs under 1%; a timeframe without that many bars prints "EMA200: n/a (not warmed — needs 661 bars)" (release #22 — the old 220-bar read printed an SMA200 under the EMA200 label, 20–60 pts off the chart).',
+    consumer:
+      'engine_prompt.go/engine_analysis.go read Indicators.EMAPeriods; market.EMAWarmupBars sets the fetch depth and the warm-up gate.',
     range: 'bool + comma periods',
     systemDefault: 'off; periods [20, 50] when on',
     recommended: 'Per strategy taste.',

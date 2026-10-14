@@ -94,6 +94,11 @@ type Context struct {
 	// time, so a legal slow call can never turn a live-at-snapshot feed into
 	// "stale" (stale-bar dispatch 2026-08-19). Prompt-invisible (json:"-").
 	SnapshotMs int64 `json:"-"`
+	// SnapshotAt is the SAME instant as SnapshotMs, kept as the time.Time from
+	// time.Now() so it carries Go's monotonic reading (release #22): B4's
+	// receipt-age leg and clock-step hold measure on it, immune to wall steps.
+	// Zero in fixtures that never went through assembly → those legs skip.
+	SnapshotAt time.Time `json:"-"`
 	// A5 (G5) — prompt-ownership tags: field-name → owning trader_id for each
 	// account-scoped context field the trader populates. Final prompt assembly
 	// asserts every tag == TraderID (the deciding trader); a mismatch is cross-trader

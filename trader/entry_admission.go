@@ -270,6 +270,17 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 		})
 	}
 
+	// Release #22 OPS-SAFETY — INSTALL PENDING: while an update job is in a
+	// pre-hold state (requested → preflight), NEW entries are frozen so the
+	// bot stops racing the preflight's flat check (10-14: job 30a8bbf6 was
+	// refused after trader 12345 placed at 01:44:00, 4 min into preflight).
+	// Read-only from the job files; clears when the job ends or times out.
+	if reason, pending := InstallPending(now); pending {
+		return at.admitRefuse(in, "install_pending", "install_pending: "+reason, func() {
+			at.logWarnf("⏳ install pending: %s %s REFUSED — %s. Exits and protection continue.", sym, act, reason)
+		})
+	}
+
 	// P3 (ledger-close 2026-08-19) — CONTRACT-ROLL gate for the continuous
 	// symbol: within ROLL_BLOCK_DAYS_BEFORE_EXPIRY of the ACK-resolved front
 	// contract's third-Friday expiry, NEW entries are refused (the dated-code

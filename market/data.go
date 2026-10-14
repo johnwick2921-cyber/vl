@@ -254,7 +254,17 @@ func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe stri
 	// period (e.g. EMA200) we must fetch maxPeriod + count bars — not a flat 200,
 	// which left EMA200 a 1-value warm-up stub. Clamp to [200, 2500]: 200 = the
 	// legacy floor (never fetch less than before); 2500 = the BarCache cap.
-	fetchDepth := clampInt(maxConfiguredPeriod(ip)+count, 200, 2500)
+	//
+	// R22 F-2: an EMA needs more than its period — EMAWarmupBars(P) (661 for
+	// EMA200) before its last value stops being the SMA seed, so the depth
+	// covers the longest configured EMA's warm-up too.
+	need := maxConfiguredPeriod(ip)
+	for _, p := range ip.EMA {
+		if w := EMAWarmupBars(p); w > need {
+			need = w
+		}
+	}
+	fetchDepth := clampInt(need+count, 200, 2500)
 
 	// Store data for all timeframes
 	timeframeData := make(map[string]*TimeframeSeriesData)
@@ -326,7 +336,7 @@ func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe stri
 		currentEMAByPeriod = make(map[int]float64, len(ip.EMA))
 		for _, p := range ip.EMA {
 			if p > 0 {
-				currentEMAByPeriod[p] = calculateEMA(primaryKlines, p)
+				currentEMAByPeriod[p] = calculateEMAWarmed(primaryKlines, p) // 0 = not warmed → n/a
 			}
 		}
 	}

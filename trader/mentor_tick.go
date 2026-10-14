@@ -401,7 +401,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// 1m feed is stale (B4's formula). Counted + WARN'd once per episode inside
 	// mentorStaleDataBlocked. Exits / protection are never gated; resting broker
 	// orders are never cancelled by this.
-	if at.mentorStaleDataBlocked(mentorClockNow()) {
+	if stale, why := at.mentorStaleDataBlockedWhy(mentorClockNow()); stale {
 		// A setup computed on stale prices is not a setup. The deferred guard in
 		// mentorDispatchEntry drops the evaluator's arm on this refusal. LOUD:
 		// every sized Place refused here is named and counted (the "never
@@ -417,8 +417,8 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 			age = fmt.Sprintf("%ds", (now.UnixMilli()-(newestOpen+60_000))/1000)
 		}
 		at.mentorCount("placement_refused_stale_data")
-		at.logWarnf("🧑‍🏫 mentor placement REFUSED — stale 1m feed (B4, newest bar %s old): %s %s %s @ %.2f — never reaches the ledger",
-			age, in.ArmID, in.Setup, in.Side, in.Price)
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — stale 1m feed (newest bar %s old; %s): %s %s %s @ %.2f — never reaches the ledger",
+			age, why, in.ArmID, in.Setup, in.Side, in.Price)
 		// STALLED-SETUP ALARM (release #22): record the refusal reason so a
 		// stalled kind's alert names "stale_data" instead of "silent drop"
 		// (the 10-11 Sunday NT8 lag refused level orders quietly here).

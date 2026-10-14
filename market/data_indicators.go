@@ -2,6 +2,33 @@ package market
 
 import "math"
 
+// emaSeedResidual is the most the SMA seed may still weigh in an EMA we print.
+const emaSeedResidual = 0.01
+
+// EMAWarmupBars is how many bars a period-P EMA needs before its value is an
+// EMA rather than its SMA seed: P bars for the seed plus k recurrence steps
+// with (1 − 2/(P+1))^k ≤ 1%. EMA20 → 68, EMA50 → 165, EMA200 → 661.
+//
+// R22 TIME-WEEKLY (MATH-INDICATORS F-2): the prompt fetched maxPeriod+count
+// bars (220 for EMA200), so 82% of the printed "EMA200" was its SMA200 seed —
+// 20 to 60 pts off the chart's EMA200 on real 5m/15m/1h bars.
+func EMAWarmupBars(period int) int {
+	if period <= 1 {
+		return period
+	}
+	k := math.Ceil(math.Log(emaSeedResidual) / math.Log(1-2.0/float64(period+1)))
+	return period + int(k)
+}
+
+// calculateEMAWarmed is calculateEMA that refuses (returns 0) until the series
+// holds EMAWarmupBars(period) bars — a prompt value labelled EMA must be one.
+func calculateEMAWarmed(klines []Kline, period int) float64 {
+	if period <= 0 || len(klines) < EMAWarmupBars(period) {
+		return 0
+	}
+	return calculateEMA(klines, period)
+}
+
 // calculateEMA calculates EMA
 func calculateEMA(klines []Kline, period int) float64 {
 	if len(klines) < period {

@@ -78,7 +78,7 @@ var barLadder = map[string][]string{
 // the reason. An omission without a reason is indistinguishable from an
 // oversight, and the next wave would "fix" it back in.
 var ladderExclusions = map[string]string{
-	"1w:1w": "NT8 native 1w bars run Friday 00:00 → Thursday 23:59 (measured on the live cache 2026-09-02: bars stamped 2026-08-21 Fri and 2026-08-28 Fri). Our weekly vocabulary is Monday-governed throughout (weekStartMonday; \"Sunday 17:00 CT first print\", \"Friday ≤16:00 CT last print\"; PWH/PWL from the prior Monday week). A Friday-stamped weekly bar STRADDLES two of our weeks and cannot be re-bucketed without inventing data, so weekly resolves from native 1d — which is clean calendar-day and rolls up to our Monday weeks exactly. Class 7: one stamp convention at one chokepoint.",
+	"1w:1w": "NT8 native 1w bars run Friday 00:00 → Thursday 23:59 (measured on the live cache 2026-09-02: bars stamped 2026-08-21 Fri and 2026-08-28 Fri). Our weekly vocabulary is Monday-governed throughout (weekStartMonday; \"Sunday 17:00 CT first print\", \"Friday ≤16:00 CT last print\"; PWH/PWL from the prior Monday week). A Friday-stamped weekly bar STRADDLES two of our weeks and cannot be re-bucketed without inventing data, so the weekly READ is built from native 1d re-stamped as CME session days (kernel.SessionDaysFromNativeDaily: Sunday 17:00 CT open → Friday 16:00 CT close). This resolver's own 1w answer is epoch-floored (Thursday 00:00 UTC buckets) and is a reachability report for the boot line ONLY — never weekly facts (R22 P1-A: it put a Thursday close into PWC). Class 7: one stamp convention at one chokepoint.",
 }
 
 // ExcludedNative returns why a native TF is excluded from its own ladder ("" =
