@@ -293,13 +293,29 @@ func (at *AutoTrader) mentorStaleDataBlockedWhy(now time.Time) (bool, string) {
 	stale, why := kernel.EntryFeedStale(at.futuresSymbol(), newestOpen, now)
 	at.mentorStaleMu.Lock()
 	changed := stale != at.mentorStaleEpisode
+	var held time.Duration
+	var startWhy string
 	if changed {
 		at.mentorStaleEpisode = stale
+		if stale {
+			at.mentorStaleSince, at.mentorStaleWhy = time.Now(), why
+		} else {
+			if !at.mentorStaleSince.IsZero() {
+				held = time.Since(at.mentorStaleSince)
+			}
+			startWhy = at.mentorStaleWhy
+			at.mentorStaleSince, at.mentorStaleWhy = time.Time{}, ""
+		}
 	}
 	at.mentorStaleMu.Unlock()
 	if changed && stale {
 		at.mentorCount("stale_data")
 		at.logWarnf("🧑‍🏫 mentor stale-data block: %s — refusing NEW mentor arms; exits and protection are unaffected; resting orders are NOT cancelled.", why)
+	}
+	if changed && !stale {
+		// OPS NEW-8 (10-14): the START edge was the only line — nothing said
+		// when NEW mentor entries resumed or how long they were held.
+		at.logInfof("🧑‍🏫 mentor stale-data block ENDED after %s (monotonic) — NEW mentor arms allowed again; it began on: %s", held.Round(time.Second), startWhy)
 	}
 	return stale, why
 }
@@ -1129,10 +1145,17 @@ func mentorExitA(pos mentorPosition, l, h float64) (exitPrice float64, exitReaso
 // entry [X8 @18:02–18:14], see mentorLivePos.TrailTFMin.
 const mentorTrailTFDefault = "1m"
 
-// mentorTrailTFSubMinuteWarned dedups the drive-time WARN for a refused 30s/45s
-// per (trader, value); the config-load check (mentorTrailTFLoadCheck) WARNs on
-// every load. The counter records every resolution.
+// mentorTrailTFSubMinuteWarned dedups the drive-time WARN AND count for a
+// refused 30s/45s or an invalid value, per (trader instance, value); the
+// config-load check (mentorTrailTFLoadCheck) WARNs and counts on every load
+// and marks the value said. #23 review P3-6: the drive resolves the knob on
+// every pass of every position, and counted each pass — one stored value
+// inflated trail_tf_subminute_refused by one per position per candle.
 var mentorTrailTFSubMinuteWarned sync.Map
+
+// mentorTrailTFSaidKey is the dedupe key: the trader INSTANCE (not its id —
+// a reload or a test's new trader is a new load) plus the normalized value.
+func mentorTrailTFSaidKey(at *AutoTrader, v string) string { return fmt.Sprintf("%p|%s", at, v) }
 
 // mentorTrailTFRaw reads the stored trail_tf value ("" when no strategy).
 func (at *AutoTrader) mentorTrailTFRaw() string {
@@ -1156,9 +1179,10 @@ func mentorTrailTFSubMinuteWhy(raw string) string {
 
 // mentorTrailTF resolves the trail_tf knob. "" → 1m; 1m passes; off = the
 // video-8 legacy "never trail on the 1m" (SUPERSEDED, kept as a knob: BE
-// only). 30s/45s are REFUSED → 1m (no sub-minute bars exist; counted every
-// resolution, WARN'd at config load and once per value at the drive). Any
-// other value refuses to trail fail-closed and is counted.
+// only). 30s/45s are REFUSED → 1m (no sub-minute bars exist). Any other value
+// refuses to trail fail-closed. A refused or invalid value is WARN'd and
+// counted at config load, and at the drive only once per value when the load
+// did not already say it — never once per pass.
 func (at *AutoTrader) mentorTrailTF() string {
 	raw := at.mentorTrailTFRaw()
 	switch v := strings.ToLower(strings.TrimSpace(raw)); v {
@@ -1167,16 +1191,22 @@ func (at *AutoTrader) mentorTrailTF() string {
 	case "1m", "off":
 		return v
 	case "30s", "45s":
-		at.mentorCount("trail_tf_subminute_refused")
-		if _, seen := mentorTrailTFSubMinuteWarned.LoadOrStore(at.id+"|"+v, true); !seen {
+		if _, seen := mentorTrailTFSubMinuteWarned.LoadOrStore(mentorTrailTFSaidKey(at, v), true); !seen {
+			at.mentorCount("trail_tf_subminute_refused")
 			at.logWarnf("%s", mentorTrailTFSubMinuteWhy(raw))
 		}
 		return mentorTrailTFDefault // refused → the 1m
 	default:
-		at.mentorCount("trail_tf_bad_value")
-		at.logWarnf("🧑‍🏫 mentor trail_tf %q invalid (1m/off) — trail refused for safety", raw)
+		if _, seen := mentorTrailTFSubMinuteWarned.LoadOrStore(mentorTrailTFSaidKey(at, v), true); !seen {
+			at.mentorCount("trail_tf_bad_value")
+			at.logWarnf("%s", mentorTrailTFBadWhy(raw))
+		}
 		return "off"
 	}
+}
+
+func mentorTrailTFBadWhy(raw string) string {
+	return fmt.Sprintf("🧑‍🏫 mentor trail_tf %q invalid (1m/off) — trail refused for safety", raw)
 }
 
 // mentorTrailTFLoadCheck is the config-load half of the 30s/45s refusal: it
@@ -1186,12 +1216,18 @@ func (at *AutoTrader) mentorTrailTF() string {
 func (at *AutoTrader) mentorTrailTFLoadCheck() {
 	raw := at.mentorTrailTFRaw()
 	v := strings.ToLower(strings.TrimSpace(raw))
-	if !mentorTrailTFSubMinute(v) {
+	switch {
+	case v == "" || v == "1m" || v == "off":
 		return
+	case mentorTrailTFSubMinute(v):
+		mentorTrailTFSubMinuteWarned.Store(mentorTrailTFSaidKey(at, v), true) // the drive need not repeat it
+		at.mentorCount("trail_tf_subminute_refused")
+		at.logWarnf("%s", mentorTrailTFSubMinuteWhy(raw))
+	default:
+		mentorTrailTFSubMinuteWarned.Store(mentorTrailTFSaidKey(at, v), true)
+		at.mentorCount("trail_tf_bad_value")
+		at.logWarnf("%s", mentorTrailTFBadWhy(raw))
 	}
-	mentorTrailTFSubMinuteWarned.Store(at.id+"|"+v, true) // the drive need not repeat it
-	at.mentorCount("trail_tf_subminute_refused")
-	at.logWarnf("%s", mentorTrailTFSubMinuteWhy(raw))
 }
 
 // mentorTrailEnabled reports whether the candle trail runs (off = video-8).

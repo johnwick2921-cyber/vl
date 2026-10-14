@@ -595,6 +595,11 @@ type AutoTrader struct {
 	// so the episode flag gets its own mutex (never a data race).
 	mentorStaleMu      sync.Mutex
 	mentorStaleEpisode bool
+	// mentorStaleSince is when the current episode began, read from the
+	// MONOTONIC clock (time.Now) — its END line reports the hold's length
+	// (OPS NEW-8), and a wall-clock step must not stretch or shrink it.
+	mentorStaleSince time.Time
+	mentorStaleWhy   string
 	// mentorInvalidLog is the item-18 noise gate (DS-105 replay): the last INFO
 	// emit instant + the suppressed count per LevelKey, so a busy level's
 	// level_invalid logs at most once per 15 minutes while the counter still

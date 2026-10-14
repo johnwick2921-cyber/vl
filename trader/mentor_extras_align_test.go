@@ -216,3 +216,27 @@ func TestExtrasAlignTrailTFSubMinuteRefusedAtLoad(t *testing.T) {
 		}
 	}
 }
+
+// TestTrailTFRefusalCountedOncePerValueNotPerDrivePass — #23 review P3-6. The
+// exit drive resolves trail_tf on EVERY pass of EVERY position
+// (mentorExitDrivePos); a stored 30s counted trail_tf_subminute_refused each
+// time, so the counter measured candles × positions, not refusals. Now: once
+// at config load, and the drive adds nothing for a value already said.
+func TestTrailTFRefusalCountedOncePerValueNotPerDrivePass(t *testing.T) {
+	for _, tc := range []struct{ v, counter string }{{"30s", "trail_tf_subminute_refused"}, {"garbage", "trail_tf_bad_value"}} {
+		at, _ := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorTrailTF: tc.v}})
+		withMaintenanceDir(t)
+		at.resetMentorCountersForTest()
+		at.mentorSeedAtStart() // the config load: said + counted once
+		if n := at.mentorCountSnapshot()[tc.counter]; n != 1 {
+			t.Fatalf("trail_tf %q: the load must count once, got %d", tc.v, n)
+		}
+		p := &mentorLivePos{Pos: mentorPosition{Mode: "swing", Side: "long"}}
+		for i := 0; i < 50; i++ { // 50 drive passes (candles × positions)
+			at.mentorExitDrivePos(nil, p, 100, 101, 99, int64(i)*60_000)
+		}
+		if n := at.mentorCountSnapshot()[tc.counter]; n != 1 {
+			t.Fatalf("trail_tf %q: 50 drive passes must not re-count the refusal, %s=%d (want 1)", tc.v, tc.counter, n)
+		}
+	}
+}
