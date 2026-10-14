@@ -56,6 +56,7 @@ func (s *PositionStore) LastLosingClose(traderID string, sinceMs int64) (*Trader
 	if err := s.db.
 		Where("trader_id = ? AND status = ? AND close_reason <> ? AND exit_time >= ?",
 			traderID, "CLOSED", CloseReasonTestSeam, sinceMs).
+		Where(BotOriginSQL). // R22 R1: a manual NT8 loser is not the bot's loss
 		Order("exit_time DESC").Limit(20).Find(&rows).Error; err != nil {
 		return nil, false
 	}

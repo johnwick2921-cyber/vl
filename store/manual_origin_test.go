@@ -295,3 +295,20 @@ func funcBody(t *testing.T, path, name string) string {
 	}
 	return rest
 }
+
+// The decision-stats opens/closes (GET /api/statistics) count the BOT's
+// positions only.
+func TestDecisionStatisticsCountBotPositionsOnly(t *testing.T) {
+	st, ps := newR1Store(t)
+	seedR1(t, ps, r1Fixture())
+	if _, err := ps.RunManualOriginMigration(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := st.Decision().GetStatistics(r1Trader, "A1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.TotalOpenPositions != 3 || s.TotalClosePositions != 3 {
+		t.Fatalf("statistics opens/closes = %d/%d, want 3/3 (4 manual rows excluded)", s.TotalOpenPositions, s.TotalClosePositions)
+	}
+}
