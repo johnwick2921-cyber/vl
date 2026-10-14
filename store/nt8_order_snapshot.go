@@ -10,6 +10,7 @@
 package store
 
 import (
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -65,6 +66,31 @@ func (s *NT8OrderSnapshotStore) Latest(account, symbol string) (*NT8OrderSnapsho
 		return nil, err
 	}
 	return &r, nil
+}
+
+// LatestWithOrderNamed returns the most recent stored snapshot for account
+// (received at or after sinceMs) whose order list carries an order whose NAME
+// starts with namePrefix — e.g. "<signal>-sl" matches both "-sl" and "-sl2".
+// nil, nil = no such snapshot. P2-1 (release #22 rescan): the protection net
+// reads the last stop price the BROKER held for a signal from here after the
+// live book has lost it; the AddOn drops terminal orders from every frame, so
+// only the history still shows the price the stop stood at.
+func (s *NT8OrderSnapshotStore) LatestWithOrderNamed(account, namePrefix string, sinceMs int64) (*NT8OrderSnapshot, error) {
+	if s == nil || s.db == nil || namePrefix == "" {
+		return nil, nil
+	}
+	esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(namePrefix)
+	var rows []NT8OrderSnapshot
+	err := s.db.Where("account = ? AND received_at_ms >= ? AND orders_json LIKE ? ESCAPE '\\'",
+		account, sinceMs, `%"name":"`+esc+`%`).
+		Order("received_at_ms DESC").Order("id DESC").Limit(1).Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return &rows[0], nil
 }
 
 // PruneBefore drops rows older than cutoff. A 30-second snapshot is ~2,880 rows

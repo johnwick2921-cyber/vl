@@ -22,8 +22,11 @@ import (
 // trading loop continues.
 
 // recordAcceptedRisk appends the immutable record of an accepted order. It is
-// called once per acceptance; a re-authorization appends ANOTHER row rather
-// than editing this one, so ledger drift becomes a query.
+// called on every live entry state, and RECORDS ONCE PER SIGNAL (N-F, release
+// #22 rescan): the Accepted and the Working frame both reached here and wrote
+// a pair per acceptance (rows 224/225, 226/227, 228/229). A re-authorization
+// is a new signal, so it still appends ANOTHER row rather than editing this
+// one, and ledger drift stays a query.
 func (at *AutoTrader) recordAcceptedRisk(r store.ArmedOrderDB, u nt.OrderUpdatePayload) {
 	if at == nil || at.store == nil {
 		return
@@ -33,12 +36,23 @@ func (at *AutoTrader) recordAcceptedRisk(r store.ArmedOrderDB, u nt.OrderUpdateP
 			at.logWarnf("🧾 accepted-risk recording panicked and was contained: %v", rec)
 		}
 	}()
+	if prior, err := at.store.AcceptedRisk().ForSignal(u.SignalID); err == nil {
+		for i := range prior {
+			if prior[i].TraderID == at.id {
+				return // already recorded on this signal's first live state
+			}
+		}
+	}
 
 	now := time.Now().UTC()
 	row := &store.AcceptedRisk{
 		TraderID: at.id, SignalID: u.SignalID, OrderName: u.OrderName,
 		Symbol: u.Symbol, Account: u.Account, Side: r.Side,
-		Quantity: u.Quantity,
+		// N-F: u.Quantity is the CUMULATIVE FILLED count (e.Filled) — 0 on
+		// every live state, which is why 229 of 229 rows read quantity=0. The
+		// ORDER's quantity comes from the broker book below; without one, the
+		// ledger's signed contracts; never the filled count.
+		Quantity: ledgerContracts(r),
 		// The ledger's terms AT THIS INSTANT — recorded so the divergence from
 		// the broker is measurable instead of reconstructed from a log file.
 		LedgerEntryPx: r.EntryPx, LedgerStopPx: r.StopPx, LedgerTargetPx: r.TargetPx,
@@ -137,12 +151,24 @@ func applyBrokerTerms(row *store.AcceptedRisk, orders []nt.NT8Order, signalID st
 			if row.OrderType == "" {
 				row.OrderType = o.Type
 			}
+			if o.Name == signalID && o.Quantity > 0 {
+				row.Quantity = o.Quantity // N-F: the broker's order quantity
+			}
 			if p := entryPriceOf(o); p > 0 {
 				v := p
 				row.AcceptedEntryPx = &v
 			}
 		}
 	}
+}
+
+// ledgerContracts is the ledger's signed contract count for an arm row (nil or
+// non-positive → 0: unknown, never invented).
+func ledgerContracts(r store.ArmedOrderDB) int {
+	if r.Contracts != nil && *r.Contracts > 0 {
+		return *r.Contracts
+	}
+	return 0
 }
 
 // isCancelInFlight reports whether the broker is already withdrawing this

@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -187,6 +188,42 @@ func protectionFreshPrice(symbol string, now time.Time) (float64, bool) {
 // already through the FRESH last price flattens rather than places.
 func adjudicateProtection(symbol, side string, posQty int, book []nt.NT8Order, haveBook bool,
 	acceptedStop *float64, planStop float64, mentorStop *float64, freshPrice *float64) protectionVerdict {
+	return adjudicateProtectionWith(symbol, side, posQty, book, haveBook, acceptedStop, planStop, mentorStop, nil, freshPrice)
+}
+
+// knownBrokerStop is the TIGHTEST stop the broker is known to have held for
+// the position's own signal (P2-1): a stop this process MOVED (auto-BE / trail,
+// TCPTrader.KnownStopForSignal) or the newest "<signal>-sl" price in the
+// persisted F12 book history. From names which, for the log and the alert.
+type knownBrokerStop struct {
+	Px   float64
+	From string
+}
+
+// stopTighter reports whether a is TIGHTER than b for the position side: a
+// long's stop higher, a short's stop lower (closer to price, less risk).
+func stopTighter(side string, a, b float64) bool {
+	if strings.EqualFold(strings.TrimSpace(side), "SHORT") {
+		return a < b
+	}
+	return a > b
+}
+
+// stopThrough reports whether a FRESH last price is already through the stop:
+// the stop would have filled, so placing it would put it behind the market.
+func stopThrough(side string, price, stop float64) bool {
+	if strings.EqualFold(strings.TrimSpace(side), "LONG") {
+		return price <= stop
+	}
+	return price >= stop
+}
+
+// adjudicateProtectionWith is adjudicateProtection plus P2-1's known broker
+// stop. PURE. The price order for a non-mentor position is: the tightest stop
+// the broker is KNOWN to have held (never placed wider than it — a BE move must
+// never be undone by the net), else the accepted-risk stop, else the plan's.
+func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Order, haveBook bool,
+	acceptedStop *float64, planStop float64, mentorStop *float64, brokerStop *knownBrokerStop, freshPrice *float64) protectionVerdict {
 
 	if posQty <= 0 {
 		return protectionVerdict{Action: protectionOK, Why: "no open position"}
@@ -291,6 +328,35 @@ func adjudicateProtection(symbol, side string, posQty int, book []nt.NT8Order, h
 		return protectionVerdict{Action: protectionPlace, StopPx: *mentorStop, Source: "mentor_driver",
 			NeedQty: posQty, Why: "NO protective order at the broker for an open mentor position" + notProtection + " — no fresh last price, so the protective side could NOT be checked; placing the driver's CURRENT (moved BE/1:1/trail) stop anyway, not the original"}
 	}
+	// P2-1 (release #22 rescan): a stop the broker is KNOWN to have held for
+	// THIS position's signal — moved by auto-BE / a trail, or read from the
+	// book history — is the floor. The plan stop (armed_orders.stop_px) and
+	// the accepted-risk stop are the ORIGINAL; placing either after a BE move
+	// re-opens the risk the move removed (654: plan 30551.25 vs BE 30456.50 =
+	// 94.75 pts, $189.50). The B1 widen ban guards move_stop only, so this is
+	// where the net must refuse to widen.
+	if brokerStop != nil && brokerStop.Px > 0 {
+		px, src := brokerStop.Px, "broker_stop("+brokerStop.From+")"
+		if acceptedStop != nil && *acceptedStop > 0 && stopTighter(side, *acceptedStop, px) {
+			px, src = *acceptedStop, "accepted_risk"
+		}
+		if freshPrice != nil && *freshPrice > 0 && stopThrough(side, *freshPrice, px) {
+			return protectionVerdict{Action: protectionFlatten, StopPx: px, Source: src,
+				NeedQty: posQty,
+				Why:     fmt.Sprintf("NO protective order at the broker and the tightest known stop %.2f (%s) is already through the fresh last price %.2f — the stop would have filled, so the position is flattened", px, src, *freshPrice)}
+		}
+		checked := " — no fresh last price, so the protective side could NOT be checked"
+		if freshPrice != nil && *freshPrice > 0 {
+			checked = fmt.Sprintf(" — fresh last price %.2f is on the protective side", *freshPrice)
+		}
+		planNote := ""
+		if planStop > 0 && math.Abs(planStop-px) > 1e-9 {
+			planNote = fmt.Sprintf(", NOT the plan's original %.2f", planStop)
+		}
+		return protectionVerdict{Action: protectionPlace, StopPx: px, Source: src,
+			NeedQty: posQty, Why: "NO protective order at the broker for an open position" + notProtection +
+				fmt.Sprintf(" — placing the TIGHTEST stop the broker is known to have held (%.2f from %s)%s%s", px, src, planNote, checked)}
+	}
 	if acceptedStop != nil && *acceptedStop > 0 {
 		return protectionVerdict{Action: protectionPlace, StopPx: *acceptedStop, Source: "accepted_risk",
 			NeedQty: posQty, Why: "NO protective order at the broker for an open position" + notProtection + " — placing the stop the broker itself accepted"}
@@ -388,6 +454,58 @@ func (at *AutoTrader) protectionPricesFor(symbol, side string) (signalID string,
 		}
 	}
 	return signalID, acceptedStop, planStop
+}
+
+// protectionHistoryLookback bounds the book-history scan for a signal's last
+// "-sl" price. A swing held across a weekend is still inside it.
+const protectionHistoryLookback = 14 * 24 * time.Hour
+
+// knownBrokerStopFor (P2-1) returns the TIGHTEST stop the broker is known to
+// have held for signalID: the stop this process last MOVED it to (auto-BE or a
+// trail, recorded per signal by the TCPTrader after each sent move) and the
+// newest "<signal>-sl"/"-sl2" price in the persisted F12 book history (which
+// survives a restart, and still holds the price after the live book lost the
+// order). Both absent → ok=false and the caller keeps the accepted/plan stop.
+func (at *AutoTrader) knownBrokerStopFor(signalID, side string, now time.Time) (knownBrokerStop, bool) {
+	var out knownBrokerStop
+	if at == nil || strings.TrimSpace(signalID) == "" {
+		return out, false
+	}
+	found := false
+	consider := func(px float64, from string) {
+		if px <= 0 {
+			return
+		}
+		if !found || stopTighter(side, px, out.Px) {
+			out, found = knownBrokerStop{Px: px, From: from}, true
+		}
+	}
+	if k, ok := at.trader.(interface {
+		KnownStopForSignal(signalID, side string) (float64, bool)
+	}); ok {
+		if px, ok := k.KnownStopForSignal(signalID, side); ok {
+			consider(px, "moved this process")
+		}
+	}
+	if at.store != nil {
+		if _, account, _ := at.brokerBook(); account != "" {
+			row, err := at.store.NT8OrderSnapshots().LatestWithOrderNamed(account, signalID+"-sl",
+				now.Add(-protectionHistoryLookback).UnixMilli())
+			if err != nil {
+				at.logWarnf("🧷 protection: book-history read for signal %s failed — the moved stop (if any) still applies: %v", shortID(signalID), err)
+			} else if row != nil {
+				var orders []nt.NT8Order
+				if jerr := json.Unmarshal([]byte(row.OrdersJSON), &orders); jerr == nil {
+					for _, o := range orders {
+						if o.Name == signalID+"-sl" || o.Name == signalID+"-sl2" {
+							consider(o.StopPrice, fmt.Sprintf("book snapshot %d", row.ID))
+						}
+					}
+				}
+			}
+		}
+	}
+	return out, found
 }
 
 // sweepStaleProtectionState deletes this trader's per-(symbol, side) protection
@@ -490,6 +608,14 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 			freshPriceP = &fp
 		}
 		v := adjudicateProtection(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, freshPriceP)
+		// P2-1: only a verdict that would PLACE a non-mentor stop asks for the
+		// tightest stop the broker is known to have held (the book-history read
+		// is a database scan; a protected position never pays for it).
+		if (v.Action == protectionPlace || (v.Action == protectionAlertOnly && v.HaveQty == 0)) && v.Source != "mentor_driver" && !hasMentorStop {
+			if ks, ok := at.knownBrokerStopFor(signalID, side, now); ok {
+				v = adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, &ks, freshPriceP)
+			}
+		}
 		at.actOnProtection(v, symbol, side, qty, signalID, trigger, age, now)
 	}
 }

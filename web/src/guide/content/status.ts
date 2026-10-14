@@ -365,7 +365,7 @@ export const status: GuideSection = {
         ['Boot integrity', 'Running binary == deploy record (goldens PASS).'],
         [
           'Dead-man watchdog',
-          'NT8 link sampled every minute per trader; a reconnect between samples counts as a gap; NEW entries blocked until a clean reconciliation.',
+          'NT8 link sampled every minute per trader; a reconnect between samples counts as a gap; NEW entries blocked until a clean reconciliation — a positions snapshot AND an order snapshot received on the new connection ("🔌 … NOT resuming yet" names the one still missing).',
         ],
         ['Trader frozen', 'The trader loop is stuck — investigate.'],
         [

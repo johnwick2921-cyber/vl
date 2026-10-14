@@ -382,6 +382,20 @@ func (at *AutoTrader) placeZoneRow(p zonePass, r store.ArmedOrderDB, side string
 	if at.pictureRowRefusedAtPlacement(p, r) {
 		return false
 	}
+	// N-I (release #22 rescan): past the session's last-entry cutoff the row
+	// can never place, so its zone verdict is neither computed nor COUNTED
+	// (row 365 counted five short_of_zone WAITINGs after the cutoff refused
+	// it). The admission chain refuses it here, logged and counted once as
+	// last_entry. Mentor rows keep their own cutoff (admission).
+	if !isMentorArmOrigin(r) {
+		if _, past := at.entryBlockedByLastEntryAt(p.now); past {
+			if ok, why := at.armAdmitted(r, side, p.price, p.now, p.admitted); !ok {
+				at.setZoneVerdict(p, r, "refused: "+zoneVerdictClass(why))
+				p.scope.note(r.Scenario, "refused: "+why)
+				return false
+			}
+		}
+	}
 	lo, hi := floatOr0(r.ZoneLo), floatOr0(r.ZoneHi)
 	var barOpenMs int64
 	if len(p.bars) > 0 {

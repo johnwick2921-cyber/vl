@@ -1207,6 +1207,43 @@ func (t *TCPTrader) resolveEntrySignalID(symbol, side string) string {
 	return sid
 }
 
+// EntrySignalIDFor is the signal id a side-keyed move_stop (MoveStopToBreakeven)
+// addresses for this trader's symbol — the same resolution, exported so the
+// planner auto-BE verdict (N-G) reads the broker book by the right name.
+func (t *TCPTrader) EntrySignalIDFor(side string) string {
+	if t == nil {
+		return ""
+	}
+	return t.resolveEntrySignalID(t.symbol, side)
+}
+
+// SnapshotsSinceAccept (N-C, release #22 rescan) reports whether a positions
+// snapshot AND an order snapshot for the bound account were RECEIVED on the
+// CURRENT connection — after its accept — and that connection's accept
+// sequence. The dead-man watchdog resumes entries only when both are true:
+// "two reads did not error" can be answered entirely from the old link's
+// cached frames.
+func (t *TCPTrader) SnapshotsSinceAccept() (positions, orders bool, acceptSeq uint64) {
+	if t == nil || t.server == nil {
+		return false, false, 0
+	}
+	rec, ok := t.server.ConnectionRecord()
+	if !ok {
+		return false, false, 0
+	}
+	acceptedAt, okA := rec.AcceptedAt()
+	if !okA {
+		return false, false, rec.AcceptSeq
+	}
+	if _, posAt, _, okP := t.server.PositionsForExecutionReceipt(t.boundAccount, t.symbol); okP && posAt.After(acceptedAt) {
+		positions = true
+	}
+	if _, ordAt, okO := t.server.OrderSnapshots().LatestReceived(t.boundAccount); okO && ordAt.After(acceptedAt) {
+		orders = true
+	}
+	return positions, orders, rec.AcceptSeq
+}
+
 // MoveStopToBreakeven asks the AddOn to move the resting stop for THIS trader's
 // current open position (the last entry's signal_id) to newStop, tick-rounded —
 // WITHOUT closing the position. Errors (no-op) if there is no tracked open entry.
@@ -1259,8 +1296,43 @@ func (t *TCPTrader) MoveStopToBreakeven(side string, newStop float64) error {
 	// Track the new stop so a subsequent move is checked against it.
 	t.mu.Lock()
 	t.stopLoss[key] = newStop
+	// P2-1 (release #22 rescan) — ALSO record it under the signal the frame
+	// addressed. The side-keyed stopLoss cannot say WHICH position it belongs
+	// to, so the protection net could not use it; the per-signal record can.
+	// Without it, a planner position whose -sl vanished after an auto-BE was
+	// re-protected at the ORIGINAL plan stop (654: 30551.25 instead of the BE
+	// 30456.50 — $189.50 of risk re-opened).
+	if t.stopBySignal == nil {
+		t.stopBySignal = map[string]float64{}
+	}
+	t.stopBySignal[sid] = newStop
 	t.mu.Unlock()
 	return nil
+}
+
+// KnownStopForSignal returns the TIGHTEST stop this process has moved for
+// signalID (the single bracket and either split leg), and whether one is
+// known. "Tightest" = closest to price on the protective side: a long's
+// highest stop, a short's lowest. Memory-only: after a restart it is empty and
+// the caller falls back to the broker's book history (P2-1).
+func (t *TCPTrader) KnownStopForSignal(signalID, side string) (float64, bool) {
+	if t == nil || strings.TrimSpace(signalID) == "" {
+		return 0, false
+	}
+	short := strings.EqualFold(strings.TrimSpace(side), "short")
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	best, found := 0.0, false
+	for _, k := range []string{signalID, signalID + "#leg1", signalID + "#leg2"} {
+		v := t.stopBySignal[k]
+		if v <= 0 {
+			continue
+		}
+		if !found || (short && v < best) || (!short && v > best) {
+			best, found = v, true
+		}
+	}
+	return best, found
 }
 
 // MoveStopForSignal (mentor exit-drive, DS-107) asks the AddOn to move the
@@ -1446,12 +1518,19 @@ func (t *TCPTrader) PlaceProtectiveStop(symbol, positionSide string, quantity in
 		return fmt.Errorf("ninjatrader/tcp: refusing protective-stop %s %s — qty=%d stop=%.2f; a protective order is never sized or priced from a zero", positionSide, symbol, quantity, stopPrice)
 	}
 	tick := InstrumentTickSize(t.symbol)
+	// P2-1 / P3-1 (release #22 rescan): the stop goes on the grid AWAY from
+	// the entry (WireStop), never to the NEAREST tick — nearest could move a
+	// sub-tick price a fraction of a tick INSIDE the price it was computed at.
+	wireStop, werr := WireStop(positionSide, stopPrice, tick)
+	if werr != nil {
+		return fmt.Errorf("ninjatrader/tcp: refusing protective-stop %s %s stop=%.2f: %w", positionSide, symbol, stopPrice, werr)
+	}
 	return t.server.SendPlaceProtectiveStop(ntwire.PlaceProtectiveStopPayload{
 		Symbol:       symbol,
 		SignalID:     signalID,
 		PositionSide: upperSideStr(positionSide),
 		Quantity:     quantity,
-		StopPrice:    RoundToTick(stopPrice, tick),
+		StopPrice:    wireStop,
 		Reason:       reason,
 		Timestamp:    time.Now().UTC().Format(time.RFC3339),
 		Account:      tradeAcct,
