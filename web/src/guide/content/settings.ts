@@ -314,7 +314,7 @@ const dayPlan: KnobSpec[] = [
   {
     label: 'Zone rest cap (W3)',
     where: 'Strategy → Day Plan → zone_rest_max_min (API/config field)',
-    what: 'A market_in_zone limit that has rested longer than this many minutes (measured from its placement) is cancelled "zone rest expired" by the executor — a zone the market walked away from is not left working forever. The rest cap is no longer the only exit: a new plan version or overlay that moves the zone off the resting limit cancels it sooner ("zone moved by vN").',
+    what: 'A market_in_zone limit that has rested longer than this many minutes (measured from its placement) is cancelled "zone rest expired" by the executor — a zone the market walked away from is not left working forever. The rest cap is no longer the only exit: a new plan version or overlay that moves the zone off the resting limit cancels it sooner ("zone moved by vN"). The same number is the TRIGGER age bound (fix F-1): a confirm that went MET longer ago than this, with no newer reaction inside the window, no longer authorizes an arm ("confirm MET but STALE").',
     trader:
       'The limit sits at the far edge of the zone; if price never comes back within the cap the order goes away rather than filling hours later in a different market.',
     consumer:
@@ -1653,7 +1653,11 @@ export const settings: GuideSection = {
         },
         {
           title: 'HTF_VETO_MODE = cross',
-          body: 'Veto mode: 1h | cross | 4h — LIVE = cross (1h AND 4h must agree; the $352/0 autopsy).',
+          body: "Veto mode: 1h | cross | 4h — LIVE = cross (1h AND 4h must agree; the $352/0 autopsy). The 4h trend is read from the bar cache's native 4h series (F-4 — before it, cross never saw a 4h and never vetoed).",
+        },
+        {
+          title: 'STRUCTURE_ONEWAY_ATR = 1.0',
+          body: "HTF veto only (F-4): a TF whose 3-swing trend is RANGING reads TRENDING when its newest closed bar closed at least this many ATR beyond the last swing extreme (a crash that has not made a new fractal low yet). 1.0 = the repo's displacement unit for a broken level (BD_MIN_DISP_ATR). The boot regime ledger prints the resolved value.",
         },
         {
           title: 'HTF_VETO_TF = 1h',

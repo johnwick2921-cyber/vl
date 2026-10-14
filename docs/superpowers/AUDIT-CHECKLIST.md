@@ -9119,3 +9119,24 @@ symptom: release #22 (#514) moved three production reads to explicit America/Chi
 probe: whenever production code reads a fixed zone, grep its tests for time.Local, for `.Format(` on a log-stamp layout without `.In(`, and for time.Date(..., time.Local). Then run the package under `TZ=UTC go test` before calling it green.
 rule: a test builds its instants in the zone the production code reads (the logger's CT), never the machine zone. "Green locally" is not green until the suite also passes under TZ=UTC.
 Reference: agent/scheduler_step_test.go, internal/activation/logstamp_ct_test.go, internal/updaterworker/logstamp_ct_test.go (logStampCT).
+
+## CLASS NN (assigned at merge) — a confirm counted from plan birth reads MET away from the level
+
+symptom: planner-touch-fills (2026-10-14). Every market_in_zone planner fill since 09-23 went 0 W / 11 L / 1 scratch (−$1,055). A hold / acceptance / reject confirm was evaluated over every 1m close since plan publication: #653 (armed_orders 366) logged "wait_confirm MET (time_hold 3min [stored])" at 08:52:36 CT 10-14 from three closes 40–140 pts ABOVE OR-L 30506.25; the limit then rested "beyond" the zone and filled at 08:57:18 inside a −70 pt dump — the hold was decided (it failed) after the fill. #650 (row 355, a reject touch with no wait_confirm) was never gated at all and filled on a candle that closed BELOW the level; #654 (row 367) was "met" by a FORMING candle that came down from ABOVE onto a short reject's level. #515 had closed the same hole for reclaim only.
+probe: for every confirm that authorizes an order, ask (1) WHERE price was when each counted close printed — is there a requirement that price reached the level first? (2) does a "touch" read the candle's side and its close, or only its range? (3) is a forming bar ever counted? (4) how old may the event be, judged on the event's own time (a backfill after a feed gap re-delivers old bars)? (5) on an empty tape, does the verdict claim a market fact?
+rule: a level play's confirm counts only after a CLOSED 1m bar reached the level since plan birth; a touch is a rejection candle from the trade side that closes back on it; a MET verdict authorizes an arm only while fresh on event times; an empty tape is UNKNOWN and counts nothing. The gate and the grade read the SAME verdict.
+Reference: kernel/touch_trigger.go, kernel/confirm_fresh.go, kernel/sweep_trigger.go (missing_tape), trader/touch_wait.go, trader/armed_executor.go (ArmLegWaitsForConfirm), trader/planner_touch_test.go (the 10-13/10-14 tape).
+
+## CLASS NN (assigned at merge) — a mode needs an input its producer never builds, so the gate is silently dead
+
+symptom: planner-touch-fills (2026-10-14). HTF_VETO_MODE=cross has been LIVE since 08-28 (boot line "htf veto: mode=cross"). Cross requires snap["4h"]; StructureSnapshot builds 5m/15m/1h only, and the cross branch returned (false, "") with NO log when a TF was missing. Zero "htf_veto:" refusals in every log after the switch; on 10-14 the 1h read TRENDING_DOWN through the whole #653 long (decision_records 54873–54883) and nothing refused it. The review blamed "RANGING fails open" — the input was never there.
+probe: for every mode switch, list the inputs each mode reads and find the producer of each; grep the producer for that key. For every fail-open branch, check it LOGS (and counts) — a silent fail-open on a missing input is indistinguishable from "no veto needed". Grep the logs for the gate's refusal string since the mode changed: zero for weeks is a finding, not a quiet market.
+rule: a mode's inputs are built where the mode is read (kernel.StructureSnapshotForVeto adds the native 4h); a missing input fails open LOUDLY, naming the missing key.
+Reference: kernel/structure.go StructureSnapshotForVeto / WithNativeHTFStructure, kernel/htf_veto.go (cross WARN, VetoTrend), trader/planner_touch_test.go TestPlannerTouchHTFVeto653.
+
+## CLASS NN (assigned at merge) — a coherence check judges the authored price, not the price the wire sends
+
+symptom: rescan N6 (2026-10-14). Flip coherence (#515) compared sc.Arm.Entry with the plan's flip line. #650's authored entry 30798.92 sat exactly ON "below 30798.92" (coherent by the #515 default), but a market_in_zone limit is sent at the zone's far edge rounded inward to the tick — 30798.75, strictly past the line.
+probe: for every check on an entry price, ask which price reaches the broker for each entry policy (authored entry, zone far edge, tick-rounded) and judge THAT one.
+rule: judge the wire price (for market_in_zone: long → zone high rounded down, short → zone low rounded up) alongside the authored entry.
+Reference: kernel/flip_coherence.go zoneWireEdge, kernel/flip_wire_edge_test.go.
