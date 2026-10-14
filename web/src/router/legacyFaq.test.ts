@@ -1,5 +1,5 @@
 // UI-GUIDE-TRUTH LF-1 (release #22): the public, un-linked /faq route shipped
-// the inherited NoFx crypto/Docker FAQ, whose "database locked" answer told the
+// the inherited crypto/Docker FAQ, whose "database locked" answer told the
 // reader to run `pkill vl` (under systemd a clean SIGTERM exit is NOT
 // relaunched) and `rm -f data/data.db-wal data/data.db-shm` (deletes committed,
 // un-checkpointed writes). Mutant: restore either string or the FAQPage route
