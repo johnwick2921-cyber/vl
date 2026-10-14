@@ -374,6 +374,9 @@ func (t *barHoleTracker) fillLocked(h *barHole, now time.Time) {
 	t.say("INFO", fmt.Sprintf("✅ bars hole FILLED: %s %s %s on %s — %d open minute(s) were missing, the store now holds them, %s (seen %s, filled %s)",
 		h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, h.MissingAtDetect, how,
 		kernel.ClockCTSeconds(h.DetectedAt), kernel.ClockCTSeconds(now)))
+	// N1 (release #23): the refilled window is in the store — the mentor tick
+	// re-seeds its history-derived state from it.
+	NoteHistoryRefill(h.Symbol, barHoleTF, h.MissingAtDetect, fmt.Sprintf("bars hole FILLED %s %s %s", h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs)))
 	t.removeLocked(h)
 }
 

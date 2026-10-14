@@ -549,6 +549,9 @@ type AutoTrader struct {
 	// only consulted when the per-strategy mentor_mode is ON.
 	mentorEval         *mentor.Evaluator
 	mentorLastTickOpen int64
+	// mentorSeedHistGen (release #23 N1) is the MNQ 1m history-refill
+	// generation this evaluator's state was last seeded at (mentor_reseed.go).
+	mentorSeedHistGen uint64
 	// mentorDayOffClearLogged is the DayRecheck.ClearedAt value last WARN'd +
 	// counted. The recheck clears at most once per trading day, so the value
 	// is a stable per-process dedup key. Read/written only inside
@@ -1158,6 +1161,11 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		// W-EXEC-TRUTH W0 (b) — the one entry latch's evidence (book + both
 		// ledgers), wired at construction, before Run.
 		wireNT8EntryLatch(at, nt)
+	}
+	// N4 (release #23): pdVWAP / the prior-day profile read the WHOLE prior
+	// session from the store when the 1m ring holds only its tail.
+	if at.exchange == "ninjatrader" && at.store != nil {
+		installPriorSessionProvider(at.store)
 	}
 	// P0 SPLICE (CTO 1791030462901) — a mentor-mode trader seeds the evaluator
 	// from the stored 1m+1h bars at start (read-only); while any source is

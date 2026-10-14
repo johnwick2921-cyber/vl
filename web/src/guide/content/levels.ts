@@ -47,7 +47,7 @@ export const levels: GuideSection = {
         },
         {
           title: 'POC / VAH / VAL · nPOC · SETT · MID-O',
-          body: 'Value-area profile (point of control, area high/low), naked POC, settlement, mid-of-overnight. The prior-day profile, pdVWAP and SETT come from the PRIOR CME SESSION that traded \u2014 Friday\u2019s on Monday (release #22: \u201cthe calendar day before\u201d was Saturday, so all three were missing every Monday). MID-O is the 17:00\u219208:30 overnight midpoint and now exists in the evening too (it used to vanish 17:00\u201323:59). Why care: where the market did business — magnets and targets. Tier-1 since R-A13.',
+          body: 'Value-area profile (point of control, area high/low), naked POC, settlement, mid-of-overnight. The prior-day profile, pdVWAP and SETT come from the PRIOR CME SESSION that traded \u2014 Friday\u2019s on Monday (release #22: \u201cthe calendar day before\u201d was Saturday, so all three were missing every Monday). pdVWAP and the prior-day profile use the WHOLE prior session: the 1m ring holds only its tail after ~03:20 CT, so the session is read from the store; if the store cannot supply it whole they are left out, never drawn from a tail (release #23 — on 10-13 the tail read pdVWAP 16\u201354 pts off). MID-O is the 17:00\u219208:30 overnight midpoint and now exists in the evening too (it used to vanish 17:00\u201323:59). Why care: where the market did business — magnets and targets. Tier-1 since R-A13.',
           tag: 'Volume',
         },
         {

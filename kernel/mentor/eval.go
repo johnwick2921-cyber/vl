@@ -390,7 +390,7 @@ func swingOldExtremeLevels(bars []market.Kline, now int64) []Level {
 	if len(bars) < 2 {
 		return nil
 	}
-	swings := kernel.SwingPointLevels(bars, time.UnixMilli(swingPointNow(now)))
+	swings := kernel.SwingPointLevelsAll(bars, time.UnixMilli(swingPointNow(now))) // N7: unbroken test over the WHOLE lookback, then the nearest
 	if len(swings) == 0 {
 		return nil
 	}
@@ -1103,6 +1103,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// the geometry (StopPts/TargetPts), the spent-day flag, and the
 	// untagged-setup drop. The defer covers every return path, including the
 	// early ISB missing-target return.
+	// P2-N2 (release #23): the school-1 entries this tick emitted WITHOUT
+	// trigger agreement. B20's flip upgrade is armed only by the ones that
+	// LEAVE Tick — a box return the box ban, the trigger zone, the ORB or the
+	// leg budget then refused used to arm it anyway (10-14 08:24: a historical
+	// FTGH return set it and the bot logged a spurious "confluence upgrade
+	// IGNORED").
+	var schoolOne []schoolOneKey
 	defer func() {
 		if out == nil {
 			return
@@ -1113,6 +1120,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 		out = kept
 		stampHTFAgree(out, e.State.HTF)
+		e.armSchoolOne(out, schoolOne)
 	}()
 	if !e.Cfg.Enabled || len(bars) < 2 {
 		return nil
@@ -1984,11 +1992,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			}
 			e.State.LevelArms[lvl.Key] = LevelArm{ArmID: id, Side: in.Side, LevelPrice: lvl.Price, PlacedAt: cur.CloseTime}
 			// B20: a school-1 entry taken without trigger agreement arms the
-			// flip upgrade.
+			// flip upgrade — only once it SURVIVES every later filter (P2-N2,
+			// release #23: armed in the Tick defer, never from a refused intent).
 			if e.Cfg.TriggerSchool == 1 {
 				if ok, ts, _ := TriggerVerdict(e.State.Trigger, in.Price); !ok || ts != in.Side {
-					e.State.SchoolOneSide = in.Side
-					e.State.SchoolOneUpgraded = false
+					schoolOne = append(schoolOne, schoolOneKeyOf(in))
 				}
 			}
 			if isEMA34(lvl) {
@@ -2034,7 +2042,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			lastMs := e.State.BoxRefs[b.Key]
 			lastIdx := -1
 			if lastMs != 0 {
-				if idx, ok := resolveBarIndex(bars, lastMs); ok {
+				if idx, ok := resolveBarIndexAtOrBefore(bars, lastMs); ok {
 					lastIdx = idx
 				}
 			}
@@ -2126,11 +2134,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						} else {
 							out = append(out, capped)
 							// B20: school-1 box entry without trigger agreement
-							// arms the flip upgrade.
+							// arms the flip upgrade — once it survives the
+							// later filters (P2-N2: armed in the Tick defer).
 							if e.Cfg.TriggerSchool == 1 {
 								if ok, ts, _ := TriggerVerdict(e.State.Trigger, capped.Price); !ok || ts != capped.Side {
-									e.State.SchoolOneSide = capped.Side
-									e.State.SchoolOneUpgraded = false
+									schoolOne = append(schoolOne, schoolOneKeyOf(capped))
 								}
 							}
 						}
