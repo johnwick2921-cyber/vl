@@ -952,7 +952,7 @@ type DayPlanConfig struct {
 	// text only, R25 pending); the stored value is still honoured at read and
 	// logged once at trader load (FoldedKnobLines).
 	StructureMap *bool `json:"structure_map,omitempty"`
-	// ProximityFilterATR: day-trade lock, 0.5–3.0 (default 1.5).
+	// ProximityFilterATR: day-trade lock, 0.1–3.0 (default 1.5).
 	ProximityFilterATR float64 `json:"proximity_filter_atr,omitempty"`
 	// MaxLevels: level table cap, 3–12 (default 8).
 	MaxLevels int `json:"max_levels,omitempty"`
@@ -1159,7 +1159,7 @@ type DayPlanSessionOverride struct {
 	// EODFlatOffsetMin: minutes before this session's end at which any open
 	// position is force-flattened. Same day-scope disease as last-entry (the
 	// 14:45 CT literal would have flattened an Asia position on sight the moment
-	// the last-entry fix landed). nil → default 15.
+	// the last-entry fix landed). nil → default 0 (flat AT session end).
 	EODFlatOffsetMin *int `json:"eod_flat_offset_min,omitempty"`
 	// ConditionStatus (0C shadow demotion, 2026-08-31) — per-session live|
 	// shadow map override; nil inherits the strategy-level map.
@@ -2047,9 +2047,9 @@ type RiskControlConfig struct {
 	// 0B size clamp and EXIT_MECHS_SUSPENDED do not apply to it.
 	MentorMode bool `json:"mentor_mode,omitempty"`
 	// Mentor size-table knobs (CTO defaults when unset — the owner can change
-	// them): base setup at a location 5; confluence 10; confluence+4h/1h agree
-	// + room≥2× target≥30pts 20 (hard cap); stop 20–25 pts or spent day 3;
-	// SWING4H 3; never above MentorMaxContracts (default 20).
+	// them): base setup at a location 5; confluence 5; confluence+4h/1h agree
+	// + room≥2× target≥30pts 5; stop 20–25 pts 3; spent day 2; SWING4H 1;
+	// never above MentorMaxContracts (default 20, ceiling only).
 	MentorBaseContracts       int `json:"mentor_base_contracts,omitempty"`
 	MentorConfluenceContracts int `json:"mentor_confluence_contracts,omitempty"`
 	MentorBigContracts        int `json:"mentor_big_contracts,omitempty"`

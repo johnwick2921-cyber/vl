@@ -12,6 +12,7 @@ import (
 	"vl/safe"
 	"vl/store"
 	"vl/telemetry"
+	traderpkg "vl/trader"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -810,6 +811,12 @@ func (s *Server) handleStartTrader(c *gin.Context) {
 	safe.GoNet("trader-start", traderID, func() {
 		logger.Infof("▶️  Starting trader %s (%s)", traderID, trader.GetName())
 		if err := trader.Run(); err != nil {
+			// FIX-RUNNING-FLAG: a duplicate self-start (already running in
+			// memory) is a NO-OP, not a runtime error.
+			if errors.Is(err, traderpkg.ErrTraderAlreadyRunning) {
+				logger.Infof("🔄 Trader %s is already running — duplicate start ignored", trader.GetName())
+				return
+			}
 			logger.Infof("❌ Trader %s runtime error: %v", trader.GetName(), err)
 		}
 	})

@@ -159,9 +159,10 @@ type Intent struct {
 	// HTFAgree: the 4h AND 1h triggers BOTH stand and point this entry's side
 	// (D4.4 p1 @16:00 case 1: "4h trigger buy, 1h trigger buy" → trade that
 	// side). The evaluator stamps it on every ENTRY where intents leave Tick;
-	// the trader's size table needs it for the 20-contract tier ("size 20 only
-	// when 4h AND 1h agree and room ≥ 30 pts"). A silent 1h (case 2: follow the
-	// 4h) is NOT agreement.
+	// the trader's size table needs it for the big tier (size stays 5 with
+	// confluence + 4h AND 1h agree + room ≥ 2× + target ≥ 30 pts — course
+	// default 5 MNQ, 1.1 p2 L1103). A silent 1h (case 2: follow the 4h) is
+	// NOT agreement.
 	HTFAgree bool
 	// RunnerTarget is the mode-A runner target BEYOND the old high (D2-49 /
 	// D2.4 p1 @01:56: "resonance breaks the old high 70–80%"). The PHL/PLH
