@@ -2154,6 +2154,38 @@ type RiskControlConfig struct {
 	MentorEmaMaxCross30m        int     `json:"mentor_ema_max_cross_30m,omitempty"`
 	MentorLocationTriggerFilter *bool   `json:"mentor_loc_trigger_filter,omitempty"`
 	MentorLossDeparturePts      float64 `json:"mentor_loss_departure_pts,omitempty"`
+	// RELEASE #25 COURSE-EXITS KNOBS (lane mentor-course-exits, owner "do all
+	// now" 2026-10-14). Each item is its own switch; an absent key runs the
+	// COMMON-25 knob-rule default (case a = course, no ruling against → ON;
+	// case b = a ruling / open question against, or course silent → OFF or
+	// today's behaviour). Resolved ONLY in trader/mentor_course_exits.go.
+	//   CX-1 MentorSwingEMA34IsFirstTarget — nil → ON (case a): the 5m EMA 34
+	//        is the swing's first target, never its room obstacle [D5.2 p2 @01:40].
+	//   CX-2 MentorSwingRunner — nil → OFF (case b, sizing is the owner's):
+	//        a swing of ≥ 2 contracts (mentor_swing4h_contracts) splits into
+	//        leg 1 at the first target + a runner held by the 4h.
+	//   CX-3 MentorResonanceRunnerTPOldHigh — nil → ON (case a, a bug fix):
+	//        the mode-A runner's TP really moves past the old high.
+	//   CX-4 MentorBEBeforePartial — nil → OFF (case b, owner ruling R3): BE at
+	//        half-way to +1R BEFORE leg 1's partial fills [D1.2 p1 @12:41].
+	//   CX-5 MentorISBC3PartialAnyProfit — nil → ON = today's rule (the ISB
+	//        candle-3 partial at any profit); false = hold leg 1 for its +1R.
+	//   CX-6 MentorReverseISBAsPHL — nil → OFF (case b, Q-D4 open).
+	//   CX-8 MentorEMA9VisitCap — "" → shared (case b, course silent).
+	//   CX-9 MentorISBMaxPts — 0 → off (case b, course silent on ≥ 25).
+	//   CX-10 MentorKeypairCandleRatio — 0 → 1 (case b, no ratio spoken).
+	//   CX-11 MentorBoxFreshRTHPair — nil → OFF; MentorBoxMaxHeightPts — 0 → off.
+	MentorSwingEMA34IsFirstTarget  *bool   `json:"mentor_swing_ema34_is_first_target,omitempty"`
+	MentorSwingRunner              *bool   `json:"mentor_swing_runner,omitempty"`
+	MentorResonanceRunnerTPOldHigh *bool   `json:"mentor_resonance_runner_tp_old_high,omitempty"`
+	MentorBEBeforePartial          *bool   `json:"mentor_be_before_partial,omitempty"`
+	MentorISBC3PartialAnyProfit    *bool   `json:"mentor_isb_c3_partial_any_profit,omitempty"`
+	MentorReverseISBAsPHL          *bool   `json:"mentor_reverse_isb_as_phl,omitempty"`
+	MentorEMA9VisitCap             string  `json:"mentor_ema9_visit_cap,omitempty"`
+	MentorISBMaxPts                float64 `json:"mentor_isb_max_pts,omitempty"`
+	MentorKeypairCandleRatio       float64 `json:"mentor_keypair_candle_ratio,omitempty"`
+	MentorBoxFreshRTHPair          *bool   `json:"mentor_box_fresh_rth_pair,omitempty"`
+	MentorBoxMaxHeightPts          float64 `json:"mentor_box_max_height_pts,omitempty"`
 	// MentorTuning — the owner-tunable mentor method numbers (K3, OWNER RULING
 	// 2026-10-04 "do all as mentor"). EVERY field unset (nil/0) resolves to the
 	// ruled default in kernel/mentor DefaultConfig, so an absent block runs

@@ -83,6 +83,8 @@ type State struct {
 	// LatchedBoxesDay is the trading day the latch belongs to; on a new day
 	// the latch is cleared and the first box of the new day is drawn.
 	LatchedBoxesDay string `json:"latched_boxes_day,omitempty"`
+	// TallBoxNoted (CX-11) dedups the "box too tall" note per box.
+	TallBoxNoted map[string]bool `json:"-"`
 	// ISBBox15m is the 15m ISB rest box (D4.1-25): the latest CLOSED 15m
 	// inside-bar candle, boxed like R5. Nil = none standing. Rebuildable by
 	// replaying the closed 15m buckets + 1m escapes.
@@ -1262,7 +1264,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// §4.1 FTGH/FTGL boxes (BOX RULING part 2): built per tick; the edges
 	// join the level set as locations (used again and again) and the box
 	// interior bans entries.
-	boxes := BoxesBuild(bars, e.Cfg.Box, time.UnixMilli(now))
+	boxes := e.buildBoxes(bars, now) // CX-11: fresh RTH pair + max height (knobs; OFF = BoxesBuild)
 	// D4.1-22: the first box per role per day is latched — never redrawn on a
 	// later higher high / lower low ("không vẽ cái box khác… y nguyên đó tới
 	// cuối ngày" [D4.1 p2 @02:39–02:57]). A new trading day clears the latch.
@@ -1270,9 +1272,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// roll, the same tradingDayKey BoxesBuild filters on) — never the day-gate
 	// key, which is "" until 08:30 and so cleared the latch at the RTH open
 	// and redrew both boxes on a higher high / lower low.
-	if boxDay := tradingDayKey(time.UnixMilli(now).In(ctime())); e.State.LatchedBoxesDay != boxDay {
+	if boxDay := boxLatchDayKey(now, e.Cfg); e.State.LatchedBoxesDay != boxDay {
 		if e.State.LatchedBoxesDay != "" && len(e.State.LatchedBoxes) > 0 {
-			e.note("box latch cleared at the 17:00 CT session roll: trading day %s → %s (FTGH/FTGL redraw from the new session only) [D4.1 p2 @02:58]", e.State.LatchedBoxesDay, boxDay)
+			e.note("box latch cleared at the 17:00 CT session roll (or the 08:30 CT fresh RTH pair, mentor_box_fresh_rth_pair): trading day %s → %s (FTGH/FTGL redraw from the new session only) [D4.1 p2 @02:58]", e.State.LatchedBoxesDay, boxDay)
 		}
 		e.State.LatchedBoxes = nil
 		e.State.LatchedBoxesDay = boxDay
@@ -1339,7 +1341,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			if e.State.Visits == nil {
 				e.State.Visits = map[string]int{}
 			}
-			e.State.Visits[visitKey(lvl)]++
+			e.State.Visits[visitKeyFor(lvl, e.Cfg.CourseExits.EMA9VisitCap)]++
 		}
 		out = append(out, handleTouchIntents(e, lvl, intents)...)
 	}
@@ -1503,9 +1505,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							box30Blocked, _ = true, r
 						}
 					}
-					side, chosen, ok, _ := ISBStopLimitOrder(execPrev, execCur, e.Cfg)
+					side, chosen, ok, why := ISBStopLimitOrder(execPrev, execCur, e.Cfg)
 					if !ok {
-						e.refuse("isb_stop_twenties")
+						e.refuse(isbStopRefusal("isb_", why))
 					} else if isbArmActive(e.State.ISBArms, side) {
 						// ONE ARM PER SIDE (CTO parity ruling 1791008332386 #1):
 						// stacking extends the EXISTING arm — no new arm.
@@ -1665,8 +1667,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			}
 			htfOK, htfSide, _ := HTFVerdict(e.State.HTF)
 			target := 0.0
-			if _, stopOK, _ := ISBStopVerdict(execCur, e.Cfg); !stopOK {
-				e.refuse("isbrev_stop_twenties")
+			if _, stopOK, why := ISBStopVerdict(execCur, e.Cfg); !stopOK {
+				e.refuse(isbStopRefusal("isbrev_", why))
 			} else if boxBlocked {
 				e.refuse("isbrev_box_blocked")
 			} else if box15Blocked {
@@ -1720,7 +1722,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						delete(justPlaced, id)
 					}
 					in.Confluence = confluence
-					out = append(out, in)
+					out = append(out, reverseISBRetag(in, e.Cfg)) // CX-6 knob (default OFF = tag "ISB")
 				}
 			}
 		}
@@ -1797,7 +1799,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// visit departure so a NEW visit re-arms the refusal.
 			// r22 P1-2: the cap reads the level's REAL identity (visitKey) and
 			// never applies to the EMA lines (visitCapApplies).
-			if e.Cfg.LevelMaxVisits > 0 && visitCapApplies(lvl) && e.State.Visits[visitKey(lvl)] > e.Cfg.LevelMaxVisits {
+			if e.Cfg.LevelMaxVisits > 0 && visitCapAppliesFor(lvl, e.Cfg.CourseExits.EMA9VisitCap) && e.State.Visits[visitKeyFor(lvl, e.Cfg.CourseExits.EMA9VisitCap)] > e.Cfg.LevelMaxVisits {
 				if !e.State.VisitCapRefused[lvl.Key] {
 					e.refuse("level_visit_cap")
 					e.State.VisitCapRefused[lvl.Key] = true
@@ -1852,7 +1854,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						next = l2.Price
 					}
 				}
-				if next != 0 && abs(next-lvl.Price) <= largestCandlePts(bars, e.Cfg.PingPongCandleLookback) {
+				if next != 0 && abs(next-lvl.Price) <= keypairCandleRatio(e.Cfg)*largestCandlePts(bars, e.Cfg.PingPongCandleLookback) { // CX-10 ratio (default 1)
 					e.refuse("keypair_candle_too_big")
 					continue
 				}
@@ -2488,7 +2490,7 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 	out := make([]Intent, 0, len(kept))
 	for _, in := range kept {
 		if in.Action == PlaceStopEntry && in.Setup == "SWING4H" && strings.Contains(in.Reason, "reject touch") {
-			if swingRoomRefused(in, obstacle, e.Cfg.RoomMultiple) {
+			if swingRoomFilterRefuses(e.Cfg, in, obstacle) { // CX-1: OFF = R68; ON = the EMA is the target
 				e.refuse("room")
 				continue
 			}

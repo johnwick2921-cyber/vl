@@ -263,6 +263,15 @@ func loadReplayStrategy(t *testing.T) *store.StrategyConfig {
 		cfg.DayPlan.PlannerMomentumIntoZoneMaxATR, cfg.DayPlan.PlannerATRFloorCapAtInvalidation = 1.0, &on
 		cfg.RiskControl.BreakevenTriggerR = 1
 	}
+	// FDR_RC_JSON (release #25 knob replays): a risk_control JSON fragment
+	// merged over the live config, so a knob can be replayed ON vs OFF on the
+	// same tape. Unset = the live config, byte-identical.
+	if extra := os.Getenv("FDR_RC_JSON"); extra != "" {
+		if err := json.Unmarshal([]byte(extra), &cfg.RiskControl); err != nil {
+			t.Fatalf("FDR_RC_JSON: %v", err)
+		}
+		t.Logf("FDR_RC_JSON merged over the live risk_control: %s", extra)
+	}
 	return cfg
 }
 

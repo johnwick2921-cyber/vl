@@ -382,6 +382,9 @@ type Config struct {
 	// simulated fill for the kernel's parity tests and any backtest. Default
 	// false (zero value).
 	RealFillOnly bool
+
+	// CourseExits — the release #25 course-exits knobs (course_exits.go).
+	CourseExits CourseExitsCfg
 }
 
 // DefaultConfig returns the mentor defaults per PLAN v1 (knob values start from
@@ -439,6 +442,8 @@ func DefaultConfig() Config {
 
 		LegBudgetEnabled: true,
 		LegResetOn:       "close",
+
+		CourseExits: DefaultCourseExitsCfg(),
 	}
 }
 

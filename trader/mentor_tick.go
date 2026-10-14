@@ -148,6 +148,7 @@ func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 	cfg.LocTriggerFilter = mentorLocationTriggerFilter(rc)
 	cfg.DayOffRecheck = mentorDayOffRecheck(rc)
 	applyMentorTuning(at, &cfg, rc)
+	applyMentorCourseExits(at, &cfg, rc) // release #25 course-exits knobs (CX-1/6/8/9/10/11)
 	if rc != nil {
 		cfg.LvlRevisitMinPts = mentorLvlRevisitMinPts(rc)
 		cfg.EmaMaxCross30m = mentorEmaMaxCross30m(rc)
@@ -1676,6 +1677,7 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	at.logInfof("🧑‍🏫 %s", at.mentorEval.SeedBoxLine()) // N2 (release #23): the replayed box latch
 	at.logInfof("%s", at.mentorSeamBootLine())
 	at.logInfof("%s", at.mentorStaleDataBlockBootLine())
+	at.logInfof("%s", at.mentorCourseExitsBootLine())
 	// trail_tf 30s/45s: refused LOUDLY at config load (no sub-minute bars).
 	at.mentorTrailTFLoadCheck()
 	if len(missing) > 0 {

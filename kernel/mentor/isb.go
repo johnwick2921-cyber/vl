@@ -117,6 +117,9 @@ func ISBStopLimitOrder(prev, cur market.Kline, cfg Config) (Side, Intent, bool, 
 // R1 (R9's cap is DS-103's wiring, not this verdict).
 func ISBStopVerdict(candle market.Kline, cfg Config) (stopPts float64, ok bool, reason string) {
 	stopPts = (candle.High - candle.Low) + 2*cfg.ISBBufferPts
+	if isbOverMaxStop(stopPts, cfg) { // CX-9 knob (default 0 = off)
+		return stopPts, false, ISBMaxStopReason
+	}
 	if stopPts >= cfg.ISBTwentiesPts && stopPts < cfg.ISBTwentiesPts+10 {
 		return stopPts, false, "ISB stop in the twenties — must not be taken [D4.1 p1 @ 05:41]"
 	}

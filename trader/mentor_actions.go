@@ -437,6 +437,12 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	// go on the wire; the AddOn places TWO OCO pairs on the one fill. (0, 0)
 	// = the single-bracket legacy path (n <= 1 or swing).
 	leg1Qty, leg1TP := mentorLeg1ForFrame(in, choice.Contracts, forkMode, forkTP)
+	if q, tp, runnerTP, ok := at.mentorSwingRunnerLegs(in, choice.Contracts, forkMode); ok {
+		// CX-2 (knob mentor_swing_runner, default OFF): leg 1 at the swing's
+		// first target, the runner held by the 4h with its own TP.
+		leg1Qty, leg1TP = q, tp
+		row.TargetPx = runnerTP
+	}
 	if leg1Qty > 0 {
 		row.Leg1Qty = store.IntPtr(leg1Qty)
 		row.Leg1TP = leg1TP
@@ -865,8 +871,13 @@ func (at *AutoTrader) mentorClosePosition(in mentor.Intent) {
 	}
 	// S1: the close must be attributed to the swing leg's own fill, sized by
 	// its own contracts — never a side-wide 0, never guessed.
-	_, qty, ok := at.mentorSwingFill(arm)
-	if !ok {
+	r, qty, ok := at.mentorSwingFill(arm)
+	if ok {
+		// CX-2: a split swing closes only what the broker still holds.
+		if qty, ok = at.mentorSwingCloseQty(r, arm.Side, qty); !ok {
+			return
+		}
+	} else {
 		at.mentorCount("close_refused_not_filled")
 		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q never filled (or its fill has no attributable contracts); a phantom swing must not close another trade: %s", in.ArmID, in.Reason)
 		return
