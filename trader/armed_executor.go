@@ -2645,6 +2645,12 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 				return
 			}
 			at.armLifecycleWrite("set_state(cancelled)", r, ledger.SetState(r.ID, "cancelled", "cancelled in NT8"))
+			// F-2 (release #22) — NT8's positive per-order report releases the
+			// one-entry latch's queued-entry marker HERE (the N7 hook, a
+			// positive cancel only). It used to survive to the C8 45 s sweep,
+			// which then printed "NT8 never confirmed" for an entry NT8 had
+			// positively cancelled and held the next arm until it ran.
+			at.forgetPendingEntry(r.SignalID)
 			at.logInfof("✕ armed %s cancelled in NT8", r.Scenario)
 		default:
 			// A received live ENTRY state proves placement. Preserve pending
@@ -3230,7 +3236,19 @@ func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Dura
 			continue
 		}
 		acked := false
+		offDrain := false // settled by NT8's report the ordered worker applied — READ, not drained
 		for attempt := 1; attempt <= 2 && !acked; attempt++ {
+			// F-1 (release #22) — READ THE ROW BEFORE A RE-SEND. The drain only
+			// re-read the row when a frame arrived on ITS channel, but NT8's
+			// report is owned by the ordered-execution worker: the drain's copy
+			// is a no-op (OrderedOwned) and the worker writes 'cancelled' only
+			// after the post-update snapshot. Row 363 (10-14 01:47:29) was
+			// written 'cancelled' by the worker while this loop waited, and the
+			// retry then re-sent a cancel for an order NT8 no longer had.
+			if attempt > 1 && !at.armedRowStillActive(ledger, r.ID) {
+				acked, offDrain = true, true
+				break
+			}
 			if err := cancelFn(r.SignalID); err != nil {
 				at.logWarnf("⚠️ armed sync cancel send %s signal=%s failed: %v", r.Scenario, r.SignalID, err)
 			}
@@ -3267,6 +3285,16 @@ func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Dura
 		// we cancelled. The two facts are opposite. So the outcome is read back
 		// and named.
 		final, readable := ledger.StateOf(r.ID)
+		// F-1 (release #22) — THE TIMEOUT BRANCH HONOURS THE STATE IT READ. A
+		// row the worker settled after the drain's last look is terminal here;
+		// it used to fall to the default branch below, whose RequestCancel
+		// moved row 363 from 'cancelled' back to cancel_pending.
+		if !acked && readable && store.IsTerminalArmState(final) {
+			acked, offDrain = true, true
+		}
+		if offDrain {
+			at.noteSyncCancelSettledOffDrain(r, final)
+		}
 		switch {
 		case acked && readable && final == store.StateFilled:
 			// NOT A CANCEL. The order became a POSITION during the drain, and
@@ -3298,7 +3326,23 @@ func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Dura
 			//
 			// This is the same ruling the no-broker-link branch above already
 			// follows — a missing answer records the INTENT, never the outcome.
-			at.armLifecycleWrite("request_cancel(ack_timeout)", r, ledger.RequestCancel(r.ID, reason+" (ack timeout — unconfirmed, settlement pass owns it)", p.nowMs()))
+			rerr := ledger.RequestCancel(r.ID, reason+" (ack timeout — unconfirmed, settlement pass owns it)", p.nowMs())
+			if errors.Is(rerr, store.ErrArmCancelTerminal) {
+				// F-1: the worker settled the row between the read above and
+				// this write; the store refused (and counted) the re-open. The
+				// row is settled, not UNACKED — name what it became.
+				final, _ = ledger.StateOf(r.ID)
+				at.noteSyncCancelSettledOffDrain(r, final)
+				if final == store.StateFilled {
+					filled++
+					at.logWarnf("⚠️ armed sync cancel: %s signal=%s FILLED during the drain — this is a POSITION, not a cancelled order; the flatten's position re-read must clear it",
+						r.Scenario, shortID(r.SignalID))
+				} else {
+					n++
+				}
+				continue
+			}
+			at.armLifecycleWrite("request_cancel(ack_timeout)", r, rerr)
 			unacked++
 			at.logWarnf("⚠️ armed sync cancel UNACKED %s signal=%s after retry — held cancel_pending, NOT promoted; the flatten proceeds and the settlement pass will confirm or re-request",
 				r.Scenario, shortID(r.SignalID))
