@@ -9154,3 +9154,31 @@ symptom: EXTRAS-ALIGN (2026-10-14). mentor_trail_tf accepted "30s" and "45s" (me
 probe: for every enum knob, take each accepted value and trace it to the code that behaves differently because of it. Then check the data that code needs exists in this system. An accepted value with no distinct behaviour, or no source for its data, is a finding. So is a guide line describing it.
 rule: a resolver accepts only values the system can honour. A value the system cannot serve is refused at config load: logged, counted, falls back to a named default. The guide says so in the same PR.
 Reference: trader/mentor_mode.go mentorTrailTF / mentorTrailTFLoadCheck, trader/mentor_tick.go mentorSeedAtStart, web/src/guide/content/mentor.ts (Trail timeframe), trader/mentor_extras_align_test.go TestExtrasAlignTrailTFSubMinuteRefusedAtLoad.
+
+## CLASS NN (assigned at merge) — a send window narrower than the tick that must land in it
+
+symptom: OPS-FOLLOWUPS (2026-10-14). The #23 review proposed sending a gap re-request "only when now.In(CT).Second() < 10" from a tracker that ticks every 15 s. Ticks 15 s apart land at four fixed phases per minute (p, p+15, p+30, p+45). For a ticker that started on :10–:14, NO tick ever lands in [0, 10): the hole would stay due forever and never be asked for, with no line and no counter. The existing 1-hour walk test (ticks at :10/:25/:40/:55) would have caught it only by luck of its fixture's start second.
+probe: for every "only during window W" rule driven by a periodic loop of period P, check W ≥ P (so every phase of the loop lands in it at least once per cycle), or that the loop re-arms at the window's start. Test it as a property over every phase in [0, P), not with one fixture clock.
+rule: a time window gating a periodic sender is at least one period wide, and a test pins "exactly/at least one tick per cycle lands in it" for every ticker phase.
+Reference: trader/ninjatrader/bar_holes.go barHoleSendWindow / barHoleInSendWindow, trader/ninjatrader/bar_holes_test.go TestSendWindowCatchesEveryTickerPhase.
+
+## CLASS NN (assigned at merge) — `git stash pop` in one worktree applies another lane's stash
+
+symptom: OPS-FOLLOWUPS (2026-10-14). refs/stash is ONE stack for the whole repository, shared by every worktree. A lane ran `git stash push <file>` for a RED-at-base run; while its suite waited for a throttle slot another lane pushed its own stash; `git stash pop` then applied fix/planner-touch-fills' kernel changes into the wrong worktree (3 conflicts). Nothing was lost only because a conflicting pop keeps the entry.
+probe: grep lane scripts and dispatch notes for `git stash`. Any lane that stashes while other lanes are active can pop a stranger's entry; `git stash list` shows "WIP on <other branch>" entries.
+rule: lanes never use git stash for base runs. Copy the file aside, `git show HEAD:<file> > <file>`, run, copy back — in one script that restores even when the run waits. If a stash must be touched, address it by SHA and verify the SHA right before `drop`.
+Reference: ~/deck-fix-1005/rel22/fixwave/ops-followups/EVIDENCE.md (the incident), scratchpad redbase.sh pattern.
+
+## CLASS NN (assigned at merge) — a detector whose first look-back stops at the bar before the boot
+
+symptom: release #23 booted 11:22:42 CT 2026-10-14 with ES 1m missing 03:44–07:48 (one stored bar in the span) and /api/health bars_holes read []. The hole detector's first judgement per key looked back only to the stored bar just before the first live minute, so any hole older than the boot was never judged, and the boot replay's released rows never pass through the detector.
+probe: for every detector that judges "new data since the last judgement", ask what its FIRST judgement in a process covers. If it is "since the previous point", state older than the process is invisible. Seed a store with an old defect plus one new event and run the production call site.
+rule: the first judgement per key after boot scans a READ bound (here: the current CME session day from 17:00 CT, or the replay window when shorter), tracks what it finds like a live finding, and says once what it covered and found.
+Reference: trader/ninjatrader/bar_holes.go observeLive / bootScanFromLocked / bootScanLine, trader/ninjatrader/bar_holes_test.go TestBootScanFindsAHoleOlderThanTheBoot.
+
+## CLASS NN (assigned at merge) — a gate the guide promises on every entry path, wired on two of three
+
+symptom: OPS NEW-2 / UI-GUIDE N-4 (2026-10-14). The stale-data verdict and the clock-step hold bound the AI decision path (B4) and the mentor path (kernel.EntryFeedStale), and the guide plus the WARN text said "NEW entries held". Planner arms had no feed check at their send point: on 10-14 09:56:59, inside a clock-step hold, trader 12345 logged "arm S1 leg 1 wait_confirm MET … arming" and placed nothing only because a position was already open.
+probe: for every freshness / hold verdict, list its production callers (grep the verdict function) and compare with the entry producers admitChain serves (decision, agent, arm, picture). A producer with no caller is a finding, and so is a guide sentence that says "every NEW entry".
+rule: one verdict, asked by every producer that sends a price-dependent entry, counted under its own class at that producer, and pinned at the producer's send point (runArmedPlacementAt for arms).
+Reference: trader/entry_admission.go (armFeedStale, the last arm step), trader/arm_stale_gate_test.go, web/src/guide/content/guards.ts (stale data / clock step row).

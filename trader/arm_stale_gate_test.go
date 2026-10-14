@@ -42,7 +42,7 @@ func TestPlannerArmRefusedOnDeadFeedUnderBackwardWallStep(t *testing.T) {
 	wall := real.Add(-125 * time.Second)
 	at, st, signals, _ := shadowWireHarnessAt(t, store.StrategyConfig{}, wall)
 	mentorStaleBlockFeed(t, real, 200*time.Second) // newest 1m opened 200 s before the TRUE time
-	staleStepReceipt(t, 200*time.Second)          // last live 1m frame 200 s ago, monotonic
+	staleStepReceipt(t, 200*time.Second)           // last live 1m frame 200 s ago, monotonic
 	if stale, _ := kernel.FeedStaleAt(at.futuresSymbol(), real.Add(-200*time.Second).UnixMilli(), wall); !stale {
 		t.Fatal("fixture: the receipt leg must call this feed stale")
 	}
