@@ -203,7 +203,7 @@ func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoi
 		// A3 (2026-08-26) — MIN-SL VALIDATION. Research-grounded: 15/27 week
 		// losers stopped-too-tight (MFE ≥ 0.5×SL before the stop-out). Two legs:
 		//  (1) |entry−SL| ≥ MIN_SL_ATR_MULT × ATR(14, 5m Wilder) — env, default
-		//      1.0, 0 = off. The ATR rides ctx.Structure["5m"].Atr (same series
+		//      1.5, 0 = off. The ATR rides ctx.Structure["5m"].Atr (same series
 		//      the swing engine uses; no hardcoded width).
 		//  (2) Level clearance: for a cited scenario, the SL must sit BEYOND the
 		//      anchor level/zone far edge by ≥ MinSLTickClearance ticks — stops

@@ -19,6 +19,8 @@ import (
 // levels) and line 57 (the Rules line's path_levels example moves from the
 // price-less {level, role} shape to the priced {price, level, level_id} shape
 // the obstacle-chain validator reads). Every other line is the W3 base.
+// Re-blessed again 2026-10-13 (FIX-PLANNER-TRUTH): line 35 — the lunch
+// no-trade gate line states the truth (the arm path enforces the band too).
 func TestW3PlannerPromptLegacyPolicyByteIdentical(t *testing.T) {
 	want, err := os.ReadFile("testdata/knob_prune/planner_prompt_legacy_policy.txt")
 	if err != nil {
