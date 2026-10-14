@@ -186,11 +186,18 @@ func (at *AutoTrader) ledgerOpenOrders(symbol string) ([]types.OpenOrder, error)
 			// already refused it and the book stayed empty for 33 minutes.
 			status = "PENDING — awaiting broker receipt"
 		}
+		// T5 (release #22): the row's own signed size — a mentor arm carries
+		// its contracts (row 362 = 3); a NULL (planner) row keeps the 1 it
+		// always rendered. Price is the ENTRY; StopPrice is the bracket stop.
+		qty := 1.0
+		if r.Contracts != nil && *r.Contracts > 0 {
+			qty = float64(*r.Contracts)
+		}
 		out = append(out, types.OpenOrder{
 			OrderID: r.SignalID, Symbol: at.futuresSymbol(), Side: side, PositionSide: posSide,
-			Type: typ, Price: r.EntryPx, StopPrice: r.StopPx, Quantity: 1, Status: status,
-			ArmState: r.State,
-			Source:   "armed_orders ledger (broker acceptance is a separate observation)",
+			Type: typ, Price: r.EntryPx, StopPrice: r.StopPx, Quantity: qty, Status: status,
+			ArmState: r.State, TargetPrice: r.TargetPx, ZoneLo: r.ZoneLo, ZoneHi: r.ZoneHi,
+			Source: "armed_orders ledger (broker acceptance is a separate observation)",
 		})
 	}
 	return out, nil

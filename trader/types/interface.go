@@ -123,6 +123,12 @@ type OpenOrder struct {
 	// order_snapshot frame separately to cross-check the armed_orders ledger.
 	// Empty on every exchange that answers from the venue itself.
 	Source string `json:"source,omitempty"`
+	// TargetPrice / ZoneLo / ZoneHi (release #22, T7) — ledger rows only: the
+	// bracket target and the planner's entry zone, so the chart can draw them.
+	// Absent on venue answers and on rows that never had them.
+	TargetPrice float64  `json:"target_price,omitempty"`
+	ZoneLo      *float64 `json:"zone_lo,omitempty"`
+	ZoneHi      *float64 `json:"zone_hi,omitempty"`
 }
 
 // LimitOrderRequest represents a limit order request for grid trading
