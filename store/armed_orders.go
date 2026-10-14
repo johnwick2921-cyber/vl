@@ -400,7 +400,7 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 	// lookup compared them literally — so it could never match. UPPER() on the
 	// read makes existing rows work; canonicalizing HERE, where the value
 	// enters, is what stops the two tables disagreeing at all.
-	row.Side = strings.ToUpper(strings.TrimSpace(row.Side))
+	row.Side = CanonicalArmSide(row.Side)
 	// W5 — ONE OPPORTUNITY, ONE LIFE, ACROSS PLAN VERSIONS. A machine-sourced
 	// row is identified by its opportunity (source_ref), not by the plan
 	// version: the Picture scenario is re-appended to the version that
