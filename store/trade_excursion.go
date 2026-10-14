@@ -101,6 +101,9 @@ type TradeExcursionClose struct {
 	StopPxFinal  float64
 	PnlCorrected *float64 // nil → the column stays NULL (A22: never realized_pnl)
 	Ambiguous    bool
+	// Size is the WHOLE position's contract count at close (MATH-EXECUTOR
+	// P2-1): the open hook stamps the first partial fill. 0 leaves it as is.
+	Size float64
 }
 
 const tradeExcursionDDL = `
@@ -197,6 +200,9 @@ func (s *TradeExcursionStore) Close(id int64, c TradeExcursionClose) error {
 	}
 	if c.PnlCorrected != nil { // A22 — absent stays NULL, never realized_pnl
 		up["pnl_corrected"] = *c.PnlCorrected
+	}
+	if c.Size > 0 {
+		up["size"] = c.Size
 	}
 	return s.db.Model(&TradeExcursion{}).Where("id = ?", id).Updates(up).Error
 }
