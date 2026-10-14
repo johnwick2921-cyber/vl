@@ -278,7 +278,7 @@ func (f *ghFixture) stream(from, to time.Time) {
 	for m := from; !m.After(to); m = m.Add(time.Minute) {
 		f.addon.live(m, 30700)
 	}
-	waitFor(f.t, "the store to hold "+to.Format("01-02 15:04"), func() bool {
+	waitFor(f.t, "the store to hold "+kernel.TableTimeCT(to), func() bool {
 		return f.storedOpen(to, to.Add(time.Minute)) == 1
 	})
 }

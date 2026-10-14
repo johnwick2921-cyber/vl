@@ -227,14 +227,14 @@ func (t *barHoleTracker) bootLine() string {
 }
 
 // holeWindowCT renders [from, to) for a log line, in CT.
+// Layouts route through kernel/tz.go (the TZ guard refuses a bare one here).
 func holeWindowCT(fromMs, toMs int64) string {
-	loc := kernel.CTLocation()
-	f := time.UnixMilli(fromMs).In(loc)
-	e := time.UnixMilli(toMs).In(loc)
-	if f.Format("01-02") == e.Format("01-02") {
-		return fmt.Sprintf("%s %s–%s CT", f.Format("01-02"), f.Format("15:04"), e.Format("15:04"))
+	f := kernel.TableTimeCT(time.UnixMilli(fromMs)) // "01-02 15:04", CT
+	e := kernel.TableTimeCT(time.UnixMilli(toMs))
+	if f[:5] == e[:5] {
+		return fmt.Sprintf("%s–%s CT", f, kernel.CloseHHMMCT(time.UnixMilli(toMs)))
 	}
-	return fmt.Sprintf("%s–%s CT", f.Format("01-02 15:04"), e.Format("01-02 15:04"))
+	return fmt.Sprintf("%s–%s CT", f, e)
 }
 
 func holeKey(symbol, contract string) string { return symbol + "|" + contract }
