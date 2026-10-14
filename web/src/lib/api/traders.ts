@@ -11,6 +11,10 @@ import { ApiError } from '../httpClient'
 export interface MentorTruth {
   enabled: boolean
   as_of_ms: number
+  /** UG-2 (release #24): the instrument the evaluator reads (e.g. "MNQ"). The
+   * chart draws the mentor overlays only on a tab showing this symbol. Absent
+   * on a pre-#24 server. */
+  symbol?: string
   htf: {
     four_h_dir: string
     four_h_since: number
@@ -74,6 +78,12 @@ export interface MentorSwingLeg {
   entry: number
   stop: number
   target: number
+  /** UG-1 (release #24), filled leg only: "broker" = `stop` is the leg's
+   * working stop read from NinjaTrader's order book; "entry" = the book could
+   * not be read, so `stop` is the stop the leg was entered with. */
+  stop_source?: 'broker' | 'entry'
+  /** UG-1: the evaluator emitted its +1R break-even move (a request). */
+  moved_be?: boolean
 }
 
 function throwApiError(

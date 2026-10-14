@@ -165,12 +165,16 @@ it('the length select saves 30/90/120 and "no window" as -1', () => {
   })
 })
 
-it('a stored no-window (-1) reads "any hour" in the select and the preview', () => {
+// UG-4 (release #24): "no window" removes the time window only — never "any
+// hour": the 15:45 CT entry cutoff and the 14:45 CT EOD flat still bind.
+it('a stored no-window (-1) reads "no time window" with the EOD rules in the select and the preview', () => {
   renderEditor({ mentor_window_minutes: -1 })
   expect(screen.getByTestId('mentor-window-minutes')).toHaveValue('-1')
-  expect(screen.getByTestId('mentor-window-preview')).toHaveTextContent(
-    'Mentor trades at any hour'
+  const preview = screen.getByTestId('mentor-window-preview')
+  expect(preview).toHaveTextContent(
+    'No time window — the 15:45 CT entry cutoff and the 14:45 CT EOD flat still apply'
   )
+  expect(preview).not.toHaveTextContent(/any hour/)
 })
 
 it('a stored length outside the presets is still shown, not silently replaced', () => {

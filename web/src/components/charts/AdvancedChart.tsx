@@ -27,6 +27,7 @@ import {
   MENTOR_COLOR,
   mentorTrendSegments,
   orderPriceLines,
+  ordersForChartSymbol,
   type ChartLineSpec,
   type ChartOpenOrder,
 } from './chartOverlays'
@@ -68,6 +69,9 @@ interface AdvancedChartProps {
   mentorLevels?: ChartLineSpec[]
   /** T7 (release #22) — the VALID trendlines, drawn as sloped segments. */
   mentorTrendlines?: MentorTruth['trendlines']
+  /** UG-3 (release #24): set while the mentor read is stale — the last good
+   * read's time; every mentor line then carries "stale since HH:MM CT". */
+  mentorStaleSinceMs?: number
 }
 
 // Indicator configuration
@@ -125,6 +129,7 @@ export function AdvancedChart({
   selectedAccount,
   mentorLevels,
   mentorTrendlines,
+  mentorStaleSinceMs,
 }: AdvancedChartProps) {
   void _onSymbolChange // Prevent unused warning
   const { language } = useLanguage()
@@ -145,6 +150,11 @@ export function AdvancedChart({
   const mentorPriceLinesRef = useRef<any[]>([]) // MENTOR-TRUTH PANEL key-level lines
   const mentorTrendSeriesRef = useRef<ISeriesApi<'Line'>[]>([]) // T7 trendline segments
   const latestKlinesRef = useRef<Kline[]>([]) // Most recent klines, for indicator re-render on toggle (1b)
+  // UG-6 (release #24): the open times (UTC s) of the bars this chart drew —
+  // trendline points snap to these, never to a computed grid. Re-set only
+  // when the bar set changes shape (count/first/last), not on every refresh.
+  const [barTimes, setBarTimes] = useState<number[]>([])
+  const barTimesSigRef = useRef('')
 
   // F31 — an open-order snapshot belongs to the view that requested it.
   // A failed refresh is UNKNOWN, never a computed empty list.
@@ -766,6 +776,9 @@ export function AdvancedChart({
   useEffect(() => {
     // Reset initial load flag when symbol/interval changes (for auto-fit)
     isInitialLoadRef.current = true
+    // UG-6: a new view has no bars yet — nothing to snap a trendline to.
+    barTimesSigRef.current = ''
+    setBarTimes([])
 
     // Clear old marker data to prevent stale data in new chart
     currentMarkersDataRef.current = []
@@ -798,6 +811,14 @@ export function AdvancedChart({
         const klineData = await fetchKlineData(symbol, interval)
         console.log('[AdvancedChart] Loaded', klineData.length, 'klines')
         candlestickSeriesRef.current.setData(klineData)
+        {
+          const times = klineData.map((k: any) => k.time as number)
+          const sig = `${times.length}:${times[0] ?? ''}:${times[times.length - 1] ?? ''}`
+          if (sig !== barTimesSigRef.current) {
+            barTimesSigRef.current = sig
+            setBarTimes(times)
+          }
+        }
         logBarDebug(
           'AdvancedChart',
           klineData.length
@@ -1106,7 +1127,12 @@ export function AdvancedChart({
     const loadOpenOrders = async () => {
       const id = ++request
       try {
-        const openOrders = await fetchOpenOrders(traderID, symbol)
+        // UG-2 (release #24): the server answers per symbol; a row that names
+        // another instrument is still never drawn on this one.
+        const openOrders = ordersForChartSymbol(
+          await fetchOpenOrders(traderID, symbol),
+          symbol
+        )
         if (!owns(id)) return
         console.log('[AdvancedChart] Open orders for price lines:', openOrders)
 
@@ -1240,7 +1266,11 @@ export function AdvancedChart({
     })
     mentorTrendSeriesRef.current = []
     if (!chart) return
-    for (const seg of mentorTrendSegments(mentorTrendlines, interval)) {
+    for (const seg of mentorTrendSegments(
+      mentorTrendlines,
+      barTimes,
+      mentorStaleSinceMs
+    )) {
       const sr = chart.addSeries(LineSeries, {
         color: seg.color,
         lineWidth: 1,
@@ -1258,7 +1288,7 @@ export function AdvancedChart({
       )
       mentorTrendSeriesRef.current.push(sr)
     }
-  }, [mentorTrendlines, symbol, interval])
+  }, [mentorTrendlines, symbol, interval, barTimes, mentorStaleSinceMs])
 
   // Handle order marker show/hide separately to avoid reloading data
   useEffect(() => {

@@ -53,9 +53,9 @@ const COPY = {
     es: 'Duración de la ventana',
   },
   windowNone: {
-    zh: '无窗口（任何时间）',
-    en: 'No window (any hour)',
-    es: 'Sin ventana (cualquier hora)',
+    zh: '无窗口（收盘规则仍适用）',
+    en: 'No window (EOD rules still apply)',
+    es: 'Sin ventana (rigen las reglas de cierre)',
   },
   windowMinutes: { zh: '分钟', en: 'min', es: 'min' },
   windowBadStart: {
@@ -64,9 +64,9 @@ const COPY = {
     es: 'Introduce la hora como HH:MM (00:00–23:59).',
   },
   windowPreviewAny: {
-    zh: '导师在任何时间交易',
-    en: 'Mentor trades at any hour',
-    es: 'El mentor opera a cualquier hora',
+    zh: '无时间窗口 — 15:45 CT 起不再新开入场，14:45 CT 收盘平仓仍然适用',
+    en: 'No time window — the 15:45 CT entry cutoff and the 14:45 CT EOD flat still apply',
+    es: 'Sin ventana horaria — siguen vigentes el corte de entradas de las 15:45 CT y el cierre EOD de las 14:45 CT',
   },
   windowPreview: {
     zh: '导师交易时段',
@@ -104,9 +104,9 @@ const COPY = {
     es: 'off — la regla anterior (break-even a mitad de distancia al objetivo)',
   },
   trailModeHelp: {
-    zh: '默认 candle（owner 裁定 R3）：只有在 NinjaTrader 确认第 1 腿 1:1 止盈成交后，剩余仓位止损才移到开仓价，之后每根已收盘的 1 分钟 K 线移到其低点下方 1 tick（多）/高点上方 1 tick（空），只收紧不放宽。',
-    en: 'Default candle (owner ruling R3): only after NinjaTrader CONFIRMS leg 1’s 1:1 take-profit filled does the runner’s stop move to the entry; then, on every closed 1m candle, to 1 tick beyond its low (long) / high (short) — only ever tighter.',
-    es: 'Por defecto candle (decisión R3): solo cuando NinjaTrader CONFIRMA el take-profit 1:1 de la pierna 1, el stop del runner pasa a la entrada; luego, en cada vela de 1m cerrada, a 1 tick más allá de su mínimo (largo) / máximo (corto) — solo se ajusta, nunca se amplía.',
+    zh: '默认 candle（owner 裁定 R3）：只有在 NinjaTrader 确认第 1 腿 1:1 止盈成交后，剩余仓位止损才移到开仓价，之后每根入场所用周期的已收盘 K 线（通常为 1 分钟；exec_2m_after_30m 开启时在 2 分钟图上入场的 ISB 为 2 分钟）移到其低点下方 1 tick（多）/高点上方 1 tick（空），只收紧不放宽。',
+    en: 'Default candle (owner ruling R3): only after NinjaTrader CONFIRMS leg 1’s 1:1 take-profit filled does the runner’s stop move to the entry; then, on every closed candle of the frame the entry was read on (the 1m; the 2m for an ISB entered on the 2m while exec_2m_after_30m is ON), to 1 tick beyond its low (long) / high (short) — only ever tighter.',
+    es: 'Por defecto candle (decisión R3): solo cuando NinjaTrader CONFIRMA el take-profit 1:1 de la pierna 1, el stop del runner pasa a la entrada; luego, en cada vela cerrada del marco en que se leyó la entrada (1m; 2m para un ISB que entró en 2m con exec_2m_after_30m activado), a 1 tick más allá de su mínimo (largo) / máximo (corto) — solo se ajusta, nunca se amplía.',
   },
 } satisfies Record<string, Copy>
 
