@@ -286,6 +286,7 @@ func WireBarPersistence(st *store.Store) {
 			// the persister — no hole can be detected either. Say that the
 			// tracker is not running, loudly, instead of only "backfill".
 			logger.Errorf("bars: TCP server never came up — boot backfill skipped, and the 🕳 bar-hole tracker is NOT running (no NT8 wire in this process: no bar reaches the store, no hole is detected or re-requested); /api/health bars_holes stays [] — a restart with the NT8 port free is the fix")
+			telemetry.RecordError("", "bar_hole_tracker_not_running", "TCP server never came up within 90 polls (bind error cached for the process)", telemetry.CostNone)
 		})
 	})
 }
