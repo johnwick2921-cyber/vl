@@ -2060,8 +2060,11 @@ type RiskControlConfig struct {
 	MentorSpentDayContracts   int `json:"mentor_spent_day_contracts,omitempty"`
 	MentorMaxContracts        int `json:"mentor_max_contracts,omitempty"`
 	// EXIT-SPEC-v3 (B): the candle-trail timeframe. "1m" default (course frame
-	// D2.4 p1 @08:35 on the 1-MINUTE chart); 30s/45s allowed (@09:07); "off" =
-	// the video-8 legacy "never trail on the 1m" (SUPERSEDED, kept as a knob).
+	// D2.4 p1 @08:35 on the 1-MINUTE chart); "off" = the video-8 legacy "never
+	// trail on the 1m" (SUPERSEDED, kept as a knob). 30s/45s (@09:07) are
+	// REFUSED at config load and run as 1m: the bot has no sub-minute bars.
+	// A position entered on the 2m (exec_2m_after_30m) trails the 2m [X8
+	// @18:02–18:14] — the frame follows the entry.
 	MentorTrailTF string `json:"mentor_trail_tf,omitempty"`
 	// MentorTrailMode — owner ruling R3 (release #22, 2026-10-14): what moves a
 	// SPLIT mentor position's runner stop. "candle" (default; ""/unset = candle)

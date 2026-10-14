@@ -9119,3 +9119,31 @@ symptom: release #22 (#514) moved three production reads to explicit America/Chi
 probe: whenever production code reads a fixed zone, grep its tests for time.Local, for `.Format(` on a log-stamp layout without `.In(`, and for time.Date(..., time.Local). Then run the package under `TZ=UTC go test` before calling it green.
 rule: a test builds its instants in the zone the production code reads (the logger's CT), never the machine zone. "Green locally" is not green until the suite also passes under TZ=UTC.
 Reference: agent/scheduler_step_test.go, internal/activation/logstamp_ct_test.go, internal/updaterworker/logstamp_ct_test.go (logStampCT).
+
+## CLASS NN (assigned at merge) — one break, three definitions (an escape test looser than the course and the bot's own)
+
+symptom: EXTRAS-ALIGN (2026-10-14). The ORB escape was `cur.Close > orb.High` — a 1m candle that opened inside and closed one tick out "escaped". The bot's own box escape (box.go escaped) asks open AND close outside; the course minimum is the BODY outside ("cái THÂN NẾN nằm bên ngoài mà cái râu nến nằm bên trong cái box ok… Cái đó là at least" [D4.1 p1 @20:36–21:03]); X5 asks for the whole candle ("COMPLETELY nằm ở ngoài" [X5 @07:04]). The same file's comment said "BODY closes outside", which is why it read as correct. The trendline break had the same shape: brokenBy5m tested the 5m CLOSE alone (X9: "đóng dưới NGUYÊN CÂY") and read the sloped line at the bucket OPEN, five minutes before the close it judged.
+probe: list every "escape / break / closes through" test in the kernel (grep `Close >`, `Close <` against an edge or a line). For each, name its source and compare with the other structures' tests. A test on a SLOPED line: check the instant the line is read at is the instant of the price it is compared to.
+rule: one sourced break definition per object, stated in ONE helper (orbBodyEscape, box escaped, brokenBy5m), the course's minimum unless a source asks for more; a sloped line is read at the instant judged (the candle's close for a close/whole-candle test).
+Reference: kernel/mentor/orb.go orbBodyEscape, kernel/mentor/trendline.go brokenBy5m, kernel/mentor/extras_align_test.go (TestORBEscapeNeedsTheBodyOutsideAtTick, TestTrendlineCloseThroughWithTheWickAboveIsNotABreak, TestTrendlineBreakReadsTheLineAtTheCloseTime).
+
+## CLASS NN (assigned at merge) — a latch whose lifetime no source gives
+
+symptom: EXTRAS-ALIGN (2026-10-14). The ORB latched the FIRST escape side and refused every opposite-side intraday entry until 15:00 (orb.go `if orb.Escaped != "" { return orb }`). The sources give the side per escape ("Nó thoát ra khỏi đầu nào, nó sẽ đi theo đầu đó" [X5 @02:57–03:02]) and keep it only "cho tới khi nào nó crack" [X7 @07:42–07:51]; none holds it all day. In the 10-11→10-13 replay 10 entries were refused orb_wrong_side by the latch alone (fdr-a; 0 after the fix).
+probe: for every latch (a value set once and never re-read until a reset), find the source line that says how long it lives. "Until the next day" is a lifetime too, so it needs a source. Grep `if x != "" { return` / one-way flags in a per-tick advance.
+rule: a latch lives exactly as long as its source says. When the source gives a condition ("until it cracks"), re-read that condition every tick. Refusals made under the latch stay logged and counted, and every state change of the latch is logged with the candle that made it.
+Reference: kernel/mentor/orb.go ORBAdvance, kernel/mentor/eval.go noteORBEscape, kernel/mentor/extras_align_test.go TestORBSideFollowsTheLatestEscapeAtTick.
+
+## CLASS NN (assigned at merge) — a timeframe knob that moves the entry but not the exit
+
+symptom: EXTRAS-ALIGN (2026-10-14). The X5-10 exec_2m_after_30m knob (#499) moves the ISB read to closed 2m candles, but the runner's trail kept reading closed 1m candles (mentor_tick.go feeds the exit drive 1m bars only). X8 is explicit that the two are one rule: "nếu như mình trade khung nào thì mình gồng theo khung đó, theo cây nến của khung đó… khung 1 phút nó rất dễ bị quét râu" [X8 @18:02–18:14]. Nothing recorded which frame a position was entered on, so the exit could not follow.
+probe: for every knob that changes the frame or source an ENTRY is read on, find every downstream reader of "the candle" for that position (trail, BE, expiry, the partial) and check it either reads the same frame or names a source that says otherwise. Flip the knob ON in a test at the production call sites, end to end, and watch the exit frames.
+rule: the frame a position was entered on rides with it from authoring to fill (Intent.ExecTFMin → mentorExecFrames → mentorLivePos.TrailTFMin). Every frame-dependent exit reads it. When the frame cannot be known (a restart), the fallback is named, logged and counted.
+Reference: kernel/mentor/exec_frame.go ClosedCandleTF, trader/mentor_exit_drive.go mentorExitDrivePos (trailH/trailL), trader/mentor_live_pos.go mentorRebuildTrailFrame, trader/mentor_extras_align_test.go TestExtrasAlign2mEntryTrailsOnClosed2mCandles.
+
+## CLASS NN (assigned at merge) — a knob value the resolver accepts but no data source can serve
+
+symptom: EXTRAS-ALIGN (2026-10-14). mentor_trail_tf accepted "30s" and "45s" (mentor_mode.go mentorTrailTF) and the guide said "30s/45s allowed". The bot has no sub-minute bars (the AddOn streams 1m and up) and the drive read the knob only as on/off, so both values silently ran the 1m trail. The owner could set a value, see it saved, and get a different behaviour with no log.
+probe: for every enum knob, take each accepted value and trace it to the code that behaves differently because of it. Then check the data that code needs exists in this system. An accepted value with no distinct behaviour, or no source for its data, is a finding. So is a guide line describing it.
+rule: a resolver accepts only values the system can honour. A value the system cannot serve is refused at config load: logged, counted, falls back to a named default. The guide says so in the same PR.
+Reference: trader/mentor_mode.go mentorTrailTF / mentorTrailTFLoadCheck, trader/mentor_tick.go mentorSeedAtStart, web/src/guide/content/mentor.ts (Trail timeframe), trader/mentor_extras_align_test.go TestExtrasAlignTrailTFSubMinuteRefusedAtLoad.
