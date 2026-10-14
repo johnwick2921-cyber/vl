@@ -186,6 +186,11 @@ type barHoleTracker struct {
 // surface reads it. nil = not wired (no store) — the health field is ABSENT.
 var barHoles atomic.Pointer[barHoleTracker]
 
+// barHolesServer is the wire the production tracker sends on, bound once by
+// the boot goroutine that resolves it (nil until then: no wire, every attempt
+// is DEFERRED, never a call into the singleton accessor from the ticker).
+var barHolesServer atomic.Pointer[ntwire.TCPServer]
+
 func newBarHoleTracker(st holeStore, server func() *ntwire.TCPServer) *barHoleTracker {
 	n, src := barHoleMinGap()
 	return &barHoleTracker{

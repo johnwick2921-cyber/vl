@@ -160,11 +160,12 @@ func WireBarPersistence(st *store.Store) {
 		}
 		serverFn := func() *ntwire.TCPServer { s, _ := getOrStartTCPServer(); return s }
 		// GAP-BACKFILL (2026-10-14) — the bar-hole tracker: fed by the persister
-		// below, scheduled by its own loop, read by /api/health.
-		holes := newBarHoleTracker(bh, serverFn)
+		// below, scheduled by its own loop (started below, once the wire server
+		// is BOUND — the ticker never touches the singleton accessor), read by
+		// /api/health.
+		holes := newBarHoleTracker(bh, barHolesServer.Load)
 		barHoles.Store(holes)
 		logger.Infof("%s", holes.bootLine())
-		safe.GoNet("nt8-bar-holes", "", holes.run)
 		ntwire.SetBarPersister(newBarPersister(bh, serverFn))
 		// Boot backfill + prune loop: the singleton server starts lazily on the
 		// first trader load; poll for it briefly, then flush the cache. The
@@ -174,6 +175,12 @@ func WireBarPersistence(st *store.Store) {
 			for i := 0; i < 90; i++ {
 				server, err := getOrStartTCPServer()
 				if err == nil && server != nil && server.BarCache() != nil {
+					// GAP-BACKFILL — bind the server the tracker sends on, ONCE,
+					// then start its schedule. A 15 s ticker that re-read the
+					// singleton turned the accessor's unsynchronized test seam
+					// into a periodic data race (CI -race, api package).
+					barHolesServer.Store(server)
+					safe.GoNet("nt8-bar-holes", "", holes.run)
 					backfilled := backfillBars(bh, server)
 					if backfilled == 0 {
 						// Cache still empty (replay in flight) — retry a few
