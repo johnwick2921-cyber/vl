@@ -298,10 +298,13 @@ func (at *AutoTrader) mentorStaleDataBlockedWhy(now time.Time) (bool, string) {
 	if changed {
 		at.mentorStaleEpisode = stale
 		if stale {
-			at.mentorStaleSince, at.mentorStaleWhy = time.Now(), why
+			at.mentorStaleSince, at.mentorStaleWhy = now, why
 		} else {
 			if !at.mentorStaleSince.IsZero() {
-				held = time.Since(at.mentorStaleSince)
+				// the SEAM's clock at both edges (class 113): production hands
+				// time.Now(), so the difference is monotonic; a test's clock
+				// gives a deterministic length
+				held = now.Sub(at.mentorStaleSince)
 			}
 			startWhy = at.mentorStaleWhy
 			at.mentorStaleSince, at.mentorStaleWhy = time.Time{}, ""
@@ -315,7 +318,7 @@ func (at *AutoTrader) mentorStaleDataBlockedWhy(now time.Time) (bool, string) {
 	if changed && !stale {
 		// OPS NEW-8 (10-14): the START edge was the only line — nothing said
 		// when NEW mentor entries resumed or how long they were held.
-		at.logInfof("🧑‍🏫 mentor stale-data block ENDED after %s (monotonic) — NEW mentor arms allowed again; it began on: %s", held.Round(time.Second), startWhy)
+		at.logInfof("🧑‍🏫 mentor stale-data block ENDED after %s — NEW mentor arms allowed again; it began on: %s", held.Round(time.Second), startWhy)
 	}
 	return stale, why
 }

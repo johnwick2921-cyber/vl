@@ -595,9 +595,9 @@ type AutoTrader struct {
 	// so the episode flag gets its own mutex (never a data race).
 	mentorStaleMu      sync.Mutex
 	mentorStaleEpisode bool
-	// mentorStaleSince is when the current episode began, read from the
-	// MONOTONIC clock (time.Now) — its END line reports the hold's length
-	// (OPS NEW-8), and a wall-clock step must not stretch or shrink it.
+	// mentorStaleSince is when the current episode began, on the gate's own
+	// clock (the seam's now — time.Now() in production, so the END line's
+	// length is a monotonic difference; OPS NEW-8, class 113).
 	mentorStaleSince time.Time
 	mentorStaleWhy   string
 	// mentorInvalidLog is the item-18 noise gate (DS-105 replay): the last INFO
