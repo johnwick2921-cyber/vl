@@ -1531,9 +1531,15 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							capped := CapTargetForDay(chosen, e.State.Day.Verdict, dg)
 							if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 								e.refuse("isb_target_below_floor")
-							} else if refuse, _ := roomRefusal(capped.Price, capped.Stop, capped.Target, confluence, e.Cfg.RoomMultiple); refuse {
+							} else if refuse, _ := roomRefusal(chosen.Price, chosen.Stop, target, confluence, e.Cfg.RoomMultiple); refuse {
 								// The room to the first level must be >= RoomMultiple ×
 								// the leg-1 take-profit (1R; 2R for confluence).
+								// MENTOR-NY item 1: the room is measured to the LEVEL
+								// (`target`, before the spent-day cap), never to the
+								// capped take-profit — "Dù target của em là 15 điểm …
+								// từ điểm entry xuống target nó phải từ 30 điểm đổ lên"
+								// [D5.3 p1 @09:32–09:50]. The cap still shortens the
+								// take-profit and the 1:1 floor above still reads it.
 								e.refuse("room")
 							} else {
 								// The emitted intent carries the CAPPED target: `capped`
@@ -1655,9 +1661,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
 				if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 					e.refuse("isbrev_target_below_floor")
-				} else if refuse, _ := roomRefusal(capped.Price, capped.Stop, capped.Target, confluence, e.Cfg.RoomMultiple); refuse {
+				} else if refuse, _ := roomRefusal(in.Price, in.Stop, target, confluence, e.Cfg.RoomMultiple); refuse {
 					// Item 25: the reverse ISB runs the same room rule as the
-					// normal ISB. One counter "room".
+					// normal ISB. One counter "room". MENTOR-NY item 1: measured
+					// to the LEVEL, not the spent-day capped take-profit
+					// [D5.3 p1 @09:32–09:50].
 					e.refuse("room")
 				} else {
 					in.Target = capped.Target
@@ -2082,10 +2090,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							// the CAP pulled the target inside the stop distance —
 							// refuse rather than emit a sub-floor intent.
 							e.refuse("box_target_below_floor")
-						} else if refuse, _ := roomRefusal(capped.Price, capped.Stop, capped.Target, capped.Confluence, e.Cfg.RoomMultiple); refuse {
-							// B7 (L13): the room rule reads the ACTUAL (capped)
-							// target — the same after-cap measure the ISB runs
-							// [D5.3 p1 @ 09:16; D5.1 p1 @ 16:24, @ 19:11–20:07].
+						} else if refuse, _ := roomRefusal(in.Price, in.Stop, in.Target, in.Confluence, e.Cfg.RoomMultiple); refuse {
+							// MENTOR-NY item 1 (supersedes B7/L13): the room rule
+							// reads the LEVEL the box trade targets (in.Target,
+							// before the spent-day cap), not the capped 15-pt
+							// take-profit. B7/L13 measured the capped target, which
+							// on a SPENT day demanded stop ≤ 7.5; the course measures
+							// the room to the level even when the take-profit is 15
+							// — "Dù target của em là 15 điểm … từ điểm entry xuống
+							// target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50].
+							// The cap and the 1:1 floor on the capped target stand.
 							e.refuse("room")
 						} else {
 							out = append(out, capped)

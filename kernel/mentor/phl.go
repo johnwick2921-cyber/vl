@@ -222,17 +222,14 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 			return in, false, "spent day: stop over the 15-pt cap — skip the setup [derived: D5.1 p1 @20:00 '15 điểm bán' cap + D1.2 p1 @07:48 1:1 floor ⇒ stop ≤ 15]"
 		}
 	}
+	// MENTOR-NY item 1 (supersedes B7/L13): the room rule already ran in
+	// phlPLHR2 on the LEVEL target (the first obstacle / the old extreme), and
+	// that is the course's measure — "Dù target của em là 15 điểm … từ điểm
+	// entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]: the
+	// room is to the level even when the take-profit is the 15-pt spent cap.
+	// B7/L13 re-measured it on the CAPPED target, which demanded stop ≤ 7.5 on
+	// every SPENT day. The cap still shortens the take-profit, and the R9
+	// stop ≤ 15 check above keeps the capped take-profit on the 1:1 floor.
 	capped := CapTargetForDay(in, day, dg)
-	if capped.Target != in.Target {
-		// B7 (L13): measure the room on the ACTUAL (capped) target — the room
-		// rule is "reward to the target ≥ RoomMultiple × risk" [D5.3 p1 @ 09:16]
-		// and on a spent day the target IS the 15-pt cap [D5.1 p1 @ 16:24,
-		// @ 19:11–20:07]. The ISB and reverse ISB already run this on the capped
-		// target; the PHL/PLH used to measure the uncapped target and then emit
-		// a capped target whose reward no longer clears the room.
-		if refuse, why := roomRefusal(capped.Price, capped.Stop, capped.Target, confluence, cfg.RoomMultiple); refuse {
-			return in, false, why
-		}
-	}
 	return capped, true, ""
 }

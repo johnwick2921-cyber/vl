@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"strings"
 	"testing"
 
 	"vl/market"
@@ -88,9 +89,9 @@ func TestPHLPLHGatedNotMeasuredRefuses(t *testing.T) {
 }
 
 // TestPHLPLHGatedSpentDayCapsTarget — spent + agree: the target distance is
-// capped at 15 pts ("15 điểm bán, 10 điểm bán" [D5.1 p1 @ 15:57]). The
-// fixture uses a 7.5-pt stop so the capped 15-pt target still clears the room
-// rule (2× risk) — the B7 (L13) consistency: room reads the CAPPED target.
+// capped at 15 pts ("15 điểm bán, 10 điểm bán" [D5.1 p1 @ 15:57]). The room
+// is measured to the LEVEL (MENTOR-NY item 1, D5.3 p1 @09:32–09:50); this
+// fixture's 7.5-pt stop clears it either way.
 func TestPHLPLHGatedSpentDayCapsTarget(t *testing.T) {
 	htf := HTF{FourH: TriggerLine{Dir: SideLong, Price: 29400}}
 	// tight stop: risk 7.5 → the 15-pt capped target is exactly 2× risk.
@@ -108,18 +109,32 @@ func TestPHLPLHGatedSpentDayCapsTarget(t *testing.T) {
 	}
 }
 
-// TestPHLPLHGatedSpentDayCappedTargetRoom is the B7 (L13) call-site pin: on a
-// spent day the room rule must be measured on the CAPPED target, not the
-// uncapped one. The worked example (risk 9.25) has a 30-pt uncapped target
-// (room passes) but the 15-pt cap leaves 15 < 2×9.25 → the room rule refuses.
-// MUTANT: drop the capped-target room re-check in phlPLHGatedR2 → the setup
-// ships with the capped target → RED.
-func TestPHLPLHGatedSpentDayCappedTargetRoom(t *testing.T) {
+// TestPHLPLHGatedSpentDayRoomIsToTheLevel is the MENTOR-NY item 1 call-site
+// pin (it replaces the B7/L13 pin that measured the room on the CAPPED target).
+// The course measures the room to the LEVEL even when the take-profit is the
+// 15-pt spent cap: "Dù target của em là 15 điểm … từ điểm entry xuống target nó
+// phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50].
+//
+// The worked example: risk 9.25, the level target 29 pts out (room 29 ≥ 2×9.25
+// passes), the spent cap makes the take-profit 15 (≥ the 9.25 stop, so the 1:1
+// floor holds) → the setup SHIPS with the capped take-profit. Under B7/L13 it
+// was refused (15 < 18.5) — every SPENT-day setup needed stop ≤ 7.5.
+// The control: a level only 15.25 pts out fails the room to the LEVEL → refused.
+// MUTANT: re-add the capped-target room re-check in phlPLHGatedR2 → RED.
+func TestPHLPLHGatedSpentDayRoomIsToTheLevel(t *testing.T) {
 	htf := HTF{FourH: TriggerLine{Dir: SideLong, Price: 29400}}
-	if in, ok, reason := PHLPLHGated(workedTouch(), Level{Kind: KindOldExtreme, Price: 29_431.75}, 0, 3, workedCfg(), htf, DaySpent, DefaultDayGate()); ok {
-		t.Fatalf("spent-day PHL whose capped 15-pt target is below 2×risk shipped: %+v", in)
-	} else if reason == "" {
-		t.Fatal("the refusal must carry a reason")
+	in, ok, reason := PHLPLHGated(workedTouch(), Level{Kind: KindOldExtreme, Price: 29_431.75}, 0, 3, workedCfg(), htf, DaySpent, DefaultDayGate())
+	if !ok {
+		t.Fatalf("spent-day PHL with room 29 ≥ 2×9.25 to the LEVEL was refused (room read the capped take-profit): %q", reason)
+	}
+	if in.Target != 29_396.75+15 || in.Stop != 29_387.5 || in.Price != 29_396.75 {
+		t.Fatalf("the spent cap must still make the take-profit entry+15 and leave entry/stop alone: %+v", in)
+	}
+	// control: the LEVEL itself is too close (29,418 − 6 shy = 29,412 → 15.25 < 18.5).
+	if in, ok, reason := PHLPLHGated(workedTouch(), Level{Kind: KindOldExtreme, Price: 29_418}, 0, 3, workedCfg(), htf, DaySpent, DefaultDayGate()); ok {
+		t.Fatalf("spent-day PHL whose LEVEL is only 15.25 pts out (< 2×9.25) shipped: %+v", in)
+	} else if !strings.HasPrefix(reason, "room:") {
+		t.Fatalf("the close-level refusal must be the room rule, got %q", reason)
 	}
 }
 
