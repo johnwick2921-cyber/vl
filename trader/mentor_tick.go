@@ -238,6 +238,13 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// test inside Tick then reads the just-closed bar as closed, never as forming
 	// (an OpenTime clock made the ORB escape unreachable and lagged every gate).
 	intents := at.mentorEval.Tick(bars, mentor.BarCloseInstant(last))
+	// FULL-DAY-REPLAY observer (test-only, nil in production): sees every
+	// intent this tick emitted before anything acts on it.
+	if tap := at.mentorIntentTap; tap != nil {
+		for _, in := range intents {
+			tap(in)
+		}
+	}
 	// Day-gate report (owner ruling 2026-10-09): ONE INFO line per trading day,
 	// emitted at the 08:30 decision, with the gate's own inputs (the 08:30
 	// decision was silent in the log — only the refusal counters showed it).
