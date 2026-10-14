@@ -39,11 +39,12 @@ func stallAlarmTrader(t *testing.T, id string) (*AutoTrader, *store.Store) {
 	return at, st
 }
 
-// levelIntent is a resting level order (the 10-13 shape): a PHL at a level with
-// a "lvl-" ArmID. Valid geometry so the rule gate passes and the intent SIZES
-// (5 contracts) then is held (MENTOR_PLACE off in tests), never authored —
-// placed stays 0.
-func levelIntent(n int) mentor.Intent {
+// stallLevelIntent is a resting level order (the 10-13 shape): a PHL at a level
+// with a "lvl-" ArmID. Valid geometry so the rule gate passes and the intent
+// SIZES (5 contracts) then is held (MENTOR_PLACE off in tests), never authored —
+// placed stays 0. (Named stallLevelIntent so #500 and #502 compile together —
+// DS-102's mentor_stale_data_block_test.go owns its own levelIntent helper.)
+func stallLevelIntent(n int) mentor.Intent {
 	return mentor.Intent{
 		Action: mentor.PlaceStopEntry,
 		Setup:  "PHL",
@@ -72,7 +73,7 @@ func mentorStallOpenTime() time.Time {
 // because the arm was never registered. Returns the tier inputs used (so a test
 // can assert they were real, not the zero value).
 func driveStalledLevelTick(at *AutoTrader, n int) mentorTierInputs {
-	in := levelIntent(n)
+	in := stallLevelIntent(n)
 	extra := mentorExtraFor(in, false)
 	at.mentorDispatchIntent(in, extra, 0, 0)             // sized, held (MENTOR_PLACE off) — not authored
 	at.mentorDispatchIntent(cancelLevelIntent(n), extra, 0, 0) // refused: arm not in the registry
@@ -117,7 +118,7 @@ func TestMentorStallAlarmFiresOnceForLevel(t *testing.T) {
 	// placement reaches mentorPlaceIntent and the stale-data block refuses it
 	// (quietly, before this wave) — emitted climbs, placed stays 0.
 	for i := 1; i <= 3; i++ {
-		in := levelIntent(i)
+		in := stallLevelIntent(i)
 		at.mentorDispatchIntent(in, mentorExtraFor(in, false), 0, 0)
 	}
 	if len(placed) != 0 {
@@ -159,7 +160,7 @@ func TestMentorStallNoAlertWhenPlaced(t *testing.T) {
 
 	for i := 1; i <= 3; i++ {
 		driveStalledLevelTick(at, i)
-		at.mentorCountSetupPlaced(levelIntent(i)) // reached the ledger
+		at.mentorCountSetupPlaced(stallLevelIntent(i)) // reached the ledger
 	}
 	at.mentorStallAlarmCheck(mentorStallOpenTime())
 
