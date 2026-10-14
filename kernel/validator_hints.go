@@ -22,7 +22,7 @@ const BreakdownReclaimedHint = "author a `reject` play instead (do NOT combine c
 
 // BreakdownDisplacementHint is the remediation phrase for a sub-BD_MIN_DISP_ATR
 // waterfall authoring.
-const BreakdownDisplacementHint = "author a normal `reject` play instead (do NOT combine condition names; `reject_retest` is not a valid condition)"
+const BreakdownDisplacementHint = "author the conditional thesis as an `acceptance` play instead — confirm 1x5m_close beyond the level (side below for a short, above for a long), arm wait_confirm:true — the machine sends nothing until that close prints (do NOT combine condition names; `reject_retest` is not a valid condition)"
 
 // ArmLegsSplitContract is the arm-legs condition contract fragment
 // (sweep_reclaim only splits).
@@ -32,7 +32,7 @@ const ArmLegsSplitContract = "(the split entry is the sweep_reclaim contract; ot
 const RepairBreakdownLaw = "BREAKDOWN-CONTINUE LAW: the breakdown is void once a close comes back across the breakdown level — author a `reject` play instead of breakdown_continue (do NOT combine condition names; `reject_retest` is not a valid condition)."
 
 // RepairArmSplitLaw is the ARM-SPLIT law excerpt for repair prompts.
-const RepairArmSplitLaw = "ARM-SPLIT LAW: a scenario with a split contract arm needs EXACTLY 2 legs — leg 1 rests AT the sweep ref with confirm=touch at the sweep ref; leg 2 is 1m_mss (1x5m_close accepted as the leg-2 alternative). Only sweep_reclaim conditions arm split; every other condition arms a SINGLE leg."
+const RepairArmSplitLaw = "ARM-SPLIT LAW: a scenario with a split contract arm needs EXACTLY 2 legs — leg 1 is authored AT the sweep ref (wait_confirm false) with confirm=touch at the sweep ref; leg 2 is 1m_mss (1x5m_close accepted as the leg-2 alternative). The machine holds BOTH legs until the whole confirm (the sweep touch AND confirm2) is MET, so leg 1 rests as a retest limit after the reclaim. Only sweep_reclaim conditions arm split; every other condition arms a SINGLE leg."
 
 // RepairEntryConfirmLaw is the ENTRY-LAW CONFIRM excerpt for repair prompts.
 const RepairEntryConfirmLaw = "ENTRY-LAW CONFIRM LAW: breakdown_continue takes 1 confirming close + displacement >= BD_MIN_DISP_ATR x ATR5m OR stop-entry (E7); 2x5m_close is legal ONLY there. confirm2 mirrors confirm1 unless the law above allows it."
@@ -189,7 +189,7 @@ func sortedTokens(set map[string]bool) string {
 func ValidatorHints() []ValidatorHint {
 	out := []ValidatorHint{
 		{Site: "breakdown_continue.go reclaimed", Text: BreakdownReclaimedHint, Conditions: []string{"reject"}},
-		{Site: "breakdown_continue.go displacement", Text: BreakdownDisplacementHint, Conditions: []string{"reject"}},
+		{Site: "breakdown_continue.go displacement", Text: BreakdownDisplacementHint, Conditions: []string{"acceptance"}, RuleField: HintFieldConfirmRule},
 		{Site: "plan_doc.go arm-legs contract", Text: ArmLegsSplitContract, Conditions: []string{"sweep_reclaim"}},
 		{Site: "planner_repair.go breakdown law", Text: RepairBreakdownLaw, Conditions: []string{"reject", "breakdown_continue"}},
 		{Site: "planner_repair.go arm-split law", Text: RepairArmSplitLaw, Conditions: []string{"sweep_reclaim"}, RuleField: HintFieldConfirmRule},

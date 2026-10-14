@@ -892,7 +892,7 @@ func plannerOutputContractFor(maxLevels, maxScenarios int, hasHTFZones, has1HSDZ
 		// Autopsy-response wave: armable A/B setups SHOULD carry arm{} (the
 		// resting order is the fast path); sweep_reclaim retraces chain via
 		// wait_confirm; fantasy targets (planned R > 6) are WARN-flagged.
-		"ARM SPLIT vs ARM SINGLE (class 38 — the validator refuses every other shape): legs[] are the sweep_reclaim SPLIT contract and nothing else — EXACTLY 2 legs, confirm=touch at the sweep ref, leg 1 rests there (wait_confirm false) and leg 2 chains (wait_confirm true) on confirm2 = 1m_mss or 1x5m_close with leg 2's rule EQUAL to confirm2.rule, and the top-level entry/stop/target mirror leg 1. " + ep.armSingleClause() +
+		"ARM SPLIT vs ARM SINGLE (class 38 — the validator refuses every other shape): legs[] are the sweep_reclaim SPLIT contract and nothing else — EXACTLY 2 legs, confirm=touch at the sweep ref, leg 1 is authored there with wait_confirm false (the SWEEP hold below still sends NO leg until the whole confirm — touch AND confirm2 — is machine-MET, so leg 1 then rests as a retest limit at the ref) and leg 2 chains (wait_confirm true) on confirm2 = 1m_mss or 1x5m_close with leg 2's rule EQUAL to confirm2.rule, and the top-level entry/stop/target mirror leg 1. " + ep.armSingleClause() +
 		// R22 F1 (owner R4): the machine holds every sweep-setup leg until its trigger.
 		SweepSetupHoldSentence +
 		TouchSetupHoldSentence + // F-1 (planner-touch-fills): level plays wait for a reaction AT the level

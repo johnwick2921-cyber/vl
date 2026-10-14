@@ -244,7 +244,7 @@ func armSplitLock(sc PlanScenario) error {
 			return fmt.Errorf("arm on %s needs EXACTLY 2 legs (split contract), got %d", sc.ID, len(a.Legs))
 		}
 		if sc.Confirm == nil || sc.Confirm.Rule != "touch" {
-			return fmt.Errorf("arm on %s split requires confirm=touch at the sweep ref (leg 1 rests AT the level)", sc.ID)
+			return fmt.Errorf("arm on %s split requires confirm=touch at the sweep ref (leg 1 is authored AT the level)", sc.ID)
 		}
 		if sc.Confirm2 == nil {
 			return fmt.Errorf("arm on %s split requires confirm2 (the leg-2 chain: 1m_mss or 1x5m_close)", sc.ID)

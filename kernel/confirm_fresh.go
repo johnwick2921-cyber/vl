@@ -24,12 +24,13 @@ import (
 //     day_plan.zone_rest_max_min (a trigger is good for as long as a limit
 //     placed on it may rest). #654's row was authorized from a
 //     24.5-minute-old touch.
-//  2. DISTANCE, the executor prompt's existing staleness rule
-//     (staleConfirmAnnotation: |price − context| > STALE_CONFIRM_ATR × ATR5m),
-//     now consulted by the gate. The context is the level the confirm was
-//     judged at: a level play's touch band (entry_zone ∪ ref — 0 inside it),
-//     else the FVG anchor, else the ref. No ATR5m → this leg fails open (the
-//     annotation's own rule), the age leg still binds.
+//  2. DISTANCE (level plays — hold / acceptance / reject / fvg_entry), the
+//     executor prompt's existing staleness rule (staleConfirmAnnotation:
+//     |price − context| > STALE_CONFIRM_ATR × ATR5m), now consulted by the
+//     gate. The context is the level the confirm was judged at: the touch band
+//     (entry_zone ∪ ref — 0 inside it). No ATR5m → this leg fails open (the
+//     annotation's own rule), the age leg still binds. Sweep setups and
+//     authored waits on breakout/waterfall plays keep the age leg only.
 //
 // A MET verdict without a known event instant cannot be aged: UNKNOWN does not
 // satisfy (fail-closed).
@@ -84,7 +85,11 @@ func ConfirmFresh(s PlanScenario, v ConfirmVerdict, bars []market.Kline, birthMs
 		return false, "age", fmt.Sprintf("the trigger fired at %s, %.0f min ago > %d min (day_plan.zone_rest_max_min), and no newer reaction exists inside that window — judged on event times, so a backfilled outage-time trigger is not new",
 			FormatCT(time.UnixMilli(v.EventMs)), float64(in.NowMs-v.EventMs)/60_000, in.MaxAgeMs/60_000)
 	}
-	if in.Price > 0 && in.ATR5m > 0 {
+	// The distance leg binds LEVEL plays (F-1's scope, judged from their touch
+	// band); a sweep setup's locality is its sweep, and an authored wait on a
+	// breakout/waterfall play is a move AWAY from the level by design — those
+	// keep only the age leg.
+	if TouchGatedCondition(s.Condition) && in.Price > 0 && in.ATR5m > 0 {
 		lo, hi, label := confirmContext(s, v)
 		if lo > 0 {
 			d := 0.0

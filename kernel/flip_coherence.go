@@ -2,7 +2,10 @@ package kernel
 
 import (
 	"fmt"
+	"math"
 	"strings"
+
+	"vl/market"
 )
 
 // R22 F3 — FLIP-LINE COHERENCE (2026-10-14).
@@ -75,6 +78,14 @@ func FlipIncoherentScenarios(d *PlanDoc) []FlipIncoherence {
 		for _, l := range sc.Arm.Legs {
 			entries = append(entries, l.Entry)
 		}
+		// N6 (rescan 10-14, planner-touch-fills): a market_in_zone limit goes on
+		// the wire at the zone's tick-rounded FAR edge (long → zone high rounded
+		// down, short → zone low rounded up), not at the authored entry. #650's
+		// authored 30798.92 sat ON the flip line "below 30798.92", but the wire
+		// limit was 30798.75 — strictly past it.
+		if e, ok := zoneWireEdge(sc, dir); ok {
+			entries = append(entries, e)
+		}
 		for _, e := range entries {
 			if e <= 0 {
 				continue
@@ -114,4 +125,36 @@ func DisableFlipIncoherentArms(d *PlanDoc, issues []FlipIncoherence) []FlipIncoh
 		}
 	}
 	return applied
+}
+
+// zoneWireEdge is the price a market_in_zone arm's limit is SENT at: the far
+// edge of economics.entry_zone rounded inward to the instrument tick (the
+// composer's own rounding, trader/zone_placement.go). ok=false for any other
+// policy or a missing zone.
+func zoneWireEdge(sc PlanScenario, dir string) (float64, bool) {
+	inZone := EffectiveArmPolicy(sc.Arm, nil) == EntryPolicyMarketInZone
+	for i := range sc.Arm.Legs {
+		if EffectiveArmPolicy(sc.Arm, &sc.Arm.Legs[i]) == EntryPolicyMarketInZone {
+			inZone = true
+		}
+	}
+	if !inZone || sc.Economics == nil || len(sc.Economics.EntryZone) != 2 {
+		return 0, false
+	}
+	lo, hi := math.Min(sc.Economics.EntryZone[0], sc.Economics.EntryZone[1]), math.Max(sc.Economics.EntryZone[0], sc.Economics.EntryZone[1])
+	if lo <= 0 {
+		return 0, false
+	}
+	tick := market.FuturesTickSize("MNQ")
+	if tick <= 0 {
+		tick = 0.25
+	}
+	const eps = 1e-9
+	switch dir {
+	case "long":
+		return math.Floor(hi/tick+eps) * tick, true
+	case "short":
+		return math.Ceil(lo/tick-eps) * tick, true
+	}
+	return 0, false
 }
