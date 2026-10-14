@@ -888,8 +888,9 @@ func isMovingLineKey(key string) bool {
 // [D3.4 p1 @11:48–13:33], and each position is a new support/resistance line
 // [D3.4 p2 @20:27]. So its identity is the key AT ITS PRICE: the old constant
 // key "trigger_retest" counted ~115 line positions per session as ONE level
-// (82 of 88 retest rejects refused on 10-13). Every other level keeps its key
-// (key levels, old extremes, a trendline's own anchors, box edges).
+// (82 of 88 retest rejects refused on 10-13). Every other touched level keeps
+// its key (key levels, old extremes, a trendline's own anchors; box edges are
+// outside the touch loop and never visit-counted).
 func visitKey(lvl Level) string {
 	if lvl.Kind == KindTriggerRetest {
 		return fmt.Sprintf("%s@%.2f", lvl.Key, lvl.Price)

@@ -1054,7 +1054,7 @@ export const mentor: GuideSection = {
         {
           label: 'Maximum level visits per day',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'Allow this many reject visits to each level in a day; later visits are refused (level_visit_cap). A "level" is one real price line: a key level, an old high/low, a box edge, one trendline — and the 5m trigger line AT ITS CURRENT PRICE (each reversal draws a new line, so a moved line starts at zero). The EMA 34 lines are never capped: they re-price every candle, and the course gives them their own rules instead (too many crossings in 30 minutes → off; a loss at the line → off until price leaves). Zero disables the cap.',
+          what: 'Allow this many reject visits to each level in a day; later visits are refused (level_visit_cap). A "level" is one real line: a key level, an old high/low, one trendline — and the 5m trigger line AT ITS CURRENT PRICE (each reversal draws a new line, so a moved line starts at zero). The EMA 34 lines are never capped: they re-price every candle, and the course gives them their own rules instead (too many crossings in 30 minutes → off; a loss at the line → off until price leaves). Zero disables the cap.',
           trader: '3 visits; 0 = off. Tunable in Studio (blank = default).',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (LevelMaxVisits)',
