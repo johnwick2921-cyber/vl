@@ -73,6 +73,68 @@ func barAt(openMs int64, o, h, l, c float64) market.Kline {
 	return market.Kline{OpenTime: openMs, CloseTime: openMs + 59_999, Open: o, High: h, Low: l, Close: c}
 }
 
+// x5BarsAt is the x5_10Bars doji/ISB fixture shifted so the last bar's
+// CloseTime + 1 is exactly `now`: on the 1m chart bars 2–3 form a long ISB
+// (emit), on the 2m chart candle 1 (bars 0–1) is a doji (no ISB). Works at any
+// even-UTC-aligned minute.
+func x5BarsAt(now int64) []market.Kline {
+	o := [4]float64{121, 121, 99, 101}
+	h := [4]float64{122, 121.5, 106, 102.1}
+	l := [4]float64{120, 120, 98.5, 100.9}
+	c := [4]float64{120.5, 121, 106, 102}
+	bars := make([]market.Kline, 4)
+	for i := 0; i < 4; i++ {
+		open := now - int64(4-i)*60_000
+		bars[i] = market.Kline{OpenTime: open, CloseTime: open + 59_999, Open: o[i], High: h[i], Low: l[i], Close: c[i]}
+	}
+	return bars
+}
+
+// TestX5_10Exec2mScheduleAtTick — the schedule AT THE TICK CALL SITE (canon 53):
+// with the knob ON, an overnight / Europe-open ISB is read on the 2m (the doji
+// candle 1 → no ISB → no isb_day_not_measured refusal), while the RTH-open
+// +30 window (08:45 CT) stays on the 1m and EMITS. Knob OFF stays 1m everywhere.
+// MUTANT (CTO): restore `rthMinuteOf(now) >= 9*60` AT eval.go's call site (leave
+// the predicate alone) → the 01:30/03:10 rows read 1m → the ISB forms and the
+// pre-open day gate refuses it (isb_day_not_measured) → RED.
+func TestX5_10Exec2mScheduleAtTick(t *testing.T) {
+	// Overnight + Europe open, knob ON: the 2m read finds NO ISB.
+	for _, c := range []struct {
+		label string
+		now   int64
+	}{
+		{"01:30 CT (overnight)", auditMs(2026, 9, 15, 1, 30, 0)},
+		{"03:10 CT (Europe open)", auditMs(2026, 9, 15, 3, 10, 0)},
+	} {
+		cfg := DefaultConfig()
+		cfg.Enabled = true
+		cfg.Exec2mAfter30m = true
+		e := newISBEval(cfg)
+		e.Tick(x5BarsAt(c.now), c.now)
+		if e.State.Refusals["isb_day_not_measured"] != 0 {
+			t.Fatalf("%s knob ON: the 2m read must find no ISB (no isb_day_not_measured); got %v", c.label, e.State.Refusals)
+		}
+	}
+
+	// Knob OFF at 01:30: the 1m read forms the ISB → the pre-open day gate
+	// refuses it (isb_day_not_measured) — proves the 1m read when OFF.
+	cfgOff := DefaultConfig()
+	cfgOff.Enabled = true
+	eOff := newISBEval(cfgOff)
+	eOff.Tick(x5BarsAt(auditMs(2026, 9, 15, 1, 30, 0)), auditMs(2026, 9, 15, 1, 30, 0))
+	if eOff.State.Refusals["isb_day_not_measured"] == 0 {
+		t.Fatalf("01:30 CT knob OFF: the 1m read must form the ISB (isb_day_not_measured present); got %v", eOff.State.Refusals)
+	}
+
+	// RTH open +30 window (08:45 CT), knob ON: still the 1m read → emits.
+	cfgRth := DefaultConfig()
+	cfgRth.Enabled = true
+	cfgRth.Exec2mAfter30m = true
+	if got := x5_10Emits(newISBEval(cfgRth), x5BarsAt(auditMs(2026, 9, 15, 8, 45, 0)), auditMs(2026, 9, 15, 8, 45, 0)); got != 1 {
+		t.Fatalf("08:45 CT knob ON: the 1m read must emit the ISB, got %d", got)
+	}
+}
+
 // TestExec2mReads2mSchedule — the X5-10 timeframe schedule (owner order
 // 2026-10-13 ~23:00 CT "fix all"; sources X5 @00:07–01:17, X11 @17:06–19:35):
 // with the knob ON the ISB reads the 2m at every minute EXCEPT the RTH open
