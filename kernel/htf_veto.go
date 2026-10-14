@@ -52,6 +52,25 @@ func HTFVetoMode() string {
 	}
 }
 
+// VetoTrend is the trend the HTF veto judges (F-4, planner-touch-fills): the
+// 3-swing Trend, except that a RANGING TF carrying one-way evidence (the
+// detector's StructureState.OneWay — a BOS of the last swing extreme by ≥
+// STRUCTURE_ONEWAY_ATR × ATR with no completed 3-swing set) reads TRENDING in
+// that direction. The rule lives HERE, in the veto: StructureState.Trend keeps
+// its meaning for its 21 other production readers (bias tree, planner facts,
+// structure map). A genuine range stays RANGING and still fails open.
+func (st StructureState) VetoTrend() string {
+	if st.Trend == "RANGING" && st.OneWay != nil {
+		switch st.OneWay.Dir {
+		case "down":
+			return "TRENDING_DOWN"
+		case "up":
+			return "TRENDING_UP"
+		}
+	}
+	return st.Trend
+}
+
 // vetoOpposes is the pure trend-vs-side predicate.
 func vetoOpposes(side, trend string) bool {
 	return (side == "short" && trend == "TRENDING_UP") || (side == "long" && trend == "TRENDING_DOWN")

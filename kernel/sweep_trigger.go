@@ -90,6 +90,12 @@ func sweepGatedConfirm(s PlanScenario, bars []market.Kline, sinceMs, nowMs int64
 		return ConfirmVerdict{}, false
 	}
 	c := *s.Confirm
+	if !hasClosedBar(bars, sinceMs, nowMs) {
+		// N5 (rescan 10-14): an EMPTY tape is UNKNOWN, never "no closed 1m bar
+		// has traded …" — the only change to the #515 gate (non-empty tapes are
+		// byte-identical).
+		return missingTapeVerdict(c, sinceMs, nowMs), true
+	}
 	at, ok := firstSweepOfRef(c, bars, sinceMs, nowMs)
 	if !ok {
 		way := "above"

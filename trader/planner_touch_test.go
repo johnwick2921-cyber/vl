@@ -215,30 +215,32 @@ func TestPlannerTouch653HoldWaitsForTheLevel(t *testing.T) {
 // #650: a reject with a touch confirm and NO authored wait_confirm. Before F-1
 // the gate never looked at its confirm — the market_in_zone limit rested beyond
 // the zone at 00:08:36 and filled on the first touch (a candle that CLOSED BELOW
-// the level). Now nothing is authorized until a touch candle closes back above
-// 30798.92; the first one is the 00:12 bar (close 30815.50), MET at 00:13:00.
+// the level). Now nothing is authorized until a touch candle comes FROM ABOVE
+// and closes back above 30798.92: 00:09 closed through it, 00:12 came from
+// BELOW (a reclaim, not a rejection — the rescan's 654 shape mirrored), 00:17
+// closed through again; the first rejection is the 00:22 bar (open 30802.50,
+// low 30796.75, close 30799.50) → MET at 00:23:00.
 func TestPlannerTouch650RejectWaitsForTheRejectingClose(t *testing.T) {
 	at, st, _, clock := touchArmTrader(t, "asia_v3")
 	logBuf := captureTraderLog(t)
-	for _, now := range []time.Time{touchCT(t, 2026, 10, 14, 0, 8, 36, 697), touchCT(t, 2026, 10, 14, 0, 9, 23, 608), touchCT(t, 2026, 10, 14, 0, 12, 30, 0)} {
+	for _, now := range []time.Time{touchCT(t, 2026, 10, 14, 0, 8, 36, 697), touchCT(t, 2026, 10, 14, 0, 9, 23, 608),
+		touchCT(t, 2026, 10, 14, 0, 12, 30, 0), touchCT(t, 2026, 10, 14, 0, 13, 5, 0), touchCT(t, 2026, 10, 14, 0, 22, 30, 0)} {
 		if n := armRowsAt(t, at, st, clock, now); n != 0 {
-			t.Fatalf("%s: a reject must not rest a beyond limit before a touch candle rejects the level (live #650 rested from 00:08:36, filled 00:09:23): rows=%d\nlog:\n%s",
+			t.Fatalf("%s: a reject must not rest a beyond limit before a touch candle from above rejects the level (live #650 rested from 00:08:36, filled 00:09:23): rows=%d\nlog:\n%s",
 				now.Format("15:04:05"), n, logBuf.String())
 		}
 	}
-	if !strings.Contains(logBuf.String(), "HELD — a level play waits for its reaction AT the level") {
-		t.Fatalf("the hold must be logged:\n%s", logBuf.String())
+	if !strings.Contains(logBuf.String(), "HELD — a level play waits for its reaction AT the level") ||
+		!strings.Contains(logBuf.String(), "none came from above and closed back above 30798.92") {
+		t.Fatalf("the hold and its reason must be logged:\n%s", logBuf.String())
 	}
-	// 00:12 is the first touch candle that closes back above (30815.50): the
-	// touch gate releases at 00:13:00. On this tape the EXISTING invalidation
-	// leg then refuses the arm — the 00:09–00:11 closes below VWAP accepted
-	// through it — so #650 is no trade at all, and the reason is named.
-	n := armRowsAt(t, at, st, clock, touchCT(t, 2026, 10, 14, 0, 13, 5, 0))
-	if !strings.Contains(logBuf.String(), "⚔️ arm S1 leg 1 wait_confirm MET (touch") {
-		t.Fatalf("the rejecting touch candle must release the touch gate:\n%s", logBuf.String())
-	}
-	if n != 0 || !strings.Contains(logBuf.String(), "entry_gate: scenario S1 invalidated") {
-		t.Fatalf("on the 10-14 tape the released arm meets the existing invalidation leg: rows=%d\nlog:\n%s", n, logBuf.String())
+	// 00:23:01 — the touch gate releases on the 00:22 rejection and the same
+	// call site authorizes the arm. (Honest outcome [B]: on this tape the limit
+	// at 30798.75 would still fill in the 00:23 bar and stop out — F-1 fixes the
+	// mechanism, entry AFTER the reaction, not the direction call.)
+	n := armRowsAt(t, at, st, clock, touchCT(t, 2026, 10, 14, 0, 23, 1, 0))
+	if n != 1 || !strings.Contains(logBuf.String(), "⚔️ arm S1 leg 1 wait_confirm MET (touch") {
+		t.Fatalf("the rejecting touch candle from above must release the touch gate: rows=%d\nlog:\n%s", n, logBuf.String())
 	}
 }
 
@@ -333,5 +335,52 @@ func TestPlannerTouch653NoTradeOnTheTape(t *testing.T) {
 		if n := touchVetoPass(t, at, st, clock, now); n != 0 {
 			t.Fatalf("%s: #653's arm must never be authorized on the 10-14 tape: rows=%d\nlog:\n%s", now.Format("15:04:05"), n, logBuf.String())
 		}
+	}
+}
+
+// #654 (armed_orders 367, NY v3 S1 reject SHORT at 30466, touch, zone
+// 30456.5–30466): live, the touch read MET on the 09:28 bar while it was still
+// FORMING and had come down from ABOVE (low 30460.25, close 30478 — a support
+// bounce), and the row was authorized at 09:52:57 from that 24.5-minute-old
+// touch (rescan 10-14). Now: no arm until a touch candle comes from BELOW and
+// closes back below 30466 — the 09:50 bar (open 30460.75, high 30465.75, close
+// 30463.25) → MET at 09:51:00.
+func TestPlannerTouch654ShortRejectNeedsTheCandleFromBelow(t *testing.T) {
+	at, st, _, clock := touchArmTrader(t, "ny_v3")
+	logBuf := captureTraderLog(t)
+	for _, now := range []time.Time{touchCT(t, 2026, 10, 14, 9, 28, 30, 0), touchCT(t, 2026, 10, 14, 9, 41, 5, 0), touchCT(t, 2026, 10, 14, 9, 50, 30, 0)} {
+		if n := armRowsAt(t, at, st, clock, now); n != 0 {
+			t.Fatalf("%s: a short reject must not arm on a touch from above (or a forming bar): rows=%d\nlog:\n%s", now.Format("15:04:05"), n, logBuf.String())
+		}
+	}
+	if n := armRowsAt(t, at, st, clock, touchCT(t, 2026, 10, 14, 9, 51, 5, 0)); n != 1 {
+		t.Fatalf("the 09:50 rejection from below releases the gate: rows=%d\nlog:\n%s", n, logBuf.String())
+	}
+}
+
+// Freshness at the PRODUCTION call site (rescan 10-14 binding input): a MET
+// trigger authorizes an arm only while it is fresh on EVENT times — its event
+// no older than day_plan.zone_rest_max_min (30), or a newer qualifying reaction
+// inside that window. On the 653 tape the post-touch hold was MET at 09:05:00
+// and the level never held three closes again; a pass at 09:35:05 must hold
+// the leg as STALE, logged and counted — the shape a #519 backfill would
+// otherwise turn into a "new" trigger. The grade asks the same question at
+// the fill.
+func TestPlannerTouchStaleTriggerIsHeldAndGradedMissed(t *testing.T) {
+	at, st, _, clock := touchArmTrader(t, "ny_v2")
+	logBuf := captureTraderLog(t)
+	if n := armRowsAt(t, at, st, clock, touchCT(t, 2026, 10, 14, 9, 35, 5, 0)); n != 0 {
+		t.Fatalf("a trigger 30 min old (event time) with no newer reaction must not authorize an arm: rows=%d\nlog:\n%s", n, logBuf.String())
+	}
+	if !strings.Contains(logBuf.String(), "HELD — confirm MET but STALE: the trigger fired at 2026-10-14 09:05") {
+		t.Fatalf("the stale hold must be logged with the EVENT time:\n%s", logBuf.String())
+	}
+	raw, _ := st.GetSystemConfig("confirm_stale:age:" + at.id + ":2026-10-14:NY")
+	if strings.TrimSpace(raw) != "1" {
+		t.Fatalf("the stale hold is counted once: %q", raw)
+	}
+	got, log, _ := gradeTouchFill(t, "ny_v2", touchCT(t, 2026, 10, 14, 9, 35, 30, 0), touchCT(t, 2026, 10, 14, 9, 52, 55, 0), "LONG", 30516.25, 30427.25)
+	if !strings.Contains(log, "trigger=missed") || !strings.Contains(log, "MET but STALE at the entry") || got != "C" {
+		t.Fatalf("a fill 30 min after its trigger is not the plan's trigger: grade %q\nlog:\n%s", got, log)
 	}
 }

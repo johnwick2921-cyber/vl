@@ -69,15 +69,15 @@ func zoneTape(last float64, now time.Time, shift time.Duration) []market.Kline {
 }
 
 // zoneTapeReacted is zoneTape with ONE rejecting touch candle at now−10m (after
-// the rig's plan birth at now−30m): it reaches the zone (high 99.90 ≥ 99.50)
-// and CLOSES back above the 99.50 confirm ref (99.60) — the F-1 reaction a
-// level play needs before its market_in_zone leg is authorized
-// (kernel/touch_trigger.go). The last close is unchanged, so a tape that ends
-// below the zone is "reacted, then slipped short of the zone".
+// the rig's plan birth at now−30m): it comes from ABOVE the 99.50 confirm ref
+// (open 99.70), trades down to it (low 99.45) and CLOSES back above it (99.60)
+// — the F-1 reaction a level play needs before its market_in_zone leg is
+// authorized (kernel/touch_trigger.go). The last close is unchanged, so a tape
+// that ends below the zone is "reacted, then slipped short of the zone".
 func zoneTapeReacted(last float64, now time.Time) []market.Kline {
 	out := zoneTape(last, now, 0)
 	b := &out[70]
-	b.Open, b.High, b.Low, b.Close = 99.4, 99.9, 99.3, 99.6
+	b.Open, b.High, b.Low, b.Close = 99.7, 99.9, 99.45, 99.6
 	return out
 }
 

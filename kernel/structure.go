@@ -144,24 +144,11 @@ type StructureState struct {
 	Atr float64 `json:"atr,omitempty"`
 	// OneWay (F-4) — set ONLY when Trend is RANGING and the newest closed bar
 	// broke the last swing extreme by ≥ STRUCTURE_ONEWAY_ATR × ATR. Trend itself
-	// is unchanged for every consumer; the HTF veto reads VetoTrend.
+	// is unchanged for its 21 production readers; ONLY the HTF veto reads the
+	// evidence (StructureState.VetoTrend, kernel/htf_veto.go).
 	OneWay *StructureOneWay `json:"one_way,omitempty"`
 }
 
-// VetoTrend is the trend the HTF veto judges: the 3-swing Trend, except that a
-// RANGING TF carrying one-way evidence reads TRENDING in that direction (F-4).
-// A genuine range (no one-way evidence) stays RANGING and still fails open.
-func (st StructureState) VetoTrend() string {
-	if st.Trend == "RANGING" && st.OneWay != nil {
-		switch st.OneWay.Dir {
-		case "down":
-			return "TRENDING_DOWN"
-		case "up":
-			return "TRENDING_UP"
-		}
-	}
-	return st.Trend
-}
 
 type swing struct {
 	kind   string

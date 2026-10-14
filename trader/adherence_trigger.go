@@ -9,6 +9,10 @@ import (
 // R22 F8 — the adherence grade reads whether the cited scenario's REQUIRED
 // trigger existed at the entry fill, with the SAME evaluation the arm gate runs
 // (kernel.ScenarioTriggerAt over the overlay-resolved doc as of the entry).
+// F-6 (planner-touch-fills): that evaluation is the LOCAL trigger — counted
+// after the touch of the level (kernel/touch_trigger.go) and FRESH at the entry
+// (confirmFreshAt, the gate's own read) — never a stored verdict from away
+// from the level.
 //
 // Returns "" (no change to the grade) whenever the answer is not knowable:
 // no plan link, the plan row/doc is gone, the scenario is not in the doc, the
@@ -38,10 +42,15 @@ func (at *AutoTrader) entryTriggerVerdict(p *store.TraderPosition, bars []market
 			return "", ""
 		}
 		v := kernel.ScenarioTriggerAt(sc, bars, birth, p.EntryTime)
-		if v.Met {
-			return kernel.TriggerMet, v.Detail
+		if !v.Met {
+			return kernel.TriggerMissed, v.Detail
 		}
-		return kernel.TriggerMissed, v.Detail
+		// The gate's SAME freshness read at the entry instant (armConfirmFresh):
+		// a trigger that was stale when the fill came is not the plan's trigger.
+		if fresh, _, why := at.confirmFreshAt(sc, v, bars, birth, p.EntryTime); !fresh {
+			return kernel.TriggerMissed, "MET but STALE at the entry: " + why
+		}
+		return kernel.TriggerMet, v.Detail
 	}
 	return "", ""
 }

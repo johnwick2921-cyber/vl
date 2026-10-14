@@ -1678,5 +1678,684 @@
   "plan_version": 2,
   "session": "NY",
   "trade_date": "2026-10-14"
+ },
+ "ny_v3": {
+  "created_at": "2026-10-14 09:27:08.817206285-05:00",
+  "doc": {
+   "bias": {
+    "conviction": "medium",
+    "direction": "short",
+    "flip_condition": "2x5m close above 30537.25 \u2192 long"
+   },
+   "bias_label": "bias: AI short \u00b7 tree short \u00b7 regime neutral",
+   "day_type": "trend",
+   "death": {
+    "price": 30591.25,
+    "rule": "2x5m",
+    "side": "above"
+   },
+   "death_condition": "2x5m close above 30591.25 invalidates the whole plan",
+   "flip": {
+    "flip_to": "long",
+    "price": 30537.25,
+    "rule": "2x5m",
+    "side": "above"
+   },
+   "identity_levels": [
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791984899999,
+     "grade": "",
+     "hi": 30506.25,
+     "id": "0fad2d8c5034125e507aee8cd6197dcf3b8e33471531adf3ed1e4294304cbd9f",
+     "instruction": "",
+     "kind": "OR-L",
+     "label": "OR-L",
+     "lo": 30506.25,
+     "lookback_bars": 5,
+     "names": [
+      "OR-L",
+      "EQL\u00b71h"
+     ],
+     "origin_date": "2026-10-14",
+     "price": 30506.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791987000000,
+     "grade": "",
+     "hi": 30466,
+     "id": "bead7cb58c74f5837b953d3bf8f985a3e31a11cc866c465c8a3e7d5e05756ce0",
+     "instruction": "",
+     "kind": "SWG-L",
+     "label": "SWG-L\u00b75m",
+     "lo": 30466,
+     "lookback_bars": 399,
+     "names": [
+      "SWG-L\u00b75m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30466,
+     "symbol": "MNQ",
+     "tf": "5m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791984599999,
+     "grade": "",
+     "hi": 30537.25,
+     "id": "555aa5ccb5470d286943068b797b9d4b737b465f2c2a800056498ef1af0db8bf",
+     "instruction": "",
+     "kind": "ONL",
+     "label": "ONL",
+     "lo": 30537.25,
+     "lookback_bars": 930,
+     "names": [
+      "ONL"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30537.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791928800000,
+     "grade": "",
+     "hi": 30545.591906054036,
+     "id": "ce3ff2f0d3a1670be104365f587d279a506e103c279cdf294c33cd02c49b118d",
+     "instruction": "",
+     "kind": "VWAP",
+     "label": "VWAP\u22121\u03c3",
+     "lo": 30545.591906054036,
+     "lookback_bars": 979,
+     "names": [
+      "VWAP\u22121\u03c3",
+      "SWG-L\u00b75m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30545.591906054036,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791928800000,
+     "grade": "",
+     "hi": 30416.650438017703,
+     "id": "4e37bf443555a6b93bff772a9844434e1ce41dc977b8725b5ceb3707d0f4b3ba",
+     "instruction": "",
+     "kind": "VWAP\u00b12\u03c3",
+     "label": "VWAP\u22122\u03c3",
+     "lo": 30416.650438017703,
+     "lookback_bars": 979,
+     "names": [
+      "VWAP\u22122\u03c3"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30416.650438017703,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791920699999,
+     "grade": "",
+     "hi": 30591.25,
+     "id": "8d2f62e4f64e9861d819969a4999407c8b5ee3f943f038df5670097271573efe",
+     "instruction": "",
+     "kind": "RTH-L",
+     "label": "RTH-L",
+     "lo": 30591.25,
+     "lookback_bars": 375,
+     "names": [
+      "RTH-L",
+      "SWG-H\u00b75m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30591.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791984899999,
+     "grade": "",
+     "hi": 30597.75,
+     "id": "4c6d0f6acb994ed290ffd69649988933dfb951291d9b9aa4eb13f41b6555c0f9",
+     "instruction": "",
+     "kind": "OR-H",
+     "label": "OR-H",
+     "lo": 30597.75,
+     "lookback_bars": 5,
+     "names": [
+      "OR-H"
+     ],
+     "origin_date": "2026-10-14",
+     "price": 30597.75,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791928800000,
+     "grade": "",
+     "hi": 30674.533374090366,
+     "id": "8e302f199febd0fadb945303bd6e62663486e3f9e7ec4e96ebdb1334d3c82348",
+     "instruction": "",
+     "kind": "VWAP",
+     "label": "VWAP",
+     "lo": 30674.533374090366,
+     "lookback_bars": 979,
+     "names": [
+      "VWAP"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30674.533374090366,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": 1791979200000,
+     "formed_close_ms": 1791982799999,
+     "grade": "",
+     "hi": 30769,
+     "id": "107f4311124aadbdd29cb33fa523c2413f2d6ac8224049a90ad9a8098eb29d0a",
+     "instruction": "",
+     "kind": "OB",
+     "label": "OB(bear)\u00b71h",
+     "lo": 30716,
+     "lookback_bars": 499,
+     "names": [
+      "OB(bear)\u00b71h"
+     ],
+     "origin_date": "2026-10-14",
+     "price": 30742.5,
+     "symbol": "MNQ",
+     "tf": "1h"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791928800000,
+     "grade": "",
+     "hi": 30803.474842126696,
+     "id": "5223139a91e6e31d34945ee194c822a9589aae9f0cb36c510b8891c625bdebb1",
+     "instruction": "",
+     "kind": "VWAP",
+     "label": "VWAP+1\u03c3",
+     "lo": 30803.474842126696,
+     "lookback_bars": 979,
+     "names": [
+      "VWAP+1\u03c3",
+      "SWG-H\u00b715m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30803.474842126696,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791920699999,
+     "grade": "",
+     "hi": 30815,
+     "id": "9d481597b4ba5a556c24f28be40054326ecf794aea44b242affbb2c5f8adf2f9",
+     "instruction": "",
+     "kind": "RTH-H",
+     "label": "RTH-H",
+     "lo": 30815,
+     "lookback_bars": 375,
+     "names": [
+      "RTH-H",
+      "EQH\u00b715m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30815,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791953999999,
+     "grade": "",
+     "hi": 30868.25,
+     "id": "9d604ac034963415d0dbca0b7d2ad9dbf3bdcc9cce737227117c17243f2b592d",
+     "instruction": "",
+     "kind": "PDC",
+     "label": "PDC",
+     "lo": 30868.25,
+     "lookback_bars": 1380,
+     "names": [
+      "PDC",
+      "EQL\u00b715m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30868.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    }
+   ],
+   "levels": [
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "C",
+     "hi": null,
+     "id": null,
+     "instruction": "target",
+     "kind": null,
+     "label": "OB(bull)\u00b71d",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "C",
+     "origin_date": null,
+     "price": 30257.38,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "A",
+     "hi": null,
+     "id": null,
+     "instruction": "target",
+     "kind": null,
+     "label": "VWAP\u22122\u03c3",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "A",
+     "origin_date": null,
+     "price": 30416.65,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791987000000,
+     "grade": "A",
+     "hi": 30466,
+     "id": "bead7cb58c74f5837b953d3bf8f985a3e31a11cc866c465c8a3e7d5e05756ce0",
+     "instruction": "react_zone",
+     "kind": "SWG-L",
+     "label": "SWG-L\u00b75m",
+     "lo": 30466,
+     "lookback_bars": 399,
+     "machine_grade": "A",
+     "names": [
+      "SWG-L\u00b75m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30466,
+     "symbol": "MNQ",
+     "tf": "5m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791984899999,
+     "grade": "C",
+     "hi": 30506.25,
+     "id": "0fad2d8c5034125e507aee8cd6197dcf3b8e33471531adf3ed1e4294304cbd9f",
+     "instruction": "target_only",
+     "kind": "OR-L",
+     "label": "OR-L",
+     "lo": 30506.25,
+     "lookback_bars": 5,
+     "machine_grade": "C",
+     "names": [
+      "OR-L",
+      "EQL\u00b71h"
+     ],
+     "origin_date": "2026-10-14",
+     "price": 30506.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791984599999,
+     "grade": "C",
+     "hi": 30537.25,
+     "id": "555aa5ccb5470d286943068b797b9d4b737b465f2c2a800056498ef1af0db8bf",
+     "instruction": "target_only",
+     "kind": "ONL",
+     "label": "ONL",
+     "lo": 30537.25,
+     "lookback_bars": 930,
+     "machine_grade": "C",
+     "names": [
+      "ONL"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30537.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "A",
+     "hi": null,
+     "id": null,
+     "instruction": "magnet_meanrevert",
+     "kind": null,
+     "label": "VWAP\u22121\u03c3",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "A",
+     "origin_date": null,
+     "price": 30545.59,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791920699999,
+     "grade": "A",
+     "hi": 30591.25,
+     "id": "8d2f62e4f64e9861d819969a4999407c8b5ee3f943f038df5670097271573efe",
+     "instruction": "react_zone",
+     "kind": "RTH-L",
+     "label": "RTH-L",
+     "lo": 30591.25,
+     "lookback_bars": 375,
+     "machine_grade": "A",
+     "names": [
+      "RTH-L",
+      "SWG-H\u00b75m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30591.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "A",
+     "hi": null,
+     "id": null,
+     "instruction": "magnet_meanrevert",
+     "kind": null,
+     "label": "VWAP",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "A",
+     "origin_date": null,
+     "price": 30674.53,
+     "symbol": null,
+     "tf": null
+    }
+   ],
+   "no_trade": [
+    "\ud83d\udd34 Core CPI m/m 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+    "\ud83d\udd34 Core CPI y/y 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+    "\ud83d\udd34 CPI m/m 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+    "\ud83d\udd34 CPI y/y 07:30 CT \u00b115m \u2014 HARD no-trade (red news)"
+   ],
+   "no_trade_windows": [
+    {
+     "end_min": 515,
+     "kind": "first_n",
+     "label": "first 5m after the NY open (08:30\u201308:35 CT)",
+     "source": "code-constant",
+     "start_min": 510
+    },
+    {
+     "end_min": 810,
+     "kind": "lunch",
+     "label": "lunch 12:00\u201313:30 CT",
+     "source": "code-constant",
+     "start_min": 720
+    },
+    {
+     "end_min": 465,
+     "kind": "t1",
+     "label": "\ud83d\udd34 Core CPI m/m 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+     "source": "calendar",
+     "start_min": 435
+    },
+    {
+     "end_min": 465,
+     "kind": "t1",
+     "label": "\ud83d\udd34 Core CPI y/y 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+     "source": "calendar",
+     "start_min": 435
+    },
+    {
+     "end_min": 465,
+     "kind": "t1",
+     "label": "\ud83d\udd34 CPI m/m 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+     "source": "calendar",
+     "start_min": 435
+    },
+    {
+     "end_min": 465,
+     "kind": "t1",
+     "label": "\ud83d\udd34 CPI y/y 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+     "source": "calendar",
+     "start_min": 435
+    }
+   ],
+   "price_at_write": 30491.25,
+   "reasoning": "bias-tree: branch 1 mirror (close < PDL). Prior-plan flip fired below 30506.25 and price is now below PDL 30591.25 after a 5m sweep of 30466; 1h is down, 15m/5m ranging just above the low. No fresh FVGs, so no fvg_entry. The plan is short continuation only: wait for a 5m close below 30466, then short immediately toward 30416.65 and 30257.38, stop above 30537.25. A close above 30537.25 flips bias long; above 30591.25 kills the plan. Stand aside in the 30506.25\u201330545.59 chop and through lunch.",
+   "scenarios": [
+    {
+     "arm": {
+      "enabled": true,
+      "entry": 30456.5,
+      "policy": "market_in_zone",
+      "stop": 30551.25,
+      "target": 30257.38,
+      "wait_confirm": true
+     },
+     "condition": "reject",
+     "confirm": {
+      "ref_price": 30466,
+      "rule": "touch",
+      "side": "below"
+     },
+     "direction": "short",
+     "economics": {
+      "entry_zone": [
+       30456.5,
+       30466
+      ],
+      "first_obstacle": {
+       "family": "VWAP band",
+       "level": "VWAP\u22122\u03c3",
+       "price": 30416.75,
+       "response": "pass_through"
+      },
+      "r_to_arm_target": 2.10153,
+      "r_to_obstacle": 0.420581,
+      "version": 1
+     },
+     "id": "S1",
+     "invalid": "5m close above 30537.25",
+     "level_id": "bead7cb58c74f5837b953d3bf8f985a3e31a11cc866c465c8a3e7d5e05756ce0",
+     "quality": "B",
+     "target_chain": [
+      30416.75,
+      30257.5
+     ],
+     "trigger": "Rejection at 30466 SWG-L\u00b75m; price touches 30466 and rejects, triggering immediate short in 30456.50\u201330466."
+    }
+   ],
+   "structure": {
+    "as_of_ms": 1791987571742,
+    "contract": "MNQ 12-26",
+    "tfs": {
+     "1h": {
+      "bars": 2006,
+      "impulse_hi": 30862,
+      "impulse_lo": 30705.75,
+      "last_swing_high": {
+       "price": 30862,
+       "time_ms": 1791968400000
+      },
+      "last_swing_low": {
+       "price": 30705.75,
+       "time_ms": 1791961200000
+      },
+      "premium_discount": 0,
+      "trend": "range",
+      "zones": [
+       {
+        "fresh": "fresh",
+        "hi": 30644.25,
+        "kind": "OB",
+        "lo": 30532.75,
+        "score": 1.05,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30277.25,
+        "kind": "OB",
+        "lo": 30222.25,
+        "score": 1.05,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30769,
+        "kind": "OB",
+        "lo": 30716,
+        "score": 1.05,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30791.75,
+        "kind": "OB",
+        "lo": 30747.75,
+        "score": 1.05,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30277.25,
+        "kind": "DEMAND",
+        "lo": 30218.25,
+        "score": 0.975,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30848,
+        "kind": "DEMAND",
+        "lo": 30747.75,
+        "score": 0.975,
+        "tf": "1h"
+       }
+      ]
+     },
+     "4h": {
+      "bars": 524,
+      "impulse_hi": 30891.5,
+      "impulse_lo": 30591.25,
+      "last_swing_high": {
+       "price": 30891.5,
+       "time_ms": 1791957600000
+      },
+      "last_swing_low": {
+       "price": 30591.25,
+       "time_ms": 1791900000000
+      },
+      "premium_discount": 0,
+      "trend": "range",
+      "zones": [
+       {
+        "fresh": "fresh",
+        "hi": 30190.5,
+        "kind": "OB",
+        "lo": 30120,
+        "score": 1.17,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30525.75,
+        "kind": "OB",
+        "lo": 30395.5,
+        "score": 1.0296,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30459,
+        "kind": "OB",
+        "lo": 30331.75,
+        "score": 1.0296,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30348,
+        "kind": "OB",
+        "lo": 30136.25,
+        "score": 1.0296,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30863,
+        "kind": "OB",
+        "lo": 30636.75,
+        "score": 1.0296,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30862,
+        "kind": "OB",
+        "lo": 30705.75,
+        "score": 1.0296,
+        "tf": "4h"
+       }
+      ]
+     },
+     "D": {
+      "bars": 89,
+      "impulse_hi": 31616.5,
+      "impulse_lo": 30792,
+      "last_swing_high": {
+       "price": 31616.5,
+       "time_ms": 1791262800000
+      },
+      "last_swing_low": {
+       "price": 30792,
+       "time_ms": 1791435600000
+      },
+      "premium_discount": 0,
+      "trend": "up",
+      "zones": [
+       {
+        "fresh": "fresh",
+        "hi": 30264.5,
+        "kind": "OB",
+        "lo": 30250.25,
+        "score": 1.17,
+        "tf": "D"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30264.5,
+        "kind": "DEMAND",
+        "lo": 30250.25,
+        "score": 1.0562500000000001,
+        "tf": "D"
+       }
+      ]
+     }
+    }
+   }
+  },
+  "plan_version": 3,
+  "session": "NY",
+  "trade_date": "2026-10-14"
  }
 }

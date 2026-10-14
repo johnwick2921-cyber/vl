@@ -45,6 +45,47 @@ const TouchSetupHoldSentence = "LEVEL PLAYS WAIT FOR A REACTION AT THE LEVEL (F-
 // has not been reached since the reference instant.
 const TouchRefusalNoTouch = "no_touch"
 
+// ConfirmRefusalMissingTape (N5, rescan 10-14) — no CLOSED 1m bar exists in
+// [since, now): the gate cannot know whether the level was reached or swept, so
+// the verdict is UNKNOWN (never "price has not reached…", a market claim), and
+// nothing is counted. At the 08:22:41 boot the #515 sweep gate counted a hold
+// on an empty cache while the 08:19/08:20 bars had in fact traded through.
+const ConfirmRefusalMissingTape = "missing_tape"
+
+// hasClosedBar reports whether the tape holds at least one CLOSED 1m bar in
+// [sinceMs, nowMs).
+func hasClosedBar(bars []market.Kline, sinceMs, nowMs int64) bool {
+	for _, b := range bars {
+		if b.OpenTime >= sinceMs && b.OpenTime < nowMs && EvaluateBucketClose(b.OpenTime, 1, nowMs).Closed {
+			return true
+		}
+	}
+	return false
+}
+
+// missingTapeVerdict is the UNKNOWN verdict of a gate with no closed bar.
+func missingTapeVerdict(c PlanConfirm, sinceMs, nowMs int64) ConfirmVerdict {
+	v := ConfirmVerdict{Rule: c.Rule, RefPrice: c.RefPrice, Side: c.Side, EvaluatedMs: nowMs, Outcome: confirmationUnknown,
+		ReferenceMs: &sinceMs, ReferenceSource: "plan publication", RuleSource: ResolveConfirm(c).Source,
+		Refusal: ConfirmRefusalMissingTape, Detail: "no bars yet — no closed 1m bar since plan publication; UNKNOWN does not satisfy"}
+	finishConfirmation(&v)
+	return v
+}
+
+// VerdictMissingTape reports whether a verdict (or any leg) is UNKNOWN for an
+// empty tape — a hold that must not be counted as a market event.
+func VerdictMissingTape(v ConfirmVerdict) bool {
+	if v.Refusal == ConfirmRefusalMissingTape {
+		return true
+	}
+	for _, l := range v.Legs {
+		if l.Refusal == ConfirmRefusalMissingTape {
+			return true
+		}
+	}
+	return false
+}
+
 // touchReferenceSource names the reference instant of a touch-gated confirm.
 const touchReferenceSource = "first touch of the level (first closed 1m bar to reach the zone/ref)"
 
@@ -155,9 +196,12 @@ func touchRejectSide(s PlanScenario) string {
 }
 
 // touchRejectAfter evaluates a "touch" confirm after the first touch: MET at
-// the first CLOSED 1m bar (at or after the first touch) that reached the band
-// AND closed on the rejecting side of the ref. A touch candle that closed
-// through the level is not a rejection.
+// the first CLOSED 1m bar (at or after the first touch) that came FROM the
+// trade side (opened on it — long: above the ref, short: below), reached the
+// band AND closed back on the trade side. A touch candle that closed through
+// the level is not a rejection, and neither is a candle that arrived from the
+// far side (rescan 10-14: #654's short reject was "met" by a support bounce
+// whose candle came down from ABOVE 30466).
 func touchRejectAfter(s PlanScenario, lo, hi float64, bars []market.Kline, sinceMs, nowMs, touchMs int64) ConfirmVerdict {
 	c := *s.Confirm
 	side := touchRejectSide(s)
@@ -179,7 +223,8 @@ func touchRejectAfter(s PlanScenario, lo, hi float64, bars []market.Kline, since
 		}
 		touches++
 		v.Bucket = &e
-		if (side == "above" && b.Close > c.RefPrice) || (side == "below" && b.Close < c.RefPrice) {
+		fromSide := (side == "above" && b.Open > c.RefPrice) || (side == "below" && b.Open < c.RefPrice)
+		if fromSide && ((side == "above" && b.Close > c.RefPrice) || (side == "below" && b.Close < c.RefPrice)) {
 			v.Met = true
 			v.EventMs, v.EventKnown = e.CloseMs, true
 			v.EventSource = "closed 1m touch candle that rejected the level"
@@ -188,7 +233,7 @@ func touchRejectAfter(s PlanScenario, lo, hi float64, bars []market.Kline, since
 			return v
 		}
 	}
-	v.Detail = fmt.Sprintf("price reached the level (%d closed 1m touch candle(s)) but none closed back %s %.2f — a touch that closes through the level is not a rejection", touches, side, c.RefPrice)
+	v.Detail = fmt.Sprintf("price reached the level (%d closed 1m touch candle(s)) but none came from %s and closed back %s %.2f — a touch that closes through the level, or arrives from the far side, is not a rejection", touches, side, side, c.RefPrice)
 	finishConfirmation(&v)
 	return v
 }
@@ -201,6 +246,9 @@ func touchGatedConfirm(s PlanScenario, bars []market.Kline, sinceMs, nowMs int64
 		return ConfirmVerdict{}, false
 	}
 	c := *s.Confirm
+	if !hasClosedBar(bars, sinceMs, nowMs) {
+		return missingTapeVerdict(c, sinceMs, nowMs), true // N5: UNKNOWN, not "no touch"
+	}
 	lo, hi, ok := touchBand(s)
 	var at int64
 	if ok {
