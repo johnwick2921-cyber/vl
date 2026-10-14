@@ -13,9 +13,13 @@ import (
 // that drives the mentor evaluator (mentorEventPassAt) and the armed pass.
 func liveLoop(at *AutoTrader) bool { return at.armedEvent.Load() != nil }
 
+// isRunningNow reads the run flag under its own mutex (GetStatus also reads
+// cycle fields runCycle writes unlocked — a pre-existing race the -race run
+// flags when a test polls it mid-cycle).
 func isRunningNow(at *AutoTrader) bool {
-	r, _ := at.GetStatus()["is_running"].(bool)
-	return r
+	at.isRunningMutex.RLock()
+	defer at.isRunningMutex.RUnlock()
+	return at.isRunning
 }
 
 // TestReloadRaceOneLiveRunPerTraderID — MENTOR-NY item 3, the 10-13 16:35
