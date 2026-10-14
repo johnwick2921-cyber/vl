@@ -170,6 +170,21 @@ export interface DayPlanConfig {
   /** W3 — floor (minutes) on the resolved hold of an ARMED market_in_zone
    *  time_hold scenario, refused at write below it. Absent = 3. */
   min_hold_min?: number
+  /** Release #25 loss-fix switches (STRICT-12345 F-2/F-3/F-5/F-7). Every one
+   *  ships OFF: absent = off (COMMON-25 knob rule case b — planner numbers the
+   *  owner has not given). */
+  /** F-2 room gate — 'off' | 'refuse' | 'tp1_at_obstacle'. Absent = off. */
+  planner_room_gate?: string
+  /** F-2 minimum r_to_obstacle (R). Absent = 1.0; read only when the gate is on. */
+  planner_room_min_r?: number
+  /** F-3 exit on thesis death — 'off' | 'invalidation_only' | 'all'. Absent = off. */
+  planner_exit_on_thesis_death?: string
+  /** F-5 arm no-chase WOULD_REFUSE refuses the placement. Absent = OFF. */
+  planner_no_chase_enforce?: boolean
+  /** F-5 momentum-into-zone ceiling in ATR5m over the last 15 min. 0/absent = OFF. */
+  planner_momentum_into_zone_max_atr?: number
+  /** F-7 the ATR stop floor never widens past the authored invalidation. Absent = OFF. */
+  planner_atr_floor_cap_at_invalidation?: boolean
   sessions?: DayPlanSessionOverride[]
 }
 
@@ -338,6 +353,9 @@ export interface RiskControlConfig {
   // Auto-breakeven (NT8 futures): once +N pts in profit, move the stop to entry.
   breakeven_enabled?: boolean
   breakeven_trigger_points?: number // default 50
+  // F-8 (release #25): breakeven at N × the position's initial risk instead of
+  // points. 0/absent = OFF = the points rule above. AI/planner trades only.
+  breakeven_trigger_r?: number
   // Trailing profit (Phase 3B, NT8 futures only; default OFF)
   trailing_enabled?: boolean
   trailing_atr_mult?: number // default 2.0

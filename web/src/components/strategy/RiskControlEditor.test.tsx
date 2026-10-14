@@ -245,3 +245,41 @@ it('r22: an ABSENT guardrails master shows OFF; a saved ON shows ON', () => {
     'true'
   )
 })
+
+// Release #25 (STRICT-12345 F-8) — breakeven in R: absent = 0 = OFF (the points
+// rule), inert while breakeven is off, writes breakeven_trigger_r when on.
+it('F-8: breakeven_trigger_r reads 0 (off) when absent and is disabled while breakeven is off', () => {
+  render(
+    <RiskControlEditor
+      config={{} as RiskControlConfig}
+      onChange={vi.fn()}
+      language="en"
+      isFutures
+    />
+  )
+  const input = screen.getByTestId(
+    'breakeven-trigger-r-input'
+  ) as HTMLInputElement
+  expect(input.value).toBe('0')
+  expect(input.disabled).toBe(true)
+})
+
+it('F-8: with breakeven on, committing 1 writes breakeven_trigger_r: 1', () => {
+  const onChange = vi.fn()
+  const config = { breakeven_enabled: true } as RiskControlConfig
+  render(
+    <RiskControlEditor
+      config={config}
+      onChange={onChange}
+      language="en"
+      isFutures
+    />
+  )
+  const input = screen.getByTestId(
+    'breakeven-trigger-r-input'
+  ) as HTMLInputElement
+  fireEvent.focus(input)
+  fireEvent.change(input, { target: { value: '1' } })
+  fireEvent.blur(input)
+  expect(onChange).toHaveBeenCalledWith({ ...config, breakeven_trigger_r: 1 })
+})

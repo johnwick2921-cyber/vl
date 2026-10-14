@@ -178,7 +178,7 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 	if at.exchange != "ninjatrader" || at.config.StrategyConfig == nil {
 		return
 	}
-	fire, pts := breakevenTrigger(at.config.StrategyConfig.RiskControl, side, entryPrice, markPrice)
+	fire, pts := at.breakevenTriggerFor(symbol, side, entryPrice, markPrice) // release #25 PK-5 (R=0 → the points rule)
 	if !fire {
 		return
 	}

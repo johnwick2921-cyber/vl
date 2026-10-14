@@ -57,6 +57,9 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	wd := at.driveDeadManWatchdog()
 	at.checkFeedDown(now)
 	at.checkPositionDrawdown()
+	// Release #25 PK-2 — exit a planner position whose own thesis died
+	// (day_plan.planner_exit_on_thesis_death; OFF → returns at once).
+	at.maybeExitOnThesisDeath(now)
 	// TRADE EXCURSION LOGGING (wave 1A, 2026-09-02) — E2. This tick is the
 	// ~1m cadence the excursion path is recomputed on while a position lives.
 	// The whole path is rebuilt from stored bars each time, so a missed tick,

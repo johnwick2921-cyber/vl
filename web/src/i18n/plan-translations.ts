@@ -466,6 +466,56 @@ export const planStrings = {
     zh: '红色新闻硬封锁货币 — 逗号分隔（默认 USD：仅美元红色事件封锁；其他仅提示；ALL = 全部货币）',
     id: 'Mata uang blokir keras berita merah — pisahkan koma (default USD: hanya event merah USD memblokir; lainnya hanya penasihat; ALL = semua)',
   },
+  // ── Release #25 loss-fix switches (STRICT-12345 F-2/F-3/F-5/F-7) — all OFF ──
+  lossFixHeader: {
+    en: 'Loss-fix switches (owner, all OFF by default)',
+    zh: '止损修正开关（由所有者开启，默认全部关闭）',
+    id: 'Sakelar perbaikan rugi (pemilik, semua OFF secara default)',
+  },
+  plannerRoomGate: {
+    en: 'Room gate — first obstacle closer than the minimum R: off · refuse the arm · TP1 at the obstacle',
+    zh: '空间闸门 — 第一个障碍位小于最小 R 时：关闭 · 拒绝挂单 · 第一止盈放在障碍位',
+    id: 'Gerbang ruang — hambatan pertama lebih dekat dari R minimum: off · tolak arm · TP1 di hambatan',
+  },
+  roomGateOff: { en: 'OFF', zh: '关闭', id: 'OFF' },
+  roomGateRefuse: { en: 'REFUSE', zh: '拒绝', id: 'TOLAK' },
+  roomGateTp1: {
+    en: 'TP1 AT OBSTACLE',
+    zh: '止盈于障碍',
+    id: 'TP1 DI HAMBATAN',
+  },
+  plannerRoomMinR: {
+    en: 'Room gate minimum r_to_obstacle (R; unset = 1.0)',
+    zh: '空间闸门最小 r_to_obstacle（R；未设置 = 1.0）',
+    id: 'R minimum r_to_obstacle gerbang ruang (kosong = 1.0)',
+  },
+  plannerExitOnThesisDeath: {
+    en: 'Exit on thesis death — close a planner position at market when its own invalidation closes (invalidation only) or also when its plan goes dormant / a newer plan turns the other way (all)',
+    zh: '论点失效即离场 — 当计划自己的失效条件收盘成立时（仅失效）或计划休眠 / 新版计划方向相反时（全部）以市价平掉规划师持仓',
+    id: 'Keluar saat tesis mati — tutup posisi perencana di market saat invalidasinya sendiri ditutup (hanya invalidasi) atau juga saat rencana dormant / rencana baru berbalik arah (semua)',
+  },
+  thesisOff: { en: 'OFF', zh: '关闭', id: 'OFF' },
+  thesisInvalidationOnly: {
+    en: 'INVALIDATION ONLY',
+    zh: '仅失效',
+    id: 'HANYA INVALIDASI',
+  },
+  thesisAll: { en: 'ALL', zh: '全部', id: 'SEMUA' },
+  plannerNoChaseEnforce: {
+    en: 'Enforce no-chase on arms — a WOULD_REFUSE verdict refuses the placement (today it only warns)',
+    zh: '挂单强制不追价 — WOULD_REFUSE 判定将拒绝下单（目前仅警告）',
+    id: 'Tegakkan no-chase pada arm — vonis WOULD_REFUSE menolak penempatan (saat ini hanya peringatan)',
+  },
+  plannerMomentumIntoZone: {
+    en: 'Momentum-into-zone ceiling — refuse an arm when price moved into the zone faster than N × ATR5m over the last 15 min (0 = off)',
+    zh: '入区动能上限 — 过去 15 分钟价格冲入区域超过 N × ATR5m 时拒绝挂单（0 = 关闭）',
+    id: 'Batas momentum masuk zona — tolak arm bila harga masuk zona lebih dari N × ATR5m dalam 15 menit terakhir (0 = off)',
+  },
+  plannerAtrFloorCap: {
+    en: 'Cap the ATR stop floor at the authored invalidation — refuse the arm instead of widening the stop past it',
+    zh: 'ATR 止损下限不超过计划的失效位 — 超过时拒绝挂单，而不是放宽止损',
+    id: 'Batasi lantai stop ATR di invalidasi yang ditulis — tolak arm alih-alih melebarkan stop melewatinya',
+  },
   noTradeAdvisory: { en: 'Advisory', zh: '提示', id: 'Penasihat' },
 
   // ── Two-picture mode (W-PICTURE-HTF, 2026-09-20) ──

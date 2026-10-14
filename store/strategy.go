@@ -1135,6 +1135,32 @@ type DayPlanConfig struct {
 	// market_in_zone time_hold scenario, refused below it at write (new
 	// authoring only). nil/≤0 = 3 (ResolveMinHoldMin).
 	MinHoldMin *int `json:"min_hold_min,omitempty"`
+	// ── Release #25 lane planner-knobs (owner "do all now", 2026-10-14) — the
+	// STRICT-12345 loss fixes the owner had not ruled on, each its own switch,
+	// ALL DEFAULT OFF (COMMON-25 case b: planner numbers the owner has not
+	// given). Resolvers + boot line: store/planner_knobs.go. Absent = OFF =
+	// today's behaviour byte-identical.
+	//
+	// PlannerRoomGate (F-2): off | refuse | tp1_at_obstacle — judge the room
+	// to the first obstacle (r_to_obstacle) at write.
+	PlannerRoomGate string `json:"planner_room_gate,omitempty"`
+	// PlannerRoomMinR (F-2): the r_to_obstacle floor, used only when the room
+	// gate is on. nil/≤0 = 1.0.
+	PlannerRoomMinR *float64 `json:"planner_room_min_r,omitempty"`
+	// PlannerExitOnThesisDeath (F-3): off | invalidation_only | all — exit an
+	// open planner position at market when its own thesis dies.
+	PlannerExitOnThesisDeath string `json:"planner_exit_on_thesis_death,omitempty"`
+	// PlannerNoChaseEnforce (F-5): the arm path's no-chase WOULD_REFUSE
+	// refuses the placement. nil/false = WARN-first (today).
+	PlannerNoChaseEnforce *bool `json:"planner_no_chase_enforce,omitempty"`
+	// PlannerMomentumIntoZoneMaxATR (F-5): refuse an arm placement when price
+	// moved toward the zone by more than X × ATR5m over the last 15 minutes.
+	// 0 / absent = OFF.
+	PlannerMomentumIntoZoneMaxATR float64 `json:"planner_momentum_into_zone_max_atr,omitempty"`
+	// PlannerATRFloorCapAtInvalidation (F-7): the ATR stop floor never widens
+	// past the authored invalidation; a floor that does not fit refuses the
+	// arm. nil/false = today (the floor widens freely).
+	PlannerATRFloorCapAtInvalidation *bool `json:"planner_atr_floor_cap_at_invalidation,omitempty"`
 }
 
 // DayPlanSessionOverride is a minimal per-session override. Every field is a
@@ -2173,6 +2199,11 @@ type RiskControlConfig struct {
 	// resting bracket in place. New feature → default OFF; trigger defaults to 50.
 	BreakevenEnabled       *bool   `json:"breakeven_enabled,omitempty"`
 	BreakevenTriggerPoints float64 `json:"breakeven_trigger_points,omitempty"`
+	// BreakevenTriggerR (release #25 F-8, owner "do all now"): when > 0 the
+	// auto-breakeven trigger is this many R of the position's INITIAL risk
+	// (|entry − initial stop|) instead of BreakevenTriggerPoints. 0 / absent =
+	// OFF = today's points rule. AI/planner trades only (mentor mode keeps R3).
+	BreakevenTriggerR float64 `json:"breakeven_trigger_r,omitempty"`
 
 	// Trailing profit (final-bundle Phase 3B, 2026-08-19; NT8 futures only).
 	// Mechanical, deterministic, zero AI: once ARMED (per trailing_arm), each 60s

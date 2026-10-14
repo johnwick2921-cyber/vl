@@ -130,6 +130,21 @@ const GATE_LABELS: Record<string, { en: string; icon: string }> = {
     en: 'Mentor — daily guardrail unverified',
     icon: '🧑‍🏫',
   },
+  // Release #25 (STRICT-12345 F-2/F-3/F-5/F-7/F-8) — the loss-fix switches,
+  // all OFF by default; these count only once the owner turns one on.
+  room_gate: { en: 'Room gate — first obstacle under min R', icon: '🧱' },
+  room_gate_tp1: { en: 'Room gate — TP1 moved to the obstacle', icon: '🧱' },
+  thesis_death_exit: { en: 'Thesis-death exit (planner position)', icon: '🪦' },
+  no_chase_refused: { en: 'No-chase enforced (arm refused)', icon: '🚫' },
+  momentum_into_zone: { en: 'Momentum into the zone too fast', icon: '🌊' },
+  atr_floor_beyond_invalidation: {
+    en: 'ATR stop floor past the authored invalidation',
+    icon: '🛑',
+  },
+  breakeven_r_unknown_risk: {
+    en: 'Breakeven in R — initial risk unknown (points rule used)',
+    icon: '🎯',
+  },
 }
 
 export function GateBlocksPanel({

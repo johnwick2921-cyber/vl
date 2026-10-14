@@ -541,6 +541,96 @@ const dayPlan: KnobSpec[] = [
       'Only to record an owner-researched buffer as an explicit override.',
     perSession: 'No — strategy-level.',
   },
+  // ── Release #25 — the loss-fix switches (STRICT-12345 report §7, F-2/F-3/
+  // F-5/F-7). Owner order "do all now": each is a switch that ships OFF
+  // (COMMON-25 knob rule case b — planner numbers the owner has not given).
+  // The "on 649–654" lines are fixtures from the report's numbers, never the
+  // live DB.
+  {
+    label: 'Room gate (F-2)',
+    where:
+      'Strategy → Day Plan → Loss-fix switches → Room gate (planner_room_gate) + minimum R (planner_room_min_r)',
+    what: 'At plan WRITE, every enabled arm is measured: r_to_obstacle = |first obstacle − arm entry| ÷ |arm entry − arm stop| — the economics the planner wrote, recomputed by the machine (the first obstacle is the nearest seated level between entry and target, already checked at write). Below planner_room_min_r: refuse → the arm is refused at write (attempts 1–2 get a repair hint, the last attempt writes it disabled with reason room_gate); tp1_at_obstacle → the arm target (leg 1 on a split) is moved to the first obstacle, and then the normal R:R floor judges the new geometry (with min_risk_reward_ratio 2 such an arm is then refused by the R:R gate, reason rr). An arm whose first obstacle is unknown is refused room_gate in both modes. Logged "🧱 room gate", counted room_gate / room_gate_tp1.',
+    trader:
+      'Every strict-planner loser on 10-14 stalled at its first obstacle: r_to_obstacle was 0.50 (#649), 0.60 (#650), 0.55 (#652), 0.25 (#653), 0.42 (#654) while the targets sat 2.04–3.82R away. On those five, refuse at 1.0 refuses ALL FIVE at write (no trade; the four closed ones lost −$428). tp1_at_obstacle gives an arm R:R of 0.25–0.60, below the 2.0 floor, so the R:R gate refuses them too (the report: armed anyway with the target at the nearest level they would have made +$35.5 on the four closed and +$79.5 on #654).',
+    consumer:
+      'trader/write_time_feasibility.go (write-time room verdict, joins the feasibility issues) · store.DayPlanConfig room-gate resolver · per-trader boot line',
+    range:
+      'planner_room_gate: off | refuse | tp1_at_obstacle · planner_room_min_r: 0.1–10 R (read only when the gate is on)',
+    systemDefault: 'off · min R 1.0 (unset)',
+    recommended:
+      '⭐ OFF until the owner rules — the 1.0 is the report’s suggestion, not an owner number. refuse is the honest first step; tp1_at_obstacle mostly ends in an R:R refusal while min_risk_reward_ratio is 2.',
+    whenToTouch:
+      'When you want the planner to stop arming trades whose first obstacle is closer than the risk.',
+    perSession: 'No — strategy-level.',
+  },
+  {
+    label: 'Exit on thesis death (F-3)',
+    where:
+      'Strategy → Day Plan → Loss-fix switches → Exit on thesis death (planner_exit_on_thesis_death)',
+    what: 'On the 60-second monitor beat, for each open PLANNER position (an armed entry linked to a plan): invalidation_only → close at market once a completed 5m close AFTER the fill is beyond the cited scenario’s own invalidation sentence ("5m close above/below <price>", "2x5m close …" — the grammar the write site enforces); all → also when the plan version that authored the trade goes dormant (dormant, superseded:flip, superseded:death) or a newer version of the same plan chain carries the opposite bias. The close is the whole position at market on this trader’s own bound account (the same close path EOD-flat uses) and the bracket is cancelled. Never a mentor position, never a mentor-mode trader, never a manual (origin=manual) position. Logged "🪦 thesis-death EXIT … reason=invalidation|plan_dormant|opposite_plan", counted thesis_death_exit (+ thesis_death_exit_<reason>).',
+    trader:
+      'On 10-14 every loser was held past its own thesis death. invalidation_only: #649 −$60, #650 −$76.5 (its invalidation is its stop), #652 −$19.5, #653 −$82 = −$238 instead of −$428. all: #649 +$1 (plan dormant 21:00:01), #650 −$10.5 (newer v4 short at 00:23:05), #652 −$19.5 (the invalidation close at 03:00 comes before dormant 03:22), #653 −$82 (the invalidation close at 09:00 comes before dormant 09:19:31) = −$110.5 [B — derived from the report’s per-trade exits and timestamps]. #654 was still open.',
+    consumer:
+      'trader/auto_trader_risk.go monitorTick (beside auto-breakeven) · kernel.EvaluateAuthoredInvalidationAt · store PlanStore lifecycle / latest version · flattenPosition',
+    range: 'off | invalidation_only | all',
+    systemDefault: 'off (unset)',
+    recommended:
+      '⭐ OFF until the owner rules — it changes the "entries only" rule for planner trades. invalidation_only is the narrower step.',
+    whenToTouch:
+      'When you want a planner trade closed as soon as its own plan says the idea is dead, instead of waiting for the stop.',
+    perSession: 'No — strategy-level.',
+  },
+  {
+    label: 'Enforce no-chase on arms (F-5)',
+    where:
+      'Strategy → Day Plan → Loss-fix switches → Enforce no-chase (planner_no_chase_enforce)',
+    what: 'The arm path’s no-chase leg (measured since 2026-09-02, WARN-first) becomes a refusal: a WOULD_REFUSE verdict refuses the placement and is counted no_chase_refused. OFF = today: it only warns and the entry proceeds. CAVEAT (rescan N4): the arm metric is |live price − cited level| — for a resting limit that is pullback distance, not a chase.',
+    trader:
+      'On 10-14 it would NOT have stopped #653: it printed WOULD_REFUSE at 08:54/08:55 (1.05 and 1.17 × ATR) but would have PASSED at 08:56 (≈0.55 × ATR), just before the dump filled the limit. The report records no WOULD_REFUSE for #649/#650/#652/#654. The momentum-into-zone ceiling below is the switch aimed at #650/#653.',
+    consumer:
+      'trader/no_chase.go EvaluateNoChase · trader/entry_gate.go (arm path) · per-trader boot line',
+    range: 'ON | OFF',
+    systemDefault: 'OFF (unset)',
+    recommended:
+      '⭐ OFF — enforce only after the metric is redefined as momentum into the zone (rescan N4).',
+    whenToTouch: 'Only after the no-chase counts show it separates losers.',
+    perSession: 'No — strategy-level.',
+  },
+  {
+    label: 'Momentum into the zone ceiling (F-5)',
+    where:
+      'Strategy → Day Plan → Loss-fix switches → Momentum-into-zone ceiling (planner_momentum_into_zone_max_atr)',
+    what: 'When > 0, the arm path refuses a placement when price moved TOWARD the zone (long: down into it, short: up into it) over the last 15 minutes (3 × 5m) by more than this many ATR5m (the arm seam’s own ATR5m). Counted momentum_into_zone. 0 = OFF.',
+    trader:
+      'On the report’s numbers: #650 moved 3.5 × ATR5m into its zone (−57.75 pts in 15 min) and #653 1.3 × (−70.75 pts) — any ceiling below 3.5 refuses #650, below 1.3 refuses #653. #652 is not refused (its 15-minute move was −28, away from a short’s zone). #649 and #654: the report gives no ATR5m, so not computed. The live gate judges at the pass that PLACES the order; the fixture is the move into the fill.',
+    consumer:
+      'trader/entry_gate.go (arm path) · armSeamATR5m · per-trader boot line',
+    range: '0 = OFF · 0–10 × ATR5m',
+    systemDefault: '0 (OFF)',
+    recommended:
+      '⭐ OFF until the owner picks a number — the report gives two data points (3.5 and 1.3), not a threshold.',
+    whenToTouch:
+      'When you want to stop buying into a dump / selling into a squeeze.',
+    perSession: 'No — strategy-level.',
+  },
+  {
+    label: 'Cap the ATR stop floor at the authored invalidation (F-7)',
+    where:
+      'Strategy → Day Plan → Loss-fix switches → ATR floor cap (planner_atr_floor_cap_at_invalidation)',
+    what: 'ON: the 1.5 × ATR5m stop floor may widen the stop only up to the authored invalidation = the farther of the planner’s stop and the scenario’s invalidation-line price (when its sentence parses). If the floor lies beyond it, the arm is REFUSED — at write a repair hint / written disabled, at arm a WARN + counter atr_floor_beyond_invalidation — the stop is never widened silently. OFF = today: the floor widens the stop past the authored one ("🛑 arm stop … WIDENED").',
+    trader:
+      'On 10-14: #649 refused (floor 30882.78 past the authored 30873 — the −$79 loss avoided); #653 refused (floor 30427.25 past the authored 30436 — the −$178 loss avoided). #650, #652, #654 unchanged (their stops were not widened).',
+    consumer:
+      'trader/arm_stop_anchor.go composeArmStop (legacy branch) · trader/write_time_feasibility.go · trader/armed_executor.go · per-trader boot line',
+    range: 'ON | OFF',
+    systemDefault: 'OFF (unset)',
+    recommended:
+      '⭐ OFF until the owner rules — it trades fewer setups (it refuses instead of widening).',
+    whenToTouch:
+      'When you would rather skip a setup than take a stop wider than the plan’s own invalidation.',
+    perSession: 'No — strategy-level.',
+  },
 ]
 
 const risk: KnobSpec[] = [
@@ -671,7 +761,7 @@ const risk: KnobSpec[] = [
   {
     label: 'Breakeven trigger (AI trades)',
     where: 'Strategy → Risk Control',
-    what: 'AI-plan trades only: once an open NT8 position is this many POINTS in profit (mark vs entry), its stop moves to the entry price, once per position (a move_stop on the live bracket). It moves a stop only when BOTH switches are on: this strategy toggle (breakeven_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0 → seam=ACTIVE; unset → SUSPENDED, the code default). With the seam SUSPENDED the trigger still evaluates, logs "⏸ auto-breakeven SUSPENDED (0B)" once and sends nothing. A mentor-mode trade is NEVER moved by it — the mentor exits own that stop (owner ruling 2026-10-09; see Mentor mode → The exits → mentor_trail_mode).',
+    what: 'AI-plan trades only: once an open NT8 position is this many POINTS in profit (mark vs entry), its stop moves to the entry price, once per position (a move_stop on the live bracket). It moves a stop only when BOTH switches are on: this strategy toggle (breakeven_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0 → seam=ACTIVE; unset → SUSPENDED, the code default). With the seam SUSPENDED the trigger still evaluates, logs "⏸ auto-breakeven SUSPENDED (0B)" once and sends nothing. A mentor-mode trade is NEVER moved by it — the mentor exits own that stop (owner ruling 2026-10-09; see Mentor mode → The exits → mentor_trail_mode). Since release #25 a non-zero breakeven_trigger_r replaces this points trigger with N × the position’s initial risk (see "Breakeven trigger in R (F-8)"); 0/unset keeps this points rule.',
     trader:
       'Read the boot line "🛑 exits: … BE=on|off(strategy) · seam=ACTIVE|SUSPENDED(env)" for what the running bot does — not this card. The live boots of 2026-10-13 18:57/18:58 CT and 2026-10-14 02:10 CT read BE=on · seam=ACTIVE on both traders with breakeven_trigger_points=40: breakeven IS moving AI-trade stops there (the mentor trader is exempt). Turn the toggle off to stop it.',
     consumer:
@@ -684,6 +774,24 @@ const risk: KnobSpec[] = [
       '⭐ only with MFE evidence that the move pays. Wave 1A (2026-09-02) records it: `go run ./cmd/excursions` prints MFE p50/p80/p95 per condition with the n each rests on.',
     whenToTouch:
       'Only with MFE evidence that the move pays — the distribution is in trade_excursions, so this is answerable rather than a judgement call.',
+    perSession: 'No.',
+  },
+  {
+    label: 'Breakeven trigger in R (F-8)',
+    where:
+      'Strategy → Risk Control → Auto-breakeven → Trigger in R (breakeven_trigger_r)',
+    what: 'Release #25 (STRICT-12345 F-8): when > 0, an AI/planner position moves its stop to entry once its profit reaches breakeven_trigger_r × its initial risk (|entry − initial stop|) instead of breakeven_trigger_points. Same switches as the points rule (breakeven_enabled + the server seam), same once-per-position move. An unknown initial risk falls back to the points rule, logged once and counted breakeven_r_unknown_risk — never a guessed risk. A mentor position is never moved by it (mentor mode keeps the R3 rule). 0/unset = OFF = the points rule, byte-identical.',
+    trader:
+      'On 10-14 at 1R: no change on #649–#653 (their best MFE was 0.63R, so neither rule would have moved them — the points rule at 40 did not either). #654 would need ≈+112.5 pts for 1R; its points-rule BE moved at +40 at 10:08:27. The report’s history figure (+$595 [B] on six planner losers that reached ≥1R and still took a full stop: 623, 599, 620, 595, 607, 621) is the report’s, NOT replayed here.',
+    consumer:
+      'trader/auto_trader.go maybeMoveStopToBreakeven / breakeven trigger resolution · per-trader boot line',
+    range:
+      '0 = OFF (points rule) · 0–10 R · moves a stop only with breakeven_enabled ON and env EXIT_MECHS_SUSPENDED=0',
+    systemDefault: '0 (OFF — the points rule)',
+    recommended:
+      '⭐ OFF until the owner rules — the report’s +$595 is a history subset [B], not a replay.',
+    whenToTouch:
+      'When you want breakeven to scale with each trade’s own risk instead of a fixed point distance.',
     perSession: 'No.',
   },
   {
@@ -1424,7 +1532,7 @@ const sessions: KnobSpec[] = [
     where: 'Strategy → Day Plan → Sessions accordion',
     what: 'Per-session override rows: min grade, min scenario quality, max trades, plan mode, max re-plans (the acceptance-window override row was removed by W-KNOB-PRUNE 2026-09-18 — one rule exists; a stored override is read by nothing). Min grade, quality, max trades and plan mode are tri-state: inherit (blank) = the strategy-level row; an explicit value wins. Stored values that EQUAL the strategy level are auto-migrated to inherit. (min side levels REMOVED — owner ruling 2026-08-31: the per-side count concept is deleted.)',
     trader:
-      'The current rows: min_grade B · min_scenario_quality C · max_trades 7/10/10 (ASIA/LONDON/NY) · plan_mode strict ×3 · max re-plans 4 (a stored acceptance 5m_close ×3 is inert).',
+      'The current rows: min_grade B · min_scenario_quality C · max_trades 7/10/10 (ASIA/LONDON/NY) · plan_mode strict ×3 · max re-plans 4 (a stored acceptance 5m_close ×3 is inert). STRICT-12345 F-9 (release #25 note): 3 of 4 strict-planner losses on 10-14 (#649 #650 #652) were ASIA/LONDON; the switches are in Studio → Day plan → sessions (ASIA/LONDON enable + min_grade + max_trades — the spec default is min_grade A, max_trades 1). No saved value was changed by release #25.',
     consumer:
       'store/strategy.go:921-975 (per-session resolvers) · trader/auto_trader_planconfig.go:158-168',
     range:
