@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -93,7 +94,8 @@ func TestMentorLevelOrderEveningRestsUntilNextRTH(t *testing.T) {
 
 // TestMentorLevelOrderStaleFeedRefusedLoud — the dropping condition: a sized
 // PHL Place while the 1m feed is stale is REFUSED with a per-intent counter
-// (placement_refused_stale_data) and a log line — never silent. The mutant
+// (placement_refused_stale_data) and a WARN that names the ArmID (so a reader
+// can tie it to the later "CancelArm REFUSED — ArmID …" line). The mutant
 // (restore the silent return) leaves the counter at 0 and this turns RED.
 func TestMentorLevelOrderStaleFeedRefusedLoud(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "on")
@@ -102,12 +104,16 @@ func TestMentorLevelOrderStaleFeedRefusedLoud(t *testing.T) {
 	evening := eveningInstant()
 	pinMentorClock(t, evening)
 	pinBars(t, evening.UnixMilli()-10*60_000) // 10-minute-old bar → B4 stale
+	logBuf := captureTraderLog(t)
 
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(levelIntent(), mentorTierInputs{}, evening.UnixMilli(), 1100)
 
 	if c := at.mentorCountSnapshot()["placement_refused_stale_data"]; c != 1 {
 		t.Fatalf("placement_refused_stale_data = %d, want 1 (the refusal must be counted per intent)", c)
+	}
+	if !strings.Contains(logBuf.String(), "lvl-1") {
+		t.Fatalf("the refusal WARN must name the ArmID; log: %q", logBuf.String())
 	}
 	var n int64
 	if err := ledger.DB().Model(&store.ArmedOrderDB{}).Where("scenario LIKE ?", "lvl-1-%").Count(&n).Error; err != nil {
@@ -146,21 +152,5 @@ func TestMentorLevelOrderStaleRefusalDoesNotLatch(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("a later fresh tick must place normally, got %d rows", n)
-	}
-}
-
-// TestMentorStaleWarnOnceDedupesPerArmID — one WARN per refused ArmID, not per
-// tick: the helper returns true once and false on every later call for the same
-// ArmID, while the counter at the call site still fires per refusal.
-func TestMentorStaleWarnOnceDedupesPerArmID(t *testing.T) {
-	at, _ := f2Trader(t)
-	if !at.mentorStaleWarnOnce("lvl-1") {
-		t.Fatal("first call must warn")
-	}
-	if at.mentorStaleWarnOnce("lvl-1") {
-		t.Fatal("second call for the same ArmID must NOT warn")
-	}
-	if !at.mentorStaleWarnOnce("lvl-2") {
-		t.Fatal("a DIFFERENT ArmID must warn")
 	}
 }

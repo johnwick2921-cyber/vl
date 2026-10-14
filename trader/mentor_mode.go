@@ -295,26 +295,6 @@ func (at *AutoTrader) mentorStaleDataBlocked(now time.Time) bool {
 	return stale
 }
 
-// mentorStaleWarnOnce is the per-ArmID dedupe for the LOUD per-order stale-feed
-// refusal WARN (LEVEL-ORDER-DEATH): it returns true exactly once per ArmID so
-// one refused order logs one WARN (not one per tick), while the counter at the
-// call site still fires on every refusal. Guarded by mentorStaleMu.
-func (at *AutoTrader) mentorStaleWarnOnce(armID string) bool {
-	if at == nil {
-		return false
-	}
-	at.mentorStaleMu.Lock()
-	defer at.mentorStaleMu.Unlock()
-	if at.mentorStaleWarnedArms == nil {
-		at.mentorStaleWarnedArms = map[string]bool{}
-	}
-	if at.mentorStaleWarnedArms[armID] {
-		return false
-	}
-	at.mentorStaleWarnedArms[armID] = true
-	return true
-}
-
 // mentorStaleDataBlockBootLine renders the boot line for the mentor stale-data
 // block knob (release #11).
 func (at *AutoTrader) mentorStaleDataBlockBootLine() string {

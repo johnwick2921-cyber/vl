@@ -377,20 +377,21 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	if at.mentorStaleDataBlocked(mentorClockNow()) {
 		// A setup computed on stale prices is not a setup. The deferred guard in
 		// mentorDispatchEntry drops the evaluator's arm on this refusal. LOUD:
-		// the once-per-episode WARN in mentorStaleDataBlocked is not enough to
-		// see a single level order die — every sized Place refused here is named
-		// and counted (the "never silent" rule). One WARN per refused ArmID, not
-		// per tick (the counter still fires every refusal).
-		at.mentorCount("placement_refused_stale_data")
-		if at.mentorStaleWarnOnce(in.ArmID) {
-			now := mentorClockNow()
-			newestOpen := int64(0)
-			if bars := market.FuturesBarsProvider(at.futuresSymbol(), "1m", 1); len(bars) > 0 {
-				newestOpen = bars[len(bars)-1].OpenTime
-			}
-			ageSec := (now.UnixMilli() - (newestOpen + 60_000)) / 1000
-			at.logWarnf("🧑‍🏫 mentor placement REFUSED — stale 1m feed (B4, age ~%ds): %s %s ArmID %q @ %.2f never reaches the ledger", ageSec, in.Setup, in.Side, in.ArmID, in.Price)
+		// every sized Place refused here is named and counted (the "never
+		// silent" rule). The bar age is READ from the same source
+		// mentorStaleDataBlocked reads; "n/a" when there is no bar to read.
+		now := mentorClockNow()
+		newestOpen := int64(0)
+		if bars := market.FuturesBarsProvider(at.futuresSymbol(), "1m", 1); len(bars) > 0 {
+			newestOpen = bars[len(bars)-1].OpenTime
 		}
+		age := "n/a"
+		if newestOpen > 0 {
+			age = fmt.Sprintf("%ds", (now.UnixMilli()-(newestOpen+60_000))/1000)
+		}
+		at.mentorCount("placement_refused_stale_data")
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — stale 1m feed (B4, newest bar %s old): %s %s %s @ %.2f — never reaches the ledger",
+			age, in.ArmID, in.Setup, in.Side, in.Price)
 		return
 	}
 	// N10 (stale intent): an entry whose reference candle is not the newest
