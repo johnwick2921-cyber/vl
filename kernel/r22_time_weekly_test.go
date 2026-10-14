@@ -172,3 +172,18 @@ func TestR22DATRFromCompleteSessions(t *testing.T) {
 			"a truncated 96-bar stub averaged as a full day gives 179.62", dATR)
 	}
 }
+
+// dATR, intraday fallback (no daily source answers): the front-truncated
+// 96-bar stub of the 10-11 session is NOT a complete day and must not be
+// averaged. The only complete session in the ring is 10-12 (H−L 314.25).
+func TestR22DATRIntradayFallbackDropsTruncatedDay(t *testing.T) {
+	now := time.Date(2026, 10, 14, 1, 44, 0, 0, CTLocation())
+	bars := r22Bars1m(t)
+	r22ServeAt(t, nil, bars, now) // no native 1d
+
+	_, _, dATR := AssembleScoredLevels("r22", bars, DefaultSessionRegistry(), "MNQ", 12, now, 1)
+	if math.Abs(dATR-314.25) > 1e-9 {
+		t.Errorf("intraday-fallback dATR = %.2f; want 314.25 (the one complete session 10-12) — "+
+			"179.62 means the 96-bar stub of 10-11 was averaged as a full day", dATR)
+	}
+}
