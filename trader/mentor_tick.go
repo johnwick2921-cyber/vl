@@ -224,6 +224,7 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	if last.OpenTime <= at.mentorLastTickOpen {
 		return false // already ticked (the other goroutine won the race)
 	}
+	prevTickOpen := at.mentorLastTickOpen
 	at.mentorLastTickOpen = last.OpenTime
 
 	if at.mentorEval == nil {
@@ -235,6 +236,17 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// empty → the HTF feed is byte-identical.
 	at.mentorEval.Cfg.PrintWindows = at.mentorNewsPrintWindows()
 	emitMs := time.Now().UnixMilli()
+	// MENTOR-NY item 7 (rescan P1-N1): CATCH UP every closed bar the event path
+	// missed. A tick evaluates only its newest bar (eval.go reads prev/cur), so
+	// when a bar's FINAL was missed (10-14 08:32–08:52: the funnel fell 6 bars
+	// behind the clock while the bar ingest was saturated) the next tick jumped
+	// over it — never an ISB or touch candle, never counted. Each missed CLOSED
+	// bar is ticked in order at its own close instant before the newest one.
+	// Their intents go through the same dispatch with the NEWEST bar's close,
+	// so an ENTRY from a caught-up bar is refused by N10 (stale RefBarMs —
+	// never a late order); arm actions (keep/cancel, invalidations, upgrades)
+	// apply. Counted (mentor_bars_caught_up) and WARN'd with the range.
+	caught, caughtBars := at.mentorCatchUp(bars, prevTickOpen)
 	// The evaluator's clock is the instant the last bar CLOSED: every closedness
 	// test inside Tick then reads the just-closed bar as closed, never as forming
 	// (an OpenTime clock made the ORB escape unreachable and lagged every gate).
@@ -246,6 +258,7 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 			tap(in)
 		}
 	}
+	intents = append(caught, intents...)
 	// Day-gate report (owner ruling 2026-10-09): ONE INFO line per trading day,
 	// emitted at the 08:30 decision, with the gate's own inputs (the 08:30
 	// decision was silent in the log — only the refusal counters showed it).
@@ -342,8 +355,82 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// N12 funnel visibility (read-only): one closed bar + this tick's intents.
 	// Runs inside the N11 evaluator mutex (taken at the top of mentorEvalOnce),
 	// after the event placement so this tick's placements are counted.
-	at.mentorFunnelTick(1, len(intents))
+	at.mentorFunnelTick(1+caughtBars, intents)
 	return true
+}
+
+// mentorSweepsOnBeat runs the news cancel/flatten and the day-stop sweep from
+// the 60 s monitor beat (MENTOR-NY item 8), under the evaluator mutex like
+// mentorEvalOnce. Both are idempotent. TryLock: when a tick holds the mutex it
+// is running these same sweeps itself, so the beat never queues behind it.
+// Returns whether it ran (inert unless mentor mode is ON — both sweeps check).
+func (at *AutoTrader) mentorSweepsOnBeat() bool {
+	if at == nil || !at.mentorEnabled() {
+		return false
+	}
+	if !at.mentorEvalMu.TryLock() {
+		return false
+	}
+	defer at.mentorEvalMu.Unlock()
+	now := mentorClockNow()
+	at.mentorNewsCancelFlattenAt(now)
+	at.mentorDayStopSweep(now)
+	return true
+}
+
+// mentorCatchUpMax bounds one catch-up (a long outage has no bars to replay
+// anyway; the bound keeps a single tick's latency finite). Bars beyond it are
+// counted as skipped, never silently.
+const mentorCatchUpMax = 240
+
+// mentorCatchUp ticks every CLOSED bar after prevTickOpen and before the newest
+// bar, in order, at its own close instant (MENTOR-NY item 7). Returns the
+// intents those ticks emitted (in order) and how many bars it ticked. Runs
+// under mentorEvalMu (the caller holds it). prevTickOpen 0 = the first tick
+// after a seed — nothing to catch up.
+func (at *AutoTrader) mentorCatchUp(bars []market.Kline, prevTickOpen int64) ([]mentor.Intent, int) {
+	n := len(bars)
+	if prevTickOpen <= 0 || n < 2 || bars[n-1].OpenTime <= prevTickOpen+60_000 {
+		return nil, 0
+	}
+	first := -1
+	for i := 0; i < n-1; i++ {
+		if bars[i].OpenTime > prevTickOpen {
+			first = i
+			break
+		}
+	}
+	if first < 0 {
+		return nil, 0
+	}
+	if missed := (n - 1) - first; missed > mentorCatchUpMax {
+		skipped := missed - mentorCatchUpMax
+		for k := 0; k < skipped; k++ {
+			at.mentorCount("mentor_bars_skipped")
+		}
+		at.logWarnf("🧑‍🏫 mentor catch-up capped: %d missed closed bars, the oldest %d are skipped (counter mentor_bars_skipped)", missed, skipped)
+		first += skipped
+	}
+	var out []mentor.Intent
+	ticked := 0
+	for i := first; i < n-1; i++ {
+		closeMs := mentor.BarCloseInstant(bars[i])
+		ins := at.mentorEval.Tick(bars[:i+1], closeMs)
+		if tap := at.mentorIntentTap; tap != nil {
+			for _, in := range ins {
+				tap(in)
+			}
+		}
+		for _, l := range at.mentorNoteORB(at.mentorEval.State.ORB, closeMs) {
+			at.logInfof("%s", l)
+		}
+		out = append(out, ins...)
+		ticked++
+		at.mentorCount("mentor_bars_caught_up")
+	}
+	at.logWarnf("🧑‍🏫 mentor caught up %d missed closed bar(s) %s–%s CT before the %s CT bar (the event path missed their FINAL) — entries from them are refused as stale (N10), arm actions apply (counter mentor_bars_caught_up)",
+		ticked, kernel.ClockHHMMCT(time.UnixMilli(bars[first].OpenTime)), kernel.ClockHHMMCT(time.UnixMilli(bars[n-2].OpenTime)), kernel.ClockHHMMCT(time.UnixMilli(bars[n-1].OpenTime)))
+	return out, ticked
 }
 
 // mentorDayGateVerdictLabel maps the §7 day-gate verdict to the label the
@@ -493,6 +580,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	if in.RefBarMs != 0 && in.RefBarMs != barCloseMs {
 		at.mentorCount("stale_intent")
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — stale %s intent: reference bar close %d ≠ newest closed bar %d", in.Setup, in.RefBarMs, barCloseMs)
+		at.mentorRecordStallRefusal(in, "stale_intent") // MENTOR-NY item 9 (rescan P3-N9)
 		at.mentorGateBlock("mentor_stale_intent")
 		return
 	}
@@ -501,6 +589,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	if missing := at.mentorSourcesBlocking(in.Setup); len(missing) > 0 {
 		at.mentorCount("mentor_sources_missing")
 		at.logErrorf("🧑‍🏫 mentor sources MISSING [%s] — refusing the %s entry (fail-closed)", strings.Join(missing, ", "), in.Setup)
+		at.mentorRecordStallRefusal(in, "sources_missing: "+strings.Join(missing, ", "))
 		at.mentorGateBlock("mentor_sources_missing")
 		return
 	}
@@ -510,26 +599,31 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// no-chase rule.
 	if refuse, why := at.mentorWindowGate(in); refuse {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorRecordStallRefusal(in, "window: "+why)
 		at.mentorGateBlock("mentor_window")
 		return
 	}
 	if refuse, why := at.mentorDoneAfterWinGate(); refuse {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorRecordStallRefusal(in, "done_after_win: "+why)
 		at.mentorGateBlock("mentor_done_after_win")
 		return
 	}
 	if refuse, why := at.mentorStopAfterLossGate(); refuse {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorRecordStallRefusal(in, "stop_after_loss: "+why)
 		at.mentorGateBlock("mentor_stop_after_loss")
 		return
 	}
 	if hold, why := at.mentorNewsGate(); hold {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorRecordStallRefusal(in, "news_hold: "+why)
 		at.mentorGateBlock("mentor_news_hold")
 		return
 	}
 	if refuse, why := at.mentorAddGate(in); refuse {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorRecordStallRefusal(in, "never_add: "+why)
 		at.mentorGateBlock("mentor_never_add")
 		return
 	}
@@ -539,6 +633,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// beat cancels resting entries and flattens on a daily-loss breach.
 	if refuse, why := at.mentorDailyLossGate(mentorClockNow()); refuse {
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorRecordStallRefusal(in, "daily_loss: "+why)
 		return
 	}
 	// N12 per-order expiry (PR #313): the stop-limit is cancelled when
@@ -554,6 +649,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	if refuse, why := mentorExpiryGuard(in.ExpiryMs); refuse {
 		at.mentorCount("expiry_missing_refused")
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorRecordStallRefusal(in, "expiry_missing")
 		at.mentorGateBlock("mentor_expiry_missing")
 		return
 	}
@@ -561,6 +657,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		if skip, why := mentorNoChase(in.Side, latest, in.Price); skip {
 			at.mentorCount("no_chase_skip")
 			at.logWarnf("🧑‍🏫 mentor NO-CHASE skip: %s", why)
+			at.mentorRecordStallRefusal(in, "no_chase: "+why)
 			at.mentorGateBlock("mentor_no_chase")
 			return
 		}
@@ -779,6 +876,9 @@ func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
 		lp.Pos.Mode = next
 		at.mentorCount("exit_upgrade_c")
 		at.logInfof("🧑‍🏫 mentor confluence upgrade: %s %s (size unchanged) — %s", side, why, in.Reason)
+		at.mentorPersistUpgradedExitMode("open position "+lp.Legs[0].SignalID, func(l *store.ArmedOrderStore) (int64, error) {
+			return l.SetExitModeBySignal(lp.Legs[0].SignalID, next)
+		})
 	}
 	// A school-1 arm that is still RESTING: switch its staged branch so the
 	// fill registers C. The live-arm registry names the arm by its ArmID; its
@@ -787,12 +887,15 @@ func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
 	// not race the iteration), and only THIS trader's arms are considered.
 	// REL18-A: the scenario is the STORED one on the entry, never recomputed
 	// with the current epoch (a reload would break the lookup).
-	type restingArm struct{ id, scenario, side string }
+	type restingArm struct {
+		id, scenario, side string
+		rowID              int64
+	}
 	resting := make([]restingArm, 0)
 	mentorLiveMu.Lock()
 	for _, arm := range mentorLiveArms {
 		if arm.TraderID == at.id {
-			resting = append(resting, restingArm{id: arm.ArmID, scenario: arm.Scenario, side: arm.Side})
+			resting = append(resting, restingArm{id: arm.ArmID, scenario: arm.Scenario, side: arm.Side, rowID: arm.RowID})
 		}
 	}
 	mentorLiveMu.Unlock()
@@ -813,11 +916,41 @@ func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
 		at.setMentorExitMode(scenario, next)
 		at.mentorCount("exit_upgrade_c")
 		at.logInfof("🧑‍🏫 mentor confluence upgrade (resting %s): %s %s (size unchanged) — %s", ra.id, side, why, in.Reason)
+		rowID := ra.rowID
+		at.mentorPersistUpgradedExitMode(fmt.Sprintf("resting arm %s (row %d)", ra.id, rowID), func(l *store.ArmedOrderStore) (int64, error) {
+			return l.SetExitMode(rowID, next)
+		})
 	}
 	if !found {
 		at.mentorCount("exit_upgrade_no_position")
 		at.logWarnf("🧑‍🏫 mentor confluence upgrade IGNORED — no open or resting mentor position on the %s side (%s)", side, in.Reason)
 	}
+}
+
+// mentorPersistUpgradedExitMode writes the upgraded exit branch onto the arm's
+// row (MENTOR-NY item 11, rescan P2-N3) so a restart rebuilds the position as
+// C instead of the row's original B. Counted either way; a failed or empty
+// write is a WARN, never silent. The per-arm vs per-side reach of the upgrade
+// itself is an OWNER decision and is unchanged here.
+func (at *AutoTrader) mentorPersistUpgradedExitMode(what string, write func(*store.ArmedOrderStore) (int64, error)) {
+	if at.store == nil {
+		at.mentorCount("exit_upgrade_persist_failed")
+		at.logWarnf("🧑‍🏫 mentor confluence upgrade NOT persisted for %s — no store (a restart would rebuild the row's original mode)", what)
+		return
+	}
+	ledger := at.store.ArmedOrders()
+	if ledger == nil {
+		at.mentorCount("exit_upgrade_persist_failed")
+		at.logWarnf("🧑‍🏫 mentor confluence upgrade NOT persisted for %s — no armed ledger", what)
+		return
+	}
+	n, err := write(ledger)
+	if err != nil || n == 0 {
+		at.mentorCount("exit_upgrade_persist_failed")
+		at.logWarnf("🧑‍🏫 mentor confluence upgrade NOT persisted for %s — %d row(s) changed, err=%v (a restart would rebuild the row's original mode)", what, n, err)
+		return
+	}
+	at.mentorCount("exit_upgrade_persisted")
 }
 
 // ── STRONG DAY (S9) ────────────────────────────────────────────────────────

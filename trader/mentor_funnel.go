@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"vl/kernel"
+	"vl/kernel/mentor"
 )
 
 // ── N12 MENTOR FUNNEL VISIBILITY (read-only) ───────────────────────────────
@@ -26,7 +27,8 @@ type mentorFunnel struct {
 	mu       sync.Mutex
 	dayKey   string
 	bars     int
-	intents  int
+	entries  int // MENTOR-NY item 10: entry intents (PlaceStopEntry / PlaceStopLimitEntry)
+	others   int // every other action (LevelInvalid, ConfluenceUpgrade, keep/cancel …)
 	authored int
 	placed   int
 	filled   int
@@ -36,7 +38,7 @@ type mentorFunnel struct {
 
 func (f *mentorFunnel) reset(dayKey string) {
 	f.dayKey = dayKey
-	f.bars, f.intents, f.authored, f.placed, f.filled = 0, 0, 0, 0, 0
+	f.bars, f.entries, f.others, f.authored, f.placed, f.filled = 0, 0, 0, 0, 0, 0
 }
 
 // bumpAuthored/Placed/Filled are called from the entry/fill goroutines; they
@@ -59,9 +61,12 @@ func (f *mentorFunnel) bumpFilled() {
 	f.mu.Unlock()
 }
 
-// mentorFunnelTick records one evaluator tick (one closed bar, intents emitted)
-// and emits the line when due. Called once per closed bar from mentorEvalOnce.
-func (at *AutoTrader) mentorFunnelTick(bars, intents int) {
+// mentorFunnelTick records one evaluator tick (the closed bars it evaluated —
+// 1, or more after a catch-up — and the intents they emitted) and emits the
+// line when due. Called once per tick from mentorEvalOnce. MENTOR-NY item 10
+// (rescan P3-N8): entries and other actions are counted apart — "intents 38 ·
+// authored 0" on 10-14 was 37 LevelInvalid/ConfluenceUpgrade + 1 entry.
+func (at *AutoTrader) mentorFunnelTick(bars int, intents []mentor.Intent) {
 	if at == nil || !at.mentorEnabled() {
 		return
 	}
@@ -77,7 +82,13 @@ func (at *AutoTrader) mentorFunnelTick(bars, intents int) {
 		f.reset(dayKey)
 	}
 	f.bars += bars
-	f.intents += intents
+	for _, in := range intents {
+		if in.Action == mentor.PlaceStopEntry || in.Action == mentor.PlaceStopLimitEntry {
+			f.entries++
+		} else {
+			f.others++
+		}
+	}
 	// The fingerprint is the MEANINGFUL part — refusals + stages, never the bar
 	// count (bars change every tick; emitting on that would flood the log).
 	fp := mentorFunnelFingerprint(kernelRefusals, kernelFills, traderRefusals, f.authored, f.placed, f.filled)
@@ -88,16 +99,16 @@ func (at *AutoTrader) mentorFunnelTick(bars, intents int) {
 	}
 	f.lastEmit = now
 	f.lastFp = fp
-	line := mentorFunnelLine(f.bars, f.intents, kernelRefusals, kernelFills, traderRefusals, f.authored, f.placed, f.filled)
+	line := mentorFunnelLine(f.bars, f.entries, f.others, kernelRefusals, kernelFills, traderRefusals, f.authored, f.placed, f.filled)
 	f.mu.Unlock()
 
 	at.logInfof("%s", line)
 }
 
 // mentorFunnelLine renders the funnel line (pure — the pins assert its content).
-func mentorFunnelLine(bars, intents int, kref, kfills, tref map[string]int, authored, placed, filled int) string {
-	return fmt.Sprintf("🧑‍🏫 mentor funnel [15m]: bars %d · intents %d · kernel refusals %s · kernel fills %s · trader refusals %s · authored %d · placed %d · filled %d",
-		bars, intents, mentorRefusalString(kref), mentorRefusalString(kfills), mentorRefusalString(tref), authored, placed, filled)
+func mentorFunnelLine(bars, entries, others int, kref, kfills, tref map[string]int, authored, placed, filled int) string {
+	return fmt.Sprintf("🧑‍🏫 mentor funnel [15m]: bars %d · entry intents %d · other actions %d · kernel refusals %s · kernel fills %s · trader refusals %s · authored %d · placed %d · filled %d",
+		bars, entries, others, mentorRefusalString(kref), mentorRefusalString(kfills), mentorRefusalString(tref), authored, placed, filled)
 }
 
 // mentorKernelRefusals merges the evaluator's two B-rules refusal ledgers into
@@ -153,7 +164,7 @@ func mentorTraderRefusalKey(key string) bool {
 		"refused", "suppressed", "missing", "no_source", "no_data", "no_calendar",
 		"held", "no_chase", "short", "bad_value", "failed", "unwired", "error", "hold",
 		"queue_full", // FU-1 P2-4: record_fill_queue_full (a dropped fill receipt)
-		"stale_data", // release #11: the mentor stale-data block refusal
+		"stale_data", // release #11: the mentor stale-data block (stale_data_episodes; placement_refused_stale_data)
 	} {
 		if strings.Contains(key, kw) {
 			return true

@@ -170,3 +170,65 @@ func TestMentorPlacementRegistersExitBranch(t *testing.T) {
 		t.Fatalf("an ISB entry forks B at entry and registers it per arm, got %q", got)
 	}
 }
+
+// TestMentorConfluenceUpgradePersistsExitModeC — MENTOR-NY item 11 (rescan
+// P2-N3, persistence part) at the production call site. The B20 upgrade
+// switched the exit branch to C only in memory (lp.Pos.Mode /
+// setMentorExitMode); after #517 a restart rebuilds a mentor position from the
+// row's exit_mode, so it came back as B (stop moves, BE, trail) instead of C
+// (hold ≥ 1:2, stop untouched). Both a RESTING arm (by row id) and an OPEN
+// position (by signal id) now write exit_mode='C' on their row, counted.
+// MUTANT: drop the persist call → the rows keep 'B' → RED.
+func TestMentorConfluenceUpgradePersistsExitModeC(t *testing.T) {
+	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	at, _, ledger, _ := mentorB3Rig(t)
+	mentorWireSeams(t, at, ledger)
+	now := b3Clock(9, 40)
+	mentorNowSource = func() time.Time { return now }
+	t.Cleanup(func() { mentorNowSource = nil })
+
+	author := func(armID string) mentorLiveArm {
+		at.mentorArmIntent(
+			mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: armID, Side: mentor.SideLong,
+				Price: 29600, Stop: 29590, Target: 29620, Setup: "ISB", ExpiryMs: now.UnixMilli() + 60_000},
+			mentorSizeChoice{Contracts: 1, Tier: "base"}, now.UnixMilli(), now.UnixMilli(), "B", 0)
+		live, ok := at.mentorLiveArmFor(armID)
+		if !ok {
+			t.Fatalf("arm %q not registered", armID)
+		}
+		return live
+	}
+	resting := author("isb-rest")
+	at.setMentorExitMode(resting.Scenario, "B") // the staged branch placement registers
+	open := author("isb-open")
+	if err := ledger.SetSignal(open.RowID, "sig-open"); err != nil {
+		t.Fatal(err)
+	}
+	at.mentorRegisterLivePos("sig-open", &mentorLivePos{
+		Pos:  mentorPosition{Side: "long", Mode: "B"},
+		Legs: [2]mentorLeg{{SignalID: "sig-open", Qty: 1}},
+	})
+
+	at.mentorConfluenceUpgrade(mentor.Intent{Action: mentor.ConfluenceUpgrade, Side: mentor.SideLong,
+		Reason: "trigger flipped to the long side [B20, D3.4 p3 @09:17]"})
+
+	mode := func(rowID int64) string {
+		var r store.ArmedOrderDB
+		if err := ledger.DB().First(&r, rowID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if r.ExitMode == nil {
+			return "<nil>"
+		}
+		return *r.ExitMode
+	}
+	if got := mode(resting.RowID); got != "C" {
+		t.Fatalf("the resting arm's row must persist exit_mode C after the upgrade, got %q", got)
+	}
+	if got := mode(open.RowID); got != "C" {
+		t.Fatalf("the open position's row must persist exit_mode C after the upgrade, got %q", got)
+	}
+	if got := at.mentorCountSnapshot()["exit_upgrade_persisted"]; got != 2 {
+		t.Fatalf("exit_upgrade_persisted = %d, want 2", got)
+	}
+}
