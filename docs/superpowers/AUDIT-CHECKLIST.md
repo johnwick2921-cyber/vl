@@ -9119,3 +9119,28 @@ symptom: release #22 (#514) moved three production reads to explicit America/Chi
 probe: whenever production code reads a fixed zone, grep its tests for time.Local, for `.Format(` on a log-stamp layout without `.In(`, and for time.Date(..., time.Local). Then run the package under `TZ=UTC go test` before calling it green.
 rule: a test builds its instants in the zone the production code reads (the logger's CT), never the machine zone. "Green locally" is not green until the suite also passes under TZ=UTC.
 Reference: agent/scheduler_step_test.go, internal/activation/logstamp_ct_test.go, internal/updaterworker/logstamp_ct_test.go (logStampCT).
+
+## CLASS NN (assigned at merge) — a refused or removed start leaves a live run behind (two loops for one trader id)
+
+symptom: MENTOR-NY (2026-10-14), from 10-13 16:35:42–48 (vl_2026-10-13.log
+19112–19277). Two overlapping start requests for one trader: request B read
+request A's freshly loaded instance as "stopped" (its Run goroutine had not set
+is_running yet) and RemoveTrader dropped it WITHOUT a Stop (it stops only a
+running trader); that instance then ran orphaned beside the one B loaded. B's
+own Run was refused by the ordered-owner check, but only AFTER Run had started
+its armed event loop (which also drives the mentor evaluator), and the refusal
+path cancelled only the stop monitor. Two live evaluators for one trader id
+(funnel bars 44 @17:43:00 / bars 22 @17:43:38) until the 18:57 boot; a blank
+exit mode at fill (the class above) came from the same pair.
+probe: for every start path, list what it starts BEFORE each refusal return, and
+check that each refusal tears ALL of it down. For every "remove from roster",
+ask what happens to an instance whose start has been launched but has not yet
+flipped its running flag. Count live loops per id, not running flags.
+rule: a run CLAIMS its id before it starts anything (one owner per id); an
+instance removed from the roster is retired and can never claim; a newer
+instance stops the older run and waits for it to EXIT before it starts; every
+refusal path, a Stop that lands mid-start, and a panic out of Run tear down
+everything the run started. Every refused start is logged and counted.
+Reference: trader/run_owner.go (claimRunOwner, Retire), trader/auto_trader.go
+Run/teardownRunStarted, manager/trader_manager.go RemoveTrader,
+trader/run_owner_test.go, manager/run_owner_reload_test.go.
