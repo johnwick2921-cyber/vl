@@ -108,7 +108,7 @@ func TestInstallPendingClearsOnRefusalAndOnTimeout(t *testing.T) {
 	at, _ := pauseTrader(t)
 	at.id = "install-pending-3"
 	writeJob(t, dir, pendingJob, updaterjob.StatePreflightOK, updaterjob.PhaseStarted, time.Now().Add(-9*time.Minute))
-	if _, pending := InstallPending(); !pending {
+	if _, pending := InstallPending(time.Now()); !pending {
 		t.Fatal("precondition: preflight is pending")
 	}
 	writeJob(t, dir, pendingJob, updaterjob.StateRefused, updaterjob.PhaseDone, time.Now().Add(-10*time.Minute))
@@ -116,12 +116,12 @@ func TestInstallPendingClearsOnRefusalAndOnTimeout(t *testing.T) {
 		t.Fatal("a refused job must unfreeze entries")
 	}
 	writeJob(t, dir, pendingJob, updaterjob.StatePreflightOK, updaterjob.PhaseStarted, time.Now().Add(-updaterjob.MaxJobAge-time.Minute))
-	if why, pending := InstallPending(); pending {
+	if why, pending := InstallPending(time.Now()); pending {
 		t.Fatalf("a job past the updater's 30-minute rule must not freeze entries forever, got %q", why)
 	}
 	// A job that reached the hold is the hold's business, not this gate's.
 	writeJob(t, dir, pendingJob, updaterjob.StateMaintenanceHeld, updaterjob.PhaseStarted, time.Now())
-	if _, pending := InstallPending(); pending {
+	if _, pending := InstallPending(time.Now()); pending {
 		t.Fatal("maintenance_held is past the pre-hold states: the hold refuses, not this gate")
 	}
 }
@@ -136,7 +136,7 @@ func TestInstallPendingSkipsAnUnreadableJobFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	resetInstallPendingForTest()
-	v := InstallPendingStatus()
+	v := InstallPendingStatus(time.Now())
 	if v.Pending || v.Unread != 1 {
 		t.Fatalf("an unreadable file must be skipped and counted, got %+v", v)
 	}

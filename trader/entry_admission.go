@@ -275,7 +275,7 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 	// bot stops racing the preflight's flat check (10-14: job 30a8bbf6 was
 	// refused after trader 12345 placed at 01:44:00, 4 min into preflight).
 	// Read-only from the job files; clears when the job ends or times out.
-	if reason, pending := InstallPending(); pending {
+	if reason, pending := InstallPending(now); pending {
 		return at.admitRefuse(in, "install_pending", "install_pending: "+reason, func() {
 			at.logWarnf("⏳ install pending: %s %s REFUSED — %s. Exits and protection continue.", sym, act, reason)
 		})

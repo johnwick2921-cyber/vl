@@ -84,14 +84,6 @@ var installPending struct {
 	lastJob   string // the job the current episode named ("" = no episode)
 	warned    map[string]bool
 	episodes  int64
-	nowFn     func() time.Time // test clock seam; nil = time.Now
-}
-
-func installPendingNow() time.Time {
-	if installPending.nowFn != nil {
-		return installPending.nowFn()
-	}
-	return time.Now()
 }
 
 // resetInstallPendingForTest clears the cache and episode state (tests only).
@@ -100,12 +92,12 @@ func resetInstallPendingForTest() {
 	defer installPending.mu.Unlock()
 	installPending.dir, installPending.readAt, installPending.dirMod = "", time.Time{}, time.Time{}
 	installPending.view, installPending.lastJob, installPending.warned = InstallPendingView{}, "", nil
-	installPending.nowFn = nil
 }
 
 // InstallPendingStatus reads (cached ≤ 2 s, re-read at once when the jobs
-// dir changes) whether an update job is in a pre-hold state.
-func InstallPendingStatus() InstallPendingView {
+// dir changes) whether an update job is in a pre-hold state, judged at the
+// CALLER's clock now (class 113: no wall-clock read beneath a seam).
+func InstallPendingStatus(now time.Time) InstallPendingView {
 	dataDir := MaintenanceDataDir()
 	if dataDir == "" {
 		return InstallPendingView{}
@@ -114,7 +106,6 @@ func InstallPendingStatus() InstallPendingView {
 	if err != nil {
 		return InstallPendingView{}
 	}
-	now := installPendingNow()
 	var dirMod time.Time
 	if fi, err := os.Stat(jobsDir); err == nil {
 		dirMod = fi.ModTime()
@@ -122,11 +113,13 @@ func InstallPendingStatus() InstallPendingView {
 	ip := &installPending
 	ip.mu.Lock()
 	defer ip.mu.Unlock()
-	if ip.dir == jobsDir && !ip.readAt.IsZero() && dirMod.Equal(ip.dirMod) && time.Since(ip.readAt) < installPendingCacheTTL {
+	// A read older than the TTL, or "in the future" (a clock that moved
+	// back), is re-read: a stale cache must never outlive its window.
+	if age := now.Sub(ip.readAt); ip.dir == jobsDir && !ip.readAt.IsZero() && dirMod.Equal(ip.dirMod) && age >= 0 && age < installPendingCacheTTL {
 		return ip.view
 	}
 	v := readInstallPending(jobsDir, now)
-	ip.dir, ip.readAt, ip.dirMod, ip.view = jobsDir, time.Now(), dirMod, v
+	ip.dir, ip.readAt, ip.dirMod, ip.view = jobsDir, now, dirMod, v
 	// Episode edges, logged once each (L7: every value READ from the file).
 	switch {
 	case v.Pending && ip.lastJob != v.JobID:
@@ -226,9 +219,9 @@ func peekInstallJob(p string) (installJobPeek, error) {
 }
 
 // InstallPending is the gate predicate: (reason, true) while an update job is
-// in a pre-hold state.
-func InstallPending() (string, bool) {
-	v := InstallPendingStatus()
+// in a pre-hold state at now.
+func InstallPending(now time.Time) (string, bool) {
+	v := InstallPendingStatus(now)
 	if !v.Pending {
 		return "", false
 	}

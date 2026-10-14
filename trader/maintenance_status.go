@@ -60,7 +60,7 @@ func MaintenanceStatus(loaded map[string]*AutoTrader) MaintenanceStatusView {
 		}
 	}
 	v.Withdraw = maintenanceWithdrawView(storeOf(loaded))
-	v.InstallPending = InstallPendingStatus()
+	v.InstallPending = InstallPendingStatus(time.Now())
 	v.InFlightSends = MaintenanceInFlight()
 	v.Drained = MaintenanceDrained()
 	if w, ok := installationWireView(ntTradersOf(loaded)); ok && w.Connected && w.HasAck && w.Rec.Ack != nil {
