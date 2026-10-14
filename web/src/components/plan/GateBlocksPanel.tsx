@@ -34,6 +34,10 @@ const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   night_transition: { en: 'Night/day transition', icon: '🌙' },
   maintenance_hold: { en: 'Update hold (maintenance)', icon: '🔒' },
   install_pending: { en: 'Update pending (preflight freeze)', icon: '⏳' },
+  // OPS NEW-2 (10-14): planner arms now ask the stale-data verdict; the AI
+  // path's B4 has counted stale_data all along.
+  stale_data: { en: 'Stale 1m feed', icon: '⛔' },
+  clock_step: { en: 'Clock-step hold (wall clock jumped)', icon: '🕰' },
   maintenance_drop: {
     en: 'Queued entry dropped by the update hold',
     icon: '🔒',
