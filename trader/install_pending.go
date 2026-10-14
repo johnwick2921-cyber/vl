@@ -113,10 +113,18 @@ func InstallPendingStatus(now time.Time) InstallPendingView {
 	ip := &installPending
 	ip.mu.Lock()
 	defer ip.mu.Unlock()
-	// A read older than the TTL, or "in the future" (a clock that moved
-	// back), is re-read: a stale cache must never outlive its window.
-	if age := now.Sub(ip.readAt); ip.dir == jobsDir && !ip.readAt.IsZero() && dirMod.Equal(ip.dirMod) && age >= 0 && age < installPendingCacheTTL {
-		return ip.view
+	// The updater writes every job by tmp + rename, so an unchanged jobs-dir
+	// mtime means no job file changed. A NOT-pending view can then only
+	// change by a write, so it is reused; a PENDING view also ends on time
+	// (the 30-minute rule), so it is re-read once its TTL passes — or when
+	// the read is "in the future" (a clock that moved back).
+	if ip.dir == jobsDir && !ip.readAt.IsZero() && dirMod.Equal(ip.dirMod) {
+		if !ip.view.Pending {
+			return ip.view
+		}
+		if age := now.Sub(ip.readAt); age >= 0 && age < installPendingCacheTTL {
+			return ip.view
+		}
 	}
 	v := readInstallPending(jobsDir, now)
 	ip.dir, ip.readAt, ip.dirMod, ip.view = jobsDir, now, dirMod, v
