@@ -198,7 +198,7 @@ func TestPK4CapAtTheArmPass(t *testing.T) {
 	r := newZoneRig(t, "pk4-arm", zoneDoc(zoneScenario("S1", kernel.EntryPolicyMarketInZone, zone, false)))
 	r.at.config.StrategyConfig.DayPlan.PlannerATRFloorCapAtInvalidation = pkB(true)
 	logBuf := captureTraderLog(t)
-	tape := zoneTape(99.0, r.now, 0)
+	tape := zoneTapeReacted(99.0, r.now) // #525 F-1: a level play arms only after its reaction AT the level
 	for j := range tape {
 		tape[j].High, tape[j].Low = tape[j].Close+0.6, tape[j].Close-0.6
 	}
