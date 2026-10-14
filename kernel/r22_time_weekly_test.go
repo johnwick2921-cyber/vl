@@ -10,10 +10,12 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"vl/market"
+	"vl/store"
 )
 
 func r22LoadBars(t *testing.T, name string) []market.Kline {
@@ -243,5 +245,18 @@ func TestR22MIDOPresentInTheEvening(t *testing.T) {
 	}
 	if want := (hi + lo) / 2; got[KindMIDO][0] != want {
 		t.Errorf("MID-O = %.2f, want %.2f", got[KindMIDO][0], want)
+	}
+}
+
+// F-2 render side — a configured EMA that is not warmed on this TF's depth
+// renders n/a in BOTH prompts (FormatIndicatorState is shared by the executor
+// and the planner mirror), never a silently missing row.
+func TestR22FormatIndicatorStateUnwarmedEMAIsNA(t *testing.T) {
+	var sb strings.Builder
+	FormatIndicatorState(&sb, &market.TimeframeSeriesData{EMAByPeriod: map[int][]float64{20: {101.5}, 200: {}}},
+		store.IndicatorConfig{EnableEMA: true})
+	out := sb.String()
+	if !strings.Contains(out, "EMA20: [101.5000]") || !strings.Contains(out, "EMA200: n/a (not warmed — needs 661 bars)") {
+		t.Fatalf("want EMA20 values and 'EMA200: n/a (not warmed — needs 661 bars)', got:\n%s", out)
 	}
 }
