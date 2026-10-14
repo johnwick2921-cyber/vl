@@ -147,8 +147,9 @@ type State struct {
 	ArmSeq int `json:"arm_seq"`
 	// LevelArms are the RESTING level orders (B6, 10-03 ruling): a level
 	// order has no one-candle expiry — it rests until a later candle closes
-	// through its level or the RTH window ends. Keyed by the level key so a
-	// resting order is never re-emitted (B16: one intent per reference).
+	// through its level or its own 15:00 CT expiry — LevelArmExpiry(PlacedAt).
+	// Keyed by the level key so a resting order is never re-emitted (B16: one
+	// intent per reference).
 	LevelArms map[string]LevelArm `json:"level_arms,omitempty"`
 }
 
@@ -311,13 +312,15 @@ func handleTouchIntents(e *Evaluator, lvl Level, intents []Intent) []Intent {
 	return out
 }
 
-// rthWindowEndMin is the RTH window end in CT minutes (15:00) — B6 cancels
-// resting level orders at the window end.
+// rthWindowEndMin is the RTH window CLOSE in CT minutes (15:00). It is now
+// read only by orb.go (the ORB's 08:30–15:00 RTH close boundary) — level
+// orders no longer use it; they expire at LevelArmExpiry(PlacedAt).
 const rthWindowEndMin = 15 * 60
 
 // LevelArm is one resting level order (B6): the touch level it was placed
 // at, its side and its placement candle — the cancel sweep closes it when a
-// LATER candle closes through the level or at the RTH window end.
+// LATER candle closes through the level or at its own 15:00 CT expiry
+// (LevelArmExpiry(PlacedAt)).
 type LevelArm struct {
 	ArmID      string  `json:"arm_id"`
 	Side       Side    `json:"side"`
@@ -345,8 +348,8 @@ func (e *Evaluator) ClearLevelArm(armID string) {
 
 // levelArmCancels is the B6 cancel sweep [D2.3 p1 @18:01–19:12, recovered
 // @23:48]: a resting level order is cancelled when a LATER closed candle
-// CLOSES THROUGH the level ("Minh cancel"), or at the RTH window end
-// (15:00 CT). The placement candle itself never cancels.
+// CLOSES THROUGH the level ("Minh cancel"), or at its own 15:00 CT expiry —
+// LevelArmExpiry(PlacedAt). The placement candle itself never cancels.
 // conflictArmCancels cancels every live mentor arm BY ArmID when the D4.2-03
 // 15m/5m conflict fires. The old one-shot veto emitted a CancelArm with NO
 // ArmID and the trader refused it as "unknown arm" — a resting arm survived
@@ -1653,8 +1656,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			}
 			// B6 (10-03 ruling): a LEVEL order RESTS — the one-candle expiry is
 			// the ISB rule only [D1.4 p1 @18:32]. ExpiryMs stays 0; the cancel
-			// sweep (levelArmCancels) closes it through the level or at the
-			// window end.
+			// sweep (levelArmCancels) closes it through the level or at its own
+			// 15:00 CT expiry (LevelArmExpiry(PlacedAt)).
 			// G2 place (CTO R-b): the setup's PLACE — the touch level. For the
 			// EMA the anchor is the loss-time price (the stop, K1).
 			e.State.ArmSeq++
@@ -1698,7 +1701,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 
 	// B6 cancel sweep: a resting level order dies when a later candle
-	// closes through its level, or at the RTH window end.
+	// closes through its level, or at its own 15:00 CT expiry
+	// (LevelArmExpiry(PlacedAt)).
 	out = append(out, e.levelArmCancels(cur, now)...)
 
 	// §4.1 box trades (BOX RULING R1 2026-10-03, ONE path = DS-106's
