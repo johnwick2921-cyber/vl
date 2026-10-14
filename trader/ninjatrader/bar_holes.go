@@ -34,8 +34,9 @@ import (
 //  1. DETECT. Every live 1m bar the persister writes is checked against the
 //     store: a run of ≥ N OPEN-MARKET minutes with no stored bar between two
 //     stored bars is a hole [from, to) — `from` is the first missing minute,
-//     `to` the bar that closed it. "Open" is kernel.IsCMEOpen, the one CME
-//     calendar, so the 16:00–17:00 break, weekends and holiday closes are never
+//     `to` the bar that closed it. "Open" is the one CME calendar
+//     (barHoleExpected: kernel.IsCMEOpen + the session calendar by trading
+//     date), so the 16:00–17:00 break, weekends and holiday closes are never
 //     holes. N = BARS_HOLE_MIN_GAP_MIN (default 3). Logged once, counted.
 //  2. REFILL. Each hole gets re-requests at +1/+3/+10/+30 min after it was seen,
 //     through the wire's gap re-request (RequestGapBackfillAt — the
@@ -93,6 +94,26 @@ type holeWire interface {
 	RequestGapBackfillAt(symbol string, now time.Time) error
 }
 
+// barHoleExpected reports whether CME trades the 1m bar opening at m — the
+// ONE calendar, read the way its rows are keyed. kernel.IsCMEOpen answers for
+// the instant (the 16:00–17:00 break, weekends, a closed calendar date); the
+// session_calendar.json rows are keyed by TRADING date (CMETradingDateKey: the
+// date a session closes on), so the evening session that would belong to a
+// closed day — Thursday 17:00+ before Good Friday, Sunday 17:00+ before a
+// closed Monday — reads open by the instant alone. Found by this wave's own
+// holiday pin: Good Friday 2026-04-03 came out as a 420-minute "hole"
+// (Thu 04-02 17:00–24:00). A minute is expected only when BOTH say it trades.
+func barHoleExpected(m time.Time) bool {
+	if !kernel.IsCMEOpen(m) {
+		return false
+	}
+	day, err := time.ParseInLocation("2006-01-02", kernel.CMETradingDateKey(m), kernel.CTLocation())
+	if err != nil {
+		return true // the instant said open; an unreadable key never invents a closure
+	}
+	return kernel.SessionStateAt(day.Add(12*time.Hour)).Class != kernel.SessionClosed
+}
+
 // barHoleSpan is one stretch with no stored bar between two stored bars.
 type barHoleSpan struct {
 	FromMs, ToMs int64 // [first missing minute, the bar that closed it)
@@ -101,7 +122,8 @@ type barHoleSpan struct {
 
 // findBarHoles walks ascending 1m open times and returns every stretch whose
 // OPEN-market missing minutes number at least minGap. A minute the calendar
-// calls closed (the daily break, a weekend, a holiday close) is never missing.
+// calls closed (the daily break, a weekend, a holiday close) is never missing;
+// production passes barHoleExpected.
 func findBarHoles(times []int64, minGap int, isOpen func(time.Time) bool) []barHoleSpan {
 	const minute = int64(60_000)
 	var out []barHoleSpan
@@ -174,7 +196,7 @@ func newBarHoleTracker(st holeStore, server func() *ntwire.TCPServer) *barHoleTr
 			return s
 		},
 		clock:     time.Now,
-		isOpen:    kernel.IsCMEOpen,
+		isOpen:    barHoleExpected,
 		say:       sayToLogger,
 		minGap:    n,
 		minGapSrc: src,
