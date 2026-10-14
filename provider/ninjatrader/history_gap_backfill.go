@@ -70,30 +70,30 @@ func (s *TCPServer) RequestGapBackfillAt(symbol string, now time.Time) error {
 		return fmt.Errorf("tcp_server: gap backfill %s: %w", symbol, ErrGapBackfillFeedDown)
 	}
 	day := kernel.CMESessionDayKey(now)
-	s.gapReplay.mu.Lock()
-	if s.gapReplay.last == nil {
-		s.gapReplay.last = map[string]time.Time{}
-		s.gapReplay.day = map[string]string{}
-		s.gapReplay.count = map[string]int{}
-		s.gapReplay.total = map[string]int{}
+	s.histReplay.gap.mu.Lock()
+	if s.histReplay.gap.last == nil {
+		s.histReplay.gap.last = map[string]time.Time{}
+		s.histReplay.gap.day = map[string]string{}
+		s.histReplay.gap.count = map[string]int{}
+		s.histReplay.gap.total = map[string]int{}
 	}
-	if last, ok := s.gapReplay.last[symbol]; ok && now.Sub(last) < gapBackfillMinSpacing {
-		s.gapReplay.mu.Unlock()
+	if last, ok := s.histReplay.gap.last[symbol]; ok && now.Sub(last) < gapBackfillMinSpacing {
+		s.histReplay.gap.mu.Unlock()
 		return fmt.Errorf("tcp_server: gap backfill %s: %w", symbol, ErrGapBackfillTooSoon)
 	}
-	if s.gapReplay.day[symbol] != day {
-		s.gapReplay.day[symbol] = day
-		s.gapReplay.count[symbol] = 0
+	if s.histReplay.gap.day[symbol] != day {
+		s.histReplay.gap.day[symbol] = day
+		s.histReplay.gap.count[symbol] = 0
 	}
-	if s.gapReplay.count[symbol] >= gapBackfillMaxPerDay {
-		s.gapReplay.mu.Unlock()
+	if s.histReplay.gap.count[symbol] >= gapBackfillMaxPerDay {
+		s.histReplay.gap.mu.Unlock()
 		return fmt.Errorf("tcp_server: gap backfill %s: %w", symbol, ErrGapBackfillSpent)
 	}
-	s.gapReplay.last[symbol] = now
-	s.gapReplay.count[symbol]++
-	s.gapReplay.total[symbol]++
-	sentToday := s.gapReplay.count[symbol]
-	s.gapReplay.mu.Unlock()
+	s.histReplay.gap.last[symbol] = now
+	s.histReplay.gap.count[symbol]++
+	s.histReplay.gap.total[symbol]++
+	sentToday := s.histReplay.gap.count[symbol]
+	s.histReplay.gap.mu.Unlock()
 
 	payload, err := s.resendBarsSubscribe(symbol)
 	if err != nil {
@@ -110,9 +110,9 @@ func (s *TCPServer) RequestGapBackfillAt(symbol string, now time.Time) error {
 // GapBackfillsSent is READ by the health surface (A11): gap re-requests sent
 // for symbol since boot. Separate from HistoryReplaysSent by construction.
 func (s *TCPServer) GapBackfillsSent(symbol string) int {
-	s.gapReplay.mu.Lock()
-	defer s.gapReplay.mu.Unlock()
-	return s.gapReplay.total[symbol]
+	s.histReplay.gap.mu.Lock()
+	defer s.histReplay.gap.mu.Unlock()
+	return s.histReplay.gap.total[symbol]
 }
 
 // GapBackfillDayCap is READ by the boot line.

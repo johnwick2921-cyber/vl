@@ -64,7 +64,6 @@ const (
 type TCPServer struct {
 	histAtSub  historyAtSubscribe // 101 E1
 	histReplay historyReplayState // 101 D1'(3a)
-	gapReplay  gapBackfillState   // gap-backfill 2026-10-14 — its OWN budget
 	addr       string
 	listener   net.Listener
 

@@ -38,6 +38,10 @@ type historyReplayState struct {
 	mu   sync.Mutex
 	last map[string]time.Time // symbol -> last re-request sent
 	sent map[string]int       // symbol -> count since boot (READ by the summary line)
+	// gap — the GAP-BACKFILL re-request's budget (history_gap_backfill.go),
+	// held here so the protected tcp_server.go stays byte-identical. Its own
+	// mutex and maps: nothing above is read or written by a gap re-request.
+	gap gapBackfillState
 }
 
 // ErrHistoryReplaySpent is returned when the per-boot budget is used: the
