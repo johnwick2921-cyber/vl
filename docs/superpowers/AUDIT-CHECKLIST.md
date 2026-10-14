@@ -8554,3 +8554,60 @@ c2_every_swing_break_even_at_or_beyond_1R).
 Reference: kernel/mentor/swing4h.go SwingRisk / openPosition / RebuildSwingPos
 (SwingRebuild), trader/mentor_live_pos.go mentorRebuildSwingArm (EntryStop =
 the armed row's StopPx, never NT8's possibly-moved live stop).
+
+## CLASS NN (assigned at merge) — foreign/manual fills counted as the bot's P&L (R22 PNL-TRUTH, 2026-10-14)
+
+symptom: the reconcile loop adopts an NT8 position the bot has no row for and
+materializes it into the trader's ledger. Four MANUAL NT8 shorts (#608 #609
+#637 #640, 40/40/20/20 contracts, Σ −3,202.00) became 75.8% of hoang's
+"−4,226.18 over 168" track record (the bot's own: −1,024.18 over 164). Worse,
+the readers disagreed: deskRealizedToday (the mentor daily-loss gate) dropped
+plan_id='UNRESOLVABLE' rows silently, every other reader kept them — two
+private definitions of "foreign", one never counted.
+probe: for every P&L aggregator over trader_positions ask (a) does it apply the
+ONE bot-origin predicate (store.BotOriginSQL) and (b) does the surface show the
+excluded manual rows as their own counted line. `grep -n BotOriginSQL` must hit
+every store-side entry of store.PnLSurfaces() — TestEveryStorePnLSurfaceAppliesTheBotOriginRule
+fails by name when one does not. Never infer "foreign" from plan_id or
+close_reason.
+rule: origin is a FACT on the row (bot|manual), written where the value enters
+(reconcile adoption with the positive "no evidence of our own entry" verdict;
+the R1 boot migration for the historical rows). Every bot figure excludes
+manual rows and SHOWS them ("Manual (excluded): N trades, ±$X"). Ambiguous
+adoptions stay bot — hiding a bot loss from the bot-only gates is the harmful
+direction.
+Reference: store/manual_origin.go (BotOriginSQL, BotRealizedPnL,
+RunManualOriginMigration), trader/ninjatrader/reconcile.go flagAdoptedManual,
+trader/desk_facts.go deskBotDay.
+
+## CLASS NN (assigned at merge) — a money figure labelled "total" over a session-reset source (R22 PNL-TRUTH, 2026-10-14)
+
+symptom: the dashboard "Total P&L" card and header PNL:: showed total_pnl,
+which for NT8 is RealizedProfitLoss+Unrealized — reset every NT8 session
+(+74.00 on 10-14 = #648 + #651) — under a tooltip "equity − initial balance"
+(that night −2,305.00). Label, value and tooltip described three things.
+probe: for every money figure on a page, trace the value to its source and read
+the label AND the tooltip against that source. Ask: does it reset? whose trades
+is it (bot vs account)? which day boundary?
+rule: one name per figure, carried from the API (nt8_session_pnl,
+account_pnl_vs_initial, bot_record_pnl, total_pnl_source). Account figures are
+labelled as account figures; the bot's record is labelled as the bot's; an
+unknown figure is absent / "n/a", never 0.
+Reference: trader/auto_trader_decision.go GetAccountInfo, api/handler_order.go
+handleAccount, web/src/components/trader/accountPnl.ts.
+
+## CLASS NN (assigned at merge) — more than one "today" (R22 PNL-TRUTH, 2026-10-14)
+
+symptom: four day starts for "today's P&L": CME 17:00 (gates, breaker, desk
+DAY), NY 08:30 (done-after-win), CT midnight (LEDGER_DAY header, the
+position-history footer), NT8's session (PNL::). From 17:00 to 24:00 every
+evening the header's day disagreed with the gates' day.
+probe: grep every P&L "day" window for its boundary; a `time.Date(y,m,d,0,0,0)`
+or a browser `toLocaleDateString` day next to a P&L sum is this class.
+rule: every P&L display and every P&L gate counts from kernel.CMESessionDayStart
+(17:00 CT); the web never computes its own day — the server sends the start
+(ledger_day_start_ms / session_day_start_ms). A deliberately different window
+(done-after-win's NY day, owner ruling 2026-10-09) is a trading rule with its
+own knob and its own name, never a display "today".
+Reference: api/handler_order.go ledgerDayWindow, PositionHistory.tsx
+computeDayTotal(positions, sessionDayStartMs).

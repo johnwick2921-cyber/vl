@@ -191,6 +191,7 @@ describe('computeDayTotal — same rule as the ledger', () => {
         exit_time: yesterday,
       }),
     ]
-    expect(computeDayTotal(all)).toBe(164.0)
+    // R22: the window is the server's CME session-day start (here: 1h ago).
+    expect(computeDayTotal(all, Date.now() - 3600_000)).toBe(164.0)
   })
 })
