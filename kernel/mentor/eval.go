@@ -2101,9 +2101,10 @@ type oldExtreme struct {
 // r22 P1-4: the role is the level's EXPLICIT Role, never inferred from the
 // tape. The old scan took the role from the LAST bar whose high OR low sat
 // within 0.26 of the price, so a later bar revisiting an old high relabelled
-// it a "low" (40 of 221 PHL target picks on 10-13 had the wrong role, and
-// every one of them was refused as not_higher_low / not_lower_high). A level
-// with no role cannot be a PHL/PLH extreme (fail closed).
+// it a "low" (10-13 replay: 42 of 269 PHL target picks had the wrong role —
+// the SETUPS audit counted 40 of 221 — and those picks were refused as
+// not_higher_low / not_lower_high). A level with no role cannot be a PHL/PLH
+// extreme (fail closed).
 func oldExtremeIndexes(levels []Level, bars []market.Kline) []oldExtreme {
 	var out []oldExtreme
 	for _, l := range levels {
