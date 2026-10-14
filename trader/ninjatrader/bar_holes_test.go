@@ -610,3 +610,42 @@ func TestFindBarHolesThresholdAndCalendar(t *testing.T) {
 		t.Fatalf("an ordinary evening session is expected: %+v", got)
 	}
 }
+
+// ── VERIFY FIRST — the two 10-14 shapes, end to end, over an hour ──────────
+//
+// The tracker's clock walks an hour in 15-second ticks (the production tick)
+// while the fake AddOn plays 10-14: (a) live to 03:43, silence, live again
+// from 07:48; (b) the same, plus the 07:49:55 reconnect rebuild answering
+// bars=0. Before the fix nothing on the Go side ever asked NT8 again: the hole
+// waited for the 08:22 restart.
+
+func (f *ghFixture) walkAnHour(from time.Time) {
+	for i := 0; i <= 240; i++ {
+		f.tr.tick(from.Add(time.Duration(i) * 15 * time.Second))
+	}
+	time.Sleep(300 * time.Millisecond)
+}
+
+func TestRepro1014A_HoleIsReRequestedWithoutARestart(t *testing.T) {
+	f := newGHFixture(t)
+	f.stream(ct(2026, 10, 14, 3, 30), ct(2026, 10, 14, 3, 43))
+	f.stream(ct(2026, 10, 14, 7, 48), ct(2026, 10, 14, 7, 49))
+	time.Sleep(200 * time.Millisecond)
+	f.walkAnHour(f.clk.Now())
+	if n := f.addon.reRequests(); n < 1 {
+		t.Fatalf("10-14 (a): a 244-minute 1m hole (03:44–07:48 CT) during CME open — over 60 minutes the AddOn received %d history re-request(s); the hole waits for an unrelated restart", n)
+	}
+}
+
+func TestRepro1014B_EmptyReplayAfterReconnectIsRetried(t *testing.T) {
+	f := newGHFixture(t)
+	f.addon.setAnswer(func(int, ntwire.BarsSubscribePayload) { f.answerEmpty() })
+	f.stream(ct(2026, 10, 14, 3, 30), ct(2026, 10, 14, 3, 43))
+	f.answerEmpty() // 07:49:55: the AddOn's reconnect rebuild — NT8 answers bars=0
+	f.stream(ct(2026, 10, 14, 7, 48), ct(2026, 10, 14, 7, 49))
+	time.Sleep(200 * time.Millisecond)
+	f.walkAnHour(f.clk.Now())
+	if n := f.addon.reRequests(); n < 2 {
+		t.Fatalf("10-14 (b): NT8 answered bars=0 after the reconnect — over 60 minutes the AddOn received %d history re-request(s), want ≥ 2 (an ask and a retry)", n)
+	}
+}
