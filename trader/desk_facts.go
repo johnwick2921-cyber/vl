@@ -502,6 +502,9 @@ func (at *AutoTrader) deskDay(now time.Time) DeskLine {
 	if unresolved > 0 {
 		unres = fmt.Sprintf(" · %d closed row(s) excluded: pnl_corrected NULL", unresolved)
 	}
+	if day, ok := at.deskBotDay(now); ok && day.Manual.Trades > 0 {
+		unres += " · " + day.Manual.Line()
+	}
 	return DeskLine{N: 6, Key: "day", Label: "DAY", State: "ok", Verified: true, Unit: "USD",
 		Source: "trader_positions.pnl_corrected · strategy guardrails", AsOfMs: now.UnixMilli(),
 		Text: fmt.Sprintf("realized %+.2f USD on %d trade(s) · %s%s", realized, n, limitTxt, unres)}
@@ -541,16 +544,36 @@ func (at *AutoTrader) deskGuardrail() (limit float64, source string, enforced bo
 
 // deskRealizedToday sums pnl_corrected for the CME session-day under the A22
 // rules, and COUNTS what it had to exclude rather than hiding it.
+//
+// R22 PNL-TRUTH (owner ruling R1, canon 28): this read used to drop every
+// plan_id='UNRESOLVABLE' row SILENTLY — a second, private definition of
+// "foreign" that disagreed with every other P&L reader. It now reads THE one
+// helper, store.BotRealizedPnL: manual NT8 rows (origin=manual) excluded and
+// returned as their own counted line; every bot row counted.
 func (at *AutoTrader) deskRealizedToday(now time.Time) (total float64, n int, unresolved int) {
-	// r22 RISK-GATES — ONE definition: the desk DAY line and the daily-loss
-	// gate read the same closed-trade sum (botClosedTodayAt — pnl_corrected
-	// only, manual rows excluded, NULL rows counted). KNOWN LIMIT (owner ruling
-	// 10-05, unchanged): trader-wide (no account filter), newest 500 closes.
-	total, n, unresolved, _, err := at.botClosedTodayAt(now)
-	if err != nil {
+	day, ok := at.deskBotDay(now)
+	if !ok {
 		return 0, 0, 0
 	}
-	return total, n, unresolved
+	return day.Total, day.Resolved, day.Unresolved
+}
+
+// deskBotDay is the bot-only session-day read behind the DAY line and the
+// mentor daily-loss gate.
+//
+// KNOWN LIMIT (owner ruling 10-05, "whatever risk control leave"): this read is
+// trader-WIDE (no account filter), while the done-after-win day-P&L gate
+// (MentorDayActivity) is account-scoped — the two day gates can differ on a
+// trader with more than one account's history. Documented, not changed.
+func (at *AutoTrader) deskBotDay(now time.Time) (store.BotDayPnL, bool) {
+	if at.store == nil {
+		return store.BotDayPnL{}, false
+	}
+	day, err := at.store.Position().BotRealizedPnL(at.id, kernel.CMESessionDayStart(now).UnixMilli())
+	if err != nil {
+		return store.BotDayPnL{}, false
+	}
+	return day, true
 }
 
 func (at *AutoTrader) deskArms(pos map[string]interface{}, now time.Time, tick float64) DeskLine {

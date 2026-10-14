@@ -23,13 +23,15 @@ import (
 // in-process NT8 link of the withdraw fixture, so a cancel and a flatten are
 // FRAMES the fake AddOn received, not flags.
 
-// dlSeedClosed writes one CLOSED row with a corrected P&L. plan "" is a bot
-// row; store.PlanUnresolvable is a manual (reconcile-materialized) row.
-func dlSeedClosed(t *testing.T, st *store.Store, traderID string, exit time.Time, pnl float64, plan string) {
+// dlSeedClosed writes one CLOSED row with a corrected P&L. origin "" is a
+// bot row (the column default); store.OriginManual is a manual row — the ONE
+// manual rule (r22 pnl-truth, store/manual_origin.go), not the plan_id
+// sentinel, decides.
+func dlSeedClosed(t *testing.T, st *store.Store, traderID string, exit time.Time, pnl float64, origin string) {
 	t.Helper()
 	p := &store.TraderPosition{TraderID: traderID, Account: "Sim101", Symbol: "MNQ", Side: "LONG",
 		Quantity: 1, EntryQuantity: 1, EntryPrice: 100, ExitPrice: 100 + pnl/2, RealizedPnL: pnl, PnlCorrected: &pnl,
-		Status: "CLOSED", CloseReason: "sync", PlanID: plan,
+		Status: "CLOSED", CloseReason: "sync", Origin: origin,
 		EntryTime: exit.Add(-5 * time.Minute).UnixMilli(), ExitTime: exit.UnixMilli(),
 		CreatedAt: exit.UnixMilli(), UpdatedAt: exit.UnixMilli()}
 	if err := st.GormDB().Create(p).Error; err != nil {
@@ -237,15 +239,16 @@ func TestDailyLossGateOffChangesNothing(t *testing.T) {
 }
 
 // 3 — MANUAL TRADES DO NOT COUNT. The 10-08 shape: a manual 20-lot −1,127.50
-// (reconcile-materialized, plan_id UNRESOLVABLE) and a bot loss −31.50 against
+// (reconcile-adopted, origin='manual') and a bot loss −31.50 against
 // a $450 limit. The kernel's realized input sees −1,159.00; the daily-loss leg
 // (decision path AND every other path) sees the bot's −31.50 and does not
-// trip. MUTANT: drop isBotTrade's manual exclusion → the beat latches → RED.
+// trip. MUTANT: count the manual rows again (add BotRealizedPnL's excluded
+// manual P&L back into the realized half) → the beat latches → RED.
 func TestDailyLossManualTradesDoNotCount(t *testing.T) {
 	telemetry.ResetGateBlocksForTest()
 	f := withdrawFixture(t, "dl-manual", func(c *store.StrategyConfig) { dlOn(c); c.RiskControl.DailyLossLimitUSD = 450 })
 	t1 := f.now.Add(time.Minute)
-	dlSeedClosed(t, f.st, f.at.id, f.now.Add(-40*time.Minute), -1127.50, store.PlanUnresolvable)
+	dlSeedClosed(t, f.st, f.at.id, f.now.Add(-40*time.Minute), -1127.50, store.OriginManual)
 	dlSeedClosed(t, f.st, f.at.id, f.now.Add(-30*time.Minute), -31.50, "")
 
 	f.at.monitorTick(t1)
@@ -268,7 +271,7 @@ func TestDailyLossManualTradesDoNotCount(t *testing.T) {
 	// (attachTradeContext reads the WALL clock, so the same two trades are
 	// seeded again on today's real session-day).
 	wall := time.Now().Add(-time.Second)
-	dlSeedClosed(t, f.st, f.at.id, wall, -1127.50, store.PlanUnresolvable)
+	dlSeedClosed(t, f.st, f.at.id, wall, -1127.50, store.OriginManual)
 	dlSeedClosed(t, f.st, f.at.id, wall, -31.50, "")
 	ctx := &kernel.Context{TraderID: f.at.id}
 	f.at.attachTradeContext(ctx)

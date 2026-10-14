@@ -440,7 +440,7 @@ func TestSwingRebuildPosResumesBEAndHold(t *testing.T) {
 	// entry 10110, original stop 10050 (risk 60), entry in the 05:00 bucket.
 	entryBar := mk5m(t, 15, 5, 0, 10100, 10120, 10090, 10110)
 	entryBucket := fourHBucketStart(entryBar.OpenTime, nil)
-	if !s.RebuildSwingPos(SideLong, 10110, 10050, 10250, 60, entryBucket, "swing-rebuilt", false) {
+	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10050, Target: 10250, EntryBucket: entryBucket, ArmID: "swing-rebuilt"}) {
 		t.Fatal("RebuildSwingPos refused a valid swing")
 	}
 	// a 5m close at +1R (>= 10170) → break-even
@@ -482,7 +482,7 @@ func TestSwingRebuildPosAlreadyAtBESendsNoSecondBE(t *testing.T) {
 	s := &SwingState{}
 	_ = SwingTick(s, base, cfg, base[len(base)-1].OpenTime+60_000)
 	entryBar := mk5m(t, 15, 5, 0, 10100, 10120, 10090, 10110)
-	if !s.RebuildSwingPos(SideLong, 10110, 10110, 10250, 60, fourHBucketStart(entryBar.OpenTime, nil), "swing-be-done", true) {
+	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10110, Target: 10250, EntryBucket: fourHBucketStart(entryBar.OpenTime, nil), ArmID: "swing-be-done", MovedBE: true}) {
 		t.Fatal("RebuildSwingPos refused a valid swing")
 	}
 	// a 5m close well past +1R (>= 10170) must NOT re-send the BE
@@ -513,7 +513,7 @@ func TestSwingRebuildPosHoldBoundary(t *testing.T) {
 	if entryBucket != mk5m(t, 15, 5, 0, 0, 0, 0, 0).OpenTime {
 		t.Fatalf("08:55 must resolve to the 05:00 bucket, got %d", entryBucket)
 	}
-	if !s.RebuildSwingPos(SideLong, 10110, 10050, 10250, 60, entryBucket, "swing-late", false) {
+	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10050, Target: 10250, EntryBucket: entryBucket, ArmID: "swing-late"}) {
 		t.Fatal("RebuildSwingPos refused a valid swing")
 	}
 	// last 5m bar BEFORE the boundary (holdMs = 05:00 + 2×4h = 13:00): 12:55

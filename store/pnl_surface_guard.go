@@ -1,6 +1,9 @@
 package store
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // ── P&L-TRUTH WAVE (2026-09-01) — corrected-column law (A22) on every
 // prompt-facing surface. ─────────────────────────────────────────────────────
@@ -36,6 +39,7 @@ func PnLSurfaces() []PnLSurface {
 		{Name: "GetHistorySummary", File: "store/position_history.go"},
 		{Name: "toolGetTradeHistory", File: "agent/tools.go"},
 		{Name: "attachTradeContext", File: "trader/auto_trader_loop.go"},
+		{Name: "BotRealizedPnL", File: "store/manual_origin.go"},
 	}
 }
 
@@ -43,7 +47,7 @@ func PnLSurfaces() []PnLSurface {
 // guarantee (the guard test fails the build on any raw aggregation), stated
 // at boot so the running binary's contract is verifiable from the log alone.
 func PnLSurfacesBootLine() string {
-	return fmt.Sprintf("P&L surfaces: %d aggregators strict-corrected, 0 raw (corrected-column guard; unresolved rows counted + excluded, never coerced)", len(PnLSurfaces()))
+	return fmt.Sprintf("P&L surfaces: %d aggregators strict-corrected, 0 raw (corrected-column guard; unresolved rows counted + excluded, never coerced; manual NT8 rows excluded by origin and shown as their own line)", len(PnLSurfaces()))
 }
 
 // LedgerDayTotal is the dashboard-header figure: the SAME rule as the
@@ -56,6 +60,10 @@ type LedgerDayTotal struct {
 	Total      float64 `json:"ledger_day_pnl"`
 	Resolved   int     `json:"ledger_day_resolved"`
 	Unresolved int     `json:"ledger_day_unresolved"`
+	// R22 PNL-TRUTH (R1): manual NT8 rows closed in the window — excluded
+	// from Total, counted and summed here as their own line.
+	ManualTrades int     `json:"ledger_day_manual_excluded"`
+	ManualPnL    float64 `json:"ledger_day_manual_excluded_pnl"`
 }
 
 // GetLedgerDayTotal computes the ledger day total for [startMs, endMs) (epoch
@@ -65,12 +73,28 @@ func (s *PositionStore) GetLedgerDayTotal(traderID, account string, startMs, end
 	var out LedgerDayTotal
 	var rows []TraderPosition
 	q := s.db.Where("trader_id = ? AND status = ? AND exit_time >= ? AND exit_time < ? AND close_reason NOT IN (?, ?, ?)",
-		traderID, "CLOSED", startMs, endMs, CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam)
+		traderID, "CLOSED", startMs, endMs, CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).
+		Where(BotOriginSQL) // R22 R1: the bot's day; manual rows are their own line
 	if account != "" {
 		q = q.Where("account = ?", account)
 	}
 	if err := q.Find(&rows).Error; err != nil {
 		return out, fmt.Errorf("ledger day total: %w", err)
+	}
+	mq := s.db.Where("trader_id = ? AND status = ? AND exit_time >= ? AND exit_time < ? AND close_reason <> ?",
+		traderID, "CLOSED", startMs, endMs, CloseReasonTestSeam).Where(ManualOriginSQL)
+	if account != "" {
+		mq = mq.Where("account = ?", account)
+	}
+	var manual []TraderPosition
+	if err := mq.Find(&manual).Error; err != nil {
+		return out, fmt.Errorf("ledger day manual rows: %w", err)
+	}
+	for _, r := range manual {
+		out.ManualTrades++
+		if pnl, resolved := r.CorrectedPnL(); resolved && !UnknownPnLReason(r.CloseReason) {
+			out.ManualPnL += pnl
+		}
 	}
 	for _, r := range rows {
 		pnl, resolved := r.CorrectedPnL()
@@ -82,6 +106,7 @@ func (s *PositionStore) GetLedgerDayTotal(traderID, account string, startMs, end
 		out.Total += pnl
 	}
 	out.Total = float64(int64(out.Total*100+0.5*sign(out.Total))) / 100 // 2dp, like the footer
+	out.ManualPnL = math.Round(out.ManualPnL*100) / 100
 	return out, nil
 }
 

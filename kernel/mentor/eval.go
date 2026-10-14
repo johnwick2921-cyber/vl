@@ -203,6 +203,98 @@ type Evaluator struct {
 	// Evaluator-owned on purpose — two traders run two evaluators, each with
 	// its own memo (a package-global cache would cross the streams).
 	tfMemo map[int]tfMemoEntry
+	// notes are the "changed on this tick" lines (release #22 LINES-RESTART:
+	// a 4h/1h trigger move, a box latched or cleared, a trendline turning
+	// valid or dying, a swing-line gap fold). The trader drains them with
+	// TakeNotes after each Tick and logs each one; capped so a replay that
+	// never drains cannot grow it without bound.
+	notes []string
+	// Trendline change tracking (release #22, R4): the VALID lines seen last
+	// tick (a valid line leaves only by a 5m-close break or the session end —
+	// each is a change line), and the crossed-between-anchors pairs already
+	// counted today. Rebuilt from bars on restart; the first tick after a
+	// restart only initialises them (no burst of "became valid" lines).
+	tlDay     string
+	tlValid   map[string]bool
+	tlCrossed map[string]bool
+}
+
+// maxNotes bounds the undrained note buffer (replays and tests never drain).
+const maxNotes = 64
+
+// note records one change line for the trader to log (READ values only).
+func (e *Evaluator) note(format string, args ...any) {
+	if len(e.notes) >= maxNotes {
+		e.notes = e.notes[1:]
+	}
+	e.notes = append(e.notes, fmt.Sprintf(format, args...))
+}
+
+// noteTriggerMove records a 4h/1h trigger-line move (direction or line price)
+// with the bar that fired it — the live record a later restart line can be
+// checked against (release #22: the moves were never logged, so two boot
+// lines 7 h apart could not be told apart from a restart flip).
+func (e *Evaluator) noteTriggerMove(name string, prev, cur TriggerLine, bars []market.Kline) {
+	if cur.Dir == "" || (cur.Dir == prev.Dir && cur.Price == prev.Price && cur.MovedAt == prev.MovedAt) {
+		return
+	}
+	from := "none"
+	if prev.Dir != "" {
+		from = fmt.Sprintf("%s @%.2f", prev.Dir, prev.Price)
+	}
+	at := "n/a"
+	if n := len(bars); n > 0 {
+		at = kernel.TableTimeCT(time.UnixMilli(bars[n-1].OpenTime))
+	}
+	e.note("%s trigger moved %s → %s @%.2f (bucket %s CT, broke on the %s CT bar, read intrabar) [D3.4 p1 @08:19]",
+		name, from, cur.Dir, cur.Price, kernel.TableTimeCT(time.UnixMilli(cur.MovedAt)), at)
+}
+
+// trackTrendlines counts each crossed-between-anchors pair once per trading
+// day (refusal "trendline_crossed_between_anchors") and records a change line
+// when a line turns VALID (a location) or a valid line is broken by a 5m
+// close. The session roll clears both sets — the lines die at day end
+// [D4.1 p2 @01:17].
+func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int64) {
+	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
+	first := e.tlValid == nil
+	if e.tlDay != day {
+		if e.tlDay != "" && len(e.tlValid) > 0 {
+			e.note("trendlines deleted at the session end: %d valid line(s) of trading day %s [D4.1 p2 @01:17]", len(e.tlValid), e.tlDay)
+		}
+		e.tlDay = day
+		e.tlValid = map[string]bool{}
+		e.tlCrossed = map[string]bool{}
+	}
+	for _, k := range crossed {
+		if !e.tlCrossed[k] {
+			e.tlCrossed[k] = true
+			e.refuse("trendline_crossed_between_anchors")
+		}
+	}
+	for _, tl := range lines {
+		k := tl.key()
+		switch {
+		case tl.ValidAt > 0 && !tl.Dead && !e.tlValid[k]:
+			e.tlValid[k] = true
+			if !first {
+				e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a location until a 5m close breaks it or the session ends [D3.2 p2 @03:45]",
+					tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+			}
+		case tl.Dead && e.tlValid[k]:
+			delete(e.tlValid, k)
+			e.note("trendline BROKEN by a 5m close %s %.2f→%.2f (%s → %s CT) — discarded [X9 @06:20–06:47]",
+				tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+		}
+	}
+}
+
+// TakeNotes returns the change lines recorded since the last call, then
+// clears them — the trader logs each once.
+func (e *Evaluator) TakeNotes() []string {
+	n := e.notes
+	e.notes = nil
+	return n
 }
 
 func New(cfg Config) *Evaluator {
@@ -907,7 +999,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	htfBars := htfFeedBars(bars, e.Cfg.PrintWindows)
 	bars4h := e.barsTFMemo(htfBars, 240)
 	bars1h := e.barsTFMemo(htfBars, 60)
+	prevHTF := e.State.HTF
 	e.State.HTF = HTFAdvance(e.State.HTF, bars4h, bars1h, e.Cfg)
+	e.noteTriggerMove("4h", prevHTF.FourH, e.State.HTF.FourH, bars)
+	e.noteTriggerMove("1h", prevHTF.OneH, e.State.HTF.OneH, bars)
 	// D4.4-11: the HTF direction gate applies only in the news window (the
 	// course uses the HTF read for news first, not ordinary trading).
 	e.State.HTF.GateOff = !HTFGateActive(now, e.Cfg)
@@ -934,6 +1029,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			OneHDir:  e.State.HTF.OneH.Dir,
 			Conflict: HTFConflict(e.State.HTF),
 			SpentPts: dg.SpentPts,
+			ReadAt:   now,
 		}
 	}
 	// Owner ruling 2026-10-09: a latched DayOff re-reads the 4h/1h directions
@@ -999,9 +1095,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// D4.1-22: the first box per role per day is latched — never redrawn on a
 	// later higher high / lower low ("không vẽ cái box khác… y nguyên đó tới
 	// cuối ngày" [D4.1 p2 @02:39–02:57]). A new trading day clears the latch.
-	if e.State.LatchedBoxesDay != e.State.Day.Key {
+	// Release #22 (P2-2): the latch belongs to the TRADING day (17:00 CT
+	// roll, the same tradingDayKey BoxesBuild filters on) — never the day-gate
+	// key, which is "" until 08:30 and so cleared the latch at the RTH open
+	// and redrew both boxes on a higher high / lower low.
+	if boxDay := tradingDayKey(time.UnixMilli(now).In(ctime())); e.State.LatchedBoxesDay != boxDay {
+		if e.State.LatchedBoxesDay != "" && len(e.State.LatchedBoxes) > 0 {
+			e.note("box latch cleared at the 17:00 CT session roll: trading day %s → %s (FTGH/FTGL redraw from the new session only) [D4.1 p2 @02:58]", e.State.LatchedBoxesDay, boxDay)
+		}
 		e.State.LatchedBoxes = nil
-		e.State.LatchedBoxesDay = e.State.Day.Key
+		e.State.LatchedBoxesDay = boxDay
 	}
 	boxes = e.latchBoxes(boxes, bars, e.Cfg.Box)
 	levels = append(levels, BoxEdgeLocations(boxes)...)
@@ -1010,7 +1113,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// swings joined, valid only after the 3rd touch, discarded by a 5m close
 	// through. They join the level set location-only (never a target); a
 	// trendline next to a box edge is suppressed (box beats trendline).
-	trendlines := TrendlinesBuild(bars, time.UnixMilli(now))
+	trendlines, crossed := trendlinesBuild(bars, time.UnixMilli(now))
+	e.trackTrendlines(trendlines, crossed, now)
 	levels = append(levels, TrendlineLevels(trendlines, boxes, bars)...)
 
 	// §3: first-touch classification per level. BOX edges are OUT of this
@@ -2089,6 +2193,24 @@ func nearestOldExtremeOnSide(extremes []oldExtreme, price float64, side Side) (o
 	return best, found
 }
 
+// dropStaleSwingLineEntries refuses every SWING4H entry while the swing line
+// is stale (a feed gap beyond the slice, F-3) — counted as
+// swing_line_gap_stale; cancels and every other action pass.
+func (e *Evaluator) dropStaleSwingLineEntries(ints []Intent) []Intent {
+	if !e.State.Swing.LineStale {
+		return ints
+	}
+	kept := ints[:0]
+	for _, in := range ints {
+		if in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry {
+			e.refuse("swing_line_gap_stale")
+			continue
+		}
+		kept = append(kept, in)
+	}
+	return kept
+}
+
 // runSwing evaluates the §8 4h-EMA34 swing on FINAL 5m bars (the forming
 // bucket excluded — CTO wiring ruling 2026-10-03) and returns its intents.
 // The swing is NOT gated on the 5m trigger zone by default: §8 is a
@@ -2098,7 +2220,15 @@ func nearestOldExtremeOnSide(extremes []oldExtreme, price float64, side Side) (o
 // 1791001124127 / 1791001760445).
 func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 	closed := closedBuckets(bars, now, e.Cfg)
+	wasStale, prevCount, prevLine := e.State.Swing.LineStale, e.State.Swing.EmaCount, e.State.Swing.Line
 	ints := SwingTick(&e.State.Swing, closed, e.Cfg.Swing, now)
+	if f := e.State.Swing.Folded; f > 1 && e.State.Swing.EmaCount == prevCount+f {
+		e.note("swing 4h EMA34 line folded %d 4h closes after a feed gap: %.2f → %.2f (%d closes) [F-3]", f, prevLine, e.State.Swing.Line, e.State.Swing.EmaCount)
+	}
+	if e.State.Swing.LineStale && !wasStale {
+		e.note("swing 4h EMA34 line STALE: a feed gap longer than the live slice hid 4h closes — SWING4H entries refused until a restart reseeds the line (held at %.2f, %d closes) [F-3]", e.State.Swing.Line, e.State.Swing.EmaCount)
+	}
+	ints = e.dropStaleSwingLineEntries(ints)
 	// SWING EXPIRY (CTO 1791008594562): an unfilled swing order lives until the
 	// close of the CURRENT 4h candle (ruling 1791008277195) — NOT the 2nd
 	// leeway 5m candle. SwingTick still emits its own CancelArm for the leeway.

@@ -44,7 +44,8 @@ import (
 //
 // The P&L is the bot's OWN: realized + open, MANUAL trades excluded (P1-1:
 // 76% of one trader's recorded loss was four manual 20/40-lot trades). It is
-// read in ONE place, botDayPnLAt.
+// read in ONE place, botDayPnLAt, on the ONE manual rule (origin='manual',
+// store/manual_origin.go — r22 pnl-truth).
 //
 // STILL OFF BY DEFAULT for the owner (owner ruling R4): both live strategies
 // store guardrails_enabled=false and daily_loss_enabled=false, so this whole
@@ -85,55 +86,6 @@ type botDayPnL struct {
 // Total is the number the loss leg judges: realized + open.
 func (b botDayPnL) Total() float64 { return b.Realized + b.Open }
 
-// isBotTrade reports whether a ledger row is the bot's own trade.
-//
-// TODO(r22 integration — fix/r22-pnl-truth): this is the plan_id UNRESOLVABLE
-// sentinel, the rule deskRealizedToday has used: a reconcile-materialized
-// position with no order of ours (the 4 manual NT8 trades #608 #609 #637 #640
-// carry it). The pnl-truth lane adds a real manual flag and a bot-only helper
-// (e.g. BotRealizedPnL). Swap THIS function (and botClosedTodayAt's realized
-// half) to it at integration — every daily-loss read goes through here.
-// Known limit of the sentinel: a late AI fill adopted by reconcile also keeps
-// UNRESOLVABLE (reconcile_late_fill.go) and is excluded with the manual rows.
-func isBotTrade(p *store.TraderPosition) bool {
-	return p != nil && store.ClassifyPlanLink(p.PlanID) != store.PlanLinkUnresolvable
-}
-
-// botClosedTodayAt sums the bot's CLOSED trades on the CME session-day under
-// the A22 rules. deskRealizedToday (the desk DAY line) delegates here, so the
-// strip and the gate read one definition.
-//
-// KNOWN LIMIT (owner ruling 10-05, unchanged): trader-wide, newest 500 closes.
-func (at *AutoTrader) botClosedTodayAt(now time.Time) (realized float64, n, unresolved, manual int, err error) {
-	if at.store == nil {
-		return 0, 0, 0, 0, fmt.Errorf("no store")
-	}
-	dayMs := kernel.CMESessionDayStart(now).UnixMilli()
-	rows, err := at.store.Position().GetClosedPositions(at.id, 500)
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-	for _, p := range rows {
-		if p == nil || p.ExitTime < dayMs {
-			continue
-		}
-		if store.UnknownPnLReason(p.CloseReason) {
-			continue // reconcile-flat / unresolved orphans: P&L unknown by construction
-		}
-		if !isBotTrade(p) {
-			manual++
-			continue
-		}
-		if p.PnlCorrected == nil {
-			unresolved++
-			continue
-		}
-		realized += *p.PnlCorrected
-		n++
-	}
-	return realized, n, unresolved, manual, nil
-}
-
 // dailyLossMarkSource is the mark the open half reads (test seam; nil = the
 // newest cached 1m close, the same tape the mentor's no-chase reads).
 var dailyLossMarkSource func(symbol string) (float64, bool)
@@ -153,19 +105,32 @@ func dailyLossMark(symbol string) (float64, bool) {
 }
 
 // botDayPnLAt is THE ONE READ of the daily-loss gate's P&L.
+//
+// "Manual" has ONE definition in the tree (r22 pnl-truth, #512): the position's
+// origin column — store.BotRealizedPnL / store.BotOriginSQL for the closed
+// half, store.IsManualOrigin (its Go twin) for the open half. The realized
+// half IS store.BotRealizedPnL with the same arguments the desk DAY line uses
+// (deskBotDay: trader-wide, the CME session-day start), so the strip and the
+// gate cannot disagree.
 func (at *AutoTrader) botDayPnLAt(now time.Time) (botDayPnL, error) {
 	var out botDayPnL
-	realized, n, unresolved, manual, err := at.botClosedTodayAt(now)
+	if at.store == nil {
+		return out, fmt.Errorf("no store")
+	}
+	day, err := at.store.Position().BotRealizedPnL(at.id, kernel.CMESessionDayStart(now).UnixMilli())
 	if err != nil {
 		return out, err
 	}
-	out.Realized, out.Closed, out.Unresolved, out.ManualExcluded = realized, n, unresolved, manual
+	out.Realized, out.Closed, out.Unresolved, out.ManualExcluded = day.Total, day.Resolved, day.Unresolved, day.Manual.Trades
 	opens, err := at.store.Position().GetOpenPositions(at.id)
 	if err != nil {
 		return out, err
 	}
 	for _, p := range opens {
-		if !isBotTrade(p) {
+		if p == nil {
+			continue
+		}
+		if store.IsManualOrigin(p.Origin) {
 			out.ManualExcluded++
 			continue
 		}
@@ -439,7 +404,7 @@ func (at *AutoTrader) dailyLossFlattenAt(now time.Time) {
 	}
 	for _, p := range positions {
 		key := at.id + "|" + strconv.FormatInt(p.ID, 10)
-		if !isBotTrade(p) {
+		if store.IsManualOrigin(p.Origin) {
 			dailyLossMu.Lock()
 			seen := dailyLossManualLog[key]
 			dailyLossManualLog[key] = true
