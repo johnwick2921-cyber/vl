@@ -142,7 +142,7 @@ var fdrLiveArms = []fdrLiveArm{
 // first level in the way is the key level 30611.25 (29.75 pts ≥ 2R) and the ISB
 // is a valid trade. Pinned so the deliberate divergence from live is visible.
 var fdrR22Arms = []fdrLiveArm{
-	{0, "02:09", "r22: live refused isb_target_below_floor on a broken pivot low", "short", 30641.0, 30651.0},
+	{0, "02:09", "r22: live refused isb_target_below_floor on a broken pivot low", "short", 30641.0, 30651.0, 0}, // regular ISB — no wire shift (#516 × #517 integration)
 }
 
 // fdrExpectedArms is the live set plus the deliberate r22 divergences, in
