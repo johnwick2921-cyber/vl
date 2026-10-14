@@ -1087,7 +1087,7 @@ export const mentor: GuideSection = {
         {
           label: 'Ping-pong candle maximum',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'Reject the ping-pong and key-level pair if the largest candle in the lookback exceeds this size.',
+          what: 'Reject the box ping-pong if the largest candle in the lookback exceeds this size. Above 0 it also switches on the key-level pair rule: the touch candle AS IT PRINTS (the current closed 1m candle) as big as the gap between the touched key level and the next one → sit out [X4 @06:31]; counted once per visit (keypair_candle_too_big).',
           trader: '20 pts. Tunable in Studio (blank = default).',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (PingPongCandleMaxPts)',
@@ -1100,7 +1100,7 @@ export const mentor: GuideSection = {
         {
           label: 'Ping-pong candle lookback',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'How many closed 1m candles to scan for the largest-candle gate on box ping-pong and key-level pairs.',
+          what: 'How many closed 1m candles to scan for the largest-candle gate on the box ping-pong. The key-level pair rule does not use it — it reads the current candle only.',
           trader: '30 closed 1m candles. Tunable in Studio (blank = default).',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (PingPongCandleLookback)',

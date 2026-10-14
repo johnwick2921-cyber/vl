@@ -1797,10 +1797,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					continue
 				}
 			}
-			// B21 X4 (@06:31–08:52): the gap between the touched level and the
-			// next level must exceed the largest 1m candle of the last 30 closed
-			// bars — a candle as big as the rank of the two levels: sit out. The
-			// scan is strict (beyond the touched level, excluding the level itself).
+			// B21 X4 (@06:31–08:52): a candle as big as the rank of the two
+			// levels — sit out ("một cái nến nó bằng cái range của 2 cái level
+			// rồi thì ngồi im" [X4 @06:31]). MENTOR-NY item 2: "the candle" is
+			// the candle AS IT PRINTS — the current closed 1m candle — not the
+			// largest of the last PingPongCandleLookback bars (that lookback is
+			// a bot reading, mentor.go "[C: ours]", and kept the pair blocked
+			// for 30 minutes after one spike). The lookback still gates the box
+			// ping-pong. Counted ONCE per visit of the level, not per tick. The
+			// scan is strict (beyond the touched level, excluding the level
+			// itself). PingPongCandleMaxPts > 0 keeps switching the rule on.
 			if e.Cfg.PingPongCandleMaxPts > 0 {
 				var next float64
 				for _, l2 := range levels {
@@ -1816,8 +1822,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						next = l2.Price
 					}
 				}
-				if next != 0 && abs(next-lvl.Price) <= largestCandlePts(bars, e.Cfg.PingPongCandleLookback) {
-					e.refuse("keypair_candle_too_big")
+				if next != 0 && abs(next-lvl.Price) <= cur.High-cur.Low {
+					e.refuseOncePerVisit(lvl.Key, "keypair_candle_too_big")
 					continue
 				}
 			}
