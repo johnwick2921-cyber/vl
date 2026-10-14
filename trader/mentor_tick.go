@@ -238,12 +238,25 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// test inside Tick then reads the just-closed bar as closed, never as forming
 	// (an OpenTime clock made the ORB escape unreachable and lagged every gate).
 	intents := at.mentorEval.Tick(bars, mentor.BarCloseInstant(last))
+	// FULL-DAY-REPLAY observer (test-only, nil in production): sees every
+	// intent this tick emitted before anything acts on it.
+	if tap := at.mentorIntentTap; tap != nil {
+		for _, in := range intents {
+			tap(in)
+		}
+	}
 	// Day-gate report (owner ruling 2026-10-09): ONE INFO line per trading day,
 	// emitted at the 08:30 decision, with the gate's own inputs (the 08:30
 	// decision was silent in the log — only the refusal counters showed it).
 	if rep := at.mentorEval.State.DayGateReport; rep.Key != "" && rep.Key != at.mentorDayGateReportLogged {
 		at.mentorDayGateReportLogged = rep.Key
 		at.logInfof("%s", mentorDayGateLine(rep))
+	}
+	// Release #22 LINES-RESTART: every change the evaluator recorded this tick
+	// (4h/1h trigger move, box latched/cleared, trendline valid/dead, swing
+	// line gap fold) is logged once, as it happens — READ values only.
+	for _, n := range at.mentorEval.TakeNotes() {
+		at.logInfof("🧑‍🏫 %s", n)
 	}
 	// Day-off recheck (owner ruling 2026-10-09): when the evaluator cleared a
 	// latched DayOff this tick, WARN + count ONCE (per process per trading day
@@ -362,8 +375,19 @@ func mentorDayGateLine(r mentor.DayGateReport) string {
 	if r.Conflict {
 		conflict = "yes"
 	}
-	return fmt.Sprintf("🧑‍🏫 day gate @08:30 CT: %s — overnight run %s pts (hi %s, lo %s, line %.0f) · 4h %s · 1h %s · conflict %s [D5.1 p1 @19:22]",
-		mentorDayGateVerdictLabel(r.Verdict), run, hi, lo, r.SpentPts, four, one, conflict)
+	// Release #22 (P2-3): "@08:30" only when the latch was READ at 08:30. A
+	// restart (or a feed gap) after the open re-latches on the 4h/1h state of
+	// that later moment — the line names the real read instant.
+	when := "@08:30 CT"
+	if !r.ReadAtOpen() {
+		at := "n/a"
+		if r.ReadAt > 0 {
+			at = kernel.ClockHHMMCT(time.UnixMilli(r.ReadAt))
+		}
+		when = fmt.Sprintf("RE-LATCHED @%s CT, not the 08:30 read (restart or feed gap; trading day %s — the 4h/1h below are read at %s)", at, r.Key, at)
+	}
+	return fmt.Sprintf("🧑‍🏫 day gate %s: %s — overnight run %s pts (hi %s, lo %s, line %.0f) · 4h %s · 1h %s · conflict %s [D5.1 p1 @19:22]",
+		when, mentorDayGateVerdictLabel(r.Verdict), run, hi, lo, r.SpentPts, four, one, conflict)
 }
 
 // mentorPlaceIntent runs the placement gates (sources wired, stop rules,
@@ -1568,7 +1592,9 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	// REL18-A: each construction (boot or reload) gets its OWN arm epoch (a
 	// per-AutoTrader field, never shared), so a rebuilt evaluator's "isb-1"
 	// never collides with a prior terminal row — or another trader's row.
-	at.mentorArmEpoch = time.Now().UnixNano()
+	// The epoch reads the mentor seam so a pinned test clock names the seed
+	// instant; production (nil source) is time.Now(), unchanged.
+	at.mentorArmEpoch = mentorClockNow().UnixNano()
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}

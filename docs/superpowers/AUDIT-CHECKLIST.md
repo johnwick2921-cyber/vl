@@ -8409,3 +8409,267 @@ Reference: kernel/datr_sessions.go DailyRangeProxyFor, kernel/levels_assemble.go
 DailyRangeProxy, market/data_indicators.go EMAWarmupBars; pins
 TestR22DATRFromCompleteSessions, TestR22DATRIntradayFallbackDropsTruncatedDay,
 TestR22PromptEMA200IsWarmed.
+
+## CLASS NN (assigned at merge) — a restart rebuilds live state through a different path than live built it (LINES-RESTART, release #22)
+
+symptom: a restart changes what the bot trades. The 10-13 18:57 boot re-seeded
+the 4h trigger at 30741.25 "since 2026-10-13T01:00" while the running bot held
+30774.25, moved by the 05:00 bucket (short 08:28, long 08:41 — two moves in one
+4h candle). On the 10-06→10-08 bars a fresh seed disagreed with the continuous
+evaluator's HTF verdict in 19–20 of ~276 ten-minute samples. Same class, other
+objects: the FTGH/FTGL latch keyed on the day-gate key ("" until 08:30) cleared
+at the RTH open and redrew both boxes; the day-gate line printed "@08:30" for a
+10:19 restart re-latch; the 4h swing EMA folded one close per observed flip, so
+a feed gap lost the buckets that opened and closed unseen.
+probe: for every piece of evaluator state the seed rebuilds, run a CONTINUOUS
+evaluator (seed once, Tick every closed bar at BarCloseInstant over the live
+1500-bar slice) against a FRESH SeedFull at many cut points on real bars, and
+compare the state structs — not a summary. Any field the live path computes
+from the ORDER of bars (intrabar breaks, first-latched objects, one-per-tick
+increments) is suspect when the seed computes it from a whole-history
+aggregate. For every latch, name the clock that clears it and check it is the
+object's own day (tradingDayKey, the 17:00 roll), not a neighbouring gate's key.
+rule: the seed REPLAYS the live update rule over the stored bars (same function,
+same window shape, one step per bar) — never a parallel "completed candle"
+path. A latch clears on its own lifetime's boundary. A log line about a read
+names the instant it was READ. A per-tick increment folds everything it missed
+since its last step, or fails closed when it cannot read it.
+Reference: kernel/mentor/filters.go TriggerReplay1m, kernel/mentor/seed.go seed
+(trigger/HTF replay), kernel/mentor/eval.go (box latch on tradingDayKey;
+DayGateReport.ReadAt), trader/mentor_tick.go mentorDayGateLine,
+kernel/mentor/swing4h.go bucketClosesBetween, pins in
+kernel/mentor/restart_parity_test.go (real bars
+testdata/mnq_1m_lines_restart_2026-10.json.gz).
+
+## CLASS NN (assigned at merge) — a drawn object replaced by its newer sibling (LINES-RESTART, release #22)
+
+symptom: 135 of 151 trendlines on 10-13 vanished mid-session without a 5m
+close through them: TrendlinesBuild kept ONE line per side and the newest pair
+replaced the older, while the course keeps every line until it breaks ("never
+erase during the session; DELETE at end of day" [D4.1 p2 @01:17]). 40 of 151
+were drawn THROUGH price between their own anchors ("TRENDLINE chứ không phải
+CẦU TUỘT" [X9 @01:22]).
+probe: replay a real session through the production builder and track every
+drawn object's key tick to tick; any key that disappears must name its death
+(a break, the session end). Check the candles between each object's anchors.
+rule: a stateless rebuild must be MONOTONE in what it has drawn — build every
+qualifying pair, not the latest — and a pair that price crossed is refused and
+counted (trendline_crossed_between_anchors), never drawn.
+Reference: kernel/mentor/trendline.go trendlinesBuild / trendlineCrossed,
+kernel/mentor/eval.go trackTrendlines, TestTrendlinesKeptAllSession1013.
+
+## CLASS NN (assigned at merge) — a seam declared for later wiring and never assigned (log-only forever)
+
+symptom: release #22 (MENTOR-AUDIT P1-2, 2026-10-14): `modifyBracketWire` was
+declared `var modifyBracketWire func(...) error` (nil) on 10-05 "until proven
+on SIM" and nothing ever assigned it. The live drive logged "mentor ISB leg1
+modify_bracket WOULD set TP … UNWIRED" on 7 real trades (rows 254, 273, 281,
+304, 308, 317, 362) and sent nothing; the course rule it carried ("phải BÁN
+BỚT. Bắt buộc") never reached NinjaTrader. The unit tests pinned the LOG
+counter, so they stayed green the whole time. probe: for every package-level
+`var <name>Wire` / seam func var, grep for a NON-test assignment; for every
+production log line containing "WOULD" or "UNWIRED", count its occurrences in
+the live logs — a "would" that fires on real trades is a feature that is not
+there. rule: a seam ships ASSIGNED to the production path at its declaration;
+"not yet proven" is a knob (default OFF) or a boot line that READS the wired
+state, never a nil var. Pin the wire at the production call site (the frame
+the far side reads) and mutate the declaration back to nil — the pin must go
+RED. Reference: trader/mentor_mode.go modifyBracketWire,
+trader/mentor_trail_r22.go mentorISBPartialStep / mentorSendISBPartialTP,
+trader/mentor_r22_exit_test.go TestR22Candle3PartialIsARealModify (mutant M3).
+
+## CLASS NN (assigned at merge) — a pure rule pinned by tests that production never calls
+
+symptom: release #22 (MENTOR-AUDIT P1-3): the course-pure exit model
+`mentorExitB` (break-even for both legs at +1R) carried its own tests, while
+the live drive armed break-even at HALF the distance to the far trade target
+(1.0R–7.2R on every real trade). After leg 1 banked +1R the runner kept its
+full original stop: row 313 (10-12 03:21:40 receipt, 03:22:00 driver line
+`scaled=true armedBE=false stop=31157.50 broker=31157.50`) lost the full 1R
+one candle later. The tests described a rule nobody ran. probe: for each pure
+rule function with tests, list its non-test callers (`grep -rn "<fn>(" --include=*.go
+| grep -v _test`); a rule with zero production callers next to a different
+live rule is a spec split. rule: the rule the tests pin is the rule the drive
+calls — test the drive (the per-candle entry point) with the course's own
+numbers, and delete or mark test-only any parallel model. Reference:
+trader/mentor_mode.go mentorExitB (test-only), trader/mentor_trail_r22.go
+mentorExitDriveCandle, trader/mentor_r22_exit_test.go
+TestR22BEAfterConfirmedPartialThenCandleTrail (the base rule is RED on it).
+
+## CLASS NN (assigned at merge) — a safety guard judged against the bot's belief instead of the broker
+
+symptom: release #22 (MENTOR-AUDIT P2-3): `mentorMoveLegStop`'s never-widen
+check compared the new stop with `leg.Stop` — the driver's BELIEF. A stop the
+owner tightened by hand in NinjaTrader while no move was pending was invisible
+to it, so the next BE/1:1/trail move could LOOSEN it, and the F1 verifier
+would then read broker == want and log CONFIRMED. probe: for every guard that
+protects a broker-side value (stop, size, target), ask which copy it reads —
+the bot's own memory, or the broker's latest book — and what it does when the
+book is stale. rule: judge against the broker's own book before sending: no
+fresh book → refuse (nothing can be judged; not moving cannot widen); no live
+order for the leg → send nothing; broker already tighter → keep it, correct
+the belief, count; equal → nothing to send. Pin with "the owner tightened by
+hand" at the production call site and mutate the broker-tighter branch away.
+Reference: trader/mentor_trail_r22.go mentorJudgeAgainstBroker /
+mentorBrokerLegStopRead, trader/mentor_r22_exit_test.go
+TestR22NeverWidenJudgedAgainstTheBroker (mutant M1).
+
+## CLASS NN (assigned at merge) — a late verdict acted on for a leg that is already closed
+
+symptom: review-1014 EXECUTION F-6 (#651, 10-14 01:04–01:07 CT): leg 1 closed
+by its TP at 01:04:36; at 01:05:00 the driver still sent a break-even move to
+leg 1, then WARNed "NO live stop order … leg 1 — leaving to the protection net"
+at 01:06:00, and WARNed again for leg 2 at 01:07:00 against a position flat
+since 01:06:07. Same pattern on #645 (10-12 03:46:59/03:48:00) and #647
+(10:26:00/10:27:00). A WARN that fires on every winning trade trains the owner
+to ignore the WARN that matters. probe: for every per-leg action and every
+verifier verdict, ask what happens when the leg closed between the send and
+the verdict — is "gone because it filled" distinguished from "gone because NT8
+dropped it"? rule: never send a move to a leg known closed (leg 1 after its
+confirmed partial, a flat side, an unregistered position); a verdict for such a
+leg is recorded (counter) and ignored — no WARN, no re-send, no P0, no belief
+write. Reference: trader/mentor_exit_drive.go mentorVerifyPendingStopMoves +
+the off-mode BE loop, trader/mentor_trail_r22.go mentorLegKnownClosed,
+trader/mentor_r22_exit_test.go TestR22LegClosedNoMoveSent (mutants M4, M5).
+
+## CLASS NN (assigned at merge) — a timeout re-opens an outcome the broker already settled
+
+symptom: release #21's Update was refused for 10 minutes on 10-14 (preflight
+ledger_exposure: armed#363 cancel_pending). NT8 confirmed row 363's cancel at
+01:47:29 CT ("✕ armed S1 cancelled in NT8") and the ordered-execution worker
+wrote 'cancelled'; 4 s later the sync-cancel drain timed out ("armed sync cancel
+UNACKED S1 … held cancel_pending") and its RequestCancel moved the row BACK to
+cancel_pending. The drain then re-sent a cancel every pass for an order NT8 no
+longer had (cancel_attempts=8) until a snapshot settled it at 02:05:00. Root:
+the drain re-read the row only when a frame arrived on ITS channel, but the
+frame was owned by the ordered worker (the drain's copy is OrderedOwned, a
+no-op) and the worker applies it only after the post-update order_snapshot; and
+RequestCancel guarded only 'filled', so every other terminal state could be
+re-opened.
+probe: for every "no answer within T → record the intent" branch, ask (a) does
+it READ the row before it writes, and honour a terminal state it reads; (b) can
+the answer arrive on a path the waiter does not watch (another goroutine,
+another consumer, an ordered worker); (c) does the store write itself refuse to
+move a terminal row (a CAS on the canonical terminal predicate), or does it
+trust every caller to have checked.
+rule: a settled outcome is never re-opened by a timeout. The waiter reads the
+row before a re-send and after the drain and honours a terminal state; the
+store's transition is a CAS on NonTerminalArmStateSQL and refuses typed
+(ErrArmCancelTerminal), logged once and counted; the refusal is a refusal, not
+a failed write (no slot latch).
+Reference: trader/armed_executor.go cancelArmedOrdersSyncWith (re-read before
+attempt 2, honour `final`), store/armed_orders.go RequestCancel /
+refuseTerminalCancel (gate-block request_cancel_terminal,
+arm:request_cancel_terminal_refused), trader/cancel_settle.go
+noteSyncCancelSettledOffDrain (arm:sync_cancel_settled_off_drain),
+trader/armed_ledger_loud.go; pins trader/cancel_settle_r22_test.go
+(TestR22Replay363ConfirmedCancelStaysCancelled — real TCPServer + real ordered
+worker), store/request_cancel_terminal_r22_test.go.
+
+## CLASS NN (assigned at merge) — the ledger keeps the authored price, the wire sends another
+
+symptom: armed_orders.stop_px for row 350 was 30882.7763003284 while NT8's
+stop was 30883 (snapshot 109320); row 347's leg1_tp was 30824.25 while NT8's
+-tp was 30825.25 (108678); row 362's 30725.25 vs 30724.25 (110404). The sender
+rounds every bracket (WireBracket: stop away from the entry, target nearest;
+leg-1 TP re-based on the trigger, then rounded) but the row kept the authored
+numbers, so the accepted-risk record, the desk DRIFT line, the protection net's
+plan stop and a restart's leg-1 TP all read prices NT8 never received.
+probe: for every value a sender TRANSFORMS on the way out (rounding, offset,
+re-base, clamp), find where the ledger records it. A ledger written before the
+transform, and never after, disagrees with the broker by construction. A parity
+test must read the frame's bytes and the row — never rebuild both from the same
+inputs.
+rule: after a successful send, the ledger row records exactly what the frame
+carried (store.RecordWirePrices, CAS on the signal id), computed by the SAME
+function the sender runs (or read from the sender's own record, SplitSentFor).
+Reference: trader/arm_wire_truth.go recordArmWirePrices, store/armed_orders.go
+RecordWirePrices; call sites in trader/armed_executor.go (limit, stop-entry, E2
+seams) and trader/zone_placement.go placeZoneRow; pins
+trader/arm_wire_truth_r22_test.go.
+
+## CLASS NN (assigned at merge) — a sign convention computed two ways (live vs rebuild)
+
+symptom: SWING-RISK (release #22, found by the FULL-DAY-REPLAY harness #505): a
+filled 4h swing moved its stop to break-even AT THE FILL instead of at +1R.
+`SwingState.openPosition` (kernel/mentor/swing4h.go) stored `Risk = Stop − Price`
+for a long and `Price − Stop` for a short — NEGATIVE for both — so
+manageSwingPosition's "+1R" test (`Close >= Entry+Risk` / `Close <= Entry−Risk`)
+read "entry − |R|" and passed on the fill bar. The restart path (#494
+RebuildSwingPos) was handed `|entry − stop|` by the trader — POSITIVE — so the
+SAME swing broke even at +1R only if the bot had restarted in between. Real
+tape (MNQ 10-12): BE at −0.21R, +0.22R and +0.45R; the restarted swing at
++1.00R. Every unit test passed, because each path was tested with its own
+convention.
+probe: for every quantity a state machine can be BUILT two ways (a live event vs
+a restart rebuild, a fill vs a replay, a fresh object vs a deserialised one),
+grep both constructors and ask: is the value computed by ONE function both call,
+or by two expressions? Then drive the SAME scenario through both paths at the
+call site and compare the outcome bar-for-bar.
+rule: one definition (here `mentor.SwingRisk(side, entry, entryStop)`, positive
+on the loss side) called by every constructor; the rebuild takes the RECORD
+(entry + entry stop) and computes the value itself, never a pre-computed number
+from the caller — so the two paths cannot drift. Pin it with a call-site test
+per path asserting the SAME bar (kernel/mentor/swing_risk_test.go) and the
+replay assertion over every emitted break-even (trader/full_day_replay_test.go
+c2_every_swing_break_even_at_or_beyond_1R).
+Reference: kernel/mentor/swing4h.go SwingRisk / openPosition / RebuildSwingPos
+(SwingRebuild), trader/mentor_live_pos.go mentorRebuildSwingArm (EntryStop =
+the armed row's StopPx, never NT8's possibly-moved live stop).
+
+## CLASS NN (assigned at merge) — foreign/manual fills counted as the bot's P&L (R22 PNL-TRUTH, 2026-10-14)
+
+symptom: the reconcile loop adopts an NT8 position the bot has no row for and
+materializes it into the trader's ledger. Four MANUAL NT8 shorts (#608 #609
+#637 #640, 40/40/20/20 contracts, Σ −3,202.00) became 75.8% of hoang's
+"−4,226.18 over 168" track record (the bot's own: −1,024.18 over 164). Worse,
+the readers disagreed: deskRealizedToday (the mentor daily-loss gate) dropped
+plan_id='UNRESOLVABLE' rows silently, every other reader kept them — two
+private definitions of "foreign", one never counted.
+probe: for every P&L aggregator over trader_positions ask (a) does it apply the
+ONE bot-origin predicate (store.BotOriginSQL) and (b) does the surface show the
+excluded manual rows as their own counted line. `grep -n BotOriginSQL` must hit
+every store-side entry of store.PnLSurfaces() — TestEveryStorePnLSurfaceAppliesTheBotOriginRule
+fails by name when one does not. Never infer "foreign" from plan_id or
+close_reason.
+rule: origin is a FACT on the row (bot|manual), written where the value enters
+(reconcile adoption with the positive "no evidence of our own entry" verdict;
+the R1 boot migration for the historical rows). Every bot figure excludes
+manual rows and SHOWS them ("Manual (excluded): N trades, ±$X"). Ambiguous
+adoptions stay bot — hiding a bot loss from the bot-only gates is the harmful
+direction.
+Reference: store/manual_origin.go (BotOriginSQL, BotRealizedPnL,
+RunManualOriginMigration), trader/ninjatrader/reconcile.go flagAdoptedManual,
+trader/desk_facts.go deskBotDay.
+
+## CLASS NN (assigned at merge) — a money figure labelled "total" over a session-reset source (R22 PNL-TRUTH, 2026-10-14)
+
+symptom: the dashboard "Total P&L" card and header PNL:: showed total_pnl,
+which for NT8 is RealizedProfitLoss+Unrealized — reset every NT8 session
+(+74.00 on 10-14 = #648 + #651) — under a tooltip "equity − initial balance"
+(that night −2,305.00). Label, value and tooltip described three things.
+probe: for every money figure on a page, trace the value to its source and read
+the label AND the tooltip against that source. Ask: does it reset? whose trades
+is it (bot vs account)? which day boundary?
+rule: one name per figure, carried from the API (nt8_session_pnl,
+account_pnl_vs_initial, bot_record_pnl, total_pnl_source). Account figures are
+labelled as account figures; the bot's record is labelled as the bot's; an
+unknown figure is absent / "n/a", never 0.
+Reference: trader/auto_trader_decision.go GetAccountInfo, api/handler_order.go
+handleAccount, web/src/components/trader/accountPnl.ts.
+
+## CLASS NN (assigned at merge) — more than one "today" (R22 PNL-TRUTH, 2026-10-14)
+
+symptom: four day starts for "today's P&L": CME 17:00 (gates, breaker, desk
+DAY), NY 08:30 (done-after-win), CT midnight (LEDGER_DAY header, the
+position-history footer), NT8's session (PNL::). From 17:00 to 24:00 every
+evening the header's day disagreed with the gates' day.
+probe: grep every P&L "day" window for its boundary; a `time.Date(y,m,d,0,0,0)`
+or a browser `toLocaleDateString` day next to a P&L sum is this class.
+rule: every P&L display and every P&L gate counts from kernel.CMESessionDayStart
+(17:00 CT); the web never computes its own day — the server sends the start
+(ledger_day_start_ms / session_day_start_ms). A deliberately different window
+(done-after-win's NY day, owner ruling 2026-10-09) is a trading rule with its
+own knob and its own name, never a display "today".
+Reference: api/handler_order.go ledgerDayWindow, PositionHistory.tsx
+computeDayTotal(positions, sessionDayStartMs).

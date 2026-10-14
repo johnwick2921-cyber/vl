@@ -88,7 +88,41 @@ const COPY = {
     en: 'OFF by default. ON: after a mentor trade closes today with a net loss, no new mentor entries until 17:00 CT; resting entry orders are cancelled [D1.2 @23:34].',
     es: 'OFF por defecto. ON: tras una operación mentor cerrada hoy con pérdida neta, no hay nuevas entradas mentor hasta las 17:00 CT; las órdenes de entrada en reposo se cancelan [D1.2 @23:34].',
   },
+  trailMode: {
+    zh: '剩余仓位出场（移动止损）',
+    en: 'Runner exit (trail mode)',
+    es: 'Salida del runner (modo trailing)',
+  },
+  trailModeCandle: {
+    zh: 'candle — 第 1 腿 1:1 止盈成交后保本，然后跟随每根已收盘 K 线（默认）',
+    en: 'candle — break-even once leg 1’s 1:1 fills, then each closed candle (default)',
+    es: 'candle — break-even al llenarse el 1:1 de la pierna 1, luego cada vela cerrada (por defecto)',
+  },
+  trailModeOff: {
+    zh: 'off — 旧规则（到目标一半距离时保本）',
+    en: 'off — the older rule (break-even at half the distance to the target)',
+    es: 'off — la regla anterior (break-even a mitad de distancia al objetivo)',
+  },
+  trailModeHelp: {
+    zh: '默认 candle（owner 裁定 R3）：只有在 NinjaTrader 确认第 1 腿 1:1 止盈成交后，剩余仓位止损才移到开仓价，之后每根已收盘的 1 分钟 K 线移到其低点下方 1 tick（多）/高点上方 1 tick（空），只收紧不放宽。',
+    en: 'Default candle (owner ruling R3): only after NinjaTrader CONFIRMS leg 1’s 1:1 take-profit filled does the runner’s stop move to the entry; then, on every closed 1m candle, to 1 tick beyond its low (long) / high (short) — only ever tighter.',
+    es: 'Por defecto candle (decisión R3): solo cuando NinjaTrader CONFIRMA el take-profit 1:1 de la pierna 1, el stop del runner pasa a la entrada; luego, en cada vela de 1m cerrada, a 1 tick más allá de su mínimo (largo) / máximo (corto) — solo se ajusta, nunca se amplía.',
+  },
 } satisfies Record<string, Copy>
+
+// Stored runner-exit values (trader/mentor_trail_r22.go mentorTrailMode): an
+// absent value is the shipped default, candle.
+export const MENTOR_TRAIL_MODE_DEFAULT = 'candle'
+const TRAIL_MODES = ['candle', 'off'] as const
+
+// mentorTrailModeShown mirrors the server resolver: absent → candle, and any
+// value outside candle/off is shown as candle — the server fails closed to it.
+export function mentorTrailModeShown(stored?: string): string {
+  const v = (stored || '').trim().toLowerCase()
+  return (TRAIL_MODES as readonly string[]).includes(v)
+    ? v
+    : MENTOR_TRAIL_MODE_DEFAULT
+}
 
 // Stored defaults (trader/mentor_tick.go mentorWindowDefaultStart/Minutes). An
 // unset or 0 length resolves to 60; the stored value -1 means "no window".
@@ -131,6 +165,9 @@ interface MentorModeToggleProps {
   // Stop-after-loss knob (mentor_stop_after_loss); absent = OFF.
   stopAfterLoss?: boolean
   onStopAfterLossChange: (on: boolean) => void
+  // Runner exit knob (mentor_trail_mode); absent = candle.
+  trailMode?: string
+  onTrailModeChange?: (mode: string) => void
 }
 
 export function MentorModeToggle({
@@ -146,6 +183,8 @@ export function MentorModeToggle({
   onWindowMinutesChange,
   stopAfterLoss,
   onStopAfterLossChange,
+  trailMode,
+  onTrailModeChange,
 }: MentorModeToggleProps) {
   const [confirming, setConfirming] = useState(false)
   const [startDraft, setStartDraft] = useState<string | null>(null)
@@ -325,6 +364,38 @@ export function MentorModeToggle({
         </div>
         <p className="text-xs" style={{ color: '#848E9C' }}>
           {tr(COPY.stopAfterLossHelp, language)}
+        </p>
+      </div>
+      <div
+        className="mt-3 pt-3 flex flex-col gap-2"
+        style={{ borderTop: '1px solid #2B3139' }}
+      >
+        <label className="text-xs" style={{ color: '#EAECEF' }}>
+          {tr(COPY.trailMode, language)}
+          <select
+            data-testid="mentor-trail-mode"
+            disabled={disabled || !onTrailModeChange}
+            value={mentorTrailModeShown(trailMode)}
+            onChange={(e) => !disabled && onTrailModeChange?.(e.target.value)}
+            className="ml-2 px-2 py-1 rounded"
+            style={{
+              background: '#1E2329',
+              border: '1px solid #2B3139',
+              color: '#EAECEF',
+            }}
+          >
+            {TRAIL_MODES.map((m) => (
+              <option key={m} value={m}>
+                {tr(
+                  m === 'off' ? COPY.trailModeOff : COPY.trailModeCandle,
+                  language
+                )}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="text-xs" style={{ color: '#848E9C' }}>
+          {tr(COPY.trailModeHelp, language)}
         </p>
       </div>
       {confirming && (

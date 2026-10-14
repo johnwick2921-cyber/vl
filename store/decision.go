@@ -396,12 +396,14 @@ func (s *DecisionStore) GetStatistics(traderID string, account ...string) (*Stat
 	stats.FailedCycles = stats.TotalCycles - stats.SuccessfulCycles
 
 	// Count from trader_positions table (cross-table). Scope by account too.
+	// R22 R1: these are the BOT's opens/closes — manual NT8 adoptions
+	// (origin=manual) are not bot activity.
 	if acct != "" {
-		s.db.Raw("SELECT COUNT(*) FROM trader_positions WHERE trader_id = ? AND account = ?", traderID, acct).Scan(&stats.TotalOpenPositions)
-		s.db.Raw("SELECT COUNT(*) FROM trader_positions WHERE trader_id = ? AND account = ? AND status = 'CLOSED'", traderID, acct).Scan(&stats.TotalClosePositions)
+		s.db.Raw("SELECT COUNT(*) FROM trader_positions WHERE trader_id = ? AND account = ? AND "+BotOriginSQL, traderID, acct).Scan(&stats.TotalOpenPositions)
+		s.db.Raw("SELECT COUNT(*) FROM trader_positions WHERE trader_id = ? AND account = ? AND status = 'CLOSED' AND "+BotOriginSQL, traderID, acct).Scan(&stats.TotalClosePositions)
 	} else {
-		s.db.Raw("SELECT COUNT(*) FROM trader_positions WHERE trader_id = ?", traderID).Scan(&stats.TotalOpenPositions)
-		s.db.Raw("SELECT COUNT(*) FROM trader_positions WHERE trader_id = ? AND status = 'CLOSED'", traderID).Scan(&stats.TotalClosePositions)
+		s.db.Raw("SELECT COUNT(*) FROM trader_positions WHERE trader_id = ? AND "+BotOriginSQL, traderID).Scan(&stats.TotalOpenPositions)
+		s.db.Raw("SELECT COUNT(*) FROM trader_positions WHERE trader_id = ? AND status = 'CLOSED' AND "+BotOriginSQL, traderID).Scan(&stats.TotalClosePositions)
 	}
 
 	return stats, nil
@@ -420,8 +422,8 @@ func (s *DecisionStore) GetAllStatistics() (*Statistics, error) {
 	stats.FailedCycles = stats.TotalCycles - stats.SuccessfulCycles
 
 	// Count from trader_positions table
-	s.db.Raw("SELECT COUNT(*) FROM trader_positions").Scan(&stats.TotalOpenPositions)
-	s.db.Raw("SELECT COUNT(*) FROM trader_positions WHERE status = 'CLOSED'").Scan(&stats.TotalClosePositions)
+	s.db.Raw("SELECT COUNT(*) FROM trader_positions WHERE " + BotOriginSQL).Scan(&stats.TotalOpenPositions)
+	s.db.Raw("SELECT COUNT(*) FROM trader_positions WHERE status = 'CLOSED' AND " + BotOriginSQL).Scan(&stats.TotalClosePositions)
 
 	return stats, nil
 }

@@ -388,12 +388,17 @@ func TestMentorApplyExitResult(t *testing.T) {
 	// move_stop_failed instead of move_stop_unwired).
 	oldMoveStopWire := moveStopWire
 	moveStopWire = nil
-	t.Cleanup(func() { moveStopWire = oldMoveStopWire })
+	// Release #22: modifyBracketWire now carries a PRODUCTION default (the real
+	// leg-scoped modify_bracket), so the unwired branch must nil it explicitly —
+	// and the cleanup must RESTORE it, never leave the package seam nil.
+	oldModifyWire := modifyBracketWire
+	modifyBracketWire = nil
+	t.Cleanup(func() { moveStopWire = oldMoveStopWire; modifyBracketWire = oldModifyWire })
 	tp := 103.0
 
 	// unwired: both actions counted, never sent.
 	at.mentorApplyExitResult(&ntTrader.TCPTrader{}, "long", mentorExitResult{
-		MoveStops: []string{"leg1", "leg2"}, NewStop: 100, ModifyTP: &tp,
+		MoveStops: []string{"leg1", "leg2"}, NewStop: 100, ModifyTP: &tp, SignalID: "sig-apply",
 	})
 	snap := at.mentorCountSnapshot()
 	if snap["move_stop_unwired"] != 2 || snap["modify_bracket_unwired"] != 1 {
@@ -402,24 +407,34 @@ func TestMentorApplyExitResult(t *testing.T) {
 	// wired: each leg moves and the TP modifies.
 	at.resetMentorCountersForTest()
 	var moved []string
-	var modLeg string
+	var modLeg int
+	var modSig string
 	var modTP float64
 	moveStopWire = func(nt *ntTrader.TCPTrader, side string, newStop float64) error {
 		moved = append(moved, side)
 		return nil
 	}
-	modifyBracketWire = func(leg string, newTP float64) error { modLeg, modTP = leg, newTP; return nil }
-	t.Cleanup(func() { moveStopWire = nil; modifyBracketWire = nil })
+	modifyBracketWire = func(_ *ntTrader.TCPTrader, signalID, _ string, wireLeg int, newTP float64) error {
+		modSig, modLeg, modTP = signalID, wireLeg, newTP
+		return nil
+	}
 	at.mentorApplyExitResult(&ntTrader.TCPTrader{}, "long", mentorExitResult{
-		MoveStops: []string{"leg1", "leg2"}, NewStop: 100, ModifyTP: &tp,
+		MoveStops: []string{"leg1", "leg2"}, NewStop: 100, ModifyTP: &tp, SignalID: "sig-apply",
 	})
-	if len(moved) != 2 || modLeg != "leg1" || modTP != 103 {
-		t.Fatalf("wired actions: moved=%v modLeg=%q modTP=%.2f", moved, modLeg, modTP)
+	if len(moved) != 2 || modLeg != 1 || modSig != "sig-apply" || modTP != 103 {
+		t.Fatalf("wired actions: moved=%v modSig=%q modLeg=%d modTP=%.2f", moved, modSig, modLeg, modTP)
+	}
+	// a modify with no signal id is refused + counted — never a blank frame.
+	at.resetMentorCountersForTest()
+	modSig = "untouched"
+	at.mentorApplyExitResult(&ntTrader.TCPTrader{}, "long", mentorExitResult{ModifyTP: &tp})
+	if got := at.mentorCountSnapshot()["modify_bracket_no_signal"]; got != 1 || modSig != "untouched" {
+		t.Fatalf("a modify without a signal id must be refused + counted (count %d, sent to %q)", got, modSig)
 	}
 	// a failing modify is counted, not silent.
 	at.resetMentorCountersForTest()
-	modifyBracketWire = func(leg string, newTP float64) error { return fmt.Errorf("boom") }
-	at.mentorApplyExitResult(&ntTrader.TCPTrader{}, "long", mentorExitResult{ModifyTP: &tp})
+	modifyBracketWire = func(_ *ntTrader.TCPTrader, _, _ string, _ int, _ float64) error { return fmt.Errorf("boom") }
+	at.mentorApplyExitResult(&ntTrader.TCPTrader{}, "long", mentorExitResult{ModifyTP: &tp, SignalID: "sig-apply"})
 	if got := at.mentorCountSnapshot()["modify_bracket_failed"]; got != 1 {
 		t.Fatalf("the failed modify must be counted once, got %d", got)
 	}

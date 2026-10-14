@@ -138,8 +138,9 @@ func (s *Server) setupRoutes() {
 		s.route(api, "GET", "/traders", "Public trader list", s.handlePublicTraderList)
 		s.route(api, "GET", "/competition", "Public competition data", s.handlePublicCompetition)
 		s.route(api, "GET", "/top-traders", "Top traders leaderboard", s.handleTopTraders)
-		s.route(api, "GET", "/equity-history", "Equity history for a trader", s.handleEquityHistory)
-		s.route(api, "POST", "/equity-history-batch", "Batch equity history for multiple traders", s.handleEquityHistoryBatch)
+		// R22 PNL-TRUTH (OPS-SECURITY P3-2 / UI-GUIDE-TRUTH §4): equity-history
+		// and its batch twin were PUBLIC here — a trader's whole equity curve
+		// with no token. Moved into the protected group below.
 		s.route(api, "GET", "/traders/:id/public-config", "Public trader configuration", s.handleGetPublicTraderConfig)
 
 		// Market data (no authentication required)
@@ -185,6 +186,10 @@ func (s *Server) setupRoutes() {
 			// attaches the Bearer token, and the agent calls handlers in-process.
 			s.route(protected, "GET", "/klines", "Candlestick data (?symbol=&interval=&limit=)", s.handleKlines)
 			s.route(protected, "GET", "/klines/svp", "Session Volume Profile (?symbol=&exchange=ninjatrader) — server-computed POC/VAH/VAL + histogram bins", s.handleKlinesSVP)
+			// Account equity curve — JWT-protected (R22; was public). The FE
+			// httpClient attaches the Bearer token on every call.
+			s.route(protected, "GET", "/equity-history", "Equity history for a trader (?trader_id=&account=)", s.handleEquityHistory)
+			s.route(protected, "POST", "/equity-history-batch", "Batch equity history for multiple traders", s.handleEquityHistoryBatch)
 			// Logout (add to blacklist)
 			s.route(protected, "POST", "/logout", "Logout (blacklist token)", s.handleLogout)
 			// Mint a short-lived single-use SSE ticket for the live bar stream (Stage 4).

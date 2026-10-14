@@ -666,34 +666,37 @@ const risk: KnobSpec[] = [
     perSession: 'No.',
   },
   {
-    label: 'Breakeven trigger — SUSPENDED (0B)',
+    label: 'Breakeven trigger (AI trades)',
     where: 'Strategy → Risk Control',
-    what: 'Move the stop to entry after the position gains this much. SUSPENDED 2026-09-02 pending MFE data (wave 1A): the knob is retained and the trigger still evaluates, but NO move_stop frame is sent while suspended. The boot line reads BE from the strategy toggle and seam=SUSPENDED from env — the two sources the mechanics honour. It fired 2× on 09-01 with no measurement of whether it helps, and the net effect of breakeven moves is contested in the research.',
+    what: 'AI-plan trades only: once an open NT8 position is this many POINTS in profit (mark vs entry), its stop moves to the entry price, once per position (a move_stop on the live bracket). It moves a stop only when BOTH switches are on: this strategy toggle (breakeven_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0 → seam=ACTIVE; unset → SUSPENDED, the code default). With the seam SUSPENDED the trigger still evaluates, logs "⏸ auto-breakeven SUSPENDED (0B)" once and sends nothing. A mentor-mode trade is NEVER moved by it — the mentor exits own that stop (owner ruling 2026-10-09; see Mentor mode → The exits → mentor_trail_mode).',
     trader:
-      'While suspended your exits are: fixed stop · fixed target · EOD flat · plan invalidation/dormant. Nothing silently moves your stop.',
+      'Read the boot line "🛑 exits: … BE=on|off(strategy) · seam=ACTIVE|SUSPENDED(env)" for what the running bot does — not this card. The live boots of 2026-10-13 18:57/18:58 CT and 2026-10-14 02:10 CT read BE=on · seam=ACTIVE on both traders with breakeven_trigger_points=40: breakeven IS moving AI-trade stops there (the mentor trader is exempt). Turn the toggle off to stop it.',
     consumer:
-      'trader/auto_trader.go (maybeMoveStopToBreakeven → exitMechSuspendedRefuse → moveStopWire)',
-    range: 'ticks · default 50 · env EXIT_MECHS_SUSPENDED=0 restores',
-    systemDefault: '50 (suspended)',
+      'trader/auto_trader.go maybeMoveStopToBreakeven (mentor gate → exitMechSuspendedRefuse → moveStopWire) · trader/exit_mechs_suspend.go ExitPolicyBootLine',
+    range:
+      'points (not ticks) · unset/0 → 50 · moves a stop only with breakeven_enabled ON and env EXIT_MECHS_SUSPENDED=0',
+    systemDefault:
+      'toggle OFF · 50 points · seam SUSPENDED when the env is unset',
     recommended:
-      '⭐ leave suspended until the MFE distribution says the move pays. Wave 1A (2026-09-02) now records it: `go run ./cmd/excursions` prints MFE p50/p80/p95 per condition with the n each rests on.',
+      '⭐ only with MFE evidence that the move pays. Wave 1A (2026-09-02) records it: `go run ./cmd/excursions` prints MFE p50/p80/p95 per condition with the n each rests on.',
     whenToTouch:
-      'Only with MFE evidence that the move pays — the distribution is in trade_excursions now, so this is answerable rather than a judgement call.',
+      'Only with MFE evidence that the move pays — the distribution is in trade_excursions, so this is answerable rather than a judgement call.',
     perSession: 'No.',
   },
   {
-    label: 'Trailing stop — SUSPENDED (0B)',
+    label: 'Trailing stop (AI trades)',
     where: 'Strategy → Risk Control',
-    what: 'ATR-multiplier trail. SUSPENDED 2026-09-02 pending MFE data (wave 1A): the ratchet still computes a level, but NO move_stop frame is sent while suspended. The boot line reads trail from the strategy toggle and seam=SUSPENDED from env — the two sources the mechanics honour. It ratcheted 8× on 09-01 with no measurement; a 567,000-backtest study ranks ATR/Chandelier trails in the worst group of 15 exit families, and our own tape shows $719.50 of giveback with ZERO trail exits ever.',
+    what: 'AI-plan trades only: once armed (after_breakeven | N points | immediately), each 60 s monitor beat ratchets the stop to best price since entry ∓ mult×ATR(period, 5m), tighten-only. Like breakeven it moves a stop only when BOTH this toggle (trailing_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0) are on; with the seam SUSPENDED it computes a level and sends nothing. Never applied to a mentor-mode trade — the mentor runner has its own candle trail (Mentor mode → The exits). Evidence on ATR trails: a 567,000-backtest study ranks ATR/Chandelier trails in the worst group of 15 exit families; our 09-01 tape shows $719.50 of giveback with zero trail exits.',
     trader:
-      'Suspended, not deleted. Unmeasured mechanisms moving live stops is the problem — regardless of which way they cut.',
+      'Read the boot line "🛑 exits: … trail=on|off(strategy) · seam=…(env)". The live boots of 2026-10-13 and 2026-10-14 read trail=off · seam=ACTIVE: the ATR trail is not moving stops there.',
     consumer:
       'trader/auto_trader_trailing.go (maybeTrailStop → exitMechSuspendedRefuse → moveStopWire)',
     range:
-      'mult 0.5–5 · period 7–28 · arm: after_breakeven | N-points | immediately · env EXIT_MECHS_SUSPENDED=0 restores',
-    systemDefault: '2.0 / 14 / after_breakeven (suspended)',
+      'mult 0.5–10 · period 5–50 (the Studio inputs) · arm: after_breakeven | N-points | immediately · moves a stop only with trailing_enabled ON and env EXIT_MECHS_SUSPENDED=0',
+    systemDefault:
+      'toggle OFF · 2.0 / 14 / after_breakeven · seam SUSPENDED when the env is unset',
     recommended:
-      '⭐ leave suspended until the MFE distribution says the move pays. Wave 1A (2026-09-02) now records it: `go run ./cmd/excursions` prints MFE p50/p80/p95 per condition with the n each rests on.',
+      '⭐ leave OFF until the MFE distribution says the trail pays: `go run ./cmd/excursions` prints MFE p50/p80/p95 per condition with the n each rests on.',
     whenToTouch: 'Only with evidence the trail beats the fixed target.',
     perSession: 'No.',
   },

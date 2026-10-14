@@ -101,7 +101,15 @@ export const glossary: GuideSection = {
         },
         {
           term: 'Track record (pnl_corrected)',
-          def: 'Every P&L figure the model and the dashboard read is pnl_corrected — never raw realized_pnl. The executor prompt states "+X over N resolved trades (K unresolved excluded)"; the AgentBeta trade tool and the API stats carry the same shape (P&L-truth wave, 2026-09-01).',
+          def: 'Every P&L figure the model and the dashboard read is pnl_corrected — never raw realized_pnl — over the BOT\'s own trades only: manual NT8 trades (origin=manual) are excluded and shown as their own line (owner ruling R1, release #22). The executor prompt states "+X over N resolved trades (K unresolved excluded)"; the AgentBeta trade tool and the API stats carry the same shape plus manual_excluded_* (P&L-truth wave, 2026-09-01).',
+        },
+        {
+          term: 'Manual trade (origin=manual)',
+          def: 'An NT8 position the bot ADOPTED with no order or arm of its own (someone traded the account by hand). Kept in the ledger and listed with a "MANUAL · excluded" badge, but never in a bot total, the track record, the day P&L, the breaker, expectancy or the risk gates\' bot P&L. Every bot figure shows the manual rows as their own line, e.g. "Manual (excluded): 4 trades, −$3,202.00" (#608 #609 #637 #640, owner ruling R1).',
+        },
+        {
+          term: 'Session day (P&L)',
+          def: 'The ONE "today" for every P&L figure and risk gate: the CME session day that starts 17:00 CT (kernel.CMESessionDayStart). LEDGER_DAY and the position-history footer used the CT calendar day until release #22. NT8\'s own session P&L is an account figure and is labelled NT8_SESSION. (Done-after-win keeps its own NY-day start, 08:30 CT by default — a mentor trading rule, owner ruling 2026-10-09.)',
         },
         {
           term: 'UNRESOLVED (trade)',
