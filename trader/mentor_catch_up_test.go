@@ -112,3 +112,35 @@ func stallLastRefusal(traderID, kind string) string {
 	_, tbl := telemetry.SetupStallSnapshot()
 	return tbl[traderID][kind].LastRefusal
 }
+
+// TestMentorCatchUpSwingEntryIsRefusedAsStale — DS-104 P2-1. A SWING4H entry
+// carries RefBarMs 0, so N10 (`in.RefBarMs != 0 && …`) exempted it, and its
+// own dropStaleSwingIntents ran inside the caught-up tick where that bar was
+// the newest: a swing entry authored on a missed bar could rest late. The
+// catch-up now stamps the caught-up bar's close on every entry without one,
+// and the production placement refuses it as stale; an arm action is not
+// stamped. MUTANT: return ins unstamped from mentorStampCaughtUp → the swing
+// reaches the recorder → RED.
+func TestMentorCatchUpSwingEntryIsRefusedAsStale(t *testing.T) {
+	telemetry.ResetSetupStallsForTest()
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	var placed []mentor.Intent
+	mentorPlaceRecorderForTest = func(in mentor.Intent, _ int) { placed = append(placed, in) }
+	t.Cleanup(func() { mentorPlaceRecorderForTest = nil })
+	missedClose := int64(1_790_000_000_000 + 59_999)
+	newestClose := missedClose + 3*60_000
+	ins := mentorStampCaughtUp([]mentor.Intent{
+		{Action: mentor.PlaceStopEntry, Setup: "SWING4H", Side: mentor.SideLong, Price: 100, Stop: 50, Target: 200, ArmID: "swing-1"},
+		{Action: mentor.CancelArm, ArmID: "isb-9"},
+	}, missedClose)
+	if ins[0].RefBarMs != missedClose || ins[1].RefBarMs != 0 {
+		t.Fatalf("the swing entry must carry the caught-up bar's close and the arm action nothing: %+v", ins)
+	}
+	at.mentorPlaceIntent(ins[0], mentorSizeChoice{Contracts: 1}, newestClose, newestClose)
+	if len(placed) != 0 {
+		t.Fatalf("a SWING4H entry from a caught-up bar must never place: %+v", placed)
+	}
+	if got := at.mentorCountSnapshot()["stale_intent"]; got != 1 {
+		t.Fatalf("the caught-up swing entry must be refused as stale_intent, got %d", got)
+	}
+}

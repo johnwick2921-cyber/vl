@@ -13,7 +13,8 @@ import (
 // fixture's natural ISB target is the EMA 34 at 114.16 — 10.56 pts from the
 // 103.60 entry, INSIDE the 15-pt cap — so the cap was a no-op there and the
 // assertion held with the cap removed (and with the cap never applied to the
-// emit at all). This pin seeds ONE key level 21.4 pts beyond the entry and
+// emit at all). This pin seeds ONE key level 36.4 pts beyond the entry (≥ 30: the
+// spent-day room, "target 15 → room 30" [D5.3 p1 @09:32–09:50]) and
 // switches the EMAs off, so the natural target is well past the cap and the
 // VALUE is asserted.
 func TestB9ISBOnSpentDayEmitsExactlyTheCap(t *testing.T) {
@@ -31,7 +32,7 @@ func TestB9ISBOnSpentDayEmitsExactlyTheCap(t *testing.T) {
 		e.seeded = true
 		e.State.Seed1mWatermark = math.MaxInt64
 		e.State.Seed1HWatermark = math.MaxInt64
-		e.State.SeedLevels = []Level{{Key: "far", Kind: KindKeyLevel, Price: 125}}
+		e.State.SeedLevels = []Level{{Key: "far", Kind: KindKeyLevel, Price: 140}} // ≥ 30 pts out: a SPENT day needs room ≥ 2× the 15-pt cap [D5.3 p1 @09:32–09:50]
 		e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: verdict}
 		for _, in := range e.Tick(bars, now) {
 			if in.Action == PlaceStopLimitEntry {

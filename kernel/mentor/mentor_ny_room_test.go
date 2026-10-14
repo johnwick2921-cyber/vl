@@ -157,3 +157,46 @@ func TestMentorNYSpentDayReverseISBRoomIsToTheLevel(t *testing.T) {
 		t.Fatalf("the reverse ISB take-profit must still be capped at %.2f, got %.2f pts", capPts, d)
 	}
 }
+
+// TestMentorNYSpentDayISBRoomIsTwiceTheCappedTarget — DS-104 P2-3 at Tick, the
+// course's worked figure "target 15 → room 30" [D5.3 p1 @09:32–09:50]: on a
+// SPENT day the room to the level must also be ≥ 2× the CAPPED take-profit.
+// The level sits 21.4 pts out (risk 4.2, so 2R = 8.4 alone passes it): with the
+// 15-pt cap the ISB is refused (21.4 < 30); with a 10-pt cap it emits (21.4 ≥ 20)
+// and the take-profit is entry + 10.
+// MUTANT: drop the spent-day room check at the ISB site → the cap-15 case emits → RED.
+func TestMentorNYSpentDayISBRoomIsTwiceTheCappedTarget(t *testing.T) {
+	run := func(capPts float64) (Intent, map[string]int) {
+		cfg := DefaultConfig()
+		cfg.Enabled = true
+		cfg.EMAPeriod34 = 0
+		cfg.EMAPeriod9 = 0
+		cfg.EMALocationTFMinutes = 0
+		cfg.DayGateSpentPts = 300
+		cfg.DayGateTargetCapPts = capPts
+		e := newISBEval(cfg)
+		bars := isbFixture()
+		now := bars[len(bars)-1].CloseTime + 1
+		e.seeded = true
+		e.State.Seed1mWatermark = math.MaxInt64
+		e.State.Seed1HWatermark = math.MaxInt64
+		e.State.SeedLevels = []Level{{Key: "far", Kind: KindKeyLevel, Price: 125}}
+		e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DaySpent}
+		for _, in := range e.Tick(bars, now) {
+			if in.Action == PlaceStopLimitEntry {
+				return in, e.State.Refusals
+			}
+		}
+		return Intent{}, e.State.Refusals
+	}
+	if in, led := run(15); in.Price != 0 || led["room"] == 0 {
+		t.Fatalf("cap 15: room 21.4 < 2×15 must refuse as room (the course figure), got %+v ledger %v", in, led)
+	}
+	in, led := run(10)
+	if in.Price == 0 {
+		t.Fatalf("cap 10: room 21.4 ≥ 2×10 must emit, ledger %v", led)
+	}
+	if d := abs(in.Target - in.Price); abs(d-10) > 1e-9 {
+		t.Fatalf("cap 10: the take-profit must be entry + 10, got %.2f pts", d)
+	}
+}

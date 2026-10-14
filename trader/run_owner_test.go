@@ -221,3 +221,69 @@ func TestRunPanicLeavesNoLiveLoop(t *testing.T) {
 			liveLoop(at), installed(at), isRunningNow(at), liveRunOwner("tp"))
 	}
 }
+
+// TestHandoffTimeoutIsLoudAndRetries — DS-104 P2-2. When the old run of the
+// trader_id does not exit within the handoff window the new run is refused
+// (never two evaluators) — but the trader must not then stay down silently
+// until someone clicks Start. The refusal is LOUD (ERROR + gate block + the P0
+// "trader … is DOWN: no evaluator" alert) and RETRYABLE: the moment the old
+// run's claim is released, the refused instance runs on its own.
+// MUTANTS: drop armRunRetry → the trader stays down → RED; drop the P0 → RED.
+func TestHandoffTimeoutIsLoudAndRetries(t *testing.T) {
+	telemetry.ResetGateBlocksForTest()
+	prevWait := runOwnerHandoffWait
+	runOwnerHandoffWait = 200 * time.Millisecond
+	t.Cleanup(func() { runOwnerHandoffWait = prevWait })
+	h := newRunHarness(t)
+	if err := h.st.Trader().Create(&store.Trader{ID: "tr", UserID: "u", Name: "hoang", AIModelID: "m", ExchangeID: "ex", StrategyID: "s", Account: "Sim101", IsRunning: true}); err != nil {
+		t.Fatal(err)
+	}
+	// A stuck old run: its claim is held and its Run never exits on Stop.
+	stuck := h.mk("tr")
+	slot := &runOwnerSlot{at: stuck, seq: 1 << 40, done: make(chan struct{})}
+	runOwners.Lock()
+	runOwners.m["tr"] = slot
+	runOwners.Unlock()
+	t.Cleanup(func() { releaseRunOwner("tr", slot) })
+
+	at := h.mk("tr")
+	at.config.StrategyConfig = &store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}} // the alert bus is on
+	err := at.Run()
+	if !errors.Is(err, ErrTraderOldInstanceAlive) || !errors.Is(err, ErrTraderAlreadyRunning) {
+		t.Fatalf("a handoff timeout must refuse with ErrTraderOldInstanceAlive (no is_running=0 by callers), got %v", err)
+	}
+	if liveLoop(at) || isRunningNow(at) {
+		t.Fatal("the refused run must not run beside the stuck one")
+	}
+	if _, tbl := telemetry.GateBlockSnapshot(); tbl["tr"]["trader_run_refused_old_instance_alive"] != 1 {
+		t.Fatalf("the refusal must be counted, got %v", tbl["tr"])
+	}
+	alerts, _ := h.st.Alert().List("tr", 10)
+	p0 := false
+	for _, a := range alerts {
+		if a.Kind == "trader_down_no_evaluator" && a.Level == "P0" {
+			p0 = true
+		}
+	}
+	if !p0 {
+		t.Fatalf("the trader-down P0 alert must be raised, got %d alerts", len(alerts))
+	}
+
+	// The old run finally exits: the refused instance retries on its own.
+	releaseRunOwner("tr", slot)
+	deadline := time.Now().Add(10 * time.Second)
+	for !(liveLoop(at) && installed(at)) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !liveLoop(at) || !installed(at) || liveRunOwner("tr") != at {
+		t.Fatalf("the refused run must retry once the old run exits: loop=%v installed=%v owner=%p (at %p)", liveLoop(at), installed(at), liveRunOwner("tr"), at)
+	}
+	if _, tbl := telemetry.GateBlockSnapshot(); tbl["tr"]["trader_run_retried"] != 1 {
+		t.Fatalf("the retry must be counted, got %v", tbl["tr"])
+	}
+	at.Stop()
+	deadline = time.Now().Add(5 * time.Second)
+	for liveRunOwner("tr") != nil && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+}

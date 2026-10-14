@@ -359,6 +359,22 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	return true
 }
 
+// mentorStampCaughtUp (DS-104 P2-1) gives every ENTRY intent a caught-up bar
+// emitted that bar's close as its RefBarMs when it carries none. The SWING4H
+// entry leaves RefBarMs 0 (N10 exempts it: its own 5m watermark gates it), and
+// its dropStaleSwingIntents ran inside the caught-up tick where that bar WAS
+// the newest — so without the stamp a swing entry from a missed bar passed N10
+// and could rest late. With it, N10 refuses every caught-up entry the same way
+// (stale_intent; the dispatch's arm cleanup applies). Arm actions untouched.
+func mentorStampCaughtUp(ins []mentor.Intent, barCloseMs int64) []mentor.Intent {
+	for i := range ins {
+		if (ins[i].Action == mentor.PlaceStopEntry || ins[i].Action == mentor.PlaceStopLimitEntry) && ins[i].RefBarMs == 0 {
+			ins[i].RefBarMs = barCloseMs
+		}
+	}
+	return ins
+}
+
 // mentorSweepsOnBeat runs the news cancel/flatten and the day-stop sweep from
 // the 60 s monitor beat (MENTOR-NY item 8), under the evaluator mutex like
 // mentorEvalOnce. Both are idempotent. TryLock: when a tick holds the mutex it
@@ -424,7 +440,7 @@ func (at *AutoTrader) mentorCatchUp(bars []market.Kline, prevTickOpen int64) ([]
 		for _, l := range at.mentorNoteORB(at.mentorEval.State.ORB, closeMs) {
 			at.logInfof("%s", l)
 		}
-		out = append(out, ins...)
+		out = append(out, mentorStampCaughtUp(ins, bars[i].CloseTime)...)
 		ticked++
 		at.mentorCount("mentor_bars_caught_up")
 	}

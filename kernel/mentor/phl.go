@@ -231,5 +231,11 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 	// every SPENT day. The cap still shortens the take-profit, and the R9
 	// stop ≤ 15 check above keeps the capped take-profit on the 1:1 floor.
 	capped := CapTargetForDay(in, day, dg)
+	// DS-104 P2-3: on a SPENT day the room to the level must also be ≥
+	// RoomMultiple × the capped take-profit — "target 15 → room 30"
+	// [D5.3 p1 @09:32–09:50]. in.Target is the level (pre-cap).
+	if refuse, why := spentDayRoomRefusal(in.Price, in.Target, capped.Target, day, cfg.RoomMultiple); refuse {
+		return in, false, why
+	}
 	return capped, true, ""
 }

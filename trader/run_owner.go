@@ -99,28 +99,92 @@ func (at *AutoTrader) claimRunOwner() (release func(), err error) {
 		prev, done := slot.at, slot.done
 		runOwners.Unlock()
 
+		if prev != at && at.retryIfFreeOnly.Load() {
+			// The auto-retry after a handoff timeout (below) never stops a
+			// run that claimed the trader since — that run is NEWER.
+			telemetry.IncGateBlock(at.id, "trader_run_retry_skipped")
+			at.logWarnf("⏹ run retry skipped: another run of trader %s owns it now (counter trader_run_retry_skipped)", at.id)
+			return nil, ErrTraderOldInstanceAlive
+		}
+		stopped := closedChan
 		if prev != at {
 			// One owner: the OLD run is stopped BEFORE the new one starts.
 			telemetry.IncGateBlock(at.id, "trader_run_replaced_old_instance")
 			at.logWarnf("⏹ a previous run of trader %s (%q) is still live — stopping it and waiting for it to exit before this run starts (counter trader_run_replaced_old_instance)", at.id, at.name)
 			// Stop waits for that Run's monitor; never block the claim on it.
-			prev.goNetted("run-owner-stop-old", prev.Stop)
+			// The claim waits for BOTH the old Run's exit (done) AND the end
+			// of its Stop teardown (stopped): PR #522 CI (-race) caught a new
+			// run installing before the old Stop had unregistered the ordered
+			// slot ("slot held by a stale instance of this same trader").
+			ch := make(chan struct{})
+			stopped = ch
+			prev.goNetted("run-owner-stop-old", func() { defer close(ch); prev.Stop() })
 		}
-		wait := time.Until(deadline)
-		if wait <= 0 {
-			wait = time.Millisecond
-		}
-		t := time.NewTimer(wait)
-		select {
-		case <-done:
-			t.Stop()
-			continue // re-check under the lock: retired? another claimant?
-		case <-t.C:
+		if !waitBoth(done, stopped, time.Until(deadline)) {
 			telemetry.IncGateBlock(at.id, "trader_run_refused_old_instance_alive")
-			at.logErrorf("⛔ run refused: the previous run of trader %s did not exit within %s after Stop — refusing to start a second run beside it (counter trader_run_refused_old_instance_alive)", at.id, runOwnerHandoffWait)
+			at.logErrorf("⛔ run refused: the previous run of trader %s did not exit within %s after Stop — refusing to start a second run beside it; trader %q has NO evaluator until it does — an automatic retry is armed for the moment it exits (counter trader_run_refused_old_instance_alive)", at.id, runOwnerHandoffWait, at.name)
+			at.emitAlert("P0", "trader_down_no_evaluator", "trader-down-no-evaluator:"+at.id,
+				fmt.Sprintf("Trader %s is DOWN: no evaluator", at.name),
+				fmt.Sprintf("Trader %q (%s): the old run did not stop within %s, so the new run was refused (never two evaluators). It retries automatically the moment the old run exits; Start it again if it stays down.", at.name, at.id, runOwnerHandoffWait))
+			at.armRunRetry(done)
 			return nil, ErrTraderOldInstanceAlive
 		}
+		continue // re-check under the lock: retired? another claimant?
 	}
+}
+
+// closedChan is an already-closed channel ("nothing to wait for").
+var closedChan = func() chan struct{} { c := make(chan struct{}); close(c); return c }()
+
+// waitBoth waits for a and b to close within d (at least 1 ms). Returns false on
+// timeout.
+func waitBoth(a, b <-chan struct{}, d time.Duration) bool {
+	if d <= 0 {
+		d = time.Millisecond
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	for a != nil || b != nil {
+		select {
+		case <-a:
+			a = nil
+		case <-b:
+			b = nil
+		case <-t.C:
+			return false
+		}
+	}
+	return true
+}
+
+// armRunRetry (DS-104 P2-2): after a handoff timeout the trader would stay
+// down until someone clicks Start. Instead, once the old run's claim is
+// released, THIS instance retries its Run — unless it was retired (a reload
+// replaced it) or another run claimed the trader first (retryIfFreeOnly: the
+// retry never stops a newer run). One evaluator at a time either way: the
+// retry goes through the same claim.
+func (at *AutoTrader) armRunRetry(done <-chan struct{}) {
+	if !at.runRetryArmed.CompareAndSwap(false, true) {
+		return
+	}
+	at.goNetted("run-owner-retry", func() {
+		defer at.runRetryArmed.Store(false)
+		<-done
+		runOwners.Lock()
+		retired := at.retired
+		runOwners.Unlock()
+		if retired {
+			at.logWarnf("⏹ run retry dropped: this %q instance was retired while it waited", at.name)
+			return
+		}
+		at.retryIfFreeOnly.Store(true)
+		defer at.retryIfFreeOnly.Store(false)
+		telemetry.IncGateBlock(at.id, "trader_run_retried")
+		at.logWarnf("🔁 the old run of trader %s exited — retrying this run now (counter trader_run_retried)", at.id)
+		if err := at.Run(); err != nil {
+			at.logWarnf("🔁 run retry for trader %s ended: %v", at.id, err)
+		}
+	})
 }
 
 func releaseRunOwner(id string, mine *runOwnerSlot) {

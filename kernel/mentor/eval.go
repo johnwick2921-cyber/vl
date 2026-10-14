@@ -896,6 +896,27 @@ func roomRefusal(price, stop, target float64, confluence bool, roomMultiple floa
 	return false, ""
 }
 
+// spentDayRoomRefusal — DS-104 P2-3 / MENTOR-NY item 1 (course wins, R5 ON):
+// on a SPENT day the room to the LEVEL must also be at least roomMultiple × the
+// CAPPED take-profit — the course's own worked figure: "Bây giờ dù target của
+// em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên"
+// [D5.3 p1 @09:32–09:50], target 15 → room 30. roomRefusal's 2× leg-1 (2R)
+// still applies beside it; the two agree only at a 15-pt stop, and for a
+// smaller stop 2R alone admitted a level the course rejects. capped is the
+// take-profit after CapTargetForDay (the level itself when it sits inside the
+// cap). Any other verdict, or roomMultiple <= 0, never refuses here.
+func spentDayRoomRefusal(price, level, capped float64, v DayVerdict, roomMultiple float64) (refuse bool, why string) {
+	if v != DaySpent || roomMultiple <= 0 {
+		return false, ""
+	}
+	tp := abs(capped - price)
+	room := abs(level - price)
+	if tp <= 0 || room < roomMultiple*tp {
+		return true, fmt.Sprintf("room: spent day — room %.2f pts to the level < %.2f pts (%.2fx the %.2f-pt capped take-profit) [D5.3 p1 @09:32–09:50 \"dù target của em là 15 điểm … 30 điểm đổ lên\"]", room, roomMultiple*tp, roomMultiple, tp)
+	}
+	return false, ""
+}
+
 // triggerBoxZoneVerdict is the B1 no-trade zone (10-03 ruling, D3.4 p1
 // @16:38–17:19): between an FTGL below and the BUY trigger line above there
 // is NO trade ("khỏi đánh, đợi nó thoát ra khỏi 2 cái") — mirror: an FTGH
@@ -1586,6 +1607,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								// [D5.3 p1 @09:32–09:50]. The cap still shortens the
 								// take-profit and the 1:1 floor above still reads it.
 								e.refuse("room")
+							} else if refuse, _ := spentDayRoomRefusal(chosen.Price, target, capped.Target, e.State.Day.Verdict, e.Cfg.RoomMultiple); refuse {
+								// SPENT day: room ≥ 2× the capped take-profit too
+								// ("target 15 → room 30", D5.3 p1 @09:32–09:50).
+								e.refuse("room")
 							} else {
 								// The emitted intent carries the CAPPED target: `capped`
 								// above fed only the floor check, so a spent-day ISB went
@@ -1722,6 +1747,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// normal ISB. One counter "room". MENTOR-NY item 1: measured
 					// to the LEVEL, not the spent-day capped take-profit
 					// [D5.3 p1 @09:32–09:50].
+					e.refuse("room")
+				} else if refuse, _ := spentDayRoomRefusal(in.Price, target, capped.Target, e.State.Day.Verdict, e.Cfg.RoomMultiple); refuse {
+					// SPENT day: "target 15 → room 30" [D5.3 p1 @09:32–09:50].
 					e.refuse("room")
 				} else {
 					in.Target = capped.Target
@@ -2170,6 +2198,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							// — "Dù target của em là 15 điểm … từ điểm entry xuống
 							// target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50].
 							// The cap and the 1:1 floor on the capped target stand.
+							e.refuse("room")
+						} else if refuse, _ := spentDayRoomRefusal(in.Price, in.Target, capped.Target, e.State.Day.Verdict, e.Cfg.RoomMultiple); refuse {
+							// SPENT day: "target 15 → room 30" [D5.3 p1 @09:32–09:50].
 							e.refuse("room")
 						} else {
 							out = append(out, capped)

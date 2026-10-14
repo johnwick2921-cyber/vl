@@ -450,7 +450,7 @@ export const mentor: GuideSection = {
         ],
         [
           'Room rule',
-          'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. The room is measured to the LEVEL, also on a spent day: the 15-pt take-profit cap shortens the take-profit, never the room — "dù target của em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]. So a spent-day setup needs stop ≤ 15 (the 1:1 floor on the capped take-profit) and room ≥ 2R to the level. The stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
+          'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. The room is measured to the LEVEL, also on a spent day: the 15-pt take-profit cap shortens the take-profit, never the room — "dù target của em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]. So a spent-day setup needs stop ≤ 15 (the 1:1 floor on the capped take-profit), room ≥ 2R to the level, AND room to the level ≥ 2× the capped take-profit — his worked figure: target 15 → room 30 (a take-profit sitting right at the level is refused). The stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
           'RoomMultiple 2 · StopCeilingPts 25',
         ],
         [
@@ -993,7 +993,7 @@ export const mentor: GuideSection = {
         {
           label: 'Room multiple',
           where: 'Strategy → Mentor mode → risk',
-          what: 'The room to the FIRST available level must be at least this × the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. Applies to PHL/PLH, the ISB, the reverse ISB, the box and the swing reject. Always measured to the LEVEL — on a spent day the 15-pt take-profit cap does not shrink it [D5.3 p1 @09:32–09:50].',
+          what: 'The room to the FIRST available level must be at least this × the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. Applies to PHL/PLH, the ISB, the reverse ISB, the box and the swing reject. Always measured to the LEVEL — on a spent day the 15-pt take-profit cap does not shrink it, and the room must also be ≥ this × the capped take-profit (target 15 → room 30) [D5.3 p1 @09:32–09:50].',
           trader: '2×.',
           consumer: 'kernel/mentor/mentor.go RoomMultiple',
           range: '×',

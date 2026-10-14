@@ -671,6 +671,10 @@ type AutoTrader struct {
 	// still starting is seen before the loop, and Run tears down what it
 	// started instead of entering the loop.
 	stopGen uint64
+	// DS-104 P2-2 (run_owner.go armRunRetry): a retry is armed after a
+	// handoff timeout; the retry claims only a FREE trader id.
+	runRetryArmed   atomic.Bool
+	retryIfFreeOnly atomic.Bool
 	// runReadyMu/runReadyCh is the REL18-C FOLD handshake between Run and the
 	// start handler: Run reports nil once it reaches the ordered-execution
 	// install (ready) or the O2 refusal error, so the handler can answer 409
@@ -1191,7 +1195,15 @@ func (at *AutoTrader) Run() error {
 		at.isRunningMutex.Unlock()
 		return ownErr
 	}
-	defer release()
+	// PR #522 CI: the claim is released only after EVERYTHING this run
+	// started is torn down — a Run can leave its loop on the running flag
+	// before a concurrent Stop has finished its teardown (ordered slot,
+	// event loop), and the next run must never see that half-stopped state.
+	// Idempotent beside Stop's own teardown.
+	defer func() {
+		at.teardownRunStarted()
+		release()
+	}()
 	// A Run that PANICS out (not a beat — runBeatSafely recovers those) must
 	// not release the claim with its event loop still live: tear down first,
 	// then re-panic (the caller's recovery is unchanged). LIFO: this runs
