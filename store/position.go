@@ -202,7 +202,9 @@ type TraderPosition struct {
 	// closed rows carried the never-computed pair (D15). nil means UNKNOWN.
 	MAE             *float64 `gorm:"column:mae;default:0" json:"mae"`
 	MFE             *float64 `gorm:"column:mfe;default:0" json:"mfe"`
-	EntryConfidence int      `gorm:"column:entry_confidence;default:0" json:"entry_confidence"`
+	// R22 P2 — NULLABLE like mae/mfe: a plan-arm entry carries NO AI
+	// confidence; the old int stored a fabricated 0 (#649/#650). nil = absent.
+	EntryConfidence *int `gorm:"column:entry_confidence;default:0" json:"entry_confidence"`
 	// P5.5 — plan link (additive, futures day-plan): the cited scenario + plan
 	// version stamped at OPEN, and the adherence grade (A–F) computed at CLOSE.
 	// Empty/zero for crypto / off-plan trades.
@@ -441,7 +443,11 @@ func (s *PositionStore) Create(pos *TraderPosition) error {
 	// captured BEFORE the insert: GORM writes the DDL default back into the
 	// struct, so after Create these pointers are no longer nil
 	unmeasured := pos.MAE == nil || pos.MFE == nil
+	noConfidence := pos.EntryConfidence == nil // R22 P2: absent ≠ 0
 	if err := s.db.Create(pos).Error; err != nil {
+		return err
+	}
+	if err := s.nullEntryConfidence(pos, noConfidence); err != nil {
 		return err
 	}
 	// E4 (wave 1A, 2026-09-02) — write the excursion columns as NULL.
@@ -910,6 +916,7 @@ func (s *PositionStore) CreateOpenPosition(pos *TraderPosition) error {
 
 	// E4 — captured before the insert; see Create for why the DDL default stays
 	unmeasured := pos.MAE == nil || pos.MFE == nil
+	noConfidence := pos.EntryConfidence == nil // R22 P2: absent ≠ 0
 	err := s.db.Create(pos).Error
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
@@ -930,7 +937,21 @@ func (s *PositionStore) CreateOpenPosition(pos *TraderPosition) error {
 		}
 		pos.MAE, pos.MFE = nil, nil
 	}
+	return s.nullEntryConfidence(pos, noConfidence)
+}
 
+// nullEntryConfidence (R22 P2) writes entry_confidence NULL right after the
+// insert when the caller had none — the DDL default 0 stays for the same
+// reason the mae/mfe default stays (E4: dropping it rebuilds the table), and
+// GORM omits a nil pointer on INSERT, so SQLite would fill in the fabricated 0.
+func (s *PositionStore) nullEntryConfidence(pos *TraderPosition, absent bool) error {
+	if !absent {
+		return nil
+	}
+	if err := s.db.Exec(`UPDATE trader_positions SET entry_confidence = NULL WHERE id = ?`, pos.ID).Error; err != nil {
+		return err
+	}
+	pos.EntryConfidence = nil
 	return nil
 }
 

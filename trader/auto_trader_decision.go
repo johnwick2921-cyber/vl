@@ -509,7 +509,7 @@ func (at *AutoTrader) recordPositionChangeAs(orderID, symbol, side, action strin
 			EntryTime:       nowMs,
 			Leverage:        leverage,
 			Status:          "OPEN",
-			EntryConfidence: confidence, // P2.4 — capture the AI's entry confidence
+			EntryConfidence: &confidence, // P2.4 — the AI's entry confidence (R22: nil on paths without one)
 			CreatedAt:       nowMs,
 			UpdatedAt:       nowMs,
 		}
