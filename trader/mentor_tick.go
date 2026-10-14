@@ -1546,7 +1546,9 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	// REL18-A: each construction (boot or reload) gets its OWN arm epoch (a
 	// per-AutoTrader field, never shared), so a rebuilt evaluator's "isb-1"
 	// never collides with a prior terminal row — or another trader's row.
-	at.mentorArmEpoch = time.Now().UnixNano()
+	// The epoch reads the mentor seam so a pinned test clock names the seed
+	// instant; production (nil source) is time.Now(), unchanged.
+	at.mentorArmEpoch = mentorClockNow().UnixNano()
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}

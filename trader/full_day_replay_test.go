@@ -181,11 +181,11 @@ func replayTrader(t *testing.T, id string, st *store.Store) *AutoTrader {
 	return at
 }
 
-// replayDayBars returns the bars in [17:00 CT 10-12, 16:00 CT 10-13).
-func replayDayBars(bars []fixtureBar) []fixtureBar {
+// replayDayBars returns the bars in [startMs, stopMs).
+func replayDayBars(bars []fixtureBar, startMs, stopMs int64) []fixtureBar {
 	out := make([]fixtureBar, 0, 1380)
 	for _, b := range bars {
-		if b.kline.OpenTime >= replayDayStartMs && b.kline.OpenTime < replayDayEndMs {
+		if b.kline.OpenTime >= startMs && b.kline.OpenTime < stopMs {
 			out = append(out, b)
 		}
 	}
@@ -203,10 +203,19 @@ func replayKlines(bars []fixtureBar) []market.Kline {
 
 // TestFullDayReplay drives the recorded day through two mentor AutoTraders.
 // It is a single test with named sub-tests per invariant so one failure names
-// the invariant it broke. Runtime budget: the 1380-bar day, twice, non-race.
+// the invariant it broke.
+//
+// Runtime budget: the DEFAULT window is the 3 hours from the seed instant
+// (00:59:15 → 03:59:15 CT 10-13, ~180 bars) so the default `go test ./...`
+// stays under 60 s. The FULL day (00:59:15 → 16:00 CT, ~900 bars) runs only
+// behind FULL_DAY_REPLAY=1.
 func TestFullDayReplay(t *testing.T) {
 	bars, h1bars := loadFullDayFixture(t)
-	day := replayDayBars(bars)
+	stopMs := int64(replaySeedNowMs + 3*3600_000) // default 3 h window from the seed
+	if os.Getenv("FULL_DAY_REPLAY") == "1" {
+		stopMs = replayDayEndMs
+	}
+	day := replayDayBars(bars, replayDayStartMs, stopMs)
 	if len(day) == 0 {
 		t.Fatalf("no day-window bars in the fixture")
 	}
