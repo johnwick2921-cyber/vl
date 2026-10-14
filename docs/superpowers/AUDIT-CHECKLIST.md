@@ -8525,3 +8525,32 @@ Reference: trader/arm_wire_truth.go recordArmWirePrices, store/armed_orders.go
 RecordWirePrices; call sites in trader/armed_executor.go (limit, stop-entry, E2
 seams) and trader/zone_placement.go placeZoneRow; pins
 trader/arm_wire_truth_r22_test.go.
+
+## CLASS NN (assigned at merge) — a sign convention computed two ways (live vs rebuild)
+
+symptom: SWING-RISK (release #22, found by the FULL-DAY-REPLAY harness #505): a
+filled 4h swing moved its stop to break-even AT THE FILL instead of at +1R.
+`SwingState.openPosition` (kernel/mentor/swing4h.go) stored `Risk = Stop − Price`
+for a long and `Price − Stop` for a short — NEGATIVE for both — so
+manageSwingPosition's "+1R" test (`Close >= Entry+Risk` / `Close <= Entry−Risk`)
+read "entry − |R|" and passed on the fill bar. The restart path (#494
+RebuildSwingPos) was handed `|entry − stop|` by the trader — POSITIVE — so the
+SAME swing broke even at +1R only if the bot had restarted in between. Real
+tape (MNQ 10-12): BE at −0.21R, +0.22R and +0.45R; the restarted swing at
++1.00R. Every unit test passed, because each path was tested with its own
+convention.
+probe: for every quantity a state machine can be BUILT two ways (a live event vs
+a restart rebuild, a fill vs a replay, a fresh object vs a deserialised one),
+grep both constructors and ask: is the value computed by ONE function both call,
+or by two expressions? Then drive the SAME scenario through both paths at the
+call site and compare the outcome bar-for-bar.
+rule: one definition (here `mentor.SwingRisk(side, entry, entryStop)`, positive
+on the loss side) called by every constructor; the rebuild takes the RECORD
+(entry + entry stop) and computes the value itself, never a pre-computed number
+from the caller — so the two paths cannot drift. Pin it with a call-site test
+per path asserting the SAME bar (kernel/mentor/swing_risk_test.go) and the
+replay assertion over every emitted break-even (trader/full_day_replay_test.go
+c2_every_swing_break_even_at_or_beyond_1R).
+Reference: kernel/mentor/swing4h.go SwingRisk / openPosition / RebuildSwingPos
+(SwingRebuild), trader/mentor_live_pos.go mentorRebuildSwingArm (EntryStop =
+the armed row's StopPx, never NT8's possibly-moved live stop).

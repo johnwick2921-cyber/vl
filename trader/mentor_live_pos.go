@@ -596,9 +596,13 @@ func (at *AutoTrader) mentorRebuildSwingArm(r store.ArmedOrderDB, pos *store.Tra
 		at.mentorUnregisterLiveArm(armID)
 		return false, "evaluator not constructed"
 	}
-	if !at.mentorEval.State.Swing.RebuildSwingPos(
-		mentor.Side(lp.Pos.Side), lp.Pos.Entry, lp.Pos.Stop, lp.Pos.Target, lp.Pos.R, entryBucket, armID, lp.Pos.ArmedBE,
-	) {
+	// SWING-RISK (release #22): the kernel measures the risk itself
+	// (mentor.SwingRisk) from the row's ENTRY stop — the same definition the
+	// live fill uses — never from NT8's live stop, which may already sit at BE.
+	if !at.mentorEval.State.Swing.RebuildSwingPos(mentor.SwingRebuild{
+		Side: mentor.Side(lp.Pos.Side), Entry: lp.Pos.Entry, EntryStop: r.StopPx, LiveStop: lp.Pos.Stop,
+		Target: lp.Pos.Target, EntryBucket: entryBucket, ArmID: armID, MovedBE: lp.Pos.ArmedBE,
+	}) {
 		at.mentorUnregisterLiveArm(armID)
 		return false, "degenerate swing position (entry or risk unreadable)"
 	}
