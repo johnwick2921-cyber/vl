@@ -542,30 +542,13 @@ func (at *AutoTrader) deskGuardrail() (limit float64, source string, enforced bo
 // deskRealizedToday sums pnl_corrected for the CME session-day under the A22
 // rules, and COUNTS what it had to exclude rather than hiding it.
 func (at *AutoTrader) deskRealizedToday(now time.Time) (total float64, n int, unresolved int) {
-	dayMs := kernel.CMESessionDayStart(now).UnixMilli()
-	// KNOWN LIMIT (owner ruling 10-05, "whatever risk control leave"): this read is
-	// trader-WIDE (no account filter), while the done-after-win day-P&L gate
-	// (MentorDayActivity) is account-scoped — the two day gates can differ on a
-	// trader with more than one account's history. The 500-row limit reads the
-	// newest 500 closes overall, so a session-day with >500 closes would truncate
-	// today's sum; no live path produces that. Documented, not changed.
-	rows, err := at.store.Position().GetClosedPositions(at.id, 500)
+	// r22 RISK-GATES — ONE definition: the desk DAY line and the daily-loss
+	// gate read the same closed-trade sum (botClosedTodayAt — pnl_corrected
+	// only, manual rows excluded, NULL rows counted). KNOWN LIMIT (owner ruling
+	// 10-05, unchanged): trader-wide (no account filter), newest 500 closes.
+	total, n, unresolved, _, err := at.botClosedTodayAt(now)
 	if err != nil {
 		return 0, 0, 0
-	}
-	for _, p := range rows {
-		if p == nil || p.ExitTime < dayMs {
-			continue
-		}
-		if store.UnknownPnLReason(p.CloseReason) || p.PlanID == "UNRESOLVABLE" {
-			continue
-		}
-		if p.PnlCorrected == nil {
-			unresolved++
-			continue
-		}
-		total += *p.PnlCorrected
-		n++
 	}
 	return total, n, unresolved
 }

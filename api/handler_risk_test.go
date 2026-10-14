@@ -50,10 +50,11 @@ func TestForceFlatSignalAdapterIncrementsCounter(t *testing.T) {
 
 // Tests that the response JSON shape matches the documented schema.
 func TestForceFlatResponseShape(t *testing.T) {
+	zero := 0
 	resp := forceFlatResponse{
 		Triggered:          true,
 		TraderID:           "trader-1",
-		PositionsFlattened: 0,
+		PositionsFlattened: &zero,
 		TimestampUTC:       "2026-05-26T00:00:00Z",
 		LogMessage:         "ok",
 	}
