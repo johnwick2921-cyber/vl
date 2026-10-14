@@ -59,6 +59,10 @@ type BarCache struct {
 	// the stale gate judged bar age on the wall clock alone and failed OPEN on
 	// a backward step). Read via LastLiveReceipt.
 	lastLive map[string]time.Time
+	// GAP-BACKFILL (2026-10-14): seeds judged by same-minute overlap with live
+	// bars (bar_overlap_verdict.go) — agreed sets the verdict, disagreed leaves
+	// the key armed. Read via OverlapVerdictCounts.
+	overlapAgreed, overlapDisagreed int64
 }
 
 // NewBarCache constructs an empty cache. maxBars <= 0 uses
@@ -318,6 +322,22 @@ func (c *BarCache) SeedHistorical(symbol, timeframe string, bars []Bar) {
 		merged = merged[len(merged)-c.maxBars:]
 	}
 	c.bars[key] = merged
+	// GAP-BACKFILL (2026-10-14): a replay that lands on minutes that already
+	// traded live is judged on THOSE minutes, now — the first-live-bar check
+	// can never find an adjacent reference for it (bar_overlap_verdict.go).
+	// Agreement sets the verdict the replay-hold waits for; disagreement
+	// changes nothing.
+	if pairs, agree := overlapScaleVerdict(existing, bars); pairs > 0 {
+		if agree {
+			if c.liveSeen == nil {
+				c.liveSeen = make(map[string]bool)
+			}
+			c.liveSeen[key] = true
+			c.overlapAgreed++
+		} else {
+			c.overlapDisagreed++
+		}
+	}
 }
 
 // mergeBarsByTime merges two ascending-by-T bar slices into one ascending,

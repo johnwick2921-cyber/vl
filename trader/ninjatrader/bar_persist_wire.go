@@ -78,6 +78,64 @@ func barRowsForPersist(symbol, tf, contract string, historical bool, closed []nt
 	return rows
 }
 
+// newBarPersister builds THE persister closure WireBarPersistence installs
+// (GAP-BACKFILL 2026-10-14: lifted out of the sync.Once, unchanged except for
+// the hole report after a live write, so a production-call-site test can drive
+// this exact closure against its own wire and store). server() is the wire the
+// closure reads verdicts and contracts from.
+func newBarPersister(bh *store.BarHistoryStore, server func() *ntwire.TCPServer) func(historical bool, symbol, tf string, bars []ntwire.Bar) {
+	return func(historical bool, symbol, tf string, bars []ntwire.Bar) {
+		srv := server()
+		// BAR-SOURCE WAVE — a LIVE frame is the moment the ring has judged
+		// the replay it holds; release or discard the held replay rows for
+		// this key FIRST, before this frame's own closed bars (which may be
+		// none: a bar_update for the current minute is not closed yet, and
+		// the verdict must not wait for the next one).
+		if !historical && srv != nil {
+			checked, offScale := srv.BarCache().SeedVerdict(symbol, tf)
+			barReplayHold.resolve(symbol, tf, checked, offScale, bh.InsertBars)
+		}
+		closed := ntwire.ClosedBarsOnly(bars, tf, time.Now().UnixMilli())
+		if historical {
+			// BAR-TRUTH 2026-08-28: replay frames arrive CLOSE-stamped -
+			// apply the cache's open-stamp conversion (the 2499/2500 mismatch root cause).
+			closed = ntwire.OpenStampBars(closed, tf)
+		}
+		if len(closed) == 0 {
+			return
+		}
+		// ROLL WAVE — stamp the contract the AddOn most recently named.
+		// The bar frame itself carries none (C4), so the stamp is the
+		// subscription's, read at RECEIPT and with its source recorded.
+		contract, src := contractFor(bh, srv, symbol)
+		if contract == "" {
+			logger.Warnf("bars: persist %s %s SKIPPED %d bar(s) — no contract has been named this process and the store holds none; a bar on an unknown price scale is not written (roll wave)", symbol, tf, len(closed))
+			return
+		}
+		if src == "store-fallback" {
+			logger.Warnf("bars: persist %s %s stamping %d bar(s) as %s from the STORE FALLBACK — no subscription ACK yet this process", symbol, tf, len(closed), contract)
+		}
+		// BAR-SOURCE WAVE — the `historical` flag this callback has always
+		// received is now RECORDED, not discarded. A bar the ring labelled
+		// mixed (a boot minute across two scales) keeps that label.
+		rows := barRowsForPersist(symbol, tf, contract, historical, closed)
+		if historical {
+			// AN UNVERIFIED REPLAY IS NOT THE RECORD. Held until the first
+			// live bar lets the ring judge its scale; see replayHold.
+			barReplayHold.add(symbol, tf, rows)
+			return
+		}
+		if err := bh.InsertBars(rows); err != nil {
+			logger.Warnf("bars: persist %s %s failed: %v (never blocks the loop)", symbol, tf, err)
+			return
+		}
+		// GAP-BACKFILL (2026-10-14) — a live 1m bar that lands after a run of
+		// missing open minutes opens a HOLE, and the tracker re-requests NT8's
+		// history for it on its own schedule (bar_holes.go).
+		barHoles.Load().observeLive(symbol, tf, contract, rows)
+	}
+}
+
 // WireBarPersistence attaches the store to the bar feed. st == nil → no-op.
 func WireBarPersistence(st *store.Store) {
 	if st == nil {
@@ -100,51 +158,14 @@ func WireBarPersistence(st *store.Store) {
 		} else {
 			logger.Infof("%s", rep.BootLine())
 		}
-		ntwire.SetBarPersister(func(historical bool, symbol, tf string, bars []ntwire.Bar) {
-			srv, _ := getOrStartTCPServer()
-			// BAR-SOURCE WAVE — a LIVE frame is the moment the ring has judged
-			// the replay it holds; release or discard the held replay rows for
-			// this key FIRST, before this frame's own closed bars (which may be
-			// none: a bar_update for the current minute is not closed yet, and
-			// the verdict must not wait for the next one).
-			if !historical && srv != nil {
-				checked, offScale := srv.BarCache().SeedVerdict(symbol, tf)
-				barReplayHold.resolve(symbol, tf, checked, offScale, bh.InsertBars)
-			}
-			closed := ntwire.ClosedBarsOnly(bars, tf, time.Now().UnixMilli())
-			if historical {
-				// BAR-TRUTH 2026-08-28: replay frames arrive CLOSE-stamped -
-				// apply the cache's open-stamp conversion (the 2499/2500 mismatch root cause).
-				closed = ntwire.OpenStampBars(closed, tf)
-			}
-			if len(closed) == 0 {
-				return
-			}
-			// ROLL WAVE — stamp the contract the AddOn most recently named.
-			// The bar frame itself carries none (C4), so the stamp is the
-			// subscription's, read at RECEIPT and with its source recorded.
-			contract, src := contractFor(bh, srv, symbol)
-			if contract == "" {
-				logger.Warnf("bars: persist %s %s SKIPPED %d bar(s) — no contract has been named this process and the store holds none; a bar on an unknown price scale is not written (roll wave)", symbol, tf, len(closed))
-				return
-			}
-			if src == "store-fallback" {
-				logger.Warnf("bars: persist %s %s stamping %d bar(s) as %s from the STORE FALLBACK — no subscription ACK yet this process", symbol, tf, len(closed), contract)
-			}
-			// BAR-SOURCE WAVE — the `historical` flag this callback has always
-			// received is now RECORDED, not discarded. A bar the ring labelled
-			// mixed (a boot minute across two scales) keeps that label.
-			rows := barRowsForPersist(symbol, tf, contract, historical, closed)
-			if historical {
-				// AN UNVERIFIED REPLAY IS NOT THE RECORD. Held until the first
-				// live bar lets the ring judge its scale; see replayHold.
-				barReplayHold.add(symbol, tf, rows)
-				return
-			}
-			if err := bh.InsertBars(rows); err != nil {
-				logger.Warnf("bars: persist %s %s failed: %v (never blocks the loop)", symbol, tf, err)
-			}
-		})
+		serverFn := func() *ntwire.TCPServer { s, _ := getOrStartTCPServer(); return s }
+		// GAP-BACKFILL (2026-10-14) — the bar-hole tracker: fed by the persister
+		// below, scheduled by its own loop, read by /api/health.
+		holes := newBarHoleTracker(bh, serverFn)
+		barHoles.Store(holes)
+		logger.Infof("%s", holes.bootLine())
+		safe.GoNet("nt8-bar-holes", "", holes.run)
+		ntwire.SetBarPersister(newBarPersister(bh, serverFn))
 		// Boot backfill + prune loop: the singleton server starts lazily on the
 		// first trader load; poll for it briefly, then flush the cache. The
 		// AddOn's bars_historical replay lands a few seconds after our restart,
