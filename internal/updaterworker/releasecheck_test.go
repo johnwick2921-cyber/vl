@@ -67,6 +67,19 @@ func apiJSON(w http.ResponseWriter, status int, body string) {
 	fmt.Fprint(w, body)
 }
 
+// commitShaAnswer answers commits/<tag> as GitHub does for the sha media type
+// the updater sends (OPS NEW-1): the bare sha as text. Any other Accept gets
+// the commit JSON, so a regression to the JSON read still finds a sha here
+// and only the updatersource pin catches it.
+func commitShaAnswer(w http.ResponseWriter, r *http.Request, sha string) {
+	if r.Header.Get("Accept") == "application/vnd.github.sha" {
+		w.Header().Set("Content-Type", "application/vnd.github.sha; charset=utf-8")
+		fmt.Fprint(w, sha)
+		return
+	}
+	apiJSON(w, 200, `{"sha":"`+sha+`"}`)
+}
+
 func TestReleaseSourceKnobDefaultOff(t *testing.T) {
 	t.Setenv("VL_RELEASE_SOURCE", "")
 	t.Setenv("NO"+"FX_RELEASE_SOURCE", "")
@@ -114,7 +127,7 @@ func TestHandleCheckUpToDateByCommit(t *testing.T) {
 	rev := "aaaa" + strings.Repeat("bb", 18)
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/"+updatersource.ReleaseRepo+"/commits/v9.9.9" {
-			apiJSON(w, 200, `{"sha":"`+rev+`"}`)
+			commitShaAnswer(w, r, rev)
 			return
 		}
 		apiJSON(w, 200, `{"tag_name":"v9.9.9","target_commitish":"dev"}`)
@@ -163,7 +176,7 @@ func TestHandleCheckVerifiedReadyReusesFetchRelease(t *testing.T) {
 			apiJSON(w, 200, `{"tag_name":"`+testReleaseID+`","target_commitish":"dev"}`)
 			return
 		case strings.HasSuffix(r.URL.Path, "/commits/"+testReleaseID):
-			apiJSON(w, 200, `{"sha":"`+testSHA+`"}`)
+			commitShaAnswer(w, r, testSHA)
 			return
 		}
 		b, err := os.ReadFile(rel.archive)
