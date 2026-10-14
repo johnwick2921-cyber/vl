@@ -370,8 +370,6 @@ func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
 	if len(e.State.LevelArms) == 0 {
 		return nil
 	}
-	_, hh, mm := ctOf(now)
-	windowEnd := hh*60+mm >= rthWindowEndMin
 	var out []Intent
 	for key, arm := range e.State.LevelArms {
 		through := false
@@ -379,9 +377,18 @@ func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
 			through = arm.Side == SideLong && cur.Close < arm.LevelPrice ||
 				arm.Side == SideShort && cur.Close > arm.LevelPrice
 		}
-		if through || windowEnd {
+		// FIX-LEVEL-WINDOW (owner order 2026-10-13 ~21:2x CT): a level order
+		// RESTS until ITS OWN 15:00 CT expiry — LevelArmExpiry(arm.PlacedAt),
+		// the ONE definition the trader's injector (mentorIntentExpiry) and the
+		// leg budget's pend simulation already read. The old wall-clock read
+		// (ctOf(now) ≥ 15:00) was TRUE every minute 15:00–23:59, so an evening
+		// level arm was registered and cancelled in the SAME Tick. An arm placed
+		// at 10:00 CT still cancels at 15:00 the same day; one placed at 16:10
+		// now rests until 15:00 the NEXT day (or an earlier close-through).
+		expired := now >= LevelArmExpiry(arm.PlacedAt)
+		if through || expired {
 			out = append(out, Intent{Action: CancelArm, ArmID: arm.ArmID,
-				Reason: "level order rest cancelled — a later candle closed through the level, or the window ended [D2.3 p1 @18:01–19:12; recovered @23:48]"})
+				Reason: "level order rest cancelled — a later candle closed through the level, or the order's own 15:00 CT expiry passed [D2.3 p1 @18:01–19:12; recovered @23:48]"})
 			delete(e.State.LevelArms, key)
 		}
 	}

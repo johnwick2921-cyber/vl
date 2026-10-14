@@ -2047,9 +2047,9 @@ type RiskControlConfig struct {
 	// 0B size clamp and EXIT_MECHS_SUSPENDED do not apply to it.
 	MentorMode bool `json:"mentor_mode,omitempty"`
 	// Mentor size-table knobs (CTO defaults when unset — the owner can change
-	// them): base setup at a location 5; confluence 10; confluence+4h/1h agree
-	// + room≥2× target≥30pts 20 (hard cap); stop 20–25 pts or spent day 3;
-	// SWING4H 3; never above MentorMaxContracts (default 20).
+	// them): base setup at a location 5; confluence 5; confluence+4h/1h agree
+	// + room≥2× target≥30pts 5; stop 20–25 pts 3; spent day 2; SWING4H 1;
+	// never above MentorMaxContracts (default 20, ceiling only).
 	MentorBaseContracts       int `json:"mentor_base_contracts,omitempty"`
 	MentorConfluenceContracts int `json:"mentor_confluence_contracts,omitempty"`
 	MentorBigContracts        int `json:"mentor_big_contracts,omitempty"`

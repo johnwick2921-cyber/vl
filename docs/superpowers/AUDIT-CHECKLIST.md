@@ -8285,3 +8285,28 @@ timers carry an explicit zone suffix.
 Reference: logger/logger.go (ctLocation, CTDate, LogFileNameFor, compactFormatter),
 logger/log_prune.go (pruneOldLogs), internal/updaterworker/runner.go (predictedLog),
 internal/updaterworker/recovery.go (the grep hint), deploy/systemd-user/vl-backup.timer.
+
+## CLASS NN (assigned at merge) — a time-of-day gate read from the tick's clock, not the object's own lifetime
+
+symptom: FIX-LEVEL-WINDOW (2026-10-13, owner "fix all"): mentor level (PHL/PLH)
+orders never rested from 15:00 to midnight CT. `levelArmCancels` computed
+`windowEnd := hh*60+mm >= rthWindowEndMin` from the CURRENT tick's CT wall clock
+— TRUE every minute 15:00–23:59 — so a level arm registered at 16:10 was
+cancelled in the SAME tick it was registered (register at eval.go:1676, sweep
+at eval.go:1695). The arm already HAD the right lifetime — LevelArmExpiry
+(level_lifetime.go), read by the trader's injector and the leg budget — but the
+evaluator's cancel read a second, ambient clock instead of the arm's own expiry.
+probe: for every time-of-day comparison, ask which object's lifetime the gate
+defends and whether it reads THAT object's anchor (placed-at, opened-at) or the
+ambient tick clock. A bare `hh*60+mm >= T` with no upper bound and no
+anchor is true all evening: it acts on every evening event as if the window had
+"ended" at 15:00, when the event's own window may run to the NEXT day's 15:00.
+rule: one definition per lifetime; a gate over an object reads the object's own
+anchor (LevelArmExpiry(PlacedAt)), never the tick's wall clock — so an
+evening-placed object rests to its own expiry and a morning-placed one dies at
+the same 15:00 it always did.
+Reference: kernel/mentor/eval.go levelArmCancels, kernel/mentor/level_lifetime.go
+LevelArmExpiry, trader/mentor_tick.go mentorLevelExpiry, kernel/mentor/eval.go:1071
+Exec2mAfter30m (rthMinuteOf(now) >= 9*60 — same class, default OFF, left and
+reported: the transcript is not in the repo so the 09:00–15:00 bound was not
+chosen).
