@@ -122,7 +122,9 @@ func TestMentorDayGateLineRestartLabelsRealReadTime(t *testing.T) {
 	tape := bars(ctMs(2026, 10, 9, 10, 19))
 	e := mentor.New(cfg)
 	now := mentor.BarCloseInstant(tape[len(tape)-1])
+	prior := e.State.HTF
 	mentor.Seed(e, tape, now)
+	mentor.SeedOpenHTF(e, tape, prior, now) // the trader's seed call site does both (mentor_tick.go)
 	e.Tick(tape, now) // the 17:00→10:19 tape is under the 1500-bar live window
 	line := mentorDayGateLine(e.State.DayGateReport)
 	if strings.Contains(line, "day gate @08:30 CT") {

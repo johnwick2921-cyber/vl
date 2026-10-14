@@ -1702,11 +1702,14 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	// current-contract walk (cold store / read error already refused above).
 	stitched1m, full1HRTH, contracts, gaps, stoppedAt := at.mentorFullKeyLevelHistory(bh)
 	var missing []string
+	priorHTF := at.mentorEval.State.HTF // MENTOR-NY item 6: the state the seed replays from
 	if len(full1HRTH) > 0 {
 		missing = mentor.SeedFull(at.mentorEval, stitched1m, full1HRTH, now)
+		mentor.SeedOpenHTF(at.mentorEval, stitched1m, priorHTF, now)
 		at.logInfof("%s", mentor.KeyLevelHistoryLine(contracts, full1HRTH, gaps, stoppedAt))
 	} else {
 		missing = mentor.Seed(at.mentorEval, bars1m, now)
+		mentor.SeedOpenHTF(at.mentorEval, bars1m, priorHTF, now)
 	}
 	// The evaluator's own depth (computed from the stitched series) is the
 	// single source of truth for the per-source refusal seam.

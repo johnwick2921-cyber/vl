@@ -254,22 +254,6 @@ func seed(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int
 	// HTF lines (a historical bar at a different absolute time never matches
 	// today's window).
 	htfBars := htfFeedBars(closed1m, e.Cfg.PrintWindows)
-	// MENTOR-NY item 6: a seed AFTER today's 08:30 (a boot mid-session)
-	// re-latches the day gate on the 4h/1h of NOW. Replay the same bars cut
-	// at the 08:30 read (bars that closed by 08:30) through the same
-	// TriggerReplay1m to READ what the 08:30 decision saw, so the day-gate
-	// line can show both values. A seed before 08:30 leaves it empty.
-	if key := tradingDayKey(time.UnixMilli(now).In(ctime())); key != "" {
-		if open := (DayGateReport{Key: key}).OpenAt(); open > 0 && now >= open+60_000 {
-			cut := 0
-			for cut < len(htfBars) && htfBars[cut].OpenTime < open {
-				cut++
-			}
-			four := TriggerReplay1m(e.State.HTF.FourH, htfBars[:cut], 240, e.Cfg)
-			one := TriggerReplay1m(e.State.HTF.OneH, htfBars[:cut], 60, e.Cfg)
-			e.State.OpenHTF = OpenHTFRead{Key: key, FourHDir: four.Dir, OneHDir: one.Dir}
-		}
-	}
 	e.State.HTF.FourH = TriggerReplay1m(e.State.HTF.FourH, htfBars, 240, e.Cfg)
 	e.State.HTF.OneH = TriggerReplay1m(e.State.HTF.OneH, htfBars, 60, e.Cfg)
 
