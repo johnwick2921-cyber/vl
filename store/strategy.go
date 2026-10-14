@@ -1968,6 +1968,35 @@ type MentorTuning struct {
 	// SwingMaxStopPts: SWING4H skips at a stop >= this (R-D, default 100). The
 	// trader rule gate and the kernel swing gate read this ONE value.
 	SwingMaxStopPts float64 `json:"swing_max_stop_pts,omitempty"`
+
+	// ── Release #25 course-entry knobs (fix/mentor-course-entries). Absent =
+	// the ruled default (kernel/mentor DefaultConfig, COMMON-25 knob rule);
+	// a bad value fails closed to that default and is counted. ──
+	// CE-1: inside a 15m ISB box — "off" | "require_5m_isb" (default) |
+	// "no_trade_until_escape" [D4.2 p1 @17:09–17:13].
+	FifteenMinIBRequires5mISB string `json:"15m_ib_requires_5m_isb,omitempty"`
+	// CE-2: "first_box" (default) | "both_boxes" [D4.2 p1 @07:54–08:02; OQ-2].
+	TFConflictEnd string `json:"tf_conflict_end,omitempty"`
+	// CE-3: after a print, wait for the close beyond the 4h line (nil → OFF).
+	NewsWaitBothLines *bool `json:"news_wait_both_lines,omitempty"`
+	// CE-4: drop print→08:30 bars from the 1h/4h feed (nil → OFF).
+	NewsBarsExcluded *bool `json:"news_bars_excluded,omitempty"`
+	// CE-5: ISB rest-box escape "close" | "body" (default) [D4.1 p1 @20:52].
+	ISBBoxEscape string `json:"isb_box_escape,omitempty"`
+	// CE-6: after an EMA 34 loss — "session" | "until_zone_exit" (default).
+	EMA34LossRelock string `json:"ema34_loss_relock,omitempty"`
+	// CE-7: ORB-edge veto points (0/absent = off; 0.25–50).
+	OrbEdgeVetoPts float64 `json:"orb_edge_veto_pts,omitempty"`
+	// CE-8: D4.3 trend read "trigger_line" (default) | "structure".
+	D43TrendSource string `json:"d43_trend_source,omitempty"`
+	// CE-9: level rejects need the 5m trigger side under school 1 (nil → OFF).
+	LevelEntriesNeedTriggerSide *bool `json:"level_entries_need_trigger_side,omitempty"`
+	// CE-11/B12: a trendline is a target (nil → ON).
+	TrendlineIsTarget *bool `json:"trendline_is_target,omitempty"`
+	// CE-11/B13: trendline rejects may trade between two boxes (nil → OFF).
+	TrendlineBetweenBoxes *bool `json:"trendline_between_boxes,omitempty"`
+	// CE-12: a stopped leg also resets on its wave break (nil → ON).
+	LegResetOnWaveBreak *bool `json:"leg_reset_on_wave_break,omitempty"`
 }
 
 // RiskControlConfig risk control configuration

@@ -88,6 +88,13 @@ const (
 	// nextLevelBeyond can pick it, but it is never touched and never a
 	// PHL/PLH location.
 	KindWickMicroscalp LevelKind = "wick_microscalp"
+	// KindTrendlineTarget is a valid trendline's price as a TARGET-LADDER
+	// level (CE-11/B12, release #25, knob trendline_is_target, default ON):
+	// "Target là về những level kế tiếp… về trendline, anything… những cái mà
+	// nó ngán đường anh chị trên đường đi" [D3.3 p1 @05:18–05:35]. It is never
+	// touched and never a location (the trendline LOCATION stays KindTrendline);
+	// like a key level it is a real obstacle for the room rule.
+	KindTrendlineTarget LevelKind = "trendline_target"
 )
 
 // Level is one mentor level line. Lo/Hi are equal (a line); AtTime is the bar
@@ -374,6 +381,73 @@ type Config struct {
 	// strictly beyond the extreme; "touch": this candle's wick reaching it.
 	LegResetOn string
 
+	// ── COURSE-ENTRY KNOBS (release #25, fix/mentor-course-entries) ────────
+	// Each is its own strategy knob (risk_control.mentor_tuning.<key>); the
+	// default follows the COMMON-25 knob rule: (a) the course says it and no
+	// owner ruling / open question goes against it → ON; (b) otherwise OFF.
+
+	// FifteenMinIBRule — CE-1 (a): inside a standing 15m inside-bar box the
+	// 1m ISB needs a SAME-direction 5m ISB — "Nếu như khung 5 phút xuất hiện
+	// Insaba cho lệnh short thì em trade. Còn không em không trade" [D4.2 p1
+	// @17:09–17:13; @14:24–14:34]. "require_5m_isb" (default) | "no_trade_until_escape"
+	// (option 1, @01:06–01:14) | "off" (the pre-#25 read: the 15m box gate only).
+	FifteenMinIBRule string
+	// TFConflictEnd — CE-2 (b, OQ-2): "Đừng trade. Đợi nó thoát cả luôn"
+	// [D4.2 p1 @07:54–08:02]. "first_box" (default) = the 15m/5m conflict ends
+	// when either box escapes; "both_boxes" = it holds until the 5m AND the
+	// 15m box have both escaped.
+	TFConflictEnd string
+	// NewsWaitBothLines — CE-3 (b, OQ-6): after the print, an entry needs the
+	// close beyond the 4h trigger line on its side — "Đợi canh nó nằm trên hai
+	// cái đường line này… Hoặc… nằm ở trên cái đường line 4 giờ" [D4.4 p1
+	// @21:55–22:12] — from the print window until the 08:30 CT open (the open
+	// has its own rule, D4.4 p2 @03:51). Default OFF.
+	NewsWaitBothLines bool
+	// NewsBarsExcluded — CE-4 (b): "Còn cái khúc mà news ra rồi thì không
+	// tính" [D4.4 p1 @18:18–18:25]. ON drops every 1m bar from the print
+	// window start until the 08:30 CT open from the 1h/4h feed (the course
+	// names no end; the open is our [B] bound). Default OFF.
+	NewsBarsExcluded bool
+	// ISBBoxEscapeMode — CE-5 (a): the 5m/15m/30m ISB rest-box escape. "body"
+	// (default) = a 1m candle's OPEN AND CLOSE beyond the edge [D4.1 p1
+	// @20:52–21:02 "cái thân nến… nằm bên ngoài… Cái đó là at least"];
+	// "close" = the pre-#25 close-only test.
+	ISBBoxEscapeMode string
+	// EmaLossRelock — CE-6 (a): after one loss at the EMA 34 —
+	// "until_zone_exit" (default) = back ON once a CLOSED 1m candle lies
+	// completely outside the losing trade's entry-to-stop zone [D4.2 p2
+	// @01:33–01:39 "Đợi xíu nữa nó thoát khỏi cái vùng đó đi. Rồi tôi bật EMA
+	// 34 lên lại"]; "session" = off until the 17:00 CT roll (pre-#25).
+	EmaLossRelock string
+	// OrbEdgeVetoPts — CE-7 (b, OQ-3): an entry within this many points of the
+	// ORB edge is skipped — "điểm entry… nằm gần cái resistance quá thì thôi
+	// bỏ đi" [X5 @08:52–09:09]. No number in the source → 0 = off.
+	OrbEdgeVetoPts float64
+	// D43TrendSource — CE-8 (b, [B] reading): what "the 5m trend" means for
+	// the D4.3 no-box-return-against-the-trend gate. "trigger_line" (default)
+	// = the 5m trigger line; "structure" = 5m swing structure (HH+HL up,
+	// LH+LL down) [D4.3 @12:43–12:54].
+	D43TrendSource string
+	// LevelEntriesNeedTriggerSide — CE-9 (b, owner ruled school 1): under
+	// TriggerSchool 1, ALSO bind the 5m trigger side on every level reject
+	// (key level, EMA, trendline, old extreme); school 1 stays at the
+	// FTGL/FTGH box only [D3.4 p1 @17:48–18:00 vs p3 @09:57–10:27]. Default OFF.
+	LevelEntriesNeedTriggerSide bool
+	// TrendlineIsTarget — CE-11/B12 (a): a valid trendline in the path is a
+	// target [D3.3 p1 @05:18–05:35 "Target là về những level kế tiếp… về
+	// trendline, anything"; @07:57–08:04]. Default ON; false = the pre-#25
+	// "location only, never a target".
+	TrendlineIsTarget bool
+	// TrendlineBetweenBoxes — CE-11/B13 (b): a trendline reject between an
+	// FTGL and an FTGH may trade [D3.2 p2 @10:56–11:20] although the same
+	// lesson bans every PHL/PLH between two boxes [@08:34–08:55]. Default OFF.
+	TrendlineBetweenBoxes bool
+	// LegResetOnWaveBreak — CE-12 (a, extra where the course is silent): a
+	// leg closed by a stop-out also resets on a close beyond the losing
+	// trade's wave extreme — "đợi cho nó break được cái đỉnh, hoặc đợi cho nó
+	// break được cái đáy của con sóng đó" [X-FOMO @06:10–06:22]. Default ON.
+	LegResetOnWaveBreak bool
+
 	// RealFillOnly — FU-1 (CTO 2026-10-05): when true, the G1 leg budget and
 	// the G2 loss box are fed ONLY from real broker fills (Limits.RecordFill,
 	// delivered by the trader's fill callback), never from the simulated
@@ -439,8 +513,33 @@ func DefaultConfig() Config {
 
 		LegBudgetEnabled: true,
 		LegResetOn:       "close",
+
+		// Release #25 course-entry knobs (COMMON-25 knob rule).
+		FifteenMinIBRule:    FifteenMinRequire5mISB, // CE-1 (a)
+		TFConflictEnd:       TFConflictFirstBox,     // CE-2 (b, OQ-2)
+		ISBBoxEscapeMode:    ISBBoxEscapeBody,       // CE-5 (a)
+		EmaLossRelock:       EmaRelockUntilZoneExit, // CE-6 (a)
+		D43TrendSource:      D43TrendTriggerLine,    // CE-8 (b)
+		TrendlineIsTarget:   true,                   // CE-11/B12 (a)
+		LegResetOnWaveBreak: true,                   // CE-12 (a)
 	}
 }
+
+// Release #25 course-entry knob values (the ONE spelling the kernel, the
+// trader resolver, the boot line and the guide share).
+const (
+	FifteenMinOff          = "off"
+	FifteenMinRequire5mISB = "require_5m_isb"
+	FifteenMinUntilEscape  = "no_trade_until_escape"
+	TFConflictFirstBox     = "first_box"
+	TFConflictBothBoxes    = "both_boxes"
+	ISBBoxEscapeClose      = "close"
+	ISBBoxEscapeBody       = "body"
+	EmaRelockSession       = "session"
+	EmaRelockUntilZoneExit = "until_zone_exit"
+	D43TrendTriggerLine    = "trigger_line"
+	D43TrendStructure      = "structure"
+)
 
 // barsTF aggregates 1m bars into the given timeframe. Every TF except 240 is
 // EPOCH-aligned (UTC) — identical to a 17:00 CT anchor for every TF used here

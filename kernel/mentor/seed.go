@@ -253,7 +253,7 @@ func seed(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int
 	// needed — the seed and the live tick must agree on which bars move the
 	// HTF lines (a historical bar at a different absolute time never matches
 	// today's window).
-	htfBars := htfFeedBars(closed1m, e.Cfg.PrintWindows)
+	htfBars := htfFeedBars(closed1m, newsHTFWindows(e.Cfg.PrintWindows, e.Cfg)) // CE-4
 	e.State.HTF.FourH = TriggerReplay1m(e.State.HTF.FourH, htfBars, 240, e.Cfg)
 	e.State.HTF.OneH = TriggerReplay1m(e.State.HTF.OneH, htfBars, 60, e.Cfg)
 

@@ -131,7 +131,29 @@ func ORBVerdict(orb ORB, side Side, price float64, cfg Config) (ok bool, reason 
 	if side == SideShort && price >= orb.Low {
 		return false, "ORB gate: no trade inside the opening range [X5 @02:36]"
 	}
+	if orbEdgeTooNear(orb, side, price, cfg) {
+		return false, "ORB gate: the entry sits too near the ORB edge — \"điểm entry… nằm gần cái resistance quá thì thôi bỏ đi\" [X5 @08:52–09:09]"
+	}
 	return true, ""
+}
+
+// orbEdgeTooNear is the CE-7 veto (release #25, knob orb_edge_veto_pts,
+// default 0 = off): an escape-side entry whose price lies within the knob's
+// points of the ORB edge it broke is skipped — the edge is the resistance
+// (support) the breakout fights: "cái cạnh trên của cái ORB là cái resistance,
+// cái risk nó rất cao… cái điểm entry… mà nằm gần cái resistance quá thì thôi
+// bỏ đi" [X5 @08:20–09:09]. The source gives no number (OQ-3).
+func orbEdgeTooNear(orb ORB, side Side, price float64, cfg Config) bool {
+	if cfg.OrbEdgeVetoPts <= 0 {
+		return false
+	}
+	switch side {
+	case SideLong:
+		return price-orb.High < cfg.OrbEdgeVetoPts
+	case SideShort:
+		return orb.Low-price < cfg.OrbEdgeVetoPts
+	}
+	return false
 }
 
 // orbGateFilter applies the ORB gate to every intraday entry intent. The §8
@@ -184,6 +206,9 @@ func orbRefusalStage(orb ORB, side Side, price float64, cfg Config) string {
 	}
 	if side != orb.Escaped {
 		return "orb_wrong_side"
+	}
+	if (side == SideLong && price > orb.High || side == SideShort && price < orb.Low) && orbEdgeTooNear(orb, side, price, cfg) {
+		return "orb_edge_too_near" // CE-7
 	}
 	return "orb_inside"
 }
