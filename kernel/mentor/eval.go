@@ -203,6 +203,51 @@ type Evaluator struct {
 	// Evaluator-owned on purpose — two traders run two evaluators, each with
 	// its own memo (a package-global cache would cross the streams).
 	tfMemo map[int]tfMemoEntry
+	// notes are the "changed on this tick" lines (release #22 LINES-RESTART:
+	// a 4h/1h trigger move, a box latched or cleared, a trendline turning
+	// valid or dying, a swing-line gap fold). The trader drains them with
+	// TakeNotes after each Tick and logs each one; capped so a replay that
+	// never drains cannot grow it without bound.
+	notes []string
+}
+
+// maxNotes bounds the undrained note buffer (replays and tests never drain).
+const maxNotes = 64
+
+// note records one change line for the trader to log (READ values only).
+func (e *Evaluator) note(format string, args ...any) {
+	if len(e.notes) >= maxNotes {
+		e.notes = e.notes[1:]
+	}
+	e.notes = append(e.notes, fmt.Sprintf(format, args...))
+}
+
+// noteTriggerMove records a 4h/1h trigger-line move (direction or line price)
+// with the bar that fired it — the live record a later restart line can be
+// checked against (release #22: the moves were never logged, so two boot
+// lines 7 h apart could not be told apart from a restart flip).
+func (e *Evaluator) noteTriggerMove(name string, prev, cur TriggerLine, bars []market.Kline) {
+	if cur.Dir == "" || (cur.Dir == prev.Dir && cur.Price == prev.Price && cur.MovedAt == prev.MovedAt) {
+		return
+	}
+	from := "none"
+	if prev.Dir != "" {
+		from = fmt.Sprintf("%s @%.2f", prev.Dir, prev.Price)
+	}
+	at := "n/a"
+	if n := len(bars); n > 0 {
+		at = time.UnixMilli(bars[n-1].OpenTime).In(ctime()).Format("01-02 15:04")
+	}
+	e.note("%s trigger moved %s → %s @%.2f (bucket %s CT, broke on the %s CT bar, read intrabar) [D3.4 p1 @08:19]",
+		name, from, cur.Dir, cur.Price, time.UnixMilli(cur.MovedAt).In(ctime()).Format("01-02 15:04"), at)
+}
+
+// TakeNotes returns the change lines recorded since the last call, then
+// clears them — the trader logs each once.
+func (e *Evaluator) TakeNotes() []string {
+	n := e.notes
+	e.notes = nil
+	return n
 }
 
 func New(cfg Config) *Evaluator {
@@ -907,7 +952,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	htfBars := htfFeedBars(bars, e.Cfg.PrintWindows)
 	bars4h := e.barsTFMemo(htfBars, 240)
 	bars1h := e.barsTFMemo(htfBars, 60)
+	prevHTF := e.State.HTF
 	e.State.HTF = HTFAdvance(e.State.HTF, bars4h, bars1h, e.Cfg)
+	e.noteTriggerMove("4h", prevHTF.FourH, e.State.HTF.FourH, bars)
+	e.noteTriggerMove("1h", prevHTF.OneH, e.State.HTF.OneH, bars)
 	// D4.4-11: the HTF direction gate applies only in the news window (the
 	// course uses the HTF read for news first, not ordinary trading).
 	e.State.HTF.GateOff = !HTFGateActive(now, e.Cfg)
@@ -934,6 +982,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			OneHDir:  e.State.HTF.OneH.Dir,
 			Conflict: HTFConflict(e.State.HTF),
 			SpentPts: dg.SpentPts,
+			ReadAt:   now,
 		}
 	}
 	// Owner ruling 2026-10-09: a latched DayOff re-reads the 4h/1h directions
@@ -999,9 +1048,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// D4.1-22: the first box per role per day is latched — never redrawn on a
 	// later higher high / lower low ("không vẽ cái box khác… y nguyên đó tới
 	// cuối ngày" [D4.1 p2 @02:39–02:57]). A new trading day clears the latch.
-	if e.State.LatchedBoxesDay != e.State.Day.Key {
+	// Release #22 (P2-2): the latch belongs to the TRADING day (17:00 CT
+	// roll, the same tradingDayKey BoxesBuild filters on) — never the day-gate
+	// key, which is "" until 08:30 and so cleared the latch at the RTH open
+	// and redrew both boxes on a higher high / lower low.
+	if boxDay := tradingDayKey(time.UnixMilli(now).In(ctime())); e.State.LatchedBoxesDay != boxDay {
+		if e.State.LatchedBoxesDay != "" && len(e.State.LatchedBoxes) > 0 {
+			e.note("box latch cleared at the 17:00 CT session roll: trading day %s → %s (FTGH/FTGL redraw from the new session only) [D4.1 p2 @02:58]", e.State.LatchedBoxesDay, boxDay)
+		}
 		e.State.LatchedBoxes = nil
-		e.State.LatchedBoxesDay = e.State.Day.Key
+		e.State.LatchedBoxesDay = boxDay
 	}
 	boxes = e.latchBoxes(boxes, bars, e.Cfg.Box)
 	levels = append(levels, BoxEdgeLocations(boxes)...)

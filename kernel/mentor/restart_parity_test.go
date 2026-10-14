@@ -203,3 +203,93 @@ func containsStr(s, sub string) bool {
 	}
 	return false
 }
+
+// TestBoxLatchHoldsThroughRTHOpenUntil1700 — P2-2 (MATH-LEVELS-LINES #5): the
+// box latch was keyed on the day-gate key, which is "" from 17:00 to 08:30 and
+// the date afterwards, so the latch cleared at the 08:30 RTH open and the boxes
+// were REDRAWN (10-13: FTGH 30894.25–30901.75 → 30899.25–30905.50 on a higher
+// high). The course: "never erase, never redraw — a higher high does NOT
+// justify a new box; keep to end of day" [D4.1 p2 @02:39, @02:58]. The latch
+// clears only at the 17:00 CT session roll. Production call site: Tick on the
+// real 10-12/10-13 bars. Mutant: key the latch on e.State.Day.Key again → RED.
+func TestBoxLatchHoldsThroughRTHOpenUntil1700(t *testing.T) {
+	bars := loadLinesRestartFixture(t)["B"]
+	open := time.Date(2026, time.October, 12, 17, 0, 0, 0, ctime()).UnixMilli()
+	rth := time.Date(2026, time.October, 13, 8, 30, 0, 0, ctime()).UnixMilli()
+	roll := time.Date(2026, time.October, 13, 17, 0, 0, 0, ctime()).UnixMilli()
+	var e *Evaluator
+	var preOpen, afterOpen, beforeRoll map[string]Box
+	snap := func() map[string]Box {
+		m := map[string]Box{}
+		for k, v := range e.State.LatchedBoxes {
+			m[k] = v
+		}
+		return m
+	}
+	for i, b := range bars {
+		now := BarCloseInstant(b)
+		if now <= open {
+			continue
+		}
+		if e == nil {
+			e = lrRestartAt(bars, BarCloseInstant(bars[i-1]))
+		}
+		e.Tick(lrWindow(bars, i), now)
+		switch {
+		case now < rth:
+			preOpen = snap()
+		case afterOpen == nil:
+			afterOpen = snap()
+		}
+		if now < roll {
+			beforeRoll = snap()
+		}
+	}
+	if len(preOpen) == 0 {
+		t.Fatal("control: no box latched overnight 10-12 17:00 → 10-13 08:30 — the fixture does not exercise the latch")
+	}
+	for role, b := range preOpen {
+		if got := afterOpen[role]; got.Key != b.Key {
+			t.Errorf("%s redrawn at the 08:30 RTH open: %s → %s (the latch must hold to the 17:00 roll)", role, b.Key, got.Key)
+		}
+		if got := beforeRoll[role]; got.Key != b.Key {
+			t.Errorf("%s changed before the 17:00 roll: %s → %s", role, b.Key, got.Key)
+		}
+	}
+	if e.State.LatchedBoxesDay != "2026-10-14" {
+		t.Errorf("after the 10-13 17:00 roll the latch must belong to trading day 2026-10-14, got %q", e.State.LatchedBoxesDay)
+	}
+	for role, b := range e.State.LatchedBoxes {
+		if b.FormedAtMs < roll {
+			t.Errorf("after the 17:00 roll the %s latch still holds a box formed before the roll (%s)", role, b.Key)
+		}
+	}
+}
+
+// TestTriggerMoveIsLogged1014 — the 02:10 boot's "4h short since
+// 2026-10-14T01:00" was a REAL live move (the 10-14 01:00 bucket broke the
+// 21:00–01:00 low on its first minute), but no line ever recorded it, so it
+// read like a restart flip. Every 4h/1h move is now a change line the trader
+// logs (TakeNotes), with the bucket and the bar that fired it.
+func TestTriggerMoveIsLogged1014(t *testing.T) {
+	bars := loadLinesRestartFixture(t)["B"]
+	boot := time.Date(2026, time.October, 13, 18, 57, 9, 0, ctime()).UnixMilli()
+	end := time.Date(2026, time.October, 14, 1, 5, 0, 0, ctime()).UnixMilli()
+	e := lrRestartAt(bars, boot)
+	var notes []string
+	for i, b := range bars {
+		now := BarCloseInstant(b)
+		if now <= boot || now > end {
+			continue
+		}
+		e.Tick(lrWindow(bars, i), now)
+		notes = append(notes, e.TakeNotes()...)
+	}
+	const want = "4h trigger moved long @30774.25 → short @30745.50 (bucket 10-14 01:00 CT, broke on the 10-14 01:00 CT bar"
+	for _, n := range notes {
+		if containsStr(n, want) {
+			return
+		}
+	}
+	t.Fatalf("no change line for the 10-14 01:00 4h move; notes=%q", notes)
+}
