@@ -71,17 +71,40 @@ func rtCaptureLog(t *testing.T, tag string) *rtLogHook {
 	return h
 }
 
+// rtKernelGuardrailTrip latches the kernel exactly the way the AI decision
+// cycle's Strategy Studio guardrail does (kernel/engine_analysis.go): the
+// posture from kernel.ResolveStrategyGuardrails, the loss leg fed from the
+// trader's one P&L reader (what attachTradeContext puts in
+// ctx.DailyLossPnL), kernel.DailyGuardrails.Check, and on RiskForceFlat the
+// kernel latch — on a FIXED clock. Driving kernel.GetFullDecisionWithStrategy
+// instead made the fixture depend on the wall clock: it short-circuits on
+// ShouldSkipDecisionCycle in the CME daily break and the weekend, so the test
+// failed whenever CME was closed (DS-106, fold on #533).
+func rtKernelGuardrailTrip(t *testing.T, at *AutoTrader, cfg store.StrategyConfig, now time.Time) {
+	t.Helper()
+	gp := kernel.ResolveStrategyGuardrails(cfg.RiskControl, kernel.LoadRiskLimitsFromConfig().MaxDailyLossUSD)
+	bot, err := at.botDayPnLAt(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := kernel.DailyGuardrails{MasterEnabled: gp.MasterEnabled,
+		DailyLossEnabled: gp.DailyLossEnabled, DailyLossLimitUSD: gp.DailyLossLimitUSD,
+		DailyLossPnL: bot.Total(), DailyLossPnLKnown: true}
+	d, gErr := g.Check()
+	if gErr == nil || d != kernel.RiskForceFlat {
+		t.Fatalf("fixture: the kernel guardrail must decide RiskForceFlat on the bot's %.2f, got %v %v", bot.Total(), d, gErr)
+	}
+	kernel.SetDailyForceFlatAt(at.id, gErr.Error(), now)
+}
+
 // RT-1 — THE KERNEL LATCHES FIRST, THE TRIP IS STILL ANNOUNCED ONCE.
 //
-// The decision path, from its production call sites: attachTradeContext fills
-// the loss leg from the one P&L reader, kernel.GetFullDecisionWithStrategy runs
-// the Strategy Studio guardrail (engine_analysis.go) and publishes
-// SetDailyForceFlat BEFORE any 60 s beat has evaluated the gate. Then the beat
-// runs twice. Exactly one "🔴 DAILY LOSS LIMIT HIT" line and one
-// daily_loss_tripped count; the second beat adds nothing.
-//
-// The kernel path reads the WALL clock (MaybeResetDaily / SetDailyForceFlat),
-// so the whole test runs on time.Now().
+// The AI decision cycle's guardrail latches the kernel (rtKernelGuardrailTrip,
+// the same Check + latch engine_analysis.go runs) BEFORE any 60 s beat has
+// evaluated the gate. Then the beat runs twice. Exactly one
+// "🔴 DAILY LOSS LIMIT HIT" line and one daily_loss_tripped count; the second
+// beat and an entry attempt add nothing. Fixed clock (dailyLossNow, 10:30 CT
+// on a weekday), so it holds at any hour CI runs it.
 //
 // MUTANT: drop the announce from the latch branch of dailyGuardVerdictAt →
 // zero lines, zero counts → RED.
@@ -96,25 +119,18 @@ func TestDailyLossKernelFirstTripIsAnnouncedAndCountedOnce(t *testing.T) {
 	t.Cleanup(func() { kernel.ClearDailyForceFlat(at.id) })
 	hook := rtCaptureLog(t, "")
 
-	now := time.Now()
-	dlSeedClosed(t, st, at.id, now.Add(-2*time.Second), -150, "")
+	now := dailyLossNow()
+	dlSeedClosed(t, st, at.id, now.Add(-2*time.Minute), -150, "")
 
-	ctx := &kernel.Context{TraderID: at.id}
-	at.attachTradeContext(ctx)
-	if !ctx.DailyLossPnLKnown || ctx.DailyLossPnL != -150 {
-		t.Fatalf("fixture: the decision path must judge the bot's -150, got known=%v pnl=%.2f", ctx.DailyLossPnLKnown, ctx.DailyLossPnL)
-	}
-	if _, err := kernel.GetFullDecisionWithStrategy(ctx, nil, kernel.NewStrategyEngine(&cfg), ""); err != nil {
-		t.Fatalf("the guardrail HOLD returns no error, got %v", err)
-	}
-	if kernel.DailyForceFlatReason(at.id) == "" {
+	rtKernelGuardrailTrip(t, at, cfg, now)
+	if kernel.DailyForceFlatReasonAt(at.id, now) == "" {
 		t.Fatal("fixture: the AI decision cycle's guardrail must latch the kernel first")
 	}
 	if n := hook.count("DAILY LOSS LIMIT HIT"); n != 0 {
 		t.Fatalf("fixture: nothing announced before the beat, got %d lines", n)
 	}
 
-	at.dailyLossBeatAt(time.Now())
+	at.dailyLossBeatAt(now.Add(2 * time.Second))
 
 	if n := hook.count("🔴 DAILY LOSS LIMIT HIT"); n != 1 {
 		t.Fatalf("a kernel-first trip must be announced exactly once by the beat — got %d '🔴 DAILY LOSS LIMIT HIT' line(s):\n%s", n, hook.all())
@@ -124,8 +140,8 @@ func TestDailyLossKernelFirstTripIsAnnouncedAndCountedOnce(t *testing.T) {
 	}
 
 	// A second beat, and an entry attempt, add nothing.
-	at.dailyLossBeatAt(time.Now().Add(time.Second))
-	if v := at.dailyGuardVerdictAt(time.Now().Add(2 * time.Second)); !v.Refuse || !v.Latched {
+	at.dailyLossBeatAt(now.Add(time.Minute))
+	if v := at.dailyGuardVerdictAt(now.Add(2 * time.Minute)); !v.Refuse || !v.Latched {
 		t.Fatalf("the latch must still refuse, got %+v", v)
 	}
 	if n := hook.count("🔴 DAILY LOSS LIMIT HIT"); n != 1 {
@@ -135,8 +151,8 @@ func TestDailyLossKernelFirstTripIsAnnouncedAndCountedOnce(t *testing.T) {
 		t.Fatalf("a second beat is not a new trip — daily_loss_tripped must stay 1, got %d", n)
 	}
 	// The persisted copy is written, so a restart cannot lift it.
-	if raw, _ := st.GetSystemConfig(dailyLossLatchKey(at.id)); !strings.HasPrefix(raw, kernel.CMESessionDayKey(time.Now())+"|") {
-		t.Fatalf("the kernel-first latch must be persisted for today's session-day, got %q", raw)
+	if raw, _ := st.GetSystemConfig(dailyLossLatchKey(at.id)); !strings.HasPrefix(raw, kernel.CMESessionDayKey(now)+"|") {
+		t.Fatalf("the kernel-first latch must be persisted for the session-day, got %q", raw)
 	}
 }
 
@@ -151,16 +167,12 @@ func TestDailyLossBeatFirstThenKernelAnnouncesOnce(t *testing.T) {
 	kernel.ClearDailyForceFlat(at.id)
 	t.Cleanup(func() { kernel.ClearDailyForceFlat(at.id) })
 	hook := rtCaptureLog(t, "")
-	now := time.Now()
-	dlSeedClosed(t, st, at.id, now.Add(-2*time.Second), -150, "")
+	now := dailyLossNow()
+	dlSeedClosed(t, st, at.id, now.Add(-2*time.Minute), -150, "")
 
 	at.dailyLossBeatAt(now)
-	ctx := &kernel.Context{TraderID: at.id}
-	at.attachTradeContext(ctx)
-	if _, err := kernel.GetFullDecisionWithStrategy(ctx, nil, kernel.NewStrategyEngine(&cfg), ""); err != nil {
-		t.Fatal(err)
-	}
-	at.dailyLossBeatAt(time.Now().Add(time.Second))
+	rtKernelGuardrailTrip(t, at, cfg, now.Add(time.Second))
+	at.dailyLossBeatAt(now.Add(time.Minute))
 	if n := hook.count("🔴 DAILY LOSS LIMIT HIT"); n != 1 {
 		t.Fatalf("want exactly one announcement, got %d:\n%s", n, hook.all())
 	}
