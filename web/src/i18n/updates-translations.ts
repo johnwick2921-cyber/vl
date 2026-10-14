@@ -137,6 +137,22 @@ export const updatesStrings = {
   jobState: { en: 'State', zh: '状态', id: 'Status' },
   jobStep: { en: 'Step', zh: '步骤', id: 'Langkah' },
   jobBlocker: { en: 'Blocker', zh: '阻塞原因', id: 'Pemblokir' },
+  jobError: { en: 'Reason', zh: '原因', id: 'Alasan' },
+  installPending: {
+    en: 'Install pending',
+    zh: '待安装',
+    id: 'Instalasi tertunda',
+  },
+  installPendingFrozen: {
+    en: 'new entries frozen (exits and protection continue)',
+    zh: '新开仓已冻结（平仓与保护继续）',
+    id: 'entri baru dibekukan (keluar dan proteksi tetap jalan)',
+  },
+  installPendingClearsBy: {
+    en: 'clears when the job ends, at the latest',
+    zh: '任务结束时解除，最迟',
+    id: 'lepas saat pekerjaan selesai, paling lambat',
+  },
   receipt: { en: 'Receipt', zh: '回执', id: 'Tanda terima' },
   downloadReceipt: {
     en: 'Download receipt',

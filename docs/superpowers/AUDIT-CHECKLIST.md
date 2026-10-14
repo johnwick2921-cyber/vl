@@ -8711,3 +8711,126 @@ it was left byte-identical and State.ChartLevels was added). The test drives a
 real Tick and asserts the appended kinds reach the payload.
 Reference: kernel/mentor/chart_levels_test.go,
 trader/mentor_truth_chart_test.go; UI-GUIDE-TRUTH T7.
+
+## CLASS NN (assigned at merge) — staleness judged on the wall clock fails OPEN on a backward step
+
+symptom: a dead feed reads as fresh while the host clock is stepped back. On
+2026-10-14 the WSL wall clock stepped −125.0 s at 00:23:00 (then +124.4 s 4.9 s
+later) and took 124 smaller backward steps in one night. B4 / the mentor
+stale-data block compared NT8's bar stamp with THIS process's wall clock, so a
+backward step of S seconds made every bar S seconds younger. Verified at base
+9accae11f: the same 200 s-dead feed was REFUSED on the true clock and PLACED
+after a −125 s step (mentorPlaceIntent, injected clock).
+probe: for every freshness / age / timeout gate, ask which clock BOTH ends of
+the subtraction come from. Wall − foreign-stamp is a two-clock comparison that
+moves with every step; time.Since(t) on a time.Now() value is monotonic. Then
+ask what the gate does in each step direction: a gate that fails closed on a
+forward step usually fails OPEN on a backward one.
+rule: an entry gate must have at least one leg that never reads the wall clock
+(here: the monotonic age of the last live 1m frame RECEIVED, BarCache
+LastLiveReceipt), and a wall-vs-monotonic step detector that holds NEW entries
+for a monotonic window after any material step (fail closed, never open).
+Exits and protection never read the hold.
+Reference: kernel/feed_clock.go (FeedStaleAt, EntryFeedStale, clock-step
+guard), provider/ninjatrader/bar_cache.go LastLiveReceipt,
+trader/stale_gate_clock_step_test.go, OPS-SECURITY review 10-14 §8.4.
+
+## CLASS NN (assigned at merge) — a guard that reads the wrong daemon, and samples too rarely to see a step
+
+symptom: the clock guard reported OK all night (status=OK rtc_vs_wsl_s=0
+ntp_offset=n/a) through 50 journald "Time jumped backwards" lines and a 125 s
+step. It read systemd-timesyncd, which is INACTIVE on this box (chronyd and
+Hyper-V TimeSync both discipline the clock), and point-sampled every 15 min.
+The bot's own clock-health line printed timesync{NTP=yes …}, which says
+nothing about steps.
+probe: `systemctl is-active` every daemon a guard names; then ask whether the
+guard's sampling period is shorter than the excursion it must see (a step and
+its correction 4.9 s apart are invisible to minute-scale samples — the net is
+0.6 s).
+rule: the process that depends on the clock measures it itself (wall vs
+monotonic, ~1 s cadence), counts steps by direction, and serves the counters
+on its health surface.
+Reference: kernel/feed_clock.go ClockStepSnapshot, api/handler_health.go
+"clock", kernel/clock_health.go, OPS-SECURITY review 10-14 §8.3.
+
+## CLASS NN (assigned at merge) — an edge-sampled boolean misses a down-and-up between samples
+
+symptom: on 2026-10-14 the NT8 link was force-closed twice (00:21:35,
+00:22:43). The dead-man watchdog compared ONE boolean (IsConnected) once per
+decision cycle; trader 12345, holding position #650, saw connected=true at both
+samples and logged nothing — no entry block, no post-reconnect protection
+re-ask (vl_2026-10-13.log: DOWN/UP/RESUMED only for trader hoang, 53405 /
+53767 / 53791).
+probe: for every "did X happen" check driven by a sampled boolean, ask what
+happens when X and its reversal both land between two samples, and whether the
+sampler can block (runCycle sat 402.5 s in a planner call).
+rule: compare an EPOCH (a counter that only grows per event — here the TCP
+accept sequence) between samples, not a state; and drive safety samplers from
+a beat that cannot block on unrelated work (the per-trader 60 s monitorTick).
+Reference: trader/dead_man_watchdog.go stepEpoch, trader/auto_trader.go
+driveDeadManWatchdog / ninjaLinkEpoch, trader/auto_trader_risk.go monitorTick,
+trader/dead_man_epoch_test.go, EXECUTION review 10-14 F-3.
+
+## CLASS NN (assigned at merge) — a pre-condition wait that the waited-on actor keeps breaking
+
+symptom: the updater's preflight waits (10 min) for the bot to be flat before
+it holds, but nothing told the bot a job was waiting: job 30a8bbf6 sat in
+preflight_ok/started 01:39:53→01:49:53 CT and trader 12345 placed armed S1 at
+01:44:00 (vl_2026-10-13.log 64591); the install was refused on that order.
+Second half: the planner grace applied only to the REPORTED (first failing)
+leg, and planner_in_flight was listed after the census/ledger legs, so a plan
+read running beside an order never got its grace.
+probe: for every "wait until the other side is quiet" loop, ask whether the
+other side knows it is being waited on; and for every "first failing leg"
+report that picks a budget, ask whether the leg order decides the budget.
+rule: the waited-on side freezes the thing being waited on (NEW entries) as
+soon as the wait starts, logged + counted + auto-clearing on the job's end or
+timeout; a benign blocker with its own budget is checked FIRST.
+Reference: trader/install_pending.go, trader/entry_admission.go
+(install_pending), internal/updaterworker/steps.go preflightFlatLegs,
+OPS-SECURITY review 10-14 P1-1.
+
+## CLASS NN (assigned at merge) — a UI field rendered only when ANOTHER field is absent
+
+symptom: the Updates page rendered job.error only when job.state was empty
+(`job?.state || (job?.error ? … : n/a)`); a refused job always has a state, so
+the owner saw "refused" and never why — the reason lived only in the job file.
+probe: grep every `a || (b ? … : …)` / `a ?? b` in a status panel and ask
+whether a and b are ALTERNATIVES or two independent facts.
+rule: independent server fields get independent rows; never an
+either-or chain.
+Reference: web/src/pages/UpdatesPage.tsx (job-error row),
+UpdatesPage.test.tsx, OPS-SECURITY review 10-14 P1-1(c).
+
+## CLASS NN (assigned at merge) — a test that dials the production process
+
+symptom: TestAgentDirectReply built the Telegram agent on port 8080, so every
+`go test ./...` sent four real GETs to the LIVE bot (236 "invalid number of
+segments" 401 lines in vl_2026-10-13.log, bursts of 4). The agent turns HTTP
+errors into reply strings, so the test passed regardless.
+probe: grep *_test.go for the production port and for constructors that take
+a port; ask whether the code under test swallows transport errors (then a
+dial to the wrong place can never fail the test by itself).
+rule: tests talk to httptest servers; packages that build loopback clients
+mount internal/testnet.Guard in TestMain (refuses + records the dial and fails
+the run even when the error is swallowed); the repo census
+TestNoTestNamesTheLiveBotPort keeps new ones out.
+Reference: internal/testnet, telegram/agent/main_test.go,
+OPS-SECURITY review 10-14 P3-1.
+
+## CLASS NN (assigned at merge) — a restore that leaves the WAL beside the restored file
+
+symptom: deploy/RESTORE.md swapped data.db with mv/cp after a kill -9 and never
+touched data.db-wal / -shm. SQLite pairs files by NAME, so the old DB's hot WAL
+replays into the restored file: reproduced on scratch files, the "restored" DB
+read the OLD rows and integrity_check still said ok. kill -9 also triggered
+Restart=on-failure (relaunch in 5 s, mid-copy), and the step-1 glob
+`{vl,<old>}` failed as a redirect.
+probe: for every procedure that replaces a SQLite file, ask where its -wal/-shm
+go, who can open the name in between, and whether the stop is a "failure" to
+the supervisor.
+rule: stop through the supervisor (no relaunch), keep the current DB with
+.backup, move db + -wal + -shm aside TOGETHER, write the restored file with
+.backup, verify, start.
+Reference: deploy/RESTORE.md "Restore the database", OPS-SECURITY review 10-14
+P1-3.

@@ -36,34 +36,89 @@ journalctl --user -u vl-backup.service -n 50     # last run's log
 systemctl --user disable --now vl-backup.timer   # stop auto-backups
 ```
 
-## Restore (TESTED read-back — 2026-08-13)
+## Restore the database (rewritten release #22 — the old steps were unsafe)
 
-A backup is a complete, standalone SQLite database. To restore:
+**Why the old steps were wrong** (OPS review 10-14 P1-3; each reproduced on
+scratch files before this rewrite):
+
+- **The step-1 command failed.** `ls …/{vl,<old>}-*.db.gz`: bash reads `<old>`
+  as a redirect, prints `old: No such file or directory`, and `BK` comes back
+  EMPTY — the next step then decompresses nothing.
+- **`kill -9` raced the copy.** `vl.service` has `Restart=on-failure`,
+  `RestartSec=5`. A SIGKILL is a failure, so systemd relaunched the bot 5 s
+  later — in the middle of a 2.5 GB `mv`/`cp`.
+- **The WAL was left behind.** The live DB runs in WAL mode
+  (`store/gorm.go`). After a SIGKILL its `data.db-wal` is HOT (60 MB on
+  10-14). SQLite pairs files by NAME, so the old DB's frames are replayed into
+  the restored file. On a scratch copy the "restored" DB read **the old rows,
+  not the backup's**, and `PRAGMA integrity_check` still said `ok` — the doc's
+  own check could not see it.
+
+The procedure below stops the bot through systemd (no relaunch), moves
+`data.db`, `data.db-wal` and `data.db-shm` aside **together**, and writes the
+restored file with SQLite's own `.backup` (never `cp` onto a name a WAL could
+pair with). Every command was run against scratch files on 2026-10-14
+(`sqlite3` 3.x is installed at `/usr/bin/sqlite3`); the `systemctl` steps need
+the owner's sudo.
+
+**Before you start:** no update job running (Settings → Updates shows no job,
+and `~/vl/deploy/vl-lock.sh status` shows the lock free), ideally a flat window
+(the CME halt 16:00–17:00 CT). Protective orders stay at NinjaTrader while the
+bot is down; the bot sees nothing until it is back.
 
 ```bash
-# 1. Pick a backup (newest daily shown here).
-BK=$(ls -1 ~/vl-backups/auto/daily/{vl,<old>}-*.db.gz | sort -r | head -1)
+VL=~/vl                      # the live install
+DB=$VL/data/data.db
+WORK=~/vl-backups/restore-$(date +%Y%m%d-%H%M%S)
+mkdir -p "$WORK"
 
-# 2. Decompress to a scratch file and verify it BEFORE touching the live DB.
-gunzip -c "$BK" > /tmp/restore.db
-python3 -c "import sqlite3;print(sqlite3.connect('/tmp/restore.db').execute('PRAGMA quick_check').fetchone()[0])"
-#   → must print: ok
+# 1. Pick a backup. The glob matches vl-<date> files only (never vl-research-*).
+BK=$(ls -1 ~/vl-backups/auto/daily/vl-[0-9]*.db.gz | sort -r | head -1)
+[ -n "$BK" ] || { echo "no backup found — stop"; exit 1; }
+echo "restoring from $BK"
 
-# 3. Stop the bot so nothing is writing the live DB.
-kill -9 "$(pgrep -f vl-bin)"     # systemd Restart=on-failure relaunches it after step 5
+# 2. Decompress to the work dir and verify it FULLY before touching the live DB.
+gunzip -c "$BK" > "$WORK/restore.db"
+sqlite3 "$WORK/restore.db" "PRAGMA integrity_check;"     # → must print exactly: ok
 
-# 4. Swap the file in (keep the current one aside first).
-mv ~/vl/data/data.db ~/vl/data/data.db.pre-restore   # before the R2 boot: ~/<old>/data/…
-cp /tmp/restore.db ~/vl/data/data.db
+# 3. Stop the bot through systemd. A stop is not a failure, so Restart=on-failure
+#    does NOT relaunch it. Never kill -9 here: that IS a failure and relaunches in 5 s.
+sudo systemctl stop vl
+systemctl is-active vl                                  # → inactive
+pgrep -x vl-bin && { echo "vl-bin still running — stop"; exit 1; } || echo "bot stopped"
 
-# 5. Let systemd relaunch the bot (or start it), then confirm it came up.
-journalctl -u vl -n 20 --no-pager   # before the R2 boot: <old>
+# 4. Keep the CURRENT database, WAL included. .backup reads data.db + its -wal
+#    as one consistent database, so nothing the bot wrote last is lost.
+sqlite3 "$DB" ".backup '$WORK/pre-restore.db'"
+sqlite3 "$WORK/pre-restore.db" "PRAGMA integrity_check;" # → ok
+
+# 5. Move the live DB and its WAL/SHM aside TOGETHER, so no stale -wal can pair
+#    with the restored file.
+for f in "$DB" "$DB-wal" "$DB-shm"; do [ -e "$f" ] && mv "$f" "$WORK/"; done
+ls "$DB" "$DB-wal" "$DB-shm" 2>/dev/null && { echo "files still in place — stop"; exit 1; } || echo "live files moved aside"
+
+# 6. Write the restored database with SQLite's backup API, then check it.
+sqlite3 "$WORK/restore.db" ".backup '$DB'"
+sqlite3 "$DB" "PRAGMA integrity_check;"                  # → ok
+ls -l "$DB"*                                            # → data.db only (no -wal / -shm yet)
+
+# 7. Start the bot and confirm it booted on the restored DB.
+sudo systemctl start vl
+journalctl -u vl --since '2 min ago' --no-pager | grep -E 'Database initialized|BOOT INTEGRITY'
+#   → "✅ Database initialized (GORM, SQLite)" and "BOOT INTEGRITY OK — rev <X> …"
+curl -s http://127.0.0.1:8080/api/health                 # → "db":"ok"
 ```
 
-**Verification performed 2026-08-13** on `vl-2026-08-13_175507.db.gz`: decompressed,
-`PRAGMA quick_check = ok`, 19 tables with a schema set **identical** to the live DB,
-and core tables read back cleanly (`decision_records` 28042, `trader_positions` 516,
-`strategies` 9, `exchanges` 1). The backup is fully restorable.
+**To undo the restore:** stop the bot again (step 3), move `data.db` (and any
+`-wal`/`-shm`) aside, and `.backup` `$WORK/pre-restore.db` into place the same
+way (step 6).
+
+**Verification performed 2026-08-13** on `vl-2026-08-13_175507.db.gz` (the
+backup itself, unchanged): decompressed, `PRAGMA quick_check = ok`, 19 tables
+with a schema set **identical** to the live DB, and core tables read back
+cleanly (`decision_records` 28042, `trader_positions` 516, `strategies` 9,
+`exchanges` 1). The backup is fully restorable; it was the swap steps that were
+unsafe, and they are the part rewritten above.
 
 ## Roll back the BINARY (and why you must re-arm `deploy/RELEASE`)
 
@@ -83,8 +138,9 @@ takes no trades.
 cd ~/vl && git log --oneline -5   # before the R2 boot: ~/<old>
 TARGET=<sha>
 
-# 2. Build that revision. (Checkout only if you intend to move the working tree;
-#    otherwise build from a worktree so main stays where it is.)
+# 2. Build that revision. (Checkout only if you intend to move the working tree.
+#    A build made in a linked git WORKTREE carries no vcs stamps and is refused —
+#    see "If a cutover refuses the binary you just built" below: use a clean clone.)
 git stash list && git status --porcelain      # know what you would disturb
 git checkout "$TARGET" -- . 2>/dev/null || git checkout "$TARGET"
 go build -o vl-bin . && echo BUILD OK
@@ -145,8 +201,11 @@ dropped from the parked copy so a later re-migration can recreate them), prints 
 The CTO's unattended cutover calls it on a binary rollback. By hand:
 
 ```bash
-# 0. Stop the bot (nothing may write during the swap).
-kill -9 "$(pgrep -f vl-bin)"     # systemd relaunches it — do this only with the old binary installed AND step 2 done
+# 0. Stop the bot (nothing may write during the swap). NOT kill -9: that is a
+#    failure, and Restart=on-failure relaunches the bot 5 s later, mid-swap.
+sudo systemctl stop vl && systemctl is-active vl         # → inactive
+#    … steps 1-4, then install the old binary, re-arm deploy/RELEASE, and
+#    sudo systemctl start vl
 # 1. Which tables exist?
 sqlite3 ~/vl/data/data.db "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'bars%';"
 # 2. Swap: the migrated table aside, the pre-migration table back under its name.
@@ -172,11 +231,11 @@ table exists (it never overwrites a backup table): rename or drop
 
 ```bash
 BK=$(ls -1 ~/vl-backups/pre-bars-key-*.db | sort -r | head -1)
-python3 -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute('PRAGMA quick_check').fetchone()[0])" "$BK"   # → ok
-kill -9 "$(pgrep -f vl-bin)"
-mv ~/vl/data/data.db ~/vl/data/data.db.pre-restore   # before the R2 boot: ~/<old>/data/…
-cp "$BK" ~/vl/data/data.db
-# then the binary rollback + RELEASE re-arm above
+sqlite3 "$BK" "PRAGMA integrity_check;"   # → ok
+# Then follow "Restore the database" above from step 3, with restore.db = "$BK"
+# (stop through systemd, keep the current DB with .backup, move data.db AND its
+# -wal/-shm aside together, .backup "$BK" into place) — never kill -9 + cp.
+# Then the binary rollback + RELEASE re-arm above, and start the bot.
 ```
 
 Prefer A: it is bars-only. B rewinds decision_records, plans, positions — every table.
@@ -195,7 +254,7 @@ SELECT COUNT(*) FROM bars b WHERE b.contract='MNQ 12-26' AND b.symbol='MNQ' AND 
 
 ## Notes
 
-- Backups are **gzip'd** (~402 MB DB → ~34 MB). Always `gunzip` before opening.
+- Backups are **gzip'd** (10-13: a 2.5 GB DB → 525 MB). Always `gunzip` before opening.
 - The `.backup` API copies a transactionally-consistent snapshot, so a backup taken
   mid-trade is still valid — no torn writes.
 - These automated backups are **separate** from the ad-hoc `~/vl-backups/<name>/`

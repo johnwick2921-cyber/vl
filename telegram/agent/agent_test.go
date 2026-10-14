@@ -111,9 +111,23 @@ func mockAPIServer(handlers map[string]string) (*httptest.Server, int) {
 // ── Basic agent behaviour ──────────────────────────────────────────────────
 
 // TestAgentDirectReply: LLM replies with text (no tool calls) — one LLM call.
+//
+// Release #22 OPS-SAFETY: this test was built on the LIVE bot API port (8080).
+// The first turn's buildAccountContext sent four real GETs (/api/models,
+// /api/exchanges, /api/strategies, /api/my-traders) to production on every
+// `go test`, each a 401 "invalid number of segments" in the bot log. It now
+// talks to its own httptest server like every other test here, and the
+// package's TestMain mounts testnet.Guard so a regression fails the run.
 func TestAgentDirectReply(t *testing.T) {
+	srv, port := mockAPIServer(map[string]string{
+		"/api/models":     `[]`,
+		"/api/exchanges":  `[]`,
+		"/api/strategies": `[]`,
+		"/api/my-traders": `[]`,
+	})
+	defer srv.Close()
 	llm := &mockLLM{responses: []*mcp.LLMResponse{textReply("Hello! How can I help you?")}}
-	a := New(8080, "tok", "test-user", mockGetLLM(llm), testPrompt)
+	a := New(port, "tok", "test-user", mockGetLLM(llm), testPrompt)
 
 	reply := a.Run("hello", nil)
 

@@ -387,24 +387,21 @@ describe('UpdatesPage', () => {
   it.each([
     ['downloading', 'Downloading…'],
     ['verifying', 'Verifying…'],
-  ])(
-    'renders the server install_state %s',
-    async (installState, label) => {
-      mocks.updatesStatus.mockResolvedValue({
-        status: {
-          enrolled: true,
-          manifest_verifier: 'configured',
-          install_enabled: true,
-          worker_listening: true,
-          install_state: installState,
-        },
-      })
-      render(<UpdatesPage />)
-      await waitFor(() =>
-        expect(screen.getByTestId('install-state')).toHaveTextContent(label)
-      )
-    }
-  )
+  ])('renders the server install_state %s', async (installState, label) => {
+    mocks.updatesStatus.mockResolvedValue({
+      status: {
+        enrolled: true,
+        manifest_verifier: 'configured',
+        install_enabled: true,
+        worker_listening: true,
+        install_state: installState,
+      },
+    })
+    render(<UpdatesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('install-state')).toHaveTextContent(label)
+    )
+  })
 
   // P-F: the live blocker from the job is shown verbatim (server-formatted).
   it('renders the live job blocker (waiting for the AI plan)', async () => {
@@ -419,6 +416,49 @@ describe('UpdatesPage', () => {
     await waitFor(() =>
       expect(screen.getByTestId('job-blocker')).toHaveTextContent(
         'waiting for the AI plan (started 12:34:56)'
+      )
+    )
+  })
+
+  // release #22: a refused job HAS a state, so the old render (error only
+  // when state was empty) hid the reason. The reason is shown verbatim.
+  it('shows the refused job’s error next to its state', async () => {
+    mocks.job.mockResolvedValue({
+      job_id: 'job-30a8',
+      state: 'refused',
+      error:
+        'not passed within 10m0s: ledger_exposure: placed/unresolved: armed#363 cancel_pending',
+    })
+    mocks.maintenance.mockResolvedValue({ job_id: 'job-30a8' })
+    render(<UpdatesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('job-error')).toHaveTextContent(
+        'not passed within 10m0s: ledger_exposure: placed/unresolved: armed#363 cancel_pending'
+      )
+    )
+    expect(screen.getByText('refused')).toBeTruthy()
+  })
+
+  // release #22: the install-pending freeze is visible on the page.
+  it('shows the install-pending entry freeze from /api/maintenance', async () => {
+    mocks.maintenance.mockResolvedValue({
+      held: false,
+      state: 'clear',
+      in_flight_sends: 0,
+      drained: true,
+      addon_ack: null,
+      install_pending: {
+        pending: true,
+        job_id: 'job-30a8',
+        state: 'preflight_ok',
+        phase: 'started',
+        clears_by: '02:09 CT',
+      },
+    })
+    render(<UpdatesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('install-pending')).toHaveTextContent(
+        'new entries frozen (exits and protection continue) · job=job-30a8 · preflight_ok/started'
       )
     )
   })
@@ -942,7 +982,9 @@ describe('UpdatesPage', () => {
     await waitFor(() => expect(screen.getByText('Update now')).toBeTruthy())
     fireEvent.click(screen.getByTestId('check-button'))
     await waitFor(() =>
-      expect(screen.getByTestId('check-button')).toHaveTextContent('Check again')
+      expect(screen.getByTestId('check-button')).toHaveTextContent(
+        'Check again'
+      )
     )
     expect(screen.queryByText('Up to date')).toBeNull()
   })

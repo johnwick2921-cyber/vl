@@ -267,20 +267,29 @@ func mentorStaleDataBlockEnabled(rc *store.RiskControlConfig) bool {
 // here — that is a separate decision. Fail-open when the provider is absent
 // (crypto / test) or the cache is empty (the seed + FEED DOWN alert own cold).
 func (at *AutoTrader) mentorStaleDataBlocked(now time.Time) bool {
+	stale, _ := at.mentorStaleDataBlockedWhy(now)
+	return stale
+}
+
+// mentorStaleDataBlockedWhy is mentorStaleDataBlocked plus the leg that fired
+// (release #22 OPS-SAFETY): kernel.EntryFeedStale = a clock-step hold, OR the
+// B4 wall rule, OR the monotonic receipt age of the 1m feed. The wall rule
+// alone failed OPEN on a backward wall-clock step.
+func (at *AutoTrader) mentorStaleDataBlockedWhy(now time.Time) (bool, string) {
 	if at == nil {
-		return false
+		return false, ""
 	}
 	if rc := at.mentorRiskControl(); !mentorStaleDataBlockEnabled(rc) {
-		return false
+		return false, ""
 	}
 	if market.FuturesBarsProvider == nil {
-		return false
+		return false, ""
 	}
 	newestOpen := int64(0)
 	if bars := market.FuturesBarsProvider(at.futuresSymbol(), "1m", 1); len(bars) > 0 {
 		newestOpen = bars[len(bars)-1].OpenTime
 	}
-	stale := kernel.StaleEntryGateFeed(newestOpen, now)
+	stale, why := kernel.EntryFeedStale(at.futuresSymbol(), newestOpen, now)
 	at.mentorStaleMu.Lock()
 	changed := stale != at.mentorStaleEpisode
 	if changed {
@@ -288,11 +297,10 @@ func (at *AutoTrader) mentorStaleDataBlocked(now time.Time) bool {
 	}
 	at.mentorStaleMu.Unlock()
 	if changed && stale {
-		age := now.UnixMilli() - (newestOpen + 60_000)
 		at.mentorCount("stale_data")
-		at.logWarnf("🧑‍🏫 mentor stale-data block: 1m feed stale (newest bar age %ds, B4 threshold ~75s) — refusing NEW mentor arms; exits and protection are unaffected; resting orders are NOT cancelled.", age/1000)
+		at.logWarnf("🧑‍🏫 mentor stale-data block: %s — refusing NEW mentor arms; exits and protection are unaffected; resting orders are NOT cancelled.", why)
 	}
-	return stale
+	return stale, why
 }
 
 // mentorStaleDataBlockBootLine renders the boot line for the mentor stale-data
