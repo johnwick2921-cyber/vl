@@ -122,14 +122,25 @@ func TestMentorDayGateLineRestartLabelsRealReadTime(t *testing.T) {
 	tape := bars(ctMs(2026, 10, 9, 10, 19))
 	e := mentor.New(cfg)
 	now := mentor.BarCloseInstant(tape[len(tape)-1])
+	prior := e.State.HTF
 	mentor.Seed(e, tape, now)
-	e.Tick(tape, now) // the 17:00→10:19 tape is under the 1500-bar live window
+	mentor.SeedOpenHTF(e, tape, prior, now) // the trader's seed call site does both (mentor_tick.go)
+	e.Tick(tape, now)                       // the 17:00→10:19 tape is under the 1500-bar live window
 	line := mentorDayGateLine(e.State.DayGateReport)
 	if strings.Contains(line, "day gate @08:30 CT") {
 		t.Fatalf("a 10:19 restart re-latch is labelled as the 08:30 read: %q", line)
 	}
-	if !strings.Contains(line, "RE-LATCHED @10:19 CT") || !strings.Contains(line, "trading day 2026-10-09") {
-		t.Fatalf("the re-latch line must name its real read instant and day: %q", line)
+	// MENTOR-NY item 6: the seed ran after 08:30, so this is a BOOT re-read —
+	// labelled as such, with the 08:30 decision's own 4h/1h (replayed) shown
+	// beside it (here the same, so "same 4h/1h as the 08:30 decision").
+	if !strings.Contains(line, "re-read at boot 10:19 CT, not the 08:30 decision") || !strings.Contains(line, "trading day 2026-10-09") {
+		t.Fatalf("the boot re-latch line must say it is the boot's re-read, with its instant and day: %q", line)
+	}
+	if !strings.Contains(line, "same 4h/1h as the 08:30 decision") && !strings.Contains(line, "the 08:30 decision read 4h ") {
+		t.Fatalf("the boot re-read line must carry the 08:30 decision's 4h/1h: %q", line)
+	}
+	if rep := e.State.DayGateReport; !rep.BootRead || rep.OpenFourHDir != rep.FourHDir || rep.OpenOneHDir != rep.OneHDir {
+		t.Fatalf("seed after 08:30 must record the 08:30 read (flat tape: same as now): %+v", rep)
 	}
 	// CONTROL: a bot that ticked through the open reads at 08:30.
 	tape2 := bars(ctMs(2026, 10, 9, 9, 0))
@@ -145,5 +156,33 @@ func TestMentorDayGateLineRestartLabelsRealReadTime(t *testing.T) {
 	}
 	if l := mentorDayGateLine(c.State.DayGateReport); !strings.Contains(l, "day gate @08:30 CT") {
 		t.Fatalf("control: the live 08:30 latch must keep its @08:30 label: %q", l)
+	}
+}
+
+// TestMentorDayGateLineBootShowsBothValuesWhenTheyDiffer — MENTOR-NY item 6
+// (S2), the renderer the evaluator's report feeds: 10-13 08:30 read "4h short ·
+// 1h short", the 08:49 boot re-read "4h long · 1h long" and printed it as the
+// day gate with no label. The boot line now says it is the boot's re-read and
+// shows the 08:30 decision's values beside it when they differ.
+// MUTANT: drop the 08:30 values → RED.
+func TestMentorDayGateLineBootShowsBothValuesWhenTheyDiffer(t *testing.T) {
+	open := ctMs(2026, 10, 13, 8, 30)
+	line := mentorDayGateLine(mentor.DayGateReport{
+		Key: "2026-10-13", Verdict: mentor.DayTrade, HaveRun: true, RunPts: 180,
+		FourHDir: mentor.SideLong, OneHDir: mentor.SideLong, SpentPts: 300,
+		ReadAt: open + 19*60_000 + 30_000, BootRead: true,
+		OpenFourHDir: mentor.SideShort, OpenOneHDir: mentor.SideShort,
+	})
+	for _, want := range []string{
+		"day gate re-read at boot 08:49 CT, not the 08:30 decision",
+		"· 4h long · 1h long",
+		"the 08:30 decision read 4h short · 1h short (DIFFERENT",
+	} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("line %q missing %q", line, want)
+		}
+	}
+	if strings.Contains(line, "day gate @08:30 CT") {
+		t.Fatalf("a boot re-read must never carry the @08:30 label: %q", line)
 	}
 }

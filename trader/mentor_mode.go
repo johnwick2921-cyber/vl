@@ -260,7 +260,7 @@ func mentorStaleDataBlockEnabled(rc *store.RiskControlConfig) bool {
 // mentorStaleDataBlocked is the mentor stale-data block (release #11): refuse
 // NEW mentor work (arm authoring + the armed pass placement) while the live 1m
 // feed is stale, reusing B4's ONE formula (kernel.StaleEntryGateFeed →
-// barIsStale, ~75 s, CME-open/halt aware). One WARN + one at.mentorCount("stale_data")
+// barIsStale, ~75 s, CME-open/halt aware). One WARN + one at.mentorCount("stale_data_episodes")
 // per stale EPISODE (the fresh→stale transition), never per tick.
 //
 // NEVER blocks exits or protection: the exit drive, BE/stop moves, closes and
@@ -312,7 +312,9 @@ func (at *AutoTrader) mentorStaleDataBlockedWhy(now time.Time) (bool, string) {
 	}
 	at.mentorStaleMu.Unlock()
 	if changed && stale {
-		at.mentorCount("stale_data")
+		// MENTOR-NY item 10 (rescan P3-N8): named for what it counts — one per
+		// stale EPISODE; refused intents count placement_refused_stale_data.
+		at.mentorCount("stale_data_episodes")
 		at.logWarnf("🧑‍🏫 mentor stale-data block: %s — refusing NEW mentor arms; exits and protection are unaffected; resting orders are NOT cancelled.", why)
 	}
 	if changed && !stale {

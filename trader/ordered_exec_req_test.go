@@ -352,6 +352,10 @@ func TestStopUnregistersThenSecondRunInstallsCleanly(t *testing.T) {
 		at := &AutoTrader{id: id, store: st, exchange: "ninjatrader", trader: nt, exchangeID: "ex"}
 		at.config.StrategyConfig = &store.StrategyConfig{}
 		at.mcpClient = &fakeDecisionClient{}
+		// A real scan interval: with 0, Run panicked at time.NewTicker right
+		// after the install and the pin only passed because that panic left
+		// the install behind. MENTOR-NY item 3 tears a panicked Run down.
+		at.config.ScanInterval = time.Minute
 		return at
 	}
 	installed := func(at *AutoTrader) bool {

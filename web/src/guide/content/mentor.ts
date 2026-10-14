@@ -404,7 +404,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Every PHL/PLH drop is named',
-          body: 'A rejected touch that does not become a PHL/PLH always names its reason in the funnel line, counted ONCE per visit of the level (not every minute the touch stands): phl_5m_box_ban, phl_mid_range_boxed, phl_ema_crossing_30m, phl_ema_loss_block, phl_not_location, phl_no_reject_entry, phl_level_arm_resting — beside the existing phl_15m_box_ban, phl_30m_box_ban, level_visit_cap, room, near_box and the rest. Before release #22 the first five dropped silently. The boot line also reads the key levels as "key levels N live · M deleted" — the old "levels 92" counted the deleted ones too (27 were live).',
+          body: 'A rejected touch that does not become a PHL/PLH always names its reason in the funnel line, counted ONCE per visit of the level (not every minute the touch stands): phl_5m_box_ban, phl_mid_range_boxed, phl_ema_crossing_30m, phl_ema_loss_block, phl_not_location, phl_no_reject_entry, phl_level_arm_resting — beside the existing phl_15m_box_ban, phl_30m_box_ban, level_visit_cap, room, near_box and the rest. Before release #22 the first five dropped silently. The PHL’s room and trigger-side drops (room, isb_trigger_side) and keypair_candle_too_big also count once per visit now (they counted every minute). level_invalid_first_touch counts each level the first touch invalidated by closing on the wrong side [D5.2 p1 @19:51] — course-correct, and now visible. The ORB logs its range once a day and its escape side + read time on the first escape and on every side change (“🧑‍🏫 ORB …”). The boot line also reads the key levels as "key levels N live · M deleted" — the old "levels 92" counted the deleted ones too (27 were live).',
           cite: 'Engineering rule — every refusal logged and counted · kernel/mentor/eval.go refuseOncePerVisit · kernel/mentor/seed.go SeedLine',
         },
         {
@@ -470,7 +470,7 @@ export const mentor: GuideSection = {
         ],
         [
           'Day gate (§7)',
-          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). A restart (or a feed gap) after 08:30 latches on the 4h/1h of THAT moment, and the day-gate log line then reads "day gate RE-LATCHED @HH:MM CT, not the 08:30 read" instead of "@08:30". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
+          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). A restart (or a feed gap) after 08:30 latches on the 4h/1h of THAT moment, and the day-gate log line then reads "day gate RE-LATCHED @HH:MM CT, not the 08:30 read" instead of "@08:30". After a BOOT past 08:30 it reads "day gate re-read at boot HH:MM CT, not the 08:30 decision" and shows what the 08:30 decision read (replayed from the same bars) — "the 08:30 decision read 4h … · 1h … (DIFFERENT …)" or "same 4h/1h as the 08:30 decision". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
           'DayGateSpentPts 300 · DayGateTargetCapPts 15',
         ],
         [
@@ -480,7 +480,7 @@ export const mentor: GuideSection = {
         ],
         [
           'Room rule',
-          'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. The stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
+          'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. The room is measured to the LEVEL, also on a spent day: the 15-pt take-profit cap shortens the take-profit, never the room — "dù target của em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]. So a spent-day setup needs stop ≤ 15 (the 1:1 floor on the capped take-profit), room ≥ 2R to the level, AND room to the level ≥ 2× the capped take-profit — his worked figure: target 15 → room 30 (a take-profit sitting right at the level is refused). The stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
           'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · every non-swing stop, the ISB included, also meets the trader’s 25-pt cap: trader/mentor_mode.go mentorRuleGate (mentorStopTwentiesMaxPts) · swing_max_stop_pts 100',
         ],
         [
@@ -653,7 +653,7 @@ export const mentor: GuideSection = {
             'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode (per strategy), top of the section',
           what: 'Turns the mentor method on for this strategy. SIM only. While ON, the AI-era exit mechanics — auto-breakeven and trailing — are not applied to mentor trades: the mentor\u2019s exits own the stop (owner ruling 2026-10-09).',
           trader:
-            'A switch at the top of Risk control. Turning it ON asks you to confirm (it names the strategy and the order gate); turning it OFF is immediate. Press Save: the running trader reloads on save, so no restart is needed. A second, read-only line under it shows the order gate: "Orders: DRY RUN (MENTOR_PLACE off)" means every mentor entry is only sized and logged, nothing is sent; "Orders: SIM orders ON (MENTOR_PLACE=1)" means mentor entries are placed on the SIM account. The two are separate: the switch picks the method, MENTOR_PLACE (a server setting, not a button) allows orders. Start with the dry run. While Mentor mode is ON, a funnel line logs every 15 minutes (and on change): bars · intents · kernel refusals · trader refusals · authored · placed · filled — the visibility for why entries were dropped (e.g. orb_not_drawn).',
+            'A switch at the top of Risk control. Turning it ON asks you to confirm (it names the strategy and the order gate); turning it OFF is immediate. Press Save: the running trader reloads on save, so no restart is needed. A second, read-only line under it shows the order gate: "Orders: DRY RUN (MENTOR_PLACE off)" means every mentor entry is only sized and logged, nothing is sent; "Orders: SIM orders ON (MENTOR_PLACE=1)" means mentor entries are placed on the SIM account. The two are separate: the switch picks the method, MENTOR_PLACE (a server setting, not a button) allows orders. Start with the dry run. While Mentor mode is ON, a funnel line logs every 15 minutes (and on change): bars · entry intents · other actions (level invalidations, confluence upgrades, arm keeps/cancels) · kernel refusals · trader refusals · authored · placed · filled; "bars" includes any closed bars the evaluator caught up after the event path missed them (counter mentor_bars_caught_up, one WARN with the range) — the visibility for why entries were dropped (e.g. orb_not_drawn).',
           consumer:
             'trader/mentor_mode.go mentorEnabled · kernel/mentor/mentor.go Config.Enabled',
           range: 'true / false',
@@ -1030,7 +1030,7 @@ export const mentor: GuideSection = {
         {
           label: 'Room multiple',
           where: 'Strategy → Mentor mode → risk',
-          what: 'The room to the FIRST available level must be at least this × the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. Applies to PHL/PLH, the ISB, the reverse ISB and the box. The swing reject measures its 5m EMA 34 as its FIRST TARGET, not an obstacle (mentor_swing_ema34_is_first_target, default ON since release #25); with that switch OFF the swing keeps the old rule (an on-side 5m EMA 34 closer than 2R refuses it).',
+          what: 'The room to the FIRST available level must be at least this × the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. Applies to PHL/PLH, the ISB, the reverse ISB and the box (the swing reject: see below). Always measured to the LEVEL — on a spent day the 15-pt take-profit cap does not shrink it, and the room must also be ≥ this × the capped take-profit (target 15 → room 30) [D5.3 p1 @09:32–09:50]. The swing reject measures its 5m EMA 34 as its FIRST TARGET, not an obstacle (mentor_swing_ema34_is_first_target, default ON since release #25); with that switch OFF the swing keeps the old rule (an on-side 5m EMA 34 closer than 2R refuses it).',
           trader: '2×.',
           consumer: 'kernel/mentor/mentor.go RoomMultiple',
           range: '×',
@@ -1125,7 +1125,7 @@ export const mentor: GuideSection = {
         {
           label: 'Ping-pong candle maximum',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'Reject the ping-pong and key-level pair if the largest candle in the lookback exceeds this size.',
+          what: 'Reject the box ping-pong if the largest candle in the lookback exceeds this size. Above 0 it also switches on the key-level pair rule: the touch candle AS IT PRINTS (the current closed 1m candle) as big as the gap between the touched key level and the next one → sit out [X4 @06:31]; counted once per visit (keypair_candle_too_big).',
           trader: '20 pts. Tunable in Studio (blank = default).',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (PingPongCandleMaxPts)',
@@ -1138,7 +1138,7 @@ export const mentor: GuideSection = {
         {
           label: 'Ping-pong candle lookback',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'How many closed 1m candles to scan for the largest-candle gate on box ping-pong and key-level pairs.',
+          what: 'How many closed 1m candles to scan for the largest-candle gate on the box ping-pong. The key-level pair rule does not use it — it reads the current candle only.',
           trader: '30 closed 1m candles. Tunable in Studio (blank = default).',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (PingPongCandleLookback)',
@@ -1459,9 +1459,9 @@ export const mentor: GuideSection = {
           label: 'Stale-data block',
           where:
             'No Studio control — ON by default; the strategy setting mentor_stale_data_block=false turns it off',
-          what: 'Refuse NEW mentor arms (authoring and the armed placement pass) while the live 1m feed is stale — the same B4 formula the AI path uses (expected-open − 1 bar − 15s grace ≈ 75 s) PLUS, since release #22, two legs that never read the wall clock: the last live 1m frame must have ARRIVED within 135 s on the monotonic clock, and for 120 s after any wall-clock step of 1 s or more NEW entries are held. The wall-clock rule alone failed OPEN when the clock stepped back (2026-10-14: −125 s at 00:23:00): a dead feed read as fresh. While CME is closed (the daily 16:00–17:00 break, weekends) the feed legs never fire. Exits and protection are never blocked, and already-resting broker orders are not cancelled by it.',
+          what: 'Refuse NEW mentor arms (authoring and the armed placement pass) while the live 1m feed is stale — the same B4 formula the AI path uses (expected-open − 1 bar − 15s grace ≈ 75 s) PLUS, since release #22, two legs that never read the wall clock: the last live 1m frame must have ARRIVED within 135 s on the monotonic clock, and for 120 s (CLOCK_STEP_HOLD_S, default 120) after any wall-clock step of 2 s or more (CLOCK_STEP_FREEZE_MS, default 2000 ms) NEW entries are held. The wall-clock rule alone failed OPEN when the clock stepped back (2026-10-14: −125 s at 00:23:00): a dead feed read as fresh. While CME is closed (the daily 16:00–17:00 break, weekends) the feed legs never fire. Exits and protection are never blocked, and already-resting broker orders are not cancelled by it.',
           trader:
-            'ON by default (nil → ON — the same default posture as B4); an explicit false disables it. One WARN and one "stale_data" funnel refusal per stale episode, never per tick. The block itself fails OPEN when the 1m cache is empty or no bar provider is wired (a cold start — the seed and the FEED DOWN alert own that case).',
+            'ON by default (nil → ON — the same default posture as B4); an explicit false disables it. One WARN and one "stale_data_episodes" funnel count per stale episode, never per tick (each refused arm counts "placement_refused_stale_data"). The block itself fails OPEN when the 1m cache is empty or no bar provider is wired (a cold start — the seed and the FEED DOWN alert own that case).',
           consumer:
             'trader/mentor_mode.go mentorStaleDataBlocked · kernel/feed_clock.go EntryFeedStale (wall rule StaleEntryGateFeed + monotonic receipt age + clock-step hold)',
           range: 'true / false',

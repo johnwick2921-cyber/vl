@@ -158,7 +158,19 @@ func TestB9PHLSpentDayCappedDayOffRefused(t *testing.T) {
 		t.Fatalf("control PHL entry = %+v (ledger %v): need an entry with a target beyond %.0f pts", base, ctl.State.Refusals, b9CapPts)
 	}
 
+	// DS-104 P2-3: the level sits 24.8 pts from the 105.20 entry. With the
+	// 15-pt cap the course refuses it — room must be ≥ 2× the capped take-
+	// profit ("target 15 → room 30" [D5.3 p1 @09:32–09:50]).
+	sp, sbars, snow, _ := b14Fixture(oldHighs, 99.5)
+	sp.State.Day.Verdict = DaySpent
+	if n := b14Entries(sp.Tick(sbars, snow)); n != 0 || sp.State.Refusals["room"] == 0 {
+		t.Fatalf("spent day, cap 15: room 24.8 < 30 must refuse as room, got %d entries, ledger %v", n, sp.State.Refusals)
+	}
+	// The cap VALUE at the Tick call site: a 12-pt cap needs room ≥ 24 (24.8
+	// clears it) and the take-profit is pulled to entry + 12.
+	const capPts = 12.0
 	e, bars, now, _ := b14Fixture(oldHighs, 99.5)
+	e.Cfg.DayGateTargetCapPts = capPts
 	e.State.Day.Verdict = DaySpent
 	var got *Intent
 	ins := e.Tick(bars, now)
@@ -170,9 +182,9 @@ func TestB9PHLSpentDayCappedDayOffRefused(t *testing.T) {
 	if got == nil {
 		t.Fatalf("spent-day PHL emitted no entry (cap, not refusal): ledger %v", e.State.Refusals)
 	}
-	if b9Dist(*got) > b9CapPts+1e-9 {
+	if abs(b9Dist(*got)-capPts) > 1e-9 {
 		t.Fatalf("spent-day PHL target %.2f is %.2f pts from entry %.2f — must be capped at %.0f",
-			got.Target, b9Dist(*got), got.Price, b9CapPts)
+			got.Target, b9Dist(*got), got.Price, capPts)
 	}
 
 	off, obars, onow, _ := b14Fixture(oldHighs, 99.5)

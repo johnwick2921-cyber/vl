@@ -50,7 +50,7 @@ func TestStaleGateRefusesDeadFeedUnderBackwardWallStep(t *testing.T) {
 	if placed := staleStepPlace(t, at); len(placed) != 0 {
 		t.Fatalf("a 200 s-dead feed under a −125 s wall step must NOT author an arm (fail closed); %d placement(s) reached the recorder", len(placed))
 	}
-	if got := at.mentorCountSnapshot()["stale_data"]; got != 1 {
+	if got := at.mentorCountSnapshot()["stale_data_episodes"]; got != 1 {
 		t.Fatalf("the refusal must be counted once as stale_data, got %d", got)
 	}
 	if got := at.mentorCountSnapshot()["placement_refused_stale_data"]; got != 1 {

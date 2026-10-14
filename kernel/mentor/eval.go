@@ -64,6 +64,11 @@ type State struct {
 	// (owner ruling 2026-10-09): the gate's own inputs, captured the moment the
 	// 08:30 latch freezes, so the per-day INFO line reads them.
 	DayGateReport DayGateReport `json:"day_gate_report,omitempty"`
+	// OpenHTF (MENTOR-NY item 6) — the 4h/1h directions the 08:30 day-gate
+	// decision READ, replayed by a seed that ran AFTER today's 08:30 (a boot
+	// mid-session) from the same closed 1m history, cut at the 08:30 read.
+	// Empty Key = not computed (seeded before 08:30, or never seeded).
+	OpenHTF OpenHTFRead `json:"open_htf,omitempty"`
 	// Swing is the §8 4h-EMA34 swing state (DS-106 slice; rebuildable by
 	// replaying bars through SwingTick).
 	Swing SwingState `json:"swing,omitempty"`
@@ -491,6 +496,14 @@ func handleTouchIntents(e *Evaluator, lvl Level, intents []Intent) []Intent {
 			if isBoxEdge(lvl) {
 				continue
 			}
+			// MENTOR-NY item 5: the first touch closed on the wrong side → the
+			// level is invalid for PHL/PLH [D5.2 p1 @19:51–20:25]. Course-
+			// faithful but a large hidden suppressor (RTH 10-12 75, 10-13 65,
+			// 10-14 25) the funnel never showed — counted here, once per
+			// invalidation (the touch machinery emits it once per visit).
+			if !e.State.ISBOnly[lvl.Key] {
+				e.refuse("level_invalid_first_touch")
+			}
 			e.State.ISBOnly[lvl.Key] = true
 		}
 		out = append(out, in)
@@ -885,6 +898,27 @@ func roomRefusal(price, stop, target float64, confluence bool, roomMultiple floa
 	return false, ""
 }
 
+// spentDayRoomRefusal — DS-104 P2-3 / MENTOR-NY item 1 (course wins, R5 ON):
+// on a SPENT day the room to the LEVEL must also be at least roomMultiple × the
+// CAPPED take-profit — the course's own worked figure: "Bây giờ dù target của
+// em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên"
+// [D5.3 p1 @09:32–09:50], target 15 → room 30. roomRefusal's 2× leg-1 (2R)
+// still applies beside it; the two agree only at a 15-pt stop, and for a
+// smaller stop 2R alone admitted a level the course rejects. capped is the
+// take-profit after CapTargetForDay (the level itself when it sits inside the
+// cap). Any other verdict, or roomMultiple <= 0, never refuses here.
+func spentDayRoomRefusal(price, level, capped float64, v DayVerdict, roomMultiple float64) (refuse bool, why string) {
+	if v != DaySpent || roomMultiple <= 0 {
+		return false, ""
+	}
+	tp := abs(capped - price)
+	room := abs(level - price)
+	if tp <= 0 || room < roomMultiple*tp {
+		return true, fmt.Sprintf("room: spent day — room %.2f pts to the level < %.2f pts (%.2fx the %.2f-pt capped take-profit) [D5.3 p1 @09:32–09:50 \"dù target của em là 15 điểm … 30 điểm đổ lên\"]", room, roomMultiple*tp, roomMultiple, tp)
+	}
+	return false, ""
+}
+
 // triggerBoxZoneVerdict is the B1 no-trade zone (10-03 ruling, D3.4 p1
 // @16:38–17:19): between an FTGL below and the BUY trigger line above there
 // is NO trade ("khỏi đánh, đợi nó thoát ra khỏi 2 cái") — mirror: an FTGH
@@ -1198,6 +1232,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			Conflict: HTFConflict(e.State.HTF),
 			SpentPts: dg.SpentPts,
 			ReadAt:   now,
+		}
+		// MENTOR-NY item 6: a boot after 08:30 carries what the 08:30
+		// decision read, so the line can show both values.
+		if o := e.State.OpenHTF; o.Key != "" && o.Key == e.State.Day.Key {
+			e.State.DayGateReport.BootRead = true
+			e.State.DayGateReport.OpenFourHDir = o.FourHDir
+			e.State.DayGateReport.OpenOneHDir = o.OneHDir
 		}
 	}
 	// Owner ruling 2026-10-09: a latched DayOff re-reads the 4h/1h directions
@@ -1566,9 +1607,19 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							capped := CapTargetForDay(chosen, e.State.Day.Verdict, dg)
 							if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 								e.refuse("isb_target_below_floor")
-							} else if refuse, _ := roomRefusal(capped.Price, capped.Stop, capped.Target, confluence, e.Cfg.RoomMultiple); refuse {
+							} else if refuse, _ := roomRefusal(chosen.Price, chosen.Stop, target, confluence, e.Cfg.RoomMultiple); refuse {
 								// The room to the first level must be >= RoomMultiple ×
 								// the leg-1 take-profit (1R; 2R for confluence).
+								// MENTOR-NY item 1: the room is measured to the LEVEL
+								// (`target`, before the spent-day cap), never to the
+								// capped take-profit — "Dù target của em là 15 điểm …
+								// từ điểm entry xuống target nó phải từ 30 điểm đổ lên"
+								// [D5.3 p1 @09:32–09:50]. The cap still shortens the
+								// take-profit and the 1:1 floor above still reads it.
+								e.refuse("room")
+							} else if refuse, _ := spentDayRoomRefusal(chosen.Price, target, capped.Target, e.State.Day.Verdict, e.Cfg.RoomMultiple); refuse {
+								// SPENT day: room ≥ 2× the capped take-profit too
+								// ("target 15 → room 30", D5.3 p1 @09:32–09:50).
 								e.refuse("room")
 							} else {
 								// The emitted intent carries the CAPPED target: `capped`
@@ -1701,9 +1752,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
 				if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 					e.refuse("isbrev_target_below_floor")
-				} else if refuse, _ := roomRefusal(capped.Price, capped.Stop, capped.Target, confluence, e.Cfg.RoomMultiple); refuse {
+				} else if refuse, _ := roomRefusal(in.Price, in.Stop, target, confluence, e.Cfg.RoomMultiple); refuse {
 					// Item 25: the reverse ISB runs the same room rule as the
-					// normal ISB. One counter "room".
+					// normal ISB. One counter "room". MENTOR-NY item 1: measured
+					// to the LEVEL, not the spent-day capped take-profit
+					// [D5.3 p1 @09:32–09:50].
+					e.refuse("room")
+				} else if refuse, _ := spentDayRoomRefusal(in.Price, target, capped.Target, e.State.Day.Verdict, e.Cfg.RoomMultiple); refuse {
+					// SPENT day: "target 15 → room 30" [D5.3 p1 @09:32–09:50].
 					e.refuse("room")
 				} else {
 					in.Target = capped.Target
@@ -1831,14 +1887,21 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// filter off for LEVEL rejects (the box path honours it separately).
 			if e.Cfg.LocTriggerFilter && e.Cfg.TriggerSchool != 1 {
 				if dirOK, trigSide, _ := TriggerVerdict(e.State.Trigger, price); !dirOK || trigSide != "" && trigSide != side {
-					e.refuse("isb_trigger_side")
+					// MENTOR-NY item 5: once per visit of the level, not per tick.
+					e.refuseOncePerVisit(lvl.Key, "isb_trigger_side")
 					continue
 				}
 			}
-			// B21 X4 (@06:31–08:52): the gap between the touched level and the
-			// next level must exceed the largest 1m candle of the last 30 closed
-			// bars — a candle as big as the rank of the two levels: sit out. The
-			// scan is strict (beyond the touched level, excluding the level itself).
+			// B21 X4 (@06:31–08:52): a candle as big as the rank of the two
+			// levels — sit out ("một cái nến nó bằng cái range của 2 cái level
+			// rồi thì ngồi im" [X4 @06:31]). MENTOR-NY item 2: "the candle" is
+			// the candle AS IT PRINTS — the current closed 1m candle — not the
+			// largest of the last PingPongCandleLookback bars (that lookback is
+			// a bot reading, mentor.go "[C: ours]", and kept the pair blocked
+			// for 30 minutes after one spike). The lookback still gates the box
+			// ping-pong. Counted ONCE per visit of the level, not per tick. The
+			// scan is strict (beyond the touched level, excluding the level
+			// itself). PingPongCandleMaxPts > 0 keeps switching the rule on.
 			if e.Cfg.PingPongCandleMaxPts > 0 {
 				var next float64
 				for _, l2 := range levels {
@@ -1854,8 +1917,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						next = l2.Price
 					}
 				}
-				if next != 0 && abs(next-lvl.Price) <= keypairCandleRatio(e.Cfg)*largestCandlePts(bars, e.Cfg.PingPongCandleLookback) { // CX-10 ratio (default 1)
-					e.refuse("keypair_candle_too_big")
+				if next != 0 && abs(next-lvl.Price) <= keypairCandleRatio(e.Cfg)*(cur.High-cur.Low) { // MENTOR-NY item 2 (current candle, once per visit) × CX-10 ratio (default 1)
+					e.refuseOncePerVisit(lvl.Key, "keypair_candle_too_big")
 					continue
 				}
 			}
@@ -1960,7 +2023,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			in, ok, reason := PHLPLHGatedR2Levels(tr, ex.level, ex.idx, len(bars)-1, prior, levels, e.Cfg, e.State.HTF, e.State.Day.Verdict, dg, confluence)
 			if !ok {
 				// B-rules (13:51:31Z): EVERY drop names a reason and counts it.
-				e.refuse(phlRefusalKey(reason))
+				// MENTOR-NY item 5: the room drop counts ONCE per visit of the
+				// level (it re-evaluated — and re-counted — every tick the touch
+				// stood); every other PHL reason is unchanged.
+				if key := phlRefusalKey(reason); key == "room" {
+					e.refuseOncePerVisit(lvl.Key, key)
+				} else {
+					e.refuse(key)
+				}
 				continue
 			}
 			// Row 56 (a) [D3.2 p1 @ 21:53–23:08]: a trigger-retest level trades
@@ -2128,10 +2198,19 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							// the CAP pulled the target inside the stop distance —
 							// refuse rather than emit a sub-floor intent.
 							e.refuse("box_target_below_floor")
-						} else if refuse, _ := roomRefusal(capped.Price, capped.Stop, capped.Target, capped.Confluence, e.Cfg.RoomMultiple); refuse {
-							// B7 (L13): the room rule reads the ACTUAL (capped)
-							// target — the same after-cap measure the ISB runs
-							// [D5.3 p1 @ 09:16; D5.1 p1 @ 16:24, @ 19:11–20:07].
+						} else if refuse, _ := roomRefusal(in.Price, in.Stop, in.Target, in.Confluence, e.Cfg.RoomMultiple); refuse {
+							// MENTOR-NY item 1 (supersedes B7/L13): the room rule
+							// reads the LEVEL the box trade targets (in.Target,
+							// before the spent-day cap), not the capped 15-pt
+							// take-profit. B7/L13 measured the capped target, which
+							// on a SPENT day demanded stop ≤ 7.5; the course measures
+							// the room to the level even when the take-profit is 15
+							// — "Dù target của em là 15 điểm … từ điểm entry xuống
+							// target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50].
+							// The cap and the 1:1 floor on the capped target stand.
+							e.refuse("room")
+						} else if refuse, _ := spentDayRoomRefusal(in.Price, in.Target, capped.Target, e.State.Day.Verdict, e.Cfg.RoomMultiple); refuse {
+							// SPENT day: "target 15 → room 30" [D5.3 p1 @09:32–09:50].
 							e.refuse("room")
 						} else {
 							out = append(out, capped)

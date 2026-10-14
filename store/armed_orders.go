@@ -1236,6 +1236,27 @@ func (s *ArmedOrderStore) SetFillPrice(id int64, fillPrice float64) error {
 		Update("fill_price", fillPrice).Error
 }
 
+// SetExitMode persists a mentor arm's exit branch on its row (MENTOR-NY item
+// 11, rescan P2-N3): the B20 confluence upgrade switched the branch to C only
+// in memory, so a restart rebuilt the position from the row's B. WHERE-scoped
+// to one mentor row; idempotent. Returns the rows it changed.
+func (s *ArmedOrderStore) SetExitMode(id int64, mode string) (int64, error) {
+	res := s.db.Model(&ArmedOrderDB{}).Where("id = ? AND origin = ?", id, ArmOriginMentor).
+		Update("exit_mode", mode)
+	return res.RowsAffected, res.Error
+}
+
+// SetExitModeBySignal is SetExitMode for an OPEN position, which the exit drive
+// knows by its signal id. WHERE-scoped to mentor rows of that signal.
+func (s *ArmedOrderStore) SetExitModeBySignal(signalID, mode string) (int64, error) {
+	if signalID == "" {
+		return 0, nil
+	}
+	res := s.db.Model(&ArmedOrderDB{}).Where("signal_id = ? AND origin = ?", signalID, ArmOriginMentor).
+		Update("exit_mode", mode)
+	return res.RowsAffected, res.Error
+}
+
 // SetSignal records the wire signal_id once the resting limit is placed
 // (armed → working transition).
 func (s *ArmedOrderStore) SetSignal(id int64, signalID string) error {

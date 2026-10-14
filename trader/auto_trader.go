@@ -558,6 +558,12 @@ type AutoTrader struct {
 	// is a stable per-process dedup key. Read/written only inside
 	// mentorEvalOnce under mentorEvalMu.
 	mentorDayOffClearLogged int64
+	// MENTOR-NY item 5: the ORB lines already logged — the draw once per CT
+	// day, the escape on its first appearance and on every side change (the
+	// evaluator owns the ORB; these only dedup the log, never decide).
+	mentorORBDrawLogged int64
+	mentorORBEscDay     int64
+	mentorORBEscSide    string
 	// mentorDayGateReportLogged is the DayGateReport.Key last INFO-logged — the
 	// once-per-day day-gate line. Read/written only inside mentorEvalOnce
 	// under mentorEvalMu.
@@ -729,6 +735,18 @@ type AutoTrader struct {
 	lastAIBalanceDay   string // P5 daily balance poll throttle (AI_BALANCE_WARN)
 	isRunning          bool
 	isRunningMutex     sync.RWMutex // Mutex to protect isRunning flag
+	// MENTOR-NY item 3 — retired: removed from the roster (RemoveTrader); its
+	// Run never starts. Guarded by runOwners' mutex (run_owner.go).
+	retired bool
+	// stopGen counts Stops that found the run live (bumped under
+	// isRunningMutex). Run reads it at its CAS: a Stop that lands while Run is
+	// still starting is seen before the loop, and Run tears down what it
+	// started instead of entering the loop.
+	stopGen uint64
+	// DS-104 P2-2 (run_owner.go armRunRetry): a retry is armed after a
+	// handoff timeout; the retry claims only a FREE trader id.
+	runRetryArmed   atomic.Bool
+	retryIfFreeOnly atomic.Bool
 	// runReadyMu/runReadyCh is the REL18-C FOLD handshake between Run and the
 	// start handler: Run reports nil once it reaches the ordered-execution
 	// install (ready) or the O2 refusal error, so the handler can answer 409
@@ -1234,10 +1252,48 @@ func (at *AutoTrader) Run() error {
 	at.isRunningMutex.Lock()
 	if at.isRunning {
 		at.isRunningMutex.Unlock()
+		// Logged by every caller ("duplicate start ignored"); counted here.
+		telemetry.IncGateBlock(at.id, "trader_run_duplicate_start")
 		return ErrTraderAlreadyRunning
 	}
 	at.isRunning = true
+	runStopGen := at.stopGen
 	at.isRunningMutex.Unlock()
+
+	// MENTOR-NY item 3 — ONE live run per trader_id (run_owner.go): claim the
+	// trader_id BEFORE anything starts. A retired instance (removed from the
+	// roster by a reload) is refused here with no side effect; an older live
+	// run of the same trader_id is stopped and must EXIT before this one
+	// proceeds. The release runs last, after the Run has fully exited.
+	release, ownErr := at.claimRunOwner()
+	if ownErr != nil {
+		at.isRunningMutex.Lock()
+		at.isRunning = false
+		at.isRunningMutex.Unlock()
+		return ownErr
+	}
+	// PR #522 CI: the claim is released only after EVERYTHING this run
+	// started is torn down — a Run can leave its loop on the running flag
+	// before a concurrent Stop has finished its teardown (ordered slot,
+	// event loop), and the next run must never see that half-stopped state.
+	// Idempotent beside Stop's own teardown.
+	defer func() {
+		at.teardownRunStarted()
+		release()
+	}()
+	// A Run that PANICS out (not a beat — runBeatSafely recovers those) must
+	// not release the claim with its event loop still live: tear down first,
+	// then re-panic (the caller's recovery is unchanged). LIFO: this runs
+	// before release().
+	defer func() {
+		if r := recover(); r != nil {
+			at.teardownRunStarted()
+			at.isRunningMutex.Lock()
+			at.isRunning = false
+			at.isRunningMutex.Unlock()
+			panic(r)
+		}
+	}()
 
 	at.limitFlattenMu.Lock()
 	at.limitFlattenStopped = false
@@ -1246,6 +1302,7 @@ func (at *AutoTrader) Run() error {
 	at.logInfof("🚦 %s", entryLatchBootLine(at)) // W-EXEC-TRUTH W0 (b) — READ, never asserted
 	if at.exchange == "ninjatrader" {
 		if _, ok := kernel.TFDurationMs(at.primaryTimeframe()); !ok {
+			at.teardownRunStarted() // MENTOR-NY item 3: no event loop survives a refused start
 			at.isRunningMutex.Lock()
 			at.isRunning = false
 			at.isRunningMutex.Unlock()
@@ -1302,7 +1359,11 @@ func (at *AutoTrader) Run() error {
 				// per-Run monitor up and exit (same shape as the grid-init error
 				// path) — never fall back to the legacy advisory path.
 				at.signalRunReady(err)
-				at.cancelStopMonitor()
+				// MENTOR-NY item 3: tear down EVERYTHING this Run started —
+				// on 10-13 16:35:48 only the stop monitor was cancelled, so the
+				// refused instance's armed event loop (which drives the mentor
+				// evaluator) ran on beside the owner: two evaluators.
+				at.teardownRunStarted()
 				at.isRunningMutex.Lock()
 				at.isRunning = false
 				at.isRunningMutex.Unlock()
@@ -1320,6 +1381,20 @@ func (at *AutoTrader) Run() error {
 	// refusal was already signalled on the error path above.
 	at.signalRunReady(nil)
 
+	// MENTOR-NY item 3: a Stop (or a reload's Retire+Stop) that landed while
+	// this Run was still starting found little to tear down; whatever Run
+	// started after it (the armed event loop = the mentor evaluator, the
+	// Picture / post-exit registrations, the ordered worker) is torn down here,
+	// so a stopped instance never keeps a live evaluator.
+	at.isRunningMutex.RLock()
+	stoppedWhileStarting := !at.isRunning || at.stopGen != runStopGen
+	at.isRunningMutex.RUnlock()
+	if stoppedWhileStarting {
+		at.logWarnf("⏹ stopped while starting — tearing down this run before its loop (no event loop or mentor evaluator survives)")
+		at.teardownRunStarted()
+		return nil
+	}
+
 	ticker := time.NewTicker(at.config.ScanInterval)
 	defer ticker.Stop()
 
@@ -1329,7 +1404,7 @@ func (at *AutoTrader) Run() error {
 		at.logInfof("🔲 Grid trading strategy detected, initializing grid...")
 		if err := at.InitializeGrid(); err != nil {
 			at.logErrorf("❌ Failed to initialize grid: %v", err)
-			at.cancelStopMonitor() // NOTE-leak fix: the drawdown monitor started above must not orphan on this error path
+			at.teardownRunStarted() // NOTE-leak fix + MENTOR-NY item 3: the monitor AND the event loop / registrations started above must not orphan
 			at.isRunningMutex.Lock()
 			at.isRunning = false
 			at.isRunningMutex.Unlock()
@@ -1398,8 +1473,23 @@ func (at *AutoTrader) Stop() {
 		return
 	}
 	at.isRunning = false
+	at.stopGen++ // MENTOR-NY item 3: a Run still starting sees this before its loop
 	at.isRunningMutex.Unlock()
 
+	at.teardownRunStarted()
+	at.monitorWg.Wait()                   // Wait for monitoring goroutine to finish
+	ntTrader.StopLevelStatsNightly(at.id) // NOTE-leak fix: the 24h-idling nightly goroutine exits on Stop
+	logger.Info("⏹ Automatic trading system stopped")
+}
+
+// teardownRunStarted undoes everything Run starts, in Stop's order: the
+// post-exit routing, the Picture registration and broker consumer, the armed
+// event loop (which also drives the mentor evaluator), the ordered worker and
+// the per-Run stop monitor. Every step is idempotent. It does NOT wait on
+// monitorWg — Run's own error paths call it while their deferred Done is still
+// pending (MENTOR-NY item 3: before this, a refused Run left its armed event
+// loop running = a second live mentor evaluator for the trader_id).
+func (at *AutoTrader) teardownRunStarted() {
 	unregisterPostExitDispatch(at)    // Phase 4: stop routing close events here
 	at.unregisterPictureHtf()         // W4 D25 — no Picture frame after Stop
 	at.stopPictureHtfBrokerConsumer() // P2-15 — the order_update consumer goroutine exits, never leaks across restarts
@@ -1412,10 +1502,7 @@ func (at *AutoTrader) Stop() {
 		at.orderedExecUnreg = nil
 	}
 	at.orderedExecMu.Unlock()
-	at.cancelStopMonitor()                // Notify monitoring goroutine to stop (idempotent per-Run cancel; the grid-init error path may already have called it)
-	at.monitorWg.Wait()                   // Wait for monitoring goroutine to finish
-	ntTrader.StopLevelStatsNightly(at.id) // NOTE-leak fix: the 24h-idling nightly goroutine exits on Stop
-	logger.Info("⏹ Automatic trading system stopped")
+	at.cancelStopMonitor() // Notify monitoring goroutine to stop (idempotent per-Run cancel)
 }
 
 // cancelStopMonitor asks the drawdown monitor (and the run loop's stop select)

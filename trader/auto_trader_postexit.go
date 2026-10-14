@@ -64,7 +64,9 @@ func registerPostExitDispatch(at *AutoTrader) {
 }
 
 func unregisterPostExitDispatch(at *AutoTrader) {
-	postExitRegistry.Delete(at.id)
+	// MENTOR-NY item 3: CompareAndDelete — a stale instance's teardown must
+	// never unregister the CURRENT run of the same trader_id.
+	postExitRegistry.CompareAndDelete(at.id, at)
 }
 
 // runningTrader returns the live AutoTrader for id. postExitRegistry is the

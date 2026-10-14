@@ -95,3 +95,62 @@ func TestMentorNewsCancelFlattenAtEvalOnceCallSite(t *testing.T) {
 		t.Fatal("the surviving swing arm must stay in the registry")
 	}
 }
+
+// TestMentorNewsCancelRunsOnTheMonitorBeatWithoutABar — MENTOR-NY item 8
+// (rescan P2-N5). The same print-window rig as above, but NO bar arrives (a
+// feed outage or an NT8 lag across the print): the 60 s monitor beat
+// (monitorTick, the production wall-clock call site) must still cancel the
+// live intraday mentor arm before the print; the swing stays.
+// MUTANT: drop at.mentorSweepsOnBeat() from monitorTick → RED.
+func TestMentorNewsCancelRunsOnTheMonitorBeatWithoutABar(t *testing.T) {
+	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	at, _, ledger, _ := mentorB3Rig(t)
+	mentorWireSeams(t, at, ledger)
+
+	now := b3Clock(7, 20)
+	mentorNowSource = func() time.Time { return now }
+	t.Cleanup(func() { mentorNowSource = nil })
+	mentorDayEventsForTest = func() ([]calendar.Event, bool) {
+		return []calendar.Event{{
+			Time:   time.Date(2026, 9, 23, 7, 30, 0, 0, kernel.CTLocation()),
+			Title:  "CPI m/m",
+			Impact: calendar.T1,
+		}}, true
+	}
+	t.Cleanup(func() { mentorDayEventsForTest = nil })
+	author := func(armID, setup string) {
+		at.mentorArmIntent(
+			mentor.Intent{
+				Action: mentor.PlaceStopLimitEntry, ArmID: armID,
+				Side: mentor.SideLong, Price: 29600, Stop: 29590, Target: 29620,
+				Setup: setup, ExpiryMs: now.UnixMilli() + 60_000,
+			},
+			mentorSizeChoice{Contracts: 1, Tier: "base"},
+			now.UnixMilli(), now.UnixMilli(), "B", 0,
+		)
+	}
+	author("isb-beat", "ISB")
+	author("swing-beat", "SWING4H")
+	isb, ok := at.mentorLiveArmFor("isb-beat")
+	swing, ok2 := at.mentorLiveArmFor("swing-beat")
+	if !ok || !ok2 {
+		t.Fatal("precondition: both arms registered")
+	}
+
+	at.monitorTick(now) // the wall-clock beat — no mentorEvalOnce, no bar
+
+	var r store.ArmedOrderDB
+	if err := ledger.DB().First(&r, isb.RowID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if r.State != store.StateCancelled {
+		t.Fatalf("the monitor beat must cancel the intraday mentor arm inside the print window with no bar, got state=%q", r.State)
+	}
+	var s store.ArmedOrderDB
+	if err := ledger.DB().First(&s, swing.RowID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if store.IsTerminalArmState(s.State) {
+		t.Fatalf("the SWING4H arm must survive, got state=%q", s.State)
+	}
+}

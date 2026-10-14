@@ -451,6 +451,11 @@ func (tm *TraderManager) RemoveTrader(traderID string) {
 	defer tm.mu.Unlock()
 
 	if t, exists := tm.traders[traderID]; exists {
+		// MENTOR-NY item 3: RETIRE first — an instance whose Run was spawned
+		// but has not claimed the trader yet (is_running still false: the
+		// 10-13 16:35:46 reload race) is refused when it gets there, so a
+		// removed instance can never run beside the one loaded after it.
+		t.Retire()
 		// Stop the trader if it's running (this ensures the goroutine exits)
 		status := t.GetStatus()
 		if isRunning, ok := status["is_running"].(bool); ok && isRunning {

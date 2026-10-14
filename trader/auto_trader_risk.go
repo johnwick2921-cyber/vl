@@ -92,6 +92,12 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	// loss latch holds (cancel first, flatten second: a working entry must not
 	// fill after the flat).
 	at.dailyLossFlattenAt(now)
+	// MENTOR-NY item 8 (rescan P2-N5): the mentor news cancel/flatten and the
+	// day-stop sweep also run on this wall-clock beat — before, their only
+	// callers were inside mentorEvalOnce, i.e. only on a NEW closed bar, so a
+	// feed outage or an NT8 lag across the 07:30 print skipped the −10 m
+	// cancel/flatten (10-14: FEED DOWN 03:44–07:49 spanned the CPI print).
+	at.mentorSweepsOnBeat()
 }
 
 // positionPnLPct computes a position's leveraged P&L percent. Side is normalized:
