@@ -1005,7 +1005,11 @@ func rejectComposedStopFrag(on bool) string {
 	if !on {
 		return ""
 	}
-	return "REJECT fades are the exception to authoring the stop yourself: the executor composes their stop from the FROZEN ZONE (zone edge \u2212 buffer), never your literal \u2014 that composed stop must still clear the same floor. "
+	return "REJECT fades are the exception to authoring the stop yourself: the executor composes their stop from the FROZEN ZONE (zone edge \u2212 buffer), never your literal \u2014 that composed stop must still clear the same floor. " +
+		// R22 P2 (MATH-PLANNER §3 F1): the TARGET is composed too (rulebook §Target
+		// and admission) — the prompt said only the stop, so 10 of 11 planned_order
+		// reject arms since 10-12 were authored on a target the gate never judges.
+		"A planned_order REJECT's TARGET is composed too: the near edge of the FIRST complete zone strictly beyond the entry zone in the profit direction (never your literal, never skipped for a better ratio), and R:R is judged on that composed stop and target. When that next zone sits closer than the floor \u00d7 the composed risk, the arm is refused \u2014 use a market_in_zone arm there (judged at your own target) or choose a level with room to its next zone. "
 }
 
 func plannerContractSchemaFrag(on bool) string {
