@@ -121,6 +121,30 @@ type DayGateReport struct {
 	OneHDir  Side       `json:"oneh_dir,omitempty"`
 	Conflict bool       `json:"conflict,omitempty"`
 	SpentPts float64    `json:"spent_pts,omitempty"`
+	// ReadAt is the evaluator clock of the tick that froze the latch — the
+	// instant the 4h/1h directions above were READ (release #22, P2-3). The
+	// live latch reads at 08:30; a restart (or a feed gap) after 08:30
+	// re-latches later on the HTF state of THAT moment, and the day-gate line
+	// must say so instead of labelling it "@08:30". 0 = unknown.
+	ReadAt int64 `json:"read_at,omitempty"`
+}
+
+// OpenAt is the 08:30 CT instant of the report's trading day (0 when the key
+// does not parse).
+func (r DayGateReport) OpenAt() int64 {
+	d, err := time.ParseInLocation("2006-01-02", r.Key, ctime())
+	if err != nil {
+		return 0
+	}
+	return time.Date(d.Year(), d.Month(), d.Day(), globexCloseMin/60, globexCloseMin%60, 0, 0, ctime()).UnixMilli()
+}
+
+// ReadAtOpen reports whether the latch was read in the 08:30 CT minute — the
+// live pre-session read [D5.1 p1 @18:36]. False for a late re-latch (restart
+// or feed gap) and for an unknown ReadAt.
+func (r DayGateReport) ReadAtOpen() bool {
+	o := r.OpenAt()
+	return o > 0 && r.ReadAt >= o && r.ReadAt < o+60_000
 }
 
 // recheckDayOff (owner ruling 2026-10-09) runs the one-way DayOff recheck:

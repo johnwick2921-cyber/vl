@@ -200,22 +200,31 @@ func TestSeedSwingFlipIncremental(t *testing.T) {
 	newStart := oldStart + 240*60_000
 	// fill the NEW bucket too, then close it: the flip fires when the new
 	// bucket is CLOSED (swingLine needs ≥2 closed buckets to return a line).
+	newClose := 0.0
 	for m := 0; m < 48; m++ {
 		t5 := newStart + int64(m)*5*60_000
 		c := 21100 + float64(m)
+		if m == 47 {
+			newClose = c
+		}
 		bars5m = append(bars5m, mkBar(c-0.25, c, t5, 5))
 	}
 	now2 := newStart + 240*60_000 // the new bucket has closed
 
 	out := SwingTick(&e.State.Swing, bars5m, cfg.Swing, now2)
 	_ = out
+	// Release #22 F-3: this tick jumps over the WHOLE newStart bucket (it
+	// opened and closed between two ticks), so the full rebuild folds BOTH
+	// closes — oldStart's, then newStart's. The pre-#22 expectation (only
+	// oldClose, EmaCount+1) was the F-3 bug itself.
 	k := 2.0 / float64(cfg.Swing.EMAPeriod+1)
 	want := line0 + k*(oldClose-line0)
+	want = want + k*(newClose-want)
 	if abs(e.State.Swing.Line-want) > 1e-9 {
 		t.Fatalf("flip line %.6f, want incremental %.6f", e.State.Swing.Line, want)
 	}
-	if e.State.Swing.EmaCount != count0+1 {
-		t.Fatalf("EmaCount %d, want %d", e.State.Swing.EmaCount, count0+1)
+	if e.State.Swing.EmaCount != count0+2 {
+		t.Fatalf("EmaCount %d, want %d", e.State.Swing.EmaCount, count0+2)
 	}
 	if e.State.Swing.BucketStart != newStart+240*60_000 {
 		t.Fatalf("BucketStart %d, want current bucket %d",
