@@ -42,6 +42,20 @@ type mentorLivePos struct {
 	RunnerTarget  float64        // #360 item 5: the level beyond the old high (resonance runner target); 0 = none
 	SpentDay      bool           // §7 spent day → mode D (runner ≤ 2)
 	Confluence    bool           // R2 confluence flag → mode C
+	// ISBPartialDone (release #22) — the ISB candle-3 partial was resolved (sent,
+	// skipped or refused) and must never run again. A restart-rebuilt position
+	// starts DONE: its fill candle is unknown, so a resolution after the restart
+	// would read the WRONG candle and send a real modify off it (fail-closed:
+	// leg 1 keeps the +1R TP already resting at NT8).
+	ISBPartialDone bool
+	// A SENT leg-1 TP modify awaiting the NT8 verdict (release #22,
+	// mentorVerifyPendingTPModifies). TPModWant 0 = none pending. Guarded by
+	// mentorExitMu.
+	TPModWant        float64
+	TPModSentAt      time.Time
+	TPModStaleWarned bool
+	// BEWaitLogged — the "close not past break-even, BE waits" line fired once.
+	BEWaitLogged bool
 }
 
 // registerMentorLivePos (DS-107, one-row entry) builds the single-leg live
@@ -779,7 +793,9 @@ func (at *AutoTrader) mentorBuildLivePosFromBook(r store.ArmedOrderDB, pos *stor
 		Scaled:    scaled,
 		Leg1TP:    leg1TP,
 	}
-	lp := &mentorLivePos{Pos: pos2}
+	// Release #22: the fill candle is unknown after a restart — never resolve
+	// the ISB candle-3 partial off a later candle (it is now a REAL modify).
+	lp := &mentorLivePos{Pos: pos2, ISBPartialDone: true}
 	if splitLive {
 		lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: leg1Qty, TP: leg1TP, Stop: leg1Stop, Final: false, Wire: 1}
 		lp.Legs[1] = mentorLeg{SignalID: r.SignalID, Qty: leg2Qty, TP: leg2TP, Stop: leg2Stop, Final: true, Wire: 2}

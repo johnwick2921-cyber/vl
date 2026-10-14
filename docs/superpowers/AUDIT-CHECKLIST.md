@@ -8395,3 +8395,77 @@ qualifying pair, not the latest — and a pair that price crossed is refused and
 counted (trendline_crossed_between_anchors), never drawn.
 Reference: kernel/mentor/trendline.go trendlinesBuild / trendlineCrossed,
 kernel/mentor/eval.go trackTrendlines, TestTrendlinesKeptAllSession1013.
+
+## CLASS NN (assigned at merge) — a seam declared for later wiring and never assigned (log-only forever)
+
+symptom: release #22 (MENTOR-AUDIT P1-2, 2026-10-14): `modifyBracketWire` was
+declared `var modifyBracketWire func(...) error` (nil) on 10-05 "until proven
+on SIM" and nothing ever assigned it. The live drive logged "mentor ISB leg1
+modify_bracket WOULD set TP … UNWIRED" on 7 real trades (rows 254, 273, 281,
+304, 308, 317, 362) and sent nothing; the course rule it carried ("phải BÁN
+BỚT. Bắt buộc") never reached NinjaTrader. The unit tests pinned the LOG
+counter, so they stayed green the whole time. probe: for every package-level
+`var <name>Wire` / seam func var, grep for a NON-test assignment; for every
+production log line containing "WOULD" or "UNWIRED", count its occurrences in
+the live logs — a "would" that fires on real trades is a feature that is not
+there. rule: a seam ships ASSIGNED to the production path at its declaration;
+"not yet proven" is a knob (default OFF) or a boot line that READS the wired
+state, never a nil var. Pin the wire at the production call site (the frame
+the far side reads) and mutate the declaration back to nil — the pin must go
+RED. Reference: trader/mentor_mode.go modifyBracketWire,
+trader/mentor_trail_r22.go mentorISBPartialStep / mentorSendISBPartialTP,
+trader/mentor_r22_exit_test.go TestR22Candle3PartialIsARealModify (mutant M3).
+
+## CLASS NN (assigned at merge) — a pure rule pinned by tests that production never calls
+
+symptom: release #22 (MENTOR-AUDIT P1-3): the course-pure exit model
+`mentorExitB` (break-even for both legs at +1R) carried its own tests, while
+the live drive armed break-even at HALF the distance to the far trade target
+(1.0R–7.2R on every real trade). After leg 1 banked +1R the runner kept its
+full original stop: row 313 (10-12 03:21:40 receipt, 03:22:00 driver line
+`scaled=true armedBE=false stop=31157.50 broker=31157.50`) lost the full 1R
+one candle later. The tests described a rule nobody ran. probe: for each pure
+rule function with tests, list its non-test callers (`grep -rn "<fn>(" --include=*.go
+| grep -v _test`); a rule with zero production callers next to a different
+live rule is a spec split. rule: the rule the tests pin is the rule the drive
+calls — test the drive (the per-candle entry point) with the course's own
+numbers, and delete or mark test-only any parallel model. Reference:
+trader/mentor_mode.go mentorExitB (test-only), trader/mentor_trail_r22.go
+mentorExitDriveCandle, trader/mentor_r22_exit_test.go
+TestR22BEAfterConfirmedPartialThenCandleTrail (the base rule is RED on it).
+
+## CLASS NN (assigned at merge) — a safety guard judged against the bot's belief instead of the broker
+
+symptom: release #22 (MENTOR-AUDIT P2-3): `mentorMoveLegStop`'s never-widen
+check compared the new stop with `leg.Stop` — the driver's BELIEF. A stop the
+owner tightened by hand in NinjaTrader while no move was pending was invisible
+to it, so the next BE/1:1/trail move could LOOSEN it, and the F1 verifier
+would then read broker == want and log CONFIRMED. probe: for every guard that
+protects a broker-side value (stop, size, target), ask which copy it reads —
+the bot's own memory, or the broker's latest book — and what it does when the
+book is stale. rule: judge against the broker's own book before sending: no
+fresh book → refuse (nothing can be judged; not moving cannot widen); no live
+order for the leg → send nothing; broker already tighter → keep it, correct
+the belief, count; equal → nothing to send. Pin with "the owner tightened by
+hand" at the production call site and mutate the broker-tighter branch away.
+Reference: trader/mentor_trail_r22.go mentorJudgeAgainstBroker /
+mentorBrokerLegStopRead, trader/mentor_r22_exit_test.go
+TestR22NeverWidenJudgedAgainstTheBroker (mutant M1).
+
+## CLASS NN (assigned at merge) — a late verdict acted on for a leg that is already closed
+
+symptom: review-1014 EXECUTION F-6 (#651, 10-14 01:04–01:07 CT): leg 1 closed
+by its TP at 01:04:36; at 01:05:00 the driver still sent a break-even move to
+leg 1, then WARNed "NO live stop order … leg 1 — leaving to the protection net"
+at 01:06:00, and WARNed again for leg 2 at 01:07:00 against a position flat
+since 01:06:07. Same pattern on #645 (10-12 03:46:59/03:48:00) and #647
+(10:26:00/10:27:00). A WARN that fires on every winning trade trains the owner
+to ignore the WARN that matters. probe: for every per-leg action and every
+verifier verdict, ask what happens when the leg closed between the send and
+the verdict — is "gone because it filled" distinguished from "gone because NT8
+dropped it"? rule: never send a move to a leg known closed (leg 1 after its
+confirmed partial, a flat side, an unregistered position); a verdict for such a
+leg is recorded (counter) and ignored — no WARN, no re-send, no P0, no belief
+write. Reference: trader/mentor_exit_drive.go mentorVerifyPendingStopMoves +
+the off-mode BE loop, trader/mentor_trail_r22.go mentorLegKnownClosed,
+trader/mentor_r22_exit_test.go TestR22LegClosedNoMoveSent (mutants M4, M5).

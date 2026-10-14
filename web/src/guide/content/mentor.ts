@@ -20,6 +20,7 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     live: true,
   },
   'Trail timeframe': { settingId: 'mentor_trail_tf', live: true },
+  'Runner exit (trail mode)': { settingId: 'mentor_trail_mode', live: true },
   'Key level timeframe': { settingId: 'Config.KeyLevelTFMinutes', live: false },
   'Key levels RTH only': { settingId: 'Config.KeyLevelRTHOnly', live: false },
   'Key level prune': { settingId: 'Config.KeyLevelPrunePts', live: false },
@@ -516,7 +517,7 @@ export const mentor: GuideSection = {
         ],
         [
           'B — normal',
-          '2 or more contracts: ONE entry with two exits — leg 1 (half, rounded up) takes profit at 1:1 measured from the actual entry price, the runner holds to the target (1 contract = a single leg). Both stops move to break-even at HALF the distance to the target; live 1:1 keeps the stop at 1:1 behind the target; after the 1:1 point is printed the runner’s stop trails 1 tick beyond each closed candle (trail_tf: 1m default, 30s/45s allowed, off = legacy). Spent day: at most 2 contracts run — the rest leave with leg 1. Needs the AddOn build 2026-10-04-d1; an older AddOn gets one bracket for the whole position',
+          '2 or more contracts: ONE entry with two exits — leg 1 (half, rounded up) takes profit at 1:1 measured from the actual entry price, the runner holds to the target (1 contract = a single leg). The runner’s stop follows mentor_trail_mode. candle (the default, owner ruling R3, release #22): NOTHING moves until leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader (the broker’s fill receipt, or its position size dropping to the runner — never a price touch); then the runner’s stop goes to break-even = the entry (an off-grid averaged entry rounds toward profit), on the first close past the entry — if price is back through it, the original stop stays until a close is past it; then on every CLOSED 1m candle it moves to 1 tick beyond that candle’s low (long) / high (short), only when that is tighter — a lower low (long) / higher high (short) moves nothing. off = the older rule: both stops to break-even at HALF the distance to the target, live 1:1 behind the target, trail after the 1:1 point. Either way every move is checked against the stop NinjaTrader actually holds — never wider than it (a stop you tightened by hand is kept), nothing is sent while the broker book is stale, nothing is sent to a leg that is already closed — and each move is confirmed or reported from the next broker book. trail_tf: 1m default, 30s/45s allowed, off = break-even only. Spent day: at most 2 contracts run — the rest leave with leg 1. Needs the AddOn build 2026-10-04-d1; an older AddOn gets one bracket for the whole position, which keeps the older rule',
         ],
         [
           'C — confluence',
@@ -532,11 +533,11 @@ export const mentor: GuideSection = {
         ],
         [
           'ISB partial',
-          'The ISB follows B: leg 1 (half) exits at 1:1 from the actual entry, the runner takes the B drive (BE at half the distance, live 1:1, trail 1 tick beyond after the 1:1 point). The course’s candle-3-close exit for leg 1 is only LOGGED (not sent) until it is proven on SIM',
+          'The ISB follows B, plus the course’s candle-3 rule (“phải BÁN BỚT. Bắt buộc” — you MUST sell part [D1.4 p1 @11:59–13:28]): when the fill candle closes in profit but short of 1:1, leg 1’s take-profit is MOVED to that close at NinjaTrader (a real modify, leg 1 only, rounded toward the entry) and confirmed from the next broker book (“modify_bracket CONFIRMED at NT8”); if 1:1 printed first, the resting 1:1 take-profit does it; a losing close sells nothing. A one-bracket position is never partially modified (it would close the whole trade). After a restart the fill candle is unknown, so the candle-3 step is skipped and leg 1 keeps its 1:1 take-profit. The runner then follows mentor_trail_mode (see B). Live since release #22 — from 10-05 to 10-14 this step was only logged (“WOULD set TP”), never sent',
         ],
         [
           'Restart rebuild',
-          'At boot the bot rebuilds every open mentor position from the broker’s own book (the -sl/-sl2 stops and -tp/-tp2 targets), so break-even, 1:1 and the trail resume after a restart instead of being lost. If the book has no stop for a position the bot manages nothing and raises a P0 (never guesses a stop). The boot line reads "🧑‍🏫 mentor positions rebuilt: N (refused M)". Server switch MENTOR_RESTART_REBUILD=off disables the rebuild.',
+          'At boot the bot rebuilds every open mentor position from the broker’s own book (the -sl/-sl2 stops and -tp/-tp2 targets), so the runner resumes at the right stage instead of being lost: leg 1 gone (broker size down to the runner) and the runner stop short of the entry → break-even next; the runner stop already at/through the entry → the candle trail continues. If the book has no stop for a position the bot manages nothing and raises a P0 (never guesses a stop). The boot line reads "🧑‍🏫 mentor positions rebuilt: N (refused M)". Server switch MENTOR_RESTART_REBUILD=off disables the rebuild.',
         ],
       ],
     },
@@ -689,6 +690,23 @@ export const mentor: GuideSection = {
           recommended:
             '1m — the course frame [D2.4 p1 @08:35 move-stop; X8 @15:40].',
           whenToTouch: 'off = the video-8 legacy, kept as a knob.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Runner exit (trail mode)',
+          where: 'Strategy → Risk Control → 🧑‍🏫 Mentor mode → Runner exit',
+          what: 'What moves the runner’s stop after a split mentor entry (owner ruling R3, release #22). candle: once leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader, the runner goes to break-even (the entry), then trails 1 tick beyond each closed candle’s low (long) / high (short), only ever tighter. off: the older rule — break-even at half the distance to the trade target, live 1:1, trail after the 1:1 point.',
+          trader:
+            'candle — after the 1:1 partial fills, the rest is at break-even within one closed candle, then follows each closed candle [D2.4 p1 @16:17 “CỨ BÁN BỚT, xong rồi mình GỒNG lệnh”; @07:01 “move stop THEO TỪNG CÂY NẾN ĐÃ ĐÓNG XONG”; X8 @15:40 the candle’s low].',
+          consumer:
+            'trader/mentor_trail_r22.go mentorTrailMode · mentorExitDriveCandle (called from trader/mentor_exit_drive.go mentorExitDrivePos)',
+          range:
+            'candle / off · any other value fails closed to candle and is counted (trail_mode_bad_value)',
+          systemDefault: 'candle',
+          recommended:
+            'candle — the owner’s ruling R3 and the course’s normal case. On 10-12 row 313 leg 1 banked 1:1 and the runner, still at its original stop, lost the full 1R a minute later.',
+          whenToTouch:
+            'off only to compare against the pre-release-#22 rule; a one-bracket position (1 contract, or an older AddOn) always uses the older rule.',
           perSession: 'No.',
         },
         {

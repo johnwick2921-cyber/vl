@@ -26,6 +26,10 @@ import (
 //   - mentorRR11Stop   — lesson-1.2 "keep live R:R at 1:1" [D1.2 p1 @11:36–16:07]
 //   - mentorLegStopB   — the per-leg B stop (1:1 + the runner's candle trail)
 //   - mentorBEHalfDistance — the B BE trigger (half the distance to the trade target)
+//     — mentor_trail_mode=off only. The default, candle (owner ruling R3,
+//     release #22), drives a split position's runner in mentorExitDriveCandle
+//     (mentor_trail_r22.go): BE once leg 1's partial FILLS at NT8, then 1 tick
+//     beyond each closed candle.
 
 // mentorRR11Stop is the lesson-1.2 rule [D1.2 p1 @11:36–16:07]: the LIVE R:R
 // must stay at 1:1 at all times. For a leg with target T, on a close c:
@@ -125,6 +129,9 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 	// broker's latest book BEFORE this candle's drive computes new moves — a
 	// just-corrected belief feeds the 1:1/trail math, not a stale one.
 	at.mentorVerifyPendingStopMoves(nt)
+	// Release #22 (P1-2): the same broker-book verdict for a SENT leg-1 TP
+	// modify (the ISB candle-3 partial) — the AddOn sends no success ack.
+	at.mentorVerifyPendingTPModifies(nt)
 	c, h, l := last.Close, last.High, last.Low
 	// CTO gate (release #4): the loop must drop a position once the account
 	// is flat on its side — nothing else ever unregistered it, so a closed
@@ -320,16 +327,28 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 
 	// ── (2) ISB partial (item 8): leg 1 IS the partial — it leaves at +1R TP
 	// or at the candle-3 close (the fill candle's close), whichever comes
-	// first, ONCE — and the close only when in profit. modify_bracket is
-	// LOG-only (Q2 unproven). The resolution reads the JUST-closed fill candle
-	// (BarsSinceFill == 1): its high/low decides whether +1R printed first.
-	if pos.Origin == "ISB" && !scaledNow && p.BarsSinceFill == 1 {
-		if tp := mentorISBPartialTP(*pos, c, h, l); tp > 0 {
-			p.Legs[0].TP = tp
-			leg1Target = tp
-			at.logInfof("🧑‍🏫 mentor ISB leg1 modify_bracket WOULD set TP %.2f (candle-3 close / +1R, whichever first) — UNWIRED (Q2 unproven), logged not sent", tp)
-			at.mentorCount("modify_bracket_isb_logged")
+	// first, ONCE — and the close only when in profit. The resolution reads
+	// the JUST-closed fill candle (BarsSinceFill == 1): its high/low decides
+	// whether +1R printed first. Release #22 (P1-2): a close in profit short
+	// of +1R is a REAL modify_bracket on leg 1 (modifyBracketWire, assigned),
+	// verified on the next fresh book — it was LOG-only from 10-05 to 10-14.
+	// Runs in both mentor_trail_mode values (a bug fix, not the R3 knob).
+	if pos.Origin == "ISB" && !p.ISBPartialDone && p.BarsSinceFill >= 1 {
+		p.ISBPartialDone = true
+		if !scaledNow && p.BarsSinceFill == 1 {
+			if tp := at.mentorISBPartialStep(nt, p, c, h, l); tp > 0 {
+				leg1Target = tp
+			}
 		}
+	}
+
+	// ── R3 (release #22, mentor_trail_mode=candle, the default): a SPLIT
+	// position's runner goes to break-even once leg 1's partial is CONFIRMED
+	// filled at NT8, then trails 1 tick beyond each closed candle. A single
+	// bracket has no leg-1 partial to confirm and keeps the rule below.
+	if leg1OnWire && p.Legs[1].Qty > 0 && p.Legs[1].SignalID != "" && at.mentorTrailMode() == mentorTrailModeCandle {
+		at.mentorExitDriveCandle(nt, p, c, h, l, scaledNow, scaledBefore, trail)
+		return
 	}
 
 	// ── (1) B BE: arm both legs' stops to entry once price covers HALF the
@@ -343,22 +362,48 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			armed = l <= pos.Entry+half
 		}
 		if armed {
+			// Release #22: BE counts as armed only when a move was APPLIED (sent,
+			// already at the broker, or the broker already tighter) — a refused
+			// or failed move never writes the belief; BE is re-tried next candle.
+			applied := false
 			for i := range p.Legs {
 				leg := &p.Legs[i]
 				if leg.SignalID == "" || leg.Qty <= 0 {
 					continue
 				}
-				if err := at.mentorMoveLegStop(nt, side, leg, pos.Entry); err != nil {
-					if !errors.Is(err, errMentorStopManual) {
+				// F-6 (release #22): leg 1 of a split whose partial is CONFIRMED
+				// filled is closed — never send it a move (#651 01:05:00 sent BE
+				// to the gone leg 1, then WARNed "NO live stop order" at 01:06).
+				if leg1OnWire && !leg.Final && scaledNow {
+					at.mentorCount("stop_move_skipped_leg_closed")
+					continue
+				}
+				err := at.mentorMoveLegStop(nt, side, leg, pos.Entry)
+				if errors.Is(err, errMentorStopBrokerTighter) {
+					applied = true // the broker is already past BE (belief corrected)
+					continue
+				}
+				if !mentorMoveApplied(err) {
+					if !mentorMoveErrAlreadyLogged(err) {
 						at.logWarnf("🧑‍🏫 mentor BE leg %d move FAILED: %v", i, err)
 					}
 					continue
 				}
 				leg.Stop = pos.Entry
+				applied = true
 			}
-			pos.ArmedBE = true
-			pos.Stop = pos.Entry
-			at.mentorCount("be_armed_both_legs")
+			if applied {
+				pos.ArmedBE = true
+				pos.Stop = pos.Entry
+				for i := range p.Legs {
+					if p.Legs[i].Final && p.Legs[i].Qty > 0 && mentorStopTighter(side, p.Legs[i].Stop, pos.Stop) {
+						pos.Stop = p.Legs[i].Stop
+					}
+				}
+				at.mentorCount("be_armed_both_legs")
+			} else {
+				at.mentorCount("be_not_armed_no_move_applied")
+			}
 		}
 	}
 
@@ -416,8 +461,8 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			if next == leg.Stop {
 				continue
 			}
-			if err := at.mentorMoveLegStop(nt, side, leg, next); err != nil {
-				if !errors.Is(err, errMentorStopManual) {
+			if err := at.mentorMoveLegStop(nt, side, leg, next); !mentorMoveApplied(err) {
+				if !mentorMoveErrAlreadyLogged(err) {
 					at.logWarnf("🧑‍🏫 mentor %s leg %d stop move FAILED: %v", side, i, err)
 				}
 				continue
@@ -443,9 +488,14 @@ var mentorMoveStopForSignalWire = func(nt *ntTrader.TCPTrader, signalID, side st
 var errMentorStopManual = errors.New("mentor stop move: leg under manual management")
 
 // mentorMoveLegStop sends one leg's stop move through the signal-keyed
-// move_stop frame, guarded by mentorNeverWiden (never widen, D2.3 p1 @18:08).
-// A latched leg (two broker refusals) sends NOTHING — the belief is the broker
-// truth and the owner manages it by hand.
+// move_stop frame, guarded by mentorNeverWiden (never widen, D2.3 p1 @18:08)
+// against the belief AND — release #22, P2-3 — against the BROKER's own stop
+// (mentorJudgeAgainstBroker): no fresh book refuses, no live stop for the leg
+// sends nothing (F-6), a broker stop already tighter is kept. A latched leg
+// (two broker refusals) sends NOTHING — the belief is the broker truth and the
+// owner manages it by hand. Returns nil only when a frame was SENT;
+// errMentorStopAtBroker when the broker already holds newStop (nothing sent,
+// the caller may write the belief — mentorMoveApplied).
 func (at *AutoTrader) mentorMoveLegStop(nt *ntTrader.TCPTrader, side string, leg *mentorLeg, newStop float64) error {
 	if leg == nil || leg.SignalID == "" {
 		return fmt.Errorf("mentor leg stop move: no leg signal id")
@@ -456,6 +506,9 @@ func (at *AutoTrader) mentorMoveLegStop(nt *ntTrader.TCPTrader, side string, leg
 	if refuse, why := mentorNeverWiden(side, leg.Stop, newStop); refuse {
 		at.mentorCount("widen_refused")
 		return fmt.Errorf("mentor leg stop move refused: %s", why)
+	}
+	if err := at.mentorJudgeAgainstBroker(nt, side, leg, newStop); err != nil {
+		return err
 	}
 	if err := mentorMoveStopForSignalWire(nt, leg.SignalID, side, newStop, leg.Wire); err != nil {
 		at.mentorCount("move_stop_failed")
@@ -838,6 +891,17 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 		if !recvAt.After(mv.sendAt.Add(2 * time.Second)) {
 			continue
 		}
+		// F-6 (release #22): a verdict for a leg that is KNOWN closed (leg 1
+		// after its confirmed partial, a flat side, a dropped position) is a
+		// LATE confirmation — recorded and ignored, never acted on: no WARN,
+		// no re-send, no P0, no belief write. #651 (10-14 01:06/01:07) and
+		// #645/#647 WARNed "NO live stop order" for exactly these legs.
+		if closed, why := at.mentorLegKnownClosed(mv.signalID, mv.side, mv.wireLeg); closed {
+			at.mentorCount("stop_move_verify_leg_closed")
+			at.logInfof("🧑‍🏫 mentor stop-move verify: %s leg %d is closed (%s) — late verdict recorded, ignored (F-6)", mv.signalID, mv.wireLeg, why)
+			at.mentorDeletePendingStopMove(key)
+			continue
+		}
 		if stale {
 			// No fresh book → no verdict yet; warn once and wait.
 			if !mv.staleWarned {
@@ -975,8 +1039,8 @@ func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 			if leg.SignalID == "" || leg.Qty <= 0 {
 				continue
 			}
-			if err := at.mentorMoveLegStop(nt, p.Pos.Side, leg, p.Pos.Entry); err != nil {
-				if !errors.Is(err, errMentorStopManual) {
+			if err := at.mentorMoveLegStop(nt, p.Pos.Side, leg, p.Pos.Entry); !mentorMoveApplied(err) {
+				if !mentorMoveErrAlreadyLogged(err) {
 					at.logWarnf("🧑‍🏫 mentor resonance BE leg %d move FAILED: %v", i, err)
 				}
 				continue

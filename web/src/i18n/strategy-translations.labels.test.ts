@@ -89,15 +89,22 @@ describe('gridConfig label truth (pinned to store/strategy.go:1860-1914)', () =>
   })
 })
 
-// Risk descs pin the 0B suspension truth (trader/auto_trader_trailing.go:178:
-// the ratchet computes a new level; the broker is never moved).
-describe('riskControl suspension truth (pinned to auto_trader_trailing.go 0B)', () => {
-  it('breakeven desc states SUSPENDED (0B)', () => {
+// Risk descs pin the 0B seam truth (trader/exit_mechs_suspend.go
+// exitMechsSuspended: env EXIT_MECHS_SUSPENDED unset = SUSPENDED, =0 = ACTIVE).
+// Release #22 (UI-GUIDE-TRUTH T2): the old text said "the running binary does
+// not move the stop" while the live boot read BE=on · seam=ACTIVE — the desc
+// must name BOTH switches, never claim one fixed state.
+describe('riskControl seam truth (pinned to exit_mechs_suspend.go 0B)', () => {
+  it('breakeven desc names both switches and the env seam', () => {
+    expect(riskControl.breakevenDesc.en).toContain('EXIT_MECHS_SUSPENDED=0')
     expect(riskControl.breakevenDesc.en).toContain('SUSPENDED (0B)')
+    expect(riskControl.breakevenDesc.en).not.toContain(
+      'the running binary does not move the stop'
+    )
   })
 
-  it('trailing desc states SUSPENDED (0B) and names the code file', () => {
-    expect(riskControl.trailingDesc.en).toContain('SUSPENDED (0B)')
+  it('trailing desc names both switches and the code file', () => {
+    expect(riskControl.trailingDesc.en).toContain('EXIT_MECHS_SUSPENDED=0')
     expect(riskControl.trailingDesc.en).toContain('auto_trader_trailing.go')
   })
 })
