@@ -102,14 +102,17 @@ describe('T16 — a mentor card names a Studio control only when one exists', ()
     ...[...editor.matchAll(/updateField\('(mentor_[a-z0-9_]+)'/g)].map(
       (m) => m[1]
     ),
-    ...[...tuning.matchAll(/(?:numField|boolField)\('([a-z0-9_]+)'/g)].map(
-      (m) => m[1]
-    ),
+    ...[
+      ...tuning.matchAll(
+        /(?:numField|boolField|enumField)\(\s*'([a-z0-9_]+)'/g
+      ),
+    ].map((m) => m[1]),
     ...(tuning.includes('trigger_school') ? ['trigger_school'] : []),
   ])
   it('found the Studio controls (non-vacuous)', () => {
     expect(controls.has('mentor_mode')).toBe(true)
     expect(controls.has('ping_pong_min_gap_pts')).toBe(true)
+    expect(controls.has('15m_ib_requires_5m_isb')).toBe(true) // enumField
   })
   it('every live mentor card agrees with the Studio', () => {
     const live = knobs('mentor').filter((k) => k.live === true && k.settingId)

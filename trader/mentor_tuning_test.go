@@ -92,6 +92,10 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			HTFGateNewsOnly: false, // D4.4-11: the all-day 4h/1h gate stays the default (U-6 open)
 			Exec2mAfter30m:  false, // X5-10: the 1m ISB read stays the default (course trades the 1m)
 			DayGateSpentPts: 300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
+			// Release #25 course-entry knobs (COMMON-25 knob rule: (a) ON, (b) OFF).
+			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictFirstBox,
+			ISBBoxEscapeMode: mentor.ISBBoxEscapeBody, EmaLossRelock: mentor.EmaRelockUntilZoneExit,
+			D43TrendSource: mentor.D43TrendTriggerLine, TrendlineIsTarget: true, LegResetOnWaveBreak: true,
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)

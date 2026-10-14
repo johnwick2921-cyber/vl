@@ -290,6 +290,31 @@ export interface MentorTuning {
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number
   swing_max_stop_pts?: number
+  // Course-entry knobs (release #25). Unset = the ruled default in brackets.
+  // D4.2 p1 — a 1m ISB under a standing 15m box [require_5m_isb]
+  '15m_ib_requires_5m_isb'?: 'off' | 'require_5m_isb' | 'no_trade_until_escape'
+  // D4.2 p1 @07:54 — when a 5m/15m box conflict ends [first_box] (OQ-2)
+  tf_conflict_end?: 'first_box' | 'both_boxes'
+  // D4.4 p1 @21:55 — news day: wait beyond the 4h trigger line until 08:30 [false]
+  news_wait_both_lines?: boolean
+  // D4.4 p1 @18:18 — drop print→08:30 bars from the 1h/4h feed [false]
+  news_bars_excluded?: boolean
+  // D4.1 p1 @20:52 — ISB rest box escape test [body]
+  isb_box_escape?: 'close' | 'body'
+  // D4.2 p2 @01:33 — EMA 34 back after one loss [until_zone_exit]
+  ema34_loss_relock?: 'session' | 'until_zone_exit'
+  // X5 @08:52 — refuse an entry within N pts of the ORB edge [0 = off]
+  orb_edge_veto_pts?: number
+  // D4.3 @12:43 — the box-return 5m trend source [trigger_line]
+  d43_trend_source?: 'trigger_line' | 'structure'
+  // D3.4 p1 @17:48 — the 5m trigger side binds every level reject [false]
+  level_entries_need_trigger_side?: boolean
+  // D3.3 p1 @05:18 — a trendline in the path is a target [true]
+  trendline_is_target?: boolean
+  // D3.2 p2 @10:56 — a trendline reject between two boxes may trade [false]
+  trendline_between_boxes?: boolean
+  // X-FOMO @06:10 — a stopped-out leg also resets on a wave break [true]
+  leg_reset_on_wave_break?: boolean
 }
 
 export interface RiskControlConfig {

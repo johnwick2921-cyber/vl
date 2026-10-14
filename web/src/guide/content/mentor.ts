@@ -46,6 +46,55 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.exec_2m_after_30m',
     live: true,
   },
+  // Course-entry knobs (release #25, fix/mentor-course-entries).
+  '15m inside-bar box needs a 5m ISB': {
+    settingId: 'risk_control.mentor_tuning.15m_ib_requires_5m_isb',
+    live: true,
+  },
+  '5m/15m box conflict end': {
+    settingId: 'risk_control.mentor_tuning.tf_conflict_end',
+    live: true,
+  },
+  'News day: wait beyond the 4h line': {
+    settingId: 'risk_control.mentor_tuning.news_wait_both_lines',
+    live: true,
+  },
+  'News day: post-print bars off the 1h/4h lines': {
+    settingId: 'risk_control.mentor_tuning.news_bars_excluded',
+    live: true,
+  },
+  'ISB rest box escape test': {
+    settingId: 'risk_control.mentor_tuning.isb_box_escape',
+    live: true,
+  },
+  'EMA 34 back after a loss': {
+    settingId: 'risk_control.mentor_tuning.ema34_loss_relock',
+    live: true,
+  },
+  'ORB edge veto': {
+    settingId: 'risk_control.mentor_tuning.orb_edge_veto_pts',
+    live: true,
+  },
+  'Box-return 5m trend source': {
+    settingId: 'risk_control.mentor_tuning.d43_trend_source',
+    live: true,
+  },
+  'Level entries need the 5m trigger side': {
+    settingId: 'risk_control.mentor_tuning.level_entries_need_trigger_side',
+    live: true,
+  },
+  'Trendline is a target': {
+    settingId: 'risk_control.mentor_tuning.trendline_is_target',
+    live: true,
+  },
+  'Trendline reject between two boxes': {
+    settingId: 'risk_control.mentor_tuning.trendline_between_boxes',
+    live: true,
+  },
+  'Leg reset on a wave break': {
+    settingId: 'risk_control.mentor_tuning.leg_reset_on_wave_break',
+    live: true,
+  },
   'PHL min candles from old extreme': {
     settingId: 'Config.PHLMinCandlesFromExtreme',
     live: false,
@@ -389,8 +438,8 @@ export const mentor: GuideSection = {
         },
         {
           title: '15m and 30m ISB rest boxes + the escalation ladder',
-          body: 'Like the 5m ISB rest box, the latest CLOSED 15m and 30m inside-bar candles are boxed and extended right. Inside a standing box, nothing trades against that box\u2019s direction — a 1m ISB is gated on the box direction, PHL/PLH and box returns inside are banned. When a timeframe\u2019s ISBs are CROSSING (2 opposite ISBs within the last 3 closed buckets) that timeframe is unreadable and its box gate is skipped — the next timeframe up governs (5m → 15m → 30m). A 1m BODY close outside deletes the box.',
-          cite: 'D4.1 p2 @07:35–08:11 · D4.2 p1 @16:28–16:46 · D3.4 p2 @17:07–17:49',
+          body: 'Like the 5m ISB rest box, the latest CLOSED 15m and 30m inside-bar candles are boxed and extended right. Inside a standing box, nothing trades against that box\u2019s direction — a 1m ISB is gated on the box direction, PHL/PLH and box returns inside are banned. When a timeframe\u2019s ISBs are CROSSING (2 opposite ISBs within the last 3 closed buckets) that timeframe is unreadable and its box gate is skipped — the next timeframe up governs (5m → 15m → 30m). A 1m candle with its OPEN and CLOSE both beyond the edge deletes the box (isb_box_escape, default body; close = the older close-only test). While a 15m box stands, a 1m ISB in its direction also needs a 5m ISB in that direction (15m_ib_requires_5m_isb, default require_5m_isb).',
+          cite: 'D4.1 p2 @07:35–08:11 · D4.2 p1 @16:28–16:46 · D3.4 p2 @17:07–17:49 · D4.1 p1 @20:52–21:02 (body escape) · D4.2 p1 @17:09–17:13 (5m ISB under a 15m box)',
         },
         {
           title: 'The 4h/1h trigger line is a target, never a location',
@@ -414,8 +463,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Leg budget — two entries per leg',
-          body: 'A leg runs from the PHL/PLH to the old extreme and allows at most 2 entries (the PHL/PLH + a same-direction ISB). A stop-out inside the leg closes it; a NEW leg starts only on a 1m CLOSE beyond the prior high (long) / low (short).',
-          cite: 'G1 · X15 @00:36–02:46',
+          body: 'A leg runs from the PHL/PLH to the old extreme and allows at most 2 entries (the PHL/PLH + a same-direction ISB). A stop-out inside the leg closes it; a NEW leg starts on a 1m CLOSE beyond the prior high (long) / low (short) — or, for a leg closed by a stop-out, on a 1m close beyond the losing trade\u2019s wave extreme (leg_reset_on_wave_break, default ON).',
+          cite: 'G1 · X15 @00:36–02:46 · X-FOMO @06:10–06:22 (wave break)',
         },
       ],
     },
@@ -435,8 +484,8 @@ export const mentor: GuideSection = {
         ],
         [
           'ISB rest box',
-          'The latest 5m ISB candle is boxed and extended right; only a same-direction 1m ISB trades inside; a 1m BODY closing outside deletes the box',
-          '—',
+          'The latest 5m ISB candle is boxed and extended right; only a same-direction 1m ISB trades inside; a 1m candle with its open AND close beyond the edge deletes the box (isb_box_escape, default body; close = the older close-only test)',
+          'isb_box_escape = body (default) · D4.1 p1 @20:52–21:02',
         ],
         [
           'Day gate (§7)',
@@ -928,6 +977,179 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
+          label: '15m inside-bar box needs a 5m ISB',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D4.2 p1 @17:09–17:13 "Nếu như khung 5 phút xuất hiện Insaba cho lệnh short thì em trade. Còn không em không trade" (if the 5m shows an inside bar for the short I trade; otherwise I don’t) · @14:24–14:34 "Nếu như khung 5 xuất hiện INSA 3 cùng chiều với khung 15 thì tôi kiếm lệnh — tôi dùng 1 phút tôi kiếm lệnh tôi trade" (a 5m inside bar in the 15m direction — then I look for the entry on the 1m) · option 1 @01:06–01:14 "Tôi không trade luôn… Đợi nó thoát khỏi range rồi mình trade" (I do not trade at all — wait for it to leave the range). While a 15m inside-bar box stands: require_5m_isb (default) = a 1m ISB trades only when a 5m ISB in the 15m box’s direction stands (or formed after the 15m candle and escaped the same way); no_trade_until_escape = no ISB at all until the 15m box escapes; off = the pre-#25 behaviour (a 1m ISB in the 15m direction passes without any 5m ISB). Refusals are counted isb_15m_needs_5m_isb / isb_15m_until_escape (isbrev_… for the reverse ISB). Default require_5m_isb — knob rule case (a), ON: both course options forbid what the bot did, and he names it as a month of his own losses (@15:41–16:46).',
+          trader:
+            'require_5m_isb — case (a). no_trade_until_escape is his stricter option 1; off restores the pre-#25 pass.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/eval.go Tick ISB path (fifteenMinISBGate)',
+          range: 'off / require_5m_isb / no_trade_until_escape',
+          systemDefault: 'require_5m_isb',
+          recommended:
+            'require_5m_isb — D4.2 p1 @17:09–17:13, @14:24–14:34; knob rule (a): course, no ruling against.',
+          whenToTouch:
+            'Only on an owner ruling (no_trade_until_escape = his option 1, @01:06–01:14).',
+          perSession: 'No.',
+        },
+        {
+          label: '5m/15m box conflict end',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D4.2 p1 @07:54–08:02 "Khi anh chị thấy nó messed up như vậy — Đừng trade. Đợi nó thoát cả luôn" (when you see it messed up like that — do not trade; wait until it escapes entirely). While a 5m box and a 15m box conflict, nothing trades. first_box (default) = the conflict ends when the small 5m box escapes; both_boxes = no trade until BOTH the 5m and the 15m boxes have escaped (refusals counted isb_tf_conflict_both_boxes). Default first_box — knob rule case (b), OFF: "cả" is ambiguous (the 15m range, or both boxes) — open question OQ-2.',
+          trader: 'first_box — case (b), OQ-2 open.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/eval.go Tick (5m/15m conflict)',
+          range: 'first_box / both_boxes',
+          systemDefault: 'first_box',
+          recommended:
+            'first_box — D4.2 p1 @07:54–08:02; knob rule (b): open question OQ-2 ("cả" is ambiguous).',
+          whenToTouch: 'Only on an owner ruling of OQ-2.',
+          perSession: 'No.',
+        },
+        {
+          label: 'News day: wait beyond the 4h line',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D4.4 p1 @21:55–22:12 "Đợi canh nó nằm trên hai cái đường line này, kiếm insert bar đu vô… Hoặc anh chị chỉ cần đợi nó nằm ở trên cái đường line 4 giờ" (wait for price to sit above both lines and take an inside bar — or at least above the 4h line). ON = on a red-folder print day, from the print window until the 08:30 CT RTH open, an intraday entry needs the last close beyond the 4h trigger line on its own side (above it for a long, below it for a short); refusals counted news_wait_4h_line. OFF (default) = no such wait (the print window itself still refuses). Knob rule case (b), OFF: open question OQ-6 — news vs the open, where D4.4 p2 @03:51 says price need NOT be on the right side. The 30-second ISB of the same lesson (@23:08–23:13 "Đánh inside bar lệnh long 30 giây cho em") is NOT built: NinjaTrader streams 1m bars and up, there are no sub-minute bars, and the bot does not fake them.',
+          trader: 'OFF — case (b), OQ-6 open.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/eval.go newsWaitFilter',
+          range: 'true / false',
+          systemDefault: 'false',
+          recommended:
+            'OFF — D4.4 p1 @21:55–22:12 vs D4.4 p2 @03:51; knob rule (b): open question OQ-6.',
+          whenToTouch: 'Only on an owner ruling of OQ-6.',
+          perSession: 'No.',
+        },
+        {
+          label: 'News day: post-print bars off the 1h/4h lines',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D4.4 p1 @18:18–18:25 "Chứ tính cái lúc trước news, chứ không phải tính cái lúc news ra rồi nha… Còn cái khúc mà news ra rồi thì không tính" (count the read from before the news, not after; what prints after the news does not count). OFF (default) = only the 07:20–07:35 CT print-window bars are dropped from the 1h/4h trigger feed. ON = every 1m bar from the print window start until the 08:30 CT RTH open is dropped, so post-print follow-through cannot move the 1h/4h lines before the open. Knob rule case (b), OFF: the course does not say until when the exclusion runs — the 08:30 end is our reading of D4.4 p2 ("open nó cũng giống news thôi").',
+          trader:
+            'OFF — case (b): the end of the exclusion is not in the course.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/news_print.go htfFeedBars',
+          range: 'true / false',
+          systemDefault: 'false',
+          recommended:
+            'OFF — D4.4 p1 @18:18–18:25; knob rule (b): the 08:30 end is a reading, not a course line.',
+          whenToTouch: 'Only on an owner ruling.',
+          perSession: 'No.',
+        },
+        {
+          label: 'ISB rest box escape test',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D4.1 p1 @20:52–21:02 "cái thân nến nó chỉ nằm ở cái thân nến nằm bên ngoài mà cái râu nến nằm bên trong cái box ok bình thường không sao hết. Cái đó là at least" (the body outside with the wick still inside the box is fine — that is the minimum). body (default) = the 5m/15m/30m inside-bar rest box is escaped (and deleted) only when a 1m candle’s OPEN and CLOSE are both beyond the edge — the same test as the FTGH/FTGL boxes and the ORB escape; close = the older close-only test (pre-#25). Knob rule case (a), ON: the course line, no ruling against.',
+          trader: 'body — case (a).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/isb_box.go ISBBoxEscape',
+          range: 'close / body',
+          systemDefault: 'body',
+          recommended:
+            'body — D4.1 p1 @20:52–21:02; knob rule (a): course, no ruling against.',
+          whenToTouch: 'Rarely — close only to compare with the pre-#25 test.',
+          perSession: 'No.',
+        },
+        {
+          label: 'EMA 34 back after a loss',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D4.2 p2 @01:33–01:39 "Tắt EMA 34 đi. Đợi xíu nữa nó thoát khỏi cái vùng đó đi. Rồi tôi bật EMA 34 lên lại tôi ngồi tôi trade" (turn EMA 34 off, wait for price to leave that zone, then turn it back on and trade). until_zone_exit (default) = after one loss at the EMA 34, the EMA 34 location comes back when a CLOSED 1m candle lies completely outside the losing trade’s entry-to-stop zone (wicks included — the same departure test as the G2 loss box); session = off until the 17:00 CT roll (the pre-#25 behaviour). mentor_loss_departure_pts still applies as the numeric fallback. Knob rule case (a), ON.',
+          trader: 'until_zone_exit — case (a).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/ema_rules.go emaLossTick',
+          range: 'session / until_zone_exit',
+          systemDefault: 'until_zone_exit',
+          recommended:
+            'until_zone_exit — D4.2 p2 @01:33–01:39; knob rule (a): course, no ruling against.',
+          whenToTouch:
+            'Rarely — session only to compare with the pre-#25 rule.',
+          perSession: 'No.',
+        },
+        {
+          label: 'ORB edge veto',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'X5 @08:52–09:09 "cái điểm entry của mình… mà nằm gần cái resistance quá thì thôi bỏ đi" (if my entry sits too close to the resistance — skip it); @08:20–08:28 the ORB upper edge is the resistance. 0 (default) = off. N > 0 = inside RTH, after the ORB escape, an entry whose price is within N points of the ORB edge is refused (counted orb_edge_too_near). Knob rule case (b), OFF: the course gives no number, so the veto stays off until the owner sets one.',
+          trader: '0 = off — case (b): no number in the course.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/orb.go ORBVerdict',
+          range: 'pts (0 = off; 0.25–50 accepted)',
+          systemDefault: '0 (off)',
+          recommended:
+            '0 — X5 @08:52–09:09 names no distance; knob rule (b): off until an owner ruling sets N.',
+          whenToTouch: 'Only when the owner picks a distance.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Box-return 5m trend source',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D4.3 @12:43–12:54 "Nhìn từ bên trái qua bên phải… Đỉnh cao, đỉnh thấp hơn, đỉnh thấp hơn — thì nó đang là xu hướng gì — Giảm" (read left to right: a high, a lower high, a lower high — what trend is it? Down). The D4.3 "no box return against the 5m trend" gate (refusal box_against_5m_trend) reads its trend from: trigger_line (default) = the 5m trigger line; structure = 5m swing structure (higher highs + higher lows = up; lower highs + lower lows = down; mixed = no trend, no veto). Knob rule case (b), OFF: the structure reading is [B], inferred.',
+          trader: 'trigger_line — case (b).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/eval.go box-return trend gate (box_against_5m_trend)',
+          range: 'trigger_line / structure',
+          systemDefault: 'trigger_line',
+          recommended:
+            'trigger_line — D4.3 @12:43–12:54; knob rule (b): the structure reading is [B].',
+          whenToTouch: 'Only on an owner ruling.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Level entries need the 5m trigger side',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D3.4 p1 @17:48–18:00 "Bất kỳ trường hợp nào đi nữa, nếu như anh chị đã kẻ ra được cái đường buy trigger rồi thì nếu như nằm ở dưới đường buy trigger không được đánh" (in any case, once you have drawn the buy trigger line, below it you may not trade) — against D3.4 p3 @09:57–10:27 school 1 (enter at the FTGL first, wait for the trigger after) and @12:38 "anh cứ chọn 1 trong 2 thôi" (just pick one of the two); the owner chose school 1. ON = under school 1 the 5m trigger side ALSO binds every level reject (key level, EMA 34, trendline, old extreme) — school 1 stays only at the FTGL/FTGH boxes. OFF (default) = school 1 for every location. Knob rule case (b), OFF: owner ruling (school 1).',
+          trader: 'OFF — case (b): the owner ruled school 1.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/eval.go level PHL/PLH path',
+          range: 'true / false',
+          systemDefault: 'false',
+          recommended:
+            'OFF — owner ruling: school 1 (D3.4 p3 @09:57–10:27, @12:38) over D3.4 p1 @17:48–18:00; knob rule (b).',
+          whenToTouch:
+            'Only if the owner reverses the school-1 ruling for levels.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Trendline is a target',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D3.3 p1 @05:18–05:35 "Target là về những level kế tiếp… gần đỉnh cũ, EMA 34, EMA 9, con cá, trendline, anything… những cái mà nó ngán đường anh chị trên đường đi" (the target is the next level — near the old high, EMA 34, EMA 9, the fish, a trendline, anything that blocks your path) and @07:57–08:04 "Thì cứ target nè: box, đỉnh cũ, EMA 34, trendline" (so target: the box, the old high, EMA 34, the trendline). true (default) = a valid trendline in the trade’s path is a target and counts as the first obstacle for the room rule; false = the pre-#25 rule (a trendline is a location only, never a target). Knob rule case (a), ON.',
+          trader: 'ON — case (a).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/eval.go nextLevelBeyond (target ladder)',
+          range: 'true / false',
+          systemDefault: 'true',
+          recommended:
+            'ON — D3.3 p1 @05:18–05:35, @07:57–08:04; knob rule (a): course, no ruling against.',
+          whenToTouch: 'Rarely — OFF only to compare with the pre-#25 rule.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Trendline reject between two boxes',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D3.2 p2 @10:56–11:20 "Đụng trendline, nên đóng dưới, đánh ngược lại xuống dưới… dưới cái box" (touch the trendline, close below, trade back down… to the box) — against the same lesson @08:34–08:55 "Nếu như nằm bên giữa cái box mình sẽ không được bắt bất kỳ một lệnh Potential 2 low" (between the boxes you may not take any potential-2-low). ON = a trendline reject between an FTGL and an FTGH may trade; OFF (default) = every level PHL/PLH between two boxes is refused (phl_mid_range_boxed), only the ISB trades there. Knob rule case (b), OFF: the lesson states both.',
+          trader: 'OFF — case (b): the lesson states both.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/eval.go midRangeBoxed',
+          range: 'true / false',
+          systemDefault: 'false',
+          recommended:
+            'OFF — D3.2 p2 @10:56–11:20 vs @08:34–08:55; knob rule (b): the lesson states both.',
+          whenToTouch: 'Only on an owner ruling.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Leg reset on a wave break',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'X-FOMO extra @06:10–06:22 "Nếu mà anh chị đã thua một lệnh á, đợi cho nó break được cái đỉnh, hoặc đợi cho nó break được cái đáy của con sóng đó, thì nó sẽ tạo 1 cái range mới để mình tiếp tục mình trade" (after a losing trade, wait for the high to break OR the low of that wave to break — that makes a new range to keep trading). The course is silent on the leg budget; this extra decides. true (default) = a leg closed by a stop-out ALSO resets when a 1m candle closes beyond the losing trade’s wave extreme (long: below the wave low from the fill through the stop-out candle; short: above the wave high); false = only a close beyond the old high/low resets it (pre-#25). Knob rule case (a), ON.',
+          trader: 'ON — case (a).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/limits.go resetBreaks',
+          range: 'true / false',
+          systemDefault: 'true',
+          recommended:
+            'ON — X-FOMO extra @06:10–06:22; knob rule (a): no ruling against.',
+          whenToTouch: 'Rarely — OFF only to compare with the pre-#25 rule.',
+          perSession: 'No.',
+        },
+        {
           label: 'PHL min candles from old extreme',
           where: 'Strategy → Mentor mode → PHL/PLH',
           what: 'The entry must be at least this many candles from the old extreme (wait 1–2 more pullback candles).',
@@ -1281,7 +1503,7 @@ export const mentor: GuideSection = {
         {
           label: 'Leg budget',
           where: 'Strategy → Mentor mode → limits',
-          what: 'At most two entries per leg (the PHL/PLH plus a same-direction ISB); a stop-out closes the leg; a 1m close beyond the prior extreme starts a new one.',
+          what: 'At most two entries per leg (the PHL/PLH plus a same-direction ISB); a stop-out closes the leg; a 1m close beyond the prior extreme starts a new one — and a stopped-out leg also resets on a 1m close beyond the losing wave\u2019s extreme (leg_reset_on_wave_break, default ON).',
           trader: 'ON — the method runs the budget (X15 @00:36–02:46).',
           consumer: 'kernel/mentor/limits.go leg_budget_enabled',
           range: 'true / false',
@@ -1293,7 +1515,7 @@ export const mentor: GuideSection = {
         {
           label: 'Leg reset on',
           where: 'Strategy → Mentor mode → limits',
-          what: 'What opens a new leg after the budget is spent: "close" (default) = a 1m close beyond the prior high/low; "touch" = a wick reaching it (kernel/mentor/limits.go resetBreaks).',
+          what: 'What opens a new leg after the budget is spent: "close" (default) = a 1m close beyond the prior high/low; "touch" = a wick reaching it (kernel/mentor/limits.go resetBreaks). A leg closed by a stop-out also resets on a 1m close beyond the losing wave\u2019s extreme (leg_reset_on_wave_break, default ON).',
           trader: 'close.',
           consumer: 'kernel/mentor/limits.go leg_reset_on',
           range: 'close | touch',

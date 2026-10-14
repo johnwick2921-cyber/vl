@@ -88,10 +88,13 @@ func TestISB15mBoxBlocksCounterDirection(t *testing.T) {
 }
 
 // TestISB15mBoxAllowsSameDirection — D4.1-25/D4.2-02: inside a LONG 15m box a
-// LONG 1m ISB still fires. Mutant: gate on the wrong side → RED.
+// LONG 1m ISB still fires. Mutant: gate on the wrong side → RED. CE-1
+// (release #25): the default 15m_ib_requires_5m_isb also needs a same-way 5m
+// ISB, so a standing LONG 5m box is part of the fixture (D4.2 p1 @14:24–14:34).
 func TestISB15mBoxAllowsSameDirection(t *testing.T) {
 	e, bars, now := mtfFixture(t, false) // long ISB
 	e.State.ISBBox15m = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: bars[0].OpenTime}
+	e.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: bars[0].OpenTime}
 	ins := e.Tick(bars, now)
 	var longISB bool
 	for _, in := range entryIntents(ins) {

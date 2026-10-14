@@ -71,6 +71,9 @@ func TestEMAVisitReclassifies(t *testing.T) {
 func TestEmaLossTick(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.LossDeparturePts = 20 // B22 (CTO 20:29:07Z): the knob default is OFF — E2's numeric departure is pinned here explicitly
+	// CE-6 (release #25): this test pins the numeric departure, so it runs the
+	// "session" relock; the zone-exit default is TestCE6EmaLossRelocksOnZoneExit.
+	cfg.EmaLossRelock = EmaRelockSession
 	e := New(cfg)
 
 	armLong := func(entry, stop, target, expiry float64) {

@@ -987,6 +987,7 @@ func TestFullDayReplayFidelity(t *testing.T) {
 	const acct = "SimReplayA"
 	w := newFdrWorld(t, fdrLiveSeedMs, []string{acct}, map[string]bool{acct: false}, "2026-10-04-d1")
 	cfg := loadReplayStrategy(t)
+	fdrPinPre25CourseEntries(cfg) // release #25: the live day ran the pre-#25 course-entry knobs
 	w.setNow(fdrLiveSeedMs)
 	w.cur.Store(int64(w.barIndexAtOrAfter(fdrLiveSeedMs) - 1))
 	ft := &fdrTrader{id: "fdr-hoang", account: acct, levelPx: map[string]float64{}}
@@ -1229,6 +1230,7 @@ func TestFullDayReplay(t *testing.T) {
 	w := newFdrWorld(t, fdrReplayFromMs, []string{acctA, acctB}, map[string]bool{acctA: true, acctB: true}, fdrAddonBuild)
 	w.storeReplayCalendar()
 	cfg := loadReplayStrategy(t)
+	fdrApplyTuningEnv(t, cfg) // release #25: FDR_PRE25 / FDR_TUNING knob ON-vs-OFF runs
 	start := w.barIndexAtOrAfter(fdrReplayFromMs)
 	end := w.barIndexAtOrAfter(fdrReplayEndMs())
 	w.setNow(fdrReplayFromMs)

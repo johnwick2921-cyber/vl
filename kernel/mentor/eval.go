@@ -956,6 +956,18 @@ func trendlineTargets(levels []Level) []Level {
 	return out
 }
 
+// midRangeBoxedRefuses is the level-path mid-range ban (CTO 1791003862333 —
+// between an FTGL below and an FTGH above no PHL/PLH) with the CE-11/B13
+// exemption: knob trendline_between_boxes ON lets a TRENDLINE reject through
+// ("Đụng trendline, nên đóng dưới, đánh ngược lại xuống dưới… dưới cái box"
+// [D3.2 p2 @10:56–11:20]). Default OFF = every level refused, as before.
+func midRangeBoxedRefuses(cfg Config, lvl Level, boxes []Box, price float64) bool {
+	if !midRangeBoxed(boxes, price) {
+		return false
+	}
+	return !(cfg.TrendlineBetweenBoxes && lvl.Kind == KindTrendline)
+}
+
 func nextLevelBeyond(levels []Level, price float64, side Side) float64 {
 	best := 0.0
 	for _, l := range levels {
@@ -1939,7 +1951,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// ON exempts a TRENDLINE reject — "Đụng trendline, nên đóng dưới,
 			// đánh ngược lại xuống dưới… dưới cái box" [D3.2 p2 @10:56–11:20];
 			// the same lesson bans every PHL/PLH between two boxes [@08:34–08:55].
-			if midRangeBoxed(boxes, price) && !(e.Cfg.TrendlineBetweenBoxes && lvl.Kind == KindTrendline) {
+			if midRangeBoxedRefuses(e.Cfg, lvl, boxes, price) {
 				e.refuseOncePerVisit(lvl.Key, "phl_mid_range_boxed")
 				continue
 			}
