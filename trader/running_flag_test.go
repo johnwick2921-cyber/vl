@@ -90,6 +90,10 @@ func newRunHarness(t *testing.T) *runHarness {
 		nt := ntTrader.NewTCPTrader(srv, "MNQ", "Sim101")
 		at := &AutoTrader{id: id, store: st, exchange: "ninjatrader", trader: nt, exchangeID: "ex"}
 		at.config.StrategyConfig = &store.StrategyConfig{}
+		// A real scan interval: with 0, Run panicked at time.NewTicker right
+		// after the ordered install and never entered its loop (MENTOR-NY
+		// item 3 — the run-owner pins need a Run that actually LIVES).
+		at.config.ScanInterval = time.Minute
 		at.mcpClient = &fakeDecisionClient{}
 		return at
 	}
