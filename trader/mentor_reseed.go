@@ -76,14 +76,14 @@ func (at *AutoTrader) mentorReseedOnRefill(nowMs int64) {
 	switch {
 	case rep.Refused != "":
 		at.mentorCount("reseed_refused")
-		at.logWarnf("🧑‍🏫 mentor re-seed after a history refill (%s) at %s CT: %s [%d ms]", why, kernel.ClockCTSeconds(time.UnixMilli(nowMs)), rep.Line(), ms)
+		at.logWarnf("🧑‍🏫 mentor re-seed after a history refill (%s) at %s: %s [%d ms]", why, kernel.ClockCTSeconds(time.UnixMilli(nowMs)), rep.Line(), ms)
 	case rep.Changed():
 		at.mentorCount("reseed_after_refill")
 		at.mentorCount("reseed_changed")
-		at.logWarnf("🧑‍🏫 mentor re-seed after a history refill (%s) at %s CT: %s [%d ms]", why, kernel.ClockCTSeconds(time.UnixMilli(nowMs)), rep.Line(), ms)
+		at.logWarnf("🧑‍🏫 mentor re-seed after a history refill (%s) at %s: %s [%d ms]", why, kernel.ClockCTSeconds(time.UnixMilli(nowMs)), rep.Line(), ms)
 	default:
 		at.mentorCount("reseed_after_refill")
-		at.logInfof("🧑‍🏫 mentor re-seed after a history refill (%s) at %s CT: %s [%d ms]", why, kernel.ClockCTSeconds(time.UnixMilli(nowMs)), rep.Line(), ms)
+		at.logInfof("🧑‍🏫 mentor re-seed after a history refill (%s) at %s: %s [%d ms]", why, kernel.ClockCTSeconds(time.UnixMilli(nowMs)), rep.Line(), ms)
 	}
 	at.mentorRefreshDepths()
 }
