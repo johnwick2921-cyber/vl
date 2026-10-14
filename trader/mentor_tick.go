@@ -1890,6 +1890,7 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	at.logInfof("%s", at.mentorSeamBootLine())
 	at.logInfof("%s", at.mentorStaleDataBlockBootLine())
 	at.logInfof("%s", at.mentorCourseExitsBootLine())
+	at.logInfof("%s", mentorCourseEntryBootLine(at, at.mentorRiskControl())) // release #25: READ per trader
 	// trail_tf 30s/45s: refused LOUDLY at config load (no sub-minute bars).
 	at.mentorTrailTFLoadCheck()
 	if len(missing) > 0 {

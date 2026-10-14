@@ -301,7 +301,7 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 	// each day's stored calendar) — a running bot dropped each day's print
 	// candle on that day, so the replay drops it too. A historical bar at a
 	// different absolute time never matches a window.
-	htfBars := htfFeedBars(closed1m, e.Cfg.PrintWindows)
+	htfBars := htfFeedBars(closed1m, newsHTFWindows(e.Cfg.PrintWindows, e.Cfg)) // CE-4
 	e.State.HTF.FourH = TriggerReplay1m(fourH, htfBars, 240, e.Cfg)
 	e.State.HTF.OneH = TriggerReplay1m(oneH, htfBars, 60, e.Cfg)
 }

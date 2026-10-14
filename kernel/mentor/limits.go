@@ -83,6 +83,10 @@ type Leg struct {
 	Entries   int     // fills registered in this leg
 	PHLFilled bool    // a PHL/PLH (not an ISB) already filled in this leg
 	Stopped   bool    // a stop-out inside the leg closed it
+	// Wave is the losing trade's wave extreme captured at the stop-out (CE-12,
+	// release #25): the lowest low (long) / highest high (short) from the fill
+	// through the stop-out candle — the G2 B22 wave. 0 = none.
+	Wave float64 `json:",omitempty"`
 }
 
 // Place is the G2 loss box at one place, keyed by the setup's place (R-b).
@@ -311,6 +315,25 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 // the extreme, known at its close, gates the next candle. "touch": this
 // candle's wick reaching the extreme.
 func (l *Limits) resetBreaks(prev, cur market.Kline, cfg Config) {
+	// CE-12 (release #25, knob leg_reset_on_wave_break, default ON): after a
+	// LOSS, the wave's own extreme breaking ALSO opens a new range — "Nếu mà
+	// anh chị đã thua một lệnh á, đợi cho nó break được cái đỉnh, hoặc đợi cho
+	// nó break được cái đáy của con sóng đó, thì nó sẽ tạo 1 cái range mới để
+	// mình tiếp tục mình trade" [X-FOMO @06:10–06:22]. Only a leg a stop-out
+	// closed carries a Wave; a full leg (2 entries, no loss) still resets on
+	// the old extreme alone [X-FOMO @02:19]. Same close/touch parity as below.
+	if cfg.LegResetOnWaveBreak {
+		if lg := l.Long; lg != nil && lg.Stopped && lg.Wave != 0 &&
+			(cfg.LegResetOn == "touch" && cur.Low < lg.Wave || cfg.LegResetOn != "touch" && prev.Close < lg.Wave) {
+			l.Long = nil
+			l.count("leg_reset_wave_break")
+		}
+		if lg := l.Short; lg != nil && lg.Stopped && lg.Wave != 0 &&
+			(cfg.LegResetOn == "touch" && cur.High > lg.Wave || cfg.LegResetOn != "touch" && prev.Close > lg.Wave) {
+			l.Short = nil
+			l.count("leg_reset_wave_break")
+		}
+	}
 	if cfg.LegResetOn == "touch" {
 		if l.Long != nil && cur.High >= l.Long.Extreme {
 			l.Long = nil
@@ -614,6 +637,7 @@ func (l *Limits) loss(t *openTrade) {
 	}
 	if leg := l.leg(t.side); leg != nil {
 		leg.Stopped = true // a stop-out inside the leg closes it
+		leg.Wave = t.wave  // CE-12: the wave the loss happened in
 	}
 }
 

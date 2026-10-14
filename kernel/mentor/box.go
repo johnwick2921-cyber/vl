@@ -586,3 +586,38 @@ func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk fl
 	}
 	return false, ""
 }
+
+// structureTrend5m is the CE-8 trend read (release #25, knob
+// d43_trend_source "structure"): the 5m swing STRUCTURE read left to right —
+// "Nhìn từ bên trái qua bên phải… Đỉnh cao, đỉnh thấp hơn, đỉnh thấp hơn — thì
+// nó đang là xu hướng gì — Giảm" [D4.3 @12:43–12:54]. It takes the last two
+// CONFIRMED swing highs and the last two confirmed swing lows on the closed 5m
+// candles (swings3 + swingConfirmed, the box machinery's detector): higher
+// high AND higher low → long; lower high AND lower low → short; anything else
+// (mixed, or fewer than two of each) → "" = no trend, so no box return is
+// refused for being against it.
+func structureTrend5m(closed5m []market.Kline) Side {
+	var highs, lows []float64
+	for _, sw := range swings3(closed5m) {
+		if !swingConfirmed(closed5m, sw) {
+			continue
+		}
+		if sw.kind == kernel.KindSWGH {
+			highs = append(highs, sw.price)
+		} else {
+			lows = append(lows, sw.price)
+		}
+	}
+	if len(highs) < 2 || len(lows) < 2 {
+		return ""
+	}
+	h1, h2 := highs[len(highs)-2], highs[len(highs)-1]
+	l1, l2 := lows[len(lows)-2], lows[len(lows)-1]
+	switch {
+	case h2 > h1 && l2 > l1:
+		return SideLong
+	case h2 < h1 && l2 < l1:
+		return SideShort
+	}
+	return ""
+}
