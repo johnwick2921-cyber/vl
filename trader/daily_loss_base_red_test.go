@@ -38,7 +38,11 @@ func rbSeedClosed(t *testing.T, st *store.Store, traderID string, exit time.Time
 // resting planner entry at the broker and an open bot position. The beat must
 // withdraw the entry, flatten the position, and the agent door must refuse.
 func TestBaseRedMonitorBeatActsOnABreachedDailyLoss(t *testing.T) {
-	f := withdrawFixture(t, "rb-breach", func(c *store.StrategyConfig) { c.RiskControl.DailyLossLimitUSD = 100 })
+	f := withdrawFixture(t, "rb-breach", func(c *store.StrategyConfig) {
+		on := true // both switches saved ON — the owner turned the gate on
+		c.RiskControl.GuardrailsEnabled, c.RiskControl.DailyLossEnabled = &on, &on
+		c.RiskControl.DailyLossLimitUSD = 100
+	})
 	row, sid := f.placeResting(t)
 	t1 := f.now.Add(time.Minute)
 	rbSeedClosed(t, f.st, f.at.id, f.now.Add(-30*time.Minute), -150)
@@ -81,7 +85,7 @@ func TestBaseRedMonitorBeatActsOnABreachedDailyLoss(t *testing.T) {
 func TestBaseRedMentorPlacementObeysMaxDailyTrades(t *testing.T) {
 	on := true
 	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{
-		MentorMode: true, MaxDailyTradesEnabled: &on, MaxDailyTrades: 2}})
+		MentorMode: true, GuardrailsEnabled: &on, MaxDailyTradesEnabled: &on, MaxDailyTrades: 2}})
 	at.id = "rb-mentor-max"
 	t.Cleanup(func() { kernel.ClearDailyForceFlat(at.id) })
 	wireMentorPlacementSeams(t, at)

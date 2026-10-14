@@ -214,3 +214,34 @@ it('r22: the daily-loss row states refuse + cancel + flatten + latch to 17:00 CT
     expect(note).toHaveTextContent(want)
   }
 })
+
+// r22 RISK-GATES (owner R4 + R5): a strategy that never saved the guardrails
+// master reads OFF — the switch shows what the runtime resolves
+// (kernel.ResolveStrategyGuardrails: absent = OFF). MUTANT: `?? true` → RED.
+it('r22: an ABSENT guardrails master shows OFF; a saved ON shows ON', () => {
+  const { unmount } = render(
+    <RiskControlEditor
+      config={{} as RiskControlConfig}
+      onChange={vi.fn()}
+      language="en"
+      isFutures
+    />
+  )
+  expect(screen.getByTestId('guardrails-master-toggle')).toHaveAttribute(
+    'aria-checked',
+    'false'
+  )
+  unmount()
+  render(
+    <RiskControlEditor
+      config={{ guardrails_enabled: true } as RiskControlConfig}
+      onChange={vi.fn()}
+      language="en"
+      isFutures
+    />
+  )
+  expect(screen.getByTestId('guardrails-master-toggle')).toHaveAttribute(
+    'aria-checked',
+    'true'
+  )
+})

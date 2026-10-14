@@ -1998,12 +1998,14 @@ type RiskControlConfig struct {
 	// === Strategy Studio Phase 1 — prop-firm daily guardrails (per-strategy;
 	// env = fallback for the value; the per-guardrail toggle governs enforcement). ===
 
-	// Master switch: nil/true = guardrails active; false = ALL guardrails bypassed.
+	// Master switch: true = guardrails active; nil/false = ALL guardrails
+	// bypassed (r22 RISK-GATES, owner R4: absent = OFF — the gate now
+	// flattens, so it never turns itself on).
 	GuardrailsEnabled *bool `json:"guardrails_enabled,omitempty"`
 
 	// Daily realized-LOSS limit (USD, positive): loss ≥ this halts new entries for
-	// the CME session-day. Enabled defaults ON (nil) to preserve the existing live
-	// env daily-loss gate; the value falls back to RISK_MAX_DAILY_LOSS_USD when 0.
+	// the CME session-day. Enabled defaults OFF (nil) since r22 (owner R4); the
+	// VALUE still falls back to RISK_MAX_DAILY_LOSS_USD when 0.
 	DailyLossLimitUSD float64 `json:"daily_loss_limit_usd,omitempty"`
 	DailyLossEnabled  *bool   `json:"daily_loss_enabled,omitempty"`
 

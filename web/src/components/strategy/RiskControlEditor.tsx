@@ -867,8 +867,9 @@ export function RiskControlEditor({
               {ts(riskControl.masterSwitch, language)}
             </span>
             <Toggle
-              on={config.guardrails_enabled ?? true}
+              on={config.guardrails_enabled ?? false}
               onChange={(v) => updateField('guardrails_enabled', v)}
+              testId="guardrails-master-toggle"
               disabled={disabled}
             />
           </div>
@@ -886,7 +887,7 @@ export function RiskControlEditor({
         <div className="grid grid-cols-2 gap-4">
           <GuardrailRow
             label={ts(riskControl.dailyLossLimit, language)}
-            enabled={config.daily_loss_enabled ?? true}
+            enabled={config.daily_loss_enabled ?? false}
             onToggle={(v) => updateField('daily_loss_enabled', v)}
             disabled={disabled}
           >
@@ -910,11 +911,12 @@ export function RiskControlEditor({
               }}
             />
             {/* 6.5 — the silent env fallback, stated (only enforced while the
-                guardrails master is ON) */}
+                guardrails master AND this row are ON — absent reads OFF since
+                r22) */}
             {!config.daily_loss_limit_usd && (
               <p className="text-xs mt-1" style={{ color: '#848E9C' }}>
                 empty/0 → $500 env default (RISK_MAX_DAILY_LOSS_USD) while the
-                master switch is ON
+                master switch AND this row are ON
               </p>
             )}
             {/* r22 RISK-GATES — what the switch does, in plain words. */}
@@ -923,11 +925,12 @@ export function RiskControlEditor({
               className="text-xs mt-1"
               style={{ color: '#848E9C' }}
             >
-              With the master AND this switch ON: when the bot&apos;s own
-              P&amp;L today (realized + open, manual trades excluded) reaches
-              −limit, every path refuses new entries, resting entry orders are
-              cancelled, the bot&apos;s positions are flattened, and it stays
-              locked until 17:00 CT. Mentor mode included.
+              OFF unless you switch on the master AND this row (the $ field is
+              the limit). When ON: when the bot&apos;s own P&amp;L today
+              (realized + open, manual trades excluded) reaches −limit, every
+              path refuses new entries, resting entry orders are cancelled, the
+              bot&apos;s positions are flattened, and it stays locked until
+              17:00 CT. Mentor mode included.
             </p>
             <EffectiveLine knob={eff('daily_loss_enabled')} label={onOff} />
             <EffectiveLine

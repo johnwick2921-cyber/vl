@@ -381,8 +381,15 @@ type StrategyGuardrailPosture struct {
 // (LoadRiskLimitsFromConfig().MaxDailyLossUSD).
 func ResolveStrategyGuardrails(rc store.RiskControlConfig, envDailyLossUSD float64) StrategyGuardrailPosture {
 	return StrategyGuardrailPosture{
-		MasterEnabled:         boolOrDefault(rc.GuardrailsEnabled, true),
-		DailyLossEnabled:      boolOrDefault(rc.DailyLossEnabled, true), // preserve the live daily-loss gate
+		// r22 RISK-GATES (owner R4 + R5, CTO fold 2026-10-14): ABSENT = OFF.
+		// Before r22 an absent master / daily-loss toggle read ON with the env
+		// $500 — decorative then (nothing flattened). Since r22 a breach
+		// refuses, cancels, FLATTENS and latches, so an inherited ON would be
+		// new behaviour nobody ordered. Only the ON/OFF default flips; the $
+		// value keeps its inherit (Studio value → env fallback). Stored values
+		// are untouched.
+		MasterEnabled:         boolOrDefault(rc.GuardrailsEnabled, false),
+		DailyLossEnabled:      boolOrDefault(rc.DailyLossEnabled, false),
 		DailyLossLimitUSD:     firstPositive(rc.DailyLossLimitUSD, envDailyLossUSD),
 		DailyProfitEnabled:    boolOrDefault(rc.DailyProfitEnabled, false),
 		DailyProfitTargetUSD:  rc.DailyProfitTargetUSD,

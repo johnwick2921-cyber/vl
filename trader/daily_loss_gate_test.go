@@ -49,6 +49,15 @@ func dlSeedOpen(t *testing.T, st *store.Store, traderID string, at time.Time, en
 	return p
 }
 
+// dlOn switches BOTH guardrail toggles on, the way a Studio save stores them.
+// Since r22 an ABSENT toggle reads OFF (owner R4), so every fixture that
+// means "the owner turned the gate on" must say so.
+func dlOn(c *store.StrategyConfig) {
+	on := true
+	c.RiskControl.GuardrailsEnabled = &on
+	c.RiskControl.DailyLossEnabled = &on
+}
+
 func dlMark(t *testing.T, px float64) {
 	t.Helper()
 	dailyLossMarkSource = func(string) (float64, bool) { return px, true }
@@ -85,7 +94,7 @@ func dlClosePositionFrames(w *wdWire) int {
 // placements") → the agent door is not refused on daily_loss → RED.
 func TestDailyLossBreachRefusesCancelsFlattensAndLatchesUntil1700(t *testing.T) {
 	telemetry.ResetGateBlocksForTest()
-	f := withdrawFixture(t, "dl-breach", func(c *store.StrategyConfig) { c.RiskControl.DailyLossLimitUSD = 100 })
+	f := withdrawFixture(t, "dl-breach", func(c *store.StrategyConfig) { dlOn(c); c.RiskControl.DailyLossLimitUSD = 100 })
 	row, sid := f.placeResting(t)
 	t1 := f.now.Add(time.Minute)
 
@@ -234,7 +243,7 @@ func TestDailyLossGateOffChangesNothing(t *testing.T) {
 // trip. MUTANT: drop isBotTrade's manual exclusion → the beat latches → RED.
 func TestDailyLossManualTradesDoNotCount(t *testing.T) {
 	telemetry.ResetGateBlocksForTest()
-	f := withdrawFixture(t, "dl-manual", func(c *store.StrategyConfig) { c.RiskControl.DailyLossLimitUSD = 450 })
+	f := withdrawFixture(t, "dl-manual", func(c *store.StrategyConfig) { dlOn(c); c.RiskControl.DailyLossLimitUSD = 450 })
 	t1 := f.now.Add(time.Minute)
 	dlSeedClosed(t, f.st, f.at.id, f.now.Add(-40*time.Minute), -1127.50, store.PlanUnresolvable)
 	dlSeedClosed(t, f.st, f.at.id, f.now.Add(-30*time.Minute), -31.50, "")
@@ -284,7 +293,7 @@ func TestMaxDailyTradesEnforcedOnMentorPath(t *testing.T) {
 	withMaintenanceDir(t)
 	on := true
 	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{
-		MentorMode: true, MaxDailyTradesEnabled: &on, MaxDailyTrades: 2}})
+		MentorMode: true, GuardrailsEnabled: &on, MaxDailyTradesEnabled: &on, MaxDailyTrades: 2}})
 	at.id = "dl-mentor-max"
 	kernel.ClearDailyForceFlat(at.id)
 	t.Cleanup(func() { kernel.ClearDailyForceFlat(at.id) })
@@ -349,6 +358,7 @@ func TestMentorPlacementRefusalReachesGateBlocks(t *testing.T) {
 // P&L, read again, would no longer trip — and ignores it on the next day.
 func TestDailyLossLatchSurvivesRestartUntil1700(t *testing.T) {
 	cfg := store.StrategyConfig{RiskControl: store.RiskControlConfig{DailyLossLimitUSD: 100}}
+	dlOn(&cfg)
 	at, st := resetTrader(t, cfg)
 	at.id = "dl-restart"
 	kernel.ClearDailyForceFlat(at.id)
@@ -425,5 +435,63 @@ func TestBotDayPnLCountsClosedLegsOfAnOpenRunner(t *testing.T) {
 	// legs: -(30724.00-30742.25)×2×$2 = +73.00 ; runner: -(30730.00-30742.25)×1×$2 = +24.50
 	if b.OpenPositions != 1 || b.Open != 97.50 {
 		t.Fatalf("open P&L must be legs +73.00 + runner +24.50 = +97.50, got %+v", b)
+	}
+}
+
+// 9 — OWNER RULING R4 + R5 (CTO fold 2026-10-14): A STRATEGY THAT NEVER SAVED
+// THE SWITCHES IS OFF. No guardrail keys at all (the JSON a new strategy
+// carries) and a loss far past the env $500 fallback: the 60s beat latches
+// nothing, cancels nothing, flattens nothing, the verdict is inert, and the
+// boot line says OFF (default). Before the fold the absent keys inherited
+// master ON + daily-loss ON with the env $500 — with r22's flatten that would
+// close positions on a strategy whose owner never turned anything on.
+// MUTANT: restore the `true` default in kernel.ResolveStrategyGuardrails →
+// the beat latches → RED.
+func TestDailyLossGateAbsentKeysIsOffByDefault(t *testing.T) {
+	telemetry.ResetGateBlocksForTest()
+	f := withdrawFixture(t, "dl-absent", nil) // no guardrail keys at all
+	rc := f.at.config.StrategyConfig.RiskControl
+	if rc.GuardrailsEnabled != nil || rc.DailyLossEnabled != nil || rc.DailyLossLimitUSD != 0 {
+		t.Fatalf("fixture: the strategy must carry NO guardrail keys, got %+v", rc)
+	}
+	row, sid := f.placeResting(t)
+	t1 := f.now.Add(time.Minute)
+	dlSeedClosed(t, f.st, f.at.id, f.now.Add(-30*time.Minute), -2000, "")
+	dlSeedOpen(t, f.st, f.at.id, f.now.Add(-10*time.Minute), 100)
+	f.w.srv.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{{Symbol: "MNQ", Side: "long", Quantity: 1, AvgPrice: 100}})
+	f.at.peakPnLCache = map[string]float64{}
+	dlMark(t, 10)
+	f.setLiveBook(t1, wdEntryOrder(sid))
+
+	f.at.monitorTick(t1)
+	f.w.flush(t)
+
+	if r := kernel.DailyForceFlatReasonAt(f.at.id, t1); r != "" {
+		t.Fatalf("absent keys must read OFF: a -2000 day must not latch, got %q", r)
+	}
+	if n := f.w.count(ntwire.FrameCancelOrder, sid); n != 0 {
+		t.Fatalf("absent keys must not cancel the resting entry (%d cancel frames)", n)
+	}
+	if n := dlClosePositionFrames(f.w); n != 0 {
+		t.Fatalf("absent keys must not flatten (%d close_position frames)", n)
+	}
+	if got := f.rowByID(t, row.ID); got.State != store.StateWorking {
+		t.Fatalf("absent keys must leave the resting entry working, got %q", got.State)
+	}
+	if v := f.at.dailyGuardVerdictAt(t1); v.Refuse {
+		t.Fatalf("absent keys: the verdict must be inert, got %+v", v)
+	}
+	if _, _, enforced := f.at.deskGuardrail(); enforced {
+		t.Fatal("absent keys: the desk strip must not call the limit ENFORCED")
+	}
+	line := DailyLossGateBootLineForStrategy(f.at.config.StrategyConfig)
+	if !strings.Contains(line, "daily-loss gate: OFF (default)") || !strings.Contains(line, "master off (default)") {
+		t.Fatalf("the boot line must say OFF (default) for a strategy that never saved the switches, got %q", line)
+	}
+	// The SAVED-off live shape reads as the owner's choice, not a default.
+	off := false
+	saved := store.StrategyConfig{RiskControl: store.RiskControlConfig{GuardrailsEnabled: &off, DailyLossEnabled: &off, DailyLossLimitUSD: 450}}
+	if l := DailyLossGateBootLineForStrategy(&saved); !strings.Contains(l, "daily-loss gate: OFF (master off (saved), daily_loss_enabled off (saved), limit $450 (studio))") {
+		t.Fatalf("the live strategies' saved OFF must read as saved, got %q", l)
 	}
 }

@@ -705,7 +705,8 @@ const risk: KnobSpec[] = [
       'Currently OFF by owner ruling — the would-have-tripped counters still display.',
     consumer: 'kernel/engine_position.go (guardrail evaluation)',
     range: 'ON | OFF',
-    systemDefault: 'ON',
+    systemDefault:
+      'OFF — a strategy that never saved this switch reads OFF (since release #22, owner ruling R4). Both live strategies store OFF.',
     recommended:
       '⭐ OFF for now (owner ruling) — re-armed after the risk audit is reviewed.',
     whenToTouch: 'ON when you want the daily circuit breakers live.',
@@ -756,13 +757,13 @@ const risk: KnobSpec[] = [
     label: 'Daily loss limit',
     where:
       'Strategy → Risk Control → Guardrails: the master switch AND the Daily loss row (toggle + $)',
-    what: "OFF today: both live strategies store guardrails_enabled=false and daily_loss_enabled=false, so the $450 there enforces nothing (the 🛑 [trader] daily-loss gate boot line says OFF). With BOTH switched on, when the bot's OWN session-day P&L — realized + open, MANUAL trades excluded (rows reconcile adopted with no order of ours) — is at or past −limit: (1) every new entry is REFUSED on every path (AI decision, agent chat, planner arms, mentor, Picture), counted daily_loss; (2) the 60-second monitor beat CANCELS every resting ENTRY order (protective stops/targets are never cancelled); (3) it FLATTENS the bot's open positions through the EOD-flat path (a manual position is left alone); (4) it stays LATCHED until 17:00 CT, even if the P&L recovers, and survives a restart. The trip logs '🔴 DAILY LOSS LIMIT HIT' once and counts daily_loss_tripped. An unresolved close today (pnl_corrected NULL) is excluded from the sum and counted; it refuses new MENTOR placements fail-closed (as since release 10-05-1) and never flattens on a guess. Emergency Flat on a trader clears that trader's latch only; if its loss still stands it re-trips on the next beat.",
+    what: "OFF unless you turn it on in Strategy Studio → Risk Control: the Guardrails master switch AND the Daily loss limit row's toggle, with the dollar amount in that row's $ field (daily_loss_limit_usd). Both live strategies store both switches OFF, so the $450 there enforces nothing, and a strategy that never saved them reads OFF too (the 🛑 [trader] daily-loss gate boot line says 'OFF (default)' for an unsaved switch and 'off (saved)' for yours). With BOTH switched on, when the bot's OWN session-day P&L — realized + open, MANUAL trades excluded (rows reconcile adopted with no order of ours) — is at or past −limit: (1) every new entry is REFUSED on every path (AI decision, agent chat, planner arms, mentor, Picture), counted daily_loss; (2) the 60-second monitor beat CANCELS every resting ENTRY order (protective stops/targets are never cancelled); (3) it FLATTENS the bot's open positions through the EOD-flat path (a manual position is left alone); (4) it stays LATCHED until 17:00 CT, even if the P&L recovers, and survives a restart. The trip logs '🔴 DAILY LOSS LIMIT HIT' once and counts daily_loss_tripped. An unresolved close today (pnl_corrected NULL) is excluded from the sum and counted; it refuses new MENTOR placements fail-closed (as since release 10-05-1) and never flattens on a guess. Emergency Flat on a trader clears that trader's latch only; if its loss still stands it re-trips on the next beat.",
     trader: 'The circuit breaker that ends a bad day at a known dollar number.',
     consumer:
       'trader/daily_loss_gate.go (botDayPnLAt — the one P&L read; dailyGuardVerdictAt; dailyLossBeatAt / dailyLossFlattenAt on monitorTick) · trader/entry_admission.go (every path) · kernel/risk_limits.go DailyGuardrails.Check · kernel/engine_analysis.go (AI decision cycle)',
     range: 'USD · empty/0 → env RISK_MAX_DAILY_LOSS_USD ($500 default)',
     systemDefault:
-      'OFF on both live strategies (saved). A strategy that never saved the switches inherits master ON + daily-loss ON with the env $500.',
+      'OFF. A strategy that never saved the switches reads OFF (since release #22, owner ruling R4 — before, it inherited master ON + daily-loss ON). The $ field, when empty/0, still falls back to the env RISK_MAX_DAILY_LOSS_USD ($500) once both switches are ON.',
     recommended: '⭐ set it to a loss you can absorb once a week.',
     whenToTouch: 'Set at the start of the week; review after every trip.',
     perSession: 'No.',

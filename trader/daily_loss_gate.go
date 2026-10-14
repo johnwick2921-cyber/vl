@@ -485,13 +485,26 @@ func DailyLossGateBootLineForStrategy(cfg *store.StrategyConfig) string {
 	if cfg.RiskControl.DailyLossLimitUSD <= 0 {
 		src = "env RISK_MAX_DAILY_LOSS_USD fallback"
 	}
-	posture := fmt.Sprintf("master %s, daily_loss_enabled %s, limit $%.0f (%s)", onOff(gp.MasterEnabled), onOff(gp.DailyLossEnabled), gp.DailyLossLimitUSD, src)
+	// Each switch says whether it was SAVED or is the default (absent = OFF
+	// since r22, owner R4) — an OFF the owner never chose reads "(default)".
+	toggle := func(p *bool, resolved bool) string {
+		if p == nil {
+			return onOff(resolved) + " (default)"
+		}
+		return onOff(resolved) + " (saved)"
+	}
+	posture := fmt.Sprintf("master %s, daily_loss_enabled %s, limit $%.0f (%s)",
+		toggle(cfg.RiskControl.GuardrailsEnabled, gp.MasterEnabled), toggle(cfg.RiskControl.DailyLossEnabled, gp.DailyLossEnabled), gp.DailyLossLimitUSD, src)
 	trades := "max_daily_trades off"
 	if gp.MasterEnabled && gp.MaxDailyTradesEnabled && gp.MaxDailyTrades > 0 {
 		trades = fmt.Sprintf("max_daily_trades %d ENFORCED on every path (mentor included)", gp.MaxDailyTrades)
 	}
 	if !gp.MasterEnabled || !gp.DailyLossEnabled || gp.DailyLossLimitUSD <= 0 {
-		return fmt.Sprintf("daily-loss gate: OFF (%s) — nothing refused, cancelled or flattened on a dollar loss · %s", posture, trades)
+		head := "OFF"
+		if (!gp.MasterEnabled && cfg.RiskControl.GuardrailsEnabled == nil) || (!gp.DailyLossEnabled && cfg.RiskControl.DailyLossEnabled == nil) {
+			head = "OFF (default)"
+		}
+		return fmt.Sprintf("daily-loss gate: %s (%s) — nothing refused, cancelled or flattened on a dollar loss · %s", head, posture, trades)
 	}
 	return fmt.Sprintf("daily-loss gate: ENFORCED (%s) — at bot P&L (realized+open, manual excluded) ≤ -limit: refuse new entries on every path, cancel resting entry orders, flatten bot positions, latched until 17:00 CT · %s", posture, trades)
 }
