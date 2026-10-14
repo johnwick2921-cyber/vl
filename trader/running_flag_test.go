@@ -1,10 +1,12 @@
 package trader
 
 import (
+	"context"
 	"errors"
+	"net"
 	"path/filepath"
-	"sync"
 	"testing"
+	"time"
 
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
@@ -47,67 +49,108 @@ func runningFlagTrader(st *store.Store, srv *ntwire.TCPServer, id string) *AutoT
 	}
 }
 
-// TestDuplicateSelfStartDoesNotClearRunningFlag pins FIX-RUNNING-FLAG: when the
-// ordered-execution slot is already held by THIS SAME trader (a second start of
-// a running trader), the install must return ErrTraderAlreadyRunning and must
-// NOT write is_running=0 nor raise a P0. RED at base: the refusal wrote
-// is_running=0 for the live trader and raised a P0.
-func TestDuplicateSelfStartDoesNotClearRunningFlag(t *testing.T) {
-	st, srv := newRunningFlagFixture(t, "t2",
-		&store.Trader{ID: "t2", UserID: "u", Name: "trader-2", AIModelID: "m", ExchangeID: "ex", StrategyID: "s", Account: "Sim101", IsRunning: true},
-	)
-	at := runningFlagTrader(st, srv, "t2")
-
-	err := at.installNTOrderedExecutions(at.trader.(*ntTrader.TCPTrader))
-	if err == nil || !errors.Is(err, ErrTraderAlreadyRunning) {
-		t.Fatalf("a self-duplicate install must return ErrTraderAlreadyRunning, got %v", err)
-	}
-	row, _ := st.Trader().GetByID("t2")
-	if row == nil || !row.IsRunning {
-		t.Fatalf("the live trader's is_running must stay true after a duplicate self-start, got %+v", row)
-	}
-	if alerts, _ := st.Alert().List("t2", 10); len(alerts) != 0 {
-		t.Fatalf("a self-duplicate must NOT raise a P0, got %d alerts", len(alerts))
-	}
+// runHarness is the TCP fixture a real Run() needs: a started TCPServer with one
+// fake AddOn client that has sent Hello, so Run can install the ordered
+// execution and enter its loop without a real NinjaTrader.
+type runHarness struct {
+	st *store.Store
+	mk func(id string) *AutoTrader
 }
 
-// TestConcurrentSelfStartsOneInstanceFlagStaysRunning pins the race: two
-// concurrent installs for the SAME trader yield exactly one winner and one
-// ErrTraderAlreadyRunning loser, and is_running stays true. RED at base: the
-// loser wrote is_running=0.
-func TestConcurrentSelfStartsOneInstanceFlagStaysRunning(t *testing.T) {
-	st, srv := newRunningFlagFixture(t, "",
-		&store.Trader{ID: "t2", UserID: "u", Name: "trader-2", AIModelID: "m", ExchangeID: "ex", StrategyID: "s", Account: "Sim101", IsRunning: true},
-	)
-	at := runningFlagTrader(st, srv, "t2")
-	nt := at.trader.(*ntTrader.TCPTrader)
-
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	var nils, dups int
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := at.installNTOrderedExecutions(nt); err == nil {
-				mu.Lock()
-				nils++
-				mu.Unlock()
-			} else if errors.Is(err, ErrTraderAlreadyRunning) {
-				mu.Lock()
-				dups++
-				mu.Unlock()
-			}
-		}()
+func newRunHarness(t *testing.T) *runHarness {
+	t.Helper()
+	st, err := store.New(filepath.Join(t.TempDir(), "run.db"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	wg.Wait()
+	t.Cleanup(func() { _ = st.Close() })
 
-	if nils != 1 || dups != 1 {
-		t.Fatalf("two concurrent self-starts must yield exactly one winner and one ErrTraderAlreadyRunning loser, got %d winners %d duplicates", nils, dups)
+	srv := ntwire.NewTCPServer(nil)
+	srv.SetAddrForTest("127.0.0.1:0")
+	srv.SetAccountsList([]ntwire.AccountInfo{{Name: "Sim101", IsSim: true}}, "Sim101")
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := srv.Start(ctx); err != nil {
+		cancel()
+		t.Fatal(err)
 	}
-	row, _ := st.Trader().GetByID("t2")
+	t.Cleanup(func() { _ = srv.Stop() })
+	t.Cleanup(cancel)
+
+	c, err := net.Dial("tcp", srv.ListenAddrForTest().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	waitAddonRegistered(t, srv)
+	t.Cleanup(func() { _ = c.Close() })
+	if err := ntwire.WriteFrame(c, ntwire.FrameHello, ntwire.HelloPayload{ProtocolVersion: ntwire.ProtocolVersion, Source: "vltrader-addon"}); err != nil {
+		t.Fatal(err)
+	}
+
+	mk := func(id string) *AutoTrader {
+		nt := ntTrader.NewTCPTrader(srv, "MNQ", "Sim101")
+		at := &AutoTrader{id: id, store: st, exchange: "ninjatrader", trader: nt, exchangeID: "ex"}
+		at.config.StrategyConfig = &store.StrategyConfig{}
+		at.mcpClient = &fakeDecisionClient{}
+		return at
+	}
+	return &runHarness{st: st, mk: mk}
+}
+
+func installed(at *AutoTrader) bool {
+	at.orderedExecMu.Lock()
+	defer at.orderedExecMu.Unlock()
+	return at.orderedExecUnreg != nil
+}
+
+// TestConcurrentRunOneInstanceFlagStaysRunning is the REAL fix at the call site
+// (P1-b): two concurrent Run() on ONE AutoTrader. Exactly one instance runs; the
+// loser returns ErrTraderAlreadyRunning with no side effects (it never reaches
+// the ordered install), and is_running stays true. M1 (delete the Run CAS) is
+// RED: the loser proceeds, its install is refused, and it writes is_running=0.
+func TestConcurrentRunOneInstanceFlagStaysRunning(t *testing.T) {
+	h := newRunHarness(t)
+	if err := h.st.Trader().Create(&store.Trader{ID: "t2", UserID: "u", Name: "trader-2", AIModelID: "m", ExchangeID: "ex", StrategyID: "s", Account: "Sim101", IsRunning: true}); err != nil {
+		t.Fatal(err)
+	}
+	at := h.mk("t2")
+
+	runDone := make(chan struct{})
+	go func() {
+		defer func() { _ = recover() }() // a bare-fixture cycle panic must not fail the pin
+		defer close(runDone)
+		_ = at.Run()
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for !installed(at) && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	if !installed(at) {
+		t.Fatal("the first Run never installed the ordered executions")
+	}
+
+	// The second start of the SAME running trader is a no-op.
+	err := at.Run()
+	if err == nil || !errors.Is(err, ErrTraderAlreadyRunning) {
+		t.Fatalf("a second Run of a running trader must return ErrTraderAlreadyRunning, got %v", err)
+	}
+	if running, _ := at.GetStatus()["is_running"].(bool); !running {
+		t.Fatalf("is_running must stay true after a duplicate Run")
+	}
+	// The loser must have had NO side effects: no ordered-owner P0 (it never
+	// reached install), and the DB flag stays true.
+	if alerts, _ := h.st.Alert().List("t2", 10); len(alerts) != 0 {
+		t.Fatalf("the loser must not raise a P0, got %d alerts", len(alerts))
+	}
+	row, _ := h.st.Trader().GetByID("t2")
 	if row == nil || !row.IsRunning {
-		t.Fatalf("is_running must stay true across concurrent self-starts, got %+v", row)
+		t.Fatalf("DB is_running must stay true, got %+v", row)
+	}
+
+	at.Stop()
+	select {
+	case <-runDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the winning Run did not exit after Stop")
 	}
 }
 

@@ -1114,13 +1114,10 @@ func (at *AutoTrader) runBeatSafely(where string, fn func()) {
 var ErrTraderAlreadyRunning = errors.New("trader is already running")
 
 func (at *AutoTrader) Run() error {
-	at.limitFlattenMu.Lock()
-	at.limitFlattenStopped = false
-	at.limitFlattenMu.Unlock()
-	// FIX-RUNNING-FLAG: idempotent start. A second (concurrent) start of an
-	// already-running trader returns ErrTraderAlreadyRunning BEFORE any
-	// sub-routine or ordered-execution install, so two concurrent starts yield
-	// exactly one running instance and never clobber is_running.
+	// FIX-RUNNING-FLAG: idempotent start. The CAS is the FIRST statement — a
+	// losing duplicate start must not mutate ANY state (not even
+	// limitFlattenStopped) and never reaches startPictureRun / the ordered
+	// install. Two concurrent starts yield exactly one running instance.
 	at.isRunningMutex.Lock()
 	if at.isRunning {
 		at.isRunningMutex.Unlock()
@@ -1128,6 +1125,10 @@ func (at *AutoTrader) Run() error {
 	}
 	at.isRunning = true
 	at.isRunningMutex.Unlock()
+
+	at.limitFlattenMu.Lock()
+	at.limitFlattenStopped = false
+	at.limitFlattenMu.Unlock()
 	at.startPictureRun()                        // W3 D14 event loop + run epoch, THEN Picture's live-bar routing (W5 R2)
 	at.logInfof("🚦 %s", entryLatchBootLine(at)) // W-EXEC-TRUTH W0 (b) — READ, never asserted
 	if at.exchange == "ninjatrader" {
@@ -1549,35 +1550,34 @@ func (at *AutoTrader) installNTOrderedExecutions(nt *ntTrader.TCPTrader) error {
 			otherID, _ := nt.OrderedExecutionOwnerID()
 			symbol := at.futuresSymbol()
 			account := nt.BoundAccount()
-			// FIX-RUNNING-FLAG: SELF-DUPLICATE — this SAME trader already owns the
-			// slot (a second start of a running trader). It is ALREADY running:
-			// never write is_running=0 and never raise a P0; the losing start just
-			// exits. (Defence-in-depth: Run's idempotent CAS normally catches this
-			// before the install is attempted.)
-			if otherID == at.id {
-				at.logInfof("🔄 duplicate self-start ignored: trader %q (%s) is already running on %s / %s", at.name, at.id, symbol, account)
-				return fmt.Errorf("trader %q already owns the ordered-execution slot for (symbol=%s, account=%s): %w", at.name, symbol, account, ErrTraderAlreadyRunning)
-			}
 			other := otherID
 			if strings.TrimSpace(other) == "" {
 				other = "an already-running trader"
 			}
+			// FIX-RUNNING-FLAG: after Run's idempotent CAS, a same-ID hit here can
+			// only be a STALE slot held by ANOTHER instance of this trader (a Run
+			// that exited without Stop, or a reload whose old object still holds
+			// the slot). This object is NOT the live instance, so it must be
+			// refused the same as any foreign owner — P0 + is_running=0 — never
+			// silently "already running", which would leave is_running=1 with
+			// nothing running.
+			reason := fmt.Sprintf("slot held by another instance of trader %q", other)
 			telemetry.IncGateBlock(at.id, "ordered_owner_exists")
 			at.emitAlert("P0", "ordered_owner_conflict",
 				"ordered-owner:"+at.id,
 				"Two traders bound to one account — trader stopped",
-				fmt.Sprintf("Trader %q (%s) tried to start on %s / %s, but %q already owns that ordered-execution slot. %q was STOPPED and marked not-running; it did not fall back to the legacy path.",
-					at.name, at.id, symbol, account, other, at.name))
-			at.logErrorf("❌ ordered-execution install refused (%v) — a running trader (%q) already owns (symbol=%s, account=%s); stopping %q (%s), no legacy fallback",
-				err, other, symbol, account, at.name, at.id)
+				fmt.Sprintf("Trader %q (%s) tried to start on %s / %s, but the ordered-execution %s. %q was STOPPED and marked not-running; it did not fall back to the legacy path.",
+					at.name, at.id, symbol, account, reason, at.name))
+			at.logErrorf("❌ ordered-execution install refused (%v) — %s (symbol=%s, account=%s); stopping %q (%s), no legacy fallback",
+				err, reason, symbol, account, at.name, at.id)
 			// Mark this trader not-running so the DB matches the refused start.
 			if at.store != nil {
 				if serr := at.store.Trader().UpdateStatus(at.userID, at.id, false); serr != nil {
 					at.logErrorf("❌ ordered-execution refused but the not-running DB write FAILED (%v) — trader %q may still read running", serr, at.id)
 				}
 			}
-			return fmt.Errorf("ordered-execution owner for (symbol=%s, account=%s) already exists (held by %q): %w",
-				symbol, account, other, err)
+			return fmt.Errorf("ordered-execution owner for (symbol=%s, account=%s) already exists — %s: %w",
+				symbol, account, reason, err)
 		}
 		at.logErrorf("❌ ordered-execution install refused (%v) — the durable consumers stay on the legacy advisory path", err)
 		return nil
