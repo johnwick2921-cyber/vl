@@ -1684,6 +1684,7 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 					at.logWarnf("📌 armed place failed %s: %v", r.Scenario, perr)
 					continue
 				}
+				at.recordArmWirePrices(ledger, r, sid, side, r.EntryPx, r.StopPx, r.TargetPx, nil) // F-7: ledger = wire
 				at.logInfof("📌 armed %s placement requested limit %.2f signal=%s (band ±%.0ft)", r.Scenario, r.EntryPx, sid, band/tick)
 				// ONE LIVE ENTRY PER PLAN (owner ruling 2026-09-06): the moment
 				// one arm reaches the wire, every other arm in the plan is
@@ -2149,6 +2150,12 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		}
 		return stopPlaceNotSent
 	}
+	// F-7: ledger = wire. Only a mentor frame can carry a split (leg1).
+	var splitFrom any
+	if isMentorArmOrigin(r) {
+		splitFrom = pl
+	}
+	at.recordArmWirePrices(ledger, r, sid, d.Side, d.Trigger, r.StopPx, targetPx, splitFrom)
 	at.logInfof("📌 armed %s placement requested stop-entry [guard=stop-side verdict=%s action=%s] %s %s trigger=%.2f price=%.2f signal=%s (%s · no retest in %d bars, offset %dt)",
 		r.Scenario, d.Verdict, d.Action, strings.ToUpper(d.Side), orderType, d.Trigger, price, sid, d.Why, retestWaitBars(), stopEntryOffsetTicks())
 	return stopPlaceCommitted
@@ -3448,6 +3455,7 @@ func (at *AutoTrader) TestArmPlace(side string, entry, stop, target float64) (st
 	if perr != nil {
 		return out, perr
 	}
+	at.recordArmWirePrices(ledger, out, sid, side, entry, stop, target, nil) // F-7: ledger = wire
 	// Read back: a received rejection may already have won the race.
 	if err := ledger.DB().First(&out, out.ID).Error; err != nil {
 		return out, err
@@ -3505,6 +3513,7 @@ func (at *AutoTrader) TestArmPlaceStop(side string, trigger, stop, target float6
 	if perr != nil {
 		return out, perr
 	}
+	at.recordArmWirePrices(ledger, out, sid, side, trigger, stop, target, nil) // F-7: ledger = wire
 	// Read back: a received rejection may already have won the race.
 	if err := ledger.DB().First(&out, out.ID).Error; err != nil {
 		return out, err

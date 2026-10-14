@@ -752,6 +752,53 @@ func (s *ArmedOrderStore) BeginPlacement(id int64, signalID string) error {
 	return nil
 }
 
+// ArmWirePrices is what ONE entry frame actually carried (F-7, release #22
+// CANCEL-SETTLE). Split=false leaves leg1_qty / leg1_tp untouched: the send
+// path that wrote it cannot carry a split (every non-mentor send), so the row's
+// absent split stays absent rather than becoming a fabricated 0.
+type ArmWirePrices struct {
+	Stop    float64
+	Target  float64
+	Split   bool // true: Leg1Qty/Leg1TP are the frame's split (0/0 = the frame carried none)
+	Leg1Qty int
+	Leg1TP  float64
+}
+
+// RecordWirePrices (F-7) makes the row carry EXACTLY the prices its entry
+// frame put on the wire: the stop rounded AWAY from the entry and the target
+// to the nearest tick (WireBracket), and on a mentor split the leg-1 TP the
+// sender re-based on the trigger and rounded. The ledger used to keep the
+// authored values — row 350's stop 30882.7763003284 against NT8's 30883, row
+// 347's leg1_tp 30824.25 against NT8's 30825.25 — so every reader of the row
+// (accepted risk, the protection net's plan stop, a restart's leg-1 TP)
+// worked from a price NT8 never received.
+//
+// The CAS is the signal id: the write lands only on the row that sent THIS
+// frame, never on a re-identified one. No state, reason or lifecycle column is
+// touched. A row that no longer carries the signal is an error, never silent.
+func (s *ArmedOrderStore) RecordWirePrices(id int64, signalID string, w ArmWirePrices) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("armed order store unavailable")
+	}
+	sig := strings.TrimSpace(signalID)
+	if sig == "" {
+		return fmt.Errorf("armed_orders: wire prices require the frame's signal id")
+	}
+	upd := map[string]any{"stop_px": w.Stop, "target_px": w.Target}
+	if w.Split {
+		upd["leg1_qty"] = w.Leg1Qty
+		upd["leg1_tp"] = w.Leg1TP
+	}
+	res := s.db.Model(&ArmedOrderDB{}).Where("id = ? AND signal_id = ?", id, sig).Updates(upd)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return fmt.Errorf("armed_orders: row %d no longer carries signal %s — wire prices not recorded", id, shortSignal(sig))
+	}
+	return nil
+}
+
 // CancelUnplaced (N7 part 4, CTO release #4) ends a row that was NEVER SENT —
 // armed, no signal id — straight in 'cancelled'. A cancel_pending row with an
 // empty signal id can never settle (no regime has an id to look for), so the
