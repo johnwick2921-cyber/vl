@@ -374,7 +374,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Every PHL/PLH drop is named',
-          body: 'A rejected touch that does not become a PHL/PLH always names its reason in the funnel line, counted ONCE per visit of the level (not every minute the touch stands): phl_5m_box_ban, phl_mid_range_boxed, phl_ema_crossing_30m, phl_ema_loss_block, phl_not_location, phl_no_reject_entry, phl_level_arm_resting — beside the existing phl_15m_box_ban, phl_30m_box_ban, level_visit_cap, room, near_box and the rest. Before release #22 the first five dropped silently. The boot line also reads the key levels as "key levels N live · M deleted" — the old "levels 92" counted the deleted ones too (27 were live).',
+          body: 'A rejected touch that does not become a PHL/PLH always names its reason in the funnel line, counted ONCE per visit of the level (not every minute the touch stands): phl_5m_box_ban, phl_mid_range_boxed, phl_ema_crossing_30m, phl_ema_loss_block, phl_not_location, phl_no_reject_entry, phl_level_arm_resting — beside the existing phl_15m_box_ban, phl_30m_box_ban, level_visit_cap, room, near_box and the rest. Before release #22 the first five dropped silently. The PHL’s room and trigger-side drops (room, isb_trigger_side) and keypair_candle_too_big also count once per visit now (they counted every minute). level_invalid_first_touch counts each level the first touch invalidated by closing on the wrong side [D5.2 p1 @19:51] — course-correct, and now visible. The ORB logs its range once a day and its escape side + read time on the first escape and on every side change (“🧑‍🏫 ORB …”). The boot line also reads the key levels as "key levels N live · M deleted" — the old "levels 92" counted the deleted ones too (27 were live).',
           cite: 'Engineering rule — every refusal logged and counted · kernel/mentor/eval.go refuseOncePerVisit · kernel/mentor/seed.go SeedLine',
         },
         {
@@ -440,7 +440,7 @@ export const mentor: GuideSection = {
         ],
         [
           'Day gate (§7)',
-          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). A restart (or a feed gap) after 08:30 latches on the 4h/1h of THAT moment, and the day-gate log line then reads "day gate RE-LATCHED @HH:MM CT, not the 08:30 read" instead of "@08:30". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
+          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). A restart (or a feed gap) after 08:30 latches on the 4h/1h of THAT moment, and the day-gate log line then reads "day gate RE-LATCHED @HH:MM CT, not the 08:30 read" instead of "@08:30". After a BOOT past 08:30 it reads "day gate re-read at boot HH:MM CT, not the 08:30 decision" and shows what the 08:30 decision read (replayed from the same bars) — "the 08:30 decision read 4h … · 1h … (DIFFERENT …)" or "same 4h/1h as the 08:30 decision". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
           'DayGateSpentPts 300 · DayGateTargetCapPts 15',
         ],
         [

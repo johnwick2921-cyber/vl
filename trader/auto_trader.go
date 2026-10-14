@@ -498,6 +498,12 @@ type AutoTrader struct {
 	// is a stable per-process dedup key. Read/written only inside
 	// mentorEvalOnce under mentorEvalMu.
 	mentorDayOffClearLogged int64
+	// MENTOR-NY item 5: the ORB lines already logged — the draw once per CT
+	// day, the escape on its first appearance and on every side change (the
+	// evaluator owns the ORB; these only dedup the log, never decide).
+	mentorORBDrawLogged int64
+	mentorORBEscDay     int64
+	mentorORBEscSide    string
 	// mentorDayGateReportLogged is the DayGateReport.Key last INFO-logged — the
 	// once-per-day day-gate line. Read/written only inside mentorEvalOnce
 	// under mentorEvalMu.

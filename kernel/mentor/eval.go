@@ -64,6 +64,11 @@ type State struct {
 	// (owner ruling 2026-10-09): the gate's own inputs, captured the moment the
 	// 08:30 latch freezes, so the per-day INFO line reads them.
 	DayGateReport DayGateReport `json:"day_gate_report,omitempty"`
+	// OpenHTF (MENTOR-NY item 6) — the 4h/1h directions the 08:30 day-gate
+	// decision READ, replayed by a seed that ran AFTER today's 08:30 (a boot
+	// mid-session) from the same closed 1m history, cut at the 08:30 read.
+	// Empty Key = not computed (seeded before 08:30, or never seeded).
+	OpenHTF OpenHTFRead `json:"open_htf,omitempty"`
 	// Swing is the §8 4h-EMA34 swing state (DS-106 slice; rebuildable by
 	// replaying bars through SwingTick).
 	Swing SwingState `json:"swing,omitempty"`
@@ -467,6 +472,14 @@ func handleTouchIntents(e *Evaluator, lvl Level, intents []Intent) []Intent {
 		if in.Action == LevelInvalid {
 			if isBoxEdge(lvl) {
 				continue
+			}
+			// MENTOR-NY item 5: the first touch closed on the wrong side → the
+			// level is invalid for PHL/PLH [D5.2 p1 @19:51–20:25]. Course-
+			// faithful but a large hidden suppressor (RTH 10-12 75, 10-13 65,
+			// 10-14 25) the funnel never showed — counted here, once per
+			// invalidation (the touch machinery emits it once per visit).
+			if !e.State.ISBOnly[lvl.Key] {
+				e.refuse("level_invalid_first_touch")
 			}
 			e.State.ISBOnly[lvl.Key] = true
 		}
@@ -1168,6 +1181,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			SpentPts: dg.SpentPts,
 			ReadAt:   now,
 		}
+		// MENTOR-NY item 6: a boot after 08:30 carries what the 08:30
+		// decision read, so the line can show both values.
+		if o := e.State.OpenHTF; o.Key != "" && o.Key == e.State.Day.Key {
+			e.State.DayGateReport.BootRead = true
+			e.State.DayGateReport.OpenFourHDir = o.FourHDir
+			e.State.DayGateReport.OpenOneHDir = o.OneHDir
+		}
 	}
 	// Owner ruling 2026-10-09: a latched DayOff re-reads the 4h/1h directions
 	// on every CLOSED 1h bar and clears the moment they agree (one-way). The
@@ -1793,7 +1813,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// filter off for LEVEL rejects (the box path honours it separately).
 			if e.Cfg.LocTriggerFilter && e.Cfg.TriggerSchool != 1 {
 				if dirOK, trigSide, _ := TriggerVerdict(e.State.Trigger, price); !dirOK || trigSide != "" && trigSide != side {
-					e.refuse("isb_trigger_side")
+					// MENTOR-NY item 5: once per visit of the level, not per tick.
+					e.refuseOncePerVisit(lvl.Key, "isb_trigger_side")
 					continue
 				}
 			}
@@ -1928,7 +1949,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			in, ok, reason := PHLPLHGatedR2Levels(tr, ex.level, ex.idx, len(bars)-1, prior, levels, e.Cfg, e.State.HTF, e.State.Day.Verdict, dg, confluence)
 			if !ok {
 				// B-rules (13:51:31Z): EVERY drop names a reason and counts it.
-				e.refuse(phlRefusalKey(reason))
+				// MENTOR-NY item 5: the room drop counts ONCE per visit of the
+				// level (it re-evaluated — and re-counted — every tick the touch
+				// stood); every other PHL reason is unchanged.
+				if key := phlRefusalKey(reason); key == "room" {
+					e.refuseOncePerVisit(lvl.Key, key)
+				} else {
+					e.refuse(key)
+				}
 				continue
 			}
 			// Row 56 (a) [D3.2 p1 @ 21:53–23:08]: a trigger-retest level trades

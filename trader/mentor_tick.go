@@ -253,6 +253,13 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 		at.mentorDayGateReportLogged = rep.Key
 		at.logInfof("%s", mentorDayGateLine(rep))
 	}
+	// MENTOR-NY item 5: the ORB state, READ from the evaluator — the range
+	// once per day, the escape side + time when it first appears and on every
+	// side change. It was never logged (10-14: zero ORB lines while the ORB
+	// latch held every short out 08:33–15:00).
+	for _, l := range at.mentorNoteORB(at.mentorEval.State.ORB, mentor.BarCloseInstant(last)) {
+		at.logInfof("%s", l)
+	}
 	// Release #22 LINES-RESTART: every change the evaluator recorded this tick
 	// (4h/1h trigger move, box latched/cleared, trendline valid/dead, swing
 	// line gap fold) is logged once, as it happens — READ values only.
@@ -380,15 +387,67 @@ func mentorDayGateLine(r mentor.DayGateReport) string {
 	// restart (or a feed gap) after the open re-latches on the 4h/1h state of
 	// that later moment — the line names the real read instant.
 	when := "@08:30 CT"
+	open := ""
 	if !r.ReadAtOpen() {
 		at := "n/a"
 		if r.ReadAt > 0 {
 			at = kernel.ClockHHMMCT(time.UnixMilli(r.ReadAt))
 		}
-		when = fmt.Sprintf("RE-LATCHED @%s CT, not the 08:30 read (restart or feed gap; trading day %s — the 4h/1h below are read at %s)", at, r.Key, at)
+		if r.BootRead {
+			// MENTOR-NY item 6 (S2): a boot after 08:30 re-reads the day
+			// gate on the 4h/1h of the boot moment. Say so, and show what the
+			// 08:30 decision read (replayed by the seed) when it differs —
+			// 10-13 printed "4h short · 1h short" at 08:30 and "4h long · 1h
+			// long" at the 08:49 boot, which read as a contradiction.
+			when = fmt.Sprintf("re-read at boot %s CT, not the 08:30 decision (trading day %s — the 4h/1h below are the boot's)", at, r.Key)
+			o4, o1 := string(r.OpenFourHDir), string(r.OpenOneHDir)
+			if o4 == "" {
+				o4 = "n/a"
+			}
+			if o1 == "" {
+				o1 = "n/a"
+			}
+			if o4 != four || o1 != one {
+				open = fmt.Sprintf(" · the 08:30 decision read 4h %s · 1h %s (DIFFERENT — the boot re-latched on the values above)", o4, o1)
+			} else {
+				open = " · same 4h/1h as the 08:30 decision"
+			}
+		} else {
+			when = fmt.Sprintf("RE-LATCHED @%s CT, not the 08:30 read (restart or feed gap; trading day %s — the 4h/1h below are read at %s)", at, r.Key, at)
+		}
 	}
-	return fmt.Sprintf("🧑‍🏫 day gate %s: %s — overnight run %s pts (hi %s, lo %s, line %.0f) · 4h %s · 1h %s · conflict %s [D5.1 p1 @19:22]",
-		when, mentorDayGateVerdictLabel(r.Verdict), run, hi, lo, r.SpentPts, four, one, conflict)
+	return fmt.Sprintf("🧑‍🏫 day gate %s: %s — overnight run %s pts (hi %s, lo %s, line %.0f) · 4h %s · 1h %s · conflict %s%s [D5.1 p1 @19:22]",
+		when, mentorDayGateVerdictLabel(r.Verdict), run, hi, lo, r.SpentPts, four, one, conflict, open)
+}
+
+// mentorNoteORB returns the ORB lines due at this tick (MENTOR-NY item 5) and
+// records them as logged. It reads the evaluator's ORB only — it never moves
+// it (the ORB logic is orb.go's). closeMs is the evaluator clock of the tick.
+func (at *AutoTrader) mentorNoteORB(orb mentor.ORB, closeMs int64) []string {
+	if !orb.Drawn || orb.Day == 0 {
+		return nil
+	}
+	day := time.UnixMilli(orb.Day).In(kernel.CTLocation()).Format("2006-01-02")
+	var out []string
+	if at.mentorORBDrawLogged != orb.Day {
+		at.mentorORBDrawLogged = orb.Day
+		out = append(out, fmt.Sprintf("🧑‍🏫 ORB %s: range %.2f–%.2f (%.2f pts) from the 08:30–08:32 CT candle — the escape picks the side [X5 @01:20–04:58]",
+			day, orb.Low, orb.High, orb.High-orb.Low))
+	}
+	if orb.Escaped != "" && (at.mentorORBEscDay != orb.Day || at.mentorORBEscSide != string(orb.Escaped)) {
+		prev := at.mentorORBEscSide
+		if at.mentorORBEscDay != orb.Day {
+			prev = ""
+		}
+		at.mentorORBEscDay, at.mentorORBEscSide = orb.Day, string(orb.Escaped)
+		was := ""
+		if prev != "" {
+			was = fmt.Sprintf(" (was %s)", prev)
+		}
+		out = append(out, fmt.Sprintf("🧑‍🏫 ORB %s: escape %s%s read @%s CT (range %.2f–%.2f) — only %s entries pass the ORB gate while it stands",
+			day, orb.Escaped, was, kernel.ClockHHMMCT(time.UnixMilli(closeMs)), orb.Low, orb.High, orb.Escaped))
+	}
+	return out
 }
 
 // mentorPlaceIntent runs the placement gates (sources wired, stop rules,
