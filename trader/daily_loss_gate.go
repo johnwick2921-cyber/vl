@@ -197,6 +197,12 @@ type dailyGuardVerdict struct {
 	Class   string // gate-block class: daily_loss | daily_profit_target | max_daily_trades | daily_guardrail_unverified
 	Reason  string
 	Latched bool // a daily-loss latch holds (this call's trip or an earlier one)
+	// Unverified: the refusal is FAIL-CLOSED on an unknown (an unresolved
+	// close today, or a failed read), not on a definite limit. Only the
+	// mentor's authoring gate refuses on it — the rule it has had since
+	// release 10-05-1; the admission chain refuses only on a definite limit,
+	// so no path gains a refusal it did not have before r22.
+	Unverified bool
 }
 
 // dailyGuardVerdictAt evaluates the daily guardrails (loss, profit target,
@@ -240,7 +246,7 @@ func (at *AutoTrader) dailyGuardVerdictAt(now time.Time) dailyGuardVerdict {
 	if lossOn {
 		b, err := at.botDayPnLAt(now)
 		if err != nil {
-			return dailyGuardVerdict{Refuse: true, Class: "daily_guardrail_unverified",
+			return dailyGuardVerdict{Refuse: true, Unverified: true, Class: "daily_guardrail_unverified",
 				Reason: fmt.Sprintf("daily_guardrail_unverified: daily loss limit enforced but the P&L read failed (%v) — no new entry (fail-closed)", err)}
 		}
 		bot = b
@@ -252,7 +258,7 @@ func (at *AutoTrader) dailyGuardVerdictAt(now time.Time) dailyGuardVerdict {
 		// "profit target" mean one thing on every path.
 		realized, trades, err := at.dailyGuardrailActivityAt(now)
 		if err != nil {
-			return dailyGuardVerdict{Refuse: true, Class: "daily_guardrail_unverified",
+			return dailyGuardVerdict{Refuse: true, Unverified: true, Class: "daily_guardrail_unverified",
 				Reason: fmt.Sprintf("daily_guardrail_unverified: daily profit/trade limit enforced but the session-day read failed (%v) — no new entry (fail-closed)", err)}
 		}
 		g.DailyRealizedPnL, g.TradesToday = realized, trades
@@ -269,10 +275,11 @@ func (at *AutoTrader) dailyGuardVerdictAt(now time.Time) dailyGuardVerdict {
 		return dailyGuardVerdict{Refuse: true, Class: "max_daily_trades", Reason: "max_daily_trades: " + err.Error() + " — no new entry this CME session-day"}
 	}
 	// FAIL-CLOSED on an unresolved close today (pnl_corrected NULL, canon 40):
-	// an unknown loss is not a confident "under the limit" (the mentor's
-	// placement gate has ruled this since release 10-05-1; now every path).
+	// an unknown loss is not a confident "under the limit" — the mentor's
+	// placement gate has ruled this since release 10-05-1 (Unverified: the
+	// admission chain does not refuse on it, see the field).
 	if lossOn && bot.Unresolved > 0 {
-		return dailyGuardVerdict{Refuse: true, Class: "daily_guardrail_unverified",
+		return dailyGuardVerdict{Refuse: true, Unverified: true, Class: "daily_guardrail_unverified",
 			Reason: fmt.Sprintf("daily_guardrail_unverified: daily loss limit enforced but %d close(s) today have unresolved P&L (pnl_corrected NULL) — no new entry (fail-closed)", bot.Unresolved)}
 	}
 	return dailyGuardVerdict{}

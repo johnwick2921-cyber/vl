@@ -815,6 +815,19 @@ export function RiskControlEditor({
                   the chip below prints what the server resolves for the saved
                   row (value · origin · scope), never a typed default. */}
             </p>
+            {/* r22 RISK-GATES — mentor entries come from the course rules and
+                carry no AI confidence, so this floor never gates them. */}
+            {config.mentor_mode === true && (
+              <p
+                data-testid="min-confidence-mentor-note"
+                className="text-xs mb-2"
+                style={{ color: '#F0B90B' }}
+              >
+                Does not apply in mentor mode — mentor entries come from the
+                course rules and carry no AI confidence. This floor gates AI
+                decisions only.
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <input
                 type="range"
@@ -904,6 +917,18 @@ export function RiskControlEditor({
                 master switch is ON
               </p>
             )}
+            {/* r22 RISK-GATES — what the switch does, in plain words. */}
+            <p
+              data-testid="daily-loss-what-it-does"
+              className="text-xs mt-1"
+              style={{ color: '#848E9C' }}
+            >
+              With the master AND this switch ON: when the bot&apos;s own
+              P&amp;L today (realized + open, manual trades excluded) reaches
+              −limit, every path refuses new entries, resting entry orders are
+              cancelled, the bot&apos;s positions are flattened, and it stays
+              locked until 17:00 CT. Mentor mode included.
+            </p>
             <EffectiveLine knob={eff('daily_loss_enabled')} label={onOff} />
             <EffectiveLine
               knob={eff('daily_loss_limit_usd')}

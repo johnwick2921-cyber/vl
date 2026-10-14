@@ -289,19 +289,19 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 	// decision cycle evaluated them, so the mentor path never saw max trades
 	// and a resting arm filled straight through a hit limit. Inert while the
 	// guardrails master is OFF (the owner's live setting). No mentor waiver.
-	if v := at.dailyGuardVerdictAt(now); v.Refuse {
+	// Only a DEFINITE limit refuses here; an unknown (unresolved close, failed
+	// read) refuses at the mentor's authoring gate only, as before r22.
+	if v := at.dailyGuardVerdictAt(now); v.Refuse && !v.Unverified {
 		logf := func() {
 			at.logWarnf("🔴 daily guardrail: %s %s REFUSED — %s", sym, act, v.Reason)
 		}
 		switch v.Class {
-		case "daily_loss":
-			return at.admitRefuse(in, "daily_loss", v.Reason, logf)
 		case "daily_profit_target":
 			return at.admitRefuse(in, "daily_profit_target", v.Reason, logf)
 		case "max_daily_trades":
 			return at.admitRefuse(in, "max_daily_trades", v.Reason, logf)
 		default:
-			return at.admitRefuse(in, "daily_guardrail_unverified", v.Reason, logf)
+			return at.admitRefuse(in, "daily_loss", v.Reason, logf)
 		}
 	}
 

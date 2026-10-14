@@ -827,15 +827,19 @@ func parityTable() []parityRow {
 
 	// entry_gate — A/E: entryGateForDecisionAt (E: agentBracketRefusal first);
 	// B, D: at authoring + G1; C: pictureEntryGate.
-	add(parityRow{gate: "entry_gate", path: parityA, via: parityViaAdmit, class: "entry_gate", text: "entry_gate: refused: daily_force_flat — parity: daily loss limit hit (new entries blocked on the decision path", trip: parityTripForceFlat})
-	add(parityRow{gate: "entry_gate", path: parityE, via: parityViaAdmit, class: "entry_gate", text: "entry_gate: refused: daily_force_flat — parity: daily loss limit hit", trip: parityTripForceFlat})
+	// r22 RISK-GATES: a latched daily-loss trip is now refused EARLIER, by
+	// admitChain's daily-guardrail step (class daily_loss) on A/E/C — before
+	// EntryGate, whose leg D stays as the second wall (it refuses only if that
+	// step is removed). B/D still refuse at authoring (EntryGate, G1).
+	add(parityRow{gate: "daily_loss", path: parityA, via: parityViaAdmit, class: "daily_loss", text: "daily_loss: parity: daily loss limit hit", trip: parityTripForceFlat})
+	add(parityRow{gate: "daily_loss", path: parityE, via: parityViaAdmit, class: "daily_loss", text: "daily_loss: parity: daily loss limit hit", trip: parityTripForceFlat})
 	for _, p := range []string{parityB, parityD} {
 		add(parityRow{gate: "entry_gate", path: p, via: parityViaG1, class: "arm_not_admitted", trip: parityTripForceFlat})
 	}
 	for _, p := range []string{parityBSend, parityDSend} {
 		add(parityRow{gate: "entry_gate", path: p, na: parityNASendEntryGate})
 	}
-	add(parityRow{gate: "entry_gate", path: parityC, via: parityViaAdmit, class: "entry_gate", text: "entry_gate: refused: daily_force_flat — parity: daily loss limit hit (new entries blocked on the picture path", trip: parityTripForceFlat})
+	add(parityRow{gate: "daily_loss", path: parityC, via: parityViaAdmit, class: "daily_loss", text: "daily_loss: parity: daily loss limit hit", trip: parityTripForceFlat})
 	return rows
 }
 

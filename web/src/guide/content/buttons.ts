@@ -24,9 +24,9 @@ export const buttons: GuideSection = {
           label: '🛑 Emergency Flat',
           api: 'dashboard Emergency Flat modal → Confirm',
           sideEffects:
-            'Market-flattens ALL positions NOW + sits out (EOD-flat ladder: EOD_FLAT_LIMIT_TICKS then EOD_FLAT_MARKET_AFTER_SEC). Two-step: Cancel / Confirm.',
+            "Acts on THIS trader only (the one on screen): sends ONE market flatten to NinjaTrader for its bound account's position (NT8 closes it at market and cancels its protective bracket; the close is confirmed separately). It does NOT use the EOD limit-then-market ladder, does NOT cancel resting entry orders, and does NOT pause the trader — it does not sit out. It also clears THIS trader's daily-loss latch (other traders' latches stand); if its own loss still stands the gate re-trips on the next 60-second beat. The result shows positions_flattened = the open positions NT8 reported when the flatten was sent (null if that read failed). Two-step: Cancel / Confirm.",
           budget: 'None — emergency path.',
-          undo: 'Positions are closed; the day can continue after review.',
+          undo: 'The position is closed; the trader keeps running — use Pause to stop new entries.',
           useWhen:
             'Something is wrong: runaway positions, feed confusion, or you just want out.',
         },
@@ -73,11 +73,11 @@ export const buttons: GuideSection = {
       items: [
         {
           title: 'Two steps, on purpose',
-          body: 'Tap Emergency Flat → the modal shows scope (all positions) → tap Confirm. Cancel is the bigger button on the left. There is no single-click flatten — that is the point.',
+          body: 'Tap Emergency Flat → the modal names the trader it acts on → tap Confirm. There is no single-click flatten — that is the point. To stop new entries as well, Pause the trader.',
         },
         {
           title: 'What it will NOT do',
-          body: "It never deletes the plan, never touches the strategy, never resets the day's stats. It closes positions and the day continues flat.",
+          body: "It never deletes the plan, never touches the strategy, never changes the day's P&L or trade records, and never touches another trader. It does clear this trader's daily-loss latch (a still-standing loss re-trips it), and it does not pause entries or cancel resting entry orders.",
         },
       ],
     },

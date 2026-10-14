@@ -125,9 +125,9 @@ func LoadRiskLimitsFromConfig() RiskLimits {
 // endpoint and tests have something to call. It DOES NOT yet hook into
 // CME session boundaries (deferred to a follow-up alongside T22 drift).
 //
-// Manual reset path: ResetDailyPnL() — called by the operator via the
-// (future) force-flat API endpoint after they have wired in a fresh
-// session.
+// Manual reset path: ResetDailyPnLAt(now) — the GLOBAL reset (every trader).
+// r22 RISK-GATES: the operator's force-flat endpoint no longer calls it; it
+// clears only the trader acted on (ClearDailyForceFlat via MaybeForceFlat).
 //
 // Automatic check-and-reset path: MaybeResetDaily(now) — called at the
 // top of each decision cycle. If the wall-clock date has changed since
@@ -268,10 +268,10 @@ func clearDailyForceFlatNotOn(today string) {
 	}
 }
 
-func ResetDailyPnL() {
-	ResetDailyPnLAt(time.Now())
-}
-
+// ResetDailyPnLAt is the manual GLOBAL window reset: it lifts EVERY trader's
+// trip. r22 RISK-GATES (T4): its wall-clock wrapper ResetDailyPnL was removed —
+// its only production caller was MaybeForceFlat (the Emergency Flat), which now
+// clears the ONE trader acted on (ClearDailyForceFlat).
 func ResetDailyPnLAt(now time.Time) {
 	clearAllDailyForceFlat()
 	dailyResetMu.Lock()

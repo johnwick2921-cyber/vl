@@ -547,7 +547,7 @@ const risk: KnobSpec[] = [
   {
     label: 'Min confidence',
     where: 'Strategy → Risk Control',
-    what: "Floor on the AI's confidence integer; below = refused.",
+    what: "Floor on the AI's confidence integer; below = refused. AI decisions only: it does NOT apply to mentor mode (mentor entries come from the course rules and carry no confidence) or to planner arms.",
     trader: 'The simplest honesty gate: 60 means "be at least 60% sure".',
     consumer: 'kernel/engine_position.go:188 (confidence gate)',
     range: '50 – 100',
@@ -754,13 +754,15 @@ const risk: KnobSpec[] = [
   },
   {
     label: 'Daily loss limit',
-    where: 'Strategy → Risk Control → Guardrails',
-    what: 'Realized PnL ≤ −limit trips the daily-loss halt (force-flat class).',
+    where:
+      'Strategy → Risk Control → Guardrails: the master switch AND the Daily loss row (toggle + $)',
+    what: "OFF today: both live strategies store guardrails_enabled=false and daily_loss_enabled=false, so the $450 there enforces nothing (the 🛑 [trader] daily-loss gate boot line says OFF). With BOTH switched on, when the bot's OWN session-day P&L — realized + open, MANUAL trades excluded (rows reconcile adopted with no order of ours) — is at or past −limit: (1) every new entry is REFUSED on every path (AI decision, agent chat, planner arms, mentor, Picture), counted daily_loss; (2) the 60-second monitor beat CANCELS every resting ENTRY order (protective stops/targets are never cancelled); (3) it FLATTENS the bot's open positions through the EOD-flat path (a manual position is left alone); (4) it stays LATCHED until 17:00 CT, even if the P&L recovers, and survives a restart. The trip logs '🔴 DAILY LOSS LIMIT HIT' once and counts daily_loss_tripped. An unresolved close today (pnl_corrected NULL) is excluded from the sum and counted; it refuses new MENTOR placements fail-closed (as since release 10-05-1) and never flattens on a guess. Emergency Flat on a trader clears that trader's latch only; if its loss still stands it re-trips on the next beat.",
     trader: 'The circuit breaker that ends a bad day at a known dollar number.',
     consumer:
-      'kernel/risk_limits.go:184 (DailyLossLimitUSD) · engine_analysis.go:145',
-    range: 'USD · env RISK_MAX_DAILY_LOSS_USD fallback',
-    systemDefault: 'ON (with master) · value in Risk Control',
+      'trader/daily_loss_gate.go (botDayPnLAt — the one P&L read; dailyGuardVerdictAt; dailyLossBeatAt / dailyLossFlattenAt on monitorTick) · trader/entry_admission.go (every path) · kernel/risk_limits.go DailyGuardrails.Check · kernel/engine_analysis.go (AI decision cycle)',
+    range: 'USD · empty/0 → env RISK_MAX_DAILY_LOSS_USD ($500 default)',
+    systemDefault:
+      'OFF on both live strategies (saved). A strategy that never saved the switches inherits master ON + daily-loss ON with the env $500.',
     recommended: '⭐ set it to a loss you can absorb once a week.',
     whenToTouch: 'Set at the start of the week; review after every trip.',
     perSession: 'No.',
@@ -780,7 +782,7 @@ const risk: KnobSpec[] = [
   {
     label: 'Max daily trades',
     where: 'Strategy → Risk Control → Guardrails',
-    what: 'Entry count cap per session-day.',
+    what: 'Entry count cap per CME session-day (17:00 CT). Enforced only with the master AND its own toggle ON (both OFF today). Since release #22 it refuses on every path, MENTOR included (counted max_daily_trades / mentor max_daily_trades_refused) — before, the mentor never evaluated it.',
     trader: "Stops revenge-trading after the day's quota is spent.",
     consumer: 'kernel/risk_limits.go:187 (MaxDailyTradesEnabled)',
     range: 'count · enabled with master',
