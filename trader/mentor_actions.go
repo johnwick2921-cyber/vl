@@ -388,6 +388,14 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		// A's runner target.
 		mentorRunnerTargets.Store(mentorRunnerTargetKey(at.id, scenario), in.RunnerTarget)
 	}
+	if in.ExecTFMin > 1 {
+		// X8 @18:02–18:14 "trade khung nào thì gồng theo khung đó": the frame
+		// the entry was READ on rides to the fill, so the runner trails on it.
+		mentorExecFrames.Store(mentorRunnerTargetKey(at.id, scenario), in.ExecTFMin)
+	} else {
+		// a 1m entry: no stale frame from an earlier arm of the same scenario.
+		mentorExecFrames.Delete(mentorRunnerTargetKey(at.id, scenario))
+	}
 	side := strings.ToLower(strings.TrimSpace(string(in.Side)))
 	if side != "long" && side != "short" {
 		at.mentorCount("placement_refused_bad_side")

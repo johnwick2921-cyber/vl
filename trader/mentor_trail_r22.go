@@ -2,6 +2,7 @@ package trader
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -372,8 +373,13 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 	if strings.EqualFold(side, "short") {
 		extreme, word = h, "high"
 	}
-	at.logInfof("🧑‍🏫 mentor candle trail: %s runner (leg %d) stop → %.2f — 1 tick beyond the closed candle's %s %.2f [R3; D2.4 p1 @07:01; X8 @15:40]",
-		runner.SignalID, runner.Wire, cand, word, extreme)
+	frame := "1m"
+	if p.TrailTFMin > 1 {
+		frame = fmt.Sprintf("%dm", p.TrailTFMin)
+		at.mentorCount("trail_candle_moved_2m")
+	}
+	at.logInfof("🧑‍🏫 mentor candle trail: %s runner (leg %d) stop → %.2f — 1 tick beyond the closed %s candle's %s %.2f [R3; D2.4 p1 @07:01; X8 @15:40, @18:02 the frame the entry was read on]",
+		runner.SignalID, runner.Wire, cand, frame, word, extreme)
 }
 
 // ── P1-2: THE ISB CANDLE-3 PARTIAL, REALLY SENT ─────────────────────────────
