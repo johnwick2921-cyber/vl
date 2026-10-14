@@ -12,7 +12,9 @@ import (
 // same-role swing extremes: a low and a HIGHER low (support, SideLong), or a
 // high and a LOWER high (resistance, SideShort). It must slope — never
 // horizontal [D2.3 p1 @06:44–07:18]. Two points = EXISTS; a 3rd touch makes
-// it VALID (a location) [DAY-3 p2 @03:45–04:07]. A break confirmed by a 5m
+// it VALID (a location) [DAY-3 p2 @03:45–04:07] — and that 3rd touch is a
+// RETURN: price must LEAVE the line and come BACK to it ("nó phải VỀ nó test
+// lần thứ 3" [D3.2 p2 @03:45]; see trendlineScan). A break confirmed by a 5m
 // CLOSE discards the line ("ĐỢI KHUNG 5 PHÚT ĐÓNG" [X9 @06:25]); a break is
 // NOT an entry. The line dies at day end [D4.1 p2 @01:17–01:30] — the
 // today-only swing filter below is its intraday death besides the 5m break.
@@ -66,15 +68,15 @@ func (t Trendline) brokenBy5m(b market.Kline) bool {
 // and extended right; it becomes a location on the 3rd touch and is discarded
 // by a 5m close through.
 func TrendlinesBuild(bars []market.Kline, now time.Time) []Trendline {
-	seq := swings3(bars)
+	all := swings3(bars)
 	today := tradingDayKey(now.In(ctime()))
 	var seqToday []swingPairAt
-	for _, s := range seq {
+	for _, s := range all {
 		if tradingDayKey(time.UnixMilli(bars[s.idx].OpenTime).In(ctime())) == today {
 			seqToday = append(seqToday, s)
 		}
 	}
-	seq = seqToday
+	seq := seqToday
 	var out []Trendline
 	for _, role := range []kernel.LevelKind{kernel.KindSWGL, kernel.KindSWGH} {
 		// STRUCTURAL swings only: confirmed two-sided (left fractal + right
@@ -118,16 +120,28 @@ func TrendlinesBuild(bars []market.Kline, now time.Time) []Trendline {
 		if tl.P1T <= tl.P0T {
 			continue
 		}
-		tl.ValidAt, tl.Dead = trendlineScan(bars, tl, now)
+		tl.ValidAt, tl.Dead = trendlineScan(bars, all, tl, now)
 		out = append(out, tl)
 	}
 	return out
 }
 
-// trendlineScan walks the closed bars after formation: the first wick touch
-// is the 3rd touch (ValidAt); any closed 5m candle that closes through the
-// line marks it dead.
-func trendlineScan(bars []market.Kline, tl Trendline, now time.Time) (validAt int, dead bool) {
+// trendlineScan walks the closed bars after formation: any closed 5m candle
+// that closes through the line marks it dead, and the 3rd touch (ValidAt) is
+// a RETURN — "nó phải VỀ nó test lần thứ 3 thì mới valid" [D3.2 p2 @03:45];
+// "Nó chưa VỀ test một lần nào" [D3.2 p2 @00:52–01:44]; "Nếu như nó VỀ đây, nó
+// test cái trendline một lần rồi…" [D2.3 p1 @02:34–03:16]. "Về" = price comes
+// BACK. The bars right after P1 — P1's own confirmation bar and whatever still
+// sits on the line — are the swing being built, not a return (the CTO probe,
+// 10-13: 55 of 120 lines went VALID on the bar right after P1, median +2).
+//
+// So a touch counts only AFTER price has LEFT the line: a CONFIRMED
+// opposite-role swing on the line's far side, beyond the touch band (see
+// trendlineLeaveIdx). The touch scan starts on the bar after that swing, which
+// is always after P1's confirmation bar (P1Idx+1). Structural — no distance
+// number; the same "separated by a real swing of the other role" the box
+// re-read asks of a box partner [CTO-REREAD-1004 DAY-3 row 12].
+func trendlineScan(bars []market.Kline, swings []swingPairAt, tl Trendline, now time.Time) (validAt int, dead bool) {
 	nowMs := now.UnixMilli()
 	b5 := barsTF(bars, 5)
 	for _, b := range b5 {
@@ -141,7 +155,11 @@ func trendlineScan(bars []market.Kline, tl Trendline, now time.Time) (validAt in
 			return 0, true
 		}
 	}
-	for i := tl.FormedAt + 1; i < len(bars); i++ {
+	leave := trendlineLeaveIdx(bars, swings, tl, nowMs)
+	if leave < 0 {
+		return 0, false // price never left the line — no return, not a location
+	}
+	for i := leave + 1; i < len(bars); i++ {
 		c := bars[i]
 		if c.CloseTime == 0 || c.CloseTime >= nowMs {
 			continue
@@ -151,6 +169,34 @@ func trendlineScan(bars []market.Kline, tl Trendline, now time.Time) (validAt in
 		}
 	}
 	return 0, false
+}
+
+// trendlineLeaveIdx returns the bar index of the FIRST confirmed opposite-role
+// swing after P1 whose extreme is OFF the line on its far side — a swing HIGH
+// above a support line (SideLong), a swing LOW below a resistance line
+// (SideShort), by more than the line's own touch band (an extreme still inside
+// the band never left the line). Confirmed = swingConfirmed's right side, with
+// the confirming bar CLOSED before now. -1 = price has not left the line yet.
+func trendlineLeaveIdx(bars []market.Kline, swings []swingPairAt, tl Trendline, nowMs int64) int {
+	for _, s := range swings {
+		if s.idx <= tl.P1Idx || s.idx+1 >= len(bars) {
+			continue
+		}
+		if bars[s.idx+1].CloseTime == 0 || bars[s.idx+1].CloseTime >= nowMs {
+			continue // the confirming bar has not closed yet
+		}
+		if !swingConfirmed(bars, s) {
+			continue
+		}
+		p := tl.priceAt(bars[s.idx].OpenTime)
+		if tl.Side == SideLong && s.kind == kernel.KindSWGH && s.price > p+trendlineTouchBandPts {
+			return s.idx
+		}
+		if tl.Side == SideShort && s.kind == kernel.KindSWGL && s.price < p-trendlineTouchBandPts {
+			return s.idx
+		}
+	}
+	return -1
 }
 
 // key returns the stable level key (state joins on it). UR-FIX U2: keyed on

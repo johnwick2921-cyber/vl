@@ -4957,6 +4957,17 @@ fully outside the band.
 own-TF bars (fresh/tested-1/tested-2/stale, re-entry semantics); `normalizeByTFGrade`
 maps the new vocabulary onto the unchanged `freshMult`/`zoneFreshMult` tables; knob default
 OFF so goldens stay byte-identical.
+
+**Recurrence (2026-10-14, fix/trendline-third-touch) — the F1 rule in the mentor
+trendline.** `kernel/mentor/trendline.go` `trendlineScan` counted the FIRST wick
+touch after `P1Idx+1` as the 3rd touch, and that bar is P1's own confirmation
+bar (`swingConfirmed` reads it): on the real MNQ session 10-13, 55 of 120 lines
+went VALID on the bar right after P1 (median +2). Fix: a touch counts only after
+price has LEFT the line — the first confirmed opposite-role swing after P1 whose
+extreme is beyond the touch band — then comes back ("phải VỀ TEST LẦN THỨ 3"
+[D3.2 p2 @03:45]). **Probe:** any "Nth touch / Nth test" counter — does its scan
+start after the structure's own formation AND confirmation bars, and does it ask
+for a departure in between? A fixture whose next bars sit on the line is the RED.
 ## CLASS 135 — A SEAT GUARANTEE UNDONE BY ITS OWN RESTORE SORT (born 2026-08-24, found 2026-09-16 by DS-102, fix/structure-seats-and-relation)
 
 **Shape.** A seating pass promotes a tail candidate into the top-N head, then

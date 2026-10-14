@@ -635,8 +635,14 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 		return mentorSizeChoice{}, err
 	}
 	at.mentorCount("tier_" + choice.Tier)
-	at.logInfof("🧑‍🏫 mentor size: %d contracts (tier %s) — %s [setup %s, stop %.1f pts]",
-		choice.Contracts, choice.Tier, choice.Why, in.Setup, in.StopPts)
+	// the trade's location on the record (TRENDLINE-THIRD-TOUCH): the place
+	// the setup was taken at, from its anchor — "at a location: trendline long".
+	where := "no location anchor"
+	if loc := mentor.LocationOf(in.AnchorKey); loc != "" {
+		where = "at a location: " + loc
+	}
+	at.logInfof("🧑‍🏫 mentor size: %d contracts (tier %s) — %s [setup %s, stop %.1f pts, %s]",
+		choice.Contracts, choice.Tier, choice.Why, in.Setup, in.StopPts, where)
 	return choice, nil
 }
 
