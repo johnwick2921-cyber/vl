@@ -1560,8 +1560,14 @@ func (at *AutoTrader) installNTOrderedExecutions(nt *ntTrader.TCPTrader) error {
 			// the slot). This object is NOT the live instance, so it must be
 			// refused the same as any foreign owner — P0 + is_running=0 — never
 			// silently "already running", which would leave is_running=1 with
-			// nothing running.
-			reason := fmt.Sprintf("slot held by another instance of trader %q", other)
+			// nothing running. A different-ID hit is the REL18-C O2 duplicate —
+			// its owner is a different trader, not a second copy of this one.
+			var reason string
+			if otherID == at.id {
+				reason = fmt.Sprintf("slot held by a stale instance of this same trader (%q)", other)
+			} else {
+				reason = fmt.Sprintf("slot already owned by trader %q", other)
+			}
 			telemetry.IncGateBlock(at.id, "ordered_owner_exists")
 			at.emitAlert("P0", "ordered_owner_conflict",
 				"ordered-owner:"+at.id,
