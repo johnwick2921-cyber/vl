@@ -38,6 +38,9 @@ func mentorSetupKind(in mentor.Intent) string {
 	if strings.HasPrefix(strings.TrimSpace(in.ArmID), "lvl-") {
 		return "lvl"
 	}
+	if strings.HasPrefix(in.Reason, "PHL/PLH (reverse ISB") {
+		return "isb-reverse" // CX-6: the re-tagged reverse ISB keeps its kind
+	}
 	switch in.Setup {
 	case "ISB":
 		if in.Action == mentor.PlaceStopLimitEntry {

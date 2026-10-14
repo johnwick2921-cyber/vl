@@ -304,7 +304,10 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 		return
 	}
 	if !scaledNow {
-		return // stage 0
+		// stage 0. CX-4 (knob mentor_be_before_partial, default OFF = R3):
+		// BE at half-way to +1R before the partial [D1.2 p1 @12:41–13:12].
+		at.mentorBEBeforePartialStep(nt, p, c)
+		return
 	}
 	side := pos.Side
 	tick := at.mentorInstrumentTick()
@@ -411,6 +414,13 @@ func (at *AutoTrader) mentorISBPartialStep(nt *ntTrader.TCPTrader, p *mentorLive
 		at.mentorCount("isb_partial_1r_first")
 		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: +1R (%.2f) printed before the fill candle closed — leg 1's resting +1R TP owns the partial; no modify sent", tp)
 		return tp
+	}
+	if !mentorISBC3PartialAnyProfit(at.mentorRiskControl()) {
+		// CX-5 (knob false): "bán bớt ở 1:1" [D2.2 p3 @12:13] — leg 1 keeps its
+		// resting +1R TP; no partial at a close short of 1:1.
+		at.mentorCount("isb_partial_wait_1r")
+		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: close %.2f is in profit short of +1R — mentor_isb_c3_partial_any_profit OFF, leg 1 keeps its +1R TP (D2.2 p3 @12:13 \"bán bớt ở 1:1\"); nothing sent", c)
+		return 0
 	}
 	return at.mentorSendISBPartialTP(nt, p, tp)
 }

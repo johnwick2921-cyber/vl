@@ -1065,17 +1065,12 @@ func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 			}
 			leg.Stop = p.Pos.Entry
 		}
-		// Mode A: leg 1's TP would move OUT to the runner target (Q2 — the
-		// modify_bracket frame is UNWIRED for live until one owner-attended SIM
-		// proof, so we LOG the change we WOULD make; stops still moved).
-		runnerTarget := p.Pos.Target
-		if runnerTarget == 0 {
-			runnerTarget = p.Legs[0].TP
-		}
-		if runnerTarget > 0 {
-			at.logInfof("🧑‍🏫 mentor resonance leg1 modify_bracket WOULD set TP %.2f (runner target) — UNWIRED (Q2 unproven), logged not sent", runnerTarget)
-			at.mentorCount("modify_bracket_resonance_logged")
-		}
+		// Mode A, CX-3 (release #25): the RUNNER's TP moves out to the level
+		// beyond the old high through the leg-scoped modify_bracket (wire leg
+		// 2) — leg 1's +1R TP stays (R-RES). It was logged as "WOULD set TP …
+		// UNWIRED" and never sent from 10-05 to 10-14. Knob
+		// mentor_resonance_runner_tp_old_high (nil → ON); OFF = logged only.
+		at.mentorResonanceRunnerTP(nt, p, p.RunnerTarget)
 		at.logInfof("🧑‍🏫 mentor resonance ARMED: %s %s → mode A (BE, no trail, no 1:1) [D2.4 p1]", p.Pos.Symbol, p.Pos.Side)
 	}
 }
