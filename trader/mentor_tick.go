@@ -998,7 +998,9 @@ func (at *AutoTrader) cancelLiveMentorArms(reason string, swingExempt bool) bool
 		if swingExempt {
 			at.logWarnf("🧑‍🏫 day-stop cancel: cancelled %d live intraday mentor arm(s) (SWING4H exempt) — %s", cancelled, reason)
 		} else {
-			at.logWarnf("🧑‍🏫 never-add cancel: cancelled %d live mentor arm(s) (SWING4H included — fail-closed) — %s", cancelled, reason)
+			// r22: this all-arms path is shared by the never-add sweep and the
+			// daily-loss breach; the reason names which one acted.
+			at.logWarnf("🧑‍🏫 all-arms cancel: cancelled %d live mentor arm(s) (SWING4H included — fail-closed) — %s", cancelled, reason)
 		}
 	}
 	return cancelled > 0
