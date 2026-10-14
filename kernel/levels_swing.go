@@ -36,6 +36,22 @@ const (
 // aggregated from the passed bars (typically the 1m slice) and emits the recent
 // swing highs/lows as DetectedLevel lines. Empty input → nothing.
 func SwingPointLevels(bars []market.Kline, now time.Time) []DetectedLevel {
+	return swingPointLevelsCapped(bars, now, SwingPointsPerTFSide)
+}
+
+// SwingPointLevelsAll is SwingPointLevels with NO per-TF-per-side cap: every
+// confirmed swing inside the lookback, newest first. N7 (release #23): the
+// mentor's old-extreme pick must apply its UNBROKEN test over the whole
+// lookback and then take the nearest — capping to the newest 3 first hid an
+// older unbroken high behind 3 broken newer ones, so after a reversal the
+// ladder had no old high although one existed. The capped read stays the
+// planner's (its seats are scarce); only the mentor reads this one.
+func SwingPointLevelsAll(bars []market.Kline, now time.Time) []DetectedLevel {
+	return swingPointLevelsCapped(bars, now, 0)
+}
+
+// swingPointLevelsCapped: perSide <= 0 = uncapped.
+func swingPointLevelsCapped(bars []market.Kline, now time.Time, perSide int) []DetectedLevel {
 	if len(bars) == 0 {
 		return nil
 	}
@@ -45,7 +61,7 @@ func SwingPointLevels(bars []market.Kline, now time.Time) []DetectedLevel {
 		if len(agg) < 2*structureSwingK()+1 {
 			continue
 		}
-		out = append(out, swingPointsFor(agg, tfMin, now)...)
+		out = append(out, swingPointsForCapped(agg, tfMin, now, perSide)...)
 	}
 	return out
 }
@@ -53,6 +69,12 @@ func SwingPointLevels(bars []market.Kline, now time.Time) []DetectedLevel {
 // swingPointsFor is the per-TF swing emission: fractal extremes with the
 // structure engine's significance filter, newest-first within the lookback.
 func swingPointsFor(agg []market.Kline, tfMin int, now time.Time) []DetectedLevel {
+	return swingPointsForCapped(agg, tfMin, now, SwingPointsPerTFSide)
+}
+
+// swingPointsForCapped is swingPointsFor with at most perSide swings per side
+// (perSide <= 0 = every one inside the lookback).
+func swingPointsForCapped(agg []market.Kline, tfMin int, now time.Time, perSide int) []DetectedLevel {
 	iv := int64(tfMin) * 60_000
 	closed := make([]market.Kline, 0, len(agg))
 	for _, b := range agg {
@@ -132,8 +154,12 @@ func swingPointsFor(agg []market.Kline, tfMin int, now time.Time) []DetectedLeve
 	cutoff := now.UnixMilli() - int64(lookbackFor(tfMin))*iv
 	day := CMESessionDayKey(now)
 	var out []DetectedLevel
+	capH := perSide
+	if capH <= 0 {
+		capH = len(swings) // uncapped: never binds
+	}
 	addedH, addedL := 0, 0
-	for i := len(swings) - 1; i >= 0 && (addedH < SwingPointsPerTFSide || addedL < SwingPointsPerTFSide); i-- {
+	for i := len(swings) - 1; i >= 0 && (addedH < capH || addedL < capH); i-- {
 		s := swings[i]
 		if s.timeMs < cutoff {
 			continue
@@ -145,12 +171,12 @@ func swingPointsFor(agg []market.Kline, tfMin int, now time.Time) []DetectedLeve
 			label = "SWG-L·"
 		}
 		if s.high {
-			if addedH >= SwingPointsPerTFSide {
+			if addedH >= capH {
 				continue
 			}
 			addedH++
 		} else {
-			if addedL >= SwingPointsPerTFSide {
+			if addedL >= capH {
 				continue
 			}
 			addedL++

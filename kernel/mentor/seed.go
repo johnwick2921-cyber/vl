@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -171,6 +172,40 @@ func seed(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int
 	e.missing = missingFromDepth(e.depth)
 	e.depthMet = ""
 
+	e.seedHistoryState(bars1m, full1HRTH, now, false)
+
+	// S2: the swing must never replay OLD touches at boot. Stamp the newest
+	// closed 5m bar as the watermark, so the first tick walks only NEW bars —
+	// a 25h tape containing an old touch stays silent instead of turning the
+	// old touch into a live order (00-METHOD.md §8: "Wait for a LITERAL
+	// touch" [D5.2 p2 @ 18:36–18:41] — the touch is observed live, never reconstructed).
+	if b5 := closedBuckets(bars1m, now, e.Cfg); len(b5) > 0 {
+		e.State.Swing.LastBarTime = b5[len(b5)-1].OpenTime
+	}
+
+	// N2 (release #23 MENTOR-SEED-STATE): the FTGH/FTGL latch is REPLAYED from
+	// the 17:00 CT roll minute by minute, exactly as a continuous bot latched
+	// it — a restart never redraws a box the running bot already drew
+	// [D4.1 p2 @02:39–02:57 "không vẽ cái box khác… y nguyên đó tới cuối ngày"].
+	// P2-N2 (mentor rescan): every latched box is then WATERMARKED at the newest
+	// closed bar, so the first tick evaluates only NEW returns — the returns
+	// the running bot already judged are history, never re-emitted (the same
+	// watermark idea as S2 above).
+	e.seedBoxLatch(closedOnly(bars1m, now), now)
+
+	e.seedLine = e.SeedLine(0)
+	return e.missing
+}
+
+// seedHistoryState builds every HISTORY-DERIVED piece of the evaluator state
+// from the stored bars: the 1H RTH key levels and their BODY-close deletion,
+// the 1m EMA 34/9, the swing's 4h EMA 34 line, and the 5m/4h/1h trigger lines.
+// Seed runs it once at boot; ReseedState re-runs it after a history refill
+// (N1, release #23) — reset=true starts the key-level deletion and the trigger
+// lines from scratch instead of continuing the boot evaluator's empty state.
+// Nothing here touches a latch, a position, an arm, a leg budget or a visit
+// counter.
+func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.Kline, now int64, reset bool) {
 	// 1H RTH key levels from the FULL closed stored history (F7, no cap).
 	candles1h := full1HRTH
 	if n := len(candles1h); n > 0 && keyLevel1HCandleCloseTime(candles1h[n-1].OpenTime) > now {
@@ -178,6 +213,14 @@ func seed(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int
 	}
 	e.State.Seed1HBars = candles1h // the deletion check needs the FULL closed series
 	e.State.SeedLevels = keyLevelsFromCandles(candles1h, e.Cfg.KeyLevelPrunePts)
+	// The boot seed adds to the evaluator's (empty) deletion set; a re-seed
+	// RECOMPUTES it — a level the refilled 1H history no longer deletes is live
+	// again, and every deletion the running bot made is re-derived from the
+	// same closed candles (the set is a pure function of SeedLevels + candles).
+	deleted := e.State.DeletedLevels
+	if reset || deleted == nil {
+		deleted = map[string]bool{}
+	}
 	if n := len(candles1h); n > 0 {
 		e.State.Seed1HWatermark = candles1h[n-1].OpenTime
 		// The colour the incremental walk continues from — without it the first
@@ -190,11 +233,12 @@ func seed(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int
 		// candle was already dropped above, so candles1h is all-closed.
 		for _, l := range e.State.SeedLevels {
 			if levelDeletedBy1HBody(l, candles1h, now) {
-				e.State.DeletedLevels[l.Key] = true
+				deleted[l.Key] = true
 			}
 		}
 		e.State.Seed1HDeletionWatermark = candles1h[n-1].OpenTime
 	}
+	e.State.DeletedLevels = deleted
 
 	// 1m EMA 34/9 from the closed 1m history (full recompute at seed, once).
 	var closes []float64
@@ -226,15 +270,10 @@ func seed(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int
 		e.State.Swing.Line = emaFromCloses(closes4, e.Cfg.Swing.EMAPeriod)
 		e.State.Swing.BucketStart = fourHBucketStart(now, ctime())
 		e.State.Swing.EmaCount = len(closes4)
-	}
-
-	// S2: the swing must never replay OLD touches at boot. Stamp the newest
-	// closed 5m bar as the watermark, so the first tick walks only NEW bars —
-	// a 25h tape containing an old touch stays silent instead of turning the
-	// old touch into a live order (00-METHOD.md §8: "Wait for a LITERAL
-	// touch" [D5.2 p2 @ 18:36–18:41] — the touch is observed live, never reconstructed).
-	if b5 := closedBuckets(bars1m, now, e.Cfg); len(b5) > 0 {
-		e.State.Swing.LastBarTime = b5[len(b5)-1].OpenTime
+		// The line is the canonical recurrence over the stored closes again —
+		// the F-3 stale mark ("until a restart reseeds the line from the
+		// store") is exactly what this read cures.
+		e.State.Swing.LineStale = false
 	}
 
 	// F2 (release #10) + LINES-RESTART (release #22): seed the 5m trigger line
@@ -247,18 +286,267 @@ func seed(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int
 	// uncommitted, exactly as the live path does after its last tick, so the
 	// first tick consumes only NEWER bars (no double-advance).
 	closed1m := closedOnly(bars1m, now)
-	e.State.Trigger = TriggerReplay1m(e.State.Trigger, closed1m, 5, e.Cfg)
-	// Print windows: the SAME htfFeedBars the tick path uses. The windows are
-	// absolute instants for today's prints only, so no session-day scoping is
-	// needed — the seed and the live tick must agree on which bars move the
-	// HTF lines (a historical bar at a different absolute time never matches
-	// today's window).
+	trig, fourH, oneH := e.State.Trigger, e.State.HTF.FourH, e.State.HTF.OneH
+	if reset {
+		// A re-seed replays the WHOLE refilled history from an empty line —
+		// continuing the old line would keep the very bucket the hole cut short
+		// (TriggerTick never re-reads a bucket at or below LastBucket).
+		trig, fourH, oneH = TriggerLine{}, TriggerLine{}, TriggerLine{}
+	}
+	e.State.Trigger = TriggerReplay1m(trig, closed1m, 5, e.Cfg)
+	// Print windows: the SAME htfFeedBars the tick path uses. N6 (release #23):
+	// the windows are absolute instants, and the caller hands the seed the
+	// print windows of EVERY day the replayed history covers (the trader reads
+	// each day's stored calendar) — a running bot dropped each day's print
+	// candle on that day, so the replay drops it too. A historical bar at a
+	// different absolute time never matches a window.
 	htfBars := htfFeedBars(closed1m, e.Cfg.PrintWindows)
-	e.State.HTF.FourH = TriggerReplay1m(e.State.HTF.FourH, htfBars, 240, e.Cfg)
-	e.State.HTF.OneH = TriggerReplay1m(e.State.HTF.OneH, htfBars, 60, e.Cfg)
+	e.State.HTF.FourH = TriggerReplay1m(fourH, htfBars, 240, e.Cfg)
+	e.State.HTF.OneH = TriggerReplay1m(oneH, htfBars, 60, e.Cfg)
+}
 
-	e.seedLine = e.SeedLine(0)
-	return e.missing
+// SeedTickWindow1m is the 1m window the live tick hands Tick (the trader's
+// mentorBars1mDepth — a trader pin keeps the two equal). The seed's box-latch
+// replay rebuilds each past minute's box scan over the SAME window.
+const SeedTickWindow1m = 1500
+
+// seedBoxLatch (N2, release #23) replays the FTGH/FTGL latch from the 17:00 CT
+// session roll, one 1m bar at a time, through the SAME BoxesBuild the tick runs
+// on the SAME window the tick would have had at that minute: the first box a
+// role produced is the box the running bot latched [D4.1 p2 @02:39–02:57], so a
+// restart at any instant reproduces it instead of redrawing from whatever the
+// scan picks NOW (10-14: a continuous bot held FTGH 30792.50–30805.75 / FTGL
+// 30767.00–30801.00; the 08:22 restart drew 30878.00–30891.50 / 30498.00–
+// 30586.75). The replay stops once both roles are latched — a latched role
+// never changes — so a normal day costs a few dozen scans, a day where one role
+// never forms costs one scan per minute of the session.
+//
+// Every latched box is then WATERMARKED (P2-N2, mentor rescan): BoxRefs[key] =
+// the newest closed bar, so the first live tick walks only returns that close
+// AFTER the seed — the running bot already judged every older one (10-14
+// 08:24: the first tick walked six historical FTGH returns and set
+// SchoolOneSide from them).
+func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
+	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
+	e.State.LatchedBoxesDay = day
+	e.State.LatchedBoxes = nil
+	if !e.Cfg.Enabled || len(closed1m) == 0 {
+		return
+	}
+	cfg := e.Cfg.Box
+	if cfg.TF == "" {
+		cfg = DefaultBoxCfg()
+	}
+	// The first bar a tick of THIS trading day evaluated: the tick's clock is
+	// BarCloseInstant(bar), so the day key is read at that instant.
+	first := sort.Search(len(closed1m), func(i int) bool {
+		return tradingDayKey(time.UnixMilli(BarCloseInstant(closed1m[i])).In(ctime())) >= day
+	})
+	latched := map[string]Box{}
+	for j := first; j < len(closed1m) && len(latched) < 2; j++ {
+		at := BarCloseInstant(closed1m[j])
+		if tradingDayKey(time.UnixMilli(at).In(ctime())) != day {
+			continue
+		}
+		lo := j + 1 - SeedTickWindow1m
+		// On the 1m TF the scan reads only TODAY's swings, and a swing needs its
+		// two left neighbours: bars before first-2 can never change the result,
+		// so the window is cut there (same boxes, a fraction of the work). The
+		// aggregated TFs (2m, 5m Heikin Ashi) depend on the window's start and
+		// keep the live window exactly.
+		if cfg.TF == "1m" && lo < first-2 {
+			lo = first - 2
+		}
+		if lo < 0 {
+			lo = 0
+		}
+		for _, b := range BoxesBuild(closed1m[lo:j+1], cfg, time.UnixMilli(at)) {
+			if _, ok := latched[string(b.Kind)]; !ok {
+				latched[string(b.Kind)] = b
+			}
+		}
+	}
+	if len(latched) == 0 {
+		return
+	}
+	e.State.LatchedBoxes = latched
+	if e.State.BoxRefs == nil {
+		e.State.BoxRefs = map[string]int64{}
+	}
+	newest := closed1m[len(closed1m)-1].OpenTime
+	for _, b := range latched {
+		if e.State.BoxRefs[b.Key] < newest {
+			e.State.BoxRefs[b.Key] = newest
+		}
+	}
+}
+
+// SeedBoxLine is the boot line for the replayed box latch — every field READ
+// from the seeded latch (a role not latched today prints "none").
+func (e *Evaluator) SeedBoxLine() string {
+	part := func(k BoxKind) string {
+		b, ok := e.State.LatchedBoxes[string(k)]
+		if !ok {
+			return fmt.Sprintf("%s none", strings.ToUpper(string(k)))
+		}
+		return fmt.Sprintf("%s %.2f–%.2f (formed %s CT)", strings.ToUpper(string(k)), b.Bottom, b.Top, time.UnixMilli(b.FormedAtMs).In(ctime()).Format("01-02 15:04"))
+	}
+	day := e.State.LatchedBoxesDay
+	if day == "" {
+		day = "n/a"
+	}
+	return fmt.Sprintf("mentor seed: box latch replayed from the 17:00 CT roll for trading day %s: %s · %s — stands to the session roll, never redrawn [D4.1 p2 @02:39]", day, part(FTGH), part(FTGL))
+}
+
+// ReseedSnapshot is the history-derived state a re-seed may change, READ from
+// the evaluator.
+type ReseedSnapshot struct {
+	FourH, OneH, FiveM TriggerLine
+	EMA34, EMA9        float64
+	SwingLine          float64
+	SwingCount         int
+	SwingStale         bool
+	KeyLive, KeyDel    int
+	Bars1m             int64 // Seed1mWatermark: the newest closed 1m bar folded in
+}
+
+// ReseedReport is the before → after of one state-only re-seed.
+type ReseedReport struct {
+	Before, After ReseedSnapshot
+	Bars          int // closed 1m bars the re-seed read
+	Refused       string
+}
+
+func (e *Evaluator) reseedSnapshot() ReseedSnapshot {
+	live, del := e.keyLevelCounts()
+	return ReseedSnapshot{
+		FourH: e.State.HTF.FourH, OneH: e.State.HTF.OneH, FiveM: e.State.Trigger,
+		EMA34: e.State.EMA34, EMA9: e.State.EMA9,
+		SwingLine: e.State.Swing.Line, SwingCount: e.State.Swing.EmaCount, SwingStale: e.State.Swing.LineStale,
+		KeyLive: live, KeyDel: del,
+		Bars1m: e.State.Seed1mWatermark,
+	}
+}
+
+// Changed reports whether the re-seed moved anything a trade reads.
+func (r ReseedReport) Changed() bool {
+	b, a := r.Before, r.After
+	return b.FourH.Dir != a.FourH.Dir || b.FourH.Price != a.FourH.Price || b.FourH.MovedAt != a.FourH.MovedAt ||
+		b.OneH.Dir != a.OneH.Dir || b.OneH.Price != a.OneH.Price || b.OneH.MovedAt != a.OneH.MovedAt ||
+		b.FiveM.Dir != a.FiveM.Dir || b.FiveM.Price != a.FiveM.Price || b.FiveM.MovedAt != a.FiveM.MovedAt ||
+		b.EMA34 != a.EMA34 || b.EMA9 != a.EMA9 || b.SwingLine != a.SwingLine || b.SwingStale != a.SwingStale ||
+		b.KeyLive != a.KeyLive || b.KeyDel != a.KeyDel
+}
+
+// Line renders the before → after, READ values only (a field the re-seed did
+// not change prints once, "unchanged").
+func (r ReseedReport) Line() string {
+	if r.Refused != "" {
+		return "REFUSED — " + r.Refused + " (state kept as it was)"
+	}
+	b, a := r.Before, r.After
+	trig := func(name string, x, y TriggerLine) string {
+		f := func(t TriggerLine) string {
+			if t.Dir == "" {
+				return "none"
+			}
+			since := "n/a"
+			if t.MovedAt > 0 {
+				since = time.UnixMilli(t.MovedAt).In(ctime()).Format("01-02 15:04")
+			}
+			return fmt.Sprintf("%s @%.2f since %s", t.Dir, t.Price, since)
+		}
+		if x.Dir == y.Dir && x.Price == y.Price && x.MovedAt == y.MovedAt {
+			return fmt.Sprintf("%s %s (unchanged)", name, f(y))
+		}
+		return fmt.Sprintf("%s %s → %s", name, f(x), f(y))
+	}
+	num := func(name string, x, y float64) string {
+		if x == y {
+			return fmt.Sprintf("%s %.2f (unchanged)", name, y)
+		}
+		return fmt.Sprintf("%s %.2f → %.2f (Δ%+.2f)", name, x, y, y-x)
+	}
+	parts := []string{
+		trig("4h trigger", b.FourH, a.FourH),
+		trig("1h trigger", b.OneH, a.OneH),
+		trig("5m trigger", b.FiveM, a.FiveM),
+		num("1m EMA34", b.EMA34, a.EMA34),
+		num("1m EMA9", b.EMA9, a.EMA9),
+		num("swing 4h EMA34 line", b.SwingLine, a.SwingLine),
+	}
+	if b.SwingStale != a.SwingStale {
+		parts = append(parts, fmt.Sprintf("swing line stale %v → %v", b.SwingStale, a.SwingStale))
+	}
+	if b.KeyLive != a.KeyLive || b.KeyDel != a.KeyDel {
+		parts = append(parts, fmt.Sprintf("key levels %d live · %d deleted → %d live · %d deleted", b.KeyLive, b.KeyDel, a.KeyLive, a.KeyDel))
+	} else {
+		parts = append(parts, fmt.Sprintf("key levels %d live · %d deleted (unchanged)", a.KeyLive, a.KeyDel))
+	}
+	verdict := "UNCHANGED"
+	if r.Changed() {
+		verdict = "CHANGED"
+	}
+	return fmt.Sprintf("%s over %d closed 1m bar(s): %s", verdict, r.Bars, strings.Join(parts, " · "))
+}
+
+// ReseedState (N1, release #23) re-runs the HISTORY-DERIVED half of the seed —
+// the 5m/4h/1h trigger lines, the swing's 4h EMA 34 line, the 1m EMA 34/9 and
+// the 1H RTH key levels with their BODY-close deletion — over a store read that
+// now holds bars the boot seed could not see (the AddOn's history replay is
+// released to the store AFTER the trader seeds, and a bar hole can be refilled
+// at any time). Everything a live tick ACTED on is kept: the box latch and its
+// watermarks, the day latch, the ORB, every arm, leg, loss box, position, touch
+// classification and visit counter. A store read with no closed 1m bar is
+// refused (the state stays as it was) — never a wipe. full1HRTH nil = the
+// current-contract walk (Seed's fallback).
+func ReseedState(e *Evaluator, bars1m, full1HRTH []market.Kline, now int64) ReseedReport {
+	rep := ReseedReport{Before: e.reseedSnapshot()}
+	closed := closedCount(bars1m, now)
+	rep.Bars = closed
+	if !e.seeded {
+		rep.Refused = "the evaluator was never seeded"
+		rep.After = rep.Before
+		return rep
+	}
+	if closed == 0 {
+		rep.Refused = "the store read returned no closed 1m bar"
+		rep.After = rep.Before
+		return rep
+	}
+	if len(full1HRTH) == 0 {
+		full1HRTH = keyLevel1HBars(bars1m)
+	}
+	e.seedHistoryState(bars1m, full1HRTH, now, true)
+	// The depth only ever grows: a refilled store can clear a short source,
+	// never re-open one.
+	d := seedDepthOf(bars1m, now)
+	d.oneH = len(full1HRTH)
+	if d.fourH > e.depth.fourH {
+		e.depth.fourH = d.fourH
+	}
+	if d.oneM > e.depth.oneM {
+		e.depth.oneM = d.oneM
+	}
+	if d.oneH > e.depth.oneH {
+		e.depth.oneH = d.oneH
+	}
+	if d.today > e.depth.today {
+		e.depth.today = d.today
+	}
+	if d.m15 > e.depth.m15 {
+		e.depth.m15 = d.m15
+	}
+	if len(e.missing) > 0 {
+		if m := missingFromDepth(e.depth); len(m) == 0 {
+			e.missing = nil
+			e.depthMet = depthMetLine
+		} else {
+			e.missing = m
+		}
+	}
+	rep.After = e.reseedSnapshot()
+	return rep
 }
 
 // SeedLine is the one boot/arm line: the seeded depth per source — read from
