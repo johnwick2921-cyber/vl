@@ -1,12 +1,15 @@
 package trader
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"vl/kernel"
+	"vl/kernel/mentor"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 	ntTrader "vl/trader/ninjatrader"
@@ -461,6 +464,9 @@ func (at *AutoTrader) mentorRebuildLivePosOnce(now time.Time) {
 	// L7: the boot line is READ from the counters, never literal.
 	snap := at.mentorCountSnapshot()
 	at.logInfof("🧑‍🏫 mentor positions rebuilt: %d (refused %d)", snap["rebuild_ok"], snap["rebuild_refused"])
+	if snap["swing_rebuild_ok"] > 0 || snap["swing_rebuild_refused"] > 0 {
+		at.logInfof("🧑‍🏫 mentor swing rebuilt: %d under BE/hold (refused %d)", snap["swing_rebuild_ok"], snap["swing_rebuild_refused"])
+	}
 }
 
 // mentorRebuildLivePosAtBoot rebuilds every open mentor position from the
@@ -512,8 +518,75 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 		at.mentorCount("rebuild_ok")
 		rebuilt++
 		at.logInfof("🧑‍🏫 mentor restart rebuild: %s %s %d contracts under exit management (mode %s)", pos.Symbol, side, lp.Pos.Contracts, lp.Pos.Mode)
+		// FIX-SWING-RESTART: a FILLED swing's BE/hold management runs in the
+		// EVALUATOR (manageSwingPosition → mentorMoveStopBE / mentorClosePosition),
+		// which needs TWO in-memory registries the 1m rebuild does not cover:
+		// the trader's mentorLiveArms entry and the evaluator's State.Swing.Pos.
+		// Rebuild both from the SAME proven records. Fail-closed: a swing that
+		// cannot be proven is never half-registered and never moved — its stop
+		// stays exactly where NT8 has it.
+		if strings.EqualFold(strings.TrimSpace(row.Condition), "SWING4H") {
+			if ok, why := at.mentorRebuildSwingArm(*row, pos, lp); ok {
+				at.mentorCount("swing_rebuild_ok")
+				at.logInfof("🧑‍🏫 mentor swing %s under BE/hold management after restart (arm %q)", row.SignalID, mentorArmIDFromScenario(row.Scenario))
+			} else {
+				at.mentorCount("swing_rebuild_refused")
+				at.logErrorf("🧑‍🏫 mentor swing %s NOT under BE/hold management after restart — %s; manage by hand", row.SignalID, why)
+				at.emitAlert("P0", "mentor-swing-restart", "mentor-swing-"+row.SignalID,
+					"open swing not under BE/hold management after restart",
+					"manage by hand — "+why+" (signal "+row.SignalID+")")
+			}
+		}
 	}
 	return rebuilt, refused, true
+}
+
+// mentorRebuildSwingArm restores a FILLED swing's two in-memory registries from
+// the proven live-pos rebuild (lp carries the entry, the live stop and the
+// BE-already-moved flag). Fail-closed: a trader mismatch, an unreadable arm id,
+// an unreadable entry bucket, a contract mismatch, or a degenerate evaluator
+// position refuses (false) — the caller leaves the stop as it is at NT8 and
+// raises the alert. A refusal after the registry write unregisters the arm so a
+// swing is never half-rebuilt.
+func (at *AutoTrader) mentorRebuildSwingArm(r store.ArmedOrderDB, pos *store.TraderPosition, lp *mentorLivePos) (bool, string) {
+	if strings.TrimSpace(r.TraderID) != at.id {
+		return false, "arm row trader " + r.TraderID + " != caller " + at.id
+	}
+	armID := mentorArmIDFromScenario(r.Scenario)
+	if armID == "" {
+		return false, "no readable arm id"
+	}
+	// The evaluator's EntryBucket is the 4h bucket of the swing's 5m bar (the
+	// ArmID "swing-<open>"), NOT the fill time — a fill that crossed a 4h
+	// boundary would shift the hold-close by a candle.
+	var openTime int64
+	if _, err := fmt.Sscanf(armID, "swing-%d", &openTime); err != nil || openTime <= 0 {
+		return false, "no readable entry bucket from arm id " + armID
+	}
+	// Contract match: the position's size must equal the row's filled contracts,
+	// else the swing's own close would size from a different trade.
+	rowQty := float64(r.FillQuantity)
+	if rowQty <= 0 && r.Contracts != nil {
+		rowQty = float64(*r.Contracts)
+	}
+	posQty := pos.EntryQuantity
+	if posQty < 1 {
+		posQty = pos.Quantity
+	}
+	if rowQty > 0 && posQty > 0 && rowQty != posQty {
+		return false, fmt.Sprintf("contract mismatch (position %.0f vs row %.0f)", posQty, rowQty)
+	}
+	entryBucket := kernel.FourHBucketStart(openTime, kernel.CTLocation())
+	at.mentorRegisterLiveArm(armID, r.ID, lp.Pos.Side, lp.Pos.Entry, r.Scenario)
+	if at.mentorEval != nil {
+		if !at.mentorEval.State.Swing.RebuildSwingPos(
+			mentor.Side(lp.Pos.Side), lp.Pos.Entry, lp.Pos.Stop, lp.Pos.Target, lp.Pos.R, entryBucket, armID, lp.Pos.ArmedBE,
+		) {
+			at.mentorUnregisterLiveArm(armID)
+			return false, "degenerate swing position (entry or risk unreadable)"
+		}
+	}
+	return true, ""
 }
 
 // mentorRebuildWarnPositionsOnce logs the unreadable-positions WARN once per
@@ -689,20 +762,20 @@ func (at *AutoTrader) mentorBuildLivePosFromBook(r store.ArmedOrderDB, pos *stor
 	scaled := splitLive && residual <= leg2Qty
 
 	pos2 := mentorPosition{
-		Symbol:   at.futuresSymbol(),
-		Side:     side,
-		Origin:   r.Condition,
-		Entry:    entry,
-		Stop:     runnerStop,
-		Target:   r.TargetPx,
-		R:        math.Abs(entry - r.StopPx),
+		Symbol:    at.futuresSymbol(),
+		Side:      side,
+		Origin:    r.Condition,
+		Entry:     entry,
+		Stop:      runnerStop,
+		Target:    r.TargetPx,
+		R:         math.Abs(entry - r.StopPx),
 		Contracts: total,
-		Leg1:     leg1Qty,
-		Leg2:     leg2Qty,
-		Mode:     mode,
-		ArmedBE:  armedBE,
-		Scaled:   scaled,
-		Leg1TP:   leg1TP,
+		Leg1:      leg1Qty,
+		Leg2:      leg2Qty,
+		Mode:      mode,
+		ArmedBE:   armedBE,
+		Scaled:    scaled,
+		Leg1TP:    leg1TP,
 	}
 	lp := &mentorLivePos{Pos: pos2}
 	if splitLive {
