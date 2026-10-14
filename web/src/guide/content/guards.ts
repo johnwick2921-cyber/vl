@@ -138,7 +138,7 @@ export const guards: GuideSection = {
         [
           'min_confidence',
           'HARD',
-          'Confidence below the floor (default 60) → entry refused. Decision path only: a plan arm carries no AI confidence, so under strict this gate never runs (the arm entry stores its confidence empty / n/a, never 0).',
+          'Confidence below the floor (default 60) → entry refused. Decision path only: a plan arm carries no AI confidence, so under strict this gate never runs (since release #22 an arm entry stores its confidence empty / n/a; rows written before release #22 still show 0).',
         ],
         [
           'MIN-SL (env MIN_SL_ATR_MULT, default 1.5)',
@@ -181,6 +181,31 @@ export const guards: GuideSection = {
           'After N consecutive losing closes in one CME session-day, no new entry on EITHER path until the 17:00 CT roll. N is 8 by default and the owner may set it — since W1 (settings truth, 2026-09-23) presence-aware: a saved number wins, a saved 0 is OFF, and a BLANK strategy value inherits env BREAKER_HALT_N (0 = off) else 8; the 🛑 boot line tags each [O] saved, [E] env, [I] default; a WARN at 5 counts and surfaces without refusing. This is the ONE session limit that is not gated by the guardrails master, so it bites whether or not that switch is on — and since 2026-09-09 it is wired to the ARM path as well as the decision path, which under plan_mode=strict is the only path that trades. Honest about its own reach: on the retained tape the longest run of losers is SEVEN, so a threshold of 8 would never have fired — the boot line says so only when N ≥ 8. A stored 0 from before W1 meant "inherit" then and "OFF" now: the trader bound to it is REFUSED at load (the ⛔ line names the strategy, the field and both meanings) until a Studio save confirms it — the conversion never silently disables a breaker. An UNRESOLVABLE P&L ends a run rather than bridging it — an unknown outcome must not push the desk toward a halt.',
         ],
         [
+          'Owner pause (stop_until)',
+          'HARD',
+          'POST /api/traders/:id/pause sets a deadline; until it passes, NEW entries are refused on every path (AI decision, agent chat, arm, Picture). Closes, EOD-flat, the 60-second monitor guards and NT8 brackets continue. Off unless the owner pauses; not gated by the guardrails master. The deadline is kept in system_config (trader_pause_until:<trader>) and restored after a restart; the first check at or after it auto-resumes, and POST /api/traders/:id/resume clears it at once. Logs "⏸ stop_until"; counted as stop_until. (trader/auto_trader_pause.go entryPausedAt, asked in trader/entry_admission.go admitChain)',
+        ],
+        [
+          'Maintenance hold (update install)',
+          'HARD',
+          'While the updater holds the installation (<data>/updater/hold.json; an unreadable hold file holds too, fail-closed), NEW entries are refused on every path, and the NT8 entry send itself must also pass a send-side permit that is refused while held. Position management continues. Set only by an update job, never by a strategy setting; resuming a stop_until pause does not lift it — entries resume when the update completes. Logs "🔒 maintenance hold"; counted as maintenance_hold. (trader/maintenance_gate.go MaintenanceHeld / MaintenanceEntryPermit, asked in trader/entry_admission.go admitChain)',
+        ],
+        [
+          'Install pending (update preflight, release #22)',
+          'HARD',
+          'While an update job sits in a pre-hold state (requested, downloaded, verified or preflight_ok — read-only from the updater’s job files), NEW entries are frozen on every path, so the bot stops placing while the preflight waits for it to be flat. It clears when the job leaves those states (at maintenance_held the hold above takes over) or once the job is older than the updater’s 30-minute limit (updaterjob.MaxJobAge). Exits, protection, closes and plan reads continue. Always on; nothing to configure. A job file that cannot be read is skipped, WARNed and counted (install_pending_unreadable) once per file version — it never freezes entries. Logs "⏳ install pending"; refusals are counted as install_pending, each new job once as install_pending_episode. (trader/install_pending.go InstallPending, asked in trader/entry_admission.go admitChain)',
+        ],
+        [
+          'Daily guardrails + daily-loss latch (release #22)',
+          'HARD',
+          'ONE verdict asked by every entry path (AI decision, agent chat, planner arms, mentor arms, Picture): the daily loss limit on the bot’s own session-day P&L (realized + open, manual trades excluded), the daily profit target and max daily trades. OFF by default: nothing trips unless the guardrails master (guardrails_enabled) AND that leg’s own toggle are on, and a switch never saved reads OFF (both bound strategies store them OFF). A loss breach LATCHES until 17:00 CT and survives a restart (system_config daily_loss_latch:<trader>); while latched the 60-second monitor beat cancels resting entry orders and flattens the bot’s own positions. The trip logs "🔴 DAILY LOSS LIMIT HIT" once and counts daily_loss_tripped; refusals are counted as daily_loss, daily_profit_target or max_daily_trades. Only a definite limit refuses here; an unknown (an unresolved close today, a failed read) refuses only at the mentor’s authoring step. The AI decision cycle also runs the kernel’s own check first and holds the cycle (counted strategy_studio_daily). Details: Settings → Risk Control knobs → Daily loss limit. (trader/daily_loss_gate.go dailyGuardVerdictAt, asked in trader/entry_admission.go admitChain)',
+        ],
+        [
+          'Re-entry cooldown (B7)',
+          'HARD',
+          'After a STOP-LOSS exit (NT8 exit reason "sl"; target and manual exits do not arm it), a SAME-direction re-entry on that symbol is refused until the cooldown minutes pass — or, on the AI decision path only, until price is a full ATR15 away from the stop, whichever comes first. Decision path: the entry is turned into WAIT (kernel/engine_analysis.go applyReentryCooldown); arm and Picture paths: refused in trader/entry_admission.go admitChain through discipline.ReentryPeek, timer only. OFF by default — risk_control.reentry_cooldown_minutes 0 or unset is OFF, and neither bound strategy stores a value; not gated by the guardrails master. The stop record lives in memory only, so a restart clears it. An agent-chat entry is not checked by it. Logs "⛔ re-entry cooldown"; counted as reentry_cooldown on both paths.',
+        ],
+        [
           'Side-quota (0-on-a-side / empty map)',
           'HARD',
           'A one-sided plan or an empty machine map fail-closes the read.',
@@ -217,21 +242,21 @@ export const guards: GuideSection = {
         {
           title: 'confidence too low (N), must be ≥M',
           body: "The AI's confidence was under min_confidence. Not a bug — the bar.",
-          cite: 'kernel/engine_position.go:188',
+          cite: 'kernel/engine_position.go validateDecision (min-confidence check)',
         },
         {
           title: 'no matched scenario cited (strict mode)',
           body: "plan_mode=strict and the action didn't cite an armed S#. The plan is the law. Even a CITED decision is never a market entry under strict (entry_gate: refused: strict — … ARM path only): if the cited scenario is an enabled market_in_zone arm, the decision nudges one armed pass for it and the record carries the executor's verdict.",
-          cite: 'trader/auto_trader_planconfig.go:206-249',
+          cite: 'trader/auto_trader_planconfig.go planModeBlockedAt',
         },
         {
           title: 'against the plan (direction mode)',
           body: 'The bias is long and the entry is short. Advisory says fine; direction says no.',
         },
         {
-          title: '|entry−SL| below MIN_SL_ATR_MULT × ATR',
-          body: 'The stop is too tight for the volatility floor.',
-          cite: 'kernel/engine_position.go:196',
+          title: 'sl_too_tight: D < M×ATR (A) — widen or skip',
+          body: 'The stop is too tight for the volatility floor: |entry−SL| (D) is below MIN_SL_ATR_MULT (M) × the 5m ATR (A).',
+          cite: 'kernel/engine_position.go validateDecision → kernel/min_sl.go MinSLVerdict',
         },
         {
           title: 'past last-entry time · outside session window · lunch',
@@ -287,7 +312,7 @@ export const guards: GuideSection = {
     { kind: 'h', text: 'Guardrails + SIM lock' },
     {
       kind: 'p',
-      text: 'Risk guardrails: the daily loss limit is OFF unless you turn it on in Strategy Studio → Risk Control — TWO switches must be on: the master (guardrails_enabled) arms the whole block, and the Daily loss limit row\u2019s toggle (daily_loss_enabled) arms this leg, with the dollar amount in that row\u2019s $ field. Both are OFF today, so the configured $450 limit is DECORATIVE and enforces nothing until both move; a switch never saved reads OFF too (since release #22). The desk strip DAY line says exactly that, in those words. When both are ON and the bot\u2019s own day P&L (realized + open, manual trades excluded) reaches −limit, every path refuses new entries, the 60-second beat cancels resting entry orders and flattens the bot\u2019s positions, and the gate stays latched until 17:00 CT. Max daily trades and the profit target (each with its own toggle) refuse on every path too, mentor included. Min confidence gates AI decisions only — it does not apply to mentor mode. The master also arms the daily profit/trade limits, blackout windows, max-contracts and notional caps; the always-on pair (max contracts/order, notional cap) needs no toggle. MENTOR MODE: max_contracts_per_order is NOT applied to mentor entries — a mentor-mode trader sizes from its own table (mentor_base_contracts …, hard cap mentor_max_contracts, default 20), so the per-order cap below is decorative for the mentor. The re-entry cooldown is deliberately OUTSIDE the master, like the consecutive-loss breaker: 0 = OFF until a strategy value is saved, and a saved value enforces regardless of the master switch. The consecutive-loss breaker is also outside all of this and works regardless. Would-have-tripped counters are visible in the dashboard. SIM lock: every account list is filtered to SIM; the bot cannot route to a live NT account — do not try.',
+      text: 'Risk guardrails: the daily loss limit is OFF unless you turn it on in Strategy Studio → Risk Control — TWO switches must be on: the master (guardrails_enabled) arms the whole block, and the Daily loss limit row\u2019s toggle (daily_loss_enabled) arms this leg, with the dollar amount in that row\u2019s $ field. Both are OFF today, so the configured $450 limit is DECORATIVE and enforces nothing until both move; a switch never saved reads OFF too (since release #22). The desk strip DAY line says exactly that, in those words. When both are ON and the bot\u2019s own day P&L (realized + open, manual trades excluded) reaches −limit, every path refuses new entries, the 60-second beat cancels resting entry orders and flattens the bot\u2019s positions, and the gate stays latched until 17:00 CT. Max daily trades and the profit target (each with its own toggle) refuse on every path too, mentor included. Min confidence gates AI decisions only — it does not apply to mentor mode. The master also arms the daily profit/trade limits, the blackout window and the consistency rule (those last two are checked on the AI decision cycle only). Max contracts/order and the notional cap are NOT under the master: they are always on and have no toggle (the old max_contracts_enabled / notional_cap_enabled fields are parse-only). MENTOR MODE: max_contracts_per_order is NOT applied to mentor entries — a mentor-mode trader sizes from its own table (mentor_base_contracts …, hard cap mentor_max_contracts, default 20), so the per-order cap below is decorative for the mentor. The re-entry cooldown is deliberately OUTSIDE the master, like the consecutive-loss breaker: 0 = OFF until a strategy value is saved, and a saved value enforces regardless of the master switch. The consecutive-loss breaker is also outside all of this and works regardless. Would-have-tripped counters are visible in the dashboard. SIM lock: every account list is filtered to SIM; the bot cannot route to a live NT account — do not try.',
     },
     { kind: 'h', text: 'WHEN A PLAN IS REJECTED: THE REPAIR RETRY (class 44)' },
     {

@@ -31,19 +31,19 @@ export const welcome: GuideSection = {
       kind: 'code',
       title: 'tap a layer to see its job',
       lines: [
-        'NT8 (Tradovate MNQ bars, Sim101)   ← SIM only, never live',
+        'NT8 (Tradovate MNQ bars, SIM accounts)   ← SIM only, never live',
         '  │ TCP (bars / account / positions / orders)',
         'C# AddOn (NinjaTrader AddOns folder)  ← compile + NT8 restart to change',
         '  │ framed messages (ninjascript/vltrader_tcp_PROTOCOL.md)',
         'Go bot (vl-bin) ─── BarCache + bars table (SQLite data/data.db = "memory")',
         '  ├─ PLANNER: DeepSeek → 1 day-plan per session (advisory JSON)',
-        '  ├─ EXECUTOR: every ~2 min → DeepSeek decision → risk gates → Sim101',
+        '  ├─ EXECUTOR: every ~2 min → DeepSeek decision → risk gates → its bound SIM account',
         '  └─ WATCHER: in-position advisory only (zero order authority)',
       ],
     },
     {
       kind: 'p',
-      text: 'Boot truth: the bot refuses to trade unless its revision and prompt goldens pass — `🔐 BOOT INTEGRITY OK — rev … · goldens PASS` (kernel/boot_integrity.go). The SIM lock is hard: non-SIM accounts are refused at the account-routing layer (trader/ninjatrader/tcp_trader.go isAccountTradeable).',
+      text: 'Boot truth: the bot refuses to trade unless its revision and prompt goldens pass — `🔐 BOOT INTEGRITY OK — rev … · goldens PASS` (kernel/boot_integrity.go). The SIM lock is hard: non-SIM accounts are refused at the account-routing layer (trader/ninjatrader/tcp_trader.go isAccountTradeable). Each trader trades its own bound NinjaTrader SIM account (the Account shown on its dashboard), so two traders can run on two different SIM accounts.',
     },
     { kind: 'h', text: 'Canon — the files that ARE the answer' },
     {
