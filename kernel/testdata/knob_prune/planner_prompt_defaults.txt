@@ -32,7 +32,7 @@ role playbook: magnet_meanrevert = price gravitates back (fade/reversion setups)
   - balance-day (open inside prior value area AND VAs overlap) → edges-only, or skip
   - opening gap >1.2×ATR or open outside the prior range → NEVER fade; the gap is a target
   - no A/B zone in reach AND no pool swept by 09:30 CT → declare the skip in the plan
-  - lunch 12:00–13:30 CT: no new entries (refused on the AI-decision path only — no band predicate exists in the arm path, so with plan_mode=strict nothing refuses an entry here)
+  - lunch 12:00–13:30 CT: no new entries (enforced on BOTH paths — the arm path refuses new placements here and cancels resting arms, so with plan_mode=strict the lunch band still holds)
   - Tier-1 news → stand aside until a fresh post-news swing prints
 
 ## Killzone weighting (advisory)

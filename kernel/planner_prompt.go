@@ -786,7 +786,7 @@ func BuildPlannerPrompt(in PlannerInput) string {
 	// 11:30–13:30 ET lull BESIDE the machine's 12:00–13:30 CT gate — two
 	// different windows in one sentence, in two clocks, one of them enforced.
 	// The machine's is the only one, stated in CT, rendered from its resolver.
-	b.WriteString(fmt.Sprintf("  - lunch %s–%s CT: no new entries (refused on the AI-decision path only — no band predicate exists in the arm path, so with plan_mode=strict nothing refuses an entry here)\n", lunchStartCT, lunchEndCT))
+	b.WriteString(fmt.Sprintf("  - lunch %s–%s CT: no new entries (enforced on BOTH paths — the arm path refuses new placements here and cancels resting arms, so with plan_mode=strict the lunch band still holds)\n", lunchStartCT, lunchEndCT))
 	b.WriteString("  - Tier-1 news → stand aside until a fresh post-news swing prints\n\n")
 
 	// A4 — killzone weighting (advisory, not a gate).

@@ -40,7 +40,7 @@ const MinSLATRMultDefault = 1.5
 const MinSLTickClearance = 2
 
 // MinSLATRMult resolves the min-SL ATR multiplier (env MIN_SL_ATR_MULT,
-// default 1.0; 0 = gate off).
+// default 1.5; 0 = gate off).
 func MinSLATRMult() float64 {
 	if v := os.Getenv("MIN_SL_ATR_MULT"); v != "" {
 		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && f >= 0 {
