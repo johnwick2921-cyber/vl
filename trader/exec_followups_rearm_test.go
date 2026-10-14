@@ -2,6 +2,7 @@ package trader
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -183,5 +184,94 @@ func TestNewPlanVersionStillReArmsASpentSlot(t *testing.T) {
 	rows := rowsFor(t, st, id)
 	if len(rows) != 2 || rows[1].State != store.StateArmed || rows[1].PlacementSeq != r.PlacementSeq+1 {
 		t.Fatalf("a NEW plan version must still mint the next placement: %+v", rows)
+	}
+}
+
+// ── CTO RULING (PR #526) — the bot's OWN cancels re-arm within the version ──
+
+// TestBotCancelReArmsSameVersion — (d) a cancel the BOT requested re-arms under
+// the same plan version (today's behaviour): (d1) the band's synchronous sweep,
+// whose prompt NT8 ack settles the row "cancelled in NT8" before any
+// RequestCancel — the request is now stamped at the send; (d2) a
+// RequestCancel-first path, as the install / maintenance withdraw uses.
+func TestBotCancelReArmsSameVersion(t *testing.T) {
+	for _, path := range []string{"band_sync_sweep", "withdraw_request_cancel"} {
+		t.Run(path, func(t *testing.T) {
+			withMaintenanceDir(t)
+			id := "ruling-bot-" + path
+			at, st, sigs, now := rearmFixture(t, id, kernel.EntryPolicyPlannedOrder)
+			at.maybeManageArmedOrdersAt(nil, now)
+			sid := nextSig(t, sigs, 2*time.Second)
+			if sid == "" {
+				t.Fatal("fixture: pass 1 must place the arm")
+			}
+			led := st.ArmedOrders()
+			cancelled := ntwire.OrderUpdatePayload{SignalID: sid, OrderName: sid, State: "cancelled", Symbol: "MNQ", Account: "Sim101"}
+			switch path {
+			case "band_sync_sweep":
+				ch := make(chan ntwire.OrderUpdatePayload, 4)
+				at.armedSyncSeam = &armedSyncSeam{
+					Cancel:  func(s string) error { ch <- cancelled; return nil },
+					Stream:  func() <-chan ntwire.OrderUpdatePayload { return ch },
+					Timeout: time.Second,
+				}
+				if n, unacked := at.cancelArmedOrdersSync("no-trade band opened — no_trade_band: TEST lunch no-trade window", at.windowSweepPace(now.Add(time.Second))); n != 1 || unacked != 0 {
+					t.Fatalf("fixture: the band sweep must cancel the one row, acked (n=%d unacked=%d)", n, unacked)
+				}
+				at.armedSyncSeam = nil
+			case "withdraw_request_cancel":
+				r := rowsFor(t, st, id)[0]
+				if err := led.RequestCancel(r.ID, store.WithdrawReasonPrefix+"install pending job j1", now.Add(time.Second).UnixMilli()); err != nil {
+					t.Fatal(err)
+				}
+				at.onArmedOrderUpdate(cancelled, led)
+			}
+			r := rowsFor(t, st, id)[0]
+			if r.State != store.StateCancelled || r.CancelRequestedAtMs <= 0 {
+				t.Fatalf("fixture: the bot's cancel must settle cancelled WITH its request on record: state=%s requested=%d reason=%q", r.State, r.CancelRequestedAtMs, r.StateReason)
+			}
+			flatBroker(at, now.Add(2*time.Second))
+			at.maybeManageArmedOrdersAt(nil, now.Add(3*time.Second))
+			if s := nextSig(t, sigs, 2*time.Second); s == "" || s == sid {
+				t.Fatalf("RULING: a cancel the BOT requested (%s) must re-arm under the SAME version — no new placement; rows=%+v", path, rowsFor(t, st, id))
+			}
+		})
+	}
+}
+
+// TestAbsentFromSnapshotWithoutRequestStaysSpent — (e) the stale-working
+// reaper settles a quiet order the fresh broker book no longer lists
+// ("absent from a fresh NT8 order_snapshot") with NO bot cancel request: the
+// order ended at the broker by someone else's hand, so the slot is spent.
+func TestAbsentFromSnapshotWithoutRequestStaysSpent(t *testing.T) {
+	withMaintenanceDir(t)
+	id := "ruling-absent"
+	at, st, sigs, now := rearmFixture(t, id, kernel.EntryPolicyPlannedOrder)
+	at.maybeManageArmedOrdersAt(nil, now)
+	sid := nextSig(t, sigs, 2*time.Second)
+	if sid == "" {
+		t.Fatal("fixture: pass 1 must place the arm")
+	}
+	led := st.ArmedOrders()
+	at.onArmedOrderUpdate(ntwire.OrderUpdatePayload{SignalID: sid, OrderName: sid, State: "Working", Symbol: "MNQ", Account: "Sim101"}, led)
+	rows := rowsFor(t, st, id)
+	if rows[0].State != store.StateWorking {
+		t.Fatalf("fixture: the order must be working, got %s", rows[0].State)
+	}
+	// Quiet for longer than the stale window, and the fresh book lacks it.
+	later := time.Now().Add(30 * time.Minute)
+	flatBroker(at, later)
+	at.reconcileStaleWorking(led, rows, later, 5, nil)
+	r := rowsFor(t, st, id)[0]
+	if r.State != store.StateCancelled || r.CancelRequestedAtMs != 0 || !strings.HasPrefix(r.StateReason, "absent from a fresh NT8 order_snapshot") {
+		t.Fatalf("fixture: the reaper must settle it absent with no request: state=%s requested=%d reason=%q", r.State, r.CancelRequestedAtMs, r.StateReason)
+	}
+	before := gateBlocks(id, "arm_slot_spent")
+	at.maybeManageArmedOrdersAt(nil, now.Add(3*time.Second))
+	if s := nextSig(t, sigs, 500*time.Millisecond); s != "" {
+		t.Fatalf("RULING: an order absent from the book with no bot request must stay spent — re-placed as %s", s)
+	}
+	if got := rowsFor(t, st, id); len(got) != 1 || gateBlocks(id, "arm_slot_spent") != before+1 {
+		t.Fatalf("RULING: one row, one counted refusal: rows=%d arm_slot_spent %d→%d", len(got), before, gateBlocks(id, "arm_slot_spent"))
 	}
 }

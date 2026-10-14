@@ -3349,6 +3349,12 @@ func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Dura
 			unacked++
 			continue
 		}
+		// CTO ruling on PR #526: the request is on record BEFORE the send. A
+		// promptly acked cancel is settled by NT8's report ("cancelled in NT8")
+		// inside the drain below, before any RequestCancel — without this stamp
+		// the bot's own band / EOD cancel read exactly like the owner's manual
+		// cancel, and the same-version re-arm rule could not tell them apart.
+		at.armLifecycleWrite("stamp_cancel_requested", r, ledger.StampCancelRequested(r.ID, p.nowMs()))
 		acked := false
 		offDrain := false // settled by NT8's report the ordered worker applied — READ, not drained
 		for attempt := 1; attempt <= 2 && !acked; attempt++ {
