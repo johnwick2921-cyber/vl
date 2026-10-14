@@ -37,6 +37,50 @@ func trendlineBars() ([]market.Kline, func(i int, o, h, l, c float64) market.Kli
 	}, mk
 }
 
+// trendlineReturnTape: trendlineBars + a LEAVE and a RETURN. Line value =
+// 97 + 0.2·(i−2): bar 10 = 98.6 … bar 13 = 99.2. Bar 10 is neutral (low 99.5,
+// off the line); bar 11 is a swing HIGH (102, above the line by 3.2 — price has
+// LEFT it); bar 12 confirms it (lower high 101.6) without touching; bar 13
+// comes BACK and touches (low 99.1 vs line 99.2) and closes above — the 3rd
+// touch, a return [D3.2 p2 @03:45 "nó phải VỀ nó test lần thứ 3"]. The 102
+// high sits in the still-forming 09:10 5m bucket, so no 5m trigger line forms;
+// bar 13 closes at 101.2, above the 09:05 5m inside bar's range [98.2, 101],
+// so the evaluator's 5m-ISB rest box does not swallow the PHL path.
+func trendlineReturnTape() ([]market.Kline, func(i int, o, h, l, c float64) market.Kline) {
+	bars, mk := trendlineBars()
+	return append(bars,
+		mk(10, 100, 101, 99.5, 100.5),      // neutral, off the line
+		mk(11, 100.5, 102, 100, 101.8),     // swing HIGH @11 (102) — the leave
+		mk(12, 101.5, 101.6, 100.2, 100.4), // confirms bar 11; no touch (line 99.0)
+		mk(13, 100.4, 101.5, 99.1, 101.2),  // RETURN: touches the line (99.2), closes above
+	), mk
+}
+
+// trendlineSittingTape: the same two points, but P1's OWN right side sits on
+// the line — bar 9 confirms bar 8 (low 98.6 > 98.2) AND touches (line 98.4),
+// bar 10 touches again (line 98.6). Price has not left the line: these are
+// the swing's confirmation bars, not a return (the 10-13 probe: 55 of 120
+// lines went VALID on the bar right after P1). origin/dev calls bar 9 the 3rd
+// touch.
+func trendlineSittingTape() ([]market.Kline, func(i int, o, h, l, c float64) market.Kline) {
+	bars, mk := trendlineBars()
+	bars[9] = mk(9, 98.5, 100.5, 98.6, 99.8) // confirms bar 8 AND touches the line
+	return append(bars,
+		mk(10, 99.8, 101.3, 98.8, 101.2), // touches again (line 98.6) — still sitting
+	), mk
+}
+
+// trendlineMirror reflects a tape through 100 (p → 200−p): a support tape
+// becomes the same resistance tape (rising lows → falling highs).
+func trendlineMirror(bars []market.Kline) []market.Kline {
+	out := make([]market.Kline, len(bars))
+	for i, b := range bars {
+		out[i] = market.Kline{OpenTime: b.OpenTime, CloseTime: b.CloseTime,
+			Open: 200 - b.Open, High: 200 - b.Low, Low: 200 - b.High, Close: 200 - b.Close}
+	}
+	return out
+}
+
 // TestTrendlineBuildRisingLows — D2.3 + X9 slide 27 + CTO ruling 23:10:31Z: the
 // line joins two CONFIRMED two-sided structural lows with the second HIGHER,
 // at least 5 bars apart. It EXISTS at 2 points (ValidAt == 0 before the 3rd
@@ -58,15 +102,122 @@ func TestTrendlineBuildRisingLows(t *testing.T) {
 }
 
 // TestTrendlineThirdTouchValidates — DAY-3 row 27 [p2 @03:45–04:07]: the line
-// becomes VALID (a location) only after the 3rd touch. Bar 10 touches the line
-// (line at bar 10 = 98.6, low 98.4) — ValidAt = 10.
+// becomes VALID (a location) only on the 3rd touch, and that touch is a RETURN
+// [D3.2 p2 @03:45 "VỀ nó test lần thứ 3"]: bar 11 leaves (a confirmed swing
+// high off the line), bar 13 comes back and touches — ValidAt = 13. A
+// preservation pin (green on origin/dev too: this tape's only touch is the
+// return); the RED pins are the sitting tapes below.
 func TestTrendlineThirdTouchValidates(t *testing.T) {
-	bars, mk := trendlineBars()
-	bars = append(bars, mk(10, 100, 101.5, 98.4, 101.2))
+	bars, _ := trendlineReturnTape()
+	now := time.UnixMilli(bars[13].OpenTime + 59_999).In(ctime())
+	tls := TrendlinesBuild(bars, now)
+	if len(tls) != 1 || tls[0].ValidAt != 13 || tls[0].Dead {
+		t.Fatalf("after the return = %+v, want ValidAt=13 Dead=false", tls)
+	}
+	// before the return (bar 12 the newest): left, not back yet → not valid.
+	now12 := time.UnixMilli(bars[12].OpenTime + 59_999).In(ctime())
+	if tls := TrendlinesBuild(bars[:13], now12); len(tls) != 1 || tls[0].ValidAt != 0 {
+		t.Fatalf("left but not back yet = %+v, want ValidAt=0", tls)
+	}
+}
+
+// TestTrendlineSittingOnLineIsNotThirdTouch — THE BUG (CTO probe 10-13, 1380
+// real bars: 55 of 120 lines VALID on the bar right after P1, median +2): the
+// bars that confirm P1 and still sit on the line are the swing being built,
+// not a 3rd test. Bar 9 (P1's confirmation bar) and bar 10 both touch, price
+// never left → NOT valid, NOT a location. RED on origin/dev (ValidAt = 9).
+// Mutant (the scan restored to "first touch after P1Idx+1") → RED.
+func TestTrendlineSittingOnLineIsNotThirdTouch(t *testing.T) {
+	bars, _ := trendlineSittingTape()
 	now := time.UnixMilli(bars[10].OpenTime + 59_999).In(ctime())
 	tls := TrendlinesBuild(bars, now)
-	if len(tls) != 1 || tls[0].ValidAt != 10 || tls[0].Dead {
-		t.Fatalf("after the 3rd touch = %+v, want ValidAt=10 Dead=false", tls)
+	if len(tls) != 1 || tls[0].P0Idx != 2 || tls[0].P1Idx != 8 {
+		t.Fatalf("lines = %+v, want the one support line P0=2 P1=8", tls)
+	}
+	if tls[0].ValidAt != 0 {
+		t.Fatalf("ValidAt = %d — a touch by P1's own confirmation bars (price never left the line) was taken as the 3rd touch", tls[0].ValidAt)
+	}
+	if got := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), bars); len(got) != 0 {
+		t.Fatalf("a line price never left is not a location — levels=%+v", got)
+	}
+}
+
+// TestTrendlineSittingThenReturnValidates — the SAME line as the sitting tape
+// becomes valid once price LEAVES (bar 11, a confirmed swing high off the line)
+// and comes BACK (bar 13). The sitting touches (9, 10) never count. RED on
+// origin/dev (ValidAt = 9). Mirrored for a resistance line (falling highs, the
+// leave is a confirmed swing LOW below it).
+func TestTrendlineSittingThenReturnValidates(t *testing.T) {
+	sit, mk := trendlineSittingTape()
+	bars := append(sit,
+		mk(11, 101.2, 102, 99.6, 101.8),    // swing HIGH @11 (102) — the leave; no touch (line 98.8)
+		mk(12, 101.5, 101.6, 100.2, 100.4), // confirms bar 11; no touch (line 99.0)
+		mk(13, 100.4, 101.5, 99.1, 101.2),  // RETURN: touches (line 99.2)
+	)
+	for _, tc := range []struct {
+		name string
+		bars []market.Kline
+		side Side
+	}{
+		{"support", bars, SideLong},
+		{"resistance (mirror)", trendlineMirror(bars), SideShort},
+	} {
+		now := time.UnixMilli(tc.bars[13].OpenTime + 59_999).In(ctime())
+		tls := TrendlinesBuild(tc.bars, now)
+		if len(tls) != 1 || tls[0].Side != tc.side || tls[0].P1Idx != 8 {
+			t.Fatalf("%s: lines = %+v, want one %s line with P1=8", tc.name, tls, tc.side)
+		}
+		if tls[0].ValidAt != 13 || tls[0].Dead {
+			t.Fatalf("%s: ValidAt=%d Dead=%v, want ValidAt=13 (the return after the leave), Dead=false", tc.name, tls[0].ValidAt, tls[0].Dead)
+		}
+		// one bar earlier the leave is not yet confirmed → still not valid.
+		now11 := time.UnixMilli(tc.bars[11].OpenTime + 59_999).In(ctime())
+		if tls := TrendlinesBuild(tc.bars[:12], now11); len(tls) != 1 || tls[0].ValidAt != 0 {
+			t.Fatalf("%s: leave unconfirmed = %+v, want ValidAt=0", tc.name, tls)
+		}
+	}
+}
+
+// TestTrendlineSwingInsideTouchBandIsNotALeave — an opposite-role swing whose
+// extreme is still inside the line's own touch band (trendlineTouchBandPts)
+// never LEFT the line. Bar 11 is a swing high only 0.4 above the line (band
+// 0.5); bars 12–13 keep touching → NOT valid. Mutant (drop the band from the
+// leave test) → bar 12 becomes the "3rd touch" → RED.
+func TestTrendlineSwingInsideTouchBandIsNotALeave(t *testing.T) {
+	bars, mk := trendlineBars()
+	bars[9] = mk(9, 98.7, 98.9, 98.6, 98.8) // confirms bar 8; touches (line 98.4)
+	bars = append(bars,
+		mk(10, 98.8, 98.9, 98.7, 98.8),   // touches (line 98.6)
+		mk(11, 98.9, 99.2, 98.8, 99.0),   // swing HIGH @11 (99.2) — 0.4 over the line (98.8): inside the band
+		mk(12, 99.0, 99.1, 98.9, 99.0),   // confirms bar 11; touches (line 99.0)
+		mk(13, 99.0, 99.15, 98.95, 99.1), // touches (line 99.2)
+	)
+	now := time.UnixMilli(bars[13].OpenTime + 59_999).In(ctime())
+	tls := TrendlinesBuild(bars, now)
+	if len(tls) != 1 || tls[0].Side != SideLong || tls[0].P1Idx != 8 {
+		t.Fatalf("lines = %+v, want the one support line P1=8", tls)
+	}
+	if tls[0].ValidAt != 0 {
+		t.Fatalf("ValidAt = %d — a swing high inside the touch band never left the line", tls[0].ValidAt)
+	}
+}
+
+// TestTrendlineReturnThen5mCloseThroughKills — X9 @06:25 at the call site: the
+// 5m close through still discards the line AFTER the return made it valid. The
+// 09:10 bucket (bars 10–14) closes at 98.1, below the line at its open (98.6)
+// → Dead, no longer valid, not a location. Green on origin/dev too (the kill
+// is unchanged) — a preservation pin.
+func TestTrendlineReturnThen5mCloseThroughKills(t *testing.T) {
+	bars, mk := trendlineReturnTape()
+	bars = append(bars, mk(14, 101.2, 101.3, 98.0, 98.1)) // bucket 10–14 closes 98.1
+	// the 09:10 5m bucket closes at bars[14].OpenTime+59_999 — now is after it.
+	now := time.UnixMilli(bars[14].OpenTime + 60_000).In(ctime())
+	tls := TrendlinesBuild(bars, now)
+	if len(tls) != 1 || !tls[0].Dead || tls[0].ValidAt != 0 {
+		t.Fatalf("after the 5m close through = %+v, want Dead=true ValidAt=0", tls)
+	}
+	if got := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), bars); len(got) != 0 {
+		t.Fatalf("a dead line is not a location — levels=%+v", got)
 	}
 }
 
@@ -170,9 +321,8 @@ func trendlineEval(bars []market.Kline, now int64, key string, priceAt float64) 
 // extreme on this tape) — the refusal PROVES the location gate passed, because
 // a non-location level is skipped silently before that step.
 func TestEvaluatorTrendlineLocationPHL(t *testing.T) {
-	bars, mk := trendlineBars()
-	bars = append(bars, mk(10, 100, 101.5, 98.4, 101.2))
-	now := bars[10].OpenTime + 59_999
+	bars, _ := trendlineReturnTape()
+	now := bars[13].OpenTime + 59_999
 
 	tls := TrendlinesBuild(bars, time.UnixMilli(now).In(ctime()))
 	var tl Trendline
@@ -185,34 +335,55 @@ func TestEvaluatorTrendlineLocationPHL(t *testing.T) {
 		t.Fatalf("no valid support trendline in %+v", tls)
 	}
 
-	e := trendlineEval(bars, now, tl.key(), tl.priceAt(bars[10].OpenTime))
+	e := trendlineEval(bars, now, tl.key(), tl.priceAt(bars[13].OpenTime))
 	e.Tick(bars, now)
 	if e.State.Refusals["phl_no_old_extreme_on_side"] == 0 {
 		t.Fatalf("valid trendline did not pass the location gate — refusals=%v", e.State.Refusals)
 	}
 }
 
+// TestEvaluatorTrendlineSittingIsNotALocation — Tick-level pin of the bug: on
+// the sitting tape (P1's own confirmation bars touch the line, price never
+// left) the trendline is NOT in the level set, so the PHL path never reaches
+// its target step — no phl_no_old_extreme_on_side refusal, the same proof
+// TestEvaluatorTrendlineLocationPHL reads in reverse. RED on origin/dev (the
+// line is VALID at bar 9 there and the refusal fires).
+func TestEvaluatorTrendlineSittingIsNotALocation(t *testing.T) {
+	bars, _ := trendlineSittingTape()
+	now := bars[10].OpenTime + 59_999
+	tls := TrendlinesBuild(bars, time.UnixMilli(now).In(ctime()))
+	if len(tls) != 1 || tls[0].Side != SideLong {
+		t.Fatalf("want the one support line, got %+v", tls)
+	}
+	e := trendlineEval(bars, now, tls[0].key(), tls[0].priceAt(bars[10].OpenTime))
+	e.Tick(bars, now)
+	if n := e.State.Refusals["phl_no_old_extreme_on_side"]; n != 0 {
+		t.Fatalf("a line price never left reached the PHL path as a location (%d) — refusals=%v", n, e.State.Refusals)
+	}
+}
+
 // TestTrendlineLevelsOnlyAfterThirdTouch — the "only after the 3rd test"
-// half: before the 3rd touch the line is NOT in the level set (the 2nd touch
-// is not a location); after the 3rd touch it is. Mutant (3rd-touch gate off)
-// makes the first half FAIL.
+// half: before the return the line is NOT in the level set (two points, and
+// the touches by P1's own confirmation bars, are not a location); after the
+// leave and the return it is. Mutant (3rd-touch gate off) makes the first
+// half FAIL.
 func TestTrendlineLevelsOnlyAfterThirdTouch(t *testing.T) {
-	bars, mk := trendlineBars()
-	before := time.UnixMilli(bars[9].OpenTime + 59_999).In(ctime())
-	tls := TrendlinesBuild(bars, before)
-	boxes := BoxesBuild(bars, DefaultBoxCfg(), before)
+	sit, _ := trendlineSittingTape()
+	before := time.UnixMilli(sit[10].OpenTime + 59_999).In(ctime())
+	tls := TrendlinesBuild(sit, before)
+	boxes := BoxesBuild(sit, DefaultBoxCfg(), before)
 	if len(tls) != 1 || tls[0].ValidAt != 0 {
 		t.Fatalf("want an unvalidated line, got %+v", tls)
 	}
-	if got := TrendlineLevels(tls, boxes, bars); len(got) != 0 {
+	if got := TrendlineLevels(tls, boxes, sit); len(got) != 0 {
 		t.Fatalf("before the 3rd touch the line must not be a location — levels=%+v", got)
 	}
 
-	after := append(bars, mk(10, 100, 101.5, 98.4, 101.2))
-	afterNow := time.UnixMilli(after[10].OpenTime + 59_999).In(ctime())
+	after, _ := trendlineReturnTape()
+	afterNow := time.UnixMilli(after[13].OpenTime + 59_999).In(ctime())
 	tls2 := TrendlinesBuild(after, afterNow)
 	boxes2 := BoxesBuild(after, DefaultBoxCfg(), afterNow)
-	if len(tls2) != 1 || tls2[0].ValidAt != 10 {
+	if len(tls2) != 1 || tls2[0].ValidAt != 13 {
 		t.Fatalf("want a validated line, got %+v", tls2)
 	}
 	if got := TrendlineLevels(tls2, boxes2, after); len(got) != 1 {
@@ -222,14 +393,13 @@ func TestTrendlineLevelsOnlyAfterThirdTouch(t *testing.T) {
 
 // TestEvaluatorTrendlineInsideBoxBoxWins — CTO ruling 23:10:31Z: the band is
 // the BOX ITSELF. A trendline whose 3rd touch sits INSIDE a live box's
-// [Bottom, Top] is not a trendline location (the box governs). Same tape but
-// bar 8 has a wide green body -> box top 100 -> the bar-10 touch at 98.6 is
-// inside the box -> no PHL refusal.
+// [Bottom, Top] is not a trendline location (the box governs). Same return
+// tape but bar 8 has a wide green body -> box top 100 -> the bar-13 return at
+// 99.2 is inside the box -> no PHL refusal.
 func TestEvaluatorTrendlineInsideBoxBoxWins(t *testing.T) {
-	bars, mk := trendlineBars()
+	bars, mk := trendlineReturnTape()
 	bars[8] = mk(8, 100, 101, 98.2, 100.8) // wide body -> FTGL box [97, 100]
-	bars = append(bars, mk(10, 100, 101.5, 98.4, 101.2))
-	now := bars[10].OpenTime + 59_999
+	now := bars[13].OpenTime + 59_999
 
 	tls := TrendlinesBuild(bars, time.UnixMilli(now).In(ctime()))
 	var tl Trendline
@@ -242,7 +412,7 @@ func TestEvaluatorTrendlineInsideBoxBoxWins(t *testing.T) {
 		t.Fatalf("no valid support trendline in %+v", tls)
 	}
 
-	e := trendlineEval(bars, now, tl.key(), tl.priceAt(bars[10].OpenTime))
+	e := trendlineEval(bars, now, tl.key(), tl.priceAt(bars[13].OpenTime))
 	e.Tick(bars, now)
 	if e.State.Refusals["phl_no_old_extreme_on_side"] != 0 {
 		t.Fatalf("trendline inside the box must not be a location — refusals=%v", e.State.Refusals)
