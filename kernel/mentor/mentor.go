@@ -327,12 +327,15 @@ type Config struct {
 	// edges into the location gate and InsideAnyBox into the bans.
 	Box BoxCfg
 
-	// Exec2mAfter30m — X5-10 optional knob (default OFF): after the first 30
-	// minutes of RTH (09:00 CT) the ISB entry is read on the 2m chart instead
-	// of the 1m ("sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:17;
-	// X11 @17:06–17:32]) — the 1m wicks sweep stops, so the 2m read is the
-	// quieter one. The course trades the 1m throughout, so this stays behind a
-	// knob and OFF by default; while OFF the ISB read is byte-identical.
+	// Exec2mAfter30m — X5-10 optional knob (default OFF): the ISB-exec
+	// timeframe schedule (owner order 2026-10-13 ~23:00 CT "fix all"; sources
+	// X5 @00:07–01:17, X11 @17:06–19:35 — ~/mm-course/extra/notes/05-EXTRA.md
+	// :305-311): with the knob ON the ISB reads the 1m ONLY during the RTH
+	// open +30 minutes (08:30 ≤ t < 09:00 CT), and the 2m at every other
+	// minute — overnight and the Europe open (3am Texas) included. "Evening
+	// slow → 5m" is an OPEN COURSE QUESTION (no number for "slow"); left
+	// unimplemented. The course trades the 1m throughout, so this stays behind
+	// a knob and OFF by default; while OFF the ISB read is byte-identical.
 	Exec2mAfter30m bool
 
 	// OrbGateEnabled turns on the §7 step 0 ORB gate (default ON): the high and
