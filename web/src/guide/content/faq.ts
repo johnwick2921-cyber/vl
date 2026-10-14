@@ -124,12 +124,12 @@ export const faq: GuideSection = {
         },
         {
           q: "A knob change didn't do anything — why?",
-          a: "Either it wasn't saved (toast + saved-chip), the value is above a code ceiling (leverage 20 → inert above 10/5), the guardrail master is OFF, or the config is cached at trader-load and needs the trader reload/restart to go hot.",
+          a: 'Either it wasn\'t saved (toast + saved-chip), the value is above a code ceiling, the guardrail master is OFF, the knob has no reader (the guide card says so), or the reload that Save triggers failed — Save reloads every running trader bound to the strategy, and on a failed reload the log says "saved but trader reload failed … restart to apply".',
           link: '#settings',
         },
         {
           q: 'Why does the guide banner warn about revision drift?',
-          a: "This guide was built against one code revision. The banner compares it to the running bot's revision — amber means the guide is older than the bot; verify before trusting a cite.",
+          a: 'The banner compares the commit this page bundle was BUILT from with the commit the running bot reports (first 12 characters). Amber means only that the two differ — it cannot tell older from newer, and it cannot catch a guide sentence that is wrong about the very build it ships with (the guide-truth tests do that). Reload the page after an update; if it stays amber, the bot and the UI bundle are from different builds.',
           link: '#welcome',
         },
       ],

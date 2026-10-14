@@ -494,8 +494,8 @@ export function GuidePage() {
           {PRODUCT_NAME} System Guide
         </h1>
         <p className="text-[12px]" style={muted}>
-          built against rev {GUIDE_BUILT_REV} · {GUIDE_SECTIONS.length} sections
-          · live-component examples
+          page bundle built at rev {GUIDE_BUILT_REV} · {GUIDE_SECTIONS.length}{' '}
+          sections · live-component examples
         </p>
       </header>
 
@@ -509,9 +509,9 @@ export function GuidePage() {
             color: 'var(--vl-gold)',
           }}
         >
-          ⚠ REVISION DRIFT — this guide was built against {GUIDE_BUILT_REV}, the
-          bot reports {revision}. Some cites may be stale; verify before
-          trusting them.
+          ⚠ REVISION DRIFT — this page bundle was built at {GUIDE_BUILT_REV},
+          the bot reports {revision}: the UI and the bot come from different
+          builds. Reload the page; some cites may be stale until they match.
         </div>
       )}
 

@@ -185,3 +185,54 @@ describe('T20/T21/T22 — settings and gate numbers equal the code', () => {
     )
   })
 })
+
+describe('T17/T18/T19/T24/T8 — operations text equals the code', () => {
+  it('T17: the update job age limit is internal/updaterjob MaxJobAge and the NT8 restart comes after the park', () => {
+    const m = repo('internal/updaterjob/job.go').match(
+      /const MaxJobAge = (\d+) \* time\.Minute/
+    )
+    expect(m).not.toBeNull()
+    const u = sectionText('updates')
+    expect(u).toContain(`within ${m![1]} minutes of pressing Update`)
+    expect(repo('internal/updaterworker/runner.go')).toMatch(
+      /a\.AcceptSeq == j\.NT8\.AckAcceptSeq/
+    )
+    expect(u).toContain('restart NT8 AFTER the job has parked')
+  })
+  it('T18: pause never claims to stop resting orders (the pause has no cancel path)', () => {
+    const pause = repo('trader/auto_trader_pause.go')
+    expect(pause).not.toMatch(/cancelArmedOrders/)
+    expect(sectionText('buttons')).toContain(
+      'ALREADY RESTING at the broker are NOT cancelled'
+    )
+  })
+  it('T19: Save reloads the bound running traders — the guide no longer says a restart is needed', () => {
+    const src = repo('api/strategy.go')
+    expect(src).toMatch(/s\.traderManager\.RemoveTrader\(t\.ID\)/)
+    expect(src).toMatch(/LoadUserTradersFromStore\(s\.store, userID\)/)
+    for (const id of ['buttons', 'faq']) {
+      expect(sectionText(id)).not.toMatch(
+        /needs the trader reload(\/| or )restart/
+      )
+    }
+  })
+  it('T24: the chart boot line READS the stitch mode and the guide does not call the roll un-adjusted by default', () => {
+    expect(repo('api/handler_klines_roll_derive.go')).toMatch(
+      /os\.Getenv\("CHART_ROLL_STITCH"\)\)\) != "legacy"/
+    )
+    const main = repo('main.go')
+    expect(main).not.toMatch(/step never adjusted/)
+    expect(main).toMatch(
+      /prior-segment stitch=%s[\s\S]{0,200}api\.ChartRollStitchResolved\(\)/
+    )
+    expect(sectionText('status')).not.toMatch(/that is never back-adjusted/)
+  })
+  it('T8: the banner is described as a build-identity check, not a content check', () => {
+    expect(sectionText('faq')).not.toMatch(
+      /amber means the guide is older than the bot/
+    )
+    expect(sectionText('status')).toMatch(
+      /build-identity check, not a content check/
+    )
+  })
+})

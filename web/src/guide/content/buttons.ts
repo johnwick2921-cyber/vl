@@ -14,7 +14,7 @@ export const buttons: GuideSection = {
           label: '⏸ Pause (30 min / 1 hour / Until session end / Custom)',
           api: 'dashboard PauseButton menu',
           sideEffects:
-            'Stops entries (plan stays armed) — clock-gated resume, or custom until a timestamp.',
+            'Stops NEW entries only (the admission gate refuses them; the plan stays armed). Orders ALREADY RESTING at the broker are NOT cancelled and can still fill while paused — cancel them yourself if that matters. Stops, targets, the EOD flat and position management continue. Resumes by itself at the deadline; Custom takes a number of minutes.',
           budget: 'None.',
           undo: 'Resume at will (unless session ended).',
           useWhen:
@@ -36,14 +36,14 @@ export const buttons: GuideSection = {
           sideEffects:
             'Switches the account the bot routes to — SIM only (isAccountTradeable).',
           budget: 'None.',
-          undo: 'Switch back.',
+          undo: 'Switch back — only while the trader is stopped (the selector is disabled while it runs).',
           useWhen: 'Checking which SIM account is bound.',
         },
         {
           label: 'Strategy → Save',
-          api: 'PUT /api/strategy',
+          api: 'PUT /api/strategies/:id',
           sideEffects:
-            'Persists all knob changes; toast "Strategy saved" + `saved {MM/DD, HH:MM} CT` chip. Config is cached at trader-load — a strategy change needs the trader reload or restart to go hot.',
+            'Persists all knob changes; toast "Strategy saved" + `saved {MM/DD, HH:MM} CT` chip. Save RELOADS every running trader bound to that strategy at once (api/strategy.go: remove + reload from the store, open position re-attached, NT8 stop/target guard it during the swap), so the change is live on the next cycle — no manual restart. If that reload fails the config is still saved and the log says "restart to apply".',
           budget: 'None.',
           undo: 'Re-edit + re-save.',
           useWhen: 'After every knob change (the ritual).',
