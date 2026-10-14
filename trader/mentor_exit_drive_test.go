@@ -29,12 +29,24 @@ type driveMove struct {
 // newDriveAT builds a minimal AutoTrader (mentor mode ON, a zero-value
 // TCPTrader as the armed trader — the seam never touches it) and captures every
 // signal-keyed move through mentorMoveStopForSignalWire.
+//
+// Release #22: these pins are the PRE-R3 rule, so the helper sets
+// mentor_trail_mode=off explicitly (the default is now candle — pinned at the
+// wire in mentor_r22_exit_test.go). The broker-judged never-widen (P2-3) reads
+// a broker book these seam-level pins do not have; the helper mirrors a broker
+// that applied every move (broker stop = the leg's belief), so the rule math
+// they pin is unchanged. The real book is exercised in mentor_r22_exit_test.go.
 func newDriveAT(t *testing.T) (*AutoTrader, func() []driveMove) {
 	t.Helper()
 	at := &AutoTrader{
-		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}}},
+		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorTrailMode: "off"}}},
 		trader: &nttrader.TCPTrader{},
 	}
+	oldBroker := mentorBrokerLegStopRead
+	mentorBrokerLegStopRead = func(_ *AutoTrader, _ *nttrader.TCPTrader, _ string, leg *mentorLeg) (float64, int) {
+		return leg.Stop, mentorBrokerStopLive // a broker that applied every move
+	}
+	t.Cleanup(func() { mentorBrokerLegStopRead = oldBroker })
 	var mu sync.Mutex
 	var moves []driveMove
 	old := mentorMoveStopForSignalWire
@@ -172,15 +184,20 @@ func TestMentorExitDrivePosISB_PartialResolvedOnce(t *testing.T) {
 	if p.Legs[0].TP != 12 {
 		t.Fatalf("leg1 TP = %.2f, want 12 (+1R first)", p.Legs[0].TP)
 	}
-	if got := at.mentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
-		t.Fatalf("modify_bracket_isb_logged = %d, want 1 (ONCE)", got)
+	// Release #22: +1R printed first → leg 1's resting +1R TP owns the partial;
+	// the resolution is counted ONCE and NO modify is sent.
+	if got := at.mentorCountSnapshot()["isb_partial_1r_first"]; got != 1 {
+		t.Fatalf("isb_partial_1r_first = %d, want 1 (ONCE)", got)
+	}
+	if got := at.mentorCountSnapshot()["modify_bracket_sent"]; got != 0 {
+		t.Fatalf("+1R first must send no modify, modify_bracket_sent = %d", got)
 	}
 	assertMoves(t, moves())
 	// a later candle must NOT re-fire the ISB partial.
 	p.BarsSinceFill = 2
 	at.mentorExitDrivePos(nil, p, 12.5, 13, 12, 0)
-	if got := at.mentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
-		t.Fatalf("modify_bracket_isb_logged = %d after a later candle, want 1 (no re-fire)", got)
+	if got := mentorISBPartialResolutions(at); got != 1 {
+		t.Fatalf("ISB partial resolutions = %d after a later candle, want 1 (no re-fire)", got)
 	}
 }
 
@@ -403,14 +420,32 @@ func TestMentorExitDrivePosISB_PartialOnlyOnTheFillCandle(t *testing.T) {
 	p.Pos.Origin = "ISB"
 	p.BarsSinceFill = 1
 	at.mentorExitDrivePos(nil, p, 11.0, 11.5, 10.5, 0) // fill candle closes in profit below +1R
-	if got := at.mentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
+	if got := mentorISBPartialResolutions(at); got != 1 {
 		t.Fatalf("the fill-candle close must resolve the partial once, got %d", got)
+	}
+	// bPos is ONE bracket (Wire 0): a TP modify would close the WHOLE position,
+	// so the candle-3 partial is refused + counted, never sent (release #22).
+	if got := at.mentorCountSnapshot()["isb_partial_not_split"]; got != 1 {
+		t.Fatalf("a single-bracket ISB partial must be refused as not split, got %d", got)
 	}
 	p.BarsSinceFill = 2
 	at.mentorExitDrivePos(nil, p, 11.4, 11.8, 11.1, 0) // still below +1R, still in profit
-	if got := at.mentorCountSnapshot()["modify_bracket_isb_logged"]; got != 1 {
-		t.Fatalf("a later candle must not re-fire the ISB partial, got %d logs", got)
+	if got := mentorISBPartialResolutions(at); got != 1 {
+		t.Fatalf("a later candle must not re-fire the ISB partial, got %d resolutions", got)
 	}
+}
+
+// mentorISBPartialResolutions sums every ISB candle-3 resolution counter — one
+// resolution per position, whichever branch it took.
+func mentorISBPartialResolutions(at *AutoTrader) int {
+	snap := at.mentorCountSnapshot()
+	n := 0
+	for _, k := range []string{"isb_partial_losing_close", "isb_partial_1r_first", "isb_partial_not_split",
+		"isb_partial_not_in_profit_after_rounding", "isb_partial_not_closer", "modify_bracket_unwired",
+		"modify_bracket_failed", "modify_bracket_sent"} {
+		n += int(snap[k])
+	}
+	return n
 }
 
 // UR-FIX U3: splitBySignal + stopBySignal must be dropped on the FULL close
