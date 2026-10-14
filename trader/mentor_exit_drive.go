@@ -162,6 +162,11 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 		if qtyOK {
 			at.mentorLatchLeg1GoneIfRunnerRemains(p, openQty[p.Pos.Side])
 		}
+		// X8 @18:02–18:14: a position entered on the 2m trails on CLOSED 2m
+		// candles — the same buckets the exec-2m ISB read built.
+		if p.TrailTFMin > 1 {
+			p.trailBar, p.trailBarOK = mentor.ClosedCandleTF(bars, p.TrailTFMin)
+		}
 		at.mentorExitDrivePos(nt, p, c, h, l, last.OpenTime)
 		brokerStop, brokerKnown := at.mentorBrokerStopForPos(nt, p)
 		at.mentorLogPositionState(&p.Pos, "exit-drive", brokerStop, brokerKnown)
@@ -302,6 +307,18 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	// runner's trail begins on the NEXT candle after the confirmation, never on
 	// the candle that crosses it (I6 next-candle rule).
 	scaledBefore := scaledNow && mentorLeg1ExitedBefore(exitedAtMs, candleOpenMs)
+	// The runner's candle TRAIL reads closed candles of the frame the entry was
+	// read on: "nếu như mình trade khung nào thì mình gồng theo khung đó, theo
+	// cây nến của khung đó" [X8 @18:02–18:14]. A 1m entry trails on THIS 1m
+	// candle (unchanged); a 2m entry (X5-10 exec-2m schedule) trails only on a
+	// 2m candle that closed with this 1m bar, and the I6 next-candle rule is
+	// read against THAT candle's open. BE, the 1:1 rule and the ISB partial
+	// keep the 1m close.
+	trailH, trailL, trailOK, trailScaledBefore := h, l, true, scaledBefore
+	if p.TrailTFMin > 1 {
+		trailH, trailL, trailOK = p.trailBar.High, p.trailBar.Low, p.trailBarOK
+		trailScaledBefore = scaledNow && mentorLeg1ExitedBefore(exitedAtMs, p.trailBar.OpenTime)
+	}
 	// leg1OnWire: leg 1 has its OWN bracket on the wire (a split was sent), so
 	// its exit is confirmed by the broker receipt — never candle-marked. A single
 	// bracket (Wire 0) has no leg-1 receipt and keeps the candle-priced 1:1.
@@ -347,7 +364,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	// filled at NT8, then trails 1 tick beyond each closed candle. A single
 	// bracket has no leg-1 partial to confirm and keeps the rule below.
 	if leg1OnWire && p.Legs[1].Qty > 0 && p.Legs[1].SignalID != "" && at.mentorTrailMode() == mentorTrailModeCandle {
-		at.mentorExitDriveCandle(nt, p, c, h, l, scaledNow, scaledBefore, trail)
+		at.mentorExitDriveCandle(nt, p, c, trailH, trailL, scaledNow, trailScaledBefore, trail && trailOK)
 		return
 	}
 
@@ -446,14 +463,15 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			trailPrice := 0.0
 			if isRunner {
 				target = runnerTarget
-				applyTrail = trail && scaledBefore // the 1:1 point printed on a PRIOR candle
+				applyTrail = trail && trailOK && trailScaledBefore // the 1:1 point printed on a PRIOR candle (of the trail frame)
 				if applyTrail {
 					// Item 7 ruling [X8 @15:40–17:13]: 1 tick BEYOND the closed
-					// candle's low (long) / high (short), never exactly at it.
+					// candle's low (long) / high (short), never exactly at it —
+					// the candle of the frame the entry was read on.
 					if long {
-						trailPrice = l - at.mentorInstrumentTick()
+						trailPrice = trailL - at.mentorInstrumentTick()
 					} else {
-						trailPrice = h + at.mentorInstrumentTick()
+						trailPrice = trailH + at.mentorInstrumentTick()
 					}
 				}
 			}

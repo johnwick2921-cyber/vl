@@ -307,6 +307,27 @@ func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int
 
 // TakeNotes returns the change lines recorded since the last call, then
 // clears them — the trader logs each once.
+// noteORBEscape records an ORB escape (the first of the day) or a SIDE SWITCH
+// (a later body escape beyond the other edge) with the candle that made it —
+// READ values only. Nothing is noted while the side is unchanged.
+func (e *Evaluator) noteORBEscape(prev, cur ORB, c market.Kline) {
+	if cur.Escaped == "" || (cur.Day == prev.Day && cur.Escaped == prev.Escaped) {
+		return
+	}
+	edge, word := cur.High, "above the high"
+	if cur.Escaped == SideShort {
+		edge, word = cur.Low, "below the low"
+	}
+	at := kernel.TableTimeCT(time.UnixMilli(c.OpenTime))
+	if cur.Day == prev.Day && prev.Escaped != "" {
+		e.note("ORB side SWITCHED %s → %s: the %s CT 1m body (open %.2f, close %.2f) is wholly %s %.2f — %s entries only now [X7 @07:42–07:51 \"cho tới khi nào nó crack\"; D4.1 p1 @20:36]",
+			prev.Escaped, cur.Escaped, at, c.Open, c.Close, word, edge, cur.Escaped)
+		return
+	}
+	e.note("ORB escape %s: the %s CT 1m body (open %.2f, close %.2f) is wholly %s %.2f (ORB %.2f–%.2f) — %s entries only [X5 @02:57–03:02; D4.1 p1 @20:36]",
+		cur.Escaped, at, c.Open, c.Close, word, edge, cur.Low, cur.High, cur.Escaped)
+}
+
 func (e *Evaluator) TakeNotes() []string {
 	n := e.notes
 	e.notes = nil
@@ -1242,9 +1263,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		levels = append(levels, el)
 	}
 
-	// §7 step 0: the ORB gate advances every tick (drawn at 08:32 CT,
-	// escape latched on the first 1m body close outside).
-	e.State.ORB = ORBAdvance(e.State.ORB, bars, now)
+	// §7 step 0: the ORB gate advances every tick (drawn at 08:32 CT; the
+	// side is the side of the LATEST 1m candle whose BODY is wholly outside —
+	// open AND close [D4.1 p1 @20:36; X5 @02:57; X7 @07:42]). Every escape and
+	// every side switch is logged once, with the candle that made it.
+	prevORB := e.State.ORB
+	e.State.ORB = ORBAdvance(prevORB, bars, now)
+	e.noteORBEscape(prevORB, e.State.ORB, bars[len(bars)-1])
 
 	// §4.1 FTGH/FTGL boxes (BOX RULING part 2): built per tick; the edges
 	// join the level set as locations (used again and again) and the box
@@ -1579,6 +1604,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								// next candle does not fill" [D1.4 p1 @
 								// 18:32–18:45]); stacking extends it below.
 								chosen.ExpiryMs = execCur.CloseTime + int64(execTFMin)*60_000
+								// X8 @18:02–18:14 "trade khung nào thì gồng theo khung
+								// đó": the runner trails on the frame the entry was
+								// READ on. Stamped only for a 2m read (knob OFF → 0,
+								// the intent is byte-identical).
+								if execTFMin > 1 {
+									chosen.ExecTFMin = execTFMin
+								}
 								e.State.ArmSeq++
 								id := fmt.Sprintf("isb-%d", e.State.ArmSeq)
 								// the ISB candle is the 1st inside candle (Inside=1), so the
@@ -1621,6 +1653,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// N12: an R7 reverse ISB fills by the close of the NEXT candle on
 			// the execution timeframe (the R1 family rule).
 			in.ExpiryMs = execCur.CloseTime + int64(execTFMin)*60_000
+			// X8 @18:02–18:14: the trail frame follows the entry frame.
+			if execTFMin > 1 {
+				in.ExecTFMin = execTFMin
+			}
 			// R85 (CTO, release #4): now that the reverse ISB can place, it
 			// runs through the SAME gates as the normal ISB — the twenties
 			// stop skip [D4.1 p1 @ 05:41], the 4h HTF verdict and side, and

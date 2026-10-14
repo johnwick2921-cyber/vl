@@ -1693,6 +1693,10 @@ export const settings: GuideSection = {
           body: "Age-based prune of data/vl_YYYY-MM-DD.log at logger init, where the date is America/Chicago (CT) — the same zone every log line timestamp renders in, so file date and line times always agree on any machine clock. 0 = keep every file (the default — the owner has not ruled on logs). Never deletes today's or the running boot's file.",
         },
         {
+          title: 'BARS_HOLE_MIN_GAP_MIN = 3',
+          body: "Bar-hole threshold: this many OPEN-market minutes with no stored 1m bar between two stored bars is a hole, and the bot re-requests NinjaTrader's history for it at +1/+3/+10/+30 min (never while the feed is down), then every 15 min while CME is open after one loud UNFILLED line naming the NT8 history reload. The daily break, weekends and holiday closes never count. The boot line '🕳 bar-hole backfill:' prints the value and its source.",
+        },
+        {
           title: 'PERSIST_STALL_WATCHDOG_S = 60',
           body: 'Bar-persist silence alarm: no successful flush for N seconds while live bar frames are FLOWING → loud ERROR (the Friday ~2h GORM stall can never go silent again). Frame-aware: an idle wire (weekend, the daily break, NT8 closed) stays silent — no cry-wolf.',
         },

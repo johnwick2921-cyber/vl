@@ -46,7 +46,7 @@ func TestORBDrawsAndTestsTheSameClosedCandle(t *testing.T) {
 	bars := []market.Kline{
 		mk(8, 30, 24820, 24844, 24814, 24830), // ORB high 24844, low 24814
 		mk(8, 31, 24830, 24836, 24816, 24820),
-		mk(8, 32, 24840, 24870, 24830, 24860), // BODY closes above the high → escape
+		mk(8, 32, 24846, 24870, 24845, 24860), // BODY wholly above the high (open AND close) → escape [D4.1 p1 @20:36]
 	}
 	// the 08:32 tick: the 08:32 bar just closed at 08:32:59.999
 	orb := ORBAdvance(ORB{}, bars, auditMs(2026, 9, 15, 8, 33, 0)-1)
@@ -79,8 +79,8 @@ func TestORBGateWorkedExample(t *testing.T) {
 			t.Fatalf("before the escape nothing may trade at %v", p)
 		}
 	}
-	// price clears 24,844 with a 1m BODY close above → longs only
-	esc := market.Kline{OpenTime: day, CloseTime: day + 59_999, High: 24860, Low: 24840, Close: 24850}
+	// price clears 24,844 with a 1m BODY wholly above (open AND close) → longs only
+	esc := market.Kline{OpenTime: day, CloseTime: day + 59_999, Open: 24846, High: 24860, Low: 24845, Close: 24850}
 	orb = ORBAdvance(orb, []market.Kline{esc}, day+59_999)
 	if orb.Escaped != SideLong {
 		t.Fatalf("escape = %q, want long", orb.Escaped)

@@ -137,6 +137,14 @@ type Intent struct {
 	// (the setup carries its own explicit CancelArm instead).
 	ExpiryMs int64
 
+	// ExecTFMin is the frame the entry was READ on: 2 when the X5-10 exec-2m
+	// schedule (Exec2mAfter30m) read the ISB pair on closed 2m candles; 0 = the
+	// 1m (every other setup, and every ISB while the knob is OFF). The trader
+	// trails the runner on closed candles of THIS frame — "nếu như mình trade
+	// khung nào thì mình gồng theo khung đó, theo cây nến của khung đó"
+	// [X8 @18:02–18:14].
+	ExecTFMin int
+
 	// RefBarMs (N10) is the reference candle's CLOSE time (ms) — the bar the
 	// entry geometry was measured from. The injector refuses any entry whose
 	// reference candle is not the newest closed bar (a reload replay of stale

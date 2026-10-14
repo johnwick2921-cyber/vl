@@ -257,19 +257,34 @@ func TestTrendlineFractalNoiseDrawsNoLine(t *testing.T) {
 	}
 }
 
-// TestTrendlineBrokenBy5mClose — X9 @06:25: a 5m candle CLOSING through the
-// line discards it. Direct struct test: support broken by a close below the
-// line at the bucket's open time.
-func TestTrendlineBrokenBy5mClose(t *testing.T) {
+// TestTrendlineBrokenBy5mCloseAtTheCloseTime — the course's break is a CLOSE
+// through the line ("nến nó đụng level mà nó ĐÓNG DƯỚI level — đó đụng
+// trendline… Nó GÃY level" [D2.3 p1 @14:36–15:17]; the 5m frame [X9 @06:25]),
+// the line read at the candle's CLOSE time. Line value: 98.6 at 10:00 (the
+// bucket open), ≈99.6 at its close; resistance ≈100.4 at the close.
+func TestTrendlineBrokenBy5mCloseAtTheCloseTime(t *testing.T) {
 	tl := Trendline{Side: SideLong, P0Idx: 2, P0Px: 97, P0T: 2 * 60_000, P1Idx: 8, P1Px: 98.2, P1T: 8 * 60_000}
 	if got := tl.priceAt(10 * 60_000); math.Abs(got-98.6) > 0.0001 {
 		t.Fatalf("priceAt = %.4f, want 98.6", got)
 	}
-	if tl.brokenBy5m(market.Kline{OpenTime: 10 * 60_000, Close: 98.7}) {
-		t.Fatal("close ABOVE the support line is not a break")
+	b5 := func(h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: 10 * 60_000, CloseTime: 15*60_000 - 1, High: h, Low: l, Close: c}
 	}
-	if !tl.brokenBy5m(market.Kline{OpenTime: 10 * 60_000, Close: 98.5}) {
-		t.Fatal("close BELOW the support line must break it")
+	if !tl.brokenBy5m(b5(101, 98.0, 98.5)) {
+		t.Fatal("a close BELOW the support line breaks it — the wick above does not matter (the course's close test)")
+	}
+	if !tl.brokenBy5m(b5(99.9, 98.9, 99.0)) {
+		t.Fatal("a close below the line AT THE CLOSE TIME (99.0 < ≈99.6) breaks it, even above the line's value at the open (98.6)")
+	}
+	if tl.brokenBy5m(b5(100, 99.0, 99.7)) {
+		t.Fatal("a close ABOVE the support line at the close time is not a break")
+	}
+	res := Trendline{Side: SideShort, P0Idx: 2, P0Px: 103, P0T: 2 * 60_000, P1Idx: 8, P1Px: 101.8, P1T: 8 * 60_000}
+	if !res.brokenBy5m(b5(102, 99.0, 101.5)) {
+		t.Fatal("a close ABOVE the resistance line breaks it — the wick below does not matter")
+	}
+	if res.brokenBy5m(b5(100.6, 99.9, 100.2)) {
+		t.Fatal("a close below the resistance line at the close time (100.2 < ≈100.4) is not a break")
 	}
 }
 

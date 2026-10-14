@@ -317,8 +317,8 @@ export const mentor: GuideSection = {
         ],
         [
           'Trendline',
-          'Two CONFIRMED two-sided structural swings (left fractal + the next bar confirms it), at least 5 bars apart, joined — a low and a HIGHER low (support) or a high and a LOWER high (resistance); never horizontal. EVERY consecutive pair of today\u2019s qualifying swings draws a line, and a drawn line stays all session — it leaves only when a 5m close breaks it or the session ends (owner ruling R4; "never erase during the session, delete at end of day" [D4.1 p2 @01:17]). A pair that price crossed between its own two points (a 1m wick beyond the line by more than the 0.5-pt touch band) is not a trendline and is not drawn ("TRENDLINE chứ không phải CẦU TUỘT" [X9 @01:22]) — counted once per day as trendline_crossed_between_anchors. The log says when a line turns VALID, when one is BROKEN and when the day\u2019s lines are deleted',
-          'Becomes a location only on the 3rd touch, and that touch must be a RETURN ("ph\u1ea3i V\u1ec0 TEST L\u1ea6N TH\u1ee8 3 th\u00ec m\u1edbi VALID" [D3.2 p2 @03:45]): price first LEAVES the line \u2014 a confirmed swing high above a support line, or a confirmed swing low below a resistance line, beyond the touch band \u2014 and then comes BACK to touch it. The bars that confirm the 2nd swing and still sit on the line never count. A break confirmed by a 5m close discards it (a break is NOT an entry). Box beats trendline: a trendline whose price sits inside a live box\u2019s [Bottom, Top] is NOT a location',
+          'Two CONFIRMED two-sided structural swings (left fractal + the next bar confirms it), at least 5 bars apart, joined — a low and a HIGHER low (support) or a high and a LOWER high (resistance); never horizontal. EVERY consecutive pair of today\u2019s qualifying swings draws a line, and a drawn line stays all session — it leaves only when a closed 5m candle CLOSES through it (a support line: the close below the line; a resistance line: the close above it — the wick does not matter; the line is read at the candle\u2019s close time) — "n\u1ebfn n\u00f3 \u0111\u1ee5ng level m\u00e0 n\u00f3 \u0110\u00d3NG D\u01af\u1edaI level… n\u00f3 G\u00c3Y level" [D2.3 p1 @14:36–15:17] on the 5m [X9 @06:25] — or the session ends (owner ruling R4; "never erase during the session, delete at end of day" [D4.1 p2 @01:17]). A pair that price crossed between its own two points (a 1m wick beyond the line by more than the 0.5-pt touch band) is not a trendline and is not drawn ("TRENDLINE chứ không phải CẦU TUỘT" [X9 @01:22]) — counted once per day as trendline_crossed_between_anchors. The log says when a line turns VALID, when one is BROKEN and when the day\u2019s lines are deleted',
+          'Becomes a location only on the 3rd touch, and that touch must be a RETURN ("ph\u1ea3i V\u1ec0 TEST L\u1ea6N TH\u1ee8 3 th\u00ec m\u1edbi VALID" [D3.2 p2 @03:45]): price first LEAVES the line \u2014 a confirmed swing high above a support line, or a confirmed swing low below a resistance line, beyond the touch band \u2014 and then comes BACK to touch it. The bars that confirm the 2nd swing and still sit on the line never count. A 5m close through it discards it (a close through is a break even with the wick on the other side — a break, never a reversal; a break is NOT an entry). Box beats trendline: a trendline whose price sits inside a live box\u2019s [Bottom, Top] is NOT a location',
         ],
       ],
     },
@@ -455,8 +455,8 @@ export const mentor: GuideSection = {
         ],
         [
           'ORB gate (opening range)',
-          'ORB = the high and the low of the FIRST 2-minute candle of the regular session (08:30–08:32 CT), drawn only once that candle has completed. NO trade inside the ORB and NO reversal trade at either edge. Trade only after price has LEFT the box — escape test: a 1m BODY close outside. Direction follows the escape side: below → shorts only (ISB short / PLH); above → longs only. The escape picks the side; it is NOT an entry. No ORB for pre-market. The SWING4H is exempt.',
-          'orb_gate_enabled = true (default ON) · X5 @01:52, 02:36, 03:29–03:47, 05:42',
+          'ORB = the high and the low of the FIRST 2-minute candle of the regular session (08:30–08:32 CT), drawn only once that candle has completed. NO trade inside the ORB and NO reversal trade at either edge. Trade only after price has LEFT the box — escape test: a 1m candle whose BODY is wholly outside, its open AND its close beyond the edge (the course minimum, the same test as the box escape [D4.1 p1 @20:36]; a candle that opens inside and closes one tick out is NOT an escape). Direction follows the side of the LATEST escape: below → shorts only (ISB short / PLH); above → longs only. It is not locked for the day: a later 1m body wholly beyond the OTHER edge switches the side ("cho tới khi nào nó crack" [X7 @07:42–07:51]); a candle that only pushes back inside switches nothing. Every escape and every switch is logged with its candle. The escape picks the side; it is NOT an entry. No ORB for pre-market. The SWING4H is exempt.',
+          'orb_gate_enabled = true (default ON) · X5 @01:52, 02:36, 02:57–03:47, 05:42 · X7 @07:42–07:51 · D4.1 p1 @20:36',
         ],
         [
           'News 07:30 CT (print)',
@@ -465,7 +465,7 @@ export const mentor: GuideSection = {
         ],
         [
           '2m execution (1m only in the first 30 min of RTH)',
-          'OFF by default — the course trades the 1m throughout. Turn it on and the ISB entry is read on the 1m chart ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"); at every other minute it is the 2m ("khung 2 phút ÍT BỊ QUÉT RÂU" — the 1m wicks sweep stops, so the 2m read is quieter), overnight and the Europe open (3am Texas) included. "Evening slow → 5m" is an open course question (no number for "slow"). The higher-timeframe lines, the boxes and the ORB escape always stay on the 1m.',
+          'OFF by default — the course trades the 1m throughout. Turn it on and the ISB entry is read on the 1m chart ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"); at every other minute it is the 2m ("khung 2 phút ÍT BỊ QUÉT RÂU" — the 1m wicks sweep stops, so the 2m read is quieter), overnight and the Europe open (3am Texas) included. "Evening slow → 5m" is an open course question (no number for "slow"). The higher-timeframe lines, the boxes and the ORB escape always stay on the 1m. An ISB entered on the 2m trails its runner on CLOSED 2m candles — "trade khung nào thì gồng theo khung đó" [X8 @18:02–18:14] (BE and the 1:1 rule keep the 1m close); after a restart that frame is not known and the runner trails the 1m (WARN trail_tf_unknown_after_restart).',
           'mentor_exec_2m_after_30m = false (default OFF) · X5 @00:07–01:17 · X11 @17:06–19:35',
         ],
       ],
@@ -556,7 +556,7 @@ export const mentor: GuideSection = {
         ],
         [
           'B — normal',
-          '2 or more contracts: ONE entry with two exits — leg 1 (half, rounded up) takes profit at 1:1 measured from the actual entry price, the runner holds to the target (1 contract = a single leg). The runner’s stop follows mentor_trail_mode. candle (the default, owner ruling R3, release #22): NOTHING moves until leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader (the broker’s fill receipt, or its position size dropping to the runner — never a price touch); then the runner’s stop goes to break-even = the entry (an off-grid averaged entry rounds toward profit), on the first close past the entry — if price is back through it, the original stop stays until a close is past it; then on every CLOSED 1m candle it moves to 1 tick beyond that candle’s low (long) / high (short), only when that is tighter — a lower low (long) / higher high (short) moves nothing. off = the older rule: both stops to break-even at HALF the distance to the target, live 1:1 behind the target, trail after the 1:1 point. Either way every move is checked against the stop NinjaTrader actually holds — never wider than it (a stop you tightened by hand is kept), nothing is sent while the broker book is stale, nothing is sent to a leg that is already closed — and each move is confirmed or reported from the next broker book. trail_tf: 1m default, 30s/45s allowed, off = break-even only. Spent day: at most 2 contracts run — the rest leave with leg 1. Needs the AddOn build 2026-10-04-d1; an older AddOn gets one bracket for the whole position, which keeps the older rule',
+          '2 or more contracts: ONE entry with two exits — leg 1 (half, rounded up) takes profit at 1:1 measured from the actual entry price, the runner holds to the target (1 contract = a single leg). The runner’s stop follows mentor_trail_mode. candle (the default, owner ruling R3, release #22): NOTHING moves until leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader (the broker’s fill receipt, or its position size dropping to the runner — never a price touch); then the runner’s stop goes to break-even = the entry (an off-grid averaged entry rounds toward profit), on the first close past the entry — if price is back through it, the original stop stays until a close is past it; then on every CLOSED candle of the frame the entry was read on — the 1m, or the 2m for an ISB read on the 2m under exec_2m_after_30m [X8 @18:02–18:14 "trade khung nào thì gồng theo khung đó"] — it moves to 1 tick beyond that candle’s low (long) / high (short), only when that is tighter — a lower low (long) / higher high (short) moves nothing. off = the older rule: both stops to break-even at HALF the distance to the target, live 1:1 behind the target, trail after the 1:1 point. Either way every move is checked against the stop NinjaTrader actually holds — never wider than it (a stop you tightened by hand is kept), nothing is sent while the broker book is stale, nothing is sent to a leg that is already closed — and each move is confirmed or reported from the next broker book. trail_tf: 1m default, off = break-even only; 30s/45s are REFUSED at load (the bot has no sub-minute bars — NinjaTrader streams 1m and up) and run as 1m, WARN + trail_tf_subminute_refused. Spent day: at most 2 contracts run — the rest leave with leg 1. Needs the AddOn build 2026-10-04-d1; an older AddOn gets one bracket for the whole position, which keeps the older rule',
         ],
         [
           'C — confluence',
@@ -728,10 +728,11 @@ export const mentor: GuideSection = {
         {
           label: 'Trail timeframe',
           where: 'Strategy → Mentor mode → exits',
-          what: 'The candle-trail timeframe for the B exit.',
+          what: 'The candle-trail timeframe for the B exit. A position entered on the 2m (exec_2m_after_30m) trails the 2m whatever this says — the frame follows the entry [X8 @18:02–18:14]. 30s and 45s are refused when the strategy loads (no sub-minute bars exist) and run as 1m, logged + counted (trail_tf_subminute_refused).',
           trader: '1m — the stop trails behind each closed 1m candle.',
-          consumer: 'trader/mentor_mode.go:449 mentorTrailTFDefault',
-          range: '1m / 30s / 45s / off',
+          consumer:
+            'trader/mentor_mode.go mentorTrailTF / mentorTrailTFLoadCheck',
+          range: '1m / off (30s / 45s refused → 1m)',
           systemDefault: '1m',
           recommended:
             '1m — the course frame [D2.4 p1 @08:35 move-stop; X8 @15:40].',
@@ -914,7 +915,7 @@ export const mentor: GuideSection = {
         {
           label: '2m ISB execution (1m only in the first 30 min of RTH)',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'X5-10: OFF (default) = the ISB entry is read on the 1m chart all day, as the course trades. ON = the ISB entry is read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). "Evening slow → 5m" is an open course question (no number for "slow"). Only the ISB pair swaps; the higher-TF lines, the boxes and the ORB escape always stay on the 1m.',
+          what: 'X5-10: OFF (default) = the ISB entry is read on the 1m chart all day, as the course trades. ON = the ISB entry is read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). "Evening slow → 5m" is an open course question (no number for "slow"). Only the ISB pair swaps; the higher-TF lines, the boxes and the ORB escape always stay on the 1m. An ISB entered on the 2m trails its runner on CLOSED 2m candles (the trail frame follows the entry frame [X8 @18:02–18:14]).',
           trader:
             'OFF — the course trades the 1m throughout; optional and knob-gated.',
           consumer:
@@ -1127,7 +1128,7 @@ export const mentor: GuideSection = {
         {
           label: 'ORB entry gate',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'Require price to escape the first 2-minute RTH opening range before intraday entries; the 4h swing setup is exempt.',
+          what: 'Require price to escape the first 2-minute RTH opening range before intraday entries (a 1m BODY wholly outside — open AND close); after that only the side of the latest escape trades — a later body escape beyond the other edge switches it. The 4h swing setup is exempt.',
           trader: 'ON — no entry inside the opening range.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (OrbGateEnabled)',
