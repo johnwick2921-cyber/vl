@@ -13,6 +13,7 @@
 package store
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -109,12 +110,21 @@ func TestReplacementAfterCancelIsASecondRow(t *testing.T) {
 		t.Fatalf("cancel: %v", err)
 	}
 	now := time.Now()
+	// CTO fold (PR #526): the SAME version never re-places a slot that reached
+	// the broker — the replacement arrives under a NEW version.
 	if err := st.UpsertArm(&ArmedOrderDB{
-		TraderID: "T1", PlanID: "P1", Scenario: "S1", Side: "long",
+		TraderID: "T1", PlanID: "P1", Scenario: "S1", Side: "long", Version: seed.Version,
+		EntryPx: 29610, StopPx: 29580, TargetPx: 29670,
+		State: "armed", CreatedAt: now, UpdatedAt: now,
+	}); !errors.Is(err, ErrArmSlotSpent) {
+		t.Fatalf("a same-version replacement of a placed slot must be refused as spent, got %v", err)
+	}
+	if err := st.UpsertArm(&ArmedOrderDB{
+		TraderID: "T1", PlanID: "P1", Scenario: "S1", Side: "long", Version: seed.Version + 1,
 		EntryPx: 29610, StopPx: 29580, TargetPx: 29670,
 		State: "armed", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
-		t.Fatalf("after a cancel the replacement must be accepted: %v", err)
+		t.Fatalf("after a cancel the new-version replacement must be accepted: %v", err)
 	}
 
 	var rows []ArmedOrderDB

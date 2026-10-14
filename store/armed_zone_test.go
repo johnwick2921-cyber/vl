@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -171,8 +172,8 @@ func TestArmedZoneReArmPinnedWithinVersion(t *testing.T) {
 			t.Fatal(err)
 		}
 		for i := 0; i < 3; i++ {
-			if err := st.UpsertArm(zoneRow(3)); err != nil {
-				t.Fatalf("%s: same-version re-authorization: %v", ending.reason, err)
+			if err := st.UpsertArm(zoneRow(3)); !errors.Is(err, ErrArmSlotSpent) {
+				t.Fatalf("%s: same-version re-authorization must be refused as spent, got %v", ending.reason, err)
 			}
 		}
 		if rows := zoneRows(t, st); len(rows) != 1 {
@@ -192,7 +193,11 @@ func TestArmedZoneReArmPinnedWithinVersion(t *testing.T) {
 			t.Fatalf("%s: successor lost authorization provenance: boot=%q armed_under=%d", ending.reason, rows[1].BootID, rows[1].ArmedUnderVersion)
 		}
 	}
-	// A legacy row keeps today's D5 mint (the pin is policy-only).
+	// CTO fold (PR #526): the pin is no longer policy-only. This block used to
+	// pin "a legacy row keeps today's D5 mint" — a FILLED legacy row re-minted
+	// under the same version, the re-place loop D15 exists to stop (live: 129,
+	// 196 after fills; 124/141/183 after "cancelled in NT8"). A legacy row that
+	// reached the broker is spent for its version like every other policy.
 	st := NewArmedOrderStore(newArmedTestDB(t))
 	legacy := zoneRow(3)
 	legacy.Policy = ""
@@ -207,11 +212,11 @@ func TestArmedZoneReArmPinnedWithinVersion(t *testing.T) {
 	}
 	l2 := zoneRow(3)
 	l2.Policy = ""
-	if err := st.UpsertArm(l2); err != nil {
-		t.Fatal(err)
+	if err := st.UpsertArm(l2); !errors.Is(err, ErrArmSlotSpent) {
+		t.Fatalf("a filled legacy row must be spent for its version, got %v", err)
 	}
-	if rows := zoneRows(t, st); len(rows) != 2 {
-		t.Fatalf("legacy D5 mint must be unchanged (2 rows), got %d", len(rows))
+	if rows := zoneRows(t, st); len(rows) != 1 {
+		t.Fatalf("a filled legacy row must not be re-minted under the same version (want 1 row), got %d", len(rows))
 	}
 	// A boot-swept policy row re-arms under the same version (0B).
 	st = NewArmedOrderStore(newArmedTestDB(t))
