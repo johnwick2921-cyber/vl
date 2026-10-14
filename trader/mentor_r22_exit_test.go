@@ -560,6 +560,35 @@ func TestR22RestartMidTrailResumesTheStage(t *testing.T) {
 	}
 }
 
+// TestR22RestartNeverResolvesTheCandle3PartialLate — a restart-rebuilt ISB with
+// leg 1 still open: the first post-restart candle is NOT the fill candle, so a
+// close in profit short of +1R must send NO modify (it would sell leg 1 off the
+// wrong candle). Mutant: drop ISBPartialDone on the rebuild → a modify → RED.
+func TestR22RestartNeverResolvesTheCandle3PartialLate(t *testing.T) {
+	b := r22Fixture(t, store.RiskControlConfig{})
+	arm := &store.ArmedOrderDB{TraderID: b.at.id, PlanID: "mentor", Scenario: "isb-r22", Side: "short",
+		State: store.StateFilled, SignalID: r22Sig, EntryPx: r22Entry, StopPx: r22Stop, TargetPx: r22Target,
+		Origin: store.ArmOriginMentor, Condition: "ISB", Contracts: store.IntPtr(3), Leg1Qty: store.IntPtr(2),
+		Leg1TP: r22L1TP, FillPrice: r22Entry, FillQuantity: 3, ExitMode: mentorExitModePtr("B")}
+	if err := b.st.ArmedOrders().UpsertArm(arm); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.st.Position().CreateOpenPosition(&store.TraderPosition{TraderID: b.at.id, ExchangeID: "NT8",
+		ExchangeType: "ninjatrader", Symbol: "MNQ", Side: "SHORT", EntryQuantity: 3, Quantity: 3,
+		EntryPrice: r22Entry, EntryOrderID: r22Sig, Status: "OPEN", Source: "system"}); err != nil {
+		t.Fatal(err)
+	}
+	b.positions("short", 3)
+	b.book(r22FullBook(r22Stop)...)
+	b.candle(r22Minute(0), 30742.25, 30744.00, 30735.00, 30737.50)
+	if n := b.at.mentorCountSnapshot()["rebuild_ok"]; n != 1 {
+		t.Fatalf("fixture: the rebuild must register the position, rebuild_ok=%d", n)
+	}
+	if mods := b.waitMods(0); len(mods) != 0 {
+		t.Fatalf("a rebuilt ISB must never send the candle-3 modify off a post-restart candle; got %+v", mods)
+	}
+}
+
 // TestR22KnobOffKeepsThePreR3Rule — mentor_trail_mode=off: after the confirmed
 // partial, a candle that does NOT reach half the distance to the trade target
 // moves nothing (the old rule), while the default (candle) sends BE on the
@@ -578,6 +607,9 @@ func TestR22KnobOffKeepsThePreR3Rule(t *testing.T) {
 		b.candle(r22Minute(0), 30730.00, 30731.00, 30723.00, 30725.00)
 		if got := b.waitMoves(tc.moves); len(got) != tc.moves {
 			t.Fatalf("mentor_trail_mode=%q: want %d move(s), got %+v", tc.mode, tc.moves, got)
+		}
+		if n := b.at.mentorCountSnapshot()["trail_mode_bad_value"]; n != 0 {
+			t.Fatalf("mentor_trail_mode=%q is a VALID value (unset = the candle default), never a bad one: counted %d", tc.mode, n)
 		}
 	}
 	// A bad value fails closed to candle (BE) and is counted.
