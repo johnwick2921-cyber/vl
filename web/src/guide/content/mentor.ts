@@ -284,7 +284,7 @@ export const mentor: GuideSection = {
         [
           'Trendline',
           'Two CONFIRMED two-sided structural swings (left fractal + the next bar confirms it), at least 5 bars apart, joined — a low and a HIGHER low (support) or a high and a LOWER high (resistance); never horizontal. One live line per side: the two MOST RECENT qualifying swings pair, a newer pair replaces the older',
-          'Becomes a location only after the 3rd touch [DAY-3 p2 @03:45-04:07]; a break confirmed by a 5m close discards it (a break is NOT an entry). Box beats trendline: a trendline whose price sits inside a live box\u2019s [Bottom, Top] is NOT a location',
+          'Becomes a location only on the 3rd touch, and that touch must be a RETURN ("ph\u1ea3i V\u1ec0 TEST L\u1ea6N TH\u1ee8 3 th\u00ec m\u1edbi VALID" [D3.2 p2 @03:45]): price first LEAVES the line \u2014 a confirmed swing high above a support line, or a confirmed swing low below a resistance line, beyond the touch band \u2014 and then comes BACK to touch it. The bars that confirm the 2nd swing and still sit on the line never count. A break confirmed by a 5m close discards it (a break is NOT an entry). Box beats trendline: a trendline whose price sits inside a live box\u2019s [Bottom, Top] is NOT a location',
         ],
       ],
     },
