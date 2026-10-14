@@ -62,6 +62,34 @@ func (a *forceFlatSignalAdapter) ForceFlat(traderID string) error {
 	return nil
 }
 
+// tcpForceFlatSignaler is the TCP bridge's kernel.ForceFlatSignaler. On the TCP
+// path the flatten is REAL — the close_position frame was already sent (stamped
+// with this trader's bound account) when MaybeForceFlat runs — so it reports the
+// send as it happened. It replaces forceFlatSignalAdapter{writer:nil} there,
+// whose "operator must manually flatten on NT chart" line was false after a
+// real send (rescan D-4 / N7). The send is not the close: NT8 confirms each
+// close with a position_close frame (or reports position_close_rejected).
+type tcpForceFlatSignaler struct {
+	account    string // the trader's bound account, READ from the broker
+	openAtSend *int   // open positions NT8 reported at send; nil = that read failed
+}
+
+func (s *tcpForceFlatSignaler) ForceFlat(traderID string) error {
+	if s == nil {
+		return fmt.Errorf("force-flat: nil signaler")
+	}
+	acct := strings.TrimSpace(s.account)
+	if acct == "" {
+		acct = "n/a (unbound)"
+	}
+	open := "unknown (position read failed)"
+	if s.openAtSend != nil {
+		open = fmt.Sprintf("%d", *s.openAtSend)
+	}
+	logger.Warnf("🔴 force-flat: trader=%s close sent to NT8 for account %s (open position(s) at send: %s); confirmed by the position_close frame, not by this send", traderID, acct, open)
+	return nil
+}
+
 // forceFlatResponse is the JSON shape returned by POST /api/risk/force-flat.
 type forceFlatResponse struct {
 	Triggered bool   `json:"triggered"`
@@ -130,7 +158,9 @@ func (s *Server) handleForceFlat(c *gin.Context) {
 		// ClearDailyLossLatch also drops this trader's persisted latch so a
 		// restart cannot re-arm what the owner just cleared. If this trader's
 		// own loss still stands, its gate re-trips on the next 60s beat.
-		_ = kernel.MaybeForceFlat(traderID, &forceFlatSignalAdapter{writer: nil})
+		// r24 (D-4 / N7): the signaler REPORTS the send that just happened —
+		// never the CSV path's "operator must manually flatten" line.
+		_ = kernel.MaybeForceFlat(traderID, &tcpForceFlatSignaler{account: ntTCP.BoundAccount(), openAtSend: openAtSend})
 		at.ClearDailyLossLatch("Emergency Flat")
 		msg := "force-flat: flatten SENT to NinjaTrader (TCP bridge) for this trader's bound account — open positions at send unknown (position read failed); NT8 confirms each close"
 		if openAtSend != nil {
