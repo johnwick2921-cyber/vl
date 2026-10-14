@@ -272,3 +272,71 @@ func TestPlaceProtectiveStopRoundsAwayFromEntry(t *testing.T) {
 		t.Fatalf("WireStop: SHORT 30456.30→%.2f (want 30456.50), LONG 30427.47→%.2f (want 30427.25)", stops[0].StopPrice, stops[1].StopPrice)
 	}
 }
+
+// ── N-G — the planner auto-BE gets an NT8 verdict ────────────────────────────
+
+func (w *execWire) bookWithStop(sid string, stop float64, recv time.Time) {
+	w.s.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{
+		{OrderID: "sl1", Symbol: "MNQ", Name: sid + "-sl", Action: "buy", Type: "stop", StopPrice: stop, Quantity: 1, State: "Accepted"},
+		{OrderID: "tp1", Symbol: "MNQ", Name: sid + "-tp", Action: "buy", Type: "limit", LimitPrice: 30257.50, Quantity: 1, State: "Working"},
+	}}, recv)
+}
+
+// TestPlannerAutoBENotAppliedIsJudgedAndResent — the move_stop was SENT but
+// the next fresh book still shows the plan stop 30551.25: NOT APPLIED is
+// logged with the trader tag, counted, breakevenDone is cleared and the SAME
+// monitor beat re-sends the move.
+func TestPlannerAutoBENotAppliedIsJudgedAndResent(t *testing.T) {
+	t.Setenv("EXIT_MECHS_SUSPENDED", "0")
+	noFreshPrice(t)
+	w := newExecWire(t, "ng-not-applied")
+	on := bePtr(true)
+	w.at.config.StrategyConfig.RiskControl = store.RiskControlConfig{BreakevenEnabled: on, BreakevenTriggerPoints: 40}
+	sid := w.open654(t)
+	get := warnPlusCapture(t)
+
+	w.at.maybeMoveStopToBreakeven("MNQ", "SHORT", 30456.50, 30400) // beat 1: SENT
+	if n := len(w.framesOf(ntwire.FrameMoveStop, 1, 2*time.Second)); n != 1 {
+		t.Fatalf("fixture: beat 1 must send one move_stop, got %d", n)
+	}
+	if !hasLine(get(), "[trader_id=ng-not-applied]", "auto-breakeven", "SENT") {
+		t.Fatalf("N-G: the SENT line must carry the trader tag; got %v", get())
+	}
+	// NT8 refused the Change: the fresh book (received > send+2s) still holds 30551.25.
+	w.bookWithStop(sid, 30551.25, time.Now().Add(3*time.Second))
+	w.at.maybeMoveStopToBreakeven("MNQ", "SHORT", 30456.50, 30400) // beat 2: verdict + re-send
+
+	if c := PlannerBECount("ng-not-applied", "not_applied"); c != 1 {
+		t.Fatalf("N-G: not_applied counter = %d, want 1", c)
+	}
+	if !hasLine(get(), "[trader_id=ng-not-applied]", "auto-breakeven NOT APPLIED at NT8", "want 30456.50 broker 30551.25") {
+		t.Fatalf("N-G: the NOT APPLIED line is missing; got %v", get())
+	}
+	if n := len(w.framesOf(ntwire.FrameMoveStop, 2, 2*time.Second)); n != 2 {
+		t.Fatalf("N-G: NOT APPLIED must clear breakevenDone so the beat re-sends — move_stop frames = %d, want 2", n)
+	}
+}
+
+// TestPlannerAutoBEConfirmedNoResend — the book shows the BE: CONFIRMED is
+// counted and nothing is re-sent.
+func TestPlannerAutoBEConfirmedNoResend(t *testing.T) {
+	t.Setenv("EXIT_MECHS_SUSPENDED", "0")
+	noFreshPrice(t)
+	w := newExecWire(t, "ng-confirmed")
+	on := bePtr(true)
+	w.at.config.StrategyConfig.RiskControl = store.RiskControlConfig{BreakevenEnabled: on, BreakevenTriggerPoints: 40}
+	sid := w.open654(t)
+	w.at.maybeMoveStopToBreakeven("MNQ", "SHORT", 30456.50, 30400)
+	w.bookWithStop(sid, 30456.50, time.Now().Add(3*time.Second)) // snapshot 112688's shape
+	w.at.maybeMoveStopToBreakeven("MNQ", "SHORT", 30456.50, 30400)
+	if c := PlannerBECount("ng-confirmed", "confirmed"); c != 1 {
+		t.Fatalf("N-G: confirmed counter = %d, want 1", c)
+	}
+	if c := PlannerBECount("ng-confirmed", "not_applied"); c != 0 {
+		t.Fatalf("N-G: not_applied = %d on a confirmed move", c)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if n := len(w.framesOf(ntwire.FrameMoveStop, 2, 0)); n != 1 {
+		t.Fatalf("N-G: a CONFIRMED move must not be re-sent — move_stop frames = %d, want 1", n)
+	}
+}

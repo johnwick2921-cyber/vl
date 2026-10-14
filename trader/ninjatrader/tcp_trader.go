@@ -1207,6 +1207,16 @@ func (t *TCPTrader) resolveEntrySignalID(symbol, side string) string {
 	return sid
 }
 
+// EntrySignalIDFor is the signal id a side-keyed move_stop (MoveStopToBreakeven)
+// addresses for this trader's symbol — the same resolution, exported so the
+// planner auto-BE verdict (N-G) reads the broker book by the right name.
+func (t *TCPTrader) EntrySignalIDFor(side string) string {
+	if t == nil {
+		return ""
+	}
+	return t.resolveEntrySignalID(t.symbol, side)
+}
+
 // MoveStopToBreakeven asks the AddOn to move the resting stop for THIS trader's
 // current open position (the last entry's signal_id) to newStop, tick-rounded —
 // WITHOUT closing the position. Errors (no-op) if there is no tracked open entry.

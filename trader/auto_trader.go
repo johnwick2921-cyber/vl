@@ -178,6 +178,10 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 	if at.exchange != "ninjatrader" || at.config.StrategyConfig == nil {
 		return
 	}
+	// N-G (release #22 rescan): judge a SENT move on the first fresh book —
+	// before the trigger check, so a position that fell back under the
+	// trigger still gets its verdict.
+	at.verifyPlannerBEMove(symbol+"_"+side, time.Now())
 	fire, pts := breakevenTrigger(at.config.StrategyConfig.RiskControl, side, entryPrice, markPrice)
 	if !fire {
 		return
@@ -212,7 +216,7 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 		return
 	}
 	if err := moveStopWire(ntTCP, side, entryPrice); err != nil {
-		logger.Warnf("⚠️ auto-breakeven: move-stop send failed for %s %s: %v", symbol, side, err)
+		at.logWarnf("⚠️ auto-breakeven: move-stop send failed for %s %s: %v", symbol, side, err)
 		at.breakevenMu.Lock()
 		at.breakevenDone[key] = false // let it retry next cycle
 		at.breakevenMu.Unlock()
@@ -222,8 +226,11 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 	// WARN reaches the log_events DB sink + dashboard even when journald's
 	// frame-flood suppression is dropping INFO lines (the "breakeven not
 	// moving" false alarm was exactly this line being invisible).
-	logger.Warnf("🎯 auto-breakeven: %s %s +%.1f pts in profit → stop moved to breakeven (entry %.2f)",
+	// N-G: at.logWarnf carries the trader tag (the 10:08:27 line had none),
+	// and SENT is not CONFIRMED — the next fresh book judges it.
+	at.logWarnf("🎯 auto-breakeven: %s %s +%.1f pts in profit → stop moved to breakeven (entry %.2f) — SENT; NT8's verdict follows on the next fresh book",
 		symbol, side, pts, entryPrice)
+	at.recordPlannerBEPending(ntTCP, symbol, side, key, entryPrice, time.Now())
 }
 
 // autoBEMentorBlockedCount is the session counter for "auto-BE not applied
@@ -351,6 +358,7 @@ func (at *AutoTrader) pruneBreakevenDone(openKeys map[string]bool) {
 			delete(at.drawdownMentorBlocked, k)
 		}
 	}
+	at.prunePlannerBEPending(openKeys) // N-G: a flat position has no verdict to wait for
 }
 
 // AutoTraderConfig auto trading configuration (simplified version - AI makes all decisions)

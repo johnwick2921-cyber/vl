@@ -343,7 +343,7 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 		if freshPrice != nil && *freshPrice > 0 && stopThrough(side, *freshPrice, px) {
 			return protectionVerdict{Action: protectionFlatten, StopPx: px, Source: src,
 				NeedQty: posQty,
-				Why: fmt.Sprintf("NO protective order at the broker and the tightest known stop %.2f (%s) is already through the fresh last price %.2f — the stop would have filled, so the position is flattened", px, src, *freshPrice)}
+				Why:     fmt.Sprintf("NO protective order at the broker and the tightest known stop %.2f (%s) is already through the fresh last price %.2f — the stop would have filled, so the position is flattened", px, src, *freshPrice)}
 		}
 		checked := " — no fresh last price, so the protective side could NOT be checked"
 		if freshPrice != nil && *freshPrice > 0 {
