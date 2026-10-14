@@ -1317,6 +1317,11 @@ func TestFullDayReplay(t *testing.T) {
 				continue
 			}
 			lvlRows++
+			end := "still resting at the end"
+			if life.endBar >= 0 {
+				end = fmt.Sprintf("%s at %s CT: %q", life.endState, fdrCT(life.endMs), life.endReason)
+			}
+			t.Logf("(a) row %d %s %s %s @%.2f authored %s CT, expiry %s CT — %s", r.ID, r.TraderID, armID, r.Side, r.EntryPx, fdrCT(life.bornMs), fdrCT(r.ExpiryMs), end)
 			if fdrHHMM(life.bornMs) < 15*60 || life.endBar < 0 {
 				continue
 			}
@@ -1545,8 +1550,8 @@ func TestFullDayReplay(t *testing.T) {
 				}
 				intents[k]++
 			}
-			authored, placed, filled, expired, working := 0, 0, 0, 0, 0
-			cancelledBy := map[string]int{}
+			authored, placed, filled, working := 0, 0, 0, 0
+			endedBy := map[string]int{} // "<terminal state> — <reason>"
 			for _, life := range lives {
 				r := life.row
 				if r.TraderID != ft.id {
@@ -1556,12 +1561,11 @@ func TestFullDayReplay(t *testing.T) {
 				if r.SignalID != "" {
 					placed++
 				}
-				switch strings.ToLower(r.State) {
-				case store.StateFilled:
+				state := strings.ToLower(strings.TrimSpace(r.State))
+				switch {
+				case state == store.StateFilled:
 					filled++
-				case "expired":
-					expired++
-				case "cancelled", "canceled":
+				case store.IsTerminalArmState(state): // the ONE terminal predicate (arm_state guard)
 					reason := strings.TrimPrefix(r.StateReason, "mentor: ")
 					if i := strings.Index(reason, " ["); i > 0 {
 						reason = reason[:i]
@@ -1569,7 +1573,7 @@ func TestFullDayReplay(t *testing.T) {
 					if i := strings.Index(reason, " — "); i > 0 {
 						reason = reason[:i]
 					}
-					cancelledBy[reason]++
+					endedBy[state+" — "+reason]++
 				default:
 					working++
 				}
@@ -1580,10 +1584,10 @@ func TestFullDayReplay(t *testing.T) {
 					sent++
 				}
 			}
-			t.Logf("(g) %s: authored %d · placed %d (entry frames %d) · filled %d · expired %d · non-terminal at end %d", ft.id, authored, placed, sent, filled, expired, working)
+			t.Logf("(g) %s: authored %d · placed %d (entry frames %d) · filled %d · non-terminal at end %d", ft.id, authored, placed, sent, filled, working)
 			t.Logf("(g) %s intents: %s", ft.id, fdrSortedKV(intents))
-			for _, k := range fdrSortedKeys(cancelledBy) {
-				t.Logf("(g) %s cancelled ×%d — %s", ft.id, cancelledBy[k], k)
+			for _, k := range fdrSortedKeys(endedBy) {
+				t.Logf("(g) %s ended ×%d — %s", ft.id, endedBy[k], k)
 			}
 			t.Logf("(g) %s trader counters: %s", ft.id, fdrSortedKV(traderCounters[ft.id]))
 			t.Logf("(g) %s kernel refusals: %s", ft.id, fdrSortedKV(kernelRefusals[ft.id]))
