@@ -380,6 +380,10 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	if at.mentorStaleDataBlocked(mentorClockNow()) {
 		// A setup computed on stale prices is not a setup. The deferred guard in
 		// mentorDispatchEntry drops the evaluator's arm on this refusal.
+		// STALLED-SETUP ALARM (release #22): record the refusal reason so a
+		// stalled kind's alert names "stale_data" instead of "silent drop"
+		// (the 10-11 Sunday NT8 lag refused level orders quietly here).
+		at.mentorRecordStallRefusal(in, "stale_data")
 		return
 	}
 	// N10 (stale intent): an entry whose reference candle is not the newest

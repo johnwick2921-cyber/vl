@@ -101,17 +101,27 @@ func TestMentorSetupKindMapping(t *testing.T) {
 
 func TestMentorStallAlarmFiresOnceForLevel(t *testing.T) {
 	telemetry.ResetSetupStallsForTest()
+	t.Setenv("MENTOR_PLACE", "1") // the sized Place must reach mentorPlaceIntent — the real death site
 	at, st := stallAlarmTrader(t, "t1")
-	now := mentorStallOpenTime()
+	now := mentorStaleBlockClock(9, 0)
+	mentorNowSource = func() time.Time { return now }
+	t.Cleanup(func() { mentorNowSource = nil })
+	wireMentorPlacementSeams(t, at)
+	mentorStaleBlockFeed(t, now, 3*time.Minute) // stale bars — the 10-11 Sunday NT8 ~10-min lag
 
-	// The 10-13 shape: three ticks each emit a level order that sizes but never
-	// reaches the ledger, followed by a same-tick CancelArm that is refused (the
-	// arm was never registered). Placed stays 0 the whole way.
+	var placed []mentor.Intent
+	mentorPlaceRecorderForTest = func(i mentor.Intent, n int) { placed = append(placed, i) }
+	t.Cleanup(func() { mentorPlaceRecorderForTest = nil })
+
+	// The real 10-13 mechanism: the evaluator emits a SIZED level Place; the
+	// placement reaches mentorPlaceIntent and the stale-data block refuses it
+	// (quietly, before this wave) — emitted climbs, placed stays 0.
 	for i := 1; i <= 3; i++ {
-		extra := driveStalledLevelTick(at, i)
-		if extra.StopPts != 0 || extra.TargetPts != 0 {
-			t.Fatalf("sanity: driveStalledLevelTick must not pre-set StopPts/TargetPts (they come from the geometry), got %+v", extra)
-		}
+		in := levelIntent(i)
+		at.mentorDispatchIntent(in, mentorExtraFor(in, false), 0, 0)
+	}
+	if len(placed) != 0 {
+		t.Fatalf("a stale feed must not author a level arm, placed=%d", len(placed))
 	}
 	at.mentorStallAlarmCheck(now)
 
@@ -125,13 +135,14 @@ func TestMentorStallAlarmFiresOnceForLevel(t *testing.T) {
 	if rows[0].Level != "P1" || rows[0].Kind != "mentor-setup-stalled" {
 		t.Fatalf("wrong alert level/kind: %+v", rows[0])
 	}
-	// The body names the kind, the counts, the window and the last refusal.
+	// The body names the kind, the counts, the window and the last refusal —
+	// and the real mechanism's last refusal is the stale-data block.
 	if !strings.Contains(rows[0].Body, "lvl") ||
 		!strings.Contains(rows[0].Body, "3 emitted") ||
 		!strings.Contains(rows[0].Body, "0 reached the ledger") ||
 		!strings.Contains(rows[0].Body, "17:00 CT") ||
-		!strings.Contains(rows[0].Body, "last refusal:") {
-		t.Fatalf("alert body must name kind/counts/window/last-refusal, got %q", rows[0].Body)
+		!strings.Contains(rows[0].Body, "last refusal: stale_data") {
+		t.Fatalf("alert body must name kind/counts/window and 'last refusal: stale_data', got %q", rows[0].Body)
 	}
 
 	// Once per kind per day: a second check must not add a second row.
