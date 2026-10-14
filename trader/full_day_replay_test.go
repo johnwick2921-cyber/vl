@@ -1,6 +1,8 @@
 package trader
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"os"
 	"sort"
@@ -36,20 +38,26 @@ const (
 	replayDayStartMs  = 1791842400000 // 17:00 CT 2026-10-12
 	replayDayEndMs    = 1791925200000 // 16:00 CT 2026-10-13
 	replayRestartMs   = 1791858600000 // 21:30 CT 2026-10-12
-	replayFixturePath = "testdata/mnq_1m_2026-10-12_full_day.json"
+	replayFixturePath = "testdata/mnq_1m_2026-10-12_full_day.json.gz"
 )
 
-// loadFullDayFixture loads the recorded MNQ 1m fixture (warm-up + replay day).
+// loadFullDayFixture loads the recorded MNQ 1m fixture (warm-up + replay day)
+// from the gzip-compressed testdata blob (repo size discipline: .json.gz).
 func loadFullDayFixture(t *testing.T) []market.Kline {
 	t.Helper()
 	raw, err := os.ReadFile(replayFixturePath)
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
+	gz, err := gzip.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("gzip reader: %v", err)
+	}
+	defer gz.Close()
 	var doc struct {
 		Bars map[string][][5]float64 `json:"bars"`
 	}
-	if err := json.Unmarshal(raw, &doc); err != nil {
+	if err := json.NewDecoder(gz).Decode(&doc); err != nil {
 		t.Fatalf("parse fixture: %v", err)
 	}
 	rows := doc.Bars["1m"]
@@ -110,13 +118,18 @@ func replayStore(t *testing.T, bars []market.Kline) *store.Store {
 	return st
 }
 
-// replaySeedNow is the fixed instant the seed reads as "now": the last bar's
-// close (16:00 CT 2026-10-13), inside the fixture, so the seed's "today session"
-// = the 10-12 CME session (the full replay day) and the 4h EMA warm-up counts
-// the closed buckets the fixture carries. Pinned, never the wall clock.
-const replaySeedNowMs = 1791925140000
+// replaySeedNowMs is the fixed instant the seed reads as "now": the session
+// OPEN (17:00 CT 2026-10-12), so the seed warms the 4h/1h triggers and boxes
+// from history ONLY — never the replay day itself (a later seed would pre-see
+// the day and change the incremental gate state). The day is then revealed
+// bar-by-bar, exactly as the live process sees it.
+const replaySeedNowMs = 1791842400000
 
-// replayTrader builds one mentor-mode AutoTrader over the shared store.
+// replayTrader builds one mentor-mode AutoTrader over the shared store, with the
+// LIVE hoang strategy's mentor-relevant RiskControl (scrubbed, no keys/accounts):
+// mentor_mode on + mentor_window_minutes=-1 (window DISABLED — the live bot
+// enters at any hour, including the overnight and post-15:00 evening; the
+// default 08:30–09:30 window would refuse every overnight entry).
 func replayTrader(t *testing.T, id string, st *store.Store) *AutoTrader {
 	t.Helper()
 	at := &AutoTrader{
@@ -124,7 +137,14 @@ func replayTrader(t *testing.T, id string, st *store.Store) *AutoTrader {
 		store: st,
 		config: AutoTraderConfig{
 			StrategyConfig: &store.StrategyConfig{
-				RiskControl: store.RiskControlConfig{MentorMode: true},
+				RiskControl: store.RiskControlConfig{
+					MentorMode:            true,
+					MentorWindowMinutes:   -1,
+					BreakevenTriggerPoints: 40,
+					MaxContractsPerOrder:  2,
+					MaxPositions:          3,
+					MaxDailyTrades:        3,
+				},
 			},
 		},
 	}
