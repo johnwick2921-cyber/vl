@@ -59,9 +59,9 @@ export const faq: GuideSection = {
         },
         {
           q: 'I restarted the bot mid-setup — is my resting order dead until the next plan read?',
-          a: 'No, not since 0B (2026-09-02). A restart cancels pre-boot orders at the broker (the class-33 boot sweep) because the process that owned them is gone. Those swept rows now re-arm under the SAME plan version and the journal says so: "⚖ re-armed after boot sweep". A cancel YOU made still sticks until the next plan version — manual-cancel-wins is unchanged; only the machine\'s own housekeeping is re-armable.',
+          a: 'No, not since 0B (2026-09-02). A restart cancels pre-boot orders at the broker (the class-33 boot sweep) because the process that owned them is gone. Those swept rows now re-arm under the SAME plan version and the journal says so: "⚖ re-armed after boot sweep". A cancel YOU made still sticks until the next plan version — manual-cancel-wins is unchanged; only the machine\'s own housekeeping is re-armable. Since the release #22 follow-up this holds for EVERY entry policy: an order that reached NinjaTrader and ended under a plan version (filled and stopped, cancelled by you in NT8, cancelled by the bot) is spent for that version — "⏹ re-arm REFUSED … slot spent", counted arm_slot_spent. Before it, only market_in_zone rows were held to this; a planned_order or legacy limit you cancelled in NT8 was placed again under the same version (rows 124, 141, 183), and a filled one re-placed at the same level (rows 129, 196). A NEW plan version re-arms.',
           mechanism:
-            'store/armed_orders.go UpsertArm: terminal + same version = stays terminal, EXCEPT rows whose state_reason starts with "boot_sweep".',
+            'store/armed_orders.go UpsertArm: terminal + same version = stays terminal (a row that reached the broker returns ErrArmSlotSpent, every policy; mentor rows are governed by their own expiry), EXCEPT rows whose state_reason starts with "boot_sweep"; trader/armed_executor.go armSlotSpentRefused says it once and counts it.',
           link: '#guards',
         },
         {
