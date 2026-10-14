@@ -158,3 +158,59 @@ it('U2: the max_contracts placeholder is the Stage-A effective default', () => {
   const input = screen.getByTestId('max-contracts-input') as HTMLInputElement
   expect(input.placeholder).toBe(String(RISK_DEFAULT_MAX_CONTRACTS_PER_ORDER))
 })
+
+// r22 RISK-GATES — min_confidence has no meaning for mentor rules (no AI
+// confidence). The editor says so when mentor mode is ON, and only then.
+it('r22: min confidence says it does not apply in mentor mode (and only then)', () => {
+  const { unmount } = render(
+    <RiskControlEditor
+      config={{ mentor_mode: true, min_confidence: 60 } as RiskControlConfig}
+      onChange={vi.fn()}
+      language="en"
+      isFutures
+    />
+  )
+  expect(screen.getByTestId('min-confidence-mentor-note')).toHaveTextContent(
+    'Does not apply in mentor mode'
+  )
+  unmount()
+  render(
+    <RiskControlEditor
+      config={{ mentor_mode: false, min_confidence: 60 } as RiskControlConfig}
+      onChange={vi.fn()}
+      language="en"
+      isFutures
+    />
+  )
+  expect(
+    screen.queryByTestId('min-confidence-mentor-note')
+  ).not.toBeInTheDocument()
+})
+
+// r22 RISK-GATES — the daily-loss row says what the switch does when ON.
+it('r22: the daily-loss row states refuse + cancel + flatten + latch to 17:00 CT', () => {
+  render(
+    <RiskControlEditor
+      config={
+        {
+          guardrails_enabled: false,
+          daily_loss_enabled: false,
+          daily_loss_limit_usd: 450,
+        } as RiskControlConfig
+      }
+      onChange={vi.fn()}
+      language="en"
+      isFutures
+    />
+  )
+  const note = screen.getByTestId('daily-loss-what-it-does')
+  for (const want of [
+    'refuses new entries',
+    'cancelled',
+    'flattened',
+    '17:00 CT',
+    'manual trades excluded',
+  ]) {
+    expect(note).toHaveTextContent(want)
+  }
+})
