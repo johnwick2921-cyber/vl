@@ -170,7 +170,9 @@ func applyDecisionCallTimeout(mcpClient mcp.AIClient, exchange string) {
 }
 
 func (at *AutoTrader) runCycle() error {
+	at.statusMu.Lock()
 	at.callCount++
+	at.statusMu.Unlock()
 
 	logger.Info("\n" + strings.Repeat("=", 70) + "\n")
 	logger.Infof("⏰ %s - AI decision cycle #%d", kernel.FormatCT(time.Now()), at.callCount)
@@ -374,9 +376,14 @@ func (at *AutoTrader) runCycle() error {
 	// ever writes at.dailyPnL (grep: reset + one display read only) — it is a
 	// permanently-zero display field. Every real daily guard reads the store.
 	// Left as-is: wiring it up is a behavior change outside the timegate train.
-	if time.Since(at.lastResetTime) > 24*time.Hour {
-		at.dailyPnL = 0
+	at.statusMu.Lock()
+	resetDue := time.Since(at.lastResetTime) > 24*time.Hour
+	if resetDue {
 		at.lastResetTime = time.Now()
+	}
+	at.statusMu.Unlock()
+	if resetDue {
+		at.dailyPnL = 0
 		logger.Info("📅 Daily P&L reset")
 	}
 

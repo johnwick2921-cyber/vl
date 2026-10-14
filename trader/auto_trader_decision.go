@@ -70,6 +70,14 @@ func (at *AutoTrader) saveDecision(record *store.DecisionRecord) error {
 }
 
 // GetStatus gets system status (for API)
+// aiCallCount reads the AI cycle counter under statusMu, for readers that
+// run off the decision loop's goroutine (the watcher, GetStatus).
+func (at *AutoTrader) aiCallCount() int {
+	at.statusMu.Lock()
+	defer at.statusMu.Unlock()
+	return at.callCount
+}
+
 func (at *AutoTrader) GetStatus() map[string]interface{} {
 	aiProvider := "DeepSeek"
 	if at.config.UseQwen {
@@ -79,6 +87,9 @@ func (at *AutoTrader) GetStatus() map[string]interface{} {
 	at.isRunningMutex.RLock()
 	isRunning := at.isRunning
 	at.isRunningMutex.RUnlock()
+	at.statusMu.Lock()
+	statusCallCount, statusLastReset := at.callCount, at.lastResetTime
+	at.statusMu.Unlock()
 
 	result := map[string]interface{}{
 		"trader_id":       at.id,
@@ -88,14 +99,14 @@ func (at *AutoTrader) GetStatus() map[string]interface{} {
 		"is_running":      isRunning,
 		"start_time":      at.startTime.Format(time.RFC3339),
 		"runtime_minutes": int(time.Since(at.startTime).Minutes()),
-		"call_count":      at.callCount,
+		"call_count":      statusCallCount,
 		"initial_balance": at.initialBalance,
 		"scan_interval":   at.config.ScanInterval.String(),
 		// P2 (ledger-close 2026-08-19): stop_until now reports the REAL owner
 		// pause (auto_trader_pause.go). The legacy at.stopUntil field is dormant
 		// (never assigned) so the unpaused rendering is byte-identical.
 		"stop_until":      pauseStatusString(at),
-		"last_reset_time": at.lastResetTime.Format(time.RFC3339),
+		"last_reset_time": statusLastReset.Format(time.RFC3339),
 		"ai_provider":     aiProvider,
 		// v1 audit §5.6 (E5): the running binary's revision, so a bug report
 		// can be checked against what is actually deployed without a shell.

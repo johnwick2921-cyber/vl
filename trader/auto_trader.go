@@ -735,6 +735,10 @@ type AutoTrader struct {
 	lastAIBalanceDay   string // P5 daily balance poll throttle (AI_BALANCE_WARN)
 	isRunning          bool
 	isRunningMutex     sync.RWMutex // Mutex to protect isRunning flag
+	// statusMu guards callCount and lastResetTime, written by runCycle and
+	// read by GetStatus on another goroutine (release #24: the run-owner
+	// tests made that read concurrent, and -race named it).
+	statusMu sync.Mutex
 	// MENTOR-NY item 3 — retired: removed from the roster (RemoveTrader); its
 	// Run never starts. Guarded by runOwners' mutex (run_owner.go).
 	retired bool
