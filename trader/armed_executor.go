@@ -93,6 +93,29 @@ func stopEntrySeamOn() bool     { return kernel.StopEntrySeamOn() }
 func stopEntryOffsetTicks() int { return kernel.StopEntryOffsetTicks() }
 func retestWaitBars() int       { return kernel.RetestWaitBars() }
 
+// stopEntryWireOffset is the ONE definition of how far past its authored entry
+// a stop entry's trigger goes on the wire (P2-1, rel22 mentor audit).
+//
+//   - A planner (non-mentor) stop entry keeps the E7 offset by spec: "the stop
+//     trigger sits STOP_ENTRY_OFFSET_TICKS beyond the break candle" (kernel
+//     StopEntryOffsetTicks, default 2 ticks; MATH-EXECUTOR row 167 authored
+//     29835.75, filled 29836.25). The write-time feasibility check
+//     (write_time_feasibility.go) judges planner scenarios with the same E7
+//     offset, so nothing else changes for the planner.
+//   - A MENTOR row gets NONE: the kernel authors the course price itself —
+//     the ISB at the extreme ± 1.5 [D2.1 p1 @ 05:36], the PHL at the candle ±
+//     its 1.0 buffer [D2.2 p1 @ 06:50 drawn], the SWING4H tight on the candle
+//     (R8: no buffer), the box at the rejecting candle's extreme. Adding the
+//     planner's 0.5 on top put every regular ISB 2.0 past the extreme (row 357:
+//     I1 high 30888.75, ledger 30890.25, wire 30890.75), and the reverse ISB had
+//     to pre-subtract it — two definitions of one number.
+func stopEntryWireOffset(r store.ArmedOrderDB, tick float64) float64 {
+	if isMentorArmOrigin(r) {
+		return 0
+	}
+	return float64(stopEntryOffsetTicks()) * tick
+}
+
 // stopEntryFallbackDue (E7, pure) — the breakout-retest fallback window: a
 // stop-entry leg is due when NO bar has touched its entry level within the
 // last RETEST_WAIT_BARS 1m bars AND at least RETEST_WAIT_BARS bars elapsed
@@ -1580,6 +1603,16 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 			// STOP_ENTRY_OFFSET_TICKS beyond the level.
 			if r.Kind == "stop_entry" {
 				if !stopEntrySeamOn() {
+					// rel22 item 4: a MENTOR row refused here was silent — every
+					// mentor arm would sit armed forever with no line. Logged once
+					// per arm and counted (planner rows keep today's quiet hold).
+					if isMentorArmOrigin(r) {
+						seamKey := r.PlanID + ":" + strconv.Itoa(r.Version) + ":" + r.Scenario + ":leg" + strconv.Itoa(r.LegIndex+1) + ":place"
+						if armRefusalChanged(&at.armRefusalLast, seamKey, "stop_entry:seam_off") {
+							shown := at.countStopEntryRefusal(r, "stop_entry:seam_off", now)
+							at.logWarnf("📛 armed %s mentor stop-entry REFUSED [guard=stop_entry_seam] STOP_ENTRY_SEAM is off — the arm stays armed and never reaches the wire%s", r.Scenario, shown)
+						}
+					}
 					continue // seam off → the leg stays armed (never on the wire)
 				}
 				// D3 (2026-09-04): the window belongs to the E7 FALLBACK only.
@@ -1608,7 +1641,7 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 					at.refuseContract(r, contract, placedThisPass, "stop", now)
 					continue
 				}
-				d := decideStopEntry(side, r.EntryPx, float64(stopEntryOffsetTicks())*tick, tick, price)
+				d := decideStopEntry(side, r.EntryPx, stopEntryWireOffset(r, tick), tick, price)
 				if at.placeOneStopEntry(nt, ledger, r, d, price, now, at.armSlotGuard(rows, r, now)) != stopPlaceCommitted {
 					// A hold refusal, a guard cancel, an un-adjudicated verdict,
 					// a refused slot, an AddOn too old to build the order, or a
@@ -1864,6 +1897,10 @@ type stopEntryDecision struct {
 	Verdict stopGuardVerdict // what the stop-side guard answered
 	Action  stopEntryAction  // what the caller must do about it
 	Why     string           // the reason, in the guard's own relation
+	// OffsetTicks is the wire offset ACTUALLY applied to the authored entry,
+	// in ticks (stopEntryWireOffset: the E7 offset for a planner row, 0 for a
+	// mentor row). The placement line prints this READ value, never the knob.
+	OffsetTicks int
 }
 
 // decideStopEntry (pure) turns a ledger row's raw side and authored entry into
@@ -1908,6 +1945,9 @@ func decideStopEntry(rawSide string, entryPx, offset, tick, price float64) stopE
 		d.Trigger = entryPx + offset
 	}
 	d.Trigger = ntTrader.RoundToTick(d.Trigger, tick)
+	if tick > 0 {
+		d.OffsetTicks = int(math.Round(offset / tick))
+	}
 	d.Verdict, d.Why = stopEntryGuardVerdict(d.Side, d.Trigger, price)
 	switch d.Verdict {
 	case stopGuardThrough:
@@ -2157,7 +2197,7 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 	}
 	at.recordArmWirePrices(ledger, r, sid, d.Side, d.Trigger, r.StopPx, targetPx, splitFrom)
 	at.logInfof("📌 armed %s placement requested stop-entry [guard=stop-side verdict=%s action=%s] %s %s trigger=%.2f price=%.2f signal=%s (%s · no retest in %d bars, offset %dt)",
-		r.Scenario, d.Verdict, d.Action, strings.ToUpper(d.Side), orderType, d.Trigger, price, sid, d.Why, retestWaitBars(), stopEntryOffsetTicks())
+		r.Scenario, d.Verdict, d.Action, strings.ToUpper(d.Side), orderType, d.Trigger, price, sid, d.Why, retestWaitBars(), d.OffsetTicks)
 	return stopPlaceCommitted
 }
 

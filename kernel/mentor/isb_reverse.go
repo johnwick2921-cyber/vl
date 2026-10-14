@@ -1,7 +1,6 @@
 package mentor
 
 import (
-	"vl/kernel"
 	"vl/market"
 )
 
@@ -17,10 +16,12 @@ import (
 //     [D1.4 p1 @ 22:26–23:26]; the mentor's number is 1.5 pts — "1 điểm rưỡi
 //     đi… đừng 1 điểm" [D2.1 p1 @ 06:12]. Without it the arm parks at the ISB's
 //     exact extreme and fills on a 1-pt wick — trade #627 (R7, D5.4);
-//   - the EXECUTOR adds a stop-entry wire offset on placement
-//     (kernel.StopEntryOffsetTicks() × the MNQ tick, armed_executor.go
-//     decideStopEntry), so the KERNEL-side entry here is the buffer MINUS that
-//     offset — see reverseISBEntryPts. The wire result is exactly extreme ± 1.5;
+//   - the entry authored here IS the wire trigger: the executor adds NO
+//     offset to a mentor row (trader/armed_executor.go stopEntryWireOffset —
+//     the planner's E7 stop-entry offset is planner-only since rel22 P2-1), so
+//     the entry is the extreme ± ISBBufferPts exactly, like the regular ISB.
+//     (Until rel22 this file pre-subtracted the executor's 0.5 — a second
+//     definition of the same number; trade #627/#628 ruling kept, one source.)
 //   - cancel if the next candle does not fill (the evaluator runs the same
 //     ISB stacking arithmetic on the emitted arm);
 //   - stop = the other side of the ISB candle plus the buffer (already ±
@@ -29,18 +30,6 @@ import (
 //
 // The 1m is preferred but any TF pair that satisfies IsISB qualifies — the
 // caller passes the timeframe it trades.
-
-// reverseISBEntryPts is the KERNEL-side entry offset for the reverse ISB: the
-// knob's buffer MINUS the stop-entry wire offset the executor re-adds at
-// placement (kernel.StopEntryOffsetTicks() ticks × the MNQ tick). The executor's
-// decideStopEntry pushes a long stop entry N ticks BEYOND the authored price, so
-// to land ON THE WIRE at exactly the extreme ± ISBBufferPts the kernel must
-// subtract that same offset here. Derived from the same sources the executor
-// reads — never a hard-coded 0.5 (CTO ruling, trade #627/#628).
-func reverseISBEntryPts(cfg Config) float64 {
-	wire := float64(kernel.StopEntryOffsetTicks()) * market.FuturesTickSize("MNQ")
-	return cfg.ISBBufferPts - wire
-}
 
 // ReverseISBAtEMA9 evaluates one candidate ISB candle pair against the 1m EMA 9
 // value and the bigger trend. ok=false carries a cited reason (knob off, not an
@@ -66,7 +55,7 @@ func ReverseISBAtEMA9(prev, cur market.Kline, ema9 float64, trend Side, cfg Conf
 	if ema9 < cur.Low || ema9 > cur.High {
 		return Intent{}, false, "reverse ISB at EMA 9: price did not reach the EMA 9 [D5.4]"
 	}
-	entry := reverseISBEntryPts(cfg)
+	entry := cfg.ISBBufferPts // the course's 1.5 [D2.1 p1 @ 06:12]; the wire adds nothing (rel22 P2-1)
 	if trend == SideLong {
 		// ISB points short in an uptrend → LONG, buy stop at high + buffer (wire).
 		return Intent{

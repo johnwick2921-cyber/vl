@@ -219,8 +219,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Entries become stop-LIMIT',
-          body: 'Every mentor entry goes out as a stop-LIMIT with the limit at the stop price ("đừng đặt buy stop market nữa… đặt buy stop limit đi") — always, no setting turns it off. Each order carries its own expiry: an ISB expires at the close of the next 1m candle; the swing at the close of the current 4h candle; a LEVEL (PHL/PLH/EMA) order is stamped to rest until the next 15:00 CT — the RTH window end, an inference, no lesson states it — or until a later candle closes through the level, whichever comes first. The armed pass cancels an unfilled order when it lapses. ON TOP of every expiry, the EOD flat cancels every INTRADAY mentor order (everything except the SWING4H) whenever no session window is open: from the NY close at 14:45 CT until the 17:00 CT reopen. The ASIA/LONDON/NY windows count for this whether or not their trading switch is on, and a registered half-day pulls the 14:45 earlier. So in practice a level order never lives past 14:45 CT: one placed in the morning is cancelled at 14:45 the same day, 15 minutes before its own 15:00 stamp; one authored between 14:45 and 17:00 is cancelled on the same pass, within milliseconds (rows 256, 282, 283 and 343 died 1–3 ms after they were written); one placed in the evening or overnight rests until 14:45 CT the next trading day. No NEW mentor entry is placed from 15:45 CT (the lead into the 16:00 daily halt) until the 17:00 reopen. A mentor entry without an expiry is refused, never sent as a stop-market. Other (non-mentor) orders keep their own order types.',
-          cite: 'D1.4 p1 @ 24:41–24:55 (stop-LIMIT, never stop-market) · 15:00 RTH-end = inference, no lesson · trader/mentor_tick.go mentorIntentExpiry · kernel/mentor/eval.go levelArmCancels · EOD cancel: trader/auto_trader_clock.go enforceEODFlatAt + trader/armed_executor.go cancelIntradayMentorArms, windows from kernel/session_registry.go DefaultSessionRegistry (NY flat 14:45, ASIA open 17:00) · 15:45 cutoff: trader/mentor_mode.go mentorPastDailyHaltCutoff · pinned by trader/guide_mentor_lifetime_test.go',
+          body: 'Every mentor entry goes out as a stop-LIMIT with the limit at the stop price ("đừng đặt buy stop market nữa… đặt buy stop limit đi") — always, no setting turns it off. Each order carries its own expiry: an ISB expires at the close of the next 1m candle, and while each following candle\u2019s BODY stays inside I1 the evaluator keeps it to the next close (stack candles 2 and 3; a body outside I1 or a 4th candle cancels it) — the keep is decided BEFORE the expiry sweep runs on that candle (until release #22 the sweep ran first and cancelled 16 kept ISB orders); the swing at the close of the current 4h candle; a LEVEL (PHL/PLH/EMA) order is stamped to rest until the next 15:00 CT — the RTH window end, an inference, no lesson states it — or until a later candle closes through the level, whichever comes first. The armed pass cancels an unfilled order when it lapses. ON TOP of every expiry, the EOD flat cancels every INTRADAY mentor order (everything except the SWING4H) whenever no session window is open: from the NY close at 14:45 CT until the 17:00 CT reopen. The ASIA/LONDON/NY windows count for this whether or not their trading switch is on, and a registered half-day pulls the 14:45 earlier. So in practice a level order never lives past 14:45 CT: one placed in the morning is cancelled at 14:45 the same day, 15 minutes before its own 15:00 stamp; one authored between 14:45 and 17:00 is cancelled on the same pass, within milliseconds (rows 256, 282, 283 and 343 died 1–3 ms after they were written); one placed in the evening or overnight rests until 14:45 CT the next trading day. No NEW mentor entry is placed from 15:45 CT (the lead into the 16:00 daily halt) until the 17:00 reopen. A mentor entry without an expiry is refused, never sent as a stop-market. Other (non-mentor) orders keep their own order types.',
+          cite: 'D1.4 p1 @ 24:41–24:55 (stop-LIMIT, never stop-market) · D4.2 p2 @ 08:21–09:01 (ISB keep while inside I1) · trader/armed_event_pass.go (mentor pass before the armed pass) · 15:00 RTH-end = inference, no lesson · trader/mentor_tick.go mentorIntentExpiry · kernel/mentor/eval.go levelArmCancels · EOD cancel: trader/auto_trader_clock.go enforceEODFlatAt + trader/armed_executor.go cancelIntradayMentorArms, windows from kernel/session_registry.go DefaultSessionRegistry (NY flat 14:45, ASIA open 17:00) · 15:45 cutoff: trader/mentor_mode.go mentorPastDailyHaltCutoff · pinned by trader/guide_mentor_lifetime_test.go',
         },
       ],
     },
@@ -270,7 +270,7 @@ export const mentor: GuideSection = {
       cards: [
         {
           title: 'Inside bar (ISB)',
-          body: "Candle 2's BODY inside candle 1's FULL range (wicks included). Direction = candle 1's colour. Entry at the ISB candle's own extreme + 1–1.5 pt buffer, stop at its opposite extreme, no fixed stop size — skip only when the stop is \"in the twenties\". The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest).",
+          body: "Candle 2's BODY inside candle 1's FULL range (wicks included). Direction = candle 1's colour. Entry at the ISB candle's own extreme + 1.5 pt (6 ticks) — exactly that on the wire, nothing is added at placement — stop 1.5 beyond its opposite extreme, no fixed stop size — skip only when the stop is \"in the twenties\". The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest).",
           tag: 'D1.4 p1',
         },
         {
@@ -564,7 +564,7 @@ export const mentor: GuideSection = {
         ],
         [
           'Wire 1:1 check',
-          'The stop entry goes out 2 ticks past the planned price. A target sitting at exactly 1R (the floor, e.g. the swing’s first target) moves with it, so the trade is still exactly 1:1 from the real entry; a LEVEL target cannot move — if the real entry would leave it under 1:1 the entry is refused (stop_entry:wire_rr_below_1) [D1.2 p1 @08:02–08:33]',
+          'A mentor stop entry goes out AT its planned price: the setup\u2019s own buffer (ISB 1.5, PHL/PLH 1.0, box and SWING4H none — at the candle\u2019s extreme) is the whole offset. Until release #22 every mentor stop entry went out 2 more ticks past it (the planner\u2019s stop-entry offset, which now applies to planner stop entries only). A target sitting at exactly 1R (the floor, e.g. the swing’s first target) moves with it, so the trade is still exactly 1:1 from the real entry; a LEVEL target cannot move — if the real entry would leave it under 1:1 the entry is refused (stop_entry:wire_rr_below_1) [D1.2 p1 @08:02–08:33]',
         ],
         [
           'SWING4H',
@@ -573,6 +573,10 @@ export const mentor: GuideSection = {
         [
           'ISB partial',
           'The ISB follows B, plus the course’s candle-3 rule (“phải BÁN BỚT. Bắt buộc” — you MUST sell part [D1.4 p1 @11:59–13:28]): when the fill candle closes in profit but short of 1:1, leg 1’s take-profit is MOVED to that close at NinjaTrader (a real modify, leg 1 only, rounded toward the entry) and confirmed from the next broker book (“modify_bracket CONFIRMED at NT8”); if 1:1 printed first, the resting 1:1 take-profit does it; a losing close sells nothing. A one-bracket position is never partially modified (it would close the whole trade). After a restart the fill candle is unknown, so the candle-3 step is skipped and leg 1 keeps its 1:1 take-profit. The runner then follows mentor_trail_mode (see B). Live since release #22 — from 10-05 to 10-14 this step was only logged (“WOULD set TP”), never sent',
+        ],
+        [
+          'Path missing at the fill',
+          'The path is chosen at entry and held in memory. If that is lost before the fill (a restart, or a second copy of the trader), the fill reads the path stored on the order at authoring; with none stored, SWING4H uses swing and everything else the course default B (normal: trail each closed candle) [D2.4 p1 @ 07:01]. There is no strategy setting for a default path. Never an empty path driven as B silently: the log line "🧑‍🏫 mentor exit mode for …" names the path and where it came from, once per order',
         ],
         [
           'Restart rebuild',
@@ -857,9 +861,10 @@ export const mentor: GuideSection = {
         {
           label: 'ISB buffer',
           where: 'Strategy → Mentor mode → ISB',
-          what: 'Buffer on BOTH the entry and the stop, outward.',
+          what: 'Buffer on BOTH the entry and the stop, outward. It is the WHOLE entry offset on the wire: 1.5 = the order goes out 6 ticks past the extreme (until release #22 the executor added 2 more ticks, so it went out at 2.0).',
           trader: '1.5 pts.',
-          consumer: 'kernel/mentor/mentor.go ISBBufferPts',
+          consumer:
+            'kernel/mentor/mentor.go ISBBufferPts · trader/armed_executor.go stopEntryWireOffset (0 for mentor orders)',
           range: 'pts',
           systemDefault: '1.5',
           recommended: '1.5 — D1.4 p1 @ 22:22–22:30.',
@@ -948,7 +953,7 @@ export const mentor: GuideSection = {
         {
           label: 'PHL entry buffer',
           where: 'Strategy → Mentor mode → PHL/PLH',
-          what: 'The PHL/PLH order sits this far BEYOND the candle extreme (outward) — the course draws the entry ~1 pt past the broken candle\u2019s high/low, never exactly at it. The stop stays at the candle\u2019s extreme.',
+          what: 'The PHL/PLH order sits this far BEYOND the candle extreme (outward) — the course draws the entry ~1 pt past the broken candle\u2019s high/low, never exactly at it. This is the whole offset on the wire (until release #22 the executor added 2 more ticks, so it went out 1.5 past). The stop stays at the candle\u2019s extreme.',
           trader: '1.0 pt.',
           consumer:
             'kernel/mentor/mentor.go PHLEntryBufferPts · kernel/mentor/phl.go',
@@ -1186,7 +1191,7 @@ export const mentor: GuideSection = {
         {
           label: 'Swing entry buffer',
           where: 'Strategy → Mentor mode → SWING4H',
-          what: "Buffer beyond the reference candle's extreme. R8: NO buffer — the order sits tight on the candle.",
+          what: "Buffer beyond the reference candle's extreme. R8: NO buffer — the order sits tight on the candle, on the wire too (until release #22 the executor added 2 ticks to every mentor stop entry).",
           trader: '0.',
           consumer: 'kernel/mentor/swing4h.go SwingCfg.EntryBufferPts',
           range: 'pts',
