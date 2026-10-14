@@ -347,7 +347,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	// filled at NT8, then trails 1 tick beyond each closed candle. A single
 	// bracket has no leg-1 partial to confirm and keeps the rule below.
 	if leg1OnWire && p.Legs[1].Qty > 0 && p.Legs[1].SignalID != "" && at.mentorTrailMode() == mentorTrailModeCandle {
-		at.mentorExitDriveCandle(nt, p, h, l, scaledNow, scaledBefore, trail)
+		at.mentorExitDriveCandle(nt, p, c, h, l, scaledNow, scaledBefore, trail)
 		return
 	}
 

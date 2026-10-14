@@ -296,7 +296,7 @@ func (at *AutoTrader) mentorJudgeAgainstBroker(nt *ntTrader.TCPTrader, side stri
 //
 // Every move goes through mentorMoveLegStop (belief + broker never-widen, the
 // real move_stop frame, the F1 verdict on the next fresh book).
-func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLivePos, h, l float64, scaledNow, scaledBefore, trail bool) {
+func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64, scaledNow, scaledBefore, trail bool) {
 	pos := &p.Pos
 	runner := &p.Legs[1]
 	if !runner.Final || runner.Qty <= 0 || runner.SignalID == "" {
@@ -309,6 +309,20 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 	tick := at.mentorInstrumentTick()
 	if !pos.ArmedBE {
 		be := mentorBEStopPrice(side, pos.Entry, tick)
+		// A break-even stop is only a stop while price is on the PROFIT side of
+		// it: with the close back through the entry, a sell stop above (buy
+		// stop below) the market is refused by NT8 and F1 would escalate a
+		// P0 per candle. Wait — the original stop still protects — and send
+		// BE on the first close that is past it by at least a tick. Logged
+		// once per position, counted every candle it waits.
+		if (side == "long" && c < be+tick) || (side != "long" && c > be-tick) {
+			at.mentorCount("be_after_partial_waiting_price")
+			if !p.BEWaitLogged {
+				p.BEWaitLogged = true
+				at.logInfof("🧑‍🏫 mentor BE after the +1R partial: %s close %.2f is not past break-even %.2f — the runner keeps its stop %.2f; BE goes out on the first close past it", runner.SignalID, c, be, runner.Stop)
+			}
+			return
+		}
 		err := at.mentorMoveLegStop(nt, side, runner, be)
 		if errors.Is(err, errMentorStopBrokerTighter) {
 			// The broker is already past break-even (moved by hand, or a stop

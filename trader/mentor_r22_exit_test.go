@@ -290,6 +290,30 @@ func TestR22BEAfterConfirmedPartialThenCandleTrail(t *testing.T) {
 	}
 }
 
+// TestR22BEWaitsWhilePriceIsBackThroughTheEntry — the partial filled (the
+// candle-3 TP at a small profit) but the next close is back ABOVE a short's
+// entry: a buy stop at the entry would sit below the market (NT8 refuses it),
+// so BE waits — nothing sent, counted — and goes out on the first close past
+// break-even. Mutant: drop the wait → a move at 30742.25 on the first candle → RED.
+func TestR22BEWaitsWhilePriceIsBackThroughTheEntry(t *testing.T) {
+	b := r22Fixture(t, store.RiskControlConfig{})
+	b.positions("short", 1)
+	b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
+	b.book(r22RunnerBook(r22Stop)...)
+	b.receiptLeg1(r22Sig, "short", 30737.50, r22Minute(0).Add(10*time.Second))
+	b.candle(r22Minute(0), 30738.00, 30746.00, 30737.00, 30745.00) // closes ABOVE the entry
+	if got := b.waitMoves(0); len(got) != 0 {
+		t.Fatalf("BE must wait while the close is back through the entry; got %+v", got)
+	}
+	if n := b.at.mentorCountSnapshot()["be_after_partial_waiting_price"]; n != 1 {
+		t.Fatalf("the wait must be counted, be_after_partial_waiting_price=%d", n)
+	}
+	b.candle(r22Minute(1), 30745.00, 30746.00, 30733.00, 30735.00) // closes past BE
+	if got := b.waitMoves(1); len(got) != 1 || got[0].Leg != 2 || got[0].NewStopLoss != r22Entry {
+		t.Fatalf("BE must go out on the first close past it; got %+v", got)
+	}
+}
+
 // TestR22LongTrailHigherLowUpLowerLowNoMove — the long mirror at the wire, with
 // an off-grid averaged entry: BE rounds TOWARD PROFIT (30820.10 → 30820.25);
 // a higher low moves the stop up to 1 tick under it; a lower low moves nothing.

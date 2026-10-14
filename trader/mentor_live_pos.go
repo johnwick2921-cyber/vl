@@ -54,6 +54,8 @@ type mentorLivePos struct {
 	TPModWant        float64
 	TPModSentAt      time.Time
 	TPModStaleWarned bool
+	// BEWaitLogged — the "close not past break-even, BE waits" line fired once.
+	BEWaitLogged bool
 }
 
 // registerMentorLivePos (DS-107, one-row entry) builds the single-leg live
