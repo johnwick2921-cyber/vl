@@ -5,9 +5,11 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"vl/logger"
+	"vl/safe"
 )
 
 // ── STALE GATE ON THE MONOTONIC CLOCK (release #22 OPS-SAFETY) ──────────────
@@ -121,9 +123,19 @@ var procStart = time.Now()
 // clockSample is THE clock read of the guard: the wall reading (Unix ns) and
 // the monotonic reading (elapsed since procStart) of ONE time.Now(). A test
 // replaces it to inject a stepped wall clock; production never does.
-var clockSample = func() (wallNs int64, mono time.Duration) {
+var clockSampleFn atomic.Value // func() (int64, time.Duration); swapped only by ClockSampleForTest
+
+func realClockSample() (wallNs int64, mono time.Duration) {
 	n := time.Now()
 	return n.UnixNano(), n.Sub(procStart)
+}
+
+func init() { clockSampleFn.Store(realClockSample) }
+
+// clockSample reads the current clock function atomically, so a test swap
+// can never race the 1 s sampler goroutine.
+func clockSample() (wallNs int64, mono time.Duration) {
+	return clockSampleFn.Load().(func() (int64, time.Duration))()
 }
 
 // monoOf maps a time.Time from time.Now() onto the guard's monotonic axis.
@@ -336,13 +348,16 @@ func StartClockStepSampler() {
 		clockSteps.samplerOn = true
 		clockSteps.mu.Unlock()
 		ObserveClock()
-		go func() {
+		// Under the panic net (deploy/panic_net_guard_test.go): a panic here
+		// logs + counts and ends the sampler; the gates still observe the
+		// clock on every evaluation, so a dead sampler only coarsens sampling.
+		safe.GoNet("clock-step sampler", "", func() {
 			t := time.NewTicker(clockStepSamplePeriod)
 			defer t.Stop()
 			for range t.C {
 				ObserveClock()
 			}
-		}()
+		})
 		logger.Infof("🕰 clock-step guard: ON — wall vs monotonic every %s; detect >= %dms (log+count), freeze >= %dms holds NEW entries %ds (CLOCK_STEP_DETECT_MS / CLOCK_STEP_FREEZE_MS / CLOCK_STEP_HOLD_S); the stale gate also ages the 1m feed by monotonic receipt (limit %ds)",
 			clockStepSamplePeriod, cfg.DetectMs, cfg.FreezeMs, cfg.HoldS, receiptMaxAgeMs(60_000)/1000)
 	})
@@ -401,11 +416,11 @@ func recvClock(now time.Time) time.Time {
 // (TESTS ONLY — production never calls it). It returns the restore func,
 // which also resets the guard so no injected step leaks into another test.
 func ClockSampleForTest(fn func() (wallNs int64, mono time.Duration)) (restore func()) {
-	prev := clockSample
-	clockSample = fn
+	prev := clockSampleFn.Load()
+	clockSampleFn.Store(fn)
 	resetClockStepsForTest()
 	return func() {
-		clockSample = prev
+		clockSampleFn.Store(prev)
 		resetClockStepsForTest()
 	}
 }
