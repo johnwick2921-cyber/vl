@@ -222,6 +222,21 @@ describe('orderPriceLines', () => {
       ['zone high', 30820],
     ])
   })
+  it('T29: a cancel_pending ledger row says the cancel was sent and draws dotted', () => {
+    const [l] = orderPriceLines({
+      type: 'LIMIT',
+      side: 'SELL',
+      price: 30815,
+      stop_price: 30854.97,
+      quantity: 1,
+      status: 'CANCEL_PENDING — cancel sent, not yet confirmed',
+      arm_state: 'cancel_pending',
+      source:
+        'armed_orders ledger (broker acceptance is a separate observation)',
+    })
+    expect(l.label).toBe('Limit SELL 1 · SL 30854.97 · cancel sent')
+    expect(l.style).toBe(1)
+  })
   it('draws nothing for a row that is not at the broker', () => {
     expect(
       orderPriceLines({

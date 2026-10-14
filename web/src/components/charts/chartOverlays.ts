@@ -78,12 +78,19 @@ export function orderPriceLines(o: ChartOpenOrder): ChartLineSpec[] {
     const side = (o.side ?? '').toUpperCase()
     const sl = o.stop_price > 0 ? ` · SL ${fmt(o.stop_price)}` : ''
     const tp = (o.target_price ?? 0) > 0 ? ` · TP ${fmt(o.target_price!)}` : ''
+    // T29: a cancel that is sent but not yet confirmed is not a resting
+    // order — draw it dotted and say so.
+    const cancelSent = (o.status ?? '').startsWith('CANCEL_PENDING')
     const lines: ChartLineSpec[] = [
       {
         price: o.price,
-        label: `${kind} ${side} ${o.quantity}${sl}${tp}`.replace(/\s+/g, ' '),
+        label:
+          `${kind} ${side} ${o.quantity}${sl}${tp}${cancelSent ? ' · cancel sent' : ''}`.replace(
+            /\s+/g,
+            ' '
+          ),
         color: isStopKind ? ORDER_COLORS.stopEntry : ORDER_COLORS.limitEntry,
-        style: 2,
+        style: cancelSent ? 1 : 2,
       },
     ]
     if ((o.zone_lo ?? 0) > 0 && (o.zone_hi ?? 0) > 0) {

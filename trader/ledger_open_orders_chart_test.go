@@ -58,3 +58,26 @@ func TestLedgerOpenOrdersCarryTheRowsOwnSizeAndEntry(t *testing.T) {
 		}
 	}
 }
+
+// T29 (release #22): a cancel_pending ledger row was served as Status "NEW",
+// so the chart kept drawing an order the broker had already cancelled. It now
+// says what the ledger knows. Mutant: drop the cancel_pending case → RED.
+func TestLedgerOpenOrdersNameACancelPendingRow(t *testing.T) {
+	at := class33Trader(t)
+	now := time.Now()
+	row := &store.ArmedOrderDB{
+		TraderID: at.id, PlanID: "p1", Version: 1, Session: "LONDON", Scenario: "S1",
+		Side: "short", Kind: "limit", EntryPx: 30815, StopPx: 30854.97,
+		State: store.StateCancelPending, SignalID: "sig-363", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := at.store.ArmedOrders().UpsertArm(row); err != nil {
+		t.Fatal(err)
+	}
+	orders, err := at.ledgerOpenOrders("MNQ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 1 || orders[0].Status != "CANCEL_PENDING — cancel sent, not yet confirmed" || orders[0].ArmState != store.StateCancelPending {
+		t.Fatalf("cancel_pending row = %+v, want Status CANCEL_PENDING…", orders)
+	}
+}
