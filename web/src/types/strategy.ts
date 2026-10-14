@@ -325,6 +325,10 @@ export interface RiskControlConfig {
   // net loss, refuse new entries until the next trading day (17:00 CT).
   // Absent = OFF (byte-identical to the prior config).
   mentor_stop_after_loss?: boolean
+  // Runner exit (owner ruling R3, release #22): "candle" (absent = candle) =
+  // break-even once leg 1's 1:1 take-profit is CONFIRMED filled at NT8, then
+  // 1 tick beyond each closed candle; "off" = the older half-distance rule.
+  mentor_trail_mode?: string
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning
