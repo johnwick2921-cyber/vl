@@ -1,6 +1,9 @@
 package ninjatrader
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // ── GAP-BACKFILL (2026-10-14) — a replay landing on traded minutes is judged
 // on those minutes ──────────────────────────────────────────────────────────
@@ -43,6 +46,7 @@ func ovRing(t *testing.T) *BarCache {
 
 func TestReplayOverlappingLiveMinutesIsJudgedOnThem(t *testing.T) {
 	c := ovRing(t)
+	c.armOverlapVerdict("MNQ", time.Now().Add(gapReplayJudgeWindow)) // the gap re-request went out
 	c.SeedHistorical("MNQ", "1m", ovLive(30700.25, ovRange(0, 262)...))
 	checked, off := c.SeedVerdict("MNQ", "1m")
 	if !checked || off {
@@ -63,6 +67,7 @@ func TestReplayOverlappingLiveMinutesIsJudgedOnThem(t *testing.T) {
 
 func TestOffScaleOverlapChangesNothing(t *testing.T) {
 	c := ovRing(t)
+	c.armOverlapVerdict("MNQ", time.Now().Add(gapReplayJudgeWindow))
 	c.SeedHistorical("MNQ", "1m", ovLive(30410, ovRange(0, 262)...)) // ~290 pts below: the 09-10 finding
 	checked, off := c.SeedVerdict("MNQ", "1m")
 	if checked || off {
@@ -86,5 +91,31 @@ func TestReplayIntoAnEmptyRingIsLeftToTheFirstLiveBar(t *testing.T) {
 	}
 	if a, d := c.OverlapVerdictCounts(); a != 0 || d != 0 {
 		t.Fatalf("no overlap, no verdict: agreed=%d disagreed=%d", a, d)
+	}
+}
+
+// A replay the gap backfill did NOT ask for — a reconnect replay, the
+// scale-break re-request, or one that lands after the window — keeps the
+// first-live-bar rule untouched (scale_check_adjacency_test.go).
+func TestUnaskedReplayKeepsTheFirstLiveBarRule(t *testing.T) {
+	for _, arm := range []bool{false, true} {
+		c := ovRing(t)
+		if arm {
+			c.armOverlapVerdict("MNQ", time.Now().Add(-time.Second)) // window already closed
+		}
+		c.SeedHistorical("MNQ", "1m", ovLive(30700.25, ovRange(0, 262)...))
+		if checked, _ := c.SeedVerdict("MNQ", "1m"); checked {
+			t.Fatalf("arm=%v: an unasked replay must not be judged by overlap", arm)
+		}
+		if a, d := c.OverlapVerdictCounts(); a != 0 || d != 0 {
+			t.Fatalf("arm=%v: no overlap verdict outside the window, got %d/%d", arm, a, d)
+		}
+	}
+	// the window is per symbol: ES's re-request does not judge MNQ
+	c := ovRing(t)
+	c.armOverlapVerdict("ES", time.Now().Add(gapReplayJudgeWindow))
+	c.SeedHistorical("MNQ", "1m", ovLive(30700.25, ovRange(0, 262)...))
+	if checked, _ := c.SeedVerdict("MNQ", "1m"); checked {
+		t.Fatal("another symbol's window must not judge MNQ")
 	}
 }

@@ -123,6 +123,15 @@ func wireBar(open time.Time, c float64) ntwire.Bar {
 
 // ── the fixture ────────────────────────────────────────────────────────────
 
+func (h *replayHold) clearForTest() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.pending = map[string][]store.BarHistoryDB{}
+	h.written = map[string]int{}
+	h.discarded = map[string]int{}
+	h.overflow = map[string]int{}
+}
+
 type lineSink struct {
 	mu    sync.Mutex
 	lines []string
@@ -177,7 +186,11 @@ type ghFixture struct {
 
 func newGHFixture(t *testing.T) *ghFixture {
 	t.Helper()
-	barReplayHold = newReplayHold(2 * ntwire.DefaultBarCacheMaxBars)
+	// Empty the process hold IN PLACE, under its own lock: earlier tests leave
+	// MNQ|1m rows in it (stamped wall-clock −2h, which can sit inside this
+	// fixture's window), and swapping the pointer would race a persist worker
+	// still flushing the previous test's last frame.
+	barReplayHold.clearForTest()
 	st, err := store.New(filepath.Join(t.TempDir(), "gh.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +237,10 @@ func newGHFixture(t *testing.T) *ghFixture {
 
 	serverFn := func() *ntwire.TCPServer { return srv }
 	ntwire.SetBarPersister(newBarPersister(bh, serverFn))
-	t.Cleanup(func() { ntwire.SetBarPersister(nil) })
+	t.Cleanup(func() {
+		ntwire.SetBarPersister(nil)
+		time.Sleep(400 * time.Millisecond) // a flush already inside the closure (300 ms ticker) finishes
+	})
 	clk := &fakeClock{t: ct(2026, 10, 14, 7, 49).Add(10 * time.Second)}
 	sink := &lineSink{}
 	tr := newBarHoleTracker(bh, serverFn)

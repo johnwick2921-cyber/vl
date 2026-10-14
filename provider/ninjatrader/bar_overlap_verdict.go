@@ -1,6 +1,27 @@
 package ninjatrader
 
-import "math"
+import (
+	"math"
+	"time"
+)
+
+// gapReplayJudgeWindow — how long after a gap re-request its replay is judged
+// by overlap. NT8 answers a rebuilt BarsRequest in seconds from its own DB; a
+// provider download for a missing range can take longer.
+const gapReplayJudgeWindow = 5 * time.Minute
+
+// armOverlapVerdict opens the overlap-verdict window for symbol until `until`.
+func (c *BarCache) armOverlapVerdict(symbol string, until time.Time) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.overlapJudgeUntil == nil {
+		c.overlapJudgeUntil = make(map[string]time.Time)
+	}
+	c.overlapJudgeUntil[symbol] = until
+}
 
 // ── GAP-BACKFILL (2026-10-14) — a replay that overlaps traded minutes is
 // judged ON THOSE MINUTES ──────────────────────────────────────────────────
@@ -24,6 +45,12 @@ import "math"
 // ScaleMismatchPct of price, the seed is judged on-scale and SeedVerdict says
 // so; the hold then releases the replay as 'historical' into the minutes live
 // never wrote (the upsert rule still keeps every live row).
+//
+// SCOPE: only a replay the gap backfill asked for. RequestGapBackfillAt arms
+// the symbol for gapReplayJudgeWindow after a successful send (wall clock:
+// the window is the AddOn's reply latency, measured where the frame lands).
+// Boot replays, reconnect replays and the scale-break re-request keep the
+// first-live-bar rule exactly as before (scale_check_adjacency_test.go pins it).
 //
 // It only ever ADDS a verdict. A disagreeing pair leaves the key armed exactly
 // as before (the first-live-bar check stands), nothing is dropped here, and a

@@ -99,6 +99,9 @@ func (s *TCPServer) RequestGapBackfillAt(symbol string, now time.Time) error {
 	if err != nil {
 		return fmt.Errorf("tcp_server: gap backfill %s: %w", symbol, err)
 	}
+	// The replay this asked for is judged on the live minutes it overlaps
+	// (bar_overlap_verdict.go) — wall clock, the AddOn's reply latency.
+	s.barCache.armOverlapVerdict(symbol, time.Now().Add(gapReplayJudgeWindow))
 	if s.logger != nil {
 		s.logger.Info("tcp_server: gap backfill re-requested history (bars_subscribe resent; the AddOn rebuilds its BarsRequests)",
 			"symbol", symbol, "timeframes", payload.Timeframes, "bars_back", payload.BarsBack,

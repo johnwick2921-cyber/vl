@@ -63,6 +63,10 @@ type BarCache struct {
 	// bars (bar_overlap_verdict.go) — agreed sets the verdict, disagreed leaves
 	// the key armed. Read via OverlapVerdictCounts.
 	overlapAgreed, overlapDisagreed int64
+	// overlapJudgeUntil — per SYMBOL, until when a replay is judged by
+	// same-minute overlap: armed only by the gap-backfill re-request
+	// (armOverlapVerdict), so every other replay keeps the first-live-bar rule.
+	overlapJudgeUntil map[string]time.Time
 }
 
 // NewBarCache constructs an empty cache. maxBars <= 0 uses
@@ -322,11 +326,14 @@ func (c *BarCache) SeedHistorical(symbol, timeframe string, bars []Bar) {
 		merged = merged[len(merged)-c.maxBars:]
 	}
 	c.bars[key] = merged
-	// GAP-BACKFILL (2026-10-14): a replay that lands on minutes that already
-	// traded live is judged on THOSE minutes, now — the first-live-bar check
-	// can never find an adjacent reference for it (bar_overlap_verdict.go).
-	// Agreement sets the verdict the replay-hold waits for; disagreement
-	// changes nothing.
+	// GAP-BACKFILL (2026-10-14): a replay the gap re-request ASKED FOR lands
+	// on minutes that already traded live; it is judged on THOSE minutes, now
+	// — the first-live-bar check can never find an adjacent reference for it
+	// (bar_overlap_verdict.go). Agreement sets the verdict the replay-hold
+	// waits for; disagreement changes nothing. Any other replay is untouched.
+	if until, armed := c.overlapJudgeUntil[symbol]; !armed || time.Now().After(until) {
+		return
+	}
 	if pairs, agree := overlapScaleVerdict(existing, bars); pairs > 0 {
 		if agree {
 			if c.liveSeen == nil {
