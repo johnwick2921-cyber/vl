@@ -46,7 +46,7 @@ func TestClockORBEscapeLatchesOnItsCloseInstant(t *testing.T) {
 	bars = append(bars,
 		clockBar(at(8, 30), 100, 101, 99, 100),
 		clockBar(at(8, 31), 100, 101, 99.5, 100),
-		clockBar(at(8, 32), 100, 105.5, 100, 105), // closes outside the 08:30–08:31 box
+		clockBar(at(8, 32), 101.5, 105.5, 101.25, 105), // BODY wholly outside the 08:30–08:31 box (open AND close > 101) [D4.1 p1 @20:36]
 		clockBar(at(8, 33), 105, 106, 104, 105),
 	)
 	e := New(clockCfg())
@@ -65,7 +65,7 @@ func TestClockORBEscapeLatchesOnItsCloseInstant(t *testing.T) {
 		t.Fatalf("ORB drawn on the eval of the bar opened %q, want 08:31:00.000 (the 08:32:00 close that completes the 2-minute candle)", drawnAt)
 	}
 	if escapedAt != "08:32:00.000" {
-		t.Fatalf("ORB escape latched on the eval of the bar opened %q, want 08:32:00.000 (the first 1m close outside the box)", escapedAt)
+		t.Fatalf("ORB escape latched on the eval of the bar opened %q, want 08:32:00.000 (the first 1m BODY wholly outside the box)", escapedAt)
 	}
 	if e.State.ORB.Escaped != SideLong {
 		t.Fatalf("ORB escape = %q, want long", e.State.ORB.Escaped)

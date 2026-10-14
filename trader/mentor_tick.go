@@ -1664,6 +1664,8 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	at.logInfof("🧑‍🏫 %s", at.mentorEval.SeedLine(len(contracts)))
 	at.logInfof("%s", at.mentorSeamBootLine())
 	at.logInfof("%s", at.mentorStaleDataBlockBootLine())
+	// trail_tf 30s/45s: refused LOUDLY at config load (no sub-minute bars).
+	at.mentorTrailTFLoadCheck()
 	if len(missing) > 0 {
 		at.mentorCount("seed_missing")
 		at.logErrorf("%s", mentorSeedRefusalLine(missing))
