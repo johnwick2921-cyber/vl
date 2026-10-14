@@ -15,6 +15,7 @@ import {
 } from './EffectiveChip'
 import { MentorModeToggle } from './MentorModeToggle'
 import { MentorTuningPanel } from './MentorTuningPanel'
+import { MentorCourseExitsPanel } from './MentorCourseExitsPanel'
 
 // ClampedNumberInput edits a single clamped number (e.g. min R/R). It holds the
 // RAW typed text in local state WHILE editing — so clearing + retyping work — and
@@ -261,6 +262,20 @@ export function RiskControlEditor({
         <MentorTuningPanel
           tuning={config.mentor_tuning}
           onChange={(v) => updateField('mentor_tuning', v)}
+          disabled={disabled}
+          language={language}
+        />
+      )}
+      {config.mentor_mode === true && (
+        <MentorCourseExitsPanel
+          values={config}
+          onChange={(key, value) => {
+            if (!disabled) {
+              const next: Record<string, unknown> = { ...config, [key]: value }
+              if (value === undefined) delete next[key]
+              onChange(next as unknown as RiskControlConfig)
+            }
+          }}
           disabled={disabled}
           language={language}
         />

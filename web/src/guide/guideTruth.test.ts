@@ -98,7 +98,13 @@ describe('T16 — a mentor card names a Studio control only when one exists', ()
   // The controls the Studio really renders, read from the components.
   const editor = web('src/components/strategy/RiskControlEditor.tsx')
   const tuning = web('src/components/strategy/MentorTuningPanel.tsx')
+  // release #25: the course-exits switches (BOOL_KEYS / NUM_KEYS entries and
+  // the EMA 9 select's onChange key).
+  const courseExits = web('src/components/strategy/MentorCourseExitsPanel.tsx')
   const controls = new Set<string>([
+    ...[
+      ...courseExits.matchAll(/(?:^ {2}|onChange\(\s*)'(mentor_[a-z0-9_]+)'/gm),
+    ].map((m) => m[1]),
     ...[...editor.matchAll(/updateField\('(mentor_[a-z0-9_]+)'/g)].map(
       (m) => m[1]
     ),

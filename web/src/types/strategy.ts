@@ -329,6 +329,21 @@ export interface RiskControlConfig {
   // break-even once leg 1's 1:1 take-profit is CONFIRMED filled at NT8, then
   // 1 tick beyond each closed candle; "off" = the older half-distance rule.
   mentor_trail_mode?: string
+  // Release #25 course-exits knobs (trader/mentor_course_exits.go). Absent =
+  // the knob-rule default: first-target ON, runner OFF, resonance runner TP ON,
+  // BE-before-partial OFF (ruling R3), candle-3 any-profit ON (today's rule),
+  // reverse-ISB-as-PHL OFF, EMA 9 visits shared, the three numbers off / 1.
+  mentor_swing_ema34_is_first_target?: boolean
+  mentor_swing_runner?: boolean
+  mentor_resonance_runner_tp_old_high?: boolean
+  mentor_be_before_partial?: boolean
+  mentor_isb_c3_partial_any_profit?: boolean
+  mentor_reverse_isb_as_phl?: boolean
+  mentor_ema9_visit_cap?: string
+  mentor_isb_max_pts?: number
+  mentor_keypair_candle_ratio?: number
+  mentor_box_fresh_rth_pair?: boolean
+  mentor_box_max_height_pts?: number
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning
