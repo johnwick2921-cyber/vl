@@ -8,7 +8,14 @@
 
 import { useState } from 'react'
 import type { MentorTruth } from '../../lib/api/traders'
+import { mentorKindLabel } from '../charts/chartOverlays'
 import { mentorWindowLabel } from './mentorWindowLabel'
+
+// UG-9 (release #24): the kinds the evaluator holds ONLY as targets — they
+// join the level set so the target ladder can pick them, but the touch loop
+// skips them (kernel/mentor/eval.go: `lvl.Kind == KindHTFTrigger ||
+// lvl.Kind == KindWickMicroscalp` → continue). Never an entry place.
+export const MENTOR_TARGET_ONLY_KINDS = ['htf_trigger', 'wick_microscalp']
 
 // MENTOR-CARD-EXPAND (release #12): the owner's last choice persists per
 // browser under this key. Read/write are try/catch-guarded — a storage
@@ -182,9 +189,11 @@ export function MentorTruthCard({
             )}
           </div>
 
-          {/* mentor key levels (distinct style: the levels that actually trade).
+          {/* mentor levels (distinct style: the levels the evaluator holds).
           levels is ABSENT while the evaluator computes its first bar, and `[]`
-          once it has built with nothing drawn — never dereference a null. */}
+          once it has built with nothing drawn — never dereference a null.
+          UG-9 (release #24): readable kind names; target-only kinds are
+          marked "target only" — they are never an entry place. */}
           {truth.computing ? (
             <div className="text-[11px]" style={{ color: 'var(--vl-muted)' }}>
               levels: computing (first 1m bar)
@@ -195,23 +204,25 @@ export function MentorTruthCard({
                 className="text-[10px] uppercase tracking-widest"
                 style={{ color: 'var(--vl-faint)' }}
               >
-                Key levels in effect
+                Levels in effect
               </span>
               {(truth.levels ?? []).map((l) => (
                 <div
                   key={l.key}
                   className="flex items-baseline justify-between text-[11px]"
                 >
-                  <span style={{ color: 'var(--vl-muted)' }}>{l.kind}</span>
-                  <span
-                    className="vl-num"
-                    style={{ color: 'var(--vl-warn)' }}
-                    title={
-                      l.merged_from && l.merged_from.length > 0
-                        ? `also ${l.merged_from.map((p) => p.toFixed(2)).join(', ')}`
-                        : undefined
-                    }
-                  >
+                  <span style={{ color: 'var(--vl-muted)' }}>
+                    {mentorKindLabel(l.kind, l.key)}
+                    {MENTOR_TARGET_ONLY_KINDS.includes(l.kind) && (
+                      <span
+                        className="ml-1 text-[9px] uppercase"
+                        style={{ color: 'var(--vl-faint)' }}
+                      >
+                        target only
+                      </span>
+                    )}
+                  </span>
+                  <span className="vl-num" style={{ color: 'var(--vl-warn)' }}>
                     {l.price.toFixed(2)}
                   </span>
                   <span
@@ -226,17 +237,6 @@ export function MentorTruthCard({
                   </span>
                 </div>
               ))}
-              {(truth.levels ?? []).some(
-                (l) => l.merged_from && l.merged_from.length > 0
-              ) && (
-                <div
-                  className="text-[10px]"
-                  style={{ color: 'var(--vl-faint)' }}
-                >
-                  Hover a price to see the old highs/lows folded into it (closer
-                  than 20 pts = one line).
-                </div>
-              )}
             </div>
           ) : (
             <div className="text-[11px]" style={{ color: 'var(--vl-muted)' }}>

@@ -9154,3 +9154,17 @@ symptom: EXTRAS-ALIGN (2026-10-14). mentor_trail_tf accepted "30s" and "45s" (me
 probe: for every enum knob, take each accepted value and trace it to the code that behaves differently because of it. Then check the data that code needs exists in this system. An accepted value with no distinct behaviour, or no source for its data, is a finding. So is a guide line describing it.
 rule: a resolver accepts only values the system can honour. A value the system cannot serve is refused at config load: logged, counted, falls back to a named default. The guide says so in the same PR.
 Reference: trader/mentor_mode.go mentorTrailTF / mentorTrailTFLoadCheck, trader/mentor_tick.go mentorSeedAtStart, web/src/guide/content/mentor.ts (Trail timeframe), trader/mentor_extras_align_test.go TestExtrasAlignTrailTFSubMinuteRefusedAtLoad.
+
+## CLASS NN (assigned at merge) — a chart line drawn from a value the move never updates
+
+symptom: UI-GUIDE-TRUTH UG-1 (release #24). After the swing's +1R break-even move the chart still drew the ORIGINAL stop. kernel/mentor/swing4h.go manageSwingPosition sets only `MovedBE` and emits the intent; the trader's mentorMoveStopBE sends the move to NT8 and writes the new price nowhere — so the evaluator's `swingPosition.Stop` (the panel's source) stays the entry stop forever. The owner saw risk the account no longer had.
+probe: for every price the chart or a card draws for a LIVE order or position (stop, target, entry), find every code path that MOVES that price at the broker (BE, trail, manual edit, partial) and check the drawn field is written by it — or that the display reads the broker's own book instead. A field written once at entry and drawn for the life of the trade is a finding.
+rule: draw a broker-side price from the broker's latest book (the bound account's order snapshot) and label the source; when the book cannot be read, draw the bot's copy and SAY it is the bot's copy — never a guessed moved price (a refused move must keep showing the stop that is really there).
+Reference: trader/mentor_truth_panel.go mentorSwingStopTruth / mentorSwingBrokerStop, web/src/components/charts/chartOverlays.ts swingStopLabel, trader/ui_guide_truth_r24_test.go TestMentorTruthSwingStopIsTheBrokerStopAfterBreakEven.
+
+## CLASS NN (assigned at merge) — a reader that ignores its scope argument
+
+symptom: UI-GUIDE-TRUTH UG-2 (release #24). `ledgerOpenOrders(symbol)` never read `symbol`, so /api/open-orders answered this trader's MNQ rows for ANY symbol, and the dashboard drew MNQ orders — and the mentor's MNQ levels, which carried no instrument at all — on the ES, AAPL or EUR/USD tab. Nothing failed: every caller that passed "MNQ" got the right answer.
+probe: for every function that takes a scope parameter (symbol, account, trader, session), grep its body for the parameter; an unread scope parameter is a finding. For every overlay payload, check it names the scope it belongs to and that the renderer compares it.
+rule: a scoped reader filters by its scope ("" = explicitly the whole book, documented at the function); a payload drawn per-instrument carries its instrument; a hidden overlay says it is hidden and why.
+Reference: trader/class33_boot_sweep.go ledgerOpenOrders / ledgerSymbolMatches, trader/mentor_truth_panel.go MentorTruthPanel.Symbol, web/src/components/charts/ChartTabs.tsx (mentor-overlay-note), trader/ui_guide_truth_r24_test.go TestLedgerOpenOrdersAnswerOnlyTheTradersSymbol.

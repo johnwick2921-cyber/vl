@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GuidePage, GUIDE_SECTIONS } from './GuidePage'
 import { GUIDE_BUILT_REV } from './types'
+import { guideRevBanner } from './guideRevBanner'
 
 // ── per-knob required-fields lint: EVERY KnobSpec field must be non-empty ──
 describe('knob spec completeness', () => {
@@ -150,7 +151,10 @@ describe('GuidePage', () => {
     expect(screen.getByText(/no matches/i)).toBeTruthy()
   })
 
-  it('shows the rev-drift banner when the bot revision differs', async () => {
+  // DR-3 (release #24): the banner the page renders is guideRevBanner's
+  // verdict for THIS bundle's rev — drift for a real sha, "not a release
+  // build" for 'dev' (the vitest bundle), "cannot verify" for 'unknown'.
+  it('shows the banner guideRevBanner names when the bot revision differs', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -159,7 +163,14 @@ describe('GuidePage', () => {
       })
     )
     render(<GuidePage />)
-    expect(await screen.findByTestId('guide-rev-drift')).toBeTruthy()
+    const want = guideRevBanner(GUIDE_BUILT_REV, '0ldcafe12345678')
+    expect(want).not.toBeNull()
+    const el = await screen.findByTestId(`guide-rev-${want!.kind}`)
+    expect(el.textContent).toBe(want!.text)
+    if (GUIDE_BUILT_REV === 'dev') {
+      expect(el.textContent).toMatch(/NOT A RELEASE BUILD/)
+      expect(screen.queryByTestId('guide-rev-drift')).toBeNull()
+    }
   })
 
   it('hides the drift banner when the bot revision matches', async () => {
