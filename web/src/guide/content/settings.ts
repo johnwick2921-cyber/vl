@@ -554,7 +554,7 @@ const dayPlan: KnobSpec[] = [
     trader:
       'Every strict-planner loser on 10-14 stalled at its first obstacle: r_to_obstacle was 0.50 (#649), 0.60 (#650), 0.55 (#652), 0.25 (#653), 0.42 (#654) while the targets sat 2.04–3.82R away. On those five, refuse at 1.0 refuses ALL FIVE at write (no trade; the four closed ones lost −$428). tp1_at_obstacle gives an arm R:R of 0.25–0.60, below the 2.0 floor, so the R:R gate refuses them too (the report: armed anyway with the target at the nearest level they would have made +$35.5 on the four closed and +$79.5 on #654).',
     consumer:
-      'trader/write_time_feasibility.go (write-time room verdict, joins the feasibility issues) · store.DayPlanConfig room-gate resolver · per-trader boot line',
+      'trader/planner_room_gate.go roomGateAtWrite (run at the plan write site, trader/auto_trader_planner.go, before the write-time feasibility verdicts; the hint rides trader/write_time_feasibility.go) · store/planner_knobs.go ResolvePlannerRoomGate / ResolvePlannerRoomMinR · 🧱 per-trader boot line',
     range:
       'planner_room_gate: off | refuse | tp1_at_obstacle · planner_room_min_r: 0.1–10 R (read only when the gate is on)',
     systemDefault: 'off · min R 1.0 (unset)',
@@ -572,7 +572,7 @@ const dayPlan: KnobSpec[] = [
     trader:
       'On 10-14 every loser was held past its own thesis death. invalidation_only: #649 −$60, #650 −$76.5 (its invalidation is its stop), #652 −$19.5, #653 −$82 = −$238 instead of −$428. all: #649 +$1 (plan dormant 21:00:01), #650 −$10.5 (newer v4 short at 00:23:05), #652 −$19.5 (the invalidation close at 03:00 comes before dormant 03:22), #653 −$82 (the invalidation close at 09:00 comes before dormant 09:19:31) = −$110.5 [B — derived from the report’s per-trade exits and timestamps]. #654 was still open.',
     consumer:
-      'trader/auto_trader_risk.go monitorTick (beside auto-breakeven) · kernel.EvaluateAuthoredInvalidationAt · store PlanStore lifecycle / latest version · flattenPosition',
+      'trader/thesis_death_exit.go maybeExitOnThesisDeath (called from trader/auto_trader_risk.go monitorTick, beside auto-breakeven) · kernel.EvaluateAuthoredInvalidationAt · store PlanStore lifecycle / latest version · flattenPosition · store/planner_knobs.go ResolvePlannerExitOnThesisDeath · 🧱 per-trader boot line',
     range: 'off | invalidation_only | all',
     systemDefault: 'off (unset)',
     recommended:
@@ -589,7 +589,7 @@ const dayPlan: KnobSpec[] = [
     trader:
       'On 10-14 it would NOT have stopped #653: it printed WOULD_REFUSE at 08:54/08:55 (1.05 and 1.17 × ATR) but would have PASSED at 08:56 (≈0.55 × ATR), just before the dump filled the limit. The report records no WOULD_REFUSE for #649/#650/#652/#654. The momentum-into-zone ceiling below is the switch aimed at #650/#653.',
     consumer:
-      'trader/no_chase.go EvaluateNoChase · trader/entry_gate.go (arm path) · per-trader boot line',
+      'trader/no_chase.go EvaluateNoChase · trader/entry_gate.go EntryGate (arm path, entryGateForArm sets NoChaseEnforce) · store/planner_knobs.go ResolvePlannerNoChaseEnforce · 🧱 per-trader boot line',
     range: 'ON | OFF',
     systemDefault: 'OFF (unset)',
     recommended:
@@ -605,7 +605,7 @@ const dayPlan: KnobSpec[] = [
     trader:
       'On the report’s numbers: #650 moved 3.5 × ATR5m into its zone (−57.75 pts in 15 min) and #653 1.3 × (−70.75 pts) — any ceiling below 3.5 refuses #650, below 1.3 refuses #653. #652 is not refused (its 15-minute move was −28, away from a short’s zone). #649 and #654: the report gives no ATR5m, so not computed. The live gate judges at the pass that PLACES the order; the fixture is the move into the fill.',
     consumer:
-      'trader/entry_gate.go (arm path) · armSeamATR5m · per-trader boot line',
+      'trader/planner_momentum_gate.go momentumIntoZoneVerdict · trader/entry_gate.go EntryGate (arm path, via entryGateForArm) · armSeamATR5m · store/planner_knobs.go ResolvePlannerMomentumIntoZoneMaxATR · 🧱 per-trader boot line',
     range: '0 = OFF · 0–10 × ATR5m',
     systemDefault: '0 (OFF)',
     recommended:
@@ -622,7 +622,7 @@ const dayPlan: KnobSpec[] = [
     trader:
       'On 10-14: #649 refused (floor 30882.78 past the authored 30873 — the −$79 loss avoided); #653 refused (floor 30427.25 past the authored 30436 — the −$178 loss avoided). #650, #652, #654 unchanged (their stops were not widened).',
     consumer:
-      'trader/arm_stop_anchor.go composeArmStop (legacy branch) · trader/write_time_feasibility.go · trader/armed_executor.go · per-trader boot line',
+      'trader/arm_stop_anchor.go atrFloorCapVerdict (after composeArmStop, legacy branch) · trader/write_time_feasibility.go (write) · trader/armed_executor.go (arm pass) · store/planner_knobs.go ResolvePlannerATRFloorCap · 🧱 per-trader boot line',
     range: 'ON | OFF',
     systemDefault: 'OFF (unset)',
     recommended:
@@ -782,9 +782,9 @@ const risk: KnobSpec[] = [
       'Strategy → Risk Control → Auto-breakeven → Trigger in R (breakeven_trigger_r)',
     what: 'Release #25 (STRICT-12345 F-8): when > 0, an AI/planner position moves its stop to entry once its profit reaches breakeven_trigger_r × its initial risk (|entry − initial stop|) instead of breakeven_trigger_points. Same switches as the points rule (breakeven_enabled + the server seam), same once-per-position move. An unknown initial risk falls back to the points rule, logged once and counted breakeven_r_unknown_risk — never a guessed risk. A mentor position is never moved by it (mentor mode keeps the R3 rule). 0/unset = OFF = the points rule, byte-identical.',
     trader:
-      'On 10-14 at 1R: no change on #649–#653 (their best MFE was 0.63R, so neither rule would have moved them — the points rule at 40 did not either). #654 would need ≈+112.5 pts for 1R; its points-rule BE moved at +40 at 10:08:27. The report’s history figure (+$595 [B] on six planner losers that reached ≥1R and still took a full stop: 623, 599, 620, 595, 607, 621) is the report’s, NOT replayed here.',
+      'On 10-14 at 1R: no change on #649–#653 (their best MFE was 0.63R, so neither rule would have moved them — the points rule at 40 did not either). #654’s initial risk is ≈95–113 pts depending on its fill (stop 30551.25; the report gives the placement price 30438.75, not the fill), so 1R needs that much profit; its points-rule BE moved at +40 at 10:08:27. The report’s history figure (+$595 [B] on six planner losers that reached ≥1R and still took a full stop: 623, 599, 620, 595, 607, 621) is the report’s, NOT replayed here.',
     consumer:
-      'trader/auto_trader.go maybeMoveStopToBreakeven / breakeven trigger resolution · per-trader boot line',
+      'trader/breakeven_r.go breakevenTriggerFor (called by trader/auto_trader.go maybeMoveStopToBreakeven) · store/planner_knobs.go ResolveBreakevenTriggerR · 🧱 per-trader boot line',
     range:
       '0 = OFF (points rule) · 0–10 R · moves a stop only with breakeven_enabled ON and env EXIT_MECHS_SUSPENDED=0',
     systemDefault: '0 (OFF — the points rule)',
