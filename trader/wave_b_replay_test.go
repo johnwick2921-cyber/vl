@@ -115,7 +115,7 @@ func TestStopEntryGuardHasAProductionCallSite(t *testing.T) {
 		t.Fatalf("cannot read the placement source: %v", err)
 	}
 	src := string(b)
-	if !strings.Contains(src, "d := decideStopEntry(side, r.EntryPx, float64(stopEntryOffsetTicks())*tick, tick, price)") {
+	if !strings.Contains(src, "d := decideStopEntry(side, r.EntryPx, stopEntryWireOffset(r, tick), tick, price)") {
 		t.Error("the stop-entry branch does not call decideStopEntry — the adjudication is built but not wired")
 	}
 	// cancel-confirmation (2026-09-06) added the slot guard as the call's last

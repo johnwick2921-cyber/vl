@@ -3,7 +3,6 @@ package mentor
 import (
 	"testing"
 
-	"vl/kernel"
 	"vl/market"
 )
 
@@ -40,11 +39,11 @@ func TestReverseISBAtEMA9DefaultIsOn(t *testing.T) {
 
 func TestReverseISBAtEMA9LongAndShort(t *testing.T) {
 	cfg := reverseCfg()
-	// The kernel-side entry offset is the knob buffer MINUS the stop-entry wire
-	// offset the executor re-adds (StopEntryOffsetTicks × MNQ tick), so the WIRE
-	// lands at exactly the extreme ± the buffer (CTO ruling, trade #627/#628).
-	wireOffset := float64(kernel.StopEntryOffsetTicks()) * market.FuturesTickSize("MNQ")
-	entryPts := cfg.ISBBufferPts - wireOffset
+	// rel22 P2-1: ONE definition of the offset — the kernel authors the wire
+	// price itself (the executor adds nothing to a mentor row), so the entry is
+	// exactly the extreme ± the buffer, 1.5 [D2.1 p1 @ 06:12] (the trade
+	// #627/#628 ruling: the WIRE lands at extreme ± 1.5).
+	entryPts := cfg.ISBBufferPts
 	// uptrend, ISB points SHORT (red candle 1), EMA 9 inside the ISB range
 	redPrev := market.Kline{Open: 106, Close: 100, High: 106.5, Low: 99.5}
 	cur := market.Kline{Open: 102, Close: 104, High: 104.5, Low: 99.5}
