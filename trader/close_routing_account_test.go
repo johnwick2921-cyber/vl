@@ -14,6 +14,7 @@ import (
 	"vl/kernel/mentor"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
+	"vl/telemetry"
 	ntTrader "vl/trader/ninjatrader"
 )
 
@@ -328,4 +329,28 @@ func TestCloseRoutingDrawdownCloseStampsTheBoundAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustOnlyAccount(t, "drawdown emergency close", r.w.waitCloses(t, 1), r.b, crAcctB)
+}
+
+// A REFUSED CLOSE IS COUNTED (L7). From build 2026-10-14-a the AddOn answers
+// a close it will not route (named account not found / not SIM, ambiguous
+// legacy close, unknown instrument) with position_close_rejected naming the
+// account the close named. The frame reaches THAT trader's close-sync over
+// the real wire, which logs the 🚨 line and counts it. Mutant: drop
+// telemetry.IncNT8CloseRejected() from the reject watcher → RED.
+func TestCloseRoutingRefusedCloseIsCountedForTheNamedTrader(t *testing.T) {
+	r := crRigFor(t, time.Now(), nil)
+	before := telemetry.NT8CloseRejectedCount()
+	if err := ntwire.WriteFrame(r.w.conn, ntwire.FramePositionCloseRejected, ntwire.PositionCloseRejectedPayload{
+		SignalID: "cr-refused", Symbol: "MNQ", PositionSide: "long", Account: crAcctB,
+		Reason: "the named account 'SimAccount1' was not found in Account.All (fail-closed: no other account is used when one is named)",
+	}); err != nil {
+		t.Fatalf("reject write: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for telemetry.NT8CloseRejectedCount() < before+1 {
+		if time.Now().After(deadline) {
+			t.Fatalf("a position_close_rejected for the bound account must be counted (vl_nt8_close_rejected_total); count stayed %d", telemetry.NT8CloseRejectedCount())
+		}
+		time.Sleep(time.Millisecond)
+	}
 }

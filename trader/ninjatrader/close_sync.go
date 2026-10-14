@@ -68,6 +68,7 @@ func (t *TCPTrader) StartCloseSync(traderID, exchangeID, exchangeType string, st
 		// NT8 truth, so the orphan can't be netted onto by the next entry.
 		safe.GoNet("nt8-reject-watch", "traderID", func() {
 			for r := range rejects { // P5.4 router-fed (per-symbol)
+				telemetry.IncNT8CloseRejected() // r24: counted, never only a log line
 				logger.Warnf("🚨 NT close REJECTED: %s %s — STILL OPEN in NT8, NOT recording closed (reason: %q, account: %s). Will retry on next decision cycle / reconnect.",
 					r.Symbol, r.PositionSide, r.Reason, r.Account)
 			}
