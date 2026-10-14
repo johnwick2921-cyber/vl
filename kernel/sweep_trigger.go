@@ -90,6 +90,12 @@ func sweepGatedConfirm(s PlanScenario, bars []market.Kline, sinceMs, nowMs int64
 		return ConfirmVerdict{}, false
 	}
 	c := *s.Confirm
+	if !hasClosedBar(bars, sinceMs, nowMs) {
+		// N5 (rescan 10-14): an EMPTY tape is UNKNOWN, never "no closed 1m bar
+		// has traded …" — the only change to the #515 gate (non-empty tapes are
+		// byte-identical).
+		return missingTapeVerdict(c, sinceMs, nowMs), true
+	}
 	at, ok := firstSweepOfRef(c, bars, sinceMs, nowMs)
 	if !ok {
 		way := "above"
@@ -126,7 +132,8 @@ func VerdictWaitsForSweep(v ConfirmVerdict) bool {
 }
 
 // ScenarioTriggerRequired reports whether a scenario's entry must follow its
-// confirm: a sweep setup, or an arm (or any arm leg) authored wait_confirm.
+// confirm: a sweep setup, an arm (or any arm leg) authored wait_confirm, or a
+// level play's market_in_zone arm (F-1, touch_trigger.go).
 func ScenarioTriggerRequired(sc PlanScenario) bool {
 	if SweepSetupCondition(sc.Condition) {
 		return true
@@ -134,11 +141,13 @@ func ScenarioTriggerRequired(sc PlanScenario) bool {
 	if sc.Arm == nil {
 		return false
 	}
-	if sc.Arm.WaitConfirm {
+	// F-1/F-6 (planner-touch-fills): a level play's market_in_zone arm waits
+	// for its reaction at the level — the grader judges the SAME trigger.
+	if sc.Arm.WaitConfirm || TouchSetupWaits(sc, nil) {
 		return true
 	}
-	for _, l := range sc.Arm.Legs {
-		if l.WaitConfirm {
+	for i, l := range sc.Arm.Legs {
+		if l.WaitConfirm || TouchSetupWaits(sc, &sc.Arm.Legs[i]) {
 			return true
 		}
 	}

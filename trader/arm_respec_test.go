@@ -173,6 +173,13 @@ func TestWorkingArmBracketRespecByNewVersionReplacesTheOrder(t *testing.T) {
 // it ("zone moved by v2") and re-arms at the NEW zone's far edge.
 func TestZoneMovedByNewVersionCancelsTheWorkingLimitAndReArms(t *testing.T) {
 	r := newZoneRig(t, "w1b-respec-e2", zoneDoc(zoneScenario("S1", kernel.EntryPolicyMarketInZone, zone, false)))
+	// F-1 freshness (planner-touch-fills): the rig's plans are born at now−30m
+	// and its rising tape rejects the new v2 band from the first post-birth bar,
+	// so at the t3 re-arm that trigger is 32 min old > the 30-min default
+	// (zone_rest_max_min) and would be held STALE. This test is the zone-move
+	// re-arm, not freshness: the bound is widened to 60 for it.
+	sixty := 60
+	r.at.config.StrategyConfig.DayPlan.ZoneRestMaxMin = &sixty
 	sid := r.placeWorking(100.5).SignalID
 	before, _ := store.SystemCounter(r.st, "market_in_zone:zone_moved")
 

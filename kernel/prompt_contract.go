@@ -160,9 +160,12 @@ func PromptContracts() []PromptContract {
 			MustAppear: []string{"confirm=touch at the sweep ref"},
 		},
 		{
-			Rule:       "split leg 1 rests (wait_confirm false), leg 2 chains (wait_confirm true)",
-			Site:       "plan_doc.go ArmSpecValid (leg 1 must rest / leg 2 must chain)",
-			MustAppear: []string{"leg 1 rests there (wait_confirm false)", "leg 2 chains (wait_confirm true)"},
+			// N3 (rescan 10-14, planner-touch-fills): the validator still demands
+			// leg 1 wait_confirm false, but since R22 the sweep hold sends no leg
+			// before the whole confirm is MET — the sentence says both (class 45).
+			Rule:       "split leg 1 authored wait_confirm false (held with leg 2 until the whole confirm is MET), leg 2 chains (wait_confirm true)",
+			Site:       "plan_doc.go ArmSpecValid (leg 1 must rest / leg 2 must chain) + armed_executor sweep hold",
+			MustAppear: []string{"leg 1 is authored there with wait_confirm false", "sends NO leg until the whole confirm", "leg 2 chains (wait_confirm true)"},
 		},
 		{
 			Rule:       "split leg 2 rule ∈ {1m_mss, 1x5m_close} and equals confirm2.rule",

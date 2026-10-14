@@ -148,7 +148,7 @@ export const guards: GuideSection = {
         [
           'HTF veto',
           'HARD',
-          "Entry against the HTF regime at a veto anchor → refused. MODE (HTF_VETO_MODE): 1h | cross | 4h — LIVE = cross: vetoes only when 1h AND 4h both agree (the 2026-08-28 autopsy: 1h-only blocked 3 would-have-won arms = +$352, 4h was RANGING at all 7 → cross blocks nothing the evidence doesn't support).",
+          'Entry against the HTF regime at a veto anchor → refused. MODE (HTF_VETO_MODE): 1h | cross | 4h — LIVE = cross: vetoes only when 1h AND 4h both agree (the 2026-08-28 autopsy: 1h-only blocked 3 would-have-won arms = +$352, 4h was RANGING at all 7 → cross blocks nothing the evidence doesn\'t support). FIXED (F-4): until this fix cross could NEVER veto — the cycle snapshot held 5m/15m/1h only, so it never found a 4h trend and passed every entry without a word (zero htf_veto refusals since 08-28; on 10-14 the 1h read TRENDING_DOWN all through the long #653). The 4h trend now comes from the bar cache\'s own 4h series, and a missing TF is said out loud (🛡️ HTF veto (cross) SKIPPED …). A one-way move also counts: a TF whose 3-swing set reads RANGING but whose newest closed bar broke the last swing extreme by ≥ STRUCTURE_ONEWAY_ATR (1.0) × ATR reads TRENDING in that direction for the veto only (the refusal says "one-way: …"); a genuine range still never vetoes, and every other reader of the structure trend is unchanged.',
         ],
         [
           'ARM floors (the strategy min R:R)',

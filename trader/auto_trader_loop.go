@@ -401,7 +401,7 @@ func (at *AutoTrader) runCycle() error {
 	// G1/G4/G8's input and future forensics' gold.
 	if market.FuturesBarsProvider != nil {
 		bars1m := market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
-		ctx.Structure = kernel.StructureSnapshot(bars1m, time.Now().UnixMilli())
+		ctx.Structure = kernel.StructureSnapshotForVeto(at.futuresSymbol(), bars1m, time.Now().UnixMilli()) // F-4: + the native 4h the cross veto needs
 		if blob, jerr := json.Marshal(ctx.Structure); jerr == nil {
 			record.StructureJSON = string(blob)
 		}

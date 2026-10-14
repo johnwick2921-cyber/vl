@@ -707,17 +707,17 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 					}
 				}
 			}
-			// S2b chained arm (autopsy-response wave): wait_confirm legs stay DORMANT until the chain confirm is
-			// machine-MET (E4: leg 1 chains on confirm2; a single arm on its own confirm{}). R22 F1 (owner R4): a
-			// SWEEP setup waits for its trigger whatever wait_confirm says — no fillable order before the sweep.
-			if kernel.SweepSetupWaits(sc, leg.WaitConfirm) {
+			// S2b chained arm: wait_confirm legs stay DORMANT until the chain confirm is machine-MET (E4); R22 F1 (owner R4): a SWEEP setup waits for its trigger whatever wait_confirm says; F-1 (planner-touch-fills): so does a level play's market_in_zone leg, for its reaction AT the level (kernel/touch_trigger.go).
+			if kernel.ArmLegWaitsForConfirm(sc, leg) {
 				v := kernel.EvaluateScenarioConfirm(sc, bars, plan.BirthMs, now.UnixMilli())
 				if !v.Met {
-					at.noteSweepWait(plan, sc, li, leg.WaitConfirm, v)
+					at.holdForConfirm(ledger, plan, sc, li, legs[li], leg, zl, v, now) // note + a re-priced working order is still re-spec-cancelled
 					scope.note(sc.ID, "waiting: confirm not met ("+kernel.ConfirmGatedRuleLabel(sc)+")")
 					continue
 				}
-				at.logInfof("⚔️ arm %s leg %d wait_confirm MET (%s) — arming", sc.ID, li+1, kernel.ConfirmGatedRuleLabel(sc)) // W2: the rule(s) gated + source
+				if !at.armConfirmFresh(ledger, plan, sc, li, legs[li], leg, zl, v, bars, now, scope) { // F-1 rescan: MET must be FRESH (event age + distance); logs "MET — arming" or the stale hold
+					continue
+				}
 			}
 			// gates AT ARM TIME — a resting order is a pre-passed entry; each gate
 			// input that changes materially later triggers a cancel (1.3).

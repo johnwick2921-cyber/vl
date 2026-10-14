@@ -46,7 +46,18 @@ func TestValidatorHintsNameOnlyLegalLiveConditions(t *testing.T) {
 // only mention of the composite token is the explicit "not a valid condition"
 // warning.
 func TestBreakdownHintsNameRejectNotComposite(t *testing.T) {
-	for _, s := range []string{BreakdownReclaimedHint, BreakdownDisplacementHint, RepairBreakdownLaw} {
+	// N2 (rescan 10-14, planner-touch-fills): the DISPLACEMENT hint now steers
+	// a conditional breakdown to a machine-verified `acceptance` play (1x5m_close
+	// beyond the level, wait_confirm:true) — steering it to `reject`+`touch` is
+	// how #654 was born. The void-breakdown hints still name `reject`.
+	if !strings.Contains(BreakdownDisplacementHint, "`acceptance` play") || strings.Contains(BreakdownDisplacementHint, "`reject` play") ||
+		!strings.Contains(BreakdownDisplacementHint, "1x5m_close") || !strings.Contains(BreakdownDisplacementHint, "wait_confirm:true") {
+		t.Errorf("the displacement hint must name the conditional acceptance play: %q", BreakdownDisplacementHint)
+	}
+	if !strings.Contains(BreakdownDisplacementHint, "`reject_retest` is not a valid condition") {
+		t.Errorf("hint must explicitly forbid the composite: %q", BreakdownDisplacementHint)
+	}
+	for _, s := range []string{BreakdownReclaimedHint, RepairBreakdownLaw} {
 		if !strings.Contains(s, "`reject` play") {
 			t.Errorf("hint must name the legal condition: %q", s)
 		}
