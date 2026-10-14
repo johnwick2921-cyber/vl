@@ -100,8 +100,12 @@ func TestSweepSetupConfirmMetOnlyAfterSweepThenClose(t *testing.T) {
 func TestSweepSetupGateLeavesOtherConditionsAlone(t *testing.T) {
 	sc := scenario649()
 	sc.Condition = "hold"
-	if v := EvaluateScenarioConfirm(sc, real649Tape(), birth649, 1791940501453); !v.Met {
-		t.Fatalf("a non-sweep condition keeps its close count from birth: %s", v.Detail)
+	// F-1 (planner-touch-fills): the SWEEP gate still leaves a non-sweep
+	// condition alone (no no_sweep refusal) — a hold is now judged by the TOUCH
+	// gate instead (kernel/touch_trigger.go): the 649 ref was never traded, so
+	// its closes from birth no longer count (before F-1 this read MET).
+	if v := EvaluateScenarioConfirm(sc, real649Tape(), birth649, 1791940501453); v.Met || VerdictWaitsForSweep(v) || !VerdictWaitsForTouch(v) {
+		t.Fatalf("a non-sweep condition is not sweep-gated; its level was never reached, so the touch gate holds it: met=%v refusal=%q %s", v.Met, v.Refusal, v.Detail)
 	}
 	if SweepSetupCondition("reject") || SweepSetupCondition("hold") || !SweepSetupCondition(" Sweep_Reclaim ") || !SweepSetupCondition("reclaim") {
 		t.Fatal("SweepSetupCondition must be exactly the reclaim family")

@@ -1,0 +1,1682 @@
+{
+ "asia_v3": {
+  "created_at": "2026-10-13 21:11:33.258755764-05:00",
+  "doc": {
+   "bias": {
+    "conviction": "low",
+    "direction": "long",
+    "flip_condition": "2x5m close below 30798.92 flips bias short"
+   },
+   "bias_label": "bias: AI long \u00b7 tree neutral \u00b7 regime neutral",
+   "day_type": "trend",
+   "death": {
+    "price": 30769.75,
+    "rule": "2x5m",
+    "side": "below"
+   },
+   "death_condition": "2x5m close below 30769.75",
+   "flip": {
+    "flip_to": "short",
+    "price": 30798.92,
+    "rule": "2x5m",
+    "side": "below"
+   },
+   "identity_levels": [
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791928800000,
+     "grade": "",
+     "hi": 30844.857148072402,
+     "id": "a170ba7cbe507fe014b0fc3a586840dde4cac8263e221985b50a275bd72b10bd",
+     "instruction": "",
+     "kind": "VWAP\u00b12\u03c3",
+     "label": "VWAP+2\u03c3",
+     "lo": 30844.857148072402,
+     "lookback_bars": 240,
+     "names": [
+      "VWAP+2\u03c3"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30844.857148072402,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "",
+     "hi": 30849.75,
+     "id": "ref|1ed84bc19522fe61a41d11c91ab9c4045f5a0c81ca7b017269ef4113dbc4e47c",
+     "instruction": "",
+     "kind": "ONH",
+     "label": "ONH",
+     "lo": 30849.75,
+     "lookback_bars": 240,
+     "names": [
+      "ONH",
+      "SWG-H\u00b75m",
+      "SWG-H\u00b715m",
+      "EQH\u00b715m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30849.75,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791942000000,
+     "grade": "",
+     "hi": 30830.5,
+     "id": "9cce7c9d8186c2d42e56205d11bb37a379727c10a451f260717dd5b41036195e",
+     "instruction": "",
+     "kind": "SWG-H",
+     "label": "SWG-H\u00b75m",
+     "lo": 30830.5,
+     "lookback_bars": 400,
+     "names": [
+      "SWG-H\u00b75m",
+      "EQH",
+      "SWG-H\u00b715m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30830.5,
+     "symbol": "MNQ",
+     "tf": "5m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1790078399999,
+     "grade": "",
+     "hi": 30863,
+     "id": "85044fbc01373b38285e4ba231b5130a18c9bc6f4bd1bc127d71af387a401952",
+     "instruction": "",
+     "kind": "EQH",
+     "label": "EQH\u00b71h",
+     "lo": 30863,
+     "lookback_bars": 499,
+     "names": [
+      "EQH\u00b71h",
+      "EQH"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30863,
+     "symbol": "MNQ",
+     "tf": "1h"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791928800000,
+     "grade": "",
+     "hi": 30821.88879488988,
+     "id": "a88146d7ad1be8454ed92e86ee16e7aec12bcc13ddc039fafe16f65a42f2189f",
+     "instruction": "",
+     "kind": "VWAP",
+     "label": "VWAP+1\u03c3",
+     "lo": 30821.88879488988,
+     "lookback_bars": 240,
+     "names": [
+      "VWAP+1\u03c3"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30821.88879488988,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791928800000,
+     "grade": "",
+     "hi": 30798.92044170736,
+     "id": "32440d6a2500710e28e98ee86ff75b9f6c4b324ded7d56b3de0a85ad6e770718",
+     "instruction": "",
+     "kind": "VWAP",
+     "label": "VWAP",
+     "lo": 30798.92044170736,
+     "lookback_bars": 240,
+     "names": [
+      "VWAP"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30798.92044170736,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791942900000,
+     "grade": "",
+     "hi": 30787.5,
+     "id": "09e48aeb59bea72d8e6f2a1cd536ccff7087e5be09e9f61bee697570223dc59e",
+     "instruction": "",
+     "kind": "SWG-L",
+     "label": "SWG-L\u00b75m",
+     "lo": 30787.5,
+     "lookback_bars": 400,
+     "names": [
+      "SWG-L\u00b75m",
+      "EQH",
+      "EQL"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30787.5,
+     "symbol": "MNQ",
+     "tf": "5m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791928800000,
+     "grade": "",
+     "hi": 30775.95208852484,
+     "id": "f10e9706b851e656b37276b3e1b689753bbbc4fdbcdc8e350eb8c67396a005f4",
+     "instruction": "",
+     "kind": "VWAP",
+     "label": "VWAP\u22121\u03c3",
+     "lo": 30775.95208852484,
+     "lookback_bars": 240,
+     "names": [
+      "VWAP\u22121\u03c3",
+      "SWG-H\u00b75m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30775.95208852484,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791941100000,
+     "grade": "",
+     "hi": 30772.25,
+     "id": "987965a2e8a1f0ef4b6441f88eca1e56934fd8d3ba2714ac61cd20c30bcea313",
+     "instruction": "",
+     "kind": "SWG-L",
+     "label": "SWG-L\u00b75m",
+     "lo": 30772.25,
+     "lookback_bars": 400,
+     "names": [
+      "SWG-L\u00b75m",
+      "SWG-L\u00b715m",
+      "EQH",
+      "EQL"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30772.25,
+     "symbol": "MNQ",
+     "tf": "5m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791929700000,
+     "grade": "",
+     "hi": 30760.5,
+     "id": "15780dd1f66425b9b44416b5c789db9ed901a35210a714730496538a1f5ba089",
+     "instruction": "",
+     "kind": "SWG-L",
+     "label": "SWG-L\u00b715m",
+     "lo": 30760.5,
+     "lookback_bars": 134,
+     "names": [
+      "SWG-L\u00b715m",
+      "EQL"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30760.5,
+     "symbol": "MNQ",
+     "tf": "15m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "",
+     "hi": 30744.5,
+     "id": "ref|a66e609ca60d6c723b69e130b29215648c372b97842987db5a0ebc3c2594d1e1",
+     "instruction": "",
+     "kind": "ONL",
+     "label": "ONL",
+     "lo": 30744.5,
+     "lookback_bars": 240,
+     "names": [
+      "ONL",
+      "SWG-L\u00b75m",
+      "SWG-L\u00b715m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30744.5,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791925199999,
+     "grade": "",
+     "hi": 30739.209375,
+     "id": "52e4face6496ab69f058c2f91fd7c5b9fdb251ed2fbfce655b94b2175108c59a",
+     "instruction": "",
+     "kind": "POC",
+     "label": "POC",
+     "lo": 30739.209375,
+     "lookback_bars": 1380,
+     "names": [
+      "POC",
+      "EQH\u00b74h",
+      "EQH\u00b71h"
+     ],
+     "origin_date": "2026-10-12",
+     "price": 30739.209375,
+     "symbol": "MNQ",
+     "tf": "1m"
+    }
+   ],
+   "levels": [
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "A",
+     "hi": null,
+     "id": null,
+     "instruction": "breakout-invalidation target",
+     "kind": null,
+     "label": "VWAP+2\u03c3",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "A",
+     "origin_date": null,
+     "price": 30844.86,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "A",
+     "hi": 30849.75,
+     "id": "ref|1ed84bc19522fe61a41d11c91ab9c4045f5a0c81ca7b017269ef4113dbc4e47c",
+     "instruction": "liquidity target",
+     "kind": "ONH",
+     "label": "ONH \u00b7 SWG-H\u00b75m \u00b7 SWG-H\u00b715m \u00b7 EQH\u00b715m",
+     "lo": 30849.75,
+     "lookback_bars": 240,
+     "machine_grade": "A",
+     "names": [
+      "ONH",
+      "SWG-H\u00b75m",
+      "SWG-H\u00b715m",
+      "EQH\u00b715m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30849.75,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1790078399999,
+     "grade": "A",
+     "hi": 30863,
+     "id": "85044fbc01373b38285e4ba231b5130a18c9bc6f4bd1bc127d71af387a401952",
+     "instruction": "upside target",
+     "kind": "EQH",
+     "label": "EQH\u00b71h \u00b7 EQH",
+     "lo": 30863,
+     "lookback_bars": 499,
+     "machine_grade": "A",
+     "names": [
+      "EQH\u00b71h",
+      "EQH"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30863,
+     "symbol": "MNQ",
+     "tf": "1h"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "C",
+     "hi": null,
+     "id": null,
+     "instruction": "HTF resistance target, never standalone",
+     "kind": null,
+     "label": "OB(bear)\u00b71h",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "C",
+     "origin_date": null,
+     "price": 30944.75,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791942000000,
+     "grade": "A",
+     "hi": 30830.5,
+     "id": "9cce7c9d8186c2d42e56205d11bb37a379727c10a451f260717dd5b41036195e",
+     "instruction": "support/target",
+     "kind": "SWG-H",
+     "label": "SWG-H\u00b75m \u00b7 EQH \u00b7 SWG-H\u00b715m",
+     "lo": 30830.5,
+     "lookback_bars": 400,
+     "machine_grade": "A",
+     "names": [
+      "SWG-H\u00b75m",
+      "EQH",
+      "SWG-H\u00b715m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30830.5,
+     "symbol": "MNQ",
+     "tf": "5m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "A",
+     "hi": null,
+     "id": null,
+     "instruction": "first obstacle/target",
+     "kind": null,
+     "label": "VWAP+1\u03c3",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "A",
+     "origin_date": null,
+     "price": 30821.89,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "A",
+     "hi": null,
+     "id": null,
+     "instruction": "long reject entry",
+     "kind": null,
+     "label": "VWAP",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "A",
+     "origin_date": null,
+     "price": 30798.92,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791942900000,
+     "grade": "A",
+     "hi": 30787.5,
+     "id": "09e48aeb59bea72d8e6f2a1cd536ccff7087e5be09e9f61bee697570223dc59e",
+     "instruction": "support",
+     "kind": "SWG-L",
+     "label": "SWG-L\u00b75m \u00b7 EQH \u00b7 EQL",
+     "lo": 30787.5,
+     "lookback_bars": 400,
+     "machine_grade": "A",
+     "names": [
+      "SWG-L\u00b75m",
+      "EQH",
+      "EQL"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30787.5,
+     "symbol": "MNQ",
+     "tf": "5m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "A",
+     "hi": null,
+     "id": null,
+     "instruction": "support",
+     "kind": null,
+     "label": "VWAP\u22121\u03c3 \u00b7 SWG-H\u00b75m",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "A",
+     "origin_date": null,
+     "price": 30775.95,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "C",
+     "hi": null,
+     "id": null,
+     "instruction": "HTF support confluence, not standalone",
+     "kind": null,
+     "label": "OB(bull)\u00b71h",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "C",
+     "origin_date": null,
+     "price": 30769.75,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791929700000,
+     "grade": "A",
+     "hi": 30760.5,
+     "id": "15780dd1f66425b9b44416b5c789db9ed901a35210a714730496538a1f5ba089",
+     "instruction": "stop zone reference",
+     "kind": "SWG-L",
+     "label": "SWG-L\u00b715m \u00b7 EQL",
+     "lo": 30760.5,
+     "lookback_bars": 134,
+     "machine_grade": "A",
+     "names": [
+      "SWG-L\u00b715m",
+      "EQL"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30760.5,
+     "symbol": "MNQ",
+     "tf": "15m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "A",
+     "hi": 30744.5,
+     "id": "ref|a66e609ca60d6c723b69e130b29215648c372b97842987db5a0ebc3c2594d1e1",
+     "instruction": "downside liquidity target",
+     "kind": "ONL",
+     "label": "ONL \u00b7 SWG-L\u00b75m \u00b7 SWG-L\u00b715m",
+     "lo": 30744.5,
+     "lookback_bars": 240,
+     "machine_grade": "A",
+     "names": [
+      "ONL",
+      "SWG-L\u00b75m",
+      "SWG-L\u00b715m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30744.5,
+     "symbol": "MNQ",
+     "tf": "1m"
+    }
+   ],
+   "no_trade": null,
+   "no_trade_windows": [
+    {
+     "end_min": 1025,
+     "kind": "first_n",
+     "label": "first 5m after the ASIA open (17:00\u201317:05 CT)",
+     "source": "code-constant",
+     "start_min": 1020
+    },
+    {
+     "end_min": 810,
+     "kind": "lunch",
+     "label": "lunch 12:00\u201313:30 CT",
+     "source": "code-constant",
+     "start_min": 720
+    }
+   ],
+   "price_at_write": 30843,
+   "reasoning": "bias-tree: inside-day long LOW \u2014 prior-plan short flip to long has already fired (2x5m close above 30828.75) and 15m is TRENDING_UP after a 1h sweep-up at 20:00 CT. I will not chase the premium break above 30844.86/ONH; the plan buys pullbacks into VWAP and buys the deeper 1h demand if tested. The tripwire is a 2x5m close below 30769.75, and a 2x5m close below 30798.92 flips me short. No fvg_entry: fresh FVG list is empty.",
+   "scenarios": [
+    {
+     "arm": {
+      "enabled": true,
+      "entry": 30798.92,
+      "policy": "market_in_zone",
+      "stop": 30760.5,
+      "target": 30944.75
+     },
+     "condition": "reject",
+     "confirm": {
+      "ref_price": 30798.92,
+      "rule": "touch",
+      "side": "above"
+     },
+     "direction": "long",
+     "economics": {
+      "entry_zone": [
+       30798.67,
+       30798.92
+      ],
+      "first_obstacle": {
+       "family": "magnet_meanrevert",
+       "level": "VWAP+1\u03c3",
+       "price": 30822,
+       "response": "pass_through"
+      },
+      "path_levels": [
+       {
+        "level": "VWAP+1\u03c3",
+        "level_id": "a88146d7ad1be8454ed92e86ee16e7aec12bcc13ddc039fafe16f65a42f2189f",
+        "price": 30822,
+        "role": "pass_through"
+       },
+       {
+        "level": "SWG-H\u00b75m \u00b7 EQH \u00b7 SWG-H\u00b715m",
+        "level_id": "9cce7c9d8186c2d42e56205d11bb37a379727c10a451f260717dd5b41036195e",
+        "price": 30830.5,
+        "role": "pass_through"
+       },
+       {
+        "level": "VWAP+2\u03c3",
+        "level_id": "a170ba7cbe507fe014b0fc3a586840dde4cac8263e221985b50a275bd72b10bd",
+        "price": 30844.75,
+        "role": "pass_through"
+       },
+       {
+        "level": "ONH \u00b7 SWG-H\u00b75m \u00b7 SWG-H\u00b715m \u00b7 EQH\u00b715m",
+        "level_id": "ref|1ed84bc19522fe61a41d11c91ab9c4045f5a0c81ca7b017269ef4113dbc4e47c",
+        "price": 30849.75,
+        "role": "pass_through"
+       },
+       {
+        "level": "EQH\u00b71h \u00b7 EQH",
+        "level_id": "85044fbc01373b38285e4ba231b5130a18c9bc6f4bd1bc127d71af387a401952",
+        "price": 30863,
+        "role": "pass_through"
+       }
+      ],
+      "r_to_arm_target": 3.795679,
+      "r_to_obstacle": 0.597866,
+      "version": 1
+     },
+     "id": "S1",
+     "invalid": "2x5m close below 30760.50",
+     "level_id": "32440d6a2500710e28e98ee86ff75b9f6c4b324ded7d56b3de0a85ad6e770718",
+     "quality": "B",
+     "target_chain": [
+      30822,
+      30830.5,
+      30844.75,
+      30849.75,
+      30863,
+      30944.75
+     ],
+     "trigger": "Price pulls back to 30798.92 VWAP and rejects first-touch from above into the value area."
+    },
+    {
+     "arm": {
+      "enabled": true,
+      "entry": 30769.75,
+      "policy": "market_in_zone",
+      "stop": 30736.25,
+      "target": 30944.75
+     },
+     "condition": "reject",
+     "confirm": {
+      "ref_price": 30769.75,
+      "rule": "touch",
+      "side": "above"
+     },
+     "direction": "long",
+     "economics": {
+      "entry_zone": [
+       30769.75,
+       30769.75
+      ],
+      "first_obstacle": {
+       "family": "structure",
+       "level": "SWG-L\u00b75m",
+       "price": 30772.25,
+       "response": "pass_through"
+      },
+      "path_levels": [
+       {
+        "level": "SWG-L\u00b75m",
+        "level_id": "987965a2e8a1f0ef4b6441f88eca1e56934fd8d3ba2714ac61cd20c30bcea313",
+        "price": 30772.25,
+        "role": "pass_through"
+       },
+       {
+        "level": "VWAP\u22121\u03c3 \u00b7 SWG-H\u00b75m",
+        "level_id": "f10e9706b851e656b37276b3e1b689753bbbc4fdbcdc8e350eb8c67396a005f4",
+        "price": 30776,
+        "role": "pass_through"
+       },
+       {
+        "level": "SWG-L\u00b75m \u00b7 EQH \u00b7 EQL",
+        "level_id": "09e48aeb59bea72d8e6f2a1cd536ccff7087e5be09e9f61bee697570223dc59e",
+        "price": 30787.5,
+        "role": "pass_through"
+       },
+       {
+        "level": "VWAP",
+        "level_id": "32440d6a2500710e28e98ee86ff75b9f6c4b324ded7d56b3de0a85ad6e770718",
+        "price": 30799,
+        "role": "pass_through"
+       },
+       {
+        "level": "VWAP+1\u03c3",
+        "level_id": "a88146d7ad1be8454ed92e86ee16e7aec12bcc13ddc039fafe16f65a42f2189f",
+        "price": 30822,
+        "role": "pass_through"
+       },
+       {
+        "level": "SWG-H\u00b75m \u00b7 EQH \u00b7 SWG-H\u00b715m",
+        "level_id": "9cce7c9d8186c2d42e56205d11bb37a379727c10a451f260717dd5b41036195e",
+        "price": 30830.5,
+        "role": "pass_through"
+       },
+       {
+        "level": "VWAP+2\u03c3",
+        "level_id": "a170ba7cbe507fe014b0fc3a586840dde4cac8263e221985b50a275bd72b10bd",
+        "price": 30844.75,
+        "role": "pass_through"
+       },
+       {
+        "level": "ONH \u00b7 SWG-H\u00b75m \u00b7 SWG-H\u00b715m \u00b7 EQH\u00b715m",
+        "level_id": "ref|1ed84bc19522fe61a41d11c91ab9c4045f5a0c81ca7b017269ef4113dbc4e47c",
+        "price": 30849.75,
+        "role": "pass_through"
+       },
+       {
+        "level": "EQH\u00b71h \u00b7 EQH",
+        "level_id": "85044fbc01373b38285e4ba231b5130a18c9bc6f4bd1bc127d71af387a401952",
+        "price": 30863,
+        "role": "pass_through"
+       }
+      ],
+      "r_to_arm_target": 5.223881,
+      "r_to_obstacle": 0.074627,
+      "version": 1
+     },
+     "id": "S2",
+     "invalid": "2x5m close below 30736.25",
+     "level_id": null,
+     "quality": "B",
+     "target_chain": [
+      30772.25,
+      30776,
+      30787.5,
+      30799,
+      30822,
+      30830.5,
+      30844.75,
+      30849.75,
+      30863,
+      30944.75
+     ],
+     "trigger": "Price pulls back to the 30769.75 1h demand zone and rejects with VWAP\u22121\u03c3 just above."
+    }
+   ],
+   "structure": {
+    "as_of_ms": 1791943201001,
+    "contract": "MNQ 12-26",
+    "tfs": {
+     "1h": {
+      "bars": 1994,
+      "impulse_hi": 30815,
+      "impulse_lo": 30591.25,
+      "last_swing_high": {
+       "price": 30815,
+       "time_ms": 1791903600000
+      },
+      "last_swing_low": {
+       "price": 30591.25,
+       "time_ms": 1791900000000
+      },
+      "premium_discount": 1,
+      "trend": "range",
+      "zones": [
+       {
+        "fresh": "fresh",
+        "hi": 30688,
+        "kind": "DEMAND",
+        "lo": 30642.25,
+        "score": 1.0725,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30791.75,
+        "kind": "OB",
+        "lo": 30747.75,
+        "score": 1.05,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30970.25,
+        "kind": "OB",
+        "lo": 30919.25,
+        "score": 1.05,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30688,
+        "kind": "OB",
+        "lo": 30642.25,
+        "score": 1.05,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30970.25,
+        "kind": "SUPPLY",
+        "lo": 30919.25,
+        "score": 0.975,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30906,
+        "kind": "OB",
+        "lo": 30806,
+        "score": 0.9239999999999999,
+        "tf": "1h"
+       }
+      ]
+     },
+     "4h": {
+      "bars": 521,
+      "impulse_hi": 31290,
+      "impulse_lo": 30591.25,
+      "last_swing_high": {
+       "price": 31290,
+       "time_ms": 1791770400000
+      },
+      "last_swing_low": {
+       "price": 30591.25,
+       "time_ms": 1791900000000
+      },
+      "premium_discount": 0.3602862254025045,
+      "trend": "range",
+      "zones": [
+       {
+        "fresh": "fresh",
+        "hi": 31002,
+        "kind": "OB",
+        "lo": 30860,
+        "score": 0.9359999999999999,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 31002,
+        "kind": "OB",
+        "lo": 30860,
+        "score": 0.9359999999999999,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30948.75,
+        "kind": "OB",
+        "lo": 30694.75,
+        "score": 0.7956,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30863,
+        "kind": "OB",
+        "lo": 30636.75,
+        "score": 0.7956,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 31096,
+        "kind": "OB",
+        "lo": 30813.75,
+        "score": 0.7956,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30948.75,
+        "kind": "DEMAND",
+        "lo": 30694.75,
+        "score": 0.71825,
+        "tf": "4h"
+       }
+      ]
+     },
+     "D": {
+      "bars": 88,
+      "impulse_hi": 31616.5,
+      "impulse_lo": 30792,
+      "last_swing_high": {
+       "price": 31616.5,
+       "time_ms": 1791262800000
+      },
+      "last_swing_low": {
+       "price": 30792,
+       "time_ms": 1791435600000
+      },
+      "premium_discount": 0.061855670103092786,
+      "trend": "up",
+      "zones": [
+       {
+        "fresh": "fresh",
+        "hi": 31297,
+        "kind": "OB",
+        "lo": 30670,
+        "score": 0.46799999999999997,
+        "tf": "D"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 31297,
+        "kind": "SUPPLY",
+        "lo": 30670,
+        "score": 0.46475000000000005,
+        "tf": "D"
+       }
+      ]
+     }
+    }
+   }
+  },
+  "plan_version": 3,
+  "session": "ASIA",
+  "trade_date": "2026-10-13"
+ },
+ "ny_v2": {
+  "created_at": "2026-10-14 08:47:19.740480521-05:00",
+  "doc": {
+   "bias": {
+    "conviction": "low",
+    "direction": "long",
+    "flip_condition": "2x5m close below 30506.25 flips short."
+   },
+   "bias_label": "bias: AI long \u00b7 tree short \u00b7 regime neutral",
+   "day_type": "trend",
+   "death": {
+    "price": 30257.38,
+    "rule": "2x5m",
+    "side": "below"
+   },
+   "death_condition": "2x5m close below 30257.38 invalidates the whole plan.",
+   "flip": {
+    "flip_to": "short",
+    "price": 30506.25,
+    "rule": "2x5m",
+    "side": "below"
+   },
+   "identity_levels": [
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791920699999,
+     "grade": "",
+     "hi": 30591.25,
+     "id": "8d2f62e4f64e9861d819969a4999407c8b5ee3f943f038df5670097271573efe",
+     "instruction": "",
+     "kind": "RTH-L",
+     "label": "RTH-L",
+     "lo": 30591.25,
+     "lookback_bars": 375,
+     "names": [
+      "RTH-L",
+      "SWG-H\u00b75m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30591.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791984899999,
+     "grade": "",
+     "hi": 30597.75,
+     "id": "4c6d0f6acb994ed290ffd69649988933dfb951291d9b9aa4eb13f41b6555c0f9",
+     "instruction": "",
+     "kind": "OR-H",
+     "label": "OR-H",
+     "lo": 30597.75,
+     "lookback_bars": 5,
+     "names": [
+      "OR-H"
+     ],
+     "origin_date": "2026-10-14",
+     "price": 30597.75,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791982500000,
+     "grade": "",
+     "hi": 30556,
+     "id": "ca742824281d75dbb4aa7a9a3a96b22dc12748a7286627b70ab21d0eb2af57eb",
+     "instruction": "",
+     "kind": "SWG-L",
+     "label": "SWG-L\u00b75m",
+     "lo": 30556,
+     "lookback_bars": 400,
+     "names": [
+      "SWG-L\u00b75m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30556,
+     "symbol": "MNQ",
+     "tf": "5m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791928800000,
+     "grade": "",
+     "hi": 30605.379293840022,
+     "id": "89c139688f06d7650de43f943811aba83803bf8a4167e5478d396ac0cfbcaee0",
+     "instruction": "",
+     "kind": "VWAP",
+     "label": "VWAP\u22121\u03c3",
+     "lo": 30605.379293840022,
+     "lookback_bars": 940,
+     "names": [
+      "VWAP\u22121\u03c3"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30605.379293840022,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791984599999,
+     "grade": "",
+     "hi": 30537.25,
+     "id": "555aa5ccb5470d286943068b797b9d4b737b465f2c2a800056498ef1af0db8bf",
+     "instruction": "",
+     "kind": "ONL",
+     "label": "ONL",
+     "lo": 30537.25,
+     "lookback_bars": 930,
+     "names": [
+      "ONL"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30537.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791925199999,
+     "grade": "",
+     "hi": 30648.119791666668,
+     "id": "ec6f6b1d51b8b5be83e31f2749d7521a21cd75beba9f25b1991447bb467ff7fe",
+     "instruction": "",
+     "kind": "POC",
+     "label": "POC",
+     "lo": 30648.119791666668,
+     "lookback_bars": 1077,
+     "names": [
+      "POC",
+      "EQL\u00b715m"
+     ],
+     "origin_date": "2026-10-12",
+     "price": 30648.119791666668,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791984899999,
+     "grade": "",
+     "hi": 30506.25,
+     "id": "0fad2d8c5034125e507aee8cd6197dcf3b8e33471531adf3ed1e4294304cbd9f",
+     "instruction": "",
+     "kind": "OR-L",
+     "label": "OR-L",
+     "lo": 30506.25,
+     "lookback_bars": 5,
+     "names": [
+      "OR-L",
+      "EQL\u00b71h"
+     ],
+     "origin_date": "2026-10-14",
+     "price": 30506.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791928800000,
+     "grade": "",
+     "hi": 30720.24168685166,
+     "id": "432f65f0c9d8b4b68847729abeaf6eaa9e41f51258907e3bfa125893d7df863a",
+     "instruction": "",
+     "kind": "VWAP",
+     "label": "VWAP",
+     "lo": 30720.24168685166,
+     "lookback_bars": 940,
+     "names": [
+      "VWAP"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30720.24168685166,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791920699999,
+     "grade": "",
+     "hi": 30815,
+     "id": "9d481597b4ba5a556c24f28be40054326ecf794aea44b242affbb2c5f8adf2f9",
+     "instruction": "",
+     "kind": "RTH-H",
+     "label": "RTH-H",
+     "lo": 30815,
+     "lookback_bars": 375,
+     "names": [
+      "RTH-H"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30815,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791928800000,
+     "grade": "",
+     "hi": 30835.104079863297,
+     "id": "e1b8d08ab5022a15e1a73fdeec0e4cc0c8942c71efb0c01c24f5508fed2441b9",
+     "instruction": "",
+     "kind": "VWAP",
+     "label": "VWAP+1\u03c3",
+     "lo": 30835.104079863297,
+     "lookback_bars": 940,
+     "names": [
+      "VWAP+1\u03c3",
+      "EQL\u00b71h"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30835.104079863297,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791953999999,
+     "grade": "",
+     "hi": 30868.25,
+     "id": "9d604ac034963415d0dbca0b7d2ad9dbf3bdcc9cce737227117c17243f2b592d",
+     "instruction": "",
+     "kind": "PDC",
+     "label": "PDC",
+     "lo": 30868.25,
+     "lookback_bars": 1380,
+     "names": [
+      "PDC"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30868.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791953999999,
+     "grade": "",
+     "hi": 30891.5,
+     "id": "51d12ebbb42ce59f4a935a09de4d60c5004107a4ef54489f6eb61b48304f679a",
+     "instruction": "",
+     "kind": "PDH",
+     "label": "PDH",
+     "lo": 30891.5,
+     "lookback_bars": 1380,
+     "names": [
+      "PDH",
+      "EQH\u00b71h"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30891.5,
+     "symbol": "MNQ",
+     "tf": "1m"
+    }
+   ],
+   "levels": [
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "C",
+     "hi": null,
+     "id": null,
+     "instruction": "confluence reference",
+     "kind": null,
+     "label": "Demand\u00b71d",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "C",
+     "origin_date": null,
+     "price": 30257.38,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "C",
+     "hi": null,
+     "id": null,
+     "instruction": "confluence reference",
+     "kind": null,
+     "label": "Supply\u00b74h",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "C",
+     "origin_date": null,
+     "price": 30365.88,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791984899999,
+     "grade": "A",
+     "hi": 30506.25,
+     "id": "0fad2d8c5034125e507aee8cd6197dcf3b8e33471531adf3ed1e4294304cbd9f",
+     "instruction": "trigger",
+     "kind": "OR-L",
+     "label": "OR-L \u00b7 EQL\u00b71h",
+     "lo": 30506.25,
+     "lookback_bars": 5,
+     "machine_grade": "A",
+     "names": [
+      "OR-L",
+      "EQL\u00b71h"
+     ],
+     "origin_date": "2026-10-14",
+     "price": 30506.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791984599999,
+     "grade": "A",
+     "hi": 30537.25,
+     "id": "555aa5ccb5470d286943068b797b9d4b737b465f2c2a800056498ef1af0db8bf",
+     "instruction": "trigger",
+     "kind": "ONL",
+     "label": "ONL",
+     "lo": 30537.25,
+     "lookback_bars": 930,
+     "machine_grade": "A",
+     "names": [
+      "ONL"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30537.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791982500000,
+     "grade": "A",
+     "hi": 30556,
+     "id": "ca742824281d75dbb4aa7a9a3a96b22dc12748a7286627b70ab21d0eb2af57eb",
+     "instruction": "path",
+     "kind": "SWG-L",
+     "label": "SWG-L\u00b75m",
+     "lo": 30556,
+     "lookback_bars": 400,
+     "machine_grade": "A",
+     "names": [
+      "SWG-L\u00b75m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30556,
+     "symbol": "MNQ",
+     "tf": "5m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791920699999,
+     "grade": "A",
+     "hi": 30591.25,
+     "id": "8d2f62e4f64e9861d819969a4999407c8b5ee3f943f038df5670097271573efe",
+     "instruction": "target",
+     "kind": "RTH-L",
+     "label": "RTH-L \u00b7 SWG-H\u00b75m",
+     "lo": 30591.25,
+     "lookback_bars": 375,
+     "machine_grade": "A",
+     "names": [
+      "RTH-L",
+      "SWG-H\u00b75m"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30591.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791984899999,
+     "grade": "A",
+     "hi": 30597.75,
+     "id": "4c6d0f6acb994ed290ffd69649988933dfb951291d9b9aa4eb13f41b6555c0f9",
+     "instruction": "path",
+     "kind": "OR-H",
+     "label": "OR-H",
+     "lo": 30597.75,
+     "lookback_bars": 5,
+     "machine_grade": "A",
+     "names": [
+      "OR-H"
+     ],
+     "origin_date": "2026-10-14",
+     "price": 30597.75,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "A",
+     "hi": null,
+     "id": null,
+     "instruction": "path",
+     "kind": null,
+     "label": "VWAP\u22121\u03c3",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "A",
+     "origin_date": null,
+     "price": 30605.38,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "A",
+     "hi": null,
+     "id": null,
+     "instruction": "target",
+     "kind": null,
+     "label": "POC \u00b7 EQL\u00b715m",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "A",
+     "origin_date": null,
+     "price": 30648.12,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": null,
+     "grade": "A",
+     "hi": null,
+     "id": null,
+     "instruction": "target",
+     "kind": null,
+     "label": "VWAP",
+     "lo": null,
+     "lookback_bars": null,
+     "machine_grade": "A",
+     "origin_date": null,
+     "price": 30720.24,
+     "symbol": null,
+     "tf": null
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791953999999,
+     "grade": "A",
+     "hi": 30868.25,
+     "id": "9d604ac034963415d0dbca0b7d2ad9dbf3bdcc9cce737227117c17243f2b592d",
+     "instruction": "target",
+     "kind": "PDC",
+     "label": "PDC",
+     "lo": 30868.25,
+     "lookback_bars": 1380,
+     "machine_grade": "A",
+     "names": [
+      "PDC"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30868.25,
+     "symbol": "MNQ",
+     "tf": "1m"
+    },
+    {
+     "formed_at_ms": null,
+     "formed_close_ms": 1791953999999,
+     "grade": "A",
+     "hi": 30891.5,
+     "id": "51d12ebbb42ce59f4a935a09de4d60c5004107a4ef54489f6eb61b48304f679a",
+     "instruction": "target",
+     "kind": "PDH",
+     "label": "PDH \u00b7 EQH\u00b71h",
+     "lo": 30891.5,
+     "lookback_bars": 1380,
+     "machine_grade": "A",
+     "names": [
+      "PDH",
+      "EQH\u00b71h"
+     ],
+     "origin_date": "2026-10-13",
+     "price": 30891.5,
+     "symbol": "MNQ",
+     "tf": "1m"
+    }
+   ],
+   "no_trade": [
+    "No new entry while 1m price is trapped inside 30537.25\u201330556.00 chop without a 5m close outside it.",
+    "\ud83d\udd34 Core CPI m/m 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+    "\ud83d\udd34 Core CPI y/y 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+    "\ud83d\udd34 CPI m/m 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+    "\ud83d\udd34 CPI y/y 07:30 CT \u00b115m \u2014 HARD no-trade (red news)"
+   ],
+   "no_trade_windows": [
+    {
+     "end_min": 515,
+     "kind": "first_n",
+     "label": "first 5m after the NY open (08:30\u201308:35 CT)",
+     "source": "code-constant",
+     "start_min": 510
+    },
+    {
+     "end_min": 810,
+     "kind": "lunch",
+     "label": "lunch 12:00\u201313:30 CT",
+     "source": "code-constant",
+     "start_min": 720
+    },
+    {
+     "end_min": 465,
+     "kind": "t1",
+     "label": "\ud83d\udd34 Core CPI m/m 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+     "source": "calendar",
+     "start_min": 435
+    },
+    {
+     "end_min": 465,
+     "kind": "t1",
+     "label": "\ud83d\udd34 Core CPI y/y 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+     "source": "calendar",
+     "start_min": 435
+    },
+    {
+     "end_min": 465,
+     "kind": "t1",
+     "label": "\ud83d\udd34 CPI m/m 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+     "source": "calendar",
+     "start_min": 435
+    },
+    {
+     "end_min": 465,
+     "kind": "t1",
+     "label": "\ud83d\udd34 CPI y/y 07:30 CT \u00b115m \u2014 HARD no-trade (red news)",
+     "source": "calendar",
+     "start_min": 435
+    }
+   ],
+   "price_at_write": 30578.5,
+   "reasoning": "bias-tree: premium/discount LONG-below-mid (branch 5) \u2014 price is below the dealing-range low after the CPI dump and below value; the 30498 sweep of ONL/OR-L and current recovery reads as a low-conviction long attempt, not a short chase. 1h/5m are still trending down, so I keep a short breaker below ONL. no fvg_entry: fresh FVGs empty. Levels are two-sided: long hold above OR-L, short breakout-retest of ONL.",
+   "scenarios": [
+    {
+     "arm": {
+      "enabled": true,
+      "entry": 30517,
+      "policy": "market_in_zone",
+      "stop": 30436,
+      "target": 30720.24,
+      "wait_confirm": true
+     },
+     "condition": "hold",
+     "confirm": {
+      "hold_min": 3,
+      "ref_price": 30506.25,
+      "rule": "time_hold",
+      "side": "above"
+     },
+     "direction": "long",
+     "economics": {
+      "entry_zone": [
+       30509,
+       30517
+      ],
+      "first_obstacle": {
+       "family": "liquidity_break",
+       "level": "ONL",
+       "price": 30537.25,
+       "response": "pass_through"
+      },
+      "path_levels": [
+       {
+        "level": "ONL",
+        "level_id": "555aa5ccb5470d286943068b797b9d4b737b465f2c2a800056498ef1af0db8bf",
+        "price": 30537.25,
+        "role": "pass_through"
+       },
+       {
+        "level": "SWG-L\u00b75m",
+        "level_id": "ca742824281d75dbb4aa7a9a3a96b22dc12748a7286627b70ab21d0eb2af57eb",
+        "price": 30556,
+        "role": "pass_through"
+       },
+       {
+        "level": "RTH-L \u00b7 SWG-H\u00b75m",
+        "level_id": "8d2f62e4f64e9861d819969a4999407c8b5ee3f943f038df5670097271573efe",
+        "price": 30591.25,
+        "role": "pass_through"
+       },
+       {
+        "level": "OR-H",
+        "level_id": "4c6d0f6acb994ed290ffd69649988933dfb951291d9b9aa4eb13f41b6555c0f9",
+        "price": 30597.75,
+        "role": "pass_through"
+       },
+       {
+        "level": "VWAP\u22121\u03c3",
+        "level_id": "89c139688f06d7650de43f943811aba83803bf8a4167e5478d396ac0cfbcaee0",
+        "price": 30605.5,
+        "role": "pass_through"
+       },
+       {
+        "level": "POC \u00b7 EQL\u00b715m",
+        "level_id": "ec6f6b1d51b8b5be83e31f2749d7521a21cd75beba9f25b1991447bb467ff7fe",
+        "price": 30648,
+        "role": "pass_through"
+       }
+      ],
+      "r_to_arm_target": 2.5091358,
+      "r_to_obstacle": 0.25,
+      "version": 1
+     },
+     "id": "S1",
+     "invalid": "5m close below 30506.25",
+     "level_id": "0fad2d8c5034125e507aee8cd6197dcf3b8e33471531adf3ed1e4294304cbd9f",
+     "quality": "B",
+     "target_chain": [
+      30537.25,
+      30556,
+      30591.25,
+      30597.75,
+      30605.5,
+      30648,
+      30720.25
+     ],
+     "trigger": "Pullback holds above 30506.25 OR-L for 3 one-minute closes; enter near 30517.00."
+    }
+   ],
+   "structure": {
+    "as_of_ms": 1791985237516,
+    "contract": "MNQ 12-26",
+    "tfs": {
+     "1h": {
+      "bars": 2005,
+      "impulse_hi": 30862,
+      "impulse_lo": 30705.75,
+      "last_swing_high": {
+       "price": 30862,
+       "time_ms": 1791968400000
+      },
+      "last_swing_low": {
+       "price": 30705.75,
+       "time_ms": 1791961200000
+      },
+      "premium_discount": 0,
+      "trend": "range",
+      "zones": [
+       {
+        "fresh": "fresh",
+        "hi": 30644.25,
+        "kind": "OB",
+        "lo": 30532.75,
+        "score": 1.05,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30769,
+        "kind": "OB",
+        "lo": 30716,
+        "score": 1.05,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30791.75,
+        "kind": "OB",
+        "lo": 30747.75,
+        "score": 1.05,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30277.25,
+        "kind": "OB",
+        "lo": 30222.25,
+        "score": 1.05,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 31000,
+        "kind": "OB",
+        "lo": 30913.25,
+        "score": 1.05,
+        "tf": "1h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30848,
+        "kind": "DEMAND",
+        "lo": 30747.75,
+        "score": 0.975,
+        "tf": "1h"
+       }
+      ]
+     },
+     "4h": {
+      "bars": 523,
+      "impulse_hi": 31290,
+      "impulse_lo": 30591.25,
+      "last_swing_high": {
+       "price": 31290,
+       "time_ms": 1791770400000
+      },
+      "last_swing_low": {
+       "price": 30591.25,
+       "time_ms": 1791900000000
+      },
+      "premium_discount": 0,
+      "trend": "range",
+      "zones": [
+       {
+        "fresh": "fresh",
+        "hi": 30400,
+        "kind": "OB",
+        "lo": 30331.75,
+        "score": 1.17,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30400,
+        "kind": "SUPPLY",
+        "lo": 30331.75,
+        "score": 1.161875,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30525.75,
+        "kind": "OB",
+        "lo": 30395.5,
+        "score": 1.0296,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30863,
+        "kind": "OB",
+        "lo": 30636.75,
+        "score": 1.0296,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30459,
+        "kind": "OB",
+        "lo": 30331.75,
+        "score": 1.0296,
+        "tf": "4h"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30348,
+        "kind": "OB",
+        "lo": 30136.25,
+        "score": 1.0296,
+        "tf": "4h"
+       }
+      ]
+     },
+     "D": {
+      "bars": 89,
+      "impulse_hi": 31616.5,
+      "impulse_lo": 30792,
+      "last_swing_high": {
+       "price": 31616.5,
+       "time_ms": 1791262800000
+      },
+      "last_swing_low": {
+       "price": 30792,
+       "time_ms": 1791435600000
+      },
+      "premium_discount": 0,
+      "trend": "up",
+      "zones": [
+       {
+        "fresh": "fresh",
+        "hi": 30264.5,
+        "kind": "OB",
+        "lo": 30250.25,
+        "score": 1.17,
+        "tf": "D"
+       },
+       {
+        "fresh": "fresh",
+        "hi": 30264.5,
+        "kind": "DEMAND",
+        "lo": 30250.25,
+        "score": 1.0562500000000001,
+        "tf": "D"
+       }
+      ]
+     }
+    }
+   }
+  },
+  "plan_version": 2,
+  "session": "NY",
+  "trade_date": "2026-10-14"
+ }
+}

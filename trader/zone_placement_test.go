@@ -68,6 +68,19 @@ func zoneTape(last float64, now time.Time, shift time.Duration) []market.Kline {
 	return out
 }
 
+// zoneTapeReacted is zoneTape with ONE rejecting touch candle at now−10m (after
+// the rig's plan birth at now−30m): it reaches the zone (high 99.90 ≥ 99.50)
+// and CLOSES back above the 99.50 confirm ref (99.60) — the F-1 reaction a
+// level play needs before its market_in_zone leg is authorized
+// (kernel/touch_trigger.go). The last close is unchanged, so a tape that ends
+// below the zone is "reacted, then slipped short of the zone".
+func zoneTapeReacted(last float64, now time.Time) []market.Kline {
+	out := zoneTape(last, now, 0)
+	b := &out[70]
+	b.Open, b.High, b.Low, b.Close = 99.4, 99.9, 99.3, 99.6
+	return out
+}
+
 func (r *zoneRig) setTape(bars []market.Kline) {
 	r.mu.Lock()
 	r.bars = bars
@@ -79,7 +92,11 @@ func (r *zoneRig) setTape(bars []market.Kline) {
 func zoneScenario(id string, policy string, zone []float64, waitConfirm bool) kernel.PlanScenario {
 	sc := kernel.PlanScenario{ID: id, Trigger: "t", Condition: "reject", Direction: "long",
 		TargetChain: []float64{110}, Invalid: "i", Quality: "B",
-		Confirm: &kernel.PlanConfirm{Rule: "touch", RefPrice: 100, Side: "above"},
+		// F-1 (planner-touch-fills): the confirm ref is the zone's support edge
+		// 99.50 — a market_in_zone reject now waits for a touch candle that
+		// CLOSES back above its ref, and the rig's rising tapes print that
+		// reaction after birth (closes 99.55–100.00 with lows inside the zone).
+		Confirm: &kernel.PlanConfirm{Rule: "touch", RefPrice: 99.5, Side: "above"},
 		Arm:     &kernel.PlanArmSpec{Enabled: true, Entry: 100, Stop: 98, Target: 110, Policy: policy, WaitConfirm: waitConfirm}}
 	if zone != nil {
 		sc.Economics = &kernel.ScenarioEconomics{Version: 1, EntryZone: zone}
@@ -356,7 +373,7 @@ func TestZoneRowPlacesOneLimitAtTheFarBound(t *testing.T) {
 // three passes.
 func TestZoneRowShortOfZoneWaitsAndCountsOnce(t *testing.T) {
 	r := newZoneRig(t, "w3-zone-short", zoneDoc(zoneScenario("S1", kernel.EntryPolicyMarketInZone, zone, false)))
-	r.setTape(zoneTape(99.0, r.now, 0))
+	r.setTape(zoneTapeReacted(99.0, r.now))
 	before := gateBlocks(r.at.id, "market_in_zone_short_of_zone")
 	for i := 0; i < 3; i++ {
 		r.at.maybeManageArmedOrdersAt(nil, r.now.Add(time.Duration(i)*time.Second))
@@ -771,7 +788,7 @@ func TestZoneRejectSkipsTheStructuralGeometryRefusal(t *testing.T) {
 // refresh, and re-stamped by a re-authorize on a new version.
 func TestZoneLedgerStampsAtAuthoringThroughTheComposer(t *testing.T) {
 	r := newZoneRig(t, "w3-zone-stamp", zoneDoc(zoneScenario("S1", kernel.EntryPolicyMarketInZone, zone, false)))
-	r.setTape(zoneTape(99.0, r.now, 0)) // short of the zone: authored, never placed
+	r.setTape(zoneTapeReacted(99.0, r.now)) // short of the zone: authored, never placed
 	check := func(what string, row store.ArmedOrderDB) {
 		t.Helper()
 		if row.Policy != kernel.EntryPolicyMarketInZone || row.ZoneLo == nil || *row.ZoneLo != 99.5 || row.ZoneHi == nil || *row.ZoneHi != 100.5 ||
@@ -831,7 +848,7 @@ func TestZoneVerdictWrittenOnlyOnChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	t0, t1, t2 := r.now, r.now.Add(20*time.Second), r.now.Add(40*time.Second)
-	r.setTape(zoneTape(99.0, r.now, 0))
+	r.setTape(zoneTapeReacted(99.0, r.now))
 	r.at.maybeManageArmedOrdersAt(nil, t0)
 	r.at.maybeManageArmedOrdersAt(nil, t1)
 	if row := r.row("S1"); row.LastVerdict != "short_of_zone" || row.LastVerdictMs == nil || *row.LastVerdictMs != t0.UnixMilli() {
@@ -854,7 +871,7 @@ func TestZoneVerdictChangeIsOneCountAndOneLogLine(t *testing.T) {
 	r := newZoneRig(t, "w3-zone-verdict-counts", zoneDoc(zoneScenario("S1", kernel.EntryPolicyMarketInZone, zone, false)))
 	logs := captureTraderLog(t)
 	t0, t1, t2 := r.now, r.now.Add(20*time.Second), r.now.Add(40*time.Second)
-	r.setTape(zoneTape(99.0, r.now, 0))
+	r.setTape(zoneTapeReacted(99.0, r.now))
 	r.at.maybeManageArmedOrdersAt(nil, t0)
 	r.at.maybeManageArmedOrdersAt(nil, t1)
 	r.setTape(zoneTape(100.0, r.now, 0))
