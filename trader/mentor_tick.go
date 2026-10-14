@@ -305,6 +305,9 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 		// every arm action; an unknown action is refused, never silent.
 		at.mentorDispatchIntent(in, extra, last.CloseTime, emitMs)
 	}
+	// STALLED-SETUP ALARM (release #22): after this tick's emits are counted,
+	// fire the once-per-day P1 for any kind with emitted >= 3 and placed == 0.
+	at.mentorStallAlarmCheck(mentorClockNow())
 	// B3 (release #3b) item 4: place at the authoring event, not on the 2-min
 	// scan — a 1-candle mentor arm must not expire before the scan runs.
 	if mentorPlaceEnv() {

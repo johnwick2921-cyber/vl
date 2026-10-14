@@ -303,6 +303,10 @@ func (at *AutoTrader) mentorDropEvalArm(armID string) {
 func (at *AutoTrader) mentorDispatchIntent(in mentor.Intent, extra mentorTierInputs, lastCloseTime, emitMs int64) {
 	switch in.Action {
 	case mentor.PlaceStopEntry, mentor.PlaceStopLimitEntry:
+		// STALLED-SETUP ALARM (release #22): the emit half of the seen-vs-placed
+		// pair — every placement intent the evaluator emitted is counted HERE,
+		// keyed by setup kind, whatever the rule gate / placement does next.
+		at.mentorCountSetupEmitted(in)
 		at.mentorDispatchEntry(in, extra, lastCloseTime, emitMs)
 	case mentor.ExtendArm:
 		at.mentorExtendArm(in)
@@ -437,6 +441,10 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	at.mentorRegisterLiveArm(armID, row.ID, side, in.Price, scenario)
 	at.mentorCount("armed_" + choice.Tier)
 	at.mentorFunnel.bumpAuthored() // N12 funnel stage: the arm row was authored
+	// STALLED-SETUP ALARM (release #22): the placed half of the seen-vs-placed
+	// pair — this intent reached the ledger (row ID nonzero). Counted HERE, at
+	// the ledger-author site, never inferred from the emit counter.
+	at.mentorCountSetupPlaced(in)
 	ackMs := time.Now().UnixMilli()
 	recordMentorLatency(barCloseMs, at.mentorFinalArrival.Load(), emitMs, ackMs)
 	at.logInfof("🧑‍🏫 mentor arm authored: %s %s %d contracts (tier %s) — row %d, the armed pass places it (stop-limit by the origin rule), expiry %d",
