@@ -8347,3 +8347,73 @@ GET /api/risk/gate-blocks (`setup_stalls`).
 Reference: telemetry/setup_stall.go (SetupStallAlertDue, RolloverSetupStalls),
 trader/mentor_stall_alarm.go (mentorSetupKind, mentorStallAlarmCheck),
 api/handler_gate_blocks.go (telemetrySetupStallTable).
+
+## CLASS NN (assigned at merge) — a per-object counter keyed on a constant key while the object moves
+
+symptom: r22 LEVELS (10-13 replay, release #22): the mentor B23 visit cap
+("knock knock", 3 visits/day per level) counted `e.State.Visits[lvl.Key]`, and
+the 5m trigger-line retest carried the CONSTANT key "trigger_retest" (the EMA 34
+lines: "ema34" / "ema34_htf"). The trigger line moves on every reversal (~115
+positions a session) and the EMA re-prices every candle, so every position the
+line held was ONE level for the counter: 82 of 88 trigger-retest rejects and 59
+of 65 EMA 34 rejects on 10-13 were refused by `level_visit_cap` — the backtest
+entry he takes live was gone after the third reject of the day at ANY price.
+probe: for every counter / budget / latch keyed by an object id, ask whether the
+id survives a change of the thing the rule is about. A key that is a constant
+string for an object that moves (a line, a re-priced EMA, a rolling window)
+merges every instance into one count. Replay a full session and tabulate the
+refusals by key kind; a single key refusing at many distinct prices is the tell.
+rule: the counter key is the object's REAL identity for the rule being counted
+(here: the trigger line AT ITS PRICE — a reversal draws a new line,
+D3.4 p1 @11:48–13:33); a line the rule does not apply to is exempted by name
+with its own course rule cited (the EMA: crossing/loss rules, D4.2), never
+silently merged.
+Reference: kernel/mentor/eval.go visitKey, visitCapApplies;
+kernel/mentor/r22_levels_replay_test.go TestR22VisitCapPerLevelIdentity1013,
+TestR22VisitCapSeparatesTriggerLinePositions.
+
+## CLASS NN (assigned at merge) — an object's role re-inferred from the tape at read time
+
+symptom: r22 LEVELS: the PHL/PLH target pick read an old extreme's role (high
+vs low) from `oldExtremeIndexes`, which scanned BACKWARD for the LAST bar whose
+high OR low sat within 0.26 of the price — so a later candle revisiting an old
+HIGH (its low touching the price) relabelled it a "low". 41–42 of ~266 PHL
+target picks on 10-13 had the wrong role, and every one was then refused as
+not_higher_low / not_lower_high (the higher-low check read the wrong side of
+the leg). The pivot detector KNEW the role (SWGH / SWGL) and threw it away.
+probe: for every classification read off a stored object (role, side, kind),
+ask whether it is CARRIED from the producer or RE-DERIVED by a reader. A
+re-derivation that scans later data can flip when later data revisits the
+object; mutate the reader's tie-break and watch whether any test notices.
+rule: the producer stamps the classification on the object (Level.Role); every
+reader uses it; an object without it is refused for that use (fail closed),
+never guessed.
+Reference: kernel/mentor/mentor.go Level.Role, kernel/mentor/eval.go
+swingOldExtremeLevels, oldExtremeIndexes, nearestOldExtremeOnSide,
+oldExtremeRoleFits; TestR22PHLTargetExtremeHasTheTradeRole,
+TestR22NearestOldExtremeOnSideSkipsTheWrongRole.
+
+## CLASS NN (assigned at merge) — a level set that keeps members its own rule has invalidated
+
+symptom: r22 LEVELS: the mentor's "old highs/lows" were the 12 raw 5m/15m
+swing pivots (3 highs + 3 lows per TF), never pruned once price traded through
+them: at 09:00 CT on 10-13, 11 of 12 were already broken. The course has ONE
+nearest old high and ONE old low (§6 ladder, §2.1 rule 2, §2.2). The ISB
+"at an old high/low → size 3" zone covered 183 of 390 RTH candles (47%; the
+single-pair reading: 18/390), and morning targets were broken pivots. The chart
+drew a separately cleaned 3–5 lines while trading read the 12 (the class "one
+source, both readers" above), and the boot line `levels 92` counted the 65
+body-deleted key levels with the 27 live ones — the same shape: a set reported
+or consumed with its dead members inside.
+probe: for every derived set a rule consumes, ask what invalidates a member
+(a break, a deletion, an expiry) and whether the set the READER sees has
+already applied it. Count live vs total at a real instant; a reader of the
+total is a reader of the tombstones.
+rule: the set a reader consumes contains only live members, from ONE builder
+that the chart, the trader and the boot line all read; a count prints live and
+dead separately and never their sum as "the levels".
+Reference: kernel/mentor/eval.go swingOldExtremeLevels, oldExtremeBroken;
+kernel/mentor/level_display.go DisplayLevels; kernel/mentor/seed.go SeedLine
+keyLevelCounts; TestR22OldExtremesAreTheNearestUnbrokenPair1013,
+TestR22OldExtremeZoneShareIsTheSinglePair1013,
+TestR22ChartDrawsTheTradingOldExtremes1013, TestR22SeedLineCountsLiveKeyLevels.

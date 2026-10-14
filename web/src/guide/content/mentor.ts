@@ -211,9 +211,10 @@ export const mentor: GuideSection = {
           cite: 'Engineering rule — frontend refresh + chart levels, not from the course · web/src/components/mentor/useMentorTruth.ts · web/src/components/charts/AdvancedChart.tsx mentorLevels',
         },
         {
-          title: 'Old highs/lows closer than 20 pts are drawn as one line',
-          body: 'The panel and the chart draw ONE line where old highs/lows sit closer than 20 pts apart — the most recent is kept and the folded-away prices are listed in the line\u2019s tooltip ("old low 31043.00 · also 31058.00, 31050.00"). An old high/low within 20 pts of a key level is folded INTO that key level (the key wins). This is the display only: the bot still reduces the ISB size (3 contracts) at any of the merged old highs/lows, and the target ladder still reads them — trading is unchanged.',
-          cite: 'Course 5.3 @15:59–16:50 — two lines under 20 pts → delete one, keep the more recent · kernel/mentor/level_display.go DisplayLevels · mentor.Level.MergedFrom',
+          title:
+            'Old highs/lows: ONE old high and ONE old low — the chart draws what trades',
+          body: 'The bot keeps exactly one old high and one old low: the NEAREST UNBROKEN old high above price and the nearest unbroken old low below it. They are picked from the 5m/15m swing pivots (every pivot price is a 1m wick); a pivot drops out the moment a later closed 1m candle trades beyond it (a wick above an old high breaks it — the candle need not close). The candle being judged is measured against the extremes that stood BEFORE it. Either side can be empty — at a fresh high of the window there is no old high above. The panel and the chart draw exactly these two lines, never folded into a key level and never pruned: the lines you see are the lines the bot sizes, targets and builds legs from. (Before release #22 the bot used 12 raw pivots, most already broken, while the chart drew a cleaned 3–5.)',
+          cite: '§6 ladder "nearest old high → EMA 34 → next level" [D3.3 p1 @04:11, 07:12] · §2.1 rule 2 [D4.1 p1 @08:05 written] · law 2 / D3.4 p1 @08:19 (a break needs no close) · kernel/mentor/eval.go swingOldExtremeLevels · kernel/mentor/level_display.go DisplayLevels',
         },
         {
           title: 'Fold it away',
@@ -241,7 +242,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'PHL / PLH — the pullback',
-          body: "Uptrend pullback → buy stop at the previous candle's high, stop at that candle's low, target NEAR the old high. Downtrend bounce → the exact mirror. Wait 1–2 more pullback candles; a higher low is required (a flat low is an FTGL, not a PHL).",
+          body: "Uptrend pullback → buy stop at the previous candle's high, stop at that candle's low, target NEAR the old high. Downtrend bounce → the exact mirror. Wait 1–2 more pullback candles; a higher low is required (a flat low is an FTGL, not a PHL). The old high is the nearest UNBROKEN old high, and its role is fixed when it is drawn: a PHL (long) only ever targets an old HIGH and a PLH (short) an old LOW — an old low is never a long's target. Inside a standing 5m (or 15m/30m) ISB box, or between an FTGL and an FTGH, there is no PHL/PLH at all (only the ISB) [D3.4 p2 @07:27–10:35; D3.2 p2 @08:51].",
           tag: 'D2.2 p1',
         },
         {
@@ -314,7 +315,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Smaller size at an old high/low',
-          body: 'An ISB right at an old high/low trades the reduced size (3 contracts), not the base size. Written rule 2 [D4.1 p1 @04:37–05:04: "ở ngay đỉnh hoặc đáy cũ… giảm size… là cái thứ 2"] — wired: the evaluator flags the ISB and the size table cuts it.',
+          body: 'An ISB right at an old high/low trades the reduced size (3 contracts), not the base size. "At" = the ISB candle reaches within ±2 pts of THE nearest unbroken old high or THE nearest unbroken old low (one line each — see "Old highs/lows" above). On 10-13 that is 18 of the 390 RTH candles (4.6%); before release #22 the 12-pivot list flagged 183 of them (47%). Written rule 2 [D4.1 p1 @04:37–05:04: "ở ngay đỉnh hoặc đáy cũ… giảm size… là cái thứ 2"] — wired: the evaluator flags the ISB and the size table cuts it.',
           cite: 'D4.1 p1 @04:37–05:04 — "ở ngay đỉnh hoặc đáy cũ… giảm size" · trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlags',
         },
         {
@@ -337,6 +338,11 @@ export const mentor: GuideSection = {
           title: 'Per-visit level references',
           body: 'A level reference lasts until a closed candle departs the level; every NEW visit (a closed candle not touching it since the last reference) gets its own reference candle and stop. One level no longer blocks itself for the whole day. A wrong-way close marks a level ISB-only (only ISBs may trade there): a moving line (EMA / trigger retest) clears that mark only when the visit departs (the touching candle is gone) — never on drift alone, because the EMA re-prices every tick; a key level clears it at the next session day.',
           cite: 'L1 — lvl_revisit_min_pts, default 0 · D5.2 p2 @20:48 (item 22)',
+        },
+        {
+          title: 'Every PHL/PLH drop is named',
+          body: 'A rejected touch that does not become a PHL/PLH always names its reason in the funnel line, counted ONCE per visit of the level (not every minute the touch stands): phl_5m_box_ban, phl_mid_range_boxed, phl_ema_crossing_30m, phl_ema_loss_block, phl_not_location, phl_no_reject_entry, phl_level_arm_resting — beside the existing phl_15m_box_ban, phl_30m_box_ban, level_visit_cap, room, near_box and the rest. Before release #22 the first five dropped silently. The boot line also reads the key levels as "key levels N live · M deleted" — the old "levels 92" counted the deleted ones too (27 were live).',
+          cite: 'Engineering rule — every refusal logged and counted · kernel/mentor/eval.go refuseOncePerVisit · kernel/mentor/seed.go SeedLine',
         },
         {
           title: 'Box ping-pong needs ≥ 50 pts',
@@ -1048,13 +1054,14 @@ export const mentor: GuideSection = {
         {
           label: 'Maximum level visits per day',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'Allow this many visits to each level in a day; later visits are refused. Zero disables the cap.',
+          what: 'Allow this many reject visits to each level in a day; later visits are refused (level_visit_cap). A "level" is one real price line: a key level, an old high/low, a box edge, one trendline — and the 5m trigger line AT ITS CURRENT PRICE (each reversal draws a new line, so a moved line starts at zero). The EMA 34 lines are never capped: they re-price every candle, and the course gives them their own rules instead (too many crossings in 30 minutes → off; a loss at the line → off until price leaves). Zero disables the cap.',
           trader: '3 visits; 0 = off. Tunable in Studio (blank = default).',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (LevelMaxVisits)',
           range: 'visits (0 = off)',
           systemDefault: '3',
-          recommended: '3 — B23 “knock knock” ruling.',
+          recommended:
+            '3 — B23 “knock knock” ruling (D1.3 p1 @10:23–11:43: a level tested 1, 2, at most 3 times holds; more and it breaks).',
           whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
