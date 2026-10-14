@@ -60,6 +60,27 @@ function Panel({
   )
 }
 
+// The last polled update-job id, per tab (UI-GUIDE N-5). Every access is
+// guarded: storage can be absent or throw (private window, blocked site
+// data, previews) and the page must still render.
+const LAST_JOB_KEY = 'vl.updates.lastJobID'
+
+function readLastJobID(): string | null {
+  try {
+    return window.sessionStorage.getItem(LAST_JOB_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeLastJobID(id: string) {
+  try {
+    window.sessionStorage.setItem(LAST_JOB_KEY, id)
+  } catch {
+    // memory only — the panel still shows the job until the tab reloads
+  }
+}
+
 export default function UpdatesPage() {
   const { language } = useLanguage()
 
@@ -135,8 +156,19 @@ export default function UpdatesPage() {
   // (complete / rolled_back) is the last thing shown, never a frozen
   // snapshot of the moment the hold appeared (#206 review fold). Absent job
   // = "no update job".
-  const [lastJobID, setLastJobID] = useState<string | null>(null)
-  const polledJobID = maintenance?.job_id ?? lastJobID
+  //
+  // UI-GUIDE N-5: a job refused IN PREFLIGHT never writes the hold, so the
+  // hold never names it — the install-pending view does (job_id), and it is
+  // a polled id too. The last id is kept in sessionStorage (this tab only)
+  // so a reload does not drop a refused job from the panel; storage that
+  // throws (private window, blocked site data) falls back to memory.
+  const [lastJobID, setLastJobIDState] = useState<string | null>(readLastJobID)
+  const setLastJobID = useCallback((id: string) => {
+    setLastJobIDState(id)
+    writeLastJobID(id)
+  }, [])
+  const polledJobID =
+    maintenance?.job_id ?? maintenance?.install_pending?.job_id ?? lastJobID
   useEffect(() => {
     if (!polledJobID) {
       setJob(null)
@@ -161,7 +193,9 @@ export default function UpdatesPage() {
   // the hold).
   useEffect(() => {
     if (maintenance?.job_id) setLastJobID(maintenance.job_id)
-  }, [maintenance?.job_id])
+    else if (maintenance?.install_pending?.job_id)
+      setLastJobID(maintenance.install_pending.job_id)
+  }, [maintenance?.job_id, maintenance?.install_pending?.job_id, setLastJobID])
 
   // The receipt download (OQ-7): the route sits behind the M3 gate, so a bare
   // navigation 403s — the receipt is fetched through the API client (which
@@ -750,6 +784,17 @@ export default function UpdatesPage() {
             {job?.state && job?.error && (
               <div data-testid="job-error">
                 <Row label={up('jobError', language)} value={job.error} />
+              </div>
+            )}
+            {/* UI-GUIDE N-5: stale at start / stale at resume / the attempts
+                cap put a job in recovery_needed with ONLY a recovery reason
+                (no error) — shown verbatim, as the server wrote it. */}
+            {job?.recovery_reason && (
+              <div data-testid="job-recovery">
+                <Row
+                  label={up('jobRecovery', language)}
+                  value={job.recovery_reason}
+                />
               </div>
             )}
             {job?.timestamps && Object.keys(job.timestamps).length > 0 && (
