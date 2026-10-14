@@ -162,8 +162,8 @@ func (s *PositionStore) GetSessionDayActivity(traderID string, sinceMs int64, ac
 		// A-2 (2026-08-28): no silent NULLs — legacy unverified rows are
 		// excluded from the guardrail P&L too.
 		Where("trader_id = ? AND status = ? AND close_reason NOT IN (?, ?, ?) AND pnl_corrected IS NOT NULL AND exit_time >= ?",
-			traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam, sinceMs).
-		Where(BotOriginSQL) // R22 R1: bot-only realized P&L
+			traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam, sinceMs)
+	pq = pq.Where(BotOriginSQL) // R22 R1: bot-only realized P&L
 	if acct != "" {
 		pq = pq.Where("account = ?", acct)
 	}

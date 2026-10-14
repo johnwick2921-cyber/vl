@@ -34,8 +34,8 @@ const (
 	OriginManual = "manual"
 )
 
-// BotOriginSQL is THE predicate every bot P&L aggregator applies. NULL or ''
-// reads as bot: a row written before the column existed was written by the
+// BotOriginSQL is THE predicate every bot P&L aggregator applies. NULL or an
+// empty value reads as bot: a row written before the column existed was written by the
 // bot's own paths (the reconcile adoptions are marked by the migration below).
 const BotOriginSQL = "COALESCE(origin, '') <> 'manual'"
 
@@ -201,7 +201,7 @@ type ManualOriginTarget struct {
 
 // R1ManualOriginTargets — EXACTLY the four rows of owner ruling R1, each pinned
 // to hoang's trader id. Verified read-only 2026-10-14 (data.db): all four are
-// source='reconcile', plan_id='UNRESOLVABLE', entry_order_id='', 40/40/20/20
+// source='reconcile', plan_id='UNRESOLVABLE', an empty entry_order_id, 40/40/20/20
 // contracts, each with a "MATERIALIZED untracked NT8 position … manual/NT8-side
 // entry" log line and no armed_orders row of 20+ contracts ever filled.
 var R1ManualOriginTargets = []ManualOriginTarget{
