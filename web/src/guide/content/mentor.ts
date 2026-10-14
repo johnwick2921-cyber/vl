@@ -150,15 +150,47 @@ const codeConstantNote = {
     'Not tunable from the app: this is the default the evaluator ships with; changing it takes a code change.',
 }
 
+// Stored strategy settings the bot READS but the Studio has NO control for
+// (UI-GUIDE-TRUTH T16, release #22): the only Studio mentor controls are the
+// mode switch, the window start/length, stop-after-loss (RiskControlEditor)
+// and the "Mentor method numbers" panel (MentorTuningPanel). Pinned against
+// those two files by mentorKnobWhere.test.ts.
+export const MENTOR_NO_STUDIO_CONTROL = [
+  'mentor_base_contracts',
+  'mentor_confluence_contracts',
+  'mentor_big_contracts',
+  'mentor_max_contracts',
+  'mentor_reduced_contracts',
+  'mentor_swing4h_contracts',
+  'mentor_spent_day_contracts',
+  'mentor_trail_tf',
+  'mentor_leg_budget_enabled',
+  'mentor_leg_reset_on',
+  'mentor_lvl_revisit_min_pts',
+  'mentor_ema_max_cross_30m',
+  'mentor_loss_departure_pts',
+  'mentor_loc_trigger_filter',
+]
+
+function noStudioControlWhere(settingId: string): string {
+  return `No Studio control — stored strategy setting ${settingId}; the app has no field for it, so the shipped default applies unless the saved strategy config already carries a value`
+}
+
 function withMentorKnobKeys(knobs: KnobSpec[]): KnobSpec[] {
   return knobs.map((knob) => {
     const metadata = mentorKnobKeys[knob.label]
     if (!metadata) return knob
     const isConstant =
       !metadata.live && /^(Config|SwingCfg|BoxCfg)\./.test(metadata.settingId)
-    return isConstant
-      ? { ...knob, ...metadata, ...codeConstantNote }
-      : { ...knob, ...metadata }
+    if (isConstant) return { ...knob, ...metadata, ...codeConstantNote }
+    if (MENTOR_NO_STUDIO_CONTROL.includes(metadata.settingId)) {
+      return {
+        ...knob,
+        ...metadata,
+        where: noStudioControlWhere(metadata.settingId),
+      }
+    }
+    return { ...knob, ...metadata }
   })
 }
 
@@ -186,8 +218,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Entries become stop-LIMIT',
-          body: 'Every mentor entry goes out as a stop-LIMIT with the limit at the stop price ("đừng đặt buy stop market nữa… đặt buy stop limit đi") — always, no setting turns it off. Each order carries an expiry: a LEVEL (PHL/PLH/EMA) order RESTS until the NEXT 15:00 CT — the RTH window end (or until a later candle closes through the level, whichever comes first). An order placed before 15:00 rests to 15:00 the SAME day; one placed after 15:00 rests through to 15:00 the NEXT day. The 15:00 RTH-end lifetime is an inference from the RTH window end, no lesson states it; an ISB expires at the close of the next 1m candle; the swing at the close of the current 4h candle. The armed pass cancels an unfilled order when it lapses. A mentor entry without an expiry is refused, never sent as a stop-market. Other (non-mentor) orders keep their own order types.',
-          cite: 'D1.4 p1 @ 24:41–24:55 (stop-LIMIT, never stop-market) · 15:00 RTH-end = inference, no lesson · trader/mentor_tick.go mentorIntentExpiry · kernel/mentor/eval.go levelArmCancels',
+          body: 'Every mentor entry goes out as a stop-LIMIT with the limit at the stop price ("đừng đặt buy stop market nữa… đặt buy stop limit đi") — always, no setting turns it off. Each order carries its own expiry: an ISB expires at the close of the next 1m candle; the swing at the close of the current 4h candle; a LEVEL (PHL/PLH/EMA) order is stamped to rest until the next 15:00 CT — the RTH window end, an inference, no lesson states it — or until a later candle closes through the level, whichever comes first. The armed pass cancels an unfilled order when it lapses. ON TOP of every expiry, the EOD flat cancels every INTRADAY mentor order (everything except the SWING4H) whenever no session window is open: from the NY close at 14:45 CT until the 17:00 CT reopen. The ASIA/LONDON/NY windows count for this whether or not their trading switch is on, and a registered half-day pulls the 14:45 earlier. So in practice a level order never lives past 14:45 CT: one placed in the morning is cancelled at 14:45 the same day, 15 minutes before its own 15:00 stamp; one authored between 14:45 and 17:00 is cancelled on the same pass, within milliseconds (rows 256, 282, 283 and 343 died 1–3 ms after they were written); one placed in the evening or overnight rests until 14:45 CT the next trading day. No NEW mentor entry is placed from 15:45 CT (the lead into the 16:00 daily halt) until the 17:00 reopen. A mentor entry without an expiry is refused, never sent as a stop-market. Other (non-mentor) orders keep their own order types.',
+          cite: 'D1.4 p1 @ 24:41–24:55 (stop-LIMIT, never stop-market) · 15:00 RTH-end = inference, no lesson · trader/mentor_tick.go mentorIntentExpiry · kernel/mentor/eval.go levelArmCancels · EOD cancel: trader/auto_trader_clock.go enforceEODFlatAt + trader/armed_executor.go cancelIntradayMentorArms, windows from kernel/session_registry.go DefaultSessionRegistry (NY flat 14:45, ASIA open 17:00) · 15:45 cutoff: trader/mentor_mode.go mentorPastDailyHaltCutoff · pinned by trader/guide_mentor_lifetime_test.go',
         },
       ],
     },
@@ -206,9 +238,9 @@ export const mentor: GuideSection = {
           cite: 'Engineering rule — frontend label (advice-only), not from the course · web/src/components/plan/BiasBlock.tsx adviceOnly · web/src/components/plan/PlanCard.tsx',
         },
         {
-          title: 'Live refresh + chart levels',
-          body: 'The card refreshes every 30s and on window focus, and stamps each snapshot "as of HH:MM:SS CT" (server as_of_ms). The mentor key levels are also drawn on the dashboard price chart as dashed amber lines labelled "mentor", distinct from the solid order lines.',
-          cite: 'Engineering rule — frontend refresh + chart levels, not from the course · web/src/components/mentor/useMentorTruth.ts · web/src/components/charts/AdvancedChart.tsx mentorLevels',
+          title: 'Live refresh + what the chart draws',
+          body: 'The card refreshes every 30s and on window focus, and stamps each snapshot "as of HH:MM:SS CT" (server as_of_ms). The dashboard price chart draws, in mentor amber, every place the evaluator holds on the latest tick: key levels, old highs/lows (a merged line names the prices it absorbed), the EMA 34/9 lines, the EMA 34 location line, the 5m trigger line, the 4h/1h trigger lines, the FTGH/FTGL box edges, the ISB rest boxes (5m/15m/30m high and low), the ORB high/low with its escape state, the swing line (the warm 4h EMA 34) and a filled swing leg\'s SL/TP, and every VALID trendline as a sloped segment from its first swing to where it trades now (a line inside a box is drawn to its second swing and labelled "not traded"). Working orders are drawn from the order ledger: a mentor stop-entry is an orange "Stop entry SELL 3 · SL … · TP …" line at its ENTRY price, never a red "SL" at its stop; a planner limit draws with its entry zone. Nothing is drawn that the bot does not hold — the chart shows no open-position stop/target for intraday positions yet (the API does not carry them).',
+          cite: 'Engineering rule — frontend refresh + chart overlays (release #22 T5/T7), not from the course · web/src/components/mentor/useMentorTruth.ts · web/src/components/charts/chartOverlays.ts · trader/mentor_truth_panel.go mentorChartObjects · kernel/mentor/eval.go State.ChartLevels',
         },
         {
           title: 'Old highs/lows closer than 20 pts are drawn as one line',
@@ -319,12 +351,12 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Smaller size when the ISB is in a range',
-          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). "In range" means: between an FTGL below and an FTGH above; inside the standing 5m ISB rest box; between two key levels closer than the ping-pong minimum (50 pts); and — once built — a 15m ISB range. Written rule 3 [D4.1 p1 @04:37–05:04: "Khi trade isb in-range bắt buộc giảm size"]. A spent day (2) still wins; the cut beats the confluence size.',
+          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). "In range" means: between an FTGL below and an FTGH above; inside the standing 5m ISB rest box; between two key levels closer than the ping-pong minimum (50 pts); and — once built — a 15m ISB range. Written rule 3 [D4.1 p1 @04:37–05:04: "Khi trade isb in-range bắt buộc giảm size"]. The cut beats the confluence size. A spent day does NOT change the size (it cuts the target to 15 pts and the runner to 2 contracts instead).',
           cite: 'D4.1 p1 @04:37–05:04 — "Khi trade isb in-range bắt buộc giảm size" · trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlagsFor',
         },
         {
           title: 'Skip a stop in the twenties',
-          body: 'A stop of 20–29.99 pts must not be taken — the only stop-size skip the method has.',
+          body: 'An ISB stop of 20–29.99 pts must not be taken. It is not the only stop-size skip: any non-swing mentor stop over 25 pts is skipped, and on a spent day any non-swing stop over the 15-pt cap is skipped (trader/mentor_mode.go mentorRuleGate).',
           cite: 'D4.1 p1 @05:41 — "cái setup ISB mà nó hai mươi mấy điểm… đừng vô" · ISBTwentiesPts 20 — merged',
         },
       ],
@@ -421,7 +453,7 @@ export const mentor: GuideSection = {
         ],
         [
           'News 07:30 CT (print)',
-          'A mentor entry is refused through the print window (07:20–07:35 CT). At print −10m on a red-folder print day, live INTRADAY mentor arms are cancelled by ArmID and intraday mentor positions are flattened before the 07:30 print — the SWING4H is exempt (held by the 4h). The 07:30 print candle never moves the 1h/4h trigger lines: the evaluator drops the print-window bars from the higher-timeframe feed, so a news spike is not a real break.',
+          "On a red-folder 07:30 print day (from the day's calendar), a mentor entry is refused through the print window (07:20–07:35 CT); if the calendar slice is missing or unreadable the window is held anyway (fail-closed, counted news_hold_no_calendar); on an ordinary day the window refuses nothing. At print −10m on a red-folder print day, live INTRADAY mentor arms are cancelled by ArmID and intraday mentor positions are flattened before the 07:30 print — the SWING4H is exempt (held by the 4h). The 07:30 print candle never moves the 1h/4h trigger lines: the evaluator drops the print-window bars from the higher-timeframe feed, so a news spike is not a real break.",
           'F11 · R12 · D4.4 p1 @18:13, @22:15, @20:44–21:46',
         ],
         [
@@ -441,8 +473,8 @@ export const mentor: GuideSection = {
           cite: 'Owner setting — done-after-win (D1.2 p1 @20:53 "thắng rồi… quyền được nghỉ ngơi") · mentor_done_after_win — live',
         },
         {
-          title: 'Trading window 08:30–09:30 CT',
-          body: 'The day is only 08:30–09:30 CT. The SWING4H is exempt.',
+          title: 'Trading window — 08:30–09:30 CT by default',
+          body: 'With the default window (start 08:30, 60 minutes) the day is only 08:30–09:30 CT. A window length of -1 ("No window (any hour)") removes it: both bound strategies save -1 today, so mentor arms are authored around the clock (row 362 was written at 01:02 CT). The SWING4H is exempt either way.',
           cite: 'Owner setting — window 08:30 + 60 (D1.2 p1 @24:04–24:15 "đặt một cái timer… đúng một tiếng") · mentor_window_start / mentor_window_minutes — live',
         },
         {
@@ -481,7 +513,7 @@ export const mentor: GuideSection = {
         ['Big (the hard tier)', '5', 'mentor_big_contracts'],
         ['Hard cap', '20', 'mentor_max_contracts'],
         [
-          'Reduced (stop in the twenties / spent day)',
+          'Reduced (stop 20–25 pts; also an ISB at an old high/low or inside a range)',
           '3',
           'mentor_reduced_contracts',
         ],
@@ -528,7 +560,7 @@ export const mentor: GuideSection = {
         ],
         [
           'SWING4H',
-          'First target = the 5m EMA 34 (or the 50-pt fallback); BE at +1R; hold to the close of the 2nd 4h candle after entry',
+          'First target = at least 1R: the warmed 5m EMA 34 when it sits FURTHER than 1R on the profitable side, else exactly 1R (the old 50-pt fallback is gone — kernel/mentor/swing4h.go swingFirstTarget); BE at +1R; hold to the close of the 2nd 4h candle after entry',
         ],
         [
           'ISB partial',
@@ -642,40 +674,43 @@ export const mentor: GuideSection = {
         {
           label: 'Reduced contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'Size when the stop is in the twenties or the day is spent.',
+          what: 'Size when the stop is 20–25 pts (trader/mentor_mode.go mentorContractsFor). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner.',
           trader: '3 contracts on the reduced tier.',
           consumer: 'trader/mentor_mode.go:28',
           range: 'int',
           systemDefault: '3',
           recommended:
-            '3 — Owner setting: CTO shipped size table (P3); the reduced tier for twenties/spent stops.',
-          whenToTouch: 'With the twenties/spent tier rules.',
+            '3 — Owner setting: CTO shipped size table (P3); the reduced tier for a 20–25 pt stop. (An ISB at an old high/low or in a range is a fixed 3 in the code, not this knob.)',
+          whenToTouch: 'With the twenties tier rule.',
           perSession: 'No.',
         },
         {
           label: 'SWING4H contracts',
           where: 'Strategy → Mentor mode → sizing',
           what: 'Size for the 4h EMA 34 swing setup.',
-          trader: '3 contracts on the swing.',
-          consumer: 'trader/mentor_mode.go:29',
+          trader:
+            '1 contract on the swing (lesson 5.2: "Em vô đúng 1 MNQ thôi"); a strong day can never raise it.',
+          consumer: 'trader/mentor_mode.go mentorSwing4HContractsDefault',
           range: 'int',
-          systemDefault: '3',
+          systemDefault: '1',
           recommended:
-            '3 — Owner setting: CTO shipped size table (P3); the swing is exempt from the 25-pt ceiling.',
+            '1 — D5.2 p1 @00:38–00:47 ("enter exactly 1 MNQ"); the swing is exempt from the 25-pt ceiling.',
           whenToTouch: 'Never — fixed by the size table.',
           perSession: 'No.',
         },
         {
           label: 'Spent-day contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'Size when the §7 day gate says the day already ran 300+.',
-          trader: '1–2 contracts — "on range days hold 1–2 contracts only".',
-          consumer: 'trader/mentor_mode.go:30',
-          range: 'int',
-          systemDefault: '2',
+          what: 'NOT READ FOR SIZING. The value is resolved and then discarded (trader/mentor_mode.go mentorContractsFor: `_ = spentCap`). A spent day (§7: the day already ran 300+) keeps the normal size; what it cuts is the target (15-pt cap) and the runner — at most 2 contracts run, a fixed code constant (mentorSpentDayRunnerCap), not this knob [R09].',
+          trader:
+            'Changing it changes nothing today — the course\'s "on range days hold 1–2 contracts only" is carried by the fixed runner cap of 2.',
+          consumer:
+            'none (resolved by mentorKnobs, then discarded) — runner cap: trader/mentor_mode.go mentorSpentDayRunnerCap = 2',
+          range: 'int (no effect)',
+          systemDefault: '2 (no effect)',
           recommended:
-            '2 — Owner setting: CTO shipped size table (P3); the §7 spent-day tier.',
-          whenToTouch: 'With DayGateSpentPts.',
+            'Leave it — it has no reader. Engineering rule (R09, owner ruling 2026-10-04): the spent-day behaviour is the 15-pt target cap + the runner cap 2.',
+          whenToTouch: 'Never — it does nothing until a code change wires it.',
           perSession: 'No.',
         },
         {
@@ -1137,7 +1172,7 @@ export const mentor: GuideSection = {
         {
           label: 'Swing target EMA period',
           where: 'Strategy → Mentor mode → SWING4H',
-          what: 'The first target is the 5m EMA 34.',
+          what: 'The first target is max(1R, the warmed 5m EMA 34) on the profitable side — the EMA wins only when it sits further than 1R; absent or on the wrong side, the target is exactly 1R.',
           trader: '34 on the 5m.',
           consumer: 'kernel/mentor/swing4h.go SwingCfg.TargetEMA5mPeriod',
           range: 'period',
@@ -1353,7 +1388,7 @@ export const mentor: GuideSection = {
             'No Studio control — ON by default; the strategy setting mentor_stale_data_block=false turns it off',
           what: 'Refuse NEW mentor arms (authoring and the armed placement pass) while the live 1m feed is stale — the same B4 formula the AI path uses (expected-open − 1 bar − 15s grace ≈ 75 s). While CME is closed (the daily 16:00–17:00 break, weekends) the gate never fires. Exits and protection are never blocked, and already-resting broker orders are not cancelled by it.',
           trader:
-            'ON by default (nil → ON, fail-closed — the same default posture as B4); an explicit false disables it. One WARN and one "stale_data" funnel refusal per stale episode, never per tick.',
+            'ON by default (nil → ON — the same default posture as B4); an explicit false disables it. One WARN and one "stale_data" funnel refusal per stale episode, never per tick. The block itself fails OPEN when the 1m cache is empty or no bar provider is wired (a cold start — the seed and the FEED DOWN alert own that case).',
           consumer:
             'trader/mentor_mode.go mentorStaleDataBlocked · kernel/stale_data.go StaleEntryGateFeed',
           range: 'true / false',

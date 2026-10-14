@@ -80,9 +80,9 @@ const dayPlan: KnobSpec[] = [
       'kernel/levels_score.go:389 (ScoreLevels proximityK) · trader/auto_trader_planconfig.go:47',
     range: '0.1 – 3.0 (× daily-range proxy, clamped)',
     systemDefault:
-      '1.5 (the code default AND, as of 2026-09-03, the resolved live value — the saved config reads 1.5, so the 0.3 retune this card described is no longer in effect)',
+      '1.5 (the code default: kernel.ResolveProximityK falls back to ActivationWindowK 1.5 when nothing is saved)',
     recommended:
-      '⭐ 1.5 — the RESOLVED live value, read from the saved strategy config 2026-09-03 (day_plan.proximity_filter_atr = 1.5), NOT the 0.3 this card claimed since 2026-08-28. Band = K × dATR (the daily-range proxy) on BOTH the bot gate and the engine path; kernel.ResolveProximityK clamps to 0.1–3.0 and falls back to ActivationWindowK 1.5.',
+      '⭐ 1 — the value BOTH bound strategies have SAVED (day_plan.proximity_filter_atr = 1, read 2026-10-14 for a5b7662e "MNQ" and 7a853ea3 "mnq 2"); the 1.5 this card used to call the saved value is only the code fallback. Band = K × dATR (the daily-range proxy) on BOTH the bot gate and the engine path; kernel.ResolveProximityK clamps to 0.1–3.0.',
     whenToTouch:
       'If the card looks too crowded or too empty for the daily range.',
     perSession:
@@ -589,9 +589,11 @@ const risk: KnobSpec[] = [
     trader: 'Raising this is the single strongest filter on bad entries.',
     consumer: 'kernel/engine_position.go:122 (validateDecisions minRiskReward)',
     range: '1 – 10 (step 0.5)',
-    systemDefault: '3 (owner)',
-    recommended: '⭐ 3 — current config; 4+ measurably cuts entry count.',
-    whenToTouch: 'Raise to 4+ if wins are too small to cover losers.',
+    systemDefault:
+      '3 — the code fallback, used only when the bound strategy saves no value',
+    recommended:
+      '⭐ 2 — the value BOTH bound strategies have SAVED (min_risk_reward_ratio = 2 since the 2026-09-01 08:13 CT save; read 2026-10-14). It is the ONE floor for the decision path AND the arm seam (ARM_MIN_RR was deleted, owner ruling 2026-09-03). 3+ measurably cuts entry count.',
+    whenToTouch: 'Raise to 3+ if wins are too small to cover losers.',
     perSession: 'No.',
   },
   {
@@ -712,16 +714,17 @@ const risk: KnobSpec[] = [
     perSession: 'No.',
   },
   {
-    label: 'Max contracts (always-on) — Stage A: 1',
-    what: 'Contract cap per order — on with or without the master. 0B (2026-09-02): every resolution is clamped to the Stage-A ceiling of 1 contract — survival-first under an undemonstrated edge. Stage B (2) only at n≥30 closed trades with a POSITIVE LOWER-CI expectancy; Kelly and optimal-f are undefined without an edge estimate. Before 0B the two resolvers disagreed: arm-leg capacity said 1 while order sizing said 2, and the boot line said capacity=1.',
+    label: 'Max contracts (always-on) — Stage A: 1 (AI / planner path only)',
+    what: 'Contract cap per order on the AI / planner path — on with or without the master. 0B (2026-09-02): every AI / planner resolution is clamped to the Stage-A ceiling of 1 contract — survival-first under an undemonstrated edge. Stage B (2) only at n≥30 closed trades with a POSITIVE LOWER-CI expectancy; Kelly and optimal-f are undefined without an edge estimate. Before 0B the two resolvers disagreed: arm-leg capacity said 1 while order sizing said 2, and the boot line said capacity=1. MENTOR MODE IS NOT CLAMPED BY THIS: a mentor-mode trader skips this resolver (resolveMaxContracts returns mentor_max_contracts) and sizes every entry from the mentor size table — 5 by default (base, confluence and big are all 5), 3 when the stop is 20–25 pts or an ISB sits at an old high/low or inside a range, 1 on the SWING4H — capped only by mentor_max_contracts (default 20). Live: every mentor arm on the mentor trader since 10-13 (rows 340–362) carried 3 contracts (ISB tiers). See Mentor Mode → Sizing.',
     where: 'Strategy → Risk Control → always-on row',
     trader:
       'THE ARITHMETIC: 0B also raised the stop floor from 1.0× to 1.5×ATR5m, which lifts dollar risk per trade by roughly 50% at constant size. That is precisely why size does NOT move at the same time.',
     consumer:
-      'kernel/risk_limits.go (ResolveMaxContracts → ClampStageAContracts)',
+      'kernel/risk_limits.go (ResolveMaxContracts → ClampStageAContracts) · mentor bypass: trader/auto_trader_orders.go resolveMaxContracts → trader/mentor_mode.go mentorMaxContracts',
     range:
-      'page value · Stage-A ceiling 1 · env STAGE_A_CONTRACT_CAP raises it',
-    systemDefault: '1 (Stage A)',
+      'page value · Stage-A ceiling 1 · env STAGE_A_CONTRACT_CAP raises it · not applied in mentor mode',
+    systemDefault:
+      '1 (Stage A) on the AI / planner path; mentor mode: the mentor size table (5 / 3 / 1, cap 20)',
     recommended: '⭐ 1 — do not raise before the n≥30 lower-CI test.',
     whenToTouch: 'Stage B, with the expectancy table in hand.',
     perSession: 'No.',
@@ -771,8 +774,9 @@ const risk: KnobSpec[] = [
     what: 'Realized PnL ≥ cap stops new entries for the day (lock-in, not close-out).',
     trader: 'Takes the win and stops overtrading a good day.',
     consumer: 'kernel/risk_limits.go:185 (DailyProfitEnabled)',
-    range: 'USD · enabled with master',
-    systemDefault: 'ON (with master)',
+    range: 'USD · needs its own toggle AND the master',
+    systemDefault:
+      'OFF — an unsaved toggle resolves OFF (kernel/risk_limits.go ResolveStrategyGuardrails: DailyProfitEnabled default false); it acts only when saved ON and the master is ON',
     recommended: '⭐ ON — one of the cheapest edge protections in the stack.',
     whenToTouch: 'Disable only if you deliberately want unlimited upside days.',
     perSession: 'No.',
@@ -783,8 +787,9 @@ const risk: KnobSpec[] = [
     what: 'Entry count cap per session-day.',
     trader: "Stops revenge-trading after the day's quota is spent.",
     consumer: 'kernel/risk_limits.go:187 (MaxDailyTradesEnabled)',
-    range: 'count · enabled with master',
-    systemDefault: 'ON (with master)',
+    range: 'count · needs its own toggle AND the master',
+    systemDefault:
+      'OFF — an unsaved toggle resolves OFF (ResolveStrategyGuardrails: MaxDailyTradesEnabled default false). Both bound strategies save it OFF (max_daily_trades 3 is stored but not enforced).',
     recommended: "⭐ ON with a number that fits the strategy's hit rate.",
     whenToTouch: 'Review weekly against the win rate.',
     perSession: 'No.',
@@ -824,8 +829,9 @@ const risk: KnobSpec[] = [
     what: 'Max daily PnL percentage swing before the consistency rule fires.',
     trader: 'Bounds how much one day may deviate from the norm.',
     consumer: 'kernel/risk_limits.go:195 (ConsistencyMaxDayPct)',
-    range: 'percent · enabled with master',
-    systemDefault: 'ON (with master)',
+    range: 'percent · needs its own toggle AND the master',
+    systemDefault:
+      'OFF — an unsaved toggle resolves OFF (ResolveStrategyGuardrails: ConsistencyEnabled default false)',
     recommended: '⭐ ON for a smooth equity curve.',
     whenToTouch: 'Loosen only after a verified regime change.',
     perSession: 'No.',
@@ -1630,11 +1636,11 @@ export const settings: GuideSection = {
     { kind: 'h', text: 'Env-only knobs (not Studio)' },
     {
       kind: 'callout',
-      title: 'The 9 env knobs — .env only, never a Studio slider',
+      title: 'Env-only knobs — .env only, never a Studio slider',
       items: [
         {
-          title: 'ARM_MIN_RR = 2.0',
-          body: 'The gate-at-arm R:R floor for resting orders. RESOLVED 2026-09-03: the market-entry floor is ALSO 2.0, not 3.0 — the entry gate reads the BOUND strategy (MNQ, a5b7662e), whose min_risk_reward_ratio is 2 since the 2026-09-01 08:13 CT save. Both paths therefore refuse below 2.0. The 3.0 this card used to claim is the hardcoded fallback the gate uses only when the bound config has no value, and it is also what the unbound preset 均衡策略 carries — which is how the wrong number got here.',
+          title: 'ARM_MIN_RR — DELETED (no longer read)',
+          body: 'There is no ARM_MIN_RR any more, env or code default (owner ruling 2026-09-03, R1 "one R:R floor"; trader/armed_executor.go). The resting-order seam and the decision path read the SAME floor: the bound strategy\'s min_risk_reward_ratio — 2 on both bound strategies since the 2026-09-01 08:13 CT save. 3.0 is only the fallback when the bound config has no value. Setting ARM_MIN_RR in .env does nothing.',
         },
         {
           title: 'HTF_VETO_MODE = cross',
@@ -1661,7 +1667,7 @@ export const settings: GuideSection = {
           body: 'FVG displacement floor in ATR5m multiples.',
         },
         {
-          title: 'INGEST_QUEUE_CAP = 1024',
+          title: 'INGEST_QUEUE_CAP = 4096',
           body: 'Bar-ingest queue depth (peak_depth is logged; 0 drops is the invariant).',
         },
         {

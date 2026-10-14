@@ -114,7 +114,7 @@ export const faq: GuideSection = {
         },
         {
           q: 'Why did the bot flatten at 14:45?',
-          a: 'EOD-flat ladder: the session ends flat by design (limit ticks, then market after the grace seconds). The session registry enforces it for all three sessions.',
+          a: 'EOD flat: the session ends flat by design — resting entries are cancelled, then positions close at market (the limit-ticks-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0; default 0). The session registry enforces it for all three sessions. Exception: a SWING4H mentor position is held through the close (it is managed by the 4h candle).',
           link: '#trading-day',
         },
         {
