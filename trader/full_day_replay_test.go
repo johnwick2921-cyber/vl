@@ -208,6 +208,7 @@ type fdrWorld struct {
 	cur          atomic.Int64   // index into bars of the newest CLOSED bar the ring shows
 	nowMs        atomic.Int64   // the replay clock (mentorNowSource)
 	storedTo     int64          // store holds every fixture bar with OpenTime <= storedTo
+	traders      []*fdrTrader   // the replay's traders (the AddOn applies updates to them)
 }
 
 func newFdrWorld(t *testing.T, seedMs int64, accounts []string, snapshotAccounts map[string]bool, build string) *fdrWorld {
@@ -410,7 +411,6 @@ type fdrAddon struct {
 	writeMu sync.Mutex
 	mu      sync.Mutex
 	inbox   []ntwire.Envelope
-	recv    int64
 	done    chan struct{}
 
 	// book state — touched only by the test goroutine (settle).
@@ -419,6 +419,8 @@ type fdrAddon struct {
 	signals   map[string]ntwire.SignalPayload
 	positions map[string]fdrAddonPos  // account → the open position
 	unfilled  map[string]fdrAddonSend // entry signal → its send (the C8 sweep's input)
+	listeners map[string]<-chan ntwire.OrderUpdatePayload
+	sentinel  int
 	log       []fdrWire
 	orderSeq  int
 }
@@ -436,7 +438,7 @@ type fdrAddonPos struct {
 
 func newFdrAddon(t *testing.T, w *fdrWorld, conn net.Conn, build string, accounts []string, snapshots map[string]bool) *fdrAddon {
 	a := &fdrAddon{t: t, w: w, conn: conn, build: build, done: make(chan struct{}),
-		books: map[string][]ntwire.NT8Order{}, snapshots: snapshots, signals: map[string]ntwire.SignalPayload{}, positions: map[string]fdrAddonPos{}, unfilled: map[string]fdrAddonSend{}}
+		books: map[string][]ntwire.NT8Order{}, snapshots: snapshots, signals: map[string]ntwire.SignalPayload{}, positions: map[string]fdrAddonPos{}, unfilled: map[string]fdrAddonSend{}, listeners: map[string]<-chan ntwire.OrderUpdatePayload{}}
 	go func() {
 		defer close(a.done)
 		for {
@@ -446,7 +448,6 @@ func newFdrAddon(t *testing.T, w *fdrWorld, conn net.Conn, build string, account
 			}
 			a.mu.Lock()
 			a.inbox = append(a.inbox, env)
-			a.recv++
 			a.mu.Unlock()
 		}
 	}()
@@ -484,24 +485,33 @@ func (a *fdrAddon) write(ft ntwire.FrameType, p any) {
 	_ = ntwire.WriteFrame(a.conn, ft, p)
 }
 
-// quiesce waits until no new frame has arrived for a few milliseconds — the
-// loopback socket delivers in microseconds, so a quiet gap means every frame
-// the production code wrote this step has been read.
+// quiesce makes the server→AddOn direction deterministic: every server
+// write goes through ONE connection under the server's write lock, so a
+// sentinel frame written now (a bars_history_request — a pure write with no
+// server-side state) arrives after every frame production wrote before it.
 func (a *fdrAddon) quiesce() {
-	last := int64(-1)
-	quiet := 0
-	for i := 0; i < 400 && quiet < 3; i++ {
-		time.Sleep(time.Millisecond)
-		a.mu.Lock()
-		n := a.recv
-		a.mu.Unlock()
-		if n == last {
-			quiet++
-		} else {
-			quiet = 0
-			last = n
-		}
+	a.t.Helper()
+	a.sentinel++
+	id := "fdr-sentinel-" + strconv.Itoa(a.sentinel)
+	if err := a.w.srv.SendBarsHistoryRequest(ntwire.BarsHistoryRequestPayload{RequestID: id, Symbol: "MNQ", Contract: fdrContract, Timeframe: "1m"}); err != nil {
+		a.t.Fatalf("fixture: sentinel write: %v", err)
 	}
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(200 * time.Microsecond) {
+		a.mu.Lock()
+		for i, env := range a.inbox {
+			if env.Type != ntwire.FrameBarsHistoryRequest {
+				continue
+			}
+			var p ntwire.BarsHistoryRequestPayload
+			if json.Unmarshal(env.Payload, &p) == nil && p.RequestID == id {
+				a.inbox = append(a.inbox[:i:i], a.inbox[i+1:]...)
+				a.mu.Unlock()
+				return
+			}
+		}
+		a.mu.Unlock()
+	}
+	a.t.Fatalf("fixture: the AddOn never read the sentinel %s", id)
 }
 
 // settle drains the frames production sent this step and plays the AddOn's
@@ -514,7 +524,7 @@ func (a *fdrAddon) settle() {
 	a.inbox = nil
 	a.mu.Unlock()
 	nowMs := a.w.nowMs.Load()
-	fed := false
+	fed := map[string]bool{} // accounts whose router got order_updates this step
 	for _, env := range frames {
 		switch env.Type {
 		case ntwire.FrameSignal:
@@ -547,7 +557,7 @@ func (a *fdrAddon) settle() {
 				a.w.srv.FeedOrderUpdateForTest(ntwire.OrderUpdatePayload{SignalID: p.SignalID, State: s,
 					Symbol: "MNQ", Account: p.Account, TraderID: p.TraderID, Quantity: p.Quantity, Seq: p.Seq})
 			}
-			fed = true
+			fed[p.Account] = true
 		case ntwire.FrameCancelOrder:
 			var p ntwire.CancelOrderPayload
 			if json.Unmarshal(env.Payload, &p) != nil {
@@ -557,7 +567,7 @@ func (a *fdrAddon) settle() {
 			if a.removeOrder(p.Account, p.SignalID) {
 				a.w.srv.FeedOrderUpdateForTest(ntwire.OrderUpdatePayload{SignalID: p.SignalID, State: "cancelled",
 					Symbol: "MNQ", Account: p.Account, TraderID: p.TraderID, Seq: p.Seq})
-				fed = true
+				fed[p.Account] = true
 			}
 		case ntwire.FrameMoveStop:
 			var p ntwire.MoveStopPayload
@@ -594,14 +604,15 @@ func (a *fdrAddon) settle() {
 				a.write(ntwire.FramePositionClose, ntwire.PositionClosePayload{SignalID: pos.signalID, Symbol: "MNQ",
 					PositionSide: pos.side, ExitPrice: exitPx, Quantity: pos.qty, ExitReason: "manual",
 					ExitTime: time.UnixMilli(nowMs).UTC().Format(time.RFC3339), Account: p.Account, TraderID: p.TraderID, Seq: p.Seq})
+				a.awaitClosed(pos.signalID)
 			}
 		case ntwire.FrameModifyBracket, ntwire.FramePlaceProtectiveStop:
 			a.log = append(a.log, fdrWire{atMs: nowMs, typ: env.Type})
 		}
 	}
 	a.publish()
-	if fed {
-		time.Sleep(2 * time.Millisecond) // the router hands the fed updates to the listeners
+	for acct := range fed {
+		a.flushUpdates(acct)
 	}
 }
 
@@ -665,7 +676,66 @@ func (a *fdrAddon) fill(account, signalID string, price float64) {
 	a.w.srv.FeedFillForTest(ntwire.FillPayload{SignalID: signalID, Symbol: "MNQ", Account: account, FillPrice: price,
 		FillTime: time.UnixMilli(a.w.nowMs.Load()).UTC().Format(time.RFC3339), Side: p.Side, Quantity: p.Quantity, Status: "filled", TraderID: p.TraderID, Seq: p.Seq})
 	a.publish()
-	time.Sleep(2 * time.Millisecond)
+	a.flushUpdates(account)
+}
+
+// flushUpdates makes the order_update delivery deterministic: a sentinel
+// update goes through the SAME router behind the fed ones, and once the
+// harness's own fan-out listener sees it, every earlier update is in every
+// listener's channel. The trader(s) on the account then drain their stream
+// (consumeArmedOrderUpdates — the armed pass's own drain), i.e. the updates
+// are applied on arrival, as production's ordered-execution worker does.
+func (a *fdrAddon) flushUpdates(account string) {
+	a.t.Helper()
+	a.sentinel++
+	sid := "fdr-sentinel-" + strconv.Itoa(a.sentinel)
+	ch := a.listener(account)
+	a.w.srv.FeedOrderUpdateForTest(ntwire.OrderUpdatePayload{SignalID: sid, State: "working", Symbol: "MNQ", Account: account})
+	deadline := time.After(10 * time.Second)
+	for seen := false; !seen; {
+		select {
+		case u, ok := <-ch:
+			if !ok {
+				delete(a.listeners, account) // the fan-out was rebuilt — listen again and re-send the sentinel
+				ch = a.listener(account)
+				a.w.srv.FeedOrderUpdateForTest(ntwire.OrderUpdatePayload{SignalID: sid, State: "working", Symbol: "MNQ", Account: account})
+				continue
+			}
+			seen = u.SignalID == sid
+		case <-deadline:
+			a.t.Fatalf("fixture: the order_update router never delivered the sentinel for %s", account)
+		}
+	}
+	for _, ft := range a.w.traders {
+		if ft.account == account && ft.at != nil {
+			if nt := ft.at.armedTrader(); nt != nil {
+				ft.at.consumeArmedOrderUpdates(nt, a.w.st.ArmedOrders())
+			}
+		}
+	}
+}
+
+func (a *fdrAddon) listener(account string) <-chan ntwire.OrderUpdatePayload {
+	if ch, ok := a.listeners[account]; ok {
+		return ch
+	}
+	ch, _ := a.w.srv.ListenOrderUpdates("MNQ", account)
+	a.listeners[account] = ch
+	return ch
+}
+
+// awaitClosed waits until the close-sync goroutine has recorded the
+// position_close on the position row (it runs on its own goroutine).
+func (a *fdrAddon) awaitClosed(signalID string) {
+	a.t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		var n int64
+		a.w.st.GormDB().Model(&store.TraderPosition{}).Where("entry_order_id = ? AND status = ?", signalID, "OPEN").Count(&n)
+		if n == 0 {
+			return
+		}
+	}
+	a.t.Logf("fixture: the close of %s was not recorded within 5 s", signalID)
 }
 
 func (a *fdrAddon) workingEntries(account string) []ntwire.NT8Order {
@@ -863,6 +933,7 @@ func TestFullDayReplayFidelity(t *testing.T) {
 	w.setNow(fdrLiveSeedMs)
 	w.cur.Store(int64(w.barIndexAtOrAfter(fdrLiveSeedMs) - 1))
 	ft := &fdrTrader{id: "fdr-hoang", account: acct, levelPx: map[string]float64{}}
+	w.traders = []*fdrTrader{ft}
 	w.newFdrTrader(ft, cfg)
 	l := &fdrLedger{rows: map[int64]*fdrRowLife{}}
 	start := w.barIndexAtOrAfter(fdrLiveSeedMs) // the first bar to CLOSE after the seed
@@ -1107,6 +1178,7 @@ func TestFullDayReplay(t *testing.T) {
 	A := &fdrTrader{id: "fdr-a", account: acctA, levelPx: map[string]float64{}}
 	B := &fdrTrader{id: "fdr-b", account: acctB, levelPx: map[string]float64{}}
 	traders := []*fdrTrader{A, B}
+	w.traders = traders
 	for _, ft := range traders {
 		w.newFdrTrader(ft, cfg)
 	}
@@ -1276,8 +1348,12 @@ func TestFullDayReplay(t *testing.T) {
 					}
 				}
 			}
+			// Named production ends that are not the bug: the day-stop sweeps, the
+			// EOD flat, the 15m/5m conflict, the news hold, and the armed pass's
+			// stop-side guard ("accepted through": the market traded through the
+			// trigger before the order could rest).
 			named := false
-			for _, k := range []string{"day-stop", "session ended", "EOD", "15m/5m ISB conflict", "never-add", "news"} {
+			for _, k := range []string{"day-stop", "session ended", "EOD", "15m/5m ISB conflict", "never-add", "news", "accepted through"} {
 				if strings.Contains(life.endReason, k) {
 					named = true
 				}
@@ -1529,7 +1605,11 @@ func TestFullDayReplay(t *testing.T) {
 					continue
 				}
 				c5 := fdrLast5mClose(w, tk.barIdx)
-				if p, ok := places[tk.in.ArmID]; ok {
+				p, ok := places[tk.in.ArmID]
+				if !ok && tk.in.ArmID == sw.armID && ft.id == sw.traderID {
+					p, ok = mentor.Intent{Side: mentor.SideLong, Price: sw.entry, Stop: sw.stop}, true // the injected swing, rebuilt after the restart
+				}
+				if ok {
 					risk := math.Abs(p.Price - p.Stop)
 					move := c5 - p.Price
 					if p.Side == mentor.SideShort {
