@@ -8347,3 +8347,51 @@ GET /api/risk/gate-blocks (`setup_stalls`).
 Reference: telemetry/setup_stall.go (SetupStallAlertDue, RolloverSetupStalls),
 trader/mentor_stall_alarm.go (mentorSetupKind, mentorStallAlarmCheck),
 api/handler_gate_blocks.go (telemetrySetupStallTable).
+
+## CLASS NN (assigned at merge) — a restart rebuilds live state through a different path than live built it (LINES-RESTART, release #22)
+
+symptom: a restart changes what the bot trades. The 10-13 18:57 boot re-seeded
+the 4h trigger at 30741.25 "since 2026-10-13T01:00" while the running bot held
+30774.25, moved by the 05:00 bucket (short 08:28, long 08:41 — two moves in one
+4h candle). On the 10-06→10-08 bars a fresh seed disagreed with the continuous
+evaluator's HTF verdict in 19–20 of ~276 ten-minute samples. Same class, other
+objects: the FTGH/FTGL latch keyed on the day-gate key ("" until 08:30) cleared
+at the RTH open and redrew both boxes; the day-gate line printed "@08:30" for a
+10:19 restart re-latch; the 4h swing EMA folded one close per observed flip, so
+a feed gap lost the buckets that opened and closed unseen.
+probe: for every piece of evaluator state the seed rebuilds, run a CONTINUOUS
+evaluator (seed once, Tick every closed bar at BarCloseInstant over the live
+1500-bar slice) against a FRESH SeedFull at many cut points on real bars, and
+compare the state structs — not a summary. Any field the live path computes
+from the ORDER of bars (intrabar breaks, first-latched objects, one-per-tick
+increments) is suspect when the seed computes it from a whole-history
+aggregate. For every latch, name the clock that clears it and check it is the
+object's own day (tradingDayKey, the 17:00 roll), not a neighbouring gate's key.
+rule: the seed REPLAYS the live update rule over the stored bars (same function,
+same window shape, one step per bar) — never a parallel "completed candle"
+path. A latch clears on its own lifetime's boundary. A log line about a read
+names the instant it was READ. A per-tick increment folds everything it missed
+since its last step, or fails closed when it cannot read it.
+Reference: kernel/mentor/filters.go TriggerReplay1m, kernel/mentor/seed.go seed
+(trigger/HTF replay), kernel/mentor/eval.go (box latch on tradingDayKey;
+DayGateReport.ReadAt), trader/mentor_tick.go mentorDayGateLine,
+kernel/mentor/swing4h.go bucketClosesBetween, pins in
+kernel/mentor/restart_parity_test.go (real bars
+testdata/mnq_1m_lines_restart_2026-10.json.gz).
+
+## CLASS NN (assigned at merge) — a drawn object replaced by its newer sibling (LINES-RESTART, release #22)
+
+symptom: 135 of 151 trendlines on 10-13 vanished mid-session without a 5m
+close through them: TrendlinesBuild kept ONE line per side and the newest pair
+replaced the older, while the course keeps every line until it breaks ("never
+erase during the session; DELETE at end of day" [D4.1 p2 @01:17]). 40 of 151
+were drawn THROUGH price between their own anchors ("TRENDLINE chứ không phải
+CẦU TUỘT" [X9 @01:22]).
+probe: replay a real session through the production builder and track every
+drawn object's key tick to tick; any key that disappears must name its death
+(a break, the session end). Check the candles between each object's anchors.
+rule: a stateless rebuild must be MONOTONE in what it has drawn — build every
+qualifying pair, not the latest — and a pair that price crossed is refused and
+counted (trendline_crossed_between_anchors), never drawn.
+Reference: kernel/mentor/trendline.go trendlinesBuild / trendlineCrossed,
+kernel/mentor/eval.go trackTrendlines, TestTrendlinesKeptAllSession1013.
