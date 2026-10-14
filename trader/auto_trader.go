@@ -493,6 +493,9 @@ type AutoTrader struct {
 	// only consulted when the per-strategy mentor_mode is ON.
 	mentorEval         *mentor.Evaluator
 	mentorLastTickOpen int64
+	// mentorSeedHistGen (release #23 N1) is the MNQ 1m history-refill
+	// generation this evaluator's state was last seeded at (mentor_reseed.go).
+	mentorSeedHistGen uint64
 	// mentorDayOffClearLogged is the DayRecheck.ClearedAt value last WARN'd +
 	// counted. The recheck clears at most once per trading day, so the value
 	// is a stable per-process dedup key. Read/written only inside

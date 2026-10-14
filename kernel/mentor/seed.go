@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"vl/kernel"
 	"vl/market"
 )
 
@@ -389,7 +390,7 @@ func (e *Evaluator) SeedBoxLine() string {
 		if !ok {
 			return fmt.Sprintf("%s none", strings.ToUpper(string(k)))
 		}
-		return fmt.Sprintf("%s %.2f–%.2f (formed %s CT)", strings.ToUpper(string(k)), b.Bottom, b.Top, time.UnixMilli(b.FormedAtMs).In(ctime()).Format("01-02 15:04"))
+		return fmt.Sprintf("%s %.2f–%.2f (formed %s CT)", strings.ToUpper(string(k)), b.Bottom, b.Top, kernel.TableTimeCT(time.UnixMilli(b.FormedAtMs)))
 	}
 	day := e.State.LatchedBoxesDay
 	if day == "" {
@@ -452,7 +453,7 @@ func (r ReseedReport) Line() string {
 			}
 			since := "n/a"
 			if t.MovedAt > 0 {
-				since = time.UnixMilli(t.MovedAt).In(ctime()).Format("01-02 15:04")
+				since = kernel.TableTimeCT(time.UnixMilli(t.MovedAt)) + " CT"
 			}
 			return fmt.Sprintf("%s @%.2f since %s", t.Dir, t.Price, since)
 		}

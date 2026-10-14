@@ -229,6 +229,8 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}
+	// N1 (release #23): a history refill since the seed → re-seed the state.
+	at.mentorReseedOnRefill(mentor.BarCloseInstant(last))
 	// item 18 part 1: plumb the day's red-folder 07:30 print windows from the
 	// calendar into the evaluator so the print candle never moves the 1h/4h
 	// trigger lines [D4.4 p1 @18:13, @22:15]. No calendar / no print today →
@@ -1616,6 +1618,9 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	if at.mentorEval == nil {
 		at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	}
+	// N1 (release #23): the refill generation is read BEFORE the store, so a
+	// replay released while the seed reads it still triggers a re-seed.
+	at.mentorSeedHistGen, _ = mentorRefillGeneration()
 	// The seed clock reads the mentor seam (mentorNowSource) so tests can pin a
 	// fixed mid-session instant; production defaults to time.Now() (X-07-follow,
 	// FLAKE-SEED-CLOCK). Same wall clock, same behaviour.
@@ -1644,10 +1649,16 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	stitched1m, full1HRTH, contracts, gaps, stoppedAt := at.mentorFullKeyLevelHistory(bh)
 	var missing []string
 	if len(full1HRTH) > 0 {
-		missing = mentor.SeedFull(at.mentorEval, stitched1m, full1HRTH, now)
+		// N6 (release #23): the seed replays the HTF lines with every replayed
+		// day's print windows, as the running bot dropped them.
+		at.mentorWithHistoryPrintWindows(stitched1m, func() {
+			missing = mentor.SeedFull(at.mentorEval, stitched1m, full1HRTH, now)
+		})
 		at.logInfof("%s", mentor.KeyLevelHistoryLine(contracts, full1HRTH, gaps, stoppedAt))
 	} else {
-		missing = mentor.Seed(at.mentorEval, bars1m, now)
+		at.mentorWithHistoryPrintWindows(bars1m, func() {
+			missing = mentor.Seed(at.mentorEval, bars1m, now)
+		})
 	}
 	// The evaluator's own depth (computed from the stitched series) is the
 	// single source of truth for the per-source refusal seam.
@@ -1662,6 +1673,7 @@ func (at *AutoTrader) mentorSeedAtStart() {
 		return d, ok
 	}
 	at.logInfof("🧑‍🏫 %s", at.mentorEval.SeedLine(len(contracts)))
+	at.logInfof("🧑‍🏫 %s", at.mentorEval.SeedBoxLine()) // N2 (release #23): the replayed box latch
 	at.logInfof("%s", at.mentorSeamBootLine())
 	at.logInfof("%s", at.mentorStaleDataBlockBootLine())
 	// trail_tf 30s/45s: refused LOUDLY at config load (no sub-minute bars).

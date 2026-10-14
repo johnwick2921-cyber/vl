@@ -87,8 +87,16 @@ func TestR22OldExtremesAreTheNearestUnbrokenPair1013(t *testing.T) {
 	want := map[int64][]float64{
 		1791874740000: {30644.25, 30702.00}, // 02:00 CT
 		1791885540000: {30734.75, 30774.25}, // 05:00 CT
-		1791898140000: {30688.00},           // 08:30 CT — every pivot low traded through
-		1791899940000: {30591.25},           // 09:00 CT — every pivot high traded through
+		// N7 (release #23): the unbroken test runs over the WHOLE lookback, then
+		// the nearest is picked. At 08:30 the 3 newest pivot lows had all traded
+		// through, but an OLDER one (30613.25) had not; at 09:00 the same for the
+		// highs (30905.50). The #516 values {30688.00} / {30591.25} were the
+		// 3-per-side cap's. Independent oracle (stdlib Python, the same fractal
+		// k=2 + 0.25×ATR14 filter + 144/96-bar lookback, uncapped vs capped):
+		// ~/deck-fix-1005/rel22/fixwave/mentor-seed-state/py/oldext.py — capped3
+		// reproduces every #516 value, uncapped gives these.
+		1791898140000: {30613.25, 30688.00}, // 08:30 CT
+		1791899940000: {30591.25, 30905.50}, // 09:00 CT
 		1791903540000: {30591.25, 30792.75}, // 10:00 CT
 		1791910740000: {30635.25, 30809.50}, // 12:00 CT
 		1791917940000: {30710.75, 30780.75}, // 14:00 CT
@@ -114,8 +122,8 @@ func TestR22OldExtremesAreTheNearestUnbrokenPair1013(t *testing.T) {
 
 // TestR22OldExtremeZoneShareIsTheSinglePair1013 — r22 P1. The ISB "at an old
 // high/low → size 3" zone (touchesOldExtreme, the isbFlagsFor read) on the 390
-// RTH candles of 10-13 is the single-pair figure 18/390 (4.6%) — the oracle's
-// number. Before the fix: 183/390 (47%).
+// RTH candles of 10-13 is the single-pair figure 20/390 (5.1%) — the oracle's
+// number (18/390 under the 3-per-side cap N7 removed). Before the fix: 183/390 (47%).
 func TestR22OldExtremeZoneShareIsTheSinglePair1013(t *testing.T) {
 	n, zone := 0, 0
 	r22Replay(t, "mnq_1m_2026-10-13_session", r22Open1013, r22Cfg(), func(e *Evaluator, win []market.Kline, _ []Intent) {
@@ -128,8 +136,10 @@ func TestR22OldExtremeZoneShareIsTheSinglePair1013(t *testing.T) {
 			zone++
 		}
 	})
-	if n != 390 || zone != 18 {
-		t.Fatalf("ISB old-extreme zone = %d of %d RTH candles, want 18 of 390 (the nearest unbroken pair; 183 = the 12-pivot list)", zone, n)
+	// N7 (release #23): 20, not #516's 18 — the uncapped nearest unbroken pair
+	// (oldext.py: "RTH zone uncapped 20 of 390"); 183 = the old 12-pivot list.
+	if n != 390 || zone != 20 {
+		t.Fatalf("ISB old-extreme zone = %d of %d RTH candles, want 20 of 390 (the nearest unbroken pair over the whole lookback; 18 = the 3-per-side cap; 183 = the 12-pivot list)", zone, n)
 	}
 }
 
