@@ -209,6 +209,14 @@ type Evaluator struct {
 	// TakeNotes after each Tick and logs each one; capped so a replay that
 	// never drains cannot grow it without bound.
 	notes []string
+	// Trendline change tracking (release #22, R4): the VALID lines seen last
+	// tick (a valid line leaves only by a 5m-close break or the session end —
+	// each is a change line), and the crossed-between-anchors pairs already
+	// counted today. Rebuilt from bars on restart; the first tick after a
+	// restart only initialises them (no burst of "became valid" lines).
+	tlDay     string
+	tlValid   map[string]bool
+	tlCrossed map[string]bool
 }
 
 // maxNotes bounds the undrained note buffer (replays and tests never drain).
@@ -240,6 +248,45 @@ func (e *Evaluator) noteTriggerMove(name string, prev, cur TriggerLine, bars []m
 	}
 	e.note("%s trigger moved %s → %s @%.2f (bucket %s CT, broke on the %s CT bar, read intrabar) [D3.4 p1 @08:19]",
 		name, from, cur.Dir, cur.Price, time.UnixMilli(cur.MovedAt).In(ctime()).Format("01-02 15:04"), at)
+}
+
+// trackTrendlines counts each crossed-between-anchors pair once per trading
+// day (refusal "trendline_crossed_between_anchors") and records a change line
+// when a line turns VALID (a location) or a valid line is broken by a 5m
+// close. The session roll clears both sets — the lines die at day end
+// [D4.1 p2 @01:17].
+func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int64) {
+	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
+	first := e.tlValid == nil
+	if e.tlDay != day {
+		if e.tlDay != "" && len(e.tlValid) > 0 {
+			e.note("trendlines deleted at the session end: %d valid line(s) of trading day %s [D4.1 p2 @01:17]", len(e.tlValid), e.tlDay)
+		}
+		e.tlDay = day
+		e.tlValid = map[string]bool{}
+		e.tlCrossed = map[string]bool{}
+	}
+	for _, k := range crossed {
+		if !e.tlCrossed[k] {
+			e.tlCrossed[k] = true
+			e.refuse("trendline_crossed_between_anchors")
+		}
+	}
+	for _, tl := range lines {
+		k := tl.key()
+		switch {
+		case tl.ValidAt > 0 && !tl.Dead && !e.tlValid[k]:
+			e.tlValid[k] = true
+			if !first {
+				e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a location until a 5m close breaks it or the session ends [D3.2 p2 @03:45]",
+					tl.Side, tl.P0Px, tl.P1Px, time.UnixMilli(tl.P0T).In(ctime()).Format("15:04"), time.UnixMilli(tl.P1T).In(ctime()).Format("15:04"))
+			}
+		case tl.Dead && e.tlValid[k]:
+			delete(e.tlValid, k)
+			e.note("trendline BROKEN by a 5m close %s %.2f→%.2f (%s → %s CT) — discarded [X9 @06:20–06:47]",
+				tl.Side, tl.P0Px, tl.P1Px, time.UnixMilli(tl.P0T).In(ctime()).Format("15:04"), time.UnixMilli(tl.P1T).In(ctime()).Format("15:04"))
+		}
+	}
 }
 
 // TakeNotes returns the change lines recorded since the last call, then
@@ -1066,7 +1113,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// swings joined, valid only after the 3rd touch, discarded by a 5m close
 	// through. They join the level set location-only (never a target); a
 	// trendline next to a box edge is suppressed (box beats trendline).
-	trendlines := TrendlinesBuild(bars, time.UnixMilli(now))
+	trendlines, crossed := trendlinesBuild(bars, time.UnixMilli(now))
+	e.trackTrendlines(trendlines, crossed, now)
 	levels = append(levels, TrendlineLevels(trendlines, boxes, bars)...)
 
 	// §3: first-touch classification per level. BOX edges are OUT of this

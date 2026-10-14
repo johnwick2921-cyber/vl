@@ -293,3 +293,74 @@ func TestTriggerMoveIsLogged1014(t *testing.T) {
 	}
 	t.Fatalf("no change line for the 10-14 01:00 4h move; notes=%q", notes)
 }
+
+// TestTrendlinesKeptAllSession1013 — owner ruling R4 + course D4.1 ("Extend
+// right; never erase during the session; DELETE at end of day" [D4.1 p2
+// @01:17]); the 3rd-touch rule (#504) is unchanged. MATH-LEVELS-LINES #6
+// measured on 10-13: ONE line per side, the newest pair replacing the older —
+// 135 of 151 lines vanished without a 5m break; and 40 of 151 were crossed by
+// price between their own anchors ("TRENDLINE chứ không phải CẦU TUỘT"
+// [X9 @01:22–02:10]). Production call site: TrendlinesBuild with the exact
+// inputs Tick hands it (the last 1500 closed bars, the bar-close instant), on
+// the real 10-12 17:00 → 10-13 16:00 session.
+// Mutant: newest-pair replacement (only the last pair draws) → RED.
+func TestTrendlinesKeptAllSession1013(t *testing.T) {
+	bars := loadLinesRestartFixture(t)["B"]
+	open := time.Date(2026, time.October, 12, 17, 0, 0, 0, ctime()).UnixMilli()
+	end := time.Date(2026, time.October, 13, 16, 0, 0, 0, ctime()).UnixMilli()
+	prevDrawn := map[string]Trendline{}
+	drawn, vanished, validErased, crossedDrawn, validSeen, maxLive := map[string]bool{}, 0, 0, 0, map[string]bool{}, 0
+	for i, b := range bars {
+		now := BarCloseInstant(b)
+		if now <= open || now > end {
+			continue
+		}
+		win := lrWindow(bars, i)
+		lines := TrendlinesBuild(win, time.UnixMilli(now))
+		cur := map[string]Trendline{}
+		live := 0
+		for _, tl := range lines {
+			if tl.ValidAt > 0 && !tl.Dead {
+				live++
+			}
+			k := tl.key()
+			cur[k] = tl
+			if !drawn[k] {
+				drawn[k] = true
+				// re-resolve the anchors in this window and test the candles between
+				if trendlineCrossed(win, tl) {
+					crossedDrawn++
+				}
+			}
+			if tl.ValidAt > 0 && !tl.Dead {
+				validSeen[k] = true
+			}
+		}
+		for k, p := range prevDrawn {
+			if _, ok := cur[k]; ok {
+				continue
+			}
+			vanished++
+			if p.ValidAt > 0 && !p.Dead {
+				validErased++
+				if validErased <= 3 {
+					t.Errorf("%s CT: VALID %s line %.2f→%.2f erased mid-session without a 5m break", lrCT(time.UnixMilli(b.OpenTime)), p.Side, p.P0Px, p.P1Px)
+				}
+			}
+		}
+		prevDrawn = cur
+		if live > maxLive {
+			maxLive = live
+		}
+	}
+	t.Logf("10-13 session: %d distinct lines drawn · %d vanished mid-session · %d VALID lines erased · %d valid ever · max %d valid+unbroken at once · %d drawn through price between anchors", len(drawn), vanished, validErased, len(validSeen), maxLive, crossedDrawn)
+	if len(validSeen) == 0 {
+		t.Fatal("control: no trendline ever turned valid on 10-13 — the pin would be vacuous")
+	}
+	if vanished != 0 || validErased != 0 {
+		t.Errorf("%d drawn lines (%d VALID) vanished mid-session without a 5m-close break — R4: never erased during the session", vanished, validErased)
+	}
+	if crossedDrawn != 0 {
+		t.Errorf("%d lines were drawn through price between their own anchors", crossedDrawn)
+	}
+}
