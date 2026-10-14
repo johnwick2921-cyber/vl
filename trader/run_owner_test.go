@@ -188,3 +188,32 @@ func TestRetiredInstanceNeverRuns(t *testing.T) {
 		t.Fatalf("the refusal must be counted, got %v", tbl["t9"])
 	}
 }
+
+// TestRunPanicLeavesNoLiveLoop — MENTOR-NY item 3: a Run that PANICS out (here
+// time.NewTicker(0) right after the ordered install, the old harness's
+// accident) must not leave its armed event loop, its ordered install or its
+// run claim behind — otherwise the next instance of the trader_id claims while
+// a zombie evaluator still runs. The panic still propagates to the caller.
+// MUTANT: drop the recover-teardown defer in Run → RED.
+func TestRunPanicLeavesNoLiveLoop(t *testing.T) {
+	h := newRunHarness(t)
+	at := h.mk("tp")
+	at.config.ScanInterval = 0 // Run panics at NewTicker after the install
+	panicked := make(chan interface{}, 1)
+	go func() {
+		defer func() { panicked <- recover() }()
+		_ = at.Run()
+	}()
+	select {
+	case r := <-panicked:
+		if r == nil {
+			t.Fatal("precondition: Run must panic with a zero scan interval")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run neither panicked nor returned")
+	}
+	if liveLoop(at) || installed(at) || isRunningNow(at) || liveRunOwner("tp") != nil {
+		t.Fatalf("a panicked Run left state behind: loop=%v installed=%v running=%v owner=%p",
+			liveLoop(at), installed(at), isRunningNow(at), liveRunOwner("tp"))
+	}
+}
