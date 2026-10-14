@@ -324,6 +324,14 @@ func botUntilNextSecond(now time.Time) time.Duration {
 // the API would admit could be minted (PR #200 F7) — and on false nothing is
 // installed.
 func (b *botIdentity) refresh() bool {
+	// Parity with api requireOwner (DS-103 P3-2): no store, no owner — act for
+	// nobody, counted like every other unresolved owner.
+	if b.st == nil {
+		o := store.Owner{Reason: "no store"}
+		store.RecordOwnerRefusal("Telegram bot identity (no token minted)", o)
+		b.actForNobody(o.Reason)
+		return false
+	}
 	o := b.st.ResolveOwner()
 	if !o.Resolved() {
 		store.RecordOwnerRefusal("Telegram bot identity (no token minted)", o)
@@ -551,8 +559,10 @@ func statusMsg(st *store.Store, userID string, apiPort int, lang string) string 
 
 📊 "查看我的持仓"
 💰 "账户余额多少"
-🤖 "帮我创建 MNQ 趋势策略并启动"
+⏸ "暂停交易员 30 分钟"
 ⏹ "停止所有交易员"
+
+我可以查询，也可以降低风险（停止、暂停、平仓）。启动交易员、创建或修改策略和设置，请在 Web 管理界面操作。
 
 /help 查看更多 · /lang 切换语言`
 	}
@@ -562,8 +572,10 @@ Just tell me what you want:
 
 📊 "Show my positions"
 💰 "What's my balance?"
-🤖 "Create an MNQ trend strategy and start it"
+⏸ "Pause my trader for 30 minutes"
 ⏹ "Stop all traders"
+
+I can read everything and reduce risk (stop, pause, close a position, flatten). Starting traders and creating or changing strategies and settings is done in the web dashboard.
 
 /help for more · /lang to change language`
 }
@@ -595,14 +607,12 @@ func helpMsg(lang string) string {
 • "账户余额多少"
 • "列出我的交易员"
 
-*创建 & 启动*
-• "帮我创建 MNQ 趋势策略并跑起来"
-• "保守型策略，只交易 MNQ"
-
-*控制*
-• "启动交易员"
+*降低风险*
 • "暂停交易员"
 • "停止所有交易"
+• "平掉持仓"
+
+启动、创建和修改设置只能在 Web 管理界面操作（机器人只能查询和降低风险）。
 
 *命令*
 /start — 刷新状态
@@ -616,14 +626,12 @@ func helpMsg(lang string) string {
 • "What's my balance?"
 • "List my traders"
 
-*Create & start*
-• "Create an MNQ trend strategy and start it"
-• "Conservative strategy, MNQ only"
-
-*Control*
-• "Start trader"
-• "Stop trader"
+*Reduce risk*
+• "Pause trader"
 • "Stop all trading"
+• "Close my position"
+
+Starting traders, creating anything and changing settings happen in the web dashboard only (the bot may read and reduce risk, not add it).
 
 *Commands*
 /start — refresh status

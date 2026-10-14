@@ -35,7 +35,9 @@ func TestAgentRouteListOmitsAccountBotConfigAndUpdateRoutes(t *testing.T) {
 	e := newUpdEnv(t) // NewServer → setupRoutes populates the registry
 	docs := GetAPIDocs()
 	prompt := agent.BuildAgentPrompt(docs, updAdminEmail, updAdminID)
-	for _, want := range []string{"/api/my-traders", "/api/traders/:id/start", "/api/strategies"} {
+	// P2-8 (owner-identity fold): the bot may read and reduce risk, so its
+	// list keeps stop, not start (start is refused to machine tokens).
+	for _, want := range []string{"/api/my-traders", "/api/traders/:id/stop", "/api/strategies"} {
 		if !strings.Contains(docs, want) || !strings.Contains(prompt, want) {
 			t.Fatalf("positive control: the agent's route list lost the ordinary route %s", want)
 		}

@@ -132,3 +132,37 @@ func TestBotOffMsgOnAnEmptyBoxIsTheRegisterHint(t *testing.T) {
 		t.Fatalf("empty box: chat told %q, want the register hint", got)
 	}
 }
+
+// DS-103 P3-2: a bot with no store acts for nobody (parity with requireOwner).
+func TestBotRefreshWithNoStoreActsForNobody(t *testing.T) {
+	telemetry.ResetGateBlocksForTest()
+	t.Cleanup(telemetry.ResetGateBlocksForTest)
+	ident := newBotIdentity(nil, 0)
+	ident.userID, ident.token = "stale-owner", "stale-token"
+	if ident.refresh() {
+		t.Fatal("refresh with no store = true")
+	}
+	if ident.userID != "" || ident.token != "" || ident.agents != nil {
+		t.Fatalf("no store but the bot still acts for %q", ident.userID)
+	}
+	_, table := telemetry.GateBlockSnapshot()
+	if n := table[""][store.OwnerUnresolvedGate]; n != 1 {
+		t.Fatalf("owner_unresolved count = %d, want 1", n)
+	}
+}
+
+// P2-8 fold: the bot's own menus offer only what its token may do (read and
+// reduce risk) — never start, create or change.
+func TestBotMenusOfferOnlyReadAndReduceRisk(t *testing.T) {
+	for _, lang := range []string{"en", "zh"} {
+		h := helpMsg(lang)
+		for _, refused := range []string{"Start trader", "Create an MNQ", "Conservative strategy", "启动交易员", "帮我创建", "保守型策略"} {
+			if strings.Contains(h, refused) {
+				t.Fatalf("/help (%s) still offers %q, which the bot's token is refused on", lang, refused)
+			}
+		}
+	}
+	if h := helpMsg("en"); !strings.Contains(h, "Stop all trading") || !strings.Contains(h, "the bot may read and reduce risk, not add it") {
+		t.Fatalf("/help (en) lost the risk-reducing examples or the rule:\n%s", h)
+	}
+}

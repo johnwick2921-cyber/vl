@@ -50,10 +50,12 @@ func (s *Server) routeWithSchema(g *gin.RouterGroup, method, path, description, 
 //
 // M3 red-team H1: routes the agent must not be handed (agentHidden —
 // credential_guard.go) are omitted; they stay registered for the web UI.
+// P2-8: so is every route the bot's machine token is refused on
+// (machineActionAllowed — it may read and reduce risk, not add it).
 func GetAPIDocs() string {
 	var sb strings.Builder
 	for _, r := range routeRegistry {
-		if agentHidden(r.Path) {
+		if agentHidden(r.Path) || !machineActionAllowed(r.Method, r.Path) {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("%-8s %s\n", r.Method, r.Path))
