@@ -64,13 +64,15 @@ describe('MentorTruthCard', () => {
     )
     expect(screen.getByText('Mentor — what trades')).toBeTruthy()
     expect(screen.getByText('follow LONG')).toBeTruthy()
-    expect(screen.getByText('key_level')).toBeTruthy()
+    expect(screen.getByText('key level')).toBeTruthy()
     expect(screen.getByText('30000.00')).toBeTruthy()
     // P3-2 (GUIDE CONTENT LAW): the key-level row renders the drawn-at column.
     expect(screen.getByTitle('drawn at')).toBeTruthy()
   })
 
-  it('renders the merged_from tooltip on a folded line', () => {
+  // UG-8 (release #24): since r22 nothing is merged (level_display.go
+  // DisplayLevels clears merged_from), so the card never claims a 20-pt fold.
+  it('never claims a "closer than 20 pts" fold', () => {
     render(
       <LanguageProvider>
         <MentorTruthCard
@@ -89,11 +91,51 @@ describe('MentorTruthCard', () => {
         />
       </LanguageProvider>
     )
-    // the price carries the "also …" tooltip (the folded-away old highs/lows)
-    expect(
-      screen.getByTitle('also 31058.00, 31050.00')
-    ).toBeTruthy()
-    expect(screen.getByText(/Hover a price to see the old highs/i)).toBeTruthy()
+    expect(screen.queryByText(/20 pts/i)).toBeNull()
+    expect(screen.queryByText(/Hover a price/i)).toBeNull()
+  })
+
+  // UG-9 (release #24): readable kind names; target-only kinds say so.
+  // Mutant: render l.kind raw / drop the target-only tag → RED.
+  it('names each kind and marks the target-only ones', () => {
+    render(
+      <LanguageProvider>
+        <MentorTruthCard
+          truth={truth({
+            levels: [
+              {
+                key: 'wick_microscalp',
+                kind: 'wick_microscalp',
+                price: 30110,
+                drawn_at: 5000,
+                visits_today: 0,
+              },
+              {
+                key: 'htf_4h_trigger',
+                kind: 'htf_trigger',
+                price: 29900,
+                drawn_at: 5000,
+                visits_today: 0,
+              },
+              {
+                key: 'oe:31043',
+                kind: 'old_extreme',
+                price: 31043,
+                drawn_at: 5000,
+                visits_today: 0,
+              },
+            ],
+          })}
+        />
+      </LanguageProvider>
+    )
+    expect(screen.queryByText('wick_microscalp')).toBeNull()
+    expect(screen.queryByText('old_extreme')).toBeNull()
+    expect(screen.getByText('wick target')).toBeTruthy()
+    expect(screen.getByText('4h trigger')).toBeTruthy()
+    expect(screen.getByText('old high/low')).toBeTruthy()
+    // two target-only rows, the old high/low is not one
+    expect(screen.getAllByText('target only')).toHaveLength(2)
   })
 
   it('shows the stale marker when the refresh failed, and none when fresh', () => {
@@ -156,7 +198,7 @@ describe('MentorTruthCard expand/collapse', () => {
     const btn = screen.getByRole('button', { name: /Mentor — what trades/i })
     expect(btn.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText(/HTF verdict/i)).toBeTruthy()
-    expect(screen.getByText('Key levels in effect')).toBeTruthy()
+    expect(screen.getByText('Levels in effect')).toBeTruthy()
   })
 
   it('collapse hides the body and flips aria-expanded; click again restores', () => {
@@ -169,14 +211,14 @@ describe('MentorTruthCard expand/collapse', () => {
     fireEvent.click(btn)
     expect(btn.getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByText(/HTF verdict/i)).toBeNull()
-    expect(screen.queryByText('Key levels in effect')).toBeNull()
+    expect(screen.queryByText('Levels in effect')).toBeNull()
     // the header itself stays
     expect(screen.getByText('Mentor — what trades')).toBeTruthy()
 
     fireEvent.click(btn)
     expect(btn.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText(/HTF verdict/i)).toBeTruthy()
-    expect(screen.getByText('Key levels in effect')).toBeTruthy()
+    expect(screen.getByText('Levels in effect')).toBeTruthy()
   })
 
   it('keeps the stale warning visible while collapsed', () => {

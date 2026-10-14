@@ -92,13 +92,15 @@ export const levels: GuideSection = {
     { kind: 'h', text: 'Which timeframes the detectors run on' },
     {
       kind: 'p',
-      text: 'Four detector families — equal highs/lows, supply/demand zones, fair-value gaps and order blocks — run with the SAME definition on every timeframe in the detection set: 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d and 1w. Before 10 September the set stopped at 12h, so no daily or weekly swing, zone, order block or gap could reach a plan: of 297 stored plans, none carried one. The strategy config had been asking for daily structure the whole time — planner_timeframes reads ["D","4h","1h","15m","5m"] and names D first — but the detector only recognised the spelling "1d", so "D" was dropped without a word. Anything below 15m stays out on purpose: intraday noise adds nothing to higher-timeframe structure, and swing detection already covers 5m and 15m.',
+      text: 'Four detector families — equal highs/lows, supply/demand zones, fair-value gaps and order blocks — run with the SAME definition on each timeframe they are asked for, and only on timeframes inside the detection set: 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d and 1w. The set is a gate, not a schedule — nothing runs all eleven by default. The planner asks for its planner_timeframes (shipped default D, 4h, 1h, 15m; D is read as 1d); the executor’s KEY LEVELS pass, which has no list of its own, runs DefaultHTFDetectionTFs — 5 timeframes: 15m, 1h, 4h, 1d and 1w. 30m, 2h, 6h, 8h, 12h and 3d run only when a strategy lists them. Before 10 September the set stopped at 12h, so no daily or weekly swing, zone, order block or gap could reach a plan: of 297 stored plans, none carried one. The strategy config had been asking for daily structure the whole time — planner_timeframes reads ["D","4h","1h","15m","5m"] and names D first — but the detector only recognised the spelling "1d", so "D" was dropped without a word. Anything below 15m stays out on purpose: intraday noise adds nothing to higher-timeframe structure, and swing detection already covers 5m and 15m.',
     },
     {
       kind: 'code',
       title: 'what a timeframe contributes, and what it cannot',
       lines: [
-        'detection set: 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w',
+        'detection set (the gate): 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w',
+        'default set (KEY LEVELS pass): 15m 1h 4h 1d 1w',
+        'planner: its own planner_timeframes, inside the gate',
         'detectors per timeframe: 4 (same definition on each)',
         '',
         'a level now carries THREE separate facts:',
@@ -152,7 +154,7 @@ export const levels: GuideSection = {
         },
       ],
     },
-    { kind: 'h', text: 'Seats & band' },
+    { kind: 'h', text: 'Freshness by own timeframe' },
     {
       kind: 'p',
       text: "Freshness by own timeframe (levels_fresh_by_tf) — FOLDED by W-KNOB-PRUNE (2026-09-18, S4c: freshness separates nothing): no Studio control; OFF (the 1m-touch ladder) unless the strategy already stores ON, which the engine honours and logs at load (the owner's MNQ strategy does). ON = HTF levels grade fresh / tested-1 / tested-2 / stale on their own timeframe bars. The scoring tables never change in either mode; only the freshness string HTF levels carry differs.",
@@ -160,7 +162,7 @@ export const levels: GuideSection = {
     { kind: 'h', text: 'Seats & band' },
     {
       kind: 'p',
-      text: 'Why 8 (max_levels): a tight table the AI can actually copy without hallucinating. The ±band (proximity_filter_atr × daily-range, retuned 0.3 → ≈±100pt): day-trade relevance — far levels still exist in the detector universe (they now feed the bias-tree anchors even unseated). Per-side counts are DELETED (owner ruling 2026-08-31): the old min_side_levels knob is gone and the ⚖ thin-side note is gone — the only side guard left is the 0-levels-on-a-side fail (the 2026-08-18 one-sided-map pathology).',
+      text: 'Why 8 (max_levels — the code default, kernel.DefaultMaxLevels; both bound strategies save 12 today, see Settings → Max levels): a tight table the AI can actually copy without hallucinating. The ±band (proximity_filter_atr × daily-range, retuned 0.3 → ≈±100pt): day-trade relevance — far levels still exist in the detector universe (they now feed the bias-tree anchors even unseated). Per-side counts are DELETED (owner ruling 2026-08-31): the old min_side_levels knob is gone and the ⚖ thin-side note is gone — the only side guard left is the 0-levels-on-a-side fail (the 2026-08-18 one-sided-map pathology).',
     },
     { kind: 'h', text: 'WHERE THE BARS COME FROM (class 45)' },
     {

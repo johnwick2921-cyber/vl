@@ -34,7 +34,7 @@ export const routines: GuideSection = {
         {
           title: 'End of day (after 14:45 EOD)',
           steps: [
-            'All positions flat (the EOD ladder should have done it).',
+            'All positions flat (the EOD flat should have done it — a market close by default).',
             'Day summary: fills, gate-block counter, would-have-tripped.',
             "Note anything to fix in tomorrow's knobs.",
           ],

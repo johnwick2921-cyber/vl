@@ -24,6 +24,7 @@ export interface TrendSegment {
 /** The /api/open-orders row as the chart reads it. */
 export interface ChartOpenOrder {
   order_id?: string
+  symbol?: string // the instrument the row is an order on (UG-2)
   side?: string // BUY/SELL
   position_side?: string
   type: string // LIMIT / STOP_MARKET / TAKE_PROFIT_MARKET
@@ -36,6 +37,10 @@ export interface ChartOpenOrder {
   target_price?: number
   zone_lo?: number
   zone_hi?: number
+  /** UG-5 (release #24): a split mentor arm — leg 1's own TP for leg1_qty
+   * contracts; target_price is then the runner's (quantity − leg1_qty). */
+  leg1_tp?: number
+  leg1_qty?: number
 }
 
 export const ORDER_COLORS = {
@@ -49,6 +54,86 @@ export const ORDER_COLORS = {
 export const MENTOR_COLOR = '#E8A33D' // mentor amber — distinct from order lines
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2))
+
+// UG-2 (release #24): CME roots, longest first so "MNQ" wins over "NQ" —
+// the same set and rule as market/futures_symbol.go futuresRoot.
+const CME_ROOTS = [
+  'MNQ',
+  'MES',
+  'M2K',
+  'MYM',
+  'MCL',
+  'MGC',
+  'NQ',
+  'ES',
+  'RTY',
+  'YM',
+  'CL',
+  'NG',
+  'GC',
+  'SI',
+  'ZB',
+  'ZN',
+  'ZF',
+  'ZT',
+]
+
+/** The CME root of any symbol form ("MNQ", "MNQZ6", "MNQ 12-26", "NQ.c.0"),
+ * or '' when no known root matches. */
+export function chartFuturesRoot(symbol: string | undefined): string {
+  const s = (symbol ?? '').trim().toUpperCase()
+  for (const r of CME_ROOTS) {
+    if (
+      s === r ||
+      s.startsWith(r + '.') ||
+      s.startsWith(r + ' ') ||
+      (s.length === r.length + 2 &&
+        /^[FGHJKMNQUVXZ][0-9]$/.test(s.slice(r.length)))
+    )
+      return r
+  }
+  return ''
+}
+
+/** Do two symbols name the same instrument? (same CME root; otherwise an
+ * exact, case-insensitive match). An empty side never matches. */
+export function sameChartSymbol(
+  a: string | undefined,
+  b: string | undefined
+): boolean {
+  const x = (a ?? '').trim()
+  const y = (b ?? '').trim()
+  if (!x || !y) return false
+  const rx = chartFuturesRoot(x)
+  const ry = chartFuturesRoot(y)
+  if (rx || ry) return rx === ry
+  return x.toUpperCase() === y.toUpperCase()
+}
+
+/** UG-2: only the rows that are orders on the chart's symbol. A row with no
+ * symbol field is kept (the server already answered for this symbol). */
+export function ordersForChartSymbol<T extends { symbol?: string }>(
+  orders: T[],
+  chartSymbol: string
+): T[] {
+  return orders.filter(
+    (o) => !o.symbol || sameChartSymbol(o.symbol, chartSymbol)
+  )
+}
+
+/** UG-3 (release #24): the mark a stale mentor read carries on every line —
+ * the lines stay drawn (never hidden), and say how old they are. */
+export function mentorStaleMark(staleSinceMs: number | undefined): string {
+  if (staleSinceMs === undefined) return ''
+  if (!(staleSinceMs > 0)) return ' · STALE'
+  const hhmm = new Date(staleSinceMs).toLocaleTimeString('en-US', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Chicago',
+  })
+  return ` · stale since ${hhmm} CT`
+}
 
 /**
  * A row from the armed_orders LEDGER is always an ENTRY order: `price` is the
@@ -78,7 +163,18 @@ export function orderPriceLines(o: ChartOpenOrder): ChartLineSpec[] {
     const kind = isStopKind ? 'Stop entry' : 'Limit'
     const side = openOrderSideLabel(o) // #512 T6: one canonical side label (SHORT never renders as BUY)
     const sl = o.stop_price > 0 ? ` · SL ${fmt(o.stop_price)}` : ''
-    const tp = (o.target_price ?? 0) > 0 ? ` · TP ${fmt(o.target_price!)}` : ''
+    // UG-5 (release #24): a split arm has TWO take-profits — leg 1's own for
+    // leg1_qty contracts and the runner's for the rest. Both, from the row.
+    const leg1Qty = o.leg1_qty ?? 0
+    const split = (o.leg1_tp ?? 0) > 0 && leg1Qty > 0 && leg1Qty < o.quantity
+    const tp = split
+      ? ` · TP1 ${fmt(o.leg1_tp!)} ×${leg1Qty}` +
+        ((o.target_price ?? 0) > 0
+          ? ` · TP2 ${fmt(o.target_price!)} ×${o.quantity - leg1Qty}`
+          : '')
+      : (o.target_price ?? 0) > 0
+        ? ` · TP ${fmt(o.target_price!)}`
+        : ''
     // T29: a cancel that is sent but not yet confirmed is not a resting
     // order — draw it dotted and say so.
     const cancelSent = (o.status ?? '').startsWith('CANCEL_PENDING')
@@ -201,7 +297,8 @@ export function mentorKindLabel(kind: string, key = ''): string {
  * order / position. Trendlines are SLOPED — see mentorTrendSegments.
  */
 export function mentorChartLines(
-  truth: MentorTruth | null | undefined
+  truth: MentorTruth | null | undefined,
+  staleSinceMs?: number
 ): ChartLineSpec[] {
   if (!truth || !truth.enabled) return []
   const out: ChartLineSpec[] = []
@@ -263,7 +360,7 @@ export function mentorChartLines(
     if (pos && pos.stop > 0)
       out.push({
         price: pos.stop,
-        label: 'swing position SL',
+        label: swingStopLabel(pos),
         color: ORDER_COLORS.stopLoss,
         style: 2,
       })
@@ -275,51 +372,72 @@ export function mentorChartLines(
         style: 2,
       })
   }
-  return out.filter((l) => l.price > 0)
+  const mark = mentorStaleMark(staleSinceMs)
+  return out
+    .filter((l) => l.price > 0)
+    .map((l) => (mark ? { ...l, label: l.label + mark } : l))
 }
 
-const INTERVAL_MS: Record<string, number> = {
-  '1m': 60_000,
-  '3m': 180_000,
-  '5m': 300_000,
-  '15m': 900_000,
-  '30m': 1_800_000,
-  '1h': 3_600_000,
-  '2h': 7_200_000,
-  '4h': 14_400_000,
-  '1d': 86_400_000,
+/** UG-1 (release #24): the filled swing leg's stop says where it was read. */
+function swingStopLabel(pos: MentorSwingLeg): string {
+  if (pos.stop_source === 'broker')
+    return pos.moved_be && pos.stop === pos.entry
+      ? 'swing position SL · break-even (NT8)'
+      : 'swing position SL (NT8)'
+  if (pos.stop_source === 'entry')
+    return pos.moved_be
+      ? 'swing position SL · entry stop — BE move sent, NT8 book unread'
+      : 'swing position SL · entry stop (NT8 book unread)'
+  return 'swing position SL'
 }
 
 /**
  * Trendline segments. Each VALID line runs from its first swing anchor to the
  * value it trades at on the current bar (or to its second anchor while a box
- * suppresses it). Points are snapped to the chart's bar grid and re-valued ON
- * THE SAME LINE, so a 1m anchor never inserts a stray time slot on a 5m chart.
+ * suppresses it). UG-6 (release #24): every point is snapped to the open time
+ * of the chart bar that CONTAINS it — read from the bars the chart actually
+ * drew (`barTimes`, UTC seconds, ascending) — and re-valued ON THE SAME LINE.
+ * A fixed grid missed 6h/8h/12h/3d/1w (they fell back to 1m) and put 4h/1d on
+ * the UTC grid while NT8's bars are session-aligned, so a point could land on
+ * a time slot no candle has. No bars yet → nothing to snap to → no segment.
  */
 export function mentorTrendSegments(
   trendlines: MentorTruth['trendlines'],
-  interval = '5m'
+  barTimes: readonly number[],
+  staleSinceMs?: number
 ): TrendSegment[] {
-  const step = INTERVAL_MS[interval] ?? 60_000
   const out: TrendSegment[] = []
+  if (barTimes.length === 0) return out
+  const snap = (ms: number): number => {
+    const sec = ms / 1000
+    let lo = 0
+    let hi = barTimes.length - 1
+    if (sec <= barTimes[0]) return barTimes[0]
+    // the last bar that opened at or before the point
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if (barTimes[mid] <= sec) lo = mid
+      else hi = mid - 1
+    }
+    return barTimes[lo]
+  }
+  const mark = mentorStaleMark(staleSinceMs)
   for (const tl of trendlines ?? []) {
     if (tl.p1_ms === tl.p0_ms) continue
     const slope = (tl.p1_px - tl.p0_px) / (tl.p1_ms - tl.p0_ms)
     const valueAt = (ms: number) => tl.p0_px + slope * (ms - tl.p0_ms)
     const endMs = tl.in_level && tl.now_ms > tl.p1_ms ? tl.now_ms : tl.p1_ms
     const times = Array.from(
-      new Set(
-        [tl.p0_ms, tl.p1_ms, endMs].map((ms) => Math.floor(ms / step) * step)
-      )
+      new Set([tl.p0_ms, tl.p1_ms, endMs].map(snap))
     ).sort((a, b) => a - b)
     if (times.length < 2) continue
     const role = tl.side === 'long' ? 'support' : 'resistance'
     out.push({
-      label: `mentor trendline (${role}${tl.in_level ? '' : ', inside a box — not traded'})`,
+      label: `mentor trendline (${role}${tl.in_level ? '' : ', inside a box — not traded'})${mark}`,
       color: MENTOR_COLOR,
-      points: times.map((ms) => ({
-        time: Math.floor(ms / 1000),
-        value: valueAt(ms),
+      points: times.map((sec) => ({
+        time: sec,
+        value: valueAt(sec * 1000),
       })),
     })
   }

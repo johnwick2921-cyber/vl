@@ -1,4 +1,10 @@
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  waitFor,
+} from '@testing-library/react'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { ChartTabs } from './ChartTabs'
 vi.mock('../../contexts/LanguageContext', () => ({
@@ -11,11 +17,20 @@ vi.mock('./AdvancedChart', () => ({
   AdvancedChart: ({
     symbol,
     selectedAccount,
+    mentorLevels,
+    mentorTrendlines,
   }: {
     symbol: string
     selectedAccount?: string
+    mentorLevels?: unknown[]
+    mentorTrendlines?: unknown[]
   }) => (
-    <div data-testid="market" data-account={selectedAccount}>
+    <div
+      data-testid="market"
+      data-account={selectedAccount}
+      data-mentor-levels={mentorLevels?.length ?? 0}
+      data-mentor-trendlines={mentorTrendlines?.length ?? 0}
+    >
       {symbol}
     </div>
   ),
@@ -60,5 +75,84 @@ describe('ChartTabs composition modes', () => {
     const select = screen.getByRole('combobox', { name: 'Market Chart' })
     fireEvent.change(select, { target: { value: 'ninjatrader' } })
     expect((await screen.findAllByText('MNQ')).length).toBeGreaterThan(0)
+  })
+})
+
+// UG-2 (release #24): a mentor level is a price on ONE instrument. The chart
+// draws the overlays only on a tab showing the mentor's symbol, and says so
+// on any other tab (never a silent hide).
+// Mutant: pass mentorLevels through unconditionally → RED.
+describe('UG-2 mentor overlays follow the symbol', () => {
+  const levels = [{ price: 30000, label: 'mentor key level' }]
+  const tls = [
+    {
+      side: 'long',
+      p0_ms: 0,
+      p0_px: 1,
+      p1_ms: 60_000,
+      p1_px: 2,
+      now_ms: 0,
+      now_px: 0,
+      in_level: true,
+    },
+  ]
+  it('draws them on the mentor symbol tab', () => {
+    render(
+      <ChartTabs
+        traderId="t"
+        exchangeId="ninjatrader"
+        marketOnly
+        selectedSymbol="MNQ"
+        mentorLevels={levels}
+        mentorTrendlines={tls}
+        mentorSymbol="MNQ"
+      />
+    )
+    const m = screen.getByTestId('market')
+    expect(m).toHaveAttribute('data-mentor-levels', '1')
+    expect(m).toHaveAttribute('data-mentor-trendlines', '1')
+    expect(screen.getByTestId('mentor-overlay-note')).toHaveTextContent(
+      'mentor lines: MNQ'
+    )
+  })
+  it('hides them on another symbol and says why', async () => {
+    render(
+      <ChartTabs
+        traderId="t"
+        exchangeId="ninjatrader"
+        marketOnly
+        selectedSymbol="ES"
+        mentorLevels={levels}
+        mentorTrendlines={tls}
+        mentorSymbol="MNQ"
+      />
+    )
+    // AnimatePresence (mode="wait") keeps the MNQ chart until its exit
+    // completes; wait for the ES chart itself.
+    await waitFor(() =>
+      expect(screen.getByTestId('market')).toHaveTextContent('ES')
+    )
+    const m = screen.getByTestId('market')
+    expect(m).toHaveAttribute('data-mentor-levels', '0')
+    expect(m).toHaveAttribute('data-mentor-trendlines', '0')
+    expect(screen.getByTestId('mentor-overlay-note')).toHaveTextContent(
+      'mentor lines hidden — they belong to MNQ, this chart shows ES'
+    )
+  })
+  it('UG-3: a stale read is marked on the chart', () => {
+    render(
+      <ChartTabs
+        traderId="t"
+        exchangeId="ninjatrader"
+        marketOnly
+        selectedSymbol="MNQ"
+        mentorLevels={levels}
+        mentorSymbol="MNQ"
+        mentorStaleSinceMs={Date.UTC(2026, 9, 14, 15, 7)}
+      />
+    )
+    expect(screen.getByTestId('mentor-overlay-note')).toHaveTextContent(
+      'mentor lines: MNQ · stale since 10:07 CT'
+    )
   })
 })

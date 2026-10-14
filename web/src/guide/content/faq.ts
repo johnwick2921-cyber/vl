@@ -59,9 +59,9 @@ export const faq: GuideSection = {
         },
         {
           q: 'I restarted the bot mid-setup — is my resting order dead until the next plan read?',
-          a: 'No, not since 0B (2026-09-02). A restart cancels pre-boot orders at the broker (the class-33 boot sweep) because the process that owned them is gone. Those swept rows now re-arm under the SAME plan version and the journal says so: "⚖ re-armed after boot sweep". A cancel YOU made still sticks until the next plan version — manual-cancel-wins is unchanged; only the machine\'s own housekeeping is re-armable.',
+          a: 'No, not since 0B (2026-09-02). A restart asks the broker to cancel pre-boot orders (the class-33 boot sweep) because the process that owned them is gone: each is logged "🛡 boot sweep cancel REQUESTED …" and held cancel_pending, and is cancelled only once a fresh NT8 order book shows it gone. Then the swept scenario re-arms under the SAME plan version, as the next placement (the cancelled row keeps its record). A cancel YOU made still sticks until the next plan version — manual-cancel-wins is unchanged; only the machine\'s own housekeeping is re-armable.',
           mechanism:
-            'store/armed_orders.go UpsertArm: terminal + same version = stays terminal, EXCEPT rows whose state_reason starts with "boot_sweep".',
+            'trader/class33_boot_sweep.go sweepPreBootArmsWith → ledger.RequestCancel (cancel_pending, BootSweepReason) → trader/cancel_confirm.go confirmPendingCancels → ConfirmCancel; store/armed_orders.go UpsertArm refuses a cancel_pending row and mints the next placement for a settled one (the "boot_sweep" state_reason prefix, store.IsBootSweepReason, exempts it from the same-version pins).',
           link: '#guards',
         },
         {
@@ -121,7 +121,7 @@ export const faq: GuideSection = {
         },
         {
           q: 'Why did the bot flatten at 14:45?',
-          a: 'EOD flat: the session ends flat by design — resting entries are cancelled, then positions close at market (the limit-ticks-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0; default 0). The session registry enforces it for all three sessions. Exception: a SWING4H mentor position is held through the close (it is managed by the 4h candle).',
+          a: 'EOD flat, and only for a Day-Plan or mentor trader: the one EOD-flat rule (enforceEODFlatAt) does nothing for a trader with neither on. For those, the session ends flat by design — resting entries are cancelled first, then positions close at market (the limit-ticks-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0; default 0). The session registry enforces it for all three sessions. Exception: a SWING4H mentor position is exempt and held through the close (it is managed by the 4h candle), and SWING4H mentor arms are not cancelled.',
           link: '#trading-day',
         },
         {
@@ -131,7 +131,7 @@ export const faq: GuideSection = {
         },
         {
           q: 'The chart has a gap or a jump after NT8 lost its connection — do I restart?',
-          a: "No. The bot finds the missing minutes itself ('🕳 bars HOLE detected') and asks NinjaTrader for them again at +1/+3/+10/+30 min once the feed is back; '✅ bars hole FILLED' means done. Only if it prints '🚨 bars hole UNFILLED … NinjaTrader has no history for <from>–<to>' does NT8 lack the data: right-click an MNQ chart → Reload All Historical Data, and the bot picks it up on its next 15-minute try. GET /api/health → bars_holes shows what is still open.",
+          a: "No. The bot finds the missing minutes itself ('🕳 bars HOLE detected') and asks NinjaTrader for them again at +1/+3/+10/+30 min once the feed is back; '✅ bars hole FILLED' means done. Only if it prints '🚨 bars hole UNFILLED … NinjaTrader has no history for <from>–<to>' do you act. First read the end of that line: if its replay overlap verdicts show disagreed above 0, a replay NT8 sent was on another price scale and was held out of the store, so the window can be empty for a scale reason rather than missing history — read the 🚨 scale lines before reloading. Otherwise NT8 lacks the data: right-click an MNQ chart → Reload All Historical Data, and the bot picks it up on its next 15-minute try (up to 24 a session-day per hole; after that, from the 17:00 CT roll). GET /api/health → bars_holes shows what is still open.",
           link: '#status',
         },
         {
@@ -141,7 +141,7 @@ export const faq: GuideSection = {
         },
         {
           q: 'Why does the guide banner warn about revision drift?',
-          a: 'The banner compares the commit this page bundle was BUILT from with the commit the running bot reports (first 12 characters). Amber means only that the two differ — it cannot tell older from newer, and it cannot catch a guide sentence that is wrong about the very build it ships with (the guide-truth tests do that). Reload the page after an update; if it stays amber, the bot and the UI bundle are from different builds.',
+          a: 'The banner compares the commit this page bundle was BUILT from with the commit the running bot reports (first 12 characters). Amber means only that the two differ — it cannot tell older from newer, and it cannot catch a guide sentence that is wrong about the very build it ships with (the guide-truth tests do that). Reload the page after an update; if it stays amber, the bot and the UI bundle are from different builds. Two other banners are not drift: "NOT A RELEASE BUILD" means this bundle was built without a release sha (a development build, rev "dev") and is never treated as matching; "CANNOT VERIFY THE BUILD" means the bundle carries no usable sha (rev "unknown") or /api/health did not answer (web/src/guide/guideRevBanner.ts).',
           link: '#welcome',
         },
       ],

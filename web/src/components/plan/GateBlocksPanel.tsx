@@ -16,8 +16,9 @@ import { planApi } from '../../lib/api/plan'
 
 // Human labels for the gate names telemetry emits. An unknown gate falls back to
 // its raw name rather than being hidden — a refusal we cannot label is still a
-// refusal the owner must see.
-const GATE_LABELS: Record<string, { en: string; icon: string }> = {
+// refusal the owner must see. Exported for the guide's label-list pin
+// (guideTruth.test.ts) — the guide copies these strings, the test proves it.
+export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   feed_down: { en: 'NT8 feed down', icon: '📡' },
   dead_man: { en: 'Dead-man watchdog', icon: '⏱' },
   frozen: { en: 'Trader frozen', icon: '🧊' },

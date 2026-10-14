@@ -7,6 +7,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { GUIDE_SECTIONS } from './GuidePage'
 import { MENTOR_NO_STUDIO_CONTROL } from './content/mentor'
+import { GATE_LABELS } from '../components/plan/GateBlocksPanel'
 import type { KnobSpec } from './types'
 
 const repo = (p: string) =>
@@ -281,5 +282,30 @@ describe('ADDON-CLOSE-ROUTING — Emergency Flat says what the AddOn does', () =
     )
     expect(b).toContain('routed by the AddOn exactly like Emergency Flat')
     expect(b).not.toContain('Closes one position now.')
+  })
+})
+
+// C9 (release #24): the guide's "full list" of gate-block labels had 17 of the
+// panel's labels. The list is pinned to the panel's OWN map (imported — the
+// call site the dashboard renders from), and the stated count to its size.
+// Mutant: drop one label from status.ts (or add a GATE_LABELS entry without
+// the guide) → RED.
+describe("C9 — the gate-label list is the panel's own map", () => {
+  it('names every GATE_LABELS label verbatim and states the count', () => {
+    const block = GUIDE_SECTIONS.find((s) => s.id === 'status')?.blocks.find(
+      (b) =>
+        b.kind === 'code' &&
+        /every human label the gate panel has/.test(b.title ?? '')
+    )
+    if (!block || block.kind !== 'code')
+      throw new Error('gate-label block not found')
+    const lines = new Set(block.lines.map((l) => l.trim()))
+    const labels = Object.values(GATE_LABELS).map((g) => g.en)
+    expect(labels.length).toBeGreaterThan(40) // non-vacuous
+    for (const l of labels)
+      expect(lines.has(l), `guide lacks "${l}"`).toBe(true)
+    expect(block.title).toBe(
+      `every human label the gate panel has (${Object.keys(GATE_LABELS).length})`
+    )
   })
 })

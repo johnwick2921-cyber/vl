@@ -188,8 +188,14 @@ export function TraderDashboardPage({
   )
   // T7 (release #22): every place the evaluator trades — levels, trigger
   // lines, EMA34 location, box edges, ISB boxes, ORB, swing — plus the
-  // trendlines as sloped segments; merged old highs/lows are named.
-  const mentorLevels = useMemo(() => mentorChartLines(mentor), [mentor])
+  // trendlines as sloped segments.
+  // UG-3 (release #24): a failed refresh keeps the last good read on the
+  // chart, every line marked "stale since HH:MM CT" (never hidden silently).
+  const mentorStaleSinceMs = mentorStale ? (mentor?.as_of_ms ?? 0) : undefined
+  const mentorLevels = useMemo(
+    () => mentorChartLines(mentor, mentorStaleSinceMs),
+    [mentor, mentorStaleSinceMs]
+  )
   const mentorTrendlines = mentor?.enabled ? mentor.trendlines : undefined
   // Plan 4 Task 23.4 — Dashboard tab switcher (Overview / Decisions).
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'decisions'>(
@@ -779,6 +785,8 @@ export function TraderDashboardPage({
               )}
               mentorLevels={mentorLevels}
               mentorTrendlines={mentorTrendlines}
+              mentorSymbol={mentor?.symbol}
+              mentorStaleSinceMs={mentorStaleSinceMs}
             />
           </div>
 

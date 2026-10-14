@@ -90,7 +90,9 @@ func (at *AutoTrader) mentorWireProductionSeams() {
 		}
 
 		at.mentorLegProtectedSource = func(leg string) bool {
-			orders, err := pr.GetOpenOrders("MNQ")
+			// UG-2 (release #24): the ledger answers per symbol now — ask
+			// for THIS trader's instrument, never a literal root.
+			orders, err := pr.GetOpenOrders(at.futuresSymbol())
 			if err != nil {
 				return false
 			}
