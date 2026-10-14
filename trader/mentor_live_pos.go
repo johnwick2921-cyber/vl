@@ -42,6 +42,71 @@ type mentorLivePos struct {
 	RunnerTarget  float64        // #360 item 5: the level beyond the old high (resonance runner target); 0 = none
 	SpentDay      bool           // §7 spent day → mode D (runner ≤ 2)
 	Confluence    bool           // R2 confluence flag → mode C
+	// ModeSource / ModeWhy (P2-2 rel22) say WHERE Pos.Mode came from — the
+	// staged fork, the row's persisted exit_mode, the SWING4H rule or the
+	// course default — and why. Set by mentorBuildLivePos; read by the
+	// once-per-arm mode line.
+	ModeSource string
+	ModeWhy    string
+}
+
+// mentorFillExitMode resolves the exit branch a FILLED mentor arm is driven by
+// (P2-2, rel22 mentor audit). It is never "": the exit drive has no case for
+// an empty mode and ran B's stop moves on it — row 347 (10-13 17:50:54 CT) was
+// driven with mode="" while its row says exit_mode='B', and a lost C would
+// have broken "do NOT move the stop up at all" [D4.2 p1 @ 14:57]. Order:
+//
+//  1. the branch staged at entry (in memory, keyed by the row's scenario —
+//     a B20 confluence upgrade may have moved it to C after authoring);
+//  2. the branch PERSISTED on the row at authoring (armed_orders.exit_mode) —
+//     the staging is lost across a restart or a second instance of the trader
+//     between authoring and fill;
+//  3. the setup's own rule: SWING4H holds by the 4h → "swing";
+//  4. the COURSE default, B "normal" — trail every closed candle
+//     [00-METHOD §6 "Mode B — normal", D2.4 p1 @ 07:01]. No strategy-level
+//     exit-mode default exists to read first (no such knob).
+//
+// class is the counter suffix (exit_mode_<class>); why is the log text.
+func mentorFillExitMode(staged string, r store.ArmedOrderDB) (mode, class, why string) {
+	if s := strings.TrimSpace(staged); s != "" {
+		return s, "staged", "the branch staged at entry"
+	}
+	mode, derived := mentorRebuildExitMode(r)
+	switch {
+	case !derived:
+		return mode, "persisted", "the staged branch was MISSING (restart or second instance between authoring and fill) — read from the row's persisted exit_mode"
+	case mode == "swing":
+		return mode, "derived_swing", "no staged or persisted branch — SWING4H holds by the 4h (the setup's own rule)"
+	default:
+		return mode, "course_default", "no staged or persisted branch and no strategy default exists — the course default B, normal: trail each closed candle [D2.4 p1 @ 07:01]"
+	}
+}
+
+// mentorNoteFillExitMode logs and counts, ONCE per arm, which exit mode a
+// registered fill is driven by and why (P2-2). A re-registration of the same
+// signal with the same mode (a completing fill frame, the partial-then-full
+// path) is silent; a mode CHANGE on re-registration is logged again.
+func (at *AutoTrader) mentorNoteFillExitMode(r store.ArmedOrderDB, lp *mentorLivePos, priorMode string, hadPrior bool) {
+	if lp == nil || (hadPrior && priorMode == lp.Pos.Mode) {
+		return
+	}
+	at.mentorCount("exit_mode_" + lp.ModeSource)
+	if lp.ModeSource == "staged" {
+		at.logInfof("🧑‍🏫 mentor exit mode for %s (signal %s, row %d): %s — %s", r.Scenario, shortID(r.SignalID), r.ID, lp.Pos.Mode, lp.ModeWhy)
+		return
+	}
+	at.logWarnf("🧑‍🏫 mentor exit mode for %s (signal %s, row %d): %s — %s [P2-2]", r.Scenario, shortID(r.SignalID), r.ID, lp.Pos.Mode, lp.ModeWhy)
+}
+
+// mentorLivePosMode reads a registered signal's mode (guarded).
+func (at *AutoTrader) mentorLivePosMode(key string) (string, bool) {
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	p, ok := at.mentorLivePos[key]
+	if !ok || p == nil {
+		return "", false
+	}
+	return p.Pos.Mode, true
 }
 
 // registerMentorLivePos (DS-107, one-row entry) builds the single-leg live
@@ -51,7 +116,9 @@ type mentorLivePos struct {
 // a completing fill frame may grow the position, so an overwrite is correct.
 func (at *AutoTrader) registerMentorLivePos(r store.ArmedOrderDB, u ntwire.OrderUpdatePayload) {
 	if lp := at.mentorBuildLivePos(r, u); lp != nil {
+		priorMode, hadPrior := at.mentorLivePosMode(r.SignalID)
 		at.mentorRegisterLivePos(r.SignalID, lp)
+		at.mentorNoteFillExitMode(r, lp, priorMode, hadPrior) // P2-2: once per arm, which mode and why
 		// I13 (rel9 fix): a FULL fill consumes the staged exit branch — prune it
 		// HERE, never in the shared builder (a partial-fill build must leave the
 		// staged C/swing mode for the remainder's full fill to read).
@@ -96,10 +163,14 @@ func (at *AutoTrader) mentorBuildLivePos(r store.ArmedOrderDB, u ntwire.OrderUpd
 		Contracts: n,
 		Leg1:      n, // the whole position is one leg
 		Leg2:      0,
-		Mode:      at.mentorExitMode(r.Scenario), // B5 (L8): per arm/signal id, never per side
 		Leg1TP:    r.TargetPx,
 	}
-	lp := &mentorLivePos{Pos: pos}
+	// B5 (L8): the branch is per arm/signal id, never per side. P2-2 (rel22):
+	// resolved explicitly — staged → persisted row → SWING4H → course default B;
+	// never "" (an empty mode was driven as B silently).
+	mode, modeClass, modeWhy := mentorFillExitMode(at.mentorExitMode(r.Scenario), r)
+	pos.Mode = mode
+	lp := &mentorLivePos{Pos: pos, ModeSource: modeClass, ModeWhy: modeWhy}
 	// REL18-A #7: the runner target is keyed trader+scenario — two traders mint
 	// the same scenario, and a bare-scenario key would hand B's fill A's target.
 	if v, ok := mentorRunnerTargets.Load(mentorRunnerTargetKey(at.id, r.Scenario)); ok {
@@ -382,6 +453,7 @@ func (at *AutoTrader) mentorRegisterPartialFillIfAbsent(r store.ArmedOrderDB) bo
 	if lp == nil || !at.mentorRegisterLivePosIfAbsent(r.SignalID, lp) {
 		return false
 	}
+	at.mentorNoteFillExitMode(r, lp, "", false) // P2-2: registered now (it was absent) — once per arm
 	// P3 (rel9): the shape counter fires ONLY when a registration actually
 	// happened — the sweep re-runs every bar while the row is cancel_pending,
 	// and a register-if-absent miss must not bump the counter (canon 35).
