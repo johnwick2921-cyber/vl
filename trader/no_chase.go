@@ -39,6 +39,12 @@ type NoChaseInputs struct {
 	HasTouch    bool
 	ATR5m       float64
 	MinSLMult   float64 // the SAME multiplier the stop floor uses
+	// R22 P2 (MATH-PLANNER §4) — the ARM path measures from the LIVE price at
+	// the pass that places it: the authored entry vs the authored confirm ref
+	// is a constant of the plan (0.00×ATR for every reject-at-level arm), never
+	// a chase. LiveRequired with LivePx ≤ 0 → abstain (counted no_live_price).
+	LivePx       float64
+	LiveRequired bool
 }
 
 // NoChaseVerdict is the leg's measurement and its opinion.
@@ -60,6 +66,11 @@ type NoChaseVerdict struct {
 	DistFired   bool // which half fired — the week's table needs them apart
 	RunFired    bool
 	Why         string
+	// R22 P2: MeasuredFrom names the price the distances were taken from
+	// ("live" on the arm path, "entry" on the decision path); LiveUnknown =
+	// the arm path had no live price, so nothing was measured.
+	MeasuredFrom string
+	LiveUnknown  bool
 }
 
 // NoChaseMaxDistATR — NOCHASE_MAX_DIST_ATR, default 1.0.
@@ -102,14 +113,23 @@ func EvaluateNoChase(in NoChaseInputs) NoChaseVerdict {
 	if in.Entry <= 0 || in.CitedLevel <= 0 {
 		return v // not applicable — no level cited; the caller counts this case
 	}
+	px := in.Entry
+	v.MeasuredFrom = "entry"
+	if in.LiveRequired {
+		if in.LivePx <= 0 {
+			v.LiveUnknown = true
+			return v // live price unknown — nothing measured, never a plausible zero
+		}
+		px, v.MeasuredFrom = in.LivePx, "live"
+	}
 	v.Applicable = true
-	v.DistPts = math.Abs(in.Entry - in.CitedLevel)
+	v.DistPts = math.Abs(px - in.CitedLevel)
 	if in.ATR5m > 0 {
 		v.DistATR = v.DistPts / in.ATR5m
 	}
 	if in.HasTouch && in.LastTouchPx > 0 {
 		v.RunKnown = true
-		v.RunPts = math.Abs(in.Entry - in.LastTouchPx)
+		v.RunPts = math.Abs(px - in.LastTouchPx)
 	}
 	var why []string
 	if v.DistATR > 0 && v.DistATR > v.MaxDistATR {
@@ -137,8 +157,12 @@ func NoChaseLine(path, scenario string, v NoChaseVerdict) string {
 	if v.RunKnown {
 		run = fmt.Sprintf("%.1fpts", v.RunPts)
 	}
-	return fmt.Sprintf("🚫 no-chase WOULD_REFUSE %s %s: dist=%.1fpts/%.2f×ATR run=%s (%s) — WARN-first, entry PROCEEDING",
-		path, scenario, v.DistPts, v.DistATR, run, v.Why)
+	from := ""
+	if v.MeasuredFrom == "live" {
+		from = " from live price"
+	}
+	return fmt.Sprintf("🚫 no-chase WOULD_REFUSE %s %s: dist=%.1fpts/%.2f×ATR%s run=%s (%s) — WARN-first, entry PROCEEDING",
+		path, scenario, v.DistPts, v.DistATR, from, run, v.Why)
 }
 
 // NoChaseBootLine is the boot line, every field READ from its resolver.
@@ -159,6 +183,9 @@ func (at *AutoTrader) noChaseObserver(path, scenario string) func(NoChaseVerdict
 	return func(v NoChaseVerdict) {
 		outcome := "ok"
 		switch {
+		case v.LiveUnknown:
+			outcome = "no_live_price"
+			at.logInfof("🚫 no-chase: %s %s has no live price at this pass — distance UNKNOWN, not counted as ok", path, scenario)
 		case !v.Applicable:
 			outcome = "no_level"
 			at.logInfof("🚫 no-chase: %s %s cites no level price — distance UNKNOWN, not counted as ok", path, scenario)

@@ -8781,3 +8781,264 @@ it was left byte-identical and State.ChartLevels was added). The test drives a
 real Tick and asserts the appended kinds reach the payload.
 Reference: kernel/mentor/chart_levels_test.go,
 trader/mentor_truth_chart_test.go; UI-GUIDE-TRUTH T7.
+
+## CLASS NN (assigned at merge) — staleness judged on the wall clock fails OPEN on a backward step
+
+symptom: a dead feed reads as fresh while the host clock is stepped back. On
+2026-10-14 the WSL wall clock stepped −125.0 s at 00:23:00 (then +124.4 s 4.9 s
+later) and took 124 smaller backward steps in one night. B4 / the mentor
+stale-data block compared NT8's bar stamp with THIS process's wall clock, so a
+backward step of S seconds made every bar S seconds younger. Verified at base
+9accae11f: the same 200 s-dead feed was REFUSED on the true clock and PLACED
+after a −125 s step (mentorPlaceIntent, injected clock).
+probe: for every freshness / age / timeout gate, ask which clock BOTH ends of
+the subtraction come from. Wall − foreign-stamp is a two-clock comparison that
+moves with every step; time.Since(t) on a time.Now() value is monotonic. Then
+ask what the gate does in each step direction: a gate that fails closed on a
+forward step usually fails OPEN on a backward one.
+rule: an entry gate must have at least one leg that never reads the wall clock
+(here: the monotonic age of the last live 1m frame RECEIVED, BarCache
+LastLiveReceipt), and a wall-vs-monotonic step detector that holds NEW entries
+for a monotonic window after any material step (fail closed, never open).
+Exits and protection never read the hold.
+Reference: kernel/feed_clock.go (FeedStaleAt, EntryFeedStale, clock-step
+guard), provider/ninjatrader/bar_cache.go LastLiveReceipt,
+trader/stale_gate_clock_step_test.go, OPS-SECURITY review 10-14 §8.4.
+
+## CLASS NN (assigned at merge) — a guard that reads the wrong daemon, and samples too rarely to see a step
+
+symptom: the clock guard reported OK all night (status=OK rtc_vs_wsl_s=0
+ntp_offset=n/a) through 50 journald "Time jumped backwards" lines and a 125 s
+step. It read systemd-timesyncd, which is INACTIVE on this box (chronyd and
+Hyper-V TimeSync both discipline the clock), and point-sampled every 15 min.
+The bot's own clock-health line printed timesync{NTP=yes …}, which says
+nothing about steps.
+probe: `systemctl is-active` every daemon a guard names; then ask whether the
+guard's sampling period is shorter than the excursion it must see (a step and
+its correction 4.9 s apart are invisible to minute-scale samples — the net is
+0.6 s).
+rule: the process that depends on the clock measures it itself (wall vs
+monotonic, ~1 s cadence), counts steps by direction, and serves the counters
+on its health surface.
+Reference: kernel/feed_clock.go ClockStepSnapshot, api/handler_health.go
+"clock", kernel/clock_health.go, OPS-SECURITY review 10-14 §8.3.
+
+## CLASS NN (assigned at merge) — an edge-sampled boolean misses a down-and-up between samples
+
+symptom: on 2026-10-14 the NT8 link was force-closed twice (00:21:35,
+00:22:43). The dead-man watchdog compared ONE boolean (IsConnected) once per
+decision cycle; trader 12345, holding position #650, saw connected=true at both
+samples and logged nothing — no entry block, no post-reconnect protection
+re-ask (vl_2026-10-13.log: DOWN/UP/RESUMED only for trader hoang, 53405 /
+53767 / 53791).
+probe: for every "did X happen" check driven by a sampled boolean, ask what
+happens when X and its reversal both land between two samples, and whether the
+sampler can block (runCycle sat 402.5 s in a planner call).
+rule: compare an EPOCH (a counter that only grows per event — here the TCP
+accept sequence) between samples, not a state; and drive safety samplers from
+a beat that cannot block on unrelated work (the per-trader 60 s monitorTick).
+Reference: trader/dead_man_watchdog.go stepEpoch, trader/auto_trader.go
+driveDeadManWatchdog / ninjaLinkEpoch, trader/auto_trader_risk.go monitorTick,
+trader/dead_man_epoch_test.go, EXECUTION review 10-14 F-3.
+
+## CLASS NN (assigned at merge) — a pre-condition wait that the waited-on actor keeps breaking
+
+symptom: the updater's preflight waits (10 min) for the bot to be flat before
+it holds, but nothing told the bot a job was waiting: job 30a8bbf6 sat in
+preflight_ok/started 01:39:53→01:49:53 CT and trader 12345 placed armed S1 at
+01:44:00 (vl_2026-10-13.log 64591); the install was refused on that order.
+Second half: the planner grace applied only to the REPORTED (first failing)
+leg, and planner_in_flight was listed after the census/ledger legs, so a plan
+read running beside an order never got its grace.
+probe: for every "wait until the other side is quiet" loop, ask whether the
+other side knows it is being waited on; and for every "first failing leg"
+report that picks a budget, ask whether the leg order decides the budget.
+rule: the waited-on side freezes the thing being waited on (NEW entries) as
+soon as the wait starts, logged + counted + auto-clearing on the job's end or
+timeout; a benign blocker with its own budget is checked FIRST.
+Reference: trader/install_pending.go, trader/entry_admission.go
+(install_pending), internal/updaterworker/steps.go preflightFlatLegs,
+OPS-SECURITY review 10-14 P1-1.
+
+## CLASS NN (assigned at merge) — a UI field rendered only when ANOTHER field is absent
+
+symptom: the Updates page rendered job.error only when job.state was empty
+(`job?.state || (job?.error ? … : n/a)`); a refused job always has a state, so
+the owner saw "refused" and never why — the reason lived only in the job file.
+probe: grep every `a || (b ? … : …)` / `a ?? b` in a status panel and ask
+whether a and b are ALTERNATIVES or two independent facts.
+rule: independent server fields get independent rows; never an
+either-or chain.
+Reference: web/src/pages/UpdatesPage.tsx (job-error row),
+UpdatesPage.test.tsx, OPS-SECURITY review 10-14 P1-1(c).
+
+## CLASS NN (assigned at merge) — a test that dials the production process
+
+symptom: TestAgentDirectReply built the Telegram agent on port 8080, so every
+`go test ./...` sent four real GETs to the LIVE bot (236 "invalid number of
+segments" 401 lines in vl_2026-10-13.log, bursts of 4). The agent turns HTTP
+errors into reply strings, so the test passed regardless.
+probe: grep *_test.go for the production port and for constructors that take
+a port; ask whether the code under test swallows transport errors (then a
+dial to the wrong place can never fail the test by itself).
+rule: tests talk to httptest servers; packages that build loopback clients
+mount internal/testnet.Guard in TestMain (refuses + records the dial and fails
+the run even when the error is swallowed); the repo census
+TestNoTestNamesTheLiveBotPort keeps new ones out.
+Reference: internal/testnet, telegram/agent/main_test.go,
+OPS-SECURITY review 10-14 P3-1.
+
+## CLASS NN (assigned at merge) — a restore that leaves the WAL beside the restored file
+
+symptom: deploy/RESTORE.md swapped data.db with mv/cp after a kill -9 and never
+touched data.db-wal / -shm. SQLite pairs files by NAME, so the old DB's hot WAL
+replays into the restored file: reproduced on scratch files, the "restored" DB
+read the OLD rows and integrity_check still said ok. kill -9 also triggered
+Restart=on-failure (relaunch in 5 s, mid-copy), and the step-1 glob
+`{vl,<old>}` failed as a redirect.
+probe: for every procedure that replaces a SQLite file, ask where its -wal/-shm
+go, who can open the name in between, and whether the stop is a "failure" to
+the supervisor.
+rule: stop through the supervisor (no relaunch), keep the current DB with
+.backup, move db + -wal + -shm aside TOGETHER, write the restored file with
+.backup, verify, start.
+Reference: deploy/RESTORE.md "Restore the database", OPS-SECURITY review 10-14
+P1-3.
+
+## CLASS NN (assigned at merge) — a sweep setup's trigger read MET from the state the plan was born in
+
+Symptom: a reclaim / sweep_reclaim confirm (a close rule on the reclaimed side)
+reads MET on the FIRST completed close after plan birth because price was
+already on the reclaimed side — no sweep ever happened. #649 (armed_orders 350,
+10-13 ASIA v2 S2, ONH 30849.75): "wait_confirm MET" at 20:15:01 CT, 2.5 min after
+birth, ~55 pts under the ref; the market_in_zone limit filled at 30843.50 with a
+max 1m high of 30844.25 between birth and fill. Row 233 (10-02) is the same.
+Probe: for every filled reclaim-family arm, find the first closed 1m bar after
+plan birth that traded at/through the confirm ref; compare with filled_at_ms.
+Replay the confirm renderer over a decision corpus and count MET lines whose
+scenario has no such bar.
+Rule: an EVENT-sequence trigger (sweep, then close) is evaluated as a sequence —
+the close counts only after the first event is recorded. The arm gate holds
+every leg of a sweep setup until that verdict is MET, whatever wait_confirm the
+plan authored, so no fillable order exists before the trigger.
+Reference: kernel/sweep_trigger.go (firstSweepOfRef, sweepGatedConfirm),
+kernel/confirmation_evidence.go orderedScenarioConfirm, trader/armed_executor.go
+(SweepSetupWaits), trader/sweep_wait.go; replay golden: 1335 MET -> NOT MET.
+
+## CLASS NN (assigned at merge) — a discipline grade computed from links, not from the event
+
+Symptom: #649 graded "A (followed the plan)" — the grade read only the FK link
+(armed_fill -> cited scenario, direction matched), never whether the scenario's
+trigger had happened before the fill.
+Probe: for graded closes citing a sweep setup or a wait_confirm arm, evaluate the
+scenario's confirm at entry_time over the stored bars; any A/B with NOT MET is
+this class.
+Rule: a grade that claims "followed the plan" must read the plan's own trigger
+at the fill instant (the SAME evaluator the gate runs); unknowable (no plan row,
+no bar coverage) leaves the grade unchanged and is never a guessed miss.
+Reference: kernel/adherence.go (AdherenceInput.Trigger), trader/adherence_trigger.go,
+trader/auto_trader_clock.go recordClosedTradeAnalyticsAt.
+
+## CLASS NN (assigned at merge) — a plan whose armed entry contradicts its own flip line
+
+Symptom: an armed scenario entered PAST its own plan's flip line against the
+flip direction can only fill where the plan is about to flip against it. Class
+148 judged the flip line against PRICE; nothing judged it against the plan's own
+entries. Since 09-24: 48 of 231 armed scenarios strictly past the line, 31 on it.
+Probe: plans.doc flip{price,side,flip_to} vs every enabled arm entry whose
+direction != flip_to.
+Rule: write-time relation — such an arm is written disabled
+(arm_disabled_reason flip_incoherent), logged, counted; the prompt states it.
+Reference: kernel/flip_coherence.go, trader/auto_trader_planner.go (before the
+feasibility verdicts), trader/write_time_feasibility.go noteFlipIncoherentDisabled.
+
+## CLASS NN (assigned at merge) — an owner instruction that reaches one AI but not the one that acts
+
+Symptom: the Studio custom_prompt reached only the executor prompts; under
+plan_mode strict only the PLANNER creates entries, and PlannerInput.OwnerNote had
+no producer anywhere (repo-wide grep), so the owner's "No trade inside sideway
+zone" never reached the model that authors entries.
+Probe: for every owner-editable text/knob, grep its consumers and confirm each
+AI that makes the decision it governs reads it; a struct field with zero
+producers is a dead input.
+Rule: one source (the executor's own config), delimited in the planner prompt,
+logged on every plan write as length + short hash — never the text.
+Reference: kernel/owner_guidance.go, kernel/planner_prompt.go,
+trader/auto_trader_planner.go studioCustomPrompt.
+
+## CLASS NN (assigned at merge) — a count summed across a merge double-counts overlapping members
+
+Symptom: collapseLevelClusters did kept.Confluence += member.Confluence + 1. Each
+member's count overlaps the keeper's (a member within tol sits inside the
+keeper's confBand), so the executor's "·xN" read up to x119 while only 10
+families exist (4,308 / 5,714 seated rows differed from their family count).
+Probe: any "+=" of a DISTINCT-count across a merge; compare the displayed N with
+the definition's ceiling.
+Rule: a distinct count merges by set union (or keeps the keeper's already-distinct
+count), never by addition.
+Reference: kernel/levels_score.go collapseLevelClusters.
+
+## CLASS NN (assigned at merge) — a promote/evict loop that never removes the promoted item
+
+Symptom: seatBothSides runs its side rebalance twice and never removed a
+promoted candidate from `rest`; when a side had fewer than MinSideLevels
+candidates, pass 2 promoted the same level again and evicted a different seat
+(read 10969: SWG-L·5m held 2 of 12 seats; OR-H and OB(bear)·1h lost theirs).
+Probe: a multi-pass loop that appends to a result from a pool; assert result
+identities are unique.
+Rule: an item leaves its pool when it is promoted (seatHTFLegacy already did).
+Reference: kernel/levels_score.go seatBothSides.
+
+## CLASS NN (assigned at merge) — a measurement whose inputs are all authored constants
+
+Symptom: the arm-path no-chase measured |authored entry − authored confirm ref| —
+fixed at write, 0.00×ATR for every reject-at-level arm — so it could never see
+a chase (nochase_arm_ok 9,069 vs would_refuse 18).
+Probe: for each "live" measurement, list its inputs; if none changes after the
+plan is written, it is a constant labelled as a measurement.
+Rule: the arm path measures from the live tape price at the pass that places;
+no live price = not measured, counted apart, never "ok".
+Reference: trader/no_chase.go (LivePx/LiveRequired), trader/entry_gate.go entryGateForArm.
+
+## CLASS NN (assigned at merge) — a moving level frozen at plan write and armed hours later
+
+Symptom: #650 (row 355) rested at frozen_line:VWAP[30798.92] written 21:11 CT and
+filled at 00:09 with the session VWAP ~20 pts higher; "reject from VWAP" executed
+far from VWAP.
+Probe: armed rows whose zone_provenance names VWAP/σ-bands/eVWAP; recompute the
+line at placed_at_ms.
+Rule (release #22, owner: observability only): log + count the live-vs-plan drift
+at placement (vwap_drift_at_placement:<session>:<measured|live_unknown|mixed_source>);
+the entry is not changed. Re-pricing is an owner call.
+Reference: trader/vwap_drift.go, trader/zone_placement.go placeZoneRow.
+
+## CLASS NN (assigned at merge) — a guardrail evaluated only inside a cycle one mode never runs (r22 RISK-GATES, 2026-10-14)
+
+Symptom: a risk limit the owner can switch ON is enforced on one entry path and
+silently skipped on another, because it lives inside a cycle that a mode
+bypasses. The daily guardrails (loss, profit target, max trades) lived only in
+kernel/engine_analysis.go's AI decision cycle; mentor mode returns before that
+cycle, so a mentor trader never evaluated max trades or the profit target, its
+daily loss was checked only while AUTHORING a new arm (never on an arm already
+resting at the broker), nothing ever flattened (the guide promised a "60-second
+force-flat sweep"), the trip's only clear was a roll that ran inside the same
+AI cycle, and the loss counted MANUAL trades on one reader and not on another.
+Sibling: the Emergency Flat's reset (MaybeForceFlat → ResetDailyPnL) cleared
+EVERY trader's trip, not the one acted on.
+
+Probe: for every limit with an owner switch, list the entry producers (AI
+decision, agent door, planner arm, mentor arm + mentor authoring, Picture) and
+the wall-clock beat; for each, name the line that refuses/acts — a producer with
+no line is the class. Then check what lifts the trip (who runs it, in which
+mode) and whether every reader of the limit's P&L applies the same exclusions.
+
+Rule: a guardrail is ONE verdict asked by the one admission chain (every path)
+and acted on by the wall-clock monitor beat (mode- and day_plan-independent);
+its trip is a latch stamped with its session-day; its P&L is read in one place;
+an operator reset is scoped to the trader acted on.
+
+Reference: trader/daily_loss_gate.go (botDayPnLAt, dailyGuardVerdictAt,
+dailyLossBeatAt, dailyLossFlattenAt), trader/entry_admission.go (daily
+guardrail step), kernel/risk_limits.go (forceFlatTrip, DailyForceFlatReasonAt,
+DailyGuardrails.lossPnL), kernel/engine_analysis.go MaybeForceFlat;
+review-1014 RISK-PNL P1-3 / P2-2 / P2-3, UI-GUIDE-TRUTH T4 / T33.

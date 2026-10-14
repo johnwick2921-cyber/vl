@@ -31,7 +31,7 @@ func TestBuildPlannerPrompt(t *testing.T) {
 	for _, want := range []string{
 		"DAY-PLAN READER", "trade_date 2026-08-14 · session NY",
 		"REGIME: trend D=up", "Ranked levels", "PDH", "Calendar", "FOMC", "HARD no-trade blackout",
-		"Owner note", "respect PDH", `"reasoning"`, "sweep_reclaim", "death_condition",
+		"OWNER GUIDANCE", "<<<OWNER_GUIDANCE\nrespect PDH, don't chase\nOWNER_GUIDANCE>>>", `"reasoning"`, // R22 R4: the delimited owner block "sweep_reclaim", "death_condition",
 		`"quality": "A+|A|B|C"`, "C = machine-demoted",
 		// A1/A2 (2026-08-26) — anchor-role truth + condition×session guidance.
 		"Anchor roles", "LIQUIDITY/BREAKOUT references", "Fade ONLY on a confirmed sweep-reclaim",

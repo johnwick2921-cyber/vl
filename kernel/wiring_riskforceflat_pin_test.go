@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // PIN (wiring wave 2026-09-05) — RiskForceFlat must be USED by its caller.
@@ -42,9 +43,9 @@ func TestDailyForceFlatStateRoundTrip(t *testing.T) {
 func TestDailyResetClearsForceFlat(t *testing.T) {
 	const id = "pin-trader-reset"
 	SetDailyForceFlat(id, "daily loss limit hit")
-	ResetDailyPnL()
+	ResetDailyPnLAt(time.Now())
 	if got := DailyForceFlatReason(id); got != "" {
-		t.Fatalf("ResetDailyPnL must clear the trip; still %q", got)
+		t.Fatalf("ResetDailyPnLAt must clear the trip; still %q", got)
 	}
 }
 

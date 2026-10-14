@@ -313,7 +313,7 @@ export interface RiskControlConfig {
 
   // === Strategy Studio Phase 1 — prop-firm guardrails (Chunks 2-5; surfaced in Chunk 6).
   // The kernel gate reads these exact fields; the toggle (…_enabled) governs enforcement. ===
-  guardrails_enabled?: boolean // master switch (default ON)
+  guardrails_enabled?: boolean // master switch (absent = OFF since r22 — owner R4)
   // Mentor mode (🧑‍🏫) — per strategy, default OFF. Placements also need the
   // server env MENTOR_PLACE=1; without it every intent is a dry run.
   mentor_mode?: boolean
@@ -345,7 +345,7 @@ export interface RiskControlConfig {
   trailing_arm?: string // 'after_breakeven' (default) | 'after_trigger_points' | 'immediate'
   trailing_arm_points?: number // used iff after_trigger_points
   daily_loss_limit_usd?: number // daily realized-loss limit (USD)
-  daily_loss_enabled?: boolean // default ON (preserves the live env gate)
+  daily_loss_enabled?: boolean // absent = OFF since r22 (owner R4); the $ keeps its env fallback
   daily_profit_target_usd?: number // daily realized-profit target (USD)
   daily_profit_enabled?: boolean // default OFF
   max_daily_trades?: number // max entries per CME session-day

@@ -66,7 +66,14 @@ export const status: GuideSection = {
         ['maybeWakePlannerOnLevelEvents — the level wake (fixed first)', 'yes'],
         ['weeklyConfluenceShadow — the weekly shadow read', 'yes'],
         ['weeklyScenarioGrade — the active-session grade', 'yes'],
-        ['ResetDailyPnL — the manual daily-window reset', 'yes'],
+        [
+          'SetDailyForceFlat — the daily-loss latch, stamped with its CME session-day',
+          'yes',
+        ],
+        [
+          'DailyForceFlatReason — is the daily-loss latch still holding (lifts at 17:00 CT)',
+          'yes',
+        ],
         ['barPersistSummary — the 60s counter summary', 'yes'],
         [
           'ForceReset poll deadline — a real wait, not a rule',
@@ -250,7 +257,7 @@ export const status: GuideSection = {
         '⚙ config diff (studio_save): min_risk_reward_ratio 3 → 2  ← one line per RESOLVED knob a save changed, plus a config_changes row',
         '🛡 boot sweep CANCELLED pre-boot arm (class 33): <session> <S#> … signal=<id> — the process that placed it is gone  ← only when a restart orphaned a resting order',
         "🧷 brackets: entry-oco=<own(none)|SHARED(id)|n/a> · bracket-oco=<on-fill(shared)|MIXED|n/a> · state-source=<broker|none> · protective-tif=<Gtc|Day|n/a> · reconcile-on-reconnect=on · can-place-stop=<yes|no (addon <build>)> · unprotected-found=<n>  ← bracket-OCO separation. At startup most fields read n/a ON PURPOSE: they describe what the NinjaTrader AddOn does, and the bot can only know that from a book it has not received yet. A Go constant asserting the AddOn's behaviour is exactly the failure this line exists to catch — if entry-oco ever reads SHARED(...), the entry is back in its bracket's cancel group and cancelling it can take the stop.",
-        "🛑 session risk: daily=<$N>[O] [DECORATIVE (guardrails master off, daily_loss_enabled off — both must be on)] · breaker=<N|off>[O|E|I] warn=<M>[I] (not master-gated[; never fires on the retained tape, max run 7, ids 585-591]) · no-trade-band=arm+decision · post-loss counter=on(<K>m) · flat@<close>=position+arms+pending  ← session risk limits. Every threshold carries its evidence tier: [O] is an owner ruling (a saved value), [E] is the process environment (e.g. BREAKER_HALT_N, used only when the strategy saved nothing), [I] is invented and not yet measured (the shipped default). The breaker is READ from the one bound strategy (W1): breaker=n/a (<why>) when zero or several strategies are bound — each trader then prints its own '🛑 [trader] breaker=…' line — and the retained-tape clause rides only an N of 8 or more. Beside it at trader load: '🧮 replan cap: strategy=… · NY=… · ASIA=… · LONDON=…' with the same origin tags, and at boot one '🩺 settings truth [<strategy id>]' line per stored strategy (stored value, what the pre-W1 binary enforced, what this one enforces, CHANGED/UNCHANGED) plus a summary; a CHANGED row no Studio save confirmed refuses its trader with a '⛔ settings truth' line. The line says DECORATIVE in those words whenever a limit is configured but not enforced, because a limit that is displayed and not enforced is worse than none — it is a limit someone is relying on.",
+        "🛑 session risk: daily=<$N>[O] [DECORATIVE (guardrails master off, daily_loss_enabled off — both must be on)] · breaker=<N|off>[O|E|I] warn=<M>[I] (not master-gated[; never fires on the retained tape, max run 7, ids 585-591]) · no-trade-band=arm+decision · post-loss counter=on(<K>m) · flat@<close>=position+arms+pending  ← session risk limits. Every threshold carries its evidence tier: [O] is an owner ruling (a saved value), [E] is the process environment (e.g. BREAKER_HALT_N, used only when the strategy saved nothing), [I] is invented and not yet measured (the shipped default). The breaker is READ from the one bound strategy (W1): breaker=n/a (<why>) when zero or several strategies are bound — each trader then prints its own '🛑 [trader] breaker=…' line — and the retained-tape clause rides only an N of 8 or more. Beside it at trader load: '🧮 replan cap: strategy=… · NY=… · ASIA=… · LONDON=…' with the same origin tags, and at boot one '🩺 settings truth [<strategy id>]' line per stored strategy (stored value, what the pre-W1 binary enforced, what this one enforces, CHANGED/UNCHANGED) plus a summary; a CHANGED row no Studio save confirmed refuses its trader with a '⛔ settings truth' line. The line says DECORATIVE in those words whenever a limit is configured but not enforced, because a limit that is displayed and not enforced is worse than none — it is a limit someone is relying on. At trader load each trader also prints '🛑 [trader] daily-loss gate: OFF (…) …' or 'daily-loss gate: ENFORCED (…) — at bot P&L (realized+open, manual excluded) ≤ -limit: refuse new entries on every path, cancel resting entry orders, flatten bot positions, latched until 17:00 CT', with its max_daily_trades posture; a trip logs '🔴 DAILY LOSS LIMIT HIT' once, and GET /api/risk/status carries daily_loss_gate (enforced, limit, latched, the bot P&L it judges, manual rows excluded, unresolved rows).",
         '🎛 volume wave …   ← wave detector knobs',
         '🎯 touch telemetry …',
         '📐 fvg_entry …',
@@ -356,11 +363,18 @@ export const status: GuideSection = {
           'TCP bridge alive + bars flowing — the single source of truth.',
         ],
         ['Boot integrity', 'Running binary == deploy record (goldens PASS).'],
-        ['Dead-man watchdog', 'Kernel heartbeats ok.'],
+        [
+          'Dead-man watchdog',
+          'NT8 link sampled every minute per trader; a reconnect between samples counts as a gap; NEW entries blocked until a clean reconciliation.',
+        ],
         ['Trader frozen', 'The trader loop is stuck — investigate.'],
         [
           'Clock drift',
           'Host clock vs NT8 clock mismatch. Red-news windows widen by at most 2 minutes a side for it (CLASS 145); a reading over 5 minutes is feed age (halt or gap), not the clock.',
+        ],
+        [
+          'Clock steps',
+          'GET /api/health → clock: every wall-clock step the bot itself saw (wall vs monotonic, sampled each second) — backward and forward counts, the largest of each, the last step, and whether NEW entries are held right now. This is the authority; the old timesync{…} field read systemd-timesyncd, which is not running on this box (chrony and Hyper-V TimeSync are), so it measured nothing. The clock-health log line prints the same counters as steps{…}.',
         ],
         [
           '402 banner',
@@ -374,6 +388,7 @@ export const status: GuideSection = {
       title: 'every label the gate panel can show',
       lines: [
         'NT8 feed down · Dead-man watchdog · Trader frozen · Boot integrity',
+        'Update pending (preflight freeze)',
         'Consecutive-loss halt · Past last-entry time · Outside session window',
         'Against the plan · Awaiting approval · Clock drift',
         'Duplicate order dropped · Order rate breaker · Burned level re-touched',

@@ -1311,6 +1311,13 @@ func (at *AutoTrader) attachTradeContext(ctx *kernel.Context) {
 		ctx.DailyRealizedPnL = dayPnL
 		ctx.TradesToday = dayTrades
 	}
+	// r22 RISK-GATES — the LOSS leg judges the bot's own P&L (realized + open,
+	// manual excluded) from the ONE reader every entry path uses.
+	if bot, berr := at.botDayPnLAt(time.Now()); berr != nil {
+		at.logWarnf("⚠️ daily-loss P&L read failed: %v — the decision path's loss leg falls back to realized", berr)
+	} else {
+		ctx.DailyLossPnL, ctx.DailyLossPnLKnown = bot.Total(), true
+	}
 
 	// Recent 10 closed trades for AI context, scoped to the ACTIVE account so a
 	// post-switch cycle does not carry the old account's trades into the prompt.

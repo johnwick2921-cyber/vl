@@ -485,9 +485,10 @@ export const mentor: GuideSection = {
           cite: 'Owner setting — window 08:30 + 60 (D1.2 p1 @24:04–24:15 "đặt một cái timer… đúng một tiếng") · mentor_window_start / mentor_window_minutes — live',
         },
         {
-          title: 'Daily loss is checked at placement',
-          body: 'An entry is refused the moment the session-day\u2019s realized loss is already at/past the daily-loss limit — before the 60-second force-flat sweep can act. An unresolved close (pnl_corrected NULL) is not a confident "under the limit": it FAILS CLOSED and the placement is refused (counted daily_loss_refused).',
-          cite: 'Engineering rule — mentorDailyLossGate (daily-loss placement check), not from the course · trader/mentor_actions.go mentorDailyLossGate — live',
+          title:
+            'Daily guardrails apply to the mentor (OFF until you switch them on)',
+          body: 'OFF unless you turn it on in Strategy Studio → Risk Control (the Guardrails master AND the Daily loss limit toggle, with its $ field; both OFF today, and an unsaved switch reads OFF). When ON, the daily loss limit covers the mentor exactly as every other path: the bot\u2019s own session-day P&L (realized + open, manual trades excluded) at or past −limit REFUSES every new mentor placement, the 60-second monitor beat CANCELS every resting mentor entry (SWING4H included — a dollar stop has no swing exemption) and FLATTENS the bot\u2019s open positions, and the gate stays LATCHED until 17:00 CT even if the P&L recovers. Max daily trades and the daily profit target, when switched on, now refuse mentor placements too (counted max_daily_trades_refused / daily_profit_refused) — before release #22 the mentor never evaluated them. An unresolved close (pnl_corrected NULL) FAILS CLOSED: the placement is refused (counted daily_loss_refused). Min confidence does NOT apply to mentor entries: they come from the course rules and carry no AI confidence.',
+          cite: 'Engineering rule — mentorDailyLossGate → dailyGuardVerdictAt (one daily-guardrail verdict for every path), not from the course · trader/mentor_tick.go mentorDailyLossGate, trader/daily_loss_gate.go — live',
         },
         {
           title: 'Never widen a stop, never add',
@@ -1411,11 +1412,11 @@ export const mentor: GuideSection = {
           label: 'Stale-data block',
           where:
             'No Studio control — ON by default; the strategy setting mentor_stale_data_block=false turns it off',
-          what: 'Refuse NEW mentor arms (authoring and the armed placement pass) while the live 1m feed is stale — the same B4 formula the AI path uses (expected-open − 1 bar − 15s grace ≈ 75 s). While CME is closed (the daily 16:00–17:00 break, weekends) the gate never fires. Exits and protection are never blocked, and already-resting broker orders are not cancelled by it.',
+          what: 'Refuse NEW mentor arms (authoring and the armed placement pass) while the live 1m feed is stale — the same B4 formula the AI path uses (expected-open − 1 bar − 15s grace ≈ 75 s) PLUS, since release #22, two legs that never read the wall clock: the last live 1m frame must have ARRIVED within 135 s on the monotonic clock, and for 120 s after any wall-clock step of 1 s or more NEW entries are held. The wall-clock rule alone failed OPEN when the clock stepped back (2026-10-14: −125 s at 00:23:00): a dead feed read as fresh. While CME is closed (the daily 16:00–17:00 break, weekends) the feed legs never fire. Exits and protection are never blocked, and already-resting broker orders are not cancelled by it.',
           trader:
             'ON by default (nil → ON — the same default posture as B4); an explicit false disables it. One WARN and one "stale_data" funnel refusal per stale episode, never per tick. The block itself fails OPEN when the 1m cache is empty or no bar provider is wired (a cold start — the seed and the FEED DOWN alert own that case).',
           consumer:
-            'trader/mentor_mode.go mentorStaleDataBlocked · kernel/stale_data.go StaleEntryGateFeed',
+            'trader/mentor_mode.go mentorStaleDataBlocked · kernel/feed_clock.go EntryFeedStale (wall rule StaleEntryGateFeed + monotonic receipt age + clock-step hold)',
           range: 'true / false',
           systemDefault: 'true (unset = ON)',
           recommended:

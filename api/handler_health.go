@@ -86,5 +86,9 @@ func (s *Server) handleHealth(c *gin.Context) {
 		"db":              dbStatus,
 		"nt8":             nt8,
 		"traders_running": running,
+		// Release #22 OPS-SAFETY: the bot's own wall-vs-monotonic clock-step
+		// counters (backward/forward, largest, last, whether NEW entries are
+		// held right now). Read values; last_* absent until a step is seen.
+		"clock": kernel.ClockStepSnapshot(),
 	})
 }

@@ -1,10 +1,8 @@
 package kernel
 
 import (
-	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -58,18 +56,11 @@ func classifyClockDrift(absDriftMs, warnMs, toleranceMs int64) string {
 	}
 }
 
-// timesyncStatus reports systemd-timesyncd's view, best-effort with a hard
-// 2s ceiling ("unknown" on any failure — WSL2 setups vary).
-func timesyncStatus() string {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "timedatectl", "show",
-		"-p", "NTPSynchronized", "-p", "NTP").Output()
-	if err != nil {
-		return "unknown"
-	}
-	return strings.ReplaceAll(strings.TrimSpace(string(out)), "\n", " ")
-}
+// The clock-health line used to read systemd-timesyncd (timedatectl) here.
+// On this box timesyncd is INACTIVE (chronyd runs, and Hyper-V TimeSync steps
+// the clock too), so it printed a value that measured nothing (OPS review
+// 10-14 §8.3). The authority is now the bot's OWN wall-vs-monotonic step
+// guard (kernel/feed_clock.go), which counts every step it sees.
 
 // LogClockHealth emits the clock-health line for one symbol's feed. tag names
 // the trigger ("boot" | "session-roll:<name>").
@@ -100,7 +91,7 @@ func LogClockHealth(tag, symbol string) {
 	// F6 (2026-08-30) — persist this measurement so the authoring gate and the
 	// news-window widening read the freshest clock truth without re-deriving it.
 	RecordClockDrift(drift, haveBar)
-	line += " timesync{" + timesyncStatus() + "} tolerance_ms=" + i64str(C2ToleranceMs())
+	line += " " + ClockStepSummary() + " tolerance_ms=" + i64str(C2ToleranceMs())
 	logger.Infof("%s", line)
 
 	// A stale-but-live feed inflates "drift" honestly (the bar IS old); the
@@ -112,7 +103,7 @@ func LogClockHealth(tag, symbol string) {
 	if haveBar {
 		switch classifyClockDrift(absI64(drift), clockWarnMs(), C2ToleranceMs()) {
 		case "critical":
-			logger.Errorf("🚨 CLOCK CRITICAL [%s]: |drift| %dms exceeds C2 tolerance %dms — check WSL2 time-sync (systemd-timesyncd) and the NT8 feed. Log-only: no trading gate added.",
+			logger.Errorf("🚨 CLOCK CRITICAL [%s]: |drift| %dms exceeds C2 tolerance %dms — check the host clock (chrony / Hyper-V TimeSync — see the clock-step counters in /api/health) and the NT8 feed. Log-only: no trading gate added.",
 				tag, absI64(drift), C2ToleranceMs())
 		case "warn":
 			logger.Errorf("🚨 CLOCK EARLY-WARNING [%s]: |drift| %dms exceeds CLOCK_WARN_MS %dms (tolerance %dms not yet breached) — fix WSL2 time-sync NOW, before staleness verdicts degrade. Log-only.",
@@ -164,8 +155,8 @@ func LogClockGuardBoot() {
 			}
 		}
 	}
-	logger.Infof("🛡 clock-guard [boot] rtc_vs_go=%s timer=%s last_check=%s%s warn_ms=%d tolerance_ms=%d resync=unavailable-no-root (timesyncd slews; owner root unit is the escalation path)",
-		rtcDrift, timer, lastCheck, lastStatus, clockWarnMs(), C2ToleranceMs())
+	logger.Infof("🛡 clock-guard [boot] rtc_vs_go=%s timer=%s last_check=%s%s warn_ms=%d tolerance_ms=%d resync=unavailable-no-root (the in-bot step guard counts wall-vs-monotonic steps: %s; owner root unit is the escalation path)",
+		rtcDrift, timer, lastCheck, lastStatus, clockWarnMs(), C2ToleranceMs(), ClockStepSummary())
 }
 
 func i64str(v int64) string {

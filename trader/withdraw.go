@@ -52,7 +52,7 @@ func (at *AutoTrader) withdrawDueReason(now time.Time) string {
 	if st, ok := maintenanceState(); ok && st.Held && !st.Corrupt && st.Hold.WithdrawEntries {
 		return "maintenance job " + st.Hold.JobID
 	}
-	if r := kernel.DailyForceFlatReason(at.id); r != "" {
+	if r := kernel.DailyForceFlatReasonAt(at.id, now); r != "" { // r22: the beat's clock judges the latch's session-day
 		return "daily_force_flat"
 	}
 	if _, halted := at.consecutiveLossHaltedAt(now); halted {

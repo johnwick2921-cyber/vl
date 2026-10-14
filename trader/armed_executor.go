@@ -645,7 +645,7 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 					kernel.MinSLTickClearance, armStopAnchorMaxATR()); comp.Stop != leg.Stop || comp.Unanchored {
 					skey := plan.PlanID + ":" + strconv.Itoa(plan.Version) + ":" + sc.ID + ":leg" + strconv.Itoa(li+1) + ":stop"
 					if armRefusalChanged(&at.armStopCompLast, skey, fmt.Sprintf("%.2f/%s", comp.Stop, comp.Bound)) {
-						at.logInfof("%s", armStopCompositionLine(plan.Session, sc.ID, li+1, sc.Direction, comp, atr5m, kernel.MinSLATRMult()))
+						at.logArmStopComposition(plan, sc, li, comp, atr5m) // R22 P2: pts + $ on a widening, counted once per arm-spec
 						// OWNER RULING 1 (0B): ARM_STOP_ANCHOR_MAX_ATR 3.0 is a
 						// PROVISIONAL [I] default, reviewed at n≥30 dead zones. The
 						// count is RECORDED (class-35 law), never inferred from logs.
@@ -684,13 +684,13 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 					}
 				}
 			}
-			// S2b chained arm (autopsy-response wave): wait_confirm legs stay
-			// DORMANT until the chain confirm is machine-MET. E4: leg 1 chains
-			// on confirm2 (1m_mss|1x5m_close); a legacy single arm chains on
-			// its own confirm{}.
-			if leg.WaitConfirm {
+			// S2b chained arm (autopsy-response wave): wait_confirm legs stay DORMANT until the chain confirm is
+			// machine-MET (E4: leg 1 chains on confirm2; a single arm on its own confirm{}). R22 F1 (owner R4): a
+			// SWEEP setup waits for its trigger whatever wait_confirm says — no fillable order before the sweep.
+			if kernel.SweepSetupWaits(sc, leg.WaitConfirm) {
 				v := kernel.EvaluateScenarioConfirm(sc, bars, plan.BirthMs, now.UnixMilli())
 				if !v.Met {
+					at.noteSweepWait(plan, sc, li, leg.WaitConfirm, v)
 					scope.note(sc.ID, "waiting: confirm not met ("+kernel.ConfirmGatedRuleLabel(sc)+")")
 					continue
 				}

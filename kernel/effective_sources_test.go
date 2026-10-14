@@ -95,11 +95,12 @@ func TestConditionStatusWithSourceParity(t *testing.T) {
 }
 
 // The posture the engine gate builds from: unset toggles take the gate's
-// shipped defaults (master ON, daily-loss ON with the env fallback, the rest
-// OFF); saved values win.
+// shipped defaults — since r22 (owner R4 + R5) EVERY toggle OFF, master and
+// daily-loss included; the $ value keeps its env fallback (500 here) — saved
+// values win.
 func TestResolveStrategyGuardrailsPosture(t *testing.T) {
 	p := ResolveStrategyGuardrails(store.RiskControlConfig{}, 500)
-	if !p.MasterEnabled || !p.DailyLossEnabled || p.DailyLossLimitUSD != 500 ||
+	if p.MasterEnabled || p.DailyLossEnabled || p.DailyLossLimitUSD != 500 ||
 		p.DailyProfitEnabled || p.MaxDailyTradesEnabled || p.BlackoutEnabled || p.ConsistencyEnabled {
 		t.Fatalf("unset posture: %+v", p)
 	}

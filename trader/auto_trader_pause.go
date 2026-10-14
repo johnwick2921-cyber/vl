@@ -195,7 +195,7 @@ func (at *AutoTrader) logLedgerBootBlock(now time.Time) {
 	guardrails := "master=OFF (soft-audit only)"
 	if at.config.StrategyConfig != nil {
 		rc := at.config.StrategyConfig.RiskControl
-		if hlBool(rc.GuardrailsEnabled, true) {
+		if hlBool(rc.GuardrailsEnabled, false) { // r22: absent = OFF (kernel.ResolveStrategyGuardrails)
 			if rc.DailyLossLimitUSD > 0 {
 				guardrails = fmt.Sprintf("master=ON daily_loss=$%.0f (studio)", rc.DailyLossLimitUSD)
 			} else {
