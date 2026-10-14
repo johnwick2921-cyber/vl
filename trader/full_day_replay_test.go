@@ -33,17 +33,27 @@ import (
 // The fill-based invariants ((c) swing BE/hold across restart, (e) is_running)
 // are asserted where the harness's fake book can drive them; see the sub-tests.
 
-// The replay day window and the restart bar, in CT epoch ms.
+// The replay day window, the restart bar and the seed instant, in CT epoch ms.
 const (
 	replayDayStartMs  = 1791842400000 // 17:00 CT 2026-10-12
 	replayDayEndMs    = 1791925200000 // 16:00 CT 2026-10-13
 	replayRestartMs   = 1791858600000 // 21:30 CT 2026-10-12
+	replaySeedNowMs   = 1791871155000 // 00:59:15 CT 2026-10-13 — the LIVE seed instant (CTO reload)
 	replayFixturePath = "testdata/mnq_1m_2026-10-12_full_day.json.gz"
 )
 
-// loadFullDayFixture loads the recorded MNQ 1m fixture (warm-up + replay day)
+// fixtureBar is one recorded 1m bar with its futures contract (the seed's
+// ContractSpans + mentorFullKeyLevelHistory stitch across contracts).
+type fixtureBar struct {
+	kline    market.Kline
+	contract string
+}
+
+// loadFullDayFixture loads the recorded MNQ fixture (warm-up + replay day)
 // from the gzip-compressed testdata blob (repo size discipline: .json.gz).
-func loadFullDayFixture(t *testing.T) []market.Kline {
+// It returns the 1m bars and the native 1h bars (the 1h feeds ONLY the
+// seed's roll-gap measurement — the live store's native 1h retention).
+func loadFullDayFixture(t *testing.T) ([]fixtureBar, []fixtureBar) {
 	t.Helper()
 	raw, err := os.ReadFile(replayFixturePath)
 	if err != nil {
@@ -55,31 +65,47 @@ func loadFullDayFixture(t *testing.T) []market.Kline {
 	}
 	defer gz.Close()
 	var doc struct {
-		Bars map[string][][5]float64 `json:"bars"`
+		Bars map[string][][]json.RawMessage `json:"bars"`
 	}
 	if err := json.NewDecoder(gz).Decode(&doc); err != nil {
 		t.Fatalf("parse fixture: %v", err)
 	}
-	rows := doc.Bars["1m"]
-	out := make([]market.Kline, 0, len(rows))
-	for _, r := range rows {
-		ot := int64(r[0])
-		out = append(out, market.Kline{
-			Open:     r[1],
-			High:     r[2],
-			Low:      r[3],
-			Close:    r[4],
-			OpenTime: ot,
-			CloseTime: ot + 60_000 - 1,
-			Final:    true,
-		})
+	parse := func(tf string) []fixtureBar {
+		rows := doc.Bars[tf]
+		out := make([]fixtureBar, 0, len(rows))
+		var ot, o, h, l, c float64
+		var contract string
+		for _, r := range rows {
+			if len(r) < 6 {
+				continue
+			}
+			if json.Unmarshal(r[0], &ot) != nil || json.Unmarshal(r[1], &o) != nil ||
+				json.Unmarshal(r[2], &h) != nil || json.Unmarshal(r[3], &l) != nil ||
+				json.Unmarshal(r[4], &c) != nil || json.Unmarshal(r[5], &contract) != nil {
+				continue
+			}
+			oo := int64(ot)
+			out = append(out, fixtureBar{
+				kline: market.Kline{
+					Open: o, High: h, Low: l, Close: c,
+					OpenTime: oo, CloseTime: oo + 60_000 - 1, Final: true,
+				},
+				contract: contract,
+			})
+		}
+		return out
 	}
-	return out
+	return parse("1m"), parse("1h")
 }
 
-// replayStore builds an in-memory store with the bars, armed-orders, positions
-// and level-stats tables the mentor production path touches.
-func replayStore(t *testing.T, bars []market.Kline) *store.Store {
+// replayStore builds an in-memory store with the bars (per-bar contract, so the
+// seed's ContractSpans + mentorFullKeyLevelHistory stitch across the roll),
+// plus the armed-orders, positions and level-stats tables the mentor path uses.
+// Fidelity: it stores ONLY bars with OpenTime <= replaySeedNowMs — exactly what
+// the live store held at the seed instant. The day bars are fed to the
+// evaluator through the FuturesBarsProvider ring, not the store (the seed is
+// the only reader of BarHistoryStore).
+func replayStore(t *testing.T, bars1m, bars1h []fixtureBar) *store.Store {
 	t.Helper()
 	db, err := gorm.Open(sqlitedriver.GormDialector(":memory:"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
@@ -100,30 +126,30 @@ func replayStore(t *testing.T, bars []market.Kline) *store.Store {
 	if err := store.NewLevelStatsStore(db).Migrate(); err != nil {
 		t.Fatalf("level_stats migrate: %v", err)
 	}
-	rows := make([]store.BarHistoryDB, 0, len(bars))
-	for _, b := range bars {
-		rows = append(rows, store.BarHistoryDB{
-			Symbol: "MNQ", TF: "1m", Contract: "MNQ 12-26",
-			OpenTimeMs: b.OpenTime, O: b.Open, H: b.High, L: b.Low, C: b.Close,
-			Source: store.BarSourceHistorical,
-		})
+	insert := func(tf string, bars []fixtureBar) {
+		rows := make([]store.BarHistoryDB, 0, len(bars))
+		for _, b := range bars {
+			if b.kline.OpenTime > replaySeedNowMs {
+				continue // not yet recorded at the seed instant
+			}
+			rows = append(rows, store.BarHistoryDB{
+				Symbol: "MNQ", TF: tf, Contract: b.contract,
+				OpenTimeMs: b.kline.OpenTime, O: b.kline.Open, H: b.kline.High, L: b.kline.Low, C: b.kline.Close,
+				Source: store.BarSourceHistorical,
+			})
+		}
+		if err := bh.InsertBars(rows); err != nil {
+			t.Fatalf("InsertBars(%s): %v", tf, err)
+		}
 	}
-	if err := bh.InsertBars(rows); err != nil {
-		t.Fatalf("InsertBars: %v", err)
-	}
+	insert("1m", bars1m)
+	insert("1h", bars1h)
 	st, err := store.NewFromGorm(db)
 	if err != nil {
 		t.Fatalf("NewFromGorm: %v", err)
 	}
 	return st
 }
-
-// replaySeedNowMs is the fixed instant the seed reads as "now": the session
-// OPEN (17:00 CT 2026-10-12), so the seed warms the 4h/1h triggers and boxes
-// from history ONLY — never the replay day itself (a later seed would pre-see
-// the day and change the incremental gate state). The day is then revealed
-// bar-by-bar, exactly as the live process sees it.
-const replaySeedNowMs = 1791842400000
 
 // replayTrader builds one mentor-mode AutoTrader over the shared store, with the
 // LIVE hoang strategy's mentor-relevant RiskControl (scrubbed, no keys/accounts):
@@ -156,12 +182,21 @@ func replayTrader(t *testing.T, id string, st *store.Store) *AutoTrader {
 }
 
 // replayDayBars returns the bars in [17:00 CT 10-12, 16:00 CT 10-13).
-func replayDayBars(bars []market.Kline) []market.Kline {
-	out := make([]market.Kline, 0, 1380)
+func replayDayBars(bars []fixtureBar) []fixtureBar {
+	out := make([]fixtureBar, 0, 1380)
 	for _, b := range bars {
-		if b.OpenTime >= replayDayStartMs && b.OpenTime < replayDayEndMs {
+		if b.kline.OpenTime >= replayDayStartMs && b.kline.OpenTime < replayDayEndMs {
 			out = append(out, b)
 		}
+	}
+	return out
+}
+
+// replayKlines projects the fixture bars to []market.Kline (the tick input).
+func replayKlines(bars []fixtureBar) []market.Kline {
+	out := make([]market.Kline, 0, len(bars))
+	for _, b := range bars {
+		out = append(out, b.kline)
 	}
 	return out
 }
@@ -170,19 +205,20 @@ func replayDayBars(bars []market.Kline) []market.Kline {
 // It is a single test with named sub-tests per invariant so one failure names
 // the invariant it broke. Runtime budget: the 1380-bar day, twice, non-race.
 func TestFullDayReplay(t *testing.T) {
-	bars := loadFullDayFixture(t)
+	bars, h1bars := loadFullDayFixture(t)
 	day := replayDayBars(bars)
 	if len(day) == 0 {
 		t.Fatalf("no day-window bars in the fixture")
 	}
+	klines := replayKlines(bars)
 	// Pin the mentor clock to the bar under evaluation, per bar.
 	// mentorNowSource is process-global; the harness sets it per bar below.
 	restoreProvider := market.FuturesBarsProvider
 	market.FuturesBarsProvider = func(symbol, tf string, n int) []market.Kline {
-		if n <= 0 || n > len(bars) {
-			n = len(bars)
+		if n <= 0 || n > len(klines) {
+			n = len(klines)
 		}
-		return bars[len(bars)-n:]
+		return klines[len(klines)-n:]
 	}
 	t.Cleanup(func() {
 		market.FuturesBarsProvider = restoreProvider
@@ -193,18 +229,26 @@ func TestFullDayReplay(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Unsetenv("MENTOR_PLACE") })
 
-	st := replayStore(t, bars)
+	st := replayStore(t, bars, h1bars)
 	traderA := replayTrader(t, "full-day-a", st)
 	traderB := replayTrader(t, "full-day-b", st)
 	_ = traderB
 
-	// The bar loop drives the PRODUCTION tick call site.
+	// The bar loop drives the PRODUCTION tick call site from the seed instant
+	// (00:59:15 CT 10-13) forward through the rest of the day.
 	at := traderA
-	for i := 0; i < len(day); i++ {
-		now := time.UnixMilli(day[i].CloseTime)
+	seedIdx := 0
+	for i := range day {
+		if day[i].kline.OpenTime > replaySeedNowMs {
+			seedIdx = i
+			break
+		}
+	}
+	for i := seedIdx; i < len(day); i++ {
+		now := time.UnixMilli(day[i].kline.CloseTime)
 		mentorNowSource = func() time.Time { return now }
-		at.mentorEvalOnce(bars[:len(bars)-len(day)+i+1])
-		if day[i].OpenTime == replayRestartMs {
+		at.mentorEvalOnce(klines[:len(klines)-len(day)+i+1])
+		if day[i].kline.OpenTime == replayRestartMs {
 			// RESTART: a fresh AutoTrader over the SAME store re-seeds and
 			// continues — the same shape the real boot path uses.
 			at = replayTrader(t, "full-day-a", st)
