@@ -44,10 +44,17 @@ export const faq: GuideSection = {
           link: '#guards',
         },
         {
-          q: 'Why does the header PNL differ from the day total in the position history?',
-          a: 'PNL:: is the NT8-native total (equity − initial balance) and can sit at 0.00 all day. LEDGER_DAY:: beside it is the ledger day total — the SAME rule as the position-history footer: rows closed today CT, unknown-P&L / test-seam reasons out, strict pnl_corrected, unresolved rows counted and excluded. When the backend cannot compute it the chip says UNRESOLVED rather than showing a zero.',
+          q: 'What are the money numbers on the dashboard, and why do they differ?',
+          a: 'Each one now says what it is (release #22). NT8_SESSION:: in the header is an ACCOUNT figure from NT8: this NT8 session\'s realized + unrealized P&L, which NT8 resets every session — it is not a total and not equity − initial balance (the old "PNL::" chip had that tooltip over the session number). The Total Equity card shows "Account vs initial" = equity − the configured initial balance, also an account figure. The "Bot P&L (record)" card is the BOT\'s own closed trades (pnl_corrected) with the manual NT8 trades on their own line, e.g. "Manual (excluded): 4 trades, −$3,202.00". LEDGER_DAY:: is the bot\'s P&L for the CME session day that starts 17:00 CT — the same day every risk gate counts — with unresolved rows counted and excluded and any manual rows in the day named in the chip. The position-history footer\'s "Session day (from 17:00 CT)" total is the same figure. When a figure cannot be computed it reads n/a or UNRESOLVED, never a zero.',
           mechanism:
-            '/api/account carries ledger_day_pnl / ledger_day_resolved / ledger_day_unresolved (store.GetLedgerDayTotal); the boot line 🧾 states the corrected-column guard.',
+            '/api/account: nt8_session_pnl, account_pnl_vs_initial(_pct), total_pnl_source; bot_record_pnl / bot_record_trades / manual_excluded_* (store.GetFullStats); ledger_day_* (store.GetLedgerDayTotal over kernel.CMESessionDayStart). The boot lines 🧾 state the corrected-column guard and the manual-origin count.',
+          link: '#status',
+        },
+        {
+          q: "Why does hoang's record no longer show the −$4,226?",
+          a: 'Owner ruling R1 (2026-10-14). Four big shorts on hoang\'s account — #608, #609, #637 and #640, 40/40/20/20 contracts, together −$3,202.00 — were MANUAL NT8 trades that the reconcile loop adopted into the bot\'s ledger. They were 75.8% of the −$4,226.18 record; the bot\'s own trades come to about −$1,024 over 164 trades. They are removed from the bot record by EXCLUSION: the rows are kept, marked origin=manual, listed in the position history with a "MANUAL · excluded" badge, and shown as their own line beside every bot figure. Nothing is deleted. From release #22 any NT8 position the bot adopts with no order or arm of its own is marked manual the moment it is adopted (logged "🧾 manual origin: … flagged origin=manual"). An adoption the bot can tie to its own fill, or cannot decide about, stays a bot trade.',
+          mechanism:
+            'trader_positions.origin (bot|manual); store.BotOriginSQL in every P&L aggregator; boot migration RunManualOriginMigration (backup first, WHERE id AND trader id, idempotent); store.BotRealizedPnL is the bot-only day read for gates.',
           link: '#status',
         },
         {
