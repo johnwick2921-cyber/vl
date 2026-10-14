@@ -547,9 +547,10 @@ const risk: KnobSpec[] = [
   {
     label: 'Min confidence',
     where: 'Strategy → Risk Control',
-    what: "Floor on the AI's confidence integer; below = refused.",
-    trader: 'The simplest honesty gate: 60 means "be at least 60% sure".',
-    consumer: 'kernel/engine_position.go:188 (confidence gate)',
+    what: "Floor on the AI's confidence integer; below = refused. DECISION PATH ONLY: a plan arm carries no AI confidence, so under plan_mode strict (entries only through armed scenarios) this floor never runs. Since release #22 an arm entry's confidence is stored EMPTY (shown n/a), never a fabricated 0.",
+    trader:
+      'The simplest honesty gate: 60 means "be at least 60% sure" — for AI decisions, not for armed plan scenarios.',
+    consumer: 'kernel/engine_position.go:199 (confidence gate, decision path)',
     range: '50 – 100',
     systemDefault: '60 (owner)',
     recommended:
@@ -862,9 +863,9 @@ const prompt: KnobSpec[] = [
     where: 'Strategy → AI config → custom_prompt (ai_config field)',
     what: 'Extra prompt text appended to the System Prompt for a personalized trading style. Empty = nothing appended; the output format and the risk rules are fixed and cannot be overridden from here.',
     trader:
-      'The appended text rides verbatim into every live/planner prompt for this strategy.',
+      'The text rides verbatim into the executor prompt ("# Personalized Strategy") AND — since release #22 (owner ruling) — into the PLANNER prompt as a delimited OWNER GUIDANCE block (<<<OWNER_GUIDANCE … OWNER_GUIDANCE>>>) that never overrides the machine rules. Before #22 the planner never saw it, so under plan_mode strict it could not shape a single entry. Every plan write logs only its length and a short hash (🗣️ owner guidance in the planner prompt … len=… sha256=…), never the text.',
     consumer:
-      'store/strategy.go:792 (ai_config.custom_prompt) · merged into the prompt at build',
+      'store/strategy.go:792 (ai_config.custom_prompt) · kernel/engine_prompt_futures.go (executor) · kernel/owner_guidance.go + kernel/planner_prompt.go (planner)',
     range: 'free text · empty = nothing appended',
     systemDefault: 'empty',
     recommended: '⭐ keep it short — it appends verbatim to the prompt.',

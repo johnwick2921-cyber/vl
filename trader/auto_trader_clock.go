@@ -907,7 +907,9 @@ func (at *AutoTrader) recordClosedTradeAnalyticsAt(now time.Time, p *store.Trade
 
 	// P5.5 — ADHERENCE GRADE (A–F), separate from P&L.
 	inKZ, inNoTrade := kernel.SessionWindowFacts(at.sessionRegistry(now), time.UnixMilli(p.EntryTime))
+	trig, trigWhy := at.entryTriggerVerdict(p, bars) // R22 F8: "" = not required / not verifiable
 	grade, _ := kernel.GradeAdherence(kernel.AdherenceInput{
+		Trigger:    trig,
 		Cited:      p.CitedScenarioID != "",
 		Matched:    p.PlanMatched,
 		OffPlan:    p.CitedScenarioID == "",
@@ -919,8 +921,12 @@ func (at *AutoTrader) recordClosedTradeAnalyticsAt(now time.Time, p *store.Trade
 		at.logWarnf("🎓 adherence grade update failed for %s: %v", p.Symbol, err)
 		return
 	}
-	at.logInfof("📐🎓 %s close: MAE %.2f / MFE %.2f pts · adherence %s (%s) cited=%q matched=%v",
-		p.Symbol, ex.MAE, ex.MFE, grade, kernel.AdherenceLabel(grade), p.CitedScenarioID, p.PlanMatched)
+	at.logInfof("📐🎓 %s close: MAE %.2f / MFE %.2f pts · adherence %s (%s) cited=%q matched=%v trigger=%s",
+		p.Symbol, ex.MAE, ex.MFE, grade, kernel.AdherenceLabel(grade), p.CitedScenarioID, p.PlanMatched, orNA(trig))
+	if trig == kernel.TriggerMissed {
+		telemetry.IncGateBlock(at.id, "adherence_trigger_missed")
+		at.logWarnf("📐🎓 %s pos=%d entered BEFORE its cited scenario's trigger (%s) — graded %s, not \"followed the plan\": %s", p.Symbol, p.ID, p.CitedScenarioID, grade, trigWhy)
+	}
 
 	// W6 — P0 close+P&L alert.
 	at.emitAlert("P0", "close", fmt.Sprintf("close:%d", p.ID),

@@ -138,7 +138,7 @@ export const guards: GuideSection = {
         [
           'min_confidence',
           'HARD',
-          'Confidence below the floor (default 60) → entry refused.',
+          'Confidence below the floor (default 60) → entry refused. Decision path only: a plan arm carries no AI confidence, so under strict this gate never runs (the arm entry stores its confidence empty / n/a, never 0).',
         ],
         [
           'MIN-SL (env MIN_SL_ATR_MULT, default 1.5)',

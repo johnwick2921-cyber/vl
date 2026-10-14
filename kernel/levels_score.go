@@ -800,10 +800,13 @@ func collapseLevelClusters(scored []ScoredLevel, tol float64) []ScoredLevel {
 			}
 			if math.Abs(kept[i].Price-cand.Price) <= tol {
 				researchCut(cand.DetectedLevel, fmt.Sprintf("cluster collapsed into %s %.2f [%s]", kept[i].Kind, kept[i].Price, kept[i].Label))
+				// R22 (MATH-PLANNER 1g): Confluence is the keeper's count of DISTINCT
+				// other families within confBand; a member within tol already sits in
+				// that band, so its family is already counted. Summing overlapping
+				// counts (+= member + 1) printed ·x48 for a 6-family PDH, max ·x119.
 				if kept[i].Research != nil {
-					kept[i].Research.Overrides = append(kept[i].Research.Overrides, fmt.Sprintf("cluster confluence display %d -> %d; score unchanged", kept[i].Confluence, kept[i].Confluence+cand.Confluence+1))
+					kept[i].Research.Overrides = append(kept[i].Research.Overrides, fmt.Sprintf("cluster member %s %.2f merged; confluence stays %d distinct families; score unchanged", cand.Kind, cand.Price, kept[i].Confluence))
 				}
-				kept[i].Confluence += cand.Confluence + 1
 				// fix/collapse-keeps-names (2026-09-10). A level collapsed from a
 				// DIFFERENT timeframe is a distinct reference the owner reads
 				// differently, not a duplicate — W-TF's D3 promised its name on the
@@ -1231,9 +1234,19 @@ func seatBothSides(scored []ScoredLevel, maxLevels int) []ScoredLevel {
 				if dropIdx < 0 {
 					break
 				}
+				cand := cands[0]
+				// R22 (MATH-PLANNER 1e): a promoted candidate LEAVES rest — else the
+				// second pass re-promotes it and one level takes two seats (read
+				// 10969: SWG-L·5m seated twice, OR-H + OB(bear)·1h evicted).
+				for i, l := range rest {
+					if l.Price == cand.Price && l.Kind == cand.Kind && l.Label == cand.Label && l.HTF == cand.HTF {
+						rest = append(rest[:i], rest[i+1:]...)
+						break
+					}
+				}
 				rest = append(rest, seated[dropIdx])
 				seated = append(seated[:dropIdx], seated[dropIdx+1:]...)
-				seated = append(seated, cands[0])
+				seated = append(seated, cand)
 				cands = cands[1:]
 				need--
 			}

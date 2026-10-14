@@ -305,9 +305,11 @@ func TestConfirmResolverRow435(t *testing.T) {
 	if !strings.Contains(out, "  S1 confirm: leg 1/2 2x5m close — NOT MET · leg 2/2 retest fail — NOT MET → overall NOT MET (") {
 		t.Fatalf("05:30 render:\n%s", out)
 	}
-	// S3 is a stored 1x5m_close reclaim — a non-continuation rule: its line is
-	// byte-identical to the base (f2ac79eb) render.
-	const s3Base = "  S3 confirm: 1x5m close above 30264.00 — NOT MET (best run 0/1 completed closes above 30264.00 · 5m bucket 2026-09-21 05:25 CT–2026-09-21 05:30 CT · close 2026-09-21 05:30 CT · closed=true · reference=2026-09-21 05:25 CT (plan publication))\n"
+	// S3 is a stored 1x5m_close reclaim — a non-continuation rule: its verdict
+	// and run are those of the base (f2ac79eb) render. R22 F1: a reclaim counts
+	// closes only after its sweep, so the reference now names the sweep bar
+	// (05:26) instead of plan publication (05:25) — same NOT MET, same 0/1.
+	const s3Base = "  S3 confirm: 1x5m close above 30264.00 — NOT MET (best run 0/1 completed closes above 30264.00 · 5m bucket 2026-09-21 05:25 CT–2026-09-21 05:30 CT · close 2026-09-21 05:30 CT · closed=true · reference=2026-09-21 05:26 CT (sweep of the ref (first closed 1m bar through it)))\n"
 	if !strings.Contains(out, s3Base) {
 		t.Fatalf("S3 (non-continuation) must render byte-identically:\n%s", out)
 	}

@@ -39,6 +39,7 @@ var a3Fragments = []string{
 	"author it ONLY AFTER the tape prints its confirming close",
 	"Entry policy: planned_order is legal on reject",
 	"REJECT fades are the exception to authoring the stop yourself",
+	"A planned_order REJECT's TARGET is composed too", // R22 P2: the gate's target rule, told
 	"Gap-reach law:",
 	"obstacles→",
 }

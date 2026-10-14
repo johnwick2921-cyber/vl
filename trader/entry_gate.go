@@ -44,6 +44,7 @@ type EntryIntent struct {
 	Entry  float64 // the price the entry will actually transact at (arm leg entry / live market price)
 	Stop   float64
 	Target float64
+	LivePx float64 // R22 P2: the live tape price at the arm pass (no-chase measures from it on the arm path)
 
 	ATR5m                   float64
 	MinRR                   float64 // resolved min_risk_reward_ratio — ONE floor for BOTH paths (R1, 2026-09-03; ARM_MIN_RR deleted)
@@ -338,6 +339,7 @@ func EntryGate(in EntryIntent) (reason string, refused bool) {
 			Entry: in.Entry, CitedLevel: in.CitedLevelPx, LevelKind: in.CitedLevelKind,
 			LastTouchPx: in.LastTouchPx, HasTouch: in.HasTouch,
 			ATR5m: in.ATR5m, MinSLMult: in.MinSLMult,
+			LivePx: in.LivePx, LiveRequired: in.Path == "arm", // R22 P2: arms measure from the live price
 		}))
 	}
 
@@ -448,6 +450,7 @@ func (at *AutoTrader) entryGateForArm(plan *kernel.ActivePlan, sc kernel.PlanSce
 		CitedLevelKind: levelKind,
 		LastTouchPx:    touchPx,
 		HasTouch:       hasTouch,
+		LivePx:         lastTapeClose(at.futuresSymbol()), // R22 P2: the live price at the pass that places
 		OnNoChase:      at.noChaseObserver("arm", sc.ID),
 		// INVALIDATION (owner ruling 2026-09-03) — the arm path, and only it,
 		// judged on the PASS clock every other leg of the pass reads (W1b E3).

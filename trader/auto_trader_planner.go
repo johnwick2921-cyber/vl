@@ -166,6 +166,24 @@ func plannerTradeDateCT(now time.Time) string {
 	return now.In(loc).Format("2006-01-02")
 }
 
+// studioCustomPrompt (R22 R4) is the owner's Studio custom_prompt from the SAME
+// config the executor's "# Personalized Strategy" block reads (the strategy
+// engine's config), so the planner and the executor hear one text.
+func (at *AutoTrader) studioCustomPrompt() string {
+	if at == nil {
+		return ""
+	}
+	if at.strategyEngine != nil {
+		if c := at.strategyEngine.GetConfig(); c != nil {
+			return c.CustomPrompt
+		}
+	}
+	if at.config.StrategyConfig != nil {
+		return at.config.StrategyConfig.CustomPrompt
+	}
+	return ""
+}
+
 func shortHash(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:6])
@@ -2525,6 +2543,9 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 				kernel.StampAuthoredIdentity(d, facts.IdentityMap)
 			}()
 		}
+		// R22 F3 — flip-line coherence: an arm past its own plan's flip line is
+		// written DISABLED (no repair round-trip; logged + counted on accept).
+		flipOff := kernel.DisableFlipIncoherentArms(d, kernel.FlipIncoherentScenarios(d))
 		// W-EXEC-TRUTH W3 (c): the market_in_zone zone verdicts join the
 		// feasibility issues — NOT gated by the write_time_feasibility knob
 		// (D5); hinted on attempts < max, the arm disabled on the last.
@@ -2545,6 +2566,7 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 			// last attempt — write the unarmable arms disabled, never a silent write.
 			at.applyWriteTimeArmDisable(d, feas, tradeDate, session)
 		}
+		at.noteFlipIncoherentDisabled(flipOff, tradeDate, session)
 		// S5 (autopsy-response wave) — arm-authored counter: one tick per
 		// arm{} spec written; the before/after gauge of the arming mandate.
 		nArms := 0
@@ -2779,6 +2801,7 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 	at.recordPlanIdentity(planID, version, identityWarnings, doc, authoredAt)
 	researchTrace.Published(planID, version, string(docJSON))
 	at.logInfof("🗓️ PLAN written %s %s v%d (model %s, lifecycle %s, prompt %s, ai_config %s)", tradeDate, session, version, modelID, lifecycle, promptHash, aiConfigHash)
+	at.logInfof("🗣️ owner guidance in the planner prompt for %s %s v%d: %s", tradeDate, session, version, kernel.OwnerGuidanceFingerprint(prompt)) // R22 R4: length + hash, never the text
 	// FIX-READ-FACTS-PLAN-ID (DS-103): bind the read that produced this plan BY
 	// EXACT ID — the id the read's insert returned — so planner_read_facts ↔
 	// plans joins by id. Bound at WRITE time (never read) because AppendPlan
@@ -3362,6 +3385,8 @@ func (at *AutoTrader) assemblePlannerInputWithCtx(now time.Time, session, tradeD
 		// the weekly-bias context line (soft law, fail-open).
 		CandleTables: candleTables,
 		WeeklyCtx:    weeklyCtx,
+		// R22 R4 (owner ruling): the Studio custom prompt reaches the planner.
+		OwnerNote: at.studioCustomPrompt(),
 	}
 	// VOID PARITY D3 (2026-09-02) — record what the model is TOLD on EVERY read.
 	// Before this a rendered prompt survived only when the read FAILED, so a

@@ -1,12 +1,12 @@
 KEY LEVELS (map, nearest-first; price 20041.83):
-  20040.64  POC                  A  fresh·x11 magnet_meanrevert -1.2
-  20045.77  VWAP+1σ              A  fresh·x13 magnet_meanrevert +3.9
+  20040.64  POC                  A  fresh·x5  magnet_meanrevert -1.2
+  20045.77  VWAP+1σ              A  fresh·x6  magnet_meanrevert +3.9
   20036.56  PDC                  A  fresh·x5  pivot           -5.3
   20056.51  VAH                  A  fresh·x5  react_zone      +14.7
-  20060.46  SWG-H·5m             A  fresh·x13 react_zone      +18.6
-  20075.16  SETT                 A  fresh·x11 pivot           +33.3
-  20079.55  SWG-H·5m             A  fresh·x17 react_zone      +37.7
-  20001.23  VWAP                 A  fresh·x19 magnet_meanrevert -40.6
+  20060.46  SWG-H·5m             A  fresh·x6  react_zone      +18.6
+  20075.16  SETT                 A  fresh·x5  pivot           +33.3
+  20079.55  SWG-H·5m             A  fresh·x5  react_zone      +37.7
+  20001.23  VWAP                 A  fresh·x3  magnet_meanrevert -40.6
 Anchor: react AT these levels (grade A>B>C); between them, a confirmed momentum/breakout may still be traded.
 role playbook: magnet_meanrevert = price gravitates back (fade/reversion setups) · liquidity_break = resting stops (break or sweep-reclaim, never a blind fade) · react_zone = first-touch reaction reference (reject/hold evidence) · target_only = take-profit / invalid reference only, NEVER an entry trigger · pivot = the auction's fulcrum (bias flips measured against it).
 

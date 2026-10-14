@@ -143,6 +143,16 @@ func staleConfirmAnnotation(s PlanScenario, v ConfirmVerdict, nowPrice, atr5m fl
 // (F2, the S2 10:54 artifact). Leg 2 is windowed from leg 1's FIRST fire time
 // (a retest touch that happened BEFORE the breakdown cannot count).
 func EvaluateScenarioConfirm(s PlanScenario, bars []market.Kline, sinceMs, nowMs int64) ConfirmVerdict {
+	v := scenarioConfirm(s, bars, sinceMs, nowMs)
+	if s.Confirm != nil || (IsBreakdownCondition(s.Condition) && s.Breakdown != nil) {
+		recordConfirmationVerdict(v) // exactly the set that recorded before the split
+	}
+	return v
+}
+
+// scenarioConfirm is EvaluateScenarioConfirm without the live telemetry (one
+// evaluation; ScenarioTriggerAt — the grader's retrospective read — reuses it).
+func scenarioConfirm(s PlanScenario, bars []market.Kline, sinceMs, nowMs int64) ConfirmVerdict {
 	if IsBreakdownCondition(s.Condition) && s.Breakdown != nil {
 		st := BreakdownContinueState(s, bars, sinceMs, nowMs)
 		// W2 (a): leg 1 is judged on the rule the resolver read — the STORED
@@ -182,15 +192,12 @@ func EvaluateScenarioConfirm(s PlanScenario, bars []market.Kline, sinceMs, nowMs
 		v.Rule, v.RefPrice, v.Side, v.RuleSource = c.Rule, c.RefPrice, c.Side, st.Rule.Source
 		v.Met = st.Leg1Met && st.Leg2Met
 		v.Legs = []ConfirmVerdict{leg1, leg2}
-		recordConfirmationVerdict(v)
 		return v
 	}
 	if s.Confirm == nil {
 		return ConfirmVerdict{}
 	}
-	v := orderedScenarioConfirm(s, bars, sinceMs, nowMs)
-	recordConfirmationVerdict(v)
-	return v
+	return orderedScenarioConfirm(s, bars, sinceMs, nowMs)
 }
 
 // AcceptHoldMin resolves ACCEPT_HOLD_MIN (E6, default 10) — the minutes of
