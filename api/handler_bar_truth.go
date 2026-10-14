@@ -14,7 +14,11 @@ import (
 )
 
 // handleBarTruthArbiter POST /api/nt/bar-arbiter — BAR-TRUTH WAVE (2026-08-28).
-// Owner-only. Two actions:
+// Gated on the TRADER's owner (traderOwnedBy: the JWT user must own the
+// trader named), not on the box owner (requireOwner) — owner-identity review
+// DS-103 P3-1 corrected the "Owner-only" this comment used to claim. Machine
+// tokens are refused here (not a read, not a risk-reducing action —
+// machine_action_guard.go). Two actions:
 //
 //	backfill: one-shot deep bars_subscribe (default MNQ 1m, 8640 bars) so the
 //	          AddOn replays deep history into the cache + persister.

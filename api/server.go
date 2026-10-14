@@ -963,6 +963,15 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 			}
 		}
 
+		// P2-8 (owner-identity fold): a machine token may READ and REDUCE
+		// risk, never add it — deny by default over every route
+		// (machine_action_guard.go), so a new mutating route is refused
+		// until it is listed on purpose.
+		if claims.IsMachine() && !machineActionAllowed(c.Request.Method, c.FullPath()) {
+			machineActionRefuse(c, claims)
+			return
+		}
+
 		// Store user information in context (user_id, email and the claims
 		// the credential guard reads — credential_guard.go).
 		setAuthContext(c, claims)
