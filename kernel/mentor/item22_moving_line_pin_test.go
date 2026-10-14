@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"strings"
 	"testing"
 
 	"vl/market"
@@ -120,7 +121,9 @@ func TestItem22VisitCounterOncePerVisit(t *testing.T) {
 		rthBars(1, 101, 101.2, 100, 100.5), // touches 100, closes back above → reject
 	}
 	e.Tick(bars, bars[1].CloseTime+1)
-	if got := e.State.Visits[string(KindTriggerRetest)]; got != 1 {
+	// r22 P1-2: the visit is counted against the line's identity AT ITS PRICE
+	// (visitKey) — the line at 100 here.
+	if got := e.State.Visits[visitKey(Level{Key: string(KindTriggerRetest), Kind: KindTriggerRetest, Price: 100})]; got != 1 {
 		t.Fatalf("precondition: one reject = one visit; visits=%d, want 1", got)
 	}
 
@@ -134,7 +137,14 @@ func TestItem22VisitCounterOncePerVisit(t *testing.T) {
 		bars = append(bars, rthBars(2+i, line+1.5, line+2, line-0.5, line+0.5))
 		e.Tick(bars, bars[len(bars)-1].CloseTime+1)
 	}
-	if got := e.State.Visits[string(KindTriggerRetest)]; got != 1 {
-		t.Fatalf("visits=%d after 30 drift ticks, want 1 — drift must not re-classify reject", got)
+	// Summed over every price identity the line held: still ONE visit.
+	got := 0
+	for k, v := range e.State.Visits {
+		if strings.HasPrefix(k, string(KindTriggerRetest)) {
+			got += v
+		}
+	}
+	if got != 1 {
+		t.Fatalf("visits=%d after 30 drift ticks, want 1 — drift must not re-classify reject (%v)", got, e.State.Visits)
 	}
 }

@@ -27,7 +27,8 @@ func TestVisitCapRefusalOncePerVisit(t *testing.T) {
 		rthBars(1, 101, 101.2, 100, 100.5),   // touches 100, closes back above → reject
 	}
 	e.Tick(bars, bars[1].CloseTime+1)
-	key := string(KindTriggerRetest)
+	// r22 P1-2: the visit is counted against the line's identity AT ITS PRICE.
+	key := visitKey(Level{Key: string(KindTriggerRetest), Kind: KindTriggerRetest, Price: 100})
 	if e.State.Visits[key] != 1 {
 		t.Fatalf("precondition: one reject = one visit; visits=%d", e.State.Visits[key])
 	}
@@ -35,13 +36,12 @@ func TestVisitCapRefusalOncePerVisit(t *testing.T) {
 	// level is "capped".
 	e.State.Visits[key] = 4
 
-	// 30 ticks: price keeps touching the line and closing back on the approach
-	// side (reject, same visit — never a departure). The cap refusal must
-	// fire ONCE, not 30 times.
+	// 30 ticks: price keeps touching the line (fixed at 100 — r22: a MOVED
+	// line is a new level with its own count) and closing back on the
+	// approach side (reject, same visit — never a departure). The cap refusal
+	// must fire ONCE, not 30 times.
 	for i := 0; i < 30; i++ {
-		line := 99.0 - 1.0*float64(i)
-		e.State.Trigger.Price = line
-		bars = append(bars, rthBars(2+i, line+1.5, line+2, line-0.5, line+0.5))
+		bars = append(bars, rthBars(2+i, 101.5, 102, 99.5, 100.5))
 		e.Tick(bars, bars[len(bars)-1].CloseTime+1)
 	}
 	if got := e.State.Refusals["level_visit_cap"]; got != 1 {
@@ -59,7 +59,7 @@ func TestVisitCapRefusalRearmsAfterDeparture(t *testing.T) {
 		rthBars(1, 101, 101.2, 100, 100.5), // reject → visit 1
 	}
 	e.Tick(bars, bars[1].CloseTime+1)
-	key := string(KindTriggerRetest)
+	key := visitKey(Level{Key: string(KindTriggerRetest), Kind: KindTriggerRetest, Price: 100})
 	e.State.Visits[key] = 4 // capped
 
 	// One capped tick → the refusal fires once.

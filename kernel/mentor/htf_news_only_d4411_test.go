@@ -67,8 +67,8 @@ func TestHTFGateNewsOnlyTick(t *testing.T) {
 		e.State.EMA9 = 0
 		e.State.SeedLevels = []Level{
 			{Key: "L", Kind: KindKeyLevel, Price: 29386},
-			{Key: "old-low:29335", Kind: KindOldExtreme, Price: 29335},
-			{Key: "old-high:29431.75", Kind: KindOldExtreme, Price: 29431.75},
+			{Key: "old-low:29335", Kind: KindOldExtreme, Role: OldLow, Price: 29335},
+			{Key: "old-high:29431.75", Kind: KindOldExtreme, Role: OldHigh, Price: 29431.75},
 		}
 		e.State.Trigger = TriggerLine{Dir: SideLong, Price: 29300}
 		// CONFLICT: 4h long vs 1h short — case 3 sits out when the gate is on.

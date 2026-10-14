@@ -118,6 +118,26 @@ var fdrLiveArms = []fdrLiveArm{
 	{340, "04:33", "04:33:00.316", "long", 30770.5, 30763.25},
 }
 
+// fdrR22Arms — arms the release #22 build authors on purpose that the live
+// release #21 bot refused (id 0 = not a live row). r22 LEVELS: the bar closing
+// 02:09 CT is an ISB short entry 30641.00 / stop 30651.00. Live (#21) refused
+// it isb_target_below_floor: its target ladder read the BROKEN 5m/15m pivot low
+// 30636.75 (4.25 pts — under the 10-pt stop). The old lows 30636.75 / 30632.75
+// had been traded through; the nearest UNBROKEN old low is 30606.75, so the
+// first level in the way is the key level 30611.25 (29.75 pts ≥ 2R) and the ISB
+// is a valid trade. Pinned so the deliberate divergence from live is visible.
+var fdrR22Arms = []fdrLiveArm{
+	{0, "02:09", "r22: live refused isb_target_below_floor on a broken pivot low", "short", 30641.0, 30651.0},
+}
+
+// fdrExpectedArms is the live set plus the deliberate r22 divergences, in
+// bar-close order.
+func fdrExpectedArms() []fdrLiveArm {
+	out := append(append([]fdrLiveArm{}, fdrR22Arms...), fdrLiveArms...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].barCT < out[j].barCT })
+	return out
+}
+
 // ── fixture ─────────────────────────────────────────────────────────────────
 
 // fixtureBar is one recorded bar with its futures contract (the seed's
@@ -970,16 +990,17 @@ func TestFullDayReplayFidelity(t *testing.T) {
 		}
 	}
 	t.Logf("FIDELITY live vs harness (CT bar-close minute · side · entry · stop):")
+	want := fdrExpectedArms()
 	n := len(got)
-	if len(fdrLiveArms) > n {
-		n = len(fdrLiveArms)
+	if len(want) > n {
+		n = len(want)
 	}
 	mismatch := 0
 	for i := 0; i < n; i++ {
 		var lv, hv string
 		var lvA *fdrLiveArm
-		if i < len(fdrLiveArms) {
-			lvA = &fdrLiveArms[i]
+		if i < len(want) {
+			lvA = &want[i]
 			lv = fmt.Sprintf("#%d %s (%s) %s %.2f/%.2f", lvA.id, lvA.barCT, lvA.created, strings.ToUpper(lvA.side), lvA.entry, lvA.stop)
 		}
 		ok := false
@@ -997,7 +1018,7 @@ func TestFullDayReplayFidelity(t *testing.T) {
 		t.Logf("  %-5s live %-50s | harness %s", mark, lv, hv)
 	}
 	if mismatch != 0 {
-		t.Fatalf("FIDELITY: %d of %d rows differ from the live 11 (see the table)", mismatch, n)
+		t.Fatalf("FIDELITY: %d of %d rows differ from the live 11 + %d r22 arms (see the table)", mismatch, n, len(fdrR22Arms))
 	}
 }
 

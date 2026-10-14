@@ -231,7 +231,7 @@ func TestEmaCrossingGatesTradedLine(t *testing.T) {
 	e.State.Seed1HWatermark = math.MaxInt64
 	e.State.SeedLevels = []Level{
 		{Key: string(KindEMA34HTF), Kind: KindEMA34HTF, Price: 100},
-		{Key: "old-high:130", Kind: KindOldExtreme, Price: 130},
+		{Key: "old-high:130", Kind: KindOldExtreme, Role: OldHigh, Price: 130},
 	}
 	e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}

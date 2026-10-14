@@ -22,7 +22,7 @@ func TestPHLPLHWorkedExampleGeometry(t *testing.T) {
 		RefBar:         ref,
 		ApproachedFrom: SideLong,
 	}
-	oldHigh := Level{Key: "old-high", Kind: KindOldExtreme, Price: 29_431.75}
+	oldHigh := Level{Key: "old-high", Kind: KindOldExtreme, Role: OldHigh, Price: 29_431.75}
 	in, ok, reason := PHLPLH(touch, oldHigh, 0, 3, cfg)
 	if !ok {
 		t.Fatalf("worked example refused: %s", reason)

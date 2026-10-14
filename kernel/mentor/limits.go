@@ -685,11 +685,12 @@ func (l *Limits) setLeg(side Side, leg *Leg) {
 
 // nearestOldExtreme returns the nearest old-extreme (swing) level beyond
 // price in the trade direction — the G1 leg extreme and the G2 anchor.
-// 0 = none.
+// r22: only the extreme of the trade's role counts (a long leg runs to the old
+// HIGH, a short leg to the old LOW). 0 = none.
 func nearestOldExtreme(levels []Level, price float64, side Side) float64 {
 	best := 0.0
 	for _, lvl := range levels {
-		if lvl.Kind != KindOldExtreme {
+		if lvl.Kind != KindOldExtreme || !oldExtremeRoleFits(lvl, side) {
 			continue
 		}
 		switch side {

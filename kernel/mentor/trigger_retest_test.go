@@ -34,7 +34,7 @@ func TestTriggerRetestWrongWayRefused(t *testing.T) {
 	e.State.EMA9 = 0
 	// An old LOW below the entry — the SHORT target for the (would-be) PLH.
 	e.State.SeedLevels = []Level{
-		{Key: "old-low:29200", Kind: KindOldExtreme, Price: 29200},
+		{Key: "old-low:29200", Kind: KindOldExtreme, Role: OldLow, Price: 29200},
 	}
 	// BUY trigger line at 29300 (its retest is a location).
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 29300}
