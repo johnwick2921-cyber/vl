@@ -266,7 +266,7 @@ export const status: GuideSection = {
     },
     {
       kind: 'p',
-      text: 'A date is now one of three things, and the calendar is DATA (kernel/session_calendar.json), not code. CLOSED \u2014 no trading at all. SHORTENED \u2014 a TRADING day: reads fire, arms are allowed, and the bot is flat at the stated early close, the same discipline as 14:45 at an earlier time. NORMAL \u2014 the ordinary weekly rules decide, and a date absent from the file is normal.',
+      text: 'A date is now one of three things, and the calendar is DATA (kernel/session_calendar.json), not code. CLOSED \u2014 no trading at all. SHORTENED \u2014 a TRADING day: reads fire, arms are allowed, new entries stop at the early close minus the last-entry offset (12:00 on a 12:15 day), and the bot is flat at the stated early close, the same discipline as 14:45 at an earlier time. The early close is looked up on the date the session CLOSES (release #22: it used to be looked up on the day before, so 11-27 and 12-24 never pulled anything in), and because the market is already closed at that minute, the closed-market path itself cancels the resting arms and flattens the positions before it idles \u2014 nothing rides over the holiday. SWING4H positions and swing arms keep their own exemption. NORMAL \u2014 the ordinary weekly rules decide, and a date absent from the file is normal.',
     },
     {
       kind: 'p',

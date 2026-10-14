@@ -118,7 +118,7 @@ export const tradingDay: GuideSection = {
     { kind: 'h', text: 'The EOD ladder (limit-then-market)' },
     {
       kind: 'p',
-      text: 'At EOD flat (and T1 force-flat), the bot first tries a LIMIT a couple of ticks favorable, then converts to MARKET after a short grace. Knobs: EOD_FLAT_LIMIT_TICKS / EOD_FLAT_MARKET_AFTER_SEC (env, 0 = disabled). Why 14:45: half-days close at 12:00 CT and the registry pulls the flat time IN automatically (effectiveEODFlatCT).',
+      text: 'At EOD flat (and T1 force-flat), the bot first tries a LIMIT a couple of ticks favorable, then converts to MARKET after a short grace. Knobs: EOD_FLAT_LIMIT_TICKS / EOD_FLAT_MARKET_AFTER_SEC (env, 0 = disabled). Why 14:45: on a half-day (the session calendar lists it — e.g. 12:15 CT on 11-27 and 12-24) the flat is pulled IN to the early close and the last entry to the early close minus its offset, looked up on the date the session closes. At the early close the market is already shut, so the closed-market path runs the same flat (arms cancelled first, then positions) before it idles.',
     },
   ],
 }

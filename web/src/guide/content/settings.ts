@@ -82,7 +82,7 @@ const dayPlan: KnobSpec[] = [
     systemDefault:
       '1.5 (the code default AND, as of 2026-09-03, the resolved live value — the saved config reads 1.5, so the 0.3 retune this card described is no longer in effect)',
     recommended:
-      '⭐ 1.5 — the RESOLVED live value, read from the saved strategy config 2026-09-03 (day_plan.proximity_filter_atr = 1.5), NOT the 0.3 this card claimed since 2026-08-28. Band = K × dATR (the daily-range proxy) on BOTH the bot gate and the engine path; kernel.ResolveProximityK clamps to 0.1–3.0 and falls back to ActivationWindowK 1.5.',
+      '⭐ 1.5 — the RESOLVED live value, read from the saved strategy config 2026-09-03 (day_plan.proximity_filter_atr = 1.5), NOT the 0.3 this card claimed since 2026-08-28. Band = K × dATR (the daily-range proxy) on BOTH the bot gate and the engine path; kernel.ResolveProximityK clamps to 0.1–3.0 and falls back to ActivationWindowK 1.5. dATR (release #22) = the mean high−low of the last 2 COMPLETE CME sessions, read from the NT8 daily bars; it used to average a cut-off stub of the oldest day as if complete and fell as low as half the real range (10-14 01:44 CT: 179.62 vs ~380).',
     whenToTouch:
       'If the card looks too crowded or too empty for the daily range.',
     perSession:
@@ -998,8 +998,10 @@ const indicators: KnobSpec[] = [
     label: 'EMA',
     where: 'Strategy → Indicators → EMA toggle + periods',
     what: 'Exponential Moving Average block on/off. Default periods [20, 50] (store/strategy.go:1950 + DefaultConfig :2205).',
-    trader: 'OFF removes EMA from the AI indicator text.',
-    consumer: 'engine_prompt.go/engine_analysis.go read Indicators.EMAPeriods.',
+    trader:
+      'OFF removes EMA from the AI indicator text. ON prints only WARMED values: a period-P EMA needs about P + 2.3×P bars (EMA200 → 661) before its starting average weighs under 1%; a timeframe without that many bars prints "EMA200: n/a (not warmed — needs 661 bars)" (release #22 — the old 220-bar read printed an SMA200 under the EMA200 label, 20–60 pts off the chart).',
+    consumer:
+      'engine_prompt.go/engine_analysis.go read Indicators.EMAPeriods; market.EMAWarmupBars sets the fetch depth and the warm-up gate.',
     range: 'bool + comma periods',
     systemDefault: 'off; periods [20, 50] when on',
     recommended: 'Per strategy taste.',
