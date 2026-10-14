@@ -101,8 +101,8 @@ func runBot(token string, cfg *config.Config, st *store.Store) bool {
 		if text == "/start" {
 			ident.refresh()
 			if ident.userID == "" {
-				sendMsg(bot, chatID,
-					"No account found.\nOpen the web dashboard to register, then send /start.")
+				sendMsg(bot, chatID, ident.offMsg(
+					"No account found.\nOpen the web dashboard to register, then send /start."))
 				continue
 			}
 			if allowedChatID == 0 {
@@ -144,7 +144,7 @@ func runBot(token string, cfg *config.Config, st *store.Store) bool {
 			}
 			ident.refresh()
 			if ident.userID == "" {
-				sendMsg(bot, chatID, "No account found.\nOpen the web dashboard to register, then try /bind again.")
+				sendMsg(bot, chatID, ident.offMsg("No account found.\nOpen the web dashboard to register, then try /bind again."))
 				continue
 			}
 			username := update.Message.From.UserName
@@ -189,7 +189,7 @@ func runBot(token string, cfg *config.Config, st *store.Store) bool {
 		// ── Refresh user before every AI call ────────────────────────────────
 		ident.refresh()
 		if ident.userID == "" {
-			sendMsg(bot, chatID, "No account found. Open the web dashboard to register.")
+			sendMsg(bot, chatID, ident.offMsg("No account found. Open the web dashboard to register."))
 			continue
 		}
 
@@ -273,6 +273,9 @@ type botIdentity struct {
 	email   string
 	token   string
 	agents  *agent.Manager
+	// noOwner is why the last refresh resolved NO owner ("" = it did, or no
+	// refresh ran yet); offMsg reads it on the main loop.
+	noOwner string
 }
 
 func newBotIdentity(st *store.Store, apiPort int) *botIdentity {
@@ -311,17 +314,25 @@ func botUntilNextSecond(now time.Time) time.Duration {
 	return now.Truncate(time.Second).Add(time.Second + botNextSecondMargin).Sub(now)
 }
 
-// refresh re-reads the account (the first user) and, when the user changed
-// or the current token would be refused, mints a new token and rebuilds the
-// agent manager on it. false = no account, or the mint failed, or no token
-// the API would admit could be minted (PR #200 F7) — and on false nothing
-// is installed.
+// refresh re-reads the box OWNER — store.ResolveOwner, the one resolver the
+// owner-only API routes use too (owner-identity 2026-10-14; it was users[0],
+// the first-created account, which on the live box is a test account that
+// owns no trader) — and, when the owner changed or the current token would be
+// refused, mints a new token and rebuilds the agent manager on it. false = no
+// owner resolved (the bot then acts for NOBODY: every field cleared, nothing
+// minted, the refusal logged and counted), or the mint failed, or no token
+// the API would admit could be minted (PR #200 F7) — and on false nothing is
+// installed.
 func (b *botIdentity) refresh() bool {
-	users, err := b.st.User().GetAll()
-	if err != nil || len(users) == 0 {
+	o := b.st.ResolveOwner()
+	if !o.Resolved() {
+		store.RecordOwnerRefusal("Telegram bot identity (no token minted)", o)
+		b.actForNobody(o.Reason)
 		return false
 	}
-	u := users[0]
+	b.noOwner = ""
+	u := *o.User
+	source := o.Source
 	// M3 red-team H2: the API refuses a token issued at or before the
 	// account's last credential change on every route, so the SAME user
 	// also re-mints when its token would be refused (botTokenStale).
@@ -369,32 +380,58 @@ func (b *botIdentity) refresh() bool {
 		func() mcp.AIClient { return newLLMClient(st, userID) },
 		api.GetAPIDocs(),
 	)
+	// The email is never logged (owner-identity): the id and the rule that
+	// resolved it are enough to say who the bot acts for.
 	switch prev {
 	case "":
-		logger.Infof("Bot: resolved user %s (%s)", b.userID, b.email)
+		logger.Infof("Bot: resolved user %s (owner source %s)", b.userID, source)
 	case b.userID:
 		logger.Infof("Bot: token re-minted for %s — the previous one would be refused (credential change or expiry)", b.userID)
 	default:
-		logger.Infof("Bot: user changed → %s (%s)", b.userID, b.email)
+		logger.Infof("Bot: user changed → %s (owner source %s)", b.userID, source)
 	}
 	return true
 }
 
 // dropIfUserChanged is refresh's fail-closed path on a USER change: when the
-// box's first account is no longer the one the bot holds a token for, and no
-// token the API admits could be minted for the new one, the bot acts for
-// NOBODY — never for the previous user, whose token may still be admitted
-// (PR #200 F7 verify note 3; TestBotRefreshFailingClosedOnAUserChangeActsForNobody).
-// The same user keeps its fields: its token is the one being replaced, and
-// the next message retries.
-func (b *botIdentity) dropIfUserChanged(firstUserID string) {
-	if b.userID == firstUserID {
+// box's owner is no longer the one the bot holds a token for, and no token
+// the API admits could be minted for the new one, the bot acts for NOBODY —
+// never for the previous user, whose token may still be admitted (PR #200 F7
+// verify note 3; TestBotRefreshFailingClosedOnAUserChangeActsForNobody). The
+// same user keeps its fields: its token is the one being replaced, and the
+// next message retries.
+func (b *botIdentity) dropIfUserChanged(ownerID string) {
+	if b.userID == ownerID {
 		return
 	}
 	if b.userID != "" {
-		logger.Warnf("Bot: first account changed %s → %s and no admitted token could be minted — acting for no account until a refresh succeeds", b.userID, firstUserID)
+		logger.Warnf("Bot: owner changed %s → %s and no admitted token could be minted — acting for no account until a refresh succeeds", b.userID, ownerID)
 	}
 	b.userID, b.email, b.token, b.agents = "", "", "", nil
+}
+
+// actForNobody is refresh's fail-closed path when NO owner resolves (traders
+// split across users, the traders' user missing, no users, a store error):
+// the bot holds no identity at all — never the previous owner's, whose token
+// may still be admitted — until an owner resolves again
+// (TestBotRefreshActsForNobodyWhenNoOwnerResolves).
+func (b *botIdentity) actForNobody(reason string) {
+	if b.userID != "" {
+		logger.Warnf("Bot: no owner resolved — dropping the identity of %s; acting for no account until an owner resolves", b.userID)
+	}
+	b.userID, b.email, b.token, b.agents = "", "", "", nil
+	b.noOwner = reason
+}
+
+// offMsg is what a chat is told while the bot acts for nobody: the
+// registration hint when the box simply has no account yet, otherwise that no
+// owner resolved (the reason itself stays in the log — an unbound chat may be
+// anyone).
+func (b *botIdentity) offMsg(registerHint string) string {
+	if b.noOwner == "" || b.noOwner == store.OwnerReasonNoUsers {
+		return registerHint
+	}
+	return "No owner account is resolved, so the bot is off.\nThe 👤 owner line in the VL log says why."
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

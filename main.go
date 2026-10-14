@@ -123,9 +123,9 @@ func main() {
 		persistState = "on(db)"
 	}
 	if n, err := st.RevokedTokens().Count(); err == nil {
-		logger.Infof("🛡 auth hardening (FIX-SEC): login-rate-limit=on(per-ip+per-account) · onboarding-beginner=owner-only · telegram-bind-code=owner-gated · logout-revocations=%s rows=%d", persistState, n)
+		logger.Infof("🛡 auth hardening (FIX-SEC): login-rate-limit=on(per-ip+per-account) · telegram-bind-code=owner-gated · logout-revocations=%s rows=%d", persistState, n)
 	} else {
-		logger.Warnf("🛡 auth hardening (FIX-SEC): login-rate-limit=on(per-ip+per-account) · onboarding-beginner=owner-only · telegram-bind-code=owner-gated · logout-revocations=%s rows=n/a (read failed: %v)", persistState, err)
+		logger.Warnf("🛡 auth hardening (FIX-SEC): login-rate-limit=on(per-ip+per-account) · telegram-bind-code=owner-gated · logout-revocations=%s rows=n/a (read failed: %v)", persistState, err)
 	}
 
 	// P6 (ledger-close 2026-08-19) — WARN+ERROR→DB log shipping. Attached
@@ -138,6 +138,15 @@ func main() {
 			TraderID: traderID, Message: message, FieldsJSON: fieldsJSON,
 		})
 	})
+	// Owner identity (2026-10-14): who the owner-only routes and the Telegram
+	// bot trust, READ from the one resolver both use (store.ResolveOwner) —
+	// never the first-created account by assumption. NONE is a WARN, printed
+	// after the DB log sink is attached so it also lands in log_events.
+	if owner := st.ResolveOwner(); owner.Resolved() {
+		logger.Infof("%s", owner.BootLine())
+	} else {
+		logger.Warnf("%s", owner.BootLine())
+	}
 	// P2-1 — table retention: WIRED but DISABLED (owner ruling 2026-09-26:
 	// "keep the database, we are testing"). Every RETENTION_*_DAYS knob defaults
 	// to 0 = keep forever, so the boot run prunes nothing; the boot line READS

@@ -1776,7 +1776,7 @@ export const settings: GuideSection = {
     },
     {
       kind: 'p',
-      text: 'The beginner onboarding route is owner-only (the first-created account, no machine tokens). The boot line now prints the JWT secret state truthfully: configured (custom) or INSECURE DEFAULT with a warning.',
+      text: 'Owner-only routes (today: the Telegram bind code) accept only the box OWNER’s own session, never a machine token. The owner is the account that owns every trader — not simply the first account registered; the first account counts only while there are no traders. When the traders belong to more than one account, or to one that no longer exists, there is no owner and those routes refuse (logged and counted as owner_unresolved in the gate-block table). The 👤 owner boot line names the owner and the rule that chose it. The boot line now prints the JWT secret state truthfully: configured (custom) or INSECURE DEFAULT with a warning.',
     },
   ],
 }
