@@ -1,5 +1,10 @@
 import { PRODUCT_NAME } from '../constants/branding'
 import { LedgerDayPnl } from '../components/trader/LedgerDayPnl'
+import {
+  accountVsInitialCard,
+  botRecordCard,
+  headerAccountPnl,
+} from '../components/trader/accountPnl'
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { mutate } from 'swr'
 import { api } from '../lib/api'
@@ -593,8 +598,15 @@ export function TraderDashboardPage({
             <div className="flex gap-4">
               <span>LAST_UPDATE::{lastUpdate}</span>
               <span>EQ::{account.total_equity?.toFixed(2)}</span>
-              <span title="NT8-native total P&L (equity − initial balance)">
-                PNL::{account.total_pnl?.toFixed(2)}
+              {/* R22 PNL-TRUTH (P1-2): this chip read "PNL::" over a tooltip
+                  ("equity − initial balance") that described a DIFFERENT
+                  number than the one shown (NT8's session P&L). Label, value
+                  and tooltip now come from one helper. */}
+              <span
+                data-testid="header-account-pnl"
+                title={headerAccountPnl(account).title}
+              >
+                {headerAccountPnl(account).label}
               </span>
               <LedgerDayPnl account={account} />
             </div>
@@ -621,8 +633,13 @@ export function TraderDashboardPage({
                 : `${account?.total_equity?.toFixed(2) ?? '--'}`
             }
             unit={currencyUnit}
-            change={account ? account.total_pnl_pct || 0 : undefined}
-            positive={(account?.total_pnl ?? 0) > 0}
+            change={
+              account ? accountVsInitialCard(account).changePct : undefined
+            }
+            positive={account ? accountVsInitialCard(account).positive : true}
+            subtitle={
+              account ? accountVsInitialCard(account).subtitle : undefined
+            }
             icon="💰"
             loading={!account && !accountFailed}
           />
@@ -642,16 +659,21 @@ export function TraderDashboardPage({
             icon="💳"
             loading={!account && !accountFailed}
           />
+          {/* R22 PNL-TRUTH: was "Total P&L" showing NT8's SESSION figure.
+              It is now the BOT's record (closed bot trades, pnl_corrected)
+              with the manual NT8 trades on their own visible line. */}
           <StatCard
-            title={t('totalPnL', language)}
+            title="Bot P&L (record)"
             value={
               accountFailed && !account
                 ? '--'
-                : `${account?.total_pnl !== undefined && account.total_pnl >= 0 ? '+' : ''}${account?.total_pnl?.toFixed(2) ?? '--'}`
+                : account
+                  ? botRecordCard(account).value
+                  : '--'
             }
             unit={currencyUnit}
-            change={account ? account.total_pnl_pct || 0 : undefined}
-            positive={(account?.total_pnl ?? 0) >= 0}
+            positive={account ? botRecordCard(account).positive : true}
+            subtitle={account ? botRecordCard(account).subtitle : undefined}
             icon="📈"
             loading={!account && !accountFailed}
           />
