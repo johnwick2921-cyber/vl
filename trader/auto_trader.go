@@ -513,6 +513,11 @@ type AutoTrader struct {
 	// prior terminal row — and never with ANOTHER trader's row (the ledger key
 	// carries the trader too). Read once per placement, never shared.
 	mentorArmEpoch int64
+	// mentorIntentTap is a READ-ONLY test observer (FULL-DAY-REPLAY): when set,
+	// mentorEvalOnce hands it every intent the evaluator emitted this tick,
+	// before any dispatch. nil in production (never assigned outside tests) —
+	// the tick is byte-identical.
+	mentorIntentTap func(in mentor.Intent)
 	// mentorPendingStopMoves is the F1 stop-move TRUTH registry: one entry per
 	// (signal, wire leg) stop move that has been SENT but not yet VERIFIED
 	// against the broker's order book. Keyed "<signalID>#<wireLeg>". Guarded by
