@@ -956,11 +956,18 @@ func (at *AutoTrader) runCycle() error {
 // when the whole cycle should be skipped because the futures market is closed —
 // after logging the open⇄closed edge and idling with a backoff.
 func (at *AutoTrader) cmeSessionClosedSkip() bool {
-	open := kernel.IsCMEOpen(time.Now())
-	at.noteCMESessionEdge(open)
+	now := traderNow() // class 32 trader clock (== time.Now() in production; test seam)
+	open := kernel.IsCMEOpen(now)
+	at.noteCMESessionEdgeAt(open, now)
 	if open {
 		return false
 	}
+	// R22 P1-B — retire the book on an EARLY-CLOSE afternoon BEFORE skipping.
+	// The early close is the flat (early_close − eod_flat_offset, 0 by
+	// default), the very instant IsCMEOpen turns false — and this skip returns
+	// long before runCycle reaches enforceEODFlat. Without this, 11-27 and
+	// 12-24 carried resting arms and open positions over the holiday.
+	at.retireBookAfterEarlyCloseAt(now)
 	// E5 (owner ruling 2026-09-07): mark the cycle as having taken the closed
 	// path, so the loop's overrun check can tell the deliberate backoff from a
 	// fault. Set BEFORE the sleep: a Stop() during the backoff still leaves a
@@ -970,19 +977,44 @@ func (at *AutoTrader) cmeSessionClosedSkip() bool {
 	return true
 }
 
+// retireBookAfterEarlyCloseAt runs the ONE EOD-flat definition
+// (enforceEODFlatAt: cancel arms first, then flatten, broker-truth checked) on
+// the closed path, from a shortened day's early close to the end of that
+// calendar date. It re-runs each closed cycle while it still acts, and stops
+// for the date once a pass has nothing left to retire. Ordinary closes (the
+// 16:00 halt, the weekend) never reach it: their flat is inside the open
+// session and the open path already ran it.
+func (at *AutoTrader) retireBookAfterEarlyCloseAt(now time.Time) {
+	st := kernel.SessionStateAt(now)
+	if st.Class != kernel.SessionShortened || !st.HasClose || now.Before(st.Close) {
+		return
+	}
+	if at.earlyCloseRetiredDate == st.Date {
+		return
+	}
+	if at.earlyCloseNotedDate != st.Date {
+		at.earlyCloseNotedDate = st.Date
+		at.logInfof("🕒 EARLY CLOSE %s (%s, %s CT): market closed — retiring the book on the closed path (arms cancelled, positions flattened)",
+			st.Date, st.Name, kernel.CloseHHMMCT(st.Close))
+	}
+	if !at.enforceEODFlatAt(now) {
+		at.earlyCloseRetiredDate = st.Date // nothing left to retire this afternoon
+	}
+}
+
 // noteCMESessionEdge logs the market open⇄closed transition ONCE (not every
 // cycle). On a fresh start into a closed market it announces the closure + the
 // next open immediately; a fresh start into an open market stays silent (there
 // is nothing to "resume"). Single-goroutine (runCycle) → no locking on cmePrevOpen.
-func (at *AutoTrader) noteCMESessionEdge(open bool) {
+func (at *AutoTrader) noteCMESessionEdgeAt(open bool, now time.Time) {
 	prev := at.cmePrevOpen
 	at.cmePrevOpen = &open
 	if prev != nil && *prev == open {
 		return // no edge — stay quiet
 	}
 	if !open {
-		_, reason := kernel.CMEClosedReason(time.Now())
-		next := kernel.NextCMEOpen(time.Now())
+		_, reason := kernel.CMEClosedReason(now)
+		next := kernel.NextCMEOpen(now)
 		chicago := kernel.CTLocation()
 		at.logInfof("🌙 CME closed (%s) — next open %s", reason, next.In(chicago).Format("Mon 2006-01-02 15:04 MST"))
 	} else if prev != nil {

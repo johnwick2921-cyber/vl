@@ -153,6 +153,7 @@ func (b *Brain) StartMarketBriefs(hours []int) {
 			case <-b.stopCh:
 				return
 			case now := <-ticker.C:
+				now = now.In(kernel.CTLocation()) // R22 P3-3: brief hours are CT, not the machine zone
 				key := now.Format("2006-01-02-15")
 				for _, h := range hours {
 					if now.Hour() == h && now.Minute() == 30 && !sent[key] {
