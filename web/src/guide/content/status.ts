@@ -386,6 +386,8 @@ export const status: GuideSection = {
         ['Trader frozen', 'The trader loop is stuck — investigate.'],
         [
           'Clock drift',
+          'Stale 1m feed',
+          'Clock-step hold (wall clock jumped)',
           'Host clock vs NT8 clock mismatch. Red-news windows widen by at most 2 minutes a side for it (CLASS 145); a reading over 5 minutes is feed age (halt or gap), not the clock.',
         ],
         [
@@ -401,7 +403,7 @@ export const status: GuideSection = {
     { kind: 'h', text: 'Gate-block labels — the full list' },
     {
       kind: 'code',
-      title: 'every human label the gate panel has (53)',
+      title: 'every human label the gate panel has (55)',
       lines: [
         'NT8 feed down',
         'Dead-man watchdog',
