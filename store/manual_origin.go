@@ -47,6 +47,15 @@ func IsManualOrigin(origin string) bool {
 	return strings.EqualFold(strings.TrimSpace(origin), OriginManual)
 }
 
+// CanonicalOrigin returns the one spelling of an origin value: "manual" or
+// "bot" (empty / legacy / any other value reads as bot).
+func CanonicalOrigin(origin string) string {
+	if IsManualOrigin(origin) {
+		return OriginManual
+	}
+	return OriginBot
+}
+
 // ManualExcluded is the separate line: the manual rows a bot figure left out.
 // Counts, never rates; the ids make every figure reproducible (sample-id law).
 type ManualExcluded struct {

@@ -88,4 +88,3 @@ func TestReconcileFlagsOnlyNoEvidenceAdoptionsManual(t *testing.T) {
 		})
 	}
 }
-
