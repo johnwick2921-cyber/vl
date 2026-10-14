@@ -760,8 +760,11 @@ func (t *TCPTrader) c8EntryEvidence(traderID, sid string, sentMs int64, st *stor
 	if st != nil && traderID != "" {
 		if ao := st.ArmedOrders(); ao != nil {
 			if row, err := ao.FindBySignal(traderID, sid); err == nil && row != nil {
-				switch strings.ToLower(strings.TrimSpace(row.State)) {
-				case store.StateWorking, store.StateCancelPending:
+				// Any NON-TERMINAL row for this signal (working, cancel_pending,
+				// place_pending) says the order may still be at the broker; the
+				// ledger's own placement expiry bounds how long that lasts. One
+				// canonical predicate (checklist 28), never a re-typed set.
+				if !store.IsTerminalArmState(row.State) {
 					return true, fmt.Sprintf("armed row %d is %s", row.ID, row.State), bookSaw
 				}
 			}

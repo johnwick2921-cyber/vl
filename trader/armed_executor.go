@@ -978,13 +978,16 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 				if why, past := at.planSessionPastLastEntry(plan.Session, now); past {
 					key := plan.PlanID + ":" + strconv.Itoa(plan.Version) + ":" + sc.ID + ":leg" + strconv.Itoa(li+1) + ":last_entry"
 					if armRefusalChanged(&at.armRefusalLast, key, "last_entry") {
+						// Same gate-block family and record wording as the
+						// admission chain's last_entry refusal (gate parity).
+						telemetry.IncGateBlock(at.id, "last_entry")
 						shown := ""
 						if n, cerr := store.IncArmRefusal(at.store, at.id, kernel.PlanTradeDateFor(plan), plan.Session, "last_entry"); cerr == nil {
 							shown = fmt.Sprintf(" · last_entry refusals this session: %d", n)
 						}
-						at.logWarnf("🕒 arm NOT authored %s %s leg %d: last_entry — %s; no row is written for an entry that cannot be placed%s", plan.Session, sc.ID, li+1, why, shown)
+						at.logWarnf("🕒 arm NOT authored %s %s leg %d: last_entry_cutoff: %s — no row is written for an entry that cannot be placed%s", plan.Session, sc.ID, li+1, why, shown)
 					}
-					scope.note(sc.ID, "refused: last_entry: "+why)
+					scope.note(sc.ID, "refused: last_entry_cutoff: "+why)
 					if geometry != nil {
 						geometry.Reason = "last_entry"
 						geometry.Detail = why
