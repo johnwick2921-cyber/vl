@@ -131,7 +131,7 @@ export const faq: GuideSection = {
         },
         {
           q: 'The chart has a gap or a jump after NT8 lost its connection — do I restart?',
-          a: "No. The bot finds the missing minutes itself ('🕳 bars HOLE detected') and asks NinjaTrader for them again at +1/+3/+10/+30 min once the feed is back; '✅ bars hole FILLED' means done. Only if it prints '🚨 bars hole UNFILLED … NinjaTrader has no history for <from>–<to>' does NT8 lack the data: right-click an MNQ chart → Reload All Historical Data, and the bot picks it up on its next 15-minute try. GET /api/health → bars_holes shows what is still open.",
+          a: "No. The bot finds the missing minutes itself ('🕳 bars HOLE detected') and asks NinjaTrader for them again at +1/+3/+10/+30 min once the feed is back; '✅ bars hole FILLED' means done. Only if it prints '🚨 bars hole UNFILLED … NinjaTrader has no history for <from>–<to>' does NT8 lack the data: right-click a chart of the symbol that line names (MNQ or ES) → Reload All Historical Data, and the bot picks it up on one of its next 15-minute tries (8 at most per hole). A hole older than NT8's replay reaches (its last 2000 1m bars) is RETIRED instead — no re-request can bring it back. GET /api/health → bars_holes shows what is still open.",
           link: '#status',
         },
         {
