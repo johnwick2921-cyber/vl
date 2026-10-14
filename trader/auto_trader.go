@@ -231,7 +231,7 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 	// before the trigger check, so a position that fell back under the
 	// trigger still gets its verdict.
 	at.verifyPlannerBEMove(symbol+"_"+side, time.Now())
-	fire, pts := breakevenTrigger(at.config.StrategyConfig.RiskControl, side, entryPrice, markPrice)
+	fire, pts := at.breakevenTriggerFor(symbol, side, entryPrice, markPrice) // release #25 PK-5 (R=0 → the points rule)
 	if !fire {
 		return
 	}

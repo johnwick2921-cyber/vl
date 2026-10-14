@@ -615,6 +615,7 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 			// takes the reject structural-geometry path (provenance is a label, R2).
 			structuralFade := sc.Condition == kernel.OneSetupPlay && !strings.EqualFold(leg.Kind, "exit") && !zl.on
 			var geometry *store.StructuralGeometryRecord
+			floorCapWhy := "" // release #25 PK-4: set by the legacy stop composition below
 			osTargetSubstituted := false
 			if structuralFade {
 				policy := store.ResolveStructuralStop(cfg, at.futuresSymbol())
@@ -667,9 +668,11 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 				// beyond the nearest seated level on the risk side + clearance,
 				// floored at MIN_SL_ATR_MULT×ATR5m, widest wins, never tighter than
 				// authored. Logged once per (plan, version, scenario, leg, stop).
-				if comp := composeArmStop(strings.ToLower(strings.TrimSpace(sc.Direction)), stopFrom, leg.Stop, atr5m,
+				comp := composeArmStop(strings.ToLower(strings.TrimSpace(sc.Direction)), stopFrom, leg.Stop, atr5m,
 					market.FuturesTickSize(at.futuresSymbol()), doc.Levels, kernel.MinSLATRMult(),
-					kernel.MinSLTickClearance, armStopAnchorMaxATR()); comp.Stop != leg.Stop || comp.Unanchored {
+					kernel.MinSLTickClearance, armStopAnchorMaxATR())
+				floorCapWhy = at.atrFloorCapVerdictFor(sc, comp) // release #25 PK-4 (OFF → "")
+				if comp.Stop != leg.Stop || comp.Unanchored {
 					skey := plan.PlanID + ":" + strconv.Itoa(plan.Version) + ":" + sc.ID + ":leg" + strconv.Itoa(li+1) + ":stop"
 					if armRefusalChanged(&at.armStopCompLast, skey, fmt.Sprintf("%.2f/%s", comp.Stop, comp.Bound)) {
 						at.logArmStopComposition(plan, sc, li, comp, atr5m) // R22 P2: pts + $ on a widening, counted once per arm-spec
@@ -733,7 +736,7 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 			if machine {
 				legBias, dirRule = at.pictureDirectionRule(plan, sc, store.IsMachinePlan(planRow), legBias)
 			}
-			if verdict := pictureDirectionVerdict(dirRule, at.zoneAwareGateVerdict(zl, sc, leg, legBias, snap, atr5m, minQuality, cfg, plan.Session, structuralFade)); verdict != "" {
+			if verdict := pictureDirectionVerdict(dirRule, firstVerdict(floorCapWhy, at.zoneAwareGateVerdict(zl, sc, leg, legBias, snap, atr5m, minQuality, cfg, plan.Session, structuralFade))); verdict != "" {
 				scope.note(sc.ID, "refused: "+armRefusalClass(verdict)+": "+verdict)
 				if geometry != nil {
 					geometry.Reason = "entry_gate"
@@ -2397,6 +2400,15 @@ func churnNeedsModify(oldStop, oldTarget, newStop, newTarget, tick float64) bool
 func armRefusalClass(verdict string) string {
 	v := strings.ToLower(verdict)
 	switch {
+	// Release #25 planner-knobs — the three new arm refusals get their own
+	// classes (never "other"); checked first because the PK-4 text names the
+	// authored invalidation.
+	case strings.Contains(v, ATRFloorBeyondInvalidationClass):
+		return ATRFloorBeyondInvalidationClass
+	case strings.Contains(v, NoChaseRefusedClass):
+		return NoChaseRefusedClass
+	case strings.Contains(v, MomentumIntoZoneClass):
+		return MomentumIntoZoneClass
 	// INVALIDATION (2026-09-03) — first, because it is the only class that says
 	// the SETUP is gone rather than that the trade is badly shaped. It must not
 	// fall into "other" and disappear from the tally.

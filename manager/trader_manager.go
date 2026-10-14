@@ -717,6 +717,9 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 		// (OFF, or ENFORCED with its refuse/cancel/flatten/latch), READ from
 		// the resolver the gate runs.
 		logger.Infof("🛑 [%s] %s", traderCfg.Name, trader.DailyLossGateBootLineForStrategy(strategyConfig))
+		// Release #25 planner-knobs — the seven STRICT-12345 loss-fix
+		// switches for THIS strategy, each READ from its resolver + origin.
+		logger.Infof("🧱 [%s] %s", traderCfg.Name, store.PlannerKnobsBootLine(strategyConfig))
 		// W-KNOB-PRUNE (2026-09-18) — every folded knob whose STORED value
 		// differs from its constant, once, so a removed control never keeps
 		// a value silently.

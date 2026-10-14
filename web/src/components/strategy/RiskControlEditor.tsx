@@ -318,10 +318,31 @@ export function RiskControlEditor({
             onCommit={(n) => updateField('breakeven_trigger_points', n)}
           />
         </div>
+        {/* Release #25 (F-8) — breakeven in R of the initial risk. 0/absent =
+            OFF = the points rule above (byte-identical). AI/planner only. */}
+        <div className="flex items-center gap-2 mt-2">
+          <span className="text-xs" style={{ color: '#848E9C' }}>
+            {ts(riskControl.breakevenTriggerR, language)}
+          </span>
+          <ClampedNumberInput
+            value={config.breakeven_trigger_r}
+            fallback={0}
+            min={0}
+            max={10}
+            step={0.1}
+            disabled={disabled || config.breakeven_enabled !== true}
+            onCommit={(n) => updateField('breakeven_trigger_r', n)}
+            testId="breakeven-trigger-r-input"
+          />
+        </div>
         <EffectiveLine knob={eff('breakeven_enabled')} label={onOff} />
         <EffectiveLine
           knob={eff('breakeven_trigger_points')}
           label={ts(riskControl.breakevenTrigger, language)}
+        />
+        <EffectiveLine
+          knob={eff('breakeven_trigger_r')}
+          label={ts(riskControl.breakevenTriggerR, language)}
         />
       </div>
 

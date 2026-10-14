@@ -71,6 +71,9 @@ type NoChaseVerdict struct {
 	// the arm path had no live price, so nothing was measured.
 	MeasuredFrom string
 	LiveUnknown  bool
+	// Enforced (release #25 PK-3) — the arm-path WOULD_REFUSE was ENFORCED
+	// (planner_no_chase_enforce on): the line says REFUSED, not PROCEEDING.
+	Enforced bool
 }
 
 // NoChaseMaxDistATR — NOCHASE_MAX_DIST_ATR, default 1.0.
@@ -160,6 +163,10 @@ func NoChaseLine(path, scenario string, v NoChaseVerdict) string {
 	from := ""
 	if v.MeasuredFrom == "live" {
 		from = " from live price"
+	}
+	if v.Enforced {
+		return fmt.Sprintf("🚫 no-chase REFUSED %s %s: dist=%.1fpts/%.2f×ATR%s run=%s (%s) — ENFORCED (planner_no_chase_enforce on), entry REFUSED",
+			path, scenario, v.DistPts, v.DistATR, from, run, v.Why)
 	}
 	return fmt.Sprintf("🚫 no-chase WOULD_REFUSE %s %s: dist=%.1fpts/%.2f×ATR%s run=%s (%s) — WARN-first, entry PROCEEDING",
 		path, scenario, v.DistPts, v.DistATR, from, run, v.Why)

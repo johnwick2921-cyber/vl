@@ -456,6 +456,13 @@ export const riskControl = {
     en: 'Trigger (points)',
     es: 'Disparador (puntos)',
   },
+  // Release #25 (STRICT-12345 F-8) — breakeven in R; 0/blank = OFF = points rule.
+  breakevenTriggerR: {
+    zh: '按 R 触发（初始风险的倍数；0 = 关闭，用上面的点数）',
+    en: 'Trigger in R (× initial risk; 0 = off, the points rule above applies)',
+    es: 'Disparador en R (× riesgo inicial; 0 = off, se usa la regla de puntos)',
+    id: 'Pemicu dalam R (× risiko awal; 0 = off, aturan poin di atas berlaku)',
+  },
 
   // === Trailing profit (Phase 3B) ===
   trailing: {

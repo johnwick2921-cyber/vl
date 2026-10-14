@@ -401,7 +401,7 @@ export const status: GuideSection = {
     { kind: 'h', text: 'Gate-block labels — the full list' },
     {
       kind: 'code',
-      title: 'every human label the gate panel has (55)',
+      title: 'every human label the gate panel has (62)',
       lines: [
         'NT8 feed down',
         'Dead-man watchdog',
@@ -415,6 +415,13 @@ export const status: GuideSection = {
         'Clock drift',
         'Stale 1m feed',
         'Clock-step hold (wall clock jumped)',
+        'Room gate — first obstacle under min R',
+        'Room gate — TP1 moved to the obstacle',
+        'Thesis-death exit (planner position)',
+        'No-chase enforced (arm refused)',
+        'Momentum into the zone too fast',
+        'ATR stop floor past the authored invalidation',
+        'Breakeven in R — initial risk unknown (points rule used)',
         'Duplicate order dropped',
         'Order rate breaker',
         'Burned level re-touched',

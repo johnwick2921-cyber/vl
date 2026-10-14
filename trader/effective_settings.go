@@ -718,6 +718,10 @@ func buildEffectiveResolvers() map[string]effResolver {
 		v := breakevenTriggerPoints(x.rc())
 		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeFutures}
 	})
+	add(rcPath+"breakeven_trigger_r", "store.ResolveBreakevenTriggerR (trader.breakevenTriggerFor)", func(x *effCtx) effResult {
+		v, src := store.ResolveBreakevenTriggerR(x.rc())
+		return effResult{value: v, origin: src, scope: ScopeFutures}
+	})
 	trailing := func(path string, pick func(mult float64, period int, arm string, armPts float64) any) {
 		add(rcPath+path, "trader.trailingConfig", func(x *effCtx) effResult {
 			_, mult, period, arm, armPts := trailingConfig(x.rc())
@@ -814,6 +818,32 @@ func buildEffectiveResolvers() map[string]effResolver {
 	})
 	add(dpPath+"min_hold_min", "store.ResolveMinHoldMin", func(x *effCtx) effResult {
 		v, src := store.ResolveMinHoldMin(x.dp())
+		return effResult{value: v, origin: src}
+	})
+	// Release #25 planner-knobs — the STRICT-12345 loss-fix switches, each
+	// READ from the resolver its consumer calls (all default OFF).
+	add(dpPath+"planner_room_gate", "store.ResolvePlannerRoomGate", func(x *effCtx) effResult {
+		v, src := store.ResolvePlannerRoomGate(x.dp())
+		return effResult{value: v, origin: src}
+	})
+	add(dpPath+"planner_room_min_r", "store.ResolvePlannerRoomMinR", func(x *effCtx) effResult {
+		v, src := store.ResolvePlannerRoomMinR(x.dp())
+		return effResult{value: v, origin: src}
+	})
+	add(dpPath+"planner_exit_on_thesis_death", "store.ResolvePlannerExitOnThesisDeath", func(x *effCtx) effResult {
+		v, src := store.ResolvePlannerExitOnThesisDeath(x.dp())
+		return effResult{value: v, origin: src}
+	})
+	add(dpPath+"planner_no_chase_enforce", "store.ResolvePlannerNoChaseEnforce", func(x *effCtx) effResult {
+		v, src := store.ResolvePlannerNoChaseEnforce(x.dp())
+		return effResult{value: v, origin: src}
+	})
+	add(dpPath+"planner_momentum_into_zone_max_atr", "store.ResolvePlannerMomentumIntoZoneMaxATR", func(x *effCtx) effResult {
+		v, src := store.ResolvePlannerMomentumIntoZoneMaxATR(x.dp())
+		return effResult{value: v, origin: src}
+	})
+	add(dpPath+"planner_atr_floor_cap_at_invalidation", "store.ResolvePlannerATRFloorCap", func(x *effCtx) effResult {
+		v, src := store.ResolvePlannerATRFloorCap(x.dp())
 		return effResult{value: v, origin: src}
 	})
 	add(dpPath+"proximity_filter_atr", "trader.(*AutoTrader).proximityFilterATR → kernel.ResolveProximityK", func(x *effCtx) effResult {

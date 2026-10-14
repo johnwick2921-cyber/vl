@@ -250,6 +250,19 @@ func loadReplayStrategy(t *testing.T) *store.StrategyConfig {
 	if !cfg.RiskControl.MentorMode || cfg.RiskControl.MentorWindowMinutes != -1 {
 		t.Fatalf("strategy fixture is not the live mentor config: %+v", cfg.RiskControl)
 	}
+	// Release #25 planner-knobs: FDR_PLANNER_KNOBS_ON=1 replays the day with
+	// all seven loss-fix switches ON (they ship OFF) — the mentor funnel must
+	// not move (COMMON-25 PROOF: intents/placed with the knobs ON vs OFF).
+	if os.Getenv("FDR_PLANNER_KNOBS_ON") == "1" {
+		if cfg.DayPlan == nil {
+			t.Fatal("FDR_PLANNER_KNOBS_ON: the fixture strategy carries no day_plan")
+		}
+		on, minR := true, 1.0
+		cfg.DayPlan.PlannerRoomGate, cfg.DayPlan.PlannerRoomMinR = store.RoomGateRefuse, &minR
+		cfg.DayPlan.PlannerExitOnThesisDeath, cfg.DayPlan.PlannerNoChaseEnforce = store.ThesisDeathAll, &on
+		cfg.DayPlan.PlannerMomentumIntoZoneMaxATR, cfg.DayPlan.PlannerATRFloorCapAtInvalidation = 1.0, &on
+		cfg.RiskControl.BreakevenTriggerR = 1
+	}
 	return cfg
 }
 

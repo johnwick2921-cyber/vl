@@ -277,6 +277,12 @@ export const guards: GuideSection = {
           cite: 'web/src/components/plan/GateBlocksPanel.tsx',
         },
         {
+          title:
+            'room_gate · thesis_death_exit · no_chase_refused · momentum_into_zone · atr_floor_beyond_invalidation · breakeven_r_unknown_risk (release #25, all OFF by default)',
+          body: 'The STRICT-12345 loss-fix switches. They count only after the owner turns one on in Studio (Day Plan → Loss-fix switches; Risk Control → Auto-breakeven → Trigger in R). room_gate: the first obstacle is closer than planner_room_min_r × risk (room_gate_tp1 = the target was moved to it instead). thesis_death_exit: a planner position closed at market because its own invalidation closed, its plan went dormant, or a newer plan turned the other way. no_chase_refused / momentum_into_zone: an arm placement refused for chasing / for price racing into the zone. atr_floor_beyond_invalidation: the ATR stop floor would sit past the authored invalidation, so the arm was refused instead of widened. breakeven_r_unknown_risk: breakeven in R had no initial risk and used the points rule. Settings → Day Plan cards carry what each would have done on #649–#654.',
+          cite: 'web/src/guide/content/settings.ts (the F-2/F-3/F-5/F-7/F-8 cards)',
+        },
+        {
           title: 'attempted-entry replay guard (FIX-DOUBLE-ENTRY)',
           body: 'An entry frame whose socket write was STARTED (it may have reached NinjaTrader) is never re-sent blindly after a reconnect. Before re-sending, the bot requires FRESH broker truth taken after the reconnect: the order named by the signal id in a new order snapshot, or a fill echoing it → the frame is settled and dropped ("found at broker — not resent"). Absent from a fresh snapshot it is re-sent once; no fresh snapshot within the wait → dropped and counted (gate-block "attempted_entry_unverified"). Always ON — ATTEMPTED_ENTRY_VERIFY_WAIT_S only tunes the wait. A missed entry is acceptable; a double entry is not.',
           cite: 'provider/ninjatrader/attempted_guard.go',
