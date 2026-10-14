@@ -7,6 +7,7 @@ import (
 	"strings"
 	"vl/kernel"
 	"vl/market"
+	"vl/telemetry"
 )
 
 // U1 (stale-bar dispatch 2026-08-19) — FEED PROBLEMS BECOME LOUD.
@@ -87,6 +88,24 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 			return // give a fresh boot the same grace as a gap
 		}
 	}
+	// FOLD 3 (DS-106, 10-14 15:04:28): one line after "NT8 TCP link back UP"
+	// the ring still held the rehydrated store tail, and this check raised the
+	// FEED DOWN ERROR with a 6h41m29s age before the first live bar landed.
+	// Inside the reconnect/boot grace it is SAID and counted as waiting; once
+	// the grace ends without a live bar, FEED DOWN fires exactly as before.
+	if anchor, until, ok := at.feedReconnectGraceAt(now); ok {
+		at.feedGraceMu.Lock()
+		first := !at.feedGraceSaid.Equal(anchor)
+		at.feedGraceSaid = anchor
+		at.feedGraceMu.Unlock()
+		if first {
+			telemetry.IncFeedDownGraced()
+			at.logWarnf("⏳ feed: waiting for the first live bar after reconnect (link up %s CT; newest bar stamp %s old; threshold %s; holding=%v) — FEED DOWN fires if none arrives by %s CT (grace %s; graced since boot: %d)",
+				kernel.ClockCTSeconds(anchor), now.Sub(gapStart).Round(time.Second), threshold, holding,
+				kernel.ClockCTSeconds(until), feedReconnectGraceWindow, telemetry.FeedDownGracedCount())
+		}
+		return
+	}
 	title := "NT8 bar feed DOWN"
 	body := fmt.Sprintf("No bar frames for %s while the market is open. Nothing can trade and the planner will refuse to run until bars return. Start/check NinjaTrader on Windows.",
 		now.Sub(gapStart).Round(time.Minute))
@@ -100,6 +119,47 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 	at.emitAlert("P0", "feed-down",
 		fmt.Sprintf("feeddown:%s", gapStart.UTC().Format("2006-01-02T15:04")),
 		title, body)
+}
+
+// feedReconnectGraceWindow — how long after a link-up (or the trader's start)
+// a stale newest-bar stamp is read as "the replay/first live bar has not
+// landed yet" instead of FEED DOWN. The 10-14 15:04 recovery: link up
+// 15:04:22, false FEED DOWN 15:04:28, ES hole filled 15:07:35.
+const feedReconnectGraceWindow = 90 * time.Second
+
+// noteFeedLinkUp records a link-up (the dead-man watchdog's reconnect edge).
+func (at *AutoTrader) noteFeedLinkUp(t time.Time) {
+	at.feedGraceMu.Lock()
+	at.feedLinkUpAt = t
+	at.feedGraceMu.Unlock()
+}
+
+// feedReconnectGraceAt reports whether a FEED DOWN verdict at now falls in the
+// reconnect/boot grace: within feedReconnectGraceWindow after the latest of
+// the trader's start and its last link-up, AND no live 1m frame received since
+// that anchor (the grace ends at the first live bar). A NEGATIVE elapsed (a
+// clock that moved back, or an anchor on another clock) is never grace —
+// FEED DOWN is not hidden by a clock it cannot read.
+func (at *AutoTrader) feedReconnectGraceAt(now time.Time) (anchor, until time.Time, ok bool) {
+	at.feedGraceMu.Lock()
+	anchor = at.feedLinkUpAt
+	at.feedGraceMu.Unlock()
+	if at.startTime.After(anchor) {
+		anchor = at.startTime
+	}
+	if anchor.IsZero() {
+		return anchor, until, false
+	}
+	elapsed := now.Sub(anchor)
+	if elapsed < 0 || elapsed > feedReconnectGraceWindow {
+		return anchor, until, false
+	}
+	if fn := kernel.FeedLastLiveReceipt; fn != nil {
+		if recv, got := fn(at.futuresSymbol(), "1m"); got && recv.After(anchor) {
+			return anchor, until, false // a live bar landed: the ordinary rule judges
+		}
+	}
+	return anchor, anchor.Add(feedReconnectGraceWindow), true
 }
 
 // plannerPreflight (3.2) refuses to CALL the LLM when the bar window is empty

@@ -126,7 +126,7 @@ export const faq: GuideSection = {
         },
         {
           q: 'NT8 is down — what do I do?',
-          a: 'Nothing on the bot first: no bars means no decisions, and the gates (feed down / dead-man) say so. Fix NT8 + the AddOn connection (copy → F5 compile → full restart), then verify the TCP reconnect.',
+          a: 'Nothing on the bot first: no bars means no decisions, and the gates (feed down / dead-man) say so. Fix NT8 + the AddOn connection (copy → F5 compile → full restart), then verify the TCP reconnect. Right after the link comes back (or the bot starts) the bars it holds are the old ones from the store, so for up to 90 s it says “⏳ feed: waiting for the first live bar after reconnect” instead of FEED DOWN, and counts it; the first live bar ends the wait, and if none arrives in those 90 s “🚨 FEED DOWN” fires exactly as before.',
           link: '#routines',
         },
         {
