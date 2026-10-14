@@ -555,11 +555,32 @@ func (at *AutoTrader) mentorExtendArm(in mentor.Intent) {
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
 		at.mentorCount("extend_refused_no_ledger")
+		at.logWarnf("🧑‍🏫 mentor ExtendArm REFUSED for ArmID %q (row %d) — the armed-orders ledger is unavailable; the keep was not recorded: %s", in.ArmID, arm.RowID, in.Reason)
 		return
 	}
 	if err := ledger.SetArmExpiry(arm.RowID, in.ExpiryMs); err != nil {
+		// P1-1 (rel22): name WHY the keep could not land, from the row's OWN
+		// state and reason (counters record, never infer). A filled arm has
+		// nothing to keep; a row the expiry sweep already took is the race the
+		// pass order now prevents — if it ever shows again it is counted apart.
+		var r store.ArmedOrderDB
+		if rerr := ledger.DB().First(&r, arm.RowID).Error; rerr == nil {
+			switch {
+			case strings.EqualFold(r.State, store.StateFilled):
+				at.mentorCount("extend_skipped_filled")
+				at.logInfof("🧑‍🏫 mentor ExtendArm for ArmID %q (row %d) — the arm already FILLED; nothing to keep (%s)", in.ArmID, arm.RowID, in.Reason)
+				return
+			case mentorRowTakenByExpiry(r):
+				at.mentorCount("extend_lost_expiry_race")
+				at.logWarnf("🧑‍🏫 mentor ExtendArm LOST THE EXPIRY RACE for ArmID %q (row %d): the expiry sweep had already moved it to %s (%q) before the evaluator's keep landed — the course keeps this order [D4.2 p2 @ 08:21–09:01; P1-1]", in.ArmID, arm.RowID, r.State, r.StateReason)
+				return
+			}
+			at.mentorCount("extend_refused")
+			at.logWarnf("🧑‍🏫 mentor ExtendArm REFUSED for ArmID %q (row %d, state %s, reason %q): %v", in.ArmID, arm.RowID, r.State, r.StateReason, err)
+			return
+		}
 		at.mentorCount("extend_refused")
-		at.logWarnf("🧑‍🏫 mentor ExtendArm REFUSED for ArmID %q (row %d): %v", in.ArmID, arm.RowID, err)
+		at.logWarnf("🧑‍🏫 mentor ExtendArm REFUSED for ArmID %q (row %d, state n/a — row unreadable): %v", in.ArmID, arm.RowID, err)
 		return
 	}
 	at.mentorCount("extend_ok")
@@ -571,6 +592,19 @@ func (at *AutoTrader) mentorExtendArm(in mentor.Intent) {
 // position — its registry entry must survive so the swing's MoveStopBE /
 // ClosePosition resolve (P1). Cancelled / canceled / rejected / expired /
 // superseded / shadowed prune.
+// mentorRowTakenByExpiry reports whether the expiry sweep (not the evaluator)
+// is what took a row: it is cancel_pending / cancelled / expired AND its own
+// reason names the expiry ("stop-limit expiry elapsed", "… — never placed",
+// "stop-limit expiry: remainder cancelled …"). Read from the row, never
+// inferred from timing.
+func mentorRowTakenByExpiry(r store.ArmedOrderDB) bool {
+	s := strings.ToLower(strings.TrimSpace(r.State))
+	if s != store.StateCancelPending && s != "cancelled" && s != "canceled" && s != "expired" {
+		return false
+	}
+	return strings.Contains(strings.ToLower(r.StateReason), "expiry")
+}
+
 func mentorPrunableTerminalState(state string) bool {
 	s := strings.ToLower(strings.TrimSpace(state))
 	return s != store.StateFilled && store.IsTerminalArmState(s)
