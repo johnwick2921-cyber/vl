@@ -187,7 +187,7 @@ func TestDailyLossUnknownReasonCloseTodayIsUnresolved(t *testing.T) {
 	row := &store.TraderPosition{TraderID: at.id, Account: "Sim101", Symbol: "MNQ", Side: "LONG",
 		Quantity: 1, EntryQuantity: 1, EntryPrice: 100, RealizedPnL: -500, Status: "CLOSED",
 		CloseReason: store.CloseReasonUnresolved, // class 27: the exit fill is unknown
-		EntryTime: exit.Add(-5 * time.Minute).UnixMilli(), ExitTime: exit.UnixMilli(),
+		EntryTime:   exit.Add(-5 * time.Minute).UnixMilli(), ExitTime: exit.UnixMilli(),
 		CreatedAt: exit.UnixMilli(), UpdatedAt: exit.UnixMilli()}
 	if err := st.GormDB().Create(row).Error; err != nil {
 		t.Fatal(err)

@@ -122,10 +122,32 @@ describe('riskControl guardrail label truth (pinned to store/strategy.go:2020-21
     expect(riskControl.altcoinPositionValueRatioDesc.en).toContain('default 1')
   })
 
-  it('daily loss limit states default ON + env fallback; profit target default OFF', () => {
-    expect(riskControl.dailyLossLimit.en).toContain('default ON')
-    expect(riskControl.dailyLossLimit.en).toContain('RISK_MAX_DAILY_LOSS_USD')
+  // RT-5 (release #24): since r22 an unsaved switch reads OFF
+  // (kernel/risk_limits.go ResolveStrategyGuardrails) and the gate needs the
+  // master AND this row; the env fallback default is $500 (config/config.go).
+  it('daily loss limit states default OFF + master AND row + env fallback $500; profit target default OFF', () => {
+    for (const lang of ['en', 'zh', 'es'] as const) {
+      expect(riskControl.dailyLossLimit[lang]).not.toMatch(
+        /default ON|默认开启|ON por defecto/
+      )
+      expect(riskControl.dailyLossLimit[lang]).toContain(
+        'RISK_MAX_DAILY_LOSS_USD'
+      )
+      expect(riskControl.dailyLossLimit[lang]).toContain('$500')
+    }
+    expect(riskControl.dailyLossLimit.en).toContain('default OFF')
+    expect(riskControl.dailyLossLimit.en).toContain('master AND this row')
     expect(riskControl.dailyProfitTarget.en).toContain('default OFF')
+  })
+
+  // RT-5: the consecutive-loss halt and the re-entry cooldown are not
+  // master-gated (trader/entry_admission.go, kernel/engine_analysis.go).
+  it('master switch desc does not claim ALL guardrails; names what it does not gate', () => {
+    const en = riskControl.masterSwitchDesc.en
+    expect(en).not.toContain('ALL guardrails')
+    expect(en).toContain('consecutive-loss halt')
+    expect(en).toContain('re-entry cooldown')
+    expect(en).toContain('NOT gated')
   })
 
   it('max daily trades states default OFF', () => {
@@ -140,16 +162,26 @@ describe('riskControl guardrail label truth (pinned to store/strategy.go:2020-21
     expect(en).toContain('NOT gated')
   })
 
-  it('re-entry cooldown states default 20, 0 = OFF, not master-gated', () => {
+  // RT-5: the code default is 0 = OFF (store RiskControlConfig, unset);
+  // RiskControlEditor fills 20 only when the switch is turned on.
+  it('re-entry cooldown states default 0 = OFF (20 when switched on), not master-gated', () => {
     const en = riskControl.reentryCooldown.en
-    expect(en).toContain('default 20')
-    expect(en).toContain('0 = OFF')
+    expect(en).toContain('default 0 = OFF')
+    expect(en).not.toContain('default 20')
     expect(en).toContain('NOT gated')
   })
 
-  it('max contracts states default 2 always-on; notional cap default 20 backstop', () => {
-    expect(riskControl.maxContractsField.en).toContain('default 2')
+  // RT-5: kernel.ResolveMaxContractsWithSource clamps every value to the
+  // Stage-A ceiling (StageAContractCapDefault = 1), and resolveMaxContracts
+  // returns the mentor ceiling for a mentor-mode trader.
+  it('max contracts states the always-on clamp, the Stage-A ceiling of 1 and the mentor bypass; notional cap default 20 backstop', () => {
+    expect(riskControl.maxContractsField.en).not.toMatch(/default 2(?!\d)/)
     expect(riskControl.maxContractsField.en).toContain('always-on')
+    expect(riskControl.maxContractsField.en).toContain('STAGE_A_CONTRACT_CAP')
+    expect(riskControl.maxContractsField.en).toContain('effectively 1')
+    expect(riskControl.maxContractsField.en).toContain(
+      'mentor-mode trader is NOT clamped'
+    )
     expect(riskControl.notionalCapField.en).toContain('default 20')
     expect(riskControl.notionalCapField.en).toContain('safety backstop')
   })
