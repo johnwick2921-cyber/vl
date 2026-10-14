@@ -364,3 +364,101 @@ func TestTrendlinesKeptAllSession1013(t *testing.T) {
 		t.Errorf("%d lines were drawn through price between their own anchors", crossedDrawn)
 	}
 }
+
+// swingGapTape: a 24h synthetic minute tape whose 4h closes swing by ±150 pts
+// (so a missed close moves the EMA measurably), `days` long from 10-01 00:00 CT.
+func swingGapTape(t *testing.T, days int) []market.Kline {
+	t.Helper()
+	var bars []market.Kline
+	for d := 0; d < days; d++ {
+		for m := 0; m < 24*60; m++ {
+			ms := ctMs(t, d, 0, m)
+			x := float64(d*24*60+m) / 97.0
+			cl := 20000 + 150*float64(int(x)%5-2)/2 + float64(m%7)*0.25
+			bars = append(bars, market.Kline{OpenTime: ms, CloseTime: ms + 59_999, Open: cl - 0.5, High: cl + 1, Low: cl - 1, Close: cl, Final: true})
+		}
+	}
+	return bars
+}
+
+func swingTickRange(e *Evaluator, bars []market.Kline, from, to int64) {
+	for i, b := range bars {
+		now := BarCloseInstant(b)
+		if now <= from || now > to {
+			continue
+		}
+		e.Tick(lrWindow(bars, i), now)
+	}
+}
+
+// TestSwingLineFoldsEveryBucketAcrossAFeedGap — MATH-INDICATORS F-3: on a 4h
+// flip the warm swing line folded exactly ONE close (the bucket it was in), so
+// a 4h bucket that opened and closed between two ticks (a feed gap of 4h+
+// while the process stays up) was lost for good — measured +39.8 pts vs a
+// rebuild after a 9.5h gap, decaying ~5.7% per bucket. Production call site:
+// Tick (runSwing → SwingTick). After a 9h30 gap the live line must equal a
+// fresh restart's line exactly. Mutant: fold only the s.BucketStart close → RED.
+func TestSwingLineFoldsEveryBucketAcrossAFeedGap(t *testing.T) {
+	bars := swingGapTape(t, 12)
+	seedAt := ctMs(t, 10, 8, 0)
+	gapFrom := ctMs(t, 10, 12, 0)
+	resume := ctMs(t, 10, 21, 30)
+	e := New(lrProdCfg())
+	Seed(e, closedOnly(bars, seedAt), seedAt)
+	if e.State.Swing.EmaCount < FourHEMA34Min {
+		t.Fatalf("control: the seeded swing line must be warm (%d closes)", e.State.Swing.EmaCount)
+	}
+	swingTickRange(e, bars, seedAt, gapFrom)
+	// the feed stops 12:00 → 21:30 (buckets 13:00 and 17:00 open AND close unseen)
+	swingTickRange(e, bars, resume-60_000, resume)
+	re := New(lrProdCfg())
+	Seed(re, closedOnly(bars, resume), resume)
+	idx := 0
+	for i, b := range bars {
+		if BarCloseInstant(b) == resume {
+			idx = i
+		}
+	}
+	re.Tick(lrWindow(bars, idx), resume)
+	if e.State.Swing.Line != re.State.Swing.Line || e.State.Swing.EmaCount != re.State.Swing.EmaCount {
+		t.Fatalf("after a 9h30 feed gap the live swing line is %.4f (%d closes); a restart reads %.4f (%d closes) — the missed 4h buckets were never folded",
+			e.State.Swing.Line, e.State.Swing.EmaCount, re.State.Swing.Line, re.State.Swing.EmaCount)
+	}
+	if e.State.Swing.LineStale {
+		t.Fatal("a gap inside the 1500-bar slice is recoverable — the line must not be marked stale")
+	}
+}
+
+// TestSwingLineGapBeyondSliceFailsClosed — a gap longer than the live slice
+// (1500 1m bars ≈ 25h) leaves closes the evaluator cannot read: the line is
+// marked stale (SWING4H entries refused, counted, logged) instead of jumping
+// to the ~6-bucket cold recompute, which F-3 measured up to ~300 pts off.
+func TestSwingLineGapBeyondSliceFailsClosed(t *testing.T) {
+	bars := swingGapTape(t, 13)
+	seedAt := ctMs(t, 9, 8, 0)
+	gapFrom := ctMs(t, 9, 12, 0)
+	resume := ctMs(t, 11, 2, 30) // 38h30 later
+	e := New(lrProdCfg())
+	Seed(e, closedOnly(bars, seedAt), seedAt)
+	swingTickRange(e, bars, seedAt, gapFrom)
+	before := e.State.Swing.Line
+	swingTickRange(e, bars, resume-60_000, resume)
+	if !e.State.Swing.LineStale {
+		t.Fatalf("a 38h gap beyond the slice must mark the swing line stale (line %.2f → %.2f)", before, e.State.Swing.Line)
+	}
+	notes := e.TakeNotes()
+	found := false
+	for _, n := range notes {
+		if containsStr(n, "swing 4h EMA34 line STALE") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the stale swing line must be a change line; notes=%q", notes)
+	}
+	n0 := e.State.Refusals["swing_line_gap_stale"]
+	kept := e.dropStaleSwingLineEntries([]Intent{{Action: PlaceStopEntry, Setup: "SWING4H"}, {Action: CancelArm, Setup: "SWING4H"}})
+	if len(kept) != 1 || kept[0].Action != CancelArm || e.State.Refusals["swing_line_gap_stale"] != n0+1 {
+		t.Fatalf("a stale line must refuse swing ENTRIES (counted) and keep cancels: kept=%+v refusals=%v", kept, e.State.Refusals)
+	}
+}

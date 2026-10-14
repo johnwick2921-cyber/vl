@@ -2193,6 +2193,24 @@ func nearestOldExtremeOnSide(extremes []oldExtreme, price float64, side Side) (o
 	return best, found
 }
 
+// dropStaleSwingLineEntries refuses every SWING4H entry while the swing line
+// is stale (a feed gap beyond the slice, F-3) — counted as
+// swing_line_gap_stale; cancels and every other action pass.
+func (e *Evaluator) dropStaleSwingLineEntries(ints []Intent) []Intent {
+	if !e.State.Swing.LineStale {
+		return ints
+	}
+	kept := ints[:0]
+	for _, in := range ints {
+		if in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry {
+			e.refuse("swing_line_gap_stale")
+			continue
+		}
+		kept = append(kept, in)
+	}
+	return kept
+}
+
 // runSwing evaluates the §8 4h-EMA34 swing on FINAL 5m bars (the forming
 // bucket excluded — CTO wiring ruling 2026-10-03) and returns its intents.
 // The swing is NOT gated on the 5m trigger zone by default: §8 is a
@@ -2202,7 +2220,15 @@ func nearestOldExtremeOnSide(extremes []oldExtreme, price float64, side Side) (o
 // 1791001124127 / 1791001760445).
 func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 	closed := closedBuckets(bars, now, e.Cfg)
+	wasStale, prevCount, prevLine := e.State.Swing.LineStale, e.State.Swing.EmaCount, e.State.Swing.Line
 	ints := SwingTick(&e.State.Swing, closed, e.Cfg.Swing, now)
+	if f := e.State.Swing.Folded; f > 1 && e.State.Swing.EmaCount == prevCount+f {
+		e.note("swing 4h EMA34 line folded %d 4h closes after a feed gap: %.2f → %.2f (%d closes) [F-3]", f, prevLine, e.State.Swing.Line, e.State.Swing.EmaCount)
+	}
+	if e.State.Swing.LineStale && !wasStale {
+		e.note("swing 4h EMA34 line STALE: a feed gap longer than the live slice hid 4h closes — SWING4H entries refused until a restart reseeds the line (held at %.2f, %d closes) [F-3]", e.State.Swing.Line, e.State.Swing.EmaCount)
+	}
+	ints = e.dropStaleSwingLineEntries(ints)
 	// SWING EXPIRY (CTO 1791008594562): an unfilled swing order lives until the
 	// close of the CURRENT 4h candle (ruling 1791008277195) — NOT the 2nd
 	// leeway 5m candle. SwingTick still emits its own CancelArm for the leeway.
