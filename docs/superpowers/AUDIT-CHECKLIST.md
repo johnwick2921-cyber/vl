@@ -8347,3 +8347,110 @@ GET /api/risk/gate-blocks (`setup_stalls`).
 Reference: telemetry/setup_stall.go (SetupStallAlertDue, RolloverSetupStalls),
 trader/mentor_stall_alarm.go (mentorSetupKind, mentorStallAlarmCheck),
 api/handler_gate_blocks.go (telemetrySetupStallTable).
+
+## CLASS NN (assigned at merge) — a sweep setup's trigger read MET from the state the plan was born in
+
+Symptom: a reclaim / sweep_reclaim confirm (a close rule on the reclaimed side)
+reads MET on the FIRST completed close after plan birth because price was
+already on the reclaimed side — no sweep ever happened. #649 (armed_orders 350,
+10-13 ASIA v2 S2, ONH 30849.75): "wait_confirm MET" at 20:15:01 CT, 2.5 min after
+birth, ~55 pts under the ref; the market_in_zone limit filled at 30843.50 with a
+max 1m high of 30844.25 between birth and fill. Row 233 (10-02) is the same.
+Probe: for every filled reclaim-family arm, find the first closed 1m bar after
+plan birth that traded at/through the confirm ref; compare with filled_at_ms.
+Replay the confirm renderer over a decision corpus and count MET lines whose
+scenario has no such bar.
+Rule: an EVENT-sequence trigger (sweep, then close) is evaluated as a sequence —
+the close counts only after the first event is recorded. The arm gate holds
+every leg of a sweep setup until that verdict is MET, whatever wait_confirm the
+plan authored, so no fillable order exists before the trigger.
+Reference: kernel/sweep_trigger.go (firstSweepOfRef, sweepGatedConfirm),
+kernel/confirmation_evidence.go orderedScenarioConfirm, trader/armed_executor.go
+(SweepSetupWaits), trader/sweep_wait.go; replay golden: 1335 MET -> NOT MET.
+
+## CLASS NN (assigned at merge) — a discipline grade computed from links, not from the event
+
+Symptom: #649 graded "A (followed the plan)" — the grade read only the FK link
+(armed_fill -> cited scenario, direction matched), never whether the scenario's
+trigger had happened before the fill.
+Probe: for graded closes citing a sweep setup or a wait_confirm arm, evaluate the
+scenario's confirm at entry_time over the stored bars; any A/B with NOT MET is
+this class.
+Rule: a grade that claims "followed the plan" must read the plan's own trigger
+at the fill instant (the SAME evaluator the gate runs); unknowable (no plan row,
+no bar coverage) leaves the grade unchanged and is never a guessed miss.
+Reference: kernel/adherence.go (AdherenceInput.Trigger), trader/adherence_trigger.go,
+trader/auto_trader_clock.go recordClosedTradeAnalyticsAt.
+
+## CLASS NN (assigned at merge) — a plan whose armed entry contradicts its own flip line
+
+Symptom: an armed scenario entered PAST its own plan's flip line against the
+flip direction can only fill where the plan is about to flip against it. Class
+148 judged the flip line against PRICE; nothing judged it against the plan's own
+entries. Since 09-24: 48 of 231 armed scenarios strictly past the line, 31 on it.
+Probe: plans.doc flip{price,side,flip_to} vs every enabled arm entry whose
+direction != flip_to.
+Rule: write-time relation — such an arm is written disabled
+(arm_disabled_reason flip_incoherent), logged, counted; the prompt states it.
+Reference: kernel/flip_coherence.go, trader/auto_trader_planner.go (before the
+feasibility verdicts), trader/write_time_feasibility.go noteFlipIncoherentDisabled.
+
+## CLASS NN (assigned at merge) — an owner instruction that reaches one AI but not the one that acts
+
+Symptom: the Studio custom_prompt reached only the executor prompts; under
+plan_mode strict only the PLANNER creates entries, and PlannerInput.OwnerNote had
+no producer anywhere (repo-wide grep), so the owner's "No trade inside sideway
+zone" never reached the model that authors entries.
+Probe: for every owner-editable text/knob, grep its consumers and confirm each
+AI that makes the decision it governs reads it; a struct field with zero
+producers is a dead input.
+Rule: one source (the executor's own config), delimited in the planner prompt,
+logged on every plan write as length + short hash — never the text.
+Reference: kernel/owner_guidance.go, kernel/planner_prompt.go,
+trader/auto_trader_planner.go studioCustomPrompt.
+
+## CLASS NN (assigned at merge) — a count summed across a merge double-counts overlapping members
+
+Symptom: collapseLevelClusters did kept.Confluence += member.Confluence + 1. Each
+member's count overlaps the keeper's (a member within tol sits inside the
+keeper's confBand), so the executor's "·xN" read up to x119 while only 10
+families exist (4,308 / 5,714 seated rows differed from their family count).
+Probe: any "+=" of a DISTINCT-count across a merge; compare the displayed N with
+the definition's ceiling.
+Rule: a distinct count merges by set union (or keeps the keeper's already-distinct
+count), never by addition.
+Reference: kernel/levels_score.go collapseLevelClusters.
+
+## CLASS NN (assigned at merge) — a promote/evict loop that never removes the promoted item
+
+Symptom: seatBothSides runs its side rebalance twice and never removed a
+promoted candidate from `rest`; when a side had fewer than MinSideLevels
+candidates, pass 2 promoted the same level again and evicted a different seat
+(read 10969: SWG-L·5m held 2 of 12 seats; OR-H and OB(bear)·1h lost theirs).
+Probe: a multi-pass loop that appends to a result from a pool; assert result
+identities are unique.
+Rule: an item leaves its pool when it is promoted (seatHTFLegacy already did).
+Reference: kernel/levels_score.go seatBothSides.
+
+## CLASS NN (assigned at merge) — a measurement whose inputs are all authored constants
+
+Symptom: the arm-path no-chase measured |authored entry − authored confirm ref| —
+fixed at write, 0.00×ATR for every reject-at-level arm — so it could never see
+a chase (nochase_arm_ok 9,069 vs would_refuse 18).
+Probe: for each "live" measurement, list its inputs; if none changes after the
+plan is written, it is a constant labelled as a measurement.
+Rule: the arm path measures from the live tape price at the pass that places;
+no live price = not measured, counted apart, never "ok".
+Reference: trader/no_chase.go (LivePx/LiveRequired), trader/entry_gate.go entryGateForArm.
+
+## CLASS NN (assigned at merge) — a moving level frozen at plan write and armed hours later
+
+Symptom: #650 (row 355) rested at frozen_line:VWAP[30798.92] written 21:11 CT and
+filled at 00:09 with the session VWAP ~20 pts higher; "reject from VWAP" executed
+far from VWAP.
+Probe: armed rows whose zone_provenance names VWAP/σ-bands/eVWAP; recompute the
+line at placed_at_ms.
+Rule (release #22, owner: observability only): log + count the live-vs-plan drift
+at placement (vwap_drift_at_placement:<session>:<measured|live_unknown|mixed_source>);
+the entry is not changed. Re-pricing is an owner call.
+Reference: trader/vwap_drift.go, trader/zone_placement.go placeZoneRow.
