@@ -152,6 +152,7 @@ func main() {
 	// Print tables.
 	printBandTable(stats, joined, re, statsKey)
 	printFitHoldout(stats, joined, re, statsKey)
+	printDetailed(stats, joined, re, statsKey)
 	printFamilyTable(stats)
 	printTouchTable(db, stats)
 }
@@ -242,10 +243,11 @@ func printGradeAgg(m map[string]*gradeAgg) {
 	}
 }
 
+// splitDay is the fit/hold-out boundary (DECLARED BEFORE LOOKING at hold-out):
+// chronological by session day; fit = days < splitDay, hold-out = >= splitDay.
+const splitDay = "2026-09-28"
+
 func printFitHoldout(stats []statRow, joined map[keyT]*cand, re map[string]map[float64]string, statsKey func(statRow) keyT) {
-	// Fit/hold-out split (DECLARED BEFORE LOOKING at hold-out results):
-	// chronological by session day; fit = days < 2026-09-28, hold-out = >= 2026-09-28.
-	const splitDay = "2026-09-28"
 	fmt.Printf("\n## Fit/hold-out split at %s (A vs C gap; negative broke gap = A holds better)\n", splitDay)
 	fmt.Printf("%-14s | %-24s | %-24s\n", "band", "FIT (n)", "HOLD-OUT (n)")
 	for _, band := range []float64{3, 5, 10, 20} {
@@ -278,6 +280,128 @@ func printFitHoldout(stats []statRow, joined map[keyT]*cand, re map[string]map[f
 func gapFor(rows []statRow) (a, c *gradeAgg) {
 	m := aggregateByGrade(rows)
 	return m["A"], m["C"]
+}
+
+// printDetailed dumps the full per-window fit/hold-out table with raw counts
+// and the Newcombe (Wilson-based) 95% CI on the A-vs-C broke-clean difference.
+func printDetailed(stats []statRow, joined map[keyT]*cand, re map[string]map[float64]string, statsKey func(statRow) keyT) {
+	fmt.Println("\n## DETAILED — per window, per split, per grade (n · touched · reacted n/% · broke n/% · shareA)")
+	// Day lists (sample-id law).
+	fitDays, holdDays := dayLists(stats)
+	fmt.Printf("\nFIT days (%d): %s\n", len(fitDays), strings.Join(fitDays, ","))
+	fmt.Printf("HOLD-OUT days (%d): %s\n", len(holdDays), strings.Join(holdDays, ","))
+
+	for _, band := range []float64{0, 3, 5, 10, 20} {
+		for _, split := range []struct {
+			name string
+			less bool
+		}{{"FIT", true}, {"HOLD-OUT", false}} {
+			var rows []statRow
+			for i := range stats {
+				r := &stats[i]
+				c := joined[statsKey(*r)]
+				if c == nil {
+					continue
+				}
+				var g string
+				if band == 0 {
+					g = r.grade // stored (0.10×dATR reference)
+				} else {
+					key := fmt.Sprintf("%d|%.6f|%s|%s", c.readAtMs, c.price, c.kind, c.label)
+					var ok bool
+					g, ok = re[key][band]
+					if !ok {
+						continue
+					}
+				}
+				if (r.day < splitDay) != split.less {
+					continue
+				}
+				nr := *r
+				nr.grade = g
+				rows = append(rows, nr)
+			}
+			m := aggregateByGrade(rows)
+			bandName := "0.10×dATR"
+			if band != 0 {
+				bandName = fmt.Sprintf("±%.0fpt", band)
+			}
+			fmt.Printf("\n=== %s %s (n=%d) ===\n", bandName, split.name, len(rows))
+			for _, g := range []string{"A", "B", "C"} {
+				a := m[g]
+				if a == nil || a.n == 0 {
+					fmt.Printf("  %s n=0\n", g)
+					continue
+				}
+				fmt.Printf("  %s n=%d shareA=%.1f%% touched=%d reacted=%d(%.1f%%) broke=%d(%.1f%%)\n",
+					g, a.n, 100*float64(a.n)/float64(len(rows)), a.touched, a.reacted, pct(a.reacted, a.touched), a.broke, pct(a.broke, a.touched))
+			}
+			if aa, cc := m["A"], m["C"]; aa != nil && cc != nil {
+				lo, hi := newcombeBrokeDiff(aa, cc)
+				fmt.Printf("  A-vs-C broke-clean diff = %+.1fpp [%+.1f, %+.1f] (A touched=%d, C touched=%d)%s\n",
+					pct(aa.broke, aa.touched)-pct(cc.broke, cc.touched), lo, hi, aa.touched, cc.touched,
+					smallCell(cc.touched, aa.touched))
+			}
+		}
+	}
+}
+
+func dayLists(stats []statRow) (fit, hold []string) {
+	seenFit, seenHold := map[string]bool{}, map[string]bool{}
+	for i := range stats {
+		r := &stats[i]
+		if r.day == "" {
+			continue
+		}
+		if r.day < splitDay {
+			if !seenFit[r.day] {
+				seenFit[r.day] = true
+				fit = append(fit, r.day)
+			}
+		} else {
+			if !seenHold[r.day] {
+				seenHold[r.day] = true
+				hold = append(hold, r.day)
+			}
+		}
+	}
+	sort.Strings(fit)
+	sort.Strings(hold)
+	return fit, hold
+}
+
+func smallCell(cTouched, aTouched int) string {
+	if cTouched < 30 || aTouched < 30 {
+		return " — TOO SMALL TO CALL (a cell < 30 touched)"
+	}
+	return ""
+}
+
+// newcombeBrokeDiff returns the Newcombe (Wilson score) 95% CI for the
+// difference of two independent proportions (broke/touched).
+func newcombeBrokeDiff(a, c *gradeAgg) (lo, hi float64) {
+	p1 := float64(a.broke) / float64(a.touched)
+	p2 := float64(c.broke) / float64(c.touched)
+	l1, u1 := wilson(a.broke, a.touched)
+	l2, u2 := wilson(c.broke, c.touched)
+	d := 100 * (p1 - p2)
+	lo = d - 100*math.Sqrt((p1-l1)*(p1-l1)+(u2-p2)*(u2-p2))
+	hi = d + 100*math.Sqrt((u1-p1)*(u1-p1)+(p2-l2)*(p2-l2))
+	return lo, hi
+}
+
+// wilson is the 95% Wilson score interval for a binomial proportion (x/n),
+// in [0,1].
+func wilson(x, n int) (lo, hi float64) {
+	if n == 0 {
+		return 0, 1
+	}
+	z := 1.959963984540054 // z_{0.975}
+	p := float64(x) / float64(n)
+	d := 1 + z*z/float64(n)
+	center := (p + z*z/(2*float64(n))) / d
+	half := z * math.Sqrt(p*(1-p)/float64(n)+z*z/(4*float64(n)*float64(n))) / d
+	return center - half, center + half
 }
 
 func gapStr(tag string, n int, a, c *gradeAgg) string {
