@@ -1739,7 +1739,7 @@ export const settings: GuideSection = {
         },
         {
           title: 'BARS_HOLE_MIN_GAP_MIN = 3',
-          body: "Bar-hole threshold: this many OPEN-market minutes with no stored 1m bar between two stored bars is a hole, and the bot re-requests NinjaTrader's history for it at +1/+3/+10/+30 min (never while the feed is down), then every 15 min while CME is open after one loud UNFILLED line naming the NT8 history reload. The daily break, weekends and holiday closes never count. The boot line '🕳 bar-hole backfill:' prints the value and its source.",
+          body: "Bar-hole threshold: this many OPEN-market minutes with no stored 1m bar between two stored bars is a hole, and the bot re-requests NinjaTrader's history for it at +1/+3/+10/+30 min (never while the feed is down), then every 15 min while CME is open (8 slow tries per hole in total) after one loud UNFILLED line naming the NT8 history reload; requests go out only in the first 15 s of a minute, and a hole older than NT8's 2000-bar replay reach is retired. The daily break, weekends and holiday closes never count. The boot line '🕳 bar-hole backfill:' prints the value and its source.",
         },
         {
           title: 'PERSIST_STALL_WATCHDOG_S = 60',

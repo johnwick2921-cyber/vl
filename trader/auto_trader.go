@@ -122,6 +122,7 @@ func (at *AutoTrader) driveDeadManWatchdog() watchdogEvent {
 		} else {
 			at.logWarnf("🔌 dead-man watchdog: NT8 TCP link back UP — sweeping unfilled entries; entries stay BLOCKED until a clean positions/orders reconciliation.")
 		}
+		at.noteFeedLinkUp(time.Now()) // FOLD 3: the FEED DOWN reconnect grace starts here
 		at.cancelUnfilledEntriesAfterReconnect()
 		// D5 (2026-09-07) — C6: nothing rebuilds the bracket after a reconnect.
 		// The AddOn's placedBrackets is in-memory and repopulated from nowhere,
@@ -654,6 +655,18 @@ type AutoTrader struct {
 	// so the episode flag gets its own mutex (never a data race).
 	mentorStaleMu      sync.Mutex
 	mentorStaleEpisode bool
+	// mentorStaleSince is when the current episode began, on the gate's own
+	// clock (the seam's now — time.Now() in production, so the END line's
+	// length is a monotonic difference; OPS NEW-8, class 113).
+	mentorStaleSince time.Time
+	mentorStaleWhy   string
+	// feedLinkUpAt is when this trader last saw the NT8 link come (back) UP
+	// (dead-man wdReconnected): with startTime, the anchor of the FEED DOWN
+	// reconnect grace (FOLD 3, 10-14). feedGraceSaid is the anchor whose ⏳
+	// line was already said. Guarded by feedGraceMu.
+	feedGraceMu   sync.Mutex
+	feedLinkUpAt  time.Time
+	feedGraceSaid time.Time
 	// mentorInvalidLog is the item-18 noise gate (DS-105 replay): the last INFO
 	// emit instant + the suppressed count per LevelKey, so a busy level's
 	// level_invalid logs at most once per 15 minutes while the counter still

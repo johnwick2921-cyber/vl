@@ -734,7 +734,7 @@ export const mentor: GuideSection = {
         {
           label: 'Trail timeframe',
           where: 'Strategy → Mentor mode → exits',
-          what: 'The candle-trail timeframe for the B exit. A position entered on the 2m (exec_2m_after_30m) trails the 2m whatever this says — the frame follows the entry [X8 @18:02–18:14]. 30s and 45s are refused when the strategy loads (no sub-minute bars exist) and run as 1m, logged + counted (trail_tf_subminute_refused).',
+          what: 'The candle-trail timeframe for the B exit. A position entered on the 2m (exec_2m_after_30m) trails closed 2m candles instead of the 1m — the frame follows the entry [X8 @18:02–18:14] — unless this is off, which stops the trail for EVERY entry (break-even only). 30s and 45s are refused when the strategy loads (no sub-minute bars exist) and run as 1m, logged + counted once per load (trail_tf_subminute_refused).',
           trader: '1m — the stop trails behind each closed 1m candle.',
           consumer:
             'trader/mentor_mode.go mentorTrailTF / mentorTrailTFLoadCheck',

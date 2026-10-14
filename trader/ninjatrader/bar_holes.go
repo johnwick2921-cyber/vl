@@ -47,18 +47,37 @@ import (
 //     with its attempt number, schedule stops. Still open after the fourth →
 //     ONE loud line naming the window and the manual fix (an NT8 history
 //     reload), counted; then one slow retry every 15 min while CME is open,
-//     capped per session-day, so the owner's reload is picked up by itself.
-//  4. SHOW. /api/health serves the open holes as read values.
+//     at most barHoleSlowCapTotal IN TOTAL per hole (#23 review P2-3: the old
+//     per-session-day cap polled an unfillable hole forever), so the owner's
+//     reload is picked up by itself.
+//  4. RETIRE what no re-request can reach (#23 review P2-3): a re-request
+//     replays the last bars_back 1m bars, so a hole whose first missing minute
+//     lies more than bars_back open minutes back is outside NT8's replay
+//     window — one line, counted, never asked for again.
+//  5. SEND TIMING (#23 review P2-1): a re-request makes the AddOn rebuild its
+//     BarsRequests, which freezes the symbol's forming bars for 20–35 s; a
+//     freeze that crosses a minute boundary stores that 1m candle truncated,
+//     as LIVE. Sends go out only in the first barHoleSendWindow of a CT minute,
+//     so the freeze ends before the boundary.
+//  6. SHOW. /api/health serves the open holes as read values.
 
 const (
 	barHoleTF            = "1m"
 	barHoleMinGapDefault = 3
 	barHoleSlowEvery     = 15 * time.Minute
-	barHoleSlowCapPerDay = 24
+	barHoleSlowCapTotal  = 8               // slow re-requests per hole, in TOTAL (#23 review P2-3)
 	barHoleSettle        = 2 * time.Minute // replay lands + the hold releases on the next live frame
 	barHoleTickEvery     = 15 * time.Second
-	barHoleSpacing       = 60 * time.Second // one gap re-request per symbol per minute, at most
-	barHoleMaxOpen       = 32
+	// barHoleSendWindow — sends only while now.In(CT).Second() is below this
+	// (#23 review P2-1). It equals the tick period ON PURPOSE: with 15 s ticks
+	// exactly one tick per minute lands in [0, 15 s), whatever the ticker's
+	// phase. A 10 s window would be missed by EVERY tick for a third of the
+	// phases (ticks at :10/:25/:40/:55) and the hole would never be asked for.
+	// Worst case: a send at :14.9 + a 35 s freeze ends at :50, before the
+	// boundary (the review's limit was "sends after about :25").
+	barHoleSendWindow = barHoleTickEvery
+	barHoleSpacing    = 60 * time.Second // one gap re-request per symbol per minute, at most
+	barHoleMaxOpen    = 32
 
 	holeStateRefilling = "refilling"
 	holeStateUnfilled  = "unfilled"
@@ -94,6 +113,15 @@ type holeWire interface {
 	RequestGapBackfillAt(symbol string, now time.Time) error
 	BarCache() *ntwire.BarCache
 	CurrentContract(symbol string) (ntwire.ContractFact, bool)
+	// BarsBackAsked is the bars_back the subscribe frame carried — how far a
+	// re-request's replay reaches (0 = no subscribe yet → reach unknown).
+	BarsBackAsked() int
+}
+
+// barHoleInSendWindow — the send-timing rule (item 5 of the header).
+func barHoleInSendWindow(now time.Time) bool {
+	in := now.In(kernel.CTLocation())
+	return time.Duration(in.Second())*time.Second+time.Duration(in.Nanosecond()) < barHoleSendWindow
 }
 
 // barHoleExpected reports whether CME trades the 1m bar opening at m — the
@@ -161,9 +189,11 @@ type barHole struct {
 	measureAt     time.Time // zero = no measure pending
 	saidDeferred  int       // attempt index (1-based) whose deferral was already said
 	saidRefused   int       // attempt index (1-based) whose refusal was already said
-	slowDay       string    // CME session-day of slowCount
-	slowCount     int
-	saidSlowCap   string // session-day whose cap line was already said
+	slowCount     int       // slow re-requests SENT, in total (cap barHoleSlowCapTotal)
+	saidSlowCap   bool      // the "slow retries spent" line was said
+
+	reachCountedMs int64 // replay-reach walk: next minute to count (0 = from FromMs)
+	reachOpen      int   // open minutes counted in [FromMs, reachCountedMs)
 }
 
 type barHoleTracker struct {
@@ -226,9 +256,9 @@ func sayToLogger(level, msg string) {
 
 // bootLine prints the armed configuration, every value read (A11).
 func (t *barHoleTracker) bootLine() string {
-	return fmt.Sprintf("🕳 bar-hole backfill: armed on %s · hole = ≥%d open minute(s) with no stored bar [%s, env BARS_HOLE_MIN_GAP_MIN] · re-request at %s then every %s while CME is open (≤%d/day per hole) · wire budget %d/day per symbol, SEPARATE from the scale-break re-request (1/boot) · never while the link or feed is down (gap-backfill 2026-10-14)",
+	return fmt.Sprintf("🕳 bar-hole backfill: armed on %s · hole = ≥%d open minute(s) with no stored bar [%s, env BARS_HOLE_MIN_GAP_MIN] · re-request at %s then every %s while CME is open (≤%d slow re-requests per hole in total) · sent only in the first %s of a CT minute · a hole outside NT8's replay window (the subscription's bars_back of 1m bars) is retired · wire budget %d/day per symbol, SEPARATE from the scale-break re-request (1/boot) · never while the link or feed is down (gap-backfill 2026-10-14)",
 		barHoleTF, t.minGap, t.minGapSrc, scheduleText(), strings.TrimSuffix(barHoleSlowEvery.String(), "0s"),
-		barHoleSlowCapPerDay, ntwire.GapBackfillDayCap())
+		barHoleSlowCapTotal, barHoleSendWindow, ntwire.GapBackfillDayCap())
 }
 
 // holeWindowCT renders [from, to) for a log line, in CT.
@@ -247,7 +277,14 @@ func holeKey(symbol, contract string) string { return symbol + "|" + contract }
 // observeLive is THE DETECTOR, called by the persister after it has written a
 // live frame's closed rows. Only 1m on a named contract is judged; each new
 // newest minute is judged once, against what the store held since the last
-// judged minute (or, the first time this process, the stored bar just before).
+// judged minute. The FIRST judgement per (symbol, contract) this process is
+// the BOOT SCAN (CTO fold 2, 10-14): it reads back over the current CME
+// session day from its 17:00 CT open — or over the replay window when that is
+// shorter (bootScanFromLocked) — and never less far than the stored bar just
+// before the first live minute (the pre-fold reach). Release #23 booted 11:22
+// with ES 1m missing 03:44–07:48 (one stored bar in that span) and health read
+// bars_holes [] — a hole older than the boot was never judged. Holes the scan
+// finds are tracked exactly like a live one; one line says what it covered.
 func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.BarHistoryDB) {
 	if t == nil || tf != barHoleTF || strings.TrimSpace(contract) == "" || len(rows) == 0 {
 		return
@@ -269,6 +306,7 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		return
 	}
 	from := oldest
+	bootScan, bootBound := false, ""
 	if seen {
 		from = last
 	} else {
@@ -280,6 +318,13 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		if ok {
 			from = prev
 		}
+		// the boot scan: as far back as the session open / replay window,
+		// never less far than before the fold
+		scanFrom, bound := t.bootScanFromLocked(newest)
+		if scanFrom < from {
+			from = scanFrom
+		}
+		bootScan, bootBound = true, bound
 	}
 	got, err := t.st.BarsBetweenOn(symbol, barHoleTF, contract, from, newest+1)
 	if err != nil {
@@ -292,7 +337,11 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		times = append(times, r.OpenTimeMs)
 	}
 	now := t.clock()
-	for _, sp := range findBarHoles(times, t.minGap, t.isOpen) {
+	spans := findBarHoles(times, t.minGap, t.isOpen)
+	if bootScan {
+		t.say(bootScanLevel(spans), bootScanLine(symbol, contract, from, newest, bootBound, spans))
+	}
+	for _, sp := range spans {
 		if t.trackedLocked(symbol, contract, sp) {
 			continue
 		}
@@ -313,6 +362,55 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		t.say("WARN", fmt.Sprintf("🕳 bars HOLE detected: %s %s %s on %s — %d open minute(s) with no stored bar (threshold %d, %s); NT8 history re-request scheduled at %s after now, never while the feed is down (gap-backfill)",
 			symbol, barHoleTF, holeWindowCT(sp.FromMs, sp.ToMs), contract, sp.OpenMissing, t.minGap, t.minGapSrc, scheduleText()))
 	}
+}
+
+// bootScanFromLocked is the boot scan's first minute for a key whose newest
+// live minute is newestMs: the current CME session day's open (17:00 CT,
+// kernel.CMESessionDayStart), or — when it is shorter — the oldest minute a
+// bars_back replay reaches (bars_back READ off the wire; absent → the session
+// bound alone). Returns the bound and its name for the boot line.
+func (t *barHoleTracker) bootScanFromLocked(newestMs int64) (int64, string) {
+	const minute = int64(60_000)
+	start := kernel.CMESessionDayStart(time.UnixMilli(newestMs)).UnixMilli()
+	bb := 0
+	if w := t.wire(); w != nil {
+		bb = w.BarsBackAsked()
+	}
+	if bb <= 0 {
+		return start, "the session open (bars_back n/a)"
+	}
+	open := 0
+	for m := newestMs; m >= start; m -= minute {
+		if t.isOpen(time.UnixMilli(m)) {
+			open++
+			if open >= bb {
+				return m, fmt.Sprintf("the replay window (bars_back %d, shorter than the session)", bb)
+			}
+		}
+	}
+	return start, fmt.Sprintf("the session open (inside the bars_back %d replay window)", bb)
+}
+
+func bootScanLevel(spans []barHoleSpan) string {
+	if len(spans) > 0 {
+		return "WARN"
+	}
+	return "INFO"
+}
+
+// bootScanLine is the ONE line per (symbol, contract) per process saying what
+// the boot scan read and what it found — every value read.
+func bootScanLine(symbol, contract string, fromMs, toMs int64, bound string, spans []barHoleSpan) string {
+	found := fmt.Sprintf("%d hole(s)", len(spans))
+	if len(spans) > 0 {
+		parts := make([]string, 0, len(spans))
+		for _, sp := range spans {
+			parts = append(parts, fmt.Sprintf("%s, %d open min", holeWindowCT(sp.FromMs, sp.ToMs), sp.OpenMissing))
+		}
+		found += " (" + strings.Join(parts, "; ") + ") — tracked like a live hole"
+	}
+	return fmt.Sprintf("🕳 boot hole scan: %s %s on %s %s → %s · from %s · %s",
+		symbol, barHoleTF, contract, kernel.TableTimeCT(time.UnixMilli(fromMs)), kernel.TableTimeCT(time.UnixMilli(toMs)), bound, found)
 }
 
 func scheduleText() string {
@@ -396,9 +494,29 @@ func (t *barHoleTracker) declareUnfilledLocked(h *barHole, now time.Time) {
 	h.State = holeStateUnfilled
 	h.nextAttemptAt = now.Add(barHoleSlowEvery)
 	telemetry.IncBarsHoleUnfilled()
-	t.say("ERROR", fmt.Sprintf("🚨 bars hole UNFILLED after %d re-requests: NinjaTrader has no history for %s (%s %s on %s, %d open minute(s) still missing): on an %s chart right-click → Reload All Historical Data; the bot re-requests on its next attempt (every %s while CME is open, up to %d/day)%s",
+	t.say("ERROR", fmt.Sprintf("🚨 bars hole UNFILLED after %d re-requests: NinjaTrader has no history for %s (%s %s on %s, %d open minute(s) still missing): on an %s chart right-click → Reload All Historical Data; the bot re-requests on its next attempt (every %s while CME is open, at most %d more), until the hole leaves NT8's replay window — then it is retired and stays%s",
 		h.Attempts, holeWindowCT(h.FromMs, h.ToMs), h.Symbol, barHoleTF, h.Contract, h.Missing, h.Symbol,
-		strings.TrimSuffix(barHoleSlowEvery.String(), "0s"), barHoleSlowCapPerDay, t.overlapNoteLocked()))
+		strings.TrimSuffix(barHoleSlowEvery.String(), "0s"), barHoleSlowCapTotal, t.overlapNoteLocked()))
+}
+
+// beyondReplayLocked reports whether the hole's first missing minute lies
+// further back than a re-request can reach: more than barsBack OPEN minutes
+// (the one calendar) between it and now — a replay of barsBack 1m bars ends
+// before it. The walk is incremental per hole (each minute counted once),
+// and stops as soon as the answer is yes.
+func (t *barHoleTracker) beyondReplayLocked(h *barHole, barsBack int, now time.Time) (bool, int) {
+	const minute = int64(60_000)
+	if h.reachCountedMs == 0 {
+		h.reachCountedMs = h.FromMs
+	}
+	end := now.UnixMilli() / minute * minute // the forming minute's open
+	for m := h.reachCountedMs; m < end && h.reachOpen <= barsBack; m += minute {
+		if t.isOpen(time.UnixMilli(m)) {
+			h.reachOpen++
+		}
+		h.reachCountedMs = m + minute
+	}
+	return h.reachOpen > barsBack, h.reachOpen
 }
 
 // overlapNoteLocked READS the ring's same-minute replay verdicts for the
@@ -480,6 +598,11 @@ func (t *barHoleTracker) tick(now time.Time) {
 			case h.State == holeStateUnfilled:
 				h.slowCount++
 				h.nextAttemptAt = now.Add(barHoleSlowEvery)
+				if h.slowCount >= barHoleSlowCapTotal {
+					// the cap, in TOTAL: nothing further is scheduled — the
+					// measure after this one says so once (collectDue, step 1)
+					h.nextAttemptAt = time.Time{}
+				}
 			case h.Attempts < len(barHoleSchedule):
 				// the slot, or — after an outage held this attempt back — the
 				// schedule's own spacing from now, so a late start never
@@ -513,6 +636,17 @@ func (t *barHoleTracker) collectDue(now time.Time) (holeWire, map[string][]*barH
 				t.removeLocked(h)
 				continue
 			}
+			// 0b. a hole whose first minute is outside NT8's replay window
+			//     cannot be refilled by a re-request, ever (#23 review P2-3)
+			if bb := w.BarsBackAsked(); bb > 0 {
+				if beyond, open := t.beyondReplayLocked(h, bb, now); beyond {
+					telemetry.IncBarsHoleRefused()
+					t.say("WARN", fmt.Sprintf("🕳 bars hole RETIRED: %s %s %s on %s — outside NT8's replay window: a re-request replays the last %d 1m bars and more than %d open minute(s) have passed since %s, so this hole stays (%d open minute(s) missing; %d re-request(s) made). Nothing more is asked for it.",
+						h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, bb, open-1, kernel.TableTimeCT(time.UnixMilli(h.FromMs)), h.Missing, h.Attempts))
+					t.removeLocked(h)
+					continue
+				}
+			}
 		}
 		// 1. the measure that follows an attempt
 		if !h.measureAt.IsZero() && !now.Before(h.measureAt) {
@@ -529,6 +663,17 @@ func (t *barHoleTracker) collectDue(now time.Time) (holeWire, map[string][]*barH
 			if h.State == holeStateRefilling && h.Attempts >= len(barHoleSchedule) {
 				t.declareUnfilledLocked(h, now)
 			}
+			// the slow cap is IN TOTAL (#23 review P2-3) — checked here, before
+			// any later store read: a spent hole is never measured again (its
+			// nextAttemptAt is zero) and stays listed until it leaves the
+			// replay window (step 0b) or the process ends.
+			if h.State == holeStateUnfilled && h.slowCount >= barHoleSlowCapTotal && !h.saidSlowCap {
+				h.saidSlowCap = true
+				h.nextAttemptAt = time.Time{}
+				telemetry.IncBarsHoleRefused()
+				t.say("WARN", fmt.Sprintf("🕳 bars hole slow retries spent: %s %s %s on %s still has %d open minute(s) missing after %d re-requests (cap %d slow re-requests per hole, in total) — nothing more is asked; an NT8 history reload plus a bot restart (which re-subscribes) is the fix while it is inside NT8's replay window",
+					h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, h.Missing, h.Attempts, barHoleSlowCapTotal))
+			}
 		}
 		if h.nextAttemptAt.IsZero() || now.Before(h.nextAttemptAt) || !h.measureAt.IsZero() {
 			continue
@@ -544,33 +689,24 @@ func (t *barHoleTracker) collectDue(now time.Time) (holeWire, map[string][]*barH
 			}
 			continue
 		}
-		// 3. measure before asking — another replay may have carried it
+		// 3. only in the first barHoleSendWindow of a CT minute (#23 review
+		//    P2-1): the hole stays due and the next tick in the window sends.
+		//    Not a refusal — a wait of at most one minute — so not counted.
+		if !barHoleInSendWindow(now) {
+			continue
+		}
+		// 4. one send per symbol per minute (holes on one symbol share it)
+		if last, ok := t.lastFire[h.Symbol]; ok && now.Sub(last) < barHoleSpacing {
+			continue
+		}
+		// 5. measure before asking — another replay may have carried it (the
+		//    store read comes AFTER every cheap check: #23 review P3-5)
 		if filled, missing, err := t.measureLocked(h); err == nil {
 			if filled {
 				t.fillLocked(h, now)
 				continue
 			}
 			h.Missing = missing
-		}
-		// 4. the slow phase is capped per session-day
-		if h.State == holeStateUnfilled {
-			day := kernel.CMESessionDayKey(now)
-			if h.slowDay != day {
-				h.slowDay, h.slowCount = day, 0
-			}
-			if h.slowCount >= barHoleSlowCapPerDay {
-				if h.saidSlowCap != day {
-					h.saidSlowCap = day
-					telemetry.IncBarsHoleRefused()
-					t.say("WARN", fmt.Sprintf("🕳 bars hole slow retries spent for session-day %s: %s %s %s still has %d open minute(s) missing after %d re-requests — next try after the 17:00 CT roll; an NT8 history reload is the fix",
-						day, h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Missing, h.Attempts))
-				}
-				continue
-			}
-		}
-		// 5. one send per symbol per minute (holes on one symbol share it)
-		if last, ok := t.lastFire[h.Symbol]; ok && now.Sub(last) < barHoleSpacing {
-			continue
 		}
 		due[h.Symbol] = append(due[h.Symbol], h)
 	}
@@ -604,7 +740,7 @@ type BarHoleView struct {
 	Attempts      int     `json:"attempts"`
 	State         string  `json:"state"` // refilling | unfilled
 	DetectedAt    string  `json:"detected_at"`
-	NextAttemptAt *string `json:"next_attempt_at,omitempty"` // absent = waiting on the measure of the last attempt
+	NextAttemptAt *string `json:"next_attempt_at,omitempty"` // absent = waiting on the measure of the last attempt, or the slow retries are spent
 }
 
 func (t *barHoleTracker) snapshot() []BarHoleView {

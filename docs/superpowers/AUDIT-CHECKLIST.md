@@ -9252,3 +9252,38 @@ symptom: P2-8 (rescan OPS-SECURITY-FEED; folded into owner-identity 2026-10-14).
 probe: for every token class that is not a human session (scope claims, service emails), find the ONE place its routes are decided and ask whether it is an allow-list or a deny-list. Register a dummy mutating route in a test under the same middleware and call it with each machine token: a 200 is the finding. Then ask what changed the token's blast radius recently (whose account it acts for).
 rule: a non-human token's reach is an EXACT (method, route) allow-list — reads plus the actions its purpose needs (for the bot: stop, pause, close, flatten — risk-reducing only) — and everything else, including every future route, is refused 403, logged and counted per route. The agent is shown only the routes it may call. Any change that widens WHOSE data a machine token acts on re-reads this list in the same PR.
 Reference: api/machine_action_guard.go (machineActionAllowed, machineReadPostRoutes, machineRiskReducingRoutes, machineActionRefuse), api/server.go authMiddleware, api/route_registry.go GetAPIDocs, api/machine_action_guard_test.go (TestMachineTokenIsRefusedOnANewMutatingRouteByDefault, TestMachineActionGuardCensusOverTheRouter), telegram/agent/prompt.go.
+
+## CLASS NN (assigned at merge) — a send window narrower than the tick that must land in it
+
+symptom: OPS-FOLLOWUPS (2026-10-14). The #23 review proposed sending a gap re-request "only when now.In(CT).Second() < 10" from a tracker that ticks every 15 s. Ticks 15 s apart land at four fixed phases per minute (p, p+15, p+30, p+45). For a ticker that started on :10–:14, NO tick ever lands in [0, 10): the hole would stay due forever and never be asked for, with no line and no counter. The existing 1-hour walk test (ticks at :10/:25/:40/:55) would have caught it only by luck of its fixture's start second.
+probe: for every "only during window W" rule driven by a periodic loop of period P, check W ≥ P (so every phase of the loop lands in it at least once per cycle), or that the loop re-arms at the window's start. Test it as a property over every phase in [0, P), not with one fixture clock.
+rule: a time window gating a periodic sender is at least one period wide, and a test pins "exactly/at least one tick per cycle lands in it" for every ticker phase.
+Reference: trader/ninjatrader/bar_holes.go barHoleSendWindow / barHoleInSendWindow, trader/ninjatrader/bar_holes_test.go TestSendWindowCatchesEveryTickerPhase.
+
+## CLASS NN (assigned at merge) — `git stash pop` in one worktree applies another lane's stash
+
+symptom: OPS-FOLLOWUPS (2026-10-14). refs/stash is ONE stack for the whole repository, shared by every worktree. A lane ran `git stash push <file>` for a RED-at-base run; while its suite waited for a throttle slot another lane pushed its own stash; `git stash pop` then applied fix/planner-touch-fills' kernel changes into the wrong worktree (3 conflicts). Nothing was lost only because a conflicting pop keeps the entry.
+probe: grep lane scripts and dispatch notes for `git stash`. Any lane that stashes while other lanes are active can pop a stranger's entry; `git stash list` shows "WIP on <other branch>" entries.
+rule: lanes never use git stash for base runs. Copy the file aside, `git show HEAD:<file> > <file>`, run, copy back — in one script that restores even when the run waits. If a stash must be touched, address it by SHA and verify the SHA right before `drop`.
+Reference: ~/deck-fix-1005/rel22/fixwave/ops-followups/EVIDENCE.md (the incident), scratchpad redbase.sh pattern.
+
+## CLASS NN (assigned at merge) — a detector whose first look-back stops at the bar before the boot
+
+symptom: release #23 booted 11:22:42 CT 2026-10-14 with ES 1m missing 03:44–07:48 (one stored bar in the span) and /api/health bars_holes read []. The hole detector's first judgement per key looked back only to the stored bar just before the first live minute, so any hole older than the boot was never judged, and the boot replay's released rows never pass through the detector.
+probe: for every detector that judges "new data since the last judgement", ask what its FIRST judgement in a process covers. If it is "since the previous point", state older than the process is invisible. Seed a store with an old defect plus one new event and run the production call site.
+rule: the first judgement per key after boot scans a READ bound (here: the current CME session day from 17:00 CT, or the replay window when shorter), tracks what it finds like a live finding, and says once what it covered and found.
+Reference: trader/ninjatrader/bar_holes.go observeLive / bootScanFromLocked / bootScanLine, trader/ninjatrader/bar_holes_test.go TestBootScanFindsAHoleOlderThanTheBoot.
+
+## CLASS NN (assigned at merge) — a gate the guide promises on every entry path, wired on two of three
+
+symptom: OPS NEW-2 / UI-GUIDE N-4 (2026-10-14). The stale-data verdict and the clock-step hold bound the AI decision path (B4) and the mentor path (kernel.EntryFeedStale), and the guide plus the WARN text said "NEW entries held". Planner arms had no feed check at their send point: on 10-14 09:56:59, inside a clock-step hold, trader 12345 logged "arm S1 leg 1 wait_confirm MET … arming" and placed nothing only because a position was already open.
+probe: for every freshness / hold verdict, list its production callers (grep the verdict function) and compare with the entry producers admitChain serves (decision, agent, arm, picture). A producer with no caller is a finding, and so is a guide sentence that says "every NEW entry".
+rule: one verdict, asked by every producer that sends a price-dependent entry, counted under its own class at that producer, and pinned at the producer's send point (runArmedPlacementAt for arms).
+Reference: trader/entry_admission.go (armFeedStale, the last arm step), trader/arm_stale_gate_test.go, web/src/guide/content/guards.ts (stale data / clock step row).
+
+## CLASS NN (assigned at merge) — a process-wide guard on the real clock leaks into unrelated tests
+
+symptom: OPS-FOLLOWUPS (2026-10-14 15:42:38 CT). The kernel clock-step guard samples the REAL wall clock for the whole process. The box clock stepped +1032 ms during a `TZ=UTC go test ./trader/` run and the guard held NEW entries for 120 s: ~50 placement tests failed together (mentor, planner-arm, Picture, daily-loss, gate parity, the replay fidelity), none of them about clocks. The CT run of the same code minutes earlier was green.
+probe: list every package-level guard that reads time.Now() (or the wall clock) and gates behaviour other tests exercise. Check that the package's TestMain pins it to a steady or injected clock, and that a test which exercises the guard injects its own clock and restores.
+rule: a process-wide safety guard keyed to the real clock gets a steady test clock in TestMain. Only the guard's own tests inject steps. A burst of unrelated failures inside one 2-minute window is read as a clock-step hold first (grep "🕰 clock step" in the run log).
+Reference: trader/testmain_tmpfs_test.go, kernel/feed_clock.go ClockSampleForTest, ~/deck-fix-1005/rel22/fixwave/ops-followups/gate3.log (the failing run), gate4-ct.log / gate4-utc.log (green after).

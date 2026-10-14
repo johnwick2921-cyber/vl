@@ -782,7 +782,14 @@ func BracketsBootLine(book []nt.NT8Order, haveBook bool, addonBuild string, unpr
 	if haveBook {
 		source = "broker"
 	}
-	canPlace := "no (addon " + nt.BuildIDForLog(addonBuild) + " < " + nt.MinAddonBuildProtectiveStop + ")"
+	// EXECUTION N-H (10-14): with NO build received the line said
+	// "no (addon none < …)" — a verdict on an AddOn this process had not heard
+	// from (the boot caller passes "" by design, and the build id rides the
+	// heartbeat). Unknown prints n/a; a received build below the floor is "no".
+	canPlace := "n/a (no AddOn build received yet — the placement guard checks it on every stop)"
+	if strings.TrimSpace(addonBuild) != "" {
+		canPlace = "no (addon " + nt.BuildIDForLog(addonBuild) + " < " + nt.MinAddonBuildProtectiveStop + ")"
+	}
 	if nt.FarSideProven(addonBuild, nt.MinAddonBuildProtectiveStop) {
 		canPlace = "yes"
 	}

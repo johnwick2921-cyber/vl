@@ -82,6 +82,13 @@ const heldMaintenance = {
 
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset()
+  // UI-GUIDE N-5: the page keeps the last job id in sessionStorage; a test
+  // must not inherit the previous test's job.
+  window.sessionStorage.clear()
+  // updatesApi.job always returns a Promise (null when there is no data); the
+  // page now also polls the job install_pending names, so the default must be
+  // the production shape, not mockReset's undefined.
+  mocks.job.mockResolvedValue(null)
   mocks.health.mockResolvedValue({
     status: 'ok',
     time: '2026-09-24T06:00:00Z',
@@ -437,6 +444,86 @@ describe('UpdatesPage', () => {
       )
     )
     expect(screen.getByText('refused')).toBeTruthy()
+  })
+
+  // UI-GUIDE N-5: stale at start / stale at resume / the attempts cap set ONLY
+  // recovery_reason (live job files 39e3d44f…, 878fd3d8…, de4cf900…); the
+  // panel showed such a job with no reason at all.
+  it('shows the recovery reason of a recovery_needed job that has no error', async () => {
+    mocks.job.mockResolvedValue({
+      job_id: 'job-39e3',
+      state: 'recovery_needed',
+      recovery_reason:
+        'stale at resume: older than 30 minutes — never resumed (C21)',
+    })
+    mocks.maintenance.mockResolvedValue({ job_id: 'job-39e3' })
+    render(<UpdatesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('job-recovery')).toHaveTextContent(
+        'Recovery' +
+          'stale at resume: older than 30 minutes — never resumed (C21)'
+      )
+    )
+    expect(screen.queryByTestId('job-error')).toBeNull()
+  })
+
+  // UI-GUIDE N-5: a job refused in PREFLIGHT never writes the hold, so only
+  // install_pending names it — the panel must poll that id too.
+  it('polls the job install_pending names when no hold names one', async () => {
+    mocks.maintenance.mockResolvedValue({
+      held: false,
+      state: 'clear',
+      in_flight_sends: 0,
+      drained: true,
+      addon_ack: null,
+      install_pending: {
+        pending: true,
+        job_id: 'job-pre1',
+        state: 'preflight',
+        phase: 'started',
+      },
+    })
+    mocks.job.mockResolvedValue({
+      job_id: 'job-pre1',
+      state: 'refused',
+      error: 'not passed within 10m0s: ledger_exposure',
+    })
+    render(<UpdatesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('job-error')).toHaveTextContent(
+        'not passed within 10m0s: ledger_exposure'
+      )
+    )
+    expect(mocks.job).toHaveBeenCalledWith('job-pre1')
+  })
+
+  // UI-GUIDE N-5: after a reload, the last job the API named is still shown
+  // (sessionStorage), even once nothing names it any more.
+  it('keeps the last job across a reload of the page', async () => {
+    mocks.maintenance.mockResolvedValue({ job_id: 'job-r1' })
+    mocks.job.mockResolvedValue({
+      job_id: 'job-r1',
+      state: 'refused',
+      error: 'preflight refused',
+    })
+    const first = render(<UpdatesPage />)
+    await waitFor(() => expect(screen.getByTestId('job-error')).toBeTruthy())
+    first.unmount()
+    mocks.maintenance.mockResolvedValue({
+      held: false,
+      state: 'clear',
+      in_flight_sends: 0,
+      drained: true,
+      addon_ack: null,
+    })
+    mocks.job.mockClear()
+    render(<UpdatesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('job-error')).toHaveTextContent(
+        'preflight refused'
+      )
+    )
+    expect(mocks.job).toHaveBeenCalledWith('job-r1')
   })
 
   // release #22: the install-pending freeze is visible on the page.

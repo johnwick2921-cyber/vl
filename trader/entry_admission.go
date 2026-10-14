@@ -482,6 +482,34 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 			})
 		}
 	}
+
+	// OPS NEW-2 (10-14) — STALE FEED / CLOCK STEP ON PLANNER ARMS. A planner
+	// (or Picture-scenario) arm places a limit off the newest 1m close; with
+	// the NT8 feed dead and the TCP link up, that close is frozen and the limit
+	// lands on a dead price. The AI path has B4 and the mentor path its own
+	// stale block; the arm send point had neither, though the guide said every
+	// NEW entry needs a fresh feed. Same verdict as the mentor block
+	// (kernel.EntryFeedStale: a clock-step hold, the wall bar-age rule, the
+	// monotonic receipt age). Mentor arms keep their own block (mentor_mode.go,
+	// and the mentor-only pass). Refused rows stay armed — a refusal is never a
+	// cancellation — and are logged and counted once per episode per row.
+	// It is the LAST step of the chain: every policy gate above names its own
+	// refusal first (a breached daily loss, a no-trade band), and the one
+	// question left before the send is whether the price it uses is current.
+	if in.Path == admitArm && !in.MentorArm {
+		if stale, why := at.armFeedStale(now); stale {
+			// Counted under the leg that fired: clock_step (the hold after a
+			// wall-clock step) or stale_data (bar age / receipt age). The log
+			// line names the path and the row ([arm <plan:scenario:leg>]).
+			class := "stale_data"
+			if strings.HasPrefix(why, "clock_step") {
+				class = "clock_step"
+			}
+			return at.admitRefuse(in, class, class+": "+why, func() {
+				at.logWarnf("⛔ %s: %s %s REFUSED — %s. A planner arm needs a fresh 1m feed and no clock-step hold; the row stays armed, resting orders are not cancelled, exits and protection continue.", class, sym, act, why)
+			})
+		}
+	}
 	return "", false
 }
 
@@ -705,4 +733,21 @@ func (at *AutoTrader) manualEntryQuantityRefusal(symbol string, quantity float64
 		return fmt.Sprintf("refused: quantity %s exceeds the max-contracts cap %d", q, c), true
 	}
 	return "", false
+}
+
+// armFeedStale is the planner-arm stale-data verdict (OPS NEW-2): the newest
+// 1m bar of the trader's symbol judged by kernel.EntryFeedStale — the SAME
+// one-verdict function the mentor block calls. No bar provider wired (no NT8
+// series at all: sandbox, tests) → not stale, as on the mentor path; a wired
+// provider with no 1m bar is the kernel's documented unknown-bar fail-open,
+// still behind the clock-step hold.
+func (at *AutoTrader) armFeedStale(now time.Time) (bool, string) {
+	if at == nil || market.FuturesBarsProvider == nil {
+		return false, ""
+	}
+	newestOpen := int64(0)
+	if bars := market.FuturesBarsProvider(at.futuresSymbol(), "1m", 1); len(bars) > 0 {
+		newestOpen = bars[len(bars)-1].OpenTime
+	}
+	return kernel.EntryFeedStale(at.futuresSymbol(), newestOpen, now)
 }

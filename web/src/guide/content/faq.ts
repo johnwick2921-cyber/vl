@@ -126,12 +126,12 @@ export const faq: GuideSection = {
         },
         {
           q: 'NT8 is down — what do I do?',
-          a: 'Nothing on the bot first: no bars means no decisions, and the gates (feed down / dead-man) say so. Fix NT8 + the AddOn connection (copy → F5 compile → full restart), then verify the TCP reconnect.',
+          a: 'Nothing on the bot first: no bars means no decisions, and the gates (feed down / dead-man) say so. Fix NT8 + the AddOn connection (copy → F5 compile → full restart), then verify the TCP reconnect. Right after the link comes back (or the bot starts) the bars it holds are the old ones from the store, so for up to 90 s it says “⏳ feed: waiting for the first live bar after reconnect” instead of FEED DOWN, and counts it; the first live bar ends the wait, and if none arrives in those 90 s “🚨 FEED DOWN” fires exactly as before.',
           link: '#routines',
         },
         {
           q: 'The chart has a gap or a jump after NT8 lost its connection — do I restart?',
-          a: "No. The bot finds the missing minutes itself ('🕳 bars HOLE detected') and asks NinjaTrader for them again at +1/+3/+10/+30 min once the feed is back; '✅ bars hole FILLED' means done. Only if it prints '🚨 bars hole UNFILLED … NinjaTrader has no history for <from>–<to>' do you act. First read the end of that line: if its replay overlap verdicts show disagreed above 0, a replay NT8 sent was on another price scale and was held out of the store, so the window can be empty for a scale reason rather than missing history — read the 🚨 scale lines before reloading. Otherwise NT8 lacks the data: right-click an MNQ chart → Reload All Historical Data, and the bot picks it up on its next 15-minute try (up to 24 a session-day per hole; after that, from the 17:00 CT roll). GET /api/health → bars_holes shows what is still open.",
+          a: "No. The bot finds the missing minutes itself ('🕳 bars HOLE detected') and asks NinjaTrader for them again at +1/+3/+10/+30 min once the feed is back; '✅ bars hole FILLED' means done. Only if it prints '🚨 bars hole UNFILLED … NinjaTrader has no history for <from>–<to>' do you act. First read the end of that line: if its replay overlap verdicts show disagreed above 0, a replay NT8 sent was on another price scale and was held out of the store, so the window can be empty for a scale reason rather than missing history — read the 🚨 scale lines before reloading. Otherwise NT8 lacks the data: right-click a chart of the symbol that line names (MNQ or ES) → Reload All Historical Data, and the bot picks it up on one of its next 15-minute tries (8 at most per hole). A hole older than NT8's replay reaches (its last 2000 1m bars) is RETIRED instead — no re-request can bring it back. GET /api/health → bars_holes shows what is still open.",
           link: '#status',
         },
         {
