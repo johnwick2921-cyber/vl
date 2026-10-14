@@ -247,8 +247,11 @@ func TestR22BEAfterConfirmedPartialThenCandleTrail(t *testing.T) {
 	b.positions("short", 1)
 	b.book(r22RunnerBook(r22Stop)...) // the OCO cancelled leg 1's stop
 
-	// candle 2 closes → BE for the RUNNER only.
-	b.candle(r22Minute(2), 30726.00, 30729.00, 30722.00, 30725.00)
+	// candle 2 closes → BE for the RUNNER only. Its low 30723.00 is past +1R
+	// but NOT past the pre-R3 half-distance trigger 30722.62 — the row-313
+	// shape (10-12 03:22: leg 1 banked +1R, the runner kept its ORIGINAL stop
+	// and was stopped −1R), so the base rule sends nothing here.
+	b.candle(r22Minute(2), 30726.00, 30729.00, 30723.00, 30725.00)
 	got := b.waitMoves(1)
 	if len(got) != 1 || got[0].SignalID != r22Sig || got[0].Leg != 2 || got[0].NewStopLoss != r22Entry {
 		t.Fatalf("after the confirmed partial exactly ONE move_stop for leg 2 → BE %.2f was expected; got %+v", r22Entry, got)
