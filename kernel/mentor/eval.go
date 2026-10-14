@@ -244,10 +244,10 @@ func (e *Evaluator) noteTriggerMove(name string, prev, cur TriggerLine, bars []m
 	}
 	at := "n/a"
 	if n := len(bars); n > 0 {
-		at = time.UnixMilli(bars[n-1].OpenTime).In(ctime()).Format("01-02 15:04")
+		at = kernel.TableTimeCT(time.UnixMilli(bars[n-1].OpenTime))
 	}
 	e.note("%s trigger moved %s → %s @%.2f (bucket %s CT, broke on the %s CT bar, read intrabar) [D3.4 p1 @08:19]",
-		name, from, cur.Dir, cur.Price, time.UnixMilli(cur.MovedAt).In(ctime()).Format("01-02 15:04"), at)
+		name, from, cur.Dir, cur.Price, kernel.TableTimeCT(time.UnixMilli(cur.MovedAt)), at)
 }
 
 // trackTrendlines counts each crossed-between-anchors pair once per trading
@@ -279,12 +279,12 @@ func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int
 			e.tlValid[k] = true
 			if !first {
 				e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a location until a 5m close breaks it or the session ends [D3.2 p2 @03:45]",
-					tl.Side, tl.P0Px, tl.P1Px, time.UnixMilli(tl.P0T).In(ctime()).Format("15:04"), time.UnixMilli(tl.P1T).In(ctime()).Format("15:04"))
+					tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
 			}
 		case tl.Dead && e.tlValid[k]:
 			delete(e.tlValid, k)
 			e.note("trendline BROKEN by a 5m close %s %.2f→%.2f (%s → %s CT) — discarded [X9 @06:20–06:47]",
-				tl.Side, tl.P0Px, tl.P1Px, time.UnixMilli(tl.P0T).In(ctime()).Format("15:04"), time.UnixMilli(tl.P1T).In(ctime()).Format("15:04"))
+				tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
 		}
 	}
 }
