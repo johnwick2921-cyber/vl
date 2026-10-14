@@ -40,6 +40,12 @@ type State struct {
 	// to resolve a row-fallback fill's leg extreme via the old-extreme fallback
 	// when the in-memory pend was dropped by a restart.
 	Levels []Level `json:"levels,omitempty"`
+	// ChartLevels / ChartTrendlines (release #22, T7) are the SAME tick's set
+	// AFTER every append — Levels plus the trigger lines, the EMA 34 location,
+	// the box edges and the trendlines. DISPLAY ONLY (truth panel / chart);
+	// nothing that trades reads them, so Levels above stays byte-identical.
+	ChartLevels     []Level     `json:"-"`
+	ChartTrendlines []Trendline `json:"-"`
 	// Refusals is the B-rules refusal ledger (CTO 13:51:31Z): every filter
 	// that DROPS an intent names its reason and counts it, like the replay
 	// funnel stages — DS-105 diffs these against the replay.
@@ -1116,6 +1122,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	trendlines, crossed := trendlinesBuild(bars, time.UnixMilli(now))
 	e.trackTrendlines(trendlines, crossed, now)
 	levels = append(levels, TrendlineLevels(trendlines, boxes, bars)...)
+	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
 
 	// §3: first-touch classification per level. BOX edges are OUT of this
 	// loop (BOX PATH DECISION, CTO 12:38:50Z): the box path is DS-106's

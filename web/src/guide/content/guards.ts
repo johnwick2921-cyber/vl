@@ -136,7 +136,7 @@ export const guards: GuideSection = {
           'Confidence below the floor (default 60) → entry refused.',
         ],
         [
-          'MIN-SL (env MIN_SL_ATR_MULT, 1.0)',
+          'MIN-SL (env MIN_SL_ATR_MULT, default 1.5)',
           'HARD',
           'Stop closer than the floor (×ATR + 2-tick clearance) → refused. On CME futures, judged on the tick-rounded prices the broker receives (the stop rounds away from the entry).',
         ],
@@ -146,9 +146,9 @@ export const guards: GuideSection = {
           "Entry against the HTF regime at a veto anchor → refused. MODE (HTF_VETO_MODE): 1h | cross | 4h — LIVE = cross: vetoes only when 1h AND 4h both agree (the 2026-08-28 autopsy: 1h-only blocked 3 would-have-won arms = +$352, 4h was RANGING at all 7 → cross blocks nothing the evidence doesn't support).",
         ],
         [
-          'ARM floors (ARM_MIN_RR 2.0)',
+          'ARM floors (the strategy min R:R)',
           'HARD',
-          'The resting-order gate: R:R ≥ 2.0 AND stop ≥ 1.0×ATR5m or the arm is REFUSED every cycle.',
+          "The resting-order gate: R:R ≥ the bound strategy's min_risk_reward_ratio (2 on both bound strategies; ARM_MIN_RR was deleted 2026-09-03 — one floor for the arm seam and the decision path) AND stop ≥ the MIN-SL floor (1.5×ATR5m, kernel.MinSLATRMultDefault) or the arm is REFUSED every cycle.",
         ],
         [
           'Entry gate (class 48) — ONE gate, BOTH paths',
@@ -168,7 +168,7 @@ export const guards: GuideSection = {
         [
           'Lunch / session windows / EOD flat',
           'HARD',
-          'Outside an enabled session window, inside the lunch or first-N no-trade band (the lunch window is the one kernel.LunchWindowCT() resolves — read, never a literal), or past the session close: no NEW entry, and flat at session end. Since 2026-09-09 the band binds the ARM path too. Until then it was read by the AI-decision gate and the adherence grader and by NOTHING on the arm path, so under plan_mode=strict — where a resting order is the only way in — it refused nothing. An arm inside the band is now refused, and an arm already resting when the band opens is CANCELLED rather than grandfathered: refusing only NEW arms while one placed at 11:58 rests into 12:00 is a band that stops authoring and not entering. A cancel still unconfirmed by NinjaTrader is re-sent at most once every 30 seconds per order while the band stays open, not on every pass. A session whose EOD flat is set earlier than its last-entry cutoff refuses entries from the flat on, not only at last-entry (counted as force_flat_window).',
+          'Outside an enabled session window, inside the lunch or first-N no-trade band (the lunch window is the one kernel.LunchWindowCT() resolves — read, never a literal), or past the session close: no NEW entry, and flat at session end. MENTOR-MODE EXCEPTION: a mentor arm is NOT refused by the lunch band or the first-5m band — those two are waived for mentor rows (trader/session_risk.go mentorWaivesSessionBand); every other session refusal still applies to it (live: mentor row 251 filled at 13:25 CT on 10-05, inside the lunch band). Since 2026-09-09 the band binds the ARM path too. Until then it was read by the AI-decision gate and the adherence grader and by NOTHING on the arm path, so under plan_mode=strict — where a resting order is the only way in — it refused nothing. An arm inside the band is now refused, and an arm already resting when the band opens is CANCELLED rather than grandfathered: refusing only NEW arms while one placed at 11:58 rests into 12:00 is a band that stops authoring and not entering. A cancel still unconfirmed by NinjaTrader is re-sent at most once every 30 seconds per order while the band stays open, not on every pass. A session whose EOD flat is set earlier than its last-entry cutoff refuses entries from the flat on, not only at last-entry (counted as force_flat_window).',
         ],
         [
           'Consecutive-loss breaker',

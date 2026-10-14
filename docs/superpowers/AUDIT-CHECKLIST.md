@@ -8611,3 +8611,41 @@ rule: every P&L display and every P&L gate counts from kernel.CMESessionDayStart
 own knob and its own name, never a display "today".
 Reference: api/handler_order.go ledgerDayWindow, PositionHistory.tsx
 computeDayTotal(positions, sessionDayStartMs).
+
+## CLASS NN (assigned at merge) — a lifetime documented from one layer while another layer cancels first
+
+symptom: release #21 (c4be11547) taught the guide that a mentor level order
+"placed after 15:00 rests through to 15:00 the NEXT day". The evaluator does
+stamp that expiry. But the trader's EOD flat (auto_trader_clock.go
+enforceEODFlatAt, armed_executor.go cancelIntradayMentorArms) cancels every
+intraday mentor arm whenever no session window is open (14:45–17:00 CT), so the
+order never lives past 14:45, and one authored in the gap dies within ms (DB rows
+256/282/283/343). The fix's census covered "kernel/mentor + trader/mentor_*" and
+never opened the two files that actually ended the order's life.
+probe: for any sentence or code comment that states how long an object lives,
+list EVERY path that can end it: the expiry sweep, the session or EOD cancel, the
+news cancel, the boot sweep, the broker TIF. The documented lifetime is the
+MINIMUM over those paths, never the one the author just edited.
+rule: a lifetime claim is pinned by a test that drives the PRODUCTION pass that
+can end the object, on the SHIPPED configuration (here, the armed pass on the
+default session registry), plus a guide pin that reads the times from that
+registry.
+Reference: trader/guide_mentor_lifetime_test.go
+TestMentorLevelArmLifetimeEndsAtTheEODFlat + TestGuideMentorLevelLifetimeNamesTheEODFlat;
+UI-GUIDE-TRUTH T1.
+
+## CLASS NN (assigned at merge) — a display snapshot taken before the set it shows is complete
+
+symptom: kernel/mentor/eval.go stored `State.Levels = levels` BEFORE the 5m
+trigger retest, the 4h/1h trigger lines, the EMA 34 location, the box edges and
+the trendlines were appended to `levels`. The truth panel and the dashboard chart
+read State.Levels, so every one of those trading locations was invisible (no
+trendline was ever drawn), while the evaluator traded them.
+probe: for every state field a UI or API reads, find the LAST write to the local
+it copies and check that no append, filter or merge follows it in the same tick.
+rule: a display copy is taken after the final mutation, as its own field when the
+earlier copy has a trading reader (State.Levels feeds the fill-drain fallback, so
+it was left byte-identical and State.ChartLevels was added). The test drives a
+real Tick and asserts the appended kinds reach the payload.
+Reference: kernel/mentor/chart_levels_test.go,
+trader/mentor_truth_chart_test.go; UI-GUIDE-TRUTH T7.

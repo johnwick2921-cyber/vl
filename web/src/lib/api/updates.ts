@@ -59,7 +59,7 @@ export interface MaintenanceStatusView {
   withdraw?: MaintenanceWithdrawView | null
 }
 
-// ── GET /api/health (api/server.go:669 handleHealth) — panel A revision ──
+// ── GET /api/health (api/handler_health.go handleHealth) — panel A revision ──
 export interface HealthStatus {
   status?: string
   time?: string

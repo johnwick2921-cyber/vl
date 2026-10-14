@@ -8,6 +8,7 @@
 
 import { useState } from 'react'
 import type { MentorTruth } from '../../lib/api/traders'
+import { mentorWindowLabel } from './mentorWindowLabel'
 
 // MENTOR-CARD-EXPAND (release #12): the owner's last choice persists per
 // browser under this key. Read/write are try/catch-guarded — a storage
@@ -226,7 +227,7 @@ export function MentorTruthCard({
                 </div>
               ))}
               {(truth.levels ?? []).some(
-                (l) => l.merged_from && l.merged_from.length > 0,
+                (l) => l.merged_from && l.merged_from.length > 0
               ) && (
                 <div
                   className="text-[10px]"
@@ -259,12 +260,8 @@ export function MentorTruthCard({
             style={{ color: 'var(--vl-muted)' }}
           >
             <span>
-              window {truth.window.start}/{truth.window.minutes}:
-              {truth.window.active
-                ? ' open'
-                : truth.window.ended
-                  ? ' ended'
-                  : ' disabled'}
+              window {truth.window.start}/{truth.window.minutes}:{' '}
+              {mentorWindowLabel(truth.window)}
             </span>
             {truth.done_after_win && (
               <span style={{ color: 'var(--vl-warn)' }}>done-after-win</span>

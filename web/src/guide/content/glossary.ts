@@ -40,7 +40,7 @@ export const glossary: GuideSection = {
         },
         {
           term: 'EOD flat',
-          def: 'The session-end ladder: close at EOD_FLAT_LIMIT_TICKS, then market after EOD_FLAT_MARKET_AFTER_SEC.',
+          def: 'The session-end flat: cancel resting entries, then close open positions — at market by default; when EOD_FLAT_LIMIT_TICKS > 0 (default 0) it first works a limit that many ticks away, then goes to market after EOD_FLAT_MARKET_AFTER_SEC. A SWING4H mentor position is exempt.',
         },
         {
           term: 'Fail-closed',
@@ -129,7 +129,7 @@ export const glossary: GuideSection = {
         },
         {
           term: 'Thin side',
-          def: 'Machine-caused shortage on one side → ⚖ note instead of failure.',
+          def: 'REMOVED concept (owner ruling 2026-08-31): there is no thin-side note, knob or WARN any more. What survives: a plan with 0 levels on a side, or an empty machine map, fails closed.',
         },
         {
           term: 'Tier-1',

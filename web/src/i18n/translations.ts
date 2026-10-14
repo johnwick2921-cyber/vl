@@ -736,7 +736,7 @@ export const translations = {
 
     faqDatabaseLocked: 'Database locked error',
     faqDatabaseLockedAnswer:
-      'Multiple processes accessing SQLite simultaneously. Solution: 1) Stop all processes: "docker compose down" or "pkill vl"; 2) Remove lock files if present: "rm -f data/data.db-wal data/data.db-shm"; 3) Restart: "docker compose up -d". Only one backend instance should access the database.',
+      'Do NOT run "pkill" and do NOT delete data/data.db-wal or data/data.db-shm. Under systemd a clean SIGTERM exit is not relaunched, so pkill leaves the bot down; the -wal/-shm files hold committed writes that are not yet checkpointed, so deleting them loses data. A "database is locked" error means a second process has data/data.db open: close it (open any manual sqlite3 session with -readonly). For a restart or a recovery, follow the in-app Guide and deploy/RESTORE.md.',
 
     faqTALibNotFound: 'TA-Lib not found during build',
     faqTALibNotFoundAnswer:
@@ -2017,7 +2017,7 @@ export const translations = {
 
     faqDatabaseLocked: '数据库锁定错误',
     faqDatabaseLockedAnswer:
-      '多个进程同时访问 SQLite 导致。解决方案：1）停止所有进程："docker compose down" 或 "pkill vl"；2）如有锁文件删除："rm -f data/data.db-wal data/data.db-shm"；3）重启："docker compose up -d"。只能有一个后端实例访问数据库。',
+      '不要运行 "pkill"，也不要删除 data/data.db-wal 或 data/data.db-shm。在 systemd 下，正常的 SIGTERM 退出不会被重新拉起，pkill 会让机器人停机；-wal/-shm 文件保存着已提交但尚未写回的数据，删除会丢失数据。"database is locked" 表示有第二个进程打开了 data/data.db：关闭它（手动 sqlite3 会话请用 -readonly 打开）。需要重启或恢复时，请按应用内指南和 deploy/RESTORE.md 操作。',
 
     faqTALibNotFound: '构建时找不到 TA-Lib',
     faqTALibNotFoundAnswer:
@@ -3272,7 +3272,7 @@ export const translations = {
       'Backend mungkin tidak berjalan. Periksa: "curl http://127.0.0.1:8080/api/health" harus mengembalikan {"status":"ok"}.',
     faqDatabaseLocked: 'Error database terkunci',
     faqDatabaseLockedAnswer:
-      'Beberapa proses mengakses SQLite bersamaan. Hentikan semua, hapus file lock, restart.',
+      'JANGAN jalankan "pkill" dan JANGAN hapus data/data.db-wal atau data/data.db-shm. Di bawah systemd, keluar SIGTERM yang bersih tidak dijalankan ulang, jadi pkill membuat bot mati; file -wal/-shm menyimpan tulisan yang sudah di-commit tetapi belum di-checkpoint, jadi menghapusnya menghilangkan data. Error "database is locked" berarti proses kedua membuka data/data.db: tutup proses itu (buka sesi sqlite3 manual dengan -readonly). Untuk restart atau pemulihan, ikuti Panduan di aplikasi dan deploy/RESTORE.md.',
     faqTALibNotFound: 'TA-Lib tidak ditemukan saat build',
     faqTALibNotFoundAnswer:
       'Instal TA-Lib: macOS: "brew install ta-lib"; Ubuntu: "sudo apt-get install libta-lib0-dev".',

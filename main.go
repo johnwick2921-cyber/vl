@@ -640,8 +640,8 @@ func main() {
 			// 101 D2 (2026-09-16) — the chart across the roll. The flag is READ
 			// (A11); the readers it gates live in api/ only and the decision
 			// readers are contract-scoped and untouched (E4).
-			logger.Infof("📈 chart: across-roll=%s · prior contracts fill strictly before the current contract's first live row · step never adjusted · limit max=%d · decision readers=current-contract-only",
-				api.ChartAcrossRollResolved(), 20000)
+			logger.Infof("📈 chart: across-roll=%s · prior contracts fill strictly before the current contract's first live row · prior-segment stitch=%s · limit max=%d · decision readers=current-contract-only",
+				api.ChartAcrossRollResolved(), api.ChartRollStitchResolved(), 20000)
 
 			// ONE SETUP (dispatch 102, 2026-09-10) — D9's two backfills, three-state,
 			// ONE SHOT per trader: verdicts at each episode's OPEN since W2's boot,
