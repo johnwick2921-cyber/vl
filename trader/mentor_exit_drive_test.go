@@ -310,13 +310,16 @@ func TestMentorMoveLegStop_NeverWidens(t *testing.T) {
 }
 
 // A same-side ISB within 3 candles of a PHL/PLH fill arms mode A: the single
-// leg to BE now, and the leg-1 TP modify (out to the runner target) is LOGGED,
-// unwired.
+// leg to BE now. Release #25 (CX-3): the runner-TP move is SENT on the runner's
+// own wire leg (TestCX3ResonanceRunnerTPIsSentOnTheRunnerLeg); a SINGLE bracket
+// has no separate runner, so nothing is sent and it is counted (never a modify
+// of the whole position past the 1:1 partial).
 func TestMentorArmResonanceOnISB(t *testing.T) {
 	at, moves := newDriveAT(t)
 	p := bPos("B", "long", 10, 9, 16, 5)
 	p.Pos.Origin = "PHL"
 	p.BarsSinceFill = 1
+	p.RunnerTarget = 20
 	at.mentorRegisterLivePos("sig-1", p)
 	at.mentorArmResonanceOnISB("long")
 	if p.Pos.Mode != "A-resonance" || !p.Pos.ArmedBE {
@@ -324,8 +327,8 @@ func TestMentorArmResonanceOnISB(t *testing.T) {
 	}
 	assertMoves(t, moves(), driveMove{"entry", "long", 10})
 	snap := at.mentorCountSnapshot()
-	if snap["resonance_armed"] != 1 || snap["modify_bracket_resonance_logged"] != 1 {
-		t.Fatalf("resonance counters: armed=%d modify_logged=%d, want 1/1", snap["resonance_armed"], snap["modify_bracket_resonance_logged"])
+	if snap["resonance_armed"] != 1 || snap["resonance_runner_tp_not_split"] != 1 {
+		t.Fatalf("resonance counters: armed=%d runner_tp_not_split=%d, want 1/1", snap["resonance_armed"], snap["resonance_runner_tp_not_split"])
 	}
 }
 
