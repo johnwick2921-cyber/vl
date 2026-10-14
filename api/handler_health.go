@@ -7,6 +7,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"vl/kernel"
+	"vl/telemetry"
+	ntTrader "vl/trader/ninjatrader"
 )
 
 // handleHealth (P2-6) reports REAL state, not a liveness constant: DB ping,
@@ -79,7 +81,7 @@ func (s *Server) handleHealth(c *gin.Context) {
 		}
 	}
 
-	c.JSON(code, gin.H{
+	body := gin.H{
 		"status":          status,
 		"time":            now.UTC().Format(time.RFC3339),
 		"revision":        kernel.RunningRevision(),
@@ -90,5 +92,14 @@ func (s *Server) handleHealth(c *gin.Context) {
 		// counters (backward/forward, largest, last, whether NEW entries are
 		// held right now). Read values; last_* absent until a step is seen.
 		"clock": kernel.ClockStepSnapshot(),
-	})
+	}
+	// GAP-BACKFILL (2026-10-14): the open 1m bar holes the bot is refilling
+	// from NT8 by itself, and the refill counters. READ values: [] = the
+	// tracker is wired and no hole is open; ABSENT = no tracker (no store), so
+	// nothing is known — never a fabricated empty list (A24).
+	if holes, ok := ntTrader.BarHolesSnapshot(); ok {
+		body["bars_holes"] = holes
+		body["bars_hole_counts"] = telemetry.BarsHoleCountsSnapshot()
+	}
+	c.JSON(code, body)
 }

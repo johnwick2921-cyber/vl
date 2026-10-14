@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"vl/kernel"
@@ -1123,27 +1124,74 @@ func mentorExitA(pos mentorPosition, l, h float64) (exitPrice float64, exitReaso
 }
 
 // mentorTrailTFDefault is the B candle-trail timeframe: 1m (the course frame
-// D2.4 p1 @08:35 is on the 1-MINUTE chart; 30s/45s allowed @09:07).
+// D2.4 p1 @08:35 is on the 1-MINUTE chart). A position entered on the 2m (the
+// X5-10 exec-2m schedule) trails on the 2m instead — the frame follows the
+// entry [X8 @18:02–18:14], see mentorLivePos.TrailTFMin.
 const mentorTrailTFDefault = "1m"
 
-// mentorTrailTF resolves the trail_tf knob. "" → 1m; 1m/30s/45s pass; off =
-// the video-8 legacy "never trail on the 1m" (SUPERSEDED, kept as a knob);
-// any other value refuses to trail fail-closed and is counted.
-func (at *AutoTrader) mentorTrailTF() string {
-	raw := ""
-	if at.config.StrategyConfig != nil {
-		raw = at.config.StrategyConfig.RiskControl.MentorTrailTF
+// mentorTrailTFSubMinuteWarned dedups the drive-time WARN for a refused 30s/45s
+// per (trader, value); the config-load check (mentorTrailTFLoadCheck) WARNs on
+// every load. The counter records every resolution.
+var mentorTrailTFSubMinuteWarned sync.Map
+
+// mentorTrailTFRaw reads the stored trail_tf value ("" when no strategy).
+func (at *AutoTrader) mentorTrailTFRaw() string {
+	if at == nil || at.config.StrategyConfig == nil {
+		return ""
 	}
+	return at.config.StrategyConfig.RiskControl.MentorTrailTF
+}
+
+// mentorTrailTFSubMinute reports a 30s/45s value — accepted by the resolver
+// until 10-14, but the bot has NO sub-minute bars (the NT8 AddOn streams 1m and
+// up), so the trail always ran on closed 1m candles while the guide said
+// otherwise. The course offers them ("muốn SÁT HƠN — khung 45 giây, khung 30
+// giây" [D2.4 p1 @09:08]); nothing here can read them, so they are refused.
+func mentorTrailTFSubMinute(v string) bool { return v == "30s" || v == "45s" }
+
+func mentorTrailTFSubMinuteWhy(raw string) string {
+	return fmt.Sprintf("🧑‍🏫 mentor trail_tf %q REFUSED — the bot has no sub-minute bars (NinjaTrader streams 1m and up), so a %s trail cannot be honoured; the runner trails on closed 1m candles (the default) [D2.4 p1 @09:08 names 30s/45s; no source can feed them]",
+		raw, strings.ToLower(strings.TrimSpace(raw)))
+}
+
+// mentorTrailTF resolves the trail_tf knob. "" → 1m; 1m passes; off = the
+// video-8 legacy "never trail on the 1m" (SUPERSEDED, kept as a knob: BE
+// only). 30s/45s are REFUSED → 1m (no sub-minute bars exist; counted every
+// resolution, WARN'd at config load and once per value at the drive). Any
+// other value refuses to trail fail-closed and is counted.
+func (at *AutoTrader) mentorTrailTF() string {
+	raw := at.mentorTrailTFRaw()
 	switch v := strings.ToLower(strings.TrimSpace(raw)); v {
 	case "":
 		return mentorTrailTFDefault
-	case "1m", "30s", "45s", "off":
+	case "1m", "off":
 		return v
+	case "30s", "45s":
+		at.mentorCount("trail_tf_subminute_refused")
+		if _, seen := mentorTrailTFSubMinuteWarned.LoadOrStore(at.id+"|"+v, true); !seen {
+			at.logWarnf("%s", mentorTrailTFSubMinuteWhy(raw))
+		}
+		return mentorTrailTFDefault // refused → the 1m
 	default:
 		at.mentorCount("trail_tf_bad_value")
-		at.logWarnf("🧑‍🏫 mentor trail_tf %q invalid (1m/30s/45s/off) — trail refused for safety", raw)
+		at.logWarnf("🧑‍🏫 mentor trail_tf %q invalid (1m/off) — trail refused for safety", raw)
 		return "off"
 	}
+}
+
+// mentorTrailTFLoadCheck is the config-load half of the 30s/45s refusal: it
+// runs at every mentor seed (boot AND every reload — a strategy save reloads
+// the trader), WARNs and counts a refused value there, so the refusal is loud
+// the moment the config is loaded, not first at a fill.
+func (at *AutoTrader) mentorTrailTFLoadCheck() {
+	raw := at.mentorTrailTFRaw()
+	v := strings.ToLower(strings.TrimSpace(raw))
+	if !mentorTrailTFSubMinute(v) {
+		return
+	}
+	mentorTrailTFSubMinuteWarned.Store(at.id+"|"+v, true) // the drive need not repeat it
+	at.mentorCount("trail_tf_subminute_refused")
+	at.logWarnf("%s", mentorTrailTFSubMinuteWhy(raw))
 }
 
 // mentorTrailEnabled reports whether the candle trail runs (off = video-8).
