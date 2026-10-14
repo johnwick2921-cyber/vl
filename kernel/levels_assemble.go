@@ -129,7 +129,7 @@ func AssembleScoredLevels(traderID string, bars []market.Kline, reg SessionRegis
 	all = append(all, SupplyDemandZones(bars, atr, now)...)
 	all = append(all, FairValueGaps(bars, fvgMinGapPoints(symbol), now)...)
 	all = append(all, OrderBlocks(bars, atr, now)...)
-	all = append(all, VolumeLevels(bars, now)...) // Pack B (2026-08-26) — volume family
+	all = append(all, VolumeLevelsFor(symbol, bars, now)...) // Pack B (2026-08-26) — volume family; N4: whole prior session
 	// Level-truth wave (2026-08-27) — recent 5m/15m fractal swings (T3).
 	all = append(all, SwingPointLevels(bars, now)...)
 	all = append(all, extraLevels...) // nPOC etc. from the durable store (P1.3)
@@ -184,7 +184,7 @@ func AssembleScoredLevelsMinGrade(traderID string, bars []market.Kline, reg Sess
 	all = append(all, SupplyDemandZones(bars, atr, now)...)
 	all = append(all, FairValueGaps(bars, fvgMinGapPoints(symbol), now)...)
 	all = append(all, OrderBlocks(bars, atr, now)...)
-	all = append(all, VolumeLevels(bars, now)...) // Pack B (2026-08-26) — volume family
+	all = append(all, VolumeLevelsFor(symbol, bars, now)...) // Pack B (2026-08-26) — volume family; N4: whole prior session
 	// Level-truth wave (2026-08-27) — recent 5m/15m fractal swings (T3).
 	all = append(all, SwingPointLevels(bars, now)...)
 	all = append(all, extraLevels...) // nPOC etc. from the durable store (P1.3)
@@ -241,7 +241,7 @@ func AssembleResearchLevels(traderID string, bars []market.Kline, reg SessionReg
 	all = append(all, SupplyDemandZones(bars, atr, now)...)
 	all = append(all, FairValueGaps(bars, fvgMinGapPoints(symbol), now)...)
 	all = append(all, OrderBlocks(bars, atr, now)...)
-	all = append(all, VolumeLevels(bars, now)...) // Pack B (2026-08-26) — volume family
+	all = append(all, VolumeLevelsFor(symbol, bars, now)...) // Pack B (2026-08-26) — volume family; N4: whole prior session
 	// Level-truth wave (2026-08-27) — recent 5m/15m fractal swings (T3).
 	all = append(all, SwingPointLevels(bars, now)...)
 	all = append(all, extraLevels...) // nPOC etc. from the durable store (P1.3)

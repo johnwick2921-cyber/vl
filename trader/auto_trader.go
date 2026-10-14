@@ -1106,6 +1106,11 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		// ledgers), wired at construction, before Run.
 		wireNT8EntryLatch(at, nt)
 	}
+	// N4 (release #23): pdVWAP / the prior-day profile read the WHOLE prior
+	// session from the store when the 1m ring holds only its tail.
+	if at.exchange == "ninjatrader" && at.store != nil {
+		installPriorSessionProvider(at.store)
+	}
 	// P0 SPLICE (CTO 1791030462901) — a mentor-mode trader seeds the evaluator
 	// from the stored 1m+1h bars at start (read-only); while any source is
 	// missing every mentor entry is refused with the named source.

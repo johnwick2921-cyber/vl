@@ -29,10 +29,10 @@ import (
 // numbers the live log printed.
 
 var (
-	ssSeedNow   = int64(1791984160000) // 2026-10-14 08:22:40 CT — the release #22 boot seed
-	ssStoreLast = int64(1791983700000) // 2026-10-14 08:15 CT — the store's newest 1m row at that seed
-	ssRefillBar = int64(1791984180000) // 2026-10-14 08:23 CT — the bar the first tick after the 08:23:00 release closes
-	ssRoll      = int64(1791928800000) // 2026-10-13 17:00 CT — the session roll
+	ssSeedNow   = int64(1791984160000)                                        // 2026-10-14 08:22:40 CT — the release #22 boot seed
+	ssStoreLast = int64(1791983700000)                                        // 2026-10-14 08:15 CT — the store's newest 1m row at that seed
+	ssRefillBar = int64(1791984180000)                                        // 2026-10-14 08:23 CT — the bar the first tick after the 08:23:00 release closes
+	ssRoll      = int64(1791928800000)                                        // 2026-10-13 17:00 CT — the session roll
 	ssCPI       = []PrintWindow{{FromMs: 1791980400000, ToMs: 1791981300000}} // 10-14 CPI 07:30: 07:20–07:35 CT
 )
 

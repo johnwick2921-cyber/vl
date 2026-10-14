@@ -259,3 +259,38 @@ func TestMentorTickWindowMatchesTheSeedReplay(t *testing.T) {
 		t.Fatalf("mentorBars1mDepth %d ≠ mentor.SeedTickWindow1m %d", mentorBars1mDepth, mentor.SeedTickWindow1m)
 	}
 }
+
+// TestPriorSessionStoreProviderServesTheWholeSession1014 — N4 (P2), the store
+// side. At 10-13 08:30 the 2,000-bar ring holds 1,070 of the prior session's
+// 1,378 bars; through the store provider the trader installs, pdVWAP is the
+// WHOLE session's 30999.9259 (independent oracle pdvwap.py; the tail gives
+// 30983.70, the rescan's −16.23). Mutant: the provider reads the 5m series →
+// nothing whole → refused → RED.
+func TestPriorSessionStoreProviderServesTheWholeSession1014(t *testing.T) {
+	bars := loadSeedStateBars(t)
+	at := seedStateTrader(t)
+	bh := store.NewBarHistoryStore(at.store.GormDB())
+	if err := bh.InsertBars(seedStateRows(bars, func(seedStateBar) bool { return true })); err != nil {
+		t.Fatal(err)
+	}
+	prev := kernel.PriorSessionBarsProvider
+	t.Cleanup(func() { kernel.PriorSessionBarsProvider = prev })
+	kernel.PriorSessionBarsProvider = priorSessionBarsFromStore(bh)
+	now := time.Date(2026, 10, 13, 8, 30, 0, 0, kernel.CTLocation())
+	var ring []market.Kline
+	for _, b := range bars {
+		if b.k.CloseTime < now.UnixMilli() {
+			ring = append(ring, b.k)
+		}
+	}
+	ring = ring[len(ring)-2000:]
+	var pd []float64
+	for _, l := range kernel.VolumeLevelsFor("MNQ", ring, now) {
+		if l.Kind == kernel.KindPDVWAP {
+			pd = append(pd, l.Price)
+		}
+	}
+	if len(pd) != 1 || pd[0] < 30999.9258 || pd[0] > 30999.9260 {
+		t.Fatalf("pdVWAP via the store = %v, want the whole session's [30999.9259]", pd)
+	}
+}

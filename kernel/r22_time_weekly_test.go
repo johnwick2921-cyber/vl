@@ -212,14 +212,21 @@ func TestR22MondayPriorDayIsFridaysSession(t *testing.T) {
 	}
 	got := r22VolumeKinds(VolumeLevels(bars, now))
 
-	if v := got[KindPDVWAP]; len(v) != 1 || math.Abs(v[0]-31103.9049) > 0.01 {
-		t.Errorf("Monday pdVWAP = %v; want [31103.90] (Friday's session VWAP) — absent means 'prior day' was Saturday", v)
+	// N4 (release #23): this ring holds only 1,095 of Friday's 1,380 bars — a
+	// FRONT-TRUNCATED session. pdVWAP 31103.90 and the profile were computed
+	// from that tail (the rescan's oracle: +11.33 against the whole session at
+	// 08:30); with no store to read the whole session from, both are now
+	// REFUSED rather than drawn wrong. The whole-session read is pinned in
+	// levels_volume_n4_test.go. SETT (the session's LAST bar) still proves the
+	// prior session picked is FRIDAY's, not Saturday's.
+	if v := got[KindPDVWAP]; len(v) != 0 {
+		t.Errorf("Monday pdVWAP = %v from a front-truncated Friday session; want it refused (N4)", v)
 	}
 	if v := got[KindSETT]; len(v) != 1 || v[0] != 31123.25 {
 		t.Errorf("Monday SETT = %v; want [31123.25] (Friday 15:59 close)", v)
 	}
-	if len(got[KindVAH]) == 0 || len(got[KindVAL]) == 0 {
-		t.Errorf("Monday prior-day profile (pdPOC/VAH/VAL) absent — 'prior day' was Saturday")
+	if len(got[KindVAH]) != 0 || len(got[KindVAL]) != 0 {
+		t.Errorf("Monday prior-day profile drawn from a front-truncated Friday session; want it refused (N4)")
 	}
 	ev := got[KindEVWAP]
 	if len(ev) != 1 || math.Abs(ev[0]-31152.0020) > 0.01 {
