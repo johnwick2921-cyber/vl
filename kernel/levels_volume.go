@@ -108,6 +108,7 @@ func EVWAPLevels(bars []market.Kline, now time.Time) []DetectedLevel {
 	if ct.Hour() < 15 {
 		anchorCT = anchorCT.AddDate(0, 0, -1)
 	}
+	anchorCT = lastCashCloseWithBars(cb, anchorCT)
 	anchorMs := anchorCT.UnixMilli()
 	win := make([]market.Kline, 0, len(cb))
 	for _, b := range cb {
@@ -142,21 +143,12 @@ func PriorDayProfileLevels(bars []market.Kline, now time.Time) []DetectedLevel {
 	if len(cb) == 0 {
 		return nil
 	}
-	curDay := CMESessionDayStart(now)
-	priorStart := curDay.AddDate(0, 0, -1).UnixMilli()
-	priorEnd := curDay.UnixMilli()
-	dayKey := time.UnixMilli(priorStart).In(CTLocation()).Format("2006-01-02")
-	if v, ok := pdProfileCache.Load(dayKey); ok {
-		return v.([]DetectedLevel)
-	}
-	var prior []market.Kline
-	for _, b := range cb {
-		if b.OpenTime >= priorStart && b.OpenTime < priorEnd {
-			prior = append(prior, b)
-		}
-	}
+	prior, dayKey := priorSessionBars(cb, CMESessionDayStart(now))
 	if len(prior) == 0 {
 		return nil
+	}
+	if v, ok := pdProfileCache.Load(dayKey); ok {
+		return v.([]DetectedLevel)
 	}
 	out := profileLevels(prior, dayKey, "")
 	out = captureFormationGroup(out, prior[len(prior)-1].CloseTime, len(prior), "prior_profile_last_source_close", now)
@@ -323,6 +315,53 @@ func NakedPOCLevels(bars []market.Kline, now time.Time) []DetectedLevel {
 
 // ── pdVWAP · SETT · MID-O ──────────────────────────────────────────────────
 
+// priorSessionBars returns the closed bars of the PRIOR CME session — the
+// last session-day before curDay that HAS bars — and its session key.
+//
+// R22 F-1: every "prior day" reader used curDay − 1 calendar day. For the
+// Monday session (Sunday 17:00 open) that is Saturday 17:00 → Sunday 17:00,
+// where no bars exist, so pdVWAP, SETT and the prior-day profile were absent
+// for the WHOLE Monday session every week (and after every holiday). The
+// prior session is Friday's.
+func priorSessionBars(cb []market.Kline, curDay time.Time) ([]market.Kline, string) {
+	curMs := curDay.UnixMilli()
+	key := ""
+	for i := len(cb) - 1; i >= 0; i-- {
+		if cb[i].OpenTime < curMs {
+			key = CMESessionDayKey(time.UnixMilli(cb[i].OpenTime))
+			break
+		}
+	}
+	if key == "" {
+		return nil, ""
+	}
+	var out []market.Kline
+	for _, b := range cb {
+		if b.OpenTime < curMs && CMESessionDayKey(time.UnixMilli(b.OpenTime)) == key {
+			out = append(out, b)
+		}
+	}
+	return out, key
+}
+
+// lastCashCloseWithBars walks the eVWAP anchor back to the most recent 15:00
+// CT cash close that actually traded (a bar in its 15:00–16:00 hour), at most
+// a week back. R22 F-1: from Sunday 17:00 to Monday 14:59 the anchor was
+// SUNDAY 15:00 — no bars — so eVWAP collapsed onto session VWAP (the very
+// duplicate the A2 re-anchor removed). The cash close it means is Friday's.
+func lastCashCloseWithBars(cb []market.Kline, anchor time.Time) time.Time {
+	for step := 0; step < 7; step++ {
+		cand := anchor.AddDate(0, 0, -step)
+		from, to := cand.UnixMilli(), cand.Add(time.Hour).UnixMilli()
+		for _, b := range cb {
+			if b.OpenTime >= from && b.OpenTime < to {
+				return cand
+			}
+		}
+	}
+	return anchor // nothing traded at any 15:00 in reach — keep the old anchor
+}
+
 // PDVWAPLevels (B1) — the prior session-day's session VWAP (17:00-anchored).
 // Prior-day VWAP is the inventory line overnight desks still mark the next
 // morning.
@@ -331,19 +370,11 @@ func PDVWAPLevels(bars []market.Kline, now time.Time) []DetectedLevel {
 	if len(cb) == 0 {
 		return nil
 	}
-	curDay := CMESessionDayStart(now)
-	startMs, endMs := curDay.AddDate(0, 0, -1).UnixMilli(), curDay.UnixMilli()
-	var prior []market.Kline
-	for _, b := range cb {
-		if b.OpenTime >= startMs && b.OpenTime < endMs {
-			prior = append(prior, b)
-		}
-	}
+	prior, day := priorSessionBars(cb, CMESessionDayStart(now))
 	v, _ := vwapAndStdev(prior)
 	if v <= 0 || len(prior) < 2 {
 		return nil
 	}
-	day := curDay.AddDate(0, 0, -1).In(CTLocation()).Format("2006-01-02")
 	return captureFormationGroup([]DetectedLevel{lineLevel(KindPDVWAP, v, "pdVWAP", day, false)}, prior[len(prior)-1].CloseTime, len(prior), "prior_vwap_last_source_close", now)
 }
 
@@ -355,19 +386,16 @@ func SETTLevels(bars []market.Kline, now time.Time) []DetectedLevel {
 	if len(cb) == 0 {
 		return nil
 	}
-	curDay := CMESessionDayStart(now)
-	endMs := curDay.UnixMilli()
+	prior, _ := priorSessionBars(cb, CMESessionDayStart(now))
 	var sett float64
 	var day string
 	var sourceClose int64
 	var sourceCount int
-	for _, b := range cb {
-		if b.OpenTime < endMs && b.OpenTime >= curDay.AddDate(0, 0, -1).UnixMilli() {
-			sett = b.Close
-			sourceClose = b.CloseTime
-			sourceCount++
-			day = time.UnixMilli(b.OpenTime).In(CTLocation()).Format("2006-01-02")
-		}
+	for _, b := range prior {
+		sett = b.Close
+		sourceClose = b.CloseTime
+		sourceCount++
+		day = time.UnixMilli(b.OpenTime).In(CTLocation()).Format("2006-01-02")
 	}
 	if sett <= 0 {
 		return nil
@@ -383,13 +411,16 @@ func MIDOLevels(bars []market.Kline, now time.Time) []DetectedLevel {
 	if len(cb) == 0 {
 		return nil
 	}
-	ct := now.In(CTLocation())
-	cutover := time.Date(ct.Year(), ct.Month(), ct.Day(), 8, 30, 0, 0, CTLocation())
-	if ct.Hour() < 8 || (ct.Hour() == 8 && ct.Minute() < 30) {
+	// R22 P3-1: the cutover is the 08:30 CT that FOLLOWS this session's 17:00
+	// open. It used to be "today 08:30", which from 17:00 to 23:59 lies BEFORE
+	// the session start — an empty window, so MID-O vanished every evening.
+	sessStart := CMESessionDayStart(now)
+	ss := sessStart.In(CTLocation())
+	cutover := time.Date(ss.Year(), ss.Month(), ss.Day()+1, 8, 30, 0, 0, CTLocation())
+	if now.Before(cutover) {
 		// Overnight window still open — use bars so far.
 		cutover = now
 	}
-	sessStart := CMESessionDayStart(now)
 	hi, lo := math.Inf(-1), math.Inf(1)
 	var sourceClose int64
 	var sourceCount int

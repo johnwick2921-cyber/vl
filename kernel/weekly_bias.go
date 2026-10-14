@@ -186,20 +186,28 @@ func LastNWOGs(bars1m []market.Kline, now time.Time, n int) []NWOG {
 		t := time.UnixMilli(b.OpenTime)
 		ct := t.In(CTLocation())
 		key := weekStartMonday(t).Format("2006-01-02")
-		if ct.Weekday() == time.Friday && ct.Hour() < 16 {
+		// R22 TIME-WEEKLY: the Friday side is classified by the bar's TRADING
+		// day (the session it belongs to), not the wall-clock weekday of its
+		// stamp. For 1m bars the last Friday-session print is still Fri ≤16:00
+		// CT (the last one wins). For DAILY session bars — stamped at their
+		// 17:00 CT open, so Friday's day sits on THURSDAY 17:00 — only the
+		// trading-day rule finds it; the wall-clock rule found nothing and the
+		// weekly read's NWOG section was always empty.
+		friday := sessionTradingWeekday(b.OpenTime) == time.Friday
+		if friday {
 			// The Friday close pairs with the FOLLOWING Sunday's open — the gap
 			// belongs to the next week (born at that Sunday 17:00 CT).
 			key = weekStartMonday(t).AddDate(0, 0, 7).Format("2006-01-02")
 		}
 		switch {
-		case ct.Weekday() == time.Friday && ct.Hour() < 16: // Friday last prints (≤16:00 CT)
+		case friday: // Friday-session last prints (≤16:00 CT)
 			if gaps[key] == nil {
 				gaps[key] = &gap{}
 				order = append(order, key)
 			}
 			gaps[key].prevFriClose = b.Close
 			gaps[key].prevFriTime = b.OpenTime
-		case ct.Weekday() == time.Sunday && ct.Hour() >= 17: // Sunday first prints (≥17:00 CT)
+		case ct.Weekday() == time.Sunday && ct.Hour() >= 17: // Sunday first prints (≥17:00 CT) — a daily session bar opens exactly here
 			if gaps[key] == nil {
 				gaps[key] = &gap{}
 				order = append(order, key)
@@ -222,7 +230,10 @@ func LastNWOGs(bars1m []market.Kline, now time.Time, n int) []NWOG {
 		}
 		og := NWOG{Born: key, Hi: hi, Lo: lo, CE: (hi + lo) / 2}
 		for _, b := range bars1m {
-			if b.OpenTime > g.sunOpenTime && b.High >= og.CE && b.Low <= og.CE {
+			// >= : the birth bar itself counts. For 1m bars that is the first
+			// minute; for daily session bars it is the whole Monday session,
+			// which a strict > would have skipped.
+			if b.OpenTime >= g.sunOpenTime && b.High >= og.CE && b.Low <= og.CE {
 				og.Filled = true
 				break
 			}

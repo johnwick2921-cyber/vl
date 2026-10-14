@@ -42,12 +42,12 @@ export const levels: GuideSection = {
         },
         {
           title: 'VWAP ±1σ · eVWAP',
-          body: 'Session volume-weighted average + its band; eVWAP anchored at 15:00 CT. Why care: the institutional magnet — mean-revert entries look here. Role: magnet/mean-revert.',
+          body: 'Session volume-weighted average + its band; eVWAP anchored at the last 15:00 CT cash close that traded (Friday\u2019s on a Sunday night or Monday — release #22; it used to anchor on an empty Sunday and copy session VWAP). Why care: the institutional magnet — mean-revert entries look here. Role: magnet/mean-revert.',
           tag: 'Volume',
         },
         {
           title: 'POC / VAH / VAL · nPOC · SETT · MID-O',
-          body: 'Value-area profile (point of control, area high/low), naked POC, settlement, mid-of-overnight. Why care: where the market did business — magnets and targets. Tier-1 since R-A13.',
+          body: 'Value-area profile (point of control, area high/low), naked POC, settlement, mid-of-overnight. The prior-day profile, pdVWAP and SETT come from the PRIOR CME SESSION that traded \u2014 Friday\u2019s on Monday (release #22: \u201cthe calendar day before\u201d was Saturday, so all three were missing every Monday). MID-O is the 17:00\u219208:30 overnight midpoint and now exists in the evening too (it used to vanish 17:00\u201323:59). Why care: where the market did business — magnets and targets. Tier-1 since R-A13.',
           tag: 'Volume',
         },
         {

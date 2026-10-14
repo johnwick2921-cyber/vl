@@ -71,22 +71,22 @@ func ProjectPriorWeekExtremes(daily []market.Kline, now time.Time) []MapCandidat
 	if len(daily) == 0 {
 		return nil
 	}
-	loc := chicago()
-	n := now.In(loc)
-	// The prior week is [start of last week, start of this week) in CT, with
-	// the week starting Monday.
-	weekday := int(n.Weekday())
-	if weekday == 0 {
-		weekday = 7 // Sunday closes the week rather than opening it
-	}
-	thisWeekStart := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, -(weekday - 1))
+	// R22 TIME-WEEKLY (P2-A). The prior week is the CME week before the one
+	// governing `now` — the SAME week convention as the weekly read
+	// (weekStartMonday: Sunday belongs to the week it opens). Each native daily
+	// row is placed by its TRADING date, not its open stamp: NT8 open-stamps a
+	// daily row at 00:00 CT of the calendar day BEFORE its trading day, so the
+	// old open-stamp window took Tue..Fri of last week plus THIS week's Monday
+	// and dropped last Monday (measured: 215.5 pts off on PWH, 254.75 on PWL),
+	// and on a Sunday evening it projected the week before last.
+	thisWeekStart := weekStartMonday(now)
 	priorWeekStart := thisWeekStart.AddDate(0, 0, -7)
 
 	var hi, lo float64
 	var days int
 	for _, b := range daily {
-		bt := time.UnixMilli(b.OpenTime).In(loc)
-		if bt.Before(priorWeekStart) || !bt.Before(thisWeekStart) {
+		td := NativeDailyTradingDate(b)
+		if td.Before(priorWeekStart) || !td.Before(thisWeekStart) {
 			continue
 		}
 		days++

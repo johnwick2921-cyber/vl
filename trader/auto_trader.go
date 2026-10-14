@@ -747,6 +747,10 @@ type AutoTrader struct {
 	// nil = not yet observed. Touched only from runCycle (single goroutine), so
 	// no mutex is required.
 	cmePrevOpen *bool
+	// R22 P1-B — the calendar date whose early-close retirement completed on
+	// the closed path (runCycle goroutine only, like cmePrevOpen).
+	earlyCloseRetiredDate string
+	earlyCloseNotedDate   string // the closed-path retirement line is logged once per date
 
 	// P2.1 — bar-close cadence: CloseTime (ms) of the last primary-TF bar we ran
 	// a cycle for. Only meaningful when barCloseCadenceActive() (day_plan futures);

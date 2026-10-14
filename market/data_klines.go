@@ -82,9 +82,11 @@ func calculateTimeframeSeries(klines []Kline, timeframe string, count int, ip In
 		}
 
 		// Calculate the strategy-CONFIGURED EMA periods (e.g. 9/21/200) for each
-		// point — same "need `period` bars" guard as the fixed EMAs above.
+		// point. R22 F-2: a point gets a value only once the EMA is WARMED
+		// (EMAWarmupBars — the SMA seed weighs ≤1%); before that the configured
+		// period stays present with no values and the prompt prints n/a.
 		for _, p := range ip.EMA {
-			if p > 0 && i >= p-1 {
+			if p > 0 && i+1 >= EMAWarmupBars(p) {
 				data.EMAByPeriod[p] = append(data.EMAByPeriod[p], calculateEMA(klines[:i+1], p))
 			}
 		}

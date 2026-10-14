@@ -8348,6 +8348,68 @@ Reference: telemetry/setup_stall.go (SetupStallAlertDue, RolloverSetupStalls),
 trader/mentor_stall_alarm.go (mentorSetupKind, mentorStallAlarmCheck),
 api/handler_gate_blocks.go (telemetrySetupStallTable).
 
+## CLASS NN (assigned at merge) — a day-keyed lookup mixes two day-key conventions
+
+The code speaks FOUR day keys and every confirmed R22 time bug mixed two of them:
+(1) `kernel.CMESessionDayKey` — the date of the session's 17:00 CT START (Sunday
+for Monday's session); (2) the TRADING date — the date the session CLOSES on
+(`kernel.CMETradingDateKey`, mentor `tradingDayKey`); (3) the calendar CT date
+(`SessionStateAt`, the rows of `kernel/session_calendar.json`); (4) the NT8 native
+daily open-stamp — trading date − 1 day at 00:00 CT (fixed −24h, so across DST it
+lands on 01:00 CDT or on the PREVIOUS calendar day). Also: an epoch-floored
+10080-minute bucket is a THURSDAY-00:00-UTC week, not a CME week.
+
+Symptoms (all live at 269745e1a): the weekly read fed Thursday-UTC weeks into a
+facts builder written for bars (week 2026-10-12: PWL 30760.75 / PWC 30969.50, truth
+30792.00 / 31108.75; IPDA and NWOG always empty); the half-day early close was
+looked up with key (1) while the calendar is keyed (2)/(3), so 11-27 / 12-24 never
+pulled the last entry or the flat in, and the closed-market skip then ran before
+the EOD flat; the prior-week map projection windowed native dailies by key (4) as
+if it were (2) (215–255 pts off); Monday's "prior day" was key(1) − 1 calendar day
+= Saturday (pdVWAP/SETT/prior profile absent every Monday).
+
+Probe: for every lookup keyed by a date string or a date window, name the key
+convention of the PRODUCER and of the CONSUMER; feed the consumer the producer's
+real output (not a literal date) and read the answer at a Monday, a Sunday
+17:00+, a half-day, and both DST Sundays.
+
+Rule: a day-keyed lookup names its key convention in its parameter name, and its
+test builds the key with the PRODUCTION function at a real instant, never as a
+literal (the `TestFoldOneFactOneOwner` literal "2026-11-27" is the anti-pattern —
+canon 53). Native daily bars are placed by `kernel.NativeDailyTradingDate`, never
+by their stamp; weeks are built from bars stamped at their open
+(`kernel.SessionDaysFromNativeDaily`), never from epoch-floored weeks.
+
+Reference: kernel/weekly_session_days.go, kernel/cme_calendar.go CMETradingDateKey,
+trader/auto_trader_weekly.go weeklyDailyBars/weeklyReadFacts,
+trader/auto_trader_clock.go halfDayCutoffMin, trader/auto_trader_loop.go
+retireBookAfterEarlyCloseAt, kernel/map_projections.go ProjectPriorWeekExtremes,
+kernel/levels_volume.go priorSessionBars; pins TestWeeklyReadUsesCMEWeeks_Live1012,
+TestEarlyCloseDay1127TickSequence, TestR22PriorWeekProjectionUsesTradingDays,
+TestR22MondayPriorDayIsFridaysSession. Review: ~/deck-fix-1005/review-1014/MATH-TIME-DST.md §5.
+
+## CLASS NN (assigned at merge) — an average over a ring window counts a truncated period as complete
+
+A ring/slice of N bars almost never starts on a period boundary, so its OLDEST
+period is cut off at the front. dATR (`DailyRangeProxy`) averaged every
+non-developing session-day in the 2,000-bar 1m ring, including a 96-bar stub
+(10-14 01:44 CT: 179.62 vs ~380, −53%), and every planner band scaled with it. The
+prompt's EMA200 is the same shape in time: 220 bars left 82% of the value as its
+SMA200 seed.
+
+Probe: for any statistic over "completed periods" or any recursive indicator,
+print how many bars the oldest period / the warm-up actually holds at the read
+instant; compare with the value over full history.
+
+Rule: a period counts only when the window holds it WHOLE (or it is read whole from
+a coarser source — the native daily bars for dATR); a recursive indicator prints a
+value only after its warm-up (market.EMAWarmupBars) and n/a before.
+
+Reference: kernel/datr_sessions.go DailyRangeProxyFor, kernel/levels_assemble.go
+DailyRangeProxy, market/data_indicators.go EMAWarmupBars; pins
+TestR22DATRFromCompleteSessions, TestR22DATRIntradayFallbackDropsTruncatedDay,
+TestR22PromptEMA200IsWarmed.
+
 ## CLASS NN (assigned at merge) — a restart rebuilds live state through a different path than live built it (LINES-RESTART, release #22)
 
 symptom: a restart changes what the bot trades. The 10-13 18:57 boot re-seeded
