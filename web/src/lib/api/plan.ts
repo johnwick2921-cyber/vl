@@ -1269,7 +1269,8 @@ export interface PlanTrade {
   realized_pnl: number
   mae: number
   mfe: number
-  entry_confidence: number
+  // R22: null = no AI confidence (a plan-arm entry) — never a fabricated 0
+  entry_confidence: number | null
   cited_scenario_id: string
   plan_matched: boolean
   plan_version: number
@@ -1315,4 +1316,15 @@ export interface PlanStatsResponse {
   progress: StatsProgress[]
   target_n: number
   alpha: number
+}
+
+// R22 F3 — the readable gloss of an arm_disabled_reason class on the plan view
+// (the class itself stays the stored value; unknown classes show as-is).
+const ARM_DISABLED_REASON_TEXT: Record<string, string> = {
+  flip_incoherent: "entry sits past the plan's own flip line, against the flip",
+}
+
+export function armDisabledReasonText(reason: string): string {
+  const gloss = ARM_DISABLED_REASON_TEXT[reason]
+  return gloss ? `${reason} — ${gloss}` : reason
 }

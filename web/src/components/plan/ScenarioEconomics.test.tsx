@@ -96,3 +96,22 @@ for (const [id, entry, stop, target, obstacle] of rows)
       `Arm R ${(Math.abs(target - entry) / Math.abs(entry - stop)).toFixed(6)}`
     )
   })
+// R22 F3 — the plan view shows WHY an arm was disabled at write: the
+// flip-coherence class carries its readable reason; other classes show as-is.
+it('R22 flip_incoherent shows its reason on the plan view', () => {
+  const scenario = {
+    ...base,
+    arm: {
+      entry: 29664.5,
+      stop: 29640,
+      target: 29721.25,
+      enabled: false,
+      arm_disabled_reason: 'flip_incoherent',
+    },
+  }
+  render(<ScenarioList scenarios={[scenario]} language="en" />)
+  const text = screen.getByTestId('economics-S1').textContent
+  expect(text).toContain(
+    "disabled at write: flip_incoherent — entry sits past the plan's own flip line, against the flip"
+  )
+})
