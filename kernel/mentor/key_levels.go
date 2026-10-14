@@ -211,6 +211,19 @@ func rthMinuteOf(ms int64) int {
 	return t.Hour()*60 + t.Minute()
 }
 
+// exec2mReads2m is the X5-10 timeframe-schedule predicate (ONE definition,
+// read by Tick): with the knob ON the ISB reads the 2m chart at every minute
+// EXCEPT the RTH open +30 minutes (08:30 ≤ t < 09:00 CT), when it stays on the
+// 1m ("a 2m stop cannot cover the setup at open volume"). Overnight, the
+// Europe open (3am Texas) and the evening are all 2m. The schedule source is
+// ~/mm-course/extra/notes/05-EXTRA.md:305-311 (X5 @00:07–01:17, X11
+// @17:06–19:35); "evening slow → 5m" is an OPEN COURSE QUESTION (no number for
+// "slow") and is not implemented.
+func exec2mReads2m(now int64) bool {
+	m := rthMinuteOf(now)
+	return m < 8*60+30 || m >= 9*60
+}
+
 // rthHourAnchor returns the open epoch of the RTH 1h candle a bar belongs
 // to: candles open at :30 (08:30, 09:30, …) — a bar at hh:29 belongs to
 // the previous hour's candle, hh:30 starts the current one. DST-safe via

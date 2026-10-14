@@ -73,6 +73,37 @@ func barAt(openMs int64, o, h, l, c float64) market.Kline {
 	return market.Kline{OpenTime: openMs, CloseTime: openMs + 59_999, Open: o, High: h, Low: l, Close: c}
 }
 
+// TestExec2mReads2mSchedule — the X5-10 timeframe schedule (owner order
+// 2026-10-13 ~23:00 CT "fix all"; sources X5 @00:07–01:17, X11 @17:06–19:35):
+// with the knob ON the ISB reads the 2m at every minute EXCEPT the RTH open
+// +30 minutes (08:30 ≤ t < 09:00 CT), when it stays on the 1m. Overnight and
+// the Europe open (3am Texas) are 2m. The predicate is the ONE definition the
+// Tick call site reads. MUTANT (CTO): restore `rthMinuteOf(now) >= 9*60` →
+// the 01:30/03:10 rows read 1m → RED.
+func TestExec2mReads2mSchedule(t *testing.T) {
+	cases := []struct {
+		label string
+		now   int64
+		want  bool // true = 2m read
+	}{
+		{"08:29 CT (just before the 1m window)", auditMs(2026, 9, 15, 8, 29, 0), true},
+		{"08:30 CT (RTH open, window start)", auditMs(2026, 9, 15, 8, 30, 0), false},
+		{"08:45 CT (RTH open +15m)", auditMs(2026, 9, 15, 8, 45, 0), false},
+		{"08:59 CT (last minute of the window)", auditMs(2026, 9, 15, 8, 59, 0), false},
+		{"09:00 CT (window end)", auditMs(2026, 9, 15, 9, 0, 0), true},
+		{"09:05 CT (after +30m)", auditMs(2026, 9, 15, 9, 5, 0), true},
+		{"01:30 CT (overnight)", auditMs(2026, 9, 15, 1, 30, 0), true},
+		{"03:10 CT (Europe open)", auditMs(2026, 9, 15, 3, 10, 0), true},
+		{"15:00 CT (RTH close)", auditMs(2026, 9, 15, 15, 0, 0), true},
+		{"23:59 CT (late evening)", auditMs(2026, 9, 15, 23, 59, 0), true},
+	}
+	for _, c := range cases {
+		if got := exec2mReads2m(c.now); got != c.want {
+			t.Fatalf("%s: exec2mReads2m = %v, want %v (2m=%v)", c.label, got, c.want, c.want)
+		}
+	}
+}
+
 // TestX5_10Exec2mReadsClosedBucketsNotTheFormingOne — P1: on a 1m close that
 // OPENS a 2m bucket, the read must be the previous two CLOSED 2m candles, not
 // the half-formed one (barsTF would flush the partial bucket and the ISB would

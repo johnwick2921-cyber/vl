@@ -425,9 +425,9 @@ export const mentor: GuideSection = {
           'F11 · R12 · D4.4 p1 @18:13, @22:15, @20:44–21:46',
         ],
         [
-          '2m execution after 09:00 CT (optional)',
-          'OFF by default — the course trades the 1m throughout. Turn it on and, after the first 30 minutes of RTH (09:00 CT), the ISB entry is read on the 2m chart instead of the 1m ("sau 30 phút em sẽ chuyển qua khung 2 phút" — the 1m wicks sweep stops, so the 2m read is quieter). Before 09:00 CT the 1m read is unchanged. The higher-timeframe lines, the boxes and the ORB escape always stay on the 1m.',
-          'mentor_exec_2m_after_30m = false (default OFF) · X5 @00:41–01:17 · X11 @17:06–17:32',
+          '2m execution (1m only in the first 30 min of RTH)',
+          'OFF by default — the course trades the 1m throughout. Turn it on and the ISB entry is read on the 1m chart ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"); at every other minute it is the 2m ("khung 2 phút ÍT BỊ QUÉT RÂU" — the 1m wicks sweep stops, so the 2m read is quieter), overnight and the Europe open (3am Texas) included. "Evening slow → 5m" is an open course question (no number for "slow"). The higher-timeframe lines, the boxes and the ORB escape always stay on the 1m.',
+          'mentor_exec_2m_after_30m = false (default OFF) · X5 @00:07–01:17 · X11 @17:06–19:35',
         ],
       ],
     },
@@ -836,9 +836,9 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
-          label: '2m ISB execution after 09:00 CT',
+          label: '2m ISB execution (1m only in the first 30 min of RTH)',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'X5-10: OFF (default) = the ISB entry is read on the 1m chart all day, as the course trades. ON = after the first 30 minutes of RTH (09:00 CT) the ISB entry is read on the 2m chart instead ("sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:17; X11 @17:06–17:32]) — the 1m wicks sweep stops, so the 2m read is quieter. Only the ISB pair swaps; the higher-TF lines, the boxes and the ORB escape always stay on the 1m.',
+          what: 'X5-10: OFF (default) = the ISB entry is read on the 1m chart all day, as the course trades. ON = the ISB entry is read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). "Evening slow → 5m" is an open course question (no number for "slow"). Only the ISB pair swaps; the higher-TF lines, the boxes and the ORB escape always stay on the 1m.',
           trader:
             'OFF — the course trades the 1m throughout; optional and knob-gated.',
           consumer:

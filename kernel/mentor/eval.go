@@ -1059,16 +1059,24 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// colour, not the trigger line (RULES-FIX-v3).
 	prev, cur := bars[len(bars)-2], bars[len(bars)-1]
 
-	// X5-10 (optional, knob default OFF): after the first 30 minutes of RTH
-	// (09:00 CT) the ISB entry is read on the 2m chart instead of the 1m —
-	// "sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:17; X11
-	// @17:06–17:32]. The 1m wicks sweep stops, so the 2m read is quieter.
-	// The box/ORB escapes and every higher-TF read stay 1m (they are defined
-	// on the 1m body close); only the ISB pair swaps. While the knob is OFF,
-	// or before 09:00 CT, execPrev/execCur == prev/cur and the read is
-	// byte-identical to the 1m-only build.
+	// X5-10 (optional knob, default OFF) — the ISB-exec timeframe schedule
+	// (owner order 2026-10-13 ~23:00 CT "fix all"; sources X5 @00:07–01:17,
+	// X11 @17:06–19:35 — transcript in ~/mm-course/extra/notes/05-EXTRA.md
+	// :305-311):
+	//   • RTH open +30 minutes (08:30 ≤ t < 09:00 CT) → 1-MINUTE read only
+	//     ("a 2m stop cannot cover the setup at open volume").
+	//   • every other minute → 2-MINUTE read ("khung 2 phút ÍT BỊ QUÉT RÂU" —
+	//     the 1m wicks sweep stops, so the 2m read is quieter), overnight and
+	//     the Europe open (3am Texas) included.
+	// OPEN COURSE QUESTION: the mentor also says "evening slow → 5-minute only"
+	// but gives no number for "slow" — left unimplemented pending the owner's
+	// call; the 2m read stays through the evening.
+	// The box/ORB escapes and every higher-TF read stay 1m (they are defined on
+	// the 1m body close); only the ISB pair swaps. While the knob is OFF,
+	// execPrev/execCur == prev/cur and the read is byte-identical to the
+	// 1m-only build.
 	execPrev, execCur, execTFMin := prev, cur, 1
-	if e.Cfg.Exec2mAfter30m && rthMinuteOf(now) >= 9*60 {
+	if e.Cfg.Exec2mAfter30m && exec2mReads2m(now) {
 		// closedBucketsTF drops the still-forming last 2m bucket: on a 1m close
 		// that OPENS a 2m bucket, barsTF would flush a half-formed 2m candle and
 		// the ISB would read it. The read must be the previous two CLOSED 2m
