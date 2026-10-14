@@ -529,14 +529,14 @@ export const riskControl = {
     es: 'Barreras de riesgo',
   },
   masterSwitchDesc: {
-    zh: '关闭则全部防护栏停用（记录）；实盘账户拦截始终生效，不可关闭。',
-    en: 'OFF disables ALL guardrails (logged). The live-account block stays ON always — untoggleable.',
-    es: 'OFF desactiva TODAS las barreras. El bloqueo de cuenta real siempre activo.',
+    zh: '关闭则停用每日亏损/每日盈利/每日最大开仓/禁止交易时段/一致性防护栏（记录）。不受总开关控制：连续亏损熔断、止损后再入场冷却、合约数与名义上限。实盘账户拦截始终生效，不可关闭。',
+    en: 'OFF disables the daily loss, daily profit, max daily trades, blackout and consistency guardrails (logged). NOT gated by this switch: the consecutive-loss halt, the re-entry cooldown and the size caps (max contracts, notional). The live-account block stays ON always — untoggleable.',
+    es: 'OFF desactiva las barreras de pérdida diaria, ganancia diaria, máx. operaciones, bloqueo horario y consistencia. NO dependen de este interruptor: el freno por pérdidas seguidas, el enfriamiento de reingreso y los topes de tamaño (contratos, nocional). El bloqueo de cuenta real siempre activo.',
   },
   dailyLossLimit: {
-    zh: '每日亏损上限 (USD) — 默认开启；留空则取环境变量 RISK_MAX_DAILY_LOSS_USD',
-    en: 'Daily loss limit (USD) — default ON; a blank value falls back to env RISK_MAX_DAILY_LOSS_USD',
-    es: 'Límite de pérdida diaria (USD) — ON por defecto; vacío usa RISK_MAX_DAILY_LOSS_USD',
+    zh: '每日亏损上限 (USD) — 默认关闭；需同时开启防护栏总开关与本行；金额留空则取环境变量 RISK_MAX_DAILY_LOSS_USD（$500）',
+    en: 'Daily loss limit (USD) — default OFF; it acts only with the Guardrails master AND this row ON; a blank $ falls back to env RISK_MAX_DAILY_LOSS_USD ($500)',
+    es: 'Límite de pérdida diaria (USD) — OFF por defecto; actúa solo con el interruptor maestro Y esta fila en ON; vacío usa RISK_MAX_DAILY_LOSS_USD ($500)',
   },
   dailyProfitTarget: {
     zh: '每日盈利目标 (USD) — 默认关闭',
@@ -554,14 +554,14 @@ export const riskControl = {
     es: 'Freno por pérdidas seguidas (parar tras N) — presencia: vacío = hereda (8, ON); 0 explícito = OFF; no lo controla el master',
   },
   reentryCooldown: {
-    zh: '止损后再入场冷却 (分钟, 或价格离止损 ≥1×ATR15) — 默认 20；0 = 关闭；不受总开关控制',
-    en: 'Re-entry cooldown after stop (min, or ≥1×ATR15 from stop) — default 20; 0 = OFF; NOT gated by the master switch',
-    es: 'Enfriamiento de reingreso tras stop (min, o ≥1×ATR15) — por defecto 20; 0 = OFF; no lo controla el master',
+    zh: '止损后再入场冷却 (分钟, 或价格离止损 ≥1×ATR15) — 默认 0 = 关闭（打开开关时填入 20）；不受总开关控制',
+    en: 'Re-entry cooldown after stop (min, or ≥1×ATR15 from stop) — default 0 = OFF (switching it on fills 20); NOT gated by the master switch',
+    es: 'Enfriamiento de reingreso tras stop (min, o ≥1×ATR15) — por defecto 0 = OFF (al activarlo se pone 20); no lo controla el master',
   },
   maxContractsField: {
-    zh: '单笔最大合约数 — 默认 2（常开钳制；旧开关从未有读取方）',
-    en: 'Max contracts / order — default 2 (always-on clamp; the old toggle never had a reader)',
-    es: 'Máx. contratos / orden — por defecto 2 (tope siempre activo)',
+    zh: '单笔最大合约数 — 常开钳制：取你的值，否则 2，再受 Stage-A 上限约束（默认 1，环境变量 STAGE_A_CONTRACT_CAP 可提高）→ 实际默认 1；导师模式交易员不受此限（按导师表，最多 mentor_max_contracts，默认 20）',
+    en: 'Max contracts / order — always-on clamp: your value, else 2, then capped by the Stage-A ceiling (1 unless env STAGE_A_CONTRACT_CAP raises it), so effectively 1 by default; a mentor-mode trader is NOT clamped by it (mentor table, up to mentor_max_contracts, default 20)',
+    es: 'Máx. contratos / orden — tope siempre activo: tu valor, si no 2, luego limitado por el techo Stage-A (1 salvo que STAGE_A_CONTRACT_CAP lo suba): en la práctica 1; un trader en modo mentor NO queda limitado (tabla del mentor, hasta mentor_max_contracts, 20)',
   },
   notionalCapField: {
     zh: '名义上限倍数 (权益×N) — 默认 20（安全底线，开关默认开启）',

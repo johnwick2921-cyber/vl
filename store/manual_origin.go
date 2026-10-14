@@ -143,7 +143,7 @@ type BotDayPnL struct {
 	SinceMs    int64          `json:"since_ms"`
 	Total      float64        `json:"bot_realized_pnl"`
 	Resolved   int            `json:"bot_resolved"`
-	Unresolved int            `json:"bot_unresolved"` // NULL pnl_corrected — excluded, counted (A22)
+	Unresolved int            `json:"bot_unresolved"` // NULL pnl_corrected or a reconcile_flat/unresolved close — excluded, counted (A22, RT-3)
 	Manual     ManualExcluded `json:"manual"`
 }
 
@@ -158,8 +158,13 @@ func (s *PositionStore) BotRealizedPnL(traderID string, sessionDayStartMs int64,
 	if len(account) > 0 {
 		acct = account[0]
 	}
-	q := s.db.Where("trader_id = ? AND status = ? AND exit_time >= ? AND close_reason NOT IN (?, ?, ?)",
-		traderID, "CLOSED", sessionDayStartMs, CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).
+	// RT-3 (release #24): a reconcile_flat / unresolved bot close is SELECTED
+	// and counted Unresolved (its P&L is unknown — possibly a full stop), the
+	// way ManualExcludedSince counts its own; it used to be filtered out in
+	// this WHERE, so the gate's fail-closed handling of Unresolved > 0 never
+	// saw it. The test seam stays out: a synthetic row is not a trade.
+	q := s.db.Where("trader_id = ? AND status = ? AND exit_time >= ? AND close_reason <> ?",
+		traderID, "CLOSED", sessionDayStartMs, CloseReasonTestSeam).
 		Where(BotOriginSQL)
 	if acct != "" {
 		q = q.Where("account = ?", acct)
@@ -169,6 +174,10 @@ func (s *PositionStore) BotRealizedPnL(traderID string, sessionDayStartMs int64,
 		return out, fmt.Errorf("bot realized pnl: %w", err)
 	}
 	for _, r := range rows {
+		if UnknownPnLReason(r.CloseReason) {
+			out.Unresolved++
+			continue
+		}
 		pnl, resolved := r.CorrectedPnL()
 		if !resolved {
 			out.Unresolved++

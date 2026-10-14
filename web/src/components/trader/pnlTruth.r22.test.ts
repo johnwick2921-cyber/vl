@@ -2,12 +2,14 @@ import { describe, it, expect } from 'vitest'
 import {
   classifyPosition,
   computeDayTotal,
+  historyScopeLabel,
   manualFooterLine,
 } from './PositionHistory'
 import { ledgerDayLabel } from './LedgerDayPnl'
 import {
   accountVsInitialCard,
   botRecordCard,
+  botRecordScopeLine,
   headerAccountPnl,
   manualLine,
 } from './accountPnl'
@@ -159,5 +161,47 @@ describe('P1-2 — label, value and tooltip agree', () => {
     expect(accountVsInitialCard(acct({})).value).toBe('n/a')
     expect(botRecordCard(acct({})).value).toBe('n/a')
     expect(headerAccountPnl(acct({})).label).toBe('ACCT_PNL::n/a')
+  })
+})
+
+// RT-7 (release #24, N1): two "bot record" figures on one dashboard — the
+// account-scoped card and the trader-wide history total. No figure changes;
+// each says its scope, and the scoped card names the bot rows it leaves out
+// (the server's count: hoang's 16 rows, −547.00, ids 383–489).
+describe('RT-7 bot record scope', () => {
+  const acct = (over: Partial<AccountInfo>) => over as AccountInfo
+  it('the scoped card counts the bot trades on other accounts, from the server', () => {
+    const a = acct({
+      bot_record_pnl: -1024.18,
+      bot_record_trades: 164,
+      bot_record_scope: 'this account',
+      bot_record_other_accounts_trades: 16,
+      bot_record_other_accounts_pnl: -547,
+    })
+    expect(botRecordScopeLine(a)).toBe(
+      '16 bot trades (−547.00) on other accounts not counted here'
+    )
+    expect(botRecordCard(a).value).toBe('−1,024.18')
+    expect(botRecordCard(a).subtitle).toContain(
+      '16 bot trades (−547.00) on other accounts not counted here'
+    )
+  })
+  it('no other-account rows, a trader-wide read, and an older server', () => {
+    expect(
+      botRecordScopeLine(
+        acct({
+          bot_record_scope: 'this account',
+          bot_record_other_accounts_trades: 0,
+        })
+      )
+    ).toBe('this account only (no bot trades on other accounts)')
+    expect(botRecordScopeLine(acct({ bot_record_scope: 'all accounts' }))).toBe(
+      'all accounts'
+    )
+    expect(botRecordScopeLine(acct({}))).toBe('')
+  })
+  it('the history total says its scope; absent reads scope n/a', () => {
+    expect(historyScopeLabel('all accounts')).toBe('all accounts')
+    expect(historyScopeLabel(undefined)).toBe('scope n/a')
   })
 })

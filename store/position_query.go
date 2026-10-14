@@ -207,8 +207,11 @@ func (s *PositionStore) MentorDayActivity(traderID string, sinceMs int64, accoun
 		acct = account[0]
 	}
 	var out MentorDayActivity
-	q := s.db.Where("trader_id = ? AND status = ? AND exit_time >= ? AND close_reason NOT IN (?, ?, ?)",
-		traderID, "CLOSED", sinceMs, CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).
+	// RT-3 (release #24): reconcile_flat / unresolved closes are SELECTED and
+	// counted Unresolved (the caller fails CLOSED on it) instead of being
+	// filtered out unseen. The test seam stays out: it is not a trade.
+	q := s.db.Where("trader_id = ? AND status = ? AND exit_time >= ? AND close_reason <> ?",
+		traderID, "CLOSED", sinceMs, CloseReasonTestSeam).
 		Where(BotOriginSQL) // R22 R1: a manual winner/loser is not the bot's day
 	if acct != "" {
 		q = q.Where("account = ?", acct)
@@ -218,6 +221,10 @@ func (s *PositionStore) MentorDayActivity(traderID string, sinceMs int64, accoun
 		return out, fmt.Errorf("mentor day activity: %w", err)
 	}
 	for _, r := range rows {
+		if UnknownPnLReason(r.CloseReason) {
+			out.Unresolved++
+			continue
+		}
 		pnl, resolved := r.CorrectedPnL()
 		if !resolved {
 			out.Unresolved++

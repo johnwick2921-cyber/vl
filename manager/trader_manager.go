@@ -721,7 +721,8 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 		// r22 RISK-GATES — what the daily-loss gate does for THIS strategy
 		// (OFF, or ENFORCED with its refuse/cancel/flatten/latch), READ from
 		// the resolver the gate runs.
-		logger.Infof("🛑 [%s] %s", traderCfg.Name, trader.DailyLossGateBootLineForStrategy(strategyConfig))
+		// RT-2 (release #24): a held latch reads LATCHED, whatever the switches.
+		logger.Infof("🛑 [%s] %s", traderCfg.Name, trader.DailyLossGateBootLine(st, traderCfg.ID, strategyConfig, time.Now()))
 		// Release #25 planner-knobs — the seven STRICT-12345 loss-fix
 		// switches for THIS strategy, each READ from its resolver + origin.
 		logger.Infof("🧱 [%s] %s", traderCfg.Name, store.PlannerKnobsBootLine(strategyConfig))

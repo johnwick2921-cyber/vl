@@ -1381,7 +1381,14 @@ func (at *AutoTrader) attachTradeContext(ctx *kernel.Context) {
 		AvgWin:             stats.AvgWin,
 		AvgLoss:            stats.AvgLoss,
 		MaxDrawdownPct:     stats.MaxDrawdownPct,
+		// RT-4 (release #24): the manual rows ride as their own counted line,
+		// READ from the store (GetFullStats → ManualExcluded.Line).
+		ManualExcludedLine: stats.ManualExcludedLine,
 	}
-	logger.Infof("🧾 [%s] Track record: %+.2f over %d resolved trades (%d unresolved excluded), %.1f%% win rate, PF=%.2f, Sharpe=%.2f, DD=%.1f%%",
-		at.name, stats.TotalPnL, stats.TotalTrades, stats.UnresolvedExcluded, stats.WinRate, stats.ProfitFactor, stats.SharpeRatio, stats.MaxDrawdownPct)
+	manualLine := stats.ManualExcludedLine
+	if manualLine == "" {
+		manualLine = "Manual (excluded): n/a"
+	}
+	logger.Infof("🧾 [%s] Track record: %+.2f over %d resolved trades (%d unresolved excluded), %.1f%% win rate, PF=%.2f, Sharpe=%.2f, DD=%.1f%% · %s",
+		at.name, stats.TotalPnL, stats.TotalTrades, stats.UnresolvedExcluded, stats.WinRate, stats.ProfitFactor, stats.SharpeRatio, stats.MaxDrawdownPct, manualLine)
 }

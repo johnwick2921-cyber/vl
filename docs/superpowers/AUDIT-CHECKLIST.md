@@ -9319,3 +9319,24 @@ everything the run started. Every refused start is logged and counted.
 Reference: trader/run_owner.go (claimRunOwner, Retire), trader/auto_trader.go
 Run/teardownRunStarted, manager/trader_manager.go RemoveTrader,
 trader/run_owner_test.go, manager/run_owner_reload_test.go.
+
+## CLASS NN (assigned at merge) — a second latcher bypasses the announcement
+
+symptom: RISK-TRUTH (2026-10-14, rescan N3). The daily-loss trip has two writers of one latch: the 60 s beat's verdict (tripDailyLoss: latch + one 🔴 line + one daily_loss_tripped count + one P0 alert) and the AI decision cycle's kernel guardrail (engine_analysis.go → SetDailyForceFlat: latch only). After a stop-out the kernel path trips 2 s later, first; the beat's verdict then returns early on the latch and never reaches the announcement. The trip was real and silent — the guide promised the line and the counter.
+probe: for every latch, list ALL its writers (grep the setter, not the function you expect). For each writer, trace whether the announce/count/alert runs when THAT writer is first. Drive the test with the "other" writer first.
+rule: the announcement is one function, keyed once per (subject, period), and every path that can FIND the latch already set calls it — not only the path that sets it. A restored latch marks itself announced and logs its own RESTORED line.
+Reference: trader/daily_loss_gate.go announceDailyLossTrip / dailyGuardVerdictAt, kernel/engine_analysis.go (SetDailyForceFlat), trader/daily_loss_truth_test.go TestDailyLossKernelFirstTripIsAnnouncedAndCountedOnce.
+
+## CLASS NN (assigned at merge) — a surface prints the switch while a latch it cannot see decides
+
+symptom: RISK-TRUTH (2026-10-14, rescan N2). The daily-loss verdict checks the latch BEFORE the master switch, and the latch is persisted across a save-reload and a restart. Switching the gate OFF after a trip left entries refused and bot positions re-flattened until 17:00 CT while the trader's boot line said "OFF … nothing refused, cancelled or flattened" and GET /api/risk/status said latched=false after a restart (it read only the in-memory latch, restored on the first beat).
+probe: for every gate with a latch, find each surface that describes it (boot line, status endpoint, guide) and check it reads the latch — in-memory AND persisted — not only the switches. Test: latch held + switch OFF + fresh process.
+rule: a surface describing a gate reads what the gate's verdict reads, in the verdict's order. A held latch is printed as LATCHED with its lift rule, whatever the switches say.
+Reference: trader/daily_loss_gate.go DailyLossLatchStateAt / DailyLossGateBootLine / DailyLossGateStatusAt, manager/trader_manager.go (load line), trader/daily_loss_latch_surface_test.go.
+
+## CLASS NN (assigned at merge) — a restart wipes the evidence and "no evidence" is read as a verdict
+
+symptom: RISK-TRUTH (2026-10-14, rescan N11, reproduced). reconcile flagged an adopted NT8 position origin=manual when nothing evidenced the bot's own entry: the in-memory fill ring and FILLED arms in a window. A resting arm that fills while the process is down loses both — a new process starts with an empty ring, the AddOn replays no fills, and the post-restart order snapshot omits Filled entries, so the arm stays working. The bot's own position was flagged manual: out of the bot record and out of the daily-loss flatten — the harmful direction.
+probe: for every classifier that reads "absence of evidence", list where the evidence lives and what a restart (or a missed frame) does to it. Replay the event during the gap at the production call site on a fresh instance.
+rule: a classification with a harmful branch needs POSITIVE evidence for that branch. Unknown keeps the safe default, logged and counted (kept-bot counter), and the genuine case is pinned so the fix cannot over-correct.
+Reference: trader/ninjatrader/reconcile.go liveBotOrderFor / keepAdoptedBot, telemetry/manual_adoption.go IncManualAdoptKeptBot, trader/ninjatrader/reconcile_restart_gap_origin_test.go.

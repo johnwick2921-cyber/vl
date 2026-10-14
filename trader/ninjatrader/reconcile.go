@@ -485,6 +485,17 @@ func (t *TCPTrader) reconcilePositions(traderID, exchangeID, exchangeType string
 				origin = fmt.Sprintf("UNTAGGED entry (%s)", failed)
 			}
 		}
+		// RT-11 (N11): the ring and the FILLED-arm read are exactly what a
+		// restart takes from an arm that filled while the process was down
+		// (empty ring, ledger still working). Manual needs POSITIVE evidence:
+		// a live bot order of ours on this side keeps the row bot, logged.
+		if manualVerdict {
+			if why, live := liveBotOrderFor(st, traderID, side); live {
+				manualVerdict = false
+				origin = "UNATTRIBUTED entry kept BOT (" + why + ")"
+				keepAdoptedBot(row.ID, sym, side, qty, why)
+			}
+		}
 		if manualVerdict {
 			flagAdoptedManual(st, traderID, row.ID, sym, side, qty)
 		}
@@ -846,4 +857,40 @@ func c8Plural(n int) string {
 		return "y"
 	}
 	return "ies"
+}
+
+// liveBotOrderFor (RT-11, N11) reports an order of THIS trader that may be
+// resting at the broker on side — the ownership evidence the pre-open
+// reconcile already uses (trader/reconcile_owned.go clause (i)): a placed
+// non-terminal arm (it carries a broker signal), or a Picture row whose send
+// started. A read that fails cannot rule one out, so it answers yes.
+func liveBotOrderFor(st *store.Store, traderID, side string) (string, bool) {
+	arms, err := st.ArmedOrders().ListNonTerminal(traderID)
+	if err != nil {
+		return fmt.Sprintf("armed ledger unreadable (%v) — a resting arm cannot be ruled out", err), true
+	}
+	for _, r := range arms {
+		if strings.TrimSpace(r.SignalID) != "" && store.CanonicalArmSide(r.Side) == side {
+			return fmt.Sprintf("armed #%d %s %s is %s under signal %s — its fill may have landed while the process was down", r.ID, r.Scenario, side, r.State, r.SignalID), true
+		}
+	}
+	pics, err := st.PictureHtfRecoverableByTrader(traderID)
+	if err != nil {
+		return fmt.Sprintf("picture ledger unreadable (%v) — a resting Picture order cannot be ruled out", err), true
+	}
+	for _, p := range pics {
+		if store.PictureSendStarted(p) && store.CanonicalArmSide(p.Direction) == side {
+			return fmt.Sprintf("picture %s %s is %s — its fill may have landed while the process was down", store.RedactPictureOppKey(p.OppKey), side, p.Stage), true
+		}
+	}
+	return "", false
+}
+
+// keepAdoptedBot (RT-11) logs and counts an adoption the no-evidence verdict
+// would have flagged manual while a live bot order could explain it: it STAYS
+// in the bot record (unknown is not manual), never silently.
+func keepAdoptedBot(rowID int64, sym, side string, qty float64, why string) {
+	n := telemetry.IncManualAdoptKeptBot()
+	logger.Warnf("🧾 manual origin: pos %d (%s %s qty=%.0f) has no fill-ring or in-window armed-fill evidence, but %s — kept origin=bot, NOT flagged manual (unknown is not manual; kept-bot adoptions since boot=%d)",
+		rowID, sym, side, qty, why, n)
 }
