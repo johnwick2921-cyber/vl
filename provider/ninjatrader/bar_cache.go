@@ -52,6 +52,13 @@ type BarCache struct {
 	// scale, and cleared by the next SeedHistorical. mismatches keeps every
 	// detection for the boot line; this answers "is the seed I hold bad NOW".
 	seedOffScale map[string]bool
+	// lastLive is, per key, WHEN this process last received a LIVE bar frame
+	// that the ring accepted (bar_update, never a historical seed). It is the
+	// time.Now() of Upsert, so it carries Go's MONOTONIC reading: an age taken
+	// with time.Since is immune to wall-clock steps (release #22 OPS-SAFETY —
+	// the stale gate judged bar age on the wall clock alone and failed OPEN on
+	// a backward step). Read via LastLiveReceipt.
+	lastLive map[string]time.Time
 }
 
 // NewBarCache constructs an empty cache. maxBars <= 0 uses
@@ -382,17 +389,21 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 		bars[i], _ = c.detectScaleMismatch(key, bars[i], now)
 	}
 	existing := c.bars[key]
+	accepted := false
 	for _, b := range bars {
 		if len(existing) == 0 {
 			existing = append(existing, b)
+			accepted = true
 			continue
 		}
 		last := existing[len(existing)-1]
 		switch {
 		case b.T == last.T:
 			existing[len(existing)-1] = b
+			accepted = true
 		case b.T > last.T:
 			existing = append(existing, b)
+			accepted = true
 			if len(existing) > c.maxBars {
 				// Drop the oldest bar; copy the tail forward in place
 				// to keep the slice's backing array bounded.
@@ -426,6 +437,27 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 		}
 	}
 	c.bars[key] = existing
+	// Only a frame that moved the ring's newest bar (a forming-bar update or a
+	// new bar) proves the feed is alive NOW. A finalisation of an older bar or
+	// a refused out-of-order bar does not.
+	if accepted {
+		if c.lastLive == nil {
+			c.lastLive = make(map[string]time.Time)
+		}
+		c.lastLive[key] = now
+	}
+}
+
+// LastLiveReceipt returns when this process last received an accepted LIVE
+// bar frame for (symbol, timeframe), as a time.Time carrying the monotonic
+// clock reading (so time.Since on it ignores wall-clock steps). ok=false: no
+// live frame received since the process started (a historical seed alone
+// never counts — it is a replay, not evidence the feed is alive).
+func (c *BarCache) LastLiveReceipt(symbol, timeframe string) (time.Time, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	t, ok := c.lastLive[barKey(symbol, timeframe)]
+	return t, ok
 }
 
 // indexOfBarT returns the index of the bar stamped t, or -1. The ring is
@@ -511,6 +543,7 @@ func (c *BarCache) PurgeSymbol(symbol string) int {
 		s, _, ok := splitBarKey(k)
 		if ok && strings.EqualFold(s, symbol) {
 			delete(c.bars, k)
+			delete(c.lastLive, k)
 			removed++
 		}
 	}

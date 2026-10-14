@@ -287,6 +287,7 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 	// assembled — which makes engine.go's SnapshotMs comment true.
 	snapshotNow := time.Now()
 	ctx.SnapshotMs = snapshotNow.UnixMilli()
+	ctx.SnapshotAt = snapshotNow
 
 	// 1. Fetch market data using strategy config
 	if len(ctx.MarketDataMap) == 0 {
