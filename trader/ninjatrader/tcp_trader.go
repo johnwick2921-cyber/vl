@@ -2082,6 +2082,15 @@ func (t *TCPTrader) GetOpenOrders(symbol string) ([]types.OpenOrder, error) {
 // "Duplicate order dropped" never showed an armed refusal. B6: B3 fires at the
 // shared chokepoint (bound to an account, not a trader), so it tallies under
 // the process-wide "" trader bucket. A nil guard admits (done is a no-op).
+// AgeOrderGuardForTest ages the B3 dedupe / rate history by d (test seam: a
+// re-place minutes after the first send is not a B3 duplicate, and a fixture
+// must not need to sleep 55 s to say so).
+func (t *TCPTrader) AgeOrderGuardForTest(d time.Duration) {
+	if t != nil && t.guard != nil {
+		t.guard.ageForTest(d.Milliseconds())
+	}
+}
+
 func (t *TCPTrader) b3Reserve(key string) (done func(sent bool), reason string, ok bool) {
 	if t.guard == nil {
 		return func(bool) {}, "", true

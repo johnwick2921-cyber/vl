@@ -18,7 +18,9 @@ func TestListFilledSinceIsTraderScopedAndZoneSafe(t *testing.T) {
 	}
 	led := st.ArmedOrders()
 	mk := func(trader, scen, state string) int64 {
-		r := &ArmedOrderDB{TraderID: trader, PlanID: "p", Scenario: scen, Version: 1, State: "armed", Side: "long", EntryPx: 100, StopPx: 99, TargetPx: 102}
+		// The plan id carries the trader, as MakePlanIDForTrader does in
+		// production — a shared "p" made two traders one ledger slot.
+		r := &ArmedOrderDB{TraderID: trader, PlanID: "p-" + trader, Scenario: scen, Version: 1, State: "armed", Side: "long", EntryPx: 100, StopPx: 99, TargetPx: 102}
 		if err := led.UpsertArm(r); err != nil {
 			t.Fatal(err)
 		}

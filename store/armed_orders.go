@@ -387,6 +387,13 @@ func (s *ArmedOrderStore) Migrate() error {
 // row — source_ref, deadline, epoch and prices — with only an INFO.
 var ErrArmSourceMismatch = errors.New("armed_orders: the ledger row belongs to another opportunity")
 
+// ErrArmSlotSpent (CTO fold on PR #526, 2026-10-14): the (plan, scenario, leg)
+// slot already REACHED THE BROKER under this plan version and ended (filled,
+// stopped, cancelled — by the owner in NT8 or by the bot). The same version
+// never places it again; a NEW version re-arms, and a boot-swept row keeps the
+// 0B re-arm law. Typed so the authoring loop can say so once and count it.
+var ErrArmSlotSpent = errors.New("armed_orders: slot spent — this plan version already placed it at the broker")
+
 // UpsertArm writes/refreshes the arm row for (plan_id, scenario, leg_index).
 // Same key = same row (state reset to armed only when the spec CHANGED
 // materially — entry/stop/target diff >= 2 ticks — the caller decides and
@@ -482,17 +489,32 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 			return fmt.Errorf("armed_orders: refusing to rewrite %s/%s — a cancel is in flight for signal %q and is not yet confirmed by the broker's book; the slot is not free",
 				row.PlanID, row.Scenario, existing.SignalID)
 		}
-		// W3 D15 — RE-ARM PINNED. A market_in_zone row that REACHED THE BROKER
-		// (it carries a signal) is terminal for its plan version: filled,
-		// stopped, cancelled by the rest cap or withdrawn for maintenance, the
-		// same version never mints it again. Without this the mint below is the
-		// re-place loop (fill → stop-out → seq+1 → marketable limit → fill…),
-		// and the rest cap becomes a 30-minute re-placement timer. A NEW
-		// version re-arms (the mint runs); a boot-swept row keeps the 0B law.
+		// W3 D15 — RE-ARM PINNED (CTO fold + ruling on PR #526). A row that
+		// REACHED THE BROKER (it carries a signal) and ended under THIS plan
+		// version is SPENT — the same version never mints it again — when:
+		//   · it is market_in_zone: every ending (D15 exactly as before);
+		//   · any other non-mentor policy, unless the BOT requested the cancel:
+		//     a fill (filled / stopped / closed), a cancel with NO bot request
+		//     on record (the owner's manual cancel in NT8, a broker cancel,
+		//     "absent from a fresh NT8 order_snapshot"), or any other ending
+		//     (rejected …) is spent. Fail-closed: the bot re-arms within a
+		//     version only what it asked to cancel itself (cancel_requested_at_ms
+		//     > 0 — gate changed, a band, an install/maintenance withdraw, a
+		//     re-spec, EOD / no-plan), which is today's behaviour for those.
+		// Without the pin the mint below is the re-place loop (fill → stop-out →
+		// seq+1 → limit → fill…) and the owner's cancel never wins; it held for
+		// market_in_zone ONLY before (reproduced through the real arm pass).
+		// Exceptions kept: a NEW version re-arms (the mint runs); a boot-swept
+		// row keeps the 0B law. Mentor rows are governed by mentor mode, their
+		// own expiry and the evaluator (B3), never by a plan version.
+		botCancelled := IsCancelledArmState(existing.State) && existing.CancelRequestedAtMs > 0
 		if existing.State != StateArmed && strings.TrimSpace(existing.SignalID) != "" &&
-			existing.Policy == ArmPolicyMarketInZone && existing.Version == row.Version &&
-			!IsBootSweepReason(existing.StateReason) {
-			return nil
+			existing.Version == row.Version && !IsBootSweepReason(existing.StateReason) &&
+			strings.TrimSpace(existing.Origin) != ArmOriginMentor &&
+			(existing.Policy == ArmPolicyMarketInZone || !botCancelled) {
+			return fmt.Errorf("%w: row #%d (%s leg %d) %s (%s) signal %s under v%d",
+				ErrArmSlotSpent, existing.ID, row.Scenario, row.LegIndex+1, existing.State,
+				existing.StateReason, signalOrNone(existing.SignalID), existing.Version)
 		}
 		// A TERMINAL row that reached the broker keeps its record forever; the
 		// new authorization becomes the NEXT placement rather than erasing it.
@@ -966,6 +988,22 @@ var requestCancelBeforeWriteHook func(id int64)
 // Idempotent on the timestamp — a re-request bumps the attempt count and leaves
 // the original request time, so the age in the timeout WARN is the age of the
 // FIRST attempt, which is the number that matters.
+// StampCancelRequested records that THIS process asked the broker to cancel
+// the row's order (the FIRST request only), without changing its state. The
+// synchronous sweep (band / EOD flat / no-active-plan / dormant) sends the
+// cancel and drains NT8's report before any RequestCancel, so a promptly acked
+// bot cancel used to end "cancelled in NT8" with no request on record —
+// indistinguishable from the owner's manual cancel in NT8 (CTO ruling on PR
+// #526: only a bot-requested cancel may re-arm within a plan version).
+func (s *ArmedOrderStore) StampCancelRequested(id int64, nowMs int64) error {
+	if s == nil || s.db == nil || nowMs <= 0 {
+		return nil
+	}
+	return s.db.Model(&ArmedOrderDB{}).
+		Where("id = ? AND cancel_requested_at_ms = 0 AND "+NonTerminalArmStateSQL(), id).
+		Update("cancel_requested_at_ms", nowMs).Error
+}
+
 func (s *ArmedOrderStore) RequestCancel(id int64, reason string, nowMs int64) error {
 	if s == nil || s.db == nil {
 		return nil

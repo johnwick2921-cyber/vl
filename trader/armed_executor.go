@@ -582,7 +582,9 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 				if row.ID != 0 {
 					at.armLifecycleWrite("set_state(shadowed)", *row, ledger.SetState(row.ID, "shadowed", "condition_shadowed"))
 				}
-				if err := ledger.UpsertArm(row); err != nil {
+				if err := ledger.UpsertArm(row); err != nil && !errors.Is(err, store.ErrArmSlotSpent) {
+					// A spent slot (it reached the broker under this version)
+					// is not re-authored even as a shadow — not a write failure.
 					at.logWarnf("⚔️ shadowed arm write failed %s %s leg %d: %v", plan.Session, sc.ID, li+1, err)
 				}
 			}
@@ -1011,6 +1013,9 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 			if row.ID == 0 {
 				if err := ledger.UpsertArm(row); err != nil {
 					if at.armSourceRefused(plan, sc, li, err, scope, admitted) {
+						continue
+					}
+					if at.armSlotSpentRefused(plan, sc, li, err, scope, admitted) {
 						continue
 					}
 					at.logWarnf("⚔️ arm write failed %s %s leg %d: %v", plan.Session, sc.ID, li+1, err)
@@ -2475,6 +2480,37 @@ func (at *AutoTrader) armSourceRefused(plan *kernel.ActivePlan, sc kernel.PlanSc
 	return true
 }
 
+// armSlotSpentRefused handles store.ErrArmSlotSpent from the authoring write
+// (CTO fold on PR #526): the slot already reached the broker under THIS plan
+// version and ended, so the same version does not place it again — the owner's
+// manual cancel in NT8 sticks, and a stopped trade is not re-placed at the
+// same level. Said ONCE per (plan, version, scenario, leg), counted as gate
+// block "arm_slot_spent" and as an arm refusal of the session. A NEW plan
+// version re-arms.
+func (at *AutoTrader) armSlotSpentRefused(plan *kernel.ActivePlan, sc kernel.PlanScenario, li int, err error, scope *armedPassScope, admitted armAdmission) bool {
+	if !errors.Is(err, store.ErrArmSlotSpent) {
+		return false
+	}
+	const class = "arm_slot_spent"
+	if admitted != nil {
+		admitted.retract(plan.PlanID, sc.ID, li)
+	}
+	scope.note(sc.ID, "refused: "+class+": "+err.Error())
+	key := plan.PlanID + ":" + strconv.Itoa(plan.Version) + ":" + sc.ID + ":leg" + strconv.Itoa(li+1) + ":spent"
+	if armRefusalChanged(&at.armRefusalLast, key, class) {
+		telemetry.IncGateBlock(at.id, class)
+		shown := ""
+		if at.store != nil {
+			if n, cerr := store.IncArmRefusal(at.store, at.id, kernel.PlanTradeDateFor(plan), plan.Session, class); cerr == nil {
+				shown = fmt.Sprintf(" · %s this session: %d", class, n)
+			}
+		}
+		at.logWarnf("⏹ re-arm REFUSED %s %s leg %d: slot spent — %v; the same plan version never re-places it (a NEW plan version re-arms)%s",
+			plan.Session, sc.ID, li+1, err, shown)
+	}
+	return true
+}
+
 func armRefusalChanged(last *map[string]string, key, verdict string) bool {
 	if *last == nil {
 		*last = map[string]string{}
@@ -3325,6 +3361,12 @@ func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Dura
 			unacked++
 			continue
 		}
+		// CTO ruling on PR #526: the request is on record BEFORE the send. A
+		// promptly acked cancel is settled by NT8's report ("cancelled in NT8")
+		// inside the drain below, before any RequestCancel — without this stamp
+		// the bot's own band / EOD cancel read exactly like the owner's manual
+		// cancel, and the same-version re-arm rule could not tell them apart.
+		at.armLifecycleWrite("stamp_cancel_requested", r, ledger.StampCancelRequested(r.ID, p.nowMs()))
 		acked := false
 		offDrain := false // settled by NT8's report the ordered worker applied — READ, not drained
 		for attempt := 1; attempt <= 2 && !acked; attempt++ {
