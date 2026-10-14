@@ -64,9 +64,10 @@ export const routines: GuideSection = {
           title: 'Bot is trading wrong — the 60-second response',
           steps: [
             '1. ⏸ Pause (until session end).',
-            '2. 🛑 Emergency Flat → Confirm if positions are open.',
-            '3. Screenshot the card + the chat + the gate panel.',
-            '4. Diagnose with the refusal decoder (Section 6) before touching knobs.',
+            "2. 🛑 Emergency Flat → Confirm, on EACH trader that is trading wrong — it acts on the trader on screen only. On that trader's account NT8 closes the MNQ position AND cancels every working MNQ order, resting entries included (even when flat).",
+            "3. Check NT8's Orders and Positions tabs: the OTHER trader's account keeps its own position and orders — flatten that trader too if they must go.",
+            '4. Screenshot the card + the chat + the gate panel.',
+            '5. Diagnose with the refusal decoder (Section 6) before touching knobs.',
           ],
         },
         {
