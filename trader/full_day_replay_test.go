@@ -57,7 +57,7 @@ import (
 // Two tests:
 //
 //	TestFullDayReplayFidelity (default run, ~5 s) — seeds at the LIVE seed
-//	instant (00:59:15 CT 10-13) and must author the SAME 11 ISB LONG arms the
+//	instant (00:59:15 CT 10-13) and must author the SAME ISB LONG arms the
 //	live bot authored 03:28–04:33 CT (armed_orders 329…340, the other trader's
 //	335/341 excluded): minute, side, entry and stop.
 //
@@ -145,10 +145,33 @@ var fdrR22Arms = []fdrLiveArm{
 	{0, "02:09", "r22: live refused isb_target_below_floor on a broken pivot low", "short", 30641.0, 30651.0, 0}, // regular ISB — no wire shift (#516 × #517 integration)
 }
 
-// fdrExpectedArms is the live set plus the deliberate r22 divergences, in
-// bar-close order.
+// fdrR23Dropped — live rows the release #23 build does NOT author, on purpose
+// (MENTOR-SEED-STATE N7: the old-extreme pick tests EVERY pivot of the 12 h /
+// 24 h lookback for unbroken, then takes the nearest — the live bot capped the
+// pivots to the newest 3 per side first). At 03:30–03:42 CT 10-13 the nearest
+// UNBROKEN old high is the 5m pivot 30769.50 (closed 10-12 20:15; first broken
+// ~03:44), which the cap hid behind 3 broken newer highs, so live targeted
+// 30905.50. With the old high 3.25–8.75 pts above these ISB longs' entries the
+// kernel refuses them: isb_target_below_floor at 03:30/03:33/03:38, room at
+// 03:41 (probed on the 10-13 session fixture). Independent oracle:
+// ~/deck-fix-1005/rel22/fixwave/mentor-seed-state/py/oldext.py — "uncapped
+// [30688.0, 30769.5] capped3 [30688.0, 30905.5]" at every one of those bars.
+var fdrR23Dropped = map[int64]string{
+	330: "N7: nearest unbroken old high 30769.50 is 3.25 pts above — isb_target_below_floor",
+	331: "N7: nearest unbroken old high 30769.50 is 7.50 pts above — isb_target_below_floor",
+	332: "N7: nearest unbroken old high 30769.50 is 4.75 pts above — isb_target_below_floor",
+	333: "N7: nearest unbroken old high 30769.50 is 8.75 pts above — room",
+}
+
+// fdrExpectedArms is the live set plus the deliberate r22 divergences, minus
+// the deliberate r23 drops, in bar-close order.
 func fdrExpectedArms() []fdrLiveArm {
-	out := append(append([]fdrLiveArm{}, fdrR22Arms...), fdrLiveArms...)
+	out := append([]fdrLiveArm{}, fdrR22Arms...)
+	for _, a := range fdrLiveArms {
+		if _, dropped := fdrR23Dropped[a.id]; !dropped {
+			out = append(out, a)
+		}
+	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].barCT < out[j].barCT })
 	return out
 }
@@ -1033,7 +1056,7 @@ func TestFullDayReplayFidelity(t *testing.T) {
 		t.Logf("  %-5s live %-50s | harness %s", mark, lv, hv)
 	}
 	if mismatch != 0 {
-		t.Fatalf("FIDELITY: %d of %d rows differ from the live 11 + %d r22 arms (see the table)", mismatch, n, len(fdrR22Arms))
+		t.Fatalf("FIDELITY: %d of %d rows differ from the live 11 + %d r22 arms − %d r23 drops (see the table)", mismatch, n, len(fdrR22Arms), len(fdrR23Dropped))
 	}
 }
 
