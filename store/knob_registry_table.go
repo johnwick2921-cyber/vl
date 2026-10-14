@@ -160,6 +160,7 @@ var knobRegistry = map[string]KnobEntry{
 	"primary_timeframe":                     {Path: "primary_timeframe", Status: KnobLive, Consumers: []string{"kernel/engine_analysis.go:763"}, Note: ""},
 	"prompt_variant":                        {Path: "prompt_variant", Status: KnobLive, Consumers: []string{"trader/auto_trader_loop.go:546"}, Note: ""},
 	"proximity_filter_atr":                  {Path: "proximity_filter_atr", Status: KnobLive, Consumers: []string{"kernel/engine_analysis.go:375"}, Note: ""},
+	"confluence_band_pts":                   {Path: "confluence_band_pts", Status: KnobLive, Consumers: []string{"trader/auto_trader_planconfig.go:confluenceBandPts", "kernel/levels_score.go:scoreLevelsPool"}, Note: "FIX-LEVEL-GRADE 2026-10-14: confluence cluster half-width in points; ≤0 → 0.10×dATR (byte-identical default)."},
 	"publish_config":                        {Path: "publish_config", Status: KnobLive, Consumers: []string{"api/strategy.go:42"}, Note: ""},
 	"quant_data":                            {Path: "quant_data", Status: KnobLive, Consumers: []string{"kernel/engine.go:858"}, Note: ""},
 	"realign_cap":                           {Path: "realign_cap", Status: KnobFolded, Consumers: []string{"trader/auto_trader_planconfig.go:RealignCap → store.DayPlanConfig.RealignCapResolved", "api/handler_plan.go realign endpoint"}, Note: "W-KNOB-PRUNE 2026-09-18: folded into the re-plan section — constant 5 unless stored (the owner stores 10, honoured + logged). Control removed."},

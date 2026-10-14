@@ -29,7 +29,13 @@ func BuildKeyLevelsBlock(traderID string, bars []market.Kline, reg SessionRegist
 // planner table (one-sided tables and sub-min rows reached the executor before
 // this).
 func BuildKeyLevelsBlockOpts(traderID string, bars []market.Kline, reg SessionRegistry, symbol string, maxLevels int, now time.Time, proximityK float64, seat1HZone bool, minGrade string, extraLevels ...DetectedLevel) string {
-	scored, price, _ := AssembleScoredLevelsMinGrade(traderID, bars, reg, symbol, maxLevels, nil, HTFScoreMultiplier, now, proximityK, minGrade, extraLevels...)
+	return BuildKeyLevelsBlockOptsBand(traderID, bars, reg, symbol, maxLevels, now, proximityK, seat1HZone, minGrade, 0, extraLevels...)
+}
+
+// BuildKeyLevelsBlockOptsBand is BuildKeyLevelsBlockOpts with an explicit
+// confluence band (points); ≤0 → the default 0.10 × dATR.
+func BuildKeyLevelsBlockOptsBand(traderID string, bars []market.Kline, reg SessionRegistry, symbol string, maxLevels int, now time.Time, proximityK float64, seat1HZone bool, minGrade string, confBandPts float64, extraLevels ...DetectedLevel) string {
+	scored, price, _ := AssembleScoredLevelsMinGradeBand(traderID, bars, reg, symbol, maxLevels, nil, HTFScoreMultiplier, now, proximityK, minGrade, confBandPts, extraLevels...)
 	if price <= 0 {
 		return ""
 	}
@@ -98,6 +104,12 @@ func mapProjectionsFor(scored []ScoredLevel, bars []market.Kline, symbol string,
 // generator and the scorer — H1/H2: the config must govern which levels are
 // generated AND which are seated, not just the activation-window paths.
 func AssembleScoredLevels(traderID string, bars []market.Kline, reg SessionRegistry, symbol string, maxLevels int, now time.Time, proximityK float64, extraLevels ...DetectedLevel) (scored []ScoredLevel, price, dATR float64) {
+	return AssembleScoredLevelsBand(traderID, bars, reg, symbol, maxLevels, now, proximityK, 0, extraLevels...)
+}
+
+// AssembleScoredLevelsBand is AssembleScoredLevels with an explicit confluence
+// band (points); ≤0 → the default 0.10 × dATR.
+func AssembleScoredLevelsBand(traderID string, bars []market.Kline, reg SessionRegistry, symbol string, maxLevels int, now time.Time, proximityK float64, confBandPts float64, extraLevels ...DetectedLevel) (scored []ScoredLevel, price, dATR float64) {
 	cb := closedBars(bars, now)
 	if len(cb) == 0 {
 		return nil, 0, 0
@@ -142,7 +154,7 @@ func AssembleScoredLevels(traderID string, bars []market.Kline, reg SessionRegis
 	// W11b — persisted level-state (freshness A→B→C, consumed) now surfaces: the
 	// trader installs LevelStateProvider over store.LevelStateStore. Nil provider →
 	// all-fresh (byte-identical to the pre-W11b output the goldens capture).
-	scored = ScoreLevels(all, price, dATR, levelFreshnessFn(traderID, symbol, now), maxLevels, proximityK)
+	scored = ScoreLevelsBand(all, price, dATR, levelFreshnessFn(traderID, symbol, now), maxLevels, proximityK, confBandPts)
 	return scored, price, dATR
 }
 
@@ -153,6 +165,12 @@ func AssembleScoredLevels(traderID string, bars []market.Kline, reg SessionRegis
 // can never leave the executor/planner table one-sided when candidates exist.
 // Empty minGrade → byte-identical to AssembleScoredLevels.
 func AssembleScoredLevelsMinGrade(traderID string, bars []market.Kline, reg SessionRegistry, symbol string, maxLevels int, htfSeats *int, htfMult float64, now time.Time, proximityK float64, minGrade string, extraLevels ...DetectedLevel) (scored []ScoredLevel, price, dATR float64) {
+	return AssembleScoredLevelsMinGradeBand(traderID, bars, reg, symbol, maxLevels, htfSeats, htfMult, now, proximityK, minGrade, 0, extraLevels...)
+}
+
+// AssembleScoredLevelsMinGradeBand is AssembleScoredLevelsMinGrade with an
+// explicit confluence band (points); ≤0 → the default 0.10 × dATR.
+func AssembleScoredLevelsMinGradeBand(traderID string, bars []market.Kline, reg SessionRegistry, symbol string, maxLevels int, htfSeats *int, htfMult float64, now time.Time, proximityK float64, minGrade string, confBandPts float64, extraLevels ...DetectedLevel) (scored []ScoredLevel, price, dATR float64) {
 	cb := closedBars(bars, now)
 	if len(cb) == 0 {
 		return nil, 0, 0
@@ -192,7 +210,7 @@ func AssembleScoredLevelsMinGrade(traderID string, bars []market.Kline, reg Sess
 	CaptureIdentityContext(all, symbol, AISVPBarInterval)
 	all = dedupeSameKind(all)
 
-	scored, _ = ScoreLevelsMinGradeFullSeats(all, price, dATR, levelFreshnessFn(traderID, symbol, now), maxLevels, proximityK, minGrade, htfSeats, htfMult)
+	scored, _ = ScoreLevelsMinGradeFullSeats(all, price, dATR, levelFreshnessFn(traderID, symbol, now), maxLevels, proximityK, minGrade, htfSeats, htfMult, confBandPts)
 	return scored, price, dATR
 }
 
@@ -203,13 +221,25 @@ func AssembleScoredLevelsMinGrade(traderID string, bars []market.Kline, reg Sess
 // LOST the seat race (a far nPOC, a carried swing) still gets stamped — the
 // stamp-gap regression fix (256/795 rows unstamped).
 func AssembleScoredLevelsFullMinGrade(traderID string, bars []market.Kline, reg SessionRegistry, symbol string, maxLevels int, htfSeats *int, htfMult float64, now time.Time, proximityK float64, minGrade string, extraLevels ...DetectedLevel) (seated, pool []ScoredLevel, price, dATR float64) {
-	seated, pool, price, dATR, _ = AssembleResearchLevels(traderID, bars, reg, symbol, maxLevels, htfSeats, htfMult, now, proximityK, minGrade, extraLevels...)
+	return AssembleScoredLevelsFullMinGradeBand(traderID, bars, reg, symbol, maxLevels, htfSeats, htfMult, now, proximityK, minGrade, 0, extraLevels...)
+}
+
+// AssembleScoredLevelsFullMinGradeBand is AssembleScoredLevelsFullMinGrade with
+// an explicit confluence band (points); ≤0 → the default 0.10 × dATR.
+func AssembleScoredLevelsFullMinGradeBand(traderID string, bars []market.Kline, reg SessionRegistry, symbol string, maxLevels int, htfSeats *int, htfMult float64, now time.Time, proximityK float64, minGrade string, confBandPts float64, extraLevels ...DetectedLevel) (seated, pool []ScoredLevel, price, dATR float64) {
+	seated, pool, price, dATR, _ = AssembleResearchLevelsBand(traderID, bars, reg, symbol, maxLevels, htfSeats, htfMult, now, proximityK, minGrade, confBandPts, extraLevels...)
 	return
 }
 
 // AssembleResearchLevels returns the pre-deduplication universe as evidence;
 // the trading outputs use the same detection, scoring and seating path.
 func AssembleResearchLevels(traderID string, bars []market.Kline, reg SessionRegistry, symbol string, maxLevels int, htfSeats *int, htfMult float64, now time.Time, proximityK float64, minGrade string, extraLevels ...DetectedLevel) (seated, pool []ScoredLevel, price, dATR float64, raw []DetectedLevel) {
+	return AssembleResearchLevelsBand(traderID, bars, reg, symbol, maxLevels, htfSeats, htfMult, now, proximityK, minGrade, 0, extraLevels...)
+}
+
+// AssembleResearchLevelsBand is AssembleResearchLevels with an explicit
+// confluence band (points); ≤0 → the default 0.10 × dATR.
+func AssembleResearchLevelsBand(traderID string, bars []market.Kline, reg SessionRegistry, symbol string, maxLevels int, htfSeats *int, htfMult float64, now time.Time, proximityK float64, minGrade string, confBandPts float64, extraLevels ...DetectedLevel) (seated, pool []ScoredLevel, price, dATR float64, raw []DetectedLevel) {
 	cb := closedBars(bars, now)
 	if len(cb) == 0 {
 		return nil, nil, 0, 0, nil
@@ -249,7 +279,7 @@ func AssembleResearchLevels(traderID string, bars []market.Kline, reg SessionReg
 	raw = researchLevels(all)
 	all = dedupeSameKind(raw)
 
-	seated, pool = ScoreLevelsMinGradeFullSeats(all, price, dATR, levelFreshnessFn(traderID, symbol, now), maxLevels, proximityK, minGrade, htfSeats, htfMult)
+	seated, pool = ScoreLevelsMinGradeFullSeats(all, price, dATR, levelFreshnessFn(traderID, symbol, now), maxLevels, proximityK, minGrade, htfSeats, htfMult, confBandPts)
 	return seated, pool, price, dATR, raw
 }
 

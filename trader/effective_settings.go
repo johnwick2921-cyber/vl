@@ -820,6 +820,10 @@ func buildEffectiveResolvers() map[string]effResolver {
 		v := x.at.proximityFilterATR()
 		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault)}
 	})
+	add(dpPath+"confluence_band_pts", "trader.(*AutoTrader).confluenceBandPts (≤0 → 0.10×dATR)", func(x *effCtx) effResult {
+		v := x.at.confluenceBandPts()
+		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault)}
+	})
 	add(dpPath+"max_levels", "trader.resolveSessionPlanCfg", func(x *effCtx) effResult {
 		v, _, _, _, _ := resolveSessionPlanCfg(x.dp(), x.session)
 		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault)}

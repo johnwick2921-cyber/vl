@@ -954,6 +954,12 @@ type DayPlanConfig struct {
 	StructureMap *bool `json:"structure_map,omitempty"`
 	// ProximityFilterATR: day-trade lock, 0.5–3.0 (default 1.5).
 	ProximityFilterATR float64 `json:"proximity_filter_atr,omitempty"`
+	// ConfluenceBandPts (FIX-LEVEL-GRADE, 2026-10-14): the confluence cluster
+	// half-width in POINTS. ≤0 (unset) → the default 0.10 × daily-range proxy
+	// (today's behaviour, byte-identical). A positive value replaces the ATR
+	// band with a fixed point width (e.g. 3 = only levels within ±3 pts count
+	// as confluence).
+	ConfluenceBandPts float64 `json:"confluence_band_pts,omitempty"`
 	// MaxLevels: level table cap, 3–12 (default 8).
 	MaxLevels int `json:"max_levels,omitempty"`
 	// ScenarioCap: scenarios cap, 1–5. W-KNOB-PRUNE (2026-09-18): FOLDED —

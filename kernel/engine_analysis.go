@@ -359,6 +359,7 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 	maxLevels := DefaultMaxLevels
 	proximityK := ActivationWindowK
 	htfMult := HTFScoreMultiplier
+	confBand := 0.0 // FIX-LEVEL-GRADE: ≤0 → scorer default 0.10 × dATR
 	if cfg := engine.GetConfig(); cfg != nil && cfg.DayPlan != nil {
 		planOn = cfg.DayPlan.PlanEnabled
 		if cfg.DayPlan.MaxLevels > 0 {
@@ -371,6 +372,7 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 		// 0.3 retune on THIS path while the bot gate honored it — both sides
 		// now resolve through the one ResolveProximityK clamp (0.1–3.0).
 		proximityK = ResolveProximityK(cfg.DayPlan.ProximityFilterATR)
+		confBand = cfg.DayPlan.ConfluenceBandPts
 	}
 	if isFut, _ := futuresVariantMode(variant); isFut && planOn {
 		klBlock := ""
@@ -410,11 +412,11 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 					minGrade = cfg.DayPlan.MinGradeFor(p.Session)
 				}
 			}
-			klBlock = BuildKeyLevelsBlockOpts(ctx.TraderID, snapshotBars, ResolvedSessionRegistryFor(ctx.TraderID), activeSymbol, maxLevels, snapshotNow, proximityK, seat1h, minGrade, extra...)
+			klBlock = BuildKeyLevelsBlockOptsBand(ctx.TraderID, snapshotBars, ResolvedSessionRegistryFor(ctx.TraderID), activeSymbol, maxLevels, snapshotNow, proximityK, seat1h, minGrade, confBand, extra...)
 			// ADDENDUM (2) — bias-context facts line, computed from the same
 			// scored pool + bars (never a second data source).
 			if klBlock != "" {
-				if sc, _, _ := AssembleScoredLevelsMinGrade(ctx.TraderID, snapshotBars, ResolvedSessionRegistryFor(ctx.TraderID), activeSymbol, maxLevels, nil, htfMult, snapshotNow, proximityK, minGrade, extra...); len(sc) > 0 {
+				if sc, _, _ := AssembleScoredLevelsMinGradeBand(ctx.TraderID, snapshotBars, ResolvedSessionRegistryFor(ctx.TraderID), activeSymbol, maxLevels, nil, htfMult, snapshotNow, proximityK, minGrade, confBand, extra...); len(sc) > 0 {
 					bc := ComputeBiasContext(snapshotBars, sc, snapshotNow)
 					// FIX 8 (F6, 2026-08-27) — the executor's bias_ctx PDC read
 					// "n/a" post-roll because the day anchors sat outside the
@@ -471,7 +473,7 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 			}
 			status := ""
 			if len(snapshotBars) > 0 {
-				_, price, dATR := AssembleScoredLevels(ctx.TraderID, snapshotBars, ResolvedSessionRegistryFor(ctx.TraderID), activeSymbol, maxLevels, snapshotNow, proximityK)
+				_, price, dATR := AssembleScoredLevelsBand(ctx.TraderID, snapshotBars, ResolvedSessionRegistryFor(ctx.TraderID), activeSymbol, maxLevels, snapshotNow, proximityK, confBand)
 				SetPlanDATR(ctx.TraderID, dATR) // B3: the citation band check reads this
 				// R2 4.7 (2026-08-25) — PLAN STATUS obeys the per-session
 				// min_grade floor so the executor tail and the table agree.

@@ -139,7 +139,7 @@ func (at *AutoTrader) oneSetupVerdictsAt(plan *kernel.ActivePlan, doc *kernel.Pl
 		cands, price, band, testPerm = f.Candidates, f.Price, f.BandPts, f.Permission
 	} else {
 		if len(bars) > 0 {
-			scored, price, dATR = kernel.AssembleScoredLevels(at.id, bars, at.sessionRegistry(now), symbol, kernel.PlanHardMaxLevels, now, at.proximityFilterATR())
+			scored, price, dATR = kernel.AssembleScoredLevelsBand(at.id, bars, at.sessionRegistry(now), symbol, kernel.PlanHardMaxLevels, now, at.proximityFilterATR(), at.confluenceBandPts())
 		}
 		if price > 0 && len(scored) > 0 {
 			cands = kernel.BuildMapCandidates(scored, price, atr5m, kernel.MapCandidateOpts{})

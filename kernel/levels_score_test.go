@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -207,5 +208,71 @@ func TestZoneTierForUnknownFallsBackTo1m(t *testing.T) {
 func TestGradeRank(t *testing.T) {
 	if GradeRank("A") <= GradeRank("B") || GradeRank("B") <= GradeRank("C") || GradeRank("C") <= GradeRank("") {
 		t.Fatal("GradeRank ordering wrong: want A > B > C > unknown")
+	}
+}
+
+// FIX-LEVEL-GRADE (2026-10-14) — the confluence band knob must be byte-identical
+// when unset (confBandPts ≤ 0 → 0.10×dATR), and a fixed point width must spread
+// the grades (tighter → fewer A).
+type scoredProj struct {
+	kind  LevelKind
+	price float64
+	score float64
+	conf  int
+	grade string
+}
+
+func projectScored(s []ScoredLevel) []scoredProj {
+	out := make([]scoredProj, 0, len(s))
+	for _, l := range s {
+		out = append(out, scoredProj{l.Kind, l.Price, l.Score, l.Confluence, l.Grade})
+	}
+	return out
+}
+
+func TestConfluenceBandDefaultByteIdentical(t *testing.T) {
+	levels := []DetectedLevel{
+		lineLevel(KindPDH, 30000, "PDH", "d", true),
+		lineLevel(KindPDL, 29850, "PDL", "d", true),
+		lineLevel(KindONH, 29950, "ONH", "d", false),
+		lineLevel(KindRound, 29990, "RN", "", false),
+		{Kind: KindVWAP, Price: 29940, Lo: 29930, Hi: 29950, Label: "VWAP", OriginDate: "d"},
+	}
+	freshness := func(l DetectedLevel) string { return "" }
+	def := ScoreLevels(levels, 29970, 200, freshness, 8, 1.5)
+	band := ScoreLevelsBand(levels, 29970, 200, freshness, 8, 1.5, 0)
+	neg := ScoreLevelsBand(levels, 29970, 200, freshness, 8, 1.5, -3) // ≤0 → default
+	if !reflect.DeepEqual(projectScored(def), projectScored(band)) {
+		t.Fatalf("ScoreLevelsBand(…, 0) must be byte-identical to ScoreLevels:\ndef=%+v\nband=%+v", projectScored(def), projectScored(band))
+	}
+	if !reflect.DeepEqual(projectScored(def), projectScored(neg)) {
+		t.Fatalf("ScoreLevelsBand(…, ≤0) must be byte-identical to ScoreLevels:\ndef=%+v\nneg=%+v", projectScored(def), projectScored(neg))
+	}
+}
+
+func TestConfluenceBandKnobSpreadsGrades(t *testing.T) {
+	// dATR=350 → default band ±35pt. ONH at 29990 and VWAP at 30010 are 20pt
+	// apart, so the default band counts them as one confluence family (ONH → A),
+	// while a ±3pt band sees no confluence (ONH → B, evidence 0.85).
+	levels := []DetectedLevel{
+		lineLevel(KindONH, 29990, "ONH", "d", false),
+		{Kind: KindVWAP, Price: 30010, Lo: 30005, Hi: 30015, Label: "VWAP", OriginDate: "d"},
+	}
+	freshness := func(l DetectedLevel) string { return "" }
+	gradeFor := func(s []ScoredLevel, k LevelKind) string {
+		for _, l := range s {
+			if l.Kind == k {
+				return l.Grade
+			}
+		}
+		return ""
+	}
+	def := ScoreLevels(levels, 30000, 350, freshness, 8, 1.5)
+	if got := gradeFor(def, KindONH); got != "A" {
+		t.Fatalf("default band (±35pt): ONH with one confluence family should grade A, got %q (scores %+v)", got, projectScored(def))
+	}
+	tight := ScoreLevelsBand(levels, 30000, 350, freshness, 8, 1.5, 3)
+	if got := gradeFor(tight, KindONH); got != "B" {
+		t.Fatalf("±3pt band: ONH with no in-band family should grade B, got %q (scores %+v)", got, projectScored(tight))
 	}
 }

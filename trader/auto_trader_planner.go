@@ -1165,7 +1165,7 @@ func (at *AutoTrader) noTradeLevelMap(now time.Time, session string) []kernel.Pl
 	maxLevels, htfSeats, htfMult, minGrade, _ := resolveSessionPlanCfg(at.dayPlanCfg(), session)
 	// R2 4.7 (2026-08-25) — fail-closed maps obey min_grade: a NO-TRADE doc's
 	// level map must match what an active plan would have carried.
-	scored, _, _ := kernel.AssembleScoredLevelsMinGrade(at.id, bars, at.sessionRegistry(now), symbol, maxLevels, htfSeats, htfMult, now, at.proximityFilterATR(), minGrade)
+	scored, _, _ := kernel.AssembleScoredLevelsMinGradeBand(at.id, bars, at.sessionRegistry(now), symbol, maxLevels, htfSeats, htfMult, now, at.proximityFilterATR(), minGrade, at.confluenceBandPts())
 
 	out := make([]kernel.PlanLevel, 0, len(scored)+4)
 	if owned, err := at.store.OwnerLevel().ListActiveForUser(at.ownerUserID(), symbol); err == nil {
@@ -3002,7 +3002,7 @@ func (at *AutoTrader) assemblePlannerInputWithCtx(now time.Time, session, tradeD
 		}
 		extra = append(extra, htfLevels...)
 	}
-	scored, pool, price, dATR, researchRaw := kernel.AssembleResearchLevels(at.id, bars, reg, symbol, maxLevels, htfSeats, htfMult, now, at.proximityFilterATR(), minGrade, extra...)
+	scored, pool, price, dATR, researchRaw := kernel.AssembleResearchLevelsBand(at.id, bars, reg, symbol, maxLevels, htfSeats, htfMult, now, at.proximityFilterATR(), minGrade, at.confluenceBandPts(), extra...)
 	// 1h wave (2026-08-25) — the ranked table's HTF seats guarantee an in-band
 	// 1h S/D zone when one exists. W-KNOB-PRUNE (2026-09-18): unconditional —
 	// the seat_1h_zone switch (default ON, never stored) is gone.
@@ -3023,7 +3023,7 @@ func (at *AutoTrader) assemblePlannerInputWithCtx(now time.Time, session, tradeD
 		}
 		if len(zones) > 0 {
 			// ScoreLevels filters to the ±proximity band and returns nearest-first.
-			zs := kernel.ScoreLevels(zones, price, dATR, nil, 4, at.proximityFilterATR())
+			zs := kernel.ScoreLevelsBand(zones, price, dATR, nil, 4, at.proximityFilterATR(), at.confluenceBandPts())
 			// 1h wave (2026-08-25) — the cap-4 MUST keep a 1h S/D zone when one
 			// is in band, so the prompt's conditional 1h mandate has data to
 			// point at. Unconditional since W-KNOB-PRUNE (switch removed).
@@ -3034,7 +3034,7 @@ func (at *AutoTrader) assemblePlannerInputWithCtx(now time.Time, session, tradeD
 			// model reads the whole key-levels block and may write zones the
 			// cap-4 section hid (the 13 Demand·1h escapes). Prompt rendering
 			// still uses the cap-4 HTFZones.
-			htfZonesFull = kernel.ScoreLevels(zones, price, dATR, nil, len(zones), at.proximityFilterATR())
+			htfZonesFull = kernel.ScoreLevelsBand(zones, price, dATR, nil, len(zones), at.proximityFilterATR(), at.confluenceBandPts())
 		}
 	}
 

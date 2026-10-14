@@ -13,7 +13,7 @@ func TestTier1VolumeAnchorPatternGate(t *testing.T) {
 		{Kind: KindFVG, Price: 100.8, Lo: 100.7, Hi: 100.9, Label: "FVG", TF: "15m"},
 		{Kind: KindRound, Price: 100.6, Lo: 100.6, Hi: 100.6, Label: "RN100", TF: "1m"}, // confluence, NOT Tier-1
 	}
-	scored := scoreLevelsPool(levels, 100.0, 1000.0, nil, 8, 1.5, nil, HTFScoreMultiplier)
+	scored := scoreLevelsPool(levels, 100.0, 1000.0, nil, 8, 1.5, nil, HTFScoreMultiplier, 0)
 	var fvg *ScoredLevel
 	for i := range scored {
 		if scored[i].Kind == KindFVG {

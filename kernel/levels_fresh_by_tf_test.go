@@ -108,8 +108,8 @@ func TestScoreLevels_ByTFVocabScoresLikeCanonical(t *testing.T) {
 	}
 	price, dATR := 101.0, 10.0
 	for _, p := range pairs {
-		withVocab := scoreLevelsPool(levels, price, dATR, func(DetectedLevel) string { return p.vocab }, 8, 0, nil, HTFScoreMultiplier)
-		withCanon := scoreLevelsPool(levels, price, dATR, func(DetectedLevel) string { return p.canon }, 8, 0, nil, HTFScoreMultiplier)
+		withVocab := scoreLevelsPool(levels, price, dATR, func(DetectedLevel) string { return p.vocab }, 8, 0, nil, HTFScoreMultiplier, 0)
+		withCanon := scoreLevelsPool(levels, price, dATR, func(DetectedLevel) string { return p.canon }, 8, 0, nil, HTFScoreMultiplier, 0)
 		if len(withVocab) != len(withCanon) {
 			t.Fatalf("%s vs %s: different seat counts", p.vocab, p.canon)
 		}

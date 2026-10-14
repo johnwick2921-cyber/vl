@@ -78,6 +78,9 @@ export const levels: GuideSection = {
         '',
         'freshness ladder (zones): 1.0 / 0.6 / 0.3 / 0.15',
         'confluence: distinct families only, cap 3 → ×1.6 max',
+        'confluence band: ±0.10×dATR (~±35pt at dATR 350) by default;',
+        '  day_plan.confluence_band_pts (e.g. 3) replaces it with a fixed',
+        '  ±3pt window — a tighter band spreads the grades (fewer A)',
         '',
         'floors/caps: 1m zones forced C · 15m forced B (both ways) ·',
         '  1h/4h floor B (may reach A) · above-C only within 12 ticks',
@@ -85,6 +88,10 @@ export const levels: GuideSection = {
         '',
         '3 FVGs of the same family = 1 family entry (one seat, not three)',
       ],
+    },
+    {
+      kind: 'p',
+      text: 'confluence_band_pts (2026-10-14): how close another family has to sit before it counts as "confluence". The default ±0.10×dATR is ~±35pt on a 350pt tape — wide enough that most levels pick up 1–3 confirming families and grade A (≈80% of seated levels), so the A/B/C grade stops separating levels that hold from levels that break (A broke clean 41% vs C 34% on 2026-08-24..10-12 — inverted). Re-scoring the same 880 levels with fixed bands shows ±3pt is the only window whose A grade keeps a stable edge on held-out days (A breaks clean less than C on both fit and hold-out). It defaults to 0 = today\'s behaviour; set it in Studio to a fixed point width to actually spread the grades.',
     },
     { kind: 'h', text: 'Which timeframes the detectors run on' },
     {

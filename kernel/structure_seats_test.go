@@ -97,7 +97,7 @@ func TestSeatHTFZeroSeatsNoOp(t *testing.T) {
 func TestS3HtfSeatsParityWithLegacy(t *testing.T) {
 	levels, price, dATR := htfsParityLevels()
 	viaWrapper, _ := ScoreLevelsMinGradeFull(levels, price, dATR, nil, 8, 1.5, "")
-	viaSeats, _ := ScoreLevelsMinGradeFullSeats(levels, price, dATR, nil, 8, 1.5, "", nil, HTFScoreMultiplier)
+	viaSeats, _ := ScoreLevelsMinGradeFullSeats(levels, price, dATR, nil, 8, 1.5, "", nil, HTFScoreMultiplier, 0)
 	if !reflect.DeepEqual(viaWrapper, viaSeats) {
 		t.Fatalf("ScoreLevelsMinGradeFull and …FullSeats(nil) must be byte-identical — wrapper=%d rows, seats=%d rows", len(viaWrapper), len(viaSeats))
 	}

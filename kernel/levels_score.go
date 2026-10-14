@@ -430,7 +430,13 @@ func zoneFreshMult(f string) float64 {
 // OUTSIDE which no level is generated or seated. The freshness callback is
 // built by levelFreshnessFn WITH the read's now already captured (class 60).
 func ScoreLevels(levels []DetectedLevel, price, dATR float64, freshness func(DetectedLevel) string, maxLevels int, proximityK float64) []ScoredLevel {
-	return scoreLevelsPool(levels, price, dATR, freshness, maxLevels, proximityK, nil, HTFScoreMultiplier)
+	return scoreLevelsPool(levels, price, dATR, freshness, maxLevels, proximityK, nil, HTFScoreMultiplier, 0)
+}
+
+// ScoreLevelsBand is ScoreLevels with an explicit confluence band (in points).
+// confBandPts ≤ 0 → the default 0.10 × dATR (byte-identical to ScoreLevels).
+func ScoreLevelsBand(levels []DetectedLevel, price, dATR float64, freshness func(DetectedLevel) string, maxLevels int, proximityK float64, confBandPts float64) []ScoredLevel {
+	return scoreLevelsPool(levels, price, dATR, freshness, maxLevels, proximityK, nil, HTFScoreMultiplier, confBandPts)
 }
 
 // LegacyHtfSeats (S3, 2026-09-16) is the seatHTF count the pre-S3 code
@@ -439,7 +445,9 @@ func ScoreLevels(levels []DetectedLevel, price, dATR float64, freshness func(Det
 const LegacyHtfSeats = 2
 
 // scoreLevelsPool is the full scorer (lock → grade → collapse → seat → top-N).
-func scoreLevelsPool(levels []DetectedLevel, price, dATR float64, freshness func(DetectedLevel) string, maxLevels int, proximityK float64, htfSeats *int, htfMult float64) []ScoredLevel {
+// confBandPts is the confluence cluster half-width in POINTS; ≤0 → the default
+// 0.10 × daily-range proxy (today's behaviour, byte-identical).
+func scoreLevelsPool(levels []DetectedLevel, price, dATR float64, freshness func(DetectedLevel) string, maxLevels int, proximityK float64, htfSeats *int, htfMult float64, confBandPts float64) []ScoredLevel {
 	if price <= 0 || dATR <= 0 {
 		return nil
 	}
@@ -453,7 +461,13 @@ func scoreLevelsPool(levels []DetectedLevel, price, dATR float64, freshness func
 	// S1 (mega-research 2026-08-26) — confBand = 0.10 × daily-range proxy:
 	// ±35pt at dATR≈350 — wide enough that distant rows count as "confluence".
 	// Documented, not changed here (the proximity re-tune is config-side).
-	confBand := 0.10 * dATR // cluster tolerance
+	// FIX-LEVEL-GRADE (2026-10-14) — the confluence band is now knob-controlled:
+	// day_plan.confluence_band_pts > 0 uses that fixed point width; ≤0 keeps
+	// 0.10 × dATR (byte-identical default).
+	confBand := confBandPts // cluster tolerance
+	if confBand <= 0 {
+		confBand = 0.10 * dATR
+	}
 
 	// Proximity filter (day-trade lock).
 	levels = researchLevels(levels)
@@ -657,6 +671,13 @@ func ScoreLevelsMinGrade(levels []DetectedLevel, price, dATR float64, freshness 
 	return seated
 }
 
+// ScoreLevelsMinGradeBand is ScoreLevelsMinGrade with an explicit confluence
+// band (in points); ≤0 → the default 0.10 × dATR.
+func ScoreLevelsMinGradeBand(levels []DetectedLevel, price, dATR float64, freshness func(DetectedLevel) string, maxLevels int, proximityK float64, minGrade string, confBandPts float64) []ScoredLevel {
+	seated, _ := ScoreLevelsMinGradeFullBand(levels, price, dATR, freshness, maxLevels, proximityK, minGrade, confBandPts)
+	return seated
+}
+
 // ScoreLevelsMinGradeFull is ScoreLevelsMinGrade returning the GRADED PRE-SEAT
 // POOL alongside the seated result. Level-truth wave (2026-08-27) — the planner
 // write site uses the pool for machine-grade stamping: a level the model copies
@@ -664,13 +685,19 @@ func ScoreLevelsMinGrade(levels []DetectedLevel, price, dATR float64, freshness 
 // machine grade stamped, so the stamp map now records EVERY graded candidate,
 // not just the seated top-N.
 func ScoreLevelsMinGradeFull(levels []DetectedLevel, price, dATR float64, freshness func(DetectedLevel) string, maxLevels int, proximityK float64, minGrade string) ([]ScoredLevel, []ScoredLevel) {
-	return ScoreLevelsMinGradeFullSeats(levels, price, dATR, freshness, maxLevels, proximityK, minGrade, nil, HTFScoreMultiplier)
+	return ScoreLevelsMinGradeFullSeats(levels, price, dATR, freshness, maxLevels, proximityK, minGrade, nil, HTFScoreMultiplier, 0)
+}
+
+// ScoreLevelsMinGradeFullBand is ScoreLevelsMinGradeFull with an explicit
+// confluence band (in points); ≤0 → the default 0.10 × dATR.
+func ScoreLevelsMinGradeFullBand(levels []DetectedLevel, price, dATR float64, freshness func(DetectedLevel) string, maxLevels int, proximityK float64, minGrade string, confBandPts float64) ([]ScoredLevel, []ScoredLevel) {
+	return ScoreLevelsMinGradeFullSeats(levels, price, dATR, freshness, maxLevels, proximityK, minGrade, nil, HTFScoreMultiplier, confBandPts)
 }
 
 // ScoreLevelsMinGradeFullSeats is ScoreLevelsMinGradeFull with the resolved
 // day_plan.htf_seats + htf_score_multiplier knobs (S3) — the production path;
 // the legacy wrapper above keeps every historical caller byte-identical.
-func ScoreLevelsMinGradeFullSeats(levels []DetectedLevel, price, dATR float64, freshness func(DetectedLevel) string, maxLevels int, proximityK float64, minGrade string, htfSeats *int, htfMult float64) ([]ScoredLevel, []ScoredLevel) {
+func ScoreLevelsMinGradeFullSeats(levels []DetectedLevel, price, dATR float64, freshness func(DetectedLevel) string, maxLevels int, proximityK float64, minGrade string, htfSeats *int, htfMult float64, confBandPts float64) ([]ScoredLevel, []ScoredLevel) {
 	eff := maxLevels
 	if eff <= 0 {
 		eff = DefaultMaxLevels
@@ -679,7 +706,7 @@ func ScoreLevelsMinGradeFullSeats(levels []DetectedLevel, price, dATR float64, f
 		return nil, nil
 	}
 	levels = researchLevels(levels)
-	pool := scoreLevelsPool(levels, price, dATR, freshness, eff*2, proximityK, htfSeats, htfMult)
+	pool := scoreLevelsPool(levels, price, dATR, freshness, eff*2, proximityK, htfSeats, htfMult, confBandPts)
 	filtered := FilterLevelsByMinGrade(pool, minGrade)
 	if minGrade == "" || len(filtered) <= eff {
 		if len(filtered) > eff {

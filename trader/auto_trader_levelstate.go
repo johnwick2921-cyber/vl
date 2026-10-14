@@ -57,7 +57,7 @@ func (at *AutoTrader) recordLevelStateAt(now time.Time) {
 	// 1.5 that the config cannot move). max_levels resolves from config (D2 —
 	// the planner and the state writers must seat the SAME count).
 	maxLevels, _, _, _, _ := resolveSessionPlanCfg(at.dayPlanCfg(), at.activeSessionName(now))
-	_, price, dATR := kernel.AssembleScoredLevels(at.id, bars, at.sessionRegistry(now), symbol, maxLevels, now, at.proximityFilterATR())
+	_, price, dATR := kernel.AssembleScoredLevelsBand(at.id, bars, at.sessionRegistry(now), symbol, maxLevels, now, at.proximityFilterATR(), at.confluenceBandPts())
 	if price <= 0 {
 		return
 	}
@@ -203,7 +203,7 @@ func (at *AutoTrader) recordScenarioStateAt(now time.Time) {
 		return
 	}
 	maxLevels, _, _, _, _ := resolveSessionPlanCfg(at.dayPlanCfg(), at.activeSessionName(now))
-	_, price, dATR := kernel.AssembleScoredLevels(at.id, bars, at.sessionRegistry(now), symbol, maxLevels, now, at.proximityFilterATR())
+	_, price, dATR := kernel.AssembleScoredLevelsBand(at.id, bars, at.sessionRegistry(now), symbol, maxLevels, now, at.proximityFilterATR(), at.confluenceBandPts())
 	if price <= 0 {
 		return
 	}

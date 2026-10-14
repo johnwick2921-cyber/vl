@@ -141,6 +141,17 @@ func (at *AutoTrader) proximityFilterATR() float64 {
 	return kernel.ActivationWindowK // 1.5
 }
 
+// confluenceBandPts is the confluence cluster half-width in POINTS
+// (FIX-LEVEL-GRADE, 2026-10-14). ≤0 (unset) → the scorer's default 0.10 ×
+// daily-range proxy (byte-identical today). A positive value is passed through
+// verbatim to the scorer's confBand.
+func (at *AutoTrader) confluenceBandPts() float64 {
+	if dp := at.dayPlanCfg(); dp != nil {
+		return dp.ConfluenceBandPts
+	}
+	return 0
+}
+
 // scenarioCap is the max scenarios kept from a planner read (1–5). FOLDED
 // (W-KNOB-PRUNE): the constant 3 unless a stored value exists — one seam.
 func (at *AutoTrader) scenarioCap() int {
