@@ -66,6 +66,29 @@ func touchTape1m(t *testing.T) []market.Kline {
 	return out
 }
 
+// touchNative4h is the NT8 4h series (17:00 CT session grid) rebuilt from the
+// stored NATIVE 1h bars (bars tf=1h, MNQ 12-26). The grid is evidenced [A]:
+// the NY v2 doc's own structure map (built from the cache's native 4h series)
+// carries its 4h last swing low 30591.25 at time_ms 1791900000000 — the close
+// instant of this grid's 10-13 05:00–09:00 bar.
+func touchNative4h(t *testing.T) []market.Kline {
+	t.Helper()
+	raw, err := os.ReadFile("../kernel/testdata/mnq1226_4h_nt8grid_from_1h_through_20261014_1030ct.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows [][6]float64
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		t.Fatal(err)
+	}
+	out := make([]market.Kline, 0, len(rows))
+	for _, r := range rows {
+		o := int64(r[0])
+		out = append(out, market.Kline{OpenTime: o, CloseTime: o + 4*3_600_000 - 1, Open: r[1], High: r[2], Low: r[3], Close: r[4], Volume: r[5]})
+	}
+	return out
+}
+
 func touchCT(t *testing.T, y int, mo time.Month, d, h, mi, s, ms int) time.Time {
 	t.Helper()
 	return time.Date(y, mo, d, h, mi, s, ms*1_000_000, chicagoLoc())
@@ -108,7 +131,17 @@ func touchArmTrader(t *testing.T, key string) (*AutoTrader, *store.Store, *kerne
 	tape := touchTape1m(t)
 	clock := new(time.Time)
 	old := market.FuturesBarsProvider
+	h4 := touchNative4h(t)
 	market.FuturesBarsProvider = func(_ string, tf string, n int) []market.Kline {
+		if tf == "4h" { // the bar cache's NATIVE 4h series (forming bar included, as live)
+			var out []market.Kline
+			for _, b := range h4 {
+				if b.OpenTime <= clock.UnixMilli() {
+					out = append(out, b)
+				}
+			}
+			return out
+		}
 		if tf != "1m" {
 			return nil
 		}
@@ -251,5 +284,54 @@ func TestPlannerTouch650GradeTriggerMissed(t *testing.T) {
 	want, _ := kernel.GradeAdherence(kernel.AdherenceInput{Trigger: kernel.TriggerMissed, Cited: true, Matched: true, InNoTrade: inNoTrade, InKillzone: inKZ})
 	if got != want || !strings.Contains(log, "trigger=missed") {
 		t.Fatalf("#650 filled on a touch candle that closed THROUGH the level — no rejection yet; live graded B, must grade %q trigger=missed: got %q\nlog:\n%s", want, got, log)
+	}
+}
+
+// F-4 — the HTF veto at its PRODUCTION call site: the arm pass fed by the
+// production snapshot builder (kernel.StructureSnapshotForVeto — the loop, the
+// event pass, the strict nudge and the mentor pass all call it) under the LIVE
+// mode HTF_VETO_MODE=cross (boot line 10-14 08:22:40 "htf veto: mode=cross").
+// Before F-4 the snapshot held 5m/15m/1h only, so cross never found "4h" and
+// passed every entry SILENTLY — zero "htf_veto:" refusals in any log since the
+// 08-28 switch to cross. On the 10-14 tape the 1h read TRENDING_DOWN from 06:00
+// (persisted decision_records 54873–54883) and the native 4h TRENDING_DOWN once
+// the 05:00–09:00 bar closed; the NY v2 long's leg (row 366) is released by the
+// touch gate at 09:05:00 (post-touch hold) — and must meet the veto there.
+func touchVetoPass(t *testing.T, at *AutoTrader, st *store.Store, clock *time.Time, now time.Time) int {
+	t.Helper()
+	*clock = now
+	snap := kernel.StructureSnapshotForVeto(at.futuresSymbol(), market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount), now.UnixMilli())
+	at.maybeManageArmedOrdersAt(snap, now)
+	rows, err := st.ArmedOrders().ListNonTerminal(at.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(rows)
+}
+
+func TestPlannerTouchHTFVeto653(t *testing.T) {
+	t.Setenv("HTF_VETO_MODE", "cross")
+	at, st, _, clock := touchArmTrader(t, "ny_v2")
+	logBuf := captureTraderLog(t)
+	now := touchCT(t, 2026, 10, 14, 9, 5, 5, 0)
+	if n := touchVetoPass(t, at, st, clock, now); n != 0 {
+		t.Fatalf("the NY v2 long at 30517 must be VETOED against 1h+4h TRENDING_DOWN (cross): rows=%d\nlog:\n%s", n, logBuf.String())
+	}
+	if !strings.Contains(logBuf.String(), "HTF veto: htf_veto: long vs 1h TRENDING_DOWN + 4h TRENDING_DOWN (cross-check)") {
+		t.Fatalf("the veto must be the logged refusal:\n%s", logBuf.String())
+	}
+}
+
+// F-1 + F-4 together on the whole NY v2 window: one pass a minute from the
+// live MET instant to the plan's DORMANT (09:19:31) — no arm is ever
+// authorized, so #653 (−$178) is no trade.
+func TestPlannerTouch653NoTradeOnTheTape(t *testing.T) {
+	t.Setenv("HTF_VETO_MODE", "cross")
+	at, st, _, clock := touchArmTrader(t, "ny_v2")
+	logBuf := captureTraderLog(t)
+	for now := touchCT(t, 2026, 10, 14, 8, 52, 36, 81); now.Before(touchCT(t, 2026, 10, 14, 9, 19, 31, 0)); now = now.Add(time.Minute) {
+		if n := touchVetoPass(t, at, st, clock, now); n != 0 {
+			t.Fatalf("%s: #653's arm must never be authorized on the 10-14 tape: rows=%d\nlog:\n%s", now.Format("15:04:05"), n, logBuf.String())
+		}
 	}
 }

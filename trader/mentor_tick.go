@@ -161,7 +161,7 @@ func (at *AutoTrader) mentorEvaluatorConfig() mentor.Config {
 // mentor-aware and needs no day plan.
 func (at *AutoTrader) mentorPlaceNow(bars []market.Kline) {
 	now := mentorClockNow()
-	at.maybeManageArmedOrdersAt(kernel.StructureSnapshot(bars, now.UnixMilli()), now)
+	at.maybeManageArmedOrdersAt(kernel.StructureSnapshotForVeto(at.futuresSymbol(), bars, now.UnixMilli()), now) // F-4: + native 4h
 }
 
 // mentorPlaceCadence (N7 part 3) is how often the event loop re-runs the

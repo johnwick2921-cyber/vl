@@ -219,7 +219,7 @@ func (at *AutoTrader) armedEventPassAt(now time.Time) bool {
 	if market.FuturesBarsProvider != nil {
 		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
 	}
-	at.maybeManageArmedOrdersAt(kernel.StructureSnapshot(bars, now.UnixMilli()), now)
+	at.maybeManageArmedOrdersAt(kernel.StructureSnapshotForVeto(at.futuresSymbol(), bars, now.UnixMilli()), now) // F-4: + native 4h
 	return true
 }
 

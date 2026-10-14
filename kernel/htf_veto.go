@@ -11,7 +11,9 @@ import (
 
 // G1 (regime wave, 2026-08-21) — HTF VETO: a NEW entry whose direction opposes
 // the CONFIRMED higher-timeframe trend (G2 structure) is refused. Confirmed =
-// the detector's 3-swing standard, so RANGING / unconfirmed NEVER vetoes.
+// the detector's 3-swing standard, or (F-4, 2026-10-14) a one-way break of the
+// last swing extreme by ≥ STRUCTURE_ONEWAY_ATR × ATR on a TF whose swing set
+// has not caught up (StructureState.VetoTrend); a genuine range NEVER vetoes.
 // FAIL-OPEN: a missing snapshot (detector unavailable) logs WARN and passes —
 // a veto that cannot resolve its inputs must never silence the bot.
 //
@@ -57,6 +59,12 @@ func vetoOpposes(side, trend string) bool {
 
 // vetoRef renders the swing/BOS evidence suffix for the refusal message.
 func vetoRef(st StructureState) string {
+	if st.Trend == "RANGING" && st.OneWay != nil {
+		// F-4 — the one-way evidence that made a RANGING TF read trending.
+		return fmt.Sprintf("one-way: close %.2f %s swing %.2f by %.1f×ATR %.2f @%s, no 3-swing set yet",
+			st.OneWay.Close, map[string]string{"down": "below", "up": "above"}[st.OneWay.Dir], st.OneWay.Extreme,
+			st.OneWay.Mult, st.OneWay.ATR, ClockCT(time.UnixMilli(st.OneWay.TimeMs)))
+	}
 	if st.Swing != nil {
 		return fmt.Sprintf("%s %.2f @%s", st.Swing.Kind, st.Swing.Price,
 			ClockCT(time.UnixMilli(st.Swing.TimeMs)))
@@ -93,11 +101,26 @@ func HTFVetoVerdict(snap map[string]StructureState, action, tf string) (bool, st
 		// fails open for that TF, so cross vetoes strictly LESS than 1h-only.
 		st1, ok1 := snap["1h"]
 		st4, ok4 := snap["4h"]
-		if !ok1 || !ok4 || !vetoOpposes(side, st1.Trend) || !vetoOpposes(side, st4.Trend) {
+		if !ok1 || !ok4 {
+			// F-4 — this branch was SILENT, and snap["4h"] never existed
+			// (StructureSnapshot builds 5m/15m/1h): cross, LIVE since 08-28,
+			// passed every entry without a word. Fail-open stays (dispatch
+			// 1.4), but loudly, naming the missing TF.
+			missing := "4h"
+			if !ok1 {
+				missing = "1h"
+				if !ok4 {
+					missing = "1h+4h"
+				}
+			}
+			logger.Warnf("🛡️ HTF veto (cross) SKIPPED — no %s structure snapshot this cycle; entry proceeds (fail-open).", missing)
+			return false, ""
+		}
+		if !vetoOpposes(side, st1.VetoTrend()) || !vetoOpposes(side, st4.VetoTrend()) {
 			return false, ""
 		}
 		return true, fmt.Sprintf("htf_veto: %s vs 1h %s + 4h %s (cross-check) (%s / %s)",
-			side, st1.Trend, st4.Trend, vetoRef(st1), vetoRef(st4))
+			side, st1.VetoTrend(), st4.VetoTrend(), vetoRef(st1), vetoRef(st4))
 	}
 
 	st, ok := snap[tf]
@@ -106,7 +129,8 @@ func HTFVetoVerdict(snap map[string]StructureState, action, tf string) (bool, st
 		logger.Warnf("🛡️ HTF veto SKIPPED — no %s structure snapshot this cycle (detector unavailable); entry proceeds (fail-open).", tf)
 		return false, ""
 	}
-	if !vetoOpposes(side, st.Trend) {
+	trend := st.VetoTrend() // F-4: a one-way RANGING TF reads trending
+	if !vetoOpposes(side, trend) {
 		return false, ""
 	}
 	ref := vetoRef(st)
@@ -118,5 +142,5 @@ func HTFVetoVerdict(snap map[string]StructureState, action, tf string) (bool, st
 			break
 		}
 	}
-	return true, fmt.Sprintf("htf_veto: %s vs %s %s (%s)", side, tf, st.Trend, ref)
+	return true, fmt.Sprintf("htf_veto: %s vs %s %s (%s)", side, tf, trend, ref)
 }
