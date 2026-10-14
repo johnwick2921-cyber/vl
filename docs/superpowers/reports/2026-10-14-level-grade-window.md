@@ -5,7 +5,7 @@
 - The default grade direction looks inverted (A breaks clean 41.2% vs C 33.8%) but is **not significant**: every window's A-vs-C broke-clean 95% CI crosses zero on fit AND hold-out.
 - ±3pt is the only window that keeps the right sign, but n is too small to call (hold-out A 13 / C 25 touched).
 - **No knob ships** in release #21. The `day_plan.confluence_band_pts` change stays on the parked branch.
-- Re-measure when the hold-out split has **≥ 60 touched per grade cell** — at the current ±3pt A-cell touch rate (13 touched / 11 hold-out session days ≈ 1.2/day), that is ≈ 40 session days from 2026-10-12, i.e. **~2026-11-20**.
+- Re-measure when the hold-out split has **≥ 60 touched per grade cell**: (60 − 13) ÷ (13 ÷ 11 session days) ≈ 39 session days (weekdays) from 2026-10-13, i.e. **~2026-12-04**.
 - Branch `fix/level-grade-window` @ `34f2f0a2f` is **parked**, not merged; this docs-only branch carries the measurement so the evidence survives independent of the parked code.
 
 The A/B/C level grade does not separate levels that hold from levels that break.
