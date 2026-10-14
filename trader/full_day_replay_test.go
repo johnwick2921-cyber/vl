@@ -98,6 +98,21 @@ type fdrLiveArm struct {
 	side    string
 	entry   float64
 	stop    float64
+	// wireShift (rel22 P2-1): the reverse ISB at EMA 9 now authors its WIRE
+	// price. The live bot authored extreme ± 1.0 and the executor re-added the
+	// planner's 2-tick stop-entry offset (wire ± 1.5); since rel22 the kernel
+	// authors extreme ± 1.5 and the executor adds nothing to a mentor row, so
+	// the harness entry is the live entry + this shift (side-aware). The WIRE
+	// price is unchanged for these rows. 0 for every regular ISB.
+	wireShift float64
+}
+
+// wantEntry is the entry the harness must author for this live row.
+func (a fdrLiveArm) wantEntry() float64 {
+	if strings.EqualFold(a.side, "short") {
+		return a.entry - a.wireShift
+	}
+	return a.entry + a.wireShift
 }
 
 // fdrLiveArms — read with sqlite3 -readonly from data/data.db on 2026-10-14:
@@ -105,17 +120,17 @@ type fdrLiveArm struct {
 // BETWEEN 329 AND 341 AND trader_id LIKE '%1781246265'. Rows 335 and 341 are
 // the OTHER trader's (…_1791870197) and are not part of hoang's set.
 var fdrLiveArms = []fdrLiveArm{
-	{329, "03:28", "03:28:00.007", "long", 30754.75, 30748.0},
-	{330, "03:31", "03:30:59.960", "long", 30766.25, 30753.75},
-	{331, "03:34", "03:34:00.875", "long", 30762.0, 30752.75},
-	{332, "03:39", "03:39:00.494", "long", 30764.75, 30753.25},
-	{333, "03:42", "03:42:00.002", "long", 30760.75, 30752.25},
-	{334, "03:46", "03:46:00.077", "long", 30767.5, 30756.25},
-	{336, "03:48", "03:48:00.075", "long", 30760.75, 30752.25},
-	{337, "03:50", "03:50:00.134", "long", 30767.0, 30759.5},
-	{338, "04:11", "04:11:00.029", "long", 30773.0, 30759.25},
-	{339, "04:31", "04:31:00.629", "long", 30771.0, 30762.75},
-	{340, "04:33", "04:33:00.316", "long", 30770.5, 30763.25},
+	{329, "03:28", "03:28:00.007", "long", 30754.75, 30748.0, 0},
+	{330, "03:31", "03:30:59.960", "long", 30766.25, 30753.75, 0},
+	{331, "03:34", "03:34:00.875", "long", 30762.0, 30752.75, 0},
+	{332, "03:39", "03:39:00.494", "long", 30764.75, 30753.25, 0},
+	{333, "03:42", "03:42:00.002", "long", 30760.75, 30752.25, 0},
+	{334, "03:46", "03:46:00.077", "long", 30767.5, 30756.25, 0.5},  // reverse ISB (scenario mentor-<ns>) — rel22 P2-1 wireShift
+	{336, "03:48", "03:48:00.075", "long", 30760.75, 30752.25, 0.5}, // reverse ISB — rel22 P2-1 wireShift
+	{337, "03:50", "03:50:00.134", "long", 30767.0, 30759.5, 0},
+	{338, "04:11", "04:11:00.029", "long", 30773.0, 30759.25, 0},
+	{339, "04:31", "04:31:00.629", "long", 30771.0, 30762.75, 0.5}, // reverse ISB — rel22 P2-1 wireShift
+	{340, "04:33", "04:33:00.316", "long", 30770.5, 30763.25, 0.5}, // reverse ISB — rel22 P2-1 wireShift
 }
 
 // ── fixture ─────────────────────────────────────────────────────────────────
@@ -965,7 +980,7 @@ func TestFullDayReplayFidelity(t *testing.T) {
 			r := got[i]
 			ct := time.UnixMilli(r.bornMs).In(kernel.CTLocation()).Format("15:04")
 			hv = fmt.Sprintf("row %d %s %s %.2f/%.2f [%s] %s", r.row.ID, ct, strings.ToUpper(r.row.Side), r.row.EntryPx, r.row.StopPx, r.row.Condition, r.row.Scenario)
-			ok = lvA != nil && ct == lvA.barCT && strings.EqualFold(r.row.Side, lvA.side) && r.row.EntryPx == lvA.entry && r.row.StopPx == lvA.stop
+			ok = lvA != nil && ct == lvA.barCT && strings.EqualFold(r.row.Side, lvA.side) && r.row.EntryPx == lvA.wantEntry() && r.row.StopPx == lvA.stop
 		}
 		mark := "MATCH"
 		if !ok {
