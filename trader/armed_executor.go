@@ -684,13 +684,13 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 					}
 				}
 			}
-			// S2b chained arm (autopsy-response wave): wait_confirm legs stay
-			// DORMANT until the chain confirm is machine-MET. E4: leg 1 chains
-			// on confirm2 (1m_mss|1x5m_close); a legacy single arm chains on
-			// its own confirm{}.
-			if leg.WaitConfirm {
+			// S2b chained arm (autopsy-response wave): wait_confirm legs stay DORMANT until the chain confirm is
+			// machine-MET (E4: leg 1 chains on confirm2; a single arm on its own confirm{}). R22 F1 (owner R4): a
+			// SWEEP setup waits for its trigger whatever wait_confirm says — no fillable order before the sweep.
+			if kernel.SweepSetupWaits(sc, leg.WaitConfirm) {
 				v := kernel.EvaluateScenarioConfirm(sc, bars, plan.BirthMs, now.UnixMilli())
 				if !v.Met {
+					at.noteSweepWait(plan, sc, li, leg.WaitConfirm, v)
 					scope.note(sc.ID, "waiting: confirm not met ("+kernel.ConfirmGatedRuleLabel(sc)+")")
 					continue
 				}
