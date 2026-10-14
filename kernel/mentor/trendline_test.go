@@ -495,3 +495,123 @@ func TestLocationOfNamesTheTouchedPlace(t *testing.T) {
 		t.Fatalf("no anchor = %q, want empty", got)
 	}
 }
+
+// supportLineP0P1 returns the support line joining bar 2 and bar 8 (the
+// trendlineBars pair) if TrendlinesBuild reports it, else ok=false.
+func supportLineP0P1(t *testing.T, bars []market.Kline, now time.Time) (Trendline, bool) {
+	t.Helper()
+	for _, tl := range TrendlinesBuild(bars, now) {
+		if tl.Side == SideLong && tl.P0T == bars[2].OpenTime && tl.P1T == bars[8].OpenTime {
+			return tl, true
+		}
+	}
+	return Trendline{}, false
+}
+
+// TestTrendlineLeaveWaitsForTheConfirmingBarToClose — the leave is a CONFIRMED
+// swing, and confirmed means its confirming bar has CLOSED. On the return tape
+// at a moment INSIDE bar 12 (the bar that will confirm the bar-11 swing high,
+// still forming): no leave yet, the line is not valid. One minute later (bar 12
+// closed) the leave counts; the next touch (bar 13) validates.
+//
+// At the TrendlinesBuild call site the forming case cannot differ: every bar
+// after a forming bar is also unclosed, so the touch scan finds nothing either
+// way. The helper assertion is what pins the guard (CTO mutant M3: the
+// closed-bar guard → `if false` returns 11 mid-bar → RED).
+func TestTrendlineLeaveWaitsForTheConfirmingBarToClose(t *testing.T) {
+	tape, _ := trendlineReturnTape()
+	bars := tape[:13] // bars 0..12; bar 12 confirms the bar-11 swing high
+	forming := bars[12].OpenTime + 30_000
+	tl, ok := supportLineP0P1(t, bars, time.UnixMilli(forming).In(ctime()))
+	if !ok || tl.ValidAt != 0 {
+		t.Fatalf("mid-bar 12: line = %+v ok=%v, want the P0=2/P1=8 line, not valid", tl, ok)
+	}
+	if got := trendlineLeaveIdx(bars, swings3(bars), tl, forming); got != -1 {
+		t.Fatalf("leave = %d while its confirming bar is still forming — want -1 (no leave yet)", got)
+	}
+
+	closed := bars[12].OpenTime + 59_999
+	if got := trendlineLeaveIdx(bars, swings3(bars), tl, closed); got != 11 {
+		t.Fatalf("leave = %d after bar 12 closed, want 11 (the bar-11 swing high)", got)
+	}
+	if tl, ok := supportLineP0P1(t, bars, time.UnixMilli(closed).In(ctime())); !ok || tl.ValidAt != 0 {
+		t.Fatalf("left, no return yet: line = %+v ok=%v, want not valid", tl, ok)
+	}
+	if tl, ok := supportLineP0P1(t, tape, time.UnixMilli(tape[13].OpenTime+59_999).In(ctime())); !ok || tl.ValidAt != 13 {
+		t.Fatalf("the next touch after the leave: line = %+v ok=%v, want ValidAt=13", tl, ok)
+	}
+}
+
+// TestTrendlineUnconfirmedFractalIsNotALeave — a 3-bar fractal high above the
+// support line that FAILS swingConfirmed (the next bar makes a HIGHER high) is
+// not a leave. Bar 11 is a fractal high (102) that bar 12 exceeds (102.5); bar
+// 12 swings down to touch the line (low 99.3 vs line 99.0). No confirmed swing
+// high exists before that touch → NOT valid. Bar 13 then confirms the bar-12
+// swing high (lower high 101.5) and touches → valid at 13. CTO mutant M1 (drop the swingConfirmed
+// guard) takes bar 11 as the leave and calls bar 12 the 3rd touch → RED at the
+// call site.
+func TestTrendlineUnconfirmedFractalIsNotALeave(t *testing.T) {
+	base, mk := trendlineBars()
+	bars := append(base,
+		mk(10, 100, 101, 99.2, 100.5),     // off the line (98.6 + band = 99.1)
+		mk(11, 100.5, 102, 100, 101.8),    // fractal HIGH @11 (102)
+		mk(12, 101.8, 102.5, 99.3, 100.0), // HIGHER high: bar 11 unconfirmed; touches the line (99.0); low not under bar 10's, so bar 12 is a swing HIGH, not a swing low
+	)
+	now12 := time.UnixMilli(bars[12].OpenTime + 59_999).In(ctime())
+	tl, ok := supportLineP0P1(t, bars, now12)
+	if !ok {
+		t.Fatalf("want the P0=2/P1=8 support line, got %+v", TrendlinesBuild(bars, now12))
+	}
+	if tl.ValidAt != 0 {
+		t.Fatalf("ValidAt = %d — an UNCONFIRMED fractal high was taken as the leave", tl.ValidAt)
+	}
+
+	bars = append(bars, mk(13, 100.0, 101.5, 99.1, 101.2)) // confirms bar 12; touches (99.2)
+	now13 := time.UnixMilli(bars[13].OpenTime + 59_999).In(ctime())
+	if tl, ok := supportLineP0P1(t, bars, now13); !ok || tl.ValidAt != 13 {
+		t.Fatalf("after bar 13 confirms the bar-12 swing high: line = %+v ok=%v, want ValidAt=13", tl, ok)
+	}
+}
+
+// TestTrendlineSameRoleSwingIsNotALeave — "left the line" is an OPPOSITE-role
+// swing only. A support line is BUILT from lows — "một đáy thấp và một đáy cao
+// hơn" [D2.3 p1 @00:00–00:34] — so a higher swing LOW above it is the next
+// candidate POINT of a line, not a departure; price leaves a support line
+// upward and turns back at a swing HIGH (the box re-read's "separated by a
+// real swing of the other role", CTO-REREAD-1004 DAY-3 row 12). Here bar 12 is
+// a confirmed swing low at 99.8, above the line (99.0) by more than the band,
+// and no swing high forms → trendlineLeaveIdx = -1. Mirrored for resistance.
+//
+// At the TrendlinesBuild call site this cannot differ (CTO mutant M2 is
+// equivalent there): a confirmed same-role swing after P1 re-pairs the line
+// under the newest-pair rule (here 4 bars after P1 → no support line at all),
+// so the P0/P1 line is never reported again for the leave to validate. The
+// call-site half asserts only that no P0/P1 line goes valid on the later touch.
+// The helper half pins the rule: M2 → returns 12 → RED.
+func TestTrendlineSameRoleSwingIsNotALeave(t *testing.T) {
+	base, mk := trendlineBars()
+	bars := append(base,
+		mk(10, 100, 101, 100, 100.5),
+		mk(11, 100.5, 101, 100.3, 100.8),
+		mk(12, 100.6, 100.9, 99.8, 100.7), // swing LOW @12 (99.8) — above the line (99.0) + band
+		mk(13, 100.7, 101, 100.1, 100.6),  // confirms bar 12 (higher low); no swing high anywhere
+		mk(14, 100.6, 100.8, 99.3, 100.5), // touches the P0/P1 line (99.4)
+	)
+	now := bars[14].OpenTime + 59_999
+	tl := Trendline{Side: SideLong, P0Idx: 2, P0Px: 97, P0T: bars[2].OpenTime, P1Idx: 8, P1Px: 98.2, P1T: bars[8].OpenTime, FormedAt: 8}
+	for _, tc := range []struct {
+		name string
+		bars []market.Kline
+		tl   Trendline
+	}{
+		{"support", bars, tl},
+		{"resistance (mirror)", trendlineMirror(bars), Trendline{Side: SideShort, P0Idx: 2, P0Px: 103, P0T: tl.P0T, P1Idx: 8, P1Px: 101.8, P1T: tl.P1T, FormedAt: 8}},
+	} {
+		if got := trendlineLeaveIdx(tc.bars, swings3(tc.bars), tc.tl, now); got != -1 {
+			t.Fatalf("%s: leave = %d — a same-role swing beyond the line was taken as leaving it", tc.name, got)
+		}
+	}
+	if tl, ok := supportLineP0P1(t, bars, time.UnixMilli(now).In(ctime())); ok && tl.ValidAt != 0 {
+		t.Fatalf("the P0/P1 line went valid off a same-role swing: %+v", tl)
+	}
+}
