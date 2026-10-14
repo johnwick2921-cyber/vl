@@ -337,6 +337,9 @@ func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 				ctx.TradingStats.SharpeRatio,
 				winLossRatio))
 			sb.WriteString(TrackRecordLine(ctx.TradingStats, LangChinese) + "\n")
+			if ctx.TradingStats.ManualExcludedLine != "" { // RT-4: the manual rows' own counted line
+				sb.WriteString(ctx.TradingStats.ManualExcludedLine + "\n")
+			}
 			sb.WriteString(fmt.Sprintf("平均盈利: +%.2f | 平均亏损: -%.2f | 最大回撤: %.1f%%\n",
 				ctx.TradingStats.AvgWin,
 				ctx.TradingStats.AvgLoss,
@@ -363,6 +366,9 @@ func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 			// P&L-TRUTH WAVE: never a bare total — the figure, its resolved n and
 			// the unresolved exclusion count, in one line the model can use.
 			sb.WriteString(TrackRecordLine(ctx.TradingStats, LangEnglish) + "\n")
+			if ctx.TradingStats.ManualExcludedLine != "" { // RT-4: the manual rows' own counted line
+				sb.WriteString(ctx.TradingStats.ManualExcludedLine + "\n")
+			}
 			sb.WriteString(fmt.Sprintf("Avg Win: +%.2f | Avg Loss: -%.2f | Max Drawdown: %.1f%%\n",
 				ctx.TradingStats.AvgWin,
 				ctx.TradingStats.AvgLoss,

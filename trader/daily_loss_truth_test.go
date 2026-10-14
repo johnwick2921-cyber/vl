@@ -204,3 +204,36 @@ func TestDailyLossUnknownReasonCloseTodayIsUnresolved(t *testing.T) {
 		t.Fatalf("the mentor's authoring gate must refuse on the unresolved close, got refuse=%v %q", refuse, why)
 	}
 }
+
+// RT-4 — THE AI TRACK RECORD CARRIES THE MANUAL LINE. attachTradeContext (the
+// decision path's production call site) reads GetFullStats; the manual rows it
+// excluded ride into the context and onto the 🧾 log line as their own counted
+// line, READ from the store — and the executor prompt renders it. MUTANT: drop
+// the ManualExcludedLine assignment → the context and prompt lack it → RED.
+func TestTrackRecordCarriesTheManualLine(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{Language: "en"})
+	at.id = "rt4-track"
+	at.name = "rt4"
+	hook := rtCaptureLog(t, "[rt4]")
+	wall := time.Now().Add(-time.Minute)
+	dlSeedClosed(t, st, at.id, wall, -1127.50, store.OriginManual)
+	dlSeedClosed(t, st, at.id, wall, -31.50, "")
+
+	ctx := &kernel.Context{TraderID: at.id}
+	at.attachTradeContext(ctx)
+	if ctx.TradingStats == nil {
+		t.Fatal("fixture: no track record built")
+	}
+	const want = "Manual (excluded): 1 trade, −$1,127.50"
+	if ctx.TradingStats.ManualExcludedLine != want || ctx.TradingStats.TotalPnL != -31.50 {
+		t.Fatalf("the AI context must carry the bot's -31.50 AND the manual line %q, got total %.2f line %q",
+			want, ctx.TradingStats.TotalPnL, ctx.TradingStats.ManualExcludedLine)
+	}
+	if n := hook.count("Track record: -31.50 over 1 resolved trades"); n != 1 || hook.count(want) != 1 {
+		t.Fatalf("the 🧾 track-record log line must carry the manual line once, got:\n%s", hook.all())
+	}
+	prompt := kernel.NewStrategyEngine(&store.StrategyConfig{Language: "en"}).BuildUserPrompt(ctx)
+	if !strings.Contains(prompt, "over 1 resolved trades") || !strings.Contains(prompt, want) {
+		t.Fatalf("the executor prompt's track record must render the manual line %q", want)
+	}
+}
