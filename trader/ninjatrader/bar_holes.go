@@ -93,6 +93,7 @@ type holeWire interface {
 	IsFeedConnected() bool
 	RequestGapBackfillAt(symbol string, now time.Time) error
 	BarCache() *ntwire.BarCache
+	CurrentContract(symbol string) (ntwire.ContractFact, bool)
 }
 
 // barHoleExpected reports whether CME trades the 1m bar opening at m — the
@@ -368,6 +369,10 @@ func (t *barHoleTracker) fillLocked(h *barHole, now time.Time) {
 	t.say("INFO", fmt.Sprintf("✅ bars hole FILLED: %s %s %s on %s — %d open minute(s) were missing, the store now holds them, %s (seen %s, filled %s)",
 		h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, h.MissingAtDetect, how,
 		kernel.ClockCTSeconds(h.DetectedAt), kernel.ClockCTSeconds(now)))
+	t.removeLocked(h)
+}
+
+func (t *barHoleTracker) removeLocked(h *barHole) {
 	out := t.holes[:0]
 	for _, x := range t.holes {
 		if x != h {
@@ -422,16 +427,85 @@ func (t *barHoleTracker) gateLocked(w holeWire, now time.Time) string {
 }
 
 // tick runs the schedule at `now` (A28: the caller's clock). Production calls
-// it every barHoleTickEvery from run(); tests call it directly.
+// it every barHoleTickEvery from run(); tests call it directly. The wire send
+// happens OUTSIDE the tracker lock: the persist worker reports to the same
+// tracker and must never wait on a socket write.
 func (t *barHoleTracker) tick(now time.Time) {
 	if t == nil {
 		return
 	}
+	w, due := t.collectDue(now)
+	if len(due) == 0 {
+		return
+	}
+	syms := make([]string, 0, len(due))
+	for s := range due {
+		syms = append(syms, s)
+	}
+	sort.Strings(syms)
+	sent := make(map[string]error, len(syms))
+	for _, sym := range syms {
+		sent[sym] = w.RequestGapBackfillAt(sym, now)
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, sym := range syms {
+		hs := due[sym]
+		if err := sent[sym]; err != nil {
+			for _, h := range hs {
+				attempt := h.Attempts + 1
+				if h.saidRefused != attempt {
+					h.saidRefused = attempt
+					telemetry.IncBarsHoleRefused()
+					t.say("WARN", fmt.Sprintf("🕳 bars hole re-request #%d REFUSED by the wire for %s %s %s: %v",
+						attempt, sym, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), err))
+				}
+			}
+			continue
+		}
+		t.lastFire[sym] = now
+		telemetry.IncBarsHoleRerequest()
+		for _, h := range hs {
+			h.Attempts++
+			h.measureAt = now.Add(barHoleSettle)
+			switch {
+			case h.State == holeStateUnfilled:
+				h.slowCount++
+				h.nextAttemptAt = now.Add(barHoleSlowEvery)
+			case h.Attempts < len(barHoleSchedule):
+				// the slot, or — after an outage held this attempt back — the
+				// schedule's own spacing from now, so a late start never
+				// crowds four asks into the minutes after the feed returns
+				step := barHoleSchedule[h.Attempts] - barHoleSchedule[h.Attempts-1]
+				h.nextAttemptAt = laterOf(h.DetectedAt.Add(barHoleSchedule[h.Attempts]), now.Add(step))
+			default:
+				h.nextAttemptAt = time.Time{} // the measure after this one decides
+			}
+			t.say("INFO", fmt.Sprintf("🧯 bars hole re-request #%d SENT for %s %s %s on %s (%d open minute(s) missing) — bars_subscribe resent, the AddOn rebuilds its BarsRequests and NT8 replays its window; re-measured from the store at %s",
+				h.Attempts, sym, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, h.Missing, kernel.ClockCTSeconds(h.measureAt)))
+		}
+	}
+}
+
+// collectDue runs measures, gates and caps under the lock and returns the
+// holes due a re-request, by symbol, with the wire to send on.
+func (t *barHoleTracker) collectDue(now time.Time) (holeWire, map[string][]*barHole) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	w := t.wire()
 	due := map[string][]*barHole{}
 	for _, h := range append([]*barHole(nil), t.holes...) {
+		// 0. a hole on a contract the platform has rolled away from cannot be
+		//    re-requested: the subscription serves the front month only
+		if w != nil {
+			if f, ok := w.CurrentContract(h.Symbol); ok && f.Contract != "" && f.Contract != h.Contract {
+				telemetry.IncBarsHoleRefused()
+				t.say("WARN", fmt.Sprintf("🕳 bars hole RETIRED: %s %s %s on %s — the subscription now names %s; a re-request replays the front month only, so this window cannot be refilled from NT8 (%d open minute(s) stay missing)",
+					h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, f.Contract, h.Missing))
+				t.removeLocked(h)
+				continue
+			}
+		}
 		// 1. the measure that follows an attempt
 		if !h.measureAt.IsZero() && !now.Before(h.measureAt) {
 			h.measureAt = time.Time{}
@@ -492,43 +566,7 @@ func (t *barHoleTracker) tick(now time.Time) {
 		}
 		due[h.Symbol] = append(due[h.Symbol], h)
 	}
-	syms := make([]string, 0, len(due))
-	for s := range due {
-		syms = append(syms, s)
-	}
-	sort.Strings(syms)
-	for _, sym := range syms {
-		hs := due[sym]
-		if err := w.RequestGapBackfillAt(sym, now); err != nil {
-			for _, h := range hs {
-				attempt := h.Attempts + 1
-				if h.saidRefused != attempt {
-					h.saidRefused = attempt
-					telemetry.IncBarsHoleRefused()
-					t.say("WARN", fmt.Sprintf("🕳 bars hole re-request #%d REFUSED by the wire for %s %s %s: %v",
-						attempt, sym, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), err))
-				}
-			}
-			continue
-		}
-		t.lastFire[sym] = now
-		telemetry.IncBarsHoleRerequest()
-		for _, h := range hs {
-			h.Attempts++
-			h.measureAt = now.Add(barHoleSettle)
-			switch {
-			case h.State == holeStateUnfilled:
-				h.slowCount++
-				h.nextAttemptAt = now.Add(barHoleSlowEvery)
-			case h.Attempts < len(barHoleSchedule):
-				h.nextAttemptAt = laterOf(h.DetectedAt.Add(barHoleSchedule[h.Attempts]), now.Add(barHoleSpacing))
-			default:
-				h.nextAttemptAt = time.Time{} // the measure after this one decides
-			}
-			t.say("INFO", fmt.Sprintf("🧯 bars hole re-request #%d SENT for %s %s %s on %s (%d open minute(s) missing) — bars_subscribe resent, the AddOn rebuilds its BarsRequests and NT8 replays its window; re-measured from the store at %s",
-				h.Attempts, sym, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, h.Missing, kernel.ClockCTSeconds(h.measureAt)))
-		}
-	}
+	return w, due
 }
 
 func laterOf(a, b time.Time) time.Time {

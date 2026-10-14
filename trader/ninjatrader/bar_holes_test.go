@@ -652,3 +652,25 @@ func TestRepro1014B_EmptyReplayAfterReconnectIsRetried(t *testing.T) {
 		t.Fatalf("10-14 (b): NT8 answered bars=0 after the reconnect — over 60 minutes the AddOn received %d history re-request(s), want ≥ 2 (an ask and a retry)", n)
 	}
 }
+
+// ── a hole on a contract the platform rolled away from is retired, loudly ──
+// A re-request replays the subscription's front month only; asking four times
+// for a retired contract's window would end in an UNFILLED line sending the
+// owner to reload history that the subscription can never serve.
+func TestHoleOnARolledContractIsRetiredNotReRequested(t *testing.T) {
+	f := newGHFixture(t)
+	det := f.openHole()
+	f.addon.send(ntwire.FrameSubscribed, ntwire.SubscribedPayload{Symbol: "MNQ", ResolvedContract: "MNQ 03-27"})
+	waitFor(t, "the roll ACK", func() bool { c, ok := f.srv.CurrentContract("MNQ"); return ok && c.Contract == "MNQ 03-27" })
+	f.tr.tick(det.Add(61 * time.Second))
+	f.noNewReRequest(0, "a retired contract's window is not re-requested")
+	if hs := f.holes(); len(hs) != 0 {
+		t.Fatalf("the hole must be retired: %+v", hs)
+	}
+	if f.sink.count("bars hole RETIRED: MNQ 1m 10-14 03:44–07:48 CT on MNQ 12-26 — the subscription now names MNQ 03-27") != 1 {
+		t.Fatalf("the retirement must be said once, naming both contracts:\n%s", f.sink.dump())
+	}
+	if d := f.delta(); d.Refused != 1 || d.Unfilled != 0 {
+		t.Fatalf("refused +%d unfilled +%d — a retirement is counted as a refusal, never as unfilled", d.Refused, d.Unfilled)
+	}
+}
