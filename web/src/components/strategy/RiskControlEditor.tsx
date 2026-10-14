@@ -254,6 +254,8 @@ export function RiskControlEditor({
         onWindowMinutesChange={(v) => updateField('mentor_window_minutes', v)}
         stopAfterLoss={config.mentor_stop_after_loss}
         onStopAfterLossChange={(v) => updateField('mentor_stop_after_loss', v)}
+        trailMode={config.mentor_trail_mode}
+        onTrailModeChange={(v) => updateField('mentor_trail_mode', v)}
       />
       {config.mentor_mode === true && (
         <MentorTuningPanel

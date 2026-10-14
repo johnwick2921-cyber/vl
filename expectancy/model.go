@@ -186,6 +186,9 @@ type Exclusions struct {
 	Unresolvable int `json:"unresolvable"`
 	// TestSeam — ARMED_TEST_SEAM artifacts.
 	TestSeam int `json:"test_seam"`
+	// Manual — origin=manual: an NT8 position the bot adopted with no order or
+	// arm of its own (R22, owner ruling R1). Not the bot's trade.
+	Manual int `json:"manual"`
 	// NoCondition — no condition recoverable from the plan doc.
 	NoCondition int `json:"no_condition"`
 	// CryptoEra is ALWAYS 0 by construction: pre-day-plan-era rows are never

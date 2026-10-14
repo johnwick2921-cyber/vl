@@ -237,21 +237,25 @@ func seed(e *Evaluator, bars1m []market.Kline, full1HRTH []market.Kline, now int
 		e.State.Swing.LastBarTime = b5[len(b5)-1].OpenTime
 	}
 
-	// F2 (release #10): seed the 5m trigger line and the 4h/1h HTF trigger
-	// lines from the SAME closed 1m history with the SAME functions and
-	// aggregation as the tick path (TriggerTick / HTFAdvance over barsTF;
-	// bucketOpen keeps the 4h on the 17:00 CT anchor) — so the watermarks line
-	// up and the first tick consumes only NEWER bars (no double-advance).
-	// TriggerTick commits only non-tail buckets, so the last, possibly
-	// incomplete bucket is left for the first tick, exactly as on the live path.
-	e.State.Trigger = TriggerTick(e.State.Trigger, barsTF(bars1m, 5), 5, e.Cfg)
+	// F2 (release #10) + LINES-RESTART (release #22): seed the 5m trigger line
+	// and the 4h/1h HTF trigger lines from the SAME closed 1m history by
+	// REPLAYING it minute by minute through the live TriggerTick
+	// (TriggerReplay1m) — never bucket-complete. A bucket read whole cannot
+	// see which extreme broke first; live reads it intrabar, so a restart used
+	// to change the line (P1-1: the HTF verdict differed in 20 of 276 reseed
+	// samples on 10-06→10-08). The replay leaves the forming bucket
+	// uncommitted, exactly as the live path does after its last tick, so the
+	// first tick consumes only NEWER bars (no double-advance).
+	closed1m := closedOnly(bars1m, now)
+	e.State.Trigger = TriggerReplay1m(e.State.Trigger, closed1m, 5, e.Cfg)
 	// Print windows: the SAME htfFeedBars the tick path uses. The windows are
 	// absolute instants for today's prints only, so no session-day scoping is
 	// needed — the seed and the live tick must agree on which bars move the
 	// HTF lines (a historical bar at a different absolute time never matches
 	// today's window).
-	htfBars := htfFeedBars(bars1m, e.Cfg.PrintWindows)
-	e.State.HTF = HTFAdvance(e.State.HTF, barsTF(htfBars, 240), barsTF(htfBars, 60), e.Cfg)
+	htfBars := htfFeedBars(closed1m, e.Cfg.PrintWindows)
+	e.State.HTF.FourH = TriggerReplay1m(e.State.HTF.FourH, htfBars, 240, e.Cfg)
+	e.State.HTF.OneH = TriggerReplay1m(e.State.HTF.OneH, htfBars, 60, e.Cfg)
 
 	e.seedLine = e.SeedLine(0)
 	return e.missing
@@ -273,24 +277,31 @@ func (e *Evaluator) SeedLine(contracts int) string {
 	if contracts > 0 {
 		parts = append(parts, fmt.Sprintf("contracts %d", contracts))
 	}
-	parts = append(parts, triggerLinePart("4h", e.State.HTF.FourH, true))
-	parts = append(parts, triggerLinePart("1h", e.State.HTF.OneH, false))
-	parts = append(parts, triggerLinePart("5m", e.State.Trigger, false))
+	parts = append(parts, triggerLinePart("4h", e.State.HTF.FourH))
+	parts = append(parts, triggerLinePart("1h", e.State.HTF.OneH))
+	parts = append(parts, triggerLinePart("5m", e.State.Trigger))
 	return strings.Join(parts, " ")
 }
 
-// triggerLinePart renders one seeded trigger line for the boot line: "<name>
-// trigger <dir>" (and, for the 4h, "since <bucket time>"). An unset direction
-// is "none".
-func triggerLinePart(name string, t TriggerLine, since bool) string {
+// triggerLinePart renders one seeded trigger line for the boot line, every
+// field READ from the seeded state (release #22 LINES-RESTART: the restart
+// line prints the direction, the line price AND the "since" — the bucket that
+// last moved it — for all three lines, so two boot lines can be compared
+// without guessing): "<name> trigger <dir> @<price> since <bucket CT>". An
+// unset direction is "none"; an unknown since/price prints n/a.
+func triggerLinePart(name string, t TriggerLine) string {
 	dir := string(t.Dir)
 	if dir == "" {
 		dir = "none"
 	}
-	if since && t.MovedAt > 0 {
-		return fmt.Sprintf("%s trigger %s since %s", name, dir, time.UnixMilli(t.MovedAt).In(ctime()).Format("2006-01-02T15:04"))
+	px, since := "n/a", "n/a"
+	if t.Dir != "" && t.Price != 0 {
+		px = fmt.Sprintf("%.2f", t.Price)
 	}
-	return fmt.Sprintf("%s trigger %s", name, dir)
+	if t.MovedAt > 0 {
+		since = time.UnixMilli(t.MovedAt).In(ctime()).Format("2006-01-02T15:04")
+	}
+	return fmt.Sprintf("%s trigger %s @%s since %s", name, dir, px, since)
 }
 
 // depthMetLine is the ONE line logged when the seeded depth floors are met
@@ -407,6 +418,18 @@ func fourHClosedBuckets(bars1h []market.Kline, now int64) []market.Kline {
 			continue
 		}
 		break
+	}
+	return out
+}
+
+// closedOnly returns the bars closed by now (CloseTime <= now — the same
+// cut the seed's 1m EMA uses), in their original order.
+func closedOnly(bars []market.Kline, now int64) []market.Kline {
+	out := make([]market.Kline, 0, len(bars))
+	for _, b := range bars {
+		if b.CloseTime <= now {
+			out = append(out, b)
+		}
 	}
 	return out
 }

@@ -225,6 +225,13 @@ type TraderPosition struct {
 	// PlanLinkNote carries backfill verdicts: "" (live stamp) |
 	// "backfill:<reason>" | "unresolvable:<reason>" (never a guessed join).
 	PlanLinkNote string `gorm:"column:plan_link_note;default:''" json:"plan_link_note"`
+	// Origin (R22 PNL-TRUTH, owner ruling R1 2026-10-14): WHO opened the
+	// position — "bot" (the default, every row this bot placed) or "manual"
+	// (an NT8 position the bot ADOPTED with no originating order/arm of its
+	// own). Manual rows stay in the ledger and the history list; every bot
+	// P&L aggregator excludes them and shows them as a separate counted line
+	// (store/manual_origin.go). Never inferred from close_reason or plan_id.
+	Origin string `gorm:"column:origin;not null;default:'bot'" json:"origin"`
 }
 
 // TableName returns the table name

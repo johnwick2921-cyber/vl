@@ -108,6 +108,14 @@ type SwingState struct {
 	ClearShortAt float64        // price ≥ this re-arms shorts (line + stop)
 	Pending      *swingPosition // S1: the resting stop order, not yet filled
 	Pos          *swingPosition // S1: the FILLED swing leg (BE/hold management)
+	// LineStale (release #22, F-3): a feed gap longer than the live slice
+	// left 4h closes the evaluator cannot read, so the warm line is no longer
+	// the canonical EMA. SWING4H entries are refused (counted) until a
+	// restart reseeds the line from the store — never the cold slice value.
+	LineStale bool `json:"line_stale,omitempty"`
+	// Folded is the number of 4h closes the last flip folded (1 on contiguous
+	// ticks; >1 after a feed gap) — read by runSwing for the change line.
+	Folded int `json:"-"`
 }
 
 type swingTouch struct {
@@ -183,6 +191,35 @@ func swingLine(bars5m []market.Kline, now int64, cfg SwingCfg, loc *time.Locatio
 	return emaValue(kbars, cfg.EMAPeriod), cur, true
 }
 
+// bucketClosesBetween returns, in time order, the close of every 4h bucket
+// with a start in [from, to) that has bars in the slice (the last 5m bar of
+// each) — the closes a warm line must fold on a flip. covered=false when the
+// slice starts AFTER the from bucket: buckets before the slice may have traded
+// and cannot be read, so the caller must fail closed (release #22, F-3: one
+// close per flip lost every bucket that opened and closed between two ticks).
+func bucketClosesBetween(bars5m []market.Kline, from, to int64) (closes []float64, covered bool) {
+	if len(bars5m) == 0 {
+		return nil, false
+	}
+	if fourHBucketStart(bars5m[0].OpenTime, ctime()) > from {
+		return nil, false
+	}
+	last := int64(-1)
+	for _, b := range bars5m {
+		bs := fourHBucketStart(b.OpenTime, ctime())
+		if bs < from || bs >= to {
+			continue
+		}
+		if bs == last {
+			closes[len(closes)-1] = b.Close
+			continue
+		}
+		closes = append(closes, b.Close)
+		last = bs
+	}
+	return closes, true
+}
+
 // bucketClose returns the close of the closed 4h bucket starting at start
 // (the last 5m bar inside it), 0 when absent.
 func bucketClose(bars5m []market.Kline, start int64) float64 {
@@ -232,13 +269,27 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		// P0: a warm line continues the SAME EMA recurrence incrementally
 		// (exact parity with a full-history rebuild) instead of a cold
 		// recompute from the ~2-day slice.
+		s.Folded = 0
 		if warm {
-			if nc := bucketClose(bars5m, s.BucketStart); nc != 0 {
-				k := 2.0 / float64(cfg.EMAPeriod+1)
-				s.Line = s.Line + k*(nc-s.Line)
-				s.EmaCount++
+			// F-3 (release #22): fold EVERY closed 4h bucket since the last
+			// flip that has bars in the slice — not only the bucket the line
+			// was in. A feed gap of 4h+ while the process stays up used to
+			// drop the buckets that opened and closed unseen (+39.8 pts).
+			// Buckets with no bars (a weekend, the halt) were never candles
+			// and fold nothing, exactly like the seed's closed-bucket series.
+			closes, covered := bucketClosesBetween(bars5m, s.BucketStart, bucketStart)
+			if !covered {
+				// The slice no longer reaches the last folded bucket: the
+				// missing closes are unknowable here. Fail closed — keep the
+				// last canonical value, refuse swing entries until a reseed.
+				s.LineStale = true
 			} else {
-				s.Line = line
+				k := 2.0 / float64(cfg.EMAPeriod+1)
+				for _, nc := range closes {
+					s.Line = s.Line + k*(nc-s.Line)
+					s.EmaCount++
+				}
+				s.Folded = len(closes)
 			}
 		} else {
 			s.Line = line
@@ -393,11 +444,24 @@ func closesThroughPendingLine(side Side, close, line float64) bool {
 // would close a DIFFERENT mentor trade after the hold.
 func (s *SwingState) openPosition(in Intent, now int64) {
 	p := &swingPosition{Side: in.Side, Entry: in.Price, Stop: in.Stop, Target: in.Target, EntryBucket: s.BucketStart, ArmID: in.ArmID, ExpiryMs: swingExpiry(now)}
-	p.Risk = in.Stop - in.Price
-	if in.Side == SideShort {
-		p.Risk = in.Price - in.Stop
-	}
+	// SWING-RISK (release #22): the ONE risk definition. It used to be
+	// Stop−Price for a long and Price−Stop for a short — NEGATIVE for both — so
+	// manageSwingPosition's "+1R" test passed on the fill bar itself.
+	p.Risk = SwingRisk(in.Side, in.Price, in.Stop)
 	s.Pending = p
+}
+
+// SwingRisk is THE swing risk: the distance from the entry to the stop the
+// trade was entered with, on the LOSS side — long: entry − stop; short: stop −
+// entry. Positive for a well-formed swing; ≤ 0 when the stop sits on the wrong
+// side. One definition for both ways a swing position is made — the live fill
+// (openPosition) and the restart rebuild (RebuildSwingPos) — so a swing reaches
+// break-even at the same +1R whether or not the bot restarted in between.
+func SwingRisk(side Side, entry, entryStop float64) float64 {
+	if side == SideShort {
+		return entryStop - entry
+	}
+	return entry - entryStop
 }
 
 // swingTargetEMA is the first target: the 5m EMA 34 [table]. R42 [D5.2 p2
@@ -562,28 +626,47 @@ func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Int
 	return out
 }
 
+// SwingRebuild is the durable record of a FILLED swing the restart path
+// restores from: the armed row's entry and ENTRY stop (the stop the trade was
+// entered with — the risk is measured from it, never from a stop the broker
+// has since moved), NT8's live stop, the 4h bucket of the swing's 5m bar, the
+// arm id, and whether the live stop already sits at break-even.
+type SwingRebuild struct {
+	Side        Side
+	Entry       float64
+	EntryStop   float64
+	LiveStop    float64
+	Target      float64
+	EntryBucket int64
+	ArmID       string
+	MovedBE     bool
+}
+
 // RebuildSwingPos (FIX-SWING-RESTART) restores the FILLED swing leg from
 // durable records (the armed row, the open position and NT8's live stop) so
 // manageSwingPosition resumes break-even + hold-close across a restart. Every
-// field is caller-proven; the kernel invents nothing. A degenerate position
-// (unknown side, entry or risk unreadable) is refused (false) so the caller
-// leaves the stop as it is at NT8 — never a guessed stop or a guessed close.
-func (s *SwingState) RebuildSwingPos(side Side, entry, stop, target, risk float64, entryBucket int64, armID string, movedBE bool) bool {
-	if side != SideLong && side != SideShort {
+// field is caller-proven; the kernel invents nothing. The risk is SwingRisk —
+// the SAME definition the live fill uses (SWING-RISK, release #22). A
+// degenerate position (unknown side, entry unreadable, or a risk ≤ 0) is
+// refused (false) so the caller leaves the stop as it is at NT8 — never a
+// guessed stop or a guessed close.
+func (s *SwingState) RebuildSwingPos(r SwingRebuild) bool {
+	if r.Side != SideLong && r.Side != SideShort {
 		return false
 	}
-	if entry <= 0 || risk <= 0 {
+	risk := SwingRisk(r.Side, r.Entry, r.EntryStop)
+	if r.Entry <= 0 || risk <= 0 {
 		return false
 	}
 	s.Pos = &swingPosition{
-		Side:        side,
-		Entry:       entry,
-		Stop:        stop,
-		Target:      target,
+		Side:        r.Side,
+		Entry:       r.Entry,
+		Stop:        r.LiveStop,
+		Target:      r.Target,
 		Risk:        risk,
-		EntryBucket: entryBucket,
-		ArmID:       armID,
-		MovedBE:     movedBE,
+		EntryBucket: r.EntryBucket,
+		ArmID:       r.ArmID,
+		MovedBE:     r.MovedBE,
 	}
 	return true
 }

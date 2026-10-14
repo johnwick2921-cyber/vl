@@ -87,7 +87,7 @@ func (s *PositionStore) GetHistorySummary(traderID string) (*HistorySummary, err
 
 	// Calculate average holding time
 	var positions []TraderPosition
-	s.db.Where("trader_id = ? AND status = ? AND exit_time > 0", traderID, "CLOSED").Find(&positions)
+	s.db.Where("trader_id = ? AND status = ? AND exit_time > 0", traderID, "CLOSED").Where(BotOriginSQL).Find(&positions)
 	if len(positions) > 0 {
 		var totalMins float64
 		for _, pos := range positions {
@@ -101,6 +101,7 @@ func (s *PositionStore) GetHistorySummary(traderID string) (*HistorySummary, err
 	// Recent 20 trades (exclude unknown-P&L orphan closes — reconcile_flat / unresolved / e7 test-seam).
 	var recent []TraderPosition
 	s.db.Where("trader_id = ? AND status = ? AND close_reason NOT IN (?, ?, ?)", traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).
+		Where(BotOriginSQL). // R22 R1: bot-only
 		Order("exit_time DESC").Limit(20).Find(&recent)
 	for _, pos := range recent {
 		pnl, resolved := pos.CorrectedPnL()
@@ -127,6 +128,7 @@ func (s *PositionStore) calculateStreaks(traderID string, summary *HistorySummar
 	var positions []TraderPosition
 	// Exclude unknown-P&L orphan closes (reconcile_flat / class-27 unresolved / e7 test-seam).
 	err := s.db.Where("trader_id = ? AND status = ? AND close_reason NOT IN (?, ?, ?)", traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).
+		Where(BotOriginSQL). // R22 R1: bot-only
 		Order("exit_time DESC").
 		Find(&positions).Error
 	if err != nil || len(positions) == 0 {

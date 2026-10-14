@@ -1717,6 +1717,7 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 					at.logWarnf("📌 armed place failed %s: %v", r.Scenario, perr)
 					continue
 				}
+				at.recordArmWirePrices(ledger, r, sid, side, r.EntryPx, r.StopPx, r.TargetPx, nil) // F-7: ledger = wire
 				at.logInfof("📌 armed %s placement requested limit %.2f signal=%s (band ±%.0ft)", r.Scenario, r.EntryPx, sid, band/tick)
 				// ONE LIVE ENTRY PER PLAN (owner ruling 2026-09-06): the moment
 				// one arm reaches the wire, every other arm in the plan is
@@ -2189,6 +2190,12 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		}
 		return stopPlaceNotSent
 	}
+	// F-7: ledger = wire. Only a mentor frame can carry a split (leg1).
+	var splitFrom any
+	if isMentorArmOrigin(r) {
+		splitFrom = pl
+	}
+	at.recordArmWirePrices(ledger, r, sid, d.Side, d.Trigger, r.StopPx, targetPx, splitFrom)
 	at.logInfof("📌 armed %s placement requested stop-entry [guard=stop-side verdict=%s action=%s] %s %s trigger=%.2f price=%.2f signal=%s (%s · no retest in %d bars, offset %dt)",
 		r.Scenario, d.Verdict, d.Action, strings.ToUpper(d.Side), orderType, d.Trigger, price, sid, d.Why, retestWaitBars(), d.OffsetTicks)
 	return stopPlaceCommitted
@@ -2685,6 +2692,12 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 				return
 			}
 			at.armLifecycleWrite("set_state(cancelled)", r, ledger.SetState(r.ID, "cancelled", "cancelled in NT8"))
+			// F-2 (release #22) — NT8's positive per-order report releases the
+			// one-entry latch's queued-entry marker HERE (the N7 hook, a
+			// positive cancel only). It used to survive to the C8 45 s sweep,
+			// which then printed "NT8 never confirmed" for an entry NT8 had
+			// positively cancelled and held the next arm until it ran.
+			at.forgetPendingEntry(r.SignalID)
 			at.logInfof("✕ armed %s cancelled in NT8", r.Scenario)
 		default:
 			// A received live ENTRY state proves placement. Preserve pending
@@ -3270,7 +3283,19 @@ func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Dura
 			continue
 		}
 		acked := false
+		offDrain := false // settled by NT8's report the ordered worker applied — READ, not drained
 		for attempt := 1; attempt <= 2 && !acked; attempt++ {
+			// F-1 (release #22) — READ THE ROW BEFORE A RE-SEND. The drain only
+			// re-read the row when a frame arrived on ITS channel, but NT8's
+			// report is owned by the ordered-execution worker: the drain's copy
+			// is a no-op (OrderedOwned) and the worker writes 'cancelled' only
+			// after the post-update snapshot. Row 363 (10-14 01:47:29) was
+			// written 'cancelled' by the worker while this loop waited, and the
+			// retry then re-sent a cancel for an order NT8 no longer had.
+			if attempt > 1 && !at.armedRowStillActive(ledger, r.ID) {
+				acked, offDrain = true, true
+				break
+			}
 			if err := cancelFn(r.SignalID); err != nil {
 				at.logWarnf("⚠️ armed sync cancel send %s signal=%s failed: %v", r.Scenario, r.SignalID, err)
 			}
@@ -3307,6 +3332,16 @@ func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Dura
 		// we cancelled. The two facts are opposite. So the outcome is read back
 		// and named.
 		final, readable := ledger.StateOf(r.ID)
+		// F-1 (release #22) — THE TIMEOUT BRANCH HONOURS THE STATE IT READ. A
+		// row the worker settled after the drain's last look is terminal here;
+		// it used to fall to the default branch below, whose RequestCancel
+		// moved row 363 from 'cancelled' back to cancel_pending.
+		if !acked && readable && store.IsTerminalArmState(final) {
+			acked, offDrain = true, true
+		}
+		if offDrain {
+			at.noteSyncCancelSettledOffDrain(r, final)
+		}
 		switch {
 		case acked && readable && final == store.StateFilled:
 			// NOT A CANCEL. The order became a POSITION during the drain, and
@@ -3338,7 +3373,23 @@ func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Dura
 			//
 			// This is the same ruling the no-broker-link branch above already
 			// follows — a missing answer records the INTENT, never the outcome.
-			at.armLifecycleWrite("request_cancel(ack_timeout)", r, ledger.RequestCancel(r.ID, reason+" (ack timeout — unconfirmed, settlement pass owns it)", p.nowMs()))
+			rerr := ledger.RequestCancel(r.ID, reason+" (ack timeout — unconfirmed, settlement pass owns it)", p.nowMs())
+			if errors.Is(rerr, store.ErrArmCancelTerminal) {
+				// F-1: the worker settled the row between the read above and
+				// this write; the store refused (and counted) the re-open. The
+				// row is settled, not UNACKED — name what it became.
+				final, _ = ledger.StateOf(r.ID)
+				at.noteSyncCancelSettledOffDrain(r, final)
+				if final == store.StateFilled {
+					filled++
+					at.logWarnf("⚠️ armed sync cancel: %s signal=%s FILLED during the drain — this is a POSITION, not a cancelled order; the flatten's position re-read must clear it",
+						r.Scenario, shortID(r.SignalID))
+				} else {
+					n++
+				}
+				continue
+			}
+			at.armLifecycleWrite("request_cancel(ack_timeout)", r, rerr)
 			unacked++
 			at.logWarnf("⚠️ armed sync cancel UNACKED %s signal=%s after retry — held cancel_pending, NOT promoted; the flatten proceeds and the settlement pass will confirm or re-request",
 				r.Scenario, shortID(r.SignalID))
@@ -3444,6 +3495,7 @@ func (at *AutoTrader) TestArmPlace(side string, entry, stop, target float64) (st
 	if perr != nil {
 		return out, perr
 	}
+	at.recordArmWirePrices(ledger, out, sid, side, entry, stop, target, nil) // F-7: ledger = wire
 	// Read back: a received rejection may already have won the race.
 	if err := ledger.DB().First(&out, out.ID).Error; err != nil {
 		return out, err
@@ -3501,6 +3553,7 @@ func (at *AutoTrader) TestArmPlaceStop(side string, trigger, stop, target float6
 	if perr != nil {
 		return out, perr
 	}
+	at.recordArmWirePrices(ledger, out, sid, side, trigger, stop, target, nil) // F-7: ledger = wire
 	// Read back: a received rejection may already have won the race.
 	if err := ledger.DB().First(&out, out.ID).Error; err != nil {
 		return out, err

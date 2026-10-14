@@ -215,6 +215,7 @@ func (at *AutoTrader) excursionOnClose(p *store.TraderPosition) {
 			StopPxFinal:  row.StopPxInitial, // no trail wave yet; the initial stop is the final one
 			PnlCorrected: p.PnlCorrected,    // A22 — corrected only; nil stays NULL
 			Ambiguous:    ambiguous,
+			Size:         excursionWholeSize(p), // MATH-EXECUTOR P2-1: not the first partial
 		}); err != nil {
 			return err
 		}
@@ -222,4 +223,14 @@ func (at *AutoTrader) excursionOnClose(p *store.TraderPosition) {
 			row.ID, p.ID, p.ExitPrice, p.CloseReason, ambiguous)
 		return nil
 	})
+}
+
+// excursionWholeSize is the closed position's whole contract count: its entry
+// quantity (every fill), else its quantity. The open hook's Size is the FIRST
+// partial fill (1 of a 5-lot), which inflated realized R 1.5–5× (P2-1).
+func excursionWholeSize(p *store.TraderPosition) float64 {
+	if p.EntryQuantity > 0 {
+		return p.EntryQuantity
+	}
+	return p.Quantity
 }

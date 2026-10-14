@@ -447,9 +447,9 @@ export const riskControl = {
     es: 'Mover stop a equilibrio',
   },
   breakevenDesc: {
-    zh: '当浮盈达到设定点数后，把止损移到开仓价（保本）。仅期货 (NT8)。默认关闭。Mentor mode 开启时不生效（owner ruling 2026-10-09）—— mentor 交易只跟随 mentor 自己的出场。SUSPENDED (0B) — 当前运行中该功能已暂停，开启后不会移动止损。',
-    en: 'Move the stop to your entry (breakeven) after N points in profit. Futures (NT8) only. Default OFF. Not applied while mentor mode is ON (owner ruling 2026-10-09) — mentor trades follow only the mentor\u2019s exits. SUSPENDED (0B) — the running binary does not move the stop.',
-    es: 'Mueve el stop a la entrada tras N puntos. Solo futuros (NT8). OFF por defecto. No se aplica con modo mentor ON (decisión del propietario 2026-10-09): las operaciones mentor siguen solo sus propias salidas. SUSPENDIDO (0B) — el binario en ejecución no mueve el stop.',
+    zh: '当浮盈达到设定点数后，把止损移到开仓价（保本）。仅期货 (NT8)。默认关闭。Mentor mode 开启时不生效（owner ruling 2026-10-09）—— mentor 交易只跟随 mentor 自己的出场。只有同时满足：本开关开启 且 服务器 EXIT_MECHS_SUSPENDED=0（seam=ACTIVE）才会移动止损；未设置该环境变量时为 SUSPENDED (0B)，不发送。运行状态见启动行 "🛑 exits: … BE=… seam=…"。',
+    en: 'Move the stop to your entry (breakeven) after N points in profit. Futures (NT8) only. Default OFF. Not applied while mentor mode is ON (owner ruling 2026-10-09) — mentor trades follow only the mentor\u2019s exits. It moves a stop only when this toggle is ON AND the server seam is ACTIVE (env EXIT_MECHS_SUSPENDED=0); with the env unset it is SUSPENDED (0B) and nothing is sent. The boot line "🛑 exits: … BE=… seam=…" shows the running state.',
+    es: 'Mueve el stop a la entrada tras N puntos. Solo futuros (NT8). OFF por defecto. No se aplica con modo mentor ON (decisión del propietario 2026-10-09): las operaciones mentor siguen solo sus propias salidas. Mueve el stop solo si este interruptor está ON y el seam del servidor está ACTIVO (env EXIT_MECHS_SUSPENDED=0); sin esa variable queda SUSPENDIDO (0B) y no se envía nada. La línea de arranque "🛑 exits: … BE=… seam=…" muestra el estado real.',
   },
   breakevenTrigger: {
     zh: '触发点数',
@@ -464,9 +464,9 @@ export const riskControl = {
     es: 'Trailing stop',
   },
   trailingDesc: {
-    zh: '设计行为：按 最优价 ∓ 倍数×ATR(周期,5m) 逐级收紧止损。仅期货 (NT8)。默认关闭。Mentor mode 开启时不生效（owner ruling 2026-10-09）—— mentor 交易只跟随 mentor 自己的出场。SUSPENDED (0B) — 计算仍会产生新价位，但不会发到交易所（见 auto_trader_trailing.go）。',
-    en: 'Designed: the stop ratchets to best-price ∓ mult×ATR(period, 5m), tighten-only. Futures (NT8) only. Default OFF. Not applied while mentor mode is ON (owner ruling 2026-10-09) — mentor trades follow only the mentor\u2019s exits. SUSPENDED (0B) — the ratchet computes a new level but the broker is never moved (auto_trader_trailing.go).',
-    es: 'Diseñado: el stop se ajusta a mejor-precio ∓ mult×ATR. Solo futuros (NT8). OFF por defecto. No se aplica con modo mentor ON (decisión del propietario 2026-10-09). SUSPENDIDO (0B) — el ratchet calcula pero el broker nunca se mueve.',
+    zh: '设计行为：按 最优价 ∓ 倍数×ATR(周期,5m) 逐级收紧止损。仅期货 (NT8)。默认关闭。Mentor mode 开启时不生效（owner ruling 2026-10-09）—— mentor 交易只跟随 mentor 自己的出场。只有同时满足：本开关开启 且 服务器 EXIT_MECHS_SUSPENDED=0（seam=ACTIVE）才会移动止损；未设置该环境变量时为 SUSPENDED (0B)：计算仍会产生新价位，但不会发到交易所（见 auto_trader_trailing.go）。',
+    en: 'Designed: the stop ratchets to best-price ∓ mult×ATR(period, 5m), tighten-only. Futures (NT8) only. Default OFF. Not applied while mentor mode is ON (owner ruling 2026-10-09) — mentor trades follow only the mentor\u2019s exits. It moves a stop only when this toggle is ON AND the server seam is ACTIVE (env EXIT_MECHS_SUSPENDED=0); with the env unset it is SUSPENDED (0B): the ratchet computes a new level but the broker is never moved (auto_trader_trailing.go). The boot line "🛑 exits: … trail=… seam=…" shows the running state.',
+    es: 'Diseñado: el stop se ajusta a mejor-precio ∓ mult×ATR. Solo futuros (NT8). OFF por defecto. No se aplica con modo mentor ON (decisión del propietario 2026-10-09). Mueve el stop solo si este interruptor está ON y el seam está ACTIVO (env EXIT_MECHS_SUSPENDED=0); sin esa variable queda SUSPENDIDO (0B): el ratchet calcula pero el broker nunca se mueve.',
   },
   trailingMult: {
     zh: 'ATR 倍数',

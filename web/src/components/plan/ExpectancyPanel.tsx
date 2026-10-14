@@ -69,6 +69,8 @@ interface Payload {
     unresolved_pnl: number
     unresolvable: number
     test_seam: number
+    // R22 R1: origin=manual NT8 adoptions — not the bot's trades.
+    manual?: number
     no_condition: number
     crypto_era: number
   }
@@ -298,8 +300,12 @@ export function ExpectancyPanel() {
           >
             excluded — {data.excluded.unresolved_pnl} unresolved P&L ·{' '}
             {data.excluded.unresolvable} unresolvable ·{' '}
-            {data.excluded.test_seam} test-seam · {data.excluded.no_condition}{' '}
-            no play. Floor: n ≥ {data.min_n}. {data.promotion_rule}
+            {data.excluded.test_seam} test-seam ·{' '}
+            {typeof data.excluded.manual === 'number'
+              ? `${data.excluded.manual} manual (not the bot's) · `
+              : ''}
+            {data.excluded.no_condition} no play. Floor: n ≥ {data.min_n}.{' '}
+            {data.promotion_rule}
           </div>
 
           {data.counterfactual_e8.length > 0 && (
