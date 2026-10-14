@@ -563,6 +563,10 @@ type AutoTrader struct {
 	// so the episode flag gets its own mutex (never a data race).
 	mentorStaleMu      sync.Mutex
 	mentorStaleEpisode bool
+	// mentorStaleWarnedArms is the per-ArmID dedupe for the LOUD per-order
+	// stale-feed refusal WARN (LEVEL-ORDER-DEATH): one WARN per refused ArmID,
+	// not per tick. Guarded by mentorStaleMu.
+	mentorStaleWarnedArms map[string]bool
 	// mentorInvalidLog is the item-18 noise gate (DS-105 replay): the last INFO
 	// emit instant + the suppressed count per LevelKey, so a busy level's
 	// level_invalid logs at most once per 15 minutes while the counter still

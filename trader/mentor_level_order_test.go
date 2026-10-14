@@ -93,7 +93,7 @@ func TestMentorLevelOrderEveningRestsUntilNextRTH(t *testing.T) {
 
 // TestMentorLevelOrderStaleFeedRefusedLoud — the dropping condition: a sized
 // PHL Place while the 1m feed is stale is REFUSED with a per-intent counter
-// (stale_data_placement_refused) and a log line — never silent. The mutant
+// (placement_refused_stale_data) and a log line — never silent. The mutant
 // (restore the silent return) leaves the counter at 0 and this turns RED.
 func TestMentorLevelOrderStaleFeedRefusedLoud(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "on")
@@ -106,8 +106,8 @@ func TestMentorLevelOrderStaleFeedRefusedLoud(t *testing.T) {
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(levelIntent(), mentorTierInputs{}, evening.UnixMilli(), 1100)
 
-	if c := at.mentorCountSnapshot()["stale_data_placement_refused"]; c != 1 {
-		t.Fatalf("stale_data_placement_refused = %d, want 1 (the refusal must be counted per intent)", c)
+	if c := at.mentorCountSnapshot()["placement_refused_stale_data"]; c != 1 {
+		t.Fatalf("placement_refused_stale_data = %d, want 1 (the refusal must be counted per intent)", c)
 	}
 	var n int64
 	if err := ledger.DB().Model(&store.ArmedOrderDB{}).Where("scenario LIKE ?", "lvl-1-%").Count(&n).Error; err != nil {
@@ -118,5 +118,49 @@ func TestMentorLevelOrderStaleFeedRefusedLoud(t *testing.T) {
 	}
 	if _, ok := at.mentorLiveArmFor("lvl-1"); ok {
 		t.Fatal("a stale-feed level order must NOT register")
+	}
+}
+
+// TestMentorLevelOrderStaleRefusalDoesNotLatch — the stale-feed refusal is a
+// per-tick gate, not a latch: after the bars go fresh the SAME order places
+// normally. A mutant that latches the episode leaves the later tick unplaced.
+func TestMentorLevelOrderStaleRefusalDoesNotLatch(t *testing.T) {
+	t.Setenv("MENTOR_PLACE", "on")
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	mentorWireSeams(t, at, ledger)
+	evening := eveningInstant()
+	pinMentorClock(t, evening)
+
+	pinBars(t, evening.UnixMilli()-10*60_000) // stale
+	resetMentorCounters(at)
+	at.mentorDispatchIntent(levelIntent(), mentorTierInputs{}, evening.UnixMilli(), 1100)
+	if c := at.mentorCountSnapshot()["placement_refused_stale_data"]; c != 1 {
+		t.Fatalf("placement_refused_stale_data = %d, want 1", c)
+	}
+
+	pinBars(t, evening.UnixMilli()) // fresh again
+	at.mentorDispatchIntent(levelIntent(), mentorTierInputs{}, evening.UnixMilli(), 1100)
+	var n int64
+	if err := ledger.DB().Model(&store.ArmedOrderDB{}).Where("scenario LIKE ?", "lvl-1-%").Count(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("a later fresh tick must place normally, got %d rows", n)
+	}
+}
+
+// TestMentorStaleWarnOnceDedupesPerArmID — one WARN per refused ArmID, not per
+// tick: the helper returns true once and false on every later call for the same
+// ArmID, while the counter at the call site still fires per refusal.
+func TestMentorStaleWarnOnceDedupesPerArmID(t *testing.T) {
+	at, _ := f2Trader(t)
+	if !at.mentorStaleWarnOnce("lvl-1") {
+		t.Fatal("first call must warn")
+	}
+	if at.mentorStaleWarnOnce("lvl-1") {
+		t.Fatal("second call for the same ArmID must NOT warn")
+	}
+	if !at.mentorStaleWarnOnce("lvl-2") {
+		t.Fatal("a DIFFERENT ArmID must warn")
 	}
 }
