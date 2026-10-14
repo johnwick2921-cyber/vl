@@ -95,6 +95,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.leg_reset_on_wave_break',
     live: true,
   },
+  'Flag wall as a target': {
+    settingId: 'risk_control.mentor_tuning.flag_wall_target',
+    live: true,
+  },
   'PHL min candles from old extreme': {
     settingId: 'Config.PHLMinCandlesFromExtreme',
     live: false,
@@ -1147,6 +1151,20 @@ export const mentor: GuideSection = {
           recommended:
             'ON — X-FOMO extra @06:10–06:22; knob rule (a): no ruling against.',
           whenToTouch: 'Rarely — OFF only to compare with the pre-#25 rule.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Flag wall as a target',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'X9 extra @05:47–06:12 "Nếu mà anh chị vô cái lệnh Potential high low chỗ này, thì cái target anh chị về chỗ nào? … Có phải là target của anh chị là chỉ là trên cái đỉnh của cái flag không, là trên cạnh trên không? Thì nếu như anh chị nào vẫn muốn vô thì mình vẫn scalping được, không sai" (a trade taken inside the flag targets its upper edge — a scalp is still fine). Ported from PR #416. ON = when an entry sits strictly INSIDE a live flag (a support and a resistance trendline both drawn and unbroken), the OPPOSITE wall becomes the target if it is closer than the normal target; a wall that leaves less than 1:1 refuses the entry (flag_wall_room; flag_wall_target_used counts each re-target). OFF (default) = targets come from the level ladder only (where trendline_is_target already puts a VALID trendline). Knob rule case (b): X9 is an extra, older than the course, and it relaxes the course room rule for the in-flag scalp.',
+          trader: 'OFF — case (b).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/flag_wall.go applyFlagWallTarget (Tick defer)',
+          range: 'true / false',
+          systemDefault: 'false',
+          recommended:
+            'OFF — X9 extra @05:47–06:12; turn ON only on an owner ruling.',
+          whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },
         {

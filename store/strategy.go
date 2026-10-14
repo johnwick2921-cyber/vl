@@ -1997,6 +1997,9 @@ type MentorTuning struct {
 	TrendlineBetweenBoxes *bool `json:"trendline_between_boxes,omitempty"`
 	// CE-12: a stopped leg also resets on its wave break (nil → ON).
 	LegResetOnWaveBreak *bool `json:"leg_reset_on_wave_break,omitempty"`
+	// CE-11 (ported #416): inside a live flag the opposite wall is a closer
+	// target candidate [X9 @05:47–06:12] (nil → OFF).
+	FlagWallTarget *bool `json:"flag_wall_target,omitempty"`
 }
 
 // RiskControlConfig risk control configuration

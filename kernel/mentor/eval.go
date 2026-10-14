@@ -1137,6 +1137,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// FU-2: the per-Tick barsTF memo is scoped to ONE Tick — clear it before
 	// anything aggregates, so a new bar always rebuilds the buckets it must.
 	e.tfMemo = nil
+	// CE-11 FLAG-TARGET (ported from #416): the live flag walls and the
+	// current bar's open time, captured at the trendline build for the defer's
+	// target pass (zero until then, so an early return leaves them inert).
+	var liveFlagWalls flagWalls
+	var curBarOpenTime int64
 	// A5 + P0 sizing gap (CTO 20:13:25Z): ONE stamp where intents LEAVE Tick —
 	// the geometry (StopPts/TargetPts), the spent-day flag, and the
 	// untagged-setup drop. The defer covers every return path, including the
@@ -1150,6 +1155,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.refuse(r)
 		}
 		out = kept
+		out = applyFlagWallTarget(out, liveFlagWalls, curBarOpenTime, e.Cfg, e.refuse) // CE-11 (knob flag_wall_target, default OFF)
 		stampHTFAgree(out, e.State.HTF)
 	}()
 	if !e.Cfg.Enabled || len(bars) < 2 {
@@ -1318,6 +1324,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// through. They join the level set location-only (never a target); a
 	// trendline next to a box edge is suppressed (box beats trendline).
 	trendlines, crossed := trendlinesBuild(bars, time.UnixMilli(now))
+	liveFlagWalls = buildFlagWalls(trendlines) // CE-11 FLAG-TARGET (#416)
+	curBarOpenTime = bars[len(bars)-1].OpenTime
 	e.trackTrendlines(trendlines, crossed, now)
 	levels = append(levels, TrendlineLevels(trendlines, boxes, bars)...)
 	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
@@ -1908,7 +1916,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			if e.Cfg.LocTriggerFilter && (e.Cfg.TriggerSchool != 1 || e.Cfg.LevelEntriesNeedTriggerSide) {
 				if dirOK, trigSide, _ := TriggerVerdict(e.State.Trigger, price); !dirOK || trigSide != "" && trigSide != side {
 					if e.Cfg.TriggerSchool == 1 {
-						e.refuse("phl_level_trigger_side") // CE-9: named apart from school 2's stage
+						// CE-9: named apart from school 2's stage; once per visit
+						// (a rejected level is re-read every tick — r22 P2-1).
+						e.refuseOncePerVisit(lvl.Key, "phl_level_trigger_side")
 					} else {
 						e.refuse("isb_trigger_side")
 					}

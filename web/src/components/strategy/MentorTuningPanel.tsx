@@ -29,6 +29,7 @@ type BoolKey =
   | 'trendline_is_target'
   | 'trendline_between_boxes'
   | 'leg_reset_on_wave_break'
+  | 'flag_wall_target'
 
 type EnumKey =
   | '15m_ib_requires_5m_isb'
@@ -242,6 +243,11 @@ const COPY = {
     en: 'A stopped-out leg also resets on a break of the losing wave',
     es: 'Un tramo con stop también se reinicia al romper la onda perdedora',
   },
+  flagWall: {
+    zh: '旗形内入场：对侧旗形边作为更近的目标',
+    en: 'Inside a flag: the opposite flag wall is a closer target',
+    es: 'Dentro de una bandera: la pared opuesta es un objetivo más cercano',
+  },
 } satisfies Record<string, Copy>
 
 // The option lists of the string-valued knobs; "" (blank) = the ruled default.
@@ -302,6 +308,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   trendline_is_target: true, // (a)
   trendline_between_boxes: false, // (b)
   leg_reset_on_wave_break: true, // (a)
+  flag_wall_target: false, // (b) X9 extra, ported from #416
 } as const
 
 // Remove a key when the value is undefined; keep an empty block out of the
@@ -515,6 +522,7 @@ export function MentorTuningPanel({
         {boolField('trendline_is_target', COPY.tlTarget)}
         {boolField('trendline_between_boxes', COPY.tlBetween)}
         {boolField('leg_reset_on_wave_break', COPY.legWave)}
+        {boolField('flag_wall_target', COPY.flagWall)}
       </div>
     </div>
   )

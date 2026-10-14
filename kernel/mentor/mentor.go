@@ -447,6 +447,14 @@ type Config struct {
 	// trade's wave extreme — "đợi cho nó break được cái đỉnh, hoặc đợi cho nó
 	// break được cái đáy của con sóng đó" [X-FOMO @06:10–06:22]. Default ON.
 	LegResetOnWaveBreak bool
+	// FlagWallTarget — CE-11 (b, ported from PR #416): when ON, a trade taken
+	// INSIDE a live flag (both trendlines exist and are unbroken, the entry
+	// strictly between them) gets the OPPOSITE flag wall as a target candidate
+	// — the target is the NEAREST of {the existing target, the wall}, and the
+	// wall can only bring it CLOSER [X9 @ 05:47–06:12: "target của anh chị là
+	// chỉ là trên cái đỉnh của cái flag… vẫn scalping được, không sai"]. A wall
+	// that leaves < 1:1 refuses the entry (flag_wall_room). Default OFF.
+	FlagWallTarget bool
 
 	// RealFillOnly — FU-1 (CTO 2026-10-05): when true, the G1 leg budget and
 	// the G2 loss box are fed ONLY from real broker fills (Limits.RecordFill,

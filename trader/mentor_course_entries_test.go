@@ -32,6 +32,7 @@ func TestCourseEntryKnobsDefaultsAtTheCallSite(t *testing.T) {
 		{"trendline_is_target=true (a)", cfg.TrendlineIsTarget},
 		{"trendline_between_boxes=false (b)", !cfg.TrendlineBetweenBoxes},
 		{"leg_reset_on_wave_break=true (a)", cfg.LegResetOnWaveBreak},
+		{"flag_wall_target=false (b)", !cfg.FlagWallTarget},
 	}
 	for _, c := range checks {
 		if !c.ok {
@@ -55,6 +56,7 @@ func TestCourseEntryKnobsReachTheEvaluator(t *testing.T) {
 		TrendlineIsTarget:           &off,
 		TrendlineBetweenBoxes:       &on,
 		LegResetOnWaveBreak:         &off,
+		FlagWallTarget:              &on,
 	})
 	checks := []struct {
 		name string
@@ -72,6 +74,7 @@ func TestCourseEntryKnobsReachTheEvaluator(t *testing.T) {
 		{"trendline_is_target", !cfg.TrendlineIsTarget},
 		{"trendline_between_boxes", cfg.TrendlineBetweenBoxes},
 		{"leg_reset_on_wave_break", !cfg.LegResetOnWaveBreak},
+		{"flag_wall_target", cfg.FlagWallTarget},
 	}
 	for _, c := range checks {
 		if !c.ok {

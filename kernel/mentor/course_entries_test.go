@@ -413,3 +413,42 @@ func TestB13TrendlineBetweenBoxes(t *testing.T) {
 		t.Fatal("one box is not mid-range")
 	}
 }
+
+// CE-11 FLAG-TARGET (b, ported from PR #416) — "target của anh chị là chỉ là
+// trên cái đỉnh của cái flag… vẫn scalping được, không sai" [X9 @05:47–06:12].
+// A long inside a live flag (support 95, resistance 106 at the bar) targets the
+// closer resistance wall when ON; a wall under 1:1 refuses; OFF never touches
+// the intent. MUTANT: make wallFor always return ok=false → RED.
+func TestCE11FlagWallTarget(t *testing.T) {
+	const bt = int64(600_000)
+	fw := flagWalls{
+		support:        Trendline{Side: SideLong, P0Px: 95, P0T: 0, P1Px: 95, P1T: bt},
+		resistance:     Trendline{Side: SideShort, P0Px: 106, P0T: 0, P1Px: 106, P1T: bt},
+		haveSupport:    true,
+		haveResistance: true,
+	}
+	in := Intent{Action: PlaceStopLimitEntry, Side: SideLong, Price: 100, Stop: 97, Target: 120}
+	var refused []string
+	ref := func(r string) { refused = append(refused, r) }
+
+	cfg := DefaultConfig()
+	if cfg.FlagWallTarget {
+		t.Fatal("flag_wall_target default must be OFF (case b)")
+	}
+	if got := applyFlagWallTarget([]Intent{in}, fw, bt, cfg, ref); got[0].Target != 120 {
+		t.Fatalf("OFF: target must stay 120, got %g", got[0].Target)
+	}
+	cfg.FlagWallTarget = true
+	got := applyFlagWallTarget([]Intent{in}, fw, bt, cfg, ref)
+	if len(got) != 1 || got[0].Target != 106 {
+		t.Fatalf("ON: the resistance wall 106 is the closer target, got %+v", got)
+	}
+	tight := in
+	tight.Stop = 90 // risk 10, wall 6 away → under 1:1
+	if got := applyFlagWallTarget([]Intent{tight}, fw, bt, cfg, ref); len(got) != 0 {
+		t.Fatalf("a wall under 1:1 must refuse the entry, got %+v", got)
+	}
+	if len(refused) < 2 || refused[len(refused)-1] != "flag_wall_room" {
+		t.Fatalf("refusals %v, want flag_wall_target_used then flag_wall_room", refused)
+	}
+}

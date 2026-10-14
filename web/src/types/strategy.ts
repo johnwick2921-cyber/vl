@@ -315,6 +315,8 @@ export interface MentorTuning {
   trendline_between_boxes?: boolean
   // X-FOMO @06:10 — a stopped-out leg also resets on a wave break [true]
   leg_reset_on_wave_break?: boolean
+  // X9 @05:47 — inside a live flag the opposite wall is a closer target (#416) [false]
+  flag_wall_target?: boolean
 }
 
 export interface RiskControlConfig {
