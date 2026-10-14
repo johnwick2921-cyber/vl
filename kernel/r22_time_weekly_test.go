@@ -187,3 +187,61 @@ func TestR22DATRIntradayFallbackDropsTruncatedDay(t *testing.T) {
 			"179.62 means the 96-bar stub of 10-11 was averaged as a full day", dATR)
 	}
 }
+
+func r22VolumeKinds(levels []DetectedLevel) map[LevelKind][]float64 {
+	out := map[LevelKind][]float64{}
+	for _, l := range levels {
+		out[l.Kind] = append(out[l.Kind], l.Price)
+	}
+	return out
+}
+
+// F-1 — Monday's "prior day" is the prior CME SESSION (Friday), not the
+// calendar day before the Sunday 17:00 open (Saturday, which has no bars).
+// Real ring: the 2,000 closed 1m bars before Mon 2026-10-12 08:07 CT (1,095
+// of Friday's session 10-08, 905 of Monday's). Oracles (independent Python
+// over the same rows): pdVWAP 31103.9049, SETT 31123.25 (Fri 15:59 close),
+// session VWAP 31154.0093, eVWAP anchored at FRIDAY 15:00 31152.0020.
+func TestR22MondayPriorDayIsFridaysSession(t *testing.T) {
+	now := time.Date(2026, 10, 12, 8, 7, 0, 0, CTLocation())
+	bars := r22LoadBars(t, "mnq1226_1m_2000_before_20261012_0807ct.json")
+	for i := range bars {
+		bars[i].CloseTime = bars[i].OpenTime + 60_000 - 1
+	}
+	got := r22VolumeKinds(VolumeLevels(bars, now))
+
+	if v := got[KindPDVWAP]; len(v) != 1 || math.Abs(v[0]-31103.9049) > 0.01 {
+		t.Errorf("Monday pdVWAP = %v; want [31103.90] (Friday's session VWAP) — absent means 'prior day' was Saturday", v)
+	}
+	if v := got[KindSETT]; len(v) != 1 || v[0] != 31123.25 {
+		t.Errorf("Monday SETT = %v; want [31123.25] (Friday 15:59 close)", v)
+	}
+	if len(got[KindVAH]) == 0 || len(got[KindVAL]) == 0 {
+		t.Errorf("Monday prior-day profile (pdPOC/VAH/VAL) absent — 'prior day' was Saturday")
+	}
+	ev := got[KindEVWAP]
+	if len(ev) != 1 || math.Abs(ev[0]-31152.0020) > 0.01 {
+		t.Errorf("Monday eVWAP = %v; want [31152.00] (anchored at FRIDAY's 15:00 cash close) — 31154.01 is the session VWAP duplicate", ev)
+	}
+}
+
+// P3-1 — MID-O (overnight 17:00 → 08:30 midpoint) vanished every evening:
+// from 17:00 to 23:59 the window was [today 17:00, today 08:30] — empty.
+func TestR22MIDOPresentInTheEvening(t *testing.T) {
+	now := time.Date(2026, 10, 13, 23, 30, 0, 0, CTLocation())
+	bars := r22Bars1m(t) // 10-11 17:00 … 10-14 01:43; closedBars(now) keeps up to 23:29
+	got := r22VolumeKinds(VolumeLevels(bars, now))
+	if len(got[KindMIDO]) != 1 {
+		t.Fatalf("MID-O at 23:30 CT = %v; want one level from the 17:00→23:29 overnight so far", got[KindMIDO])
+	}
+	hi, lo := math.Inf(-1), math.Inf(1)
+	start := time.Date(2026, 10, 13, 17, 0, 0, 0, CTLocation()).UnixMilli()
+	for _, b := range bars {
+		if b.OpenTime >= start && b.CloseTime < now.UnixMilli() {
+			hi, lo = math.Max(hi, b.High), math.Min(lo, b.Low)
+		}
+	}
+	if want := (hi + lo) / 2; got[KindMIDO][0] != want {
+		t.Errorf("MID-O = %.2f, want %.2f", got[KindMIDO][0], want)
+	}
+}
