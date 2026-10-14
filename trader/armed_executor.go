@@ -423,6 +423,10 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 		// Cancelled through the same seam the close uses, so each cancel is a
 		// wire cancel the book can confirm — never a ledger assumption. PACED per row (W1b FOLD-12, window_sweep_pace.go).
 		if name, noun, window := sessionRiskWindowWords(risk.Class); window {
+			// N-I: a row whose own session has CLOSED is cancelled for THAT
+			// reason first (row 365: "NY first-5m" was the band, LONDON's
+			// close was the cause).
+			at.cancelClosedSessionArms(ledger, now, at.windowSweepPace(now))
 			if n, unacked := at.cancelArmedOrdersSync(name+" opened — "+risk.Reason, at.windowSweepPace(now)); n > 0 || unacked > 0 {
 				at.logWarnf("🔒 %s: %d resting arm(s) cancelled, %d unacked — an arm resting into the %s is cancelled, not grandfathered", name, n, unacked, noun)
 			}
@@ -966,6 +970,30 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 			// short of "admitted". No hole: a cancel_pending row is never placed.
 			if row.ID != 0 && at.respecWorkingArm(ledger, plan, sc, li, prior, legs[li], leg, zl, now) {
 				continue
+			}
+			// N-I (release #22 rescan): a NEW row is never written once the
+			// plan's own session is past its last-entry cutoff — it could
+			// never be placed (row 365, 08:24:00, cutoff 08:15).
+			if row.ID == 0 {
+				if why, past := at.planSessionPastLastEntry(plan.Session, now); past {
+					key := plan.PlanID + ":" + strconv.Itoa(plan.Version) + ":" + sc.ID + ":leg" + strconv.Itoa(li+1) + ":last_entry"
+					if armRefusalChanged(&at.armRefusalLast, key, "last_entry") {
+						shown := ""
+						if n, cerr := store.IncArmRefusal(at.store, at.id, kernel.PlanTradeDateFor(plan), plan.Session, "last_entry"); cerr == nil {
+							shown = fmt.Sprintf(" · last_entry refusals this session: %d", n)
+						}
+						at.logWarnf("🕒 arm NOT authored %s %s leg %d: last_entry — %s; no row is written for an entry that cannot be placed%s", plan.Session, sc.ID, li+1, why, shown)
+					}
+					scope.note(sc.ID, "refused: last_entry: "+why)
+					if geometry != nil {
+						geometry.Reason = "last_entry"
+						geometry.Detail = why
+						if !at.saveArmGeometry(*geometry) {
+							return
+						}
+					}
+					continue
+				}
 			}
 			if geometry != nil {
 				geometry.Quantity = 1
