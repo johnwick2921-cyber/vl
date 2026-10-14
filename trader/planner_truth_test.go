@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"vl/kernel"
+	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 )
 
@@ -62,6 +63,78 @@ func TestDroppedScenarioSweepLeavesPresentScenarioWorking(t *testing.T) {
 	}
 	if row := r.row("S1"); row.State != store.StateWorking {
 		t.Fatalf("the working row must keep resting: %+v", row)
+	}
+}
+
+// M5 (CTO gate P2) — a WORKING row from a DIFFERENT plan_id (an older plan of
+// the same trader) whose scenario is absent from the new doc is NOT cancelled:
+// that row belongs to plan death, not to this sweep. Dropping the
+// `r.PlanID != plan.PlanID` filter would sweep it.
+func TestDroppedScenarioSweepIgnoresForeignPlanRow(t *testing.T) {
+	r := newZoneRig(t, "fp-foreign", zoneDoc(zoneScenario("S1", kernel.EntryPolicyMarketInZone, zone, false)))
+	sid := r.placeWorking(100.5).SignalID
+
+	foreign := &store.ArmedOrderDB{
+		TraderID: "fp-foreign", PlanID: "foreign-plan", Scenario: "FX", LegIndex: 0,
+		Side: "long", EntryPx: 100, StopPx: 98, TargetPx: 110,
+		Policy: kernel.EntryPolicyMarketInZone, State: store.StateWorking,
+		Version: 1, SignalID: "foreign-sid",
+	}
+	if err := r.st.ArmedOrders().UpsertArm(foreign); err != nil {
+		t.Fatalf("insert foreign working row: %v", err)
+	}
+
+	sc2 := zoneScenario("S2", kernel.EntryPolicyMarketInZone, zone, false)
+	sc2.Arm.Enabled = false
+	r.newVersion(sc2)
+	t1 := r.now.Add(time.Minute)
+	r.restingBook(t1, sid, 100.5) // the book knows ONLY the current plan's entry
+	r.setTape(zoneTape(101.95, t1, 0))
+	r.at.maybeManageArmedOrdersAt(nil, t1)
+	sigs, cancels := r.drain()
+	if len(cancels) != 1 || cancels[0].SignalID != sid {
+		t.Fatalf("the sweep must cancel ONLY the current plan's dropped scenario (%s), never a foreign plan's: sigs=%+v cancels=%+v", sid, sigs, cancels)
+	}
+	if len(sigs) != 0 {
+		t.Fatalf("v2 authors no armable scenario — nothing may place: %+v", sigs)
+	}
+	foreignRows, err := r.st.ArmedOrders().ListForPlan("foreign-plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(foreignRows) != 1 || foreignRows[0].State != store.StateWorking || foreignRows[0].SignalID != "foreign-sid" {
+		t.Fatalf("the foreign-plan row must stay working and untouched: %+v", foreignRows)
+	}
+}
+
+// M6 (CTO gate P2) — when cancelSafetyFor refuses (the entry has filled and
+// only its bracket children remain), the sweep sends NO cancel, writes NO
+// cancel_pending, and logs the REFUSED line exactly once.
+func TestDroppedScenarioCancelSafetyRefusalBlocksCancel(t *testing.T) {
+	r := newZoneRig(t, "fp-refused", zoneDoc(zoneScenario("S1", kernel.EntryPolicyMarketInZone, zone, false)))
+	sid := r.placeWorking(100.5).SignalID
+	sc2 := zoneScenario("S2", kernel.EntryPolicyMarketInZone, zone, false)
+	sc2.Arm.Enabled = false
+	r.newVersion(sc2)
+	t1 := r.now.Add(time.Minute)
+	// Book: the ENTRY is gone, only its protection child remains working — the
+	// filled-arm shape cancelSafetyFor refuses (a cancel would take the stop
+	// with it).
+	r.srv.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{
+		{OrderID: "o-" + sid + "-sl", Name: sid + "-sl", Symbol: "MNQ", Action: "sell", Type: "stop", LimitPrice: 98, Quantity: 1, State: "Working"},
+	}}, t1)
+	logBuf := captureTraderLog(t)
+	r.setTape(zoneTape(101.95, t1, 0))
+	r.at.maybeManageArmedOrdersAt(nil, t1)
+	sigs, cancels := r.drain()
+	if len(cancels) != 0 || len(sigs) != 0 {
+		t.Fatalf("a safety-refused dropped scenario must send NOTHING: sigs=%+v cancels=%+v", sigs, cancels)
+	}
+	if row := r.row("S1"); row.State != store.StateWorking {
+		t.Fatalf("the refused row must stay working (no cancel_pending): %+v", row)
+	}
+	if n := strings.Count(logBuf.String(), "dropped-scenario cancel REFUSED"); n != 1 {
+		t.Fatalf("the REFUSED line must be logged exactly once, got %d:\n%s", n, logBuf.String())
 	}
 }
 
