@@ -362,6 +362,10 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			armed = l <= pos.Entry+half
 		}
 		if armed {
+			// Release #22: BE counts as armed only when a move was APPLIED (sent,
+			// already at the broker, or the broker already tighter) — a refused
+			// or failed move never writes the belief; BE is re-tried next candle.
+			applied := false
 			for i := range p.Legs {
 				leg := &p.Legs[i]
 				if leg.SignalID == "" || leg.Qty <= 0 {
@@ -374,17 +378,32 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 					at.mentorCount("stop_move_skipped_leg_closed")
 					continue
 				}
-				if err := at.mentorMoveLegStop(nt, side, leg, pos.Entry); !mentorMoveApplied(err) {
+				err := at.mentorMoveLegStop(nt, side, leg, pos.Entry)
+				if errors.Is(err, errMentorStopBrokerTighter) {
+					applied = true // the broker is already past BE (belief corrected)
+					continue
+				}
+				if !mentorMoveApplied(err) {
 					if !mentorMoveErrAlreadyLogged(err) {
 						at.logWarnf("🧑‍🏫 mentor BE leg %d move FAILED: %v", i, err)
 					}
 					continue
 				}
 				leg.Stop = pos.Entry
+				applied = true
 			}
-			pos.ArmedBE = true
-			pos.Stop = pos.Entry
-			at.mentorCount("be_armed_both_legs")
+			if applied {
+				pos.ArmedBE = true
+				pos.Stop = pos.Entry
+				for i := range p.Legs {
+					if p.Legs[i].Final && p.Legs[i].Qty > 0 && mentorStopTighter(side, p.Legs[i].Stop, pos.Stop) {
+						pos.Stop = p.Legs[i].Stop
+					}
+				}
+				at.mentorCount("be_armed_both_legs")
+			} else {
+				at.mentorCount("be_not_armed_no_move_applied")
+			}
 		}
 	}
 

@@ -314,6 +314,38 @@ func TestR22BEWaitsWhilePriceIsBackThroughTheEntry(t *testing.T) {
 	}
 }
 
+// TestR22RefusedBENeverArmsInBelief — a stale broker book (older than
+// snapshotMaxAge) refuses every stop move (nothing can be judged against the
+// broker — P2-3); the refusal is counted and BE is NOT believed armed: the
+// state line keeps the real stop and the next candle with a fresh book sends
+// BE. Pinned in BOTH modes. Mutant: arm BE whether or not a move applied → the
+// off-mode belief says armed with nothing sent → RED.
+func TestR22RefusedBENeverArmsInBelief(t *testing.T) {
+	for _, mode := range []string{"off", "candle"} {
+		b := r22Fixture(t, store.RiskControlConfig{MentorTrailMode: mode})
+		b.positions("short", 1)
+		b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
+		b.receiptLeg1(r22Sig, "short", r22L1TP, r22Minute(0).Add(30*time.Second))
+		b.s.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: r22RunnerBook(r22Stop)}, time.Now().Add(-2*time.Minute))
+		b.candle(r22Minute(0), 30730.00, 30731.00, 30720.00, 30725.00) // past the half-distance too
+		if got := b.waitMoves(0); len(got) != 0 {
+			t.Fatalf("%s: a stale book must refuse every move; got %+v", mode, got)
+		}
+		lp := b.at.mentorLivePos[r22Sig]
+		if lp.Pos.ArmedBE || lp.Pos.Stop != r22Stop {
+			t.Fatalf("%s: a refused BE must not be believed: armedBE=%v stop=%.2f", mode, lp.Pos.ArmedBE, lp.Pos.Stop)
+		}
+		if n := b.at.mentorCountSnapshot()["stop_move_refused_book_unknown"]; n < 1 {
+			t.Fatalf("%s: the stale-book refusal must be counted, got %d", mode, n)
+		}
+		b.book(r22RunnerBook(r22Stop)...) // a fresh book arrives
+		b.candle(r22Minute(1), 30725.00, 30727.00, 30719.00, 30722.00)
+		if got := b.waitMoves(1); len(got) != 1 || got[0].Leg != 2 || got[0].NewStopLoss != r22Entry {
+			t.Fatalf("%s: BE must go out once a fresh book judges it; got %+v", mode, got)
+		}
+	}
+}
+
 // TestR22LongTrailHigherLowUpLowerLowNoMove — the long mirror at the wire, with
 // an off-grid averaged entry: BE rounds TOWARD PROFIT (30820.10 → 30820.25);
 // a higher low moves the stop up to 1 tick under it; a lower low moves nothing.
