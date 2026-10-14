@@ -379,7 +379,22 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// orders are never cancelled by this.
 	if at.mentorStaleDataBlocked(mentorClockNow()) {
 		// A setup computed on stale prices is not a setup. The deferred guard in
-		// mentorDispatchEntry drops the evaluator's arm on this refusal.
+		// mentorDispatchEntry drops the evaluator's arm on this refusal. LOUD:
+		// every sized Place refused here is named and counted (the "never
+		// silent" rule). The bar age is READ from the same source
+		// mentorStaleDataBlocked reads; "n/a" when there is no bar to read.
+		now := mentorClockNow()
+		newestOpen := int64(0)
+		if bars := market.FuturesBarsProvider(at.futuresSymbol(), "1m", 1); len(bars) > 0 {
+			newestOpen = bars[len(bars)-1].OpenTime
+		}
+		age := "n/a"
+		if newestOpen > 0 {
+			age = fmt.Sprintf("%ds", (now.UnixMilli()-(newestOpen+60_000))/1000)
+		}
+		at.mentorCount("placement_refused_stale_data")
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — stale 1m feed (B4, newest bar %s old): %s %s %s @ %.2f — never reaches the ledger",
+			age, in.ArmID, in.Setup, in.Side, in.Price)
 		// STALLED-SETUP ALARM (release #22): record the refusal reason so a
 		// stalled kind's alert names "stale_data" instead of "silent drop"
 		// (the 10-11 Sunday NT8 lag refused level orders quietly here).
