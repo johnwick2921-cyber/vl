@@ -898,6 +898,18 @@ func (s *ArmedOrderStore) ResetToArmedUnplaced(id int64, reason string) error {
 	}).Error
 }
 
+// ErrArmCancelTerminal is RequestCancel's refusal for a row whose outcome is
+// already settled (release #22 CANCEL-SETTLE, F-1).
+var ErrArmCancelTerminal = errors.New("armed_orders: cancel request refused — the row is already terminal")
+
+// GateRequestCancelTerminal is the per-trader gate-block counter
+// (GET /api/risk/gate-blocks) a refused terminal cancel request records.
+const GateRequestCancelTerminal = "request_cancel_terminal"
+
+// requestCancelBeforeWriteHook runs between RequestCancel's read and its write
+// (fixtures only — it forces the race the CAS exists for). nil in production.
+var requestCancelBeforeWriteHook func(id int64)
+
 // RequestCancel moves a row to cancel_pending and records that a cancel was
 // SENT. It never writes 'cancelled': that word now means the broker's book
 // stopped listing the order, and only ConfirmCancel may say it.
@@ -912,6 +924,9 @@ func (s *ArmedOrderStore) RequestCancel(id int64, reason string, nowMs int64) er
 	var row ArmedOrderDB
 	if err := s.db.First(&row, id).Error; err != nil {
 		return err
+	}
+	if requestCancelBeforeWriteHook != nil {
+		requestCancelBeforeWriteHook(id)
 	}
 	// B2 — the budget is PER PROCESS. A row whose attempts were counted by a
 	// different (or no longer identifiable) process starts again at 1 under
