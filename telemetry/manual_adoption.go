@@ -14,7 +14,17 @@ import "sync/atomic"
 var (
 	manualAdopted        atomic.Int64
 	manualAdoptFlagFails atomic.Int64
+	manualAdoptKeptBot   atomic.Int64
 )
+
+// IncManualAdoptKeptBot (RT-11) counts one adoption with no fill-ring or
+// in-window armed-fill evidence that was KEPT bot because a live bot order of
+// that trader on that side could not be ruled out (unknown is not manual).
+// Returns the new count.
+func IncManualAdoptKeptBot() int64 { return manualAdoptKeptBot.Add(1) }
+
+// ManualAdoptKeptBotCount returns the kept-bot adoptions since boot.
+func ManualAdoptKeptBotCount() int64 { return manualAdoptKeptBot.Load() }
 
 // IncManualAdopted counts one adopted NT8 position flagged origin=manual.
 func IncManualAdopted() { manualAdopted.Add(1) }
