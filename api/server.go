@@ -983,12 +983,15 @@ func (s *Server) Start() error {
 	addr := net.JoinHostPort(host, strconv.Itoa(s.port))
 	logger.Infof("🌐 API server starting at http://%s", addr)
 	logger.Infof("📊 API Documentation:")
-	logger.Infof("  • GET  /api/health           - Health check")
+	logger.Infof("  • GET  /api/health           - Health check (no auth required)")
 	logger.Infof("  • GET  /api/traders          - Public AI trader leaderboard top 50 (no auth required)")
 	logger.Infof("  • GET  /api/competition      - Public competition data (no auth required)")
 	logger.Infof("  • GET  /api/top-traders      - Top 5 trader data (no auth required, for performance comparison)")
-	logger.Infof("  • GET  /api/equity-history?trader_id=xxx - Public return rate historical data (no auth required, for competition)")
-	logger.Infof("  • GET  /api/equity-history-batch?trader_ids=a,b,c - Batch get historical data (no auth required, performance comparison optimization)")
+	// OPS NEW-4 (10-14): these two said "no auth required" (and the batch
+	// "GET") two days after R22 put both behind JWT and made the batch a POST.
+	// Pinned against the registrations: api/boot_banner_routes_test.go.
+	logger.Infof("  • GET  /api/equity-history?trader_id=xxx - Equity history for a trader (JWT required)")
+	logger.Infof("  • POST /api/equity-history-batch - Batch equity history for several traders (JWT required)")
 	logger.Infof("  • GET  /api/traders/:id/public-config - Public trader config (no auth required, no sensitive info)")
 	logger.Infof("  • POST /api/traders          - Create new AI trader")
 	logger.Infof("  • DELETE /api/traders/:id    - Delete AI trader")
@@ -1004,7 +1007,6 @@ func (s *Server) Start() error {
 	logger.Infof("  • GET  /api/decisions?trader_id=xxx  - Specified trader's decision log")
 	logger.Infof("  • GET  /api/decisions/latest?trader_id=xxx - Specified trader's latest decisions")
 	logger.Infof("  • GET  /api/statistics?trader_id=xxx - Specified trader's statistics")
-	logger.Infof("  • GET  /api/performance?trader_id=xxx - Specified trader's AI learning performance analysis")
 	logger.Info()
 
 	s.httpServer = &http.Server{

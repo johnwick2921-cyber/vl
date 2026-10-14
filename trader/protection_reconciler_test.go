@@ -243,6 +243,14 @@ func TestBracketsBootLineReadsRatherThanAsserts(t *testing.T) {
 	if strings.Contains(cold, "can-place-stop=yes") {
 		t.Errorf("an unknown AddOn build was reported as capable:\n  %s", cold)
 	}
+	// EXECUTION N-H: and not as INCAPABLE either — "no (addon none < …)" was a
+	// verdict on a build nobody had received. Unknown is n/a.
+	if !strings.Contains(cold, "can-place-stop=n/a (no AddOn build received yet") {
+		t.Errorf("an unknown AddOn build must print can-place-stop=n/a, never a verdict:\n  %s", cold)
+	}
+	if old := BracketsBootLine(nil, false, "2026-09-01-a", 0); !strings.Contains(old, "can-place-stop=no (addon 2026-09-01-a < ") {
+		t.Errorf("a RECEIVED build below the floor still reads no:\n  %s", old)
+	}
 
 	// With a book carrying the shape this wave creates.
 	book := []nt.NT8Order{
