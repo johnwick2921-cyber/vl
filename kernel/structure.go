@@ -149,7 +149,6 @@ type StructureState struct {
 	OneWay *StructureOneWay `json:"one_way,omitempty"`
 }
 
-
 type swing struct {
 	kind   string
 	price  float64
