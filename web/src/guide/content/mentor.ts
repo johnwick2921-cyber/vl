@@ -41,7 +41,7 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.htf_gate_news_only',
     live: true,
   },
-  '2m ISB execution after 09:00 CT': {
+  '2m ISB execution (1m only in the first 30 min of RTH)': {
     settingId: 'risk_control.mentor_tuning.exec_2m_after_30m',
     live: true,
   },
