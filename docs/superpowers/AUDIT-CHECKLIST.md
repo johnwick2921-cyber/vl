@@ -8347,3 +8347,71 @@ GET /api/risk/gate-blocks (`setup_stalls`).
 Reference: telemetry/setup_stall.go (SetupStallAlertDue, RolloverSetupStalls),
 trader/mentor_stall_alarm.go (mentorSetupKind, mentorStallAlarmCheck),
 api/handler_gate_blocks.go (telemetrySetupStallTable).
+
+## CLASS NN (assigned at merge) — an expiry set AT the decision instant, settled by pass order
+
+symptom: rel22 mentor audit P1-1 (2026-10-14). A mentor ISB arm is authored with
+expiry = the close of the NEXT 1m candle — the very instant the evaluator decides
+keep-or-cancel on that candle [D4.2 p2 @ 08:21–09:01]. The event loop
+(trader/armed_event_pass.go runArmedEventLoop) ran the ARMED pass first and the
+mentor pass second; the FINAL frame that wakes it lands after the wall-clock
+close, so the armed pass always saw the arm expired and cancelled it at NT8 a few
+ms before the evaluator's ExtendArm, which was then refused "row N is not an
+unfilled arm". 39 such log lines 10-04..10-13; 16 resting orders killed (rows 253,
+257, 258, 262, 266, 267, 270, 272, 275, 279, 309, 319, 322, 326, 357, 358), 9 of
+which would have triggered inside the keep window. Every one fell while the
+trader's active plan carried an enabled market_in_zone arm (the flag that makes
+the loop run its armed pass at all); the extends that DID land (10-12 03:55,
+10-13 03:29/04:12/04:13) fell under no_trade/dormant plans.
+probe: for every deadline that a bar-driven decision may move (expiry, rest cap,
+hold window), find EVERY pass that can act on the deadline and ask whether one
+of them can run between the deadline instant and the decision. If the deadline
+equals the decision instant, the order of the passes in each loop IS the rule —
+read it, and pin it with a test that drives the real loop goroutine.
+rule: the pass that DECIDES runs before the pass that ENFORCES the deadline on the
+same wake-up; a refusal caused by losing that race is counted apart
+(extend_lost_expiry_race), read from the row's own state, never inferred.
+Reference: trader/armed_event_pass.go runArmedEventLoop (mentor pass first),
+trader/mentor_actions.go mentorExtendArm + mentorRowTakenByExpiry,
+trader/mentor_keep_race_test.go. Known residue [B]: the 2-min scan and the 5 s
+mentor cadence tick are other passes; neither was the culprit in the 16 rows,
+and the counter will show it if one ever is.
+
+## CLASS NN (assigned at merge) — one number, two definitions (a hidden executor offset)
+
+symptom: rel22 mentor audit P2-1 (2026-10-14). The kernel authored the ISB at the
+extreme ± 1.5 (the course's buffer [D2.1 p1 @ 05:36]) and the executor's
+decideStopEntry added the planner's E7 stop-entry offset (2 ticks = 0.5) on top,
+so every regular ISB reached NT8 at ± 2.0 (row 357: I1 high 30888.75, ledger
+30890.25, wire 30890.75; fills 252/254/261/316/347 each 0.5 past the ledger).
+One setup (the reverse ISB) had been patched to pre-subtract the offset — a
+second definition compensating the first, which is what hid it.
+probe: for every price the kernel authors, compare the ledger value with the
+WIRE value (the placement log's trigger, or the fill). A difference that is not
+the documented rounding is a hidden second definition. Grep for authoring code
+that subtracts an executor constant — compensation is the tell.
+rule: ONE definition per offset, at one call site (stopEntryWireOffset: the E7
+offset for planner stop entries by spec, 0 for mentor rows — the kernel
+authors the course price); the placement line prints the offset it ACTUALLY
+applied (a READ value).
+Reference: trader/armed_executor.go stopEntryWireOffset / decideStopEntry
+(OffsetTicks), kernel/mentor/isb_reverse.go, trader/mentor_isb_offset_test.go.
+
+## CLASS NN (assigned at merge) — an empty enum value falls through to a default branch
+
+symptom: rel22 mentor audit P2-2 (2026-10-14). The fill path read a mentor
+position's exit mode only from an in-memory staging map; when the staging was
+lost between authoring and fill (a restart, or a second instance of the trader —
+10-13 17:41–17:50 shows two hoang funnel series on one trader id), the position
+registered with Mode "" and the exit drive, which has no case for "", ran mode
+B's stop moves. Row 347 (position 648) logged "mode=" while its row says
+exit_mode='B'. A lost C (confluence: "do NOT move the stop up at all"
+[D4.2 p1 @ 14:57]) would have been driven as B.
+probe: for every switch over a mode/kind/state string, ask what the empty string
+does. If "" reaches the default branch, find every writer of the value and every
+way it can be absent (restart, second instance, partial path).
+rule: resolve "" explicitly at the source with a stated order (staged → persisted
+→ the setup's own rule → the course default, cited) and log + count which source
+was used, once per object.
+Reference: trader/mentor_live_pos.go mentorFillExitMode / mentorNoteFillExitMode,
+trader/mentor_fill_exit_mode_test.go.
