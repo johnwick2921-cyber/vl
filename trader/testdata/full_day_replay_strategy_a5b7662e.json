@@ -1,0 +1,136 @@
+{
+  "ai_config": {
+    "coin_source": {
+      "source_type": "static",
+      "static_coins": [
+        "MNQ"
+      ]
+    },
+    "indicators": {
+      "atr_periods": [
+        14
+      ],
+      "boll_periods": [
+        20
+      ],
+      "ema_periods": [
+        50,
+        200
+      ],
+      "enable_atr": true,
+      "enable_boll": false,
+      "enable_ema": true,
+      "enable_funding_rate": true,
+      "enable_macd": false,
+      "enable_oi": false,
+      "enable_raw_klines": true,
+      "enable_rsi": true,
+      "enable_svp": true,
+      "enable_volume": true,
+      "klines": {
+        "enable_multi_timeframe": true,
+        "longer_count": 10,
+        "longer_timeframe": "4h",
+        "primary_count": 20,
+        "primary_timeframe": "5m",
+        "selected_timeframes": [
+          "1h",
+          "4h",
+          "1d",
+          "15m",
+          "3m",
+          "5m"
+        ]
+      },
+      "rsi_periods": [
+        14
+      ]
+    },
+    "risk_control": {
+      "altcoin_max_leverage": 5,
+      "altcoin_max_position_value_ratio": 1,
+      "blackout_enabled": false,
+      "breakeven_enabled": true,
+      "breakeven_trigger_points": 40,
+      "btc_eth_max_leverage": 5,
+      "btc_eth_max_position_value_ratio": 5,
+      "daily_loss_enabled": false,
+      "daily_loss_limit_usd": 450,
+      "daily_profit_enabled": false,
+      "daily_profit_target_usd": 900,
+      "guardrails_enabled": false,
+      "hold_discipline": true,
+      "max_contracts_enabled": false,
+      "max_contracts_per_order": 2,
+      "max_daily_trades": 3,
+      "max_daily_trades_enabled": false,
+      "max_margin_usage": 0.9,
+      "max_positions": 3,
+      "mentor_mode": true,
+      "mentor_window_minutes": -1,
+      "min_confidence": 60,
+      "min_position_size": 12,
+      "min_risk_reward_ratio": 2,
+      "notional_cap_enabled": false,
+      "trailing_atr_period": 14,
+      "trailing_enabled": false
+    }
+  },
+  "day_plan": {
+    "acceptance_rule": "5m_close",
+    "approval_required": false,
+    "evening_digest": true,
+    "flip_reread": true,
+    "levels_fresh_by_tf": true,
+    "max_levels": 12,
+    "one_setup_enabled": false,
+    "picture_htf": {
+      "enabled": true
+    },
+    "plan_enabled": true,
+    "plan_mode": "strict",
+    "planner_timeframes": [
+      "D",
+      "4h",
+      "1h",
+      "15m",
+      "5m"
+    ],
+    "proximity_filter_atr": 1,
+    "realign_cap": 10,
+    "replan_cap": 4,
+    "scenario_cap": 5,
+    "sessions": [
+      {
+        "acceptance_rule": "5m_close",
+        "max_trades": 10,
+        "min_grade": "B",
+        "replan_cap": 4,
+        "session": "NY"
+      },
+      {
+        "acceptance_rule": "5m_close",
+        "enable": true,
+        "max_trades": 7,
+        "min_grade": "B",
+        "replan_cap": 4,
+        "session": "ASIA"
+      },
+      {
+        "acceptance_rule": "5m_close",
+        "enable": true,
+        "max_trades": 10,
+        "min_grade": "B",
+        "replan_cap": 4,
+        "session": "LONDON"
+      }
+    ],
+    "sessions_enabled": [
+      "NY"
+    ],
+    "structure_map": true,
+    "wake_on_htf_ob": true
+  },
+  "language": "en",
+  "strategy_type": "ai_trading"
+}
