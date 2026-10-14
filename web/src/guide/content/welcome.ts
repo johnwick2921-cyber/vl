@@ -13,7 +13,7 @@ export const welcome: GuideSection = {
       cards: [
         {
           title: PRODUCT_NAME,
-          body: 'One structure-permissioned, level-anchored MNQ SIM trader — advisory-first. The Go engine computes the map; the AI (deepseek-v4-pro) writes one day-plan per session, then decides every cycle against it. You hold the knobs.',
+          body: 'One structure-permissioned, level-anchored MNQ SIM trader — advisory-first. The Go engine computes the map; the AI (deepseek-v4-pro) writes one day-plan per session, then decides every cycle against it. In MENTOR MODE (a per-strategy switch — the owner’s mentor trader runs it) the AI places no entries at all: the mentor rules engine places them and the AI plan is advice only (Section 17). You hold the knobs.',
           tag: 'SIM',
         },
         {
@@ -43,7 +43,7 @@ export const welcome: GuideSection = {
     },
     {
       kind: 'p',
-      text: 'Boot truth: the bot refuses to trade unless its revision and prompt goldens pass — `🔐 BOOT INTEGRITY OK — rev … · goldens PASS` (kernel/boot_integrity.go). The SIM lock is hard: non-SIM accounts are refused at the account-routing layer (provider/ninjatrader isAccountTradeable).',
+      text: 'Boot truth: the bot refuses to trade unless its revision and prompt goldens pass — `🔐 BOOT INTEGRITY OK — rev … · goldens PASS` (kernel/boot_integrity.go). The SIM lock is hard: non-SIM accounts are refused at the account-routing layer (trader/ninjatrader/tcp_trader.go isAccountTradeable).',
     },
     { kind: 'h', text: 'Canon — the files that ARE the answer' },
     {
@@ -80,7 +80,7 @@ export const welcome: GuideSection = {
     { kind: 'h', text: 'Quick start' },
     {
       kind: 'p',
-      text: 'Three jumps: read the plan card (Section 3) · learn what levels are (Section 4) · understand why it sits out (Section 6 + FAQ "ASIA sat out all night").',
+      text: 'Three jumps: read the plan card (Section 3) · learn what levels are (Section 4) · understand why it sits out (Section 6 + FAQ "Why did the bot sit out all session?").',
     },
   ],
 }

@@ -4,7 +4,7 @@ export const faq: GuideSection = {
   id: 'faq',
   num: 12,
   title: 'FAQ',
-  tagline: 'The fourteen questions everyone asks.',
+  tagline: 'The questions everyone asks.',
   asBuiltRev: GUIDE_BUILT_REV,
   blocks: [
     {
@@ -66,7 +66,7 @@ export const faq: GuideSection = {
         },
         {
           q: 'I restarted NinjaTrader while holding a trade — does my stop survive?',
-          a: 'The stop itself usually does: working orders are re-synced from the broker. What did NOT survive, until 2026-09-07, was the bot\'s memory of it — the AddOn kept the stop/target pairing in memory only, rebuilt from nowhere, so after a restart auto-breakeven and bracket edits silently did nothing and no one was checking whether a stop was there at all. Now the bot asks the broker directly, every minute a position is open and again on reconnect, and if there is genuinely no stop it raises a P0 and places one. Two honest caveats: on the reconnect edge the answer is usually "UNVERIFIED", because NinjaTrader sends positions and balances on connect but not its order book until the next 30-second beat — the check re-asks a minute later; and protective orders are now GTC rather than Day, so a stop no longer expires at session end while the position it protects lives on.',
+          a: 'The stop itself usually does: working orders are re-synced from the broker. What did NOT survive, until 2026-09-07, was the bot\'s memory of it — the AddOn kept the stop/target pairing in memory only, rebuilt from nowhere, so after a restart auto-breakeven and bracket edits silently did nothing and no one was checking whether a stop was there at all. Now the bot asks the broker directly, every minute a position is open and again on reconnect, and if there is genuinely no stop it raises a P0 and places one. Two honest caveats: on the reconnect edge the answer can still read "UNVERIFIED" for a moment — since release #20 the AddOn sends an order snapshot for every SIM account the instant it connects (SendAllOrderSnapshots on connect), and the check re-asks a minute later; and protective orders are now GTC rather than Day, so a stop no longer expires at session end while the position it protects lives on.',
           mechanism:
             'trader/protection_reconciler.go adjudicateProtection, on monitorTick and the dead-man reconnect edge; ninjascript SubmitBracketOnEntryFill places SL/TP TimeInForce.Gtc.',
           link: '#guards',
@@ -87,7 +87,7 @@ export const faq: GuideSection = {
         },
         {
           q: 'Why did my stop get wider than the plan said?',
-          a: "Since 0B every armed stop is composed: beyond the nearest seated level on the risk side plus 2 ticks, floored at 1.5×ATR5m, widest wins — and never tighter than the planner authored. The arm logs 🛑 with the chosen stop, the anchor level, the ATR floor and which one bound. If nothing seated sits within 3×ATR on the risk side the line says stop_unanchored and the ATR floor governs. Note the R:R gate then judges the WIDER stop, so some arms are now refused at ARM_MIN_RR 2.0 that would previously have rested. On CME futures the chosen stop is then rounded to the tick AWAY from the entry (a long's stop down, a short's up), using the instrument's own tick (M2K/RTY 0.10, YM 1.00, NQ/ES 0.25) in any symbol form, so the order NT8 receives is never inside the floor it passed.",
+          a: "Since 0B every armed stop is composed: beyond the nearest seated level on the risk side plus 2 ticks, floored at 1.5×ATR5m, widest wins — and never tighter than the planner authored. The arm logs 🛑 with the chosen stop, the anchor level, the ATR floor and which one bound. If nothing seated sits within 3×ATR on the risk side the line says stop_unanchored and the ATR floor governs. Note the R:R gate then judges the WIDER stop, so some arms are now refused at the strategy's min R:R (2 on both bound strategies; ARM_MIN_RR was deleted 2026-09-03) that would previously have rested. Exception: a reject fade keeps the frozen structural stop it was authored with (trader/arm_stop_anchor.go). On CME futures the chosen stop is then rounded to the tick AWAY from the entry (a long's stop down, a short's up), using the instrument's own tick (M2K/RTY 0.10, YM 1.00, NQ/ES 0.25) in any symbol form, so the order NT8 receives is never inside the floor it passed.",
           mechanism:
             'trader/arm_stop_anchor.go composeArmStop → the arm gate → the ledger row → placement.',
           link: '#settings',
@@ -101,7 +101,7 @@ export const faq: GuideSection = {
         },
         {
           q: 'What do the level grades mean?',
-          a: "A/B/C = the planner's confidence in a level (evidence × freshness × confluence × TF). m: is the machine grade. Both are INFORMATIONAL — nothing gates on them.",
+          a: "A/B/C = the planner's confidence in a level (evidence × freshness × confluence × TF). m: is the machine grade. The planner grade is informational, but the grade is NOT purely decorative: the strategy's min_grade filters which levels are SEATED on the card at all (kernel/levels_assemble.go ScoreLevelsMinGradeFullSeats; live value B).",
           link: '#levels',
         },
         {
@@ -121,7 +121,7 @@ export const faq: GuideSection = {
         },
         {
           q: 'Why did the bot flatten at 14:45?',
-          a: 'EOD-flat ladder: the session ends flat by design (limit ticks, then market after the grace seconds). The session registry enforces it for all three sessions.',
+          a: 'EOD flat: the session ends flat by design — resting entries are cancelled, then positions close at market (the limit-ticks-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0; default 0). The session registry enforces it for all three sessions. Exception: a SWING4H mentor position is held through the close (it is managed by the 4h candle).',
           link: '#trading-day',
         },
         {
@@ -131,12 +131,12 @@ export const faq: GuideSection = {
         },
         {
           q: "A knob change didn't do anything — why?",
-          a: "Either it wasn't saved (toast + saved-chip), the value is above a code ceiling (leverage 20 → inert above 10/5), the guardrail master is OFF, or the config is cached at trader-load and needs the trader reload/restart to go hot.",
+          a: 'Either it wasn\'t saved (toast + saved-chip), the value is above a code ceiling, the guardrail master is OFF, the knob has no reader (the guide card says so), or the reload that Save triggers failed — Save reloads every running trader bound to the strategy, and on a failed reload the log says "saved but trader reload failed … restart to apply".',
           link: '#settings',
         },
         {
           q: 'Why does the guide banner warn about revision drift?',
-          a: "This guide was built against one code revision. The banner compares it to the running bot's revision — amber means the guide is older than the bot; verify before trusting a cite.",
+          a: 'The banner compares the commit this page bundle was BUILT from with the commit the running bot reports (first 12 characters). Amber means only that the two differ — it cannot tell older from newer, and it cannot catch a guide sentence that is wrong about the very build it ships with (the guide-truth tests do that). Reload the page after an update; if it stays amber, the bot and the UI bundle are from different builds.',
           link: '#welcome',
         },
       ],

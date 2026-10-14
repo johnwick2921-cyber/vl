@@ -426,6 +426,10 @@ it('preserves every existing TypeScript import target in changed files', async (
     'web/src/pages/AgentChatPage.tsx\u0000../components/agent/MarketTicker',
     'web/src/router/AppRoutes.tsx\u0000../pages/BeginnerOnboardingPage',
     'web/src/router/AppRoutes.tsx\u0000../lib/onboarding',
+    // release #22 UI-GUIDE-TRUTH LF-1: /faq now redirects to /guide — the
+    // inherited crypto/Docker FAQ page (with its pkill / delete-the-WAL
+    // advice) is no longer routed:
+    'web/src/router/AppRoutes.tsx\u0000../pages/FAQPage',
   ])
   for (const path of git(['diff', '--name-only', base, '--', '*.ts', '*.tsx'])
     .trim()
