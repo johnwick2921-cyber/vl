@@ -447,6 +447,8 @@ const REV_COMPARE_LEN = 12
 export function GuidePage() {
   const [query, setQuery] = useState('')
   const [revision, setRevision] = useState<string | undefined>(undefined)
+  // DR-4 (release #22): a failed health read is UNVERIFIED, not "no drift".
+  const [healthFailed, setHealthFailed] = useState(false)
   const indexRef = useRef<HTMLDivElement>(null)
   const allHits = useMemo(() => collectHits(), [])
   const hits = useMemo(() => {
@@ -460,7 +462,11 @@ export function GuidePage() {
     fetch('/api/health')
       .then((r) => r.json())
       .then((j) => live && setRevision(j?.revision))
-      .catch(() => live && setRevision(undefined))
+      .catch(() => {
+        if (!live) return
+        setRevision(undefined)
+        setHealthFailed(true)
+      })
     return () => {
       live = false
     }
@@ -498,6 +504,20 @@ export function GuidePage() {
           sections · live-component examples
         </p>
       </header>
+
+      {healthFailed && (
+        <div
+          data-testid="guide-rev-unverified"
+          className="rounded-xl px-3 py-2 text-[12px]"
+          style={{
+            border: '1px solid var(--vl-gold-line)',
+            color: 'var(--vl-gold)',
+          }}
+        >
+          ⚠ CANNOT VERIFY THE BUILD — /api/health did not answer, so this page
+          cannot tell whether it matches the running bot.
+        </div>
+      )}
 
       {drift && (
         <div

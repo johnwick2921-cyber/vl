@@ -209,6 +209,15 @@ describe('GuidePage', () => {
     expect(screen.queryByTestId('guide-rev-drift')).toBeNull()
   })
 
+  // DR-4 (release #22): a failed health read used to look exactly like a
+  // match (no banner). Unverified must say so. Mutant: drop the catch flag → RED.
+  it('says the build cannot be verified when /api/health fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+    render(<GuidePage />)
+    expect(await screen.findByTestId('guide-rev-unverified')).toBeTruthy()
+    expect(screen.queryByTestId('guide-rev-drift')).toBeNull()
+  })
+
   it('renders knob cards with all ten fields', () => {
     render(<GuidePage />)
     const knobs = screen.getAllByTestId('guide-knob')

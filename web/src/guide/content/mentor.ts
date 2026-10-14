@@ -1261,10 +1261,10 @@ export const mentor: GuideSection = {
         {
           label: 'Leg reset on',
           where: 'Strategy → Mentor mode → limits',
-          what: 'What opens a new leg after the budget is spent: a 1m close beyond the prior high/low.',
+          what: 'What opens a new leg after the budget is spent: "close" (default) = a 1m close beyond the prior high/low; "touch" = a wick reaching it (kernel/mentor/limits.go resetBreaks).',
           trader: 'close.',
           consumer: 'kernel/mentor/limits.go leg_reset_on',
-          range: 'close',
+          range: 'close | touch',
           systemDefault: 'close',
           recommended: 'close — G1 ruling 2026-10-03.',
           whenToTouch: 'Rarely.',

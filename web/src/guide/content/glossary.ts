@@ -121,7 +121,7 @@ export const glossary: GuideSection = {
         },
         {
           term: 'Thin side',
-          def: 'Machine-caused shortage on one side → ⚖ note instead of failure.',
+          def: 'REMOVED concept (owner ruling 2026-08-31): there is no thin-side note, knob or WARN any more. What survives: a plan with 0 levels on a side, or an empty machine map, fails closed.',
         },
         {
           term: 'Tier-1',

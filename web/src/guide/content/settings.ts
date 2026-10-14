@@ -702,10 +702,10 @@ const risk: KnobSpec[] = [
   {
     label: 'Guardrails master',
     where: 'Strategy → Risk Control → Guardrails',
-    what: 'Master switch for the daily guardrails stack (loss/profit caps, max trades, reentry cooldown, consistency, blackout windows). The consecutive-loss halt is NOT under this switch — it is its own circuit breaker and bites whether the master is on or off.',
+    what: 'Master switch for the daily guardrails stack (loss/profit caps, max trades, consistency, blackout windows). The consecutive-loss halt and the re-entry cooldown are NOT under this switch — each bites whether the master is on or off.',
     trader:
       'Currently OFF by owner ruling — the would-have-tripped counters still display.',
-    consumer: 'kernel/engine_position.go (guardrail evaluation)',
+    consumer: 'kernel/risk_limits.go ResolveStrategyGuardrails (MasterEnabled)',
     range: 'ON | OFF',
     systemDefault: 'ON',
     recommended:
