@@ -376,7 +376,12 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// orders are never cancelled by this.
 	if at.mentorStaleDataBlocked(mentorClockNow()) {
 		// A setup computed on stale prices is not a setup. The deferred guard in
-		// mentorDispatchEntry drops the evaluator's arm on this refusal.
+		// mentorDispatchEntry drops the evaluator's arm on this refusal. LOUD:
+		// the once-per-episode WARN in mentorStaleDataBlocked is not enough to
+		// see a single level order die — every sized Place refused here is named
+		// and counted (the "never silent" rule).
+		at.mentorCount("stale_data_placement_refused")
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — stale 1m feed (B4): %s %s @ %.2f never reaches the ledger", in.Setup, in.Side, in.Price)
 		return
 	}
 	// N10 (stale intent): an entry whose reference candle is not the newest
