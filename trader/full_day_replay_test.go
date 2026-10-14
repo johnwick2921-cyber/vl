@@ -260,6 +260,20 @@ func TestFullDayReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ledger read: %v", err)
 	}
+	// Fidelity dump: ALL authored arms (terminal included) vs the live ids
+	// 329-340 (CT 03:28-04:33 UTC 08:28-09:33, e.g. 329 LONG 30754.75/30748.0).
+	var allRows []store.ArmedOrderDB
+	if err := st.GormDB().Order("id ASC").Find(&allRows).Error; err != nil {
+		t.Fatalf("all-arms read: %v", err)
+	}
+	for _, r := range allRows {
+		if r.Side == "" {
+			continue // never-authored placeholder rows
+		}
+		t.Logf("ARM id=%d trader=%s scenario=%s side=%s entry=%.2f stop=%.2f ct=%s",
+			r.ID, r.TraderID, r.Scenario, r.Side, r.EntryPx, r.StopPx,
+			time.UnixMilli(r.CreatedAt.UnixMilli()).In(kernel.CTLocation()).Format("15:04"))
+	}
 	t.Run("b_emitted_orders_have_ledger_rows", func(t *testing.T) {
 		if len(rows) == 0 {
 			t.Skipf("no mentor arms were authored on this fixture day (placement may be gated by the day gate / windows) — the invariant is vacuous here; count emitted intents")
