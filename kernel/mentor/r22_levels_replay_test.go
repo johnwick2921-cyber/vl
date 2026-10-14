@@ -352,14 +352,17 @@ func TestR22SilentPHLDropsAreCounted1013(t *testing.T) {
 }
 
 // TestR22ChartDrawsTheTradingOldExtremes1013 — r22 P1 "one source". On every
-// tick of 10-13 the DRAW set (DisplayLevels — the mentor-truth panel and the
-// dashboard chart) carries exactly the old extremes the trading code reads.
+// tick of 10-13 the DRAW set (DisplayLevels over the tick's ChartLevels — what
+// the mentor-truth panel and the dashboard chart draw) carries exactly the old
+// extremes the trading code reads.
 // Before the fix the chart folded/pruned the 12 pivots (5 drawn at 08:30).
 func TestR22ChartDrawsTheTradingOldExtremes1013(t *testing.T) {
 	cfg := r22Cfg()
 	r22Replay(t, "mnq_1m_2026-10-13_session", r22Open1013, cfg, func(e *Evaluator, win []market.Kline, _ []Intent) {
 		trading := r22OldExtremePrices(e.State.Levels)
-		drawn := r22OldExtremePrices(DisplayLevels(e.State.Levels, cfg.KeyLevelPrunePts))
+		// The panel/chart draws DisplayLevels over the tick's chart set
+		// (trader/mentor_truth_panel.go: DisplayLevels(st.ChartLevels, …)).
+		drawn := r22OldExtremePrices(DisplayLevels(e.State.ChartLevels, cfg.KeyLevelPrunePts))
 		if fmt.Sprint(trading) != fmt.Sprint(drawn) {
 			t.Fatalf("bar %d: chart draws old extremes %v, trading reads %v — one source", win[len(win)-1].OpenTime, drawn, trading)
 		}
