@@ -578,13 +578,15 @@ func (at *AutoTrader) mentorRebuildSwingArm(r store.ArmedOrderDB, pos *store.Tra
 	}
 	entryBucket := kernel.FourHBucketStart(openTime, kernel.CTLocation())
 	at.mentorRegisterLiveArm(armID, r.ID, lp.Pos.Side, lp.Pos.Entry, r.Scenario)
-	if at.mentorEval != nil {
-		if !at.mentorEval.State.Swing.RebuildSwingPos(
-			mentor.Side(lp.Pos.Side), lp.Pos.Entry, lp.Pos.Stop, lp.Pos.Target, lp.Pos.R, entryBucket, armID, lp.Pos.ArmedBE,
-		) {
-			at.mentorUnregisterLiveArm(armID)
-			return false, "degenerate swing position (entry or risk unreadable)"
-		}
+	if at.mentorEval == nil {
+		at.mentorUnregisterLiveArm(armID)
+		return false, "evaluator not constructed"
+	}
+	if !at.mentorEval.State.Swing.RebuildSwingPos(
+		mentor.Side(lp.Pos.Side), lp.Pos.Entry, lp.Pos.Stop, lp.Pos.Target, lp.Pos.R, entryBucket, armID, lp.Pos.ArmedBE,
+	) {
+		at.mentorUnregisterLiveArm(armID)
+		return false, "degenerate swing position (entry or risk unreadable)"
 	}
 	return true, ""
 }

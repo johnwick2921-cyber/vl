@@ -2,10 +2,12 @@ package trader
 
 import (
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"vl/kernel"
 	"vl/kernel/mentor"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
@@ -276,6 +278,134 @@ func TestMentorRebuildSwingContractMismatchRefused(t *testing.T) {
 	}
 	if at.mentorEval.State.Swing.Pos != nil {
 		t.Fatal("evaluator swing Pos must NOT be rebuilt on a contract mismatch")
+	}
+	if c := at.mentorCountSnapshot()["swing_rebuild_refused"]; c != 1 {
+		t.Fatalf("swing_rebuild_refused = %d, want 1", c)
+	}
+	alerts, _ := st.Alert().List(at.id, 100)
+	for _, a := range alerts {
+		if a.Kind == "mentor-swing-restart" {
+			return
+		}
+	}
+	t.Fatal("no P0 mentor-swing-restart alert raised")
+}
+
+// swingOpenTimeCT is the real-UTC epoch ms of a CT wall-clock 5m bar open
+// (America/Chicago — CDT -5 in September, the same anchor the kernel's
+// fourHBucketStart uses).
+func swingOpenTimeCT(day, hour, minute int) int64 {
+	return time.Date(2026, 9, day, hour, minute, 0, 0, kernel.CTLocation()).UnixMilli()
+}
+
+// TestMentorRebuildSwingMovedBEReadsBroker — fold M2: a swing whose live NT8
+// stop is ALREADY at entry rebuilds with MovedBE=true (read from the broker,
+// never forced). A mutant that forces MovedBE false in RebuildSwingPos makes
+// this RED.
+func TestMentorRebuildSwingMovedBEReadsBroker(t *testing.T) {
+	at, st := f2Trader(t)
+	at.id = "swing-movedbe"
+	at.mentorEval = mentor.New(mentor.DefaultConfig())
+	sig := "swing-movedbe-sig"
+	armID := "swing-" + strconv.FormatInt(swingRestartOpenTime, 10)
+	arm := swingRestartArm(at.id, sig, armID, 3, 31020, 31000, 31080)
+	if err := st.ArmedOrders().UpsertArm(arm); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Position().CreateOpenPosition(swingRestartPos(at.id, sig, 3, 31020, swingRestartOpenTime)); err != nil {
+		t.Fatal(err)
+	}
+	// the broker stop is already AT entry (BE done before the restart)
+	f2PinBook(t, []ntwire.NT8Order{f2StopOrder(sig+"-sl", 31020, 3)}, true, 0)
+	if rebuilt, refused, ran := at.mentorRebuildLivePosAtBoot(time.Now()); !ran || rebuilt != 1 || refused != 0 {
+		t.Fatalf("rebuilt=%d refused=%d ran=%v want 1/0/true", rebuilt, refused, ran)
+	}
+	p := at.mentorEval.State.Swing.Pos
+	if p == nil {
+		t.Fatal("evaluator swing Pos not rebuilt")
+	}
+	if !p.MovedBE {
+		t.Fatal("MovedBE must be true — the live stop is already at entry")
+	}
+}
+
+// TestMentorRebuildSwingEntryBucketIsArmBarBucket — fold M3: the evaluator's
+// EntryBucket is the 4h bucket of the swing's own 5m bar (the ArmID
+// "swing-<open>"), so a bar 3h55m into its bucket resolves to the BUCKET START,
+// not the bar's round hour. A mutant that shifts EntryBucket one 4h candle late
+// (+4h) makes this RED.
+func TestMentorRebuildSwingEntryBucketIsArmBarBucket(t *testing.T) {
+	at, st := f2Trader(t)
+	at.id = "swing-bucket"
+	at.mentorEval = mentor.New(mentor.DefaultConfig())
+	sig := "swing-bucket-sig"
+	openTime := swingOpenTimeCT(15, 8, 55) // 08:55 = 3h55m into the 05:00 bucket
+	armID := "swing-" + strconv.FormatInt(openTime, 10)
+	arm := swingRestartArm(at.id, sig, armID, 3, 31020, 31000, 31080)
+	if err := st.ArmedOrders().UpsertArm(arm); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Position().CreateOpenPosition(swingRestartPos(at.id, sig, 3, 31020, openTime)); err != nil {
+		t.Fatal(err)
+	}
+	f2PinBook(t, []ntwire.NT8Order{f2StopOrder(sig+"-sl", 31000, 3)}, true, 0)
+	if rebuilt, refused, ran := at.mentorRebuildLivePosAtBoot(time.Now()); !ran || rebuilt != 1 || refused != 0 {
+		t.Fatalf("rebuilt=%d refused=%d ran=%v want 1/0/true", rebuilt, refused, ran)
+	}
+	want := swingOpenTimeCT(15, 5, 0) // the 05:00 bucket start
+	if got := at.mentorEval.State.Swing.Pos.EntryBucket; got != want {
+		t.Fatalf("EntryBucket = %d, want %d (the 05:00 bucket, not 08:00 or +4h)", got, want)
+	}
+}
+
+// TestMentorRebuildSwingArmForeignTraderRefused — fold M5: a row whose TraderID
+// is not the caller's is refused at the trader-id check (fail-closed, never a
+// cross-trader registration). A mutant that drops the check returns true.
+func TestMentorRebuildSwingArmForeignTraderRefused(t *testing.T) {
+	at, _ := f2Trader(t)
+	at.id = "swing-owner"
+	at.mentorEval = mentor.New(mentor.DefaultConfig())
+	foreign := swingRestartArm("swing-foreign", "swing-f-sig", "swing-"+strconv.FormatInt(swingRestartOpenTime, 10), 3, 31020, 31000, 31080)
+	pos := swingRestartPos("swing-foreign", "swing-f-sig", 3, 31020, swingRestartOpenTime)
+	lp := &mentorLivePos{Pos: mentorPosition{Side: "long", Entry: 31020, Stop: 31000, Target: 31080, R: 20}}
+	if ok, why := at.mentorRebuildSwingArm(*foreign, pos, lp); ok {
+		t.Fatal("a foreign-trader row must be refused")
+	} else if why == "" || !strings.Contains(why, "trader") {
+		t.Fatalf("refusal must name the trader mismatch, got %q", why)
+	}
+	if _, ok := at.mentorLiveArmFor("swing-" + strconv.FormatInt(swingRestartOpenTime, 10)); ok {
+		t.Fatal("a foreign-trader row must never register under the caller")
+	}
+}
+
+// TestMentorRebuildSwingDegenerateRiskRefused — fold M6/M7: a degenerate swing
+// (original stop == entry → risk 0) is refused at the call site: the arm is
+// unregistered (never half-rebuilt), a P0 alert fires and swing_rebuild_refused
+// is counted. A mutant that drops the unregister, or that accepts risk 0, makes
+// this RED.
+func TestMentorRebuildSwingDegenerateRiskRefused(t *testing.T) {
+	at, st := f2Trader(t)
+	at.id = "swing-degenerate"
+	at.mentorEval = mentor.New(mentor.DefaultConfig())
+	sig := "swing-deg-sig"
+	armID := "swing-" + strconv.FormatInt(swingRestartOpenTime, 10)
+	arm := swingRestartArm(at.id, sig, armID, 3, 31020, 31020, 31080) // stop == entry → risk 0
+	if err := st.ArmedOrders().UpsertArm(arm); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Position().CreateOpenPosition(swingRestartPos(at.id, sig, 3, 31020, swingRestartOpenTime)); err != nil {
+		t.Fatal(err)
+	}
+	f2PinBook(t, []ntwire.NT8Order{f2StopOrder(sig+"-sl", 31020, 3)}, true, 0)
+	rebuilt, refused, ran := at.mentorRebuildLivePosAtBoot(time.Now())
+	if !ran || rebuilt != 1 || refused != 0 {
+		t.Fatalf("rebuilt=%d refused=%d ran=%v want 1/0/true (the 1m rebuild still succeeds)", rebuilt, refused, ran)
+	}
+	if _, ok := at.mentorLiveArmFor(armID); ok {
+		t.Fatal("a degenerate swing must NOT stay in mentorLiveArms")
+	}
+	if at.mentorEval.State.Swing.Pos != nil {
+		t.Fatal("a degenerate swing must NOT rebuild the evaluator Pos")
 	}
 	if c := at.mentorCountSnapshot()["swing_rebuild_refused"]; c != 1 {
 		t.Fatalf("swing_rebuild_refused = %d, want 1", c)
