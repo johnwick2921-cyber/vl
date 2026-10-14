@@ -131,7 +131,10 @@ func TestMentorTickKeepsAProductionAuthoredRestingLevelArm(t *testing.T) {
 		t.Fatalf("precondition: the production scenario is epoch-prefixed, got %q", row.Scenario)
 	}
 	at.mentorEval.State.LevelArms = map[string]mentor.LevelArm{
-		"L": {ArmID: "lvl-77", Side: mentor.SideLong, LevelPrice: 29385},
+		// PlacedAt mirrors the production register (eval.go:1676 sets it to the
+		// placement candle's CloseTime): the level rests until ITS OWN 15:00 CT
+		// expiry (FIX-LEVEL-WINDOW), never cancelled at birth by the wall clock.
+		"L": {ArmID: "lvl-77", Side: mentor.SideLong, LevelPrice: 29385, PlacedAt: now.Add(-time.Minute).UnixMilli() + 59_999},
 	}
 	bars := []market.Kline{
 		{OpenTime: now.Add(-2 * time.Minute).UnixMilli(), CloseTime: now.Add(-2*time.Minute).UnixMilli() + 59_999, Open: 29390, High: 29395, Low: 29388, Close: 29393, Final: true},

@@ -67,6 +67,11 @@ func TestOrderedOwnerConflictFailsStart(t *testing.T) {
 			if !strings.Contains(a.Body, "t2") || !strings.Contains(a.Body, "t1") {
 				t.Fatalf("P0 must name both traders, got: %s", a.Body)
 			}
+			// FIX-RUNNING-FLAG fold: a FOREIGN owner (t1) is a different trader,
+			// not a second copy of this one — the banner must not read "instance".
+			if strings.Contains(a.Body, "instance") {
+				t.Fatalf("the foreign-owner P0 must not call the other trader an instance of this one, got: %s", a.Body)
+			}
 		}
 	}
 	if !found {

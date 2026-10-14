@@ -75,7 +75,7 @@ type mentorSizeChoice struct {
 }
 
 // mentorContractsFor is THE size table (pure — the call site the tests pin).
-// Order matters: spent → ISB reductions → twenties → big → confluence →
+// Order matters: ISB reductions → stop-in-the-twenties → big → confluence →
 // swing4h → base, every branch capped at maxContracts. A non-positive max
 // refuses (fail-closed). B12 (CTO 1791041016051): the stop-in-the-twenties
 // cut wins over confluence sizing — a 20–25 pt stop is 3, never a raised tier.
@@ -759,11 +759,11 @@ func mentorLeg1TPForC(entry, r float64, side string) float64 {
 	return entry + r*mentor.Leg1RiskMultiple(true)
 }
 
-// mentorConfluenceForIntent is the R2 STUB (CTO 1791029620038: "use a stub
+// mentorConfluenceForIntent is the R2 seam (CTO 1791029620038: "use a stub
 // flag until DS-106's lands"): reports whether the intent carries the
 // confluence flag (box edge + key level inside the box or within 2 pts of its
-// edge + 5m trigger agrees). nil → false — C and size 10 never fire until
-// DS-103's tagged intents replace this seam.
+// edge + 5m trigger agrees). Wired by mentorWiring to the evaluator's tagged
+// in.Confluence; nil → false — C (size 5) never fires with no wiring.
 var mentorConfluenceForIntent func(in mentor.Intent) bool
 
 // mentorConfluenceFlag resolves the stub seam for one intent.
@@ -813,9 +813,10 @@ func mentorIntentTargetPts(in mentor.Intent) float64 {
 // loop lands):
 //
 //	swing — SWING4H: hold by the 4h (DS-106's rules).
-//	C     — the confluence flag: hold ≥ 1:2, stop never moves up, size 10
-//	        (20 with 4h+1h agree + room ≥ 2× + target ≥ 30). Leg 1's TP at
-//	        2× risk is set AT ENTRY (mentorLeg1TPForC).
+//	C     — the confluence flag: hold ≥ 1:2, stop never moves up, size 5
+//	        (5 with 4h+1h agree + room ≥ 2× + target ≥ 30 — course default
+//	        5 MNQ, 1.1 p2 L1103). Leg 1's TP at 2× risk is set AT ENTRY
+//	        (mentorLeg1TPForC).
 //	B     — normal: BE once price covers half the distance to the TRADE's target,
 //	        leg 1 exits at its +1R TP, the runner trails each closed 1m
 //	        candle. A PHL/PLH fill starts as B with the resonance watch armed:

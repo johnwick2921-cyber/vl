@@ -421,6 +421,123 @@ func TestSwing4hBEAndHold(t *testing.T) {
 	}
 }
 
+// TestSwingRebuildPosResumesBEAndHold — FIX-SWING-RESTART: a FILLED swing
+// restored from durable records via RebuildSwingPos resumes break-even at +1R
+// and the hold-close at the 2nd 4h candle after entry. The BE/hold management
+// runs only because RebuildSwingPos set Pos — a mutant that drops the restore
+// leaves Pos nil and this turns RED.
+func TestSwingRebuildPosResumesBEAndHold(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	base := swingTape(t, nil) // 3 closed 4h buckets (17:00/21:00/01:00)
+	s := &SwingState{}
+	// establish the warm line + LastBarTime from the closed buckets
+	now0 := base[len(base)-1].OpenTime + 60_000
+	_ = SwingTick(s, base, cfg, now0)
+	if s.Line == 0 {
+		t.Fatal("fixture: the swing line must be established")
+	}
+	// a FILLED long swing the trader proved from durable records:
+	// entry 10110, original stop 10050 (risk 60), entry in the 05:00 bucket.
+	entryBar := mk5m(t, 15, 5, 0, 10100, 10120, 10090, 10110)
+	entryBucket := fourHBucketStart(entryBar.OpenTime, nil)
+	if !s.RebuildSwingPos(SideLong, 10110, 10050, 10250, 60, entryBucket, "swing-rebuilt", false) {
+		t.Fatal("RebuildSwingPos refused a valid swing")
+	}
+	// a 5m close at +1R (>= 10170) → break-even
+	beBars := append(base, mk5m(t, 15, 5, 5, 10180, 10190, 10175, 10185))
+	out := SwingTick(s, beBars, cfg, beBars[len(beBars)-1].OpenTime+60_000)
+	var be bool
+	for _, in := range out {
+		if in.Action == ActionMoveStopBE {
+			be = true
+			if in.ArmID != "swing-rebuilt" {
+				t.Fatalf("BE intent ArmID = %q, want swing-rebuilt", in.ArmID)
+			}
+		}
+	}
+	if !be {
+		t.Fatalf("no BE intent after the rebuild; got %+v", out)
+	}
+	// advance past entryBucket + 2*4h (05:00 + 8h = 13:00) → hold-close
+	late := append(beBars, mk5m(t, 15, 13, 5, 10180, 10190, 10175, 10185))
+	out2 := SwingTick(s, late, cfg, late[len(late)-1].OpenTime+60_000)
+	var closed bool
+	for _, in := range out2 {
+		if in.Action == ActionClosePosition {
+			closed = true
+		}
+	}
+	if !closed {
+		t.Fatalf("no close at the hold limit after the rebuild; got %+v", out2)
+	}
+}
+
+// TestSwingRebuildPosAlreadyAtBESendsNoSecondBE — FIX-SWING-RESTART fold M2: a
+// swing whose live NT8 stop is already at entry (MovedBE true) must NOT get a
+// second ActionMoveStopBE after a restart, even on a +1R close. A mutant that
+// forces MovedBE false in RebuildSwingPos re-sends the BE and this turns RED.
+func TestSwingRebuildPosAlreadyAtBESendsNoSecondBE(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	base := swingTape(t, nil)
+	s := &SwingState{}
+	_ = SwingTick(s, base, cfg, base[len(base)-1].OpenTime+60_000)
+	entryBar := mk5m(t, 15, 5, 0, 10100, 10120, 10090, 10110)
+	if !s.RebuildSwingPos(SideLong, 10110, 10110, 10250, 60, fourHBucketStart(entryBar.OpenTime, nil), "swing-be-done", true) {
+		t.Fatal("RebuildSwingPos refused a valid swing")
+	}
+	// a 5m close well past +1R (>= 10170) must NOT re-send the BE
+	beBars := append(base, mk5m(t, 15, 5, 5, 10180, 10190, 10175, 10185))
+	out := SwingTick(s, beBars, cfg, beBars[len(beBars)-1].OpenTime+60_000)
+	for _, in := range out {
+		if in.Action == ActionMoveStopBE {
+			t.Fatalf("a swing already at break-even must not re-send MoveStopBE; got %+v", out)
+		}
+	}
+}
+
+// TestSwingRebuildPosHoldBoundary — FIX-SWING-RESTART fold M3: the hold-close
+// fires at the END of the 4h candle after the entry candle, not before. The
+// entry bar sits LATE in its 4h bucket (08:55 = 3h55m into the 05:00 bucket), so
+// the bucket math — not a round number — decides the boundary: no close on the
+// last 5m bar before bucket+2×4h (12:55), close ON the first bar at/after it
+// (13:00). A mutant that shifts EntryBucket one 4h candle late misses the 13:00
+// close and this turns RED.
+func TestSwingRebuildPosHoldBoundary(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	base := swingTape(t, nil)
+	s := &SwingState{}
+	_ = SwingTick(s, base, cfg, base[len(base)-1].OpenTime+60_000)
+	// 08:55 is 3h55m into the 05:00 bucket — the entry bucket is 05:00, NOT 08:00.
+	entryBar := mk5m(t, 15, 8, 55, 10100, 10120, 10090, 10110)
+	entryBucket := fourHBucketStart(entryBar.OpenTime, nil)
+	if entryBucket != mk5m(t, 15, 5, 0, 0, 0, 0, 0).OpenTime {
+		t.Fatalf("08:55 must resolve to the 05:00 bucket, got %d", entryBucket)
+	}
+	if !s.RebuildSwingPos(SideLong, 10110, 10050, 10250, 60, entryBucket, "swing-late", false) {
+		t.Fatal("RebuildSwingPos refused a valid swing")
+	}
+	// last 5m bar BEFORE the boundary (holdMs = 05:00 + 2×4h = 13:00): 12:55
+	preBars := append(base, mk5m(t, 15, 12, 55, 10130, 10140, 10125, 10135))
+	out := SwingTick(s, preBars, cfg, preBars[len(preBars)-1].OpenTime+60_000)
+	for _, in := range out {
+		if in.Action == ActionClosePosition {
+			t.Fatalf("no hold-close before the boundary; got %+v", out)
+		}
+	}
+	// the FIRST bar at/after the boundary: 13:00 → close
+	postBars := append(preBars, mk5m(t, 15, 13, 0, 10130, 10140, 10125, 10135))
+	out2 := SwingTick(s, postBars, cfg, postBars[len(postBars)-1].OpenTime+60_000)
+	var closed bool
+	for _, in := range out2 {
+		if in.Action == ActionClosePosition {
+			closed = true
+		}
+	}
+	if !closed {
+		t.Fatalf("hold-close must fire on the first bar at/after the boundary; got %+v", out2)
+	}
+}
+
 // TestSwingNeverFillsSendsNoManage (S1 pin, production call site SwingTick):
 // a swing intent that never fills must never send MoveStopBE / ClosePosition —
 // the hold close is a phantom that would flatten a DIFFERENT mentor position on

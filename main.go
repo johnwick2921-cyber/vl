@@ -343,6 +343,26 @@ func main() {
 			logger.Infof("  • %s [%s] %s - AI Model: %s, Exchange: %s",
 				t.Name, idShort, status, t.AIModelID, t.ExchangeID)
 		}
+
+		// FIX-RUNNING-FLAG — boot mismatch WARN: a trader the DB says is STOPPED
+		// but that still has an open position or working (non-terminal) armed
+		// order was almost certainly stopped by the double-start rollback, not by
+		// the owner. READ-only: log a WARN naming the trader; no auto-start change.
+		for _, t := range traders {
+			if t.IsRunning {
+				continue
+			}
+			var openPos, working int
+			if ps, err := st.Position().GetOpenPositions(t.ID); err == nil {
+				openPos = len(ps)
+			}
+			if as, err := st.ArmedOrders().ListNonTerminal(t.ID); err == nil {
+				working = len(as)
+			}
+			if openPos > 0 || working > 0 {
+				logger.Warnf("⚠️  boot mismatch: trader %q (%s) is marked STOPPED (is_running=0) but has %d open position(s) and %d working order(s) — it may have been stopped by a duplicate-start rollback while actually running", t.Name, t.ID, openPos, working)
+			}
+		}
 	}
 
 	// Plan 4 Task 23 — risk + audit endpoints are registered inside

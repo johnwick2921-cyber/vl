@@ -315,8 +315,9 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 		}
 	}
 
-	// P2.3 — LAST-ENTRY cutoff: block NEW entries after the day-trader last-entry
-	// time (default 13:00 CT = 14:00 ET). Gated on day_plan → dormant by default.
+	// P2.3 — LAST-ENTRY cutoff: block NEW entries after the session's last-entry
+	// time (session end − DefaultLastEntryOffsetMin = 14:30 CT for NY). Gated on
+	// day_plan → dormant by default.
 	// ALL paths (CTO Q4): an arm placed between the cutoff and the EOD flat is
 	// the class of bug W-EXEC-TRUTH exists for.
 	// B3 N6: a MENTOR arm is exempt from the per-session last-entry cutoff (its

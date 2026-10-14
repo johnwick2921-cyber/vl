@@ -449,7 +449,7 @@ func swingFirstTarget(side Side, entry, stop, ema5m float64) float64 {
 // placement offset (5–10 pts) sits TOWARD the approaching price, so the
 // line is drawn at line−offset for a below-approach (resistance) and at
 // line+offset for an above-approach (support); the candle must reach the
-	// placed line — "KHÔNG ĐƯỢC GẦN ĐỤNG" [D5.2 p2 @ 18:36–18:41].
+// placed line — "KHÔNG ĐƯỢC GẦN ĐỤNG" [D5.2 p2 @ 18:36–18:41].
 func touchesLineApproach(b market.Kline, line, offset float64, approach Side) bool {
 	if approach == SideShort { // price comes from below → line at line−offset
 		return b.Low <= line-offset && b.High >= line-offset
@@ -560,4 +560,30 @@ func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Int
 		s.Pos = nil
 	}
 	return out
+}
+
+// RebuildSwingPos (FIX-SWING-RESTART) restores the FILLED swing leg from
+// durable records (the armed row, the open position and NT8's live stop) so
+// manageSwingPosition resumes break-even + hold-close across a restart. Every
+// field is caller-proven; the kernel invents nothing. A degenerate position
+// (unknown side, entry or risk unreadable) is refused (false) so the caller
+// leaves the stop as it is at NT8 — never a guessed stop or a guessed close.
+func (s *SwingState) RebuildSwingPos(side Side, entry, stop, target, risk float64, entryBucket int64, armID string, movedBE bool) bool {
+	if side != SideLong && side != SideShort {
+		return false
+	}
+	if entry <= 0 || risk <= 0 {
+		return false
+	}
+	s.Pos = &swingPosition{
+		Side:        side,
+		Entry:       entry,
+		Stop:        stop,
+		Target:      target,
+		Risk:        risk,
+		EntryBucket: entryBucket,
+		ArmID:       armID,
+		MovedBE:     movedBE,
+	}
+	return true
 }
