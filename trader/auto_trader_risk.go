@@ -92,6 +92,11 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	// loss latch holds (cancel first, flatten second: a working entry must not
 	// fill after the flat).
 	at.dailyLossFlattenAt(now)
+	// W26 P3-11: the EOD 14:45 flatten also runs on THIS 60 s wall-clock beat.
+	// Before, its only caller was runCycle (the ~2 min cycle), so a session-end
+	// flatten could be up to 2 minutes late. enforceEODFlatAt is idempotent and
+	// gated on day_plan/mentor, so a no-position trader no-ops every beat.
+	at.enforceEODFlat()
 	// MENTOR-NY item 8 (rescan P2-N5): the mentor news cancel/flatten and the
 	// day-stop sweep also run on this wall-clock beat — before, their only
 	// callers were inside mentorEvalOnce, i.e. only on a NEW closed bar, so a

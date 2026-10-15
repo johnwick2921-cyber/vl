@@ -2001,6 +2001,10 @@ type MentorTuning struct {
 	// SwingMaxStopPts: SWING4H skips at a stop >= this (R-D, default 100). The
 	// trader rule gate and the kernel swing gate read this ONE value.
 	SwingMaxStopPts float64 `json:"swing_max_stop_pts,omitempty"`
+	// SwingMinStopPts (W26 P2-4): SWING4H skips at a stop NARROWER than this.
+	// 0 = OFF (the course states no minimum — only the 100-pt ceiling and "a
+	// stop near 100 → don't enter"). R5: new behaviour, defaults OFF.
+	SwingMinStopPts float64 `json:"swing_min_stop_pts,omitempty"`
 
 	// ── Release #25 course-entry knobs (fix/mentor-course-entries). Absent =
 	// the ruled default (kernel/mentor DefaultConfig, COMMON-25 knob rule);
