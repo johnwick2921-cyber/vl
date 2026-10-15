@@ -5,6 +5,16 @@ import (
 	"sync/atomic"
 )
 
+// W26 deadman-escalation thresholds (bug fix, ships ON — no knob): a blocked
+// episode that has not reconciled after this many CONSECUTIVE failed probes, or
+// has stood for this long, fires ONE P0 `dead_man_reconcile_stuck` alert per
+// episode. Entries stay BLOCKED regardless — the alert is an operator signal,
+// never an auto-unblock.
+const (
+	deadManStuckProbeMin = 3
+	deadManStuckAgeMs    = int64(5 * 60_000)
+)
+
 // B5 — dead-man's watchdog. On an NT8 TCP disconnect / missed heartbeats, NEW
 // entries are blocked; a reconnect alone does NOT resume trading — the link must
 // first pass a clean positions/orders reconciliation (so the bot never opens on top
@@ -44,6 +54,76 @@ type deadManWatchdog struct {
 	mu        sync.Mutex // serializes step(): runCycle and monitorTick both drive it
 	epoch     uint64     // accept sequence of the link last seen connected
 	haveEpoch bool
+
+	// W26 escalation state (guarded by mu; written inside step/stepEpoch, read
+	// by escalation()/HealthSnapshot()).
+	blockedSinceMs int64 // Unix ms the current blocked episode began; 0 = not blocked
+	failedProbes   int   // consecutive failed reconcile probes in this episode
+	stuckAlerted   bool  // the P0 stuck alert has fired for this episode
+}
+
+// deadManEscalation is the snapshot of the W26 escalation state.
+type deadManEscalation struct {
+	BlockedSinceMs int64 // 0 = not blocked
+	FailedProbes   int
+	Alerted        bool
+}
+
+// deadManHealth is the per-trader /api/health `dead_man` field (READ values).
+type deadManHealth struct {
+	Blocked bool  `json:"blocked"`
+	SinceMs int64 `json:"since_ms"` // 0 = not blocked
+	Probes  int   `json:"probes"`
+}
+
+// beginEpisode starts a NEW blocked episode at nowMs — called only on a
+// transition from dmLive into a blocked state (a drop, or a replaced link
+// epoch), under mu. A flap within an episode (down ↔ awaiting) does NOT start
+// a new episode: the alert fires once per continuous block, not once per flap.
+func (w *deadManWatchdog) beginEpisode(nowMs int64) {
+	w.blockedSinceMs = nowMs
+	w.failedProbes = 0
+	w.stuckAlerted = false
+}
+
+// endEpisode clears the escalation state when a clean reconcile resumes.
+func (w *deadManWatchdog) endEpisode() {
+	w.blockedSinceMs = 0
+	w.failedProbes = 0
+	w.stuckAlerted = false
+}
+
+// bumpFailedProbe records one failed reconcile probe (called only while the
+// link is up and entries are blocked, under mu).
+func (w *deadManWatchdog) bumpFailedProbe(nowMs int64) {
+	if w.blockedSinceMs == 0 {
+		w.blockedSinceMs = nowMs
+	}
+	w.failedProbes++
+}
+
+// escalation returns the current escalation snapshot.
+func (w *deadManWatchdog) escalation() deadManEscalation {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return deadManEscalation{BlockedSinceMs: w.blockedSinceMs, FailedProbes: w.failedProbes, Alerted: w.stuckAlerted}
+}
+
+// markStuckAlerted records that the P0 alert has fired for the current episode.
+func (w *deadManWatchdog) markStuckAlerted() {
+	w.mu.Lock()
+	w.stuckAlerted = true
+	w.mu.Unlock()
+}
+
+// HealthSnapshot is the /api/health `dead_man` field (READ values, never
+// literal). blocked = entries are currently blocked; since_ms = the current
+// blocked episode's start (0 = not blocked); probes = consecutive failed
+// reconcile probes in the current episode.
+func (w *deadManWatchdog) HealthSnapshot() deadManHealth {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return deadManHealth{Blocked: w.get() != dmLive, SinceMs: w.blockedSinceMs, Probes: w.failedProbes}
 }
 
 func (w *deadManWatchdog) get() deadManState  { return deadManState(w.st.Load()) }
@@ -106,7 +186,7 @@ const (
 // wdReconnected (entries block, unfilled entries swept, protection re-asked,
 // reconcile on a LATER step); from dmAwaitingReconcile it restarts the wait.
 // missed reports that the event came from the epoch, for the log line.
-func (w *deadManWatchdog) stepEpoch(connected bool, epoch uint64, epochKnown bool, reconcileOK func() bool) (ev watchdogEvent, missed bool, prevEpoch uint64) {
+func (w *deadManWatchdog) stepEpoch(connected bool, epoch uint64, epochKnown bool, nowMs int64, reconcileOK func() bool) (ev watchdogEvent, missed bool, prevEpoch uint64) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	prevEpoch = w.epoch
@@ -117,12 +197,15 @@ func (w *deadManWatchdog) stepEpoch(connected bool, epoch uint64, epochKnown boo
 	if replaced {
 		switch w.get() {
 		case dmLive, dmAwaitingReconcile:
+			if w.get() == dmLive {
+				w.beginEpisode(nowMs) // a NEW block begins (live → blocked via epoch)
+			}
 			w.set(dmAwaitingReconcile)
 			return wdReconnected, true, prevEpoch
 		}
 		// dmDisconnected: the ordinary reconnect path below sees it.
 	}
-	return w.step(connected, reconcileOK), false, prevEpoch
+	return w.step(connected, nowMs, reconcileOK), false, prevEpoch
 }
 
 // step advances the watchdog one trading cycle from the current link status and a
@@ -138,19 +221,32 @@ func (w *deadManWatchdog) stepEpoch(connected bool, epoch uint64, epochKnown boo
 //
 // reconcileOK is invoked ONLY when the link is up and entries are already blocked
 // (awaiting reconciliation), never on the reconnect cycle itself.
-func (w *deadManWatchdog) step(connected bool, reconcileOK func() bool) watchdogEvent {
+func (w *deadManWatchdog) step(connected bool, nowMs int64, reconcileOK func() bool) watchdogEvent {
+	prev := w.get()
 	if cur, changed := w.observe(connected); changed {
 		switch cur {
 		case dmDisconnected:
+			if prev == dmLive {
+				w.beginEpisode(nowMs) // a NEW block begins
+			}
 			return wdWentDown
 		case dmAwaitingReconcile:
+			// prev was dmDisconnected — a within-episode reconnect, the same
+			// continuous block; the episode is not restarted.
 			return wdReconnected // reconnected — defer reconcile to a later cycle
 		}
 		return wdNone
 	}
 	// No transition; if still awaiting reconcile over a live link, try to reconcile.
-	if w.entriesBlocked() && connected && reconcileOK != nil && reconcileOK() && w.reconciled() {
-		return wdResumed
+	if w.entriesBlocked() && connected {
+		if reconcileOK != nil && reconcileOK() {
+			if w.reconciled() {
+				w.endEpisode()
+				return wdResumed
+			}
+			return wdNone
+		}
+		w.bumpFailedProbe(nowMs)
 	}
 	return wdNone
 }

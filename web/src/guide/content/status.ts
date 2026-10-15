@@ -532,5 +532,10 @@ export const status: GuideSection = {
       kind: 'p',
       text: "GET /api/health now reports real state, not a liveness constant: db is ok|unavailable|dead (a DEAD database answers 503 — everything else stays 200), nt8 carries each running trader's feed_status and newest-1m-bar age, traders_running counts running traders, and time is a real RFC3339 timestamp (it used to be null). Cutover scripts still read revision from it. GET /api/telemetry (read-only, auth'd) serves the previously write-only counters: far arms, repair regression, shadowed arm refusals, research-snapshot drops/rows, weekly snapshot, GA4 send failures and log-event drop counts. GA4 sends now count every non-2xx and transport failure instead of swallowing them.",
     },
+    { kind: 'h', text: 'Dead-man reconcile block — and the stuck alert' },
+    {
+      kind: 'p',
+      text: "The dead-man watchdog blocks NEW entries the moment the NT8 TCP link drops, and keeps them blocked through a reconnect until a clean reconciliation: BOTH a positions snapshot and an order snapshot must be RECEIVED on the NEW connection (the old link's cached book does not count). Exits and open-position management are never gated — only new entries. A block that will not clear now tells you so instead of sitting silent: after 3 consecutive failed reconcile probes, or 5 minutes blocked, the bot raises ONE P0 'dead_man_reconcile_stuck' alert per blocked episode — the usual cause is the AddOn having stopped sending order snapshots. The alert is a signal to YOU, never an auto-unblock: entries stay BLOCKED until a clean reconcile actually lands, and a clean reconcile ends the episode (the next block alerts again). GET /api/health names each blocked trader as nt8.<id>.dead_man {blocked, since_ms, probes} — blocked is READ from the gate, since_ms is when the current block began, probes is how many consecutive reconciles have failed.",
+    },
   ],
 }
