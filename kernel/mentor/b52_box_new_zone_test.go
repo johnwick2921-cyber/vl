@@ -125,20 +125,21 @@ func TestB52KnobOffNoNewZone(t *testing.T) {
 // TestB52InsideRangeNoBox — rule 3: a failure that forms INSIDE the standing
 // range (its top above the old floor) is never latched — "no third zone in the
 // middle". Same first box + escape, but the next double bottom sits ABOVE the
-// old floor. Mutant: change the outside check from `b.Top > old.Bottom` to
-// `b.Bottom >= old.Bottom` (a zone straddling the floor) → RED.
+// old floor.
 func TestB52InsideRangeNoBox(t *testing.T) {
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
 	}
 	// Bars 0–8 = b52Tape (first FTGL [96, 96.8], escape @8). Then price rallies
-	// and makes a STRADDLING double bottom: bottom 96.5 is BELOW the old floor
-	// 96, its partner's body 97.1 is ABOVE it — the candidate [96.5, 97.1]
-	// straddles the old range and must be refused ("no third zone in the
-	// middle"). The tape is the CTO's fold-551 replacement: the candidate really
-	// forms (swing low 96.5 @12, partner low 96.9 @16, both confirmed), so the
-	// pin reaches the outside check instead of returning nil first.
+	// and makes a double bottom INSIDE the old range: bottom 96.5 is ABOVE the
+	// old floor 96, its partner's body 97.1 is above too — the candidate
+	// [96.5, 97.1] is fully inside (not straddling) and must be refused ("no
+	// third zone in the middle"). The tape is the CTO's fold-551 replacement:
+	// the candidate really forms (swing low 96.5 @12, partner low 96.9 @16, both
+	// confirmed), so the pin reaches the outside check instead of returning nil
+	// first. Killed by B1 (outside check disabled); the straddling case is the
+	// separate TestB52StraddlingZoneNoBox.
 	bars := []market.Kline{
 		mk(0, 100, 101, 99, 100),
 		mk(1, 100, 100.5, 98, 100),
@@ -152,7 +153,7 @@ func TestB52InsideRangeNoBox(t *testing.T) {
 		mk(9, 95.5, 97.5, 95.3, 97.2),
 		mk(10, 97.2, 98.5, 97.0, 98.2),
 		mk(11, 98.2, 98.6, 97.8, 98.0),
-		mk(12, 98.0, 98.2, 96.5, 96.7), // swing low 96.5 (below the floor 96)
+		mk(12, 98.0, 98.2, 96.5, 96.7), // swing low 96.5 (above the floor 96)
 		mk(13, 96.7, 97.8, 96.8, 97.6), // confirms @12 (low 96.8 > 96.5)
 		mk(14, 97.6, 98.4, 97.4, 98.2),
 		mk(15, 98.2, 98.5, 97.9, 98.3),
@@ -162,7 +163,83 @@ func TestB52InsideRangeNoBox(t *testing.T) {
 	}
 	e := b52Run(bars, b52Cfg())
 	if len(e.State.PostEscapeBoxes) != 0 {
-		t.Fatalf("latched a straddling zone: %+v — no third zone in the middle [D3.2 p2 @09:47–09:54]", e.State.PostEscapeBoxes)
+		t.Fatalf("latched an inside-range zone: %+v — no third zone in the middle [D3.2 p2 @09:47–09:54]", e.State.PostEscapeBoxes)
+	}
+}
+
+// TestB52StraddlingZoneNoBox — a candidate FTGL whose bottom is BELOW the old
+// floor and whose top is ABOVE it (Bottom < old.Bottom < Top) must NOT latch:
+// a new zone only when price left and built one OUTSIDE [D3.4 p3 rec @00:00–
+// 00:34]. Mutant (box.go:695 `b.Top > old.Bottom` → `b.Bottom >= old.Bottom`)
+// lets the straddle through → RED.
+func TestB52StraddlingZoneNoBox(t *testing.T) {
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	// Bars 0–8 = b52Tape (first FTGL [96, 96.8], escape @8). Then a double
+	// bottom whose bottom 95.5 is BELOW the old floor 96 and whose partner body
+	// 97.1 is ABOVE it → candidate [95.5, 97.1] straddles the old range.
+	bars := []market.Kline{
+		mk(0, 100, 101, 99, 100),
+		mk(1, 100, 100.5, 98, 100),
+		mk(2, 99, 99.5, 96, 97),
+		mk(3, 97, 98, 97, 97.5),
+		mk(4, 98, 98.5, 98, 98),
+		mk(5, 98, 98.5, 97.5, 98),
+		mk(6, 97, 97.5, 96.5, 96.8),
+		mk(7, 96.8, 97.5, 96.6, 97),
+		mk(8, 95.5, 96, 95, 95), // escape below 96
+		mk(9, 95.5, 97.5, 95.3, 97.2),
+		mk(10, 97.2, 98.5, 97.0, 98.2),
+		mk(11, 98.2, 98.6, 97.8, 98.0),
+		mk(12, 98.0, 98.2, 95.5, 95.7), // swing low 95.5 (below the floor 96)
+		mk(13, 95.7, 97.8, 95.8, 97.6), // confirms @12 (low 95.8 > 95.5)
+		mk(14, 97.6, 98.4, 97.4, 98.2),
+		mk(15, 98.2, 98.5, 97.9, 98.3),
+		mk(16, 98.3, 98.4, 96.9, 97.1), // partner low 96.9 (>95.5), body 97.1
+		mk(17, 97.1, 97.9, 97.0, 97.7), // confirms @16 → candidate [95.5, 97.1]
+		mk(18, 97.7, 98.0, 97.5, 97.8),
+	}
+	e := b52Run(bars, b52Cfg())
+	if len(e.State.PostEscapeBoxes) != 0 {
+		t.Fatalf("latched a straddling zone: %+v — a new zone only outside the old range [D3.4 p3 rec @00:00–00:34]", e.State.PostEscapeBoxes)
+	}
+}
+
+// TestB52StraddlingFTGHNoBox — the FTGH mirror: a candidate FTGH whose bottom is
+// below the old ceiling and whose top is above it (Bottom < old.Top < Top) must
+// NOT latch. Mutant (box.go:698 `b.Bottom < old.Top` → `b.Top <= old.Top`) lets
+// the straddle through → RED.
+func TestB52StraddlingFTGHNoBox(t *testing.T) {
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	// First FTGH [100, 102] (extreme 102 @2, partner body 100 @5), escape @7
+	// (body above 102). Then a double top whose top 103 is ABOVE the old ceiling
+	// 102 and whose partner body 101.5 is BELOW it → candidate [101.5, 103]
+	// straddles the old range.
+	bars := []market.Kline{
+		mk(0, 100, 101, 99, 100),
+		mk(1, 100, 100.5, 99, 100),
+		mk(2, 100, 102, 99, 101), // extreme high 102
+		mk(3, 101, 101, 100, 100.5),
+		mk(4, 100, 100, 99, 99.5),
+		mk(5, 99.5, 101.5, 99, 100),       // partner high 101.5, body 100
+		mk(6, 100, 101, 99, 100),          // FTGH [100, 102]
+		mk(7, 102.2, 102.5, 102.0, 102.4), // escape: body above 102
+		mk(8, 102.4, 102.6, 102.1, 102.3),
+		mk(9, 102.3, 103, 102.0, 102.5), // extreme high 103
+		mk(10, 102.5, 102.8, 102.2, 102.6),
+		mk(11, 101.5, 101.8, 101.0, 101.2),
+		mk(12, 101.2, 101.6, 100.8, 101.0),
+		mk(13, 101.0, 102.0, 100.9, 101.5), // partner high 102.0, body edge 101.5
+		mk(14, 101.5, 101.7, 101.0, 101.2), // confirms @13 → candidate [101.5, 103]
+	}
+	e := b52Run(bars, b52Cfg())
+	if len(e.State.PostEscapeBoxes) != 0 {
+		t.Fatalf("latched a straddling FTGH: %+v — a new zone only outside the old range [D3.4 p3 rec @00:00–00:34]", e.State.PostEscapeBoxes)
 	}
 }
 
