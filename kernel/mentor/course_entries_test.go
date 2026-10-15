@@ -397,6 +397,81 @@ func TestCE4SeedHistoryStateFreeze(t *testing.T) {
 	}
 }
 
+// F550-2 — a restart DURING the news freeze must seed the SAME pre-print 1h/4h
+// read the continuous bot holds. A post-print bar BEFORE the open (07:50) that
+// breaks the prior 1h high must NOT move the seeded line — the freeze runs to
+// the 08:30 open, not to the 07:35 print-window end. After 08:30 both read the
+// whole candles and the break lands.
+// MUTANT N3: newsBarFrozen reads cfg.PrintWindows (raw 07:20–07:35) instead of
+// newsHTFWindows(...) (extended to 08:30) → the 07:50 break is not frozen in the
+// seed replay → the restart seeds the line long → RED.
+func TestCE4RestartDuringFreezeParity(t *testing.T) {
+	mk := func() Config {
+		cfg := DefaultConfig()
+		cfg.Enabled = true
+		cfg.NewsBarsExcluded = true
+		cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
+		return cfg
+	}
+	start := auditMs(2026, 9, 15, 6, 0, 0)
+	breakAt := auditMs(2026, 9, 15, 7, 50, 0)
+	var bars []market.Kline
+	for i := 0; i <= 210; i++ { // 06:00 … 09:30
+		o := start + int64(i)*60_000
+		b := market.Kline{OpenTime: o, CloseTime: o + 59_999, Open: 100.5, High: 101, Low: 100, Close: 100.5}
+		if o == breakAt {
+			b.High, b.Close = 110, 109 // a post-print break, before the open
+		}
+		bars = append(bars, b)
+	}
+
+	// The continuous bot: seed before the print, tick every bar to the end.
+	cont := New(mk())
+	cont.seedHistoryState(nil, nil, start, false)
+	var contFed []market.Kline
+	var contAt0815 TriggerLine
+	for _, b := range bars {
+		if b.OpenTime < start {
+			continue
+		}
+		contFed = append(contFed, b)
+		cont.Tick(contFed, b.CloseTime+1)
+		if b.OpenTime == auditMs(2026, 9, 15, 8, 14, 0) {
+			contAt0815 = cont.State.HTF.OneH // the last closed bar before the 08:15 restart
+		}
+	}
+
+	// The restart DURING the freeze at 08:15: its seed replays 06:00–08:14 with
+	// the freeze, so the 07:50 break must NOT move the seeded line.
+	restartAt := auditMs(2026, 9, 15, 8, 15, 0)
+	re := New(mk())
+	hist := closedOnly(bars, restartAt)
+	re.seedHistoryState(hist, keyLevel1HBars(hist), restartAt, false)
+	if re.State.HTF.OneH.Dir != "" || contAt0815.Dir != "" {
+		t.Fatalf("the 07:50 post-print break must be frozen at the 08:15 restart: restart 1h %+v · continuous 1h %+v", re.State.HTF.OneH, contAt0815)
+	}
+	if re.State.HTF.OneH.Dir != contAt0815.Dir || re.State.HTF.OneH.Price != contAt0815.Price || re.State.HTF.OneH.MovedAt != contAt0815.MovedAt {
+		t.Fatalf("the 08:15 restart must seed the continuous bot's pre-print read: restart %+v vs continuous %+v", re.State.HTF.OneH, contAt0815)
+	}
+
+	// After 08:30 both read the whole candles: tick the restart to the end and
+	// compare with the continuous bot.
+	var reFed []market.Kline
+	for _, b := range bars {
+		if b.OpenTime <= restartAt {
+			continue
+		}
+		reFed = append(reFed, b)
+		re.Tick(append(hist, reFed...), b.CloseTime+1)
+	}
+	if re.State.HTF.OneH.Dir != SideLong || cont.State.HTF.OneH.Dir != SideLong {
+		t.Fatalf("after 08:30 both must read the whole candles long: restart %+v · continuous %+v", re.State.HTF.OneH, cont.State.HTF.OneH)
+	}
+	if re.State.HTF.OneH.Price != cont.State.HTF.OneH.Price {
+		t.Fatalf("after 08:30 the restart and the continuous bot must hold the same line: restart %+v · continuous %+v", re.State.HTF.OneH, cont.State.HTF.OneH)
+	}
+}
+
 // CE-8 (b) — "Nhìn từ bên trái qua bên phải… Đỉnh cao, đỉnh thấp hơn, đỉnh
 // thấp hơn — … Giảm" [D4.3 @12:43–12:54]: the structure read.
 func TestCE8StructureTrend5m(t *testing.T) {
