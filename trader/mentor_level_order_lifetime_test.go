@@ -123,8 +123,8 @@ func TestMentorTickKeepsAProductionAuthoredRestingLevelArm(t *testing.T) {
 	// the just-authored level arm — a flaky RED that depends on the hour of the
 	// test run. The assertion below is about the reconcile, never about the
 	// news window, so pin every mentor time gate to the fixed 10:30 CT instant.
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "lvl-77", Side: mentor.SideLong,
 		Price: 29392, Stop: 29385, Target: 29430, Setup: "PHL"}
 	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 1}, now.UnixMilli(), now.UnixMilli(), "B", 0)
