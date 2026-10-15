@@ -9361,3 +9361,23 @@ symptom: W26 deadman-escalation (2026-10-15, r3 P2). The dead-man reconcile gate
 probe: for every fail-closed gate that blocks NEW action, list (a) what ends the block, (b) whether that ending is guaranteed to arrive, and (c) what the OWNER sees when it does not. Grep the setter of the blocked state and list the alert / log / endpoint that reports a block which has stood past a threshold. A gate that blocks forever with no escalating signal is the finding.
 rule: a fail-closed block stays fail-closed — it is never auto-unblocked on a threshold. But a block that has not cleared after N consecutive failed reconcile probes, or T time blocked, fires ONE owner-facing P0 per blocked episode (not once per probe), and the live block is surfaced in a read endpoint (blocked + since + failed-probe count). A clean reconcile ends the episode and re-arms the alert for the next block.
 Reference: trader/dead_man_watchdog.go (deadManStuckProbeMin / deadManStuckAgeMs, beginEpisode/endEpisode/bumpFailedProbe/escalation), trader/auto_trader.go deadManEscalate / HealthDeadMan, api/handler_health.go (nt8.<id>.dead_man), trader/dead_man_escalation_test.go.
+
+## CLASS NN (assigned at merge) — alert dedupe without episode
+
+symptom: ALERT-DOWN-EPISODES (2026-10-15, R3 P2 N1/N2). The run-owner P0
+"trader is DOWN: no evaluator" alert used the fixed event id
+"trader-down-no-evaluator:"+traderID, and the alert store's dedupe (event_id,
+idempotent bus) has NO expiry — so a second down episode was a silent no-op, and
+the SAME alert was also gated on dayPlanEnabled(), so a non-day-plan trader's
+down episode was dropped entirely. A down trader is exactly the owner-facing
+failure that must never be silent.
+probe: for every emitAlert call site, is the event id per-episode or fixed? Does
+the store's dedupe ever expire? Is the emit gated on a per-trader feature flag
+(day_plan) that a DOWN trader may not have? Grep the setter and the store, not
+the kind you expect.
+rule: a recurring event's dedupe key carries an episode marker (the episode start
+instant, or a monotonic counter); ops alerts (down, link, disk, backup, updater,
+bar hole) bypass the day-plan gate, while plan-content alerts keep it.
+Reference: store/alert.go Emit / EpisodeEventID, trader/auto_trader_alerts.go
+emitAlert / isOpsAlertKind, trader/run_owner.go armRunRetry,
+trader/run_owner_alert_episode_test.go.

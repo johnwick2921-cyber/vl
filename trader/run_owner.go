@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"vl/store"
 	"vl/telemetry"
 )
 
@@ -49,6 +50,12 @@ var ErrTraderOldInstanceAlive = fmt.Errorf("%w: the previous run of this trader 
 // after Stop. A run exits at its next loop turn, which can sit behind one
 // in-flight cycle (an AI read can take minutes), hence the generous bound.
 var runOwnerHandoffWait = 10 * time.Minute
+
+// runRetryMaxWait bounds how long the armed run retry waits for the old run's
+// claim to release (W26 N3). The old run was already given runOwnerHandoffWait
+// to exit after Stop and did not; if it never releases, the retry goroutine
+// must not leak — it gives up, logged and counted, instead of blocking forever.
+var runRetryMaxWait = 10 * time.Minute
 
 type runOwnerSlot struct {
 	at   *AutoTrader
@@ -123,7 +130,7 @@ func (at *AutoTrader) claimRunOwner() (release func(), err error) {
 		if !waitBoth(done, stopped, time.Until(deadline)) {
 			telemetry.IncGateBlock(at.id, "trader_run_refused_old_instance_alive")
 			at.logErrorf("⛔ run refused: the previous run of trader %s did not exit within %s after Stop — refusing to start a second run beside it; trader %q has NO evaluator until it does — an automatic retry is armed for the moment it exits (counter trader_run_refused_old_instance_alive)", at.id, runOwnerHandoffWait, at.name)
-			at.emitAlert("P0", "trader_down_no_evaluator", "trader-down-no-evaluator:"+at.id,
+			at.emitAlert("P0", "trader_down_no_evaluator", store.EpisodeEventID("trader_down_no_evaluator", at.id, time.Now().UnixMilli()),
 				fmt.Sprintf("Trader %s is DOWN: no evaluator", at.name),
 				fmt.Sprintf("Trader %q (%s): the old run did not stop within %s, so the new run was refused (never two evaluators). It retries automatically the moment the old run exits; Start it again if it stays down.", at.name, at.id, runOwnerHandoffWait))
 			at.armRunRetry(done)
@@ -160,16 +167,34 @@ func waitBoth(a, b <-chan struct{}, d time.Duration) bool {
 // armRunRetry (DS-104 P2-2): after a handoff timeout the trader would stay
 // down until someone clicks Start. Instead, once the old run's claim is
 // released, THIS instance retries its Run — unless it was retired (a reload
-// replaced it) or another run claimed the trader first (retryIfFreeOnly: the
-// retry never stops a newer run). One evaluator at a time either way: the
-// retry goes through the same claim.
+// replaced it), a Stop was asked for during the wait (W26 N4), the wait ran
+// past runRetryMaxWait (W26 N3), or another run claimed the trader first
+// (retryIfFreeOnly: the retry never stops a newer run). One evaluator at a
+// time either way: the retry goes through the same claim.
 func (at *AutoTrader) armRunRetry(done <-chan struct{}) {
 	if !at.runRetryArmed.CompareAndSwap(false, true) {
 		return
 	}
+	gen := at.currentStopGen()
 	at.goNetted("run-owner-retry", func() {
 		defer at.runRetryArmed.Store(false)
-		<-done
+		select {
+		case <-done:
+		case <-time.After(runRetryMaxWait):
+			// W26 N3 — the old run never released its claim; the goroutine must
+			// not leak. Give up, logged and counted (a Start still works).
+			telemetry.IncGateBlock(at.id, "trader_run_retry_gave_up")
+			at.logWarnf("⏹ run retry gave up: the old run of trader %s did not exit within %s of the handoff timeout — no automatic retry was attempted (counter trader_run_retry_gave_up); Start it again to run it", at.id, runRetryMaxWait)
+			return
+		}
+		if at.currentStopGen() != gen {
+			// W26 N4 — the operator asked for a Stop while the retry waited. The
+			// refused instance has isRunning=false, so Stop() does not tear a run
+			// down, but it still bumps stopGen — this cancels the armed retry.
+			telemetry.IncGateBlock(at.id, "trader_run_retry_stopped")
+			at.logWarnf("⏹ run retry cancelled: Stop was requested for trader %s while it waited — not restarting it (counter trader_run_retry_stopped)", at.id)
+			return
+		}
 		runOwners.Lock()
 		retired := at.retired
 		runOwners.Unlock()
@@ -185,6 +210,13 @@ func (at *AutoTrader) armRunRetry(done <-chan struct{}) {
 			at.logWarnf("🔁 run retry for trader %s ended: %v", at.id, err)
 		}
 	})
+}
+
+// currentStopGen reads stopGen under isRunningMutex (Stop writes it there).
+func (at *AutoTrader) currentStopGen() uint64 {
+	at.isRunningMutex.RLock()
+	defer at.isRunningMutex.RUnlock()
+	return at.stopGen
 }
 
 func releaseRunOwner(id string, mine *runOwnerSlot) {

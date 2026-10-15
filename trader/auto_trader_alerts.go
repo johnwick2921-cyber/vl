@@ -11,9 +11,16 @@ import (
 // W6 — in-app alert emit (the audit's dead wire: AlertStore.Emit had zero
 // production callers). emitAlert is the single gated + deduped producer. P0 =
 // pop-up + banner-until-ack · P1 = feed · P2 = digest. Gated on day_plan (the
-// alert center only renders for a futures day-plan trader).
+// alert center only renders for a futures day-plan trader) EXCEPT for ops kinds
+// (W26, 2026-10-15): a trader that is DOWN, or whose feed/link/disk/backup/
+// updater/bar-hole guard tripped, must always reach the owner — the alert
+// center is the only surface a down trader has. Plan-content alerts keep the
+// day-plan gate.
 func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) {
-	if at.store == nil || !at.dayPlanEnabled() {
+	if at.store == nil {
+		return
+	}
+	if !at.dayPlanEnabled() && !isOpsAlertKind(kind) {
 		return
 	}
 	if _, err := at.store.Alert().Emit(&store.AlertDB{
@@ -30,6 +37,22 @@ func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) {
 		at.logErrorf("🚨 alert EMIT failed (%s %s): %v — body: %s", level, kind, err, body)
 		telemetry.RecordError(at.id, "alert_emit_failed", err.Error(), telemetry.CostNone)
 	}
+}
+
+// isOpsAlertKind reports whether an alert kind is an OPS condition (down, link,
+// dead-man, disk, backup, updater, bar hole) that must reach the owner even
+// when the trader has no day plan. Plan-content alerts (plan-died, fill, close,
+// level-*, overlays-*, mentor-*, decision-*, …) keep the day-plan gate. The
+// disk / backup / updater / bar-hole kinds do not exist yet — add them here
+// when their producer lands.
+func isOpsAlertKind(kind string) bool {
+	switch kind {
+	case "trader_down_no_evaluator", // the run-owner "trader is DOWN" P0
+		"feed-down",                 // the NT8 link/feed down P0
+		"dead_man_reconcile_stuck":  // DS-102 #538: dead-man reconcile block with no upper bound
+		return true
+	}
+	return false
 }
 
 // ackedAlertPruneDays is how old an ACKED P2 alert must be before the daily
