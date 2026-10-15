@@ -88,6 +88,11 @@ type State struct {
 	// LatchedBoxesDay is the trading day the latch belongs to; on a new day
 	// the latch is cleared and the first box of the new day is drawn.
 	LatchedBoxesDay string `json:"latched_boxes_day,omitempty"`
+	// PostEscapeBoxes (B52, release #29) holds the NEW-zone boxes latched
+	// after the standing box escaped: one per further escape, outside the old
+	// range. Order is formation order; the last of a role is that role's
+	// active box.
+	PostEscapeBoxes []Box `json:"post_escape_boxes,omitempty"`
 	// TallBoxNoted (CX-11) dedups the "box too tall" note per box.
 	TallBoxNoted map[string]bool `json:"-"`
 	// ISBBox15m is the 15m ISB rest box (D4.1-25): the latest CLOSED 15m
@@ -1365,6 +1370,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.note("box latch cleared at the 17:00 CT session roll (or the 08:30 CT fresh RTH pair, mentor_box_fresh_rth_pair): trading day %s → %s (FTGH/FTGL redraw from the new session only) [D4.1 p2 @02:58]", e.State.LatchedBoxesDay, boxDay)
 		}
 		e.State.LatchedBoxes = nil
+		e.State.PostEscapeBoxes = nil // B52: the new-zone boxes die with the day too
 		e.State.LatchedBoxesDay = boxDay
 	}
 	boxes = e.latchBoxes(boxes, bars, e.Cfg.Box)

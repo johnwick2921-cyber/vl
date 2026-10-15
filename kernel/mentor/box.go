@@ -362,7 +362,7 @@ func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []B
 		e.note("box latched %s %.2f–%.2f (formed %s CT) — stands to the 17:00 CT session roll, never redrawn [D4.1 p2 @02:39]", strings.ToUpper(role), b.Bottom, b.Top, kernel.TableTimeCT(time.UnixMilli(b.FormedAtMs)))
 	}
 	tfBars := barsForTF(bars, cfg.TF)
-	out := make([]Box, 0, len(e.State.LatchedBoxes))
+	out := make([]Box, 0, len(e.State.LatchedBoxes)+len(e.State.PostEscapeBoxes))
 	for _, kind := range []BoxKind{FTGL, FTGH} {
 		role := string(kind)
 		latched, ok := e.State.LatchedBoxes[role]
@@ -382,7 +382,91 @@ func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []B
 		e.State.LatchedBoxes[role] = latched // write the refreshed copy back
 		out = append(out, latched)
 	}
+	// B52 (release #29): after a standing box escapes, latch ONE new same-role
+	// box outside the old range, per further escape. The old box keeps its
+	// flipped role (D14); the new box is that role's active box.
+	if e.Cfg.BoxNewZoneAfterEscape {
+		e.latchPostEscapeBoxes(bars, cfg)
+	}
+	out = append(out, e.State.PostEscapeBoxes...)
 	return out
+}
+
+// latchPostEscapeBoxes (B52) refreshes the post-escape boxes and latches a new
+// one for any role whose ACTIVE box has escaped. The active box is the newest
+// post-escape box of that role, else the first-latched box. One box per escape:
+// once latched, the new box is the active box and blocks another until IT
+// escapes. Dedup by Key so a replay of the same tick never double-latches.
+func (e *Evaluator) latchPostEscapeBoxes(bars []market.Kline, cfg BoxCfg) {
+	tfBars := barsForTF(bars, cfg.TF)
+	// Refresh the post-escape boxes first (touches + D14 flip + window index).
+	for i := range e.State.PostEscapeBoxes {
+		b := &e.State.PostEscapeBoxes[i]
+		if idx, ok := resolveBarIndex(tfBars, b.FormedAtMs); ok {
+			b.Touches = countBoxTouches(tfBars, *b, idx, cfg)
+			b.Flipped = escaped(tfBars, *b, idx)
+			b.FormedAt = idx
+		}
+	}
+	for _, kind := range []BoxKind{FTGL, FTGH} {
+		active, ok := e.activeBoxOf(kind)
+		if !ok {
+			continue
+		}
+		if idx, ok := resolveBarIndex(tfBars, active.FormedAtMs); ok {
+			active.FormedAt = idx
+		}
+		if _, escapedYet := boxEscapeIndex(tfBars, active, active.FormedAt); !escapedYet {
+			continue
+		}
+		nb := boxAfterEscapeBuild(bars, cfg, active)
+		if nb == nil {
+			continue
+		}
+		if e.hasPostEscapeBox(nb.Key) {
+			continue
+		}
+		e.State.PostEscapeBoxes = append(e.State.PostEscapeBoxes, *nb)
+		e.note("box new zone after escape: %s %.2f–%.2f (formed %s CT) — new zone outside the escaped %s %.2f–%.2f [B52 D3.4 p3 recovered2 @00:00–00:21]",
+			strings.ToUpper(string(nb.Kind)), nb.Bottom, nb.Top,
+			kernel.TableTimeCT(time.UnixMilli(nb.FormedAtMs)),
+			strings.ToUpper(string(active.Kind)), active.Bottom, active.Top)
+	}
+}
+
+// activeBoxOf returns the role's newest post-escape box, else its first-latched
+// box. ok=false when the role has no box at all yet.
+func (e *Evaluator) activeBoxOf(kind BoxKind) (Box, bool) {
+	return activeBoxOfPair(e.State.LatchedBoxes, e.State.PostEscapeBoxes, kind)
+}
+
+// activeBoxOfPair is the pure form of activeBoxOf, shared with the seed replay.
+func activeBoxOfPair(latched map[string]Box, post []Box, kind BoxKind) (Box, bool) {
+	for i := len(post) - 1; i >= 0; i-- {
+		if post[i].Kind == kind {
+			return post[i], true
+		}
+	}
+	if b, ok := latched[string(kind)]; ok {
+		return b, true
+	}
+	return Box{}, false
+}
+
+// hasPostEscapeBox reports whether a post-escape box with the given Key is
+// already latched.
+func (e *Evaluator) hasPostEscapeBox(key string) bool {
+	return postHasBox(e.State.PostEscapeBoxes, key)
+}
+
+// postHasBox is the pure form of hasPostEscapeBox, shared with the seed replay.
+func postHasBox(post []Box, key string) bool {
+	for _, b := range post {
+		if b.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveBarIndex returns the index of the bar with the given OpenTime in the
@@ -464,6 +548,130 @@ func escaped(bars []market.Kline, b Box, formedAt int) bool {
 		}
 	}
 	return false
+}
+
+// boxEscapeIndex returns the index of the FIRST closed candle after formation
+// whose whole BODY closed outside the box on the far side (the escape that
+// triggers B52). ok=false when the box has not escaped yet.
+func boxEscapeIndex(bars []market.Kline, b Box, formedAt int) (int, bool) {
+	for i := formedAt + 1; i < len(bars); i++ {
+		c := bars[i]
+		if c.CloseTime == 0 {
+			continue
+		}
+		switch b.Kind {
+		case FTGH:
+			if c.Open > b.Top && c.Close > b.Top {
+				return i, true
+			}
+		case FTGL:
+			if c.Open < b.Bottom && c.Close < b.Bottom {
+				return i, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// boxAfterEscapeBuild (B52, release #29) builds ONE new same-role box from
+// confirmed swings that form STRICTLY AFTER the standing box escaped, whose
+// zone lies ENTIRELY OUTSIDE the old box's range — a new FTGL below the old
+// floor, a new FTGH above the old ceiling. "khi nào nó rớt xuống đây, nó bật
+// ngược lên, nó tạo cái failure to go lower dưới này nè… thì anh chị mới có
+// được cái range giữa cái này và cái này" [D3.4 p3 recovered2 @00:00–00:21];
+// "Đừng vẽ vùng thứ 3… Rối lắm" [D3.2 p2 @09:47–09:54] — a zone inside the
+// range is refused. The construction is the SAME rule as BoxesBuild (two
+// same-role swings, the second fails to break the first; wick of the first to
+// the nearest body of the second). Returns nil when no such box exists yet.
+func boxAfterEscapeBuild(bars []market.Kline, cfg BoxCfg, old Box) *Box {
+	tfBars := barsForTF(bars, cfg.TF)
+	esc, ok := boxEscapeIndex(tfBars, old, old.FormedAt)
+	if !ok {
+		return nil
+	}
+	role := kernel.KindSWGL
+	if old.Kind == FTGH {
+		role = kernel.KindSWGH
+	}
+	seq := swings3(tfBars)
+	extreme := -1
+	for i, s := range seq {
+		if s.idx <= esc || s.kind != role {
+			continue
+		}
+		if !swingConfirmed(tfBars, s) {
+			continue
+		}
+		if extreme < 0 {
+			extreme = i
+			continue
+		}
+		if role == kernel.KindSWGL && s.price < seq[extreme].price {
+			extreme = i
+		}
+		if role == kernel.KindSWGH && s.price > seq[extreme].price {
+			extreme = i
+		}
+	}
+	if extreme < 0 {
+		return nil
+	}
+	nearest := -1
+	for i, s := range seq {
+		if i == extreme || s.kind != role {
+			continue
+		}
+		if s.idx <= seq[extreme].idx {
+			continue
+		}
+		if !swingConfirmed(tfBars, s) {
+			continue
+		}
+		if role == kernel.KindSWGL && s.price < seq[extreme].price {
+			continue
+		}
+		if role == kernel.KindSWGH && s.price > seq[extreme].price {
+			continue
+		}
+		if nearest < 0 {
+			nearest = i
+			continue
+		}
+		di := seq[i].idx - seq[extreme].idx
+		if di < 0 {
+			di = -di
+		}
+		dn := seq[nearest].idx - seq[extreme].idx
+		if dn < 0 {
+			dn = -dn
+		}
+		if di < dn {
+			nearest = i
+		}
+	}
+	if nearest < 0 {
+		return nil
+	}
+	b := boxFromPair(tfBars, seq[extreme], seq[nearest])
+	if b == nil {
+		return nil
+	}
+	// Outside the old range only — never a zone inside the standing range.
+	if old.Kind == FTGL && b.Top > old.Bottom {
+		return nil
+	}
+	if old.Kind == FTGH && b.Bottom < old.Top {
+		return nil
+	}
+	b.Touches = countBoxTouches(tfBars, *b, seq[extreme].idx, cfg)
+	b.Key = "ftgh:" + fnum(b.Top) + ":" + fnum(b.Bottom)
+	if b.Kind == FTGL {
+		b.Key = "ftgl:" + fnum(b.Top) + ":" + fnum(b.Bottom)
+	}
+	b.FormedAt = seq[nearest].idx + 1
+	b.FormedAtMs = tfBars[b.FormedAt].OpenTime
+	b.Flipped = escaped(tfBars, *b, b.FormedAt)
+	return b
 }
 
 // countBoxTouches counts closed candles after formation whose wick reached

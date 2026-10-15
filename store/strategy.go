@@ -2037,6 +2037,10 @@ type MentorTuning struct {
 	// CE-11 (ported #416): inside a live flag the opposite wall is a closer
 	// target candidate [X9 @05:47–06:12] (nil → OFF).
 	FlagWallTarget *bool `json:"flag_wall_target,omitempty"`
+	// B52 (release #29): after a box escapes, latch ONE new same-role box
+	// outside the old range (nil → ON) [D3.4 p3 recovered2 @00:00–00:21;
+	// "Đừng vẽ vùng thứ 3… Rối lắm" D3.2 p2 @09:47–09:54; D4.1 p2 @02:38].
+	BoxNewZoneAfterEscape *bool `json:"box_new_zone_after_escape,omitempty"`
 }
 
 // RiskControlConfig risk control configuration

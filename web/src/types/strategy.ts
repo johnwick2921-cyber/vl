@@ -334,6 +334,9 @@ export interface MentorTuning {
   leg_reset_on_wave_break?: boolean
   // X9 @05:47 — inside a live flag the opposite wall is a closer target (#416) [false]
   flag_wall_target?: boolean
+  // D3.4 p3 recovered2 @00:00 — after a box escapes, a new same-role box
+  // outside the old range; D3.2 p2 @09:47 "Đừng vẽ vùng thứ 3… Rối lắm" [true]
+  box_new_zone_after_escape?: boolean
 }
 
 export interface RiskControlConfig {

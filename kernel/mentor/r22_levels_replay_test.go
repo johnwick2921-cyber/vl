@@ -33,6 +33,11 @@ func r22Cfg() Config {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.RealFillOnly = true
+	// B52 (release #29) ships ON in production and changes the box set on the
+	// recorded days (post-escape boxes cascade). These r22 tests pin the
+	// LEVEL fix against the pre-B52 box world — the knob OFF reproduces
+	// exactly today's behaviour, so the r22 placement expectations hold.
+	cfg.BoxNewZoneAfterEscape = false
 	return cfg
 }
 

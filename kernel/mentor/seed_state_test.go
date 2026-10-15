@@ -106,6 +106,18 @@ func ssSeed(bars []market.Kline, now int64, windows []PrintWindow) *Evaluator {
 	return e
 }
 
+// ssSeedKnobOff seeds with the B52 box-new-zone knob OFF — the pre-B52 box
+// world. B20 tests pin this so their scenario's historical returns survive
+// into the trigger-zone refusal exactly as before release #29.
+func ssSeedKnobOff(bars []market.Kline, now int64, windows []PrintWindow) *Evaluator {
+	hist := closedOnly(bars, now)
+	e := New(lrProdCfg())
+	e.Cfg.BoxNewZoneAfterEscape = false
+	e.Cfg.PrintWindows = windows
+	SeedFull(e, hist, keyLevel1HBars(hist), now)
+	return e
+}
+
 // ssLive is a continuous bot: booted at the 10-13 17:00 roll (seeded on the
 // FULL tape), then ticked on every closed bar up to and including stopOpen, the
 // day's print windows set per tick exactly as mentorEvalOnce does. each (may be
@@ -451,7 +463,11 @@ func TestSchoolOneArmedOnlyBySurvivingEntries1014(t *testing.T) {
 	all := loadSeedStateFixture(t)
 	full := ssTape(all, true, 1<<62)
 	ri := ssIndexOf(full, ssRefillBar)
-	re := ssSeed(full, BarCloseInstant(full[ri-1]), ssCPI)
+	// B52 (release #29) ships ON and re-latches post-escape boxes on this
+	// tape, changing the box set the first tick walks. This B20 test pins the
+	// pre-B52 box world so its four historical FTGH returns still die in the
+	// trigger zone exactly as the scenario was written.
+	re := ssSeedKnobOff(full, BarCloseInstant(full[ri-1]), ssCPI)
 	re.State.BoxRefs = map[string]int64{} // no watermark: walk every historical return
 	before := copyCounts(re.State.Refusals)
 	out := re.Tick(lrWindow(full, ri), BarCloseInstant(full[ri]))

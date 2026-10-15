@@ -26,6 +26,10 @@ func fdrPinPre25CourseEntries(cfg *store.StrategyConfig) {
 	t.D43TrendSource = "trigger_line"
 	t.TrendlineIsTarget = &off
 	t.LegResetOnWaveBreak = &off
+	// B52 (release #29) ships ON by default; the fidelity day ran BEFORE #29,
+	// so the harness must pin the pre-#29 box world to reproduce the live arms.
+	// The #29 box changes are measured by TestFullDayReplay (knob ON), not here.
+	t.BoxNewZoneAfterEscape = &off
 }
 
 // fdrApplyTuningEnv merges FDR_TUNING (a JSON object of mentor_tuning keys,
