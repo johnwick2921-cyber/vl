@@ -156,3 +156,41 @@ func TestMTFConflictNoConflictWhenSameDirection(t *testing.T) {
 		t.Fatal("a lone 5m box must NOT conflict")
 	}
 }
+
+// TestMTFConflictRefusalsAreNamed (W26 P2-1) — the conflict drop of an ISB
+// candidate is no longer silent: in the default first_box mode it is counted
+// under isb_tf_conflict (and NOT under the held-only both_boxes key). Mutant:
+// delete the e.refuse("isb_tf_conflict") call → this test goes RED.
+func TestMTFConflictRefusalsAreNamed(t *testing.T) {
+	e, bars, now := mtfFixture(t, false) // a long ISB would otherwise fire
+	e.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideShort, AtTime: bars[0].OpenTime}
+	e.State.ISBBox15m = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: bars[0].OpenTime}
+
+	ins := e.Tick(bars, now)
+	if got := entryIntents(ins); len(got) != 0 {
+		t.Fatalf("conflict must refuse every setup, got entries %+v", got)
+	}
+	if e.State.Refusals["isb_tf_conflict"] == 0 {
+		t.Fatalf("first_box conflict must count isb_tf_conflict, got refusals %v", e.State.Refusals)
+	}
+	if e.State.Refusals["isb_tf_conflict_both_boxes"] != 0 {
+		t.Fatalf("first_box mode must NOT count the held-only key isb_tf_conflict_both_boxes, got %v", e.State.Refusals)
+	}
+}
+
+// TestMTFConflictHeldRefusalIsNamed (W26 P2-1) — in both_boxes mode, once ONE
+// box escapes the conflict is still HELD (the latch) until both escape; that
+// held ISB drop is counted under its own key.
+func TestMTFConflictHeldRefusalIsNamed(t *testing.T) {
+	e, bars, now := mtfFixture(t, false)
+	e.Cfg.TFConflictEnd = TFConflictBothBoxes
+	e.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideShort, AtTime: bars[0].OpenTime}
+	e.State.ISBBox15m = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: bars[0].OpenTime}
+
+	e.Tick(bars, now) // tick 1: conflict fires, the latch is set
+	e.State.ISBBox = nil // the 5m box escapes; the 15m box stands → HELD
+	e.Tick(bars, now)
+	if e.State.Refusals["isb_tf_conflict_both_boxes"] == 0 {
+		t.Fatalf("a held both_boxes conflict must count isb_tf_conflict_both_boxes, got %v", e.State.Refusals)
+	}
+}

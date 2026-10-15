@@ -130,6 +130,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.swing_max_stop_pts',
     live: true,
   },
+  'Swing min stop': {
+    settingId: 'risk_control.mentor_tuning.swing_min_stop_pts',
+    live: true,
+  },
   'Swing entry buffer': { settingId: 'SwingCfg.EntryBufferPts', live: false },
   'Swing target EMA period': {
     settingId: 'SwingCfg.TargetEMA5mPeriod',
@@ -457,7 +461,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Every PHL/PLH drop is named',
-          body: 'A rejected touch that does not become a PHL/PLH always names its reason in the funnel line, counted ONCE per visit of the level (not every minute the touch stands): phl_5m_box_ban, phl_mid_range_boxed, phl_ema_crossing_30m, phl_ema_loss_block, phl_not_location, phl_no_reject_entry, phl_level_arm_resting — beside the existing phl_15m_box_ban, phl_30m_box_ban, level_visit_cap, room, near_box and the rest. Before release #22 the first five dropped silently. The PHL’s room and trigger-side drops (room, isb_trigger_side) and keypair_candle_too_big also count once per visit now (they counted every minute). level_invalid_first_touch counts each level the first touch invalidated by closing on the wrong side [D5.2 p1 @19:51] — course-correct, and now visible. The ORB logs its range once a day and its escape side + read time on the first escape and on every side change (“🧑‍🏫 ORB …”). The boot line also reads the key levels as "key levels N live · M deleted" — the old "levels 92" counted the deleted ones too (27 were live).',
+          body: 'A rejected touch that does not become a PHL/PLH always names its reason in the funnel line, counted ONCE per visit of the level (not every minute the touch stands): phl_5m_box_ban, phl_mid_range_boxed, phl_ema_crossing_30m, phl_ema_loss_block, phl_not_location, phl_no_reject_entry, phl_level_arm_resting — beside the existing phl_15m_box_ban, phl_30m_box_ban, level_visit_cap, room, near_box and the rest. Before release #22 the first five dropped silently. The PHL’s room and trigger-side drops (room, isb_trigger_side) and keypair_candle_too_big also count once per visit now (they counted every minute). level_invalid_first_touch counts each level the first touch invalidated by closing on the wrong side [D5.2 p1 @19:51] — course-correct, and now visible. The ORB logs its range once a day and its escape side + read time on the first escape and on every side change (“🧑‍🏫 ORB …”). The 15m/5m conflict also names every drop it causes (release #26): isb_tf_conflict (first_box), isb_tf_conflict_both_boxes (both_boxes, the held half), isbrev_tf_conflict (a reverse ISB) and phl_tf_conflict (a candidate PHL/PLH). The boot line also reads the key levels as "key levels N live · M deleted" — the old "levels 92" counted the deleted ones too (27 were live).',
           cite: 'Engineering rule — every refusal logged and counted · kernel/mentor/eval.go refuseOncePerVisit · kernel/mentor/seed.go SeedLine',
         },
         {
@@ -1465,6 +1469,21 @@ export const mentor: GuideSection = {
           systemDefault: '100',
           recommended: '100 — D5.2 table.',
           whenToTouch: 'Never below 25+30.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Swing min stop',
+          where:
+            'No Studio control — stored strategy setting risk_control.mentor_tuning.swing_min_stop_pts (API/config field)',
+          what: 'A swing stop NARROWER than this → do not enter (degenerate geometry). 0 = OFF — the course states no minimum swing stop (only the 100-pt ceiling and "a stop near 100 → don\'t enter" [06-SIZING]).',
+          trader: 'OFF (0).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (SwingMinStopPts) · kernel/mentor/swing4h.go SwingCfg.MinStopPts',
+          range: 'pts · 0 = OFF',
+          systemDefault: '0 (OFF)',
+          recommended:
+            '0 — R5 (new behaviour behind a knob, OFF): the course states no minimum [06-SIZING: 30–60 pt stops, near 100 → "đừng vô"].',
+          whenToTouch: "Only with a new owner ruling; 0 = today's behaviour.",
           perSession: 'No.',
         },
         {

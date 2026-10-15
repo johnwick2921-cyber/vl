@@ -32,6 +32,7 @@ type mentorTuned struct {
 	DayGateSpentPts        float64
 	DayGateTargetCapPts    float64
 	SwingMaxStopPts        float64
+	SwingMinStopPts        float64
 
 	// Release #25 course-entry knobs (fix/mentor-course-entries).
 	FifteenMinIBRule            string
@@ -64,6 +65,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		DayGateSpentPts:        d.DayGateSpentPts,
 		DayGateTargetCapPts:    d.DayGateTargetCapPts,
 		SwingMaxStopPts:        d.Swing.MaxStopPts,
+		SwingMinStopPts:        d.Swing.MinStopPts,
 
 		FifteenMinIBRule:            d.FifteenMinIBRule,
 		TFConflictEnd:               d.TFConflictEnd,
@@ -107,6 +109,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	pick(t.DayGateSpentPts, 50, 2000, &out.DayGateSpentPts)
 	pick(t.DayGateTargetCapPts, 1, 100, &out.DayGateTargetCapPts)
 	pick(t.SwingMaxStopPts, 30, 300, &out.SwingMaxStopPts)
+	// W26 P2-4: 0 = OFF (R5). A floor above the MaxStopPts ceiling is refused.
+	pick(t.SwingMinStopPts, 0.01, 100, &out.SwingMinStopPts)
 
 	if t.PingPongCandleLookback != 0 {
 		if t.PingPongCandleLookback >= 1 && t.PingPongCandleLookback <= 200 {
@@ -186,6 +190,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.DayGateSpentPts = t.DayGateSpentPts
 	cfg.DayGateTargetCapPts = t.DayGateTargetCapPts
 	cfg.Swing.MaxStopPts = t.SwingMaxStopPts
+	cfg.Swing.MinStopPts = t.SwingMinStopPts
 	cfg.FifteenMinIBRule = t.FifteenMinIBRule
 	cfg.TFConflictEnd = t.TFConflictEnd
 	cfg.NewsWaitBothLines = t.NewsWaitBothLines
