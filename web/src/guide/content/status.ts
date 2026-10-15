@@ -364,6 +364,11 @@ export const status: GuideSection = {
       kind: 'p',
       text: 'It refreshes every 5 seconds while a position or an arm is live and every 15 seconds otherwise — the server decides which, from what is actually live. It has no unread count and nothing to acknowledge: P0 alerts are already acknowledged only 40.8% of the time (62 of 152), and a second queue would make that worse.',
     },
+    { kind: 'h', text: 'In-app alerts — who always reaches you' },
+    {
+      kind: 'p',
+      text: "An in-app alert is raised on the trader's alert center. Plan-content alerts (a died plan, a fill, a level event) are raised only for a day-plan trader, because that is where they render. Ops alerts are different: a trader that is DOWN, or whose NT8 feed is down, raises its P0 alert even when the trader has no day plan — the alert center is the only surface a down trader has, so gating it on day_plan would hide exactly the failure the owner must see. A recurring down is not silently deduped: every down episode is its own alert row (the dedupe key carries the episode instant), so a trader that goes down twice shows two banners, not one.",
+    },
     { kind: 'h', text: 'PROCESS::RESPONDING (dashboard header)' },
     {
       kind: 'p',

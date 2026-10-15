@@ -9347,3 +9347,23 @@ symptom: EXEC-FOLLOWUPS fold (CTO, PR #526). The MANUAL-CANCEL-WINS law ("same p
 probe: for every ledger law, list the branches that write a row and check each enforces it for every policy / origin / kind. A guard that names one value (`Policy == X`) on a law stated for all is the finding. Test it through the REAL pass (author → place → terminal → author again), and count the rows and the wire frames, not only the original row's state. A dedupe that masks it in a fast test (B3's 55 s window) must be aged out. For "who ended it" rules, check every terminal writer records its cause BEFORE the terminal state lands; a drain that settles the row mid-call skips a stamp written afterwards.
 rule: a same-version row that reached the broker is spent for every market_in_zone ending, and for every other non-mentor policy unless the BOT requested the cancel (cancel_requested_at_ms > 0, stamped at the send). Only a new version or the boot sweep (0B) re-arms a spent slot. The refusal is typed (ErrArmSlotSpent), said once per slot, and counted.
 Reference: store/armed_orders.go UpsertArm (ErrArmSlotSpent, StampCancelRequested), trader/armed_executor.go armSlotSpentRefused + cancelArmedOrdersSyncWith, trader/exec_followups_rearm_test.go.
+
+## CLASS NN (assigned at merge) — alert dedupe without episode
+
+symptom: ALERT-DOWN-EPISODES (2026-10-15, R3 P2 N1/N2). The run-owner P0
+"trader is DOWN: no evaluator" alert used the fixed event id
+"trader-down-no-evaluator:"+traderID, and the alert store's dedupe (event_id,
+idempotent bus) has NO expiry — so a second down episode was a silent no-op, and
+the SAME alert was also gated on dayPlanEnabled(), so a non-day-plan trader's
+down episode was dropped entirely. A down trader is exactly the owner-facing
+failure that must never be silent.
+probe: for every emitAlert call site, is the event id per-episode or fixed? Does
+the store's dedupe ever expire? Is the emit gated on a per-trader feature flag
+(day_plan) that a DOWN trader may not have? Grep the setter and the store, not
+the kind you expect.
+rule: a recurring event's dedupe key carries an episode marker (the episode start
+instant, or a monotonic counter); ops alerts (down, link, disk, backup, updater,
+bar hole) bypass the day-plan gate, while plan-content alerts keep it.
+Reference: store/alert.go Emit / EpisodeEventID, trader/auto_trader_alerts.go
+emitAlert / isOpsAlertKind, trader/run_owner.go armRunRetry,
+trader/run_owner_alert_episode_test.go.
