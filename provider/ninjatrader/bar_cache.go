@@ -485,7 +485,7 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 		// (label mixed) when its close is impossible against both its own open
 		// and the previous ring bar, so no reader takes it.
 		var quarantined bool
-		b, quarantined = c.quarantineStalePrint(symbol, b, prevBarBefore(existing, b.T))
+		b, quarantined = c.quarantineStalePrint(symbol, timeframe, b, prevBarBefore(existing, b.T))
 		bars[i] = b
 		// W26 F2/P2 — record ONLY the stale-print quarantine (not a scale-break
 		// mixed bar) as the one that stays frozen on a later clean update.

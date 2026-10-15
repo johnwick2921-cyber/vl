@@ -240,3 +240,46 @@ func TestBarsSubscribeResendArmsStalePrintGuard(t *testing.T) {
 		t.Fatalf("the bars_subscribe resend must arm the guard: quarantined=%d, want 1", n)
 	}
 }
+
+// Release #27 — the guard must never hide a REAL higher-timeframe bar. On 10-15
+// the #26 guard (0.5% on every TF) hid the forming 1d and 3d bars of MNQ and ES
+// in the reconnect window after the boot. A real daily bar whose high sits 3%
+// from its open and from the previous close is NOT quarantined.
+func TestRealDailyBarNotQuarantined(t *testing.T) {
+	stalePrintQuarantined.Store(0)
+	c := NewBarCache(2500)
+	// History, then a live bar (the scale-break check's one-shot is spent, as on
+	// a running bot), then the reconnect that arms the guard.
+	// Wire stamps are bar CLOSE times (open + 1d); the ring stores open stamps.
+	w := int64(staleBarOpenT + 86_400_000)
+	c.SeedHistorical("MNQ", "1d", []Bar{{T: w - 2*86_400_000, O: 30700, H: 30850, L: 30650, C: 30800}})
+	c.Upsert("MNQ", "1d", []Bar{{T: w - 86_400_000, O: 30800, H: 30905, L: 30140, C: 30151}})
+	c.NoteReconnect(time.Now())
+	day := Bar{T: w, O: 30151, H: 30159, L: 29247, C: 29300} // −3% day
+	c.Upsert("MNQ", "1d", []Bar{day})
+	got, ok := barAt(c, "MNQ", "1d", staleBarOpenT)
+	if !ok || got.Source != BarSourceLive {
+		t.Fatalf("a real daily bar must stay live, got ok=%v source=%q", ok, got.Source)
+	}
+	if n := StalePrintQuarantined(); n != 0 {
+		t.Fatalf("quarantine counter = %d, want 0 for a 1d bar", n)
+	}
+}
+
+// A real 1m bar with a 0.64% extreme (the 10-14 07:30 CPI minute's size) right
+// after a reconnect is NOT quarantined under the 2% bound.
+func TestRealBigMinuteNotQuarantined(t *testing.T) {
+	stalePrintQuarantined.Store(0)
+	c := NewBarCache(2500)
+	prevC := 30842.25
+	w := int64(staleBarOpenT + 60_000) // wire stamp = close time
+	c.SeedHistorical("MNQ", "1m", []Bar{{T: w - 120_000, O: 30838, H: 30846, L: 30832, C: 30840}})
+	c.Upsert("MNQ", "1m", []Bar{{T: w - 60_000, O: 30840, H: 30851, L: 30835, C: prevC}})
+	c.NoteReconnect(time.Now())
+	cpi := Bar{T: w, O: 30842.25, H: 30851.75, L: 30645.25, C: 30645.25} // −0.64%
+	c.Upsert("MNQ", "1m", []Bar{cpi})
+	got, _ := barAt(c, "MNQ", "1m", staleBarOpenT)
+	if got.Source != BarSourceLive {
+		t.Fatalf("a real 0.64%% minute must stay live, got source=%q", got.Source)
+	}
+}
