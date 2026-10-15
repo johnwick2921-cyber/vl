@@ -106,6 +106,18 @@ func ssSeed(bars []market.Kline, now int64, windows []PrintWindow) *Evaluator {
 	return e
 }
 
+// ssSeedKnobOff seeds with the B52 box-new-zone knob OFF — the pre-B52 box
+// world. B20 tests pin this so their scenario's historical returns survive
+// into the trigger-zone refusal exactly as before release #29.
+func ssSeedKnobOff(bars []market.Kline, now int64, windows []PrintWindow) *Evaluator {
+	hist := closedOnly(bars, now)
+	e := New(lrProdCfg())
+	e.Cfg.BoxNewZoneAfterEscape = false
+	e.Cfg.PrintWindows = windows
+	SeedFull(e, hist, keyLevel1HBars(hist), now)
+	return e
+}
+
 // ssLive is a continuous bot: booted at the 10-13 17:00 roll (seeded on the
 // FULL tape), then ticked on every closed bar up to and including stopOpen, the
 // day's print windows set per tick exactly as mentorEvalOnce does. each (may be
@@ -330,15 +342,18 @@ func TestRestartReproducesBoxLatch1014(t *testing.T) {
 
 // TestLatchedBoxIsOutputEveryTick1014 — N3 (P2). latchBoxes iterated only the
 // fresh scan, so a latched role vanished whenever the scan lacked it (boxes.py:
-// the continuous FTGL missing on 141 ticks). Every latched role is now output
-// on every tick — its edges are locations and its interior bans entries. The
-// mutant (iterate `fresh`) drops a latched role on N ticks → RED.
+// the continuous FTGL missing on 141 ticks). Every LIVE box is now output on
+// every tick — its edges are locations and its interior bans entries. (B52
+// fold-551 narrows "live" to ≤2 zones — the newest zone + the zone it escaped
+// from — so the assertion reads the live set, not every first box.) The mutant
+// (iterate `fresh`) drops a live role on N ticks → RED.
 func TestLatchedBoxIsOutputEveryTick1014(t *testing.T) {
 	all := loadSeedStateFixture(t)
 	full := ssTape(all, true, 1<<62)
 	ticks, freshMissing := 0, 0
 	ssLive(t, full, 1791992400000, func(i int, live *Evaluator, _ []Intent) {
-		if len(live.State.LatchedBoxes) == 0 {
+		liveSet := liveBoxes(live.State.LatchedBoxes, live.State.PostEscapeBoxes)
+		if len(liveSet) == 0 {
 			return
 		}
 		ticks++
@@ -352,18 +367,18 @@ func TestLatchedBoxIsOutputEveryTick1014(t *testing.T) {
 		for _, b := range BoxesBuild(lrWindow(full, i), live.Cfg.Box, time.UnixMilli(BarCloseInstant(full[i]))) {
 			fresh[string(b.Kind)] = true
 		}
-		for role, b := range live.State.LatchedBoxes {
-			if !fresh[role] {
+		for _, b := range liveSet {
+			if !fresh[string(b.Kind)] {
 				freshMissing++
 			}
 			if !edges[b.Key+":top"] || !edges[b.Key+":bottom"] {
-				t.Fatalf("%s CT: latched %s %s is not in the tick's level set", lrCT(time.UnixMilli(full[i].OpenTime)), role, b.Key)
+				t.Fatalf("%s CT: live box %s %s is not in the tick's level set", lrCT(time.UnixMilli(full[i].OpenTime)), b.Kind, b.Key)
 			}
 		}
 	})
-	t.Logf("%d ticks with a latch; a latched role was absent from the fresh scan %d times (each one used to drop the box)", ticks, freshMissing)
+	t.Logf("%d ticks with a live box; a live role was absent from the fresh scan %d times (each one used to drop the box)", ticks, freshMissing)
 	if freshMissing == 0 {
-		t.Fatal("the scenario lost its teeth: the fresh scan never lacked a latched role")
+		t.Fatal("the scenario lost its teeth: the fresh scan never lacked a live role")
 	}
 }
 
@@ -451,7 +466,11 @@ func TestSchoolOneArmedOnlyBySurvivingEntries1014(t *testing.T) {
 	all := loadSeedStateFixture(t)
 	full := ssTape(all, true, 1<<62)
 	ri := ssIndexOf(full, ssRefillBar)
-	re := ssSeed(full, BarCloseInstant(full[ri-1]), ssCPI)
+	// B52 (release #29) ships ON and re-latches post-escape boxes on this
+	// tape, changing the box set the first tick walks. This B20 test pins the
+	// pre-B52 box world so its four historical FTGH returns still die in the
+	// trigger zone exactly as the scenario was written.
+	re := ssSeedKnobOff(full, BarCloseInstant(full[ri-1]), ssCPI)
 	re.State.BoxRefs = map[string]int64{} // no watermark: walk every historical return
 	before := copyCounts(re.State.Refusals)
 	out := re.Tick(lrWindow(full, ri), BarCloseInstant(full[ri]))

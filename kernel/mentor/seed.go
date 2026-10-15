@@ -352,7 +352,8 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 		return tradingDayKey(time.UnixMilli(BarCloseInstant(closed1m[i])).In(ctime())) >= day
 	})
 	latched := map[string]Box{}
-	for j := first; j < len(closed1m) && len(latched) < 2; j++ {
+	post := []Box{}
+	for j := first; j < len(closed1m); j++ {
 		at := BarCloseInstant(closed1m[j])
 		if tradingDayKey(time.UnixMilli(at).In(ctime())) != day {
 			continue
@@ -369,21 +370,64 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 		if lo < 0 {
 			lo = 0
 		}
-		for _, b := range BoxesBuild(closed1m[lo:j+1], cfg, time.UnixMilli(at)) {
-			if _, ok := latched[string(b.Kind)]; !ok {
-				latched[string(b.Kind)] = b
+		w := closed1m[lo : j+1]
+		// Once both roles are latched the first box never changes, so the
+		// full BoxesBuild scan is skipped — only the B52 new-zone check below
+		// still needs the window.
+		if len(latched) < 2 {
+			for _, b := range BoxesBuild(w, cfg, time.UnixMilli(at)) {
+				if _, ok := latched[string(b.Kind)]; !ok {
+					latched[string(b.Kind)] = b
+				}
 			}
+		}
+		// B52 (release #29): replay the new-zone latch too — once a role's
+		// active box escaped, the next same-role box OUTSIDE the old range is
+		// latched, exactly as the tick does. The replay runs to the end of the
+		// day (escapes happen long after the first boxes form).
+		if e.Cfg.BoxNewZoneAfterEscape {
+			wTF := barsForTF(w, cfg.TF)
+			for _, kind := range []BoxKind{FTGL, FTGH} {
+				active, ok := activeBoxOfPair(latched, post, kind)
+				if !ok {
+					continue
+				}
+				idx, ok := resolveBarIndex(wTF, active.FormedAtMs)
+				if !ok {
+					continue
+				}
+				active.FormedAt = idx
+				if _, escapedYet := boxEscapeIndex(wTF, active, idx); !escapedYet {
+					continue
+				}
+				nb := boxAfterEscapeBuild(w, cfg, active)
+				if nb == nil || postHasBox(post, nb.Key) {
+					continue
+				}
+				post = append(post, *nb)
+			}
+		} else if len(latched) >= 2 {
+			// The pre-B52 fast path: stop once both roles are latched — a
+			// latched role never changes, so a normal day costs a few dozen
+			// scans, a day where one role never forms costs one scan per minute.
+			break
 		}
 	}
 	if len(latched) == 0 {
 		return
 	}
 	e.State.LatchedBoxes = latched
+	e.State.PostEscapeBoxes = post
 	if e.State.BoxRefs == nil {
 		e.State.BoxRefs = map[string]int64{}
 	}
 	newest := closed1m[len(closed1m)-1].OpenTime
 	for _, b := range latched {
+		if e.State.BoxRefs[b.Key] < newest {
+			e.State.BoxRefs[b.Key] = newest
+		}
+	}
+	for _, b := range post {
 		if e.State.BoxRefs[b.Key] < newest {
 			e.State.BoxRefs[b.Key] = newest
 		}

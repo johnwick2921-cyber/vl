@@ -101,6 +101,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.flag_wall_target',
     live: true,
   },
+  'Box new zone after escape': {
+    settingId: 'risk_control.mentor_tuning.box_new_zone_after_escape',
+    live: true,
+  },
   'PHL min candles from old extreme': {
     settingId: 'Config.PHLMinCandlesFromExtreme',
     live: false,
@@ -1205,6 +1209,20 @@ export const mentor: GuideSection = {
           recommended:
             'OFF — X9 extra @05:47–06:12; turn ON only on an owner ruling.',
           whenToTouch: 'Only on an owner ruling.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Box new zone after escape',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D3.4 p3 recovered2 @00:00–00:21 "khi nào nó rớt xuống đây, nó bật ngược lên, nó tạo cái failure to go lower dưới này nè… thì anh chị mới có được cái range giữa cái này và cái này" (when it drops down here, bounces back, and makes a failure-to-go-lower down here — only then do you get the range between this and this) — a range escape makes a NEW zone, not a redraw. D3.2 p2 @09:47–09:54 "Đừng vẽ vùng thứ 3… Rối lắm" (do not draw a third zone… it gets messy) caps it: the new zone must sit entirely outside the escaped range. D4.1 p2 @02:38–03:31: a higher high / lower low does NOT redraw the drawn box, and the drawn box is never deleted. true (default) = after a standing FTGH/FTGL box escapes (a closed 1m body fully outside), ONE new same-role box is latched from confirmed swings that form after the escape and lie wholly beyond the old range (a new FTGL below the floor, a new FTGH above the ceiling); the old box keeps its flipped role and the new box is the active one, so one new zone per further escape. false = the pre-#29 rule (the first box per role per day is the only box). Knob rule case (a), ON.',
+          trader: 'ON — case (a).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/box.go latchPostEscapeBoxes / boxAfterEscapeBuild',
+          range: 'true / false',
+          systemDefault: 'true',
+          recommended:
+            'ON — D3.4 p3 recovered2 @00:00–00:21; knob rule (a): course, no ruling against.',
+          whenToTouch: 'Rarely — OFF only to compare with the pre-#29 rule.',
           perSession: 'No.',
         },
         {
