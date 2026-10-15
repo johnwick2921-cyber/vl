@@ -283,3 +283,141 @@ func TestRealBigMinuteNotQuarantined(t *testing.T) {
 		t.Fatalf("a real 0.64%% minute must stay live, got source=%q", got.Source)
 	}
 }
+
+// ── release #28: HTF cross-check against the bar's own 1m bars ─────────────
+
+// htfRig builds a ring whose 1m bars cover [startOpen, startOpen+n min) cleanly
+// (a gentle walk around base), as a running bot would hold them.
+func htfRig(startOpen int64, n int, base float64) *BarCache {
+	c := NewBarCache(2500)
+	var hist []Bar
+	for i := 0; i < n; i++ {
+		o := base + float64(i%5)
+		hist = append(hist, Bar{T: startOpen + int64(i)*60_000 + 60_000, O: o, H: o + 3, L: o - 3, C: o + 1})
+	}
+	c.SeedHistorical("MNQ", "1m", hist[:n-1])
+	c.Upsert("MNQ", "1m", hist[n-1:]) // one live bar: the scale-break one-shot is spent
+	return c
+}
+
+// The 10-14 shape on the 1h bar: the 20:00 hour's real 1m bars sit near 29,930,
+// the HTF bar carries the stale high 30,754 → quarantined.
+func TestHTFStaleHighQuarantinedAgainstItsOwnMinutes(t *testing.T) {
+	stalePrintQuarantined.Store(0)
+	open := int64(staleBarOpenT) // 20:00 CT 10-14
+	c := htfRig(open, 60, 29930)
+	c.NoteReconnect(time.Now())
+	c.Upsert("MNQ", "1h", []Bar{{T: open + 3_600_000, O: 29931.25, H: 30754.0, L: 29927.0, C: 29954.25}})
+	got, ok := barAt(c, "MNQ", "1h", open)
+	if !ok || got.Source != BarSourceMixed {
+		t.Fatalf("a 1h bar whose high its own 1m bars never traded must be quarantined, got ok=%v source=%q", ok, got.Source)
+	}
+}
+
+// A real 1h bar with a 3% range is NOT quarantined when its 1m bars carry that
+// range (the reference, not a fixed percentage, is the judge).
+func TestHTFRealBigHourNotQuarantined(t *testing.T) {
+	stalePrintQuarantined.Store(0)
+	open := int64(staleBarOpenT)
+	// the hour's real 1m bars, one of which (20:30) ran to 30,830: a real 3% hour
+	c := NewBarCache(2500)
+	var hist []Bar
+	for i := 0; i < 60; i++ {
+		b := Bar{T: open + int64(i)*60_000 + 60_000, O: 29930, H: 29933, L: 29927, C: 29931}
+		if i == 30 {
+			b = Bar{T: open + int64(i)*60_000 + 60_000, O: 29960, H: 30830, L: 29950, C: 30800}
+		}
+		hist = append(hist, b)
+	}
+	c.SeedHistorical("MNQ", "1m", hist[:59])
+	c.Upsert("MNQ", "1m", hist[59:])
+	c.NoteReconnect(time.Now())
+	c.Upsert("MNQ", "1h", []Bar{{T: open + 3_600_000, O: 29931.25, H: 30830, L: 29927.0, C: 30800}})
+	got, _ := barAt(c, "MNQ", "1h", open)
+	if got.Source != BarSourceLive {
+		t.Fatalf("a real 3%% hour must stay live, got source=%q", got.Source)
+	}
+	if n := StalePrintQuarantined(); n != 0 {
+		t.Fatalf("quarantine counter = %d, want 0", n)
+	}
+}
+
+// A 1m hole inside the period means the 1m reference may miss a real extreme:
+// the HTF bar is NOT judged (fail open, as before release #28).
+func TestHTFNotJudgedOverA1mHole(t *testing.T) {
+	stalePrintQuarantined.Store(0)
+	open := int64(staleBarOpenT)
+	c := NewBarCache(2500)
+	var hist []Bar
+	for i := 0; i < 60; i++ {
+		if i >= 10 && i < 40 { // 30-minute hole
+			continue
+		}
+		hist = append(hist, Bar{T: open + int64(i)*60_000 + 60_000, O: 29930, H: 29933, L: 29927, C: 29931})
+	}
+	c.SeedHistorical("MNQ", "1m", hist[:len(hist)-1])
+	c.Upsert("MNQ", "1m", hist[len(hist)-1:])
+	c.NoteReconnect(time.Now())
+	c.Upsert("MNQ", "1h", []Bar{{T: open + 3_600_000, O: 29931.25, H: 30754.0, L: 29927.0, C: 29954.25}})
+	got, _ := barAt(c, "MNQ", "1h", open)
+	if got.Source != BarSourceLive {
+		t.Fatalf("over a 1m hole the HTF bar must not be judged, got source=%q", got.Source)
+	}
+}
+
+// A daily bar is never judged by the HTF cross-check (its stamp does not match
+// its session minutes); the 10-15 case: a real daily bar must never be hidden.
+func TestHTFDailyBeyondTheRingNotJudged(t *testing.T) {
+	stalePrintQuarantined.Store(0)
+	dayOpen := int64(staleBarOpenT) - 3*3_600_000 // 17:00 CT
+	c := htfRig(int64(staleBarOpenT), 60, 29930)  // the ring starts at 20:00, after the day's open
+	c.NoteReconnect(time.Now())
+	c.Upsert("MNQ", "1d", []Bar{{T: dayOpen + 86_400_000, O: 30151, H: 30159, L: 29247, C: 29300}})
+	got, _ := barAt(c, "MNQ", "1d", dayOpen)
+	if got.Source != BarSourceLive {
+		t.Fatalf("a daily bar the 1m ring does not cover must not be judged, got source=%q", got.Source)
+	}
+}
+
+// Outside the reconnect window the HTF bar is trusted, exactly as the 1m guard.
+func TestHTFOutsideWindowTrusted(t *testing.T) {
+	stalePrintQuarantined.Store(0)
+	open := int64(staleBarOpenT)
+	c := htfRig(open, 60, 29930)
+	c.NoteReconnect(time.Now().Add(-2 * stalePrintGuardWindow))
+	c.Upsert("MNQ", "1h", []Bar{{T: open + 3_600_000, O: 29931.25, H: 30754.0, L: 29927.0, C: 29954.25}})
+	got, _ := barAt(c, "MNQ", "1h", open)
+	if got.Source != BarSourceLive {
+		t.Fatalf("outside the window the HTF bar is trusted, got source=%q", got.Source)
+	}
+}
+
+// Even with full 1m coverage of a FORMING daily bar, the daily bar is not judged
+// (stamp/session mismatch). Stamps are relative to now so the bar is forming
+// and its minutes so far are complete — only the TF list keeps it unjudged.
+func TestHTFDailyNeverJudgedEvenWithCoverage(t *testing.T) {
+	stalePrintQuarantined.Store(0)
+	nowMin := time.Now().Truncate(time.Minute).UnixMilli()
+	open := nowMin - 30*60_000
+	c := htfRig(open, 30, 29930) // 1m bars for every minute from open to now-1
+	c.NoteReconnect(time.Now())
+	c.Upsert("MNQ", "1d", []Bar{{T: open + 86_400_000, O: 29931.25, H: 30754.0, L: 29927.0, C: 29931.0}})
+	got, _ := barAt(c, "MNQ", "1d", open)
+	if got.Source != BarSourceLive {
+		t.Fatalf("a daily bar must never be judged by the HTF check, got source=%q", got.Source)
+	}
+}
+
+// The same forming shape on a 1h bar IS judged (control for the daily test).
+func TestHTFFormingHourJudged(t *testing.T) {
+	stalePrintQuarantined.Store(0)
+	nowMin := time.Now().Truncate(time.Minute).UnixMilli()
+	open := nowMin - 30*60_000
+	c := htfRig(open, 30, 29930)
+	c.NoteReconnect(time.Now())
+	c.Upsert("MNQ", "1h", []Bar{{T: open + 3_600_000, O: 29931.25, H: 30754.0, L: 29927.0, C: 29931.0}})
+	got, _ := barAt(c, "MNQ", "1h", open)
+	if got.Source != BarSourceMixed {
+		t.Fatalf("a forming 1h bar with a stale high must be quarantined, got source=%q", got.Source)
+	}
+}
