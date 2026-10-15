@@ -189,6 +189,7 @@ func withReleaseBinary(binName string) rigOpt {
 func withCSChanged() rigOpt {
 	return func(b *box) {
 		writeFile(b.t, filepath.Join(b.relDir, "ninjascript", "VLTrader.cs"), "// C# v2\n")
+		writeFile(b.t, filepath.Join(b.relDir, "ninjascript", "VLTraderTCPClient.cs"), "// C# v2\nprivate const string VL_BUILD_ID = \""+boxNewBuild+"\";\n")
 		b.manifestBuild = boxNewBuild
 	}
 }
@@ -220,6 +221,7 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	writeFile(t, filepath.Join(b.inst, "web", "dist", "assets", "app.js"), "old();\n")
 	writeFile(t, filepath.Join(b.inst, calendarFile), "[]\n")
 	writeFile(t, filepath.Join(b.inst, "ninjascript", "VLTrader.cs"), "// C# v1\n")
+	writeFile(t, filepath.Join(b.inst, "ninjascript", "VLTraderTCPClient.cs"), "// C# v1\nprivate const string VL_BUILD_ID = \""+boxOldBuild+"\";\n")
 	writeFile(t, filepath.Join(b.data, "data.db"), "SQLite format 3\x00 fake\n")
 	// the materialized release (activation layout)
 	writeFile(t, filepath.Join(b.relDir, b.binName), binaryBody(boxNew))
@@ -227,6 +229,7 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	writeFile(t, filepath.Join(b.relDir, "web", "dist", "index.html"), "<html>new</html>\n")
 	writeFile(t, filepath.Join(b.relDir, calendarFile), "[]\n")
 	writeFile(t, filepath.Join(b.relDir, "ninjascript", "VLTrader.cs"), "// C# v1\n")
+	writeFile(t, filepath.Join(b.relDir, "ninjascript", "VLTraderTCPClient.cs"), "// C# v1\nprivate const string VL_BUILD_ID = \""+boxOldBuild+"\";\n")
 	writeFile(t, filepath.Join(b.relDir, "manifest.json"), fmt.Sprintf(`{"source_sha":%q,"binary_md5":"","signature_verdict":"sshsig:release:SHA256:fake"}`, boxNew))
 	for _, o := range opts {
 		o(b)
@@ -629,7 +632,7 @@ func (f *fakeRel) Rehash(v Verdict) (int, error) {
 
 func (f *fakeRel) Reverify(v Verdict) (ReleaseFacts, error) {
 	arts := map[string]string{}
-	for _, rel := range []string{"web/dist/index.html", "ninjascript/VLTrader.cs", calendarFile, f.b.relBinName} {
+	for _, rel := range []string{"web/dist/index.html", "ninjascript/VLTrader.cs", "ninjascript/VLTraderTCPClient.cs", calendarFile, f.b.relBinName} {
 		if f.b.noCS && strings.HasPrefix(rel, "ninjascript/") {
 			continue
 		}

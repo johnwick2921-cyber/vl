@@ -267,3 +267,59 @@ func TestResumeNeedsANewConnectionWhenTheCSharpChangedWithoutABuildBump(t *testi
 		t.Fatalf("a resume after the F5 ended %s (error %q)", j.State, j.Error)
 	}
 }
+
+// W26 PART C (updater-addon-proof): the release's .cs differ from the install
+// tree's, but the AddOn ALREADY acks the bumped manifest build while the
+// install's own .cs declares the OLD build — the F5 + NT8 restart demonstrably
+// already happened, so decideNT8 must NOT park. The owner who F5'd the night
+// before is not forced to restart NT8 again.
+func TestDecideNT8SkipsWhenTheAddOnAlreadyRunsTheBumpedBuild(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	r.mu.Lock()
+	r.addonBuild = boxNewBuild
+	r.mu.Unlock()
+	r.install()
+	if err := r.drive(); err != nil {
+		t.Fatal(err)
+	}
+	if j := r.job(); j.State != updaterjob.StateComplete {
+		t.Fatalf("an already-compiled bump must NOT park; got %s (error %q blocker %q)", j.State, j.Error, j.Blocker)
+	}
+	if j := r.job(); j.NT8 == nil || j.NT8.Decision != updaterjob.NT8Skipped {
+		got := "<nil>"
+		if j.NT8 != nil {
+			got = string(j.NT8.Decision) + " reason=" + j.NT8.Reason
+		}
+		t.Fatalf("decision = %s, want %s", got, updaterjob.NT8Skipped)
+	}
+}
+
+// W26 PART C: the job parked on a bumped build (the AddOn still ran the OLD
+// one). The owner F5'd but NT8 KEPT the same connection — accept_seq is
+// unchanged while the acked build moved to the manifest's. The bumped build
+// proves the recompile, so resumeProof must NOT demand a NEW connection.
+func TestResumeAcceptsSameConnectionWhenTheBuildWasBumped(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	r.install()
+	if err := r.drive(); err != nil {
+		t.Fatal(err)
+	}
+	if j := r.job(); j.State != updaterjob.StateNT8Updated {
+		t.Fatalf("the bumped build with the old AddOn must park; got %s (error %q)", j.State, j.Error)
+	}
+	// F5 WITHOUT a restart: the acked build moves, the connection does not.
+	// (The clock still has to advance — resumed_at must be AFTER the park.)
+	r.clock.Advance(time.Minute)
+	r.mu.Lock()
+	r.addonBuild = boxNewBuild
+	r.mu.Unlock()
+	if resp := r.w.Handle(resumeRequest(boxJobID)); !resp.OK {
+		t.Fatalf("resume verb: %+v", resp)
+	}
+	if err := r.drive(); err != nil {
+		t.Fatal(err)
+	}
+	if j := r.job(); j.State != updaterjob.StateComplete {
+		t.Fatalf("a bumped build on the same connection must resume; got %s (error %q blocker %q)", j.State, j.Error, j.Blocker)
+	}
+}

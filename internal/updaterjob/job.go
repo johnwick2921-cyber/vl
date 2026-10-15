@@ -155,6 +155,13 @@ type NT8Decision struct {
 	AckedAt         string `json:"acked_at,omitempty"`       // addon_ack.received, verbatim
 	AckAcceptSeq    uint64 `json:"ack_accept_seq,omitempty"` // the connection's accept_seq at the park — a new seq proves a new connection
 	CSUnchanged     *bool  `json:"cs_unchanged,omitempty"`
+	// OldInstallBuildID (W26 PART C) is the VL_BUILD_ID the install's OWN
+	// ninjascript declares — "the build the OLD install shipped". It is READ at
+	// the park and persists to the resume, where it distinguishes the #206 hazard
+	// (build id NOT bumped: old install build == manifest build) from the
+	// already-compiled case (bumped: the AddOn can only run the new build if it
+	// was F5'd). Empty when unreadable — the park stays the safe side.
+	OldInstallBuildID string `json:"old_install_build_id,omitempty"`
 	// Absent marks the nt8_absent decision (UPDATER-NT8-CLOSED): NT8 was
 	// closed at the decision, so no ack was read — the decision rests on the
 	// signed manifest vs the install's ninjascript/*.cs content alone.

@@ -702,6 +702,9 @@ func (w *Worker) stepNT8(ctx context.Context, j updaterjob.Job) stepResult {
 		if d.Reason != "" {
 			ev["reason"] = d.Reason
 		}
+		if d.OldInstallBuildID != "" {
+			ev["old_install_build_id"] = d.OldInstallBuildID
+		}
 		if d.CSUnchanged != nil {
 			ev["cs_unchanged"] = strconv.FormatBool(*d.CSUnchanged)
 		}
