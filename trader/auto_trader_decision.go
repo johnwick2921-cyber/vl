@@ -234,8 +234,11 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 		"unrealized_profit": totalUnrealizedProfit, // Unrealized P&L (official value from exchange API)
 		"available_balance": availableBalance,      // Available balance
 
-		// P&L statistics
-		"total_pnl":       totalPnL,          // Total P&L = equity - initial
+		// P&L statistics. N6 (release #26): total_pnl is NOT a uniform "total" —
+		// on NT8 it is the broker's SESSION figure (realized+unrealized since the
+		// session reset), on crypto it is equity − initial. The truth is carried
+		// beside it in total_pnl_source; readers must consult it.
+		"total_pnl":       totalPnL,          // NT8: session realized+unrealized; crypto: equity − initial (see total_pnl_source)
 		"total_pnl_pct":   totalPnLPct,       // Total P&L percentage
 		"initial_balance": at.initialBalance, // Initial balance
 		"daily_pnl":       at.dailyPnL,       // Daily P&L

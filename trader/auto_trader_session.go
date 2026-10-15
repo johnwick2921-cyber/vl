@@ -182,7 +182,9 @@ func (at *AutoTrader) observeNightEdge() {
 		} else {
 			at.logInfof("🌅 DAY MODE — an enabled session window opened.")
 		}
-		telemetry.IncGateBlock(at.id, "night_transition") // event row (until the P4 alert center)
+		// P2-3a (release #26): a night/day transition is an EVENT, not a
+		// refusal — it must not count as a gate-block.
+		telemetry.IncTraderEvent(at.id, "night_transition")
 	}
 	at.nightPrev = &night
 }

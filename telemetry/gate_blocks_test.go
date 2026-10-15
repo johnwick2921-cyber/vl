@@ -57,6 +57,59 @@ func TestGateBlocks_TripTwoGatesShowsExactlyThem(t *testing.T) {
 	}
 }
 
+// TestIncTraderEventDoesNotCountAsGateBlock is the P2-3a (release #26) anchor:
+// an EVENT (arm authored, night transition) must never read as a refusal in the
+// per-session gate-block table. If a call site regresses to IncGateBlock, this
+// test's snapshot/summary asserts fail.
+func TestIncTraderEventDoesNotCountAsGateBlock(t *testing.T) {
+	resetGateBlocksForTest()
+	defer resetGateBlocksForTest()
+	RolloverGateBlocks(1_000)
+
+	IncTraderEvent("T1", "arm_authored")
+	IncTraderEvent("T1", "night_transition")
+	IncGateBlock("T1", "feed_down") // a REAL refusal
+
+	_, table := GateBlockSnapshot()
+	if _, present := table["T1"]["arm_authored"]; present {
+		t.Error("arm_authored must not appear in the gate-block table")
+	}
+	if _, present := table["T1"]["night_transition"]; present {
+		t.Error("night_transition must not appear in the gate-block table")
+	}
+	if table["T1"]["feed_down"] != 1 {
+		t.Errorf("feed_down = %d, want 1 (a real refusal must still count)", table["T1"]["feed_down"])
+	}
+	sum := GateBlockDailySummary()
+	if strings.Contains(sum, "arm_authored") || strings.Contains(sum, "night_transition") {
+		t.Errorf("summary must not mention events as blocks: %q", sum)
+	}
+}
+
+// TestGateBlocks_SummaryGroupsPerTrader is the P2-3b (release #26) anchor: the
+// daily summary names which trader each gate blocked, instead of an aggregate
+// that loses the trader dimension.
+func TestGateBlocks_SummaryGroupsPerTrader(t *testing.T) {
+	resetGateBlocksForTest()
+	defer resetGateBlocksForTest()
+	RolloverGateBlocks(1_000)
+
+	IncGateBlock("T1", "feed_down")
+	IncGateBlock("T2", "feed_down")
+	IncGateBlock("", "b3_order_dedup")
+
+	sum := GateBlockDailySummary()
+	if !strings.Contains(sum, "T1{feed_down=1}") {
+		t.Errorf("summary missing T1 group: %q", sum)
+	}
+	if !strings.Contains(sum, "T2{feed_down=1}") {
+		t.Errorf("summary missing T2 group: %q", sum)
+	}
+	if !strings.Contains(sum, "(process){b3_order_dedup=1}") {
+		t.Errorf("summary missing process-wide group: %q", sum)
+	}
+}
+
 // TestGateBlocks_ProcessWideBucket: the empty-trader key holds shared-chokepoint
 // gates (B3) separately from any real trader's counters.
 func TestGateBlocks_ProcessWideBucket(t *testing.T) {
