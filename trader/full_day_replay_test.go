@@ -1766,6 +1766,29 @@ func TestFullDayReplay(t *testing.T) {
 		for _, s := range lines {
 			t.Logf("    %s", s)
 		}
+		// BOX intents over the day — the B52 new-zone rule adds these, so the
+		// time + zone of every box placement is listed for the CTO to check
+		// against the course [D3.2 p1 @ 04:29: the 3rd touch is the trade].
+		box := map[string]int{}
+		var boxLines []string
+		for _, o := range outcomes {
+			if o.in.Setup != "BOX" || !fdrIsPlace(o.in) {
+				continue
+			}
+			state := "authored"
+			if o.rowID == 0 {
+				state = "refused " + o.refusal
+			}
+			if o.birthCx {
+				state += " + CANCELLED IN THE SAME TICK"
+			}
+			box[o.trader]++
+			boxLines = append(boxLines, fmt.Sprintf("%s %s %s %s %s @%.2f stop %.2f zone %s — %s", fdrCT(w.bars[o.barIdx].CloseTime+1), o.trader, o.in.ArmID, o.in.Setup, o.in.Side, o.in.Price, o.in.Stop, o.in.AnchorKey, state))
+		}
+		t.Logf("(g) BOX Place intents emitted: %d — %s", len(boxLines), fdrSortedKV(box))
+		for _, s := range boxLines {
+			t.Logf("    %s", s)
+		}
 		for _, ft := range traders {
 			lv := map[string]int{}
 			for k, v := range kernelRefusals[ft.id] {

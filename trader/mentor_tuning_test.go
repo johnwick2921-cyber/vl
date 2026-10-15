@@ -96,8 +96,12 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			DayGateSpentPts: 300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
 			// Release #25 course-entry knobs (COMMON-25 knob rule: (a) ON, (b) OFF).
 			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictFirstBox,
+			NewsBarsExcluded: true, // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
 			ISBBoxEscapeMode: mentor.ISBBoxEscapeBody, EmaLossRelock: mentor.EmaRelockUntilZoneExit,
 			D43TrendSource: mentor.D43TrendTriggerLine, TrendlineIsTarget: true, LegResetOnWaveBreak: true,
+			// Release #29 B52: a new zone after a range escape — course, no
+			// ruling against → ON (COMMON-25).
+			BoxNewZoneAfterEscape: true,
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)

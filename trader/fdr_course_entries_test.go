@@ -21,11 +21,16 @@ func fdrPinPre25CourseEntries(cfg *store.StrategyConfig) {
 	t := cfg.RiskControl.MentorTuning
 	t.FifteenMinIBRequires5mISB = "off"
 	t.TFConflictEnd = "first_box"
+	t.NewsBarsExcluded = &off // release #29: the live 10-13 day ran the item-18 drop, not the freeze
 	t.ISBBoxEscape = "close"
 	t.EMA34LossRelock = "session"
 	t.D43TrendSource = "trigger_line"
 	t.TrendlineIsTarget = &off
 	t.LegResetOnWaveBreak = &off
+	// B52 (release #29) ships ON by default; the fidelity day ran BEFORE #29,
+	// so the harness must pin the pre-#29 box world to reproduce the live arms.
+	// The #29 box changes are measured by TestFullDayReplay (knob ON), not here.
+	t.BoxNewZoneAfterEscape = &off
 }
 
 // fdrApplyTuningEnv merges FDR_TUNING (a JSON object of mentor_tuning keys,

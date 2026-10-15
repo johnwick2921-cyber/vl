@@ -295,15 +295,23 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		trig, fourH, oneH = TriggerLine{}, TriggerLine{}, TriggerLine{}
 	}
 	e.State.Trigger = TriggerReplay1m(trig, closed1m, 5, e.Cfg)
-	// Print windows: the SAME htfFeedBars the tick path uses. N6 (release #23):
+	// Print windows: the SAME freeze the tick path uses. N6 (release #23):
 	// the windows are absolute instants, and the caller hands the seed the
 	// print windows of EVERY day the replayed history covers (the trader reads
-	// each day's stored calendar) — a running bot dropped each day's print
-	// candle on that day, so the replay drops it too. A historical bar at a
+	// each day's stored calendar) — a running bot froze each day's print candle
+	// on that day, so the replay freezes it too. A historical bar at a
 	// different absolute time never matches a window.
-	htfBars := htfFeedBars(closed1m, newsHTFWindows(e.Cfg.PrintWindows, e.Cfg)) // CE-4
-	e.State.HTF.FourH = TriggerReplay1m(fourH, htfBars, 240, e.Cfg)
-	e.State.HTF.OneH = TriggerReplay1m(oneH, htfBars, 60, e.Cfg)
+	if e.Cfg.NewsBarsExcluded {
+		// CE-4 reworked: freeze the pre-print trigger read; the bars still
+		// build their whole 1h/4h candles (no deletion).
+		frozen := func(openMs int64) bool { return newsBarFrozen(openMs, e.Cfg) }
+		e.State.HTF.FourH = TriggerReplay1mFrozen(fourH, closed1m, 240, e.Cfg, frozen)
+		e.State.HTF.OneH = TriggerReplay1mFrozen(oneH, closed1m, 60, e.Cfg, frozen)
+	} else {
+		htfBars := htfFeedBars(closed1m, e.Cfg.PrintWindows)
+		e.State.HTF.FourH = TriggerReplay1m(fourH, htfBars, 240, e.Cfg)
+		e.State.HTF.OneH = TriggerReplay1m(oneH, htfBars, 60, e.Cfg)
+	}
 }
 
 // SeedTickWindow1m is the 1m window the live tick hands Tick (the trader's
@@ -344,7 +352,8 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 		return tradingDayKey(time.UnixMilli(BarCloseInstant(closed1m[i])).In(ctime())) >= day
 	})
 	latched := map[string]Box{}
-	for j := first; j < len(closed1m) && len(latched) < 2; j++ {
+	post := []Box{}
+	for j := first; j < len(closed1m); j++ {
 		at := BarCloseInstant(closed1m[j])
 		if tradingDayKey(time.UnixMilli(at).In(ctime())) != day {
 			continue
@@ -361,21 +370,64 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 		if lo < 0 {
 			lo = 0
 		}
-		for _, b := range BoxesBuild(closed1m[lo:j+1], cfg, time.UnixMilli(at)) {
-			if _, ok := latched[string(b.Kind)]; !ok {
-				latched[string(b.Kind)] = b
+		w := closed1m[lo : j+1]
+		// Once both roles are latched the first box never changes, so the
+		// full BoxesBuild scan is skipped — only the B52 new-zone check below
+		// still needs the window.
+		if len(latched) < 2 {
+			for _, b := range BoxesBuild(w, cfg, time.UnixMilli(at)) {
+				if _, ok := latched[string(b.Kind)]; !ok {
+					latched[string(b.Kind)] = b
+				}
 			}
+		}
+		// B52 (release #29): replay the new-zone latch too — once a role's
+		// active box escaped, the next same-role box OUTSIDE the old range is
+		// latched, exactly as the tick does. The replay runs to the end of the
+		// day (escapes happen long after the first boxes form).
+		if e.Cfg.BoxNewZoneAfterEscape {
+			wTF := barsForTF(w, cfg.TF)
+			for _, kind := range []BoxKind{FTGL, FTGH} {
+				active, ok := activeBoxOfPair(latched, post, kind)
+				if !ok {
+					continue
+				}
+				idx, ok := resolveBarIndex(wTF, active.FormedAtMs)
+				if !ok {
+					continue
+				}
+				active.FormedAt = idx
+				if _, escapedYet := boxEscapeIndex(wTF, active, idx); !escapedYet {
+					continue
+				}
+				nb := boxAfterEscapeBuild(w, cfg, active)
+				if nb == nil || postHasBox(post, nb.Key) {
+					continue
+				}
+				post = append(post, *nb)
+			}
+		} else if len(latched) >= 2 {
+			// The pre-B52 fast path: stop once both roles are latched — a
+			// latched role never changes, so a normal day costs a few dozen
+			// scans, a day where one role never forms costs one scan per minute.
+			break
 		}
 	}
 	if len(latched) == 0 {
 		return
 	}
 	e.State.LatchedBoxes = latched
+	e.State.PostEscapeBoxes = post
 	if e.State.BoxRefs == nil {
 		e.State.BoxRefs = map[string]int64{}
 	}
 	newest := closed1m[len(closed1m)-1].OpenTime
 	for _, b := range latched {
+		if e.State.BoxRefs[b.Key] < newest {
+			e.State.BoxRefs[b.Key] = newest
+		}
+	}
+	for _, b := range post {
 		if e.State.BoxRefs[b.Key] < newest {
 			e.State.BoxRefs[b.Key] = newest
 		}

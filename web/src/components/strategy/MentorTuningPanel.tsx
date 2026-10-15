@@ -30,6 +30,7 @@ type BoolKey =
   | 'trendline_between_boxes'
   | 'leg_reset_on_wave_break'
   | 'flag_wall_target'
+  | 'box_new_zone_after_escape'
 
 type EnumKey =
   | '15m_ib_requires_5m_isb'
@@ -248,6 +249,11 @@ const COPY = {
     en: 'Inside a flag: the opposite flag wall is a closer target',
     es: 'Dentro de una bandera: la pared opuesta es un objetivo más cercano',
   },
+  boxNewZone: {
+    zh: '箱体突破后在区间外绘制新箱体',
+    en: 'After a box escapes, draw one new box outside the range',
+    es: 'Tras un escape de caja, dibujar una caja nueva fuera del rango',
+  },
 } satisfies Record<string, Copy>
 
 // The option lists of the string-valued knobs; "" (blank) = the ruled default.
@@ -309,6 +315,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   trendline_between_boxes: false, // (b)
   leg_reset_on_wave_break: true, // (a)
   flag_wall_target: false, // (b) X9 extra, ported from #416
+  box_new_zone_after_escape: true, // (a) B52: new zone after range escape [D3.4 p3 recovered2 @00:00–00:21]
 } as const
 
 // Remove a key when the value is undefined; keep an empty block out of the
@@ -523,6 +530,7 @@ export function MentorTuningPanel({
         {boolField('trendline_between_boxes', COPY.tlBetween)}
         {boolField('leg_reset_on_wave_break', COPY.legWave)}
         {boolField('flag_wall_target', COPY.flagWall)}
+        {boolField('box_new_zone_after_escape', COPY.boxNewZone)}
       </div>
     </div>
   )

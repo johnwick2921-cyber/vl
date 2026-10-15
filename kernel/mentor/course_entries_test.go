@@ -232,33 +232,65 @@ func TestCE3NewsWaitFor4hLine(t *testing.T) {
 	}
 }
 
-// CE-4 (b) — "Còn cái khúc mà news ra rồi thì không tính" [D4.4 p1
-// @18:18–18:25]. ON stretches a 07:20–07:35 print window to the 08:30 CT open;
-// OFF returns the windows untouched (byte-identical HTF feed).
+// CE-4 (a, release #29 rework) — "Còn cái khúc mà news ra rồi thì không tính"
+// [D4.4 p1 @18:13–18:25]. ON FREEZES the pre-print 1h/4h trigger read from the
+// print window start until the 08:30 CT day-gate read (the bars still build
+// their whole 1h/4h candles); OFF keeps the item-18 print-window drop.
 func TestCE4NewsBarsExcludedToTheOpen(t *testing.T) {
+	if !DefaultConfig().NewsBarsExcluded {
+		t.Fatal("news_bars_excluded default must be ON (case a)")
+	}
 	w := printWindowCT(2026, 9, 15)
-	cfg := DefaultConfig()
-	if got := newsHTFWindows([]PrintWindow{w}, cfg); got[0] != w {
-		t.Fatalf("OFF must keep the print window: %+v", got)
+
+	// ON freezes every tick from the print window start through the 08:30
+	// day-gate read (the 08:30-close tick at now = 08:31:00 releases).
+	on := DefaultConfig()
+	on.NewsBarsExcluded = true
+	on.PrintWindows = []PrintWindow{w}
+	for _, tc := range []struct {
+		now   int64
+		frozen bool
+	}{
+		{auditMs(2026, 9, 15, 7, 19, 0), false},
+		{auditMs(2026, 9, 15, 7, 20, 0), true},
+		{auditMs(2026, 9, 15, 7, 50, 0), true},
+		{auditMs(2026, 9, 15, 8, 29, 0), true},
+		{auditMs(2026, 9, 15, 8, 30, 0), true},  // the day-gate read tick
+		{auditMs(2026, 9, 15, 8, 31, 0), false}, // after the open: candles whole again
+	} {
+		if got := newsHTFFrozen(on, tc.now); got != tc.frozen {
+			t.Fatalf("newsHTFFrozen(%d) = %v, want %v", tc.now, got, tc.frozen)
+		}
 	}
-	cfg.NewsBarsExcluded = true
-	got := newsHTFWindows([]PrintWindow{w}, cfg)
-	if got[0].FromMs != w.FromMs || got[0].ToMs != auditMs(2026, 9, 15, 8, 30, 0) {
-		t.Fatalf("ON must run the window to 08:30 CT: %+v", got)
+
+	// The per-bar freeze (the seed replay) covers [07:20, 08:30), and a bar is
+	// never deleted — the candle aggregation stays whole.
+	if newsBarFrozen(auditMs(2026, 9, 15, 7, 19, 0), on) {
+		t.Fatal("a pre-print bar must not be frozen")
 	}
-	// The HTF feed the Tick builds drops a 07:50 bar only when ON.
+	if !newsBarFrozen(auditMs(2026, 9, 15, 7, 50, 0), on) {
+		t.Fatal("a post-print bar before the open must be frozen")
+	}
+	if newsBarFrozen(auditMs(2026, 9, 15, 8, 30, 0), on) {
+		t.Fatal("the 08:30 bar must not be frozen")
+	}
 	bars := []market.Kline{{OpenTime: auditMs(2026, 9, 15, 7, 19, 0)}, {OpenTime: auditMs(2026, 9, 15, 7, 50, 0)}, {OpenTime: auditMs(2026, 9, 15, 8, 30, 0)}}
-	if n := len(htfFeedBars(bars, newsHTFWindows([]PrintWindow{w}, cfg))); n != 2 {
-		t.Fatalf("ON: HTF feed kept %d bars, want 2 (07:19 and 08:30)", n)
+	if n := len(htfFeedBars(bars, on.PrintWindows)); n != 3 {
+		t.Fatalf("the item-18 OFF feed keeps %d bars, want 3 (no print-window deletion beyond 07:35)", n)
 	}
-	if n := len(htfFeedBars(bars, newsHTFWindows([]PrintWindow{w}, DefaultConfig()))); n != 3 {
-		t.Fatalf("OFF: HTF feed kept %d bars, want 3", n)
+
+	// OFF: no freeze at all (the item-18 drop is the only behaviour).
+	off := DefaultConfig()
+	off.NewsBarsExcluded = false
+	off.PrintWindows = []PrintWindow{w}
+	if newsHTFFrozen(off, auditMs(2026, 9, 15, 7, 50, 0)) {
+		t.Fatal("OFF must not freeze")
 	}
 }
 
 // CE-4 at the Tick call site: a 07:40 CT bar that breaks the prior 1h high
-// moves the 1h line with the knob OFF and does not with it ON.
-// MUTANT: pass e.Cfg.PrintWindows (not newsHTFWindows) to htfFeedBars in Tick → RED.
+// moves the 1h line with the knob OFF and does not with it ON (the freeze).
+// MUTANT: drop the newsHTFFrozen guard in Tick → RED.
 func TestCE4TickHTFIgnoresPostPrintBars(t *testing.T) {
 	build := func(on bool) *Evaluator {
 		cfg := DefaultConfig()
@@ -284,6 +316,159 @@ func TestCE4TickHTFIgnoresPostPrintBars(t *testing.T) {
 	}
 	if on := build(true); on.State.HTF.OneH.Dir == SideLong {
 		t.Fatalf("ON: a post-print bar before the open must not move the 1h line, got %+v", on.State.HTF.OneH)
+	}
+}
+
+// CE-4 reworked (release #29): the freeze holds the pre-print 1h/4h read
+// through the 08:30 day-gate read, then the lines resume on WHOLE candles — the
+// 07:30 print spike is still IN the 07:00 1h bucket (never deleted), so it
+// moves the 1h line only after the open, not during the news window.
+// MUTANT: drop the newsHTFFrozen guard in Tick → the 07:50 tick moves the line.
+func TestCE4FreezeResumesOnWholeCandles(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.NewsBarsExcluded = true
+	cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
+	e := New(cfg)
+
+	start := auditMs(2026, 9, 15, 6, 0, 0)
+	spike := auditMs(2026, 9, 15, 7, 30, 0)
+	var fed []market.Kline
+	for i := 0; i <= 210; i++ { // 06:00 … 09:30
+		o := start + int64(i)*60_000
+		b := market.Kline{OpenTime: o, CloseTime: o + 59_999, Open: 100.5, High: 101, Low: 100, Close: 100.5}
+		if o == spike {
+			b.High, b.Close = 120, 119 // the print spike
+		}
+		fed = append(fed, b)
+		e.Tick(fed, b.CloseTime+1)
+		switch o {
+		case auditMs(2026, 9, 15, 7, 50, 0):
+			if e.State.HTF.OneH.Dir != "" {
+				t.Fatalf("07:50 (frozen): 1h line must hold its pre-print read, got %+v", e.State.HTF.OneH)
+			}
+		case auditMs(2026, 9, 15, 8, 29, 0):
+			if e.State.HTF.OneH.Dir != "" {
+				t.Fatalf("08:29 day-gate read (frozen): 1h line must hold its pre-print read, got %+v", e.State.HTF.OneH)
+			}
+		}
+	}
+	// After 08:30 the freeze releases and the whole 07:00 bucket (spike high
+	// 120) breaks the prior 1h high → long. The spike was never deleted.
+	if e.State.HTF.OneH.Dir != SideLong {
+		t.Fatalf("after the open the whole-candle spike must move the 1h line long, got %+v", e.State.HTF.OneH)
+	}
+}
+
+// CE-4 reworked at the SEED call site (seedHistoryState): a boot after the open
+// seeds the 1h line from the whole-candle freeze replay — the 07:30 spike moves
+// the line long, exactly as a continuous bot held it. The OLD delete (htfFeedBars
+// of the news window) seeded the line as never-moved ("").
+// MUTANT: revert seedHistoryState to the htfFeedBars delete → RED.
+func TestCE4SeedHistoryStateFreeze(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.NewsBarsExcluded = true
+	cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
+
+	start := auditMs(2026, 9, 15, 6, 0, 0)
+	spike := auditMs(2026, 9, 15, 7, 30, 0)
+	var bars []market.Kline
+	for i := 0; i <= 210; i++ {
+		o := start + int64(i)*60_000
+		b := market.Kline{OpenTime: o, CloseTime: o + 59_999, Open: 100.5, High: 101, Low: 100, Close: 100.5}
+		if o == spike {
+			b.High, b.Close = 120, 119
+		}
+		bars = append(bars, b)
+	}
+	now := bars[len(bars)-1].CloseTime + 1
+	hist := closedOnly(bars, now)
+	e := New(cfg)
+	e.seedHistoryState(hist, keyLevel1HBars(hist), now, false)
+	if e.State.HTF.OneH.Dir != SideLong {
+		t.Fatalf("seed: the whole-candle spike must move the 1h line long, got %+v", e.State.HTF.OneH)
+	}
+	// The OLD delete drops the spike from the 07:00 bucket, so the line never
+	// moves — the behaviour the rework removes.
+	del := TriggerReplay1m(TriggerLine{}, htfFeedBars(bars, newsHTFWindows(cfg.PrintWindows, cfg)), 60, cfg)
+	if del.Dir != "" {
+		t.Fatalf("the OLD delete must NOT move the line (spike deleted), got %+v", del)
+	}
+}
+
+// F550-2 — a restart DURING the news freeze must seed the SAME pre-print 1h/4h
+// read the continuous bot holds. A post-print bar BEFORE the open (07:50) that
+// breaks the prior 1h high must NOT move the seeded line — the freeze runs to
+// the 08:30 open, not to the 07:35 print-window end. After 08:30 both read the
+// whole candles and the break lands.
+// MUTANT N3: newsBarFrozen reads cfg.PrintWindows (raw 07:20–07:35) instead of
+// newsHTFWindows(...) (extended to 08:30) → the 07:50 break is not frozen in the
+// seed replay → the restart seeds the line long → RED.
+func TestCE4RestartDuringFreezeParity(t *testing.T) {
+	mk := func() Config {
+		cfg := DefaultConfig()
+		cfg.Enabled = true
+		cfg.NewsBarsExcluded = true
+		cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
+		return cfg
+	}
+	start := auditMs(2026, 9, 15, 6, 0, 0)
+	breakAt := auditMs(2026, 9, 15, 7, 50, 0)
+	var bars []market.Kline
+	for i := 0; i <= 210; i++ { // 06:00 … 09:30
+		o := start + int64(i)*60_000
+		b := market.Kline{OpenTime: o, CloseTime: o + 59_999, Open: 100.5, High: 101, Low: 100, Close: 100.5}
+		if o == breakAt {
+			b.High, b.Close = 110, 109 // a post-print break, before the open
+		}
+		bars = append(bars, b)
+	}
+
+	// The continuous bot: seed before the print, tick every bar to the end.
+	cont := New(mk())
+	cont.seedHistoryState(nil, nil, start, false)
+	var contFed []market.Kline
+	var contAt0815 TriggerLine
+	for _, b := range bars {
+		if b.OpenTime < start {
+			continue
+		}
+		contFed = append(contFed, b)
+		cont.Tick(contFed, b.CloseTime+1)
+		if b.OpenTime == auditMs(2026, 9, 15, 8, 14, 0) {
+			contAt0815 = cont.State.HTF.OneH // the last closed bar before the 08:15 restart
+		}
+	}
+
+	// The restart DURING the freeze at 08:15: its seed replays 06:00–08:14 with
+	// the freeze, so the 07:50 break must NOT move the seeded line.
+	restartAt := auditMs(2026, 9, 15, 8, 15, 0)
+	re := New(mk())
+	hist := closedOnly(bars, restartAt)
+	re.seedHistoryState(hist, keyLevel1HBars(hist), restartAt, false)
+	if re.State.HTF.OneH.Dir != "" || contAt0815.Dir != "" {
+		t.Fatalf("the 07:50 post-print break must be frozen at the 08:15 restart: restart 1h %+v · continuous 1h %+v", re.State.HTF.OneH, contAt0815)
+	}
+	if re.State.HTF.OneH.Dir != contAt0815.Dir || re.State.HTF.OneH.Price != contAt0815.Price || re.State.HTF.OneH.MovedAt != contAt0815.MovedAt {
+		t.Fatalf("the 08:15 restart must seed the continuous bot's pre-print read: restart %+v vs continuous %+v", re.State.HTF.OneH, contAt0815)
+	}
+
+	// After 08:30 both read the whole candles: tick the restart to the end and
+	// compare with the continuous bot.
+	var reFed []market.Kline
+	for _, b := range bars {
+		if b.OpenTime <= restartAt {
+			continue
+		}
+		reFed = append(reFed, b)
+		re.Tick(append(hist, reFed...), b.CloseTime+1)
+	}
+	if re.State.HTF.OneH.Dir != SideLong || cont.State.HTF.OneH.Dir != SideLong {
+		t.Fatalf("after 08:30 both must read the whole candles long: restart %+v · continuous %+v", re.State.HTF.OneH, cont.State.HTF.OneH)
+	}
+	if re.State.HTF.OneH.Price != cont.State.HTF.OneH.Price {
+		t.Fatalf("after 08:30 the restart and the continuous bot must hold the same line: restart %+v · continuous %+v", re.State.HTF.OneH, cont.State.HTF.OneH)
 	}
 }
 
