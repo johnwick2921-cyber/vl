@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"vl/safe"
 
 	"vl/kernel"
 )
@@ -126,7 +127,7 @@ func fireDeferredWakeRefires() {
 		return
 	}
 	for _, f := range drainDeferredWakeRefires() {
-		go f()
+		safe.GoNamed("planner-wake-refire", f) // panic net (TestNoBareGoroutineOutsideTheNet)
 	}
 }
 
