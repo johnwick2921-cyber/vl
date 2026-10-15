@@ -28,8 +28,11 @@ import {
   mentorTrendSegments,
   orderPriceLines,
   ordersForChartSymbol,
+  positionBracketLines,
+  sameChartSymbol,
   type ChartLineSpec,
   type ChartOpenOrder,
+  type PositionBracket,
 } from './chartOverlays'
 import type { MentorTruth } from '../../lib/api/traders'
 import {
@@ -603,6 +606,29 @@ export function AdvancedChart({
       throw new Error('Open-order snapshot unavailable')
     }
     return result.data as OpenOrder[]
+  }
+
+  // Fetch the OPEN positions' working brackets (T32, ui-studio-truth): the
+  // stop/target NT8 holds for each filled position, from the broker's own order
+  // book. Absent bracket = draw nothing — never a fabricated SL/TP.
+  const fetchPositionBrackets = async (
+    traderID: string,
+    symbol: string
+  ): Promise<PositionBracket[]> => {
+    const result = await httpClient.request(
+      `/api/positions?trader_id=${encodeURIComponent(traderID)}`,
+      { silent: true }
+    )
+    const list = Array.isArray(result?.data) ? result.data : []
+    return list
+      .filter(
+        (p: any) =>
+          p &&
+          typeof p.bracket === 'object' &&
+          p.bracket !== null &&
+          (!p.symbol || sameChartSymbol(p.symbol, symbol))
+      )
+      .map((p: any) => p.bracket as PositionBracket)
   }
 
   // Initialize chart
@@ -1189,6 +1215,31 @@ export function AdvancedChart({
             priceLinesRef.current.length,
             'price lines for pending orders'
           )
+        }
+
+        // T32 (ui-studio-truth): draw the OPEN position's working stop/target
+        // from the broker order book (an absent bracket draws nothing — never a
+        // fabricated SL/TP). A failed positions read must not clear the order
+        // lines already drawn; the brackets simply do not repaint this cycle.
+        try {
+          const brackets = await fetchPositionBrackets(traderID, symbol)
+          if (owns(id) && candlestickSeriesRef.current) {
+            for (const bracket of brackets) {
+              for (const spec of positionBracketLines(bracket)) {
+                const priceLine = candlestickSeriesRef.current.createPriceLine({
+                  price: spec.price,
+                  color: spec.color ?? '#F0B90B',
+                  lineWidth: 1,
+                  lineStyle: spec.style ?? 2,
+                  axisLabelVisible: true,
+                  title: spec.label,
+                })
+                if (priceLine) priceLinesRef.current.push(priceLine)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[AdvancedChart] Error loading position brackets:', err)
         }
       } catch (err) {
         if (!owns(id)) return

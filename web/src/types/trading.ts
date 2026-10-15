@@ -90,6 +90,14 @@ export interface Position {
   unrealized_pnl_pct: number
   liquidation_price: number
   margin_used: number
+  /** T27 (ui-studio-truth): CME futures truth — the per-contract point value
+   * ($/pt, e.g. MNQ = 2) and the notional position value (qty × mark × $/pt),
+   * read from the API. Absent on crypto venue answers. */
+  point_value?: number
+  position_value?: number
+  /** T32 (ui-studio-truth): the open position's working stop/target from the
+   * broker's own order book. ABSENT when unknown — never a zero bracket. */
+  bracket?: { stop?: number; target?: number; source?: string }
 }
 
 export interface DecisionAction {

@@ -443,3 +443,36 @@ export function mentorTrendSegments(
   }
   return out
 }
+
+/** The working protective bracket of an OPEN position (T32, ui-studio-truth):
+ * `{ stop, target, source }` from /api/positions. Absent field / zero price
+ * draws nothing — never a fabricated SL/TP line. */
+export interface PositionBracket {
+  stop?: number
+  target?: number
+  source?: string
+}
+
+export function positionBracketLines(
+  bracket: PositionBracket | null | undefined
+): ChartLineSpec[] {
+  if (!bracket) return []
+  const out: ChartLineSpec[] = []
+  if ((bracket.stop ?? 0) > 0) {
+    out.push({
+      price: bracket.stop!,
+      label: 'position SL',
+      color: ORDER_COLORS.stopLoss,
+      style: 2,
+    })
+  }
+  if ((bracket.target ?? 0) > 0) {
+    out.push({
+      price: bracket.target!,
+      label: 'position TP',
+      color: ORDER_COLORS.takeProfit,
+      style: 2,
+    })
+  }
+  return out
+}
