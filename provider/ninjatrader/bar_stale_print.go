@@ -103,6 +103,125 @@ func stalePrintBound(symbol string, open float64) float64 {
 	return math.Max(stalePrintMinTicks*tick, stalePrintPct*math.Abs(open))
 }
 
+// ── HTF CROSS-CHECK (release #28, 2026-10-15) ────────────────────────────
+//
+// stalePrintJudgedTF leaves 1h and above unjudged: no fixed bound separates a
+// stale print from a real higher-timeframe bar (real 1h–1d extremes reach 3–4%).
+// But the 10-14 stale print ALSO landed on the 1h and 2h bars (high 30754 vs a
+// real ~29955). An HTF bar cannot have an extreme its own 1m bars never traded:
+// they are cut from the same ticks. So, inside the same reconnect window, an
+// HTF live bar is judged AGAINST ITS OWN CLEAN 1m BARS — never against a fixed
+// percentage of its own range — and only when those 1m bars are COMPLETE for
+// the bar's period so far:
+//   - the 1m ring reaches back to the HTF bar's open (a 3d/1w bar is longer
+//     than the ring, so it is never judged);
+//   - no 1m gap > stalePrintHTFMaxGapMs inside the period, except the CME daily
+//     break (16:00–17:00 CT) and the weekend;
+//   - the newest clean 1m bar is within stalePrintHTFMaxGapMs of now.
+// Mixed 1m bars (scale-break or stale-print) are excluded from the reference.
+// A high/low/close beyond the clean 1m extremes (or the newest clean 1m close)
+// by more than max(40 ticks, 2%) is quarantined. Any doubt → not judged.
+
+// stalePrintHTFTF lists the higher timeframes the cross-check judges.
+// Measured on the last ~400 stored bars per TF (MNQ + ES): a real 1h/2h/4h bar's
+// extreme exceeds its own clean 1m extremes by at most 0.365% (NT8 cuts both
+// from the same ticks), far below the 2% bound. Daily bars are NOT judged: NT8
+// stamps them at the calendar day, not the 17:00 CT session open, so their own
+// minutes cannot be matched reliably (measured excess up to 1.67%, too close to
+// 2%). 6h/8h/12h alignment was not measured, so they are not judged either. The
+// 10-14 stale print reached the 1m–2h bars only.
+var stalePrintHTFTF = map[string]bool{"1h": true, "2h": true, "4h": true}
+
+// stalePrintHTFMaxGapMs is the largest 1m gap the cross-check accepts inside a
+// period (a hole means the 1m reference may miss a real extreme).
+const stalePrintHTFMaxGapMs = 3 * 60_000
+
+var chicagoLoc = func() *time.Location {
+	if l, err := time.LoadLocation("America/Chicago"); err == nil {
+		return l
+	}
+	return time.FixedZone("CT", -5*3600)
+}()
+
+// cmeClosedGap reports whether a 1m gap from prevT to nextT (open stamps, ms)
+// is the CME daily break (16:00→17:00 CT) or the weekend, i.e. no trading.
+func cmeClosedGap(prevT, nextT int64) bool {
+	a := time.UnixMilli(prevT + 60_000).In(chicagoLoc) // first missing minute
+	b := time.UnixMilli(nextT).In(chicagoLoc)          // first minute back
+	if a.Hour() == 16 && b.Hour() == 17 && b.Sub(a) <= 61*time.Minute {
+		return true // daily break
+	}
+	if a.Weekday() == time.Friday && a.Hour() >= 16 && b.Weekday() == time.Sunday && b.Hour() == 17 {
+		return true // weekend
+	}
+	return false
+}
+
+// quarantineStalePrintHTF judges an HTF live bar against its own clean 1m bars
+// (caller holds c.mu). Returns the (possibly relabelled) bar and whether it was
+// quarantined. Inside the reconnect window only; any incomplete reference →
+// not judged.
+func (c *BarCache) quarantineStalePrintHTF(symbol, timeframe string, b Bar) (Bar, bool) {
+	if c == nil || !stalePrintHTFTF[timeframe] || b.Source != BarSourceLive || b.O == 0 {
+		return b, false
+	}
+	recon := c.lastReconnectUnixNano.Load()
+	if recon == 0 || time.Now().UnixNano()-recon > int64(stalePrintGuardWindow) {
+		return b, false
+	}
+	one := c.bars[barKey(symbol, "1m")]
+	if len(one) == 0 || one[0].T > b.T {
+		return b, false // the 1m ring does not reach back to the HTF bar's open
+	}
+	end := b.T + timeframeMs(timeframe)
+	var ref []Bar
+	for _, m := range one {
+		if m.T >= b.T && m.T < end && m.Source != BarSourceMixed && m.H != 0 && m.L != 0 {
+			ref = append(ref, m)
+		}
+	}
+	if len(ref) == 0 {
+		return b, false
+	}
+	nowMs := time.Now().UnixMilli()
+	if ref[0].T-b.T > stalePrintHTFMaxGapMs && !cmeClosedGap(b.T-60_000, ref[0].T) {
+		return b, false // the period's first minutes are missing
+	}
+	for i := 1; i < len(ref); i++ {
+		if ref[i].T-ref[i-1].T > stalePrintHTFMaxGapMs && !cmeClosedGap(ref[i-1].T, ref[i].T) {
+			return b, false // a 1m hole inside the period: the reference may miss a real extreme
+		}
+	}
+	last := ref[len(ref)-1]
+	if end > nowMs {
+		if nowMs-last.T > stalePrintHTFMaxGapMs+60_000 {
+			return b, false // the 1m feed lags the forming HTF bar: not comparable yet
+		}
+	} else if end-last.T > stalePrintHTFMaxGapMs+60_000 && !cmeClosedGap(last.T, end) {
+		return b, false // a closed HTF bar whose last minutes are missing from the 1m ring
+	}
+	hi, lo := ref[0].H, ref[0].L
+	for _, m := range ref[1:] {
+		if m.H > hi {
+			hi = m.H
+		}
+		if m.L < lo {
+			lo = m.L
+		}
+	}
+	bound := stalePrintBound(symbol, b.O)
+	beyond := (b.H != 0 && b.H-hi > bound) || (b.L != 0 && lo-b.L > bound)
+	if !beyond && b.C != 0 && last.C != 0 && end > nowMs && math.Abs(b.C-last.C) > bound {
+		beyond = true // a forming HTF close far from the newest clean 1m close
+	}
+	if !beyond {
+		return b, false
+	}
+	b.Source = BarSourceMixed
+	stalePrintQuarantined.Add(1)
+	return b, true
+}
+
 // quarantineStalePrint relabels b MIXED when it is an impossible live print
 // inside the reconnect window. prev is the newest ring bar strictly BEFORE b
 // (nil = no neighbour, nothing to judge against). Returns the (possibly
