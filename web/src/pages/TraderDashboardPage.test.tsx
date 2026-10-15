@@ -205,7 +205,7 @@ describe('Dashboard production composition', () => {
     expect(table.querySelectorAll('th.hidden,td.hidden')).toHaveLength(0)
     expect(table.closest('.overflow-x-auto')).not.toBeNull()
   })
-  it('T27: the Value cell multiplies by the futures point value, never price×qty', () => {
+  it('T27: the Value cell shows the API position_value, never price×qty', () => {
     const p = props()
     p.positions = [
       {
@@ -220,11 +220,33 @@ describe('Dashboard production composition', () => {
         liquidation_price: 0,
         margin_used: 100,
         point_value: 2, // $2/pt MNQ
+        position_value: 404, // 2 × 101 × $2/pt
       },
     ]
     render(<TraderDashboardPage {...p} />)
-    // 2 contracts × 101 × $2/pt = $404.00 — the old price×qty would read 202.00.
+    // The API's notional wins; the old price×qty (202.00) must never render.
     expect(screen.getByText('404.00')).toBeTruthy()
+    expect(screen.queryByText('202.00')).toBeNull()
+  })
+  it('T27: a futures row without position_value shows n/a, never a fabricated number', () => {
+    const p = props()
+    p.positions = [
+      {
+        symbol: 'MNQ',
+        side: 'long',
+        entry_price: 100,
+        mark_price: 101,
+        quantity: 2,
+        leverage: 1,
+        unrealized_pnl: 2,
+        unrealized_pnl_pct: 1,
+        liquidation_price: 0,
+        margin_used: 100,
+        // no point_value / position_value → L7: absent, never fabricated
+      },
+    ]
+    render(<TraderDashboardPage {...p} />)
+    expect(screen.getByText('n/a')).toBeTruthy()
     expect(screen.queryByText('202.00')).toBeNull()
   })
 })
