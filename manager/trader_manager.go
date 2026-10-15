@@ -224,17 +224,18 @@ func (tm *TraderManager) GetComparisonData() (map[string]interface{}, error) {
 		status := t.GetStatus()
 
 		traders = append(traders, map[string]interface{}{
-			"trader_id":       t.GetID(),
-			"trader_name":     t.GetName(),
-			"ai_model":        t.GetAIModel(),
-			"exchange":        t.GetExchange(),
-			"total_equity":    account["total_equity"],
-			"total_pnl":       account["total_pnl"],
-			"total_pnl_pct":   account["total_pnl_pct"],
-			"position_count":  account["position_count"],
-			"margin_used_pct": account["margin_used_pct"],
-			"call_count":      status["call_count"],
-			"is_running":      status["is_running"],
+			"trader_id":        t.GetID(),
+			"trader_name":      t.GetName(),
+			"ai_model":         t.GetAIModel(),
+			"exchange":         t.GetExchange(),
+			"total_equity":     account["total_equity"],
+			"total_pnl":        account["total_pnl"],
+			"total_pnl_source": account["total_pnl_source"],
+			"total_pnl_pct":    account["total_pnl_pct"],
+			"position_count":   account["position_count"],
+			"margin_used_pct":  account["margin_used_pct"],
+			"call_count":       status["call_count"],
+			"is_running":       status["is_running"],
 		})
 	}
 
@@ -358,6 +359,7 @@ func (tm *TraderManager) getConcurrentTraderData(traders []*trader.AutoTrader) [
 					"exchange":               trader.GetExchange(),
 					"total_equity":           account["total_equity"],
 					"total_pnl":              account["total_pnl"],
+					"total_pnl_source":       account["total_pnl_source"],
 					"total_pnl_pct":          account["total_pnl_pct"],
 					"position_count":         account["position_count"],
 					"margin_used_pct":        account["margin_used_pct"],
@@ -374,6 +376,7 @@ func (tm *TraderManager) getConcurrentTraderData(traders []*trader.AutoTrader) [
 					"exchange":               trader.GetExchange(),
 					"total_equity":           0.0,
 					"total_pnl":              0.0,
+					"total_pnl_source":       "unavailable",
 					"total_pnl_pct":          0.0,
 					"position_count":         0,
 					"margin_used_pct":        0.0,
@@ -391,6 +394,7 @@ func (tm *TraderManager) getConcurrentTraderData(traders []*trader.AutoTrader) [
 					"exchange":               trader.GetExchange(),
 					"total_equity":           0.0,
 					"total_pnl":              0.0,
+					"total_pnl_source":       "unavailable",
 					"total_pnl_pct":          0.0,
 					"position_count":         0,
 					"margin_used_pct":        0.0,
@@ -722,8 +726,10 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 		// (OFF, or ENFORCED with its refuse/cancel/flatten/latch), READ from
 		// the resolver the gate runs.
 		// RT-2 (release #24): a held latch reads LATCHED, whatever the switches.
-		logger.Infof("🛑 [%s] %s", traderCfg.Name, trader.DailyLossGateBootLine(st, traderCfg.ID, strategyConfig, time.Now()))
-		// Release #25 planner-knobs — the seven STRICT-12345 loss-fix
+		logger.Infof("🛑 [%s] %s", traderCfg.Name, trader.DailyLossGateBootLine(st, traderCfg.ID, strategyConfig, time.Now())) // N9 (release #26) — report-only: the two scopes the gate's legs read,
+		// so the owner sees the trader-wide loss leg vs the account-scoped
+		// trades/profit legs.
+		logger.Infof("📏 [%s] %s", traderCfg.Name, trader.DailyLossScopeBootLine(traderCfg.Account)) // Release #25 planner-knobs — the seven STRICT-12345 loss-fix
 		// switches for THIS strategy, each READ from its resolver + origin.
 		logger.Infof("🧱 [%s] %s", traderCfg.Name, store.PlannerKnobsBootLine(strategyConfig))
 		// W-KNOB-PRUNE (2026-09-18) — every folded knob whose STORED value

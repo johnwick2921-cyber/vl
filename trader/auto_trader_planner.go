@@ -2620,7 +2620,9 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 			}
 		}
 		for i := 0; i < nArms; i++ {
-			telemetry.IncGateBlock(at.id, "arm_authored")
+			// P2-3a (release #26): an arm AUTHORED is an event, not a refusal —
+			// it must not count as a gate-block. Recorded on its own counter.
+			telemetry.IncTraderEvent(at.id, "arm_authored")
 		}
 		if modeLabel == "repair" {
 			// The denominator: an accepted repair is recorded ONLY here, where

@@ -244,11 +244,14 @@ func (at *AutoTrader) runCycle() error {
 	at.driveDeadManWatchdog()
 
 	// B6 — GATE-BLOCK COUNTERS: advance the per-trader/session-day tally to today's
-	// CME session-day. The first trader across the 17:00 CT rollover boundary logs a
-	// one-line journal summary of the ending day's gate blocks, then the table
-	// resets. Individual gate sites increment via telemetry.IncGateBlock.
+	// CME session-day. The first call across the 17:00 CT rollover boundary returns
+	// a one-line journal summary of the ending day's gate blocks (per trader), then
+	// the table resets; same-day calls return "". Individual gate sites increment
+	// via telemetry.IncGateBlock. P2-3b (release #26): the summary is PROCESS-level
+	// (it covers every trader's blocks), so it is logged by the process logger, not
+	// attributed to whichever trader's loop happened to cross the boundary first.
 	if summary := telemetry.RolloverGateBlocks(kernel.CMESessionDayStart(time.Now()).UnixMilli()); summary != "" {
-		at.logInfof("📊 %s", summary)
+		logger.Infof("📊 %s", summary)
 	}
 	// STALLED-SETUP ALARM (release #22): the seen-vs-placed counters roll on the
 	// SAME 17:00 CT session-day boundary (the alert latch resets with them).

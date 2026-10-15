@@ -406,7 +406,7 @@ export const status: GuideSection = {
     { kind: 'h', text: 'Gate-block labels — the full list' },
     {
       kind: 'code',
-      title: 'every human label the gate panel has (62)',
+      title: 'every human label the gate panel has (61)',
       lines: [
         'NT8 feed down',
         'Dead-man watchdog',
@@ -430,7 +430,6 @@ export const status: GuideSection = {
         'Duplicate order dropped',
         'Order rate breaker',
         'Burned level re-touched',
-        'Night/day transition',
         'Update hold (maintenance)',
         'Update pending (preflight freeze)',
         'Queued entry dropped by the update hold',

@@ -171,31 +171,44 @@ func (t *TCPTrader) recordClose(
 			qty, attributedQty, p.ExitPrice)
 	}
 	pv := market.FuturesPointValue(symbol)
-	if pv <= 0 {
-		pv = 1
-	}
+	pnlKnown := pv > 0
 	realizedPnL := 0.0
-	if owner.EntryPrice > 0 {
+	if pnlKnown && owner.EntryPrice > 0 {
 		if side == "LONG" {
 			realizedPnL = (p.ExitPrice - owner.EntryPrice) * attributedQty * pv
 		} else {
 			realizedPnL = (owner.EntryPrice - p.ExitPrice) * attributedQty * pv
 		}
 	}
+	if !pnlKnown {
+		// P3-1 (release #26): never fabricate pv=1 for an unknown root. The close
+		// records with pnl_corrected NULL (UNRESOLVED — excluded and counted),
+		// logged and counted here. MNQ=2, ES=50 … come from the instrument table
+		// via market.FuturesPointValue; a root outside it is genuinely unknown.
+		logger.Warnf("⚠️ ninjatrader/tcp: point value UNKNOWN for %s — close P&L UNRESOLVED (pnl_corrected left NULL, counted unresolved; no fabricated pv).", symbol)
+		telemetry.IncTraderEvent(owner.TraderID, "close_pnl_unresolved")
+	}
 
 	// D3 — the broker's own cause travels WITH the close instead of being
 	// logged and thrown away. p.ExitReason is the same value line 204 below
 	// uses to arm the re-entry cooldown.
-	if err := pb.ProcessTradeWithExitReason(owner.TraderID, exchangeID, exchangeType, symbol, side, action,
-		attributedQty, p.ExitPrice, 0, realizedPnL, exitMs, p.SignalID, p.ExitReason); err != nil {
-		logger.Warnf("ninjatrader/tcp: record close failed (%s %s): %v", symbol, side, err)
+	var cerr error
+	if pnlKnown {
+		cerr = pb.ProcessTradeWithExitReason(owner.TraderID, exchangeID, exchangeType, symbol, side, action,
+			attributedQty, p.ExitPrice, 0, realizedPnL, exitMs, p.SignalID, p.ExitReason)
+	} else {
+		cerr = pb.ProcessTradeCloseUnresolvedPnl(owner.TraderID, exchangeID, exchangeType, symbol, side, action,
+			attributedQty, p.ExitPrice, 0, exitMs, p.SignalID, p.ExitReason)
+	}
+	if cerr != nil {
+		logger.Warnf("ninjatrader/tcp: record close failed (%s %s): %v", symbol, side, cerr)
 	} else {
 		// 4.2 — exit-fill persistence (NT8 SIM lineage): entries record fills in
 		// trader_fills (executeDecisionWithRecord poll path), exits NEVER did — NT
 		// closes return early there and wait for THIS frame. Write the tick-exact
 		// exit fill now, keyed deterministically on the owning position row so a
 		// retransmitted position_close frame can never double-count (CreateFill
-		// dedupes on exchange_trade_id).
+		// dedupes on exchange_trade_id). realizedPnL is 0 when the P&L is unknown.
 		if fill := buildExitFill(owner, exchangeID, exchangeType, symbol, side,
 			p.ExitPrice, attributedQty, realizedPnL, exitMs, p.SignalID); fill != nil {
 			if err := st.Order().CreateFill(fill); err != nil {
@@ -215,11 +228,14 @@ func (t *TCPTrader) recordClose(
 		if OnPositionLegClosed != nil {
 			OnPositionLegClosed(owner.TraderID, p)
 		}
-		// T7 (2026-08-27) — the close path stamps pnl_corrected on the
-		// row immediately (same recompute the readers COALESCE to), so the
-		// column is non-NULL on every NEW close. The Δ≥$0.50 class-killer
-		// WARN lives inside the stamp.
-		st.StampPnlCorrectedOnClose(owner.ID, realizedPnL, realizedPnL)
+		if pnlKnown {
+			// T7 (2026-08-27) — the close path stamps pnl_corrected on the
+			// row immediately (same recompute the readers COALESCE to), so the
+			// column is non-NULL on every NEW close. The Δ≥$0.50 class-killer
+			// WARN lives inside the stamp. Skipped when the P&L is unknown: the
+			// row stays pnl_corrected NULL = UNRESOLVED.
+			st.StampPnlCorrectedOnClose(owner.ID, realizedPnL, realizedPnL)
+		}
 		// WARN (honest-logs 2026-08-19): a position close with realized P&L is
 		// owner-visible truth — must reach the log_events sink + dashboard even
 		// under journald frame-flood suppression.
