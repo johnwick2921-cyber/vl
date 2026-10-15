@@ -15,3 +15,16 @@ func NewAutoTraderOnBrokerForTest(id, exchange string, broker Trader, running bo
 	at.isRunning = running
 	return at
 }
+
+// SetDeadManBlockedForTest forces the dead-man watchdog into a blocked episode
+// with the given start and failed-probe count, so another package's call-site
+// test (/api/health `dead_man`) can exercise HealthDeadMan without spinning the
+// real TCP link. Test-only; never called in production.
+func (at *AutoTrader) SetDeadManBlockedForTest(sinceMs int64, probes int) {
+	at.deadMan.mu.Lock()
+	defer at.deadMan.mu.Unlock()
+	at.deadMan.blockedSinceMs = sinceMs
+	at.deadMan.failedProbes = probes
+	at.deadMan.stuckAlerted = false
+	at.deadMan.set(dmAwaitingReconcile)
+}
