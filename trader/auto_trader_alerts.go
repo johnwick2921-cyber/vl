@@ -40,15 +40,16 @@ func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) {
 }
 
 // isOpsAlertKind reports whether an alert kind is an OPS condition (down, link,
-// disk, backup, updater, bar hole) that must reach the owner even when the
-// trader has no day plan. Plan-content alerts (plan-died, fill, close, level-*,
-// overlays-*, mentor-*, decision-*, …) keep the day-plan gate. Add a new ops
-// kind here when its producer lands (DS-102's dead-man escalation, bar-hole,
-// updater, disk, backup).
+// dead-man, disk, backup, updater, bar hole) that must reach the owner even
+// when the trader has no day plan. Plan-content alerts (plan-died, fill, close,
+// level-*, overlays-*, mentor-*, decision-*, …) keep the day-plan gate. The
+// disk / backup / updater / bar-hole kinds do not exist yet — add them here
+// when their producer lands.
 func isOpsAlertKind(kind string) bool {
 	switch kind {
 	case "trader_down_no_evaluator", // the run-owner "trader is DOWN" P0
-		"feed-down": // the NT8 link/feed down P0
+		"feed-down",                 // the NT8 link/feed down P0
+		"dead_man_reconcile_stuck":  // DS-102 #538: dead-man reconcile block with no upper bound
 		return true
 	}
 	return false

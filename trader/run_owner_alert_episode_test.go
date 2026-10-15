@@ -61,6 +61,40 @@ func waitGateBlock(t *testing.T, traderID, key string, want int) {
 	t.Fatalf("%s %s never reached %d (got %v)", traderID, key, want, tbl[traderID])
 }
 
+// TestOpsAlertKindsBypassTheDayPlanGate — W26 fold. Every OPS kind (down, link,
+// dead-man) reaches the owner on a non-day-plan trader; a plan-content kind
+// still needs the day plan. MUTANT: drop one ops kind from isOpsAlertKind →
+// RED.
+func TestOpsAlertKindsBypassTheDayPlanGate(t *testing.T) {
+	h := newRunHarness(t)
+	mkTraderRow(t, h, "tr")
+	at := h.mk("tr") // no day plan (empty StrategyConfig)
+
+	opsKinds := []string{"trader_down_no_evaluator", "feed-down", "dead_man_reconcile_stuck"}
+	for i, kind := range opsKinds {
+		at.emitAlert("P0", kind, store.EpisodeEventID(kind, "tr", time.Now().UnixMilli()+int64(i)), "t", "b")
+	}
+	// plan-content alert: must NOT land without a day plan.
+	at.emitAlert("P0", "plan-died", store.EpisodeEventID("plan-died", "tr", time.Now().UnixMilli()), "t", "b")
+
+	alerts, err := h.st.Alert().List("tr", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int{}
+	for _, a := range alerts {
+		got[a.Kind]++
+	}
+	for _, kind := range opsKinds {
+		if got[kind] != 1 {
+			t.Fatalf("ops kind %q must bypass the day-plan gate, got %d rows (all: %v)", kind, got[kind], got)
+		}
+	}
+	if got["plan-died"] != 0 {
+		t.Fatalf("plan-content kind plan-died must keep the day-plan gate, got %d rows", got["plan-died"])
+	}
+}
+
 // TestDownAlertFiresWithoutDayPlan — W26 N1. The run-owner P0 "trader is DOWN"
 // alert must reach the owner even when the trader has NO day plan (the old
 // emitAlert gate dropped it on dayPlanEnabled()==false). MUTANT: re-gate the
