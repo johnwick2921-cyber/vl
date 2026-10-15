@@ -68,7 +68,8 @@ func waitGateBlock(t *testing.T, traderID, key string, want int) {
 func TestOpsAlertKindsBypassTheDayPlanGate(t *testing.T) {
 	h := newRunHarness(t)
 	mkTraderRow(t, h, "tr")
-	at := h.mk("tr") // no day plan (empty StrategyConfig)
+	at := h.mk("tr")
+	t.Cleanup(func() { waitRunRetryIdle(t, at) }) // stop the armed retry reading the seams before they are restored (race) // no day plan (empty StrategyConfig)
 
 	opsKinds := []string{"trader_down_no_evaluator", "feed-down", "dead_man_reconcile_stuck"}
 	for i, kind := range opsKinds {
@@ -113,6 +114,7 @@ func TestDownAlertFiresWithoutDayPlan(t *testing.T) {
 	stuckSlot(t, h, "tr")
 
 	at := h.mk("tr")
+	t.Cleanup(func() { waitRunRetryIdle(t, at) }) // stop the armed retry reading the seams before they are restored (race)
 	// NO day plan: h.mk sets an empty StrategyConfig (DayPlan nil).
 	err := at.Run()
 	if !errors.Is(err, ErrTraderOldInstanceAlive) {
@@ -143,6 +145,7 @@ func TestDownTwiceTwoAlerts(t *testing.T) {
 
 	for i := 0; i < 2; i++ {
 		at := h.mk("tr")
+		t.Cleanup(func() { waitRunRetryIdle(t, at) }) // stop the armed retry reading the seams before they are restored (race)
 		at.config.StrategyConfig = &store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}}
 		if err := at.Run(); !errors.Is(err, ErrTraderOldInstanceAlive) {
 			t.Fatalf("episode %d: a handoff timeout must refuse, got %v", i+1, err)
@@ -177,6 +180,7 @@ func TestRunRetryGivesUpWhenOldRunNeverExits(t *testing.T) {
 	stuckSlot(t, h, "tr")
 
 	at := h.mk("tr")
+	t.Cleanup(func() { waitRunRetryIdle(t, at) }) // stop the armed retry reading the seams before they are restored (race)
 	if err := at.Run(); !errors.Is(err, ErrTraderOldInstanceAlive) {
 		t.Fatalf("a handoff timeout must refuse, got %v", err)
 	}
@@ -207,6 +211,7 @@ func TestStopDuringRunRetryCancelsRestart(t *testing.T) {
 	slot := stuckSlot(t, h, "tr")
 
 	at := h.mk("tr")
+	t.Cleanup(func() { waitRunRetryIdle(t, at) }) // stop the armed retry reading the seams before they are restored (race)
 	if err := at.Run(); !errors.Is(err, ErrTraderOldInstanceAlive) {
 		t.Fatalf("a handoff timeout must refuse, got %v", err)
 	}
@@ -223,5 +228,20 @@ func TestStopDuringRunRetryCancelsRestart(t *testing.T) {
 	}
 	if _, tbl := telemetry.GateBlockSnapshot(); tbl["tr"]["trader_run_retried"] != 0 {
 		t.Fatalf("a cancelled retry must not run, got trader_run_retried=%v", tbl["tr"]["trader_run_retried"])
+	}
+}
+
+// waitRunRetryIdle waits (bounded) until the armed run retry goroutine has
+// finished, so a test's seam-restore cleanup (runOwnerHandoffWait /
+// runRetryMaxWait) never races the goroutine still reading them (-race).
+func waitRunRetryIdle(t *testing.T, at *AutoTrader) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for at.runRetryArmed.Load() {
+		if time.Now().After(deadline) {
+			t.Errorf("the armed run retry did not finish within 5s")
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
