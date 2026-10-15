@@ -1814,6 +1814,16 @@ func fdrSortedKeys(m map[string]int) []string {
 // store and NT8 link: the Run loops must not touch the replay's ledger.
 func fdrStartPathFlags(t *testing.T, ids, accounts []string) map[string]bool {
 	t.Helper()
+	// Clock-independence (R3-DS-108 P2 note 1): the start/stop path here must not
+	// depend on the REAL wall clock. When the real clock lands inside the
+	// 16:00–17:00 CT daily halt, cmeSessionClosedSkip() → backoffWhileClosed()
+	// sleeps in 10 s slices and Stop() cannot observe isRunning=false before the
+	// 5 s deadline (the (e) RED). Pin the trader clock seam to a CME-OPEN instant
+	// (00:59:15 CT 10-13, the live seed) so the session gate is deterministic and
+	// Stop() returns promptly at any wall time. The assertion is unchanged.
+	prev := testNow
+	testNow = func() time.Time { return time.UnixMilli(fdrLiveSeedMs) } // CME open
+	t.Cleanup(func() { testNow = prev })
 	st, err := store.New(filepath.Join(t.TempDir(), "start-path.db"))
 	if err != nil {
 		t.Fatal(err)
