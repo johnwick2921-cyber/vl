@@ -33,23 +33,26 @@ import (
 // was still adjacent.
 //
 // THIS GUARD closes the hole on the Go side. For the first
-// stalePrintGuardWindow after a (re)connect/hello, a live bar whose CLOSE sits
-// an impossible distance from BOTH its own open AND the previous bar's close —
-// max(stalePrintMinTicks ticks, stalePrintPct of price) — is quarantined: the
-// bar is relabelled MIXED (values untouched, A24) so no reader takes it. The
-// window is the point: inside it the AddOn is re-emitting its loaded series,
-// not live ticks, so a close that moved a full 0.5% from its own open is a
-// replay of a stale series, not a trade. Outside the window the live feed is
-// trusted exactly as before. A real fast market (a 1% move over several
-// minutes) never trips it: each minute's close stays near its own open, and a
-// gap open stays near the close it opens from.
+// stalePrintGuardWindow after a (re)connect/hello/bar-rebuild, a live bar whose
+// HIGH, LOW or CLOSE sits an impossible distance from BOTH its own open AND the
+// previous bar's close — max(stalePrintMinTicks ticks, stalePrintPct of price) —
+// is quarantined: the bar is relabelled MIXED (values untouched, A24) so no
+// reader takes it. The window is the point: inside it the AddOn is re-emitting
+// its loaded series, not live ticks, so a print that moved a full 0.5% from its
+// own open is a replay of a stale series, not a trade. Outside the window the
+// live feed is trusted exactly as before. A real fast market (a 1% move over
+// several minutes) never trips it: each minute's extremes stay near its own
+// open, and a gap open stays near the open it opens from.
 
 const (
-	// stalePrintGuardWindow is how long after a (re)connect/hello the guard is
-	// armed. The AddOn's BarsRequest rebuild + first bar_update land within
-	// seconds of the accept; 30 s covers it with headroom without touching a
-	// normal reconnect's later, real ticks.
-	stalePrintGuardWindow = 30 * time.Second
+	// stalePrintGuardWindow is how long after a (re)connect/hello/bar-rebuild
+	// trigger the guard is armed. The 10-14 restart was at 19:59 and the first
+	// stale print carried the 20:00 minute — up to a full minute later (the
+	// tcp_server accept/hello lines live in journald, not the file log, so the
+	// exact accept→print gap could not be read back; 60 s covers it). A real
+	// fast market cannot move a full 0.5% inside one minute of a reconnect,
+	// when the feed is still settling, so the wider window costs nothing.
+	stalePrintGuardWindow = 60 * time.Second
 	// stalePrintMinTicks is the K-tick floor of the impossible-move bound (40
 	// ticks = 10 pts on MNQ/ES at 0.25). It exists so a very low-priced symbol
 	// still has a bound when the percentage leg would be tiny.
@@ -103,14 +106,17 @@ func (c *BarCache) quarantineStalePrint(symbol string, b Bar, prev *Bar) (Bar, b
 		return b, false // no neighbour: nothing to judge the close against
 	}
 	bound := stalePrintBound(symbol, b.O)
-	// The close must be impossible against BOTH the bar's own open and the
-	// previous close. A normal bar closes near its own open; a gap open closes
-	// near the close it opened from. Only a stale reloaded series closes far
-	// from both.
-	if math.Abs(b.C-b.O) <= bound {
-		return b, false
+	// Any extreme — the HIGH, the LOW or the CLOSE — that is impossible against
+	// BOTH the bar's own open and the previous close quarantines the bar. The
+	// close alone is not enough: live ticks after a stale print return the close
+	// to the real price while the 820-pt high wick survives (the F2 shape). A
+	// normal bar's extremes stay near its own open; a gap open's extremes stay
+	// near the open it gapped from. Only a stale reloaded series has an extreme
+	// far from both.
+	impossible := func(x float64) bool {
+		return x != 0 && math.Abs(x-b.O) > bound && math.Abs(x-prev.C) > bound
 	}
-	if math.Abs(b.C-prev.C) <= bound {
+	if !impossible(b.H) && !impossible(b.L) && !impossible(b.C) {
 		return b, false
 	}
 	b.Source = BarSourceMixed

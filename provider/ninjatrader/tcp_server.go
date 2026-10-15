@@ -1020,6 +1020,7 @@ func (s *TCPServer) SubscribeBarsSymbol(symbol string) error {
 	if err != nil {
 		return fmt.Errorf("tcp_server: send bars_subscribe %s: %w", symbol, err)
 	}
+	s.barCache.NoteReconnect(time.Now()) // W26: a subscribe rebuilds the AddOn's BarsRequests
 	s.logger.Info("tcp_server: sent runtime bars_subscribe", "symbol", symbol,
 		"timeframes", payload.Timeframes, "bars_back", payload.BarsBack)
 	return nil
@@ -1738,6 +1739,7 @@ func (s *TCPServer) RequestDeepBarsBackfill(symbol, timeframe string, barsBack i
 	if err != nil {
 		return fmt.Errorf("bars_subscribe write: %w", err)
 	}
+	s.barCache.NoteReconnect(time.Now()) // W26: a deep backfill rebuilds the AddOn's BarsRequests
 	s.logger.Info("tcp_server: sent DEEP bars_subscribe (bar-truth arbiter)",
 		"symbol", symbol, "timeframe", timeframe, "bars_back", barsBack)
 	return nil
@@ -1763,6 +1765,7 @@ func (s *TCPServer) sendAutoBarsSubscribe(c net.Conn) {
 				"symbol", payload.Symbol, "timeframes", payload.Timeframes)
 			continue
 		}
+		s.barCache.NoteReconnect(time.Now()) // W26: the accept auto-subscribe rebuilds the AddOn's BarsRequests
 		s.setSubState(payload.Symbol, "pending", "", "") // P5.3 — awaiting the AddOn's ack
 		s.logger.Info("tcp_server: sent bars_subscribe",
 			"symbol", payload.Symbol,
@@ -2025,6 +2028,9 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 				return // closes the connection via the deferred cleanup
 			}
 			helloSeen = true
+			// W26 — the hello precedes the AddOn's first BarsRequest build + the
+			// reloaded-series re-emit; arm the stale-print guard for it.
+			s.barCache.NoteReconnect(time.Now())
 			// F12 — the handshake carries build_id, so the running DLL is
 			// identifiable from the FIRST frame instead of only after a
 			// heartbeat or a snapshot.
@@ -2465,8 +2471,15 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 				continue
 			}
 			s.feedMu.Lock()
+			prev := s.feedStatus
 			s.feedStatus = p.PriceStatus
 			s.feedMu.Unlock()
+			// W26 — NT8's data-feed reconnect recreates the AddOn's BarsRequests
+			// ("feed Connected … recreating BarsRequests"), so the stale re-emit
+			// window opens on the transition to Connected.
+			if prev != "Connected" && p.PriceStatus == "Connected" {
+				s.barCache.NoteReconnect(time.Now())
+			}
 			s.logger.Info("tcp_server: feed status", "price_status", p.PriceStatus)
 
 		case FrameInstrumentInfo:

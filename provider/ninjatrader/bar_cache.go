@@ -438,6 +438,13 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 		last := existing[len(existing)-1]
 		switch {
 		case b.T == last.T:
+			// W26 F2: a minute the guard quarantined stays quarantined — a later
+			// "clean" update of the same T (a live tick that returns the close
+			// to the real price while the stale extreme survives) must not
+			// re-promote it to live.
+			if last.Source == BarSourceMixed {
+				b.Source = BarSourceMixed
+			}
 			existing[len(existing)-1] = b
 			accepted = true
 		case b.T > last.T:
@@ -466,6 +473,11 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 			if b.Final {
 				if idx := indexOfBarT(existing, b.T); idx >= 0 {
 					if !existing[idx].Final {
+						// W26 F2: keep a quarantined minute quarantined on the
+						// finalisation path too.
+						if existing[idx].Source == BarSourceMixed {
+							b.Source = BarSourceMixed
+						}
 						existing[idx] = b
 						c.finalisations++
 					}

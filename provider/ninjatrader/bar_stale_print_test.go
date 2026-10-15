@@ -1,6 +1,7 @@
 package ninjatrader
 
 import (
+	"net"
 	"testing"
 	"time"
 )
@@ -106,7 +107,7 @@ func TestGapOpenNotQuarantined(t *testing.T) {
 	}
 }
 
-// Outside the 30 s reconnect window the live feed is trusted exactly as before.
+// Outside the 60 s reconnect window the live feed is trusted exactly as before.
 func TestStalePrintOutsideWindowTrusted(t *testing.T) {
 	stalePrintQuarantined.Store(0)
 	c := NewBarCache(2500)
@@ -116,7 +117,7 @@ func TestStalePrintOutsideWindowTrusted(t *testing.T) {
 	c.Upsert("MNQ", "1m", []Bar{
 		{T: prevBarWireT, O: 29922.0, H: 29949.0, L: 29917.75, C: 29930.75},
 	})
-	c.NoteReconnect(time.Now().Add(-31 * time.Second)) // reconnect 31 s ago
+	c.NoteReconnect(time.Now().Add(-61 * time.Second)) // reconnect 61 s ago
 	c.Upsert("MNQ", "1m", []Bar{stalePrintBar()})
 
 	if n := StalePrintQuarantined(); n != 0 {
@@ -124,5 +125,85 @@ func TestStalePrintOutsideWindowTrusted(t *testing.T) {
 	}
 	if got, _ := barAt(c, "MNQ", "1m", staleBarOpenT); got.Source != BarSourceLive {
 		t.Fatalf("outside the window the bar must stay live, got source=%q", got.Source)
+	}
+}
+
+// F2 — the judge looks at the HIGH and LOW too, not only the close. A stale
+// high with a real close (live ticks return the close to the real price while
+// the 820-pt wick survives) must still be quarantined.
+func TestStaleHighRealCloseQuarantined(t *testing.T) {
+	stalePrintQuarantined.Store(0)
+	c := staleRig()
+	bar := Bar{T: staleBarWireT, O: 29931.25, H: 30754.0, L: 29927.0, C: 29954.0, V: 976}
+	c.Upsert("MNQ", "1m", []Bar{bar})
+
+	got, _ := barAt(c, "MNQ", "1m", staleBarOpenT)
+	if got.Source != BarSourceMixed {
+		t.Fatalf("a stale HIGH must quarantine the bar even with a real close, got source=%q bar=%+v", got.Source, got)
+	}
+	if n := StalePrintQuarantined(); n != 1 {
+		t.Fatalf("quarantine counter = %d, want 1", n)
+	}
+}
+
+// F2 — a minute the guard quarantined stays quarantined: a later "clean" update
+// of the same T must not re-promote it to live.
+func TestQuarantinedMinuteStaysQuarantined(t *testing.T) {
+	stalePrintQuarantined.Store(0)
+	c := staleRig()
+	c.Upsert("MNQ", "1m", []Bar{stalePrintBar()})
+	if n := StalePrintQuarantined(); n != 1 {
+		t.Fatalf("first update must quarantine: counter=%d", n)
+	}
+	// A later live tick returns the close (and high) to the real price; the
+	// minute must STAY mixed — a clean update must not re-promote it to live.
+	clean := Bar{T: staleBarWireT, O: 29931.25, H: 29954.0, L: 29927.0, C: 29954.0, V: 980}
+	c.Upsert("MNQ", "1m", []Bar{clean})
+	if got, _ := barAt(c, "MNQ", "1m", staleBarOpenT); got.Source != BarSourceMixed {
+		t.Fatalf("a quarantined minute must stay quarantined, got source=%q", got.Source)
+	}
+	if n := StalePrintQuarantined(); n != 1 {
+		t.Fatalf("a clean update must not re-count: counter=%d, want 1", n)
+	}
+}
+
+// F1 — the guard window is armed by a bars_subscribe resend (the gap-backfill /
+// scale-break re-request), not only by a TCP accept.
+func TestBarsSubscribeResendArmsStalePrintGuard(t *testing.T) {
+	stalePrintQuarantined.Store(0)
+	s := NewTCPServer(nil)
+	srv, cli := net.Pipe()
+	defer srv.Close()
+	defer cli.Close()
+	s.conn = srv
+	s.barsSubscribe.Timeframes = []string{"1m"}
+	s.barsSubscribe.BarsBack = 2000
+	s.markFeedConnectedForTest(true)
+	// Drain the subscribe frame the resend writes.
+	go func() {
+		for {
+			if _, ok := readSubscribeFrame(t, cli, time.Second); !ok {
+				return
+			}
+		}
+	}()
+	// The guard is EXPIRED — no TCP accept armed it here.
+	s.barCache.NoteReconnect(time.Now().Add(-time.Hour))
+	// The 10-14 shape: a live bar already seen (liveSeen spent), so the
+	// scale-break one-shot cannot catch the stale print.
+	s.barCache.SeedHistorical("MNQ", "1m", []Bar{
+		{T: prevBarWireT - 60000, O: 29915.0, H: 29930.0, L: 29905.0, C: 29922.0},
+	})
+	s.barCache.Upsert("MNQ", "1m", []Bar{
+		{T: prevBarWireT, O: 29922.0, H: 29949.0, L: 29917.75, C: 29930.75},
+	})
+
+	if err := s.RequestHistoryReplayAt("MNQ", time.Now()); err != nil {
+		t.Fatalf("re-request: %v", err)
+	}
+
+	s.barCache.Upsert("MNQ", "1m", []Bar{stalePrintBar()})
+	if n := StalePrintQuarantined(); n != 1 {
+		t.Fatalf("the bars_subscribe resend must arm the guard: quarantined=%d, want 1", n)
 	}
 }
