@@ -61,7 +61,7 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.news_wait_both_lines',
     live: true,
   },
-  'News day: post-print bars off the 1h/4h lines': {
+  'News day: freeze the pre-print 1h/4h read': {
     settingId: 'risk_control.mentor_tuning.news_bars_excluded',
     live: true,
   },
@@ -532,7 +532,7 @@ export const mentor: GuideSection = {
         ],
         [
           '4h/1h direction',
-          'Entries only WITH the 4h trigger. The 1h counts only when it fired at or after the 4h (an earlier 1h trigger is ignored — it is silent): 1h agreeing or silent → follow the 4h; 1h opposite → sit out until it flips. No 4h trigger → nothing to follow. The 4h/1h lines (and the 5m trigger line) are seeded from history at boot by replaying every stored 1m bar through the same intrabar break rule the running bot uses, so a restart lands on exactly the line a bot that never stopped would hold — including a candle that broke both sides (which side broke first decides). The boot line prints each line as "<tf> trigger <dir> @<price> since <bucket CT>", and every 4h/1h move is logged as it happens ("4h trigger moved long @… → short @…"). On a red-folder print day the seed drops each replayed day\u2019s 07:20–07:35 print candles exactly as the running bot did (release #23). History that reaches the store AFTER the boot — NinjaTrader\u2019s replay is held until the first live bar, and a refilled bar hole — re-seeds the trigger lines, the swing line, the 1m EMA 34/9 and the key-level deletion on the next tick, keeping every latch, arm, leg and visit count; the log line "🧑‍🏫 mentor re-seed after a history refill (…): CHANGED|UNCHANGED … before → after" names what moved (counted reseed_after_refill / reseed_changed). 10-14: the 08:22 boot seeded before the 03:44–07:47 hole reached the store and traded on 1h short @30790.75 instead of 30716.00.',
+          'Entries only WITH the 4h trigger. The 1h counts only when it fired at or after the 4h (an earlier 1h trigger is ignored — it is silent): 1h agreeing or silent → follow the 4h; 1h opposite → sit out until it flips. No 4h trigger → nothing to follow. The 4h/1h lines (and the 5m trigger line) are seeded from history at boot by replaying every stored 1m bar through the same intrabar break rule the running bot uses, so a restart lands on exactly the line a bot that never stopped would hold — including a candle that broke both sides (which side broke first decides). The boot line prints each line as "<tf> trigger <dir> @<price> since <bucket CT>", and every 4h/1h move is logged as it happens ("4h trigger moved long @… → short @…"). On a red-folder print day the seed freezes each replayed day\u2019s print-window trigger read exactly as the running bot did (release #29: the read is frozen from the print to the 08:30 CT open — the candles are never rewritten; release #23 dropped the 07:20–07:35 print candles). History that reaches the store AFTER the boot — NinjaTrader\u2019s replay is held until the first live bar, and a refilled bar hole — re-seeds the trigger lines, the swing line, the 1m EMA 34/9 and the key-level deletion on the next tick, keeping every latch, arm, leg and visit count; the log line "🧑‍🏫 mentor re-seed after a history refill (…): CHANGED|UNCHANGED … before → after" names what moved (counted reseed_after_refill / reseed_changed). 10-14: the 08:22 boot seeded before the 03:44–07:47 hole reached the store and traded on 1h short @30790.75 instead of 30716.00.',
           '—',
         ],
         [
@@ -1065,17 +1065,17 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
-          label: 'News day: post-print bars off the 1h/4h lines',
+          label: 'News day: freeze the pre-print 1h/4h read',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D4.4 p1 @18:18–18:25 "Chứ tính cái lúc trước news, chứ không phải tính cái lúc news ra rồi nha… Còn cái khúc mà news ra rồi thì không tính" (count the read from before the news, not after; what prints after the news does not count). OFF (default) = only the 07:20–07:35 CT print-window bars are dropped from the 1h/4h trigger feed. ON = every 1m bar from the print window start until the 08:30 CT RTH open is dropped, so post-print follow-through cannot move the 1h/4h lines before the open. Knob rule case (b), OFF: the course does not say until when the exclusion runs — the 08:30 end is our reading of D4.4 p2 ("open nó cũng giống news thôi").',
+          what: 'D4.4 p1 @18:13–18:25 "Chứ tính cái lúc trước news, chứ không phải tính cái lúc news ra rồi nha… Còn cái khúc mà news ra rồi thì không tính" (read the trigger from before the news, not from when it prints; what prints after the news does not count). ON (default) = the 1h/4h trigger read FREEZES at its pre-print values from the print window start until the 08:30 CT day-gate read — the 1h/4h candles are never rewritten (no bar is deleted), so after 08:30 the lines resume on whole candles. OFF = the item-18 print-window drop (07:20–07:35 only), byte-identical. Knob rule case (a): the course line, no ruling against.',
           trader:
-            'OFF — case (b): the end of the exclusion is not in the course.',
+            'ON — case (a): the course reads the trigger from before the print and never rewrites candles after the open.',
           consumer:
-            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/news_print.go htfFeedBars',
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/news_print.go newsHTFFrozen / newsBarFrozen',
           range: 'true / false',
-          systemDefault: 'false',
+          systemDefault: 'true',
           recommended:
-            'OFF — D4.4 p1 @18:18–18:25; knob rule (b): the 08:30 end is a reading, not a course line.',
+            'ON — D4.4 p1 @18:13–18:25; the freeze is the faithful reading (the old behaviour deleted the 07:20–08:30 bars and corrupted every later 1h/4h candle all day).',
           whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },

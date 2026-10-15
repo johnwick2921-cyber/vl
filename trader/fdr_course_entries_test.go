@@ -21,6 +21,7 @@ func fdrPinPre25CourseEntries(cfg *store.StrategyConfig) {
 	t := cfg.RiskControl.MentorTuning
 	t.FifteenMinIBRequires5mISB = "off"
 	t.TFConflictEnd = "first_box"
+	t.NewsBarsExcluded = &off // release #29: the live 10-13 day ran the item-18 drop, not the freeze
 	t.ISBBoxEscape = "close"
 	t.EMA34LossRelock = "session"
 	t.D43TrendSource = "trigger_line"

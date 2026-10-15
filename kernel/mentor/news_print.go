@@ -61,7 +61,7 @@ func htfFeedBars(bars []market.Kline, windows []PrintWindow) []market.Kline {
 	return out
 }
 
-// ── CE-3 / CE-4 (release #25): the news trade runs from the print to the open ─
+// ── CE-3 / CE-4 (release #25; CE-4 reworked release #29): the news trade ────
 //
 // The course trades news from a read taken BEFORE the print and holds it:
 // "Chứ tính cái lúc trước news, chứ không phải tính cái lúc news ra rồi nha…
@@ -71,7 +71,16 @@ func htfFeedBars(bars []market.Kline, windows []PrintWindow) []market.Kline {
 // [@21:55–22:12]. The course names no END to that news period; the 08:30 CT
 // RTH open is our [B] bound — the open is read as its own event ("open nó
 // cũng giống news thôi" [D4.4 p2 @00:35]) where price need NOT be on the
-// right side of the line [@03:51]. Both knobs default OFF (COMMON-25 case b).
+// right side of the line [@03:51].
+//
+// CE-4 was reworked (release #29, owner "fix all"): it used to DELETE the
+// 07:20–08:30 1m bars from the 1h/4h feed, which corrupted every later 1h/4h
+// candle ALL DAY. The course reads the triggers from BEFORE the print and
+// never says rewrite candles after the open — so CE-4 now FREEZES the pre-print
+// trigger read until the 08:30 CT day-gate read (newsHTFFrozen), and no bar is
+// ever deleted: the candles stay whole. news_bars_excluded now defaults ON
+// (COMMON-25 case a: the course line, no ruling against); CE-3 (news_wait_both_lines)
+// stays default OFF (case b).
 
 // newsPeriodEnd is the end of the news period that a print window opens: the
 // 08:30 CT RTH open of the print's CT day (never before the window's own end).
@@ -83,10 +92,10 @@ func newsPeriodEnd(w PrintWindow) int64 {
 	return end
 }
 
-// newsHTFWindows is the HTF-feed exclusion the evaluator and the seed read
-// (CE-4, knob news_bars_excluded): OFF → the print windows unchanged (only the
-// 07:20–07:35 bars are dropped, byte-identical); ON → each window runs to the
-// 08:30 CT open, so post-print follow-through cannot move the 1h/4h lines.
+// newsHTFWindows returns the CE-4 news-period windows (the freeze span):
+// OFF → the print windows unchanged (07:20–07:35); ON → each window runs to
+// the 08:30 CT open, so post-print follow-through cannot move the 1h/4h lines.
+// It is the window basis for newsHTFFrozen / newsBarFrozen (release #29).
 func newsHTFWindows(windows []PrintWindow, cfg Config) []PrintWindow {
 	if !cfg.NewsBarsExcluded || len(windows) == 0 {
 		return windows
@@ -96,6 +105,36 @@ func newsHTFWindows(windows []PrintWindow, cfg Config) []PrintWindow {
 		out[i] = PrintWindow{FromMs: w.FromMs, ToMs: newsPeriodEnd(w)}
 	}
 	return out
+}
+
+// newsHTFFrozen (CE-4 reworked, release #29) reports whether the 1h/4h trigger
+// read is FROZEN at the tick clock `now`: news_bars_excluded ON and `now`
+// inside a print window's news period, extended through the 08:30 CT day-gate
+// read (the 08:30-close tick). While frozen the trigger lines hold their
+// pre-print values — no 1m bar is deleted, so the 1h/4h candles stay whole all
+// day. The course reads the trigger from BEFORE the print and never says
+// rewrite candles after the open [D4.4 p1 @18:13–18:25]; the freeze is the
+// faithful reading, the old htfFeedBars deletion was not.
+func newsHTFFrozen(cfg Config, now int64) bool {
+	if !cfg.NewsBarsExcluded || len(cfg.PrintWindows) == 0 {
+		return false
+	}
+	for _, w := range newsHTFWindows(cfg.PrintWindows, cfg) {
+		if now >= w.FromMs && now < w.ToMs+60_000 {
+			return true
+		}
+	}
+	return false
+}
+
+// newsBarFrozen reports whether a 1m bar at openMs is inside the CE-4 freeze
+// (the seed replay's per-bar form): openMs in [window start, 08:30 CT open).
+// The bar still builds its 1h/4h candle (whole), but fires no trigger break.
+func newsBarFrozen(openMs int64, cfg Config) bool {
+	if !cfg.NewsBarsExcluded {
+		return false
+	}
+	return inPrintWindows(openMs, newsHTFWindows(cfg.PrintWindows, cfg))
 }
 
 // newsWaitFilter is the CE-3 gate (knob news_wait_both_lines): inside a news

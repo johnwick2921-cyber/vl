@@ -87,8 +87,12 @@ func cpiEvents1014() []calendar.Event {
 
 func seedStateTrader(t *testing.T) *AutoTrader {
 	t.Helper()
+	off := false
 	at, _ := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{
 		MentorMode: true, MentorWindowStart: "00:00", MentorWindowMinutes: 1440,
+		// 10-14 historical pin: the live bot ran the item-18 print-window drop,
+		// not the release #29 freeze (news_bars_excluded OFF).
+		MentorTuning: &store.MentorTuning{NewsBarsExcluded: &off},
 	}})
 	wireMentorPlacementSeams(t, at)
 	mentorDayEventsForTest = func() ([]calendar.Event, bool) { return cpiEvents1014(), true }

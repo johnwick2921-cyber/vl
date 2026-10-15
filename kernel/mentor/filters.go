@@ -86,6 +86,14 @@ func TriggerTick(prev TriggerLine, bars []market.Kline, tfMin int, cfg Config) T
 // the result equals a live evaluator that ticked every bar. bars1m must be
 // closed bars in time order (the caller cuts anything not closed by now).
 func TriggerReplay1m(prev TriggerLine, bars1m []market.Kline, tfMin int, cfg Config) TriggerLine {
+	return TriggerReplay1mFrozen(prev, bars1m, tfMin, cfg, nil)
+}
+
+// TriggerReplay1mFrozen is TriggerReplay1m with a CE-4 freeze: when `frozen`
+// reports a 1m bar's open time, that bar still builds its bucket (the candle
+// stays WHOLE) but fires no break — the trigger read holds its pre-print
+// values until the freeze releases. frozen nil = no freeze (TriggerReplay1m).
+func TriggerReplay1mFrozen(prev TriggerLine, bars1m []market.Kline, tfMin int, cfg Config, frozen func(openMs int64) bool) TriggerLine {
 	if !cfg.Enabled || len(bars1m) == 0 || tfMin <= 1 {
 		return prev
 	}
@@ -115,6 +123,9 @@ func TriggerReplay1m(prev TriggerLine, bars1m []market.Kline, tfMin int, cfg Con
 			}
 			cur.Close = b.Close
 			cur.Volume += b.Volume
+		}
+		if frozen != nil && frozen(b.OpenTime) {
+			continue // the bar builds the bucket, but fires no break
 		}
 		window = window[:0]
 		if haveDone {

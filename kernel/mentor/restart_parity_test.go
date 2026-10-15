@@ -68,11 +68,14 @@ func loadLinesRestartFixture(t *testing.T) map[string][]market.Kline {
 }
 
 // lrProdCfg is mentorEvaluatorConfig for the live trader with no tuning:
-// DefaultConfig + Enabled + RealFillOnly.
+// DefaultConfig + Enabled + RealFillOnly, with the 10-13/10-14 historical pin
+// (news_bars_excluded OFF — the live bot on those days ran the item-18
+// print-window drop, not the release #29 freeze; release #25 CE-4 did not exist).
 func lrProdCfg() Config {
 	c := DefaultConfig()
 	c.Enabled = true
 	c.RealFillOnly = true
+	c.NewsBarsExcluded = false // historical 10-13/10-14 pin (pre-#25 CE-4)
 	return c
 }
 

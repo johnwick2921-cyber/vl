@@ -23,7 +23,7 @@ func TestCourseEntryKnobsDefaultsAtTheCallSite(t *testing.T) {
 		{"15m_ib_requires_5m_isb=require_5m_isb (a)", cfg.FifteenMinIBRule == mentor.FifteenMinRequire5mISB},
 		{"tf_conflict_end=first_box (b)", cfg.TFConflictEnd == mentor.TFConflictFirstBox},
 		{"news_wait_both_lines=false (b)", !cfg.NewsWaitBothLines},
-		{"news_bars_excluded=false (b)", !cfg.NewsBarsExcluded},
+		{"news_bars_excluded=true (a)", cfg.NewsBarsExcluded},
 		{"isb_box_escape=body (a)", cfg.ISBBoxEscapeMode == mentor.ISBBoxEscapeBody},
 		{"ema34_loss_relock=until_zone_exit (a)", cfg.EmaLossRelock == mentor.EmaRelockUntilZoneExit},
 		{"orb_edge_veto_pts=0 (b)", cfg.OrbEdgeVetoPts == 0},
