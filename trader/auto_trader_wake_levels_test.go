@@ -482,3 +482,52 @@ func TestCollectWakeCandidatesStaleZones(t *testing.T) {
 		t.Fatalf("split arm with one near leg must not fire, got %+v", cands)
 	}
 }
+
+// TestWakeDeferredByStreamRefiresOnClose — W26 F-1: a wake deferred by "stream
+// open" re-fires the moment the stream closes (instead of waiting for the next
+// monitor cycle). The 10-14 wake sat parked behind another trader's 2h stream.
+func TestWakeDeferredByStreamRefiresOnClose(t *testing.T) {
+	defer drainReReads(t)
+	at, st := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true, WakeMinIntervalMin: 10}})
+	now := time.Date(2026, 8, 25, 10, 0, 0, 0, kernel.CTLocation())
+	testNow = func() time.Time { return now }
+	t.Cleanup(func() { testNow = nil })
+	// 15m bars with a last close 95 — below a seated Demand 100.
+	bars := wakeBars(15, now.UnixMilli(), [][4]float64{
+		{100, 101, 99, 100}, {100, 101, 99, 100}, {100, 101, 99, 100},
+		{100, 101, 99, 100}, {100, 101, 99, 100}, {100, 101, 99, 100},
+		{99, 99.5, 94.5, 95},
+	})
+	prev := market.FuturesBarsProvider
+	market.FuturesBarsProvider = func(symbol, tf string, count int) []market.Kline {
+		if tf == "15m" || tf == "5m" {
+			return bars
+		}
+		return nil
+	}
+	t.Cleanup(func() { market.FuturesBarsProvider = prev })
+	pid := "2026-08-25:ASIA"
+	base := `{"bias":{"direction":"neutral"},"levels":[{"price":100,"label":"Demand·15m","grade":"B"}],"scenarios":[{"id":"S1","condition":"reject","direction":"long","quality":"A"}]}`
+	if _, err := st.Plan().AppendPlan(&store.PlanDB{PlanID: pid, StrategyID: at.id, TradeDate: "2026-08-25", Session: "ASIA", Lifecycle: "active", Doc: base, CreatedAt: now.Add(-24 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	row, err := st.Plan().GetLatestPlanForTraderSession("2026-08-25", "ASIA", at.id)
+	if err != nil || row == nil {
+		t.Fatalf("plan row: %v", err)
+	}
+	// Open ANOTHER trader's stream — the wake must defer and register a re-fire.
+	claimPlannerRead("other:2026-08-25:ASIA")
+	at.maybeWakePlannerOnLevelEventsAt(now, "ASIA", "2026-08-25", row)
+	if at.lastLevelWakeKey != "" {
+		t.Fatalf("wake must defer while a stream is open, got key %q", at.lastLevelWakeKey)
+	}
+	// Close the stream — the deferred wake re-fires (async).
+	releasePlannerRead("other:2026-08-25:ASIA")
+	deadline := time.Now().Add(2 * time.Second)
+	for at.lastLevelWakeKey == "" && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if at.lastLevelWakeKey == "" {
+		t.Fatal("the deferred wake must re-fire once the stream closes")
+	}
+}

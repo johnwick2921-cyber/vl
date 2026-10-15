@@ -448,6 +448,16 @@ func (at *AutoTrader) maybeWakePlannerOnLevelEventsAt(now time.Time, session, tr
 			}
 		}
 		at.logWarnf("%s", wakeStreamDeferLine(session, ev.desc, held))
+		// W26 F-1 — re-fire the wake the moment the stream closes (the reason is
+		// re-checked on the re-run: the same candidate + throttle + flip gate).
+		registerDeferredWakeRefire(func() {
+			if at.store == nil {
+				return
+			}
+			if fresh, err := at.store.Plan().GetLatestPlanForTraderSession(tradeDate, session, at.id); err == nil && fresh != nil {
+				at.maybeWakePlannerOnLevelEventsAt(traderNow(), session, tradeDate, fresh)
+			}
+		})
 		return
 	}
 	// W6-D (2026-08-25) — wakes are UNLIMITED and count against NOTHING: a wake
