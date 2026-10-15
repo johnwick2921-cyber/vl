@@ -53,8 +53,8 @@ func mentorStaleBlockIntent() mentor.Intent {
 func TestMentorStaleDataBlockRefusesAuthoring(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	now := mentorStaleBlockClock(9, 0)
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	wireMentorPlacementSeams(t, at)
 	mentorStaleBlockFeed(t, now, 3*time.Minute) // stale: ~3 min old (AFTER the seams, which own their own feed)
 
@@ -77,8 +77,8 @@ func TestMentorStaleDataBlockRefusesAuthoring(t *testing.T) {
 func TestMentorStaleDataBlockAllowsFresh(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	now := mentorStaleBlockClock(9, 0)
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	wireMentorPlacementSeams(t, at)
 	mentorStaleBlockFeed(t, now, 30*time.Second) // fresh: 30 s old (AFTER the seams, which own their own feed)
 
@@ -102,8 +102,8 @@ func TestMentorStaleDataBlockAllowsFresh(t *testing.T) {
 func TestMentorStaleDataBlockHaltNoFalseRefusal(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	now := mentorStaleBlockClock(16, 30) // inside the 16:00–17:00 daily break
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	mentorStaleBlockFeed(t, now, 3*time.Minute) // bars are old, but CME is closed
 
 	if at.mentorStaleDataBlocked(now) {
@@ -139,8 +139,8 @@ func TestMentorStaleDataBlockDoesNotBlockExitDrive(t *testing.T) {
 	mentorRegisterLiveArmForTest("swing-stale", at.id, row.ID, "long", 29600)
 
 	now := mentorStaleBlockClock(10, 0) // CME open, stale feed
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	mentorStaleBlockFeed(t, now, 3*time.Minute) // stale: ~3 min old
 
 	at.resetMentorCountersForTest()

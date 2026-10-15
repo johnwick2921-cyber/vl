@@ -404,7 +404,7 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		return
 	}
 	row := store.ArmedOrderDB{
-		TraderID:  at.id,
+		TraderID: at.id,
 		// REL18-A #2: the trader is IN the unique key — two traders authoring
 		// the same scenario can no longer overwrite each other's ARMED row.
 		PlanID:    mentorPlanID(at.id),
@@ -670,14 +670,11 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 	if mentorPrunableTerminalState(r.State) {
 		at.mentorCount("cancel_refused_row_gone")
 		at.logInfof("🧑‍🏫 mentor CancelArm for ArmID %q — the row is already terminal; nothing to cancel (%s)", in.ArmID, in.Reason)
-			at.mentorUnregisterLiveArm(in.ArmID)   // I5: prune the terminal entry
-		at.deleteMentorExitMode(r.Scenario) // P3: delete by the ROW's own scenario, not the package epoch
+		at.mentorUnregisterLiveArm(in.ArmID) // I5: prune the terminal entry
+		at.deleteMentorExitMode(r.Scenario)  // P3: delete by the ROW's own scenario, not the package epoch
 		return false
 	}
-	now := time.Now()
-	if mentorNowSource != nil {
-		now = mentorNowSource()
-	}
+	now := mentorClockNow()
 	// N7 part 4 (CTO, release #4): a row that was NEVER SENT ends cancelled
 	// at once — a cancel_pending row with no signal id can never settle and
 	// would WARN every pass forever. CAS: if a placement stamped a signal id
@@ -686,8 +683,8 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 		done, err := ledger.CancelUnplaced(r.ID, "mentor: "+in.Reason+" — never placed")
 		if err == nil && done {
 			at.clearMentorLevelArmLocked(in.ArmID)
-				at.mentorUnregisterLiveArm(in.ArmID)   // I5: the row is now cancelled (terminal)
-			at.deleteMentorExitMode(r.Scenario) // P3: delete by the ROW's own scenario
+			at.mentorUnregisterLiveArm(in.ArmID) // I5: the row is now cancelled (terminal)
+			at.deleteMentorExitMode(r.Scenario)  // P3: delete by the ROW's own scenario
 			at.mentorCount("cancel_unplaced")
 			at.logInfof("🧑‍🏫 mentor cancel for ArmID %q: never placed — row cancelled directly (%s)", in.ArmID, in.Reason)
 			return true
@@ -702,8 +699,8 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 		}
 		if mentorPrunableTerminalState(r.State) {
 			at.clearMentorLevelArmLocked(in.ArmID)
-				at.mentorUnregisterLiveArm(in.ArmID)   // I5: the row is terminal now
-			at.deleteMentorExitMode(r.Scenario) // P3: delete by the ROW's own scenario
+			at.mentorUnregisterLiveArm(in.ArmID) // I5: the row is terminal now
+			at.deleteMentorExitMode(r.Scenario)  // P3: delete by the ROW's own scenario
 			return false
 		}
 	}

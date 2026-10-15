@@ -63,8 +63,8 @@ func TestMentorSeedAtStart(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				st := mentorSeedStore(t)
 				now := tc.instant.UnixMilli()
-				mentorNowSource = func() time.Time { return tc.instant }
-				t.Cleanup(func() { mentorNowSource = nil })
+				setMentorNowSource(func() time.Time { return tc.instant })
+				t.Cleanup(func() { setMentorNowSource(nil) })
 				bh := store.NewBarHistoryStore(st.GormDB())
 				rows1m := mentorSeedBars1m(now)
 				if err := bh.InsertBars(rows1m); err != nil {
@@ -115,8 +115,8 @@ func TestMentorSeedAtStart(t *testing.T) {
 func TestMentorSeedAtStartFirstTickDoesNotReAdvance(t *testing.T) {
 	st := mentorSeedStore(t)
 	now := time.Date(2026, time.September, 16, 12, 0, 0, 0, kernel.CTLocation())
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	bh := store.NewBarHistoryStore(st.GormDB())
 	rows := mentorSeedBars1m(now.UnixMilli())
@@ -298,8 +298,8 @@ func mentorSeedBars1mHours(now int64, hours int64) []store.BarHistoryDB {
 func TestMentorSeedAtStartBootLineReadsSeededDepth(t *testing.T) {
 	st := mentorSeedStore(t)
 	now := time.Date(2026, time.September, 10, 12, 0, 0, 0, kernel.CTLocation())
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	bh := store.NewBarHistoryStore(st.GormDB())
 	if err := bh.InsertBars(mentorSeedTwoContractRows(t, now)); err != nil {

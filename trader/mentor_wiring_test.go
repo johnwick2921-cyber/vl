@@ -74,7 +74,7 @@ func TestMentorProductionWiring(t *testing.T) {
 		at.mentorOpenSideSource = nil
 		at.mentorLegProtectedSource = nil
 		mentorLatestPriceSource = nil
-		mentorNowSource = nil
+		setMentorNowSource(nil)
 		mentorConfluenceForIntent = nil
 		mentorSetArmExpiryWire = nil
 		at.mentorDayNetSource = nil
@@ -95,7 +95,7 @@ func TestMentorProductionWiring(t *testing.T) {
 		t.Fatalf("latest price = %.2f/%v, want 100.25/true", px, ok)
 	}
 	before := time.Now()
-	now := mentorNowSource()
+	now := mentorClockNow()
 	if now.Before(before) || now.After(time.Now().Add(2*time.Second)) {
 		t.Fatalf("now seam not the wall clock: %v", now)
 	}

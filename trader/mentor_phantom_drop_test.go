@@ -46,8 +46,8 @@ func TestMentorDispatchDropArmOnNeverAdd(t *testing.T) {
 	at.mentorOpenSideSource = func() string { return "long" }
 	t.Cleanup(func() { at.mentorOpenSideSource = nil })
 	now := time.Date(2026, 9, 23, 9, 0, 0, 0, kernel.CTLocation())
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-test", Side: mentor.SideLong,
 		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12, ExpiryMs: now.UnixMilli() + 60_000}
@@ -70,11 +70,11 @@ func TestMentorDispatchDropArmOnDoneAfterWinSwing(t *testing.T) {
 	resetMentorLiveArms(t)
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
 	at.mentorDayNetSource = func() (float64, bool) { return 120, true }
 	at.mentorClosedProfitSource = func() (bool, bool) { return true, true }
 	t.Cleanup(func() {
-		mentorNowSource = nil
+		setMentorNowSource(nil)
 		at.mentorDayNetSource = nil
 		at.mentorClosedProfitSource = nil
 	})
@@ -130,8 +130,8 @@ func TestMentorDispatchDropArmOnStaleData(t *testing.T) {
 	at.mentorEval.State.ISBArms["isb-stale"] = mentor.ISBArm{Inside: 0, Side: mentor.SideLong}
 	resetMentorLiveArms(t)
 	now := mentorStaleBlockClock(9, 0)
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	wireMentorPlacementSeams(t, at)
 	mentorStaleBlockFeed(t, now, 3*time.Minute) // stale: ~3 min old, CME open
 
@@ -172,8 +172,8 @@ func TestMentorDispatchDropArmOnStaleIntent(t *testing.T) {
 	at.mentorEval.State.ISBArms["isb-n10"] = mentor.ISBArm{Inside: 0, Side: mentor.SideLong}
 	resetMentorLiveArms(t)
 	now := time.Date(2026, 9, 23, 9, 0, 0, 0, kernel.CTLocation())
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	wireMentorPlacementSeams(t, at)
 
 	// RefBarMs 2000 ≠ barCloseMs 1000 → the N10 stale-intent refusal.

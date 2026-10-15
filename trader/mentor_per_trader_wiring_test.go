@@ -245,8 +245,8 @@ func TestMentorProductionWiringReadsOwnTrader(t *testing.T) {
 	// The wiring re-pins mentorNowSource to the wall clock; re-pin the fixed
 	// clock so the day-boundary reads below are deterministic (the closures
 	// read mentorClockNow() lazily at call time).
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	// (audit #4) done-after-win: A has no NY-day win → keeps trading; B has a
 	// +120 win → refused. A mutant that captures the last-wired trader's day

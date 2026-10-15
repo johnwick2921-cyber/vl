@@ -23,8 +23,8 @@ func TestMentorNewsCancelFlattenAtEvalOnceCallSite(t *testing.T) {
 	mentorWireSeams(t, at, ledger)
 
 	now := b3Clock(7, 20) // inside the 07:20–07:35 print window
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	mentorDayEventsForTest = func() ([]calendar.Event, bool) {
 		return []calendar.Event{{
 			Time:   time.Date(2026, 9, 23, 7, 30, 0, 0, kernel.CTLocation()),
@@ -52,7 +52,7 @@ func TestMentorNewsCancelFlattenAtEvalOnceCallSite(t *testing.T) {
 
 	readByArmID := func(armID string) store.ArmedOrderDB {
 		t.Helper()
-			live, ok := at.mentorLiveArmFor(armID)
+		live, ok := at.mentorLiveArmFor(armID)
 		if !ok {
 			t.Fatalf("arm %q not in the live registry", armID)
 		}
@@ -108,8 +108,8 @@ func TestMentorNewsCancelRunsOnTheMonitorBeatWithoutABar(t *testing.T) {
 	mentorWireSeams(t, at, ledger)
 
 	now := b3Clock(7, 20)
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	mentorDayEventsForTest = func() ([]calendar.Event, bool) {
 		return []calendar.Event{{
 			Time:   time.Date(2026, 9, 23, 7, 30, 0, 0, kernel.CTLocation()),

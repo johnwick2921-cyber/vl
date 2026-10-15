@@ -131,8 +131,8 @@ func mentorWireSeams(t *testing.T, at *AutoTrader, ledger *store.ArmedOrderStore
 func mentorPinClockToRTH(t *testing.T) {
 	t.Helper()
 	fixed := rthInstant()
-	mentorNowSource = func() time.Time { return fixed }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return fixed })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 }
 
 // sawMentorFrame drains frames until deadline and reports whether want arrived.

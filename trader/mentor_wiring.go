@@ -47,7 +47,7 @@ func (at *AutoTrader) mentorSeamBound(name string) bool {
 	case "latest_price":
 		return mentorLatestPriceSource != nil
 	case "now":
-		return mentorNowSource != nil
+		return getMentorNowSource() != nil
 	case "confluence":
 		return mentorConfluenceForIntent != nil
 	case "arm_expiry":
@@ -116,7 +116,7 @@ func (at *AutoTrader) mentorWireProductionSeams() {
 		return bars[len(bars)-1].Close, true
 	}
 
-	mentorNowSource = func() time.Time { return time.Now() }
+	setMentorNowSource(func() time.Time { return time.Now() })
 
 	mentorConfluenceForIntent = func(in mentor.Intent) bool { return in.Confluence }
 

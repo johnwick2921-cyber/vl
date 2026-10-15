@@ -81,8 +81,8 @@ func TestMentorNoChaseAtPlacementCallSite(t *testing.T) {
 	// 09:00 CT is inside the default trading window (b) — the other gates run
 	// first and must stay open for this test.
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	wireMentorPlacementSeams(t, at)
 
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,
@@ -144,8 +144,8 @@ func TestMentorWindowGateAtPlacementCallSite(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 10, 0, 0, 0, ct) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 10, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,
 		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
@@ -171,7 +171,7 @@ func TestMentorWindowGateAtPlacementCallSite(t *testing.T) {
 		t.Fatalf("the SWING4H setup must be exempt from the window, placed=%d", placed)
 	}
 	// inside the window the same ISB proceeds.
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
 	if placed != 2 {
 		t.Fatalf("inside the window the entry must proceed, placed=%d", placed)
@@ -188,11 +188,11 @@ func TestMentorDoneAfterWinGateAtPlacementCallSite(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
 	at.mentorDayNetSource = func() (float64, bool) { return 120, true }
 	at.mentorClosedProfitSource = func() (bool, bool) { return true, true }
 	t.Cleanup(func() {
-		mentorNowSource = nil
+		setMentorNowSource(nil)
 		at.mentorDayNetSource = nil
 		at.mentorClosedProfitSource = nil
 	})
@@ -258,10 +258,10 @@ func TestMentorStopAfterLossGateAtPlacementCallSite(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
 	at.mentorClosedLossSource = func() (bool, bool) { return true, true }
 	t.Cleanup(func() {
-		mentorNowSource = nil
+		setMentorNowSource(nil)
 		at.mentorClosedLossSource = nil
 	})
 
@@ -381,9 +381,9 @@ func TestMentorNeverAddAtPlacementCallSite(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
 	at.mentorOpenSideSource = func() string { return "long" }
-	t.Cleanup(func() { mentorNowSource = nil; at.mentorOpenSideSource = nil })
+	t.Cleanup(func() { setMentorNowSource(nil); at.mentorOpenSideSource = nil })
 
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,
 		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
@@ -427,8 +427,8 @@ func TestMentorSourcesMissingRefusesPlacement(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,
 		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
@@ -531,8 +531,8 @@ func TestMentorPlacementCarriesExpiry(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,
 		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
@@ -574,8 +574,8 @@ func TestMentorHistoryDepthGate(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,
 		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
@@ -739,7 +739,7 @@ func TestMentorSourcesBootLine(t *testing.T) {
 		at.mentorOpenSideSource = func() string { return "" }
 		at.mentorLegProtectedSource = func(leg string) bool { return true }
 		mentorLatestPriceSource = func() (float64, bool) { return 0, false }
-		mentorNowSource = func() time.Time { return time.Now() }
+		setMentorNowSource(func() time.Time { return time.Now() })
 		mentorConfluenceForIntent = func(in mentor.Intent) bool { return false }
 		mentorSetArmExpiryWire = func(armID int64, expiryMs int64) error { return nil }
 		mentorDayEventsForTest = func() ([]calendar.Event, bool) { return nil, true }
@@ -752,7 +752,7 @@ func TestMentorSourcesBootLine(t *testing.T) {
 		at.mentorOpenSideSource = nil
 		at.mentorLegProtectedSource = nil
 		mentorLatestPriceSource = nil
-		mentorNowSource = nil
+		setMentorNowSource(nil)
 		mentorConfluenceForIntent = nil
 		mentorSetArmExpiryWire = nil
 		mentorDayEventsForTest = nil
@@ -955,9 +955,9 @@ func TestMentorNewsGateAtPlacementCallSite(t *testing.T) {
 	ct := kernel.CTLocation()
 	cpi := []calendar.Event{{Title: "CPI m/m", Impact: calendar.T1,
 		Time: time.Date(2026, 10, 2, 7, 30, 0, 0, ct).UTC()}}
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 7, 25, 0, 0, ct) }
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 7, 25, 0, 0, ct) })
 	mentorDayEventsForTest = func() ([]calendar.Event, bool) { return cpi, true }
-	t.Cleanup(func() { mentorNowSource = nil; mentorDayEventsForTest = nil })
+	t.Cleanup(func() { setMentorNowSource(nil); mentorDayEventsForTest = nil })
 
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,
 		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
@@ -976,14 +976,14 @@ func TestMentorNewsGateAtPlacementCallSite(t *testing.T) {
 		t.Fatalf("the news hold must be counted once, got %d", got)
 	}
 	// outside the print window (08:55 CT) the same intent proceeds.
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 8, 55, 0, 0, ct) }
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 8, 55, 0, 0, ct) })
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
 	if placed != 1 {
 		t.Fatalf("outside the print window the placement must proceed, placed=%d", placed)
 	}
 	// FAIL-CLOSED: no readable calendar inside the window holds + counts.
 	mentorDayEventsForTest = func() ([]calendar.Event, bool) { return nil, false }
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 7, 25, 0, 0, ct) }
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 7, 25, 0, 0, ct) })
 	at.resetMentorCountersForTest()
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
 	if placed != 1 {
@@ -993,7 +993,7 @@ func TestMentorNewsGateAtPlacementCallSite(t *testing.T) {
 		t.Fatalf("the fail-closed hold must be counted news_hold_no_calendar once, got %d", got)
 	}
 	// no calendar OUTSIDE the window proceeds.
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 8, 55, 0, 0, ct) }
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 8, 55, 0, 0, ct) })
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
 	if placed != 2 {
 		t.Fatalf("no calendar outside the window must proceed, placed=%d", placed)

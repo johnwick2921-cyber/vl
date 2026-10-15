@@ -25,7 +25,7 @@ func doneAfterWinRig(t *testing.T, dayStart string) (*AutoTrader, *store.Store) 
 		at.mentorDayNetSource = nil
 		at.mentorClosedProfitSource = nil
 		at.mentorClosedLossSource = nil
-		mentorNowSource = nil
+		setMentorNowSource(nil)
 	})
 	return at, st
 }
@@ -57,7 +57,7 @@ func seedClosedWin(t *testing.T, st *store.Store, traderID string, exitMs int64,
 func pinDoneAfterWinClock(t *testing.T, d, h, m int) {
 	t.Helper()
 	fixed := nyDayClock(d, h, m)
-	mentorNowSource = func() time.Time { return fixed }
+	setMentorNowSource(func() time.Time { return fixed })
 }
 
 // (a)+(b) the #641 shape: a win at 18:06 CT must no longer block the next NY

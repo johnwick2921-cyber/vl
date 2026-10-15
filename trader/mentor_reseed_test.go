@@ -98,7 +98,7 @@ func seedStateTrader(t *testing.T) *AutoTrader {
 		}
 		return nil, true
 	}
-	t.Cleanup(func() { mentorDayEventsOnForTest = nil; mentorNowSource = nil })
+	t.Cleanup(func() { mentorDayEventsOnForTest = nil; setMentorNowSource(nil) })
 	if err := store.NewBarHistoryStore(at.store.GormDB()).Migrate(); err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestMentorReseedsAfterTheHistoryRefill1014(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedAt := seedStateCT(8, 22, 40)
-	mentorNowSource = func() time.Time { return seedAt }
+	setMentorNowSource(func() time.Time { return seedAt })
 	at.mentorSeedAtStart()
 	if got := seedStateLine(at.mentorEval.State.HTF.OneH); got != "short@30790.75 since 10-14 07:00" {
 		t.Fatalf("control: the holed store must seed the live boot's 1h line, got %s", got)
@@ -151,7 +151,7 @@ func TestMentorReseedsAfterTheHistoryRefill1014(t *testing.T) {
 		}
 	}
 	win := full[len(full)-mentorBars1mDepth:]
-	mentorNowSource = func() time.Time { return seedStateCT(8, 24, 0) }
+	setMentorNowSource(func() time.Time { return seedStateCT(8, 24, 0) })
 	if !at.mentorEvalOnce(win) {
 		t.Fatal("the tick did not run")
 	}
@@ -185,7 +185,7 @@ func TestMentorReseedsAfterTheHistoryRefill1014(t *testing.T) {
 	}
 	// A second tick with no new refill does NOT re-seed.
 	next := append(append([]market.Kline(nil), full...), bars[len(full)].k)
-	mentorNowSource = func() time.Time { return seedStateCT(8, 25, 0) }
+	setMentorNowSource(func() time.Time { return seedStateCT(8, 25, 0) })
 	at.mentorEvalOnce(next[len(next)-mentorBars1mDepth:])
 	if c := at.mentorCountSnapshot(); c["reseed_after_refill"] != 1 {
 		t.Fatalf("no refill since → no re-seed: %v", c)
@@ -206,7 +206,7 @@ func TestMentorSeedAtStartHonoursHistoryPrintWindows1014(t *testing.T) {
 	if err := bh.InsertBars(seedStateRows(bars, func(b seedStateBar) bool { return b.k.OpenTime < seedAt.UnixMilli() })); err != nil {
 		t.Fatal(err)
 	}
-	mentorNowSource = func() time.Time { return seedAt }
+	setMentorNowSource(func() time.Time { return seedAt })
 	at.mentorSeedAtStart()
 	oneH := at.mentorEval.State.HTF.OneH
 	if oneH.LastBar.OpenTime != seedStateCT(7, 0, 0).UnixMilli() || oneH.LastBar.High != 30817.00 {
