@@ -3,6 +3,8 @@ package trader
 import (
 	"testing"
 	"time"
+
+	"vl/kernel"
 )
 
 // armTestClock returns a moment that is inside an ENABLED session window and
@@ -34,10 +36,22 @@ import (
 // no-trade bands are configuration and move. Scanning asks the registry what is
 // true instead of hard-coding an hour that a later config change would silently
 // invalidate — which would be this same defect with a longer fuse.
+//
+// FOLD #535-extra (W26 extra, test-only P2): the search used to start from
+// time.Now(), so the arm fixtures still depended on the hour the suite ran. At
+// 08:19 CT (LONDON last-entry) the driver picked LONDON from time.Now() while
+// this search returned a moment in the NEXT session, and the arm was refused by
+// the last-entry gate. The base is now FIXED — the search stays (windows/bands
+// move), but the answer is the same instant every run, never the wall clock.
 func armTestClock(t *testing.T, at *AutoTrader) time.Time {
 	t.Helper()
-	return armTestClockFrom(t, at, time.Now())
+	return armTestClockFrom(t, at, armTestClockBase)
 }
+
+// armTestClockBase is a FIXED, calendar-covered instant: 10:00 CT 2026-09-10 —
+// inside NY (08:30–14:45), outside the lunch band and the T1 print windows. The
+// search from this constant resolves to the same armable moment every run.
+var armTestClockBase = time.Date(2026, 9, 10, 10, 0, 0, 0, kernel.CTLocation())
 
 // armTestClockFrom is the same search from a CALLER-CHOSEN base.
 //

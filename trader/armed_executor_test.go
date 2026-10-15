@@ -39,7 +39,10 @@ func TestArmedOrderUpsertAndGateRR(t *testing.T) {
 	cfg.DayPlan.ConditionStatus = map[string]string{"fvg_entry": "live"}
 	cfg.RiskControl = store.RiskControlConfig{MinRiskRewardRatio: 1.5}
 	at, st := resetTrader(t, cfg)
-	now := time.Now()
+	// W26 extra (test-only P2): session selection and the arm run at the SAME
+	// pinned armable instant — never time.Now(), which at 08:19 CT (LONDON
+	// last-entry) picked a cut session while the arm clock searched elsewhere.
+	now := armTestClock(t, at)
 	sess, ok := at.sessionRegistry(now).ActiveSession(now)
 	if !ok {
 		t.Skip("no active session right now")
@@ -52,9 +55,9 @@ func TestArmedOrderUpsertAndGateRR(t *testing.T) {
 	if _, err := st.Plan().AppendPlan(&store.PlanDB{PlanID: pid, TradeDate: td, Session: sess.Name, StrategyID: at.id, Lifecycle: "active", Doc: armedDoc(), CreatedAt: now.Add(-30 * time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
-	installActivePlanProvider(at, st)
+	installActivePlanProviderAt(at, st, func() time.Time { return now })
 
-	at.maybeManageArmedOrdersAt(nil, armTestClock(t, at))
+	at.maybeManageArmedOrdersAt(nil, now)
 
 	rows, err := st.ArmedOrders().ListNonTerminal(at.id)
 	if err != nil || len(rows) != 1 {
@@ -108,7 +111,9 @@ func TestArmedGateRefusesBadRR(t *testing.T) {
 func TestArmedCancelOnDormant(t *testing.T) {
 	cfg := store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}}
 	at, st := resetTrader(t, cfg)
-	now := time.Now()
+	// Same pinned armable instant as the arm run (W26 extra): session selection
+	// and the arm must not diverge across the LONDON last-entry cut.
+	now := armTestClock(t, at)
 	sess, ok := at.sessionRegistry(now).ActiveSession(now)
 	if !ok {
 		t.Skip("no active session right now")
@@ -129,8 +134,8 @@ func TestArmedCancelOnDormant(t *testing.T) {
 	if err := st.Plan().UpdatePlanLifecycle(pid, v, "dormant", "dormant:flip-condition: test"); err != nil {
 		t.Fatal(err)
 	}
-	installActivePlanProvider(at, st)
-	at.maybeManageArmedOrdersAt(nil, armTestClock(t, at))
+	installActivePlanProviderAt(at, st, func() time.Time { return now })
+	at.maybeManageArmedOrdersAt(nil, now)
 	rows, err := st.ArmedOrders().ListNonTerminal(at.id)
 	if err != nil || len(rows) != 0 {
 		t.Fatalf("non-terminal rows = %d err=%v — dormant must cancel ALL arms", len(rows), err)
