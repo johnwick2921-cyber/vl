@@ -343,12 +343,14 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 // touches and never changes its key.
 //
 // N3 (release #23): the OUTPUT is the latch, never the fresh scan. `fresh`
-// only latches a role that is not latched yet; EVERY latched role is output on
-// EVERY tick, with its touches and D14 flip refreshed from the window. It used
-// to iterate `fresh` alone, so a latched box vanished on every tick whose scan
-// lacked its role (10-14: the latched FTGL was absent on 50 ticks) — its edges
-// stopped being locations and the interior ban stopped applying. Output order
-// is fixed (FTGL, FTGH — BoxesBuild's role order).
+// only latches a role that is not latched yet; EVERY latched role is refreshed
+// on EVERY tick, with its touches and D14 flip refreshed from the window. It
+// used to iterate `fresh` alone, so a latched box vanished on every tick whose
+// scan lacked its role (10-14: the latched FTGL was absent on 50 ticks) — its
+// edges stopped being locations and the interior ban stopped applying. B52
+// (release #29, fold-551) narrows the output to the LIVE set (≤2 zones): the
+// newest new-zone box + the zone it escaped from, or the first boxes before any
+// escape.
 func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []Box {
 	if e.State.LatchedBoxes == nil {
 		e.State.LatchedBoxes = map[string]Box{}
@@ -362,7 +364,7 @@ func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []B
 		e.note("box latched %s %.2f–%.2f (formed %s CT) — stands to the 17:00 CT session roll, never redrawn [D4.1 p2 @02:39]", strings.ToUpper(role), b.Bottom, b.Top, kernel.TableTimeCT(time.UnixMilli(b.FormedAtMs)))
 	}
 	tfBars := barsForTF(bars, cfg.TF)
-	out := make([]Box, 0, len(e.State.LatchedBoxes)+len(e.State.PostEscapeBoxes))
+	// Refresh the first boxes (touch count + D14 flip + window index).
 	for _, kind := range []BoxKind{FTGL, FTGH} {
 		role := string(kind)
 		latched, ok := e.State.LatchedBoxes[role]
@@ -380,7 +382,6 @@ func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []B
 			latched.FormedAt = idx
 		}
 		e.State.LatchedBoxes[role] = latched // write the refreshed copy back
-		out = append(out, latched)
 	}
 	// B52 (release #29): after a standing box escapes, latch ONE new same-role
 	// box outside the old range, per further escape. The old box keeps its
@@ -388,7 +389,39 @@ func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []B
 	if e.Cfg.BoxNewZoneAfterEscape {
 		e.latchPostEscapeBoxes(bars, cfg)
 	}
-	out = append(out, e.State.PostEscapeBoxes...)
+	// CTO ruling (fold-551): AT MOST TWO ZONES LIVE. After a new-zone latch the
+	// live set is the NEW zone + the zone it escaped from (flipped); every
+	// older zone (the old opposite box, earlier flipped boxes) retires — no
+	// ladder ("đừng vẽ vùng thứ 3… rối lắm" [D3.2 p2 @09:47–09:51]).
+	return liveBoxes(e.State.LatchedBoxes, e.State.PostEscapeBoxes)
+}
+
+// liveBoxes is the LIVE box set under the 2-zone ruling (fold-551): before any
+// escape the first boxes (FTGL then FTGH); after a new-zone latch exactly the
+// newest zone plus the zone it escaped from (the immediately-previous same-role
+// post-escape box, else that role's first box). Every other box is retired from
+// the live reads (inside_any_box / near_box / between-boxes). The ladder is
+// still kept in State.PostEscapeBoxes for the replay and the latch counter.
+func liveBoxes(latched map[string]Box, post []Box) []Box {
+	if len(post) == 0 {
+		out := make([]Box, 0, len(latched))
+		for _, kind := range []BoxKind{FTGL, FTGH} {
+			if b, ok := latched[string(kind)]; ok {
+				out = append(out, b)
+			}
+		}
+		return out
+	}
+	newest := post[len(post)-1]
+	out := []Box{newest}
+	for i := len(post) - 2; i >= 0; i-- {
+		if post[i].Kind == newest.Kind {
+			return append(out, post[i])
+		}
+	}
+	if b, ok := latched[string(newest.Kind)]; ok {
+		out = append(out, b)
+	}
 	return out
 }
 
@@ -413,9 +446,11 @@ func (e *Evaluator) latchPostEscapeBoxes(bars []market.Kline, cfg BoxCfg) {
 		if !ok {
 			continue
 		}
-		if idx, ok := resolveBarIndex(tfBars, active.FormedAtMs); ok {
-			active.FormedAt = idx
+		idx, ok := resolveBarIndex(tfBars, active.FormedAtMs)
+		if !ok {
+			continue // F551-1(c): the seed skips here — the tick must too (never escape-check on a stale FormedAt)
 		}
+		active.FormedAt = idx
 		if _, escapedYet := boxEscapeIndex(tfBars, active, active.FormedAt); !escapedYet {
 			continue
 		}

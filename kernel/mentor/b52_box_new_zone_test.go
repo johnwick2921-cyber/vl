@@ -1,6 +1,8 @@
 package mentor
 
 import (
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,9 +132,13 @@ func TestB52InsideRangeNoBox(t *testing.T) {
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
 	}
-	// First FTGL [96, 96.8] (as b52Tape), escape @8, then price rallies back
-	// ABOVE the old floor and makes a double bottom at 96.5/97.2 — its zone
-	// [96.5, 97.5] would sit INSIDE (above) the old floor 96.
+	// Bars 0–8 = b52Tape (first FTGL [96, 96.8], escape @8). Then price rallies
+	// and makes a STRADDLING double bottom: bottom 96.5 is BELOW the old floor
+	// 96, its partner's body 97.1 is ABOVE it — the candidate [96.5, 97.1]
+	// straddles the old range and must be refused ("no third zone in the
+	// middle"). The tape is the CTO's fold-551 replacement: the candidate really
+	// forms (swing low 96.5 @12, partner low 96.9 @16, both confirmed), so the
+	// pin reaches the outside check instead of returning nil first.
 	bars := []market.Kline{
 		mk(0, 100, 101, 99, 100),
 		mk(1, 100, 100.5, 98, 100),
@@ -143,18 +149,20 @@ func TestB52InsideRangeNoBox(t *testing.T) {
 		mk(6, 97, 97.5, 96.5, 96.8),
 		mk(7, 96.8, 97.5, 96.6, 97),
 		mk(8, 95.5, 96, 95, 95), // escape below 96
-		mk(9, 96, 96.5, 95.5, 96),
-		mk(10, 97, 97.5, 96.5, 97), // back above the floor
-		mk(11, 97.5, 98, 96.5, 97), // swing low 96.5 (inside)
-		mk(12, 97.5, 98, 97, 97.5), // confirms @11
-		mk(13, 98, 98.5, 97.5, 98),
-		mk(14, 98, 98.5, 97.8, 98),
-		mk(15, 98, 98.5, 97.2, 97.5), // partner low 97.2 (>96.5, fails to break)
-		mk(16, 97.8, 98.5, 97.6, 98), // confirms @15 → zone [96.5, 97.5]
+		mk(9, 95.5, 97.5, 95.3, 97.2),
+		mk(10, 97.2, 98.5, 97.0, 98.2),
+		mk(11, 98.2, 98.6, 97.8, 98.0),
+		mk(12, 98.0, 98.2, 96.5, 96.7), // swing low 96.5 (below the floor 96)
+		mk(13, 96.7, 97.8, 96.8, 97.6), // confirms @12 (low 96.8 > 96.5)
+		mk(14, 97.6, 98.4, 97.4, 98.2),
+		mk(15, 98.2, 98.5, 97.9, 98.3),
+		mk(16, 98.3, 98.4, 96.9, 97.1), // partner low 96.9 (>96.5, fails to break)
+		mk(17, 97.1, 97.9, 97.0, 97.7), // confirms @16 → candidate [96.5, 97.1]
+		mk(18, 97.7, 98.0, 97.5, 97.8),
 	}
 	e := b52Run(bars, b52Cfg())
 	if len(e.State.PostEscapeBoxes) != 0 {
-		t.Fatalf("latched an inside-range zone: %+v — no third zone in the middle [D3.2 p2 @09:47–09:54]", e.State.PostEscapeBoxes)
+		t.Fatalf("latched a straddling zone: %+v — no third zone in the middle [D3.2 p2 @09:47–09:54]", e.State.PostEscapeBoxes)
 	}
 }
 
@@ -216,6 +224,151 @@ func TestB52RestartSameBoxes(t *testing.T) {
 	}
 	if got := restart.State.LatchedBoxes["ftgl"]; got.Key != "ftgl:96.80:96.00" || got.Bottom != 96 || got.Top != 96.8 {
 		t.Fatalf("restart first FTGL = %+v, want [96, 96.8]", got)
+	}
+}
+
+// b52LiveBoxKeys reads the LIVE box set back through the production surface:
+// the box edges the tick put into ChartLevels (the same `boxes` slice that
+// feeds inside_any_box / near_box / midRangeBoxed / BoxEdgeLocations).
+func b52LiveBoxKeys(e *Evaluator) []string {
+	keys := map[string]bool{}
+	for _, l := range e.State.ChartLevels {
+		if l.Kind != KindFTGHEdge && l.Kind != KindFTGLEdge {
+			continue
+		}
+		base := strings.TrimSuffix(strings.TrimSuffix(l.Key, ":top"), ":bottom")
+		keys[base] = true
+	}
+	out := make([]string, 0, len(keys))
+	for k := range keys {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// TestB52TwoLiveZonesRetireOlder — the CTO 2-zone ruling (fold-551): three
+// successive FTGL escapes latch F0→P1→P2→P3, and after EACH latch exactly TWO
+// zones are live — the newest plus the zone it escaped from. Every older zone
+// retires from the live reads. The ladder still counts (PostEscapeBoxes grows
+// 1→2→3). Mutant: liveBoxes returns all boxes (drop the retire) → the live set
+// after P2/P3 grows past 2 → RED.
+func TestB52TwoLiveZonesRetireOlder(t *testing.T) {
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	// F0 [96, 96.8] → escape @8 → P1 [92, 92.9] → escape @17 → P2 [88, 88.9]
+	// → escape @26 → P3 [84, 84.9].
+	bars := []market.Kline{
+		mk(0, 100, 101, 99, 100),
+		mk(1, 100, 100.5, 98, 100),
+		mk(2, 99, 99.5, 96, 97), // F0 extreme 96
+		mk(3, 97, 98, 97, 97.5),
+		mk(4, 98, 98.5, 98, 98),
+		mk(5, 98, 98.5, 97.5, 98),
+		mk(6, 97, 97.5, 96.5, 96.8), // F0 partner 96.5
+		mk(7, 96.8, 97.5, 96.6, 97), // F0 [96, 96.8]
+		mk(8, 95.5, 96, 95, 95),     // F0 escape
+		mk(9, 95, 95.5, 94.5, 95),
+		mk(10, 94.8, 95, 94, 94.6),
+		mk(11, 94, 94.5, 92, 93), // P1 extreme 92
+		mk(12, 93, 93.5, 92.5, 93),
+		mk(13, 93, 93.5, 93, 93.2),
+		mk(14, 93.2, 94, 93.2, 93.8),
+		mk(15, 93.5, 94, 92.8, 92.9), // P1 partner 92.8
+		mk(16, 93, 94, 93, 93.5),     // P1 [92, 92.9]
+		mk(17, 91.5, 92, 91, 91),     // P1 escape
+		mk(18, 91, 91.5, 90.5, 91),
+		mk(19, 90.8, 91, 90, 90.6),
+		mk(20, 90, 90.5, 88, 89), // P2 extreme 88
+		mk(21, 89, 89.5, 88.5, 89),
+		mk(22, 89, 89.5, 89, 89.2),
+		mk(23, 89.2, 90, 89.2, 89.8),
+		mk(24, 89.5, 90, 88.8, 88.9), // P2 partner 88.8
+		mk(25, 89, 90, 89, 89.5),     // P2 [88, 88.9]
+		mk(26, 87.5, 88, 87, 87),     // P2 escape
+		mk(27, 87, 87.5, 86.5, 87),
+		mk(28, 86.8, 87, 86, 86.6),
+		mk(29, 86, 86.5, 84, 85), // P3 extreme 84
+		mk(30, 85, 85.5, 84.5, 85),
+		mk(31, 85, 85.5, 85, 85.2),
+		mk(32, 85.2, 86, 85.2, 85.8),
+		mk(33, 85.5, 86, 84.8, 84.9), // P3 partner 84.8
+		mk(34, 85, 86, 85, 85.5),     // P3 [84, 84.9]
+	}
+	e := New(b52Cfg())
+	check := func(at int, wantLadder int, wantLive []string) {
+		t.Helper()
+		if got := len(e.State.PostEscapeBoxes); got != wantLadder {
+			t.Fatalf("tick %d: ladder = %d, want %d (post = %+v)", at, got, wantLadder, e.State.PostEscapeBoxes)
+		}
+		if got := b52LiveBoxKeys(e); strings.Join(got, ",") != strings.Join(wantLive, ",") {
+			t.Fatalf("tick %d: live zones = %v, want %v", at, got, wantLive)
+		}
+	}
+	for i := 2; i <= len(bars); i++ {
+		e.Tick(bars[:i], bars[i-1].OpenTime+59_999)
+		switch i {
+		case 8: // F0 latched, no escape yet
+			check(i, 0, []string{"ftgl:96.80:96.00"})
+		case 17: // P1 latched
+			check(i, 1, []string{"ftgl:92.90:92.00", "ftgl:96.80:96.00"})
+		case 26: // P2 latched — F0 retires
+			check(i, 2, []string{"ftgl:88.90:88.00", "ftgl:92.90:92.00"})
+		case 35: // P3 latched — P1 retires
+			check(i, 3, []string{"ftgl:84.90:84.00", "ftgl:88.90:88.00"})
+		}
+	}
+}
+
+// TestB52OneBoxPerEscape — one new zone per escape, and only when the ACTIVE
+// box escapes. Here P1 forms below F0's floor, then a LOWER double bottom (88 /
+// 88.8) forms while P1's floor 92 is never BROKEN (no body closes below 92) —
+// so the correct code latches exactly P1 and stops. Mutant B2 (activeBoxOf
+// ignores the post-escape boxes, box.go ~479) keeps F0 as the active box, so
+// F0's still-escaped state re-fires and latches the 88 zone too → 2 boxes → RED.
+func TestB52OneBoxPerEscape(t *testing.T) {
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := func(i int, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(0, 100, 101, 99, 100),
+		mk(1, 100, 100.5, 98, 100),
+		mk(2, 99, 99.5, 96, 97), // F0 extreme 96
+		mk(3, 97, 98, 97, 97.5),
+		mk(4, 98, 98.5, 98, 98),
+		mk(5, 98, 98.5, 97.5, 98),
+		mk(6, 97, 97.5, 96.5, 96.8), // F0 partner 96.5
+		mk(7, 96.8, 97.5, 96.6, 97), // F0 [96, 96.8]
+		mk(8, 95.5, 96, 95, 95),     // F0 escape
+		mk(9, 95, 95.5, 94.5, 95),
+		mk(10, 94.8, 95, 94, 94.6),
+		mk(11, 94, 94.5, 92, 93), // P1 extreme 92
+		mk(12, 93, 93.5, 92.5, 93),
+		mk(13, 93, 93.5, 93, 93.2),
+		mk(14, 93.2, 94, 93.2, 93.8),
+		mk(15, 93.5, 94, 92.8, 92.9), // P1 partner 92.8
+		mk(16, 93, 94, 93, 93.5),     // P1 [92, 92.9]
+		// A lower double bottom (wicks to 88 / 88.8) whose BODIES never close
+		// below P1's floor 92 — P1 never escapes.
+		mk(17, 93.5, 94, 92, 93.5),
+		mk(18, 93.5, 94, 92.2, 93.8),
+		mk(19, 93, 93.5, 91.5, 93),
+		mk(20, 92.5, 93, 88, 92.5), // lower extreme wick 88, body 92.5
+		mk(21, 92.5, 93, 91, 92.8), // confirms @20 (91 > 88)
+		mk(22, 92.8, 93, 91.5, 92.5),
+		mk(23, 92.5, 93, 92, 92.5),
+		mk(24, 92.5, 93, 88.8, 92.5), // partner wick 88.8, body 92.5
+		mk(25, 92.5, 93, 92, 92.5),   // confirms @24 (92 > 88.8)
+	}
+	e := b52Run(bars, b52Cfg())
+	if len(e.State.PostEscapeBoxes) != 1 {
+		t.Fatalf("latched %d boxes, want 1 (P1 only — P1 never escaped): %+v", len(e.State.PostEscapeBoxes), e.State.PostEscapeBoxes)
+	}
+	if e.State.PostEscapeBoxes[0].Key != "ftgl:92.90:92.00" {
+		t.Fatalf("post-escape box = %+v, want P1 ftgl:92.90:92.00", e.State.PostEscapeBoxes[0])
 	}
 }
 
