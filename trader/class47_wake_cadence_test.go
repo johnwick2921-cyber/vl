@@ -418,3 +418,26 @@ func TestZeroThresholdDoesNotBypassEverything(t *testing.T) {
 		t.Error("the cooldown must still apply when the threshold is unresolved")
 	}
 }
+
+// TestDeferredWakeRefireDedupedPerTraderSession (W26-CTO-GATES F4) — while a
+// stream is open, each deferred cycle must NOT queue another closure: at most
+// one pending re-fire per (trader, session), so a 2h stream queues 1 closure,
+// not ~60, and the herd never fires at stream close.
+func TestDeferredWakeRefireDedupedPerTraderSession(t *testing.T) {
+	defer drainDeferredWakeRefires() // leave the registry empty for the next test
+	k := deferredWakeRefireKey("t1", "2026-08-18", "NY")
+	n := 0
+	registerDeferredWakeRefire(k, func() { n++ })
+	registerDeferredWakeRefire(k, func() { n++ })                                               // same key → no second closure
+	registerDeferredWakeRefire(deferredWakeRefireKey("t2", "2026-08-18", "NY"), func() { n++ }) // other trader → its own slot
+	pending := drainDeferredWakeRefires()
+	if len(pending) != 2 {
+		t.Fatalf("one pending per (trader, session): got %d closures, want 2", len(pending))
+	}
+	for _, f := range pending {
+		f()
+	}
+	if n != 2 {
+		t.Fatalf("the two distinct closures must both run, got %d", n)
+	}
+}

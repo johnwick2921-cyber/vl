@@ -490,7 +490,9 @@ func (at *AutoTrader) maybeWakePlannerOnLevelEventsAt(now time.Time, session, tr
 		at.logWarnf("%s", wakeStreamDeferLine(session, ev.desc, held))
 		// W26 F-1 — re-fire the wake the moment the stream closes (the reason is
 		// re-checked on the re-run: the same candidate + throttle + flip gate).
-		registerDeferredWakeRefire(func() {
+		// Deduped per (trader, session): a later cycle's deferral while the same
+		// stream is still open replaces nothing.
+		registerDeferredWakeRefire(deferredWakeRefireKey(at.id, tradeDate, session), func() {
 			if at.store == nil {
 				return
 			}
