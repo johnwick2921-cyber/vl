@@ -9381,3 +9381,9 @@ bar hole) bypass the day-plan gate, while plan-content alerts keep it.
 Reference: store/alert.go Emit / EpisodeEventID, trader/auto_trader_alerts.go
 emitAlert / isOpsAlertKind, trader/run_owner.go armRunRetry,
 trader/run_owner_alert_episode_test.go.
+
+## CLASS NN (assigned at merge) — one guard threshold applied to every timeframe
+- **Symptom:** a data-quality guard tuned on 1m bars (release #26 stale-print guard, 0.5% "impossible move") ran on every timeframe. In the reconnect window after the 10-15 boot it quarantined the REAL forming 1d and 3d bars of MNQ and ES: `bars_stale_prints` 5,876 in 3 minutes, and readers lost today's daily candle.
+- **Probe:** for any price-move threshold, measure the real distribution per timeframe (p99.9 and max over ≥3,000 bars) before shipping. A threshold that sits inside the normal range of any TF it runs on is a false-positive generator. Read the guard's counter on /api/health right after the first boot. A count that does not stay near 0 is the alarm.
+- **Rule:** a guard judges ONLY the timeframes where its bound clears every real bar by a margin, and names them explicitly. An unknown TF is never judged. A counter of fired actions must be read at boot verification, not just exist.
+- **Reference:** release #27 fix/stale-print-tf-bound (2% on 1m–30m, 1h+ never judged; measured 1m 0.64%, 5m 0.75%, 15m 0.93%, 30m 1.43%, 1h 2.98%, 4h 2.98%, 1d 3.88%).

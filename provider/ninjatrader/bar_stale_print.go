@@ -38,8 +38,8 @@ import (
 // previous bar's close — max(stalePrintMinTicks ticks, stalePrintPct of price) —
 // is quarantined: the bar is relabelled MIXED (values untouched, A24) so no
 // reader takes it. The window is the point: inside it the AddOn is re-emitting
-// its loaded series, not live ticks, so a print that moved a full 0.5% from its
-// own open is a replay of a stale series, not a trade. Outside the window the
+// its loaded series, not live ticks, so a print that moved a full 2% from its
+// own open on a 1m–30m bar is a replay of a stale series, not a trade. Outside the window the
 // live feed is trusted exactly as before. A real fast market (a 1% move over
 // several minutes) never trips it: each minute's extremes stay near its own
 // open, and a gap open stays near the open it opens from.
@@ -50,18 +50,31 @@ const (
 	// stale print carried the 20:00 minute — up to a full minute later (the
 	// tcp_server accept/hello lines live in journald, not the file log, so the
 	// exact accept→print gap could not be read back; 60 s covers it). A real
-	// fast market cannot move a full 0.5% inside one minute of a reconnect,
+	// fast market cannot move a full 2% inside one minute of a reconnect,
 	// when the feed is still settling, so the wider window costs nothing.
 	stalePrintGuardWindow = 60 * time.Second
 	// stalePrintMinTicks is the K-tick floor of the impossible-move bound (40
 	// ticks = 10 pts on MNQ/ES at 0.25). It exists so a very low-priced symbol
 	// still has a bound when the percentage leg would be tiny.
 	stalePrintMinTicks = 40
-	// stalePrintPct is the P% leg of the impossible-move bound (0.5% of the
-	// bar's own open, the same fraction ScaleMismatchPct uses). A 1m close
-	// 0.5% from its own open inside the reconnect window is not a trade.
-	stalePrintPct = 0.005
+	// stalePrintPct is the P% leg of the impossible-move bound: 2% of the bar's
+	// own open (release #27, 2026-10-15). It was 0.5% in release #26, which is
+	// inside the NORMAL range of real bars — measured on the last 3,000 MNQ bars
+	// per timeframe, the largest extreme that was far from BOTH its own open and
+	// the previous close was 0.64% on 1m (the 10-14 07:30 CPI minute), 0.75% on
+	// 5m, 0.93% on 15m and 1.43% on 30m. 2% clears every real bar there and still
+	// catches the 10-14 stale print (30753.75 vs 29931.25 = 2.75%).
+	stalePrintPct = 0.02
 )
+
+// stalePrintJudgedTF lists the ONLY timeframes the guard judges (release #27).
+// On 1h and above a real bar's extreme routinely sits 2–4% from its own open
+// and the previous close (measured max: 1h 2.98%, 2h 2.75%, 4h 2.98%, 1d
+// 3.88%), so no fixed bound separates a stale print from a real bar there. In
+// release #26 the 0.5% bound applied to every timeframe and, in the reconnect
+// window after the 10-15 boot, hid the REAL forming 1d and 3d bars of MNQ and
+// ES (5,876 counted quarantines). An unknown timeframe is never judged.
+var stalePrintJudgedTF = map[string]bool{"1m": true, "2m": true, "3m": true, "5m": true, "15m": true, "30m": true}
 
 // stalePrintQuarantined counts live bars the guard relabelled MIXED since boot.
 var stalePrintQuarantined atomic.Int64
@@ -94,9 +107,12 @@ func stalePrintBound(symbol string, open float64) float64 {
 // inside the reconnect window. prev is the newest ring bar strictly BEFORE b
 // (nil = no neighbour, nothing to judge against). Returns the (possibly
 // relabelled) bar and whether it was quarantined.
-func (c *BarCache) quarantineStalePrint(symbol string, b Bar, prev *Bar) (Bar, bool) {
+func (c *BarCache) quarantineStalePrint(symbol, timeframe string, b Bar, prev *Bar) (Bar, bool) {
 	if c == nil || b.Source != BarSourceLive || b.C == 0 || b.O == 0 {
 		return b, false
+	}
+	if !stalePrintJudgedTF[timeframe] {
+		return b, false // 1h and above (and unknown TFs) are never judged — see stalePrintJudgedTF
 	}
 	recon := c.lastReconnectUnixNano.Load()
 	if recon == 0 || time.Now().UnixNano()-recon > int64(stalePrintGuardWindow) {
