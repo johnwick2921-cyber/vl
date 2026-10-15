@@ -1161,6 +1161,13 @@ type DayPlanConfig struct {
 	// past the authored invalidation; a floor that does not fit refuses the
 	// arm. nil/false = today (the floor widens freely).
 	PlannerATRFloorCapAtInvalidation *bool `json:"planner_atr_floor_cap_at_invalidation,omitempty"`
+	// PlannerStaleZonesMaxATR (W26 planner-stale-zones): when EVERY armed
+	// market_in_zone leg's entry is farther than X × ATR5m from the last
+	// closed 1m close, the level-event wake additionally fires one budget-free
+	// planner re-read (spaced by wake_min_interval_min like every other wake).
+	// nil/0/≤0 = OFF = today's behaviour byte-identical (the arm stays far and
+	// nothing re-reads). A pointer because 0 is the OFF zero.
+	PlannerStaleZonesMaxATR *float64 `json:"planner_stale_zones_max_atr,omitempty"`
 }
 
 // DayPlanSessionOverride is a minimal per-session override. Every field is a

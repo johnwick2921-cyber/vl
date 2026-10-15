@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"vl/kernel"
@@ -89,6 +90,44 @@ func minutesToSessionFlat(now time.Time, sess *kernel.SessionDef) (int, bool) {
 		return 0, false // outside the window
 	}
 	return sessLen - nowOff, true
+}
+
+// deferredWakeRefires holds wake re-fire closures registered while a planner
+// stream was open. releasePlannerRead drains them the moment the LAST claim
+// clears, so a wake deferred by "stream open" re-fires when the stream closes
+// instead of waiting for the next monitor cycle (W26 F-1: 10-14 the wake sat
+// parked behind another trader's 2h stream).
+var deferredWakeRefiresMu sync.Mutex
+var deferredWakeRefires []func()
+
+// registerDeferredWakeRefire queues a wake re-fire for the next stream close.
+func registerDeferredWakeRefire(f func()) {
+	deferredWakeRefiresMu.Lock()
+	deferredWakeRefires = append(deferredWakeRefires, f)
+	deferredWakeRefiresMu.Unlock()
+}
+
+// drainDeferredWakeRefires returns and clears the pending re-fires. The caller
+// runs them; a re-fire that finds another stream open re-registers itself.
+func drainDeferredWakeRefires() []func() {
+	deferredWakeRefiresMu.Lock()
+	defer deferredWakeRefiresMu.Unlock()
+	out := deferredWakeRefires
+	deferredWakeRefires = nil
+	return out
+}
+
+// fireDeferredWakeRefires runs every pending re-fire once the stream is closed.
+// Called from releasePlannerRead; each closure is its own goroutine (a wake
+// re-read is async, W6-C), and a closure that still sees an open stream simply
+// re-registers and waits for the next close.
+func fireDeferredWakeRefires() {
+	if _, open := anyPlannerStreamOpen(); open {
+		return
+	}
+	for _, f := range drainDeferredWakeRefires() {
+		go f()
+	}
 }
 
 // anyPlannerStreamOpen reports whether ANY planner read is in flight, for any

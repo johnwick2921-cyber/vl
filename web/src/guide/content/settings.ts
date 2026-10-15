@@ -590,7 +590,8 @@ const dayPlan: KnobSpec[] = [
     perSession: 'No — strategy-level.',
   },
   {
-    label: 'Enforce no-chase on arms (F-5)',
+    label:
+      'Enforce no-chase on arms (F-5) — the |live price − level| pullback metric',
     where:
       'Strategy → Day Plan → Loss-fix switches → Enforce no-chase (planner_no_chase_enforce)',
     what: 'The arm path’s no-chase leg (measured since 2026-09-02, WARN-first) becomes a refusal: a WOULD_REFUSE verdict refuses the placement and is counted no_chase_refused. OFF = today: it only warns and the entry proceeds. CAVEAT (rescan N4): the arm metric is |live price − cited level| — for a resting limit that is pullback distance, not a chase.',
@@ -637,6 +638,23 @@ const dayPlan: KnobSpec[] = [
       '⭐ OFF until the owner rules — it trades fewer setups (it refuses instead of widening).',
     whenToTouch:
       'When you would rather skip a setup than take a stop wider than the plan’s own invalidation.',
+    perSession: 'No — strategy-level.',
+  },
+  {
+    label: 'Stale-zones wake (W26)',
+    where:
+      'Strategy → Day Plan → Loss-fix switches → Stale-zones wake (planner_stale_zones_max_atr)',
+    what: 'When > 0, the level-event wake additionally fires ONE budget-free planner re-read when EVERY armed market_in_zone leg’s entry is farther than this many ATR5m from the last closed 1m close — the 10-14→10-15 night where 12345 sat all night with zones 100+ pts above a falling tape. Spaced by wake_min_interval_min like every other wake, and it still defers when the flip evaluator owns the plan (stale bars or a breached flip line): it re-reads only when it is safe to author. 0 = OFF.',
+    trader:
+      'On 10-14 the zones stayed far above for hours (17:30 → 00:00) because the 1m/5m feed was stale (the flip/death evaluator skipped on stale_bars) and later the planner calls failed with "no JSON object found" for ~2 hours. This wake would have forced a re-read in the windows where the tape WAS fresh and the flip line was not breached.',
+    consumer:
+      'trader/auto_trader_wake_levels.go collectLevelWakeCandidates (stale-zones candidate) · store/planner_knobs.go ResolvePlannerStaleZonesMaxATR · 🧱 per-trader boot line',
+    range: '0 = OFF · 0–50 × ATR5m',
+    systemDefault: '0 (OFF)',
+    recommended:
+      '⭐ OFF until the owner picks a number — it trades fewer dead hours but a too-low threshold re-reads on normal drift.',
+    whenToTouch:
+      'When you want the planner to re-read instead of sitting far from its zones all night.',
     perSession: 'No — strategy-level.',
   },
 ]

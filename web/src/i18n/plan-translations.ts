@@ -502,14 +502,19 @@ export const planStrings = {
   },
   thesisAll: { en: 'ALL', zh: '全部', id: 'SEMUA' },
   plannerNoChaseEnforce: {
-    en: 'Enforce no-chase on arms — a WOULD_REFUSE verdict refuses the placement (today it only warns)',
-    zh: '挂单强制不追价 — WOULD_REFUSE 判定将拒绝下单（目前仅警告）',
-    id: 'Tegakkan no-chase pada arm — vonis WOULD_REFUSE menolak penempatan (saat ini hanya peringatan)',
+    en: 'Enforce no-chase on arms (|live price − level| pullback metric) — a WOULD_REFUSE verdict refuses the placement; prefer the momentum-into-zone ceiling next to it (today it only warns)',
+    zh: '挂单强制不追价（|现价 − 价位| 回撤指标）— WOULD_REFUSE 判定将拒绝下单；优先使用旁边的入区动能上限（目前仅警告）',
+    id: 'Tegakkan no-chase pada arm (metrik pullback |harga live − level|) — vonis WOULD_REFUSE menolak penempatan; utamakan batas momentum masuk zona di sebelahnya (saat ini hanya peringatan)',
   },
   plannerMomentumIntoZone: {
     en: 'Momentum-into-zone ceiling — refuse an arm when price moved into the zone faster than N × ATR5m over the last 15 min (0 = off)',
     zh: '入区动能上限 — 过去 15 分钟价格冲入区域超过 N × ATR5m 时拒绝挂单（0 = 关闭）',
     id: 'Batas momentum masuk zona — tolak arm bila harga masuk zona lebih dari N × ATR5m dalam 15 menit terakhir (0 = off)',
+  },
+  plannerStaleZonesMaxAtr: {
+    en: 'Stale-zones wake — re-read the plan when EVERY armed market_in_zone entry is farther than N × ATR5m from price (0 = off)',
+    zh: '区域过远唤醒 — 当所有挂单的 market_in_zone 入场位距离现价超过 N × ATR5m 时重新规划（0 = 关闭）',
+    id: 'Wake zona basi — baca ulang plan bila SETIAP entry market_in_zone yang di-arm lebih jauh dari N × ATR5m dari harga (0 = off)',
   },
   plannerAtrFloorCap: {
     en: 'Cap the ATR stop floor at the authored invalidation — refuse the arm instead of widening the stop past it',

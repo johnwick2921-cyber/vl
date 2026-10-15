@@ -3,6 +3,7 @@ package trader
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -44,6 +45,7 @@ const (
 	wakePrio15mFVG       = 3
 	wakePrioIFVG         = 4
 	wakePrioHTFOB        = 5
+	wakePrioStaleZones   = 6 // W26: lowest — a fallback when nothing else is waking
 )
 
 // wakeTFs are the detection timeframes of the W6 wake loop.
@@ -218,6 +220,68 @@ func collectLevelWakeCandidates(cfg *store.DayPlanConfig, fetch func(tf string, 
 		}
 	}
 
+	// W26 planner-stale-zones (2026-10-15) — when EVERY armed market_in_zone
+	// leg's entry is farther than planner_stale_zones_max_atr × ATR5m from the
+	// last CLOSED 1m close, emit one stale_zones candidate per wake interval
+	// (the key is bucketed to wake_min_interval_min) so the planner re-reads
+	// instead of sitting 100+ pts from its zones all night. OFF (0) = today's
+	// behaviour byte-identical: a far arm stays far and nothing re-reads. The
+	// candidate rides the SAME throttle/dedup/cutoff/cooldown as every other
+	// wake, and the flip deferral in maybeWakePlannerOnLevelEventsAt still
+	// binds (nobody authors on stale tape or while the flip evaluator owns the
+	// plan).
+	if sz, _ := store.ResolvePlannerStaleZonesMaxATR(cfg); sz > 0 {
+		if price, priceOK := lastClosedBar(fetch("1m", 500), nowMs); priceOK {
+			if atr5m := wakeATR(fetch("5m", 500)); atr5m > 0 {
+				var doc kernel.PlanDoc
+				if resolved != nil {
+					doc = *resolved
+				} else if row != nil {
+					_ = json.Unmarshal([]byte(row.Doc), &doc)
+				}
+				arms, farArms, farthest := 0, 0, 0.0
+				limit := sz * atr5m
+				mark := func(entry float64) {
+					arms++
+					d := math.Abs(entry - price.Close)
+					if d > limit {
+						farArms++
+					}
+					if d > farthest {
+						farthest = d
+					}
+				}
+				for _, sc := range doc.Scenarios {
+					if sc.Arm == nil || !sc.Arm.Enabled {
+						continue
+					}
+					if len(sc.Arm.Legs) == 0 {
+						if kernel.EffectiveArmPolicy(sc.Arm, nil) == kernel.EntryPolicyMarketInZone && sc.Arm.Entry > 0 {
+							mark(sc.Arm.Entry)
+						}
+						continue
+					}
+					for i := range sc.Arm.Legs {
+						leg := &sc.Arm.Legs[i]
+						if kernel.EffectiveArmPolicy(sc.Arm, leg) == kernel.EntryPolicyMarketInZone && leg.Entry > 0 {
+							mark(leg.Entry)
+						}
+					}
+				}
+				// EVERY armed market_in_zone leg must be out of reach — one
+				// reachable leg keeps the plan tradeable, so nothing re-reads.
+				if arms > 0 && farArms == arms {
+					bucketMs := int64(cfg.WakeMinIntervalMinutes()) * int64(time.Minute/time.Millisecond)
+					add(levelWakeCandidate{
+						key:  fmt.Sprintf("%s:%d:stale_zones:%d", row.PlanID, row.Version, nowMs/bucketMs),
+						desc: fmt.Sprintf("stale zones: all %d armed market_in_zone leg(s) ≥ %.0f pts / %.1f×ATR5m from price %.2f — re-read", arms, farthest, farthest/atr5m, price.Close),
+						kind: "stale_zones", tier: "1m", birthMs: nowMs, prio: wakePrioStaleZones,
+					})
+				}
+			}
+		}
+	}
+
 	// Priority first, newest within a class first.
 	sort.SliceStable(out, func(a, b int) bool {
 		if out[a].prio != out[b].prio {
@@ -384,6 +448,16 @@ func (at *AutoTrader) maybeWakePlannerOnLevelEventsAt(now time.Time, session, tr
 			}
 		}
 		at.logWarnf("%s", wakeStreamDeferLine(session, ev.desc, held))
+		// W26 F-1 — re-fire the wake the moment the stream closes (the reason is
+		// re-checked on the re-run: the same candidate + throttle + flip gate).
+		registerDeferredWakeRefire(func() {
+			if at.store == nil {
+				return
+			}
+			if fresh, err := at.store.Plan().GetLatestPlanForTraderSession(tradeDate, session, at.id); err == nil && fresh != nil {
+				at.maybeWakePlannerOnLevelEventsAt(traderNow(), session, tradeDate, fresh)
+			}
+		})
 		return
 	}
 	// W6-D (2026-08-25) — wakes are UNLIMITED and count against NOTHING: a wake

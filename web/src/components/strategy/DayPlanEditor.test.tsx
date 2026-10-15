@@ -590,7 +590,7 @@ describe('DayPlanEditor · release #25 loss-fix switches', () => {
       .find((b) => b.style.color === 'var(--vl-gold)')?.textContent
   }
 
-  it('all six controls render and read OFF when the keys are absent', () => {
+  it('all seven controls render and read OFF when the keys are absent', () => {
     renderOn()
     expect(screen.getByTestId('loss-fix-switches')).toBeTruthy()
     expect(segActive('planner-room-gate')).toBe('OFF')
@@ -612,6 +612,10 @@ describe('DayPlanEditor · release #25 loss-fix switches', () => {
       'planner-momentum-into-zone'
     ) as HTMLInputElement
     expect(mom.value).toBe('')
+    const sz = screen.getByTestId(
+      'planner-stale-zones-max-atr'
+    ) as HTMLInputElement
+    expect(sz.value).toBe('')
   })
 
   it('the master switch never seeds them (absent = off)', () => {
@@ -627,6 +631,7 @@ describe('DayPlanEditor · release #25 loss-fix switches', () => {
     expect(next.planner_no_chase_enforce).toBeUndefined()
     expect(next.planner_momentum_into_zone_max_atr).toBeUndefined()
     expect(next.planner_atr_floor_cap_at_invalidation).toBeUndefined()
+    expect(next.planner_stale_zones_max_atr).toBeUndefined()
   })
 
   it('room gate writes planner_room_gate; min R writes planner_room_min_r once on', () => {
