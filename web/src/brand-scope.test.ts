@@ -70,6 +70,11 @@
 // signToken every mint goes through. The protected guards are byte-untouched:
 // the HMAC signing-method check, `&& token.Valid`, the Issuer, and the
 // blacklist lookup. No identifier renamed.
+// Bar-feed baseline advanced 2026-10-15 for WAVE 26 bar-stale-print (fix/bar-stale-print,
+// PR #537; re-pinned by the CTO on release/2026-10-15-1):
+//   provider/ninjatrader/tcp_server.go sha256 3f59f5a6… — the accept loop and the
+//     bars_subscribe send arm the stale-print guard (NoteReconnect / rebuild
+//     triggers). Additive call sites only; no identifier, frame or wire change.
 // Bar-feed baseline advanced 2026-09-24 for DS-102 U6 (fix/owed-ui-ci-1):
 //   provider/ninjatrader/tcp_server.go — the hello handshake log now renders an
 //     absent NT8 identity as n/a via helloProcessPair (nt8_pid/assembly_mvid;
