@@ -126,6 +126,51 @@ func TestDeadManEscalateFiresByAgeWhileLinkDown(t *testing.T) {
 	}
 }
 
+// TestDeadManEscalateFlapWithinEpisodeDoesNotRestart — CTO gate F1: a
+// down↔awaiting flap INSIDE one blocked episode must NOT restart the episode.
+// drop → reconnect → 2 failed probes → drop (flap) → reconnect → 1 failed probe
+// is 3 probes across ONE episode: it must fire, and the episode id must be the
+// FIRST blockedSinceMs. The mutant (restart the episode on every flap) resets
+// the probe/age counters and the alert never fires — this test goes RED.
+func TestDeadManEscalateFlapWithinEpisodeDoesNotRestart(t *testing.T) {
+	at, st := deadManEscalationTrader(t)
+
+	// Episode begins at 1000 on the first drop.
+	at.deadMan.step(false, 1_000, nil)
+	at.deadMan.step(true, 2_000, func() bool { return false }) // reconnect (no probe)
+	at.deadMan.step(true, 3_000, func() bool { return false }) // probe 1 fail
+	at.deadMan.step(true, 4_000, func() bool { return false }) // probe 2 fail
+	// Flap: drop again mid-episode, then reconnect — SAME continuous block.
+	at.deadMan.step(false, 5_000, nil)
+	at.deadMan.step(true, 6_000, func() bool { return false }) // reconnect (no probe)
+	at.deadMan.step(true, 7_000, func() bool { return false }) // probe 3 fail (total)
+
+	// The health snapshot must still report the ORIGINAL episode, not the flap.
+	if blocked, since, probes := at.HealthDeadMan(); !blocked || since != 1_000 || probes != 3 {
+		t.Fatalf("a flap must not restart the episode: got blocked=%v since=%d probes=%d, want blocked since=1000 probes=3", blocked, since, probes)
+	}
+
+	at.deadManEscalate(time.UnixMilli(7_000))
+	if n := stuckAlertCount(t, st, at.id); n != 1 {
+		t.Fatalf("3 probes across one episode (with a flap) must fire exactly one P0, got %d", n)
+	}
+	// The episode id must be the FIRST blockedSinceMs (1000), not the flap's.
+	alerts, _ := st.Alert().List(at.id, 10)
+	found := 0
+	for _, a := range alerts {
+		if a.Kind != "dead_man_reconcile_stuck" {
+			continue
+		}
+		found++
+		if a.EventID != "deadman-stuck-trader-1-1000" {
+			t.Fatalf("episode id must be the first blockedSinceMs, got %q", a.EventID)
+		}
+	}
+	if found != 1 {
+		t.Fatalf("expected exactly one stuck alert, found %d", found)
+	}
+}
+
 // TestDeadManHealthSnapshot — /api/health `dead_man` (READ values, never
 // literal): blocked, the episode start, and the failed-probe count.
 func TestDeadManHealthSnapshot(t *testing.T) {
