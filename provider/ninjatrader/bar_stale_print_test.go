@@ -167,6 +167,39 @@ func TestQuarantinedMinuteStaysQuarantined(t *testing.T) {
 	}
 }
 
+// P2 — the keep-quarantined freeze is STALE-PRINT only. A bar the SCALE-BREAK
+// guard (detectScaleMismatch) marked mixed must re-promote to live when a later
+// clean update of the same minute arrives — it is not in the stale-quarantined
+// set, so the freeze must not touch it.
+func TestScaleBreakMixedNotFrozen(t *testing.T) {
+	stalePrintQuarantined.Store(0)
+	c := NewBarCache(2500)
+	// Flat seed on the old scale (the 10-14 ES replay side, close 7743.00).
+	// prevBarWireT is the 19:59 wire CLOSE stamp; openStampBars stores both the
+	// seed and the live bar one interval earlier.
+	c.SeedHistorical("ES", "1m", []Bar{
+		{T: prevBarWireT - 60000, O: 7743.0, H: 7743.0, L: 7743.0, C: 7743.0, V: 100},
+	})
+	liveOpenT := int64(prevBarWireT - 60000) // the 19:59 minute's stored OPEN stamp
+	// First live bar on the real scale → detectScaleMismatch stamps it MIXED.
+	first := Bar{T: prevBarWireT, O: 7843.0, H: 7846.0, L: 7841.0, C: 7845.25}
+	c.Upsert("ES", "1m", []Bar{first})
+	got, ok := barAt(c, "ES", "1m", liveOpenT)
+	if !ok || got.Source != BarSourceMixed {
+		t.Fatalf("scale-break must stamp the first live bar mixed, got source=%q ok=%v", got.Source, ok)
+	}
+	// A later clean update of the SAME minute: the scale-break mixed bar must
+	// re-promote to live — only a stale-print quarantine stays frozen.
+	clean := Bar{T: prevBarWireT, O: 7843.0, H: 7846.0, L: 7841.0, C: 7844.5}
+	c.Upsert("ES", "1m", []Bar{clean})
+	if got, _ := barAt(c, "ES", "1m", liveOpenT); got.Source != BarSourceLive {
+		t.Fatalf("a scale-break mixed bar must re-promote to live, got source=%q", got.Source)
+	}
+	if n := StalePrintQuarantined(); n != 0 {
+		t.Fatalf("the scale-break path must not touch the stale-print counter: %d", n)
+	}
+}
+
 // F1 — the guard window is armed by a bars_subscribe resend (the gap-backfill /
 // scale-break re-request), not only by a TCP accept.
 func TestBarsSubscribeResendArmsStalePrintGuard(t *testing.T) {
