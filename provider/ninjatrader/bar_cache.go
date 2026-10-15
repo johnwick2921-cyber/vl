@@ -14,6 +14,7 @@ package ninjatrader
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -67,6 +68,10 @@ type BarCache struct {
 	// same-minute overlap: armed only by the gap-backfill re-request
 	// (armOverlapVerdict), so every other replay keeps the first-live-bar rule.
 	overlapJudgeUntil map[string]time.Time
+	// lastReconnectUnixNano (WAVE 26) — the wall-clock (UnixNano) instant of the
+	// most recent AddOn (re)connect/hello. The stale-print guard
+	// (bar_stale_print.go) is armed for stalePrintGuardWindow after it.
+	lastReconnectUnixNano atomic.Int64
 }
 
 // NewBarCache constructs an empty cache. maxBars <= 0 uses
@@ -417,7 +422,14 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 	}
 	existing := c.bars[key]
 	accepted := false
-	for _, b := range bars {
+	for i := range bars {
+		b := bars[i]
+		// WAVE 26 — a live print that lands right after a (re)connect/hello can
+		// carry the AddOn's RELOADED series (a day-old price). Quarantine it
+		// (label mixed) when its close is impossible against both its own open
+		// and the previous ring bar, so no reader takes it.
+		b, _ = c.quarantineStalePrint(symbol, b, prevBarBefore(existing, b.T))
+		bars[i] = b
 		if len(existing) == 0 {
 			existing = append(existing, b)
 			accepted = true

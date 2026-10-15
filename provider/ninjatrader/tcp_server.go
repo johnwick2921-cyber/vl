@@ -1591,6 +1591,7 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 		s.connMu.Unlock()
 		s.beginConnectionRecord(c, time.Now()) // W-ONE-BUTTON M2 site 7
 		s.attempted.noteReconnect(time.Now())  // FIX-DOUBLE-ENTRY: reconnect instant for fresh-truth checks
+		s.barCache.NoteReconnect(time.Now())   // WAVE 26: arm the stale-print guard for the AddOn's reloaded-series re-emit
 
 		s.logger.Info("tcp_server: client connected", "addr", c.RemoteAddr())
 		s.wg.Add(2)

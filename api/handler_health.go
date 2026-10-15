@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"vl/kernel"
+	ntwire "vl/provider/ninjatrader"
 	"vl/telemetry"
 	ntTrader "vl/trader/ninjatrader"
 )
@@ -101,5 +102,9 @@ func (s *Server) handleHealth(c *gin.Context) {
 		body["bars_holes"] = holes
 		body["bars_hole_counts"] = telemetry.BarsHoleCountsSnapshot()
 	}
+	// WAVE 26 — the stale-print guard's lifetime count, beside the hole counts:
+	// how many live bars were quarantined (labelled mixed) after a reconnect
+	// because their close was impossible against the neighbouring minutes.
+	body["bars_stale_prints"] = ntwire.StalePrintQuarantined()
 	c.JSON(code, body)
 }
