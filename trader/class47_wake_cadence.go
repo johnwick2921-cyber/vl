@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"vl/kernel"
+	"vl/safe"
 )
 
 // ── CLASS 47 (2026-09-02) — WAKE CADENCE ────────────────────────────────────
@@ -100,6 +101,12 @@ func minutesToSessionFlat(now time.Time, sess *kernel.SessionDef) (int, bool) {
 var deferredWakeRefiresMu sync.Mutex
 var deferredWakeRefires []func()
 
+// wakeRefireTestHook is a test-only seam invoked after a deferred-wake re-fire
+// completes (nil in production). Tests set it to a channel close and WAIT on it
+// instead of polling the wake-state fields, so the race detector never sees the
+// re-fire goroutine's write race the test's read.
+var wakeRefireTestHook func()
+
 // registerDeferredWakeRefire queues a wake re-fire for the next stream close.
 func registerDeferredWakeRefire(f func()) {
 	deferredWakeRefiresMu.Lock()
@@ -126,7 +133,7 @@ func fireDeferredWakeRefires() {
 		return
 	}
 	for _, f := range drainDeferredWakeRefires() {
-		go f()
+		safe.GoNamed("planner-wake-refire", f)
 	}
 }
 

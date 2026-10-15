@@ -181,7 +181,7 @@ func (at *AutoTrader) maybeWakePlannerOnMSSAt(now time.Time, session, tradeDate 
 		return
 	}
 	key := fmt.Sprintf("%s:%d:%d", row.PlanID, row.Version, mss.TimeMs)
-	if at.lastMSSWakeKey == key {
+	if at.wakeMSSKey() == key {
 		return // one wake per MSS event
 	}
 	// W6 — the MSS wake shares the planner-wake clock with the level-event
@@ -190,18 +190,19 @@ func (at *AutoTrader) maybeWakePlannerOnMSSAt(now time.Time, session, tradeDate 
 	// siblings instead of a same-cycle double fire.
 	// P15 (WAVE 1a-plan) — the throttle reads the SEAMED clock, not the wall
 	// clock it was handed: now.Sub(…) so a test can state its own hour.
-	if at.config.StrategyConfig != nil && at.config.StrategyConfig.DayPlan != nil &&
-		!at.lastPlannerWakeAt.IsZero() &&
-		now.Sub(at.lastPlannerWakeAt) < time.Duration(at.config.StrategyConfig.DayPlan.WakeMinIntervalMinutes())*time.Minute {
-		at.logWarnf("🗓️ structure MSS on %s %s — SKIPPED: %.0fm elapsed < wake_min_interval_min (%dm).", session, tradeDate, now.Sub(at.lastPlannerWakeAt).Minutes(), at.config.StrategyConfig.DayPlan.WakeMinIntervalMinutes())
-		return
+	if at.config.StrategyConfig != nil && at.config.StrategyConfig.DayPlan != nil {
+		wakeAt := at.wakePlannerAt()
+		if !wakeAt.IsZero() &&
+			now.Sub(wakeAt) < time.Duration(at.config.StrategyConfig.DayPlan.WakeMinIntervalMinutes())*time.Minute {
+			at.logWarnf("🗓️ structure MSS on %s %s — SKIPPED: %.0fm elapsed < wake_min_interval_min (%dm).", session, tradeDate, now.Sub(wakeAt).Minutes(), at.config.StrategyConfig.DayPlan.WakeMinIntervalMinutes())
+			return
+		}
 	}
 	// W6-D (2026-08-25) — wakes are UNLIMITED and spend NO budget: an MSS wake
 	// can never consume the death re-plan cap, and can never cause a
 	// replans_exhausted NO-TRADE. The dedupe key + the shared min-interval
 	// throttle are the only frequency limits.
-	at.lastMSSWakeKey = key
-	at.lastPlannerWakeAt = now // W6 — shared wake clock
+	at.recordMSSWakeFired(key, now) // W6 — shared wake clock
 	at.logWarnf("🗓️ structure MSS on %s %s (%s) — waking the planner (G4.6, 4th wake-up).", session, tradeDate, mss.Detail)
 	// C5 — an MSS wake strands owner overlays exactly like a death re-plan does:
 	// make the loss audible BEFORE the read (the P1 alert names the count).

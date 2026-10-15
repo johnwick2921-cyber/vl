@@ -518,16 +518,21 @@ func TestWakeDeferredByStreamRefiresOnClose(t *testing.T) {
 	// Open ANOTHER trader's stream — the wake must defer and register a re-fire.
 	claimPlannerRead("other:2026-08-25:ASIA")
 	at.maybeWakePlannerOnLevelEventsAt(now, "ASIA", "2026-08-25", row)
-	if at.lastLevelWakeKey != "" {
-		t.Fatalf("wake must defer while a stream is open, got key %q", at.lastLevelWakeKey)
+	if at.wakeLevelKey() != "" {
+		t.Fatalf("wake must defer while a stream is open, got key %q", at.wakeLevelKey())
 	}
-	// Close the stream — the deferred wake re-fires (async).
+	// Close the stream — the deferred wake re-fires (async). Wait for the
+	// re-fire goroutine to FINISH via the hook, never by polling the field.
+	done := make(chan struct{})
+	wakeRefireTestHook = func() { close(done) }
+	t.Cleanup(func() { wakeRefireTestHook = nil })
 	releasePlannerRead("other:2026-08-25:ASIA")
-	deadline := time.Now().Add(2 * time.Second)
-	for at.lastLevelWakeKey == "" && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the deferred wake re-fire did not complete")
 	}
-	if at.lastLevelWakeKey == "" {
+	if at.wakeLevelKey() == "" {
 		t.Fatal("the deferred wake must re-fire once the stream closes")
 	}
 }
