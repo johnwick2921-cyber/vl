@@ -414,3 +414,71 @@ func (b *blockingPlannerClient) CallWithRequestStream(*mcp.Request, func(string)
 func (b *blockingPlannerClient) CallWithRequestFull(*mcp.Request) (*mcp.LLMResponse, error) {
 	return nil, nil
 }
+
+// TestCollectWakeCandidatesStaleZones (W26 planner-stale-zones) — the stale-zones
+// candidate fires exactly when EVERY armed market_in_zone leg is farther than
+// planner_stale_zones_max_atr × ATR5m from the last closed 1m close, and OFF (nil)
+// emits nothing — today's behaviour byte-identical.
+func TestCollectWakeCandidatesStaleZones(t *testing.T) {
+	now := time.Date(2026, 8, 25, 10, 0, 0, 0, kernel.CTLocation())
+	row := &store.PlanDB{PlanID: "p1", Version: 1, CreatedAt: now.Add(-24 * time.Hour)}
+	// 1m bars: last close = 100. 5m bars: range 2 → ATR14 ≈ 2.0.
+	ones := wakeBars(1, now.UnixMilli(), [][4]float64{{100, 101, 99, 100}, {100, 101, 99, 100}, {100, 101, 99, 100}})
+	fiveRows := make([][4]float64, 20)
+	for i := range fiveRows {
+		fiveRows[i] = [4]float64{100, 101, 99, 100}
+	}
+	fives := wakeBars(5, now.UnixMilli(), fiveRows)
+	fetch := func(tf string, count int) []market.Kline {
+		switch tf {
+		case "1m":
+			return ones
+		case "5m":
+			return fives
+		}
+		return nil
+	}
+	resolved := &kernel.PlanDoc{Scenarios: []kernel.PlanScenario{{
+		ID:  "S1",
+		Arm: &kernel.PlanArmSpec{Enabled: true, Entry: 110, Stop: 108, Target: 114, Policy: kernel.EntryPolicyMarketInZone},
+	}}}
+	// OFF (nil) = today's behaviour: no stale-zones candidate.
+	if cands := collectLevelWakeCandidates(nil, fetch, "MNQ", row, resolved, now); len(cands) != 0 {
+		t.Fatalf("OFF must emit no stale-zones candidate, got %+v", cands)
+	}
+	// A threshold above the arm's distance (10 pts ≈ 5×ATR) does not fire.
+	hi := 6.0
+	if cands := collectLevelWakeCandidates(&store.DayPlanConfig{PlannerStaleZonesMaxATR: &hi}, fetch, "MNQ", row, resolved, now); len(cands) != 0 {
+		t.Fatalf("6×ATR threshold must not fire for a ~5×ATR arm, got %+v", cands)
+	}
+	// A threshold below the arm's distance fires one stale_zones candidate.
+	lo := 3.0
+	cands := collectLevelWakeCandidates(&store.DayPlanConfig{PlannerStaleZonesMaxATR: &lo}, fetch, "MNQ", row, resolved, now)
+	if len(cands) != 1 || cands[0].kind != "stale_zones" {
+		t.Fatalf("3×ATR threshold must emit one stale_zones candidate, got %+v", cands)
+	}
+	if cands[0].prio != wakePrioStaleZones {
+		t.Fatalf("stale-zones prio = %d, want %d", cands[0].prio, wakePrioStaleZones)
+	}
+	// A split arm with BOTH legs far still fires; one near leg does not.
+	split := &kernel.PlanDoc{Scenarios: []kernel.PlanScenario{{
+		ID: "S1",
+		Arm: &kernel.PlanArmSpec{Enabled: true, Policy: kernel.EntryPolicyMarketInZone, Legs: []kernel.PlanArmLeg{
+			{Entry: 110, Stop: 108, Target: 114},
+			{Entry: 112, Stop: 110, Target: 116},
+		}},
+	}}}
+	if cands := collectLevelWakeCandidates(&store.DayPlanConfig{PlannerStaleZonesMaxATR: &lo}, fetch, "MNQ", row, split, now); len(cands) != 1 {
+		t.Fatalf("split arm with both legs far must emit one candidate, got %+v", cands)
+	}
+	splitNear := &kernel.PlanDoc{Scenarios: []kernel.PlanScenario{{
+		ID: "S1",
+		Arm: &kernel.PlanArmSpec{Enabled: true, Policy: kernel.EntryPolicyMarketInZone, Legs: []kernel.PlanArmLeg{
+			{Entry: 110, Stop: 108, Target: 114},
+			{Entry: 102, Stop: 100, Target: 106},
+		}},
+	}}}
+	if cands := collectLevelWakeCandidates(&store.DayPlanConfig{PlannerStaleZonesMaxATR: &lo}, fetch, "MNQ", row, splitNear, now); len(cands) != 0 {
+		t.Fatalf("split arm with one near leg must not fire, got %+v", cands)
+	}
+}

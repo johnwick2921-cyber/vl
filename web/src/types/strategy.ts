@@ -185,6 +185,8 @@ export interface DayPlanConfig {
   planner_momentum_into_zone_max_atr?: number
   /** F-7 the ATR stop floor never widens past the authored invalidation. Absent = OFF. */
   planner_atr_floor_cap_at_invalidation?: boolean
+  /** W26 stale-zones wake: when EVERY armed market_in_zone leg is > X × ATR5m from price, re-read. 0/absent = OFF. */
+  planner_stale_zones_max_atr?: number
   sessions?: DayPlanSessionOverride[]
 }
 

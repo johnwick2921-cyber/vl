@@ -846,6 +846,10 @@ func buildEffectiveResolvers() map[string]effResolver {
 		v, src := store.ResolvePlannerATRFloorCap(x.dp())
 		return effResult{value: v, origin: src}
 	})
+	add(dpPath+"planner_stale_zones_max_atr", "store.ResolvePlannerStaleZonesMaxATR", func(x *effCtx) effResult {
+		v, src := store.ResolvePlannerStaleZonesMaxATR(x.dp())
+		return effResult{value: v, origin: src}
+	})
 	add(dpPath+"proximity_filter_atr", "trader.(*AutoTrader).proximityFilterATR → kernel.ResolveProximityK", func(x *effCtx) effResult {
 		v := x.at.proximityFilterATR()
 		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault)}

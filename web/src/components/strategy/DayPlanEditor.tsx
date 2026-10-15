@@ -850,6 +850,26 @@ export function DayPlanEditor({
                 disabled={bodyDisabled}
               />
             </FieldRow>
+            <FieldRow
+              label={tp('plannerStaleZonesMaxAtr', language)}
+              knob={dpEff('planner_stale_zones_max_atr')}
+            >
+              <NumberField
+                testId="planner-stale-zones-max-atr"
+                value={cfg.planner_stale_zones_max_atr}
+                min={0}
+                max={50}
+                step={0.5}
+                placeholder="0"
+                onChange={(v) =>
+                  update('planner_stale_zones_max_atr', v)
+                }
+                onClear={() =>
+                  update('planner_stale_zones_max_atr', undefined)
+                }
+                disabled={bodyDisabled}
+              />
+            </FieldRow>
           </div>
 
           {/* W6 (2026-08-25) — planner wake-up: level-event wakes. W-KNOB-PRUNE

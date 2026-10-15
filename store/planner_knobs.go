@@ -117,7 +117,23 @@ func ResolveBreakevenTriggerR(rc RiskControlConfig) (float64, string) {
 	return 0, SourceShippedDefault + " (saved value " + strconv.FormatFloat(rc.BreakevenTriggerR, 'g', -1, 64) + " is outside (0, 10] — OFF, points rule)"
 }
 
-// PlannerKnobsBootLine is the per-trader load line for the seven switches:
+// ResolvePlannerStaleZonesMaxATR resolves day_plan.planner_stale_zones_max_atr
+// (W26 planner-stale-zones): the distance threshold, in ATR5m multiples, beyond
+// which EVERY armed market_in_zone leg's entry triggers one budget-free planner
+// re-read (the stale-zones wake). nil/0/≤0 = OFF = today's behaviour
+// byte-identical; an out-of-range saved value is named in the source and reads
+// OFF — a typo never changes trading.
+func ResolvePlannerStaleZonesMaxATR(c *DayPlanConfig) (float64, string) {
+	if c == nil || c.PlannerStaleZonesMaxATR == nil || *c.PlannerStaleZonesMaxATR <= 0 {
+		return 0, SourceShippedDefault
+	}
+	if v := *c.PlannerStaleZonesMaxATR; v > 0 && v <= 50 {
+		return v, SourceSaved
+	}
+	return 0, SourceShippedDefault + " (saved value " + strconv.FormatFloat(*c.PlannerStaleZonesMaxATR, 'g', -1, 64) + " is outside (0, 50] — OFF)"
+}
+
+// PlannerKnobsBootLine is the per-trader load line for the eight switches:
 // every value READ from the resolver its consumer calls (L7 — never a
 // literal), each tagged with its origin letter.
 func PlannerKnobsBootLine(cfg *StrategyConfig) string {
@@ -150,11 +166,17 @@ func PlannerKnobsBootLine(cfg *StrategyConfig) string {
 	if ber > 0 {
 		berText = strconv.FormatFloat(ber, 'g', -1, 64) + "R"
 	}
-	return fmt.Sprintf("🧱 planner loss-fix switches: room_gate=%s%s min_r=%.2f%s%s · exit_on_thesis_death=%s%s · no_chase_enforce=%s%s · momentum_into_zone_max_atr=%s%s · atr_floor_cap_at_invalidation=%s%s · breakeven_trigger_r=%s%s",
+	sz, szSrc := ResolvePlannerStaleZonesMaxATR(dp)
+	szText := "off"
+	if sz > 0 {
+		szText = strconv.FormatFloat(sz, 'g', -1, 64) + "×ATR5m"
+	}
+	return fmt.Sprintf("🧱 planner loss-fix switches: room_gate=%s%s min_r=%.2f%s%s · exit_on_thesis_death=%s%s · no_chase_enforce=%s%s · momentum_into_zone_max_atr=%s%s · atr_floor_cap_at_invalidation=%s%s · breakeven_trigger_r=%s%s · stale_zones_max_atr=%s%s",
 		room, OriginLetter(roomSrc), minR, OriginLetter(minRSrc), minRNote,
 		death, OriginLetter(deathSrc),
 		onOff(nc), OriginLetter(ncSrc),
 		momText, OriginLetter(momSrc),
 		onOff(capOn), OriginLetter(capSrc),
-		berText, OriginLetter(berSrc))
+		berText, OriginLetter(berSrc),
+		szText, OriginLetter(szSrc))
 }
