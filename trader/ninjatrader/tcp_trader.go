@@ -1817,8 +1817,9 @@ func (t *TCPTrader) positionMap(symbol, side string, qty, entry float64, uPnLOve
 	// Futures: contract point value (MNQ=$2/pt). positionAmt is signed (short < 0)
 	// per the account-snapshot convention GetAccountInfo expects.
 	pv := market.FuturesPointValue(symbol)
-	if pv <= 0 {
-		pv = 1
+	pvKnown := pv > 0 // L7: an unknown symbol has NO point value — never fabricate 1
+	if !pvKnown {
+		pv = 1 // internal fallback for the uPnL math only (avoid divide-by-zero)
 	}
 	dir := 1.0
 	signedQty := qty
@@ -1870,17 +1871,19 @@ func (t *TCPTrader) positionMap(symbol, side string, qty, entry float64, uPnLOve
 		"unrealized_pnl_pct": uPnLPct,
 		"liquidation_price":  0.0,
 		"margin_used":        0.0,
-		// T27 (ui-studio-truth): CME futures truth — the per-contract point
-		// value and the notional position value (qty × mark × $/pt). The UI
-		// reads these instead of multiplying price×qty (wrong for $2/pt MNQ)
-		// or inventing a point value from a constant.
-		"point_value":    pv,
-		"position_value": qty * mark * pv,
 		// camelCase — read by AutoTrader.GetAccountInfo (the account-snapshot margin calc)
 		"positionAmt":      signedQty,
 		"entryPrice":       entry,
 		"markPrice":        mark,
 		"unRealizedProfit": uPnL,
+	}
+	// T27 (ui-studio-truth): CME futures truth — the per-contract point value
+	// and the notional position value (qty × mark × $/pt). ABSENT when the
+	// point value is unknown (L7: never a fabricated 1 $/pt); the UI then shows
+	// n/a, and the uPnL math above used the internal 1 fallback only.
+	if pvKnown {
+		out["point_value"] = pv
+		out["position_value"] = qty * mark * pv
 	}
 	// T32 (ui-studio-truth): the open position's working stop/target from the
 	// broker order book — ABSENT when unknown (never a zero bracket).

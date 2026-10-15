@@ -32,6 +32,20 @@ func TestPositionMapCarriesFuturesPointValueAndValue(t *testing.T) {
 	}
 }
 
+// T27 fold #536 (L7): an unknown symbol has NO point value — the map must omit
+// point_value/position_value (never a fabricated 1 $/pt). The uPnL math still
+// uses the internal 1 fallback internally, but the UI fields stay ABSENT.
+func TestPositionMapOmitsPointValueWhenUnknown(t *testing.T) {
+	tr := &TCPTrader{}
+	m := tr.positionMap("FAKEXX", "long", 2, 100, nil)
+	if _, ok := m["point_value"]; ok {
+		t.Fatalf("unknown symbol must not fabricate point_value, got %v", m["point_value"])
+	}
+	if _, ok := m["position_value"]; ok {
+		t.Fatalf("unknown symbol must not fabricate position_value, got %v", m["position_value"])
+	}
+}
+
 // T32 (ui-studio-truth): the open position's working stop/target is read from
 // the broker's own order book (protective legs carry -sl / -tp suffixes).
 // MUTANT: drop the bracket from positionMap → RED.
