@@ -742,10 +742,11 @@ type AutoTrader struct {
 	// MENTOR-NY item 3 — retired: removed from the roster (RemoveTrader); its
 	// Run never starts. Guarded by runOwners' mutex (run_owner.go).
 	retired bool
-	// stopGen counts Stops that found the run live (bumped under
-	// isRunningMutex). Run reads it at its CAS: a Stop that lands while Run is
-	// still starting is seen before the loop, and Run tears down what it
-	// started instead of entering the loop.
+	// stopGen counts Stops (bumped under isRunningMutex on EVERY Stop, W26 N4:
+	// a Stop on a not-running instance must cancel an armed run retry). Run
+	// reads it at its CAS: a Stop that lands while Run is still starting is
+	// seen before the loop, and Run tears down what it started instead of
+	// entering the loop.
 	stopGen uint64
 	// DS-104 P2-2 (run_owner.go armRunRetry): a retry is armed after a
 	// handoff timeout; the retry claims only a FREE trader id.
@@ -1472,12 +1473,15 @@ func (at *AutoTrader) Run() error {
 func (at *AutoTrader) Stop() {
 	at.stopLimitFlattens()
 	at.isRunningMutex.Lock()
+	// W26 N4 — bump the generation even when the run is not running: a refused
+	// instance (isRunning=false) sits in the armed run retry, and its Stop must
+	// cancel that retry (armRunRetry compares this against the gen it captured).
+	at.stopGen++
 	if !at.isRunning {
 		at.isRunningMutex.Unlock()
 		return
 	}
 	at.isRunning = false
-	at.stopGen++ // MENTOR-NY item 3: a Run still starting sees this before its loop
 	at.isRunningMutex.Unlock()
 
 	at.teardownRunStarted()
