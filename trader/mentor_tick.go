@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"vl/calendar"
@@ -1072,13 +1073,32 @@ func (at *AutoTrader) mentorNewsPrintWindows() []mentor.PrintWindow {
 	return mentorNewsPrintWindowsFromEvents(evs)
 }
 
-// mentorNowSource is the clock seam for every mentor time gate (tests).
-var mentorNowSource func() time.Time
+// mentorNowSource is the clock seam for every mentor time gate (tests). It is
+// an atomic.Value because runArmedEventLoop (a background goroutine) reads it
+// through mentorClockNow while a test writes it; a plain func global raced
+// (release #26 -race: TestStaleGateRefusesDeadFeedUnderBackwardWallStep write
+// vs mentorPlacementCadencePass read).
+var mentorNowSource atomic.Value // func() time.Time
+
+// setMentorNowSource installs (or clears, with nil) the test clock seam.
+// Every test write goes through here so the read in mentorClockNow is atomic.
+func setMentorNowSource(fn func() time.Time) {
+	mentorNowSource.Store(fn)
+}
+
+// getMentorNowSource returns the installed seam (nil when unset) for tests that
+// capture and restore it.
+func getMentorNowSource() func() time.Time {
+	if fn, ok := mentorNowSource.Load().(func() time.Time); ok {
+		return fn
+	}
+	return nil
+}
 
 // mentorClockNow is the one clock read for the time gates.
 func mentorClockNow() time.Time {
-	if mentorNowSource != nil {
-		return mentorNowSource()
+	if fn, ok := mentorNowSource.Load().(func() time.Time); ok && fn != nil {
+		return fn()
 	}
 	return time.Now()
 }

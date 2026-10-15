@@ -76,9 +76,9 @@ func TestMentorISBKeepWinsTheExpiryRace(t *testing.T) {
 	bars = append(bars, mother, i1, cur)
 	market.FuturesBarsProvider = func(symbol, tf string, n int) []market.Kline { return bars }
 
-	oldNow := mentorNowSource
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = oldNow })
+	oldNow := getMentorNowSource()
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(oldNow) })
 	at.armedEventNowForTest = func() time.Time { return now }
 
 	// The resting order: placed on the I1 close with expiry = the close of the

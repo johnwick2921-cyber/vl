@@ -303,8 +303,8 @@ func TestMaxDailyTradesEnforcedOnMentorPath(t *testing.T) {
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
 	now := time.Date(2026, 10, 2, 9, 0, 0, 0, ct)
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	var placed int
 	mentorPlaceRecorderForTest = func(mentor.Intent, int) { placed++ }
 	t.Cleanup(func() { mentorPlaceRecorderForTest = nil })
@@ -343,8 +343,8 @@ func TestMentorPlacementRefusalReachesGateBlocks(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	at.id = "dl-mentor-window"
 	wireMentorPlacementSeams(t, at)
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 10, 0, 0, 0, kernel.CTLocation()) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 10, 0, 0, 0, kernel.CTLocation()) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	mentorPlaceRecorderForTest = func(mentor.Intent, int) {}
 	t.Cleanup(func() { mentorPlaceRecorderForTest = nil })
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,

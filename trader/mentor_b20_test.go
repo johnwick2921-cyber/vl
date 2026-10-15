@@ -148,8 +148,8 @@ func TestMentorPlacementRegistersExitBranch(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,
 		ArmID: "isb-test", Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
@@ -184,8 +184,8 @@ func TestMentorConfluenceUpgradePersistsExitModeC(t *testing.T) {
 	at, _, ledger, _ := mentorB3Rig(t)
 	mentorWireSeams(t, at, ledger)
 	now := b3Clock(9, 40)
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	author := func(armID string) mentorLiveArm {
 		at.mentorArmIntent(

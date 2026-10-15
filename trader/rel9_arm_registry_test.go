@@ -31,8 +31,8 @@ func TestRel9FilledSwingSurvivesNeverAddSweep(t *testing.T) {
 	t.Cleanup(func() { moveStopWire = oldMoveStopWire })
 
 	now := b3Clock(10, 30)
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	at.mentorOpenSideSource = func() string { return "long" } // a mentor position is OPEN
 	t.Cleanup(func() { at.mentorOpenSideSource = nil })
 

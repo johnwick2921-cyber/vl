@@ -319,9 +319,9 @@ func newFdrWorld(t *testing.T, seedMs int64, accounts []string, snapshotAccounts
 
 	// Package-level seams the replay pins; restored for the next test.
 	prevProvider := market.FuturesBarsProvider
-	prevNow := mentorNowSource
+	prevNow := getMentorNowSource()
 	market.FuturesBarsProvider = w.provide
-	mentorNowSource = w.now
+	setMentorNowSource(w.now)
 	// The restart rebuild reads the book at time.Now() (mentor_exit_drive.go —
 	// the wall clock); the replay's book is stamped on the replay clock, so the
 	// seam reads the SAME book (liveBook) at the replay clock instead.
@@ -332,7 +332,7 @@ func newFdrWorld(t *testing.T, seedMs int64, accounts []string, snapshotAccounts
 	t.Cleanup(func() {
 		mentorRebuildBook = prevRebuildBook
 		market.FuturesBarsProvider = prevProvider
-		mentorNowSource = prevNow
+		setMentorNowSource(prevNow)
 		mentorLatestPriceSource = nil
 		mentorConfluenceForIntent = nil
 		mentorSetArmExpiryWire = nil
@@ -913,7 +913,7 @@ func (w *fdrWorld) newFdrTrader(ft *fdrTrader, cfg *store.StrategyConfig) {
 		}
 	}
 	at.mentorWireProductionSeams()
-	mentorNowSource = w.now
+	setMentorNowSource(w.now)
 	at.mentorSeedAtStart()
 	ft.at = at
 	ft.epochs = append(ft.epochs, at.mentorArmEpoch)

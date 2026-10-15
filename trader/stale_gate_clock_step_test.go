@@ -41,8 +41,8 @@ func TestStaleGateRefusesDeadFeedUnderBackwardWallStep(t *testing.T) {
 	real := mentorStaleBlockClock(9, 0)
 	t.Cleanup(kernel.ClockSampleForTest(kernel.NewSteppedClock(real).Sample))
 	wall := real.Add(-125 * time.Second)
-	mentorNowSource = func() time.Time { return wall }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return wall })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	wireMentorPlacementSeams(t, at)
 	mentorStaleBlockFeed(t, real, 200*time.Second)
 	staleStepReceipt(t, 200*time.Second)
@@ -66,8 +66,8 @@ func TestStaleGateHoldsEntriesAfterAWallStepWithAFreshFeed(t *testing.T) {
 	now := mentorStaleBlockClock(9, 0)
 	clk := kernel.NewSteppedClock(now)
 	t.Cleanup(kernel.ClockSampleForTest(clk.Sample))
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	wireMentorPlacementSeams(t, at)
 	mentorStaleBlockFeed(t, now, 30*time.Second) // fresh on the wall rule
 	staleStepReceipt(t, time.Second)             // fresh on the receipt leg

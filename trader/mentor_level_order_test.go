@@ -24,9 +24,9 @@ func eveningInstant() time.Time {
 
 func pinMentorClock(t *testing.T, tm time.Time) {
 	t.Helper()
-	prev := mentorNowSource
-	mentorNowSource = func() time.Time { return tm }
-	t.Cleanup(func() { mentorNowSource = prev })
+	prev := getMentorNowSource()
+	setMentorNowSource(func() time.Time { return tm })
+	t.Cleanup(func() { setMentorNowSource(prev) })
 }
 
 func pinBars(t *testing.T, openMs int64) {

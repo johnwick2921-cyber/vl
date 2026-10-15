@@ -28,9 +28,9 @@ func TestMentorPlacementCadencePlacesAnArmAuthoredBetweenScans(t *testing.T) {
 	// Pin the mentor clock to an RTH instant (class 110): the admission chain
 	// asks the calendar on the clock it is GIVEN.
 	now := rthInstant()
-	oldNow := mentorNowSource
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = oldNow })
+	oldNow := getMentorNowSource()
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(oldNow) })
 
 	// A fresh flat book + a tape below the long trigger, so the placement's
 	// stop-side guard rests and the one-contract guard reads an empty account.

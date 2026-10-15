@@ -24,8 +24,8 @@ func TestEODFlatRunsOnTheMonitorBeat(t *testing.T) {
 	now := time.Date(2026, 9, 23, 15, 0, 0, 0, kernel.CTLocation())
 	testNow = func() time.Time { return now }
 	t.Cleanup(func() { testNow = nil })
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	author := func(armID, setup string) {
 		at.mentorArmIntent(

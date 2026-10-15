@@ -31,8 +31,8 @@ func TestMentorSeedDepthRecheckClearsPlacementGateWithoutRestart(t *testing.T) {
 		{"15_30_CT_good_position", time.Date(2026, 10, 6, 15, 30, 0, 0, kernel.CTLocation())},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			mentorNowSource = func() time.Time { return tc.now }
-			t.Cleanup(func() { mentorNowSource = nil })
+			setMentorNowSource(func() time.Time { return tc.now })
+			t.Cleanup(func() { setMentorNowSource(nil) })
 			runMentorSeedDepthRecheck(t, tc.now.UnixMilli())
 		})
 	}

@@ -174,8 +174,8 @@ func TestB3MentorPlacedOnAuthoringEvent(t *testing.T) {
 	at, _, ledger, _ := mentorB3Rig(t)
 	mentorWireSeams(t, at, ledger)
 	now := b3Clock(10, 30)
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	seedMentorArmedRow(t, at, ledger, "mentor-e", now.UnixMilli()+60_000)
 
 	// The authoring event: a NEW 1m close. No maybeManageArmedOrdersAt call from
