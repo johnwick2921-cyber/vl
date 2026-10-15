@@ -45,6 +45,11 @@ export const updates: GuideSection = {
       kind: 'p',
       text: 'A receipt is the recorded proof of a completed update job: the states the job passed through, its timestamps, and whether it ended complete, rolled back, or in need of recovery. A receipt from an AddOn that was never restarted, or from an AddOn whose build does not match the release, never satisfies verification — a pre-restart receipt proves the install reached a machine, not that the machine is running the new code. The page shows the receipt download link only when the API offers one.',
     },
+    { kind: 'h', text: 'The AddOn build proof is READ, not a file date' },
+    {
+      kind: 'p',
+      text: 'When the release\'s ninjascript/*.cs differs from the install tree\'s, the update parks for the owner\'s attended F5 — unless the AddOn\'s hello already names the release\'s build AND that build differs from the one the OLD install\'s own .cs declares (VL_BUILD_ID, read by content). That combination proves the recompile already happened: the update does not park, and a resume is accepted on the same connection (accept_seq) — the owner who compiled the AddOn the night before is not forced to restart NT8 again. The park stays whenever the ack\'d build still equals the old install\'s build (the build id was not bumped), because the #206 hazard is unchanged: a restarted AddOn on the same build cannot be told apart from one that was never recompiled.',
+    },
     { kind: 'h', text: 'Native history readiness' },
     {
       kind: 'p',

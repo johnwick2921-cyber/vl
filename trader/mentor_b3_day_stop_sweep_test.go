@@ -31,7 +31,7 @@ func authorMentorArmForDayStop(t *testing.T, at *AutoTrader, armID, setup string
 		mentorSizeChoice{Contracts: 1, Tier: "base"},
 		now.UnixMilli(), now.UnixMilli(), "B", 0,
 	)
-		live, ok := at.mentorLiveArmFor(armID)
+	live, ok := at.mentorLiveArmFor(armID)
 	if !ok {
 		t.Fatalf("arm %q not in the live registry", armID)
 	}
@@ -56,8 +56,8 @@ func TestB3DayStopDoneAfterWinCancelsRestingArm(t *testing.T) {
 	mentorWireSeams(t, at, ledger)
 
 	now := b3Clock(10, 30) // in-window (the loopback rig window is all-day), no news
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	// done-after-win DEFINITELY trips: a closed profit and a net-positive day.
 	at.mentorDayNetSource = func() (float64, bool) { return 100, true }
@@ -103,8 +103,8 @@ func TestB3DayStopWindowEndCancelsRestingArm(t *testing.T) {
 	at.config.StrategyConfig.RiskControl.MentorWindowStart = "08:30"
 	at.config.StrategyConfig.RiskControl.MentorWindowMinutes = 60
 	now := b3Clock(9, 31)
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	intradayRow := authorMentorArmForDayStop(t, at, "isb-b3-window", "ISB", now)
 	swingRow := authorMentorArmForDayStop(t, at, "swing-b3-window", "SWING4H", now)
@@ -164,8 +164,8 @@ func TestB3DayStopNeverAddCancelsRestingArms(t *testing.T) {
 	mentorWireSeams(t, at, ledger)
 
 	now := b3Clock(10, 30)
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	// A mentor position is OPEN (the P1 driver wires this from the account).
 	at.mentorOpenSideSource = func() string { return "long" }
@@ -272,8 +272,8 @@ func TestB3DayStopStopAfterLossCancelsRestingArm(t *testing.T) {
 	})
 
 	now := b3Clock(10, 30)
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	intradayRow := authorMentorArmForDayStop(t, at, "isb-b3-salloss", "ISB", now)
 	swingRow := authorMentorArmForDayStop(t, at, "swing-b3-salloss", "SWING4H", now)
@@ -313,8 +313,8 @@ func TestB3DayStopStopAfterLossOffCancelsNothing(t *testing.T) {
 	})
 
 	now := b3Clock(10, 30)
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	intradayRow := authorMentorArmForDayStop(t, at, "isb-b3-saloff", "ISB", now)
 

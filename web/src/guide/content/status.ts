@@ -364,6 +364,11 @@ export const status: GuideSection = {
       kind: 'p',
       text: 'It refreshes every 5 seconds while a position or an arm is live and every 15 seconds otherwise — the server decides which, from what is actually live. It has no unread count and nothing to acknowledge: P0 alerts are already acknowledged only 40.8% of the time (62 of 152), and a second queue would make that worse.',
     },
+    { kind: 'h', text: 'In-app alerts — who always reaches you' },
+    {
+      kind: 'p',
+      text: "An in-app alert is raised on the trader's alert center. Plan-content alerts (a died plan, a fill, a level event) are raised only for a day-plan trader, because that is where they render. Ops alerts are different: a trader that is DOWN, or whose NT8 feed is down, raises its P0 alert even when the trader has no day plan — the alert center is the only surface a down trader has, so gating it on day_plan would hide exactly the failure the owner must see. A recurring down is not silently deduped: every down episode is its own alert row (the dedupe key carries the episode instant), so a trader that goes down twice shows two banners, not one.",
+    },
     { kind: 'h', text: 'PROCESS::RESPONDING (dashboard header)' },
     {
       kind: 'p',
@@ -401,7 +406,7 @@ export const status: GuideSection = {
     { kind: 'h', text: 'Gate-block labels — the full list' },
     {
       kind: 'code',
-      title: 'every human label the gate panel has (62)',
+      title: 'every human label the gate panel has (61)',
       lines: [
         'NT8 feed down',
         'Dead-man watchdog',
@@ -425,7 +430,6 @@ export const status: GuideSection = {
         'Duplicate order dropped',
         'Order rate breaker',
         'Burned level re-touched',
-        'Night/day transition',
         'Update hold (maintenance)',
         'Update pending (preflight freeze)',
         'Queued entry dropped by the update hold',
@@ -503,7 +507,7 @@ export const status: GuideSection = {
     },
     {
       kind: 'p',
-      text: "NT8 answers every subscription with up to 2,000 bars per timeframe; the '🧯 nt8 history at subscribe:' boot line prints received/asked per timeframe (n/a for a timeframe NT8 has not answered yet — HTF replays land late, and n/a is not zero). On 2026-09-16 the 5m chart was 11 hours deep with 2,000 bars delivered: a zero-bar reconnect replay had re-armed the scale check, the next live bar was judged against a reference eleven hours old, 146 points of overnight move read as a scale break and 1,999 5m + 1,832 1m bars were dropped. Since then the scale check judges NEIGHBOURS only — the replay's last bar and a live bar within two intervals of it; an older reference is a time gap, not a scale gap, and is SKIPPED with both ages printed ('🕳 scale check SKIPPED') while the check stays armed. An empty replay re-arms nothing. A CONFIRMED break asks NT8 for its full replay again — once per symbol per boot; a second break in the same boot prints 'second scale break this boot — replay on another contract, restart the AddOn' and stops, because a timed retry would loop.",
+      text: "NT8 answers every subscription with up to 2,000 bars per timeframe; the '🧯 nt8 history at subscribe:' boot line prints received/asked per timeframe (n/a for a timeframe NT8 has not answered yet — HTF replays land late, and n/a is not zero). On 2026-09-16 the 5m chart was 11 hours deep with 2,000 bars delivered: a zero-bar reconnect replay had re-armed the scale check, the next live bar was judged against a reference eleven hours old, 146 points of overnight move read as a scale break and 1,999 5m + 1,832 1m bars were dropped. Since then the scale check judges NEIGHBOURS only — the replay's last bar and a live bar within two intervals of it; an older reference is a time gap, not a scale gap, and is SKIPPED with both ages printed ('🕳 scale check SKIPPED') while the check stays armed. An empty replay re-arms nothing. A CONFIRMED break asks NT8 for its full replay again — once per symbol per boot; a second break in the same boot prints 'second scale break this boot — replay on another contract, restart the AddOn' and stops, because a timed retry would loop. On top of the scale check, for the first 60 seconds after any NT8 reconnect, hello, or bar re-subscription a live bar whose close is impossibly far from BOTH its own open and the previous bar's close (a stale price the AddOn re-emitted from its reloaded series, like the 10-14 20:00 print) is quarantined — labelled mixed so no reader takes it, values untouched, counted in /api/health as bars_stale_prints; after that window the live feed is trusted as normal.",
     },
     {
       kind: 'p',
@@ -531,6 +535,11 @@ export const status: GuideSection = {
     {
       kind: 'p',
       text: "GET /api/health now reports real state, not a liveness constant: db is ok|unavailable|dead (a DEAD database answers 503 — everything else stays 200), nt8 carries each running trader's feed_status and newest-1m-bar age, traders_running counts running traders, and time is a real RFC3339 timestamp (it used to be null). Cutover scripts still read revision from it. GET /api/telemetry (read-only, auth'd) serves the previously write-only counters: far arms, repair regression, shadowed arm refusals, research-snapshot drops/rows, weekly snapshot, GA4 send failures and log-event drop counts. GA4 sends now count every non-2xx and transport failure instead of swallowing them.",
+    },
+    { kind: 'h', text: 'Dead-man reconcile block — and the stuck alert' },
+    {
+      kind: 'p',
+      text: "The dead-man watchdog blocks NEW entries the moment the NT8 TCP link drops, and keeps them blocked through a reconnect until a clean reconciliation: BOTH a positions snapshot and an order snapshot must be RECEIVED on the NEW connection (the old link's cached book does not count). Exits and open-position management are never gated — only new entries. A block that will not clear now tells you so instead of sitting silent: after 3 consecutive failed reconcile probes, or 5 minutes blocked, the bot raises ONE P0 'dead_man_reconcile_stuck' alert per blocked episode — the usual cause is the AddOn having stopped sending order snapshots. The alert is a signal to YOU, never an auto-unblock: entries stay BLOCKED until a clean reconcile actually lands, and a clean reconcile ends the episode (the next block alerts again). GET /api/health names each blocked trader as nt8.<id>.dead_man {blocked, since_ms, probes} — blocked is READ from the gate, since_ms is when the current block began, probes is how many consecutive reconciles have failed.",
     },
   ],
 }

@@ -118,6 +118,41 @@ func flipRereadTestNow(t *testing.T, now time.Time) {
 	t.Cleanup(func() { testNow = nil })
 }
 
+// flipDistinctDefectResponder returns a DIFFERENT parse defect per attempt, so
+// the real planner core still exhausts its 3 attempts (W26 F-1 fail-fast ends a
+// read only on an IDENTICAL repeated defect — see
+// assertRepeatedDefectEndsAtTwo).
+func flipDistinctDefectResponder(n int, _ string) (string, error) {
+	switch n % 3 {
+	case 1:
+		return "not json", nil // "no JSON object found in planner output"
+	case 2:
+		return `{"bias":{"direction":"long"},"levels":[],"scenarios":[]}`, nil // "scenarios count 0 invalid (1..N)"
+	default:
+		return "still not json", nil // different again
+	}
+}
+
+// assertRepeatedDefectEndsAtTwo (W26 F-1) — on the REAL flip path, a repeated
+// IDENTICAL defect ends the read at attempt 2 (fail-closed, the dormant plan
+// stands). The 3-attempt scripts above use DIFFERENT defects per attempt so they
+// keep exercising backoff / once-key (their real subject).
+func assertRepeatedDefectEndsAtTwo(t *testing.T) {
+	t.Helper()
+	at, _, client := realPathTrader(t, true, func(int, string) (string, error) { return "not json", nil })
+	now := time.Date(2026, 8, 18, 14, 0, 0, 0, time.UTC)
+	flipRereadTestNow(t, now)
+	td := "2026-08-18"
+	_ = seedActivePlan(t, at, td, "NY", now.Add(-40*time.Minute), flipFixtureDoc())
+	seedFlipBars(15500, 15470, 6*time.Minute, now)
+	logBuf := captureTraderLog(t)
+
+	at.maybeRunSessionReadsAt(now)
+	if !waitFor(t, 10*time.Second, func() bool { return client.calls() == 2 }) {
+		t.Fatalf("a repeated identical defect must end the read at attempt 2, got %d; log:\n%s", client.calls(), logBuf.String())
+	}
+}
+
 // (i) BLOCKER 1 at the PRODUCTION WRITE SITE: the structure_flip prior line
 // for long→short must make the write site demand SHORT. Before the fix
 // kernel.FlipToDirection read the old-bias echo ("PRIOR PLAN v3 bias long")
@@ -183,7 +218,7 @@ func TestFlipRereadWriteSiteRequiresFlippedBias(t *testing.T) {
 // must be decided by the store: the once-key is cleared, the dormant plan
 // stands, and the NEXT cycle retries through the dormant branch.
 func TestFlipRereadRealPathExhaustedRetriesClearsOnceKeyAndRetries(t *testing.T) {
-	at, st, client := realPathTrader(t, true, func(int, string) (string, error) { return "not json", nil })
+	at, st, client := realPathTrader(t, true, flipDistinctDefectResponder)
 	now := time.Date(2026, 8, 18, 14, 0, 0, 0, time.UTC)
 	flipRereadTestNow(t, now)
 	td := "2026-08-18"
@@ -239,6 +274,9 @@ func TestFlipRereadRealPathExhaustedRetriesClearsOnceKeyAndRetries(t *testing.T)
 	if v := sysCfgVal(t, st, flipRereadDoneKey(row)); v != "" && v != "0" {
 		t.Fatalf("once-key must still be clear after the failed retry, got %q", v)
 	}
+	// W26 F-1: the fail-fast law is separate — an IDENTICAL repeated defect
+	// ends the read at attempt 2 (the distinct-defect script above still runs 3).
+	assertRepeatedDefectEndsAtTwo(t)
 }
 
 // (iii) BLOCKER 3 on the REAL path: the re-arm path moves v1 dormant → active
@@ -656,7 +694,7 @@ func TestFlipRereadExemptionNotePure(t *testing.T) {
 // a refusal (preflight/cutoff/open stream) never does either (the defer test
 // above retries one minute later).
 func TestFlipRereadFailedLaunchBacksOffFromItsOwnLaunchOnly(t *testing.T) {
-	at, st, client := realPathTrader(t, true, func(int, string) (string, error) { return "not json", nil })
+	at, st, client := realPathTrader(t, true, flipDistinctDefectResponder)
 	now := time.Date(2026, 8, 18, 14, 0, 0, 0, time.UTC)
 	flipRereadTestNow(t, now)
 	td := "2026-08-18"
@@ -698,4 +736,7 @@ func TestFlipRereadFailedLaunchBacksOffFromItsOwnLaunchOnly(t *testing.T) {
 	if v := sysCfgVal(t, st, flipRereadDoneKey(row)); v != "" && v != "0" {
 		t.Fatalf("once-key must still be clear, got %q", v)
 	}
+	// W26 F-1: an IDENTICAL repeated defect ends at 2 (the distinct-defect
+	// script above still exhausts 3 per launch).
+	assertRepeatedDefectEndsAtTwo(t)
 }

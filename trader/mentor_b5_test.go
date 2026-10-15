@@ -27,8 +27,8 @@ func TestB5ExitModeIsPerArmNotPerSide(t *testing.T) {
 	t.Cleanup(func() { mentorConfluenceForIntent = nil })
 
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	var placed int
 	mentorPlaceRecorderForTest = func(i mentor.Intent, n int) { placed++ }

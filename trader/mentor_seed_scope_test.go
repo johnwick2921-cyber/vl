@@ -17,8 +17,8 @@ func TestMentorSeedScopePlacementGate(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	depth := func(h4, m1 int) {
 		at.mentorSourceDepthSource = func(name string) (int, bool) {

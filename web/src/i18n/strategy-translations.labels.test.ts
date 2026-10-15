@@ -184,6 +184,18 @@ describe('riskControl guardrail label truth (pinned to store/strategy.go:2020-21
     )
     expect(riskControl.notionalCapField.en).toContain('default 20')
     expect(riskControl.notionalCapField.en).toContain('safety backstop')
+    // R3-1 (ui-studio-truth): NotionalCapEnabled is parse-only (KnobIneffective,
+    // store/strategy.go) — the cap is always on, so the label must NOT claim a
+    // toggle that defaults on. Mutant "toggle default ON" → these RED.
+    expect(riskControl.notionalCapField.en).not.toMatch(
+      /toggle default ON|switch default ON/i
+    )
+    expect(riskControl.notionalCapField.zh).not.toMatch(/开关默认开启/)
+    expect(riskControl.notionalCapField.es).not.toMatch(/respaldo, ON/)
+    // And the corrected text says there is NO toggle, per language.
+    expect(riskControl.notionalCapField.en).toContain('no toggle')
+    expect(riskControl.notionalCapField.zh).toContain('无开关')
+    expect(riskControl.notionalCapField.es).toContain('sin interruptor')
   })
 
   it('blackout start/end state toggle default OFF + NT8 SL/TP + Chicago window', () => {

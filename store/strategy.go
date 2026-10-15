@@ -1161,6 +1161,13 @@ type DayPlanConfig struct {
 	// past the authored invalidation; a floor that does not fit refuses the
 	// arm. nil/false = today (the floor widens freely).
 	PlannerATRFloorCapAtInvalidation *bool `json:"planner_atr_floor_cap_at_invalidation,omitempty"`
+	// PlannerStaleZonesMaxATR (W26 planner-stale-zones): when EVERY armed
+	// market_in_zone leg's entry is farther than X × ATR5m from the last
+	// closed 1m close, the level-event wake additionally fires one budget-free
+	// planner re-read (spaced by wake_min_interval_min like every other wake).
+	// nil/0/≤0 = OFF = today's behaviour byte-identical (the arm stays far and
+	// nothing re-reads). A pointer because 0 is the OFF zero.
+	PlannerStaleZonesMaxATR *float64 `json:"planner_stale_zones_max_atr,omitempty"`
 }
 
 // DayPlanSessionOverride is a minimal per-session override. Every field is a
@@ -1994,6 +2001,10 @@ type MentorTuning struct {
 	// SwingMaxStopPts: SWING4H skips at a stop >= this (R-D, default 100). The
 	// trader rule gate and the kernel swing gate read this ONE value.
 	SwingMaxStopPts float64 `json:"swing_max_stop_pts,omitempty"`
+	// SwingMinStopPts (W26 P2-4): SWING4H skips at a stop NARROWER than this.
+	// 0 = OFF (the course states no minimum — only the 100-pt ceiling and "a
+	// stop near 100 → don't enter"). R5: new behaviour, defaults OFF.
+	SwingMinStopPts float64 `json:"swing_min_stop_pts,omitempty"`
 
 	// ── Release #25 course-entry knobs (fix/mentor-course-entries). Absent =
 	// the ruled default (kernel/mentor DefaultConfig, COMMON-25 knob rule);

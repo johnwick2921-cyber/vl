@@ -420,7 +420,9 @@ export function EquityChart({ traderId, embedded = false }: EquityChartProps) {
               label={{
                 value:
                   displayMode === 'dollar'
-                    ? t('initialBalance', language).split(' ')[0]
+                    ? selectedAccount
+                      ? t('equityBaseline', language)
+                      : t('initialBalance', language).split(' ')[0]
                     : '0%',
                 fill: '#848E9C',
                 fontSize: 12,

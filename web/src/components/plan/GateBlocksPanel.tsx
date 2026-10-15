@@ -32,7 +32,8 @@ export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   b3_order_dedup: { en: 'Duplicate order dropped', icon: '👯' },
   b3_rate_breaker: { en: 'Order rate breaker', icon: '🚨' },
   level_burned_retouch: { en: 'Burned level re-touched', icon: '🔥' },
-  night_transition: { en: 'Night/day transition', icon: '🌙' },
+  // P2-3a (release #26): a night/day transition is an EVENT, not a refusal —
+  // it no longer reaches the gate-block table, so it has no label here.
   maintenance_hold: { en: 'Update hold (maintenance)', icon: '🔒' },
   install_pending: { en: 'Update pending (preflight freeze)', icon: '⏳' },
   // OPS NEW-2 (10-14): planner arms now ask the stale-data verdict; the AI

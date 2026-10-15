@@ -33,9 +33,7 @@ func swingTape(t *testing.T, cur []market.Kline) []market.Kline {
 	return append(closed, cur...)
 }
 
-const swingLineGolden = 10168.16 // EMA 34 of 10000/11000/12000 ≈ 10168.1633
-
-// TestSwing4hRejectShort — resistance: price came from BELOW, the first
+const swingLineGolden = 10168.16 // EMA 34 of 10000/11000/12000 ≈ 10168.1633// TestSwing4hRejectShort — resistance: price came from BELOW, the first
 // touching 5m candle closes BACK below the line → sell stop tight on the
 // reference candle's low (R8: no buffer), stop ~30 pts above the line
 // [D5.2 p3 @ 21:30 corrected; table "Stop (clean rejection)"; R8].
@@ -595,5 +593,40 @@ func TestSwingNeverFillsSendsNoManage(t *testing.T) {
 	}
 	if s.Pos != nil {
 		t.Fatalf("the unfilled swing must not open a position across the hold, got %+v", s.Pos)
+	}
+}
+
+// TestSwingMinStopKnobDefaultOff (W26 P2-4) — the degenerate-geometry floor is
+// OFF by default (R5): the course states no minimum, only the 100-pt ceiling and
+// "a stop near 100 → don't enter".
+func TestSwingMinStopKnobDefaultOff(t *testing.T) {
+	if DefaultSwingCfg().MinStopPts != 0 {
+		t.Fatalf("MinStopPts must default 0 (OFF), got %v", DefaultSwingCfg().MinStopPts)
+	}
+}
+
+// TestSwingMinStopRefusesDegenerate (W26 P2-4) — with the knob ON, a clean-
+// rejection stop narrower than the floor is refused; with the knob OFF (0) the
+// same geometry still emits (today's behaviour). Mutant: delete the
+// `if cfg.MinStopPts > 0 && abs(...)` check in swingRejectIntent → this test
+// goes RED on the ON half.
+func TestSwingMinStopRefusesDegenerate(t *testing.T) {
+	ref := mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160) // closes back below the line
+	line := swingLineGolden                              // ≈ 10168.16
+
+	// OFF (0): the stop ≈ line+30 − ref.Low ≈ 38 pts emits.
+	off, ok := swingRejectIntent(SideShort, ref, line, DefaultSwingCfg())
+	if !ok {
+		t.Fatalf("MinStopPts=0 must not refuse (OFF = today), got %+v", off)
+	}
+
+	// ON (50): a ~38-pt stop is below the floor → refused.
+	on := DefaultSwingCfg()
+	on.MinStopPts = 50
+	if _, ok := swingRejectIntent(SideShort, ref, line, on); ok {
+		t.Fatalf("MinStopPts=50 must refuse a stop narrower than 50 pts")
+	}
+	if SwingMinStopRefused() == 0 {
+		t.Fatalf("the min-stop refusal must be counted")
 	}
 }

@@ -56,8 +56,8 @@ func TestMentorWindowCrossesMidnight(t *testing.T) {
 // CT, while the unset default (0 → 60) still refuses it; SWING stays exempt.
 func TestMentorWindowGateNoWindowStoredValue(t *testing.T) {
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 10, 0, 0, 0, ct) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 10, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "ISB"}
 
 	unset := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
@@ -69,7 +69,7 @@ func TestMentorWindowGateNoWindowStoredValue(t *testing.T) {
 		t.Fatalf("a saved no-window (-1) must allow 10:00 CT: %s", why)
 	}
 	overnight := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorWindowStart: "23:00", MentorWindowMinutes: 120})
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 3, 0, 30, 0, 0, ct) }
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 3, 0, 30, 0, 0, ct) })
 	if refuse, why := overnight.mentorWindowGate(in); refuse {
 		t.Fatalf("23:00+120 must allow 00:30 CT: %s", why)
 	}

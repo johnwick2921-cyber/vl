@@ -44,6 +44,18 @@ func IncGateBlock(trader, gate string) {
 	gateBlockMu.Unlock()
 }
 
+// IncTraderEvent records one per-trader EVENT that is NOT a gate refusal (an
+// arm authored, a night/day transition, a close whose P&L was unresolved).
+// It feeds the Prometheus TraderEventsTotal counter, NEVER the per-session
+// gate-block table — a non-block must not read as a block (P2-3a, release #26;
+// canon 35: counters record, never infer).
+func IncTraderEvent(trader, event string) {
+	if event == "" {
+		return
+	}
+	TraderEventsTotal.WithLabelValues(trader, event).Inc()
+}
+
 // IncClockSkewObserved records one observed local-vs-feed clock skew event that
 // did NOT block an entry (signals are feed-stamped since 2026-08-18). It feeds
 // the same per-trader session table under the gate name "clock_skew_observed".
@@ -98,34 +110,51 @@ func GateBlockDailySummary() string {
 }
 
 // summarizeGateBlocksLocked builds the one-line summary. Caller holds gateBlockMu.
+//
+// P2-3b (release #26): the summary is grouped PER TRADER so the line names which
+// trader each gate blocked — the old aggregate (gate=n across all traders) lost
+// the trader dimension and read as one trader's tally. The empty-string trader
+// (the process-wide bucket) renders as "(process)".
 func summarizeGateBlocksLocked() string {
 	if len(gateBlockCnts) == 0 {
 		return "gate-block summary: no gate blocks recorded"
 	}
-	// Aggregate across traders per gate for the headline, and keep a stable order.
-	perGate := map[string]int{}
 	total := 0
+	perTrader := map[string]map[string]int{} // trader → gate → count
 	for k, v := range gateBlockCnts {
-		perGate[k.gate] += v
+		if perTrader[k.trader] == nil {
+			perTrader[k.trader] = map[string]int{}
+		}
+		perTrader[k.trader][k.gate] += v
 		total += v
 	}
-	type gc struct {
-		gate string
-		n    int
+	traderNames := make([]string, 0, len(perTrader))
+	for t := range perTrader {
+		traderNames = append(traderNames, t)
 	}
-	items := make([]gc, 0, len(perGate))
-	for g, n := range perGate {
-		items = append(items, gc{g, n})
-	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].n != items[j].n {
-			return items[i].n > items[j].n
+	sort.Strings(traderNames)
+	parts := make([]string, 0, len(traderNames))
+	for _, t := range traderNames {
+		label := t
+		if t == "" {
+			label = "(process)"
 		}
-		return items[i].gate < items[j].gate
-	})
-	parts := make([]string, 0, len(items))
-	for _, it := range items {
-		parts = append(parts, fmt.Sprintf("%s=%d", it.gate, it.n))
+		gates := perTrader[t]
+		gateNames := make([]string, 0, len(gates))
+		for g := range gates {
+			gateNames = append(gateNames, g)
+		}
+		sort.Slice(gateNames, func(i, j int) bool {
+			if gates[gateNames[i]] != gates[gateNames[j]] {
+				return gates[gateNames[i]] > gates[gateNames[j]]
+			}
+			return gateNames[i] < gateNames[j]
+		})
+		gs := make([]string, 0, len(gateNames))
+		for _, g := range gateNames {
+			gs = append(gs, fmt.Sprintf("%s=%d", g, gates[g]))
+		}
+		parts = append(parts, fmt.Sprintf("%s{%s}", label, strings.Join(gs, " ")))
 	}
 	return fmt.Sprintf("gate-block summary (%d total): %s", total, strings.Join(parts, " "))
 }

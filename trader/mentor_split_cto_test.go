@@ -82,9 +82,9 @@ func TestMentorSplitRegistersTwoLegsAndMovesEachByLeg(t *testing.T) {
 	// Pin the clock so the receipt (ExitTime empty → mentorClockNow) lands at a
 	// deterministic instant between the BE candle and the trail candle.
 	T := int64(1_000_000)
-	oldNow := mentorNowSource
-	mentorNowSource = func() time.Time { return time.UnixMilli(T) }
-	t.Cleanup(func() { mentorNowSource = oldNow })
+	oldNow := getMentorNowSource()
+	setMentorNowSource(func() time.Time { return time.UnixMilli(T) })
+	t.Cleanup(func() { setMentorNowSource(oldNow) })
 	old := mentorSentSplit
 	mentorSentSplit = func(_ *AutoTrader, sid string) (nttrader.SentSplit, bool) {
 		if sid == "sig-split" {

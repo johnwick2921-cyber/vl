@@ -61,6 +61,11 @@ type SwingCfg struct {
 	LineOffsetPts     float64 // placement offset TOWARD the approach; default 5 (R8: 5–10)
 	StopBeyondLinePts float64 // clean-rejection stop distance; default 30 (R8: 30–60 allowed)
 	MaxStopPts        float64 // ≥ this → skip; default 100 [table]
+	// MinStopPts is the degenerate-geometry floor (W26 P2-4): a swing stop
+	// NARROWER than this is refused. 0 = OFF (the course states no minimum —
+	// only a 100-pt ceiling and "a stop near 100 → don't enter" [06-SIZING]).
+	// R5: new behaviour behind a knob that defaults OFF.
+	MinStopPts float64
 	EntryBufferPts    float64 // R8: NO buffer — order sits tight on the candle; default 0
 	TargetEMA5mPeriod int     // first target EMA period on 5m; default 34
 	// LeewayCandles is the reference-leeway knob (R26, P2): the first OR
@@ -83,6 +88,7 @@ func DefaultSwingCfg() SwingCfg {
 		LineOffsetPts:     5,
 		StopBeyondLinePts: 30,
 		MaxStopPts:        100,
+		MinStopPts:        0, // W26 P2-4: OFF by default (R5)
 		EntryBufferPts:    0, // R8: no buffer
 		TargetEMA5mPeriod: 34,
 		LeewayCandles:     2,
@@ -93,8 +99,15 @@ func DefaultSwingCfg() SwingCfg {
 // swingInvalidStops counts the hard-invariant violations (log + counter).
 var swingInvalidStops atomic.Int64
 
+// swingMinStopRefused counts a swing skipped for a stop narrower than
+// MinStopPts (W26 P2-4; OFF = 0 by default, so this stays 0 today).
+var swingMinStopRefused atomic.Int64
+
 // SwingInvalidStops exposes the counter for tests and telemetry.
 func SwingInvalidStops() int64 { return swingInvalidStops.Load() }
+
+// SwingMinStopRefused exposes the min-stop counter (W26 P2-4).
+func SwingMinStopRefused() int64 { return swingMinStopRefused.Load() }
 
 // SwingState is everything the swing machine carries between ticks. It is
 // rebuildable: replaying the same 5m series from a zero state reproduces it.
@@ -571,6 +584,10 @@ func swingRejectIntent(approach Side, ref market.Kline, line float64, cfg SwingC
 	if abs(in.Stop-in.Price) >= cfg.MaxStopPts {
 		return Intent{}, false
 	}
+	if cfg.MinStopPts > 0 && abs(in.Stop-in.Price) < cfg.MinStopPts {
+		swingMinStopRefused.Add(1)
+		return Intent{}, false
+	}
 	if in.Side == SideLong && in.Stop >= in.Price || in.Side == SideShort && in.Stop <= in.Price {
 		swingInvalidStops.Add(1)
 		log.Printf("swing4h: hard invariant broken — %s entry %.2f stop %.2f refused",
@@ -591,6 +608,10 @@ func swingISBIntent(t *swingTouch, ref market.Kline, line float64, cfg SwingCfg)
 		in = Intent{Action: PlaceStopEntry, Setup: "SWING4H", Side: SideLong, Price: ref.High + cfg.EntryBufferPts, Stop: line}
 	}
 	if abs(in.Stop-in.Price) >= cfg.MaxStopPts {
+		return Intent{}, false
+	}
+	if cfg.MinStopPts > 0 && abs(in.Stop-in.Price) < cfg.MinStopPts {
+		swingMinStopRefused.Add(1)
 		return Intent{}, false
 	}
 	if in.Side == SideLong && in.Stop >= in.Price || in.Side == SideShort && in.Stop <= in.Price {

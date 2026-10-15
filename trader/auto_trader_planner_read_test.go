@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"vl/kernel"
 	"vl/store"
@@ -157,8 +158,9 @@ func TestRunPlannerReadRepairCarriesVerbatimReject(t *testing.T) {
 }
 
 // TestRunPlannerReadRepairFallbackAndRegression — 3.4/3.6: a malformed repair
-// falls back to one full re-author (reject block rides), and the repeated-defect
-// counter increments when attempt 2 repeats attempt 1's defect.
+// falls back to one full re-author (reject block rides) when the repair's
+// defect is DIFFERENT from the author's. W26 F-1: an IDENTICAL repeated defect
+// no longer reaches attempt 3 — see TestRunPlannerReadRepeatedDefectEndsRead.
 func TestRunPlannerReadRepairFallbackAndRegression(t *testing.T) {
 	at := plannerTestTrader(t)
 	facts := kernel.PlanFacts{Price: 15550, DATR: 300}
@@ -170,10 +172,12 @@ func TestRunPlannerReadRepairFallbackAndRegression(t *testing.T) {
 		func(userPrompt string) (string, error) {
 			blocks = append(blocks, userPrompt)
 			if len(blocks) == 1 {
-				return "not json", nil // attempt 1 parse-fails
+				return "not json", nil // attempt 1 parse-fails ("no JSON object found")
 			}
 			if len(blocks) == 2 {
-				return "still not json", nil // repair attempt ALSO parse-fails → fallback
+				// A DIFFERENT defect (valid JSON, zero scenarios) — the repair
+				// made progress, so the full re-author still gets its chance.
+				return `{"bias":{"direction":"long"},"levels":[],"scenarios":[]}`, nil
 			}
 			return validTraderPlanJSON, nil
 		})
@@ -193,11 +197,38 @@ func TestRunPlannerReadRepairFallbackAndRegression(t *testing.T) {
 		!strings.Contains(blocks[2], "FULLPROMPT") {
 		t.Fatalf("attempt 3 must be the full re-author with corrections at TOP and TAIL, got %q", blocks[2])
 	}
-	if n := strings.Count(blocks[2], "no JSON object found in planner output"); n != 2 {
-		t.Fatalf("the defect must be stated twice (top and tail), counted %d: %q", n, blocks[2])
-	}
 	if hi, lo := strings.Index(blocks[2], "CORRECTIONS FROM THIS READ"), strings.Index(blocks[2], "FULLPROMPT"); hi > lo {
 		t.Fatalf("the corrections must LEAD the prompt, not trail the playbook")
+	}
+	if delta := telemetry.RepairRegressionCount() - base; delta != 0 {
+		t.Fatalf("DIFFERENT defects must not increment the regression counter, delta=%d", delta)
+	}
+}
+
+// TestRunPlannerReadRepeatedDefectEndsRead — W26 F-1: two IDENTICAL parse
+// defects end the read at once (fail-closed: no plan written, the active plan
+// is kept), instead of burning a third ~15 min max-reasoning attempt. The
+// 10-14 read burned attempts 2 AND 3 on the identical "no JSON object found"
+// defect and held the planner stream ~45 min.
+func TestRunPlannerReadRepeatedDefectEndsRead(t *testing.T) {
+	at := plannerTestTrader(t)
+	read := time.Date(2026, 8, 26, 10, 0, 0, 0, kernel.CTLocation())
+	facts := kernel.PlanFacts{Price: 15550, DATR: 300}
+	machine := map[float64]string{15480: "PWL", 15700: "RN 15700"}
+	calls := 0
+	base := telemetry.RepairRegressionCount()
+	_, lc, _ := at.runPlannerReadCoreWithFactsGradesClock(func() time.Time { return read },
+		"ASIA", "2026-08-26", "owner_reset",
+		"deepseek-v4-pro", "hashQD", "", "", "", "FULLPROMPT", facts, nil, machine, nil, false, // wake path: opportunistic
+		func(userPrompt string) (string, error) {
+			calls++
+			return "still not json", nil // identical parse defect every attempt
+		})
+	if calls != 2 {
+		t.Fatalf("a repeated identical parse defect must end the read after attempt 2, got %d calls", calls)
+	}
+	if lc != "kept_active" {
+		t.Fatalf("a failed wake read keeps the active plan (lc=%q), never a no_trade", lc)
 	}
 	if delta := telemetry.RepairRegressionCount() - base; delta < 1 {
 		t.Fatalf("repeated-defect regression counter must increment, delta=%d", delta)
@@ -209,8 +240,13 @@ func TestRunPlannerReadCoreRetryThenSuccess(t *testing.T) {
 	n := 0
 	_, lc, err := at.runPlannerReadCore("NY", "2026-08-14", "m", "hashC", "", "", func() (string, error) {
 		n++
-		if n < 3 {
-			return "not json", nil // 2 invalid → retried
+		if n == 1 {
+			return "not json", nil // attempt 1 parse-fails
+		}
+		if n == 2 {
+			// A DIFFERENT defect (valid JSON, zero scenarios) — W26 F-1 keeps
+			// retrying on distinct defects; only an IDENTICAL repeat fast-fails.
+			return `{"bias":{"direction":"long"},"levels":[],"scenarios":[]}`, nil
 		}
 		return validTraderPlanJSON, nil
 	})
@@ -219,5 +255,33 @@ func TestRunPlannerReadCoreRetryThenSuccess(t *testing.T) {
 	}
 	if n != 3 {
 		t.Fatalf("expected 3 attempts (1+2 retries), got %d", n)
+	}
+}
+
+// TestRunPlannerReadWallClockCap — W26 F-1: the READ is wall-clock bounded to
+// one wake interval, so a slow max-reasoning attempt × 3 can never hold the
+// planner stream for 45+ min (10-14 held it ~45 min and blocked every wake).
+func TestRunPlannerReadWallClockCap(t *testing.T) {
+	at := plannerTestTrader(t)
+	clk := time.Date(2026, 8, 26, 10, 0, 0, 0, kernel.CTLocation())
+	testNow = func() time.Time { return clk }
+	t.Cleanup(func() { testNow = nil })
+	facts := kernel.PlanFacts{Price: 15550, DATR: 300}
+	machine := map[float64]string{15480: "PWL"}
+	calls := 0
+	_, lc, _ := at.runPlannerReadCoreWithFactsGradesClock(func() time.Time { return clk },
+		"ASIA", "2026-08-26", "owner_reset",
+		"deepseek-v4-pro", "hashQE", "", "", "", "FULLPROMPT", facts, nil, machine, nil, false,
+		func(userPrompt string) (string, error) {
+			calls++
+			// The first attempt consumes the whole wake interval (30 min).
+			clk = clk.Add(31 * time.Minute)
+			return "not json", nil
+		})
+	if calls != 1 {
+		t.Fatalf("the wall-clock cap must stop the read after attempt 1 once the wake interval elapsed, got %d calls", calls)
+	}
+	if lc != "kept_active" {
+		t.Fatalf("cap fail-closed keeps the active plan (lc=%q)", lc)
 	}
 }

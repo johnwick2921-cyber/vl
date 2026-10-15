@@ -10,6 +10,7 @@ import {
   mentorTrendSegments,
   orderPriceLines,
   ordersForChartSymbol,
+  positionBracketLines,
   sameChartSymbol,
 } from './chartOverlays'
 
@@ -423,5 +424,34 @@ describe('orderPriceLines', () => {
         arm_state: 'armed',
       })
     ).toEqual([])
+  })
+})
+
+describe('positionBracketLines (T32)', () => {
+  it('draws the open position SL and TP from the broker bracket', () => {
+    expect(
+      positionBracketLines({
+        stop: 30500,
+        target: 30750,
+        source: 'nt8_order_snapshot',
+      })
+    ).toEqual([
+      { price: 30500, label: 'position SL', color: '#F6465D', style: 2 },
+      { price: 30750, label: 'position TP', color: '#0ECB81', style: 2 },
+    ])
+  })
+
+  it('draws only the known side and never a zero line', () => {
+    expect(
+      positionBracketLines({ stop: 30500, source: 'nt8_order_snapshot' })
+    ).toEqual([
+      { price: 30500, label: 'position SL', color: '#F6465D', style: 2 },
+    ])
+    // stop: 0 must not draw a line — unknown is absent, never zero.
+    expect(
+      positionBracketLines({ stop: 0, target: 0, source: 'nt8_order_snapshot' })
+    ).toEqual([])
+    expect(positionBracketLines(undefined)).toEqual([])
+    expect(positionBracketLines(null)).toEqual([])
   })
 })

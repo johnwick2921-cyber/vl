@@ -319,9 +319,9 @@ func newFdrWorld(t *testing.T, seedMs int64, accounts []string, snapshotAccounts
 
 	// Package-level seams the replay pins; restored for the next test.
 	prevProvider := market.FuturesBarsProvider
-	prevNow := mentorNowSource
+	prevNow := getMentorNowSource()
 	market.FuturesBarsProvider = w.provide
-	mentorNowSource = w.now
+	setMentorNowSource(w.now)
 	// The restart rebuild reads the book at time.Now() (mentor_exit_drive.go —
 	// the wall clock); the replay's book is stamped on the replay clock, so the
 	// seam reads the SAME book (liveBook) at the replay clock instead.
@@ -332,7 +332,7 @@ func newFdrWorld(t *testing.T, seedMs int64, accounts []string, snapshotAccounts
 	t.Cleanup(func() {
 		mentorRebuildBook = prevRebuildBook
 		market.FuturesBarsProvider = prevProvider
-		mentorNowSource = prevNow
+		setMentorNowSource(prevNow)
 		mentorLatestPriceSource = nil
 		mentorConfluenceForIntent = nil
 		mentorSetArmExpiryWire = nil
@@ -913,7 +913,7 @@ func (w *fdrWorld) newFdrTrader(ft *fdrTrader, cfg *store.StrategyConfig) {
 		}
 	}
 	at.mentorWireProductionSeams()
-	mentorNowSource = w.now
+	setMentorNowSource(w.now)
 	at.mentorSeedAtStart()
 	ft.at = at
 	ft.epochs = append(ft.epochs, at.mentorArmEpoch)
@@ -1814,6 +1814,16 @@ func fdrSortedKeys(m map[string]int) []string {
 // store and NT8 link: the Run loops must not touch the replay's ledger.
 func fdrStartPathFlags(t *testing.T, ids, accounts []string) map[string]bool {
 	t.Helper()
+	// Clock-independence (R3-DS-108 P2 note 1): the start/stop path here must not
+	// depend on the REAL wall clock. When the real clock lands inside the
+	// 16:00–17:00 CT daily halt, cmeSessionClosedSkip() → backoffWhileClosed()
+	// sleeps in 10 s slices and Stop() cannot observe isRunning=false before the
+	// 5 s deadline (the (e) RED). Pin the trader clock seam to a CME-OPEN instant
+	// (00:59:15 CT 10-13, the live seed) so the session gate is deterministic and
+	// Stop() returns promptly at any wall time. The assertion is unchanged.
+	prev := testNow
+	testNow = func() time.Time { return time.UnixMilli(fdrLiveSeedMs) } // CME open
+	t.Cleanup(func() { testNow = prev })
 	st, err := store.New(filepath.Join(t.TempDir(), "start-path.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -1904,4 +1914,61 @@ func fdrOrderedInstalled(at *AutoTrader) bool {
 	at.orderedExecMu.Lock()
 	defer at.orderedExecMu.Unlock()
 	return at.orderedExecUnreg != nil
+}
+
+// TestStopDuringHaltReturnsPromptly (FOLD #535 P2, production): backoffWhileClosed
+// used to sleep the whole 10 s slice with a plain time.Sleep, so a Stop() during
+// the 16:00–17:00 CME halt blocked until the next slice boundary (~10 s). The
+// backoff must wake on the per-Run stop context: Stop() returns within 1 s even
+// while the loop is parked inside the halt backoff.
+func TestStopDuringHaltReturnsPromptly(t *testing.T) {
+	at, _ := asiaClockTrader(t)
+	now := ctTime(t, 2026, 8, 18, 16, 30) // Tuesday, inside the 16:00–17:00 halt
+	if kernel.IsCMEOpen(now) {
+		t.Fatal("fixture: 16:30 must be inside the CME maintenance halt (IsCMEOpen=false)")
+	}
+	testNow = func() time.Time { return now }
+	t.Cleanup(func() { testNow = nil })
+
+	// Install the per-Run stop context exactly as Run() does (the backoff selects
+	// on its Done channel).
+	at.stopMonitorMu.Lock()
+	at.stopMonitorCtx, at.stopMonitorCancel = context.WithCancel(context.Background())
+	at.stopMonitorMu.Unlock()
+
+	at.isRunningMutex.Lock()
+	at.isRunning = true
+	at.isRunningMutex.Unlock()
+
+	entered := make(chan struct{})
+	exited := make(chan struct{})
+	// Run the backoff inside the monitor goroutine (as the real Run loop does) so
+	// Stop()'s monitorWg.Wait() blocks on it — the faithful reproduction of the
+	// ~10 s restart stall.
+	at.monitorWg.Add(1)
+	go func() {
+		defer at.monitorWg.Done()
+		close(entered)
+		at.backoffWhileClosed()
+		close(exited)
+	}()
+	<-entered
+	time.Sleep(50 * time.Millisecond) // let it enter the first 10 s slice
+
+	start := time.Now()
+	stopDone := make(chan struct{})
+	go func() { at.Stop(); close(stopDone) }()
+	select {
+	case <-stopDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop() did not return within 2 s during the halt backoff")
+	}
+	select {
+	case <-exited:
+	case <-time.After(2 * time.Second):
+		t.Fatal("backoffWhileClosed did not exit after Stop()")
+	}
+	if d := time.Since(start); d >= time.Second {
+		t.Fatalf("Stop() took %v during the halt backoff, want < 1 s", d)
+	}
 }

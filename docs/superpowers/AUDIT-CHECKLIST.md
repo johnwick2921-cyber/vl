@@ -9347,3 +9347,37 @@ symptom: EXEC-FOLLOWUPS fold (CTO, PR #526). The MANUAL-CANCEL-WINS law ("same p
 probe: for every ledger law, list the branches that write a row and check each enforces it for every policy / origin / kind. A guard that names one value (`Policy == X`) on a law stated for all is the finding. Test it through the REAL pass (author → place → terminal → author again), and count the rows and the wire frames, not only the original row's state. A dedupe that masks it in a fast test (B3's 55 s window) must be aged out. For "who ended it" rules, check every terminal writer records its cause BEFORE the terminal state lands; a drain that settles the row mid-call skips a stamp written afterwards.
 rule: a same-version row that reached the broker is spent for every market_in_zone ending, and for every other non-mentor policy unless the BOT requested the cancel (cancel_requested_at_ms > 0, stamped at the send). Only a new version or the boot sweep (0B) re-arms a spent slot. The refusal is typed (ErrArmSlotSpent), said once per slot, and counted.
 Reference: store/armed_orders.go UpsertArm (ErrArmSlotSpent, StampCancelRequested), trader/armed_executor.go armSlotSpentRefused + cancelArmedOrdersSyncWith, trader/exec_followups_rearm_test.go.
+
+## CLASS NN (assigned at merge) — a stale print on reconnect (the live side trusted on a scale break)
+
+symptom: WAVE 26 bar-stale-print (10-14 20:00 CT, [A]). NT8 restarted at 19:59 and the first LIVE print carried a day-old price — MNQ 1m o 29931.25 / h 30754.0 / c 30753.75 while the real close was ~29954. The AddOn's BarsRequest rebuild re-emitted the tail of its reloaded series as forming bar_update frames (the fresh request reset its dedup watermark), so the stale bar's high/close merged into the forming minute. It was stored as `live`, so no replay could overwrite it (the store protects live rows). The scale-break guard SAW the mismatch (ES 1m: replay 7743 vs live 7845) and trusted the LIVE side — the stale one — and its one-shot `liveSeen` key plus the "adjacent historical reference only" rule meant MNQ 1m and every higher timeframe were never judged.
+probe: for every guard that resolves a live-vs-replay conflict, ask which side it TRUSTS and whether that side can itself be stale. A one-shot guard (`liveSeen`) and a "first live bar only" rule both leave a mid-session reconnect unprotected: live bars existed before, so the check is spent. Replay the reconnect shape (a stale close ~2.7% from both its own open and the previous close) at the production call site.
+rule: a live print that lands within N seconds of a (re)connect/hello and whose close is impossible against BOTH its own open and the previous bar's close is quarantined (labelled mixed, values untouched, counted) rather than trusted. Outside the window the live feed is trusted as before; a real fast market never trips it (each minute's close stays near its own open).
+Reference: provider/ninjatrader/bar_stale_print.go (NoteReconnect / quarantineStalePrint / StalePrintQuarantined), provider/ninjatrader/bar_stale_print_test.go, api/handler_health.go (bars_stale_prints).
+
+## CLASS NN (assigned at merge) — a fail-closed blocking gate with no upper bound and no owner-facing alert
+
+symptom: W26 deadman-escalation (2026-10-15, r3 P2). The dead-man reconcile gate (trader/auto_trader.go watchdogReconcileClean) blocked NEW entries after an NT8 link drop and held them blocked until BOTH a positions and an order snapshot were received on the NEW connection — correctly fail-closed. But it had no upper bound and only a once-per-state WARN: if the AddOn stopped sending order snapshots (or the snapshot never arrived), the trader stayed entry-blocked forever and the only owner-visible signal was one WARN line at the transition. A block that will not clear is indistinguishable from a block that is still reconciling, until the operator happens to notice no new entries.
+probe: for every fail-closed gate that blocks NEW action, list (a) what ends the block, (b) whether that ending is guaranteed to arrive, and (c) what the OWNER sees when it does not. Grep the setter of the blocked state and list the alert / log / endpoint that reports a block which has stood past a threshold. A gate that blocks forever with no escalating signal is the finding.
+rule: a fail-closed block stays fail-closed — it is never auto-unblocked on a threshold. But a block that has not cleared after N consecutive failed reconcile probes, or T time blocked, fires ONE owner-facing P0 per blocked episode (not once per probe), and the live block is surfaced in a read endpoint (blocked + since + failed-probe count). A clean reconcile ends the episode and re-arms the alert for the next block.
+Reference: trader/dead_man_watchdog.go (deadManStuckProbeMin / deadManStuckAgeMs, beginEpisode/endEpisode/bumpFailedProbe/escalation), trader/auto_trader.go deadManEscalate / HealthDeadMan, api/handler_health.go (nt8.<id>.dead_man), trader/dead_man_escalation_test.go.
+
+## CLASS NN (assigned at merge) — alert dedupe without episode
+
+symptom: ALERT-DOWN-EPISODES (2026-10-15, R3 P2 N1/N2). The run-owner P0
+"trader is DOWN: no evaluator" alert used the fixed event id
+"trader-down-no-evaluator:"+traderID, and the alert store's dedupe (event_id,
+idempotent bus) has NO expiry — so a second down episode was a silent no-op, and
+the SAME alert was also gated on dayPlanEnabled(), so a non-day-plan trader's
+down episode was dropped entirely. A down trader is exactly the owner-facing
+failure that must never be silent.
+probe: for every emitAlert call site, is the event id per-episode or fixed? Does
+the store's dedupe ever expire? Is the emit gated on a per-trader feature flag
+(day_plan) that a DOWN trader may not have? Grep the setter and the store, not
+the kind you expect.
+rule: a recurring event's dedupe key carries an episode marker (the episode start
+instant, or a monotonic counter); ops alerts (down, link, disk, backup, updater,
+bar hole) bypass the day-plan gate, while plan-content alerts keep it.
+Reference: store/alert.go Emit / EpisodeEventID, trader/auto_trader_alerts.go
+emitAlert / isOpsAlertKind, trader/run_owner.go armRunRetry,
+trader/run_owner_alert_episode_test.go.

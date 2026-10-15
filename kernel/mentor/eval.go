@@ -1548,10 +1548,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	e.State.TFConflictLatched = latch
 	if conflict {
 		out = append(out, e.conflictArmCancels()...)
-		if conflictHeld && IsISB(execPrev, execCur) {
-			// The held half is new behaviour: name it (L7) — an ISB candidate
-			// refused only because the conflict waits for the 15m box too.
-			e.refuse("isb_tf_conflict_both_boxes")
+		if IsISB(execPrev, execCur) {
+			if conflictHeld {
+				// The held half is new behaviour: name it (L7) — an ISB candidate
+				// refused only because the conflict waits for the 15m box too.
+				e.refuse("isb_tf_conflict_both_boxes")
+			} else {
+				// P2-1 (L7): in first_box mode the conflict dropped this ISB
+				// silently — name and count the refusal. No behaviour change:
+				// the ISB is still refused (the !conflict path below does not run).
+				e.refuse("isb_tf_conflict")
+			}
 		}
 	}
 
@@ -1754,6 +1761,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// ISB at EMA 9 — an ISB that points AGAINST the trend with price at the EMA 9
 	// trades WITH the trend [D5.4].
 	//
+	// P2-1 (L7): the reverse ISB was dropped silently while the 15m/5m conflict
+	// stood. Name and count it; no behaviour change (the !conflict path below
+	// still does not run).
+	if conflict && e.Cfg.ISBReverseEMA9Enabled && IsISB(execPrev, execCur) {
+		e.refuse("isbrev_tf_conflict")
+	}
 	// B6 (L14): the reverse ISB must stand behind the SAME standing gates as the
 	// normal ISB — the 15m/5m conflict, the ISB boxes, and the trigger side — and
 	// fail closed when the 5m trigger has no direction yet (it used to fall
@@ -1928,6 +1941,19 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 
 	// D4.2-03: while the 15m/5m conflict stands, NO setup trades — PHL/PLH
 	// included (the old one-shot veto covered only the ISB path).
+	// P2-1 (L7): a conflict drop of a candidate PHL/PLH was silent — name and
+	// count it once per tick where a candidate level exists. No behaviour
+	// change: the level still does not trade.
+	if conflict {
+		for _, lvl := range levels {
+			tr := e.State.Touches[lvl.Key]
+			if tr.Outcome != TouchReject || e.State.ISBOnly[lvl.Key] {
+				continue
+			}
+			e.refuse("phl_tf_conflict")
+			break
+		}
+	}
 	if !conflict {
 		for _, lvl := range levels {
 			tr := e.State.Touches[lvl.Key]

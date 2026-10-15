@@ -41,6 +41,7 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 		DayGateSpentPts:        420,
 		DayGateTargetCapPts:    12,
 		SwingMaxStopPts:        80,
+		SwingMinStopPts:        25,
 	})
 	checks := []struct {
 		name string
@@ -58,6 +59,7 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 		{"day_gate_spent_pts=420", cfg.DayGateSpentPts == 420},
 		{"day_gate_target_cap_pts=12", cfg.DayGateTargetCapPts == 12},
 		{"swing_max_stop_pts=80 (SwingCfg.MaxStopPts)", cfg.Swing.MaxStopPts == 80},
+		{"swing_min_stop_pts=25 (SwingCfg.MinStopPts)", cfg.Swing.MinStopPts == 25},
 	}
 	for _, c := range checks {
 		if !c.ok {

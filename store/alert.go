@@ -3,12 +3,27 @@ package store
 import (
 	"errors"
 	"fmt"
+	"strconv"
 
 	"gorm.io/gorm"
 )
 
 // P4.4 — in-app alert store (no external push). P0 = toast + persistent banner
 // until ack · P1 = feed · P2 = digest-only. Deduped by event_id (idempotent bus).
+
+// EpisodeEventID (W26, 2026-10-15) builds a PER-EPISODE dedupe key for a
+// recurring event: "<kind>:<traderID>:<epochMs>". A fixed event id dedupes
+// forever (the idempotent bus has no expiry), so a recurring DOWN episode used
+// to be silent the second time. Callers pass the episode's start instant (the
+// handoff timeout, the link-down instant, …) so every episode is its own row;
+// the dedupe still collapses a re-emit inside the same instant. epochMs <= 0
+// falls back to the bare "<kind>:<traderID>" key (no fabricated instant).
+func EpisodeEventID(kind, traderID string, epochMs int64) string {
+	if epochMs <= 0 {
+		return kind + ":" + traderID
+	}
+	return kind + ":" + traderID + ":" + strconv.FormatInt(epochMs, 10)
+}
 
 // AlertStore persists in-app alerts.
 type AlertStore struct {

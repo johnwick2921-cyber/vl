@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"vl/kernel"
+	"vl/logger"
 	"vl/market"
 	"vl/store"
 	"vl/telemetry"
@@ -61,12 +62,13 @@ const dailyLossFlattenResend = 2 * time.Minute
 func dailyLossLatchKey(traderID string) string { return "daily_loss_latch:" + traderID }
 
 var (
-	dailyLossMu        sync.Mutex
-	dailyLossRestored  = map[*AutoTrader]bool{} // the persisted latch was read once for this instance
-	dailyLossPersisted = map[string]string{}    // traderID → session-day already written
-	dailyLossFlatSent  = map[string]time.Time{} // traderID|positionID → last flatten send
-	dailyLossManualLog = map[string]bool{}      // traderID|positionID → manual position logged once
-	dailyLossTripDay   = map[string]string{}    // traderID → session-day the trip was announced
+	dailyLossMu              sync.Mutex
+	dailyLossRestored        = map[*AutoTrader]bool{} // the persisted latch was read once for this instance
+	dailyLossPersisted       = map[string]string{}    // traderID → session-day already written
+	dailyLossFlatSent        = map[string]time.Time{} // traderID|positionID → last flatten send
+	dailyLossManualLog       = map[string]bool{}      // traderID|positionID → manual position logged once
+	dailyLossTripDay         = map[string]string{}    // traderID → session-day the trip was announced
+	dailyLossSoftAuditLogged = map[string]bool{}      // traderID|session-day|hit → soft-audit line logged once
 )
 
 // ── THE ONE P&L READER ──────────────────────────────────────────────────────
@@ -402,6 +404,12 @@ func (at *AutoTrader) dailyLossBeatAt(now time.Time) {
 	if at == nil {
 		return
 	}
+	// P2-4 (release #26): the soft guardrail audit (CheckSoft) only ever ran on
+	// the AI decision path (kernel/engine_analysis.go), which a mentor trader
+	// never runs — so a mentor trader saw NOTHING of what the cage would have
+	// caught. Run it here, on the mentor's own beat, before the hard verdict.
+	// Pure audit: logs + counters, never refuses.
+	at.mentorSoftAudit(now)
 	v := at.dailyGuardVerdictAt(now)
 	if !v.Latched {
 		return
@@ -413,6 +421,62 @@ func (at *AutoTrader) dailyLossBeatAt(now time.Time) {
 		// SWING4H included. Entries only — the mentor cancel never touches a
 		// filled position's bracket.
 		at.cancelAllLiveMentorArmsWith("daily-loss limit: " + why)
+	}
+}
+
+// mentorSoftAudit is the mentor path's half of the soft guardrail audit
+// (P2-4, release #26). The AI decision path runs CheckSoft in
+// kernel/engine_analysis.go; a mentor trader never enters that cycle, so this
+// runs it on the mentor's 60 s beat instead. It is PURE AUDIT: CheckSoft
+// returns "would have tripped" reasons and never blocks anything; here they are
+// logged and counted, once per (trader, CME session-day, reason), and the
+// hard gate's own trip is still announced by dailyGuardVerdictAt.
+func (at *AutoTrader) mentorSoftAudit(now time.Time) {
+	if at == nil || at.store == nil || at.config.StrategyConfig == nil {
+		return
+	}
+	if !at.mentorEnabled() {
+		return // the AI path already soft-audits; do not double-log
+	}
+	rc := at.config.StrategyConfig.RiskControl
+	gp := kernel.ResolveStrategyGuardrails(rc, kernel.LoadRiskLimitsFromConfig().MaxDailyLossUSD)
+	if gp.MasterEnabled {
+		return // the hard gate is live; the soft audit is the master-OFF diagnostic
+	}
+	g := kernel.DailyGuardrails{
+		MasterEnabled:         false,
+		DailyLossEnabled:      gp.DailyLossEnabled,
+		DailyLossLimitUSD:     gp.DailyLossLimitUSD,
+		DailyProfitEnabled:    gp.DailyProfitEnabled,
+		DailyProfitTargetUSD:  gp.DailyProfitTargetUSD,
+		MaxDailyTradesEnabled: gp.MaxDailyTradesEnabled,
+		MaxDailyTrades:        gp.MaxDailyTrades,
+		BlackoutConfigured:    rc.BlackoutStartCT != "" && rc.BlackoutEndCT != "",
+		InBlackoutNow:         kernel.InBlackoutWindow(now, rc.BlackoutStartCT, rc.BlackoutEndCT),
+		ConsistencyMaxDayPct:  rc.ConsistencyMaxDayPct,
+	}
+	if bot, err := at.botDayPnLAt(now); err == nil {
+		g.DailyLossPnL, g.DailyLossPnLKnown = bot.Total(), true
+	}
+	if realized, trades, err := at.dailyGuardrailActivityAt(now); err == nil {
+		g.DailyRealizedPnL, g.TradesToday = realized, trades
+	}
+	if rec, err := at.store.Position().GetFullStats(at.id, at.currentAccountName()); err == nil {
+		g.TotalRealizedPnL = rec.TotalPnL
+	}
+	day := kernel.CMESessionDayKey(now)
+	for _, hit := range g.CheckSoft() {
+		key := at.id + "|" + day + "|" + hit
+		dailyLossMu.Lock()
+		seen := dailyLossSoftAuditLogged[key]
+		dailyLossSoftAuditLogged[key] = true
+		dailyLossMu.Unlock()
+		if seen {
+			continue
+		}
+		logger.Warnf("🔍 mentor guardrail WOULD have tripped (master OFF, not enforced): %s", hit)
+		telemetry.RecordError(at.id, "guardrail_would_trip", hit, telemetry.CostNone)
+		telemetry.IncTraderEvent(at.id, "mentor_guardrail_would_trip")
 	}
 }
 
@@ -539,6 +603,20 @@ func dailyLossGatePosture(cfg *store.StrategyConfig) (enforced bool, posture, tr
 		trades = fmt.Sprintf("max_daily_trades %d ENFORCED on every path (mentor included)", gp.MaxDailyTrades)
 	}
 	return gp.MasterEnabled && gp.DailyLossEnabled && gp.DailyLossLimitUSD > 0, posture, trades
+}
+
+// DailyLossScopeBootLine is the per-trader load line for the TWO scopes the
+// daily-loss gate's legs read (N9, release #26 — REPORT ONLY, behaviour
+// unchanged; the owner has not decided the scope). The loss leg is trader-wide
+// (store.BotRealizedPnL + GetOpenPositions, no account filter); the
+// trades/profit legs are account-scoped (GetSessionDayActivity with the active
+// account). Printed so the owner can see the difference.
+func DailyLossScopeBootLine(activeAccount string) string {
+	acct := strings.TrimSpace(activeAccount)
+	if acct == "" {
+		acct = "n/a (not bound yet — resolved per evaluation)"
+	}
+	return fmt.Sprintf("daily-loss gate scopes: loss leg = trader-wide (bot P&L realized+open, every account) · trades/profit legs = account-scoped (active account %s)", acct)
 }
 
 // DailyLossGateBootLineForStrategy is the per-trader posture line: what the

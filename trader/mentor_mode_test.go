@@ -963,8 +963,8 @@ func TestMentorExitForkAtPlacement(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	wireMentorPlacementSeams(t, at)
 	ct := time.FixedZone("CT", -5*3600)
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	mentorLatestPriceSource = func() (float64, bool) { return 99, true }
 	t.Cleanup(func() { mentorLatestPriceSource = nil })
 	placed := 0

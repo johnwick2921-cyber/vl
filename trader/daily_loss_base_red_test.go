@@ -90,8 +90,8 @@ func TestBaseRedMentorPlacementObeysMaxDailyTrades(t *testing.T) {
 	t.Cleanup(func() { kernel.ClearDailyForceFlat(at.id) })
 	wireMentorPlacementSeams(t, at)
 	now := time.Date(2026, 10, 2, 9, 0, 0, 0, kernel.CTLocation())
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	var placed int
 	mentorPlaceRecorderForTest = func(mentor.Intent, int) { placed++ }
 	t.Cleanup(func() { mentorPlaceRecorderForTest = nil })

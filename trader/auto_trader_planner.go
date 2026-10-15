@@ -897,7 +897,7 @@ func (at *AutoTrader) maybeRereadAfterFlip(now time.Time, session, tradeDate str
 	// The two LOAD rules a level wake obeys are computed only to SAY that the
 	// exemption applied (never to refuse): the class-47 cooldown since the last
 	// wake-authored version, and the shared wake_min_interval_min throttle.
-	if exempt := flipRereadExemptionNote(now, at.lastPlannerWakeAt, cfg.WakeMinIntervalMinutes(), at.lastWakeAuthoredVersionAge(now, tradeDate, session), wakeCooldownMinutes()); exempt != "" {
+	if exempt := flipRereadExemptionNote(now, at.wakePlannerAt(), cfg.WakeMinIntervalMinutes(), at.lastWakeAuthoredVersionAge(now, tradeDate, session), wakeCooldownMinutes()); exempt != "" {
 		at.logWarnf("🗓️ structure_flip read %s %s v%d — immediate (flip reads are exempt from cooldown/min-interval; cutoff + stream guard still apply): %s",
 			tradeDate, session, row.Version, exempt)
 	}
@@ -917,7 +917,7 @@ func (at *AutoTrader) maybeRereadAfterFlip(now time.Time, session, tradeDate str
 	at.flipRereadLaunchAt.Store(inflightKey, now)
 	// Ordinary wakes back off from THIS read; the flip read never backed off
 	// from them.
-	at.lastPlannerWakeAt = now
+	at.setWakePlannerAt(now)
 	// BLOCKER 2 — the once-key is NOT set here. It lands only after the
 	// goroutine below has seen a newer active version in the store.
 
@@ -1301,7 +1301,13 @@ func claimPlannerRead(key string) bool {
 	return !loaded
 }
 
-func releasePlannerRead(key string) { plannerReadInFlight.Delete(key) }
+func releasePlannerRead(key string) {
+	plannerReadInFlight.Delete(key)
+	// W26 F-1: a wake deferred by "stream open" re-fires the moment the LAST
+	// claim clears — it must not wait for the next monitor cycle (10-14 the
+	// wake sat parked behind another trader's stream for ~2h).
+	fireDeferredWakeRefires()
+}
 
 // PlannerReadInFlight reports whether a planner read for this trader's chain is
 // currently running (the claim is held). The API exposes it as the card's
@@ -1924,11 +1930,20 @@ func clampLine(s string, n int) string {
 // attempt N-1's defect, and (WAVE PLANNER B2 follow-up) persists the AI's RAW
 // answer so a future replay can re-check the same text the live attempt
 // produced.
-func (at *AutoTrader) plannerRejectBookkeeping(attempt int, tradeDate, session, hash, userPrompt, raw string, rejectErr error, prevReason *string, factsJSON ...string) {
+//
+// W26 F-1 (2026-10-15): it now RETURNS whether this reject repeated the
+// PREVIOUS attempt's defect (samePlannerDefect). A repeated identical defect
+// is a stuck model — the caller ends the read at once (fail-closed) instead of
+// burning another full ~15 min max-reasoning attempt (the 10-14 read burned
+// attempts 2 AND 3 on the identical "no JSON object found" defect and held the
+// stream ~45 min).
+func (at *AutoTrader) plannerRejectBookkeeping(attempt int, tradeDate, session, hash, userPrompt, raw string, rejectErr error, prevReason *string, factsJSON ...string) bool {
 	if rejectErr == nil {
-		return
+		return false
 	}
+	repeated := false
 	if attempt >= 2 && *prevReason != "" && samePlannerDefect(*prevReason, rejectErr.Error()) {
+		repeated = true
 		telemetry.IncRepairRegression(at.id)
 		at.logWarnf("🎯 repair regression: attempt %d repeated the attempt %d defect — %s", attempt, attempt-1, rejectErr.Error())
 	}
@@ -1944,6 +1959,7 @@ func (at *AutoTrader) plannerRejectBookkeeping(attempt int, tradeDate, session, 
 			at.logWarnf("🧾 rejected-prompt persist failed: %v", serr)
 		}
 	}
+	return repeated
 }
 
 // samePlannerDefect compares two reject reasons on a normalized prefix — the
@@ -2127,9 +2143,27 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 	resendIdentical := ""        // class 41 M0: the exact prompt a provider-failed attempt sent
 	resendAfterWatchdog := false // the prior attempt died on a watchdog close
 	resendStart := time.Time{}
-	lastAttempt := 0                            // WAVE PLANNER B3 — the final attempt count, recorded by the read line
+	lastAttempt := 0 // WAVE PLANNER B3 — the final attempt count, recorded by the read line
+	// W26 F-1 (2026-10-15): the READ is wall-clock bounded to ONE wake interval,
+	// so a slow max-reasoning attempt (~904s) × 3 can never hold the planner
+	// stream for 45+ min and block every wake behind it (10-14 22:31→23:59).
+	// The per-attempt stream deadline (PlannerStreamTotalSeconds, default 1200s)
+	// still binds each call; this is the read-level ceiling.
+	readIntervalMin := store.DefaultWakeMinIntervalMin
+	if cfg := at.dayPlanCfg(); cfg != nil {
+		readIntervalMin = cfg.WakeMinIntervalMinutes()
+	}
+	// traderNow() is the testable clock (testNow seam) — the wall clock in prod.
+	readDeadline := traderNow().Add(time.Duration(readIntervalMin) * time.Minute)
 	for attempt := 1; attempt <= 3; attempt++ { // 1 + ≤2 retries
 		lastAttempt = attempt
+		if traderNow().After(readDeadline) {
+			if lastErr == nil {
+				lastErr = fmt.Errorf("planner read wall-clock cap (%d min) reached before attempt %d — fail-closed", readIntervalMin, attempt)
+			}
+			at.logWarnf("⛔ planner read wall-clock cap (%d min) reached at attempt %d — fail-closed (no plan written)", readIntervalMin, attempt)
+			break
+		}
 		researchTrace.Finish(lastErr)
 		userPrompt := prompt
 		modeLabel := "author"
@@ -2245,12 +2279,18 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 			// being repaired BEFORE bookkeeping rewrites the pointer.
 			// (#213 keeps the raw answer in the bookkeeping — both behaviours.)
 			repairing := prevReason
-			at.plannerRejectBookkeeping(attempt, tradeDate, session, promptHash, userPrompt, lastRaw, lastErr, &prevReason, FactsSnapshotJSON(facts))
+			repeated := at.plannerRejectBookkeeping(attempt, tradeDate, session, promptHash, userPrompt, lastRaw, lastErr, &prevReason, FactsSnapshotJSON(facts))
 			if modeLabel == "repair" {
 				at.recordRepairOutcome(raw, perr, repairing)
 			}
 			rejectBlock = plannerRejectBlock(lastErr, liveConditions, kernel.StructureTrend4h(facts.Structure))
 			rejectHistory = addDistinctReject(rejectHistory, lastErr)
+			if repeated {
+				// W26 F-1: a repeated identical parse defect is a stuck model —
+				// end the read at once, fail-closed (no plan, active plan kept).
+				at.logWarnf("⛔ planner read ends at attempt %d — repeated the attempt %d defect (%s), fail-closed (no plan written)", attempt, attempt-1, lastErr.Error())
+				break
+			}
 			continue
 		}
 		// W6-D (2026-08-25) — the G5 write-time demotion is REMOVED: stamping
@@ -2580,7 +2620,9 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 			}
 		}
 		for i := 0; i < nArms; i++ {
-			telemetry.IncGateBlock(at.id, "arm_authored")
+			// P2-3a (release #26): an arm AUTHORED is an event, not a refusal —
+			// it must not count as a gate-block. Recorded on its own counter.
+			telemetry.IncTraderEvent(at.id, "arm_authored")
 		}
 		if modeLabel == "repair" {
 			// The denominator: an accepted repair is recorded ONLY here, where

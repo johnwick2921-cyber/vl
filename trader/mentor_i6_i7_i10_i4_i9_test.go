@@ -85,9 +85,9 @@ func TestMentorI7BrokerSnapshotLatchesScaledWhenLeg1Gone(t *testing.T) {
 	}
 
 	T := int64(2_000)
-	oldNow := mentorNowSource
-	mentorNowSource = func() time.Time { return time.UnixMilli(T) }
-	t.Cleanup(func() { mentorNowSource = oldNow })
+	oldNow := getMentorNowSource()
+	setMentorNowSource(func() time.Time { return time.UnixMilli(T) })
+	t.Cleanup(func() { setMentorNowSource(oldNow) })
 
 	sides := map[string]bool{"long": true}
 	qty := map[string]float64{"long": 5} // leg 1 still present

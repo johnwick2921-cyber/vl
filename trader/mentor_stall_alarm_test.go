@@ -75,7 +75,7 @@ func mentorStallOpenTime() time.Time {
 func driveStalledLevelTick(at *AutoTrader, n int) mentorTierInputs {
 	in := stallLevelIntent(n)
 	extra := mentorExtraFor(in, false)
-	at.mentorDispatchIntent(in, extra, 0, 0)             // sized, held (MENTOR_PLACE off) — not authored
+	at.mentorDispatchIntent(in, extra, 0, 0)                   // sized, held (MENTOR_PLACE off) — not authored
 	at.mentorDispatchIntent(cancelLevelIntent(n), extra, 0, 0) // refused: arm not in the registry
 	return extra
 }
@@ -105,8 +105,8 @@ func TestMentorStallAlarmFiresOnceForLevel(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "1") // the sized Place must reach mentorPlaceIntent — the real death site
 	at, st := stallAlarmTrader(t, "t1")
 	now := mentorStaleBlockClock(9, 0)
-	mentorNowSource = func() time.Time { return now }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	wireMentorPlacementSeams(t, at)
 	mentorStaleBlockFeed(t, now, 3*time.Minute) // stale bars — the 10-11 Sunday NT8 ~10-min lag
 

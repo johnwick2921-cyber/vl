@@ -1761,6 +1761,52 @@ fillDerived:
 	}, nil
 }
 
+// positionBracket is the working protective bracket of an OPEN position, read
+// from the broker's own order book (the order_snapshot frame). The AddOn names
+// entry legs by signal id and protective legs with -sl / -tp suffixes. A field
+// is omitted (json:",omitempty") when unknown — never 0 (L7).
+type positionBracket struct {
+	Stop   float64 `json:"stop,omitempty"`
+	Target float64 `json:"target,omitempty"`
+	Source string  `json:"source,omitempty"`
+}
+
+// positionBracketFor reads the working stop/target NT8 holds for one open
+// position from the latest order snapshot. Returns nil when unknown (no book
+// yet, or no working protective orders for the symbol) — the field stays
+// ABSENT, never a zero bracket (T32, ui-studio-truth).
+func (t *TCPTrader) positionBracketFor(symbol string) *positionBracket {
+	if t == nil || t.server == nil {
+		return nil
+	}
+	snap, ok := t.server.OrderSnapshots().Latest(t.boundAccount)
+	if !ok {
+		return nil
+	}
+	b := &positionBracket{Source: "nt8_order_snapshot"}
+	for _, o := range snap.WorkingOrdersFor(symbol) {
+		name := strings.TrimSpace(o.Name)
+		switch {
+		case strings.HasSuffix(name, "-sl"):
+			if o.StopPrice > 0 {
+				b.Stop = o.StopPrice
+			} else if o.LimitPrice > 0 {
+				b.Stop = o.LimitPrice
+			}
+		case strings.HasSuffix(name, "-tp"):
+			if o.LimitPrice > 0 {
+				b.Target = o.LimitPrice
+			} else if o.StopPrice > 0 {
+				b.Target = o.StopPrice
+			}
+		}
+	}
+	if b.Stop <= 0 && b.Target <= 0 {
+		return nil
+	}
+	return b
+}
+
 // positionMap builds the UI/decision-context record for one open position, with
 // uPnL marked off the latest cached bar and the futures point value. Shared by
 // the NT8-snapshot path (truth) and the fill-derived fallback so both produce
@@ -1771,8 +1817,9 @@ func (t *TCPTrader) positionMap(symbol, side string, qty, entry float64, uPnLOve
 	// Futures: contract point value (MNQ=$2/pt). positionAmt is signed (short < 0)
 	// per the account-snapshot convention GetAccountInfo expects.
 	pv := market.FuturesPointValue(symbol)
-	if pv <= 0 {
-		pv = 1
+	pvKnown := pv > 0 // L7: an unknown symbol has NO point value — never fabricate 1
+	if !pvKnown {
+		pv = 1 // internal fallback for the uPnL math only (avoid divide-by-zero)
 	}
 	dir := 1.0
 	signedQty := qty
@@ -1812,7 +1859,7 @@ func (t *TCPTrader) positionMap(symbol, side string, qty, entry float64, uPnLOve
 		}
 	}
 
-	return map[string]interface{}{
+	out := map[string]interface{}{
 		// snake_case — read by the UI Position type (web/src/types/trading.ts)
 		"symbol":             symbol,
 		"side":               sd,
@@ -1830,6 +1877,20 @@ func (t *TCPTrader) positionMap(symbol, side string, qty, entry float64, uPnLOve
 		"markPrice":        mark,
 		"unRealizedProfit": uPnL,
 	}
+	// T27 (ui-studio-truth): CME futures truth — the per-contract point value
+	// and the notional position value (qty × mark × $/pt). ABSENT when the
+	// point value is unknown (L7: never a fabricated 1 $/pt); the UI then shows
+	// n/a, and the uPnL math above used the internal 1 fallback only.
+	if pvKnown {
+		out["point_value"] = pv
+		out["position_value"] = qty * mark * pv
+	}
+	// T32 (ui-studio-truth): the open position's working stop/target from the
+	// broker order book — ABSENT when unknown (never a zero bracket).
+	if b := t.positionBracketFor(symbol); b != nil {
+		out["bracket"] = b
+	}
+	return out
 }
 
 // DebugPlaceTestTrade places a deterministic 1-contract bracket order on the

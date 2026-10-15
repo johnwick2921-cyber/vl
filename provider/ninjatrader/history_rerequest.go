@@ -112,6 +112,7 @@ func (s *TCPServer) resendBarsSubscribe(symbol string) (BarsSubscribePayload, er
 	if err != nil {
 		return payload, fmt.Errorf("send bars_subscribe: %w", err)
 	}
+	s.barCache.NoteReconnect(time.Now()) // W26: a resend rebuilds the AddOn's BarsRequests → stale re-emit window
 	return payload, nil
 }
 
