@@ -564,9 +564,9 @@ export const riskControl = {
     es: 'Máx. contratos / orden — tope siempre activo: tu valor, si no 2, luego limitado por el techo Stage-A (1 salvo que STAGE_A_CONTRACT_CAP lo suba): en la práctica 1; un trader en modo mentor NO queda limitado (tabla del mentor, hasta mentor_max_contracts, 20)',
   },
   notionalCapField: {
-    zh: '名义上限倍数 (权益×N) — 默认 20（安全底线，开关默认开启）',
-    en: 'Notional cap (equity × N) — default 20 (safety backstop, toggle default ON)',
-    es: 'Tope nocional (capital × N) — por defecto 20 (respaldo, ON)',
+    zh: '名义上限倍数 (权益×N) — 默认 20（安全底线，始终开启，无开关）',
+    en: 'Notional cap (equity × N) — default 20 (safety backstop, always on — no toggle)',
+    es: 'Tope nocional (capital × N) — por defecto 20 (respaldo, siempre activo — sin interruptor)',
   },
   blackoutStart: {
     zh: '禁止交易开始 (CT) — 开关默认关闭；窗口内不做新决策（NT8 侧 SL/TP 仍保护持仓）',

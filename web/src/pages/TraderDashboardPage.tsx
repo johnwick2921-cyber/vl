@@ -974,8 +974,20 @@ export function TraderDashboardPage({
                           <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-vl-neo-text-main">
                             {formatQuantity(pos.quantity)}
                           </td>
-                          <td className="px-1 py-3 font-mono font-bold whitespace-nowrap text-right text-vl-neo-text-main">
-                            {(pos.quantity * pos.mark_price).toFixed(2)}
+                          <td
+                            className="px-1 py-3 font-mono font-bold whitespace-nowrap text-right text-vl-neo-text-main"
+                            title={
+                              pos.point_value
+                                ? `${pos.point_value} $/pt`
+                                : undefined
+                            }
+                          >
+                            {(
+                              pos.position_value ??
+                              pos.quantity *
+                                pos.mark_price *
+                                (pos.point_value ?? 1)
+                            ).toFixed(2)}
                           </td>
                           {!isFutures && (
                             <td className="px-1 py-3 font-mono whitespace-nowrap text-center text-vl-neo-gold hidden md:table-cell">

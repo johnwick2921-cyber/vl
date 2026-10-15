@@ -76,6 +76,7 @@ export const translations = {
     noHistoricalData: 'No Historical Data',
     dataWillAppear: 'Equity curve will appear after running a few cycles',
     initialBalance: 'Initial Balance',
+    equityBaseline: 'Baseline',
     currentEquity: 'Current Equity',
     historicalCycles: 'Historical Cycles',
     displayRange: 'Display Range',
@@ -1407,6 +1408,7 @@ export const translations = {
     noHistoricalData: '暂无历史数据',
     dataWillAppear: '运行几个周期后将显示收益率曲线',
     initialBalance: '初始余额',
+    equityBaseline: '基线',
     currentEquity: '当前净值',
     historicalCycles: '历史周期',
     displayRange: '显示范围',
@@ -2664,6 +2666,7 @@ export const translations = {
     dataWillAppear:
       'Kurva ekuitas akan muncul setelah beberapa siklus berjalan',
     initialBalance: 'Saldo Awal',
+    equityBaseline: 'Garis dasar',
     currentEquity: 'Ekuitas Saat Ini',
     historicalCycles: 'Siklus Historis',
     displayRange: 'Rentang Tampilan',
