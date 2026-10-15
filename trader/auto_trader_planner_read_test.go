@@ -212,11 +212,13 @@ func TestRunPlannerReadRepairFallbackAndRegression(t *testing.T) {
 // defect and held the planner stream ~45 min.
 func TestRunPlannerReadRepeatedDefectEndsRead(t *testing.T) {
 	at := plannerTestTrader(t)
+	read := time.Date(2026, 8, 26, 10, 0, 0, 0, kernel.CTLocation())
 	facts := kernel.PlanFacts{Price: 15550, DATR: 300}
 	machine := map[float64]string{15480: "PWL", 15700: "RN 15700"}
 	calls := 0
 	base := telemetry.RepairRegressionCount()
-	_, lc, _ := at.runPlannerReadCoreWithFactsGrades("ASIA", "2026-08-26", "owner_reset",
+	_, lc, _ := at.runPlannerReadCoreWithFactsGradesClock(func() time.Time { return read },
+		"ASIA", "2026-08-26", "owner_reset",
 		"deepseek-v4-pro", "hashQD", "", "", "", "FULLPROMPT", facts, nil, machine, nil, false, // wake path: opportunistic
 		func(userPrompt string) (string, error) {
 			calls++
@@ -267,7 +269,8 @@ func TestRunPlannerReadWallClockCap(t *testing.T) {
 	facts := kernel.PlanFacts{Price: 15550, DATR: 300}
 	machine := map[float64]string{15480: "PWL"}
 	calls := 0
-	_, lc, _ := at.runPlannerReadCoreWithFactsGrades("ASIA", "2026-08-26", "owner_reset",
+	_, lc, _ := at.runPlannerReadCoreWithFactsGradesClock(func() time.Time { return clk },
+		"ASIA", "2026-08-26", "owner_reset",
 		"deepseek-v4-pro", "hashQE", "", "", "", "FULLPROMPT", facts, nil, machine, nil, false,
 		func(userPrompt string) (string, error) {
 			calls++

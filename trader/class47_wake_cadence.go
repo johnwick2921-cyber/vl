@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"vl/safe"
 
 	"vl/kernel"
+	"vl/safe"
 )
 
 // ── CLASS 47 (2026-09-02) — WAKE CADENCE ────────────────────────────────────
@@ -94,18 +94,40 @@ func minutesToSessionFlat(now time.Time, sess *kernel.SessionDef) (int, bool) {
 }
 
 // deferredWakeRefires holds wake re-fire closures registered while a planner
-// stream was open. releasePlannerRead drains them the moment the LAST claim
-// clears, so a wake deferred by "stream open" re-fires when the stream closes
-// instead of waiting for the next monitor cycle (W26 F-1: 10-14 the wake sat
-// parked behind another trader's 2h stream).
+// stream was open, keyed by (trader, session) so at most ONE pending re-fire is
+// queued per trader per session. releasePlannerRead drains them the moment the
+// LAST claim clears, so a wake deferred by "stream open" re-fires when the
+// stream closes instead of waiting for the next monitor cycle (W26 F-1: 10-14
+// the wake sat parked behind another trader's 2h stream). W26-CTO-GATES F4: the
+// map dedupes the ~60-closure herd that the old slice accumulated over a 2h
+// stream.
 var deferredWakeRefiresMu sync.Mutex
-var deferredWakeRefires []func()
+var deferredWakeRefires = map[string]func(){}
+
+// wakeRefireTestHook is a test-only seam invoked after a deferred-wake re-fire
+// completes (nil in production). Tests set it to a channel close and WAIT on it
+// instead of polling the wake-state fields, so the race detector never sees the
+// re-fire goroutine's write race the test's read.
+var wakeRefireTestHook func()
+
+// deferredWakeRefireKey builds the dedupe key: one pending re-fire per
+// (trader, trade date, session) — the level-event wake is the only wake class
+// that defers on stream-open, and a later cycle's re-registration for the same
+// trader/session replaces nothing (the first pending closure already re-checks
+// the reason on the re-run).
+func deferredWakeRefireKey(traderID, tradeDate, session string) string {
+	return traderID + "|" + tradeDate + "|" + session
+}
 
 // registerDeferredWakeRefire queues a wake re-fire for the next stream close.
-func registerDeferredWakeRefire(f func()) {
+// Same key → the existing closure stands (no herd).
+func registerDeferredWakeRefire(key string, f func()) {
 	deferredWakeRefiresMu.Lock()
-	deferredWakeRefires = append(deferredWakeRefires, f)
-	deferredWakeRefiresMu.Unlock()
+	defer deferredWakeRefiresMu.Unlock()
+	if _, exists := deferredWakeRefires[key]; exists {
+		return
+	}
+	deferredWakeRefires[key] = f
 }
 
 // drainDeferredWakeRefires returns and clears the pending re-fires. The caller
@@ -113,8 +135,11 @@ func registerDeferredWakeRefire(f func()) {
 func drainDeferredWakeRefires() []func() {
 	deferredWakeRefiresMu.Lock()
 	defer deferredWakeRefiresMu.Unlock()
-	out := deferredWakeRefires
-	deferredWakeRefires = nil
+	out := make([]func(), 0, len(deferredWakeRefires))
+	for _, f := range deferredWakeRefires {
+		out = append(out, f)
+	}
+	deferredWakeRefires = map[string]func(){}
 	return out
 }
 
@@ -127,7 +152,7 @@ func fireDeferredWakeRefires() {
 		return
 	}
 	for _, f := range drainDeferredWakeRefires() {
-		safe.GoNamed("planner-wake-refire", f) // panic net (TestNoBareGoroutineOutsideTheNet)
+		safe.GoNamed("planner-wake-refire", f)
 	}
 }
 

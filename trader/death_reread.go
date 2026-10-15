@@ -269,7 +269,7 @@ func (at *AutoTrader) maybeRereadAfterDeath(now time.Time, session, tradeDate st
 	// The two LOAD rules a level wake obeys are computed only to SAY that the
 	// exemption applied (never to refuse) — a death re-read is a reaction to a
 	// machine-confirmed kill, like the flip read.
-	if exempt := flipRereadExemptionNote(now, at.lastPlannerWakeAt, cfg.WakeMinIntervalMinutes(), at.lastWakeAuthoredVersionAge(now, tradeDate, session), wakeCooldownMinutes()); exempt != "" {
+	if exempt := flipRereadExemptionNote(now, at.wakePlannerAt(), cfg.WakeMinIntervalMinutes(), at.lastWakeAuthoredVersionAge(now, tradeDate, session), wakeCooldownMinutes()); exempt != "" {
 		at.logWarnf("🗓️ death re-read %s %s v%d — immediate (reaction reads are exempt from cooldown/min-interval; cutoff + stream guard still apply): %s",
 			tradeDate, session, row.Version, exempt)
 	}
@@ -292,7 +292,7 @@ func (at *AutoTrader) maybeRereadAfterDeath(now time.Time, session, tradeDate st
 		return
 	}
 	at.flipRereadLaunchAt.Store(inflightKey, now)
-	at.lastPlannerWakeAt = now
+	at.setWakePlannerAt(now)
 
 	oldBias := ""
 	if doc, ok := resolveActivePlanDoc(at.store, row); ok {

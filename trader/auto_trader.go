@@ -762,6 +762,10 @@ type AutoTrader struct {
 	// can never double-fire inside one wake_min_interval_min window).
 	lastLevelWakeKey  string
 	lastPlannerWakeAt time.Time
+	// wakeStateMu guards the W6 wake-state fields (lastLevelWakeKey,
+	// lastMSSWakeKey, lastPlannerWakeAt): the W26 F-1 re-fire goroutine and the
+	// per-trader monitor loop can both touch them, so every access holds it.
+	wakeStateMu sync.Mutex
 	// flipRereadLaunchAt (W-FLIP-REREAD-IMMEDIATE) — per plan|version, when a
 	// structure_flip read last LAUNCHED and wrote nothing; the flip read's
 	// self-backoff clock (see maybeRereadAfterFlip). Per trader on purpose:

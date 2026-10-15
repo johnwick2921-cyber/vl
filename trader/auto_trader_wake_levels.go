@@ -292,6 +292,46 @@ func collectLevelWakeCandidates(cfg *store.DayPlanConfig, fetch func(tf string, 
 	return out
 }
 
+// wakeState accessors — the W6 wake-state fields under wakeStateMu. The W26 F-1
+// re-fire goroutine and the per-trader monitor loop can both touch them.
+func (at *AutoTrader) wakeLevelKey() string {
+	at.wakeStateMu.Lock()
+	defer at.wakeStateMu.Unlock()
+	return at.lastLevelWakeKey
+}
+
+func (at *AutoTrader) wakeMSSKey() string {
+	at.wakeStateMu.Lock()
+	defer at.wakeStateMu.Unlock()
+	return at.lastMSSWakeKey
+}
+
+func (at *AutoTrader) wakePlannerAt() time.Time {
+	at.wakeStateMu.Lock()
+	defer at.wakeStateMu.Unlock()
+	return at.lastPlannerWakeAt
+}
+
+func (at *AutoTrader) setWakePlannerAt(t time.Time) {
+	at.wakeStateMu.Lock()
+	defer at.wakeStateMu.Unlock()
+	at.lastPlannerWakeAt = t
+}
+
+func (at *AutoTrader) recordLevelWakeFired(key string, t time.Time) {
+	at.wakeStateMu.Lock()
+	defer at.wakeStateMu.Unlock()
+	at.lastLevelWakeKey = key
+	at.lastPlannerWakeAt = t
+}
+
+func (at *AutoTrader) recordMSSWakeFired(key string, t time.Time) {
+	at.wakeStateMu.Lock()
+	defer at.wakeStateMu.Unlock()
+	at.lastMSSWakeKey = key
+	at.lastPlannerWakeAt = t
+}
+
 // seatedLevelSide classifies a plan level by its provenance label into the
 // invalidation direction ("" = not a zone-kind level, never wakes).
 func seatedLevelSide(label string) string {
@@ -357,14 +397,14 @@ func (at *AutoTrader) maybeWakePlannerOnLevelEventsAt(now time.Time, session, tr
 	ev := cands[0]
 	// One wake per (plan,version,event) — the same event must not re-fire on
 	// the next cycle after the wake.
-	if at.lastLevelWakeKey == ev.key {
+	if at.wakeLevelKey() == ev.key {
 		return
 	}
 	// Min-interval throttle shared with the MSS wake: ANY planner wake resets
 	// the clock, so a death/MSS/level cascade can't triple-spend one window.
-	if !at.lastPlannerWakeAt.IsZero() && now.Sub(at.lastPlannerWakeAt) < time.Duration(cfg.WakeMinIntervalMinutes())*time.Minute {
+	if wakeAt := at.wakePlannerAt(); !wakeAt.IsZero() && now.Sub(wakeAt) < time.Duration(cfg.WakeMinIntervalMinutes())*time.Minute {
 		at.logWarnf("🗓️ level wake %s on %s %s — SKIPPED: %.0fm elapsed < wake_min_interval_min (%dm).",
-			ev.desc, session, tradeDate, now.Sub(at.lastPlannerWakeAt).Minutes(), cfg.WakeMinIntervalMinutes())
+			ev.desc, session, tradeDate, now.Sub(wakeAt).Minutes(), cfg.WakeMinIntervalMinutes())
 		return
 	}
 	// ── CLASS 47 — CADENCE CUTOFFS, ENFORCING (owner ruling 2026-09-03) ──────
@@ -450,12 +490,17 @@ func (at *AutoTrader) maybeWakePlannerOnLevelEventsAt(now time.Time, session, tr
 		at.logWarnf("%s", wakeStreamDeferLine(session, ev.desc, held))
 		// W26 F-1 — re-fire the wake the moment the stream closes (the reason is
 		// re-checked on the re-run: the same candidate + throttle + flip gate).
-		registerDeferredWakeRefire(func() {
+		// Deduped per (trader, session): a later cycle's deferral while the same
+		// stream is still open replaces nothing.
+		registerDeferredWakeRefire(deferredWakeRefireKey(at.id, tradeDate, session), func() {
 			if at.store == nil {
 				return
 			}
 			if fresh, err := at.store.Plan().GetLatestPlanForTraderSession(tradeDate, session, at.id); err == nil && fresh != nil {
 				at.maybeWakePlannerOnLevelEventsAt(traderNow(), session, tradeDate, fresh)
+			}
+			if wakeRefireTestHook != nil {
+				wakeRefireTestHook()
 			}
 		})
 		return
@@ -465,8 +510,7 @@ func (at *AutoTrader) maybeWakePlannerOnLevelEventsAt(now time.Time, session, tr
 	// a replans_exhausted NO-TRADE (live bug 19:35 CT: 4 wake re-plans ate the
 	// whole budget and a later death darked the session). Only the dedupe key +
 	// the min-interval throttle limit wake frequency; deaths keep their own cap.
-	at.lastLevelWakeKey = ev.key
-	at.lastPlannerWakeAt = now
+	at.recordLevelWakeFired(ev.key, now)
 	at.logWarnf("🗓️ level wake %s on %s %s — waking the planner (W6, 5th wake-up).", ev.desc, session, tradeDate)
 	at.warnIfReplanOrphansOverlays(row)
 	// W6-C (2026-08-25) — the wake re-read is NON-fatal (a failed read keeps the

@@ -897,7 +897,7 @@ func (at *AutoTrader) maybeRereadAfterFlip(now time.Time, session, tradeDate str
 	// The two LOAD rules a level wake obeys are computed only to SAY that the
 	// exemption applied (never to refuse): the class-47 cooldown since the last
 	// wake-authored version, and the shared wake_min_interval_min throttle.
-	if exempt := flipRereadExemptionNote(now, at.lastPlannerWakeAt, cfg.WakeMinIntervalMinutes(), at.lastWakeAuthoredVersionAge(now, tradeDate, session), wakeCooldownMinutes()); exempt != "" {
+	if exempt := flipRereadExemptionNote(now, at.wakePlannerAt(), cfg.WakeMinIntervalMinutes(), at.lastWakeAuthoredVersionAge(now, tradeDate, session), wakeCooldownMinutes()); exempt != "" {
 		at.logWarnf("🗓️ structure_flip read %s %s v%d — immediate (flip reads are exempt from cooldown/min-interval; cutoff + stream guard still apply): %s",
 			tradeDate, session, row.Version, exempt)
 	}
@@ -917,7 +917,7 @@ func (at *AutoTrader) maybeRereadAfterFlip(now time.Time, session, tradeDate str
 	at.flipRereadLaunchAt.Store(inflightKey, now)
 	// Ordinary wakes back off from THIS read; the flip read never backed off
 	// from them.
-	at.lastPlannerWakeAt = now
+	at.setWakePlannerAt(now)
 	// BLOCKER 2 — the once-key is NOT set here. It lands only after the
 	// goroutine below has seen a newer active version in the store.
 
