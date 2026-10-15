@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -81,7 +82,21 @@ func (w *Worker) decideNT8(ctx context.Context, j updaterjob.Job) updaterjob.NT8
 			same := equalSets(rel, inst)
 			d.CSUnchanged = &same
 			if !same {
-				why("the release's %s differs from the install's (%s)", ninjascriptGlob, csDiff(rel, inst))
+				// W26 PART C (updater-addon-proof): the .cs differ, but if the
+				// AddOn already acks the manifest's build AND that build differs
+				// from the one the OLD install ships, the F5 + NT8 restart have
+				// demonstrably already happened (the AddOn can only run the bumped
+				// build if it was recompiled) — do not park. The owner F5'd the
+				// night before is the exact case: a park + resume forced an NT8
+				// restart for nothing.
+				d.OldInstallBuildID = w.oldInstallBuildID()
+				alreadyCompiled := validBuildID(d.OldInstallBuildID) &&
+					d.OldInstallBuildID != f.AddonBuildID &&
+					validBuildID(f.AddonBuildID) &&
+					d.AckedBuildID == f.AddonBuildID
+				if !alreadyCompiled {
+					why("the release's %s differs from the install's (%s)", ninjascriptGlob, csDiff(rel, inst))
+				}
 			}
 		}
 	}
@@ -201,4 +216,38 @@ func csDiff(rel, inst map[string]string) string {
 	}
 	sort.Strings(out)
 	return strings.Join(out, ",")
+}
+
+// vlBuildIDRe matches the AddOn's build-id constant: the .cs declares
+// `VL_BUILD_ID = "<id>"` (private const string). READ, never a file date.
+var vlBuildIDRe = regexp.MustCompile(`VL_BUILD_ID\s*=\s*"([^"]+)"`)
+
+// buildIDFromCS extracts the VL_BUILD_ID string constant from a .cs file body.
+func buildIDFromCS(content string) string {
+	if m := vlBuildIDRe.FindStringSubmatch(content); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// oldInstallBuildID (W26 PART C) reads the build id the INSTALL's OWN
+// ninjascript declares — "the build the OLD install shipped". It is read from
+// <install>/ninjascript/*.cs by content (the same files csOfTree hashes); empty
+// on any read error, in which case the already-compiled proof simply does not
+// fire and the park stays the safe side.
+func (w *Worker) oldInstallBuildID() string {
+	hits, err := filepath.Glob(filepath.Join(w.cfg.Target.InstallDir, filepath.FromSlash(ninjascriptGlob)))
+	if err != nil {
+		return ""
+	}
+	for _, h := range hits {
+		b, err := os.ReadFile(h)
+		if err != nil {
+			continue
+		}
+		if id := buildIDFromCS(string(b)); id != "" {
+			return id
+		}
+	}
+	return ""
 }

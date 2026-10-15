@@ -528,8 +528,15 @@ func (w *Worker) resumeProof(ctx context.Context, j updaterjob.Job, ev map[strin
 	// restart is a NEW connection: accept_seq is assigned per connection,
 	// so the resume demands an ack from a different connection than the one
 	// the park recorded (an F5 + NT8 restart reconnects the AddOn).
+	// W26 PART C (updater-addon-proof): that accept_seq proof is ONLY needed
+	// when the build id was NOT bumped. When it WAS (the install's old build
+	// differs from the manifest's), the acked build == manifest (checked above)
+	// already proves the AddOn was recompiled, so the same accept_seq is fine —
+	// the owner who F5'd the night before is not forced to restart NT8 again.
 	if j.NT8 != nil && j.NT8.CSUnchanged != nil && !*j.NT8.CSUnchanged && a.AcceptSeq == j.NT8.AckAcceptSeq {
-		return fmt.Errorf("the release's %s differs and the AddOn still runs on connection accept_seq=%d — copy it over, F5 and restart NT8, then resume", ninjascriptGlob, a.AcceptSeq)
+		if j.NT8.OldInstallBuildID == "" || j.NT8.OldInstallBuildID == j.NT8.ManifestBuildID {
+			return fmt.Errorf("the release's %s differs and the AddOn still runs on connection accept_seq=%d — copy it over, F5 and restart NT8, then resume", ninjascriptGlob, a.AcceptSeq)
+		}
 	}
 	return nil
 }
