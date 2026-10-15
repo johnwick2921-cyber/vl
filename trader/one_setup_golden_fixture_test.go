@@ -100,7 +100,11 @@ func driveOneSetupArmPath(t *testing.T, mutate func(*store.StrategyConfig), hook
 		mutate(&cfg)
 	}
 	at, st := resetTrader(t, cfg)
-	now := time.Now()
+	// W26 extra (test-only P2): session selection must come from the SAME pinned
+	// armable instant the arm runs at — never time.Now(), which at 08:19 CT
+	// (LONDON last-entry) picked a session whose cutoff had passed and refused the
+	// arm (or diverged from the arm clock).
+	now := armTestClock(t, at)
 	sess, ok := at.sessionRegistry(now).ActiveSession(now)
 	if !ok {
 		t.Skip("no active session right now")
@@ -131,7 +135,7 @@ func driveOneSetupArmPath(t *testing.T, mutate func(*store.StrategyConfig), hook
 	if _, err := st.Plan().AppendPlan(&store.PlanDB{PlanID: pid, TradeDate: td, Session: sess.Name, StrategyID: at.id, Lifecycle: "active", Doc: doc, CreatedAt: now.Add(-30 * time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
-	installActivePlanProvider(at, st)
+	installActivePlanProviderAt(at, st, func() time.Time { return now })
 	prev := market.FuturesBarsProvider
 	market.FuturesBarsProvider = func(symbol string, tf string, n int) []market.Kline { return oneSetupFixtureTape(now) }
 	t.Cleanup(func() { market.FuturesBarsProvider = prev })
