@@ -112,7 +112,7 @@ func (at *AutoTrader) driveDeadManWatchdog() watchdogEvent {
 	// Release #22 (EXECUTION F-3): the connection epoch catches a disconnect +
 	// reconnect that both fell between two samples.
 	epoch, epochKnown := at.ninjaLinkEpoch()
-	ev, missed, prev := at.deadMan.stepEpoch(connected, epoch, epochKnown, at.watchdogReconcileClean)
+	ev, missed, prev := at.deadMan.stepEpoch(connected, epoch, epochKnown, time.Now().UnixMilli(), at.watchdogReconcileClean)
 	switch ev {
 	case wdWentDown:
 		at.logWarnf("🚨 dead-man watchdog: NT8 TCP link DOWN — NEW entries BLOCKED until a clean reconciliation. Open positions & exits are unaffected.")
@@ -135,7 +135,43 @@ func (at *AutoTrader) driveDeadManWatchdog() watchdogEvent {
 	case wdResumed:
 		at.logInfof("✅ dead-man watchdog: clean positions/orders reconciliation — NEW entries RESUMED.")
 	}
+	// W26: escalate a reconcile block that will not clear (order snapshots
+	// stopped) — one P0 per episode, entries stay BLOCKED.
+	at.deadManEscalate(time.Now())
 	return ev
+}
+
+// deadManEscalate (W26) fires ONE P0 `dead_man_reconcile_stuck` alert per blocked
+// episode, after deadManStuckProbeMin consecutive failed reconcile probes or
+// deadManStuckAgeMs blocked — whichever comes first. Entries stay BLOCKED (the
+// alert is an operator signal, never an auto-unblock). A clean reconcile ends
+// the episode; the next block alerts again.
+func (at *AutoTrader) deadManEscalate(now time.Time) {
+	esc := at.deadMan.escalation()
+	if esc.BlockedSinceMs == 0 || esc.Alerted {
+		return
+	}
+	nowMs := now.UnixMilli()
+	if esc.FailedProbes < deadManStuckProbeMin && nowMs-esc.BlockedSinceMs < deadManStuckAgeMs {
+		return
+	}
+	at.deadMan.markStuckAlerted()
+	episode := fmt.Sprintf("%d", esc.BlockedSinceMs)
+	at.emitAlert("P0", "dead_man_reconcile_stuck", "deadman-stuck-"+at.id+"-"+episode,
+		"dead-man reconcile stuck — NEW entries blocked",
+		fmt.Sprintf("trader %s: entries blocked since %s (%d consecutive failed reconcile probes) — an order snapshot may have stopped arriving; manage by hand",
+			at.id, kernel.ClockCT(time.UnixMilli(esc.BlockedSinceMs)), esc.FailedProbes))
+}
+
+// HealthDeadMan is the /api/health `dead_man` field for THIS trader (READ
+// values): blocked, the current episode's start (0 = not blocked), and the
+// consecutive failed reconcile probes. Never a literal.
+func (at *AutoTrader) HealthDeadMan() (blocked bool, sinceMs int64, probes int) {
+	if at == nil {
+		return false, 0, 0
+	}
+	h := at.deadMan.HealthSnapshot()
+	return h.Blocked, h.SinceMs, h.Probes
 }
 
 // watchdogReconcileClean is the reconcile probe: the link is considered reconciled

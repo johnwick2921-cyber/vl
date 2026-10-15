@@ -27,10 +27,20 @@ func (s *Server) handleHealth(c *gin.Context) {
 		dbStatus = "dead"
 	}
 
+	// deadManHealthInfo is the per-trader /api/health `dead_man` field (W26).
+	type deadManHealthInfo struct {
+		Blocked bool  `json:"blocked"`
+		SinceMs int64 `json:"since_ms"`
+		Probes  int   `json:"probes"`
+	}
 	type nt8Info struct {
 		Link         string `json:"link"`
 		FeedStatus   string `json:"feed_status"`
 		LastBarAgeMs *int64 `json:"last_bar_age_ms"` // absent = no bar available
+		// W26 deadman-escalation: entries blocked by the dead-man reconcile gate
+		// and the current blocked episode. READ values; since_ms = 0 when not
+		// blocked; probes = consecutive failed reconcile probes in this episode.
+		DeadMan *deadManHealthInfo `json:"dead_man,omitempty"`
 	}
 	nt8 := map[string]nt8Info{}
 	running := 0
@@ -58,6 +68,9 @@ func (s *Server) handleHealth(c *gin.Context) {
 			}
 			if ageMs, ok := at.HealthLastBarAgeMs(now); ok {
 				info.LastBarAgeMs = &ageMs
+			}
+			if blocked, sinceMs, probes := at.HealthDeadMan(); blocked {
+				info.DeadMan = &deadManHealthInfo{Blocked: true, SinceMs: sinceMs, Probes: probes}
 			}
 			nt8[id] = info
 		}

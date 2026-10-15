@@ -60,33 +60,33 @@ func TestDeadManWatchdog_StepDriver(t *testing.T) {
 	probe := func() bool { return reconcileClean }
 
 	// Steady live → no event, entries allowed.
-	if ev := w.step(true, probe); ev != wdNone || w.entriesBlocked() {
+	if ev := w.step(true, 0, probe); ev != wdNone || w.entriesBlocked() {
 		t.Fatalf("steady live must be a no-op; ev=%v blocked=%v", ev, w.entriesBlocked())
 	}
 	// Disconnect → wentDown + block.
-	if ev := w.step(false, probe); ev != wdWentDown || !w.entriesBlocked() {
+	if ev := w.step(false, 0, probe); ev != wdWentDown || !w.entriesBlocked() {
 		t.Fatalf("disconnect must emit wentDown + block; ev=%v", ev)
 	}
 	// Still down → no repeat event, still blocked; reconcile probe must NOT run.
-	if ev := w.step(false, func() bool { t.Fatal("probe must not run while link down"); return true }); ev != wdNone || !w.entriesBlocked() {
+	if ev := w.step(false, 0, func() bool { t.Fatal("probe must not run while link down"); return true }); ev != wdNone || !w.entriesBlocked() {
 		t.Fatalf("still-down must not re-emit; ev=%v", ev)
 	}
 	// Reconnect → reconnected (sweep unfilled), STILL blocked; no reconcile this step.
-	if ev := w.step(true, func() bool { t.Fatal("probe must not run on the reconnect step"); return true }); ev != wdReconnected || !w.entriesBlocked() {
+	if ev := w.step(true, 0, func() bool { t.Fatal("probe must not run on the reconnect step"); return true }); ev != wdReconnected || !w.entriesBlocked() {
 		t.Fatalf("reconnect must emit reconnected + stay blocked; ev=%v", ev)
 	}
 	// Next cycle, dirty reconcile → stays blocked, no resume.
 	reconcileClean = false
-	if ev := w.step(true, probe); ev != wdNone || !w.entriesBlocked() {
+	if ev := w.step(true, 0, probe); ev != wdNone || !w.entriesBlocked() {
 		t.Fatalf("dirty reconcile must keep entries blocked; ev=%v", ev)
 	}
 	// Clean reconcile → resumed, entries allowed.
 	reconcileClean = true
-	if ev := w.step(true, probe); ev != wdResumed || w.entriesBlocked() {
+	if ev := w.step(true, 0, probe); ev != wdResumed || w.entriesBlocked() {
 		t.Fatalf("clean reconcile must resume; ev=%v", ev)
 	}
 	// Steady live again → no event, probe not invoked (entries already allowed).
-	if ev := w.step(true, func() bool { t.Fatal("probe must not run while live"); return true }); ev != wdNone {
+	if ev := w.step(true, 0, func() bool { t.Fatal("probe must not run while live"); return true }); ev != wdNone {
 		t.Fatalf("steady live after resume must be a no-op; ev=%v", ev)
 	}
 }
@@ -96,14 +96,14 @@ func TestDeadManWatchdog_StepDriver(t *testing.T) {
 func TestDeadManWatchdog_StepFlapDownBeforeReconcile(t *testing.T) {
 	w := &deadManWatchdog{}
 	probe := func() bool { return true }
-	w.step(false, probe) // down
-	w.step(true, probe)  // reconnected (awaiting reconcile)
-	if ev := w.step(false, probe); ev != wdWentDown || !w.entriesBlocked() {
+	w.step(false, 0, probe) // down
+	w.step(true, 0, probe)  // reconnected (awaiting reconcile)
+	if ev := w.step(false, 0, probe); ev != wdWentDown || !w.entriesBlocked() {
 		t.Fatalf("flap down before reconcile must re-emit wentDown + block; ev=%v", ev)
 	}
 	// And a clean reconcile only counts once the link is back up and awaiting again.
-	w.step(true, func() bool { return false }) // reconnected
-	if ev := w.step(true, probe); ev != wdResumed || w.entriesBlocked() {
+	w.step(true, 0, func() bool { return false }) // reconnected
+	if ev := w.step(true, 0, probe); ev != wdResumed || w.entriesBlocked() {
 		t.Fatalf("clean reconcile after re-reconnect must resume; ev=%v", ev)
 	}
 }
