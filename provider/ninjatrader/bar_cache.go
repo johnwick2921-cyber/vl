@@ -14,6 +14,7 @@ package ninjatrader
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -67,6 +68,10 @@ type BarCache struct {
 	// same-minute overlap: armed only by the gap-backfill re-request
 	// (armOverlapVerdict), so every other replay keeps the first-live-bar rule.
 	overlapJudgeUntil map[string]time.Time
+	// lastReconnectUnixNano (WAVE 26) — the wall-clock (UnixNano) instant of the
+	// most recent AddOn (re)connect/hello. The stale-print guard
+	// (bar_stale_print.go) is armed for stalePrintGuardWindow after it.
+	lastReconnectUnixNano atomic.Int64
 }
 
 // NewBarCache constructs an empty cache. maxBars <= 0 uses
@@ -417,7 +422,14 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 	}
 	existing := c.bars[key]
 	accepted := false
-	for _, b := range bars {
+	for i := range bars {
+		b := bars[i]
+		// WAVE 26 — a live print that lands right after a (re)connect/hello can
+		// carry the AddOn's RELOADED series (a day-old price). Quarantine it
+		// (label mixed) when its close is impossible against both its own open
+		// and the previous ring bar, so no reader takes it.
+		b, _ = c.quarantineStalePrint(symbol, b, prevBarBefore(existing, b.T))
+		bars[i] = b
 		if len(existing) == 0 {
 			existing = append(existing, b)
 			accepted = true
@@ -426,6 +438,13 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 		last := existing[len(existing)-1]
 		switch {
 		case b.T == last.T:
+			// W26 F2: a minute the guard quarantined stays quarantined — a later
+			// "clean" update of the same T (a live tick that returns the close
+			// to the real price while the stale extreme survives) must not
+			// re-promote it to live.
+			if last.Source == BarSourceMixed {
+				b.Source = BarSourceMixed
+			}
 			existing[len(existing)-1] = b
 			accepted = true
 		case b.T > last.T:
@@ -454,6 +473,11 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 			if b.Final {
 				if idx := indexOfBarT(existing, b.T); idx >= 0 {
 					if !existing[idx].Final {
+						// W26 F2: keep a quarantined minute quarantined on the
+						// finalisation path too.
+						if existing[idx].Source == BarSourceMixed {
+							b.Source = BarSourceMixed
+						}
 						existing[idx] = b
 						c.finalisations++
 					}
