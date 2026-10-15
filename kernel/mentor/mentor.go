@@ -405,10 +405,12 @@ type Config struct {
 	// @21:55–22:12] — from the print window until the 08:30 CT open (the open
 	// has its own rule, D4.4 p2 @03:51). Default OFF.
 	NewsWaitBothLines bool
-	// NewsBarsExcluded — CE-4 (b): "Còn cái khúc mà news ra rồi thì không
-	// tính" [D4.4 p1 @18:18–18:25]. ON drops every 1m bar from the print
-	// window start until the 08:30 CT open from the 1h/4h feed (the course
-	// names no end; the open is our [B] bound). Default OFF.
+	// NewsBarsExcluded — CE-4 (a, release #29 rework): "Còn cái khúc mà news
+	// ra rồi thì không tính" [D4.4 p1 @18:18–18:25]. ON FREEZES the pre-print
+	// 1h/4h trigger read from the print window start until the 08:30 CT
+	// day-gate read — the bars still build their whole 1h/4h candles, so
+	// nothing is ever deleted. OFF keeps the item-18 print-window drop
+	// (07:20–07:35). Default ON.
 	NewsBarsExcluded bool
 	// ISBBoxEscapeMode — CE-5 (a): the 5m/15m/30m ISB rest-box escape. "body"
 	// (default) = a 1m candle's OPEN AND CLOSE beyond the edge [D4.1 p1
@@ -531,6 +533,7 @@ func DefaultConfig() Config {
 		// Release #25 course-entry knobs (COMMON-25 knob rule).
 		FifteenMinIBRule:    FifteenMinRequire5mISB, // CE-1 (a)
 		TFConflictEnd:       TFConflictFirstBox,     // CE-2 (b, OQ-2)
+		NewsBarsExcluded:    true,                   // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
 		ISBBoxEscapeMode:    ISBBoxEscapeBody,       // CE-5 (a)
 		EmaLossRelock:       EmaRelockUntilZoneExit, // CE-6 (a)
 		D43TrendSource:      D43TrendTriggerLine,    // CE-8 (b)

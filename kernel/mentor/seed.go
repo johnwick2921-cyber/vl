@@ -295,15 +295,23 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		trig, fourH, oneH = TriggerLine{}, TriggerLine{}, TriggerLine{}
 	}
 	e.State.Trigger = TriggerReplay1m(trig, closed1m, 5, e.Cfg)
-	// Print windows: the SAME htfFeedBars the tick path uses. N6 (release #23):
+	// Print windows: the SAME freeze the tick path uses. N6 (release #23):
 	// the windows are absolute instants, and the caller hands the seed the
 	// print windows of EVERY day the replayed history covers (the trader reads
-	// each day's stored calendar) — a running bot dropped each day's print
-	// candle on that day, so the replay drops it too. A historical bar at a
+	// each day's stored calendar) — a running bot froze each day's print candle
+	// on that day, so the replay freezes it too. A historical bar at a
 	// different absolute time never matches a window.
-	htfBars := htfFeedBars(closed1m, newsHTFWindows(e.Cfg.PrintWindows, e.Cfg)) // CE-4
-	e.State.HTF.FourH = TriggerReplay1m(fourH, htfBars, 240, e.Cfg)
-	e.State.HTF.OneH = TriggerReplay1m(oneH, htfBars, 60, e.Cfg)
+	if e.Cfg.NewsBarsExcluded {
+		// CE-4 reworked: freeze the pre-print trigger read; the bars still
+		// build their whole 1h/4h candles (no deletion).
+		frozen := func(openMs int64) bool { return newsBarFrozen(openMs, e.Cfg) }
+		e.State.HTF.FourH = TriggerReplay1mFrozen(fourH, closed1m, 240, e.Cfg, frozen)
+		e.State.HTF.OneH = TriggerReplay1mFrozen(oneH, closed1m, 60, e.Cfg, frozen)
+	} else {
+		htfBars := htfFeedBars(closed1m, e.Cfg.PrintWindows)
+		e.State.HTF.FourH = TriggerReplay1m(fourH, htfBars, 240, e.Cfg)
+		e.State.HTF.OneH = TriggerReplay1m(oneH, htfBars, 60, e.Cfg)
+	}
 }
 
 // SeedTickWindow1m is the 1m window the live tick hands Tick (the trader's
