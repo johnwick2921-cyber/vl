@@ -1032,13 +1032,16 @@ func (at *AutoTrader) noteCMESessionEdgeAt(open bool, now time.Time) {
 // backoffWhileClosed idles for cmeClosedBackoff while the market is shut, in
 // short stop-responsive slices so Stop() returns promptly instead of the loop
 // spinning a full cycle every ScanInterval (~1 min) all weekend. Returns early
-// the moment the trader is stopped.
+// the moment the trader is stopped — either the running flag is cleared, or the
+// per-Run stop context is cancelled (FOLD #535: a plain time.Sleep blocked a
+// Stop for the full 10 s slice; the backoff now wakes on the stop context).
 func (at *AutoTrader) backoffWhileClosed() {
 	const slice = 10 * time.Second
 	const cmeClosedBackoff = 3 * time.Minute
 	// A11 — hand the calendar the ENFORCING value so the boot line quotes this
 	// constant rather than a literal typed into a format string.
 	kernel.SetClosedBackoffForBootLine(cmeClosedBackoff) // within the ~2–5 min target
+	done := at.stopDone()
 	for waited := time.Duration(0); waited < cmeClosedBackoff; waited += slice {
 		at.isRunningMutex.RLock()
 		running := at.isRunning
@@ -1046,7 +1049,39 @@ func (at *AutoTrader) backoffWhileClosed() {
 		if !running {
 			return
 		}
-		time.Sleep(slice)
+		if !sleepOrStop(done, slice) {
+			return
+		}
+	}
+}
+
+// stopDone returns the per-Run stop context's Done channel (nil when no run is
+// active). backoffWhileClosed selects on it so a Stop during the closed-market
+// backoff wakes the loop immediately instead of blocking the remainder of the
+// 10 s slice.
+func (at *AutoTrader) stopDone() <-chan struct{} {
+	at.stopMonitorMu.Lock()
+	defer at.stopMonitorMu.Unlock()
+	if at.stopMonitorCtx == nil {
+		return nil
+	}
+	return at.stopMonitorCtx.Done()
+}
+
+// sleepOrStop sleeps for d, returning false the moment done is closed (the
+// per-Run stop context was cancelled). A nil done sleeps the full d.
+func sleepOrStop(done <-chan struct{}, d time.Duration) bool {
+	if done == nil {
+		time.Sleep(d)
+		return true
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-done:
+		return false
+	case <-t.C:
+		return true
 	}
 }
 
