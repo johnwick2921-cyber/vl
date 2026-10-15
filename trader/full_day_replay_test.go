@@ -1915,3 +1915,60 @@ func fdrOrderedInstalled(at *AutoTrader) bool {
 	defer at.orderedExecMu.Unlock()
 	return at.orderedExecUnreg != nil
 }
+
+// TestStopDuringHaltReturnsPromptly (FOLD #535 P2, production): backoffWhileClosed
+// used to sleep the whole 10 s slice with a plain time.Sleep, so a Stop() during
+// the 16:00–17:00 CME halt blocked until the next slice boundary (~10 s). The
+// backoff must wake on the per-Run stop context: Stop() returns within 1 s even
+// while the loop is parked inside the halt backoff.
+func TestStopDuringHaltReturnsPromptly(t *testing.T) {
+	at, _ := asiaClockTrader(t)
+	now := ctTime(t, 2026, 8, 18, 16, 30) // Tuesday, inside the 16:00–17:00 halt
+	if kernel.IsCMEOpen(now) {
+		t.Fatal("fixture: 16:30 must be inside the CME maintenance halt (IsCMEOpen=false)")
+	}
+	testNow = func() time.Time { return now }
+	t.Cleanup(func() { testNow = nil })
+
+	// Install the per-Run stop context exactly as Run() does (the backoff selects
+	// on its Done channel).
+	at.stopMonitorMu.Lock()
+	at.stopMonitorCtx, at.stopMonitorCancel = context.WithCancel(context.Background())
+	at.stopMonitorMu.Unlock()
+
+	at.isRunningMutex.Lock()
+	at.isRunning = true
+	at.isRunningMutex.Unlock()
+
+	entered := make(chan struct{})
+	exited := make(chan struct{})
+	// Run the backoff inside the monitor goroutine (as the real Run loop does) so
+	// Stop()'s monitorWg.Wait() blocks on it — the faithful reproduction of the
+	// ~10 s restart stall.
+	at.monitorWg.Add(1)
+	go func() {
+		defer at.monitorWg.Done()
+		close(entered)
+		at.backoffWhileClosed()
+		close(exited)
+	}()
+	<-entered
+	time.Sleep(50 * time.Millisecond) // let it enter the first 10 s slice
+
+	start := time.Now()
+	stopDone := make(chan struct{})
+	go func() { at.Stop(); close(stopDone) }()
+	select {
+	case <-stopDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop() did not return within 2 s during the halt backoff")
+	}
+	select {
+	case <-exited:
+	case <-time.After(2 * time.Second):
+		t.Fatal("backoffWhileClosed did not exit after Stop()")
+	}
+	if d := time.Since(start); d >= time.Second {
+		t.Fatalf("Stop() took %v during the halt backoff, want < 1 s", d)
+	}
+}
