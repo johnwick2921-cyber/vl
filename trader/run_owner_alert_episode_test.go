@@ -188,6 +188,11 @@ func TestRunRetryGivesUpWhenOldRunNeverExits(t *testing.T) {
 	if _, tbl := telemetry.GateBlockSnapshot(); tbl["tr"]["trader_run_retried"] != 0 {
 		t.Fatalf("a retry that gave up must not have run, got trader_run_retried=%v", tbl["tr"]["trader_run_retried"])
 	}
+	// The give-up clears the armed flag in a DEFERRED Store(false) that trails
+	// the counter (IncGateBlock → logWarnf → return → defer). Reading the flag
+	// right after the counter lands in that gap on the slow race+coverage
+	// runner — poll it bounded, then assert.
+	waitRunRetryDisarmed(t, at)
 	if at.runRetryArmed.Load() {
 		t.Fatalf("the give-up must clear the armed flag (no leaked retry)")
 	}
@@ -243,5 +248,20 @@ func waitRunRetryIdle(t *testing.T, at *AutoTrader) {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// waitRunRetryDisarmed polls runRetryArmed until false with a 2 s deadline. The
+// give-up path clears the flag in a DEFERRED Store(false) that trails the
+// trader_run_retry_gave_up counter, so a counter read alone can land in that gap
+// on a slow runner. A deadline loop, never a sleep-and-hope.
+func waitRunRetryDisarmed(t *testing.T, at *AutoTrader) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for at.runRetryArmed.Load() {
+		if time.Now().After(deadline) {
+			t.Fatalf("the armed run retry flag did not clear within 2s (leaked retry?)")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
