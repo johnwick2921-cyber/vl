@@ -199,6 +199,21 @@ func TestMentorSize5Defaults(t *testing.T) {
 		t.Fatalf("swing: got %d %s, want 2 swing4h", got.Contracts, got.Tier)
 	}
 
+	// P1-5: a SWING4H stop in the 20–<30 band sizes by the swing tier (2), NOT
+	// the reduced 3 — the swing branch ranks BEFORE the reduced band. Mutant:
+	// move the reduced band before the swing branch → this sizes 3 → RED.
+	swBandIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "SWING4H",
+		Price: 21000, Stop: 21022, Target: 21044, StopPts: 22, TargetPts: 44}
+	swBandExtra := mentorExtraFor(swBandIn, false)
+	swBandExtra.Confluence = false
+	got, err = at.mentorSizeFor(swBandIn, swBandExtra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 2 || got.Tier != "swing4h" {
+		t.Fatalf("a swing stop in the 20–<30 band: got %d %s, want 2 swing4h (not the reduced 3)", got.Contracts, got.Tier)
+	}
+
 	// an explicit knob value 10 is still honoured (the owner can choose otherwise).
 	atKnob := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorConfluenceContracts: 10})
 	got, err = atKnob.mentorSizeFor(confIn, mentorExtraFor(confIn, false))
