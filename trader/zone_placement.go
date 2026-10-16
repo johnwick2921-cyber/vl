@@ -488,7 +488,7 @@ func (at *AutoTrader) placeZoneRow(p zonePass, r store.ArmedOrderDB, side string
 	at.setZoneVerdict(p, r, v.String())
 	stamped := false
 	evalPx, now := p.price, p.now
-	qty, leg1Qty, leg1TP := plannerArmWireQty(r)
+	qty, leg1Qty, leg1TP := at.plannerArmWireQty(r)
 	sid, perr := p.nt.PlaceLimitEntryWithSplit(at.futuresSymbol(), side, qty, r.EntryPx, r.StopPx, r.TargetPx, leg1Qty, leg1TP, func(sid string) error {
 		if err := p.ledger.BeginPlacementEval(r.ID, sid, evalPx, barOpenMs, now.UnixMilli()); err != nil {
 			return err
@@ -507,7 +507,11 @@ func (at *AutoTrader) placeZoneRow(p zonePass, r store.ArmedOrderDB, side string
 		p.scope.note(r.Scenario, "refused: send: "+perr.Error())
 		return stamped
 	}
-	at.recordArmWirePrices(p.ledger, r, sid, side, r.EntryPx, r.StopPx, r.TargetPx, nil) // F-7: ledger = wire
+	var splitFrom any
+	if leg1Qty > 0 {
+		splitFrom = p.nt // the sender's own record of the split it actually carried
+	}
+	at.recordArmWirePrices(p.ledger, r, sid, side, r.EntryPx, r.StopPx, r.TargetPx, splitFrom) // F-7: ledger = wire
 	at.logInfof("📌 armed %s leg %d market_in_zone placement requested %s limit %.2f (zone %.2f–%.2f, verdict %s, price %.2f) signal=%s",
 		r.Scenario, r.LegIndex+1, strings.ToUpper(side), r.EntryPx, lo, hi, v, p.price, sid)
 	at.noteVWAPDriftAtPlacement(r, p.bars, p.now) // R22 P2: observability only — the entry is unchanged

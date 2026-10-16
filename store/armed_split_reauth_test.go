@@ -54,14 +54,14 @@ func TestUpsertArmCarriesTheSplitThroughReauthorization(t *testing.T) {
 	check("terminal re-authorization", 6, 4, 103)
 }
 
-// TestUpsertArmUnstampedDoesNotNullASize (dispatch-31 D7): a PLANNER arm sized
-// at its FIRST authorization keeps that size through an in-place refresh that
-// carries no stamp — planner_contracts dropped 4→1 mid-arm must not NULL the
-// row's contracts/leg1 (the wire already sized from the first authorization; an
-// unplaced refresh re-prices, never un-sizes). Mutant: write the size columns
-// unconditionally (a nil stamp NULLs the size) → RED.
-func TestUpsertArmUnstampedDoesNotNullASize(t *testing.T) {
-	st, err := New(filepath.Join(t.TempDir(), "split-nonull.db"))
+// TestUpsertArmUnstampedClearsTheSize (fold-564-b D1): a PLANNER arm sized at
+// its FIRST authorization is CLEARED by an unstamped re-authorization while it
+// is still ARMED (unplaced) — planner_contracts dropped 4→1 mid-arm must lower
+// the row, so placement re-clamps instead of sending a stale 4 past a lowered
+// cap. Working rows never reach this branch (refused by the live-order guard).
+// Mutant: keep the size when the new stamp is nil → RED.
+func TestUpsertArmUnstampedClearsTheSize(t *testing.T) {
+	st, err := New(filepath.Join(t.TempDir(), "split-clear.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestUpsertArmUnstampedDoesNotNullASize(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := read()
-	if r.Contracts == nil || *r.Contracts != 4 || r.Leg1Qty == nil || *r.Leg1Qty != 2 || r.Leg1TP != 105 {
-		t.Fatalf("an unstamped refresh must not NULL the first authorization's size: %+v", r)
+	if r.Contracts != nil || r.Leg1Qty != nil || r.Leg1TP != 0 {
+		t.Fatalf("an unstamped refresh must CLEAR the size so placement re-clamps: %+v", r)
 	}
 }

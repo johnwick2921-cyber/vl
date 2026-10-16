@@ -574,22 +574,18 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 				// planner row writes '' / NULL over '' / NULL).
 				"source": row.Source, "source_ref": row.SourceRef, "source_rule": row.SourceRule,
 				"eligible_until_ms": row.EligibleUntilMs, "source_run_epoch": row.SourceRunEpoch,
+				// REVIEW-SPLIT-2 P2: the mentor size and split follow the
+				// authorization — leg1_tp moves with a re-armed stop. Every
+				// other author writes NULL / 0 over NULL / 0, INCLUDING a
+				// planner arm whose knob was lowered while it was still ARMED
+				// (unplaced): an unstamped re-authorization clears the size, so
+				// placement re-clamps instead of sending a stale 4 past a
+				// lowered cap (fold-564-b D1). Working rows never reach this
+				// branch (refused at the live-order guard above).
+				"contracts": row.Contracts, "leg1_qty": row.Leg1Qty, "leg1_tp": row.Leg1TP,
 				// REL17-F2: the persisted exit branch follows the re-authorization
 				// (a re-armed stop re-chooses the fork).
 				"exit_mode": row.ExitMode,
-			}
-			// REVIEW-SPLIT-2 P2 + dispatch-31 D7: the mentor size and split follow
-			// the authorization — leg1_tp moves with a re-armed stop. But an
-			// UNSTAMPED re-authorization (planner_contracts dropped mid-arm, 4→1)
-			// carries nil and must NOT NULL a row that already holds a size — the
-			// size belongs to the FIRST authorization; an in-place refresh
-			// re-prices, never un-sizes. So the size columns are written only when
-			// the new authorization actually stamps one (mentor always does; a
-			// planner knob → 1 leaves the prior stamp alone).
-			if row.Contracts != nil {
-				armedUpdates["contracts"] = row.Contracts
-				armedUpdates["leg1_qty"] = row.Leg1Qty
-				armedUpdates["leg1_tp"] = row.Leg1TP
 			}
 			return s.db.Model(&existing).Updates(armedUpdates).Error
 		}

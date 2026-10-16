@@ -11,6 +11,7 @@
 package trader
 
 import (
+	"os"
 	"testing"
 
 	"vl/kernel"
@@ -19,12 +20,14 @@ import (
 
 func firstObstaclePtr(v float64) *float64 { return &v }
 
-// plannerSplitScenario is a planner scenario whose economics name a first
-// obstacle (the plan's first target) below the arm's final target.
+// plannerSplitScenario is a planner scenario whose target chain names a first
+// target (target_chain[0] = 105) below the arm's final target (110), and whose
+// economics ALSO carry a first obstacle (101) — the FALLBACK the CTO ruling
+// (fold-564-b D5) uses only when target_chain[0] is unusable.
 func plannerSplitScenario(id string, firstObstacle float64) kernel.PlanScenario {
 	return kernel.PlanScenario{
 		ID: id, Trigger: "t", Condition: "reject", Direction: "long",
-		TargetChain: []float64{110}, Invalid: "i", Quality: "B",
+		TargetChain: []float64{105, 110}, Invalid: "i", Quality: "B",
 		Economics: &kernel.ScenarioEconomics{Version: 1, FirstObstacle: &kernel.ScenarioObstacle{
 			Price: firstObstaclePtr(firstObstacle), Level: "L1", Response: "reduce",
 		}},
@@ -32,14 +35,43 @@ func plannerSplitScenario(id string, firstObstacle float64) kernel.PlanScenario 
 	}
 }
 
-// TestFirstObstaclePrice — the plan's first target is the first_obstacle price;
-// 0 when absent (legacy / a plan that never wrote one).
+// TestFirstObstaclePrice — the first_obstacle price; 0 when absent.
 func TestFirstObstaclePrice(t *testing.T) {
 	if got := firstObstaclePrice(plannerSplitScenario("S1", 101)); got != 101 {
 		t.Fatalf("firstObstaclePrice = %.2f, want 101", got)
 	}
 	if got := firstObstaclePrice(kernel.PlanScenario{ID: "S2"}); got != 0 {
 		t.Fatalf("firstObstaclePrice (no economics) = %.2f, want 0", got)
+	}
+}
+
+// TestPlannerLeg1Target — the CTO RULING (fold-564-b D5): leg 1 exits at the
+// plan's FIRST TARGET = target_chain[0], NOT the first obstacle. The first
+// obstacle is only the fallback, and only when it is at least +1R away. A leg-1
+// price that equals or passes the final target degrades to a single bracket (0).
+func TestPlannerLeg1Target(t *testing.T) {
+	// target_chain[0] = 105 wins over the first obstacle 101 (both ≥ +1R: risk 2).
+	if got := plannerLeg1Target(plannerSplitScenario("S1", 101), "long", 100, 98, 110); got != 105 {
+		t.Fatalf("leg1 target = %.2f, want 105 (target_chain[0], not the obstacle 101)", got)
+	}
+	// no target_chain → the first obstacle, when ≥ +1R away.
+	noChain := plannerSplitScenario("S2", 103)
+	noChain.TargetChain = nil
+	if got := plannerLeg1Target(noChain, "long", 100, 98, 110); got != 103 {
+		t.Fatalf("leg1 target (no chain) = %.2f, want 103 (the +1R first obstacle)", got)
+	}
+	// the first obstacle is 5.5 pts away (< 1R of 2) and target_chain[0] is the
+	// final target — neither is a usable first target → single bracket (0).
+	tooClose := plannerSplitScenario("S3", 105.5)
+	tooClose.TargetChain = []float64{110}
+	if got := plannerLeg1Target(tooClose, "long", 100, 98, 110); got != 0 {
+		t.Fatalf("leg1 target (no usable first target) = %.2f, want 0", got)
+	}
+	// target_chain[0] EQUALS the final target → one 4-lot bracket (0).
+	eqFinal := plannerSplitScenario("S4", 101)
+	eqFinal.TargetChain = []float64{110}
+	if got := plannerLeg1Target(eqFinal, "long", 100, 98, 110); got != 0 {
+		t.Fatalf("leg1 target (tc0 == final) = %.2f, want 0", got)
 	}
 }
 
@@ -142,36 +174,52 @@ func TestPlannerSplitStampRespectsTheContractsClamp(t *testing.T) {
 	}
 }
 
-// TestPlannerSplitStampRefusesFirstObstacleBeyondFinalTarget — a first obstacle
-// FURTHER than the final target (leg 1 would exit after leg 2) is refused as if
-// absent: the total is stamped, the split degrades to a single bracket.
-func TestPlannerSplitStampRefusesFirstObstacleBeyondFinalTarget(t *testing.T) {
+// TestPlannerSplitStampRefusesLeg1AtOrPastFinalTarget — a leg-1 price that
+// would EQUAL or PASS the final target (both legs exit at one price) is refused
+// as if absent: the total is stamped, the split degrades to a single bracket.
+func TestPlannerSplitStampRefusesLeg1AtOrPastFinalTarget(t *testing.T) {
 	rc := &store.RiskControlConfig{PlannerContracts: 4}
 	long := &store.ArmedOrderDB{Scenario: "S1", Side: "long", TargetPx: 110}
-	stampPlannerSplit(long, rc, false, 0, 115, 0) // 115 > 110
+	stampPlannerSplit(long, rc, false, 0, 115, 0) // 115 > 110 (past)
 	if long.Contracts == nil || *long.Contracts != 4 || long.Leg1Qty == nil || *long.Leg1Qty != 2 || long.Leg1TP != 0 {
-		t.Fatalf("a long first obstacle beyond the target must drop the split: %+v", long)
+		t.Fatalf("a long leg-1 past the target must drop the split: %+v", long)
 	}
-	short := &store.ArmedOrderDB{Scenario: "S2", Side: "short", TargetPx: 100}
-	stampPlannerSplit(short, rc, false, 0, 95, 0) // 95 < 100
+	eq := &store.ArmedOrderDB{Scenario: "S2", Side: "long", TargetPx: 110}
+	stampPlannerSplit(eq, rc, false, 0, 110, 0) // 110 == 110 (equal)
+	if eq.Contracts == nil || *eq.Contracts != 4 || eq.Leg1TP != 0 {
+		t.Fatalf("a long leg-1 EQUAL to the target must drop the split: %+v", eq)
+	}
+	short := &store.ArmedOrderDB{Scenario: "S3", Side: "short", TargetPx: 100}
+	stampPlannerSplit(short, rc, false, 0, 95, 0) // 95 < 100 (past)
 	if short.Contracts == nil || *short.Contracts != 4 || short.Leg1TP != 0 {
-		t.Fatalf("a short first obstacle beyond the target must drop the split: %+v", short)
+		t.Fatalf("a short leg-1 past the target must drop the split: %+v", short)
 	}
 }
 
-// TestPlannerArmWireQty — the placement-side resolver reads the STAMP, never the
-// knob: a stamped row wires its total + split; an unstamped row wires 1/0.
+// TestPlannerArmWireQty — the placement-side resolver reads the STAMP and
+// RE-CLAMPS at send: a stamped row wires its total + split when the cap still
+// allows it; an unstamped row wires 1/0; a stale stamp is clamped back down.
 func TestPlannerArmWireQty(t *testing.T) {
+	t.Setenv("STAGE_A_CONTRACT_CAP", "4")
+	at := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{PlannerContracts: 4, MaxContractsPerOrder: 4}}}}
 	four, two, tp := 4, 2, 105.0
-	if q, l1, l1tp := plannerArmWireQty(store.ArmedOrderDB{Contracts: &four, Leg1Qty: &two, Leg1TP: tp}); q != 4 || l1 != 2 || l1tp != 105 {
+	if q, l1, l1tp := at.plannerArmWireQty(store.ArmedOrderDB{Contracts: &four, Leg1Qty: &two, Leg1TP: tp}); q != 4 || l1 != 2 || l1tp != 105 {
 		t.Fatalf("stamped row wired qty %.0f leg1 %d @ %.2f, want 4/2/105", q, l1, l1tp)
 	}
-	if q, l1, l1tp := plannerArmWireQty(store.ArmedOrderDB{}); q != 1 || l1 != 0 || l1tp != 0 {
+	if q, l1, l1tp := at.plannerArmWireQty(store.ArmedOrderDB{}); q != 1 || l1 != 0 || l1tp != 0 {
 		t.Fatalf("unstamped row wired qty %.0f leg1 %d @ %.2f, want 1/0/0", q, l1, l1tp)
 	}
 	// a stamped total with NO leg-1 TP (single 4-lot bracket) wires 4/0.
-	if q, l1, _ := plannerArmWireQty(store.ArmedOrderDB{Contracts: &four, Leg1Qty: &two}); q != 4 || l1 != 0 {
+	if q, l1, _ := at.plannerArmWireQty(store.ArmedOrderDB{Contracts: &four, Leg1Qty: &two}); q != 4 || l1 != 0 {
 		t.Fatalf("no leg-1 TP: wired qty %.0f leg1 %d, want 4/0", q, l1)
+	}
+	// RE-CLAMP: the stamp says 4 but the Stage-A cap moved back to 1 → wire 1.
+	if err := os.Unsetenv("STAGE_A_CONTRACT_CAP"); err != nil {
+		t.Fatal(err)
+	}
+	clamped := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{PlannerContracts: 4, MaxContractsPerOrder: 4}}}}
+	if q, l1, l1tp := clamped.plannerArmWireQty(store.ArmedOrderDB{Contracts: &four, Leg1Qty: &two, Leg1TP: tp}); q != 1 || l1 != 0 || l1tp != 0 {
+		t.Fatalf("a stale 4 must re-clamp to the Stage-A 1 at send: wired qty %.0f leg1 %d @ %.2f, want 1/0/0", q, l1, l1tp)
 	}
 }
 
@@ -192,7 +240,8 @@ func plannerSplitRow(at *AutoTrader, contracts, leg1 int, leg1TP float64) store.
 // target. Mutant: send 1 again (or drop the leg split) → RED.
 func TestPlannerArmWiresSplit4(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "1")
-	at, _ := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{PlannerContracts: 4}})
+	t.Setenv("STAGE_A_CONTRACT_CAP", "4")
+	at, _ := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{PlannerContracts: 4, MaxContractsPerOrder: 4}})
 	at.id = "planner-split"
 	r := plannerSplitRow(at, 4, 2, 29660)
 	d := decideStopEntry("LONG", r.EntryPx, testOffset(), testTick, 99)
@@ -219,7 +268,8 @@ func TestPlannerArmWiresSplit4(t *testing.T) {
 // arm) still places 1 — the knob changes AUTHORING only, never a bare row.
 func TestPlannerArmUnstampedStaysOneContract(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "1")
-	at, _ := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{PlannerContracts: 4}})
+	t.Setenv("STAGE_A_CONTRACT_CAP", "4")
+	at, _ := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{PlannerContracts: 4, MaxContractsPerOrder: 4}})
 	at.id = "planner-unstamped"
 	r := store.ArmedOrderDB{
 		ID: 9, TraderID: at.id, PlanID: "2026-09-11:NY", Version: 1,

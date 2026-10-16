@@ -85,11 +85,10 @@ func plannerContracts(rc *store.RiskControlConfig) int {
 	return n
 }
 
-// firstObstaclePrice (dispatch-31) is the plan's FIRST target — the
-// economics.first_obstacle.price the planner authored for one scenario. 0 when
-// the scenario carries no economics / no first obstacle (legacy or a plan that
-// never wrote one) — the split then falls back to a single bracket at the final
-// target.
+// firstObstaclePrice (dispatch-31) is the economics.first_obstacle.price the
+// planner authored for one scenario. 0 when the scenario carries no economics /
+// no first obstacle. It is the FALLBACK leg-1 price (fold-564-b ruling: the
+// plan's first target is target_chain[0], not the first obstacle).
 func firstObstaclePrice(sc kernel.PlanScenario) float64 {
 	if sc.Economics != nil && sc.Economics.FirstObstacle != nil && sc.Economics.FirstObstacle.Price != nil {
 		return *sc.Economics.FirstObstacle.Price
@@ -97,21 +96,82 @@ func firstObstaclePrice(sc kernel.PlanScenario) float64 {
 	return 0
 }
 
+// firstTargetChainPrice is target_chain[0] — the plan's FIRST target. 0 when the
+// scenario carries no target chain.
+func firstTargetChainPrice(sc kernel.PlanScenario) float64 {
+	if len(sc.TargetChain) > 0 {
+		return sc.TargetChain[0]
+	}
+	return 0
+}
+
+// plannerLeg1Target (fold-564-b CTO RULING on "sell 2 first") resolves the price
+// leg 1 exits at: the plan's FIRST TARGET = target_chain[0] — NOT the first
+// obstacle (17 of 87 recent arms differ, e.g. 10-15 ASIA v15 S2 obstacle 5.5 pts
+// vs target 35.5). Fallbacks, in order:
+//   - target_chain[0], when it is at least +1R on the profit side of the entry;
+//   - the first obstacle, when IT is at least +1R away;
+//   - neither → 0 (single 4-lot bracket at the final target).
+//
+// A leg-1 price that would EQUAL or PASS the final target returns 0 (both legs
+// at one price = one 4-lot bracket — never a leg 1 that exits after leg 2).
+// risk is the distance from entry to stop (the authored risk).
+func plannerLeg1Target(sc kernel.PlanScenario, side string, entry, stop, finalTarget float64) float64 {
+	risk := math.Abs(entry - stop)
+	tc0 := firstTargetChainPrice(sc)
+	fo := firstObstaclePrice(sc)
+	for _, cand := range []float64{tc0, fo} {
+		if cand == 0 || !leg1AtLeastOneR(side, entry, cand, risk) {
+			continue
+		}
+		if leg1AtOrPastFinalTarget(side, cand, finalTarget) {
+			return 0
+		}
+		return cand
+	}
+	return 0
+}
+
+// leg1AtLeastOneR reports whether cand sits at least +1R on the profit side of
+// the entry (long: ≥ entry+risk; short: ≤ entry−risk).
+func leg1AtLeastOneR(side string, entry, cand, risk float64) bool {
+	switch strings.ToLower(strings.TrimSpace(side)) {
+	case "long":
+		return cand >= entry+risk
+	case "short":
+		return cand <= entry-risk
+	}
+	return false
+}
+
+// leg1AtOrPastFinalTarget reports whether leg 1's price would equal or pass the
+// final target (long: ≥ target; short: ≤ target) — both legs exit at one price,
+// so the split degrades to a single bracket. An unknown side is never "past"
+// (fail open: the wire's wireLeg1TP still drops a wrong-side split).
+func leg1AtOrPastFinalTarget(side string, leg1, target float64) bool {
+	switch strings.ToLower(strings.TrimSpace(side)) {
+	case "long":
+		return target > 0 && leg1 >= target
+	case "short":
+		return target > 0 && leg1 <= target
+	}
+	return false
+}
+
 // stampPlannerSplit (dispatch-31, owner order 2026-10-16) is the ONE authoring
 // site that sizes a PLANNER arm. Pure (the test seam): a non-machine SINGLE arm
 // (legCount 0) with planner_contracts ≥ 2 is stamped with its total contract
-// count and an equal split — leg 1 = n/2 at the first obstacle (fo), leg 2 = the
-// rest at the final target. A machine arm, a 2-leg sweep_reclaim arm, an unset
-// knob (→ 1) and a missing first obstacle all leave the row untouched except the
-// total count (fo 0 → the wire sends one bracket of `total` at the final target).
+// count and an equal split — leg 1 = n/2 at leg1TP (the plan's first target, as
+// resolved by plannerLeg1Target), leg 2 = the rest at the final target. A
+// machine arm, a 2-leg sweep_reclaim arm, an unset knob (→ 1) and a leg1TP of 0
+// (no first target) all leave the split off (leg1TP 0 → one bracket of `total`).
 //
 // maxContracts is the always-on resolveMaxContracts() clamp (max_contracts_per_order
 // + the Stage-A ceiling): the stamped total NEVER exceeds it — the planner knob
 // does not bypass the venue size clamp. A total clamped below 2 leaves the row
-// unstamped (today's single-contract arm). A first obstacle BEYOND the final
-// target (leg 1 would exit after leg 2) is refused as if absent: the split
-// degrades to a single bracket at the final target.
-func stampPlannerSplit(row *store.ArmedOrderDB, rc *store.RiskControlConfig, machine bool, legCount int, fo float64, maxContracts int) {
+// unstamped (today's single-contract arm). A leg-1 price that would equal or
+// pass the final target is refused here as a final guard (single bracket).
+func stampPlannerSplit(row *store.ArmedOrderDB, rc *store.RiskControlConfig, machine bool, legCount int, leg1TP float64, maxContracts int) {
 	if row == nil || machine || legCount != 0 {
 		return
 	}
@@ -125,42 +185,44 @@ func stampPlannerSplit(row *store.ArmedOrderDB, rc *store.RiskControlConfig, mac
 	if total < 2 {
 		return // clamped to 1 — today's single-contract arm
 	}
-	if fo > 0 && firstObstacleBeyondFinalTarget(row.Side, fo, row.TargetPx) {
-		fo = 0 // leg 1 would exit after leg 2 — refuse the split, single bracket
+	if leg1TP > 0 && leg1AtOrPastFinalTarget(row.Side, leg1TP, row.TargetPx) {
+		leg1TP = 0 // leg 1 would equal/pass leg 2 — refuse the split, single bracket
 	}
 	half := total / 2
 	row.Contracts = &total
 	row.Leg1Qty = &half
-	if fo > 0 {
-		row.Leg1TP = fo
+	if leg1TP > 0 {
+		row.Leg1TP = leg1TP
 	}
-}
-
-// firstObstacleBeyondFinalTarget reports whether the plan's first obstacle sits
-// FURTHER than the arm's final target (long: above it; short: below it) — a leg
-// 1 that would exit after leg 2. An unknown side is never "beyond" (fail open:
-// the wire's wireLeg1TP still drops a wrong-side split).
-func firstObstacleBeyondFinalTarget(side string, fo, target float64) bool {
-	switch strings.ToLower(strings.TrimSpace(side)) {
-	case "long":
-		return target > 0 && fo > target
-	case "short":
-		return target > 0 && fo < target
-	}
-	return false
 }
 
 // plannerArmWireQty (dispatch-31) resolves the wire quantity + split for a
-// NON-mentor armed row at PLACEMENT: the stamped planner contracts / split when
-// present, else today's single 1-contract arm. The ledger = the wire — this
-// reads exactly what the authoring stamp wrote, never the knob a second time.
-func plannerArmWireQty(r store.ArmedOrderDB) (qty float64, leg1Qty int, leg1TP float64) {
+// NON-mentor armed row at PLACEMENT, and RE-CLAMPS at send: the stamped size is
+// authoring-time truth, but the cap may have moved since (planner_contracts
+// lowered, STAGE_A_CONTRACT_CAP reverted). qty = min(stamped, resolveMaxContracts(),
+// plannerContracts(now)); leg 1 is re-derived as qty/2 at the row's stamped
+// leg-1 TP. A clamp below 2 collapses to today's single 1-contract arm.
+func (at *AutoTrader) plannerArmWireQty(r store.ArmedOrderDB) (qty float64, leg1Qty int, leg1TP float64) {
 	qty = 1
 	if r.Contracts != nil && *r.Contracts > 0 {
 		qty = float64(*r.Contracts)
 	}
+	if max := at.resolveMaxContracts(); max > 0 && qty > float64(max) {
+		qty = float64(max)
+	}
+	var rc *store.RiskControlConfig
+	if at.config.StrategyConfig != nil {
+		rc = &at.config.StrategyConfig.RiskControl
+	}
+	if k := plannerContracts(rc); qty > float64(k) {
+		qty = float64(k)
+	}
+	if qty < 2 {
+		return 1, 0, 0
+	}
 	if r.Leg1Qty != nil && *r.Leg1Qty > 0 && r.Leg1TP > 0 {
-		leg1Qty, leg1TP = *r.Leg1Qty, r.Leg1TP
+		leg1Qty = int(qty) / 2
+		leg1TP = r.Leg1TP
 	}
 	return qty, leg1Qty, leg1TP
 }

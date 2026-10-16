@@ -2123,10 +2123,11 @@ type RiskControlConfig struct {
 	// sell 2 first so it's equal"): the PLANNER trader's contracts per entry.
 	// Unset/0 → 1 (today's single-contract arm). A value ≥ 2 splits the planner
 	// arm at ENTRY into equal halves — leg 1 = n/2 (floor, so 3 → 1/2, 5 → 2/3)
-	// contracts at the plan's FIRST obstacle (economics.first_obstacle.price),
-	// leg 2 = the rest at the arm's final target — so a single entry can sell
-	// part and run the rest. The stamped total is clamped to the always-on
-	// resolveMaxContracts() size cap and to the plannerContractsCeiling (10).
+	// contracts at the plan's FIRST TARGET = target_chain[0] (fold-564-b CTO
+	// ruling; the first obstacle is only the fallback, and only when it is ≥ +1R
+	// away). If leg 1's price would equal or pass the final target the split
+	// degrades to ONE n-lot bracket. The stamped total is clamped to the
+	// always-on resolveMaxContracts() and the plannerContractsCeiling (10).
 	// Mentor sizing and every other strategy are unchanged (the knob is read on
 	// the planner arm path only, never the mentor table). SIM only.
 	PlannerContracts int `json:"planner_contracts,omitempty"`
