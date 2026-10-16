@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"vl/kernel"
-	"vl/market"
 	"vl/store"
 )
 
@@ -60,12 +59,8 @@ func (at *AutoTrader) strictNudgeAt(decision *kernel.Decision, refusal string, n
 		return "", false
 	}
 	at.logInfof("🚦 strict: decision cites %s → armed pass", sc.ID)
-	var bars []market.Kline
-	if market.FuturesBarsProvider != nil {
-		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
-	}
 	// Never nil: a nil snapshot would skip the HTF veto (fail-open).
-	snap := kernel.StructureSnapshotForVeto(at.futuresSymbol(), bars, now.UnixMilli()) // F-4: + the native 4h the cross veto needs
+	snap := at.armVetoSnapshot(now) // 1m cache + the native 4h the cross veto needs (F-4) — veto_snapshot.go
 	scope := &armedPassScope{Scenario: sc.ID, Trigger: "nudge"}
 	// The FULL pass (CTO D14 ruling): every authoring gate, the admitted set,
 	// then placement — the scope filters placement rows only.

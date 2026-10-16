@@ -86,6 +86,10 @@ func (at *AutoTrader) writeTimeFeasibilityVerdicts(d *kernel.PlanDoc, atr5m floa
 		minQuality = cfg.DayPlan.MinGradeFor(session)
 	}
 	bias := biasDirectionFor(d.Bias.Direction)
+	// The HTF veto inside armGateVerdictFor judges the snapshot the arm pass
+	// builds (armVetoSnapshot), NEVER nil: a nil here skipped the cross veto
+	// on every planner write (2026-10-16, veto_snapshot.go).
+	vetoSnap := at.lazyArmVetoSnapshot()
 	var out []writeTimeFeasibilityIssue
 	for i := range d.Scenarios {
 		sc := &d.Scenarios[i]
@@ -155,7 +159,7 @@ func (at *AutoTrader) writeTimeFeasibilityVerdicts(d *kernel.PlanDoc, atr5m floa
 				leg.Stop = comp.Stop
 			}
 		}
-		if v := at.armGateVerdictFor(*sc, leg, bias, nil, atr5m, minQuality, cfg, session, structuralFade); v != "" {
+		if v := at.armGateVerdictFor(*sc, leg, bias, vetoSnap(), atr5m, minQuality, cfg, session, structuralFade); v != "" {
 			out = append(out, writeTimeFeasibilityIssue{Scenario: sc.ID, Class: armRefusalClass(v), Verbose: v, Kind: "gate"})
 			continue
 		}
@@ -215,7 +219,7 @@ func geometryClass(reason string) string {
 func writeTimeFeasibilityHint(issues []writeTimeFeasibilityIssue) string {
 	var b strings.Builder
 	b.WriteString("write-time feasibility: ")
-	gateIssues := 0
+	gateIssues, vetoIssues := 0, 0
 	for i, is := range issues {
 		if i > 0 {
 			b.WriteString("; ")
@@ -242,10 +246,18 @@ func writeTimeFeasibilityHint(issues []writeTimeFeasibilityIssue) string {
 			continue
 		}
 		gateIssues++
+		if is.Class == "veto" {
+			vetoIssues++
+		}
 		b.WriteString(fmt.Sprintf("%s would be refused at arm — %s", is.Scenario, is.Verbose))
 	}
 	if gateIssues > 0 {
 		b.WriteString(" — widen the stop past the min-SL floor / raise the arm R:R / pick a mapped level with an id / choose a different condition")
+		if vetoIssues > 0 {
+			// 2026-10-16: the HTF veto is judged at write on the arm pass's
+			// own snapshot; its fix is the direction, not the geometry.
+			b.WriteString(" / for an HTF veto: author the side the higher-timeframe trend allows, or no arm")
+		}
 	}
 	return b.String()
 }
@@ -324,6 +336,7 @@ func (at *AutoTrader) writeTimeZoneVerdicts(d *kernel.PlanDoc, atr5m float64, cf
 	sym := at.futuresSymbol()
 	tick := market.FuturesTickSize(sym)
 	bias := biasDirectionFor(d.Bias.Direction)
+	vetoSnap := at.lazyArmVetoSnapshot() // the arm pass's snapshot, never nil (veto_snapshot.go)
 	var out []writeTimeFeasibilityIssue
 	for i := range d.Scenarios {
 		sc := &d.Scenarios[i]
@@ -339,7 +352,7 @@ func (at *AutoTrader) writeTimeZoneVerdicts(d *kernel.PlanDoc, atr5m float64, cf
 			if kernel.EffectiveArmPolicy(sc.Arm, &leg) != kernel.EntryPolicyMarketInZone {
 				continue
 			}
-			is, label, ok := at.zoneLegVerdict(d, *sc, leg, bias, atr5m, minQuality, cfg, session, tick, zoneMax)
+			is, label, ok := at.zoneLegVerdict(d, *sc, leg, bias, vetoSnap(), atr5m, minQuality, cfg, session, tick, zoneMax)
 			if !ok {
 				out = append(out, is)
 				break // one issue per scenario (the disable is per scenario)
@@ -351,8 +364,9 @@ func (at *AutoTrader) writeTimeZoneVerdicts(d *kernel.PlanDoc, atr5m float64, cf
 }
 
 // zoneLegVerdict judges ONE market_in_zone leg. ok=false → the issue; ok=true
-// → the provenance/geometry label for the INFO line.
-func (at *AutoTrader) zoneLegVerdict(d *kernel.PlanDoc, sc kernel.PlanScenario, leg kernel.PlanArmLeg, bias string, atr5m float64, minQuality string, cfg *store.StrategyConfig, session string, tick, zoneMax float64) (writeTimeFeasibilityIssue, string, bool) {
+// → the provenance/geometry label for the INFO line. snap is the HTF veto's
+// structure snapshot (armVetoSnapshot) — the far and near edges share it.
+func (at *AutoTrader) zoneLegVerdict(d *kernel.PlanDoc, sc kernel.PlanScenario, leg kernel.PlanArmLeg, bias string, snap map[string]kernel.StructureState, atr5m float64, minQuality string, cfg *store.StrategyConfig, session string, tick, zoneMax float64) (writeTimeFeasibilityIssue, string, bool) {
 	v := kernel.ArmZoneVerdict(sc, leg.Entry, leg.Stop, leg.Target, sc.Direction, tick, zoneMax)
 	if v.Code != "" {
 		return writeTimeFeasibilityIssue{Scenario: sc.ID, Class: v.Code, Kind: "zone", Cond: sc.Condition,
@@ -372,12 +386,12 @@ func (at *AutoTrader) zoneLegVerdict(d *kernel.PlanDoc, sc kernel.PlanScenario, 
 			Verbose: fmt.Sprintf("market_in_zone stop composed from the zone's near edge %.2f: %s", v.Near, why)}, "", false
 	}
 	far := kernel.PlanArmLeg{Entry: v.Far, Stop: stop, Target: leg.Target}
-	g := at.armGateVerdictFor(sc, far, bias, nil, atr5m, minQuality, cfg, session)
+	g := at.armGateVerdictFor(sc, far, bias, snap, atr5m, minQuality, cfg, session)
 	edge := fmt.Sprintf("far edge %.2f", v.Far)
 	if g == "" {
 		near := far
 		near.Entry = v.Near
-		g = at.armGateVerdictFor(sc, near, bias, nil, atr5m, minQuality, cfg, session)
+		g = at.armGateVerdictFor(sc, near, bias, snap, atr5m, minQuality, cfg, session)
 		edge = fmt.Sprintf("near edge %.2f", v.Near)
 	}
 	if g != "" {

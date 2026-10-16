@@ -8,7 +8,6 @@ import (
 
 	"vl/kernel"
 	"vl/logger"
-	"vl/market"
 	ntwire "vl/provider/ninjatrader"
 )
 
@@ -215,11 +214,7 @@ func (at *AutoTrader) armedEventPassAt(now time.Time) bool {
 	if tr, err := at.store.Trader().GetByID(at.id); err != nil || tr == nil || strings.TrimSpace(tr.Account) == "" {
 		return false
 	}
-	var bars []market.Kline
-	if market.FuturesBarsProvider != nil {
-		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
-	}
-	at.maybeManageArmedOrdersAt(kernel.StructureSnapshotForVeto(at.futuresSymbol(), bars, now.UnixMilli()), now) // F-4: + native 4h
+	at.maybeManageArmedOrdersAt(at.armVetoSnapshot(now), now) // 1m cache + native 4h (F-4), never nil — veto_snapshot.go
 	return true
 }
 
