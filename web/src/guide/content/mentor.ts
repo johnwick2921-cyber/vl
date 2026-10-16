@@ -851,7 +851,7 @@ export const mentor: GuideSection = {
             'candle / off · any other value fails closed to candle and is counted (trail_mode_bad_value)',
           systemDefault: 'candle',
           recommended:
-            'candle — the course’s normal case (BE at +0.5R first, mentor_be_before_partial ON). On 10-12 row 313 leg 1 banked 1:1 and the runner, still at its original stop, lost the full 1R a minute later.',
+            'candle — the course’s normal case [D2.4 p1 @16:17; X8 @15:40] with BE at +0.5R first (mentor_be_before_partial ON, owner "fix all"). On 10-12 row 313 leg 1 banked 1:1 and the runner, still at its original stop, lost the full 1R a minute later.',
           whenToTouch:
             'off only to compare against the pre-release-#22 rule; a one-bracket position (1 contract, or an older AddOn) always uses the older rule.',
           perSession: 'No.',
