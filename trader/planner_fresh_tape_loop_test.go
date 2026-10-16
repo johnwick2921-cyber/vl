@@ -223,6 +223,56 @@ func TestPlannerFreshTapeRefusalLogSilentWhenKnobOff(t *testing.T) {
 	}
 }
 
+// TestPlannerFreshTapeRefusalLogSilentOnLastAttempt is the M8 last-attempt
+// half. A born-dead attempt 2 with the knob ON does NOT reach attempt 3: the
+// FIX-PLANNER one-repair stop (skipThird) fails-closed right there, so the
+// `attempt < plannerMaxAttempts` guard on the re-sight clause is unobservable
+// from a born-dead ×3 fixture. To exercise the LAST attempt we drive attempt 2
+// through a non-born-dead rejection (a parse/schema refusal carries no
+// BornCheck, so skipThird never fires and the read continues) and refuse
+// attempt 3 born-dead. Correct code: attempt 1 logs "attempt 2 re-sights",
+// attempt 3 logs the refusal with NO "attempt 4 re-sights" claim. MUTANT: drop
+// `attempt < plannerMaxAttempts` → attempt 3 claims a nonexistent attempt 4.
+func TestPlannerFreshTapeRefusalLogSilentOnLastAttempt(t *testing.T) {
+	at := plannerTestTrader(t)
+	loc := kernel.CTLocation()
+	read := time.Date(2026, 9, 23, 19, 0, 0, 0, loc)
+	publish := time.Date(2026, 9, 23, 19, 7, 0, 0, loc)
+
+	orig := market.FuturesBarsProvider
+	market.FuturesBarsProvider = func(symbol, tf string, count int) []market.Kline { return a6Tape() }
+	defer func() { market.FuturesBarsProvider = orig }()
+
+	h := rtCaptureLog(t, "born-dead/flip-met refusal")
+	facts := kernel.PlanFacts{Price: 15550, DATR: 300, ReadAt: read}
+	machine := map[float64]string{15480: "PWL", 15700: "RN 15700"}
+	blocks := 0
+	_, lc, err := at.runPlannerReadCoreObserved(
+		func() time.Time { return read },
+		func() time.Time { return publish },
+		nil, "ASIA", "2026-09-23", "owner_reset", "deepseek-v4-pro", "hashM8last", "", "", "", "FULLPROMPT",
+		facts, nil, machine, nil, true, 0,
+		func(userPrompt string) (string, error) {
+			blocks++
+			if blocks == 2 {
+				return "not json at all", nil // non-born-dead rejection — reaches attempt 3
+			}
+			return a6BornDeadPlan, nil
+		})
+	if err != nil {
+		t.Fatalf("last-attempt born-dead: %v", err)
+	}
+	if blocks != 3 {
+		t.Fatalf("expected all 3 attempts to be reached, got %d (lc=%q)", blocks, lc)
+	}
+	if !strings.Contains(h.all(), "attempt 2 re-sights on the fresh tape") {
+		t.Errorf("attempt 1 born-dead must claim attempt 2 re-sights, log:\n%s", h.all())
+	}
+	if strings.Contains(h.all(), "attempt 4 re-sights") {
+		t.Errorf("attempt 3 (the last) must never claim a nonexistent attempt 4, log:\n%s", h.all())
+	}
+}
+
 // TestPlannerBornDeadRetryKnobOffIsByteIdenticalToday — L4: planner_fresh_tape
 // false reproduces today's blind retry (no fresh block) on the SAME refusal.
 func TestPlannerBornDeadRetryKnobOffIsByteIdenticalToday(t *testing.T) {
