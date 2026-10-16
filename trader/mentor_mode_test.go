@@ -101,13 +101,15 @@ func TestMentorContractsForClampsAtMax(t *testing.T) {
 
 // TestMentorKnobsSwingDefaultIsOne — FIX-SWING-SIZE-LESSON: the swing tier's
 // shipped default is 1 MNQ, not 3. D5.2 p1 @00:38–00:47 "Em vô đúng 1 MNQ thôi,
-// em không vô nhiều" (I enter exactly 1 MNQ, I don't enter many). Named RED:
-// revert mentorSwing4HContractsDefault to 3 → swing4h != 1 → this fails.
+// em không vô nhiều" (I enter exactly 1 MNQ, I don't enter many).
+// course-defaults-30 (owner "fix all"): the swing base is 2 — "đừng vô 1 MNQ…
+// vô ít nhất là 2 MNQ để có đường bán bớt" [D5.2 p2 @06:19–06:23]. Named RED:
+// revert mentorSwing4HContractsDefault to 1 → swing4h != 2 → this fails.
 func TestMentorKnobsSwingDefaultIsOne(t *testing.T) {
 	at := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{}}}}
 	base, conf, big, reduced, swing4h, _, mx := at.mentorKnobs()
-	if base != 5 || conf != 5 || big != 5 || reduced != 3 || swing4h != 1 || mx != 20 {
-		t.Fatalf("default knobs = (%d,%d,%d,%d,%d,_,%d), want (5,5,5,3,1,_,20)", base, conf, big, reduced, swing4h, mx)
+	if base != 5 || conf != 5 || big != 5 || reduced != 3 || swing4h != 2 || mx != 20 {
+		t.Fatalf("default knobs = (%d,%d,%d,%d,%d,_,%d), want (5,5,5,3,2,_,20)", base, conf, big, reduced, swing4h, mx)
 	}
 }
 
@@ -168,8 +170,8 @@ func TestMentorSize5Defaults(t *testing.T) {
 		t.Fatalf("ISB old extreme: got %d %s, want 3 isb_old_extreme", got.Contracts, got.Tier)
 	}
 
-	// swing → 1 (unchanged). The confluence stub is forced OFF here — the
-	// confluence branch ranks BEFORE the swing branch, so a confluence-true
+	// swing → 2 (course-defaults-30). The confluence stub is forced OFF here —
+	// the confluence branch ranks BEFORE the swing branch, so a confluence-true
 	// swing would read as confluence.
 	swIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "SWING4H",
 		Price: 21000, Stop: 20988, Target: 21024, StopPts: 12, TargetPts: 24}
@@ -179,8 +181,8 @@ func TestMentorSize5Defaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 1 || got.Tier != "swing4h" {
-		t.Fatalf("swing: got %d %s, want 1 swing4h", got.Contracts, got.Tier)
+	if got.Contracts != 2 || got.Tier != "swing4h" {
+		t.Fatalf("swing: got %d %s, want 2 swing4h", got.Contracts, got.Tier)
 	}
 
 	// an explicit knob value 10 is still honoured (the owner can choose otherwise).

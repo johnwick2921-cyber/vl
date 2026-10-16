@@ -1033,6 +1033,7 @@ func TestFullDayReplayFidelity(t *testing.T) {
 	w := newFdrWorld(t, fdrLiveSeedMs, []string{acct}, map[string]bool{acct: false}, "2026-10-04-d1")
 	cfg := loadReplayStrategy(t)
 	fdrPinPre25CourseEntries(cfg) // release #25: the live day ran the pre-#25 course-entry knobs
+	fdrPinPre30Defaults(cfg)      // course-defaults-30: the live day predates #30 — pin the live defaults
 	w.setNow(fdrLiveSeedMs)
 	w.cur.Store(int64(w.barIndexAtOrAfter(fdrLiveSeedMs) - 1))
 	ft := &fdrTrader{id: "fdr-hoang", account: acct, levelPx: map[string]float64{}}

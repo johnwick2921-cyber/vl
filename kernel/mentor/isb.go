@@ -109,19 +109,16 @@ func ISBStopLimitOrder(prev, cur market.Kline, cfg Config) (Side, Intent, bool, 
 	return dir, short, true, ""
 }
 
-// ISBStopVerdict applies the ONLY stop-size rule R1 has (RULES-FIX-v3): an ISB
-// whose stop is IN THE TWENTIES must NOT be taken [D4.1 p1 @ 05:41]. There is
-// NO fixed 5–6-pt stop and NO ceiling here — the replay's 5–6-pt cap was wrong
-// and killed 17,001 ISBs (CTO, 2026-10-03). "In the twenties" is the window
-// [ISBTwentiesPts, ISBTwentiesPts+10); a stop of thirty-plus is not skipped by
-// R1 (R9's cap is DS-103's wiring, not this verdict).
+// ISBStopVerdict applies the ONLY stop-size rule R1 has (course-defaults-30,
+// owner order "move to 30 at least … fix all"): an ISB whose stop is ≥ 30 pts
+// must NOT be taken; a stop < 30 is TAKEN. There is NO fixed 5–6-pt stop and
+// no "twenties" window any more — the [20,30) skip was REMOVED (it refused
+// 20–30 and let 30+ through, which was backwards). The ≥ 30 ceiling lives in
+// CourseExits.ISBMaxStopPts (default 30, CX-9).
 func ISBStopVerdict(candle market.Kline, cfg Config) (stopPts float64, ok bool, reason string) {
 	stopPts = (candle.High - candle.Low) + 2*cfg.ISBBufferPts
-	if isbOverMaxStop(stopPts, cfg) { // CX-9 knob (default 0 = off)
+	if isbOverMaxStop(stopPts, cfg) { // CX-9 knob (default 30)
 		return stopPts, false, ISBMaxStopReason
-	}
-	if stopPts >= cfg.ISBTwentiesPts && stopPts < cfg.ISBTwentiesPts+10 {
-		return stopPts, false, "ISB stop in the twenties — must not be taken [D4.1 p1 @ 05:41]"
 	}
 	return stopPts, true, ""
 }

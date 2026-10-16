@@ -87,21 +87,23 @@ func isbReverseFixture(t *testing.T) (*Evaluator, []market.Kline, int64) {
 
 // TestReverseISBEmitsWithTarget (item 26 / R81): a reverse ISB emits WITH a
 // target (the next level beyond in the trade direction), so the trader geometry
-// gate no longer refuses it. Mutant: drop the target assignment → RED.
+// gate no longer refuses it. course-defaults-30: ReverseISBAsPHL is ON, so the
+// emitted setup is the retagged PHL (CX-6). Mutant: drop the target assignment
+// → RED.
 func TestReverseISBEmitsWithTarget(t *testing.T) {
 	e, bars, now := isbReverseFixture(t)
 	ins := e.Tick(bars, now)
 	var reverse *Intent
 	for i := range ins {
 		in := &ins[i]
-		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" && in.Side == SideLong {
+		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && (in.Setup == "ISB" || in.Setup == "PHL") && in.Side == SideLong {
 			if reverse == nil {
 				reverse = in
 			} else {
-				t.Fatalf("two long ISB entries on one tick: %+v", ins)
+				t.Fatalf("two long reverse entries on one tick: %+v", ins)
 			}
 		}
-		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" && in.Side == SideShort {
+		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && (in.Setup == "ISB" || in.Setup == "PHL") && in.Side == SideShort {
 			t.Fatalf("R85: the counter-trend short ISB must not arm beside the reverse: %+v", ins)
 		}
 	}
@@ -141,20 +143,37 @@ func TestReverseISBObeysThe4hAgainstANormalISB(t *testing.T) {
 	}
 }
 
-// R85 (CTO, release #4): the reverse ISB obeys the twenties stop skip like the
-// normal ISB [D4.1 p1 @ 05:41]. The fixture's inside candle gives a 5-pt stop;
-// a twenties window moved to [4, 14) puts it inside → refused
-// isbrev_stop_twenties. Mutant: drop the gate → the reverse fires → RED.
+// R85 reworked by course-defaults-30: the reverse ISB obeys the SAME stop
+// ceiling as the normal ISB — CourseExits.ISBMaxStopPts default 30 (stop < 30
+// taken, ≥ 30 refused). The fixture's inside candle gives a 5-pt stop, so with
+// the default it FIRES; with the knob at 4 the same 5-pt stop is refused and
+// counted "isbrev_stop_over_max". Mutant: drop the isbOverMaxStop check in
+// ISBStopVerdict → RED (the reverse fires under the knob).
 func TestReverseISBSkipsTheTwenties(t *testing.T) {
 	e, bars, now := isbReverseFixture(t)
-	e.Cfg.ISBTwentiesPts = 4
+	if e.Cfg.CourseExits.ISBMaxStopPts != 30 {
+		t.Fatalf("CX-9 default must be 30; got %g", e.Cfg.CourseExits.ISBMaxStopPts)
+	}
 	ins := e.Tick(bars, now)
 	for i := range ins {
 		if in := &ins[i]; (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" && in.Side == SideLong {
-			t.Fatalf("a reverse ISB with a stop in the twenties window must not fire; intents %+v", ins)
+			// the default fires: a 5-pt stop is below the 30-pt ceiling
+			_ = in
 		}
 	}
-	if e.State.Refusals["isbrev_stop_twenties"] < 1 {
-		t.Fatalf("want isbrev_stop_twenties counted; refusals %v", e.State.Refusals)
+	if e.State.Refusals["isbrev_stop_over_max"] != 0 || e.State.Refusals["isbrev_stop_twenties"] != 0 {
+		t.Fatalf("default: no stop refusal expected; refusals %v", e.State.Refusals)
+	}
+
+	e2, bars2, now2 := isbReverseFixture(t)
+	e2.Cfg.CourseExits.ISBMaxStopPts = 4
+	ins2 := e2.Tick(bars2, now2)
+	for i := range ins2 {
+		if in := &ins2[i]; (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" && in.Side == SideLong {
+			t.Fatalf("a reverse ISB with a 5-pt stop under a 4-pt ceiling must not fire; intents %+v", ins2)
+		}
+	}
+	if e2.State.Refusals["isbrev_stop_over_max"] < 1 {
+		t.Fatalf("want isbrev_stop_over_max counted; refusals %v", e2.State.Refusals)
 	}
 }

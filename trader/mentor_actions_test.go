@@ -98,6 +98,7 @@ func mentorWireSeams(t *testing.T, at *AutoTrader, ledger *store.ArmedOrderStore
 	mentorConfluenceForIntent = func(in mentor.Intent) bool { return in.Confluence }
 	at.mentorDayNetSource = func() (float64, bool) { return 0, true }
 	at.mentorClosedProfitSource = func() (bool, bool) { return false, true }
+	at.mentorClosedLossSource = func() (bool, bool) { return false, true } // stop-after-loss is ON by default (course-defaults-30): "no loss, resolved"
 	mentorSetArmExpiryWire = func(armID int64, expiryMs int64) error {
 		return ledger.SetArmExpiry(armID, expiryMs)
 	}
@@ -112,6 +113,7 @@ func mentorWireSeams(t *testing.T, at *AutoTrader, ledger *store.ArmedOrderStore
 		mentorConfluenceForIntent = nil
 		at.mentorDayNetSource = nil
 		at.mentorClosedProfitSource = nil
+		at.mentorClosedLossSource = nil
 		mentorSetArmExpiryWire = nil
 		at.mentorSourceDepthSource = nil
 		market.FuturesBarsProvider = nil

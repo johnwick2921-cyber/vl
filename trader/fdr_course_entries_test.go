@@ -33,6 +33,35 @@ func fdrPinPre25CourseEntries(cfg *store.StrategyConfig) {
 	t.BoxNewZoneAfterEscape = &off
 }
 
+// fdrPinPre30Defaults pins every knob whose DEFAULT changed in
+// course-defaults-30 back to the value the LIVE fidelity day ran (the live day
+// predates #30): the fidelity test reproduces the live arms, so it must run
+// the live behaviour. The #30 defaults are measured by TestFullDayReplay (the
+// FULL_DAY_REPLAY=1 run), not by the fidelity pin.
+func fdrPinPre30Defaults(cfg *store.StrategyConfig) {
+	off, on := false, true
+	if cfg.RiskControl.MentorTuning == nil {
+		cfg.RiskControl.MentorTuning = &store.MentorTuning{}
+	}
+	t := cfg.RiskControl.MentorTuning
+	// course-entry knobs whose #30 default flipped.
+	t.HTFGateNewsOnly = &off        // was OFF (all-day gate)
+	t.NewsWaitBothLines = &off      // was OFF
+	t.TrendlineBetweenBoxes = &off  // was OFF
+	t.FlagWallTarget = &off         // was OFF
+	// course-exits + other risk knobs whose #30 default flipped.
+	cfg.RiskControl.MentorDayOffRecheck = &on     // was ON (2026-10-09 ruling)
+	cfg.RiskControl.MentorBEBeforePartial = &off  // was OFF (R3)
+	cfg.RiskControl.MentorSwingRunner = &off      // was OFF
+	cfg.RiskControl.MentorReverseISBAsPHL = &off  // was OFF
+	cfg.RiskControl.MentorStopAfterLoss = &off    // was OFF
+	if cfg.RiskControl.MentorSwing4HContracts == 0 {
+		cfg.RiskControl.MentorSwing4HContracts = 1 // was 1
+	}
+	// ISBMaxStopPts is left at the #30 default 30: every live fidelity arm's
+	// stop is < 30 pts, so the cap does not change the reproduced arms.
+}
+
 // fdrApplyTuningEnv merges FDR_TUNING (a JSON object of mentor_tuning keys,
 // e.g. {"isb_box_escape":"close"}) onto the replay strategy — the ON-vs-OFF
 // switch for the release #25 replay table. FDR_PRE25=1 first pins every

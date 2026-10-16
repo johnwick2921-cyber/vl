@@ -91,14 +91,18 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 		want := mentorTuned{
 			TriggerSchool: 1, PingPongMinGapPts: 50, PingPongCandleMaxPts: 20, PingPongCandleLookback: 30,
 			LevelMaxVisits: 3, OrbGateEnabled: true, ISBReverseEMA9Enabled: true,
-			HTFGateNewsOnly: false, // D4.4-11: the all-day 4h/1h gate stays the default (U-6 open)
+			HTFGateNewsOnly: true, // course-defaults-30: the 4h/1h gate is for news and the open only [D4.4 p1 @13:55–14:06]
 			Exec2mAfter30m:  false, // X5-10: the 1m ISB read stays the default (course trades the 1m)
 			DayGateSpentPts: 300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
-			// Release #25 course-entry knobs (COMMON-25 knob rule: (a) ON, (b) OFF).
-			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictFirstBox,
+			// Release #25 course-entry knobs (course-defaults-30 changes).
+			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictBothBoxes,
+			NewsWaitBothLines: true, // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
 			NewsBarsExcluded: true, // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
 			ISBBoxEscapeMode: mentor.ISBBoxEscapeBody, EmaLossRelock: mentor.EmaRelockUntilZoneExit,
-			D43TrendSource: mentor.D43TrendTriggerLine, TrendlineIsTarget: true, LegResetOnWaveBreak: true,
+			D43TrendSource: mentor.D43TrendStructure, TrendlineIsTarget: true,
+			TrendlineBetweenBoxes: true, // CE-11/B13 — course-defaults-30 [D3.2 p2 @10:56–11:04]
+			FlagWallTarget:        true, // CE-11 — course-defaults-30 [X9 @05:59–06:12]
+			LegResetOnWaveBreak:   true,
 			// Release #29 B52: a new zone after a range escape — course, no
 			// ruling against → ON (COMMON-25).
 			BoxNewZoneAfterEscape: true,

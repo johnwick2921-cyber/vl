@@ -32,9 +32,10 @@ func mentorSwingEMA34FirstTarget(rc *store.RiskControlConfig) bool {
 	return rc == nil || mentorBoolKnob(rc.MentorSwingEMA34IsFirstTarget, true)
 }
 
-// mentorSwingRunnerOn — CX-2, nil → OFF (case b).
+// mentorSwingRunnerOn — CX-2, nil → ON (course-defaults-30, owner "fix all":
+// the course runs the 4h swing with a runner [D5.2 p2 @06:19–06:23]).
 func mentorSwingRunnerOn(rc *store.RiskControlConfig) bool {
-	return rc != nil && mentorBoolKnob(rc.MentorSwingRunner, false)
+	return rc == nil || mentorBoolKnob(rc.MentorSwingRunner, true)
 }
 
 // mentorResonanceRunnerTPOn — CX-3, nil → ON (case a, a bug fix).
@@ -42,9 +43,10 @@ func mentorResonanceRunnerTPOn(rc *store.RiskControlConfig) bool {
 	return rc == nil || mentorBoolKnob(rc.MentorResonanceRunnerTPOldHigh, true)
 }
 
-// mentorBEBeforePartialOn — CX-4, nil → OFF (case b: owner ruling R3).
+// mentorBEBeforePartialOn — CX-4, nil → ON (course-defaults-30, owner "fix all"
+// — reverses R3): BE at half-way to +1R is MANDATORY [D1.2 p1 @12:34–13:12, @15:57].
 func mentorBEBeforePartialOn(rc *store.RiskControlConfig) bool {
-	return rc != nil && mentorBoolKnob(rc.MentorBEBeforePartial, false)
+	return rc == nil || mentorBoolKnob(rc.MentorBEBeforePartial, true)
 }
 
 // mentorISBC3PartialAnyProfit — CX-5, nil → ON = today's rule (the ISB
@@ -53,9 +55,10 @@ func mentorISBC3PartialAnyProfit(rc *store.RiskControlConfig) bool {
 	return rc == nil || mentorBoolKnob(rc.MentorISBC3PartialAnyProfit, true)
 }
 
-// mentorReverseISBAsPHL — CX-6, nil → OFF (case b).
+// mentorReverseISBAsPHL — CX-6, nil → ON (course-defaults-30, owner "fix all"):
+// the mentor names the reverse ISB the Potential Low 2 / Lower High [D5.4].
 func mentorReverseISBAsPHL(rc *store.RiskControlConfig) bool {
-	return rc != nil && mentorBoolKnob(rc.MentorReverseISBAsPHL, false)
+	return rc == nil || mentorBoolKnob(rc.MentorReverseISBAsPHL, true)
 }
 
 // mentorEMA9VisitCap — CX-8: shared (default) | per_level | exempt; a bad
@@ -109,10 +112,11 @@ func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mento
 		ReverseISBAsPHL:       mentorReverseISBAsPHL(rc),
 		EMA9VisitCap:          mentorEMA9VisitCap(at, rc),
 		KeypairRatio:          1,
+		ISBMaxPts:             30, // course-defaults-30: stop < 30 taken, ≥ 30 refused
 		BoxFreshRTHPair:       rc != nil && mentorBoolKnob(rc.MentorBoxFreshRTHPair, false),
 	}
 	if rc != nil {
-		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, 0, "isb_max_pts")
+		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, 30, "isb_max_pts")
 		out.KeypairRatio = mentorPositiveKnob(at, rc.MentorKeypairCandleRatio, 1, "keypair_candle_ratio")
 		out.BoxMaxHeightPts = mentorPositiveKnob(at, rc.MentorBoxMaxHeightPts, 0, "box_max_height_pts")
 	}

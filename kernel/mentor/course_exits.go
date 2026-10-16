@@ -32,7 +32,8 @@ type CourseExitsCfg struct {
 	// also the OBSTACLE the swing room rule measures (R68 refused every swing
 	// whose on-side 5m EMA 34 sat closer than 2R). false = R68 (pre-#25).
 	SwingEMA34IsFirstTarget bool
-	// ReverseISBAsPHL (CX-6, case b, default OFF): tag the reverse ISB at EMA 9
+	// ReverseISBAsPHL (CX-6, case b, default ON — course-defaults-30, owner
+	// "fix all"): tag the reverse ISB at EMA 9
 	// as the PHL (long) / PLH (short) the mentor calls it — "Nó là bộ tên solo
 	// 2, chứ nó không phải là Insa 3" [D5.4 @03:52–03:56], "em lại gọi là
 	// Potential Low 2" [@07:33–07:37]. The tag moves the exit to the PHL/PLH
@@ -42,10 +43,12 @@ type CourseExitsCfg struct {
 	// EMA9VisitCap (CX-8, case b, default "shared" — the course states no EMA 9
 	// visit rule): shared | per_level | exempt.
 	EMA9VisitCap string
-	// ISBMaxStopPts (CX-9, case b, default 0 = off): refuse an ISB (and the
-	// reverse ISB) whose stop is at/above this many points. The course states
-	// only the twenties skip ("hai mươi mấy điểm … đừng vô" [D4.1 p1 @05:41]);
-	// no ≥ 25 ISB cap is spoken.
+	// ISBMaxStopPts (CX-9, default 30 — course-defaults-30, owner order "move
+	// to 30 at least … fix all", DEVIATES from the course's twenties skip
+	// [D4.1 p1 @05:41]): refuse an ISB (and the reverse ISB) whose stop is
+	// at/above this many points. The [20,30) "twenties" window no longer
+	// refuses — an ISB stop < 30 is TAKEN, ≥ 30 is REFUSED (the pre-30 code
+	// had it backwards: it refused 20–30 and let 30+ through).
 	ISBMaxStopPts float64
 	// KeypairCandleRatio (CX-10, default 1 = today): the X4 keypair rule sits
 	// out when the gap to the next key level is ≤ ratio × the largest recent
@@ -66,8 +69,10 @@ type CourseExitsCfg struct {
 func DefaultCourseExitsCfg() CourseExitsCfg {
 	return CourseExitsCfg{
 		SwingEMA34IsFirstTarget: true,
+		ReverseISBAsPHL:         true, // course-defaults-30 [D5.4 @03:52–03:56, @07:33]
 		EMA9VisitCap:            EMA9VisitShared,
 		KeypairCandleRatio:      1,
+		ISBMaxStopPts:           30, // course-defaults-30: stop < 30 taken, ≥ 30 refused
 	}
 }
 
@@ -243,13 +248,11 @@ func (e *Evaluator) buildBoxes(bars []market.Kline, now int64) []Box {
 }
 
 // ISBMaxStopReason is the CX-9 refusal reason ISBStopVerdict returns.
-const ISBMaxStopReason = "ISB stop at/above mentor_isb_max_pts — refused [CX-9 knob; the course's only ISB stop rule is the twenties skip, D4.1 p1 @05:41]"
+const ISBMaxStopReason = "ISB stop at/above mentor_isb_max_pts — refused [CX-9 knob, default 30 — course-defaults-30 owner order: stop < 30 taken, ≥ 30 refused]"
 
 // isbStopRefusal names the ISB stop refusal counter: <prefix>stop_over_max for
-// the CX-9 knob, <prefix>stop_twenties for everything else (today's counter).
+// the CX-9 knob. (The pre-30 <prefix>stop_twenties name is retired with the
+// twenties skip it counted.)
 func isbStopRefusal(prefix, why string) string {
-	if why == ISBMaxStopReason {
-		return prefix + "stop_over_max"
-	}
-	return prefix + "stop_twenties"
+	return prefix + "stop_over_max"
 }

@@ -37,7 +37,7 @@ const (
 	mentorConfluenceContractsDefault = 5
 	mentorBigContractsDefault        = 5
 	mentorReducedContractsDefault    = 3
-	mentorSwing4HContractsDefault    = 1 // 1 MNQ, not 3 [D5.2 p1 @00:38–00:47 "Em vô đúng 1 MNQ thôi"]
+	mentorSwing4HContractsDefault    = 2 // 2 MNQ — the course runs ≥ 2 to sell part and hold the runner [D5.2 p2 @06:19–06:23 "đừng vô 1 MNQ… 2 của MNQ để có đường bán bớt"]
 	mentorSpentDayContractsDefault   = 2
 	mentorMaxContractsDefault        = 20 // ceiling only — no tier sizes to it by default
 
@@ -388,12 +388,13 @@ func mentorLocationTriggerFilter(rc *store.RiskControlConfig) bool {
 	return rc == nil || rc.MentorLocationTriggerFilter == nil || *rc.MentorLocationTriggerFilter
 }
 
-// mentorDayOffRecheck — owner ruling 2026-10-09: after a DayOff latch freezes
-// at the open, re-read the 4h/1h directions on every closed 1h bar and clear
-// the latch the moment they agree (one-way). nil → ON; false = today's
-// whole-day latch.
+// mentorDayOffRecheck — course-defaults-30 (owner "fix all", supersedes the
+// 2026-10-09 owner ruling): the course shuts the WHOLE day on a DayOff
+// [D5.1 p1 @19:22–19:40, p2 @00:01]; nil → OFF (the whole-day latch). true =
+// the pre-ruling recheck (re-read 4h/1h on each closed 1h bar; clear one-way
+// to DaySpent when they agree).
 func mentorDayOffRecheck(rc *store.RiskControlConfig) bool {
-	return rc == nil || rc.MentorDayOffRecheck == nil || *rc.MentorDayOffRecheck
+	return rc != nil && rc.MentorDayOffRecheck != nil && *rc.MentorDayOffRecheck
 }
 
 // mentorLossDeparturePts is the optional fixed-points fallback for the B22

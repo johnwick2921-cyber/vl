@@ -51,6 +51,7 @@ func wireMentorPlacementSeams(t *testing.T, at *AutoTrader) {
 	t.Helper()
 	at.mentorDayNetSource = func() (float64, bool) { return 0, true }
 	at.mentorClosedProfitSource = func() (bool, bool) { return false, true }
+	at.mentorClosedLossSource = func() (bool, bool) { return false, true } // stop-after-loss is ON by default (course-defaults-30): wire "no loss, resolved"
 	at.mentorOpenSideSource = func() string { return "" }
 	at.mentorLegProtectedSource = func(leg string) bool { return true }
 	mentorLatestPriceSource = func() (float64, bool) { return 0, false } // bound, inert: no-chase sees no price
@@ -62,6 +63,7 @@ func wireMentorPlacementSeams(t *testing.T, at *AutoTrader) {
 	t.Cleanup(func() {
 		at.mentorDayNetSource = nil
 		at.mentorClosedProfitSource = nil
+		at.mentorClosedLossSource = nil
 		at.mentorOpenSideSource = nil
 		at.mentorLegProtectedSource = nil
 		mentorLatestPriceSource = nil
@@ -250,10 +252,12 @@ func TestMentorDoneAfterWinGateAtPlacementCallSite(t *testing.T) {
 }
 
 // TestMentorStopAfterLossGateAtPlacementCallSite — STOP-AFTER-LOSS (owner "ok"
-// 2026-10-05): a mentor trade closed today with a net loss ends the mentor's
-// day, but only with the switch ON (nil → OFF). A breakeven close (no loss)
-// proceeds. The mutant that drops the gate makes the recorder fire after a loss
-// and this test goes RED.
+// 2026-10-05; course-defaults-30 — the course says it at [D1.2 p1 @23:40–23:42]
+// "nếu mà thua / thì em thôi / em tắt má nghỉ"): a mentor trade closed today
+// with a net loss ends the mentor's day, and the knob is ON by default (nil →
+// ON). A breakeven close (no loss) proceeds, and an explicit OFF restores the
+// pre-30 behaviour. The mutant that drops the gate makes the recorder fire
+// after a loss and this test goes RED.
 func TestMentorStopAfterLossGateAtPlacementCallSite(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	wireMentorPlacementSeams(t, at)
@@ -273,22 +277,24 @@ func TestMentorStopAfterLossGateAtPlacementCallSite(t *testing.T) {
 	mentorPlaceRecorderForTest = func(i mentor.Intent, n int) { placed++ }
 	t.Cleanup(func() { mentorPlaceRecorderForTest = nil })
 
-	// nil knob (OFF) → proceeds despite a closed loss.
+	// nil knob (ON, the course-defaults-30 default) + a closed loss → refused.
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
-	if placed != 1 {
-		t.Fatalf("with the knob OFF (nil) a loss must NOT stop the day, placed=%d", placed)
-	}
-	// knob ON + a closed loss → refused and counted.
-	on := true
-	at.config.StrategyConfig.RiskControl.MentorStopAfterLoss = &on
-	at.mentorPlaceIntent(in, choice, 1000, 1100)
-	if placed != 1 {
-		t.Fatalf("with the knob ON a loss must stop the day, placed=%d", placed)
+	if placed != 0 {
+		t.Fatalf("with the knob ON (nil default) a loss must stop the day, placed=%d", placed)
 	}
 	if got := at.mentorCountSnapshot()["stop_after_loss_refused"]; got != 1 {
 		t.Fatalf("the stop-after-loss refusal must be counted once, got %d", got)
 	}
+	// knob explicitly OFF + a closed loss → proceeds.
+	off := false
+	at.config.StrategyConfig.RiskControl.MentorStopAfterLoss = &off
+	at.mentorPlaceIntent(in, choice, 1000, 1100)
+	if placed != 1 {
+		t.Fatalf("with the knob explicitly OFF a loss must NOT stop the day, placed=%d", placed)
+	}
 	// knob ON + a breakeven close (no loss) → proceeds.
+	on := true
+	at.config.StrategyConfig.RiskControl.MentorStopAfterLoss = &on
 	at.mentorClosedLossSource = func() (bool, bool) { return false, true }
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
 	if placed != 2 {
@@ -303,8 +309,8 @@ func TestMentorStopAfterLossGateAtPlacementCallSite(t *testing.T) {
 	if got := at.mentorCountSnapshot()["stop_after_loss_no_data"]; got != 1 {
 		t.Fatalf("the fail-closed refusal must be counted stop_after_loss_no_data once, got %d", got)
 	}
-	// a NIL StrategyConfig reads OFF, exactly like a nil knob — the gate must
-	// not run (and cannot refuse) when there is no config to carry the switch.
+	// a NIL StrategyConfig reads OFF, exactly like an explicit OFF — the gate
+	// must not run (and cannot refuse) when there is no config to carry the switch.
 	at.mentorClosedLossSource = func() (bool, bool) { return true, true }
 	saved := at.config.StrategyConfig
 	at.config.StrategyConfig = nil
@@ -319,12 +325,19 @@ func TestMentorStopAfterLossGateAtPlacementCallSite(t *testing.T) {
 // a DEFINITE loss (knob ON + a resolved closed loss). OFF, breakeven or an
 // unresolved read is "unknown", not a trip: the sweep never force-cancels a
 // resting arm on it (same contract as mentorDoneAfterWinTripped).
+// course-defaults-30: the knob defaults ON, so nil + a resolved loss trips.
 func TestMentorStopAfterLossTrippedHook(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	at.mentorClosedLossSource = func() (bool, bool) { return true, true }
 	t.Cleanup(func() { at.mentorClosedLossSource = nil })
 
-	// knob OFF (nil) → no trip.
+	// knob nil (ON, the default) + a resolved closed loss → DEFINITE trip.
+	if trip, why := at.mentorStopAfterLossTrip(); !trip || why == "" {
+		t.Fatalf("knob ON (nil default) + a loss must trip: trip=%v why=%q", trip, why)
+	}
+	// knob explicitly OFF → no trip.
+	off := false
+	at.config.StrategyConfig.RiskControl.MentorStopAfterLoss = &off
 	if trip, why := at.mentorStopAfterLossTrip(); trip || why != "" {
 		t.Fatalf("knob OFF must not trip: trip=%v why=%q", trip, why)
 	}

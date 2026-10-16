@@ -78,12 +78,12 @@ func TestCX1SwingEMA34IsTheFirstTargetNotAnObstacle(t *testing.T) {
 }
 
 // TestCX6ReverseISBTaggedPHLWhenOn — D5.4 @03:52–03:56 "Nó là bộ tên solo 2,
-// chứ nó không phải là Insa 3": knob ON tags the reverse ISB PHL (long) and
-// drops the ISB size flags; OFF (the default) keeps "ISB". Mutant: the retag
-// call removed from eval.go → ON RED.
+// chứ nó không phải là Insa 3": knob ON (the course-defaults-30 default) tags
+// the reverse ISB PHL (long) and drops the ISB size flags; OFF keeps "ISB".
+// Mutant: the retag call removed from eval.go → ON RED.
 func TestCX6ReverseISBTaggedPHLWhenOn(t *testing.T) {
-	if DefaultConfig().CourseExits.ReverseISBAsPHL {
-		t.Fatal("CX-6 default must be OFF (case b)")
+	if !DefaultConfig().CourseExits.ReverseISBAsPHL {
+		t.Fatal("CX-6 default must be ON (course-defaults-30)")
 	}
 	for _, on := range []bool{false, true} {
 		e, bars, now := isbReverseFixture(t)
@@ -179,18 +179,18 @@ func TestCX8EMA9VisitCapModes(t *testing.T) {
 	}
 }
 
-// TestCX9ISBMaxStopRefusedAndNamed — knob mentor_isb_max_pts (default 0 =
-// off, the course states only the twenties skip): with the knob at 5 the
-// standard long ISB (stop > 5) is refused and counted "isb_stop_over_max",
+// TestCX9ISBMaxStopRefusedAndNamed — knob mentor_isb_max_pts (default 30 —
+// course-defaults-30: stop < 30 taken, ≥ 30 refused): with the knob at 1 the
+// standard long ISB (stop > 1) is refused and counted "isb_stop_over_max",
 // never folded into "isb_stop_twenties". Mutant: drop the isbOverMaxStop check
 // in ISBStopVerdict → RED.
 func TestCX9ISBMaxStopRefusedAndNamed(t *testing.T) {
-	if DefaultConfig().CourseExits.ISBMaxStopPts != 0 {
-		t.Fatal("CX-9 default must be 0 = off")
+	if DefaultConfig().CourseExits.ISBMaxStopPts != 30 {
+		t.Fatal("CX-9 default must be 30 (course-defaults-30)")
 	}
 	ins, e := scopeISBTick(fullDepth)
 	if entriesOf(ins, "ISB") != 1 {
-		t.Fatalf("control: the ISB must emit with the knob off; %+v %v", ins, e.State.Refusals)
+		t.Fatalf("control: the ISB must emit with the default 30 (its stop 5 < 30); %+v %v", ins, e.State.Refusals)
 	}
 	cfg := DefaultConfig()
 	cfg.Enabled = true

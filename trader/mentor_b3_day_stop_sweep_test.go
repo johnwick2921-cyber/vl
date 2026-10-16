@@ -295,16 +295,19 @@ func TestB3DayStopStopAfterLossCancelsRestingArm(t *testing.T) {
 	}
 }
 
-// TestB3DayStopStopAfterLossOffCancelsNothing — the knob OFF (nil) is not a trip:
-// the sweep must not cancel a resting arm.
+// TestB3DayStopStopAfterLossOffCancelsNothing — the knob explicitly OFF is not
+// a trip: the sweep must not cancel a resting arm. (course-defaults-30: nil
+// defaults ON, so OFF is explicit here.)
 func TestB3DayStopStopAfterLossOffCancelsNothing(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "on")
 	at, _, ledger, _ := mentorB3Rig(t)
 	mentorWireSeams(t, at, ledger)
 	at.resetMentorCountersForTest()
 
-	// knob OFF (nil), but a resolved closed loss — the hook is wired and returns
-	// false, so nothing cancels.
+	// knob explicitly OFF, but a resolved closed loss — the hook is wired and
+	// returns false, so nothing cancels.
+	off := false
+	at.config.StrategyConfig.RiskControl.MentorStopAfterLoss = &off
 	at.mentorClosedLossSource = func() (bool, bool) { return true, true }
 	at.mentorStopAfterLossTripped = at.mentorStopAfterLossTrip
 	t.Cleanup(func() {

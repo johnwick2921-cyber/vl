@@ -1586,19 +1586,20 @@ func (at *AutoTrader) mentorDoneAfterWinGate() (bool, string) {
 	return false, ""
 }
 
-// mentorStopAfterLossGate — STOP-AFTER-LOSS (owner "ok" 2026-10-05): once a
-// MENTOR trade closes today (17:00 CT session-day) with a net LOSS (both legs
-// combined; pnl_corrected < 0), refuse new mentor entries until the next
-// session day [D1.2 p1 @ 23:34]. A breakeven close (0) is NOT a loss. The
-// knob is default OFF (nil → OFF; byte-identical while off). FAIL-CLOSED like
+// mentorStopAfterLossGate — STOP-AFTER-LOSS (course-defaults-30, owner "fix
+// all"; the course says it at [D1.2 p1 @23:40–23:42] "nếu mà thua / thì em
+// thôi / em tắt má nghỉ"): once a MENTOR trade closes today (17:00 CT
+// session-day) with a net LOSS (both legs combined; pnl_corrected < 0), refuse
+// new mentor entries until the next session day [D1.2 p1 @ 23:34]. A breakeven
+// close (0) is NOT a loss. nil → ON (course default). FAIL-CLOSED like
 // done-after-win: an unwired source or an UNRESOLVED close refuses, with its
 // own counters.
 func (at *AutoTrader) mentorStopAfterLossGate() (bool, string) {
 	if at.config.StrategyConfig == nil {
-		return false, "" // no config → the knob reads OFF (nil → OFF, the default)
+		return false, "" // no config → the knob reads OFF (nil → OFF, no strategy bound)
 	}
-	if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v == nil || !*v {
-		return false, "" // the knob is OFF (nil → OFF, the default)
+	if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v != nil && !*v {
+		return false, "" // the knob is explicitly OFF
 	}
 	if at.mentorClosedLossSource == nil {
 		at.mentorCount("stop_after_loss_no_data")
@@ -1628,12 +1629,13 @@ func (at *AutoTrader) mentorStopAfterLossGate() (bool, string) {
 
 // mentorStopAfterLossTrip is the DEFINITE-trip computation behind the B3 sweep
 // hook: the knob ON and a resolved closed loss, nothing else.
+// course-defaults-30: nil → ON (the course default).
 func (at *AutoTrader) mentorStopAfterLossTrip() (bool, string) {
 	if at.config.StrategyConfig == nil {
 		return false, ""
 	}
-	if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v == nil || !*v {
-		return false, "" // the knob is OFF (nil → OFF, the default)
+	if v := at.config.StrategyConfig.RiskControl.MentorStopAfterLoss; v != nil && !*v {
+		return false, "" // the knob is explicitly OFF
 	}
 	if at.mentorClosedLossSource == nil {
 		return false, ""
