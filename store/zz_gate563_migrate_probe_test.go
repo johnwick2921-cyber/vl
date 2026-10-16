@@ -6,6 +6,7 @@ package store
 import (
 	"os"
 	"testing"
+	"time"
 )
 
 func TestG563MigrateLiveCopyIsAdditive(t *testing.T) {
@@ -95,5 +96,44 @@ func TestG563FreshDBRoundTripsLeg2(t *testing.T) {
 	t.Logf("after re-authorization without leg 2: (%v, %.2f)", got.Leg2Qty, got.Leg2TP)
 	if got.Leg2Qty != nil || got.Leg2TP != 0 {
 		t.Fatalf("a re-authorization without leg 2 must clear it, got (%v, %.2f)", got.Leg2Qty, got.Leg2TP)
+	}
+}
+
+// M26 — the NEW-plan-version re-authorization branch must also write leg 2
+// (NULL/0 over a stale 1/104). A terminal row re-authorized under a bumped
+// version reaches the version-change Updates map; dropping leg2_qty/leg2_tp
+// from it leaves the stale partial behind.
+func TestG563VersionBumpReauthorizationClearsLeg2(t *testing.T) {
+	st, err := New(t.TempDir() + "/fresh2.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := time.Now()
+	row := &ArmedOrderDB{TraderID: "g", PlanID: "p", Scenario: "s", Side: "long", State: StateArmed,
+		Version: 1, EntryPx: 100, StopPx: 98, TargetPx: 106, Contracts: IntPtr(5),
+		Leg1Qty: IntPtr(3), Leg1TP: 102, Leg2Qty: IntPtr(1), Leg2TP: 104,
+		CreatedAt: now, UpdatedAt: now}
+	if err := st.ArmedOrders().UpsertArm(row); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ArmedOrders().SetState(row.ID, StateCancelled, "owner manual cancel"); err != nil {
+		t.Fatal(err)
+	}
+	next := &ArmedOrderDB{TraderID: "g", PlanID: "p", Scenario: "s", Side: "long", State: StateArmed,
+		Version: 2, EntryPx: 100, StopPx: 98, TargetPx: 106, Contracts: IntPtr(5),
+		Leg1Qty: IntPtr(3), Leg1TP: 102, CreatedAt: now, UpdatedAt: now}
+	if err := st.ArmedOrders().UpsertArm(next); err != nil {
+		t.Fatal(err)
+	}
+	var got ArmedOrderDB
+	if err := st.ArmedOrders().DB().Where("id = ?", row.ID).First(&got).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.State != StateArmed || got.Version != 2 {
+		t.Fatalf("state=%q version=%d, want armed v2 (version bump re-authorizes)", got.State, got.Version)
+	}
+	if got.Leg2Qty != nil || got.Leg2TP != 0 {
+		t.Fatalf("a version-bump re-authorization without leg 2 must clear it, got (%v, %.2f)", got.Leg2Qty, got.Leg2TP)
 	}
 }
