@@ -127,6 +127,27 @@ func (at *AutoTrader) SessionRunnable(s *kernel.SessionDef) (bool, string) {
 	return at.sessionRunnable(s)
 }
 
+// NightModeAt reports whether now is NIGHT for THIS strategy: no registry
+// session window that this strategy actually runs (sessionRunnable) contains
+// now. It is the per-strategy twin of registry.IsNightMode, which reads only
+// the registry's Enabled flag and therefore called a strategy "night" while an
+// explicit per-session override (sessions[].enable) kept ASIA/LONDON runnable
+// (S2, release #32). Derived from the same resolver the session gates use, so
+// the log line and the gate can never disagree again.
+func (at *AutoTrader) NightModeAt(now time.Time) bool {
+	reg := at.sessionRegistry(now)
+	for i := range reg.Sessions {
+		s := &reg.Sessions[i]
+		if !s.InWindow(now) {
+			continue
+		}
+		if ok, _ := at.sessionRunnable(s); ok {
+			return false // a session window this strategy runs is active → DAY
+		}
+	}
+	return true // no runnable window active (gap / daily break / disabled) → NIGHT
+}
+
 // proximityFilterATR is the level activation half-width in daily-range-proxy
 // multiples (day-trade lock). Valid 0.1–3.0; anything else → the default 1.5.
 // S1 (mega-research 2026-08-26) — the 0.5 lower clamp made sane values

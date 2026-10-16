@@ -103,6 +103,21 @@ func TestEffectiveAdaptersMatchProductionResolvers(t *testing.T) {
 	}
 }
 
+// effSessionRuns mirrors the per-session "enable" resolver's displayed value
+// (S1, release #32): the same three branches effective_settings.go uses.
+func effSessionRuns(at *AutoTrader, session string) string {
+	v := at.sessionEnabledForStrategy(session)
+	if dp := at.dayPlanCfg(); dp != nil {
+		if ov := dp.SessionOverride(session); ov != nil && ov.Enable != nil {
+			return sessionRunsLabel(v, "override")
+		}
+		if len(dp.SessionsEnabled) > 0 {
+			return sessionRunsLabel(v, "sessions_enabled")
+		}
+	}
+	return sessionRunsLabel(v, "default [NY]")
+}
+
 // Every row whose resolver is an AutoTrader method (or a trader function)
 // reports exactly what that method returns for an AutoTrader carrying the same
 // parsed config.
@@ -152,7 +167,7 @@ func TestEffectiveRowsMatchAutoTraderMethods(t *testing.T) {
 			dpPath + "fade_or_wide_k":           at.fadeORWideK(),
 			dpPath + "replan_cap":               at.replanCapFor("NY"),
 			dpPath + "picture_htf.min_rr":       pictureRR,
-			spPath + "enable":                   at.sessionEnabledForStrategy("NY"),
+			spPath + "enable":                   effSessionRuns(at, "NY"),
 			spPath + "replan_cap":               at.replanCapFor("NY"),
 		}
 		for path, want := range checks {
