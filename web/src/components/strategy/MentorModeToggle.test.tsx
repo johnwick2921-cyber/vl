@@ -244,10 +244,11 @@ it('the stop-after-loss switch is inert on a read-only strategy', () => {
   expect(onChange).not.toHaveBeenCalled()
 })
 
-// Release #22 (owner ruling R3): the runner-exit knob mentor_trail_mode is a
-// Studio control. Absent reads candle (the server default), a bad stored value
-// shows candle (the server fails closed to it), and a change saves the value
-// through the same RiskControlEditor path as the other mentor knobs.
+// Release #22 (course-defaults-30, owner "fix all" — reverses owner ruling R3):
+// the runner-exit knob mentor_trail_mode is a Studio control. Absent reads
+// candle (the server default), a bad stored value shows candle (the server
+// fails closed to it), and a change saves the value through the same
+// RiskControlEditor path as the other mentor knobs.
 it('an absent mentor_trail_mode reads candle', () => {
   renderEditor({ mentor_mode: true })
   expect(screen.getByTestId('mentor-trail-mode')).toHaveValue('candle')

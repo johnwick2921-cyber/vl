@@ -257,6 +257,7 @@ export function RiskControlEditor({
         onStopAfterLossChange={(v) => updateField('mentor_stop_after_loss', v)}
         trailMode={config.mentor_trail_mode}
         onTrailModeChange={(v) => updateField('mentor_trail_mode', v)}
+        eff={eff}
       />
       {config.mentor_mode === true && (
         <MentorTuningPanel
@@ -264,6 +265,7 @@ export function RiskControlEditor({
           onChange={(v) => updateField('mentor_tuning', v)}
           disabled={disabled}
           language={language}
+          eff={eff}
         />
       )}
       {config.mentor_mode === true && (
@@ -278,6 +280,7 @@ export function RiskControlEditor({
           }}
           disabled={disabled}
           language={language}
+          eff={eff}
         />
       )}
       {/* Hold discipline (hold-lock) — applies to futures + crypto; default OFF */}

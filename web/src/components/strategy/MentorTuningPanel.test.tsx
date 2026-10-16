@@ -150,7 +150,7 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     '15m_ib_requires_5m_isb': 'require_5m_isb',
     tf_conflict_end: 'both_boxes', // course-defaults-30
     news_wait_both_lines: true, // course-defaults-30
-    news_bars_excluded: false,
+    news_bars_excluded: true, // course-defaults-30 (CE-4, release #29 rework)
     isb_box_escape: 'body',
     ema34_loss_relock: 'until_zone_exit',
     orb_edge_veto_pts: 0,
