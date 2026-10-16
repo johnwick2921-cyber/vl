@@ -683,9 +683,11 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 // mentor path — the frame stays in the AddOn, unwired. The exit is a FORK,
 // chosen by whether the resonance appears (D2.4 p1):
 //   A. RESONANCE — a PHL/PLH filled, then an ISB in the SAME direction within
-//      3 candles of the fill: BOTH stops → BE at that moment and leg 1's TP is
-//      modified OUT to the runner's target — NO 1:1 scale-out, NO candle
-//      trail. Let it run; EOD flat still applies.
+//      3 candles of the fill: BOTH stops → BE at that moment, leg 1's +1R TP
+//      STAYS (the 1:1 partial still fires — "RISK REWARD 1-1 tôi vẫn sẽ bán
+//      bớt" [D2.4 @02:24]), and the RUNNER's TP is modified out to the level
+//      beyond the old high (CX-3). NO candle trail. Let it run; EOD flat still
+//      applies.
 //   B. NO RESONANCE (normal) — once price has covered HALF THE DISTANCE TO
 //      LEG 1'S TARGET both legs' stops → BE (move_stop on each, the live R:R
 //      stays 1:1); leg 1 exits at its +1R TP (native bracket); the runner
@@ -781,8 +783,32 @@ func mentorLeg1ForFrame(in mentor.Intent, n int, forkMode string, forkTP float64
 		} else {
 			tp = in.Price + r*mentor.Leg1RiskMultiple(false)
 		}
+		// RELEASE #30 (D1.4): the ISB's first partial is the FILL CANDLE'S
+		// CLOSE, not +1R. A resting +1R limit fills INSIDE the candle the
+		// moment price crosses it, before the close is known — so leg 1's TP is
+		// held out at the runner's target until that close, then
+		// modify_bracket'd to the close (in profit) or back to +1R (losing
+		// close → the D2.2 "bán bớt ở 1-1" fallback). [D1.4 p1 @12:51–13:01
+		// "khi cây nến trend kế tiếp đóng … bán bớt. Bắt buộc"; p2 @05:25–05:41]
+		if in.Setup == "ISB" && mentorISBLeg1Holdout(in.Target, tp, in.Side) {
+			tp = in.Target
+		}
 	}
 	return leg1, tp
+}
+
+// mentorISBLeg1Holdout reports whether the ISB leg-1 TP should be held OUT at
+// the runner's target (release #30): the target is a real level FURTHER than
+// +1R on the profitable side, so it cannot fill inside the fill candle before
+// its close. A target absent, on the loss side, or short of +1R keeps the 1:1.
+func mentorISBLeg1Holdout(target, oneR float64, side mentor.Side) bool {
+	if target <= 0 {
+		return false
+	}
+	if side == mentor.SideShort {
+		return target < oneR
+	}
+	return target > oneR
 }
 
 // mentorLeg1TPForC is the C (confluence) leg-1 target: hold to at least 1:2 —
@@ -872,7 +898,7 @@ func mentorExitFork(in mentor.Intent, confluence bool) (mode string, leg1TP floa
 		}
 		return "C", mentorLeg1TPForC(in.Price, r, side), "confluence flag: hold ≥ 1:2, stop never moves up"
 	case in.Setup == "PHL" || in.Setup == "PLH":
-		return "B", 0, "PHL/PLH: B at entry, resonance watch armed — a same-direction ISB within 3 candles flips to A (BE, no trail, no 1:1 scale-out)"
+		return "B", 0, "PHL/PLH: B at entry, resonance watch armed — a same-direction ISB within 3 candles flips to A (BE, no trail; the 1:1 partial still fires)"
 	default:
 		return "B", 0, "normal: leg 1 TP +1R; runner per mentor_trail_mode — candle (default): BE once leg 1's partial FILLS at NT8, then 1 tick beyond each closed 1m candle; off: BE at half the distance to the TRADE's target"
 	}

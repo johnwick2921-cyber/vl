@@ -390,36 +390,35 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 // mentorISBPartialStep resolves the ISB candle-3 partial ONCE, on the fill
 // candle's close [D1.4 p1 @11:59–13:28 "phải BÁN BỚT. Bắt buộc"; item 8]:
 //   - the fill candle closed at a LOSS → no scale-out (the stop rules own it);
-//   - +1R printed before the close → leg 1's resting +1R TP owns the partial;
-//   - the close is in profit short of +1R → leg 1's TP is MODIFIED to that
+//     leg 1's TP (held out at the runner's target since entry, release #30) is
+//     reverted to +1R — the D2.2 "bán bớt ở 1-1" fallback [D2.2 p3 @12:13];
+//   - the close is in profit (even PAST +1R) → leg 1's TP is MODIFIED to that
 //     close at NT8 (modify_bracket, leg 1 only, tick-rounded toward the entry)
-//     and the verdict is read from the next fresh book.
+//     and the verdict is read from the next fresh book. The fill candle's
+//     close is the target, not +1R intrabar [D1.4 p2 @05:25–05:41].
 //
 // Returns the leg-1 target this candle's (off-mode) 1:1 math should use, or 0
 // for "unchanged".
 func (at *AutoTrader) mentorISBPartialStep(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64) float64 {
 	pos := &p.Pos
 	tp := mentorISBPartialTP(*pos, c, h, l)
-	if tp == 0 {
-		at.mentorCount("isb_partial_losing_close")
-		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: the fill candle closed at %.2f, not in profit (entry %.2f) — no scale-out; the stop rules own leg 1 [D1.4 p1 @11:59–13:28]", c, pos.Entry)
-		return 0
-	}
 	oneR := pos.Entry + pos.R
 	if pos.Side != "long" {
 		oneR = pos.Entry - pos.R
 	}
-	if tp == oneR {
-		p.Legs[0].TP = tp
-		at.mentorCount("isb_partial_1r_first")
-		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: +1R (%.2f) printed before the fill candle closed — leg 1's resting +1R TP owns the partial; no modify sent", tp)
-		return tp
+	if tp == 0 {
+		at.mentorCount("isb_partial_losing_close")
+		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: the fill candle closed at %.2f, not in profit (entry %.2f) — no scale-out; leg 1's TP reverts to +1R (%.2f) [D2.1 p1 @11:08–11:23 deferred; D2.2 p3 @12:13]", c, pos.Entry, oneR)
+		if p.Legs[0].TP > 0 && p.Legs[0].TP != oneR {
+			return at.mentorSendISBPartialTP(nt, p, oneR)
+		}
+		return 0
 	}
 	if !mentorISBC3PartialAnyProfit(at.mentorRiskControl()) {
 		// CX-5 (knob false): "bán bớt ở 1:1" [D2.2 p3 @12:13] — leg 1 keeps its
-		// resting +1R TP; no partial at a close short of 1:1.
+		// resting +1R TP; no partial at the candle-3 close.
 		at.mentorCount("isb_partial_wait_1r")
-		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: close %.2f is in profit short of +1R — mentor_isb_c3_partial_any_profit OFF, leg 1 keeps its +1R TP (D2.2 p3 @12:13 \"bán bớt ở 1:1\"); nothing sent", c)
+		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: close %.2f in profit but mentor_isb_c3_partial_any_profit OFF — leg 1 keeps its +1R TP (D2.2 p3 @12:13 \"bán bớt ở 1:1\"); nothing sent", c)
 		return 0
 	}
 	return at.mentorSendISBPartialTP(nt, p, tp)

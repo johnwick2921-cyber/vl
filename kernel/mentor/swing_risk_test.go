@@ -7,9 +7,15 @@ import (
 	"vl/market"
 )
 
-// SWING-RISK (release #22 fix wave) — call-site pins for the swing's +1R
-// break-even. The production chain is Evaluator.Tick → runSwing → SwingTick →
+// SWING-RISK (release #22 fix wave) — call-site pins for the swing's risk and
+// exit. The production chain is Evaluator.Tick → runSwing → SwingTick →
 // manageSwingPosition; every tick here goes through Evaluator.Tick.
+//
+// Release #30: the swing runner holds by the 4h with its hard stop — the
+// bot-only break-even at +1R and the 2nd-4h-candle forced close are REMOVED
+// [D5.2 p1 @05:48–06:18 "gồng theo khung 4 giờ"; no swing BE / hold length in
+// the course]. The first partial (the 5m EMA 34) is the swing's own target via
+// the CX-2 trader split.
 //
 // The fixture is TestEvaluatorTickWarmSwingEntryUsesSeededLine's: a warm 4h
 // line at 950 and a through-close first touch from below, so the 05:10 CT 5m
@@ -19,9 +25,8 @@ import (
 //	05:20 bar  trades through 930 (the fill) and closes at 929.50 = +0.025R
 //	05:25 bar  closes at 909.50 = +1.025R (the first 5m close at ≥ +1R)
 //
-// The break-even must come on the 05:25 bar, never on the fill bar — with the
-// swing filled in this process AND with the swing restored by RebuildSwingPos
-// (the restart path), which must reach it on the SAME bar.
+// Neither the fill bar nor the +1R close moves the stop to break-even — the
+// runner keeps the hard stop by the 4h.
 
 func swingRiskBar(day, hour, minute int, o, h, l, c float64) market.Kline {
 	open := time.Date(2026, time.September, day, hour, minute, 0, 0, ctime())
@@ -74,9 +79,11 @@ func countAction(ins []Intent, a Action) int {
 	return n
 }
 
-// TestEvaluatorTickSwingBreakEvenOnlyAtOneR — the live-fill path: the swing
-// armed and filled in THIS process.
-func TestEvaluatorTickSwingBreakEvenOnlyAtOneR(t *testing.T) {
+// TestEvaluatorTickSwingNeverMovesStopBE — the live-fill path, release #30:
+// the swing runner holds by the 4h with its hard stop, so neither the fill bar
+// nor a +1R close moves the stop to break-even (the bot-only BE-at-+1R is
+// removed [D5.2: no swing break-even rule]). The position still FILLS.
+func TestEvaluatorTickSwingNeverMovesStopBE(t *testing.T) {
 	tape, fill, oneR := swingRiskTape()
 	e := New(DefaultConfig())
 	e.Cfg.Enabled = true
@@ -97,19 +104,19 @@ func TestEvaluatorTickSwingBreakEvenOnlyAtOneR(t *testing.T) {
 		t.Fatalf("the 05:20 bar trades through 930: the swing must be FILLED, pos=nil (intents %+v)", atFill)
 	}
 	if n := countAction(atFill, ActionMoveStopBE); n != 0 {
-		t.Fatalf("RED: break-even on the FILL bar (close 929.50 = +0.025R, risk 20) — want it only at +1R; intents %+v", atFill)
+		t.Fatalf("release #30: no BE on the fill bar; intents %+v", atFill)
 	}
 
 	atOneR := swingIntentsOf(e, append(append([]market.Kline{}, tape...), fill, oneR))
-	if n := countAction(atOneR, ActionMoveStopBE); n != 1 {
-		t.Fatalf("the 05:25 close 909.50 is +1.025R: want exactly one break-even, got %d (%+v)", n, atOneR)
+	if n := countAction(atOneR, ActionMoveStopBE); n != 0 {
+		t.Fatalf("release #30: no BE at +1R — the runner holds by the 4h with its hard stop; got %d (%+v)", n, atOneR)
 	}
 }
 
-// TestEvaluatorTickRebuiltSwingBreakEvenOnlyAtOneR — the restart path: the
-// same swing restored by RebuildSwingPos from its durable records reaches
-// break-even on the SAME bar as the live-fill path, never before.
-func TestEvaluatorTickRebuiltSwingBreakEvenOnlyAtOneR(t *testing.T) {
+// TestEvaluatorTickRebuiltSwingNeverMovesStopBE — the restart path, release
+// #30: the same swing restored by RebuildSwingPos holds by the 4h with its hard
+// stop — no break-even at +1R after the rebuild either.
+func TestEvaluatorTickRebuiltSwingNeverMovesStopBE(t *testing.T) {
 	tape, fill, oneR := swingRiskTape()
 	e := New(DefaultConfig())
 	e.Cfg.Enabled = true
@@ -127,11 +134,11 @@ func TestEvaluatorTickRebuiltSwingBreakEvenOnlyAtOneR(t *testing.T) {
 	}
 	atFill := swingIntentsOf(e, afterFill)
 	if n := countAction(atFill, ActionMoveStopBE); n != 0 {
-		t.Fatalf("RED: the rebuilt swing broke even at +0.025R (05:20 close 929.50); intents %+v", atFill)
+		t.Fatalf("release #30: no BE on the fill bar; intents %+v", atFill)
 	}
 	atOneR := swingIntentsOf(e, append(afterFill, oneR))
-	if n := countAction(atOneR, ActionMoveStopBE); n != 1 {
-		t.Fatalf("the rebuilt swing must break even on the 05:25 close (+1.025R): got %d (%+v)", n, atOneR)
+	if n := countAction(atOneR, ActionMoveStopBE); n != 0 {
+		t.Fatalf("release #30: the rebuilt swing must not move the stop to BE at +1R: got %d (%+v)", n, atOneR)
 	}
 }
 

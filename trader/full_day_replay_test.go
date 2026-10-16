@@ -1494,21 +1494,10 @@ func TestFullDayReplay(t *testing.T) {
 		}
 	})
 
-	// ── (c) an open swing across the restart: BE at +1R and the hold close ──
-	t.Run("c_swing_across_restart_gets_be_at_1R_and_hold_close", func(t *testing.T) {
+	// ── (c) an open swing across the restart: holds by the 4h, no BE/close ──
+	t.Run("c_swing_across_restart_holds_by_the_4h", func(t *testing.T) {
 		if sw.signalID == "" {
 			t.Fatal("the swing was never injected")
-		}
-		// The expected BE: the first 5m bar CLOSING after the restart at ≥ entry+1R.
-		var beAt int64
-		for _, b5 := range fdrAggregate(w.bars[sw.fillBar:end:end], 300_000, math.MaxInt64) {
-			if b5.CloseTime+1 <= fdrRestartMs {
-				continue
-			}
-			if b5.Close >= sw.entry+sw.risk {
-				beAt = b5.CloseTime + 1
-				break
-			}
 		}
 		var moves, closes []fdrWire
 		for _, f := range w.addon.log {
@@ -1519,78 +1508,44 @@ func TestFullDayReplay(t *testing.T) {
 				closes = append(closes, f)
 			}
 		}
-		t.Logf("(c) injected swing %s: expected BE at %s CT (first 5m close ≥ %.2f after the restart), hold close at %s CT; move_stop frames %d, close frames %d",
-			sw.signalID, fdrCT(beAt), sw.entry+sw.risk, fdrCT(sw.holdMs+300_000), len(moves), len(closes))
+		t.Logf("(c) injected swing %s: release #30 holds by the 4h with its hard stop — move_stop frames %d, close frames %d",
+			sw.signalID, len(moves), len(closes))
 		for _, f := range moves {
 			t.Logf("    move_stop %s CT → %.2f", fdrCT(f.atMs), f.price)
 		}
 		for _, f := range closes {
 			t.Logf("    close_position %s CT %s qty %d", fdrCT(f.atMs), f.side, f.qty)
 		}
-		if beAt == 0 {
-			t.Fatal("the fixture never reaches +1R for the injected swing — pick another injection")
+		// Release #30: the bot-only swing BE-at-+1R and the 2nd-4h-candle forced
+		// close are REMOVED — the runner holds by the 4h with its hard stop, so
+		// the injected swing must emit NO stop move and NO close [D5.2 p1
+		// @05:48–06:18 "gồng theo khung 4 giờ"; no swing BE / hold length in the
+		// course].
+		if len(moves) != 0 {
+			t.Fatalf("(c) RED: the swing must not move its stop (release #30) — got %d move_stop for %s", len(moves), sw.signalID)
 		}
-		if len(moves) == 0 {
-			t.Fatalf("(c) RED: the restarted swing never got its break-even — no move_stop for %s (expected at %s CT)", sw.signalID, fdrCT(beAt))
-		}
-		if first := moves[0]; first.atMs != beAt || first.price != sw.entry {
-			t.Fatalf("(c) the first stop move for the swing was %.2f at %s CT; want BE %.2f at %s CT (+1R)", first.price, fdrCT(first.atMs), sw.entry, fdrCT(beAt))
-		}
-		if end := w.barIndexAtOrAfter(sw.holdMs + 300_000); end < len(w.bars) && w.bars[end].OpenTime < fdrReplayEndMs() {
-			if len(closes) == 0 {
-				t.Fatalf("(c) RED: the restarted swing never got its hold close (2nd 4h close after entry, %s CT)", fdrCT(sw.holdMs+300_000))
-			}
-			if closes[0].atMs != sw.holdMs+300_000 {
-				t.Fatalf("(c) the swing's hold close came at %s CT; want %s CT (the close of the first 5m bar of the hold boundary)", fdrCT(closes[0].atMs), fdrCT(sw.holdMs+300_000))
-			}
+		if len(closes) != 0 {
+			t.Fatalf("(c) RED: the swing must not be force-closed (release #30) — got %d close_position", len(closes))
 		}
 	})
 
-	// ── (c2) every swing break-even comes at ≥ +1R, with and without a restart
-	t.Run("c2_every_swing_break_even_at_or_beyond_1R", func(t *testing.T) {
-		// The course rule is "+1R reached — stop to break-even" [§8]. Every swing
-		// MoveStopBE the evaluator emitted is judged on the 5m close it was
-		// emitted on, against the position's OWN risk |entry − stop| (measured
-		// here independently of the kernel's sign convention). The injected swing
-		// is the restart path (rebuilt from the records); every other swing was
-		// filled — in the kernel's tape simulation — in the same process.
+	// ── (c2) the swing never breaks even — release #30 removed the bot-only BE
+	t.Run("c2_no_swing_break_even_anywhere", func(t *testing.T) {
+		// Release #30: the swing runner holds by the 4h with its hard stop; no
+		// swing MoveStopBE is ever emitted — with or without a restart.
 		var bad []string
-		checked := map[string]int{}
 		for _, ft := range traders {
 			for _, be := range ft.swingBE {
 				path := "no restart"
-				entry, stop, side, known := be.entry, be.stop, be.side, be.known
 				if be.armID == sw.armID && ft.id == sw.traderID {
 					path = "after the restart"
-					entry, stop, side, known = sw.entry, sw.stop, mentor.SideLong, true // the records, not the live (possibly moved) stop
 				}
 				when := fdrCT(w.bars[be.barIdx].CloseTime + 1)
-				if !known || math.Abs(entry-stop) == 0 {
-					bad = append(bad, fmt.Sprintf("%s %s break-even at %s CT with no readable position (entry %.2f stop %.2f)", ft.id, be.armID, when, entry, stop))
-					continue
-				}
-				risk := math.Abs(entry - stop)
-				c5 := fdrLast5mClose(w, be.barIdx)
-				move := c5 - entry
-				if side == mentor.SideShort {
-					move = entry - c5
-				}
-				r := move / risk
-				checked[path]++
-				t.Logf("(c2) %s %s %s: %s entry %.2f stop %.2f (R %.2f), break-even at %s CT on a 5m close %.2f = %+.2fR",
-					ft.id, be.armID, path, side, entry, stop, risk, when, c5, r)
-				if r < 1-1e-9 {
-					bad = append(bad, fmt.Sprintf("%s %s (%s) moved to break-even at %+.2fR (%s CT, close %.2f, entry %.2f, R %.2f) — the rule is +1R",
-						ft.id, be.armID, path, r, when, c5, entry, risk))
-				}
+				bad = append(bad, fmt.Sprintf("%s %s (%s) emitted a swing break-even at %s CT — release #30 removed it (the runner holds by the 4h)", ft.id, be.armID, path, when))
 			}
 		}
-		t.Logf("(c2) swing break-evens checked: %s", fdrSortedKV(checked))
-		if checked["after the restart"] == 0 {
-			t.Fatal("(c2) the restarted swing never broke even — the restart half of the rule is untested")
-		}
 		if len(bad) > 0 {
-			t.Fatalf("(c2) %d swing break-even(s) before +1R:\n  %s", len(bad), strings.Join(bad, "\n  "))
+			t.Fatalf("(c2) %d swing break-even(s) after release #30:\n  %s", len(bad), strings.Join(bad, "\n  "))
 		}
 	})
 

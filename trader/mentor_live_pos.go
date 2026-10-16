@@ -631,9 +631,10 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 		at.mentorCount("rebuild_ok")
 		rebuilt++
 		at.logInfof("🧑‍🏫 mentor restart rebuild: %s %s %d contracts under exit management (mode %s)", pos.Symbol, side, lp.Pos.Contracts, lp.Pos.Mode)
-		// FIX-SWING-RESTART: a FILLED swing's BE/hold management runs in the
-		// EVALUATOR (manageSwingPosition → mentorMoveStopBE / mentorClosePosition),
-		// which needs TWO in-memory registries the 1m rebuild does not cover:
+		// FIX-SWING-RESTART: a FILLED swing's exit management runs in the
+		// EVALUATOR (manageSwingPosition — release #30 holds the runner by the
+		// 4h with its hard stop, no BE, no forced close), which needs TWO
+		// in-memory registries the 1m rebuild does not cover:
 		// the trader's mentorLiveArms entry and the evaluator's State.Swing.Pos.
 		// Rebuild both from the SAME proven records. Fail-closed: a swing that
 		// cannot be proven is never half-registered and never moved — its stop
@@ -641,12 +642,12 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 		if strings.EqualFold(strings.TrimSpace(row.Condition), "SWING4H") {
 			if ok, why := at.mentorRebuildSwingArm(*row, pos, lp); ok {
 				at.mentorCount("swing_rebuild_ok")
-				at.logInfof("🧑‍🏫 mentor swing %s under BE/hold management after restart (arm %q)", row.SignalID, mentorArmIDFromScenario(row.Scenario))
+				at.logInfof("🧑‍🏫 mentor swing %s under exit management after restart (arm %q) — the runner holds by the 4h with its hard stop", row.SignalID, mentorArmIDFromScenario(row.Scenario))
 			} else {
 				at.mentorCount("swing_rebuild_refused")
-				at.logErrorf("🧑‍🏫 mentor swing %s NOT under BE/hold management after restart — %s; manage by hand", row.SignalID, why)
+				at.logErrorf("🧑‍🏫 mentor swing %s NOT under exit management after restart — %s; manage by hand", row.SignalID, why)
 				at.emitAlert("P0", "mentor-swing-restart", "mentor-swing-"+row.SignalID,
-					"open swing not under BE/hold management after restart",
+					"open swing not under exit management after restart",
 					"manage by hand — "+why+" (signal "+row.SignalID+")")
 			}
 		}

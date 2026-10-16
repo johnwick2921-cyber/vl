@@ -573,6 +573,53 @@ func TestR22Candle3PartialIsARealModify(t *testing.T) {
 	}
 }
 
+// TestR22Candle3PartialPast1ROwnsTheClose — release #30 (D1.4 p1 @12:51–13:01
+// "bán bớt. Bắt buộc"; p2 @05:25–05:41): the ISB candle-3 partial is the FILL
+// CANDLE'S CLOSE even when that candle ran PAST +1R first. Entry holds leg 1's
+// TP OUT at the runner target (30703.00), so the +1R limit cannot fill inside
+// the candle; the close 30738.00 (in profit, low 30720.00 ran past +1R
+// 30724.25) is then modify_bracket'd to leg 1. Pre-#30 the intrabar +1R was
+// returned with NO modify → RED. Mutant: drop the entry holdout (mentorLeg1ForFrame
+// keeps +1R) → the +1R limit fills intrabar before the close → RED.
+func TestR22Candle3PartialPast1ROwnsTheClose(t *testing.T) {
+	b := r22Fixture(t, store.RiskControlConfig{})
+	b.positions("short", 3)
+	b.book(r22StopOrder(r22Sig+"-sl", r22Stop, 2), r22StopOrder(r22Sig+"-sl2", r22Stop, 1),
+		r22TP(r22Sig+"-tp", r22Target, 2), r22TP(r22Sig+"-tp2", r22Target, 1))
+	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22Target, r22Target)
+	// fill candle: low 30720.00 runs PAST +1R (30724.25); the close 30738.00 is
+	// in profit short of the entry — the close owns the partial, not the +1R.
+	b.candle(r22Minute(0), 30742.25, 30744.00, 30720.00, 30738.00)
+	mods := b.waitMods(1)
+	if len(mods) != 1 || mods[0].SignalID != r22Sig || mods[0].Leg != 1 || mods[0].NewTakeProfit != 30738.00 || mods[0].NewStopLoss != 0 {
+		t.Fatalf("the past-+1R candle-3 partial must be ONE modify_bracket {leg 1, TP 30738.00 (the close, NOT +1R 30724.25), no stop}; got %+v", mods)
+	}
+	if got := b.waitMoves(0); len(got) != 0 {
+		t.Fatalf("the candle-3 partial moves no stop; got %+v", got)
+	}
+}
+
+// TestR22Candle3PartialLosingCloseRevertsTo1R — a fill candle that closes at a
+// LOSS: leg 1's held-out TP (the runner target) is reverted to +1R via a
+// modify_bracket (the D2.2 "bán bớt ở 1-1" fallback [D2.2 p3 @12:13]). Mutant:
+// skip the revert → leg 1 keeps the runner-target TP → RED.
+func TestR22Candle3PartialLosingCloseRevertsTo1R(t *testing.T) {
+	b := r22Fixture(t, store.RiskControlConfig{})
+	b.positions("short", 3)
+	b.book(r22StopOrder(r22Sig+"-sl", r22Stop, 2), r22StopOrder(r22Sig+"-sl2", r22Stop, 1),
+		r22TP(r22Sig+"-tp", r22Target, 2), r22TP(r22Sig+"-tp2", r22Target, 1))
+	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22Target, r22Target)
+	// fill candle closes at a LOSS (30750.00 > entry 30742.25 for a short).
+	b.candle(r22Minute(0), 30742.25, 30752.00, 30740.00, 30750.00)
+	mods := b.waitMods(1)
+	if len(mods) != 1 || mods[0].SignalID != r22Sig || mods[0].Leg != 1 || mods[0].NewTakeProfit != r22L1TP || mods[0].NewStopLoss != 0 {
+		t.Fatalf("a losing fill-candle close must revert leg 1's held-out TP to +1R 30724.25; got %+v", mods)
+	}
+	if got := b.waitMoves(0); len(got) != 0 {
+		t.Fatalf("the losing-close revert moves no stop; got %+v", got)
+	}
+}
+
 // TestR22RestartMidTrailResumesTheStage — after a restart the stage is
 // re-derived from the ledger + the broker (the rebuild inside the production
 // drive): (a) leg 1 gone and the runner already trailed to 30730.25 → the next

@@ -623,28 +623,22 @@ func swingISBIntent(t *swingTouch, ref market.Kline, line float64, cfg SwingCfg)
 	return in, true
 }
 
-// manageSwingPosition emits the BE and hold-close intents for an open swing.
+// manageSwingPosition is the release #30 exit for an open swing. The course
+// sells part at the 5m EMA 34 (the swing's FIRST target) and holds the rest
+// by the 4h with the hard stop [D5.2 p1 @05:48–06:18 "gồng theo khung 4 giờ";
+// p2 @01:44–01:48 "target đầu tiên … EMA 34 05 phút"; @11:17–11:24]. The first
+// partial is the swing's own Target (max(1R, the warmed 5m EMA 34), split by
+// CX-2 mentorSwingRunnerLegs on the trader side); the runner then rides its
+// TP / hard stop until EOD flat. The bot-only rules — break-even at +1R and a
+// forced close at the end of the 2nd 4h candle — are REMOVED (the course
+// states no swing break-even and no hold length [D5.2, "break even": 0 hits]).
+// This function now emits nothing; it exists so the swing exit is a single,
+// documented seam.
 func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Intent {
-	p := s.Pos
-	if p == nil || len(bars) == 0 {
-		return nil
-	}
-	cur := bars[len(bars)-1]
-	var out []Intent
-	if !p.MovedBE {
-		if p.Side == SideLong && cur.Close >= p.Entry+p.Risk || p.Side == SideShort && cur.Close <= p.Entry-p.Risk {
-			out = append(out, Intent{Action: ActionMoveStopBE, ArmID: p.ArmID,
-				Reason: "swing §8: +1R reached — stop to break-even"})
-			p.MovedBE = true
-		}
-	}
-	holdMs := p.EntryBucket + int64(cfg.Hold4hBars)*4*3600_000
-	if cur.OpenTime >= holdMs {
-		out = append(out, Intent{Action: ActionClosePosition, ArmID: p.ArmID,
-			Reason: "swing §8: hold to the close of the 2nd 4h candle after entry"})
-		s.Pos = nil
-	}
-	return out
+	_ = s
+	_ = bars
+	_ = cfg
+	return nil
 }
 
 // SwingRebuild is the durable record of a FILLED swing the restart path

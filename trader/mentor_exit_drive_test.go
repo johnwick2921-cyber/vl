@@ -145,13 +145,14 @@ func TestMentorLegStopB_RunnerTrailTighter(t *testing.T) {
 	}
 }
 
-// item 8 (ISB partial): leg 1 leaves at +1R if the fill candle printed it first,
-// else at the candle-3 close when that is in profit; a losing close → 0 (no
-// scale-out — the stop rules own a losing leg).
+// item 8 (ISB partial): leg 1 leaves at the candle-3 (fill-candle) CLOSE when
+// that is in profit — even when the candle ran PAST +1R first [D1.4 p2
+// @05:25–05:41; D1.4 p1 @12:51–13:01 "bán bớt. Bắt buộc"]; a losing close → 0
+// (no scale-out — the stop rules own a losing leg).
 func TestMentorISBPartialTP(t *testing.T) {
 	long := mentorPosition{Side: "long", Entry: 100, R: 10}
-	if got := mentorISBPartialTP(long, 108, 111, 99); got != 110 {
-		t.Fatalf("+1R first → %v, want 110 (the high 111 crossed +1R before the close)", got)
+	if got := mentorISBPartialTP(long, 108, 111, 99); got != 108 {
+		t.Fatalf("close past +1R → %v, want 108 (the close owns the partial, not the intrabar +1R)", got)
 	}
 	if got := mentorISBPartialTP(long, 104, 105, 99); got != 104 {
 		t.Fatalf("candle-3 close in profit → %v, want 104", got)
@@ -160,8 +161,8 @@ func TestMentorISBPartialTP(t *testing.T) {
 		t.Fatalf("losing close → %v, want 0 (never book a loss at the candle-3 close)", got)
 	}
 	short := mentorPosition{Side: "short", Entry: 100, R: 10}
-	if got := mentorISBPartialTP(short, 92, 99, 89); got != 90 {
-		t.Fatalf("short −1R first → %v, want 90", got)
+	if got := mentorISBPartialTP(short, 92, 99, 89); got != 92 {
+		t.Fatalf("short close past −1R → %v, want 92 (the close owns the partial)", got)
 	}
 	if got := mentorISBPartialTP(short, 96, 99, 95); got != 96 {
 		t.Fatalf("short candle-3 close in profit → %v, want 96", got)
@@ -173,24 +174,29 @@ func TestMentorISBPartialTP(t *testing.T) {
 
 // item 8 live-loop pin: the ISB partial is resolved ONCE at the fill candle's
 // close (BarsSinceFill == 1), logged once, and never re-fires on later candles.
+// Release #30: the candle-3 CLOSE owns the partial — a close PAST +1R still
+// scales at the close, not at the intrabar +1R. bPos is ONE bracket (Wire 0),
+// so the modify is refused + counted (a TP modify would close the WHOLE
+// position); the split-wire send past +1R is pinned in mentor_r22_exit_test.go.
 func TestMentorExitDrivePosISB_PartialResolvedOnce(t *testing.T) {
 	at, moves := newDriveAT(t)
 	p := bPos("B", "long", 10, 10, 13, 5) // stop already at BE
 	p.Pos.Origin = "ISB"
 	p.Pos.ArmedBE = true
 	p.BarsSinceFill = 1 // the fill candle just closed
-	// fill candle high 12 >= +1R (entry 10 + R 2 = 12): +1R printed first.
+	// fill candle high 12 = +1R (entry 10 + R 2), close 11.0 in profit: the
+	// close owns the partial, not the intrabar +1R.
 	at.mentorExitDrivePos(nil, p, 11.0, 12.0, 10.8, 0)
-	if p.Legs[0].TP != 12 {
-		t.Fatalf("leg1 TP = %.2f, want 12 (+1R first)", p.Legs[0].TP)
+	if p.Legs[0].TP != 13 {
+		t.Fatalf("leg1 TP = %.2f, want 13 (one bracket — the whole-position target stays, no modify sent)", p.Legs[0].TP)
 	}
-	// Release #22: +1R printed first → leg 1's resting +1R TP owns the partial;
-	// the resolution is counted ONCE and NO modify is sent.
-	if got := at.mentorCountSnapshot()["isb_partial_1r_first"]; got != 1 {
-		t.Fatalf("isb_partial_1r_first = %d, want 1 (ONCE)", got)
+	// Release #22/#30: bPos is one bracket → refused as not split, counted
+	// ONCE, and NO modify is sent.
+	if got := at.mentorCountSnapshot()["isb_partial_not_split"]; got != 1 {
+		t.Fatalf("isb_partial_not_split = %d, want 1 (ONCE)", got)
 	}
 	if got := at.mentorCountSnapshot()["modify_bracket_sent"]; got != 0 {
-		t.Fatalf("+1R first must send no modify, modify_bracket_sent = %d", got)
+		t.Fatalf("a single bracket must send no modify, modify_bracket_sent = %d", got)
 	}
 	assertMoves(t, moves())
 	// a later candle must NOT re-fire the ISB partial.
@@ -443,7 +449,7 @@ func TestMentorExitDrivePosISB_PartialOnlyOnTheFillCandle(t *testing.T) {
 func mentorISBPartialResolutions(at *AutoTrader) int {
 	snap := at.mentorCountSnapshot()
 	n := 0
-	for _, k := range []string{"isb_partial_losing_close", "isb_partial_1r_first", "isb_partial_not_split",
+	for _, k := range []string{"isb_partial_losing_close", "isb_partial_wait_1r", "isb_partial_not_split",
 		"isb_partial_not_in_profit_after_rounding", "isb_partial_not_closer", "modify_bracket_unwired",
 		"modify_bracket_failed", "modify_bracket_sent"} {
 		n += int(snap[k])

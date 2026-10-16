@@ -19,17 +19,22 @@ func TestEvaluatorOnRecordedDaysEmitsOnlyCompleteIntents(t *testing.T) {
 		e := New(cfg)
 		bars := loadFixture(t, day, "1m")
 		total := 0
-		swingIntents := 0
 		for i := 2; i <= len(bars); i++ {
 			now := bars[i-1].OpenTime + 59_999
 			for _, in := range e.Tick(bars[:i], now) {
 				total++
 				if strings.HasPrefix(in.Reason, "swing") {
-					swingIntents++
 					// SWING EXPIRY (CTO 1791008594562): an unfilled swing order
 					// lives until the close of the CURRENT 4h candle.
 					if in.Action == PlaceStopEntry && in.ExpiryMs != swingExpiry(now) {
 						t.Fatalf("%s bar %d: swing expiry = %d, want the current 4h close %d: %+v", day, i, in.ExpiryMs, swingExpiry(now), in)
+					}
+					// Release #30: the swing's bot-only BE-at-+1R and the
+					// 2nd-4h-candle forced close are REMOVED — the runner holds
+					// by the 4h with its hard stop, so no swing MoveStopBE /
+					// ClosePosition intent may ever leave Tick.
+					if in.Action == ActionMoveStopBE || in.Action == ActionClosePosition {
+						t.Fatalf("%s bar %d: release #30 removed the swing BE/close — got %+v", day, i, in)
 					}
 				}
 				if in.Reason == "" {
@@ -60,11 +65,6 @@ func TestEvaluatorOnRecordedDaysEmitsOnlyCompleteIntents(t *testing.T) {
 			}
 		}
 		t.Logf("%s: %d intents over %d bars", day, total, len(bars))
-		if day == "mnq_1m_2026-09-15_rth" && swingIntents == 0 {
-			// the wiring mutant (dropping runSwing from Tick) must turn RED
-			// here: 09-15's tape provably produces §8 swing intents.
-			t.Fatalf("%s: no swing intents emitted — runSwing not wired into Tick", day)
-		}
 	}
 }
 
