@@ -310,11 +310,11 @@ export interface MentorTuning {
   // Course-entry knobs (release #25). Unset = the ruled default in brackets.
   // D4.2 p1 — a 1m ISB under a standing 15m box [require_5m_isb]
   '15m_ib_requires_5m_isb'?: 'off' | 'require_5m_isb' | 'no_trade_until_escape'
-  // D4.2 p1 @07:54 — when a 5m/15m box conflict ends [first_box] (OQ-2)
+  // D4.2 p1 @07:54 — when a 5m/15m box conflict ends [both_boxes] (OQ-2)
   tf_conflict_end?: 'first_box' | 'both_boxes'
-  // D4.4 p1 @21:55 — news day: wait beyond the 4h trigger line until 08:30 [false]
+  // D4.4 p1 @21:55 — news day: wait beyond the 4h trigger line until 08:30 [true]
   news_wait_both_lines?: boolean
-  // D4.4 p1 @18:18 — drop print→08:30 bars from the 1h/4h feed [false]
+  // D4.4 p1 @18:18 — drop print→08:30 bars from the 1h/4h feed [true]
   news_bars_excluded?: boolean
   // D4.1 p1 @20:52 — ISB rest box escape test [body]
   isb_box_escape?: 'close' | 'body'
@@ -322,17 +322,17 @@ export interface MentorTuning {
   ema34_loss_relock?: 'session' | 'until_zone_exit'
   // X5 @08:52 — refuse an entry within N pts of the ORB edge [0 = off]
   orb_edge_veto_pts?: number
-  // D4.3 @12:43 — the box-return 5m trend source [trigger_line]
+  // D4.3 @12:43 — the box-return 5m trend source [structure]
   d43_trend_source?: 'trigger_line' | 'structure'
   // D3.4 p1 @17:48 — the 5m trigger side binds every level reject [false]
   level_entries_need_trigger_side?: boolean
   // D3.3 p1 @05:18 — a trendline in the path is a target [true]
   trendline_is_target?: boolean
-  // D3.2 p2 @10:56 — a trendline reject between two boxes may trade [false]
+  // D3.2 p2 @10:56 — a trendline reject between two boxes may trade [true]
   trendline_between_boxes?: boolean
   // X-FOMO @06:10 — a stopped-out leg also resets on a wave break [true]
   leg_reset_on_wave_break?: boolean
-  // X9 @05:47 — inside a live flag the opposite wall is a closer target (#416) [false]
+  // X9 @05:47 — inside a live flag the opposite wall is a closer target (#416) [true]
   flag_wall_target?: boolean
   // D3.4 p3 recovered2 @00:00 — after a box escapes, a new same-role box
   // outside the old range; D3.2 p2 @09:47 "Đừng vẽ vùng thứ 3… Rối lắm" [true]
@@ -373,14 +373,18 @@ export interface RiskControlConfig {
   // net loss, refuse new entries until the next trading day (17:00 CT).
   // Absent = OFF (byte-identical to the prior config).
   mentor_stop_after_loss?: boolean
-  // Runner exit (owner ruling R3, release #22): "candle" (absent = candle) =
-  // break-even once leg 1's 1:1 take-profit is CONFIRMED filled at NT8, then
-  // 1 tick beyond each closed candle; "off" = the older half-distance rule.
+  // Runner exit (course-defaults-30, owner "fix all"; release #22): "candle"
+  // (absent = candle) = FIRST break-even at +0.5R before leg 1's 1:1 partial
+  // (mentor_be_before_partial ON), THEN once leg 1's 1:1 take-profit is
+  // CONFIRMED filled at NT8, 1 tick beyond each closed candle; "off" = the
+  // older half-distance rule.
   mentor_trail_mode?: string
   // Release #25 course-exits knobs (trader/mentor_course_exits.go). Absent =
-  // the knob-rule default: first-target ON, runner OFF, resonance runner TP ON,
-  // BE-before-partial OFF (ruling R3), candle-3 any-profit ON (today's rule),
-  // reverse-ISB-as-PHL OFF, EMA 9 visits shared, the three numbers off / 1.
+  // the knob-rule default (course-defaults-30, owner "fix all"): first-target
+  // ON, runner ON, resonance runner TP ON, BE-before-partial ON (reverses R3),
+  // candle-3 any-profit ON (today's rule), reverse-ISB-as-PHL ON, EMA 9 visits
+  // shared, ISB max stop 30, keypair ratio 1, box height 0 (off), box fresh
+  // RTH pair OFF.
   mentor_swing_ema34_is_first_target?: boolean
   mentor_swing_runner?: boolean
   mentor_resonance_runner_tp_old_high?: boolean
