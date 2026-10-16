@@ -116,20 +116,19 @@ func TestMentorStaleDataBlockHaltNoFalseRefusal(t *testing.T) {
 
 // TestMentorStaleDataBlockDoesNotBlockExitDrive — the stale block NEVER gates
 // exits / protection: with a stale feed and a filled position, the exit-drive
-// stop move (mentorMoveStopBE → the signal-keyed move wire) still runs.
+// stop move (mentorMoveStopBE → moveStopWire) still runs.
 func TestMentorStaleDataBlockDoesNotBlockExitDrive(t *testing.T) {
 	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
-	mentorSeedSwingOpenForTest(t, "long")
 	var mu sync.Mutex
 	var moved []float64
-	oldWire := mentorMoveStopForSignalWire
-	mentorMoveStopForSignalWire = func(nt *nttrader.TCPTrader, signalID, side string, newStop float64, leg int) error {
+	oldWire := moveStopWire
+	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error {
 		mu.Lock()
 		moved = append(moved, newStop)
 		mu.Unlock()
 		return nil
 	}
-	t.Cleanup(func() { mentorMoveStopForSignalWire = oldWire })
+	t.Cleanup(func() { moveStopWire = oldWire })
 
 	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-stale",
 		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",

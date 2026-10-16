@@ -120,6 +120,16 @@ func (b *r22Bridge) positions(side string, qty int) {
 	b.s.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{{Symbol: "MNQ", Side: side, Quantity: qty, AvgPrice: r22Entry}})
 }
 
+// positionsPx seeds the broker's open-position snapshot at a specific average
+// price (the clamp pin uses an entry that is not #651's).
+func (b *r22Bridge) positionsPx(side string, qty int, px float64) {
+	if qty <= 0 {
+		b.s.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{})
+		return
+	}
+	b.s.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{{Symbol: "MNQ", Side: side, Quantity: qty, AvgPrice: px}})
+}
+
 // book puts the broker's order book, received 3 s from now — newer than any
 // send so far + 2 s, so the next F1 verdict reads THIS book.
 func (b *r22Bridge) book(orders ...ntwire.NT8Order) {
@@ -533,6 +543,74 @@ func TestR22Candle3PartialIsARealMarketableModify(t *testing.T) {
 	}
 	if n := len(b.waitMods(1)); n != 1 {
 		t.Fatalf("the partial resolves ONCE — got %d modify frames", n)
+	}
+}
+
+// TestR22Candle3PartialClampedToEntryTick — R-6 (fold 2): the marketable limit
+// is clamped so it is never a LOSS price. Long → ≥ entry + 1 tick; short →
+// ≤ entry − 1 tick [D1.2 p1 @13:31–13:33]. MUTANT N7 (drop the clamp) → the
+// raw close ∓ 8-tick price reaches the wire → RED, both sides.
+func TestR22Candle3PartialClampedToEntryTick(t *testing.T) {
+	t.Run("short", func(t *testing.T) {
+		b := r22Fixture(t, store.RiskControlConfig{})
+		b.positions("short", 3)
+		b.book(r22FullBook(r22Stop)...)
+		b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
+		// close 30741.00: raw marketable = close + 8 ticks = 30743.00 (a LOSS
+		// for a short), clamped to entry − 1 tick = 30742.00.
+		b.candle(r22Minute(0), 30742.25, 30743.00, 30740.00, 30741.00)
+		mods := b.waitMods(1)
+		if len(mods) != 1 || mods[0].NewTakeProfit != 30742.00 {
+			t.Fatalf("the short marketable TP must clamp to entry−1 tick 30742.00 (raw 30743.00); got %+v", mods)
+		}
+	})
+	t.Run("long", func(t *testing.T) {
+		const sig, entry, stop, l1tp, target = "sig-clamp-long", 30100.0, 30085.0, 30115.0, 30130.0
+		b := r22Fixture(t, store.RiskControlConfig{})
+		b.positionsPx("long", 3, entry)
+		b.book(r22StopOrder(sig+"-sl", stop, 2), r22StopOrder(sig+"-sl2", stop, 1),
+			r22TP(sig+"-tp", l1tp, 2), r22TP(sig+"-tp2", target, 1))
+		b.registerSplit(sig, "long", "ISB", 3, 2, entry, stop, l1tp, target)
+		// close 30101: raw marketable = close − 8 ticks = 30099.00 (a LOSS for
+		// a long), clamped to entry + 1 tick = 30100.25.
+		b.candle(r22Minute(0), entry, entry+2, entry-1, entry+1)
+		mods := b.waitMods(1)
+		if len(mods) != 1 || mods[0].NewTakeProfit != 30100.25 {
+			t.Fatalf("the long marketable TP must clamp to entry+1 tick 30100.25 (raw 30099.00); got %+v", mods)
+		}
+	})
+}
+
+// TestR22ConfirmedWritesLeg1TPBeliefOnce — R-3 (fold 2): a CONFIRMED verdict
+// writes the APPLIED price as the leg-1 belief (N12) and must not re-fire on a
+// later candle while the same marketable limit rests (defect 8). MUTANT N12
+// (drop the belief write) → the belief stays the +1R TP → RED.
+func TestR22ConfirmedWritesLeg1TPBeliefOnce(t *testing.T) {
+	b := r22Fixture(t, store.RiskControlConfig{})
+	b.positions("short", 3)
+	b.book(r22FullBook(r22Stop)...)
+	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
+	// fill candle closes in profit short of +1R → the first marketable modify.
+	b.candle(r22Minute(0), 30742.25, 30744.00, 30735.00, 30737.50)
+	if mods := b.waitMods(1); len(mods) != 1 || mods[0].NewTakeProfit != 30739.50 {
+		t.Fatalf("the first modify must be 30739.50; got %+v", mods)
+	}
+	// the AddOn applied it: the book shows leg 1 TP at 30739.50 (CONFIRMED).
+	b.book(r22StopOrder(r22Sig+"-sl", r22Stop, 2), r22StopOrder(r22Sig+"-sl2", r22Stop, 1),
+		r22TP(r22Sig+"-tp", 30739.50, 2), r22TP(r22Sig+"-tp2", r22Target, 1))
+	b.at.mentorVerifyPendingTPModifies(b.nt)
+	lp := b.at.mentorLivePos[r22Sig]
+	if lp == nil || lp.Legs[0].TP != 30739.50 {
+		t.Fatalf("CONFIRMED must write the applied price 30739.50 as the leg-1 belief; got %+v", lp)
+	}
+	if n := b.at.mentorCountSnapshot()["modify_bracket_confirmed"]; n != 1 {
+		t.Fatalf("modify_bracket_confirmed = %d, want 1", n)
+	}
+	// defect 8: the SAME resting limit must not re-render (and re-count) the
+	// CONFIRMED verdict on a later candle.
+	b.at.mentorVerifyPendingTPModifies(b.nt)
+	if n := b.at.mentorCountSnapshot()["modify_bracket_confirmed"]; n != 1 {
+		t.Fatalf("CONFIRMED re-fired on a later candle: modify_bracket_confirmed = %d, want 1", n)
 	}
 }
 

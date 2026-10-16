@@ -113,27 +113,21 @@ func TestMentorRebuildSwingResumesBE(t *testing.T) {
 
 	var mu sync.Mutex
 	var moved []float64
-	var movedSig string
-	oldWire := mentorMoveStopForSignalWire
-	mentorMoveStopForSignalWire = func(nt *nttrader.TCPTrader, signalID, side string, newStop float64, leg int) error {
+	oldWire := moveStopWire
+	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error {
 		mu.Lock()
 		moved = append(moved, newStop)
-		movedSig = signalID
 		mu.Unlock()
 		return nil
 	}
-	t.Cleanup(func() { mentorMoveStopForSignalWire = oldWire })
-	mentorSeedSwingOpenForTest(t, "long")
+	t.Cleanup(func() { moveStopWire = oldWire })
 
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: armID, Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
 	mu.Lock()
 	defer mu.Unlock()
 	if len(moved) != 1 || moved[0] != 31020 {
-		t.Fatalf("the signal-keyed wire must be called once with the entry price, got %v", moved)
-	}
-	if movedSig != sig {
-		t.Fatalf("the BE move must address the swing's OWN signal id, got %q", movedSig)
+		t.Fatalf("moveStopWire must be called once with the entry price, got %v", moved)
 	}
 	if c := at.mentorCountSnapshot()["move_be_sent"]; c != 1 {
 		t.Fatalf("move_be_sent = %d, want 1", c)

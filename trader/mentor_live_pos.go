@@ -60,6 +60,12 @@ type mentorLivePos struct {
 	// 2 = the retry was consumed (never retried again — fail-safe: the +1R TP
 	// keeps resting).
 	ISBPartialRetryCount int
+	// TPModConfirmedWant (R-3 fold 2): the last leg-1 TP want the broker
+	// CONFIRMED. While TPModWant == TPModConfirmedWant the verdict already
+	// rendered — mentorVerifyPendingTPModifies skips it so a resting marketable
+	// limit does not re-render CONFIRMED (and re-count it) every candle. A new
+	// modify (a new want) resets it to 0.
+	TPModConfirmedWant float64
 	// BEWaitLogged — the "close not past break-even, BE waits" line fired once.
 	BEWaitLogged bool
 	// ModeSource / ModeWhy (P2-2 rel22) say WHERE Pos.Mode came from — the
@@ -582,7 +588,7 @@ func (at *AutoTrader) mentorRebuildLivePosOnce(now time.Time) {
 	snap := at.mentorCountSnapshot()
 	at.logInfof("🧑‍🏫 mentor positions rebuilt: %d (refused %d)", snap["rebuild_ok"], snap["rebuild_refused"])
 	if snap["swing_rebuild_ok"] > 0 || snap["swing_rebuild_refused"] > 0 {
-		at.logInfof("🧑‍🏫 mentor swing rebuilt: %d under exit management (refused %d)", snap["swing_rebuild_ok"], snap["swing_rebuild_refused"])
+		at.logInfof("🧑‍🏫 mentor swing rebuilt: %d under BE/hold (refused %d)", snap["swing_rebuild_ok"], snap["swing_rebuild_refused"])
 	}
 }
 
@@ -636,11 +642,9 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 		at.mentorCount("rebuild_ok")
 		rebuilt++
 		at.logInfof("🧑‍🏫 mentor restart rebuild: %s %s %d contracts under exit management (mode %s)", pos.Symbol, side, lp.Pos.Contracts, lp.Pos.Mode)
-		// FIX-SWING-RESTART: a FILLED swing's exit management runs in the
-// EVALUATOR (manageSwingPosition — release #30 fold 2: break-even at +1R, then
-// trail per closed 4h candle; the 2nd-4h-candle forced close is gone), which
-// needs TWO
-		// in-memory registries the 1m rebuild does not cover:
+		// FIX-SWING-RESTART: a FILLED swing's BE/hold management runs in the
+		// EVALUATOR (manageSwingPosition → mentorMoveStopBE / mentorClosePosition),
+		// which needs TWO in-memory registries the 1m rebuild does not cover:
 		// the trader's mentorLiveArms entry and the evaluator's State.Swing.Pos.
 		// Rebuild both from the SAME proven records. Fail-closed: a swing that
 		// cannot be proven is never half-registered and never moved — its stop
@@ -648,12 +652,12 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 		if strings.EqualFold(strings.TrimSpace(row.Condition), "SWING4H") {
 			if ok, why := at.mentorRebuildSwingArm(*row, pos, lp); ok {
 				at.mentorCount("swing_rebuild_ok")
-							at.logInfof("🧑‍🏫 mentor swing %s under exit management after restart (arm %q) — BE at +1R, then trail per closed 4h candle", row.SignalID, mentorArmIDFromScenario(row.Scenario))
+				at.logInfof("🧑‍🏫 mentor swing %s under BE/hold management after restart (arm %q)", row.SignalID, mentorArmIDFromScenario(row.Scenario))
 			} else {
 				at.mentorCount("swing_rebuild_refused")
-				at.logErrorf("🧑‍🏫 mentor swing %s NOT under exit management after restart — %s; manage by hand", row.SignalID, why)
+				at.logErrorf("🧑‍🏫 mentor swing %s NOT under BE/hold management after restart — %s; manage by hand", row.SignalID, why)
 				at.emitAlert("P0", "mentor-swing-restart", "mentor-swing-"+row.SignalID,
-					"open swing not under exit management after restart",
+					"open swing not under BE/hold management after restart",
 					"manage by hand — "+why+" (signal "+row.SignalID+")")
 			}
 		}

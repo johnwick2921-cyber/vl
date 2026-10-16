@@ -373,47 +373,58 @@ func TestSwing4hFlipOnNewBucket(t *testing.T) {
 	}
 }
 
-// TestSwing4hBEAnd4hTrail — R2 (release #30 fold): the swing's runner goes to
-// break-even once the FIRST target is reached [D1.2 p1 @12:34, @15:57], then
-// trails behind each CLOSED 4h candle [X8 @16:02–18:09; D5.2 p1 @05:48–06:18].
-// The bot-only forced close at the 2nd 4h candle is GONE (no ClosePosition on a
-// non-Friday).
-func TestSwing4hBEAnd4hTrail(t *testing.T) {
+// TestSwing4hBEAndHold — BE at +1R, then hold to the close of the 2nd 4h
+// candle after entry [table]. Ticks are incremental: the BE/hold management
+// runs at the START of a tick over the position's book.
+func TestSwing4hBEAndHold(t *testing.T) {
 	cfg := DefaultSwingCfg()
-	entry := mk5m(t, 15, 5, 5, 10180, 10260, 10175, 10255)
-	s := &SwingState{Pos: &swingPosition{Side: SideLong, Entry: 10110, Stop: 10050, Target: 10250, Risk: 60, EntryBucket: fourHBucketStart(entry.OpenTime, ctime()), ArmID: "swing-t", MovedBE: false}}
-	// a 5m bar whose CLOSE reaches the target (>= 10250) → BE
-	bars := []market.Kline{entry}
-	out := manageSwingPosition(s, bars, cfg, bars[len(bars)-1].CloseTime+1)
-	var be, trail bool
+	entryBars := swingTape(t, []market.Kline{
+		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),     // prev below
+		mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160), // short entry 10155, risk ≈ 43.16
+	})
+	s := &SwingState{}
+	out := SwingTick(s, entryBars, cfg, entryBars[len(entryBars)-1].OpenTime+60_000)
+	entries := 0
 	for _, in := range out {
-		switch in.Action {
-		case ActionMoveStopBE:
+		if in.Action == PlaceStopEntry {
+			entries++
+		}
+	}
+	if entries != 1 {
+		t.Fatalf("setup entries = %d, want 1; got %+v", entries, out)
+	}
+	// next tick: a bar closing at −1R (≤ 10111.84) → BE
+	beBars := append(entryBars, mk5m(t, 15, 5, 10, 10095, 10100, 10090, 10095))
+	out = SwingTick(s, beBars, cfg, beBars[len(beBars)-1].OpenTime+60_000)
+	var be bool
+	for _, in := range out {
+		if in.Action == ActionMoveStopBE {
 			be = true
-		case ActionMoveStop:
-			trail = true
-			if in.NewStop == 0 {
-				t.Fatalf("a trail move must carry a NewStop price; got %+v", in)
-			}
 		}
 	}
 	if !be {
-		t.Fatalf("the first target reached must emit MoveStopBE; got %+v", out)
+		t.Fatalf("no BE intent at +1R; got %+v", out)
 	}
-	if !s.Pos.MovedBE {
-		t.Fatal("MovedBE must be true after the first target is reached")
+	// advance past the close of the 2nd 4h candle after entry (05:00 + 8h)
+	late := append(beBars, mk5m(t, 15, 13, 5, 10095, 10100, 10090, 10095))
+	out2 := SwingTick(s, late, cfg, late[len(late)-1].OpenTime+60_000)
+	var closed bool
+	for _, in := range out2 {
+		if in.Action == ActionClosePosition {
+			closed = true
+		}
 	}
-	_ = trail // the trail fires on the next closed 4h candle after BE
+	if !closed {
+		t.Fatalf("no close at the 2nd-4h-candle hold limit; got %+v", out2)
+	}
 }
 
-// TestSwingRebuildPosHoldsByThe4h — FIX-SWING-RESTART + release #30 fold 2: a
-// FILLED swing restored from durable records via RebuildSwingPos holds by the 4h
-// with its hard stop. R-4 (fold 2): the +1R break-even IS restored (the base
-// rule — a rebuilt swing reaches BE at +1R), then it trails only 4h candles
-// that closed AFTER the entry bucket; NO hold-close at the 2nd 4h candle. The
-// rebuild still sets Pos (the runner is tracked); a mutant that drops the
-// restore leaves Pos nil and this turns RED.
-func TestSwingRebuildPosHoldsByThe4h(t *testing.T) {
+// TestSwingRebuildPosResumesBEAndHold — FIX-SWING-RESTART: a FILLED swing
+// restored from durable records via RebuildSwingPos resumes break-even at +1R
+// and the hold-close at the 2nd 4h candle after entry. The BE/hold management
+// runs only because RebuildSwingPos set Pos — a mutant that drops the restore
+// leaves Pos nil and this turns RED.
+func TestSwingRebuildPosResumesBEAndHold(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	base := swingTape(t, nil) // 3 closed 4h buckets (17:00/21:00/01:00)
 	s := &SwingState{}
@@ -430,20 +441,32 @@ func TestSwingRebuildPosHoldsByThe4h(t *testing.T) {
 	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10050, Target: 10250, EntryBucket: entryBucket, ArmID: "swing-rebuilt"}) {
 		t.Fatal("RebuildSwingPos refused a valid swing")
 	}
-	// a 5m close at +1R (>= 10170) → R-4: the stop moves to break-even.
+	// a 5m close at +1R (>= 10170) → break-even
 	beBars := append(base, mk5m(t, 15, 5, 5, 10180, 10190, 10175, 10185))
 	out := SwingTick(s, beBars, cfg, beBars[len(beBars)-1].OpenTime+60_000)
 	var be bool
 	for _, in := range out {
 		if in.Action == ActionMoveStopBE {
 			be = true
-		}
-		if in.Action == ActionClosePosition {
-			t.Fatalf("release #30: no forced close after the rebuild; got %+v", out)
+			if in.ArmID != "swing-rebuilt" {
+				t.Fatalf("BE intent ArmID = %q, want swing-rebuilt", in.ArmID)
+			}
 		}
 	}
 	if !be {
-		t.Fatalf("fold-2 R-4: a rebuilt swing must reach break-even at +1R; got %+v", out)
+		t.Fatalf("no BE intent after the rebuild; got %+v", out)
+	}
+	// advance past entryBucket + 2*4h (05:00 + 8h = 13:00) → hold-close
+	late := append(beBars, mk5m(t, 15, 13, 5, 10180, 10190, 10175, 10185))
+	out2 := SwingTick(s, late, cfg, late[len(late)-1].OpenTime+60_000)
+	var closed bool
+	for _, in := range out2 {
+		if in.Action == ActionClosePosition {
+			closed = true
+		}
+	}
+	if !closed {
+		t.Fatalf("no close at the hold limit after the rebuild; got %+v", out2)
 	}
 }
 
@@ -470,12 +493,14 @@ func TestSwingRebuildPosAlreadyAtBESendsNoSecondBE(t *testing.T) {
 	}
 }
 
-// TestSwingRebuildPosNoHoldBoundaryClose — FIX-SWING-RESTART fold M3 + release
-// #30: the runner holds BY the 4h with its hard stop, so the bucket boundary
-// emits NO close — not before it, and not on the first bar at/after it (the
-// bot-only 2nd-4h-candle close is removed). A mutant that re-adds the close at
-// the boundary fires ActionClosePosition and this turns RED.
-func TestSwingRebuildPosNoHoldBoundaryClose(t *testing.T) {
+// TestSwingRebuildPosHoldBoundary — FIX-SWING-RESTART fold M3: the hold-close
+// fires at the END of the 4h candle after the entry candle, not before. The
+// entry bar sits LATE in its 4h bucket (08:55 = 3h55m into the 05:00 bucket), so
+// the bucket math — not a round number — decides the boundary: no close on the
+// last 5m bar before bucket+2×4h (12:55), close ON the first bar at/after it
+// (13:00). A mutant that shifts EntryBucket one 4h candle late misses the 13:00
+// close and this turns RED.
+func TestSwingRebuildPosHoldBoundary(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	base := swingTape(t, nil)
 	s := &SwingState{}
@@ -489,21 +514,25 @@ func TestSwingRebuildPosNoHoldBoundaryClose(t *testing.T) {
 	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10050, Target: 10250, EntryBucket: entryBucket, ArmID: "swing-late"}) {
 		t.Fatal("RebuildSwingPos refused a valid swing")
 	}
-	// last 5m bar BEFORE the old boundary (holdMs = 05:00 + 2×4h = 13:00): 12:55
+	// last 5m bar BEFORE the boundary (holdMs = 05:00 + 2×4h = 13:00): 12:55
 	preBars := append(base, mk5m(t, 15, 12, 55, 10130, 10140, 10125, 10135))
 	out := SwingTick(s, preBars, cfg, preBars[len(preBars)-1].OpenTime+60_000)
 	for _, in := range out {
 		if in.Action == ActionClosePosition {
-			t.Fatalf("release #30: no close before the boundary; got %+v", out)
+			t.Fatalf("no hold-close before the boundary; got %+v", out)
 		}
 	}
-	// the FIRST bar at/after the boundary: 13:00 — still no close (hold by 4h)
+	// the FIRST bar at/after the boundary: 13:00 → close
 	postBars := append(preBars, mk5m(t, 15, 13, 0, 10130, 10140, 10125, 10135))
 	out2 := SwingTick(s, postBars, cfg, postBars[len(postBars)-1].OpenTime+60_000)
+	var closed bool
 	for _, in := range out2 {
 		if in.Action == ActionClosePosition {
-			t.Fatalf("release #30: no close at/after the boundary — the runner holds by the 4h; got %+v", out2)
+			closed = true
 		}
+	}
+	if !closed {
+		t.Fatalf("hold-close must fire on the first bar at/after the boundary; got %+v", out2)
 	}
 }
 
@@ -599,108 +628,5 @@ func TestSwingMinStopRefusesDegenerate(t *testing.T) {
 	}
 	if SwingMinStopRefused() == 0 {
 		t.Fatalf("the min-stop refusal must be counted")
-	}
-}
-
-// TestSwingTrailPostEntryOnly — R-1 (fold 2): the 4h trail reads ONLY 4h
-// candles that closed AFTER the entry bucket — never a pre-entry candle.
-// MUTANT (drop the EntryBucket filter) → a pre-entry candle's low (10160, a
-// valid tighten below the last close) emits a move_stop → RED.
-func TestSwingTrailPostEntryOnly(t *testing.T) {
-	cfg := DefaultSwingCfg()
-	// pre-entry closed buckets: 17:00 (low 9998), 21:00 (low 10160 — a valid
-	// trail candidate the filter must exclude), 01:00 (low 11998, wrong side).
-	base := []market.Kline{
-		mk5m(t, 14, 17, 5, 9999, 10000, 9998, 10000),
-		mk5m(t, 14, 21, 5, 10160, 10165, 10160, 10162),
-		mk5m(t, 15, 1, 5, 11999, 12000, 11998, 12000),
-	}
-	entryBar := mk5m(t, 15, 5, 5, 10110, 10120, 10111, 10110) // entry in the 05:00 bucket (low 10111 > BE stop)
-	entryBucket := fourHBucketStart(entryBar.OpenTime, nil)
-	post := mk5m(t, 15, 9, 5, 10170, 10180, 10150, 10175) // post-entry 09:00 bucket (low 10150)
-	s := &SwingState{Pos: &swingPosition{Side: SideLong, Entry: 10110, Stop: 10110, Target: 10250, Risk: 60, EntryBucket: entryBucket, ArmID: "swing-t", MovedBE: true, FillBarTime: entryBar.OpenTime}}
-	bars := append(append([]market.Kline{}, base...), entryBar, post)
-	now := mk5m(t, 15, 13, 0, 0, 0, 0, 0).OpenTime // the 13:00 bucket: the 05:00 and 09:00 buckets are closed
-	out := manageSwingPosition(s, bars, cfg, now)
-	for _, in := range out {
-		if in.Action != ActionMoveStop {
-			t.Fatalf("unexpected intent %+v", in)
-		}
-		for _, pre := range []float64{9998, 10160, 11998} {
-			if in.NewStop == pre {
-				t.Fatalf("a PRE-entry 4h low %.2f must never trail the stop; got %+v", pre, out)
-			}
-		}
-	}
-	if len(out) == 0 || out[len(out)-1].NewStop != 10150 {
-		t.Fatalf("the post-entry 09:00 candle must trail to 10150; got %+v", out)
-	}
-}
-
-// TestSwingTrailWrongSideRefused — R-1 (fold 2): a 4h low AT/ABOVE the last
-// close is on the wrong side of the market (long) and is refused, never sent.
-// MUTANT (drop the wrong-side guard) → the wrong-side stop is emitted → RED.
-func TestSwingTrailWrongSideRefused(t *testing.T) {
-	cfg := DefaultSwingCfg()
-	entryBar := mk5m(t, 15, 5, 5, 10110, 10120, 10115, 10110)
-	entryBucket := fourHBucketStart(entryBar.OpenTime, nil)
-	s := &SwingState{Pos: &swingPosition{Side: SideLong, Entry: 10110, Stop: 10110, Target: 10250, Risk: 60, EntryBucket: entryBucket, ArmID: "swing-t", MovedBE: true, FillBarTime: entryBar.OpenTime}}
-	wrong := mk5m(t, 15, 9, 5, 10160, 10180, 10175, 10160) // 09:00 low 10175 >= last close 10160 → wrong side
-	bars := append([]market.Kline{entryBar}, wrong)
-	out := manageSwingPosition(s, bars, cfg, mk5m(t, 15, 13, 0, 0, 0, 0, 0).OpenTime)
-	// the entry bucket's own low (10115) may trail, but the wrong-side 10175
-	// (>= the last close 10160) must never be emitted.
-	for _, in := range out {
-		if in.Action == ActionMoveStop && in.NewStop >= 10160 {
-			t.Fatalf("a wrong-side stop (>= the last close 10160) must be refused; got %+v", out)
-		}
-	}
-	if s.Pos.Stop == 10175 {
-		t.Fatalf("the stop must never sit on the wrong side; got %.2f", s.Pos.Stop)
-	}
-}
-
-// TestSwingPosClearedOnStopTrade — R-2 (fold 2): the tape showing the STOP
-// traded clears the swing so a closed swing never sends a BE/trail move.
-// MUTANT (drop the stop-trade detection) → the ghost BE fires → RED.
-func TestSwingPosClearedOnStopTrade(t *testing.T) {
-	cfg := DefaultSwingCfg()
-	fillBar := mk5m(t, 15, 5, 5, 10110, 10120, 10100, 10110)
-	s := &SwingState{Pos: &swingPosition{Side: SideLong, Entry: 10110, Stop: 10050, Target: 10250, Risk: 60, EntryBucket: fourHBucketStart(fillBar.OpenTime, nil), ArmID: "swing-t", MovedBE: false, FillBarTime: fillBar.OpenTime}}
-	stopped := mk5m(t, 15, 5, 10, 10090, 10100, 10040, 10060) // low 10040 <= stop 10050
-	// a close that WOULD reach +1R (to make a ghost BE tempting) — but the stop
-	// traded first, so nothing is emitted and Pos is cleared.
-	next := mk5m(t, 15, 5, 15, 10170, 10180, 10160, 10175)
-	bars := []market.Kline{fillBar, stopped, next}
-	out := manageSwingPosition(s, bars, cfg, next.OpenTime+60_000)
-	if len(out) != 0 {
-		t.Fatalf("a stopped swing must emit nothing; got %+v", out)
-	}
-	if s.Pos != nil {
-		t.Fatal("the swing must be cleared once its stop traded")
-	}
-}
-
-// TestSwingFridayFlatReemittedUntilConfirmed — R-8 (fold 2): the Friday 15:55
-// close intent is emitted and the kernel does NOT clear Pos itself (the trader
-// clears it once the close is CONFIRMED — a failed close is retried next tick).
-// MUTANT (clear Pos in the kernel) → a re-tick emits nothing → RED.
-func TestSwingFridayFlatReemittedUntilConfirmed(t *testing.T) {
-	cfg := DefaultSwingCfg()
-	fillBar := mk5m(t, 18, 5, 5, 10110, 10120, 10100, 10110) // Friday
-	s := &SwingState{Pos: &swingPosition{Side: SideLong, Entry: 10110, Stop: 10050, Target: 10250, Risk: 60, EntryBucket: fourHBucketStart(fillBar.OpenTime, nil), ArmID: "swing-t", MovedBE: true, FillBarTime: fillBar.OpenTime, TrailWatermark: fillBar.OpenTime + 4*60_000}}
-	fri1555 := time.Date(2026, 9, 18, 15, 55, 0, 0, ctime())
-	bars := []market.Kline{fillBar}
-	out := manageSwingPosition(s, bars, cfg, fri1555.UnixMilli())
-	if len(out) != 1 || out[0].Action != ActionClosePosition {
-		t.Fatalf("Friday 15:55 must emit ONE close intent; got %+v", out)
-	}
-	if s.Pos == nil {
-		t.Fatal("the kernel must NOT clear Pos on the Friday flat — the trader clears it on the confirmed close")
-	}
-	// re-emitted on the next tick (the close was not confirmed yet)
-	out2 := manageSwingPosition(s, bars, cfg, fri1555.UnixMilli()+60_000)
-	if len(out2) != 1 || out2[0].Action != ActionClosePosition {
-		t.Fatalf("the Friday flat must be re-emitted until the trader confirms; got %+v", out2)
 	}
 }

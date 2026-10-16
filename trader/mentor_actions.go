@@ -321,8 +321,6 @@ func (at *AutoTrader) mentorDispatchIntent(in mentor.Intent, extra mentorTierInp
 		at.mentorRecordLevelInvalid(in)
 	case mentor.ActionMoveStopBE:
 		at.mentorMoveStopBE(in)
-	case mentor.ActionMoveStop:
-		at.mentorMoveSwingStop(in)
 	case mentor.ActionClosePosition:
 		at.mentorClosePosition(in)
 	default:
@@ -926,10 +924,6 @@ func (at *AutoTrader) mentorSwingFill(arm mentorLiveArm) (r store.ArmedOrderDB, 
 // only on the swing leg's OWN FILLED position, and the never-widen guard reads
 // the swing leg's OWN recorded stop (the arm row's StopPx) — never the ledger's
 // open-orders list. Unknown stop → refuse + log (fail closed), never skip.
-// R-2 (fold 2): the move is refused (and the swing cleared) when the broker no
-// longer holds an open position on the side — a stopped/TP'd swing must not
-// keep sending BE moves — and the frame addresses the swing's OWN signal id
-// (never resolveEntrySignalID's side-wide guess, which can hit another trade).
 func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 	arm, ok := at.mentorLiveArmFor(in.ArmID)
 	if !ok {
@@ -948,16 +942,6 @@ func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 	if !ok {
 		at.mentorCount("move_be_refused_not_filled")
 		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q never filled; the swing leg has no position of its own: %s", in.ArmID, in.Reason)
-		at.mentorClearSwingPos(in.ArmID) // R2: the swing is gone (stop/TP filled) — stop drawing it
-		return
-	}
-	// R-2 (fold 2): a swing the broker no longer holds (its stop/TP filled)
-	// must not keep sending BE moves — and must not route one to another
-	// trade's signal. Fail closed: an unreadable broker refuses the move.
-	if open, known := at.mentorSwingBrokerOpen(arm.Side); !known || !open {
-		at.mentorCount("move_be_refused_side_flat")
-		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q: the %s side is flat at the broker (or unreadable) — the swing closed; not drawing it: %s", in.ArmID, arm.Side, in.Reason)
-		at.mentorClearSwingPos(in.ArmID)
 		return
 	}
 	// The widen guard reads the swing leg's OWN stop (SwingState.Pos.Stop's
@@ -973,83 +957,13 @@ func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 		at.logWarnf("🧑‍🏫 %s", why)
 		return
 	}
-	if err := mentorMoveStopForSignalWire(nt, r.SignalID, arm.Side, arm.Entry, 0); err != nil {
+	if err := moveStopWire(nt, arm.Side, arm.Entry); err != nil {
 		at.mentorCount("move_be_refused")
 		at.logWarnf("🧑‍🏫 mentor stop→BE refused: %v", err)
 		return
 	}
 	at.mentorCount("move_be_sent")
-	at.logInfof("🧑‍🏫 mentor stop moved to break-even (entry %.2f) for ArmID %q (signal %s): %s", arm.Entry, in.ArmID, r.SignalID, in.Reason)
-}
-
-// mentorSwingBrokerOpen (R-2, fold 2) reports whether the broker still holds an
-// open position on the swing's side. ok=false = the broker read failed (the
-// caller refuses, fail-closed). Used by the swing BE/trail moves so a closed
-// swing never sends a move to the wire.
-func (at *AutoTrader) mentorSwingBrokerOpen(side string) (open bool, ok bool) {
-	sides, known := mentorDriveOpenSides(at)
-	if !known {
-		return false, false
-	}
-	return sides[strings.ToLower(strings.TrimSpace(side))], true
-}
-
-// mentorMoveSwingStop (R2, release #30 fold) moves the swing's stop to
-// in.NewStop — the 4h-candle trail ("gồng theo khung 4 giờ" = trail per closed
-// 4h candle [X8 @16:02–18:09]). The widen guard reads the swing leg's OWN stop
-// (never wider than NT8 already holds); a refused or failed move leaves the
-// resting stop. R-2 (fold 2): a swing the broker no longer holds is refused +
-// cleared, and the frame addresses the swing's OWN signal id (never
-// resolveEntrySignalID's side-wide guess).
-func (at *AutoTrader) mentorMoveSwingStop(in mentor.Intent) {
-	arm, ok := at.mentorLiveArmFor(in.ArmID)
-	if !ok {
-		at.mentorCount("move_swing_refused_unknown_arm")
-		at.logWarnf("🧑‍🏫 mentor swing MoveStop REFUSED — ArmID %q not in this process's registry: %s", in.ArmID, in.Reason)
-		return
-	}
-	nt := at.armedTrader()
-	if nt == nil {
-		at.mentorCount("move_swing_refused_unavailable")
-		return
-	}
-	r, _, ok := at.mentorSwingFill(arm)
-	if !ok {
-		at.mentorCount("move_swing_refused_not_filled")
-		at.logWarnf("🧑‍🏫 mentor swing MoveStop REFUSED — ArmID %q never filled: %s", in.ArmID, in.Reason)
-		at.mentorClearSwingPos(in.ArmID) // R2: the swing is gone (stop/TP filled) — stop drawing it
-		return
-	}
-	// R-2 (fold 2): never move the stop of a swing the broker no longer holds.
-	if open, known := at.mentorSwingBrokerOpen(arm.Side); !known || !open {
-		at.mentorCount("move_swing_refused_side_flat")
-		at.logWarnf("🧑‍🏫 mentor swing MoveStop REFUSED — ArmID %q: the %s side is flat at the broker (or unreadable) — the swing closed; not drawing it: %s", in.ArmID, arm.Side, in.Reason)
-		at.mentorClearSwingPos(in.ArmID)
-		return
-	}
-	if in.NewStop <= 0 {
-		at.mentorCount("move_swing_refused_no_stop")
-		at.logWarnf("🧑‍🏫 mentor swing MoveStop REFUSED — ArmID %q carries no NewStop: %s", in.ArmID, in.Reason)
-		return
-	}
-	curStop := r.StopPx
-	if curStop <= 0 {
-		at.mentorCount("move_swing_refused_no_stop")
-		at.logWarnf("🧑‍🏫 mentor swing MoveStop REFUSED — ArmID %q filled but its own stop is unknown (StopPx=0): %s", in.ArmID, in.Reason)
-		return
-	}
-	if refuse, why := mentorNeverWiden(arm.Side, curStop, in.NewStop); refuse {
-		at.mentorCount("widen_refused")
-		at.logWarnf("🧑‍🏫 %s", why)
-		return
-	}
-	if err := mentorMoveStopForSignalWire(nt, r.SignalID, arm.Side, in.NewStop, 0); err != nil {
-		at.mentorCount("move_swing_refused")
-		at.logWarnf("🧑‍🏫 mentor swing stop→%.2f refused: %v", in.NewStop, err)
-		return
-	}
-	at.mentorCount("move_swing_sent")
-	at.logInfof("🧑‍🏫 mentor swing stop moved to %.2f (the 4h-candle trail) for ArmID %q (signal %s): %s", in.NewStop, in.ArmID, r.SignalID, in.Reason)
+	at.logInfof("🧑‍🏫 mentor stop moved to break-even (entry %.2f) for ArmID %q: %s", arm.Entry, in.ArmID, in.Reason)
 }
 
 // mentorClosePosition executes the swing's hold-close intent: a mentor-owned
@@ -1099,21 +1013,4 @@ func (at *AutoTrader) mentorClosePosition(in mentor.Intent) {
 	}
 	at.mentorCount("close_sent")
 	at.logInfof("🧑‍🏫 mentor position closed (%s, %.0f contracts) for ArmID %q: %s", arm.Side, qty, in.ArmID, in.Reason)
-	// R2 (defect 7): the swing is cleared on the close — the truth panel must
-	// never draw a closed swing.
-	at.mentorClearSwingPos(in.ArmID)
-}
-
-// mentorClearSwingPos (R2, release #30 fold) clears the evaluator's filled
-// swing position once the broker no longer holds it — a stop, a TP, the trail,
-// or a flat all end the same way, and the truth panel must not draw a closed
-// swing. Idempotent: a nil or mismatched ArmID clears nothing.
-func (at *AutoTrader) mentorClearSwingPos(armID string) {
-	if at == nil || at.mentorEval == nil {
-		return
-	}
-	p := at.mentorEval.State.Swing.Pos
-	if p != nil && p.ArmID == armID {
-		at.mentorEval.State.Swing.Pos = nil
-	}
 }

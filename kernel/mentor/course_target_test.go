@@ -11,9 +11,9 @@ import "testing"
 
 func TestNextLevelBeyondRoomSkipsEMAAsTarget(t *testing.T) {
 	levels := []Level{
-		{Key: "ema9", Kind: KindEMA9, Price: 102},                                      // nearest — a partial point
-		{Key: "ema34", Kind: KindEMA34, Price: 106},                                    // a partial point
-		{Key: "old-high:120", Kind: KindOldExtreme, Role: OldHigh, Price: 120},         // the real target
+		{Key: "ema9", Kind: KindEMA9, Price: 102},                              // nearest — a partial point
+		{Key: "ema34", Kind: KindEMA34, Price: 106},                            // a partial point
+		{Key: "old-high:120", Kind: KindOldExtreme, Role: OldHigh, Price: 120}, // the real target
 	}
 	if got := nextLevelBeyondRoom(levels, 100, 98, SideLong, 2); got != 120 {
 		t.Fatalf("an EMA must not be the target when an old high stands beyond: got %.2f, want 120", got)

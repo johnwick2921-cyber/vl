@@ -38,11 +38,8 @@ import (
 //     swing is EXEMPT from the 25-pt ceiling (the injector must not apply
 //     it to SWING4H).
 //  7. Targets [table]: first = "EMA 34 on the 5-minute" (or the 50-pt
-//     fallback). R2 (release #30 fold): the first target sells part, then the
-//     runner's stop goes to break-even [D1.2 p1 @12:34, @15:57] and TRAILS
-//     behind each closed 4h candle [X8 @16:02–18:09 "gồng theo khung 4 giờ"].
-//     Bot safety (not a course rule): flat before the weekend close (Friday
-//     15:55 CT).
+//     fallback); BE at +1R; hold to the close of the 2nd 4h candle after
+//     entry (the method does not state the hold length — knob [C]).
 //  8. One setup per approach: no new one until price has left the line by
 //     at least the stop distance and comes back. R8: each new 4h candle
 //     re-bases the line and the "used" approach resets.
@@ -54,9 +51,6 @@ import (
 const (
 	// ActionMoveStopBE asks the injector to move the stop to break-even.
 	ActionMoveStopBE Action = "move_stop_to_break_even"
-	// ActionMoveStop asks the injector to move the swing's stop to NewStop (the
-	// 4h-candle trail — R2, release #30 fold).
-	ActionMoveStop Action = "move_stop"
 	// ActionClosePosition asks the injector to close the position.
 	ActionClosePosition Action = "close_position"
 )
@@ -79,7 +73,7 @@ type SwingCfg struct {
 	// R34 rules that the ISB watch after a through-close stays open until the
 	// 4h flip (no candle limit). Currently unused by the swing tick.
 	LeewayCandles int
-	Hold4hBars    int // UNREAD (dead knob — release #30 removed the 2nd-4h-candle hold-close); kept for wire/storage parity
+	Hold4hBars    int // hold to the close of the N-th 4h candle after entry; default 2 [C]
 	// Respects5mZone — gate swing entries on the 5m trigger-line zone.
 	// Default false: §8 is a self-contained 4h → 5m procedure; nothing in
 	// D5.2 ties it to the 5m trigger lines. [C] not stated in the method —
@@ -153,16 +147,6 @@ type swingPosition struct {
 	ArmID       string
 	MovedBE     bool
 	ExpiryMs    int64 // S1: the resting order's expiry (close of the current 4h candle)
-	// FillBarTime is the OpenTime of the 5m bar the entry FILLED on (0 for a
-	// rebuilt position). The stop/TP-traded detection (R-2, fold 2) reads only
-	// bars at/after this bar — a bar that dipped to the stop BEFORE the entry
-	// filled never clears the position.
-	FillBarTime int64
-	// TrailWatermark (R2, release #30 fold) is the CloseTime of the last CLOSED
-	// 4h candle the stop was trailed behind — the swing trails per closed 4h
-	// candle, never widening [X8 @16:02–18:09 "gồng theo khung nào … theo cây
-	// nến của khung đó"; D5.2 p1 @05:48–06:18]. 0 = not trailed yet.
-	TrailWatermark int64
 }
 
 // fourHBucketStart returns the start (ms) of the 4h bucket a bar belongs to.
@@ -287,13 +271,6 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		// Seeded warm line: the local slice is too short to recompute the 4h
 		// EMA — KEEP the seeded line, never wipe a warm line to 0 (P0 seed).
 		if warm {
-			// R-8 (fold 2): the open-swing management (stop/TP detection, the
-			// Friday 15:55 flat) must still run when the slice holds fewer than
-			// 2 closed 4h buckets — a flat Friday with a short slice must not
-			// ride the weekend.
-			if s.Pos != nil {
-				out = append(out, manageSwingPosition(s, bars5m, cfg, now)...)
-			}
 			return out
 		}
 		s.Line, s.BucketStart = 0, bucketStart
@@ -350,7 +327,6 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		if s.Pending != nil && fillsSwingEntry(s.Pending, b) {
 			s.Pos = s.Pending
 			s.Pos.MovedBE = false
-			s.Pos.FillBarTime = b.OpenTime
 			s.Pending = nil
 		}
 		// R31 [D5.2 p1 @15:48–16:24 "1 cây nến sau đó đóng ở trên level…
@@ -447,7 +423,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 	// S1: BE/hold management runs AFTER the bar walk, so a fill that happened
 	// THIS tick is managed against the fill bar's close — not one bar late.
 	if s.Pos != nil {
-		out = append(out, manageSwingPosition(s, bars5m, cfg, now)...)
+		out = append(out, manageSwingPosition(s, bars5m, cfg)...)
 	}
 	return out
 }
@@ -647,151 +623,28 @@ func swingISBIntent(t *swingTouch, ref market.Kline, line float64, cfg SwingCfg)
 	return in, true
 }
 
-// manageSwingPosition is the R2 (release #30 fold) exit for an open swing,
-// with the fold-2 corrections:
-//   - R-4: the stop goes to BREAK-EVEN at +1R (the general live-1:1 rule
-//     [D1.2 p1 @12:44–13:12 "lúc nào cũng phải maintain risk reward ở mức 1-1"]
-//     — 1 contract can never reach a first-target partial, so the +1R BE is the
-//     protection), then TRAILS behind each CLOSED 4h candle that closed AFTER
-//     the entry — "gồng theo khung 4 giờ" = trail per closed candle of that
-//     frame [X8 @16:02–18:09 "trade khung nào thì gồng theo khung đó, theo cây
-//     nến của khung đó"; D5.2 p1 @05:48–06:18], never widening, never on the
-//     wrong side of the market (long: new stop < last price; short: > last
-//     price — refuse + log otherwise);
-//   - R-2: the tape showing the stop or TP traded clears the swing (Pos = nil)
-//     so a closed swing never keeps sending BE/trail moves;
-//   - R-8 (bot safety, not a course rule, labelled): flat before the weekend
-//     close (Friday 15:55 CT). The kernel does NOT clear Pos here — the trader
-//     clears it once the close is CONFIRMED (a failed close is retried next
-//     tick).
-func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg, now int64) []Intent {
+// manageSwingPosition emits the BE and hold-close intents for an open swing.
+func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Intent {
 	p := s.Pos
 	if p == nil || len(bars) == 0 {
 		return nil
 	}
-	last := bars[len(bars)-1].Close
-
-	// R-2: the STOP traded on the tape → the swing is closed. Clear it and
-	// emit nothing — never a BE/trail move for a position the broker no longer
-	// holds. Only bars at/after the fill bar count (a bar that dipped to the
-	// stop BEFORE the entry filled never clears the position). A TP close is
-	// NOT detected here — the trader clears the swing on the broker's close
-	// receipt (and refuses the ghost moves), so a split swing (2+ contracts,
-	// leg 1 off at the first target) is never cleared by its own partial.
-	if p.FillBarTime > 0 {
-		for _, b := range bars {
-			if b.OpenTime < p.FillBarTime {
-				continue
-			}
-			if p.Side == SideLong && b.Low <= p.Stop {
-				s.Pos = nil
-				return nil
-			}
-			if p.Side == SideShort && b.High >= p.Stop {
-				s.Pos = nil
-				return nil
-			}
-		}
-	}
-
+	cur := bars[len(bars)-1]
 	var out []Intent
-
-	// R-4: break-even once price reaches +1R (on the CLOSE — the course reads
-	// closes, not intrabar prints).
 	if !p.MovedBE {
-		reached := p.Side == SideLong && last >= p.Entry+p.Risk ||
-			p.Side == SideShort && last <= p.Entry-p.Risk
-		if reached {
+		if p.Side == SideLong && cur.Close >= p.Entry+p.Risk || p.Side == SideShort && cur.Close <= p.Entry-p.Risk {
 			out = append(out, Intent{Action: ActionMoveStopBE, ArmID: p.ArmID,
-				Reason: "swing §8: +1R reached — the stop to break-even [D1.2 p1 @12:44–13:12]"})
+				Reason: "swing §8: +1R reached — stop to break-even"})
 			p.MovedBE = true
-			p.Stop = p.Entry // the BE stop rests AT the entry — the stop-trade detection reads it
 		}
 	}
-
-	// R-1: trail behind each closed 4h candle that CLOSED AFTER the entry
-	// bucket — never a candle from before the fill — never widening, never on
-	// the wrong side of the market.
-	if p.MovedBE {
-		for _, b4 := range closedFourHCandles(bars, now) {
-			if b4.OpenTime < p.EntryBucket {
-				continue // a 4h candle from before the entry
-			}
-			if b4.CloseTime <= p.TrailWatermark || b4.CloseTime == 0 {
-				continue
-			}
-			p.TrailWatermark = b4.CloseTime
-			want := b4.Low // long: the stop sits under the 4h candle's low
-			if p.Side == SideShort {
-				want = b4.High // short: above the 4h candle's high
-			}
-			if want <= 0 {
-				continue
-			}
-			if p.Side == SideLong && want <= p.Stop || p.Side == SideShort && want >= p.Stop {
-				continue // never widen
-			}
-			if p.Side == SideLong && want >= last || p.Side == SideShort && want <= last {
-				// The stop would sit on the wrong side of the market (long: at
-				// or above the last close; short: at or below it) — NT8 refuses
-				// it and a wrong-side stop would trigger at market. Refuse + log.
-				log.Printf("swing4h: trail REFUSED — %s stop %.2f sits on the wrong side of the market (last close %.2f) [X8 @16:02–18:09]",
-					p.Side, want, last)
-				continue
-			}
-			out = append(out, Intent{Action: ActionMoveStop, ArmID: p.ArmID, NewStop: want,
-				Reason: "swing §8: trail behind the closed 4h candle [X8 @16:02–18:09; D5.2 p1 @05:48–06:18]"})
-			p.Stop = want
-		}
-	}
-
-	// R-8 (bot safety): flat before the weekend close (Friday 15:55 CT). The
-	// close intent is re-emitted every tick until the trader confirms the close
-	// and clears the swing — a refused or failed close is retried, never
-	// silently left to ride the weekend.
-	if isSwingWeekendFlatTime(now) {
+	holdMs := p.EntryBucket + int64(cfg.Hold4hBars)*4*3600_000
+	if cur.OpenTime >= holdMs {
 		out = append(out, Intent{Action: ActionClosePosition, ArmID: p.ArmID,
-			Reason: "swing §8 bot safety: flat before the weekend close (Friday 15:55 CT)"})
+			Reason: "swing §8: hold to the close of the 2nd 4h candle after entry"})
+		s.Pos = nil
 	}
 	return out
-}
-
-// closedFourHCandles aggregates the closed 5m series into CLOSED 4h candles
-// (17:00 CT anchored) — the still-forming bucket is excluded. Used by the
-// swing's 4h-candle trail.
-func closedFourHCandles(bars []market.Kline, now int64) []market.Kline {
-	cur := fourHBucketStart(now, ctime())
-	var out []market.Kline
-	for _, b := range bars {
-		bs := fourHBucketStart(b.OpenTime, ctime())
-		if bs >= cur {
-			continue // the current bucket is still forming
-		}
-		if n := len(out); n > 0 && out[n-1].OpenTime == bs {
-			c := &out[n-1]
-			if b.High > c.High {
-				c.High = b.High
-			}
-			if b.Low < c.Low {
-				c.Low = b.Low
-			}
-			c.Close = b.Close
-			c.CloseTime = b.CloseTime
-			continue
-		}
-		out = append(out, market.Kline{OpenTime: bs, CloseTime: b.CloseTime, Open: b.Open, High: b.High, Low: b.Low, Close: b.Close})
-	}
-	return out
-}
-
-// isSwingWeekendFlatTime reports whether now is at/after Friday 15:55 CT — the
-// bot-safety weekend flat for an open swing (not a course rule).
-func isSwingWeekendFlatTime(now int64) bool {
-	t := time.UnixMilli(now).In(ctime())
-	if t.Weekday() != time.Friday {
-		return false
-	}
-	return t.Hour() > 15 || t.Hour() == 15 && t.Minute() >= 55
 }
 
 // SwingRebuild is the durable record of a FILLED swing the restart path

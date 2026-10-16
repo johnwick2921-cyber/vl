@@ -442,37 +442,21 @@ func TestMentorCancelArmReachesTheBroker(t *testing.T) {
 	}
 }
 
-// mentorSeedSwingOpenForTest overrides the broker open-side read (the R-2
-// fold-2 guard in the swing BE/trail moves) so a filled swing arm is seen as
-// OPEN on the given side — the swing move then proceeds to the wire.
-func mentorSeedSwingOpenForTest(t *testing.T, side string) {
-	t.Helper()
-	old := mentorDriveOpenSides
-	mentorDriveOpenSides = func(*AutoTrader) (map[string]bool, bool) {
-		return map[string]bool{strings.ToLower(side): true}, true
-	}
-	t.Cleanup(func() { mentorDriveOpenSides = old })
-}
-
 // TestMentorMoveStopBEReachesMoveStopWire — the swing's BE intent moves the
-// stop to the registered ENTRY price through the signal-keyed move_stop wire
-// (R-2, fold 2: the swing's OWN signal id, never resolveEntrySignalID's
-// side-wide guess). Mutant: dropping the dispatch case leaves the spy uncalled.
+// stop to the registered ENTRY price through mentorMoveStop (never-widen
+// guarded). Mutant: dropping the dispatch case leaves the spy uncalled.
 func TestMentorMoveStopBEReachesMoveStopWire(t *testing.T) {
 	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
-	mentorSeedSwingOpenForTest(t, "long")
 	var mu sync.Mutex
 	var moved []float64
-	var movedSig string
-	oldWire := mentorMoveStopForSignalWire
-	mentorMoveStopForSignalWire = func(nt *nttrader.TCPTrader, signalID, side string, newStop float64, leg int) error {
+	oldWire := moveStopWire
+	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error {
 		mu.Lock()
 		moved = append(moved, newStop)
-		movedSig = signalID
 		mu.Unlock()
 		return nil
 	}
-	t.Cleanup(func() { mentorMoveStopForSignalWire = oldWire })
+	t.Cleanup(func() { moveStopWire = oldWire })
 	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-1",
 		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
 		State: store.StateFilled, SignalID: "swing-1-sig", FillPrice: 29600, FillQuantity: 1}
@@ -485,10 +469,7 @@ func TestMentorMoveStopBEReachesMoveStopWire(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	if len(moved) != 1 || moved[0] != 29600 {
-		t.Fatalf("the signal-keyed wire must be called once with the entry price, got %v", moved)
-	}
-	if movedSig != "swing-1-sig" {
-		t.Fatalf("the BE move must address the swing's OWN signal id, got %q", movedSig)
+		t.Fatalf("moveStopWire must be called once with the entry price, got %v", moved)
 	}
 	if c := at.mentorCountSnapshot()["move_be_sent"]; c != 1 {
 		t.Fatalf("move_be_sent = %d, want 1", c)
@@ -719,7 +700,6 @@ func TestMentorPlaceIntentRefusesStaleBox(t *testing.T) {
 // the ledger's open-orders list is empty.
 func TestMentorSwingBEUsesLegOwnStop(t *testing.T) {
 	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
-	mentorSeedSwingOpenForTest(t, "long")
 	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-be",
 		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
 		State: store.StateFilled, SignalID: "swing-be-sig", FillPrice: 29600, FillQuantity: 1}
@@ -727,13 +707,13 @@ func TestMentorSwingBEUsesLegOwnStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	mentorRegisterLiveArmForTest("swing-be", at.id, row.ID, "long", 29600)
-	oldWire := mentorMoveStopForSignalWire
+	oldWire := moveStopWire
 	var moved []float64
-	mentorMoveStopForSignalWire = func(nt *nttrader.TCPTrader, signalID, side string, newStop float64, leg int) error {
+	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error {
 		moved = append(moved, newStop)
 		return nil
 	}
-	t.Cleanup(func() { mentorMoveStopForSignalWire = oldWire })
+	t.Cleanup(func() { moveStopWire = oldWire })
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-be", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
 	if len(moved) != 1 || moved[0] != 29600 {
@@ -746,7 +726,6 @@ func TestMentorSwingBEUsesLegOwnStop(t *testing.T) {
 // guard is never skipped.
 func TestMentorMoveStopBERefusesUnknownOwnStop(t *testing.T) {
 	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
-	mentorSeedSwingOpenForTest(t, "long")
 	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-nostop",
 		Side: "long", EntryPx: 29600, StopPx: 0, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
 		State: store.StateFilled, SignalID: "swing-nostop-sig", FillPrice: 29600, FillQuantity: 1}
@@ -754,13 +733,10 @@ func TestMentorMoveStopBERefusesUnknownOwnStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	mentorRegisterLiveArmForTest("swing-nostop", at.id, row.ID, "long", 29600)
-	oldWire := mentorMoveStopForSignalWire
+	oldWire := moveStopWire
 	moved := false
-	mentorMoveStopForSignalWire = func(nt *nttrader.TCPTrader, signalID, side string, newStop float64, leg int) error {
-		moved = true
-		return nil
-	}
-	t.Cleanup(func() { mentorMoveStopForSignalWire = oldWire })
+	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error { moved = true; return nil }
+	t.Cleanup(func() { moveStopWire = oldWire })
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-nostop", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
 	if moved {
@@ -768,77 +744,5 @@ func TestMentorMoveStopBERefusesUnknownOwnStop(t *testing.T) {
 	}
 	if c := at.mentorCountSnapshot()["move_be_refused_no_stop"]; c != 1 {
 		t.Fatalf("move_be_refused_no_stop = %d, want 1", c)
-	}
-}
-
-// TestMentorMoveSwingStopReachesWire — S5 (fold 2): the trader ActionMoveStop
-// dispatch moves the swing's stop to NewStop through the signal-keyed wire (the
-// swing's OWN signal id). MUTANT S5 (drop the dispatch case) → the spy never
-// fires → RED.
-func TestMentorMoveSwingStopReachesWire(t *testing.T) {
-	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
-	mentorSeedSwingOpenForTest(t, "long")
-	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-mv",
-		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
-		State: store.StateFilled, SignalID: "swing-mv-sig", FillPrice: 29600, FillQuantity: 1}
-	if err := ledger.DB().Create(&row).Error; err != nil {
-		t.Fatal(err)
-	}
-	mentorRegisterLiveArmForTest("swing-mv", at.id, row.ID, "long", 29600)
-	oldWire := mentorMoveStopForSignalWire
-	var moved []float64
-	var movedSig string
-	mentorMoveStopForSignalWire = func(nt *nttrader.TCPTrader, signalID, side string, newStop float64, leg int) error {
-		moved = append(moved, newStop)
-		movedSig = signalID
-		return nil
-	}
-	t.Cleanup(func() { mentorMoveStopForSignalWire = oldWire })
-	resetMentorCounters(at)
-	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStop, ArmID: "swing-mv", NewStop: 29640, Reason: "swing 4h trail"}, mentorTierInputs{}, 1000, 1100)
-	if len(moved) != 1 || moved[0] != 29640 || movedSig != "swing-mv-sig" {
-		t.Fatalf("the swing trail must move to 29640 on its OWN signal id; moved=%v sig=%q", moved, movedSig)
-	}
-	if c := at.mentorCountSnapshot()["move_swing_sent"]; c != 1 {
-		t.Fatalf("move_swing_sent = %d, want 1", c)
-	}
-}
-
-// TestMentorSwingMoveRefusedAndClearedWhenSideFlat — S6 (fold 2): a swing the
-// broker no longer holds (its stop/TP filled) must NOT send a BE move and must
-// clear the evaluator's swing Pos. MUTANT S6 (drop every mentorClearSwingPos
-// call) → the Pos stays drawn → RED.
-func TestMentorSwingMoveRefusedAndClearedWhenSideFlat(t *testing.T) {
-	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
-	at.mentorEval = mentor.New(mentor.DefaultConfig())
-	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-flat",
-		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
-		State: store.StateFilled, SignalID: "swing-flat-sig", FillPrice: 29600, FillQuantity: 1}
-	if err := ledger.DB().Create(&row).Error; err != nil {
-		t.Fatal(err)
-	}
-	mentorRegisterLiveArmForTest("swing-flat", at.id, row.ID, "long", 29600)
-	// The swing Pos is set through RebuildSwingPos (the production writer).
-	if !at.mentorEval.State.Swing.RebuildSwingPos(mentor.SwingRebuild{Side: mentor.SideLong, Entry: 29600, EntryStop: 29595, LiveStop: 29595, Target: 29660, ArmID: "swing-flat"}) {
-		t.Fatal("fixture: RebuildSwingPos refused")
-	}
-	// no broker position seeded → the side is flat.
-	oldWire := mentorMoveStopForSignalWire
-	moved := false
-	mentorMoveStopForSignalWire = func(nt *nttrader.TCPTrader, signalID, side string, newStop float64, leg int) error {
-		moved = true
-		return nil
-	}
-	t.Cleanup(func() { mentorMoveStopForSignalWire = oldWire })
-	resetMentorCounters(at)
-	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-flat", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
-	if moved {
-		t.Fatal("a flat swing must NOT send a BE move")
-	}
-	if c := at.mentorCountSnapshot()["move_be_refused_side_flat"]; c != 1 {
-		t.Fatalf("move_be_refused_side_flat = %d, want 1", c)
-	}
-	if at.mentorEval.State.Swing.Pos != nil {
-		t.Fatal("the swing Pos must be cleared once the broker side is flat")
 	}
 }

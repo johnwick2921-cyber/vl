@@ -301,9 +301,10 @@ func mentorChartObjects(st *mentor.State, drawn []mentor.Level) (*[]MentorTrendl
 // drawn stop with the stop that is really working at NinjaTrader.
 //
 // WHY: the evaluator's swing position keeps the stop it was ENTERED with.
-// Release #30 fold 2 (R-4) restored the swing's break-even move (the stop goes
-// to break-even at +1R, then the 4h trail — kernel/mentor/swing4h.go
-// manageSwingPosition). The stop that is really working still lives in ONE
+// Its +1R break-even move (kernel/mentor/swing4h.go manageSwingPosition) sets
+// only MovedBE and emits the intent; the trader's mentorMoveStopBE sends the
+// move to NT8 (moveStopWire) and writes no price anywhere else. So after a BE
+// move the chart kept drawing the original stop. The moved stop lives in ONE
 // place: NT8's order book (the swing row's "<signal>-sl"). The evaluator's
 // Stop is read by nothing but this panel, and it is left untouched — a refused
 // move must keep showing the stop that is really there.

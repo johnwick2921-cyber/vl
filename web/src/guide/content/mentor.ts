@@ -659,11 +659,11 @@ export const mentor: GuideSection = {
         ],
         [
           'SWING4H',
-          'First target = at least 1R: the warmed 5m EMA 34 when it sits FURTHER than 1R on the profitable side, else exactly 1R (the old 50-pt fallback is gone — kernel/mentor/swing4h.go swingFirstTarget). R2/R-4 [D5.2 p1 @05:48–06:18 “gồng theo khung 4 giờ”; D1.2 p1 @12:44–13:12 “lúc nào cũng phải maintain risk reward ở mức 1-1”]: the first target sells part (the CX-2 split needs ≥ 2 swing contracts), and the stop goes to BREAK-EVEN at +1R (the base rule — 1 contract can never reach a first-target partial), then TRAILS behind each closed 4h candle that closed AFTER the entry (stop to that candle’s low for a long / high for a short, never widening, never on the wrong side of the market) [X8 @16:02–18:09 “gồng theo khung 4 giờ”]. Bot safety (not a course rule): flat before the weekend close (Friday 15:55 CT), retried until the close is confirmed. The bot-only forced close at the end of the 2nd 4h candle is removed.',
+          'First target = at least 1R: the warmed 5m EMA 34 when it sits FURTHER than 1R on the profitable side, else exactly 1R (the old 50-pt fallback is gone — kernel/mentor/swing4h.go swingFirstTarget); BE at +1R; hold to the close of the 2nd 4h candle after entry',
         ],
         [
           'ISB partial',
-          'The ISB follows B, plus the course’s candle-3 rule (“phải BÁN BỚT. Bắt buộc” — you MUST sell part [D1.4 p1 @11:59–13:28]). R1: leg 1’s +1R take-profit ALWAYS rests at NinjaTrader from the fill, every setup, every knob value. When the fill candle closes in profit SHORT of +1R (leg 1 did NOT fill inside the candle), leg 1’s take-profit is MOVED to a marketable limit at that close through the existing modify_bracket path — long: close − 8 ticks (2.00 pts); short: close + 8 ticks — so NinjaTrader fills it immediately at the best price: a market exit in effect, never a resting limit, with no AddOn change (the 8-tick offset is a named constant, mentorISBMarketableTickOffset). If it has not filled by the next 1m close it is re-modified to the new close ∓ 8 ticks, once per candle, never back to “none” — the leg keeps its stop throughout. A close PAST +1R means the +1R TP already filled inside the candle (the 1:1 rule); a losing close moves nothing (the +1R TP keeps resting — fail-safe on any skip, restart or failed send). A one-bracket position is never partially sold (the modify cannot target a leg the wire does not carry). The runner then follows mentor_trail_mode (see B).',
+          'The ISB follows B, plus the course’s candle-3 rule (“phải BÁN BỚT. Bắt buộc” — you MUST sell part [D1.4 p1 @11:59–13:28]). R1: leg 1’s +1R take-profit ALWAYS rests at NinjaTrader from the fill, every setup, every knob value. When the fill candle closes in profit SHORT of +1R (leg 1 did NOT fill inside the candle), leg 1’s take-profit is MOVED to a marketable limit at that close through the existing modify_bracket path — long: close − 8 ticks (2.00 pts); short: close + 8 ticks — so NinjaTrader fills it immediately at the best price: a market exit in effect, never a resting limit, with no AddOn change (the 8-tick offset is a named constant, mentorISBMarketableTickOffset). The limit is CLAMPED to never book a loss — long ≥ entry + 1 tick, short ≤ entry − 1 tick [D1.2 p1 @13:31–13:33] (mentorClampMarketableTP). If it has not filled by the next 1m close it is re-modified to the new close ∓ 8 ticks, once per candle, never back to “none” — the leg keeps its stop throughout; a failed send is retried ONCE on the next candle, then left to the +1R TP (fail-safe). A close PAST +1R means the +1R TP already filled inside the candle (the 1:1 rule); a losing close moves nothing (the +1R TP keeps resting — fail-safe on any skip, restart or failed send). A one-bracket position is never partially sold (the modify cannot target a leg the wire does not carry). The runner then follows mentor_trail_mode (see B).',
         ],
         [
           'Line partials (deferred)',
@@ -1548,15 +1548,14 @@ export const mentor: GuideSection = {
         {
           label: 'Swing hold bars',
           where: 'Strategy → Mentor mode → SWING4H',
-          what: 'REMOVED (R2, release #30 fold): the swing no longer force-closes at the N-th 4h candle. The runner trails behind each closed 4h candle and flattens before the weekend close (Friday 15:55 CT) instead. This knob is no longer read.',
-          trader:
-            '2 — the method does not state the hold length (removed as a bot-only rule).',
-          consumer: 'kernel/mentor/swing4h.go SwingCfg.Hold4hBars (unused)',
+          what: 'Hold to the close of the N-th 4h candle after entry.',
+          trader: '2 — the method does not state the hold length.',
+          consumer: 'kernel/mentor/swing4h.go SwingCfg.Hold4hBars',
           range: '4h candles',
-          systemDefault: '2 (unused)',
+          systemDefault: '2',
           recommended:
-            'Leave unset — not from the course (a bot-only number the course never states).',
-          whenToTouch: 'Never (dead knob).',
+            '2 [C] — Engineering rule: the method does not state the hold length, not from the course.',
+          whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
         {
@@ -1773,7 +1772,7 @@ export const mentor: GuideSection = {
           label: 'Swing runner',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25); size = mentor_swing4h_contracts',
-          what: 'With 2+ swing contracts, split the swing: leg 1 (half, rounded up) takes profit at the first target (max(1R, the 5m EMA 34)); the runner’s stop then goes to break-even [D1.2 p1 @12:34, @15:57] and trails behind each closed 4h candle, with its take-profit capped at max(100 pts, 2× the first-target distance). With 1 contract the switch does nothing (counted swing_runner_needs_2_contracts).',
+          what: 'With 2+ swing contracts, split the swing: leg 1 (half, rounded up) takes profit at the first target (max(1R, the 5m EMA 34)); the runner is held by the 4h — break-even at +1R and the close at the end of the 2nd 4h candle (the swing’s own rules), with its take-profit capped at max(100 pts, 2× the first-target distance). The hold-close never closes more than NinjaTrader still holds. With 1 contract the switch does nothing (counted swing_runner_needs_2_contracts).',
           trader:
             'Course: “đừng vô 1 MNQ, vô at least là 2 … để có đường bắn bớt” (not 1 MNQ — at least 2, so you can take some off) [D5.2 p2 @06:19–06:27]; “gồng theo khung 4 giờ” [D5.2 p1 @05:52]; “hô tới đâu luôn” [D5.2 p2 @05:50]. He swings 1 MNQ himself (“Em vô đúng 1 MNQ thôi” [D5.2 p1 @00:43]). The 100-pt cap is the top of the course’s 50–100 pts per 4h candle — the course names no runner take-profit [C]. Case (b): sizing is the owner’s call.',
           consumer:
@@ -1822,7 +1821,7 @@ export const mentor: GuideSection = {
           label: 'ISB candle-3 partial at any profit',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
-          what: 'ON (default, today’s rule): when the ISB fill candle closes in profit short of 1:1, leg 1’s take-profit is MOVED to a marketable limit at that close through the existing modify_bracket path — long: close − 8 ticks (2.00 pts); short: close + 8 ticks (R1, no AddOn change) — re-modified to the new close ∓ 8 ticks each later candle until it fills. OFF: leg 1 keeps its +1R take-profit — no candle-3 sale (counted isb_partial_wait_1r). A losing close or a close past +1R always moves nothing (the +1R TP fills or keeps resting).',
+          what: 'ON (default, today’s rule): when the ISB fill candle closes in profit short of 1:1, leg 1’s take-profit is MOVED to a marketable limit at that close through the existing modify_bracket path — long: close − 8 ticks (2.00 pts); short: close + 8 ticks (R1, no AddOn change), clamped to never book a loss (long ≥ entry + 1 tick, short ≤ entry − 1 tick) — re-modified to the new close ∓ 8 ticks each later candle until it fills, with a failed send retried ONCE on the next candle. OFF: leg 1 keeps its +1R take-profit — no candle-3 sale (counted isb_partial_wait_1r). A losing close or a close past +1R always moves nothing (the +1R TP fills or keeps resting).',
           trader:
             'Course, in conflict: “khi cây nến trend kế tiếp đóng là chỗ đó mình phải bán bớt. Bắt buộc. Ở thời điểm hiện tại bắt buộc” (sell part at the candle-3 close — compulsory for now) [D1.4 p1 @12:51–13:07] vs “Còn nếu mà nó đóng lỗ hay là nó đóng còn ít điểm quá … xíu mình sẽ được học” (too few points — learn later, never taught) [D2.1 @11:08–11:23] and “anh làm gì anh cũng phải bán bớt ở 1:1” [D2.2 p3 @12:13]. Case (b): ambiguous → today’s rule stays the default.',
           consumer:

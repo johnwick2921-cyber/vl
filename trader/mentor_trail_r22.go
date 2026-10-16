@@ -504,6 +504,7 @@ func (at *AutoTrader) mentorSellISBLeg1Marketable(nt *ntTrader.TCPTrader, p *men
 	p.TPModWant = want
 	p.TPModSentAt = time.Now()
 	p.TPModStaleWarned = false
+	p.TPModConfirmedWant = 0
 	at.mentorExitMu.Unlock()
 	return want
 }
@@ -545,6 +546,7 @@ func (at *AutoTrader) mentorISBMarketableReModify(nt *ntTrader.TCPTrader, p *men
 	at.mentorExitMu.Lock()
 	p.TPModWant = want
 	p.TPModSentAt = time.Now()
+	p.TPModConfirmedWant = 0
 	at.mentorExitMu.Unlock()
 }
 
@@ -573,7 +575,11 @@ func (at *AutoTrader) mentorVerifyPendingTPModifies(nt *ntTrader.TCPTrader) {
 	at.mentorExitMu.Lock()
 	var list []pend
 	for _, p := range at.mentorLivePos {
-		if p != nil && p.TPModWant > 0 {
+		// R-3 (fold 2, defect 8): a want already CONFIRMED at the broker must
+		// not re-render (and re-count) the CONFIRMED verdict every candle while
+		// the marketable limit rests. It re-enters only when a NEW modify
+		// resets TPModConfirmedWant.
+		if p != nil && p.TPModWant > 0 && p.TPModWant != p.TPModConfirmedWant {
 			list = append(list, pend{p, p.Legs[0].SignalID, p.TPModWant, p.TPModSentAt, p.Pos.Scaled})
 		}
 	}
@@ -599,10 +605,12 @@ func (at *AutoTrader) mentorVerifyPendingTPModifies(nt *ntTrader.TCPTrader) {
 	}
 	// R-3 (fold 2): a CONFIRMED verdict must NOT clear the pending re-modify
 	// state — the per-candle re-modify keeps re-pricing the marketable limit
-	// until leg 1 fills. It only writes the belief (the applied price).
-	confirm := func(p *mentorLivePos, tpBelief float64) {
+	// until leg 1 fills. It only writes the belief (the applied price) and
+	// records the confirmed want so the verdict does not re-fire every candle.
+	confirm := func(p *mentorLivePos, tpBelief, want float64) {
 		at.mentorExitMu.Lock()
 		p.Legs[0].TP = tpBelief
+		p.TPModConfirmedWant = want
 		at.mentorExitMu.Unlock()
 	}
 	for _, e := range list {
@@ -640,7 +648,7 @@ func (at *AutoTrader) mentorVerifyPendingTPModifies(nt *ntTrader.TCPTrader) {
 		case math.Abs(tpOrder.LimitPrice-e.want) <= halfTick:
 			at.mentorCount("modify_bracket_confirmed")
 			at.logInfof("🧑‍🏫 modify_bracket CONFIRMED at NT8: %s leg 1 TP %.2f (ISB candle-3 partial — re-modify keeps running until leg 1 fills)", e.sig, e.want)
-			confirm(e.p, e.want)
+			confirm(e.p, e.want, e.want)
 		default:
 			at.mentorCount("modify_bracket_not_applied")
 			at.logErrorf("🚨 MODIFY NOT APPLIED at NT8: %s leg 1 TP want %.2f broker %.2f — leg 1 keeps the broker's TP; nothing re-sent", e.sig, e.want, tpOrder.LimitPrice)
