@@ -684,6 +684,127 @@ func buildEffectiveResolvers() map[string]effResolver {
 		mx, _ := x.at.mentorMaxContracts()
 		return effResult{value: mx, origin: presenceOrigin(x, mx, store.SourceShippedDefault), scope: ScopeStrategy}
 	})
+
+	// ── Mentor mode: every risk_control.mentor_* / mentor_tuning.* path ──────
+	// F-13 (W32 mentor-knob-truth): the owner must see the value the bot RUNS.
+	// Every resolver calls the production resolver the runtime uses (no copied
+	// literals); origin is "saved value" when the stored row holds that exact
+	// value, else "shipped default". mentor_done_after_win + its day_start are
+	// DS-104's rows — deliberately left unresolved here.
+
+	add(rcPath+"mentor_mode", "trader.(*AutoTrader).mentorEnabled", func(x *effCtx) effResult {
+		v := x.at.mentorEnabled()
+		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeStrategy}
+	})
+	mentorSizeRow := func(path, name string, pick func(b, c, big, r, s4, sp, mx int) int) {
+		add(rcPath+path, name, func(x *effCtx) effResult {
+			b, c, big, r, s4, sp, mx := x.at.mentorKnobs()
+			v := pick(b, c, big, r, s4, sp, mx)
+			return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeStrategy}
+		})
+	}
+	mentorSizeRow("mentor_base_contracts", "trader.(*AutoTrader).mentorKnobs", func(b, _, _, _, _, _, _ int) int { return b })
+	mentorSizeRow("mentor_confluence_contracts", "trader.(*AutoTrader).mentorKnobs", func(_, c, _, _, _, _, _ int) int { return c })
+	mentorSizeRow("mentor_big_contracts", "trader.(*AutoTrader).mentorKnobs", func(_, _, big, _, _, _, _ int) int { return big })
+	mentorSizeRow("mentor_reduced_contracts", "trader.(*AutoTrader).mentorKnobs", func(_, _, _, r, _, _, _ int) int { return r })
+	mentorSizeRow("mentor_swing4h_contracts", "trader.(*AutoTrader).mentorKnobs", func(_, _, _, _, s4, _, _ int) int { return s4 })
+	add(rcPath+"mentor_spent_day_contracts", "DEAD — mentorContractsFor discards it; the spent-day runner cap is the constant mentorSpentDayRunnerCap=2 (F-7)", func(x *effCtx) effResult {
+		return effResult{value: "not read (dead — the spent-day runner cap is the constant 2)", origin: "ineffective", scope: ScopeStrategy}
+	})
+	add(rcPath+"mentor_trail_mode", "trader.(*AutoTrader).mentorTrailMode", func(x *effCtx) effResult {
+		v := x.at.mentorTrailMode()
+		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeStrategy}
+	})
+	add(rcPath+"mentor_trail_tf", "trader.(*AutoTrader).mentorTrailTF", func(x *effCtx) effResult {
+		v := x.at.mentorTrailTF()
+		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeStrategy}
+	})
+	add(rcPath+"mentor_window_start", "trader.(*AutoTrader).mentorWindowKnobs", func(x *effCtx) effResult {
+		start, _ := x.at.mentorWindowKnobs()
+		return effResult{value: start, origin: presenceOrigin(x, start, store.SourceShippedDefault), scope: ScopeStrategy}
+	})
+	add(rcPath+"mentor_window_minutes", "trader.(*AutoTrader).mentorWindowKnobs", func(x *effCtx) effResult {
+		_, min := x.at.mentorWindowKnobs()
+		return effResult{value: min, origin: presenceOrigin(x, min, store.SourceShippedDefault), scope: ScopeStrategy}
+	})
+	mentorRCRow := func(path, name string, get func(store.RiskControlConfig) any) {
+		add(rcPath+path, name, func(x *effCtx) effResult {
+			v := get(x.rc())
+			return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeStrategy}
+		})
+	}
+	mentorRCRow("mentor_stale_data_block", "mentorStaleDataBlockEnabled (nil → ON)", func(rc store.RiskControlConfig) any { return mentorStaleDataBlockEnabled(&rc) })
+	mentorRCRow("mentor_stop_after_loss", "mentor_tick.go reads v==nil||!*v (nil → OFF)", func(rc store.RiskControlConfig) any {
+		if rc.MentorStopAfterLoss == nil {
+			return false
+		}
+		return *rc.MentorStopAfterLoss
+	})
+	mentorRCRow("mentor_day_off_recheck", "mentorDayOffRecheck (nil → OFF)", func(rc store.RiskControlConfig) any { return mentorDayOffRecheck(&rc) })
+	mentorRCRow("mentor_leg_budget_enabled", "mentorLegBudgetEnabled (nil → ON)", func(rc store.RiskControlConfig) any { return mentorLegBudgetEnabled(&rc) })
+	add(rcPath+"mentor_leg_reset_on", "mentorLegResetOn (default \"close\")", func(x *effCtx) effResult {
+		v := mentorLegResetOn(x.at, &x.cfg.RiskControl)
+		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeStrategy}
+	})
+	mentorRCRow("mentor_lvl_revisit_min_pts", "mentorLvlRevisitMinPts (default 0)", func(rc store.RiskControlConfig) any { return mentorLvlRevisitMinPts(&rc) })
+	mentorRCRow("mentor_ema_max_cross_30m", "mentorEmaMaxCross30m (default 2)", func(rc store.RiskControlConfig) any { return mentorEmaMaxCross30m(&rc) })
+	mentorRCRow("mentor_loc_trigger_filter", "mentorLocationTriggerFilter (nil → ON; inert under school 1 unless level_entries_need_trigger_side)", func(rc store.RiskControlConfig) any { return mentorLocationTriggerFilter(&rc) })
+	mentorRCRow("mentor_loss_departure_pts", "mentorLossDeparturePts (default 0)", func(rc store.RiskControlConfig) any { return mentorLossDeparturePts(&rc) })
+
+	// course-exits (release #25): each through mentorCourseExitsResolve.
+	mentorCXRow := func(path, name string, get func(mentorCourseExitsResolved) any) {
+		add(rcPath+path, name, func(x *effCtx) effResult {
+			v := get(mentorCourseExitsResolve(x.at, &x.cfg.RiskControl))
+			return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeStrategy}
+		})
+	}
+	mentorCXRow("mentor_swing_ema34_is_first_target", "trader.mentorCourseExitsResolve (CX-1, nil → ON)", func(c mentorCourseExitsResolved) any { return c.SwingEMA34FirstTarget })
+	mentorCXRow("mentor_swing_runner", "trader.mentorCourseExitsResolve (CX-2, nil → ON)", func(c mentorCourseExitsResolved) any { return c.SwingRunner })
+	mentorCXRow("mentor_resonance_runner_tp_old_high", "trader.mentorCourseExitsResolve (CX-3, nil → ON)", func(c mentorCourseExitsResolved) any { return c.ResonanceRunnerTP })
+	mentorCXRow("mentor_be_before_partial", "trader.mentorCourseExitsResolve (CX-4, nil → ON)", func(c mentorCourseExitsResolved) any { return c.BEBeforePartial })
+	mentorCXRow("mentor_isb_c3_partial_any_profit", "trader.mentorCourseExitsResolve (CX-5, nil → ON)", func(c mentorCourseExitsResolved) any { return c.ISBC3AnyProfit })
+	mentorCXRow("mentor_reverse_isb_as_phl", "trader.mentorCourseExitsResolve (CX-6, nil → ON)", func(c mentorCourseExitsResolved) any { return c.ReverseISBAsPHL })
+	mentorCXRow("mentor_ema9_visit_cap", "trader.mentorCourseExitsResolve (CX-8)", func(c mentorCourseExitsResolved) any { return c.EMA9VisitCap })
+	mentorCXRow("mentor_isb_max_pts", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.ISBMaxPts })
+	mentorCXRow("mentor_keypair_candle_ratio", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.KeypairRatio })
+	mentorCXRow("mentor_box_fresh_rth_pair", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.BoxFreshRTHPair })
+	mentorCXRow("mentor_box_max_height_pts", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.BoxMaxHeightPts })
+
+	// mentor_tuning.* (K3): each through mentorTuningResolve (the ONE resolver).
+	mentorTuningRow := func(path, name string, get func(mentorTuned) any) {
+		add(rcPath+"mentor_tuning."+path, name, func(x *effCtx) effResult {
+			v := get(mentorTuningResolve(x.at, &x.cfg.RiskControl))
+			return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeStrategy}
+		})
+	}
+	mentorTuningRow("trigger_school", "trader.mentorTuningResolve → kernel DefaultConfig", func(t mentorTuned) any { return t.TriggerSchool })
+	mentorTuningRow("ping_pong_min_gap_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PingPongMinGapPts })
+	mentorTuningRow("ping_pong_candle_max_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PingPongCandleMaxPts })
+	mentorTuningRow("ping_pong_candle_lookback", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PingPongCandleLookback })
+	mentorTuningRow("level_max_visits", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.LevelMaxVisits })
+	mentorTuningRow("orb_gate_enabled", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.OrbGateEnabled })
+	mentorTuningRow("isb_reverse_ema9_enabled", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBReverseEMA9Enabled })
+	mentorTuningRow("htf_gate_news_only", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.HTFGateNewsOnly })
+	mentorTuningRow("exec_2m_after_30m", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.Exec2mAfter30m })
+	mentorTuningRow("day_gate_spent_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.DayGateSpentPts })
+	mentorTuningRow("day_gate_target_cap_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.DayGateTargetCapPts })
+	mentorTuningRow("swing_max_stop_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.SwingMaxStopPts })
+	mentorTuningRow("swing_min_stop_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.SwingMinStopPts })
+	mentorTuningRow("15m_ib_requires_5m_isb", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.FifteenMinIBRule })
+	mentorTuningRow("tf_conflict_end", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.TFConflictEnd })
+	mentorTuningRow("news_wait_both_lines", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NewsWaitBothLines })
+	mentorTuningRow("news_bars_excluded", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NewsBarsExcluded })
+	mentorTuningRow("isb_box_escape", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBBoxEscapeMode })
+	mentorTuningRow("ema34_loss_relock", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.EmaLossRelock })
+	mentorTuningRow("orb_edge_veto_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.OrbEdgeVetoPts })
+	mentorTuningRow("d43_trend_source", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.D43TrendSource })
+	mentorTuningRow("level_entries_need_trigger_side", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.LevelEntriesNeedTriggerSide })
+	mentorTuningRow("trendline_is_target", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.TrendlineIsTarget })
+	mentorTuningRow("trendline_between_boxes", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.TrendlineBetweenBoxes })
+	mentorTuningRow("leg_reset_on_wave_break", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.LegResetOnWaveBreak })
+	mentorTuningRow("flag_wall_target", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.FlagWallTarget })
+	mentorTuningRow("box_new_zone_after_escape", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.BoxNewZoneAfterEscape })
+
 	add(rcPath+"max_notional_leverage", "kernel.ResolveNotionalLeverage (trader.enforcePositionValueRatio)", func(x *effCtx) effResult {
 		v, src := kernel.ResolveNotionalLeverageWithSource(x.rc().MaxNotionalLeverage, futuresMaxNotionalLeverage)
 		return effResult{value: v, origin: src, scope: ScopeFutures}

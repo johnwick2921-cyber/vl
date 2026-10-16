@@ -2017,7 +2017,8 @@ type MentorTuning struct {
 	// CE-3: after a print, wait for the close beyond the 4h line (nil → ON,
 	// course-defaults-30) [D4.4 p1 @21:55–22:12].
 	NewsWaitBothLines *bool `json:"news_wait_both_lines,omitempty"`
-	// CE-4: drop print→08:30 bars from the 1h/4h feed (nil → OFF).
+	// CE-4: drop print→08:30 bars from the 1h/4h feed (nil → ON,
+	// course-defaults-30; release #29 rework — freeze the pre-print read).
 	NewsBarsExcluded *bool `json:"news_bars_excluded,omitempty"`
 	// CE-5: ISB rest-box escape "close" | "body" (default) [D4.1 p1 @20:52].
 	ISBBoxEscape string `json:"isb_box_escape,omitempty"`
@@ -2192,8 +2193,8 @@ type RiskControlConfig struct {
 	//   MentorLegResetOn — G1 parity ("close" default | "touch"; bad → close);
 	//   MentorLvlRevisitMinPts — L1 per-visit departure (default 0);
 	//   MentorEmaMaxCross30m — E4 "xien len xien xuong" (default ON = 2,
-	//     the most conservative; 0 = OFF; mentor question open — no count in
-	//     the course);
+	//     the most conservative; nil → 2, &0 = OFF; mentor question open —
+	//     no count in the course);
 	//   MentorLocationTriggerFilter — the 5m trigger filter at locations
 	//     (nil → ON, L3: keep it ON in the base).
 	//   MentorLossDeparturePts — optional fixed-points fallback for B22's
@@ -2201,7 +2202,7 @@ type RiskControlConfig struct {
 	MentorLegBudgetEnabled      *bool   `json:"mentor_leg_budget_enabled,omitempty"`
 	MentorLegResetOn            string  `json:"mentor_leg_reset_on,omitempty"`
 	MentorLvlRevisitMinPts      float64 `json:"mentor_lvl_revisit_min_pts,omitempty"`
-	MentorEmaMaxCross30m        int     `json:"mentor_ema_max_cross_30m,omitempty"`
+	MentorEmaMaxCross30m        *int    `json:"mentor_ema_max_cross_30m,omitempty"`
 	MentorLocationTriggerFilter *bool   `json:"mentor_loc_trigger_filter,omitempty"`
 	MentorLossDeparturePts      float64 `json:"mentor_loss_departure_pts,omitempty"`
 	// RELEASE #25 COURSE-EXITS KNOBS (lane mentor-course-exits, owner "do all

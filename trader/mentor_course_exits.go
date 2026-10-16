@@ -298,8 +298,10 @@ func (at *AutoTrader) mentorResonanceRunnerTP(nt *ntTrader.TCPTrader, p *mentorL
 // half-way to leg 1's +1R target (+0.5R) — and past break-even by a tick —
 // BOTH legs' stops go to break-even [D1.2 p1 @12:41–13:12 "kéo stop … về break
 // even … ở mức 1-1"; @15:57 "Bắt buộc … maintain risk reward ở mức 1-1"].
-// Owner ruling R3 (BE only after the confirmed partial) is the default; this
-// runs only with mentor_be_before_partial ON. Returns whether BE armed.
+// course-defaults-30 (owner "fix all") makes mentor_be_before_partial ON by
+// default, which REVERSES owner ruling R3 (BE only after the confirmed
+// partial); this runs only with mentor_be_before_partial ON. Returns whether
+// BE armed.
 func (at *AutoTrader) mentorBEBeforePartialStep(nt *ntTrader.TCPTrader, p *mentorLivePos, c float64) bool {
 	pos := &p.Pos
 	if pos.ArmedBE || pos.R <= 0 || !mentorBEBeforePartialOn(at.mentorRiskControl()) {
