@@ -531,7 +531,7 @@ export const mentor: GuideSection = {
         ],
         [
           'Day gate (§7)',
-          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). A restart (or a feed gap) after 08:30 latches on the 4h/1h of THAT moment, and the day-gate log line then reads "day gate RE-LATCHED @HH:MM CT, not the 08:30 read" instead of "@08:30". After a BOOT past 08:30 it reads "day gate re-read at boot HH:MM CT, not the 08:30 decision" and shows what the 08:30 decision read (replayed from the same bars) — "the 08:30 decision read 4h … · 1h … (DIFFERENT …)" or "same 4h/1h as the 08:30 decision". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
+          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). The day gate is frozen AT the 08:30 read: a restart after 08:30 RESTORES that decision (the seed replays the 08:30 4h/1h read and the frozen run, then replays the one-way DayOff recheck over the closed 1h bars since), so a restart never re-decides the day — the log line reads "RESTORED from the 08:30 read". Only when the 08:30 read is not possible (no bars closed by 08:30) does the line read "re-read at boot … not the 08:30 decision". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
           'DayGateSpentPts 300 · DayGateTargetCapPts 15',
         ],
         [
