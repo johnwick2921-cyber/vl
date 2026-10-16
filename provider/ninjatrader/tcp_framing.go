@@ -644,6 +644,10 @@ type ClosePositionPayload struct {
 	// historical market flatten, byte-identical framing.
 	LimitPrice float64 `json:"limit_price,omitempty"`
 	SignalID   string  `json:"signal_id"`
+	// Leg (R1, release #30): 1/2 = a LEG-scoped market close — sell ONLY that
+	// leg's contracts at market (the ISB candle-3 partial), then cancel that
+	// leg's bracket. 0/absent = the historical whole-position flatten.
+	Leg int `json:"leg,omitempty"`
 	// A2 (G1, wire v3) — identity stamp: the account this flatten targets + the
 	// owning trader + the op seq. The AddOn echoes them on the resulting
 	// position_close so Go verifies the close came back for the right originator.

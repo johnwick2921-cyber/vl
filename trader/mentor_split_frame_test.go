@@ -15,9 +15,8 @@ import (
 
 // TestMentorLeg1ForFrame — the split math feeding the frame (pure). 5-lot →
 // (3, entry±R); n=2 → (1, entry±R); n=1 / swing → (0,0) single bracket; mode
-// C → leg1TP ≥ 2R; spent day caps the RUNNER (leg1 stays ceil(n/2)); an ISB
-// whose target is FURTHER than +1R holds leg 1's TP OUT at the target
-// (release #30 — the candle-3 close owns the partial, not the intrabar +1R).
+// C → leg1TP ≥ 2R; spent day caps the RUNNER (leg1 stays ceil(n/2)). R1: leg
+// 1's TP is ALWAYS +1R at NT8, every setup (the ISB included — no holdout).
 func TestMentorLeg1ForFrame(t *testing.T) {
 	long := mentor.Intent{Side: mentor.SideLong, Price: 100, Stop: 95, Target: 110, StopPts: 5, TargetPts: 10}
 	short := mentor.Intent{Side: mentor.SideShort, Price: 100, Stop: 105, Target: 90, StopPts: 5, TargetPts: 10}
@@ -25,9 +24,6 @@ func TestMentorLeg1ForFrame(t *testing.T) {
 	isbLong.Setup = "ISB"
 	isbShort := short
 	isbShort.Setup = "ISB"
-	isbLongShortTarget := long
-	isbLongShortTarget.Setup = "ISB"
-	isbLongShortTarget.Target = 104 // inside +1R → keeps the 1:1
 	cases := []struct {
 		name    string
 		in      mentor.Intent
@@ -44,9 +40,8 @@ func TestMentorLeg1ForFrame(t *testing.T) {
 		{"swing single", long, 5, "swing", 0, 0, 0},
 		{"5-lot C ≥2R", long, 5, "C", 110, 3, 110},
 		{"5-lot spent day (runner capped)", mentor.Intent{Side: mentor.SideLong, Price: 100, Stop: 95, Target: 110, StopPts: 5, TargetPts: 10, SpentDay: true}, 5, "B", 0, 3, 105},
-		{"ISB long holdout", isbLong, 5, "B", 0, 3, 110},
-		{"ISB short holdout", isbShort, 5, "B", 0, 3, 90},
-		{"ISB long target inside +1R", isbLongShortTarget, 5, "B", 0, 3, 105},
+		{"ISB long +1R (R1: no holdout)", isbLong, 5, "B", 0, 3, 105},
+		{"ISB short +1R (R1: no holdout)", isbShort, 5, "B", 0, 3, 95},
 	}
 	for _, c := range cases {
 		qty, tp := mentorLeg1ForFrame(c.in, c.n, c.mode, c.forkTP)
@@ -58,9 +53,8 @@ func TestMentorLeg1ForFrame(t *testing.T) {
 
 // TestMentorSplitOneRowOneFrame — the PRODUCTION writer (mentorArmIntent)
 // authors ONE row carrying the full split: Contracts=n, Leg1Qty=ceil(n/2),
-// Leg1TP=entry±R (an ISB target beyond +1R holds leg 1 OUT at the target —
-// release #30), TargetPx=the runner target. Mutant: leg1_qty not stamped →
-// the row's Leg1Qty is nil → RED.
+// Leg1TP=entry±R (R1: every setup, the ISB included), TargetPx=the runner
+// target. Mutant: leg1_qty not stamped → the row's Leg1Qty is nil → RED.
 func TestMentorSplitOneRowOneFrame(t *testing.T) {
 	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
 	ledger := st.ArmedOrders()
@@ -84,11 +78,11 @@ func TestMentorSplitOneRowOneFrame(t *testing.T) {
 	if r.Leg1Qty == nil || *r.Leg1Qty != 3 {
 		t.Fatalf("the one row must carry leg1_qty=3, got %v", r.Leg1Qty)
 	}
-	// Release #30: an ISB whose target (110) is beyond +1R (105) holds leg 1's
-	// TP OUT at the target so the +1R limit cannot fill inside the fill candle;
-	// the candle-3 close then modify_bracket's it (in profit) or back to +1R.
-	if r.Leg1TP != 110 {
-		t.Fatalf("leg1_tp must be held OUT at the target 110 for an ISB (release #30), got %.2f", r.Leg1TP)
+	// R1 (release #30 fold): leg 1's TP is ALWAYS +1R at NT8, every setup — the
+	// ISB included. The candle-3 partial is a MARKET sell of leg 1, not a TP
+	// held out at the runner target.
+	if r.Leg1TP != 105 {
+		t.Fatalf("leg1_tp must be +1R = 105 for every setup (R1), got %.2f", r.Leg1TP)
 	}
 	if r.TargetPx != 110 {
 		t.Fatalf("the runner target must be the trade target 110, got %.2f", r.TargetPx)

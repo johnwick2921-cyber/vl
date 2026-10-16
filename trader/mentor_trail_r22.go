@@ -385,91 +385,76 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 		runner.SignalID, runner.Wire, cand, frame, word, extreme)
 }
 
-// ── P1-2: THE ISB CANDLE-3 PARTIAL, REALLY SENT ─────────────────────────────
+// ── P1-2: THE ISB CANDLE-3 PARTIAL — R1 (release #30 fold) ─────────────────
 
 // mentorISBPartialStep resolves the ISB candle-3 partial ONCE, on the fill
-// candle's close [D1.4 p1 @11:59–13:28 "phải BÁN BỚT. Bắt buộc"; item 8]:
-//   - the fill candle closed at a LOSS → no scale-out (the stop rules own it);
-//     leg 1's TP (held out at the runner's target since entry, release #30) is
-//     reverted to +1R — the D2.2 "bán bớt ở 1-1" fallback [D2.2 p3 @12:13];
-//   - the close is in profit (even PAST +1R) → leg 1's TP is MODIFIED to that
-//     close at NT8 (modify_bracket, leg 1 only, tick-rounded toward the entry)
-//     and the verdict is read from the next fresh book. The fill candle's
-//     close is the target, not +1R intrabar [D1.4 p2 @05:25–05:41].
-//
-// Returns the leg-1 target this candle's (off-mode) 1:1 math should use, or 0
-// for "unchanged".
+// candle's close [D1.4 p1 @11:59–13:28 "phải BÁN BỚT. Bắt buộc"]:
+//   - leg 1's +1R TP always rests at NT8 from the fill (R1 — never held out);
+//   - when the fill candle traded THROUGH +1R, the +1R TP already filled
+//     inside the candle (the 1:1 rule) — nothing to do at the close;
+//   - when the close is in profit SHORT of +1R, leg 1 is sold at MARKET at that
+//     close (a market exit, never a resting limit) [R1];
+//   - a losing close moves nothing; the +1R TP keeps resting (fail-safe).
 func (at *AutoTrader) mentorISBPartialStep(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64) float64 {
 	pos := &p.Pos
 	tp := mentorISBPartialTP(*pos, c, h, l)
-	oneR := pos.Entry + pos.R
-	if pos.Side != "long" {
-		oneR = pos.Entry - pos.R
-	}
 	if tp == 0 {
-		at.mentorCount("isb_partial_losing_close")
-		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: the fill candle closed at %.2f, not in profit (entry %.2f) — no scale-out; leg 1's TP reverts to +1R (%.2f) [D2.1 p1 @11:08–11:23 deferred; D2.2 p3 @12:13]", c, pos.Entry, oneR)
-		if p.Legs[0].TP > 0 && p.Legs[0].TP != oneR {
-			return at.mentorSendISBPartialTP(nt, p, oneR)
-		}
+		// A losing close OR a close past +1R: nothing moves; the +1R TP keeps
+		// resting at NT8 (a past-+1R candle already filled it inside the candle).
+		at.mentorCount("isb_partial_no_sale")
+		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: fill candle close %.2f — leg 1 keeps its +1R TP at NT8 (in-profit short of +1R is the only market-sell case) [D2.2 p3 @12:13]", c)
 		return 0
 	}
 	if !mentorISBC3PartialAnyProfit(at.mentorRiskControl()) {
 		// CX-5 (knob false): "bán bớt ở 1:1" [D2.2 p3 @12:13] — leg 1 keeps its
-		// resting +1R TP; no partial at the candle-3 close.
+		// resting +1R TP; no market sell at the candle-3 close.
 		at.mentorCount("isb_partial_wait_1r")
-		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: close %.2f in profit but mentor_isb_c3_partial_any_profit OFF — leg 1 keeps its +1R TP (D2.2 p3 @12:13 \"bán bớt ở 1:1\"); nothing sent", c)
+		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: close %.2f in profit but mentor_isb_c3_partial_any_profit OFF — leg 1 keeps its +1R TP (D2.2 p3 @12:13 \"bán bớt ở 1:1\"); nothing sold", c)
 		return 0
 	}
-	return at.mentorSendISBPartialTP(nt, p, tp)
+	return at.mentorSellISBLeg1Market(nt, p, tp)
 }
 
-// mentorSendISBPartialTP sends the leg-1 TP modify for the candle-3 partial.
-// Refused (logged + counted, nothing sent) when the position is ONE bracket (a
-// TP modify would close the WHOLE position), when rounding lands the TP at or
-// through the entry, or when the TP would not come closer than the one already
-// resting. The leg-1 TP belief is written only on the NT8 verdict.
-func (at *AutoTrader) mentorSendISBPartialTP(nt *ntTrader.TCPTrader, p *mentorLivePos, tp float64) float64 {
+// mentorSellISBLeg1Market (R1) market-sells leg 1 at the fill candle's close.
+// Refused (logged + counted, nothing sent) when the position is ONE bracket
+// (a partial market close cannot target a leg the wire does not carry), or when
+// the close is not in profit after the exit-side guard. The leg-1 TP belief is
+// written only on the NT8 fill receipt — a failed send or a refused close
+// leaves leg 1's +1R TP resting (fail-safe).
+func (at *AutoTrader) mentorSellISBLeg1Market(nt *ntTrader.TCPTrader, p *mentorLivePos, tp float64) float64 {
 	pos := &p.Pos
 	leg := &p.Legs[0]
 	long := pos.Side == "long"
 	if leg.Wire != 1 || leg.SignalID == "" || leg.Qty <= 0 || p.Legs[1].Qty <= 0 {
 		at.mentorCount("isb_partial_not_split")
-		at.logWarnf("🧑‍🏫 mentor ISB candle-3 partial at %.2f NOT sent — one bracket on the wire (no separate leg 1); a TP modify would close the WHOLE position, so its TP stays", tp)
+		at.logWarnf("🧑‍🏫 mentor ISB candle-3 partial at %.2f NOT sold — one bracket on the wire (no separate leg 1); a partial market close cannot target a leg the wire does not carry, so its +1R TP stays", tp)
 		return 0
 	}
-	tick := at.mentorInstrumentTick()
-	want := mentorPartialTPPrice(pos.Side, tp, tick)
-	if (long && want <= pos.Entry) || (!long && want >= pos.Entry) {
-		at.mentorCount("isb_partial_not_in_profit_after_rounding")
-		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: close %.2f rounds to %.2f, not past the entry %.2f — nothing sent", tp, want, pos.Entry)
+	if (long && tp <= pos.Entry) || (!long && tp >= pos.Entry) {
+		at.mentorCount("isb_partial_not_in_profit")
+		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: close %.2f is not in profit (entry %.2f) — leg 1 keeps its +1R TP", tp, pos.Entry)
 		return 0
 	}
-	if leg.TP > 0 && !mentorStopTighter(pos.Side, leg.TP, want) {
-		// The resting TP is already at or nearer than the close (long: TP <= want).
-		at.mentorCount("isb_partial_not_closer")
-		at.logInfof("🧑‍🏫 mentor ISB candle-3 partial: leg 1's resting TP %.2f is already at/inside %.2f — nothing sent", leg.TP, want)
+	if closeLegWire == nil {
+		at.mentorCount("close_leg_unwired")
+		at.logWarnf("🧑‍🏫 mentor ISB leg1 market close unwired (close %.2f) — logged, NOT sent; leg 1 keeps its +1R TP", tp)
 		return 0
 	}
-	if modifyBracketWire == nil {
-		at.mentorCount("modify_bracket_unwired")
-		at.logWarnf("🧑‍🏫 mentor ISB leg1 modify_bracket unwired (TP %.2f) — logged, NOT sent", want)
+	side := strings.ToLower(pos.Side)
+	if side != "long" && side != "short" {
+		at.mentorCount("close_leg_bad_side")
+		at.logWarnf("🧑‍🏫 mentor ISB leg1 market close REFUSED — unknown side %q", pos.Side)
 		return 0
 	}
-	if err := modifyBracketWire(nt, leg.SignalID, pos.Side, 1, want); err != nil {
-		at.mentorCount("modify_bracket_failed")
-		at.logErrorf("🧑‍🏫 mentor ISB leg1 modify_bracket FAILED for %s (TP %.2f): %v — leg 1 keeps its resting TP %.2f", leg.SignalID, want, err, leg.TP)
+	if err := closeLegWire(nt, leg.SignalID, 1, side, leg.Qty); err != nil {
+		at.mentorCount("close_leg_failed")
+		at.logErrorf("🧑‍🏫 mentor ISB leg1 market close FAILED for %s (close %.2f): %v — leg 1 keeps its +1R TP", leg.SignalID, tp, err)
 		return 0
 	}
-	at.mentorCount("modify_bracket_sent")
-	at.logInfof("🧑‍🏫 mentor ISB leg1 modify_bracket SENT: %s leg 1 TP %.2f → %.2f (candle-3 close %.2f) — awaiting the NT8 verdict [D1.4 p1 @11:59–13:28]",
-		leg.SignalID, leg.TP, want, tp)
-	at.mentorExitMu.Lock()
-	p.TPModWant = want
-	p.TPModSentAt = time.Now()
-	p.TPModStaleWarned = false
-	at.mentorExitMu.Unlock()
-	return want
+	at.mentorCount("close_leg_sent")
+	at.logInfof("🧑‍🏫 mentor ISB leg1 market close SENT: %s leg 1 (%d contracts) at the fill candle's close %.2f — awaiting the NT8 fill; the +1R TP is cancelled by the AddOn on the same frame [D1.4 p1 @11:59–13:28]",
+		leg.SignalID, leg.Qty, tp)
+	return tp
 }
 
 // mentorVerifyPendingTPModifies renders the NT8 verdict on every SENT leg-1 TP

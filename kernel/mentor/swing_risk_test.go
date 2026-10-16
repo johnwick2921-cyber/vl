@@ -79,12 +79,11 @@ func countAction(ins []Intent, a Action) int {
 	return n
 }
 
-// TestEvaluatorTickSwingNeverMovesStopBE — the live-fill path, release #30:
-// the swing runner holds by the 4h with its hard stop, so neither the fill bar
-// nor a +1R close moves the stop to break-even (the bot-only BE-at-+1R is
-// removed [D5.2: no swing break-even rule]). The position still FILLS.
-func TestEvaluatorTickSwingNeverMovesStopBE(t *testing.T) {
-	tape, fill, oneR := swingRiskTape()
+// TestEvaluatorTickSwingBEAtFirstTarget — the live-fill path, R2: the swing
+// runner's stop goes to break-even once the FIRST target is reached [D1.2 p1
+// @12:34, @15:57] — not before.
+func TestEvaluatorTickSwingBEAtFirstTarget(t *testing.T) {
+	tape, fill, _ := swingRiskTape()
 	e := New(DefaultConfig())
 	e.Cfg.Enabled = true
 	now := tape[len(tape)-1].CloseTime + 1
@@ -104,26 +103,26 @@ func TestEvaluatorTickSwingNeverMovesStopBE(t *testing.T) {
 		t.Fatalf("the 05:20 bar trades through 930: the swing must be FILLED, pos=nil (intents %+v)", atFill)
 	}
 	if n := countAction(atFill, ActionMoveStopBE); n != 0 {
-		t.Fatalf("release #30: no BE on the fill bar; intents %+v", atFill)
+		t.Fatalf("R2: no BE before the first target; intents %+v", atFill)
 	}
 
-	atOneR := swingIntentsOf(e, append(append([]market.Kline{}, tape...), fill, oneR))
-	if n := countAction(atOneR, ActionMoveStopBE); n != 0 {
-		t.Fatalf("release #30: no BE at +1R — the runner holds by the 4h with its hard stop; got %d (%+v)", n, atOneR)
+	// a bar whose LOW reaches the first target → BE
+	deep := swingRiskBar(15, 5, 34, 900, 901, 880, 890)
+	atOneR := swingIntentsOf(e, append(append([]market.Kline{}, tape...), fill, deep))
+	if n := countAction(atOneR, ActionMoveStopBE); n != 1 {
+		t.Fatalf("R2: the first target reached must emit ONE break-even, got %d (%+v)", n, atOneR)
 	}
 }
 
-// TestEvaluatorTickRebuiltSwingNeverMovesStopBE — the restart path, release
-// #30: the same swing restored by RebuildSwingPos holds by the 4h with its hard
-// stop — no break-even at +1R after the rebuild either.
-func TestEvaluatorTickRebuiltSwingNeverMovesStopBE(t *testing.T) {
+// TestEvaluatorTickRebuiltSwingBEAtFirstTarget — the restart path, R2: the same
+// swing restored by RebuildSwingPos reaches break-even at the first target.
+func TestEvaluatorTickRebuiltSwingBEAtFirstTarget(t *testing.T) {
 	tape, fill, oneR := swingRiskTape()
+	_ = oneR
 	e := New(DefaultConfig())
 	e.Cfg.Enabled = true
 	refBar := tape[5] // the 05:10 inside bar the entry was placed on
 	afterFill := append(append([]market.Kline{}, tape...), fill)
-	// the restarted evaluator has already walked the 5m tape through the fill
-	// bucket's predecessor; the fill is in the records, not re-walked.
 	e.State.Swing = swingWarmState(fourHBucketStart(refBar.OpenTime, ctime()), tape[6].OpenTime, nil)
 	if !e.State.Swing.RebuildSwingPos(SwingRebuild{Side: SideShort, Entry: 930, EntryStop: 950, LiveStop: 950, Target: 890,
 		EntryBucket: fourHBucketStart(refBar.OpenTime, ctime()), ArmID: "swing-rebuilt", MovedBE: false}) {
@@ -134,11 +133,12 @@ func TestEvaluatorTickRebuiltSwingNeverMovesStopBE(t *testing.T) {
 	}
 	atFill := swingIntentsOf(e, afterFill)
 	if n := countAction(atFill, ActionMoveStopBE); n != 0 {
-		t.Fatalf("release #30: no BE on the fill bar; intents %+v", atFill)
+		t.Fatalf("R2: no BE before the first target; intents %+v", atFill)
 	}
-	atOneR := swingIntentsOf(e, append(afterFill, oneR))
-	if n := countAction(atOneR, ActionMoveStopBE); n != 0 {
-		t.Fatalf("release #30: the rebuilt swing must not move the stop to BE at +1R: got %d (%+v)", n, atOneR)
+	deep := swingRiskBar(15, 5, 34, 900, 901, 880, 890)
+	atOneR := swingIntentsOf(e, append(afterFill, deep))
+	if n := countAction(atOneR, ActionMoveStopBE); n != 1 {
+		t.Fatalf("R2: the rebuilt swing must break even at the first target: got %d (%+v)", n, atOneR)
 	}
 }
 

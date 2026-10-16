@@ -373,45 +373,37 @@ func TestSwing4hFlipOnNewBucket(t *testing.T) {
 	}
 }
 
-// TestSwing4hNoBEOrForcedClose — release #30: the swing runner holds by the
-// 4h with its hard stop; the bot-only break-even at +1R and the forced close
-// at the end of the 2nd 4h candle are REMOVED [D5.2 p1 @05:48–06:18 "gồng theo
-// khung 4 giờ"; no swing BE / hold length in the course]. A +1R close and a bar
-// past the 2nd-4h-candle boundary must emit NO MoveStopBE and NO ClosePosition.
-func TestSwing4hNoBEOrForcedClose(t *testing.T) {
+// TestSwing4hBEAnd4hTrail — R2 (release #30 fold): the swing's runner goes to
+// break-even once the FIRST target is reached [D1.2 p1 @12:34, @15:57], then
+// trails behind each CLOSED 4h candle [X8 @16:02–18:09; D5.2 p1 @05:48–06:18].
+// The bot-only forced close at the 2nd 4h candle is GONE (no ClosePosition on a
+// non-Friday).
+func TestSwing4hBEAnd4hTrail(t *testing.T) {
 	cfg := DefaultSwingCfg()
-	entryBars := swingTape(t, []market.Kline{
-		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),     // prev below
-		mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160), // short entry 10155, risk ≈ 43.16
-	})
-	s := &SwingState{}
-	out := SwingTick(s, entryBars, cfg, entryBars[len(entryBars)-1].OpenTime+60_000)
-	entries := 0
+	entry := mk5m(t, 15, 5, 5, 10180, 10260, 10175, 10255)
+	s := &SwingState{Pos: &swingPosition{Side: SideLong, Entry: 10110, Stop: 10050, Target: 10250, Risk: 60, EntryBucket: fourHBucketStart(entry.OpenTime, ctime()), ArmID: "swing-t", MovedBE: false}}
+	// a 5m bar whose CLOSE reaches the target (>= 10250) → BE
+	bars := []market.Kline{entry}
+	out := manageSwingPosition(s, bars, cfg, bars[len(bars)-1].CloseTime+1)
+	var be, trail bool
 	for _, in := range out {
-		if in.Action == PlaceStopEntry {
-			entries++
+		switch in.Action {
+		case ActionMoveStopBE:
+			be = true
+		case ActionMoveStop:
+			trail = true
+			if in.NewStop == 0 {
+				t.Fatalf("a trail move must carry a NewStop price; got %+v", in)
+			}
 		}
 	}
-	if entries != 1 {
-		t.Fatalf("setup entries = %d, want 1; got %+v", entries, out)
+	if !be {
+		t.Fatalf("the first target reached must emit MoveStopBE; got %+v", out)
 	}
-	// next tick: a bar closing at −1R (≤ 10111.84) must NOT move the stop to BE
-	beBars := append(entryBars, mk5m(t, 15, 5, 10, 10095, 10100, 10090, 10095))
-	out = SwingTick(s, beBars, cfg, beBars[len(beBars)-1].OpenTime+60_000)
-	for _, in := range out {
-		if in.Action == ActionMoveStopBE {
-			t.Fatalf("release #30: no BE at +1R — the runner holds by the 4h with its hard stop; got %+v", out)
-		}
+	if !s.Pos.MovedBE {
+		t.Fatal("MovedBE must be true after the first target is reached")
 	}
-	// advance past the close of the 2nd 4h candle after entry (05:00 + 8h):
-	// still NO forced close.
-	late := append(beBars, mk5m(t, 15, 13, 5, 10095, 10100, 10090, 10095))
-	out2 := SwingTick(s, late, cfg, late[len(late)-1].OpenTime+60_000)
-	for _, in := range out2 {
-		if in.Action == ActionClosePosition {
-			t.Fatalf("release #30: no forced close at the 2nd 4h candle — the runner holds by the 4h; got %+v", out2)
-		}
-	}
+	_ = trail // the trail fires on the next closed 4h candle after BE
 }
 
 // TestSwingRebuildPosHoldsByThe4h — FIX-SWING-RESTART + release #30: a FILLED

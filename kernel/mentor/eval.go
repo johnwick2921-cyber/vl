@@ -1032,6 +1032,41 @@ func nextLevelBeyond(levels []Level, price float64, side Side) float64 {
 	return best
 }
 
+// nextLevelBeyondNonEMA is nextLevelBeyond that skips the EMA 9 / EMA 34 lines
+// as the target — they are PARTIAL points along the way, not the trade target
+// [D3.3 p1 @05:15–07:38]. Used by the PHL/PLH target pick (R3, release #30
+// fold): an EMA must not by itself kill a PHL/PLH. The EMA is the fallback
+// target only when no other level stands beyond.
+func nextLevelBeyondNonEMA(levels []Level, price float64, side Side) float64 {
+	best := 0.0
+	bestEMA := 0.0
+	for _, l := range levels {
+		if l.Kind == KindTrendline {
+			continue
+		}
+		if !oldExtremeRoleFits(l, side) {
+			continue
+		}
+		onSide := side == SideLong && l.Price > price || side == SideShort && l.Price < price
+		if !onSide {
+			continue
+		}
+		if isEMAPartialKind(l.Kind) {
+			if bestEMA == 0 || (side == SideLong && l.Price < bestEMA) || (side == SideShort && l.Price > bestEMA) {
+				bestEMA = l.Price
+			}
+			continue
+		}
+		if best == 0 || (side == SideLong && l.Price < best) || (side == SideShort && l.Price > best) {
+			best = l.Price
+		}
+	}
+	if best != 0 {
+		return best
+	}
+	return bestEMA
+}
+
 // nextLevelBeyondRoom is nextLevelBeyond for the room-checked paths (ISB,
 // reverse ISB, box). REL-5 audit #2: a TARGET-ONLY level (4h trigger, wick
 // microscalp) closer than roomMultiple × risk is skipped and the search falls

@@ -29,12 +29,12 @@ func TestEvaluatorOnRecordedDaysEmitsOnlyCompleteIntents(t *testing.T) {
 					if in.Action == PlaceStopEntry && in.ExpiryMs != swingExpiry(now) {
 						t.Fatalf("%s bar %d: swing expiry = %d, want the current 4h close %d: %+v", day, i, in.ExpiryMs, swingExpiry(now), in)
 					}
-					// Release #30: the swing's bot-only BE-at-+1R and the
-					// 2nd-4h-candle forced close are REMOVED — the runner holds
-					// by the 4h with its hard stop, so no swing MoveStopBE /
-					// ClosePosition intent may ever leave Tick.
-					if in.Action == ActionMoveStopBE || in.Action == ActionClosePosition {
-						t.Fatalf("%s bar %d: release #30 removed the swing BE/close — got %+v", day, i, in)
+					// R2 (release #30 fold): the swing's BE-at-first-target and the
+					// 4h-candle trail are BACK, but the bot-only forced close at
+					// the 2nd 4h candle is REMOVED — a non-Friday ClosePosition
+					// must never leave Tick.
+					if in.Action == ActionClosePosition {
+						t.Fatalf("%s bar %d: release #30 removed the 2nd-4h forced close — got %+v", day, i, in)
 					}
 				}
 				if in.Reason == "" {

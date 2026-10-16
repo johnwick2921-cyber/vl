@@ -783,32 +783,8 @@ func mentorLeg1ForFrame(in mentor.Intent, n int, forkMode string, forkTP float64
 		} else {
 			tp = in.Price + r*mentor.Leg1RiskMultiple(false)
 		}
-		// RELEASE #30 (D1.4): the ISB's first partial is the FILL CANDLE'S
-		// CLOSE, not +1R. A resting +1R limit fills INSIDE the candle the
-		// moment price crosses it, before the close is known — so leg 1's TP is
-		// held out at the runner's target until that close, then
-		// modify_bracket'd to the close (in profit) or back to +1R (losing
-		// close → the D2.2 "bán bớt ở 1-1" fallback). [D1.4 p1 @12:51–13:01
-		// "khi cây nến trend kế tiếp đóng … bán bớt. Bắt buộc"; p2 @05:25–05:41]
-		if in.Setup == "ISB" && mentorISBLeg1Holdout(in.Target, tp, in.Side) {
-			tp = in.Target
-		}
 	}
 	return leg1, tp
-}
-
-// mentorISBLeg1Holdout reports whether the ISB leg-1 TP should be held OUT at
-// the runner's target (release #30): the target is a real level FURTHER than
-// +1R on the profitable side, so it cannot fill inside the fill candle before
-// its close. A target absent, on the loss side, or short of +1R keeps the 1:1.
-func mentorISBLeg1Holdout(target, oneR float64, side mentor.Side) bool {
-	if target <= 0 {
-		return false
-	}
-	if side == mentor.SideShort {
-		return target < oneR
-	}
-	return target > oneR
 }
 
 // mentorLeg1TPForC is the C (confluence) leg-1 target: hold to at least 1:2 —
@@ -916,6 +892,18 @@ var modifyBracketWire = func(nt *ntTrader.TCPTrader, signalID, side string, wire
 		return fmt.Errorf("mentor modify_bracket: no NT8 trader for %s", signalID)
 	}
 	return nt.ModifyBracketLeg(signalID, side, wireLeg, 0, newTP)
+}
+
+// closeLegWire is the LAST hop for a mentor LEG-scoped market close (R1,
+// release #30) — TCPTrader.CloseLeg, the close_position frame with the new
+// `leg` field. The AddOn markets out exactly that leg's contracts and cancels
+// that leg's bracket (the +1R TP + stop), so the runner is untouched. nil →
+// logged + counted, never sent (tests substitute a recorder).
+var closeLegWire = func(nt *ntTrader.TCPTrader, signalID string, leg int, side string, qty int) error {
+	if nt == nil {
+		return fmt.Errorf("mentor leg close: no NT8 trader for %s", signalID)
+	}
+	return nt.CloseLeg(signalID, leg, side, qty)
 }
 
 // flattenLegWire flattens ONE leg (fail-closed on lost protection).

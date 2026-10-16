@@ -55,6 +55,7 @@ type r22Bridge struct {
 	mu    sync.Mutex
 	moves []ntwire.MoveStopPayload
 	mods  []ntwire.ModifyBracketPayload
+	closes []ntwire.ClosePositionPayload
 }
 
 // r22Fixture stands up the real TCPServer + loopback "AddOn" + TCPTrader +
@@ -98,6 +99,13 @@ func r22Fixture(t *testing.T, rc store.RiskControlConfig) *r22Bridge {
 				if json.Unmarshal(env.Payload, &p) == nil {
 					b.mu.Lock()
 					b.mods = append(b.mods, p)
+					b.mu.Unlock()
+				}
+			case ntwire.FrameClosePosition:
+				var p ntwire.ClosePositionPayload
+				if json.Unmarshal(env.Payload, &p) == nil {
+					b.mu.Lock()
+					b.closes = append(b.closes, p)
 					b.mu.Unlock()
 				}
 			}
@@ -169,6 +177,24 @@ func (b *r22Bridge) waitMods(n int) []ntwire.ModifyBracketPayload {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return append([]ntwire.ModifyBracketPayload(nil), b.mods...)
+}
+
+func (b *r22Bridge) waitCloses(n int) []ntwire.ClosePositionPayload {
+	b.t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		b.mu.Lock()
+		got := len(b.closes)
+		b.mu.Unlock()
+		if got >= n || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(150 * time.Millisecond)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]ntwire.ClosePositionPayload(nil), b.closes...)
 }
 
 // registerSplit registers the filled position through the PRODUCTION fill-time
@@ -493,8 +519,7 @@ func TestR22LegClosedNoMoveSent(t *testing.T) {
 }
 
 // TestR22RefusedMovesAreCounted — NT8 refuses (the book keeps the old price):
-// the BE stop move and the candle-3 TP modify are each logged + counted, the
-// stop move re-sent once (F1), nothing silent.
+// the BE stop move is logged + counted and re-sent once (F1), nothing silent.
 func TestR22RefusedMovesAreCounted(t *testing.T) {
 	b := r22Fixture(t, store.RiskControlConfig{})
 	b.positions("short", 1)
@@ -511,112 +536,71 @@ func TestR22RefusedMovesAreCounted(t *testing.T) {
 	if snap["stop_move_not_applied"] != 1 || snap["stop_move_resend_sent"] != 1 {
 		t.Fatalf("a refused stop move must be counted and re-sent once: %v", snap)
 	}
-
-	// The TP modify refusal.
-	c := r22Fixture(t, store.RiskControlConfig{})
-	c.positions("short", 3)
-	c.book(r22FullBook(r22Stop)...)
-	c.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
-	c.candle(r22Minute(0), 30742.25, 30744.00, 30735.00, 30737.50) // candle-3 close in profit
-	if mods := c.waitMods(1); len(mods) != 1 {
-		t.Fatalf("fixture: the candle-3 modify first; got %+v", mods)
-	}
-	c.book(r22FullBook(r22Stop)...) // the -tp still rests at 30724.25
-	c.candle(r22Minute(1), 30737.50, 30740.00, 30733.00, 30738.00)
-	if n := c.at.mentorCountSnapshot()["modify_bracket_not_applied"]; n != 1 {
-		t.Fatalf("a TP modify NT8 did not apply must be counted, modify_bracket_not_applied=%d", n)
-	}
 }
 
-// TestR22Candle3PartialIsARealModify — P1-2 at the wire: the ISB fill candle
-// closes in profit short of +1R (#651: close 30737.50, low 30735.00 > 30724.25)
-// → ONE modify_bracket frame for LEG 1 ONLY with TP 30737.50 and no stop; the
-// next fresh book confirms it. A long with an off-grid close rounds toward the
-// entry (30822.60 → 30822.50). Mutant M3 (unassign modifyBracketWire) → no
+// TestR22Candle3PartialIsARealMarketSell — R1 (release #30 fold): the ISB fill
+// candle closes in profit short of +1R (#651: close 30737.50, low 30735.00 >
+// 30724.25) → ONE close_position frame, LEG 1, market (no limit), qty = leg 1's
+// 2 contracts. Never a resting limit. Mutant M3 (unassign closeLegWire) → no
 // frame → RED.
-func TestR22Candle3PartialIsARealModify(t *testing.T) {
+func TestR22Candle3PartialIsARealMarketSell(t *testing.T) {
 	b := r22Fixture(t, store.RiskControlConfig{})
 	b.positions("short", 3)
 	b.book(r22FullBook(r22Stop)...)
 	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
 	b.candle(r22Minute(0), 30742.25, 30744.00, 30735.00, 30737.50)
-	mods := b.waitMods(1)
-	if len(mods) != 1 || mods[0].SignalID != r22Sig || mods[0].Leg != 1 || mods[0].NewTakeProfit != 30737.50 || mods[0].NewStopLoss != 0 {
-		t.Fatalf("the candle-3 partial must be ONE real modify_bracket {leg 1, TP 30737.50, no stop}; got %+v", mods)
+	closes := b.waitCloses(1)
+	if len(closes) != 1 || closes[0].SignalID != r22Sig || closes[0].Leg != 1 || closes[0].Quantity != 2 || closes[0].LimitPrice != 0 {
+		t.Fatalf("the candle-3 partial must be ONE market close {leg 1, qty 2, no limit}; got %+v", closes)
 	}
 	if got := b.waitMoves(0); len(got) != 0 {
-		t.Fatalf("the candle-3 partial moves no stop; got %+v", got)
+		t.Fatalf("the candle-3 market sell moves no stop; got %+v", got)
 	}
-	b.book(r22StopOrder(r22Sig+"-sl", r22Stop, 2), r22StopOrder(r22Sig+"-sl2", r22Stop, 1),
-		r22TP(r22Sig+"-tp", 30737.50, 2), r22TP(r22Sig+"-tp2", r22Target, 1))
-	b.candle(r22Minute(1), 30737.50, 30740.00, 30733.00, 30738.00)
-	if n := b.at.mentorCountSnapshot()["modify_bracket_confirmed"]; n != 1 {
-		t.Fatalf("the applied modify must be CONFIRMED from the broker book, modify_bracket_confirmed=%d", n)
+	if mods := b.waitMods(0); len(mods) != 0 {
+		t.Fatalf("the candle-3 market sell sends no modify_bracket; got %+v", mods)
 	}
-	if tp := b.at.mentorLivePos[r22Sig].Legs[0].TP; tp != 30737.50 {
-		t.Fatalf("the confirmed TP is the belief only AFTER the verdict: leg 1 TP %.2f, want 30737.50", tp)
-	}
-	if n := len(b.waitMods(1)); n != 1 {
-		t.Fatalf("the partial resolves ONCE — got %d modify frames", n)
-	}
-
-	// Long, off-grid close: rounds toward the entry (the TP never asks more).
-	sig := "68be9062-a901-418f-b3de-59e1882f79c2"
-	c := r22Fixture(t, store.RiskControlConfig{})
-	c.positions("long", 3)
-	c.book(r22StopOrder(sig+"-sl", 30814.75, 2), r22StopOrder(sig+"-sl2", 30814.75, 1), r22TP(sig+"-tp", 30825.25, 2), r22TP(sig+"-tp2", 30839.00, 1))
-	c.registerSplit(sig, "long", "ISB", 3, 2, 30820.00, 30814.75, 30825.25, 30839.00)
-	c.candle(r22Minute(0), 30820.00, 30823.00, 30819.00, 30822.60)
-	mods = c.waitMods(1)
-	if len(mods) != 1 || mods[0].Leg != 1 || mods[0].NewTakeProfit != 30822.50 {
-		t.Fatalf("a long's candle-3 TP must round toward the entry (30822.60 → 30822.50); got %+v", mods)
+	if n := len(b.waitCloses(1)); n != 1 {
+		t.Fatalf("the partial resolves ONCE — got %d close frames", n)
 	}
 }
 
-// TestR22Candle3PartialPast1ROwnsTheClose — release #30 (D1.4 p1 @12:51–13:01
-// "bán bớt. Bắt buộc"; p2 @05:25–05:41): the ISB candle-3 partial is the FILL
-// CANDLE'S CLOSE even when that candle ran PAST +1R first. Entry holds leg 1's
-// TP OUT at the runner target (30703.00), so the +1R limit cannot fill inside
-// the candle; the close 30738.00 (in profit, low 30720.00 ran past +1R
-// 30724.25) is then modify_bracket'd to leg 1. Pre-#30 the intrabar +1R was
-// returned with NO modify → RED. Mutant: drop the entry holdout (mentorLeg1ForFrame
-// keeps +1R) → the +1R limit fills intrabar before the close → RED.
-func TestR22Candle3PartialPast1ROwnsTheClose(t *testing.T) {
+// TestR22Candle3PartialPast1RDoesNothing — R1: when the fill candle runs PAST
+// +1R, the native +1R TP already filled inside the candle (the 1:1 rule), so
+// the candle-3 step sends NO market sell and NO modify at the close. Mutant:
+// sell at the close anyway → a close frame → RED.
+func TestR22Candle3PartialPast1RDoesNothing(t *testing.T) {
 	b := r22Fixture(t, store.RiskControlConfig{})
 	b.positions("short", 3)
-	b.book(r22StopOrder(r22Sig+"-sl", r22Stop, 2), r22StopOrder(r22Sig+"-sl2", r22Stop, 1),
-		r22TP(r22Sig+"-tp", r22Target, 2), r22TP(r22Sig+"-tp2", r22Target, 1))
-	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22Target, r22Target)
-	// fill candle: low 30720.00 runs PAST +1R (30724.25); the close 30738.00 is
-	// in profit short of the entry — the close owns the partial, not the +1R.
+	b.book(r22FullBook(r22Stop)...)
+	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
+	// fill candle: low 30720.00 runs PAST +1R (30724.25); close 30738.00.
 	b.candle(r22Minute(0), 30742.25, 30744.00, 30720.00, 30738.00)
-	mods := b.waitMods(1)
-	if len(mods) != 1 || mods[0].SignalID != r22Sig || mods[0].Leg != 1 || mods[0].NewTakeProfit != 30738.00 || mods[0].NewStopLoss != 0 {
-		t.Fatalf("the past-+1R candle-3 partial must be ONE modify_bracket {leg 1, TP 30738.00 (the close, NOT +1R 30724.25), no stop}; got %+v", mods)
+	if closes := b.waitCloses(0); len(closes) != 0 {
+		t.Fatalf("a past-+1R close must send no market sell (the +1R TP filled inside the candle); got %+v", closes)
 	}
-	if got := b.waitMoves(0); len(got) != 0 {
-		t.Fatalf("the candle-3 partial moves no stop; got %+v", got)
+	if mods := b.waitMods(0); len(mods) != 0 {
+		t.Fatalf("a past-+1R close must send no modify; got %+v", mods)
+	}
+	if n := b.at.mentorCountSnapshot()["isb_partial_no_sale"]; n != 1 {
+		t.Fatalf("isb_partial_no_sale = %d, want 1", n)
 	}
 }
 
-// TestR22Candle3PartialLosingCloseRevertsTo1R — a fill candle that closes at a
-// LOSS: leg 1's held-out TP (the runner target) is reverted to +1R via a
-// modify_bracket (the D2.2 "bán bớt ở 1-1" fallback [D2.2 p3 @12:13]). Mutant:
-// skip the revert → leg 1 keeps the runner-target TP → RED.
-func TestR22Candle3PartialLosingCloseRevertsTo1R(t *testing.T) {
+// TestR22Candle3PartialLosingCloseDoesNothing — R1: a losing fill-candle close
+// moves nothing; leg 1's +1R TP keeps resting at NT8 (fail-safe). Mutant: send
+// a close on a losing close → a close frame → RED.
+func TestR22Candle3PartialLosingCloseDoesNothing(t *testing.T) {
 	b := r22Fixture(t, store.RiskControlConfig{})
 	b.positions("short", 3)
-	b.book(r22StopOrder(r22Sig+"-sl", r22Stop, 2), r22StopOrder(r22Sig+"-sl2", r22Stop, 1),
-		r22TP(r22Sig+"-tp", r22Target, 2), r22TP(r22Sig+"-tp2", r22Target, 1))
-	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22Target, r22Target)
+	b.book(r22FullBook(r22Stop)...)
+	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
 	// fill candle closes at a LOSS (30750.00 > entry 30742.25 for a short).
 	b.candle(r22Minute(0), 30742.25, 30752.00, 30740.00, 30750.00)
-	mods := b.waitMods(1)
-	if len(mods) != 1 || mods[0].SignalID != r22Sig || mods[0].Leg != 1 || mods[0].NewTakeProfit != r22L1TP || mods[0].NewStopLoss != 0 {
-		t.Fatalf("a losing fill-candle close must revert leg 1's held-out TP to +1R 30724.25; got %+v", mods)
+	if closes := b.waitCloses(0); len(closes) != 0 {
+		t.Fatalf("a losing close must send no market sell (the +1R TP keeps resting); got %+v", closes)
 	}
-	if got := b.waitMoves(0); len(got) != 0 {
-		t.Fatalf("the losing-close revert moves no stop; got %+v", got)
+	if n := b.at.mentorCountSnapshot()["isb_partial_no_sale"]; n != 1 {
+		t.Fatalf("isb_partial_no_sale = %d, want 1", n)
 	}
 }
 

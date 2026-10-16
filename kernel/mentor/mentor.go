@@ -198,6 +198,10 @@ type Intent struct {
 	// 0 = none — in mode A the runner's native TP is removed and the exit is
 	// the BE stop or EOD flat. The trader's resonance arming consumes it.
 	RunnerTarget float64
+	// NewStop (R2, release #30 fold) is the stop price an ActionMoveStop asks
+	// the injector to move the swing's stop to (the 4h-candle trail). 0 = the
+	// action carries no price (an ActionMoveStopBE moves to the entry instead).
+	NewStop float64
 }
 
 // Leg1RiskMultiple is the leg-1 take-profit distance in units of R — the ONE

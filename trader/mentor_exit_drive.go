@@ -76,23 +76,29 @@ func mentorLegStopB(side string, stop, close, target, trailPrice float64, applyT
 	return next
 }
 
-// mentorISBPartialTP (item 8) resolves the ISB leg-1 exit point ONCE, on the
-// fill candle's close: the close itself when it is in profit — even when the
-// candle ran PAST +1R first [D1.4 p2 @05:25–05:41: the fill candle's close
-// gives "1 1 … 1 3, 1 4"; D1.4 p1 @12:51–13:01 "khi cây nến trend kế tiếp đóng
-// … bán bớt. Bắt buộc"]. A losing close resolves to 0 — no scale-out there,
-// the stop rules own a losing leg [D2.1 p1 @11:08–11:23, deferred]. (Before
-// release #30 the bot reconciled D1.4 with D2.2 as "+1R first wins", selling
-// leg 1 at +1R inside the candle; the course sells AT THE CLOSE.)
+// mentorISBPartialTP (item 8, R1 release #30) resolves the ISB leg-1 exit on
+// the fill candle's close: the CLOSE itself when it is in profit SHORT of +1R
+// — i.e. leg 1 did NOT fill inside the candle. A close PAST +1R means the
+// native +1R TP already filled inside the candle (the 1:1 rule), so the
+// candle-3 step has nothing to do → 0. A losing close → 0 (the +1R TP keeps
+// resting; the stop rules own a losing leg [D2.1 p1 @11:08–11:23, deferred]).
 func mentorISBPartialTP(pos mentorPosition, c, h, l float64) float64 {
-	_ = h
-	_ = l
 	long := pos.Side == "long"
+	oneR := pos.Entry + pos.R
+	if !long {
+		oneR = pos.Entry - pos.R
+	}
 	if long {
+		if h >= oneR {
+			return 0 // +1R TP already filled inside the candle (R1)
+		}
 		if c > pos.Entry {
 			return c
 		}
 		return 0
+	}
+	if l <= oneR {
+		return 0 // +1R TP already filled inside the candle (R1)
 	}
 	if c < pos.Entry {
 		return c
@@ -340,14 +346,12 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		runnerTarget = leg1Target
 	}
 
-	// ── (2) ISB partial (item 8): leg 1 IS the partial — it leaves at +1R TP
-	// or at the candle-3 close (the fill candle's close), whichever comes
-	// first, ONCE — and the close only when in profit. The resolution reads
-	// the JUST-closed fill candle (BarsSinceFill == 1): its high/low decides
-	// whether +1R printed first. Release #22 (P1-2): a close in profit short
-	// of +1R is a REAL modify_bracket on leg 1 (modifyBracketWire, assigned),
-	// verified on the next fresh book — it was LOG-only from 10-05 to 10-14.
-	// Runs in both mentor_trail_mode values (a bug fix, not the R3 knob).
+	// ── (2) ISB partial (item 8, R1): leg 1's +1R TP always rests at NT8.
+	// When the fill candle's close is in profit SHORT of +1R (leg 1 did NOT
+	// fill inside the candle), leg 1 is sold at MARKET at that close — never a
+	// resting limit [D1.4 p1 @12:51–13:01 "bán bớt. Bắt buộc"]. A close PAST
+	// +1R means the +1R TP already filled inside the candle (the 1:1 rule).
+	// A losing close moves nothing. Runs in both mentor_trail_mode values.
 	if pos.Origin == "ISB" && !p.ISBPartialDone && p.BarsSinceFill >= 1 {
 		p.ISBPartialDone = true
 		if !scaledNow && p.BarsSinceFill == 1 {

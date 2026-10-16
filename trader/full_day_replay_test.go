@@ -1494,8 +1494,8 @@ func TestFullDayReplay(t *testing.T) {
 		}
 	})
 
-	// ── (c) an open swing across the restart: holds by the 4h, no BE/close ──
-	t.Run("c_swing_across_restart_holds_by_the_4h", func(t *testing.T) {
+	// ── (c) an open swing across the restart: BE at the first target, no 2nd-4h close ──
+	t.Run("c_swing_across_restart_be_no_forced_close", func(t *testing.T) {
 		if sw.signalID == "" {
 			t.Fatal("the swing was never injected")
 		}
@@ -1508,7 +1508,7 @@ func TestFullDayReplay(t *testing.T) {
 				closes = append(closes, f)
 			}
 		}
-		t.Logf("(c) injected swing %s: release #30 holds by the 4h with its hard stop — move_stop frames %d, close frames %d",
+		t.Logf("(c) injected swing %s: R2 BE at the first target + 4h trail — move_stop frames %d, close frames %d",
 			sw.signalID, len(moves), len(closes))
 		for _, f := range moves {
 			t.Logf("    move_stop %s CT → %.2f", fdrCT(f.atMs), f.price)
@@ -1516,36 +1516,51 @@ func TestFullDayReplay(t *testing.T) {
 		for _, f := range closes {
 			t.Logf("    close_position %s CT %s qty %d", fdrCT(f.atMs), f.side, f.qty)
 		}
-		// Release #30: the bot-only swing BE-at-+1R and the 2nd-4h-candle forced
-		// close are REMOVED — the runner holds by the 4h with its hard stop, so
-		// the injected swing must emit NO stop move and NO close [D5.2 p1
-		// @05:48–06:18 "gồng theo khung 4 giờ"; no swing BE / hold length in the
-		// course].
-		if len(moves) != 0 {
-			t.Fatalf("(c) RED: the swing must not move its stop (release #30) — got %d move_stop for %s", len(moves), sw.signalID)
-		}
+		// R2: the bot-only forced close at the 2nd 4h candle is GONE — the swing
+		// must emit NO close_position (this fixture is not a Friday). The BE/trail
+		// move_stop is expected (the runner goes to break-even at the first target).
 		if len(closes) != 0 {
-			t.Fatalf("(c) RED: the swing must not be force-closed (release #30) — got %d close_position", len(closes))
+			t.Fatalf("(c) RED: the swing must not be force-closed (R2 removed the 2nd-4h close) — got %d close_position", len(closes))
+		}
+		if len(moves) == 0 {
+			t.Fatalf("(c) RED: the swing must break even (R2) — got 0 move_stop for %s", sw.signalID)
 		}
 	})
 
-	// ── (c2) the swing never breaks even — release #30 removed the bot-only BE
-	t.Run("c2_no_swing_break_even_anywhere", func(t *testing.T) {
-		// Release #30: the swing runner holds by the 4h with its hard stop; no
-		// swing MoveStopBE is ever emitted — with or without a restart.
+	// ── (c2) every swing break-even comes at/beyond +1R (the first target) ──
+	t.Run("c2_every_swing_break_even_at_or_beyond_1R", func(t *testing.T) {
+		// R2: the swing's stop goes to break-even at the FIRST target — max(1R,
+		// the warmed 5m EMA 34) — so every BE is at ≥ +1R. The injected swing is
+		// the restart path; every other swing was filled in-process.
 		var bad []string
 		for _, ft := range traders {
 			for _, be := range ft.swingBE {
 				path := "no restart"
+				entry, stop, side, known := be.entry, be.stop, be.side, be.known
 				if be.armID == sw.armID && ft.id == sw.traderID {
 					path = "after the restart"
+					entry, stop, side, known = sw.entry, sw.stop, mentor.SideLong, true
 				}
 				when := fdrCT(w.bars[be.barIdx].CloseTime + 1)
-				bad = append(bad, fmt.Sprintf("%s %s (%s) emitted a swing break-even at %s CT — release #30 removed it (the runner holds by the 4h)", ft.id, be.armID, path, when))
+				if !known || math.Abs(entry-stop) == 0 {
+					bad = append(bad, fmt.Sprintf("%s %s break-even at %s CT with no readable position", ft.id, be.armID, when))
+					continue
+				}
+				risk := math.Abs(entry - stop)
+				c5 := fdrLast5mClose(w, be.barIdx)
+				move := c5 - entry
+				if side == mentor.SideShort {
+					move = entry - c5
+				}
+				r := move / risk
+				t.Logf("(c2) %s %s %s: break-even at %s CT, 5m close %.2f = %+.2fR", ft.id, be.armID, path, when, c5, r)
+				if r < 1-1e-9 {
+					bad = append(bad, fmt.Sprintf("%s %s (%s) broke even at %+.2fR — the first target is ≥ 1R", ft.id, be.armID, path, r))
+				}
 			}
 		}
 		if len(bad) > 0 {
-			t.Fatalf("(c2) %d swing break-even(s) after release #30:\n  %s", len(bad), strings.Join(bad, "\n  "))
+			t.Fatalf("(c2) %d swing break-even(s) before +1R:\n  %s", len(bad), strings.Join(bad, "\n  "))
 		}
 	})
 

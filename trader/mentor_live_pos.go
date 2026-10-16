@@ -577,7 +577,7 @@ func (at *AutoTrader) mentorRebuildLivePosOnce(now time.Time) {
 	snap := at.mentorCountSnapshot()
 	at.logInfof("🧑‍🏫 mentor positions rebuilt: %d (refused %d)", snap["rebuild_ok"], snap["rebuild_refused"])
 	if snap["swing_rebuild_ok"] > 0 || snap["swing_rebuild_refused"] > 0 {
-		at.logInfof("🧑‍🏫 mentor swing rebuilt: %d under BE/hold (refused %d)", snap["swing_rebuild_ok"], snap["swing_rebuild_refused"])
+		at.logInfof("🧑‍🏫 mentor swing rebuilt: %d under exit management (refused %d)", snap["swing_rebuild_ok"], snap["swing_rebuild_refused"])
 	}
 }
 
@@ -642,7 +642,7 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 		if strings.EqualFold(strings.TrimSpace(row.Condition), "SWING4H") {
 			if ok, why := at.mentorRebuildSwingArm(*row, pos, lp); ok {
 				at.mentorCount("swing_rebuild_ok")
-				at.logInfof("🧑‍🏫 mentor swing %s under exit management after restart (arm %q) — the runner holds by the 4h with its hard stop", row.SignalID, mentorArmIDFromScenario(row.Scenario))
+							at.logInfof("🧑‍🏫 mentor swing %s under exit management after restart (arm %q) — BE at the first target, then trail per closed 4h candle", row.SignalID, mentorArmIDFromScenario(row.Scenario))
 			} else {
 				at.mentorCount("swing_rebuild_refused")
 				at.logErrorf("🧑‍🏫 mentor swing %s NOT under exit management after restart — %s; manage by hand", row.SignalID, why)

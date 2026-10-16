@@ -1479,6 +1479,67 @@ namespace NinjaTrader.NinjaScript.AddOns
                 LogInfo("VLTraderTCPClient: close_position " + root + " → account=" + closeTarget.Name
                         + " (from " + source + ") side=" + (sideStr ?? "") + " qty=" + askedQty + " holds=" + held);
 
+                // R1 (release #30 fold): a LEG-scoped market close. leg 1/2 sells ONLY
+                // that leg's contracts at market (the ISB candle-3 partial — "sell part
+                // at MARKET at that close", never a resting limit), then cancels that
+                // leg's bracket so the +1R TP cannot also fill (no window with two exits;
+                // the market order is submitted FIRST so there is no window with none).
+                // leg absent/0 = the whole-position flatten below (unchanged).
+                int closeLeg = GetInt(p, "leg");
+                if (closeLeg >= 1 && closeLeg <= 2 && !string.IsNullOrEmpty(closeSignalId))
+                {
+                    PlacedBracket pb;
+                    lock (signalMapLock)
+                    {
+                        placedBrackets.TryGetValue(closeSignalId, out pb);
+                    }
+                    if (pb == null)
+                    {
+                        RefuseClose(closeSignalId, root, sideStr, closeTarget.Name,
+                                    "leg close: no live bracket for " + closeSignalId);
+                        return;
+                    }
+                    int legQty = closeLeg == 1 ? pb.Leg1Qty : pb.Leg2Qty;
+                    if (legQty <= 0)
+                    {
+                        RefuseClose(closeSignalId, root, sideStr, closeTarget.Name,
+                                    "leg close: leg " + closeLeg + " has no contracts (Leg" + closeLeg + "Qty=0)");
+                        return;
+                    }
+                    OrderAction exitAction = pb.ExitAction;
+                    var legMarket = closeTarget.CreateOrder(
+                        instrument, exitAction, OrderType.Market, OrderEntry.Manual,
+                        TimeInForce.Day, legQty, 0, 0, string.Empty,
+                        closeSignalId + "-leg" + closeLeg + "-close", Core.Globals.MaxDate, null);
+                    closeTarget.Submit(new[] { legMarket });
+                    // Cancel the leg's bracket AFTER the market sell is submitted: the
+                    // +1R TP (and the stop) for those contracts is removed so the leg
+                    // cannot fill twice. Cancel is async; the market order already rests
+                    // against the account.
+                    var legOrders = new List<Order>();
+                    if (closeLeg == 1)
+                    {
+                        if (pb.TpOrder != null) legOrders.Add(pb.TpOrder);
+                        if (pb.SlOrder != null) legOrders.Add(pb.SlOrder);
+                        pb.Leg1Exited = legQty;
+                    }
+                    else
+                    {
+                        if (pb.TpOrder2 != null) legOrders.Add(pb.TpOrder2);
+                        if (pb.SlOrder2 != null) legOrders.Add(pb.SlOrder2);
+                    }
+                    var liveLeg = new List<Order>();
+                    foreach (var o in legOrders)
+                        if (o != null && IsLiveAtExchange(o.OrderState)) liveLeg.Add(o);
+                    if (liveLeg.Count > 0)
+                    {
+                        try { closeTarget.Cancel(liveLeg); } catch (Exception ex) { LogWarn("VLTraderTCPClient: leg " + closeLeg + " bracket cancel failed: " + ex.Message); }
+                    }
+                    LogInfo("VLTraderTCPClient: leg " + closeLeg + " market close submitted " + root + " " + sideStr
+                            + " qty=" + legQty + " on account=" + closeTarget.Name + " (bracket cancelled) — awaiting fill");
+                    return;
+                }
+
                 // 4.3 limit-then-market: when limit_price > 0, submit a LIMIT exit
                 // (favorable side) instead of an immediate market flatten, on the SAME
                 // resolved account. Go sends the market fallback as a later

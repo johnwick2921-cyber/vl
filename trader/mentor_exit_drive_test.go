@@ -145,58 +145,53 @@ func TestMentorLegStopB_RunnerTrailTighter(t *testing.T) {
 	}
 }
 
-// item 8 (ISB partial): leg 1 leaves at the candle-3 (fill-candle) CLOSE when
-// that is in profit — even when the candle ran PAST +1R first [D1.4 p2
-// @05:25–05:41; D1.4 p1 @12:51–13:01 "bán bớt. Bắt buộc"]; a losing close → 0
-// (no scale-out — the stop rules own a losing leg).
+// item 8 (ISB partial, R1): leg 1's +1R TP always rests at NT8. The candle-3
+// partial is ONLY the case "close in profit SHORT of +1R" (leg 1 did NOT fill
+// inside the candle) — the close itself [D1.4 p1 @12:51–13:01 "bán bớt. Bắt
+// buộc"]. A close PAST +1R means the +1R TP already filled inside the candle
+// (the 1:1 rule) → 0. A losing close → 0 (the +1R TP keeps resting).
 func TestMentorISBPartialTP(t *testing.T) {
 	long := mentorPosition{Side: "long", Entry: 100, R: 10}
-	if got := mentorISBPartialTP(long, 108, 111, 99); got != 108 {
-		t.Fatalf("close past +1R → %v, want 108 (the close owns the partial, not the intrabar +1R)", got)
+	if got := mentorISBPartialTP(long, 108, 111, 99); got != 0 {
+		t.Fatalf("close past +1R → %v, want 0 (the +1R TP already filled inside the candle)", got)
 	}
 	if got := mentorISBPartialTP(long, 104, 105, 99); got != 104 {
-		t.Fatalf("candle-3 close in profit → %v, want 104", got)
+		t.Fatalf("candle-3 close in profit short of +1R → %v, want 104 (the market-sell close)", got)
 	}
 	if got := mentorISBPartialTP(long, 98, 105, 95); got != 0 {
-		t.Fatalf("losing close → %v, want 0 (never book a loss at the candle-3 close)", got)
+		t.Fatalf("losing close → %v, want 0 (the +1R TP keeps resting)", got)
 	}
 	short := mentorPosition{Side: "short", Entry: 100, R: 10}
-	if got := mentorISBPartialTP(short, 92, 99, 89); got != 92 {
-		t.Fatalf("short close past −1R → %v, want 92 (the close owns the partial)", got)
+	if got := mentorISBPartialTP(short, 92, 99, 89); got != 0 {
+		t.Fatalf("short close past −1R → %v, want 0 (the +1R TP already filled)", got)
 	}
 	if got := mentorISBPartialTP(short, 96, 99, 95); got != 96 {
-		t.Fatalf("short candle-3 close in profit → %v, want 96", got)
+		t.Fatalf("short candle-3 close in profit short of +1R → %v, want 96", got)
 	}
 	if got := mentorISBPartialTP(short, 102, 103, 95); got != 0 {
 		t.Fatalf("short losing close → %v, want 0", got)
 	}
 }
 
-// item 8 live-loop pin: the ISB partial is resolved ONCE at the fill candle's
-// close (BarsSinceFill == 1), logged once, and never re-fires on later candles.
-// Release #30: the candle-3 CLOSE owns the partial — a close PAST +1R still
-// scales at the close, not at the intrabar +1R. bPos is ONE bracket (Wire 0),
-// so the modify is refused + counted (a TP modify would close the WHOLE
-// position); the split-wire send past +1R is pinned in mentor_r22_exit_test.go.
+// item 8 live-loop pin (R1): the ISB partial resolves ONCE at the fill candle's
+// close. A close past +1R does NOTHING at the close — the +1R TP already filled
+// inside the candle. bPos is ONE bracket (Wire 0); the market sell of a leg the
+// wire does not carry is refused + counted. The split-wire market close is
+// pinned in mentor_r22_exit_test.go.
 func TestMentorExitDrivePosISB_PartialResolvedOnce(t *testing.T) {
 	at, moves := newDriveAT(t)
 	p := bPos("B", "long", 10, 10, 13, 5) // stop already at BE
 	p.Pos.Origin = "ISB"
 	p.Pos.ArmedBE = true
 	p.BarsSinceFill = 1 // the fill candle just closed
-	// fill candle high 12 = +1R (entry 10 + R 2), close 11.0 in profit: the
-	// close owns the partial, not the intrabar +1R.
+	// fill candle high 12 = +1R (entry 10 + R 2): the +1R TP already filled
+	// inside the candle — nothing to do at the close.
 	at.mentorExitDrivePos(nil, p, 11.0, 12.0, 10.8, 0)
-	if p.Legs[0].TP != 13 {
-		t.Fatalf("leg1 TP = %.2f, want 13 (one bracket — the whole-position target stays, no modify sent)", p.Legs[0].TP)
+	if got := at.mentorCountSnapshot()["isb_partial_no_sale"]; got != 1 {
+		t.Fatalf("isb_partial_no_sale = %d, want 1 (a past-+1R close sells nothing at the close)", got)
 	}
-	// Release #22/#30: bPos is one bracket → refused as not split, counted
-	// ONCE, and NO modify is sent.
-	if got := at.mentorCountSnapshot()["isb_partial_not_split"]; got != 1 {
-		t.Fatalf("isb_partial_not_split = %d, want 1 (ONCE)", got)
-	}
-	if got := at.mentorCountSnapshot()["modify_bracket_sent"]; got != 0 {
-		t.Fatalf("a single bracket must send no modify, modify_bracket_sent = %d", got)
+	if got := at.mentorCountSnapshot()["close_leg_sent"]; got != 0 {
+		t.Fatalf("a past-+1R close must send no market close, close_leg_sent = %d", got)
 	}
 	assertMoves(t, moves())
 	// a later candle must NOT re-fire the ISB partial.
@@ -449,9 +444,9 @@ func TestMentorExitDrivePosISB_PartialOnlyOnTheFillCandle(t *testing.T) {
 func mentorISBPartialResolutions(at *AutoTrader) int {
 	snap := at.mentorCountSnapshot()
 	n := 0
-	for _, k := range []string{"isb_partial_losing_close", "isb_partial_wait_1r", "isb_partial_not_split",
-		"isb_partial_not_in_profit_after_rounding", "isb_partial_not_closer", "modify_bracket_unwired",
-		"modify_bracket_failed", "modify_bracket_sent"} {
+	for _, k := range []string{"isb_partial_no_sale", "isb_partial_wait_1r", "isb_partial_not_split",
+		"isb_partial_not_in_profit", "close_leg_unwired", "close_leg_bad_side",
+		"close_leg_failed", "close_leg_sent"} {
 		n += int(snap[k])
 	}
 	return n
