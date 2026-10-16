@@ -885,6 +885,22 @@ const risk: KnobSpec[] = [
     perSession: 'No.',
   },
   {
+    label: 'Planner contracts per entry',
+    what: 'The PLANNER trader\u2019s contracts per entry (dispatch-31, owner order 2026-10-16 "set to 4 at least, sell 2 first so it\u2019s equal"). Unset/0 → 1 = today\u2019s single-contract arm. A value ≥ 2 splits the planner arm AT ENTRY into equal halves: leg 1 = n/2 (floor) contracts at the plan\u2019s FIRST TARGET (target_chain[0]; the first obstacle is only the fallback, and only when it is ≥ +1R away), leg 2 = the rest at the arm\u2019s final target with the existing stop management. If leg 1\u2019s price would equal or pass the final target the split degrades to ONE n-lot bracket. The stamped total is clamped to the always-on Max contracts / order (resolveMaxContracts — max_contracts_per_order + the Stage-A ceiling), re-clamped at send, and to a hard ceiling of 10 (a typo of 40 is refused). A 2-leg sweep_reclaim arm and a Picture arm are never split. Mentor sizing is untouched (the mentor table, not this knob). Read on the planner arm path only.',
+    where: 'Strategy → Risk Control → Planner contracts per entry',
+    trader:
+      'To actually size 4 = 2 + 2 on "mnq 2" the owner must ALSO set max_contracts_per_order = 4 AND the env STAGE_A_CONTRACT_CAP = 4 (a .env change + restart) — today the always-on clamp resolves to 1 for that strategy.',
+    consumer:
+      'trader/auto_trader_orders.go plannerContracts / stampPlannerSplit (clamped to resolveMaxContracts) · trader/armed_executor.go + trader/zone_placement.go (the stamped row reaches the wire as one split frame via PlaceLimitEntryWithSplit)',
+    range:
+      'int · unset/0 → 1 · ≥ 2 splits equal halves · ceiling 10 · clamped to resolveMaxContracts',
+    systemDefault: '1 (single-contract arm)',
+    recommended:
+      '⭐ 1 everywhere except the owner\u2019s planner strategy (4, after raising max_contracts_per_order and STAGE_A_CONTRACT_CAP).',
+    whenToTouch: 'Only on an owner ruling for the planner trader.',
+    perSession: 'No — per strategy.',
+  },
+  {
     label: 'Notional cap (always-on)',
     where: 'Strategy → Risk Control → always-on row',
     what: 'Max notional per position — on with or without the master.',

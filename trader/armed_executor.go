@@ -956,6 +956,15 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 			}
 			zl.stamp(row)               // W3 — policy, zone (inward-rounded), provenance, planned entry
 			stampPictureSource(row, sc) // W5 — source, opportunity, rule, deadline, run epoch
+			// dispatch-31 (owner order 2026-10-16 "set to 4 at least, sell 2 first
+			// so it's equal") — a PLANNER single arm (non-machine, non-mentor, not a
+			// sweep_reclaim split) sizes to the per-strategy planner_contracts knob
+			// and splits AT ENTRY into equal halves: leg 1 = n/2 at the plan's first
+			// obstacle, leg 2 = the rest at the final target. Stamped on the row so
+			// the placement pass (any process, after a restart) sends it without
+			// re-reading the plan doc. Mentor rows and a 2-leg sweep_reclaim arm are
+			// untouched; the knob unset/0 → 1 = today's single-contract arm.
+			stampPlannerSplit(row, &cfg.RiskControl, machine, legCount, plannerLeg1Target(sc, row.Side, row.EntryPx, row.StopPx, row.TargetPx), at.resolveMaxContracts())
 			// W1b E1: the matched ledger row is KEPT — its prices are what went to the wire.
 			var prior store.ArmedOrderDB
 			existing, err := ledger.ListNonTerminal(at.id)
@@ -1005,6 +1014,11 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 			}
 			if geometry != nil {
 				geometry.Quantity = 1
+				// fold-564-b D6: the geometry card must print the REAL size the
+				// arm was authorized for — a planner arm stamped 4 says 4, not 1.
+				if row.Contracts != nil && *row.Contracts > 0 {
+					geometry.Quantity = *row.Contracts
+				}
 				geometry.Reason = "admitted"
 				if !at.saveArmGeometry(*geometry) {
 					return // unavailable decision record must not expose older authorizations
@@ -1736,7 +1750,8 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 					continue
 				}
 				registered := false
-				sid, perr := nt.PlaceLimitEntry(at.futuresSymbol(), side, 1, r.EntryPx, r.StopPx, r.TargetPx, func(sid string) error {
+				qty, leg1Qty, leg1TP := at.plannerArmWireQty(r)
+				sid, perr := nt.PlaceLimitEntryWithSplit(at.futuresSymbol(), side, qty, r.EntryPx, r.StopPx, r.TargetPx, leg1Qty, leg1TP, func(sid string) error {
 					err := ledger.BeginPlacement(r.ID, sid)
 					registered = err == nil
 					return err
@@ -1756,7 +1771,11 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 					at.logWarnf("📌 armed place failed %s: %v", r.Scenario, perr)
 					continue
 				}
-				at.recordArmWirePrices(ledger, r, sid, side, r.EntryPx, r.StopPx, r.TargetPx, nil) // F-7: ledger = wire
+				var splitFrom any
+				if leg1Qty > 0 {
+					splitFrom = nt // the sender's own record of the split it actually carried
+				}
+				at.recordArmWirePrices(ledger, r, sid, side, r.EntryPx, r.StopPx, r.TargetPx, splitFrom) // F-7: ledger = wire
 				at.logInfof("📌 armed %s placement requested limit %.2f signal=%s (band ±%.0ft)", r.Scenario, r.EntryPx, sid, band/tick)
 				// ONE LIVE ENTRY PER PLAN (owner ruling 2026-09-06): the moment
 				// one arm reaches the wire, every other arm in the plan is
@@ -2125,7 +2144,12 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 	// B2 MENTOR SIZE (2026-10-04): the mentor arm carries its signed contract
 	// count on the row. A mentor row WITHOUT one is REFUSED (counted + logged),
 	// never sent as 1 (absent ≠ 0). Non-mentor rows stay 1.
+	// dispatch-31 (2026-10-16): a PLANNER arm stamped with its contract count at
+	// authoring (planner_contracts ≥ 2) sends that count; every other non-mentor
+	// row stays 1.
 	qty := 1.0
+	var plannerLeg1Qty int
+	var plannerLeg1TP float64
 	if isMentorArmOrigin(r) {
 		n, why := at.mentorArmQuantity(r)
 		if why != "" {
@@ -2137,6 +2161,11 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 			return stopPlaceNotSent
 		}
 		qty = n
+	} else {
+		// dispatch-31: the planner split stamped at authoring, RE-CLAMPED at
+		// send (the cap may have moved since the stamp — knob lowered, Stage-A
+		// reverted). Never past the CURRENT resolveMaxContracts().
+		qty, plannerLeg1Qty, plannerLeg1TP = at.plannerArmWireQty(r)
 	}
 	// N4 (2026-10-04, DAY-1 #15/#42): the +2-tick wire offset moves the entry
 	// 0.5 pt against the trade (trigger = entry ± offset, stop and target
@@ -2181,6 +2210,11 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		if leg1Qty = mentorWireLeg1(r, int(qty)); leg1Qty > 0 {
 			leg1TP = mentorWireLeg1TP(r.EntryPx, d.Trigger, r.StopPx, r.Leg1TP)
 		}
+	} else {
+		// dispatch-31: the planner split, re-derived from the re-clamped qty.
+		// The wire rounds leg1TP to the tick grid and drops the split (single
+		// bracket) when it cannot sit on the profit side of the entry.
+		leg1Qty, leg1TP = plannerLeg1Qty, plannerLeg1TP
 	}
 	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, targetPx, leg1Qty, leg1TP, func(sid string) error {
 		if err := ledger.BeginPlacement(r.ID, sid); err != nil {

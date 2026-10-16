@@ -684,6 +684,31 @@ func buildEffectiveResolvers() map[string]effResolver {
 		mx, _ := x.at.mentorMaxContracts()
 		return effResult{value: mx, origin: presenceOrigin(x, mx, store.SourceShippedDefault), scope: ScopeStrategy}
 	})
+	add(rcPath+"planner_contracts", "trader.plannerContracts (dispatch-31), clamped to resolveMaxContracts — the size the authoring stamp actually writes", func(x *effCtx) effResult {
+		// The EFFECTIVE size: min(plannerContracts(rc), resolveMaxContracts()).
+		// A knob of 4 with the always-on clamp at 1 stamps 1 — the effective
+		// line must say so, with the binding source as the origin (fold-564-b
+		// D4: the old line showed 4 while the wire sent 1).
+		rc := x.rc()
+		v := plannerContracts(&rc)
+		origin := store.SourceShippedDefault
+		if rc.PlannerContracts > 0 {
+			origin = store.SourceSaved
+		}
+		if rc.PlannerContracts > plannerContractsCeiling {
+			origin = "clamp (trader.plannerContractsCeiling = 10)"
+		}
+		scope := ScopeStrategy
+		if x.at != nil && !x.at.mentorEnabled() {
+			max, maxSrc := kernel.ResolveMaxContractsWithSource(rc.MaxContractsPerOrder, int(maxFuturesContracts))
+			if v > max {
+				v = max
+				origin = maxSrc
+				scope = ScopeProcessEnv
+			}
+		}
+		return effResult{value: v, origin: origin, scope: scope}
+	})
 	add(rcPath+"max_notional_leverage", "kernel.ResolveNotionalLeverage (trader.enforcePositionValueRatio)", func(x *effCtx) effResult {
 		v, src := kernel.ResolveNotionalLeverageWithSource(x.rc().MaxNotionalLeverage, futuresMaxNotionalLeverage)
 		return effResult{value: v, origin: src, scope: ScopeFutures}
