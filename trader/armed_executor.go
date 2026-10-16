@@ -2755,6 +2755,11 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 				// FU-1: feed G1/G2 from the REAL fill — the receipt is queued
 				// and drained inside mentorEvalOnce under mentorEvalMu.
 				at.mentorEnqueueFill(r, u)
+				// ONE WORKING ENTRY PER SIDE (release #30): the fill is the
+				// reference — cancel every other working SAME-SIDE mentor entry
+				// BEFORE it can fill (OCO-style, the never-add sweep only runs
+				// on the NEXT tick and cannot catch a same-bar double fill).
+				at.mentorCancelOtherSameSideWorking(r)
 			}
 		case "cancelled":
 			// CANCEL-REPORT REGIME (2026-10-03, knob default OFF): for a row
