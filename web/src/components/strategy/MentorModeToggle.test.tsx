@@ -239,6 +239,16 @@ it('the stop-after-win switch reads ON only when the stored value is true', () =
   )
 })
 
+it('the winning-trade toggle renders ABOVE the losing-trade one (M15)', () => {
+  renderEditor({})
+  const win = screen.getByTestId('mentor-stop-after-win')
+  const loss = screen.getByTestId('mentor-stop-after-loss')
+  // DOCUMENT_POSITION_FOLLOWING: win precedes loss in document order.
+  expect(
+    win.compareDocumentPosition(loss) & Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy()
+})
+
 // ── stop-after-loss switch (mentor_stop_after_loss, absent = OFF) ──
 
 it('an absent mentor_stop_after_loss reads OFF', () => {
