@@ -566,8 +566,8 @@ export const mentor: GuideSection = {
       items: [
         {
           title: 'Done for the day after a win',
-          body: 'One win and the machine is done for the day.',
-          cite: 'Owner setting — done-after-win (D1.2 p1 @20:53 "thắng rồi… quyền được nghỉ ngơi") · mentor_done_after_win — live',
+          body: 'OFF by default (owner order 2026-10-16, "it’s been off … follow it"). ON: after a mentor trade closes in profit and the day is net positive, no new mentor entries until the next NY open (08:30 CT); resting entry orders are cancelled.',
+          cite: 'Owner setting — done-after-win (D1.2 p1 @20:53 "thắng rồi… quyền được nghỉ ngơi") · mentor_done_after_win — nil → OFF (owner order 2026-10-16)',
         },
         {
           title: 'Trading window — 08:30–09:30 CT by default',
@@ -1671,15 +1671,15 @@ export const mentor: GuideSection = {
         {
           label: 'Done after a winning day',
           where:
-            'No Studio control — ON by default (owner ruling); the strategy setting mentor_done_after_win=false turns it off',
-          what: 'Stop new mentor entries for the mentor\u2019s NY day after a winning trade closes and the day\u2019s net P&L is positive. The day boundary is 08:30 CT (the NY open) — owner ruling 2026-10-09; a win at 18:06 CT no longer blocks the next NY open.',
+            'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode → "Stop for the day after a winning trade"',
+          what: 'Stop new mentor entries for the mentor\u2019s NY day after a winning trade closes and the day\u2019s net P&L is positive. OFF by default (owner order 2026-10-16: nil → OFF, an explicit true turns it on). The day boundary is 08:30 CT (the NY open) — owner ruling 2026-10-09; a win at 18:06 CT no longer blocks the next NY open.',
           trader:
-            'ON by default; an explicit false disables this stop rule. The day boundary is the knob mentor_done_after_win_day_start ("HH:MM" CT; unset → 08:30, the NY open). Set it to 17:00 to restore the old CME-session-day behaviour.',
+            'OFF by default; an explicit true enables this stop rule. The day boundary is the knob mentor_done_after_win_day_start ("HH:MM" CT; unset → 08:30, the NY open). Set it to 17:00 to restore the old CME-session-day behaviour.',
           consumer: 'trader/mentor_tick.go mentorDoneAfterWinGate',
           range: 'true / false',
-          systemDefault: 'true (unset = ON)',
+          systemDefault: 'false (unset = OFF)',
           recommended:
-            'ON — owner ruling; stop after a win on a net-positive day. Day boundary: 08:30 CT (owner ruling 2026-10-09).',
+            'OFF — owner order 2026-10-16 ("it\u2019s been off … follow it"). Day boundary: 08:30 CT (owner ruling 2026-10-09).',
           whenToTouch: 'Rarely.',
           perSession: 'No — per strategy.',
         },

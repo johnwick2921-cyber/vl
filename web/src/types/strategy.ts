@@ -369,6 +369,11 @@ export interface RiskControlConfig {
   // and the 14:45 CT EOD flat still apply, never "any hour"). SWING is exempt.
   mentor_window_start?: string
   mentor_window_minutes?: number
+  // Stop-after-win / done-after-win (mentor day-stop): once a mentor trade
+  // closes today in profit and the day is net positive, refuse new entries
+  // until the next NY open (08:30 CT). Absent = OFF (owner order 2026-10-16:
+  // nil → OFF, an explicit true turns it on).
+  mentor_done_after_win?: boolean
   // Stop-after-loss (mentor day-stop): once a mentor trade closes today with a
   // net loss, refuse new entries until the next trading day (17:00 CT).
   // Absent = OFF (byte-identical to the prior config).

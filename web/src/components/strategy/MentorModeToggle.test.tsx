@@ -199,6 +199,46 @@ it('the window controls are inert on a read-only strategy', () => {
   expect(screen.getByTestId('mentor-window-minutes')).toBeDisabled()
 })
 
+// ── stop-after-win switch (mentor_done_after_win, absent = OFF) ──
+
+it('an absent mentor_done_after_win reads OFF', () => {
+  renderEditor({})
+  expect(screen.getByTestId('mentor-stop-after-win')).toHaveAttribute(
+    'aria-checked',
+    'false'
+  )
+})
+
+it('turning the stop-after-win switch ON saves mentor_done_after_win=true', () => {
+  const { onChange, full } = renderEditor({})
+  fireEvent.click(screen.getByTestId('mentor-stop-after-win'))
+  expect(onChange).toHaveBeenCalledWith({
+    ...full,
+    mentor_done_after_win: true,
+  })
+  // The save payload carries the key as true, not merely an omitted/absent one.
+  expect(JSON.stringify(onChange.mock.calls[0][0])).toContain(
+    '"mentor_done_after_win":true'
+  )
+})
+
+it('turning the stop-after-win switch OFF saves mentor_done_after_win=false', () => {
+  const { onChange, full } = renderEditor({ mentor_done_after_win: true })
+  fireEvent.click(screen.getByTestId('mentor-stop-after-win'))
+  expect(onChange).toHaveBeenCalledWith({
+    ...full,
+    mentor_done_after_win: false,
+  })
+})
+
+it('the stop-after-win switch reads ON only when the stored value is true', () => {
+  renderEditor({ mentor_done_after_win: true })
+  expect(screen.getByTestId('mentor-stop-after-win')).toHaveAttribute(
+    'aria-checked',
+    'true'
+  )
+})
+
 // ── stop-after-loss switch (mentor_stop_after_loss, absent = OFF) ──
 
 it('an absent mentor_stop_after_loss reads OFF', () => {

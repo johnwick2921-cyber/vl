@@ -78,6 +78,16 @@ const COPY = {
     en: 'Outside the window no new entries; the SWING setup ignores the window. Saved and applied like the switch above.',
     es: 'Fuera de la ventana no hay entradas nuevas; el SWING ignora la ventana. Se guarda y aplica como el interruptor.',
   },
+  stopAfterWin: {
+    zh: '盈利后当日停止',
+    en: 'Stop for the day after a winning trade',
+    es: 'Detenerse el día tras una operación ganadora',
+  },
+  stopAfterWinHelp: {
+    zh: '默认关闭。开启后：导师交易以盈利平仓且当日净盈利，则在下一个纽约开盘（08:30 CT）前不再新开导师入场；已挂的入场单会被撤销 [D1.2 p1 @20:46]。',
+    en: 'OFF by default. ON: after a mentor trade closes in profit and the day is net positive, no new mentor entries until the next NY open (08:30 CT); resting entry orders are cancelled [D1.2 p1 @20:46].',
+    es: 'OFF por defecto. ON: tras una operación mentor cerrada con ganancia y el día en positivo neto, no hay nuevas entradas mentor hasta la próxima apertura de NY (08:30 CT); las órdenes de entrada en reposo se cancelan [D1.2 p1 @20:46].',
+  },
   stopAfterLoss: {
     zh: '亏损后当日停止',
     en: 'Stop for the day after a losing trade',
@@ -162,6 +172,9 @@ interface MentorModeToggleProps {
   windowMinutes?: number
   onWindowStartChange: (start: string) => void
   onWindowMinutesChange: (minutes: number) => void
+  // Stop-after-win knob (mentor_done_after_win); absent = OFF.
+  stopAfterWin?: boolean
+  onStopAfterWinChange: (on: boolean) => void
   // Stop-after-loss knob (mentor_stop_after_loss); absent = OFF.
   stopAfterLoss?: boolean
   onStopAfterLossChange: (on: boolean) => void
@@ -181,6 +194,8 @@ export function MentorModeToggle({
   windowMinutes,
   onWindowStartChange,
   onWindowMinutesChange,
+  stopAfterWin,
+  onStopAfterWinChange,
   stopAfterLoss,
   onStopAfterLossChange,
   trailMode,
@@ -329,6 +344,41 @@ export function MentorModeToggle({
         </p>
         <p className="text-xs" style={{ color: '#848E9C' }}>
           {tr(COPY.windowNote, language)}
+        </p>
+      </div>
+      <div
+        className="mt-3 pt-3 flex flex-col gap-2"
+        style={{ borderTop: '1px solid #2B3139' }}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <label className="text-xs" style={{ color: '#EAECEF' }}>
+            {tr(COPY.stopAfterWin, language)}
+          </label>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={stopAfterWin === true}
+            aria-label={tr(COPY.stopAfterWin, language)}
+            disabled={disabled}
+            data-testid="mentor-stop-after-win"
+            onClick={() => {
+              if (disabled) return
+              onStopAfterWinChange(!(stopAfterWin === true))
+            }}
+            className="relative inline-block w-9 h-5 rounded-full transition-colors shrink-0"
+            style={{
+              background: stopAfterWin === true ? '#0ECB81' : '#2B3139',
+              opacity: disabled ? 0.5 : 1,
+            }}
+          >
+            <span
+              className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all"
+              style={{ left: stopAfterWin === true ? '18px' : '2px' }}
+            />
+          </button>
+        </div>
+        <p className="text-xs" style={{ color: '#848E9C' }}>
+          {tr(COPY.stopAfterWinHelp, language)}
         </p>
       </div>
       <div
