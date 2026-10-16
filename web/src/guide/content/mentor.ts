@@ -582,9 +582,9 @@ export const mentor: GuideSection = {
           cite: 'Engineering rule — mentorDailyLossGate → dailyGuardVerdictAt (one daily-guardrail verdict for every path) · trader/mentor_tick.go mentorDailyLossGate, trader/daily_loss_gate.go — live. The course’s own figure is deck slide 14: “Lỗ tối đa một ngày không được vượt quá 30% account” (max daily loss ≤ 30% of the account; never spoken in the videos). The gate is the OWNER’s switch — OFF by owner ruling R4; the owner sets the $',
         },
         {
-          title: 'Never widen a stop, never add',
-          body: 'A stop only ever moves toward break-even. Never add to a position.',
-          cite: 'D2.3 p1 @18:08 — "Không bao giờ được dời lệnh buy stop của mình xuống cây nến kế tiếp" (never move your buy stop down to the next candle) — live',
+          title: 'Never widen a stop, never add, never flip',
+          body: 'A stop only ever moves toward break-even. Never add to a position, and never flip while one is open: ANY entry (same or opposite side) is refused while a mentor position is open — flat first (owner ruling 2026-09-03 "no adds, no flips"). Once flat, the next tick may place the other side (the box "Uno reverse" trades after the stop, never before). A fill also cancels every other working mentor entry on both sides (one working entry per side + OCO) before it can fill.',
+          cite: 'D2.3 p1 @18:08 — "Không bao giờ được dời lệnh buy stop của mình xuống cây nến kế tiếp" (never move your buy stop down to the next candle); owner ruling 2026-09-03 "no adds, no flips" — live',
         },
         {
           title: '"One loss → done" is NOT used',

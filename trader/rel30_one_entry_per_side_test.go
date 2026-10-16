@@ -76,8 +76,9 @@ func TestMentorOneEntryPerSideRefusesSameSidePlacement(t *testing.T) {
 		t.Fatalf("refused_same_side_working = %d, want 1", c)
 	}
 
-	// An opposite-side entry proceeds — never-add bars only the SAME side; a
-	// flip is the trader's today-behaviour (TestMentorNeverAddAtPlacementCallSite).
+	// An opposite-side entry proceeds while a same-side entry merely WORKS (no
+	// open position) — the no-flip gate bars only a POSITION-open flip, not a
+	// resting same-side arm (that is the same-side refuse above).
 	short := rev
 	short.Side = mentor.SideShort
 	short.Price = 29500
@@ -86,7 +87,7 @@ func TestMentorOneEntryPerSideRefusesSameSidePlacement(t *testing.T) {
 	short.ArmID = "isb-short-1"
 	at.mentorPlaceIntent(short, choice, 1000, 1100)
 	if len(placed) != 1 {
-		t.Fatalf("an opposite-side entry must proceed (flip allowed), placed=%d", len(placed))
+		t.Fatalf("an opposite-side entry must proceed while no position is open, placed=%d", len(placed))
 	}
 }
 
@@ -136,10 +137,12 @@ func TestMentorOneEntryPerSideOCOCancelsSameSideOnFill(t *testing.T) {
 	}
 }
 
-// TestMentorOneEntryPerSideOCOLeavesOppositeSideAlone — the flip is allowed, so
-// a fill must NOT cancel an OPPOSITE-side working entry. MUTANT: widen the OCO
-// filter to every side → the opposite-side row is cancelled → RED.
-func TestMentorOneEntryPerSideOCOLeavesOppositeSideAlone(t *testing.T) {
+// TestMentorOneEntryPerSideOCOCancelsOppositeSideOnFill — the release #30 fold
+// (CTO ruling, no flip): when a position opens, an OPPOSITE-side working entry
+// is cancelled too (its fill would net the position and leave the open trade's
+// stop/TP working against the wrong side). MUTANT: keep the OCO same-side-only
+// → the opposite-side row stays working → RED.
+func TestMentorOneEntryPerSideOCOCancelsOppositeSideOnFill(t *testing.T) {
 	at, _, ledger, frames := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
 	resetMentorCounters(at)
 
@@ -151,15 +154,54 @@ func TestMentorOneEntryPerSideOCOLeavesOppositeSideAlone(t *testing.T) {
 		SignalID: "sig-long", State: "filled", Quantity: 5, FillPrice: 29600, Account: "Sim101",
 	}, ledger)
 
-	// The opposite-side (short) entry must NOT be cancelled.
-	if sawMentorFrame(t, frames, ntwire.FrameCancelOrder, 300*time.Millisecond) {
-		t.Fatal("a fill must not cancel an opposite-side working entry (flip is allowed)")
+	// The opposite-side (short) entry must be cancelled before it can fill.
+	if !sawMentorFrame(t, frames, ntwire.FrameCancelOrder, 1*time.Second) {
+		t.Fatal("a fill must cancel the opposite-side working entry on the wire (cancel_order)")
 	}
 	var got store.ArmedOrderDB
 	if err := ledger.DB().First(&got, other.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if got.State != store.StateWorking {
-		t.Fatalf("the opposite-side row must stay working, got %q", got.State)
+	if got.State != store.StateCancelPending {
+		t.Fatalf("the opposite-side row must be cancel_pending, got %q", got.State)
+	}
+}
+
+// TestMentorOneEntryPerSideNoFlipRefusesWhileOpenThenPlacesAfterFlat — the
+// placement half of the fold: ANY entry (same or opposite side) is refused
+// while a mentor position is open, and once FLAT the next tick may place the
+// other side (the box "Uno reverse" trades after the stop, never before).
+// MUTANT: drop the opposite-side refusal in mentorAddGate → the short places
+// while the long is open → RED.
+func TestMentorOneEntryPerSideNoFlipRefusesWhileOpenThenPlacesAfterFlat(t *testing.T) {
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	mentorWireSeams(t, at, ledger)
+	mentorPinClockToRTH(t)
+	resetMentorCounters(at)
+
+	// A long position is open.
+	at.mentorOpenSideSource = func() string { return "long" }
+	t.Cleanup(func() { at.mentorOpenSideSource = nil })
+
+	var placed []mentor.Intent
+	mentorPlaceRecorderForTest = func(i mentor.Intent, n int) { placed = append(placed, i) }
+	t.Cleanup(func() { mentorPlaceRecorderForTest = nil })
+
+	choice := mentorSizeChoice{Contracts: 5, Tier: "base", Why: "test"}
+	short := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideShort,
+		Price: 29500, Stop: 29505, Target: 29480, Setup: "ISB", StopPts: 5, ArmID: "isb-short-1"}
+	at.mentorPlaceIntent(short, choice, 1000, 1100)
+	if len(placed) != 0 {
+		t.Fatalf("an opposite-side entry while a position is open must be refused (no flip), placed=%d", len(placed))
+	}
+	if c := at.mentorCountSnapshot()["mentor_no_flip"]; c != 1 {
+		t.Fatalf("mentor_no_flip = %d, want 1", c)
+	}
+
+	// Flat again → the next tick may place the other side.
+	at.mentorOpenSideSource = func() string { return "" }
+	at.mentorPlaceIntent(short, choice, 1000, 1100)
+	if len(placed) != 1 {
+		t.Fatalf("once flat, the next tick must place the other side, placed=%d", len(placed))
 	}
 }

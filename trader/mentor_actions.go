@@ -820,21 +820,25 @@ func (at *AutoTrader) mentorCancelRestingRow(r store.ArmedOrderDB, reason string
 	return true
 }
 
-// mentorCancelOtherSameSideWorking (release #30, OCO): when one mentor entry
-// fills, every other working SAME-SIDE entry is cancelled before it can fill —
-// one working entry per side, the fill is the reference. The cancel rides the
-// real broker path (wire cancel + ledger RequestCancel), confirmed by NT8's
+// mentorCancelOtherWorkingOnFill (release #30 fold, CTO ruling): when one
+// mentor entry fills (a position opens), every OTHER working mentor entry is
+// cancelled before it can fill — the SAME side (one working entry per side) AND
+// the OPPOSITE side (no flip: a resting opposite-side stop can net the position
+// and leave the open trade's stop/TP working against the wrong side). One
+// working entry period while a position is open. The cancel rides the real
+// broker path (wire cancel + ledger RequestCancel), confirmed by NT8's
 // per-order report like every other cancel.
-func (at *AutoTrader) mentorCancelOtherSameSideWorking(filled store.ArmedOrderDB) {
+func (at *AutoTrader) mentorCancelOtherWorkingOnFill(filled store.ArmedOrderDB) {
 	side := strings.ToLower(strings.TrimSpace(filled.Side))
-	if side == "" {
-		return
-	}
-	for _, other := range at.mentorWorkingSameSideRows(side) {
+	for _, other := range at.mentorWorkingSameSideRows("") {
 		if other.ID == filled.ID {
 			continue
 		}
-		at.mentorCancelRestingRow(other, "one working entry per side — the same-side entry filled, cancel the rest (OCO) [D1.1 p1 @17:06–17:44]")
+		if side != "" && strings.EqualFold(strings.TrimSpace(other.Side), side) {
+			at.mentorCancelRestingRow(other, "one working entry per side — the same-side entry filled, cancel the rest (OCO) [D1.1 p1 @17:06–17:44]")
+		} else {
+			at.mentorCancelRestingRow(other, "no flip: a position opened — cancel the opposite-side resting entry before it can net/flip [owner ruling 2026-09-03]")
+		}
 	}
 }
 

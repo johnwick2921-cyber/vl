@@ -1665,7 +1665,15 @@ func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
 		at.mentorCount("add_refused")
 		return true, fmt.Sprintf("never add/average [D1.1 p1 @17:06–17:44]: %s already open — the resonance ISB is a hold signal, not an entry", open)
 	}
-	return false, ""
+	// NO FLIP (release #30 fold, CTO ruling): an OPPOSITE-side entry while a
+	// mentor position is open is refused too. At NT8 a same-bar opposite fill
+	// nets the position and leaves the open trade's stop/TP working against the
+	// wrong side (a long's sell-stop later opens a NEW short). The planner
+	// already runs "no adds, no flips" (owner ruling 2026-09-03); the mentor
+	// now matches. Once flat, the next tick may place the other side (the box
+	// "Uno reverse" still trades after the stop, never before).
+	at.mentorCount("mentor_no_flip")
+	return true, fmt.Sprintf("no flip: %s open — flat first [owner ruling 2026-09-03]", open)
 }
 
 // mentorDailyLossGate is the §5(a) placement-time daily guardrail check: a

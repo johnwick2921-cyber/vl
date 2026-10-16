@@ -1201,7 +1201,7 @@ func fdrIsPlacementRefusal(k string) bool {
 		return true
 	}
 	switch k {
-	case "no_chase_skip", "stale_intent", "stale_data_episodes", "mentor_sources_missing", "add_no_source", "placement_held", "expiry_missing_refused":
+	case "no_chase_skip", "stale_intent", "stale_data_episodes", "mentor_sources_missing", "add_no_source", "placement_held", "expiry_missing_refused", "mentor_no_flip":
 		return true
 	}
 	return false
