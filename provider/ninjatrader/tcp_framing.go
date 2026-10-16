@@ -253,7 +253,8 @@ type ModifyBracketPayload struct {
 	SignalID      string  `json:"signal_id"`
 	NewStopLoss   float64 `json:"new_stop_loss,omitempty"`
 	NewTakeProfit float64 `json:"new_take_profit,omitempty"`
-	// Leg (REVIEW-353, wire v4): 1 = leg 1 only, 2 = leg 2 only, absent/0 = all.
+	// Leg (REVIEW-353, wire v4; release #31 wire v5): 1 = leg 1 only, 2 = leg 2
+	// only, 3 = leg 3 only, absent/0 = all.
 	Leg      int    `json:"leg,omitempty"`
 	Account  string `json:"account,omitempty"`
 	TraderID string `json:"trader_id,omitempty"`
@@ -719,7 +720,8 @@ type MoveStopPayload struct {
 	SignalID    string  `json:"signal_id"`     // the entry's signal_id (the bracket key)
 	NewStopLoss float64 `json:"new_stop_loss"` // tick-rounded new stop price
 	Timestamp   string  `json:"timestamp"`     // RFC3339
-	// Leg (REVIEW-353, wire v4): 1 = leg 1 only, 2 = leg 2 only, absent/0 = all.
+	// Leg (REVIEW-353, wire v4; release #31 wire v5): 1 = leg 1 only, 2 = leg 2
+	// only, 3 = leg 3 only, absent/0 = all.
 	Leg int `json:"leg,omitempty"`
 	// A2 (G1, wire v3) — identity stamp: target account + owning trader + op seq.
 	Account  string `json:"account,omitempty"`

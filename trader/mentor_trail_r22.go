@@ -285,22 +285,22 @@ func (at *AutoTrader) mentorJudgeAgainstBroker(nt *ntTrader.TCPTrader, side stri
 // the broker qty is down to the runner, ArmedBE = the broker's runner stop is
 // at/through the entry):
 //
-//	0. leg 1's partial NOT confirmed filled → nothing moves. Never a price
-//	   belief: only the broker's TP receipt (mentorMarkLeg1Scaled) or the I7
-//	   broker-snapshot qty drop sets Scaled.
-//	1. confirmed, BE not armed → the runner's stop goes to break-even; that
-//	   candle only arms BE.
-//	2. BE armed → on every closed candle that OPENED after the confirmation
-//	   (I6), the runner's stop goes 1 tick beyond that candle's low (long) /
-//	   high (short) — only when that is TIGHTER; a lower low (long) / higher
-//	   high (short) moves nothing. trail_tf=off stops at stage 1.
+//  0. leg 1's partial NOT confirmed filled → nothing moves. Never a price
+//     belief: only the broker's TP receipt (mentorMarkLeg1Scaled) or the I7
+//     broker-snapshot qty drop sets Scaled.
+//  1. confirmed, BE not armed → the runner's stop goes to break-even; that
+//     candle only arms BE.
+//  2. BE armed → on every closed candle that OPENED after the confirmation
+//     (I6), the runner's stop goes 1 tick beyond that candle's low (long) /
+//     high (short) — only when that is TIGHTER; a lower low (long) / higher
+//     high (short) moves nothing. trail_tf=off stops at stage 1.
 //
 // Every move goes through mentorMoveLegStop (belief + broker never-widen, the
 // real move_stop frame, the F1 verdict on the next fresh book).
 func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64, scaledNow, scaledBefore, trail bool) {
 	pos := &p.Pos
-	runner := &p.Legs[1]
-	if !runner.Final || runner.Qty <= 0 || runner.SignalID == "" {
+	runner := mentorRunnerLeg(p)
+	if runner == nil {
 		return
 	}
 	if !scaledNow {

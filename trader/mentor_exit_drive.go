@@ -294,9 +294,11 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 
 	// ── Mode D guard: the spent-day runner is capped at 2 (placed by DS-103;
 	// the loop ASSERTS it, never reduces). ────────────────────────────────
-	if p.SpentDay && p.Legs[1].Qty > mentorSpentDayRunnerCap {
-		at.mentorCount("spent_day_runner_over_cap")
-		at.logWarnf("🧑‍🏫 mentor spent-day runner %d over the cap %d — asserting, not reducing [D5.1]", p.Legs[1].Qty, mentorSpentDayRunnerCap)
+	if p.SpentDay {
+		if runner := mentorRunnerLeg(p); runner != nil && runner.Qty > mentorSpentDayRunnerCap {
+			at.mentorCount("spent_day_runner_over_cap")
+			at.logWarnf("🧑‍🏫 mentor spent-day runner %d over the cap %d — asserting, not reducing [D5.1]", runner.Qty, mentorSpentDayRunnerCap)
+		}
 	}
 
 	// scaledNow / exitedAtMs are read ONCE under mentorExitMu (I6): the receipt
@@ -363,7 +365,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	// position's runner goes to break-even once leg 1's partial is CONFIRMED
 	// filled at NT8, then trails 1 tick beyond each closed candle. A single
 	// bracket has no leg-1 partial to confirm and keeps the rule below.
-	if leg1OnWire && p.Legs[1].Qty > 0 && p.Legs[1].SignalID != "" && at.mentorTrailMode() == mentorTrailModeCandle {
+	if leg1OnWire && mentorRunnerLeg(p) != nil && at.mentorTrailMode() == mentorTrailModeCandle {
 		at.mentorExitDriveCandle(nt, p, c, trailH, trailL, scaledNow, trailScaledBefore, trail && trailOK)
 		return
 	}
@@ -596,9 +598,9 @@ type mentorStopMoveEpisode struct {
 // leg): after two misses the drive sends NOTHING more for it until the position
 // is gone, or the owner moves the broker stop by hand (see mentorSweepManualLatches).
 type mentorStopMoveManual struct {
-	signalID    string
-	wireLeg     int
-	logged      bool    // the "under manual management" line fired once
+	signalID     string
+	wireLeg      int
+	logged       bool    // the "under manual management" line fired once
 	adoptedPrice float64 // the broker price adopted at latch time (owner-override change detection)
 }
 
@@ -707,9 +709,9 @@ var mentorStopBook = func(nt *ntTrader.TCPTrader) (ntwire.OrderSnapshotPayload, 
 }
 
 // mentorBrokerStopOrders returns the broker's live stop order(s) for a signal
-// wire leg: wire 1 → "<signal>-sl", wire 2 → "<signal>-sl2", wire 0 (single
-// bracket) → every live -sl/-sl2 of the signal (a leg-less move_stop moves them
-// together).
+// wire leg: wire 1 → "<signal>-sl", wire 2 → "<signal>-sl2", wire 3 →
+// "<signal>-sl3" (release #31), wire 0 (single bracket) → every live -sl/-sl2/
+// -sl3 of the signal (a leg-less move_stop moves them together).
 func mentorBrokerStopOrders(book ntwire.OrderSnapshotPayload, signalID string, wireLeg int) []ntwire.NT8Order {
 	if signalID == "" {
 		return nil
@@ -720,8 +722,10 @@ func mentorBrokerStopOrders(book ntwire.OrderSnapshotPayload, signalID string, w
 		names = []string{signalID + "-sl"}
 	case 2:
 		names = []string{signalID + "-sl2"}
+	case 3:
+		names = []string{signalID + "-sl3"}
 	default:
-		names = []string{signalID + "-sl", signalID + "-sl2"}
+		names = []string{signalID + "-sl", signalID + "-sl2", signalID + "-sl3"}
 	}
 	out := make([]ntwire.NT8Order, 0, 2)
 	for _, o := range book.Orders {

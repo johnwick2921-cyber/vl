@@ -1140,21 +1140,22 @@ func (t *TCPTrader) ModifyBracket(signalID string, newSL, newTP float64) error {
 }
 
 // ModifyBracketLeg (release #22, mentor ISB candle-3 partial) modifies ONE leg
-// of a split bracket in place — leg 1 (-sl/-tp), leg 2 (-sl2/-tp2), 0 = every
-// leg — through the SAME modify_bracket frame (its `leg` field is wire v4; the
-// AddOn's HandleModifyBracket already honours it, so no C# change). Unlike the
-// unwired ModifyBracket it never puts an off-grid price on the wire (MATH-
-// EXECUTOR P2-2): a TP rounds to the NEAREST tick (the caller has already
-// rounded in its protective direction, so an on-grid price is unchanged) and a
-// stop goes through WireStop (away from the entry). A price <= 0 is "leave that
-// order untouched" (omitted from the frame). Nothing to change, a bad leg or a
-// bad side is an error — never a guessed frame.
+// of a split bracket in place — leg 1 (-sl/-tp), leg 2 (-sl2/-tp2), leg 3
+// (-sl3/-tp3, release #31), 0 = every leg — through the SAME modify_bracket
+// frame (its `leg` field is wire v4; the AddOn's HandleModifyBracket already
+// honours it, so no C# change). Unlike the unwired ModifyBracket it never puts
+// an off-grid price on the wire (MATH-EXECUTOR P2-2): a TP rounds to the
+// NEAREST tick (the caller has already rounded in its protective direction, so
+// an on-grid price is unchanged) and a stop goes through WireStop (away from
+// the entry). A price <= 0 is "leave that order untouched" (omitted from the
+// frame). Nothing to change, a bad leg or a bad side is an error — never a
+// guessed frame.
 func (t *TCPTrader) ModifyBracketLeg(signalID, side string, leg int, newSL, newTP float64) error {
 	if strings.TrimSpace(signalID) == "" {
 		return fmt.Errorf("ninjatrader/tcp: modify_bracket needs a signal id")
 	}
-	if leg < 0 || leg > 2 {
-		return fmt.Errorf("ninjatrader/tcp: modify_bracket leg %d is not 0, 1 or 2", leg)
+	if leg < 0 || leg > 3 {
+		return fmt.Errorf("ninjatrader/tcp: modify_bracket leg %d is not 0, 1, 2 or 3", leg)
 	}
 	if newSL <= 0 && newTP <= 0 {
 		return fmt.Errorf("ninjatrader/tcp: modify_bracket for %s has nothing to change", signalID)
@@ -1407,15 +1408,16 @@ func (t *TCPTrader) MoveStopForSignal(signalID, side string, newStop float64) er
 }
 
 // MoveStopForSignalLeg is MoveStopForSignal for ONE leg of a split bracket:
-// leg 1 (-sl) or leg 2 (-sl2) under the one signal id; 0 = every leg (the
-// single bracket). The widen ban is judged per leg — both legs share the
-// signal id, so a signal-only key would let one leg's stop judge the other's.
+// leg 1 (-sl), leg 2 (-sl2) or leg 3 (-sl3, release #31) under the one signal
+// id; 0 = every leg (the single bracket). The widen ban is judged per leg —
+// both legs share the signal id, so a signal-only key would let one leg's stop
+// judge the other's.
 func (t *TCPTrader) MoveStopForSignalLeg(signalID, side string, newStop float64, leg int) error {
 	if strings.TrimSpace(signalID) == "" {
 		return fmt.Errorf("ninjatrader/tcp: move_stop needs a signal id")
 	}
-	if leg < 0 || leg > 2 {
-		return fmt.Errorf("ninjatrader/tcp: move_stop leg %d is not 0, 1 or 2", leg)
+	if leg < 0 || leg > 3 {
+		return fmt.Errorf("ninjatrader/tcp: move_stop leg %d is not 0, 1, 2 or 3", leg)
 	}
 	stopKey := signalID
 	if leg > 0 {

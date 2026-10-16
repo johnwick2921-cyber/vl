@@ -32,8 +32,9 @@ func TestSplitAddonPlacesTwoOCOPairs(t *testing.T) {
 		"var tp1 = ba.CreateOrder(",
 		"var sl2 = ba.CreateOrder(",
 		"var tp2 = ba.CreateOrder(",
-		"ba.Submit(new[] { sl1, tp1, sl2, tp2 });",
-		"Leg1Qty = b.Leg1Qty, Leg2Qty = leg2Qty, Leg1Tp = b.Leg1Tp, RunnerTp = b.Tp,",
+		"ba.Submit(orders.ToArray());",
+		"Leg1Qty = b.Leg1Qty, Leg2Qty = leg3Wanted ? leg2Partial : leg2Qty,",
+		"Leg1Tp = b.Leg1Tp, Leg2Tp = leg3Wanted ? b.Leg2Tp : 0, RunnerTp = b.Tp,",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("AddOn lost the two-OCO-pair placement: missing %q", want)
@@ -95,10 +96,12 @@ func TestSplitAddonLegFieldOnMoveModify(t *testing.T) {
 	src := readSplitAddonSource(t)
 	for _, want := range []string{
 		"int    leg      = GetInt(p, \"leg\");   // 1 = leg 1, 2 = leg 2, 0/absent = ALL",
-		"if (leg != 2 && pb.SlOrder != null) stops.Add(pb.SlOrder);",
-		"if (leg != 1 && pb.SlOrder2 != null) stops.Add(pb.SlOrder2);",
-		"if (leg != 2)",
-		"if (leg != 1)",
+		"if ((leg == 0 || leg == 1) && pb.SlOrder != null) stops.Add(pb.SlOrder);",
+		"if ((leg == 0 || leg == 2) && pb.SlOrder2 != null) stops.Add(pb.SlOrder2);",
+		"if ((leg == 0 || leg == 3) && pb.SlOrder3 != null) stops.Add(pb.SlOrder3);",
+		"if (leg == 0 || leg == 1)",
+		"if (leg == 0 || leg == 2)",
+		"if (leg == 0 || leg == 3)",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("AddOn lost the leg field on move_stop/modify_bracket: missing %q", want)
@@ -208,7 +211,7 @@ func TestSplitAddonLeg1ExitFold(t *testing.T) {
 		"int leg2Qty = leg1Gone ? Math.Max(0, filledQty - pb.Leg1Exited)",
 		"double stop = pb.LastStop > 0 ? pb.LastStop : pb.InitialStop;",
 		"bool entryWorking = workingEntries.ContainsKey(signalId);",
-		"if (!live1 && !live2 && !entryWorking)",
+		"if (!live1 && !live2 && !live3 && !entryWorking)",
 		"wasSplit = cb.Leg1Qty > 0;",
 		"closeLeg = wasSplit ? 1 : 0;",
 	} {

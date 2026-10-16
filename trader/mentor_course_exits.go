@@ -249,13 +249,16 @@ func (at *AutoTrader) mentorResonanceRunnerTP(nt *ntTrader.TCPTrader, p *mentorL
 		at.mentorCount("modify_bracket_resonance_logged")
 		return
 	}
-	runner := &p.Legs[1]
+	runner := mentorRunnerLeg(p)
 	if runnerTarget <= 0 {
 		at.mentorCount("resonance_runner_tp_none")
+		if runner == nil {
+			return
+		}
 		at.logInfof("🧑‍🏫 mentor resonance runner TP: no level beyond the old high on record — the runner keeps its TP %.2f", runner.TP)
 		return
 	}
-	if !runner.Final || runner.Wire != 2 || runner.SignalID == "" || runner.Qty <= 0 {
+	if runner == nil || (runner.Wire != 2 && runner.Wire != 3) {
 		at.mentorCount("resonance_runner_tp_not_split")
 		at.logWarnf("🧑‍🏫 mentor resonance runner TP %.2f NOT sent — one bracket on the wire (no separate runner leg); a TP modify would move the WHOLE position past the 1:1 partial", runnerTarget)
 		return

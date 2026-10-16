@@ -6,8 +6,8 @@ import (
 	"time"
 
 	ntwire "vl/provider/ninjatrader"
-	ntTrader "vl/trader/ninjatrader"
 	"vl/store"
+	ntTrader "vl/trader/ninjatrader"
 )
 
 // F1 STOP-MOVE TRUTH — call-site tests. The seam under test is
@@ -43,7 +43,7 @@ func f1StopVerifyTrader(t *testing.T) *AutoTrader {
 	at.mentorLivePos = map[string]*mentorLivePos{
 		"sig1": {
 			Pos:  mentorPosition{Symbol: "MNQ", Side: "long", Entry: 95, Stop: 90},
-			Legs: [2]mentorLeg{{SignalID: "sig1", Qty: 1, Stop: 90, Final: true, Wire: 1}},
+			Legs: [3]mentorLeg{{SignalID: "sig1", Qty: 1, Stop: 90, Final: true, Wire: 1}},
 		},
 	}
 	return at

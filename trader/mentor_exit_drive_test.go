@@ -87,7 +87,7 @@ func bPos(mode, side string, entry, stop, target float64, qty int) *mentorLivePo
 			Leg1TP:  target,
 			ArmedBE: mode == "A-resonance",
 		},
-		Legs: [2]mentorLeg{
+		Legs: [3]mentorLeg{
 			{SignalID: "entry", Qty: qty, TP: target, Stop: stop, Final: true},
 			{},
 		},
@@ -205,7 +205,7 @@ func TestMentorExitDrivePosISB_PartialResolvedOnce(t *testing.T) {
 // distance to the trade target.
 func TestMentorExitDrivePosB_ArmsBE(t *testing.T) {
 	at, moves := newDriveAT(t)
-	p := bPos("B", "long", 10, 9, 13, 5)            // half = (13−10)/2 = 1.5 → BE at 11.5
+	p := bPos("B", "long", 10, 9, 13, 5)               // half = (13−10)/2 = 1.5 → BE at 11.5
 	at.mentorExitDrivePos(nil, p, 11.0, 11.8, 10.8, 0) // high 11.8 arms it
 	assertMoves(t, moves(), driveMove{"entry", "long", 10})
 	if !p.Pos.ArmedBE {
@@ -471,7 +471,7 @@ func TestMentorExitDriveForgetsSignalMapsOnFullCloseOnly(t *testing.T) {
 			Symbol: "MNQ", Side: "long", Origin: "PHL", Entry: 10, Stop: 9,
 			Target: 14, R: 1, Mode: "B", Leg1: 2, Leg2: 2, Leg1TP: 11,
 		},
-		Legs: [2]mentorLeg{
+		Legs: [3]mentorLeg{
 			{SignalID: sid, Qty: 2, TP: 11, Stop: 9, Final: false, Wire: 1},
 			{SignalID: sid, Qty: 2, TP: 14, Stop: 9, Final: true, Wire: 2},
 		},

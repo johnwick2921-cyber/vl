@@ -82,20 +82,23 @@ func TestMoveStopForSignalLegNamesTheLegAndGuardsPerLeg(t *testing.T) {
 	if err := tr.MoveStopForSignalLeg("sig", "long", 29580, 2); err == nil {
 		t.Fatal("leg 2 widen (29590 → 29580) was NOT refused")
 	}
-	if err := tr.MoveStopForSignalLeg("sig", "long", 29700, 3); err == nil {
-		t.Fatal("leg 3 does not exist — must be refused")
+	if err := tr.MoveStopForSignalLeg("sig", "long", 29700, 3); err != nil {
+		t.Fatalf("leg 3 move (release #31): %v", err)
+	}
+	if err := tr.MoveStopForSignalLeg("sig", "long", 29710, 4); err == nil {
+		t.Fatal("leg 4 does not exist — must be refused")
 	}
 	var got []ntwire.MoveStopPayload
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		select {
 		case p := <-moves:
 			got = append(got, p)
 		case <-time.After(2 * time.Second):
-			t.Fatalf("timed out waiting for move_stop %d/2", i+1)
+			t.Fatalf("timed out waiting for move_stop %d/3", i+1)
 		}
 	}
-	if got[0].Leg != 1 || got[0].NewStopLoss != 29600 || got[1].Leg != 2 || got[1].NewStopLoss != 29590 {
-		t.Fatalf("frames = %+v, want leg 1 @29600 then leg 2 @29590", got)
+	if got[0].Leg != 1 || got[0].NewStopLoss != 29600 || got[1].Leg != 2 || got[1].NewStopLoss != 29590 || got[2].Leg != 3 || got[2].NewStopLoss != 29700 {
+		t.Fatalf("frames = %+v, want leg 1 @29600, leg 2 @29590, leg 3 @29700", got)
 	}
 }
 
