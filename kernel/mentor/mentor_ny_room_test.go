@@ -132,7 +132,7 @@ func TestMentorNYSpentDayReverseISBRoomIsToTheLevel(t *testing.T) {
 		}
 		e.State.Day.Verdict = verdict
 		for _, in := range e.Tick(bars, now) {
-			if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" && in.Side == SideLong {
+			if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && (in.Setup == "ISB" || in.Setup == "PHL") && in.Side == SideLong {
 				return in, e.State.Refusals
 			}
 		}

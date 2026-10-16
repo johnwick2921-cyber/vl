@@ -56,7 +56,8 @@ func TestISBOrdersWickInclusiveWithBuffer(t *testing.T) {
 
 // TestISBDirectionAndStopLimitOrder — R1 [D1.4 p1 @ 09:20–10:20]: direction is
 // the COLOUR OF CANDLE 1 (green → long, red → short); the emitted order is the
-// single stop-limit on that side, and a twenties stop is skipped.
+// single stop-limit on that side, and a stop ≥ 30 pts is skipped
+// (course-defaults-30: stop < 30 taken, ≥ 30 refused).
 func TestISBDirectionAndStopLimitOrder(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
@@ -74,15 +75,16 @@ func TestISBDirectionAndStopLimitOrder(t *testing.T) {
 	if !ok || dir != SideShort {
 		t.Fatalf("short side order: ok=%v dir=%q", ok, dir)
 	}
-	// a candle whose stop lands in the twenties is skipped, citing D4.1
-	wide := market.Kline{Open: 102, Close: 104, High: 112.0, Low: 93.0}
+	// a candle whose stop reaches 30 pts is skipped, citing CX-9
+	wide := market.Kline{Open: 102, Close: 104, High: 115.0, Low: 88.0}
 	if _, _, ok, reason := ISBStopLimitOrder(green, wide, cfg); ok || reason == "" {
-		t.Fatalf("twenties stop: ok=%v reason=%q, want skip with a cited reason", ok, reason)
+		t.Fatalf("30-pt stop: ok=%v reason=%q, want skip with a cited reason", ok, reason)
 	}
 }
 
-// TestISBStopVerdict — RULES-FIX-v3 R1 [D4.1 p1 @ 05:41]: NO fixed 5–6-pt stop
-// and NO ceiling for the ISB; the ONLY skip is a stop in the twenties.
+// TestISBStopVerdict — course-defaults-30 (owner order "move to 30 at least …
+// fix all"): NO fixed 5–6-pt stop and NO "twenties" window. An ISB stop < 30
+// pts is TAKEN; ≥ 30 is REFUSED (CourseExits.ISBMaxStopPts default 30).
 func TestISBStopVerdict(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
@@ -91,11 +93,13 @@ func TestISBStopVerdict(t *testing.T) {
 		span   float64
 		wantOK bool
 	}{
-		{"small 4pt stop", 1.0, true},        // 1 + 3 buffer = 4 — taken (no minimum)
-		{"5pt stop", 2.0, true},              // 2 + 3 = 5
-		{"6pt stop", 3.0, true},              // 3 + 3 = 6
-		{"twenties", 17.0, false},            // 17 + 3 = 20 — the only skip
-		{"thirties not skipped", 28.0, true}, // 31 — only the twenties skip (no ceiling)
+		{"small 4pt stop", 1.0, true},  // 1 + 3 buffer = 4 — taken (no minimum)
+		{"5pt stop", 2.0, true},        // 2 + 3 = 5
+		{"6pt stop", 3.0, true},        // 3 + 3 = 6
+		{"twenties taken", 17.0, true}, // 17 + 3 = 20 — taken (no twenties skip)
+		{"27pt taken", 24.0, true},     // 24 + 3 = 27 — taken
+		{"30pt refused", 27.0, false},  // 27 + 3 = 30 — at the ceiling
+		{"31pt refused", 28.0, false},  // 28 + 3 = 31 — over the ceiling
 	}
 	for _, c := range cases {
 		stop, ok, _ := ISBStopVerdict(market.Kline{High: 100 + c.span/2, Low: 100 - c.span/2}, cfg)

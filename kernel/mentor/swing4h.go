@@ -35,7 +35,8 @@ import (
 //     then closes back, wait for a 5-MINUTE INSIDE BAR" — the ISB entry
 //     has the "stop RIGHT AT the level" [table].
 //  6. R8: a stop of 30–60 is allowed; ~100 → DO NOT ENTER [table]. The
-//     swing is EXEMPT from the 25-pt ceiling (the injector must not apply
+//     swing is EXEMPT from the ISB stop ceiling (mentor_isb_max_pts, default 30;
+//     the injector must not apply
 //     it to SWING4H).
 //  7. Targets [table]: first = "EMA 34 on the 5-minute" (or the 50-pt
 //     fallback); BE at +1R; hold to the close of the 2nd 4h candle after

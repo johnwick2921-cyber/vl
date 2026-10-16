@@ -51,6 +51,7 @@ func wireMentorPlacementSeams(t *testing.T, at *AutoTrader) {
 	t.Helper()
 	at.mentorDayNetSource = func() (float64, bool) { return 0, true }
 	at.mentorClosedProfitSource = func() (bool, bool) { return false, true }
+	at.mentorClosedLossSource = func() (bool, bool) { return false, true } // stop-after-loss is OFF by default (FOLD 2026-10-16): wire "no loss, resolved"
 	at.mentorOpenSideSource = func() string { return "" }
 	at.mentorLegProtectedSource = func(leg string) bool { return true }
 	mentorLatestPriceSource = func() (float64, bool) { return 0, false } // bound, inert: no-chase sees no price
@@ -62,6 +63,7 @@ func wireMentorPlacementSeams(t *testing.T, at *AutoTrader) {
 	t.Cleanup(func() {
 		at.mentorDayNetSource = nil
 		at.mentorClosedProfitSource = nil
+		at.mentorClosedLossSource = nil
 		at.mentorOpenSideSource = nil
 		at.mentorLegProtectedSource = nil
 		mentorLatestPriceSource = nil
@@ -250,10 +252,10 @@ func TestMentorDoneAfterWinGateAtPlacementCallSite(t *testing.T) {
 }
 
 // TestMentorStopAfterLossGateAtPlacementCallSite — STOP-AFTER-LOSS (owner "ok"
-// 2026-10-05): a mentor trade closed today with a net loss ends the mentor's
-// day, but only with the switch ON (nil → OFF). A breakeven close (no loss)
-// proceeds. The mutant that drops the gate makes the recorder fire after a loss
-// and this test goes RED.
+// 2026-10-05; FOLD 2026-10-16 reverts course-defaults-30): a mentor trade closed
+// today with a net loss ends the mentor's day, but only with the switch ON
+// (nil → OFF). A breakeven close (no loss) proceeds. The mutant that drops the
+// gate makes the recorder fire after a loss and this test goes RED.
 func TestMentorStopAfterLossGateAtPlacementCallSite(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	wireMentorPlacementSeams(t, at)
@@ -324,7 +326,7 @@ func TestMentorStopAfterLossTrippedHook(t *testing.T) {
 	at.mentorClosedLossSource = func() (bool, bool) { return true, true }
 	t.Cleanup(func() { at.mentorClosedLossSource = nil })
 
-	// knob OFF (nil) → no trip.
+	// knob nil (OFF, the default) → no trip.
 	if trip, why := at.mentorStopAfterLossTrip(); trip || why != "" {
 		t.Fatalf("knob OFF must not trip: trip=%v why=%q", trip, why)
 	}

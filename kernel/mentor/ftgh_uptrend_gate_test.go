@@ -11,15 +11,22 @@ import (
 // TestBoxReturnGatedAgainst5mTrend pins D4.3-04 — no FTGH short in a 5m
 // uptrend, no FTGL long in a 5m downtrend: "từ trái qua phải TREND ĐANG TĂNG.
 // [Vẽ] FAILURE TO GO HIGHER SAO ĐÁNH?" [D4.3 @08:53–09:06]. The box's CURRENT
-// role (D14 flip) sets the side. Mutant: disable the trend gate → the uptrend
-// case no longer refuses box_against_5m_trend → RED.
+// role (D14 flip) sets the side. course-defaults-30: the D4.3 trend read
+// defaults to 5m SWING STRUCTURE (d43_trend_source = structure); the
+// trigger-line mode is still a knob, pinned below with the mode set explicitly.
+// Mutant: disable the trend gate → the uptrend case no longer refuses
+// box_against_5m_trend → RED.
 func TestBoxReturnGatedAgainst5mTrend(t *testing.T) {
+	if DefaultConfig().D43TrendSource != D43TrendStructure {
+		t.Fatalf("d43_trend_source default must be structure (course-defaults-30)")
+	}
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
 	cfg.RoomMultiple = 0.05
+	cfg.D43TrendSource = D43TrendTriggerLine // this test pins the trigger-line mode explicitly
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
@@ -84,5 +91,16 @@ func TestBoxReturnGatedAgainst5mTrend(t *testing.T) {
 	eNone.Tick(bars, now)
 	if eNone.State.Refusals["box_against_5m_trend"] != 0 {
 		t.Fatalf("no trend read must not trip the trend gate, ledger=%v", eNone.State.Refusals)
+	}
+
+	// STRUCTURE mode (the course-defaults-30 default): this fixture builds an
+	// FTGH (lower highs — a DOWN 5m structure), so an FTGH SHORT agrees with
+	// the structure read and is NOT refused by the trend gate, even with a
+	// trigger line that reads UP.
+	eStruct := seed(TriggerLine{Dir: SideLong, Price: 100, LastBucket: 1 << 62})
+	eStruct.Cfg.D43TrendSource = D43TrendStructure
+	eStruct.Tick(bars, now)
+	if eStruct.State.Refusals["box_against_5m_trend"] != 0 {
+		t.Fatalf("structure mode: the short agrees with the DOWN structure, ledger=%v", eStruct.State.Refusals)
 	}
 }

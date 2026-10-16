@@ -111,8 +111,8 @@ func TestCE2ConflictHoldsUntilBothBoxesEscape(t *testing.T) {
 			t.Fatalf("held conflict must be counted; refusals %v", e.State.Refusals)
 		}
 	}
-	if DefaultConfig().TFConflictEnd != TFConflictFirstBox {
-		t.Fatal("tf_conflict_end default must stay first_box (case b)")
+	if DefaultConfig().TFConflictEnd != TFConflictBothBoxes {
+		t.Fatal("tf_conflict_end default must be both_boxes (course-defaults-30)")
 	}
 }
 
@@ -227,8 +227,8 @@ func TestCE3NewsWaitFor4hLine(t *testing.T) {
 			t.Fatalf("refusal must be counted as news_wait_4h_line; refusals %v", e.State.Refusals)
 		}
 	}
-	if DefaultConfig().NewsWaitBothLines {
-		t.Fatal("news_wait_both_lines default must be OFF (case b)")
+	if !DefaultConfig().NewsWaitBothLines {
+		t.Fatal("news_wait_both_lines default must be ON (course-defaults-30)")
 	}
 }
 
@@ -577,22 +577,28 @@ func TestCE9LevelEntriesNeedTriggerSide(t *testing.T) {
 }
 
 // CE-11/B13 (b) — between an FTGL (floor) and an FTGH (ceiling) every level
-// PHL/PLH is refused; ON exempts a TRENDLINE reject only.
+// PHL/PLH is refused; ON (the course-defaults-30 default) exempts a TRENDLINE
+// reject only.
 // MUTANT: drop the trendline exemption in midRangeBoxedRefuses → RED.
 func TestB13TrendlineBetweenBoxes(t *testing.T) {
 	boxes := []Box{{Kind: FTGL, Top: 95, Bottom: 90}, {Kind: FTGH, Top: 115, Bottom: 110}}
 	tl := Level{Key: "trendline:x", Kind: KindTrendline, Price: 100}
 	kl := Level{Key: "K", Kind: KindKeyLevel, Price: 100}
 	cfg := DefaultConfig()
-	if !midRangeBoxedRefuses(cfg, tl, boxes, 101) || !midRangeBoxedRefuses(cfg, kl, boxes, 101) {
-		t.Fatal("default OFF: every level reject between two boxes is refused")
-	}
-	cfg.TrendlineBetweenBoxes = true
+	// default ON: the trendline is exempt, the key level is not.
 	if midRangeBoxedRefuses(cfg, tl, boxes, 101) {
-		t.Fatal("ON: a trendline reject between two boxes may trade")
+		t.Fatal("default ON: a trendline reject between two boxes may trade")
 	}
 	if !midRangeBoxedRefuses(cfg, kl, boxes, 101) {
-		t.Fatal("ON exempts the trendline only — a key level stays refused")
+		t.Fatal("default ON exempts the trendline only — a key level stays refused")
+	}
+	// OFF (the pre-30 behaviour): the trendline reject is refused again.
+	cfg.TrendlineBetweenBoxes = false
+	if !midRangeBoxedRefuses(cfg, tl, boxes, 101) {
+		t.Fatal("OFF: a trendline reject between two boxes is refused")
+	}
+	if !midRangeBoxedRefuses(cfg, kl, boxes, 101) {
+		t.Fatal("OFF keeps the key level refused")
 	}
 	if midRangeBoxedRefuses(DefaultConfig(), kl, boxes[:1], 101) {
 		t.Fatal("one box is not mid-range")
@@ -617,17 +623,19 @@ func TestCE11FlagWallTarget(t *testing.T) {
 	ref := func(r string) { refused = append(refused, r) }
 
 	cfg := DefaultConfig()
-	if cfg.FlagWallTarget {
-		t.Fatal("flag_wall_target default must be OFF (case b)")
+	if !cfg.FlagWallTarget {
+		t.Fatal("flag_wall_target default must be ON (course-defaults-30)")
 	}
+	// ON (default): the resistance wall 106 is the closer target.
+	if got := applyFlagWallTarget([]Intent{in}, fw, bt, cfg, ref); len(got) != 1 || got[0].Target != 106 {
+		t.Fatalf("ON: the resistance wall 106 is the closer target, got %+v", got)
+	}
+	// OFF: the target stays 120.
+	cfg.FlagWallTarget = false
 	if got := applyFlagWallTarget([]Intent{in}, fw, bt, cfg, ref); got[0].Target != 120 {
 		t.Fatalf("OFF: target must stay 120, got %g", got[0].Target)
 	}
 	cfg.FlagWallTarget = true
-	got := applyFlagWallTarget([]Intent{in}, fw, bt, cfg, ref)
-	if len(got) != 1 || got[0].Target != 106 {
-		t.Fatalf("ON: the resistance wall 106 is the closer target, got %+v", got)
-	}
 	tight := in
 	tight.Stop = 90 // risk 10, wall 6 away → under 1:1
 	if got := applyFlagWallTarget([]Intent{tight}, fw, bt, cfg, ref); len(got) != 0 {

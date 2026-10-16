@@ -82,10 +82,7 @@ func TestCX3ResonanceRunnerTPIsSentOnTheRunnerLeg(t *testing.T) {
 // NOTHING. Knob ON: that close sends BOTH legs' stops to break-even.
 func TestCX4BEBeforeThePartialAtHalfway(t *testing.T) {
 	for _, on := range []bool{false, true} {
-		rc := store.RiskControlConfig{}
-		if on {
-			rc.MentorBEBeforePartial = cxBool(true)
-		}
+		rc := store.RiskControlConfig{MentorBEBeforePartial: cxBool(on)} // course-defaults-30: the default is ON, so OFF is explicit
 		b := r22Fixture(t, rc)
 		b.positions("short", 3)
 		b.book(r22FullBook(r22Stop)...)
@@ -170,8 +167,8 @@ func TestCX2SwingRunnerSplitsAtTheFirstTarget(t *testing.T) {
 		}
 		return rows[0]
 	}
-	// OFF (default): single bracket.
-	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
+	// OFF (explicit — the course-defaults-30 default is ON): single bracket.
+	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorSwingRunner: cxBool(false)}})
 	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 2, Tier: "swing4h", Why: "test"}, 1000, 1100, "swing", 0)
 	if r := read(st); r.Leg1Qty != nil || r.TargetPx != in.Target {
 		t.Fatalf("knob OFF: today's single bracket at the first target; got leg1=%v target %.2f", r.Leg1Qty, r.TargetPx)
@@ -228,9 +225,9 @@ func TestCXKnobDefaultsAndBootLine(t *testing.T) {
 		t.Fatalf("absent keys must resolve to the kernel defaults: %+v vs %+v", cfg.CourseExits, d)
 	}
 	line := at.mentorCourseExitsBootLine()
-	for _, want := range []string{"swing_ema34_is_first_target=ON", "swing_runner=OFF (swing contracts 1)", "resonance_runner_tp_old_high=ON",
-		"be_before_partial=OFF", "isb_c3_partial_any_profit=ON", "reverse_isb_as_phl=OFF", "ema9_visit_cap=shared",
-		"isb_max_pts=off", "keypair_candle_ratio=1", "box_fresh_rth_pair=OFF", "box_max_height_pts=off"} {
+	for _, want := range []string{"swing_ema34_is_first_target=ON", "swing_runner=ON (swing contracts 2)", "resonance_runner_tp_old_high=ON",
+		"be_before_partial=ON", "isb_c3_partial_any_profit=ON", "reverse_isb_as_phl=ON", "ema9_visit_cap=shared",
+		"isb_max_pts=30", "keypair_candle_ratio=1", "box_fresh_rth_pair=OFF", "box_max_height_pts=off"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("boot line %q missing %q", line, want)
 		}

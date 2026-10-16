@@ -303,18 +303,18 @@ export const MENTOR_TUNING_DEFAULTS = {
   day_gate_target_cap_pts: 15,
   swing_max_stop_pts: 100,
   '15m_ib_requires_5m_isb': 'require_5m_isb', // (a)
-  tf_conflict_end: 'first_box', // (b) OQ-2
-  news_wait_both_lines: false, // (b) OQ-6
+  tf_conflict_end: 'both_boxes', // (b) OQ-2 — course-defaults-30 [D4.2 p1 @07:54–08:02]
+  news_wait_both_lines: true, // (b) OQ-6 — course-defaults-30 [D4.4 p1 @21:55–22:12]
   news_bars_excluded: false, // (b)
   isb_box_escape: 'body', // (a)
   ema34_loss_relock: 'until_zone_exit', // (a)
   orb_edge_veto_pts: 0, // (b) 0 = off
-  d43_trend_source: 'trigger_line', // (b)
+  d43_trend_source: 'structure', // (b) — course-defaults-30 [D4.3 @12:43–12:54]
   level_entries_need_trigger_side: false, // (b) owner ruled school 1
   trendline_is_target: true, // (a)
-  trendline_between_boxes: false, // (b)
+  trendline_between_boxes: true, // (b) — course-defaults-30 [D3.2 p2 @10:56–11:04]
   leg_reset_on_wave_break: true, // (a)
-  flag_wall_target: false, // (b) X9 extra, ported from #416
+  flag_wall_target: true, // (b) X9 extra, ported from #416 — course-defaults-30 [X9 @05:59–06:12]
   box_new_zone_after_escape: true, // (a) B52: new zone after range escape [D3.4 p3 recovered2 @00:00–00:21]
 } as const
 

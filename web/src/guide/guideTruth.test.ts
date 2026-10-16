@@ -76,7 +76,7 @@ describe('T3 — max contracts card tells the mentor truth', () => {
     const k = card('settings', /^Max contracts \(always-on\)/)
     expect(k.what).toContain('MENTOR MODE IS NOT CLAMPED')
     expect(k.what).toContain(`${SIZE.base} by default`)
-    expect(k.what).toContain(`${SIZE.reduced} when the stop is 20–25 pts`)
+    expect(k.what).toContain(`${SIZE.reduced} when the stop is 20–<30 pts`)
     expect(k.what).toContain(`${SIZE.swing} on the SWING4H`)
     expect(k.what).toContain(`mentor_max_contracts (default ${SIZE.max})`)
     expect(k.what).not.toMatch(

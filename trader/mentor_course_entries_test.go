@@ -21,18 +21,18 @@ func TestCourseEntryKnobsDefaultsAtTheCallSite(t *testing.T) {
 		ok   bool
 	}{
 		{"15m_ib_requires_5m_isb=require_5m_isb (a)", cfg.FifteenMinIBRule == mentor.FifteenMinRequire5mISB},
-		{"tf_conflict_end=first_box (b)", cfg.TFConflictEnd == mentor.TFConflictFirstBox},
-		{"news_wait_both_lines=false (b)", !cfg.NewsWaitBothLines},
+		{"tf_conflict_end=both_boxes (course-defaults-30)", cfg.TFConflictEnd == mentor.TFConflictBothBoxes},
+		{"news_wait_both_lines=true (course-defaults-30)", cfg.NewsWaitBothLines},
 		{"news_bars_excluded=true (a)", cfg.NewsBarsExcluded},
 		{"isb_box_escape=body (a)", cfg.ISBBoxEscapeMode == mentor.ISBBoxEscapeBody},
 		{"ema34_loss_relock=until_zone_exit (a)", cfg.EmaLossRelock == mentor.EmaRelockUntilZoneExit},
 		{"orb_edge_veto_pts=0 (b)", cfg.OrbEdgeVetoPts == 0},
-		{"d43_trend_source=trigger_line (b)", cfg.D43TrendSource == mentor.D43TrendTriggerLine},
+		{"d43_trend_source=structure (course-defaults-30)", cfg.D43TrendSource == mentor.D43TrendStructure},
 		{"level_entries_need_trigger_side=false (b)", !cfg.LevelEntriesNeedTriggerSide},
 		{"trendline_is_target=true (a)", cfg.TrendlineIsTarget},
-		{"trendline_between_boxes=false (b)", !cfg.TrendlineBetweenBoxes},
+		{"trendline_between_boxes=true (course-defaults-30)", cfg.TrendlineBetweenBoxes},
 		{"leg_reset_on_wave_break=true (a)", cfg.LegResetOnWaveBreak},
-		{"flag_wall_target=false (b)", !cfg.FlagWallTarget},
+		{"flag_wall_target=true (course-defaults-30)", cfg.FlagWallTarget},
 	}
 	for _, c := range checks {
 		if !c.ok {

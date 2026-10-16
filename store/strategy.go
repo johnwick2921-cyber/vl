@@ -2012,9 +2012,10 @@ type MentorTuning struct {
 	// CE-1: inside a 15m ISB box — "off" | "require_5m_isb" (default) |
 	// "no_trade_until_escape" [D4.2 p1 @17:09–17:13].
 	FifteenMinIBRequires5mISB string `json:"15m_ib_requires_5m_isb,omitempty"`
-	// CE-2: "first_box" (default) | "both_boxes" [D4.2 p1 @07:54–08:02; OQ-2].
+	// CE-2: "first_box" | "both_boxes" (default, course-defaults-30) [D4.2 p1 @07:54–08:02; OQ-2].
 	TFConflictEnd string `json:"tf_conflict_end,omitempty"`
-	// CE-3: after a print, wait for the close beyond the 4h line (nil → OFF).
+	// CE-3: after a print, wait for the close beyond the 4h line (nil → ON,
+	// course-defaults-30) [D4.4 p1 @21:55–22:12].
 	NewsWaitBothLines *bool `json:"news_wait_both_lines,omitempty"`
 	// CE-4: drop print→08:30 bars from the 1h/4h feed (nil → OFF).
 	NewsBarsExcluded *bool `json:"news_bars_excluded,omitempty"`
@@ -2024,18 +2025,20 @@ type MentorTuning struct {
 	EMA34LossRelock string `json:"ema34_loss_relock,omitempty"`
 	// CE-7: ORB-edge veto points (0/absent = off; 0.25–50).
 	OrbEdgeVetoPts float64 `json:"orb_edge_veto_pts,omitempty"`
-	// CE-8: D4.3 trend read "trigger_line" (default) | "structure".
+	// CE-8: D4.3 trend read "trigger_line" | "structure" (default,
+	// course-defaults-30).
 	D43TrendSource string `json:"d43_trend_source,omitempty"`
 	// CE-9: level rejects need the 5m trigger side under school 1 (nil → OFF).
 	LevelEntriesNeedTriggerSide *bool `json:"level_entries_need_trigger_side,omitempty"`
 	// CE-11/B12: a trendline is a target (nil → ON).
 	TrendlineIsTarget *bool `json:"trendline_is_target,omitempty"`
-	// CE-11/B13: trendline rejects may trade between two boxes (nil → OFF).
+	// CE-11/B13: trendline rejects may trade between two boxes (nil → ON,
+	// course-defaults-30) [D3.2 p2 @10:56–11:04].
 	TrendlineBetweenBoxes *bool `json:"trendline_between_boxes,omitempty"`
 	// CE-12: a stopped leg also resets on its wave break (nil → ON).
 	LegResetOnWaveBreak *bool `json:"leg_reset_on_wave_break,omitempty"`
 	// CE-11 (ported #416): inside a live flag the opposite wall is a closer
-	// target candidate [X9 @05:47–06:12] (nil → OFF).
+	// target candidate [X9 @05:47–06:12] (nil → ON, course-defaults-30).
 	FlagWallTarget *bool `json:"flag_wall_target,omitempty"`
 	// B52 (release #29): after a box escapes, latch ONE new same-role box
 	// outside the old range (nil → ON) [D3.4 p3 recovered2 @00:00–00:21;
@@ -2123,7 +2126,7 @@ type RiskControlConfig struct {
 	MentorMode bool `json:"mentor_mode,omitempty"`
 	// Mentor size-table knobs (CTO defaults when unset — the owner can change
 	// them): base setup at a location 5; confluence 5; confluence+4h/1h agree
-	// + room≥2× target≥30pts 5; stop 20–25 pts 3; spent day 2; SWING4H 1;
+	// + room≥2× target≥30pts 5; stop 20–<30 pts 3; spent day 2; SWING4H 2;
 	// never above MentorMaxContracts (default 20, ceiling only).
 	MentorBaseContracts       int `json:"mentor_base_contracts,omitempty"`
 	MentorConfluenceContracts int `json:"mentor_confluence_contracts,omitempty"`
@@ -2176,11 +2179,11 @@ type RiskControlConfig struct {
 	// B4 on the AI path); explicit false disables. Never blocks exits or
 	// protection; resting broker orders are NOT cancelled.
 	MentorStaleDataBlock *bool `json:"mentor_stale_data_block,omitempty"`
-	// MentorDayOffRecheck — owner ruling 2026-10-09: once the §7 day gate
-	// latches DayOff at the 08:30 read, re-read the 4h/1h trigger directions
-	// on every closed 1h bar; the moment they AGREE the DayOff clears for the
-	// rest of the trading day (one-way). nil → ON; false = today's whole-day
-	// latch (the pre-ruling behaviour).
+	// MentorDayOffRecheck — course-defaults-30 (owner "fix all", supersedes the
+	// 2026-10-09 ruling): the course shuts the WHOLE day on a DayOff [D5.1 p1
+	// @19:22–19:40, p2 @00:01]. nil → OFF (the whole-day latch); true = the
+	// pre-30 recheck (re-read 4h/1h on each closed 1h bar; clear one-way to
+	// DaySpent when they agree).
 	MentorDayOffRecheck *bool `json:"mentor_day_off_recheck,omitempty"`
 	// Knob routing (CTO 1791033257041): the evaluator's G1/L1/E4/location
 	// knobs ride the strategy config like the other mentor knobs, defaults as
@@ -2208,18 +2211,18 @@ type RiskControlConfig struct {
 	// today's behaviour). Resolved ONLY in trader/mentor_course_exits.go.
 	//   CX-1 MentorSwingEMA34IsFirstTarget — nil → ON (case a): the 5m EMA 34
 	//        is the swing's first target, never its room obstacle [D5.2 p2 @01:40].
-	//   CX-2 MentorSwingRunner — nil → OFF (case b, sizing is the owner's):
+	//   CX-2 MentorSwingRunner — nil → ON (course-defaults-30, owner "fix all"):
 	//        a swing of ≥ 2 contracts (mentor_swing4h_contracts) splits into
 	//        leg 1 at the first target + a runner held by the 4h.
 	//   CX-3 MentorResonanceRunnerTPOldHigh — nil → ON (case a, a bug fix):
 	//        the mode-A runner's TP really moves past the old high.
-	//   CX-4 MentorBEBeforePartial — nil → OFF (case b, owner ruling R3): BE at
+	//   CX-4 MentorBEBeforePartial — nil → ON (course-defaults-30): BE at
 	//        half-way to +1R BEFORE leg 1's partial fills [D1.2 p1 @12:41].
 	//   CX-5 MentorISBC3PartialAnyProfit — nil → ON = today's rule (the ISB
 	//        candle-3 partial at any profit); false = hold leg 1 for its +1R.
-	//   CX-6 MentorReverseISBAsPHL — nil → OFF (case b, Q-D4 open).
+	//   CX-6 MentorReverseISBAsPHL — nil → ON (course-defaults-30, D5.4).
 	//   CX-8 MentorEMA9VisitCap — "" → shared (case b, course silent).
-	//   CX-9 MentorISBMaxPts — 0 → off (case b, course silent on ≥ 25).
+	//   CX-9 MentorISBMaxPts — 0 → 30 (course-defaults-30, owner order).
 	//   CX-10 MentorKeypairCandleRatio — 0 → 1 (case b, no ratio spoken).
 	//   CX-11 MentorBoxFreshRTHPair — nil → OFF; MentorBoxMaxHeightPts — 0 → off.
 	MentorSwingEMA34IsFirstTarget  *bool   `json:"mentor_swing_ema34_is_first_target,omitempty"`

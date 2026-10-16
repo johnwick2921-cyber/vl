@@ -229,7 +229,9 @@ func r22RunnerBook(runnerStop float64) []ntwire.NT8Order {
 // closes trail 1 tick above each closed candle's HIGH, only when tighter.
 // Mutant M2 (BE on the price crossing) sends BE on candle 1 → RED.
 func TestR22BEAfterConfirmedPartialThenCandleTrail(t *testing.T) {
-	b := r22Fixture(t, store.RiskControlConfig{})
+	// course-defaults-30: BE-before-partial defaults ON, so this R3 pin (BE
+	// only after the confirmed partial) sets the knob OFF explicitly.
+	b := r22Fixture(t, store.RiskControlConfig{MentorBEBeforePartial: cxBool(false)})
 	b.positions("short", 3)
 	b.book(r22FullBook(r22Stop)...)
 	b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)

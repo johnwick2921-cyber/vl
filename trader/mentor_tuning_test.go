@@ -91,14 +91,18 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 		want := mentorTuned{
 			TriggerSchool: 1, PingPongMinGapPts: 50, PingPongCandleMaxPts: 20, PingPongCandleLookback: 30,
 			LevelMaxVisits: 3, OrbGateEnabled: true, ISBReverseEMA9Enabled: true,
-			HTFGateNewsOnly: false, // D4.4-11: the all-day 4h/1h gate stays the default (U-6 open)
+			HTFGateNewsOnly: false, // U-6 open (FOLD 2026-10-16: the all-day 4h/1h gate stays the default)
 			Exec2mAfter30m:  false, // X5-10: the 1m ISB read stays the default (course trades the 1m)
 			DayGateSpentPts: 300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
-			// Release #25 course-entry knobs (COMMON-25 knob rule: (a) ON, (b) OFF).
-			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictFirstBox,
+			// Release #25 course-entry knobs (course-defaults-30 changes).
+			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictBothBoxes,
+			NewsWaitBothLines: true, // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
 			NewsBarsExcluded: true, // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
 			ISBBoxEscapeMode: mentor.ISBBoxEscapeBody, EmaLossRelock: mentor.EmaRelockUntilZoneExit,
-			D43TrendSource: mentor.D43TrendTriggerLine, TrendlineIsTarget: true, LegResetOnWaveBreak: true,
+			D43TrendSource: mentor.D43TrendStructure, TrendlineIsTarget: true,
+			TrendlineBetweenBoxes: true, // CE-11/B13 — course-defaults-30 [D3.2 p2 @10:56–11:04]
+			FlagWallTarget:        true, // CE-11 — course-defaults-30 [X9 @05:59–06:12]
+			LegResetOnWaveBreak:   true,
 			// Release #29 B52: a new zone after a range escape — course, no
 			// ruling against → ON (COMMON-25).
 			BoxNewZoneAfterEscape: true,
@@ -106,6 +110,25 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)
 		}
+	}
+}
+
+// TestMentorDayOffRecheckDefaultsOff — P1-7: the LIVE trader resolver
+// (mentor_mode.go:408) must read OFF when the knob is nil/unset (the whole-day
+// latch), and ON only on an explicit true. Mutant: revert to nil → ON → RED.
+func TestMentorDayOffRecheckDefaultsOff(t *testing.T) {
+	on, off := true, false
+	if mentorDayOffRecheck(nil) {
+		t.Fatal("nil rc must read OFF (nil → OFF, the whole-day latch)")
+	}
+	if mentorDayOffRecheck(&store.RiskControlConfig{MentorMode: true}) {
+		t.Fatal("an unset knob must read OFF (nil → OFF)")
+	}
+	if !mentorDayOffRecheck(&store.RiskControlConfig{MentorDayOffRecheck: &on}) {
+		t.Fatal("an explicit true must read ON")
+	}
+	if mentorDayOffRecheck(&store.RiskControlConfig{MentorDayOffRecheck: &off}) {
+		t.Fatal("an explicit false must read OFF")
 	}
 }
 
@@ -123,6 +146,59 @@ func TestMentorTuningBadValuesFailClosed(t *testing.T) {
 	}
 	if n := at.mentorCountSnapshot()["tuning_bad_value"]; n != 8 {
 		t.Errorf("tuning_bad_value = %d, want 8 (one per bad field)", n)
+	}
+}
+
+// TestMentorISBMaxKnobReachesR8AndBand (re-gate D2) — ONE knob
+// (mentor_isb_max_pts) feeds BOTH the kernel ceiling and the trader R8/band at
+// the production dispatch call site. Mutant M09 (mentor_actions.go:263 wiring
+// dropped) and M10 (band top ignores the knob) → RED.
+func TestMentorISBMaxKnobReachesR8AndBand(t *testing.T) {
+	isb := func(stop float64) mentor.Intent {
+		return mentor.Intent{Action: mentor.PlaceStopLimitEntry, Setup: "ISB", Side: mentor.SideLong,
+			Price: 30000, Stop: 30000 - stop, Target: 30000 + 2*stop, StopPts: stop, TargetPts: 2 * stop, ExpiryMs: 100_000}
+	}
+	// knob 35: a 32-pt ISB passes R8 (35) and sizes the reduced band (20–<35).
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 35})
+	if cfg := at.mentorEvaluatorConfig(); cfg.CourseExits.ISBMaxStopPts != 35 {
+		t.Fatalf("kernel ISB max = %g, want 35 (one knob, not two)", cfg.CourseExits.ISBMaxStopPts)
+	}
+	resetMentorCounters(at)
+	at.mentorDispatchIntent(isb(32), mentorTierInputs{}, 1000, 1100)
+	snap := at.mentorCountSnapshot()
+	if snap["refused_r8"] != 0 {
+		t.Fatalf("knob 35: a 32-pt ISB must pass R8, refused_r8=%d", snap["refused_r8"])
+	}
+	if snap["tier_reduced"] != 1 {
+		t.Fatalf("knob 35: a 32-pt ISB must size the reduced 3, tier_reduced=%d", snap["tier_reduced"])
+	}
+
+	// knob 25: a 28.25-pt ISB is refused R8 (25).
+	at2 := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 25})
+	if cfg := at2.mentorEvaluatorConfig(); cfg.CourseExits.ISBMaxStopPts != 25 {
+		t.Fatalf("kernel ISB max = %g, want 25", cfg.CourseExits.ISBMaxStopPts)
+	}
+	resetMentorCounters(at2)
+	at2.mentorDispatchIntent(isb(28.25), mentorTierInputs{}, 1000, 1100)
+	if n := at2.mentorCountSnapshot()["refused_r8"]; n != 1 {
+		t.Fatalf("knob 25: a 28.25-pt ISB must be refused R8, refused_r8=%d", n)
+	}
+}
+
+// TestRetaggedPHLInRangeSizesThree (re-gate D3) — the P2-2 trader half: the ISB
+// location size flags are read for ANY setup, so a reverse ISB retagged PHL that
+// carries isb_in_range still sizes 3, never base 5. Mutant M13 (flags read only
+// for Setup "ISB") → RED.
+func TestRetaggedPHLInRangeSizesThree(t *testing.T) {
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	in := mentor.Intent{Action: mentor.PlaceStopEntry, Setup: "PHL", Side: mentor.SideLong,
+		Price: 21000, Stop: 20988, Target: 21024, StopPts: 12, TargetPts: 24, Flag: mentor.FlagISBInRange}
+	got, err := at.mentorSizeFor(in, mentorTierInputs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 3 || got.Tier != "isb_in_range" {
+		t.Fatalf("a retagged PHL in a range: got %d %s, want 3 isb_in_range", got.Contracts, got.Tier)
 	}
 }
 
