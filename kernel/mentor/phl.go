@@ -144,14 +144,16 @@ func phlTarget(oldExtreme Level, price float64, side Side, levels []Level, cfg C
 	if levels == nil {
 		return target
 	}
-	ob := nextLevelBeyond(levels, price, side)
+	// R3 (release #30 fold): the EMA 9 / EMA 34 lines are PARTIAL points, not
+	// the trade target — an EMA must not by itself kill a PHL/PLH.
+	ob := nextLevelBeyondNonEMA(levels, price, side)
 	if ob == 0 {
 		return target
 	}
 	switch side {
 	case SideLong:
 		if ob < target {
-			return ob // a key level / EMA 34 / box edge stands in the way
+			return ob // a key level / old high-low / box edge stands in the way
 		}
 	case SideShort:
 		if ob > target {

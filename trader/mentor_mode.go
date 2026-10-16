@@ -704,9 +704,11 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 // mentor path — the frame stays in the AddOn, unwired. The exit is a FORK,
 // chosen by whether the resonance appears (D2.4 p1):
 //   A. RESONANCE — a PHL/PLH filled, then an ISB in the SAME direction within
-//      3 candles of the fill: BOTH stops → BE at that moment and leg 1's TP is
-//      modified OUT to the runner's target — NO 1:1 scale-out, NO candle
-//      trail. Let it run; EOD flat still applies.
+//      3 candles of the fill: BOTH stops → BE at that moment, leg 1's +1R TP
+//      STAYS (the 1:1 partial still fires — "RISK REWARD 1-1 tôi vẫn sẽ bán
+//      bớt" [D2.4 @02:24]), and the RUNNER's TP is modified out to the level
+//      beyond the old high (CX-3). NO candle trail. Let it run; EOD flat still
+//      applies.
 //   B. NO RESONANCE (normal) — once price has covered HALF THE DISTANCE TO
 //      LEG 1'S TARGET both legs' stops → BE (move_stop on each, the live R:R
 //      stays 1:1); leg 1 exits at its +1R TP (native bracket); the runner
@@ -893,7 +895,7 @@ func mentorExitFork(in mentor.Intent, confluence bool) (mode string, leg1TP floa
 		}
 		return "C", mentorLeg1TPForC(in.Price, r, side), "confluence flag: hold ≥ 1:2, stop never moves up"
 	case in.Setup == "PHL" || in.Setup == "PLH":
-		return "B", 0, "PHL/PLH: B at entry, resonance watch armed — a same-direction ISB within 3 candles flips to A (BE, no trail, no 1:1 scale-out)"
+		return "B", 0, "PHL/PLH: B at entry, resonance watch armed — a same-direction ISB within 3 candles flips to A (BE, no trail; the 1:1 partial still fires)"
 	default:
 		return "B", 0, "normal: leg 1 TP +1R; runner per mentor_trail_mode — candle (default): BE once leg 1's partial FILLS at NT8, then 1 tick beyond each closed 1m candle; off: BE at half the distance to the TRADE's target"
 	}

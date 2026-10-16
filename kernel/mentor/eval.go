@@ -1032,15 +1032,59 @@ func nextLevelBeyond(levels []Level, price float64, side Side) float64 {
 	return best
 }
 
+// nextLevelBeyondNonEMA is nextLevelBeyond that skips the EMA 9 / EMA 34 lines
+// as the target — they are PARTIAL points along the way, not the trade target
+// [D3.3 p1 @05:15–07:38]. Used by the PHL/PLH target pick (R3, release #30
+// fold): an EMA must not by itself kill a PHL/PLH. The EMA is the fallback
+// target only when no other level stands beyond.
+func nextLevelBeyondNonEMA(levels []Level, price float64, side Side) float64 {
+	best := 0.0
+	bestEMA := 0.0
+	for _, l := range levels {
+		if l.Kind == KindTrendline {
+			continue
+		}
+		if !oldExtremeRoleFits(l, side) {
+			continue
+		}
+		onSide := side == SideLong && l.Price > price || side == SideShort && l.Price < price
+		if !onSide {
+			continue
+		}
+		if isEMAPartialKind(l.Kind) {
+			if bestEMA == 0 || (side == SideLong && l.Price < bestEMA) || (side == SideShort && l.Price > bestEMA) {
+				bestEMA = l.Price
+			}
+			continue
+		}
+		if best == 0 || (side == SideLong && l.Price < best) || (side == SideShort && l.Price > best) {
+			best = l.Price
+		}
+	}
+	if best != 0 {
+		return best
+	}
+	return bestEMA
+}
+
 // nextLevelBeyondRoom is nextLevelBeyond for the room-checked paths (ISB,
 // reverse ISB, box). REL-5 audit #2: a TARGET-ONLY level (4h trigger, wick
 // microscalp) closer than roomMultiple × risk is skipped and the search falls
 // through to the next level beyond; a key level or box edge inside 2R still
 // becomes the target (and the room rule then refuses it). The 4h line stays a
 // valid target whenever it is ≥ 2R away [D4.4 p2 @05:04].
+//
+// Release #30 (D3.3 p1 @05:15–07:38): the EMA 9 / EMA 34 lines are PARTIAL
+// points along the way, not the trade target — "Ta ghẹt tôi đầu tiên phải là
+// về gần đỉnh cũ trước đó nè … Tiếp tục là email 34 nè … những cái chỗ này là
+// những cái chỗ anh chị bán bớt". So an EMA must not by itself kill the trade:
+// the nearest EMA is skipped as the target and the floor/room read the next
+// non-EMA level (the nearest old high/low, key level, trendline target, HTF
+// line). An EMA becomes the target only when NO other level stands beyond.
 func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMultiple float64) float64 {
 	risk := abs(entry - stop)
 	best := 0.0
+	bestEMA := 0.0
 	for _, l := range levels {
 		if l.Kind == KindTrendline {
 			continue // the LOCATION line is never a target; its KindTrendlineTarget mirror is (CE-11/B12, knob)
@@ -1052,6 +1096,14 @@ func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMul
 		if !onSide {
 			continue
 		}
+		if isEMAPartialKind(l.Kind) {
+			// release #30: an EMA line is a partial point, never the trade
+			// target while another level stands beyond.
+			if bestEMA == 0 || (side == SideLong && l.Price < bestEMA) || (side == SideShort && l.Price > bestEMA) {
+				bestEMA = l.Price
+			}
+			continue
+		}
 		if (l.Kind == KindHTFTrigger || l.Kind == KindWickMicroscalp) && roomMultiple > 0 && risk > 0 {
 			if abs(l.Price-entry) < roomMultiple*risk {
 				continue // target-only level too close to hold 2R room — fall through
@@ -1061,7 +1113,17 @@ func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMul
 			best = l.Price
 		}
 	}
-	return best
+	if best != 0 {
+		return best
+	}
+	return bestEMA
+}
+
+// isEMAPartialKind reports whether a level kind is one of the EMA lines the
+// course names as PARTIAL points, not the trade target (release #30, D3.3 p1
+// @05:15–07:38): the 1m EMA 34, the 1m EMA 9, and the location-gate EMA 34.
+func isEMAPartialKind(k LevelKind) bool {
+	return k == KindEMA9 || k == KindEMA34 || k == KindEMA34HTF
 }
 
 // isMovingLineKey (item 22) reports whether a level key is one of the MOVING

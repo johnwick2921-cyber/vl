@@ -3,6 +3,7 @@ package trader
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -117,6 +118,16 @@ func (b *r22Bridge) positions(side string, qty int) {
 		return
 	}
 	b.s.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{{Symbol: "MNQ", Side: side, Quantity: qty, AvgPrice: r22Entry}})
+}
+
+// positionsPx seeds the broker's open-position snapshot at a specific average
+// price (the clamp pin uses an entry that is not #651's).
+func (b *r22Bridge) positionsPx(side string, qty int, px float64) {
+	if qty <= 0 {
+		b.s.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{})
+		return
+	}
+	b.s.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{{Symbol: "MNQ", Side: side, Quantity: qty, AvgPrice: px}})
 }
 
 // book puts the broker's order book, received 3 s from now — newer than any
@@ -495,8 +506,7 @@ func TestR22LegClosedNoMoveSent(t *testing.T) {
 }
 
 // TestR22RefusedMovesAreCounted — NT8 refuses (the book keeps the old price):
-// the BE stop move and the candle-3 TP modify are each logged + counted, the
-// stop move re-sent once (F1), nothing silent.
+// the BE stop move is logged + counted and re-sent once (F1), nothing silent.
 func TestR22RefusedMovesAreCounted(t *testing.T) {
 	b := r22Fixture(t, store.RiskControlConfig{})
 	b.positions("short", 1)
@@ -513,65 +523,133 @@ func TestR22RefusedMovesAreCounted(t *testing.T) {
 	if snap["stop_move_not_applied"] != 1 || snap["stop_move_resend_sent"] != 1 {
 		t.Fatalf("a refused stop move must be counted and re-sent once: %v", snap)
 	}
-
-	// The TP modify refusal.
-	c := r22Fixture(t, store.RiskControlConfig{})
-	c.positions("short", 3)
-	c.book(r22FullBook(r22Stop)...)
-	c.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
-	c.candle(r22Minute(0), 30742.25, 30744.00, 30735.00, 30737.50) // candle-3 close in profit
-	if mods := c.waitMods(1); len(mods) != 1 {
-		t.Fatalf("fixture: the candle-3 modify first; got %+v", mods)
-	}
-	c.book(r22FullBook(r22Stop)...) // the -tp still rests at 30724.25
-	c.candle(r22Minute(1), 30737.50, 30740.00, 30733.00, 30738.00)
-	if n := c.at.mentorCountSnapshot()["modify_bracket_not_applied"]; n != 1 {
-		t.Fatalf("a TP modify NT8 did not apply must be counted, modify_bracket_not_applied=%d", n)
-	}
 }
 
-// TestR22Candle3PartialIsARealModify — P1-2 at the wire: the ISB fill candle
-// closes in profit short of +1R (#651: close 30737.50, low 30735.00 > 30724.25)
-// → ONE modify_bracket frame for LEG 1 ONLY with TP 30737.50 and no stop; the
-// next fresh book confirms it. A long with an off-grid close rounds toward the
-// entry (30822.60 → 30822.50). Mutant M3 (unassign modifyBracketWire) → no
-// frame → RED.
-func TestR22Candle3PartialIsARealModify(t *testing.T) {
+// TestR22Candle3PartialIsARealMarketableModify — R1 (CTO 2026-10-16, no AddOn
+// change): the ISB fill candle closes in profit short of +1R (#651: close
+// 30737.50, low 30735.00 > 30724.25) → ONE modify_bracket {leg 1, TP = close +
+// 8 ticks = 30739.50, no stop} — a MARKETABLE buy limit above the ask. Mutant
+// (unassign modifyBracketWire) → no frame → RED.
+func TestR22Candle3PartialIsARealMarketableModify(t *testing.T) {
 	b := r22Fixture(t, store.RiskControlConfig{})
 	b.positions("short", 3)
 	b.book(r22FullBook(r22Stop)...)
 	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
 	b.candle(r22Minute(0), 30742.25, 30744.00, 30735.00, 30737.50)
 	mods := b.waitMods(1)
-	if len(mods) != 1 || mods[0].SignalID != r22Sig || mods[0].Leg != 1 || mods[0].NewTakeProfit != 30737.50 || mods[0].NewStopLoss != 0 {
-		t.Fatalf("the candle-3 partial must be ONE real modify_bracket {leg 1, TP 30737.50, no stop}; got %+v", mods)
+	if len(mods) != 1 || mods[0].SignalID != r22Sig || mods[0].Leg != 1 || mods[0].NewTakeProfit != 30739.50 || mods[0].NewStopLoss != 0 {
+		t.Fatalf("the candle-3 partial must be ONE marketable modify_bracket {leg 1, TP 30739.50 (close + 8 ticks), no stop}; got %+v", mods)
 	}
 	if got := b.waitMoves(0); len(got) != 0 {
-		t.Fatalf("the candle-3 partial moves no stop; got %+v", got)
-	}
-	b.book(r22StopOrder(r22Sig+"-sl", r22Stop, 2), r22StopOrder(r22Sig+"-sl2", r22Stop, 1),
-		r22TP(r22Sig+"-tp", 30737.50, 2), r22TP(r22Sig+"-tp2", r22Target, 1))
-	b.candle(r22Minute(1), 30737.50, 30740.00, 30733.00, 30738.00)
-	if n := b.at.mentorCountSnapshot()["modify_bracket_confirmed"]; n != 1 {
-		t.Fatalf("the applied modify must be CONFIRMED from the broker book, modify_bracket_confirmed=%d", n)
-	}
-	if tp := b.at.mentorLivePos[r22Sig].Legs[0].TP; tp != 30737.50 {
-		t.Fatalf("the confirmed TP is the belief only AFTER the verdict: leg 1 TP %.2f, want 30737.50", tp)
+		t.Fatalf("the candle-3 marketable modify moves no stop; got %+v", got)
 	}
 	if n := len(b.waitMods(1)); n != 1 {
 		t.Fatalf("the partial resolves ONCE — got %d modify frames", n)
 	}
+}
 
-	// Long, off-grid close: rounds toward the entry (the TP never asks more).
-	sig := "68be9062-a901-418f-b3de-59e1882f79c2"
-	c := r22Fixture(t, store.RiskControlConfig{})
-	c.positions("long", 3)
-	c.book(r22StopOrder(sig+"-sl", 30814.75, 2), r22StopOrder(sig+"-sl2", 30814.75, 1), r22TP(sig+"-tp", 30825.25, 2), r22TP(sig+"-tp2", 30839.00, 1))
-	c.registerSplit(sig, "long", "ISB", 3, 2, 30820.00, 30814.75, 30825.25, 30839.00)
-	c.candle(r22Minute(0), 30820.00, 30823.00, 30819.00, 30822.60)
-	mods = c.waitMods(1)
-	if len(mods) != 1 || mods[0].Leg != 1 || mods[0].NewTakeProfit != 30822.50 {
-		t.Fatalf("a long's candle-3 TP must round toward the entry (30822.60 → 30822.50); got %+v", mods)
+// TestR22Candle3PartialClampedToEntryTick — R-6 (fold 2): the marketable limit
+// is clamped so it is never a LOSS price. Long → ≥ entry + 1 tick; short →
+// ≤ entry − 1 tick [D1.2 p1 @13:31–13:33]. MUTANT N7 (drop the clamp) → the
+// raw close ∓ 8-tick price reaches the wire → RED, both sides.
+func TestR22Candle3PartialClampedToEntryTick(t *testing.T) {
+	t.Run("short", func(t *testing.T) {
+		b := r22Fixture(t, store.RiskControlConfig{})
+		b.positions("short", 3)
+		b.book(r22FullBook(r22Stop)...)
+		b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
+		// close 30741.00: raw marketable = close + 8 ticks = 30743.00 (a LOSS
+		// for a short), clamped to entry − 1 tick = 30742.00.
+		b.candle(r22Minute(0), 30742.25, 30743.00, 30740.00, 30741.00)
+		mods := b.waitMods(1)
+		if len(mods) != 1 || mods[0].NewTakeProfit != 30742.00 {
+			t.Fatalf("the short marketable TP must clamp to entry−1 tick 30742.00 (raw 30743.00); got %+v", mods)
+		}
+	})
+	t.Run("long", func(t *testing.T) {
+		const sig, entry, stop, l1tp, target = "sig-clamp-long", 30100.0, 30085.0, 30115.0, 30130.0
+		b := r22Fixture(t, store.RiskControlConfig{})
+		b.positionsPx("long", 3, entry)
+		b.book(r22StopOrder(sig+"-sl", stop, 2), r22StopOrder(sig+"-sl2", stop, 1),
+			r22TP(sig+"-tp", l1tp, 2), r22TP(sig+"-tp2", target, 1))
+		b.registerSplit(sig, "long", "ISB", 3, 2, entry, stop, l1tp, target)
+		// close 30101: raw marketable = close − 8 ticks = 30099.00 (a LOSS for
+		// a long), clamped to entry + 1 tick = 30100.25.
+		b.candle(r22Minute(0), entry, entry+2, entry-1, entry+1)
+		mods := b.waitMods(1)
+		if len(mods) != 1 || mods[0].NewTakeProfit != 30100.25 {
+			t.Fatalf("the long marketable TP must clamp to entry+1 tick 30100.25 (raw 30099.00); got %+v", mods)
+		}
+	})
+}
+
+// TestR22ConfirmedWritesLeg1TPBeliefOnce — R-3 (fold 2): a CONFIRMED verdict
+// writes the APPLIED price as the leg-1 belief (N12) and must not re-fire on a
+// later candle while the same marketable limit rests (defect 8). MUTANT N12
+// (drop the belief write) → the belief stays the +1R TP → RED.
+func TestR22ConfirmedWritesLeg1TPBeliefOnce(t *testing.T) {
+	b := r22Fixture(t, store.RiskControlConfig{})
+	b.positions("short", 3)
+	b.book(r22FullBook(r22Stop)...)
+	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
+	// fill candle closes in profit short of +1R → the first marketable modify.
+	b.candle(r22Minute(0), 30742.25, 30744.00, 30735.00, 30737.50)
+	if mods := b.waitMods(1); len(mods) != 1 || mods[0].NewTakeProfit != 30739.50 {
+		t.Fatalf("the first modify must be 30739.50; got %+v", mods)
+	}
+	// the AddOn applied it: the book shows leg 1 TP at 30739.50 (CONFIRMED).
+	b.book(r22StopOrder(r22Sig+"-sl", r22Stop, 2), r22StopOrder(r22Sig+"-sl2", r22Stop, 1),
+		r22TP(r22Sig+"-tp", 30739.50, 2), r22TP(r22Sig+"-tp2", r22Target, 1))
+	b.at.mentorVerifyPendingTPModifies(b.nt)
+	lp := b.at.mentorLivePos[r22Sig]
+	if lp == nil || lp.Legs[0].TP != 30739.50 {
+		t.Fatalf("CONFIRMED must write the applied price 30739.50 as the leg-1 belief; got %+v", lp)
+	}
+	if n := b.at.mentorCountSnapshot()["modify_bracket_confirmed"]; n != 1 {
+		t.Fatalf("modify_bracket_confirmed = %d, want 1", n)
+	}
+	// defect 8: the SAME resting limit must not re-render (and re-count) the
+	// CONFIRMED verdict on a later candle.
+	b.at.mentorVerifyPendingTPModifies(b.nt)
+	if n := b.at.mentorCountSnapshot()["modify_bracket_confirmed"]; n != 1 {
+		t.Fatalf("CONFIRMED re-fired on a later candle: modify_bracket_confirmed = %d, want 1", n)
+	}
+}
+
+// TestR22Candle3PartialPast1RDoesNothing — R1: when the fill candle runs PAST
+// +1R, the native +1R TP already filled inside the candle (the 1:1 rule), so
+// the candle-3 step sends NO modify at the close. Mutant: modify at the close
+// anyway → a frame → RED.
+func TestR22Candle3PartialPast1RDoesNothing(t *testing.T) {
+	b := r22Fixture(t, store.RiskControlConfig{})
+	b.positions("short", 3)
+	b.book(r22FullBook(r22Stop)...)
+	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
+	// fill candle: low 30720.00 runs PAST +1R (30724.25); close 30738.00.
+	b.candle(r22Minute(0), 30742.25, 30744.00, 30720.00, 30738.00)
+	if mods := b.waitMods(0); len(mods) != 0 {
+		t.Fatalf("a past-+1R close must send no modify (the +1R TP filled inside the candle); got %+v", mods)
+	}
+	if n := b.at.mentorCountSnapshot()["isb_partial_no_sale"]; n != 1 {
+		t.Fatalf("isb_partial_no_sale = %d, want 1", n)
+	}
+}
+
+// TestR22Candle3PartialLosingCloseDoesNothing — R1: a losing fill-candle close
+// moves nothing; leg 1's +1R TP keeps resting at NT8 (fail-safe). Mutant: modify
+// on a losing close → a frame → RED.
+func TestR22Candle3PartialLosingCloseDoesNothing(t *testing.T) {
+	b := r22Fixture(t, store.RiskControlConfig{})
+	b.positions("short", 3)
+	b.book(r22FullBook(r22Stop)...)
+	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
+	// fill candle closes at a LOSS (30750.00 > entry 30742.25 for a short).
+	b.candle(r22Minute(0), 30742.25, 30752.00, 30740.00, 30750.00)
+	if mods := b.waitMods(0); len(mods) != 0 {
+		t.Fatalf("a losing close must send no modify (the +1R TP keeps resting); got %+v", mods)
+	}
+	if n := b.at.mentorCountSnapshot()["isb_partial_no_sale"]; n != 1 {
+		t.Fatalf("isb_partial_no_sale = %d, want 1", n)
 	}
 }
 
@@ -696,5 +774,113 @@ func TestR22ModifyBracketLegFrameIsLegScopedAndRounded(t *testing.T) {
 	}
 	if err := b.nt.ModifyBracketLeg(r22Sig, "short", 1, 0, 0); err == nil {
 		t.Fatal("nothing to change must be an error, never an empty frame")
+	}
+}
+
+// TestR22Candle3MarketableReModifyAtCallSite — R-3 (fold 2) at the production
+// drive: a CONFIRMED marketable modify must NOT clear the pending re-modify
+// state — the next 1m close re-prices the limit to the new close + 8 ticks.
+// MUTANT M3 (remove the re-modify call site in mentorExitDrivePos) → the second
+// frame never goes out → RED.
+func TestR22Candle3MarketableReModifyAtCallSite(t *testing.T) {
+	b := r22Fixture(t, store.RiskControlConfig{})
+	b.positions("short", 3)
+	b.book(r22FullBook(r22Stop)...)
+	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
+	// fill candle closes in profit short of +1R → the first marketable modify.
+	b.candle(r22Minute(0), 30742.25, 30744.00, 30735.00, 30737.50)
+	mods := b.waitMods(1)
+	if len(mods) != 1 || mods[0].NewTakeProfit != 30739.50 {
+		t.Fatalf("the first modify must be 30739.50; got %+v", mods)
+	}
+	// the AddOn applied it: the book now shows leg 1 TP at 30739.50 (CONFIRMED).
+	b.book(r22StopOrder(r22Sig+"-sl", r22Stop, 2), r22StopOrder(r22Sig+"-sl2", r22Stop, 1),
+		r22TP(r22Sig+"-tp", 30739.50, 2), r22TP(r22Sig+"-tp2", r22Target, 1))
+	// the next 1m close re-prices to the new close + 8 ticks.
+	b.candle(r22Minute(1), 30739.50, 30741.00, 30739.00, 30740.00)
+	mods = b.waitMods(2)
+	if len(mods) != 2 || mods[1].NewTakeProfit != 30742.00 {
+		t.Fatalf("the re-modify must re-price to 30742.00 once per candle; got %+v", mods)
+	}
+}
+
+// TestR22MarketableModifyFailedSendRetriedOnce — R-7 (fold 2): a failed first
+// marketable modify is retried ONCE on the next candle (the course's compulsory
+// candle-3 sale is not silently skipped), then never again.
+func TestR22MarketableModifyFailedSendRetriedOnce(t *testing.T) {
+	b := r22Fixture(t, store.RiskControlConfig{})
+	b.positions("short", 3)
+	b.book(r22FullBook(r22Stop)...)
+	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
+	old := modifyBracketWire
+	failed := 0
+	var sent []float64
+	modifyBracketWire = func(_ *nttrader.TCPTrader, _, _ string, _ int, tp float64) error {
+		if failed == 0 {
+			failed++
+			return fmt.Errorf("boom")
+		}
+		sent = append(sent, tp)
+		return nil
+	}
+	t.Cleanup(func() { modifyBracketWire = old })
+	b.candle(r22Minute(0), 30742.25, 30744.00, 30735.00, 30737.50) // first send FAILS
+	if n := b.at.mentorCountSnapshot()["modify_bracket_failed"]; n != 1 {
+		t.Fatalf("modify_bracket_failed = %d, want 1", n)
+	}
+	b.candle(r22Minute(1), 30739.50, 30741.00, 30739.00, 30740.00) // the ONE retry
+	if len(sent) != 1 || sent[0] != 30742.00 {
+		t.Fatalf("the retry must send ONE modify to 30742.00; sent=%v", sent)
+	}
+	if n := b.at.mentorCountSnapshot()["modify_bracket_failed"]; n != 1 {
+		t.Fatalf("the retry must not add another failure; modify_bracket_failed = %d", n)
+	}
+}
+
+// TestR22ModifyNotAppliedBeliefTakesBrokerTP — M6 (fold 2): a NOT APPLIED
+// verdict takes the BROKER's own TP as the leg-1 belief (the +1R TP that still
+// rests), never the wanted price. MUTANT M6 (belief takes the want) → RED.
+func TestR22ModifyNotAppliedBeliefTakesBrokerTP(t *testing.T) {
+	b := r22Fixture(t, store.RiskControlConfig{})
+	b.positions("short", 3)
+	b.book(r22FullBook(r22Stop)...)
+	b.registerSplit(r22Sig, "short", "ISB", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
+	b.candle(r22Minute(0), 30742.25, 30744.00, 30735.00, 30737.50) // sends want 30739.50
+	// the AddOn did NOT apply it — the book still shows the +1R TP 30724.25.
+	b.book(r22FullBook(r22Stop)...)
+	b.candle(r22Minute(1), 30739.50, 30741.00, 30739.00, 30740.00)
+	if n := b.at.mentorCountSnapshot()["modify_bracket_not_applied"]; n != 1 {
+		t.Fatalf("modify_bracket_not_applied = %d, want 1", n)
+	}
+	lp := b.at.mentorLivePos[r22Sig]
+	if lp == nil || lp.Legs[0].TP != 30724.25 {
+		t.Fatalf("the belief must take the broker's TP 30724.25, got %+v", lp)
+	}
+}
+
+// TestR22ShortWorkedExampleFillCandlePastOneR — the dispatch's worked example
+// pinned in MNQ prices: short 5 @ 30100, stop 30115 (+1R = 30085); the fill
+// candle runs past +1R and closes 30080 → leg 1 (3) fills at +1R inside the
+// candle (no modify at the close), and the runner (2) goes to break-even at
+// 30100 on the next candle — never −$150.
+func TestR22ShortWorkedExampleFillCandlePastOneR(t *testing.T) {
+	b := r22Fixture(t, store.RiskControlConfig{})
+	const sig, entry, stop, l1tp, target = "sig-swe", 30100.0, 30115.0, 30085.0, 30060.0
+	b.positions("short", 5)
+	b.book(r22StopOrder(sig+"-sl", stop, 3), r22StopOrder(sig+"-sl2", stop, 2),
+		r22TP(sig+"-tp", l1tp, 3), r22TP(sig+"-tp2", target, 2))
+	b.registerSplit(sig, "short", "ISB", 5, 3, entry, stop, l1tp, target)
+	// fill candle: low 30080 runs PAST +1R 30085 → leg 1 fills at +1R inside.
+	b.candle(r22Minute(0), entry, entry+2, 30080, 30080)
+	if mods := b.waitMods(0); len(mods) != 0 {
+		t.Fatalf("a past-+1R close sends no modify (the +1R TP filled inside the candle); got %+v", mods)
+	}
+	// the leg-1 TP receipt arrives.
+	b.receiptLeg1(sig, "short", l1tp, r22Minute(0).Add(30*time.Second))
+	// the next candle: the runner goes to break-even at the entry 30100.
+	b.candle(r22Minute(1), 30080, 30090, 30085, 30090)
+	moves := b.waitMoves(1)
+	if len(moves) != 1 || moves[0].Leg != 2 || moves[0].NewStopLoss != entry {
+		t.Fatalf("the runner must go to break-even at 30100 on leg 2; got %+v", moves)
 	}
 }
