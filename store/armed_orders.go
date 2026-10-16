@@ -81,8 +81,16 @@ type ArmedOrderDB struct {
 	// ≥2R for mode C), leg 2 = the runner (TP = TargetPx). NULL / 0 = the
 	// single-bracket legacy path (byte-identical wire). Only the mentor
 	// injector stamps them; the AddOn places TWO OCO pairs on the one fill.
-	Leg1Qty      *int
-	Leg1TP       float64 `gorm:"default:0"`
+	Leg1Qty *int
+	Leg1TP  float64 `gorm:"default:0"`
+	// Leg2Qty / Leg2TP (release #31, leg-3 bracket): the runner's FIRST partial
+	// — the runner sells leg2_qty at leg2_tp (the first line beyond the leg-1
+	// exit), and the rest trails as today (leg 3 = Contracts − Leg1Qty −
+	// Leg2Qty, TP = TargetPx). NULL / 0 = the 2-pair plan (no leg 3). Only the
+	// mentor injector stamps them, and the send is gated on the AddOn proving
+	// the leg-3 build.
+	Leg2Qty      *int
+	Leg2TP       float64 `gorm:"default:0"`
 	FillPrice    float64
 	FillQuantity int
 
@@ -333,6 +341,11 @@ func (s *ArmedOrderStore) Migrate() error {
 			// the ONE entry frame. NULL/0 = single-bracket legacy.
 			{"leg1_qty", "INTEGER"},
 			{"leg1_tp", "REAL NOT NULL DEFAULT 0"},
+			// RELEASE #31 (leg-3 bracket): the runner's FIRST partial — the
+			// runner sells leg2_qty at leg2_tp (the first line beyond the
+			// leg-1 exit). NULL/0 = the 2-pair plan (no leg 3).
+			{"leg2_qty", "INTEGER"},
+			{"leg2_tp", "REAL NOT NULL DEFAULT 0"},
 			// W3 market_in_zone (2026-09-23): NULLable where 0 would be a
 			// fabricated value (absent ≠ 0); '' where the text is a label.
 			{"policy", "TEXT NOT NULL DEFAULT ''"},
@@ -583,6 +596,9 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 				// lowered cap (fold-564-b D1). Working rows never reach this
 				// branch (refused at the live-order guard above).
 				"contracts": row.Contracts, "leg1_qty": row.Leg1Qty, "leg1_tp": row.Leg1TP,
+				// release #31: the runner's first partial follows the
+				// authorization too (leg2_qty/leg2_tp, NULL/0 over NULL/0).
+				"leg2_qty": row.Leg2Qty, "leg2_tp": row.Leg2TP,
 				// REL17-F2: the persisted exit branch follows the re-authorization
 				// (a re-armed stop re-chooses the fork).
 				"exit_mode": row.ExitMode,
@@ -640,6 +656,8 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 			"eligible_until_ms": row.EligibleUntilMs, "source_run_epoch": row.SourceRunEpoch,
 			// REVIEW-SPLIT-2 P2: the new authorization's mentor size and split.
 			"contracts": row.Contracts, "leg1_qty": row.Leg1Qty, "leg1_tp": row.Leg1TP,
+			// release #31: the new authorization's runner first partial.
+			"leg2_qty": row.Leg2Qty, "leg2_tp": row.Leg2TP,
 			// REL17-F2: the new authorization's persisted exit branch.
 			"exit_mode": row.ExitMode,
 		}).Error
@@ -790,6 +808,8 @@ type ArmWirePrices struct {
 	Split   bool // true: Leg1Qty/Leg1TP are the frame's split (0/0 = the frame carried none)
 	Leg1Qty int
 	Leg1TP  float64
+	Leg2Qty int
+	Leg2TP  float64
 }
 
 // RecordWirePrices (F-7) makes the row carry EXACTLY the prices its entry
@@ -816,6 +836,8 @@ func (s *ArmedOrderStore) RecordWirePrices(id int64, signalID string, w ArmWireP
 	if w.Split {
 		upd["leg1_qty"] = w.Leg1Qty
 		upd["leg1_tp"] = w.Leg1TP
+		upd["leg2_qty"] = w.Leg2Qty
+		upd["leg2_tp"] = w.Leg2TP
 	}
 	res := s.db.Model(&ArmedOrderDB{}).Where("id = ? AND signal_id = ?", id, sig).Updates(upd)
 	if res.Error != nil {

@@ -194,7 +194,7 @@ func TestMentorDriverCurrentStopTightest(t *testing.T) {
 	at.mentorLivePos = map[string]*mentorLivePos{
 		"sig": {
 			Pos: mentorPosition{Symbol: "MNQ", Side: "long", Contracts: 2},
-			Legs: [2]mentorLeg{
+			Legs: [3]mentorLeg{
 				{SignalID: "sig", Qty: 1, Stop: 31163, Final: false, Wire: 1}, // BE at entry
 				{SignalID: "sig", Qty: 1, Stop: 31155, Final: true, Wire: 2},  // a trail below
 			},

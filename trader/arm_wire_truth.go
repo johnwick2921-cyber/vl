@@ -61,6 +61,7 @@ func (at *AutoTrader) recordArmWirePrices(ledger any, r store.ArmedOrderDB, sid,
 		wp.Split = true
 		if sp, sent := sr.SplitSentFor(sid); sent {
 			wp.Leg1Qty, wp.Leg1TP = sp.Leg1Qty, sp.Leg1TP
+			wp.Leg2Qty, wp.Leg2TP = sp.Leg2Qty, sp.Leg2TP
 		}
 	}
 	if err := w.RecordWirePrices(r.ID, sid, wp); err != nil {

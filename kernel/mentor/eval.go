@@ -1067,6 +1067,37 @@ func nextLevelBeyondNonEMA(levels []Level, price float64, side Side) float64 {
 	return bestEMA
 }
 
+// runnerPartialLine (release #31, leg-3 bracket) is the runner's FIRST partial
+// line: the nearest target line strictly BETWEEN the leg-1 exit (the 1:1 point,
+// "bán bớt ở 1:1" [D2.2 p3 @12:13]) and the trade target, in the trade
+// direction [D3.3 p1 @04:11–04:17 "những cái chỗ này là những cái chỗ anh chị
+// bán bớt"]. 0 = no line between them → no leg-3 split (the runner rides to the
+// trade target as one pair). The trade target itself is NOT a partial line: a
+// line at or past it returns 0 (the runner's TP already owns the target).
+func runnerPartialLine(levels []Level, entry, stop, target float64, side Side) float64 {
+	if entry == 0 || stop == 0 || target == 0 {
+		return 0
+	}
+	leg1TP := 2*entry - stop // the 1:1 reflection of the entry across the stop
+	line := nextLevelBeyond(levels, leg1TP, side)
+	if line == 0 {
+		return 0
+	}
+	switch side {
+	case SideLong:
+		if line >= target {
+			return 0 // the only line beyond leg 1 is the trade target itself
+		}
+		return line
+	case SideShort:
+		if line <= target {
+			return 0
+		}
+		return line
+	}
+	return 0
+}
+
 // nextLevelBeyondRoom is nextLevelBeyond for the room-checked paths (ISB,
 // reverse ISB, box). REL-5 audit #2: a TARGET-ONLY level (4h trigger, wick
 // microscalp) closer than roomMultiple × risk is skipped and the search falls
@@ -2553,6 +2584,19 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 	}
 	out = append(keptIntraday, swings...)
+
+	// release #31 (leg-3 bracket): stamp the runner's FIRST partial line on
+	// every entry intent — the first target line strictly between the 1:1 leg-1
+	// exit and the trade target. The trader sends leg2_qty/leg2_tp only when the
+	// far-side AddOn proves the leg-3 build AND the runner is ≥ 2 contracts;
+	// 0 here = no line in between → the runner rides to the trade target.
+	for i := range out {
+		in := &out[i]
+		if in.Action != PlaceStopEntry && in.Action != PlaceStopLimitEntry {
+			continue
+		}
+		in.RunnerPartialTP = runnerPartialLine(levels, in.Price, in.Stop, in.Target, in.Side)
+	}
 
 	return out
 }

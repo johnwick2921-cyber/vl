@@ -724,3 +724,43 @@ bracket, byte-identical.
   single-bracket receipt key is unchanged from before the split.
 - The exit-drive record for the signal is kept while either leg is live; it
   is dropped when the last leg exits.
+
+## Leg-3 bracket (release #31, wire v5) — build `2026-10-16-a`
+
+The runner of ≥ 2 contracts sells half (rounded down) at the first line beyond
+the leg-1 exit (near old high/low → EMA 34 → next level [D3.3 p1 @04:11–04:17]);
+the rest trails as today. It stays ONE entry order and ONE signal id; the AddOn
+builds a THIRD OCO pair on the fill. Go sends the leg-2 split only when the far
+side has proven `MinAddonBuildLeg3` (`2026-10-16-a`); an older AddOn gets the
+2-pair plan, byte-identical. 5 → 3 / 1 / 1; 3 → 2 / 1 (no leg 3).
+
+**`signal` (Go → AddOn), additive:**
+
+- `leg2_qty` (int): the runner's first partial. Absent/0 = the 2-pair plan
+  (leg 1 + the whole runner). leg 3 = `filled − leg1_qty − leg2_qty` (the rest,
+  TP = `take_profit`); the AddOn builds the leg-3 pair only once the fill
+  exceeds `leg1_qty + leg2_qty`.
+- `leg2_tp` (float): the runner's first partial take-profit (the first line
+  beyond the leg-1 exit), rounded to the nearest tick by Go and STRICTLY
+  between leg 1's TP and the trade target. A leg-2 TP that fails drops leg 2
+  (the 2-pair plan stands).
+
+**Order names under the one signal id:** leg 1 = `<sid>-sl` / `<sid>-tp`, leg 2
+= `<sid>-sl2` / `<sid>-tp2`, leg 3 = `<sid>-sl3` / `<sid>-tp3` — three OCO
+pairs.
+
+**`move_stop` / `modify_bracket` (Go → AddOn), additive:**
+
+- `leg` (int): 1 = leg 1 only, 2 = leg 2 only, 3 = leg 3 only, absent/0 = every
+  live leg.
+- A terminal leg is skipped. The frame errors only when no selected leg is live.
+- Go's stop-widen ban is judged per leg (`<sid>#leg1` / `<sid>#leg2` /
+  `<sid>#leg3`).
+
+**`position_close` (AddOn → Go), additive:**
+
+- `leg` (int): which leg exited — 1 (`-sl`/`-tp`), 2 (`-sl2`/`-tp2`) or 3
+  (`-sl3`/`-tp3`). 0 or absent means the whole position.
+- The exit-drive record for the signal is kept while any leg is live; it is
+  dropped when the last leg exits.
+

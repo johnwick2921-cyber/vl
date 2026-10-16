@@ -32,8 +32,12 @@ func TestSplitAddonPlacesTwoOCOPairs(t *testing.T) {
 		"var tp1 = ba.CreateOrder(",
 		"var sl2 = ba.CreateOrder(",
 		"var tp2 = ba.CreateOrder(",
-		"ba.Submit(new[] { sl1, tp1, sl2, tp2 });",
-		"Leg1Qty = b.Leg1Qty, Leg2Qty = leg2Qty, Leg1Tp = b.Leg1Tp, RunnerTp = b.Tp,",
+		"ba.Submit(orders.ToArray());",
+		// release #31 (D3): the record keeps the FRAME's leg 2 on every
+		// PlacedBracket (the 3-pair build, the 2-pair plan and the leg-1-only
+		// first fill alike) so AmendBracketQuantity can build leg 3 later.
+		"Leg1Qty = b.Leg1Qty, Leg2Qty = b.Leg2Qty,",
+		"Leg1Tp = b.Leg1Tp, Leg2Tp = b.Leg2Tp, RunnerTp = b.Tp,",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("AddOn lost the two-OCO-pair placement: missing %q", want)
@@ -95,10 +99,12 @@ func TestSplitAddonLegFieldOnMoveModify(t *testing.T) {
 	src := readSplitAddonSource(t)
 	for _, want := range []string{
 		"int    leg      = GetInt(p, \"leg\");   // 1 = leg 1, 2 = leg 2, 0/absent = ALL",
-		"if (leg != 2 && pb.SlOrder != null) stops.Add(pb.SlOrder);",
-		"if (leg != 1 && pb.SlOrder2 != null) stops.Add(pb.SlOrder2);",
-		"if (leg != 2)",
-		"if (leg != 1)",
+		"if ((leg == 0 || leg == 1) && pb.SlOrder != null) stops.Add(pb.SlOrder);",
+		"if ((leg == 0 || leg == 2) && pb.SlOrder2 != null) stops.Add(pb.SlOrder2);",
+		"if ((leg == 0 || leg == 3) && pb.SlOrder3 != null) stops.Add(pb.SlOrder3);",
+		"if (leg == 0 || leg == 1)",
+		"if (leg == 0 || leg == 2)",
+		"if (leg == 0 || leg == 3)",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("AddOn lost the leg field on move_stop/modify_bracket: missing %q", want)
@@ -174,19 +180,21 @@ func TestSplitAddonPositionCloseLegField(t *testing.T) {
 }
 
 // TestSplitAddonOrderUpdateStripsLeg2 pins SendOrderUpdateFrame: it strips
-// -sl2/-tp2 BEFORE -sl/-tp so an order_update for a leg-2 bracket reports the
-// base signal id the Go side tracks. Mutant: -sl2 not stripped → RED.
+// -sl3/-tp3 (release #31) and -sl2/-tp2 BEFORE -sl/-tp so an order_update for a
+// leg-2 or leg-3 bracket reports the base signal id the Go side tracks.
+// Mutant: -sl2 not stripped → RED.
 func TestSplitAddonOrderUpdateStripsLeg2(t *testing.T) {
 	src := readSplitAddonSource(t)
-	if !strings.Contains(src, "// REVIEW-SPLIT-2 P2-3: strip the leg-2 suffixes first") {
-		t.Error("AddOn lost the order_update leg-2 strip marker")
+	if !strings.Contains(src, "// REVIEW-SPLIT-2 P2-3: strip the leg suffixes first") {
+		t.Error("AddOn lost the order_update leg-suffix strip marker")
 	}
 	for _, want := range []string{
+		`if (signalId.EndsWith("-sl3") || signalId.EndsWith("-tp3"))`,
 		`if (signalId.EndsWith("-sl2") || signalId.EndsWith("-tp2"))`,
 		`signalId = signalId.Substring(0, signalId.Length - 4);`,
 	} {
 		if !strings.Contains(src, want) {
-			t.Errorf("AddOn lost the order_update leg-2 strip: missing %q", want)
+			t.Errorf("AddOn lost the order_update leg-suffix strip: missing %q", want)
 		}
 	}
 }
@@ -208,7 +216,7 @@ func TestSplitAddonLeg1ExitFold(t *testing.T) {
 		"int leg2Qty = leg1Gone ? Math.Max(0, filledQty - pb.Leg1Exited)",
 		"double stop = pb.LastStop > 0 ? pb.LastStop : pb.InitialStop;",
 		"bool entryWorking = workingEntries.ContainsKey(signalId);",
-		"if (!live1 && !live2 && !entryWorking)",
+		"if (!live1 && !live2 && !live3 && !entryWorking)",
 		"wasSplit = cb.Leg1Qty > 0;",
 		"closeLeg = wasSplit ? 1 : 0;",
 	} {
@@ -245,5 +253,26 @@ func TestSplitAddonLeg2StopFallback(t *testing.T) {
 	// The old dead fallback (SlOrder is null in the leg1Gone branch) must be gone.
 	if strings.Contains(src, "if (stop <= 0 && pb.SlOrder != null)") {
 		t.Error("AddOn still carries the dead SlOrder stop fallback")
+	}
+}
+
+// TestSplitAddonPlacesThirdOCOPair (release #31) pins SubmitBracketOnEntryFill
+// and the leg=3 selection: when leg2_qty/leg2_tp are carried the AddOn submits
+// a THIRD OCO pair (sl3/tp3 under its own group) and move_stop/modify_bracket
+// honour leg=3. Mutant: drop sl3/tp3 or the leg=3 branch → RED.
+func TestSplitAddonPlacesThirdOCOPair(t *testing.T) {
+	src := readSplitAddonSource(t)
+	for _, want := range []string{
+		"var sl3 = ba.CreateOrder(",
+		"var tp3 = ba.CreateOrder(",
+		"signalId + \"-sl3\"",
+		"signalId + \"-tp3\"",
+		"orders.Add(sl3); orders.Add(tp3);",
+		"if (leg == 0 || leg == 3)",
+		"isLeg3 = orderName.EndsWith(\"-sl3\") || orderName.EndsWith(\"-tp3\")",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("AddOn lost the third-OCO-pair placement: missing %q", want)
+		}
 	}
 }

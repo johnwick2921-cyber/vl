@@ -126,7 +126,7 @@ func TestMentorPartFillExpiryDoesNotResetRegisteredPos(t *testing.T) {
 			Symbol: "MNQ", Side: "long", Entry: 29600, Stop: 29590, Target: 29630,
 			R: 10, Contracts: 99, Leg1: 99, Leg1TP: 29630, ArmedBE: true, Scaled: true,
 		},
-		Legs: [2]mentorLeg{{SignalID: "sig-b1r", Qty: 99, TP: 29630, Stop: 29590, Final: true}, {}},
+		Legs: [3]mentorLeg{{SignalID: "sig-b1r", Qty: 99, TP: 29630, Stop: 29590, Final: true}, {}},
 	})
 
 	at.runArmedPlacementAtFiltered(nil, 0, now, nil, isMentorArmOrigin)

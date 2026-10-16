@@ -285,22 +285,22 @@ func (at *AutoTrader) mentorJudgeAgainstBroker(nt *ntTrader.TCPTrader, side stri
 // the broker qty is down to the runner, ArmedBE = the broker's runner stop is
 // at/through the entry):
 //
-//	0. leg 1's partial NOT confirmed filled → nothing moves. Never a price
-//	   belief: only the broker's TP receipt (mentorMarkLeg1Scaled) or the I7
-//	   broker-snapshot qty drop sets Scaled.
-//	1. confirmed, BE not armed → the runner's stop goes to break-even; that
-//	   candle only arms BE.
-//	2. BE armed → on every closed candle that OPENED after the confirmation
-//	   (I6), the runner's stop goes 1 tick beyond that candle's low (long) /
-//	   high (short) — only when that is TIGHTER; a lower low (long) / higher
-//	   high (short) moves nothing. trail_tf=off stops at stage 1.
+//  0. leg 1's partial NOT confirmed filled → nothing moves. Never a price
+//     belief: only the broker's TP receipt (mentorMarkLeg1Scaled) or the I7
+//     broker-snapshot qty drop sets Scaled.
+//  1. confirmed, BE not armed → the runner's stop goes to break-even; that
+//     candle only arms BE.
+//  2. BE armed → on every closed candle that OPENED after the confirmation
+//     (I6), the runner's stop goes 1 tick beyond that candle's low (long) /
+//     high (short) — only when that is TIGHTER; a lower low (long) / higher
+//     high (short) moves nothing. trail_tf=off stops at stage 1.
 //
 // Every move goes through mentorMoveLegStop (belief + broker never-widen, the
 // real move_stop frame, the F1 verdict on the next fresh book).
-func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64, scaledNow, scaledBefore, trail bool) {
+func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64, scaledNow, scaledBefore, trail bool, exited [3]bool) {
 	pos := &p.Pos
-	runner := &p.Legs[1]
-	if !runner.Final || runner.Qty <= 0 || runner.SignalID == "" {
+	runners := mentorRunnerLegs(p, exited)
+	if len(runners) == 0 {
 		return
 	}
 	if !scaledNow {
@@ -324,55 +324,75 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 			at.mentorCount("be_after_partial_waiting_price")
 			if !p.BEWaitLogged {
 				p.BEWaitLogged = true
-				at.logInfof("🧑‍🏫 mentor BE after the +1R partial: %s close %.2f is not past break-even %.2f — the runner keeps its stop %.2f; BE goes out on the first close past it", runner.SignalID, c, be, runner.Stop)
+				at.logInfof("🧑‍🏫 mentor BE after the +1R partial: %s close %.2f is not past break-even %.2f — the runner keeps its stop; BE goes out on the first close past it", runners[0].SignalID, c, be)
 			}
 			return
 		}
-		err := at.mentorMoveLegStop(nt, side, runner, be)
-		if errors.Is(err, errMentorStopBrokerTighter) {
-			// The broker is already past break-even (moved by hand, or a stop
-			// the restart rebuild read) — BE is satisfied; the trail runs on.
-			pos.ArmedBE = true
-			pos.Stop = runner.Stop
-			at.mentorCount("be_after_partial_broker_tighter")
-			return
-		}
-		if !mentorMoveApplied(err) {
-			if err != nil && !mentorMoveErrAlreadyLogged(err) {
-				at.logWarnf("🧑‍🏫 mentor BE after the +1R partial: %s leg %d move FAILED: %v", runner.SignalID, runner.Wire, err)
+		// D1 (release #31 fold): EVERY runner contract goes to break-even —
+		// the Final runner AND the runner partial (wire 2). Wire 2 is skipped
+		// only once its own TP receipt landed (Exited) or the broker holds no
+		// live stop for it.
+		appliedAny := false
+		brokerTighter := false
+		for _, leg := range runners {
+			err := at.mentorMoveLegStop(nt, side, leg, be)
+			if errors.Is(err, errMentorStopBrokerTighter) {
+				brokerTighter = true
+				appliedAny = true
+				continue
 			}
-			return // re-tried next candle (a FAILED send never arms BE)
+			if errors.Is(err, errMentorLegClosed) {
+				// the leg's TP already filled — its stop is gone; not a failure.
+				at.mentorCount("stop_move_skipped_leg_closed")
+				continue
+			}
+			if !mentorMoveApplied(err) {
+				if err != nil && !mentorMoveErrAlreadyLogged(err) {
+					at.logWarnf("🧑‍🏫 mentor BE after the +1R partial: %s leg %d move FAILED: %v", leg.SignalID, leg.Wire, err)
+				}
+				continue // re-tried next candle (a FAILED send never arms BE)
+			}
+			leg.Stop = be
+			appliedAny = true
 		}
-		runner.Stop = be
+		if !appliedAny {
+			return // no runner move applied — BE not armed, re-tried next candle
+		}
 		pos.Stop = be
 		pos.ArmedBE = true
-		at.mentorCount("be_after_partial")
-		how := "SENT — awaiting the NT8 verdict"
-		if err != nil {
-			how = "already at the broker — nothing sent"
+		if brokerTighter {
+			at.mentorCount("be_after_partial_broker_tighter")
+		} else {
+			at.mentorCount("be_after_partial")
 		}
-		at.logInfof("🧑‍🏫 mentor BE after the +1R partial: %s runner (leg %d) stop → %.2f (entry %.2f) — %s [R3; D2.4 p1 @16:17]",
-			runner.SignalID, runner.Wire, be, pos.Entry, how)
+		at.logInfof("🧑‍🏫 mentor BE after the +1R partial: %s runner stop(s) → %.2f (entry %.2f) [R3; D2.4 p1 @16:17]",
+			runners[0].SignalID, be, pos.Entry)
 		return
 	}
 	if !trail || !scaledBefore {
 		return
 	}
 	cand := mentorCandleTrailStop(side, h, l, tick)
-	if !mentorStopTighter(side, cand, runner.Stop) {
-		return // a lower low (long) / higher high (short): never a widen, nothing to send
-	}
-	err := at.mentorMoveLegStop(nt, side, runner, cand)
-	if !mentorMoveApplied(err) {
-		if err != nil && !mentorMoveErrAlreadyLogged(err) {
-			at.logWarnf("🧑‍🏫 mentor candle trail: %s leg %d move FAILED: %v", runner.SignalID, runner.Wire, err)
+	for _, leg := range runners {
+		if !mentorStopTighter(side, cand, leg.Stop) {
+			continue // a lower low (long) / higher high (short): never a widen, nothing to send
 		}
-		pos.Stop = runner.Stop // a broker-tighter refusal corrected the runner's belief
-		return
+		err := at.mentorMoveLegStop(nt, side, leg, cand)
+		if !mentorMoveApplied(err) {
+			if errors.Is(err, errMentorLegClosed) {
+				at.mentorCount("stop_move_skipped_leg_closed")
+				continue
+			}
+			if err != nil && !mentorMoveErrAlreadyLogged(err) {
+				at.logWarnf("🧑‍🏫 mentor candle trail: %s leg %d move FAILED: %v", leg.SignalID, leg.Wire, err)
+			}
+			pos.Stop = leg.Stop // a broker-tighter refusal corrected the belief
+			continue
+		}
+		leg.Stop = cand
+		pos.Stop = cand
+		at.mentorCount("trail_candle_moved")
 	}
-	runner.Stop = cand
-	pos.Stop = cand
-	at.mentorCount("trail_candle_moved")
 	extreme, word := l, "low"
 	if strings.EqualFold(side, "short") {
 		extreme, word = h, "high"
@@ -382,8 +402,8 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 		frame = fmt.Sprintf("%dm", p.TrailTFMin)
 		at.mentorCount("trail_candle_moved_2m")
 	}
-	at.logInfof("🧑‍🏫 mentor candle trail: %s runner (leg %d) stop → %.2f — 1 tick beyond the closed %s candle's %s %.2f [R3; D2.4 p1 @07:01; X8 @15:40, @18:02 the frame the entry was read on]",
-		runner.SignalID, runner.Wire, cand, frame, word, extreme)
+	at.logInfof("🧑‍🏫 mentor candle trail: %s runner stop(s) → %.2f — 1 tick beyond the closed %s candle's %s %.2f [R3; D2.4 p1 @07:01; X8 @15:40, @18:02 the frame the entry was read on]",
+		runners[0].SignalID, cand, frame, word, extreme)
 }
 
 // ── P1-2: THE ISB CANDLE-3 PARTIAL — R1 (release #30 fold) ─────────────────
