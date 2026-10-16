@@ -864,7 +864,11 @@ func TestR22ModifyNotAppliedBeliefTakesBrokerTP(t *testing.T) {
 // candle (no modify at the close), and the runner (2) goes to break-even at
 // 30100 on the next candle — never −$150.
 func TestR22ShortWorkedExampleFillCandlePastOneR(t *testing.T) {
-	b := r22Fixture(t, store.RiskControlConfig{})
+	// The worked example pins the candle-3 path with break-even AFTER leg 1 (the
+	// R3 order); release #31 turns mentor_be_before_partial ON by default, which
+	// moves both stops to break-even at half-way first — covered by the BE-before-
+	// partial tests, so this one states its knob explicitly.
+	b := r22Fixture(t, store.RiskControlConfig{MentorBEBeforePartial: cxBool(false)})
 	const sig, entry, stop, l1tp, target = "sig-swe", 30100.0, 30115.0, 30085.0, 30060.0
 	b.positions("short", 5)
 	b.book(r22StopOrder(sig+"-sl", stop, 3), r22StopOrder(sig+"-sl2", stop, 2),
