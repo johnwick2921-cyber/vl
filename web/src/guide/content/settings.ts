@@ -839,7 +839,7 @@ const risk: KnobSpec[] = [
   {
     label: 'Trailing stop (AI trades)',
     where: 'Strategy → Risk Control',
-    what: 'AI-plan trades only: once armed (after_breakeven | N points | immediately), each 60 s monitor beat ratchets the stop to best price since entry ∓ mult×ATR(period, 5m), tighten-only. Like breakeven it moves a stop only when BOTH this toggle (trailing_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0) are on; with the seam SUSPENDED it computes a level and sends nothing. Never applied to a mentor-mode trade — the mentor runner has its own candle trail (Mentor mode → The exits). Evidence on ATR trails: a 567,000-backtest study ranks ATR/Chandelier trails in the worst group of 15 exit families; our 09-01 tape shows $719.50 of giveback with zero trail exits.',
+    what: 'AI-plan trades only: once armed (after_breakeven | N points | immediately), each 60 s monitor beat ratchets the stop to best price since entry ∓ mult×ATR(period, 5m), tighten-only. Like breakeven it moves a stop only when BOTH this toggle (trailing_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0) are on; with the seam SUSPENDED it computes a level and sends nothing. Never applied to a mentor-mode trade — the mentor runner has its own candle trail (Mentor mode → The exits). Since release #32 the panel shows the "not applied while mentor mode is ON" caveat under BOTH the breakeven and the trailing toggle, read from the server’s effective origin (never a typed copy). Evidence on ATR trails: a 567,000-backtest study ranks ATR/Chandelier trails in the worst group of 15 exit families; our 09-01 tape shows $719.50 of giveback with zero trail exits.',
     trader:
       'Read the boot line "🛑 exits: … trail=on|off(strategy) · seam=…(env)". The live boots of 2026-10-13 and 2026-10-14 read trail=off · seam=ACTIVE: the ATR trail is not moving stops there.',
     consumer:
@@ -856,7 +856,7 @@ const risk: KnobSpec[] = [
   {
     label: 'Guardrails master',
     where: 'Strategy → Risk Control → Guardrails',
-    what: 'Master switch for the daily guardrails stack (loss/profit caps, max trades, consistency, blackout windows). The consecutive-loss halt and the re-entry cooldown are NOT under this switch — each bites whether the master is on or off.',
+    what: 'Master switch for the daily guardrails stack (loss/profit caps, max trades, consistency, blackout windows). The consecutive-loss halt and the re-entry cooldown are NOT under this switch — each bites whether the master is on or off. Since release #32, with the master OFF every child guardrail row (daily loss / daily profit / max trades / blackout / consistency) shows a red "NOT ENFORCED — Risk guardrails master is OFF" badge beside its own toggle, so a stored value that looks set is visibly not enforced.',
     trader:
       'Currently OFF by owner ruling — the would-have-tripped counters still display.',
     consumer: 'kernel/risk_limits.go ResolveStrategyGuardrails (MasterEnabled)',
@@ -972,7 +972,7 @@ const risk: KnobSpec[] = [
   {
     label: 'Re-entry cooldown',
     where: 'Strategy → Risk Control → Guardrails',
-    what: 'After a STOP-LOSS exit (NT8 exit reason "sl"; target and manual exits do not arm it), a SAME-direction re-entry on that symbol is refused for this many minutes. On the AI decision path it also unlocks early once price is a full ATR15 away from the stop; the arm and Picture paths unlock on the timer only. The opposite direction and other symbols are never blocked, an agent-chat entry is not checked, and the stop record is in memory only (a restart clears it).',
+    what: 'After a STOP-LOSS exit (NT8 exit reason "sl"; target and manual exits do not arm it), a SAME-direction re-entry on that symbol is refused for this many minutes. On the AI decision path it also unlocks early once price is a full ATR15 away from the stop; the arm and Picture paths unlock on the timer only. The opposite direction and other symbols are never blocked, an agent-chat entry is not checked, and the stop record is in memory only (a restart clears it). Since release #32 the Studio shows "OFF (absent = 0)" beside the field when the key is absent (the Go truth), and the toggle writes 20 only when you turn it on.',
     trader: 'Prevents immediately re-entering after being stopped.',
     consumer:
       'trader/entry_admission.go admitChain → reentryCooldownMinutes + discipline.ReentryPeek (arm/picture) · kernel/engine_analysis.go applyReentryCooldown (decision)',
