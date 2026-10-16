@@ -1550,7 +1550,8 @@ export const mentor: GuideSection = {
           consumer: 'kernel/mentor/swing4h.go SwingCfg.Hold4hBars (unused)',
           range: '4h candles',
           systemDefault: '2 (unused)',
-          recommended: 'Leave unset — the value is no longer read.',
+          recommended:
+            'Leave unset — not from the course (a bot-only number the course never states).',
           whenToTouch: 'Never (dead knob).',
           perSession: 'No.',
         },
