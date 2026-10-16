@@ -885,6 +885,21 @@ const risk: KnobSpec[] = [
     perSession: 'No.',
   },
   {
+    label: 'Planner contracts per entry',
+    what: 'The PLANNER trader\u2019s contracts per entry (dispatch-31, owner order 2026-10-16 "set to 4 at least, sell 2 first so it\u2019s equal"). Unset/0 → 1 = today\u2019s single-contract arm. A value ≥ 2 splits the planner arm AT ENTRY into equal halves: leg 1 = n/2 contracts at the plan\u2019s FIRST target (economics.first_obstacle.price), leg 2 = the rest at the arm\u2019s final target with the existing stop management. A 2-leg sweep_reclaim arm and a Picture arm are never split. Mentor sizing is untouched (the mentor table, not this knob). Read on the planner arm path only.',
+    where: 'Strategy → Risk Control → Planner contracts per entry',
+    trader:
+      'Owner set 4 for "mnq 2" (leg 1 = 2 at the first obstacle, leg 2 = 2 runs).',
+    consumer:
+      'trader/auto_trader_orders.go plannerContracts / stampPlannerSplit · trader/armed_executor.go placeOneStopEntry (the stamped row reaches the wire as one split frame)',
+    range: 'int · unset/0 → 1 · ≥ 2 splits equal halves',
+    systemDefault: '1 (single-contract arm)',
+    recommended:
+      '⭐ 1 everywhere except the owner\u2019s planner strategy (4).',
+    whenToTouch: 'Only on an owner ruling for the planner trader.',
+    perSession: 'No — per strategy.',
+  },
+  {
     label: 'Notional cap (always-on)',
     where: 'Strategy → Risk Control → always-on row',
     what: 'Max notional per position — on with or without the master.',

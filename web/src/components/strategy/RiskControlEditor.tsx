@@ -1173,6 +1173,30 @@ export function RiskControlEditor({
           </AlwaysOnRow>
 
           <AlwaysOnRow
+            label={ts(riskControl.plannerContractsField, language)}
+            badge={ts(riskControl.alwaysActive, language)}
+          >
+            <input
+              type="number"
+              value={config.planner_contracts ?? ''}
+              placeholder="1"
+              data-testid="planner-contracts-input"
+              onChange={(e) =>
+                updateField('planner_contracts', parseInt(e.target.value) || 0)
+              }
+              disabled={disabled}
+              min={0}
+              className="w-full px-3 py-2 rounded font-mono"
+              style={{
+                background: '#1E2329',
+                border: '1px solid #2B3139',
+                color: '#EAECEF',
+              }}
+            />
+            <EffectiveLine knob={eff('planner_contracts')} />
+          </AlwaysOnRow>
+
+          <AlwaysOnRow
             label={ts(riskControl.notionalCapField, language)}
             badge={ts(riskControl.alwaysActive, language)}
           >

@@ -563,6 +563,11 @@ export const riskControl = {
     en: 'Max contracts / order — always-on clamp: your value, else 2, then capped by the Stage-A ceiling (1 unless env STAGE_A_CONTRACT_CAP raises it), so effectively 1 by default; a mentor-mode trader is NOT clamped by it (mentor table, up to mentor_max_contracts, default 20)',
     es: 'Máx. contratos / orden — tope siempre activo: tu valor, si no 2, luego limitado por el techo Stage-A (1 salvo que STAGE_A_CONTRACT_CAP lo suba): en la práctica 1; un trader en modo mentor NO queda limitado (tabla del mentor, hasta mentor_max_contracts, 20)',
   },
+  plannerContractsField: {
+    zh: '规划器每笔合约数 — 默认 1（现状单口）。≥ 2 时入场拆成两半：第 1 腿 n/2 在计划第一目标（economics.first_obstacle.price），第 2 腿其余部分跑到最终目标（主人 2026-10-16 “至少 4，先卖 2 才公平”）。只作用于规划器入场；导师手数与其它策略不变。',
+    en: 'Planner contracts / entry — default 1 (today’s single-contract arm). ≥ 2 splits the entry into equal halves: leg 1 = n/2 at the plan’s first target (economics.first_obstacle.price), leg 2 = the rest at the final target (owner 2026-10-16 “set to 4 at least, sell 2 first so it’s equal”). Planner entries only; mentor sizing and every other strategy are unchanged.',
+    es: 'Contratos planner / entrada — por defecto 1 (el brazo de un contrato actual). ≥ 2 divide la entrada en mitades iguales: pierna 1 = n/2 en el primer objetivo del plan (economics.first_obstacle.price), pierna 2 = el resto al objetivo final (owner 2026-10-16 “4 mínimo, vender 2 primero para igualar”). Solo entradas planner; el tamaño del mentor y las demás estrategias no cambian.',
+  },
   notionalCapField: {
     zh: '名义上限倍数 (权益×N) — 默认 20（安全底线，始终开启，无开关）',
     en: 'Notional cap (equity × N) — default 20 (safety backstop, always on — no toggle)',
