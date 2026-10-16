@@ -495,7 +495,14 @@ func mentorDayGateLine(r mentor.DayGateReport) string {
 	// that later moment — the line names the real read instant.
 	when := "@08:30 CT"
 	open := ""
-	if !r.ReadAtOpen() {
+	if r.Restored {
+		// B1 (release #30): the seed restored the 08:30 latch from the
+		// 08:30 read — the 4h/1h below ARE the 08:30 decision. Checked
+		// BEFORE ReadAtOpen: a restored report's ReadAt IS the 08:30
+		// instant (that is what was restored), but this process did not
+		// read it live at 08:30 — it replayed it at boot. Say so.
+		when = fmt.Sprintf("RESTORED from the 08:30 read (trading day %s — the 4h/1h below are the 08:30 decision's)", r.Key)
+	} else if !r.ReadAtOpen() {
 		at := "n/a"
 		if r.ReadAt > 0 {
 			at = kernel.ClockHHMMCT(time.UnixMilli(r.ReadAt))
@@ -1885,12 +1892,16 @@ func (at *AutoTrader) mentorSeedAtStart() {
 		at.mentorWithHistoryPrintWindows(stitched1m, func() {
 			missing = mentor.SeedFull(at.mentorEval, stitched1m, full1HRTH, now)
 			mentor.SeedOpenHTF(at.mentorEval, stitched1m, priorHTF, now)
+			mentor.SeedDayLatch(at.mentorEval, stitched1m, now)   // B1: restore the 08:30 day latch
+			mentor.SeedTrendlines(at.mentorEval, stitched1m, now) // B3: mark already-crossed trendline pairs
 		})
 		at.logInfof("%s", mentor.KeyLevelHistoryLine(contracts, full1HRTH, gaps, stoppedAt))
 	} else {
 		at.mentorWithHistoryPrintWindows(bars1m, func() {
 			missing = mentor.Seed(at.mentorEval, bars1m, now)
 			mentor.SeedOpenHTF(at.mentorEval, bars1m, priorHTF, now)
+			mentor.SeedDayLatch(at.mentorEval, bars1m, now)   // B1
+			mentor.SeedTrendlines(at.mentorEval, bars1m, now) // B3
 		})
 	}
 	// The evaluator's own depth (computed from the stitched series) is the
