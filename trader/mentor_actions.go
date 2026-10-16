@@ -726,6 +726,122 @@ func (at *AutoTrader) mentorCancelArm(in mentor.Intent) bool {
 	return true
 }
 
+// mentorWorkingSameSideRows lists this trader's WORKING mentor rows on one
+// side (release #30: ONE working entry per side, across every kind — ISB,
+// ISB-reverse, PHL/PLH, BOX, trendline, swing). The armed ledger is the source
+// of truth: it survives a restart where the in-memory registry is only
+// partially rebuilt. A cancel_pending row is NOT working (its cancel is already
+// in flight); armed / place_pending / working all are — each can still fill.
+func (at *AutoTrader) mentorWorkingSameSideRows(side string) []store.ArmedOrderDB {
+	if at == nil || at.store == nil {
+		return nil
+	}
+	ledger := at.store.ArmedOrders()
+	if ledger == nil {
+		return nil
+	}
+	rows, err := ledger.ListNonTerminal(at.id)
+	if err != nil {
+		// Fail-open on a read error: the fill-time OCO is the backstop, and a
+		// transient DB lock must not stall every entry.
+		at.logWarnf("🧑‍🏫 mentor same-side scan read failed: %v (fail-open — the fill-time OCO is the backstop)", err)
+		return nil
+	}
+	side = strings.ToLower(strings.TrimSpace(side))
+	var out []store.ArmedOrderDB
+	for _, r := range rows {
+		if r.TraderID != at.id || !isMentorArmOrigin(r) {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(r.State), store.StateCancelPending) {
+			continue // already being cancelled — not a working entry
+		}
+		if side != "" && !strings.EqualFold(strings.TrimSpace(r.Side), side) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// mentorCancelRestingRow cancels ONE resting mentor row directly from its row
+// (release #30, OCO). Unlike mentorCancelArm (registry-keyed), it takes the
+// row, so it works across a restart where the in-memory registry was not yet
+// rebuilt for a resting arm. Returns whether a cancel was ACTUALLY requested —
+// a filled / already-pending / terminal row returns false (never re-cancelled).
+func (at *AutoTrader) mentorCancelRestingRow(r store.ArmedOrderDB, reason string) bool {
+	ledger := at.store.ArmedOrders()
+	if ledger == nil {
+		return false
+	}
+	armID := mentorArmIDFromScenario(r.Scenario)
+	if strings.EqualFold(strings.TrimSpace(r.State), store.StateFilled) {
+		return false // a filled row is a live position — never cancel it
+	}
+	if strings.EqualFold(strings.TrimSpace(r.State), store.StateCancelPending) {
+		return false // a cancel is already in flight — no re-request
+	}
+	if mentorPrunableTerminalState(r.State) {
+		at.mentorUnregisterLiveArm(armID)
+		at.deleteMentorExitMode(r.Scenario)
+		return false
+	}
+	now := mentorClockNow()
+	// Never-placed (no signal id): cancel the authorization directly — the
+	// placement pass will never fire for it.
+	if strings.TrimSpace(r.SignalID) == "" {
+		done, err := ledger.CancelUnplaced(r.ID, "mentor: "+reason+" — never placed")
+		if err == nil && done {
+			at.clearMentorLevelArmLocked(armID)
+			at.mentorUnregisterLiveArm(armID)
+			at.deleteMentorExitMode(r.Scenario)
+			at.mentorCount("cancel_unplaced")
+			at.logInfof("🧑‍🏫 mentor OCO cancel for ArmID %q: never placed — row cancelled directly (%s)", armID, reason)
+			return true
+		}
+		if err != nil {
+			at.logWarnf("🧑‍🏫 mentor OCO unplaced cancel write failed for ArmID %q: %v", armID, err)
+		}
+	}
+	nt := at.armedTrader()
+	if nt != nil && strings.TrimSpace(r.SignalID) != "" {
+		if v := at.cancelSafetyFor(r, now); !v.Allow {
+			at.logWarnf("🛟 mentor OCO cancel REFUSED: %s %s — %s", r.Session, r.Scenario, v.Why)
+		} else if cerr := nt.CancelOrder(r.SignalID); cerr != nil {
+			at.logWarnf("✕ mentor OCO cancel SEND failed: %s %s: %v", r.Session, r.Scenario, cerr)
+		}
+	}
+	at.clearMentorLevelArmLocked(armID)
+	at.armLifecycleWrite("request_cancel(mentor OCO)", r,
+		ledger.RequestCancel(r.ID, "mentor: "+reason, now.UnixMilli()))
+	at.mentorRegisterPartialFillIfAbsent(r)
+	at.mentorCount("cancel_requested")
+	at.logInfof("🧑‍🏫 mentor OCO cancel requested for ArmID %q: %s", armID, reason)
+	return true
+}
+
+// mentorCancelOtherWorkingOnFill (release #30 fold, CTO ruling): when one
+// mentor entry fills (a position opens), every OTHER working mentor entry is
+// cancelled before it can fill — the SAME side (one working entry per side) AND
+// the OPPOSITE side (no flip: a resting opposite-side stop can net the position
+// and leave the open trade's stop/TP working against the wrong side). One
+// working entry period while a position is open. The cancel rides the real
+// broker path (wire cancel + ledger RequestCancel), confirmed by NT8's
+// per-order report like every other cancel.
+func (at *AutoTrader) mentorCancelOtherWorkingOnFill(filled store.ArmedOrderDB) {
+	side := strings.ToLower(strings.TrimSpace(filled.Side))
+	for _, other := range at.mentorWorkingSameSideRows("") {
+		if other.ID == filled.ID {
+			continue
+		}
+		if side != "" && strings.EqualFold(strings.TrimSpace(other.Side), side) {
+			at.mentorCancelRestingRow(other, "one working entry per side — the same-side entry filled, cancel the rest (OCO) [D1.1 p1 @17:06–17:44]")
+		} else {
+			at.mentorCancelRestingRow(other, "no flip: a position opened — cancel the opposite-side resting entry before it can net/flip [owner ruling 2026-09-03]")
+		}
+	}
+}
+
 // mentorRecordLevelInvalid records the evaluator's level-invalidation intent
 // (only ISBs may trade there after — the evaluator owns that rule; the
 // injector records it, never silently).

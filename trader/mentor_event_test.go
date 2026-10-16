@@ -401,11 +401,15 @@ func TestMentorNeverAddAtPlacementCallSite(t *testing.T) {
 	if got := at.mentorCountSnapshot()["add_refused"]; got != 1 {
 		t.Fatalf("the never-add refusal must be counted once, got %d", got)
 	}
-	// the opposite side proceeds.
+	// the opposite side is refused too (no flip — flat first, owner ruling
+	// 2026-09-03 "no adds, no flips").
 	in.Side = mentor.SideShort
 	at.mentorPlaceIntent(in, choice, 1000, 1100)
-	if placed != 1 {
-		t.Fatalf("an opposite-side entry must proceed, placed=%d", placed)
+	if placed != 0 {
+		t.Fatalf("an opposite-side entry while a position is open must be refused (no flip), placed=%d", placed)
+	}
+	if got := at.mentorCountSnapshot()["mentor_no_flip"]; got != 1 {
+		t.Fatalf("the no-flip refusal must be counted once, got %d", got)
 	}
 	// FAIL-CLOSED: no open-side source refuses the entry — asserted on the
 	// gate directly (the placement-level sources check refuses first at the
