@@ -75,6 +75,15 @@
 //   provider/ninjatrader/tcp_server.go sha256 3f59f5a6… — the accept loop and the
 //     bars_subscribe send arm the stale-print guard (NoteReconnect / rebuild
 //     triggers). Additive call sites only; no identifier, frame or wire change.
+// Wire baseline advanced 2026-10-15 for DEADMAN-ACCEPT-NS (fix/deadman-accept-ns,
+// PR #555, DS-101):
+//   provider/ninjatrader/tcp_server.go sha256 8aaa9e53… — acceptClock seam +
+//     acceptNow at the accept: the accept loop stamps the accept instant through
+//     an acceptClock func (nil = time.Now) so a test can state its own, and
+//     SeedPositionsForTest delegates to SeedPositionsForTestAt (receipt instant
+//     passed in). Additive; no identifier, frame or wire change; the accept-time
+//     connection record and the bar-feed guards this pin protects are
+//     byte-untouched.
 // Bar-feed baseline advanced 2026-09-24 for DS-102 U6 (fix/owed-ui-ci-1):
 //   provider/ninjatrader/tcp_server.go — the hello handshake log now renders an
 //     absent NT8 identity as n/a via helloProcessPair (nt8_pid/assembly_mvid;

@@ -306,7 +306,7 @@ func TestW3ZoneLegVerdictWorstFills(t *testing.T) {
 		t.Fatal(err)
 	}
 	sc := d.Scenarios[0]
-	is, label, ok := at.zoneLegVerdict(d, sc, kernel.PlanArmLeg{Entry: sc.Arm.Entry, Stop: sc.Arm.Stop, Target: sc.Arm.Target}, "long", 8, "", at.config.StrategyConfig, "NY", 0.25, 10)
+	is, label, ok := at.zoneLegVerdict(d, sc, kernel.PlanArmLeg{Entry: sc.Arm.Entry, Stop: sc.Arm.Stop, Target: sc.Arm.Target}, "long", at.lazyArmVetoSnapshot()(), 8, "", at.config.StrategyConfig, "NY", 0.25, 10)
 	if !ok {
 		t.Fatalf("admitted leg refused: %+v", is)
 	}

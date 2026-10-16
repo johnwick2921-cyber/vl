@@ -531,7 +531,7 @@ export const mentor: GuideSection = {
         ],
         [
           'Day gate (§7)',
-          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). A restart (or a feed gap) after 08:30 latches on the 4h/1h of THAT moment, and the day-gate log line then reads "day gate RE-LATCHED @HH:MM CT, not the 08:30 read" instead of "@08:30". After a BOOT past 08:30 it reads "day gate re-read at boot HH:MM CT, not the 08:30 decision" and shows what the 08:30 decision read (replayed from the same bars) — "the 08:30 decision read 4h … · 1h … (DIFFERENT …)" or "same 4h/1h as the 08:30 decision". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
+          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). The day gate is frozen AT the 08:30 read: a restart after 08:30 RESTORES that decision (the seed replays the 08:30 4h/1h read and the frozen run, then replays the one-way DayOff recheck over the closed 1h bars since), so a restart never re-decides the day — the log line reads "RESTORED from the 08:30 read". Only when the 08:30 read is not possible (no bars closed by 08:30) does the line read "re-read at boot … not the 08:30 decision". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
           'DayGateSpentPts 300 · DayGateTargetCapPts 15',
         ],
         [
@@ -582,9 +582,9 @@ export const mentor: GuideSection = {
           cite: 'Engineering rule — mentorDailyLossGate → dailyGuardVerdictAt (one daily-guardrail verdict for every path) · trader/mentor_tick.go mentorDailyLossGate, trader/daily_loss_gate.go — live. The course’s own figure is deck slide 14: “Lỗ tối đa một ngày không được vượt quá 30% account” (max daily loss ≤ 30% of the account; never spoken in the videos). The gate is the OWNER’s switch — OFF by owner ruling R4; the owner sets the $',
         },
         {
-          title: 'Never widen a stop, never add',
-          body: 'A stop only ever moves toward break-even. Never add to a position.',
-          cite: 'D2.3 p1 @18:08 — "Không bao giờ được dời lệnh buy stop của mình xuống cây nến kế tiếp" (never move your buy stop down to the next candle) — live',
+          title: 'Never widen a stop, never add, never flip',
+          body: 'A stop only ever moves toward break-even. Never add to a position, and never flip while one is open: ANY entry (same or opposite side) is refused while a mentor position is open — flat first (owner ruling 2026-09-03 "no adds, no flips"). Once flat, the next tick may place the other side (the box "Uno reverse" trades after the stop, never before). A fill also cancels every other working mentor entry on both sides (one working entry per side + OCO) before it can fill.',
+          cite: 'D2.3 p1 @18:08 — "Không bao giờ được dời lệnh buy stop của mình xuống cây nến kế tiếp" (never move your buy stop down to the next candle); owner ruling 2026-09-03 "no adds, no flips" — live',
         },
         {
           title: '"One loss → done" is NOT used',

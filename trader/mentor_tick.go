@@ -495,7 +495,14 @@ func mentorDayGateLine(r mentor.DayGateReport) string {
 	// that later moment — the line names the real read instant.
 	when := "@08:30 CT"
 	open := ""
-	if !r.ReadAtOpen() {
+	if r.Restored {
+		// B1 (release #30): the seed restored the 08:30 latch from the
+		// 08:30 read — the 4h/1h below ARE the 08:30 decision. Checked
+		// BEFORE ReadAtOpen: a restored report's ReadAt IS the 08:30
+		// instant (that is what was restored), but this process did not
+		// read it live at 08:30 — it replayed it at boot. Say so.
+		when = fmt.Sprintf("RESTORED from the 08:30 read (trading day %s — the 4h/1h below are the 08:30 decision's)", r.Key)
+	} else if !r.ReadAtOpen() {
 		at := "n/a"
 		if r.ReadAt > 0 {
 			at = kernel.ClockHHMMCT(time.UnixMilli(r.ReadAt))
@@ -693,6 +700,21 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		// mode B/SWING4H: leg 1's TP is computed later (mentorWireLeg1TP at
 		// placement / the +1R default) — don't print a misleading 0.00.
 		at.logInfof("🧑‍🏫 mentor exit fork: %s — %s", forkMode, forkWhy)
+	}
+	// ONE WORKING ENTRY PER SIDE (release #30): the reference is the FIRST
+	// working entry; a new same-side arm forms only after the previous one is
+	// filled, cancelled or expired [CTO parity ruling 1791008332386 #1,
+	// generalized from isbArmActive to EVERY kind via the armed ledger]. The
+	// never-add gate above covers an OPEN position; this covers a same-side
+	// entry still RESTING (armed/working) — the case where two stop entries can
+	// both fill in one bar (10-02 07:11 ISB-rev + ISB long = 8 MNQ).
+	if same := at.mentorWorkingSameSideRows(string(in.Side)); len(same) > 0 {
+		at.mentorCount("refused_same_side_working")
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — one working entry per side: a %s entry already works (%s) [D1.1 p1 @17:06–17:44]",
+			in.Side, mentorArmIDFromScenario(same[0].Scenario))
+		at.mentorRecordStallRefusal(in, "same_side_working: one working entry per side")
+		at.mentorGateBlock("mentor_same_side_working")
+		return
 	}
 	// B20: the chosen branch is REGISTERED per open position — a later
 	// confluence upgrade switches it to C (hold ≥ 1:2, size untouched).
@@ -1650,7 +1672,15 @@ func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
 		at.mentorCount("add_refused")
 		return true, fmt.Sprintf("never add/average [D1.1 p1 @17:06–17:44]: %s already open — the resonance ISB is a hold signal, not an entry", open)
 	}
-	return false, ""
+	// NO FLIP (release #30 fold, CTO ruling): an OPPOSITE-side entry while a
+	// mentor position is open is refused too. At NT8 a same-bar opposite fill
+	// nets the position and leaves the open trade's stop/TP working against the
+	// wrong side (a long's sell-stop later opens a NEW short). The planner
+	// already runs "no adds, no flips" (owner ruling 2026-09-03); the mentor
+	// now matches. Once flat, the next tick may place the other side (the box
+	// "Uno reverse" still trades after the stop, never before).
+	at.mentorCount("mentor_no_flip")
+	return true, fmt.Sprintf("no flip: %s open — flat first [owner ruling 2026-09-03]", open)
 }
 
 // mentorDailyLossGate is the §5(a) placement-time daily guardrail check: a
@@ -1885,12 +1915,16 @@ func (at *AutoTrader) mentorSeedAtStart() {
 		at.mentorWithHistoryPrintWindows(stitched1m, func() {
 			missing = mentor.SeedFull(at.mentorEval, stitched1m, full1HRTH, now)
 			mentor.SeedOpenHTF(at.mentorEval, stitched1m, priorHTF, now)
+			mentor.SeedDayLatch(at.mentorEval, stitched1m, now)   // B1: restore the 08:30 day latch
+			mentor.SeedTrendlines(at.mentorEval, stitched1m, now) // B3: mark already-crossed trendline pairs
 		})
 		at.logInfof("%s", mentor.KeyLevelHistoryLine(contracts, full1HRTH, gaps, stoppedAt))
 	} else {
 		at.mentorWithHistoryPrintWindows(bars1m, func() {
 			missing = mentor.Seed(at.mentorEval, bars1m, now)
 			mentor.SeedOpenHTF(at.mentorEval, bars1m, priorHTF, now)
+			mentor.SeedDayLatch(at.mentorEval, bars1m, now)   // B1
+			mentor.SeedTrendlines(at.mentorEval, bars1m, now) // B3
 		})
 	}
 	// The evaluator's own depth (computed from the stitched series) is the

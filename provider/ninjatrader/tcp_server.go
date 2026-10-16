@@ -86,6 +86,11 @@ type TCPServer struct {
 	// told, and the per-connection record (hello epoch + maintenance_ack).
 	maint maintenanceWire
 
+	// acceptClock is a test-only seam for the accept instant (DEADMAN-ACCEPT-NS:
+	// a test states its own so a snapshot received in the SAME millisecond but
+	// BEFORE the accept is deterministic). nil = time.Now in production.
+	acceptClock func() time.Time
+
 	// E7 capability handshake (2026-08-30): the far-side AddOn's build id,
 	// reported on every heartbeat. Empty until the first heartbeat carries it.
 	// Frame types are gated on it (FarSideBuildE7) — an old AddOn that would
@@ -1512,6 +1517,14 @@ func (s *TCPServer) ListenAddrForTest() net.Addr {
 // frame (mirrors the FramePositions receive path). Tests only; production is fed by
 // the C# AddOn's `positions` frames.
 func (s *TCPServer) SeedPositionsForTest(account string, ps []OpenPosition) {
+	s.SeedPositionsForTestAt(account, ps, time.Now())
+}
+
+// SeedPositionsForTestAt is the seamed twin: the receipt instant is passed IN
+// (class 60 / A28), so a test states its own and a snapshot received in the
+// SAME millisecond but BEFORE the accept is deterministically reproducible
+// (DEADMAN-ACCEPT-NS).
+func (s *TCPServer) SeedPositionsForTestAt(account string, ps []OpenPosition, receivedAt time.Time) {
 	s.acctMu.Lock()
 	if s.acctPositions == nil {
 		s.acctPositions = make(map[string][]OpenPosition)
@@ -1520,7 +1533,7 @@ func (s *TCPServer) SeedPositionsForTest(account string, ps []OpenPosition) {
 		s.acctPositionsReceived = make(map[string]time.Time)
 	}
 	s.acctPositions[account] = ps
-	s.acctPositionsReceived[account] = time.Now()
+	s.acctPositionsReceived[account] = receivedAt
 	s.acctMu.Unlock()
 }
 
@@ -1590,7 +1603,7 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 		s.lastAckTime = time.Now()
 		s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // B11: a fresh conn restarts the read-idle clock
 		s.connMu.Unlock()
-		s.beginConnectionRecord(c, time.Now()) // W-ONE-BUTTON M2 site 7
+		s.beginConnectionRecord(c, s.acceptNow()) // W-ONE-BUTTON M2 site 7
 		s.attempted.noteReconnect(time.Now())  // FIX-DOUBLE-ENTRY: reconnect instant for fresh-truth checks
 		s.barCache.NoteReconnect(time.Now())   // WAVE 26: arm the stale-print guard for the AddOn's reloaded-series re-emit
 
