@@ -533,6 +533,11 @@ export const riskControl = {
     en: 'OFF disables the daily loss, daily profit, max daily trades, blackout and consistency guardrails (logged). NOT gated by this switch: the consecutive-loss halt, the re-entry cooldown and the size caps (max contracts, notional). The live-account block stays ON always — untoggleable.',
     es: 'OFF desactiva las barreras de pérdida diaria, ganancia diaria, máx. operaciones, bloqueo horario y consistencia. NO dependen de este interruptor: el freno por pérdidas seguidas, el enfriamiento de reingreso y los topes de tamaño (contratos, nocional). El bloqueo de cuenta real siempre activo.',
   },
+  notEnforcedBadge: {
+    zh: '未生效 — 风险防护栏总开关为关闭',
+    en: 'NOT ENFORCED — Risk guardrails master is OFF',
+    es: 'NO APLICADO — el interruptor maestro de riesgo está OFF',
+  },
   dailyLossLimit: {
     zh: '每日亏损上限 (USD) — 默认关闭；需同时开启防护栏总开关与本行；金额留空则取环境变量 RISK_MAX_DAILY_LOSS_USD（$500）',
     en: 'Daily loss limit (USD) — default OFF; it acts only with the Guardrails master AND this row ON; a blank $ falls back to env RISK_MAX_DAILY_LOSS_USD ($500)',
