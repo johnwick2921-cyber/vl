@@ -360,7 +360,7 @@ export const mentor: GuideSection = {
       cards: [
         {
           title: 'Inside bar (ISB)',
-          body: "Candle 2's BODY inside candle 1's FULL range (wicks included). Direction = candle 1's colour. Entry at the ISB candle's own extreme + 1.5 pt (6 ticks) — exactly that on the wire, nothing is added at placement — stop 1.5 beyond its opposite extreme, no fixed stop size — skip only when the stop is \"in the twenties\". The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest).",
+          body: "Candle 2's BODY inside candle 1's FULL range (wicks included). Direction = candle 1's colour. Entry at the ISB candle's own extreme + 1.5 pt (6 ticks) — exactly that on the wire, nothing is added at placement — stop 1.5 beyond its opposite extreme, no fixed stop size — skip only when the stop is in the 20–<30 band. The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest).",
           tag: 'D1.4 p1',
         },
         {
@@ -448,7 +448,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Skip a stop of 30 or more',
-          body: 'An ISB stop of 30 pts or more must not be taken (course-defaults-30, owner order "move to 30 at least… fix all" — DEVIATES from the course\u2019s twenties skip [D4.1 p1 @05:41]: the [20,30) window no longer refuses). A stop under 30 is taken. The trader-side sizing cuts a stop of 20–<30 pts to the reduced 3-contract tier (mentorStopTwentiesMinPts/MaxPts).',
+          body: 'An ISB stop of 30 pts or more must not be taken (course-defaults-30, owner order "move to 30 at least… fix all" — DEVIATES from the course\u2019s twenties skip [D4.1 p1 @05:41]: the [20,30) window no longer refuses). A stop under 30 is taken. The trader-side sizing cuts a stop of 20–<30 pts to the reduced 3-contract tier (the mentor_isb_max_pts knob top).',
           cite: 'Course-defaults-30 (owner order 10-16) — CourseExits.ISBMaxStopPts 30 · D4.1 p1 @05:41 (the course says "twenties… đừng vô"; the owner moved the line to 30)',
         },
       ],
@@ -540,8 +540,8 @@ export const mentor: GuideSection = {
         ],
         [
           'Room rule',
-          'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. The room is measured to the LEVEL, also on a spent day: the 15-pt take-profit cap shortens the take-profit, never the room — "dù target của em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]. So a spent-day setup needs stop ≤ 15 (the 1:1 floor on the capped take-profit), room ≥ 2R to the level, AND room to the level ≥ 2× the capped take-profit — his worked figure: target 15 → room 30 (a take-profit sitting right at the level is refused). The stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
-          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · every non-swing stop, the ISB included, also meets the trader’s 25-pt cap: trader/mentor_mode.go mentorRuleGate (mentorStopTwentiesMaxPts) · swing_max_stop_pts 100',
+          'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. The room is measured to the LEVEL, also on a spent day: the 15-pt take-profit cap shortens the take-profit, never the room — "dù target của em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]. So a spent-day setup needs stop ≤ 15 (the 1:1 floor on the capped take-profit), room ≥ 2R to the level, AND room to the level ≥ 2× the capped take-profit — his worked figure: target 15 → room 30 (a take-profit sitting right at the level is refused). A PHL/PLH stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
+          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · every non-swing stop, the ISB included, also meets the mentor_isb_max_pts ceiling (default 30 — the SAME knob the trader’s R8 gate reads; P2-1 one number) · swing_max_stop_pts 100',
         ],
         [
           'ORB gate (opening range)',
@@ -592,7 +592,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Spent 300+ overnight AND 4h/1h disagree at 08:30 → day OFF',
-          body: 'The day gate reads the Globex run at 08:30 CT. If the overnight daily candle already ran 300+ pts AND the 4h and 1h disagree, the machine is OFF for the day (latched at 08:30) — no box/ISB trades all day, the swing exempt. Owner ruling 2026-10-09: the OFF is re-checked on every closed 1h bar — the moment the 4h and 1h AGREE, the day re-opens (one-way, never re-latched that day; the spent-day target cap still applies) and trading resumes in that direction.',
+          body: 'The day gate reads the Globex run at 08:30 CT. If the overnight daily candle already ran 300+ pts AND the 4h and 1h disagree, the machine is OFF for the day (latched at 08:30) — no box/ISB trades all day, the swing exempt. course-defaults-30 (item 4): the re-check is OFF (mentor_day_off_recheck, nil → OFF) — the day STAYS off, a whole-day latch. The pre-30 owner ruling (2026-10-09) that re-checked the OFF on every closed 1h bar is superseded.',
           cite: 'Ngày 5.1 p1 @19:22 — "Còn nếu như 2 khung giờ đang ngược nhau / Mà khung daily nó đã chạy được 300-400 điểm rồi / Tắt máy nghỉ luôn cho em" (shut down for the day; @19:40 "Ngày hôm đó không đáng để trade") — the course has NO re-check later in the day. course-defaults-30: the re-check is OFF (mentor_day_off_recheck, nil → OFF) — the day stays off. The pre-30 owner ruling (2026-10-09) that added the re-check is superseded.',
         },
       ],
@@ -618,7 +618,7 @@ export const mentor: GuideSection = {
         [
           'SWING4H',
           '2',
-          'mentor_swing4h_contracts — lesson 5.2 p2 @06:19: “đừng vô 1 MNQ… vô ít nhất là 2 MNQ để có đường bán bớt” (enter at least 2 MNQ to have room to sell part) — course-defaults-30',
+          'mentor_swing4h_contracts — lesson 5.2 p2 @06:08: “Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt” (not 1 MNQ — at least 2 MNQ to have room to take some off) — course-defaults-30',
         ],
         [
           'Spent day (§7)',
@@ -796,12 +796,12 @@ export const mentor: GuideSection = {
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25) → SWING contracts (release #25: the course’s swing_contracts knob)',
           what: 'Size for the 4h EMA 34 swing setup. With 2+ contracts AND the Swing runner switch ON, the swing splits into leg 1 at the first target + a runner.',
           trader:
-            '2 contracts on the swing (lesson 5.2 p2 @06:19: "đừng vô 1 MNQ… vô ít nhất là 2 MNQ để có đường bán bớt"); a strong day can never raise it.',
+            '2 contracts on the swing (lesson 5.2 p2 @06:08: “Vô Addict là 2 của MNQ để có đường bắn bớt”); a strong day can never raise it.',
           consumer: 'trader/mentor_mode.go mentorSwing4HContractsDefault',
           range: 'int',
           systemDefault: '2',
           recommended:
-            '2 — D5.2 p2 @06:19–06:23 ("enter at least 2 MNQ to sell part"); course-defaults-30.',
+            '2 — D5.2 p2 @06:08 "Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt" (not 1 MNQ — at least 2 to take some off); course-defaults-30.',
           whenToTouch:
             'Owner sizing call (CX-2): 1 is his own cash-account size ("Em vô đúng 1 MNQ thôi" [D5.2 p1 @00:43]).',
           perSession: 'No.',
@@ -984,14 +984,15 @@ export const mentor: GuideSection = {
         {
           label: '4h/1h gate only in the news window',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D4.4-11: ON (default, course-defaults-30) = the 4h/1h direction gate applies ONLY inside the 07:20–07:35 CT news window; ordinary intraday entries are then not HTF-gated. OFF = the all-day gate (the pre-30 behaviour — no 4h trigger means nothing to follow, and a 1h against the 4h sits out all day). The course says to use the HTF read "for news first, not ordinary trading yet" (D4.4 p1 @13:44–14:06); the later D5.1 routine reads 4h then 1h for the day, which the DAY gate already does [D5.1 p1 @19:04–19:20].',
-          trader: 'ON — course-defaults-30 (owner "fix all").',
+          what: 'D4.4-11: ON = the 4h/1h direction gate applies ONLY inside the 07:20–07:35 CT news window; ordinary intraday entries are then not HTF-gated. OFF (default — the all-day gate) = no 4h trigger means nothing to follow, and a 1h against the 4h sits out all day. The course: "Đánh thường đánh níu cũng được / Nhưng mà đánh níu nên sử dụng cho níu trước đi / Đừng sử dụng cho thường / Thường bắt đầu khó lắm" (D4.4 p1 @13:55–14:06 — trading normal or news is fine, but use the HTF read for news first); the later D5.1 routine reads 4h then 1h for the day [D5.1 p1 @19:04–19:20]. The course is split, so the all-day gate stays the default and the news-only switch sits on the mentor-question list (U-6 open).',
+          trader:
+            'OFF — FOLD 2026-10-16 reverted course-defaults-30 back to the all-day gate (U-6 open).',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (HTFGateNewsOnly) · kernel/mentor/htf_direction.go HTFGateActive / HTFVerdict',
           range: 'true / false',
-          systemDefault: 'true',
+          systemDefault: 'false',
           recommended:
-            'ON — the course default (D4.4 p1 @13:55–14:06, @24:48–24:57); the all-day gate was stricter than the course.',
+            'OFF — the all-day gate is the default (U-6 open; the course is split D4.4 p1 @13:55 vs D5.1 p1 @19:11–19:20).',
           whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
@@ -1262,7 +1263,7 @@ export const mentor: GuideSection = {
         {
           label: 'Stop ceiling',
           where: 'Strategy → Mentor mode → risk',
-          what: 'The evaluator’s hard stop ceiling for PHL/PLH stops and box-return stops — its only two readers. The ISB is not checked against it: every non-swing mentor stop, the ISB included, meets the trader’s own separate 25-pt gate (trader/mentor_mode.go mentorRuleGate, mentorStopTwentiesMaxPts), which this value does not move.',
+          what: 'The evaluator’s hard stop ceiling for PHL/PLH stops and box-return stops — its only two readers. The ISB is not checked against it: the ISB (and the reverse ISB) meet the mentor_isb_max_pts ceiling (default 30, the SAME knob the trader R8 gate reads), which this value does not move.',
           trader: '25 pts — the SWING4H is exempt (its ceiling is 100).',
           consumer:
             'kernel/mentor/mentor.go StopCeilingPts — read only by kernel/mentor/phl.go phlPLHR2 and kernel/mentor/box_trade.go boxEntryIntent',
@@ -1462,7 +1463,7 @@ export const mentor: GuideSection = {
         {
           label: 'Swing max stop',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'A swing stop at/above this → do not enter. The swing is EXEMPT from the 25-pt ceiling.',
+          what: 'A swing stop at/above this → do not enter. The swing is EXEMPT from the ISB stop ceiling (mentor_isb_max_pts, default 30).',
           trader: '100 pts.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (SwingMaxStopPts)',
@@ -1753,7 +1754,7 @@ export const mentor: GuideSection = {
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25); size = mentor_swing4h_contracts',
           what: 'With 2+ swing contracts, split the swing: leg 1 (half, rounded up) takes profit at the first target (max(1R, the 5m EMA 34)); the runner is held by the 4h — break-even at +1R and the close at the end of the 2nd 4h candle (the swing’s own rules), with its take-profit capped at max(100 pts, 2× the first-target distance). The hold-close never closes more than NinjaTrader still holds. With 1 contract the switch does nothing (counted swing_runner_needs_2_contracts).',
           trader:
-            'Course: “đừng vô 1 MNQ, vô at least là 2 … để có đường bắn bớt” (not 1 MNQ — at least 2, so you can take some off) [D5.2 p2 @06:19–06:27]; “gồng theo khung 4 giờ” [D5.2 p1 @05:52]; “hô tới đâu luôn” [D5.2 p2 @05:50]. He swings 1 MNQ himself (“Em vô đúng 1 MNQ thôi” [D5.2 p1 @00:43]). The 100-pt cap is the top of the course’s 50–100 pts per 4h candle — the course names no runner take-profit [C]. Case (b): sizing is the owner’s call.',
+            'Course: “Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt” (not 1 MNQ — at least 2, so you can take some off) [D5.2 p2 @06:08–06:23]; “gồng theo khung 4 giờ” [D5.2 p1 @05:52]; “hô tới đâu luôn” [D5.2 p2 @05:50]. He swings 1 MNQ himself (“Em vô đúng 1 MNQ thôi” [D5.2 p1 @00:43]). The 100-pt cap is the top of the course’s 50–100 pts per 4h candle — the course names no runner take-profit [C]. Case (b): sizing is the owner’s call.',
           consumer:
             'trader/mentor_course_exits.go mentorSwingRunnerLegs ← trader/mentor_actions.go mentorArmIntent · mentorSwingCloseQty ← mentorClosePosition',
           range: 'ON / OFF',
@@ -1852,7 +1853,8 @@ export const mentor: GuideSection = {
             'Course: “nếu như một cái setup insidebar mà nó hai mươi mấy điểm … làm ơn giúp em đừng vô” (an ISB in the twenties — don’t enter) [D4.1 p1 @05:34–05:48]. The OWNER moved the line to 30 (10-16 "fix all").',
           consumer:
             'kernel/mentor/course_exits.go isbOverMaxStop ← kernel/mentor/isb.go ISBStopVerdict',
-          range: 'pts, 0 = off',
+          range:
+            'pts, 0 → 30 (the knob has no OFF — unset/0 resolves to the 30 default)',
           systemDefault: '30',
           recommended:
             '30 — course-defaults-30 owner order; D4.1 p1 @05:41 (the course\u2019s twenties skip, moved to 30 by the owner).',

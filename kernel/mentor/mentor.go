@@ -317,10 +317,11 @@ type Config struct {
 	// direction gate is for NEWS first, not ordinary trading yet
 	// ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI. ĐỪNG SỬ DỤNG CHO [trade]
 	// THƯỜNG"). true: the HTF gate applies only inside the 07:20–07:35 CT
-	// news window; ordinary intraday entries are not HTF-gated. Default true
-	// = the course default (course-defaults-30, owner "fix all": the all-day
-	// gate was STRICTER than the course). The day gate keeps its own 4h/1h
-	// pre-session read [D5.1 p1 @19:04–19:20]. Studio switch:
+	// news window; ordinary intraday entries are not HTF-gated. Default false
+	// = the all-day gate (U-6 open — the course is split: D4.4 p1 @13:55 news-
+	// first vs D5.1 p1 @19:11–19:20 "4h and 1h agree → trade with them"; the
+	// FOLD 2026-10-16 reverts course-defaults-30 back to the all-day gate and
+	// puts it on the mentor-question list). Studio switch:
 	// risk_control.mentor_tuning.htf_gate_news_only.
 	HTFGateNewsOnly bool
 
@@ -520,7 +521,7 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
-		HTFGateNewsOnly:        true, // course-defaults-30: news-only is the course default [D4.4 p1 @13:55–14:06, @24:48]
+		HTFGateNewsOnly:        false, // U-6 open (FOLD 2026-10-16: the all-day gate stays; the course is split D4.4 vs D5.1)
 		NearBoxRoomMultiple:    2,     // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
 		LossDeparturePts:       0,     // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,

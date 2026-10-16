@@ -17,8 +17,8 @@ import (
 // TestHTFGateActiveNewsOnly pins the pure window test.
 func TestHTFGateActiveNewsOnly(t *testing.T) {
 	cfg := DefaultConfig()
-	if !cfg.HTFGateNewsOnly {
-		t.Fatal("HTFGateNewsOnly must default ON (the course default; course-defaults-30)")
+	if cfg.HTFGateNewsOnly {
+		t.Fatal("HTFGateNewsOnly must default OFF (the all-day gate; U-6 open) — FOLD 2026-10-16")
 	}
 	cfg.HTFGateNewsOnly = true
 	cases := []struct {

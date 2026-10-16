@@ -119,7 +119,8 @@ func swingRoomFilterRefuses(cfg Config, in Intent, obstacle float64) bool {
 	return swingRoomRefused(in, obstacle, cfg.RoomMultiple)
 }
 
-// isbOverMaxStop (CX-9): an ISB stop at/above the knob is refused. 0 = off.
+// isbOverMaxStop (CX-9): an ISB stop at/above the knob is refused. 0 → 30
+// (the knob has no OFF — unset/0 resolves to the 30 default).
 func isbOverMaxStop(stopPts float64, cfg Config) bool {
 	return cfg.CourseExits.ISBMaxStopPts > 0 && stopPts >= cfg.CourseExits.ISBMaxStopPts
 }
@@ -133,8 +134,9 @@ func keypairCandleRatio(cfg Config) float64 {
 }
 
 // reverseISBRetag (CX-6): with the knob ON the reverse ISB carries the setup
-// the mentor names — PHL for a long, PLH for a short — and the ISB-only size
-// flags (written rules 2 and 3 are ISB rules) are not set. OFF: unchanged.
+// the mentor names — PHL for a long, PLH for a short — and the ISB location
+// sizing flags STAY (P2-2): a retagged reverse ISB inside a range or at an
+// old extreme still sizes 3 (written rules 2–3), never base 5. OFF: unchanged.
 func reverseISBRetag(in Intent, cfg Config) Intent {
 	if !cfg.CourseExits.ReverseISBAsPHL {
 		return in
@@ -144,7 +146,8 @@ func reverseISBRetag(in Intent, cfg Config) Intent {
 	} else {
 		in.Setup = "PLH"
 	}
-	in.Flag = "" // the ISB size flags (written rules 2–3) are ISB rules
+	// P2-2: keep in.Flag — the ISB location flags (FlagISBAtOldExtreme /
+	// FlagISBInRange) cut a reverse ISB to 3 exactly like a forward ISB.
 	in.Reason = "PHL/PLH (" + in.Reason + ") — the mentor reads a reverse ISB as the with-trend Potential Low 2 / Lower High [D5.4 @03:52–03:56, @07:33–07:37; mentor_reverse_isb_as_phl]"
 	return in
 }

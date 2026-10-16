@@ -1203,7 +1203,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.refuse(r)
 		}
 		out = kept
-		out = applyFlagWallTarget(out, liveFlagWalls, curBarOpenTime, e.Cfg, e.refuse) // CE-11 (knob flag_wall_target, default OFF)
+		out = applyFlagWallTarget(out, liveFlagWalls, curBarOpenTime, e.Cfg, e.refuse) // CE-11 (knob flag_wall_target, default ON — course-defaults-30)
 		stampHTFAgree(out, e.State.HTF)
 		e.armSchoolOne(out, schoolOne)
 	}()
@@ -1596,7 +1596,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// NOT location-gated — "inside bar lúc nào cũng có thể take
 				// risk… trong range, trên range, ngoài range, dưới range"
 				// [D4.1 p1 @ 05:15]. His conditions stay: the trigger zone
-				// (above), the R5 box (below), the twenties skip, and a size
+				// (above), the R5 box (below), the 20–<30 stop band, and a size
 				// flag at an old high/low.
 				//
 				// fold item 3: entries only with the 4h trigger direction
@@ -1607,7 +1607,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				} else {
 					// R1 (RULES-FIX-v3): the order is a STOP-LIMIT in the
 					// CANDLE-1 colour direction (the only skip: a stop in
-					// the twenties) [D1.4 p1 @ 09:20–10:20, 24:41–24:55].
+					// the 20–<30 band) [D1.4 p1 @ 09:20–10:20, 24:41–24:55].
 					// R5: while the box stands nothing trades inside it except a
 					// SAME-direction 1m ISB — compute the verdict up front so an
 					// allowed ISB still falls through to the emit below.
@@ -1806,7 +1806,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				in.ExecTFMin = execTFMin
 			}
 			// R85 (CTO, release #4): now that the reverse ISB can place, it
-			// runs through the SAME gates as the normal ISB — the twenties
+			// runs through the SAME gates as the normal ISB — the 20–<30
 			// stop skip [D4.1 p1 @ 05:41], the 4h HTF verdict and side, and
 			// the near-box rule (row 24) — before any target is set.
 			// B6: plus the SAME ISB-box gates (R5 / D4.1-25 / D4.2-07) and the
@@ -1898,7 +1898,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						delete(justPlaced, id)
 					}
 					in.Confluence = confluence
-					out = append(out, reverseISBRetag(in, e.Cfg)) // CX-6 knob (default OFF = tag "ISB")
+					out = append(out, reverseISBRetag(in, e.Cfg)) // CX-6 knob (default ON = tag PHL/PLH — course-defaults-30)
 				}
 			}
 		}
@@ -2074,10 +2074,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// MID-RANGE ban via boxes (CTO 1791003862333): between an FTGL
 			// below and an FTGH above there is NO PHL, NO PLH, regardless of
 			// width — only the ISB.
-			// CE-11/B13 (release #25, knob trendline_between_boxes, default OFF):
-			// ON exempts a TRENDLINE reject — "Đụng trendline, nên đóng dưới,
-			// đánh ngược lại xuống dưới… dưới cái box" [D3.2 p2 @10:56–11:20];
-			// the same lesson bans every PHL/PLH between two boxes [@08:34–08:55].
+			// CE-11/B13 (release #25, knob trendline_between_boxes, default ON —
+			// course-defaults-30): ON exempts a TRENDLINE reject — "Đụng
+			// trendline, nên đóng dưới, đánh ngược lại xuống dưới… dưới cái box"
+			// [D3.2 p2 @10:56–11:20]; the same lesson bans every PHL/PLH
+			// between two boxes [@08:34–08:55].
 			if midRangeBoxedRefuses(e.Cfg, lvl, boxes, price) {
 				e.refuseOncePerVisit(lvl.Key, "phl_mid_range_boxed")
 				continue
@@ -2430,10 +2431,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.refuse(r)
 	}
 
-	// CE-3 (release #25, knob news_wait_both_lines, default OFF): after a
-	// red-folder print, until the 08:30 CT open, an entry waits for the close
-	// beyond the 4h trigger line [D4.4 p1 @21:55–22:12]. The 30-second ISB of
-	// the same lesson [@23:08–23:13] is NOT built: no sub-minute bars exist.
+	// CE-3 (release #25, knob news_wait_both_lines, default ON —
+	// course-defaults-30): after a red-folder print, until the 08:30 CT open,
+	// an entry waits for the close beyond the 4h trigger line [D4.4 p1
+	// @21:55–22:12]. The 30-second ISB of the same lesson [@23:08–23:13] is
+	// NOT built: no sub-minute bars exist.
 	out, refused = newsWaitFilter(out, e.State.HTF, bars[len(bars)-1].Close, now, e.Cfg)
 	for _, r := range refused {
 		e.refuse(r)

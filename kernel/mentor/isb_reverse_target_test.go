@@ -146,20 +146,31 @@ func TestReverseISBObeysThe4hAgainstANormalISB(t *testing.T) {
 // R85 reworked by course-defaults-30: the reverse ISB obeys the SAME stop
 // ceiling as the normal ISB — CourseExits.ISBMaxStopPts default 30 (stop < 30
 // taken, ≥ 30 refused). The fixture's inside candle gives a 5-pt stop, so with
-// the default it FIRES; with the knob at 4 the same 5-pt stop is refused and
-// counted "isbrev_stop_over_max". Mutant: drop the isbOverMaxStop check in
-// ISBStopVerdict → RED (the reverse fires under the knob).
+// the default it FIRES (retagged PHL by CX-6); with the knob at 4 the same
+// 5-pt stop is refused and counted "isbrev_stop_over_max". Mutant: drop the
+// isbOverMaxStop check in ISBStopVerdict → RED (the reverse fires under the
+// knob). The fired-intent filter matches the RETAGGED PHL, so a regression
+// that silently drops the intent (or un-retags it) fails here too.
 func TestReverseISBSkipsTheTwenties(t *testing.T) {
 	e, bars, now := isbReverseFixture(t)
 	if e.Cfg.CourseExits.ISBMaxStopPts != 30 {
 		t.Fatalf("CX-9 default must be 30; got %g", e.Cfg.CourseExits.ISBMaxStopPts)
 	}
 	ins := e.Tick(bars, now)
+	// the default fires — retagged PHL (CX-6), a 5-pt stop below the 30-pt
+	// ceiling. Assert the intent is PRESENT (the old loop asserted nothing).
+	var fired *Intent
 	for i := range ins {
-		if in := &ins[i]; (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" && in.Side == SideLong {
-			// the default fires: a 5-pt stop is below the 30-pt ceiling
-			_ = in
+		in := &ins[i]
+		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "PHL" && in.Side == SideLong {
+			if fired != nil {
+				t.Fatalf("two long reverse entries on one tick: %+v", ins)
+			}
+			fired = in
 		}
+	}
+	if fired == nil {
+		t.Fatalf("the reverse ISB must fire retagged PHL under the default ceiling; intents %+v refusals %v", ins, e.State.Refusals)
 	}
 	if e.State.Refusals["isbrev_stop_over_max"] != 0 || e.State.Refusals["isbrev_stop_twenties"] != 0 {
 		t.Fatalf("default: no stop refusal expected; refusals %v", e.State.Refusals)
@@ -168,8 +179,10 @@ func TestReverseISBSkipsTheTwenties(t *testing.T) {
 	e2, bars2, now2 := isbReverseFixture(t)
 	e2.Cfg.CourseExits.ISBMaxStopPts = 4
 	ins2 := e2.Tick(bars2, now2)
+	// the "must not fire" filter matches BOTH the retagged PHL and a forward
+	// ISB, so a retag regression cannot make the refusal loop silently pass.
 	for i := range ins2 {
-		if in := &ins2[i]; (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" && in.Side == SideLong {
+		if in := &ins2[i]; (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && (in.Setup == "PHL" || in.Setup == "ISB") && in.Side == SideLong {
 			t.Fatalf("a reverse ISB with a 5-pt stop under a 4-pt ceiling must not fire; intents %+v", ins2)
 		}
 	}

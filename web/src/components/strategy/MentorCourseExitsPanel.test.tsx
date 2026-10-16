@@ -36,7 +36,7 @@ it('absent keys read "default" with the knob-rule default named', () => {
     'mentor-course-mentor_be_before_partial'
   ) as HTMLSelectElement
   expect(be.value).toBe('default')
-  expect(be).toHaveTextContent('default: OFF')
+  expect(be).toHaveTextContent('default: ON') // course-defaults-30: nil → ON
   const first = screen.getByTestId(
     'mentor-course-mentor_swing_ema34_is_first_target'
   ) as HTMLSelectElement

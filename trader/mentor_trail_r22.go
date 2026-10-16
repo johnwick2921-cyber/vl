@@ -304,8 +304,9 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 		return
 	}
 	if !scaledNow {
-		// stage 0. CX-4 (knob mentor_be_before_partial, default OFF = R3):
-		// BE at half-way to +1R before the partial [D1.2 p1 @12:41–13:12].
+		// stage 0. CX-4 (knob mentor_be_before_partial, default ON —
+		// course-defaults-30): BE at half-way to +1R before the partial
+		// [D1.2 p1 @12:41–13:12].
 		at.mentorBEBeforePartialStep(nt, p, c)
 		return
 	}

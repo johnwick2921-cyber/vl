@@ -79,8 +79,8 @@ func TestCX1SwingEMA34IsTheFirstTargetNotAnObstacle(t *testing.T) {
 
 // TestCX6ReverseISBTaggedPHLWhenOn — D5.4 @03:52–03:56 "Nó là bộ tên solo 2,
 // chứ nó không phải là Insa 3": knob ON (the course-defaults-30 default) tags
-// the reverse ISB PHL (long) and drops the ISB size flags; OFF keeps "ISB".
-// Mutant: the retag call removed from eval.go → ON RED.
+// the reverse ISB PHL (long) and KEEPS the ISB location size flags (P2-2); OFF
+// keeps "ISB". Mutant: the retag call removed from eval.go → ON RED.
 func TestCX6ReverseISBTaggedPHLWhenOn(t *testing.T) {
 	if !DefaultConfig().CourseExits.ReverseISBAsPHL {
 		t.Fatal("CX-6 default must be ON (course-defaults-30)")
@@ -106,8 +106,28 @@ func TestCX6ReverseISBTaggedPHLWhenOn(t *testing.T) {
 		if got.Setup != want {
 			t.Fatalf("on=%v: reverse ISB tagged %q, want %q", on, got.Setup, want)
 		}
-		if on && got.Flag != "" {
-			t.Fatalf("on: the ISB size flags must not ride a PHL-tagged reverse: %q", got.Flag)
+	}
+}
+
+// TestCX6ReverseISBRetagKeepsLocationFlags — P2-2: the retag renames the setup
+// (ISB → PHL/PLH) but must NOT clear the ISB location size flags, so a reverse
+// ISB inside a range or at an old extreme still sizes 3, never base 5. Mutant:
+// `in.Flag = ""` in reverseISBRetag → RED.
+func TestCX6ReverseISBRetagKeepsLocationFlags(t *testing.T) {
+	cfg := DefaultConfig()
+	both := FlagISBAtOldExtreme + "|" + FlagISBInRange
+	for _, side := range []Side{SideLong, SideShort} {
+		in := Intent{Setup: "ISB", Side: side, Flag: both, Reason: "reverse ISB"}
+		out := reverseISBRetag(in, cfg)
+		want := "PHL"
+		if side == SideShort {
+			want = "PLH"
+		}
+		if out.Setup != want {
+			t.Fatalf("side=%v: retagged setup %q, want %q", side, out.Setup, want)
+		}
+		if !HasFlag(out.Flag, FlagISBAtOldExtreme) || !HasFlag(out.Flag, FlagISBInRange) {
+			t.Fatalf("side=%v: the retag must KEEP the ISB location flags, got %q", side, out.Flag)
 		}
 	}
 }

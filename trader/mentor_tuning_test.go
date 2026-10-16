@@ -91,7 +91,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 		want := mentorTuned{
 			TriggerSchool: 1, PingPongMinGapPts: 50, PingPongCandleMaxPts: 20, PingPongCandleLookback: 30,
 			LevelMaxVisits: 3, OrbGateEnabled: true, ISBReverseEMA9Enabled: true,
-			HTFGateNewsOnly: true, // course-defaults-30: the 4h/1h gate is for news and the open only [D4.4 p1 @13:55–14:06]
+			HTFGateNewsOnly: false, // U-6 open (FOLD 2026-10-16: the all-day 4h/1h gate stays the default)
 			Exec2mAfter30m:  false, // X5-10: the 1m ISB read stays the default (course trades the 1m)
 			DayGateSpentPts: 300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
 			// Release #25 course-entry knobs (course-defaults-30 changes).
@@ -110,6 +110,25 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)
 		}
+	}
+}
+
+// TestMentorDayOffRecheckDefaultsOff — P1-7: the LIVE trader resolver
+// (mentor_mode.go:408) must read OFF when the knob is nil/unset (the whole-day
+// latch), and ON only on an explicit true. Mutant: revert to nil → ON → RED.
+func TestMentorDayOffRecheckDefaultsOff(t *testing.T) {
+	on, off := true, false
+	if mentorDayOffRecheck(nil) {
+		t.Fatal("nil rc must read OFF (nil → OFF, the whole-day latch)")
+	}
+	if mentorDayOffRecheck(&store.RiskControlConfig{MentorMode: true}) {
+		t.Fatal("an unset knob must read OFF (nil → OFF)")
+	}
+	if !mentorDayOffRecheck(&store.RiskControlConfig{MentorDayOffRecheck: &on}) {
+		t.Fatal("an explicit true must read ON")
+	}
+	if mentorDayOffRecheck(&store.RiskControlConfig{MentorDayOffRecheck: &off}) {
+		t.Fatal("an explicit false must read OFF")
 	}
 }
 

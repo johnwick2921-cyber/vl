@@ -13,6 +13,15 @@ import (
 // (one-way). These pins drive the production Tick call site and assert the
 // transition, the knob, the still-conflicting case and the one-way guarantee.
 
+// TestDayOffRecheckDefaultsOff — course-defaults-30 item 4 / P1-7: the kernel
+// default is OFF (the whole-day latch, superseding the 2026-10-09 ruling).
+// Mutant: DefaultConfig().DayOffRecheck → true → RED.
+func TestDayOffRecheckDefaultsOff(t *testing.T) {
+	if DefaultConfig().DayOffRecheck {
+		t.Fatal("DayOffRecheck must default OFF (the whole-day latch; course-defaults-30 item 4)")
+	}
+}
+
 // dayoffRecheckTape builds 1m bars from 09:00 CT (2026-09-15, CDT), one flat
 // hour block per entry: hours[i] = {high, low, close}. The 1h bucket
 // aggregation takes the min low / max high across the hour, so a later hour's
