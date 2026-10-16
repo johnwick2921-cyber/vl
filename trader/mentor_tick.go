@@ -495,16 +495,19 @@ func mentorDayGateLine(r mentor.DayGateReport) string {
 	// that later moment — the line names the real read instant.
 	when := "@08:30 CT"
 	open := ""
-	if !r.ReadAtOpen() {
+	if r.Restored {
+		// B1 (release #30): the seed restored the 08:30 latch from the
+		// 08:30 read — the 4h/1h below ARE the 08:30 decision. Checked
+		// BEFORE ReadAtOpen: a restored report's ReadAt IS the 08:30
+		// instant (that is what was restored), but this process did not
+		// read it live at 08:30 — it replayed it at boot. Say so.
+		when = fmt.Sprintf("RESTORED from the 08:30 read (trading day %s — the 4h/1h below are the 08:30 decision's)", r.Key)
+	} else if !r.ReadAtOpen() {
 		at := "n/a"
 		if r.ReadAt > 0 {
 			at = kernel.ClockHHMMCT(time.UnixMilli(r.ReadAt))
 		}
-		if r.Restored {
-			// B1 (release #30): the seed restored the 08:30 latch from the
-			// 08:30 read — the 4h/1h below ARE the 08:30 decision.
-			when = fmt.Sprintf("RESTORED from the 08:30 read (trading day %s — the 4h/1h below are the 08:30 decision's)", r.Key)
-		} else if r.BootRead {
+		if r.BootRead {
 			// MENTOR-NY item 6 (S2): a boot after 08:30 re-reads the day
 			// gate on the 4h/1h of the boot moment. Say so, and show what the
 			// 08:30 decision read (replayed by the seed) when it differs —
