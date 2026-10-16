@@ -956,6 +956,15 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 			}
 			zl.stamp(row)               // W3 — policy, zone (inward-rounded), provenance, planned entry
 			stampPictureSource(row, sc) // W5 — source, opportunity, rule, deadline, run epoch
+			// dispatch-31 (owner order 2026-10-16 "set to 4 at least, sell 2 first
+			// so it's equal") — a PLANNER single arm (non-machine, non-mentor, not a
+			// sweep_reclaim split) sizes to the per-strategy planner_contracts knob
+			// and splits AT ENTRY into equal halves: leg 1 = n/2 at the plan's first
+			// obstacle, leg 2 = the rest at the final target. Stamped on the row so
+			// the placement pass (any process, after a restart) sends it without
+			// re-reading the plan doc. Mentor rows and a 2-leg sweep_reclaim arm are
+			// untouched; the knob unset/0 → 1 = today's single-contract arm.
+			stampPlannerSplit(row, &cfg.RiskControl, machine, legCount, firstObstaclePrice(sc))
 			// W1b E1: the matched ledger row is KEPT — its prices are what went to the wire.
 			var prior store.ArmedOrderDB
 			existing, err := ledger.ListNonTerminal(at.id)
@@ -2125,6 +2134,9 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 	// B2 MENTOR SIZE (2026-10-04): the mentor arm carries its signed contract
 	// count on the row. A mentor row WITHOUT one is REFUSED (counted + logged),
 	// never sent as 1 (absent ≠ 0). Non-mentor rows stay 1.
+	// dispatch-31 (2026-10-16): a PLANNER arm stamped with its contract count at
+	// authoring (planner_contracts ≥ 2) sends that count; every other non-mentor
+	// row stays 1.
 	qty := 1.0
 	if isMentorArmOrigin(r) {
 		n, why := at.mentorArmQuantity(r)
@@ -2137,6 +2149,8 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 			return stopPlaceNotSent
 		}
 		qty = n
+	} else if r.Contracts != nil && *r.Contracts > 0 {
+		qty = float64(*r.Contracts)
 	}
 	// N4 (2026-10-04, DAY-1 #15/#42): the +2-tick wire offset moves the entry
 	// 0.5 pt against the trade (trigger = entry ± offset, stop and target
@@ -2181,6 +2195,13 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		if leg1Qty = mentorWireLeg1(r, int(qty)); leg1Qty > 0 {
 			leg1TP = mentorWireLeg1TP(r.EntryPx, d.Trigger, r.StopPx, r.Leg1TP)
 		}
+	} else if r.Leg1Qty != nil && *r.Leg1Qty > 0 && r.Leg1TP > 0 {
+		// dispatch-31: the planner split stamped at authoring — leg 1 at the
+		// plan's first obstacle, leg 2 at the final target. The wire rounds
+		// leg1TP to the tick grid and drops the split (single bracket) when it
+		// cannot sit on the profit side of the entry (wireLeg1TP).
+		leg1Qty = *r.Leg1Qty
+		leg1TP = r.Leg1TP
 	}
 	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, targetPx, leg1Qty, leg1TP, func(sid string) error {
 		if err := ledger.BeginPlacement(r.ID, sid); err != nil {

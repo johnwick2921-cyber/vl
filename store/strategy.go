@@ -2119,6 +2119,16 @@ type RiskControlConfig struct {
 	// default (the prior hidden const maxFuturesContracts). Toggle default ON.
 	MaxContractsPerOrder int `json:"max_contracts_per_order,omitempty"`
 
+	// PlannerContracts (dispatch-31, owner order 2026-10-16 "set to 4 at least,
+	// sell 2 first so it's equal"): the PLANNER trader's contracts per entry.
+	// Unset/0 → 1 (today's single-contract arm). A value ≥ 2 splits the planner
+	// arm at ENTRY into equal halves — leg 1 = ceil(n/2) contracts at the plan's
+	// FIRST obstacle (economics.first_obstacle.price), leg 2 = the rest at the
+	// arm's final target — so a single entry can sell part and run the rest.
+	// Mentor sizing and every other strategy are unchanged (the knob is read on
+	// the planner arm path only, never the mentor table). SIM only.
+	PlannerContracts int `json:"planner_contracts,omitempty"`
+
 	// MENTOR P3 — mentor mode, per strategy. OFF by default: while off the bot
 	// is byte-identical (L4). A mentor-mode trader takes AI entries off, sizes
 	// from the mentor table, and its exits follow the mentor §6 modes; the AI

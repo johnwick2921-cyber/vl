@@ -61,6 +61,53 @@ func (at *AutoTrader) resolveMaxContracts() int {
 	return kernel.ResolveMaxContracts(rc.MaxContractsPerOrder, int(maxFuturesContracts))
 }
 
+// plannerContracts (dispatch-31, owner order 2026-10-16) resolves the PLANNER
+// trader's contracts per entry: unset/0 → 1 (today's single-contract arm); ≥ 2
+// splits the arm at entry into equal halves (leg 1 at the first obstacle, leg 2
+// at the final target). Read ONLY on the planner arm path — the mentor table and
+// every other strategy are untouched.
+func plannerContracts(rc *store.RiskControlConfig) int {
+	if rc != nil && rc.PlannerContracts > 0 {
+		return rc.PlannerContracts
+	}
+	return 1
+}
+
+// firstObstaclePrice (dispatch-31) is the plan's FIRST target — the
+// economics.first_obstacle.price the planner authored for one scenario. 0 when
+// the scenario carries no economics / no first obstacle (legacy or a plan that
+// never wrote one) — the split then falls back to a single bracket at the final
+// target.
+func firstObstaclePrice(sc kernel.PlanScenario) float64 {
+	if sc.Economics != nil && sc.Economics.FirstObstacle != nil && sc.Economics.FirstObstacle.Price != nil {
+		return *sc.Economics.FirstObstacle.Price
+	}
+	return 0
+}
+
+// stampPlannerSplit (dispatch-31, owner order 2026-10-16) is the ONE authoring
+// site that sizes a PLANNER arm. Pure (the test seam): a non-machine SINGLE arm
+// (legCount 0) with planner_contracts ≥ 2 is stamped with its total contract
+// count and an equal split — leg 1 = n/2 at the first obstacle (fo), leg 2 = the
+// rest at the final target. A machine arm, a 2-leg sweep_reclaim arm, an unset
+// knob (→ 1) and a missing first obstacle all leave the row untouched except the
+// total count (fo 0 → the wire sends one bracket of `total` at the final target).
+func stampPlannerSplit(row *store.ArmedOrderDB, rc *store.RiskControlConfig, machine bool, legCount int, fo float64) {
+	if row == nil || machine || legCount != 0 {
+		return
+	}
+	total := plannerContracts(rc)
+	if total < 2 {
+		return
+	}
+	half := total / 2
+	row.Contracts = &total
+	row.Leg1Qty = &half
+	if fo > 0 {
+		row.Leg1TP = fo
+	}
+}
+
 // hlBool resolves a three-state *bool toggle (nil → default).
 func hlBool(p *bool, def bool) bool {
 	if p == nil {
