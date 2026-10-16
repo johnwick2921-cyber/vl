@@ -134,6 +134,9 @@ type DayGateReport struct {
 	BootRead     bool `json:"boot_read,omitempty"`
 	OpenFourHDir Side `json:"open_fourh_dir,omitempty"`
 	OpenOneHDir  Side `json:"open_oneh_dir,omitempty"`
+	// Restored (release #30): the seed RESTORED the 08:30 latch from the 08:30
+	// read, so the line reads the 08:30 decision, not a boot re-read.
+	Restored bool `json:"restored,omitempty"`
 }
 
 // OpenHTFRead is the 08:30 read of the 4h/1h directions for trading day Key
