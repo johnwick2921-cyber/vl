@@ -172,10 +172,14 @@ func timeCT(ms int64) time.Time {
 // restart must stay cleared. The tape draws 4h short (01:00) and 1h long
 // (08:00) at the read → DAY OFF (run 400); the 10:00 1h bucket breaks the prior
 // 1h low → the 1h flips short and the clear replays to DaySpent.
+// DayOffRecheck is set TRUE explicitly — this tests the recheck path, not the
+// default (which #561 turns OFF).
 // MUTANT: drop the replayDayOffRecheck call in SeedDayLatch → RED (stays DayOff).
 func TestDayRecheckSurvivesRestart(t *testing.T) {
 	tape := dayOffClearTape()
-	e := New(dsCfg())
+	cfg := dsCfg()
+	cfg.DayOffRecheck = true
+	e := New(cfg)
 	now := int64(1792015200000) + 1080*60_000 // 11:00 CT — the 10:00 bucket has closed
 	SeedDayLatch(e, tape, now)
 	if e.State.Day.Verdict != DaySpent {
@@ -183,6 +187,25 @@ func TestDayRecheckSurvivesRestart(t *testing.T) {
 	}
 	if e.State.DayRecheck.ClearedAt == 0 || e.State.DayRecheck.Clears != 1 {
 		t.Fatalf("the recheck clear must be replayed once, got %+v", e.State.DayRecheck)
+	}
+}
+
+// TestDayRecheckOffStaysDayOff — the knob: with DayOffRecheck OFF (the #561
+// default), SeedDayLatch restores the 08:30 DayOff and does NOT replay the
+// recheck, so a clear that happened before the restart is NOT resurrected —
+// the restored day stays DayOff and no clear is recorded.
+func TestDayRecheckOffStaysDayOff(t *testing.T) {
+	tape := dayOffClearTape()
+	cfg := dsCfg()
+	cfg.DayOffRecheck = false
+	e := New(cfg)
+	now := int64(1792015200000) + 1080*60_000 // 11:00 CT — the 10:00 bucket has closed
+	SeedDayLatch(e, tape, now)
+	if e.State.Day.Verdict != DayOff {
+		t.Fatalf("with the recheck OFF the restored DayOff must stay DayOff, got %v", e.State.Day.Verdict)
+	}
+	if e.State.DayRecheck.ClearedAt != 0 || e.State.DayRecheck.Clears != 0 {
+		t.Fatalf("with the recheck OFF no clear may be replayed, got %+v", e.State.DayRecheck)
 	}
 }
 
@@ -199,13 +222,13 @@ func dayOffClearTape() []market.Kline {
 			bars = append(bars, market.Kline{OpenTime: ms, CloseTime: ms + 59_999, Open: o, High: h, Low: l, Close: c, Final: true})
 		}
 	}
-	seg(0, 480, 30250, 30300, 30200, 30250)    // 17:00–00:59 (17:00 + 21:00 4h buckets)
-	seg(480, 720, 30100, 30250, 30000, 30100)  // 01:00–04:59 (4h short at 01:00)
-	seg(720, 840, 30050, 30100, 29900, 30050)  // 05:00–06:59
-	seg(840, 900, 30020, 30050, 30000, 30020)  // 07:00–07:59
-	seg(900, 930, 30050, 30150, 30020, 30080)  // 08:00–08:29 (1h long at 08:00)
-	seg(930, 960, 30080, 30150, 30010, 30080)  // 08:30–08:59
-	seg(960, 1020, 30080, 30150, 30010, 30080) // 09:00–09:59
+	seg(0, 480, 30250, 30300, 30200, 30250)     // 17:00–00:59 (17:00 + 21:00 4h buckets)
+	seg(480, 720, 30100, 30250, 30000, 30100)   // 01:00–04:59 (4h short at 01:00)
+	seg(720, 840, 30050, 30100, 29900, 30050)   // 05:00–06:59
+	seg(840, 900, 30020, 30050, 30000, 30020)   // 07:00–07:59
+	seg(900, 930, 30050, 30150, 30020, 30080)   // 08:00–08:29 (1h long at 08:00)
+	seg(930, 960, 30080, 30150, 30010, 30080)   // 08:30–08:59
+	seg(960, 1020, 30080, 30150, 30010, 30080)  // 09:00–09:59
 	seg(1020, 1080, 29800, 29900, 29600, 29800) // 10:00–10:59 (1h short at 10:00)
 	return bars
 }
