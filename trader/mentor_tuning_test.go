@@ -10,6 +10,8 @@ import (
 
 func intPtr(v int) *int { return &v }
 
+func floatPtr(v float64) *float64 { return &v }
+
 func tuningTick(t *testing.T, tn *store.MentorTuning) mentor.Config {
 	t.Helper()
 	old := market.FuturesBarsProvider
@@ -42,6 +44,7 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 		DayGateTargetCapPts:    12,
 		SwingMaxStopPts:        80,
 		SwingMinStopPts:        25,
+		OrbISBFractionOutside:  floatPtr(0.55),
 	})
 	checks := []struct {
 		name string
@@ -60,6 +63,7 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 		{"day_gate_target_cap_pts=12", cfg.DayGateTargetCapPts == 12},
 		{"swing_max_stop_pts=80 (SwingCfg.MaxStopPts)", cfg.Swing.MaxStopPts == 80},
 		{"swing_min_stop_pts=25 (SwingCfg.MinStopPts)", cfg.Swing.MinStopPts == 25},
+		{"orb_isb_fraction_outside=0.55 (rule 5)", cfg.OrbISBFractionOutside == 0.55},
 	}
 	for _, c := range checks {
 		if !c.ok {
@@ -74,6 +78,15 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 	// turning the booleans ON explicitly
 	if cfg := tuningTick(t, &store.MentorTuning{OrbGateEnabled: &on, ISBReverseEMA9Enabled: &on}); !cfg.OrbGateEnabled || !cfg.ISBReverseEMA9Enabled {
 		t.Error("explicit true must stay true")
+	}
+	// fold #565 (D5): an explicit orb_isb_fraction_outside=0 turns rule 5 OFF
+	// (the kernel reads <= 0 as off) — not silently back to the 0.80 default.
+	if got := tuningTick(t, &store.MentorTuning{OrbISBFractionOutside: floatPtr(0)}).OrbISBFractionOutside; got != 0 {
+		t.Errorf("explicit orb_isb_fraction_outside=0 must turn the rule off, got %.2f", got)
+	}
+	// unset stays the 0.80 default.
+	if got := tuningTick(t, &store.MentorTuning{}).OrbISBFractionOutside; got != 0.80 {
+		t.Errorf("unset orb_isb_fraction_outside must stay 0.80, got %.2f", got)
 	}
 }
 
@@ -92,7 +105,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			TriggerSchool: 1, PingPongMinGapPts: 50, PingPongCandleMaxPts: 20, PingPongCandleLookback: 30,
 			LevelMaxVisits: 3, OrbGateEnabled: true, ISBReverseEMA9Enabled: true,
 			HTFGateNewsOnly: false, // U-6 open (FOLD 2026-10-16: the all-day 4h/1h gate stays the default)
-			Exec2mAfter30m:  false, // X5-10: the 1m ISB read stays the default (course trades the 1m)
+			Exec2mAfter30m:  true,  // X5-10 rule 4 (release #31): 1m for the first 30 min, then the 2m
+			OrbISBFractionOutside: 0.80, // rule 5 (release #31): the ORB-edge ISB candle must be ≥ 80% outside
 			DayGateSpentPts: 300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
 			// Release #25 course-entry knobs (course-defaults-30 changes).
 			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictBothBoxes,
@@ -139,13 +153,14 @@ func TestMentorTuningBadValuesFailClosed(t *testing.T) {
 	got := mentorTuningResolve(at, &store.RiskControlConfig{MentorTuning: &store.MentorTuning{
 		TriggerSchool: 3, PingPongMinGapPts: -5, PingPongCandleMaxPts: 9999, PingPongCandleLookback: 9999,
 		LevelMaxVisits: intPtr(99), DayGateSpentPts: 1, DayGateTargetCapPts: 500, SwingMaxStopPts: 5,
+		OrbISBFractionOutside: floatPtr(1.5), // rule 5: (0,1] only; >1 is bad
 	}})
 	want := mentorTuningResolve(at, nil)
 	if got != want {
 		t.Errorf("bad values changed the result: %+v, want defaults %+v", got, want)
 	}
-	if n := at.mentorCountSnapshot()["tuning_bad_value"]; n != 8 {
-		t.Errorf("tuning_bad_value = %d, want 8 (one per bad field)", n)
+	if n := at.mentorCountSnapshot()["tuning_bad_value"]; n != 9 {
+		t.Errorf("tuning_bad_value = %d, want 9 (one per bad field)", n)
 	}
 }
 

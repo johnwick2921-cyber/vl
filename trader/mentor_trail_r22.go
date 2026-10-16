@@ -297,7 +297,7 @@ func (at *AutoTrader) mentorJudgeAgainstBroker(nt *ntTrader.TCPTrader, side stri
 //
 // Every move goes through mentorMoveLegStop (belief + broker never-widen, the
 // real move_stop frame, the F1 verdict on the next fresh book).
-func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64, scaledNow, scaledBefore, trail bool, exited [3]bool) {
+func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64, scaledNow, scaledBefore, trail bool, frameOK bool, exited [3]bool) {
 	pos := &p.Pos
 	runners := mentorRunnerLegs(p, exited)
 	if len(runners) == 0 {
@@ -313,6 +313,11 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 	side := pos.Side
 	tick := at.mentorInstrumentTick()
 	if !pos.ArmedBE {
+		// fold #565 (D8): a 2m entry's break-even waits for the 2m candle to
+		// close (frameOK) — the 1m close is not the entry's frame.
+		if p.TrailTFMin > 1 && !frameOK {
+			return
+		}
 		be := mentorBEStopPrice(side, pos.Entry, tick)
 		// A break-even stop is only a stop while price is on the PROFIT side of
 		// it: with the close back through the entry, a sell stop above (buy
@@ -675,7 +680,7 @@ func (at *AutoTrader) mentorVerifyPendingTPModifies(nt *ntTrader.TCPTrader) {
 			at.logErrorf("🚨 MODIFY NOT APPLIED at NT8: %s leg 1 TP want %.2f broker %.2f — leg 1 keeps the broker's TP; nothing re-sent", e.sig, e.want, tpOrder.LimitPrice)
 			at.emitAlert("P1", "modify-bracket-not-applied", "modify-bracket:"+e.sig,
 				"ISB partial not applied at NT8",
-				e.sig+": leg 1 TP not moved to the wanted price — leg 1 keeps the broker's TP (the +1R TP on the first modify)");
+				e.sig+": leg 1 TP not moved to the wanted price — leg 1 keeps the broker's TP (the +1R TP on the first modify)")
 			clear(e.p, tpOrder.LimitPrice)
 		}
 	}

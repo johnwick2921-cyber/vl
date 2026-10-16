@@ -17,6 +17,7 @@ import (
 // PingPongCandleMaxPts ("nến tầm mười mấy điểm").
 func TestPingPongCandleCap(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	floor := Box{Kind: FTGL, Top: 100, Bottom: 90, Key: "ftgl"}
 	ceil := Box{Kind: FTGH, Top: 210, Bottom: 160, Key: "ftgh"} // gap 60
 
@@ -68,6 +69,7 @@ const (
 func b21PairFixtureMode(mode string) (*Evaluator, []market.Kline, int64) {
 	fat := mode == b21FatPrior
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
@@ -102,7 +104,7 @@ func b21PairFixtureMode(mode string) (*Evaluator, []market.Kline, int64) {
 	now := bars[5].OpenTime + 59_999
 	levels := []Level{
 		{Key: "K", Kind: KindKeyLevel, Price: 99.5},
-		{Key: "KL2", Kind: KindKeyLevel, Price: 118},            // the pair's second level: gap 18.5
+		{Key: "KL2", Kind: KindKeyLevel, Price: 118},                           // the pair's second level: gap 18.5
 		{Key: "old-high:118", Kind: KindOldExtreme, Role: OldHigh, Price: 118}, // the PHL target (matched to the tape swing at bar 3)
 	}
 	e := New(cfg)
@@ -213,6 +215,7 @@ func TestMentorNYKeyPairCountedOncePerVisit(t *testing.T) {
 // the 4th and later refuse, named and counted.
 func TestB23LevelVisitCap(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0

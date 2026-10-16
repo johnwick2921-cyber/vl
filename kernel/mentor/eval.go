@@ -27,6 +27,13 @@ type State struct {
 	DeletedLevels map[string]bool `json:"deleted_levels,omitempty"`
 	// ISBArms are the live inside-bar orders (stacking counter, §2.1).
 	ISBArms map[string]ISBArm `json:"isb_arms,omitempty"`
+	// LastISBEvalClose is the CloseTime of the last exec candle the ISB pair was
+	// evaluated on. fold #565 (D4): when the exec-2m schedule reads the ISB on
+	// 2m candles, a 1m tick on an odd minute sees the SAME 2m candle — the ISB
+	// pair (and the reverse ISB) is evaluated only when the exec candle
+	// ADVANCED, so the closed 2m pair is never re-emitted one minute later and
+	// refused as a stale intent at the trader.
+	LastISBEvalClose int64 `json:"last_isb_eval_close,omitempty"`
 	// BoxRefs records, per live box key, the OpenTime (ms) of the last return
 	// visit already evaluated — every return trades (R1, D3.2 p2 @ 06:25),
 	// each exactly once. UR-FIX class: the value is a TIME anchor, not a bar
@@ -1581,6 +1588,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			execTFMin = 2
 		}
 	}
+	// fold #565 (D4): the ISB pair is evaluated only when the exec candle
+	// ADVANCED — a 2m read on an odd 1m minute sees the same 2m candle as the
+	// previous tick, so the placement (and the reverse ISB) runs once per 2m
+	// candle, never re-emitted one minute later.
+	isbEval := execCur.CloseTime != e.State.LastISBEvalClose
+	if isbEval {
+		e.State.LastISBEvalClose = execCur.CloseTime
+	}
 
 	// arms placed on THIS tick are skipped by the stacking loop below.
 	justPlaced := map[string]bool{}
@@ -1668,7 +1683,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 	}
 
-	if !conflict && IsISB(execPrev, execCur) {
+	if isbEval && !conflict && IsISB(execPrev, execCur) {
 		// D4.1-23: while the 5m ISB rest box stands, the box — not the 5m
 		// trigger line — governs the 1m ISB. The trigger PRICE-side filter is
 		// skipped entirely ("khung 5 phút kêu làm gì, làm cái đó" [D4.1 p2
@@ -1845,7 +1860,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								id := fmt.Sprintf("isb-%d", e.State.ArmSeq)
 								// the ISB candle is the 1st inside candle (Inside=1), so the
 								// stacking loop must skip this arm on the placement bar.
-								e.State.ISBArms[id] = ISBArm{FirstBar: execCur, Inside: 0, Side: side}
+								// fold #565 (D1): the arm records the frame it was READ on —
+								// the stacking count advances on that frame's candles, not
+								// on every 1m bar.
+								e.State.ISBArms[id] = ISBArm{FirstBar: execCur, Inside: 0, Side: side, TFMin: execTFMin, LastTick: execCur.CloseTime}
 								justPlaced[id] = true
 								chosen.ArmID = id
 								// D4.2-06 part 1: mode C also fires on timeframe
@@ -1874,14 +1892,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// against the trend) — before they fired for every ISB.
 	revEma9 := emaValue(bars, e.Cfg.EMAPeriod9)
 	revIn, revCandidate, _ := ReverseISBAtEMA9(execPrev, execCur, revEma9, e.State.Trigger.Dir, e.Cfg)
-	if conflict && e.Cfg.ISBReverseEMA9Enabled && revCandidate {
+	if isbEval && conflict && e.Cfg.ISBReverseEMA9Enabled && revCandidate {
 		e.refuse("isbrev_tf_conflict")
 	}
 	// B6 (L14): the reverse ISB must stand behind the SAME standing gates as the
 	// normal ISB — the 15m/5m conflict, the ISB boxes, and the trigger side — and
 	// fail closed when the 5m trigger has no direction yet (it used to fall
 	// through to SHORT unconditionally).
-	if !conflict && e.Cfg.ISBReverseEMA9Enabled && IsISB(execPrev, execCur) {
+	if isbEval && !conflict && e.Cfg.ISBReverseEMA9Enabled && IsISB(execPrev, execCur) {
 		if r := dayGateRefusal(e.State.Day.Verdict); revCandidate && r != "" {
 			e.refuse("isbrev_" + r)
 		} else if e.State.Trigger.Dir == "" {
@@ -1998,6 +2016,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 
 	// Stacking ticks for live arms (§2.1): bodies staying inside the first ISB.
+	// fold #565 (D1): each arm advances on ITS OWN frame's closed candle — a 2m
+	// arm counts 2m candles (ticked only when its 2m candle advanced), a 1m arm
+	// counts 1m candles exactly as before.
+	var arm2m []market.Kline // lazy: the closed 2m buckets, for 2m arms
 	for id, arm := range e.State.ISBArms {
 		if arm.Inside < 0 {
 			delete(e.State.ISBArms, id)
@@ -2006,21 +2028,39 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		if justPlaced[id] {
 			continue // placed this tick: the ISB candle is Inside 1 already
 		}
+		tickBar := cur
+		if arm.TFMin > 1 {
+			if arm2m == nil {
+				arm2m = e.closedBucketsTFMemo(bars, 2, now)
+			}
+			if len(arm2m) == 0 {
+				continue // no closed 2m candle yet — a 2m arm cannot tick
+			}
+			tickBar = arm2m[len(arm2m)-1]
+			if tickBar.CloseTime <= arm.LastTick {
+				continue // the arm's 2m candle has not advanced this tick
+			}
+		}
 		var cancelled bool
-		for _, in := range ISBStackTick(&arm, cur, e.Cfg) {
+		for _, in := range ISBStackTick(&arm, tickBar, e.Cfg) {
 			in.ArmID = id
 			if in.Action == CancelArm {
 				cancelled = true
 			}
 			out = append(out, in)
 		}
+		arm.LastTick = tickBar.CloseTime
 		if arm.Inside < 0 || cancelled {
 			delete(e.State.ISBArms, id) // escaped, or the 4th candle cancelled it
 		} else {
 			// N12: while the body stays inside I1 the expiry is pushed to the
-			// close of the NEXT 1m candle (the cancels — body outside I1 at
-			// once, candle 4 — come from ISBStackTick).
-			out = append(out, Intent{Action: ExtendArm, ArmID: id, ExpiryMs: cur.CloseTime + 60_000, Reason: "ISB stacking: inside I1 — extend the expiry [N12, D4.2 p2 @ 08:21–09:01]"})
+			// close of the NEXT candle on the arm's OWN frame (the cancels —
+			// body outside I1 at once, candle 4 — come from ISBStackTick).
+			tf := arm.TFMin
+			if tf <= 0 {
+				tf = 1
+			}
+			out = append(out, Intent{Action: ExtendArm, ArmID: id, ExpiryMs: tickBar.CloseTime + int64(tf)*60_000, Reason: "ISB stacking: inside I1 — extend the expiry [N12, D4.2 p2 @ 08:21–09:01]"})
 			e.State.ISBArms[id] = arm
 		}
 	}

@@ -83,8 +83,8 @@ type mentorLivePos struct {
 	// runner trails on: "nếu như mình trade khung nào thì mình gồng theo khung
 	// đó, theo cây nến của khung đó" [X8 @18:02–18:14]. 2 = the X5-10 exec-2m
 	// schedule read the ISB on closed 2m candles (carried from the intent's
-	// ExecTFMin via mentorExecFrames); 0 = the 1m (every other entry, and every
-	// entry while exec_2m_after_30m is OFF — byte-identical).
+	// ExecTFMin via mentorExecFrames); 0 = the 1m (every non-ISB entry, and
+	// every entry when exec_2m_after_30m is explicitly OFF).
 	TrailTFMin int
 	// trailBar / trailBarOK: the closed TrailTFMin candle THIS drive pass
 	// trails on, set by mentorExitDrive for a 2m position (ok=false while the
@@ -793,9 +793,16 @@ func (at *AutoTrader) mentorRebuildTrailFrame(r store.ArmedOrderDB, lp *mentorLi
 }
 
 // mentorExec2mKnobOn reads the X5-10 exec_2m_after_30m knob as stored (nil →
-// OFF, the DefaultConfig value) without the tuning resolver's side effects.
+// ON, the release #31 DefaultConfig value) without the tuning resolver's side
+// effects. It must agree with the kernel DefaultConfig (ONE canonicalizer per
+// identifier): a restart rebuild on a strategy with no mentor_tuning (the live
+// MNQ trader) reads the knob ON, matching the frame the entry was actually read
+// on.
 func mentorExec2mKnobOn(rc *store.RiskControlConfig) bool {
-	return rc != nil && rc.MentorTuning != nil && rc.MentorTuning.Exec2mAfter30m != nil && *rc.MentorTuning.Exec2mAfter30m
+	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.Exec2mAfter30m == nil {
+		return true // nil → ON (release #31 default)
+	}
+	return *rc.MentorTuning.Exec2mAfter30m
 }
 
 // mentorRebuildSwingArm restores a FILLED swing's two in-memory registries from

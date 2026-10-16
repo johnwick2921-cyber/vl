@@ -76,6 +76,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.orb_edge_veto_pts',
     live: true,
   },
+  'ORB-edge ISB candle fraction outside': {
+    settingId: 'risk_control.mentor_tuning.orb_isb_fraction_outside',
+    live: true,
+  },
   'Box-return 5m trend source': {
     settingId: 'risk_control.mentor_tuning.d43_trend_source',
     live: true,
@@ -545,7 +549,7 @@ export const mentor: GuideSection = {
         ],
         [
           'ORB gate (opening range)',
-          'ORB = the high and the low of the FIRST 2-minute candle of the regular session (08:30–08:32 CT), drawn only once that candle has completed. NO trade inside the ORB and NO reversal trade at either edge. Trade only after price has LEFT the box — escape test: a 1m candle whose BODY is wholly outside, its open AND its close beyond the edge (the course minimum, the same test as the box escape [D4.1 p1 @20:36]; a candle that opens inside and closes one tick out is NOT an escape). Direction follows the side of the LATEST escape: below → shorts only (ISB short / PLH); above → longs only. It is not locked for the day: a later 1m body wholly beyond the OTHER edge switches the side ("cho tới khi nào nó crack" [X7 @07:42–07:51]); a candle that only pushes back inside switches nothing. Every escape and every switch is logged with its candle. The escape picks the side; it is NOT an entry. No ORB for pre-market. The SWING4H is exempt.',
+          'ORB = the high and the low of the FIRST 2-minute candle of the regular session (08:30–08:32 CT), drawn only once that candle has completed. NO trade inside the ORB and NO reversal trade at either edge. Trade only after price has LEFT the box — escape test: a 1m candle whose BODY is wholly outside, its open AND its close beyond the edge (the course minimum, the same test as the box escape [D4.1 p1 @20:36]; a candle that opens inside and closes one tick out is NOT an escape). Direction follows the side of the LATEST escape: below → shorts only (ISB short / PLH); above → longs only. It is not locked for the day: a later 1m body wholly beyond the OTHER edge switches the side ("cho tới khi nào nó crack" [X7 @07:42–07:51]); a candle that only pushes back inside switches nothing. Every escape and every switch is logged with its candle. The escape picks the side; it is NOT an entry. No ORB for pre-market. The SWING4H is exempt. An ISB whose entry candle is not mostly OUTSIDE the range on the trade side is also skipped (the separate rule-5 card below, counter orb_isb_mostly_inside).',
           'orb_gate_enabled = true (default ON) · X5 @01:52, 02:36, 02:57–03:47, 05:42 · X7 @07:42–07:51 · D4.1 p1 @20:36',
         ],
         [
@@ -555,8 +559,13 @@ export const mentor: GuideSection = {
         ],
         [
           '2m execution (1m only in the first 30 min of RTH)',
-          'OFF by default — the course trades the 1m throughout. Turn it on and the ISB entry is read on the 1m chart ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"); at every other minute it is the 2m ("khung 2 phút ÍT BỊ QUÉT RÂU" — the 1m wicks sweep stops, so the 2m read is quieter), overnight and the Europe open (3am Texas) included. "Evening slow → 5m" is an open course question (no number for "slow"). The higher-timeframe lines, the boxes and the ORB escape always stay on the 1m. An ISB entered on the 2m trails its runner on CLOSED 2m candles — "trade khung nào thì gồng theo khung đó" [X8 @18:02–18:14] (BE and the 1:1 rule keep the 1m close); after a restart that frame is not known and the runner trails the 1m (WARN trail_tf_unknown_after_restart).',
-          'mentor_exec_2m_after_30m = false (default OFF) · X5 @00:07–01:17 · X11 @17:06–19:35',
+          'ON by default — the ISB entry is read on the 1m chart ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"); at every other minute it is the 2m ("khung 2 phút ÍT BỊ QUÉT RÂU" — the 1m wicks sweep stops, so the 2m read is quieter), overnight and the Europe open (3am Texas) included. "Evening slow → 5m" is an open course question (no number for "slow"). The higher-timeframe lines, the boxes and the ORB escape always stay on the 1m. An ISB entered on the 2m trails its runner on CLOSED 2m candles, its candle-3 partial reads the 2m fill candle, and its break-even reads the 2m close — "trade khung nào thì gồng theo khung đó" [X8 @18:02–18:14] (only the 1:1 live rule keeps the 1m close); after a restart that frame is not known and the runner trails the 1m (WARN trail_tf_unknown_after_restart).',
+          'mentor_exec_2m_after_30m = true (default ON) · X5 @00:07–01:17 · X11 @17:06–19:35 · "Routine trước khi trade" @00:41–01:14',
+        ],
+        [
+          'ORB-edge ISB candle fraction outside',
+          'An ISB at the ORB edge trades only when at least 80% (the knob) of the ISB candle — its high-minus-low range — lies OUTSIDE the opening range on the trade side: "80% 90% là cái nến nó nằm ở ngoài… anh chị có quyền take risk… điểm entry… nằm gần cái resistance quá thì thôi bỏ đi" [extra "Routine trước khi trade" part1 @07:46–09:04]. It is the fraction of the candle, NOT a points distance (that is the separate CE-7 orb_edge_veto_pts). A candle whose entry point just ticks outside the edge but whose body is still mostly inside the range is skipped and counted orb_isb_mostly_inside. The knob orb_isb_fraction_outside defaults to 0.80; 0 turns the rule OFF (the ISB trades at the edge at any fraction); the rule is part of the ORB gate (orb_gate_enabled), ISB entries only, RTH only.',
+          'orb_isb_fraction_outside = 0.80 (default ON; 0 = off) · extra "Routine trước khi trade" part1 @07:46–09:04',
         ],
       ],
     },
@@ -1009,15 +1018,15 @@ export const mentor: GuideSection = {
         {
           label: '2m ISB execution (1m only in the first 30 min of RTH)',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'X5-10: OFF (default) = the ISB entry is read on the 1m chart all day, as the course trades. ON = the ISB entry is read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). "Evening slow → 5m" is an open course question (no number for "slow"). Only the ISB pair swaps; the higher-TF lines, the boxes and the ORB escape always stay on the 1m. An ISB entered on the 2m trails its runner on CLOSED 2m candles (the trail frame follows the entry frame [X8 @18:02–18:14]).',
+          what: 'X5-10: ON (default) = the ISB entry is read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). "Evening slow → 5m" is an open course question (no number for "slow"). Only the ISB pair swaps; the higher-TF lines, the boxes and the ORB escape always stay on the 1m. An ISB entered on the 2m trails its runner on CLOSED 2m candles and its candle-3 partial reads the 2m fill candle (the frame follows the entry frame [X8 @18:02–18:14]).',
           trader:
-            'OFF — the course trades the 1m throughout; optional and knob-gated.',
+            'ON — the course reads the 1m for the first 30 min after the open, then the 2m ("sau 30 phút em sẽ chuyển qua khung 2 phút", "khung 2 phút ít bị quét râu").',
           consumer:
             'kernel/mentor/eval.go Tick (Exec2mAfter30m → closedBucketsTF(bars, 2, now)) · trader/mentor_tuning.go mentorTuningResolve',
           range: 'true / false',
-          systemDefault: 'false',
+          systemDefault: 'true',
           recommended:
-            'Leave OFF — Owner setting (X5 @00:41–01:17; X11 @17:06–17:32) unless the owner wants the quieter 2m read after the opening 30 minutes.',
+            'ON — release #31 default ("Routine trước khi trade" part1 @00:41–01:14; Go over @17:27). OFF restores the 1m read all day.',
           whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },
@@ -1120,6 +1129,21 @@ export const mentor: GuideSection = {
           recommended:
             '0 — X5 @08:52–09:09 names no distance; knob rule (b): off until an owner ruling sets N.',
           whenToTouch: 'Only when the owner picks a distance.',
+          perSession: 'No.',
+        },
+        {
+          label: 'ORB-edge ISB candle fraction outside',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Rule 5 (release #31): "80% 90% là cái nến nó nằm ở ngoài… anh chị có quyền take risk… điểm entry… nằm gần cái resistance quá thì thôi bỏ đi" (80% 90% of the candle sits outside… only then may you take the risk; if the entry sits too close to the resistance, skip it) [extra "Routine trước khi trade" part1 @07:46–09:04]. An ISB at the ORB edge trades only when at least this fraction of the ISB candle (its high-minus-low range) lies OUTSIDE the opening range on the trade side. It is the fraction of the candle, NOT a points distance (that is the separate CE-7 orb_edge_veto_pts above). A mostly-inside candle is skipped and counted orb_isb_mostly_inside. 0.80 (default) = ON; the rule is part of the ORB gate (orb_gate_enabled), ISB entries only, RTH only.',
+          trader:
+            '0.80 — the course names 80%–90%; the fraction measure, not a distance.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/orb.go orbISBMostlyInside',
+          range: '0.01–1 (fraction of the candle)',
+          systemDefault: '0.80',
+          recommended:
+            '0.80 — "Routine trước khi trade" part1 @07:46–09:04; the fraction the course gives.',
+          whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },
         {

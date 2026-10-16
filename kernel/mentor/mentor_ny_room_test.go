@@ -29,6 +29,7 @@ import (
 func TestMentorNYSpentDayISBRoomIsToTheLevel(t *testing.T) {
 	run := func(verdict DayVerdict, capPts float64) (Intent, map[string]int) {
 		cfg := DefaultConfig()
+		cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 		cfg.Enabled = true
 		cfg.EMAPeriod34 = 0
 		cfg.EMAPeriod9 = 0
@@ -168,6 +169,7 @@ func TestMentorNYSpentDayReverseISBRoomIsToTheLevel(t *testing.T) {
 func TestMentorNYSpentDayISBRoomIsTwiceTheCappedTarget(t *testing.T) {
 	run := func(capPts float64) (Intent, map[string]int) {
 		cfg := DefaultConfig()
+		cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 		cfg.Enabled = true
 		cfg.EMAPeriod34 = 0
 		cfg.EMAPeriod9 = 0

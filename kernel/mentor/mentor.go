@@ -159,6 +159,14 @@ type Intent struct {
 	// (swing — gated by its own 5m watermark instead).
 	RefBarMs int64
 
+	// EntryCandleHigh / EntryCandleLow (release #31 rule 5) are the entry
+	// candle's high and low, stamped ONLY on ISB intents (the candle the ORB
+	// edge rule measures the fraction outside the range from). 0 on every
+	// other intent — a pair with High <= Low is "not stamped" and the rule
+	// does not apply.
+	EntryCandleHigh float64
+	EntryCandleLow  float64
+
 	// Confluence is the R2 flag [00-METHOD Risk-reward, D3.4 p3 @ 07:38]:
 	// box edge + a key level inside the box or within 2 pts of its edge +
 	// the 5m trigger agrees — DS-102's exit-C / size-10 branch reads it.
@@ -370,16 +378,29 @@ type Config struct {
 	// edges into the location gate and InsideAnyBox into the bans.
 	Box BoxCfg
 
-	// Exec2mAfter30m — X5-10 optional knob (default OFF): the ISB-exec
+	// Exec2mAfter30m — X5-10 knob (default ON since release #31): the ISB-exec
 	// timeframe schedule (owner order 2026-10-13 ~23:00 CT "fix all"; sources
 	// X5 @00:07–01:17, X11 @17:06–19:35 — ~/mm-course/extra/notes/05-EXTRA.md
-	// :305-311): with the knob ON the ISB reads the 1m ONLY during the RTH
+	// :305-311; re-read 2026-10-16: extra "Routine trước khi trade" part1
+	// @00:41–01:14 "Trong 30 phút đầu giờ em vẫn sẽ trade khung 1 phút… sau
+	// 30 phút em sẽ chuyển qua khung 2 phút", Go over @17:27 "khung 2 phút ít
+	// bị quét râu"): with the knob ON the ISB reads the 1m ONLY during the RTH
 	// open +30 minutes (08:30 ≤ t < 09:00 CT), and the 2m at every other
 	// minute — overnight and the Europe open (3am Texas) included. "Evening
 	// slow → 5m" is an OPEN COURSE QUESTION (no number for "slow"); left
-	// unimplemented. The course trades the 1m throughout, so this stays behind
-	// a knob and OFF by default; while OFF the ISB read is byte-identical.
+	// unimplemented. The MNQ strategy sets no mentor_tuning, so this default
+	// is the live behaviour; an explicit OFF restores the 1m read all day.
 	Exec2mAfter30m bool
+
+	// OrbISBFractionOutside — rule 5 (release #31, default 0.80): an ISB at the
+	// ORB edge trades only when ≥ this fraction of the ISB candle's range
+	// (high − low) lies OUTSIDE the ORB on the trade side — "80% 90% là cái
+	// nến nó nằm ở ngoài… anh chị có quyền take risk… điểm entry… nằm gần cái
+	// resistance quá thì thôi bỏ đi" [extra "Routine trước khi trade" part1
+	// @07:46–09:04]. The measure is the fraction of the candle, NOT a points
+	// distance (that is the separate CE-7 orb_edge_veto_pts). ≤ 0 = the rule
+	// is off.
+	OrbISBFractionOutside float64
 
 	// OrbGateEnabled turns on the §7 step 0 ORB gate (default ON): the high and
 	// low of the FIRST 2-minute candle of the regular session gate every
@@ -549,6 +570,12 @@ func DefaultConfig() Config {
 		Box: DefaultBoxCfg(),
 
 		OrbGateEnabled: true,
+
+		// Release #31 rule 4 (X5-10): the ISB-exec schedule defaults ON — 1m
+		// for the first 30 min of RTH, then the 2m.
+		Exec2mAfter30m: true,
+		// Release #31 rule 5: the ORB-edge ISB candle must be ≥ 80% outside.
+		OrbISBFractionOutside: 0.80,
 
 		LegBudgetEnabled: true,
 		LegResetOn:       "close",

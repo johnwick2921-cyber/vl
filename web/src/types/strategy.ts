@@ -303,7 +303,7 @@ export interface MentorTuning {
   orb_gate_enabled?: boolean
   isb_reverse_ema9_enabled?: boolean
   htf_gate_news_only?: boolean // D4.4-11 — unset = OFF (the all-day 4h/1h gate)
-  exec_2m_after_30m?: boolean // X5-10 — unset = OFF (the 1m ISB read)
+  exec_2m_after_30m?: boolean // X5-10 — unset = ON (1m for the first 30 min, then 2m)
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number
   swing_max_stop_pts?: number
@@ -322,6 +322,8 @@ export interface MentorTuning {
   ema34_loss_relock?: 'session' | 'until_zone_exit'
   // X5 @08:52 — refuse an entry within N pts of the ORB edge [0 = off]
   orb_edge_veto_pts?: number
+  // rule 5 (release #31): the ORB-edge ISB candle must lie ≥ this fraction outside [0.80]
+  orb_isb_fraction_outside?: number
   // D4.3 @12:43 — the box-return 5m trend source [trigger_line]
   d43_trend_source?: 'trigger_line' | 'structure'
   // D3.4 p1 @17:48 — the 5m trigger side binds every level reject [false]
