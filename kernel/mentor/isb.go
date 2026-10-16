@@ -66,24 +66,28 @@ func curLow(b market.Kline) float64 {
 // Risk = (High − Low) + 2×buffer.
 func ISBOrders(candle market.Kline, cfg Config) (long, short Intent) {
 	long = Intent{
-		Action: PlaceStopLimitEntry,
-		Setup:  "ISB",
-		Side:   SideLong,
-		Price:  candle.High + cfg.ISBBufferPts,
-		Limit:  candle.High + cfg.ISBBufferPts,
-		Stop:   candle.Low - cfg.ISBBufferPts,
-		RefBarMs: candle.CloseTime,
-		Reason: "ISB: buy stop-limit above the ISB high + buffer, stop below the ISB low − buffer [D1.4 p1 @ 10:33–11:25, 14:42–14:44, 22:22–22:30, 24:41–24:55]",
+		Action:          PlaceStopLimitEntry,
+		Setup:           "ISB",
+		Side:            SideLong,
+		Price:           candle.High + cfg.ISBBufferPts,
+		Limit:           candle.High + cfg.ISBBufferPts,
+		Stop:            candle.Low - cfg.ISBBufferPts,
+		RefBarMs:        candle.CloseTime,
+		EntryCandleHigh: candle.High, // release #31 rule 5: the ORB-edge fraction reads this candle
+		EntryCandleLow:  candle.Low,
+		Reason:          "ISB: buy stop-limit above the ISB high + buffer, stop below the ISB low − buffer [D1.4 p1 @ 10:33–11:25, 14:42–14:44, 22:22–22:30, 24:41–24:55]",
 	}
 	short = Intent{
-		Action: PlaceStopLimitEntry,
-		Setup:  "ISB",
-		Side:   SideShort,
-		Price:  candle.Low - cfg.ISBBufferPts,
-		Limit:  candle.Low - cfg.ISBBufferPts,
-		Stop:   candle.High + cfg.ISBBufferPts,
-		RefBarMs: candle.CloseTime,
-		Reason: "ISB: sell stop-limit below the ISB low − buffer, stop above the ISB high + buffer [D1.4 p1 @ 10:33–11:25, 14:42–14:44, 22:22–22:30, 24:41–24:55]",
+		Action:          PlaceStopLimitEntry,
+		Setup:           "ISB",
+		Side:            SideShort,
+		Price:           candle.Low - cfg.ISBBufferPts,
+		Limit:           candle.Low - cfg.ISBBufferPts,
+		Stop:            candle.High + cfg.ISBBufferPts,
+		RefBarMs:        candle.CloseTime,
+		EntryCandleHigh: candle.High, // release #31 rule 5
+		EntryCandleLow:  candle.Low,
+		Reason:          "ISB: sell stop-limit below the ISB low − buffer, stop above the ISB high + buffer [D1.4 p1 @ 10:33–11:25, 14:42–14:44, 22:22–22:30, 24:41–24:55]",
 	}
 	return long, short
 }
@@ -131,6 +135,10 @@ type ISBArm struct {
 	Inside   int          // candles whose BODIES stayed inside the first ISB since placement
 	Side     Side         // the arm's R1 direction (candle-1 colour) — stored, not derived:
 	// FirstBar is the ISB candle, whose own colour is the OPPOSITE side
+	TFMin    int   // the execution timeframe the arm was READ on (1 or 2) — the
+	// stacking count advances on that frame's candles (fold #565, D1)
+	LastTick int64 // CloseTime of the last candle this arm was ticked with — the
+	// loop skips it on 1m ticks where its frame's candle has not advanced
 }
 
 // ISBStackAdvice is the stacking arithmetic [D4.2 p2 @ 08:49–16:08]:

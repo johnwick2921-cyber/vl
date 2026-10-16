@@ -297,7 +297,7 @@ func (at *AutoTrader) mentorJudgeAgainstBroker(nt *ntTrader.TCPTrader, side stri
 //
 // Every move goes through mentorMoveLegStop (belief + broker never-widen, the
 // real move_stop frame, the F1 verdict on the next fresh book).
-func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64, scaledNow, scaledBefore, trail bool) {
+func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64, scaledNow, scaledBefore, trail bool, frameOK bool) {
 	pos := &p.Pos
 	runner := &p.Legs[1]
 	if !runner.Final || runner.Qty <= 0 || runner.SignalID == "" {
@@ -313,6 +313,11 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 	side := pos.Side
 	tick := at.mentorInstrumentTick()
 	if !pos.ArmedBE {
+		// fold #565 (D8): a 2m entry's break-even waits for the 2m candle to
+		// close (frameOK) — the 1m close is not the entry's frame.
+		if p.TrailTFMin > 1 && !frameOK {
+			return
+		}
 		be := mentorBEStopPrice(side, pos.Entry, tick)
 		// A break-even stop is only a stop while price is on the PROFIT side of
 		// it: with the close back through the entry, a sell stop above (buy

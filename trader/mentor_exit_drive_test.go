@@ -253,6 +253,194 @@ func newDriveATForTest(t *testing.T) *AutoTrader {
 // inside the candle. bPos is ONE bracket (Wire 0); the market sell of a leg the
 // wire does not carry is refused + counted. The split-wire market close is
 // pinned in mentor_r22_exit_test.go.
+// Rule 4 (release #31): the ISB candle-3 partial reads the frame the entry was
+// read on. A 2m entry's fill candle IS the 2m candle — the partial reads ITS
+// high, not the 1m's. Here the 2m high 105 crosses +1R (entry 100 + R 2) inside
+// the fill candle, so the +1R TP already filled and NOTHING is sold at the close
+// (#559: high >= +1R → 0 → isb_partial_no_sale). The 1m candle the same pass
+// drives closes 101 IN PROFIT short of +1R — a 1m read would send a marketable
+// modify. MUTANT: read the 1m c/h/l in the partial (drop trailC/trailH/trailL)
+// → a modify is sent (modify_bracket_sent=1) → RED.
+func TestMentorExitDrivePosISBPartialReadsThe2mFillCandle(t *testing.T) {
+	at, _ := newDriveAT(t)
+	var sent []float64
+	old := modifyBracketWire
+	modifyBracketWire = func(_ *nttrader.TCPTrader, _ string, _ string, _ int, tp float64) error {
+		sent = append(sent, tp)
+		return nil
+	}
+	t.Cleanup(func() { modifyBracketWire = old })
+
+	p := bPos("B", "long", 100, 99, 104, 5) // R 2 (bPos), +1R = 102
+	p.Pos.Origin = "ISB"
+	p.Pos.ArmedBE = true
+	p.BarsSinceFill = 1
+	p.TrailTFMin = 2
+	// split: leg 1 on its own wire + the runner (the marketable modify needs it).
+	p.Pos.Leg1, p.Pos.Leg2, p.Pos.Leg1TP = 3, 2, 102
+	p.Legs[0] = mentorLeg{SignalID: "entry", Qty: 3, TP: 102, Stop: 99, Final: false, Wire: 1}
+	p.Legs[1] = mentorLeg{SignalID: "entry", Qty: 2, TP: 104, Stop: 99, Final: true, Wire: 2}
+	// the 2m candle: high 105 crosses +1R (102) — the +1R already filled inside it.
+	p.trailBar = market.Kline{OpenTime: 0, High: 105, Low: 99, Close: 104}
+	p.trailBarOK = true
+	at.mentorExitDrivePos(nil, p, 101, 101, 100, 0) // the 1m candle is in profit short of +1R
+	if len(sent) != 0 {
+		t.Fatalf("the 2m high crossed +1R inside the fill candle — nothing is sold at the close; sent=%v", sent)
+	}
+	if got := at.mentorCountSnapshot()["isb_partial_no_sale"]; got != 1 {
+		t.Fatalf("isb_partial_no_sale = %d, want 1 (the 2m high crossed +1R)", got)
+	}
+	if got := at.mentorCountSnapshot()["modify_bracket_sent"]; got != 0 {
+		t.Fatalf("modify_bracket_sent = %d, want 0 (no marketable sale when the +1R already filled)", got)
+	}
+}
+
+// Rule 4 (release #31): the partial WAITS for the 2m fill candle to close — at
+// BarsSinceFill 1 with the 2m still forming (trailBarOK false) it must not
+// resolve on the 1m close; the next pass, once the 2m candle closed, it does.
+// MUTANT: gate on BarsSinceFill==1 instead of trailBarOK → the first pass
+// resolves on the 1m close (isb_partial_no_sale) → RED.
+func TestMentorExitDrivePosISBPartialWaitsForThe2mClose(t *testing.T) {
+	at, _ := newDriveAT(t)
+	p := bPos("B", "long", 100, 99, 104, 5)
+	p.Pos.Origin = "ISB"
+	p.Pos.ArmedBE = true
+	p.BarsSinceFill = 1
+	p.TrailTFMin = 2
+	p.trailBar = market.Kline{OpenTime: 0, High: 105, Low: 99, Close: 104}
+	p.trailBarOK = false // the 2m fill candle has not closed yet
+	at.mentorExitDrivePos(nil, p, 98, 99, 95, 0)
+	if p.ISBPartialDone {
+		t.Fatal("the partial must NOT resolve before the 2m fill candle closes")
+	}
+	if got := at.mentorCountSnapshot()["isb_partial_no_sale"]; got != 0 {
+		t.Fatalf("isb_partial_no_sale = %d, want 0 (still waiting for the 2m close)", got)
+	}
+	// The next pass: the 2m candle has closed.
+	p.BarsSinceFill = 2
+	p.trailBarOK = true
+	at.mentorExitDrivePos(nil, p, 98, 99, 95, 0)
+	if !p.ISBPartialDone {
+		t.Fatal("ISBPartialDone must be set once the 2m candle closes")
+	}
+	if got := at.mentorCountSnapshot()["isb_partial_no_sale"]; got != 1 {
+		t.Fatalf("isb_partial_no_sale = %d, want 1 (the 2m high crossed +1R: already filled, nothing sold)", got)
+	}
+}
+
+// TestMentorExitDrivePosISBPartial1mNotOnALaterCandle — D3 (fold #565): dev's
+// BarsSinceFill==1 gate stays for a 1m entry. When the first drive pass is at
+// BarsSinceFill==2 (bar 1 skipped by the flat-read continue), the partial is
+// LATCHED done but never resolved on the candle AFTER the fill candle — no
+// marketable modify is sent. MUTANT M565-4 (resolve at any BarsSinceFill for a
+// 1m entry) → the later candle's close (101, in profit short of +1R) sends a
+// modify (modify_bracket_sent=1) → RED.
+func TestMentorExitDrivePosISBPartial1mNotOnALaterCandle(t *testing.T) {
+	at, _ := newDriveAT(t)
+	var sent []float64
+	old := modifyBracketWire
+	modifyBracketWire = func(_ *nttrader.TCPTrader, _ string, _ string, _ int, tp float64) error {
+		sent = append(sent, tp)
+		return nil
+	}
+	t.Cleanup(func() { modifyBracketWire = old })
+
+	p := bPos("B", "long", 100, 99, 104, 5) // R 2 (bPos), +1R = 102
+	p.Pos.Origin = "ISB"
+	p.Pos.ArmedBE = true
+	p.BarsSinceFill = 2 // bar 1 was skipped (flat read) — NOT the fill candle
+	// split: leg 1 on its own wire + the runner (the marketable modify needs it).
+	p.Pos.Leg1, p.Pos.Leg2, p.Pos.Leg1TP = 3, 2, 102
+	p.Legs[0] = mentorLeg{SignalID: "entry", Qty: 3, TP: 102, Stop: 99, Final: false, Wire: 1}
+	p.Legs[1] = mentorLeg{SignalID: "entry", Qty: 2, TP: 104, Stop: 99, Final: true, Wire: 2}
+	// a candle whose close is in profit short of +1R (high 101 < +1R 102) — but it
+	// is the candle AFTER the fill candle, so a late resolve would sell.
+	at.mentorExitDrivePos(nil, p, 101, 101, 100, 0)
+	if !p.ISBPartialDone {
+		t.Fatal("dev latches ISBPartialDone on a skipped fill candle")
+	}
+	if len(sent) != 0 {
+		t.Fatalf("a 1m entry must NOT resolve the partial on a later candle; sent=%v", sent)
+	}
+	if got := at.mentorCountSnapshot()["modify_bracket_sent"]; got != 0 {
+		t.Fatalf("modify_bracket_sent = %d, want 0 (no late partial)", got)
+	}
+	if p.Legs[0].TP != 102 {
+		t.Fatalf("leg1 TP must stay 102 (the resting +1R; no late partial); got %.2f", p.Legs[0].TP)
+	}
+}
+
+// TestMentorExitDrivePosISBPartialReadsThe2mClose — M565-5: the 2m partial
+// reads the 2m CLOSE, not the 1m's. A 2m entry whose 2m high stays under +1R
+// but whose 2m CLOSE is in profit short of +1R must modify leg 1's TP to the 2m
+// close (clamped to entry + 1 tick — the #559 no-loss floor). Dropping trailC
+// (reading the 1m close 98, a losing close) → nothing sent → RED.
+func TestMentorExitDrivePosISBPartialReadsThe2mClose(t *testing.T) {
+	at, _ := newDriveAT(t)
+	var sent []float64
+	old := modifyBracketWire
+	modifyBracketWire = func(_ *nttrader.TCPTrader, _ string, _ string, _ int, tp float64) error {
+		sent = append(sent, tp)
+		return nil
+	}
+	t.Cleanup(func() { modifyBracketWire = old })
+
+	p := bPos("B", "long", 100, 99, 104, 5) // R 2 (bPos), +1R = 102
+	p.Pos.Origin = "ISB"
+	p.Pos.ArmedBE = true
+	p.BarsSinceFill = 1
+	p.TrailTFMin = 2
+	// split: leg 1 on its own wire + the runner (the marketable modify needs it).
+	p.Pos.Leg1, p.Pos.Leg2, p.Pos.Leg1TP = 3, 2, 102
+	p.Legs[0] = mentorLeg{SignalID: "entry", Qty: 3, TP: 102, Stop: 99, Final: false, Wire: 1}
+	p.Legs[1] = mentorLeg{SignalID: "entry", Qty: 2, TP: 104, Stop: 99, Final: true, Wire: 2}
+	// the 2m candle: high 101 (< +1R 102), close 100.8 in profit short of +1R.
+	p.trailBar = market.Kline{OpenTime: 0, High: 101, Low: 99.5, Close: 100.8}
+	p.trailBarOK = true
+	at.mentorExitDrivePos(nil, p, 98, 99, 95, 0) // the 1m candle is a LOSING close
+	if len(sent) != 1 || sent[0] != 100.25 {
+		t.Fatalf("the partial must modify to the 2m close (clamped to entry+1 tick 100.25), not the 1m losing close; sent=%v", sent)
+	}
+	if got := at.mentorCountSnapshot()["modify_bracket_sent"]; got != 1 {
+		t.Fatalf("modify_bracket_sent = %d, want 1", got)
+	}
+}
+
+// TestMentorExitDriveCandleBEWaitsForThe2mFrame — D8 (fold #565): a 2m entry's
+// break-even reads its own frame. While the 2m candle is still forming
+// (frameOK=false) a 1m close past break-even must NOT arm BE; once the 2m candle
+// closes past break-even it does. MUTANT (drop the frameOK gate / read the 1m
+// close) → BE arms on the half-formed 2m candle → RED.
+func TestMentorExitDriveCandleBEWaitsForThe2mFrame(t *testing.T) {
+	at, moves := newDriveAT(t)
+	p := bPos("B", "long", 100, 98, 104, 2)
+	p.Pos.Leg1, p.Pos.Leg2, p.Pos.Leg1TP = 1, 1, 101
+	p.Legs[0] = mentorLeg{SignalID: "entry", Qty: 1, TP: 101, Stop: 98, Final: false, Wire: 1}
+	p.Legs[1] = mentorLeg{SignalID: "entry", Qty: 1, TP: 104, Stop: 98, Final: true, Wire: 2}
+	p.TrailTFMin = 2
+
+	// The 2m candle is still forming (frameOK=false): a 1m close 101 past BE
+	// must NOT arm BE.
+	at.mentorExitDriveCandle(nil, p, 101, 102, 100, true, false, true, false)
+	if p.Pos.ArmedBE {
+		t.Fatal("a 2m entry's BE must not arm on a 1m close while its 2m candle is still forming")
+	}
+	if got := moves(); len(got) != 0 {
+		t.Fatalf("no BE move while the 2m candle forms; moves=%+v", got)
+	}
+
+	// The 2m candle closes past break-even (close 101): BE arms.
+	at.mentorExitDriveCandle(nil, p, 101, 102, 100, true, false, true, true)
+	if !p.Pos.ArmedBE {
+		t.Fatal("BE must arm once the 2m candle closes past break-even")
+	}
+	assertMoves(t, moves(), driveMove{"entry", "long", 100})
+}
+
+// item 8 live-loop pin: the ISB partial is resolved ONCE at the fill candle's
+// close (BarsSinceFill == 1), logged once, and never re-fires on later candles.
+// item 8 live-loop pin: the ISB partial is resolved ONCE at the fill candle's
+// close (BarsSinceFill == 1), logged once, and never re-fires on later candles.
 func TestMentorExitDrivePosISB_PartialResolvedOnce(t *testing.T) {
 	at, moves := newDriveAT(t)
 	p := bPos("B", "long", 10, 10, 13, 5) // stop already at BE
@@ -281,7 +469,7 @@ func TestMentorExitDrivePosISB_PartialResolvedOnce(t *testing.T) {
 // distance to the trade target.
 func TestMentorExitDrivePosB_ArmsBE(t *testing.T) {
 	at, moves := newDriveAT(t)
-	p := bPos("B", "long", 10, 9, 13, 5)            // half = (13−10)/2 = 1.5 → BE at 11.5
+	p := bPos("B", "long", 10, 9, 13, 5)               // half = (13−10)/2 = 1.5 → BE at 11.5
 	at.mentorExitDrivePos(nil, p, 11.0, 11.8, 10.8, 0) // high 11.8 arms it
 	assertMoves(t, moves(), driveMove{"entry", "long", 10})
 	if !p.Pos.ArmedBE {

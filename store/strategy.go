@@ -1990,8 +1990,8 @@ type MentorTuning struct {
 	// 07:20–07:35 CT news window (nil → OFF = the all-day gate; U-6 open).
 	HTFGateNewsOnly *bool `json:"htf_gate_news_only,omitempty"`
 	// Exec2mAfter30m (X5-10): after the first 30 minutes of RTH (09:00 CT)
-	// the ISB entry is read on the 2m chart (nil → OFF; the course trades the
-	// 1m throughout).
+	// the ISB entry is read on the 2m chart (nil → ON since release #31; the
+	// course trades the 1m for the first 30 min, then the 2m).
 	Exec2mAfter30m *bool `json:"exec_2m_after_30m,omitempty"`
 	// Spent-day gate (METHOD §7 table, D5.1 p1 @14:21–15:57): a run of at
 	// least SpentPts before the open = spent; the target cap then applies,
@@ -2025,6 +2025,11 @@ type MentorTuning struct {
 	EMA34LossRelock string `json:"ema34_loss_relock,omitempty"`
 	// CE-7: ORB-edge veto points (0/absent = off; 0.25–50).
 	OrbEdgeVetoPts float64 `json:"orb_edge_veto_pts,omitempty"`
+	// Rule 5 (release #31): the ORB-edge ISB candle must lie ≥ this fraction
+	// outside the ORB on the trade side. nil → 0.80 (ON); 0 → OFF (the rule
+	// is not applied); (0,1] → the fraction. A POINTER so an explicit 0 (off)
+	// survives omitempty — a plain float64 could not tell "unset" from "0".
+	OrbISBFractionOutside *float64 `json:"orb_isb_fraction_outside,omitempty"`
 	// CE-8: D4.3 trend read "trigger_line" | "structure" (default,
 	// course-defaults-30).
 	D43TrendSource string `json:"d43_trend_source,omitempty"`

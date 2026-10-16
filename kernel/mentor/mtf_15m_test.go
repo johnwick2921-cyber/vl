@@ -16,6 +16,7 @@ import (
 func mtfFixture(t *testing.T, red bool) (*Evaluator, []market.Kline, int64) {
 	t.Helper()
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
@@ -187,7 +188,7 @@ func TestMTFConflictHeldRefusalIsNamed(t *testing.T) {
 	e.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideShort, AtTime: bars[0].OpenTime}
 	e.State.ISBBox15m = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: bars[0].OpenTime}
 
-	e.Tick(bars, now) // tick 1: conflict fires, the latch is set
+	e.Tick(bars, now)    // tick 1: conflict fires, the latch is set
 	e.State.ISBBox = nil // the 5m box escapes; the 15m box stands → HELD
 	e.Tick(bars, now)
 	if e.State.Refusals["isb_tf_conflict_both_boxes"] == 0 {

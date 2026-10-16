@@ -22,6 +22,7 @@ func fdrPinPre25CourseEntries(cfg *store.StrategyConfig) {
 	t.FifteenMinIBRequires5mISB = "off"
 	t.TFConflictEnd = "first_box"
 	t.NewsBarsExcluded = &off // release #29: the live 10-13 day ran the item-18 drop, not the freeze
+	t.Exec2mAfter30m = &off   // release #31: the live 10-13 day ran the 1m ISB read (exec_2m defaulted OFF then)
 	t.ISBBoxEscape = "close"
 	t.EMA34LossRelock = "session"
 	t.D43TrendSource = "trigger_line"

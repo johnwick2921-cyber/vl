@@ -219,8 +219,14 @@ func rthMinuteOf(ms int64) int {
 // ~/mm-course/extra/notes/05-EXTRA.md:305-311 (X5 @00:07–01:17, X11
 // @17:06–19:35); "evening slow → 5m" is an OPEN COURSE QUESTION (no number for
 // "slow") and is not implemented.
+//
+// `now` is the instant the just-closed 1m bar CLOSED (BarCloseInstant = the
+// bar's CloseTime + 1), so the bar's OPEN minute is `now − 60_000` — the window
+// is judged on the BAR being read, not the tick instant. That keeps the 08:29
+// pre-open bar on the 2m and the 08:59 bar (the last RTH-open+30 minute) on the
+// 1m (fold #565, D6: the old read was off by one candle at both ends).
 func exec2mReads2m(now int64) bool {
-	m := rthMinuteOf(now)
+	m := rthMinuteOf(now - 60_000) // the just-closed 1m bar's OPEN minute
 	return m < 8*60+30 || m >= 9*60
 }
 

@@ -17,6 +17,7 @@ import (
 // isb_trigger_side → RED.
 func TestISBBoxSkipsTriggerPriceFilter(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0

@@ -42,6 +42,7 @@ type mentorTuned struct {
 	ISBBoxEscapeMode            string
 	EmaLossRelock               string
 	OrbEdgeVetoPts              float64
+	OrbISBFractionOutside       float64
 	D43TrendSource              string
 	LevelEntriesNeedTriggerSide bool
 	TrendlineIsTarget           bool
@@ -75,6 +76,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		ISBBoxEscapeMode:            d.ISBBoxEscapeMode,
 		EmaLossRelock:               d.EmaLossRelock,
 		OrbEdgeVetoPts:              d.OrbEdgeVetoPts,
+		OrbISBFractionOutside:       d.OrbISBFractionOutside,
 		D43TrendSource:              d.D43TrendSource,
 		LevelEntriesNeedTriggerSide: d.LevelEntriesNeedTriggerSide,
 		TrendlineIsTarget:           d.TrendlineIsTarget,
@@ -162,6 +164,20 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	enum(t.EMA34LossRelock, &out.EmaLossRelock, mentor.EmaRelockSession, mentor.EmaRelockUntilZoneExit)
 	enum(t.D43TrendSource, &out.D43TrendSource, mentor.D43TrendTriggerLine, mentor.D43TrendStructure)
 	pick(t.OrbEdgeVetoPts, 0.25, 50, &out.OrbEdgeVetoPts)
+	// Rule 5 (release #31, fold #565 D5): nil → 0.80 (ON); an explicit 0 → OFF
+	// (the kernel reads <= 0 as off); (0,1] → the fraction. The pointer lets a
+	// Studio 0 reach the kernel instead of being dropped by omitempty.
+	if t.OrbISBFractionOutside != nil {
+		v := *t.OrbISBFractionOutside
+		switch {
+		case v == 0:
+			out.OrbISBFractionOutside = 0
+		case v > 0 && v <= 1:
+			out.OrbISBFractionOutside = v
+		default:
+			bad()
+		}
+	}
 	flag := func(p *bool, dst *bool) {
 		if p != nil {
 			*dst = *p
@@ -201,6 +217,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.ISBBoxEscapeMode = t.ISBBoxEscapeMode
 	cfg.EmaLossRelock = t.EmaLossRelock
 	cfg.OrbEdgeVetoPts = t.OrbEdgeVetoPts
+	cfg.OrbISBFractionOutside = t.OrbISBFractionOutside
 	cfg.D43TrendSource = t.D43TrendSource
 	cfg.LevelEntriesNeedTriggerSide = t.LevelEntriesNeedTriggerSide
 	cfg.TrendlineIsTarget = t.TrendlineIsTarget
