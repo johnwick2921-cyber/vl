@@ -187,8 +187,8 @@ func TestMentorISBMaxKnobReachesR8AndBand(t *testing.T) {
 
 // TestRetaggedPHLInRangeSizesThree (re-gate D3) — the P2-2 trader half: the ISB
 // location size flags are read for ANY setup, so a reverse ISB retagged PHL that
-// carries isb_in_range still sizes 3, never base 5. Mutant M13 (flags read only
-// for Setup "ISB") → RED.
+// carries isb_in_range still sizes the reduced 4, never base 4. Mutant M13
+// (flags read only for Setup "ISB") → RED.
 func TestRetaggedPHLInRangeSizesThree(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Setup: "PHL", Side: mentor.SideLong,
@@ -197,8 +197,8 @@ func TestRetaggedPHLInRangeSizesThree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 3 || got.Tier != "isb_in_range" {
-		t.Fatalf("a retagged PHL in a range: got %d %s, want 3 isb_in_range", got.Contracts, got.Tier)
+	if got.Contracts != 4 || got.Tier != "isb_in_range" {
+		t.Fatalf("a retagged PHL in a range: got %d %s, want 4 isb_in_range", got.Contracts, got.Tier)
 	}
 }
 

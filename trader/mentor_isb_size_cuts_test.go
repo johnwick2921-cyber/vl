@@ -15,10 +15,11 @@ func isbIntent(flag string) mentor.Intent {
 }
 
 // ISB written rules 2 and 3 (D4.1 p1 @08:05/09:40): an ISB at an old high/low,
-// or inside a range, is sized at the cut tier (3). The evaluator stamps
-// Intent.Flag; the sizing call site (mentorSizeFor, reached through
-// mentorExtraFor exactly as mentorTick does) must read it. Mutant: drop the two
-// flag lines in mentorSizeFor → the cut tiers are never chosen → RED.
+// or inside a range, is sized at the reduced tier (4 under owner order
+// 2026-10-16). The evaluator stamps Intent.Flag; the sizing call site
+// (mentorSizeFor, reached through mentorExtraFor exactly as mentorTick does)
+// must read it. Mutant: drop the two flag lines in mentorSizeFor → the cut
+// tiers are never chosen → RED.
 func TestMentorISBSizeCutsAtSizingCallSite(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	cases := []struct {
@@ -27,11 +28,11 @@ func TestMentorISBSizeCutsAtSizingCallSite(t *testing.T) {
 		wantN    int
 		wantTier string
 	}{
-		{"no flag → base", isbIntent(""), 5, "base"},
-		{"at an old extreme → 3", isbIntent(mentor.FlagISBAtOldExtreme), 3, "isb_old_extreme"},
-		{"in a range → 3", isbIntent(mentor.FlagISBInRange), 3, "isb_in_range"},
-		{"both (joined as the evaluator emits) → 3, old-extreme tier", isbIntent(mentor.FlagISBAtOldExtreme + "|" + mentor.FlagISBInRange), 3, "isb_old_extreme"},
-		{"an unrelated flag changes nothing", isbIntent("something_else"), 5, "base"},
+		{"no flag → base", isbIntent(""), 4, "base"},
+		{"at an old extreme → 4", isbIntent(mentor.FlagISBAtOldExtreme), 4, "isb_old_extreme"},
+		{"in a range → 4", isbIntent(mentor.FlagISBInRange), 4, "isb_in_range"},
+		{"both (joined as the evaluator emits) → 4, old-extreme tier", isbIntent(mentor.FlagISBAtOldExtreme + "|" + mentor.FlagISBInRange), 4, "isb_old_extreme"},
+		{"an unrelated flag changes nothing", isbIntent("something_else"), 4, "base"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -46,18 +47,18 @@ func TestMentorISBSizeCutsAtSizingCallSite(t *testing.T) {
 	}
 
 	// R09: a spent day no longer wins over the ISB cuts — it sizes normally
-	// (the old-extreme flag still cuts to 3); the spent-day cut rides the
-	// 15-pt target cap and the runner cap instead.
+	// (the old-extreme flag still cuts to the reduced 4); the spent-day cut
+	// rides the 15-pt target cap and the runner cap instead.
 	spent := isbIntent(mentor.FlagISBAtOldExtreme)
 	spent.SpentDay = true
-	if got, _ := at.mentorSizeFor(spent, mentorExtraFor(spent, false)); got.Tier != "isb_old_extreme" || got.Contracts != 3 {
+	if got, _ := at.mentorSizeFor(spent, mentorExtraFor(spent, false)); got.Tier != "isb_old_extreme" || got.Contracts != 4 {
 		t.Fatalf("R09: spent day must NOT win over the old-extreme cut: %+v", got)
 	}
 	conf := isbIntent(mentor.FlagISBInRange)
 	extra := mentorExtraFor(conf, false)
 	extra.Confluence = true
-	if got, _ := at.mentorSizeFor(conf, extra); got.Tier != "isb_in_range" || got.Contracts != 3 {
-		t.Fatalf("an in-range ISB with confluence must still be cut to 3: %+v", got)
+	if got, _ := at.mentorSizeFor(conf, extra); got.Tier != "isb_in_range" || got.Contracts != 4 {
+		t.Fatalf("an in-range ISB with confluence must still be cut to the reduced 4: %+v", got)
 	}
 }
 

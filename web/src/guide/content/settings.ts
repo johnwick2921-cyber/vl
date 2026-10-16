@@ -870,7 +870,7 @@ const risk: KnobSpec[] = [
   },
   {
     label: 'Max contracts (always-on) — Stage A: 1 (AI / planner path only)',
-    what: 'Contract cap per order on the AI / planner path — on with or without the master. 0B (2026-09-02): every AI / planner resolution is clamped to the Stage-A ceiling of 1 contract — survival-first under an undemonstrated edge. Stage B (2) only at n≥30 closed trades with a POSITIVE LOWER-CI expectancy; Kelly and optimal-f are undefined without an edge estimate. Before 0B the two resolvers disagreed: arm-leg capacity said 1 while order sizing said 2, and the boot line said capacity=1. MENTOR MODE IS NOT CLAMPED BY THIS: a mentor-mode trader skips this resolver (resolveMaxContracts returns mentor_max_contracts) and sizes every entry from the mentor size table — 5 by default (base, confluence and big are all 5), 3 when the stop is 20–<30 pts or an ISB sits at an old high/low or inside a range, 2 on the SWING4H — capped only by mentor_max_contracts (default 20). Live: every mentor arm on the mentor trader since 10-13 (rows 340–362) carried 3 contracts (ISB tiers). See Mentor Mode → Sizing.',
+    what: 'Contract cap per order on the AI / planner path — on with or without the master. 0B (2026-09-02): every AI / planner resolution is clamped to the Stage-A ceiling of 1 contract — survival-first under an undemonstrated edge. Stage B (2) only at n≥30 closed trades with a POSITIVE LOWER-CI expectancy; Kelly and optimal-f are undefined without an edge estimate. Before 0B the two resolvers disagreed: arm-leg capacity said 1 while order sizing said 2, and the boot line said capacity=1. MENTOR MODE IS NOT CLAMPED BY THIS: a mentor-mode trader skips this resolver (resolveMaxContracts returns mentor_max_contracts) and sizes every entry from the mentor size table — 4 by default (base, confluence and big are all 4), 4 when the stop is 20–<30 pts or an ISB sits at an old high/low or inside a range, 2 on the SWING4H — capped only by mentor_max_contracts (default 20). See Mentor Mode → Sizing.',
     where: 'Strategy → Risk Control → always-on row',
     trader:
       'THE ARITHMETIC: 0B also raised the stop floor from 1.0× to 1.5×ATR5m, which lifts dollar risk per trade by roughly 50% at constant size. That is precisely why size does NOT move at the same time.',
@@ -879,7 +879,7 @@ const risk: KnobSpec[] = [
     range:
       'page value · Stage-A ceiling 1 · env STAGE_A_CONTRACT_CAP raises it · not applied in mentor mode',
     systemDefault:
-      '1 (Stage A) on the AI / planner path; mentor mode: the mentor size table (5 / 3 / 2, cap 20)',
+      '1 (Stage A) on the AI / planner path; mentor mode: the mentor size table (4 / 4 / 2, cap 20)',
     recommended: '⭐ 1 — do not raise before the n≥30 lower-CI test.',
     whenToTouch: 'Stage B, with the expectancy table in hand.',
     perSession: 'No.',
