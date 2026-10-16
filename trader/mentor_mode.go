@@ -43,8 +43,8 @@ const (
 
 	mentorTargetBigPts       = 30.0 // target ≥ this for the big tier
 	mentorRoomBigMultiple    = 2.0  // room ≥ this × risk for the big tier
-	mentorStopTwentiesMinPts = 20.0 // stop 20–25 pts → reduced [D3.3 p1 @ 01:09]
-	mentorStopTwentiesMaxPts = 25.0
+	mentorStopTwentiesMinPts = 20.0 // stop ≥ 20 and < 30 pts → reduced [D3.3 p1 @ 01:09]; course-defaults-30 extends the band to 30
+	mentorStopTwentiesMaxPts = 30.0 // the non-swing stop ceiling — matches kernel CourseExits.ISBMaxStopPts (30)
 )
 
 // mentorTierInputs is everything the size table reads. The trader computes
@@ -111,12 +111,14 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	if in.ISBInRange {
 		return mentorSizeChoice{Contracts: clamp(3), Tier: "isb_in_range", Why: "ISB traded inside a range → reduce size, tier 3 [D4.1 p1 @04:37–05:04 written rule 3]"}, nil
 	}
-	// B12 (CTO 1791041016051): a stop in the twenties cuts to 3 and wins over
-	// confluence sizing — "reduce size or don't trade" [D3.3 p1 @ 01:09] is a
-	// rule about the STOP, so it outranks whatever the confluence tier would earn.
-	if in.StopPts >= mentorStopTwentiesMinPts && in.StopPts <= mentorStopTwentiesMaxPts {
+	// B12 (CTO 1791041016051): a stop in the 20–<30 band cuts to 3 and wins
+	// over confluence sizing — "reduce size or don't trade" [D3.3 p1 @ 01:09]
+	// is a rule about the STOP, so it outranks the confluence tier.
+	// course-defaults-30: the band's top moved 25 → 30 (the ISB stop ceiling),
+	// so a 25–30 stop stays at the reduced 3 MNQ instead of jumping to 5.
+	if in.StopPts >= mentorStopTwentiesMinPts && in.StopPts < mentorStopTwentiesMaxPts {
 		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "reduced", Why: fmt.Sprintf(
-			"stop %.1f pts in the twenties → reduce size or don't trade [D3.3 p1 @ 01:09]", in.StopPts)}, nil
+			"stop %.1f pts in the 20–<30 band → reduce size or don't trade [D3.3 p1 @ 01:09]", in.StopPts)}, nil
 	}
 	if in.Confluence && in.HTFAgree && in.RoomMultiple >= mentorRoomBigMultiple && in.TargetPts >= mentorTargetBigPts {
 		n := clamp(big)
@@ -611,8 +613,8 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 			return fmt.Sprintf("R8: SWING4H stop %.1f pts — a stop at or over %.0f is skipped [D5.2; owner ruling 2026-10-04 R-D] (no 25-pt ceiling for the swing)", stop, swingMax)
 		}
 	} else {
-		if stop > mentorStopTwentiesMaxPts {
-			return fmt.Sprintf("R8: stop %.1f pts over the 25-pt ceiling — skip (the swing is the only exemption)", stop)
+		if stop >= mentorStopTwentiesMaxPts {
+			return fmt.Sprintf("R8: stop %.1f pts at/over the 30-pt ceiling — skip (the swing is the only exemption)", stop)
 		}
 	}
 	if target > 0 && target < stop {

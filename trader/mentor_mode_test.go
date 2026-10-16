@@ -159,6 +159,19 @@ func TestMentorSize5Defaults(t *testing.T) {
 		t.Fatalf("twenties stop: got %d %s, want 3 reduced", got.Contracts, got.Tier)
 	}
 
+	// course-defaults-30: a 28.25-pt stop (the 10-04 17:01 real case — long
+	// 31128.25 stop 31100) stays in the reduced 3-MNQ band, not the base 5.
+	// Mutant: revert mentorStopTwentiesMaxPts to 25 → this sizes base 5 → RED.
+	wideIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "ISB",
+		Price: 31128.25, Stop: 31100.0, Target: 31185.0, StopPts: 28.25, TargetPts: 56.5}
+	got, err = at.mentorSizeFor(wideIn, mentorExtraFor(wideIn, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 3 || got.Tier != "reduced" {
+		t.Fatalf("28.25-pt stop: got %d %s, want 3 reduced (the 20–<30 band)", got.Contracts, got.Tier)
+	}
+
 	// ISB at an old extreme → 3 (unchanged).
 	extIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "ISB",
 		Price: 21000, Stop: 20994.25, Target: 21011.5, StopPts: 5.75, TargetPts: 11.5, Flag: mentor.FlagISBAtOldExtreme}
@@ -722,8 +735,11 @@ func TestMentorExitMechSuspensionAppliesToAIOnly(t *testing.T) {
 }
 
 // TestMentorRuleGateR8R9: the injector-side R8/R9 gate (RULES-FIX v3).
-// SWING4H: 30–60 allowed, ~100 refused, EXEMPT from the 25-pt ceiling.
+// SWING4H: 30–60 allowed, ~100 refused, EXEMPT from the 30-pt ceiling.
 // R9: target never smaller than stop; spent-day cap 15 skips a stop over 15.
+// course-defaults-30: the non-swing ceiling moved 25 → 30 (matches the kernel
+// ISBMaxStopPts 30) — a 28.25-pt ISB passes, a 30.00 is refused. Mutant: revert
+// mentorStopTwentiesMaxPts to 25 → the 28.25 case is refused → RED.
 func TestMentorRuleGateR8R9(t *testing.T) {
 	if why := mentorRuleGate(mentor.Intent{Setup: "SWING4H", Side: "long", Price: 100, Stop: 60, StopPts: 40, TargetPts: 80}, mentorTierInputs{}); why != "" {
 		t.Fatalf("SWING4H 40-pt stop must pass (30–60 allowed): %q", why)
@@ -734,9 +750,16 @@ func TestMentorRuleGateR8R9(t *testing.T) {
 	if why := mentorRuleGate(mentor.Intent{Setup: "SWING4H", Side: "short", Price: 100, Stop: 200, StopPts: 100, TargetPts: 200}, mentorTierInputs{}); why == "" {
 		t.Fatal("SWING4H ~100-pt stop must be refused (R8)")
 	}
-	// the swing is the ONLY exemption from the 25-pt ceiling
+	// course-defaults-30: a 28.25-pt ISB stop passes (under the 30-pt ceiling).
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{}); why != "" {
+		t.Fatalf("a 28.25-pt ISB stop must pass R8 (under the 30-pt ceiling): %q", why)
+	}
+	// the swing is the ONLY exemption from the 30-pt ceiling — 30.00 is refused.
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 70, Target: 160, StopPts: 30, TargetPts: 60}, mentorTierInputs{}); why == "" {
+		t.Fatal("a 30.00-pt non-swing stop must be refused (R8 ceiling)")
+	}
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 70, Target: 130, StopPts: 30, TargetPts: 30}, mentorTierInputs{}); why == "" {
-		t.Fatal("a non-swing stop over 25 must be refused (R8 ceiling)")
+		t.Fatal("a non-swing stop at/over 30 must be refused (R8 ceiling)")
 	}
 	// R9: target never smaller than stop
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 88, Target: 98, StopPts: 12, TargetPts: 2}, mentorTierInputs{}); why == "" {

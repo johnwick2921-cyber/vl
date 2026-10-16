@@ -448,7 +448,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Skip a stop of 30 or more',
-          body: 'An ISB stop of 30 pts or more must not be taken (course-defaults-30, owner order "move to 30 at least… fix all" — DEVIATES from the course\u2019s twenties skip [D4.1 p1 @05:41]: the [20,30) window no longer refuses). A stop under 30 is taken. The trader-side sizing still cuts a stop of 20–25 pts to the reduced 3-contract tier (mentorStopTwentiesMinPts/MaxPts); the 25-pt stop ceiling on non-swing setups still applies where it already did.',
+          body: 'An ISB stop of 30 pts or more must not be taken (course-defaults-30, owner order "move to 30 at least… fix all" — DEVIATES from the course\u2019s twenties skip [D4.1 p1 @05:41]: the [20,30) window no longer refuses). A stop under 30 is taken. The trader-side sizing cuts a stop of 20–<30 pts to the reduced 3-contract tier (mentorStopTwentiesMinPts/MaxPts).',
           cite: 'Course-defaults-30 (owner order 10-16) — CourseExits.ISBMaxStopPts 30 · D4.1 p1 @05:41 (the course says "twenties… đừng vô"; the owner moved the line to 30)',
         },
       ],
@@ -611,7 +611,7 @@ export const mentor: GuideSection = {
         ['Big (the hard tier)', '5', 'mentor_big_contracts'],
         ['Hard cap', '20', 'mentor_max_contracts'],
         [
-          'Reduced (stop 20–25 pts; also an ISB at an old high/low or inside a range)',
+          'Reduced (stop 20–<30 pts; also an ISB at an old high/low or inside a range)',
           '3',
           'mentor_reduced_contracts',
         ],
@@ -780,14 +780,14 @@ export const mentor: GuideSection = {
         {
           label: 'Reduced contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'Size when the stop is 20–25 pts (trader/mentor_mode.go mentorContractsFor). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner.',
+          what: 'Size when the stop is 20–<30 pts (trader/mentor_mode.go mentorContractsFor). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner.',
           trader: '3 contracts on the reduced tier.',
           consumer: 'trader/mentor_mode.go mentorReducedContractsDefault',
           range: 'int',
           systemDefault: '3',
           recommended:
-            '3 — Owner setting: CTO shipped size table (P3); the reduced tier for a 20–25 pt stop. (An ISB at an old high/low or in a range is a fixed 3 in the code, not this knob.)',
-          whenToTouch: 'With the twenties tier rule.',
+            '3 — Owner setting: CTO shipped size table (P3); the reduced tier for a 20–<30 pt stop. (An ISB at an old high/low or in a range is a fixed 3 in the code, not this knob.)',
+          whenToTouch: 'With the 20–<30 reduced band.',
           perSession: 'No.',
         },
         {
