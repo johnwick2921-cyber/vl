@@ -21,7 +21,7 @@ func TestSplitLeg1TPRoundedOnTheWireAndRecorded(t *testing.T) {
 	s, raw := rawSignalServer(t, ntwire.MinAddonBuildSplitLegs)
 	tr := NewTCPTrader(s, "MNQ", "Sim101")
 	tr.traderID = "split-pin"
-	sid, err := tr.PlaceStopEntry("MNQ", "long", 5, 100, 98, 106, 3, 102.13)
+	sid, err := tr.PlaceStopEntry("MNQ", "long", 5, 100, 98, 106, 3, 102.13, 0, 0)
 	if err != nil {
 		t.Fatalf("place: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestSplitLeg1TPWrongSideSendsTheSingleBracket(t *testing.T) {
 	s, raw := rawSignalServer(t, ntwire.MinAddonBuildSplitLegs)
 	tr := NewTCPTrader(s, "MNQ", "Sim101")
 	tr.traderID = "split-pin-short"
-	sid, err := tr.PlaceStopEntry("MNQ", "short", 5, 100, 102, 94, 3, 101)
+	sid, err := tr.PlaceStopEntry("MNQ", "short", 5, 100, 102, 94, 3, 101, 0, 0)
 	if err != nil {
 		t.Fatalf("place: %v", err)
 	}

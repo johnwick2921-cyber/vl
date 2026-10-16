@@ -247,3 +247,24 @@ func TestSplitAddonLeg2StopFallback(t *testing.T) {
 		t.Error("AddOn still carries the dead SlOrder stop fallback")
 	}
 }
+
+// TestSplitAddonPlacesThirdOCOPair (release #31) pins SubmitBracketOnEntryFill
+// and the leg=3 selection: when leg2_qty/leg2_tp are carried the AddOn submits
+// a THIRD OCO pair (sl3/tp3 under its own group) and move_stop/modify_bracket
+// honour leg=3. Mutant: drop sl3/tp3 or the leg=3 branch → RED.
+func TestSplitAddonPlacesThirdOCOPair(t *testing.T) {
+	src := readSplitAddonSource(t)
+	for _, want := range []string{
+		"var sl3 = ba.CreateOrder(",
+		"var tp3 = ba.CreateOrder(",
+		"signalId + \"-sl3\"",
+		"signalId + \"-tp3\"",
+		"orders.Add(sl3); orders.Add(tp3);",
+		"if (leg == 0 || leg == 3)",
+		"isLeg3 = orderName.EndsWith(\"-sl3\") || orderName.EndsWith(\"-tp3\")",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("AddOn lost the third-OCO-pair placement: missing %q", want)
+		}
+	}
+}

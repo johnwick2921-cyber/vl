@@ -198,6 +198,13 @@ type Intent struct {
 	// 0 = none — in mode A the runner's native TP is removed and the exit is
 	// the BE stop or EOD flat. The trader's resonance arming consumes it.
 	RunnerTarget float64
+	// RunnerPartialTP (release #31) is the runner's FIRST partial line — the
+	// nearest target line (key level / EMA 34/9 / old high-low / HTF trigger)
+	// strictly between the leg-1 exit (1:1) and the trade target, in the trade
+	// direction. The runner of ≥ 2 contracts sells half (rounded down) there;
+	// the rest trails as today. 0 = no line in between → no leg-3 split. The
+	// Tick emit sites stamp it centrally (runnerPartialLine).
+	RunnerPartialTP float64
 }
 
 // Leg1RiskMultiple is the leg-1 take-profit distance in units of R — the ONE

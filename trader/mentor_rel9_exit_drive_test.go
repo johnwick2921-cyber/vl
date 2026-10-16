@@ -120,7 +120,7 @@ func TestMentorRel9FlatUnregisteredNotReregistered(t *testing.T) {
 func TestMentorRel9ForgetSplitOnTerminalSettle(t *testing.T) {
 	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildSplitLegs)
 	nt := at.armedTrader()
-	sid, err := nt.PlaceStopEntry("MNQ", "long", 5, 100, 98, 106, 3, 102.13)
+	sid, err := nt.PlaceStopEntry("MNQ", "long", 5, 100, 98, 106, 3, 102.13, 0, 0)
 	if err != nil {
 		t.Fatalf("place: %v", err)
 	}

@@ -2002,8 +2002,8 @@ func decideStopEntry(rawSide string, entryPx, offset, tick, price float64) stopE
 // A29's "built ≠ wired ≠ used" is proven here by a FAKE that records what was
 // sent, not by grepping this file for the call's spelling.
 type stopEntryPlacer interface {
-	PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error)
-	PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error)
+	PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, leg2Qty int, leg2TP float64, beforeSend ...func(string) error) (string, error)
+	PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, leg2Qty int, leg2TP float64, beforeSend ...func(string) error) (string, error)
 }
 
 // armStateWriter is the ledger seam: atomic pre-send registration plus refusal.
@@ -2172,6 +2172,8 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 	// = the single-bracket legacy path. Only the mentor origin stamps them.
 	leg1Qty := 0
 	leg1TP := 0.0
+	leg2Qty := 0
+	leg2TP := 0.0
 	if isMentorArmOrigin(r) {
 		// P0-1: leg 1 from the quantity actually SENT (mentorArmQuantity clamps
 		// to the trader max; the row was sized from the UNclamped intent).
@@ -2181,8 +2183,17 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		if leg1Qty = mentorWireLeg1(r, int(qty)); leg1Qty > 0 {
 			leg1TP = mentorWireLeg1TP(r.EntryPx, d.Trigger, r.StopPx, r.Leg1TP)
 		}
+		// release #31: the runner's first partial (leg 2) rides the SAME frame.
+		// leg2_tp is a fixed LINE (not a derived R-multiple), so it is NOT
+		// re-based; wireLeg2TP in the send validates it sits strictly between
+		// the wire leg-1 TP and the wire target. Only when a leg 1 exists (a
+		// sub-1:1 drop of leg 1 also drops leg 2).
+		if leg1Qty > 0 && r.Leg2Qty != nil && *r.Leg2Qty > 0 && r.Leg2TP > 0 {
+			leg2Qty = *r.Leg2Qty
+			leg2TP = r.Leg2TP
+		}
 	}
-	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, targetPx, leg1Qty, leg1TP, func(sid string) error {
+	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, targetPx, leg1Qty, leg1TP, leg2Qty, leg2TP, func(sid string) error {
 		if err := ledger.BeginPlacement(r.ID, sid); err != nil {
 			return err
 		}
@@ -3620,7 +3631,7 @@ func (at *AutoTrader) TestArmPlaceStop(side string, trigger, stop, target float6
 	if trigger <= 0 || stop <= 0 || target <= 0 {
 		return out, fmt.Errorf("entry(trigger)/stop/target must be > 0")
 	}
-	sid, perr := nt.PlaceStopEntry(at.futuresSymbol(), side, 1, trigger, stop, target, 0, 0, func(sid string) error {
+	sid, perr := nt.PlaceStopEntry(at.futuresSymbol(), side, 1, trigger, stop, target, 0, 0, 0, 0, func(sid string) error {
 		row := &store.ArmedOrderDB{
 			TraderID: at.id,
 			PlanID:   "TEST-E7:" + sid,
