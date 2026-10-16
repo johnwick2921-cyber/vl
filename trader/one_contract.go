@@ -100,7 +100,8 @@ func (v contractVerdict) Refusal() string {
 func isBracketChild(name string) bool {
 	n := strings.ToLower(strings.TrimSpace(name))
 	return strings.HasSuffix(n, "-sl") || strings.HasSuffix(n, "-tp") || strings.HasSuffix(n, "-lx") ||
-		strings.HasSuffix(n, "-sl2") || strings.HasSuffix(n, "-tp2")
+		strings.HasSuffix(n, "-sl2") || strings.HasSuffix(n, "-tp2") ||
+		strings.HasSuffix(n, "-sl3") || strings.HasSuffix(n, "-tp3") // release #31: leg-3 bracket
 }
 
 // adjudicateAccountContract is the whole decision as a PURE function: book in,

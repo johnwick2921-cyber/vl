@@ -31,6 +31,11 @@ type mentorLeg struct {
 	Stop     float64 // the leg's CURRENT resting stop (the loop writes back here)
 	Final    bool    // marks the RUNNER — the leg that holds to the trade target
 	Wire     int     // the AddOn leg this addresses on move_stop: 1 (-sl), 2 (-sl2), 3 (-sl3); 0 = the single bracket (every leg)
+	// Exited (release #31 fold): the broker's position_close receipt for THIS
+	// leg's own TP landed — the leg is closed and must receive no further
+	// BE/trail move. Only the runner partial (wire 2) sets it in a 3-pair plan;
+	// leg 1 uses Pos.Scaled, the runner (Final) uses the whole-position close.
+	Exited bool
 }
 
 type mentorLivePos struct {
@@ -90,6 +95,31 @@ func mentorRunnerLeg(p *mentorLivePos) *mentorLeg {
 		}
 	}
 	return nil
+}
+
+// mentorRunnerLegs (release #31 fold, D1) returns every leg the exit drive must
+// manage as a RUNNER after leg 1's +1R partial: the Final runner (wire 3 in a
+// 3-pair, wire 2 in a 2-pair) AND the runner partial (wire 2 in a 3-pair — the
+// contract that sells at the first line). Excluded: leg 1 (wire 1), any leg
+// whose own TP receipt already closed it (Exited), and empty legs.
+func mentorRunnerLegs(p *mentorLivePos) []*mentorLeg {
+	if p == nil {
+		return nil
+	}
+	var out []*mentorLeg
+	for i := range p.Legs {
+		leg := &p.Legs[i]
+		if leg.SignalID == "" || leg.Qty <= 0 || leg.Exited {
+			continue
+		}
+		if leg.Wire == 1 {
+			continue // leg 1's +1R partial: its stop is moot once Scaled
+		}
+		if leg.Final || leg.Wire == 2 {
+			out = append(out, leg)
+		}
+	}
+	return out
 }
 
 // mentorFillExitMode resolves the exit branch a FILLED mentor arm is driven by
@@ -480,14 +510,47 @@ func (at *AutoTrader) mentorLatchLeg1Scaled(key string, atMs int64) bool {
 // used to set Scaled in the exit drive is gone — the trail now begins only once
 // the broker confirms leg 1 actually exited (and only on candles that OPEN after
 // that confirmation, I6).
+//
+// Release #31 fold (D1): a leg-2 TP receipt (the runner partial's own line)
+// marks that leg Exited — the leg keeps no stop and receives no further BE/trail
+// move once its own TP closed it.
 func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
-	if at == nil || p.Leg != 1 || p.ExitReason != "tp" || p.SignalID == "" {
+	if at == nil || p.SignalID == "" {
 		return
 	}
-	if at.mentorLatchLeg1Scaled(p.SignalID, mentorCloseReceiptMs(p)) {
-		at.mentorCount("leg1_at_target")
-		at.logInfof("🧑‍🏫 mentor leg 1 scaled on the broker TP receipt: %s (%s)", p.SignalID, p.PositionSide)
+	if p.Leg == 1 && p.ExitReason == "tp" {
+		if at.mentorLatchLeg1Scaled(p.SignalID, mentorCloseReceiptMs(p)) {
+			at.mentorCount("leg1_at_target")
+			at.logInfof("🧑‍🏫 mentor leg 1 scaled on the broker TP receipt: %s (%s)", p.SignalID, p.PositionSide)
+		}
+		return
 	}
+	if p.Leg == 2 && p.ExitReason == "tp" {
+		if at.mentorMarkLeg2Exited(p.SignalID) {
+			at.mentorCount("leg2_exited")
+			at.logInfof("🧑‍🏫 mentor leg 2 (runner partial) closed on the broker TP receipt: %s (%s)", p.SignalID, p.PositionSide)
+		}
+	}
+}
+
+// mentorMarkLeg2Exited marks a live position's wire-2 leg (the runner partial)
+// as closed on its own TP receipt. Idempotent; returns true when this call
+// FIRST marked it.
+func (at *AutoTrader) mentorMarkLeg2Exited(key string) bool {
+	if at == nil || key == "" {
+		return false
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	lp, ok := at.mentorLivePos[key]
+	if !ok || lp == nil {
+		return false
+	}
+	if lp.Legs[1].Exited {
+		return false
+	}
+	lp.Legs[1].Exited = true
+	return true
 }
 
 // mentorRegisterPartialFillIfAbsent (B1 + I4) registers a partially filled
@@ -882,11 +945,13 @@ func (at *AutoTrader) mentorBuildLivePosFromBook(r store.ArmedOrderDB, pos *stor
 	var leg1Qty, leg2Qty int
 	var leg1Stop, leg2Stop, leg3Stop float64
 	var leg1TP, leg2TP, leg3TP float64
-	// leg3Live: a third OCO pair sits in the book (release #31) or the row
-	// persisted a leg-2 partial (leg2_qty). The runner is then leg 3; leg 2 is
-	// the runner partial.
+	// leg3Live: a third OCO pair sits in the book (release #31). The row's
+	// leg-2 partial (leg2_qty) only SIZES leg 2; it never declares leg 3 live
+	// by itself — a row whose leg 2 was planned but not sent (old AddOn,
+	// wireLeg2TP refused, leg 1 dropped) has no -sl3/-tp3, and the runner is
+	// then the 2-pair wire-2 leg (D4).
 	leg3Live := false
-	if splitLive && ((r.Leg2Qty != nil && *r.Leg2Qty > 0) || stop3 > 0 || tp3 > 0) {
+	if splitLive && (stop3 > 0 || tp3 > 0) {
 		leg3Live = true
 	}
 	if splitLive {
@@ -944,13 +1009,11 @@ func (at *AutoTrader) mentorBuildLivePosFromBook(r store.ArmedOrderDB, pos *stor
 
 	// The runner's stop is the one the exit drive moves (BE / 1:1 / trail).
 	runnerStop := leg2Stop
-	runnerQty := leg2Qty
 	if leg3Live {
-		runnerStop, runnerQty = leg3Stop, total-leg1Qty-leg2Qty
+		runnerStop = leg3Stop
 	}
 	if !splitLive {
 		runnerStop = leg1Stop
-		runnerQty = total
 	}
 	if runnerStop <= 0 {
 		return nil, "no live protective stop in the broker book"
@@ -969,7 +1032,11 @@ func (at *AutoTrader) mentorBuildLivePosFromBook(r store.ArmedOrderDB, pos *stor
 	} else {
 		armedBE = runnerStop <= entry
 	}
-	scaled := splitLive && residual <= runnerQty
+	// D5 (release #31 fold): leg 1 is gone exactly when the broker's open qty
+	// is down to the runner (total − leg1). The old `residual <= runnerQty`
+	// compared against only leg 3's qty and read Scaled=false after leg 1
+	// filled (2 ≤ 1).
+	scaled := splitLive && residual <= total-leg1Qty
 
 	pos2 := mentorPosition{
 		Symbol:    at.futuresSymbol(),
@@ -993,7 +1060,10 @@ func (at *AutoTrader) mentorBuildLivePosFromBook(r store.ArmedOrderDB, pos *stor
 	if splitLive {
 		lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: leg1Qty, TP: leg1TP, Stop: leg1Stop, Final: false, Wire: 1}
 		if leg3Live {
-			lp.Legs[1] = mentorLeg{SignalID: r.SignalID, Qty: leg2Qty, TP: leg2TP, Stop: leg2Stop, Final: false, Wire: 2}
+			// D5 noise: when leg 2's own TP already filled before the restart,
+			// its -sl2/-tp2 are gone from the book (stop2 == 0) — mark the leg
+			// Exited so the drive never moves a dead wire-2 stop.
+			lp.Legs[1] = mentorLeg{SignalID: r.SignalID, Qty: leg2Qty, TP: leg2TP, Stop: leg2Stop, Final: false, Wire: 2, Exited: leg2Stop <= 0}
 			lp.Legs[2] = mentorLeg{SignalID: r.SignalID, Qty: total - leg1Qty - leg2Qty, TP: leg3TP, Stop: leg3Stop, Final: true, Wire: 3}
 		} else {
 			lp.Legs[1] = mentorLeg{SignalID: r.SignalID, Qty: leg2Qty, TP: leg2TP, Stop: leg2Stop, Final: true, Wire: 2}

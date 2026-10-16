@@ -903,6 +903,14 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 	if leg2Qty > 0 && !ntwire.FarSideProven(t.server.FarSideBuildID(), ntwire.MinAddonBuildLeg3) {
 		leg2Qty, leg2TP = 0, 0
 	}
+	// D6 (release #31 fold): leg 2 only exists inside a split — with leg 1
+	// dropped (wireLeg1TP refused), a leg 2 on the frame is an unvalidated,
+	// off-grid price (the wire-leg-2 check below never runs). Zero it so the
+	// frame degrades to the single bracket, never a naked leg-2 pair.
+	if leg2Qty > 0 && leg1Qty <= 0 {
+		logger.Warnf("⚠️ stop-entry %s %s: leg-2 split dropped — leg 1 was dropped; sending the single bracket", side, symbol)
+		leg2Qty, leg2TP = 0, 0
+	}
 	// leg2_tp must sit STRICTLY between leg 1's TP and the trade target (the
 	// runner's first partial sells before the target, never at or through it).
 	// A leg-2 TP that fails drops ONLY leg 2 (the 2-pair plan stands).
@@ -1156,6 +1164,12 @@ func (t *TCPTrader) ModifyBracketLeg(signalID, side string, leg int, newSL, newT
 	}
 	if leg < 0 || leg > 3 {
 		return fmt.Errorf("ninjatrader/tcp: modify_bracket leg %d is not 0, 1, 2 or 3", leg)
+	}
+	// D7 (release #31 fold): a leg-3 modify must never reach an AddOn below the
+	// leg-3 build — an older AddOn reads leg 3 as "every leg" and would apply
+	// the price to legs 1 AND 2 (defence-in-depth; unreachable today).
+	if leg == 3 && !t.FarSideProves(ntwire.MinAddonBuildLeg3) {
+		return fmt.Errorf("ninjatrader/tcp: modify_bracket leg 3 needs AddOn >= %s (live %s)", ntwire.MinAddonBuildLeg3, t.server.FarSideBuildID())
 	}
 	if newSL <= 0 && newTP <= 0 {
 		return fmt.Errorf("ninjatrader/tcp: modify_bracket for %s has nothing to change", signalID)
@@ -1418,6 +1432,12 @@ func (t *TCPTrader) MoveStopForSignalLeg(signalID, side string, newStop float64,
 	}
 	if leg < 0 || leg > 3 {
 		return fmt.Errorf("ninjatrader/tcp: move_stop leg %d is not 0, 1, 2 or 3", leg)
+	}
+	// D7 (release #31 fold): a leg-3 move must never reach an AddOn below the
+	// leg-3 build — an older AddOn reads leg 3 as "every leg" and would move
+	// legs 1 AND 2 (defence-in-depth; unreachable today).
+	if leg == 3 && !t.FarSideProves(ntwire.MinAddonBuildLeg3) {
+		return fmt.Errorf("ninjatrader/tcp: move_stop leg 3 needs AddOn >= %s (live %s)", ntwire.MinAddonBuildLeg3, t.server.FarSideBuildID())
 	}
 	stopKey := signalID
 	if leg > 0 {

@@ -387,13 +387,15 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			applied := false
 			for i := range p.Legs {
 				leg := &p.Legs[i]
-				if leg.SignalID == "" || leg.Qty <= 0 {
+				if leg.SignalID == "" || leg.Qty <= 0 || leg.Exited {
 					continue
 				}
 				// F-6 (release #22): leg 1 of a split whose partial is CONFIRMED
 				// filled is closed — never send it a move (#651 01:05:00 sent BE
 				// to the gone leg 1, then WARNed "NO live stop order" at 01:06).
-				if leg1OnWire && !leg.Final && scaledNow {
+				// D1 (release #31 fold): the runner partial (wire 2) is NOT leg 1
+				// — it goes to break-even too.
+				if leg1OnWire && leg.Wire == 1 && scaledNow {
 					at.mentorCount("stop_move_skipped_leg_closed")
 					continue
 				}
@@ -450,13 +452,15 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	if pos.ArmedBE && wasArmed {
 		for i := range p.Legs {
 			leg := &p.Legs[i]
-			if leg.SignalID == "" || leg.Qty <= 0 {
+			if leg.SignalID == "" || leg.Qty <= 0 || leg.Exited {
 				continue
 			}
 			// Canonical semantics: Final marks the RUNNER (the leg that holds
-			// to the trade target). Leg 1 (Final=false) is the partial that
-			// exits at its own TP — once Scaled its stop is moot.
-			isRunner := leg.Final
+			// to the trade target). Leg 1 (Final=false, wire 1) is the partial
+			// that exits at its own TP — once Scaled its stop is moot. D1
+			// (release #31 fold): the runner partial (wire 2) is a RUNNER too —
+			// it goes to BE and trails until its own line TP closes it.
+			isRunner := leg.Final || leg.Wire == 2
 			if !isRunner && scaledNow {
 				continue
 			}
@@ -465,6 +469,9 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			trailPrice := 0.0
 			if isRunner {
 				target = runnerTarget
+				if leg.Wire == 2 && leg.TP > 0 {
+					target = leg.TP // the runner partial's own line TP (it exits there)
+				}
 				applyTrail = trail && trailOK && trailScaledBefore // the 1:1 point printed on a PRIOR candle (of the trail frame)
 				if applyTrail {
 					// Item 7 ruling [X8 @15:40–17:13]: 1 tick BEYOND the closed

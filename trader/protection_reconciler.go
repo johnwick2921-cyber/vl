@@ -497,7 +497,7 @@ func (at *AutoTrader) knownBrokerStopFor(signalID, side string, now time.Time) (
 				var orders []nt.NT8Order
 				if jerr := json.Unmarshal([]byte(row.OrdersJSON), &orders); jerr == nil {
 					for _, o := range orders {
-						if o.Name == signalID+"-sl" || o.Name == signalID+"-sl2" {
+						if o.Name == signalID+"-sl" || o.Name == signalID+"-sl2" || o.Name == signalID+"-sl3" {
 							consider(o.StopPrice, fmt.Sprintf("book snapshot %d", row.ID))
 						}
 					}

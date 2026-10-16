@@ -802,6 +802,8 @@ type ArmWirePrices struct {
 	Split   bool // true: Leg1Qty/Leg1TP are the frame's split (0/0 = the frame carried none)
 	Leg1Qty int
 	Leg1TP  float64
+	Leg2Qty int
+	Leg2TP  float64
 }
 
 // RecordWirePrices (F-7) makes the row carry EXACTLY the prices its entry
@@ -828,6 +830,8 @@ func (s *ArmedOrderStore) RecordWirePrices(id int64, signalID string, w ArmWireP
 	if w.Split {
 		upd["leg1_qty"] = w.Leg1Qty
 		upd["leg1_tp"] = w.Leg1TP
+		upd["leg2_qty"] = w.Leg2Qty
+		upd["leg2_tp"] = w.Leg2TP
 	}
 	res := s.db.Model(&ArmedOrderDB{}).Where("id = ? AND signal_id = ?", id, sig).Updates(upd)
 	if res.Error != nil {
