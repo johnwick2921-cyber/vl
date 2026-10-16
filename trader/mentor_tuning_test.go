@@ -149,6 +149,59 @@ func TestMentorTuningBadValuesFailClosed(t *testing.T) {
 	}
 }
 
+// TestMentorISBMaxKnobReachesR8AndBand (re-gate D2) — ONE knob
+// (mentor_isb_max_pts) feeds BOTH the kernel ceiling and the trader R8/band at
+// the production dispatch call site. Mutant M09 (mentor_actions.go:263 wiring
+// dropped) and M10 (band top ignores the knob) → RED.
+func TestMentorISBMaxKnobReachesR8AndBand(t *testing.T) {
+	isb := func(stop float64) mentor.Intent {
+		return mentor.Intent{Action: mentor.PlaceStopLimitEntry, Setup: "ISB", Side: mentor.SideLong,
+			Price: 30000, Stop: 30000 - stop, Target: 30000 + 2*stop, StopPts: stop, TargetPts: 2 * stop, ExpiryMs: 100_000}
+	}
+	// knob 35: a 32-pt ISB passes R8 (35) and sizes the reduced band (20–<35).
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 35})
+	if cfg := at.mentorEvaluatorConfig(); cfg.CourseExits.ISBMaxStopPts != 35 {
+		t.Fatalf("kernel ISB max = %g, want 35 (one knob, not two)", cfg.CourseExits.ISBMaxStopPts)
+	}
+	resetMentorCounters(at)
+	at.mentorDispatchIntent(isb(32), mentorTierInputs{}, 1000, 1100)
+	snap := at.mentorCountSnapshot()
+	if snap["refused_r8"] != 0 {
+		t.Fatalf("knob 35: a 32-pt ISB must pass R8, refused_r8=%d", snap["refused_r8"])
+	}
+	if snap["tier_reduced"] != 1 {
+		t.Fatalf("knob 35: a 32-pt ISB must size the reduced 3, tier_reduced=%d", snap["tier_reduced"])
+	}
+
+	// knob 25: a 28.25-pt ISB is refused R8 (25).
+	at2 := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 25})
+	if cfg := at2.mentorEvaluatorConfig(); cfg.CourseExits.ISBMaxStopPts != 25 {
+		t.Fatalf("kernel ISB max = %g, want 25", cfg.CourseExits.ISBMaxStopPts)
+	}
+	resetMentorCounters(at2)
+	at2.mentorDispatchIntent(isb(28.25), mentorTierInputs{}, 1000, 1100)
+	if n := at2.mentorCountSnapshot()["refused_r8"]; n != 1 {
+		t.Fatalf("knob 25: a 28.25-pt ISB must be refused R8, refused_r8=%d", n)
+	}
+}
+
+// TestRetaggedPHLInRangeSizesThree (re-gate D3) — the P2-2 trader half: the ISB
+// location size flags are read for ANY setup, so a reverse ISB retagged PHL that
+// carries isb_in_range still sizes 3, never base 5. Mutant M13 (flags read only
+// for Setup "ISB") → RED.
+func TestRetaggedPHLInRangeSizesThree(t *testing.T) {
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	in := mentor.Intent{Action: mentor.PlaceStopEntry, Setup: "PHL", Side: mentor.SideLong,
+		Price: 21000, Stop: 20988, Target: 21024, StopPts: 12, TargetPts: 24, Flag: mentor.FlagISBInRange}
+	got, err := at.mentorSizeFor(in, mentorTierInputs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 3 || got.Tier != "isb_in_range" {
+		t.Fatalf("a retagged PHL in a range: got %d %s, want 3 isb_in_range", got.Contracts, got.Tier)
+	}
+}
+
 // TestMentorTuningOneValueForGateAndKernel — the trader rule gate and the
 // kernel read the SAME number: with swing_max_stop_pts=80 / day_gate_target_cap
 // =12 the dispatch path refuses at exactly those values, and the evaluator

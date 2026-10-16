@@ -51,7 +51,7 @@ func wireMentorPlacementSeams(t *testing.T, at *AutoTrader) {
 	t.Helper()
 	at.mentorDayNetSource = func() (float64, bool) { return 0, true }
 	at.mentorClosedProfitSource = func() (bool, bool) { return false, true }
-	at.mentorClosedLossSource = func() (bool, bool) { return false, true } // stop-after-loss is ON by default (course-defaults-30): wire "no loss, resolved"
+	at.mentorClosedLossSource = func() (bool, bool) { return false, true } // stop-after-loss is OFF by default (FOLD 2026-10-16): wire "no loss, resolved"
 	at.mentorOpenSideSource = func() string { return "" }
 	at.mentorLegProtectedSource = func(leg string) bool { return true }
 	mentorLatestPriceSource = func() (float64, bool) { return 0, false } // bound, inert: no-chase sees no price

@@ -530,7 +530,7 @@ export const mentor: GuideSection = {
         ],
         [
           'Day gate (§7)',
-          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). The day gate is frozen AT the 08:30 read: a restart after 08:30 RESTORES that decision (the seed replays the 08:30 4h/1h read and the frozen run, then replays the one-way DayOff recheck over the closed 1h bars since), so a restart never re-decides the day — the log line reads "RESTORED from the 08:30 read". Only when the 08:30 read is not possible (no bars closed by 08:30) does the line read "re-read at boot … not the 08:30 decision". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
+          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). The day gate is frozen AT the 08:30 read: a restart after 08:30 RESTORES that decision (the seed replays the 08:30 4h/1h read and the frozen run, then replays the one-way DayOff recheck over the closed 1h bars since — only when mentor_day_off_recheck is ON; course-defaults-30 turns it OFF, so the seed replays no clear), so a restart never re-decides the day — the log line reads "RESTORED from the 08:30 read". Only when the 08:30 read is not possible (no bars closed by 08:30) does the line read "re-read at boot … not the 08:30 decision". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
           'DayGateSpentPts 300 · DayGateTargetCapPts 15',
         ],
         [
@@ -780,13 +780,13 @@ export const mentor: GuideSection = {
         {
           label: 'Reduced contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'Size when the stop is 20–<30 pts (trader/mentor_mode.go mentorContractsFor). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner.',
+          what: 'Size when the stop is 20–<ceiling pts, where the ceiling is the mentor_isb_max_pts knob (default 30 — trader/mentor_mode.go mentorContractsFor). A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in [20,30) sizes swing4h, not 3). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner.',
           trader: '3 contracts on the reduced tier.',
           consumer: 'trader/mentor_mode.go mentorReducedContractsDefault',
           range: 'int',
           systemDefault: '3',
           recommended:
-            '3 — Owner setting: CTO shipped size table (P3); the reduced tier for a 20–<30 pt stop. (An ISB at an old high/low or in a range is a fixed 3 in the code, not this knob.)',
+            '3 — Owner setting: CTO shipped size table (P3); the reduced tier for a 20–<ceiling pt stop (top = mentor_isb_max_pts, default 30). (An ISB at an old high/low or in a range is a fixed 3 in the code, not this knob.)',
           whenToTouch: 'With the 20–<30 reduced band.',
           perSession: 'No.',
         },
@@ -1848,11 +1848,11 @@ export const mentor: GuideSection = {
           label: 'ISB max stop',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
-          what: 'Refuse an ISB (and the reverse ISB) whose stop is at or above this many points, counted isb_stop_over_max / isbrev_stop_over_max. Default 30 (course-defaults-30, owner order "move to 30 at least … fix all" — DEVIATES from the course’s twenties skip [D4.1 p1 @05:41]): an ISB stop < 30 is TAKEN, ≥ 30 is REFUSED. The pre-30 code had it backwards (it refused the 20–30 "twenties" window and let 30+ through).',
+          what: 'Refuse an ISB (and the reverse ISB) whose stop is at or above this many points, counted isb_stop_over_max / isbrev_stop_over_max. Default 30 (course-defaults-30, owner order "move to 30 at least … fix all" — DEVIATES from the course’s twenties skip [D4.1 p1 @05:41]): an ISB stop < 30 is TAKEN, ≥ 30 is REFUSED. The pre-30 code had it backwards (it refused the 20–30 "twenties" window and let 30+ through). This SAME knob is also the trader’s R8 ceiling for every non-swing setup (a PHL/PLH/BOX stop at/over it is refused R8, even below the kernel’s own StopCeilingPts 25) and the top of the 20–<ceiling reduced band.',
           trader:
             'Course: “nếu như một cái setup insidebar mà nó hai mươi mấy điểm … làm ơn giúp em đừng vô” (an ISB in the twenties — don’t enter) [D4.1 p1 @05:34–05:48]. The OWNER moved the line to 30 (10-16 "fix all").',
           consumer:
-            'kernel/mentor/course_exits.go isbOverMaxStop ← kernel/mentor/isb.go ISBStopVerdict',
+            'kernel/mentor/course_exits.go isbOverMaxStop ← kernel/mentor/isb.go ISBStopVerdict · trader/mentor_mode.go mentorRuleGate (R8) + mentorContractsFor (band top) ← trader/mentor_actions.go mentorDispatchEntry',
           range:
             'pts, 0 → 30 (the knob has no OFF — unset/0 resolves to the 30 default)',
           systemDefault: '30',

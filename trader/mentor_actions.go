@@ -237,7 +237,7 @@ func (at *AutoTrader) mentorDrainFills() {
 // mentorDispatchEntry is the ONE mentor entry path (X-07, refactored out of
 // the dispatch switch). A single deferred guard drops the kernel's pending
 // G1/G2 sim fill for the intent's ArmID on EVERY refusal inside this
-// function: a trader-side refusal (R8 25-pt ceiling, window, done-after-win,
+// function: a trader-side refusal (R8 mentor_isb_max_pts ceiling, window, done-after-win,
 // news, no-chase, N4, MENTOR_PLACE off) must not phantom-fill on a later
 // candle and spend the leg budget / open a loss box. An intent that reached
 // mentorRegisterLiveArm (mentorLiveArmFor) is accepted — no drop.
