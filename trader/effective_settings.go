@@ -709,6 +709,29 @@ func buildEffectiveResolvers() map[string]effResolver {
 		}
 		return effResult{value: v, origin: origin, scope: scope}
 	})
+	// MENTOR-DONE-AFTER-WIN eff (release #32): the switch was UI-BLIND — the
+	// panel said "n/a — no resolver registered" while the gate read it. The
+	// value is on/off from the ONE resolver the gate and the sweep use; the
+	// origin names the owner's nil → OFF ruling when the key is absent.
+	add(rcPath+"mentor_done_after_win", "trader.(*AutoTrader).mentorDoneAfterWinEnabled", func(x *effCtx) effResult {
+		on := x.at != nil && x.at.mentorDoneAfterWinEnabled()
+		v := "off"
+		if on {
+			v = "on"
+		}
+		origin := store.SourceShippedDefault + " (owner 2026-10-16: OFF)"
+		if x.st.present {
+			origin = store.SourceSaved
+		}
+		return effResult{value: v, origin: origin}
+	})
+	add(rcPath+"mentor_done_after_win_day_start", "trader.(*AutoTrader).mentorDoneAfterWinDayStart", func(x *effCtx) effResult {
+		if x.at == nil {
+			return effResult{value: mentorDoneAfterWinDayStartDefault, origin: store.SourceShippedDefault}
+		}
+		v := x.at.mentorDoneAfterWinDayStart()
+		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault)}
+	})
 	add(rcPath+"max_notional_leverage", "kernel.ResolveNotionalLeverage (trader.enforcePositionValueRatio)", func(x *effCtx) effResult {
 		v, src := kernel.ResolveNotionalLeverageWithSource(x.rc().MaxNotionalLeverage, futuresMaxNotionalLeverage)
 		return effResult{value: v, origin: src, scope: ScopeFutures}

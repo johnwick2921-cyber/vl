@@ -370,3 +370,42 @@ func TestEffectiveSettingsExitMechNotAppliedInMentorMode(t *testing.T) {
 		t.Fatalf("ai mode: breakeven_trigger_points effective = %v, want 40", got)
 	}
 }
+
+// TestEffMentorDoneAfterWinResolvesSwitch — the switch was UI-BLIND (the panel
+// said "n/a — no resolver registered" while mentorDoneAfterWinEnabled read it).
+// absent → off / "shipped default (owner 2026-10-16: OFF)"; stored true → on /
+// "saved value"; stored false → off / "saved value". The day-start row resolves
+// too. Mutant: make the resolver return a literal true → the absent row reads
+// "on" → RED.
+func TestEffMentorDoneAfterWinResolvesSwitch(t *testing.T) {
+	rc := func(inner string) string {
+		return `{"strategy_type":"ai_trading","ai_config":{"risk_control":` + inner + `}}`
+	}
+	absent := effRowsFor(t, rc(`{}`), "", "")
+	k := absent[rcPath+"mentor_done_after_win"]
+	if k.Effective != "off" || k.Origin != store.SourceShippedDefault+" (owner 2026-10-16: OFF)" || !k.Resolved {
+		t.Fatalf("absent: effective=%v origin=%q resolved=%v, want off / %q / true", k.Effective, k.Origin, k.Resolved, store.SourceShippedDefault+" (owner 2026-10-16: OFF)")
+	}
+
+	storedTrue := effRowsFor(t, rc(`{"mentor_done_after_win":true}`), "", "")
+	k = storedTrue[rcPath+"mentor_done_after_win"]
+	if k.Effective != "on" || k.Origin != store.SourceSaved {
+		t.Fatalf("stored true: effective=%v origin=%q, want on / saved value", k.Effective, k.Origin)
+	}
+
+	storedFalse := effRowsFor(t, rc(`{"mentor_done_after_win":false}`), "", "")
+	k = storedFalse[rcPath+"mentor_done_after_win"]
+	if k.Effective != "off" || k.Origin != store.SourceSaved {
+		t.Fatalf("stored false: effective=%v origin=%q, want off / saved value", k.Effective, k.Origin)
+	}
+
+	day := absent[rcPath+"mentor_done_after_win_day_start"]
+	if day.Effective != "08:30" || day.Origin != store.SourceShippedDefault || !day.Resolved {
+		t.Fatalf("day-start absent: effective=%v origin=%q resolved=%v, want 08:30 / shipped default / true", day.Effective, day.Origin, day.Resolved)
+	}
+	stored1700 := effRowsFor(t, rc(`{"mentor_done_after_win_day_start":"17:00"}`), "", "")
+	day = stored1700[rcPath+"mentor_done_after_win_day_start"]
+	if day.Effective != "17:00" || day.Origin != store.SourceSaved {
+		t.Fatalf("day-start stored 17:00: effective=%v origin=%q, want 17:00 / saved value", day.Effective, day.Origin)
+	}
+}

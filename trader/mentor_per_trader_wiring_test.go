@@ -43,11 +43,15 @@ func twoTraderB(t *testing.T) *AutoTrader {
 // read B's win and refuse.
 func TestMentorDoneAfterWinGateReadsOwnDayNet(t *testing.T) {
 	// B first, so a re-globaled seam would capture B's winning read.
+	// owner order 2026-10-16: nil → OFF — the isolation pin exercises the ON
+	// path, so the switch is explicit true on both traders.
 	b := twoTraderB(t)
+	b.config.StrategyConfig.RiskControl.MentorDoneAfterWin = bp(true)
 	b.mentorDayNetSource = func() (float64, bool) { return 120, true }
 	b.mentorClosedProfitSource = func() (bool, bool) { return true, true }
 
 	a := twoTraderA(t)
+	a.config.StrategyConfig.RiskControl.MentorDoneAfterWin = bp(true)
 	a.mentorDayNetSource = func() (float64, bool) { return 0, true }
 	a.mentorClosedProfitSource = func() (bool, bool) { return false, true }
 
@@ -227,7 +231,7 @@ func TestMentorProductionWiringReadsOwnTrader(t *testing.T) {
 		trader: &fakeMentorPositionReader{positions: []map[string]interface{}{}}, // flat
 		store:  aSt,
 		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{
-			MentorMode: true, MentorStopAfterLoss: &on,
+			MentorMode: true, MentorDoneAfterWin: &on, MentorStopAfterLoss: &on,
 		}}},
 	}
 	b := &AutoTrader{
@@ -235,7 +239,7 @@ func TestMentorProductionWiringReadsOwnTrader(t *testing.T) {
 		trader: &fakeMentorPositionReader{positions: []map[string]interface{}{{"side": "long"}}}, // long
 		store:  bSt,
 		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{
-			MentorMode: true, MentorStopAfterLoss: &on,
+			MentorMode: true, MentorDoneAfterWin: &on, MentorStopAfterLoss: &on,
 		}}},
 	}
 

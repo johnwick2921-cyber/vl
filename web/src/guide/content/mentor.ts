@@ -493,8 +493,8 @@ export const mentor: GuideSection = {
           cite: 'D4.3 @00:00–03:20, @09:27–09:46 · WickMicroscalpEnabled',
         },
         {
-          title: 'Intraday confluence (exit C, size 5)',
-          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. It also fires on timeframe agreement: the 15m ISB, the 5m ISB and the entry side all align AND the 5m trigger agrees (an ISB/PHL/PLH, not just a box) [D4.2 p1 @14:57]. Then: hold at least 1:2, the stop is never moved up (exit C), size 5 — the confluence and big tiers no longer add contracts (owner order 2026-10-13, course 1.1 L1103 “Cái sizing của em Cố định là 5 MNQ”).',
+          title: 'Intraday confluence (exit C, size 4)',
+          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. It also fires on timeframe agreement: the 15m ISB, the 5m ISB and the entry side all align AND the 5m trigger agrees (an ISB/PHL/PLH, not just a box) [D4.2 p1 @14:57]. Then: hold at least 1:2, the stop is never moved up (exit C), size 4 — the confluence and big tiers no longer add contracts (owner order 2026-10-16, “set to 4 at least, sell 2 first so it’s equal”; the course 1.1 L1103 “Cái sizing của em Cố định là 5 MNQ” is superseded).',
           cite: 'R2 · D3.4 p3 @07:38 · D4.2 p1 @14:57',
         },
         {
@@ -566,8 +566,8 @@ export const mentor: GuideSection = {
       items: [
         {
           title: 'Done for the day after a win',
-          body: 'One win and the machine is done for the day.',
-          cite: 'Owner setting — done-after-win (D1.2 p1 @20:53 "thắng rồi… quyền được nghỉ ngơi") · mentor_done_after_win — live',
+          body: 'OFF by default (owner order 2026-10-16, "it’s been off … follow it"). ON: after a mentor trade closes in profit and the day is net positive, no new mentor entries until the next NY open (08:30 CT); resting entry orders are cancelled.',
+          cite: 'Owner setting — done-after-win (D1.2 p1 @20:53 "thắng rồi… quyền được nghỉ ngơi") · mentor_done_after_win — nil → OFF (owner order 2026-10-16)',
         },
         {
           title: 'Trading window — 08:30–09:30 CT by default',
@@ -606,13 +606,13 @@ export const mentor: GuideSection = {
       title: 'The size table (SIM)',
       head: ['Tier', 'Default contracts', 'Knob'],
       rows: [
-        ['Base', '5', 'mentor_base_contracts'],
-        ['Confluence (many things agree)', '5', 'mentor_confluence_contracts'],
-        ['Big (the hard tier)', '5', 'mentor_big_contracts'],
+        ['Base', '4', 'mentor_base_contracts'],
+        ['Confluence (many things agree)', '4', 'mentor_confluence_contracts'],
+        ['Big (the hard tier)', '4', 'mentor_big_contracts'],
         ['Hard cap', '20', 'mentor_max_contracts'],
         [
           'Reduced (stop 20–<30 pts; also an ISB at an old high/low or inside a range)',
-          '3',
+          '4',
           'mentor_reduced_contracts',
         ],
         [
@@ -630,6 +630,10 @@ export const mentor: GuideSection = {
     {
       kind: 'p',
       text: 'The risk-control max_contracts_per_order knob does NOT apply in mentor mode: mentor entries size from this table, capped only by mentor_max_contracts (default 20).',
+    },
+    {
+      kind: 'p',
+      text: 'MENTOR-SIZE-4 (owner order 2026-10-16, “set to 4 at least, sell 2 first so it’s equal”): every intraday tier sizes 4 MNQ — the split sells 2 first (leg 1) and holds 2 (the runner), equal halves. This OVERRIDES the course’s “fixed 5” (1.1 p2 L1103, 3.4 p3 L531, slide 5) and the “reduce size” tier-3 rules (D4.1 p1 @04:37–05:04) — the reduced band no longer cuts below 4. The SWING4H (2) and the spent-day tier (normal size, 15-pt target cap + runner cap 2) are unchanged.',
     },
     {
       kind: 'h',
@@ -732,11 +736,13 @@ export const mentor: GuideSection = {
           label: 'Base contracts',
           where: 'Strategy → Mentor mode → sizing',
           what: 'The default contract count for a mentor entry.',
-          trader: '5 contracts on SIM per setup.',
+          trader:
+            '4 contracts on SIM per setup — the split sells 2 first (leg 1) and holds 2 (the runner), equal halves.',
           consumer: 'trader/mentor_mode.go mentorBaseContractsDefault',
           range: 'int',
-          systemDefault: '5',
-          recommended: '5 — Owner setting: CTO shipped size table (P3).',
+          systemDefault: '4',
+          recommended:
+            '4 — Owner order 2026-10-16 (“set to 4 at least, sell 2 first so it’s equal”); the course’s “fixed 5” (1.1 p2 L1103) is superseded.',
           whenToTouch: 'When you deliberately re-size the method.',
           perSession: 'No.',
         },
@@ -745,26 +751,26 @@ export const mentor: GuideSection = {
           where: 'Strategy → Mentor mode → sizing',
           what: 'Size when many things agree (the confluence path).',
           trader:
-            '5 contracts when everything lines up — the tier still reports WHY, but the count stays 5.',
+            '4 contracts when everything lines up — the tier still reports WHY, but the count stays 4.',
           consumer: 'trader/mentor_mode.go mentorConfluenceContractsDefault',
           range: 'int',
-          systemDefault: '5',
+          systemDefault: '4',
           recommended:
-            '5 — Owner order 2026-10-13 (course 1.1 p2 L1103: fixed 5 MNQ); the confluence tier no longer adds contracts.',
+            '4 — Owner order 2026-10-16 (the course 1.1 p2 L1103 “fixed 5 MNQ” is superseded); the confluence tier no longer adds contracts.',
           whenToTouch: 'Only if the owner re-sizes the method deliberately.',
           perSession: 'No.',
         },
         {
           label: 'Big contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'The big tier — it still reports WHY the setup qualified (4h AND 1h both point the entry’s side, a silent 1h does not count, room ≥ 2× the risk, target ≥ 30 pts), but the count is 5.',
+          what: 'The big tier — it still reports WHY the setup qualified (4h AND 1h both point the entry’s side, a silent 1h does not count, room ≥ 2× the risk, target ≥ 30 pts), but the count is 4.',
           trader:
-            '5 contracts on a big tier — the tier no longer adds contracts.',
+            '4 contracts on a big tier — the tier no longer adds contracts.',
           consumer: 'trader/mentor_mode.go mentorBigContractsDefault',
           range: 'int',
-          systemDefault: '5',
+          systemDefault: '4',
           recommended:
-            '5 — Owner order 2026-10-13 (course 1.1 p2 L1103: fixed 5 MNQ); mentor_max_contracts (20) is a ceiling only.',
+            '4 — Owner order 2026-10-16 (the course 1.1 p2 L1103 “fixed 5 MNQ” is superseded); mentor_max_contracts (20) is a ceiling only.',
           whenToTouch: 'Never above the hard cap.',
           perSession: 'No.',
         },
@@ -784,13 +790,13 @@ export const mentor: GuideSection = {
         {
           label: 'Reduced contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'Size when the stop is 20–<ceiling pts, where the ceiling is the mentor_isb_max_pts knob (default 30 — trader/mentor_mode.go mentorContractsFor). A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in [20,30) sizes swing4h, not 3). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner.',
-          trader: '3 contracts on the reduced tier.',
+          what: 'Size when the stop is 20–<ceiling pts, where the ceiling is the mentor_isb_max_pts knob (default 30 — trader/mentor_mode.go mentorContractsFor). A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in [20,30) sizes swing4h, not the reduced 4). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner. Owner order 2026-10-16: this band no longer cuts below 4.',
+          trader: '4 contracts on the reduced tier.',
           consumer: 'trader/mentor_mode.go mentorReducedContractsDefault',
           range: 'int',
-          systemDefault: '3',
+          systemDefault: '4',
           recommended:
-            '3 — Owner setting: CTO shipped size table (P3); the reduced tier for a 20–<ceiling pt stop (top = mentor_isb_max_pts, default 30). (An ISB at an old high/low or in a range is a fixed 3 in the code, not this knob.)',
+            '4 — Owner ruling 2026-10-16: the reduced tier no longer cuts below 4 (top = mentor_isb_max_pts, default 30). An ISB at an old high/low or in a range also sizes 4.',
           whenToTouch: 'With the 20–<30 reduced band.',
           perSession: 'No.',
         },
@@ -1665,15 +1671,15 @@ export const mentor: GuideSection = {
         {
           label: 'Done after a winning day',
           where:
-            'No Studio control — ON by default (owner ruling); the strategy setting mentor_done_after_win=false turns it off',
-          what: 'Stop new mentor entries for the mentor\u2019s NY day after a winning trade closes and the day\u2019s net P&L is positive. The day boundary is 08:30 CT (the NY open) — owner ruling 2026-10-09; a win at 18:06 CT no longer blocks the next NY open.',
+            'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode → "Stop for the day after a winning trade"',
+          what: 'Stop new mentor entries for the mentor\u2019s NY day after a winning trade closes and the day\u2019s net P&L is positive. OFF by default (owner order 2026-10-16: nil → OFF, an explicit true turns it on). The day boundary is 08:30 CT (the NY open) — owner ruling 2026-10-09; a win at 18:06 CT no longer blocks the next NY open.',
           trader:
-            'ON by default; an explicit false disables this stop rule. The day boundary is the knob mentor_done_after_win_day_start ("HH:MM" CT; unset → 08:30, the NY open). Set it to 17:00 to restore the old CME-session-day behaviour.',
+            'OFF by default; an explicit true enables this stop rule. The day boundary is the knob mentor_done_after_win_day_start ("HH:MM" CT; unset → 08:30, the NY open). Set it to 17:00 to restore the old CME-session-day behaviour.',
           consumer: 'trader/mentor_tick.go mentorDoneAfterWinGate',
           range: 'true / false',
-          systemDefault: 'true (unset = ON)',
+          systemDefault: 'false (unset = OFF)',
           recommended:
-            'ON — owner ruling; stop after a win on a net-positive day. Day boundary: 08:30 CT (owner ruling 2026-10-09).',
+            'OFF — owner order 2026-10-16 ("it\u2019s been off … follow it"). Day boundary: 08:30 CT (owner ruling 2026-10-09).',
           whenToTouch: 'Rarely.',
           perSession: 'No — per strategy.',
         },
