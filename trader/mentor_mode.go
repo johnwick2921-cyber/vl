@@ -894,18 +894,6 @@ var modifyBracketWire = func(nt *ntTrader.TCPTrader, signalID, side string, wire
 	return nt.ModifyBracketLeg(signalID, side, wireLeg, 0, newTP)
 }
 
-// closeLegWire is the LAST hop for a mentor LEG-scoped market close (R1,
-// release #30) — TCPTrader.CloseLeg, the close_position frame with the new
-// `leg` field. The AddOn markets out exactly that leg's contracts and cancels
-// that leg's bracket (the +1R TP + stop), so the runner is untouched. nil →
-// logged + counted, never sent (tests substitute a recorder).
-var closeLegWire = func(nt *ntTrader.TCPTrader, signalID string, leg int, side string, qty int) error {
-	if nt == nil {
-		return fmt.Errorf("mentor leg close: no NT8 trader for %s", signalID)
-	}
-	return nt.CloseLeg(signalID, leg, side, qty)
-}
-
 // flattenLegWire flattens ONE leg (fail-closed on lost protection).
 var flattenLegWire func(leg string) error
 

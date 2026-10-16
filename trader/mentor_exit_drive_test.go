@@ -156,7 +156,7 @@ func TestMentorISBPartialTP(t *testing.T) {
 		t.Fatalf("close past +1R → %v, want 0 (the +1R TP already filled inside the candle)", got)
 	}
 	if got := mentorISBPartialTP(long, 104, 105, 99); got != 104 {
-		t.Fatalf("candle-3 close in profit short of +1R → %v, want 104 (the market-sell close)", got)
+		t.Fatalf("candle-3 close in profit short of +1R → %v, want 104 (the TP is moved to a marketable limit at it)", got)
 	}
 	if got := mentorISBPartialTP(long, 98, 105, 95); got != 0 {
 		t.Fatalf("losing close → %v, want 0 (the +1R TP keeps resting)", got)
@@ -171,6 +171,81 @@ func TestMentorISBPartialTP(t *testing.T) {
 	if got := mentorISBPartialTP(short, 102, 103, 95); got != 0 {
 		t.Fatalf("short losing close → %v, want 0", got)
 	}
+}
+
+// TestMentorISBMarketableTP — the CTO's exact marketable formula: long → close −
+// 8 ticks (2.00 pts), short → close + 8 ticks, rounded to the tick grid. Worked
+// example from the ruling: long close 30108 → 30106.00.
+func TestMentorISBMarketableTP(t *testing.T) {
+	if got := mentorISBMarketableTP("long", 30108, 0.25); got != 30106.00 {
+		t.Fatalf("long close 30108 → %v, want 30106.00 (close − 8 ticks)", got)
+	}
+	if got := mentorISBMarketableTP("short", 30737.50, 0.25); got != 30739.50 {
+		t.Fatalf("short close 30737.50 → %v, want 30739.50 (close + 8 ticks)", got)
+	}
+	if got := mentorISBMarketableTP("SHORT", 30108, 0.25); got != 30110.00 {
+		t.Fatalf("SHORT close 30108 → %v, want 30110.00", got)
+	}
+	// off-grid close rounds onto the grid.
+	if got := mentorISBMarketableTP("long", 30108.13, 0.25); got != 30106.25 {
+		t.Fatalf("long close 30108.13 → %v, want 30106.25 (rounded)", got)
+	}
+}
+
+// TestMentorISBMarketableReModify — R1: a pending marketable leg-1 TP is
+// re-priced to the NEW close ∓ 8 ticks once per later candle while the close
+// stays in profit short of +1R; never back to "none"; the leg keeps its stop.
+func TestMentorISBMarketableReModify(t *testing.T) {
+	at := newDriveATForTest(t)
+	old := modifyBracketWire
+	t.Cleanup(func() { modifyBracketWire = old })
+	var sent []float64
+	modifyBracketWire = func(_ *nttrader.TCPTrader, signalID, _ string, wireLeg int, newTP float64) error {
+		if signalID != "sig-1" || wireLeg != 1 {
+			t.Fatalf("re-modify must address leg 1 of sig-1, got %q leg %d", signalID, wireLeg)
+		}
+		sent = append(sent, newTP)
+		return nil
+	}
+	// long entry 30100, R 8 → +1R = 30108. First marketable TP 30106 already sent.
+	p := bPos("B", "long", 30100, 30098, 30120, 4)
+	p.Pos.Origin = "ISB"
+	p.Pos.R = 8
+	p.Legs[0].Wire = 1
+	p.Legs[0].SignalID = "sig-1"
+	p.TPModWant = 30106.0
+	// In band (30100 < 30104 < 30108): re-priced to the new close − 8 ticks.
+	at.mentorISBMarketableReModify(&nttrader.TCPTrader{}, p, 30104)
+	if len(sent) != 1 || sent[0] != 30102.00 {
+		t.Fatalf("in-band re-modify must send ONE modify to 30102.00; sent=%v", sent)
+	}
+	// Same close again → the resting TP is already there → no frame.
+	at.mentorISBMarketableReModify(&nttrader.TCPTrader{}, p, 30104)
+	if len(sent) != 1 {
+		t.Fatalf("an unchanged close must not re-send; sent=%v", sent)
+	}
+	// Out of band (past +1R) → the native TP / +1R owns the exit → no frame.
+	p.TPModWant = 30102.00
+	at.mentorISBMarketableReModify(&nttrader.TCPTrader{}, p, 30112)
+	if len(sent) != 1 {
+		t.Fatalf("a past-+1R close must not re-modify; sent=%v", sent)
+	}
+	// A losing close → no frame.
+	at.mentorISBMarketableReModify(&nttrader.TCPTrader{}, p, 30095)
+	if len(sent) != 1 {
+		t.Fatalf("a losing close must not re-modify; sent=%v", sent)
+	}
+	// No pending first modify → no frame (never re-sends a never-sent modify).
+	p.TPModWant = 0
+	at.mentorISBMarketableReModify(&nttrader.TCPTrader{}, p, 30105)
+	if len(sent) != 1 {
+		t.Fatalf("TPModWant 0 means the first modify never went out — nothing to re-modify; sent=%v", sent)
+	}
+}
+
+func newDriveATForTest(t *testing.T) *AutoTrader {
+	at, _ := newDriveAT(t)
+	return at
 }
 
 // item 8 live-loop pin (R1): the ISB partial resolves ONCE at the fill candle's
@@ -190,8 +265,8 @@ func TestMentorExitDrivePosISB_PartialResolvedOnce(t *testing.T) {
 	if got := at.mentorCountSnapshot()["isb_partial_no_sale"]; got != 1 {
 		t.Fatalf("isb_partial_no_sale = %d, want 1 (a past-+1R close sells nothing at the close)", got)
 	}
-	if got := at.mentorCountSnapshot()["close_leg_sent"]; got != 0 {
-		t.Fatalf("a past-+1R close must send no market close, close_leg_sent = %d", got)
+	if got := at.mentorCountSnapshot()["modify_bracket_sent"]; got != 0 {
+		t.Fatalf("a past-+1R close must send no modify, modify_bracket_sent = %d", got)
 	}
 	assertMoves(t, moves())
 	// a later candle must NOT re-fire the ISB partial.
@@ -445,8 +520,8 @@ func mentorISBPartialResolutions(at *AutoTrader) int {
 	snap := at.mentorCountSnapshot()
 	n := 0
 	for _, k := range []string{"isb_partial_no_sale", "isb_partial_wait_1r", "isb_partial_not_split",
-		"isb_partial_not_in_profit", "close_leg_unwired", "close_leg_bad_side",
-		"close_leg_failed", "close_leg_sent"} {
+		"isb_partial_not_in_profit", "modify_bracket_unwired", "modify_bracket_failed",
+		"modify_bracket_sent"} {
 		n += int(snap[k])
 	}
 	return n

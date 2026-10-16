@@ -348,8 +348,9 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 
 	// ── (2) ISB partial (item 8, R1): leg 1's +1R TP always rests at NT8.
 	// When the fill candle's close is in profit SHORT of +1R (leg 1 did NOT
-	// fill inside the candle), leg 1 is sold at MARKET at that close — never a
-	// resting limit [D1.4 p1 @12:51–13:01 "bán bớt. Bắt buộc"]. A close PAST
+	// fill inside the candle), leg 1's TP is moved to a MARKETABLE limit at
+	// that close ∓ 8 ticks — through the existing modify_bracket path, never
+	// an AddOn change [D1.4 p1 @12:51–13:01 "bán bớt. Bắt buộc"]. A close PAST
 	// +1R means the +1R TP already filled inside the candle (the 1:1 rule).
 	// A losing close moves nothing. Runs in both mentor_trail_mode values.
 	if pos.Origin == "ISB" && !p.ISBPartialDone && p.BarsSinceFill >= 1 {
@@ -359,6 +360,13 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 				leg1Target = tp
 			}
 		}
+	}
+
+	// ── (2b) R1 re-modify: the marketable leg-1 TP limit is re-priced to the
+	// NEW close ∓ 8 ticks on every later candle until leg 1 fills — never back
+	// to "none"; the leg keeps its stop throughout.
+	if pos.Origin == "ISB" && p.ISBPartialDone && p.BarsSinceFill >= 2 && !scaledNow && leg1OnWire {
+		at.mentorISBMarketableReModify(nt, p, c)
 	}
 
 	// ── R3 (release #22, mentor_trail_mode=candle, the default): a SPLIT
