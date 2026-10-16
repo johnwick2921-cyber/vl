@@ -2,6 +2,7 @@ package trader
 
 import (
 	"testing"
+	"time"
 
 	"vl/kernel/mentor"
 	"vl/store"
@@ -18,8 +19,10 @@ func isbIntent(flag string) mentor.Intent {
 // or inside a range, is sized at the reduced tier (4 under owner order
 // 2026-10-16). The evaluator stamps Intent.Flag; the sizing call site
 // (mentorSizeFor, reached through mentorExtraFor exactly as mentorTick does)
-// must read it. Mutant: drop the two flag lines in mentorSizeFor → the cut
-// tiers are never chosen → RED.
+// must read it. Mutants: (1) drop the two flag lines in mentorSizeFor → the cut
+// tiers are never chosen → RED; (2) F-9 — revert either `clamp(reduced)` back to
+// a literal `clamp(3)` in mentorContractsFor → the old-extreme / in-range cases
+// size 3 → RED (the reduced knob must govern ALL three "reduce size" tiers).
 func TestMentorISBSizeCutsAtSizingCallSite(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	cases := []struct {
@@ -59,6 +62,47 @@ func TestMentorISBSizeCutsAtSizingCallSite(t *testing.T) {
 	extra.Confluence = true
 	if got, _ := at.mentorSizeFor(conf, extra); got.Tier != "isb_in_range" || got.Contracts != 4 {
 		t.Fatalf("an in-range ISB with confluence must still be cut to the reduced 4: %+v", got)
+	}
+}
+
+// TestMentorISBCutTiersSizeFourSplitTwoTwo — the F-9 fix through the FULL
+// production dispatch (mentorDispatchIntent → sizing → mentorArmIntent): an ISB
+// at an old high/low and an ISB inside a range each size 4 (the reduced knob,
+// never a literal 3) and the authored row carries the 2+2 split (Leg1Qty=2).
+// Anchored mutant (F-9): revert `clamp(reduced)` to `clamp(3)` in either cut
+// branch → Contracts=3 on the row → RED.
+func TestMentorISBCutTiersSizeFourSplitTwoTwo(t *testing.T) {
+	t.Setenv("MENTOR_PLACE", "on")
+	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
+	ledger := st.ArmedOrders()
+	wireMentorPlacementSeams(t, at)
+	ct := time.FixedZone("CT", -5*3600)
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
+
+	for _, c := range []struct {
+		name string
+		flag string
+	}{
+		{"ISB at an old high/low", mentor.FlagISBAtOldExtreme},
+		{"ISB inside a range", mentor.FlagISBInRange},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			in := isbIntent(c.flag)
+			in.ArmID = "isb-cut"
+			in.ExpiryMs = time.Now().UnixMilli() + 60_000
+			at.mentorDispatchIntent(in, mentorTierInputs{}, 0, 0)
+			var row store.ArmedOrderDB
+			if err := ledger.DB().Where("scenario LIKE ?", "isb-cut-%").First(&row).Error; err != nil {
+				t.Fatalf("the ISB cut tier must author a row: %v", err)
+			}
+			if row.Contracts == nil || *row.Contracts != 4 {
+				t.Fatalf("%s: Contracts = %v, want 4 (the reduced knob, no literal 3)", c.name, intPtrText(row.Contracts))
+			}
+			if row.Leg1Qty == nil || *row.Leg1Qty != 2 {
+				t.Fatalf("%s: Leg1Qty = %v, want 2 (4 = 2+2)", c.name, row.Leg1Qty)
+			}
+		})
 	}
 }
 
