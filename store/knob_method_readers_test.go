@@ -450,6 +450,70 @@ func TestCandidateKnobsHaveNoMethodReaders(t *testing.T) {
 	}
 }
 
+// freeResolverReaders finds production references (OUTSIDE store/) to a knob's
+// free-function RESOLVER (Resolve<GoField>) and/or its config accessor
+// (<GoField>Enabled). The field-level method pass misses these when the knob's
+// field sits on a NESTED type and the accessor lives on the outer config type
+// (htf_veto: field Regime.HTFVeto, accessor StrategyConfig.HTFVetoEnabled which
+// calls the free function ResolveHTFVeto). A candidate knob that is referenced
+// this way is live, not "no known reader".
+func freeResolverReaders(t *testing.T, leaf string) []string {
+	t.Helper()
+	owners := knobFieldOwners(leaf)
+	if len(owners) == 0 {
+		return nil
+	}
+	names := map[string]bool{}
+	for _, o := range owners {
+		names[o[1]+"Enabled"] = true
+		names["Resolve"+o[1]] = true
+	}
+	_, files := repoGoFiles(t, "..")
+	var sites []string
+	for _, f := range files {
+		// The resolver/accessor DEFINITION lives in store/; a production
+		// reader is a reference from OUTSIDE package store. repoGoFiles walks
+		// from the module root (".."), so store/ files carry a ../store/ prefix.
+		if strings.Contains(filepath.ToSlash(f), "/store/") {
+			continue
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		line := 0
+		for _, l := range strings.Split(string(b), "\n") {
+			line++
+			for n := range names {
+				if strings.Contains(l, n) {
+					sites = append(sites, fmt.Sprintf("%s:%d", strings.TrimPrefix(filepath.ToSlash(f), "../"), line))
+					break
+				}
+			}
+		}
+	}
+	sort.Strings(sites)
+	return sites
+}
+
+// A CANDIDATE-UNVERIFIED KNOB HAS NO FREE-FUNCTION RESOLVER READER. The
+// 2026-09-03 sweep grepped for the FIELD; a Resolve<Field> free function (or a
+// <Field>Enabled accessor on the config type) is equally invisible to that
+// grep. htf_veto is the proof: ResolveHTFVeto is read through
+// StrategyConfig.HTFVetoEnabled, which trader/auto_trader_loop.go:424 and
+// trader/armed_executor.go:3033 call. A candidate with such a reference is
+// misclassified — reclassify it live.
+func TestCandidateKnobsHaveNoFreeFunctionResolverReaders(t *testing.T) {
+	for _, e := range AllKnobs() {
+		if e.Status != KnobCandidate {
+			continue
+		}
+		if sites := freeResolverReaders(t, e.Path); len(sites) > 0 {
+			t.Errorf("knob %q is candidate-unverified but its resolver/accessor is referenced outside store/ at %v — reclassify it live with those consumers", e.Path, sites)
+		}
+	}
+}
+
 // THE METHOD-READER CHAIN MUST LEAVE package store (CTO CENSUS-GUARDS
 // 1790306266164 [31]). store/strategy.go:1624 (c.WakeOnLevelEventsEnabled()
 // inside WakeOnHTFOrderBlocks) and :1699 kept six of the seven wake knobs

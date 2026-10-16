@@ -452,7 +452,7 @@ const dayPlan: KnobSpec[] = [
     label: 'Wake on level events (1 switch)',
     where:
       'Strategy → Day Plan → Planner wake-ups → Wake on level events (wake_on_level_events)',
-    what: "The level-event wake that re-reads the planner mid-session (the W6 wake wave), now ONE switch (W-KNOB-PRUNE, 2026-09-18). ON = HTF 1h/4h S/D zones the plan never saw and invalidation of a level it DID seat wake the planner — the two classes Rounds 23/24 kept; the 15m reversal-zone/FVG and iFVG classes ride along at their shipped-ON default. HTF order blocks stay OFF unless a legacy stored wake_on_htf_ob=true exists (the owner's MNQ strategy — honoured and logged at load). Wakes are paced by the folded 30-minute interval and the class-47 cadence cutoffs.",
+    what: "The level-event wake that re-reads the planner mid-session (the W6 wake wave), now ONE switch (W-KNOB-PRUNE, 2026-09-18). ON = HTF 1h/4h S/D zones the plan never saw and invalidation of a level it DID seat wake the planner — the two classes Rounds 23/24 kept; the 15m reversal-zone/FVG and iFVG classes ride along at their shipped-ON default. HTF order blocks stay OFF unless a legacy stored wake_on_htf_ob=true exists (both bound strategies — honoured and logged at load). Wakes are paced by the folded 30-minute interval and the class-47 cadence cutoffs.",
     trader:
       'ON = the plan reacts to structure as it forms; wakes are advisory refreshes that can never dark a session. OFF = only deaths, MSS and flips re-read. A strategy that stored the old five toggles is mapped by the engine: any of them ON → this switch ON; all five false → OFF.',
     consumer:
@@ -523,7 +523,7 @@ const dayPlan: KnobSpec[] = [
   },
   {
     label: 'Session condition status override (0C)',
-    where: 'Strategy → Day Plan → sessions[] → condition_status map',
+    where: 'API/config field day_plan.sessions[].condition_status (no Studio control)',
     what: 'Per-session live|shadow override of the strategy-level condition_status map; nil inherits the strategy-level map.',
     trader: 'Use it to shadow a condition in one session only.',
     consumer:
@@ -1746,19 +1746,19 @@ export const settings: GuideSection = {
         [
           'levels_fresh_by_tf',
           'FOLDED',
-          "OFF unless stored (owner's MNQ strategy stores ON)",
+          "OFF unless stored (both bound strategies store ON)",
           'S4c: freshness separates nothing; the stored ON is honoured until the owner clears it, then the grader is deleted.',
         ],
         [
           'structure_map',
           'FOLDED',
-          "OFF unless stored (owner's MNQ strategy stores ON)",
+          "OFF unless stored (both bound strategies store ON)",
           'Advisory text only; keep OFF until Round 25.',
         ],
         [
           'wake_on_15m_zone · wake_on_htf_ob · wake_on_ifvg · wake_on_htf_zone · wake_on_seated_invalidation',
           'COLLAPSED',
-          "one switch wake_on_level_events (ON); OBs only via a legacy stored wake_on_htf_ob=true (owner's MNQ strategy)",
+          "one switch wake_on_level_events (ON); OBs only via a legacy stored wake_on_htf_ob=true (both bound strategies)",
           'Rounds 23/24 kept HTF zones + seated invalidation; the rest ride along at their shipped default; any legacy ON → ON.',
         ],
         [

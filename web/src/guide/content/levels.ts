@@ -157,7 +157,7 @@ export const levels: GuideSection = {
     { kind: 'h', text: 'Freshness by own timeframe' },
     {
       kind: 'p',
-      text: "Freshness by own timeframe (levels_fresh_by_tf) — FOLDED by W-KNOB-PRUNE (2026-09-18, S4c: freshness separates nothing): no Studio control; OFF (the 1m-touch ladder) unless the strategy already stores ON, which the engine honours and logs at load (the owner's MNQ strategy does). ON = HTF levels grade fresh / tested-1 / tested-2 / stale on their own timeframe bars. The scoring tables never change in either mode; only the freshness string HTF levels carry differs.",
+      text: "Freshness by own timeframe (levels_fresh_by_tf) — FOLDED by W-KNOB-PRUNE (2026-09-18, S4c: freshness separates nothing): no Studio control; OFF (the 1m-touch ladder) unless the strategy already stores ON, which the engine honours and logs at load (both bound strategies do). ON = HTF levels grade fresh / tested-1 / tested-2 / stale on their own timeframe bars. The scoring tables never change in either mode; only the freshness string HTF levels carry differs.",
     },
     { kind: 'h', text: 'Seats & band' },
     {

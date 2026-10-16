@@ -872,6 +872,49 @@ func buildEffectiveResolvers() map[string]effResolver {
 		_, _, _, _, tfs := resolveSessionPlanCfg(x.dp(), x.session)
 		return effResult{value: tfs, origin: presenceOrigin(x, tfs, store.SourceShippedDefault)}
 	})
+	// S3 (release #32) — planner_model was live but had no resolver (UI-BLIND).
+	// Empty binding falls back to the primary model, exactly like
+	// resolvePlannerModelID / resolvePlannerClient.
+	add(dpPath+"planner_model", "trader.resolvePlannerModelID (empty → primary)", func(x *effCtx) effResult {
+		primary := x.at.aiModel
+		if strings.TrimSpace(primary) == "" {
+			primary = "deepseek"
+		}
+		pm := ""
+		if dp := x.dp(); dp != nil {
+			pm = dp.PlannerModel
+		}
+		modelID, usePrimary := resolvePlannerModelID(pm, primary)
+		if usePrimary {
+			return effResult{value: modelID, origin: "empty binding → primary model"}
+		}
+		return effResult{value: modelID, origin: presenceOrigin(x, modelID, store.SourceSaved)}
+	})
+	// F3 (part-A) — planner_contract was UI-BLIND (no resolver). nil = ON.
+	add(dpPath+"planner_contract", "store.(*DayPlanConfig).PlannerContractOn", func(x *effCtx) effResult {
+		v := x.dp().PlannerContractOn()
+		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault)}
+	})
+	// F10 (part-A) — the four legacy wake_on_* rows printed "n/a — no resolver
+	// registered". They are read ONLY for the wake_on_level_events mapping
+	// (nil reads ON, store.legacyWakeOn); resolving them shows that.
+	legacyWake := func(path string, get func(*store.DayPlanConfig) *bool) {
+		add(dpPath+path, "legacy: read for the wake_on_level_events mapping (nil reads ON)", func(x *effCtx) effResult {
+			var p *bool
+			if dp := x.dp(); dp != nil {
+				p = get(dp)
+			}
+			v := true // nil pointer reads ON (store.legacyWakeOn)
+			if p != nil {
+				v = *p
+			}
+			return effResult{value: v, origin: presenceOrigin(x, v, OriginFolded)}
+		})
+	}
+	legacyWake("wake_on_15m_zone", func(dp *store.DayPlanConfig) *bool { return dp.WakeOn15mZone })
+	legacyWake("wake_on_htf_zone", func(dp *store.DayPlanConfig) *bool { return dp.WakeOnHTFZone })
+	legacyWake("wake_on_seated_invalidation", func(dp *store.DayPlanConfig) *bool { return dp.WakeOnSeatedInvalidation })
+	legacyWake("wake_on_ifvg", func(dp *store.DayPlanConfig) *bool { return dp.WakeOnIFVG })
 	dpBool := func(path, name, def string, get func(*store.DayPlanConfig) bool) {
 		add(dpPath+path, name, func(x *effCtx) effResult {
 			v := get(x.dp())
@@ -889,7 +932,12 @@ func buildEffectiveResolvers() map[string]effResolver {
 	add(dpPath+"wake_on_level_events", "store.(*DayPlanConfig).WakeOnLevelEventsEnabled", func(x *effCtx) effResult {
 		v := x.dp().WakeOnLevelEventsEnabled()
 		if !x.st.present && legacyWakeStored(x.root) {
-			return effResult{value: v, origin: OriginFolded + " — legacy wake_on_* fields decide"}
+			// F4 (part-A): name WHAT inherited the ON — the owner's stored
+			// legacy wake_on_htf_ob=true, or the legacy fields generally.
+			if ob := lookupStored(x.root, dpPath+"wake_on_htf_ob", ""); ob.present {
+				return effResult{value: v, origin: "inherited from stored legacy wake_on_htf_ob=" + string(ob.value) + "; save this toggle to own it"}
+			}
+			return effResult{value: v, origin: "inherited from stored legacy wake_on_* fields; save this toggle to own it"}
 		}
 		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault)}
 	})
@@ -1029,13 +1077,17 @@ func buildEffectiveResolvers() map[string]effResolver {
 	})
 	perSession("enable", "trader.(*AutoTrader).sessionEnabledForStrategy (the admin session registry also gates: sessionRunnable)", func(x *effCtx) effResult {
 		v := x.at.sessionEnabledForStrategy(x.session)
+		// S1 (release #32): the value reads "runs: yes/no (via)" so nobody
+		// reads a session that an explicit override switches ON as OFF. The
+		// bool that decides is still sessionEnabledForStrategy; only the
+		// displayed wording changes.
 		if ov := x.dp().SessionOverride(x.session); ov != nil && ov.Enable != nil {
-			return effResult{value: v, origin: store.SourceSessionOverride, scope: scopeSession(x.session)}
+			return effResult{value: sessionRunsLabel(v, "override"), origin: store.SourceSessionOverride, scope: scopeSession(x.session)}
 		}
 		if x.dp() != nil && len(x.dp().SessionsEnabled) > 0 {
-			return effResult{value: v, origin: store.SourceStrategyValue + " (sessions_enabled)"}
+			return effResult{value: sessionRunsLabel(v, "sessions_enabled"), origin: store.SourceStrategyValue + " (sessions_enabled)"}
 		}
-		return effResult{value: v, origin: store.SourceShippedDefault + " (sessions_enabled [NY])"}
+		return effResult{value: sessionRunsLabel(v, "default [NY]"), origin: store.SourceShippedDefault + " (sessions_enabled [NY])"}
 	})
 	perSession("acceptance_rule", "store.(*DayPlanConfig).AcceptanceRuleFor", func(x *effCtx) effResult {
 		return effResult{value: x.dp().AcceptanceRuleFor(x.session), origin: OriginFolded}
@@ -1044,6 +1096,17 @@ func buildEffectiveResolvers() map[string]effResolver {
 		return conditionStatusRow(x)
 	})
 	return m
+}
+
+// sessionRunsLabel is the S1 (release #32) display form of the per-session
+// enable bool: "runs: yes (via)" / "runs: no (via)" so the owner can never
+// read a session that an explicit override switches ON as OFF. The bool that
+// decides entries is unchanged; only the rendered value changes.
+func sessionRunsLabel(runs bool, via string) string {
+	if runs {
+		return "runs: yes (" + via + ")"
+	}
+	return "runs: no (" + via + ")"
 }
 
 // legacyWakeStored reports whether any of the five legacy wake switches is
