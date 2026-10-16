@@ -63,7 +63,7 @@ func TestSplitLeg1TPWrongSideSendsTheSingleBracket(t *testing.T) {
 // only → leg 2's independent 29590 reads as a widen of leg 1's 29600 → RED.
 func TestMoveStopForSignalLegNamesTheLegAndGuardsPerLeg(t *testing.T) {
 	s, st, conn, moves := moveStopServer(t)
-	if err := ntwire.WriteFrame(conn, ntwire.FrameHeartbeat, ntwire.HeartbeatPayload{BuildID: ntwire.MinAddonBuildSplitLegs}); err != nil {
+	if err := ntwire.WriteFrame(conn, ntwire.FrameHeartbeat, ntwire.HeartbeatPayload{BuildID: ntwire.MinAddonBuildLeg3}); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)

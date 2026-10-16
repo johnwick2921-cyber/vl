@@ -1,6 +1,10 @@
 package mentor
 
-import "testing"
+import (
+	"os"
+	"strings"
+	"testing"
+)
 
 // ── release #31 (leg-3 bracket) — runnerPartialLine ─────────────────────────
 
@@ -44,5 +48,35 @@ func TestRunnerPartialLineNoneWhenOnlyTheTargetIsBeyondLeg1(t *testing.T) {
 func TestRunnerPartialLineNoneWithNoLevels(t *testing.T) {
 	if got := runnerPartialLine(nil, 100, 98, 106, SideLong); got != 0 {
 		t.Fatalf("runnerPartialLine = %v, want 0", got)
+	}
+}
+
+// TestG563PartialLineSearchedFromLeg1 (M22): the search starts at leg 1's 1:1
+// (2·entry − stop), NOT the entry. A line between the entry and leg 1 is below
+// the partial and must be skipped; the only line beyond leg 1 is the target →
+// no partial. Mutant `leg1TP := entry` picks the low line → RED.
+func TestG563PartialLineSearchedFromLeg1(t *testing.T) {
+	levels := []Level{
+		{Key: "below-leg1", Kind: KindKeyLevel, Price: 101}, // entry 100 < 101 < leg1 102
+		{Key: "target", Kind: KindKeyLevel, Price: 106},
+	}
+	if got := runnerPartialLine(levels, 100, 98, 106, SideLong); got != 0 {
+		t.Fatalf("runnerPartialLine = %v, want 0 (a line below leg 1's 1:1 is not a partial)", got)
+	}
+}
+
+// TestG563TickStampsRunnerPartialTP (M21): the production Tick must stamp the
+// runner's partial line onto every entry intent from the ladder it resolved
+// (call-site pin — the stamp is inline in Tick; the ladder math is pinned by
+// TestRunnerPartialLine* above). Mutant `in.RunnerPartialTP = 0` → RED.
+func TestG563TickStampsRunnerPartialTP(t *testing.T) {
+	b, err := os.ReadFile("eval.go")
+	if err != nil {
+		t.Fatalf("cannot read eval.go: %v", err)
+	}
+	src := string(b)
+	const want = "in.RunnerPartialTP = runnerPartialLine(levels, in.Price, in.Stop, in.Target, in.Side)"
+	if !strings.Contains(src, want) {
+		t.Fatalf("eval.go lost the runner-partial stamp call site: missing %q", want)
 	}
 }

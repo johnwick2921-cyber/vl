@@ -33,8 +33,11 @@ func TestSplitAddonPlacesTwoOCOPairs(t *testing.T) {
 		"var sl2 = ba.CreateOrder(",
 		"var tp2 = ba.CreateOrder(",
 		"ba.Submit(orders.ToArray());",
-		"Leg1Qty = b.Leg1Qty, Leg2Qty = leg3Wanted ? leg2Partial : leg2Qty,",
-		"Leg1Tp = b.Leg1Tp, Leg2Tp = leg3Wanted ? b.Leg2Tp : 0, RunnerTp = b.Tp,",
+		// release #31 (D3): the record keeps the FRAME's leg 2 on every
+		// PlacedBracket (the 3-pair build, the 2-pair plan and the leg-1-only
+		// first fill alike) so AmendBracketQuantity can build leg 3 later.
+		"Leg1Qty = b.Leg1Qty, Leg2Qty = b.Leg2Qty,",
+		"Leg1Tp = b.Leg1Tp, Leg2Tp = b.Leg2Tp, RunnerTp = b.Tp,",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("AddOn lost the two-OCO-pair placement: missing %q", want)
@@ -177,19 +180,21 @@ func TestSplitAddonPositionCloseLegField(t *testing.T) {
 }
 
 // TestSplitAddonOrderUpdateStripsLeg2 pins SendOrderUpdateFrame: it strips
-// -sl2/-tp2 BEFORE -sl/-tp so an order_update for a leg-2 bracket reports the
-// base signal id the Go side tracks. Mutant: -sl2 not stripped → RED.
+// -sl3/-tp3 (release #31) and -sl2/-tp2 BEFORE -sl/-tp so an order_update for a
+// leg-2 or leg-3 bracket reports the base signal id the Go side tracks.
+// Mutant: -sl2 not stripped → RED.
 func TestSplitAddonOrderUpdateStripsLeg2(t *testing.T) {
 	src := readSplitAddonSource(t)
-	if !strings.Contains(src, "// REVIEW-SPLIT-2 P2-3: strip the leg-2 suffixes first") {
-		t.Error("AddOn lost the order_update leg-2 strip marker")
+	if !strings.Contains(src, "// REVIEW-SPLIT-2 P2-3: strip the leg suffixes first") {
+		t.Error("AddOn lost the order_update leg-suffix strip marker")
 	}
 	for _, want := range []string{
+		`if (signalId.EndsWith("-sl3") || signalId.EndsWith("-tp3"))`,
 		`if (signalId.EndsWith("-sl2") || signalId.EndsWith("-tp2"))`,
 		`signalId = signalId.Substring(0, signalId.Length - 4);`,
 	} {
 		if !strings.Contains(src, want) {
-			t.Errorf("AddOn lost the order_update leg-2 strip: missing %q", want)
+			t.Errorf("AddOn lost the order_update leg-suffix strip: missing %q", want)
 		}
 	}
 }
