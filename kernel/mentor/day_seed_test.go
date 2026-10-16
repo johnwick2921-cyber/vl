@@ -18,6 +18,12 @@ import (
 // short), and the 13:43 boot lost the 13:00 recheck clear — 165 RTH minutes
 // wrong. The seed now restores the 08:30 decision (SeedDayLatch), so a restart
 // holds the same Day verdict as a bot that never restarted.
+//
+// These are KERNEL-level pins (SeedDayLatch / SeedTrendlines in isolation, via
+// the dsSeedAtStart mirror below). The PRODUCTION call-site pin — at.mentorSeedAtStart
+// + the evaluator Tick on the production window — lives in
+// trader/mentor_day_seed_test.go (TestMentorSeedRestoresDayLatch1015), which is
+// the test whose mutants drop the trader's SeedDayLatch / SeedTrendlines calls.
 
 // dsCfg is the evaluator config for the 10-15 tape: DefaultConfig + the live
 // switches. The tape has no red-folder print windows, so the news knobs are inert.
@@ -29,7 +35,9 @@ func dsCfg() Config {
 }
 
 // dsSeedAtStart mirrors the trader's mentorSeedAtStart seed sequence on the
-// kernel side: SeedFull + SeedOpenHTF + SeedDayLatch + SeedTrendlines.
+// kernel side: SeedFull + SeedOpenHTF + SeedDayLatch + SeedTrendlines. It is
+// NOT the call-site proof — it exists so the kernel logic can be pinned in
+// isolation; the trader test drives the real mentorSeedAtStart.
 func dsSeedAtStart(bars []market.Kline, now int64) *Evaluator {
 	hist := closedOnly(bars, now)
 	e := New(dsCfg())
