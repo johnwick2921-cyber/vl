@@ -1776,8 +1776,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	//
 	// P2-1 (L7): the reverse ISB was dropped silently while the 15m/5m conflict
 	// stood. Name and count it; no behaviour change (the !conflict path below
-	// still does not run).
-	if conflict && e.Cfg.ISBReverseEMA9Enabled && IsISB(execPrev, execCur) {
+	// still does not run). Release #30: isbrev_tf_conflict / isbrev_day_off
+	// count only a REAL reverse-ISB candidate (an ISB at the EMA 9 pointing
+	// against the trend) — before they fired for every ISB.
+	revEma9 := emaValue(bars, e.Cfg.EMAPeriod9)
+	revIn, revCandidate, _ := ReverseISBAtEMA9(execPrev, execCur, revEma9, e.State.Trigger.Dir, e.Cfg)
+	if conflict && e.Cfg.ISBReverseEMA9Enabled && revCandidate {
 		e.refuse("isbrev_tf_conflict")
 	}
 	// B6 (L14): the reverse ISB must stand behind the SAME standing gates as the
@@ -1785,14 +1789,15 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// fail closed when the 5m trigger has no direction yet (it used to fall
 	// through to SHORT unconditionally).
 	if !conflict && e.Cfg.ISBReverseEMA9Enabled && IsISB(execPrev, execCur) {
-		if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
+		if r := dayGateRefusal(e.State.Day.Verdict); revCandidate && r != "" {
 			e.refuse("isbrev_" + r)
 		} else if e.State.Trigger.Dir == "" {
 			// B6: with no 5m trigger there is no trend to reverse — R7 always
 			// resolved to SHORT here before. Fail closed [D5.4: "đánh theo xu
 			// hướng" — the trend must exist].
 			e.refuse("isbrev_no_trigger")
-		} else if in, ok, _ := ReverseISBAtEMA9(execPrev, execCur, emaValue(bars, e.Cfg.EMAPeriod9), e.State.Trigger.Dir, e.Cfg); ok {
+		} else if revCandidate {
+			in := revIn
 			// N12: an R7 reverse ISB fills by the close of the NEXT candle on
 			// the execution timeframe (the R1 family rule).
 			in.ExpiryMs = execCur.CloseTime + int64(execTFMin)*60_000
@@ -1955,8 +1960,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// D4.2-03: while the 15m/5m conflict stands, NO setup trades — PHL/PLH
 	// included (the old one-shot veto covered only the ISB path).
 	// P2-1 (L7): a conflict drop of a candidate PHL/PLH was silent — name and
-	// count it once per tick where a candidate level exists. No behaviour
-	// change: the level still does not trade.
+	// count it. Release #30: count EVERY rejected level in the tick (the `break`
+	// used to count only the first). No behaviour change: the level still does
+	// not trade.
 	if conflict {
 		for _, lvl := range levels {
 			tr := e.State.Touches[lvl.Key]
@@ -1964,7 +1970,6 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				continue
 			}
 			e.refuse("phl_tf_conflict")
-			break
 		}
 	}
 	if !conflict {
@@ -2271,13 +2276,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				if r.RefBar <= lastIdx {
 					continue
 				}
-				// A10: the day gate fires BEFORE any box state is recorded
-				// (BoxRefs), and names the blocked setup.
+				// Release #30: consume the return FIRST — every return is
+				// evaluated exactly once, refused or not. Before this moved
+				// below the day gate, a day-off-refused return was re-walked
+				// every tick (10-15: 798 box_day_off from 24 returns), and once
+				// the ban lifted the stale returns were walked as fresh entries.
+				e.State.BoxRefs[b.Key] = bars[r.RefBar].OpenTime
+				// A10: the day gate fires and names the blocked setup.
 				if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
 					e.refuse("box_" + r)
 					continue
 				}
-				e.State.BoxRefs[b.Key] = bars[r.RefBar].OpenTime
 				// B11 [D3.4 p2 @07:58–08:21]: inside the standing 5m-ISB box only
 				// a same-direction ISB trades ("em chỉ đánh inside bar cùng
 				// chiều") — box trades never.
