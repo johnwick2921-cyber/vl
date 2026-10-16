@@ -219,6 +219,60 @@ func reconnectNoOrderSnapshot(t *testing.T, s *ntwire.TCPServer, broker *nttrade
 	return conn
 }
 
+// TestSnapshotsSinceAcceptSameMillisecond — DEADMAN-ACCEPT-NS (W30): the dead-man
+// watchdog's resume predicate compares a snapshot's full-resolution receipt
+// instant against the connection's accept instant. The accept used to be
+// MILLISECOND-truncated, so a snapshot received in the SAME millisecond but
+// BEFORE the accept compared After the truncated instant and counted for the
+// new link. Deterministic: the accept instant is stated via the seam, and the
+// receipt instants are 1ns on either side of it.
+func TestSnapshotsSinceAcceptSameMillisecond(t *testing.T) {
+	_, s, broker, conn := deadManLoopback(t)
+	// State a fixed accept with sub-millisecond precision, then reconnect so the
+	// new link's accept is exactly this instant (the old code floors it to the ms).
+	fixedAccept := time.Now().Truncate(time.Millisecond).Add(500 * time.Microsecond)
+	s.SetAcceptClockForTest(func() time.Time { return fixedAccept })
+
+	rec0, _, _, _ := broker.MaintenanceView()
+	_ = conn.Close()
+	for deadline := time.Now().Add(5 * time.Second); s.IsConnected(); {
+		if time.Now().After(deadline) {
+			t.Fatal("fixture: the server never saw the old link close")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	conn2, err := net.Dial("tcp", s.ListenAddrForTest().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn2.Close() })
+	waitAddonRegistered(t, s)
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if rec, _, _, _ := broker.MaintenanceView(); rec.AcceptSeq > rec0.AcceptSeq {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("fixture: the new link never got a new accept sequence")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// 1ns BEFORE the accept, in the same millisecond: must NOT count.
+	before := fixedAccept.Add(-time.Nanosecond)
+	s.SeedPositionsForTestAt("Sim101", []ntwire.OpenPosition{}, before)
+	s.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{}}, before)
+	if pos, ord, _ := broker.SnapshotsSinceAccept(); pos || ord {
+		t.Fatalf("a snapshot received before the accept (same ms) must not count for the new link: pos=%v ord=%v", pos, ord)
+	}
+	// 1ns AFTER the accept, in the same millisecond: must count.
+	after := fixedAccept.Add(time.Nanosecond)
+	s.SeedPositionsForTestAt("Sim101", []ntwire.OpenPosition{}, after)
+	s.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{}}, after)
+	if pos, ord, _ := broker.SnapshotsSinceAccept(); !pos || !ord {
+		t.Fatalf("a snapshot received after the accept (same ms) must count: pos=%v ord=%v", pos, ord)
+	}
+}
+
 // TestDriveDeadManWatchdogEscalatesWhenOrderSnapshotsStop — the FULL call site:
 // a real TCP link whose order snapshots stop arriving after a reconnect. The
 // watchdog is driven exactly as runCycle drives it; after deadManStuckProbeMin
