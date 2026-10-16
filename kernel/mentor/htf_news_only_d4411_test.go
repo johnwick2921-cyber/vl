@@ -18,7 +18,7 @@ import (
 func TestHTFGateActiveNewsOnly(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.HTFGateNewsOnly {
-		t.Fatal("HTFGateNewsOnly must default OFF (the all-day gate; U-6 open) — CTO 2026-10-04")
+		t.Fatal("HTFGateNewsOnly must default OFF (the all-day gate; U-6 open) — FOLD 2026-10-16")
 	}
 	cfg.HTFGateNewsOnly = true
 	cases := []struct {

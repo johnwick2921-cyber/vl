@@ -97,6 +97,26 @@ func TestPHLPLHR2LevelsShortObstacle(t *testing.T) {
 	}
 }
 
+// TestPHLPLHR2LevelsSkipsEMAAsTarget — release #30 fold (defect 6): the EMA 9 /
+// EMA 34 lines are PARTIAL points, not the trade target [D3.3 p1 @05:15–07:38],
+// so an EMA between the entry and the old extreme is SKIPPED as the PHL/PLH
+// target and the next non-EMA level (or the old-extreme cap) wins. MUTANT:
+// phlTarget back to nextLevelBeyond → the EMA becomes the target → RED.
+func TestPHLPLHR2LevelsSkipsEMAAsTarget(t *testing.T) {
+	cfg := workedCfg()
+	levels := []Level{
+		{Key: "ema34:29405", Kind: KindEMA34, Price: 29_405}, // an EMA in the way
+		{Key: "key_level:29420", Kind: KindKeyLevel, Price: 29_420},
+	}
+	in, ok, reason := PHLPLHR2Levels(workedTouch(), Level{Kind: KindOldExtreme, Price: 29_431.75}, 0, 3, 29_380, levels, cfg)
+	if !ok {
+		t.Fatalf("EMA-in-the-way PHL refused: %s", reason)
+	}
+	if in.Target != 29_420 {
+		t.Fatalf("target = %.2f, want the key level 29420 (the EMA 29405 is a partial point, not the target)", in.Target)
+	}
+}
+
 // B14 (CTO 20:48:40Z, D2.2 p3 @03:13-04:33): the higher-low check must run
 // against the LEFT same-role-as-the-STOP swing (the left LOW for a long).
 // This test pins the contract at the function level: given the left low the

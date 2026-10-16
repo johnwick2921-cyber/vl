@@ -76,26 +76,29 @@ func mentorLegStopB(side string, stop, close, target, trailPrice float64, applyT
 	return next
 }
 
-// mentorISBPartialTP (item 8) resolves the ISB leg-1 exit point ONCE, on the
-// fill candle's close: +1R if the fill candle reached it first, else the
-// candle-3 (fill-candle) close when that is in profit. A losing close resolves
-// to 0 — no scale-out there, the stop rules own a losing leg [D1.4 p1
-// @11:59–13:28; D2.2 p3 @12:13]. The "whichever comes first" is read off the
-// candle's high (long) / low (short): a high past +1R means +1R printed before
-// the close.
+// mentorISBPartialTP (item 8, R1 release #30) resolves the ISB leg-1 exit on
+// the fill candle's close: the CLOSE itself when it is in profit SHORT of +1R
+// — i.e. leg 1 did NOT fill inside the candle. A close PAST +1R means the
+// native +1R TP already filled inside the candle (the 1:1 rule), so the
+// candle-3 step has nothing to do → 0. A losing close → 0 (the +1R TP keeps
+// resting; the stop rules own a losing leg [D2.1 p1 @11:08–11:23, deferred]).
 func mentorISBPartialTP(pos mentorPosition, c, h, l float64) float64 {
 	long := pos.Side == "long"
+	oneR := pos.Entry + pos.R
+	if !long {
+		oneR = pos.Entry - pos.R
+	}
 	if long {
-		if h >= pos.Entry+pos.R {
-			return pos.Entry + pos.R
+		if h >= oneR {
+			return 0 // +1R TP already filled inside the candle (R1)
 		}
 		if c > pos.Entry {
 			return c
 		}
 		return 0
 	}
-	if l <= pos.Entry-pos.R {
-		return pos.Entry - pos.R
+	if l <= oneR {
+		return 0 // +1R TP already filled inside the candle (R1)
 	}
 	if c < pos.Entry {
 		return c
@@ -286,9 +289,10 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		// risk reward 1-2"]. No action.
 		return
 	case "A-resonance":
-		// A (resonance): both stops already at BE, leg 1's TP out to the
-		// runner target (logged, unwired), NO trail, NO 1:1 tightening
-		// [D2.4 p1]. Nothing to do on a candle — the native bracket holds.
+		// A (resonance): both stops already at BE, leg 1's +1R TP stays (the
+		// 1:1 partial still fires), the RUNNER's TP out to the level beyond
+		// the old high (CX-3), NO trail, NO 1:1 tightening [D2.4 p1]. Nothing
+		// to do on a candle — the native bracket holds.
 		return
 	}
 
@@ -342,14 +346,13 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		runnerTarget = leg1Target
 	}
 
-	// ── (2) ISB partial (item 8): leg 1 IS the partial — it leaves at +1R TP
-	// or at the candle-3 close (the fill candle's close), whichever comes
-	// first, ONCE — and the close only when in profit. The resolution reads
-	// the JUST-closed fill candle (BarsSinceFill == 1): its high/low decides
-	// whether +1R printed first. Release #22 (P1-2): a close in profit short
-	// of +1R is a REAL modify_bracket on leg 1 (modifyBracketWire, assigned),
-	// verified on the next fresh book — it was LOG-only from 10-05 to 10-14.
-	// Runs in both mentor_trail_mode values (a bug fix, not the R3 knob).
+	// ── (2) ISB partial (item 8, R1): leg 1's +1R TP always rests at NT8.
+	// When the fill candle's close is in profit SHORT of +1R (leg 1 did NOT
+	// fill inside the candle), leg 1's TP is moved to a MARKETABLE limit at
+	// that close ∓ 8 ticks — through the existing modify_bracket path, never
+	// an AddOn change [D1.4 p1 @12:51–13:01 "bán bớt. Bắt buộc"]. A close PAST
+	// +1R means the +1R TP already filled inside the candle (the 1:1 rule).
+	// A losing close moves nothing. Runs in both mentor_trail_mode values.
 	if pos.Origin == "ISB" && !p.ISBPartialDone && p.BarsSinceFill >= 1 {
 		p.ISBPartialDone = true
 		if !scaledNow && p.BarsSinceFill == 1 {
@@ -357,6 +360,22 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 				leg1Target = tp
 			}
 		}
+	}
+
+	// ── (2b) R1 re-modify: the marketable leg-1 TP limit is re-priced to the
+	// NEW close ∓ 8 ticks on every later candle until leg 1 fills — never back
+	// to "none"; the leg keeps its stop throughout.
+	if pos.Origin == "ISB" && p.ISBPartialDone && p.BarsSinceFill >= 2 && !scaledNow && leg1OnWire {
+		at.mentorISBMarketableReModify(nt, p, c)
+	}
+
+	// ── (2c) R-7 (fold 2): a failed first marketable modify is retried ONCE
+	// on the next candle — the course's compulsory candle-3 sale is not
+	// silently skipped. The retry re-checks in-profit itself; a second failure
+	// leaves the +1R TP resting (fail-safe).
+	if pos.Origin == "ISB" && p.ISBPartialRetryCount == 1 && !scaledNow && p.BarsSinceFill >= 2 {
+		p.ISBPartialRetryCount = 2
+		at.mentorSellISBLeg1Marketable(nt, p, c)
 	}
 
 	// ── R3 (release #22, mentor_trail_mode=candle, the default): a SPLIT
@@ -1031,8 +1050,9 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 
 // mentorArmResonanceOnISB flips an open PHL/PLH position into mode A the moment
 // a same-direction ISB intent appears within 3 candles of the fill: both stops
-// move to break-even NOW, leg 1's TP would move out to the runner target
-// (logged, unwired), NO trail, NO 1:1 tightening [D2.4 p1]. Called from the
+// move to break-even NOW, leg 1's +1R TP STAYS (the 1:1 partial still fires),
+// the RUNNER's TP moves out to the level beyond the old high (CX-3), NO trail,
+// NO 1:1 tightening [D2.4 p1]. Called from the
 // evaluator's intent loop when an ISB entry is emitted.
 func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 	if at == nil || !at.mentorEnabled() {
@@ -1071,7 +1091,7 @@ func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 		// UNWIRED" and never sent from 10-05 to 10-14. Knob
 		// mentor_resonance_runner_tp_old_high (nil → ON); OFF = logged only.
 		at.mentorResonanceRunnerTP(nt, p, p.RunnerTarget)
-		at.logInfof("🧑‍🏫 mentor resonance ARMED: %s %s → mode A (BE, no trail, no 1:1) [D2.4 p1]", p.Pos.Symbol, p.Pos.Side)
+		at.logInfof("🧑‍🏫 mentor resonance ARMED: %s %s → mode A (BE, no trail; the 1:1 partial still fires) [D2.4 p1]", p.Pos.Symbol, p.Pos.Side)
 	}
 }
 

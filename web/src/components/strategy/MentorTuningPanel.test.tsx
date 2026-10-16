@@ -148,16 +148,18 @@ it('an enum knob shows its ruled default on the blank option', () => {
 it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
   expect(MENTOR_TUNING_DEFAULTS).toMatchObject({
     '15m_ib_requires_5m_isb': 'require_5m_isb',
-    tf_conflict_end: 'first_box',
-    news_wait_both_lines: false,
+    tf_conflict_end: 'both_boxes', // course-defaults-30
+    news_wait_both_lines: true, // course-defaults-30
     news_bars_excluded: false,
     isb_box_escape: 'body',
     ema34_loss_relock: 'until_zone_exit',
     orb_edge_veto_pts: 0,
-    d43_trend_source: 'trigger_line',
+    d43_trend_source: 'structure', // course-defaults-30
     level_entries_need_trigger_side: false,
     trendline_is_target: true,
-    trendline_between_boxes: false,
+    trendline_between_boxes: true, // course-defaults-30
     leg_reset_on_wave_break: true,
+    flag_wall_target: true, // course-defaults-30
+    htf_gate_news_only: false, // U-6 open — FOLD 2026-10-16 reverted to the all-day gate
   })
 })

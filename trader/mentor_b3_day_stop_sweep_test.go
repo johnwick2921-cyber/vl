@@ -295,8 +295,9 @@ func TestB3DayStopStopAfterLossCancelsRestingArm(t *testing.T) {
 	}
 }
 
-// TestB3DayStopStopAfterLossOffCancelsNothing — the knob OFF (nil) is not a trip:
-// the sweep must not cancel a resting arm.
+// TestB3DayStopStopAfterLossOffCancelsNothing — the knob OFF (nil) is not a
+// trip: the sweep must not cancel a resting arm. (FOLD 2026-10-16: nil defaults
+// OFF again — course-defaults-30 was reverted.)
 func TestB3DayStopStopAfterLossOffCancelsNothing(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "on")
 	at, _, ledger, _ := mentorB3Rig(t)

@@ -55,6 +55,17 @@ type mentorLivePos struct {
 	TPModWant        float64
 	TPModSentAt      time.Time
 	TPModStaleWarned bool
+	// ISBPartialRetryCount (R-7, fold 2): 0 = no retry owed; 1 = the first
+	// marketable modify SEND failed and is retried once on the next candle;
+	// 2 = the retry was consumed (never retried again — fail-safe: the +1R TP
+	// keeps resting).
+	ISBPartialRetryCount int
+	// TPModConfirmedWant (R-3 fold 2): the last leg-1 TP want the broker
+	// CONFIRMED. While TPModWant == TPModConfirmedWant the verdict already
+	// rendered — mentorVerifyPendingTPModifies skips it so a resting marketable
+	// limit does not re-render CONFIRMED (and re-count it) every candle. A new
+	// modify (a new want) resets it to 0.
+	TPModConfirmedWant float64
 	// BEWaitLogged — the "close not past break-even, BE waits" line fired once.
 	BEWaitLogged bool
 	// ModeSource / ModeWhy (P2-2 rel22) say WHERE Pos.Mode came from — the

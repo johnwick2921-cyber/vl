@@ -26,18 +26,20 @@ export type CourseExitsKey =
   | CourseExitsNumKey
   | 'mentor_ema9_visit_cap'
 
-// The knob-rule defaults the server resolves for an ABSENT key.
+// The knob-rule defaults the server resolves for an ABSENT key
+// (course-defaults-30: swing_runner, be_before_partial and reverse_isb_as_phl
+// are now ON; swing4h_contracts 2; isb_max_pts 30).
 export const MENTOR_COURSE_EXITS_DEFAULTS = {
   mentor_swing_ema34_is_first_target: true,
-  mentor_swing_runner: false,
+  mentor_swing_runner: true,
   mentor_resonance_runner_tp_old_high: true,
-  mentor_be_before_partial: false,
+  mentor_be_before_partial: true,
   mentor_isb_c3_partial_any_profit: true,
-  mentor_reverse_isb_as_phl: false,
+  mentor_reverse_isb_as_phl: true,
   mentor_box_fresh_rth_pair: false,
   mentor_ema9_visit_cap: 'shared',
-  mentor_swing4h_contracts: 1,
-  mentor_isb_max_pts: 0,
+  mentor_swing4h_contracts: 2,
+  mentor_isb_max_pts: 30,
   mentor_keypair_candle_ratio: 1,
   mentor_box_max_height_pts: 0,
 } as const
@@ -72,9 +74,9 @@ const COPY = {
     es: 'Resonancia: mover el TP del runner más allá del máximo anterior',
   },
   mentor_be_before_partial: {
-    zh: '1:1 部分止盈前，到一半就保本（课程；违反 R3）',
-    en: 'Break-even at half-way BEFORE the 1:1 partial (course; against ruling R3)',
-    es: 'Break-even a mitad de camino ANTES del parcial 1:1 (curso; contra la regla R3)',
+    zh: '1:1 部分止盈前，到一半就保本（课程默认）',
+    en: 'Break-even at half-way BEFORE the 1:1 partial (the course default)',
+    es: 'Break-even a mitad de camino ANTES del parcial 1:1 (el curso por defecto)',
   },
   mentor_isb_c3_partial_any_profit: {
     zh: 'ISB 第 3 根 K 线收盘有利润即部分止盈',
@@ -112,14 +114,14 @@ const COPY = {
     es: 'exempt — sin tope (como la EMA 34)',
   },
   mentor_swing4h_contracts: {
-    zh: 'SWING 口数（默认 1；runner 需 ≥ 2）',
-    en: 'SWING contracts (default 1; a runner needs ≥ 2)',
-    es: 'Contratos SWING (por defecto 1; un runner necesita ≥ 2)',
+    zh: 'SWING 口数（默认 2；runner 需 ≥ 2）',
+    en: 'SWING contracts (default 2; a runner needs ≥ 2)',
+    es: 'Contratos SWING (por defecto 2; un runner necesita ≥ 2)',
   },
   mentor_isb_max_pts: {
-    zh: 'ISB 最大止损（点，0 = 关）',
-    en: 'ISB max stop (pts, 0 = off)',
-    es: 'Stop máximo ISB (pts, 0 = off)',
+    zh: 'ISB 最大止损（点，0 → 30）',
+    en: 'ISB max stop (pts, 0 → 30)',
+    es: 'Stop máximo ISB (pts, 0 → 30)',
   },
   mentor_keypair_candle_ratio: {
     zh: '价位间距 / K 线比例（默认 1）',

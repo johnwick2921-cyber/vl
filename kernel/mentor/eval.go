@@ -1032,15 +1032,59 @@ func nextLevelBeyond(levels []Level, price float64, side Side) float64 {
 	return best
 }
 
+// nextLevelBeyondNonEMA is nextLevelBeyond that skips the EMA 9 / EMA 34 lines
+// as the target — they are PARTIAL points along the way, not the trade target
+// [D3.3 p1 @05:15–07:38]. Used by the PHL/PLH target pick (R3, release #30
+// fold): an EMA must not by itself kill a PHL/PLH. The EMA is the fallback
+// target only when no other level stands beyond.
+func nextLevelBeyondNonEMA(levels []Level, price float64, side Side) float64 {
+	best := 0.0
+	bestEMA := 0.0
+	for _, l := range levels {
+		if l.Kind == KindTrendline {
+			continue
+		}
+		if !oldExtremeRoleFits(l, side) {
+			continue
+		}
+		onSide := side == SideLong && l.Price > price || side == SideShort && l.Price < price
+		if !onSide {
+			continue
+		}
+		if isEMAPartialKind(l.Kind) {
+			if bestEMA == 0 || (side == SideLong && l.Price < bestEMA) || (side == SideShort && l.Price > bestEMA) {
+				bestEMA = l.Price
+			}
+			continue
+		}
+		if best == 0 || (side == SideLong && l.Price < best) || (side == SideShort && l.Price > best) {
+			best = l.Price
+		}
+	}
+	if best != 0 {
+		return best
+	}
+	return bestEMA
+}
+
 // nextLevelBeyondRoom is nextLevelBeyond for the room-checked paths (ISB,
 // reverse ISB, box). REL-5 audit #2: a TARGET-ONLY level (4h trigger, wick
 // microscalp) closer than roomMultiple × risk is skipped and the search falls
 // through to the next level beyond; a key level or box edge inside 2R still
 // becomes the target (and the room rule then refuses it). The 4h line stays a
 // valid target whenever it is ≥ 2R away [D4.4 p2 @05:04].
+//
+// Release #30 (D3.3 p1 @05:15–07:38): the EMA 9 / EMA 34 lines are PARTIAL
+// points along the way, not the trade target — "Ta ghẹt tôi đầu tiên phải là
+// về gần đỉnh cũ trước đó nè … Tiếp tục là email 34 nè … những cái chỗ này là
+// những cái chỗ anh chị bán bớt". So an EMA must not by itself kill the trade:
+// the nearest EMA is skipped as the target and the floor/room read the next
+// non-EMA level (the nearest old high/low, key level, trendline target, HTF
+// line). An EMA becomes the target only when NO other level stands beyond.
 func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMultiple float64) float64 {
 	risk := abs(entry - stop)
 	best := 0.0
+	bestEMA := 0.0
 	for _, l := range levels {
 		if l.Kind == KindTrendline {
 			continue // the LOCATION line is never a target; its KindTrendlineTarget mirror is (CE-11/B12, knob)
@@ -1052,6 +1096,14 @@ func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMul
 		if !onSide {
 			continue
 		}
+		if isEMAPartialKind(l.Kind) {
+			// release #30: an EMA line is a partial point, never the trade
+			// target while another level stands beyond.
+			if bestEMA == 0 || (side == SideLong && l.Price < bestEMA) || (side == SideShort && l.Price > bestEMA) {
+				bestEMA = l.Price
+			}
+			continue
+		}
 		if (l.Kind == KindHTFTrigger || l.Kind == KindWickMicroscalp) && roomMultiple > 0 && risk > 0 {
 			if abs(l.Price-entry) < roomMultiple*risk {
 				continue // target-only level too close to hold 2R room — fall through
@@ -1061,7 +1113,17 @@ func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMul
 			best = l.Price
 		}
 	}
-	return best
+	if best != 0 {
+		return best
+	}
+	return bestEMA
+}
+
+// isEMAPartialKind reports whether a level kind is one of the EMA lines the
+// course names as PARTIAL points, not the trade target (release #30, D3.3 p1
+// @05:15–07:38): the 1m EMA 34, the 1m EMA 9, and the location-gate EMA 34.
+func isEMAPartialKind(k LevelKind) bool {
+	return k == KindEMA9 || k == KindEMA34 || k == KindEMA34HTF
 }
 
 // isMovingLineKey (item 22) reports whether a level key is one of the MOVING
@@ -1203,7 +1265,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.refuse(r)
 		}
 		out = kept
-		out = applyFlagWallTarget(out, liveFlagWalls, curBarOpenTime, e.Cfg, e.refuse) // CE-11 (knob flag_wall_target, default OFF)
+		out = applyFlagWallTarget(out, liveFlagWalls, curBarOpenTime, e.Cfg, e.refuse) // CE-11 (knob flag_wall_target, default ON — course-defaults-30)
 		stampHTFAgree(out, e.State.HTF)
 		e.armSchoolOne(out, schoolOne)
 	}()
@@ -1596,7 +1658,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// NOT location-gated — "inside bar lúc nào cũng có thể take
 				// risk… trong range, trên range, ngoài range, dưới range"
 				// [D4.1 p1 @ 05:15]. His conditions stay: the trigger zone
-				// (above), the R5 box (below), the twenties skip, and a size
+				// (above), the R5 box (below), the 20–<30 stop band, and a size
 				// flag at an old high/low.
 				//
 				// fold item 3: entries only with the 4h trigger direction
@@ -1607,7 +1669,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				} else {
 					// R1 (RULES-FIX-v3): the order is a STOP-LIMIT in the
 					// CANDLE-1 colour direction (the only skip: a stop in
-					// the twenties) [D1.4 p1 @ 09:20–10:20, 24:41–24:55].
+					// the 20–<30 band) [D1.4 p1 @ 09:20–10:20, 24:41–24:55].
 					// R5: while the box stands nothing trades inside it except a
 					// SAME-direction 1m ISB — compute the verdict up front so an
 					// allowed ISB still falls through to the emit below.
@@ -1806,7 +1868,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				in.ExecTFMin = execTFMin
 			}
 			// R85 (CTO, release #4): now that the reverse ISB can place, it
-			// runs through the SAME gates as the normal ISB — the twenties
+			// runs through the SAME gates as the normal ISB — the 20–<30
 			// stop skip [D4.1 p1 @ 05:41], the 4h HTF verdict and side, and
 			// the near-box rule (row 24) — before any target is set.
 			// B6: plus the SAME ISB-box gates (R5 / D4.1-25 / D4.2-07) and the
@@ -1898,7 +1960,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						delete(justPlaced, id)
 					}
 					in.Confluence = confluence
-					out = append(out, reverseISBRetag(in, e.Cfg)) // CX-6 knob (default OFF = tag "ISB")
+					out = append(out, reverseISBRetag(in, e.Cfg)) // CX-6 knob (default ON = tag PHL/PLH — course-defaults-30)
 				}
 			}
 		}
@@ -2074,10 +2136,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// MID-RANGE ban via boxes (CTO 1791003862333): between an FTGL
 			// below and an FTGH above there is NO PHL, NO PLH, regardless of
 			// width — only the ISB.
-			// CE-11/B13 (release #25, knob trendline_between_boxes, default OFF):
-			// ON exempts a TRENDLINE reject — "Đụng trendline, nên đóng dưới,
-			// đánh ngược lại xuống dưới… dưới cái box" [D3.2 p2 @10:56–11:20];
-			// the same lesson bans every PHL/PLH between two boxes [@08:34–08:55].
+			// CE-11/B13 (release #25, knob trendline_between_boxes, default ON —
+			// course-defaults-30): ON exempts a TRENDLINE reject — "Đụng
+			// trendline, nên đóng dưới, đánh ngược lại xuống dưới… dưới cái box"
+			// [D3.2 p2 @10:56–11:20]; the same lesson bans every PHL/PLH
+			// between two boxes [@08:34–08:55].
 			if midRangeBoxedRefuses(e.Cfg, lvl, boxes, price) {
 				e.refuseOncePerVisit(lvl.Key, "phl_mid_range_boxed")
 				continue
@@ -2430,10 +2493,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.refuse(r)
 	}
 
-	// CE-3 (release #25, knob news_wait_both_lines, default OFF): after a
-	// red-folder print, until the 08:30 CT open, an entry waits for the close
-	// beyond the 4h trigger line [D4.4 p1 @21:55–22:12]. The 30-second ISB of
-	// the same lesson [@23:08–23:13] is NOT built: no sub-minute bars exist.
+	// CE-3 (release #25, knob news_wait_both_lines, default ON —
+	// course-defaults-30): after a red-folder print, until the 08:30 CT open,
+	// an entry waits for the close beyond the 4h trigger line [D4.4 p1
+	// @21:55–22:12]. The 30-second ISB of the same lesson [@23:08–23:13] is
+	// NOT built: no sub-minute bars exist.
 	out, refused = newsWaitFilter(out, e.State.HTF, bars[len(bars)-1].Close, now, e.Cfg)
 	for _, r := range refused {
 		e.refuse(r)

@@ -37,14 +37,13 @@ const (
 	mentorConfluenceContractsDefault = 5
 	mentorBigContractsDefault        = 5
 	mentorReducedContractsDefault    = 3
-	mentorSwing4HContractsDefault    = 1 // 1 MNQ, not 3 [D5.2 p1 @00:38–00:47 "Em vô đúng 1 MNQ thôi"]
+	mentorSwing4HContractsDefault    = 2 // 2 MNQ — the course runs ≥ 2 to sell part and hold the runner [D5.2 p2 @06:08–06:23 "Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt"]
 	mentorSpentDayContractsDefault   = 2
 	mentorMaxContractsDefault        = 20 // ceiling only — no tier sizes to it by default
 
 	mentorTargetBigPts       = 30.0 // target ≥ this for the big tier
 	mentorRoomBigMultiple    = 2.0  // room ≥ this × risk for the big tier
-	mentorStopTwentiesMinPts = 20.0 // stop 20–25 pts → reduced [D3.3 p1 @ 01:09]
-	mentorStopTwentiesMaxPts = 25.0
+	mentorStopTwentiesMinPts = 20.0 // stop ≥ 20 and < the ISB ceiling → reduced [D3.3 p1 @ 01:09]; the band top is the mentor_isb_max_pts knob (default 30 — one number, no second constant)
 )
 
 // mentorTierInputs is everything the size table reads. The trader computes
@@ -61,11 +60,13 @@ type mentorTierInputs struct {
 	ISBOldExtreme bool    // ISB at an old high/low → reduce size, tier 3 [D4.1 p1 @04:37–05:04 rule 2]
 	ISBInRange    bool    // ISB traded inside a range → reduce size, tier 3 [D4.1 p1 @04:37–05:04 rule 3]
 
-	// Rule-gate limits resolved from the strategy (mentorTuningResolve): the
-	// SAME numbers the evaluator reads. Zero (a bare table test) falls back to
-	// the kernel defaults, never to a second constant.
+	// Rule-gate limits resolved from the strategy (mentorTuningResolve / the
+	// course-exits resolver): the SAME numbers the evaluator reads. Zero (a
+	// bare table test) falls back to the kernel defaults, never to a second
+	// constant.
 	SwingMaxStopPts    float64
 	SpentDayStopCapPts float64
+	ISBMaxStopPts      float64 // the R8 ceiling = mentor_isb_max_pts (kernel CourseExits.ISBMaxStopPts, default 30)
 }
 
 // mentorSizeChoice is the tier decision: contracts, the tier name and why.
@@ -76,10 +77,12 @@ type mentorSizeChoice struct {
 }
 
 // mentorContractsFor is THE size table (pure — the call site the tests pin).
-// Order matters: ISB reductions → stop-in-the-twenties → big → confluence →
-// swing4h → base, every branch capped at maxContracts. A non-positive max
-// refuses (fail-closed). B12 (CTO 1791041016051): the stop-in-the-twenties
-// cut wins over confluence sizing — a 20–25 pt stop is 3, never a raised tier.
+// Order matters: ISB reductions → swing4h → stop-in-the-reduced-band → big →
+// confluence → base, every branch capped at maxContracts. A non-positive max
+// refuses (fail-closed). B12 (CTO 1791041016051): the stop-in-the-band cut
+// wins over confluence sizing — a 20–<ceiling pt stop is 3, never a raised
+// tier. P1-5: the swing ranks BEFORE the band, so a swing stop in [20,30)
+// sizes by the swing tier, never 3.
 func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, spentCap, maxContracts int) (mentorSizeChoice, error) {
 	if maxContracts <= 0 {
 		return mentorSizeChoice{}, fmt.Errorf("mentor size: mentor_max_contracts not set (max=%d)", maxContracts)
@@ -111,12 +114,38 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	if in.ISBInRange {
 		return mentorSizeChoice{Contracts: clamp(3), Tier: "isb_in_range", Why: "ISB traded inside a range → reduce size, tier 3 [D4.1 p1 @04:37–05:04 written rule 3]"}, nil
 	}
-	// B12 (CTO 1791041016051): a stop in the twenties cuts to 3 and wins over
-	// confluence sizing — "reduce size or don't trade" [D3.3 p1 @ 01:09] is a
-	// rule about the STOP, so it outranks whatever the confluence tier would earn.
-	if in.StopPts >= mentorStopTwentiesMinPts && in.StopPts <= mentorStopTwentiesMaxPts {
+	// SWING4H ranks BEFORE the reduced stop band (P1-5): a swing stop sits AT
+	// the 4h line (swing4h.go:606-608) and can be any size under 100, so a
+	// swing stop in [20,30) must size by the swing tier (2), not the reduced 3.
+	if strings.EqualFold(in.Setup, "SWING4H") {
+		// S9 (D5.2 p2 @05:21–05:57): a strong day — 5m candles running 50–80
+		// pts — caps the SWING at 2. The swing base is 2 MNQ (D5.2 p2), so
+		// the strong-day cap must NEVER RAISE the size above the base:
+		// min(2, swing base). With the default base 2 this is 2 (no cut); a
+		// raised knob (e.g. 3) still caps at 2, the top of the course band.
+		if in.StrongDay {
+			strong := swing4h
+			if strong > 2 {
+				strong = 2
+			}
+			return mentorSizeChoice{Contracts: clamp(strong), Tier: "strong_day", Why: fmt.Sprintf(
+				"strong day — the SWING sizes min(2, base %d) = %d, never above the base [D5.2 p2 @05:21–05:57]", swing4h, strong)}, nil
+		}
+		return mentorSizeChoice{Contracts: clamp(swing4h), Tier: "swing4h", Why: fmt.Sprintf(
+			"SWING4H setup — %d MNQ (course 2: 'Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt' [D5.2 p2 @06:08–06:23])", swing4h)}, nil
+	}
+	// B12 (CTO 1791041016051): a stop in the 20–<ceiling band cuts to 3 and
+	// wins over confluence sizing — "reduce size or don't trade" [D3.3 p1
+	// @ 01:09] is a rule about the STOP, so it outranks the confluence tier.
+	// The band top is the mentor_isb_max_pts knob (kernel
+	// CourseExits.ISBMaxStopPts, default 30) — one number, not two (P2-1).
+	bandTop := in.ISBMaxStopPts
+	if bandTop <= 0 {
+		bandTop = mentor.DefaultConfig().CourseExits.ISBMaxStopPts
+	}
+	if in.StopPts >= mentorStopTwentiesMinPts && in.StopPts < bandTop {
 		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "reduced", Why: fmt.Sprintf(
-			"stop %.1f pts in the twenties → reduce size or don't trade [D3.3 p1 @ 01:09]", in.StopPts)}, nil
+			"stop %.1f pts in the 20–<%.0f band → reduce size or don't trade [D3.3 p1 @ 01:09]", in.StopPts, bandTop)}, nil
 	}
 	if in.Confluence && in.HTFAgree && in.RoomMultiple >= mentorRoomBigMultiple && in.TargetPts >= mentorTargetBigPts {
 		n := clamp(big)
@@ -129,22 +158,6 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 		return mentorSizeChoice{Contracts: n, Tier: "confluence", Why: fmt.Sprintf(
 			"confluence (hold ≥ 1:2, size stays %d — tier count; course default 5 MNQ, 1.1 p2 L1103%s) [3.4 p3 L531]",
 			n, mentorSizeKnobOverrideNote(conf, mentorConfluenceContractsDefault))}, nil
-	}
-	if strings.EqualFold(in.Setup, "SWING4H") {
-		// S9 (D5.2 p2 @05:21–05:57): a strong day — 5m candles running 50–80
-		// pts — cuts the SWING to 1–2. The swing base is 1 MNQ (D5.2 p1), so
-		// the strong-day cut must NEVER RAISE the size above the base:
-		// min(2, swing base). With the default base 1 this is 1; a raised
-		// knob (e.g. 3) still caps at 2, the top of the course band.
-		if in.StrongDay {
-			strong := swing4h
-			if strong > 2 {
-				strong = 2
-			}
-			return mentorSizeChoice{Contracts: clamp(strong), Tier: "strong_day", Why: fmt.Sprintf(
-				"strong day — the SWING sizes min(2, base %d) = %d, never above the 1-MNQ base [D5.2 p2 @05:21–05:57]", swing4h, strong)}, nil
-		}
-		return mentorSizeChoice{Contracts: clamp(swing4h), Tier: "swing4h", Why: "SWING4H setup — 1 MNQ [D5.2 p1 @00:38–00:47 'Em vô đúng 1 MNQ thôi']"}, nil
 	}
 	return mentorSizeChoice{Contracts: clamp(base), Tier: "base", Why: fmt.Sprintf(
 		"base setup at a location (setup %s, stop %.1f pts)", in.Setup, in.StopPts)}, nil
@@ -388,12 +401,13 @@ func mentorLocationTriggerFilter(rc *store.RiskControlConfig) bool {
 	return rc == nil || rc.MentorLocationTriggerFilter == nil || *rc.MentorLocationTriggerFilter
 }
 
-// mentorDayOffRecheck — owner ruling 2026-10-09: after a DayOff latch freezes
-// at the open, re-read the 4h/1h directions on every closed 1h bar and clear
-// the latch the moment they agree (one-way). nil → ON; false = today's
-// whole-day latch.
+// mentorDayOffRecheck — course-defaults-30 (owner "fix all", supersedes the
+// 2026-10-09 owner ruling): the course shuts the WHOLE day on a DayOff
+// [D5.1 p1 @19:22–19:40, p2 @00:01]; nil → OFF (the whole-day latch). true =
+// the pre-ruling recheck (re-read 4h/1h on each closed 1h bar; clear one-way
+// to DaySpent when they agree).
 func mentorDayOffRecheck(rc *store.RiskControlConfig) bool {
-	return rc == nil || rc.MentorDayOffRecheck == nil || *rc.MentorDayOffRecheck
+	return rc != nil && rc.MentorDayOffRecheck != nil && *rc.MentorDayOffRecheck
 }
 
 // mentorLossDeparturePts is the optional fixed-points fallback for the B22
@@ -549,7 +563,7 @@ func (at *AutoTrader) mentorReconcileLevelArms() {
 
 // mentorRuleGate is the injector-side R8/R9 gate: it refuses intents the
 // evaluator should never have let through, fail-closed, before any sizing.
-// (R8) SWING4H: stop 30–60 allowed, ≥100 refused, exempt from the 25-pt
+// (R8) SWING4H: stop 30–60 allowed, ≥100 refused, exempt from the ISB stop
 // ceiling. (R9) the target is never smaller than the stop; on a spent day
 // (cap 15) a stop over 15 skips. Defence in depth (CTO 1791058442006): the
 // stop/target points are read from the GEOMETRY (abs(Price−Stop),
@@ -607,11 +621,18 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 			swingMax = mentor.DefaultSwingCfg().MaxStopPts
 		}
 		if stop >= swingMax {
-			return fmt.Sprintf("R8: SWING4H stop %.1f pts — a stop at or over %.0f is skipped [D5.2; owner ruling 2026-10-04 R-D] (no 25-pt ceiling for the swing)", stop, swingMax)
+			return fmt.Sprintf("R8: SWING4H stop %.1f pts — a stop at or over %.0f is skipped [D5.2; owner ruling 2026-10-04 R-D] (the ISB stop ceiling does not apply to the swing)", stop, swingMax)
 		}
 	} else {
-		if stop > mentorStopTwentiesMaxPts {
-			return fmt.Sprintf("R8: stop %.1f pts over the 25-pt ceiling — skip (the swing is the only exemption)", stop)
+		// R8 reads the SAME knob as the kernel — mentor_isb_max_pts
+		// (CourseExits.ISBMaxStopPts, default 30). One number, not two (P2-1):
+		// a raised knob must also raise the trader's own ceiling.
+		isbMax := extra.ISBMaxStopPts
+		if isbMax <= 0 {
+			isbMax = mentor.DefaultConfig().CourseExits.ISBMaxStopPts
+		}
+		if stop >= isbMax {
+			return fmt.Sprintf("R8: stop %.1f pts at/over the %.0f-pt ceiling — skip (the swing is the only exemption)", stop, isbMax)
 		}
 	}
 	if target > 0 && target < stop {
@@ -683,9 +704,11 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 // mentor path — the frame stays in the AddOn, unwired. The exit is a FORK,
 // chosen by whether the resonance appears (D2.4 p1):
 //   A. RESONANCE — a PHL/PLH filled, then an ISB in the SAME direction within
-//      3 candles of the fill: BOTH stops → BE at that moment and leg 1's TP is
-//      modified OUT to the runner's target — NO 1:1 scale-out, NO candle
-//      trail. Let it run; EOD flat still applies.
+//      3 candles of the fill: BOTH stops → BE at that moment, leg 1's +1R TP
+//      STAYS (the 1:1 partial still fires — "RISK REWARD 1-1 tôi vẫn sẽ bán
+//      bớt" [D2.4 @02:24]), and the RUNNER's TP is modified out to the level
+//      beyond the old high (CX-3). NO candle trail. Let it run; EOD flat still
+//      applies.
 //   B. NO RESONANCE (normal) — once price has covered HALF THE DISTANCE TO
 //      LEG 1'S TARGET both legs' stops → BE (move_stop on each, the live R:R
 //      stays 1:1); leg 1 exits at its +1R TP (native bracket); the runner
@@ -872,7 +895,7 @@ func mentorExitFork(in mentor.Intent, confluence bool) (mode string, leg1TP floa
 		}
 		return "C", mentorLeg1TPForC(in.Price, r, side), "confluence flag: hold ≥ 1:2, stop never moves up"
 	case in.Setup == "PHL" || in.Setup == "PLH":
-		return "B", 0, "PHL/PLH: B at entry, resonance watch armed — a same-direction ISB within 3 candles flips to A (BE, no trail, no 1:1 scale-out)"
+		return "B", 0, "PHL/PLH: B at entry, resonance watch armed — a same-direction ISB within 3 candles flips to A (BE, no trail; the 1:1 partial still fires)"
 	default:
 		return "B", 0, "normal: leg 1 TP +1R; runner per mentor_trail_mode — candle (default): BE once leg 1's partial FILLS at NT8, then 1 tick beyond each closed 1m candle; off: BE at half the distance to the TRADE's target"
 	}

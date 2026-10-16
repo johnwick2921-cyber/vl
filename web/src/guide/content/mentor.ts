@@ -35,7 +35,6 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
   },
   'Touch band': { settingId: 'Config.TouchBandPts', live: false },
   'ISB buffer': { settingId: 'Config.ISBBufferPts', live: false },
-  'ISB twenties': { settingId: 'Config.ISBTwentiesPts', live: false },
   'Reverse ISB at EMA 9': {
     settingId: 'risk_control.mentor_tuning.isb_reverse_ema9_enabled',
     live: true,
@@ -361,7 +360,7 @@ export const mentor: GuideSection = {
       cards: [
         {
           title: 'Inside bar (ISB)',
-          body: "Candle 2's BODY inside candle 1's FULL range (wicks included). Direction = candle 1's colour. Entry at the ISB candle's own extreme + 1.5 pt (6 ticks) — exactly that on the wire, nothing is added at placement — stop 1.5 beyond its opposite extreme, no fixed stop size — skip only when the stop is \"in the twenties\". The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest).",
+          body: "Candle 2's BODY inside candle 1's FULL range (wicks included). Direction = candle 1's colour. Entry at the ISB candle's own extreme + 1.5 pt (6 ticks) — exactly that on the wire, nothing is added at placement — stop 1.5 beyond its opposite extreme, no fixed stop size — skip only when the stop is in the 20–<30 band. The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest).",
           tag: 'D1.4 p1',
         },
         {
@@ -448,9 +447,9 @@ export const mentor: GuideSection = {
           cite: 'D4.1 p1 @04:37–05:04 — "Khi trade isb in-range bắt buộc giảm size" · trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlagsFor',
         },
         {
-          title: 'Skip a stop in the twenties',
-          body: 'An ISB stop of 20–29.99 pts must not be taken. It is not the only stop-size skip: any non-swing mentor stop over 25 pts is skipped, and on a spent day any non-swing stop over the 15-pt cap is skipped (trader/mentor_mode.go mentorRuleGate).',
-          cite: 'D4.1 p1 @05:41 — "cái setup ISB mà nó hai mươi mấy điểm… đừng vô" · ISBTwentiesPts 20 — merged',
+          title: 'Skip a stop of 30 or more',
+          body: 'An ISB stop of 30 pts or more must not be taken (course-defaults-30, owner order "move to 30 at least… fix all" — DEVIATES from the course\u2019s twenties skip [D4.1 p1 @05:41]: the [20,30) window no longer refuses). A stop under 30 is taken. The trader-side sizing cuts a stop of 20–<30 pts to the reduced 3-contract tier (the mentor_isb_max_pts knob top).',
+          cite: 'Course-defaults-30 (owner order 10-16) — CourseExits.ISBMaxStopPts 30 · D4.1 p1 @05:41 (the course says "twenties… đừng vô"; the owner moved the line to 30)',
         },
       ],
     },
@@ -531,7 +530,7 @@ export const mentor: GuideSection = {
         ],
         [
           'Day gate (§7)',
-          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). The day gate is frozen AT the 08:30 read: a restart after 08:30 RESTORES that decision (the seed replays the 08:30 4h/1h read and the frozen run, then replays the one-way DayOff recheck over the closed 1h bars since), so a restart never re-decides the day — the log line reads "RESTORED from the 08:30 read". Only when the 08:30 read is not possible (no bars closed by 08:30) does the line read "re-read at boot … not the 08:30 decision". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
+          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). The day gate is frozen AT the 08:30 read: a restart after 08:30 RESTORES that decision (the seed replays the 08:30 4h/1h read and the frozen run, then replays the one-way DayOff recheck over the closed 1h bars since — only when mentor_day_off_recheck is ON; course-defaults-30 turns it OFF, so the seed replays no clear), so a restart never re-decides the day — the log line reads "RESTORED from the 08:30 read". Only when the 08:30 read is not possible (no bars closed by 08:30) does the line read "re-read at boot … not the 08:30 decision". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
           'DayGateSpentPts 300 · DayGateTargetCapPts 15',
         ],
         [
@@ -541,8 +540,8 @@ export const mentor: GuideSection = {
         ],
         [
           'Room rule',
-          'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. The room is measured to the LEVEL, also on a spent day: the 15-pt take-profit cap shortens the take-profit, never the room — "dù target của em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]. So a spent-day setup needs stop ≤ 15 (the 1:1 floor on the capped take-profit), room ≥ 2R to the level, AND room to the level ≥ 2× the capped take-profit — his worked figure: target 15 → room 30 (a take-profit sitting right at the level is refused). The stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
-          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · every non-swing stop, the ISB included, also meets the trader’s 25-pt cap: trader/mentor_mode.go mentorRuleGate (mentorStopTwentiesMaxPts) · swing_max_stop_pts 100',
+          'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. Release #30: the EMA 9 / EMA 34 lines are PARTIAL points along the way, not the level the room (and the 1:1 floor) measure — "ta ghẹt tôi đầu tiên phải là về gần đỉnh cũ … tiếp tục là EMA 34 … những cái chỗ này là những cái chỗ anh chị bán bớt" [D3.3 p1 @05:15–07:38]; an EMA must not by itself kill the trade (the room/floor read the next non-EMA level — the nearest old high/low, a key level, or a trendline target; the EMA is the target only when no other level stands beyond). The room is measured to the LEVEL, also on a spent day: the 15-pt take-profit cap shortens the take-profit, never the room — "dù target của em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]. So a spent-day setup needs stop ≤ 15 (the 1:1 floor on the capped take-profit), room ≥ 2R to the level, AND room to the level ≥ 2× the capped take-profit — his worked figure: target 15 → room 30 (a take-profit sitting right at the level is refused). A PHL/PLH stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
+          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · every non-swing stop, the ISB included, also meets the mentor_isb_max_pts ceiling (default 30 — the SAME knob the trader’s R8 gate reads; P2-1 one number) · swing_max_stop_pts 100',
         ],
         [
           'ORB gate (opening range)',
@@ -593,8 +592,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Spent 300+ overnight AND 4h/1h disagree at 08:30 → day OFF',
-          body: 'The day gate reads the Globex run at 08:30 CT. If the overnight daily candle already ran 300+ pts AND the 4h and 1h disagree, the machine is OFF for the day (latched at 08:30) — no box/ISB trades all day, the swing exempt. Owner ruling 2026-10-09: the OFF is re-checked on every closed 1h bar — the moment the 4h and 1h AGREE, the day re-opens (one-way, never re-latched that day; the spent-day target cap still applies) and trading resumes in that direction.',
-          cite: 'Ngày 5.1 p1 @19:22 — "Còn nếu như 2 khung giờ đang ngược nhau / Mà khung daily nó đã chạy được 300-400 điểm rồi / Tắt máy nghỉ luôn cho em" (shut down for the day; @19:40 "Ngày hôm đó không đáng để trade") — the course has NO re-check later in the day. The re-check is the owner’s ruling 2026-10-09 (mentor_day_off_recheck, nil → ON); the mentor’s full stop is mentor_day_off_recheck = false (release #25 CX-7: the existing switch, no second one)',
+          body: 'The day gate reads the Globex run at 08:30 CT. If the overnight daily candle already ran 300+ pts AND the 4h and 1h disagree, the machine is OFF for the day (latched at 08:30) — no box/ISB trades all day, the swing exempt. course-defaults-30 (item 4): the re-check is OFF (mentor_day_off_recheck, nil → OFF) — the day STAYS off, a whole-day latch. The pre-30 owner ruling (2026-10-09) that re-checked the OFF on every closed 1h bar is superseded.',
+          cite: 'Ngày 5.1 p1 @19:22 — "Còn nếu như 2 khung giờ đang ngược nhau / Mà khung daily nó đã chạy được 300-400 điểm rồi / Tắt máy nghỉ luôn cho em" (shut down for the day; @19:40 "Ngày hôm đó không đáng để trade") — the course has NO re-check later in the day. course-defaults-30: the re-check is OFF (mentor_day_off_recheck, nil → OFF) — the day stays off. The pre-30 owner ruling (2026-10-09) that added the re-check is superseded.',
         },
       ],
     },
@@ -612,14 +611,14 @@ export const mentor: GuideSection = {
         ['Big (the hard tier)', '5', 'mentor_big_contracts'],
         ['Hard cap', '20', 'mentor_max_contracts'],
         [
-          'Reduced (stop 20–25 pts; also an ISB at an old high/low or inside a range)',
+          'Reduced (stop 20–<30 pts; also an ISB at an old high/low or inside a range)',
           '3',
           'mentor_reduced_contracts',
         ],
         [
           'SWING4H',
-          '1',
-          'mentor_swing4h_contracts — lesson 5.2: “Em vô đúng 1 MNQ thôi” (enter exactly 1 MNQ)',
+          '2',
+          'mentor_swing4h_contracts — lesson 5.2 p2 @06:08: “Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt” (not 1 MNQ — at least 2 MNQ to have room to take some off) — course-defaults-30',
         ],
         [
           'Spent day (§7)',
@@ -663,7 +662,11 @@ export const mentor: GuideSection = {
         ],
         [
           'ISB partial',
-          'The ISB follows B, plus the course’s candle-3 rule (“phải BÁN BỚT. Bắt buộc” — you MUST sell part [D1.4 p1 @11:59–13:28]): when the fill candle closes in profit but short of 1:1, leg 1’s take-profit is MOVED to that close at NinjaTrader (a real modify, leg 1 only, rounded toward the entry) and confirmed from the next broker book (“modify_bracket CONFIRMED at NT8”); if 1:1 printed first, the resting 1:1 take-profit does it; a losing close sells nothing. A one-bracket position is never partially modified (it would close the whole trade). After a restart the fill candle is unknown, so the candle-3 step is skipped and leg 1 keeps its 1:1 take-profit. The runner then follows mentor_trail_mode (see B). Live since release #22 — from 10-05 to 10-14 this step was only logged (“WOULD set TP”), never sent',
+          'The ISB follows B, plus the course’s candle-3 rule (“phải BÁN BỚT. Bắt buộc” — you MUST sell part [D1.4 p1 @11:59–13:28]). R1: leg 1’s +1R take-profit ALWAYS rests at NinjaTrader from the fill, every setup, every knob value. When the fill candle closes in profit SHORT of +1R (leg 1 did NOT fill inside the candle), leg 1’s take-profit is MOVED to a marketable limit at that close through the existing modify_bracket path — long: close − 8 ticks (2.00 pts); short: close + 8 ticks — so NinjaTrader fills it immediately at the best price: a market exit in effect, never a resting limit, with no AddOn change (the 8-tick offset is a named constant, mentorISBMarketableTickOffset). The limit is CLAMPED to never book a loss — long ≥ entry + 1 tick, short ≤ entry − 1 tick [D1.2 p1 @13:31–13:33] (mentorClampMarketableTP). If it has not filled by the next 1m close it is re-modified to the new close ∓ 8 ticks, once per candle, never back to “none” — the leg keeps its stop throughout; a failed send is retried ONCE on the next candle, then left to the +1R TP (fail-safe). A close PAST +1R means the +1R TP already filled inside the candle (the 1:1 rule); a losing close moves nothing (the +1R TP keeps resting — fail-safe on any skip, restart or failed send). A one-bracket position is never partially sold (the modify cannot target a leg the wire does not carry). The runner then follows mentor_trail_mode (see B).',
+        ],
+        [
+          'Line partials (deferred)',
+          'The course also names the lines BETWEEN entry and target as places to sell part — near the old high/low, EMA 34, EMA 9, the next key level [D3.3 p1 @05:15–07:38 “những cái chỗ này là những cái chỗ anh chị bán bớt”] — so the runner would sell half (rounded down, min 1, only if ≥ 2 runner contracts) at the FIRST line beyond the leg-1 exit and the rest would trail. This is NOT in this release: the AddOn places at most TWO OCO pairs (leg 1 + the runner) and its close path ignores quantity, so a third partial cannot be expressed without an AddOn change — deferred to release #31 (a leg-3 AddOn release, owner F5 + NinjaTrader restart). Until then: leg 1 at 1:1 / the candle-3 marketable partial, and the runner rides its target or the candle trail — nothing closes more than the course says.',
         ],
         [
           'Path missing at the fill',
@@ -781,14 +784,14 @@ export const mentor: GuideSection = {
         {
           label: 'Reduced contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'Size when the stop is 20–25 pts (trader/mentor_mode.go mentorContractsFor). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner.',
+          what: 'Size when the stop is 20–<ceiling pts, where the ceiling is the mentor_isb_max_pts knob (default 30 — trader/mentor_mode.go mentorContractsFor). A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in [20,30) sizes swing4h, not 3). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner.',
           trader: '3 contracts on the reduced tier.',
           consumer: 'trader/mentor_mode.go mentorReducedContractsDefault',
           range: 'int',
           systemDefault: '3',
           recommended:
-            '3 — Owner setting: CTO shipped size table (P3); the reduced tier for a 20–25 pt stop. (An ISB at an old high/low or in a range is a fixed 3 in the code, not this knob.)',
-          whenToTouch: 'With the twenties tier rule.',
+            '3 — Owner setting: CTO shipped size table (P3); the reduced tier for a 20–<ceiling pt stop (top = mentor_isb_max_pts, default 30). (An ISB at an old high/low or in a range is a fixed 3 in the code, not this knob.)',
+          whenToTouch: 'With the 20–<30 reduced band.',
           perSession: 'No.',
         },
         {
@@ -797,14 +800,14 @@ export const mentor: GuideSection = {
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25) → SWING contracts (release #25: the course’s swing_contracts knob)',
           what: 'Size for the 4h EMA 34 swing setup. With 2+ contracts AND the Swing runner switch ON, the swing splits into leg 1 at the first target + a runner.',
           trader:
-            '1 contract on the swing (lesson 5.2: "Em vô đúng 1 MNQ thôi"); a strong day can never raise it.',
+            '2 contracts on the swing (lesson 5.2 p2 @06:08: “Vô Addict là 2 của MNQ để có đường bắn bớt”); a strong day can never raise it.',
           consumer: 'trader/mentor_mode.go mentorSwing4HContractsDefault',
           range: 'int',
-          systemDefault: '1',
+          systemDefault: '2',
           recommended:
-            '1 — D5.2 p1 @00:38–00:47 ("enter exactly 1 MNQ"); the swing is exempt from the 25-pt ceiling.',
+            '2 — D5.2 p2 @06:08 "Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt" (not 1 MNQ — at least 2 to take some off); course-defaults-30.',
           whenToTouch:
-            'Owner sizing call (CX-2): the course tells students "đừng vô 1 MNQ, vô at least là 2 … để có đường bắn bớt" [D5.2 p2 @06:19–06:27] and 2–3 MNQ on a funded account; 1 is his own cash-account size.',
+            'Owner sizing call (CX-2): 1 is his own cash-account size ("Em vô đúng 1 MNQ thôi" [D5.2 p1 @00:43]).',
           perSession: 'No.',
         },
         {
@@ -970,22 +973,9 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
-          label: 'ISB twenties',
-          where: 'Strategy → Mentor mode → ISB',
-          what: 'An ISB whose stop is "in the twenties" — from this value up to, not including, this + 10 (20–29.99 pts) — is not taken (kernel/mentor/isb.go ISBStopVerdict). A stop of 30 or more passes this check; it is refused instead by the trader’s 25-pt cap on every non-swing stop (trader/mentor_mode.go mentorRuleGate).',
-          trader:
-            '20 pts — and there is NO minimum stop (the old 5–6-pt cap is gone).',
-          consumer: 'kernel/mentor/mentor.go ISBTwentiesPts',
-          range: 'pts',
-          systemDefault: '20',
-          recommended: '20 — D4.1 p1 @ 05:41.',
-          whenToTouch: 'Rarely.',
-          perSession: 'No.',
-        },
-        {
           label: 'Reverse ISB at EMA 9',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'R7: an ISB pointing AGAINST the trend at EMA 9 reverses — uptrend → long buy stop above the ISB high + 1.5-pt buffer; downtrend → the mirror (sell stop below the ISB low − 1.5-pt buffer). The entry buffer is mandatory on the 1m [D1.4 p1 @ 22:26–23:26]. Requires price to actually reach EMA 9. It carries a target (the next level beyond, with the 1:1 floor and the spent-day cap) and runs through the normal ISB gates — twenties skip, 4h side, near-box room — before it can place; with it ON, the normal ISB does not arm the opposite side on the same candle pair.',
+          what: 'R7: an ISB pointing AGAINST the trend at EMA 9 reverses — uptrend → long buy stop above the ISB high + 1.5-pt buffer; downtrend → the mirror (sell stop below the ISB low − 1.5-pt buffer). The entry buffer is mandatory on the 1m [D1.4 p1 @ 22:26–23:26]. Requires price to actually reach EMA 9. It carries a target (the next level beyond, with the 1:1 floor and the spent-day cap) and runs through the normal ISB gates — the 30-pt stop ceiling, 4h side, near-box room — before it can place; with it ON, the normal ISB does not arm the opposite side on the same candle pair.',
           trader: 'ON — R-C owner ruling 2026-10-04.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (ISBReverseEMA9Enabled) · kernel/mentor/eval.go (reverse ISB emit)',
@@ -998,15 +988,16 @@ export const mentor: GuideSection = {
         {
           label: '4h/1h gate only in the news window',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D4.4-11: OFF (default) = the 4h/1h direction gate runs ALL DAY, as today — no 4h trigger means nothing to follow, and a 1h against the 4h sits out. ON = the gate applies only inside the 07:20–07:35 CT news window; ordinary intraday entries are then not HTF-gated. The course says to use the HTF read "for news first, not ordinary trading yet" (D4.4 p1 @13:44–14:06), while the later D5.1 routine reads 4h then 1h for the whole day — that conflict (U-6) is open, so the all-day gate stays the default.',
-          trader: 'OFF — CTO default 2026-10-04 (U-6 open).',
+          what: 'D4.4-11: ON = the 4h/1h direction gate applies ONLY inside the 07:20–07:35 CT news window; ordinary intraday entries are then not HTF-gated. OFF (default — the all-day gate) = no 4h trigger means nothing to follow, and a 1h against the 4h sits out all day. The course: "Đánh thường đánh níu cũng được / Nhưng mà đánh níu nên sử dụng cho níu trước đi / Đừng sử dụng cho thường / Thường bắt đầu khó lắm" (D4.4 p1 @13:55–14:06 — trading normal or news is fine, but use the HTF read for news first); the later D5.1 routine reads 4h then 1h for the day [D5.1 p1 @19:04–19:20]. The course is split, so the all-day gate stays the default and the news-only switch sits on the mentor-question list (U-6 open).',
+          trader:
+            'OFF — FOLD 2026-10-16 reverted course-defaults-30 back to the all-day gate (U-6 open).',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (HTFGateNewsOnly) · kernel/mentor/htf_direction.go HTFGateActive / HTFVerdict',
           range: 'true / false',
           systemDefault: 'false',
           recommended:
-            'OFF — Owner setting: U-6 open (D4.4 p1 @13:44 news-first vs D5.1 all-day conflict). ON trades more (the replay\u2019s zero days were blocked mostly by isb_htf_blocked).',
-          whenToTouch: 'Only on an owner ruling of U-6.',
+            'OFF — the all-day gate is the default (U-6 open; the course is split D4.4 p1 @13:55 vs D5.1 p1 @19:11–19:20).',
+          whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
         {
@@ -1043,29 +1034,28 @@ export const mentor: GuideSection = {
         {
           label: '5m/15m box conflict end',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D4.2 p1 @07:54–08:02 "Khi anh chị thấy nó messed up như vậy — Đừng trade. Đợi nó thoát cả luôn" (when you see it messed up like that — do not trade; wait until it escapes entirely). While a 5m box and a 15m box conflict, nothing trades. first_box (default) = the conflict ends when the small 5m box escapes; both_boxes = no trade until BOTH the 5m and the 15m boxes have escaped (refusals counted isb_tf_conflict_both_boxes). Default first_box — knob rule case (b), OFF: "cả" is ambiguous (the 15m range, or both boxes) — open question OQ-2.',
-          trader: 'first_box — case (b), OQ-2 open.',
+          what: 'D4.2 p1 @07:54–08:02 "Khi anh chị thấy nó messed up như vậy — Đừng trade. Đợi nó thoát cả luôn" (when you see it messed up like that — do not trade; wait until it escapes entirely). While a 5m box and a 15m box conflict, nothing trades. first_box = the conflict ends when the small 5m box escapes; both_boxes (default, course-defaults-30) = no trade until BOTH the 5m and the 15m boxes have escaped (refusals counted isb_tf_conflict_both_boxes). The course says "đợi nó thoát cả luôn" (wait for it to escape ENTIRELY).',
+          trader: 'both_boxes — course-defaults-30.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/eval.go Tick (5m/15m conflict)',
           range: 'first_box / both_boxes',
-          systemDefault: 'first_box',
+          systemDefault: 'both_boxes',
           recommended:
-            'first_box — D4.2 p1 @07:54–08:02; knob rule (b): open question OQ-2 ("cả" is ambiguous).',
-          whenToTouch: 'Only on an owner ruling of OQ-2.',
+            'both_boxes — D4.2 p1 @07:54–08:02 "đợi nó thoát cả luôn".',
+          whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },
         {
           label: 'News day: wait beyond the 4h line',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D4.4 p1 @21:55–22:12 "Đợi canh nó nằm trên hai cái đường line này, kiếm insert bar đu vô… Hoặc anh chị chỉ cần đợi nó nằm ở trên cái đường line 4 giờ" (wait for price to sit above both lines and take an inside bar — or at least above the 4h line). ON = on a red-folder print day, from the print window until the 08:30 CT RTH open, an intraday entry needs the last close beyond the 4h trigger line on its own side (above it for a long, below it for a short); refusals counted news_wait_4h_line. OFF (default) = no such wait (the print window itself still refuses). Knob rule case (b), OFF: open question OQ-6 — news vs the open, where D4.4 p2 @03:51 says price need NOT be on the right side. The 30-second ISB of the same lesson (@23:08–23:13 "Đánh inside bar lệnh long 30 giây cho em") is NOT built: NinjaTrader streams 1m bars and up, there are no sub-minute bars, and the bot does not fake them.',
-          trader: 'OFF — case (b), OQ-6 open.',
+          what: 'D4.4 p1 @21:55–22:12 "Đợi canh nó nằm trên hai cái đường line này, kiếm insert bar đu vô… Hoặc anh chị chỉ cần đợi nó nằm ở trên cái đường line 4 giờ" (wait for price to sit above both lines and take an inside bar — or at least above the 4h line). ON (default, course-defaults-30) = on a red-folder print day, from the print window until the 08:30 CT RTH open, an intraday entry needs the last close beyond the 4h trigger line on its own side (above it for a long, below it for a short); refusals counted news_wait_4h_line. OFF = no such wait (the print window itself still refuses). The 30-second ISB of the same lesson (@23:08–23:13 "Đánh inside bar lệnh long 30 giây cho em") is NOT built: NinjaTrader streams 1m bars and up, there are no sub-minute bars, and the bot does not fake them.',
+          trader: 'ON — course-defaults-30.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/eval.go newsWaitFilter',
           range: 'true / false',
-          systemDefault: 'false',
-          recommended:
-            'OFF — D4.4 p1 @21:55–22:12 vs D4.4 p2 @03:51; knob rule (b): open question OQ-6.',
-          whenToTouch: 'Only on an owner ruling of OQ-6.',
+          systemDefault: 'true',
+          recommended: 'ON — D4.4 p1 @21:55–22:12.',
+          whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },
         {
@@ -1129,15 +1119,15 @@ export const mentor: GuideSection = {
         {
           label: 'Box-return 5m trend source',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D4.3 @12:43–12:54 "Nhìn từ bên trái qua bên phải… Đỉnh cao, đỉnh thấp hơn, đỉnh thấp hơn — thì nó đang là xu hướng gì — Giảm" (read left to right: a high, a lower high, a lower high — what trend is it? Down). The D4.3 "no box return against the 5m trend" gate (refusal box_against_5m_trend) reads its trend from: trigger_line (default) = the 5m trigger line; structure = 5m swing structure (higher highs + higher lows = up; lower highs + lower lows = down; mixed = no trend, no veto). Knob rule case (b), OFF: the structure reading is [B], inferred.',
-          trader: 'trigger_line — case (b).',
+          what: 'D4.3 @12:43–12:54 "Nhìn từ bên trái qua bên phải… Đỉnh cao, đỉnh thấp hơn, đỉnh thấp hơn — thì nó đang là xu hướng gì — Giảm" (read left to right: a high, a lower high, a lower high — what trend is it? Down). The D4.3 "no box return against the 5m trend" gate (refusal box_against_5m_trend) reads its trend from: structure (default, course-defaults-30) = 5m swing structure (higher highs + higher lows = up; lower highs + lower lows = down; mixed = no trend, no veto); trigger_line = the 5m trigger line.',
+          trader: 'structure — course-defaults-30.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/eval.go box-return trend gate (box_against_5m_trend)',
           range: 'trigger_line / structure',
-          systemDefault: 'trigger_line',
+          systemDefault: 'structure',
           recommended:
-            'trigger_line — D4.3 @12:43–12:54; knob rule (b): the structure reading is [B].',
-          whenToTouch: 'Only on an owner ruling.',
+            'structure — D4.3 @12:43–12:54, @14:52–15:01 (read the 5m swing structure).',
+          whenToTouch: 'Rarely — trigger_line only to restore the pre-30 rule.',
           perSession: 'No.',
         },
         {
@@ -1172,15 +1162,14 @@ export const mentor: GuideSection = {
         {
           label: 'Trendline reject between two boxes',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D3.2 p2 @10:56–11:20 "Đụng trendline, nên đóng dưới, đánh ngược lại xuống dưới… dưới cái box" (touch the trendline, close below, trade back down… to the box) — against the same lesson @08:34–08:55 "Nếu như nằm bên giữa cái box mình sẽ không được bắt bất kỳ một lệnh Potential 2 low" (between the boxes you may not take any potential-2-low). ON = a trendline reject between an FTGL and an FTGH may trade; OFF (default) = every level PHL/PLH between two boxes is refused (phl_mid_range_boxed), only the ISB trades there. Knob rule case (b), OFF: the lesson states both.',
-          trader: 'OFF — case (b): the lesson states both.',
+          what: 'D3.2 p2 @10:56–11:20 "Đụng trendline, nên đóng dưới, đánh ngược lại xuống dưới… dưới cái box" (touch the trendline, close below, trade back down… to the box) — against the same lesson @08:34–08:55 "Nếu như nằm bên giữa cái box mình sẽ không được bắt bất kỳ một lệnh Potential 2 low" (between the boxes you may not take any potential-2-low). ON (default, course-defaults-30) = a trendline reject between an FTGL and an FTGH may trade; OFF = every level PHL/PLH between two boxes is refused (phl_mid_range_boxed), only the ISB trades there. The course trades the trendline reject, so it is ON.',
+          trader: 'ON — course-defaults-30.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/eval.go midRangeBoxed',
           range: 'true / false',
-          systemDefault: 'false',
-          recommended:
-            'OFF — D3.2 p2 @10:56–11:20 vs @08:34–08:55; knob rule (b): the lesson states both.',
-          whenToTouch: 'Only on an owner ruling.',
+          systemDefault: 'true',
+          recommended: 'ON — D3.2 p2 @10:56–11:04 (the course trades it).',
+          whenToTouch: 'Rarely — OFF only to restore the pre-30 rule.',
           perSession: 'No.',
         },
         {
@@ -1200,15 +1189,14 @@ export const mentor: GuideSection = {
         {
           label: 'Flag wall as a target',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'X9 extra @05:47–06:12 "Nếu mà anh chị vô cái lệnh Potential high low chỗ này, thì cái target anh chị về chỗ nào? … Có phải là target của anh chị là chỉ là trên cái đỉnh của cái flag không, là trên cạnh trên không? Thì nếu như anh chị nào vẫn muốn vô thì mình vẫn scalping được, không sai" (a trade taken inside the flag targets its upper edge — a scalp is still fine). Ported from PR #416. ON = when an entry sits strictly INSIDE a live flag (a support and a resistance trendline both drawn and unbroken), the OPPOSITE wall becomes the target if it is closer than the normal target; a wall that leaves less than 1:1 refuses the entry (flag_wall_room; flag_wall_target_used counts each re-target). OFF (default) = targets come from the level ladder only (where trendline_is_target already puts a VALID trendline). Knob rule case (b): X9 is an extra, older than the course, and it relaxes the course room rule for the in-flag scalp.',
-          trader: 'OFF — case (b).',
+          what: 'X9 extra @05:47–06:12 "Nếu mà anh chị vô cái lệnh Potential high low chỗ này, thì cái target anh chị về chỗ nào? … Có phải là target của anh chị là chỉ là trên cái đỉnh của cái flag không, là trên cạnh trên không? Thì nếu như anh chị nào vẫn muốn vô thì mình vẫn scalping được, không sai" (a trade taken inside the flag targets its upper edge — a scalp is still fine). Ported from PR #416. ON (default, course-defaults-30) = when an entry sits strictly INSIDE a live flag (a support and a resistance trendline both drawn and unbroken), the OPPOSITE wall becomes the target if it is closer than the normal target; a wall that leaves less than 1:1 refuses the entry (flag_wall_room; flag_wall_target_used counts each re-target). OFF = targets come from the level ladder only (where trendline_is_target already puts a VALID trendline).',
+          trader: 'ON — course-defaults-30.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/flag_wall.go applyFlagWallTarget (Tick defer)',
           range: 'true / false',
-          systemDefault: 'false',
-          recommended:
-            'OFF — X9 extra @05:47–06:12; turn ON only on an owner ruling.',
-          whenToTouch: 'Only on an owner ruling.',
+          systemDefault: 'true',
+          recommended: 'ON — X9 @05:47–06:12.',
+          whenToTouch: 'Rarely — OFF only to restore the pre-30 rule.',
           perSession: 'No.',
         },
         {
@@ -1279,7 +1267,7 @@ export const mentor: GuideSection = {
         {
           label: 'Stop ceiling',
           where: 'Strategy → Mentor mode → risk',
-          what: 'The evaluator’s hard stop ceiling for PHL/PLH stops and box-return stops — its only two readers. The ISB is not checked against it: every non-swing mentor stop, the ISB included, meets the trader’s own separate 25-pt gate (trader/mentor_mode.go mentorRuleGate, mentorStopTwentiesMaxPts), which this value does not move.',
+          what: 'The evaluator’s hard stop ceiling for PHL/PLH stops and box-return stops — its only two readers. The ISB is not checked against it: the ISB (and the reverse ISB) meet the mentor_isb_max_pts ceiling (default 30, the SAME knob the trader R8 gate reads), which this value does not move.',
           trader: '25 pts — the SWING4H is exempt (its ceiling is 100).',
           consumer:
             'kernel/mentor/mentor.go StopCeilingPts — read only by kernel/mentor/phl.go phlPLHR2 and kernel/mentor/box_trade.go boxEntryIntent',
@@ -1479,7 +1467,7 @@ export const mentor: GuideSection = {
         {
           label: 'Swing max stop',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'A swing stop at/above this → do not enter. The swing is EXEMPT from the 25-pt ceiling.',
+          what: 'A swing stop at/above this → do not enter. The swing is EXEMPT from the ISB stop ceiling (mentor_isb_max_pts, default 30).',
           trader: '100 pts.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (SwingMaxStopPts)',
@@ -1770,15 +1758,14 @@ export const mentor: GuideSection = {
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25); size = mentor_swing4h_contracts',
           what: 'With 2+ swing contracts, split the swing: leg 1 (half, rounded up) takes profit at the first target (max(1R, the 5m EMA 34)); the runner is held by the 4h — break-even at +1R and the close at the end of the 2nd 4h candle (the swing’s own rules), with its take-profit capped at max(100 pts, 2× the first-target distance). The hold-close never closes more than NinjaTrader still holds. With 1 contract the switch does nothing (counted swing_runner_needs_2_contracts).',
           trader:
-            'Course: “đừng vô 1 MNQ, vô at least là 2 … để có đường bắn bớt” (not 1 MNQ — at least 2, so you can take some off) [D5.2 p2 @06:19–06:27]; “gồng theo khung 4 giờ” [D5.2 p1 @05:52]; “hô tới đâu luôn” [D5.2 p2 @05:50]. He swings 1 MNQ himself (“Em vô đúng 1 MNQ thôi” [D5.2 p1 @00:43]). The 100-pt cap is the top of the course’s 50–100 pts per 4h candle — the course names no runner take-profit [C]. Case (b): sizing is the owner’s call.',
+            'Course: “Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt” (not 1 MNQ — at least 2, so you can take some off) [D5.2 p2 @06:08–06:23]; “gồng theo khung 4 giờ” [D5.2 p1 @05:52]; “hô tới đâu luôn” [D5.2 p2 @05:50]. He swings 1 MNQ himself (“Em vô đúng 1 MNQ thôi” [D5.2 p1 @00:43]). The 100-pt cap is the top of the course’s 50–100 pts per 4h candle — the course names no runner take-profit [C]. Case (b): sizing is the owner’s call.',
           consumer:
             'trader/mentor_course_exits.go mentorSwingRunnerLegs ← trader/mentor_actions.go mentorArmIntent · mentorSwingCloseQty ← mentorClosePosition',
           range: 'ON / OFF',
-          systemDefault: 'OFF (unset = OFF; swing size 1)',
+          systemDefault: 'ON (unset = ON; swing size 2 — course-defaults-30)',
           recommended:
-            'OFF — Owner setting: sizing is the owner’s call (case b; D5.2 p2 @06:19 says at least 2). To use it, set SWING contracts to 2–3 AND turn this ON.',
-          whenToTouch:
-            'When you decide to size the swing like the course’s students (2–3 MNQ).',
+            'ON — course-defaults-30 (D5.2 p2 @06:19 says at least 2). The swing size defaults to 2 so the split has a runner.',
+          whenToTouch: 'OFF to go back to a single swing bracket.',
           perSession: 'No — per strategy.',
         },
         {
@@ -1801,23 +1788,22 @@ export const mentor: GuideSection = {
           label: 'Break-even before the 1:1 partial',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
-          what: 'ON: on the first CLOSED candle at least half-way to leg 1’s 1:1 (+0.5R, and past the entry by a tick), BOTH legs’ stops go to break-even — before the partial fills. OFF (default): owner ruling R3 — nothing moves until leg 1’s 1:1 is CONFIRMED filled at NinjaTrader, then the runner goes to break-even and trails.',
+          what: 'ON (default, course-defaults-30): on the first CLOSED candle at least half-way to leg 1’s 1:1 (+0.5R, and past the entry by a tick), BOTH legs’ stops go to break-even — before the partial fills. OFF: owner ruling R3 (superseded by course-defaults-30) — nothing moves until leg 1’s 1:1 is CONFIRMED filled at NinjaTrader, then the runner goes to break-even and trails.',
           trader:
-            'Course: entry 10, stop 0, target 20, price at 15 → “mua stop loss về break even là 10 … ở mức 1-1” (move the stop to break-even) [D1.2 p1 @12:41–13:12]; “Bắt buộc … lúc nào cũng phải maintain risk reward ở mức 1-1” (compulsory: keep the live R:R at 1:1) [D1.2 p1 @15:56]. CONFLICTS with owner ruling R3 (10-14: break-even only AFTER the confirmed +1R partial) → case (b), OFF.',
+            'Course: entry 10, stop 0, target 20, price at 15 → “mua stop loss về break even là 10 … ở mức 1-1” (move the stop to break-even) [D1.2 p1 @12:41–13:12]; “Bắt buộc … lúc nào cũng phải maintain risk reward ở mức 1-1” (compulsory: keep the live R:R at 1:1) [D1.2 p1 @15:56]. course-defaults-30 (owner “fix all”) reverses R3.',
           consumer:
             'trader/mentor_course_exits.go mentorBEBeforePartialStep ← trader/mentor_trail_r22.go mentorExitDriveCandle (stage 0)',
           range: 'ON / OFF',
-          systemDefault: 'OFF (unset = OFF, ruling R3)',
-          recommended:
-            'OFF — owner ruling R3 stands until the owner flips it (case b vs D1.2 p1 @12:41).',
-          whenToTouch: 'Only if the owner overrides R3 with the course rule.',
+          systemDefault: 'ON (unset = ON — course-defaults-30)',
+          recommended: 'ON — D1.2 p1 @12:41–13:12, @15:56 (mandatory 1:1).',
+          whenToTouch: 'OFF only to restore the R3 behaviour.',
           perSession: 'No — per strategy.',
         },
         {
           label: 'ISB candle-3 partial at any profit',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
-          what: 'ON (default, today’s rule): when the ISB fill candle closes in profit short of 1:1, leg 1’s take-profit is moved to that close at NinjaTrader. OFF: leg 1 keeps its 1:1 take-profit — no partial at a smaller profit (counted isb_partial_wait_1r).',
+          what: 'ON (default, today’s rule): when the ISB fill candle closes in profit short of 1:1, leg 1’s take-profit is MOVED to a marketable limit at that close through the existing modify_bracket path — long: close − 8 ticks (2.00 pts); short: close + 8 ticks (R1, no AddOn change), clamped to never book a loss (long ≥ entry + 1 tick, short ≤ entry − 1 tick) — re-modified to the new close ∓ 8 ticks each later candle until it fills, with a failed send retried ONCE on the next candle. OFF: leg 1 keeps its +1R take-profit — no candle-3 sale (counted isb_partial_wait_1r). A losing close or a close past +1R always moves nothing (the +1R TP fills or keeps resting).',
           trader:
             'Course, in conflict: “khi cây nến trend kế tiếp đóng là chỗ đó mình phải bán bớt. Bắt buộc. Ở thời điểm hiện tại bắt buộc” (sell part at the candle-3 close — compulsory for now) [D1.4 p1 @12:51–13:07] vs “Còn nếu mà nó đóng lỗ hay là nó đóng còn ít điểm quá … xíu mình sẽ được học” (too few points — learn later, never taught) [D2.1 @11:08–11:23] and “anh làm gì anh cũng phải bán bớt ở 1:1” [D2.2 p3 @12:13]. Case (b): ambiguous → today’s rule stays the default.',
           consumer:
@@ -1833,17 +1819,16 @@ export const mentor: GuideSection = {
           label: 'Reverse ISB as PHL/PLH',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
-          what: 'ON: the reverse ISB at EMA 9 is tagged PHL (long) / PLH (short) as the mentor names it — so it exits as a PHL/PLH (no ISB candle-3 partial; the resonance watch), takes the leg budget’s PHL slot, and carries no ISB size flags. The stop stays the inside bar ± 1.5. OFF (default): tagged ISB, as before.',
+          what: 'ON (default, course-defaults-30): the reverse ISB at EMA 9 is tagged PHL (long) / PLH (short) as the mentor names it — so it exits as a PHL/PLH (no ISB candle-3 partial; the resonance watch), takes the leg budget’s PHL slot, and KEEPS the ISB location size flags (inside a range / at an old extreme → 3). The stop stays the inside bar ± 1.5. OFF: tagged ISB, as before.',
           trader:
-            'Course: “Nó là bộ tên solo 2, chứ nó không phải là Insa 3 cho lệnh long” (it is a Potential … 2, not an ISB long) [D5.4 @03:52–03:58]; “Thì tôi đặt lệnh Potential Low 2” [D5.4 @07:56]. Naming only — no stop, target or exit is spoken, and the PHL-reading stop is an open question (Q-D4) → case (b), OFF.',
+            'Course: “Nó là bộ tên solo 2, chứ nó không phải là Insa 3 cho lệnh long” (it is a Potential … 2, not an ISB long) [D5.4 @03:52–03:58]; “Thì tôi đặt lệnh Potential Low 2” [D5.4 @07:56]. course-defaults-30 (owner “fix all”) turns it ON.',
           consumer:
             'kernel/mentor/course_exits.go reverseISBRetag ← kernel/mentor/eval.go (reverse ISB branch)',
           range: 'ON / OFF',
-          systemDefault: 'OFF (unset = OFF)',
+          systemDefault: 'ON (unset = ON — course-defaults-30)',
           recommended:
-            'OFF — D5.4 @03:52 names it only; the stop is open question Q-D4 (case b).',
-          whenToTouch:
-            'If the owner rules the reverse ISB is managed as a PHL/PLH.',
+            'ON — D5.4 @03:52–03:58, @07:33–07:37 (the mentor names it the PHL/PLH).',
+          whenToTouch: 'OFF to keep the ISB tag.',
           perSession: 'No — per strategy.',
         },
         {
@@ -1867,16 +1852,17 @@ export const mentor: GuideSection = {
           label: 'ISB max stop',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
-          what: 'Refuse an ISB (and the reverse ISB) whose stop is at or above this many points, counted isb_stop_over_max / isbrev_stop_over_max. 0 = off. The twenties skip (20–29.99 pts) and the trader’s 25-pt stop ceiling run either way.',
+          what: 'Refuse an ISB (and the reverse ISB) whose stop is at or above this many points, counted isb_stop_over_max / isbrev_stop_over_max. Default 30 (course-defaults-30, owner order "move to 30 at least … fix all" — DEVIATES from the course’s twenties skip [D4.1 p1 @05:41]): an ISB stop < 30 is TAKEN, ≥ 30 is REFUSED. The pre-30 code had it backwards (it refused the 20–30 "twenties" window and let 30+ through). This SAME knob is also the trader’s R8 ceiling for every non-swing setup (a PHL/PLH/BOX stop at/over it is refused R8, even below the kernel’s own StopCeilingPts 25) and the top of the 20–<ceiling reduced band.',
           trader:
-            'Course: “nếu như một cái setup insidebar mà nó hai mươi mấy điểm … làm ơn giúp em đừng vô” (an ISB in the twenties — don’t enter) [D4.1 p1 @05:34–05:48]. “25” is spoken only for level trades (“25 đổ lại ok, chứ mà trên nữa thì thôi” [D3.3 @02:02–02:06]). No ISB cap of 25 is stated → case (b), off.',
+            'Course: “nếu như một cái setup insidebar mà nó hai mươi mấy điểm … làm ơn giúp em đừng vô” (an ISB in the twenties — don’t enter) [D4.1 p1 @05:34–05:48]. The OWNER moved the line to 30 (10-16 "fix all").',
           consumer:
-            'kernel/mentor/course_exits.go isbOverMaxStop ← kernel/mentor/isb.go ISBStopVerdict',
-          range: 'pts, 0 = off',
-          systemDefault: '0 (off)',
+            'kernel/mentor/course_exits.go isbOverMaxStop ← kernel/mentor/isb.go ISBStopVerdict · trader/mentor_mode.go mentorRuleGate (R8) + mentorContractsFor (band top) ← trader/mentor_actions.go mentorDispatchEntry',
+          range:
+            'pts, 0 → 30 (the knob has no OFF — unset/0 resolves to the 30 default)',
+          systemDefault: '30',
           recommended:
-            'off — D4.1 p1 @05:41 states only the twenties skip (case b); already inert in practice (0 ISB arms with a 30+ stop since 09-01).',
-          whenToTouch: 'Only to forbid big-stop ISBs outright.',
+            '30 — course-defaults-30 owner order; D4.1 p1 @05:41 (the course\u2019s twenties skip, moved to 30 by the owner).',
+          whenToTouch: 'Only to change the stop ceiling.',
           perSession: 'No — per strategy.',
         },
         {

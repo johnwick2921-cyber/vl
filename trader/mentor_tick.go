@@ -1586,13 +1586,13 @@ func (at *AutoTrader) mentorDoneAfterWinGate() (bool, string) {
 	return false, ""
 }
 
-// mentorStopAfterLossGate — STOP-AFTER-LOSS (owner "ok" 2026-10-05): once a
-// MENTOR trade closes today (17:00 CT session-day) with a net LOSS (both legs
-// combined; pnl_corrected < 0), refuse new mentor entries until the next
-// session day [D1.2 p1 @ 23:34]. A breakeven close (0) is NOT a loss. The
-// knob is default OFF (nil → OFF; byte-identical while off). FAIL-CLOSED like
-// done-after-win: an unwired source or an UNRESOLVED close refuses, with its
-// own counters.
+// mentorStopAfterLossGate — STOP-AFTER-LOSS (owner "ok" 2026-10-05; FOLD
+// 2026-10-16 reverts course-defaults-30): once a MENTOR trade closes today
+// (17:00 CT session-day) with a net LOSS (both legs combined; pnl_corrected
+// < 0), refuse new mentor entries until the next session day [D1.2 p1 @ 23:34].
+// A breakeven close (0) is NOT a loss. The knob is default OFF (nil → OFF;
+// byte-identical while off). FAIL-CLOSED like done-after-win: an unwired source
+// or an UNRESOLVED close refuses, with its own counters.
 func (at *AutoTrader) mentorStopAfterLossGate() (bool, string) {
 	if at.config.StrategyConfig == nil {
 		return false, "" // no config → the knob reads OFF (nil → OFF, the default)
@@ -1628,6 +1628,7 @@ func (at *AutoTrader) mentorStopAfterLossGate() (bool, string) {
 
 // mentorStopAfterLossTrip is the DEFINITE-trip computation behind the B3 sweep
 // hook: the knob ON and a resolved closed loss, nothing else.
+// nil → OFF (the default; FOLD 2026-10-16 reverts course-defaults-30).
 func (at *AutoTrader) mentorStopAfterLossTrip() (bool, string) {
 	if at.config.StrategyConfig == nil {
 		return false, ""

@@ -683,7 +683,7 @@ func (l *Limits) dropPend(armID string) {
 }
 
 // DropArm removes the still-pending simulated order for an ArmID (X-07): the
-// TRADER calls it when it refuses an emitted entry intent (R8 25-pt ceiling,
+// TRADER calls it when it refuses an emitted entry intent (R8 mentor_isb_max_pts ceiling,
 // window, done-after-win, news, no-chase, N4, MENTOR_PLACE off), so a
 // trader-side refusal never phantom-fills on a later candle and spends the G1
 // leg budget or opens a G2 loss box. Already-filled orders live in `open` and

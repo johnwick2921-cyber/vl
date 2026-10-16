@@ -286,9 +286,11 @@ type Config struct {
 	EmaMaxCross30m int
 
 	// ISB (PLAN v1 §3).
-	ISBBufferPts   float64 // order buffer beyond the wick extremes, BOTH sides; default 1.5 [D1.4 p1 @ 22:22–22:30]
-	ISBStopMinPts  float64 // RETIRED for ISB by RULES-FIX-v3 (no fixed stop size); kept for the other setups
-	ISBTwentiesPts float64 // a stop at/above this ("in the twenties") must not be taken; default 20 [D4.1 p1 @ 05:41]
+	ISBBufferPts  float64 // order buffer beyond the wick extremes, BOTH sides; default 1.5 [D1.4 p1 @ 22:22–22:30]
+	ISBStopMinPts float64 // RETIRED for ISB by RULES-FIX-v3 (no fixed stop size); kept for the other setups
+	// The "twenties" skip (ISBTwentiesPts) was REMOVED in course-defaults-30
+	// (owner order "move to 30"): an ISB stop < 30 pts is taken, ≥ 30 is
+	// refused — that ceiling now lives in CourseExits.ISBMaxStopPts (default 30).
 
 	// ISBReverseEMA9Enabled turns on R7, the reverse-ISB-at-EMA9 setup
 	// (RULES-FIX-v3, its own knob per the dispatch). Default ON — OWNER RULING
@@ -316,8 +318,10 @@ type Config struct {
 	// ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI. ĐỪNG SỬ DỤNG CHO [trade]
 	// THƯỜNG"). true: the HTF gate applies only inside the 07:20–07:35 CT
 	// news window; ordinary intraday entries are not HTF-gated. Default false
-	// = the all-day gate (CTO 2026-10-04: U-6 is open — D5.1's later
-	// pre-session routine reads 4h/1h for the whole day). Studio switch:
+	// = the all-day gate (U-6 open — the course is split: D4.4 p1 @13:55 news-
+	// first vs D5.1 p1 @19:11–19:20 "4h and 1h agree → trade with them"; the
+	// FOLD 2026-10-16 reverts course-defaults-30 back to the all-day gate and
+	// puts it on the mentor-question list). Studio switch:
 	// risk_control.mentor_tuning.htf_gate_news_only.
 	HTFGateNewsOnly bool
 
@@ -332,11 +336,13 @@ type Config struct {
 	DayGateSpentPts     float64 // run >= this before the open = spent; default 300 [D5.1 p1 @ 15:57]
 	DayGateTargetCapPts float64 // spent-day target cap; default 15 ("15 điểm bán, 10 điểm bán")
 
-	// DayOffRecheck (owner ruling 2026-10-09): after a DayOff latch freezes at
-	// the open, re-read the 4h/1h trigger directions on every CLOSED 1h bar;
-	// the moment they AGREE the DayOff clears for the rest of the trading day
-	// (one-way — the day lands on DaySpent, so the §7 spent target cap still
-	// applies). false = today's whole-day latch (the pre-ruling behaviour).
+	// DayOffRecheck (course-defaults-30, owner "fix all", supersedes the
+	// 2026-10-09 owner ruling): the course shuts the WHOLE day on a DayOff —
+	// "Tắt máy nghỉ luôn cho em … Ngày hôm đó không đáng để trade" [D5.1 p1
+	// @19:22–19:40], "tắt máy nghỉ 1 ngày cho lành" [D5.1 p2 @00:01]. Default
+	// false = the whole-day latch (no intraday re-read clears it). true = the
+	// pre-ruling behaviour (re-read 4h/1h on each closed 1h bar; the moment
+	// they agree the DayOff clears one-way to DaySpent).
 	DayOffRecheck bool
 
 	// PrintWindows (item 18 part 1) lists the day's red-folder 07:30 print
@@ -395,15 +401,15 @@ type Config struct {
 	// (option 1, @01:06–01:14) | "off" (the pre-#25 read: the 15m box gate only).
 	FifteenMinIBRule string
 	// TFConflictEnd — CE-2 (b, OQ-2): "Đừng trade. Đợi nó thoát cả luôn"
-	// [D4.2 p1 @07:54–08:02]. "first_box" (default) = the 15m/5m conflict ends
-	// when either box escapes; "both_boxes" = it holds until the 5m AND the
-	// 15m box have both escaped.
+	// [D4.2 p1 @07:54–08:02]. "first_box" = the 15m/5m conflict ends
+	// when either box escapes; "both_boxes" (default, course-defaults-30) =
+	// it holds until the 5m AND the 15m box have both escaped.
 	TFConflictEnd string
 	// NewsWaitBothLines — CE-3 (b, OQ-6): after the print, an entry needs the
 	// close beyond the 4h trigger line on its side — "Đợi canh nó nằm trên hai
 	// cái đường line này… Hoặc… nằm ở trên cái đường line 4 giờ" [D4.4 p1
 	// @21:55–22:12] — from the print window until the 08:30 CT open (the open
-	// has its own rule, D4.4 p2 @03:51). Default OFF.
+	// has its own rule, D4.4 p2 @03:51). Default ON (course-defaults-30).
 	NewsWaitBothLines bool
 	// NewsBarsExcluded — CE-4 (a, release #29 rework): "Còn cái khúc mà news
 	// ra rồi thì không tính" [D4.4 p1 @18:18–18:25]. ON FREEZES the pre-print
@@ -428,9 +434,9 @@ type Config struct {
 	// bỏ đi" [X5 @08:52–09:09]. No number in the source → 0 = off.
 	OrbEdgeVetoPts float64
 	// D43TrendSource — CE-8 (b, [B] reading): what "the 5m trend" means for
-	// the D4.3 no-box-return-against-the-trend gate. "trigger_line" (default)
-	// = the 5m trigger line; "structure" = 5m swing structure (HH+HL up,
-	// LH+LL down) [D4.3 @12:43–12:54].
+	// the D4.3 no-box-return-against-the-trend gate. "trigger_line" = the 5m
+	// trigger line; "structure" (default, course-defaults-30) = 5m swing
+	// structure (HH+HL up, LH+LL down) [D4.3 @12:43–12:54, @14:52–15:01].
 	D43TrendSource string
 	// LevelEntriesNeedTriggerSide — CE-9 (b, owner ruled school 1): under
 	// TriggerSchool 1, ALSO bind the 5m trigger side on every level reject
@@ -444,7 +450,8 @@ type Config struct {
 	TrendlineIsTarget bool
 	// TrendlineBetweenBoxes — CE-11/B13 (b): a trendline reject between an
 	// FTGL and an FTGH may trade [D3.2 p2 @10:56–11:20] although the same
-	// lesson bans every PHL/PLH between two boxes [@08:34–08:55]. Default OFF.
+	// lesson bans every PHL/PLH between two boxes [@08:34–08:55]. Default ON
+	// (course-defaults-30: the course trades it).
 	TrendlineBetweenBoxes bool
 	// LegResetOnWaveBreak — CE-12 (a, extra where the course is silent): a
 	// leg closed by a stop-out also resets on a close beyond the losing
@@ -457,7 +464,8 @@ type Config struct {
 	// — the target is the NEAREST of {the existing target, the wall}, and the
 	// wall can only bring it CLOSER [X9 @ 05:47–06:12: "target của anh chị là
 	// chỉ là trên cái đỉnh của cái flag… vẫn scalping được, không sai"]. A wall
-	// that leaves < 1:1 refuses the entry (flag_wall_room). Default OFF.
+	// that leaves < 1:1 refuses the entry (flag_wall_room). Default ON
+	// (course-defaults-30).
 	FlagWallTarget bool
 	// BoxNewZoneAfterEscape — B52 (release #29): when the standing FTGH/FTGL
 	// box escapes (a body close outside its outer edge), the bot may latch ONE
@@ -500,9 +508,8 @@ func DefaultConfig() Config {
 
 		TouchBandPts: 0, // §3: wait for the LITERAL touch [D3.3 p1 @ 00:13]; §8's "KHÔNG ĐƯỢC GẦN ĐỤNG" is the same strictness
 
-		ISBBufferPts:   1.5,
-		ISBStopMinPts:  5,
-		ISBTwentiesPts: 20,
+		ISBBufferPts:  1.5,
+		ISBStopMinPts: 5,
 
 		ISBReverseEMA9Enabled: true,
 
@@ -514,7 +521,7 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
-		HTFGateNewsOnly:        false, // U-6 open: D5.1's later routine runs the 4h/1h read all day — the all-day gate stays the default (Studio switch)
+		HTFGateNewsOnly:        false, // U-6 open (FOLD 2026-10-16: the all-day gate stays; the course is split D4.4 vs D5.1)
 		NearBoxRoomMultiple:    2,     // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
 		LossDeparturePts:       0,     // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
@@ -528,7 +535,7 @@ func DefaultConfig() Config {
 
 		DayGateSpentPts:     300,
 		DayGateTargetCapPts: 15,
-		DayOffRecheck:       true,
+		DayOffRecheck:       false, // course-defaults-30: the course shuts the whole day [D5.1 p1 @19:22–19:40]
 
 		Swing: DefaultSwingCfg(),
 
@@ -542,12 +549,15 @@ func DefaultConfig() Config {
 		CourseExits: DefaultCourseExitsCfg(),
 		// Release #25 course-entry knobs (COMMON-25 knob rule).
 		FifteenMinIBRule:      FifteenMinRequire5mISB, // CE-1 (a)
-		TFConflictEnd:         TFConflictFirstBox,     // CE-2 (b, OQ-2)
+		TFConflictEnd:         TFConflictBothBoxes,    // CE-2 — course-defaults-30: "đợi nó thoát cả luôn" [D4.2 p1 @07:54–08:02]
+		NewsWaitBothLines:     true,                   // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
 		NewsBarsExcluded:      true,                   // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
 		ISBBoxEscapeMode:      ISBBoxEscapeBody,       // CE-5 (a)
 		EmaLossRelock:         EmaRelockUntilZoneExit, // CE-6 (a)
-		D43TrendSource:        D43TrendTriggerLine,    // CE-8 (b)
+		D43TrendSource:        D43TrendStructure,      // CE-8 — course-defaults-30: 5m swing structure [D4.3 @12:43–12:54]
 		TrendlineIsTarget:     true,                   // CE-11/B12 (a)
+		TrendlineBetweenBoxes: true,                   // CE-11/B13 — course-defaults-30 [D3.2 p2 @10:56–11:04]
+		FlagWallTarget:        true,                   // CE-11 — course-defaults-30 [X9 @05:59–06:12]
 		LegResetOnWaveBreak:   true,                   // CE-12 (a)
 		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape
 	}

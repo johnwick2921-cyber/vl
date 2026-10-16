@@ -101,13 +101,15 @@ func TestMentorContractsForClampsAtMax(t *testing.T) {
 
 // TestMentorKnobsSwingDefaultIsOne — FIX-SWING-SIZE-LESSON: the swing tier's
 // shipped default is 1 MNQ, not 3. D5.2 p1 @00:38–00:47 "Em vô đúng 1 MNQ thôi,
-// em không vô nhiều" (I enter exactly 1 MNQ, I don't enter many). Named RED:
-// revert mentorSwing4HContractsDefault to 3 → swing4h != 1 → this fails.
+// em không vô nhiều" (I enter exactly 1 MNQ, I don't enter many).
+// course-defaults-30 (owner "fix all"): the swing base is 2 — "đừng vô 1 MNQ…
+// vô ít nhất là 2 MNQ để có đường bán bớt" [D5.2 p2 @06:19–06:23]. Named RED:
+// revert mentorSwing4HContractsDefault to 1 → swing4h != 2 → this fails.
 func TestMentorKnobsSwingDefaultIsOne(t *testing.T) {
 	at := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{}}}}
 	base, conf, big, reduced, swing4h, _, mx := at.mentorKnobs()
-	if base != 5 || conf != 5 || big != 5 || reduced != 3 || swing4h != 1 || mx != 20 {
-		t.Fatalf("default knobs = (%d,%d,%d,%d,%d,_,%d), want (5,5,5,3,1,_,20)", base, conf, big, reduced, swing4h, mx)
+	if base != 5 || conf != 5 || big != 5 || reduced != 3 || swing4h != 2 || mx != 20 {
+		t.Fatalf("default knobs = (%d,%d,%d,%d,%d,_,%d), want (5,5,5,3,2,_,20)", base, conf, big, reduced, swing4h, mx)
 	}
 }
 
@@ -157,6 +159,20 @@ func TestMentorSize5Defaults(t *testing.T) {
 		t.Fatalf("twenties stop: got %d %s, want 3 reduced", got.Contracts, got.Tier)
 	}
 
+	// course-defaults-30: a 28.25-pt stop (the 10-04 17:01 real case — long
+	// 31128.25 stop 31100) stays in the reduced 3-MNQ band, not the base 5.
+	// Mutant: the band top falls back to 25 (not the mentor_isb_max_pts 30) →
+	// this sizes base 5 → RED.
+	wideIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "ISB",
+		Price: 31128.25, Stop: 31100.0, Target: 31185.0, StopPts: 28.25, TargetPts: 56.5}
+	got, err = at.mentorSizeFor(wideIn, mentorExtraFor(wideIn, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 3 || got.Tier != "reduced" {
+		t.Fatalf("28.25-pt stop: got %d %s, want 3 reduced (the 20–<30 band)", got.Contracts, got.Tier)
+	}
+
 	// ISB at an old extreme → 3 (unchanged).
 	extIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "ISB",
 		Price: 21000, Stop: 20994.25, Target: 21011.5, StopPts: 5.75, TargetPts: 11.5, Flag: mentor.FlagISBAtOldExtreme}
@@ -168,8 +184,8 @@ func TestMentorSize5Defaults(t *testing.T) {
 		t.Fatalf("ISB old extreme: got %d %s, want 3 isb_old_extreme", got.Contracts, got.Tier)
 	}
 
-	// swing → 1 (unchanged). The confluence stub is forced OFF here — the
-	// confluence branch ranks BEFORE the swing branch, so a confluence-true
+	// swing → 2 (course-defaults-30). The confluence stub is forced OFF here —
+	// the confluence branch ranks BEFORE the swing branch, so a confluence-true
 	// swing would read as confluence.
 	swIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "SWING4H",
 		Price: 21000, Stop: 20988, Target: 21024, StopPts: 12, TargetPts: 24}
@@ -179,8 +195,23 @@ func TestMentorSize5Defaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 1 || got.Tier != "swing4h" {
-		t.Fatalf("swing: got %d %s, want 1 swing4h", got.Contracts, got.Tier)
+	if got.Contracts != 2 || got.Tier != "swing4h" {
+		t.Fatalf("swing: got %d %s, want 2 swing4h", got.Contracts, got.Tier)
+	}
+
+	// P1-5: a SWING4H stop in the 20–<30 band sizes by the swing tier (2), NOT
+	// the reduced 3 — the swing branch ranks BEFORE the reduced band. Mutant:
+	// move the reduced band before the swing branch → this sizes 3 → RED.
+	swBandIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "SWING4H",
+		Price: 21000, Stop: 21022, Target: 21044, StopPts: 22, TargetPts: 44}
+	swBandExtra := mentorExtraFor(swBandIn, false)
+	swBandExtra.Confluence = false
+	got, err = at.mentorSizeFor(swBandIn, swBandExtra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 2 || got.Tier != "swing4h" {
+		t.Fatalf("a swing stop in the 20–<30 band: got %d %s, want 2 swing4h (not the reduced 3)", got.Contracts, got.Tier)
 	}
 
 	// an explicit knob value 10 is still honoured (the owner can choose otherwise).
@@ -720,8 +751,11 @@ func TestMentorExitMechSuspensionAppliesToAIOnly(t *testing.T) {
 }
 
 // TestMentorRuleGateR8R9: the injector-side R8/R9 gate (RULES-FIX v3).
-// SWING4H: 30–60 allowed, ~100 refused, EXEMPT from the 25-pt ceiling.
+// SWING4H: 30–60 allowed, ~100 refused, EXEMPT from the ISB stop ceiling.
 // R9: target never smaller than stop; spent-day cap 15 skips a stop over 15.
+// course-defaults-30: the non-swing ceiling reads the mentor_isb_max_pts knob
+// (kernel CourseExits.ISBMaxStopPts, default 30) — one number, not two. Mutant:
+// hardcode 30 in R8 (ignore extra.ISBMaxStopPts) → the 25 / 35 knob cases RED.
 func TestMentorRuleGateR8R9(t *testing.T) {
 	if why := mentorRuleGate(mentor.Intent{Setup: "SWING4H", Side: "long", Price: 100, Stop: 60, StopPts: 40, TargetPts: 80}, mentorTierInputs{}); why != "" {
 		t.Fatalf("SWING4H 40-pt stop must pass (30–60 allowed): %q", why)
@@ -732,9 +766,25 @@ func TestMentorRuleGateR8R9(t *testing.T) {
 	if why := mentorRuleGate(mentor.Intent{Setup: "SWING4H", Side: "short", Price: 100, Stop: 200, StopPts: 100, TargetPts: 200}, mentorTierInputs{}); why == "" {
 		t.Fatal("SWING4H ~100-pt stop must be refused (R8)")
 	}
-	// the swing is the ONLY exemption from the 25-pt ceiling
+	// course-defaults-30: a 28.25-pt ISB stop passes (under the 30-pt ceiling).
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{}); why != "" {
+		t.Fatalf("a 28.25-pt ISB stop must pass R8 (under the 30-pt ceiling): %q", why)
+	}
+	// the swing is the ONLY exemption from the ceiling — 30.00 is refused.
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 70, Target: 160, StopPts: 30, TargetPts: 60}, mentorTierInputs{}); why == "" {
+		t.Fatal("a 30.00-pt non-swing stop must be refused (R8 ceiling)")
+	}
+	// P2-1: R8 reads the mentor_isb_max_pts knob — a knob of 25 refuses a
+	// 28.25-pt stop (below the 30 default), and a knob of 35 lets a 32-pt
+	// stop through. A hardcoded 30 fails both.
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{ISBMaxStopPts: 25}); why == "" || !strings.HasPrefix(why, "R8") {
+		t.Fatalf("with mentor_isb_max_pts=25 a 28.25-pt stop must be refused R8, got %q", why)
+	}
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 68, Target: 164, StopPts: 32, TargetPts: 64}, mentorTierInputs{ISBMaxStopPts: 35}); why != "" {
+		t.Fatalf("with mentor_isb_max_pts=35 a 32-pt stop must pass R8, got %q", why)
+	}
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 70, Target: 130, StopPts: 30, TargetPts: 30}, mentorTierInputs{}); why == "" {
-		t.Fatal("a non-swing stop over 25 must be refused (R8 ceiling)")
+		t.Fatal("a non-swing stop at/over 30 must be refused (R8 ceiling)")
 	}
 	// R9: target never smaller than stop
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 88, Target: 98, StopPts: 12, TargetPts: 2}, mentorTierInputs{}); why == "" {

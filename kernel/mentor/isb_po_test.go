@@ -165,27 +165,27 @@ func TestTargetFloorOK(t *testing.T) {
 	}
 }
 
-// TestISBSilentDropsAllNamed — CTO E-4: the twenties skip, the HTF block, the
-// R5 box block, the HTF side mismatch and the DayOff branch all record a named
-// refusal instead of dropping silently.
+// TestISBSilentDropsAllNamed — CTO E-4, course-defaults-30: the 30-pt stop
+// ceiling (CX-9), the HTF block, the R5 box block, the HTF side mismatch and
+// the DayOff branch all record a named refusal instead of dropping silently.
 func TestISBSilentDropsAllNamed(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.HTFGateNewsOnly = false // these pins exercise the direction gate itself (all-day)
 
-	t.Run("twenties", func(t *testing.T) {
+	t.Run("stop-over-max", func(t *testing.T) {
 		e := newISBEval(cfg)
 		bars := []market.Kline{
 			rthBars(0, 121, 121.5, 120.5, 120),
-			rthBars(1, 95, 120, 90, 115),  // green candle 1, wide
-			rthBars(2, 100, 115, 96, 101), // ISB; stop = 19 + 3 = 22 pts
+			rthBars(1, 95, 120, 90, 115),   // green candle 1, wide
+			rthBars(2, 100, 117, 90, 101),  // ISB; stop = 27 + 3 = 30 pts
 		}
 		if _, ok, _ := ISBStopVerdict(bars[2], cfg); ok {
-			t.Fatal("fixture: the stop must sit in the twenties")
+			t.Fatal("fixture: the stop must reach the 30-pt ceiling")
 		}
 		e.Tick(bars, bars[2].CloseTime+1)
-		if e.State.Refusals["isb_stop_twenties"] == 0 {
-			t.Fatalf("twenties skip must be refused by name; ledger = %v", e.State.Refusals)
+		if e.State.Refusals["isb_stop_over_max"] == 0 {
+			t.Fatalf("30-pt ceiling must be refused by name; ledger = %v", e.State.Refusals)
 		}
 	})
 
