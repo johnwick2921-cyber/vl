@@ -97,19 +97,37 @@ func mentorRunnerLeg(p *mentorLivePos) *mentorLeg {
 	return nil
 }
 
+// mentorExitedLegs returns a snapshot of which wire legs have closed on their
+// own TP receipt, read under mentorExitMu. The receipt (mentorMarkLeg2Exited)
+// writes Exited from the close-sync goroutine, so an unlocked read races — the
+// same shape as mentorScaledState (I6).
+func (at *AutoTrader) mentorExitedLegs(p *mentorLivePos) [3]bool {
+	var ex [3]bool
+	if at == nil || p == nil {
+		return ex
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	for i := range p.Legs {
+		ex[i] = p.Legs[i].Exited
+	}
+	return ex
+}
+
 // mentorRunnerLegs (release #31 fold, D1) returns every leg the exit drive must
 // manage as a RUNNER after leg 1's +1R partial: the Final runner (wire 3 in a
 // 3-pair, wire 2 in a 2-pair) AND the runner partial (wire 2 in a 3-pair — the
 // contract that sells at the first line). Excluded: leg 1 (wire 1), any leg
-// whose own TP receipt already closed it (Exited), and empty legs.
-func mentorRunnerLegs(p *mentorLivePos) []*mentorLeg {
+// whose own TP receipt already closed it (the Exited snapshot — read under
+// mentorExitMu by the caller), and empty legs.
+func mentorRunnerLegs(p *mentorLivePos, exited [3]bool) []*mentorLeg {
 	if p == nil {
 		return nil
 	}
 	var out []*mentorLeg
 	for i := range p.Legs {
 		leg := &p.Legs[i]
-		if leg.SignalID == "" || leg.Qty <= 0 || leg.Exited {
+		if leg.SignalID == "" || leg.Qty <= 0 || exited[i] {
 			continue
 		}
 		if leg.Wire == 1 {

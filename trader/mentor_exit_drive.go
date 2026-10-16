@@ -305,6 +305,10 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	// (mentorMarkLeg1Scaled) and the I7 fallback write Scaled/Leg1ExitedAtMs from
 	// other goroutines, so an unlocked read races.
 	scaledNow, exitedAtMs := at.mentorScaledState(p)
+	// exited is the per-leg "closed on its own TP receipt" snapshot, read ONCE
+	// under mentorExitMu (release #31 fold, D1): the receipt writes
+	// Legs[i].Exited from the close-sync goroutine, so an unlocked read races.
+	exited := at.mentorExitedLegs(p)
 	// scaledBefore is whether leg 1's exit was confirmed on a PRIOR candle: the
 	// runner's trail begins on the NEXT candle after the confirmation, never on
 	// the candle that crosses it (I6 next-candle rule).
@@ -366,7 +370,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	// filled at NT8, then trails 1 tick beyond each closed candle. A single
 	// bracket has no leg-1 partial to confirm and keeps the rule below.
 	if leg1OnWire && mentorRunnerLeg(p) != nil && at.mentorTrailMode() == mentorTrailModeCandle {
-		at.mentorExitDriveCandle(nt, p, c, trailH, trailL, scaledNow, trailScaledBefore, trail && trailOK)
+		at.mentorExitDriveCandle(nt, p, c, trailH, trailL, scaledNow, trailScaledBefore, trail && trailOK, exited)
 		return
 	}
 
@@ -387,7 +391,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			applied := false
 			for i := range p.Legs {
 				leg := &p.Legs[i]
-				if leg.SignalID == "" || leg.Qty <= 0 || leg.Exited {
+				if leg.SignalID == "" || leg.Qty <= 0 || exited[i] {
 					continue
 				}
 				// F-6 (release #22): leg 1 of a split whose partial is CONFIRMED
@@ -452,7 +456,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	if pos.ArmedBE && wasArmed {
 		for i := range p.Legs {
 			leg := &p.Legs[i]
-			if leg.SignalID == "" || leg.Qty <= 0 || leg.Exited {
+			if leg.SignalID == "" || leg.Qty <= 0 || exited[i] {
 				continue
 			}
 			// Canonical semantics: Final marks the RUNNER (the leg that holds

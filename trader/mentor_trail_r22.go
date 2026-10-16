@@ -297,9 +297,9 @@ func (at *AutoTrader) mentorJudgeAgainstBroker(nt *ntTrader.TCPTrader, side stri
 //
 // Every move goes through mentorMoveLegStop (belief + broker never-widen, the
 // real move_stop frame, the F1 verdict on the next fresh book).
-func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64, scaledNow, scaledBefore, trail bool) {
+func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64, scaledNow, scaledBefore, trail bool, exited [3]bool) {
 	pos := &p.Pos
-	runners := mentorRunnerLegs(p)
+	runners := mentorRunnerLegs(p, exited)
 	if len(runners) == 0 {
 		return
 	}
