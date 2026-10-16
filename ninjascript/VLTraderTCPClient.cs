@@ -1683,7 +1683,11 @@ namespace NinjaTrader.NinjaScript.AddOns
             string exitReason = null;
             // REVIEW-353: leg 2's pair is named -sl2/-tp2 but reports the SAME
             // entry signal id (its residual qty drives ApplyNT8Exit's partial path).
-            if (signalId.EndsWith("-sl2")) { exitReason = "sl"; signalId = signalId.Substring(0, signalId.Length - 4); }
+            // Release #31: leg 3's pair is named -sl3/-tp3 and reports the SAME
+            // one signal id too (PROTOCOL.md "one entry order and one signal id").
+            if (signalId.EndsWith("-sl3")) { exitReason = "sl"; signalId = signalId.Substring(0, signalId.Length - 4); }
+            else if (signalId.EndsWith("-tp3")) { exitReason = "tp"; signalId = signalId.Substring(0, signalId.Length - 4); }
+            else if (signalId.EndsWith("-sl2")) { exitReason = "sl"; signalId = signalId.Substring(0, signalId.Length - 4); }
             else if (signalId.EndsWith("-tp2")) { exitReason = "tp"; signalId = signalId.Substring(0, signalId.Length - 4); }
             else if (signalId.EndsWith("-sl")) { exitReason = "sl"; signalId = signalId.Substring(0, signalId.Length - 3); }
             else if (signalId.EndsWith("-tp")) { exitReason = "tp"; signalId = signalId.Substring(0, signalId.Length - 3); }
@@ -2291,10 +2295,13 @@ namespace NinjaTrader.NinjaScript.AddOns
                     lastOrderState[key] = state;
                 }
                 string signalId = orderName.Length > 0 ? orderName : (e.Order.Oco ?? "");
-                // REVIEW-SPLIT-2 P2-3: strip the leg-2 suffixes first so an
-                // order_update for -sl2/-tp2 reports the SAME base signal id the
-                // Go side tracks (it never sees a dangling "-sl2").
-                if (signalId.EndsWith("-sl2") || signalId.EndsWith("-tp2"))
+                // REVIEW-SPLIT-2 P2-3: strip the leg suffixes first so an
+                // order_update for -sl2/-tp2 (and release #31 -sl3/-tp3) reports
+                // the SAME base signal id the Go side tracks (it never sees a
+                // dangling "-sl2" / "-sl3").
+                if (signalId.EndsWith("-sl3") || signalId.EndsWith("-tp3"))
+                    signalId = signalId.Substring(0, signalId.Length - 4);
+                else if (signalId.EndsWith("-sl2") || signalId.EndsWith("-tp2"))
                     signalId = signalId.Substring(0, signalId.Length - 4);
                 else if (signalId.EndsWith("-sl") || signalId.EndsWith("-tp") || signalId.EndsWith("-lx"))
                     signalId = signalId.Substring(0, signalId.Length - 3);
@@ -2931,8 +2938,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                             Account = ba, Instrument = b.Instrument, ExitAction = b.ExitAction,
                             Qty = filledQty, ExitOco = exitOco1, ExitOco2 = exitOco2, ExitOco3 = leg3Wanted ? exitOco3 : null,
                             TickSize = tick,
-                            Leg1Qty = b.Leg1Qty, Leg2Qty = leg3Wanted ? leg2Partial : leg2Qty,
-                            Leg1Tp = b.Leg1Tp, Leg2Tp = leg3Wanted ? b.Leg2Tp : 0, RunnerTp = b.Tp,
+                            Leg1Qty = b.Leg1Qty, Leg2Qty = b.Leg2Qty,
+                            Leg1Tp = b.Leg1Tp, Leg2Tp = b.Leg2Tp, RunnerTp = b.Tp,
                             InitialStop = b.Sl,
                         };
                     }
@@ -2966,7 +2973,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                         {
                             SlOrder = sl1, TpOrder = tp1, Account = ba, Instrument = b.Instrument,
                             ExitAction = b.ExitAction, Qty = filledQty, ExitOco = exitOco1, TickSize = tick,
-                            Leg1Qty = b.Leg1Qty, Leg2Qty = 0, Leg1Tp = b.Leg1Tp, RunnerTp = b.Tp,
+                            Leg1Qty = b.Leg1Qty, Leg2Qty = b.Leg2Qty, Leg1Tp = b.Leg1Tp,
+                            Leg2Tp = b.Leg2Tp, RunnerTp = b.Tp,
                             InitialStop = b.Sl,
                         };
                     }
@@ -3027,6 +3035,11 @@ namespace NinjaTrader.NinjaScript.AddOns
                         int leg3Qty = leg2Qty - leg2Partial;
                         double pair2Tp = (leg3Qty > 0) ? pb.Leg2Tp : pb.RunnerTp;
 
+                        // D10 (release #31 fold): leg 2 already exited
+                        // (pb.Leg2Qty == 0) → never create or amend a zero-qty
+                        // -sl2/-tp2; the whole remainder rides leg 3.
+                        if (leg2Partial > 0)
+                        {
                         if (pb.SlOrder2 == null || pb.TpOrder2 == null)
                         {
                             // Leg 2's pair was never placed (partial first fill, or leg 1
@@ -3053,6 +3066,16 @@ namespace NinjaTrader.NinjaScript.AddOns
                         {
                             pb.SlOrder2.QuantityChanged = leg2Partial; changed.Add(pb.SlOrder2);
                             pb.TpOrder2.QuantityChanged = leg2Partial; changed.Add(pb.TpOrder2);
+                            // release #31 D3: when a later fill grows the runner past
+                            // leg 2's partial, leg 2 was first placed at the trade
+                            // target (the 2-pair plan) — re-price its TP to the leg-2
+                            // line now that leg 3 carries the rest.
+                            double halfTick = (pb.TickSize > 0 ? pb.TickSize : 0.25) / 2.0;
+                            if (Math.Abs(pb.TpOrder2.LimitPrice - pair2Tp) > halfTick)
+                            {
+                                pb.TpOrder2.LimitPriceChanged = pair2Tp;
+                            }
+                        }
                         }
                         // leg 3 — the final trailing runner (only when the split is active).
                         if (leg3Qty > 0)
