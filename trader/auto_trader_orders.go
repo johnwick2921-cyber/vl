@@ -3,6 +3,7 @@ package trader
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 	"vl/kernel"
 	"vl/logger"
@@ -61,16 +62,27 @@ func (at *AutoTrader) resolveMaxContracts() int {
 	return kernel.ResolveMaxContracts(rc.MaxContractsPerOrder, int(maxFuturesContracts))
 }
 
+// plannerContractsCeiling is the hard ceiling on planner_contracts — the same
+// "never above N" shape as the mentor table's MentorMaxContracts. It refuses a
+// typo (40 → 10) before the always-on resolveMaxContracts clamp runs, and it is
+// also the Studio input's max. SIM-conservative: 10 MNQ ≈ $600k notional.
+const plannerContractsCeiling = 10
+
 // plannerContracts (dispatch-31, owner order 2026-10-16) resolves the PLANNER
 // trader's contracts per entry: unset/0 → 1 (today's single-contract arm); ≥ 2
 // splits the arm at entry into equal halves (leg 1 at the first obstacle, leg 2
-// at the final target). Read ONLY on the planner arm path — the mentor table and
-// every other strategy are untouched.
+// at the final target). Capped at plannerContractsCeiling (a typo of 40 is
+// refused, never stamped). Read ONLY on the planner arm path — the mentor table
+// and every other strategy are untouched.
 func plannerContracts(rc *store.RiskControlConfig) int {
+	n := 1
 	if rc != nil && rc.PlannerContracts > 0 {
-		return rc.PlannerContracts
+		n = rc.PlannerContracts
 	}
-	return 1
+	if n > plannerContractsCeiling {
+		return plannerContractsCeiling
+	}
+	return n
 }
 
 // firstObstaclePrice (dispatch-31) is the plan's FIRST target — the
@@ -92,7 +104,14 @@ func firstObstaclePrice(sc kernel.PlanScenario) float64 {
 // rest at the final target. A machine arm, a 2-leg sweep_reclaim arm, an unset
 // knob (→ 1) and a missing first obstacle all leave the row untouched except the
 // total count (fo 0 → the wire sends one bracket of `total` at the final target).
-func stampPlannerSplit(row *store.ArmedOrderDB, rc *store.RiskControlConfig, machine bool, legCount int, fo float64) {
+//
+// maxContracts is the always-on resolveMaxContracts() clamp (max_contracts_per_order
+// + the Stage-A ceiling): the stamped total NEVER exceeds it — the planner knob
+// does not bypass the venue size clamp. A total clamped below 2 leaves the row
+// unstamped (today's single-contract arm). A first obstacle BEYOND the final
+// target (leg 1 would exit after leg 2) is refused as if absent: the split
+// degrades to a single bracket at the final target.
+func stampPlannerSplit(row *store.ArmedOrderDB, rc *store.RiskControlConfig, machine bool, legCount int, fo float64, maxContracts int) {
 	if row == nil || machine || legCount != 0 {
 		return
 	}
@@ -100,12 +119,50 @@ func stampPlannerSplit(row *store.ArmedOrderDB, rc *store.RiskControlConfig, mac
 	if total < 2 {
 		return
 	}
+	if maxContracts > 0 && total > maxContracts {
+		total = maxContracts
+	}
+	if total < 2 {
+		return // clamped to 1 — today's single-contract arm
+	}
+	if fo > 0 && firstObstacleBeyondFinalTarget(row.Side, fo, row.TargetPx) {
+		fo = 0 // leg 1 would exit after leg 2 — refuse the split, single bracket
+	}
 	half := total / 2
 	row.Contracts = &total
 	row.Leg1Qty = &half
 	if fo > 0 {
 		row.Leg1TP = fo
 	}
+}
+
+// firstObstacleBeyondFinalTarget reports whether the plan's first obstacle sits
+// FURTHER than the arm's final target (long: above it; short: below it) — a leg
+// 1 that would exit after leg 2. An unknown side is never "beyond" (fail open:
+// the wire's wireLeg1TP still drops a wrong-side split).
+func firstObstacleBeyondFinalTarget(side string, fo, target float64) bool {
+	switch strings.ToLower(strings.TrimSpace(side)) {
+	case "long":
+		return target > 0 && fo > target
+	case "short":
+		return target > 0 && fo < target
+	}
+	return false
+}
+
+// plannerArmWireQty (dispatch-31) resolves the wire quantity + split for a
+// NON-mentor armed row at PLACEMENT: the stamped planner contracts / split when
+// present, else today's single 1-contract arm. The ledger = the wire — this
+// reads exactly what the authoring stamp wrote, never the knob a second time.
+func plannerArmWireQty(r store.ArmedOrderDB) (qty float64, leg1Qty int, leg1TP float64) {
+	qty = 1
+	if r.Contracts != nil && *r.Contracts > 0 {
+		qty = float64(*r.Contracts)
+	}
+	if r.Leg1Qty != nil && *r.Leg1Qty > 0 && r.Leg1TP > 0 {
+		leg1Qty, leg1TP = *r.Leg1Qty, r.Leg1TP
+	}
+	return qty, leg1Qty, leg1TP
 }
 
 // hlBool resolves a three-state *bool toggle (nil → default).

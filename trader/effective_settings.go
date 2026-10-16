@@ -684,6 +684,21 @@ func buildEffectiveResolvers() map[string]effResolver {
 		mx, _ := x.at.mentorMaxContracts()
 		return effResult{value: mx, origin: presenceOrigin(x, mx, store.SourceShippedDefault), scope: ScopeStrategy}
 	})
+	add(rcPath+"planner_contracts", "trader.plannerContracts (dispatch-31; the stamped total is then clamped to resolveMaxContracts)", func(x *effCtx) effResult {
+		// The value the authoring stamp starts from: unset/0 → 1, capped at the
+		// hard ceiling (a typo of 40 reads 10). The actual stamped total is the
+		// min of this and resolveMaxContracts — shown on max_contracts_per_order.
+		rc := x.rc()
+		v := plannerContracts(&rc)
+		origin := store.SourceShippedDefault
+		if rc.PlannerContracts > 0 {
+			origin = store.SourceSaved
+		}
+		if rc.PlannerContracts > plannerContractsCeiling {
+			origin = "clamp (trader.plannerContractsCeiling = 10)"
+		}
+		return effResult{value: v, origin: origin, scope: ScopeStrategy}
+	})
 	add(rcPath+"max_notional_leverage", "kernel.ResolveNotionalLeverage (trader.enforcePositionValueRatio)", func(x *effCtx) effResult {
 		v, src := kernel.ResolveNotionalLeverageWithSource(x.rc().MaxNotionalLeverage, futuresMaxNotionalLeverage)
 		return effResult{value: v, origin: src, scope: ScopeFutures}

@@ -715,6 +715,19 @@ func (t *TCPTrader) placeEntryWith(symbol, side string, quantity float64, own *e
 // placeEntry (bound account + SIM + B3 guard); the AddOn submits OrderType.Limit
 // and defers SL/TP to SubmitBracketOnEntryFill, identical to market entries.
 func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limitPx, sl, tp float64, beforeSend ...func(string) error) (string, error) {
+	return t.placeLimitEntry(symbol, side, quantity, limitPx, sl, tp, 0, 0, beforeSend...)
+}
+
+// PlaceLimitEntryWithSplit (dispatch-31, owner order 2026-10-16 "set to 4 at
+// least, sell 2 first so it's equal") is PlaceLimitEntry with the leg-1 split:
+// leg1Qty contracts exit at leg1TP (the plan's first obstacle), the runner at
+// the final target. Mirrors placeStopEntry's split handling exactly — the same
+// two-OCO-pair build gate and the same wireLeg1TP rounding/side check.
+func (t *TCPTrader) PlaceLimitEntryWithSplit(symbol, side string, quantity float64, limitPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
+	return t.placeLimitEntry(symbol, side, quantity, limitPx, sl, tp, leg1Qty, leg1TP, beforeSend...)
+}
+
+func (t *TCPTrader) placeLimitEntry(symbol, side string, quantity float64, limitPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
 	tradeAcct := t.boundAccount
 	if tradeAcct == "" {
 		return "", fmt.Errorf("ninjatrader/tcp: refusing armed %s entry on %s — trader has no bound account", side, symbol)
@@ -749,6 +762,24 @@ func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limit
 	if rerr != nil {
 		return "", fmt.Errorf("ninjatrader/tcp: refusing armed %s entry on %s: %w", side, symbol, rerr)
 	}
+	// REVIEW-353: only send the split when the far side proves the two-OCO-pair
+	// build. An older AddOn ignores leg1_qty → single bracket, byte-identical
+	// (fail-closed: the split degrades, never half-applies).
+	if leg1Qty > 0 && !ntwire.FarSideProven(t.server.FarSideBuildID(), ntwire.MinAddonBuildSplitLegs) {
+		leg1Qty, leg1TP = 0, 0
+	}
+	// leg1_tp gets the SAME wire treatment as the trade target: nearest tick,
+	// and it must sit on the profit side of the entry. A leg-1 TP that fails
+	// either drops the split (single bracket) — never a leg 1 resting at or
+	// through the entry.
+	if leg1Qty > 0 {
+		var why string
+		leg1TP, why = wireLeg1TP(side, entry, leg1TP, tick)
+		if why != "" {
+			logger.Warnf("⚠️ limit-entry %s %s: split dropped — %s; sending the single bracket", side, symbol, why)
+			leg1Qty, leg1TP = 0, 0
+		}
+	}
 	tid := t.traderID
 	signalID := uuid.NewString()
 	payload := ntwire.SignalPayload{
@@ -764,6 +795,10 @@ func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limit
 		Timestamp:  time.Now().UTC().Truncate(time.Millisecond).Format(time.RFC3339Nano),
 		OrderType:  "limit",
 		LimitPrice: entry,
+		// dispatch-31: the split rides the ONE frame — leg1_qty + leg1_tp tell
+		// the AddOn to place TWO OCO pairs on the one fill (0 = single bracket).
+		Leg1Qty: leg1Qty,
+		Leg1TP:  leg1TP,
 	}
 	if err := assertBoundAccount("armed-entry", symbol, payload.Account, t.boundAccount); err != nil {
 		logger.Errorf("🚨 %v — REFUSING to submit armed entry", err)
@@ -786,6 +821,14 @@ func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limit
 	b3Sent = latchSent
 	if err := serr; err != nil {
 		return "", fmt.Errorf("ninjatrader/tcp: send armed signal: %w", err)
+	}
+	if leg1Qty > 0 {
+		t.mu.Lock()
+		if t.splitBySignal == nil {
+			t.splitBySignal = map[string]SentSplit{}
+		}
+		t.splitBySignal[signalID] = SentSplit{Leg1Qty: leg1Qty, Leg1TP: leg1TP}
+		t.mu.Unlock()
 	}
 	return signalID, nil
 }

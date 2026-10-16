@@ -886,16 +886,17 @@ const risk: KnobSpec[] = [
   },
   {
     label: 'Planner contracts per entry',
-    what: 'The PLANNER trader\u2019s contracts per entry (dispatch-31, owner order 2026-10-16 "set to 4 at least, sell 2 first so it\u2019s equal"). Unset/0 → 1 = today\u2019s single-contract arm. A value ≥ 2 splits the planner arm AT ENTRY into equal halves: leg 1 = n/2 contracts at the plan\u2019s FIRST target (economics.first_obstacle.price), leg 2 = the rest at the arm\u2019s final target with the existing stop management. A 2-leg sweep_reclaim arm and a Picture arm are never split. Mentor sizing is untouched (the mentor table, not this knob). Read on the planner arm path only.',
+    what: 'The PLANNER trader\u2019s contracts per entry (dispatch-31, owner order 2026-10-16 "set to 4 at least, sell 2 first so it\u2019s equal"). Unset/0 → 1 = today\u2019s single-contract arm. A value ≥ 2 splits the planner arm AT ENTRY into equal halves: leg 1 = n/2 (floor) contracts at the plan\u2019s FIRST target (economics.first_obstacle.price), leg 2 = the rest at the arm\u2019s final target with the existing stop management. The stamped total is clamped to the always-on Max contracts / order (resolveMaxContracts — max_contracts_per_order + the Stage-A ceiling), and to a hard ceiling of 10 (a typo of 40 is refused). A 2-leg sweep_reclaim arm and a Picture arm are never split. Mentor sizing is untouched (the mentor table, not this knob). Read on the planner arm path only.',
     where: 'Strategy → Risk Control → Planner contracts per entry',
     trader:
-      'Owner set 4 for "mnq 2" (leg 1 = 2 at the first obstacle, leg 2 = 2 runs).',
+      'To actually size 4 = 2 + 2 on "mnq 2" the owner must ALSO set max_contracts_per_order = 4 AND the env STAGE_A_CONTRACT_CAP = 4 (a .env change + restart) — today the always-on clamp resolves to 1 for that strategy.',
     consumer:
-      'trader/auto_trader_orders.go plannerContracts / stampPlannerSplit · trader/armed_executor.go placeOneStopEntry (the stamped row reaches the wire as one split frame)',
-    range: 'int · unset/0 → 1 · ≥ 2 splits equal halves',
+      'trader/auto_trader_orders.go plannerContracts / stampPlannerSplit (clamped to resolveMaxContracts) · trader/armed_executor.go + trader/zone_placement.go (the stamped row reaches the wire as one split frame via PlaceLimitEntryWithSplit)',
+    range:
+      'int · unset/0 → 1 · ≥ 2 splits equal halves · ceiling 10 · clamped to resolveMaxContracts',
     systemDefault: '1 (single-contract arm)',
     recommended:
-      '⭐ 1 everywhere except the owner\u2019s planner strategy (4).',
+      '⭐ 1 everywhere except the owner\u2019s planner strategy (4, after raising max_contracts_per_order and STAGE_A_CONTRACT_CAP).',
     whenToTouch: 'Only on an owner ruling for the planner trader.',
     perSession: 'No — per strategy.',
   },

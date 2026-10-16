@@ -62,7 +62,7 @@ func TestPlannerContractsResolver(t *testing.T) {
 func TestPlannerSplitStamp(t *testing.T) {
 	rc := &store.RiskControlConfig{PlannerContracts: 4}
 	row := &store.ArmedOrderDB{Scenario: "S1", Side: "long", TargetPx: 110}
-	stampPlannerSplit(row, rc, false, 0, 101)
+	stampPlannerSplit(row, rc, false, 0, 101, 0)
 	if row.Contracts == nil || *row.Contracts != 4 {
 		t.Fatalf("Contracts = %v, want 4", row.Contracts)
 	}
@@ -75,19 +75,19 @@ func TestPlannerSplitStamp(t *testing.T) {
 
 	// an unset knob leaves the row untouched (today's single-contract arm).
 	unset := &store.ArmedOrderDB{Scenario: "S2"}
-	stampPlannerSplit(unset, &store.RiskControlConfig{}, false, 0, 101)
+	stampPlannerSplit(unset, &store.RiskControlConfig{}, false, 0, 101, 0)
 	if unset.Contracts != nil || unset.Leg1Qty != nil || unset.Leg1TP != 0 {
 		t.Fatalf("unset knob must leave the row untouched: %+v", unset)
 	}
 
 	// a machine (Picture) arm and a 2-leg sweep_reclaim arm are never stamped.
 	m := &store.ArmedOrderDB{Scenario: "P1"}
-	stampPlannerSplit(m, rc, true, 0, 101)
+	stampPlannerSplit(m, rc, true, 0, 101, 0)
 	if m.Contracts != nil || m.Leg1Qty != nil {
 		t.Fatalf("a machine arm must not be stamped: %+v", m)
 	}
 	two := &store.ArmedOrderDB{Scenario: "S3"}
-	stampPlannerSplit(two, rc, false, 2, 101)
+	stampPlannerSplit(two, rc, false, 2, 101, 0)
 	if two.Contracts != nil || two.Leg1Qty != nil {
 		t.Fatalf("a 2-leg sweep_reclaim arm must not be stamped: %+v", two)
 	}
@@ -95,10 +95,83 @@ func TestPlannerSplitStamp(t *testing.T) {
 	// no first obstacle → the total is still stamped (one bracket of `total` at
 	// the final target), never a split with a fabricated leg-1 price.
 	noFo := &store.ArmedOrderDB{Scenario: "S4"}
-	stampPlannerSplit(noFo, rc, false, 0, 0)
+	stampPlannerSplit(noFo, rc, false, 0, 0, 0)
 	if noFo.Contracts == nil || *noFo.Contracts != 4 || noFo.Leg1Qty == nil || *noFo.Leg1Qty != 2 || noFo.Leg1TP != 0 {
 		t.Fatalf("no first obstacle: Contracts=%v Leg1Qty=%v Leg1TP=%.2f — want total 4, split stamped, Leg1TP 0 (wire drops the split)",
 			noFo.Contracts, noFo.Leg1Qty, noFo.Leg1TP)
+	}
+}
+
+// TestPlannerContractsCeilingRefusesATypo — plannerContracts caps a typo of 40
+// at the hard ceiling (10). Mutant: drop the ceiling → 40 is stamped → RED.
+func TestPlannerContractsCeilingRefusesATypo(t *testing.T) {
+	if got := plannerContracts(&store.RiskControlConfig{PlannerContracts: 40}); got != plannerContractsCeiling {
+		t.Fatalf("plannerContracts(40) = %d, want %d (the hard ceiling)", got, plannerContractsCeiling)
+	}
+	if got := plannerContracts(&store.RiskControlConfig{PlannerContracts: 10}); got != 10 {
+		t.Fatalf("plannerContracts(10) = %d, want 10 (at the ceiling, unchanged)", got)
+	}
+}
+
+// TestPlannerSplitStampRespectsTheContractsClamp — the authoring stamp NEVER
+// bypasses the always-on resolveMaxContracts() clamp. For "mnq 2" the clamp
+// resolves to 1 (max_contracts_per_order 2, Stage-A ceiling 1), so
+// planner_contracts=4 must leave the row UNSTAMPED (today's single-contract
+// arm), not stamp a 4 the size cap would never allow. Mutant: drop the clamp →
+// stamped 4 → RED (the gate's probe TestGate564_StampRespectsTheContractsClamp).
+func TestPlannerSplitStampRespectsTheContractsClamp(t *testing.T) {
+	rc := &store.RiskControlConfig{PlannerContracts: 4}
+	clamped := &store.ArmedOrderDB{Scenario: "S1", Side: "long", TargetPx: 110}
+	stampPlannerSplit(clamped, rc, false, 0, 101, 1) // resolveMaxContracts = 1
+	if clamped.Contracts != nil || clamped.Leg1Qty != nil || clamped.Leg1TP != 0 {
+		t.Fatalf("a clamp of 1 must leave the row unstamped (today's single-contract arm): %+v", clamped)
+	}
+
+	// a clamp of 2 (max_contracts_per_order=2, Stage-A cap raised) halves 4 → 2.
+	half := &store.ArmedOrderDB{Scenario: "S2", Side: "long", TargetPx: 110}
+	stampPlannerSplit(half, rc, false, 0, 101, 2)
+	if half.Contracts == nil || *half.Contracts != 2 || half.Leg1Qty == nil || *half.Leg1Qty != 1 || half.Leg1TP != 101 {
+		t.Fatalf("a clamp of 2 must stamp 2 = 1+1: %+v", half)
+	}
+
+	// a clamp at or above the knob leaves it intact.
+	full := &store.ArmedOrderDB{Scenario: "S3", Side: "long", TargetPx: 110}
+	stampPlannerSplit(full, rc, false, 0, 101, 4)
+	if full.Contracts == nil || *full.Contracts != 4 || full.Leg1Qty == nil || *full.Leg1Qty != 2 || full.Leg1TP != 101 {
+		t.Fatalf("a clamp of 4 must stamp 4 = 2+2: %+v", full)
+	}
+}
+
+// TestPlannerSplitStampRefusesFirstObstacleBeyondFinalTarget — a first obstacle
+// FURTHER than the final target (leg 1 would exit after leg 2) is refused as if
+// absent: the total is stamped, the split degrades to a single bracket.
+func TestPlannerSplitStampRefusesFirstObstacleBeyondFinalTarget(t *testing.T) {
+	rc := &store.RiskControlConfig{PlannerContracts: 4}
+	long := &store.ArmedOrderDB{Scenario: "S1", Side: "long", TargetPx: 110}
+	stampPlannerSplit(long, rc, false, 0, 115, 0) // 115 > 110
+	if long.Contracts == nil || *long.Contracts != 4 || long.Leg1Qty == nil || *long.Leg1Qty != 2 || long.Leg1TP != 0 {
+		t.Fatalf("a long first obstacle beyond the target must drop the split: %+v", long)
+	}
+	short := &store.ArmedOrderDB{Scenario: "S2", Side: "short", TargetPx: 100}
+	stampPlannerSplit(short, rc, false, 0, 95, 0) // 95 < 100
+	if short.Contracts == nil || *short.Contracts != 4 || short.Leg1TP != 0 {
+		t.Fatalf("a short first obstacle beyond the target must drop the split: %+v", short)
+	}
+}
+
+// TestPlannerArmWireQty — the placement-side resolver reads the STAMP, never the
+// knob: a stamped row wires its total + split; an unstamped row wires 1/0.
+func TestPlannerArmWireQty(t *testing.T) {
+	four, two, tp := 4, 2, 105.0
+	if q, l1, l1tp := plannerArmWireQty(store.ArmedOrderDB{Contracts: &four, Leg1Qty: &two, Leg1TP: tp}); q != 4 || l1 != 2 || l1tp != 105 {
+		t.Fatalf("stamped row wired qty %.0f leg1 %d @ %.2f, want 4/2/105", q, l1, l1tp)
+	}
+	if q, l1, l1tp := plannerArmWireQty(store.ArmedOrderDB{}); q != 1 || l1 != 0 || l1tp != 0 {
+		t.Fatalf("unstamped row wired qty %.0f leg1 %d @ %.2f, want 1/0/0", q, l1, l1tp)
+	}
+	// a stamped total with NO leg-1 TP (single 4-lot bracket) wires 4/0.
+	if q, l1, _ := plannerArmWireQty(store.ArmedOrderDB{Contracts: &four, Leg1Qty: &two}); q != 4 || l1 != 0 {
+		t.Fatalf("no leg-1 TP: wired qty %.0f leg1 %d, want 4/0", q, l1)
 	}
 }
 

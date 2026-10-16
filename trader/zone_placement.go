@@ -488,7 +488,8 @@ func (at *AutoTrader) placeZoneRow(p zonePass, r store.ArmedOrderDB, side string
 	at.setZoneVerdict(p, r, v.String())
 	stamped := false
 	evalPx, now := p.price, p.now
-	sid, perr := p.nt.PlaceLimitEntry(at.futuresSymbol(), side, 1, r.EntryPx, r.StopPx, r.TargetPx, func(sid string) error {
+	qty, leg1Qty, leg1TP := plannerArmWireQty(r)
+	sid, perr := p.nt.PlaceLimitEntryWithSplit(at.futuresSymbol(), side, qty, r.EntryPx, r.StopPx, r.TargetPx, leg1Qty, leg1TP, func(sid string) error {
 		if err := p.ledger.BeginPlacementEval(r.ID, sid, evalPx, barOpenMs, now.UnixMilli()); err != nil {
 			return err
 		}

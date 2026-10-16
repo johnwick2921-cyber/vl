@@ -964,7 +964,7 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 			// the placement pass (any process, after a restart) sends it without
 			// re-reading the plan doc. Mentor rows and a 2-leg sweep_reclaim arm are
 			// untouched; the knob unset/0 → 1 = today's single-contract arm.
-			stampPlannerSplit(row, &cfg.RiskControl, machine, legCount, firstObstaclePrice(sc))
+			stampPlannerSplit(row, &cfg.RiskControl, machine, legCount, firstObstaclePrice(sc), at.resolveMaxContracts())
 			// W1b E1: the matched ledger row is KEPT — its prices are what went to the wire.
 			var prior store.ArmedOrderDB
 			existing, err := ledger.ListNonTerminal(at.id)
@@ -1745,7 +1745,8 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 					continue
 				}
 				registered := false
-				sid, perr := nt.PlaceLimitEntry(at.futuresSymbol(), side, 1, r.EntryPx, r.StopPx, r.TargetPx, func(sid string) error {
+				qty, leg1Qty, leg1TP := plannerArmWireQty(r)
+				sid, perr := nt.PlaceLimitEntryWithSplit(at.futuresSymbol(), side, qty, r.EntryPx, r.StopPx, r.TargetPx, leg1Qty, leg1TP, func(sid string) error {
 					err := ledger.BeginPlacement(r.ID, sid)
 					registered = err == nil
 					return err
