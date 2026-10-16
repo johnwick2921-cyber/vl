@@ -55,6 +55,11 @@ type mentorLivePos struct {
 	TPModWant        float64
 	TPModSentAt      time.Time
 	TPModStaleWarned bool
+	// ISBPartialRetryCount (R-7, fold 2): 0 = no retry owed; 1 = the first
+	// marketable modify SEND failed and is retried once on the next candle;
+	// 2 = the retry was consumed (never retried again — fail-safe: the +1R TP
+	// keeps resting).
+	ISBPartialRetryCount int
 	// BEWaitLogged — the "close not past break-even, BE waits" line fired once.
 	BEWaitLogged bool
 	// ModeSource / ModeWhy (P2-2 rel22) say WHERE Pos.Mode came from — the
@@ -632,8 +637,9 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 		rebuilt++
 		at.logInfof("🧑‍🏫 mentor restart rebuild: %s %s %d contracts under exit management (mode %s)", pos.Symbol, side, lp.Pos.Contracts, lp.Pos.Mode)
 		// FIX-SWING-RESTART: a FILLED swing's exit management runs in the
-		// EVALUATOR (manageSwingPosition — release #30 holds the runner by the
-		// 4h with its hard stop, no BE, no forced close), which needs TWO
+// EVALUATOR (manageSwingPosition — release #30 fold 2: break-even at +1R, then
+// trail per closed 4h candle; the 2nd-4h-candle forced close is gone), which
+// needs TWO
 		// in-memory registries the 1m rebuild does not cover:
 		// the trader's mentorLiveArms entry and the evaluator's State.Swing.Pos.
 		// Rebuild both from the SAME proven records. Fail-closed: a swing that
@@ -642,7 +648,7 @@ func (at *AutoTrader) mentorRebuildLivePosAtBoot(now time.Time) (rebuilt, refuse
 		if strings.EqualFold(strings.TrimSpace(row.Condition), "SWING4H") {
 			if ok, why := at.mentorRebuildSwingArm(*row, pos, lp); ok {
 				at.mentorCount("swing_rebuild_ok")
-							at.logInfof("🧑‍🏫 mentor swing %s under exit management after restart (arm %q) — BE at the first target, then trail per closed 4h candle", row.SignalID, mentorArmIDFromScenario(row.Scenario))
+							at.logInfof("🧑‍🏫 mentor swing %s under exit management after restart (arm %q) — BE at +1R, then trail per closed 4h candle", row.SignalID, mentorArmIDFromScenario(row.Scenario))
 			} else {
 				at.mentorCount("swing_rebuild_refused")
 				at.logErrorf("🧑‍🏫 mentor swing %s NOT under exit management after restart — %s; manage by hand", row.SignalID, why)

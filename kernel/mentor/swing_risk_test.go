@@ -11,11 +11,13 @@ import (
 // exit. The production chain is Evaluator.Tick → runSwing → SwingTick →
 // manageSwingPosition; every tick here goes through Evaluator.Tick.
 //
-// Release #30: the swing runner holds by the 4h with its hard stop — the
-// bot-only break-even at +1R and the 2nd-4h-candle forced close are REMOVED
-// [D5.2 p1 @05:48–06:18 "gồng theo khung 4 giờ"; no swing BE / hold length in
-// the course]. The first partial (the 5m EMA 34) is the swing's own target via
-// the CX-2 trader split.
+// Release #30 fold 2 (R-4): the swing's stop goes to BREAK-EVEN at +1R (the
+// base rule — 1 contract can never reach a first-target partial) [D1.2 p1
+// @12:44–13:12 "lúc nào cũng phải maintain risk reward ở mức 1-1"], then it
+// TRAILS behind 4h candles that closed AFTER the entry [X8 @16:02–18:09]. The
+// 2nd-4h-candle forced close is REMOVED [D5.2 p1 @05:48–06:18 "gồng theo khung
+// 4 giờ"; no hold length in the course]. The first partial (the 5m EMA 34) is
+// the swing's own target via the CX-2 trader split.
 //
 // The fixture is TestEvaluatorTickWarmSwingEntryUsesSeededLine's: a warm 4h
 // line at 950 and a through-close first touch from below, so the 05:10 CT 5m
@@ -25,8 +27,8 @@ import (
 //	05:20 bar  trades through 930 (the fill) and closes at 929.50 = +0.025R
 //	05:25 bar  closes at 909.50 = +1.025R (the first 5m close at ≥ +1R)
 //
-// Neither the fill bar nor the +1R close moves the stop to break-even — the
-// runner keeps the hard stop by the 4h.
+// The fill bar does NOT move the stop; the +1R close moves it to break-even
+// (R-4).
 
 func swingRiskBar(day, hour, minute int, o, h, l, c float64) market.Kline {
 	open := time.Date(2026, time.September, day, hour, minute, 0, 0, ctime())
@@ -79,11 +81,10 @@ func countAction(ins []Intent, a Action) int {
 	return n
 }
 
-// TestEvaluatorTickSwingBEAtFirstTarget — the live-fill path, R2: the swing
-// runner's stop goes to break-even once the FIRST target is reached [D1.2 p1
-// @12:34, @15:57] — not before.
-func TestEvaluatorTickSwingBEAtFirstTarget(t *testing.T) {
-	tape, fill, _ := swingRiskTape()
+// TestEvaluatorTickSwingBEAtOneR — the live-fill path, R-4: the swing's stop
+// goes to break-even once price reaches +1R [D1.2 p1 @12:44–13:12] — not before.
+func TestEvaluatorTickSwingBEAtOneR(t *testing.T) {
+	tape, fill, oneR := swingRiskTape()
 	e := New(DefaultConfig())
 	e.Cfg.Enabled = true
 	now := tape[len(tape)-1].CloseTime + 1
@@ -103,22 +104,20 @@ func TestEvaluatorTickSwingBEAtFirstTarget(t *testing.T) {
 		t.Fatalf("the 05:20 bar trades through 930: the swing must be FILLED, pos=nil (intents %+v)", atFill)
 	}
 	if n := countAction(atFill, ActionMoveStopBE); n != 0 {
-		t.Fatalf("R2: no BE before the first target; intents %+v", atFill)
+		t.Fatalf("R-4: no BE before +1R; intents %+v", atFill)
 	}
 
-	// a bar whose LOW reaches the first target → BE
-	deep := swingRiskBar(15, 5, 34, 900, 901, 880, 890)
-	atOneR := swingIntentsOf(e, append(append([]market.Kline{}, tape...), fill, deep))
+	// a bar closing past +1R (909.50 ≤ 910) → BE
+	atOneR := swingIntentsOf(e, append(append([]market.Kline{}, tape...), fill, oneR))
 	if n := countAction(atOneR, ActionMoveStopBE); n != 1 {
-		t.Fatalf("R2: the first target reached must emit ONE break-even, got %d (%+v)", n, atOneR)
+		t.Fatalf("R-4: the +1R close must emit ONE break-even, got %d (%+v)", n, atOneR)
 	}
 }
 
-// TestEvaluatorTickRebuiltSwingBEAtFirstTarget — the restart path, R2: the same
-// swing restored by RebuildSwingPos reaches break-even at the first target.
-func TestEvaluatorTickRebuiltSwingBEAtFirstTarget(t *testing.T) {
+// TestEvaluatorTickRebuiltSwingBEAtOneR — the restart path, R-4: the same swing
+// restored by RebuildSwingPos reaches break-even at +1R.
+func TestEvaluatorTickRebuiltSwingBEAtOneR(t *testing.T) {
 	tape, fill, oneR := swingRiskTape()
-	_ = oneR
 	e := New(DefaultConfig())
 	e.Cfg.Enabled = true
 	refBar := tape[5] // the 05:10 inside bar the entry was placed on
@@ -133,12 +132,11 @@ func TestEvaluatorTickRebuiltSwingBEAtFirstTarget(t *testing.T) {
 	}
 	atFill := swingIntentsOf(e, afterFill)
 	if n := countAction(atFill, ActionMoveStopBE); n != 0 {
-		t.Fatalf("R2: no BE before the first target; intents %+v", atFill)
+		t.Fatalf("R-4: no BE before +1R; intents %+v", atFill)
 	}
-	deep := swingRiskBar(15, 5, 34, 900, 901, 880, 890)
-	atOneR := swingIntentsOf(e, append(afterFill, deep))
+	atOneR := swingIntentsOf(e, append(afterFill, oneR))
 	if n := countAction(atOneR, ActionMoveStopBE); n != 1 {
-		t.Fatalf("R2: the rebuilt swing must break even at the first target: got %d (%+v)", n, atOneR)
+		t.Fatalf("R-4: the rebuilt swing must break even at +1R: got %d (%+v)", n, atOneR)
 	}
 }
 

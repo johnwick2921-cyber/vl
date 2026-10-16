@@ -169,8 +169,9 @@ func (at *AutoTrader) mentorSwingContractsRead() int {
 // mentorSwingRunnerMinPts is the runner's take-profit distance floor: the top
 // of the course's per-4h-candle band ("50–100 points per 4-hour candle",
 // 00-METHOD §8 table, D5.2). The runner is held by the 4h with its hard stop
-// (release #30 removed the bot-only BE-at-+1R and the 2nd-4h-candle close);
-// this TP only caps it. [C] the course names no runner TP: "hô tới đâu luôn".
+// (release #30 fold 2 restored the +1R break-even and the 4h-candle trail; the
+// 2nd-4h-candle close is removed); this TP only caps it. [C] the course names
+// no runner TP: "hô tới đâu luôn".
 const mentorSwingRunnerMinPts = 100.0
 
 // mentorSwingRunnerLegs is the CX-2 split for a SWING4H arm with the runner
@@ -217,7 +218,7 @@ func (at *AutoTrader) mentorSwingCloseQty(r store.ArmedOrderDB, side string, qty
 	open, ok := mentorDriveOpenQty(at)
 	if !ok {
 		at.mentorCount("close_refused_open_qty_unknown")
-		at.logWarnf("🧑‍🏫 mentor swing hold-close REFUSED — split swing (runner) and the broker's open qty is unreadable; never an over-close; the resting stop protects, retried next 4h read")
+		at.logWarnf("🧑‍🏫 mentor swing hold-close REFUSED — split swing (runner) and the broker's open qty is unreadable; never an over-close; the resting stop protects, retried next tick")
 		return 0, false
 	}
 	have := open[strings.ToLower(side)]

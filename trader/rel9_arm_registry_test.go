@@ -26,9 +26,10 @@ func TestRel9FilledSwingSurvivesNeverAddSweep(t *testing.T) {
 	at, _, ledger, _ := mentorB3Rig(t)
 	mentorWireSeams(t, at, ledger)
 
-	oldMoveStopWire := moveStopWire
-	moveStopWire = func(nt *ntTrader.TCPTrader, side string, newStop float64) error { return nil }
-	t.Cleanup(func() { moveStopWire = oldMoveStopWire })
+	oldMoveStopWire := mentorMoveStopForSignalWire
+	mentorMoveStopForSignalWire = func(nt *ntTrader.TCPTrader, signalID, side string, newStop float64, leg int) error { return nil }
+	t.Cleanup(func() { mentorMoveStopForSignalWire = oldMoveStopWire })
+	mentorSeedSwingOpenForTest(t, "long")
 
 	now := b3Clock(10, 30)
 	setMentorNowSource(func() time.Time { return now })

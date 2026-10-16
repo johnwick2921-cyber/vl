@@ -369,6 +369,15 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		at.mentorISBMarketableReModify(nt, p, c)
 	}
 
+	// ── (2c) R-7 (fold 2): a failed first marketable modify is retried ONCE
+	// on the next candle — the course's compulsory candle-3 sale is not
+	// silently skipped. The retry re-checks in-profit itself; a second failure
+	// leaves the +1R TP resting (fail-safe).
+	if pos.Origin == "ISB" && p.ISBPartialRetryCount == 1 && !scaledNow && p.BarsSinceFill >= 2 {
+		p.ISBPartialRetryCount = 2
+		at.mentorSellISBLeg1Marketable(nt, p, c)
+	}
+
 	// ── R3 (release #22, mentor_trail_mode=candle, the default): a SPLIT
 	// position's runner goes to break-even once leg 1's partial is CONFIRMED
 	// filled at NT8, then trails 1 tick beyond each closed candle. A single

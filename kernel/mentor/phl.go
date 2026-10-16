@@ -153,7 +153,7 @@ func phlTarget(oldExtreme Level, price float64, side Side, levels []Level, cfg C
 	switch side {
 	case SideLong:
 		if ob < target {
-			return ob // a key level / EMA 34 / box edge stands in the way
+			return ob // a key level / old high-low / box edge stands in the way
 		}
 	case SideShort:
 		if ob > target {

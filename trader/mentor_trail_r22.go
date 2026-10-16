@@ -439,6 +439,27 @@ func mentorISBMarketableTP(side string, close, tick float64) float64 {
 	return want
 }
 
+// mentorClampMarketableTP (R-6, fold 2) clamps the marketable limit so it is
+// never a LOSS price: long → ≥ entry + 1 tick; short → ≤ entry − 1 tick
+// [D1.2 p1 @13:31–13:33 "at least tôi phải làm sao cho tôi đừng có bị lỗ"]. A
+// close within 8 ticks of the entry would otherwise book a loss at the candle-3
+// close.
+func mentorClampMarketableTP(side string, want, entry, tick float64) float64 {
+	if tick <= 0 {
+		return want
+	}
+	if strings.EqualFold(side, "long") {
+		if floor := entry + tick; want < floor {
+			return floor
+		}
+		return want
+	}
+	if cap := entry - tick; want > cap {
+		return cap
+	}
+	return want
+}
+
 // mentorSellISBLeg1Marketable (R1) moves leg 1's TP to a MARKETABLE limit at the
 // fill candle's close — through the EXISTING modify_bracket path (no AddOn
 // change). Refused (logged + counted, nothing sent) when the position is ONE
@@ -460,7 +481,7 @@ func (at *AutoTrader) mentorSellISBLeg1Marketable(nt *ntTrader.TCPTrader, p *men
 		return 0
 	}
 	tick := at.mentorInstrumentTick()
-	want := mentorISBMarketableTP(pos.Side, close, tick)
+	want := mentorClampMarketableTP(pos.Side, mentorISBMarketableTP(pos.Side, close, tick), pos.Entry, tick)
 	if modifyBracketWire == nil {
 		at.mentorCount("modify_bracket_unwired")
 		at.logWarnf("🧑‍🏫 mentor ISB leg1 marketable modify unwired (TP %.2f) — logged, NOT sent; leg 1 keeps its +1R TP", want)
@@ -468,7 +489,12 @@ func (at *AutoTrader) mentorSellISBLeg1Marketable(nt *ntTrader.TCPTrader, p *men
 	}
 	if err := modifyBracketWire(nt, leg.SignalID, pos.Side, 1, want); err != nil {
 		at.mentorCount("modify_bracket_failed")
-		at.logErrorf("🧑‍🏫 mentor ISB leg1 marketable modify FAILED for %s (TP %.2f): %v — leg 1 keeps its +1R TP", leg.SignalID, want, err)
+		at.logErrorf("🧑‍🏫 mentor ISB leg1 marketable modify FAILED for %s (TP %.2f): %v — leg 1 keeps its +1R TP; retried once on the next candle", leg.SignalID, want, err)
+		// R-7 (fold 2): a failed send is retried ONCE on the next candle — the
+		// course's compulsory candle-3 sale is not silently skipped.
+		if p.ISBPartialRetryCount == 0 {
+			p.ISBPartialRetryCount = 1
+		}
 		return 0
 	}
 	at.mentorCount("modify_bracket_sent")
@@ -504,7 +530,7 @@ func (at *AutoTrader) mentorISBMarketableReModify(nt *ntTrader.TCPTrader, p *men
 		return
 	}
 	tick := at.mentorInstrumentTick()
-	want := mentorISBMarketableTP(pos.Side, c, tick)
+	want := mentorClampMarketableTP(pos.Side, mentorISBMarketableTP(pos.Side, c, tick), pos.Entry, tick)
 	if math.Abs(want-p.TPModWant) <= tick/2 {
 		return // the resting marketable TP is already at this close ∓ 8 ticks
 	}
@@ -571,6 +597,14 @@ func (at *AutoTrader) mentorVerifyPendingTPModifies(nt *ntTrader.TCPTrader) {
 		}
 		at.mentorExitMu.Unlock()
 	}
+	// R-3 (fold 2): a CONFIRMED verdict must NOT clear the pending re-modify
+	// state — the per-candle re-modify keeps re-pricing the marketable limit
+	// until leg 1 fills. It only writes the belief (the applied price).
+	confirm := func(p *mentorLivePos, tpBelief float64) {
+		at.mentorExitMu.Lock()
+		p.Legs[0].TP = tpBelief
+		at.mentorExitMu.Unlock()
+	}
 	for _, e := range list {
 		if !recvAt.After(e.sentAt.Add(2 * time.Second)) {
 			continue
@@ -605,14 +639,14 @@ func (at *AutoTrader) mentorVerifyPendingTPModifies(nt *ntTrader.TCPTrader) {
 			clear(e.p, 0)
 		case math.Abs(tpOrder.LimitPrice-e.want) <= halfTick:
 			at.mentorCount("modify_bracket_confirmed")
-			at.logInfof("🧑‍🏫 modify_bracket CONFIRMED at NT8: %s leg 1 TP %.2f (ISB candle-3 partial)", e.sig, e.want)
-			clear(e.p, e.want)
+			at.logInfof("🧑‍🏫 modify_bracket CONFIRMED at NT8: %s leg 1 TP %.2f (ISB candle-3 partial — re-modify keeps running until leg 1 fills)", e.sig, e.want)
+			confirm(e.p, e.want)
 		default:
 			at.mentorCount("modify_bracket_not_applied")
 			at.logErrorf("🚨 MODIFY NOT APPLIED at NT8: %s leg 1 TP want %.2f broker %.2f — leg 1 keeps the broker's TP; nothing re-sent", e.sig, e.want, tpOrder.LimitPrice)
 			at.emitAlert("P1", "modify-bracket-not-applied", "modify-bracket:"+e.sig,
 				"ISB partial not applied at NT8",
-				e.sig+": leg 1 TP not moved to the candle-3 close — the +1R TP still rests")
+				e.sig+": leg 1 TP not moved to the wanted price — leg 1 keeps the broker's TP (the +1R TP on the first modify)");
 			clear(e.p, tpOrder.LimitPrice)
 		}
 	}

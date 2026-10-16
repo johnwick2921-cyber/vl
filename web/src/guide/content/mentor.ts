@@ -659,7 +659,7 @@ export const mentor: GuideSection = {
         ],
         [
           'SWING4H',
-          'First target = at least 1R: the warmed 5m EMA 34 when it sits FURTHER than 1R on the profitable side, else exactly 1R (the old 50-pt fallback is gone — kernel/mentor/swing4h.go swingFirstTarget). R2 [D5.2 p1 @05:48–06:18 “gồng theo khung 4 giờ”]: the first target sells part (the CX-2 split needs ≥ 2 swing contracts), then the runner’s stop goes to break-even [D1.2 p1 @12:34, @15:57] and TRAILS behind each closed 4h candle (stop to that candle’s low for a long / high for a short, never widening) [X8 @16:02–18:09 “gồng theo khung 4 giờ”]. Bot safety (not a course rule): flat before the weekend close (Friday 15:55 CT). The bot-only forced close at the end of the 2nd 4h candle is removed.',
+          'First target = at least 1R: the warmed 5m EMA 34 when it sits FURTHER than 1R on the profitable side, else exactly 1R (the old 50-pt fallback is gone — kernel/mentor/swing4h.go swingFirstTarget). R2/R-4 [D5.2 p1 @05:48–06:18 “gồng theo khung 4 giờ”; D1.2 p1 @12:44–13:12 “lúc nào cũng phải maintain risk reward ở mức 1-1”]: the first target sells part (the CX-2 split needs ≥ 2 swing contracts), and the stop goes to BREAK-EVEN at +1R (the base rule — 1 contract can never reach a first-target partial), then TRAILS behind each closed 4h candle that closed AFTER the entry (stop to that candle’s low for a long / high for a short, never widening, never on the wrong side of the market) [X8 @16:02–18:09 “gồng theo khung 4 giờ”]. Bot safety (not a course rule): flat before the weekend close (Friday 15:55 CT), retried until the close is confirmed. The bot-only forced close at the end of the 2nd 4h candle is removed.',
         ],
         [
           'ISB partial',
