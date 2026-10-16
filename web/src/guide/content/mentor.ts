@@ -1815,7 +1815,7 @@ export const mentor: GuideSection = {
           label: 'Reverse ISB as PHL/PLH',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
-          what: 'ON (default, course-defaults-30): the reverse ISB at EMA 9 is tagged PHL (long) / PLH (short) as the mentor names it — so it exits as a PHL/PLH (no ISB candle-3 partial; the resonance watch), takes the leg budget’s PHL slot, and carries no ISB size flags. The stop stays the inside bar ± 1.5. OFF: tagged ISB, as before.',
+          what: 'ON (default, course-defaults-30): the reverse ISB at EMA 9 is tagged PHL (long) / PLH (short) as the mentor names it — so it exits as a PHL/PLH (no ISB candle-3 partial; the resonance watch), takes the leg budget’s PHL slot, and KEEPS the ISB location size flags (inside a range / at an old extreme → 3). The stop stays the inside bar ± 1.5. OFF: tagged ISB, as before.',
           trader:
             'Course: “Nó là bộ tên solo 2, chứ nó không phải là Insa 3 cho lệnh long” (it is a Potential … 2, not an ISB long) [D5.4 @03:52–03:58]; “Thì tôi đặt lệnh Potential Low 2” [D5.4 @07:56]. course-defaults-30 (owner “fix all”) turns it ON.',
           consumer:

@@ -131,7 +131,8 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 			return mentorSizeChoice{Contracts: clamp(strong), Tier: "strong_day", Why: fmt.Sprintf(
 				"strong day — the SWING sizes min(2, base %d) = %d, never above the base [D5.2 p2 @05:21–05:57]", swing4h, strong)}, nil
 		}
-		return mentorSizeChoice{Contracts: clamp(swing4h), Tier: "swing4h", Why: "SWING4H setup — 2 MNQ [D5.2 p2 @06:08–06:23 'Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt']"}, nil
+		return mentorSizeChoice{Contracts: clamp(swing4h), Tier: "swing4h", Why: fmt.Sprintf(
+			"SWING4H setup — %d MNQ (course 2: 'Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt' [D5.2 p2 @06:08–06:23])", swing4h)}, nil
 	}
 	// B12 (CTO 1791041016051): a stop in the 20–<ceiling band cuts to 3 and
 	// wins over confluence sizing — "reduce size or don't trade" [D3.3 p1
