@@ -499,9 +499,6 @@ func (at *AutoTrader) maybeWakePlannerOnLevelEventsAt(now time.Time, session, tr
 			if fresh, err := at.store.Plan().GetLatestPlanForTraderSession(tradeDate, session, at.id); err == nil && fresh != nil {
 				at.maybeWakePlannerOnLevelEventsAt(traderNow(), session, tradeDate, fresh)
 			}
-			if wakeRefireTestHook != nil {
-				wakeRefireTestHook()
-			}
 		})
 		return
 	}
@@ -522,6 +519,14 @@ func (at *AutoTrader) maybeWakePlannerOnLevelEventsAt(now time.Time, session, tr
 		_ = at.runPlannerReadWithTriggerClaimedCtx(now, session, tradeDate, "level_event", "level event: "+ev.desc, priorPlanLevelLines(at, row), false)
 		if fresh, fErr := at.store.Plan().GetLatestPlanForTraderSession(tradeDate, session, at.id); fErr == nil && fresh != nil && fresh.Version != row.Version {
 			at.carryOwnerEditsInto(fresh.PlanID, row.Version, fresh.Version)
+		}
+		// W26 F-1 race fix: the re-fire seam must fire AFTER this ASYNC read
+		// completes (it reads market.FuturesBarsProvider through clockHoldAuthoring),
+		// never right after maybeWakePlannerOnLevelEventsAt returned — the re-fire
+		// closure spawned this goroutine and a test that unblocks on the seam would
+		// otherwise restore FuturesBarsProvider while this read is still in flight.
+		if wakeRefireTestHook != nil {
+			wakeRefireTestHook()
 		}
 	})
 }

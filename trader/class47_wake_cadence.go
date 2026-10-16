@@ -104,10 +104,11 @@ func minutesToSessionFlat(now time.Time, sess *kernel.SessionDef) (int, bool) {
 var deferredWakeRefiresMu sync.Mutex
 var deferredWakeRefires = map[string]func(){}
 
-// wakeRefireTestHook is a test-only seam invoked after a deferred-wake re-fire
-// completes (nil in production). Tests set it to a channel close and WAIT on it
-// instead of polling the wake-state fields, so the race detector never sees the
-// re-fire goroutine's write race the test's read.
+// wakeRefireTestHook is a test-only seam invoked after a deferred-wake re-fire's
+// ASYNC re-read completes (nil in production). Tests set it to a channel close
+// and WAIT on it instead of polling the wake-state fields, so the race detector
+// never sees the re-fire goroutine's write race the test's read — and the test's
+// FuturesBarsProvider restore never races the re-read that reads it.
 var wakeRefireTestHook func()
 
 // deferredWakeRefireKey builds the dedupe key: one pending re-fire per
