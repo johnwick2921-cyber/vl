@@ -705,6 +705,7 @@ func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg, now i
 			out = append(out, Intent{Action: ActionMoveStopBE, ArmID: p.ArmID,
 				Reason: "swing §8: +1R reached — the stop to break-even [D1.2 p1 @12:44–13:12]"})
 			p.MovedBE = true
+			p.Stop = p.Entry // the BE stop rests AT the entry — the stop-trade detection reads it
 		}
 	}
 

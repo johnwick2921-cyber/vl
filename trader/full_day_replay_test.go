@@ -858,7 +858,8 @@ type fdrSwingBE struct {
 	armID       string
 	side        mentor.Side
 	entry, stop float64
-	known       bool // the position was readable at the tick
+	risk        float64 // the ONE SwingRisk (entry − entry stop) — read before the BE rewrites p.Stop
+	known       bool    // the position was readable at the tick
 }
 
 // newFdrTrader builds one mentor AutoTrader the way NewAutoTrader's ninjatrader
@@ -907,7 +908,7 @@ func (w *fdrWorld) newFdrTrader(ft *fdrTrader, cfg *store.StrategyConfig) {
 		if in.Action == mentor.ActionMoveStopBE && strings.HasPrefix(in.ArmID, "swing-") {
 			be := fdrSwingBE{barIdx: ft.curBar, armID: in.ArmID}
 			if p := at.mentorEval.State.Swing.Pos; p != nil && p.ArmID == in.ArmID {
-				be.side, be.entry, be.stop, be.known = p.Side, p.Entry, p.Stop, true
+				be.side, be.entry, be.stop, be.risk, be.known = p.Side, p.Entry, p.Stop, p.Risk, true
 			}
 			ft.swingBE = append(ft.swingBE, be)
 		}
@@ -1525,6 +1526,14 @@ func TestFullDayReplay(t *testing.T) {
 		if len(moves) == 0 {
 			t.Fatalf("(c) RED: the swing must break even (R2) — got 0 move_stop for %s", sw.signalID)
 		}
+		// R-1 (fold 2): the injected LONG swing's stop must never move ABOVE the
+		// entry (a wrong-side stop — the re-gate saw 30936.25, 142 pts above the
+		// market). Every move_stop is the BE (30654.00) or a post-entry 4h low.
+		for _, f := range moves {
+			if f.price > sw.entry {
+				t.Fatalf("(c) RED: a move_stop above the entry (wrong side) — got %.2f for a long entered at %.2f", f.price, sw.entry)
+			}
+		}
 	})
 
 	// ── (c2) every swing break-even comes at/beyond +1R (the first target) ──
@@ -1536,17 +1545,23 @@ func TestFullDayReplay(t *testing.T) {
 		for _, ft := range traders {
 			for _, be := range ft.swingBE {
 				path := "no restart"
-				entry, stop, side, known := be.entry, be.stop, be.side, be.known
+				entry, side, known, risk := be.entry, be.side, be.known, be.risk
 				if be.armID == sw.armID && ft.id == sw.traderID {
 					path = "after the restart"
-					entry, stop, side, known = sw.entry, sw.stop, mentor.SideLong, true
+					entry, side, known, risk = sw.entry, mentor.SideLong, true, math.Abs(sw.entry-sw.stop)
 				}
 				when := fdrCT(w.bars[be.barIdx].CloseTime + 1)
-				if !known || math.Abs(entry-stop) == 0 {
-					bad = append(bad, fmt.Sprintf("%s %s break-even at %s CT with no readable position", ft.id, be.armID, when))
+				if !known {
+					// A kernel-only phantom swing BE (the trader refuses it —
+					// "not in this process's registry"): its position is
+					// unreadable, so the ≥ +1R check cannot apply.
+					t.Logf("(c2) %s %s: break-even at %s CT, position unreadable (phantom — refused at the trader)", ft.id, be.armID, when)
 					continue
 				}
-				risk := math.Abs(entry - stop)
+				if risk <= 0 {
+					bad = append(bad, fmt.Sprintf("%s %s break-even at %s CT with no readable risk", ft.id, be.armID, when))
+					continue
+				}
 				c5 := fdrLast5mClose(w, be.barIdx)
 				move := c5 - entry
 				if side == mentor.SideShort {

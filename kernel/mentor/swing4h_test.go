@@ -604,11 +604,17 @@ func TestSwingMinStopRefusesDegenerate(t *testing.T) {
 
 // TestSwingTrailPostEntryOnly — R-1 (fold 2): the 4h trail reads ONLY 4h
 // candles that closed AFTER the entry bucket — never a pre-entry candle.
-// MUTANT (drop the EntryBucket filter) → a pre-entry candle's low (11998)
-// emits a move_stop → RED.
+// MUTANT (drop the EntryBucket filter) → a pre-entry candle's low (10160, a
+// valid tighten below the last close) emits a move_stop → RED.
 func TestSwingTrailPostEntryOnly(t *testing.T) {
 	cfg := DefaultSwingCfg()
-	base := swingTape(t, nil) // closed 4h buckets 17:00 (low 9998), 21:00 (10998), 01:00 (11998)
+	// pre-entry closed buckets: 17:00 (low 9998), 21:00 (low 10160 — a valid
+	// trail candidate the filter must exclude), 01:00 (low 11998, wrong side).
+	base := []market.Kline{
+		mk5m(t, 14, 17, 5, 9999, 10000, 9998, 10000),
+		mk5m(t, 14, 21, 5, 10160, 10165, 10160, 10162),
+		mk5m(t, 15, 1, 5, 11999, 12000, 11998, 12000),
+	}
 	entryBar := mk5m(t, 15, 5, 5, 10110, 10120, 10111, 10110) // entry in the 05:00 bucket (low 10111 > BE stop)
 	entryBucket := fourHBucketStart(entryBar.OpenTime, nil)
 	post := mk5m(t, 15, 9, 5, 10170, 10180, 10150, 10175) // post-entry 09:00 bucket (low 10150)
@@ -620,7 +626,7 @@ func TestSwingTrailPostEntryOnly(t *testing.T) {
 		if in.Action != ActionMoveStop {
 			t.Fatalf("unexpected intent %+v", in)
 		}
-		for _, pre := range []float64{9998, 10998, 11998} {
+		for _, pre := range []float64{9998, 10160, 11998} {
 			if in.NewStop == pre {
 				t.Fatalf("a PRE-entry 4h low %.2f must never trail the stop; got %+v", pre, out)
 			}
