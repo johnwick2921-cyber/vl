@@ -1433,31 +1433,6 @@ func (t *TCPTrader) CloseShort(symbol string, quantity float64) (map[string]inte
 	return t.sendClose("short", quantity)
 }
 
-// CloseLeg (R1, release #30) sells exactly ONE split leg at market — the ISB
-// candle-3 partial. The AddOn markets out leg N's contracts and cancels that
-// leg's bracket (the +1R TP + stop), so the runner's bracket is untouched and
-// the leg can never fill twice. signalID is the ENTRY bracket's signal id (not
-// a fresh close id) — the AddOn keys the leg close off the placed bracket.
-func (t *TCPTrader) CloseLeg(signalID string, leg int, side string, quantity int) error {
-	t.mu.Lock()
-	t.lastEntrySignalID = ""
-	tid := t.traderID
-	t.mu.Unlock()
-	payload := ntwire.ClosePositionPayload{
-		Symbol:   t.symbol,
-		Side:     side,
-		Quantity: quantity,
-		SignalID: signalID,
-		Leg:      leg,
-		Account:  t.boundAccount,
-		TraderID: tid,
-	}
-	if err := t.server.SendClosePosition(payload); err != nil {
-		return fmt.Errorf("ninjatrader/tcp: send leg close: %w", err)
-	}
-	return nil
-}
-
 // sendClose asks the AddOn to flatten the symbol's position (close at market +
 // cancel the protective bracket). The resulting market-exit fill returns as a
 // position_close frame, which the close-sync records to history.
