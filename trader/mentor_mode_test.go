@@ -1073,7 +1073,7 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 		MentorLegBudgetEnabled:      &f,
 		MentorLegResetOn:            "touch",
 		MentorLvlRevisitMinPts:      3,
-		MentorEmaMaxCross30m:        4,
+		MentorEmaMaxCross30m:        intPtr(4),
 		MentorLocationTriggerFilter: &f,
 		MentorLossDeparturePts:      25,
 	}
@@ -1088,6 +1088,9 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 	}
 	if v := mentorEmaMaxCross30m(rc); v != 4 {
 		t.Fatalf("ema max cross = %d, want 4", v)
+	}
+	if v := mentorEmaMaxCross30m(&store.RiskControlConfig{MentorEmaMaxCross30m: intPtr(0)}); v != 0 {
+		t.Fatalf("ema max cross = %d, want 0 (OFF reachable — W32 F-5: nil→2, &0→off)", v)
 	}
 	if v := mentorLossDeparturePts(rc); v != 25 {
 		t.Fatalf("loss departure = %.2f, want 25", v)
@@ -1112,7 +1115,7 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 	// The evaluator config builder carries explicit strategy knobs, including
 	// B22's opt-in numeric fallback.
 	at = mentoredTrader(t, store.RiskControlConfig{MentorMode: true,
-		MentorLvlRevisitMinPts: 3, MentorEmaMaxCross30m: 4, MentorLossDeparturePts: 25})
+		MentorLvlRevisitMinPts: 3, MentorEmaMaxCross30m: intPtr(4), MentorLossDeparturePts: 25})
 	cfg := at.mentorEvaluatorConfig()
 	if !cfg.Enabled || cfg.LvlRevisitMinPts != 3 || cfg.EmaMaxCross30m != 4 || cfg.LossDeparturePts != 25 {
 		t.Fatalf("evaluator config: enabled=%v revisit=%.2f cross=%d loss_departure=%.2f — want true/3/4/25",

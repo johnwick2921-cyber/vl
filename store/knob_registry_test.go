@@ -43,6 +43,26 @@ func TestKnobRegistryIsComplete(t *testing.T) {
 	t.Logf("registry: %d reflected fields, all classified · %s", len(fields), KnobRegistryBootLine())
 }
 
+// F-7 (W32 mentor-knob-truth): mentor_spent_day_contracts is a DEAD knob — the
+// spent-day runner cap is the constant mentorSpentDayRunnerCap = 2, never this
+// field. The registry must say ineffective with no consumer, so the owner is
+// not shown a knob that does anything. Mutant: marking it live → RED.
+func TestMentorSpentDayContractsIsIneffective(t *testing.T) {
+	e, ok := LookupKnob("mentor_spent_day_contracts")
+	if !ok {
+		t.Fatal("mentor_spent_day_contracts missing from the registry")
+	}
+	if e.Status != KnobIneffective {
+		t.Fatalf("mentor_spent_day_contracts status = %v, want ineffective (dead — the spent-day runner cap is the constant)", e.Status)
+	}
+	if len(e.Consumers) != 0 {
+		t.Fatalf("mentor_spent_day_contracts consumers = %v, want none", e.Consumers)
+	}
+	if e.Note == "" {
+		t.Fatal("mentor_spent_day_contracts must carry the reason it is dead")
+	}
+}
+
 // The audit's dead knobs must NOT be classified live — the registry is only
 // useful if it tells the truth about the fifteen that produced it.
 func TestRegistryDoesNotCallTheAuditsDeadKnobsLive(t *testing.T) {

@@ -332,6 +332,59 @@ func TestEffectiveMaxContractsMentorModeTruth(t *testing.T) {
 	}
 }
 
+// F-13 (W32 mentor-knob-truth): every risk_control.mentor_* and mentor_tuning.*
+// path must RESOLVE (the owner reads the value the bot RUNS, not "n/a — no
+// resolver registered"). The two mentor_done_after_win rows are DS-104's and
+// stay unresolved. The per-path list is in buildEffectiveResolvers — this pin
+// catches a resolver that got dropped and a path that drifted back to n/a.
+// MUTANT: remove one mentor resolver from buildEffectiveResolvers → RED.
+func TestEffectiveMentorPathsResolved(t *testing.T) {
+	raw := `{"strategy_type":"ai_trading","ai_config":{"risk_control":{"mentor_mode":true}}}`
+	rows := effRowsFor(t, raw, "ninjatrader", "NY")
+
+	resolved, unresolved := 0, 0
+	for path, r := range rows {
+		if !strings.HasPrefix(path, rcPath+"mentor") {
+			continue
+		}
+		if r.Resolved {
+			resolved++
+		} else {
+			unresolved++
+			t.Logf("UNRESOLVED mentor path: %s", path)
+		}
+	}
+	if resolved < 59 {
+		t.Fatalf("mentor paths resolved: %d, want >= 59 (the 61 mentor knobs minus the two DS-104 done_after_win rows)", resolved)
+	}
+	// Only the two DS-104 rows may stay unresolved.
+	for path, r := range rows {
+		if !strings.HasPrefix(path, rcPath+"mentor") || r.Resolved {
+			continue
+		}
+		if path != rcPath+"mentor_done_after_win" && path != rcPath+"mentor_done_after_win_day_start" {
+			t.Errorf("mentor path %s is unresolved — every mentor knob except mentor_done_after_win(_day_start) must resolve", path)
+		}
+	}
+	// Origin truth on a shipped-default value (the size table default 5).
+	base := rows[rcPath+"mentor_base_contracts"]
+	if got := jsonVal(t, base.Effective); got != float64(5) {
+		t.Fatalf("mentor_base_contracts effective = %v, want shipped default 5", got)
+	}
+	if !strings.Contains(base.Origin, store.SourceShippedDefault) {
+		t.Fatalf("mentor_base_contracts origin = %q, want the shipped-default origin", base.Origin)
+	}
+	// A stored value reads "saved value".
+	stored := `{"strategy_type":"ai_trading","ai_config":{"risk_control":{"mentor_mode":true,"mentor_base_contracts":4}}}`
+	sRows := effRowsFor(t, stored, "ninjatrader", "NY")
+	if got := jsonVal(t, sRows[rcPath+"mentor_base_contracts"].Effective); got != float64(4) {
+		t.Fatalf("stored mentor_base_contracts effective = %v, want 4", got)
+	}
+	if sRows[rcPath+"mentor_base_contracts"].Origin != store.SourceSaved {
+		t.Fatalf("stored mentor_base_contracts origin = %q, want saved value", sRows[rcPath+"mentor_base_contracts"].Origin)
+	}
+}
+
 // FIX-AUTOBE-OFF-IN-MENTOR (owner ruling 2026-10-09): the breakeven_enabled /
 // trailing_enabled effective rows must say "not applied while mentor mode is
 // ON" in mentor mode, and resolve normally (with the 0B seam open) in AI mode.
