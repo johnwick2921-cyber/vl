@@ -235,7 +235,12 @@ func TestEffectiveEnvOrigins(t *testing.T) {
 	}
 
 	be := effRow(t, r, "ai_config.risk_control.breakeven_enabled")
-	if be.Effective != false || be.Origin != "suspended (EXIT_MECHS_SUSPENDED) — saved true not used" || be.Scope != "process env" {
+	// release #32 (B2 item a): while the 0B seam is suspended the EFFECTIVE
+	// value is the SUSPENDED sentence read from the env the wire gate reads —
+	// never "eff on", never "eff off", never a typed "unset" when the env is set.
+	if be.Effective != "SUSPENDED — env EXIT_MECHS_SUSPENDED=1 (no stop is ever moved)" ||
+		be.Origin != "env EXIT_MECHS_SUSPENDED (0B suspension) — saved true not used" ||
+		be.Scope != "process env" {
 		t.Fatalf("breakeven_enabled while suspended: %+v", be)
 	}
 
@@ -478,4 +483,15 @@ func TestEffectiveCoverageCounted(t *testing.T) {
 
 // effectiveResolvedPin is the number of registered resolvers at this revision
 // (trader/effective_settings.go). Change it ONLY with the table.
-const effectiveResolvedPin = 99 // RELEASE #32 2026-10-16: +1 (planner_contracts, #564 dispatch-31) +2 (mentor_done_after_win, mentor_done_after_win_day_start, #568); W26 PLANNER-STALE-ZONES 2026-10-15: +1 (planner_stale_zones_max_atr); RELEASE #25 PLANNER-KNOBS 2026-10-14: +7 (planner_room_gate, planner_room_min_r, planner_exit_on_thesis_death, planner_no_chase_enforce, planner_momentum_into_zone_max_atr, planner_atr_floor_cap_at_invalidation, breakeven_trigger_r); MENTOR-SIZE-TRUTH 2026-10-06 (release #10, #441): +1 (mentor_max_contracts effective row); FIX-PLANNER 2026-09-26: +1 (death_reread_retry_min); PLANNER A6 2026-09-25: +1 (planner_fresh_tape); PLANNER B1 2026-09-25: +1 (zone_place_within_pts); W-EXEC-TRUTH W3: +4 (entry_policy_default, zone_max_pts, zone_rest_max_min, min_hold_min)
+//
+// release #32 (B2 items d–e, 2026-10-16): +19 resolvers for the UI-BLIND rows
+// (ai_config.prompt_sections.role_definition / trading_frequency / entry_standards
+// / decision_process, prompt_variant, strategy_type, ai_config.indicators.rsi_periods,
+// ai_config.indicators.klines.longer_timeframe, ai_config.coin_source.static_coins,
+// grid_config.{stop_loss_pct,symbol,total_investment,lower_price,upper_price,max_drawdown_pct},
+// ai_config.risk_control.{max_margin_usage,min_position_size}, publish_config.{is_public,config_visible}).
+// NOT-IN-PANEL (excluded from the schema walk BY DESIGN — computed/DB/API metadata,
+// never a stored StrategyConfig leaf, so MarshalJSON never writes them and
+// EnumerateSchemaKnobs cannot reach them): model_limits, suggestions, system_prompt,
+// total, updated_at.
+const effectiveResolvedPin = 118 // RELEASE #32 2026-10-16: +1 (planner_contracts, #564) +2 (mentor_done_after_win, mentor_done_after_win_day_start, #568) +19 (#570 risk-knob-truth, see below); W26 PLANNER-STALE-ZONES 2026-10-15: +1 (planner_stale_zones_max_atr); RELEASE #25 PLANNER-KNOBS 2026-10-14: +7 (planner_room_gate, planner_room_min_r, planner_exit_on_thesis_death, planner_no_chase_enforce, planner_momentum_into_zone_max_atr, planner_atr_floor_cap_at_invalidation, breakeven_trigger_r); MENTOR-SIZE-TRUTH 2026-10-06 (release #10, #441): +1 (mentor_max_contracts effective row); FIX-PLANNER 2026-09-26: +1 (death_reread_retry_min); PLANNER A6 2026-09-25: +1 (planner_fresh_tape); PLANNER B1 2026-09-25: +1 (zone_place_within_pts); W-EXEC-TRUTH W3: +4 (entry_policy_default, zone_max_pts, zone_rest_max_min, min_hold_min)

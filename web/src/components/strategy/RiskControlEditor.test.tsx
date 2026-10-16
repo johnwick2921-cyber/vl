@@ -2,6 +2,10 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 import { RiskControlEditor } from './RiskControlEditor'
 import type { RiskControlConfig } from '../../types'
+import type {
+  EffectiveKnob,
+  StudioEffective,
+} from '../../lib/api/strategyEffective'
 import {
   RISK_DEFAULT_MAX_CONTRACTS_PER_ORDER,
   RISK_DEFAULT_MAX_POSITIONS,
@@ -282,4 +286,146 @@ it('F-8: with breakeven on, committing 1 writes breakeven_trigger_r: 1', () => {
   fireEvent.change(input, { target: { value: '1' } })
   fireEvent.blur(input)
   expect(onChange).toHaveBeenCalledWith({ ...config, breakeven_trigger_r: 1 })
+})
+
+// ── release #32 (fix/risk-knob-truth) — knob-truth UI assertions ────────────
+
+function effKnob(over: Partial<EffectiveKnob>): EffectiveKnob {
+  return {
+    path: 'ai_config.risk_control.trailing_enabled',
+    status: 'live',
+    ui_label: 'live',
+    stored: { present: true, value: false },
+    effective: 'not applied while mentor mode is ON (owner ruling 2026-10-09)',
+    origin: 'mentor_mode on — saved false not used',
+    scope: 'strategy',
+    resolver: 'trader.effectiveSettings',
+    resolved: true,
+    ...over,
+  }
+}
+
+// Item 1 — when the guardrails master is OFF, every child guardrail row shows
+// the "NOT ENFORCED" badge; with the master ON the badge is absent.
+it('release #32: guardrails master OFF shows the NOT-ENFORCED badge on child rows', () => {
+  render(
+    <RiskControlEditor
+      config={{ guardrails_enabled: false } as RiskControlConfig}
+      onChange={vi.fn()}
+      language="en"
+      isFutures
+    />
+  )
+  const badges = screen.getAllByTestId('guardrail-not-enforced-badge')
+  expect(badges.length).toBeGreaterThanOrEqual(5) // daily loss/profit/trades/blackout/consistency
+  expect(badges[0]).toHaveTextContent(
+    'NOT ENFORCED — Risk guardrails master is OFF'
+  )
+})
+
+it('release #32: guardrails master ON shows no NOT-ENFORCED badge', () => {
+  render(
+    <RiskControlEditor
+      config={{ guardrails_enabled: true } as RiskControlConfig}
+      onChange={vi.fn()}
+      language="en"
+      isFutures
+    />
+  )
+  expect(
+    screen.queryByTestId('guardrail-not-enforced-badge')
+  ).not.toBeInTheDocument()
+})
+
+// Item 3 — the mentor caveat is READ from the eff origin (verbatim effective
+// value), never a typed copy: it renders when the origin says "not used", and
+// stays absent when the origin is a plain saved value.
+it('release #32: mentor caveat renders from the eff origin for breakeven and trailing', () => {
+  const effective: StudioEffective = {
+    byPath: {
+      'ai_config.risk_control.breakeven_enabled': effKnob({
+        path: 'ai_config.risk_control.breakeven_enabled',
+        stored: { present: true, value: true },
+        origin: 'mentor_mode on — saved true not used',
+      }),
+      'ai_config.risk_control.trailing_enabled': effKnob({}),
+    },
+    bySession: {},
+  }
+  render(
+    <RiskControlEditor
+      config={{ mentor_mode: true } as RiskControlConfig}
+      onChange={vi.fn()}
+      language="en"
+      isFutures
+      effective={effective}
+    />
+  )
+  expect(screen.getByTestId('breakeven-mentor-caveat')).toHaveTextContent(
+    'not applied while mentor mode is ON'
+  )
+  expect(screen.getByTestId('trailing-mentor-caveat')).toHaveTextContent(
+    'not applied while mentor mode is ON'
+  )
+})
+
+it('release #32: no mentor caveat when the eff origin is a plain saved value', () => {
+  const effective: StudioEffective = {
+    byPath: {
+      'ai_config.risk_control.breakeven_enabled': effKnob({
+        path: 'ai_config.risk_control.breakeven_enabled',
+        stored: { present: true, value: true },
+        effective: true,
+        origin: 'saved value',
+      }),
+      'ai_config.risk_control.trailing_enabled': effKnob({
+        effective: false,
+        origin: 'saved value',
+      }),
+    },
+    bySession: {},
+  }
+  render(
+    <RiskControlEditor
+      config={{} as RiskControlConfig}
+      onChange={vi.fn()}
+      language="en"
+      isFutures
+      effective={effective}
+    />
+  )
+  expect(
+    screen.queryByTestId('breakeven-mentor-caveat')
+  ).not.toBeInTheDocument()
+  expect(screen.queryByTestId('trailing-mentor-caveat')).not.toBeInTheDocument()
+})
+
+// Item 4 — an ABSENT reentry_cooldown_minutes key is 0 = OFF in Go, so the
+// control says so; the hint disappears once a value exists.
+it('release #32: an absent reentry cooldown shows OFF (absent = 0)', () => {
+  render(
+    <RiskControlEditor
+      config={{} as RiskControlConfig}
+      onChange={vi.fn()}
+      language="en"
+      isFutures
+    />
+  )
+  expect(screen.getByTestId('reentry-cooldown-absent-hint')).toHaveTextContent(
+    'OFF (absent = 0)'
+  )
+})
+
+it('release #32: a stored reentry cooldown does not show the absent hint', () => {
+  render(
+    <RiskControlEditor
+      config={{ reentry_cooldown_minutes: 0 } as RiskControlConfig}
+      onChange={vi.fn()}
+      language="en"
+      isFutures
+    />
+  )
+  expect(
+    screen.queryByTestId('reentry-cooldown-absent-hint')
+  ).not.toBeInTheDocument()
 })

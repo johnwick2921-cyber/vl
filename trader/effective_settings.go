@@ -47,7 +47,6 @@ const (
 
 // Origin vocabulary: store's source words (store/resolve_source.go) plus these.
 const (
-	OriginSuspended   = "suspended (EXIT_MECHS_SUSPENDED)"
 	OriginBackfilled  = "backfilled default (applyMissingDefaults)"
 	OriginFolded      = "code constant (folded)"
 	OriginClampLimits = "clamp (StrategyConfig.ClampLimits)"
@@ -570,6 +569,34 @@ func explicitZeroOrigin(x *effCtx, knob, src string, decidedByStrategy bool) str
 	return src
 }
 
+// exitMechSuspendedRow is the effective row while the 0B wire seam is suspended
+// (exitMechsSuspended() — the SAME function the wire gate reads; the message is
+// never a copy). The sentence is the EFFECTIVE VALUE, so the chip never prints
+// "eff on"/"eff off" for a mechanism that cannot move a stop.
+func exitMechSuspendedRow() effResult {
+	reason := "env EXIT_MECHS_SUSPENDED unset"
+	if v := strings.TrimSpace(os.Getenv("EXIT_MECHS_SUSPENDED")); v != "" {
+		reason = "env EXIT_MECHS_SUSPENDED=" + v
+	}
+	return effResult{
+		value:  "SUSPENDED — " + reason + " (no stop is ever moved)",
+		origin: "env EXIT_MECHS_SUSPENDED (0B suspension)",
+		scope:  ScopeProcessEnv,
+	}
+}
+
+// mentorNotUsedSizingRow is the effective value for a knob mentor mode overrides:
+// mentor sizing governs (mentor_max_contracts = N, resolved from the production
+// reader — never a literal), so the inert saved value is not the running number.
+func mentorNotUsedSizingRow(x *effCtx) effResult {
+	mx, _ := x.at.mentorMaxContracts()
+	return effResult{
+		value:  fmt.Sprintf("not used in mentor mode — mentor sizing governs (mentor_max_contracts = %d)", mx),
+		origin: "mentor_mode on",
+		scope:  ScopeStrategy,
+	}
+}
+
 // ── RESOLVER TABLE ───────────────────────────────────────────────────────────
 
 const (
@@ -596,6 +623,16 @@ func buildEffectiveResolvers() map[string]effResolver {
 		return effResult{value: v, origin: src}
 	})
 	add(rcPath+"min_confidence", "store.(*StrategyConfig).ClampLimits (kernel/engine_analysis.go reads the clamped config)", func(x *effCtx) effResult {
+		// release #32 (B2 item b) — mentor mode owns entries; the AI confidence
+		// floor never gates a mentor entry, so the saved 60 is not the running
+		// number on a mentor strategy.
+		if x.at != nil && x.at.mentorEnabled() {
+			return effResult{
+				value:  "not used in mentor mode — mentor entries come from the course rules and carry no AI confidence",
+				origin: "mentor_mode on",
+				scope:  ScopeStrategy,
+			}
+		}
 		return clampRow(x, func(c *store.StrategyConfig) any { return c.RiskControl.MinConfidence }, nil)
 	})
 	add(rcPath+"max_positions", "kernel.ResolveConcurrentCap over StrategyConfig.ClampLimits (steady state)", func(x *effCtx) effResult {
@@ -662,13 +699,11 @@ func buildEffectiveResolvers() map[string]effResolver {
 	add(rcPath+"max_contracts_per_order", "trader.(*AutoTrader).resolveMaxContracts", func(x *effCtx) effResult {
 		// MENTOR-SIZE-TRUTH (DS-105 R2 P2): in mentor mode resolveMaxContracts
 		// returns mentor_max_contracts (default 20), NOT this knob — the 0B
-		// 2-contract clamp does not apply to a mentor-mode trader.
+		// 2-contract clamp does not apply to a mentor-mode trader. release #32
+		// (B2 item b): the message names the mentor's governor with its resolved
+		// value, taken from the production reader (never a literal).
 		if x.at != nil && x.at.mentorEnabled() {
-			return effResult{
-				value:  "not applied in mentor mode",
-				origin: "mentor table → mentor_max_contracts (default 20)",
-				scope:  ScopeStrategy,
-			}
+			return mentorNotUsedSizingRow(x)
 		}
 		n, src := kernel.ResolveMaxContractsWithSource(x.rc().MaxContractsPerOrder, int(maxFuturesContracts))
 		scope := ScopeFutures
@@ -742,6 +777,11 @@ func buildEffectiveResolvers() map[string]effResolver {
 	})
 	exitMech := func(path, name string, on func(store.RiskControlConfig) bool) {
 		add(rcPath+path, name, func(x *effCtx) effResult {
+			// release #32 (B2 item a) — the 0B wire seam is checked FIRST, on
+			// BOTH traders: while suspended no stop is ever moved, mentor or not.
+			if exitMechsSuspended() {
+				return exitMechSuspendedRow()
+			}
 			// FIX-AUTOBE-OFF-IN-MENTOR (owner ruling 2026-10-09): with mentor
 			// mode ON, the AI-era stop movers do not apply to mentor trades —
 			// the mentor's exits own the stop.
@@ -749,9 +789,6 @@ func buildEffectiveResolvers() map[string]effResolver {
 				return effResult{value: "not applied while mentor mode is ON (owner ruling 2026-10-09)", origin: "mentor_mode on", scope: ScopeStrategy}
 			}
 			v := on(x.rc())
-			if v && exitMechsSuspended() {
-				return effResult{value: false, origin: OriginSuspended, scope: ScopeProcessEnv}
-			}
 			return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeFutures}
 		})
 	}
@@ -763,15 +800,24 @@ func buildEffectiveResolvers() map[string]effResolver {
 		return on
 	})
 	add(rcPath+"breakeven_trigger_points", "trader.breakevenTriggerPoints", func(x *effCtx) effResult {
+		if exitMechsSuspended() {
+			return exitMechSuspendedRow()
+		}
 		v := breakevenTriggerPoints(x.rc())
 		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeFutures}
 	})
 	add(rcPath+"breakeven_trigger_r", "store.ResolveBreakevenTriggerR (trader.breakevenTriggerFor)", func(x *effCtx) effResult {
+		if exitMechsSuspended() {
+			return exitMechSuspendedRow()
+		}
 		v, src := store.ResolveBreakevenTriggerR(x.rc())
 		return effResult{value: v, origin: src, scope: ScopeFutures}
 	})
 	trailing := func(path string, pick func(mult float64, period int, arm string, armPts float64) any) {
 		add(rcPath+path, "trader.trailingConfig", func(x *effCtx) effResult {
+			if exitMechsSuspended() {
+				return exitMechSuspendedRow()
+			}
 			_, mult, period, arm, armPts := trailingConfig(x.rc())
 			v := pick(mult, period, arm, armPts)
 			return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeFutures}
@@ -1091,6 +1137,125 @@ func buildEffectiveResolvers() map[string]effResolver {
 	perSession("condition_status", "kernel.ConditionStatusWithSource (= kernel.ConditionStatus) per known condition", func(x *effCtx) effResult {
 		return conditionStatusRow(x)
 	})
+
+	// ── release #32 (B2 item d) — resolvers for the UI-BLIND rows ─────────────
+	// The prompt-section boxes and the indicator periods are LIVE on the futures
+	// path (kernel.buildFuturesPrompt / engine_analysis.go read them); the
+	// crypto/grid/coin-source rows are crypto-path-only and say so on futures.
+
+	// Prompt sections — the SAME fields buildFuturesPrompt reads.
+	add("ai_config.prompt_sections.role_definition", "kernel.buildFuturesPrompt (ps.RoleDefinition)", func(x *effCtx) effResult {
+		v := x.cfg.PromptSections.RoleDefinition
+		return effResult{value: v, origin: presenceOrigin(x, v, "empty box → prompt builds the fixed CME role")}
+	})
+	add("ai_config.prompt_sections.trading_frequency", "kernel.buildFuturesPrompt (ps.TradingFrequency)", func(x *effCtx) effResult {
+		v := x.cfg.PromptSections.TradingFrequency
+		return effResult{value: v, origin: presenceOrigin(x, v, "empty box → omitted from the prompt")}
+	})
+	add("ai_config.prompt_sections.entry_standards", "kernel.buildFuturesPrompt (ps.EntryStandards)", func(x *effCtx) effResult {
+		v := x.cfg.PromptSections.EntryStandards
+		return effResult{value: v, origin: presenceOrigin(x, v, "empty box → omitted from the prompt")}
+	})
+	add("ai_config.prompt_sections.decision_process", "kernel.buildFuturesPrompt (ps.DecisionProcess)", func(x *effCtx) effResult {
+		v := x.cfg.PromptSections.DecisionProcess
+		return effResult{value: v, origin: presenceOrigin(x, v, "empty box → omitted from the prompt")}
+	})
+	add("prompt_variant", "trader.(*AutoTrader) prompt variant (auto_trader_loop.go)", func(x *effCtx) effResult {
+		v := x.cfg.PromptVariant
+		return effResult{value: v, origin: presenceOrigin(x, v, "unset → balanced (no Mode block)")}
+	})
+	add("strategy_type", "store.(*StrategyConfig).StrategyType (normalizeStrategyType)", func(x *effCtx) effResult {
+		v := x.cfg.StrategyType
+		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault)}
+	})
+
+	// Indicator periods — the clamped/backfilled values the prompt's indicator
+	// table (engine_analysis.go) reads.
+	add("ai_config.indicators.rsi_periods", "store.(*Strategy).ParseConfig → applyMissingDefaults (engine_analysis.go indicator table)", func(x *effCtx) effResult {
+		return clampRow(x, func(c *store.StrategyConfig) any { return c.Indicators.RSIPeriods },
+			func(c *store.StrategyConfig) bool { return len(c.Indicators.RSIPeriods) == 0 })
+	})
+	add("ai_config.indicators.klines.longer_timeframe", "store.(*Strategy).ParseConfig → normalizeTimeframe (engine_analysis.go longer-TF)", func(x *effCtx) effResult {
+		return clampRow(x, func(c *store.StrategyConfig) any { return c.Indicators.Klines.LongerTimeframe },
+			func(c *store.StrategyConfig) bool { return c.Indicators.Klines.LongerTimeframe == "" })
+	})
+
+	// Crypto-path-only rows: on a futures strategy the honest value is the
+	// marker, never the stored number (CLASS 151 — the stored value stays
+	// honoured on the crypto path).
+	cryptoOnly := func(path, detail string, get func(*store.StrategyConfig) any) {
+		add(path, "crypto path only (CLASS 151)", func(x *effCtx) effResult {
+			if x.venue == "ninjatrader" {
+				return effResult{value: detail, origin: "venue " + x.venue + " (CLASS 151 — stored value stays honoured on the crypto path)", scope: "venue:" + x.venue}
+			}
+			v := get(x.clamped)
+			return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault)}
+		})
+	}
+	cryptoOnly("ai_config.coin_source.static_coins", "crypto coin list — inert on futures (the futures symbol comes from the NT8 binding)", func(c *store.StrategyConfig) any { return c.CoinSource.StaticCoins })
+	cryptoOnly("grid_config.stop_loss_pct", "crypto grid path only; inert on futures", func(c *store.StrategyConfig) any {
+		if c.GridConfig == nil {
+			return nil
+		}
+		return c.GridConfig.StopLossPct
+	})
+	cryptoOnly("grid_config.symbol", "crypto grid path only; inert on futures", func(c *store.StrategyConfig) any {
+		if c.GridConfig == nil {
+			return nil
+		}
+		return c.GridConfig.Symbol
+	})
+	cryptoOnly("grid_config.total_investment", "crypto grid path only; inert on futures", func(c *store.StrategyConfig) any {
+		if c.GridConfig == nil {
+			return nil
+		}
+		return c.GridConfig.TotalInvestment
+	})
+	cryptoOnly("grid_config.lower_price", "crypto grid path only; inert on futures", func(c *store.StrategyConfig) any {
+		if c.GridConfig == nil {
+			return nil
+		}
+		return c.GridConfig.LowerPrice
+	})
+	cryptoOnly("grid_config.upper_price", "crypto grid path only; inert on futures", func(c *store.StrategyConfig) any {
+		if c.GridConfig == nil {
+			return nil
+		}
+		return c.GridConfig.UpperPrice
+	})
+	cryptoOnly("grid_config.max_drawdown_pct", "crypto grid path only; inert on futures", func(c *store.StrategyConfig) any {
+		if c.GridConfig == nil {
+			return nil
+		}
+		return c.GridConfig.MaxDrawdownPct
+	})
+
+	// No-consumer knobs (KnobIneffective): the marker is the truth on every
+	// venue, never a borrowed default.
+	noConsumer := func(path, detail string) {
+		add(path, "no consumer (KnobIneffective)", func(x *effCtx) effResult {
+			return effResult{value: detail, origin: "no consumer (KnobIneffective)", scope: ScopeStrategy}
+		})
+	}
+	noConsumer("ai_config.risk_control.max_margin_usage", "prompt text only (advisory) — no gate reads it; inert on futures")
+	noConsumer("ai_config.risk_control.min_position_size", "crypto path hardcodes 12/60 — the stored value is never read; inert on futures")
+
+	// publish_config — read by api/strategy.go on every path (not crypto-only).
+	add("publish_config.is_public", "api/strategy.go (attachPublishConfig)", func(x *effCtx) effResult {
+		var v any = false
+		if x.cfg.PublishConfig != nil {
+			v = x.cfg.PublishConfig.IsPublic
+		}
+		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault)}
+	})
+	add("publish_config.config_visible", "api/strategy.go (attachPublishConfig)", func(x *effCtx) effResult {
+		var v any = true
+		if x.cfg.PublishConfig != nil {
+			v = x.cfg.PublishConfig.ConfigVisible
+		}
+		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault)}
+	})
+
 	return m
 }
 
