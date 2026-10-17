@@ -94,6 +94,13 @@ type Job struct {
 	DrainPath     string `json:"drain_path,omitempty"`
 	LinkDownSince string `json:"link_down_since,omitempty"`
 
+	// AddonBackupDir is where addon_place MOVED the previous VL.AddOn.dll
+	// (W-ADDON-ONE-CLICK, DS-104). revert_clean and the post-activation
+	// rollback restore it from here — a MOVE back, never a delete. Empty
+	// before the place step, so a revert before the place has nothing to
+	// restore.
+	AddonBackupDir string `json:"addon_backup_dir,omitempty"`
+
 	ResumedAt       *time.Time `json:"resumed_at,omitempty"`        // the attended resume from nt8_updated
 	LastGoodReceipt *int       `json:"last_good_receipt,omitempty"` // index into receipts (recovery_needed)
 	RecoveryReason  string     `json:"recovery_reason,omitempty"`

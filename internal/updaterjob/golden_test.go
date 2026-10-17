@@ -62,6 +62,7 @@ func fullJob(t *testing.T, dd string) Job {
 		step(t, dd, &j, &now, s)
 	}
 	j.BackupPath = "/home/u/vl-backups/updater/" + id + "/data.db"
+	j.AddonBackupDir = "/home/u/Documents/NinjaTrader 8/vl-addon-backups/" + id
 	j.Snapshot = &Release{Dir: "/home/u/vl-backups/updater/" + id + "/install", SHA: old, Binary: "/home/u/vl-backups/updater/" + id + "/install/vl-bin",
 		Dist: "/home/u/vl-backups/updater/" + id + "/install/web/dist", ReleaseFile: "/home/u/vl-backups/updater/" + id + "/install/deploy/RELEASE"}
 	step(t, dd, &j, &now, StateBackupDone)

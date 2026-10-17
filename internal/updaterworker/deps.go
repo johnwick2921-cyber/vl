@@ -250,6 +250,13 @@ type Host interface {
 	BuildInfo(binary string) (revision, modified string, err error)
 	// ExeOf is /proc/<pid>/exe.
 	ExeOf(pid int) (string, error)
+	// AddonRestore MOVES an AddOn backup back into place — the reverse of the
+	// addon_place step's MOVE (W-ADDON-ONE-CLICK self-recovery). backupDir is
+	// the job's AddonBackupDir; "" means the place step never ran, so there is
+	// nothing to restore. The real implementation is wired with the place step
+	// (DS-104); until then a non-empty backupDir is an error — fail-closed, the
+	// job ends recovery_needed rather than silently leaving the AddOn missing.
+	AddonRestore(backupDir string) error
 }
 
 // Deps is everything New needs besides the Config.

@@ -204,6 +204,17 @@ func (OSHost) ExeOf(pid int) (string, error) {
 	return os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
 }
 
+// AddonRestore is the reverse of the addon_place step's MOVE. It is wired with
+// the place step (DS-104) — until then a non-empty backupDir is an error, so a
+// revert that must restore an AddOn ends recovery_needed rather than silently
+// leaving the AddOn missing (fail-closed). Empty means nothing was placed.
+func (OSHost) AddonRestore(backupDir string) error {
+	if backupDir == "" {
+		return nil
+	}
+	return fmt.Errorf("addon restore not wired yet (W-ADDON-ONE-CLICK place step, DS-104): backup dir %s", backupDir)
+}
+
 // firstMarkerLine is the first non-empty, non-comment line of a RELEASE
 // marker (kernel/boot_integrity.go expectedRevision's rule).
 func firstMarkerLine(b []byte) string {

@@ -31,6 +31,7 @@ const (
 	StateComplete        State = "complete"
 	StateRollingBack     State = "rolling_back"
 	StateRolledBack      State = "rolled_back"
+	StateRevertedClean   State = "reverted_clean"
 	StateRecoveryNeeded  State = "recovery_needed"
 	StateCancelled       State = "cancelled"
 	StateRefused         State = "refused"
@@ -68,6 +69,7 @@ const (
 	EffectWorkerSwap  Effect = "worker_swap"  // atomic self-update of the worker binary (worker-self-update)
 	EffectRollback    Effect = "rollback"     // restore the snapshot + watch the OLD sha
 	EffectReleaseHold Effect = "release_hold" // the ONLY hold clears
+	EffectRevertClean Effect = "revert_clean" // pre-activation self-recovery: hold + lock + AddOn, nothing swapped
 )
 
 // Row is one state's contract.
@@ -106,11 +108,11 @@ var table = []Row{
 	// planner-wait expiry: drained_acked/gate_ok release the hold and refuse,
 	// via ExtraFailure (the step cleared the hold BEFORE the edge).
 	{State: StateMaintenanceHeld, Effect: EffectHold, Success: []State{StateDrainedAcked}, Failure: StateRefused},
-	{State: StateDrainedAcked, Effect: EffectDrain, Success: []State{StateGateOK}, Failure: StateRecoveryNeeded, ExtraFailure: []State{StateRefused}},
-	{State: StateGateOK, Effect: EffectGate, Success: []State{StateBackupDone}, Failure: StateRecoveryNeeded, ExtraFailure: []State{StateRefused}},
-	{State: StateBackupDone, Effect: EffectBackup, Success: []State{StateNT8Skipped, StateNT8Updated}, Failure: StateRecoveryNeeded},
-	{State: StateNT8Skipped, Effect: EffectNT8, Success: []State{StateActivated}, Failure: StateRecoveryNeeded},
-	{State: StateNT8Updated, Effect: EffectNT8, Success: []State{StateActivated}, Failure: StateRecoveryNeeded, Parks: true},
+	{State: StateDrainedAcked, Effect: EffectDrain, Success: []State{StateGateOK}, Failure: StateRevertedClean, ExtraFailure: []State{StateRevertedClean}},
+	{State: StateGateOK, Effect: EffectGate, Success: []State{StateBackupDone}, Failure: StateRevertedClean, ExtraFailure: []State{StateRevertedClean}},
+	{State: StateBackupDone, Effect: EffectBackup, Success: []State{StateNT8Skipped, StateNT8Updated}, Failure: StateRevertedClean},
+	{State: StateNT8Skipped, Effect: EffectNT8, Success: []State{StateActivated}, Failure: StateRevertedClean},
+	{State: StateNT8Updated, Effect: EffectNT8, Success: []State{StateActivated}, Failure: StateRevertedClean, Parks: true},
 	// The point of no return: any failure from here restores the snapshot.
 	{State: StateActivated, Effect: EffectActivate, Success: []State{StateBooted}, Failure: StateRollingBack},
 	{State: StateBooted, Effect: EffectWatch, Success: []State{StateBootVerified}, Failure: StateRollingBack},
@@ -124,6 +126,7 @@ var table = []Row{
 	{State: StateComplete, Effect: EffectReleaseHold, Failure: StateRecoveryNeeded},
 	{State: StateRollingBack, Effect: EffectRollback, Success: []State{StateRolledBack}, Failure: StateRecoveryNeeded},
 	{State: StateRolledBack, Effect: EffectReleaseHold, Failure: StateRecoveryNeeded},
+	{State: StateRevertedClean, Effect: EffectRevertClean, Failure: StateRecoveryNeeded},
 	// recovery_needed keeps whatever hold exists: only an attended operator
 	// clears it (brief §3.4.6).
 	{State: StateRecoveryNeeded, Effect: EffectNone},
@@ -206,6 +209,14 @@ func CheckMove(from State, phase Phase, to State) error {
 		return fmt.Errorf("%w: %s is finished", ErrForbiddenEdge, from)
 	}
 	if to == StateRecoveryNeeded {
+		return nil
+	}
+	// W-ADDON-ONE-CLICK self-recovery: a DONE pre-activation state may end
+	// reverted_clean too — the R-i re-proof before activate failed (nothing
+	// was swapped yet). Only the two states whose advance performs that
+	// re-proof may take this edge; every other state must fail its own step
+	// to reach reverted_clean.
+	if to == StateRevertedClean && phase == PhaseDone && (from == StateNT8Skipped || from == StateNT8Updated) {
 		return nil
 	}
 	if to == StateCancelled && r.Cancellable {

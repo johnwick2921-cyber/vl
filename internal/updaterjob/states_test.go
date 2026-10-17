@@ -23,7 +23,7 @@ var wantOrder = []State{
 	StateRequested, StateDownloaded, StateVerified, StatePreflightOK, StateMaintenanceHeld,
 	StateDrainedAcked, StateGateOK, StateBackupDone, StateNT8Skipped, StateNT8Updated,
 	StateActivated, StateBooted, StateBootVerified, StateWorkerSwapped, StateComplete, StateRollingBack,
-	StateRolledBack, StateRecoveryNeeded, StateCancelled, StateRefused,
+	StateRolledBack, StateRevertedClean, StateRecoveryNeeded, StateCancelled, StateRefused,
 }
 
 var wantTable = map[State]wantRow{
@@ -32,11 +32,11 @@ var wantTable = map[State]wantRow{
 	StateVerified:        {eff: EffectVerify, succ: []State{StatePreflightOK}, fail: StateRefused, cancel: true},
 	StatePreflightOK:     {eff: EffectPreflight, succ: []State{StateMaintenanceHeld}, fail: StateRefused, cancel: true},
 	StateMaintenanceHeld: {eff: EffectHold, succ: []State{StateDrainedAcked}, fail: StateRefused},
-	StateDrainedAcked:    {eff: EffectDrain, succ: []State{StateGateOK}, fail: StateRecoveryNeeded, extra: []State{StateRefused}},
-	StateGateOK:          {eff: EffectGate, succ: []State{StateBackupDone}, fail: StateRecoveryNeeded, extra: []State{StateRefused}},
-	StateBackupDone:      {eff: EffectBackup, succ: []State{StateNT8Skipped, StateNT8Updated}, fail: StateRecoveryNeeded},
-	StateNT8Skipped:      {eff: EffectNT8, succ: []State{StateActivated}, fail: StateRecoveryNeeded},
-	StateNT8Updated:      {eff: EffectNT8, succ: []State{StateActivated}, fail: StateRecoveryNeeded, parks: true},
+	StateDrainedAcked:    {eff: EffectDrain, succ: []State{StateGateOK}, fail: StateRevertedClean, extra: []State{StateRevertedClean}},
+	StateGateOK:          {eff: EffectGate, succ: []State{StateBackupDone}, fail: StateRevertedClean, extra: []State{StateRevertedClean}},
+	StateBackupDone:      {eff: EffectBackup, succ: []State{StateNT8Skipped, StateNT8Updated}, fail: StateRevertedClean},
+	StateNT8Skipped:      {eff: EffectNT8, succ: []State{StateActivated}, fail: StateRevertedClean},
+	StateNT8Updated:      {eff: EffectNT8, succ: []State{StateActivated}, fail: StateRevertedClean, parks: true},
 	StateActivated:       {eff: EffectActivate, succ: []State{StateBooted}, fail: StateRollingBack},
 	StateBooted:          {eff: EffectWatch, succ: []State{StateBootVerified}, fail: StateRollingBack},
 	StateBootVerified:    {eff: EffectBootVerify, succ: []State{StateWorkerSwapped}, fail: StateRollingBack},
@@ -44,6 +44,7 @@ var wantTable = map[State]wantRow{
 	StateComplete:        {eff: EffectReleaseHold, fail: StateRecoveryNeeded},
 	StateRollingBack:     {eff: EffectRollback, succ: []State{StateRolledBack}, fail: StateRecoveryNeeded},
 	StateRolledBack:      {eff: EffectReleaseHold, fail: StateRecoveryNeeded},
+	StateRevertedClean:   {eff: EffectRevertClean, fail: StateRecoveryNeeded},
 	StateRecoveryNeeded:  {eff: EffectNone},
 	StateCancelled:       {eff: EffectNone},
 	StateRefused:         {eff: EffectNone},
@@ -133,7 +134,7 @@ func TestStateTableIsExhaustive(t *testing.T) {
 		}
 	}
 	for name, c := range map[string]struct{ got, want []string }{
-		"terminal":    {terminal, []string{"cancelled", "complete", "recovery_needed", "refused", "rolled_back"}},
+		"terminal":    {terminal, []string{"cancelled", "complete", "recovery_needed", "refused", "reverted_clean", "rolled_back"}},
 		"cancellable": {cancellable, []string{"downloaded", "preflight_ok", "requested", "verified"}},
 		"hold write":  {holds, []string{"maintenance_held"}},
 		"hold clear":  {clears, []string{"complete", "rolled_back"}},
@@ -254,6 +255,11 @@ func legalMove(from State, p Phase, to State) bool {
 		return false
 	}
 	if to == StateRecoveryNeeded {
+		return true
+	}
+	// W-ADDON-ONE-CLICK self-recovery: mirrors CheckMove's DONE-phase
+	// reverted_clean edge (the R-i re-proof before activate).
+	if to == StateRevertedClean && p == PhaseDone && (from == StateNT8Skipped || from == StateNT8Updated) {
 		return true
 	}
 	if to == StateCancelled && w.cancel {

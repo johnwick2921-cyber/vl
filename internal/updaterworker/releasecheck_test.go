@@ -32,6 +32,7 @@ func (stubHost) LockHolder() (string, error)                { return "", nil }
 func (stubHost) LockRelease(string) error                   { return nil }
 func (s stubHost) BuildInfo(string) (string, string, error) { return s.rev, "false", nil }
 func (stubHost) ExeOf(int) (string, error)                  { return "", fmt.Errorf("unused") }
+func (stubHost) AddonRestore(string) error                  { return nil }
 
 // checkWorker builds a Worker with just enough target for handleCheck.
 func checkWorker(t *testing.T) *Worker {

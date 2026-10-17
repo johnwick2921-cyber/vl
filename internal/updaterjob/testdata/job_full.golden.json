@@ -287,6 +287,7 @@
   },
   "drain_path": "nt8_absent",
   "link_down_since": "2026-09-24T18:00:00.000000000Z",
+  "addon_backup_dir": "/home/u/Documents/NinjaTrader 8/vl-addon-backups/0123456789abcdef0123456789abcdef",
   "resumed_at": "2026-09-24T18:03:27.123456789Z",
   "last_good_receipt": 11,
   "recovery_reason": "rollback watch RED: the old build did not prove itself"

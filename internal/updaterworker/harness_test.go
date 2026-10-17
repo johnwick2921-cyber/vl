@@ -145,6 +145,10 @@ type box struct {
 	rollbackIDs []Identity
 	rollbackAtt []int   // the job's attempts on disk at each RollbackTo call
 	ackAges     []int64 // every ack age the worker observed, in order
+
+	// W-ADDON-ONE-CLICK self-recovery seam
+	addonRestoreCalls []string
+	addonRestoreErr   error
 }
 
 // rig is one worker on one box.
@@ -282,7 +286,7 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	clearMaintenanceHold = func(d, job string) error {
 		// a re-run clear (crash after the first) finds it already absent:
 		// ours or absent, never another's
-		b.expect("hold_clear", false, updaterjob.StateComplete, updaterjob.StateRolledBack)
+		b.expect("hold_clear", false, updaterjob.StateComplete, updaterjob.StateRolledBack, updaterjob.StateRevertedClean)
 		if s, _ := ReadHoldFor(b.data, boxJobID); s != HoldOurs && s != HoldAbsent {
 			b.violate("hold_clear with a %s hold on disk", s)
 		}
@@ -723,6 +727,15 @@ func (h *fakeHost) ExeOf(pid int) (string, error) {
 		return h.b.exe, nil
 	}
 	return h.b.instBinary(), nil // R5 removes: vl-bin when the install carries it
+}
+
+// AddonRestore simulates the reverse of addon_place (W-ADDON-ONE-CLICK): it
+// records the backup dir and fails only when the test asks it to.
+func (h *fakeHost) AddonRestore(backupDir string) error {
+	h.b.mu.Lock()
+	defer h.b.mu.Unlock()
+	h.b.addonRestoreCalls = append(h.b.addonRestoreCalls, backupDir)
+	return h.b.addonRestoreErr
 }
 
 // ── the app (httptest) ──────────────────────────────────────────────────────

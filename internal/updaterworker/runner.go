@@ -187,6 +187,8 @@ func (w *Worker) step(ctx context.Context, j updaterjob.Job) stepResult {
 		return w.stepWorkerSwap(ctx, j)
 	case updaterjob.StateRollingBack:
 		return w.stepRollback(ctx, j)
+	case updaterjob.StateRevertedClean:
+		return w.stepRevertClean(ctx, j)
 	case updaterjob.StateComplete, updaterjob.StateRolledBack:
 		return w.stepReleaseHold(ctx, j)
 	}
@@ -219,8 +221,10 @@ func (w *Worker) finish(ctx context.Context, j updaterjob.Job, res stepResult) (
 				res.set(k)
 			}
 			k.Blocker = res.blocker
-			// a rollback keeps WHY it rolled back: M5 shows rolled_back with it
-			if k.State != updaterjob.StateRollingBack && k.State != updaterjob.StateRolledBack {
+			// a rollback keeps WHY it rolled back: M5 shows rolled_back with it.
+			// reverted_clean keeps WHY it reverted too (W-ADDON-ONE-CLICK: the
+			// result message names the plain-words reason nothing changed).
+			if k.State != updaterjob.StateRollingBack && k.State != updaterjob.StateRolledBack && k.State != updaterjob.StateRevertedClean {
 				k.Error = ""
 			}
 			return k.Finish(now)
@@ -290,16 +294,17 @@ func (w *Worker) advance(ctx context.Context, j updaterjob.Job) (parked bool, er
 			j = k
 		}
 		// R-i: the LAST re-proof before the point of no return. A failure
-		// here has installed nothing: recovery_needed, hold kept.
+		// here has installed nothing: reverted_clean (self-recovery releases
+		// the hold, the lock, and any placed AddOn).
 		if err := w.reprove(ctx, j); err != nil {
 			if errors.Is(err, errMoved) || ctx.Err() != nil {
 				return false, err
 			}
-			return false, w.toRecovery(j, "ready not re-proven before activate: "+err.Error())
+			return false, w.toRevertClean(ctx, j, "ready not re-proven before activate: "+err.Error())
 		}
 		id, err := w.lib.CurrentIdentity()
 		if err != nil {
-			return false, w.toRecovery(j, "cannot read the running identity before activate: "+err.Error())
+			return false, w.toRevertClean(ctx, j, "cannot read the running identity before activate: "+err.Error())
 		}
 		next = updaterjob.StateActivated
 		set = func(k *updaterjob.Job) {
