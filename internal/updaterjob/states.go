@@ -37,6 +37,9 @@ const (
 	StateComplete         State = "complete"
 	StateRollingBack      State = "rolling_back"
 	StateRolledBack       State = "rolled_back"
+	// Catchup (feat/addon-catchup): a worker-internal job that rebuilds the
+	// INSTALLED release's AddOn — entered done, then the addon_* steps run.
+	StateCatchup State = "catchup"
 	// SELF-RECOVERY (DS-102): a refusal/timeout BEFORE activation ends here.
 	StateRevertedClean  State = "reverted_clean"
 	StateRecoveryNeeded State = "recovery_needed"
@@ -110,7 +113,12 @@ type Row struct {
 // table is the state machine. Order is the dispatch's order (§2), then the
 // C10 additions.
 var table = []Row{
-	{State: StateRequested, Effect: EffectNone, Success: []State{StateDownloaded}, Cancellable: true},
+	// Catchup (feat/addon-catchup): a catch-up job moves requested → catchup
+	// (instead of downloaded) and then straight into the addon build.
+	{State: StateRequested, Effect: EffectNone, Success: []State{StateDownloaded, StateCatchup}, Cancellable: true},
+	// Catchup: entered done, then straight into the addon build — nothing is
+	// downloaded, verified or activated.
+	{State: StateCatchup, Effect: EffectNone, Success: []State{StateAddonBuilt}},
 	{State: StateDownloaded, Effect: EffectDownload, Success: []State{StateVerified}, Failure: StateRefused, Cancellable: true},
 	{State: StateVerified, Effect: EffectVerify, Success: []State{StatePreflightOK}, Failure: StateRefused, Cancellable: true},
 	{State: StatePreflightOK, Effect: EffectPreflight, Success: []State{StateMaintenanceHeld}, Failure: StateRefused, Cancellable: true},
@@ -134,7 +142,7 @@ var table = []Row{
 	{State: StateAddonBuilt, Effect: EffectAddonBuild, Success: []State{StateAddonPlaced}, Failure: StateRevertedClean},
 	{State: StateAddonPlaced, Effect: EffectAddonPlace, Success: []State{StateNT8Restarted, StateAddonReconnected}, Failure: StateRevertedClean},
 	{State: StateNT8Restarted, Effect: EffectNT8Restart, Success: []State{StateAddonReconnected}, Failure: StateRevertedClean},
-	{State: StateAddonReconnected, Effect: EffectAddonReconnect, Success: []State{StateActivated}, Failure: StateRollingBack},
+	{State: StateAddonReconnected, Effect: EffectAddonReconnect, Success: []State{StateActivated, StateComplete}, Failure: StateRollingBack},
 	// The point of no return: any failure from here restores the snapshot.
 	{State: StateActivated, Effect: EffectActivate, Success: []State{StateBooted}, Failure: StateRollingBack},
 	{State: StateBooted, Effect: EffectWatch, Success: []State{StateBootVerified}, Failure: StateRollingBack},

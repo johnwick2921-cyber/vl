@@ -87,6 +87,15 @@ type Job struct {
 
 	NT8 *NT8Decision `json:"nt8,omitempty"`
 
+	// Catchup marks a worker-internal catch-up job (feat/addon-catchup): it
+	// rebuilds the AddOn from the INSTALLED release's ninjascript — no
+	// download/verify/preflight/hold/activate. CatchupNT8Open records whether
+	// NT8 was open when the job was created: open → build + place + restart +
+	// reconnect; closed → build + place only (the new DLL loads at the next
+	// NT8 start).
+	Catchup        bool `json:"catchup,omitempty"`
+	CatchupNT8Open bool `json:"catchup_nt8_open,omitempty"`
+
 	// Addon is the one-click AddOn flow state (W-ADDON-ONE-CLICK), set after
 	// nt8_updated and carried through addon_built/placed/restarted/reconnected.
 	Addon *AddonState `json:"addon,omitempty"`
@@ -247,6 +256,32 @@ func New(jobID, releaseID string, now time.Time) (Job, error) {
 		ReleaseID:   releaseID,
 		State:       StateRequested,
 		Phase:       PhaseDone,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		Transitions: []Transition{{State: StateRequested, Phase: PhaseDone, At: now, Receipts: 0}},
+		Receipts:    []Receipt{},
+	}, nil
+}
+
+// NewCatchup is the job a worker-internal catch-up writes: it starts at
+// requested/done (the history must start there — Validate), with Catchup set so
+// the runner routes it straight into the addon build instead of the install
+// pipeline. Nothing is downloaded, verified or activated.
+func NewCatchup(jobID string, now time.Time) (Job, error) {
+	if !updaterwire.ValidJobID(jobID) {
+		return Job{}, fmt.Errorf("%w: %q", ErrBadJobID, clip(jobID))
+	}
+	if now.IsZero() {
+		return Job{}, errors.New("updaterjob: NewCatchup needs a clock reading")
+	}
+	now = norm(now)
+	return Job{
+		Schema:      SchemaVersion,
+		JobID:       jobID,
+		ReleaseID:   "catchup",
+		State:       StateRequested,
+		Phase:       PhaseDone,
+		Catchup:     true,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		Transitions: []Transition{{State: StateRequested, Phase: PhaseDone, At: now, Receipts: 0}},

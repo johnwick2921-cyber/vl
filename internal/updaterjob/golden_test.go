@@ -208,6 +208,11 @@ func TestJobFileSchemaGolden(t *testing.T) {
 	// for legacy replay of parked jobs, but no new job writes it — the full
 	// golden walks the one-click addon path, which never parks.
 	delete(want, "resumed_at")
+	// catchup / catchup_nt8_open are set only on a worker-internal catch-up
+	// job; the full golden walks the one-click INSTALL path, which never sets
+	// them (absent ≠ false).
+	delete(want, "catchup")
+	delete(want, "catchup_nt8_open")
 	var missing, extra []string
 	for k := range want {
 		if !got[k] {

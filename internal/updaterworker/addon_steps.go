@@ -45,20 +45,28 @@ func (w *Worker) winSeam() nt8RunSeam {
 
 // addonConfig assembles the addonbuild.Config for THIS job. WorkDir is a
 // worker-made dir under /tmp — never the NT8 folder. SourceDir is the
-// RELEASE's ninjascript/*.cs (the NEW AddOn sources), never the install's.
+// RELEASE's ninjascript/*.cs (the NEW AddOn sources), never the install's —
+// EXCEPT for a catch-up job, which rebuilds the INSTALLED release's own
+// ninjascript (nothing new is being installed).
 func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
-	if j.Release == nil || j.Release.Dir == "" {
-		return addonbuild.Config{}, errors.New("addon build without a verified release dir")
-	}
 	docsDir, err := addonDocsDir()
 	if err != nil {
 		return addonbuild.Config{}, err
+	}
+	src := ""
+	if j.Catchup {
+		src = filepath.Join(w.cfg.Target.InstallDir, "ninjascript")
+	} else {
+		if j.Release == nil || j.Release.Dir == "" {
+			return addonbuild.Config{}, errors.New("addon build without a verified release dir")
+		}
+		src = filepath.Join(j.Release.Dir, "ninjascript")
 	}
 	return addonbuild.Config{
 		DocsDir:   docsDir,
 		Exe:       addonExe(),
 		DotnetExe: "dotnet.exe",
-		SourceDir: filepath.Join(j.Release.Dir, "ninjascript"),
+		SourceDir: src,
 		WorkDir:   filepath.Join(os.TempDir(), "vl-addon-build", j.JobID),
 		Run:       w.winSeam(),
 	}, nil
@@ -68,11 +76,23 @@ func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
 // build error refuses the update BEFORE any hold, kill or place — the page
 // shows the compiler error. A release whose signed manifest lists no
 // ninjascript/*.cs cannot be compiled from its own unproven sources: refused.
+// A CATCH-UP job builds the INSTALLED release's own ninjascript instead — the
+// install tree is what's running, no verdict is owed.
 func (w *Worker) stepAddonBuild(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
 	res := addonbuild.Result{}
 	err := func() error {
+		if j.Catchup {
+			ev["catchup"] = "true"
+			cfg, err := w.addonConfig(j)
+			if err != nil {
+				return fmt.Errorf("addon config: %w", err)
+			}
+			var berr error
+			res, berr = addonbuild.Build(ctx, cfg)
+			return berr
+		}
 		f, ferr := w.facts(j)
 		if ferr != nil {
 			return fmt.Errorf("release re-verify: %w", ferr)
@@ -160,6 +180,14 @@ func migrateAddonSources(docsDir, jobID string) error {
 func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
+	// Catch-up records the pre-restart accept_seq from the live hello (there is
+	// no nt8 decision to read it from).
+	var preSeq uint64
+	if j.Catchup {
+		if m, merr := w.app.Maintenance(ctx); merr == nil && m.AddonAck != nil {
+			preSeq = m.AddonAck.AcceptSeq
+		}
+	}
 	deferred := false
 	backupDir, err := func() (string, error) {
 		if j.Addon == nil || j.Addon.DllPath == "" || j.Addon.Sha256 == "" {
@@ -175,7 +203,11 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 		}
 		if migrate {
 			ev["migration_needed"] = "true"
-			if j.NT8 != nil && j.NT8.Absent {
+			// NT8 is CLOSED for this job when an install took the nt8_absent
+			// drain (j.NT8.Absent), or when a catch-up was created with NT8
+			// already closed (!CatchupNT8Open — a catch-up never sets j.NT8).
+			nt8Closed := (j.Catchup && !j.CatchupNT8Open) || (!j.Catchup && j.NT8 != nil && j.NT8.Absent)
+			if nt8Closed {
 				// NT8 CLOSED (release #35, no F5): migrate + rebuild + place
 				// now, in one go. The rebuild ACCEPTS the new Custom.dll only
 				// when compile errors = 0 AND the public type list equals the
@@ -233,6 +265,8 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 		// The reconnect proof starts from the connection BEFORE the restart.
 		if k.NT8 != nil {
 			k.Addon.OldAcceptSeq = k.NT8.AckAcceptSeq
+		} else if j.Catchup {
+			k.Addon.OldAcceptSeq = preSeq
 		}
 	}
 	return res
@@ -463,7 +497,12 @@ func (w *Worker) stepAddonReconnect(ctx context.Context, j updaterjob.Job) stepR
 			map[string]string{"skipped": "nt8 not restarted", "note": "NT8 closed — the new AddOn loads the next time NinjaTrader starts"}, nil)}}
 	}
 	wantBuild := ""
-	if j.NT8 != nil {
+	if j.Catchup {
+		// Catch-up rebuilds the INSTALLED release's AddOn: the reconnect must
+		// prove that build (the nt8 decision never ran, so ManifestBuildID is
+		// not the target).
+		wantBuild = w.oldInstallBuildID()
+	} else if j.NT8 != nil {
 		wantBuild = j.NT8.ManifestBuildID
 	}
 	oldSeq := j.Addon.OldAcceptSeq

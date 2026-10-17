@@ -220,6 +220,12 @@ func (w *Worker) Start(ctx context.Context) (StartReport, error) {
 	safe.GoNamed("updater-worker-run", func() { w.run(ctx) })
 	if rep.Active != "" {
 		w.signal()
+		return rep, nil
+	}
+	// feat/addon-catchup: an idle worker checks whether the AddOn NT8 runs is
+	// stale against the installed release, and rebuilds it with no hands.
+	if _, err := w.maybeStartCatchup(ctx); err != nil {
+		w.logf("updater: catch-up check at start: %v", err)
 	}
 	return rep, nil
 }
