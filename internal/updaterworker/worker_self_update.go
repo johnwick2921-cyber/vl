@@ -190,6 +190,7 @@ func pruneOrphans(dir string) error {
 	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), workerBinaryName+".new.") && e.Type().IsRegular() {
+			//homeguard:allow — only regular files named <worker>.new.* in the worker binary dir; one file each
 			if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
 				return err
 			}
@@ -219,6 +220,7 @@ func pruneOldBinaries(dir string) error {
 		return fi.ModTime().After(fj.ModTime())
 	})
 	for _, e := range olds[3:] {
+		//homeguard:allow — keeps the 3 newest; removes older <worker>.old.* files in the worker binary dir only
 		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
 			return err
 		}

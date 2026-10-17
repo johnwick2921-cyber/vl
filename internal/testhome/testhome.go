@@ -74,7 +74,7 @@ var watchedPaths = []string{
 // listedDirs are the real-home folders whose ENTRY NAMES are snapshotted
 // (depth 1): a name that vanishes, or a NEW name a test wrote there through a
 // literal path or the passwd home, fails the run (DS-106 hole 2).
-var listedDirs = []string{"", ".config", "bin", ".ssh"}
+var listedDirs = []string{"", ".config", "bin", ".ssh", ".local", ".local/share", ".local/state", ".local/bin", ".cache"} // .local/.cache: DS-106 round 2
 
 // concurrentOK names the top-level entries OTHER processes on this box create
 // during a run — lane worktrees, the trash folder, shell history files. They

@@ -128,15 +128,77 @@ func deleteFindings(name string, src []byte) ([]int, []string, error) {
 		}
 		local[ln] = path
 	}
+	// DS-106 round 2: an os.Remove inside a loop body or a Walk callback is a
+	// tree delete built one entry at a time — the same AST shape as a single
+	// remove, so it is flagged by CONTEXT. loopDepth counts the enclosing
+	// for/range bodies and Walk/WalkDir function literals.
+	var walkLits = map[*ast.FuncLit]bool{}
 	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && (sel.Sel.Name == "Walk" || sel.Sel.Name == "WalkDir") {
+			for _, a := range call.Args {
+				if fl, ok := a.(*ast.FuncLit); ok {
+					walkLits[fl] = true
+				}
+			}
+		}
+		return true
+	})
+	var stack []ast.Node
+	// inLoop: the innermost enclosing function literal (if any) is a Walk
+	// callback, or a for/range BODY encloses the node with no other function
+	// literal in between (a table of test closures inside a range expression
+	// is not a loop delete).
+	inLoop := func() bool {
+		for i := len(stack) - 1; i >= 0; i-- {
+			switch v := stack[i].(type) {
+			case *ast.FuncLit:
+				return walkLits[v]
+			case *ast.BlockStmt:
+				if i > 0 {
+					switch l := stack[i-1].(type) {
+					case *ast.ForStmt:
+						if l.Body == v {
+							return true
+						}
+					case *ast.RangeStmt:
+						if l.Body == v {
+							return true
+						}
+					}
+				}
+			}
+		}
+		return false
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		if n == nil {
+			stack = stack[:len(stack)-1]
+			return true
+		}
+		stack = append(stack, n)
 		switch x := n.(type) {
 		case *ast.SelectorExpr:
+			// Any method or package function named RemoveAll, whatever the
+			// receiver (afero.Fs, an io/fs wrapper, a future dep) — DS-106 round 2.
+			if x.Sel.Name == "RemoveAll" {
+				if id, ok := x.X.(*ast.Ident); !ok || local[id.Name] != "os" {
+					add(x.Pos(), "RemoveAll on a non-os receiver without the safepath gate")
+					return true
+				}
+			}
 			id, ok := x.X.(*ast.Ident)
 			if !ok {
 				return true
 			}
 			if sels, ok := deletePkgs[local[id.Name]]; ok && sels[x.Sel.Name] {
 				add(x.Pos(), local[id.Name]+"."+x.Sel.Name+" without the safepath gate")
+			}
+			if local[id.Name] == "os" && x.Sel.Name == "Remove" && inLoop() {
+				add(x.Pos(), "os.Remove inside a loop or Walk callback (a tree delete one entry at a time)")
 			}
 		case *ast.CallExpr:
 			sel, ok := x.Fun.(*ast.SelectorExpr)

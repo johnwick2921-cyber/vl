@@ -1268,6 +1268,7 @@ func TestOptionalUnitsAbsent(t *testing.T) {
 	o := oldName()
 	fe := newFakeEnv(t)
 	for _, u := range []string{o + "-backup.service", o + "-backup.timer", o + "-clock-guard.service", o + "-clock-guard.timer"} {
+		//homeguard:allow — fake env under t.TempDir (fe.state/units), fixed unit names
 		_ = os.Remove(filepath.Join(fe.state, "units", u))
 	}
 	out, code := fe.run(t, fe.argsForward()...)

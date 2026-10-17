@@ -65,6 +65,7 @@ func pruneOldLogs(dir string, now time.Time, days int, current string) ([]string
 		if datePart >= cutoff {
 			continue // inside the retention window
 		}
+		//homeguard:allow — only dated log files older than the retention window, in the log dir; never today or the live file
 		if err := os.Remove(filepath.Join(dir, name)); err != nil {
 			return removed, err
 		}
