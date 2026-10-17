@@ -8,7 +8,7 @@ set -u
 DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPORT=$DIR/planner-ab-report.sh
 T=$(mktemp -d /tmp/planner-ab-fixture.XXXXXX)
-trap 'rm -rf "$T"' EXIT
+trap 'rm -rf "${T:?}"' EXIT
 
 fail=0
 assert_md() { # <file> <needle>

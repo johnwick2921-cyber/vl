@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"vl/internal/safepath"
 
 	"vl/internal/updaterjob"
 	"vl/internal/updaterwire"
@@ -77,6 +78,7 @@ type box struct {
 	clock *fakeClock
 
 	inst, data, relDir, backupRoot string
+	nt8docs                        string // fake Documents/NinjaTrader 8 (bin/Custom), for the one-click AddOn seam
 
 	binName    string // the install binary basename (vl-bin or vl-bin — R5 removes the vl form)
 	relBinName string // the release dir's binary basename (defaults to binName)
@@ -102,6 +104,8 @@ type box struct {
 	watchFail        map[string]bool
 	rollbackFail     bool
 	rollbackDistFail bool // RollbackTo restores binary+RELEASE, fails at dist, no kill of its own
+	addonRestoreFail bool // fakeHost.AddonRestore returns an error
+	noReconnect      bool // the AddOn never reconnects after the NT8 restart (guard #3 timeout)
 	badToken         bool // the app refuses the token (401)
 	verdictMissing   bool
 	holdWriteLies    bool          // the hold write lands on disk, then errs (U1 item 9)
@@ -124,6 +128,7 @@ type box struct {
 	absentQueued   int           // nt8_absent leg: queued_signals
 	absentPlanner  bool          // nt8_absent leg: a planner read is in flight
 	absentSim      bool          // nt8_absent leg: the bound account is SIM-tradeable
+	simTradeable   bool          // main-view sim_accounts leg: every bound account is SIM-tradeable (guard #1)
 	absentDbOpen   bool          // nt8_absent leg: an OPEN trader_positions row (the CTO P1 leg)
 	cutoverStale   bool          // P-D ruling item 3: the trader_cutover leg fails with the
 	// production "working_orders: snapshot stale" shape when the
@@ -202,7 +207,7 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(root) })
+	t.Cleanup(func() { _ = safepath.RemoveAllTemp(root) })
 	b := &box{
 		t: t, clock: &fakeClock{t: time.Date(2026, 9, 24, 10, 0, 0, 0, logger.CTLocation())},
 		inst: filepath.Join(root, "vl"), backupRoot: filepath.Join(root, "vl-backups", "updater"),
@@ -210,10 +215,16 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 		id:      Identity{PID: 4242, StartTicks: 1000}, running: boxOld,
 		flat: true, addonConnected: true, addonBuild: boxOldBuild, manifestBuild: boxOldBuild,
 		absentSim:  true,
+		simTradeable: true,
 		refuseBoot: map[string]bool{}, watchFail: map[string]bool{},
 	}
 	b.data = filepath.Join(b.inst, "data")
 	b.relDir = filepath.Join(root, "releases", boxNew)
+	// the one-click AddOn build/place/restart seam: a fake NT8 docs dir with
+	// bin/Custom, so addonbuild never touches the real /mnt/c tree.
+	b.nt8docs = filepath.Join(root, "nt8docs")
+	t.Setenv("VL_NT8_DOCS_DIR", b.nt8docs)
+	writeFile(t, filepath.Join(b.nt8docs, "bin", "Custom", ".keep"), "")
 	// the running install (a checkout at boxOld)
 	writeFile(t, filepath.Join(b.inst, b.binName), binaryBody(boxOld))
 	writeFile(t, filepath.Join(b.inst, "deploy", "RELEASE"), boxOld+"\n")
@@ -282,7 +293,7 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	clearMaintenanceHold = func(d, job string) error {
 		// a re-run clear (crash after the first) finds it already absent:
 		// ours or absent, never another's
-		b.expect("hold_clear", false, updaterjob.StateComplete, updaterjob.StateRolledBack)
+		b.expect("hold_clear", false, updaterjob.StateComplete, updaterjob.StateRolledBack, updaterjob.StateRevertedClean)
 		if s, _ := ReadHoldFor(b.data, boxJobID); s != HoldOurs && s != HoldAbsent {
 			b.violate("hold_clear with a %s hold on disk", s)
 		}
@@ -297,7 +308,56 @@ func (r *rig) newWorker() *Worker {
 	if err != nil {
 		r.t.Fatal(err)
 	}
+	w.runWin = r.box.fakeRunWin
 	return w
+}
+
+// fakeRunWin plays dotnet.exe and powershell.exe on Linux (W-ADDON-ONE-CLICK):
+// a dotnet build "compiles" by writing a VL.AddOn.dll carrying the AddOn type
+// into the -o dir (parsed back from the Windows path Build rendered); the
+// powershell NT8 stop/start succeeds. No test ever execs a real Windows binary.
+func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if strings.Contains(name, "dotnet") {
+		out := ""
+		for i := 0; i+1 < len(args); i++ {
+			if args[i] == "-o" {
+				out = args[i+1]
+			}
+		}
+		wsl := windowsToWSL(out)
+		if err := os.MkdirAll(wsl, 0o755); err != nil {
+			return nil, err
+		}
+		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), "fake AddOn DLL: type "+addonTypeName+"\n")
+		return []byte("Build succeeded.\n    0 Warning(s)\n    0 Error(s)\n"), nil
+	}
+	// powershell.exe stop/start: Start-Process is the NT8 restart — simulate
+	// the AddOn reconnecting with the manifest's build on a NEW connection.
+	for _, a := range args {
+		if strings.Contains(a, "Start-Process") {
+			b.mu.Lock()
+			if !b.noReconnect {
+				b.addonBuild = b.manifestBuild
+				b.addonSeq++
+			}
+			b.mu.Unlock()
+		}
+	}
+	return []byte(""), nil
+}
+
+// windowsToWSL undoes addonbuild.wslToWindows for the UNC form the build's -o
+// dir uses (\\wsl.localhost\<distro>\tmp\... → /tmp/...).
+func windowsToWSL(p string) string {
+	const prefix = `\\wsl.localhost\`
+	if strings.HasPrefix(p, prefix) {
+		rest := strings.TrimPrefix(p, prefix)
+		if i := strings.IndexByte(rest, '\\'); i >= 0 {
+			rest = rest[i+1:] // drop the distro segment
+		}
+		return "/" + strings.ReplaceAll(rest, "\\", "/")
+	}
+	return strings.ReplaceAll(p, "\\", "/")
 }
 
 // install is the install verb at the production handler.
@@ -465,7 +525,7 @@ func installHalves(rel, dst Release) error {
 	if err := copyFile(rel.ReleaseFile, dst.ReleaseFile); err != nil {
 		return err
 	}
-	if err := os.RemoveAll(dst.Dist); err != nil {
+	if err := safepath.RemoveAllTemp(dst.Dist); err != nil {
 		return err
 	}
 	return copyTree(rel.Dist, dst.Dist)
@@ -725,6 +785,13 @@ func (h *fakeHost) ExeOf(pid int) (string, error) {
 	return h.b.instBinary(), nil // R5 removes: vl-bin when the install carries it
 }
 
+func (h *fakeHost) AddonRestore(docsDir, backupDir string) error {
+	if h.b.addonRestoreFail {
+		return fmt.Errorf("addon restore: fake failure")
+	}
+	return (&OSHost{}).AddonRestore(docsDir, backupDir)
+}
+
 // ── the app (httptest) ──────────────────────────────────────────────────────
 
 func (b *box) serveApp(w http.ResponseWriter, r *http.Request) {
@@ -824,7 +891,7 @@ func (b *box) maintenanceView() MaintenanceView {
 func (b *box) gateView() GateView {
 	st := store.ReadMaintenanceHold(b.data)
 	b.mu.Lock()
-	flat, plannerHeld := b.flat, b.plannerInFlight
+	flat, plannerHeld, simTradeable := b.flat, b.plannerInFlight, b.simTradeable
 	b.mu.Unlock()
 	a := b.ack()
 	job := "n/a"
@@ -868,6 +935,12 @@ func (b *box) gateView() GateView {
 		{Name: "addon_census", Pass: flat, Detail: fmt.Sprintf("age=%s — flat=%v", censusAge, flat)},
 		{Name: "addon_census_prehold", Pass: preholdCensusPass, Detail: preholdCensusDetail},
 		{Name: "ledger_exposure", Pass: flat, Detail: "arms"},
+		{Name: "sim_accounts", Pass: simTradeable, Detail: func() string {
+			if simTradeable {
+				return "1 bound account(s) SIM-tradeable"
+			}
+			return "t1: bound account Sim101 is not SIM-tradeable"
+		}()},
 		{Name: "trader_cutover:t1", Pass: flat && !b.cutoverStale, Detail: func() string {
 			if b.cutoverStale {
 				return "working_orders: snapshot stale (AddOn down)"

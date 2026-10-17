@@ -7,7 +7,7 @@ BIN="${R24_HARNESS:-$HERE/../../../../../.r24harness}"
 DB=/home/hoang/vl-r101/data/db.copy.db
 OUT="$HERE/out-r24"
 mkdir -p "$OUT"
-rm -f "$OUT/harness.done"
+rm -f "${OUT:?}/harness.done"
 echo "start $(date -Is) bin=$BIN sha256=$(sha256sum "$BIN" | cut -c1-16) db=$DB"
 "$BIN" -db "$DB" -out "$OUT" -s4
 rc=$?

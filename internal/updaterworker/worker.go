@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -97,6 +98,12 @@ type Worker struct {
 	// ("<state>/started", "<state>/effect", "<state>/done"); a test panics in
 	// it to play a crash there. nil in production.
 	crash func(point string)
+
+	// runWin is the W-ADDON-ONE-CLICK test seam that execs Windows binaries
+	// (dotnet.exe build, powershell.exe restart). nil in production = the real
+	// exec.CommandContext; a test binds a fake so it never starts the real NT8
+	// or dotnet.
+	runWin nt8RunSeam
 }
 
 // New builds a worker. Nothing runs until Start.
@@ -132,6 +139,13 @@ func New(cfg Config, d Deps) (*Worker, error) {
 		cfg.Logf = func(string, ...any) {}
 	}
 	return &Worker{cfg: cfg, lib: d.Lib, app: d.App, rel: d.Rel, host: d.Host, resume: map[string]bool{}, wake: make(chan struct{}, 1), swapDone: make(chan struct{})}, nil
+}
+
+// execWindows is the production runWin: it execs a Windows binary (powershell.exe,
+// dotnet.exe) from WSL. Never called in a test (the seam is overridden).
+func execWindows(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	return cmd.CombinedOutput()
 }
 
 func (w *Worker) dataDir() string { return w.cfg.Target.DataDir }

@@ -719,16 +719,11 @@ func (w *Worker) stepNT8(ctx context.Context, j updaterjob.Job) stepResult {
 	if err != nil {
 		err = fmt.Errorf("ready not re-proven at the AddOn step: %w", err)
 	}
-	res := stepResult{receipts: []Receipt{w.receipt("nt8", start, ev, err)}, err: err}
-	if j.State == updaterjob.StateNT8Updated {
-		why := "the AddOn must be updated"
-		if j.NT8 != nil && j.NT8.Reason != "" {
-			why = j.NT8.Reason
-		}
-		res.blocker = clipText("attended AddOn F5 required (" + why + "): compile the release's AddOn in NT8 (copy → F5 → full NT8 restart), then run: vl-updater resume " + j.JobID)
-	}
-	return res
+	return stepResult{receipts: []Receipt{w.receipt("nt8", start, ev, err)}, err: err}
 }
+
+// ── W-ADDON-ONE-CLICK: the AddOn build/place/restart/reconnect steps live in
+// addon_steps.go (DS-104). They replace the nt8_updated PARK.
 
 // stepActivate is the point of no return. On a resume INSIDE it (attempts >
 // 1) the identity on disk may be the process the first run already killed:
@@ -1004,10 +999,21 @@ func (w *Worker) stepRollback(ctx context.Context, j updaterjob.Job) stepResult 
 	return stepResult{receipts: receipts}
 }
 
-// stepReleaseHold clears THIS job's hold (complete, rolled_back — the only
-// two states that clear). A clear that keeps failing is recovery_needed.
+// stepReleaseHold clears THIS job's hold (complete, rolled_back, reverted_clean
+// — the only states that clear). reverted_clean first restores the old AddOn
+// DLL (if one was placed), so the one-click revert leaves the box exactly as it
+// was. A clear (or restore) that keeps failing is recovery_needed.
 func (w *Worker) stepReleaseHold(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
+	if j.State == updaterjob.StateRevertedClean && j.Addon != nil && j.Addon.BackupDir != "" {
+		docsDir, err := addonDocsDir()
+		if err != nil {
+			return stepResult{err: fmt.Errorf("addon restore: %w", err), reason: "the placed AddOn could not be restored: " + err.Error()}
+		}
+		if err := w.host.AddonRestore(docsDir, j.Addon.BackupDir); err != nil {
+			return stepResult{err: err, reason: "the placed AddOn could not be restored: " + err.Error()}
+		}
+	}
 	deadline := start.Add(w.cfg.Budgets.HoldClear)
 	var err error
 	for {

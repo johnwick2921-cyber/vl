@@ -72,24 +72,16 @@ func TestDoneStepCarriesItsReceipt(t *testing.T) {
 	if j.Phase != PhaseStarted || len(j.Transitions) != before {
 		t.Errorf("a refused Finish changed the job: %s, %d transitions", j.Phase, len(j.Transitions))
 	}
-	// A receipt from an EARLIER step does not finish this one: the park's
-	// resume receipt is on file before activated starts.
+	// A receipt from an EARLIER step does not finish this one: the nt8 receipt
+	// is on file before activated starts.
 	p := t.TempDir()
 	pn := t0
 	pj := mustNew(t, "job-0101", "v1.2.0", pn)
 	mustWrite(t, p, pj)
-	for _, s := range []State{StateDownloaded, StateVerified, StatePreflightOK, StateMaintenanceHeld, StateDrainedAcked, StateGateOK, StateBackupDone} {
+	pj.NT8 = &NT8Decision{Decision: NT8Skipped}
+	for _, s := range []State{StateDownloaded, StateVerified, StatePreflightOK, StateMaintenanceHeld, StateDrainedAcked, StateGateOK, StateBackupDone, StateNT8Skipped} {
 		step(t, p, &pj, &pn, s)
 	}
-	pj.NT8 = &NT8Decision{Decision: NT8Updated, Reason: "ninjascript/*.cs changed"}
-	step(t, p, &pj, &pn, StateNT8Updated)
-	pn = pn.Add(time.Minute)
-	resumed := pn
-	pj.ResumedAt = &resumed
-	if err := pj.AddReceipt(Receipt{Step: "resume", StartedAt: pn, EndedAt: pn, OK: true}, pn); err != nil {
-		t.Fatal(err)
-	}
-	mustWrite(t, p, pj)
 	withRollbackInputs(&pj)
 	pn = pn.Add(time.Second)
 	if err := pj.Enter(StateActivated, pn); err != nil {
@@ -97,7 +89,7 @@ func TestDoneStepCarriesItsReceipt(t *testing.T) {
 	}
 	mustWrite(t, p, pj)
 	if err := pj.Finish(pn.Add(time.Second)); !errors.Is(err, ErrNoReceipt) {
-		t.Errorf("Finish(activated/started) on the resume receipt alone = %v, want ErrNoReceipt", err)
+		t.Errorf("Finish(activated/started) on the nt8 receipt alone = %v, want ErrNoReceipt", err)
 	}
 	// positive control: the activate receipt finishes it, and the file reads.
 	if err := pj.AddReceipt(Receipt{Step: "activate", StartedAt: pn, EndedAt: pn.Add(time.Second), OK: true}, pn.Add(time.Second)); err != nil {
@@ -168,85 +160,34 @@ func walkTo(t *testing.T, dd, jobID string, states ...State) (Job, time.Time) {
 	return j, now
 }
 
-var toPark = []State{StateDownloaded, StateVerified, StatePreflightOK, StateMaintenanceHeld, StateDrainedAcked, StateGateOK, StateBackupDone, StateNT8Updated}
-
-// TestLeavingTheParkNeedsAnAttendedResume (U1 verifier defect 3, probes H20
-// and H18): the job leaves the nt8_updated park for activated only with a
-// resumed_at recorded AFTER the park was done and no later than the move
-// out of it (the attended `vl-updater resume` is the only way out); and a
-// resumed_at on a job that never parked is refused.
-func TestLeavingTheParkNeedsAnAttendedResume(t *testing.T) {
+// TestNoParkAddonPath (W-ADDON-ONE-CLICK): the nt8_updated park is gone — a
+// changed AddOn walks addon_built → addon_placed → nt8_restarted →
+// addon_reconnected → activated, with no resumed_at at any point. The old park
+// leave (nt8_updated/done → activated) is refused.
+func TestNoParkAddonPath(t *testing.T) {
 	restoreSeams(t)
-	sha := "0123456789abcdef0123456789abcdef01234567"
-	leave := func(t *testing.T, resumed *time.Time) (Job, string, []byte) {
-		t.Helper()
-		dd := t.TempDir()
-		j, now := walkTo(t, dd, "job-0110", toPark...)
-		withRollbackInputs(&j)
-		p, _ := Path(dd, j.JobID)
-		before, _ := os.ReadFile(p)
-		j.ResumedAt = resumed
-		if err := j.Enter(StateActivated, now.Add(time.Minute)); err != nil {
-			t.Fatal(err)
-		}
-		return j, dd, before
+
+	// the park leave is gone: Enter refuses nt8_updated/done → activated
+	dd := t.TempDir()
+	j, now := walkTo(t, dd, "job-0110", StateDownloaded, StateVerified, StatePreflightOK, StateMaintenanceHeld, StateDrainedAcked, StateGateOK, StateBackupDone, StateNT8Updated)
+	withRollbackInputs(&j)
+	if err := j.Enter(StateActivated, now.Add(time.Minute)); err == nil {
+		t.Fatal("Enter(activated) from nt8_updated/done succeeded, want a refused transition")
 	}
-	parkDone := t0.Add(16 * time.Second) // walkTo: 8 steps × 2 s
-	for name, resumed := range map[string]*time.Time{
-		"H20: no resumed_at":             nil,
-		"resumed_at at the park instant": ptr(parkDone),
-		"resumed_at before the park":     ptr(parkDone.Add(-time.Second)),
-		"resumed_at after it left":       ptr(parkDone.Add(2 * time.Minute)),
-	} {
-		t.Run(name, func(t *testing.T) {
-			j, dd, before := leave(t, resumed)
-			if err := Write(dd, j); !errors.Is(err, ErrCorrupt) {
-				t.Errorf("Write(nt8_updated → activated, %s) = %v, want ErrCorrupt", name, err)
-			}
-			p, _ := Path(dd, j.JobID)
-			if b, _ := os.ReadFile(p); string(b) != string(before) {
-				t.Error("a refused leave changed the file")
-			}
-			refusedAtBothCallSites(t, name, j)
-		})
+
+	// the addon path is legal end-to-end, with no resumed_at ever set
+	dd2 := t.TempDir()
+	a, now := walkTo(t, dd2, "job-0111", StateDownloaded, StateVerified, StatePreflightOK, StateMaintenanceHeld, StateDrainedAcked, StateGateOK, StateBackupDone, StateNT8Updated)
+	a.Addon = &AddonState{DllPath: "/tmp/vl-addon-build/job-0111/out/VL.AddOn.dll", Sha256: "deadbeef"}
+	step(t, dd2, &a, &now, StateAddonBuilt)
+	step(t, dd2, &a, &now, StateAddonPlaced)
+	step(t, dd2, &a, &now, StateNT8Restarted)
+	step(t, dd2, &a, &now, StateAddonReconnected)
+	withRollbackInputs(&a)
+	step(t, dd2, &a, &now, StateActivated)
+	if got, err := Read(dd2, "job-0111"); err != nil || got.State != StateActivated || got.Addon == nil || got.ResumedAt != nil {
+		t.Fatalf("addon path: %s/%s addon=%+v resumed_at=%v err=%v", got.State, got.Phase, got.Addon, got.ResumedAt, err)
 	}
-	// H18: a resume time on a job that never parked — mid-flight, and on the
-	// nt8_skipped path.
-	for name, states := range map[string][]State{
-		"H18: downloaded":      {StateDownloaded},
-		"nt8_skipped, no park": {StateDownloaded, StateVerified, StatePreflightOK, StateMaintenanceHeld, StateDrainedAcked, StateGateOK, StateBackupDone, StateNT8Skipped},
-		"nt8_updated not done": {StateDownloaded, StateVerified, StatePreflightOK, StateMaintenanceHeld, StateDrainedAcked, StateGateOK, StateBackupDone},
-	} {
-		t.Run(name, func(t *testing.T) {
-			dd := t.TempDir()
-			j, now := walkTo(t, dd, "job-0111", states...)
-			if name == "nt8_updated not done" {
-				j.NT8 = &NT8Decision{Decision: NT8Updated}
-				if err := j.Enter(StateNT8Updated, now.Add(time.Second)); err != nil {
-					t.Fatal(err)
-				}
-				mustWrite(t, dd, j)
-			}
-			j.ResumedAt = ptr(now.Add(time.Minute))
-			j.UpdatedAt = *j.ResumedAt
-			if err := Write(dd, j); !errors.Is(err, ErrCorrupt) {
-				t.Errorf("Write(resumed_at, %s) = %v, want ErrCorrupt", name, err)
-			}
-			refusedAtBothCallSites(t, name, j)
-		})
-	}
-	// positive control: resumed inside the park window, then activated.
-	j, dd, _ := leave(t, ptr(parkDone.Add(30*time.Second)))
-	mustWrite(t, dd, j)
-	if got, err := Read(dd, j.JobID); err != nil || got.State != StateActivated || got.ResumedAt == nil || got.Release.SHA != sha {
-		t.Fatalf("positive control: %+v %v", got, err)
-	}
-	// and the park itself may carry the resume before the runner moves
-	k := t.TempDir()
-	pj, now := walkTo(t, k, "job-0112", toPark...)
-	pj.ResumedAt = ptr(now.Add(time.Second))
-	pj.UpdatedAt = *pj.ResumedAt
-	mustWrite(t, k, pj)
 }
 
 func ptr[T any](v T) *T { return &v }

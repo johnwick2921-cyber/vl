@@ -22,8 +22,9 @@ type wantRow struct {
 var wantOrder = []State{
 	StateRequested, StateDownloaded, StateVerified, StatePreflightOK, StateMaintenanceHeld,
 	StateDrainedAcked, StateGateOK, StateBackupDone, StateNT8Skipped, StateNT8Updated,
+	StateAddonBuilt, StateAddonPlaced, StateNT8Restarted, StateAddonReconnected,
 	StateActivated, StateBooted, StateBootVerified, StateWorkerSwapped, StateComplete, StateRollingBack,
-	StateRolledBack, StateRecoveryNeeded, StateCancelled, StateRefused,
+	StateRolledBack, StateRevertedClean, StateRecoveryNeeded, StateCancelled, StateRefused,
 }
 
 var wantTable = map[State]wantRow{
@@ -36,7 +37,11 @@ var wantTable = map[State]wantRow{
 	StateGateOK:          {eff: EffectGate, succ: []State{StateBackupDone}, fail: StateRecoveryNeeded, extra: []State{StateRefused}},
 	StateBackupDone:      {eff: EffectBackup, succ: []State{StateNT8Skipped, StateNT8Updated}, fail: StateRecoveryNeeded},
 	StateNT8Skipped:      {eff: EffectNT8, succ: []State{StateActivated}, fail: StateRecoveryNeeded},
-	StateNT8Updated:      {eff: EffectNT8, succ: []State{StateActivated}, fail: StateRecoveryNeeded, parks: true},
+	StateNT8Updated:      {eff: EffectNT8, succ: []State{StateAddonBuilt}, fail: StateRecoveryNeeded},
+	StateAddonBuilt:      {eff: EffectAddonBuild, succ: []State{StateAddonPlaced}, fail: StateRevertedClean},
+	StateAddonPlaced:     {eff: EffectAddonPlace, succ: []State{StateNT8Restarted, StateAddonReconnected}, fail: StateRevertedClean},
+	StateNT8Restarted:    {eff: EffectNT8Restart, succ: []State{StateAddonReconnected}, fail: StateRevertedClean},
+	StateAddonReconnected: {eff: EffectAddonReconnect, succ: []State{StateActivated}, fail: StateRollingBack},
 	StateActivated:       {eff: EffectActivate, succ: []State{StateBooted}, fail: StateRollingBack},
 	StateBooted:          {eff: EffectWatch, succ: []State{StateBootVerified}, fail: StateRollingBack},
 	StateBootVerified:    {eff: EffectBootVerify, succ: []State{StateWorkerSwapped}, fail: StateRollingBack},
@@ -44,6 +49,7 @@ var wantTable = map[State]wantRow{
 	StateComplete:        {eff: EffectReleaseHold, fail: StateRecoveryNeeded},
 	StateRollingBack:     {eff: EffectRollback, succ: []State{StateRolledBack}, fail: StateRecoveryNeeded},
 	StateRolledBack:      {eff: EffectReleaseHold, fail: StateRecoveryNeeded},
+	StateRevertedClean:   {eff: EffectReleaseHold, fail: StateRecoveryNeeded},
 	StateRecoveryNeeded:  {eff: EffectNone},
 	StateCancelled:       {eff: EffectNone},
 	StateRefused:         {eff: EffectNone},
@@ -133,10 +139,10 @@ func TestStateTableIsExhaustive(t *testing.T) {
 		}
 	}
 	for name, c := range map[string]struct{ got, want []string }{
-		"terminal":    {terminal, []string{"cancelled", "complete", "recovery_needed", "refused", "rolled_back"}},
+		"terminal":    {terminal, []string{"cancelled", "complete", "recovery_needed", "refused", "reverted_clean", "rolled_back"}},
 		"cancellable": {cancellable, []string{"downloaded", "preflight_ok", "requested", "verified"}},
 		"hold write":  {holds, []string{"maintenance_held"}},
-		"hold clear":  {clears, []string{"complete", "rolled_back"}},
+		"hold clear":  {clears, []string{"complete", "reverted_clean", "rolled_back"}},
 	} {
 		sort.Strings(c.got)
 		if !reflect.DeepEqual(c.got, c.want) {

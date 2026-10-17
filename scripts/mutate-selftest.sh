@@ -15,7 +15,7 @@ MUTATE=scripts/mutate.sh
 [ -x "$MUTATE" ] || { echo "SELFTEST FAIL: $MUTATE is not executable"; exit 1; }
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/mutate-selftest.XXXXXX")"
-trap 'rm -rf "$WORK"' EXIT
+trap 'rm -rf "${WORK:?}"' EXIT
 
 pass=0; fail=0
 check() { # check <name> <want-rc> <got-rc> <output>

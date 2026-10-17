@@ -53,7 +53,7 @@ func TestStaleDirsOfDeadRunsAreSweptAndLiveOnesKept(t *testing.T) {
 			t.Skipf("cannot create %s: %v", d, err)
 		}
 	}
-	t.Cleanup(func() { os.RemoveAll(live) })
+	t.Cleanup(func() { os.RemoveAll(live) }) //homeguard:allow — live = <tmpfs base>/<prefix>1, made by this test under the tmpfs base, never a home path
 	sweepStale()
 	if _, err := os.Stat(dead); !os.IsNotExist(err) {
 		t.Fatalf("a dir of a dead pid must be swept (err=%v)", err)

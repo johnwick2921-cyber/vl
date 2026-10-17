@@ -122,6 +122,7 @@ func ClearFetchPending(releaseRoot, sha string) error {
 	if err != nil {
 		return err
 	}
+	//homeguard:allow — one fetch-pending marker file under releaseRoot, resolved by pendingMarker
 	if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
