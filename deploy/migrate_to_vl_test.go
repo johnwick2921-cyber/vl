@@ -200,7 +200,7 @@ log(){ echo "$*" >> "$J"; }
 unit_file(){ printf '%s' "$ST/units/$1"; }
 is_active(){ [ -f "$ST/active/$1" ]; }
 act(){ mkdir -p "$ST/active"; : > "$ST/active/$1"; }
-deact(){ rm -f "$ST/active/$1"; }
+deact(){ rm -f "${ST:?}/active/$1"; }
 set_mp(){ mkdir -p "$ST/mainpid"; printf '%s' "$1" > "$ST/mainpid/$2"; }
 mp(){ cat "$ST/mainpid/$1" 2>/dev/null || echo 0; }
 usr=0
@@ -397,7 +397,7 @@ ST="$FAKE_STATE"
 case "${1:-}" in
   release)
     echo "release ${2:-}" >> "$ST/release.log"
-    rm -rf "$HOME/<OLD>-main.lock.d"
+    rm -rf "${HOME:?}/<OLD>-main.lock.d"
     exit 0 ;;
   *) exit 0 ;;
 esac

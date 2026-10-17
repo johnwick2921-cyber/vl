@@ -107,7 +107,7 @@ cleanup() {
   if [ "$MODE" = "forward" ]; then
     sudo -k 2>/dev/null || true
   fi
-  for f in $TMP_LIST; do rm -f "$f" 2>/dev/null || true; done
+  for f in $TMP_LIST; do rm -f "${f:?}" 2>/dev/null || true; done
 }
 trap cleanup EXIT
 
@@ -408,7 +408,7 @@ gate_check() { # prints the legs and dies on any failing required leg
   ( umask 077; printf 'Authorization: Bearer %s' "$tok" > "$hdr" ) \
     || die "cannot write the token header file"
   gate="$(gate_payload "$hdr")"
-  rm -f "$hdr"
+  rm -f "${hdr:?}"
   [ -n "$gate" ] || die "the installation gate did not answer — refusing to kill a trader whose state is unknown"
   legs="$(printf '%s' "$gate" | jq -r '.legs[]? | "\(.name)\t\(.pass)"' 2>/dev/null || true)"
   [ -n "$legs" ] || die "the installation gate payload names no legs — refusing"
@@ -454,7 +454,7 @@ gate_recheck() {
   ( umask 077; printf 'Authorization: Bearer %s' "$tok" > "$hdr" ) \
     || stepdie "cannot write the token header file on the re-check"
   gate="$(gate_payload "$hdr")"
-  rm -f "$hdr"
+  rm -f "${hdr:?}"
   [ -n "$gate" ] || stepdie "the installation gate did not answer on the re-check — refusing before the bot is stopped"
   legs="$(printf '%s' "$gate" | jq -r '.legs[]? | "\(.name)\t\(.pass)"' 2>/dev/null || true)"
   [ -n "$legs" ] || stepdie "the installation gate payload names no legs on the re-check — refusing before the bot is stopped"
@@ -633,7 +633,7 @@ steps_1_5() {
         stepdie "unit template $unit still holds a placeholder after rendering"
       fi
       sudo tee "/etc/systemd/system/$unit.service" >/dev/null < "$out"
-      rm -f "$out"
+      rm -f "${out:?}"
     done
     sudo systemctl daemon-reload
     date +%s > "$STEP3_MARK"
@@ -758,18 +758,18 @@ nt8_leg() {
   tok="$(printenv VL_CUTOVER_TOKEN 2>/dev/null || printenv "${O}_CUTOVER_TOKEN" 2>/dev/null || true)"
   if [ -z "$tok" ]; then say "NT8: n/a (no token — skipped)"; return; fi
   hdr="$(mkt)"
-  ( umask 077; printf 'Authorization: Bearer %s' "$tok" > "$hdr" ) || { rm -f "$hdr"; say "NT8: n/a (header write failed)"; return; }
+  ( umask 077; printf 'Authorization: Bearer %s' "$tok" > "$hdr" ) || { rm -f "${hdr:?}"; say "NT8: n/a (header write failed)"; return; }
   gate="$(gate_payload "$hdr")"
   nt8="$(printf '%s' "$gate" | jq -r 'if .nt8_absent == null then "null" else .nt8_absent end' 2>/dev/null || echo null)"
   if [ "$nt8" = "null" ] || [ -z "$nt8" ]; then
-    rm -f "$hdr"
+    rm -f "${hdr:?}"
     say "NT8: n/a (no NT8 wire)"
     return
   fi
   eligible="$(printf '%s' "$gate" | jq -r '.nt8_absent.eligible // false' 2>/dev/null || echo false)"
   build="$(printf '%s' "$gate" | jq -r '.nt8_absent.build_id // .build_id // "n/a"' 2>/dev/null || echo n/a)"
   if [ "$eligible" = "true" ]; then
-    rm -f "$hdr"
+    rm -f "${hdr:?}"
     say "NT8: n/a (eligible — link down long enough; no wait) build=$build"
     return
   fi
@@ -777,20 +777,20 @@ nt8_leg() {
   while [ "$waited" -lt 90 ]; do
     log_file="$(newest_vl_log)"
     if [ -n "$log_file" ] && grep -qi 'hello' "$log_file" 2>/dev/null; then
-      rm -f "$hdr"
+      rm -f "${hdr:?}"
       say "NT8: hello seen (build=$build)"
       return
     fi
     gate="$(gate_payload "$hdr")"
     eligible="$(printf '%s' "$gate" | jq -r '.nt8_absent.eligible // false' 2>/dev/null || echo false)"
     if [ "$eligible" = "true" ]; then
-      rm -f "$hdr"
+      rm -f "${hdr:?}"
       say "NT8: eligible during the wait (build=$build)"
       return
     fi
     sleep 2; waited=$((waited+2))
   done
-  rm -f "$hdr"
+  rm -f "${hdr:?}"
   say "NT8: not seen in ${waited}s (build=$build)"
 }
 
@@ -956,7 +956,7 @@ EOF
   local dist_old
   dist_old="$OLD_ROOT/web/dist.old.$old12_s.$ts_rb"
   if [ -e "$dist_old" ]; then
-    rm -rf "$OLD_ROOT/web/dist" 2>/dev/null || true
+    rm -rf "${OLD_ROOT:?}/web/dist" 2>/dev/null || true
     mv "$dist_old" "$OLD_ROOT/web/dist"
   fi
   local marker_saved marker_now
@@ -979,9 +979,9 @@ EOF
   # 5. remove the vl user units.
   local unit
   for unit in vl-backup.service vl-backup.timer vl-clock-guard.service vl-clock-guard.timer vl-updater.service; do
-    rm -f "$HOME/.config/systemd/user/$unit"
+    rm -f "${HOME:?}/.config/systemd/user/${unit:?}"
   done
-  rm -f "$HOME/bin/vl-updater"
+  rm -f "${HOME:?}/bin/vl-updater"
   systemctl --user daemon-reload 2>/dev/null || true
 
   # 6. re-enable the old units (presence read from the state file).
@@ -1142,7 +1142,7 @@ fi
 # below compare file-clock to file-clock. The content (date +%s written at the
 # top of step 3) is kept only as a debugging hint and is NEVER read here.
 STEP3_EPOCH="$(stat -c %Y "$STEP3_MARK" 2>/dev/null || echo 0)"
-rm -f "$STEP3_MARK" 2>/dev/null || true
+rm -f "${STEP3_MARK:?}" 2>/dev/null || true
 
 if ! verify_legs "forward"; then
   if [ "$NO_AUTO_ROLLBACK" = 1 ]; then
