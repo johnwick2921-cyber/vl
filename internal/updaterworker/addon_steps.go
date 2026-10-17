@@ -173,6 +173,17 @@ func migrateAddonSources(docsDir, jobID string) error {
 	return nil
 }
 
+// restoreMigratedSources MOVEs the migrated AddOn sources back into AddOns —
+// the reverse of migrateAddonSources, used when the inline no-F5 rebuild fails
+// so the old files are exactly as they were (moves only, never deletes).
+func restoreMigratedSources(docsDir, jobID string) {
+	src := filepath.Join(docsDir, "vl-addon-backups", jobID, "migrated-sources")
+	matches, _ := filepath.Glob(filepath.Join(src, "*"))
+	for _, m := range matches {
+		_ = os.Rename(m, filepath.Join(docsDir, "bin", "Custom", "AddOns", filepath.Base(m)))
+	}
+}
+
 // stepAddonPlace MOVEs the old DLL out, copies the new one in, verifies its
 // sha256. Guard: a first install whose Custom.dll still holds the AddOn type is
 // refused BEFORE anything is placed — the sources are migrated out and the job
@@ -212,26 +223,46 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 				// now, in one go. The rebuild ACCEPTS the new Custom.dll only
 				// when compile errors = 0 AND the public type list equals the
 				// old one's minus the release's AddOn types. On failure the old
-				// Custom.dll is untouched and the job falls back to the F5
-				// blocker as the last resort.
-				if err := migrateAddonSources(cfg.DocsDir, j.JobID); err != nil {
-					return "", fmt.Errorf("one-time migration: %w", err)
+				// files are restored and the job falls back to the F5 blocker
+				// as the last resort.
+				if j.Catchup {
+					// A catch-up's NT8-closed state was read BEFORE the build;
+					// the owner may have opened NT8 since. NEVER rebuild
+					// Custom.dll (or place the AddOn) under a running NT8 — if
+					// it is running now, defer to the restart path, which stops
+					// NT8 first and migrates while it is closed.
+					running, rerr := newNT8Restart(w.winSeam(), addonExe(), w.host.Sleep).isRunning(ctx)
+					if rerr != nil {
+						return "", fmt.Errorf("NT8 running check before the Custom.dll rebuild: %w", rerr)
+					}
+					if running {
+						ev["nt8_started_mid_catchup"] = "true"
+						ev["migration_deferred"] = "true"
+						deferred = true
+					}
 				}
-				creb, cerr := addonbuild.RebuildCustom(ctx, cfg)
-				if cerr != nil {
-					ev["custom_rebuild"] = "failed"
-					ev["custom_rebuild_error"] = clipText(cerr.Error())
-					return "", errors.New(addonMigrationBlocker)
+				if !deferred {
+					if err := migrateAddonSources(cfg.DocsDir, j.JobID); err != nil {
+						return "", fmt.Errorf("one-time migration: %w", err)
+					}
+					creb, cerr := addonbuild.RebuildCustom(ctx, cfg)
+					if cerr != nil {
+						restoreMigratedSources(cfg.DocsDir, j.JobID)
+						ev["custom_rebuild"] = "failed"
+						ev["custom_rebuild_error"] = clipText(cerr.Error())
+						return "", errors.New(addonMigrationBlocker)
+					}
+					cbak, perr := addonbuild.PlaceCustom(cfg, creb.DllPath, creb.Sha256, j.JobID)
+					if perr != nil {
+						restoreMigratedSources(cfg.DocsDir, j.JobID)
+						return "", fmt.Errorf("Custom.dll place failed: %w", perr)
+					}
+					ev["custom_rebuild"] = "accepted"
+					ev["custom_rebuild_built_by"] = creb.BuiltBy
+					ev["custom_backup"] = cbak
+					// fall through: place VL.AddOn.dll, the AddOn now lives
+					// only there.
 				}
-				cbak, perr := addonbuild.PlaceCustom(cfg, creb.DllPath, creb.Sha256, j.JobID)
-				if perr != nil {
-					return "", fmt.Errorf("Custom.dll place failed: %w", perr)
-				}
-				ev["custom_rebuild"] = "accepted"
-				ev["custom_rebuild_built_by"] = creb.BuiltBy
-				ev["custom_backup"] = cbak
-				// fall through: place VL.AddOn.dll, the AddOn now lives
-				// only there.
 			} else {
 				// NT8 OPEN (release #35 FOLD 2): Custom.dll is loaded in memory
 				// and cannot be rebuilt in place. Defer the WHOLE migration to
