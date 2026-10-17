@@ -371,8 +371,8 @@ func TestEffectiveMentorPathsResolved(t *testing.T) {
 			t.Logf("UNRESOLVED mentor path: %s", path)
 		}
 	}
-	if resolved < 59 {
-		t.Fatalf("mentor paths resolved: %d, want >= 59 (the 61 mentor knobs minus the two DS-104 done_after_win rows)", resolved)
+	if resolved < 60 {
+		t.Fatalf("mentor paths resolved: %d, want >= 60 (the 62 mentor knobs minus the two DS-104 done_after_win rows)", resolved)
 	}
 	// Only the two DS-104 rows may stay unresolved.
 	for path, r := range rows {
@@ -383,19 +383,20 @@ func TestEffectiveMentorPathsResolved(t *testing.T) {
 			t.Errorf("mentor path %s is unresolved — every mentor knob except mentor_done_after_win(_day_start) must resolve", path)
 		}
 	}
-	// Origin truth on a shipped-default value (the size table default 5).
+	// Origin truth on a shipped-default value (the size table default 4 —
+	// MENTOR-SIZE-4, release #32: every intraday tier sizes 4, split 2+2).
 	base := rows[rcPath+"mentor_base_contracts"]
-	if got := jsonVal(t, base.Effective); got != float64(5) {
-		t.Fatalf("mentor_base_contracts effective = %v, want shipped default 5", got)
+	if got := jsonVal(t, base.Effective); got != float64(4) {
+		t.Fatalf("mentor_base_contracts effective = %v, want shipped default 4", got)
 	}
 	if !strings.Contains(base.Origin, store.SourceShippedDefault) {
 		t.Fatalf("mentor_base_contracts origin = %q, want the shipped-default origin", base.Origin)
 	}
-	// A stored value reads "saved value".
-	stored := `{"strategy_type":"ai_trading","ai_config":{"risk_control":{"mentor_mode":true,"mentor_base_contracts":4}}}`
+	// A stored value that differs from the default reads "saved value".
+	stored := `{"strategy_type":"ai_trading","ai_config":{"risk_control":{"mentor_mode":true,"mentor_base_contracts":6}}}`
 	sRows := effRowsFor(t, stored, "ninjatrader", "NY")
-	if got := jsonVal(t, sRows[rcPath+"mentor_base_contracts"].Effective); got != float64(4) {
-		t.Fatalf("stored mentor_base_contracts effective = %v, want 4", got)
+	if got := jsonVal(t, sRows[rcPath+"mentor_base_contracts"].Effective); got != float64(6) {
+		t.Fatalf("stored mentor_base_contracts effective = %v, want 6", got)
 	}
 	if sRows[rcPath+"mentor_base_contracts"].Origin != store.SourceSaved {
 		t.Fatalf("stored mentor_base_contracts origin = %q, want saved value", sRows[rcPath+"mentor_base_contracts"].Origin)

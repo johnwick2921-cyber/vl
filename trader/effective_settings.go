@@ -832,6 +832,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("isb_box_escape", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBBoxEscapeMode })
 	mentorTuningRow("ema34_loss_relock", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.EmaLossRelock })
 	mentorTuningRow("orb_edge_veto_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.OrbEdgeVetoPts })
+	mentorTuningRow("orb_isb_fraction_outside", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.OrbISBFractionOutside })
 	mentorTuningRow("d43_trend_source", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.D43TrendSource })
 	mentorTuningRow("level_entries_need_trigger_side", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.LevelEntriesNeedTriggerSide })
 	mentorTuningRow("trendline_is_target", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.TrendlineIsTarget })
