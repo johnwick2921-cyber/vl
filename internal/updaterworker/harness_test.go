@@ -95,35 +95,35 @@ type box struct {
 	lockAcquireErr      error
 
 	// knobs
-	flat             bool
-	addonConnected   bool
-	pollHook         func() // run at every fake-host sleep boundary (planner-wait tests)
-	addonBuild       string // what the running AddOn reports
-	manifestBuild    string // the signed manifest's addon.build_id
-	refuseBoot       map[string]bool
-	watchFail        map[string]bool
-	rollbackFail     bool
-	rollbackDistFail bool // RollbackTo restores binary+RELEASE, fails at dist, no kill of its own
-	addonRestoreFail bool // fakeHost.AddonRestore returns an error
-	noReconnect      bool // the AddOn never reconnects after the NT8 restart (guard #3 timeout)
-	reconnectSameSeq bool // the AddOn reconnects on the SAME accept_seq after restart (#5a)
-	reconnectOldBuild bool // the AddOn reconnects reporting the OLD build after restart (#5b)
-	omitLeg          string // the fake gate omits this leg entirely (guard #1 missing-leg pin)
-	badToken         bool // the app refuses the token (401)
-	verdictMissing   bool
-	holdWriteLies    bool          // the hold write lands on disk, then errs (U1 item 9)
-	holdWriteFails   bool          // the hold write errs before anything lands
-	ackStale         bool          // the AddOn's last ack is 20 s old
-	ackJob           string        // the AddOn acks this job id instead of the hold's
-	addonSeq         uint64        // the AddOn's connection accept_seq (a reconnect = a new seq)
-	exe              string        // /proc/<MainPID>/exe, when not the install's binary
-	healthRev        string        // /api/health serves this revision instead of the running sha
-	ackLag           time.Duration // the AddOn's last ack is this much older than the 5 s tick (age stays consistent)
-	wallStep         time.Duration // a wall-clock step: shifts the RENDERED received time only; AgeMs stays monotonic
-	maintJob         string        // /api/maintenance names this job instead of the hold's
-	echo500          bool          // the authed endpoints answer 500 echoing the request's Authorization header
-	noCS             bool          // the signed manifest lists no ninjascript/*.cs
-	reverifyTamper   func(*ReleaseFacts)
+	flat              bool
+	addonConnected    bool
+	pollHook          func() // run at every fake-host sleep boundary (planner-wait tests)
+	addonBuild        string // what the running AddOn reports
+	manifestBuild     string // the signed manifest's addon.build_id
+	refuseBoot        map[string]bool
+	watchFail         map[string]bool
+	rollbackFail      bool
+	rollbackDistFail  bool   // RollbackTo restores binary+RELEASE, fails at dist, no kill of its own
+	addonRestoreFail  bool   // fakeHost.AddonRestore returns an error
+	noReconnect       bool   // the AddOn never reconnects after the NT8 restart (guard #3 timeout)
+	reconnectSameSeq  bool   // the AddOn reconnects on the SAME accept_seq after restart (#5a)
+	reconnectOldBuild bool   // the AddOn reconnects reporting the OLD build after restart (#5b)
+	omitLeg           string // the fake gate omits this leg entirely (guard #1 missing-leg pin)
+	badToken          bool   // the app refuses the token (401)
+	verdictMissing    bool
+	holdWriteLies     bool          // the hold write lands on disk, then errs (U1 item 9)
+	holdWriteFails    bool          // the hold write errs before anything lands
+	ackStale          bool          // the AddOn's last ack is 20 s old
+	ackJob            string        // the AddOn acks this job id instead of the hold's
+	addonSeq          uint64        // the AddOn's connection accept_seq (a reconnect = a new seq)
+	exe               string        // /proc/<MainPID>/exe, when not the install's binary
+	healthRev         string        // /api/health serves this revision instead of the running sha
+	ackLag            time.Duration // the AddOn's last ack is this much older than the 5 s tick (age stays consistent)
+	wallStep          time.Duration // a wall-clock step: shifts the RENDERED received time only; AgeMs stays monotonic
+	maintJob          string        // /api/maintenance names this job instead of the hold's
+	echo500           bool          // the authed endpoints answer 500 echoing the request's Authorization header
+	noCS              bool          // the signed manifest lists no ninjascript/*.cs
+	reverifyTamper    func(*ReleaseFacts)
 
 	// UPDATER-NT8-CLOSED knobs
 	addonDownSince time.Duration // >0: the AddOn is disconnected this long (stamped on the fake server's record); the ack is nil and the fake gate attaches its nt8_absent view
@@ -221,9 +221,9 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 		binName: "vl-bin",
 		id:      Identity{PID: 4242, StartTicks: 1000}, running: boxOld,
 		flat: true, addonConnected: true, addonBuild: boxOldBuild, manifestBuild: boxOldBuild,
-		absentSim:  true,
+		absentSim:    true,
 		simTradeable: true,
-		refuseBoot: map[string]bool{}, watchFail: map[string]bool{},
+		refuseBoot:   map[string]bool{}, watchFail: map[string]bool{},
 	}
 	b.data = filepath.Join(b.inst, "data")
 	b.relDir = filepath.Join(root, "releases", boxNew)
@@ -319,18 +319,25 @@ func (r *rig) newWorker() *Worker {
 	return w
 }
 
-// fakeRunWin plays dotnet.exe and powershell.exe on Linux (W-ADDON-ONE-CLICK):
-// a dotnet build "compiles" by writing a VL.AddOn.dll carrying the AddOn type
-// into the -o dir (parsed back from the Windows path Build rendered); the
-// powershell NT8 stop/start succeeds. No test ever execs a real Windows binary.
+// fakeRunWin plays powershell.exe (ps1 build + NT8 restart) and dotnet.exe on
+// Linux (W-ADDON-ONE-CLICK): the no-SDK ps1 build "compiles" by writing a
+// VL.AddOn.dll carrying the AddOn type into the -Out dir; a dotnet build does
+// the same into the -o dir (the fallback, only when the ps1 path is made to
+// fail); the powershell NT8 stop/start succeeds. No test ever execs a real
+// Windows binary.
 func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]byte, error) {
-	if strings.Contains(name, "dotnet") {
-		out := ""
-		for i := 0; i+1 < len(args); i++ {
-			if args[i] == "-o" {
-				out = args[i+1]
-			}
+	// GAP 2: the PRIMARY build path is build-addon.ps1 via powershell.exe.
+	if strings.Contains(name, "powershell") && winFlag(args, "-Out") != "" {
+		out := winFlag(args, "-Out")
+		wsl := windowsToWSL(out)
+		if err := os.MkdirAll(wsl, 0o755); err != nil {
+			return nil, err
 		}
+		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), "fake AddOn DLL: type "+addonTypeName+"\n")
+		return []byte("VL_ADDON_DLL=" + out + "\nVL_ADDON_SHA256=fake\n"), nil
+	}
+	if strings.Contains(name, "dotnet") {
+		out := winFlag(args, "-o")
 		wsl := windowsToWSL(out)
 		if err := os.MkdirAll(wsl, 0o755); err != nil {
 			return nil, err
@@ -355,6 +362,16 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 		}
 	}
 	return []byte(""), nil
+}
+
+// winFlag returns the argument following -<flag> (e.g. -Out, -o), or "".
+func winFlag(args []string, flag string) string {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == flag {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 // windowsToWSL undoes addonbuild.wslToWindows for the UNC form the build's -o

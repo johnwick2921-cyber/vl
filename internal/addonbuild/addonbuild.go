@@ -25,22 +25,40 @@ import (
 	"strings"
 )
 
-// Config is everything Build/Place need that the caller supplies. All path
-// fields are WSL paths.
+// Config is everything Build/Place need that the caller supplies. DocsDir,
+// Exe, SourceDir and WorkDir are WSL paths (Exe may also be a Windows path,
+// as the worker's addonExe returns). DotnetExe and PowerShellExe are passed to
+// Run verbatim.
 //
-//	DocsDir   - Documents\NinjaTrader 8 directory (bin/Custom must exist)
-//	Exe       - NinjaTrader.exe path (Core/Gui refs derive from its dir)
-//	DotnetExe - dotnet.exe to build with (passed to Run verbatim)
-//	SourceDir - release's ninjascript/*.cs directory
-//	WorkDir   - worker-made build dir (NEVER the NT8 folder)
-//	Run       - execs a subprocess so tests can substitute a fake
+//	DocsDir       - Documents\NinjaTrader 8 directory (bin/Custom must exist)
+//	Exe           - NinjaTrader.exe path (Core/Gui refs derive from its dir)
+//	DotnetExe     - dotnet.exe fallback builder (passed to Run verbatim)
+//	PowerShellExe - powershell.exe running build-addon.ps1 (the PRIMARY builder)
+//	SourceDir     - release's ninjascript/*.cs directory
+//	WorkDir       - worker-made build dir (NEVER the NT8 folder)
+//	Run           - execs a subprocess so tests can substitute a fake
 type Config struct {
-	DocsDir   string
-	Exe       string
-	DotnetExe string
-	SourceDir string
-	WorkDir   string
-	Run       func(ctx context.Context, name string, args ...string) ([]byte, error)
+	DocsDir       string
+	Exe           string
+	DotnetExe     string
+	PowerShellExe string
+	SourceDir     string
+	WorkDir       string
+	Run           func(ctx context.Context, name string, args ...string) ([]byte, error)
+}
+
+// BuiltBy values: which builder produced VL.AddOn.dll.
+const (
+	BuiltByRoslynPs1 = "roslyn-ps1" // build-addon.ps1 via NT8's built-in Roslyn (the no-SDK PRIMARY path)
+	BuiltByDotnet    = "dotnet"     // the dotnet.exe net48 csproj fallback
+)
+
+// Result is what Build returns: the built DLL (WSL path), its hex sha256, and
+// which builder produced it.
+type Result struct {
+	DllPath string
+	Sha256  string
+	BuiltBy string
 }
 
 // Sentinel errors returned by this package.
@@ -79,68 +97,203 @@ func Detect() (docsDir string, err error) {
 }
 
 // Build compiles every <SourceDir>/*.cs into VL.AddOn.dll under WorkDir and
-// returns the DLL path (WSL) and its hex sha256. The net48 csproj is rendered
-// from the embedded template with Windows paths; reference DLLs resolve from the
-// box's own NT8 install (Custom/Vendor from DocsDir, Core/Gui/Newtonsoft from
-// the Exe's Program Files bin).
-func Build(ctx context.Context, c Config) (dllPath string, sha256 string, err error) {
+// returns the DLL path (WSL), its hex sha256, and which builder produced it.
+//
+// PRIMARY path (the no-SDK partner-proof method): the embedded build-addon.ps1
+// is written into WorkDir and run through PowerShell, which loads
+// Microsoft.CodeAnalysis.CSharp.dll (Roslyn) from NT8's own bin and compiles
+// against the framework reference assemblies + the NinjaTrader.Custom.csproj
+// reference mirror. The dotnet.exe net48 csproj is only a FALLBACK, used when
+// the ps1 path fails, and the result records which path actually built it.
+func Build(ctx context.Context, c Config) (Result, error) {
 	if c.Run == nil {
-		return "", "", ErrNoRun
+		return Result{}, ErrNoRun
 	}
 	docsDir, err := filepath.Abs(c.DocsDir)
 	if err != nil {
-		return "", "", fmt.Errorf("addonbuild: abs DocsDir: %w", err)
+		return Result{}, fmt.Errorf("addonbuild: abs DocsDir: %w", err)
 	}
 	srcDir, err := filepath.Abs(c.SourceDir)
 	if err != nil {
-		return "", "", fmt.Errorf("addonbuild: abs SourceDir: %w", err)
+		return Result{}, fmt.Errorf("addonbuild: abs SourceDir: %w", err)
 	}
 	workDir, err := filepath.Abs(c.WorkDir)
 	if err != nil {
-		return "", "", fmt.Errorf("addonbuild: abs WorkDir: %w", err)
+		return Result{}, fmt.Errorf("addonbuild: abs WorkDir: %w", err)
 	}
 	if !isDir(filepath.Join(docsDir, "bin", "Custom")) {
-		return "", "", fmt.Errorf("%w: %q", ErrNoDocsDir, c.DocsDir)
+		return Result{}, fmt.Errorf("%w: %q", ErrNoDocsDir, c.DocsDir)
 	}
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		return "", "", fmt.Errorf("addonbuild: mkdir work dir: %w", err)
+		return Result{}, fmt.Errorf("addonbuild: mkdir work dir: %w", err)
 	}
 	csFiles, _ := filepath.Glob(filepath.Join(srcDir, "*.cs"))
 	if len(csFiles) == 0 {
-		return "", "", fmt.Errorf("%w: %q", ErrNoSourceFiles, c.SourceDir)
+		return Result{}, fmt.Errorf("%w: %q", ErrNoSourceFiles, c.SourceDir)
 	}
 
-	customDir := filepath.Join(docsDir, "bin", "Custom")
-	pfBin := filepath.Dir(c.Exe)
-	if pfBin == "." || pfBin == "" {
-		pfBin = "/mnt/c/Program Files/NinjaTrader 8/bin"
+	powerShell := c.PowerShellExe
+	if powerShell == "" {
+		powerShell = "powershell.exe"
+	}
+	dotnetExe := c.DotnetExe
+	if dotnetExe == "" {
+		dotnetExe = "dotnet.exe"
 	}
 
-	proj := renderTemplate(csprojTemplate, map[string]string{
-		"{{ADDON_SRC}}":  wslToWindows(srcDir),
-		"{{NT8_CUSTOM}}": wslToWindows(customDir),
-		"{{NT8_PF_BIN}}": wslToWindows(pfBin),
-	})
-	projPath := filepath.Join(workDir, "VL.AddOn.csproj")
-	if err := os.WriteFile(projPath, []byte(proj), 0o644); err != nil {
-		return "", "", fmt.Errorf("addonbuild: write csproj: %w", err)
+	// PRIMARY: the embedded build-addon.ps1 via NT8's built-in Roslyn.
+	ps1Dll, ps1Err := buildViaPs1(ctx, c, workDir, srcDir, docsDir, powerShell)
+	if ps1Err == nil {
+		return ps1Dll, nil
 	}
 
-	outDir := filepath.Join(workDir, "out")
-	args := []string{"build", wslToWindows(projPath), "-c", "Release", "-o", wslToWindows(outDir)}
-	if _, err := c.Run(ctx, c.DotnetExe, args...); err != nil {
-		return "", "", fmt.Errorf("addonbuild: dotnet build: %w", err)
+	// FALLBACK: the dotnet.exe net48 csproj (needs the SDK).
+	dotnetDll, dotnetErr := buildViaDotnet(ctx, c, workDir, srcDir, docsDir, dotnetExe)
+	if dotnetErr == nil {
+		return dotnetDll, nil
+	}
+
+	return Result{}, fmt.Errorf("addonbuild: Roslyn ps1 build failed: %v; dotnet fallback failed: %v", ps1Err, dotnetErr)
+}
+
+// buildViaPs1 writes the embedded build-addon.ps1 into WorkDir and runs it
+// through PowerShell with -Probe off, then verifies the DLL it emitted. On
+// success it returns Result{BuiltBy: BuiltByRoslynPs1}.
+func buildViaPs1(ctx context.Context, c Config, workDir, srcDir, docsDir, powerShell string) (Result, error) {
+	ps1Path := filepath.Join(workDir, "build-addon.ps1")
+	if err := os.WriteFile(ps1Path, []byte(BuildPs1()), 0o644); err != nil {
+		return Result{}, fmt.Errorf("addonbuild: write ps1: %w", err)
+	}
+
+	outDir := filepath.Join(workDir, "ps1-out")
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return Result{}, fmt.Errorf("addonbuild: mkdir ps1 out: %w", err)
+	}
+
+	customWin := wslToWindows(filepath.Join(docsDir, "bin", "Custom"))
+	args := []string{
+		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+		"-File", wslToWindows(ps1Path),
+		"-Src", wslToWindows(srcDir),
+		"-Out", wslToWindows(outDir),
+		"-CustomDir", customWin,
+		"-NT8Bin", nt8BinWindows(c.Exe),
+	}
+	out, runErr := c.Run(ctx, powerShell, args...)
+	if runErr != nil {
+		return Result{}, fmt.Errorf("addonbuild: powershell ps1 build: %w: %s", runErr, clipBuildOut(out))
 	}
 
 	dll := filepath.Join(outDir, "VL.AddOn.dll")
 	if !isFile(dll) {
-		return "", "", fmt.Errorf("%w: %s", ErrBuildNoDll, dll)
+		return Result{}, fmt.Errorf("addonbuild: the Roslyn ps1 build produced no VL.AddOn.dll: %s", clipBuildOut(out))
 	}
 	sum, err := sha256File(dll)
 	if err != nil {
-		return "", "", fmt.Errorf("addonbuild: sha256: %w", err)
+		return Result{}, fmt.Errorf("addonbuild: sha256: %w", err)
 	}
-	return dll, sum, nil
+	return Result{DllPath: dll, Sha256: sum, BuiltBy: BuiltByRoslynPs1}, nil
+}
+
+// buildViaDotnet renders the net48 csproj and builds it with dotnet.exe — the
+// fallback that needs an SDK (absent on the partner box).
+func buildViaDotnet(ctx context.Context, c Config, workDir, srcDir, docsDir, dotnetExe string) (Result, error) {
+	customDir := filepath.Join(docsDir, "bin", "Custom")
+
+	proj := renderTemplate(csprojTemplate, map[string]string{
+		"{{ADDON_SRC}}":  wslToWindows(srcDir),
+		"{{NT8_CUSTOM}}": wslToWindows(customDir),
+		"{{NT8_PF_BIN}}": nt8BinWindows(c.Exe),
+	})
+	projPath := filepath.Join(workDir, "VL.AddOn.csproj")
+	if err := os.WriteFile(projPath, []byte(proj), 0o644); err != nil {
+		return Result{}, fmt.Errorf("addonbuild: write csproj: %w", err)
+	}
+
+	outDir := filepath.Join(workDir, "out")
+	args := []string{"build", wslToWindows(projPath), "-c", "Release", "-o", wslToWindows(outDir)}
+	out, err := c.Run(ctx, dotnetExe, args...)
+	if err != nil {
+		return Result{}, fmt.Errorf("addonbuild: dotnet build: %w: %s", err, clipBuildOut(out))
+	}
+
+	dll := filepath.Join(outDir, "VL.AddOn.dll")
+	if !isFile(dll) {
+		return Result{}, fmt.Errorf("%w: %s", ErrBuildNoDll, dll)
+	}
+	sum, err := sha256File(dll)
+	if err != nil {
+		return Result{}, fmt.Errorf("addonbuild: sha256: %w", err)
+	}
+	return Result{DllPath: dll, Sha256: sum, BuiltBy: BuiltByDotnet}, nil
+}
+
+// nt8BinWindows returns the NinjaTrader bin directory as a Windows path,
+// derived from Exe (which may itself be a Windows or WSL path) with the
+// standard install location as the default.
+func nt8BinWindows(exe string) string {
+	if exe != "" {
+		dir := filepath.Dir(exe)
+		if dir != "." && dir != "" {
+			return wslToWindows(dir)
+		}
+	}
+	return `C:\Program Files\NinjaTrader 8\bin`
+}
+
+// BuildPs1 returns the embedded build-addon.ps1 source — the single source of
+// truth for the no-SDK build (deploy/addon/build-addon.ps1 is the byte-identical
+// deploy copy; TestPs1ParityWithDeploy keeps them from drifting).
+func BuildPs1() string { return buildPs1Script }
+
+// CompilerProbe proves the no-SDK ps1 path works on this box: it writes the
+// embedded build-addon.ps1 to a worker-made temp dir and runs its -Probe mode
+// (loads Roslyn from NT8's bin, resolves its dependencies, compiles a trivial
+// source against the full reference set). ok is true only when the probe prints
+// VL_ADDON_PROBE=ok. Nothing touches the real NT8 folder or starts NT8.
+func CompilerProbe(ctx context.Context, c Config) (ok bool, detail string) {
+	if c.Run == nil {
+		return false, "no command runner"
+	}
+	powerShell := c.PowerShellExe
+	if powerShell == "" {
+		powerShell = "powershell.exe"
+	}
+	dir, err := os.MkdirTemp("", "vl-addon-probe-")
+	if err != nil {
+		return false, err.Error()
+	}
+	ps1Path := filepath.Join(dir, "build-addon.ps1")
+	if err := os.WriteFile(ps1Path, []byte(BuildPs1()), 0o644); err != nil {
+		return false, err.Error()
+	}
+
+	args := []string{
+		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+		"-File", wslToWindows(ps1Path),
+		"-Probe",
+		"-NT8Bin", nt8BinWindows(c.Exe),
+		"-CustomDir", wslToWindows(filepath.Join(c.DocsDir, "bin", "Custom")),
+	}
+	out, runErr := c.Run(ctx, powerShell, args...)
+	tail := clipBuildOut(out)
+	if runErr != nil {
+		return false, "probe failed: " + runErr.Error() + "; " + tail
+	}
+	if strings.Contains(string(out), "VL_ADDON_PROBE=ok") {
+		return true, strings.TrimSpace(tail)
+	}
+	return false, "probe did not report ok; " + tail
+}
+
+// clipBuildOut trims subprocess output to a bounded tail for error messages.
+func clipBuildOut(out []byte) string {
+	s := strings.TrimSpace(string(out))
+	const max = 2000
+	if len(s) > max {
+		s = "…" + s[len(s)-max:]
+	}
+	return s
 }
 
 // Place MOVES the current bin\Custom\VL.AddOn.dll (if any) to

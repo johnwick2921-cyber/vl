@@ -71,33 +71,36 @@ func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
 func (w *Worker) stepAddonBuild(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
-	dll, sha, err := func() (string, string, error) {
+	res := addonbuild.Result{}
+	err := func() error {
 		f, ferr := w.facts(j)
 		if ferr != nil {
-			return "", "", fmt.Errorf("release re-verify: %w", ferr)
+			return fmt.Errorf("release re-verify: %w", ferr)
 		}
 		if len(csFromArtifacts(f.Artifacts)) == 0 {
-			return "", "", errors.New("the release lists no ninjascript/*.cs — the AddOn source cannot be proven")
+			return errors.New("the release lists no ninjascript/*.cs — the AddOn source cannot be proven")
 		}
 		cfg, err := w.addonConfig(j)
 		if err != nil {
-			return "", "", fmt.Errorf("addon config: %w", err)
+			return fmt.Errorf("addon config: %w", err)
 		}
-		return addonbuild.Build(ctx, cfg)
+		var berr error
+		res, berr = addonbuild.Build(ctx, cfg)
+		return berr
 	}()
-	ev["dll"], ev["sha256"] = dll, sha
-	res := stepResult{receipts: []Receipt{w.receipt("addon_build", start, ev, err)}, err: err}
+	ev["dll"], ev["sha256"], ev["built_by"] = res.DllPath, res.Sha256, res.BuiltBy
+	out := stepResult{receipts: []Receipt{w.receipt("addon_build", start, ev, err)}, err: err}
 	if err != nil {
-		res.failTo, res.reason = updaterjob.StateRevertedClean, "the AddOn build failed: "+clipText(err.Error())
-		return res
+		out.failTo, out.reason = updaterjob.StateRevertedClean, "the AddOn build failed: "+clipText(err.Error())
+		return out
 	}
-	res.set = func(k *updaterjob.Job) {
+	out.set = func(k *updaterjob.Job) {
 		if k.Addon == nil {
 			k.Addon = &updaterjob.AddonState{}
 		}
-		k.Addon.DllPath, k.Addon.Sha256 = dll, sha
+		k.Addon.DllPath, k.Addon.Sha256, k.Addon.BuiltBy = res.DllPath, res.Sha256, res.BuiltBy
 	}
-	return res
+	return out
 }
 
 // addonDoubleLoaded reports whether the AddOn's type exists in BOTH

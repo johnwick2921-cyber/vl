@@ -17,15 +17,30 @@ import (
 //go:embed csproj.tmpl
 var csprojTemplate string
 
-// wslToWindows converts a WSL path to the Windows form dotnet.exe sees.
-// /mnt/c/... → C:\... ; anything else (e.g. /home/<u>/...) → the UNC
-// \\wsl.localhost\<distro>\... form (distro from WSL_DISTRO_NAME, default
-// Ubuntu).
+// buildPs1Script is the no-SDK Roslyn build script (GAP 2, the PRIMARY path).
+// deploy/addon/build-addon.ps1 is a byte-identical copy for the worker;
+// TestPs1ParityWithDeploy keeps the two from drifting.
+//
+//go:embed build-addon.ps1
+var buildPs1Script string
+
+// wslToWindows converts a WSL path to the Windows form dotnet.exe /
+// powershell.exe sees. /mnt/c/... → C:\... ; anything else (e.g.
+// /home/<u>/...) → the UNC \\wsl.localhost\<distro>\... form (distro from
+// WSL_DISTRO_NAME, default Ubuntu). A path that is ALREADY Windows (drive
+// letter or UNC) passes through unchanged, because the worker's addonExe
+// returns a Windows path.
 func wslToWindows(p string) string {
 	if p == "" {
 		return p
 	}
 	clean := filepath.Clean(p)
+	if len(clean) >= 3 && clean[1] == ':' && (clean[2] == '\\' || clean[2] == '/') {
+		return strings.ReplaceAll(clean, "/", "\\")
+	}
+	if strings.HasPrefix(clean, `\\`) {
+		return strings.ReplaceAll(clean, "/", "\\")
+	}
 	if strings.HasPrefix(clean, "/mnt/") {
 		rest := strings.TrimPrefix(clean, "/mnt/")
 		if len(rest) == 1 {

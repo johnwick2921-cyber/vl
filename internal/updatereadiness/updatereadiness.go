@@ -17,6 +17,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"vl/internal/addonbuild"
 )
 
 // Item is one precondition: ok, and a plain-words fix when it is not.
@@ -131,21 +133,21 @@ func Check(ctx context.Context, c Config) []Item {
 
 func checkCompiler(ctx context.Context, c Config, docs string) Item {
 	it := Item{Item: "NT8 Roslyn compiler"}
-	dll := filepath.Join(docs, "bin", "Microsoft.CodeAnalysis.CSharp.dll")
-	if fi, err := os.Stat(dll); err != nil || fi.IsDir() {
-		it.OK = false
-		it.Fix = "NinjaTrader's compiler is missing — reinstall or repair NinjaTrader 8 (Control Panel → NinjaTrader → Repair)."
-		return it
-	}
-	it.OK = true
-	// Best-effort FileVersion via powershell; presence is the gate.
-	if c.Run != nil {
-		script := "(Get-Item '" + windowsPath(dll) + "').VersionInfo.FileVersion"
-		if b, err := c.Run(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script); err == nil {
-			if v := strings.TrimSpace(string(b)); v != "" {
-				it.Detail = "FileVersion " + v
-			}
-		}
+	// GAP 2: the "compiler" item reads true ONLY when the no-SDK ps1 path
+	// actually works — i.e. the embedded build-addon.ps1 loads Roslyn from
+	// NT8's bin, resolves its dependencies, and compiles a trivial source
+	// against the full reference set. File presence alone is not enough: a
+	// box with Roslyn present but broken (or missing its dependency DLLs)
+	// must read not-ok before the owner presses Update.
+	ok, detail := addonbuild.CompilerProbe(ctx, addonbuild.Config{
+		DocsDir:       docs,
+		PowerShellExe: "powershell.exe",
+		Run:           c.Run,
+	})
+	it.OK = ok
+	it.Detail = detail
+	if !ok {
+		it.Fix = "NinjaTrader's built-in Roslyn compiler could not compile through the no-SDK build script — reinstall or repair NinjaTrader 8 (Control Panel → NinjaTrader → Repair), then press Update again."
 	}
 	return it
 }
