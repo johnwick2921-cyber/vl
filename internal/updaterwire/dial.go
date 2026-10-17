@@ -133,3 +133,27 @@ func (c *Client) DoWithTimeout(req Request, timeout time.Duration) (Response, er
 func (c *Client) Close() error {
 	return c.conn.Close()
 }
+
+// ResumeWorker (W-ADDON-ONE-CLICK, owner order 2026-10-17) sends
+// resume{job_id} to the worker over its unix socket and accepts OK — the same
+// verb the attended CLI sent, now reachable from the page's Retry button
+// (api/handler_updates.go:socketResumer). It is the ONE non-CLI sender, and
+// it lives here so the app never names a resume builder itself — the resume
+// census stays tight (resumeWireDecls pins ResumeWorker; any other caller of
+// NewResume outside this package and cmd/vl-updater is still an offender).
+// On !OK the worker's own validated text is returned, never anything more.
+func ResumeWorker(dataDir, jobID string) error {
+	c, err := DialWorker(dataDir)
+	if err != nil {
+		return fmt.Errorf("updater worker unreachable (job %s): %w", jobID, err)
+	}
+	defer c.Close()
+	resp, err := c.Do(NewResume(jobID))
+	if err != nil {
+		return fmt.Errorf("updater worker resume (job %s): %w", jobID, err)
+	}
+	if !resp.OK {
+		return fmt.Errorf("updater worker refused resume for job %s: %s", jobID, resp.Error)
+	}
+	return nil
+}

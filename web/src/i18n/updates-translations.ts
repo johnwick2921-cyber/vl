@@ -127,6 +127,64 @@ export const updatesStrings = {
   gateReady: { en: 'Gate ready', zh: '闸门就绪', id: 'Gerbang siap' },
   gateLegs: { en: 'Legs', zh: '检查项', id: 'Pemeriksaan' },
 
+  // W-ADDON-ONE-CLICK — plain-words job statuses (the spec's exact wording).
+  // The server sends a raw step name; the page renders the owner-facing
+  // sentence and falls back to the raw step for an unknown one.
+  addonStatusBuilding: {
+    en: 'Building the NinjaTrader AddOn…',
+    zh: '正在构建 NinjaTrader AddOn…',
+    id: 'Membangun AddOn NinjaTrader…',
+  },
+  addonStatusInstalling: {
+    en: 'Installing the NinjaTrader AddOn…',
+    zh: '正在安装 NinjaTrader AddOn…',
+    id: 'Memasang AddOn NinjaTrader…',
+  },
+  addonStatusRestarting: {
+    en: 'Restarting NinjaTrader…',
+    zh: '正在重启 NinjaTrader…',
+    id: 'Memulai ulang NinjaTrader…',
+  },
+  addonStatusReconnecting: {
+    en: 'Waiting for NinjaTrader to reconnect…',
+    zh: '等待 NinjaTrader 重新连接…',
+    id: 'Menunggu NinjaTrader terhubung kembali…',
+  },
+  addonStatusDone: {
+    en: 'Done — NinjaTrader is running the new AddOn',
+    zh: '完成 — NinjaTrader 正在运行新的 AddOn',
+    id: 'Selesai — NinjaTrader menjalankan AddOn baru',
+  },
+  retryInstall: { en: 'Retry', zh: '重试', id: 'Coba lagi' },
+  retrying: { en: 'Retrying…', zh: '重试中…', id: 'Mencoba lagi…' },
+  retryAccepted: {
+    en: 'Retry accepted',
+    zh: '重试已接受',
+    id: 'Percobaan ulang diterima',
+  },
+  retryBlockerHelp: {
+    en: 'This update is held. Type your VL login password and Retry — nothing to type in a terminal.',
+    zh: '此更新已挂起。输入你的 VL 登录密码并点击重试 — 无需在终端输入任何命令。',
+    id: 'Pembaruan ini tertahan. Ketik kata sandi login VL Anda dan Coba lagi — tidak ada yang perlu diketik di terminal.',
+  },
+
+  // W-ADDON-ONE-CLICK "walk away" result banner — the plan's exact plain words.
+  resultDone: {
+    en: 'Update done — running {tag}',
+    zh: '更新完成 — 正在运行 {tag}',
+    id: 'Pembaruan selesai — menjalankan {tag}',
+  },
+  resultFailed: {
+    en: 'Update could not finish — nothing changed, still running {tag}, trading normal. Reason: {reason}',
+    zh: '更新未完成 — 没有更改，仍在运行 {tag}，交易正常。原因：{reason}',
+    id: 'Pembaruan tidak selesai — tidak ada perubahan, masih menjalankan {tag}, trading normal. Alasan: {reason}',
+  },
+  resultRecovery: {
+    en: 'Update needs your attention — the automatic recovery failed. Reason: {reason}',
+    zh: '更新需要你的注意 — 自动恢复失败。原因：{reason}',
+    id: 'Pembaruan perlu perhatian Anda — pemulihan otomatis gagal. Alasan: {reason}',
+  },
+
   // job
   noUpdateJob: {
     en: 'no update job',

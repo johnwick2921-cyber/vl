@@ -16,6 +16,7 @@ import (
 	"vl/config"
 	"vl/internal/updateauth"
 	"vl/internal/updaterjob"
+	"vl/internal/updatereadiness"
 	"vl/internal/updatersource"
 	"vl/internal/updaterwire"
 	"vl/internal/updatescheck"
@@ -102,6 +103,14 @@ func (s *Server) SetUpdateVerifier(v updateauth.Verifier) {
 // SetUpdateStarter installs the M4 worker hand-off. nil = none (503).
 func (s *Server) SetUpdateStarter(f UpdateStarter) { s.updateStart = f }
 
+// UpdateResumer hands a password-authenticated retry of a HELD job to the
+// updater worker (W-ADDON-ONE-CLICK: the page's Retry button, never a
+// terminal). nil = none (503).
+type UpdateResumer func(jobID string) error
+
+// SetUpdateResumer installs the retry hand-off. nil = none (503).
+func (s *Server) SetUpdateResumer(f UpdateResumer) { s.updateResume = f }
+
 // ── W-ONE-BUTTON M4 3b-B U5b — the updater glue knob ────────────────────
 //
 // VL_UPDATER=1 (exactly "1"; anything else, or unset, is OFF) wires the
@@ -139,6 +148,7 @@ func (s *Server) configureUpdater() {
 	s.updaterOn = true
 	s.updateVerifier = verdictVerifier{}
 	s.updateStart = socketStarter
+	s.updateResume = socketResumer
 	logger.Infof("📦 updater glue: on · verifier=%s · worker=%s", updateVerifierName(s.updateVerifier), probeUpdaterWorker(trader.MaintenanceDataDir()))
 }
 
@@ -202,6 +212,17 @@ func socketStarter(g updateauth.Grant, _ updateauth.Manifest) error {
 	return nil
 }
 
+// socketResumer (W-ADDON-ONE-CLICK) sends resume{job_id} to the worker over
+// its unix socket — the same verb the attended CLI sent, now reachable from
+// the page's Retry. It accepts OK (any state: the worker re-validates the job
+// and the next status poll shows the new blocker) and nothing else. The error
+// never carries the password (only the job id and the worker's own text).
+// The resume frame is built inside the wire package (updaterwire.ResumeWorker),
+// never here, so the resume census keeps pinning the app's single sender.
+func socketResumer(jobID string) error {
+	return updaterwire.ResumeWorker(trader.MaintenanceDataDir(), jobID)
+}
+
 // probeUpdaterWorker dials the worker socket and hangs up without a frame
 // (the listener treats a frameless close as a clean EOF).
 func probeUpdaterWorker(dataDir string) string {
@@ -225,9 +246,11 @@ func (s *Server) updatesClock() time.Time {
 func (s *Server) registerUpdateRoutes(api *gin.RouterGroup) {
 	upd := api.Group("/updates", s.updatesGate())
 	upd.GET("", s.handleUpdatesStatus)
+	upd.GET("/readiness", s.handleUpdatesReadiness)
 	upd.POST("/check", s.handleUpdatesCheck)
 	upd.POST("/install", s.handleUpdatesInstall)
 	upd.POST("/install-with-password", s.handleUpdatesInstallWithPassword)
+	upd.POST("/retry", s.handleUpdatesRetry)
 	upd.GET("/jobs/:id", s.handleUpdatesJob)
 	upd.GET("/jobs/:id/receipt", s.handleUpdatesJob)
 }
@@ -287,6 +310,10 @@ var updatesRefusalCategories = map[string]string{
 	"install-with-password: admin user row absent":                                                  "install_password_admin_row_absent",
 	"install-with-password: password wrong":                                                         "install_password_wrong",
 	"install-with-password: server-side mint refused":                                               "install_password_mint_refused",
+	"retry: no enrolled admin on the context":                                                       "retry_password_no_admin_context",
+	"retry: password locked out":                                                                    "retry_password_locked_out",
+	"retry: admin user row absent":                                                                  "retry_password_admin_row_absent",
+	"retry: password wrong":                                                                         "retry_password_wrong",
 }
 
 // updatesRefusalCategory maps a refusal reason onto its closed category.
@@ -542,6 +569,18 @@ func (s *Server) handleUpdatesStatus(c *gin.Context) {
 		"install_enabled":   enabled,
 		"worker_listening":  workerListening,
 	})
+}
+
+// handleUpdatesReadiness — GET /api/updates/readiness (W-ADDON-ONE-CLICK).
+// Behind the same updates gate as every other route here. Returns the
+// pre-update checklist the page shows BEFORE the owner presses Update, read
+// from the live box (auto-detected NT8 Documents folder, a powershell probe,
+// Config.xml, and the AddOns folder). Read-only; never touches the bot or NT8.
+func (s *Server) handleUpdatesReadiness(c *gin.Context) {
+	items := updatereadiness.Check(c.Request.Context(), updatereadiness.Config{
+		Run: updatereadiness.RunViaExec(10 * time.Second),
+	})
+	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
 // handleUpdatesCheck — POST /api/updates/check (ONE-BUTTON P-A, fold A1).
@@ -850,6 +889,78 @@ func (s *Server) handleUpdatesInstallWithPassword(c *gin.Context) {
 		return
 	}
 	s.runInstall(c, g)
+}
+
+// handleUpdatesRetry — POST /api/updates/retry (W-ADDON-ONE-CLICK): a HELD
+// job is retried from the page with the owner's VL password — never a
+// terminal. Same route gate + limiter + password proof as
+// install-with-password (5 wrong in 15 min locks out, counted like the F9
+// compare); on success it hands resume{job_id} to the worker. The job id
+// must pass updaterwire.ValidJobID first (the ONE id rule the wire and the
+// job file share) — an ill-shaped id never reaches the worker.
+func (s *Server) handleUpdatesRetry(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUpdateInstallBody)
+	var req struct {
+		JobID    string `json:"job_id" binding:"required"`
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "job_id and password are required"})
+		return
+	}
+	if !updaterwire.ValidJobID(req.JobID) {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "job_id is invalid"})
+		return
+	}
+	adminID := c.GetString(updatesAdminIDKey)
+	if adminID == "" {
+		// Unreachable through the gate (fail closed if it ever is).
+		s.updatesForbid(c, "retry: no enrolled admin on the context")
+		return
+	}
+	now := s.updatesClock()
+	if d, ok := apiInstallPasswordLimiter.blocked(now, adminID); ok {
+		s.updatesForbidStatus(c, "retry: password locked out", http.StatusTooManyRequests,
+			gin.H{"error": "too many wrong passwords", "unlock_in_seconds": int(d.Seconds())})
+		return
+	}
+	u, err := s.store.User().GetByID(adminID)
+	if err != nil || u == nil {
+		s.updatesForbid(c, "retry: admin user row absent")
+		return
+	}
+	if !auth.CheckPassword(req.Password, u.PasswordHash) {
+		logger.Warnf("🔒 [updates] refused %s %s: retry password wrong", c.Request.Method, c.FullPath())
+		telemetry.IncGateBlock("", installPasswordWrongGate)
+		if d := apiInstallPasswordLimiter.recordFail(now, adminID); d > 0 {
+			s.updatesForbidStatus(c, "retry: password locked out", http.StatusTooManyRequests,
+				gin.H{"error": "too many wrong passwords", "unlock_in_seconds": int(d.Seconds())})
+			return
+		}
+		currentPasswordFailSleep(currentPasswordFailDelay)
+		s.updatesForbid(c, "retry: password wrong")
+		return
+	}
+	apiInstallPasswordLimiter.clear(adminID)
+
+	// The SAME install_enabled gate as Update (condition 1 of the CTO's
+	// approval): the stub verifier or an absent starter means installs are
+	// off, and a held job cannot be retried into a worker that cannot run.
+	_, stub := s.updateVerifier.(updateauth.StubVerifier)
+	if stub || s.updateStart == nil || s.updateResume == nil {
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "installer unavailable"})
+		return
+	}
+	if err := s.updateResume(req.JobID); err != nil {
+		// The worker's OWN text, shown on the page verbatim (condition 2):
+		// "not held", "unknown job", "resume refused …" — never a fabricated
+		// reason. The worker refuses anything but a held/parked job naming
+		// this id.
+		logger.Warnf("🔒 [updates] retry refused by the worker (job %s): %v", req.JobID, err)
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"job_id": req.JobID})
 }
 
 // handleUpdatesJob — GET /api/updates/jobs/:id and /jobs/:id/receipt.

@@ -62,6 +62,27 @@ type OSHost struct {
 
 func (OSHost) Now() time.Time { return time.Now() }
 
+// AddonRestore MOVES a placed AddOn's backup DLL back into bin/Custom, without
+// ever deleting the current one (THE ONE RULE): the current DLL is moved aside
+// inside the backup dir first, then the backup takes its place.
+func (OSHost) AddonRestore(docsDir, backupDir string) error {
+	if backupDir == "" {
+		return nil // nothing was backed up, nothing to restore
+	}
+	dest := filepath.Join(docsDir, "bin", "Custom", "VL.AddOn.dll")
+	if _, err := os.Stat(dest); err == nil {
+		aside := filepath.Join(backupDir, "VL.AddOn.dll.reverted")
+		if err := os.Rename(dest, aside); err != nil {
+			return fmt.Errorf("addon restore: move the placed DLL aside: %w", err)
+		}
+	}
+	backup := filepath.Join(backupDir, "VL.AddOn.dll")
+	if err := os.Rename(backup, dest); err != nil {
+		return fmt.Errorf("addon restore: move the backup back: %w", err)
+	}
+	return nil
+}
+
 func (OSHost) Sleep(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
 	defer t.Stop()

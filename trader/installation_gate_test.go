@@ -22,6 +22,7 @@ type gateFixture struct {
 	st     *store.Store
 	loaded map[string]*AutoTrader
 	wire   installationWire
+	srv    *ntwire.TCPServer
 }
 
 func goodCensusAck(job string) *ntwire.MaintenanceAckPayload {
@@ -37,9 +38,10 @@ func newGateFixture(t *testing.T) *gateFixture {
 	at.id = "gate-t1"
 	s := ntwire.NewTCPServer(nil)
 	s.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{}) // W117 F4: known-flat on connect
+	s.SetAccountsList([]ntwire.AccountInfo{{Name: "Sim101", IsSim: true}}, "Sim101") // sim_accounts: Sim101 is SIM-tradeable
 	at.trader = ntTrader.NewTCPTrader(s, "MNQ", "Sim101")
 	setHold(t, dir, "job-g")
-	f := &gateFixture{dir: dir, st: st, loaded: map[string]*AutoTrader{at.id: at},
+	f := &gateFixture{dir: dir, st: st, loaded: map[string]*AutoTrader{at.id: at}, srv: s,
 		wire: installationWire{Connected: true, Rec: ntwire.ConnectionRecord{AcceptSeq: 3, RemotePort: 50123, Ack: goodCensusAck("job-g")}, HasAck: true, AckAge: time.Second}}
 	prevW, prevC := installationWireView, installationTraderCutover
 	installationWireView = func([]*AutoTrader) (installationWire, bool) { return f.wire, true }
@@ -91,7 +93,7 @@ func TestInstallationGateReadyWhenEveryLegPasses(t *testing.T) {
 	if g.JobID != "job-g" {
 		t.Fatalf("job_id: %q", g.JobID)
 	}
-	for _, name := range []string{"hold", "go_drained", "in_flight_sends", "queued_signals", "planner_in_flight", "traders_nt8", "addon_ack", "addon_census", "addon_census_prehold", "ledger_exposure", "trader_cutover:gate-t1"} {
+	for _, name := range []string{"hold", "go_drained", "in_flight_sends", "queued_signals", "planner_in_flight", "traders_nt8", "addon_ack", "addon_census", "addon_census_prehold", "ledger_exposure", "sim_accounts", "trader_cutover:gate-t1"} {
 		if _, ok := legOf(g, name); !ok {
 			t.Errorf("leg %s missing", name)
 		}
@@ -109,6 +111,14 @@ func TestInstallationGateFailsWithoutAHold(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustFail(t, f.run(), "hold", "no hold")
+}
+
+// W-ADDON-ONE-CLICK guard #1 (#6 fold): the MAIN-view sim_accounts leg fails
+// when a bound account is not SIM-tradeable — not only on the nt8_absent view.
+func TestInstallationGateSimAccountsNonSimFails(t *testing.T) {
+	f := newGateFixture(t)
+	f.srv.SetAccountsList([]ntwire.AccountInfo{{Name: "Sim101", IsSim: false}}, "Sim101")
+	mustFail(t, f.run(), "sim_accounts", "not SIM-tradeable")
 }
 
 func TestInstallationGateFailsWhileAnEntrySendHoldsAPermit(t *testing.T) {

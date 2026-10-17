@@ -42,8 +42,8 @@ func (r *rig) f5() {
 // effect. Each fake side effect re-reads the job file and records a violation
 // unless its own state is on disk "started" (and, after the hold write, this
 // job's hold is on disk). Three paths cover every effect: the happy path
-// (nt8_skipped), the attended park (nt8_updated → resume), and a Watch that
-// never proves the new build (rollback).
+// (nt8_skipped), the one-click AddOn path (nt8_updated → build+restart), and a
+// Watch that never proves the new build (rollback).
 func TestEveryTransitionPersistsBeforeItsSideEffect(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -54,7 +54,7 @@ func TestEveryTransitionPersistsBeforeItsSideEffect(t *testing.T) {
 	}{
 		{name: "happy path, AddOn unchanged", final: updaterjob.StateComplete,
 			calls: []string{"rehash", "resolve", "stage", "hold_write", "backup", "snapshot", "activate", "watch", "hold_clear"}},
-		{name: "C# changed: park, attended resume", opts: []rigOpt{withCSChanged()}, final: updaterjob.StateComplete,
+		{name: "C# changed: one-click AddOn build+restart", opts: []rigOpt{withCSChanged()}, final: updaterjob.StateComplete,
 			calls: []string{"rehash", "resolve", "stage", "hold_write", "backup", "snapshot", "activate", "watch", "hold_clear"}},
 		{name: "Watch never proves the release: rollback", setup: func(r *rig) { r.watchFail[boxNew] = true }, final: updaterjob.StateRolledBack,
 			calls: []string{"rehash", "resolve", "stage", "hold_write", "backup", "snapshot", "activate", "watch", "rollback", "watch", "hold_clear"}},

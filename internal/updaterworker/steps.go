@@ -468,7 +468,7 @@ func (w *Worker) stepDrain(ctx context.Context, j updaterjob.Job) stepResult {
 		}
 		rev := map[string]string{"reason": "planner wait expired", "hold_after": "released"}
 		res.receipts = append(res.receipts, w.receipt("release_hold", relStart, rev, nil))
-		res.failTo, res.reason = updaterjob.StateRefused, "AI plan still running — hold released, nothing installed"
+		res.failTo, res.reason = updaterjob.StateRevertedClean, "AI plan still running — hold released, nothing installed"
 	}
 	return res
 }
@@ -620,7 +620,7 @@ func (w *Worker) stepGate(ctx context.Context, j updaterjob.Job) stepResult {
 		}
 		rev := map[string]string{"reason": "planner wait expired", "hold_after": "released"}
 		res.receipts = append(res.receipts, w.receipt("release_hold", relStart, rev, nil))
-		res.failTo, res.reason = updaterjob.StateRefused, "AI plan still running — hold released, nothing installed"
+		res.failTo, res.reason = updaterjob.StateRevertedClean, "AI plan still running — hold released, nothing installed"
 	}
 	return res
 }
@@ -719,16 +719,11 @@ func (w *Worker) stepNT8(ctx context.Context, j updaterjob.Job) stepResult {
 	if err != nil {
 		err = fmt.Errorf("ready not re-proven at the AddOn step: %w", err)
 	}
-	res := stepResult{receipts: []Receipt{w.receipt("nt8", start, ev, err)}, err: err}
-	if j.State == updaterjob.StateNT8Updated {
-		why := "the AddOn must be updated"
-		if j.NT8 != nil && j.NT8.Reason != "" {
-			why = j.NT8.Reason
-		}
-		res.blocker = clipText("attended AddOn F5 required (" + why + "): compile the release's AddOn in NT8 (copy → F5 → full NT8 restart), then run: vl-updater resume " + j.JobID)
-	}
-	return res
+	return stepResult{receipts: []Receipt{w.receipt("nt8", start, ev, err)}, err: err}
 }
+
+// ── W-ADDON-ONE-CLICK: the AddOn build/place/restart/reconnect steps live in
+// addon_steps.go (DS-104). They replace the nt8_updated PARK.
 
 // stepActivate is the point of no return. On a resume INSIDE it (attempts >
 // 1) the identity on disk may be the process the first run already killed:
@@ -1001,11 +996,42 @@ func (w *Worker) stepRollback(ctx context.Context, j updaterjob.Job) stepResult 
 	if verr != nil {
 		return stepResult{receipts: receipts, err: verr, reason: clipText("the old build is not proven after the rollback: " + verr.Error())}
 	}
+	// W-ADDON-ONE-CLICK self-recovery (R4): after the bot is proven rolled
+	// back, restore the old AddOn (MOVE the backup back) AND, if the place
+	// step restarted NT8, restart it again so the old DLL loads. A failed
+	// restore or restart makes the rollback fail → recovery_needed.
+	if j.Addon != nil && j.Addon.BackupDir != "" {
+		as := w.host.Now()
+		docsDir, derr := addonDocsDir()
+		if derr != nil {
+			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, derr))
+			return stepResult{receipts: receipts, err: derr, reason: clipText("the previous AddOn could not be restored after the rollback: " + derr.Error())}
+		}
+		if aerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir); aerr != nil {
+			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, aerr))
+			return stepResult{receipts: receipts, err: aerr, reason: clipText("the previous AddOn could not be restored after the rollback: " + aerr.Error())}
+		}
+		receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "outcome": "restored"}, nil))
+		// The place step restarted NT8 — restart it again so the old DLL loads.
+		if j.Addon.Restarted {
+			rs := w.host.Now()
+			r := newNT8Restart(w.winSeam(), addonExe(), w.host.Sleep)
+			if rerr := r.stop(ctx); rerr == nil {
+				rerr = r.start(ctx)
+			}
+			if rerr != nil {
+				receipts = append(receipts, w.receipt("nt8_rerestart", rs, map[string]string{"outcome": "failed"}, rerr))
+				return stepResult{receipts: receipts, err: rerr, reason: clipText("NT8 could not be restarted to load the old AddOn after the rollback: " + rerr.Error())}
+			}
+			receipts = append(receipts, w.receipt("nt8_rerestart", rs, map[string]string{"outcome": "restarted"}, nil))
+		}
+	}
 	return stepResult{receipts: receipts}
 }
 
 // stepReleaseHold clears THIS job's hold (complete, rolled_back — the only
-// two states that clear). A clear that keeps failing is recovery_needed.
+// states that clear). reverted_clean has its own stepRevertClean (hold + lock
+// + AddOn restore). A clear that keeps failing is recovery_needed.
 func (w *Worker) stepReleaseHold(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	deadline := start.Add(w.cfg.Budgets.HoldClear)
@@ -1037,6 +1063,64 @@ func (w *Worker) stepReleaseHold(ctx context.Context, j updaterjob.Job) stepResu
 	return stepResult{receipts: receipts, err: err}
 }
 
+// stepRevertClean is the pre-activation self-recovery (W-ADDON-ONE-CLICK,
+// owner order "click and walk away"): a refusal or timeout BEFORE the point
+// of no return releases the hold, releases the main-tree lock, and MOVES any
+// AddOn the place step already backed up back into place — then the job ends
+// reverted_clean, and the old build keeps running with trading normal. Nothing
+// was swapped, so there is no recovery_needed. A failure of THIS cleanup (the
+// hold cannot be released, the lock cannot be released, or the AddOn cannot be
+// restored) IS recovery_needed — the one case a human must see.
+func (w *Worker) stepRevertClean(ctx context.Context, j updaterjob.Job) stepResult {
+	start := w.host.Now()
+	var receipts []Receipt
+
+	// 1. Release this job's hold (ours only — a foreign hold is never touched).
+	deadline := start.Add(w.cfg.Budgets.HoldClear)
+	var err error
+	for {
+		if err = ReleaseJob(w.dataDir(), j.JobID); err == nil {
+			break
+		}
+		if !w.host.Now().Before(deadline) || w.host.Sleep(ctx, w.cfg.Budgets.Poll) != nil {
+			break
+		}
+	}
+	hev := map[string]string{}
+	if err == nil {
+		s, _ := ReadHoldFor(w.dataDir(), j.JobID)
+		hev["hold_after"] = s.String()
+	}
+	receipts = append(receipts, w.receipt("release_hold", start, hev, err))
+	if err != nil {
+		return stepResult{receipts: receipts, err: err, reason: "revert_clean: the hold could not be released: " + clipText(err.Error())}
+	}
+
+	// 2. Restore an AddOn the place step already moved aside (MOVE the backup
+	// back, never delete). Empty means the place step never ran: nothing to do.
+	if j.Addon != nil && j.Addon.BackupDir != "" {
+		as := w.host.Now()
+		docsDir, derr := addonDocsDir()
+		if derr != nil {
+			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, derr))
+			return stepResult{receipts: receipts, err: derr, reason: "revert_clean: the AddOn could not be restored: " + clipText(derr.Error())}
+		}
+		if rerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir); rerr != nil {
+			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, rerr))
+			return stepResult{receipts: receipts, err: rerr, reason: "revert_clean: the AddOn could not be restored: " + clipText(rerr.Error())}
+		}
+		receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "outcome": "restored"}, nil))
+	}
+
+	// 3. Release OUR main-tree lock (a foreign holder is never touched).
+	lrec := w.lockReleaseReceipt(lockSessionFor(j.JobID), w.host.Now())
+	receipts = append(receipts, lrec)
+	if !lrec.OK {
+		return stepResult{receipts: receipts, err: errors.New(lrec.Err), reason: "revert_clean: the main-tree lock could not be released: " + lrec.Err}
+	}
+	return stepResult{receipts: receipts}
+}
+
 // plannerExpired is the F2 expiry error: the step waited the full planner
 // budget while an AI plan read stayed in flight. Preflight refuses (no hold,
 // as today); drain/gate RELEASE the hold and refuse — a known benign blocker
@@ -1050,6 +1134,23 @@ func (e plannerExpired) Error() string {
 // plannerBlocker reports whether the blocker is the planner_in_flight leg (the
 // gate names it as "planner_in_flight: <detail>").
 func plannerBlocker(b string) bool { return strings.HasPrefix(b, "planner_in_flight") }
+
+// transitionalLegs are the gate legs that describe a NT8 connection in
+// transition or a census that has not caught up yet — wait-don't-refuse
+// (W-ADDON-ONE-CLICK, owner "click and walk away"): these re-check for the
+// Transitional budget instead of failing the step, then self-recover.
+var transitionalLegs = []string{"addon_ack", "addon_census", "addon_census_prehold"}
+
+// transitionalBlocker reports whether b is a transitional-connection or
+// stale-census blocker (a gate leg named "<leg>: <detail>").
+func transitionalBlocker(b string) bool {
+	for _, leg := range transitionalLegs {
+		if strings.HasPrefix(b, leg+":") {
+			return true
+		}
+	}
+	return false
+}
 
 // poll re-reads until check passes ("" blocker) or the budget runs out. Each
 // NEW blocker is persisted (M5 shows it). A fatal error ends it at once.
@@ -1076,6 +1177,15 @@ func (w *Worker) pollPlanner(ctx context.Context, j updaterjob.Job, budget, plan
 		if b == "" {
 			return nil
 		}
+		// W-ADDON-ONE-CLICK wait-don't-refuse: a transitional connection or a
+		// stale census is re-checked for the Transitional budget (never less
+		// than the step's own), so a mid-transition NT8 does not end the job.
+		effDeadline := deadline
+		effBudget := budget
+		if transitionalBlocker(b) && w.cfg.Budgets.Transitional > budget {
+			effDeadline = start.Add(w.cfg.Budgets.Transitional)
+			effBudget = w.cfg.Budgets.Transitional
+		}
 		if b != last {
 			last = b
 			if _, err := w.update(j.JobID, j.State, j.Phase, func(k *updaterjob.Job) error {
@@ -1090,8 +1200,8 @@ func (w *Worker) pollPlanner(ctx context.Context, j updaterjob.Job, budget, plan
 			if !w.host.Now().Before(plannerDeadline) {
 				return plannerExpired{plannerBudget}
 			}
-		} else if !w.host.Now().Before(deadline) {
-			return fmt.Errorf("not passed within %s: %s", budget, b)
+		} else if !w.host.Now().Before(effDeadline) {
+			return fmt.Errorf("not passed within %s: %s", effBudget, b)
 		}
 		if err := w.host.Sleep(ctx, w.cfg.Budgets.Poll); err != nil {
 			return err
