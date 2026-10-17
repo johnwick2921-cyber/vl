@@ -225,9 +225,11 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 				// old one's minus the release's AddOn types. On failure the old
 				// files are restored and the job falls back to the F5 blocker
 				// as the last resort.
-				if j.Catchup {
-					// A catch-up's NT8-closed state was read BEFORE the build;
-					// the owner may have opened NT8 since. NEVER rebuild
+				{
+					// The NT8-closed state was read BEFORE the build (a catch-up's
+					// status read, or an install's nt8_absent drain); the owner may
+					// have opened NT8 since. CTO #35: this re-check runs for BOTH
+					// a catch-up and an install. NEVER rebuild
 					// Custom.dll (or place the AddOn) under a running NT8 — if
 					// it is running now, defer to the restart path, which stops
 					// NT8 first and migrates while it is closed.

@@ -433,3 +433,29 @@ func TestMigrateAddonSourcesScope(t *testing.T) {
 		t.Fatalf("migrated-sources has %d entries (%v), want exactly the 2 release AddOns files", len(entries), entries)
 	}
 }
+
+// CTO #35: the "NEVER replace Custom.dll under a running NT8" re-check holds
+// for an INSTALL too, not only a catch-up. The install took the nt8_absent
+// drain (NT8 closed), then the owner opens NT8 before addon_place. Custom.dll
+// may only change if the worker stopped and restarted NT8 around it (the
+// restart path); an inline swap under the running NT8 is a failure.
+// Mutant: ignore `running` in the re-check → RED.
+func TestFirstInstallNT8OpenedMidInstallNoSwapUnderRunningNT8(t *testing.T) {
+	r := newRig(t, withCSChanged(), withNT8Down(absentDown))
+	custom := filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll")
+	writeFile(r.t, custom, "type "+addonTypeName+"\n")
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", "VLTraderTCPClient.cs"), "// the AddOn source\n")
+	r.hookAt("addon_placed/started", func() {
+		r.set(func() { r.nt8Running = true })
+	})
+	starts := startCount(r)
+	j := r.runToEnd(t)
+	b, err := os.ReadFile(custom)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebuilt := !strings.Contains(string(b), addonTypeName)
+	if rebuilt && *starts == 0 {
+		t.Fatalf("Custom.dll was replaced while NT8 was running, with no stop/start around it (job %s, error %q)", j.State, j.Error)
+	}
+}

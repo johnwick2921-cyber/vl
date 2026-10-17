@@ -26,6 +26,7 @@ func withNT8Down(d time.Duration) rigOpt {
 	return func(b *box) {
 		b.addonDownSince = d
 		b.addonConnected = false
+		b.nt8Running = false // NT8 closed: tasklist must not see it (CTO #35 — the closed-path swap re-checks the process)
 	}
 }
 
