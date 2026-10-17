@@ -128,6 +128,7 @@ type box struct {
 	absentQueued   int           // nt8_absent leg: queued_signals
 	absentPlanner  bool          // nt8_absent leg: a planner read is in flight
 	absentSim      bool          // nt8_absent leg: the bound account is SIM-tradeable
+	simTradeable   bool          // main-view sim_accounts leg: every bound account is SIM-tradeable (guard #1)
 	absentDbOpen   bool          // nt8_absent leg: an OPEN trader_positions row (the CTO P1 leg)
 	cutoverStale   bool          // P-D ruling item 3: the trader_cutover leg fails with the
 	// production "working_orders: snapshot stale" shape when the
@@ -214,6 +215,7 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 		id:      Identity{PID: 4242, StartTicks: 1000}, running: boxOld,
 		flat: true, addonConnected: true, addonBuild: boxOldBuild, manifestBuild: boxOldBuild,
 		absentSim:  true,
+		simTradeable: true,
 		refuseBoot: map[string]bool{}, watchFail: map[string]bool{},
 	}
 	b.data = filepath.Join(b.inst, "data")
@@ -889,7 +891,7 @@ func (b *box) maintenanceView() MaintenanceView {
 func (b *box) gateView() GateView {
 	st := store.ReadMaintenanceHold(b.data)
 	b.mu.Lock()
-	flat, plannerHeld := b.flat, b.plannerInFlight
+	flat, plannerHeld, simTradeable := b.flat, b.plannerInFlight, b.simTradeable
 	b.mu.Unlock()
 	a := b.ack()
 	job := "n/a"
@@ -933,6 +935,12 @@ func (b *box) gateView() GateView {
 		{Name: "addon_census", Pass: flat, Detail: fmt.Sprintf("age=%s — flat=%v", censusAge, flat)},
 		{Name: "addon_census_prehold", Pass: preholdCensusPass, Detail: preholdCensusDetail},
 		{Name: "ledger_exposure", Pass: flat, Detail: "arms"},
+		{Name: "sim_accounts", Pass: simTradeable, Detail: func() string {
+			if simTradeable {
+				return "1 bound account(s) SIM-tradeable"
+			}
+			return "t1: bound account Sim101 is not SIM-tradeable"
+		}()},
 		{Name: "trader_cutover:t1", Pass: flat && !b.cutoverStale, Detail: func() string {
 			if b.cutoverStale {
 				return "working_orders: snapshot stale (AddOn down)"

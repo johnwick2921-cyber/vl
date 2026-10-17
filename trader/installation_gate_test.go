@@ -37,6 +37,7 @@ func newGateFixture(t *testing.T) *gateFixture {
 	at.id = "gate-t1"
 	s := ntwire.NewTCPServer(nil)
 	s.SeedPositionsForTest("Sim101", []ntwire.OpenPosition{}) // W117 F4: known-flat on connect
+	s.SetAccountsList([]ntwire.AccountInfo{{Name: "Sim101", IsSim: true}}, "Sim101") // sim_accounts: Sim101 is SIM-tradeable
 	at.trader = ntTrader.NewTCPTrader(s, "MNQ", "Sim101")
 	setHold(t, dir, "job-g")
 	f := &gateFixture{dir: dir, st: st, loaded: map[string]*AutoTrader{at.id: at},

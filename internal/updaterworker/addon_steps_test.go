@@ -14,21 +14,32 @@ import (
 // distinct error, so the page can tell the owner WHY the update stopped.
 
 // Guard #1: never restart NT8 unless every bound account is flat and
-// SIM-tradeable. The gate goes non-flat the instant the restart is about to
-// run: the restart never happens and the job ends reverted_clean.
+// SIM-tradeable. Both halves are checked independently: flat failing blocks,
+// and a flat-but-non-SIM account blocks.
 func TestFlatSIMGateBlocksTheRestart(t *testing.T) {
-	r := newRig(t, withCSChanged())
-	r.hookAt("nt8_restarted/started", func() { r.set(func() { r.flat = false }) })
-	j := r.runToEnd(t)
-	r.noViolations(t)
-	if j.State != updaterjob.StateRevertedClean || j.Addon == nil || j.Addon.Restarted {
-		t.Fatalf("job %s addon=%+v, want reverted_clean with no restart", j.State, j.Addon)
-	}
-	if !strings.Contains(j.Error, "flat+SIM gate") {
-		t.Fatalf("error %q must name the flat+SIM gate", j.Error)
-	}
-	if r.callCount("activate") != 0 {
-		t.Fatalf("activate ran %d times under a non-flat account", r.callCount("activate"))
+	for _, c := range []struct {
+		name   string
+		setup  func(r *rig)
+		want   string
+	}{
+		{name: "not flat", setup: func(r *rig) { r.set(func() { r.flat = false }) }, want: "flat+SIM gate"},
+		{name: "flat but a bound account is not SIM", setup: func(r *rig) { r.set(func() { r.simTradeable = false }) }, want: "sim_accounts"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRig(t, withCSChanged())
+			r.hookAt("nt8_restarted/started", func() { c.setup(r) })
+			j := r.runToEnd(t)
+			r.noViolations(t)
+			if j.State != updaterjob.StateRevertedClean || j.Addon == nil || j.Addon.Restarted {
+				t.Fatalf("job %s addon=%+v, want reverted_clean with no restart", j.State, j.Addon)
+			}
+			if !strings.Contains(j.Error, c.want) {
+				t.Fatalf("error %q must contain %q", j.Error, c.want)
+			}
+			if r.callCount("activate") != 0 {
+				t.Fatalf("activate ran %d times under a non-flat/non-SIM account", r.callCount("activate"))
+			}
+		})
 	}
 }
 

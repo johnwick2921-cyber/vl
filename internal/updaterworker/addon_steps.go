@@ -173,12 +173,10 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 
 // flatSIMGate is guard #1: never restart NT8 unless every bound account is
 // flat (positions=0, working=0) and SIM-tradeable. It reads the SAME gate one
-// more time, immediately before the restart. The running view proves flat via
-// addon_census, exposure via ledger_exposure, and open positions + working
-// orders via every trader_cutover leg (its leg 1 IS db_open_positions, leg 4
-// is working_orders). sim_accounts and db_open_positions appear as their own
-// legs only on the nt8_absent view, which never reaches a restart — required
-// when present, never the only evidence.
+// more time, immediately before the restart. FLAT = addon_census (positions=0
+// AND working=0 on EVERY account, live included) + ledger_exposure clear.
+// SIM = sim_accounts (every bound account passes IsAccountTradeable). A leg
+// that is missing, or fails, is a refusal — never a silent restart.
 func (w *Worker) flatSIMGate(ctx context.Context, j updaterjob.Job) error {
 	g, err := w.app.InstallationGate(ctx)
 	if err != nil {
@@ -187,33 +185,21 @@ func (w *Worker) flatSIMGate(ctx context.Context, j updaterjob.Job) error {
 	want := map[string]bool{
 		"addon_census":    false,
 		"ledger_exposure": false,
+		"sim_accounts":    false,
 	}
-	cutover := 0
 	for _, leg := range g.Legs {
-		switch {
-		case leg.Name == "addon_census" || leg.Name == "ledger_exposure":
-			want[leg.Name] = true
-			if !leg.Pass {
-				return fmt.Errorf("flat+SIM gate: %s: %s", leg.Name, leg.Detail)
-			}
-		case leg.Name == "sim_accounts" || leg.Name == "db_open_positions":
-			if !leg.Pass {
-				return fmt.Errorf("flat+SIM gate: %s: %s", leg.Name, leg.Detail)
-			}
-		case strings.HasPrefix(leg.Name, "trader_cutover:"):
-			cutover++
-			if !leg.Pass {
-				return fmt.Errorf("flat+SIM gate: %s: %s", leg.Name, leg.Detail)
-			}
+		if _, ok := want[leg.Name]; !ok {
+			continue
+		}
+		want[leg.Name] = true
+		if !leg.Pass {
+			return fmt.Errorf("flat+SIM gate: %s: %s", leg.Name, leg.Detail)
 		}
 	}
 	for name, seen := range want {
 		if !seen {
 			return fmt.Errorf("flat+SIM gate: the %s leg did not run — never restart NT8 without it", name)
 		}
-	}
-	if cutover == 0 {
-		return fmt.Errorf("flat+SIM gate: no trader_cutover leg ran — never restart NT8 without the open-positions proof")
 	}
 	return nil
 }
