@@ -45,33 +45,88 @@ func TestFlatSIMGateBlocksTheRestart(t *testing.T) {
 	}
 }
 
-// Guard #1 TOCTOU (release #34): the flat+SIM gate is re-read RIGHT before
-// Stop-Process, after the 60 s CloseMainWindow wait. A fill or a new position
-// landing during that wait aborts the restart: NT8 was only ASKED to close,
-// never force-stopped, and the job ends reverted_clean.
-func TestFlatSIMGateRecheckBeforeStopProcessAborts(t *testing.T) {
-	r := newRig(t, withCSChanged())
-	stopCalls := 0
+// restartCounts wraps the fake win seam and counts Stop-Process / Start-Process
+// calls (one force-stop = one Stop-Process; one start = one Start-Process).
+func restartCounts(r *rig) (stops, starts *int) {
+	s, t := 0, 0
 	prev := r.box.fakeRunWin
 	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		for _, a := range args {
 			if strings.Contains(a, "Stop-Process") {
-				stopCalls++
+				s++
+			}
+			if strings.Contains(a, "Start-Process") {
+				t++
 			}
 		}
 		return prev(ctx, name, args...)
 	}
-	r.set(func() { r.failSimOnCloseWait = true }) // sim_accounts flips FAIL during the close wait
+	return &s, &t
+}
+
+// Guard #1 TOCTOU (release #34, CTO STOP-AND-FIX): CloseMainWindow is given up
+// to 60 s to close NT8. Three cases:
+//
+// (a) NT8 exits gracefully → no re-check, no force, one start → completes.
+func TestNT8GracefulCloseSkipsTheRecheckAndForce(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	stops, starts := restartCounts(r)
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateComplete {
+		t.Fatalf("job %s (error %q), want complete: NT8 closed itself and the one-click completed", j.State, j.Error)
+	}
+	if *stops != 0 {
+		t.Fatalf("Stop-Process ran %d times; NT8 closed itself, so none is owed", *stops)
+	}
+	if *starts != 1 {
+		t.Fatalf("Start-Process ran %d times, want exactly 1", *starts)
+	}
+}
+
+// (b) NT8 is still running after 60 s + the re-check passes → force once, then
+// start → completes.
+func TestNT8HangsThenRecheckPassesAndForces(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	stops, starts := restartCounts(r)
+	r.set(func() { r.nt8HangsOnClose = true }) // a dialog/hang keeps NT8 alive
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateComplete {
+		t.Fatalf("job %s (error %q), want complete: the re-check passed and NT8 was force-stopped", j.State, j.Error)
+	}
+	if *stops != 1 {
+		t.Fatalf("Stop-Process ran %d times, want exactly 1 (NT8 was still running)", *stops)
+	}
+	if *starts != 1 {
+		t.Fatalf("Start-Process ran %d times, want exactly 1", *starts)
+	}
+}
+
+// (c)/(d) NT8 is still running after 60 s + the re-check FAILS (a fill landed
+// during the wait) → no Stop-Process, no start, reverted_clean with NT8 LEFT
+// running. Mutant: run the re-check unconditionally (before knowing NT8 exited)
+// → case (a) RED.
+func TestFlatSIMGateRecheckBeforeStopProcessAborts(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	stops, starts := restartCounts(r)
+	r.set(func() { r.nt8HangsOnClose = true; r.flipSimOnClose = true })
 	j := r.runToEnd(t)
 	r.noViolations(t)
 	if j.State != updaterjob.StateRevertedClean || j.Addon == nil || j.Addon.Restarted {
 		t.Fatalf("job %s addon=%+v, want reverted_clean with no restart", j.State, j.Addon)
 	}
-	if !strings.Contains(j.Error, "re-check before Stop-Process") {
-		t.Fatalf("error %q must name the re-check before Stop-Process", j.Error)
+	if !strings.Contains(j.Error, "NinjaTrader did not close and the flat+SIM re-check failed — nothing was stopped") {
+		t.Fatalf("error %q must say NT8 was left running", j.Error)
 	}
-	if stopCalls != 0 {
-		t.Fatalf("Stop-Process ran %d times under an aborted restart (NT8 was only asked to close)", stopCalls)
+	if *stops != 0 {
+		t.Fatalf("Stop-Process ran %d times; the re-check failed, so NT8 must be left running", *stops)
+	}
+	if *starts != 0 {
+		t.Fatalf("Start-Process ran %d times; the restart was aborted", *starts)
+	}
+	if !r.nt8Running {
+		t.Fatalf("NT8 must still be running after the aborted restart")
 	}
 	if r.callCount("activate") != 0 {
 		t.Fatalf("activate ran %d times under an aborted restart", r.callCount("activate"))

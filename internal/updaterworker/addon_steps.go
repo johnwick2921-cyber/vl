@@ -235,10 +235,12 @@ func (w *Worker) flatSIMGate(ctx context.Context, j updaterjob.Job) error {
 
 // stepNT8Restart stops and starts NT8 through powershell.exe, ONLY after the
 // flat+SIM gate passes. NT8 was running when the drain did not take the
-// nt8_absent path. The gate is read TWICE: once before the graceful close, and
-// once more RIGHT BEFORE Stop-Process (TOCTOU — a fill or a new position can
-// land during the 60 s CloseMainWindow wait). If the re-check fails the restart
-// is aborted with NT8 only ASKED to close, never force-stopped.
+// nt8_absent path. CloseMainWindow is given up to nt8CloseWait to close NT8
+// gracefully; while it is still running the flat+SIM gate is re-read RIGHT
+// before Stop-Process (TOCTOU — a fill or a new position can land during the
+// wait). If the re-check fails, NT8 is NOT force-stopped: it is left running
+// and the job ends reverted_clean. If NT8 exits on its own, there is no
+// re-check and no force — it closed itself, and nothing can trade while closed.
 func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
@@ -251,15 +253,38 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 		if err := r.signalClose(ctx); err != nil {
 			return err
 		}
-		if err := r.sleep(ctx, nt8CloseWait); err != nil {
-			return err
+		// Poll IsRunning every 2 s up to nt8CloseWait. If NT8 exited on its own,
+		// no re-check and no force.
+		exited := false
+		deadline := w.host.Now().Add(nt8CloseWait)
+		for {
+			running, err := r.isRunning(ctx)
+			if err != nil {
+				return err
+			}
+			if !running {
+				exited = true
+				break
+			}
+			if !w.host.Now().Before(deadline) {
+				break
+			}
+			if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
+				return err
+			}
 		}
-		if err := w.flatSIMGate(ctx, j); err != nil {
-			ev["flat_sim_recheck"] = "fail"
-			return fmt.Errorf("flat+SIM gate re-check before Stop-Process: %w", err)
-		}
-		if err := r.forceStop(ctx); err != nil {
-			return err
+		if !exited {
+			// NT8 is STILL running (a dialog, a hang). The AddOn is still
+			// connected, so the census is valid — re-check the gate right before
+			// the force stop. A failed re-check leaves NT8 RUNNING, never killed.
+			if err := w.flatSIMGate(ctx, j); err != nil {
+				ev["flat_sim_recheck"] = "fail"
+				return fmt.Errorf("NinjaTrader did not close and the flat+SIM re-check failed — nothing was stopped: %w", err)
+			}
+			ev["flat_sim_recheck"] = "pass"
+			if err := r.forceStop(ctx); err != nil {
+				return err
+			}
 		}
 		if err := r.start(ctx); err != nil {
 			return err

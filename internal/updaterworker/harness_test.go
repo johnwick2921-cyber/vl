@@ -111,7 +111,9 @@ type box struct {
 	noRollbackReconnect bool // F2: the AddOn does NOT come back after the rollback's second restart
 	addonBuildBeforeRestart string // the build the AddOn ran before the FORWARD restart (captured at Start-Process)
 	addonRestored            bool   // fakeHost.AddonRestore ran: the OLD DLL is back in bin/Custom
-	failSimOnCloseWait       bool   // TOCTOU: the sim_accounts leg flips FAIL during the 60s graceful-close wait
+	nt8Running               bool   // the fake NT8 process is alive (tasklist sees it)
+	nt8HangsOnClose          bool   // TOCTOU: CloseMainWindow does NOT exit NT8 (a dialog/hang)
+	flipSimOnClose           bool   // TOCTOU: the sim_accounts leg flips FAIL when the graceful close runs
 	omitLeg          string // the fake gate omits this leg entirely (guard #1 missing-leg pin)
 	badToken         bool // the app refuses the token (401)
 	verdictMissing   bool
@@ -227,6 +229,7 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 		flat: true, addonConnected: true, addonBuild: boxOldBuild, manifestBuild: boxOldBuild,
 		absentSim:  true,
 		simTradeable: true,
+		nt8Running: true,
 		refuseBoot: map[string]bool{}, watchFail: map[string]bool{},
 	}
 	b.data = filepath.Join(b.inst, "data")
@@ -323,10 +326,13 @@ func (r *rig) newWorker() *Worker {
 	return w
 }
 
-// fakeRunWin plays dotnet.exe and powershell.exe on Linux (W-ADDON-ONE-CLICK):
-// a dotnet build "compiles" by writing a VL.AddOn.dll carrying the AddOn type
-// into the -o dir (parsed back from the Windows path Build rendered); the
-// powershell NT8 stop/start succeeds. No test ever execs a real Windows binary.
+// fakeRunWin plays dotnet.exe, tasklist.exe and powershell.exe on Linux
+// (W-ADDON-ONE-CLICK): a dotnet build "compiles" by writing a VL.AddOn.dll
+// carrying the AddOn type into the -o dir (parsed back from the Windows path
+// Build rendered); tasklist reports whether the fake NT8 process is alive; the
+// powershell CloseMainWindow / Stop-Process / Start-Process commands model the
+// restart seam — a graceful close EXITS the fake NT8 and drops its census ack.
+// No test ever execs a real Windows binary.
 func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]byte, error) {
 	if strings.Contains(name, "dotnet") {
 		out := ""
@@ -342,16 +348,45 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), "fake AddOn DLL: type "+addonTypeName+"\n")
 		return []byte("Build succeeded.\n    0 Warning(s)\n    0 Error(s)\n"), nil
 	}
-	// powershell.exe stop/start: Start-Process is the NT8 restart — simulate
-	// the AddOn reconnecting with the manifest's build on a NEW connection.
+	if strings.Contains(name, "tasklist") {
+		b.mu.Lock()
+		running := b.nt8Running
+		b.mu.Unlock()
+		if running {
+			return []byte("\"NinjaTrader.exe\",\"4242\",\"Console\",\"1\",\"1,234,567 K\"\r\n"), nil
+		}
+		return []byte("INFO: No tasks are running which match the specified criteria.\r\n"), nil
+	}
+	// powershell.exe stop/start: CloseMainWindow exits NT8 (and drops the census
+	// ack) unless it hangs; Stop-Process force-kills; Start-Process brings it
+	// back and models the AddOn reconnect.
 	for _, a := range args {
+		if strings.Contains(a, "CloseMainWindow") {
+			b.mu.Lock()
+			if !b.nt8HangsOnClose {
+				b.nt8Running = false
+				b.addonConnected = false // the census disappears when NT8 exits
+			}
+			if b.flipSimOnClose {
+				b.simTradeable = false
+			}
+			b.mu.Unlock()
+		}
+		if strings.Contains(a, "Stop-Process") {
+			b.mu.Lock()
+			b.nt8Running = false
+			b.addonConnected = false
+			b.mu.Unlock()
+		}
 		if strings.Contains(a, "Start-Process") {
 			b.mu.Lock()
+			b.nt8Running = true
 			if !b.addonRestored {
 				// FORWARD restart: remember what it was running, then bring up
 				// the NEW build on a NEW connection.
 				b.addonBuildBeforeRestart = b.addonBuild
 				if !b.noReconnect {
+					b.addonConnected = true
 					if !b.reconnectOldBuild {
 						b.addonBuild = b.manifestBuild
 					}
@@ -364,6 +399,7 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 				// comes back on the OLD build over a NEW connection.
 				if !b.noRollbackReconnect && !b.reconnectSameSeq {
 					b.addonSeq++
+					b.addonConnected = true
 				}
 			}
 			b.mu.Unlock()
@@ -747,13 +783,6 @@ func (h *fakeHost) Sleep(ctx context.Context, d time.Duration) error {
 		return err
 	}
 	h.b.clock.Advance(d)
-	// TOCTOU: during the 60 s graceful-close wait a fill or a new position can
-	// land — the sim_accounts leg flips FAIL so the re-check aborts the restart.
-	if h.b.failSimOnCloseWait && d == nt8CloseWait {
-		h.b.mu.Lock()
-		h.b.simTradeable = false
-		h.b.mu.Unlock()
-	}
 	if h.b.pollHook != nil {
 		h.b.pollHook()
 	}
@@ -970,6 +999,13 @@ func (b *box) gateView() GateView {
 	if a != nil {
 		censusAge = fmt.Sprintf("%dms", a.AgeMs)
 	}
+	// The census is the AddOn's own report: it DISAPPEARS when NT8 exits (the
+	// AddOn disconnects). The leg must fail then — reality, not the old fake
+	// that let the census survive signalClose (CTO STOP-AND-FIX 2026-10-17).
+	censusPass, censusDetail := flat && a != nil, fmt.Sprintf("age=%s — flat=%v", censusAge, flat)
+	if a == nil {
+		censusDetail = "no census — the AddOn is disconnected"
+	}
 	legs := []GateLeg{
 		{Name: "hold", Pass: st.Held, Detail: "held=" + fmt.Sprint(st.Held)},
 		{Name: "go_drained", Pass: st.Held, Detail: "barrier engaged"},
@@ -983,7 +1019,7 @@ func (b *box) gateView() GateView {
 		}()},
 		{Name: "traders_nt8", Pass: true, Detail: "1 NT8 trader"},
 		{Name: "addon_ack", Pass: st.Held && a != nil && a.Held && a.JobID == job, Detail: "ack"},
-		{Name: "addon_census", Pass: flat, Detail: fmt.Sprintf("age=%s — flat=%v", censusAge, flat)},
+		{Name: "addon_census", Pass: censusPass, Detail: censusDetail},
 		{Name: "addon_census_prehold", Pass: preholdCensusPass, Detail: preholdCensusDetail},
 		{Name: "ledger_exposure", Pass: flat, Detail: "arms"},
 		{Name: "sim_accounts", Pass: simTradeable, Detail: func() string {
