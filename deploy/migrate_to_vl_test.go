@@ -23,6 +23,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"vl/internal/safepath"
 
 	_ "vl/store/sqlitedriver" // the ONE sqlite registration site (census)
 )
@@ -1148,7 +1149,7 @@ func TestStep0Refusals(t *testing.T) {
 		extra []string
 		want  string
 	}{
-		{"missing old dir", func(fe *fakeEnv) { _ = os.RemoveAll(filepath.Join(fe.home, o)) }, nil, nil, "is missing"},
+		{"missing old dir", func(fe *fakeEnv) { _ = safepath.RemoveAllUnder(fe.home, filepath.Join(fe.home, o)) }, nil, nil, "is missing"},
 		{"vl present", func(fe *fakeEnv) { _ = os.MkdirAll(filepath.Join(fe.home, "vl"), 0o755) }, nil, nil, "already exists"},
 		{"vl lock home present", func(fe *fakeEnv) { _ = os.MkdirAll(filepath.Join(fe.home, "vl-main.lock.d"), 0o755) }, nil, nil, "already exists"},
 		{"foreign session", func(fe *fakeEnv) {
@@ -1196,7 +1197,7 @@ func TestStep0Refusals(t *testing.T) {
 			_ = os.Remove(filepath.Join(fe.relDir, "updater", "vl-updater-bootstrap"))
 		}, nil, nil, "missing updater/vl-updater-bootstrap"},
 		{"missing old updater config", func(fe *fakeEnv) {
-			_ = os.RemoveAll(filepath.Join(fe.home, ".config", o+"-updater"))
+			_ = safepath.RemoveAllUnder(fe.home, filepath.Join(fe.home, ".config", o+"-updater"))
 		}, nil, nil, "trio is incomplete"},
 		{"old updater with --no-updater", nil, func(fe *fakeEnv) []string {
 			return append(fe.argsForward(), "--dry-run", "--no-updater")
@@ -1250,7 +1251,7 @@ func TestStep0Refusals(t *testing.T) {
 func TestNoUpdaterPartnerPath(t *testing.T) {
 	o := oldName()
 	fe := newFakeEnv(t)
-	_ = os.RemoveAll(filepath.Join(fe.home, ".config", o+"-updater"))
+	_ = safepath.RemoveAllUnder(fe.home, filepath.Join(fe.home, ".config", o+"-updater"))
 	_ = os.Remove(filepath.Join(fe.home, "bin", o+"-updater"))
 	_ = os.Remove(filepath.Join(fe.state, "units", o+"-updater"))
 	out, code := fe.run(t, append(fe.argsForward(), "--no-updater")...)

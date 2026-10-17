@@ -71,6 +71,7 @@ import (
 	"syscall"
 	"time"
 
+	"vl/internal/safepath"
 	"vl/internal/updaterjob"
 	"vl/internal/updaterwire"
 )
@@ -212,7 +213,11 @@ func FetchRelease(cfg FetchConfig) (updaterjob.Verdict, error) {
 	renamed := false
 	defer func() {
 		if !renamed {
-			_ = os.RemoveAll(staging)
+			// THE ONE RULE (2026-10-17): the staging dir is removed only as a
+			// child of the release root it was created in.
+			if err := safepath.RemoveAllUnder(cfg.ReleaseRoot, staging); err != nil && cfg.Logf != nil {
+				cfg.Logf("fetch %s: staging dir %s not removed: %v", cfg.ReleaseID, staging, err)
+			}
 		}
 	}()
 	if err := extractArchive(cfg.Archive, staging); err != nil {
@@ -317,8 +322,11 @@ func FetchRelease(cfg FetchConfig) (updaterjob.Verdict, error) {
 	// every re-fetch refused with ErrVerdictExists until a hand delete).
 	warn, err := writeVerdict(cfg.DataDir, vpath, v)
 	if err != nil {
-		// no release dir survives without its verdict
-		_ = os.RemoveAll(final)
+		// no release dir survives without its verdict — removed only as a
+		// child of the release root (THE ONE RULE, 2026-10-17)
+		if rerr := safepath.RemoveAllUnder(cfg.ReleaseRoot, final); rerr != nil && cfg.Logf != nil {
+			cfg.Logf("fetch %s: release dir %s not removed after the verdict write failed: %v", cfg.ReleaseID, final, rerr)
+		}
 		_ = syncDir(cfg.ReleaseRoot)
 		_ = ClearFetchPending(cfg.ReleaseRoot, m.SourceSHA)
 		return updaterjob.Verdict{}, err
