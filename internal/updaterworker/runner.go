@@ -51,7 +51,7 @@ func (w *Worker) drive(ctx context.Context, id string) error {
 			return fmt.Errorf("read job %s: %w", id, err)
 		}
 		if updaterjob.Finished(j.State, j.Phase) {
-			w.finished(j)
+			w.finished(ctx, j)
 			return nil
 		}
 		if j.Phase == updaterjob.PhaseStarted {
@@ -89,21 +89,33 @@ func (w *Worker) drive(ctx context.Context, id string) error {
 // latches the worker: install is refused until it is restarted (OQ-3). The
 // main-tree lock is settled EARLIER, in the terminal edge itself (finish's
 // failure edges + stepReleaseHold): a finished job file is immutable.
-func (w *Worker) finished(j updaterjob.Job) {
+func (w *Worker) finished(ctx context.Context, j updaterjob.Job) {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.active == j.JobID {
 		w.active = ""
 	}
-	if j.State == updaterjob.StateRecoveryNeeded && w.stopped == "" {
+	recovery := j.State == updaterjob.StateRecoveryNeeded && w.stopped == ""
+	if recovery {
 		w.stopped = "recovery_needed: " + j.JobID
 	}
 	w.logf("updater: job %s → %s", j.JobID, j.State)
+	swapped := w.swapPending.Load()
 	// The worker binary was swapped during this job: only NOW, with the swap
 	// receipt and the terminal effects persisted, may serve() exit for the
 	// unit restart.
-	if w.swapPending.Load() {
+	if swapped {
 		closeSwapDone(w)
+	}
+	w.mu.Unlock()
+	// feat/addon-catchup: after a finished install (complete or rolled_back),
+	// an idle worker re-checks the running AddOn and rebuilds it if stale.
+	// Skipped on recovery_needed (the worker latches), on a worker swap (the
+	// NEXT worker's Start re-checks), and on a catch-up itself (a completed
+	// catch-up must not re-trigger another — no loop).
+	if !recovery && !swapped && !j.Catchup {
+		if _, err := w.maybeStartCatchup(ctx); err != nil {
+			w.logf("updater: catch-up check after %s: %v", j.State, err)
+		}
 	}
 }
 
@@ -272,7 +284,25 @@ func (w *Worker) advance(ctx context.Context, j updaterjob.Job) (parked bool, er
 	var set func(k *updaterjob.Job)
 	switch j.State {
 	case updaterjob.StateRequested:
+		if j.Catchup {
+			// Catch-up: straight into the AddOn build — nothing is downloaded,
+			// verified or activated.
+			next = updaterjob.StateCatchup
+			set = func(k *updaterjob.Job) {
+				if k.Addon == nil {
+					k.Addon = &updaterjob.AddonState{}
+				}
+			}
+			break
+		}
 		next = updaterjob.StateDownloaded
+	case updaterjob.StateCatchup:
+		next = updaterjob.StateAddonBuilt
+		set = func(k *updaterjob.Job) {
+			if k.Addon == nil {
+				k.Addon = &updaterjob.AddonState{}
+			}
+		}
 	case updaterjob.StateDownloaded:
 		next = updaterjob.StateVerified
 	case updaterjob.StateVerified:
@@ -293,6 +323,12 @@ func (w *Worker) advance(ctx context.Context, j updaterjob.Job) (parked bool, er
 		}
 		set = func(k *updaterjob.Job) { k.NT8 = &d }
 	case updaterjob.StateNT8Skipped, updaterjob.StateAddonReconnected:
+		if j.State == updaterjob.StateAddonReconnected && j.Catchup {
+			// Catch-up ends here: the AddOn is built, placed and (if NT8 was
+			// open) proven reconnected. Nothing is activated.
+			next = updaterjob.StateComplete
+			break
+		}
 		// R-i: the LAST re-proof before the point of no return. A failure
 		// here has installed nothing: reverted_clean (self-recovery releases
 		// the hold, the lock, and any placed AddOn).
@@ -324,8 +360,13 @@ func (w *Worker) advance(ctx context.Context, j updaterjob.Job) (parked bool, er
 	case updaterjob.StateAddonPlaced:
 		// Restart NT8 only when it was running at press time; the nt8_absent
 		// drain means it was closed — the DLL is placed, the job proceeds.
+		// Catch-up: restart only when NT8 was OPEN at the catch-up's creation.
 		next = updaterjob.StateAddonReconnected
-		if j.DrainPath != drainPathNT8Absent {
+		if j.Catchup {
+			if j.CatchupNT8Open {
+				next = updaterjob.StateNT8Restarted
+			}
+		} else if j.DrainPath != drainPathNT8Absent {
 			next = updaterjob.StateNT8Restarted
 		}
 	case updaterjob.StateNT8Restarted:

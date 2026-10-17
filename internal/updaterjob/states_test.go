@@ -20,7 +20,7 @@ type wantRow struct {
 }
 
 var wantOrder = []State{
-	StateRequested, StateDownloaded, StateVerified, StatePreflightOK, StateMaintenanceHeld,
+	StateRequested, StateCatchup, StateDownloaded, StateVerified, StatePreflightOK, StateMaintenanceHeld,
 	StateDrainedAcked, StateGateOK, StateBackupDone, StateNT8Skipped, StateNT8Updated,
 	StateAddonBuilt, StateAddonPlaced, StateNT8Restarted, StateAddonReconnected,
 	StateActivated, StateBooted, StateBootVerified, StateWorkerSwapped, StateComplete, StateRollingBack,
@@ -28,7 +28,8 @@ var wantOrder = []State{
 }
 
 var wantTable = map[State]wantRow{
-	StateRequested:       {eff: EffectNone, succ: []State{StateDownloaded}, cancel: true},
+	StateRequested:       {eff: EffectNone, succ: []State{StateDownloaded, StateCatchup}, cancel: true},
+	StateCatchup:         {eff: EffectNone, succ: []State{StateAddonBuilt}},
 	StateDownloaded:      {eff: EffectDownload, succ: []State{StateVerified}, fail: StateRefused, cancel: true},
 	StateVerified:        {eff: EffectVerify, succ: []State{StatePreflightOK}, fail: StateRefused, cancel: true},
 	StatePreflightOK:     {eff: EffectPreflight, succ: []State{StateMaintenanceHeld}, fail: StateRefused, cancel: true},
@@ -41,7 +42,7 @@ var wantTable = map[State]wantRow{
 	StateAddonBuilt:      {eff: EffectAddonBuild, succ: []State{StateAddonPlaced}, fail: StateRevertedClean},
 	StateAddonPlaced:     {eff: EffectAddonPlace, succ: []State{StateNT8Restarted, StateAddonReconnected}, fail: StateRevertedClean},
 	StateNT8Restarted:    {eff: EffectNT8Restart, succ: []State{StateAddonReconnected}, fail: StateRevertedClean},
-	StateAddonReconnected: {eff: EffectAddonReconnect, succ: []State{StateActivated}, fail: StateRollingBack},
+	StateAddonReconnected: {eff: EffectAddonReconnect, succ: []State{StateActivated, StateComplete}, fail: StateRollingBack},
 	StateActivated:       {eff: EffectActivate, succ: []State{StateBooted}, fail: StateRollingBack},
 	StateBooted:          {eff: EffectWatch, succ: []State{StateBootVerified}, fail: StateRollingBack},
 	StateBootVerified:    {eff: EffectBootVerify, succ: []State{StateWorkerSwapped}, fail: StateRollingBack},
