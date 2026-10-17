@@ -147,3 +147,47 @@ func TestRollbackAddonRestoreFailureIsRecoveryNeeded(t *testing.T) {
 		t.Fatalf("job %s (reason %q), want recovery_needed: the AddOn restore failed", j.State, j.RecoveryReason)
 	}
 }
+
+// F2 (release #34): after the rollback's second restart the worker PROVES the
+// AddOn came back on the OLD build over a NEW accept_seq before it reports
+// rolled_back. Mutant: drop the verifyRollbackAddon call → the receipt is
+// missing and a down AddOn still reports rolled_back → RED.
+func TestRollbackVerifiesTheAddOnCameBack(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	// An OLD DLL in bin/Custom so the place step backs it up; the rollback
+	// restores it and re-restarts NT8.
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "VL.AddOn.dll"), "old AddOn DLL\n")
+	r.set(func() { r.noReconnect = true }) // reconnect timeout → rolling_back
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRolledBack {
+		t.Fatalf("job %s (error %q), want rolled_back", j.State, j.Error)
+	}
+	// The reconnect proof ran and observed the OLD build on a NEW connection.
+	steps := strings.Join(receiptSteps(j), ",")
+	if !strings.Contains(steps, "addon_rollback_reconnect") {
+		t.Fatalf("the rollback must prove the AddOn reconnect; receipts %s", steps)
+	}
+	for _, rc := range j.Receipts {
+		if rc.Step == "addon_rollback_reconnect" {
+			if rc.Evidence["outcome"] != "reconnected" {
+				t.Fatalf("addon_rollback_reconnect outcome = %q, want reconnected", rc.Evidence["outcome"])
+			}
+		}
+	}
+}
+
+// F2 (release #34): if the AddOn does NOT come back after the rollback's second
+// restart, the job ends recovery_needed with the plain reason — never
+// rolled_back + "trading normal" while the AddOn is down. Mutant: drop the
+// verifyRollbackAddon call → RED.
+func TestRollbackAddOnDownIsRecoveryNeeded(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "VL.AddOn.dll"), "old AddOn DLL\n")
+	r.set(func() { r.noReconnect = true; r.noRollbackReconnect = true })
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRecoveryNeeded || j.RecoveryReason != rollbackAddonDown {
+		t.Fatalf("job %s (reason %q), want recovery_needed with %q", j.State, j.RecoveryReason, rollbackAddonDown)
+	}
+}

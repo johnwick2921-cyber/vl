@@ -1,6 +1,8 @@
 package updaterworker
 
 import (
+	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -43,24 +45,115 @@ func TestFlatSIMGateBlocksTheRestart(t *testing.T) {
 	}
 }
 
-// Guard #2: a double-loaded AddOn (the type exists in BOTH
-// NinjaTrader.Custom.dll and VL.AddOn.dll — the one-time migration hazard) is
-// refused BEFORE anything is placed, and the job ends reverted_clean.
-func TestDoubleLoadedAddOnIsRefused(t *testing.T) {
+// Guard #1 TOCTOU (release #34): the flat+SIM gate is re-read RIGHT before
+// Stop-Process, after the 60 s CloseMainWindow wait. A fill or a new position
+// landing during that wait aborts the restart: NT8 was only ASKED to close,
+// never force-stopped, and the job ends reverted_clean.
+func TestFlatSIMGateRecheckBeforeStopProcessAborts(t *testing.T) {
 	r := newRig(t, withCSChanged())
-	// The hazard: NT8 would load the AddOn twice.
-	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"), "type "+addonTypeName+"\n")
-	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "VL.AddOn.dll"), "type "+addonTypeName+"\n")
+	stopCalls := 0
+	prev := r.box.fakeRunWin
+	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		for _, a := range args {
+			if strings.Contains(a, "Stop-Process") {
+				stopCalls++
+			}
+		}
+		return prev(ctx, name, args...)
+	}
+	r.set(func() { r.failSimOnCloseWait = true }) // sim_accounts flips FAIL during the close wait
 	j := r.runToEnd(t)
 	r.noViolations(t)
-	if j.State != updaterjob.StateRevertedClean || !strings.Contains(j.Error, "double-load") {
-		t.Fatalf("job %s (error %q), want reverted_clean: the double-load refused", j.State, j.Error)
+	if j.State != updaterjob.StateRevertedClean || j.Addon == nil || j.Addon.Restarted {
+		t.Fatalf("job %s addon=%+v, want reverted_clean with no restart", j.State, j.Addon)
 	}
-	if j.Addon != nil && j.Addon.BackupDir != "" {
-		t.Fatalf("a refused double-load still placed the AddOn: %+v", j.Addon)
+	if !strings.Contains(j.Error, "re-check before Stop-Process") {
+		t.Fatalf("error %q must name the re-check before Stop-Process", j.Error)
+	}
+	if stopCalls != 0 {
+		t.Fatalf("Stop-Process ran %d times under an aborted restart (NT8 was only asked to close)", stopCalls)
 	}
 	if r.callCount("activate") != 0 {
-		t.Fatalf("activate ran %d times under a double-loaded AddOn", r.callCount("activate"))
+		t.Fatalf("activate ran %d times under an aborted restart", r.callCount("activate"))
+	}
+}
+
+// Guard #2 (GAP 1): while NinjaTrader.Custom.dll still holds the AddOn type,
+// the AddOn is NEVER placed — regardless of whether VL.AddOn.dll already exists
+// (F1: on the first install both DLLs can hold the type, and the reconnect
+// outcome would depend on load order). The hazard is Custom.dll ALONE, so a
+// `custom && ours` check would miss the first-install case (VL.AddOn.dll absent)
+// and place the AddOn while Custom.dll still holds the type. The update MOVEs
+// the AddOn sources out of bin/Custom/AddOns and ends reverted_clean with the
+// one-time F5 blocker.
+func TestAddOnNeverPlacedWhileCustomHoldsTheType(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		withOldDll bool
+	}{
+		{name: "first install, VL.AddOn.dll absent", withOldDll: false},
+		{name: "both DLLs hold the type", withOldDll: true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRig(t, withCSChanged())
+			writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"), "type "+addonTypeName+"\n")
+			if c.withOldDll {
+				writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", addonDllName), "old AddOn DLL: type "+addonTypeName+"\n")
+			}
+			writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", "VLTraderTCPClient.cs"), "// the AddOn source NT8 recompiles\n")
+			writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", "VLTraderTCPClient.cs.bak"), "// a stale .bak\n")
+			j := r.runToEnd(t)
+			r.noViolations(t)
+			if j.State != updaterjob.StateRevertedClean {
+				t.Fatalf("job %s (error %q), want reverted_clean", j.State, j.Error)
+			}
+			if j.Error != addonMigrationBlocker {
+				t.Fatalf("error %q, want the plain one-time F5 blocker %q", j.Error, addonMigrationBlocker)
+			}
+			if j.Addon != nil && j.Addon.BackupDir != "" {
+				t.Fatalf("a refused install still placed the AddOn: %+v", j.Addon)
+			}
+			// NEVER placed: a pre-existing VL.AddOn.dll is left byte-identical,
+			// and on a first install none is created.
+			if c.withOldDll {
+				b, err := os.ReadFile(filepath.Join(r.nt8docs, "bin", "Custom", addonDllName))
+				if err != nil || string(b) != "old AddOn DLL: type "+addonTypeName+"\n" {
+					t.Fatalf("the pre-existing VL.AddOn.dll was disturbed (err=%v, content=%q)", err, b)
+				}
+			} else {
+				if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", addonDllName)); !os.IsNotExist(err) {
+					t.Fatalf("the AddOn was placed on a first install (VL.AddOn.dll exists)")
+				}
+			}
+			// Sources moved (never deleted): gone from AddOns, present in migrated-sources.
+			for _, f := range []string{"VLTraderTCPClient.cs", "VLTraderTCPClient.cs.bak"} {
+				if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", f)); !os.IsNotExist(err) {
+					t.Fatalf("source %s was not moved out of AddOns", f)
+				}
+				if _, err := os.Stat(filepath.Join(r.nt8docs, "vl-addon-backups", boxJobID, "migrated-sources", f)); err != nil {
+					t.Fatalf("source %s not in migrated-sources: %v", f, err)
+				}
+			}
+			if r.callCount("activate") != 0 {
+				t.Fatalf("activate ran %d times under a refused install", r.callCount("activate"))
+			}
+		})
+	}
+}
+
+// Guard #2 (GAP 1) second half: after the owner's one-time F5, Custom.dll no
+// longer holds the type, and the next Update places and completes one-click.
+func TestFirstInstallPlacesAfterTheOneTimeF5(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	// The owner pressed F5 once: Custom.dll is now clean (no AddOn type).
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"), "// clean Custom.dll, no AddOn type\n")
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateComplete {
+		t.Fatalf("job %s (error %q), want complete after the one-time F5", j.State, j.Error)
+	}
+	if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", addonDllName)); err != nil {
+		t.Fatalf("the post-F5 update did not place the AddOn: %v", err)
 	}
 }
 

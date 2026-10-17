@@ -108,6 +108,10 @@ type box struct {
 	noReconnect      bool // the AddOn never reconnects after the NT8 restart (guard #3 timeout)
 	reconnectSameSeq bool // the AddOn reconnects on the SAME accept_seq after restart (#5a)
 	reconnectOldBuild bool // the AddOn reconnects reporting the OLD build after restart (#5b)
+	noRollbackReconnect bool // F2: the AddOn does NOT come back after the rollback's second restart
+	addonBuildBeforeRestart string // the build the AddOn ran before the FORWARD restart (captured at Start-Process)
+	addonRestored            bool   // fakeHost.AddonRestore ran: the OLD DLL is back in bin/Custom
+	failSimOnCloseWait       bool   // TOCTOU: the sim_accounts leg flips FAIL during the 60s graceful-close wait
 	omitLeg          string // the fake gate omits this leg entirely (guard #1 missing-leg pin)
 	badToken         bool // the app refuses the token (401)
 	verdictMissing   bool
@@ -343,11 +347,22 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 	for _, a := range args {
 		if strings.Contains(a, "Start-Process") {
 			b.mu.Lock()
-			if !b.noReconnect {
-				if !b.reconnectOldBuild {
-					b.addonBuild = b.manifestBuild
+			if !b.addonRestored {
+				// FORWARD restart: remember what it was running, then bring up
+				// the NEW build on a NEW connection.
+				b.addonBuildBeforeRestart = b.addonBuild
+				if !b.noReconnect {
+					if !b.reconnectOldBuild {
+						b.addonBuild = b.manifestBuild
+					}
+					if !b.reconnectSameSeq {
+						b.addonSeq++
+					}
 				}
-				if !b.reconnectSameSeq {
+			} else {
+				// ROLLBACK re-restart: the OLD DLL is restored, so the AddOn
+				// comes back on the OLD build over a NEW connection.
+				if !b.noRollbackReconnect && !b.reconnectSameSeq {
 					b.addonSeq++
 				}
 			}
@@ -732,6 +747,13 @@ func (h *fakeHost) Sleep(ctx context.Context, d time.Duration) error {
 		return err
 	}
 	h.b.clock.Advance(d)
+	// TOCTOU: during the 60 s graceful-close wait a fill or a new position can
+	// land — the sim_accounts leg flips FAIL so the re-check aborts the restart.
+	if h.b.failSimOnCloseWait && d == nt8CloseWait {
+		h.b.mu.Lock()
+		h.b.simTradeable = false
+		h.b.mu.Unlock()
+	}
 	if h.b.pollHook != nil {
 		h.b.pollHook()
 	}
@@ -812,6 +834,12 @@ func (h *fakeHost) AddonRestore(docsDir, backupDir string) error {
 	if fail {
 		return fmt.Errorf("addon restore: fake failure")
 	}
+	// The restored DLL is the OLD one: the AddOn now reports the build it ran
+	// before the forward restart, and the next restart is the rollback's.
+	h.b.mu.Lock()
+	h.b.addonBuild = h.b.addonBuildBeforeRestart
+	h.b.addonRestored = true
+	h.b.mu.Unlock()
 	return nil
 }
 

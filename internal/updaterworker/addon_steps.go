@@ -100,10 +100,14 @@ func (w *Worker) stepAddonBuild(ctx context.Context, j updaterjob.Job) stepResul
 	return res
 }
 
-// addonDoubleLoaded reports whether the AddOn's type exists in BOTH
-// NinjaTrader.Custom.dll (the F5-compiled copy) and VL.AddOn.dll (ours). That
-// is the one-time-migration hazard: NT8 would load the AddOn twice.
-func addonDoubleLoaded(docsDir string) (bool, error) {
+// addonMigrationNeeded reports whether NinjaTrader.Custom.dll (the F5-compiled
+// copy) already contains the AddOn's type. That is the one-time-migration
+// hazard: if it does, placing VL.AddOn.dll would make NT8 load the AddOn twice
+// after the restart. The hazard is Custom.dll containing the type ALONE — on a
+// first one-click install VL.AddOn.dll does not exist yet, so checking BOTH
+// DLLs would miss it and the AddOn would be placed while Custom.dll still holds
+// the type. If Custom.dll has the type → do NOT place.
+func addonMigrationNeeded(docsDir string) (bool, error) {
 	hasType := func(p string) (bool, error) {
 		b, err := os.ReadFile(p)
 		if err != nil {
@@ -114,19 +118,41 @@ func addonDoubleLoaded(docsDir string) (bool, error) {
 		}
 		return strings.Contains(string(b), addonTypeName), nil
 	}
-	custom, err := hasType(filepath.Join(docsDir, "bin", "Custom", "NinjaTrader.Custom.dll"))
-	if err != nil {
-		return false, err
+	return hasType(filepath.Join(docsDir, "bin", "Custom", "NinjaTrader.Custom.dll"))
+}
+
+// addonMigrationBlocker is the plain, owner-facing message a refused first
+// install ends with: the owner runs the one-time F5, then clicks Update again.
+const addonMigrationBlocker = "One-time step: open NinjaTrader → NinjaScript Editor → press F5 once, then click Update again."
+
+// migrateAddonSources MOVES the AddOn's installed .cs sources (plus their .bak
+// files) out of bin/Custom/AddOns into
+// <docs>/vl-addon-backups/<job>/migrated-sources/, so the owner's next F5
+// recompiles NinjaTrader.Custom.dll WITHOUT the AddOn type. Nothing is deleted:
+// the sources are only moved. With no sources to move the blocker still fires —
+// the owner must F5 regardless.
+func migrateAddonSources(docsDir, jobID string) error {
+	src := filepath.Join(docsDir, "bin", "Custom", "AddOns")
+	matches, _ := filepath.Glob(filepath.Join(src, "VL*.cs*"))
+	if len(matches) == 0 {
+		return nil
 	}
-	ours, err := hasType(filepath.Join(docsDir, "bin", "Custom", addonDllName))
-	if err != nil {
-		return false, err
+	dst := filepath.Join(docsDir, "vl-addon-backups", jobID, "migrated-sources")
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return fmt.Errorf("mkdir migrated-sources: %w", err)
 	}
-	return custom && ours, nil
+	for _, m := range matches {
+		if err := os.Rename(m, filepath.Join(dst, filepath.Base(m))); err != nil {
+			return fmt.Errorf("move %s: %w", m, err)
+		}
+	}
+	return nil
 }
 
 // stepAddonPlace MOVEs the old DLL out, copies the new one in, verifies its
-// sha256. Guard: a double-load is refused BEFORE anything is placed.
+// sha256. Guard: a first install whose Custom.dll still holds the AddOn type is
+// refused BEFORE anything is placed — the sources are migrated out and the job
+// ends reverted_clean with the one-time F5 blocker.
 func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
@@ -138,13 +164,16 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 		if err != nil {
 			return "", fmt.Errorf("addon config: %w", err)
 		}
-		dup, err := addonDoubleLoaded(cfg.DocsDir)
+		migrate, err := addonMigrationNeeded(cfg.DocsDir)
 		if err != nil {
-			return "", fmt.Errorf("double-load check: %w", err)
+			return "", fmt.Errorf("one-time migration check: %w", err)
 		}
-		if dup {
-			ev["double_load"] = "true"
-			return "", errors.New("double-load: the AddOn type is in both NinjaTrader.Custom.dll and VL.AddOn.dll — the one-time migration must run first")
+		if migrate {
+			ev["migration_needed"] = "true"
+			if err := migrateAddonSources(cfg.DocsDir, j.JobID); err != nil {
+				return "", fmt.Errorf("one-time migration: %w", err)
+			}
+			return "", errors.New(addonMigrationBlocker)
 		}
 		b, err := addonbuild.Place(cfg, j.Addon.DllPath, j.Addon.Sha256, j.JobID)
 		if err != nil {
@@ -206,7 +235,10 @@ func (w *Worker) flatSIMGate(ctx context.Context, j updaterjob.Job) error {
 
 // stepNT8Restart stops and starts NT8 through powershell.exe, ONLY after the
 // flat+SIM gate passes. NT8 was running when the drain did not take the
-// nt8_absent path.
+// nt8_absent path. The gate is read TWICE: once before the graceful close, and
+// once more RIGHT BEFORE Stop-Process (TOCTOU — a fill or a new position can
+// land during the 60 s CloseMainWindow wait). If the re-check fails the restart
+// is aborted with NT8 only ASKED to close, never force-stopped.
 func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
@@ -216,7 +248,17 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 		}
 		ev["flat_sim"] = "pass"
 		r := newNT8Restart(w.winSeam(), addonExe(), w.host.Sleep)
-		if err := r.stop(ctx); err != nil {
+		if err := r.signalClose(ctx); err != nil {
+			return err
+		}
+		if err := r.sleep(ctx, nt8CloseWait); err != nil {
+			return err
+		}
+		if err := w.flatSIMGate(ctx, j); err != nil {
+			ev["flat_sim_recheck"] = "fail"
+			return fmt.Errorf("flat+SIM gate re-check before Stop-Process: %w", err)
+		}
+		if err := r.forceStop(ctx); err != nil {
 			return err
 		}
 		if err := r.start(ctx); err != nil {
@@ -282,4 +324,48 @@ func (w *Worker) stepAddonReconnect(ctx context.Context, j updaterjob.Job) stepR
 		res.failTo, res.reason = updaterjob.StateRollingBack, "the AddOn reconnect timed out: "+clipText(err.Error())
 	}
 	return res
+}
+
+// rollbackAddonDown is the plain reason a rollback ends recovery_needed when
+// NT8 did not come back on the OLD AddOn after the rollback's second restart.
+const rollbackAddonDown = "NinjaTrader did not come back after the rollback — open NinjaTrader and check it is logged in"
+
+// verifyRollbackAddon (F2, release #34) proves, after the rollback's second
+// restart, that the AddOn came back on the OLD install's AddOn build over a NEW
+// accept_seq. It is bounded at nt8ReconnectWait (the same 5 minutes as the
+// forward reconnect). A timeout is never a silent pass: the caller ends
+// recovery_needed — never rolled_back + "trading normal" while the AddOn is
+// down.
+func (w *Worker) verifyRollbackAddon(ctx context.Context, j updaterjob.Job) error {
+	oldSeq := uint64(0)
+	if j.Addon != nil {
+		oldSeq = j.Addon.OldAcceptSeq
+	}
+	// The OLD install's AddOn build: what the AddOn actually acked at the park,
+	// else the build the old install's own ninjascript declares.
+	oldBuild := ""
+	if j.NT8 != nil {
+		oldBuild = j.NT8.AckedBuildID
+		if oldBuild == "" {
+			oldBuild = j.NT8.OldInstallBuildID
+		}
+	}
+	deadline := w.host.Now().Add(nt8ReconnectWait)
+	for {
+		m, merr := w.app.Maintenance(ctx)
+		if merr != nil {
+			return fmt.Errorf("maintenance read: %w", merr)
+		}
+		if a := m.AddonAck; a != nil {
+			if a.AcceptSeq > oldSeq && (oldBuild == "" || a.BuildID == oldBuild) {
+				return nil
+			}
+		}
+		if !w.host.Now().Before(deadline) {
+			return errors.New(rollbackAddonDown)
+		}
+		if err := w.host.Sleep(ctx, w.cfg.Budgets.Poll); err != nil {
+			return err
+		}
+	}
 }
