@@ -352,6 +352,7 @@
     "dll_path": "/tmp/vl-addon-build/0123456789abcdef0123456789abcdef/ps1-out/VL.AddOn.dll",
     "sha256": "fedcba9876543210fedcba9876543210fedcba98",
     "built_by": "roslyn-ps1",
+    "migration_pending": true,
     "backup_dir": "/mnt/c/Users/hoang/Documents/NinjaTrader 8/bin/Custom/AddOns/.vl-backups/VL.AddOn.dll.bak",
     "restarted": true,
     "old_accept_seq": 7
