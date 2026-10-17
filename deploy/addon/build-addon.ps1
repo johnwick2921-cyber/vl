@@ -100,6 +100,20 @@ function Get-ReferencedAssemblyNames([string]$dll) {
     }
 }
 
+# Get-CsprojCompileItems parses the <Compile Include="..."> items of
+# NinjaTrader.Custom.csproj, URL-decoding %40 -> @, returning relative paths.
+function Get-CsprojCompileItems([string]$csprojPath) {
+    $xml = [System.IO.File]::ReadAllText($csprojPath)
+    $rx = New-Object System.Text.RegularExpressions.Regex('<Compile Include="([^"]+)"', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    $out = @()
+    foreach ($m in $rx.Matches($xml)) {
+        $rel = $m.Groups[1].Value
+        $rel = $rel -replace '%40', '@'
+        $out += $rel
+    }
+    return $out
+}
+
 if (-not $NT8Bin) { $NT8Bin = 'C:\Program Files\NinjaTrader 8\bin' }
 
 # -- Load Roslyn from NT8's bin (the no-SDK compiler) ------------------------
@@ -216,16 +230,21 @@ if ($Probe) {
 } elseif ($Custom) {
     if (-not $CustomDir) { Fail "-CustomDir is required with -Custom" }
     if (-not (Test-Path $CustomDir)) { Fail "custom dir not found: " + $CustomDir }
-    # Every .cs under bin/Custom EXCEPT the release's AddOns/VL*.cs (the files
-    # being migrated out). Other VL*.cs elsewhere (e.g. Strategies/vltrader.cs,
-    # the legacy CSV strategy) is KEPT - it is not the release's file.
-    $srcFiles = @(Get-ChildItem -Path $CustomDir -Recurse -Filter '*.cs' -File |
-        Where-Object { -not ($_.Directory.Name -eq 'AddOns' -and $_.Name -like 'VL*.cs') })
-    if ($srcFiles.Count -eq 0) { Fail "no .cs files in " + $CustomDir }
-    foreach ($f in $srcFiles) {
-        $text = [System.IO.File]::ReadAllText($f.FullName)
-        $trees.Add([Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText($text, $null, $f.FullName, $null))
+    $csproj = Join-Path $CustomDir 'NinjaTrader.Custom.csproj'
+    if (-not (Test-Path $csproj)) { Fail "NinjaTrader.Custom.csproj not found in " + $CustomDir }
+    # The compile set is the csproj's <Compile Include> items EXACTLY (URL-decoded
+    # %40 -> @), MINUS the release's AddOns/VL*.cs (FOLD 1). No glob: a stray
+    # .cs not listed in the csproj must not sneak in.
+    foreach ($rel in @(Get-CsprojCompileItems $csproj)) {
+        $dir = [System.IO.Path]::GetDirectoryName($rel)
+        $file = [System.IO.Path]::GetFileName($rel)
+        if ($dir -eq 'AddOns' -and $file.StartsWith('VL', [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        $full = [System.IO.Path]::Combine($CustomDir, $rel)
+        if (-not (Test-Path $full)) { continue }
+        $text = [System.IO.File]::ReadAllText($full)
+        $trees.Add([Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText($text, $null, $full, $null))
     }
+    if ($trees.Count -eq 0) { Fail "the csproj yielded no .cs files" }
     $asmName = 'NinjaTrader.Custom'
 } else {
     if (-not $Src) { Fail "-Src is required" }
@@ -259,12 +278,12 @@ if ($Probe) {
     $outFile = Join-Path $Out $outName
     $fs = [System.IO.File]::Open($outFile, [System.IO.FileMode]::Create)
     try {
-        # NOTE (DS-103, release #35): embedding the neutral Resource.resx
-        # requires Roslyn's ResourceDescription, whose static factories
-        # (Create/FromFile/FromStream) all throw StackOverflowException under
-        # PowerShell 5.1 + Roslyn 5.0 (.NET Framework reflection). The emit
-        # therefore does NOT embed resources; the -Custom acceptance below
-        # REJECTS the result when the embedded-resource set differs from the old
+        # FOLD 3: resource embedding is BLOCKED in PowerShell. Roslyn's
+        # ResourceDescription has a single public factory, FromStream, and it
+        # throws StackOverflowException under PowerShell 5.1 + Roslyn 5.0
+        # (verified: MemoryStream/FileStream, 2-arg/3-arg all crash the process).
+        # Emit therefore does NOT embed resources; the -Custom acceptance below
+        # REJECTS the DLL when the embedded-resource set differs from the old
         # Custom.dll, so a rebuild without resources falls back to F5 instead of
         # silently swapping in a deficient DLL.
         $result = $compilation.Emit($fs)
