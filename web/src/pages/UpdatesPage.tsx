@@ -30,6 +30,18 @@ import { loadStoredTraderId } from '../router/selectedTrader'
 
 const POLL_MS = 10_000
 
+// fix/update-says-failed: a job in one of these states is OVER — the result
+// banner owns it. Any other state with a blocker is WAITING (a gate leg
+// re-checking), never "Installing…".
+const TERMINAL_JOB_STATES = new Set([
+  'complete',
+  'rolled_back',
+  'reverted_clean',
+  'recovery_needed',
+  'cancelled',
+  'refused',
+])
+
 function na(lang: 'en' | 'zh' | 'id') {
   return up('notApplicable', lang)
 }
@@ -67,6 +79,32 @@ function jobStatusText(
   return step ?? ''
 }
 
+// fix/update-says-failed: the plain words for a gate leg the server names
+// verbatim. sim_accounts → "NinjaTrader accounts not confirmed SIM (<detail>)";
+// every other text stays the server's own (truth rule: never fabricate, never
+// drop the server's own text).
+function plainReason(raw: string, language: 'en' | 'zh' | 'id'): string {
+  const mark = 'sim_accounts:'
+  const idx = raw.indexOf(mark)
+  if (idx < 0) return raw
+  const detail = raw.slice(idx + mark.length).trim()
+  const plain = up('blockerSimAccounts', language, { detail })
+  return raw.slice(0, idx) + plain
+}
+
+// elapsedSince renders "3m 12s" (or "" when the anchor is absent). The
+// anchor is the job's blocker_since — its updated_at at the moment the blocker
+// was written.
+function elapsedSince(since: string | undefined, now: number): string {
+  if (!since) return ''
+  const t = Date.parse(since)
+  if (Number.isNaN(t)) return ''
+  const s = Math.max(0, Math.floor((now - t) / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  return `${m}m ${s % 60}s`
+}
+
 // W-ADDON-ONE-CLICK "walk away": the RESULT banner for a terminal job state.
 // The new tag is the release being installed (the last Check), the old tag is
 // the running revision (health), and the reason is the worker's own text
@@ -78,6 +116,7 @@ function jobResultBanner(
   reason: string,
   language: 'en' | 'zh' | 'id'
 ): { text: string; tone: 'ok' | 'warn' | 'bad' } | null {
+  const plain = plainReason(reason, language)
   switch (state) {
     case 'complete':
       return {
@@ -85,13 +124,24 @@ function jobResultBanner(
         tone: 'ok',
       }
     case 'rolled_back':
-    case 'reverted_clean':
+      // a PROVEN rollback: the old build is back and trading normal — not a
+      // failure, the amber "could not finish" stays.
       return {
-        text: up('resultFailed', language, { tag: oldTag || '', reason }),
+        text: up('resultFailed', language, { tag: oldTag || '', reason: plain }),
         tone: 'warn',
       }
+    case 'reverted_clean':
+    case 'refused':
+      // nothing was swapped: the update FAILED and the old build never moved.
+      return {
+        text: up('resultFailedRed', language, { reason: plain }),
+        tone: 'bad',
+      }
     case 'recovery_needed':
-      return { text: up('resultRecovery', language, { reason }), tone: 'bad' }
+      return {
+        text: up('resultRecovery', language, { reason: plain }),
+        tone: 'bad',
+      }
     default:
       return null
   }
@@ -892,7 +942,30 @@ export default function UpdatesPage() {
             )}
             {job?.blocker && (
               <div data-testid="job-blocker">
-                <Row label={up('jobBlocker', language)} value={job.blocker} />
+                <Row
+                  label={up('jobBlocker', language)}
+                  value={plainReason(job.blocker, language)}
+                />
+                {!TERMINAL_JOB_STATES.has(job?.state ?? '') && (
+                  <p
+                    className="mt-2 text-xs text-sky-400 flex items-center gap-1.5"
+                    data-testid="job-waiting"
+                  >
+                    <Loader2 size={13} className="animate-spin" />
+                    {up('waitingFor', language, {
+                      reason: plainReason(job.blocker, language),
+                    })}
+                    {(() => {
+                      const e = elapsedSince(
+                        job.blocker_since,
+                        Date.now()
+                      )
+                      return e
+                        ? ' ' + up('waitingElapsed', language, { time: e })
+                        : ''
+                    })()}
+                  </p>
+                )}
                 <p className="mt-2 text-xs text-zinc-400">
                   {up('retryBlockerHelp', language)}
                 </p>

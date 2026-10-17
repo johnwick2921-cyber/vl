@@ -64,7 +64,7 @@ func jsonKeys(t *testing.T, v any) []string {
 func TestAPIViewProjectsOnlyComputedFields(t *testing.T) {
 	restoreSeams(t)
 	m5 := m5JobViewKeys(t)
-	if want := []string{"blocker", "error", "job_id", "receipt_url", "recovery_reason", "state", "status", "step", "timestamps"}; !reflect.DeepEqual(m5, want) {
+	if want := []string{"blocker", "blocker_since", "error", "job_id", "receipt_url", "recovery_reason", "state", "status", "step", "timestamps"}; !reflect.DeepEqual(m5, want) {
 		t.Fatalf("M5 UpdateJobView keys = %v, want %v (M5 changed: re-derive the projection)", m5, want)
 	}
 	var server []string
@@ -159,6 +159,12 @@ func TestAPIViewProjectsOnlyComputedFields(t *testing.T) {
 	v = View(read())
 	if v.Blocker != j.Blocker || v.Error != j.Error {
 		t.Errorf("blocker/error not verbatim: %+v", v)
+	}
+	// blocker_since anchors the page's "Waiting: … elapsed" — the job's
+	// updated_at at the moment the blocker was written. Absent until a blocker
+	// is recorded (the L7 rule: absent ≠ empty).
+	if v.BlockerSince != j.UpdatedAt.UTC().Format(time.RFC3339Nano) {
+		t.Errorf("blocker_since = %q, want %q (the job's updated_at)", v.BlockerSince, j.UpdatedAt.UTC().Format(time.RFC3339Nano))
 	}
 
 	// a job carrying everything the worker persists: none of it leaks

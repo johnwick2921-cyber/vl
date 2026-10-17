@@ -15,6 +15,8 @@ func TestUpdateResultMessage(t *testing.T) {
 			"Update could not finish — nothing changed, still running v1, trading normal. Reason: AddOn reconnect timed out"},
 		{"reverted clean", "reverted_clean", "v2", "v1", "build failed",
 			"Update could not finish — nothing changed, still running v1, trading normal. Reason: build failed"},
+		{"refused", "refused", "v2", "v1", "not passed within 10m0s: sim_accounts",
+			"Update could not finish — nothing changed, still running v1, trading normal. Reason: not passed within 10m0s: sim_accounts"},
 		{"recovery needed", "recovery_needed", "v2", "v1", "rollback failed",
 			"⚠️ Update needs your attention — the automatic recovery failed. Reason: rollback failed"},
 		{"unknown state", "requested", "v2", "v1", "", ""},
