@@ -108,6 +108,12 @@ type TCPServer struct {
 	// the parse path stays testable without a database.
 	orderSnapCB func(OrderSnapshotPayload)
 
+	// accountsCB is the optional persistence hook for the accounts_list frame
+	// (F35 — the store writes the last account list so the installation gate
+	// can vouch for SIM accounts after a restart with NT8 closed). Optional for
+	// the same reason as orderSnapCB.
+	accountsCB func([]AccountInfo)
+
 	// FIX-DOUBLE-ENTRY (CTO ruling, 2026-09-26) — reconnect-relative broker
 	// truth for attempted entry frames (see attempted_guard.go). Never cleared
 	// on close; only advanced on accept.
@@ -838,12 +844,25 @@ func (s *TCPServer) CurrentAccount() *string {
 // and optionally sets the current account.
 func (s *TCPServer) SetAccountsList(accounts []AccountInfo, current string) {
 	s.accountsListMu.Lock()
-	defer s.accountsListMu.Unlock()
 	// Defensive copy of the slice
 	s.accountsList = make([]AccountInfo, len(accounts))
 	copy(s.accountsList, accounts)
 	s.currentAccount = current
+	snapshot := make([]AccountInfo, len(s.accountsList))
+	copy(snapshot, s.accountsList)
+	s.accountsListMu.Unlock()
+	// F35 — persist the last list (nil hook = no store wired, e.g. tests).
+	// Invoked OUTSIDE the lock: the hook does a DB write and must never hold
+	// the wire's account-list lock while it runs.
+	if cb := s.accountsCB; cb != nil {
+		cb(snapshot)
+	}
 }
+
+// SetAccountsSink installs the accounts_list persistence hook. Called once at
+// wiring time; nil disables persistence (a store failure must never cost the
+// wire its account list).
+func (s *TCPServer) SetAccountsSink(fn func([]AccountInfo)) { s.accountsCB = fn }
 
 // SetBarsSubscribe overrides the auto-subscribe parameters sent on each
 // (re)connect. Stage 3 will call this with the active strategy's
@@ -2377,6 +2396,12 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 				s.accountsList = make([]AccountInfo, len(p.Accounts))
 				copy(s.accountsList, p.Accounts)
 				s.accountsListMu.Unlock()
+				// F35 — persist the last list (nil hook = no store wired).
+				// p.Accounts is goroutine-local (owned by this readLoop), so the
+				// hook never races the shared accountsList slice.
+				if cb := s.accountsCB; cb != nil {
+					cb(p.Accounts)
+				}
 				s.logger.Info("tcp_server: stored accounts",
 					"count", len(p.Accounts),
 					"accounts", func() []string {

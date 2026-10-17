@@ -363,6 +363,25 @@ func main() {
 		}
 	})
 
+	// F35 — persist the AddOn's last accounts_list frame so the installation
+	// gate's sim_accounts leg can vouch for the bound accounts after a restart
+	// with NT8 closed. Losing a write must never cost the wire its account list.
+	ntTrader.SetAccountsListSink(func(accts []ntwire.AccountInfo) {
+		now := time.Now().UnixMilli()
+		rows := make([]store.NTAccountLast, 0, len(accts))
+		for _, a := range accts {
+			rows = append(rows, store.NTAccountLast{
+				Name:         a.Name,
+				IsSim:        a.IsSim,
+				Connection:   a.Connection,
+				ReceivedAtMs: now,
+			})
+		}
+		if err := st.NTAccountsLast().Upsert(rows); err != nil {
+			logger.Warnf("📇 accounts_list: persist failed (live list still served): %v", err)
+		}
+	})
+
 	if err := traderManager.LoadTradersFromStore(st); err != nil {
 		logger.Fatalf("❌ Failed to load traders: %v", err)
 	}

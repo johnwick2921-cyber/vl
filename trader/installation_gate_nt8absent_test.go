@@ -28,6 +28,14 @@ func newAbsentFixture(t *testing.T) (*gateFixture, *ntwire.TCPServer) {
 	s.SetAccountsList([]ntwire.AccountInfo{{Name: "Sim101", IsSim: true}}, "Sim101")
 	at.trader = ntTrader.NewTCPTrader(s, "MNQ", "Sim101")
 	setHold(t, dir, "job-g")
+	// F35 — the absent view's sim_accounts leg vouches from the PERSISTED
+	// last frame (the wire is disconnected by definition), so the fixture
+	// seeds the persisted row the ready shape needs.
+	if err := st.NTAccountsLast().Upsert([]store.NTAccountLast{
+		{Name: "Sim101", IsSim: true, Connection: "SimulationConnection", ReceivedAtMs: time.Now().UnixMilli()},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	f := &gateFixture{dir: dir, st: st, loaded: map[string]*AutoTrader{at.id: at},
 		wire: installationWire{
 			Connected:          false,
@@ -189,14 +197,26 @@ func TestInstallationGateNt8AbsentEachLedgerLegRefuses(t *testing.T) {
 		mustFailAbsent(t, f.run().NT8Absent, "ledger_exposure", "picture")
 	})
 	t.Run("bound account is not SIM", func(t *testing.T) {
-		f, s := newAbsentFixture(t)
-		s.SetAccountsList([]ntwire.AccountInfo{{Name: "Sim101", IsSim: false}}, "Sim101")
-		mustFailAbsent(t, f.run().NT8Absent, "sim_accounts", "not SIM-tradeable")
+		f, _ := newAbsentFixture(t)
+		// F35 — the absent view vouches from the PERSISTED frame, so the
+		// non-SIM mutation must flip the persisted row (a non-SIM row stays
+		// non-SIM) rather than the live list the wire no longer has.
+		if err := f.st.NTAccountsLast().Upsert([]store.NTAccountLast{
+			{Name: "Sim101", IsSim: false, Connection: "LiveConnection", ReceivedAtMs: time.Now().UnixMilli()},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		mustFailAbsent(t, f.run().NT8Absent, "sim_accounts", "not SIM")
 	})
 	t.Run("the server vouches for no account", func(t *testing.T) {
 		f, s := newAbsentFixture(t)
-		s.SetAccountsList(nil, "")
-		mustFailAbsent(t, f.run().NT8Absent, "sim_accounts", "not SIM-tradeable")
+		// F35 — disconnected + no persisted row for the bound name = nothing
+		// vouches for it (fail-closed), the persisted mirror of the old
+		// "the live list vouches for no account" case: rebind to an account
+		// name the last frame never carried.
+		at := f.loaded["gate-t1"]
+		at.trader = ntTrader.NewTCPTrader(s, "MNQ", "Sim999")
+		mustFailAbsent(t, f.run().NT8Absent, "sim_accounts", "no persisted account")
 	})
 	t.Run("a trader bound to no account", func(t *testing.T) {
 		f, s := newAbsentFixture(t)

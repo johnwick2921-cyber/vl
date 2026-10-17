@@ -48,6 +48,13 @@ func newNeverConnectedFixture(t *testing.T, uptime time.Duration) (*gateFixture,
 	s.SetListeningSinceForTest(time.Now().Add(-uptime))
 	at.trader = ntTrader.NewTCPTrader(s, "MNQ", "Sim101")
 	setHold(t, dir, "job-g")
+	// F35 — never-connected means the sim_accounts leg vouches from the
+	// PERSISTED last frame, so the fixture seeds the persisted row.
+	if err := st.NTAccountsLast().Upsert([]store.NTAccountLast{
+		{Name: "Sim101", IsSim: true, Connection: "SimulationConnection", ReceivedAtMs: time.Now().UnixMilli()},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	return &gateFixture{dir: dir, st: st, loaded: map[string]*AutoTrader{at.id: at}}, s
 }
 
