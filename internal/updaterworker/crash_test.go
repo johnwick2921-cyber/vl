@@ -255,8 +255,10 @@ func TestStaleJobAtStartIsRecoveryNeededNeverResumed(t *testing.T) {
 // step that changes something — the backup, the AddOn step, the activate on
 // the normal path, AND the activate re-run after a crash inside activated
 // (the resume path never passes through advance's R-i). The box stops being
-// ready at the named boundary; the change never happens, the job goes to
-// recovery_needed with this job's hold kept, and nothing is killed.
+// ready at the named boundary; the change never happens. Before activation the
+// job self-recovers to reverted_clean (hold + lock released, nothing killed);
+// the resumed activate keeps recovery_needed (the first attempt may have
+// swapped).
 func TestReadinessIsReprovedBeforeEveryChange(t *testing.T) {
 	for _, tc := range []struct {
 		at      string // the boundary where the box stops being ready
@@ -296,14 +298,25 @@ func TestReadinessIsReprovedBeforeEveryChange(t *testing.T) {
 			if r.callCount("activate") != 0 || r.callCount("rollback") != 0 {
 				t.Fatalf("a not-ready box was changed: calls %v", r.calls)
 			}
-			if j.State != updaterjob.StateRecoveryNeeded || !strings.Contains(j.RecoveryReason, "ready") {
-				t.Fatalf("job ended %s (reason %q), want recovery_needed: ready not re-proven", j.State, j.RecoveryReason)
+			if tc.crash {
+				// The resumed activate re-proof failure is recovery_needed: the
+				// first attempt may have swapped, so self-recovery cannot say
+				// "nothing changed".
+				if j.State != updaterjob.StateRecoveryNeeded || !strings.Contains(j.RecoveryReason, "ready") {
+					t.Fatalf("job ended %s (reason %q), want recovery_needed: ready not re-proven", j.State, j.RecoveryReason)
+				}
+				if s, _ := ReadHoldFor(r.data, boxJobID); s != HoldOurs {
+					t.Fatalf("the hold is %s, want this job's (kept at recovery_needed)", s)
+				}
+				return
 			}
-			if prev := j.Transitions[len(j.Transitions)-2].State; prev != tc.atState {
-				t.Fatalf("recovery_needed entered from %s, want from %s", prev, tc.atState)
+			// Before activation the re-proof failure self-recovers: the hold and
+			// lock are released, nothing was installed.
+			if j.State != updaterjob.StateRevertedClean || !strings.Contains(j.Error, "ready") {
+				t.Fatalf("job ended %s (error %q), want reverted_clean: ready not re-proven", j.State, j.Error)
 			}
-			if s, _ := ReadHoldFor(r.data, boxJobID); s != HoldOurs {
-				t.Fatalf("the hold is %s, want this job's (kept at recovery_needed)", s)
+			if s, _ := ReadHoldFor(r.data, boxJobID); s != HoldAbsent {
+				t.Fatalf("the hold is %s, want released (reverted_clean)", s)
 			}
 		})
 	}

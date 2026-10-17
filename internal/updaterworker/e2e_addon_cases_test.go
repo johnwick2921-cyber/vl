@@ -88,13 +88,10 @@ func TestE2EAddonBuildFailureRevertsCleanNothingPlaced(t *testing.T) {
 
 // (e) NT8 closed → completes, the DLL placed, NO restart (nothing owed).
 //
-// FINDING (DS-104 head 450ec5468): this case FAILS — the closed-NT8 path still
-// routes through decideNT8Absent → nt8_skipped + F5Owed, so the DLL is NEVER
-// built or placed (j.Addon == nil). The spec (target flow step 7) requires the
-// build + place steps to run even when NT8 is closed, with only the restart
-// skipped. Skipped until DS-104 wires the closed-NT8 one-click path.
+// DS-104: the closed-NT8 one-click path is wired — decideNT8Absent routes a
+// changed AddOn to nt8_updated, so addon_build + addon_place run and only the
+// restart is skipped.
 func TestE2EAddonNT8ClosedCompletesDLLPlacedNoRestart(t *testing.T) {
-	t.Skip("DS-104 450ec5468: NT8-closed+changed → decideNT8Absent (nt8_skipped, F5Owed) — build+place on closed NT8 not wired (spec step 7)")
 	r := newRig(t, withCSChanged(), withNT8Down(absentDown))
 	starts := startCount(r)
 	j := r.runToEnd(t)

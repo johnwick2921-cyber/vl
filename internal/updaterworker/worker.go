@@ -32,6 +32,10 @@ type Budgets struct {
 	// up to this long for it (preflight, drain, gate) instead of
 	// failing on the step budget. Expiry: preflight refused (no
 	// hold); drain/gate RELEASE the hold and refuse.
+	Transitional time.Duration // W-ADDON-ONE-CLICK wait-don't-refuse: while the
+	// blocker is a transitional connection or a stale census, keep
+	// re-checking up to this long (never less than the step budget)
+	// before self-recovery — a mid-transition NT8 is not a refusal.
 }
 
 // DefaultBudgets are the ruled values.
@@ -47,6 +51,7 @@ func DefaultBudgets() Budgets {
 		IdentityRetry: 15 * time.Second,
 		HoldClear:     30 * time.Second,
 		PlannerWait:   15 * time.Minute,
+		Transitional:  10 * time.Minute,
 	}
 }
 
@@ -284,6 +289,24 @@ func (w *Worker) toRecovery(j updaterjob.Job, reason string) error {
 		return k.Enter(updaterjob.StateRecoveryNeeded, w.now(*k))
 	})
 	return err
+}
+
+// toRevertClean moves j (a DONE pre-activation state) to reverted_clean with
+// the reason as its Error, then runs the revert_clean effect (release the
+// hold, the lock, and any placed AddOn). Nothing was swapped, so the old build
+// keeps running and trading is normal.
+func (w *Worker) toRevertClean(ctx context.Context, j updaterjob.Job, reason string) error {
+	k, err := w.update(j.JobID, j.State, j.Phase, func(k *updaterjob.Job) error {
+		k.Error = clipText(reason)
+		return k.Enter(updaterjob.StateRevertedClean, w.now(*k))
+	})
+	if err != nil {
+		return err
+	}
+	if k.Phase == updaterjob.PhaseStarted {
+		return w.execute(ctx, k)
+	}
+	return nil
 }
 
 // markRecovery sets the recovery fields: the reason, and the index of the

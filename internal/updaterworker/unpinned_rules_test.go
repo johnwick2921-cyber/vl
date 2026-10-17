@@ -159,20 +159,21 @@ func TestTheReverifiedManifestMustBeTheVerdicts(t *testing.T) {
 
 // PIN (C11 as ruled, mutant A44): drained_acked reads /api/maintenance held
 // for THIS job. The app naming another job (whatever the hold file on disk
-// says) is not drained: recovery_needed with the hold kept, nothing backed up.
+// says) is not drained: reverted_clean — the hold is released (it is ours on
+// disk), the lock is released, nothing was backed up or installed.
 func TestDrainNeedsTheMaintenanceHoldForThisJob(t *testing.T) {
 	r := newRig(t)
 	r.hookAt("drained_acked/started", func() { r.set(func() { r.maintJob = "job-u4-9999abcd" }) })
 	j := r.runToEnd(t)
 	r.noViolations(t)
-	if j.State != updaterjob.StateRecoveryNeeded || !strings.Contains(j.RecoveryReason, "not held for this job") {
-		t.Fatalf("job %s (reason %q), want recovery_needed: the hold is not held for this job", j.State, j.RecoveryReason)
+	if j.State != updaterjob.StateRevertedClean || !strings.Contains(j.Error, "not held for this job") {
+		t.Fatalf("job %s (error %q), want reverted_clean: the hold is not held for this job", j.State, j.Error)
 	}
 	if r.callCount("backup") != 0 || r.callCount("activate") != 0 {
 		t.Fatalf("a job the app does not hold went on: %v", r.calls)
 	}
-	if s, _ := ReadHoldFor(r.data, boxJobID); s != HoldOurs {
-		t.Fatalf("hold %s, want kept", s)
+	if s, _ := ReadHoldFor(r.data, boxJobID); s != HoldAbsent {
+		t.Fatalf("hold %s, want released (reverted_clean)", s)
 	}
 }
 

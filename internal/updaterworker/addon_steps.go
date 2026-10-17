@@ -247,8 +247,9 @@ func (w *Worker) stepAddonReconnect(ctx context.Context, j updaterjob.Job) stepR
 	ev := map[string]string{}
 	if j.Addon == nil || !j.Addon.Restarted {
 		// NT8 was closed at press time: the DLL is placed and will load at the
-		// next NT8 start. Nothing to wait for.
-		return stepResult{receipts: []Receipt{w.receipt("addon_reconnect", start, map[string]string{"skipped": "nt8 not restarted"}, nil)}}
+		// next NT8 start. Nothing to wait for, and nothing is owed.
+		return stepResult{receipts: []Receipt{w.receipt("addon_reconnect", start,
+			map[string]string{"skipped": "nt8 not restarted", "note": "NT8 closed — the new AddOn loads the next time NinjaTrader starts"}, nil)}}
 	}
 	wantBuild := ""
 	if j.NT8 != nil {

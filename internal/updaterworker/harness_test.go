@@ -150,6 +150,10 @@ type box struct {
 	rollbackIDs []Identity
 	rollbackAtt []int   // the job's attempts on disk at each RollbackTo call
 	ackAges     []int64 // every ack age the worker observed, in order
+
+	// W-ADDON-ONE-CLICK self-recovery seam
+	addonRestoreCalls []string
+	addonRestoreErr   error
 }
 
 // rig is one worker on one box.
@@ -785,11 +789,23 @@ func (h *fakeHost) ExeOf(pid int) (string, error) {
 	return h.b.instBinary(), nil // R5 removes: vl-bin when the install carries it
 }
 
+// AddonRestore simulates the reverse of addon_place (W-ADDON-ONE-CLICK): it
+// records the backup dir and fails when the test asks it to (the real OSHost
+// MOVE-back is covered by its own unit test; the rig never touches real files
+// here, because tests use fake backup paths).
 func (h *fakeHost) AddonRestore(docsDir, backupDir string) error {
-	if h.b.addonRestoreFail {
+	h.b.mu.Lock()
+	h.b.addonRestoreCalls = append(h.b.addonRestoreCalls, backupDir)
+	err := h.b.addonRestoreErr
+	fail := h.b.addonRestoreFail
+	h.b.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if fail {
 		return fmt.Errorf("addon restore: fake failure")
 	}
-	return (&OSHost{}).AddonRestore(docsDir, backupDir)
+	return nil
 }
 
 // ── the app (httptest) ──────────────────────────────────────────────────────
