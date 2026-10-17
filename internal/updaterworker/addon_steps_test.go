@@ -377,3 +377,59 @@ func TestAddonReconnectOldBuildNewSeqRollsBack(t *testing.T) {
 		t.Fatalf("activate ran %d times on an unproven reconnect", r.callCount("activate"))
 	}
 }
+
+// TestMigrateAddonSourcesScope pins FOLD 1/FOLD 5 F2: migrateAddonSources moves
+// ONLY the release's own AddOns/VL*.cs files. A VL*.cs elsewhere (Strategies,
+// Indicators) or a non-VL file in AddOns is left byte-identical. A mutant that
+// widens the glob to bin/Custom/** would move vltrader.cs/VLTrader.cs/VLfoo.cs
+// and this test goes RED.
+func TestMigrateAddonSourcesScope(t *testing.T) {
+	docs := t.TempDir()
+	base := filepath.Join(docs, "bin", "Custom")
+
+	// The release's own AddOn source (moves) + a stale .bak (moves).
+	writeFile(t, filepath.Join(base, "AddOns", "VLTraderTCPClient.cs"), "// release AddOn source\n")
+	writeFile(t, filepath.Join(base, "AddOns", "VLTraderTCPClient.cs.bak"), "// stale bak\n")
+	// NOT the release's files: a lower/upper-case VL strategy, a VL indicator,
+	// and a non-VL file sitting in AddOns. All must stay.
+	writeFile(t, filepath.Join(base, "Strategies", "vltrader.cs"), "// legacy CSV strategy\n")
+	writeFile(t, filepath.Join(base, "Strategies", "VLTrader.cs"), "// uppercase strategy\n")
+	writeFile(t, filepath.Join(base, "Indicators", "VLfoo.cs"), "// VL indicator\n")
+	writeFile(t, filepath.Join(base, "AddOns", "SomethingElse.cs"), "// not ours\n")
+
+	if err := migrateAddonSources(docs, "job-scope"); err != nil {
+		t.Fatalf("migrateAddonSources: %v", err)
+	}
+
+	// The release's AddOns files moved out (never deleted).
+	for _, f := range []string{"VLTraderTCPClient.cs", "VLTraderTCPClient.cs.bak"} {
+		if _, err := os.Stat(filepath.Join(base, "AddOns", f)); !os.IsNotExist(err) {
+			t.Fatalf("AddOns/%s was not moved out (stat err=%v)", f, err)
+		}
+		if _, err := os.Stat(filepath.Join(docs, "vl-addon-backups", "job-scope", "migrated-sources", f)); err != nil {
+			t.Fatalf("AddOns/%s not in migrated-sources: %v", f, err)
+		}
+	}
+
+	// Everything else is byte-identical and still in place.
+	for rel, want := range map[string]string{
+		filepath.Join("Strategies", "vltrader.cs"):  "// legacy CSV strategy\n",
+		filepath.Join("Strategies", "VLTrader.cs"):  "// uppercase strategy\n",
+		filepath.Join("Indicators", "VLfoo.cs"):     "// VL indicator\n",
+		filepath.Join("AddOns", "SomethingElse.cs"): "// not ours\n",
+	} {
+		got, err := os.ReadFile(filepath.Join(base, rel))
+		if err != nil {
+			t.Fatalf("%s was moved or lost: %v", rel, err)
+		}
+		if string(got) != want {
+			t.Fatalf("%s = %q, want untouched %q", rel, got, want)
+		}
+	}
+
+	// No migrated-sources entry for anything outside AddOns/VL*.cs.
+	entries, _ := filepath.Glob(filepath.Join(docs, "vl-addon-backups", "job-scope", "migrated-sources", "*"))
+	if len(entries) != 2 {
+		t.Fatalf("migrated-sources has %d entries (%v), want exactly the 2 release AddOns files", len(entries), entries)
+	}
+}
