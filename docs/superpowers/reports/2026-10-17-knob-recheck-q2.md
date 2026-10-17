@@ -2,16 +2,20 @@
 
 Base: `origin/release/2026-10-16-32` (`a8b849161`). Slice: `/home/hoang/fleet-1017/knobs-q01.txt` (72 knobs). READ-ONLY; no fixes. Three states per knob: **MISSING** (nil/absent), **OFF** (explicit false/0), **ON** (explicit true/value).
 
-## Summary
+## Summary (corrected — three-state columns added)
 
-- **MATCH** (screen default = bot default, all three states): **58**
-- **HIDDEN** (bot behaviour with NO Studio control): **9** — all mentor size/trail/leg knobs the owner cannot see or set
-- **DEAD** (registry KnobLive but only a crypto-path reader; inert on futures): **12**
-- **INEFFECTIVE** (registry KnobIneffective, no consumer): **3**
-- **CANDIDATE** (no production reader found): **2**
-- **FOLDED** (control removed, stored value honoured): **1**
+- **MATCH**: **44** (screen echoes stored/default value in all three states; bot resolves the same)
+- **HIDDEN**: **15** (bot behaviour with NO Studio control — guide text only)
+- **DEAD**: **7** (registry Live but crypto-only reader; inert on futures)
+- **INEFFECTIVE**: **3** (registry Ineffective, no consumer)
+- **CANDIDATE**: **2** (no production reader)
+- **FOLDED**: **1** (control removed, stored value honoured)
 
-**No P0/P1 screen-vs-bot MISMATCH at the release #32 base.** The `mentor_done_after_win` shape (screen OFF / bot ON) is gone: the toggle exists, nil→OFF, and the eff resolver reads it. But two **#571-introduced regressions** must be flagged for the merge (see F1/F2): #571 is based on dev and would (1) DELETE the `mentor_done_after_win` Studio toggle, and (2) flip the `exec_2m_after_30m` default label to OFF while the bot is ON.
+Total 44+15+7+3+2+1 = **72**. **Zero MISMATCH in any of the three states at the #32 base.**
+
+> Correction to my first bridge report: counts were 58 MATCH / 9 HIDDEN / 12 DEAD — those were wrong. HIDDEN is 15 (the earlier "9" was only the size-table subset; "12 DEAD" double-counted INEFFECTIVE/CANDIDATE/FOLDED). The table below is authoritative.
+
+Three-state cells are `Studio → Bot` for MISSING / OFF(0) / ON(N). `—` = no control (HIDDEN) or no state semantics (meta).
 
 ## Findings (non-MATCH)
 
@@ -36,82 +40,82 @@ Release #32 TS: `exec_2m_after_30m?: boolean // X5-10 — unset = ON` (`web/src/
 ### F7 [A] — CANDIDATE knobs (no reader found)
 `max_trades`, `longer_count` — registry KnobCandidate (field-grep found no behavioural reader). `longer_count` is clamp-filled/fingerprinted but no production reader; `max_trades` is a session leaf. Severity P2 (cosmetic / dormant).
 
-## Table (72 knobs)
+## Table (72 rows)
 
-Legend: M = MATCH · H = HIDDEN · D = DEAD(crypto) · I = INEFFECTIVE · C = CANDIDATE · F = FOLDED.
-Bot default = nil/absent resolution (release #32). Screen default = Studio control default/placeholder.
+Legend: M=MATCH · H=HIDDEN · D=DEAD(crypto) · I=INEFFECTIVE · C=CANDIDATE · F=FOLDED.
+Cells are `Studio → Bot` per state: MISSING / OFF(0) / ON(N). `—` = no control or no state semantics.
 
-| knob | verdict | bot default (nil/absent) | screen default | states checked | registry | eff row | tier |
-|---|---|---|---|---|---|---|---|
-| geometry_reference_levels | M | ON (owner ruling) | ON (day-plan) | T/O/F | Live | yes | A |
-| grid_config | D | — (crypto) | grid editor | — | Live | no | A |
-| grid_count | D | — (crypto) | grid editor | — | Live | no | A |
-| guardrails_enabled | M | OFF (nil) | OFF | T/O/F | Live | yes | A |
-| headers | D | — (crypto fetch) | — | — | Live | no | A |
-| hold_discipline | M | OFF | OFF | T/O/F | Live | yes | A |
-| htf_seats | M | 2 (nil) | — | 0..6 | Live | yes | A |
-| htf_veto | M | (resolver) | day-plan | T/O/F | Live | yes | A |
-| id | M | — | — | — | Live | no | B |
-| indicators | M | — | indicator editor | — | Live | no | B |
-| is_active | M | — | — | — | Live | no | B |
-| is_default | M | — | — | — | Live | no | B |
-| is_public | M | — | Publish | — | Live | no | B |
-| klines | M | — | klines editor | — | Live | no | B |
-| language | M | en | — | — | Live | no | B |
-| last_entry_offset_min | M | (resolver) | day-plan | 0..N | Live | yes | A |
-| level | M | — | — | — | Live | no | B |
-| levels_fresh_by_tf | F | OFF (folded) | (removed) | — | Folded | no | A |
-| leverage | D | — (crypto) | grid editor | — | Live | no | A |
-| longer_count | C | (clamp only) | klines | — | Candidate | no | A |
-| longer_timeframe | M | 4h | 4h | — | Live | no | B |
-| lower_price | D | — (crypto) | grid editor | — | Live | no | A |
-| max_contracts_enabled | I | — (no consumer) | (parse-only) | — | Ineffective | no | A |
-| max_contracts_per_order | M | 2 | 2 | 1..N | Live | yes | A |
-| max_daily_trades | M | OFF (nil) | OFF | T/O/F | Live | yes | A |
-| max_daily_trades_enabled | M | OFF (nil) | OFF | T/O/F | Live | yes | A |
-| max_drawdown_pct | D | — (crypto) | grid editor | — | Live | no | A |
-| max_levels | M | (resolver) | day-plan | 0..N | Live | yes | A |
-| max_margin_usage | I | 1.0 clamp (prompt only) | risk field | — | Ineffective | no | A |
-| max_notional_leverage | M | 20 | 20 | — | Live | yes | A |
-| max_positions | M | 3 | 3 (1–3) | 1..3 | Live | yes | A |
-| max_trades | C | (session leaf) | per-session | — | Candidate | yes(session) | B |
-| mentor_base_contracts | H | 4 | none | — | Live | no | A |
-| mentor_be_before_partial | M | ON (nil) | ON | T/O/F | Live | no | A |
-| mentor_big_contracts | H | 4 | none | — | Live | no | A |
-| mentor_box_fresh_rth_pair | M | OFF (nil) | OFF | T/O/F | Live | no | A |
-| mentor_box_max_height_pts | M | 0=off | 0=off | 0..N | Live | no | A |
-| mentor_confluence_contracts | H | 4 | none | — | Live | no | A |
-| mentor_day_off_recheck | H | OFF (nil) | none | — | Live | no | A |
-| mentor_done_after_win | M | OFF (nil) | OFF | T/O/F | Live | yes | A |
-| mentor_done_after_win_day_start | H | 08:30 | none | — | Live | yes | A |
-| mentor_ema9_visit_cap | M | shared | shared | shared/per_level/exempt | Live | no | A |
-| mentor_ema_max_cross_30m | H | ON=2 | none | — | Live | no | A |
-| mentor_isb_c3_partial_any_profit | M | ON (nil) | ON | T/O/F | Live | no | A |
-| mentor_isb_max_pts | M | 30 | 30 | 0..N | Live | no | A |
-| mentor_keypair_candle_ratio | M | 1 (0→1) | 1 | 0..N | Live | no | A |
-| mentor_leg_budget_enabled | H | ON (nil) | none | — | Live | no | A |
-| mentor_leg_reset_on | H | close | none | — | Live | no | A |
-| mentor_loc_trigger_filter | H | ON (nil) | none | — | Live | no | A |
-| mentor_loss_departure_pts | H | 0=OFF | none | — | Live | no | A |
-| mentor_lvl_revisit_min_pts | H | 0 | none | — | Live | no | A |
-| mentor_max_contracts | H | 20 (ceiling) | text only | — | Live | yes | A |
-| mentor_mode | M | OFF | OFF | T/O/F | Live | no | A |
-| mentor_reduced_contracts | H | 4 | none | — | Live | no | A |
-| mentor_resonance_runner_tp_old_high | M | ON (nil) | ON | T/O/F | Live | no | A |
-| mentor_reverse_isb_as_phl | M | ON (nil) | ON | T/O/F | Live | no | A |
-| mentor_spent_day_contracts | H | 2 (dormant) | none | — | Live | no | A |
-| mentor_stale_data_block | M | ON (nil) | ON | T/O/F | Live | no | A |
-| mentor_stop_after_loss | M | OFF (nil) | OFF | T/O/F | Live | no | A |
-| mentor_swing4h_contracts | M | 2 | 2 | 1..N | Live | no | A |
-| mentor_swing_ema34_is_first_target | M | ON (nil) | ON | T/O/F | Live | no | A |
-| mentor_swing_runner | M | ON (nil) | ON | T/O/F | Live | no | A |
-| mentor_trail_mode | M | candle | candle | candle/off | Live | no | A |
-| mentor_trail_tf | H | 1m | none | — | Live | no | A |
-| mentor_window_minutes | M | 60 | 60 | 30/60/90/120 | Live | no | A |
-| mentor_window_start | M | 08:30 | 08:30 | HH:MM | Live | no | A |
-| method | D | — (crypto fetch) | — | — | Live | no | A |
-| min_confidence | M | 60 | 60 | 0..100 | Live | yes | A |
-| min_grade | M | B | B | A/B/C | Live | yes(session) | A |
-| min_hold_min | M | 3 | 3 | 0..N | Live | yes | A |
-| min_position_size | I | — (crypto hardcode) | risk field | — | Ineffective | no | A |
-| min_risk_reward_ratio | M | 3.0 | (stored 2) | 1..10 | Live | yes | A |
+| # | knob | verdict | MISSING | OFF/0 | ON/N | tier |
+|---|---|---|---|---|---|---|
+| 1 | geometry_reference_levels | M | ON→ON | OFF→OFF | ON→ON | A |
+| 2 | grid_config | D | shown→ignored | shown→ignored | shown→ignored | A |
+| 3 | grid_count | D | shown→ignored | shown→ignored | shown→ignored | A |
+| 4 | guardrails_enabled | M | OFF→OFF | OFF→OFF | ON→ON | A |
+| 5 | headers | D | shown→ignored | shown→ignored | shown→ignored | A |
+| 6 | hold_discipline | M | OFF→OFF | OFF→OFF | ON→ON | A |
+| 7 | htf_seats | M | 2→2 | 0→0 | N→N | A |
+| 8 | htf_veto | M | def→def | OFF→OFF | ON→ON | A |
+| 9 | id | M | — | — | — | B |
+| 10 | indicators | M | — | — | — | B |
+| 11 | is_active | M | — | — | — | B |
+| 12 | is_default | M | — | — | — | B |
+| 13 | is_public | M | — | — | — | B |
+| 14 | klines | M | — | — | — | B |
+| 15 | language | M | en→en | — | — | B |
+| 16 | last_entry_offset_min | M | def→def | 0→0 | N→N | A |
+| 17 | level | M | — | — | — | B |
+| 18 | levels_fresh_by_tf | F | removed→OFF | removed→honoured | removed→honoured | A |
+| 19 | leverage | D | shown→ignored | shown→ignored | shown→ignored | A |
+| 20 | longer_count | C | — | — | — | A |
+| 21 | longer_timeframe | M | 4h→4h | — | — | B |
+| 22 | lower_price | D | shown→ignored | shown→ignored | shown→ignored | A |
+| 23 | max_contracts_enabled | I | shown→ignored | shown→ignored | shown→ignored | A |
+| 24 | max_contracts_per_order | M | 2→2 | 1→1 | N→N | A |
+| 25 | max_daily_trades | M | OFF→OFF | OFF→OFF | ON→ON | A |
+| 26 | max_daily_trades_enabled | M | OFF→OFF | OFF→OFF | ON→ON | A |
+| 27 | max_drawdown_pct | D | shown→ignored | shown→ignored | shown→ignored | A |
+| 28 | max_levels | M | def→def | 0→0 | N→N | A |
+| 29 | max_margin_usage | I | shown→ignored | shown→ignored | shown→ignored | A |
+| 30 | max_notional_leverage | M | 20→20 | 20→20 | 20→20 | A |
+| 31 | max_positions | M | 3→3 | 1→1 | 2→2 | A |
+| 32 | max_trades | C | — | — | — | B |
+| 33 | mentor_base_contracts | H | —→4 | —→4 | —→N | A |
+| 34 | mentor_be_before_partial | M | ON→ON | OFF→OFF | ON→ON | A |
+| 35 | mentor_big_contracts | H | —→4 | —→4 | —→N | A |
+| 36 | mentor_box_fresh_rth_pair | M | OFF→OFF | OFF→OFF | ON→ON | A |
+| 37 | mentor_box_max_height_pts | M | 0→off | 0→off | N→N | A |
+| 38 | mentor_confluence_contracts | H | —→4 | —→4 | —→N | A |
+| 39 | mentor_day_off_recheck | H | —→OFF | —→OFF | —→ON | A |
+| 40 | mentor_done_after_win | M | OFF→OFF | OFF→OFF | ON→ON | A |
+| 41 | mentor_done_after_win_day_start | H | —→08:30 | —→08:30 | —→N | A |
+| 42 | mentor_ema9_visit_cap | M | shared→shared | shared→shared | per_level→per_level | A |
+| 43 | mentor_ema_max_cross_30m | H | —→ON(2) | —→ON(2) | —→N | A |
+| 44 | mentor_isb_c3_partial_any_profit | M | ON→ON | OFF→OFF | ON→ON | A |
+| 45 | mentor_isb_max_pts | M | 30→30 | 0→0 | N→N | A |
+| 46 | mentor_keypair_candle_ratio | M | 1→1 | 1→1 | N→N | A |
+| 47 | mentor_leg_budget_enabled | H | —→ON | —→OFF | —→ON | A |
+| 48 | mentor_leg_reset_on | H | —→close | —→off | —→N | A |
+| 49 | mentor_loc_trigger_filter | H | —→ON | —→OFF | —→ON | A |
+| 50 | mentor_loss_departure_pts | H | —→OFF | —→OFF | —→N | A |
+| 51 | mentor_lvl_revisit_min_pts | H | —→0 | —→0 | —→N | A |
+| 52 | mentor_max_contracts | H | —→20 | —→20 | —→N | A |
+| 53 | mentor_mode | M | OFF→OFF | OFF→OFF | ON→ON | A |
+| 54 | mentor_reduced_contracts | H | —→4 | —→4 | —→N | A |
+| 55 | mentor_resonance_runner_tp_old_high | M | ON→ON | OFF→OFF | ON→ON | A |
+| 56 | mentor_reverse_isb_as_phl | M | ON→ON | OFF→OFF | ON→ON | A |
+| 57 | mentor_spent_day_contracts | H | —→2 | —→2 | —→N | A |
+| 58 | mentor_stale_data_block | M | ON→ON | OFF→OFF | ON→ON | A |
+| 59 | mentor_stop_after_loss | M | OFF→OFF | OFF→OFF | ON→ON | A |
+| 60 | mentor_swing4h_contracts | M | 2→2 | 1→1 | N→N | A |
+| 61 | mentor_swing_ema34_is_first_target | M | ON→ON | OFF→OFF | ON→ON | A |
+| 62 | mentor_swing_runner | M | ON→ON | OFF→OFF | ON→ON | A |
+| 63 | mentor_trail_mode | M | candle→candle | off→off | candle→candle | A |
+| 64 | mentor_trail_tf | H | —→1m | —→1m | —→N | A |
+| 65 | mentor_window_minutes | M | 60→60 | 60→60 | N→N | A |
+| 66 | mentor_window_start | M | 08:30→08:30 | 08:30→08:30 | N→N | A |
+| 67 | method | D | shown→ignored | shown→ignored | shown→ignored | A |
+| 68 | min_confidence | M | 60→60 | 0→0 | N→N | A |
+| 69 | min_grade | M | B→B | C→C | A→A | A |
+| 70 | min_hold_min | M | 3→3 | 0→0 | N→N | A |
+| 71 | min_position_size | I | shown→ignored | shown→ignored | shown→ignored | A |
+| 72 | min_risk_reward_ratio | M | 3.0→3.0 | 3.0→3.0 | N→N | A |
