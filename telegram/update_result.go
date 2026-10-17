@@ -22,7 +22,9 @@ func UpdateResultMessage(state, newTag, oldTag, reason string) string {
 	switch state {
 	case "complete":
 		return "Update done — running " + newTag
-	case "rolled_back", "reverted_clean":
+	case "rolled_back", "reverted_clean", "refused":
+		// refused and reverted_clean both mean "nothing was swapped, the old
+		// build never moved" — the same plain words as a proven rollback.
 		msg := "Update could not finish — nothing changed, still running " + oldTag + ", trading normal."
 		if reason != "" {
 			msg += " Reason: " + reason

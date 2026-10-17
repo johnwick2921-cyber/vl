@@ -252,6 +252,10 @@ export interface UpdateJobView {
   state?: string
   step?: string
   blocker?: string
+  // blocker_since anchors the page's "Waiting: … elapsed" — the job's
+  // updated_at at the moment the blocker was last written. Absent when no
+  // blocker is recorded (L7: absent ≠ empty).
+  blocker_since?: string
   timestamps?: Record<string, string>
   receipt_url?: string
   error?: string
