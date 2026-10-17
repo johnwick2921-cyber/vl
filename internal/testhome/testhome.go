@@ -59,6 +59,38 @@ type fileStamp struct {
 var watchedPaths = []string{
 	".config/vl-updater", // directory — every file inside is stamped
 	"bin/vl-updater",     // file — stamped if it exists
+	// 2026-10-17 (DS-106 adversarial review, hole 2): the dotfiles a test or a
+	// child process with a cleared env would rewrite through the passwd home.
+	".gitconfig",
+	".bashrc",
+	".profile",
+	".config/go/env", // GOENV
+	".ssh/authorized_keys",
+	".ssh/config",
+	".ssh/id_ed25519",
+	".ssh/id_rsa",
+}
+
+// listedDirs are the real-home folders whose ENTRY NAMES are snapshotted
+// (depth 1): a name that vanishes, or a NEW name a test wrote there through a
+// literal path or the passwd home, fails the run (DS-106 hole 2).
+var listedDirs = []string{"", ".config", "bin", ".ssh"}
+
+// concurrentOK names the top-level entries OTHER processes on this box create
+// during a run — lane worktrees, the trash folder, shell history files. They
+// are reported nowhere and never fail the run; everything else new does.
+func concurrentOK(rel string, isDir bool) bool {
+	if strings.Contains(rel, "/") {
+		return false
+	}
+	if isDir && (strings.HasPrefix(rel, "vl-") || strings.HasPrefix(rel, "nofx-") || rel == "trash") {
+		return true
+	}
+	switch rel {
+	case ".bash_history", ".lesshst", ".viminfo", ".wget-hsts", ".python_history", ".node_repl_history", ".sudo_as_admin_successful":
+		return true
+	}
+	return false
 }
 
 // Sig maps a rel path under the real HOME to its stamp. A missing file or
@@ -123,20 +155,21 @@ func RealHome() string {
 // never touch it.
 var realHomeFn = RealHome
 
-// topLevel lists the names directly inside home. A wipe removes them; other
-// processes on the box (lanes, editors) only ever ADD here during a run, so a
-// vanished name is the signal and new names are ignored.
-func topLevel(home string) map[string]bool {
+// listing maps every entry name (depth 1) in each listedDirs folder of home
+// to whether it is a directory. Missing folders contribute nothing.
+func listing(home string) map[string]bool {
 	out := map[string]bool{}
 	if home == "" {
 		return out
 	}
-	entries, err := os.ReadDir(home)
-	if err != nil {
-		return out
-	}
-	for _, e := range entries {
-		out[e.Name()] = true
+	for _, d := range listedDirs {
+		entries, err := os.ReadDir(filepath.Join(home, d))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			out[filepath.ToSlash(filepath.Join(d, e.Name()))] = e.IsDir()
+		}
 	}
 	return out
 }
@@ -213,7 +246,7 @@ func Guard(m *testing.M) int { return Run(m.Run) }
 func Run(run func() int) int {
 	real := realHomeFn()
 	before := SigAt(real)
-	beforeTop := topLevel(real)
+	beforeList := listing(real)
 
 	tmp, restore, err := isolate(real)
 	if err != nil {
@@ -232,10 +265,15 @@ func Run(run func() int) int {
 			changed = append(changed, real+" — the real home folder itself is GONE")
 		}
 	}
-	afterTop := topLevel(real)
-	for name := range beforeTop {
-		if !afterTop[name] {
-			changed = append(changed, "~/"+name+" DELETED during the tests (top-level entry of the real home)")
+	afterList := listing(real)
+	for name := range beforeList {
+		if _, ok := afterList[name]; !ok {
+			changed = append(changed, "~/"+name+" DELETED during the tests (entry of the real home)")
+		}
+	}
+	for name, isDir := range afterList {
+		if _, ok := beforeList[name]; !ok && !concurrentOK(name, isDir) {
+			changed = append(changed, "~/"+name+" CREATED during the tests (a test wrote the real home)")
 		}
 	}
 	after := SigAt(real)

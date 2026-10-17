@@ -15,10 +15,14 @@
 package homeguard
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -76,10 +80,89 @@ func goFiles(t *testing.T, root string) []string {
 var (
 	testMainRe = regexp.MustCompile(`(?m)^func TestMain\(m \*testing\.M\)`)
 	guardRe    = regexp.MustCompile(`testhome\.(Guard|Run)\(`)
-	removeRe   = regexp.MustCompile(`\bos\.RemoveAll\(`)
-	userImport = regexp.MustCompile(`(?m)^\s*(import\s+)?(\w+\s+)?"os/user"`)
-	rmExecRe   = regexp.MustCompile(`exec\.Command(Context)?\([^)]*"(rm|/bin/rm|rmdir|shred)"`)
+	shellRmRe  = regexp.MustCompile(`(^|[\s;&|(])(rm|rmdir|shred)\s`)
 )
+
+// deletePkgs are the import paths whose delete entry points the lint tracks,
+// with the selectors that delete a tree or bypass os entirely (DS-106
+// adversarial review 2026-10-17: aliased imports, method values, dot-imports
+// and raw syscalls all slipped past the first, regex-only version).
+var deletePkgs = map[string]map[string]bool{
+	"os":                    {"RemoveAll": true},
+	"syscall":               {"Unlink": true, "Unlinkat": true, "Rmdir": true},
+	"golang.org/x/sys/unix": {"Unlink": true, "Unlinkat": true, "Rmdir": true},
+}
+
+// deleteFindings parses one Go file and returns "line: why" for every
+// reference (call OR value) to a tracked delete entry point, every dot-import
+// of a tracked package, every os/user import, and every exec.Command that
+// runs rm/rmdir/shred — before allow markers are applied.
+func deleteFindings(name string, src []byte) ([]int, []string, error) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, name, src, parser.SkipObjectResolution)
+	if err != nil {
+		return nil, nil, err
+	}
+	var lines []int
+	var why []string
+	add := func(pos token.Pos, w string) {
+		lines = append(lines, fset.Position(pos).Line)
+		why = append(why, w)
+	}
+	local := map[string]string{} // local name → import path
+	for _, im := range f.Imports {
+		path, _ := strconv.Unquote(im.Path.Value)
+		if path == "os/user" {
+			add(im.Pos(), `imports "os/user" (user.Current names the REAL home past the HOME redirect)`)
+		}
+		if _, tracked := deletePkgs[path]; !tracked && path != "os/exec" {
+			continue
+		}
+		ln := filepath.Base(path)
+		if im.Name != nil {
+			ln = im.Name.Name
+		}
+		if ln == "." && path != "os/exec" {
+			add(im.Pos(), "dot-import of "+path+" hides its delete calls from review")
+			continue
+		}
+		local[ln] = path
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.SelectorExpr:
+			id, ok := x.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if sels, ok := deletePkgs[local[id.Name]]; ok && sels[x.Sel.Name] {
+				add(x.Pos(), local[id.Name]+"."+x.Sel.Name+" without the safepath gate")
+			}
+		case *ast.CallExpr:
+			sel, ok := x.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			id, ok := sel.X.(*ast.Ident)
+			if !ok || local[id.Name] != "os/exec" || (sel.Sel.Name != "Command" && sel.Sel.Name != "CommandContext") {
+				return true
+			}
+			for _, a := range x.Args {
+				lit, ok := a.(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
+					continue
+				}
+				v, _ := strconv.Unquote(lit.Value)
+				if b := filepath.Base(v); b == "rm" || b == "rmdir" || b == "shred" || shellRmRe.MatchString(" "+v+" ") {
+					add(x.Pos(), "exec runs rm/rmdir/shred from Go")
+					break
+				}
+			}
+		}
+		return true
+	})
+	return lines, why, nil
+}
 
 func rel(root, p string) string {
 	r, _ := filepath.Rel(root, p)
@@ -122,58 +205,36 @@ func TestEveryTestPackageMountsTheHomeGuard(t *testing.T) {
 
 func TestNoUnguardedRecursiveDelete(t *testing.T) {
 	root := repoRoot(t)
-	var bad []string
-	for _, f := range goFiles(t, root) {
-		if rel(root, f) == "internal/homeguard/lint_test.go" {
-			continue
-		}
-		b, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		lines := strings.Split(string(b), "\n")
-		for i, ln := range lines {
-			code := ln
-			if j := strings.Index(code, "//"); j >= 0 && !strings.Contains(code[j:], "homeguard:allow") {
-				code = code[:j]
-			}
-			if !removeRe.MatchString(code) {
-				continue
-			}
-			if strings.Contains(ln, "homeguard:allow") || (i > 0 && strings.Contains(lines[i-1], "homeguard:allow")) {
-				continue
-			}
-			bad = append(bad, rel(root, f)+":"+itoa(i+1)+": "+strings.TrimSpace(ln))
-		}
-	}
-	if len(bad) > 0 {
-		t.Fatalf("THE ONE RULE: %d os.RemoveAll call(s) without a path check — use safepath.RemoveAllUnder(root, path) / safepath.RemoveAllTemp(path), or mark a reviewed temp-dir cleanup with `//homeguard:allow — <why it cannot reach the home folder>`:\n  %s", len(bad), strings.Join(bad, "\n  "))
-	}
-}
-
-func TestNoRealHomeLookupOutsideTheGuards(t *testing.T) {
-	root := repoRoot(t)
-	allowed := map[string]bool{"internal/testhome": true, "internal/safepath": true}
+	exempt := map[string]bool{"internal/testhome": true, "internal/safepath": true} // the guards themselves (os/user, the one gated call)
 	var bad []string
 	for _, f := range goFiles(t, root) {
 		r := rel(root, f)
-		if allowed[filepath.ToSlash(filepath.Dir(r))] || r == "internal/homeguard/lint_test.go" {
-			continue
+		if r == "internal/homeguard/lint_test.go" || r == "internal/homeguard/lint_regex_holes_test.go" {
+			continue // the lint and its fixtures name the patterns on purpose
 		}
 		b, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if userImport.Match(b) {
-			bad = append(bad, r+": imports os/user (user.Current names the REAL home past the HOME redirect)")
+		lines, why, err := deleteFindings(f, b)
+		if err != nil {
+			continue // a file the compiler would reject fails the build elsewhere
 		}
-		if rmExecRe.Match(b) {
-			bad = append(bad, r+": shells out to rm/rmdir/shred from Go")
+		src := strings.Split(string(b), "\n")
+		for k, ln := range lines {
+			if exempt[filepath.ToSlash(filepath.Dir(r))] && !strings.HasPrefix(why[k], "dot-import") {
+				continue
+			}
+			allowed := (ln-1 < len(src) && strings.Contains(src[ln-1], "homeguard:allow")) ||
+				(ln-2 >= 0 && strings.Contains(src[ln-2], "homeguard:allow"))
+			if !allowed {
+				bad = append(bad, r+":"+itoa(ln)+": "+why[k])
+			}
 		}
 	}
 	sort.Strings(bad)
 	if len(bad) > 0 {
-		t.Fatalf("THE ONE RULE:\n  %s", strings.Join(bad, "\n  "))
+		t.Fatalf("THE ONE RULE: %d unguarded delete/home reference(s) — route a tree delete through safepath.RemoveAllUnder(root, path) / safepath.RemoveAllTemp(path), or mark a reviewed temp-dir cleanup with `//homeguard:allow — <why it cannot reach the home folder>`:\n  %s", len(bad), strings.Join(bad, "\n  "))
 	}
 }
 
