@@ -59,6 +59,25 @@ func TestReverseISBAtEMA9LongAndShort(t *testing.T) {
 	}
 }
 
+// TestReverseISBStampsItsCandleForRule5 — M565-2: the reverse ISB at EMA 9
+// stamps the ISB candle's high/low (EntryCandleHigh/Low) exactly like the
+// normal ISB, so rule 5 (the ORB-edge fraction) measures it. Dropping the
+// stamp leaves hi=lo=0 → the measure reads "unmeasured" and rule 5 silently
+// turns off for reverse ISBs → RED.
+func TestReverseISBStampsItsCandleForRule5(t *testing.T) {
+	cfg := reverseCfg()
+	redPrev := market.Kline{Open: 106, Close: 100, High: 106.5, Low: 99.5}
+	cur := market.Kline{Open: 102, Close: 104, High: 104.5, Low: 99.5}
+	in, ok, _ := ReverseISBAtEMA9(redPrev, cur, 101, SideLong, cfg)
+	if !ok {
+		t.Fatal("fixture: the uptrend reverse ISB must emit")
+	}
+	if in.EntryCandleHigh != cur.High || in.EntryCandleLow != cur.Low {
+		t.Fatalf("the reverse ISB must stamp the ISB candle high/low (rule 5 reads it); got high %.2f low %.2f, want %.2f/%.2f",
+			in.EntryCandleHigh, in.EntryCandleLow, cur.High, cur.Low)
+	}
+}
+
 // TestReverseISBAtEMA9NoTrendFailsClosed is the B6 (L14) call-site pin: with
 // no trend direction the reverse ISB used to fall through to SHORT
 // unconditionally (the `if trend == SideLong … return short` tail). MUTANT:

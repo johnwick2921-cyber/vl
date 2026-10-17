@@ -53,6 +53,8 @@ func readMentorArmRowByID(t *testing.T, ledger *store.ArmedOrderStore, rowID int
 func TestB3DayStopDoneAfterWinCancelsRestingArm(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "on")
 	at, _, ledger, _ := mentorB3Rig(t)
+	// owner order 2026-10-16: nil → OFF — this pin exercises the ON path.
+	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = bp(true)
 	mentorWireSeams(t, at, ledger)
 
 	now := b3Clock(10, 30) // in-window (the loopback rig window is all-day), no news
@@ -130,7 +132,9 @@ func TestB3DayStopWindowEndCancelsRestingArm(t *testing.T) {
 // "unknown", not a trip: the sweep must NOT force-cancel a resting arm on a data
 // gap (the placement gate still fails closed for new entries).
 func TestB3MentorDoneAfterWinTrippedUnknownIsNotTrip(t *testing.T) {
-	at := &AutoTrader{}
+	// owner order 2026-10-16: nil → OFF — this test exercises the ON path, so
+	// the switch is explicit true.
+	at := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorDoneAfterWin: bp(true)}}}}
 	// Unwired sources: mentorDoneAfterWinTripped must report false.
 	if trip, _ := at.mentorDoneAfterWinTripped(); trip {
 		t.Fatal("unwired day sources must NOT trip the done-after-win sweep")

@@ -156,6 +156,49 @@ func orbEdgeTooNear(orb ORB, side Side, price float64, cfg Config) bool {
 	return false
 }
 
+// orbISBFractionOutside is the fraction of the ISB candle's range (high − low)
+// that lies OUTSIDE the ORB on the trade side — rule 5 (release #31): "80% 90%
+// là cái nến nó nằm ở ngoài… anh chị có quyền take risk" [extra "Routine trước
+// khi trade" part1 @07:46–09:04]. A candle wholly outside the edge is 1; wholly
+// inside/behind is 0; a candle with no range (hi <= lo) is unmeasured.
+func orbISBFractionOutside(orb ORB, side Side, hi, lo float64) float64 {
+	if hi <= lo {
+		return 0
+	}
+	rng := hi - lo
+	switch side {
+	case SideLong:
+		if lo >= orb.High {
+			return 1
+		}
+		if hi <= orb.High {
+			return 0
+		}
+		return (hi - orb.High) / rng
+	case SideShort:
+		if hi <= orb.Low {
+			return 1
+		}
+		if lo >= orb.Low {
+			return 0
+		}
+		return (orb.Low - lo) / rng
+	}
+	return 0
+}
+
+// orbISBMostlyInside reports whether an ISB at the ORB edge must be skipped:
+// less than cfg.OrbISBFractionOutside of the ISB candle lies outside the ORB
+// on the trade side — the entry sits too near the resistance (the edge) and the
+// candle is mostly still inside: "điểm entry… nằm gần cái resistance quá thì
+// thôi bỏ đi" [X5 @08:52–09:09]. Knob <= 0 = the rule is off.
+func orbISBMostlyInside(orb ORB, side Side, hi, lo float64, cfg Config) bool {
+	if cfg.OrbISBFractionOutside <= 0 || hi <= lo {
+		return false
+	}
+	return orbISBFractionOutside(orb, side, hi, lo) < cfg.OrbISBFractionOutside
+}
+
 // orbGateFilter applies the ORB gate to every intraday entry intent. The §8
 // swing is EXEMPT (its reasons start with "swing") — the ORB is a gate on
 // intraday entries only. The ORB belongs to the RTH open only [X5 @05:42
@@ -184,6 +227,13 @@ func orbGateFilter(ints []Intent, orb ORB, now int64, cfg Config) (out []Intent,
 			continue
 		}
 		if ok, _ := ORBVerdict(orb, in.Side, in.Price, cfg); ok {
+			// Rule 5 (release #31): an ISB at the ORB edge trades only when
+			// the ISB candle is mostly OUTSIDE the range on the trade side —
+			// the fraction, not a points distance (that is CE-7).
+			if in.Setup == "ISB" && orbISBMostlyInside(orb, in.Side, in.EntryCandleHigh, in.EntryCandleLow, cfg) {
+				refusals = append(refusals, "orb_isb_mostly_inside")
+				continue
+			}
 			out = append(out, in)
 		} else {
 			refusals = append(refusals, orbRefusalStage(orb, in.Side, in.Price, cfg))

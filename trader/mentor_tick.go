@@ -1352,15 +1352,26 @@ func (at *AutoTrader) mentorDayStopSweep(now time.Time) {
 	}
 }
 
+// mentorDoneAfterWinEnabled resolves the done-after-win switch. Owner order
+// 2026-10-16 ("it's been off … follow it"): nil → OFF — only an EXPLICIT true
+// turns the rule on. The day-boundary knob mentor_done_after_win_day_start is
+// read only when this switch is ON.
+func (at *AutoTrader) mentorDoneAfterWinEnabled() bool {
+	if at.config.StrategyConfig == nil {
+		return false
+	}
+	v := at.config.StrategyConfig.RiskControl.MentorDoneAfterWin
+	return v != nil && *v
+}
+
 // mentorDoneAfterWinTripped reports the DEFINITE done-after-win trip only — a
-// trade closed in profit AND the day is net positive. An unwired or unresolved
-// source is "unknown", not a trip: the placement gate still refuses fail-closed,
-// but the sweep does NOT force-cancel a resting arm on an unknown.
+// trade closed in profit AND the day is net positive AND the switch is ON (nil
+// → OFF, owner order 2026-10-16). An unwired or unresolved source is "unknown",
+// not a trip: the placement gate still refuses fail-closed, but the sweep does
+// NOT force-cancel a resting arm on an unknown.
 func (at *AutoTrader) mentorDoneAfterWinTripped() (bool, string) {
-	if at.config.StrategyConfig != nil {
-		if v := at.config.StrategyConfig.RiskControl.MentorDoneAfterWin; v != nil && !*v {
-			return false, "" // the knob is explicitly OFF
-		}
+	if !at.mentorDoneAfterWinEnabled() {
+		return false, "" // the switch is OFF (nil → OFF, owner order 2026-10-16)
 	}
 	if at.mentorDayNetSource == nil || at.mentorClosedProfitSource == nil {
 		return false, ""
@@ -1504,6 +1515,8 @@ func (at *AutoTrader) mentorWindowGate(in mentor.Intent) (bool, string) {
 // once a trade closes in profit and the day's net P&L is above 0 → no new
 // mentor entries until the next NY open (08:30 CT; day boundary = owner ruling
 // 2026-10-09 — the mentor's "day" is the NY day, not the CME 17:00 session day).
+// The switch is default OFF (nil → OFF, owner order 2026-10-16 "it's been off…
+// follow it"; only an explicit true turns it on).
 func mentorDoneAfterWin(dayNetPnl float64, closedInProfit bool) bool {
 	return closedInProfit && dayNetPnl > 0
 }
@@ -1558,14 +1571,13 @@ func (at *AutoTrader) mentorDoneAfterWinReason() string {
 // day's data is UNRESOLVED (a NULL pnl_corrected closed row or a read error) —
 // an unknown is not "no win", so the gate fails CLOSED.
 
-// mentorDoneAfterWinGate is the call-site half of (a); the knob is default ON
-// (nil → ON, an explicit false disables). FAIL-CLOSED: a missing day-net or
-// closed-profit source refuses the entry — an unknown is not "no win".
+// mentorDoneAfterWinGate is the call-site half of (a); the switch is default
+// OFF (nil → OFF, owner order 2026-10-16 — only an explicit true turns it on).
+// FAIL-CLOSED while ON: a missing day-net or closed-profit source refuses the
+// entry — an unknown is not "no win".
 func (at *AutoTrader) mentorDoneAfterWinGate() (bool, string) {
-	if at.config.StrategyConfig != nil {
-		if v := at.config.StrategyConfig.RiskControl.MentorDoneAfterWin; v != nil && !*v {
-			return false, "" // the knob is explicitly OFF
-		}
+	if !at.mentorDoneAfterWinEnabled() {
+		return false, "" // the switch is OFF (nil → OFF, owner order 2026-10-16)
 	}
 	if at.mentorDayNetSource == nil || at.mentorClosedProfitSource == nil {
 		at.mentorCount("done_after_win_no_data")

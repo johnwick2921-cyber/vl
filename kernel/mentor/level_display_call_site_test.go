@@ -80,11 +80,12 @@ func seededMentorEval(cfg Config, keyPrice, emaPrice float64, bars []market.Klin
 // [D4.1 p1 @08:05 written rule 2].
 func TestISBFlagAtTheNearestUnbrokenOldHighCallSite(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 
-	swing := swingHighTape5m(101.5)            // swing high 101.5
+	swing := swingHighTape5m(101.5)             // swing high 101.5
 	prev := rthBars(26, 98, 101.5, 97.5, 101.5) // green mother, tops out AT the old high
-	cur := rthBars(27, 100.5, 102, 99, 100)    // inside bar, touches 101.5 (99..102)
+	cur := rthBars(27, 100.5, 102, 99, 100)     // inside bar, touches 101.5 (99..102)
 	if !IsISB(prev, cur) {
 		t.Fatal("fixture: must be an ISB")
 	}
@@ -110,6 +111,7 @@ func TestISBFlagAtTheNearestUnbrokenOldHighCallSite(t *testing.T) {
 // is not size-cut. The pre-r22 12-pivot list still flagged it.
 func TestISBFlagIgnoresABrokenOldHighCallSite(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 
 	swing := swingHighTape5m(101.5)
@@ -140,10 +142,11 @@ func TestISBFlagIgnoresABrokenOldHighCallSite(t *testing.T) {
 // next level", D3.3 p1 @04:11].
 func TestTargetIsTheNearestUnbrokenOldHighCallSite(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 
-	swing := swingHighTape5m(125) // swing high 125, within 20 of key 130
-	prev := rthBars(26, 105, 109, 104.5, 108) // green mother
+	swing := swingHighTape5m(125)              // swing high 125, within 20 of key 130
+	prev := rthBars(26, 105, 109, 104.5, 108)  // green mother
 	cur := rthBars(27, 107, 108.5, 106.5, 107) // inside bar (entry 110 / stop 105)
 	if !IsISB(prev, cur) {
 		t.Fatal("fixture: must be an ISB")

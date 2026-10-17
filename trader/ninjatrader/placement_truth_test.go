@@ -41,7 +41,7 @@ func TestEntryCommandClockAndReceivedRejection(t *testing.T) {
 				var sid string
 				var err error
 				if kind == "stop_entry" {
-					sid, err = tr.PlaceStopEntry("MNQ", "long", 1, bar.C, row.StopPx, row.TargetPx, 0, 0, register)
+					sid, err = tr.PlaceStopEntry("MNQ", "long", 1, bar.C, row.StopPx, row.TargetPx, 0, 0, 0, 0, register)
 				} else {
 					sid, err = tr.PlaceLimitEntry("MNQ", "long", 1, bar.C, row.StopPx, row.TargetPx, register)
 				}

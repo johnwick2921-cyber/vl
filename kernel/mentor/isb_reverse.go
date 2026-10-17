@@ -59,22 +59,26 @@ func ReverseISBAtEMA9(prev, cur market.Kline, ema9 float64, trend Side, cfg Conf
 	if trend == SideLong {
 		// ISB points short in an uptrend → LONG, buy stop at high + buffer (wire).
 		return Intent{
-			Action:   PlaceStopEntry,
-			Setup:    "ISB",
-			Side:     SideLong,
-			Price:    cur.High + entry,
-			Stop:     cur.Low - cfg.ISBBufferPts,
-			RefBarMs: cur.CloseTime,
-			Reason:   "reverse ISB at EMA 9: uptrend, ISB points short → long buy stop on the wire at the ISB high + buffer [D5.4, D1.4 p1 @ 22:26–23:26, D2.1 p1 @ 06:12]",
+			Action:          PlaceStopEntry,
+			Setup:           "ISB",
+			Side:            SideLong,
+			Price:           cur.High + entry,
+			Stop:            cur.Low - cfg.ISBBufferPts,
+			RefBarMs:        cur.CloseTime,
+			EntryCandleHigh: cur.High, // release #31 rule 5
+			EntryCandleLow:  cur.Low,
+			Reason:          "reverse ISB at EMA 9: uptrend, ISB points short → long buy stop on the wire at the ISB high + buffer [D5.4, D1.4 p1 @ 22:26–23:26, D2.1 p1 @ 06:12]",
 		}, true, ""
 	}
 	return Intent{
-		Action:   PlaceStopEntry,
-		Setup:    "ISB",
-		Side:     SideShort,
-		Price:    cur.Low - entry,
-		Stop:     cur.High + cfg.ISBBufferPts,
-		RefBarMs: cur.CloseTime,
-		Reason:   "reverse ISB at EMA 9: downtrend, ISB points long → short sell stop on the wire below the ISB low − buffer [D5.4, D1.4 p1 @ 22:26–23:26, D2.1 p1 @ 06:12]",
+		Action:          PlaceStopEntry,
+		Setup:           "ISB",
+		Side:            SideShort,
+		Price:           cur.Low - entry,
+		Stop:            cur.High + cfg.ISBBufferPts,
+		RefBarMs:        cur.CloseTime,
+		EntryCandleHigh: cur.High, // release #31 rule 5
+		EntryCandleLow:  cur.Low,
+		Reason:          "reverse ISB at EMA 9: downtrend, ISB points long → short sell stop on the wire below the ISB low − buffer [D5.4, D1.4 p1 @ 22:26–23:26, D2.1 p1 @ 06:12]",
 	}, true, ""
 }

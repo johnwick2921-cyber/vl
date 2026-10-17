@@ -188,6 +188,10 @@ func TestMentorDoneAfterWinGateAtPlacementCallSite(t *testing.T) {
 		t.Fatal("the pure rule: only a winning close AND a positive day end the day")
 	}
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	// owner order 2026-10-16: nil → OFF — this test exercises the ON path, so
+	// the switch is explicit true.
+	on := true
+	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = &on
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
 	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
@@ -230,7 +234,6 @@ func TestMentorDoneAfterWinGateAtPlacementCallSite(t *testing.T) {
 		t.Fatalf("with the knob explicitly OFF the entry must proceed, placed=%d", placed)
 	}
 	// day net <= 0 → proceeds (knob back ON).
-	on := true
 	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = &on
 	at.mentorDayNetSource = func() (float64, bool) { return -50, true }
 	at.mentorPlaceIntent(in, choice, 1000, 1100)

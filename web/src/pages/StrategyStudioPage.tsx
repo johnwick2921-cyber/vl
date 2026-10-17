@@ -1009,7 +1009,10 @@ export function StrategyStudioPage() {
       (section.forStrategyType === 'both' ||
         section.forStrategyType === currentStrategyType) &&
       // Day Plan is futures-only (drop it for non-futures strategies).
-      (section.key !== 'dayPlan' || isFuturesStrategy)
+      (section.key !== 'dayPlan' || isFuturesStrategy) &&
+      // release #32 (B2 item c): the coin source is crypto-only — a CME futures
+      // strategy trades the NT8-bound symbol, never the static coin list.
+      (section.key !== 'coinSource' || !isFuturesStrategy)
   )
 
   return (

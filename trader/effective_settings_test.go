@@ -103,6 +103,21 @@ func TestEffectiveAdaptersMatchProductionResolvers(t *testing.T) {
 	}
 }
 
+// effSessionRuns mirrors the per-session "enable" resolver's displayed value
+// (S1, release #32): the same three branches effective_settings.go uses.
+func effSessionRuns(at *AutoTrader, session string) string {
+	v := at.sessionEnabledForStrategy(session)
+	if dp := at.dayPlanCfg(); dp != nil {
+		if ov := dp.SessionOverride(session); ov != nil && ov.Enable != nil {
+			return sessionRunsLabel(v, "override")
+		}
+		if len(dp.SessionsEnabled) > 0 {
+			return sessionRunsLabel(v, "sessions_enabled")
+		}
+	}
+	return sessionRunsLabel(v, "default [NY]")
+}
+
 // Every row whose resolver is an AutoTrader method (or a trader function)
 // reports exactly what that method returns for an AutoTrader carrying the same
 // parsed config.
@@ -152,7 +167,7 @@ func TestEffectiveRowsMatchAutoTraderMethods(t *testing.T) {
 			dpPath + "fade_or_wide_k":           at.fadeORWideK(),
 			dpPath + "replan_cap":               at.replanCapFor("NY"),
 			dpPath + "picture_htf.min_rr":       pictureRR,
-			spPath + "enable":                   at.sessionEnabledForStrategy("NY"),
+			spPath + "enable":                   effSessionRuns(at, "NY"),
 			spPath + "replan_cap":               at.replanCapFor("NY"),
 		}
 		for path, want := range checks {
@@ -255,9 +270,9 @@ func TestEffectiveUnresolvedSaysNA(t *testing.T) {
 	if gc.Resolved || gc.Effective != EffectiveNoResolver || gc.Origin != store.SourceSaved || gc.Resolver != "none" {
 		t.Fatalf("grid_count: %+v", gc)
 	}
-	up := rows["grid_config.upper_price"]
+	up := rows["grid_config.leverage"]
 	if up.Resolved || up.Effective != EffectiveNoResolver || up.Origin != OriginUnset || up.Stored.Present {
-		t.Fatalf("upper_price: %+v", up)
+		t.Fatalf("leverage: %+v", up)
 	}
 	cov := EffectiveCoverageOf(effRowsSlice(rows))
 	if cov.Resolved != len(effectiveResolvers) {
@@ -303,11 +318,13 @@ func TestEffectiveMaxContractsMentorModeTruth(t *testing.T) {
 	rows := effRowsFor(t, mentorRaw, "ninjatrader", "NY")
 
 	mcp := rows[rcPath+"max_contracts_per_order"]
-	if got := jsonVal(t, mcp.Effective); got != "not applied in mentor mode" {
-		t.Fatalf("mentor mode: max_contracts_per_order effective = %v, want 'not applied in mentor mode'", got)
+	// release #32 (B2 item b): the message names the mentor governor with its
+	// RESOLVED value — 20 here — never a typed "default 20" literal.
+	if got := jsonVal(t, mcp.Effective); got != "not used in mentor mode — mentor sizing governs (mentor_max_contracts = 20)" {
+		t.Fatalf("mentor mode: max_contracts_per_order effective = %v, want the mentor-sizing marker with the resolved 20", got)
 	}
-	if !strings.Contains(mcp.Origin, "mentor_max_contracts") {
-		t.Fatalf("mentor mode: max_contracts_per_order origin = %q, want it to name mentor_max_contracts", mcp.Origin)
+	if !strings.HasPrefix(mcp.Origin, "mentor_mode on") {
+		t.Fatalf("mentor mode: max_contracts_per_order origin = %q, want it to start with 'mentor_mode on'", mcp.Origin)
 	}
 
 	mmc, ok := rows[rcPath+"mentor_max_contracts"]
@@ -421,5 +438,130 @@ func TestEffectiveSettingsExitMechNotAppliedInMentorMode(t *testing.T) {
 	}
 	if got := jsonVal(t, aiRows[rcPath+"breakeven_trigger_points"].Effective); got != float64(40) {
 		t.Fatalf("ai mode: breakeven_trigger_points effective = %v, want 40", got)
+	}
+}
+
+// TestEffMentorDoneAfterWinResolvesSwitch — the switch was UI-BLIND (the panel
+// said "n/a — no resolver registered" while mentorDoneAfterWinEnabled read it).
+// absent → off / "shipped default (owner 2026-10-16: OFF)"; stored true → on /
+// "saved value"; stored false → off / "saved value". The day-start row resolves
+// too. Mutant: make the resolver return a literal true → the absent row reads
+// "on" → RED.
+func TestEffMentorDoneAfterWinResolvesSwitch(t *testing.T) {
+	rc := func(inner string) string {
+		return `{"strategy_type":"ai_trading","ai_config":{"risk_control":` + inner + `}}`
+	}
+	absent := effRowsFor(t, rc(`{}`), "", "")
+	k := absent[rcPath+"mentor_done_after_win"]
+	if k.Effective != "off" || k.Origin != store.SourceShippedDefault+" (owner 2026-10-16: OFF)" || !k.Resolved {
+		t.Fatalf("absent: effective=%v origin=%q resolved=%v, want off / %q / true", k.Effective, k.Origin, k.Resolved, store.SourceShippedDefault+" (owner 2026-10-16: OFF)")
+	}
+
+	storedTrue := effRowsFor(t, rc(`{"mentor_done_after_win":true}`), "", "")
+	k = storedTrue[rcPath+"mentor_done_after_win"]
+	if k.Effective != "on" || k.Origin != store.SourceSaved {
+		t.Fatalf("stored true: effective=%v origin=%q, want on / saved value", k.Effective, k.Origin)
+	}
+
+	storedFalse := effRowsFor(t, rc(`{"mentor_done_after_win":false}`), "", "")
+	k = storedFalse[rcPath+"mentor_done_after_win"]
+	if k.Effective != "off" || k.Origin != store.SourceSaved {
+		t.Fatalf("stored false: effective=%v origin=%q, want off / saved value", k.Effective, k.Origin)
+	}
+
+	day := absent[rcPath+"mentor_done_after_win_day_start"]
+	if day.Effective != "08:30" || day.Origin != store.SourceShippedDefault || !day.Resolved {
+		t.Fatalf("day-start absent: effective=%v origin=%q resolved=%v, want 08:30 / shipped default / true", day.Effective, day.Origin, day.Resolved)
+	}
+	stored1700 := effRowsFor(t, rc(`{"mentor_done_after_win_day_start":"17:00"}`), "", "")
+	day = stored1700[rcPath+"mentor_done_after_win_day_start"]
+	if day.Effective != "17:00" || day.Origin != store.SourceSaved {
+		t.Fatalf("day-start stored 17:00: effective=%v origin=%q, want 17:00 / saved value", day.Effective, day.Origin)
+	}
+}
+
+// release #32 (B2 item a) — while the 0B wire seam is suspended, every
+// breakeven_* / trailing_* row's EFFECTIVE value is the SUSPENDED sentence read
+// from the env the wire gate reads — never "eff on"/"eff off", never a typed
+// "unset" when the env is set. RED (named): hardcoding "unset" in the resolver
+// leaves the message wrong when the env is set to "1".
+func TestEffectiveExitMechsSuspendedSentence(t *testing.T) {
+	t.Setenv("EXIT_MECHS_SUSPENDED", "1") // suspended (not the unset default)
+	raw := `{"strategy_type":"ai_trading","ai_config":{"risk_control":{
+		"breakeven_enabled":true,"breakeven_trigger_points":40,"breakeven_trigger_r":1,
+		"trailing_enabled":true,"trailing_atr_mult":2.5,"trailing_atr_period":14,
+		"trailing_arm":"immediate","trailing_arm_points":20}}}`
+	rows := effRowsFor(t, raw, "ninjatrader", "NY")
+	for _, path := range []string{
+		"breakeven_enabled", "breakeven_trigger_points", "breakeven_trigger_r",
+		"trailing_enabled", "trailing_atr_mult", "trailing_atr_period",
+		"trailing_arm", "trailing_arm_points",
+	} {
+		k := rcPath + path
+		if got := jsonVal(t, rows[k].Effective); got != "SUSPENDED — env EXIT_MECHS_SUSPENDED=1 (no stop is ever moved)" {
+			t.Fatalf("suspended: %s effective = %v, want the SUSPENDED sentence with the env value", k, got)
+		}
+		if !strings.HasPrefix(rows[k].Origin, "env EXIT_MECHS_SUSPENDED") {
+			t.Fatalf("suspended: %s origin = %q, want the env origin", k, rows[k].Origin)
+		}
+	}
+
+	// The seam open: the rows resolve to the strategy values again.
+	t.Setenv("EXIT_MECHS_SUSPENDED", "0")
+	open := effRowsFor(t, raw, "ninjatrader", "NY")
+	if got := jsonVal(t, open[rcPath+"breakeven_enabled"].Effective); got != true {
+		t.Fatalf("seam open: breakeven_enabled effective = %v, want true", got)
+	}
+	if got := jsonVal(t, open[rcPath+"breakeven_trigger_points"].Effective); got != float64(40) {
+		t.Fatalf("seam open: breakeven_trigger_points effective = %v, want 40", got)
+	}
+}
+
+// release #32 (B2 item b) — the mentor-inert marker names the mentor governor's
+// RESOLVED value (never a typed "default 20"), and min_confidence carries its
+// own truthful reason. RED (named): hardcoding "= 20" in the sizing marker
+// leaves the message wrong when mentor_max_contracts is saved 15.
+func TestEffectiveMentorInertResolvedValue(t *testing.T) {
+	t.Setenv("EXIT_MECHS_SUSPENDED", "0")
+	raw := `{"strategy_type":"ai_trading","ai_config":{"risk_control":{
+		"mentor_mode":true,"max_contracts_per_order":2,"min_confidence":60,"mentor_max_contracts":15}}}`
+	rows := effRowsFor(t, raw, "ninjatrader", "NY")
+
+	if got := jsonVal(t, rows[rcPath+"max_contracts_per_order"].Effective); got != "not used in mentor mode — mentor sizing governs (mentor_max_contracts = 15)" {
+		t.Fatalf("mentor max_contracts_per_order = %v, want the marker with the resolved 15 (not a literal 20)", got)
+	}
+	if got := jsonVal(t, rows[rcPath+"min_confidence"].Effective); got != "not used in mentor mode — mentor entries come from the course rules and carry no AI confidence" {
+		t.Fatalf("mentor min_confidence = %v, want the not-used marker", got)
+	}
+}
+
+// release #32 (B2 item d) — the UI-BLIND prompt/indicator rows now resolve to
+// the SAME fields the production readers read (no literals), and the crypto-only
+// rows say so on a futures strategy.
+func TestEffectiveUIBlindRowsResolve(t *testing.T) {
+	raw := `{"strategy_type":"ai_trading","ai_config":{
+		"prompt_sections":{"role_definition":"ROLE-PLANTED","trading_frequency":"FREQ-PLANTED"},
+		"indicators":{"rsi_periods":[7,14,21],"klines":{"primary_timeframe":"5m","longer_timeframe":"1h"}}},
+		"prompt_variant":"conservative"}`
+	rows := effRowsFor(t, raw, "ninjatrader", "NY")
+
+	if got := jsonVal(t, rows["ai_config.prompt_sections.role_definition"].Effective); got != "ROLE-PLANTED" {
+		t.Fatalf("role_definition = %v, want the stored box value", got)
+	}
+	if got := jsonVal(t, rows["ai_config.prompt_sections.trading_frequency"].Effective); got != "FREQ-PLANTED" {
+		t.Fatalf("trading_frequency = %v, want the stored box value", got)
+	}
+	if got := jsonVal(t, rows["prompt_variant"].Effective); got != "conservative" {
+		t.Fatalf("prompt_variant = %v, want the stored value", got)
+	}
+	rsi := rows["ai_config.indicators.rsi_periods"]
+	if !rsi.Resolved {
+		t.Fatalf("rsi_periods unresolved: %+v", rsi)
+	}
+	if got := jsonVal(t, rows["ai_config.indicators.klines.longer_timeframe"].Effective); got != "1h" {
+		t.Fatalf("longer_timeframe = %v, want the stored '1h'", got)
+	}
+	if got := jsonVal(t, rows["ai_config.coin_source.static_coins"].Effective); !strings.HasPrefix(got.(string), "crypto coin list") {
+		t.Fatalf("static_coins on futures = %v, want the crypto-only marker", got)
 	}
 }

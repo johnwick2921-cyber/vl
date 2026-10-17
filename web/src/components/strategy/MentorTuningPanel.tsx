@@ -20,6 +20,7 @@ type NumKey =
   | 'day_gate_target_cap_pts'
   | 'swing_max_stop_pts'
   | 'orb_edge_veto_pts'
+  | 'orb_isb_fraction_outside'
 
 type BoolKey =
   | 'orb_gate_enabled'
@@ -212,6 +213,11 @@ const COPY = {
     en: 'ORB edge veto (pts, 0 = off, 0.25–50)',
     es: 'Veto junto al borde ORB (pts, 0 = off, 0,25–50)',
   },
+  orbISBFrac: {
+    zh: 'ORB 边缘 ISB 蜡烛在区间外的最小占比（0.01–1）',
+    en: 'ORB-edge ISB candle fraction outside the range (0.01–1)',
+    es: 'Fracción de la vela ISB fuera del rango ORB (0,01–1)',
+  },
   d43: {
     zh: '箱体回踩的 5 分钟趋势依据',
     en: 'Box return: the 5m trend is read from',
@@ -301,7 +307,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   orb_gate_enabled: true,
   isb_reverse_ema9_enabled: true,
   htf_gate_news_only: false,
-  exec_2m_after_30m: false,
+  exec_2m_after_30m: true,
   day_gate_spent_pts: 300,
   day_gate_target_cap_pts: 15,
   swing_max_stop_pts: 100,
@@ -312,6 +318,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   isb_box_escape: 'body', // (a)
   ema34_loss_relock: 'until_zone_exit', // (a)
   orb_edge_veto_pts: 0, // (b) 0 = off
+  orb_isb_fraction_outside: 0.8, // rule 5 (release #31) — default ON at 0.80
   d43_trend_source: 'structure', // (b) — course-defaults-30 [D4.3 @12:43–12:54]
   level_entries_need_trigger_side: false, // (b) owner ruled school 1
   trendline_is_target: true, // (a)
@@ -535,6 +542,7 @@ export function MentorTuningPanel({
           ENUM_OPTIONS.ema34_loss_relock
         )}
         {numField('orb_edge_veto_pts', COPY.orbEdge)}
+        {numField('orb_isb_fraction_outside', COPY.orbISBFrac)}
         {enumField('d43_trend_source', COPY.d43, ENUM_OPTIONS.d43_trend_source)}
         {boolField('level_entries_need_trigger_side', COPY.lvlTrigger)}
         {boolField('trendline_is_target', COPY.tlTarget)}

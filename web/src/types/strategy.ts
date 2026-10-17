@@ -303,7 +303,7 @@ export interface MentorTuning {
   orb_gate_enabled?: boolean
   isb_reverse_ema9_enabled?: boolean
   htf_gate_news_only?: boolean // D4.4-11 — unset = OFF (the all-day 4h/1h gate)
-  exec_2m_after_30m?: boolean // X5-10 — unset = OFF (the 1m ISB read)
+  exec_2m_after_30m?: boolean // X5-10 — unset = ON (1m for the first 30 min, then 2m)
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number
   swing_max_stop_pts?: number
@@ -322,6 +322,8 @@ export interface MentorTuning {
   ema34_loss_relock?: 'session' | 'until_zone_exit'
   // X5 @08:52 — refuse an entry within N pts of the ORB edge [0 = off]
   orb_edge_veto_pts?: number
+  // rule 5 (release #31): the ORB-edge ISB candle must lie ≥ this fraction outside [0.80]
+  orb_isb_fraction_outside?: number
   // D4.3 @12:43 — the box-return 5m trend source [structure]
   d43_trend_source?: 'trigger_line' | 'structure'
   // D3.4 p1 @17:48 — the 5m trigger side binds every level reject [false]
@@ -369,6 +371,11 @@ export interface RiskControlConfig {
   // and the 14:45 CT EOD flat still apply, never "any hour"). SWING is exempt.
   mentor_window_start?: string
   mentor_window_minutes?: number
+  // Stop-after-win / done-after-win (mentor day-stop): once a mentor trade
+  // closes today in profit and the day is net positive, refuse new entries
+  // until the next NY open (08:30 CT). Absent = OFF (owner order 2026-10-16:
+  // nil → OFF, an explicit true turns it on).
+  mentor_done_after_win?: boolean
   // Stop-after-loss (mentor day-stop): once a mentor trade closes today with a
   // net loss, refuse new entries until the next trading day (17:00 CT).
   // Absent = OFF (byte-identical to the prior config).
@@ -427,6 +434,7 @@ export interface RiskControlConfig {
   consecutive_loss_halt?: number | null
   reentry_cooldown_minutes?: number // B7: after a stop-loss, block same-dir re-entry for N min or until price moves ≥1×ATR15 from the stop (0=off; futures-only)
   max_contracts_per_order?: number // futures contracts-per-order clamp
+  planner_contracts?: number // dispatch-31: planner contracts per entry (unset/0 → 1; ≥ 2 splits 2+2 at the first obstacle)
   max_contracts_enabled?: boolean // parse-only — no consumer (knob registry KnobIneffective)
   max_notional_leverage?: number // futures notional ceiling = equity × this (default 20)
   notional_cap_enabled?: boolean // default ON

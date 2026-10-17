@@ -46,6 +46,7 @@ func TestExec2mISBIntentCarriesItsFrame(t *testing.T) {
 	off := DefaultConfig()
 	off.Enabled = true
 	off.RoomMultiple = 0
+	off.Exec2mAfter30m = false
 	gotOff := isbs(off)
 	if len(gotOff) == 0 {
 		t.Fatal("fixture: knob OFF, the 1m read must emit the ISB")

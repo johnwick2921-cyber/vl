@@ -450,6 +450,21 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		row.Leg1Qty = store.IntPtr(leg1Qty)
 		row.Leg1TP = leg1TP
 	}
+	// release #31 (leg-3 bracket): the runner of ≥ 2 contracts sells half
+	// (rounded down) at the first line beyond the leg-1 exit, stamped by the
+	// evaluator (Intent.RunnerPartialTP); the rest trails as today. Mode B only
+	// (leg 1 exits at 1:1); mode C's leg 1 holds to 2R and its runner is not
+	// split further. The SEND is gated on the AddOn proving the leg-3 build; a
+	// 0 line (or a runner < 2) leaves the 2-pair plan.
+	leg2Qty, leg2TP := 0, 0.0
+	if runner := choice.Contracts - leg1Qty; forkMode == "B" && runner >= 2 && in.RunnerPartialTP > 0 {
+		leg2Qty = runner / 2
+		leg2TP = in.RunnerPartialTP
+	}
+	if leg2Qty > 0 {
+		row.Leg2Qty = store.IntPtr(leg2Qty)
+		row.Leg2TP = leg2TP
+	}
 	if err := ledger.UpsertArm(&row); err != nil {
 		at.mentorCount("placement_refused_upsert")
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm upsert failed: %v", err)

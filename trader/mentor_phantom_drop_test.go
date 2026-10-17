@@ -66,6 +66,8 @@ func TestMentorDispatchDropArmOnNeverAdd(t *testing.T) {
 func TestMentorDispatchDropArmOnDoneAfterWinSwing(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "1")
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	// owner order 2026-10-16: nil → OFF — this pin exercises the ON path.
+	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = bp(true)
 	at.mentorEval = mentor.New(mentor.Config{})
 	resetMentorLiveArms(t)
 	wireMentorPlacementSeams(t, at)

@@ -110,3 +110,85 @@ func TestKnobBootLineIsCounted(t *testing.T) {
 	}
 	t.Logf("boot: %s", line)
 }
+
+// Release #32 (fix/risk-knob-truth) — item 5 and item 6 pin the registry to the
+// B1 audit's truth. These are DATA assertions: the four crypto-era size toggles
+// are ineffective with NO consumer, and the method-level recheck of the five
+// CANDIDATE knobs promotes exactly the two whose free-function resolvers have a
+// production caller, citing the consuming function by name.
+func TestRelease32KnobTruth(t *testing.T) {
+	// Item 5 — no consumer, KnobIneffective, with a reason. No UI exists for
+	// these; the status must not pretend a reader exists.
+	ineffective := map[string]string{
+		"min_position_size":    "min_position_size",
+		"max_margin_usage":     "max_margin_usage",
+		"max_contracts_enabled": "max_contracts_enabled",
+		"notional_cap_enabled":  "notional_cap_enabled",
+	}
+	for p, key := range ineffective {
+		e, ok := LookupKnob(key)
+		if !ok {
+			t.Errorf("%s: registry does not know it", p)
+			continue
+		}
+		if e.Status != KnobIneffective {
+			t.Errorf("%s: status = %v, want KnobIneffective", p, e.Status)
+		}
+		if len(e.Consumers) != 0 {
+			t.Errorf("%s: consumers = %v, want none", p, e.Consumers)
+		}
+		if e.Note == "" {
+			t.Errorf("%s: an ineffective knob must carry the REASON", p)
+		}
+	}
+
+	// Item 6 — the free-function resolver recheck. These two look Candidate to
+	// a FIELD grep but their resolvers are consumed by the admission clock.
+	live := map[string][]string{
+		"last_entry_offset_min": {
+			"store/strategy.go:LastEntryOffsetFor (resolver)",
+			"trader/auto_trader_clock.go:383 entryBlockedByLastEntryAt",
+			"trader/auto_trader_pause.go:154",
+		},
+		"eod_flat_offset_min": {
+			"store/strategy.go:EODFlatOffsetFor (resolver)",
+			"trader/auto_trader_clock.go:1091 eodSessionFlatAt",
+			"trader/auto_trader_pause.go:158",
+		},
+	}
+	for key, want := range live {
+		e, ok := LookupKnob(key)
+		if !ok {
+			t.Errorf("%s: registry does not know it", key)
+			continue
+		}
+		if e.Status != KnobLive {
+			t.Errorf("%s: status = %v, want KnobLive (its resolver has a production caller)", key, e.Status)
+		}
+		for _, w := range want {
+			found := false
+			for _, c := range e.Consumers {
+				if strings.Contains(c, w) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("%s: consumers %v missing %q", key, e.Consumers, w)
+			}
+		}
+	}
+
+	// The three that have no production reader stay Candidate — the recheck
+	// verified, it did not find a reader to promote.
+	for _, key := range []string{"context_limit", "fixed_overhead", "longer_count"} {
+		e, ok := LookupKnob(key)
+		if !ok {
+			t.Errorf("%s: registry does not know it", key)
+			continue
+		}
+		if e.Status != KnobCandidate {
+			t.Errorf("%s: status = %v, want KnobCandidate (no production reader found by the recheck)", key, e.Status)
+		}
+	}
+}

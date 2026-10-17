@@ -206,7 +206,7 @@ func TestMentorConfluenceUpgradePersistsExitModeC(t *testing.T) {
 	}
 	at.mentorRegisterLivePos("sig-open", &mentorLivePos{
 		Pos:  mentorPosition{Side: "long", Mode: "B"},
-		Legs: [2]mentorLeg{{SignalID: "sig-open", Qty: 1}},
+		Legs: [3]mentorLeg{{SignalID: "sig-open", Qty: 1}},
 	})
 
 	at.mentorConfluenceUpgrade(mentor.Intent{Action: mentor.ConfluenceUpgrade, Side: mentor.SideLong,
