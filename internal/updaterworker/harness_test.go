@@ -342,6 +342,12 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 		if err := os.MkdirAll(wsl, 0o755); err != nil {
 			return nil, err
 		}
+		if hasWinFlag(args, "-Custom") {
+			// Release #35: the no-F5 Custom.dll rebuild — write a clean
+			// Custom.dll (no AddOn type) and report the type-list accept.
+			writeFile(b.t, filepath.Join(wsl, "NinjaTrader.Custom.dll"), "fake rebuilt Custom.dll: no AddOn type\n")
+			return []byte("VL_CUSTOM_TYPES_OK\nVL_CUSTOM_DLL=" + out + "\\NinjaTrader.Custom.dll\nVL_CUSTOM_SHA256=fake\n"), nil
+		}
 		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), "fake AddOn DLL: type "+addonTypeName+"\n")
 		return []byte("VL_ADDON_DLL=" + out + "\nVL_ADDON_SHA256=fake\n"), nil
 	}
@@ -422,6 +428,16 @@ func winFlag(args []string, flag string) string {
 		}
 	}
 	return ""
+}
+
+// hasWinFlag reports whether args contains the bare switch <flag> (e.g. -Custom).
+func hasWinFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
 }
 
 // windowsToWSL undoes addonbuild.wslToWindows for the UNC form the build's -o
