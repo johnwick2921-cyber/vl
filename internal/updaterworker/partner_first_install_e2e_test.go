@@ -136,15 +136,17 @@ func TestPartnerFirstInstallNT8OpenNotFlatCatchupWaits(t *testing.T) {
 func TestPartnerFirstInstallCustomRebuildFailureAsksF5(t *testing.T) {
 	r := newRig(t, withPartnerFirstInstall())
 	nt8Closed(r.box)
+	starts := startCount(r)
 	// Make the no-F5 Custom rebuild FAIL: the ps1 reports a public type-list
 	// diff (indicators/strategies/Apex would be disturbed — never accepted).
+	// Wrap on top of startCount's wrapper so both the failure and the count apply.
+	prev := r.w.runWin
 	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		if strings.Contains(name, "powershell") && hasWinFlag(args, "-Custom") {
 			return []byte("VL_CUSTOM_TYPES_DIFF\n"), nil
 		}
-		return r.box.fakeRunWin(ctx, name, args...)
+		return prev(ctx, name, args...)
 	}
-	starts := startCount(r)
 	started, j := r.runCatchup(t)
 	r.noViolations(t)
 	if !started {
@@ -167,5 +169,45 @@ func TestPartnerFirstInstallCustomRebuildFailureAsksF5(t *testing.T) {
 	}
 	if r.callCount("activate") != 0 {
 		t.Fatalf("activate ran %d times under a failed rebuild", r.callCount("activate"))
+	}
+}
+
+// (e) NT8 starts mid-catch-up (the owner opens it after the status read) → the
+// guard NEVER swaps Custom.dll under a running NT8: it defers to the restart
+// path, which stops NT8 first and migrates while it is closed.
+func TestPartnerFirstInstallNT8StartsMidCatchupNoSwapUnderRunningNT8(t *testing.T) {
+	r := newRig(t, withPartnerFirstInstall())
+	nt8Closed(r.box)
+	// NT8 comes up (AddOn reconnected, still the OLD build) after the catch-up
+	// read its NT8-closed status but BEFORE the place runs.
+	r.hookAt("addon_placed/started", func() {
+		r.set(func() {
+			r.nt8Running = true
+			r.addonConnected = true
+		})
+	})
+	starts := startCount(r)
+	started, j := r.runCatchup(t)
+	r.noViolations(t)
+	if !started {
+		t.Fatal("the partner's stale install must start a catch-up")
+	}
+	if j.State != updaterjob.StateComplete || j.Phase != updaterjob.PhaseDone {
+		t.Fatalf("catch-up ended %s/%s (error %q), want complete via the restart path", j.State, j.Phase, j.Error)
+	}
+	if *starts != 1 {
+		t.Fatalf("NT8 restarts = %d, want exactly 1 — the mid-catch-up start must be handled by stop→migrate→start, never an inline swap", *starts)
+	}
+	if j.Addon == nil || !j.Addon.Restarted {
+		t.Fatalf("the catch-up must have restarted NT8 (deferred migration), addon=%+v", j.Addon)
+	}
+	if strings.Contains(customDLLText(t, r), addonTypeName) {
+		t.Fatal("Custom.dll must be rebuilt WITHOUT the AddOn type")
+	}
+	if srcs := addonSourcesInAddOns(r); len(srcs) != 0 {
+		t.Fatalf("VL*.cs still in AddOns: %v — the migration did not run", srcs)
+	}
+	if r.box.addonBuild != boxNewBuild {
+		t.Fatalf("after restart the ack build = %q, want the install's %q", r.box.addonBuild, boxNewBuild)
 	}
 }

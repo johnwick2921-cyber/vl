@@ -360,10 +360,13 @@ func (w *Worker) advance(ctx context.Context, j updaterjob.Job) (parked bool, er
 	case updaterjob.StateAddonPlaced:
 		// Restart NT8 only when it was running at press time; the nt8_absent
 		// drain means it was closed — the DLL is placed, the job proceeds.
-		// Catch-up: restart only when NT8 was OPEN at the catch-up's creation.
+		// Catch-up: restart only when NT8 was OPEN at the catch-up's creation,
+		// OR when the no-F5 migration was DEFERRED because NT8 started
+		// mid-catch-up (the restart stops NT8 first, then migrates while it
+		// is closed). A closed catch-up that migrated inline skips the restart.
 		next = updaterjob.StateAddonReconnected
 		if j.Catchup {
-			if j.CatchupNT8Open {
+			if j.CatchupNT8Open || (j.Addon != nil && j.Addon.MigrationPending) {
 				next = updaterjob.StateNT8Restarted
 			}
 		} else if j.DrainPath != drainPathNT8Absent {

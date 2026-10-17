@@ -86,6 +86,13 @@ func (w *Worker) maybeStartCatchup(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	j.CatchupNT8Open = nt8Open
+	if !nt8Open {
+		// Release #35: a catch-up that saw NT8 closed must carry the same
+		// NT8-closed state an install does, so stepAddonPlace runs the no-F5
+		// migration (migrate + RebuildCustom + PlaceCustom) INLINE while NT8
+		// is closed instead of deferring it to a restart that will never run.
+		j.NT8 = &updaterjob.NT8Decision{Decision: updaterjob.NT8Updated, Absent: true}
+	}
 	if err := updaterjob.Write(w.dataDir(), j); err != nil {
 		return false, fmt.Errorf("write catch-up job: %w", err)
 	}
