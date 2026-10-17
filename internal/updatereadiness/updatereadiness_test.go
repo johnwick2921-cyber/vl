@@ -40,7 +40,7 @@ func okRunner() Runner {
 		if name == "powershell.exe" {
 			for _, a := range args {
 				if a == "-Probe" {
-					return []byte("VL_ADDON_PROBE=ok\n"), nil
+					return []byte("VL_ADDON_PROBE=ok\nVL_SELFTEST_OK\n"), nil
 				}
 			}
 		}

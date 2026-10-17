@@ -457,10 +457,12 @@ func BuildPs1() string { return buildPs1Script }
 func BuilderCs() string { return builderCs }
 
 // CompilerProbe proves the no-SDK ps1 path works on this box: it writes the
-// embedded build-addon.ps1 to a worker-made temp dir and runs its -Probe mode
-// (loads Roslyn from NT8's bin, resolves its dependencies, compiles a trivial
-// source against the full reference set). ok is true only when the probe prints
-// VL_ADDON_PROBE=ok. Nothing touches the real NT8 folder or starts NT8.
+// embedded build-addon.ps1 (and its VLCustomBuilder.cs sidekick) to a
+// worker-made temp dir and runs its -Probe mode, which loads Roslyn from NT8's
+// bin, resolves its dependencies, compiles a trivial source against the full
+// reference set, AND runs the builder's --selftest (FOLD 5 F1). ok is true only
+// when the probe prints both VL_ADDON_PROBE=ok and VL_SELFTEST_OK. Nothing
+// touches the real NT8 folder or starts NT8.
 func CompilerProbe(ctx context.Context, c Config) (ok bool, detail string) {
 	if c.Run == nil {
 		return false, "no command runner"
@@ -477,6 +479,9 @@ func CompilerProbe(ctx context.Context, c Config) (ok bool, detail string) {
 	if err := os.WriteFile(ps1Path, []byte(BuildPs1()), 0o644); err != nil {
 		return false, err.Error()
 	}
+	if err := os.WriteFile(filepath.Join(dir, "VLCustomBuilder.cs"), []byte(BuilderCs()), 0o644); err != nil {
+		return false, err.Error()
+	}
 
 	args := []string{
 		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
@@ -490,10 +495,14 @@ func CompilerProbe(ctx context.Context, c Config) (ok bool, detail string) {
 	if runErr != nil {
 		return false, "probe failed: " + runErr.Error() + "; " + tail
 	}
-	if strings.Contains(string(out), "VL_ADDON_PROBE=ok") {
-		return true, strings.TrimSpace(tail)
+	s := string(out)
+	switch {
+	case !strings.Contains(s, "VL_ADDON_PROBE=ok"):
+		return false, "probe did not report ok; " + tail
+	case !strings.Contains(s, "VL_SELFTEST_OK"):
+		return false, "probe selftest did not report ok; " + tail
 	}
-	return false, "probe did not report ok; " + tail
+	return true, strings.TrimSpace(tail)
 }
 
 // clipBuildOut trims subprocess output to a bounded tail for error messages.

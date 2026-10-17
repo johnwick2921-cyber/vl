@@ -157,6 +157,10 @@ if ($Custom) {
     $oldDll = Join-Path $CustomDir 'NinjaTrader.Custom.dll'
     if (-not (Test-Path $oldDll)) { Fail "old Custom.dll not found at " + $oldDll }
     $exe = Build-VLCustomBuilder $NT8Bin
+    # FOLD 5 F1: self-test the acceptance comparers BEFORE every real rebuild.
+    # A broken comparer must refuse the rebuild (-> F5), never accept a bad DLL.
+    & $exe --selftest --nt8Bin $NT8Bin
+    if ($LASTEXITCODE -ne 0) { Fail 'VLCustomBuilder --selftest did not pass' }
     & $exe --csproj $csproj --customDir $CustomDir --nt8Bin $NT8Bin --outDir $Out --oldDll $oldDll
     exit $LASTEXITCODE
 }
@@ -293,7 +297,11 @@ if (-not $result.Success) {
 
 if ($Probe) {
     Write-Output 'VL_ADDON_PROBE=ok'
-    exit 0
+    # FOLD 5 F1: the readiness probe also proves the acceptance comparers, so a
+    # broken comparer is caught by /api/updates/readiness, not just at install.
+    $exe = Build-VLCustomBuilder $NT8Bin
+    & $exe --selftest --nt8Bin $NT8Bin
+    exit $LASTEXITCODE
 }
 
 # -- sha256 + machine-readable result ---------------------------------------

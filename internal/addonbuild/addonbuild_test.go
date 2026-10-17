@@ -401,7 +401,7 @@ func TestCompilerProbe(t *testing.T) {
 			PowerShellExe: "powershell.exe",
 			Run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 				gotArgs = append([]string{name}, args...)
-				return []byte("VL_ADDON_PROBE=ok\n"), nil
+				return []byte("VL_ADDON_PROBE=ok\nVL_SELFTEST_OK\n"), nil
 			},
 		}
 		ok, detail := CompilerProbe(context.Background(), cfg)

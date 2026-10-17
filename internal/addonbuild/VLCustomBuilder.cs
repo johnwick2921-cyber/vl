@@ -41,6 +41,7 @@ internal static class VLCustomBuilder
         public string Nt8Bin;
         public string OutDir;
         public string OldDll;
+        public bool SelfTest;
     }
 
     public static int Main(string[] args)
@@ -66,6 +67,7 @@ internal static class VLCustomBuilder
                 }
                 return null;
             };
+            if (o.SelfTest) return SelfTest(o.Nt8Bin);
             return Run(o);
         }
         catch (Exception ex)
@@ -87,8 +89,15 @@ internal static class VLCustomBuilder
                 case "--nt8Bin": o.Nt8Bin = args[++i]; break;
                 case "--outDir": o.OutDir = args[++i]; break;
                 case "--oldDll": o.OldDll = args[++i]; break;
+                case "--selftest": o.SelfTest = true; break;
                 default: throw new ArgumentException("unknown arg: " + args[i]);
             }
+        }
+        if (o.SelfTest)
+        {
+            if (string.IsNullOrEmpty(o.Nt8Bin))
+                throw new ArgumentException("--selftest requires --nt8Bin");
+            return o;
         }
         if (string.IsNullOrEmpty(o.Csproj) || string.IsNullOrEmpty(o.CustomDir) ||
             string.IsNullOrEmpty(o.Nt8Bin) || string.IsNullOrEmpty(o.OutDir))
@@ -274,30 +283,50 @@ internal static class VLCustomBuilder
     }
 
     // -- acceptance ---------------------------------------------------------
+    // Each Check* returns true on pass and false on a mismatch, carrying the
+    // diff detail in `detail` WITHOUT printing - so the -Custom run can print
+    // the markers once, and --selftest can drive them silently.
 
     private static bool Accept(string oldDll, string newDll, ProjectInfo proj)
     {
-        // (b) manifest resource names == old
+        if (!CheckResources(oldDll, newDll, out var d)) { Console.WriteLine("VL_CUSTOM_TYPES_DIFF"); Console.WriteLine(d); return false; }
+        if (!CheckReferences(oldDll, newDll, out d)) { Console.WriteLine("VL_CUSTOM_TYPES_DIFF"); Console.WriteLine(d); return false; }
+        if (!CheckTypes(oldDll, newDll, out d)) { Console.WriteLine("VL_CUSTOM_TYPES_DIFF"); Console.WriteLine(d); return false; }
+        if (!CheckIdentity(oldDll, newDll, out d)) { Console.WriteLine("VL_CUSTOM_TYPES_DIFF"); Console.WriteLine(d); return false; }
+        return true;
+    }
+
+    // (b) manifest resource names == old
+    private static bool CheckResources(string oldDll, string newDll, out string detail)
+    {
         var oldRes = ReadManifestResourceNames(oldDll).OrderBy(x => x, StringComparer.Ordinal).ToArray();
         var newRes = ReadManifestResourceNames(newDll).OrderBy(x => x, StringComparer.Ordinal).ToArray();
         if (!oldRes.SequenceEqual(newRes, StringComparer.Ordinal))
         {
-            Console.WriteLine("VL_CUSTOM_TYPES_DIFF");
-            Console.WriteLine("RESOURCE_DIFF old=[" + string.Join(",", oldRes) + "] new=[" + string.Join(",", newRes) + "]");
+            detail = "RESOURCE_DIFF old=[" + string.Join(",", oldRes) + "] new=[" + string.Join(",", newRes) + "]";
             return false;
         }
+        detail = null;
+        return true;
+    }
 
-        // (c) referenced-assembly names == old
+    // (c) referenced-assembly names == old
+    private static bool CheckReferences(string oldDll, string newDll, out string detail)
+    {
         var oldRefs = ReadReferencedAssemblyNames(oldDll).OrderBy(x => x, StringComparer.Ordinal).ToArray();
         var newRefs = ReadReferencedAssemblyNames(newDll).OrderBy(x => x, StringComparer.Ordinal).ToArray();
         if (!oldRefs.SequenceEqual(newRefs, StringComparer.Ordinal))
         {
-            Console.WriteLine("VL_CUSTOM_TYPES_DIFF");
-            Console.WriteLine("REFERENCE_DIFF old=[" + string.Join(",", oldRefs) + "] new=[" + string.Join(",", newRefs) + "]");
+            detail = "REFERENCE_DIFF old=[" + string.Join(",", oldRefs) + "] new=[" + string.Join(",", newRefs) + "]";
             return false;
         }
+        detail = null;
+        return true;
+    }
 
-        // (d) full public type signatures == old minus the VL AddOn types
+    // (d) full public type signatures == old minus the VL AddOn types
+    private static bool CheckTypes(string oldDll, string newDll, out string detail)
+    {
         var vlPrefix = "NinjaTrader.NinjaScript.AddOns.VL";
         var oldTypes = ReadPublicTypeSignatures(oldDll)
             .Where(s => !s.StartsWith(vlPrefix, StringComparison.Ordinal))
@@ -308,18 +337,24 @@ internal static class VLCustomBuilder
             .ToArray();
         if (!oldTypes.SequenceEqual(newTypes, StringComparer.Ordinal))
         {
-            Console.WriteLine("VL_CUSTOM_TYPES_DIFF");
             var onlyOld = oldTypes.Except(newTypes, StringComparer.Ordinal).Take(20).ToArray();
             var onlyNew = newTypes.Except(oldTypes, StringComparer.Ordinal).Take(20).ToArray();
-            foreach (var t in onlyOld) Console.WriteLine("TYPE => " + t);
-            foreach (var t in onlyNew) Console.WriteLine("TYPE <= " + t);
-            Console.WriteLine("TYPE_DIFF old_only=" + oldTypes.Except(newTypes, StringComparer.Ordinal).Count() +
-                             " new_only=" + newTypes.Except(oldTypes, StringComparer.Ordinal).Count());
+            var sb = new StringBuilder();
+            foreach (var t in onlyOld) sb.AppendLine("TYPE => " + t);
+            foreach (var t in onlyNew) sb.AppendLine("TYPE <= " + t);
+            sb.Append("TYPE_DIFF old_only=" + oldTypes.Except(newTypes, StringComparer.Ordinal).Count() +
+                      " new_only=" + newTypes.Except(oldTypes, StringComparer.Ordinal).Count());
+            detail = sb.ToString();
             return false;
         }
+        detail = null;
+        return true;
+    }
 
-        // (e) AssemblyName/Version == old (FOLD 4: also culture neutral and
-        // unsigned - the full main identity).
+    // (e) AssemblyName/Version == old (FOLD 4: also culture neutral and
+    // unsigned - the full main identity).
+    private static bool CheckIdentity(string oldDll, string newDll, out string detail)
+    {
         var oldName = AssemblyName.GetAssemblyName(oldDll);
         var newName = AssemblyName.GetAssemblyName(newDll);
         if (!string.Equals(oldName.Name, newName.Name, StringComparison.Ordinal) ||
@@ -327,14 +362,13 @@ internal static class VLCustomBuilder
             !string.Equals(oldName.CultureName ?? "", newName.CultureName ?? "", StringComparison.Ordinal) ||
             !PublicKeyTokenEqual(oldName, newName))
         {
-            Console.WriteLine("VL_CUSTOM_TYPES_DIFF");
-            Console.WriteLine("ASSEMBLY_DIFF old=" + oldName.Name + "/" + oldName.Version +
-                              "/" + (oldName.CultureName ?? "") + "/" + PublicKeyTokenHex(oldName) +
-                              " new=" + newName.Name + "/" + newName.Version +
-                              "/" + (newName.CultureName ?? "") + "/" + PublicKeyTokenHex(newName));
+            detail = "ASSEMBLY_DIFF old=" + oldName.Name + "/" + oldName.Version +
+                     "/" + (oldName.CultureName ?? "") + "/" + PublicKeyTokenHex(oldName) +
+                     " new=" + newName.Name + "/" + newName.Version +
+                     "/" + (newName.CultureName ?? "") + "/" + PublicKeyTokenHex(newName);
             return false;
         }
-
+        detail = null;
         return true;
     }
 
@@ -356,6 +390,149 @@ internal static class VLCustomBuilder
         foreach (var b in t) sb.Append(b.ToString("x2"));
         return sb.ToString();
     }
+
+    // -- self-test (FOLD 5 F1) ----------------------------------------------
+    // Compiles tiny in-memory fixture assemblies with Roslyn and drives each
+    // comparer with deliberately-different pairs. Prints VL_SELFTEST_OK only
+    // when every rejecting pair is rejected and one identical pair is accepted.
+
+    private static int SelfTest(string nt8Bin)
+    {
+        var failures = new List<string>();
+        var dir = Path.Combine(Path.GetTempPath(), "vl-builder-selftest-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+
+        var refsBase = FixtureRefs(false);
+        var refsXml = FixtureRefs(true);
+
+        // (a) a compile error must be detected
+        var badComp = CompileInMemory("Bad", "public class Bad { this is not valid C# }", refsBase);
+        if (!HasCompileErrors(badComp))
+            failures.Add("(a) a compile error was not detected");
+
+        // (b) a missing manifest resource must be rejected
+        var bOld = BuildFixture(dir, "b-old.dll", FixtureSource("1.0.0.0"), refsBase,
+            new List<ResourceDescription> { FixtureResource("Fixture.resources") }, failures, "(b)");
+        var bNew = BuildFixture(dir, "b-new.dll", FixtureSource("1.0.0.0"), refsBase, null, failures, "(b)");
+        if (bOld != null && bNew != null && CheckResources(bOld, bNew, out _))
+            failures.Add("(b) a missing manifest resource was accepted");
+
+        // (c) a different reference must be rejected
+        var cOld = BuildFixture(dir, "c-old.dll", FixtureSource("1.0.0.0"), refsBase, null, failures, "(c)");
+        var cNew = BuildFixture(dir, "c-new.dll", XmlSource("1.0.0.0"), refsXml, null, failures, "(c)");
+        if (cOld != null && cNew != null && CheckReferences(cOld, cNew, out _))
+            failures.Add("(c) a different reference was accepted");
+
+        // (d) an extra public type must be rejected
+        var dOld = BuildFixture(dir, "d-old.dll", TwoClassSource("1.0.0.0"), refsBase, null, failures, "(d)");
+        var dNew = BuildFixture(dir, "d-new.dll", FixtureSource("1.0.0.0"), refsBase, null, failures, "(d)");
+        if (dOld != null && dNew != null && CheckTypes(dOld, dNew, out _))
+            failures.Add("(d) an extra public type was accepted");
+
+        // (e) a different version must be rejected
+        var eOld = BuildFixture(dir, "e-old.dll", FixtureSource("1.0.0.0"), refsBase, null, failures, "(e)");
+        var eNew = BuildFixture(dir, "e-new.dll", FixtureSource("2.0.0.0"), refsBase, null, failures, "(e)");
+        if (eOld != null && eNew != null && CheckIdentity(eOld, eNew, out _))
+            failures.Add("(e) a different version was accepted");
+
+        // one identical pair must be accepted on every comparer
+        var okOld = BuildFixture(dir, "ok-old.dll", FixtureSource("1.0.0.0"), refsBase, null, failures, "(ok)");
+        var okNew = BuildFixture(dir, "ok-new.dll", FixtureSource("1.0.0.0"), refsBase, null, failures, "(ok)");
+        if (okOld != null && okNew != null)
+        {
+            if (!CheckResources(okOld, okNew, out _)) failures.Add("(ok) identical pair rejected on resources");
+            if (!CheckReferences(okOld, okNew, out _)) failures.Add("(ok) identical pair rejected on references");
+            if (!CheckTypes(okOld, okNew, out _)) failures.Add("(ok) identical pair rejected on types");
+            if (!CheckIdentity(okOld, okNew, out _)) failures.Add("(ok) identical pair rejected on identity");
+        }
+
+        if (failures.Count > 0)
+        {
+            Console.WriteLine("VL_SELFTEST_FAIL");
+            foreach (var f in failures) Console.WriteLine("SELFTEST " + f);
+            return 1;
+        }
+        Console.WriteLine("VL_SELFTEST_OK");
+        return 0;
+    }
+
+    private static bool HasCompileErrors(Compilation c) =>
+        c.GetDiagnostics().Any(d => d.Severity == DiagnosticSeverity.Error);
+
+    private static CSharpCompilation CompileInMemory(string asmName, string source, List<MetadataReference> refs)
+    {
+        var tree = CSharpSyntaxTree.ParseText(source);
+        return CSharpCompilation.Create(asmName, new[] { tree }, refs,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private static byte[] CompileAssembly(string asmName, string source, List<MetadataReference> refs,
+        List<ResourceDescription> resources, out List<Diagnostic> errors)
+    {
+        var comp = CompileInMemory(asmName, source, refs);
+        errors = comp.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
+        if (errors.Count > 0) return null;
+        using (var ms = new MemoryStream())
+        {
+            var result = comp.Emit(ms, null, null, null, resources, null);
+            if (!result.Success)
+            {
+                errors = result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
+                return null;
+            }
+            return ms.ToArray();
+        }
+    }
+
+    private static string BuildFixture(string dir, string name, string source, List<MetadataReference> refs,
+        List<ResourceDescription> resources, List<string> failures, string label)
+    {
+        // The assembly NAME is fixed ("Fixture") so a pair compares as the same
+        // assembly; only the on-disk filename differs.
+        var bytes = CompileAssembly("Fixture", source, refs, resources, out var errors);
+        if (bytes == null)
+        {
+            failures.Add(label + ": fixture failed to compile: " + string.Join("; ", errors.Select(e => e.Id)));
+            return null;
+        }
+        var p = Path.Combine(dir, name);
+        File.WriteAllBytes(p, bytes);
+        return p;
+    }
+
+    private static List<MetadataReference> FixtureRefs(bool withXml)
+    {
+        var fw = FrameworkRefDir();
+        var refs = new List<MetadataReference>();
+        foreach (var n in new[] { "mscorlib.dll", "System.dll", "System.Core.dll" })
+            refs.Add(MetadataReference.CreateFromFile(Path.Combine(fw, n)));
+        if (withXml)
+            refs.Add(MetadataReference.CreateFromFile(Path.Combine(fw, "System.Xml.dll")));
+        return refs;
+    }
+
+    private static ResourceDescription FixtureResource(string name)
+    {
+        byte[] bytes;
+        using (var ms = new MemoryStream())
+        {
+            using (var w = new ResourceWriter(ms)) { w.AddResource("k", "v"); w.Generate(); }
+            bytes = ms.ToArray();
+        }
+        return new ResourceDescription(name, () => new MemoryStream(bytes), true);
+    }
+
+    private static string FixtureSource(string version) =>
+        "using System.Reflection;\n[assembly: AssemblyVersion(\"" + version + "\")]\n" +
+        "public class Fixture { public static int One() { return 1; } }\n";
+
+    private static string XmlSource(string version) =>
+        "using System.Reflection;\n[assembly: AssemblyVersion(\"" + version + "\")]\n" +
+        "public class Fixture { public System.Xml.XmlDocument Doc; }\n";
+
+    private static string TwoClassSource(string version) =>
+        "using System.Reflection;\n[assembly: AssemblyVersion(\"" + version + "\")]\n" +
+        "public class Fixture { }\npublic class Extra { }\n";
 
     // -- metadata readers ---------------------------------------------------
 
