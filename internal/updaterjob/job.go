@@ -183,6 +183,9 @@ type AddonState struct {
 	// DllPath is the built VL.AddOn.dll (WSL path) and Sha256 its hex digest.
 	DllPath string `json:"dll_path,omitempty"`
 	Sha256  string `json:"sha256,omitempty"`
+	// BuiltBy records which builder produced the DLL: "roslyn-ps1" (the no-SDK
+	// build-addon.ps1 via NT8's built-in Roslyn) or "dotnet" (the SDK fallback).
+	BuiltBy string `json:"built_by,omitempty"`
 	// BackupDir is where Place MOVED the previous DLL ("" when there was none).
 	BackupDir string `json:"backup_dir,omitempty"`
 	// Restarted records that nt8_restart actually restarted NT8 (so rollback

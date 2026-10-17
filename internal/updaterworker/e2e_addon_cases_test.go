@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"vl/internal/addonbuild"
 	"vl/internal/updaterjob"
 )
 
@@ -49,6 +50,10 @@ func TestE2EAddonChangedCompletesWithOneRestartNoPark(t *testing.T) {
 	if j.Addon.DllPath == "" || j.Addon.Sha256 == "" {
 		t.Fatalf("the AddOn must be built: %+v", j.Addon)
 	}
+	// GAP 2: the PRIMARY path is the no-SDK ps1 build, and the job records it.
+	if j.Addon.BuiltBy != addonbuild.BuiltByRoslynPs1 {
+		t.Fatalf("the AddOn must be built by the no-SDK ps1 path, got %q", j.Addon.BuiltBy)
+	}
 	if *starts != 1 {
 		t.Fatalf("NT8 restarted %d times, want exactly 1", *starts)
 	}
@@ -65,8 +70,13 @@ func TestE2EAddonChangedCompletesWithOneRestartNoPark(t *testing.T) {
 func TestE2EAddonBuildFailureRevertsCleanNothingPlaced(t *testing.T) {
 	r := newRig(t, withCSChanged())
 	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		// Fail BOTH builders: the primary no-SDK ps1 path AND the dotnet
+		// fallback — a build failure must refuse the update before any place.
 		if strings.Contains(name, "dotnet") {
 			return []byte("Program.cs(1,1): error CS1002: ; expected"), errors.New("dotnet build failed")
+		}
+		if strings.Contains(name, "powershell") && winFlag(args, "-Out") != "" {
+			return []byte("ERROR CS1002: ; expected"), errors.New("ps1 build failed")
 		}
 		return r.box.fakeRunWin(ctx, name, args...)
 	}
