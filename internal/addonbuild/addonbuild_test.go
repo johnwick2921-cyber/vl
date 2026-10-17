@@ -380,6 +380,16 @@ func TestPs1ParityWithDeploy(t *testing.T) {
 	}
 }
 
+func TestBuilderCsParityWithDeploy(t *testing.T) {
+	deploy, err := os.ReadFile(filepath.Join("..", "..", "deploy", "addon", "VLCustomBuilder.cs"))
+	if err != nil {
+		t.Fatalf("read deploy builder: %v", err)
+	}
+	if string(deploy) != builderCs {
+		t.Fatalf("deploy/addon/VLCustomBuilder.cs drifted from embedded VLCustomBuilder.cs (parity law)")
+	}
+}
+
 func TestCompilerProbe(t *testing.T) {
 	root := t.TempDir()
 	docsDir := mkNT8(t, root, "alice", true)

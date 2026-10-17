@@ -24,6 +24,15 @@ var csprojTemplate string
 //go:embed build-addon.ps1
 var buildPs1Script string
 
+// builderCs is the C# program build-addon.ps1 compiles and runs in -Custom mode
+// to rebuild NinjaTrader.Custom.dll WITH its embedded resources (FOLD 3) - the
+// one thing PowerShell cannot do (Roslyn's Func(Stream) delegate StackOverflows
+// under PS 5.1). deploy/addon/VLCustomBuilder.cs is a byte-identical copy;
+// TestBuilderCsParityWithDeploy keeps the two from drifting.
+//
+//go:embed VLCustomBuilder.cs
+var builderCs string
+
 // wslToWindows converts a WSL path to the Windows form dotnet.exe /
 // powershell.exe sees. /mnt/c/... → C:\... ; anything else (e.g.
 // /home/<u>/...) → the UNC \\wsl.localhost\<distro>\... form (distro from

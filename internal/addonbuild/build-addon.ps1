@@ -11,19 +11,23 @@
 #   -Probe    compile a trivial source against the full reference set and print
 #             "VL_ADDON_PROBE=ok" - used by /api/updates/readiness to prove the
 #             no-SDK path actually works on this box.
-#   -Custom   compile every <CustomDir>\**\*.cs EXCEPT VL*.cs into
-#             <Out>\NinjaTrader.Custom.dll, then verify the new DLL's PUBLIC
-#             type list equals the old Custom.dll's minus the VL AddOn types.
-#             This replaces the one-time F5: with NT8 closed the worker rebuilds
-#             Custom.dll itself, ACCEPTING it only when compile errors = 0 AND
-#             the public types are unchanged apart from the VL types. It prints
-#             VL_CUSTOM_TYPES_OK (or VL_CUSTOM_TYPES_DIFF + the diff) and
-#             VL_CUSTOM_DLL / VL_CUSTOM_SHA256.
+#   -Custom   compile VLCustomBuilder.cs (the C# builder sitting next to this
+#             ps1) with NT8's Roslyn, then RUN it. The builder rebuilds
+#             NinjaTrader.Custom.dll from its own .csproj, embeds the neutral
+#             Resource.resx, and runs the full acceptance (resources / refs /
+#             public type signatures / AssemblyName+Version == old, minus the VL
+#             AddOn types). This replaces the one-time F5: with NT8 closed the
+#             worker rebuilds Custom.dll itself. The builder prints
+#             VL_CUSTOM_TYPES_OK (or VL_CUSTOM_TYPES_DIFF / VL_CUSTOM_ERRORS +
+#             the diff) and VL_CUSTOM_DLL / VL_CUSTOM_SHA256, and exits non-zero
+#             on any mismatch - so a failure falls back to F5, never a silent
+#             swap. (FOLD 3: the resource embed must run in compiled C#, because
+#             PowerShell 5.1 StackOverflows on Roslyn's Func(Stream) delegate.)
 #
 # Nothing here deletes or overwrites an existing install file: the output goes
 # only to <Out>, which the Go worker owns (a worker-made dir, NEVER the NT8
-# folder). The old Custom.dll is only READ here (for the type-list diff); the Go
-# side MOVEs it to a backup and MOVEs the new one in after acceptance.
+# folder). The old Custom.dll is only READ here (for the acceptance diff); the
+# Go side MOVEs it to a backup and MOVEs the new one in after acceptance.
 
 param(
     [string]$Src,       # Windows path to the ninjascript source dir (normal mode)
@@ -39,79 +43,6 @@ $ErrorActionPreference = 'Stop'
 function Fail([string]$msg) {
     Write-Output ("ERROR " + $msg)
     exit 1
-}
-
-# Get-PublicTypes lists the PUBLIC type definitions (namespace.name) of a .NET
-# assembly, read straight from metadata (no loading, no dependency resolution).
-function Get-PublicTypes([string]$dll) {
-    $fs = [System.IO.File]::OpenRead($dll)
-    try {
-        $pe = [System.Reflection.PortableExecutable.PEReader]::new($fs)
-        $md = [System.Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($pe)
-        $out = @()
-        $en = $md.TypeDefinitions.GetEnumerator()
-        while ($en.MoveNext()) {
-            $t = $md.GetTypeDefinition($en.Current)
-            $vis = $t.Attributes -band 0x7
-            if ($vis -eq 0x1 -or $vis -eq 0x2) {  # TypeAttributes.Public / NestedPublic
-                $ns = $md.GetString($t.Namespace)
-                $name = $md.GetString($t.Name)
-                if ($ns) { $out += ($ns + '.' + $name) } else { $out += $name }
-            }
-        }
-        return $out
-    } finally {
-        $fs.Close()
-    }
-}
-
-# Get-ManifestResourceNames lists the embedded manifest resource names of a DLL.
-function Get-ManifestResourceNames([string]$dll) {
-    $fs = [System.IO.File]::OpenRead($dll)
-    try {
-        $pe = [System.Reflection.PortableExecutable.PEReader]::new($fs)
-        $md = [System.Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($pe)
-        $out = @()
-        foreach ($h in $md.ManifestResources) {
-            $r = $md.GetManifestResource($h)
-            $out += $md.GetString($r.Name)
-        }
-        return $out
-    } finally {
-        $fs.Close()
-    }
-}
-
-# Get-ReferencedAssemblyNames lists the simple names of the assemblies a DLL
-# references (its AssemblyRef table).
-function Get-ReferencedAssemblyNames([string]$dll) {
-    $fs = [System.IO.File]::OpenRead($dll)
-    try {
-        $pe = [System.Reflection.PortableExecutable.PEReader]::new($fs)
-        $md = [System.Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($pe)
-        $out = @()
-        foreach ($h in $md.AssemblyReferences) {
-            $a = $md.GetAssemblyReference($h)
-            $out += $md.GetString($a.Name)
-        }
-        return $out
-    } finally {
-        $fs.Close()
-    }
-}
-
-# Get-CsprojCompileItems parses the <Compile Include="..."> items of
-# NinjaTrader.Custom.csproj, URL-decoding %40 -> @, returning relative paths.
-function Get-CsprojCompileItems([string]$csprojPath) {
-    $xml = [System.IO.File]::ReadAllText($csprojPath)
-    $rx = New-Object System.Text.RegularExpressions.Regex('<Compile Include="([^"]+)"', [System.Text.RegularExpressions.RegexOptions]::Singleline)
-    $out = @()
-    foreach ($m in $rx.Matches($xml)) {
-        $rel = $m.Groups[1].Value
-        $rel = $rel -replace '%40', '@'
-        $out += $rel
-    }
-    return $out
 }
 
 if (-not $NT8Bin) { $NT8Bin = 'C:\Program Files\NinjaTrader 8\bin' }
@@ -143,6 +74,91 @@ try {
     [void][System.Reflection.Assembly]::LoadFrom($codeAnalysisCSharp)
 } catch {
     Fail ("failed to load Roslyn from " + $NT8Bin + ": " + $_.Exception.Message)
+}
+
+# Build-VLCustomBuilder compiles deploy/addon/VLCustomBuilder.cs (sitting next to
+# this ps1) into a console exe with NT8's Roslyn, then returns the exe path. The
+# builder does the whole -Custom rebuild - compile from the csproj + embed the
+# neutral Resource.resx + all acceptance - because Roslyn's ResourceDescription
+# can only be used from COMPILED C#: PowerShell 5.1 StackOverflows on its
+# Func(Stream) delegate (verified). The builder exe resolves Roslyn at run time
+# from NT8's bin via its own AssemblyResolve.
+function Build-VLCustomBuilder([string]$NT8Bin) {
+    $src = Join-Path $PSScriptRoot 'VLCustomBuilder.cs'
+    if (-not (Test-Path $src)) { Fail 'VLCustomBuilder.cs not found next to build-addon.ps1' }
+
+    $fwRoot = 'C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework'
+    $fw = $null
+    if (Test-Path (Join-Path $fwRoot 'v4.8')) {
+        $fw = Join-Path $fwRoot 'v4.8'
+    } else {
+        $best = Get-ChildItem -Path $fwRoot -Directory -Filter 'v4.*' -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending | Select-Object -First 1
+        if ($best) { $fw = $best.FullName }
+    }
+    if (-not $fw) { $fw = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319' }
+
+    $bRefs = New-Object 'System.Collections.Generic.List[Microsoft.CodeAnalysis.MetadataReference]'
+    if (Test-Path $fw) {
+        Get-ChildItem -Path $fw -Filter '*.dll' -File | ForEach-Object {
+            # Skip native (non-managed) DLLs - the v4.8 folder also holds a few
+            # unmanaged shims (System.EnterpriseServices.*) Roslyn cannot use.
+            try { [void][System.Reflection.AssemblyName]::GetAssemblyName($_.FullName) } catch { return }
+            $bRefs.Add([Microsoft.CodeAnalysis.MetadataReference]::CreateFromFile($_.FullName))
+        }
+    }
+    # netstandard facade: Roslyn 5.0 is a netstandard2.0 assembly, so its public
+    # API (Func(Stream), Stream, Object) forwards through netstandard.
+    $ns = Join-Path $fw 'Facades\netstandard.dll'
+    if (-not (Test-Path $ns)) { $ns = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\netstandard.dll' }
+    if (Test-Path $ns) { $bRefs.Add([Microsoft.CodeAnalysis.MetadataReference]::CreateFromFile($ns)) }
+    # Roslyn + its metadata deps from NT8's bin.
+    foreach ($n in @('Microsoft.CodeAnalysis.dll','Microsoft.CodeAnalysis.CSharp.dll','System.Reflection.Metadata.dll','System.Collections.Immutable.dll','System.Runtime.CompilerServices.Unsafe.dll','System.Memory.dll','System.Buffers.dll')) {
+        $p = Join-Path $NT8Bin $n
+        if (Test-Path $p) { $bRefs.Add([Microsoft.CodeAnalysis.MetadataReference]::CreateFromFile($p)) }
+    }
+
+    $text = [System.IO.File]::ReadAllText($src)
+    $bTree = [Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText($text, $null, $src, $null)
+    $bTrees = New-Object 'System.Collections.Generic.List[Microsoft.CodeAnalysis.SyntaxTree]'
+    $bTrees.Add($bTree)
+    $bOpts = New-Object Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions([Microsoft.CodeAnalysis.OutputKind]::ConsoleApplication)
+    $bComp = [Microsoft.CodeAnalysis.CSharp.CSharpCompilation]::Create('VLCustomBuilder', $bTrees, $bRefs, $bOpts)
+    $bErrors = @($bComp.GetDiagnostics() | Where-Object { $_.Severity -eq [Microsoft.CodeAnalysis.DiagnosticSeverity]::Error })
+    if ($bErrors.Count -gt 0) {
+        foreach ($d in $bErrors) { Write-Output ("ERROR " + $d.Id + ": " + $d.GetMessage()) }
+        Fail 'VLCustomBuilder.cs failed to compile'
+    }
+
+    $tmpDir = Join-Path $env:LOCALAPPDATA ('Temp\vl-custom-builder\' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+    $exe = Join-Path $tmpDir 'VLCustomBuilder.exe'
+    $fs = [System.IO.File]::Open($exe, [System.IO.FileMode]::Create)
+    try {
+        $bResult = $bComp.Emit($fs)
+    } finally {
+        $fs.Close()
+    }
+    if (-not $bResult.Success) { Fail 'VLCustomBuilder emit failed' }
+    return $exe
+}
+
+# -Custom delegates the WHOLE Custom.dll rebuild to the C# builder (FOLD 3). The
+# builder prints the same markers the worker greps for (VL_CUSTOM_TYPES_OK /
+# VL_CUSTOM_TYPES_DIFF / VL_CUSTOM_ERRORS / VL_CUSTOM_DLL / VL_CUSTOM_SHA256) and
+# exits non-zero on any mismatch, so a builder compile/run failure falls back to
+# F5 - never a silent swap.
+if ($Custom) {
+    if (-not $CustomDir) { Fail "-CustomDir is required with -Custom" }
+    if (-not $Out) { Fail "-Out is required" }
+    if (-not (Test-Path $Out)) { New-Item -ItemType Directory -Path $Out -Force | Out-Null }
+    $csproj = Join-Path $CustomDir 'NinjaTrader.Custom.csproj'
+    if (-not (Test-Path $csproj)) { Fail "NinjaTrader.Custom.csproj not found in " + $CustomDir }
+    $oldDll = Join-Path $CustomDir 'NinjaTrader.Custom.dll'
+    if (-not (Test-Path $oldDll)) { Fail "old Custom.dll not found at " + $oldDll }
+    $exe = Build-VLCustomBuilder $NT8Bin
+    & $exe --csproj $csproj --customDir $CustomDir --nt8Bin $NT8Bin --outDir $Out --oldDll $oldDll
+    exit $LASTEXITCODE
 }
 
 # -- Reference set: framework reference assemblies + the csproj mirror ------
@@ -227,25 +243,6 @@ $trees = New-Object 'System.Collections.Generic.List[Microsoft.CodeAnalysis.Synt
 if ($Probe) {
     $trees.Add([Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText('public static class __VlAddonProbe { }'))
     $asmName = '__VlAddonProbe'
-} elseif ($Custom) {
-    if (-not $CustomDir) { Fail "-CustomDir is required with -Custom" }
-    if (-not (Test-Path $CustomDir)) { Fail "custom dir not found: " + $CustomDir }
-    $csproj = Join-Path $CustomDir 'NinjaTrader.Custom.csproj'
-    if (-not (Test-Path $csproj)) { Fail "NinjaTrader.Custom.csproj not found in " + $CustomDir }
-    # The compile set is the csproj's <Compile Include> items EXACTLY (URL-decoded
-    # %40 -> @), MINUS the release's AddOns/VL*.cs (FOLD 1). No glob: a stray
-    # .cs not listed in the csproj must not sneak in.
-    foreach ($rel in @(Get-CsprojCompileItems $csproj)) {
-        $dir = [System.IO.Path]::GetDirectoryName($rel)
-        $file = [System.IO.Path]::GetFileName($rel)
-        if ($dir -eq 'AddOns' -and $file.StartsWith('VL', [System.StringComparison]::OrdinalIgnoreCase)) { continue }
-        $full = [System.IO.Path]::Combine($CustomDir, $rel)
-        if (-not (Test-Path $full)) { continue }
-        $text = [System.IO.File]::ReadAllText($full)
-        $trees.Add([Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText($text, $null, $full, $null))
-    }
-    if ($trees.Count -eq 0) { Fail "the csproj yielded no .cs files" }
-    $asmName = 'NinjaTrader.Custom'
 } else {
     if (-not $Src) { Fail "-Src is required" }
     if (-not $Out) { Fail "-Out is required" }
@@ -274,18 +271,9 @@ if ($Probe) {
     if (-not (Test-Path $Out)) {
         New-Item -ItemType Directory -Path $Out -Force | Out-Null
     }
-    $outName = if ($Custom) { 'NinjaTrader.Custom.dll' } else { 'VL.AddOn.dll' }
-    $outFile = Join-Path $Out $outName
+    $outFile = Join-Path $Out 'VL.AddOn.dll'
     $fs = [System.IO.File]::Open($outFile, [System.IO.FileMode]::Create)
     try {
-        # FOLD 3: resource embedding is BLOCKED in PowerShell. Roslyn's
-        # ResourceDescription has a single public factory, FromStream, and it
-        # throws StackOverflowException under PowerShell 5.1 + Roslyn 5.0
-        # (verified: MemoryStream/FileStream, 2-arg/3-arg all crash the process).
-        # Emit therefore does NOT embed resources; the -Custom acceptance below
-        # REJECTS the DLL when the embedded-resource set differs from the old
-        # Custom.dll, so a rebuild without resources falls back to F5 instead of
-        # silently swapping in a deficient DLL.
         $result = $compilation.Emit($fs)
     } finally {
         $fs.Close()
@@ -294,7 +282,6 @@ if ($Probe) {
 
 $errors = @($result.Diagnostics | Where-Object { $_.Severity -eq [Microsoft.CodeAnalysis.DiagnosticSeverity]::Error })
 if ($errors.Count -gt 0) {
-    if ($Custom) { Write-Output ("VL_CUSTOM_ERRORS=" + $errors.Count) }
     foreach ($d in $errors) {
         Write-Output ("ERROR " + $d.Id + ": " + $d.GetMessage())
     }
@@ -309,48 +296,6 @@ if ($Probe) {
     exit 0
 }
 
-# -Custom: accept only if the public type list is unchanged minus the VL AddOn
-# types (indicators, strategies, Apex untouched).
-if ($Custom) {
-    $oldDll = Join-Path $CustomDir 'NinjaTrader.Custom.dll'
-    if (-not (Test-Path $oldDll)) { Fail "old Custom.dll not found at " + $oldDll }
-    $oldTypes = @(Get-PublicTypes $oldDll)
-    $newTypes = @(Get-PublicTypes $outFile)
-    # The release's AddOn sources all live in the AddOns namespace, so subtract
-    # exactly those public types (VLBarsSubscriptionManager, VLContractResolver,
-    # VLHistoryPullEntry, VLHistoryPullManager, VLInstrumentLookup,
-    # VLTraderTCPClient) and NOTHING else - a VL type elsewhere (e.g.
-    # NinjaTrader.NinjaScript.Strategies.VLTrader) is KEPT.
-    $vlPrefix = 'NinjaTrader.NinjaScript.AddOns.VL'
-    $expected = @($oldTypes | Where-Object { -not $_.StartsWith($vlPrefix) })
-    $diff = @(Compare-Object $expected $newTypes)
-    if ($diff) {
-        Write-Output 'VL_CUSTOM_TYPES_DIFF'
-        foreach ($d in $diff) {
-            Write-Output ("TYPE " + $d.SideIndicator + " " + $d.InputObject)
-        }
-        Fail "the rebuilt Custom.dll public type list differs from the old one minus the release's AddOn types"
-    }
-    # DS-102 review: the type list is necessary but not sufficient. The rebuilt
-    # DLL must also carry the SAME embedded resources and reference the SAME
-    # assemblies as the old one, or it is REJECTED (never a silent swap).
-    $oldRes = @(Get-ManifestResourceNames $oldDll)
-    $newRes = @(Get-ManifestResourceNames $outFile)
-    if (@(Compare-Object $oldRes $newRes).Count -gt 0) {
-        Write-Output 'VL_CUSTOM_TYPES_DIFF'
-        Write-Output ("RESOURCE_DIFF old=[" + ($oldRes -join ',') + "] new=[" + ($newRes -join ',') + "]")
-        Fail "the rebuilt Custom.dll embeds different resources than the old one"
-    }
-    $oldRefs = @(Get-ReferencedAssemblyNames $oldDll)
-    $newRefs = @(Get-ReferencedAssemblyNames $outFile)
-    if (@(Compare-Object $oldRefs $newRefs).Count -gt 0) {
-        Write-Output 'VL_CUSTOM_TYPES_DIFF'
-        Write-Output ("REFERENCE_DIFF old=[" + ($oldRefs -join ',') + "] new=[" + ($newRefs -join ',') + "]")
-        Fail "the rebuilt Custom.dll references different assemblies than the old one"
-    }
-    Write-Output 'VL_CUSTOM_TYPES_OK'
-}
-
 # -- sha256 + machine-readable result ---------------------------------------
 $sha = [System.Security.Cryptography.SHA256]::Create()
 try {
@@ -361,13 +306,8 @@ try {
     $sha.Dispose()
 }
 
-if ($Custom) {
-    Write-Output ("VL_CUSTOM_DLL=" + $outFile)
-    Write-Output ("VL_CUSTOM_SHA256=" + $hex)
-} else {
-    Write-Output ("VL_ADDON_DLL=" + $outFile)
-    Write-Output ("VL_ADDON_SHA256=" + $hex)
-}
+Write-Output ("VL_ADDON_DLL=" + $outFile)
+Write-Output ("VL_ADDON_SHA256=" + $hex)
 exit 0
 
 

@@ -275,6 +275,11 @@ func RebuildCustom(ctx context.Context, c Config) (Result, error) {
 	if err := os.WriteFile(ps1Path, []byte(BuildPs1()), 0o644); err != nil {
 		return Result{}, fmt.Errorf("addonbuild: write ps1: %w", err)
 	}
+	// The -Custom mode compiles VLCustomBuilder.cs (from $PSScriptRoot) into a
+	// temp exe; it must sit next to the ps1.
+	if err := os.WriteFile(filepath.Join(workDir, "VLCustomBuilder.cs"), []byte(BuilderCs()), 0o644); err != nil {
+		return Result{}, fmt.Errorf("addonbuild: write VLCustomBuilder.cs: %w", err)
+	}
 	outDir := filepath.Join(workDir, "custom-out")
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return Result{}, fmt.Errorf("addonbuild: mkdir custom-out: %w", err)
@@ -361,6 +366,12 @@ func PlaceCustom(c Config, dll, sha, jobID string) (backupDir string, err error)
 // truth for the no-SDK build (deploy/addon/build-addon.ps1 is the byte-identical
 // deploy copy; TestPs1ParityWithDeploy keeps them from drifting).
 func BuildPs1() string { return buildPs1Script }
+
+// BuilderCs returns the embedded VLCustomBuilder.cs source — the C# program
+// build-addon.ps1 compiles and runs in -Custom mode to rebuild Custom.dll WITH
+// its embedded resources (deploy/addon/VLCustomBuilder.cs is the byte-identical
+// deploy copy; TestBuilderCsParityWithDeploy keeps them from drifting).
+func BuilderCs() string { return builderCs }
 
 // CompilerProbe proves the no-SDK ps1 path works on this box: it writes the
 // embedded build-addon.ps1 to a worker-made temp dir and runs its -Probe mode
