@@ -90,10 +90,10 @@ func TestDrainNt8AbsentLinkDownBelowWindowRefuses(t *testing.T) {
 	}
 	j := r.job()
 	// the absent verdict is not eligible → the normal path applies → the ack
-	// blocker names the real reason and the drain ends in recovery (the hold
-	// is kept, nothing installed)
-	if j.State != updaterjob.StateRecoveryNeeded {
-		t.Fatalf("state=%s, want recovery_needed", j.State)
+	// blocker names the real reason and the drain ends reverted_clean (self-
+	// recovery: the hold is released, the lock is released, nothing installed)
+	if j.State != updaterjob.StateRevertedClean {
+		t.Fatalf("state=%s, want reverted_clean", j.State)
 	}
 	if !strings.Contains(j.Error, "addon_ack") {
 		t.Fatalf("error %q must name the missing ack", j.Error)
@@ -155,7 +155,7 @@ func TestDrainNt8AbsentNotEligibleNeverPassesEvenIfReady(t *testing.T) {
 		t.Fatal("drain passed although the gate says the absent path is NOT eligible")
 	}
 	j := r.job()
-	if j.State != updaterjob.StateRecoveryNeeded {
+	if j.State != updaterjob.StateRevertedClean {
 		t.Fatalf("state=%s — the drain must fail on the normal path", j.State)
 	}
 	// the normal path's own blocker (no AddOn ack) is the real reason

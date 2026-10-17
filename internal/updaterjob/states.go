@@ -24,21 +24,21 @@ const (
 	StateBackupDone      State = "backup_done"
 	StateNT8Skipped      State = "nt8_skipped"
 	StateNT8Updated      State = "nt8_updated"
-	// W-ADDON-ONE-CLICK states (unreached until backup_done is rewired to
-	// addon_built; the rows land with the step implementations, next increment).
+	// W-ADDON-ONE-CLICK states (DS-104): a changed AddOn builds → places →
+	// restarts NT8 → waits for the reconnect, all before the point of no return.
 	StateAddonBuilt       State = "addon_built"
 	StateAddonPlaced      State = "addon_placed"
 	StateNT8Restarted     State = "nt8_restarted"
 	StateAddonReconnected State = "addon_reconnected"
+	StateActivated        State = "activated"
+	StateBooted           State = "booted"
+	StateBootVerified     State = "boot_verified"
+	StateWorkerSwapped    State = "worker_swapped"
+	StateComplete         State = "complete"
+	StateRollingBack      State = "rolling_back"
+	StateRolledBack       State = "rolled_back"
 	// SELF-RECOVERY (DS-102): a refusal/timeout BEFORE activation ends here.
 	StateRevertedClean  State = "reverted_clean"
-	StateActivated      State = "activated"
-	StateBooted         State = "booted"
-	StateBootVerified   State = "boot_verified"
-	StateWorkerSwapped  State = "worker_swapped"
-	StateComplete       State = "complete"
-	StateRollingBack    State = "rolling_back"
-	StateRolledBack     State = "rolled_back"
 	StateRecoveryNeeded State = "recovery_needed"
 	StateCancelled      State = "cancelled"
 	StateRefused        State = "refused"
@@ -61,16 +61,16 @@ const (
 type Effect string
 
 const (
-	EffectNone      Effect = "none"      // the state is its own effect (the file) or terminal
-	EffectDownload  Effect = "download"  // locate the verified release + re-hash every artifact
-	EffectVerify    Effect = "verify"    // re-verify the signature + resolve the release dir
-	EffectPreflight Effect = "preflight" // stage + host/app/flat/lock checks, before any hold
-	EffectHold      Effect = "hold"      // the ONLY hold write (internal/updaterworker/hold.go)
-	EffectDrain     Effect = "drain"     // READ the app's view until held+drained+acked+flat
-	EffectGate      Effect = "gate"      // ready:true on two reads with distinct ack.received
-	EffectBackup    Effect = "backup"    // DB backup + snapshot of the install halves
-	EffectNT8       Effect = "nt8"       // record the AddOn decision (a read, C12)
-	// W-ADDON-ONE-CLICK effects (owned by DS-104, wired in the next increment).
+	EffectNone        Effect = "none"         // the state is its own effect (the file) or terminal
+	EffectDownload    Effect = "download"     // locate the verified release + re-hash every artifact
+	EffectVerify      Effect = "verify"       // re-verify the signature + resolve the release dir
+	EffectPreflight   Effect = "preflight"    // stage + host/app/flat/lock checks, before any hold
+	EffectHold        Effect = "hold"         // the ONLY hold write (internal/updaterworker/hold.go)
+	EffectDrain       Effect = "drain"        // READ the app's view until held+drained+acked+flat
+	EffectGate        Effect = "gate"         // ready:true on two reads with distinct ack.received
+	EffectBackup      Effect = "backup"       // DB backup + snapshot of the install halves
+	EffectNT8         Effect = "nt8"          // record the AddOn decision (a read, C12)
+	// W-ADDON-ONE-CLICK effects (DS-104).
 	EffectAddonBuild     Effect = "addon_build"     // compile the release's ninjascript/*.cs into VL.AddOn.dll
 	EffectAddonPlace     Effect = "addon_place"     // MOVE the old DLL to backups, copy the new one in, verify sha
 	EffectNT8Restart     Effect = "nt8_restart"     // stop+start NT8 via powershell.exe (only when it was running)
@@ -81,6 +81,7 @@ const (
 	EffectWorkerSwap     Effect = "worker_swap"     // atomic self-update of the worker binary (worker-self-update)
 	EffectRollback       Effect = "rollback"        // restore the snapshot + watch the OLD sha
 	EffectReleaseHold    Effect = "release_hold"    // the ONLY hold clears
+	EffectRevertClean    Effect = "revert_clean"    // pre-activation self-recovery: hold + lock + AddOn, nothing swapped
 )
 
 // Row is one state's contract.
@@ -119,13 +120,17 @@ var table = []Row{
 	// planner-wait expiry: drained_acked/gate_ok release the hold and refuse,
 	// via ExtraFailure (the step cleared the hold BEFORE the edge).
 	{State: StateMaintenanceHeld, Effect: EffectHold, Success: []State{StateDrainedAcked}, Failure: StateRefused},
-	{State: StateDrainedAcked, Effect: EffectDrain, Success: []State{StateGateOK}, Failure: StateRecoveryNeeded, ExtraFailure: []State{StateRefused}},
-	{State: StateGateOK, Effect: EffectGate, Success: []State{StateBackupDone}, Failure: StateRecoveryNeeded, ExtraFailure: []State{StateRefused}},
-	{State: StateBackupDone, Effect: EffectBackup, Success: []State{StateNT8Skipped, StateNT8Updated}, Failure: StateRecoveryNeeded},
-	{State: StateNT8Skipped, Effect: EffectNT8, Success: []State{StateActivated}, Failure: StateRecoveryNeeded},
-	// W-ADDON-ONE-CLICK: a changed AddOn no longer parks. It builds → places →
-	// restarts NT8 → waits for the reconnect, all before the point of no return.
-	{State: StateNT8Updated, Effect: EffectNT8, Success: []State{StateAddonBuilt}, Failure: StateRecoveryNeeded},
+	// SELF-RECOVERY (DS-102): pre-activation failures go reverted_clean, not
+	// recovery_needed — nothing was swapped yet, the old build keeps running.
+	{State: StateDrainedAcked, Effect: EffectDrain, Success: []State{StateGateOK}, Failure: StateRevertedClean, ExtraFailure: []State{StateRevertedClean}},
+	{State: StateGateOK, Effect: EffectGate, Success: []State{StateBackupDone}, Failure: StateRevertedClean, ExtraFailure: []State{StateRevertedClean}},
+	{State: StateBackupDone, Effect: EffectBackup, Success: []State{StateNT8Skipped, StateNT8Updated}, Failure: StateRevertedClean},
+	{State: StateNT8Skipped, Effect: EffectNT8, Success: []State{StateActivated}, Failure: StateRevertedClean},
+	// W-ADDON-ONE-CLICK (DS-104): a changed AddOn no longer parks. It builds →
+	// places → restarts NT8 → waits for the reconnect, all before the point of
+	// no return. addon_* failures revert clean; the reconnect timeout (NT8 was
+	// already restarted) rolls back.
+	{State: StateNT8Updated, Effect: EffectNT8, Success: []State{StateAddonBuilt}, Failure: StateRevertedClean},
 	{State: StateAddonBuilt, Effect: EffectAddonBuild, Success: []State{StateAddonPlaced}, Failure: StateRevertedClean},
 	{State: StateAddonPlaced, Effect: EffectAddonPlace, Success: []State{StateNT8Restarted, StateAddonReconnected}, Failure: StateRevertedClean},
 	{State: StateNT8Restarted, Effect: EffectNT8Restart, Success: []State{StateAddonReconnected}, Failure: StateRevertedClean},
@@ -143,7 +148,7 @@ var table = []Row{
 	{State: StateComplete, Effect: EffectReleaseHold, Failure: StateRecoveryNeeded},
 	{State: StateRollingBack, Effect: EffectRollback, Success: []State{StateRolledBack}, Failure: StateRecoveryNeeded},
 	{State: StateRolledBack, Effect: EffectReleaseHold, Failure: StateRecoveryNeeded},
-	{State: StateRevertedClean, Effect: EffectReleaseHold, Failure: StateRecoveryNeeded},
+	{State: StateRevertedClean, Effect: EffectRevertClean, Failure: StateRecoveryNeeded},
 	// recovery_needed keeps whatever hold exists: only an attended operator
 	// clears it (brief §3.4.6).
 	{State: StateRecoveryNeeded, Effect: EffectNone},
@@ -226,6 +231,14 @@ func CheckMove(from State, phase Phase, to State) error {
 		return fmt.Errorf("%w: %s is finished", ErrForbiddenEdge, from)
 	}
 	if to == StateRecoveryNeeded {
+		return nil
+	}
+	// W-ADDON-ONE-CLICK self-recovery: a DONE pre-activation state may end
+	// reverted_clean too — the R-i re-proof before activate failed (nothing
+	// was swapped yet). Only the two states whose advance performs that
+	// re-proof (nt8_skipped and addon_reconnected) may take this edge; every
+	// other state must fail its own step to reach reverted_clean.
+	if to == StateRevertedClean && phase == PhaseDone && (from == StateNT8Skipped || from == StateAddonReconnected) {
 		return nil
 	}
 	if to == StateCancelled && r.Cancellable {
