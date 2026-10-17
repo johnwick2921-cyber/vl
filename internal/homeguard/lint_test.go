@@ -188,3 +188,30 @@ func itoa(n int) string {
 	}
 	return string(b)
 }
+
+// TestCanonCarriesTheOneRule pins THE ONE RULE into the tracked canon that
+// every agent's CLAUDE.md / AGENTS.md mirrors (owner order 2026-10-17, JOB 1
+// step 4): a wave that drops or waters it down fails the build.
+func TestCanonCarriesTheOneRule(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", "superpowers", "CLAUDE-canon.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	for _, must := range []string{
+		"THE ONE RULE — NO DELETING",
+		"Never delete files or folders",
+		"mktemp -d",
+		`"${VAR:?}"`,
+		"~/trash/<date>/",
+		"no `git clean`",
+		"no `git reset --hard`",
+		"no force push",
+		"no DELETE, DROP or TRUNCATE",
+		"Never bypass or disable",
+	} {
+		if !strings.Contains(s, must) {
+			t.Errorf("CLAUDE-canon.md lost THE ONE RULE clause %q", must)
+		}
+	}
+}

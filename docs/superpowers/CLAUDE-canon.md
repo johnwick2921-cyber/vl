@@ -3,6 +3,43 @@
 names rewritten to vl on 2026-09-30 (VL rename)
 # CLAUDE-canon — the operating rules that must SURVIVE, in a file a wave can reach
 
+## THE ONE RULE — NO DELETING (owner order 2026-10-17, no exceptions)
+
+Born from 2026-10-16 19:05–19:14 CDT: everything in /home/hoang (~11M files) was deleted while the agent fleet ran tests and scripts. The likely cause was a recursive delete run with HOME, or an empty variable, pointing at the real home folder. It applies to every agent — Claude, Codex, Copilot, every DS lane and every subagent — in every repo on this box.
+
+- **Never delete files or folders, and never empty or overwrite them away.** That covers rm, rmdir, os.RemoveAll, os.Remove, shutil.rmtree, find -delete, unlink, truncate, and `> file` over an existing file.
+- **The only exception** is a temp folder YOU created in this run with `mktemp -d` or `t.TempDir()`.
+  - Guard every variable inside a delete as `"${VAR:?}"`.
+  - Never use `"$VAR"/*`, and never a bare `~` or `$HOME`.
+- **If something must go away, MOVE it** to `~/trash/<date>/`. Never delete it.
+- **Git:**
+  - no `git clean`;
+  - no `git reset --hard`;
+  - no `git checkout --` / `git restore` over uncommitted work;
+  - no branch or tag deletion;
+  - no force push (not even `--force-with-lease`);
+  - no `git worktree remove` / `prune`.
+  Stash, or commit to a rescue branch instead.
+- **Database:** no DELETE, DROP or TRUNCATE. Before any database write, copy the database file to a timestamped backup.
+- **Never bypass or disable** the delete-protection hook (`~/.claude/hooks/block-home-delete.py`) or safe-rm. If something is blocked, change the approach.
+
+**Enforced in code** (branch fix/home-wipe-guards):
+- `internal/safepath` gates every recursive delete in Go. It refuses an empty path, a relative path, `/`, any home folder or an ancestor of one, and anything outside the expected folder.
+- `internal/testhome` points HOME and XDG_* at a throwaway folder for every test package. It fails the run if the real home loses anything.
+- `internal/homeguard` is a lint inside `go test ./...`. It fails the build on:
+  - a test package without the guard;
+  - an os.RemoveAll that does not go through safepath;
+  - `os/user` outside the guards;
+  - Go code that shells out to rm.
+- **Every test:** `t.Setenv("HOME", t.TempDir())` where it touches HOME, ~/.config or ~/bin. Every package mounts `testhome.Guard` in its TestMain.
+- **Every shell run of the suite:**
+  ```
+  TH=$(mktemp -d)
+  HOME="$TH" GOCACHE=/home/hoang/.cache/go-build GOMODCACHE=/home/hoang/go/pkg/mod go test ./...
+  ```
+  then clean up with `rm -rf "${TH:?}"`.
+
+
 **Why this file exists.** `~/vl/CLAUDE.md` is **untracked**. Every rule in it is
 invisible to git: no wave can correct it on a branch, no review can see it drift, and
 no test can assert it still matches the code. On 2026-09-10 that cost real safety —
