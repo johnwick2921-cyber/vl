@@ -78,6 +78,7 @@ type box struct {
 	clock *fakeClock
 
 	inst, data, relDir, backupRoot string
+	nt8docs                        string // fake Documents/NinjaTrader 8 (bin/Custom), for the one-click AddOn seam
 
 	binName    string // the install binary basename (vl-bin or vl-bin — R5 removes the vl form)
 	relBinName string // the release dir's binary basename (defaults to binName)
@@ -103,6 +104,8 @@ type box struct {
 	watchFail        map[string]bool
 	rollbackFail     bool
 	rollbackDistFail bool // RollbackTo restores binary+RELEASE, fails at dist, no kill of its own
+	addonRestoreFail bool // fakeHost.AddonRestore returns an error
+	noReconnect      bool // the AddOn never reconnects after the NT8 restart (guard #3 timeout)
 	badToken         bool // the app refuses the token (401)
 	verdictMissing   bool
 	holdWriteLies    bool          // the hold write lands on disk, then errs (U1 item 9)
@@ -215,6 +218,11 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	}
 	b.data = filepath.Join(b.inst, "data")
 	b.relDir = filepath.Join(root, "releases", boxNew)
+	// the one-click AddOn build/place/restart seam: a fake NT8 docs dir with
+	// bin/Custom, so addonbuild never touches the real /mnt/c tree.
+	b.nt8docs = filepath.Join(root, "nt8docs")
+	t.Setenv("VL_NT8_DOCS_DIR", b.nt8docs)
+	writeFile(t, filepath.Join(b.nt8docs, "bin", "Custom", ".keep"), "")
 	// the running install (a checkout at boxOld)
 	writeFile(t, filepath.Join(b.inst, b.binName), binaryBody(boxOld))
 	writeFile(t, filepath.Join(b.inst, "deploy", "RELEASE"), boxOld+"\n")
@@ -283,7 +291,7 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	clearMaintenanceHold = func(d, job string) error {
 		// a re-run clear (crash after the first) finds it already absent:
 		// ours or absent, never another's
-		b.expect("hold_clear", false, updaterjob.StateComplete, updaterjob.StateRolledBack)
+		b.expect("hold_clear", false, updaterjob.StateComplete, updaterjob.StateRolledBack, updaterjob.StateRevertedClean)
 		if s, _ := ReadHoldFor(b.data, boxJobID); s != HoldOurs && s != HoldAbsent {
 			b.violate("hold_clear with a %s hold on disk", s)
 		}
@@ -298,7 +306,56 @@ func (r *rig) newWorker() *Worker {
 	if err != nil {
 		r.t.Fatal(err)
 	}
+	w.runWin = r.box.fakeRunWin
 	return w
+}
+
+// fakeRunWin plays dotnet.exe and powershell.exe on Linux (W-ADDON-ONE-CLICK):
+// a dotnet build "compiles" by writing a VL.AddOn.dll carrying the AddOn type
+// into the -o dir (parsed back from the Windows path Build rendered); the
+// powershell NT8 stop/start succeeds. No test ever execs a real Windows binary.
+func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if strings.Contains(name, "dotnet") {
+		out := ""
+		for i := 0; i+1 < len(args); i++ {
+			if args[i] == "-o" {
+				out = args[i+1]
+			}
+		}
+		wsl := windowsToWSL(out)
+		if err := os.MkdirAll(wsl, 0o755); err != nil {
+			return nil, err
+		}
+		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), "fake AddOn DLL: type "+addonTypeName+"\n")
+		return []byte("Build succeeded.\n    0 Warning(s)\n    0 Error(s)\n"), nil
+	}
+	// powershell.exe stop/start: Start-Process is the NT8 restart — simulate
+	// the AddOn reconnecting with the manifest's build on a NEW connection.
+	for _, a := range args {
+		if strings.Contains(a, "Start-Process") {
+			b.mu.Lock()
+			if !b.noReconnect {
+				b.addonBuild = b.manifestBuild
+				b.addonSeq++
+			}
+			b.mu.Unlock()
+		}
+	}
+	return []byte(""), nil
+}
+
+// windowsToWSL undoes addonbuild.wslToWindows for the UNC form the build's -o
+// dir uses (\\wsl.localhost\<distro>\tmp\... → /tmp/...).
+func windowsToWSL(p string) string {
+	const prefix = `\\wsl.localhost\`
+	if strings.HasPrefix(p, prefix) {
+		rest := strings.TrimPrefix(p, prefix)
+		if i := strings.IndexByte(rest, '\\'); i >= 0 {
+			rest = rest[i+1:] // drop the distro segment
+		}
+		return "/" + strings.ReplaceAll(rest, "\\", "/")
+	}
+	return strings.ReplaceAll(p, "\\", "/")
 }
 
 // install is the install verb at the production handler.
@@ -724,6 +781,13 @@ func (h *fakeHost) ExeOf(pid int) (string, error) {
 		return h.b.exe, nil
 	}
 	return h.b.instBinary(), nil // R5 removes: vl-bin when the install carries it
+}
+
+func (h *fakeHost) AddonRestore(docsDir, backupDir string) error {
+	if h.b.addonRestoreFail {
+		return fmt.Errorf("addon restore: fake failure")
+	}
+	return (&OSHost{}).AddonRestore(docsDir, backupDir)
 }
 
 // ── the app (httptest) ──────────────────────────────────────────────────────

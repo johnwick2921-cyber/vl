@@ -227,8 +227,9 @@ func (w *Worker) finish(ctx context.Context, j updaterjob.Job, res stepResult) (
 				res.set(k)
 			}
 			k.Blocker = res.blocker
-			// a rollback keeps WHY it rolled back: M5 shows rolled_back with it
-			if k.State != updaterjob.StateRollingBack && k.State != updaterjob.StateRolledBack {
+			// a rollback (or a revert) keeps WHY it rolled back: M5 shows
+			// rolled_back / reverted_clean with it
+			if k.State != updaterjob.StateRollingBack && k.State != updaterjob.StateRolledBack && k.State != updaterjob.StateRevertedClean {
 				k.Error = ""
 			}
 			return k.Finish(now)
@@ -289,14 +290,7 @@ func (w *Worker) advance(ctx context.Context, j updaterjob.Job) (parked bool, er
 			next = updaterjob.StateNT8Skipped
 		}
 		set = func(k *updaterjob.Job) { k.NT8 = &d }
-	case updaterjob.StateNT8Updated, updaterjob.StateNT8Skipped:
-		if j.State == updaterjob.StateNT8Updated {
-			k, proceed, err := w.resumeFromPark(ctx, j)
-			if err != nil || !proceed {
-				return true, err
-			}
-			j = k
-		}
+	case updaterjob.StateNT8Skipped, updaterjob.StateAddonReconnected:
 		// R-i: the LAST re-proof before the point of no return. A failure
 		// here has installed nothing: recovery_needed, hold kept.
 		if err := w.reprove(ctx, j); err != nil {
@@ -314,6 +308,25 @@ func (w *Worker) advance(ctx context.Context, j updaterjob.Job) (parked bool, er
 			k.IdentityBefore = &id
 			w.setBootWatch(k)
 		}
+	case updaterjob.StateNT8Updated:
+		// W-ADDON-ONE-CLICK: a changed AddOn no longer parks — it builds.
+		next = updaterjob.StateAddonBuilt
+		set = func(k *updaterjob.Job) {
+			if k.Addon == nil {
+				k.Addon = &updaterjob.AddonState{}
+			}
+		}
+	case updaterjob.StateAddonBuilt:
+		next = updaterjob.StateAddonPlaced
+	case updaterjob.StateAddonPlaced:
+		// Restart NT8 only when it was running at press time; the nt8_absent
+		// drain means it was closed — the DLL is placed, the job proceeds.
+		next = updaterjob.StateAddonReconnected
+		if j.DrainPath != drainPathNT8Absent {
+			next = updaterjob.StateNT8Restarted
+		}
+	case updaterjob.StateNT8Restarted:
+		next = updaterjob.StateAddonReconnected
 	case updaterjob.StateActivated:
 		next = updaterjob.StateBooted
 	case updaterjob.StateBooted:

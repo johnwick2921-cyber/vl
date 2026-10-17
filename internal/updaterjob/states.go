@@ -123,7 +123,13 @@ var table = []Row{
 	{State: StateGateOK, Effect: EffectGate, Success: []State{StateBackupDone}, Failure: StateRecoveryNeeded, ExtraFailure: []State{StateRefused}},
 	{State: StateBackupDone, Effect: EffectBackup, Success: []State{StateNT8Skipped, StateNT8Updated}, Failure: StateRecoveryNeeded},
 	{State: StateNT8Skipped, Effect: EffectNT8, Success: []State{StateActivated}, Failure: StateRecoveryNeeded},
-	{State: StateNT8Updated, Effect: EffectNT8, Success: []State{StateActivated}, Failure: StateRecoveryNeeded, Parks: true},
+	// W-ADDON-ONE-CLICK: a changed AddOn no longer parks. It builds → places →
+	// restarts NT8 → waits for the reconnect, all before the point of no return.
+	{State: StateNT8Updated, Effect: EffectNT8, Success: []State{StateAddonBuilt}, Failure: StateRecoveryNeeded},
+	{State: StateAddonBuilt, Effect: EffectAddonBuild, Success: []State{StateAddonPlaced}, Failure: StateRevertedClean},
+	{State: StateAddonPlaced, Effect: EffectAddonPlace, Success: []State{StateNT8Restarted, StateAddonReconnected}, Failure: StateRevertedClean},
+	{State: StateNT8Restarted, Effect: EffectNT8Restart, Success: []State{StateAddonReconnected}, Failure: StateRevertedClean},
+	{State: StateAddonReconnected, Effect: EffectAddonReconnect, Success: []State{StateActivated}, Failure: StateRollingBack},
 	// The point of no return: any failure from here restores the snapshot.
 	{State: StateActivated, Effect: EffectActivate, Success: []State{StateBooted}, Failure: StateRollingBack},
 	{State: StateBooted, Effect: EffectWatch, Success: []State{StateBootVerified}, Failure: StateRollingBack},
@@ -137,6 +143,7 @@ var table = []Row{
 	{State: StateComplete, Effect: EffectReleaseHold, Failure: StateRecoveryNeeded},
 	{State: StateRollingBack, Effect: EffectRollback, Success: []State{StateRolledBack}, Failure: StateRecoveryNeeded},
 	{State: StateRolledBack, Effect: EffectReleaseHold, Failure: StateRecoveryNeeded},
+	{State: StateRevertedClean, Effect: EffectReleaseHold, Failure: StateRecoveryNeeded},
 	// recovery_needed keeps whatever hold exists: only an attended operator
 	// clears it (brief §3.4.6).
 	{State: StateRecoveryNeeded, Effect: EffectNone},
