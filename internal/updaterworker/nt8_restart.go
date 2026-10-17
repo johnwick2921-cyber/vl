@@ -17,9 +17,9 @@ import (
 // start or stop the real NT8 in a test).
 
 const (
-	defaultNT8Exe     = `C:\Program Files\NinjaTrader 8\bin\NinjaTrader.exe`
-	nt8CloseWait      = 60 * time.Second
-	nt8ReconnectWait  = 5 * time.Minute
+	defaultNT8Exe    = `C:\Program Files\NinjaTrader 8\bin\NinjaTrader.exe`
+	nt8CloseWait     = 60 * time.Second
+	nt8ReconnectWait = 5 * time.Minute
 )
 
 // addonExe returns VL_NT8_EXE or the default. Nothing is hardcoded to "hoang":

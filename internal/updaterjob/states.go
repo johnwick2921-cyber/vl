@@ -31,17 +31,17 @@ const (
 	StateNT8Restarted     State = "nt8_restarted"
 	StateAddonReconnected State = "addon_reconnected"
 	// SELF-RECOVERY (DS-102): a refusal/timeout BEFORE activation ends here.
-	StateRevertedClean    State = "reverted_clean"
-	StateActivated       State = "activated"
-	StateBooted          State = "booted"
-	StateBootVerified    State = "boot_verified"
-	StateWorkerSwapped   State = "worker_swapped"
-	StateComplete        State = "complete"
-	StateRollingBack     State = "rolling_back"
-	StateRolledBack      State = "rolled_back"
-	StateRecoveryNeeded  State = "recovery_needed"
-	StateCancelled       State = "cancelled"
-	StateRefused         State = "refused"
+	StateRevertedClean  State = "reverted_clean"
+	StateActivated      State = "activated"
+	StateBooted         State = "booted"
+	StateBootVerified   State = "boot_verified"
+	StateWorkerSwapped  State = "worker_swapped"
+	StateComplete       State = "complete"
+	StateRollingBack    State = "rolling_back"
+	StateRolledBack     State = "rolled_back"
+	StateRecoveryNeeded State = "recovery_needed"
+	StateCancelled      State = "cancelled"
+	StateRefused        State = "refused"
 )
 
 // Phase says whether a state's side effect is under way or finished. Every
@@ -61,26 +61,26 @@ const (
 type Effect string
 
 const (
-	EffectNone        Effect = "none"         // the state is its own effect (the file) or terminal
-	EffectDownload    Effect = "download"     // locate the verified release + re-hash every artifact
-	EffectVerify      Effect = "verify"       // re-verify the signature + resolve the release dir
-	EffectPreflight   Effect = "preflight"    // stage + host/app/flat/lock checks, before any hold
-	EffectHold        Effect = "hold"         // the ONLY hold write (internal/updaterworker/hold.go)
-	EffectDrain       Effect = "drain"        // READ the app's view until held+drained+acked+flat
-	EffectGate        Effect = "gate"         // ready:true on two reads with distinct ack.received
-	EffectBackup      Effect = "backup"       // DB backup + snapshot of the install halves
-	EffectNT8         Effect = "nt8"          // record the AddOn decision (a read, C12)
+	EffectNone      Effect = "none"      // the state is its own effect (the file) or terminal
+	EffectDownload  Effect = "download"  // locate the verified release + re-hash every artifact
+	EffectVerify    Effect = "verify"    // re-verify the signature + resolve the release dir
+	EffectPreflight Effect = "preflight" // stage + host/app/flat/lock checks, before any hold
+	EffectHold      Effect = "hold"      // the ONLY hold write (internal/updaterworker/hold.go)
+	EffectDrain     Effect = "drain"     // READ the app's view until held+drained+acked+flat
+	EffectGate      Effect = "gate"      // ready:true on two reads with distinct ack.received
+	EffectBackup    Effect = "backup"    // DB backup + snapshot of the install halves
+	EffectNT8       Effect = "nt8"       // record the AddOn decision (a read, C12)
 	// W-ADDON-ONE-CLICK effects (owned by DS-104, wired in the next increment).
 	EffectAddonBuild     Effect = "addon_build"     // compile the release's ninjascript/*.cs into VL.AddOn.dll
 	EffectAddonPlace     Effect = "addon_place"     // MOVE the old DLL to backups, copy the new one in, verify sha
 	EffectNT8Restart     Effect = "nt8_restart"     // stop+start NT8 via powershell.exe (only when it was running)
 	EffectAddonReconnect Effect = "addon_reconnect" // wait for a NEW accept_seq + hello build_id (bounded)
-	EffectActivate    Effect = "activate"     // install the release halves + kill by identity
-	EffectWatch       Effect = "watch"        // the new process proves itself (log + health)
-	EffectBootVerify  Effect = "boot_verify"  // OK boot line, health prefix, AddOn ack build
-	EffectWorkerSwap  Effect = "worker_swap"  // atomic self-update of the worker binary (worker-self-update)
-	EffectRollback    Effect = "rollback"     // restore the snapshot + watch the OLD sha
-	EffectReleaseHold Effect = "release_hold" // the ONLY hold clears
+	EffectActivate       Effect = "activate"        // install the release halves + kill by identity
+	EffectWatch          Effect = "watch"           // the new process proves itself (log + health)
+	EffectBootVerify     Effect = "boot_verify"     // OK boot line, health prefix, AddOn ack build
+	EffectWorkerSwap     Effect = "worker_swap"     // atomic self-update of the worker binary (worker-self-update)
+	EffectRollback       Effect = "rollback"        // restore the snapshot + watch the OLD sha
+	EffectReleaseHold    Effect = "release_hold"    // the ONLY hold clears
 )
 
 // Row is one state's contract.
