@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 )
 
@@ -326,6 +327,12 @@ func RebuildCustom(ctx context.Context, c Config) (Result, error) {
 // in, verifying its sha256. On any failure after the backup move it MOVEs the
 // backup back (the old Custom.dll is never left absent). It returns the backup
 // directory.
+//
+// Acceptance (f) (release #35 FOLD 4): the 16 culture satellites
+// (bin/Custom/<culture>/NinjaTrader.{Custom,Vendor}.resources.dll) and
+// bin/Custom/NinjaTrader.Vendor.dll are OUT OF SCOPE - the place must leave
+// them byte-identical. Their sha256 is snapshotted before the move and verified
+// after; a difference refuses the place and restores the old Custom.dll.
 func PlaceCustom(c Config, dll, sha, jobID string) (backupDir string, err error) {
 	customDir := filepath.Join(c.DocsDir, "bin", "Custom")
 	if !isDir(customDir) {
@@ -334,6 +341,11 @@ func PlaceCustom(c Config, dll, sha, jobID string) (backupDir string, err error)
 	destDll := filepath.Join(customDir, "NinjaTrader.Custom.dll")
 	if !isFile(destDll) {
 		return "", fmt.Errorf("%w: %s", ErrNoCustomDll, destDll)
+	}
+
+	before, err := satelliteFingerprint(customDir)
+	if err != nil {
+		return "", err
 	}
 
 	backupDir = filepath.Join(c.DocsDir, "vl-addon-backups", jobID, "custom-rebuild")
@@ -359,7 +371,78 @@ func PlaceCustom(c Config, dll, sha, jobID string) (backupDir string, err error)
 		restore()
 		return "", fmt.Errorf("addonbuild: Custom.dll sha256 mismatch: got %s want %s (old restored)", got, sha)
 	}
+
+	// Test seam: simulate a place that disturbs a satellite or the Vendor dll.
+	if placeHook != nil {
+		placeHook(customDir)
+	}
+
+	after, err := satelliteFingerprint(customDir)
+	if err != nil {
+		restore()
+		return "", fmt.Errorf("addonbuild: satellite re-hash: %w (old restored)", err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		restore()
+		return "", fmt.Errorf("addonbuild: a satellite/Vendor file changed during the place (acceptance f): %s", satelliteDiff(before, after))
+	}
 	return backupDir, nil
+}
+
+// placeHook, non-nil only in tests, runs between the Custom.dll copy and the
+// after-place satellite verification so a test can simulate a place that
+// disturbs a satellite or the Vendor dll. Production code never sets it.
+var placeHook func(customDir string)
+
+// satelliteFingerprint returns the hex sha256 of every OUT-OF-SCOPE file the
+// place must leave untouched (acceptance f): bin/Custom/<culture>/
+// NinjaTrader.{Custom,Vendor}.resources.dll plus bin/Custom/NinjaTrader.Vendor.dll,
+// keyed by path relative to customDir. Missing files are simply absent.
+func satelliteFingerprint(customDir string) (map[string]string, error) {
+	patterns := []string{
+		filepath.Join(customDir, "*", "NinjaTrader.Custom.resources.dll"),
+		filepath.Join(customDir, "*", "NinjaTrader.Vendor.resources.dll"),
+		filepath.Join(customDir, "NinjaTrader.Vendor.dll"),
+	}
+	out := make(map[string]string)
+	for _, pat := range patterns {
+		matches, _ := filepath.Glob(pat)
+		for _, m := range matches {
+			if !isFile(m) {
+				continue
+			}
+			sum, err := sha256File(m)
+			if err != nil {
+				return nil, fmt.Errorf("addonbuild: satellite sha256 %s: %w", m, err)
+			}
+			rel, _ := filepath.Rel(customDir, m)
+			out[rel] = sum
+		}
+	}
+	return out, nil
+}
+
+// satelliteDiff renders a compact before/after difference for the error path.
+func satelliteDiff(before, after map[string]string) string {
+	var diffs []string
+	for k, v := range before {
+		if after[k] != v {
+			diffs = append(diffs, fmt.Sprintf("%s: %s -> %s", k, shortSha(v), shortSha(after[k])))
+		}
+	}
+	for k, v := range after {
+		if _, ok := before[k]; !ok {
+			diffs = append(diffs, fmt.Sprintf("%s: absent -> %s", k, shortSha(v)))
+		}
+	}
+	return strings.Join(diffs, "; ")
+}
+
+func shortSha(s string) string {
+	if len(s) > 12 {
+		return s[:12]
+	}
+	return s
 }
 
 // BuildPs1 returns the embedded build-addon.ps1 source — the single source of

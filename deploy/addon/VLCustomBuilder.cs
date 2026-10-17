@@ -318,19 +318,43 @@ internal static class VLCustomBuilder
             return false;
         }
 
-        // (e) AssemblyName/Version == old
+        // (e) AssemblyName/Version == old (FOLD 4: also culture neutral and
+        // unsigned - the full main identity).
         var oldName = AssemblyName.GetAssemblyName(oldDll);
         var newName = AssemblyName.GetAssemblyName(newDll);
         if (!string.Equals(oldName.Name, newName.Name, StringComparison.Ordinal) ||
-            oldName.Version != newName.Version)
+            oldName.Version != newName.Version ||
+            !string.Equals(oldName.CultureName ?? "", newName.CultureName ?? "", StringComparison.Ordinal) ||
+            !PublicKeyTokenEqual(oldName, newName))
         {
             Console.WriteLine("VL_CUSTOM_TYPES_DIFF");
             Console.WriteLine("ASSEMBLY_DIFF old=" + oldName.Name + "/" + oldName.Version +
-                              " new=" + newName.Name + "/" + newName.Version);
+                              "/" + (oldName.CultureName ?? "") + "/" + PublicKeyTokenHex(oldName) +
+                              " new=" + newName.Name + "/" + newName.Version +
+                              "/" + (newName.CultureName ?? "") + "/" + PublicKeyTokenHex(newName));
             return false;
         }
 
         return true;
+    }
+
+    private static bool PublicKeyTokenEqual(AssemblyName a, AssemblyName b)
+    {
+        var ta = a.GetPublicKeyToken();
+        var tb = b.GetPublicKeyToken();
+        if (ta == null || tb == null) return ta == tb;
+        if (ta.Length != tb.Length) return false;
+        for (var i = 0; i < ta.Length; i++) if (ta[i] != tb[i]) return false;
+        return true;
+    }
+
+    private static string PublicKeyTokenHex(AssemblyName a)
+    {
+        var t = a.GetPublicKeyToken();
+        if (t == null || t.Length == 0) return "unsigned";
+        var sb = new StringBuilder(t.Length * 2);
+        foreach (var b in t) sb.Append(b.ToString("x2"));
+        return sb.ToString();
     }
 
     // -- metadata readers ---------------------------------------------------
@@ -519,6 +543,13 @@ internal static class VLCustomBuilder
                     DefineSymbols.Add(t);
                 }
             }
+
+            // FOLD 4: the rebuild must NOT define PRODUCTION. AssemblyInfo.cs
+            // stamps 8.1.8.3 under PRODUCTION and 8.1.9.0 otherwise; today's
+            // main is 8.1.9.0. Refuse rather than silently stamp the wrong
+            // identity.
+            if (DefineSymbols.Contains("PRODUCTION"))
+                throw new Exception("DefineConstants resolves PRODUCTION; refusing (would stamp 8.1.8.3, today's main is 8.1.9.0)");
         }
 
         private static XmlNode Select(XmlDocument xml, XmlNamespaceManager nsm, string xpath)
