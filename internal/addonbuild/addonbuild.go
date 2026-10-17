@@ -87,34 +87,46 @@ func Build(ctx context.Context, c Config) (dllPath string, sha256 string, err er
 	if c.Run == nil {
 		return "", "", ErrNoRun
 	}
-	if c.DocsDir == "" || !isDir(filepath.Join(c.DocsDir, "bin", "Custom")) {
+	docsDir, err := filepath.Abs(c.DocsDir)
+	if err != nil {
+		return "", "", fmt.Errorf("addonbuild: abs DocsDir: %w", err)
+	}
+	srcDir, err := filepath.Abs(c.SourceDir)
+	if err != nil {
+		return "", "", fmt.Errorf("addonbuild: abs SourceDir: %w", err)
+	}
+	workDir, err := filepath.Abs(c.WorkDir)
+	if err != nil {
+		return "", "", fmt.Errorf("addonbuild: abs WorkDir: %w", err)
+	}
+	if !isDir(filepath.Join(docsDir, "bin", "Custom")) {
 		return "", "", fmt.Errorf("%w: %q", ErrNoDocsDir, c.DocsDir)
 	}
-	if err := os.MkdirAll(c.WorkDir, 0o755); err != nil {
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return "", "", fmt.Errorf("addonbuild: mkdir work dir: %w", err)
 	}
-	csFiles, _ := filepath.Glob(filepath.Join(c.SourceDir, "*.cs"))
+	csFiles, _ := filepath.Glob(filepath.Join(srcDir, "*.cs"))
 	if len(csFiles) == 0 {
 		return "", "", fmt.Errorf("%w: %q", ErrNoSourceFiles, c.SourceDir)
 	}
 
-	customDir := filepath.Join(c.DocsDir, "bin", "Custom")
+	customDir := filepath.Join(docsDir, "bin", "Custom")
 	pfBin := filepath.Dir(c.Exe)
 	if pfBin == "." || pfBin == "" {
 		pfBin = "/mnt/c/Program Files/NinjaTrader 8/bin"
 	}
 
 	proj := renderTemplate(csprojTemplate, map[string]string{
-		"{{ADDON_SRC}}":  wslToWindows(c.SourceDir),
+		"{{ADDON_SRC}}":  wslToWindows(srcDir),
 		"{{NT8_CUSTOM}}": wslToWindows(customDir),
 		"{{NT8_PF_BIN}}": wslToWindows(pfBin),
 	})
-	projPath := filepath.Join(c.WorkDir, "VL.AddOn.csproj")
+	projPath := filepath.Join(workDir, "VL.AddOn.csproj")
 	if err := os.WriteFile(projPath, []byte(proj), 0o644); err != nil {
 		return "", "", fmt.Errorf("addonbuild: write csproj: %w", err)
 	}
 
-	outDir := filepath.Join(c.WorkDir, "out")
+	outDir := filepath.Join(workDir, "out")
 	args := []string{"build", wslToWindows(projPath), "-c", "Release", "-o", wslToWindows(outDir)}
 	if _, err := c.Run(ctx, c.DotnetExe, args...); err != nil {
 		return "", "", fmt.Errorf("addonbuild: dotnet build: %w", err)
