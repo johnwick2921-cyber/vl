@@ -62,6 +62,10 @@ func TestManifestAddonBuildAnchorsToTheConstLine(t *testing.T) {
 	mustWrite(t, filepath.Join(stage, "ninjascript", "VLTraderTCPClient.cs"),
 		"// VL_BUILD_ID is declared below; the build id was once \"1999-01-01-comment\".\n"+
 			"// const string VL_BUILD_ID = \"1999-01-01-comment\";\n"+
+			// A NON-comment code line that mentions VL_BUILD_ID with a quoted
+			// value (DS-107 gate 10-17: the comment strip alone hid the anchor —
+			// only the const-declaration anchor rejects this line).
+			`Log("VL_BUILD_ID is \"1999-01-01-codeline\"");`+"\n"+
 			`private const string  VL_BUILD_ID             = "2026-09-30-anchor";`+"\n")
 
 	out, err := runScript(t, "deploy/release/manifest.sh", stage, sha, "v9.9.9")
@@ -73,6 +77,9 @@ func TestManifestAddonBuildAnchorsToTheConstLine(t *testing.T) {
 	}
 	if strings.Contains(out, "1999-01-01-comment") {
 		t.Fatalf("the manifest read a comment as the build id (1999-01-01-comment):\n%s", out)
+	}
+	if strings.Contains(out, "1999-01-01-codeline") {
+		t.Fatalf("the manifest read a non-const code line as the build id (1999-01-01-codeline):\n%s", out)
 	}
 }
 
