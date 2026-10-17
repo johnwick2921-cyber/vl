@@ -19,7 +19,7 @@ func TestUpdatesRouteExistenceIsObservable(t *testing.T) {
 	for name, tok := range map[string]string{"no token": "", "the Telegram bot's token": mustBotToken(t)} {
 		for _, p := range []struct{ method, path string }{
 			{"GET", "/api/updates"}, {"POST", "/api/updates/check"}, {"POST", "/api/updates/install"},
-			{"GET", "/api/updates/jobs/0123456789abcdef"}, {"GET", "/api/updates/jobs/0123456789abcdef/receipt"},
+			{"GET", "/api/updates/readiness"}, {"GET", "/api/updates/jobs/0123456789abcdef"}, {"GET", "/api/updates/jobs/0123456789abcdef/receipt"},
 		} {
 			if w := credCall(t, e, p.method, p.path, tok, ""); w.Code != http.StatusForbidden || w.Body.String() != forbiddenBody {
 				t.Fatalf("%s: registered %s %s = %d %s — the comment says it answers the gate's 403", name, p.method, p.path, w.Code, w.Body.String())
