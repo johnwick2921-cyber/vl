@@ -832,6 +832,10 @@ type BarsUnsubscribePayload struct {
 type AccountInfo struct {
 	Name  string `json:"name"`   // e.g. "Sim101" or "PropAcct"
 	IsSim bool   `json:"is_sim"` // true if this is a simulation account
+	// Connection is the NT8 connection type name (e.g. "SimulationConnection"),
+	// best-effort and absent when the AddOn could not read it. Persisted for
+	// forensics only — the SIM gate reads IsSim, never this string.
+	Connection string `json:"connection,omitempty"`
 }
 
 // AccountsListPayload reports all available NT accounts discovered by the C# AddOn.

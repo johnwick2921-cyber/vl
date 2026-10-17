@@ -77,6 +77,21 @@ func TestPlaceEntry_NonSIMBoundAccountStillRefuses(t *testing.T) {
 	}
 }
 
+// TestPlaceEntry_NT8ClosedStillRefuses pins F35's live-only law at the ORDER
+// path: with NT8 closed (an empty live list) the entry is refused even though
+// the gate can vouch for the account from the PERSISTED frame. The trader never
+// reads the store, so the gate's fallback can never leak into a placed order.
+func TestPlaceEntry_NT8ClosedStillRefuses(t *testing.T) {
+	s := ntwire.NewTCPServer(nil) // no live accounts — NT8 closed
+	tr := NewTCPTrader(s, "MNQ", "Sim101")
+	if tr.IsAccountTradeable("Sim101") {
+		t.Fatal("IsAccountTradeable must be false on an empty live list")
+	}
+	if _, err := tr.OpenWithBracket("MNQ", "long", 1, 0, 0); err == nil || !strings.Contains(err.Error(), "not tradeable") {
+		t.Fatalf("an entry with NT8 closed must refuse at the order path: err=%v", err)
+	}
+}
+
 // TestGetPositions_ReadsBoundAccountNotCurrent locks the decoupling: a trader reads
 // its OWN bound account's positions, NOT the shared connection "current" account
 // (which the dashboard can switch for display). Without this, viewing another
