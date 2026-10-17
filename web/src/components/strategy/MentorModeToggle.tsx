@@ -1,5 +1,8 @@
 import { useState } from 'react'
 
+import { EffectiveLine } from './EffectiveChip'
+import type { EffectiveKnob } from '../../lib/api/strategyEffective'
+
 // Studio control for the per-strategy `mentor_mode` flag (risk_control.mentor_mode,
 // default OFF). It only edits the strategy config; the Studio's normal Save
 // persists it and reloads the running trader(s) bound to the strategy (api/strategy.go
@@ -104,9 +107,9 @@ const COPY = {
     es: 'Salida del runner (modo trailing)',
   },
   trailModeCandle: {
-    zh: 'candle — 第 1 腿 1:1 止盈成交后保本，然后跟随每根已收盘 K 线（默认）',
-    en: 'candle — break-even once leg 1’s 1:1 fills, then each closed candle (default)',
-    es: 'candle — break-even al llenarse el 1:1 de la pierna 1, luego cada vela cerrada (por defecto)',
+    zh: 'candle — +0.5R 时保本（在第 1 腿 1:1 止盈成交前），随后跟随每根已收盘 K 线（默认）',
+    en: 'candle — break-even at +0.5R (before leg 1’s 1:1 fills), then each closed candle (default)',
+    es: 'candle — break-even a +0.5R (antes del 1:1 de la pierna 1), luego cada vela cerrada (por defecto)',
   },
   trailModeOff: {
     zh: 'off — 旧规则（到目标一半距离时保本）',
@@ -114,9 +117,89 @@ const COPY = {
     es: 'off — la regla anterior (break-even a mitad de distancia al objetivo)',
   },
   trailModeHelp: {
-    zh: '默认 candle（owner 裁定 R3）：只有在 NinjaTrader 确认第 1 腿 1:1 止盈成交后，剩余仓位止损才移到开仓价，之后每根入场所用周期的已收盘 K 线（通常为 1 分钟；exec_2m_after_30m 开启时在 2 分钟图上入场的 ISB 为 2 分钟）移到其低点下方 1 tick（多）/高点上方 1 tick（空），只收紧不放宽。',
-    en: 'Default candle (owner ruling R3): only after NinjaTrader CONFIRMS leg 1’s 1:1 take-profit filled does the runner’s stop move to the entry; then, on every closed candle of the frame the entry was read on (the 1m; the 2m for an ISB entered on the 2m while exec_2m_after_30m is ON), to 1 tick beyond its low (long) / high (short) — only ever tighter.',
-    es: 'Por defecto candle (decisión R3): solo cuando NinjaTrader CONFIRMA el take-profit 1:1 de la pierna 1, el stop del runner pasa a la entrada; luego, en cada vela cerrada del marco en que se leyó la entrada (1m; 2m para un ISB que entró en 2m con exec_2m_after_30m activado), a 1 tick más allá de su mínimo (largo) / máximo (corto) — solo se ajusta, nunca se amplía.',
+    zh: '默认 candle（course-defaults-30，owner "fix all"）：当某根已收盘 K 线收盘价 ≥ +0.5R 时，两条腿的止损先移到开仓价（mentor_be_before_partial 默认开启，先于第 1 腿 1:1 止盈成交 —— 反转了 owner 裁定 R3）；之后在 NinjaTrader 确认第 1 腿 1:1 止盈成交后，剩余仓位按入场所用周期的每根已收盘 K 线（通常 1 分钟；exec_2m_after_30m 开启时在 2 分钟图上入场的 ISB 为 2 分钟）移到其低点下方 1 tick（多）/高点上方 1 tick（空），只收紧不放宽。',
+    en: 'Default candle (course-defaults-30, owner "fix all"): on the first closed candle whose close is ≥ +0.5R, BOTH legs’ stops move to break-even FIRST (mentor_be_before_partial ON by default, before leg 1’s 1:1 partial — this reverses owner ruling R3); then, once NinjaTrader CONFIRMS leg 1’s 1:1 take-profit filled, the runner trails 1 tick beyond each closed candle of the frame the entry was read on (the 1m; the 2m for an ISB entered on the 2m while exec_2m_after_30m is ON) — only ever tighter.',
+    es: 'Por defecto candle (course-defaults-30, owner "fix all"): en la primera vela cerrada cuyo cierre es ≥ +0.5R, el stop de AMBAS piernas pasa primero a break-even (mentor_be_before_partial ON por defecto, antes del parcial 1:1 de la pierna 1 — esto revierte la decisión R3); luego, cuando NinjaTrader CONFIRMA el take-profit 1:1 de la pierna 1, el runner se arrastra 1 tick más allá de cada vela cerrada del marco en que se leyó la entrada (1m; 2m para un ISB que entró en 2m con exec_2m_after_30m activado) — solo se ajusta, nunca se amplía.',
+  },
+  readOnlyKnobs: {
+    zh: '生效中的导师旋钮（只读）',
+    en: 'Effective mentor knobs (read-only)',
+    es: 'Knobs mentor efectivos (solo lectura)',
+  },
+  trailTF: {
+    zh: '移动止损周期',
+    en: 'Trail timeframe',
+    es: 'Marco del trailing',
+  },
+  baseContracts: {
+    zh: '基础口数',
+    en: 'Base contracts',
+    es: 'Contratos base',
+  },
+  confContracts: {
+    zh: '汇聚口数',
+    en: 'Confluence contracts',
+    es: 'Contratos confluencia',
+  },
+  bigContracts: {
+    zh: '大单口数',
+    en: 'Big contracts',
+    es: 'Contratos grandes',
+  },
+  reducedContracts: {
+    zh: '缩减口数',
+    en: 'Reduced contracts',
+    es: 'Contratos reducidos',
+  },
+  spentContracts: {
+    zh: 'spent 日口数',
+    en: 'Spent-day contracts',
+    es: 'Contratos día agotado',
+  },
+  maxContracts: {
+    zh: '口数上限',
+    en: 'Max contracts',
+    es: 'Contratos máximos',
+  },
+  staleBlock: {
+    zh: '数据过期拦截',
+    en: 'Stale-data block',
+    es: 'Bloqueo por datos obsoletos',
+  },
+  dayOffRecheck: {
+    zh: 'DayOff 复核',
+    en: 'Day-off recheck',
+    es: 'Revisión día libre',
+  },
+  legBudget: {
+    zh: '腿预算',
+    en: 'Leg budget',
+    es: 'Presupuesto de pierna',
+  },
+  legReset: {
+    zh: '腿重置',
+    en: 'Leg reset',
+    es: 'Reinicio de pierna',
+  },
+  lvlRevisit: {
+    zh: '价位重访距离',
+    en: 'Level revisit distance',
+    es: 'Distancia de revisita',
+  },
+  emaCross: {
+    zh: 'EMA34 30m 交叉上限',
+    en: 'EMA 34 cross cap (30m)',
+    es: 'Tope de cruces EMA 34 (30m)',
+  },
+  locTrigger: {
+    zh: '价位 5m 触发过滤',
+    en: 'Location trigger filter',
+    es: 'Filtro de gatillo por ubicación',
+  },
+  lossDeparture: {
+    zh: '亏损离场距离',
+    en: 'Loss departure distance',
+    es: 'Distancia de salida en pérdida',
   },
 } satisfies Record<string, Copy>
 
@@ -181,6 +264,10 @@ interface MentorModeToggleProps {
   // Runner exit knob (mentor_trail_mode); absent = candle.
   trailMode?: string
   onTrailModeChange?: (mode: string) => void
+  // The server's effective rows (GET /api/strategies/:id/effective). Optional:
+  // absent → no chips. Leaves are risk_control.<leaf> (the RC_PATH prefix is
+  // applied by the caller).
+  eff?: (leaf: string) => EffectiveKnob | null | undefined
 }
 
 export function MentorModeToggle({
@@ -200,6 +287,7 @@ export function MentorModeToggle({
   onStopAfterLossChange,
   trailMode,
   onTrailModeChange,
+  eff,
 }: MentorModeToggleProps) {
   const [confirming, setConfirming] = useState(false)
   const [startDraft, setStartDraft] = useState<string | null>(null)
@@ -268,6 +356,7 @@ export function MentorModeToggle({
       >
         {gateText}
       </p>
+      <EffectiveLine knob={eff?.('mentor_mode')} />
       <div
         className="mt-3 pt-3 flex flex-col gap-2"
         style={{ borderTop: '1px solid #2B3139' }}
@@ -345,6 +434,8 @@ export function MentorModeToggle({
         <p className="text-xs" style={{ color: '#848E9C' }}>
           {tr(COPY.windowNote, language)}
         </p>
+        <EffectiveLine knob={eff?.('mentor_window_start')} label="start" />
+        <EffectiveLine knob={eff?.('mentor_window_minutes')} label="minutes" />
       </div>
       <div
         className="mt-3 pt-3 flex flex-col gap-2"
@@ -415,6 +506,7 @@ export function MentorModeToggle({
         <p className="text-xs" style={{ color: '#848E9C' }}>
           {tr(COPY.stopAfterLossHelp, language)}
         </p>
+        <EffectiveLine knob={eff?.('mentor_stop_after_loss')} />
       </div>
       <div
         className="mt-3 pt-3 flex flex-col gap-2"
@@ -447,6 +539,7 @@ export function MentorModeToggle({
         <p className="text-xs" style={{ color: '#848E9C' }}>
           {tr(COPY.trailModeHelp, language)}
         </p>
+        <EffectiveLine knob={eff?.('mentor_trail_mode')} />
       </div>
       {confirming && (
         <div
@@ -490,6 +583,109 @@ export function MentorModeToggle({
           </div>
         </div>
       )}
+      {eff && (
+        <div
+          className="mt-3 pt-3 flex flex-col gap-1"
+          style={{ borderTop: '1px solid #2B3139' }}
+          data-testid="mentor-readonly-knobs"
+        >
+          <div className="text-xs font-medium" style={{ color: '#EAECEF' }}>
+            {tr(COPY.readOnlyKnobs, language)}
+          </div>
+          <ReadOnlyRow
+            leaf="mentor_trail_tf"
+            label={tr(COPY.trailTF, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_base_contracts"
+            label={tr(COPY.baseContracts, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_confluence_contracts"
+            label={tr(COPY.confContracts, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_big_contracts"
+            label={tr(COPY.bigContracts, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_reduced_contracts"
+            label={tr(COPY.reducedContracts, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_spent_day_contracts"
+            label={tr(COPY.spentContracts, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_max_contracts"
+            label={tr(COPY.maxContracts, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_stale_data_block"
+            label={tr(COPY.staleBlock, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_day_off_recheck"
+            label={tr(COPY.dayOffRecheck, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_leg_budget_enabled"
+            label={tr(COPY.legBudget, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_leg_reset_on"
+            label={tr(COPY.legReset, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_lvl_revisit_min_pts"
+            label={tr(COPY.lvlRevisit, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_ema_max_cross_30m"
+            label={tr(COPY.emaCross, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_loc_trigger_filter"
+            label={tr(COPY.locTrigger, language)}
+            eff={eff}
+          />
+          <ReadOnlyRow
+            leaf="mentor_loss_departure_pts"
+            label={tr(COPY.lossDeparture, language)}
+            eff={eff}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ReadOnlyRow({
+  leaf,
+  label,
+  eff,
+}: {
+  leaf: string
+  label: string
+  eff: (leaf: string) => EffectiveKnob | null | undefined
+}) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-2 text-[11px]">
+      <span style={{ color: '#848E9C' }}>{label}</span>
+      <EffectiveLine knob={eff(leaf)} className="mt-0" />
     </div>
   )
 }

@@ -857,16 +857,16 @@ export const mentor: GuideSection = {
         {
           label: 'Runner exit (trail mode)',
           where: 'Strategy → Risk Control → 🧑‍🏫 Mentor mode → Runner exit',
-          what: 'What moves the runner’s stop after a split mentor entry (owner ruling R3, release #22). candle: once leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader, the runner goes to break-even (the entry), then trails 1 tick beyond each closed candle’s low (long) / high (short), only ever tighter. off: the older rule — break-even at half the distance to the trade target, live 1:1, trail after the 1:1 point.',
+          what: 'What moves the runner’s stop after a split mentor entry (course-defaults-30, owner "fix all"). candle: FIRST, on the first closed candle whose close is ≥ +0.5R, BOTH legs’ stops move to break-even BEFORE leg 1’s 1:1 partial fills (mentor_be_before_partial ON by default — this reverses owner ruling R3); THEN, once leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader, the runner trails 1 tick beyond each closed candle’s low (long) / high (short), only ever tighter. off: the older rule — break-even at half the distance to the trade target, live 1:1, trail after the 1:1 point.',
           trader:
-            'candle — after the 1:1 partial fills, the rest is at break-even within one closed candle, then follows each closed candle [D2.4 p1 @16:17 “CỨ BÁN BỚT, xong rồi mình GỒNG lệnh”; @07:01 “move stop THEO TỪNG CÂY NẾN ĐÃ ĐÓNG XONG”; X8 @15:40 the candle’s low].',
+            'candle — BE at +0.5R first, then after the 1:1 partial fills the rest is at break-even within one closed candle, then follows each closed candle [D2.4 p1 @16:17 “CỨ BÁN BỚT, xong rồi mình GỒNG lệnh”; @07:01 “move stop THEO TỪNG CÂY NẾN ĐÃ ĐÓNG XONG”; X8 @15:40 the candle’s low].',
           consumer:
             'trader/mentor_trail_r22.go mentorTrailMode · mentorExitDriveCandle (called from trader/mentor_exit_drive.go mentorExitDrivePos)',
           range:
             'candle / off · any other value fails closed to candle and is counted (trail_mode_bad_value)',
           systemDefault: 'candle',
           recommended:
-            'candle — the owner’s ruling R3 and the course’s normal case. On 10-12 row 313 leg 1 banked 1:1 and the runner, still at its original stop, lost the full 1R a minute later.',
+            'candle — the course’s normal case [D2.4 p1 @16:17; X8 @15:40] with BE at +0.5R first (mentor_be_before_partial ON, owner "fix all"). On 10-12 row 313 leg 1 banked 1:1 and the runner, still at its original stop, lost the full 1R a minute later.',
           whenToTouch:
             'off only to compare against the pre-release-#22 rule; a one-bracket position (1 contract, or an older AddOn) always uses the older rule.',
           perSession: 'No.',
@@ -1658,7 +1658,7 @@ export const mentor: GuideSection = {
           trader:
             'ON — 2 crosses in 30m refuse the EMA34 setup (the most conservative reading).',
           consumer: 'kernel/mentor ema_max_cross_30m',
-          range: 'int / off',
+          range: 'int / 0 = off (reachable since W32)',
           systemDefault: '2',
           recommended:
             '2 — item 16 (2026-10-04): gate the line that trades, default ON; the course states no count (frame D4.2 p1 @22:28 shows the indicator OFF), so 2 = the most conservative of v5_ema_cross2/4 and stays flagged mentor-question-open.',
@@ -1682,7 +1682,7 @@ export const mentor: GuideSection = {
         {
           label: '5m trigger at locations',
           where: 'Strategy → Mentor mode → levels',
-          what: 'The 5m trigger filter at levels and boxes (“bat buoc”). OFF only for the sensitivity row that measures what it costs.',
+          what: 'The 5m trigger filter at levels and boxes (“bat buoc”). Inert under trigger_school 1 (enter at the level — the filter is only consulted when the 5m trigger school is ON). OFF only for the sensitivity row that measures what it costs.',
           trader: 'ON.',
           consumer: 'kernel/mentor location trigger filter',
           range: 'true / false',

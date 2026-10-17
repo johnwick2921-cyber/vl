@@ -1,5 +1,8 @@
 import type { MentorTuning } from '../../types'
 
+import { EffectiveLine } from './EffectiveChip'
+import type { EffectiveKnob } from '../../lib/api/strategyEffective'
+
 // Studio controls for risk_control.mentor_tuning — the mentor-method numbers
 // the owner may tune. A blank field = "use the ruled default" (the key is
 // removed from the stored config); the server fails closed to the default on an
@@ -311,7 +314,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   '15m_ib_requires_5m_isb': 'require_5m_isb', // (a)
   tf_conflict_end: 'both_boxes', // (b) OQ-2 — course-defaults-30 [D4.2 p1 @07:54–08:02]
   news_wait_both_lines: true, // (b) OQ-6 — course-defaults-30 [D4.4 p1 @21:55–22:12]
-  news_bars_excluded: false, // (b)
+  news_bars_excluded: true, // CE-4 — course-defaults-30 (release #29 rework: freeze the pre-print read)
   isb_box_escape: 'body', // (a)
   ema34_loss_relock: 'until_zone_exit', // (a)
   orb_edge_veto_pts: 0, // (b) 0 = off
@@ -343,6 +346,9 @@ interface Props {
   onChange: (next: MentorTuning | undefined) => void
   disabled?: boolean
   language: string
+  // Effective rows for risk_control.mentor_tuning.<key> (prefix applied by the
+  // caller). Optional: absent → no chips.
+  eff?: (leaf: string) => EffectiveKnob | null | undefined
 }
 
 const box = {
@@ -356,6 +362,7 @@ export function MentorTuningPanel({
   onChange,
   disabled,
   language,
+  eff,
 }: Props) {
   const numField = (key: NumKey, label: Copy, integer = false) => (
     <label className="text-xs flex flex-col gap-1" style={{ color: '#EAECEF' }}>
@@ -380,6 +387,7 @@ export function MentorTuningPanel({
         className="px-2 py-1 rounded"
         style={box}
       />
+      <EffectiveLine knob={eff?.(`mentor_tuning.${key}`)} />
     </label>
   )
 
@@ -414,6 +422,7 @@ export function MentorTuningPanel({
           <option value="on">{tr(COPY.on, language)}</option>
           <option value="off">{tr(COPY.off, language)}</option>
         </select>
+        <EffectiveLine knob={eff?.(`mentor_tuning.${key}`)} />
       </label>
     )
   }
@@ -455,6 +464,7 @@ export function MentorTuningPanel({
             </option>
           ))}
         </select>
+        <EffectiveLine knob={eff?.(`mentor_tuning.${key}`)} />
       </label>
     )
   }
@@ -496,6 +506,7 @@ export function MentorTuningPanel({
             <option value="1">{tr(COPY.school1, language)}</option>
             <option value="2">{tr(COPY.school2, language)}</option>
           </select>
+          <EffectiveLine knob={eff?.('mentor_tuning.trigger_school')} />
         </label>
         {boolField('orb_gate_enabled', COPY.orb)}
         {boolField('isb_reverse_ema9_enabled', COPY.isbRev)}
