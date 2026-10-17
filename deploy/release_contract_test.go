@@ -530,7 +530,7 @@ func TestCutoverTokenNeverRidesAProcessArgv(t *testing.T) {
 	if !strings.Contains(sh, "umask 077") {
 		t.Fatalf("the token header file must be written 0600")
 	}
-	if !strings.Contains(sh, `rm -f "${TOKEN_HDR:?}"`) {
+	if !strings.Contains(sh, `if [ -n "${TOKEN_HDR:-}" ]; then rm -f "${TOKEN_HDR:?}"; fi' EXIT`) {
 		t.Fatalf("the token header file must be removed on every exit path (trap)")
 	}
 }
