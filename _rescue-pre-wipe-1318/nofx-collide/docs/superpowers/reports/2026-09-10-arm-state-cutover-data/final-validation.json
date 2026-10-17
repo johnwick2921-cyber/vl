@@ -1,0 +1,38 @@
+{
+  "merged_head": "a8b66cd0f463d2c2afb16a29e245de2dfa947433",
+  "clone": "/tmp/arm-state-cutover-20260910/nofx",
+  "captured_utc": "2026-09-10T17:04:49.361361+00:00",
+  "go_test": {
+    "exit": 1,
+    "failed_tests": [
+      "TestShadowDemotionAuthorsInertRow",
+      "TestShadowDemotionE8WritesCounterfactual",
+      "TestShadowDemotionNoWireFrameOnLoopback",
+      "TestLiveConditionPlacesOnLoopback",
+      "TestShadowedRestingOrderCancelledAtBoot",
+      "TestConfigFlipToLiveAllowsArming",
+      "TestSplitArmWritesTwoLedgerRows"
+    ],
+    "full_log_sha256": "5fa29f84107934433b5ef6de0646a642ec50bd129539199cf01a65acb6489668"
+  },
+  "frontend": {
+    "files_passed": 58,
+    "tests_passed": 414,
+    "exit": 0
+  },
+  "typescript": {
+    "exit": 0
+  },
+  "lock_suite": {
+    "passed": 99,
+    "failed": 2,
+    "exit": 1
+  },
+  "pre_pr_parent": "2f80d743",
+  "same_seven_parent_failures": true,
+  "binary_built": false,
+  "dist_built": false,
+  "release_changed": false,
+  "main_lock_acquired": false,
+  "booted": false
+}

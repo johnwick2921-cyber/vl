@@ -1,0 +1,173 @@
+# IDE 配置文件
+.idea/
+*.iml
+*.xml
+
+# AI 工具
+.claude/
+CLAUDE.md
+
+# 编译产物
+*.exe
+nofx
+
+# Go 相关
+*.test
+*.out
+.gocache/
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.log
+*.tmp
+*.bak
+.env.bak*
+*.backup
+.cache/
+.gh-config/
+
+# 环境变量
+.env
+config.json
+configbak.json
+
+# 数据目录（数据库、日志等）
+/data/
+*.db
+
+# 决策日志
+decision_logs/
+
+# Node.js
+web/node_modules
+web/node_modules/
+node_modules/
+web/dist/
+web/.vite/
+
+# ESLint 临时报告文件（调试时生成，不纳入版本控制）
+eslint-*.json
+
+# 本地 Agent QA seed（个人调试用，不纳入版本控制）
+docs/qa/fixtures/agent_self_play_seed.zh-CN.json
+
+# VS code
+.vscode
+
+# 密钥和敏感文件
+# 注意：crypto目录包含加密服务代码，应该被提交
+# 只忽略密钥文件本身
+secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+rsa_key*
+
+# 加密相关
+DATA_ENCRYPTION_KEY=*
+*.enc
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Python 虚拟环境
+.venv/
+venv/
+ENV/
+env/
+.env/
+
+# uv
+.uv/
+uv.lock
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# pyenv
+.python-version
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+PR_DESCRIPTION.md
+
+# 调试截图 / one-off debug + verification screenshots dropped at repo ROOT during
+# agent sessions (not versioned). Tracked doc assets under screenshots/, docs/,
+# and the referenced inventory_*.png are already tracked and unaffected by this.
+/*.png
+/*.jpg
+/*.jpeg
+
+# 一次性补丁文件 / stray format-patch artifacts
+*.patch
+
+# Playwright MCP output (screenshots, snapshots, console logs — tool artifacts)
+.playwright-mcp/
+
+# Go build artifacts
+/vl
+/vl-bin*
+/vl-updater*
+/sandbox-seed
+
+# Compiled binaries (defensive; the vl form is anchored at /vl-bin* above)
+nofx-bin*
+/nq_smoke
+
+# Local environment backups (not for commit)
+.env.save
+.env.save.*
+
+# Playwright MCP cache (per-session, not for commit)
+.playwright-mcp/
+
+# sandbox (isolated test instance) — never commit its DB or binary
+data/sandbox.db*
+.sandbox/
+
+# build artifacts from cmd/* (the 2026-08-29 purge: never commit binaries)
+/gate-jwt
+/maintenance-hold
+
+# W-ONE-BUTTON M2 — installation-local updater state (hold file, jobs, keys). Covered by /data/ too; explicit so it is never committed.
+data/updater/
+/w2w3_replay
+/cmd/w2w3_replay/w2w3_replay

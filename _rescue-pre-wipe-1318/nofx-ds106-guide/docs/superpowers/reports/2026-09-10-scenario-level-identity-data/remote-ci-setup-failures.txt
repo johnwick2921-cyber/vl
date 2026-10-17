@@ -1,0 +1,12 @@
+govulncheck (Go)	Run govulncheck	2026-09-10T23:41:18.7854369Z go: golang.org/x/vuln/cmd/govulncheck@latest: golang.org/x/vuln@v1.8.0 requires go >= 1.26.0 (running go 1.25.3; GOTOOLCHAIN=local)
+npm audit --production	Install production deps	2026-09-10T23:40:49.5380467Z npm error code 127
+npm audit --production	Install production deps	2026-09-10T23:40:49.5382375Z npm error command sh -c husky
+Build backend (amd64)	Build and push backend-amd64 image	2026-09-10T23:41:09.2314239Z ERROR: failed to build: invalid tag "ghcr.io/johnwick2921-cyber/nofx/nofx-backend:-4ed4efa-amd64": invalid reference format
+Build backend (amd64)	Build and push backend-amd64 image	2026-09-10T23:41:09.2344053Z ##[error]buildx failed with: ERROR: failed to build: invalid tag "ghcr.io/johnwick2921-cyber/nofx/nofx-backend:-4ed4efa-amd64": invalid reference format
+Build frontend (arm64)	Build and push frontend-arm64 image	2026-09-10T23:41:05.0419501Z ERROR: failed to build: invalid tag "ghcr.io/johnwick2921-cyber/nofx/nofx-frontend:-4ed4efa-arm64": invalid reference format
+Build frontend (arm64)	Build and push frontend-arm64 image	2026-09-10T23:41:05.0469480Z ##[error]buildx failed with: ERROR: failed to build: invalid tag "ghcr.io/johnwick2921-cyber/nofx/nofx-frontend:-4ed4efa-arm64": invalid reference format
+Build backend (arm64)	Build and push backend-arm64 image	2026-09-10T23:41:01.5066117Z ERROR: failed to build: invalid tag "ghcr.io/johnwick2921-cyber/nofx/nofx-backend:-4ed4efa-arm64": invalid reference format
+Build backend (arm64)	Build and push backend-arm64 image	2026-09-10T23:41:01.5113011Z ##[error]buildx failed with: ERROR: failed to build: invalid tag "ghcr.io/johnwick2921-cyber/nofx/nofx-backend:-4ed4efa-arm64": invalid reference format
+Build frontend (amd64)	Build and push frontend-amd64 image	2026-09-10T23:41:01.2170730Z ERROR: failed to build: invalid tag "ghcr.io/johnwick2921-cyber/nofx/nofx-frontend:-4ed4efa-amd64": invalid reference format
+Build frontend (amd64)	Build and push frontend-amd64 image	2026-09-10T23:41:01.2193113Z ##[error]buildx failed with: ERROR: failed to build: invalid tag "ghcr.io/johnwick2921-cyber/nofx/nofx-frontend:-4ed4efa-amd64": invalid reference format
+2026-09-10T23:41:29.4125926Z #15 18.79 Could not resolve "../../../branding/product.txt?raw" from "src/constants/branding.ts"

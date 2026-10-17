@@ -1,0 +1,142 @@
+== a free lock reports free ==
+  ok   status names it free
+  ok   status rc on a free lock
+== acquire, then a SECOND acquire FAILS (the replacement class) ==
+  ok   first acquire rc
+  ok   first acquire confirms
+  ok   second acquire rc is nonzero
+  ok   second acquire refuses
+  ok   second acquire names the holder
+  ok   second acquire names the task
+== the lock carries no pid, by construction ==
+  ok   no pid= field in the lock
+  ok   no PID word in the lock
+  ok   records the session
+  ok   records the task
+  ok   records acquired
+  ok   records expiry
+  ok   records a heartbeat
+== a fresh heartbeat reads held, and never 'stale' ==
+  ok   fresh status says held
+  ok   fresh status is not stale
+  ok   check rc on held-fresh
+== a STALE heartbeat says stale, and NEVER says dead ==
+  ok   stale status says stale
+  ok   stale status never says dead
+  ok   stale status demands corroboration
+  ok   stale status still names the holder
+  ok   check rc on held-stale
+== heartbeat refreshes it; a foreign session may not beat ==
+  ok   beating clears stale
+  ok   foreign heartbeat rc nonzero
+  ok   foreign heartbeat refuses
+== release is owner-scoped, and frees the lock ==
+  ok   foreign release rc nonzero
+  ok   owner release rc
+  ok   release confirms
+  ok   lock is free again
+  ok   lock dir is gone
+== with-heartbeat keeps a long job fresh, and stops when it ends ==
+  ok   with-heartbeat beat at least once
+cat: /tmp/tmp.Hew3HpC11L/nofx-main.lock.d/heartbeat: No such file or directory
+cat: /tmp/tmp.Hew3HpC11L/nofx-main.lock.d/heartbeat: No such file or directory
+  ok   beater does not outlive its command
+== reclaim: REFUSED on a fresh heartbeat ==
+  ok   reclaim rc on fresh is nonzero
+  ok   reclaim refuses a fresh lock
+  ok   refusal says the heartbeat is fresh
+  ok   holder is unchanged after a refused reclaim
+== reclaim: allowed once STALE, and only with corroboration ==
+  ok   reclaim without corroboration rc nonzero
+  ok   refuses when corroboration is missing
+  ok   reclaim naming the WRONG stale session rc nonzero
+  ok   refuses when the named session is not the holder
+  ok   reclaim rc is 3, distinct from acquire's 0
+  ok   reclaim confirms
+  ok   new holder is named
+  ok   reclaimed lock is fresh
+== the reclaim is written to the lock's history ==
+  ok   history names who took over
+  ok   history names who was taken from
+  ok   history carries the corroboration
+  ok   history is timestamped
+  ok   history survives into status
+== a reclaimed lock still beats and releases as the new holder ==
+  ok   old holder may no longer beat
+  ok   new holder may beat
+  ok   released
+== the script cannot express pid liveness ==
+  ok   no kill -0
+  ok   no pgrep
+  ok   no $$
+== the keeper: acquire starts one, and a WAITING holder stays ALIVE ==
+  ok   acquire rc
+  ok   acquire confirms
+  ok   the acquire message no longer promises an unstarted beat
+  ok   a WAITING holder is still ALIVE past the stale window
+  ok   a waiting holder is not reported STALE
+  ok   status reports the auto-beat
+== killing the keeper makes it STALE — the beat is a process, not a fiction ==
+  ok   a keeper pid is recorded as a stop handle
+  ok   with the keeper dead the lock goes STALE
+== a second acquire never succeeds while the lock lives ==
+  ok   second acquire rc is a refusal
+  ok   second acquire is REFUSED
+== release stops the keeper — no writer outlives its lock ==
+  ok   release confirms
+  ok   release STOPS the keeper process
+== the keeper OUTLIVES the shell that spawned it ==
+  ok   a keeper spawned by an exited shell keeps beating
+== THE BOUND: the keeper stops at the declared expiry, and never extends it ==
+  ok   a lock past its declared expiry goes STALE — the keeper never auto-extends
+== the acquire message says what the keeper actually does ==
+  ok   the acquire path records a keeper
+== NO WRITER OUTLIVES ITS LOCK: an orphan cannot land in the next holder's lock ==
+  ok   a second acquire never sees the first holder's identity
+  ok   the lock reports the holder that actually took it
+  ok   the holder can release its OWN lock
+== release kills the GROUP, so no keeper member survives it ==
+  ok   release stops the whole keeper group
+== NO WRITER EXTENDS A WINDOW — not even a hand-rolled one ==
+  ok   a hand beat past the declared expiry is REFUSED
+  ok   and says why
+  ok   the lock still names its holder
+== a lock inside its window still beats normally ==
+  ok   a beat inside the window succeeds
+== acquire is CLEAN on stderr — a spawn that warns is a spawn nobody reads ==
+  ok   acquire writes nothing to stderr
+== pgrp is counted AFTER comm, so a comm with spaces cannot shift it ==
+  ok   pgrp survives a comm with spaces and parens
+  ok   and the naive whole-line split is the wrong number
+== release NEVER signals a group it did not create ==
+  ok   a keeper.pid naming someone else's group is not signalled
+deploy/nofx-lock-test.sh: line 412: 2315428 Killed                  setsid bash -c 'sleep 30' > /dev/null 2>&1
+== a keeper.pid that is not a number is inert ==
+  FAIL release of a lock with a corrupt keeper.pid still succeeds
+     want [0] got [1]
+  FAIL and reports the release
+     missing [released] in: release failed — '/tmp/tmp.lfpf4lv7bu/lock.d' still exists after rm.
+  the lock is still held by sess-j and its keeper has been stopped,
+  so it will read stale within 600s though you are still here.
+  fix the cause (permissions on the parent? read-only mount?) and release again.
+== C1 — release REPORTS a failed removal instead of claiming success ==
+  ok   release of an unremovable lock FAILS
+  ok   and says the lock is still held
+  ok   and warns the keeper is already stopped
+  ok   and does NOT claim it released
+== C3 — a half-built lock is INCOMPLETE, never STALE with an empty holder ==
+  ok   a meta-less lock reads INCOMPLETE
+  ok   and is NOT reported stale
+  ok   and invents no empty holder
+  ok   check rc for an acquire in flight
+  ok   an orphaned half-built lock reads ABANDONED
+  ok   check rc for an abandoned half-built lock
+== C2 — a lock that names NOBODY can be cleared, but only that kind ==
+  ok   clear-incomplete removes an abandoned lock
+  ok   the directory is gone
+  ok   a lock too YOUNG to be abandoned is refused
+  ok   and says an acquire is probably in flight
+  ok   a lock WITH a holder is refused
+  ok   and names the holder it refused to clear
+
+pass=99 fail=2

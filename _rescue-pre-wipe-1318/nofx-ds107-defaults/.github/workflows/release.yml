@@ -1,0 +1,216 @@
+# W-ONE-BUTTON M4 — cut a signed, scanned release from an APPROVED TAG.
+#
+# Design rules this file exists to enforce (docs/superpowers/plans/
+# 2026-09-22-one-button-m4-design-notes.md):
+#   * A release is cut from a TAG a human approved. Never from a push to a
+#     branch — a branch moves, and "the release" would then mean whatever dev
+#     happened to be when the job ran.
+#   * The binary must be provably built from clean, tagged source
+#     (vcs.modified=false). A dirty build is not a release.
+#   * The guide carries the sha it was built for (VITE_GUIDE_BUILT_REV), so it
+#     cannot lie about the binary it ships beside.
+#   * Only the allow-list is packaged; the staged tree AND the archive are both
+#     scanned for secrets, because they are different things.
+#   * The artifact repository is ONE variable. OPEN OWNER DECISION: it defaults
+#     fail-closed to THIS repo. The partner repo must never be a target.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'existing tag to release'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  # OPEN OWNER DECISION (plan §Owner decisions 4). Fail-closed default: this
+  # repo. Changeable by the owner in ONE line. Never the partner mirror —
+  # deploy/release_contract_test.go fails if that name appears here.
+  RELEASE_REPO: johnwick2921-cyber/nofx
+
+jobs:
+  # A rollback pair is advertised tested ONLY when this job has actually done
+  # it: old creates the DB, new migrates it forward, and then OLD BOOTS THE
+  # MIGRATED DB — the step nobody runs, and the one that fails at the moment a
+  # rollback is needed most. Network is disabled so nothing here can reach a
+  # broker, and the verdict is read off the DATABASE rather than the process
+  # (with no NT8 a binary is not expected to stay up).
+  dbcompat:
+    runs-on: ubuntu-latest
+    outputs:
+      rollback_pairs: ${{ steps.pairs.outputs.json }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with: { go-version-file: 'go.mod' }
+      - name: Prove each rollback pair
+        id: pairs
+        env:
+          # First pair, per the dispatch. Add pairs here as they are proven.
+          PAIRS: '0e490e44:662c79bd'
+        run: |
+          set -uo pipefail
+          sudo apt-get install -y -q sqlite3 >/dev/null 2>&1 || true
+          out='['; sep=''
+          for pair in $PAIRS; do
+            old="${pair%%:*}"; new="${pair##*:}"
+            if bash deploy/release/db-compat.sh "$old" "$new"; then tested=true; else tested=false; fi
+            out="${out}${sep}{\"to_release\":\"${old}\",\"tested\":${tested}}"; sep=','
+          done
+          out="${out}]"
+          echo "json=$out" >> "$GITHUB_OUTPUT"
+          echo "$out"
+
+  release:
+    needs: [dbcompat]
+    runs-on: ubuntu-latest
+    # The protected Environment carries the owner as a REQUIRED REVIEWER and
+    # holds the signing key. No approval, no release, no signature.
+    environment: release
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve the source sha (40 hex, READ)
+        id: src
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse HEAD)"
+          [ "${#SHA}" -eq 40 ] || { echo "source sha is not 40 hex: $SHA"; exit 1; }
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          # On workflow_dispatch GITHUB_REF_NAME is the BRANCH the run started
+          # from, not the tag — 'gh release create dev --verify-tag' would be
+          # the result. Take the input when dispatched, and refuse anything
+          # that is not a v-tag either way.
+          REL_ID="${{ github.event.inputs.tag }}"
+          [ -n "$REL_ID" ] || REL_ID="${GITHUB_REF_NAME}"
+          case "$REL_ID" in v*) : ;; *) echo "REFUSED: release id '$REL_ID' is not a v* tag"; exit 1 ;; esac
+          echo "release_id=$REL_ID" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with: { go-version-file: 'go.mod' }
+
+      - name: Build the binary and PROVE the tree was clean
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)" || { echo "REFUSED: working tree dirty before build"; git status --porcelain; exit 1; }
+          go build -trimpath -o nofx-bin ./
+          # The stamp is READ back out of the binary, never assumed: a build
+          # that reports vcs.modified=true is not a release.
+          go version -m nofx-bin | tee /tmp/vcs.txt
+          grep -q 'vcs.modified=false' /tmp/vcs.txt || { echo "REFUSED: vcs.modified is not false"; exit 1; }
+          grep -q "vcs.revision=${{ steps.src.outputs.sha }}" /tmp/vcs.txt || { echo "REFUSED: binary does not carry the tag's revision"; exit 1; }
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: '20', cache: 'npm', cache-dependency-path: web/package-lock.json }
+
+      - name: PROVE a prod build without the rev FAILS (negative, before the real build)
+        run: |
+          set -uo pipefail
+          # The vitest for this re-implements the resolver, which proves
+          # self-consistency and not the build (canon 53). This is the real
+          # thing: vite must REFUSE to produce a bundle with no rev. If this
+          # step ever succeeds, the guard has stopped guarding.
+          cd web && npm ci
+          if VITE_GUIDE_BUILT_REV= npm run build >/tmp/negative.log 2>&1; then
+            echo "REFUSED: a production build with no VITE_GUIDE_BUILT_REV SUCCEEDED — the guard is gone"
+            tail -20 /tmp/negative.log
+            exit 1
+          fi
+          echo "ok: a prod build without the rev fails, as it must"
+
+      - name: Build the web assets with the guide rev baked in
+        env:
+          VITE_GUIDE_BUILT_REV: ${{ steps.src.outputs.sha }}
+        run: |
+          set -euo pipefail
+          cd web && npm run build
+          grep -rq "${{ steps.src.outputs.sha }}" dist/assets/*.js || { echo "REFUSED: built dist does not carry the guide rev"; exit 1; }
+
+      - name: Stage ONLY the allow-list
+        run: bash deploy/release/package.sh "$PWD" /tmp/stage "${{ steps.src.outputs.sha }}"
+
+      - name: Install gitleaks (PINNED version, sha256 verified)
+        run: |
+          set -euo pipefail
+          # This job later holds RELEASE_SIGNING_KEY. It does not pipe a remote
+          # script into a shell, and it does not fetch from a moving branch:
+          # both would let whoever controls that branch run code beside the key.
+          # Fixed version, fixed checksum, verified before anything executes.
+          VER=8.30.1
+          SHA=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+          curl -sSfL -o /tmp/gl.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz"
+          echo "${SHA}  /tmp/gl.tgz" | sha256sum -c -
+          tar -C /usr/local/bin -xzf /tmp/gl.tgz gitleaks
+          gitleaks version
+
+      - name: Secret scan — the staged tree (gitleaks REQUIRED here)
+        env:
+          # In CI an absent scanner is a FAILURE, never a downgrade to the
+          # deny-list: secret-scan.sh would otherwise print its NOTE and pass.
+          GITLEAKS_REQUIRED: '1'
+        run: bash deploy/release/secret-scan.sh /tmp/stage
+
+      - name: Build the manifest
+        env:
+          # COMPUTED by the dbcompat job, which actually performed each
+          # rollback. A pair it could not prove is carried as tested:false —
+          # never omitted silently and never asserted true (R2).
+          ROLLBACK_PAIRS: ${{ needs.dbcompat.outputs.rollback_pairs }}
+        run: |
+          set -euo pipefail
+          # WRITE OUTSIDE THE STAGE, MOVE IN AFTER ENUMERATION.
+          # Redirecting into the stage creates manifest.json at 0 BYTES before
+          # the script starts — redirection truncates first — so the script
+          # then enumerates the stage, finds its own output file empty, and
+          # refuses (correctly: an entry carrying the sha256 of the empty
+          # string matches nothing that ships). Every tag failed on a guard
+          # that was right. The guard stays; the caller is the bug.
+          bash deploy/release/manifest.sh /tmp/stage "${{ steps.src.outputs.sha }}" "${{ steps.src.outputs.release_id }}" > /tmp/manifest.json
+          python3 -c "import json,sys; json.load(open('/tmp/manifest.json'))"
+          mv /tmp/manifest.json /tmp/stage/manifest.json
+
+      - name: Sign the manifest (ed25519; private key lives only in the Environment)
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "${RELEASE_SIGNING_KEY:-}" ] || { echo "REFUSED: no signing key in the release Environment"; exit 1; }
+          # '%s' alone drops the trailing newline an OpenSSH private key
+          # requires, and a 0644 key file is refused outright.
+          printf '%s\n' "$RELEASE_SIGNING_KEY" > /tmp/sign.key
+          chmod 600 /tmp/sign.key
+          ssh-keygen -Y sign -f /tmp/sign.key -n release /tmp/stage/manifest.json
+          shred -u /tmp/sign.key
+          # Verify with the COMMITTED public key, so a signature that the
+          # shipped public key cannot check never leaves the runner.
+          [ -f deploy/release_allowed_signers ] || { echo "REFUSED: deploy/release_allowed_signers is missing. The owner creates the release keypair ONCE (see deploy/release/README.md): the ALLOWED-SIGNERS line is committed here, the PRIVATE half goes only into the 'release' Environment secret RELEASE_SIGNING_KEY."; exit 1; }
+          ssh-keygen -Y verify -f deploy/release_allowed_signers -I release -n release \
+            -s /tmp/stage/manifest.json.sig < /tmp/stage/manifest.json
+
+      - name: Archive, then scan the ARCHIVE too
+        run: |
+          set -euo pipefail
+          tar -C /tmp/stage -czf "/tmp/${{ steps.src.outputs.release_id }}.tar.gz" .
+          mkdir -p /tmp/verify && tar -C /tmp/verify -xzf "/tmp/${{ steps.src.outputs.release_id }}.tar.gz"
+          bash deploy/release/secret-scan.sh /tmp/verify
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.src.outputs.release_id }}" \
+            --repo "$RELEASE_REPO" --verify-tag --notes-file docs/superpowers/plans/2026-09-22-one-button-m4-design-notes.md \
+            "/tmp/${{ steps.src.outputs.release_id }}.tar.gz" \
+            /tmp/stage/manifest.json /tmp/stage/manifest.json.sig

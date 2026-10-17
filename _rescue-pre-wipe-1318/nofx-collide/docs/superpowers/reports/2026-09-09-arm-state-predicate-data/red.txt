@@ -1,0 +1,16 @@
+09-09 22:20:43 [INFO] store/store.go:89 ✅ Database initialized (GORM, SQLite)
+09-09 22:20:43 [INFO] store/store.go:89 ✅ Database initialized (GORM, SQLite)
+09-09 22:20:43 [INFO] store/store.go:89 ✅ Database initialized (GORM, SQLite)
+--- FAIL: TestArmStateGateSeparatesAuthorizationFromPlacement (0.42s)
+    --- FAIL: TestArmStateGateSeparatesAuthorizationFromPlacement/two_authorized,_empty_book (0.15s)
+        arm_state_contract_test.go:38: pass=false want=true, detail must contain "2 armed": {N:4 Name:working_orders Pass:false Detail:broker 0 vs ledger 2 — MISMATCH; broker[] ledger[,] Source:broker — NT8 order_snapshot frame (age 0s, build fixture) × armed_orders ledger}
+    --- FAIL: TestArmStateGateSeparatesAuthorizationFromPlacement/placement_unconfirmed (0.14s)
+        arm_state_contract_test.go:38: pass=false want=false, detail must contain "unconfirmed": {N:4 Name:working_orders Pass:false Detail:broker 0 vs ledger 1 — MISMATCH; broker[] ledger[sent-entry] Source:broker — NT8 order_snapshot frame (age 0s, build fixture) × armed_orders ledger}
+--- FAIL: TestArmStateReadersAgreeOnFinishedRows (0.00s)
+    arm_state_contract_test.go:47: terminal state "rejected" must not be reported armed
+    arm_state_contract_test.go:47: terminal state "superseded" must not be reported armed
+    arm_state_contract_test.go:47: terminal state "shadowed" must not be reported armed
+    arm_state_contract_test.go:47: terminal state " CANCELED " must not be reported armed
+FAIL
+FAIL	nofx/trader	0.429s
+FAIL

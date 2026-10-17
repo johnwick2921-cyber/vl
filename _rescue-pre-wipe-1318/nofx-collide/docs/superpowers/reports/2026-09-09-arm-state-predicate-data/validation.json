@@ -1,0 +1,45 @@
+{
+  "validated_implementation_head": "2d6186c7acabb3b7893c3c0caeb8fcae906bc8f2",
+  "integrated_dev_head": "d1a19cd3d2713da5c8fb7505156c1c2d18ff93dd",
+  "captured_at": "2026-09-10T03:57:01.786766+00:00",
+  "checks": [
+    {
+      "command": "go test ./...",
+      "exit_code": 0,
+      "log_bytes": 2519,
+      "log_sha256": "db1e4ef8ba71a99181836fc34215b686e42d2cefa871b1a6964da1878a345899",
+      "summary": [
+        "ok  \tnofx/store\t28.188s",
+        "ok  \tnofx/trader\t87.714s"
+      ]
+    },
+    {
+      "command": "go build ./...",
+      "exit_code": 0,
+      "log_bytes": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary": []
+    },
+    {
+      "command": "npx vitest run",
+      "exit_code": 0,
+      "log_bytes": 88841,
+      "log_sha256": "ae306c26b86ec147190004096b106b1e760e2431a50ca703677a77c0561edce5",
+      "summary": [
+        " Test Files  58 passed (58)",
+        "      Tests  414 passed (414)"
+      ]
+    },
+    {
+      "command": "npx tsc --noEmit",
+      "exit_code": 0,
+      "log_bytes": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary": []
+    }
+  ],
+  "python": {
+    "result": "PASS",
+    "scope": "canonical helper against in-memory SQLite; parsed modified audit scripts; no live database opened"
+  }
+}

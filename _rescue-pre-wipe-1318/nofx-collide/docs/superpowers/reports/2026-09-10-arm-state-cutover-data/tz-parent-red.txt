@@ -1,0 +1,8 @@
+--- FAIL: TestTZGuardSingleTimeSource (0.07s)
+    tz_guard_test.go:99: candle_disclosure.go:/tmp/arm-state-cutover-20260910/baseline/nofx/kernel/candle_disclosure.go:115:73: bare time layout "15:04" must route through kernel/tz.go helpers (FormatCT/ClockCT/ClockCTAndUTC/TableTimeCT) or carry an explicit zone suffix
+    tz_guard_test.go:99: ninjatrader/bar_horizon_warn.go:/tmp/arm-state-cutover-20260910/baseline/nofx/trader/ninjatrader/bar_horizon_warn.go:161:100: bare time layout "15:04:05" must route through kernel/tz.go helpers (FormatCT/ClockCT/ClockCTAndUTC/TableTimeCT) or carry an explicit zone suffix
+    tz_guard_test.go:99: ninjatrader/bar_horizon_warn.go:/tmp/arm-state-cutover-20260910/baseline/nofx/trader/ninjatrader/bar_horizon_warn.go:258:38: bare time layout "15:04:05" must route through kernel/tz.go helpers (FormatCT/ClockCT/ClockCTAndUTC/TableTimeCT) or carry an explicit zone suffix
+    tz_guard_test.go:99: regime_input_window.go:/tmp/arm-state-cutover-20260910/baseline/nofx/trader/regime_input_window.go:111:38: bare time layout "15:04:05" must route through kernel/tz.go helpers (FormatCT/ClockCT/ClockCTAndUTC/TableTimeCT) or carry an explicit zone suffix
+FAIL
+FAIL	nofx/kernel	0.078s
+FAIL

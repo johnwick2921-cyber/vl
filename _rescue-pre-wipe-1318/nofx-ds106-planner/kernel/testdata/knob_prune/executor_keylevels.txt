@@ -1,0 +1,29 @@
+KEY LEVELS (map, nearest-first; price 20041.83):
+  20040.64  POC                  A  fresh·x11 magnet_meanrevert -1.2
+  20045.77  VWAP+1σ              A  fresh·x13 magnet_meanrevert +3.9
+  20036.56  PDC                  A  fresh·x5  pivot           -5.3
+  20056.51  VAH                  A  fresh·x5  react_zone      +14.7
+  20060.46  SWG-H·5m             A  fresh·x13 react_zone      +18.6
+  20075.16  SETT                 A  fresh·x11 pivot           +33.3
+  20079.55  SWG-H·5m             A  fresh·x17 react_zone      +37.7
+  20001.23  VWAP                 A  fresh·x19 magnet_meanrevert -40.6
+Anchor: react AT these levels (grade A>B>C); between them, a confirmed momentum/breakout may still be traded.
+role playbook: magnet_meanrevert = price gravitates back (fade/reversion setups) · liquidity_break = resting stops (break or sweep-reclaim, never a blind fade) · react_zone = first-touch reaction reference (reject/hold evidence) · target_only = take-profit / invalid reference only, NEVER an entry trigger · pivot = the auction's fulcrum (bias flips measured against it).
+
+MAP (merged references, nearest-first; price 20041.83):
+  20040.64  POC                                          A  target           -1.19 pt / 0.07 ATR  not-an-entry: nearest opposing reference 5.13 pt away, under the 27.12 pt minimum
+  20045.77  VWAP+1σ                                      A  target           +3.94 pt / 0.22 ATR  not-an-entry: nearest opposing reference 5.13 pt away, under the 27.12 pt minimum
+  20036.56  PDC                                          A  target           -5.28 pt / 0.29 ATR  not-an-entry: nearest opposing reference 4.08 pt away, under the 27.12 pt minimum
+  20056.51  VAH                                          A  target           +14.68 pt / 0.81 ATR  not-an-entry: nearest opposing reference 10.74 pt away, under the 27.12 pt minimum
+  20060.46  SWG-H·5m · SWG-H·15m                         A  target           +18.63 pt / 1.03 ATR  not-an-entry: nearest opposing reference 3.95 pt away, under the 27.12 pt minimum
+  20075.16  SETT                                         A  target           +33.33 pt / 1.84 ATR  not-an-entry: nearest opposing reference 14.7 pt away, under the 27.12 pt minimum
+  20079.55  SWG-H·5m · SWG-H·15m · LDN-H                 A  target           +37.72 pt / 2.09 ATR  not-an-entry: nearest opposing reference 4.4 pt away, under the 27.12 pt minimum
+  20001.23  VWAP · RN 20000 [merged x2]                  A  entry-candidate  -40.6 pt / 2.25 ATR
+  20100     RN 20100                                     —  target           +58.17 pt / 3.22 ATR  projection: round number beyond the range (step 100)
+  19900     RN 19900                                     —  target           -141.83 pt / 7.84 ATR  projection: round number beyond the range (step 100)
+  20184.38  ATR-PROJ-H                                   —  target           +142.55 pt / 7.88 ATR  projection: session open 20019 ± 1×daily-ATR 165.38 [I]
+  20200     RN 20200                                     —  target           +158.17 pt / 8.75 ATR  projection: round number beyond the range (step 100)
+  19853.62  ATR-PROJ-L                                   —  target           -188.21 pt / 10.41 ATR  projection: session open 20019 ± 1×daily-ATR 165.38 [I]
+ENTRY SHORTLIST (reachability order — nearest first; [I] unvalidated, E4 pending):
+  1. 20001.23  VWAP · RN 20000                              score 1.44
+Levels excluded from the shortlist remain on the map as target/obstacle/invalidation — exclusion is not invalidation.

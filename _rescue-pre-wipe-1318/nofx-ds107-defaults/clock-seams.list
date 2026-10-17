@@ -1,0 +1,84 @@
+# CLOCK SEAMS (checklist class 60) — the maintained list of TIME-DEPENDENT RULES.
+#
+# Format:  <file>:<entry point>:<…At variant>
+#
+# Every rule whose verdict can change with the wall clock belongs here. The lint
+# test (trader/clock_seam_lint_test.go) reads THIS FILE and asserts, for each
+# row, that the …At variant exists and that the entry point is a ONE-LINE
+# DELEGATE. Adding a time-dependent rule without a seam fails the build.
+#
+# Class 60 in one line: a suite verified at 11:00 was red at 14:50 because a
+# fixed-fixture test reached a wall-clock entry point. The entry owns the clock;
+# the rule takes it as an argument.
+#
+# NOT in this list, deliberately — with the reason, because an unexplained
+# absence is how a list stops being trusted:
+#   trader/auto_trader_reset.go ForceReset — its time.Now() is a poll DEADLINE
+#     for a real wait on an in-flight read, not a rule. Feeding it fixture time
+#     would change behaviour (instant timeout or none), which this wave forbids.
+#   trader/auto_trader_clock.go entryBlockedByLastEntry — REMOVED (W-EXEC-TRUTH W0,
+#     2026-09-23): its only production caller was the AI path's inline chain,
+#     which moved into admitEntry and passes its own clock to
+#     entryBlockedByLastEntryAt. A wrapper nothing calls is a dead row (A29).
+#   trader/armed_executor.go runArmedPlacement — REMOVED (W-EXEC-TRUTH W0, CTO M2):
+#     its only caller was a test; the production caller maybeManageArmedOrdersAt
+#     calls runArmedPlacementAt with its clock AND its admitted set (G1).
+#   trader/invalidation_resolver.go scenarioInvalidationResolver — REMOVED (W1b E3):
+#     its only production caller, entryGateForArm, runs inside the armed pass and
+#     now hands scenarioInvalidationResolverClock the pass's `now`. The wrapper
+#     passed time.Now as a VALUE, so the seam walk never saw leg 3 read the wall
+#     clock beneath maybeManageArmedOrdersAt. A wrapper nothing calls is a dead row.
+#   trader/auto_trader_clock.go tickOnce — the loop entry. Its only clock use
+#     already delegates to the seamed staleDodgeCheck(now).
+#   kernel/tz.go NowCT — the clock accessor itself; every consumer (ClockCT,
+#     ClockCTAndUTC, ClockCTSeconds, TableTimeCT) already takes an explicit t.
+#   trader/binance/order_sync.go — live-network request timestamps, env-gated
+#     tests (BINANCE_LIVE_TEST), not in the deploy gate.
+#   trader/armed_event_pass.go startArmedEventLoop / stopArmedEventLoop (W5) —
+#     lifecycle hooks, not rules: start marks the Picture run epoch with the
+#     wall instant the run began, and Stop has no pass clock; the Stop hook's
+#     rule (retirePictureRowsOnStop → invalidatePictureRows) takes `now` as an
+#     argument, and under the pass it is handed the pass's `now`.
+
+trader/auto_trader_clock.go:latestClosedPrimaryBarMs:latestClosedPrimaryBarMsAt
+trader/auto_trader_clock.go:recordClosedTradeAnalytics:recordClosedTradeAnalyticsAt
+trader/auto_trader_clock.go:maybeRecordClosedTradeAnalytics:maybeRecordClosedTradeAnalyticsAt
+trader/auto_trader_clock.go:enforceEODFlat:enforceEODFlatAt
+trader/auto_trader_clock.go:enforceT1ForceFlat:enforceT1ForceFlatAt
+trader/auto_trader_transition.go:observeTransitionStanddown:observeTransitionStanddownAt
+trader/auto_trader_transition.go:maybeWakePlannerOnMSS:maybeWakePlannerOnMSSAt
+trader/auto_trader_weekly.go:weeklyConfluenceShadow:weeklyConfluenceShadowAt
+trader/auto_trader_weekly.go:weeklyScenarioGrade:weeklyScenarioGradeAt
+trader/auto_trader_wake_levels.go:maybeWakePlannerOnLevelEvents:maybeWakePlannerOnLevelEventsAt
+kernel/risk_limits.go:ResetDailyPnL:ResetDailyPnLAt
+provider/ninjatrader/bar_persist.go:barPersistSummary:barPersistSummaryAt
+
+trader/auto_trader_levelstate.go:recordLevelState:recordLevelStateAt
+trader/auto_trader_levelstate.go:recordScenarioState:recordScenarioStateAt
+trader/auto_trader_planner.go:runPlannerReadCoreWithFactsGrades:runPlannerReadCoreWithFactsGradesClock
+
+trader/armed_executor.go:declineHadFreshMet:declineHadFreshMetAt
+trader/armed_executor.go:maybeManageArmedOrders:maybeManageArmedOrdersAt
+# W3 (W-EXEC-TRUTH, 2026-09-23): the live-bar armed pass and the strict nudge.
+trader/armed_event_pass.go:armedEventPass:armedEventPassAt
+trader/strict_nudge.go:strictNudge:strictNudgeAt
+
+# Stage A telemetry clocks (no trading verdict changes)
+researchsnapshot/archive.go:Save:saveAt
+researchsnapshot/recorder.go:Offer:offerWithClock
+researchsnapshot/runtime.go:CurrentBootLine:CurrentBootLineAt
+researchsnapshot/plan.go:Begin:BeginAt
+researchsnapshot/plan.go:Reply:ReplyAt
+researchsnapshot/plan.go:Finish:FinishAt
+researchsnapshot/plan.go:Published:PublishedAt
+provider/ninjatrader/research_wire.go:observe:observeAt
+trader/research_snapshot.go:recordResearchCandidates:recordResearchCandidatesAt
+trader/research_snapshot.go:recordResearchInput:recordResearchInputAt
+trader/research_snapshot.go:recordResearchPermissions:recordResearchPermissionsAt
+trader/research_snapshot.go:recordResearchGate:recordResearchGateAt
+provider/ninjatrader/research_wire.go:recordResearchSignal:recordResearchSignalAt
+trader/research_snapshot.go:recordResearchEpisodes:recordResearchEpisodesAt
+researchsnapshot/plan.go:RequestConfig:RequestConfigAt
+trader/research_snapshot.go:recordResearchPlacement:recordResearchPlacementAt
+store/research_record.go:recordResearchPlacementTimeout:recordResearchPlacementTimeoutAt
+trader/auto_trader_planner.go:installActivePlanProvider:installActivePlanProviderAt

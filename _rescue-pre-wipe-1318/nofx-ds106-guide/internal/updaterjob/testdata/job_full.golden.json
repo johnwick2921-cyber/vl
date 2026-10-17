@@ -1,0 +1,292 @@
+{
+  "schema": 1,
+  "job_id": "0123456789abcdef0123456789abcdef",
+  "release_id": "v1.2.0",
+  "source_sha": "0123456789abcdef0123456789abcdef01234567",
+  "state": "recovery_needed",
+  "phase": "done",
+  "attempts": 0,
+  "created_at": "2026-09-24T18:02:11.123456789Z",
+  "updated_at": "2026-09-24T18:06:35.123456789Z",
+  "blocker": "attended recovery: nofx-updater recovery 0123456789abcdef0123456789abcdef",
+  "error": "watch: no boot line for 89abcdef0123 within 1m30s",
+  "transitions": [
+    {
+      "state": "requested",
+      "phase": "done",
+      "at": "2026-09-24T18:02:11.123456789Z",
+      "receipts": 0
+    },
+    {
+      "state": "downloaded",
+      "phase": "started",
+      "at": "2026-09-24T18:02:12.123456789Z",
+      "receipts": 0
+    },
+    {
+      "state": "downloaded",
+      "phase": "done",
+      "at": "2026-09-24T18:02:13.123456789Z",
+      "receipts": 1
+    },
+    {
+      "state": "verified",
+      "phase": "started",
+      "at": "2026-09-24T18:02:14.123456789Z",
+      "receipts": 1
+    },
+    {
+      "state": "verified",
+      "phase": "done",
+      "at": "2026-09-24T18:02:15.123456789Z",
+      "receipts": 2
+    },
+    {
+      "state": "preflight_ok",
+      "phase": "started",
+      "at": "2026-09-24T18:02:16.123456789Z",
+      "receipts": 2
+    },
+    {
+      "state": "preflight_ok",
+      "phase": "done",
+      "at": "2026-09-24T18:02:17.123456789Z",
+      "receipts": 3
+    },
+    {
+      "state": "maintenance_held",
+      "phase": "started",
+      "at": "2026-09-24T18:02:18.123456789Z",
+      "receipts": 3
+    },
+    {
+      "state": "maintenance_held",
+      "phase": "done",
+      "at": "2026-09-24T18:02:19.123456789Z",
+      "receipts": 4
+    },
+    {
+      "state": "drained_acked",
+      "phase": "started",
+      "at": "2026-09-24T18:02:20.123456789Z",
+      "receipts": 4
+    },
+    {
+      "state": "drained_acked",
+      "phase": "done",
+      "at": "2026-09-24T18:02:21.123456789Z",
+      "receipts": 5
+    },
+    {
+      "state": "gate_ok",
+      "phase": "started",
+      "at": "2026-09-24T18:02:22.123456789Z",
+      "receipts": 5
+    },
+    {
+      "state": "gate_ok",
+      "phase": "done",
+      "at": "2026-09-24T18:02:23.123456789Z",
+      "receipts": 6
+    },
+    {
+      "state": "backup_done",
+      "phase": "started",
+      "at": "2026-09-24T18:02:24.123456789Z",
+      "receipts": 6
+    },
+    {
+      "state": "backup_done",
+      "phase": "done",
+      "at": "2026-09-24T18:02:25.123456789Z",
+      "receipts": 7
+    },
+    {
+      "state": "nt8_updated",
+      "phase": "started",
+      "at": "2026-09-24T18:02:26.123456789Z",
+      "receipts": 7
+    },
+    {
+      "state": "nt8_updated",
+      "phase": "done",
+      "at": "2026-09-24T18:02:27.123456789Z",
+      "receipts": 8
+    },
+    {
+      "state": "activated",
+      "phase": "started",
+      "at": "2026-09-24T18:03:28.123456789Z",
+      "receipts": 9
+    },
+    {
+      "state": "activated",
+      "phase": "done",
+      "at": "2026-09-24T18:03:29.123456789Z",
+      "receipts": 10
+    },
+    {
+      "state": "booted",
+      "phase": "started",
+      "at": "2026-09-24T18:03:30.123456789Z",
+      "receipts": 10
+    },
+    {
+      "state": "rolling_back",
+      "phase": "started",
+      "at": "2026-09-24T18:05:00.123456789Z",
+      "receipts": 11
+    },
+    {
+      "state": "recovery_needed",
+      "phase": "done",
+      "at": "2026-09-24T18:06:35.123456789Z",
+      "receipts": 13
+    }
+  ],
+  "receipts": [
+    {
+      "step": "download",
+      "started_at": "2026-09-24T18:02:12.123456789Z",
+      "ended_at": "2026-09-24T18:02:13.123456789Z",
+      "ok": true
+    },
+    {
+      "step": "verify",
+      "started_at": "2026-09-24T18:02:14.123456789Z",
+      "ended_at": "2026-09-24T18:02:15.123456789Z",
+      "ok": true
+    },
+    {
+      "step": "preflight",
+      "started_at": "2026-09-24T18:02:16.123456789Z",
+      "ended_at": "2026-09-24T18:02:17.123456789Z",
+      "ok": true
+    },
+    {
+      "step": "hold",
+      "started_at": "2026-09-24T18:02:18.123456789Z",
+      "ended_at": "2026-09-24T18:02:19.123456789Z",
+      "ok": true
+    },
+    {
+      "step": "drain",
+      "started_at": "2026-09-24T18:02:20.123456789Z",
+      "ended_at": "2026-09-24T18:02:21.123456789Z",
+      "ok": true
+    },
+    {
+      "step": "gate",
+      "started_at": "2026-09-24T18:02:22.123456789Z",
+      "ended_at": "2026-09-24T18:02:23.123456789Z",
+      "ok": true
+    },
+    {
+      "step": "backup",
+      "started_at": "2026-09-24T18:02:24.123456789Z",
+      "ended_at": "2026-09-24T18:02:25.123456789Z",
+      "ok": true
+    },
+    {
+      "step": "nt8",
+      "started_at": "2026-09-24T18:02:26.123456789Z",
+      "ended_at": "2026-09-24T18:02:27.123456789Z",
+      "ok": true
+    },
+    {
+      "step": "resume",
+      "started_at": "2026-09-24T18:03:27.123456789Z",
+      "ended_at": "2026-09-24T18:03:27.123456789Z",
+      "ok": true,
+      "evidence": {
+        "acked_build_id": "2026-09-24-m4"
+      }
+    },
+    {
+      "step": "activate",
+      "started_at": "2026-09-24T18:03:28.123456789Z",
+      "ended_at": "2026-09-24T18:03:29.123456789Z",
+      "ok": true
+    },
+    {
+      "step": "watch",
+      "started_at": "2026-09-24T18:03:30.123456789Z",
+      "ended_at": "2026-09-24T18:05:00.123456789Z",
+      "ok": false,
+      "err": "no boot line for 0123456789ab within 1m30s"
+    },
+    {
+      "step": "rollback",
+      "started_at": "2026-09-24T18:05:00.123456789Z",
+      "ended_at": "2026-09-24T18:05:05.123456789Z",
+      "ok": true,
+      "evidence": {
+        "restored": "binary,dist,release"
+      }
+    },
+    {
+      "step": "watch",
+      "started_at": "2026-09-24T18:05:05.123456789Z",
+      "ended_at": "2026-09-24T18:06:35.123456789Z",
+      "ok": false,
+      "err": "no boot line for 89abcdef0123 within 1m30s"
+    }
+  ],
+  "release": {
+    "dir": "/home/u/nofx-releases/0123456789abcdef0123456789abcdef01234567",
+    "sha": "0123456789abcdef0123456789abcdef01234567",
+    "binary": "/home/u/nofx-releases/0123456789abcdef0123456789abcdef01234567/nofx-bin",
+    "dist": "/home/u/nofx-releases/0123456789abcdef0123456789abcdef01234567/web/dist",
+    "release_file": "/home/u/nofx-releases/0123456789abcdef0123456789abcdef01234567/RELEASE",
+    "manifest_path": "/home/u/nofx-releases/0123456789abcdef0123456789abcdef01234567/manifest.json"
+  },
+  "install": {
+    "dir": "/home/u/nofx",
+    "sha": "89abcdef0123456789abcdef0123456789abcdef",
+    "binary": "/home/u/nofx/nofx-bin",
+    "dist": "/home/u/nofx/web/dist",
+    "release_file": "/home/u/nofx/deploy/RELEASE"
+  },
+  "snapshot": {
+    "dir": "/home/u/nofx-backups/updater/0123456789abcdef0123456789abcdef/install",
+    "sha": "89abcdef0123456789abcdef0123456789abcdef",
+    "binary": "/home/u/nofx-backups/updater/0123456789abcdef0123456789abcdef/install/nofx-bin",
+    "dist": "/home/u/nofx-backups/updater/0123456789abcdef0123456789abcdef/install/web/dist",
+    "release_file": "/home/u/nofx-backups/updater/0123456789abcdef0123456789abcdef/install/deploy/RELEASE"
+  },
+  "backup_path": "/home/u/nofx-backups/updater/0123456789abcdef0123456789abcdef/data.db",
+  "identity_before": {
+    "pid": 172,
+    "start_ticks": 23987
+  },
+  "identity_after": {
+    "pid": 9120,
+    "start_ticks": 24410
+  },
+  "identity_rollback": {
+    "pid": 9120,
+    "start_ticks": 24410
+  },
+  "log_path": "/home/u/nofx/data/nofx_2026-09-24.log",
+  "log_offset": 81920,
+  "watch_since": "2026-09-24T18:03:28.123456789Z",
+  "rollback_log_path": "/home/u/nofx/data/nofx_2026-09-24.log",
+  "rollback_log_offset": 90112,
+  "rollback_watch_since": "2026-09-24T18:05:00.123456789Z",
+  "nt8": {
+    "decision": "updated",
+    "reason": "ninjascript/*.cs changed",
+    "manifest_build_id": "2026-09-24-m4",
+    "acked_build_id": "2026-09-23-m21",
+    "acked_at": "2026-09-24T18:02:30Z",
+    "ack_accept_seq": 7,
+    "cs_unchanged": false,
+    "absent": true,
+    "f5_owed": true
+  },
+  "drain_path": "nt8_absent",
+  "link_down_since": "2026-09-24T18:00:00.000000000Z",
+  "resumed_at": "2026-09-24T18:03:27.123456789Z",
+  "last_good_receipt": 11,
+  "recovery_reason": "rollback watch RED: the old build did not prove itself"
+}

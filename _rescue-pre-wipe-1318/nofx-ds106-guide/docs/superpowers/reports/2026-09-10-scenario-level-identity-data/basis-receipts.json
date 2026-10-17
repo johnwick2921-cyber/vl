@@ -1,0 +1,57 @@
+[
+  {
+    "revision": "770e2297d2188d09de0dcf76c3722e19e022e4c6",
+    "path": "docs/superpowers/reports/2026-09-10-episode-contract.md",
+    "url": "https://raw.githubusercontent.com/johnwick2921-cyber/nofx/770e2297d2188d09de0dcf76c3722e19e022e4c6/docs/superpowers/reports/2026-09-10-episode-contract.md",
+    "http_status": 200,
+    "size_download": 33143,
+    "git_blob_bytes": 33143,
+    "git_ls_tree": "100644 blob 739861ad6d06b1c426eab182da0bd4c160395631   33143\tdocs/superpowers/reports/2026-09-10-episode-contract.md",
+    "last_change": "5dd0e8c7f9ef32038bf5f2574e63b2f02b84633c 2026-09-10T13:29:04-05:00 docs(W1 17/n): \u00a7G4 corrected \u2014 it was the wall clock, not interference, and I had the disproof",
+    "sha256": "f73fc5dd9d70d4c0697a971100d28f7a0d2846b6dad7f03bf977dfc122acceff"
+  },
+  {
+    "revision": "770e2297d2188d09de0dcf76c3722e19e022e4c6",
+    "path": "docs/superpowers/reports/2026-09-09-candidates-not-entitlements.md",
+    "url": "https://raw.githubusercontent.com/johnwick2921-cyber/nofx/770e2297d2188d09de0dcf76c3722e19e022e4c6/docs/superpowers/reports/2026-09-09-candidates-not-entitlements.md",
+    "http_status": 200,
+    "size_download": 9269,
+    "git_blob_bytes": 9269,
+    "git_ls_tree": "100644 blob 2e04e96db19b0d8331cfe70939fb5b59d8138e68    9269\tdocs/superpowers/reports/2026-09-09-candidates-not-entitlements.md",
+    "last_change": "d0df134d8badc10704b178442111338a179e3bd1 2026-09-10T08:04:28-05:00 docs(class 99): correct 11 -> 10, record the mirror-image instance, name the direction",
+    "sha256": "fdcc5ec7555f9a492011b8c9063092aa64a40c32586ea0102d992ec37bddec7b"
+  },
+  {
+    "revision": "770e2297d2188d09de0dcf76c3722e19e022e4c6",
+    "path": "docs/superpowers/reports/2026-09-10-every-detector-every-timeframe.md",
+    "url": "https://raw.githubusercontent.com/johnwick2921-cyber/nofx/770e2297d2188d09de0dcf76c3722e19e022e4c6/docs/superpowers/reports/2026-09-10-every-detector-every-timeframe.md",
+    "http_status": 200,
+    "size_download": 14489,
+    "git_blob_bytes": 14489,
+    "git_ls_tree": "100644 blob f2b3d09b4b704c5aca8303a4b299074f76a49c4a   14489\tdocs/superpowers/reports/2026-09-10-every-detector-every-timeframe.md",
+    "last_change": "050cd5c1549b656ed06f6eaae8954b55a723ede4 2026-09-10T13:18:24-05:00 docs(report): A15 \u2014 vl/trader is RED on dev, and it is not the lunch band",
+    "sha256": "2a6c4f189ee20331e6a9e0d5af536914b0b12fccfdb30404196840361f6a1744"
+  },
+  {
+    "revision": "770e2297d2188d09de0dcf76c3722e19e022e4c6",
+    "path": "docs/superpowers/SYSTEM-MAP.md",
+    "url": "https://raw.githubusercontent.com/johnwick2921-cyber/nofx/770e2297d2188d09de0dcf76c3722e19e022e4c6/docs/superpowers/SYSTEM-MAP.md",
+    "http_status": 200,
+    "size_download": 85621,
+    "git_blob_bytes": 85621,
+    "git_ls_tree": "100644 blob 55fa36cb8cb626be0ba97e03e5f4526c403a8276   85621\tdocs/superpowers/SYSTEM-MAP.md",
+    "last_change": "8d10b55b249de36289978aa7f0d83be8bd244849 2026-09-10T16:16:02-05:00 Merge origin/dev @ 1e890c6c \u2014 W1's follow-up wiring (class 100: fresh base)",
+    "sha256": "22dc393f34845286cc62667745a43d51cd7f9b697b0088a1f535e8f16dc6a140"
+  },
+  {
+    "revision": "daeb654978b0c739592e8589a393c5e79171560d",
+    "path": "docs/superpowers/VL-TRADING-RULEBOOK-v1.md",
+    "url": "https://raw.githubusercontent.com/johnwick2921-cyber/nofx/daeb654978b0c739592e8589a393c5e79171560d/docs/superpowers/VL-TRADING-RULEBOOK-v1.md",
+    "http_status": 200,
+    "size_download": 36422,
+    "git_blob_bytes": 36422,
+    "git_ls_tree": "100644 blob 893fca80e4edc273d6089c8347a912837447f9da   36422\tdocs/superpowers/VL-TRADING-RULEBOOK-v1.md",
+    "last_change": "daeb654978b0c739592e8589a393c5e79171560d 2026-09-10T14:27:59-05:00 docs: make corrected rulebook canonical in master plan section 6",
+    "sha256": "9aa67e5fa1aa931990a51ae8144501c9af385c7290e9e7151bb8428ba657a120"
+  }
+]

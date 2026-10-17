@@ -1,0 +1,51 @@
+# CLOCK SEAMS — THE OWED LIST (cleanup batch 2, B2, 2026-09-11; class 113).
+#
+# clock-seams.list names the seams. THIS file names what the receiver-aware walk
+# (trader/clock_seam_walk_test.go) found beneath and around them on the day it
+# shipped, so the walk can be a GATE from day one: anything NOT on this list
+# fails the build; anything on this list that no longer reproduces fails too
+# (a row that has rotted is a claim). Every row is debt with a name, or an
+# exemption with a reason. Fixing a row means deleting it.
+#
+# Formats:
+#   verdict:<file>:<func>:<OWED|EXEMPT>:<reason>
+#       a time.Now()/time.Since() read beneath a seamed …At variant whose value
+#       feeds a VERDICT (compared, subtracted, hour/weekday taken, or handed to
+#       a callee as its clock). Stamps and elapsed timers are not listed — the
+#       walk excludes them by construction and counts them.
+#   testcall:<test file>:<entry>:<count>
+#       calls of a registered WALL-CLOCK entry from that test file. The count
+#       may only go DOWN; a new file or a higher count fails.
+#   deadwrapper:<file>:<Recv.entry>
+#       a registered wall-clock entry with no production caller (A29).
+#
+# The walk's reach, measured at 41391794: 37 seam rows; 817 receiver
+# boundaries unresolved (counted, never errors); 106 stamp-only reads beneath
+# seams. The textual form of the test-call check found 35 sites and could not
+# say which were real; this one resolves every receiver: 32 real, 0 unresolved.
+
+# ── verdict reads beneath a seam ──────────────────────────────────────────────
+verdict:trader/auto_trader_transition.go:maybeWakePlannerOnMSSAt:OWED:the …At variant's own throttle reads time.Since(at.lastPlannerWakeAt) instead of now.Sub(…) — the seam ignores the clock it was handed (wake path; fix belongs to the wake-predicate lane)
+verdict:trader/auto_trader_planner.go:noTradeLevelMap:OWED:now := time.Now() feeds sessionRegistry(now) and level assembly on a path reached from maybeWakePlannerOnMSSAt / maybeWakePlannerOnLevelEventsAt / runPlannerReadCoreWithFactsGradesClock — the planner read reads its own wall clock beneath three seams
+verdict:trader/auto_trader_planner.go:assemblePlannerInputWithCtx:OWED:now := time.Now() → sessionRegistry(now) beneath the same three seams; the planner input is assembled at the wall clock, not the seam's
+verdict:trader/armed_executor.go:logArmedOrderUpdateSummary:EXEMPT:a 60-second LOG rate limiter (now - armedOULastSum < 60); it throttles a log line, not a rule
+verdict:trader/trade_excursion_hook.go:excursionOnClose:EXEMPT:exitMs falls back to time.Now().UnixMilli() only when the close carried no ExitTime; it stamps the exit and bounds a bar window — a record, not a verdict
+
+# ── tests calling a wall-clock entry (counts may only fall) ───────────────────
+testcall:auto_trader_clock_test.go:latestClosedPrimaryBarMs:2
+testcall:auto_trader_planner_read_test.go:runPlannerReadCoreWithFactsGrades:3
+testcall:auto_trader_transition_test.go:observeTransitionStanddown:10
+testcall:class36_preflight_test.go:maybeWakePlannerOnLevelEvents:1
+testcall:class39_writesite_test.go:runPlannerReadCoreWithFactsGrades:2
+testcall:class41_transport_retry_test.go:runPlannerReadCoreWithFactsGrades:2
+testcall:clock_seam_test.go:latestClosedPrimaryBarMs:1
+testcall:no_trade_band_writesite_test.go:runPlannerReadCoreWithFactsGrades:1
+testcall:recorder_test.go:Offer:4
+testcall:recorder_test.go:Save:2
+testcall:runtime_test.go:Save:1
+testcall:w5_learning_loop_test.go:recordClosedTradeAnalytics:1
+testcall:w7_levelstate_test.go:recordLevelState:1
+
+# ── registered wall-clock entries with no production caller ───────────────────
+deadwrapper:trader/auto_trader_weekly.go:AutoTrader.weeklyScenarioGrade
+deadwrapper:trader/strict_nudge.go:AutoTrader.strictNudge

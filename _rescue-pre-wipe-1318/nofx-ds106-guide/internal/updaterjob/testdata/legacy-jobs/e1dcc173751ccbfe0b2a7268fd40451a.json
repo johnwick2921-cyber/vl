@@ -1,0 +1,168 @@
+{
+  "schema": 1,
+  "job_id": "e1dcc173751ccbfe0b2a7268fd40451a",
+  "release_id": "v2026.09.27.2",
+  "source_sha": "24220e1474f137e545f247919249351b7a278543",
+  "state": "recovery_needed",
+  "phase": "done",
+  "attempts": 0,
+  "created_at": "2026-09-28T02:50:35.322129776Z",
+  "updated_at": "2026-09-28T03:00:35.310566085Z",
+  "error": "not passed within 10m0s: addon_ack: no AddOn maintenance_ack",
+  "transitions": [
+    {
+      "state": "requested",
+      "phase": "done",
+      "at": "2026-09-28T02:50:35.322129776Z",
+      "receipts": 0
+    },
+    {
+      "state": "downloaded",
+      "phase": "started",
+      "at": "2026-09-28T02:50:35.327614893Z",
+      "receipts": 0
+    },
+    {
+      "state": "downloaded",
+      "phase": "done",
+      "at": "2026-09-28T02:50:35.476399351Z",
+      "receipts": 1
+    },
+    {
+      "state": "verified",
+      "phase": "started",
+      "at": "2026-09-28T02:50:35.480114658Z",
+      "receipts": 1
+    },
+    {
+      "state": "verified",
+      "phase": "done",
+      "at": "2026-09-28T02:50:35.485603531Z",
+      "receipts": 2
+    },
+    {
+      "state": "preflight_ok",
+      "phase": "started",
+      "at": "2026-09-28T02:50:35.490876233Z",
+      "receipts": 2
+    },
+    {
+      "state": "preflight_ok",
+      "phase": "done",
+      "at": "2026-09-28T02:50:35.580917662Z",
+      "receipts": 4
+    },
+    {
+      "state": "maintenance_held",
+      "phase": "started",
+      "at": "2026-09-28T02:50:35.584184015Z",
+      "receipts": 4
+    },
+    {
+      "state": "maintenance_held",
+      "phase": "done",
+      "at": "2026-09-28T02:50:35.589873705Z",
+      "receipts": 5
+    },
+    {
+      "state": "drained_acked",
+      "phase": "started",
+      "at": "2026-09-28T02:50:35.592582372Z",
+      "receipts": 5
+    },
+    {
+      "state": "recovery_needed",
+      "phase": "done",
+      "at": "2026-09-28T03:00:35.310566085Z",
+      "receipts": 6
+    }
+  ],
+  "receipts": [
+    {
+      "step": "download",
+      "started_at": "2026-09-28T02:50:35.330276324Z",
+      "ended_at": "2026-09-28T02:50:35.476239965Z",
+      "ok": true,
+      "evidence": {
+        "artifacts": "104",
+        "manifest_sha256": "3cd590563f73957a218cc3de54431712978381cf5db72000b5ba3ee25dd01dcb"
+      }
+    },
+    {
+      "step": "verify",
+      "started_at": "2026-09-28T02:50:35.484689888Z",
+      "ended_at": "2026-09-28T02:50:35.485533171Z",
+      "ok": true,
+      "evidence": {
+        "signer_fingerprint": "SHA256:IvzjG35bsg2Ak3pwpka4GP1HM2PUCriy65nRjOjw8/o",
+        "source_sha": "24220e1474f137e545f247919249351b7a278543"
+      }
+    },
+    {
+      "step": "stage",
+      "started_at": "2026-09-28T02:50:35.49871158Z",
+      "ended_at": "2026-09-28T02:50:35.573172896Z",
+      "ok": true,
+      "evidence": {
+        "binary_md5": "c78caf82f24ebfa9510ee6f86eed097f",
+        "manifest.binary_md5": "c78caf82f24ebfa9510ee6f86eed097f",
+        "manifest.source_sha": "24220e1474f137e545f247919249351b7a278543",
+        "vcs.modified": "false",
+        "vcs.revision": "24220e1474f137e545f247919249351b7a278543"
+      }
+    },
+    {
+      "step": "preflight",
+      "started_at": "2026-09-28T02:50:35.493846696Z",
+      "ended_at": "2026-09-28T02:50:35.580793612Z",
+      "ok": true,
+      "evidence": {
+        "calendar": "equal",
+        "flat": "pass",
+        "health_revision": "1fa5c3f1d0c9",
+        "install_modified": "false",
+        "install_sha": "1fa5c3f1d0c9f49541a75569082718b0d671aa70",
+        "main_tree_lock": "check rc=1",
+        "pid": "7444"
+      }
+    },
+    {
+      "step": "hold",
+      "started_at": "2026-09-28T02:50:35.58703562Z",
+      "ended_at": "2026-09-28T02:50:35.589758627Z",
+      "ok": true,
+      "evidence": {
+        "already": "false",
+        "owner": "updater"
+      }
+    },
+    {
+      "step": "drain",
+      "started_at": "2026-09-28T02:50:35.595234915Z",
+      "ended_at": "2026-09-28T03:00:35.310383728Z",
+      "ok": false,
+      "evidence": {
+        "ack_build_id": "2026-09-23-m21",
+        "ack_received": "2026-09-28T02:52:01.209530703Z"
+      },
+      "err": "not passed within 10m0s: addon_ack: no AddOn maintenance_ack"
+    }
+  ],
+  "release": {
+    "dir": "/home/hoang/nofx-releases/24220e1474f137e545f247919249351b7a278543",
+    "sha": "24220e1474f137e545f247919249351b7a278543",
+    "binary": "/home/hoang/nofx-releases/24220e1474f137e545f247919249351b7a278543/nofx-bin",
+    "dist": "/home/hoang/nofx-releases/24220e1474f137e545f247919249351b7a278543/web/dist",
+    "release_file": "/home/hoang/nofx-releases/24220e1474f137e545f247919249351b7a278543/RELEASE",
+    "manifest_path": "/home/hoang/nofx-releases/24220e1474f137e545f247919249351b7a278543/manifest.json"
+  },
+  "install": {
+    "dir": "/home/hoang/nofx",
+    "sha": "1fa5c3f1d0c9f49541a75569082718b0d671aa70",
+    "binary": "/home/hoang/nofx/nofx-bin",
+    "dist": "/home/hoang/nofx/web/dist",
+    "release_file": "/home/hoang/nofx/deploy/RELEASE"
+  },
+  "last_good_receipt": 4,
+  "recovery_reason": "drained_acked failed: not passed within 10m0s: addon_ack: no AddOn maintenance_ack"
+}

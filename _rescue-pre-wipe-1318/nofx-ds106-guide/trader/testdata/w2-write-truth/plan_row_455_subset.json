@@ -1,0 +1,639 @@
+{
+ "_provenance": "plans rowid=455 (2026-09-23:LONDON v1, active, created 2026-09-23 01:51:47.925812345-05:00) read with nice -n 19 sqlite3 -readonly /home/hoang/nofx/data/data.db by Claude-101 2026-09-23 10:36 CT (SELECT doc FROM plans WHERE rowid=455); subset copied verbatim: identity_levels, levels, bias, death, flip, death_condition, day_type, price_at_write, scenarios S2,S3,S4. W-EXEC-TRUTH W2 A3/A4 fixture.",
+ "identity_levels": [
+  {
+   "id": "a8824a229dbae38e7c226df8e6eb307de54e90b6e63adaf87e2c9cd7c98baf6e",
+   "symbol": "MNQ",
+   "kind": "SWG-H",
+   "lo": 31059,
+   "hi": 31059,
+   "origin_date": "2026-09-22",
+   "tf": "15m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790129700000,
+   "lookback_bars": 134,
+   "names": [
+    "SWG-H·15m",
+    "EQH"
+   ],
+   "price": 31059,
+   "label": "SWG-H·15m",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "9d1032e7208d3b227e957e84ebfee030a2d3fe188a34f1f275c21e23f9ea0be1",
+   "symbol": "MNQ",
+   "kind": "RTH-H",
+   "lo": 31050,
+   "hi": 31050,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790106299999,
+   "lookback_bars": 375,
+   "names": [
+    "RTH-H",
+    "SWG-H·5m",
+    "SWG-H·15m"
+   ],
+   "price": 31050,
+   "label": "RTH-H",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "fd2051638e6cabbbb61bab906cf352abe4cd542111f6486197a48ce1e26cc306",
+   "symbol": "MNQ",
+   "kind": "VWAP±2σ",
+   "lo": 31066.32343321059,
+   "hi": 31066.32343321059,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790114400000,
+   "lookback_bars": 510,
+   "names": [
+    "VWAP+2σ"
+   ],
+   "price": 31066.32343321059,
+   "label": "VWAP+2σ",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "b6251ba61e79c68551862b065f228c3ee0c10354c7136347eea7dcecd3939ad7",
+   "symbol": "MNQ",
+   "kind": "SWG-H",
+   "lo": 31043,
+   "hi": 31043,
+   "origin_date": "2026-09-22",
+   "tf": "5m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790141400000,
+   "lookback_bars": 400,
+   "names": [
+    "SWG-H·5m",
+    "EQL",
+    "EQH"
+   ],
+   "price": 31043,
+   "label": "SWG-H·5m",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "041a24af39da63b118fac66c2f9a9830b7afd346e107ae3411dd1bbb48dbc774",
+   "symbol": "MNQ",
+   "kind": "PDH",
+   "lo": 31075.75,
+   "hi": 31075.75,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790139599999,
+   "lookback_bars": 1380,
+   "names": [
+    "PDH",
+    "SWG-H·15m"
+   ],
+   "price": 31075.75,
+   "label": "PDH",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "021354f4d8dd35971459c10cde0199bd3c6484a1fc615eccfa777a9a8c6331f7",
+   "symbol": "MNQ",
+   "kind": "PDC",
+   "lo": 31035.25,
+   "hi": 31035.25,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790139599999,
+   "lookback_bars": 1380,
+   "names": [
+    "PDC"
+   ],
+   "price": 31035.25,
+   "label": "PDC",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "e1be1233cff00f266c1a894bcf16c749c89415be89f09f0ab6400561e7367a57",
+   "symbol": "MNQ",
+   "kind": "eVWAP",
+   "lo": 31030.272715190426,
+   "hi": 31030.272715190426,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790107200000,
+   "lookback_bars": 570,
+   "names": [
+    "eVWAP",
+    "SWG-H·5m"
+   ],
+   "price": 31030.272715190426,
+   "label": "eVWAP",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "7cfd5d3909709b507d27cf7bac11f7923f1f64b0ae709e8b720748648872f789",
+   "symbol": "MNQ",
+   "kind": "SWG-L",
+   "lo": 31021.5,
+   "hi": 31021.5,
+   "origin_date": "2026-09-22",
+   "tf": "5m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790140500000,
+   "lookback_bars": 400,
+   "names": [
+    "SWG-L·5m",
+    "EQH",
+    "EQL"
+   ],
+   "price": 31021.5,
+   "label": "SWG-L·5m",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "897b3780393e2b509575cd6f8f0a34f449676df19510219d26da87e1f59c868d",
+   "symbol": "MNQ",
+   "kind": "SWG-L",
+   "lo": 31012.5,
+   "hi": 31012.5,
+   "origin_date": "2026-09-22",
+   "tf": "15m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790127000000,
+   "lookback_bars": 134,
+   "names": [
+    "SWG-L·15m",
+    "SWG-L·5m",
+    "EQH",
+    "EQL",
+    "VWAP−1σ"
+   ],
+   "price": 31012.5,
+   "label": "SWG-L·15m",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "d261100fdb2e73b73bbc518e15e34f44db7d80149a2772f35c8f3028bc52ab4f",
+   "symbol": "MNQ",
+   "kind": "VWAP±2σ",
+   "lo": 30998.26360304846,
+   "hi": 30998.26360304846,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790114400000,
+   "lookback_bars": 510,
+   "names": [
+    "VWAP−2σ"
+   ],
+   "price": 30998.26360304846,
+   "label": "VWAP−2σ",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "ref|854bfe436eb67c73eb846a6c0763ca6f78d05890af2b3432645dc95966066ebb",
+   "symbol": "MNQ",
+   "kind": "ONL",
+   "lo": 30983.25,
+   "hi": 30983.25,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": null,
+   "lookback_bars": 510,
+   "names": [
+    "ONL",
+    "SWG-L·15m"
+   ],
+   "price": 30983.25,
+   "label": "ONL",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "7542c2938a6b7cb455d7bb9ee1db0fb4fcf150379104c9e96093827a2d04c65b",
+   "symbol": "MNQ",
+   "kind": "POC",
+   "lo": 30942.5625,
+   "hi": 30942.5625,
+   "origin_date": "2026-09-21",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790110799999,
+   "lookback_bars": 1380,
+   "names": [
+    "POC"
+   ],
+   "price": 30942.5625,
+   "label": "POC",
+   "grade": "",
+   "instruction": ""
+  }
+ ],
+ "levels": [
+  {
+   "id": "041a24af39da63b118fac66c2f9a9830b7afd346e107ae3411dd1bbb48dbc774",
+   "symbol": "MNQ",
+   "kind": "PDH",
+   "lo": 31075.75,
+   "hi": 31075.75,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790139599999,
+   "lookback_bars": 1380,
+   "names": [
+    "PDH",
+    "SWG-H·15m"
+   ],
+   "price": 31075.75,
+   "label": "PDH",
+   "grade": "A",
+   "instruction": "fade_reject_short",
+   "machine_grade": "A"
+  },
+  {
+   "id": null,
+   "symbol": null,
+   "kind": null,
+   "lo": null,
+   "hi": null,
+   "origin_date": null,
+   "tf": null,
+   "formed_at_ms": null,
+   "formed_close_ms": null,
+   "lookback_bars": null,
+   "price": 31066.32,
+   "label": "VWAP+2σ",
+   "grade": "A",
+   "instruction": "breakdown_reentry",
+   "machine_grade": "A"
+  },
+  {
+   "id": "a8824a229dbae38e7c226df8e6eb307de54e90b6e63adaf87e2c9cd7c98baf6e",
+   "symbol": "MNQ",
+   "kind": "SWG-H",
+   "lo": 31059,
+   "hi": 31059,
+   "origin_date": "2026-09-22",
+   "tf": "15m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790129700000,
+   "lookback_bars": 134,
+   "names": [
+    "SWG-H·15m",
+    "EQH"
+   ],
+   "price": 31059,
+   "label": "SWG-H·15m",
+   "grade": "A",
+   "instruction": "target",
+   "machine_grade": "A"
+  },
+  {
+   "id": "9d1032e7208d3b227e957e84ebfee030a2d3fe188a34f1f275c21e23f9ea0be1",
+   "symbol": "MNQ",
+   "kind": "RTH-H",
+   "lo": 31050,
+   "hi": 31050,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790106299999,
+   "lookback_bars": 375,
+   "names": [
+    "RTH-H",
+    "SWG-H·5m",
+    "SWG-H·15m"
+   ],
+   "price": 31050,
+   "label": "RTH-H",
+   "grade": "A",
+   "instruction": "target",
+   "machine_grade": "A"
+  },
+  {
+   "id": "021354f4d8dd35971459c10cde0199bd3c6484a1fc615eccfa777a9a8c6331f7",
+   "symbol": "MNQ",
+   "kind": "PDC",
+   "lo": 31035.25,
+   "hi": 31035.25,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790139599999,
+   "lookback_bars": 1380,
+   "names": [
+    "PDC"
+   ],
+   "price": 31035.25,
+   "label": "PDC",
+   "grade": "A",
+   "instruction": "target",
+   "machine_grade": "A"
+  },
+  {
+   "id": null,
+   "symbol": null,
+   "kind": null,
+   "lo": null,
+   "hi": null,
+   "origin_date": null,
+   "tf": null,
+   "formed_at_ms": null,
+   "formed_close_ms": null,
+   "lookback_bars": null,
+   "price": 31030.27,
+   "label": "eVWAP",
+   "grade": "A",
+   "instruction": "target",
+   "machine_grade": "A"
+  },
+  {
+   "id": "7cfd5d3909709b507d27cf7bac11f7923f1f64b0ae709e8b720748648872f789",
+   "symbol": "MNQ",
+   "kind": "SWG-L",
+   "lo": 31021.5,
+   "hi": 31021.5,
+   "origin_date": "2026-09-22",
+   "tf": "5m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790140500000,
+   "lookback_bars": 400,
+   "names": [
+    "SWG-L·5m",
+    "EQH",
+    "EQL"
+   ],
+   "price": 31021.5,
+   "label": "SWG-L·5m",
+   "grade": "A",
+   "instruction": "target",
+   "machine_grade": "A"
+  },
+  {
+   "id": "897b3780393e2b509575cd6f8f0a34f449676df19510219d26da87e1f59c868d",
+   "symbol": "MNQ",
+   "kind": "SWG-L",
+   "lo": 31012.5,
+   "hi": 31012.5,
+   "origin_date": "2026-09-22",
+   "tf": "15m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790127000000,
+   "lookback_bars": 134,
+   "names": [
+    "SWG-L·15m",
+    "SWG-L·5m",
+    "EQH",
+    "EQL",
+    "VWAP−1σ"
+   ],
+   "price": 31012.5,
+   "label": "SWG-L·15m",
+   "grade": "A",
+   "instruction": "target",
+   "machine_grade": "A"
+  },
+  {
+   "id": null,
+   "symbol": null,
+   "kind": null,
+   "lo": null,
+   "hi": null,
+   "origin_date": null,
+   "tf": null,
+   "formed_at_ms": null,
+   "formed_close_ms": null,
+   "lookback_bars": null,
+   "price": 30998.26,
+   "label": "VWAP−2σ",
+   "grade": "A",
+   "instruction": "target",
+   "machine_grade": "A"
+  },
+  {
+   "id": "ref|854bfe436eb67c73eb846a6c0763ca6f78d05890af2b3432645dc95966066ebb",
+   "symbol": "MNQ",
+   "kind": "ONL",
+   "lo": 30983.25,
+   "hi": 30983.25,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": null,
+   "lookback_bars": 510,
+   "names": [
+    "ONL",
+    "SWG-L·15m"
+   ],
+   "price": 30983.25,
+   "label": "ONL",
+   "grade": "A",
+   "instruction": "liquidity_sweep_long",
+   "machine_grade": "A"
+  },
+  {
+   "id": null,
+   "symbol": null,
+   "kind": null,
+   "lo": null,
+   "hi": null,
+   "origin_date": null,
+   "tf": null,
+   "formed_at_ms": null,
+   "formed_close_ms": null,
+   "lookback_bars": null,
+   "price": 30942.56,
+   "label": "POC",
+   "grade": "A",
+   "instruction": "magnet_target",
+   "machine_grade": "A"
+  },
+  {
+   "id": null,
+   "symbol": null,
+   "kind": null,
+   "lo": null,
+   "hi": null,
+   "origin_date": null,
+   "tf": null,
+   "formed_at_ms": null,
+   "formed_close_ms": null,
+   "lookback_bars": null,
+   "price": 31151.62,
+   "label": "OB(bear)·4h",
+   "grade": "C",
+   "instruction": "confluence_reference"
+  }
+ ],
+ "bias": {
+  "direction": "short",
+  "conviction": "low",
+  "flip_condition": "Any 5m close above 31066.32 VWAP+2σ flips bias long; two 5m closes above 31075.75 PDH kill the plan."
+ },
+ "death": {
+  "price": 31075.75,
+  "side": "above",
+  "rule": "2x5m"
+ },
+ "flip": {
+  "price": 31066.32,
+  "side": "above",
+  "rule": "5m_close",
+  "flip_to": "long"
+ },
+ "death_condition": "Two consecutive 5m closes above 31075.75 PDH kill the plan (flip to long fires earlier on a 5m close above 31066.32).",
+ "day_type": "balance",
+ "price_at_write": 31057.5,
+ "scenarios": [
+  {
+   "level_id": "fd2051638e6cabbbb61bab906cf352abe4cd542111f6486197a48ce1e26cc306",
+   "economics": {
+    "version": 1,
+    "entry_zone": [
+     31066,
+     31066.32
+    ],
+    "geometry": {
+     "entry": 31066.32,
+     "stop": 31089.32,
+     "target": 31012.5
+    },
+    "first_obstacle": {
+     "price": 31050,
+     "level": "RTH-H",
+     "family": "react_zone",
+     "response": "reduce"
+    },
+    "r_to_obstacle": 0.709565,
+    "r_to_arm_target": 2.34
+   },
+   "id": "S2",
+   "trigger": "Price pulls back to 31066.32 VWAP+2σ from below after the break from the highs; the re-test stalls below the level and rejects. The 83pt down displacement is above the waterfall floor.",
+   "condition": "reject",
+   "direction": "short",
+   "target_chain": [
+    31059,
+    31050,
+    31035.25,
+    31021.5,
+    31012.5
+   ],
+   "invalid": "Any 5m close above 31066.32 invalidates the fade; stand aside for the breakout.",
+   "confirm": {
+    "rule": "touch",
+    "ref_price": 31066.32,
+    "side": "below"
+   },
+   "quality": "B",
+   "arm": {
+    "enabled": false,
+    "entry": 31066.32,
+    "stop": 31089.32,
+    "target": 31012.5,
+    "wait_confirm": true,
+    "arm_disabled_reason": "geometry_no_provenance"
+   }
+  },
+  {
+   "level_id": "ref|854bfe436eb67c73eb846a6c0763ca6f78d05890af2b3432645dc95966066ebb",
+   "economics": {
+    "version": 1,
+    "entry_zone": [
+     30983.25,
+     30983.5
+    ],
+    "geometry": {
+     "entry": 30983.25,
+     "stop": 30959.75,
+     "target": 31066.32
+    },
+    "first_obstacle": {
+     "price": 30998.26,
+     "level": "VWAP−2σ",
+     "family": "react_zone",
+     "response": "pass_through"
+    },
+    "r_to_obstacle": 0.638723,
+    "r_to_arm_target": 3.534894
+   },
+   "id": "S3",
+   "trigger": "Price sweeps 30983.25 ONL and then prints a 1m_mss above 30998.26 VWAP−2σ to reclaim the low; a liquidity-reclaim long is the only permitted long this high in the range.",
+   "condition": "sweep_reclaim",
+   "direction": "long",
+   "target_chain": [
+    30998.26,
+    31012.5,
+    31030.27,
+    31066.32
+   ],
+   "invalid": "A 2x5m close below 30983.25 means the pool is not reclaimed; stand aside.",
+   "confirm": {
+    "rule": "touch",
+    "ref_price": 30983.25,
+    "side": "below"
+   },
+   "quality": "C",
+   "confirm2": {
+    "rule": "1m_mss",
+    "ref_price": 30998.26,
+    "side": "above"
+   }
+  },
+  {
+   "level_id": "9d1032e7208d3b227e957e84ebfee030a2d3fe188a34f1f275c21e23f9ea0be1",
+   "economics": {
+    "version": 1,
+    "entry_zone": [
+     31046.5,
+     31047.5
+    ],
+    "geometry": {
+     "entry": 31047,
+     "stop": 31070,
+     "target": 31012.5
+    },
+    "first_obstacle": {
+     "price": 31035.25,
+     "level": "PDC",
+     "family": "pivot",
+     "response": "reduce"
+    },
+    "r_to_obstacle": 0.51087,
+    "r_to_arm_target": 1.5
+   },
+   "id": "S4",
+   "trigger": "Price prints 1m closes holding below 31050.00 RTH-H for ACCEPT_HOLD_MIN minutes with no reclaim of the level; the retest-hold after consumption is new short evidence.",
+   "condition": "hold",
+   "direction": "short",
+   "target_chain": [
+    31035.25,
+    31030.27,
+    31021.5,
+    31012.5
+   ],
+   "invalid": "A 5m close back above 31050.00 invalidates the hold; abandon the continuation.",
+   "confirm": {
+    "rule": "time_hold",
+    "ref_price": 31050,
+    "side": "below"
+   },
+   "quality": "C"
+  }
+ ]
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "mutation": "restore bare layout in non-nofx-named worktree",
+    "exit": 1,
+    "evidence": [
+      "    tz_guard_test.go:103: candle_disclosure.go:/tmp/nofx-arm-state/kernel/candle_disclosure.go:115:73: bare time layout \"15:04\" must route through kernel/tz.go helpers (FormatCT/ClockCT/ClockCTAndUTC/TableTimeCT) or carry an explicit zone suffix"
+    ]
+  },
+  {
+    "mutation": "remove keeper start from authorized lock script",
+    "exit": 1,
+    "evidence": "Dispatch 102 protected file changed: deploy/nofx-lock.sh"
+  }
+]

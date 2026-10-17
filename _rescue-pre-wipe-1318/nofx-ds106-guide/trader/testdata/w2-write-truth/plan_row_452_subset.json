@@ -1,0 +1,497 @@
+{
+ "_provenance": "plans rowid=452 (2026-09-22:ASIA v1, superseded:flip, created 2026-09-22 16:36:51.688892997-05:00) read with nice -n 19 sqlite3 -readonly /home/hoang/nofx/data/data.db by Claude-101 2026-09-23 10:36 CT (SELECT doc FROM plans WHERE rowid=452); subset copied verbatim: identity_levels, levels, bias, death, flip, death_condition, day_type, price_at_write, scenarios S2. W-EXEC-TRUTH W2 A3/A4 fixture.",
+ "identity_levels": [
+  {
+   "id": "6395894ce603a7e3a6d291a18bf67c4e30f3451c26c2f98fc98f71248eb1bccd",
+   "symbol": "MNQ",
+   "kind": "SWG-L",
+   "lo": 31000,
+   "hi": 31000,
+   "origin_date": "2026-09-21",
+   "tf": "5m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790109300000,
+   "lookback_bars": 400,
+   "names": [
+    "SWG-L·5m",
+    "EQL",
+    "RN 31000 (100)",
+    "SWG-H·15m"
+   ],
+   "price": 31000,
+   "label": "SWG-L·5m",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "aad2172fc85a07c432f643bdf0da05b9e1cd72934243164d01df52d2f86f9cbd",
+   "symbol": "MNQ",
+   "kind": "SWG-H",
+   "lo": 31009.75,
+   "hi": 31009.75,
+   "origin_date": "2026-09-21",
+   "tf": "5m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790102100000,
+   "lookback_bars": 400,
+   "names": [
+    "SWG-H·5m",
+    "EQH"
+   ],
+   "price": 31009.75,
+   "label": "SWG-H·5m",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "5ea6d095d1028fd5f745f4d23a3673514f61cc8900646a78f24e4c6af06a1293",
+   "symbol": "MNQ",
+   "kind": "eVWAP",
+   "lo": 31015.23332328024,
+   "hi": 31015.23332328024,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790107200000,
+   "lookback_bars": 60,
+   "names": [
+    "eVWAP"
+   ],
+   "price": 31015.23332328024,
+   "label": "eVWAP",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "fae6b29ddc177556323610b7bb60d5095e2d74216878aad7e57eb0aa8401a8bd",
+   "symbol": "MNQ",
+   "kind": "SWG-L",
+   "lo": 31018.25,
+   "hi": 31018.25,
+   "origin_date": "2026-09-21",
+   "tf": "5m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790106900000,
+   "lookback_bars": 400,
+   "names": [
+    "SWG-L·5m"
+   ],
+   "price": 31018.25,
+   "label": "SWG-L·5m",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "30cb1f4ecad5e6a1fe1bb10d1a92a526da72ee2a1c8fd27c94e737ae21f82e69",
+   "symbol": "MNQ",
+   "kind": "VWAP",
+   "lo": 30976.622038195255,
+   "hi": 30976.622038195255,
+   "origin_date": "2026-09-21",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790028000000,
+   "lookback_bars": 1380,
+   "names": [
+    "VWAP+1σ"
+   ],
+   "price": 30976.622038195255,
+   "label": "VWAP+1σ",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "ecf5bfb6741dfbcaa407fbe679413446442e5c5533703acbad5f5ee2c7868c67",
+   "symbol": "MNQ",
+   "kind": "PDH",
+   "lo": 30917.5,
+   "hi": 30917.5,
+   "origin_date": "2026-09-21",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790053199999,
+   "lookback_bars": 1040,
+   "names": [
+    "PDH",
+    "EQH·4h"
+   ],
+   "price": 30917.5,
+   "label": "PDH",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "a3355c50dc73a3091acacdc969cb3360ab12dce84dfefdbcc1c684cfa62eec82",
+   "symbol": "MNQ",
+   "kind": "VWAP",
+   "lo": 30896.789024278987,
+   "hi": 30896.789024278987,
+   "origin_date": "2026-09-21",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790028000000,
+   "lookback_bars": 1380,
+   "names": [
+    "VWAP"
+   ],
+   "price": 30896.789024278987,
+   "label": "VWAP",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "1b2f9b807af37f8e15d810574cf63ec8d5e95689f00fba2ba8c803c385062a2f",
+   "symbol": "MNQ",
+   "kind": "OR-H",
+   "lo": 30868.25,
+   "hi": 30868.25,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790084099999,
+   "lookback_bars": 5,
+   "names": [
+    "OR-H",
+    "EQL·15m"
+   ],
+   "price": 30868.25,
+   "label": "OR-H",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "efe91ae176413c794d49567aa226c96a8ba713a20052270a62c2c09ab69039fb",
+   "symbol": "MNQ",
+   "kind": "RTH-H",
+   "lo": 30863,
+   "hi": 30863,
+   "origin_date": "2026-09-21",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790019899999,
+   "lookback_bars": 375,
+   "names": [
+    "RTH-H",
+    "EQH·1h"
+   ],
+   "price": 30863,
+   "label": "RTH-H",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "07cdb1f053d4f75074e832e0b6370163891b684f30b70a73ed781e2c925e6dd3",
+   "symbol": "MNQ",
+   "kind": "PDC",
+   "lo": 30813,
+   "hi": 30813,
+   "origin_date": "2026-09-21",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790053199999,
+   "lookback_bars": 1040,
+   "names": [
+    "PDC"
+   ],
+   "price": 30813,
+   "label": "PDC",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "d71ac54d42c5eabc53d50fbe4a39e40518d58b49a5ba79d6a86f708ffc91dd6a",
+   "symbol": "MNQ",
+   "kind": "OR-L",
+   "lo": 30763.25,
+   "hi": 30763.25,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790084099999,
+   "lookback_bars": 5,
+   "names": [
+    "OR-L"
+   ],
+   "price": 30763.25,
+   "label": "OR-L",
+   "grade": "",
+   "instruction": ""
+  },
+  {
+   "id": "ceec9bc9928f9aaf5c1bfc7454ac60aa12b3eef65eec43d9898c4f56deb10b97",
+   "symbol": "MNQ",
+   "kind": "ONL",
+   "lo": 30671,
+   "hi": 30671,
+   "origin_date": "2026-09-21",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790083799999,
+   "lookback_bars": 930,
+   "names": [
+    "ONL",
+    "EQL·4h"
+   ],
+   "price": 30671,
+   "label": "ONL",
+   "grade": "",
+   "instruction": ""
+  }
+ ],
+ "levels": [
+  {
+   "id": "fae6b29ddc177556323610b7bb60d5095e2d74216878aad7e57eb0aa8401a8bd",
+   "symbol": "MNQ",
+   "kind": "SWG-L",
+   "lo": 31018.25,
+   "hi": 31018.25,
+   "origin_date": "2026-09-21",
+   "tf": "5m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790106900000,
+   "lookback_bars": 400,
+   "names": [
+    "SWG-L·5m"
+   ],
+   "price": 31018.25,
+   "label": "SWG-L·5m",
+   "grade": "A",
+   "instruction": "overhead target/ref",
+   "machine_grade": "A"
+  },
+  {
+   "id": null,
+   "symbol": null,
+   "kind": null,
+   "lo": null,
+   "hi": null,
+   "origin_date": null,
+   "tf": null,
+   "formed_at_ms": null,
+   "formed_close_ms": null,
+   "lookback_bars": null,
+   "price": 31015.23,
+   "label": "eVWAP",
+   "grade": "A",
+   "instruction": "short reject trigger",
+   "machine_grade": "A"
+  },
+  {
+   "id": "aad2172fc85a07c432f643bdf0da05b9e1cd72934243164d01df52d2f86f9cbd",
+   "symbol": "MNQ",
+   "kind": "SWG-H",
+   "lo": 31009.75,
+   "hi": 31009.75,
+   "origin_date": "2026-09-21",
+   "tf": "5m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790102100000,
+   "lookback_bars": 400,
+   "names": [
+    "SWG-H·5m",
+    "EQH"
+   ],
+   "price": 31009.75,
+   "label": "SWG-H·5m",
+   "grade": "A",
+   "instruction": "upper reference",
+   "machine_grade": "A"
+  },
+  {
+   "id": "6395894ce603a7e3a6d291a18bf67c4e30f3451c26c2f98fc98f71248eb1bccd",
+   "symbol": "MNQ",
+   "kind": "SWG-L",
+   "lo": 31000,
+   "hi": 31000,
+   "origin_date": "2026-09-21",
+   "tf": "5m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790109300000,
+   "lookback_bars": 400,
+   "names": [
+    "SWG-L·5m",
+    "EQL",
+    "RN 31000 (100)",
+    "SWG-H·15m"
+   ],
+   "price": 31000,
+   "label": "SWG-L·5m",
+   "grade": "A",
+   "instruction": "support/target",
+   "machine_grade": "A"
+  },
+  {
+   "id": null,
+   "symbol": null,
+   "kind": null,
+   "lo": null,
+   "hi": null,
+   "origin_date": null,
+   "tf": null,
+   "formed_at_ms": null,
+   "formed_close_ms": null,
+   "lookback_bars": null,
+   "price": 30976.62,
+   "label": "VWAP+1σ",
+   "grade": "A",
+   "instruction": "magnet/target",
+   "machine_grade": "A"
+  },
+  {
+   "id": null,
+   "symbol": null,
+   "kind": null,
+   "lo": null,
+   "hi": null,
+   "origin_date": null,
+   "tf": null,
+   "formed_at_ms": null,
+   "formed_close_ms": null,
+   "lookback_bars": null,
+   "price": 30931,
+   "label": "OB(bear)·4h",
+   "grade": "C",
+   "instruction": "HTF confluence only",
+   "machine_grade": "C"
+  },
+  {
+   "id": "ecf5bfb6741dfbcaa407fbe679413446442e5c5533703acbad5f5ee2c7868c67",
+   "symbol": "MNQ",
+   "kind": "PDH",
+   "lo": 30917.5,
+   "hi": 30917.5,
+   "origin_date": "2026-09-21",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790053199999,
+   "lookback_bars": 1040,
+   "names": [
+    "PDH",
+    "EQH·4h"
+   ],
+   "price": 30917.5,
+   "label": "PDH",
+   "grade": "B",
+   "instruction": "long retest trigger",
+   "machine_grade": "B"
+  },
+  {
+   "id": null,
+   "symbol": null,
+   "kind": null,
+   "lo": null,
+   "hi": null,
+   "origin_date": null,
+   "tf": null,
+   "formed_at_ms": null,
+   "formed_close_ms": null,
+   "lookback_bars": null,
+   "price": 30896.79,
+   "label": "VWAP",
+   "grade": "A",
+   "instruction": "deeper magnet",
+   "machine_grade": "A"
+  },
+  {
+   "id": "1b2f9b807af37f8e15d810574cf63ec8d5e95689f00fba2ba8c803c385062a2f",
+   "symbol": "MNQ",
+   "kind": "OR-H",
+   "lo": 30868.25,
+   "hi": 30868.25,
+   "origin_date": "2026-09-22",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790084099999,
+   "lookback_bars": 5,
+   "names": [
+    "OR-H",
+    "EQL·15m"
+   ],
+   "price": 30868.25,
+   "label": "OR-H",
+   "grade": "A",
+   "instruction": "draw",
+   "machine_grade": "A"
+  },
+  {
+   "id": "ceec9bc9928f9aaf5c1bfc7454ac60aa12b3eef65eec43d9898c4f56deb10b97",
+   "symbol": "MNQ",
+   "kind": "ONL",
+   "lo": 30671,
+   "hi": 30671,
+   "origin_date": "2026-09-21",
+   "tf": "1m",
+   "formed_at_ms": null,
+   "formed_close_ms": 1790083799999,
+   "lookback_bars": 930,
+   "names": [
+    "ONL",
+    "EQL·4h"
+   ],
+   "price": 30671,
+   "label": "ONL",
+   "grade": "A",
+   "instruction": "deep liquidity",
+   "machine_grade": "A"
+  }
+ ],
+ "bias": {
+  "direction": "short",
+  "conviction": "medium",
+  "flip_condition": "5m close above 31015.23 flips long"
+ },
+ "death": {
+  "price": 31018.25,
+  "side": "above",
+  "rule": "2x5m"
+ },
+ "flip": {
+  "price": 31015.23,
+  "side": "above",
+  "rule": "5m_close",
+  "flip_to": "long"
+ },
+ "death_condition": "5m close above 31018.25 invalidates the short plan.",
+ "day_type": "balance",
+ "price_at_write": 31002.5,
+ "scenarios": [
+  {
+   "level_id": "ecf5bfb6741dfbcaa407fbe679413446442e5c5533703acbad5f5ee2c7868c67",
+   "economics": {
+    "version": 1,
+    "entry_zone": [
+     31009.75,
+     31013.75
+    ],
+    "geometry": {
+     "entry": 31009.75,
+     "stop": 30995,
+     "target": 31018.25
+    },
+    "first_obstacle": {
+     "price": 31015.23,
+     "level": "eVWAP",
+     "family": "VWAP",
+     "response": "pass_through"
+    },
+    "r_to_obstacle": 0.371525,
+    "r_to_arm_target": 0.576271
+   },
+   "id": "S2",
+   "trigger": "Price breaks above 31009.75 SWG-H·5m, retests it from above, and holds above it for 3 minutes of 1m closes.",
+   "condition": "acceptance",
+   "direction": "long",
+   "target_chain": [
+    31015.23,
+    31018.25
+   ],
+   "invalid": "1m close below 31009.75 breaks the acceptance and invalidates the long.",
+   "confirm": {
+    "rule": "time_hold",
+    "ref_price": 31009.75,
+    "side": "above"
+   },
+   "quality": "B"
+  }
+ ]
+}

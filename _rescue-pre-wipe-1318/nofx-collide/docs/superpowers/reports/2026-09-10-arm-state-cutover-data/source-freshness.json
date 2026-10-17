@@ -1,0 +1,8 @@
+{
+  "kernel/tz_guard_test.go": "55506262 2026-08-18T07:34:36-05:00 fix(tz): P0 \u2014 CT canonical everywhere; labelled clock in every prompt, single timezone source",
+  "kernel/candle_disclosure.go": "cd15cacb 2026-09-09T18:59:44-05:00 fix(bars-horizon REPAIR): a healthy tape carries no marker, an absent window is named, and the D3 regime input is corrected under the owner ruling",
+  "trader/ninjatrader/bar_horizon_warn.go": "cd15cacb 2026-09-09T18:59:44-05:00 fix(bars-horizon REPAIR): a healthy tape carries no marker, an absent window is named, and the D3 regime input is corrected under the owner ruling",
+  "trader/regime_input_window.go": "cd15cacb 2026-09-09T18:59:44-05:00 fix(bars-horizon REPAIR): a healthy tape carries no marker, an absent window is named, and the D3 regime input is corrected under the owner ruling",
+  "deploy/nofx-lock.sh": "ace51598 2026-09-10T11:43:44-05:00 fix(lock): a directory with no meta is an INCOMPLETE lock, not a held one \u2014 and release honours rm",
+  "web/src/test/brand-scope-baseline.json": "66e2c09a 2026-09-08T18:57:19-05:00 test(brand): record Dispatch 102 preflight and RED surface pins"
+}

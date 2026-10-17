@@ -1,0 +1,23 @@
+{
+  "_source": "W1 settings-truth fixture. The first nine rows are the stored shapes of the two W1 knobs in the 09-16 research copy (/home/hoang/nofx-r101/data/db.copy.db, sqlite3 -readonly, read 2026-09-23): ids verbatim, every other key dropped. The id '' row is real (name 'MNQ SIM Default', is_default=1). The syn-* rows are SYNTHETIC — the shapes no pre-W1 writer could store — so the report's CHANGED/refused branch is exercised. 'record' is the RAW system_config settings_truth_zero:<id> value (a JSON object is stored as its compact text; a string verbatim): both seats parse it with the production parser.",
+  "rows": [
+    {"id": "", "bound": 0, "config": {"ai_config": {"risk_control": {}}, "day_plan": {"replan_cap": 2}}},
+    {"id": "0362594e-77e6-4c5f-a350-5c3738529d28", "bound": 0, "config": {"ai_config": {"risk_control": {}}, "day_plan": {"replan_cap": 2}}},
+    {"id": "08539e82-6ba5-417d-8afe-6077ace29ea0", "bound": 0, "config": {"ai_config": {"risk_control": {}}, "day_plan": {"replan_cap": 2}}},
+    {"id": "4104ca0a-cd27-4206-af79-e04375290b3e", "bound": 0, "config": {"ai_config": {"risk_control": {}}, "day_plan": {"replan_cap": 2}}},
+    {"id": "578ac8f6-2c16-4b0e-b7af-bca6e5413597", "bound": 0, "config": {"ai_config": {"risk_control": {}}, "day_plan": {"replan_cap": 2}}},
+    {"id": "70695b25-01a3-4c38-9917-261260b49550", "bound": 0, "config": {"ai_config": {"risk_control": {"consecutive_loss_halt": 2}}, "day_plan": {"replan_cap": 2}}},
+    {"id": "82b3d482-e018-46cc-984d-122d6f6ddf7e", "bound": 0, "config": {"ai_config": {"risk_control": {}}, "day_plan": {"replan_cap": 2}}},
+    {"id": "a5b7662e-7bf7-49bb-9f09-7efa48f95ac8", "bound": 1, "config": {"ai_config": {"risk_control": {}}, "day_plan": {"replan_cap": 4, "sessions": [{"session": "NY", "replan_cap": 4}, {"session": "ASIA", "replan_cap": 4}, {"session": "LONDON", "replan_cap": 4}]}}},
+    {"id": "a79ba71f-cd7b-4fbb-8dd7-b85b3049d194", "bound": 0, "config": {"ai_config": {"risk_control": {}}, "day_plan": {"replan_cap": 2}}},
+    {"id": "syn-breaker-0-flat", "bound": 1, "config": {"risk_control": {"consecutive_loss_halt": 0}}},
+    {"id": "syn-breaker-0-nested", "bound": 1, "config": {"ai_config": {"risk_control": {"consecutive_loss_halt": 0}}}},
+    {"id": "syn-breaker-0-nested-confirmed", "bound": 1, "record": {"fields": ["risk_control.consecutive_loss_halt"], "saved_at": "2026-09-23T15:04:05Z"}, "config": {"ai_config": {"risk_control": {"consecutive_loss_halt": 0}}}},
+    {"id": "syn-breaker-0-legacy-record", "bound": 0, "record": "risk_control.consecutive_loss_halt", "config": {"ai_config": {"risk_control": {"consecutive_loss_halt": 0}}}},
+    {"id": "syn-breaker-0-bad-record", "bound": 1, "record": "{\"fields\":[\"risk_control.consecutive_loss_halt\"]", "config": {"ai_config": {"risk_control": {"consecutive_loss_halt": 0}}}},
+    {"id": "syn-breaker-null", "bound": 0, "config": {"ai_config": {"risk_control": {"consecutive_loss_halt": null}}}},
+    {"id": "syn-replan-0-strategy", "bound": 1, "config": {"ai_config": {"risk_control": {}}, "day_plan": {"replan_cap": 0, "sessions": [{"session": "NY", "replan_cap": 3}]}}},
+    {"id": "syn-replan-0-strategy-confirmed", "bound": 1, "record": {"fields": ["day_plan.replan_cap"], "saved_at": "2026-01-15T20:30:00Z"}, "config": {"ai_config": {"risk_control": {}}, "day_plan": {"replan_cap": 0, "sessions": [{"session": "NY", "replan_cap": 3}]}}},
+    {"id": "syn-replan-0-session-only", "bound": 0, "config": {"ai_config": {"risk_control": {}}, "day_plan": {"replan_cap": 4, "sessions": [{"session": "ASIA", "replan_cap": 0}]}}}
+  ]
+}

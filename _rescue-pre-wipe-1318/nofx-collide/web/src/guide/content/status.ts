@@ -1,0 +1,246 @@
+import { GUIDE_BUILT_REV, type GuideSection } from '../types'
+
+export const status: GuideSection = {
+  id: 'status',
+  num: 10,
+  title: 'Status & Signals',
+  tagline: 'Every indicator strip, banner, and log line — decoded.',
+  asBuiltRev: GUIDE_BUILT_REV,
+  blocks: [
+    { kind: 'h', text: 'Scenario activation and order authorization' },
+    {
+      kind: 'p',
+      text: 'Scenario activation describes the evaluator’s view of the setup. In activation window and confirmation MET do not authorize or place an order. The separate order authorized chip means the ledger has an authorization; working, filled and cancelled describe that ledger record, not a direct broker settlement. Prices and order selection are addressed separately.',
+    },
+    { kind: 'h', text: 'Dashboard layout and Desk loading' },
+    {
+      kind: 'p',
+      text: 'Overview shows Market Chart beside Account Equity on wide screens and stacks them on narrow screens. The futures Planner, including Desk, follows both charts. Switching to Decisions hides Overview without unmounting Planner: its polling and local state continue. Entry, Mark and Value remain available in the horizontally scrollable position table on phones. The mobile market selector uses the same market choices as the desktop pills. While the first Desk read is pending, DESK shows Loading; this is not a claim that any fact is current. The Desk toggle announces whether the rows are expanded or collapsed.',
+    },
+    { kind: 'h', text: 'Where this page comes from' },
+    {
+      kind: 'p',
+      text: "The UI you are reading is served by the bot's own process at http://localhost:8080. That is the production path and the one this Guide assumes. Until 2026-09-03 there was no production path at all: the interface was served by a Vite DEVELOPMENT server on port 3000, started by hand, supervised by nothing, and the built bundle on disk had been stale since 08-31 while the Go server answered 404 at its own root. A reboot of the machine, or anything that stopped that one node process, took the whole interface with it and left the bot trading blind to its operator. Port 3000 still works and is still the right thing to use while developing — it rebuilds on save — but nothing depends on it any more.",
+    },
+    {
+      kind: 'p',
+      text: "The boot log says which path is live and how old the bundle is: '🖥 ui: served-by=go-static build=<timestamp>'. If that bundle is older than the binary running it, the line adds STALE and how far behind it is, and it is logged as a warning rather than as information — because a stale bundle means the screen is showing you a build that is not the one making your trading decisions. 'served-by=none' means no bundle was found at web/dist; the API keeps working and only the interface is missing, which is why the bot does not refuse to start over it.",
+    },
+    { kind: 'h', text: 'What the E8 side-table can be used for' },
+    {
+      kind: 'p',
+      text: "The A/B counterfactual table records what a confirm rule WOULD have done. Until 2026-09-03 every short row in it was arithmetic across two price spaces: the replay mirrored stop/target into negative prices so the excursion signs read nicely, while the fill and the stored bracket stayed real — so risk came out as 58 430 instead of 21.50 and RR sat pinned near −1. Measured with direction read from the plan: 121 short rows, 109 with a broken RR; all 67 long rows were always clean. The boot line now states what survives: 'e8: rows=188 usable=55 · unrecomputable fill-bar=54 no-inputs=12'. USABLE is the only count a ruling may rest on. The 54 fill-bar rows keep their numbers and are labelled, because the same bug also broke the close-rule comparison — their fill came from the wrong bar, and clean arithmetic on a wrong fill is a precise answer about the wrong moment.",
+    },
+    { kind: 'h', text: 'Why a green test suite has an expiry time' },
+    {
+      kind: 'p',
+      text: 'On 2026-09-03 a suite was verified green at 11:00 and was red at 14:50 with no code change in between, and both readings were honest. A test pinned its fixture to a fixed date but called production code that asked the operating system what time it was; once a cadence guard began enforcing, the answer started depending on how many minutes were left before the session flat. The lesson is not about that one test: any rule that consults the clock makes every test that reaches it a function of the hour it ran.',
+    },
+    {
+      kind: 'p',
+      text: "The repair is a seam. The entry point keeps reading the wall clock and does nothing else; the rule underneath takes the time as an argument. Production behaviour is identical — the bot still asks the OS — but a test can now state its own hour instead of borrowing the machine's. Thirteen time-dependent rules are listed in clock-seams.list at the repo root, and a lint test reads that file and fails the build if any of them loses its seam or grows a second line. Adding a new time-dependent rule without one does not compile past the gate.",
+    },
+    {
+      kind: 'table',
+      title: 'Clock seams — every time-dependent rule and its status',
+      head: ['Rule', 'Seamed'],
+      rows: [
+        ['latestClosedPrimaryBarMs — which bar has closed by now', 'yes'],
+        ['recordClosedTradeAnalytics — MAE/MFE + adherence at exit', 'yes'],
+        ['maybeRecordClosedTradeAnalytics — the once-per-close stamp', 'yes'],
+        ['entryBlockedByLastEntry — the per-session last-entry gate', 'yes'],
+        ['enforceEODFlat — the session flat', 'yes'],
+        ['enforceT1ForceFlat — the T1 force-flat', 'yes'],
+        ['observeTransitionStanddown — the transition timer', 'yes'],
+        ['maybeWakePlannerOnMSS — the structure wake', 'yes'],
+        ['maybeWakePlannerOnLevelEvents — the level wake (fixed first)', 'yes'],
+        ['weeklyConfluenceShadow — the weekly shadow read', 'yes'],
+        ['weeklyScenarioGrade — the active-session grade', 'yes'],
+        ['ResetDailyPnL — the manual daily-window reset', 'yes'],
+        ['barPersistSummary — the 60s counter summary', 'yes'],
+        [
+          'ForceReset poll deadline — a real wait, not a rule',
+          'deliberately not',
+        ],
+        [
+          'tickOnce — loop entry; its clock use already delegates',
+          'deliberately not',
+        ],
+        [
+          'NowCT — the clock accessor itself; consumers all take a time',
+          'deliberately not',
+        ],
+      ],
+    },
+    {
+      kind: 'p',
+      text: 'The three marked \u201cdeliberately not\u201d are listed with their reasons in the same file. An unexplained absence from a list is how the list stops being trusted, so the exclusions are written down beside the inclusions rather than left to be rediscovered.',
+    },
+    { kind: 'h', text: 'The boot ledger, line by line' },
+    {
+      kind: 'code',
+      title: 'the lines printed at startup, in order',
+      lines: [
+        '🔐 BOOT INTEGRITY OK — rev <sha> [+dirty] · built <ts>',
+        '🧾 P&L surfaces: <N> aggregators strict-corrected, 0 raw (corrected-column guard) — every P&L figure the model and the dashboard read is pnl_corrected; unresolved rows are counted and excluded, never coerced',
+        '🛑 exits: stop=max(anchor+clr, 1.5×ATR5m) · anchor_max=3.0×ATR5m · BE=off · trail=off · size=1 · re-arm-after-sweep=on (0B) — the whole exit posture in one line',
+        '⏱ wakes: cutoff=25m(enforce) cooldown=30m(enforce, fast-market≥1.5×ATR exempt) cross-session=on stale-arm-expiry=on (class 47) — ENFORCING since 2026-09-03: a level_event wake with under 25 min to the flat is SKIPPED (its read would land after the last-entry gate closes), and so is one within 30 min of the last wake-authored version — UNLESS price has drifted ≥ FAST_MARKET_ATR (1.5×) from the plan being traded, which bypasses the cooldown and logs "cooldown bypassed: fast market <drift>×ATR". The 25-min cutoff is never exempted: a re-plan with 20 minutes left is a re-plan with 20 minutes left, fast or not. Scheduled reads, death re-plans and owner resets are untouched. cross-session defers WAKES (never scheduled reads) while a planner stream is open; stale-arm expiry retires never-placed arms from superseded plan versions',
+        '    · expected <sha> · goldens PASS      ← code matches deploy record',
+        '📜 planner playbook: playbook=v2 bias_tree=on …',
+        '🛡 plan facts guards: 0-side + empty map fail-closed …',
+        '🚀 planner speed wave: retry=repair stream=on stream_idle=30s stream_total=1200s …',
+        '🛰 planner client: provider_row=<ai_models id> stream_idle=30s stream_total=1200s http_ceiling=600s …  ← class 37 (per trader)',
+        '🧪 validator hints: N sites — condition tokens legal+live, rule tokens in-field',
+        '📜 prompt/validator contract: N restrictions, all stated in prompt  ← class 38',
+        '⚖ arm normalizer: legs on non-sweep → single arm + WARN  ← class 39',
+        '🔁 planner stream policy (class 41): stream_tries=3 backoff=2s→15s→45s watchdog_log=on keepalive=30s serialize_executor=off resend_identical=on  ← class 41 (per trader)',
+        '🛡 cutover safety (class 33): gate legs=5 · leg4=<broker|ledger (no snapshot yet)|STALE> · boot sweep cancelled <N> pre-boot arm(s) (<M> authorized-but-never-placed left for this process)  ← class 33',
+        '✂ planner schema: 9 top-level fields, ALL consumed … plan JSON ~920 tokens of a 23,769-token p50 output (3.9%); reasoning is ~96%  ← root-fix part A (measured, no cut shipped)',
+        '🔬 shadow A/B (root-fix part B): OFF target_n=10 done=0 … promotion criterion: legal-rate ≥ max AND median wall ≤50% of max at n≥10',
+        '🩹 repair (class 44): contract=full-doc restated head+tail · vocab-suffix=on · law excerpts=all-matching · outcomes recorded  ← class 44',
+        '📊 bars: 1w nt8_agg via 1d since 2020-11-11 · 1d nt8 since 2020-11-11 · … · ladder(1w)=[1d 1m] · native 1w EXCLUDED · retention 1m=90d coarse=forever  ← class 45',
+        '🛰 planner client: tries=3 backoff=2s→15s→45s keepalive_set=30s observed=n/a watchdog=pre600s/post90s(data) resend_identical=true serialize=false storm_cap=5 trace=true  ← class 49 (every field READ from its enforcer)',
+        '⏱ watchdog fired: post gap=93.2s (limit 1m30s, call age 214.0s)  ← only when a generation actually stalls',
+        '🔌 conn trace: closed_by=peer_fin reused=true bytes=54986 elapsed=250.1s  ← who ended the stream (INFERRED)',
+        '🌩 storm cap reached: 5 provider call(s) this read ≥ cap 5  ← a 503 burst is not retried harder',
+        '⚙ config diff (studio_save): min_risk_reward_ratio 3 → 2  ← one line per RESOLVED knob a save changed, plus a config_changes row',
+        '🛡 boot sweep CANCELLED pre-boot arm (class 33): <session> <S#> … signal=<id> — the process that placed it is gone  ← only when a restart orphaned a resting order',
+        "🧷 brackets: entry-oco=<own(none)|SHARED(id)|n/a> · bracket-oco=<on-fill(shared)|MIXED|n/a> · state-source=<broker|none> · protective-tif=<Gtc|Day|n/a> · reconcile-on-reconnect=on · can-place-stop=<yes|no (addon <build>)> · unprotected-found=<n>  ← bracket-OCO separation. At startup most fields read n/a ON PURPOSE: they describe what the NinjaTrader AddOn does, and the bot can only know that from a book it has not received yet. A Go constant asserting the AddOn's behaviour is exactly the failure this line exists to catch — if entry-oco ever reads SHARED(...), the entry is back in its bracket's cancel group and cancelling it can take the stop.",
+        '🛑 session risk: daily=<$N>[O] [DECORATIVE (guardrails master off, daily_loss_enabled off — both must be on)] · breaker=<N>[I] warn=<M>[I] (not master-gated; never fires on the retained tape, max run 7, ids 585-591) · no-trade-band=arm+decision · post-loss counter=on(<K>m) · flat@<close>=position+arms+pending  ← session risk limits. Every threshold carries its evidence tier: [O] is an owner ruling, [I] is invented and not yet measured. The line says DECORATIVE in those words whenever a limit is configured but not enforced, because a limit that is displayed and not enforced is worse than none — it is a limit someone is relying on.',
+        '🎛 volume wave …   ← wave detector knobs',
+        '🎯 touch telemetry …',
+        '📐 fvg_entry …',
+        '🔧 S-wave …',
+        '',
+        '+dirty usually = an untracked file (.env.bak…) — Go vcs.modified',
+        'counts untracked files. NOT a code change.',
+      ],
+    },
+    { kind: 'h', text: 'Which day is it? (the session calendar)' },
+    {
+      kind: 'p',
+      text: 'CME does not simply open or close. Most US holidays are EARLY CLOSES, not closures, and the bot used to treat every one of them as a full shutdown \u2014 the code said so itself: "for v1 we treat them as full closures and refuse to trade." On Labor Day 2026 that cost a whole session: MNQ traded 980 bars across 153.50 points while the dashboard read CME CLOSED (holiday) beside a live bar, and no LONDON plan was ever read.',
+    },
+    {
+      kind: 'p',
+      text: 'A date is now one of three things, and the calendar is DATA (kernel/session_calendar.json), not code. CLOSED \u2014 no trading at all. SHORTENED \u2014 a TRADING day: reads fire, arms are allowed, and the bot is flat at the stated early close, the same discipline as 14:45 at an earlier time. NORMAL \u2014 the ordinary weekly rules decide, and a date absent from the file is normal.',
+    },
+    {
+      kind: 'p',
+      text: 'Every row cites its source, so you can tell a published fact from a decision. Where nobody has established a date it is CLOSED and SAYS SO \u2014 a guessed trading day is worse than a missed one \u2014 and the count of unestablished dates rides the boot line so an unchecked calendar cannot look like a checked one. A year the calendar has never covered falls back to the old holiday rule, which errs closed, and the boot line names the year.',
+    },
+    {
+      kind: 'p',
+      text: 'You will see it in two places. The boot line: \u201c\ud83d\uddd3 session calendar: today=shortened close=12:00 CT source=CME published \u00b7 unknown-dates=5 \u00b7 dates=14 covered=[2026] \u00b7 backoff=3m0s\u201d. And the DESK strip\u2019s MODE row, which now ends with the day\u2019s classification, its close time and where that came from \u2014 the row that used to say only \u201choliday\u201d.',
+    },
+    {
+      kind: 'p',
+      text: 'One more thing changed with it: while the market is shut the loop idles on a deliberate 3-minute backoff, which is longer than the 2-minute scan interval it was being measured against. That comparison logged 165 \u201ccycle overran the scan interval\u201d warnings in a single day, every one of them guaranteed rather than diagnostic. The closed path no longer raises it. A real overrun on a trading day still does.',
+    },
+    { kind: 'h', text: 'The DESK strip (top of the plan card)' },
+    {
+      kind: 'p',
+      text: 'Twelve rows, one per fact you need mid-session, from a single read of /api/desk. Every row carries the age of the newest input it used, so nothing on it is undated. A row the engine could not compute says UNKNOWN and gives its reason — it never shows a zero, a dash, or the last value it happened to have. A source older than its own bound turns amber with its age rather than quietly showing you a stale number as if it were current.',
+    },
+    {
+      kind: 'table',
+      head: ['Row', 'What it tells you'],
+      rows: [
+        [
+          'MODE',
+          'plan_mode, session, CT clock — and process/feed/link/book named SEPARATELY, never as one green word.',
+        ],
+        [
+          'POSITION',
+          'Side, size, entry, mark and unrealized P&L in points and dollars. FLAT when there is nothing on.',
+        ],
+        [
+          'PROTECTION',
+          "The stop NT8 ACCEPTED — not the one in our ledger — with the distance and the dollars at risk if it fills. UNKNOWN when no accepted record exists yet; it never falls back to the ledger's number.",
+        ],
+        [
+          'DRIFT',
+          'Shown only when the ledger and the broker disagree about the stop. Arm 35 was 3.371527 points apart.',
+        ],
+        [
+          'TARGET',
+          'The accepted target, its distance, and the dollars if it fills.',
+        ],
+        [
+          'DAY',
+          'Realized P&L on pnl_corrected against the ENFORCED daily limit, naming its source (Studio or the env fallback) and whether the guardrails master is even on. Rows with no corrected P&L are excluded AND counted.',
+        ],
+        [
+          'ARMS',
+          'Every resting arm: scenario, side, kind, price, distance from mark, age, and whether it actually reached the broker.',
+        ],
+        [
+          'BOOK',
+          'Broker order count against the ledger, dated from receipt of that snapshot. Receipt time, true age and received AddOn build are visible together. No received book or missing link state says UNKNOWN; a fresh bar does not supply a missing link status.',
+        ],
+        [
+          'FEED',
+          'Age of the newest 1m bar, the NT8 link state, and the AddOn build the broker is actually running.',
+        ],
+        ['PLANNER', 'Idle, or a read in flight and since when.'],
+        ['RANGE', "The session's high, low and range against ATR5m."],
+        [
+          'LAST FILL',
+          'The most recent fill. Slippage reads UNKNOWN because the intended price is not stored beside the fill.',
+        ],
+      ],
+    },
+    {
+      kind: 'p',
+      text: 'It refreshes every 5 seconds while a position or an arm is live and every 15 seconds otherwise — the server decides which, from what is actually live. It has no unread count and nothing to acknowledge: P0 alerts are already acknowledged only 40.8% of the time (62 of 152), and a second queue would make that worse.',
+    },
+    { kind: 'h', text: 'PROCESS::RESPONDING (dashboard header)' },
+    {
+      kind: 'p',
+      text: 'This header used to read SYSTEM_STATUS::ONLINE. It answers exactly one question — did the HTTP process reply to /api/health — and it stayed green through 113 minutes of feed silence on 2026-09-03. It was renamed so it can only be read as what it is. For whether the system is actually working, read the DESK strip: feed, link and book are separate facts and each is stated separately.',
+    },
+    { kind: 'h', text: 'SYSTEM_STATUS strip (dashboard)' },
+    {
+      kind: 'table',
+      head: ['Item', 'Meaning'],
+      rows: [
+        [
+          'NT8 feed',
+          'TCP bridge alive + bars flowing — the single source of truth.',
+        ],
+        ['Boot integrity', 'Running binary == deploy record (goldens PASS).'],
+        ['Dead-man watchdog', 'Kernel heartbeats ok.'],
+        ['Trader frozen', 'The trader loop is stuck — investigate.'],
+        ['Clock drift', 'Host clock vs NT8 clock mismatch.'],
+        [
+          '402 banner',
+          'An upstream model API returned HTTP 402 (billing) — the model is down for payment, not code.',
+        ],
+      ],
+    },
+    { kind: 'h', text: 'Gate-block labels — the full list' },
+    {
+      kind: 'code',
+      title: 'every label the gate panel can show',
+      lines: [
+        'NT8 feed down · Dead-man watchdog · Trader frozen · Boot integrity',
+        'Consecutive-loss halt · Past last-entry time · Outside session window',
+        'Against the plan · Awaiting approval · Clock drift',
+        'Duplicate order dropped · Order rate breaker · Burned level re-touched',
+        'Night/day transition',
+        '',
+        'Reset: at the 17:00 session roll, and on bot restart.',
+      ],
+    },
+    { kind: 'h', text: 'Stream cuts vs connection idleness' },
+    {
+      kind: 'p',
+      text: "GET /api/risk/stream-cuts. Every early end of an AI stream — a peer FIN ('cut') or our own watchdog ('watchdog') — grouped by how long the connection had been idle before the call reused it, with what the identical resend then did. Born from 2026-09-03 08:11:38: a planner stream died to a peer FIN at 283.4s with 50,489 reasoning chars in, on a connection reused after 101,212ms idle; the resend that succeeded rode one idle 34,935ms. If cuts cluster above some idle threshold, setting IdleConnTimeout below it is the whole fix and needs nothing from the provider. NOTHING IS SET — the ruling was three more cuts before deciding. An unresolved resend counts as unresolved, never as a loss, and a connection that was not reused gets its own bucket so fresh dials never read as evidence about idleness. idle_before_ms and conn_reused ride every ai_call log line now, so this is greppable as well as queryable.",
+    },
+    { kind: 'h', text: 'Traffic light — one glance' },
+    {
+      kind: 'p',
+      text: "GREEN = bot running, gates quiet, plan armed (or flat by plan). AMBER = gates firing repeatedly — read the ledger, don't override. RED = feed down / frozen / boot mismatch — use the emergency checklist (Section 9). The card's NO-TRADE banner is not a light: it is a state.",
+    },
+  ],
+}

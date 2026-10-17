@@ -1,0 +1,5 @@
+--- FAIL: TestArmStateSQLAndGoAgreeAtStoreCallSites (0.00s)
+    arm_state_test.go:45: SQL/Go disagree for "expİred"
+FAIL
+FAIL	nofx/store	0.011s
+FAIL

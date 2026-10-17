@@ -1,0 +1,50 @@
+
+ RUN  v4.0.16 /tmp/arm-state-cutover-20260910/baseline/nofx/web
+
+ ❯ src/brand-scope.test.ts (18 tests | 1 failed) 471ms
+   ✓ preserves go.mod byte for byte 1ms
+   ✓ preserves auth/auth.go byte for byte 0ms
+   ✓ preserves logger/logger.go byte for byte 0ms
+   ✓ preserves deploy/nofx.service byte for byte 0ms
+   ✓ preserves deploy/nofx-web.service byte for byte 0ms
+   ✓ preserves deploy/systemd-user/nofx-backup.service byte for byte 0ms
+   ✓ preserves deploy/systemd-user/nofx-backup.timer byte for byte 0ms
+   ✓ preserves deploy/systemd-user/nofx-clock-guard.service byte for byte 0ms
+   ✓ preserves deploy/systemd-user/nofx-clock-guard.timer byte for byte 0ms
+   × preserves deploy/nofx-lock.sh byte for byte 2ms
+   ✓ preserves deploy/nofx-claim.sh byte for byte 0ms
+   ✓ preserves deploy/nofx-db-backup.sh byte for byte 0ms
+   ✓ preserves provider/ninjatrader/tcp_server.go byte for byte 0ms
+   ✓ preserves provider/ninjatrader/tcp_framing.go byte for byte 0ms
+   ✓ preserves ninjascript/VLTraderTCPClient.cs byte for byte 0ms
+   ✓ preserves web/src/lib/agentChatStorage.ts byte for byte 0ms
+   ✓ rejects a removed protected guard, instead of only checking the issuer word 0ms
+   ✓ preserves every existing TypeScript import target in changed files  464ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/brand-scope.test.ts > preserves deploy/nofx-lock.sh byte for byte
+AssertionError: expected [Function] to not throw an error but 'Error: Dispatch 102 protected file ch…' was thrown
+
+- Expected: 
+undefined
+
++ Received: 
+"Error: Dispatch 102 protected file changed: deploy/nofx-lock.sh"
+
+ ❯ src/brand-scope.test.ts:18:11
+     16|     expect(() =>
+     17|       verifyScope(path, readFileSync(resolve('..', path)), hash)
+     18|     ).not.toThrow()
+       |           ^
+     19|   }
+     20| )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 17 passed (18)
+   Start at  11:43:21
+   Duration  765ms (transform 90ms, setup 38ms, import 13ms, tests 471ms, environment 182ms)
+

@@ -1,0 +1,71 @@
+=== RUN   TestShadowDemotionAuthorsInertRow
+09-10 12:03:06 [INFO] store/store.go:89 ✅ Database initialized (GORM, SQLite)
+09-10 12:03:06 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 🛡 boot sweep DEFERRED (class 33): NT8 link not ready — pre-boot arms are UNVERIFIED this cycle; retrying next cycle
+09-10 12:03:06 [INFO] trader/auto_trader.go:44 [trader_id=trader-1] 🔬 conditions: live [acceptance, breakdown_continue, breakup_continue, hold, reclaim, reject, sweep_reclaim] · shadow [breakout_retest, fvg_entry] (per-trader resolved, 0C shadow demotion)
+09-10 12:03:06 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 📅 calendar FAIL-CLOSED: no slice for 2026-09-10 — using the static T1 fallback (0 window(s)) instead of zero protection
+09-10 12:03:06 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 🛑 arm REFUSED (session risk): no_trade_band: lunch no-trade window (12:00–13:30 CT) · no_trade_band refusals this session: 1
+    shadow_demotion_test.go:145: shadowed arm must still AUTHOR a ledger row, got 0 (err=<nil>)
+--- FAIL: TestShadowDemotionAuthorsInertRow (0.16s)
+=== RUN   TestShadowDemotionE8WritesCounterfactual
+09-10 12:03:06 [INFO] store/store.go:89 ✅ Database initialized (GORM, SQLite)
+09-10 12:03:06 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 🛡 boot sweep DEFERRED (class 33): NT8 link not ready — pre-boot arms are UNVERIFIED this cycle; retrying next cycle
+09-10 12:03:06 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 📅 calendar FAIL-CLOSED: no slice for 2026-09-10 — using the static T1 fallback (0 window(s)) instead of zero protection
+09-10 12:03:06 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 🛑 arm REFUSED (session risk): no_trade_band: lunch no-trade window (12:00–13:30 CT) · no_trade_band refusals this session: 1
+    shadow_demotion_test.go:190: E8 counterfactual rows = 0 err=<nil>, want ≥1 for the shadowed fvg setup
+--- FAIL: TestShadowDemotionE8WritesCounterfactual (0.16s)
+=== RUN   TestShadowDemotionNoWireFrameOnLoopback
+2026/09/10 12:03:06 INFO tcp_server: listening addr=127.0.0.1:0
+2026/09/10 12:03:06 INFO tcp_server: client connected addr=127.0.0.1:46952
+2026/09/10 12:03:06 INFO tcp_server: sent bars_subscribe symbol=MNQ timeframes="[1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w]" bars_back=2000
+09-10 12:03:06 [INFO] store/store.go:89 ✅ Database initialized (GORM, SQLite)
+09-10 12:03:06 [INFO] ninjatrader/tcp_trader.go:157 🔗 ninjatrader/tcp: trader MNQ BOUND to account Sim101 (P5.4 per-(symbol,account) routing)
+2026/09/10 12:03:06 INFO tcp_server: sent account_register allowlist accounts=[Sim101]
+09-10 12:03:07 [INFO] trader/auto_trader.go:44 [trader_id=trader-1] 🛡 cutover safety (class 33): gate legs=5 · leg4=broker · boot sweep cancelled 0 pre-boot arm(s) (0 authorized-but-never-placed left for this process)
+09-10 12:03:07 [INFO] trader/auto_trader.go:44 [trader_id=trader-1] 🔌 nt8 addon: build_id=none expected=2026-09-07-h1 match=NO (no frame carrying a build_id received yet)
+09-10 12:03:07 [INFO] trader/auto_trader.go:44 [trader_id=trader-1] 🔌 order_snapshot: last age=0s orders=0 · leg4 source=broker
+09-10 12:03:07 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 📅 calendar FAIL-CLOSED: no slice for 2026-09-10 — using the static T1 fallback (0 window(s)) instead of zero protection
+09-10 12:03:07 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 🛑 arm REFUSED (session risk): no_trade_band: lunch no-trade window (12:00–13:30 CT) · no_trade_band refusals this session: 1
+    shadow_demotion_test.go:219: expected exactly one inert shadowed row, got []
+2026/09/10 12:03:07 INFO tcp_server: client disconnected
+--- FAIL: TestShadowDemotionNoWireFrameOnLoopback (0.57s)
+=== RUN   TestLiveConditionPlacesOnLoopback
+2026/09/10 12:03:07 INFO tcp_server: listening addr=127.0.0.1:0
+2026/09/10 12:03:07 INFO tcp_server: client connected addr=127.0.0.1:45114
+2026/09/10 12:03:07 INFO tcp_server: sent bars_subscribe symbol=MNQ timeframes="[1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w]" bars_back=2000
+09-10 12:03:07 [INFO] store/store.go:89 ✅ Database initialized (GORM, SQLite)
+09-10 12:03:07 [INFO] ninjatrader/tcp_trader.go:157 🔗 ninjatrader/tcp: trader MNQ BOUND to account Sim101 (P5.4 per-(symbol,account) routing)
+2026/09/10 12:03:07 INFO tcp_server: sent account_register allowlist accounts=[Sim101]
+09-10 12:03:07 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 📅 calendar FAIL-CLOSED: no slice for 2026-09-10 — using the static T1 fallback (0 window(s)) instead of zero protection
+09-10 12:03:07 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 🛑 arm REFUSED (session risk): no_trade_band: lunch no-trade window (12:00–13:30 CT) · no_trade_band refusals this session: 1
+    shadow_demotion_test.go:251: live condition did NOT place — regression in the arm seam
+2026/09/10 12:03:09 INFO tcp_server: client disconnected
+--- FAIL: TestLiveConditionPlacesOnLoopback (2.15s)
+=== RUN   TestShadowedRestingOrderCancelledAtBoot
+2026/09/10 12:03:09 INFO tcp_server: listening addr=127.0.0.1:0
+2026/09/10 12:03:09 INFO tcp_server: client connected addr=127.0.0.1:46320
+2026/09/10 12:03:09 INFO tcp_server: sent bars_subscribe symbol=MNQ timeframes="[1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w]" bars_back=2000
+09-10 12:03:09 [INFO] store/store.go:89 ✅ Database initialized (GORM, SQLite)
+09-10 12:03:09 [INFO] ninjatrader/tcp_trader.go:157 🔗 ninjatrader/tcp: trader MNQ BOUND to account Sim101 (P5.4 per-(symbol,account) routing)
+2026/09/10 12:03:09 INFO tcp_server: sent account_register allowlist accounts=[Sim101]
+09-10 12:03:09 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 📅 calendar FAIL-CLOSED: no slice for 2026-09-10 — using the static T1 fallback (0 window(s)) instead of zero protection
+09-10 12:03:09 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 🛑 arm REFUSED (session risk): no_trade_band: lunch no-trade window (12:00–13:30 CT) · no_trade_band refusals this session: 1
+09-10 12:03:13 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] ⚠️ armed sync cancel UNACKED S1 signal=sig-pre-wave after retry — ledger cancelled, flatten proceeds
+09-10 12:03:13 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 🔒 no-trade band: 0 resting arm(s) cancelled, 1 unacked — an arm resting into the band is cancelled, not grandfathered
+    shadow_demotion_test.go:287: resting order must be swept to shadowed, got {ID:1 TraderID:trader-1 PlanID:2026-09-10:TEST:trader-1 Version:1 ArmedUnderVersion:1 Session:TEST Scenario:S1 Side:LONG EntryPx:100 StopPx:95 TargetPx:110 State:cancelled StateReason:no-trade band opened — no_trade_band: lunch no-trade window (12:00–13:30 CT) (ack timeout — flatten proceeds) EntryClass: SignalID:sig-pre-wave FillPrice:0 FillQuantity:0 BootID:2331522-1789059787002 LegIndex:0 LegCount:0 Kind: Condition: PlacementSeq:0 CancelRequestedAtMs:0 CancelAttempts:0 CancelSettledSnapshotID:0 CreatedAt:2026-09-10 17:03:09.7080856 +0000 UTC UpdatedAt:2026-09-10 17:03:13.714194122 +0000 UTC}
+2026/09/10 12:03:13 INFO tcp_server: client disconnected
+--- FAIL: TestShadowedRestingOrderCancelledAtBoot (4.16s)
+=== RUN   TestConfigFlipToLiveAllowsArming
+09-10 12:03:13 [INFO] store/store.go:89 ✅ Database initialized (GORM, SQLite)
+09-10 12:03:13 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 📅 calendar FAIL-CLOSED: no slice for 2026-09-10 — using the static T1 fallback (0 window(s)) instead of zero protection
+09-10 12:03:13 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 🛑 arm REFUSED (session risk): no_trade_band: lunch no-trade window (12:00–13:30 CT) · no_trade_band refusals this session: 1
+    shadow_demotion_test.go:307: live-configured condition must arm normally, got [] (err=<nil>)
+--- FAIL: TestConfigFlipToLiveAllowsArming (0.16s)
+=== RUN   TestSplitArmWritesTwoLedgerRows
+09-10 12:03:14 [INFO] store/store.go:89 ✅ Database initialized (GORM, SQLite)
+09-10 12:03:14 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 📅 calendar FAIL-CLOSED: no slice for 2026-09-10 — using the static T1 fallback (0 window(s)) instead of zero protection
+09-10 12:03:14 [WARN] trader/auto_trader.go:49 [trader_id=trader-1] 🛑 arm REFUSED (session risk): no_trade_band: lunch no-trade window (12:00–13:30 CT) · no_trade_band refusals this session: 1
+    split_entry_test.go:139: split arm must write 2 ledger rows (legs), got 0 ([])
+--- FAIL: TestSplitArmWritesTwoLedgerRows (0.20s)
+FAIL
+FAIL	nofx/trader	7.579s
+FAIL
