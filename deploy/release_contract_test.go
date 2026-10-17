@@ -314,6 +314,7 @@ func TestManifestRendersUncomputedListsAsNullNotEmpty(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(stage, "deploy/RELEASE"), []byte(sha+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	addonConstSource(t, stage, "2026-09-30-contract")
 	out, err := runScript(t, "deploy/release/manifest.sh", stage, sha, "v9.9.9")
 	if err != nil {
 		t.Fatalf("manifest failed: %v\n%s", err, out)
@@ -365,6 +366,7 @@ func TestManifestRefusesWhenTheStagedReleaseDisagreesWithTheSourceSha(t *testing
 	if err := os.WriteFile(filepath.Join(stage, "deploy/RELEASE"), []byte(strings.Repeat("a", 40)+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	addonConstSource(t, stage, "2026-09-30-contract")
 	if out, err := runScript(t, "deploy/release/manifest.sh", stage, want, "v1"); err == nil {
 		t.Fatalf("a staged RELEASE that disagrees with the source sha must be REFUSED:\n%s", out)
 	}

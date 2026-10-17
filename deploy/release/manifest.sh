@@ -43,8 +43,18 @@ arts="$(cd "$STAGE" && find . -type f -printf '%P\n' | LC_ALL=C sort | while rea
 done | paste -sd, -)" || exit 1
 
 # Read from the AddOn source rather than restated here (L7: READ, never literal).
-ADDON_BUILD="$(grep -hoE 'VL_BUILD_ID[^"]*"[^"]+"' "$STAGE"/ninjascript/VLTraderTCPClient.cs 2>/dev/null | head -1 | sed 's/.*"\(.*\)"/\1/')"
-[ -n "$ADDON_BUILD" ] || ADDON_BUILD="n/a"
+# The extraction is ANCHORED to the const declaration line: comment lines are
+# dropped first, so a comment that mentions VL_BUILD_ID — even one containing
+# the full const text — can never be read as the build id. An absent
+# declaration is a REFUSAL, never "n/a": a manifest that ships without the
+# AddOn build id would let the updater verify the wrong AddOn.
+ADDON_BUILD="$(grep -vE '^[[:space:]]*//' "$STAGE"/ninjascript/VLTraderTCPClient.cs 2>/dev/null \
+  | grep -hoE 'const[[:space:]]+string[[:space:]]+VL_BUILD_ID[[:space:]]*=[[:space:]]*"[^"]*"' \
+  | head -1 | sed 's/.*"\([^"]*\)"/\1/')"
+[ -n "$ADDON_BUILD" ] || {
+  echo "manifest: REFUSED — no const string VL_BUILD_ID declaration found in ninjascript/VLTraderTCPClient.cs" >&2
+  exit 1
+}
 # THE PROTOCOL VERSION COMES FROM THE CODE, NOT THE DOCUMENTATION.
 # This used to grep the first `protocol_version` out of
 # ninjascript/vltrader_tcp_PROTOCOL.md — and the first match in that file is a
