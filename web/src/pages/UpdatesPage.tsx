@@ -45,6 +45,28 @@ function Row({ label, value }: { label: string; value: string }) {
   )
 }
 
+// W-ADDON-ONE-CLICK — the owner-facing plain word for a job STEP (the spec's
+// exact sentences). The server sends a raw step name; an unknown one is shown
+// verbatim (truth rule: never fabricate, never drop the server's own text).
+function jobStatusText(
+  step: string | undefined,
+  language: 'en' | 'zh' | 'id'
+): string {
+  const raw = (step ?? '').toLowerCase()
+  if (!raw) return ''
+  if (/addon.?build|building/.test(raw))
+    return up('addonStatusBuilding', language)
+  if (/addon.?place|placing|install.*addon|addon.*install/.test(raw))
+    return up('addonStatusInstalling', language)
+  if (/nt8.?restart|restart/.test(raw))
+    return up('addonStatusRestarting', language)
+  if (/reconnect|wait.*ninja|ninja.*wait|waiting/.test(raw))
+    return up('addonStatusReconnecting', language)
+  if (/addon.?done|addon.?ack|running.*new|done/.test(raw))
+    return up('addonStatusDone', language)
+  return step ?? ''
+}
+
 function Panel({
   title,
   children,
@@ -107,6 +129,10 @@ export default function UpdatesPage() {
   // install-with-password (owner order 10-02 07:3x CT): the PRIMARY flow.
   const [password, setPassword] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  // W-ADDON-ONE-CLICK: a HELD job is retried from the page with the same
+  // password — never `vl-updater resume` from a terminal.
+  const [retrying, setRetrying] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
 
   // Panel E — the resolved PivotWindow (W1 effective settings), or null.
   const [pivotWindow, setPivotWindow] = useState<number | null>(null)
@@ -395,6 +421,16 @@ export default function UpdatesPage() {
     !releaseId ||
     !availableReady
 
+  // W-ADDON-ONE-CLICK: Retry is gated on the worker listening + a typed
+  // password + a named job. It does NOT need install_enabled or a verified
+  // release — the job already exists and is held; Retry re-runs it.
+  const retryDisabled =
+    INSTALL_AUTHZ_UNDER_REVIEW ||
+    retrying ||
+    !password.trim() ||
+    status?.worker_listening !== true ||
+    !polledJobID
+
   const doInstallWithPassword = useCallback(async () => {
     if (INSTALL_AUTHZ_UNDER_REVIEW || installing) return
     if (!releaseId || !password.trim()) return
@@ -412,6 +448,28 @@ export default function UpdatesPage() {
     }
     setInstalling(false)
   }, [releaseId, password, installing])
+
+  // W-ADDON-ONE-CLICK: the page's Retry for a HELD job — the owner's password
+  // (same proof as Update), sent only in the request body, never rendered.
+  // On success the page just re-polls: the worker re-runs the held step and
+  // the next status poll shows the new blocker or the completion. There is no
+  // terminal instruction to show.
+  const doRetry = useCallback(async () => {
+    if (INSTALL_AUTHZ_UNDER_REVIEW || retrying) return
+    const id = polledJobID
+    if (!id || !password.trim()) return
+    setRetrying(true)
+    setRetryError(null)
+    const res = await updatesApi.retry(id, password)
+    if (res.ok) {
+      setPassword('')
+    } else {
+      // the SERVER's own text verbatim (wrong password 403, lockout 429,
+      // worker refused 503) — never a fabricated reason.
+      setRetryError(res.error || 'retry refused')
+    }
+    setRetrying(false)
+  }, [polledJobID, password, retrying])
 
   const askReloadHistory = useCallback(() => {
     setHistoryReply(null)
@@ -771,11 +829,48 @@ export default function UpdatesPage() {
               }
             />
             {job?.step && (
-              <Row label={up('jobStep', language)} value={job.step} />
+              <Row
+                label={up('jobStep', language)}
+                value={jobStatusText(job.step, language)}
+              />
             )}
             {job?.blocker && (
               <div data-testid="job-blocker">
                 <Row label={up('jobBlocker', language)} value={job.blocker} />
+                <p className="mt-2 text-xs text-zinc-400">
+                  {up('retryBlockerHelp', language)}
+                </p>
+                <input
+                  id="updates-retry-password"
+                  data-testid="retry-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  spellCheck={false}
+                  className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+                  placeholder={up('installPasswordPlaceholder', language)}
+                />
+                <button
+                  type="button"
+                  disabled={retryDisabled}
+                  onClick={doRetry}
+                  className="mt-2 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium bg-zinc-700 text-zinc-100 disabled:opacity-50"
+                  data-testid="retry-button"
+                >
+                  {retrying && <Loader2 size={15} className="animate-spin" />}
+                  {retrying
+                    ? up('retrying', language)
+                    : up('retryInstall', language)}
+                </button>
+                {retryError && (
+                  <p
+                    className="mt-1 text-xs text-red-400"
+                    data-testid="retry-error"
+                  >
+                    {retryError}
+                  </p>
+                )}
               </div>
             )}
             {/* release #22: the failure reason was rendered only when the job

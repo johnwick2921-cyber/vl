@@ -38,6 +38,7 @@ type Server struct {
 	// in M3) and a clock seam for the install expiry window.
 	updateVerifier updateauth.Verifier
 	updateStart    UpdateStarter
+	updateResume   UpdateResumer
 	updatesNow     func() time.Time
 	// M4 3b-B U5b: VL_UPDATER=1 read once at NewServer (configureUpdater).
 	updaterOn bool

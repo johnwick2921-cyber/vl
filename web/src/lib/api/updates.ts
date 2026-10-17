@@ -368,6 +368,29 @@ export const updatesApi = {
     }
   },
 
+  // W-ADDON-ONE-CLICK: a HELD job is retried from the page with the owner's
+  // password (same proof as Update) — never `vl-updater resume` from a
+  // terminal. The password travels ONLY in this request body and is never
+  // echoed. Same refusal shape as install-with-password (429 = lockout).
+  async retry(
+    jobId: string,
+    password: string
+  ): Promise<InstallWithPasswordResult> {
+    const payload = { job_id: jobId, password }
+    const res = await httpClient.request<{ job_id: string; error?: string }>(
+      `${API_BASE}/updates/retry`,
+      { method: 'POST', data: payload, headers: UPDATE_HEADERS, silent: true }
+    )
+    if (res.success && res.data?.job_id) {
+      return { ok: true, job_id: res.data.job_id }
+    }
+    return {
+      ok: false,
+      error: res.data?.error || res.message,
+      status: res.statusCode,
+    }
+  },
+
   async job(id: string, silent = true): Promise<UpdateJobView | null> {
     const res = await httpClient.request<UpdateJobView>(
       `${API_BASE}/updates/jobs/${encodeURIComponent(id)}`,
