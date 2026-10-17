@@ -359,8 +359,8 @@ func TestUpdateRoutesAreNotAdvertisedToTheAgent(t *testing.T) {
 			found++
 		}
 	}
-	if found != 6 {
-		t.Fatalf("router has %d /api/updates routes, want 6 (status, check, install, install-with-password, jobs, jobs/receipt)", found)
+	if found != 7 {
+		t.Fatalf("router has %d /api/updates routes, want 7 (status, readiness, check, install, install-with-password, jobs, jobs/receipt)", found)
 	}
 	re := regexp.MustCompile(`s\.route(WithSchema)?\([^)]*"/updates`)
 	for _, f := range []string{"server.go", "handler_updates.go"} {

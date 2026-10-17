@@ -16,6 +16,7 @@ import (
 	"vl/config"
 	"vl/internal/updateauth"
 	"vl/internal/updaterjob"
+	"vl/internal/updatereadiness"
 	"vl/internal/updatersource"
 	"vl/internal/updaterwire"
 	"vl/internal/updatescheck"
@@ -225,6 +226,7 @@ func (s *Server) updatesClock() time.Time {
 func (s *Server) registerUpdateRoutes(api *gin.RouterGroup) {
 	upd := api.Group("/updates", s.updatesGate())
 	upd.GET("", s.handleUpdatesStatus)
+	upd.GET("/readiness", s.handleUpdatesReadiness)
 	upd.POST("/check", s.handleUpdatesCheck)
 	upd.POST("/install", s.handleUpdatesInstall)
 	upd.POST("/install-with-password", s.handleUpdatesInstallWithPassword)
@@ -542,6 +544,18 @@ func (s *Server) handleUpdatesStatus(c *gin.Context) {
 		"install_enabled":   enabled,
 		"worker_listening":  workerListening,
 	})
+}
+
+// handleUpdatesReadiness — GET /api/updates/readiness (W-ADDON-ONE-CLICK).
+// Behind the same updates gate as every other route here. Returns the
+// pre-update checklist the page shows BEFORE the owner presses Update, read
+// from the live box (auto-detected NT8 Documents folder, a powershell probe,
+// Config.xml, and the AddOns folder). Read-only; never touches the bot or NT8.
+func (s *Server) handleUpdatesReadiness(c *gin.Context) {
+	items := updatereadiness.Check(c.Request.Context(), updatereadiness.Config{
+		Run: updatereadiness.RunViaExec(10 * time.Second),
+	})
+	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
 // handleUpdatesCheck — POST /api/updates/check (ONE-BUTTON P-A, fold A1).
