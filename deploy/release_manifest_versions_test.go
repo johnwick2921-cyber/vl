@@ -19,8 +19,9 @@ import (
 	"testing"
 )
 
-// manifestFixture stages what manifest.sh demands: an artifact, and a
-// deploy/RELEASE marker that AGREES with the source sha (P3).
+// manifestFixture stages what manifest.sh demands: an artifact, a
+// deploy/RELEASE marker that AGREES with the source sha (P3), and the AddOn
+// const declaration the manifest reads (F3: absent → refused, never "n/a").
 func manifestFixture(t *testing.T) (stage, sha string) {
 	t.Helper()
 	stage = t.TempDir()
@@ -34,7 +35,28 @@ func manifestFixture(t *testing.T) (stage, sha string) {
 	if err := os.WriteFile(filepath.Join(stage, "deploy/RELEASE"), []byte(sha+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(stage, "ninjascript"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stage, "ninjascript", "VLTraderTCPClient.cs"),
+		[]byte(`private const string  VL_BUILD_ID             = "2026-09-30-fixture";`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return stage, sha
+}
+
+// addonConstSource stages the AddOn const declaration the manifest reads, so a
+// manifest fixture that expects SUCCESS has one (F3: absent → refused, never
+// "n/a").
+func addonConstSource(t *testing.T, stage, build string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(stage, "ninjascript"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stage, "ninjascript", "VLTraderTCPClient.cs"),
+		[]byte(`private const string  VL_BUILD_ID             = "`+build+`";`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // versionlessEnv strips the three version vars so the child sees the true

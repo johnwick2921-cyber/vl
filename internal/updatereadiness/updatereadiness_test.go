@@ -32,10 +32,17 @@ func writeCompiler(t *testing.T, docs string) {
 	}
 }
 
-func okRunner(version string) Runner {
+// okRunner fakes the Windows seam: the -Probe call (the no-SDK Roslyn compiler
+// check) reports ok; every other command succeeds, so the "PowerShell reachable"
+// item stays ok.
+func okRunner() Runner {
 	return func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		if name == "powershell.exe" && len(args) > 0 && args[len(args)-1] != "exit 0" {
-			return []byte(version), nil
+		if name == "powershell.exe" {
+			for _, a := range args {
+				if a == "-Probe" {
+					return []byte("VL_ADDON_PROBE=ok\n"), nil
+				}
+			}
 		}
 		return nil, nil
 	}
@@ -66,7 +73,7 @@ func TestCheckAllGreen(t *testing.T) {
 	docs := buildDocs(t)
 	writeCompiler(t, docs)
 	writeConfig(t, docs, tradovateOn)
-	items := Check(context.Background(), Config{DocsDir: docs, Run: okRunner("4.13.0")})
+	items := Check(context.Background(), Config{DocsDir: docs, Run: okRunner()})
 	if len(items) != 5 {
 		t.Fatalf("got %d items, want 5: %+v", len(items), items)
 	}
@@ -97,10 +104,15 @@ func TestCheckReportsMissingDocsDir(t *testing.T) {
 func TestCheckMissingCompiler(t *testing.T) {
 	docs := buildDocs(t)
 	writeConfig(t, docs, tradovateOn)
-	items := Check(context.Background(), Config{DocsDir: docs, Run: okRunner("")})
+	// A runner that never reports VL_ADDON_PROBE=ok: the no-SDK ps1 path does
+	// not work, so the compiler item must read not-ok (GAP 2: true only when
+	// the ps1 path works — file presence alone is no longer enough).
+	items := Check(context.Background(), Config{DocsDir: docs, Run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return nil, nil
+	}})
 	it := find(items, "NT8 Roslyn compiler")
 	if it == nil || it.OK {
-		t.Fatalf("missing compiler DLL must be not-ok: %+v", it)
+		t.Fatalf("compiler must be not-ok when the no-SDK probe does not report ok: %+v", it)
 	}
 }
 
@@ -113,7 +125,7 @@ func TestCheckConnectOnStartupOff(t *testing.T) {
     <ConnectOnStartup>false</ConnectOnStartup>
   </TradovateOptions>
 </ConnectOptions>`)
-	items := Check(context.Background(), Config{DocsDir: docs, Run: okRunner("")})
+	items := Check(context.Background(), Config{DocsDir: docs, Run: okRunner()})
 	it := find(items, "Connect on startup")
 	if it == nil || it.OK {
 		t.Fatalf("a Tradovate connection with ConnectOnStartup=false must be not-ok: %+v", it)
@@ -130,7 +142,7 @@ func TestCheckMigrationPending(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(docs, "bin", "Custom", "AddOns", "VLTrader.cs"), []byte("//"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	items := Check(context.Background(), Config{DocsDir: docs, Run: okRunner("")})
+	items := Check(context.Background(), Config{DocsDir: docs, Run: okRunner()})
 	it := find(items, "One-time AddOn migration")
 	if it == nil || it.OK {
 		t.Fatalf("VL*.cs still present must be not-ok (one F5 owed): %+v", it)

@@ -19,7 +19,10 @@ import (
 const (
 	defaultNT8Exe    = `C:\Program Files\NinjaTrader 8\bin\NinjaTrader.exe`
 	nt8CloseWait     = 60 * time.Second
+	nt8RestartPoll   = 2 * time.Second
 	nt8ReconnectWait = 5 * time.Minute
+	// nt8ImageName is the image tasklist.exe matches (the exe's file name).
+	nt8ImageName = "NinjaTrader.exe"
 )
 
 // addonExe returns VL_NT8_EXE or the default. Nothing is hardcoded to "hoang":
@@ -73,6 +76,25 @@ func (r nt8Restart) forceStop(ctx context.Context) error {
 	const script = `Stop-Process -Name 'NinjaTrader' -Force -ErrorAction SilentlyContinue`
 	_, err := r.run(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
 	return err
+}
+
+// isRunning reports whether the NinjaTrader image is alive, read through
+// `tasklist.exe /FI "IMAGENAME eq <name>" /FO CSV /NH`. Locale-independent:
+// running ⇔ the image name appears as a CSV field; the localized
+// "INFO: No tasks …" line contains no image name and reads false.
+func (r nt8Restart) isRunning(ctx context.Context) (bool, error) {
+	out, err := r.run(ctx, "tasklist.exe", "/FI", "IMAGENAME eq "+nt8ImageName, "/FO", "CSV", "/NH")
+	if err != nil {
+		return false, fmt.Errorf("tasklist: %w", err)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		for _, field := range strings.Split(line, ",") {
+			if strings.EqualFold(strings.Trim(strings.TrimSpace(field), `"`), nt8ImageName) {
+				return true, nil
+			}
+		}
+	}
+	return strings.Contains(strings.ToLower(string(out)), strings.ToLower(nt8ImageName)), nil
 }
 
 // start launches the configured NT8 exe.

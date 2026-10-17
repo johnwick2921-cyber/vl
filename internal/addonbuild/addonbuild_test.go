@@ -2,6 +2,7 @@ package addonbuild
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,13 +79,80 @@ func TestBuild(t *testing.T) {
 
 	var gotArgs []string
 	cfg := Config{
-		DocsDir:   docsDir,
-		Exe:       "/mnt/c/Program Files/NinjaTrader 8/bin/NinjaTrader.exe",
-		DotnetExe: "dotnet.exe",
-		SourceDir: srcDir,
-		WorkDir:   workDir,
+		DocsDir:       docsDir,
+		Exe:           "/mnt/c/Program Files/NinjaTrader 8/bin/NinjaTrader.exe",
+		DotnetExe:     "dotnet.exe",
+		PowerShellExe: "powershell.exe",
+		SourceDir:     srcDir,
+		WorkDir:       workDir,
 		Run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			gotArgs = append([]string{name}, args...)
+			// Simulate the no-SDK ps1 build succeeding: write the DLL to the
+			// ps1 -Out dir (workDir/ps1-out).
+			out := filepath.Join(workDir, "ps1-out")
+			if err := os.MkdirAll(out, 0o755); err != nil {
+				return nil, err
+			}
+			return []byte("VL_ADDON_DLL=x\nVL_ADDON_SHA256=y\n"), os.WriteFile(filepath.Join(out, "VL.AddOn.dll"), []byte("fake dll"), 0o644)
+		},
+	}
+
+	res, err := Build(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("Build err = %v", err)
+	}
+	wantDll := filepath.Join(workDir, "ps1-out", "VL.AddOn.dll")
+	if res.DllPath != wantDll {
+		t.Fatalf("dll = %q, want %q", res.DllPath, wantDll)
+	}
+	if res.BuiltBy != BuiltByRoslynPs1 {
+		t.Fatalf("BuiltBy = %q, want %q", res.BuiltBy, BuiltByRoslynPs1)
+	}
+	wantSum, err := sha256File(wantDll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Sha256 != wantSum {
+		t.Fatalf("sum = %q, want %q", res.Sha256, wantSum)
+	}
+
+	if len(gotArgs) == 0 || gotArgs[0] != "powershell.exe" {
+		t.Fatalf("Run got %v, want powershell.exe -File ... build-addon.ps1", gotArgs)
+	}
+	// The ps1 must be written into the work dir and invoked with the right
+	// reference dirs.
+	ps1, err := os.ReadFile(filepath.Join(workDir, "build-addon.ps1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(ps1) != BuildPs1() {
+		t.Fatalf("written ps1 drifted from the embedded source")
+	}
+}
+
+// TestBuildFallsBackToDotnet: when the ps1 path fails, Build falls back to the
+// dotnet.exe net48 csproj and records BuiltBy=dotnet.
+func TestBuildFallsBackToDotnet(t *testing.T) {
+	root := t.TempDir()
+	docsDir := mkNT8(t, root, "alice", true)
+	srcDir := filepath.Join(root, "ninjascript")
+	os.MkdirAll(srcDir, 0o755)
+	os.WriteFile(filepath.Join(srcDir, "VLTraderTCPClient.cs"), []byte("// fake"), 0o644)
+	workDir := filepath.Join(root, "build")
+
+	var calls []string
+	cfg := Config{
+		DocsDir:       docsDir,
+		Exe:           "/mnt/c/Program Files/NinjaTrader 8/bin/NinjaTrader.exe",
+		DotnetExe:     "dotnet.exe",
+		PowerShellExe: "powershell.exe",
+		SourceDir:     srcDir,
+		WorkDir:       workDir,
+		Run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			calls = append(calls, name)
+			if strings.Contains(name, "powershell") {
+				return nil, errors.New("ps1 failed")
+			}
 			// Simulate a successful dotnet build writing the DLL.
 			out := filepath.Join(workDir, "out")
 			if err := os.MkdirAll(out, 0o755); err != nil {
@@ -94,24 +162,18 @@ func TestBuild(t *testing.T) {
 		},
 	}
 
-	dll, sum, err := Build(context.Background(), cfg)
+	res, err := Build(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("Build err = %v", err)
 	}
 	wantDll := filepath.Join(workDir, "out", "VL.AddOn.dll")
-	if dll != wantDll {
-		t.Fatalf("dll = %q, want %q", dll, wantDll)
-	}
-	wantSum, err := sha256File(wantDll)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sum != wantSum {
-		t.Fatalf("sum = %q, want %q", sum, wantSum)
+	if res.DllPath != wantDll || res.BuiltBy != BuiltByDotnet {
+		t.Fatalf("res = %+v, want dll %q built_by %q", res, wantDll, BuiltByDotnet)
 	}
 
-	if len(gotArgs) == 0 || gotArgs[0] != "dotnet.exe" || gotArgs[1] != "build" {
-		t.Fatalf("Run got %v, want dotnet.exe build ...", gotArgs)
+	// Both builders were attempted, ps1 first then dotnet.
+	if len(calls) != 2 || !strings.Contains(calls[0], "powershell") || !strings.Contains(calls[1], "dotnet") {
+		t.Fatalf("Run calls = %v, want powershell first then dotnet", calls)
 	}
 
 	proj, err := os.ReadFile(filepath.Join(workDir, "VL.AddOn.csproj"))
@@ -128,6 +190,34 @@ func TestBuild(t *testing.T) {
 		if !strings.Contains(string(proj), want) {
 			t.Errorf("csproj missing %q:\n%s", want, proj)
 		}
+	}
+}
+
+// TestBuildBothFail: ps1 fails AND the dotnet fallback fails — the error must
+// name both, never silently pass.
+func TestBuildBothFail(t *testing.T) {
+	root := t.TempDir()
+	docsDir := mkNT8(t, root, "alice", true)
+	srcDir := filepath.Join(root, "ninjascript")
+	os.MkdirAll(srcDir, 0o755)
+	os.WriteFile(filepath.Join(srcDir, "x.cs"), []byte("// x"), 0o644)
+	workDir := filepath.Join(root, "build")
+
+	cfg := Config{
+		DocsDir:       docsDir,
+		Exe:           "/mnt/c/Program Files/NinjaTrader 8/bin/NinjaTrader.exe",
+		DotnetExe:     "dotnet.exe",
+		PowerShellExe: "powershell.exe",
+		SourceDir:     srcDir,
+		WorkDir:       workDir,
+		Run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return nil, errors.New("boom")
+		},
+	}
+
+	_, err := Build(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "ps1 build failed") || !strings.Contains(err.Error(), "dotnet fallback failed") {
+		t.Fatalf("err = %v, want an error naming both the ps1 and dotnet failures", err)
 	}
 }
 
@@ -150,13 +240,13 @@ func TestBuildErrors(t *testing.T) {
 	t.Run("nil run", func(t *testing.T) {
 		c := base
 		c.Run = nil
-		if _, _, err := Build(context.Background(), c); err != ErrNoRun {
+		if _, err := Build(context.Background(), c); err != ErrNoRun {
 			t.Fatalf("err = %v, want ErrNoRun", err)
 		}
 	})
 
 	t.Run("no source files", func(t *testing.T) {
-		if _, _, err := Build(context.Background(), base); err == nil || !strings.Contains(err.Error(), "no .cs files") {
+		if _, err := Build(context.Background(), base); err == nil || !strings.Contains(err.Error(), "no .cs files") {
 			t.Fatalf("err = %v, want no-source-files", err)
 		}
 	})
@@ -164,7 +254,7 @@ func TestBuildErrors(t *testing.T) {
 	t.Run("missing docs dir", func(t *testing.T) {
 		c := base
 		c.DocsDir = filepath.Join(root, "nope")
-		if _, _, err := Build(context.Background(), c); err == nil || !strings.Contains(err.Error(), "DocsDir") {
+		if _, err := Build(context.Background(), c); err == nil || !strings.Contains(err.Error(), "DocsDir") {
 			t.Fatalf("err = %v, want DocsDir error", err)
 		}
 	})
@@ -173,7 +263,7 @@ func TestBuildErrors(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(srcDir, "x.cs"), []byte("// x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := Build(context.Background(), base); err == nil || !strings.Contains(err.Error(), "no VL.AddOn.dll") {
+		if _, err := Build(context.Background(), base); err == nil || !strings.Contains(err.Error(), "no VL.AddOn.dll") {
 			t.Fatalf("err = %v, want no-dll error", err)
 		}
 	})
@@ -258,6 +348,10 @@ func TestWslToWindows(t *testing.T) {
 		{"/mnt/c/", `C:\`},
 		{"/home/u/repo/ninjascript", `\\wsl.localhost\Ubuntu\home\u\repo\ninjascript`},
 		{"", ""},
+		// Already-Windows paths pass through unchanged (addonExe returns a
+		// Windows path in production).
+		{`C:\Program Files\NinjaTrader 8\bin`, `C:\Program Files\NinjaTrader 8\bin`},
+		{`\\wsl.localhost\Ubuntu\tmp\x`, `\\wsl.localhost\Ubuntu\tmp\x`},
 	}
 	for _, c := range cases {
 		if got := wslToWindows(c.in); got != c.want {
@@ -274,4 +368,72 @@ func TestTemplateParityWithDeploy(t *testing.T) {
 	if string(deploy) != csprojTemplate {
 		t.Fatalf("deploy/addon/VL.AddOn.csproj.tmpl drifted from embedded csproj.tmpl (parity law)")
 	}
+}
+
+func TestPs1ParityWithDeploy(t *testing.T) {
+	deploy, err := os.ReadFile(filepath.Join("..", "..", "deploy", "addon", "build-addon.ps1"))
+	if err != nil {
+		t.Fatalf("read deploy ps1: %v", err)
+	}
+	if string(deploy) != buildPs1Script {
+		t.Fatalf("deploy/addon/build-addon.ps1 drifted from embedded build-addon.ps1 (parity law)")
+	}
+}
+
+func TestCompilerProbe(t *testing.T) {
+	root := t.TempDir()
+	docsDir := mkNT8(t, root, "alice", true)
+
+	t.Run("probe ok", func(t *testing.T) {
+		var gotArgs []string
+		cfg := Config{
+			DocsDir:       docsDir,
+			PowerShellExe: "powershell.exe",
+			Run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				gotArgs = append([]string{name}, args...)
+				return []byte("VL_ADDON_PROBE=ok\n"), nil
+			},
+		}
+		ok, detail := CompilerProbe(context.Background(), cfg)
+		if !ok {
+			t.Fatalf("CompilerProbe = %v (%q), want ok", ok, detail)
+		}
+		if len(gotArgs) == 0 || gotArgs[0] != "powershell.exe" {
+			t.Fatalf("Run got %v, want powershell.exe -Probe", gotArgs)
+		}
+		// The -Probe flag and the reference dirs must be passed.
+		found := false
+		for _, a := range gotArgs {
+			if a == "-Probe" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("probe args missing -Probe: %v", gotArgs)
+		}
+	})
+
+	t.Run("probe fails", func(t *testing.T) {
+		cfg := Config{
+			DocsDir:       docsDir,
+			PowerShellExe: "powershell.exe",
+			Run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return []byte("ERROR failed to load Roslyn\n"), errors.New("exit 1")
+			},
+		}
+		ok, detail := CompilerProbe(context.Background(), cfg)
+		if ok {
+			t.Fatalf("CompilerProbe = ok, want not-ok (probe failed)")
+		}
+		if !strings.Contains(detail, "failed to load Roslyn") {
+			t.Fatalf("detail = %q, want the probe diagnostics", detail)
+		}
+	})
+
+	t.Run("nil run", func(t *testing.T) {
+		ok, _ := CompilerProbe(context.Background(), Config{DocsDir: docsDir})
+		if ok {
+			t.Fatalf("CompilerProbe with nil Run must be not-ok")
+		}
+	})
 }

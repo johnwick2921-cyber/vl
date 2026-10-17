@@ -10,13 +10,15 @@ import (
 	"time"
 )
 
-// TestRealBuildProof is an opt-in integration proof that the net48 recipe
-// actually compiles the release's ninjascript/*.cs with the box's dotnet.exe.
-// Set ADDONBUILD_REAL_PROOF=1 to run. It writes only to a worker-made dir under
-// %LOCALAPPDATA%\Temp and never touches the real NT8 folder.
+// TestRealBuildProof is an opt-in integration proof that the PRIMARY no-SDK
+// path (build-addon.ps1 via NT8's built-in Roslyn) really compiles the
+// release's ninjascript/*.cs into VL.AddOn.dll on this box, falling back to
+// dotnet.exe only if the ps1 fails. Set ADDONBUILD_REAL_PROOF=1 to run. It
+// writes only to a worker-made dir under %LOCALAPPDATA%\Temp and never touches
+// the real NT8 folder.
 func TestRealBuildProof(t *testing.T) {
 	if os.Getenv("ADDONBUILD_REAL_PROOF") != "1" {
-		t.Skip("set ADDONBUILD_REAL_PROOF=1 to run the real dotnet.exe build proof")
+		t.Skip("set ADDONBUILD_REAL_PROOF=1 to run the real no-SDK ps1 build proof")
 	}
 	docsDir, err := Detect()
 	if err != nil {
@@ -45,9 +47,9 @@ func TestRealBuildProof(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	dll, sha, err := Build(ctx, cfg)
+	res, err := Build(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	t.Logf("BUILT %s sha256=%s", dll, sha)
+	t.Logf("BUILT %s sha256=%s built_by=%s", res.DllPath, res.Sha256, res.BuiltBy)
 }

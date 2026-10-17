@@ -22,8 +22,8 @@ import (
 //   4. a transitional connection → waits (15 s re-checks, 10 min bound) then
 //      proceeds, never refuses;
 //   5. NT8 closed → completes, DLL placed, nothing owed;
-//   6. double-load (VLTraderTCPClient in both Custom.dll and VL.AddOn.dll) →
-//      refused.
+//   6. first install: VLTraderTCPClient still in Custom.dll (VL.AddOn.dll
+//      absent) → refused, sources migrated, one-time F5 blocker.
 // These are wired to the worker's addon_build/addon_place/nt8_restart/reconnect
 // steps once DS-104's feat/addon-one-click-worker and DS-102's
 // feat/update-self-recovery land. The fakes below are the spec-fixed half.

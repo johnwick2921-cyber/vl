@@ -1024,6 +1024,14 @@ func (w *Worker) stepRollback(ctx context.Context, j updaterjob.Job) stepResult 
 				return stepResult{receipts: receipts, err: rerr, reason: clipText("NT8 could not be restarted to load the old AddOn after the rollback: " + rerr.Error())}
 			}
 			receipts = append(receipts, w.receipt("nt8_rerestart", rs, map[string]string{"outcome": "restarted"}, nil))
+			// F2 (release #34): never report rolled_back + "trading normal" while
+			// the AddOn is down — prove it came back on the OLD build over a NEW
+			// accept_seq, bounded at the same 5 minutes as the forward reconnect.
+			if aerr := w.verifyRollbackAddon(ctx, j); aerr != nil {
+				receipts = append(receipts, w.receipt("addon_rollback_reconnect", rs, map[string]string{"outcome": "failed"}, aerr))
+				return stepResult{receipts: receipts, err: aerr, reason: clipText(aerr.Error())}
+			}
+			receipts = append(receipts, w.receipt("addon_rollback_reconnect", rs, map[string]string{"outcome": "reconnected"}, nil))
 		}
 	}
 	return stepResult{receipts: receipts}

@@ -68,7 +68,8 @@ func fullJob(t *testing.T, dd string) Job {
 	cs := false
 	j.NT8 = &NT8Decision{Decision: NT8Updated, Reason: "ninjascript/*.cs changed", ManifestBuildID: "2026-09-24-m4", AckedBuildID: "2026-09-23-m21", AckedAt: "2026-09-24T18:02:30Z", AckAcceptSeq: 7, CSUnchanged: &cs, Absent: true, F5Owed: true, OldInstallBuildID: "2026-09-23-m21"}
 	step(t, dd, &j, &now, StateNT8Updated)
-	j.Addon = &AddonState{DllPath: "/tmp/vl-addon-build/" + id + "/out/VL.AddOn.dll", Sha256: "fedcba9876543210fedcba9876543210fedcba98",
+	j.Addon = &AddonState{DllPath: "/tmp/vl-addon-build/" + id + "/ps1-out/VL.AddOn.dll", Sha256: "fedcba9876543210fedcba9876543210fedcba98",
+		BuiltBy:   "roslyn-ps1",
 		BackupDir: "/mnt/c/Users/hoang/Documents/NinjaTrader 8/bin/Custom/AddOns/.vl-backups/VL.AddOn.dll.bak", Restarted: true, OldAcceptSeq: 7}
 	step(t, dd, &j, &now, StateAddonBuilt)
 	step(t, dd, &j, &now, StateAddonPlaced)

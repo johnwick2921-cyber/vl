@@ -38,6 +38,7 @@ func TestTheWorkflowsOwnManifestCommandProducesAUsableManifest(t *testing.T) {
 	mustWrite(t, filepath.Join(stage, "vl-bin"), "ELF-ish")
 	mustWrite(t, filepath.Join(stage, "web", "dist", "index.html"), "<html></html>")
 	mustWrite(t, filepath.Join(stage, "deploy", "RELEASE"), sha+"\n")
+	addonConstSource(t, stage, "2026-09-30-workflow")
 
 	// Substitute the workflow's expressions with the fixture's values. The
 	// COMMAND SHAPE — including where stdout goes — is the workflow's own.
