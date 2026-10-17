@@ -334,7 +334,7 @@ export interface MentorTuning {
   trendline_between_boxes?: boolean
   // X-FOMO @06:10 — a stopped-out leg also resets on a wave break [true]
   leg_reset_on_wave_break?: boolean
-  // X9 @05:47 — inside a live flag the opposite wall is a closer target (#416) [false]
+  // X9 @05:47 — inside a live flag the opposite wall is a closer target (#416) [true]
   flag_wall_target?: boolean
   // D3.4 p3 recovered2 @00:00 — after a box escapes, a new same-role box
   // outside the old range; D3.2 p2 @09:47 "Đừng vẽ vùng thứ 3… Rối lắm" [true]
