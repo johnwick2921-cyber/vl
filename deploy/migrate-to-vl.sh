@@ -956,7 +956,7 @@ EOF
   local dist_old
   dist_old="$OLD_ROOT/web/dist.old.$old12_s.$ts_rb"
   if [ -e "$dist_old" ]; then
-    rm -rf "$OLD_ROOT/web/dist" 2>/dev/null || true
+    rm -rf "${OLD_ROOT:?}/web/dist" 2>/dev/null || true
     mv "$dist_old" "$OLD_ROOT/web/dist"
   fi
   local marker_saved marker_now

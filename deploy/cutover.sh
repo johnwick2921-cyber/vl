@@ -66,7 +66,7 @@ fi
 # runs is the one that answers here. The manifest records what the operator
 # asserted; verify decides whether the binary agrees.
 STAGE_DIR="$(mktemp -d -t vl-cutover.XXXXXX)"
-trap 'rm -rf "$STAGE_DIR"; [ -n "${ACTIVATE:-}" ] && [ -z "${VL_ACTIVATE_BIN:-}" ] && rm -f "$ACTIVATE"; rm -f "${TOKEN_HDR:-}"' EXIT
+trap 'rm -rf "${STAGE_DIR:?}"; [ -n "${ACTIVATE:-}" ] && [ -z "${VL_ACTIVATE_BIN:-}" ] && rm -f "$ACTIVATE"; rm -f "${TOKEN_HDR:-}"' EXIT
 [ -f "$NEW_BIN" ] || die "new binary $NEW_BIN not found"
 cp "$NEW_BIN" "$STAGE_DIR/vl-bin" || die "cannot stage $NEW_BIN"
 NEW_MD5="$(md5sum "$STAGE_DIR/vl-bin" | cut -d' ' -f1)"
