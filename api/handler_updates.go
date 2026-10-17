@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,12 +16,13 @@ import (
 	"vl/auth"
 	"vl/config"
 	"vl/internal/updateauth"
-	"vl/internal/updaterjob"
 	"vl/internal/updatereadiness"
+	"vl/internal/updaterjob"
 	"vl/internal/updatersource"
 	"vl/internal/updaterwire"
 	"vl/internal/updatescheck"
 	"vl/logger"
+	"vl/provider/ninjatrader"
 	"vl/telemetry"
 	"vl/trader"
 
@@ -578,9 +580,53 @@ func (s *Server) handleUpdatesStatus(c *gin.Context) {
 // Config.xml, and the AddOns folder). Read-only; never touches the bot or NT8.
 func (s *Server) handleUpdatesReadiness(c *gin.Context) {
 	items := updatereadiness.Check(c.Request.Context(), updatereadiness.Config{
-		Run: updatereadiness.RunViaExec(10 * time.Second),
+		Run:        updatereadiness.RunViaExec(10 * time.Second),
+		Accounts:   s.liveAccounts,
+		AddOnBuild: s.liveAddOnBuild,
 	})
 	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+// futuresTCPServer returns the first NinjaTrader TCP bridge's server, or nil
+// when no futures trader is running one.
+func (s *Server) futuresTCPServer() *ninjatrader.TCPServer {
+	for _, id := range s.traderManager.GetTraderIDs() {
+		at, err := s.traderManager.GetTrader(id)
+		if err != nil {
+			continue
+		}
+		if tcp := extractTCPServer(at); tcp != nil {
+			return tcp
+		}
+	}
+	return nil
+}
+
+// liveAccounts feeds the readiness "NinjaTrader accounts known" item from the
+// connected AddOn's live list. When NT8 is closed there is no live list yet —
+// DS-108's accounts persistence replaces this with the last-seen list.
+func (s *Server) liveAccounts(ctx context.Context) (updatereadiness.AccountsInfo, error) {
+	tcp := s.futuresTCPServer()
+	if tcp == nil {
+		return updatereadiness.AccountsInfo{}, fmt.Errorf("no NinjaTrader TCP connection")
+	}
+	accts, _ := tcp.GetAccountsList()
+	info := updatereadiness.AccountsInfo{Live: true, SeenAt: time.Now()}
+	for _, a := range accts {
+		info.Accounts = append(info.Accounts, updatereadiness.Account{Name: a.Name, IsSim: a.IsSim})
+	}
+	return info, nil
+}
+
+// liveAddOnBuild feeds the readiness "AddOn build in NT8 vs release" item with
+// the running AddOn build id. The release side of the comparison is the
+// worker's (DS-104) — the bot's readiness page only knows the running build.
+func (s *Server) liveAddOnBuild(ctx context.Context) (updatereadiness.AddOnBuildInfo, error) {
+	tcp := s.futuresTCPServer()
+	if tcp == nil {
+		return updatereadiness.AddOnBuildInfo{}, nil // NT8 closed — the walk-away handles it
+	}
+	return updatereadiness.AddOnBuildInfo{Running: tcp.FarSideBuildID()}, nil
 }
 
 // handleUpdatesCheck — POST /api/updates/check (ONE-BUTTON P-A, fold A1).
