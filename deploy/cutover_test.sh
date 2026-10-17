@@ -30,7 +30,7 @@ fi
 
 WORK="$(mktemp -d)"
 SRV_PID=""
-trap '[ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null; rm -rf "$WORK"' EXIT
+trap '[ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null; rm -rf "${WORK:?}"' EXIT
 
 # --- a stamped binary: go only stamps vcs.revision in a PLAIN checkout (it
 # refuses in a git worktree, where .git is a file — proven by control
@@ -102,7 +102,7 @@ write_gate() { printf '%s\n' "$1" > "$WORK/gate.json"; }
 
 start_server() { # $1 = health revision, $2 = gate payload
   [ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null && wait "$SRV_PID" 2>/dev/null
-  rm -f "$WORK/port"
+  rm -f "${WORK:?}/port"
   PORTFILE="$WORK/port"
   write_gate "$2"
   python3 "$SRV_PY" "$1" "$PORTFILE" "$WORK/gate.json" &
@@ -134,7 +134,7 @@ check_hdr_gone "F1 token header file removed"
 
 echo "== F2: disk != health -> refuses, names the mismatch =="
 start_server "{\"revision\":\"$OTHER\"}" "$GATE_OK"
-rm -f "$WORK/inst/RELEASE"
+rm -f "${WORK:?}/inst/RELEASE"
 run_cutover
 check "F2 rc is nonzero"   "$([ $RC -ne 0 ] && echo nonzero || echo zero)" "nonzero"
 has   "F2 names the mismatch" "$OUT" "RUNNING process reports"
@@ -144,7 +144,7 @@ hasnt "F2 no dry-run completion" "$OUT" "dry run complete"
 echo "== F3: neither health nor RELEASE answers -> refuses =="
 export VL_HEALTH_URL="http://127.0.0.1:9/health"   # discard port: nothing listens
 export VL_GATE_URL="http://127.0.0.1:9/gate"
-rm -f "$WORK/inst/RELEASE"
+rm -f "${WORK:?}/inst/RELEASE"
 run_cutover
 check "F3 rc is nonzero"   "$([ $RC -ne 0 ] && echo nonzero || echo zero)" "nonzero"
 has   "F3 cannot reconcile"   "$OUT" "cannot reconcile OLD_SHA=$SHORT"

@@ -68,7 +68,7 @@ q "VACUUM INTO '$BK';"
 BKROWS="$(sqlite3 "$BK" "SELECT COUNT(*) FROM bars;")"
 NEWROWS="$(q "SELECT COUNT(*) FROM bars;")"
 OLDROWS="$(q "SELECT COUNT(*) FROM \"$OLD\";")"
-[[ "$BKROWS" == "$NEWROWS" ]] || { echo "bars-key-rollback: backup verification FAILED ($BKROWS vs $NEWROWS rows)" >&2; rm -f "$BK"; exit 1; }
+[[ "$BKROWS" == "$NEWROWS" ]] || { echo "bars-key-rollback: backup verification FAILED ($BKROWS vs $NEWROWS rows)" >&2; rm -f "${BK:?}"; exit 1; }
 echo "bars-key-rollback: backup $BK (bars rows=$BKROWS)"
 
 # The rename pair, one transaction.
