@@ -65,6 +65,41 @@ function Get-PublicTypes([string]$dll) {
     }
 }
 
+# Get-ManifestResourceNames lists the embedded manifest resource names of a DLL.
+function Get-ManifestResourceNames([string]$dll) {
+    $fs = [System.IO.File]::OpenRead($dll)
+    try {
+        $pe = [System.Reflection.PortableExecutable.PEReader]::new($fs)
+        $md = [System.Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($pe)
+        $out = @()
+        foreach ($h in $md.ManifestResources) {
+            $r = $md.GetManifestResource($h)
+            $out += $md.GetString($r.Name)
+        }
+        return $out
+    } finally {
+        $fs.Close()
+    }
+}
+
+# Get-ReferencedAssemblyNames lists the simple names of the assemblies a DLL
+# references (its AssemblyRef table).
+function Get-ReferencedAssemblyNames([string]$dll) {
+    $fs = [System.IO.File]::OpenRead($dll)
+    try {
+        $pe = [System.Reflection.PortableExecutable.PEReader]::new($fs)
+        $md = [System.Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($pe)
+        $out = @()
+        foreach ($h in $md.AssemblyReferences) {
+            $a = $md.GetAssemblyReference($h)
+            $out += $md.GetString($a.Name)
+        }
+        return $out
+    } finally {
+        $fs.Close()
+    }
+}
+
 if (-not $NT8Bin) { $NT8Bin = 'C:\Program Files\NinjaTrader 8\bin' }
 
 # -- Load Roslyn from NT8's bin (the no-SDK compiler) ------------------------
@@ -181,9 +216,11 @@ if ($Probe) {
 } elseif ($Custom) {
     if (-not $CustomDir) { Fail "-CustomDir is required with -Custom" }
     if (-not (Test-Path $CustomDir)) { Fail "custom dir not found: " + $CustomDir }
-    # Every .cs under bin/Custom EXCEPT the VL*.cs being migrated out.
+    # Every .cs under bin/Custom EXCEPT the release's AddOns/VL*.cs (the files
+    # being migrated out). Other VL*.cs elsewhere (e.g. Strategies/vltrader.cs,
+    # the legacy CSV strategy) is KEPT - it is not the release's file.
     $srcFiles = @(Get-ChildItem -Path $CustomDir -Recurse -Filter '*.cs' -File |
-        Where-Object { $_.Name -notlike 'VL*.cs' })
+        Where-Object { -not ($_.Directory.Name -eq 'AddOns' -and $_.Name -like 'VL*.cs') })
     if ($srcFiles.Count -eq 0) { Fail "no .cs files in " + $CustomDir }
     foreach ($f in $srcFiles) {
         $text = [System.IO.File]::ReadAllText($f.FullName)
@@ -222,6 +259,14 @@ if ($Probe) {
     $outFile = Join-Path $Out $outName
     $fs = [System.IO.File]::Open($outFile, [System.IO.FileMode]::Create)
     try {
+        # NOTE (DS-103, release #35): embedding the neutral Resource.resx
+        # requires Roslyn's ResourceDescription, whose static factories
+        # (Create/FromFile/FromStream) all throw StackOverflowException under
+        # PowerShell 5.1 + Roslyn 5.0 (.NET Framework reflection). The emit
+        # therefore does NOT embed resources; the -Custom acceptance below
+        # REJECTS the result when the embedded-resource set differs from the old
+        # Custom.dll, so a rebuild without resources falls back to F5 instead of
+        # silently swapping in a deficient DLL.
         $result = $compilation.Emit($fs)
     } finally {
         $fs.Close()
@@ -252,21 +297,37 @@ if ($Custom) {
     if (-not (Test-Path $oldDll)) { Fail "old Custom.dll not found at " + $oldDll }
     $oldTypes = @(Get-PublicTypes $oldDll)
     $newTypes = @(Get-PublicTypes $outFile)
-    # The VL types live in more than one namespace (AddOns + Strategies), so
-    # subtract every public type whose SIMPLE name starts with "VL" ? those are
-    # exactly the types the migrated-out VL*.cs defined.
-    $expected = @($oldTypes | Where-Object {
-        $leaf = $_
-        if ($leaf.Contains('.')) { $leaf = $leaf.Substring($leaf.LastIndexOf('.') + 1) }
-        -not $leaf.StartsWith('VL')
-    })
+    # The release's AddOn sources all live in the AddOns namespace, so subtract
+    # exactly those public types (VLBarsSubscriptionManager, VLContractResolver,
+    # VLHistoryPullEntry, VLHistoryPullManager, VLInstrumentLookup,
+    # VLTraderTCPClient) and NOTHING else - a VL type elsewhere (e.g.
+    # NinjaTrader.NinjaScript.Strategies.VLTrader) is KEPT.
+    $vlPrefix = 'NinjaTrader.NinjaScript.AddOns.VL'
+    $expected = @($oldTypes | Where-Object { -not $_.StartsWith($vlPrefix) })
     $diff = @(Compare-Object $expected $newTypes)
     if ($diff) {
         Write-Output 'VL_CUSTOM_TYPES_DIFF'
         foreach ($d in $diff) {
             Write-Output ("TYPE " + $d.SideIndicator + " " + $d.InputObject)
         }
-        Fail "the rebuilt Custom.dll public type list differs from the old one minus the VL types"
+        Fail "the rebuilt Custom.dll public type list differs from the old one minus the release's AddOn types"
+    }
+    # DS-102 review: the type list is necessary but not sufficient. The rebuilt
+    # DLL must also carry the SAME embedded resources and reference the SAME
+    # assemblies as the old one, or it is REJECTED (never a silent swap).
+    $oldRes = @(Get-ManifestResourceNames $oldDll)
+    $newRes = @(Get-ManifestResourceNames $outFile)
+    if (@(Compare-Object $oldRes $newRes).Count -gt 0) {
+        Write-Output 'VL_CUSTOM_TYPES_DIFF'
+        Write-Output ("RESOURCE_DIFF old=[" + ($oldRes -join ',') + "] new=[" + ($newRes -join ',') + "]")
+        Fail "the rebuilt Custom.dll embeds different resources than the old one"
+    }
+    $oldRefs = @(Get-ReferencedAssemblyNames $oldDll)
+    $newRefs = @(Get-ReferencedAssemblyNames $outFile)
+    if (@(Compare-Object $oldRefs $newRefs).Count -gt 0) {
+        Write-Output 'VL_CUSTOM_TYPES_DIFF'
+        Write-Output ("REFERENCE_DIFF old=[" + ($oldRefs -join ',') + "] new=[" + ($newRefs -join ',') + "]")
+        Fail "the rebuilt Custom.dll references different assemblies than the old one"
     }
     Write-Output 'VL_CUSTOM_TYPES_OK'
 }

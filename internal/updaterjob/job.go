@@ -186,6 +186,11 @@ type AddonState struct {
 	// BuiltBy records which builder produced the DLL: "roslyn-ps1" (the no-SDK
 	// build-addon.ps1 via NT8's built-in Roslyn) or "dotnet" (the SDK fallback).
 	BuiltBy string `json:"built_by,omitempty"`
+	// MigrationPending is set when the AddOn place is DEFERRED to the restart
+	// step: NT8 was OPEN and NinjaTrader.Custom.dll still held the AddOn type,
+	// so the Custom.dll rebuild + AddOn place run while NT8 is closed (release
+	// #35 FOLD 2), right after the restart's stop and before its start.
+	MigrationPending bool `json:"migration_pending,omitempty"`
 	// BackupDir is where Place MOVED the previous DLL ("" when there was none).
 	BackupDir string `json:"backup_dir,omitempty"`
 	// Restarted records that nt8_restart actually restarted NT8 (so rollback
