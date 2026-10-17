@@ -551,21 +551,6 @@ namespace NinjaTrader.NinjaScript.AddOns
             return a.Name != null && a.Name.StartsWith("Sim");
         }
 
-        // Best-effort connection type name (e.g. "SimulationConnection",
-        // "PlaybackConnection", "LiveConnection"). Never throws; empty when the
-        // account has no connection or the type name cannot be read. Go persists
-        // it for forensics only — the SIM gate reads is_sim, never this string.
-        private static string AccountConnectionName(Account a)
-        {
-            try
-            {
-                var c = a == null ? null : a.Connection;
-                if (c != null) return c.GetType().Name ?? "";
-            }
-            catch { }
-            return "";
-        }
-
         // === PHASE 3 — dedup'd OrderUpdate (un)subscription ===
         // SubscribeOrderUpdate is idempotent: a no-op if the account is already hooked,
         // so routing to the active account (or re-routing to an already-routed one) never
@@ -3500,9 +3485,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                             LogInfo(string.Format("@@@   account[{0}]: {1}", accountsList.Count, a.Name));
                         accountsList.Add(new Dictionary<string, object>
                         {
-                            ["name"]       = a.Name,
-                            ["is_sim"]     = IsSimAccount(a),
-                            ["connection"] = AccountConnectionName(a)
+                            ["name"]   = a.Name,
+                            ["is_sim"] = IsSimAccount(a)
                         });
                     }
                 }
