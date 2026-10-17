@@ -318,3 +318,35 @@ describe("C9 — the gate-label list is the panel's own map", () => {
     )
   })
 })
+
+// JOB 2.4 (knob recheck fixes, 2026-10-17): the three recheck-HIDDEN knobs that
+// had NO guide card at all now have one, each saying "No Studio control" and
+// stating the CODE default. Mutant: reword the default (or drop "No Studio
+// control") → RED.
+describe("JOB 2.4 — hidden-knob cards state the code default and 'No Studio control'", () => {
+  const fadeSrc = repo('trader/fade_facts.go')
+  const structSrc = repo('store/structural_geometry.go')
+  const stratSrc = repo('store/strategy.go')
+
+  it('fade_or_wide_k states the code default and "No Studio control"', () => {
+    const k = card('settings', 'Fade-or-wide k (W2 label)')
+    expect(k.where).toMatch(/No Studio control/)
+    expect(k.systemDefault).toContain(goConst(fadeSrc, 'fadeORWideKDefault'))
+  })
+
+  it('round_trip_cost_points states the code default 2 and "No Studio control"', () => {
+    const k = card('settings', 'Round-trip cost (structural stop)')
+    expect(k.where).toMatch(/No Studio control/)
+    // the shipped default is the CostPoints literal in ResolveStructuralStop
+    expect(structSrc).toMatch(/CostPoints:\s*2\b/)
+    expect(k.systemDefault).toBe('2')
+  })
+
+  it('transition_standdown states nil → ON and "No Studio control"', () => {
+    const k = card('settings', 'Transition stand-down (regime G4)')
+    expect(k.where).toMatch(/No Studio control/)
+    expect(k.systemDefault).toMatch(/ON/)
+    // the shipped default is the nil branch of TransitionStanddownEnabled
+    expect(stratSrc).toMatch(/if c\.Regime == nil \|\| c\.Regime\.TransitionStanddown == nil \{\s*return true/)
+  })
+})

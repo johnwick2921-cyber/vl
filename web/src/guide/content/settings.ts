@@ -431,6 +431,38 @@ const dayPlan: KnobSpec[] = [
     perSession: 'No.',
   },
   {
+    label: 'Round-trip cost (structural stop)',
+    where:
+      'No Studio control — stored setting day_plan.structural_stop.round_trip_cost_points (API/config field)',
+    what: "The point cost of a complete round trip (entry + exit friction) assumed when the structural stop is composed. Unset → 2 points (the owner's baseline research assumption); a stored non-negative value overrides it. The resolved cost is part of the structural-stop policy the arm geometry reads.",
+    trader:
+      '2 points is the friction assumption baked into the structural stop so the machine does not arm a stop whose net edge is eaten by costs.',
+    consumer:
+      'store/structural_geometry.go ResolveStructuralStop (CostPoints, default 2) · trader/structural_geometry.go ComposeLevelFadeGeometry',
+    range: 'points ≥ 0 (unset → 2)',
+    systemDefault: '2',
+    recommended:
+      "⭐ 2 — the owner's baseline assumption; change only with a measured round-trip cost.",
+    whenToTouch: 'Only after measuring the actual per-trade friction.',
+    perSession: 'No — strategy-level.',
+  },
+  {
+    label: 'Fade-or-wide k (W2 label)',
+    where:
+      'No Studio control — stored setting day_plan.fade_or_wide_k (API/config field)',
+    what: "W2 LABEL knob: sets exclusion (a)'s k — it changes what is RECORDED (which level is labelled fade vs wide), never what is armed. Zero or unset → the C5 default 1.28 (p80/median, n=13).",
+    trader:
+      'A labelling constant only: it names the fade/wide split in the records; the arm gate never reads it to allow or refuse an entry.',
+    consumer:
+      'trader/fade_facts.go fadeORWideKResolved (fadeORWideKDefault = 1.28)',
+    range: 'k > 0 (0 or unset → 1.28)',
+    systemDefault: '1.28 (C5 p80/median n=13)',
+    recommended:
+      '⭐ leave unset — the C5 default; a stored value only changes the recorded label split.',
+    whenToTouch: 'Only to re-label the fade/wide split in the records.',
+    perSession: 'No — strategy-level.',
+  },
+  {
     label: 'Red-news hard-block currencies (W-T1-CURRENCIES)',
     where: 'Strategy → Day Plan → t1_currencies text field (comma-separated)',
     what: "Which currencies' T1 (red) calendar events open the HARD ±15m no-trade window. Default USD: only USD red events hard-block; a red event in any other currency (a BOJ rate decision, a BoE vote) is shown as an advisory line — on the plan card, in the plan's no_trade list and in the planner prompt — and blocks nothing. Set ALL to restore the old behaviour where every red event in the session's currency filter hard-blocked. Case-insensitive; blanks are ignored; a red event with NO currency still hard-blocks (fail closed) and is named once a day in the log.",
@@ -1111,6 +1143,22 @@ const prompt: KnobSpec[] = [
       'ON = counter-trend entries are refused while the HTF trend is confirmed.',
     consumer:
       'store/strategy.go RegimeConfig.HTFVeto · store/resolve_source.go ResolveHTFVeto',
+    range: 'ON | OFF',
+    systemDefault: 'ON (nil/absent = ON)',
+    recommended:
+      '⭐ ON — the shipped default; OFF only to reproduce pre-wave behaviour.',
+    whenToTouch: 'Turn OFF only for a pre-wave comparison study.',
+    perSession: 'No — strategy-level.',
+  },
+  {
+    label: 'Transition stand-down (regime G4)',
+    where:
+      'No Studio control — stored setting regime.transition_standdown (API/config field)',
+    what: 'Pause plan-direction entries while an unconfirmed counter-trend CHoCH/MSS is outstanding (G4). nil → ON (shipped default); false = pre-wave behaviour (no transition stand-down). The stand-down state advances on the transition state machine and is surfaced to the plan card via the stored transition key.',
+    trader:
+      'ON = the planner holds off direction entries while the regime transition is unresolved; a genuine transition must confirm before plan-direction entries resume.',
+    consumer:
+      'store/strategy.go StrategyConfig.TransitionStanddownEnabled (nil → ON) · trader/auto_trader_transition.go observeTransitionStanddown → kernel.TransitionStanddownVerdict',
     range: 'ON | OFF',
     systemDefault: 'ON (nil/absent = ON)',
     recommended:
