@@ -147,12 +147,66 @@ func deleteFindings(name string, src []byte) ([]int, []string, error) {
 		}
 		return true
 	})
+	// DS-106 round 3: a NAMED function passed to Walk/WalkDir, or a helper
+	// called from a loop body / Walk callback, carries the os.Remove out of
+	// the loop's AST. Same-file analysis: names passed to Walk or called in a
+	// loop body become loop context too. A helper in ANOTHER file stays a
+	// residual; the runtime HOME redirect in testhome is the backstop.
+	loopFuncs := map[string]bool{}
+	{
+		var st []ast.Node
+		inBody := func() bool {
+			for i := len(st) - 1; i >= 0; i-- {
+				switch v := st[i].(type) {
+				case *ast.FuncLit:
+					return walkLits[v]
+				case *ast.BlockStmt:
+					if i > 0 {
+						if l, ok := st[i-1].(*ast.ForStmt); ok && l.Body == v {
+							return true
+						}
+						if l, ok := st[i-1].(*ast.RangeStmt); ok && l.Body == v {
+							return true
+						}
+					}
+				}
+			}
+			return false
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			if n == nil {
+				st = st[:len(st)-1]
+				return true
+			}
+			st = append(st, n)
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok && (sel.Sel.Name == "Walk" || sel.Sel.Name == "WalkDir") {
+				for _, a := range call.Args {
+					if id, ok := a.(*ast.Ident); ok {
+						loopFuncs[id.Name] = true
+					}
+				}
+			}
+			if id, ok := call.Fun.(*ast.Ident); ok && inBody() {
+				loopFuncs[id.Name] = true
+			}
+			return true
+		})
+	}
 	var stack []ast.Node
 	// inLoop: the innermost enclosing function literal (if any) is a Walk
 	// callback, or a for/range BODY encloses the node with no other function
 	// literal in between (a table of test closures inside a range expression
 	// is not a loop delete).
 	inLoop := func() bool {
+		for _, n := range stack {
+			if fd, ok := n.(*ast.FuncDecl); ok && fd.Recv == nil && loopFuncs[fd.Name.Name] {
+				return true
+			}
+		}
 		for i := len(stack) - 1; i >= 0; i-- {
 			switch v := stack[i].(type) {
 			case *ast.FuncLit:
@@ -204,6 +258,15 @@ func deleteFindings(name string, src []byte) ([]int, []string, error) {
 			sel, ok := x.Fun.(*ast.SelectorExpr)
 			if !ok {
 				return true
+			}
+			// DS-106 round 3: a raw syscall whose NUMBER is an unlink/rmdir.
+			if pid, ok := sel.X.(*ast.Ident); ok && (local[pid.Name] == "syscall" || local[pid.Name] == "golang.org/x/sys/unix") &&
+				(strings.HasPrefix(sel.Sel.Name, "Syscall") || strings.HasPrefix(sel.Sel.Name, "RawSyscall")) {
+				if len(x.Args) > 0 {
+					if num, ok := x.Args[0].(*ast.SelectorExpr); ok && (strings.HasPrefix(num.Sel.Name, "SYS_UNLINK") || strings.HasPrefix(num.Sel.Name, "SYS_RMDIR")) {
+						add(x.Pos(), "raw "+num.Sel.Name+" syscall without the safepath gate")
+					}
+				}
 			}
 			id, ok := sel.X.(*ast.Ident)
 			if !ok || local[id.Name] != "os/exec" || (sel.Sel.Name != "Command" && sel.Sel.Name != "CommandContext") {

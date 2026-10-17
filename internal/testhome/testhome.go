@@ -77,13 +77,18 @@ var watchedPaths = []string{
 var listedDirs = []string{"", ".config", "bin", ".ssh", ".local", ".local/share", ".local/state", ".local/bin", ".cache"} // .local/.cache: DS-106 round 2
 
 // concurrentOK names the top-level entries OTHER processes on this box create
-// during a run — lane worktrees, the trash folder, shell history files. They
-// are reported nowhere and never fail the run; everything else new does.
+// during a run — any new top-level directory (worktrees, clones, trash) and
+// shell history files. They never fail the run; everything else new does.
 func concurrentOK(rel string, isDir bool) bool {
 	if strings.Contains(rel, "/") {
 		return false
 	}
-	if isDir && (strings.HasPrefix(rel, "vl-") || strings.HasPrefix(rel, "nofx-") || rel == "trash") {
+	if isDir {
+		// Lanes create worktrees, sync clones and the trash folder at the top
+		// of the home while suites run (2026-10-17: ~/partner-sync-1017 tripped
+		// the guard mid-suite). A new top-level DIRECTORY is therefore not a
+		// signal; a new top-level FILE, anything new in the listed config/bin/
+		// ssh/local/cache folders, and every deletion still are.
 		return true
 	}
 	switch rel {
