@@ -1,0 +1,33 @@
+<!--
+  VL.AddOn.csproj template (W-ADDON-ONE-CLICK). Build renders this into the
+  worker-made build dir, substituting the NT8 reference-assembly paths resolved
+  from the box's own NinjaTrader 8 install. net48 + LangVersion 13 (the proven
+  10-04 recipe). Placeholders are {{NT8_BIN}} and {{ADDON_SRC}}.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>13</LangVersion>
+    <OutputType>Library</OutputType>
+    <AssemblyName>VL.AddOn</AssemblyName>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="{{ADDON_SRC}}\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="NinjaTrader.Custom">
+      <HintPath>{{NT8_BIN}}\Custom\NinjaTrader.Custom.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="NinjaTrader.Core">
+      <HintPath>{{NT8_BIN}}\NinjaTrader.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="NinjaTrader.Gui">
+      <HintPath>{{NT8_BIN}}\NinjaTrader.Gui.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
