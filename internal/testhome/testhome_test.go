@@ -14,7 +14,7 @@ import (
 func fakeHome(t *testing.T) string {
 	t.Helper()
 	h := t.TempDir()
-	for _, d := range []string{"vl", "nofx", ".config/vl-updater", "bin"} {
+	for _, d := range []string{"vl", "other", ".config/vl-updater", "bin"} {
 		if err := os.MkdirAll(filepath.Join(h, d), 0o700); err != nil {
 			t.Fatal(err)
 		}
