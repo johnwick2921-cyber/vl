@@ -87,6 +87,10 @@ type Job struct {
 
 	NT8 *NT8Decision `json:"nt8,omitempty"`
 
+	// Addon is the one-click AddOn flow state (W-ADDON-ONE-CLICK), set after
+	// nt8_updated and carried through addon_built/placed/restarted/reconnected.
+	Addon *AddonState `json:"addon,omitempty"`
+
 	// DrainPath is how the drain passed: "" (the normal ack/census path) or
 	// "nt8_absent" (UPDATER-NT8-CLOSED: the link was down >= 60s and every
 	// ledger leg passed on its own evidence). LinkDownSince is the server's
@@ -170,6 +174,23 @@ type NT8Decision struct {
 	// is closed, so there is nobody to F5 now.
 	Absent bool `json:"absent,omitempty"`
 	F5Owed bool `json:"f5_owed,omitempty"`
+}
+
+// AddonState persists the one-click AddOn flow's inputs across its steps, so a
+// resume mid-flow (or DS-102's rollback) knows exactly what was built, placed
+// and restarted. W-ADDON-ONE-CLICK.
+type AddonState struct {
+	// DllPath is the built VL.AddOn.dll (WSL path) and Sha256 its hex digest.
+	DllPath string `json:"dll_path,omitempty"`
+	Sha256  string `json:"sha256,omitempty"`
+	// BackupDir is where Place MOVED the previous DLL ("" when there was none).
+	BackupDir string `json:"backup_dir,omitempty"`
+	// Restarted records that nt8_restart actually restarted NT8 (so rollback
+	// knows to restart it again with the old DLL restored).
+	Restarted bool `json:"restarted,omitempty"`
+	// OldAcceptSeq is the AddOn connection's accept_seq before the restart — a
+	// NEW accept_seq proves a new connection on reconnect.
+	OldAcceptSeq uint64 `json:"old_accept_seq,omitempty"`
 }
 
 // NT8 decisions.
@@ -431,7 +452,11 @@ func (j Job) Validate() error {
 		// released version could have written — this edge stays legal for
 		// REPLAY only; CheckMove (the live table) still forbids it.
 		legacyBootToComplete := p.State == StateBootVerified && p.Phase == PhaseDone && c.State == StateComplete
-		if !legacyBootToComplete {
+		// LEGACY EDGE (W-ADDON-ONE-CLICK, 2026-10-17): every released worker
+		// before this wave left the nt8_updated park directly for activated
+		// (the attended F5 resume). Replay accepts it; the live table does not.
+		legacyParkLeave := p.State == StateNT8Updated && p.Phase == PhaseDone && c.State == StateActivated
+		if !legacyBootToComplete && !legacyParkLeave {
 			if err := CheckMove(p.State, p.Phase, c.State); err != nil {
 				return bad("transition %d: %v", i, err)
 			}

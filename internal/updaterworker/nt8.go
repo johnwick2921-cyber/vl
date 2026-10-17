@@ -108,15 +108,15 @@ func (w *Worker) decideNT8(ctx context.Context, j updaterjob.Job) updaterjob.NT8
 	return d
 }
 
-// decideNT8Absent (UPDATER-NT8-CLOSED item 3): NT8 is closed — no ack is
-// read, none is waited for. The decision rests on the signed manifest vs the
-// install's ninjascript/*.cs hashed by content:
+// decideNT8Absent (UPDATER-NT8-CLOSED item 3, W-ADDON-ONE-CLICK DS-103 e2e
+// case e): NT8 is closed — no ack is read, none is waited for. The decision
+// rests on the signed manifest vs the install's ninjascript/*.cs hashed by
+// content:
 //
 //   - C# unchanged → nt8_skipped, as today;
-//   - C# differs → STILL nt8_skipped (the Go side completes), with F5Owed
-//     recorded — "AddOn F5 owed at next NT8 start". The job does NOT park:
-//     NT8 is closed, there is nobody to F5 now.
-//   - a read failure → F5Owed too (fail closed: assume the F5 is needed).
+//   - C# differs → nt8_updated: the AddOn is BUILT and PLACED, the restart is
+//     skipped (nothing to restart), and the job completes — nothing is owed.
+//     A build failure here is reverted_clean, as on the open path.
 func (w *Worker) decideNT8Absent(j updaterjob.Job) updaterjob.NT8Decision {
 	d := updaterjob.NT8Decision{Decision: updaterjob.NT8Skipped, Absent: true}
 	reasons := []string{}
@@ -143,11 +143,14 @@ func (w *Worker) decideNT8Absent(j updaterjob.Job) updaterjob.NT8Decision {
 		}
 	}
 	if len(reasons) == 0 {
-		return d
+		return d // skipped: unchanged, nothing to build
 	}
-	// fail closed: with the C# state unprovable or differing, the F5 is owed
-	d.F5Owed = true
-	d.Reason = "AddOn F5 owed at next NT8 start: " + clipText(strings.Join(reasons, "; "))
+	// NT8 is closed, so there is nobody to ack — but the AddOn can still be
+	// built and placed now. Route to addon_built; a build refusal ends
+	// reverted_clean exactly as on the open path. Nothing is owed: the new
+	// AddOn loads the next time NinjaTrader starts.
+	d.Decision = updaterjob.NT8Updated
+	d.Reason = clipText(strings.Join(reasons, "; "))
 	return d
 }
 

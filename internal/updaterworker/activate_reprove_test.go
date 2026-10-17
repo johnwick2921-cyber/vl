@@ -11,27 +11,26 @@ import (
 // PIN (#206 review fold, runner.go:275): the activate and rollback kills used
 // the re-read MainPID without re-proving what preflight proved ONCE about the
 // process — its exe, the install binary's build, and health. A hotfix deploy
-// or a restart during a 30-minute park silently replaces the process; the
-// kill is start-ticks-guarded so it hits the unit's CURRENT process, but that
-// process is no longer the one preflight proved. The proof now runs right
+// or a restart during the one-click AddOn build silently replaces the process;
+// the kill is start-ticks-guarded so it hits the unit's CURRENT process, but
+// that process is no longer the one preflight proved. The proof now runs right
 // before the kill.
 func TestActivateReProvesTheProcessBeforeTheKill(t *testing.T) {
-	r := newRig(t, withCSChanged()) // park at nt8_updated: time for the swap
-	r.install()
-	if err := r.drive(); err != nil {
-		t.Fatal(err)
+	r := newRig(t, withCSChanged()) // the one-click AddOn path reaches addon_reconnected
+	r.w.crash = func(q string) {
+		if q == "addon_reconnected/done" {
+			panic(crashPanic{q})
+		}
 	}
-	if j := r.job(); j.State != updaterjob.StateNT8Updated {
-		t.Fatalf("no park: %s/%s", j.State, j.Phase)
+	if !r.runCrashing(t) {
+		t.Fatal("never reached addon_reconnected/done")
 	}
-	// During the park the unit is restarted onto another build and the
-	// install binary is hotfixed — the preflighted process is gone.
+	r.w.crash = nil
+	// After the AddOn reconnected but before activate's re-proof: the unit is
+	// restarted onto another build and the install binary is hotfixed — the
+	// preflighted process is gone.
 	r.set(func() { r.exe = "/opt/somewhere-else/other-bin" })
 	writeFile(r.t, filepath.Join(r.inst, "vl-bin"), binaryBody(strings.Repeat("c3", 20)))
-	r.f5()
-	if resp := r.w.Handle(resumeRequest(boxJobID)); !resp.OK {
-		t.Fatalf("resume verb: %+v", resp)
-	}
 	if err := r.drive(); err != nil {
 		t.Fatal(err)
 	}

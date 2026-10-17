@@ -10,6 +10,7 @@ package updaterworker
 // grandfathered.
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -89,10 +90,10 @@ func TestDrainNt8AbsentLinkDownBelowWindowRefuses(t *testing.T) {
 	}
 	j := r.job()
 	// the absent verdict is not eligible → the normal path applies → the ack
-	// blocker names the real reason and the drain ends in recovery (the hold
-	// is kept, nothing installed)
-	if j.State != updaterjob.StateRecoveryNeeded {
-		t.Fatalf("state=%s, want recovery_needed", j.State)
+	// blocker names the real reason and the drain ends reverted_clean (self-
+	// recovery: the hold is released, the lock is released, nothing installed)
+	if j.State != updaterjob.StateRevertedClean {
+		t.Fatalf("state=%s, want reverted_clean", j.State)
 	}
 	if !strings.Contains(j.Error, "addon_ack") {
 		t.Fatalf("error %q must name the missing ack", j.Error)
@@ -154,7 +155,7 @@ func TestDrainNt8AbsentNotEligibleNeverPassesEvenIfReady(t *testing.T) {
 		t.Fatal("drain passed although the gate says the absent path is NOT eligible")
 	}
 	j := r.job()
-	if j.State != updaterjob.StateRecoveryNeeded {
+	if j.State != updaterjob.StateRevertedClean {
 		t.Fatalf("state=%s — the drain must fail on the normal path", j.State)
 	}
 	// the normal path's own blocker (no AddOn ack) is the real reason
@@ -293,28 +294,40 @@ func TestDecideNT8AbsentNoCSChangeSkips(t *testing.T) {
 	}
 }
 
-// With a .cs change the job does NOT park (NT8 is closed — nobody to F5 now):
-// the Go side completes and the owed F5 is RECORDED.
-func TestDecideNT8AbsentCSChangeRecordsF5OwedAndDoesNotPark(t *testing.T) {
+// With a .cs change and NT8 closed the AddOn is BUILT and PLACED (no restart,
+// no reconnect wait — there is no NT8 to ack): the job completes and nothing is
+// owed. DS-103 e2e case (e).
+func TestDecideNT8AbsentCSChangeBuildsAndPlaces(t *testing.T) {
 	r, _ := atBackupDone(t, withNT8Down(absentDown))
 	writeFile(r.t, filepath.Join(r.relDir, "ninjascript", "VLTrader.cs"), "// C# v2\n")
-	r.w.crash = func(q string) {
-		if q == "nt8_skipped/done" {
-			panic(crashPanic{q})
-		}
-	}
-	if !r.runCrashing(t) {
-		t.Fatal("never reached nt8_skipped/done (must not park)")
+	if err := r.drive(); err != nil {
+		t.Fatalf("drive: %v", err)
 	}
 	j := r.job()
-	if j.NT8 == nil || j.NT8.Decision != updaterjob.NT8Skipped {
-		t.Fatalf("nt8 decision %+v — the absent path must not park", j.NT8)
+	r.noViolations(t)
+	if j.State != updaterjob.StateComplete {
+		t.Fatalf("job %s (error %q), want complete: the absent path builds and places\n%v", j.State, j.Error, states(j))
 	}
-	if !j.NT8.Absent || !j.NT8.F5Owed {
-		t.Fatalf("nt8 decision %+v — the owed F5 must be recorded", j.NT8)
+	if j.NT8 == nil || j.NT8.Decision != updaterjob.NT8Updated || !j.NT8.Absent {
+		t.Fatalf("nt8 decision %+v — the absent+changed path must be nt8_updated", j.NT8)
 	}
-	if !strings.Contains(j.NT8.Reason, "AddOn F5 owed at next NT8 start") {
-		t.Fatalf("reason %q", j.NT8.Reason)
+	if j.NT8.F5Owed {
+		t.Fatalf("nothing is owed: %+v", j.NT8)
+	}
+	if j.Addon == nil || j.Addon.Restarted || j.Addon.DllPath == "" || j.Addon.Sha256 == "" {
+		t.Fatalf("the DLL must be built and placed with no restart: %+v", j.Addon)
+	}
+	if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", "VL.AddOn.dll")); err != nil {
+		t.Fatalf("the built DLL was not placed into bin/Custom: %v", err)
+	}
+	for _, tr := range j.Transitions {
+		if tr.State == updaterjob.StateNT8Restarted {
+			t.Fatal("the absent path must never restart NT8")
+		}
+	}
+	rc := mustReceipt(t, j, "addon_reconnect")
+	if !strings.Contains(rc.Evidence["note"], "NT8 closed — the new AddOn loads the next time NinjaTrader starts") {
+		t.Fatalf("the closed-NT8 receipt is missing the note: %+v", rc.Evidence)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -31,6 +32,10 @@ type Budgets struct {
 	// up to this long for it (preflight, drain, gate) instead of
 	// failing on the step budget. Expiry: preflight refused (no
 	// hold); drain/gate RELEASE the hold and refuse.
+	Transitional time.Duration // W-ADDON-ONE-CLICK wait-don't-refuse: while the
+	// blocker is a transitional connection or a stale census, keep
+	// re-checking up to this long (never less than the step budget)
+	// before self-recovery — a mid-transition NT8 is not a refusal.
 }
 
 // DefaultBudgets are the ruled values.
@@ -46,6 +51,7 @@ func DefaultBudgets() Budgets {
 		IdentityRetry: 15 * time.Second,
 		HoldClear:     30 * time.Second,
 		PlannerWait:   15 * time.Minute,
+		Transitional:  10 * time.Minute,
 	}
 }
 
@@ -97,6 +103,12 @@ type Worker struct {
 	// ("<state>/started", "<state>/effect", "<state>/done"); a test panics in
 	// it to play a crash there. nil in production.
 	crash func(point string)
+
+	// runWin is the W-ADDON-ONE-CLICK test seam that execs Windows binaries
+	// (dotnet.exe build, powershell.exe restart). nil in production = the real
+	// exec.CommandContext; a test binds a fake so it never starts the real NT8
+	// or dotnet.
+	runWin nt8RunSeam
 }
 
 // New builds a worker. Nothing runs until Start.
@@ -132,6 +144,13 @@ func New(cfg Config, d Deps) (*Worker, error) {
 		cfg.Logf = func(string, ...any) {}
 	}
 	return &Worker{cfg: cfg, lib: d.Lib, app: d.App, rel: d.Rel, host: d.Host, resume: map[string]bool{}, wake: make(chan struct{}, 1), swapDone: make(chan struct{})}, nil
+}
+
+// execWindows is the production runWin: it execs a Windows binary (powershell.exe,
+// dotnet.exe) from WSL. Never called in a test (the seam is overridden).
+func execWindows(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	return cmd.CombinedOutput()
 }
 
 func (w *Worker) dataDir() string { return w.cfg.Target.DataDir }
@@ -270,6 +289,24 @@ func (w *Worker) toRecovery(j updaterjob.Job, reason string) error {
 		return k.Enter(updaterjob.StateRecoveryNeeded, w.now(*k))
 	})
 	return err
+}
+
+// toRevertClean moves j (a DONE pre-activation state) to reverted_clean with
+// the reason as its Error, then runs the revert_clean effect (release the
+// hold, the lock, and any placed AddOn). Nothing was swapped, so the old build
+// keeps running and trading is normal.
+func (w *Worker) toRevertClean(ctx context.Context, j updaterjob.Job, reason string) error {
+	k, err := w.update(j.JobID, j.State, j.Phase, func(k *updaterjob.Job) error {
+		k.Error = clipText(reason)
+		return k.Enter(updaterjob.StateRevertedClean, w.now(*k))
+	})
+	if err != nil {
+		return err
+	}
+	if k.Phase == updaterjob.PhaseStarted {
+		return w.execute(ctx, k)
+	}
+	return nil
 }
 
 // markRecovery sets the recovery fields: the reason, and the index of the

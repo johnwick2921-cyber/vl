@@ -47,16 +47,10 @@ func do(t *testing.T, c *updaterwire.Client, req updaterwire.Request) updaterwir
 // resume wake, so the verb must refuse — the old code answered ok("resuming")
 // although nothing would happen until a restart.
 func TestSocketResumeRefusesWhileStopped(t *testing.T) {
-	r := newRig(t, withCSChanged())
+	r := newRig(t)
 	r.install()
-	if err := r.drive(); err != nil {
-		t.Fatal(err)
-	}
-	if j := r.job(); j.State != updaterjob.StateNT8Updated || j.Phase != updaterjob.PhaseDone {
-		t.Fatalf("no park: %s/%s", j.State, j.Phase)
-	}
 	c := r.serve(t)
-	// the runner hit a persist failure: the job stays parked and the worker stops
+	// the runner hit a persist failure: the job stays and the worker stops
 	r.w.mu.Lock()
 	r.w.stopped = "recovery_needed: " + boxJobID
 	r.w.mu.Unlock()

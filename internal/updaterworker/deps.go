@@ -250,6 +250,11 @@ type Host interface {
 	BuildInfo(binary string) (revision, modified string, err error)
 	// ExeOf is /proc/<pid>/exe.
 	ExeOf(pid int) (string, error)
+	// AddonRestore MOVES a placed AddOn's backup back into bin/Custom — never
+	// a delete (THE ONE RULE). docsDir is the NT8 Documents dir (bin/Custom
+	// under it); backupDir is the directory addonbuild.Place returned ("" =
+	// nothing was backed up, nothing to restore).
+	AddonRestore(docsDir, backupDir string) error
 }
 
 // Deps is everything New needs besides the Config.
