@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func buildDocs(t *testing.T) string {
@@ -74,8 +76,8 @@ func TestCheckAllGreen(t *testing.T) {
 	writeCompiler(t, docs)
 	writeConfig(t, docs, tradovateOn)
 	items := Check(context.Background(), Config{DocsDir: docs, Run: okRunner()})
-	if len(items) != 5 {
-		t.Fatalf("got %d items, want 5: %+v", len(items), items)
+	if len(items) != 7 {
+		t.Fatalf("got %d items, want 7: %+v", len(items), items)
 	}
 	for _, name := range []string{"NT8 Documents folder", "NT8 Roslyn compiler", "PowerShell reachable", "Connect on startup", "One-time AddOn migration"} {
 		it := find(items, name)
@@ -85,6 +87,14 @@ func TestCheckAllGreen(t *testing.T) {
 	}
 	if comp := find(items, "NT8 Roslyn compiler"); comp == nil || comp.Detail == "" {
 		t.Fatalf("compiler detail should carry the FileVersion, got %+v", comp)
+	}
+	// The two release-#35 items are present even with nil seams: accounts
+	// fails closed, the addon-build comparison is informational.
+	if it := find(items, "NinjaTrader accounts known"); it == nil || it.OK {
+		t.Fatalf("nil accounts seam must fail closed: %+v", it)
+	}
+	if it := find(items, "AddOn build in NT8 vs release"); it == nil || !it.OK {
+		t.Fatalf("nil addon-build seam must be informational-ok: %+v", it)
 	}
 }
 
@@ -178,5 +188,105 @@ func TestParseConnections(t *testing.T) {
 func TestWindowsPath(t *testing.T) {
 	if got := windowsPath("/mnt/c/Users/hoang/Documents/NinjaTrader 8"); got != `C:\Users\hoang\Documents\NinjaTrader 8` {
 		t.Fatalf("windowsPath = %q", got)
+	}
+}
+
+// ── release #35: "NinjaTrader accounts known" ──────────────────────────────
+
+func accountsSeam(info AccountsInfo, err error) func(context.Context) (AccountsInfo, error) {
+	return func(context.Context) (AccountsInfo, error) { return info, err }
+}
+
+func TestCheckAccountsLiveSIM(t *testing.T) {
+	it := checkAccounts(context.Background(), Config{Accounts: accountsSeam(AccountsInfo{
+		Live:     true,
+		Accounts: []Account{{Name: "SimAccount1", IsSim: true}, {Name: "Sim101", IsSim: true}},
+	}, nil)})
+	if !it.OK {
+		t.Fatalf("two live SIM accounts must be ok: %+v", it)
+	}
+	if it.Detail != "live — SimAccount1=on, Sim101=on" {
+		t.Fatalf("detail = %q, want the live list", it.Detail)
+	}
+}
+
+func TestCheckAccountsPersistedLastSeen(t *testing.T) {
+	seen := time.Date(2026, 10, 17, 9, 50, 0, 0, time.UTC)
+	it := checkAccounts(context.Background(), Config{Accounts: accountsSeam(AccountsInfo{
+		Live:     false,
+		SeenAt:   seen,
+		Accounts: []Account{{Name: "Sim101", IsSim: true}},
+	}, nil)})
+	if !it.OK {
+		t.Fatalf("a persisted SIM list must be ok: %+v", it)
+	}
+	// The detail must carry the last-seen clock, not "live" (DS-108's list).
+	if !strings.Contains(it.Detail, "last seen ") || strings.Contains(it.Detail, "live") {
+		t.Fatalf("detail = %q, want 'last seen hh:mm'", it.Detail)
+	}
+}
+
+func TestCheckAccountsNoneKnown(t *testing.T) {
+	it := checkAccounts(context.Background(), Config{Accounts: accountsSeam(AccountsInfo{}, nil)})
+	if it.OK {
+		t.Fatalf("an empty account list must be not-ok (fail closed): %+v", it)
+	}
+}
+
+func TestCheckAccountsError(t *testing.T) {
+	it := checkAccounts(context.Background(), Config{Accounts: accountsSeam(AccountsInfo{}, os.ErrNotExist)})
+	if it.OK {
+		t.Fatalf("a read error must be not-ok (fail closed): %+v", it)
+	}
+}
+
+func TestCheckAccountsLiveAccountRefused(t *testing.T) {
+	it := checkAccounts(context.Background(), Config{Accounts: accountsSeam(AccountsInfo{
+		Live:     true,
+		Accounts: []Account{{Name: "Sim101", IsSim: true}, {Name: "PropAcct", IsSim: false}},
+	}, nil)})
+	if it.OK {
+		t.Fatalf("a non-SIM account must refuse the gate: %+v", it)
+	}
+	if !strings.Contains(it.Fix, "PropAcct") {
+		t.Fatalf("fix = %q, want it to name the non-SIM account", it.Fix)
+	}
+}
+
+// ── release #35: "AddOn build in NT8 vs release" (informational) ───────────
+
+func TestCheckAddOnBuildMatch(t *testing.T) {
+	it := checkAddOnBuild(context.Background(), Config{AddOnBuild: func(context.Context) (AddOnBuildInfo, error) {
+		return AddOnBuildInfo{Running: "b1", Release: "b1"}, nil
+	}})
+	if !it.OK || !strings.Contains(it.Detail, "matches the release") {
+		t.Fatalf("a matching build must be ok with the match detail: %+v", it)
+	}
+}
+
+func TestCheckAddOnBuildMismatchReconciles(t *testing.T) {
+	it := checkAddOnBuild(context.Background(), Config{AddOnBuild: func(context.Context) (AddOnBuildInfo, error) {
+		return AddOnBuildInfo{Running: "old", Release: "new"}, nil
+	}})
+	if !it.OK || !strings.Contains(it.Detail, "rebuilds + restarts") {
+		t.Fatalf("a mismatch must be ok (the walk-away rebuilds): %+v", it)
+	}
+}
+
+func TestCheckAddOnBuildClosed(t *testing.T) {
+	it := checkAddOnBuild(context.Background(), Config{AddOnBuild: func(context.Context) (AddOnBuildInfo, error) {
+		return AddOnBuildInfo{}, nil
+	}})
+	if !it.OK || !strings.Contains(it.Detail, "closed") {
+		t.Fatalf("NT8 closed must be ok with the closed detail: %+v", it)
+	}
+}
+
+func TestCheckAddOnBuildReleaseUnknown(t *testing.T) {
+	it := checkAddOnBuild(context.Background(), Config{AddOnBuild: func(context.Context) (AddOnBuildInfo, error) {
+		return AddOnBuildInfo{Running: "b1"}, nil
+	}})
+	if !it.OK || !strings.Contains(it.Detail, "compared during the update") {
+		t.Fatalf("a running-only build must be ok and defer the release side: %+v", it)
 	}
 }

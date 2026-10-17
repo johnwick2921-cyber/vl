@@ -44,6 +44,39 @@ type Config struct {
 	Detect func() (string, error)
 	// Run executes a command; nil → the powershell probe fails closed.
 	Run Runner
+	// Accounts returns the best-known NT account list — the LIVE list now when
+	// the AddOn is connected, else the last persisted snapshot (DS-108's
+	// persistence). nil → the accounts item fails closed ("no accounts known").
+	Accounts func(ctx context.Context) (AccountsInfo, error)
+	// AddOnBuild returns the running AddOn build id vs the release's. nil →
+	// the item reports it as checked during the update (the worker owns the
+	// release side of the comparison).
+	AddOnBuild func(ctx context.Context) (AddOnBuildInfo, error)
+}
+
+// Account is one NinjaTrader account as the AddOn reports it.
+type Account struct {
+	Name  string `json:"name"`
+	IsSim bool   `json:"is_sim"`
+}
+
+// AccountsInfo is the best-known account list: Live is true when it came from
+// the connected AddOn just now, false when it is the last persisted snapshot
+// (SeenAt is when that snapshot was received).
+type AccountsInfo struct {
+	Live     bool      `json:"live"`
+	SeenAt   time.Time `json:"seen_at,omitempty"`
+	Accounts []Account `json:"accounts"`
+}
+
+// AddOnBuildInfo carries the two sides of the "AddOn build in NT8 vs release"
+// comparison. Running is the build id the connected AddOn last reported (empty
+// when NT8 is closed / never said hello); Release is the AddOn build the
+// release installs (empty when the caller does not know it — e.g. the bot's
+// readiness page, where the worker owns the release side).
+type AddOnBuildInfo struct {
+	Running string `json:"running,omitempty"`
+	Release string `json:"release,omitempty"`
 }
 
 // RunViaExec is the production Runner.
@@ -103,9 +136,10 @@ func windowsPath(wsl string) string {
 }
 
 // Check runs every precondition and returns them in a stable order:
-// docs dir, compiler, powershell, connect-on-startup, migration.
+// docs dir, compiler, powershell, connect-on-startup, migration, accounts,
+// addon build.
 func Check(ctx context.Context, c Config) []Item {
-	out := make([]Item, 0, 5)
+	out := make([]Item, 0, 7)
 
 	docs, err := c.docsDir()
 	if err != nil {
@@ -118,8 +152,11 @@ func Check(ctx context.Context, c Config) []Item {
 		} {
 			out = append(out, Item{Item: row[0], OK: false, Fix: row[1]})
 		}
-		// powershell is independent of the docs dir.
+		// powershell, accounts and the addon build are independent of the
+		// docs dir.
 		out = append(out, checkPowershell(ctx, c))
+		out = append(out, checkAccounts(ctx, c))
+		out = append(out, checkAddOnBuild(ctx, c))
 		return out
 	}
 
@@ -128,6 +165,8 @@ func Check(ctx context.Context, c Config) []Item {
 	out = append(out, checkPowershell(ctx, c))
 	out = append(out, checkConnectOnStartup(docs))
 	out = append(out, checkMigration(docs))
+	out = append(out, checkAccounts(ctx, c))
+	out = append(out, checkAddOnBuild(ctx, c))
 	return out
 }
 
@@ -262,5 +301,87 @@ func checkMigration(docs string) Item {
 	it.OK = false
 	it.Fix = "The old VL*.cs files are still in NinjaTrader's AddOns folder — the very first update needs ONE F5 in NinjaTrader after they are moved out, and only that once."
 	it.Detail = fmt.Sprintf("%d file(s): %s", len(matches), strings.Join(matches, ", "))
+	return it
+}
+
+// checkAccounts is the sim_accounts readiness leg (release #35, owner 10:0x CT:
+// the first install stalled because NT8 was closed and the bot had never seen
+// the accounts). OK needs at least one account AND every account SIM; the
+// detail says "live" or "last seen hh:mm" so the owner knows which list the
+// gate will use.
+func checkAccounts(ctx context.Context, c Config) Item {
+	it := Item{Item: "NinjaTrader accounts known"}
+	if c.Accounts == nil {
+		it.OK = false
+		it.Fix = "The bot has not seen NinjaTrader's accounts — open NinjaTrader once and log in to Tradovate, then press Update again."
+		return it
+	}
+	info, err := c.Accounts(ctx)
+	if err != nil {
+		it.OK = false
+		it.Fix = "The bot could not read NinjaTrader's accounts — open NinjaTrader once and log in to Tradovate, then press Update again."
+		it.Detail = err.Error()
+		return it
+	}
+	if len(info.Accounts) == 0 {
+		it.OK = false
+		it.Fix = "The bot has not seen NinjaTrader's accounts — open NinjaTrader once and log in to Tradovate, then press Update again."
+		return it
+	}
+	names := make([]string, 0, len(info.Accounts))
+	var liveAccounts []string
+	for _, a := range info.Accounts {
+		names = append(names, a.Name+"="+onOff(a.IsSim))
+		if !a.IsSim {
+			liveAccounts = append(liveAccounts, a.Name)
+		}
+	}
+	source := "live"
+	if !info.Live {
+		if info.SeenAt.IsZero() {
+			source = "last seen (time unknown)"
+		} else {
+			source = "last seen " + info.SeenAt.Format("15:04")
+		}
+	}
+	it.Detail = source + " — " + strings.Join(names, ", ")
+	if len(liveAccounts) > 0 {
+		it.OK = false
+		it.Fix = "Account " + strings.Join(liveAccounts, ", ") + " is not SIM — the bot only trades SIM. Make every account SIM, then press Update again."
+		return it
+	}
+	it.OK = true
+	return it
+}
+
+// checkAddOnBuild is INFORMATIONAL, never a blocker: the walk-away update
+// rebuilds, places and restarts NinjaTrader on any mismatch, so no owner action
+// is ever needed here. It reports the two build ids the caller knows.
+func checkAddOnBuild(ctx context.Context, c Config) Item {
+	it := Item{Item: "AddOn build in NT8 vs release"}
+	if c.AddOnBuild == nil {
+		it.OK = true
+		it.Detail = "checked during the update (the worker compares the AddOn build after install)"
+		return it
+	}
+	b, err := c.AddOnBuild(ctx)
+	if err != nil {
+		it.OK = true
+		it.Detail = "could not read the AddOn build (" + err.Error() + ") — the update rebuilds it regardless"
+		return it
+	}
+	switch {
+	case b.Running == "" && b.Release == "":
+		it.Detail = "NinjaTrader is closed — the update builds + places, then starts NinjaTrader"
+	case b.Running == "":
+		it.Detail = "NinjaTrader is closed — the update builds + places AddOn build " + b.Release + ", then starts NinjaTrader"
+	case b.Release == "":
+		it.Detail = "NT8 runs " + b.Running + " — the release AddOn build is compared during the update"
+	case b.Running == b.Release:
+		it.Detail = "NT8 runs " + b.Running + " — matches the release"
+	default:
+		it.Detail = "NT8 runs " + b.Running + ", release is " + b.Release + " — the update rebuilds + restarts NinjaTrader"
+	}
+	it.OK = true
 	return it
 }
