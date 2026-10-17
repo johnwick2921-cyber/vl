@@ -102,14 +102,55 @@ none changes entries, exits or size against a disagreeing screen.
 - `excluded_coins` — `kernel/engine.go:613`.
 - `flip_reread` — `bool` absent→false; `store/strategy.go:1730 FlipRereadEnabled` = `c != nil && c.FlipReread` (OFF); Studio `DayPlanEditor.tsx:665 on={cfg.flip_reread === true}` → OFF when unset; registry "false=OFF (legacy dormant)".
 
+## Three-state check (boolean / toggle knobs) — owner order 06:20Z
+
+Each toggle compared in three states: MISSING (no saved value), explicit
+OFF/false/0, explicit ON/true/value. Format `Studio shows → bot does`.
+
+| knob | MISSING | explicit OFF/false/0 | explicit ON/true/value | verdict |
+|---|---|---|---|---|
+| `approval_required` | OFF (`strategy.ts:123` optional; Go `bool` absent→false) | OFF→false | ON→true | MATCH ×3 |
+| `blackout_enabled` | OFF (`strategy.ts:437`) → OFF (`risk_limits.go:398 boolOrDefault(…,false)`) | OFF→false | ON→true | MATCH ×3 |
+| `breakeven_enabled` | OFF (TS "Default OFF") → OFF (`auto_trader.go:407 hlBool(…,false)`) | OFF→false | ON→true | MATCH ×3 |
+| `config_visible` | ON (DB `gorm default:true`, `strategy.go:652`) | OFF→false | ON→true | MATCH ×3 |
+| `consistency_enabled` | OFF (`strategy.ts:441`) → OFF (`risk_limits.go:399`) | OFF→false | ON→true | MATCH ×3 |
+| `consecutive_loss_halt` | inherit→8 ON (`RiskControlEditor.tsx:1119 enabled={!==0}` → ON; bot `breakerHaltN` 8) | 0→OFF (`RiskControlEditor.tsx:1120 v?null:0`) | N→N | MATCH ×3 |
+| `daily_loss_enabled` | OFF (`strategy.ts:421`) → OFF (`risk_limits.go`) | OFF→false | ON→true | MATCH ×3 |
+| `daily_profit_enabled` | OFF (`strategy.ts:423`) → OFF | OFF→false | ON→true | MATCH ×3 |
+| `death_reread` | ON (`DayPlanEditor.tsx:678 on={!==false}` → ON; `strategy.go:1841 nil→true`) | OFF (`!==false`→OFF; `*bool` false) | ON | MATCH ×3 |
+| `enable` (session) | inherit (⚪; `auto_trader_planconfig.go:73`) | override OFF | override ON | MATCH ×3 |
+| `enable_atr` | OFF (undefined→`checked` false; Go `bool` false) | OFF | ON (`engine_prompt.go:241`) | MATCH ×3 |
+| `enable_boll` | OFF | OFF | ON (`engine_prompt.go:249`) | MATCH ×3 |
+| `enable_direction_adjust` | OFF (crypto grid only) | OFF | ON (`auto_trader_grid_regime.go:65`) | MATCH ×3 |
+| `enable_ema` | OFF | OFF | ON (`engine_prompt.go:221`) | MATCH ×3 |
+| `enable_funding_rate` | OFF | OFF | ON (`engine_prompt.go:265`) | MATCH ×3 |
+| `enable_macd` | OFF | OFF | ON (`engine_prompt.go:229`) | MATCH ×3 |
+| `enable_multi_timeframe` | `current.length>1` (`IndicatorEditor.tsx:159`); bot Normalize fills true when the klines block was never set (`strategy.go:2664`) | OFF→false | ON→true | MATCH ×3 |
+| `enable_oi` | OFF | OFF | ON (`engine_prompt.go:261`) | MATCH ×3 |
+| `enable_raw_klines` | force-ON (Studio `ensureRawKlines` sets true; card hidden on futures) — no futures reader | n/a (force-set true) | ON (only agent skill handler reads) | HIDDEN (P2) |
+| `enable_rsi` | OFF | OFF | ON (`engine_prompt.go:233`) | MATCH ×3 |
+| `enable_svp` | OFF (`strategy.ts:269`; Go `bool` false) | OFF | ON (`engine_analysis.go:331`) | MATCH ×3 |
+| `enable_volume` | OFF | OFF | ON (`engine_prompt.go:257`) | MATCH ×3 |
+| `evening_digest` | OFF (folded, no control; `EveningDigestOn` false) | OFF (no control) | ON only via a stored true (honoured, no control) | HIDDEN (P2) |
+| `flip_reread` | OFF (`DayPlanEditor.tsx:665 on={===true}` → OFF; `FlipRereadEnabled` false) | OFF→false | ON→true (`maybeRereadAfterFlip`) | MATCH ×3 |
+
+Numeric / string knobs (the other ~44): two-state only — MISSING → the documented
+default, explicit value → that value. Every one is MATCH (defaults and resolvers
+cited in the MATCH list above). No numeric/string knob flips a meaning between
+MISSING and explicit 0.
+
 ## Notes
 
 - The owner's exact failure shape — "nothing saved read as ON while every switch
   read OFF" — does not reproduce in this slice. The two nil→ON knobs here
   (`death_reread`, and `consecutive_loss_halt`'s inherit→8) are BOTH mirrored by
   their Studio controls (`!== false` / `!== 0`), so the screen shows ON when the
-  bot reads ON.
+  bot reads ON — and explicit OFF flips BOTH screen and bot to OFF together.
 - The whole `external_data_sources` family (parent + 7 leaves + standalone
   `data_path`) is inert: `kernel/engine.go:795/815` feed `FetchExternalData`,
   which has no production caller. Registry rows already say so.
+- `enable_raw_klines` is the only three-state oddity: MISSING and explicit-OFF
+  are BOTH force-set to true by the Studio (`ensureRawKlines`), and the futures
+  engine has no reader — a switch that can never read OFF and does nothing when
+  ON. HIDDEN, P2.
 - No fixes made, per the dispatch.
