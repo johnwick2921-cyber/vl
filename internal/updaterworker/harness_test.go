@@ -106,6 +106,9 @@ type box struct {
 	rollbackDistFail bool // RollbackTo restores binary+RELEASE, fails at dist, no kill of its own
 	addonRestoreFail bool // fakeHost.AddonRestore returns an error
 	noReconnect      bool // the AddOn never reconnects after the NT8 restart (guard #3 timeout)
+	reconnectSameSeq bool // the AddOn reconnects on the SAME accept_seq after restart (#5a)
+	reconnectOldBuild bool // the AddOn reconnects reporting the OLD build after restart (#5b)
+	omitLeg          string // the fake gate omits this leg entirely (guard #1 missing-leg pin)
 	badToken         bool // the app refuses the token (401)
 	verdictMissing   bool
 	holdWriteLies    bool          // the hold write lands on disk, then errs (U1 item 9)
@@ -341,8 +344,12 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 		if strings.Contains(a, "Start-Process") {
 			b.mu.Lock()
 			if !b.noReconnect {
-				b.addonBuild = b.manifestBuild
-				b.addonSeq++
+				if !b.reconnectOldBuild {
+					b.addonBuild = b.manifestBuild
+				}
+				if !b.reconnectSameSeq {
+					b.addonSeq++
+				}
 			}
 			b.mu.Unlock()
 		}
@@ -907,7 +914,7 @@ func (b *box) maintenanceView() MaintenanceView {
 func (b *box) gateView() GateView {
 	st := store.ReadMaintenanceHold(b.data)
 	b.mu.Lock()
-	flat, plannerHeld, simTradeable := b.flat, b.plannerInFlight, b.simTradeable
+	flat, plannerHeld, simTradeable, omitLeg := b.flat, b.plannerInFlight, b.simTradeable, b.omitLeg
 	b.mu.Unlock()
 	a := b.ack()
 	job := "n/a"
@@ -963,6 +970,15 @@ func (b *box) gateView() GateView {
 			}
 			return "legs 1,2,4"
 		}()},
+	}
+	if omitLeg != "" {
+		filtered := legs[:0]
+		for _, l := range legs {
+			if l.Name != omitLeg {
+				filtered = append(filtered, l)
+			}
+		}
+		legs = filtered
 	}
 	ready := true
 	for _, l := range legs {

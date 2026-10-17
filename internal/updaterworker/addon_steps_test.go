@@ -79,3 +79,58 @@ func TestAddonReconnectTimeoutRollsBack(t *testing.T) {
 		t.Fatalf("activate ran %d times before the reconnect proved", r.callCount("activate"))
 	}
 }
+
+// Guard #1 missing-leg refusal (#3 fold): the flat+SIM gate must REFUSE when
+// any one of addon_census / ledger_exposure / sim_accounts is absent from the
+// gate view — a missing leg is missing evidence, never a pass.
+func TestFlatSIMGateRefusesWhenALegIsMissing(t *testing.T) {
+	for _, leg := range []string{"addon_census", "ledger_exposure", "sim_accounts"} {
+		t.Run(leg, func(t *testing.T) {
+			r := newRig(t, withCSChanged())
+			// Omit the leg only at the restart step's gate read — the earlier
+			// drain/gate steps passed with every leg present.
+			r.hookAt("nt8_restarted/started", func() { r.set(func() { r.omitLeg = leg }) })
+			j := r.runToEnd(t)
+			r.noViolations(t)
+			if j.State != updaterjob.StateRevertedClean || j.Addon == nil || j.Addon.Restarted {
+				t.Fatalf("job %s addon=%+v, want reverted_clean with no restart", j.State, j.Addon)
+			}
+			if !strings.Contains(j.Error, leg) || !strings.Contains(j.Error, "did not run") {
+				t.Fatalf("error %q must name the missing leg %q", j.Error, leg)
+			}
+			if r.callCount("activate") != 0 {
+				t.Fatalf("activate ran %d times with a missing %s leg", r.callCount("activate"), leg)
+			}
+		})
+	}
+}
+
+// Guard #3 #5a: a NEW build_id on the OLD accept_seq is not a reconnect — the
+// reconnect step itself must fail with its own "did not reconnect" error.
+func TestAddonReconnectNewBuildOldSeqRollsBack(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	r.set(func() { r.reconnectSameSeq = true }) // new build, but the connection never changed
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRolledBack || !strings.Contains(j.Error, "did not reconnect") {
+		t.Fatalf("job %s (error %q), want rolled_back: a new build on the old connection is not a reconnect", j.State, j.Error)
+	}
+	if r.callCount("activate") != 0 {
+		t.Fatalf("activate ran %d times on an unproven reconnect", r.callCount("activate"))
+	}
+}
+
+// Guard #3 #5b: a NEW accept_seq on the OLD build_id is NT8 coming back on the
+// old AddOn — the reconnect step itself must fail with "did not reconnect".
+func TestAddonReconnectOldBuildNewSeqRollsBack(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	r.set(func() { r.reconnectOldBuild = true }) // NT8 came back on the OLD AddOn
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRolledBack || !strings.Contains(j.Error, "did not reconnect") {
+		t.Fatalf("job %s (error %q), want rolled_back: NT8 came back on the old AddOn", j.State, j.Error)
+	}
+	if r.callCount("activate") != 0 {
+		t.Fatalf("activate ran %d times on an unproven reconnect", r.callCount("activate"))
+	}
+}
