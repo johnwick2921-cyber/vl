@@ -24,6 +24,14 @@ const (
 	StateBackupDone      State = "backup_done"
 	StateNT8Skipped      State = "nt8_skipped"
 	StateNT8Updated      State = "nt8_updated"
+	// W-ADDON-ONE-CLICK states (unreached until backup_done is rewired to
+	// addon_built; the rows land with the step implementations, next increment).
+	StateAddonBuilt       State = "addon_built"
+	StateAddonPlaced      State = "addon_placed"
+	StateNT8Restarted     State = "nt8_restarted"
+	StateAddonReconnected State = "addon_reconnected"
+	// SELF-RECOVERY (DS-102): a refusal/timeout BEFORE activation ends here.
+	StateRevertedClean    State = "reverted_clean"
 	StateActivated       State = "activated"
 	StateBooted          State = "booted"
 	StateBootVerified    State = "boot_verified"
@@ -62,6 +70,11 @@ const (
 	EffectGate        Effect = "gate"         // ready:true on two reads with distinct ack.received
 	EffectBackup      Effect = "backup"       // DB backup + snapshot of the install halves
 	EffectNT8         Effect = "nt8"          // record the AddOn decision (a read, C12)
+	// W-ADDON-ONE-CLICK effects (owned by DS-104, wired in the next increment).
+	EffectAddonBuild     Effect = "addon_build"     // compile the release's ninjascript/*.cs into VL.AddOn.dll
+	EffectAddonPlace     Effect = "addon_place"     // MOVE the old DLL to backups, copy the new one in, verify sha
+	EffectNT8Restart     Effect = "nt8_restart"     // stop+start NT8 via powershell.exe (only when it was running)
+	EffectAddonReconnect Effect = "addon_reconnect" // wait for a NEW accept_seq + hello build_id (bounded)
 	EffectActivate    Effect = "activate"     // install the release halves + kill by identity
 	EffectWatch       Effect = "watch"        // the new process proves itself (log + health)
 	EffectBootVerify  Effect = "boot_verify"  // OK boot line, health prefix, AddOn ack build

@@ -730,6 +730,43 @@ func (w *Worker) stepNT8(ctx context.Context, j updaterjob.Job) stepResult {
 	return res
 }
 
+// ── W-ADDON-ONE-CLICK: the AddOn build/place/restart/reconnect steps ─────────
+// These replace the nt8_updated PARK. They are wired against internal/addonbuild
+// (DS-108) once its stub lands; until then each fails to reverted_clean with a
+// plain reason, so a job can never park on an unimplemented step.
+
+func (w *Worker) stepAddonBuild(ctx context.Context, j updaterjob.Job) stepResult {
+	return stepResult{
+		err:    errors.New("addon_build not yet wired (internal/addonbuild stub pending)"),
+		failTo: updaterjob.StateRevertedClean,
+		reason: "the AddOn build step is not wired yet",
+	}
+}
+
+func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResult {
+	return stepResult{
+		err:    errors.New("addon_place not yet wired (internal/addonbuild stub pending)"),
+		failTo: updaterjob.StateRevertedClean,
+		reason: "the AddOn place step is not wired yet",
+	}
+}
+
+func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResult {
+	return stepResult{
+		err:    errors.New("nt8_restart not yet wired"),
+		failTo: updaterjob.StateRevertedClean,
+		reason: "the NT8 restart step is not wired yet",
+	}
+}
+
+func (w *Worker) stepAddonReconnect(ctx context.Context, j updaterjob.Job) stepResult {
+	return stepResult{
+		err:    errors.New("addon_reconnect not yet wired"),
+		failTo: updaterjob.StateRevertedClean,
+		reason: "the AddOn reconnect wait is not wired yet",
+	}
+}
+
 // stepActivate is the point of no return. On a resume INSIDE it (attempts >
 // 1) the identity on disk may be the process the first run already killed:
 // ready is re-proven first (R-i — the resume never passes through advance's

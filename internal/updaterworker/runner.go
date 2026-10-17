@@ -177,6 +177,14 @@ func (w *Worker) step(ctx context.Context, j updaterjob.Job) stepResult {
 		return w.stepBackup(ctx, j)
 	case updaterjob.StateNT8Skipped, updaterjob.StateNT8Updated:
 		return w.stepNT8(ctx, j)
+	case updaterjob.StateAddonBuilt:
+		return w.stepAddonBuild(ctx, j)
+	case updaterjob.StateAddonPlaced:
+		return w.stepAddonPlace(ctx, j)
+	case updaterjob.StateNT8Restarted:
+		return w.stepNT8Restart(ctx, j)
+	case updaterjob.StateAddonReconnected:
+		return w.stepAddonReconnect(ctx, j)
 	case updaterjob.StateActivated:
 		return w.stepActivate(ctx, j)
 	case updaterjob.StateBooted:
@@ -187,7 +195,7 @@ func (w *Worker) step(ctx context.Context, j updaterjob.Job) stepResult {
 		return w.stepWorkerSwap(ctx, j)
 	case updaterjob.StateRollingBack:
 		return w.stepRollback(ctx, j)
-	case updaterjob.StateComplete, updaterjob.StateRolledBack:
+	case updaterjob.StateComplete, updaterjob.StateRolledBack, updaterjob.StateRevertedClean:
 		return w.stepReleaseHold(ctx, j)
 	}
 	return stepResult{err: fmt.Errorf("no step for %s", j.State), failTo: updaterjob.StateRecoveryNeeded, reason: "no step for " + string(j.State)}
