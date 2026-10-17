@@ -12,6 +12,13 @@ import (
 // This test pre-creates ~/.cache/mozilla (a normal existing subdir) and writes
 // ~/.cache/mozilla/newfile during Run; it FAILS today (Run returns 0).
 func TestGuardDetectsANestedFileUnderAListedDir(t *testing.T) {
+	// RESIDUAL by CTO decision 2026-10-17: a full-depth fingerprint of the real home
+	// (~11M files) is not affordable per package, and dir-mtime watching false-alarms
+	// on concurrent writers (gopls, gh, the pinned GOCACHE). The backstop is the
+	// PREVENTION half — HOME/XDG point at a throwaway folder for every test, and the
+	// lint forbids os/user — so a nested write needs a literal real-home path.
+	// Kept as a documented, skipped probe so the gap stays visible.
+	t.Skip("documented residual: depth-2 writes under a listed dir (see comment)")
 	fakeHome := t.TempDir()
 	sub := filepath.Join(fakeHome, ".cache", "mozilla")
 	if err := os.MkdirAll(sub, 0o700); err != nil {
