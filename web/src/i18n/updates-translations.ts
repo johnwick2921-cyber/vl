@@ -168,6 +168,23 @@ export const updatesStrings = {
     id: 'Pembaruan ini tertahan. Ketik kata sandi login VL Anda dan Coba lagi — tidak ada yang perlu diketik di terminal.',
   },
 
+  // W-ADDON-ONE-CLICK "walk away" result banner — the plan's exact plain words.
+  resultDone: {
+    en: 'Update done — running {tag}',
+    zh: '更新完成 — 正在运行 {tag}',
+    id: 'Pembaruan selesai — menjalankan {tag}',
+  },
+  resultFailed: {
+    en: 'Update could not finish — nothing changed, still running {tag}, trading normal. Reason: {reason}',
+    zh: '更新未完成 — 没有更改，仍在运行 {tag}，交易正常。原因：{reason}',
+    id: 'Pembaruan tidak selesai — tidak ada perubahan, masih menjalankan {tag}, trading normal. Alasan: {reason}',
+  },
+  resultRecovery: {
+    en: 'Update needs your attention — the automatic recovery failed. Reason: {reason}',
+    zh: '更新需要你的注意 — 自动恢复失败。原因：{reason}',
+    id: 'Pembaruan perlu perhatian Anda — pemulihan otomatis gagal. Alasan: {reason}',
+  },
+
   // job
   noUpdateJob: {
     en: 'no update job',

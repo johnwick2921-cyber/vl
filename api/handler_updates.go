@@ -929,13 +929,21 @@ func (s *Server) handleUpdatesRetry(c *gin.Context) {
 	}
 	apiInstallPasswordLimiter.clear(adminID)
 
-	if s.updateResume == nil {
+	// The SAME install_enabled gate as Update (condition 1 of the CTO's
+	// approval): the stub verifier or an absent starter means installs are
+	// off, and a held job cannot be retried into a worker that cannot run.
+	_, stub := s.updateVerifier.(updateauth.StubVerifier)
+	if stub || s.updateStart == nil || s.updateResume == nil {
 		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "installer unavailable"})
 		return
 	}
 	if err := s.updateResume(req.JobID); err != nil {
-		logger.Errorf("🔒 [updates] retry hand-off refused (job %s): %v", req.JobID, err)
-		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "installer unavailable"})
+		// The worker's OWN text, shown on the page verbatim (condition 2):
+		// "not held", "unknown job", "resume refused …" — never a fabricated
+		// reason. The worker refuses anything but a held/parked job naming
+		// this id.
+		logger.Warnf("🔒 [updates] retry refused by the worker (job %s): %v", req.JobID, err)
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusAccepted, gin.H{"job_id": req.JobID})

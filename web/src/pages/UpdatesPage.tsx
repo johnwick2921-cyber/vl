@@ -67,6 +67,36 @@ function jobStatusText(
   return step ?? ''
 }
 
+// W-ADDON-ONE-CLICK "walk away": the RESULT banner for a terminal job state.
+// The new tag is the release being installed (the last Check), the old tag is
+// the running revision (health), and the reason is the worker's own text
+// (recovery_reason or error). An unknown/absent state → null (no banner).
+function jobResultBanner(
+  state: string | undefined,
+  newTag: string | null,
+  oldTag: string | undefined,
+  reason: string,
+  language: 'en' | 'zh' | 'id'
+): { text: string; tone: 'ok' | 'warn' | 'bad' } | null {
+  switch (state) {
+    case 'complete':
+      return {
+        text: up('resultDone', language, { tag: newTag || '' }),
+        tone: 'ok',
+      }
+    case 'rolled_back':
+    case 'reverted_clean':
+      return {
+        text: up('resultFailed', language, { tag: oldTag || '', reason }),
+        tone: 'warn',
+      }
+    case 'recovery_needed':
+      return { text: up('resultRecovery', language, { reason }), tone: 'bad' }
+    default:
+      return null
+  }
+}
+
 function Panel({
   title,
   children,
@@ -421,13 +451,15 @@ export default function UpdatesPage() {
     !releaseId ||
     !availableReady
 
-  // W-ADDON-ONE-CLICK: Retry is gated on the worker listening + a typed
-  // password + a named job. It does NOT need install_enabled or a verified
+  // W-ADDON-ONE-CLICK: Retry is gated on the SAME chain as Update — the
+  // install control enabled (install_enabled AND worker_listening, both
+  // measured) + a typed password + a named job. It does NOT need a verified
   // release — the job already exists and is held; Retry re-runs it.
   const retryDisabled =
     INSTALL_AUTHZ_UNDER_REVIEW ||
     retrying ||
     !password.trim() ||
+    status?.install_enabled !== true ||
     status?.worker_listening !== true ||
     !polledJobID
 
@@ -817,6 +849,30 @@ export default function UpdatesPage() {
           </p>
         ) : (
           <>
+            {(() => {
+              const b = jobResultBanner(
+                job?.state,
+                check?.tag ?? null,
+                health?.revision,
+                job?.recovery_reason || job?.error || '',
+                language
+              )
+              if (!b) return null
+              const toneClass =
+                b.tone === 'ok'
+                  ? 'border-emerald-600/40 bg-emerald-500/10 text-emerald-300'
+                  : b.tone === 'bad'
+                    ? 'border-red-600/40 bg-red-500/10 text-red-300'
+                    : 'border-amber-600/40 bg-amber-500/10 text-amber-300'
+              return (
+                <div
+                  className={`mb-3 rounded-lg border px-4 py-2 text-sm font-medium ${toneClass}`}
+                  data-testid="update-result-banner"
+                >
+                  {b.text}
+                </div>
+              )
+            })()}
             <Row
               label={up('jobId', language)}
               value={job?.job_id || maintenance?.job_id || na(language)}
