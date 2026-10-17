@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"vl/internal/safepath"
 
 	"vl/internal/updaterwire"
 )
@@ -50,7 +51,7 @@ func dataDir(t *testing.T) (string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(base) })
+	t.Cleanup(func() { _ = safepath.RemoveAllTemp(base) })
 	d := filepath.Join(base, "data")
 	if err := os.Mkdir(d, 0o755); err != nil {
 		t.Fatal(err)

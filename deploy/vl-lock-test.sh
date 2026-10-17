@@ -39,7 +39,7 @@ cleanup() {
     [ -n "$pg" ] && kill -KILL -- "-$pg" 2>/dev/null || true
   done
   sleep 0.2
-  rm -rf "$WORK"
+  rm -rf "${WORK:?}"
 }
 trap cleanup EXIT
 o=no; o=${o}fx   # the pre-rename prefix, assembled at runtime (never written literal)
@@ -218,7 +218,7 @@ echo "== release stops the keeper — no writer outlives its lock =="
 # THE PROCESS, NOT THE FILE, AND ON A BEAT LONG ENOUGH TO SEE IT.
 #
 # Two drafts of this pin failed to bite. The first checked only that keeper.pid
-# was gone — which rm -rf "$LOCK_DIR" does anyway, so deleting _stop_keeper left
+# was gone — which rm -rf "${LOCK_DIR:?}" does anyway, so deleting _stop_keeper left
 # it green with an orphan still looping. The second checked the PROCESS but ran
 # on a 1s beat, so an unstopped keeper noticed the missing directory and exited
 # by itself before the assertion — the pin was measuring the OS's timing, not
@@ -240,8 +240,8 @@ if [ -n "$kp2" ] && kill -0 "$kp2" 2>/dev/null; then
 else
   ok "release STOPS the keeper process"
 fi
-rm -rf "$KWR"
-rm -rf "$KW"
+rm -rf "${KWR:?}"
+rm -rf "${KW:?}"
 
 echo "== the keeper OUTLIVES the shell that spawned it =="
 # A keeper that dies with its session reproduces the defect one layer down.
@@ -252,7 +252,7 @@ sleep 6
 out="$(VL_LOCK_DIR="$KW2/lock.d" VL_LOCK_STALE_SECONDS=4 bash "$LOCK_SH" status 2>&1)"
 hasi "a keeper spawned by an exited shell keeps beating" "$out" "alive"
 VL_LOCK_DIR="$KW2/lock.d" bash "$LOCK_SH" release vl-detached >/dev/null 2>&1
-rm -rf "$KW2"
+rm -rf "${KW2:?}"
 
 echo "== THE BOUND: the keeper stops at the declared expiry, and never extends it =="
 KW3="$(mktemp -d)"
@@ -263,7 +263,7 @@ sleep 6
 out="$(VL_LOCK_DIR="$KW3/lock.d" VL_LOCK_STALE_SECONDS=4 bash "$LOCK_SH" status 2>&1)"
 hasi "a lock past its declared expiry goes STALE — the keeper never auto-extends" "$out" "stale"
 VL_LOCK_DIR="$KW3/lock.d" bash "$LOCK_SH" release vl-brief >/dev/null 2>&1
-rm -rf "$KW3"
+rm -rf "${KW3:?}"
 
 echo "== the acquire message says what the keeper actually does =="
 src2="$(cat "$LOCK_SH")"
@@ -299,11 +299,11 @@ chmod +x "$SHIM/mktemp"
 KWO="$(mktemp -d)"
 export VL_LOCK_DIR="$KWO/lock.d"
 O() { VL_LOCK_STALE_SECONDS=600 VL_LOCK_BEAT_SECONDS=1 PATH="$SHIM:$PATH" bash "$LOCK_SH" "$@" 2>&1; }
-rm -f "$SLOWFLAG"
+rm -f "${SLOWFLAG:?}"
 O acquire sess-A "lane A cutover" 45 >/dev/null
 touch "$SLOWFLAG"      # the NEXT beat parks inside mktemp holding A's meta
 sleep 1.5
-rm -f "$SLOWFLAG"      # everything after this is fast again
+rm -f "${SLOWFLAG:?}"      # everything after this is fast again
 O release sess-A >/dev/null
 O acquire sess-B "lane B — a DIFFERENT cutover" 45 >/dev/null
 sleep 4                # give the parked writer time to land its mv
@@ -314,7 +314,7 @@ rel="$(bash "$LOCK_SH" release sess-B 2>&1)"
 hasi  "the holder can release its OWN lock"                     "$rel" "released"
 kp="$(cat "$VL_LOCK_DIR/keeper.pid" 2>/dev/null || true)"
 [ -n "$kp" ] && kill -KILL -- "-$kp" 2>/dev/null
-rm -rf "$KWO" "$SHIM"; rm -f "$SLOWFLAG"
+rm -rf "${KWO:?}" "${SHIM:?}"; rm -f "${SLOWFLAG:?}"
 unset VL_LOCK_DIR
 export VL_LOCK_DIR="$WORK/$o-main.lock.d"
 
@@ -331,7 +331,7 @@ if [ -n "$pg" ] && kill -0 -- "-$pg" 2>/dev/null; then
 else
   ok "release stops the whole keeper group"
 fi
-rm -rf "$KWG"
+rm -rf "${KWG:?}"
 
 echo "== NO WRITER EXTENDS A WINDOW — not even a hand-rolled one =="
 #
@@ -351,7 +351,7 @@ hasi  "and says why"                                    "$out" "past the declare
 # The holder is still the holder — expiry bounds the WINDOW, not the identity.
 hasi  "the lock still names its holder"                 "$(X status)" "sess-X"
 X release sess-X >/dev/null 2>&1
-rm -rf "$KWX"
+rm -rf "${KWX:?}"
 
 echo "== a lock inside its window still beats normally =="
 KWY="$(mktemp -d)"
@@ -359,7 +359,7 @@ Y() { VL_LOCK_DIR="$KWY/lock.d" VL_LOCK_STALE_SECONDS=600 VL_LOCK_BEAT_SECONDS=1
 Y acquire sess-Y 'a normal window' 45 >/dev/null
 check "a beat inside the window succeeds" "$(Y heartbeat sess-Y >/dev/null 2>&1; echo $?)" "0"
 Y release sess-Y >/dev/null 2>&1
-rm -rf "$KWY"
+rm -rf "${KWY:?}"
 
 echo "== acquire is CLEAN on stderr — a spawn that warns is a spawn nobody reads =="
 #
@@ -380,7 +380,7 @@ err="$(VL_LOCK_DIR="$KSE/lock.d" VL_LOCK_BEAT_SECONDS=60 bash "$LOCK_SH" acquire
 if [ -z "$err" ]; then ok "acquire writes nothing to stderr"
 else bad "acquire writes nothing to stderr" "stderr: $err"; fi
 VL_LOCK_DIR="$KSE/lock.d" bash "$LOCK_SH" release sess-E >/dev/null 2>&1
-rm -rf "$KSE"
+rm -rf "${KSE:?}"
 
 echo "== pgrp is counted AFTER comm, so a comm with spaces cannot shift it =="
 #
@@ -427,7 +427,7 @@ else
   bad "a keeper.pid naming someone else's group is not signalled" "release killed pid $victim (group $vg)"
 fi
 kill -KILL "$victim" 2>/dev/null
-rm -rf "$KWN"
+rm -rf "${KWN:?}"
 
 echo "== a keeper.pid that is not a number is inert =="
 KWJ="$(mktemp -d)"
@@ -437,11 +437,11 @@ printf 'not-a-pid' > "$KWJ/lock.d/keeper.pid"
 out="$(J release sess-J 2>&1)"; rc=$?
 check "release of a lock with a corrupt keeper.pid still succeeds" "$rc" "0"
 hasi  "and reports the release"                                    "$out" "released"
-rm -rf "$KWJ"
+rm -rf "${KWJ:?}"
 
 echo "== C1 — release REPORTS a failed removal instead of claiming success =="
 #
-# This was `rm -rf "$LOCK_DIR"; echo "released by $session"`. The `;` threw rm's
+# This was `rm -rf "${LOCK_DIR:?}"; echo "released by $session"`. The `;` threw rm's
 # status away and the function returned echo's 0. A read-only parent, a stale
 # handle or a permissions change printed "released", returned SUCCESS, and left
 # the directory standing — while _stop_keeper had ALREADY stopped the heartbeat.
@@ -458,7 +458,7 @@ hasi  "and warns the keeper is already stopped"     "$out" "keeper has been STOP
 hasnt "and does NOT claim it released"              "$out" "released by sess-R"
 chmod u+w "$KR/parent"
 kp="$(cat "$KR/parent/lock.d/keeper.pid" 2>/dev/null || true)"; [ -n "$kp" ] && kill -- -"$kp" 2>/dev/null
-rm -rf "$KR"
+rm -rf "${KR:?}"
 
 echo "== C3 — a half-built lock is INCOMPLETE, never STALE with an empty holder =="
 #
@@ -496,7 +496,7 @@ mkdir -p "$KI/lock.d"
 out="$(bash "$LOCK_SH" clear-incomplete 2>&1)"; rc=$?
 check "a lock too YOUNG to be abandoned is refused" "$rc" "1"
 hasi  "and says an acquire is probably in flight"   "$out" "in flight"
-rm -rf "$KI/lock.d"
+rm -rf "${KI:?}/lock.d"
 VL_LOCK_BEAT_SECONDS=60 bash "$LOCK_SH" acquire sess-C2 'a genuine holder' 30 >/dev/null 2>&1
 out="$(bash "$LOCK_SH" clear-incomplete 2>&1)"; rc=$?
 check "a lock WITH a holder is refused"             "$rc" "1"
@@ -504,7 +504,7 @@ hasi  "and names the holder it refused to clear"    "$out" "sess-C2"
 kp="$(cat "$KI/lock.d/keeper.pid" 2>/dev/null || true)"
 bash "$LOCK_SH" release sess-C2 >/dev/null 2>&1; [ -n "$kp" ] && kill -- -"$kp" 2>/dev/null
 unset VL_LOCK_DIR; export VL_LOCK_DIR="$WORK/$o-main.lock.d"
-rm -rf "$KI"
+rm -rf "${KI:?}"
 
 
 echo "== one home, TWO callers: this tool races itself for one winner =="
@@ -514,7 +514,7 @@ echo "== one home, TWO callers: this tool races itself for one winner =="
 # tool into one home.
 KCONT="$WORK/cont.lock.d"
 for i in $(seq 1 10); do
-  rm -rf "$KCONT"
+  rm -rf "${KCONT:?}"
   VL_LOCK_DIR="$KCONT" bash "$LOCK_SH" acquire r-$i "race" 60 >/dev/null 2>&1 &
   VL_LOCK_DIR="$KCONT" bash "$LOCK_SH" acquire r-$i "race" 60 >/dev/null 2>&1 &
   wait
@@ -546,7 +546,7 @@ hasi  "and the exemption is on the record"   "$out" "same session"
 VLB release sess-X >/dev/null; OLDB release sess-X >/dev/null
 both=0
 for i in $(seq 1 50); do
-  rm -rf "$XH/$o-main.lock.d" "$XH/vl-main.lock.d"
+  rm -rf "${XH:?}/${o:?}-main.lock.d" "${XH:?}/vl-main.lock.d"
   OLDB acquire race-a 'race' 60 >/dev/null 2>&1 &
   VLB acquire race-b 'race' 60 >/dev/null 2>&1 &
   wait
@@ -573,7 +573,7 @@ out="$(OLDB reclaim sess-A sess-B 'HEAD static; no build in flight' 2>&1)"; rc=$
 check "reclaim refuses while the other home is held by another" "$rc" "1"
 VLB2 reclaim sess-B sess-A 'HEAD static; no build in flight' >/dev/null 2>&1
 VLB2 release sess-B >/dev/null
-rm -rf "$XH"
+rm -rf "${XH:?}"
 
 
 echo "== (a) DEFAULT-HOME: envs unset, the vl home, the retired home never born =="
@@ -587,7 +587,7 @@ check "an env-less acquire parks in the vl home"  "$([ -d "$ZD/vl-main.lock.d" ]
 check "and the retired home is never created"     "$([ -e "$ZD/$o-main.lock.d" ] && echo yes || echo no)" "no"
 ( unset VL_LOCK_DIR; HOME="$ZD" bash "$LOCK_SH" release sess-D >/dev/null 2>&1 )
 check "and release clears the vl home"            "$([ -d "$ZD/vl-main.lock.d" ] && echo yes || echo no)" "no"
-rm -rf "$ZD/$o-main.lock.d" "$ZD/vl-main.lock.d"
+rm -rf "${ZD:?}/${o:?}-main.lock.d" "${ZD:?}/vl-main.lock.d"
 echo "== the vl tools run DIRECTLY on their own shebang, never via bash =="
 out="$("$PWD/vl-claim.sh" 2>&1)"; rc=$?
 check "vl-claim direct-exec refuses a bare call" "$rc" "1"

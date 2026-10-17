@@ -7,8 +7,20 @@ import (
 	"os"
 	"time"
 
+	"vl/internal/safepath"
 	ntpkg "vl/provider/ninjatrader"
 )
+
+// cleanupRoundtripDir removes the smoke's os.MkdirTemp dir — only ever as a
+// child of os.TempDir() (THE ONE RULE, 2026-10-17). A refusal is printed and
+// the dir is left behind.
+func cleanupRoundtripDir(dir string) error {
+	err := safepath.RemoveAllTemp(dir)
+	if err != nil {
+		fmt.Printf("WARN roundtrip: temp dir %q not removed: %v\n", dir, err)
+	}
+	return err
+}
 
 // runRoundtripSmoke exercises the full signal -> mockNT -> fill cycle on a
 // temp directory. Needs no network, no NT8, no env vars. Depends on
@@ -19,7 +31,7 @@ func runRoundtripSmoke() {
 		fmt.Printf("FAIL roundtrip: tempdir: %v\n", err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(dir)
+	defer cleanupRoundtripDir(dir)
 
 	stop := ntpkg.StartMockNT(dir, 200*time.Millisecond)
 	defer stop()

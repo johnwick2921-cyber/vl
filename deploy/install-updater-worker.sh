@@ -87,7 +87,7 @@ echo "install-updater-worker: env ok (release dir outside the install; token pre
 echo "install-updater-worker: note — VL_CUTOVER_TOKEN is the cutover-worker credential enroll writes (auth.ScopeCutoverWorker); never a hand-minted gate-jwt — the enroll token is the long-lived type (auth.WorkerTokenTTL)"
 
 BUILD_DIR="$(mktemp -d /tmp/vl-updater-build.XXXXXX)" || { echo "install-updater-worker: REFUSED — cannot make a build dir" >&2; exit 2; }
-trap 'rm -rf "$BUILD_DIR"' EXIT
+trap 'rm -rf "${BUILD_DIR:?}"' EXIT
 echo "install-updater-worker: cloning $REPO_URL (the live install is never touched)"
 git clone -q "$REPO_URL" "$BUILD_DIR/src" 2>/dev/null || { echo "install-updater-worker: REFUSED — clone failed ($REPO_URL)" >&2; exit 2; }
 git -C "$BUILD_DIR/src" checkout -q --detach "$SHA" 2>/dev/null || { echo "install-updater-worker: REFUSED — $SHA is not in $REPO_URL" >&2; exit 2; }

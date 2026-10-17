@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"vl/internal/safepath"
 )
 
 // privateSockDir returns <tmp>/data/updater at 0700 and the socket path
@@ -19,7 +20,7 @@ func privateSockDir(t *testing.T) (dataDir, sock string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(base) })
+	t.Cleanup(func() { _ = safepath.RemoveAllTemp(base) })
 	dataDir = filepath.Join(base, "data")
 	if err := os.MkdirAll(filepath.Join(dataDir, UpdaterDirName), 0o700); err != nil {
 		t.Fatal(err)

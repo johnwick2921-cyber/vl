@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"vl/internal/safepath"
 
 	"vl/internal/updaterjob"
 	"vl/internal/updaterwire"
@@ -202,7 +203,7 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(root) })
+	t.Cleanup(func() { _ = safepath.RemoveAllTemp(root) })
 	b := &box{
 		t: t, clock: &fakeClock{t: time.Date(2026, 9, 24, 10, 0, 0, 0, logger.CTLocation())},
 		inst: filepath.Join(root, "vl"), backupRoot: filepath.Join(root, "vl-backups", "updater"),
@@ -465,7 +466,7 @@ func installHalves(rel, dst Release) error {
 	if err := copyFile(rel.ReleaseFile, dst.ReleaseFile); err != nil {
 		return err
 	}
-	if err := os.RemoveAll(dst.Dist); err != nil {
+	if err := safepath.RemoveAllTemp(dst.Dist); err != nil {
 		return err
 	}
 	return copyTree(rel.Dist, dst.Dist)
