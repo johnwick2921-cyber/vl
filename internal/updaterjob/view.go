@@ -12,6 +12,9 @@ import (
 //
 //   - step: the running side effect's name — only while phase is started;
 //   - blocker: only when the worker recorded one;
+//   - blocker_since: the job's updated_at the moment the blocker was last
+//     written — the anchor the page's "Waiting: <reason> … elapsed" reads.
+//     Absent when there is no blocker (L7: absent ≠ empty).
 //   - timestamps: state → the time it was DONE, for every state done so far;
 //   - receipt_url: only when at least one receipt exists;
 //   - error: only when a step failed;
@@ -26,6 +29,7 @@ type APIView struct {
 	State      State            `json:"state"`
 	Step       Effect           `json:"step,omitempty"`
 	Blocker    string           `json:"blocker,omitempty"`
+	BlockerSince string         `json:"blocker_since,omitempty"`
 	Timestamps map[State]string `json:"timestamps,omitempty"`
 	ReceiptURL string           `json:"receipt_url,omitempty"`
 	Error      string           `json:"error,omitempty"`
@@ -49,6 +53,9 @@ func ReceiptURL(jobID string) string {
 // View projects a job (as Read returns it) onto the API.
 func View(j Job) APIView {
 	v := APIView{JobID: j.JobID, State: j.State, Blocker: j.Blocker, Error: j.Error, RecoveryReason: j.RecoveryReason}
+	if j.Blocker != "" {
+		v.BlockerSince = j.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	}
 	if j.Phase == PhaseStarted {
 		if r, ok := Lookup(j.State); ok {
 			v.Step = r.Effect

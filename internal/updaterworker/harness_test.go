@@ -114,6 +114,7 @@ type box struct {
 	nt8Running              bool   // the fake NT8 process is alive (tasklist sees it)
 	nt8HangsOnClose         bool   // TOCTOU: CloseMainWindow does NOT exit NT8 (a dialog/hang)
 	flipSimOnClose          bool   // TOCTOU: the sim_accounts leg flips FAIL when the graceful close runs
+	catchupBuild            string // feat/addon-catchup: the install's own AddOn build (the fake reports it after the catch-up restart, instead of manifestBuild)
 	omitLeg                 string // the fake gate omits this leg entirely (guard #1 missing-leg pin)
 	badToken                bool   // the app refuses the token (401)
 	verdictMissing          bool
@@ -212,6 +213,19 @@ func withCSChanged() rigOpt {
 	}
 }
 
+// withStaleAddon (feat/addon-catchup) makes the INSTALLED release ship the NEW
+// AddOn build while NT8 still runs the OLD one — the state the catch-up exists
+// to fix. The fake reports the install's build after the catch-up restart.
+func withStaleAddon() rigOpt {
+	return func(b *box) {
+		writeFile(b.t, filepath.Join(b.inst, "ninjascript", "VLTraderTCPClient.cs"),
+			"// C#\nprivate const string VL_BUILD_ID = \""+boxNewBuild+"\";\n")
+		b.addonBuild = boxOldBuild // NT8 still runs the OLD AddOn
+		b.catchupBuild = boxNewBuild
+	}
+}
+
+
 func newRig(t *testing.T, opts ...rigOpt) *rig {
 	t.Helper()
 	t.Setenv(CutoverTokenEnv, boxToken)
@@ -307,8 +321,8 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	clearMaintenanceHold = func(d, job string) error {
 		// a re-run clear (crash after the first) finds it already absent:
 		// ours or absent, never another's
-		b.expect("hold_clear", false, updaterjob.StateComplete, updaterjob.StateRolledBack, updaterjob.StateRevertedClean)
-		if s, _ := ReadHoldFor(b.data, boxJobID); s != HoldOurs && s != HoldAbsent {
+		b.expectJob("hold_clear", job, false, updaterjob.StateComplete, updaterjob.StateRolledBack, updaterjob.StateRevertedClean)
+		if s, _ := ReadHoldFor(b.data, job); s != HoldOurs && s != HoldAbsent {
 			b.violate("hold_clear with a %s hold on disk", s)
 		}
 		return origC(d, job)
@@ -341,6 +355,12 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 		wsl := windowsToWSL(out)
 		if err := os.MkdirAll(wsl, 0o755); err != nil {
 			return nil, err
+		}
+		if hasWinFlag(args, "-Custom") {
+			// Release #35: the no-F5 Custom.dll rebuild — write a clean
+			// Custom.dll (no AddOn type) and report the type-list accept.
+			writeFile(b.t, filepath.Join(wsl, "NinjaTrader.Custom.dll"), "fake rebuilt Custom.dll: no AddOn type\n")
+			return []byte("VL_CUSTOM_TYPES_OK\nVL_CUSTOM_DLL=" + out + "\\NinjaTrader.Custom.dll\nVL_CUSTOM_SHA256=fake\n"), nil
 		}
 		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), "fake AddOn DLL: type "+addonTypeName+"\n")
 		return []byte("VL_ADDON_DLL=" + out + "\nVL_ADDON_SHA256=fake\n"), nil
@@ -394,7 +414,11 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 				if !b.noReconnect {
 					b.addonConnected = true
 					if !b.reconnectOldBuild {
-						b.addonBuild = b.manifestBuild
+						target := b.manifestBuild
+						if b.catchupBuild != "" {
+							target = b.catchupBuild // catch-up rebuilds the install's own build
+						}
+						b.addonBuild = target
 					}
 					if !b.reconnectSameSeq {
 						b.addonSeq++
@@ -422,6 +446,16 @@ func winFlag(args []string, flag string) string {
 		}
 	}
 	return ""
+}
+
+// hasWinFlag reports whether args contains the bare switch <flag> (e.g. -Custom).
+func hasWinFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
 }
 
 // windowsToWSL undoes addonbuild.wslToWindows for the UNC form the build's -o
@@ -486,10 +520,14 @@ func receiptSteps(j updaterjob.Job) []string {
 // expect records a call and checks the job on disk: its own state, started;
 // with afterHold, this job's hold must be on disk too.
 func (b *box) expect(call string, afterHold bool, want ...updaterjob.State) {
+	b.expectJob(call, boxJobID, afterHold, want...)
+}
+
+func (b *box) expectJob(call, jobID string, afterHold bool, want ...updaterjob.State) {
 	b.mu.Lock()
 	b.calls = append(b.calls, call)
 	b.mu.Unlock()
-	j, err := updaterjob.Read(b.data, boxJobID)
+	j, err := updaterjob.Read(b.data, jobID)
 	if err != nil {
 		b.violate("%s: job unreadable: %v", call, err)
 		return
@@ -502,7 +540,7 @@ func (b *box) expect(call string, afterHold bool, want ...updaterjob.State) {
 		b.violate("%s ran while the job on disk is %s/%s (want %v/started)", call, j.State, j.Phase, want)
 	}
 	if afterHold {
-		if s, _ := ReadHoldFor(b.data, boxJobID); s != HoldOurs {
+		if s, _ := ReadHoldFor(b.data, jobID); s != HoldOurs {
 			b.violate("%s ran at %s without this job's hold on disk (%s)", call, j.State, s)
 		}
 	}

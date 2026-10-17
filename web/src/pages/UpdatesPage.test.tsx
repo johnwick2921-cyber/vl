@@ -427,6 +427,68 @@ describe('UpdatesPage', () => {
     )
   })
 
+  // fix/update-says-failed: a gate-blocked (non-terminal) job is WAITING, not
+  // installing — the plain reason + the elapsed time since the blocker landed.
+  it('shows Waiting + elapsed for a job blocked at the sim_accounts gate', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date('2026-10-17T10:00:00Z'))
+    try {
+      mocks.maintenance.mockResolvedValue({ job_id: 'job-sim' })
+      mocks.job.mockResolvedValue({
+        job_id: 'job-sim',
+        state: 'gate_ok',
+        blocker: 'sim_accounts: bound account Sim101 is not SIM-tradeable',
+        blocker_since: '2026-10-17T09:56:00Z', // 4 minutes ago
+      })
+      render(<UpdatesPage />)
+      const waiting = await waitFor(() =>
+        screen.getByTestId('job-waiting')
+      )
+      expect(waiting).toHaveTextContent(
+        'Waiting: NinjaTrader accounts not confirmed SIM (bound account Sim101 is not SIM-tradeable)'
+      )
+      expect(waiting.textContent).toMatch(/elapsed/)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // fix/update-says-failed: refused and reverted_clean are FAILURES — the red
+  // "Update failed — nothing changed" banner, never the amber "still trading
+  // normal" (that stays for the PROVEN rolled_back only).
+  it.each([
+    ['refused', 'not passed within 10m0s: sim_accounts: bound account Sim101 is not SIM-tradeable'],
+    ['reverted_clean', 'not passed within 10m0s: sim_accounts: bound account Sim101 is not SIM-tradeable'],
+  ])('shows the red failed banner for a %s job', async (state, error) => {
+    mocks.maintenance.mockResolvedValue({ job_id: 'job-fail' })
+    mocks.job.mockResolvedValue({ job_id: 'job-fail', state, error })
+    render(<UpdatesPage />)
+    const banner = await waitFor(() =>
+      screen.getByTestId('update-result-banner')
+    )
+    expect(banner).toHaveTextContent(
+      'Update failed — nothing changed: not passed within 10m0s: NinjaTrader accounts not confirmed SIM (bound account Sim101 is not SIM-tradeable)'
+    )
+    expect(banner.className).toContain('text-red-300')
+  })
+
+  // The PROVEN rollback keeps the amber "could not finish" — it recovered,
+  // it did not fail.
+  it('keeps the amber banner for a rolled_back job', async () => {
+    mocks.maintenance.mockResolvedValue({ job_id: 'job-rb' })
+    mocks.job.mockResolvedValue({
+      job_id: 'job-rb',
+      state: 'rolled_back',
+      error: 'AddOn reconnect timed out',
+    })
+    render(<UpdatesPage />)
+    const banner = await waitFor(() =>
+      screen.getByTestId('update-result-banner')
+    )
+    expect(banner).toHaveTextContent('Update could not finish — nothing changed')
+    expect(banner.className).toContain('text-amber-300')
+  })
+
   // release #22: a refused job HAS a state, so the old render (error only
   // when state was empty) hid the reason. The reason is shown verbatim.
   it('shows the refused job’s error next to its state', async () => {

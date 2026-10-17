@@ -2,6 +2,7 @@ package updaterworker
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,9 +21,9 @@ import (
 // and a flat-but-non-SIM account blocks.
 func TestFlatSIMGateBlocksTheRestart(t *testing.T) {
 	for _, c := range []struct {
-		name   string
-		setup  func(r *rig)
-		want   string
+		name  string
+		setup func(r *rig)
+		want  string
 	}{
 		{name: "not flat", setup: func(r *rig) { r.set(func() { r.flat = false }) }, want: "flat+SIM gate"},
 		{name: "flat but a bound account is not SIM", setup: func(r *rig) { r.set(func() { r.simTradeable = false }) }, want: "sim_accounts"},
@@ -133,15 +134,11 @@ func TestFlatSIMGateRecheckBeforeStopProcessAborts(t *testing.T) {
 	}
 }
 
-// Guard #2 (GAP 1): while NinjaTrader.Custom.dll still holds the AddOn type,
-// the AddOn is NEVER placed — regardless of whether VL.AddOn.dll already exists
-// (F1: on the first install both DLLs can hold the type, and the reconnect
-// outcome would depend on load order). The hazard is Custom.dll ALONE, so a
-// `custom && ours` check would miss the first-install case (VL.AddOn.dll absent)
-// and place the AddOn while Custom.dll still holds the type. The update MOVEs
-// the AddOn sources out of bin/Custom/AddOns and ends reverted_clean with the
-// one-time F5 blocker.
-func TestAddOnNeverPlacedWhileCustomHoldsTheType(t *testing.T) {
+// Guard #2 (release #35 FOLD 2): NT8 OPEN + Custom.dll holding the AddOn type
+// is no longer a refusal — the migration is DEFERRED to the restart step, which
+// stops NT8, rebuilds Custom.dll while it is closed, places the AddOn, and
+// starts NT8 again. The update completes one-click, no F5.
+func TestFirstInstallNT8OpenMigratesWhileClosedAndCompletes(t *testing.T) {
 	for _, c := range []struct {
 		name       string
 		withOldDll bool
@@ -159,28 +156,23 @@ func TestAddOnNeverPlacedWhileCustomHoldsTheType(t *testing.T) {
 			writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", "VLTraderTCPClient.cs.bak"), "// a stale .bak\n")
 			j := r.runToEnd(t)
 			r.noViolations(t)
-			if j.State != updaterjob.StateRevertedClean {
-				t.Fatalf("job %s (error %q), want reverted_clean", j.State, j.Error)
+			if j.State != updaterjob.StateComplete {
+				t.Fatalf("job %s (error %q), want complete — NT8 open + migration is one-click, no F5", j.State, j.Error)
 			}
-			if j.Error != addonMigrationBlocker {
-				t.Fatalf("error %q, want the plain one-time F5 blocker %q", j.Error, addonMigrationBlocker)
+			// Custom.dll was rebuilt WITHOUT the type (so the AddOn runs only
+			// from VL.AddOn.dll — the double-load hazard is gone).
+			cur, err := os.ReadFile(filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"))
+			if err != nil {
+				t.Fatal(err)
 			}
-			if j.Addon != nil && j.Addon.BackupDir != "" {
-				t.Fatalf("a refused install still placed the AddOn: %+v", j.Addon)
+			if strings.Contains(string(cur), addonTypeName) {
+				t.Fatalf("the rebuilt Custom.dll still holds the AddOn type: %q", cur)
 			}
-			// NEVER placed: a pre-existing VL.AddOn.dll is left byte-identical,
-			// and on a first install none is created.
-			if c.withOldDll {
-				b, err := os.ReadFile(filepath.Join(r.nt8docs, "bin", "Custom", addonDllName))
-				if err != nil || string(b) != "old AddOn DLL: type "+addonTypeName+"\n" {
-					t.Fatalf("the pre-existing VL.AddOn.dll was disturbed (err=%v, content=%q)", err, b)
-				}
-			} else {
-				if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", addonDllName)); !os.IsNotExist(err) {
-					t.Fatalf("the AddOn was placed on a first install (VL.AddOn.dll exists)")
-				}
+			// The AddOn itself was placed.
+			if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", addonDllName)); err != nil {
+				t.Fatalf("the AddOn was not placed: %v", err)
 			}
-			// Sources moved (never deleted): gone from AddOns, present in migrated-sources.
+			// Sources migrated out (never deleted), present in migrated-sources.
 			for _, f := range []string{"VLTraderTCPClient.cs", "VLTraderTCPClient.cs.bak"} {
 				if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", f)); !os.IsNotExist(err) {
 					t.Fatalf("source %s was not moved out of AddOns", f)
@@ -189,8 +181,8 @@ func TestAddOnNeverPlacedWhileCustomHoldsTheType(t *testing.T) {
 					t.Fatalf("source %s not in migrated-sources: %v", f, err)
 				}
 			}
-			if r.callCount("activate") != 0 {
-				t.Fatalf("activate ran %d times under a refused install", r.callCount("activate"))
+			if r.callCount("activate") != 1 {
+				t.Fatalf("activate ran %d times, want exactly 1", r.callCount("activate"))
 			}
 		})
 	}
@@ -209,6 +201,109 @@ func TestFirstInstallPlacesAfterTheOneTimeF5(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", addonDllName)); err != nil {
 		t.Fatalf("the post-F5 update did not place the AddOn: %v", err)
+	}
+}
+
+// Guard #2 (release #35, no F5): with NT8 CLOSED and Custom.dll still holding
+// the AddOn type, the worker rebuilds Custom.dll itself (build-addon.ps1
+// -Custom), accepts it, and the update completes one-click — no F5, no hands.
+func TestFirstInstallNT8ClosedRebuildsCustomAndPlaces(t *testing.T) {
+	r := newRig(t, withCSChanged(), withNT8Down(absentDown))
+	// First install: Custom.dll holds the type; VL.AddOn.dll does not exist yet.
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"), "type "+addonTypeName+"\n")
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", "VLTraderTCPClient.cs"), "// the AddOn source\n")
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateComplete {
+		t.Fatalf("job %s (error %q), want complete — the no-F5 rebuild replaces the one-time F5", j.State, j.Error)
+	}
+	// Custom.dll was rebuilt WITHOUT the type, and the old one was backed up.
+	cur, err := os.ReadFile(filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(cur), addonTypeName) {
+		t.Fatalf("the rebuilt Custom.dll still holds the AddOn type: %q", cur)
+	}
+	backup, err := os.ReadFile(filepath.Join(r.nt8docs, "vl-addon-backups", boxJobID, "custom-rebuild", "NinjaTrader.Custom.dll"))
+	if err != nil || !strings.Contains(string(backup), addonTypeName) {
+		t.Fatalf("the old Custom.dll was not backed up (err=%v): %q", err, backup)
+	}
+	// The AddOn itself was placed.
+	if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", addonDllName)); err != nil {
+		t.Fatalf("the AddOn was not placed: %v", err)
+	}
+	// The AddOn source was migrated out of AddOns.
+	if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", "VLTraderTCPClient.cs")); !os.IsNotExist(err) {
+		t.Fatalf("the AddOn source was not moved out: %v", err)
+	}
+}
+
+// Guard #2 (release #35) failure: with NT8 CLOSED the rebuild fails (the fake
+// -Custom path returns a type diff), so the old Custom.dll is left untouched and
+// the job falls back to the F5 blocker as the last resort.
+func TestFirstInstallNT8ClosedRebuildFailureAsksForF5(t *testing.T) {
+	r := newRig(t, withCSChanged(), withNT8Down(absentDown))
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"), "type "+addonTypeName+"\n")
+	// Make the no-F5 rebuild fail: the -Custom ps1 returns a type diff.
+	prev := r.box.fakeRunWin
+	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if strings.Contains(name, "powershell") && hasWinFlag(args, "-Custom") {
+			return []byte("VL_CUSTOM_TYPES_DIFF\nTYPE <= NinjaTrader.NinjaScript.Strategies.VLTrader\n"), errors.New("exit 1")
+		}
+		return prev(ctx, name, args...)
+	}
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRevertedClean || j.Error != addonMigrationBlocker {
+		t.Fatalf("job %s (error %q), want reverted_clean with the F5 blocker", j.State, j.Error)
+	}
+	// The old Custom.dll is untouched.
+	cur, err := os.ReadFile(filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"))
+	if err != nil || !strings.Contains(string(cur), addonTypeName) {
+		t.Fatalf("the old Custom.dll must be untouched on rebuild failure: %q (err=%v)", cur, err)
+	}
+	if r.callCount("activate") != 0 {
+		t.Fatalf("activate ran %d times under a failed no-F5 rebuild", r.callCount("activate"))
+	}
+}
+
+// Guard #2 (release #35 FOLD 2) failure: NT8 OPEN + migration needed, and the
+// rebuild fails while NT8 is closed. The worker must restore the old files and
+// START NT8 again — never leave it closed after it was open — then end
+// reverted_clean.
+func TestFirstInstallNT8OpenMigrationFailureRestartsOnOldFiles(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"), "type "+addonTypeName+"\n")
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", "VLTraderTCPClient.cs"), "// the AddOn source\n")
+	// The -Custom rebuild fails (type diff).
+	prev := r.box.fakeRunWin
+	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if strings.Contains(name, "powershell") && hasWinFlag(args, "-Custom") {
+			return []byte("VL_CUSTOM_TYPES_DIFF\nTYPE <= NinjaTrader.NinjaScript.Strategies.VLTrader\n"), errors.New("exit 1")
+		}
+		return prev(ctx, name, args...)
+	}
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRevertedClean {
+		t.Fatalf("job %s (error %q), want reverted_clean", j.State, j.Error)
+	}
+	// NT8 must be RUNNING again (it was open, and must never be left closed).
+	if !r.box.nt8Running {
+		t.Fatalf("NT8 must be running again after the migration failure")
+	}
+	// The old Custom.dll is untouched (still holds the type).
+	cur, err := os.ReadFile(filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"))
+	if err != nil || !strings.Contains(string(cur), addonTypeName) {
+		t.Fatalf("the old Custom.dll must be restored: %q (err=%v)", cur, err)
+	}
+	// The migrated source was moved back to AddOns.
+	if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", "VLTraderTCPClient.cs")); err != nil {
+		t.Fatalf("the AddOn source must be restored on migration failure: %v", err)
+	}
+	if r.callCount("activate") != 0 {
+		t.Fatalf("activate ran %d times under a failed migration", r.callCount("activate"))
 	}
 }
 
@@ -280,5 +375,87 @@ func TestAddonReconnectOldBuildNewSeqRollsBack(t *testing.T) {
 	}
 	if r.callCount("activate") != 0 {
 		t.Fatalf("activate ran %d times on an unproven reconnect", r.callCount("activate"))
+	}
+}
+
+// TestMigrateAddonSourcesScope pins FOLD 1/FOLD 5 F2: migrateAddonSources moves
+// ONLY the release's own AddOns/VL*.cs files. A VL*.cs elsewhere (Strategies,
+// Indicators) or a non-VL file in AddOns is left byte-identical. A mutant that
+// widens the glob to bin/Custom/** would move vltrader.cs/VLTrader.cs/VLfoo.cs
+// and this test goes RED.
+func TestMigrateAddonSourcesScope(t *testing.T) {
+	docs := t.TempDir()
+	base := filepath.Join(docs, "bin", "Custom")
+
+	// The release's own AddOn source (moves) + a stale .bak (moves).
+	writeFile(t, filepath.Join(base, "AddOns", "VLTraderTCPClient.cs"), "// release AddOn source\n")
+	writeFile(t, filepath.Join(base, "AddOns", "VLTraderTCPClient.cs.bak"), "// stale bak\n")
+	// NOT the release's files: a lower/upper-case VL strategy, a VL indicator,
+	// and a non-VL file sitting in AddOns. All must stay.
+	writeFile(t, filepath.Join(base, "Strategies", "vltrader.cs"), "// legacy CSV strategy\n")
+	writeFile(t, filepath.Join(base, "Strategies", "VLTrader.cs"), "// uppercase strategy\n")
+	writeFile(t, filepath.Join(base, "Indicators", "VLfoo.cs"), "// VL indicator\n")
+	writeFile(t, filepath.Join(base, "AddOns", "SomethingElse.cs"), "// not ours\n")
+
+	if err := migrateAddonSources(docs, "job-scope"); err != nil {
+		t.Fatalf("migrateAddonSources: %v", err)
+	}
+
+	// The release's AddOns files moved out (never deleted).
+	for _, f := range []string{"VLTraderTCPClient.cs", "VLTraderTCPClient.cs.bak"} {
+		if _, err := os.Stat(filepath.Join(base, "AddOns", f)); !os.IsNotExist(err) {
+			t.Fatalf("AddOns/%s was not moved out (stat err=%v)", f, err)
+		}
+		if _, err := os.Stat(filepath.Join(docs, "vl-addon-backups", "job-scope", "migrated-sources", f)); err != nil {
+			t.Fatalf("AddOns/%s not in migrated-sources: %v", f, err)
+		}
+	}
+
+	// Everything else is byte-identical and still in place.
+	for rel, want := range map[string]string{
+		filepath.Join("Strategies", "vltrader.cs"):  "// legacy CSV strategy\n",
+		filepath.Join("Strategies", "VLTrader.cs"):  "// uppercase strategy\n",
+		filepath.Join("Indicators", "VLfoo.cs"):     "// VL indicator\n",
+		filepath.Join("AddOns", "SomethingElse.cs"): "// not ours\n",
+	} {
+		got, err := os.ReadFile(filepath.Join(base, rel))
+		if err != nil {
+			t.Fatalf("%s was moved or lost: %v", rel, err)
+		}
+		if string(got) != want {
+			t.Fatalf("%s = %q, want untouched %q", rel, got, want)
+		}
+	}
+
+	// No migrated-sources entry for anything outside AddOns/VL*.cs.
+	entries, _ := filepath.Glob(filepath.Join(docs, "vl-addon-backups", "job-scope", "migrated-sources", "*"))
+	if len(entries) != 2 {
+		t.Fatalf("migrated-sources has %d entries (%v), want exactly the 2 release AddOns files", len(entries), entries)
+	}
+}
+
+// CTO #35: the "NEVER replace Custom.dll under a running NT8" re-check holds
+// for an INSTALL too, not only a catch-up. The install took the nt8_absent
+// drain (NT8 closed), then the owner opens NT8 before addon_place. Custom.dll
+// may only change if the worker stopped and restarted NT8 around it (the
+// restart path); an inline swap under the running NT8 is a failure.
+// Mutant: ignore `running` in the re-check → RED.
+func TestFirstInstallNT8OpenedMidInstallNoSwapUnderRunningNT8(t *testing.T) {
+	r := newRig(t, withCSChanged(), withNT8Down(absentDown))
+	custom := filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll")
+	writeFile(r.t, custom, "type "+addonTypeName+"\n")
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", "VLTraderTCPClient.cs"), "// the AddOn source\n")
+	r.hookAt("addon_placed/started", func() {
+		r.set(func() { r.nt8Running = true })
+	})
+	starts := startCount(r)
+	j := r.runToEnd(t)
+	b, err := os.ReadFile(custom)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebuilt := !strings.Contains(string(b), addonTypeName)
+	if rebuilt && *starts == 0 {
+		t.Fatalf("Custom.dll was replaced while NT8 was running, with no stop/start around it (job %s, error %q)", j.State, j.Error)
 	}
 }

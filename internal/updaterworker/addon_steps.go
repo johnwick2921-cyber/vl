@@ -45,20 +45,28 @@ func (w *Worker) winSeam() nt8RunSeam {
 
 // addonConfig assembles the addonbuild.Config for THIS job. WorkDir is a
 // worker-made dir under /tmp — never the NT8 folder. SourceDir is the
-// RELEASE's ninjascript/*.cs (the NEW AddOn sources), never the install's.
+// RELEASE's ninjascript/*.cs (the NEW AddOn sources), never the install's —
+// EXCEPT for a catch-up job, which rebuilds the INSTALLED release's own
+// ninjascript (nothing new is being installed).
 func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
-	if j.Release == nil || j.Release.Dir == "" {
-		return addonbuild.Config{}, errors.New("addon build without a verified release dir")
-	}
 	docsDir, err := addonDocsDir()
 	if err != nil {
 		return addonbuild.Config{}, err
+	}
+	src := ""
+	if j.Catchup {
+		src = filepath.Join(w.cfg.Target.InstallDir, "ninjascript")
+	} else {
+		if j.Release == nil || j.Release.Dir == "" {
+			return addonbuild.Config{}, errors.New("addon build without a verified release dir")
+		}
+		src = filepath.Join(j.Release.Dir, "ninjascript")
 	}
 	return addonbuild.Config{
 		DocsDir:   docsDir,
 		Exe:       addonExe(),
 		DotnetExe: "dotnet.exe",
-		SourceDir: filepath.Join(j.Release.Dir, "ninjascript"),
+		SourceDir: src,
 		WorkDir:   filepath.Join(os.TempDir(), "vl-addon-build", j.JobID),
 		Run:       w.winSeam(),
 	}, nil
@@ -68,11 +76,23 @@ func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
 // build error refuses the update BEFORE any hold, kill or place — the page
 // shows the compiler error. A release whose signed manifest lists no
 // ninjascript/*.cs cannot be compiled from its own unproven sources: refused.
+// A CATCH-UP job builds the INSTALLED release's own ninjascript instead — the
+// install tree is what's running, no verdict is owed.
 func (w *Worker) stepAddonBuild(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
 	res := addonbuild.Result{}
 	err := func() error {
+		if j.Catchup {
+			ev["catchup"] = "true"
+			cfg, err := w.addonConfig(j)
+			if err != nil {
+				return fmt.Errorf("addon config: %w", err)
+			}
+			var berr error
+			res, berr = addonbuild.Build(ctx, cfg)
+			return berr
+		}
 		f, ferr := w.facts(j)
 		if ferr != nil {
 			return fmt.Errorf("release re-verify: %w", ferr)
@@ -128,15 +148,16 @@ func addonMigrationNeeded(docsDir string) (bool, error) {
 // install ends with: the owner runs the one-time F5, then clicks Update again.
 const addonMigrationBlocker = "One-time step: open NinjaTrader → NinjaScript Editor → press F5 once, then click Update again."
 
-// migrateAddonSources MOVES the AddOn's installed .cs sources (plus their .bak
-// files) out of bin/Custom/AddOns into
-// <docs>/vl-addon-backups/<job>/migrated-sources/, so the owner's next F5
-// recompiles NinjaTrader.Custom.dll WITHOUT the AddOn type. Nothing is deleted:
-// the sources are only moved. With no sources to move the blocker still fires —
-// the owner must F5 regardless.
+// migrateAddonSources MOVEs the release's own AddOn sources (bin/Custom/AddOns/
+// VL*.cs, plus their .bak files) out into
+// <docs>/vl-addon-backups/<job>/migrated-sources/, so a rebuild (or the owner's
+// F5) recompiles NinjaTrader.Custom.dll WITHOUT the AddOn types. Scope is the
+// AddOns folder ONLY: other VL*.cs elsewhere (e.g. Strategies/vltrader.cs, the
+// legacy CSV strategy) are NOT the release's files and are left untouched.
+// Nothing is deleted: the sources are only moved.
 func migrateAddonSources(docsDir, jobID string) error {
-	src := filepath.Join(docsDir, "bin", "Custom", "AddOns")
-	matches, _ := filepath.Glob(filepath.Join(src, "VL*.cs*"))
+	addons := filepath.Join(docsDir, "bin", "Custom", "AddOns")
+	matches, _ := filepath.Glob(filepath.Join(addons, "VL*.cs*"))
 	if len(matches) == 0 {
 		return nil
 	}
@@ -152,6 +173,17 @@ func migrateAddonSources(docsDir, jobID string) error {
 	return nil
 }
 
+// restoreMigratedSources MOVEs the migrated AddOn sources back into AddOns —
+// the reverse of migrateAddonSources, used when the inline no-F5 rebuild fails
+// so the old files are exactly as they were (moves only, never deletes).
+func restoreMigratedSources(docsDir, jobID string) {
+	src := filepath.Join(docsDir, "vl-addon-backups", jobID, "migrated-sources")
+	matches, _ := filepath.Glob(filepath.Join(src, "*"))
+	for _, m := range matches {
+		_ = os.Rename(m, filepath.Join(docsDir, "bin", "Custom", "AddOns", filepath.Base(m)))
+	}
+}
+
 // stepAddonPlace MOVEs the old DLL out, copies the new one in, verifies its
 // sha256. Guard: a first install whose Custom.dll still holds the AddOn type is
 // refused BEFORE anything is placed — the sources are migrated out and the job
@@ -159,6 +191,15 @@ func migrateAddonSources(docsDir, jobID string) error {
 func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
+	// Catch-up records the pre-restart accept_seq from the live hello (there is
+	// no nt8 decision to read it from).
+	var preSeq uint64
+	if j.Catchup {
+		if m, merr := w.app.Maintenance(ctx); merr == nil && m.AddonAck != nil {
+			preSeq = m.AddonAck.AcceptSeq
+		}
+	}
+	deferred := false
 	backupDir, err := func() (string, error) {
 		if j.Addon == nil || j.Addon.DllPath == "" || j.Addon.Sha256 == "" {
 			return "", errors.New("addon_place without a built DLL")
@@ -173,10 +214,68 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 		}
 		if migrate {
 			ev["migration_needed"] = "true"
-			if err := migrateAddonSources(cfg.DocsDir, j.JobID); err != nil {
-				return "", fmt.Errorf("one-time migration: %w", err)
+			// NT8 is CLOSED for this job when an install took the nt8_absent
+			// drain (j.NT8.Absent), or when a catch-up was created with NT8
+			// already closed (!CatchupNT8Open — a catch-up never sets j.NT8).
+			nt8Closed := (j.Catchup && !j.CatchupNT8Open) || (!j.Catchup && j.NT8 != nil && j.NT8.Absent)
+			if nt8Closed {
+				// NT8 CLOSED (release #35, no F5): migrate + rebuild + place
+				// now, in one go. The rebuild ACCEPTS the new Custom.dll only
+				// when compile errors = 0 AND the public type list equals the
+				// old one's minus the release's AddOn types. On failure the old
+				// files are restored and the job falls back to the F5 blocker
+				// as the last resort.
+				{
+					// The NT8-closed state was read BEFORE the build (a catch-up's
+					// status read, or an install's nt8_absent drain); the owner may
+					// have opened NT8 since. CTO #35: this re-check runs for BOTH
+					// a catch-up and an install. NEVER rebuild
+					// Custom.dll (or place the AddOn) under a running NT8 — if
+					// it is running now, defer to the restart path, which stops
+					// NT8 first and migrates while it is closed.
+					running, rerr := newNT8Restart(w.winSeam(), addonExe(), w.host.Sleep).isRunning(ctx)
+					if rerr != nil {
+						return "", fmt.Errorf("NT8 running check before the Custom.dll rebuild: %w", rerr)
+					}
+					if running {
+						ev["nt8_started_mid_catchup"] = "true"
+						ev["migration_deferred"] = "true"
+						deferred = true
+					}
+				}
+				if !deferred {
+					if err := migrateAddonSources(cfg.DocsDir, j.JobID); err != nil {
+						return "", fmt.Errorf("one-time migration: %w", err)
+					}
+					creb, cerr := addonbuild.RebuildCustom(ctx, cfg)
+					if cerr != nil {
+						restoreMigratedSources(cfg.DocsDir, j.JobID)
+						ev["custom_rebuild"] = "failed"
+						ev["custom_rebuild_error"] = clipText(cerr.Error())
+						return "", errors.New(addonMigrationBlocker)
+					}
+					cbak, perr := addonbuild.PlaceCustom(cfg, creb.DllPath, creb.Sha256, j.JobID)
+					if perr != nil {
+						restoreMigratedSources(cfg.DocsDir, j.JobID)
+						return "", fmt.Errorf("Custom.dll place failed: %w", perr)
+					}
+					ev["custom_rebuild"] = "accepted"
+					ev["custom_rebuild_built_by"] = creb.BuiltBy
+					ev["custom_backup"] = cbak
+					// fall through: place VL.AddOn.dll, the AddOn now lives
+					// only there.
+				}
+			} else {
+				// NT8 OPEN (release #35 FOLD 2): Custom.dll is loaded in memory
+				// and cannot be rebuilt in place. Defer the WHOLE migration to
+				// the restart step, which stops NT8, then migrates + rebuilds +
+				// places while it is closed, then starts it again.
+				ev["migration_deferred"] = "true"
+				deferred = true
 			}
-			return "", errors.New(addonMigrationBlocker)
+		}
+		if deferred {
+			return "", nil
 		}
 		b, err := addonbuild.Place(cfg, j.Addon.DllPath, j.Addon.Sha256, j.JobID)
 		if err != nil {
@@ -195,9 +294,12 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 			k.Addon = &updaterjob.AddonState{}
 		}
 		k.Addon.BackupDir = backupDir
+		k.Addon.MigrationPending = deferred
 		// The reconnect proof starts from the connection BEFORE the restart.
 		if k.NT8 != nil {
 			k.Addon.OldAcceptSeq = k.NT8.AckAcceptSeq
+		} else if j.Catchup {
+			k.Addon.OldAcceptSeq = preSeq
 		}
 	}
 	return res
@@ -234,6 +336,98 @@ func (w *Worker) flatSIMGate(ctx context.Context, j updaterjob.Job) error {
 		}
 	}
 	return nil
+}
+
+// migrateRebuildPlaceWhileClosed (release #35 FOLD 2) runs the deferred
+// migration while NT8 is CLOSED: migrate the AddOn sources out, rebuild
+// NinjaTrader.Custom.dll, place it, then place VL.AddOn.dll. It is ONLY called
+// from stepNT8Restart after the stop and before the start. On any failure it
+// restores every move (sources, Custom.dll, VL.AddOn.dll) so NT8 can be started
+// on the OLD files — moves only, never deletes.
+func (w *Worker) migrateRebuildPlaceWhileClosed(ctx context.Context, j updaterjob.Job, ev map[string]string) error {
+	cfg, err := w.addonConfig(j)
+	if err != nil {
+		return err
+	}
+	docs := cfg.DocsDir
+	customDir := filepath.Join(docs, "bin", "Custom")
+	backupRoot := filepath.Join(docs, "vl-addon-backups", j.JobID)
+
+	// restoreAll moves every artifact back (reverse order), best-effort.
+	restoreAll := func() {
+		customBackup := filepath.Join(backupRoot, "custom-rebuild", "NinjaTrader.Custom.dll")
+		if isRegularFile(customBackup) {
+			_ = os.Rename(customBackup, filepath.Join(customDir, "NinjaTrader.Custom.dll"))
+		}
+		addonBackup := filepath.Join(backupRoot, addonDllName)
+		if isRegularFile(addonBackup) {
+			_ = os.Rename(addonBackup, filepath.Join(customDir, addonDllName))
+		}
+		if matches, _ := filepath.Glob(filepath.Join(backupRoot, "migrated-sources", "*")); len(matches) > 0 {
+			for _, m := range matches {
+				_ = os.Rename(m, filepath.Join(customDir, "AddOns", filepath.Base(m)))
+			}
+		}
+	}
+
+	// 1. Migrate the sources out.
+	if err := migrateAddonSources(docs, j.JobID); err != nil {
+		return err
+	}
+
+	// 2. Rebuild Custom.dll (no moves; the old DLL is only read for the diff).
+	creb, cerr := addonbuild.RebuildCustom(ctx, cfg)
+	if cerr != nil {
+		restoreAll()
+		ev["custom_rebuild"] = "failed"
+		ev["custom_rebuild_error"] = clipText(cerr.Error())
+		return fmt.Errorf("Custom.dll rebuild failed: %w", cerr)
+	}
+
+	// 3. Place Custom.dll (moves the old to a backup, copies the new in).
+	cbak, perr := addonbuild.PlaceCustom(cfg, creb.DllPath, creb.Sha256, j.JobID)
+	if perr != nil {
+		restoreAll()
+		return fmt.Errorf("Custom.dll place failed: %w", perr)
+	}
+	ev["custom_rebuild"] = "accepted"
+	ev["custom_rebuild_built_by"] = creb.BuiltBy
+	ev["custom_backup"] = cbak
+
+	// 4. Place VL.AddOn.dll (moves the old to a backup, copies the new in).
+	destAddon := filepath.Join(customDir, addonDllName)
+	hadOldAddon := isRegularFile(destAddon)
+	if j.Addon == nil || j.Addon.DllPath == "" || j.Addon.Sha256 == "" {
+		restoreAll()
+		return errors.New("migration place without a built AddOn DLL")
+	}
+	abak, perr2 := addonbuild.Place(cfg, j.Addon.DllPath, j.Addon.Sha256, j.JobID)
+	if perr2 != nil {
+		// addonbuild.Place may have moved the old AddOn to the deterministic
+		// backup before failing: restore it. If there was no old AddOn, the
+		// failed new copy must be MOVED aside (never deleted) so a rollback
+		// does not double-load it.
+		addonBackup := filepath.Join(backupRoot, addonDllName)
+		switch {
+		case isRegularFile(addonBackup):
+			_ = os.Rename(addonBackup, destAddon)
+		case !hadOldAddon:
+			rejected := filepath.Join(backupRoot, "rejected-addon")
+			if err := os.MkdirAll(rejected, 0o755); err == nil {
+				_ = os.Rename(destAddon, filepath.Join(rejected, addonDllName))
+			}
+		}
+		restoreAll()
+		return fmt.Errorf("AddOn place failed: %w", perr2)
+	}
+	ev["backup_dir"] = abak
+	return nil
+}
+
+// isRegularFile reports whether p is an existing regular file.
+func isRegularFile(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.Mode().IsRegular()
 }
 
 // stepNT8Restart stops and starts NT8 through powershell.exe, ONLY after the
@@ -289,6 +483,20 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 				return err
 			}
 		}
+		// FOLD 2: a deferred migration (NT8 was open and Custom.dll still held
+		// the AddOn type) runs while NT8 is closed — right after the stop and
+		// before the start. A failure here must NEVER leave NT8 closed: restore
+		// the old files and start NT8 on them, then fail to reverted_clean.
+		if j.Addon != nil && j.Addon.MigrationPending {
+			if merr := w.migrateRebuildPlaceWhileClosed(ctx, j, ev); merr != nil {
+				if serr := r.start(ctx); serr != nil {
+					return fmt.Errorf("the Custom.dll migration failed (%v) and NT8 could not be restarted: %w", merr, serr)
+				}
+				ev["nt8_restarted_after_migration_failure"] = "true"
+				return fmt.Errorf("the Custom.dll migration failed and NT8 was restarted on the old files: %w", merr)
+			}
+			ev["migration"] = "rebuilt"
+		}
 		if err := r.start(ctx); err != nil {
 			return err
 		}
@@ -322,7 +530,12 @@ func (w *Worker) stepAddonReconnect(ctx context.Context, j updaterjob.Job) stepR
 			map[string]string{"skipped": "nt8 not restarted", "note": "NT8 closed — the new AddOn loads the next time NinjaTrader starts"}, nil)}}
 	}
 	wantBuild := ""
-	if j.NT8 != nil {
+	if j.Catchup {
+		// Catch-up rebuilds the INSTALLED release's AddOn: the reconnect must
+		// prove that build (the nt8 decision never ran, so ManifestBuildID is
+		// not the target).
+		wantBuild = w.oldInstallBuildID()
+	} else if j.NT8 != nil {
 		wantBuild = j.NT8.ManifestBuildID
 	}
 	oldSeq := j.Addon.OldAcceptSeq

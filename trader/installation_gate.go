@@ -522,10 +522,30 @@ func InstallationGateStatus(loaded map[string]*AutoTrader, st *store.Store) (g I
 	// SIM-tradeable via IsAccountTradeable (the hard live/funded-account
 	// block, NEVER weakened). Any unknown (no bound account, a non-NT8
 	// trader, an account the server cannot vouch for) fails.
+	//
+	// F35 (accounts-remembered): with the AddOn CONNECTED the leg vouches
+	// from the LIVE list (the order predicate, unchanged). With it
+	// DISCONNECTED (e.g. a bot restart with NT8 closed) it vouches from the
+	// last PERSISTED accounts frame — a non-SIM row stays non-SIM, and a
+	// bound account with no persisted row fails closed. The ORDER paths keep
+	// reading the live list only; this fallback is the gate's alone.
 	simAccountsLeg := func() (bool, string) {
 		registry := map[string]bool{}
 		for _, id := range registryOnly {
 			registry[id] = true
+		}
+		liveSource := haveWire && wire.Connected
+		var persisted []store.NTAccountLast
+		lastSeen := "never"
+		if !liveSource && st != nil && st.NTAccountsLast() != nil {
+			rows, err := st.NTAccountsLast().List()
+			if err != nil {
+				return false, "persisted account list read failed: " + err.Error()
+			}
+			persisted = rows
+			if ms, ok := st.NTAccountsLast().LatestReceivedAt(); ok {
+				lastSeen = store.LastSeenCT(ms)
+			}
 		}
 		var bad []string
 		checked := 0
@@ -545,8 +565,25 @@ func InstallationGateStatus(loaded map[string]*AutoTrader, st *store.Store) (g I
 				bad = append(bad, fmt.Sprintf("%s: bound to no account", id))
 				continue
 			}
-			if !nt.IsAccountTradeable(name) {
-				bad = append(bad, fmt.Sprintf("%s: bound account %s is not SIM-tradeable", id, name))
+			if liveSource {
+				if !nt.IsAccountTradeable(name) {
+					bad = append(bad, fmt.Sprintf("%s: bound account %s is not SIM-tradeable (live)", id, name))
+				}
+				continue
+			}
+			var acct *store.NTAccountLast
+			for i := range persisted {
+				if strings.EqualFold(strings.TrimSpace(persisted[i].Name), strings.TrimSpace(name)) {
+					acct = &persisted[i]
+					break
+				}
+			}
+			if acct == nil {
+				bad = append(bad, fmt.Sprintf("%s: bound account %s — NT8 closed and no persisted account (last seen %s) — fail-closed", id, name, lastSeen))
+				continue
+			}
+			if !nt.AccountTradeableFromList([]ntwire.AccountInfo{{Name: acct.Name, IsSim: acct.IsSim}}, name) {
+				bad = append(bad, fmt.Sprintf("%s: bound account %s is not SIM (last seen %s)", id, name, store.LastSeenCT(acct.ReceivedAtMs)))
 			}
 		}
 		if len(bad) > 0 {
@@ -555,9 +592,12 @@ func InstallationGateStatus(loaded map[string]*AutoTrader, st *store.Store) (g I
 		if checked == 0 {
 			return false, "no NT8 trader bound to an account — nothing to vouch for (fail-closed)"
 		}
-		return true, fmt.Sprintf("%d bound account(s) SIM-tradeable", checked)
+		if liveSource {
+			return true, fmt.Sprintf("%d bound account(s) SIM-tradeable (live)", checked)
+		}
+		return true, fmt.Sprintf("%d bound account(s) SIM-tradeable (persisted, last seen %s)", checked, lastSeen)
 	}
-	leg("sim_accounts", "each bound trading account via IsAccountTradeable (the SIM-only order predicate, never weakened)", simAccountsLeg)
+	leg("sim_accounts", "each bound trading account via IsAccountTradeable (live) or the last persisted accounts frame (F35) — the SIM-only order predicate, never weakened", simAccountsLeg)
 
 	// db_open_positions — the DB's own record of exposure, per NT8 trader
 	// (UPDATER-NT8-CLOSED P1): the SAME store read CutoverGateStatus leg 1

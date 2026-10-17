@@ -179,6 +179,13 @@ export const updatesStrings = {
     zh: '更新未完成 — 没有更改，仍在运行 {tag}，交易正常。原因：{reason}',
     id: 'Pembaruan tidak selesai — tidak ada perubahan, masih menjalankan {tag}, trading normal. Alasan: {reason}',
   },
+  // fix/update-says-failed: a REFUSED or reverted_clean job is a FAILURE, not
+  // a "still trading normal" rollback — the red banner, the plain words.
+  resultFailedRed: {
+    en: 'Update failed — nothing changed: {reason}',
+    zh: '更新失败 — 没有更改：{reason}',
+    id: 'Pembaruan gagal — tidak ada perubahan: {reason}',
+  },
   resultRecovery: {
     en: 'Update needs your attention — the automatic recovery failed. Reason: {reason}',
     zh: '更新需要你的注意 — 自动恢复失败。原因：{reason}',
@@ -195,6 +202,26 @@ export const updatesStrings = {
   jobState: { en: 'State', zh: '状态', id: 'Status' },
   jobStep: { en: 'Step', zh: '步骤', id: 'Langkah' },
   jobBlocker: { en: 'Blocker', zh: '阻塞原因', id: 'Pemblokir' },
+  // fix/update-says-failed: a gate-blocked (non-terminal) job is WAITING, not
+  // installing — the plain reason + the elapsed time since the blocker landed.
+  waitingFor: {
+    en: 'Waiting: {reason}',
+    zh: '等待：{reason}',
+    id: 'Menunggu: {reason}',
+  },
+  waitingElapsed: {
+    en: '({time} elapsed)',
+    zh: '（已等待 {time}）',
+    id: '({time} berlalu)',
+  },
+  // The sim_accounts gate leg, plain words (the server sends
+  // "sim_accounts: <detail>" — the detail carries the last-seen time once the
+  // account list is persisted, and the old "… not SIM-tradeable" before then).
+  blockerSimAccounts: {
+    en: 'NinjaTrader accounts not confirmed SIM ({detail})',
+    zh: 'NinjaTrader 账户未确认 SIM（{detail}）',
+    id: 'Akun NinjaTrader belum dikonfirmasi SIM ({detail})',
+  },
   jobError: { en: 'Reason', zh: '原因', id: 'Alasan' },
   jobRecovery: { en: 'Recovery', zh: '恢复原因', id: 'Pemulihan' },
   installPending: {

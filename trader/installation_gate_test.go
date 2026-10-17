@@ -121,6 +121,60 @@ func TestInstallationGateSimAccountsNonSimFails(t *testing.T) {
 	mustFail(t, f.run(), "sim_accounts", "not SIM-tradeable")
 }
 
+// F35 — accounts-remembered. With the AddOn DISCONNECTED the sim_accounts leg
+// vouches from the last PERSISTED accounts frame instead of the live list: a
+// persisted SIM row lets a bot restart with NT8 closed still vouch for its
+// bound account (detail names the source and the "last seen" time).
+func TestInstallationGateSimAccountsPersistedFallbackPasses(t *testing.T) {
+	f := newGateFixture(t)
+	f.wire.Connected = false // NT8 closed at this restart
+	now := time.Now().UnixMilli()
+	if err := f.st.NTAccountsLast().Upsert([]store.NTAccountLast{
+		{Name: "Sim101", IsSim: true, Connection: "SimulationConnection", ReceivedAtMs: now},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	l, ok := legOf(f.run(), "sim_accounts")
+	if !ok || !l.Pass {
+		t.Fatalf("sim_accounts must pass from the persisted row: %+v", l)
+	}
+	if !strings.Contains(l.Detail, "persisted") || !strings.Contains(l.Detail, "last seen") {
+		t.Fatalf("detail must say persisted + last seen: %q", l.Detail)
+	}
+}
+
+// F35 — a persisted account that is NON-SIM stays non-SIM: the disconnected
+// fallback fails the leg exactly as the live list would.
+func TestInstallationGateSimAccountsPersistedNonSimFails(t *testing.T) {
+	f := newGateFixture(t)
+	f.wire.Connected = false
+	if err := f.st.NTAccountsLast().Upsert([]store.NTAccountLast{
+		{Name: "Sim101", IsSim: false, Connection: "LiveConnection", ReceivedAtMs: time.Now().UnixMilli()},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mustFail(t, f.run(), "sim_accounts", "not SIM")
+}
+
+// F35 — missing data fails closed: disconnected AND no persisted row for the
+// bound account means nothing can vouch for it.
+func TestInstallationGateSimAccountsPersistedMissingFails(t *testing.T) {
+	f := newGateFixture(t)
+	f.wire.Connected = false
+	mustFail(t, f.run(), "sim_accounts", "no persisted account")
+}
+
+// F35 — the ORDER path stays live-only: a disconnected AddOn (empty live list)
+// refuses the bound account even when a persisted SIM row exists. The trader
+// never reads the store, so the gate's fallback can never leak into an order.
+func TestIsAccountTradeableStaysLiveOnly(t *testing.T) {
+	s := ntwire.NewTCPServer(nil) // no live accounts — NT8 closed
+	tr := ntTrader.NewTCPTrader(s, "MNQ", "Sim101")
+	if tr.IsAccountTradeable("Sim101") {
+		t.Fatal("IsAccountTradeable must be false on an empty live list, persisted row or not")
+	}
+}
+
 func TestInstallationGateFailsWhileAnEntrySendHoldsAPermit(t *testing.T) {
 	f := newGateFixture(t)
 	if err := store.ClearMaintenanceHold(f.dir, "job-g"); err != nil {

@@ -46,6 +46,15 @@ var orderSnapshotSink func(ntwire.OrderSnapshotPayload)
 // started once.
 func SetOrderSnapshotSink(fn func(ntwire.OrderSnapshotPayload)) { orderSnapshotSink = fn }
 
+// accountsListSink (F35) is the optional persistence hook for received
+// accounts_list frames. It mirrors orderSnapshotSink: main.go owns the closure
+// (the store), this package keeps its single responsibility, and the wire's
+// in-memory list stays independent of whether persistence is wired at all.
+var accountsListSink func([]ntwire.AccountInfo)
+
+// SetAccountsListSink registers the hook. Call before the first trader is built.
+func SetAccountsListSink(fn func([]ntwire.AccountInfo)) { accountsListSink = fn }
+
 // getOrStartTCPServer lazily starts the singleton TCP server on first call.
 // Subsequent calls return the same instance. The startup error (if any) is
 // cached and returned to every caller so a bind failure surfaces consistently.
@@ -63,6 +72,10 @@ func getOrStartTCPServer() (*ntwire.TCPServer, error) {
 		// of whether persistence is wired at all.
 		if fn := orderSnapshotSink; fn != nil {
 			server.SetOrderSnapshotSink(fn)
+		}
+		// F35 — install the accounts persistence sink if one was registered.
+		if fn := accountsListSink; fn != nil {
+			server.SetAccountsSink(fn)
 		}
 		// Stage 3: route the kernel's futures kline reads to this server's
 		// live BarCache (NT8 bars), bypassing the removed crypto providers. Crypto path untouched.

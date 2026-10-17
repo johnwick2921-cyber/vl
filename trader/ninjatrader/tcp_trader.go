@@ -512,15 +512,15 @@ func (t *TCPTrader) feedNowUTC(symbol string) time.Time {
 	return time.Now().UTC()
 }
 
-// isAccountTradeable reports whether an order may be sent for `name`: it must be a
-// SIM account (per the C#-reported accounts list, which uses Account.Simulation) AND,
-// if NT_ALLOWED_ACCOUNTS is configured, on that allow-list. This is the hard
-// live/funded-account block (Stage-2 Phase-1). Fail-safe: unknown account → false.
-func (t *TCPTrader) isAccountTradeable(name string) bool {
+// AccountTradeableFromList reports SIM + allow-list for `name` against a
+// caller-supplied account list. The LIVE order path calls it with the wire's
+// live list; the installation gate's sim_accounts leg calls it with the
+// PERSISTED last list when the AddOn is disconnected. A non-SIM account stays
+// non-SIM on either list; missing data fails closed (unknown → false).
+func (t *TCPTrader) AccountTradeableFromList(accts []ntwire.AccountInfo, name string) bool {
 	if name == "" {
 		return false
 	}
-	accts, _ := t.server.GetAccountsList()
 	isSim := false
 	found := false
 	for _, a := range accts {
@@ -542,6 +542,17 @@ func (t *TCPTrader) isAccountTradeable(name string) bool {
 		return false // an allow-list is set and this account isn't on it
 	}
 	return true
+}
+
+// isAccountTradeable reports whether an order may be sent for `name`: it must be a
+// SIM account (per the C#-reported accounts list, which uses Account.Simulation) AND,
+// if NT_ALLOWED_ACCOUNTS is configured, on that allow-list. This is the hard
+// live/funded-account block (Stage-2 Phase-1). Fail-safe: unknown account → false.
+// LIVE-ONLY: it reads the wire's current list, never the persisted fallback — a
+// placed order must be vouched for by the running AddOn, not by history.
+func (t *TCPTrader) isAccountTradeable(name string) bool {
+	accts, _ := t.server.GetAccountsList()
+	return t.AccountTradeableFromList(accts, name)
 }
 
 // IsAccountTradeable is the SIM-only account predicate, exported for the
