@@ -19,5 +19,5 @@ import (
 
 func TestMain(m *testing.M) {
 	// t.TempDir() on tmpfs (internal/testtmpfs); the guard still wraps m.Run.
-	os.Exit(testtmpfs.Run(func() int { return testhome.Guard(m) }))
+	os.Exit(testhome.Run(func() int { return testtmpfs.Run(m.Run) }))
 }

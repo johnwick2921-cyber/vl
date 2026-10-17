@@ -119,6 +119,7 @@ func privateDirs(dataDir string, create bool) (string, error) {
 			switch {
 			case err == nil:
 				if err := fsyncDir(filepath.Dir(d)); err != nil {
+					//homeguard:allow — removes only the directory d this loop just created (os.Remove cannot empty a tree)
 					_ = os.Remove(d)
 					return "", err
 				}

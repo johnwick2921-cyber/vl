@@ -115,7 +115,7 @@ prune() {
   for f in $(ls -1 "$dir"/${prefix}-*.db.gz 2>/dev/null | sort -r); do
     n=$((n + 1))
     if [[ $n -gt $keep ]]; then
-      rm -f "$f"
+      rm -f "${f:?}"
       echo "vl-backup: pruned $(basename "$f")"
     fi
   done

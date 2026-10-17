@@ -66,6 +66,20 @@ set -uo pipefail
 # VL_LOCK_DIR overrides; the home is never a symlink.
 o=no; o=${o}fx
 LOCK_DIR="${VL_LOCK_DIR:-$HOME/vl-main.lock.d}"
+# HOME-WIPE GUARD (owner order 2026-10-17, after /home/hoang was wiped on
+# 2026-10-16 while agents ran scripts). Every `rm -rf` in this file targets
+# $LOCK_DIR, and VL_LOCK_DIR is caller-controlled: pointed at $HOME, /home or /
+# by a typo or an empty expansion upstream, `clear-incomplete` (a dir with no
+# meta, older than 30s) would remove that whole tree. A lock dir is a leaf
+# whose name ends in lock.d; anything else is refused before any verb runs,
+# with the usage rc (64) so no check caller can read it as free/held/stale.
+case "${LOCK_DIR##*/}" in
+  *lock.d) ;;
+  *) echo "REFUSED — lock dir '$LOCK_DIR' is not named *lock.d; this tool never touches it" >&2; exit 64 ;;
+esac
+case "$LOCK_DIR" in
+  ""|/|/home|/home/|"${HOME:-/}"|"${HOME:-/}"/) echo "REFUSED — lock dir '$LOCK_DIR' is a home or the root; this tool never touches it" >&2; exit 64 ;;
+esac
 # The other home is the retired pre-rename home — the COMPLEMENT of this run's
 # own: a default run parks in the vl home and must see the old home as "other";
 # a run pointed AT the old home must see the vl home as "other".
@@ -148,7 +162,7 @@ META
   if [ -d "$OTHER_HOME" ]; then
     local other_s; other_s="$(_other_session)"
     if [ "$other_s" != "$session" ]; then
-      rm -rf "$LOCK_DIR" 2>/dev/null || true
+      rm -rf "${LOCK_DIR:?}" 2>/dev/null || true
       echo "REFUSED — the other lock home exists ($OTHER_HOME):"
       cat "$OTHER_HOME/meta" 2>/dev/null || echo "  (meta unreadable — inspect it by hand: cat $OTHER_HOME/meta)"
       echo "Run the tool against THAT home, or resolve the other holder first."
@@ -197,7 +211,7 @@ _spawn_keeper() {
     # holder declared leaves a lock that goes stale — which reads identically to
     # the defect this keeper was built to fix unless the tool says otherwise.
     [ -n "$why" ] && [ -d "$lock" ] && printf %s "$why" > "$lock/keeper.ended" 2>/dev/null
-    rm -f "$lock/keeper.pid" 2>/dev/null
+    rm -f "${lock:?}/keeper.pid" 2>/dev/null
   ' _ "$LOCK_DIR" "$session" "$exp" "$HEARTBEAT_EVERY_SECONDS" "$self" >/dev/null 2>&1 &
   kpid=$!
   # The GROUP id, read from /proc rather than assumed: setsid forks in some
@@ -285,7 +299,7 @@ _is_group_leader() {
 _stop_keeper() {
   local pg i=0
   pg="$(cat "$LOCK_DIR/keeper.pid" 2>/dev/null || true)"
-  rm -f "$LOCK_DIR/keeper.pid" "$LOCK_DIR/keeper.ended" 2>/dev/null
+  rm -f "${LOCK_DIR:?}/keeper.pid" "${LOCK_DIR:?}/keeper.ended" 2>/dev/null
   [ -n "$pg" ] || return 0
   # A24 — UNKNOWN TAKES NO DESTRUCTIVE BRANCH. Everything below signals; nothing
   # below signals a target it has not positively identified as OUR keeper.
@@ -465,7 +479,7 @@ cmd_clear_incomplete() {
     echo "  Wait until it is ${INCOMPLETE_ABANDON_SECONDS}s old and look again: if meta has appeared, it is a real lock."
     return 1
   fi
-  if ! rm -rf "$LOCK_DIR" 2>/dev/null || [ -d "$LOCK_DIR" ]; then
+  if ! rm -rf "${LOCK_DIR:?}" 2>/dev/null || [ -d "${LOCK_DIR:?}" ]; then
     echo "CLEAR FAILED — '$LOCK_DIR' still exists after rm. Fix the cause and try again."
     return 1
   fi
@@ -549,7 +563,7 @@ cmd_release() {
   _require_holder "$session" || return 1
   _show_history
   _stop_keeper
-  # THE REMOVAL IS THE RELEASE. This was `rm -rf "$LOCK_DIR"; echo "released"`,
+  # THE REMOVAL IS THE RELEASE. This was `rm -rf "${LOCK_DIR:?}"; echo "released"`,
   # and the `;` threw rm's exit status away: the function returned echo's 0. A
   # read-only parent, a stale NFS handle or a permissions change printed
   # "released by <session>", returned SUCCESS, and left the directory standing —
@@ -559,7 +573,7 @@ cmd_release() {
   #
   # So: rm's status is checked, AND the directory is confirmed gone, because a
   # zero exit is a claim and the absent directory is the fact.
-  if ! rm -rf "$LOCK_DIR" 2>/dev/null || [ -d "$LOCK_DIR" ]; then
+  if ! rm -rf "${LOCK_DIR:?}" 2>/dev/null || [ -d "${LOCK_DIR:?}" ]; then
     echo "RELEASE FAILED — '$LOCK_DIR' still exists after rm."
     echo "  The lock is STILL HELD by $session and its keeper has been STOPPED,"
     echo "  so it will read STALE within ${HEARTBEAT_STALE_SECONDS}s though you are still here."
