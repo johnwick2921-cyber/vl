@@ -1,0 +1,114 @@
+package updaterworker
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+
+	"vl/internal/updaterjob"
+)
+
+// ── W-ADDON-ONE-CLICK e2e (DS-103) — the FULL job against a fake NT8 ────────
+//
+// The REAL runner, job file, hold file, lock and loopback app are the production
+// ones (the rig); only dotnet.exe, powershell.exe and the AddOn wire are faked.
+// These are the happy-path / refusal cases that do not need DS-102's
+// self-recovery (feat/update-self-recovery); the timeout-rollback (c) and the
+// transitional-connection wait (d) stay PENDING-DS-102.
+
+// startCount wraps the fake win seam and counts powershell Start-Process calls
+// (one NT8 restart = exactly one Start-Process).
+func startCount(r *rig) *int {
+	n := 0
+	prev := r.box.fakeRunWin
+	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		for _, a := range args {
+			if strings.Contains(a, "Start-Process") {
+				n++
+			}
+		}
+		return prev(ctx, name, args...)
+	}
+	return &n
+}
+
+// (a) NT8 open + changed AddOn → completes with no human: no park, no resume,
+// NT8 restarted ONCE, the new build acked.
+func TestE2EAddonChangedCompletesWithOneRestartNoPark(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	starts := startCount(r)
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateComplete {
+		t.Fatalf("job %s (error %q), want complete — the one-click flow never parks", j.State, j.Error)
+	}
+	if j.Addon == nil || !j.Addon.Restarted {
+		t.Fatalf("AddOn must be restarted exactly once, addon=%+v", j.Addon)
+	}
+	if j.Addon.DllPath == "" || j.Addon.Sha256 == "" {
+		t.Fatalf("the AddOn must be built: %+v", j.Addon)
+	}
+	if *starts != 1 {
+		t.Fatalf("NT8 restarted %d times, want exactly 1", *starts)
+	}
+	// the reconnect proved the NEW build on a NEW connection
+	if r.box.addonBuild != boxNewBuild {
+		t.Fatalf("after restart the ack build = %q, want %q", r.box.addonBuild, boxNewBuild)
+	}
+	if r.box.addonSeq == 0 {
+		t.Fatal("accept_seq never bumped — the reconnect did not prove a new connection")
+	}
+}
+
+// (b) build failure → reverted_clean: nothing placed, hold + lock released.
+func TestE2EAddonBuildFailureRevertsCleanNothingPlaced(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if strings.Contains(name, "dotnet") {
+			return []byte("Program.cs(1,1): error CS1002: ; expected"), errors.New("dotnet build failed")
+		}
+		return r.box.fakeRunWin(ctx, name, args...)
+	}
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRevertedClean {
+		t.Fatalf("job %s (error %q), want reverted_clean", j.State, j.Error)
+	}
+	if j.Addon != nil && j.Addon.BackupDir != "" {
+		t.Fatalf("a failed build still placed the AddOn: %+v", j.Addon)
+	}
+	if r.hold().Present {
+		t.Fatalf("hold must be released after reverted_clean, got %+v", r.hold())
+	}
+	if r.box.lockHolder != "" {
+		t.Fatalf("lock must be released after reverted_clean, holder %q", r.box.lockHolder)
+	}
+}
+
+// (e) NT8 closed → completes, the DLL placed, NO restart (nothing owed).
+//
+// FINDING (DS-104 head 450ec5468): this case FAILS — the closed-NT8 path still
+// routes through decideNT8Absent → nt8_skipped + F5Owed, so the DLL is NEVER
+// built or placed (j.Addon == nil). The spec (target flow step 7) requires the
+// build + place steps to run even when NT8 is closed, with only the restart
+// skipped. Skipped until DS-104 wires the closed-NT8 one-click path.
+func TestE2EAddonNT8ClosedCompletesDLLPlacedNoRestart(t *testing.T) {
+	t.Skip("DS-104 450ec5468: NT8-closed+changed → decideNT8Absent (nt8_skipped, F5Owed) — build+place on closed NT8 not wired (spec step 7)")
+	r := newRig(t, withCSChanged(), withNT8Down(absentDown))
+	starts := startCount(r)
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateComplete {
+		t.Fatalf("job %s (error %q), want complete", j.State, j.Error)
+	}
+	if j.Addon == nil || j.Addon.DllPath == "" || j.Addon.Sha256 == "" {
+		t.Fatalf("the DLL must be built and placed: %+v", j.Addon)
+	}
+	if j.Addon.Restarted {
+		t.Fatalf("NT8 was closed — it must NOT be restarted: %+v", j.Addon)
+	}
+	if *starts != 0 {
+		t.Fatalf("NT8 restarted %d times with NT8 closed, want 0", *starts)
+	}
+}
