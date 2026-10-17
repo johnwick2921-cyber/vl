@@ -46,6 +46,15 @@ func (w *Worker) catchupStatus(ctx context.Context) (needed, nt8Open bool, err e
 	if nt8Open && running == installed {
 		return false, nt8Open, nil
 	}
+	// NT8 is OPEN and the build differs: the catch-up restarts NT8, which is
+	// only owed when the box is flat + SIM — never force NT8 down while a
+	// position is live. If not flat+SIM, wait for the next start or install.
+	if nt8Open {
+		if err := w.flatSIMGate(ctx, updaterjob.Job{}); err != nil {
+			w.logf("updater: catch-up held — the box is not flat+SIM: %v", err)
+			return false, nt8Open, nil
+		}
+	}
 	return true, nt8Open, nil
 }
 

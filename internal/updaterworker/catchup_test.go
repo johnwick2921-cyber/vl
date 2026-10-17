@@ -49,6 +49,18 @@ func TestCatchupStartsOnWorkerStart(t *testing.T) {
 	}
 }
 
+// NT8 open + stale but NOT flat/SIM → no catch-up; the worker waits for the
+// next start or install (never forces NT8 down while a position is live).
+func TestCatchupSkipsWhenNotFlatOrSim(t *testing.T) {
+	r := newRig(t, withStaleAddon())
+	r.set(func() { r.simTradeable = false }) // a bound account is not SIM-tradeable
+	started, _ := r.runCatchup(t)
+	r.noViolations(t)
+	if started {
+		t.Fatal("a stale AddOn with a non-flat/non-SIM box must not start a catch-up")
+	}
+}
+
 // NT8 open + stale → build → place → restart → reconnect → complete. Nothing is
 // activated (this is not an install).
 func TestCatchupRebuildsAndRestartsWhenStale(t *testing.T) {
