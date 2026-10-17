@@ -15,7 +15,9 @@ import (
 
 func doneAfterWinRig(t *testing.T, dayStart string) (*AutoTrader, *store.Store) {
 	t.Helper()
-	rc := store.RiskControlConfig{MentorMode: true} // MentorDoneAfterWin nil → ON
+	// owner order 2026-10-16: nil → OFF — these NY-day pins exercise the ON
+	// path, so the switch is explicit true.
+	rc := store.RiskControlConfig{MentorMode: true, MentorDoneAfterWin: bp(true)}
 	if dayStart != "" {
 		rc.MentorDoneAfterWinDayStart = dayStart
 	}
@@ -58,6 +60,61 @@ func pinDoneAfterWinClock(t *testing.T, d, h, m int) {
 	t.Helper()
 	fixed := nyDayClock(d, h, m)
 	setMentorNowSource(func() time.Time { return fixed })
+}
+
+// ── MENTOR-DONE-AFTER-WIN default OFF (owner order 2026-10-16) ─────────────
+// The switch is nil → OFF (owner order 2026-10-16: "it's been off … follow
+// it"); only an EXPLICIT true turns the rule on. These pins run the production
+// gate AND the sweep half (mentorDoneAfterWinTripped — the same function the
+// truth panel and the day-stop cancel read).
+
+// TestDoneAfterWinNilDefaultsOff is the ANCHORED MUTANT: if the nil default is
+// flipped back to ON, the #660 scratch (+$31.50 at 11:02 on a net-positive day)
+// refuses again and this test goes RED. Production call site: the gate and the
+// sweep.
+func TestDoneAfterWinNilDefaultsOff(t *testing.T) {
+	at, st := doneAfterWinRig(t, "") // explicit true, then nil it below
+	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = nil
+	seedClosedWin(t, st, at.id, nyDayClock(8, 11, 2).UnixMilli(), 31.50) // 10-16 #660: a +$31.50 scratch
+
+	pinDoneAfterWinClock(t, 8, 11, 3)
+	if refuse, why := at.mentorDoneAfterWinGate(); refuse {
+		t.Fatalf("nil → OFF: the +$31.50 scratch must NOT stop the day (refused: %s)", why)
+	}
+	if trip, _ := at.mentorDoneAfterWinTripped(); trip {
+		t.Fatal("nil → OFF: the sweep must NOT trip on the scratch win")
+	}
+}
+
+// TestDoneAfterWinExplicitFalsePasses — an explicit false is OFF too, even
+// after a definite win.
+func TestDoneAfterWinExplicitFalsePasses(t *testing.T) {
+	at, st := doneAfterWinRig(t, "")
+	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = bp(false)
+	seedClosedWin(t, st, at.id, nyDayClock(8, 11, 2).UnixMilli(), 120)
+
+	pinDoneAfterWinClock(t, 8, 11, 3)
+	if refuse, _ := at.mentorDoneAfterWinGate(); refuse {
+		t.Fatal("explicit false must pass even after a definite win")
+	}
+	if trip, _ := at.mentorDoneAfterWinTripped(); trip {
+		t.Fatal("explicit false: the sweep must not trip")
+	}
+}
+
+// TestDoneAfterWinExplicitTrueRefuses — an explicit true keeps today's
+// behaviour: a definite win refuses the gate and trips the sweep.
+func TestDoneAfterWinExplicitTrueRefuses(t *testing.T) {
+	at, st := doneAfterWinRig(t, "") // explicit true
+	seedClosedWin(t, st, at.id, nyDayClock(8, 11, 2).UnixMilli(), 120)
+
+	pinDoneAfterWinClock(t, 8, 11, 3)
+	if refuse, why := at.mentorDoneAfterWinGate(); !refuse || why == "" {
+		t.Fatalf("explicit true must refuse after a win (refuse=%v why=%q)", refuse, why)
+	}
+	if trip, why := at.mentorDoneAfterWinTripped(); !trip || why == "" {
+		t.Fatalf("explicit true: a definite win must trip the sweep (trip=%v why=%q)", trip, why)
+	}
 }
 
 // (a)+(b) the #641 shape: a win at 18:06 CT must no longer block the next NY

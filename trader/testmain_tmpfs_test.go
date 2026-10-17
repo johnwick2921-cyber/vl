@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 	"time"
+	"vl/internal/testhome"
 
 	"vl/internal/testtmpfs"
 	"vl/kernel"
@@ -26,7 +27,7 @@ func TestMain(m *testing.M) {
 		mono := time.Since(start)
 		return start.UnixNano() + int64(mono), mono
 	})
-	code := testtmpfs.Run(m.Run)
+	code := testhome.Run(func() int { return testtmpfs.Run(m.Run) })
 	restore()
 	os.Exit(code)
 }

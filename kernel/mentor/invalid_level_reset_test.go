@@ -34,6 +34,7 @@ func TestIsMovingLineKey(t *testing.T) {
 func seedEmptySeeded() *Evaluator {
 	e := New(DefaultConfig())
 	e.Cfg.Enabled = true
+	e.Cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	e.seeded = true
 	e.State.Seed1mWatermark = math.MaxInt64
 	e.State.Seed1HWatermark = math.MaxInt64

@@ -4,6 +4,9 @@
 // knob-rule default (trader/mentor_course_exits.go). Applied when the strategy
 // is saved (the running trader reloads on save).
 
+import { EffectiveLine } from './EffectiveChip'
+import type { EffectiveKnob } from '../../lib/api/strategyEffective'
+
 type Copy = { zh: string; en: string; es: string }
 
 export type CourseExitsBoolKey =
@@ -119,9 +122,9 @@ const COPY = {
     es: 'Contratos SWING (por defecto 2; un runner necesita ≥ 2)',
   },
   mentor_isb_max_pts: {
-    zh: 'ISB 最大止损（点，0 → 30）',
-    en: 'ISB max stop (pts, 0 → 30)',
-    es: 'Stop máximo ISB (pts, 0 → 30)',
+    zh: '最大止损（ISB 及每个非 swing 设置；点，0 → 30）',
+    en: 'Max stop (ISB and every non-swing setup; pts, 0 → 30)',
+    es: 'Stop máximo (ISB y cada setup no-swing; pts, 0 → 30)',
   },
   mentor_keypair_candle_ratio: {
     zh: '价位间距 / K 线比例（默认 1）',
@@ -170,6 +173,9 @@ interface Props {
   ) => void
   disabled?: boolean
   language: string
+  // Effective rows for the risk_control.mentor_* course-exit leaves (prefix
+  // applied by the caller). Optional: absent → no chips.
+  eff?: (leaf: string) => EffectiveKnob | null | undefined
 }
 
 const box = {
@@ -183,6 +189,7 @@ export function MentorCourseExitsPanel({
   onChange,
   disabled,
   language,
+  eff,
 }: Props) {
   return (
     <div
@@ -225,6 +232,7 @@ export function MentorCourseExitsPanel({
                 <option value="on">{tr(COPY.on, language)}</option>
                 <option value="off">{tr(COPY.off, language)}</option>
               </select>
+              <EffectiveLine knob={eff?.(key)} />
             </label>
           )
         })}
@@ -251,6 +259,7 @@ export function MentorCourseExitsPanel({
             <option value="per_level">{tr(COPY.per_level, language)}</option>
             <option value="exempt">{tr(COPY.exempt, language)}</option>
           </select>
+          <EffectiveLine knob={eff?.('mentor_ema9_visit_cap')} />
         </label>
         {NUM_KEYS.map((key) => (
           <label
@@ -276,6 +285,7 @@ export function MentorCourseExitsPanel({
               className="px-2 py-1 rounded"
               style={box}
             />
+            <EffectiveLine knob={eff?.(key)} />
           </label>
         ))}
       </div>

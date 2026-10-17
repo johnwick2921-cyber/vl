@@ -2521,7 +2521,15 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 				// it; the counters themselves stay in B3's lane).
 				prevBornDead = true
 				prevPublishAt = authoredAt
-				at.logWarnf("📐 planner attempt %d/3 born-dead/flip-met refusal: read→publish latency %s — attempt %d re-sights on the fresh tape", attempt, authoredAt.Sub(facts.ReadAt), attempt+1)
+				// F12 (release #32): only claim a fresh-tape re-sight when the
+				// knob is ON AND another attempt remains. The old line said
+				// "attempt 4 re-sights" on the 3/3 attempt, and said "re-sights
+				// on the fresh tape" even with the knob OFF.
+				reSight := ""
+				if at.plannerFreshTapeOn() && attempt < plannerMaxAttempts {
+					reSight = fmt.Sprintf(" — attempt %d re-sights on the fresh tape", attempt+1)
+				}
+				at.logWarnf("📐 planner attempt %d/3 born-dead/flip-met refusal: read→publish latency %s%s", attempt, authoredAt.Sub(facts.ReadAt), reSight)
 				// FIX-PLANNER item 1: a born-dead DEATH goes straight to ONE
 				// fresh-tape repair (the A6 path) instead of burning attempts
 				// 2/3 on the same stale tape. The stop applies only when THIS

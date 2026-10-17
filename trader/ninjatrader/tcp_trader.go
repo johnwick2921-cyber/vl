@@ -715,6 +715,19 @@ func (t *TCPTrader) placeEntryWith(symbol, side string, quantity float64, own *e
 // placeEntry (bound account + SIM + B3 guard); the AddOn submits OrderType.Limit
 // and defers SL/TP to SubmitBracketOnEntryFill, identical to market entries.
 func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limitPx, sl, tp float64, beforeSend ...func(string) error) (string, error) {
+	return t.placeLimitEntry(symbol, side, quantity, limitPx, sl, tp, 0, 0, beforeSend...)
+}
+
+// PlaceLimitEntryWithSplit (dispatch-31, owner order 2026-10-16 "set to 4 at
+// least, sell 2 first so it's equal") is PlaceLimitEntry with the leg-1 split:
+// leg1Qty contracts exit at leg1TP (the plan's first obstacle), the runner at
+// the final target. Mirrors placeStopEntry's split handling exactly — the same
+// two-OCO-pair build gate and the same wireLeg1TP rounding/side check.
+func (t *TCPTrader) PlaceLimitEntryWithSplit(symbol, side string, quantity float64, limitPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
+	return t.placeLimitEntry(symbol, side, quantity, limitPx, sl, tp, leg1Qty, leg1TP, beforeSend...)
+}
+
+func (t *TCPTrader) placeLimitEntry(symbol, side string, quantity float64, limitPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
 	tradeAcct := t.boundAccount
 	if tradeAcct == "" {
 		return "", fmt.Errorf("ninjatrader/tcp: refusing armed %s entry on %s — trader has no bound account", side, symbol)
@@ -749,6 +762,24 @@ func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limit
 	if rerr != nil {
 		return "", fmt.Errorf("ninjatrader/tcp: refusing armed %s entry on %s: %w", side, symbol, rerr)
 	}
+	// REVIEW-353: only send the split when the far side proves the two-OCO-pair
+	// build. An older AddOn ignores leg1_qty → single bracket, byte-identical
+	// (fail-closed: the split degrades, never half-applies).
+	if leg1Qty > 0 && !ntwire.FarSideProven(t.server.FarSideBuildID(), ntwire.MinAddonBuildSplitLegs) {
+		leg1Qty, leg1TP = 0, 0
+	}
+	// leg1_tp gets the SAME wire treatment as the trade target: nearest tick,
+	// and it must sit on the profit side of the entry. A leg-1 TP that fails
+	// either drops the split (single bracket) — never a leg 1 resting at or
+	// through the entry.
+	if leg1Qty > 0 {
+		var why string
+		leg1TP, why = wireLeg1TP(side, entry, leg1TP, tick)
+		if why != "" {
+			logger.Warnf("⚠️ limit-entry %s %s: split dropped — %s; sending the single bracket", side, symbol, why)
+			leg1Qty, leg1TP = 0, 0
+		}
+	}
 	tid := t.traderID
 	signalID := uuid.NewString()
 	payload := ntwire.SignalPayload{
@@ -764,6 +795,10 @@ func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limit
 		Timestamp:  time.Now().UTC().Truncate(time.Millisecond).Format(time.RFC3339Nano),
 		OrderType:  "limit",
 		LimitPrice: entry,
+		// dispatch-31: the split rides the ONE frame — leg1_qty + leg1_tp tell
+		// the AddOn to place TWO OCO pairs on the one fill (0 = single bracket).
+		Leg1Qty: leg1Qty,
+		Leg1TP:  leg1TP,
 	}
 	if err := assertBoundAccount("armed-entry", symbol, payload.Account, t.boundAccount); err != nil {
 		logger.Errorf("🚨 %v — REFUSING to submit armed entry", err)
@@ -787,6 +822,14 @@ func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limit
 	if err := serr; err != nil {
 		return "", fmt.Errorf("ninjatrader/tcp: send armed signal: %w", err)
 	}
+	if leg1Qty > 0 {
+		t.mu.Lock()
+		if t.splitBySignal == nil {
+			t.splitBySignal = map[string]SentSplit{}
+		}
+		t.splitBySignal[signalID] = SentSplit{Leg1Qty: leg1Qty, Leg1TP: leg1TP}
+		t.mu.Unlock()
+	}
 	return signalID, nil
 }
 
@@ -795,8 +838,8 @@ func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limit
 // same bracket-on-fill contract as limits. stopPx is the TRIGGER price (the
 // tick offset is applied by the caller). Back-compat law: the frame is
 // additive JSON — only send it when the far-side AddOn has proven it.
-func (t *TCPTrader) PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
-	return t.placeStopEntry(symbol, side, quantity, stopPx, sl, tp, false, leg1Qty, leg1TP, beforeSend...)
+func (t *TCPTrader) PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, leg2Qty int, leg2TP float64, beforeSend ...func(string) error) (string, error) {
+	return t.placeStopEntry(symbol, side, quantity, stopPx, sl, tp, false, leg1Qty, leg1TP, leg2Qty, leg2TP, beforeSend...)
 }
 
 // PlaceStopEntryWithLimit (MENTOR STOP-LIMIT, PR B 2026-10-03) is PlaceStopEntry
@@ -806,11 +849,11 @@ func (t *TCPTrader) PlaceStopEntry(symbol, side string, quantity float64, stopPx
 // the order's expiry (expiry_ms, authored by the evaluator's intent) cancels it
 // unfilled when it lapses. Fail-closed: refused when the far side does not
 // prove MinAddonBuildStopLimit (an older AddOn would build StopMarket).
-func (t *TCPTrader) PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
-	return t.placeStopEntry(symbol, side, quantity, stopPx, sl, tp, true, leg1Qty, leg1TP, beforeSend...)
+func (t *TCPTrader) PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, leg2Qty int, leg2TP float64, beforeSend ...func(string) error) (string, error) {
+	return t.placeStopEntry(symbol, side, quantity, stopPx, sl, tp, true, leg1Qty, leg1TP, leg2Qty, leg2TP, beforeSend...)
 }
 
-func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, stopLimit bool, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
+func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, stopLimit bool, leg1Qty int, leg1TP float64, leg2Qty int, leg2TP float64, beforeSend ...func(string) error) (string, error) {
 	// CAPABILITY HANDSHAKE — the far-side AddOn must PROVE, by a build_id that
 	// arrived on the wire, that it will BUILD this order correctly. Two distinct
 	// failures live behind this one gate:
@@ -896,6 +939,32 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 			leg1Qty, leg1TP = 0, 0
 		}
 	}
+	// release #31: leg 2 (the runner's first partial) rides the SAME frame, but
+	// ONLY to an AddOn that proves the leg-3 build — an older AddOn ignores
+	// leg2_qty and would place the 2-pair plan (leg 1 + runner) byte-identical.
+	// Degrades to the 2-pair plan, never half-applies.
+	if leg2Qty > 0 && !ntwire.FarSideProven(t.server.FarSideBuildID(), ntwire.MinAddonBuildLeg3) {
+		leg2Qty, leg2TP = 0, 0
+	}
+	// D6 (release #31 fold): leg 2 only exists inside a split — with leg 1
+	// dropped (wireLeg1TP refused), a leg 2 on the frame is an unvalidated,
+	// off-grid price (the wire-leg-2 check below never runs). Zero it so the
+	// frame degrades to the single bracket, never a naked leg-2 pair.
+	if leg2Qty > 0 && leg1Qty <= 0 {
+		logger.Warnf("⚠️ stop-entry %s %s: leg-2 split dropped — leg 1 was dropped; sending the single bracket", side, symbol)
+		leg2Qty, leg2TP = 0, 0
+	}
+	// leg2_tp must sit STRICTLY between leg 1's TP and the trade target (the
+	// runner's first partial sells before the target, never at or through it).
+	// A leg-2 TP that fails drops ONLY leg 2 (the 2-pair plan stands).
+	if leg2Qty > 0 && leg1Qty > 0 {
+		var why string
+		leg2TP, why = wireLeg2TP(side, entry, leg1TP, leg2TP, tp, tick)
+		if why != "" {
+			logger.Warnf("⚠️ stop-entry %s %s: leg-2 split dropped — %s; sending the 2-pair plan", side, symbol, why)
+			leg2Qty, leg2TP = 0, 0
+		}
+	}
 	tid := t.traderID
 	signalID := uuid.NewString()
 	payload := ntwire.SignalPayload{
@@ -916,6 +985,10 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 		// the AddOn to place TWO OCO pairs on the one fill (0 = single bracket).
 		Leg1Qty: leg1Qty,
 		Leg1TP:  leg1TP,
+		// release #31: leg2_qty + leg2_tp tell the AddOn to place a THIRD OCO
+		// pair (the runner's first partial); 0 = the 2-pair plan.
+		Leg2Qty: leg2Qty,
+		Leg2TP:  leg2TP,
 	}
 	if err := assertBoundAccount("stop-entry", symbol, payload.Account, t.boundAccount); err != nil {
 		logger.Errorf("🚨 %v — REFUSING to submit stop-entry", err)
@@ -944,7 +1017,7 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 		if t.splitBySignal == nil {
 			t.splitBySignal = map[string]SentSplit{}
 		}
-		t.splitBySignal[signalID] = SentSplit{Leg1Qty: leg1Qty, Leg1TP: leg1TP}
+		t.splitBySignal[signalID] = SentSplit{Leg1Qty: leg1Qty, Leg1TP: leg1TP, Leg2Qty: leg2Qty, Leg2TP: leg2TP}
 		t.mu.Unlock()
 	}
 	return signalID, nil
@@ -954,6 +1027,8 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 type SentSplit struct {
 	Leg1Qty int
 	Leg1TP  float64
+	Leg2Qty int
+	Leg2TP  float64
 }
 
 // SplitSentFor returns the split the entry frame for signalID carried; ok=false
@@ -1009,6 +1084,40 @@ func wireLeg1TP(side string, entry, leg1TP, tick float64) (float64, string) {
 	default:
 		return 0, fmt.Sprintf("unknown side %q", side)
 	}
+	return tp, ""
+}
+
+// wireLeg2TP rounds leg 2's TP (the runner's first partial) to the nearest tick
+// and checks it sits STRICTLY between leg 1's TP and the trade target — the
+// runner sells part before the target, never at or through it. why != "" =
+// refuse the leg-2 split (the 2-pair plan stands).
+func wireLeg2TP(side string, entry, leg1TP, leg2TP, target, tick float64) (float64, string) {
+	if leg2TP <= 0 {
+		return 0, "leg2_tp is not set"
+	}
+	if leg1TP <= 0 || target <= 0 {
+		return 0, "leg2_tp needs a leg-1 TP and a trade target"
+	}
+	tp := RoundToTick(leg2TP, tick)
+	switch strings.ToLower(strings.TrimSpace(side)) {
+	case "long":
+		if tp <= leg1TP {
+			return 0, fmt.Sprintf("leg2_tp %.2f is not beyond the long leg-1 TP %.2f", tp, leg1TP)
+		}
+		if tp >= target {
+			return 0, fmt.Sprintf("leg2_tp %.2f is not before the long trade target %.2f", tp, target)
+		}
+	case "short":
+		if tp >= leg1TP {
+			return 0, fmt.Sprintf("leg2_tp %.2f is not beyond the short leg-1 TP %.2f", tp, leg1TP)
+		}
+		if tp <= target {
+			return 0, fmt.Sprintf("leg2_tp %.2f is not before the short trade target %.2f", tp, target)
+		}
+	default:
+		return 0, fmt.Sprintf("unknown side %q", side)
+	}
+	_ = entry
 	return tp, ""
 }
 
@@ -1082,21 +1191,28 @@ func (t *TCPTrader) ModifyBracket(signalID string, newSL, newTP float64) error {
 }
 
 // ModifyBracketLeg (release #22, mentor ISB candle-3 partial) modifies ONE leg
-// of a split bracket in place — leg 1 (-sl/-tp), leg 2 (-sl2/-tp2), 0 = every
-// leg — through the SAME modify_bracket frame (its `leg` field is wire v4; the
-// AddOn's HandleModifyBracket already honours it, so no C# change). Unlike the
-// unwired ModifyBracket it never puts an off-grid price on the wire (MATH-
-// EXECUTOR P2-2): a TP rounds to the NEAREST tick (the caller has already
-// rounded in its protective direction, so an on-grid price is unchanged) and a
-// stop goes through WireStop (away from the entry). A price <= 0 is "leave that
-// order untouched" (omitted from the frame). Nothing to change, a bad leg or a
-// bad side is an error — never a guessed frame.
+// of a split bracket in place — leg 1 (-sl/-tp), leg 2 (-sl2/-tp2), leg 3
+// (-sl3/-tp3, release #31), 0 = every leg — through the SAME modify_bracket
+// frame (its `leg` field is wire v4; the AddOn's HandleModifyBracket already
+// honours it, so no C# change). Unlike the unwired ModifyBracket it never puts
+// an off-grid price on the wire (MATH-EXECUTOR P2-2): a TP rounds to the
+// NEAREST tick (the caller has already rounded in its protective direction, so
+// an on-grid price is unchanged) and a stop goes through WireStop (away from
+// the entry). A price <= 0 is "leave that order untouched" (omitted from the
+// frame). Nothing to change, a bad leg or a bad side is an error — never a
+// guessed frame.
 func (t *TCPTrader) ModifyBracketLeg(signalID, side string, leg int, newSL, newTP float64) error {
 	if strings.TrimSpace(signalID) == "" {
 		return fmt.Errorf("ninjatrader/tcp: modify_bracket needs a signal id")
 	}
-	if leg < 0 || leg > 2 {
-		return fmt.Errorf("ninjatrader/tcp: modify_bracket leg %d is not 0, 1 or 2", leg)
+	if leg < 0 || leg > 3 {
+		return fmt.Errorf("ninjatrader/tcp: modify_bracket leg %d is not 0, 1, 2 or 3", leg)
+	}
+	// D7 (release #31 fold): a leg-3 modify must never reach an AddOn below the
+	// leg-3 build — an older AddOn reads leg 3 as "every leg" and would apply
+	// the price to legs 1 AND 2 (defence-in-depth; unreachable today).
+	if leg == 3 && !t.FarSideProves(ntwire.MinAddonBuildLeg3) {
+		return fmt.Errorf("ninjatrader/tcp: modify_bracket leg 3 needs AddOn >= %s (live %s)", ntwire.MinAddonBuildLeg3, t.server.FarSideBuildID())
 	}
 	if newSL <= 0 && newTP <= 0 {
 		return fmt.Errorf("ninjatrader/tcp: modify_bracket for %s has nothing to change", signalID)
@@ -1349,15 +1465,22 @@ func (t *TCPTrader) MoveStopForSignal(signalID, side string, newStop float64) er
 }
 
 // MoveStopForSignalLeg is MoveStopForSignal for ONE leg of a split bracket:
-// leg 1 (-sl) or leg 2 (-sl2) under the one signal id; 0 = every leg (the
-// single bracket). The widen ban is judged per leg — both legs share the
-// signal id, so a signal-only key would let one leg's stop judge the other's.
+// leg 1 (-sl), leg 2 (-sl2) or leg 3 (-sl3, release #31) under the one signal
+// id; 0 = every leg (the single bracket). The widen ban is judged per leg —
+// both legs share the signal id, so a signal-only key would let one leg's stop
+// judge the other's.
 func (t *TCPTrader) MoveStopForSignalLeg(signalID, side string, newStop float64, leg int) error {
 	if strings.TrimSpace(signalID) == "" {
 		return fmt.Errorf("ninjatrader/tcp: move_stop needs a signal id")
 	}
-	if leg < 0 || leg > 2 {
-		return fmt.Errorf("ninjatrader/tcp: move_stop leg %d is not 0, 1 or 2", leg)
+	if leg < 0 || leg > 3 {
+		return fmt.Errorf("ninjatrader/tcp: move_stop leg %d is not 0, 1, 2 or 3", leg)
+	}
+	// D7 (release #31 fold): a leg-3 move must never reach an AddOn below the
+	// leg-3 build — an older AddOn reads leg 3 as "every leg" and would move
+	// legs 1 AND 2 (defence-in-depth; unreachable today).
+	if leg == 3 && !t.FarSideProves(ntwire.MinAddonBuildLeg3) {
+		return fmt.Errorf("ninjatrader/tcp: move_stop leg 3 needs AddOn >= %s (live %s)", ntwire.MinAddonBuildLeg3, t.server.FarSideBuildID())
 	}
 	stopKey := signalID
 	if leg > 0 {

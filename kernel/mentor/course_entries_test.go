@@ -191,6 +191,7 @@ func TestCE7OrbEdgeVeto(t *testing.T) {
 		e, bars, now := mtfFixture(t, false)
 		e.Cfg.FifteenMinIBRule = FifteenMinOff
 		e.Cfg.OrbEdgeVetoPts = tc.veto
+		e.Cfg.OrbISBFractionOutside = 0 // CE-7 pin: isolate the POINTS veto from rule 5 (the fraction)
 		e.State.ORB = ORB{Day: dayStartCT(now), High: 103, Low: 99, Drawn: true, Escaped: SideLong}
 		got := longISBEmitted(e.Tick(bars, now))
 		if got != tc.want {
@@ -248,7 +249,7 @@ func TestCE4NewsBarsExcludedToTheOpen(t *testing.T) {
 	on.NewsBarsExcluded = true
 	on.PrintWindows = []PrintWindow{w}
 	for _, tc := range []struct {
-		now   int64
+		now    int64
 		frozen bool
 	}{
 		{auditMs(2026, 9, 15, 7, 19, 0), false},

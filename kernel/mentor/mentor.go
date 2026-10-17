@@ -159,6 +159,14 @@ type Intent struct {
 	// (swing — gated by its own 5m watermark instead).
 	RefBarMs int64
 
+	// EntryCandleHigh / EntryCandleLow (release #31 rule 5) are the entry
+	// candle's high and low, stamped ONLY on ISB intents (the candle the ORB
+	// edge rule measures the fraction outside the range from). 0 on every
+	// other intent — a pair with High <= Low is "not stamped" and the rule
+	// does not apply.
+	EntryCandleHigh float64
+	EntryCandleLow  float64
+
 	// Confluence is the R2 flag [00-METHOD Risk-reward, D3.4 p3 @ 07:38]:
 	// box edge + a key level inside the box or within 2 pts of its edge +
 	// the 5m trigger agrees — DS-102's exit-C / size-10 branch reads it.
@@ -187,10 +195,10 @@ type Intent struct {
 	// HTFAgree: the 4h AND 1h triggers BOTH stand and point this entry's side
 	// (D4.4 p1 @16:00 case 1: "4h trigger buy, 1h trigger buy" → trade that
 	// side). The evaluator stamps it on every ENTRY where intents leave Tick;
-	// the trader's size table needs it for the big tier (size stays 5 with
-	// confluence + 4h AND 1h agree + room ≥ 2× + target ≥ 30 pts — course
-	// default 5 MNQ, 1.1 p2 L1103). A silent 1h (case 2: follow the 4h) is
-	// NOT agreement.
+	// the trader's size table needs it for the big tier (size stays 4 with
+	// confluence + 4h AND 1h agree + room ≥ 2× + target ≥ 30 pts — owner order
+	// 2026-10-16; the course default 5 MNQ, 1.1 p2 L1103, is superseded). A
+	// silent 1h (case 2: follow the 4h) is NOT agreement.
 	HTFAgree bool
 	// RunnerTarget is the mode-A runner target BEYOND the old high (D2-49 /
 	// D2.4 p1 @01:56: "resonance breaks the old high 70–80%"). The PHL/PLH
@@ -198,6 +206,13 @@ type Intent struct {
 	// 0 = none — in mode A the runner's native TP is removed and the exit is
 	// the BE stop or EOD flat. The trader's resonance arming consumes it.
 	RunnerTarget float64
+	// RunnerPartialTP (release #31) is the runner's FIRST partial line — the
+	// nearest target line (key level / EMA 34/9 / old high-low / HTF trigger)
+	// strictly between the leg-1 exit (1:1) and the trade target, in the trade
+	// direction. The runner of ≥ 2 contracts sells half (rounded down) there;
+	// the rest trails as today. 0 = no line in between → no leg-3 split. The
+	// Tick emit sites stamp it centrally (runnerPartialLine).
+	RunnerPartialTP float64
 }
 
 // Leg1RiskMultiple is the leg-1 take-profit distance in units of R — the ONE
@@ -363,16 +378,29 @@ type Config struct {
 	// edges into the location gate and InsideAnyBox into the bans.
 	Box BoxCfg
 
-	// Exec2mAfter30m — X5-10 optional knob (default OFF): the ISB-exec
+	// Exec2mAfter30m — X5-10 knob (default ON since release #31): the ISB-exec
 	// timeframe schedule (owner order 2026-10-13 ~23:00 CT "fix all"; sources
 	// X5 @00:07–01:17, X11 @17:06–19:35 — ~/mm-course/extra/notes/05-EXTRA.md
-	// :305-311): with the knob ON the ISB reads the 1m ONLY during the RTH
+	// :305-311; re-read 2026-10-16: extra "Routine trước khi trade" part1
+	// @00:41–01:14 "Trong 30 phút đầu giờ em vẫn sẽ trade khung 1 phút… sau
+	// 30 phút em sẽ chuyển qua khung 2 phút", Go over @17:27 "khung 2 phút ít
+	// bị quét râu"): with the knob ON the ISB reads the 1m ONLY during the RTH
 	// open +30 minutes (08:30 ≤ t < 09:00 CT), and the 2m at every other
 	// minute — overnight and the Europe open (3am Texas) included. "Evening
 	// slow → 5m" is an OPEN COURSE QUESTION (no number for "slow"); left
-	// unimplemented. The course trades the 1m throughout, so this stays behind
-	// a knob and OFF by default; while OFF the ISB read is byte-identical.
+	// unimplemented. The MNQ strategy sets no mentor_tuning, so this default
+	// is the live behaviour; an explicit OFF restores the 1m read all day.
 	Exec2mAfter30m bool
+
+	// OrbISBFractionOutside — rule 5 (release #31, default 0.80): an ISB at the
+	// ORB edge trades only when ≥ this fraction of the ISB candle's range
+	// (high − low) lies OUTSIDE the ORB on the trade side — "80% 90% là cái
+	// nến nó nằm ở ngoài… anh chị có quyền take risk… điểm entry… nằm gần cái
+	// resistance quá thì thôi bỏ đi" [extra "Routine trước khi trade" part1
+	// @07:46–09:04]. The measure is the fraction of the candle, NOT a points
+	// distance (that is the separate CE-7 orb_edge_veto_pts). ≤ 0 = the rule
+	// is off.
+	OrbISBFractionOutside float64
 
 	// OrbGateEnabled turns on the §7 step 0 ORB gate (default ON): the high and
 	// low of the FIRST 2-minute candle of the regular session gate every
@@ -542,6 +570,12 @@ func DefaultConfig() Config {
 		Box: DefaultBoxCfg(),
 
 		OrbGateEnabled: true,
+
+		// Release #31 rule 4 (X5-10): the ISB-exec schedule defaults ON — 1m
+		// for the first 30 min of RTH, then the 2m.
+		Exec2mAfter30m: true,
+		// Release #31 rule 5: the ORB-edge ISB candle must be ≥ 80% outside.
+		OrbISBFractionOutside: 0.80,
 
 		LegBudgetEnabled: true,
 		LegResetOn:       "close",

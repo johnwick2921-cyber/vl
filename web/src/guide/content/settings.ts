@@ -431,6 +431,38 @@ const dayPlan: KnobSpec[] = [
     perSession: 'No.',
   },
   {
+    label: 'Round-trip cost (structural stop)',
+    where:
+      'No Studio control — stored setting day_plan.structural_stop.round_trip_cost_points (API/config field)',
+    what: "The point cost of a complete round trip (entry + exit friction) assumed when the structural stop is composed. Unset → 2 points (the owner's baseline research assumption); a stored non-negative value overrides it. The resolved cost is part of the structural-stop policy the arm geometry reads.",
+    trader:
+      '2 points is the friction assumption baked into the structural stop so the machine does not arm a stop whose net edge is eaten by costs.',
+    consumer:
+      'store/structural_geometry.go ResolveStructuralStop (CostPoints, default 2) · trader/structural_geometry.go ComposeLevelFadeGeometry',
+    range: 'points ≥ 0 (unset → 2)',
+    systemDefault: '2',
+    recommended:
+      "⭐ 2 — the owner's baseline assumption; change only with a measured round-trip cost.",
+    whenToTouch: 'Only after measuring the actual per-trade friction.',
+    perSession: 'No — strategy-level.',
+  },
+  {
+    label: 'Fade-or-wide k (W2 label)',
+    where:
+      'No Studio control — stored setting day_plan.fade_or_wide_k (API/config field)',
+    what: "W2 LABEL knob: sets exclusion (a)'s k — it changes what is RECORDED (which level is labelled fade vs wide), never what is armed. Zero or unset → the C5 default 1.28 (p80/median, n=13).",
+    trader:
+      'A labelling constant only: it names the fade/wide split in the records; the arm gate never reads it to allow or refuse an entry.',
+    consumer:
+      'trader/fade_facts.go fadeORWideKResolved (fadeORWideKDefault = 1.28)',
+    range: 'k > 0 (0 or unset → 1.28)',
+    systemDefault: '1.28 (C5 p80/median n=13)',
+    recommended:
+      '⭐ leave unset — the C5 default; a stored value only changes the recorded label split.',
+    whenToTouch: 'Only to re-label the fade/wide split in the records.',
+    perSession: 'No — strategy-level.',
+  },
+  {
     label: 'Red-news hard-block currencies (W-T1-CURRENCIES)',
     where: 'Strategy → Day Plan → t1_currencies text field (comma-separated)',
     what: "Which currencies' T1 (red) calendar events open the HARD ±15m no-trade window. Default USD: only USD red events hard-block; a red event in any other currency (a BOJ rate decision, a BoE vote) is shown as an advisory line — on the plan card, in the plan's no_trade list and in the planner prompt — and blocks nothing. Set ALL to restore the old behaviour where every red event in the session's currency filter hard-blocked. Case-insensitive; blanks are ignored; a red event with NO currency still hard-blocks (fail closed) and is named once a day in the log.",
@@ -452,7 +484,7 @@ const dayPlan: KnobSpec[] = [
     label: 'Wake on level events (1 switch)',
     where:
       'Strategy → Day Plan → Planner wake-ups → Wake on level events (wake_on_level_events)',
-    what: "The level-event wake that re-reads the planner mid-session (the W6 wake wave), now ONE switch (W-KNOB-PRUNE, 2026-09-18). ON = HTF 1h/4h S/D zones the plan never saw and invalidation of a level it DID seat wake the planner — the two classes Rounds 23/24 kept; the 15m reversal-zone/FVG and iFVG classes ride along at their shipped-ON default. HTF order blocks stay OFF unless a legacy stored wake_on_htf_ob=true exists (the owner's MNQ strategy — honoured and logged at load). Wakes are paced by the folded 30-minute interval and the class-47 cadence cutoffs.",
+    what: 'The level-event wake that re-reads the planner mid-session (the W6 wake wave), now ONE switch (W-KNOB-PRUNE, 2026-09-18). ON = HTF 1h/4h S/D zones the plan never saw and invalidation of a level it DID seat wake the planner — the two classes Rounds 23/24 kept; the 15m reversal-zone/FVG and iFVG classes ride along at their shipped-ON default. HTF order blocks stay OFF unless a legacy stored wake_on_htf_ob=true exists (both bound strategies — honoured and logged at load). Wakes are paced by the folded 30-minute interval and the class-47 cadence cutoffs.',
     trader:
       'ON = the plan reacts to structure as it forms; wakes are advisory refreshes that can never dark a session. OFF = only deaths, MSS and flips re-read. A strategy that stored the old five toggles is mapped by the engine: any of them ON → this switch ON; all five false → OFF.',
     consumer:
@@ -523,7 +555,8 @@ const dayPlan: KnobSpec[] = [
   },
   {
     label: 'Session condition status override (0C)',
-    where: 'Strategy → Day Plan → sessions[] → condition_status map',
+    where:
+      'API/config field day_plan.sessions[].condition_status (no Studio control)',
     what: 'Per-session live|shadow override of the strategy-level condition_status map; nil inherits the strategy-level map.',
     trader: 'Use it to shadow a condition in one session only.',
     consumer:
@@ -839,7 +872,7 @@ const risk: KnobSpec[] = [
   {
     label: 'Trailing stop (AI trades)',
     where: 'Strategy → Risk Control',
-    what: 'AI-plan trades only: once armed (after_breakeven | N points | immediately), each 60 s monitor beat ratchets the stop to best price since entry ∓ mult×ATR(period, 5m), tighten-only. Like breakeven it moves a stop only when BOTH this toggle (trailing_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0) are on; with the seam SUSPENDED it computes a level and sends nothing. Never applied to a mentor-mode trade — the mentor runner has its own candle trail (Mentor mode → The exits). Evidence on ATR trails: a 567,000-backtest study ranks ATR/Chandelier trails in the worst group of 15 exit families; our 09-01 tape shows $719.50 of giveback with zero trail exits.',
+    what: 'AI-plan trades only: once armed (after_breakeven | N points | immediately), each 60 s monitor beat ratchets the stop to best price since entry ∓ mult×ATR(period, 5m), tighten-only. Like breakeven it moves a stop only when BOTH this toggle (trailing_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0) are on; with the seam SUSPENDED it computes a level and sends nothing. Never applied to a mentor-mode trade — the mentor runner has its own candle trail (Mentor mode → The exits). Since release #32 the panel shows the "not applied while mentor mode is ON" caveat under BOTH the breakeven and the trailing toggle, read from the server’s effective origin (never a typed copy). Evidence on ATR trails: a 567,000-backtest study ranks ATR/Chandelier trails in the worst group of 15 exit families; our 09-01 tape shows $719.50 of giveback with zero trail exits.',
     trader:
       'Read the boot line "🛑 exits: … trail=on|off(strategy) · seam=…(env)". The live boots of 2026-10-13 and 2026-10-14 read trail=off · seam=ACTIVE: the ATR trail is not moving stops there.',
     consumer:
@@ -856,7 +889,7 @@ const risk: KnobSpec[] = [
   {
     label: 'Guardrails master',
     where: 'Strategy → Risk Control → Guardrails',
-    what: 'Master switch for the daily guardrails stack (loss/profit caps, max trades, consistency, blackout windows). The consecutive-loss halt and the re-entry cooldown are NOT under this switch — each bites whether the master is on or off.',
+    what: 'Master switch for the daily guardrails stack (loss/profit caps, max trades, consistency, blackout windows). The consecutive-loss halt and the re-entry cooldown are NOT under this switch — each bites whether the master is on or off. Since release #32, with the master OFF every child guardrail row (daily loss / daily profit / max trades / blackout / consistency) shows a red "NOT ENFORCED — Risk guardrails master is OFF" badge beside its own toggle, so a stored value that looks set is visibly not enforced.',
     trader:
       'Currently OFF by owner ruling — the would-have-tripped counters still display.',
     consumer: 'kernel/risk_limits.go ResolveStrategyGuardrails (MasterEnabled)',
@@ -870,7 +903,7 @@ const risk: KnobSpec[] = [
   },
   {
     label: 'Max contracts (always-on) — Stage A: 1 (AI / planner path only)',
-    what: 'Contract cap per order on the AI / planner path — on with or without the master. 0B (2026-09-02): every AI / planner resolution is clamped to the Stage-A ceiling of 1 contract — survival-first under an undemonstrated edge. Stage B (2) only at n≥30 closed trades with a POSITIVE LOWER-CI expectancy; Kelly and optimal-f are undefined without an edge estimate. Before 0B the two resolvers disagreed: arm-leg capacity said 1 while order sizing said 2, and the boot line said capacity=1. MENTOR MODE IS NOT CLAMPED BY THIS: a mentor-mode trader skips this resolver (resolveMaxContracts returns mentor_max_contracts) and sizes every entry from the mentor size table — 5 by default (base, confluence and big are all 5), 3 when the stop is 20–<30 pts or an ISB sits at an old high/low or inside a range, 2 on the SWING4H — capped only by mentor_max_contracts (default 20). Live: every mentor arm on the mentor trader since 10-13 (rows 340–362) carried 3 contracts (ISB tiers). See Mentor Mode → Sizing.',
+    what: 'Contract cap per order on the AI / planner path — on with or without the master. 0B (2026-09-02): every AI / planner resolution is clamped to the Stage-A ceiling of 1 contract — survival-first under an undemonstrated edge. Stage B (2) only at n≥30 closed trades with a POSITIVE LOWER-CI expectancy; Kelly and optimal-f are undefined without an edge estimate. Before 0B the two resolvers disagreed: arm-leg capacity said 1 while order sizing said 2, and the boot line said capacity=1. MENTOR MODE IS NOT CLAMPED BY THIS: a mentor-mode trader skips this resolver (resolveMaxContracts returns mentor_max_contracts) and sizes every entry from the mentor size table — 4 by default (base, confluence and big are all 4), 4 when the stop is 20–<30 pts or an ISB sits at an old high/low or inside a range, 2 on the SWING4H — capped only by mentor_max_contracts (default 20). See Mentor Mode → Sizing.',
     where: 'Strategy → Risk Control → always-on row',
     trader:
       'THE ARITHMETIC: 0B also raised the stop floor from 1.0× to 1.5×ATR5m, which lifts dollar risk per trade by roughly 50% at constant size. That is precisely why size does NOT move at the same time.',
@@ -879,10 +912,26 @@ const risk: KnobSpec[] = [
     range:
       'page value · Stage-A ceiling 1 · env STAGE_A_CONTRACT_CAP raises it · not applied in mentor mode',
     systemDefault:
-      '1 (Stage A) on the AI / planner path; mentor mode: the mentor size table (5 / 3 / 2, cap 20)',
+      '1 (Stage A) on the AI / planner path; mentor mode: the mentor size table (4 / 4 / 2, cap 20)',
     recommended: '⭐ 1 — do not raise before the n≥30 lower-CI test.',
     whenToTouch: 'Stage B, with the expectancy table in hand.',
     perSession: 'No.',
+  },
+  {
+    label: 'Planner contracts per entry',
+    what: 'The PLANNER trader\u2019s contracts per entry (dispatch-31, owner order 2026-10-16 "set to 4 at least, sell 2 first so it\u2019s equal"). Unset/0 → 1 = today\u2019s single-contract arm. A value ≥ 2 splits the planner arm AT ENTRY into equal halves: leg 1 = n/2 (floor) contracts at the plan\u2019s FIRST TARGET (target_chain[0]; the first obstacle is only the fallback, and only when it is ≥ +1R away), leg 2 = the rest at the arm\u2019s final target with the existing stop management. If leg 1\u2019s price would equal or pass the final target the split degrades to ONE n-lot bracket. The stamped total is clamped to the always-on Max contracts / order (resolveMaxContracts — max_contracts_per_order + the Stage-A ceiling), re-clamped at send, and to a hard ceiling of 10 (a typo of 40 is refused). A 2-leg sweep_reclaim arm and a Picture arm are never split. Mentor sizing is untouched (the mentor table, not this knob). Read on the planner arm path only.',
+    where: 'Strategy → Risk Control → Planner contracts per entry',
+    trader:
+      'To actually size 4 = 2 + 2 on "mnq 2" the owner must ALSO set max_contracts_per_order = 4 AND the env STAGE_A_CONTRACT_CAP = 4 (a .env change + restart) — today the always-on clamp resolves to 1 for that strategy.',
+    consumer:
+      'trader/auto_trader_orders.go plannerContracts / stampPlannerSplit (clamped to resolveMaxContracts) · trader/armed_executor.go + trader/zone_placement.go (the stamped row reaches the wire as one split frame via PlaceLimitEntryWithSplit)',
+    range:
+      'int · unset/0 → 1 · ≥ 2 splits equal halves · ceiling 10 · clamped to resolveMaxContracts',
+    systemDefault: '1 (single-contract arm)',
+    recommended:
+      '⭐ 1 everywhere except the owner\u2019s planner strategy (4, after raising max_contracts_per_order and STAGE_A_CONTRACT_CAP).',
+    whenToTouch: 'Only on an owner ruling for the planner trader.',
+    perSession: 'No — per strategy.',
   },
   {
     label: 'Notional cap (always-on)',
@@ -972,7 +1021,7 @@ const risk: KnobSpec[] = [
   {
     label: 'Re-entry cooldown',
     where: 'Strategy → Risk Control → Guardrails',
-    what: 'After a STOP-LOSS exit (NT8 exit reason "sl"; target and manual exits do not arm it), a SAME-direction re-entry on that symbol is refused for this many minutes. On the AI decision path it also unlocks early once price is a full ATR15 away from the stop; the arm and Picture paths unlock on the timer only. The opposite direction and other symbols are never blocked, an agent-chat entry is not checked, and the stop record is in memory only (a restart clears it).',
+    what: 'After a STOP-LOSS exit (NT8 exit reason "sl"; target and manual exits do not arm it), a SAME-direction re-entry on that symbol is refused for this many minutes. On the AI decision path it also unlocks early once price is a full ATR15 away from the stop; the arm and Picture paths unlock on the timer only. The opposite direction and other symbols are never blocked, an agent-chat entry is not checked, and the stop record is in memory only (a restart clears it). Since release #32 the Studio shows "OFF (absent = 0)" beside the field when the key is absent (the Go truth), and the toggle writes 20 only when you turn it on.',
     trader: 'Prevents immediately re-entering after being stopped.',
     consumer:
       'trader/entry_admission.go admitChain → reentryCooldownMinutes + discipline.ReentryPeek (arm/picture) · kernel/engine_analysis.go applyReentryCooldown (decision)',
@@ -1094,6 +1143,22 @@ const prompt: KnobSpec[] = [
       'ON = counter-trend entries are refused while the HTF trend is confirmed.',
     consumer:
       'store/strategy.go RegimeConfig.HTFVeto · store/resolve_source.go ResolveHTFVeto',
+    range: 'ON | OFF',
+    systemDefault: 'ON (nil/absent = ON)',
+    recommended:
+      '⭐ ON — the shipped default; OFF only to reproduce pre-wave behaviour.',
+    whenToTouch: 'Turn OFF only for a pre-wave comparison study.',
+    perSession: 'No — strategy-level.',
+  },
+  {
+    label: 'Transition stand-down (regime G4)',
+    where:
+      'No Studio control — stored setting regime.transition_standdown (API/config field)',
+    what: 'Pause plan-direction entries while an unconfirmed counter-trend CHoCH/MSS is outstanding (G4). nil → ON (shipped default); false = pre-wave behaviour (no transition stand-down). The stand-down state advances on the transition state machine and is surfaced to the plan card via the stored transition key.',
+    trader:
+      'ON = the planner holds off direction entries while the regime transition is unresolved; a genuine transition must confirm before plan-direction entries resume.',
+    consumer:
+      'store/strategy.go StrategyConfig.TransitionStanddownEnabled (nil → ON) · trader/auto_trader_transition.go observeTransitionStanddown → kernel.TransitionStanddownVerdict',
     range: 'ON | OFF',
     systemDefault: 'ON (nil/absent = ON)',
     recommended:
@@ -1746,19 +1811,19 @@ export const settings: GuideSection = {
         [
           'levels_fresh_by_tf',
           'FOLDED',
-          "OFF unless stored (owner's MNQ strategy stores ON)",
+          'OFF unless stored (both bound strategies store ON)',
           'S4c: freshness separates nothing; the stored ON is honoured until the owner clears it, then the grader is deleted.',
         ],
         [
           'structure_map',
           'FOLDED',
-          "OFF unless stored (owner's MNQ strategy stores ON)",
+          'OFF unless stored (both bound strategies store ON)',
           'Advisory text only; keep OFF until Round 25.',
         ],
         [
           'wake_on_15m_zone · wake_on_htf_ob · wake_on_ifvg · wake_on_htf_zone · wake_on_seated_invalidation',
           'COLLAPSED',
-          "one switch wake_on_level_events (ON); OBs only via a legacy stored wake_on_htf_ob=true (owner's MNQ strategy)",
+          'one switch wake_on_level_events (ON); OBs only via a legacy stored wake_on_htf_ob=true (both bound strategies)',
           'Rounds 23/24 kept HTF zones + seated invalidation; the rest ride along at their shipped default; any legacy ON → ON.',
         ],
         [

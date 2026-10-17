@@ -74,6 +74,27 @@ func TestMentorTruthSnapshotDisabledWhenMentorOff(t *testing.T) {
 	}
 }
 
+// (d) the truth card must NOT show done-after-win while the switch is OFF, even
+// on a definite win day. The card reads mentorDoneAfterWinTripped — the same
+// resolver the gate and the day-stop sweep use — so this pins the STATUS-CARD
+// half of "every reader moves together". Mutant: drop the Enabled early-return
+// in mentorDoneAfterWinTripped (or make the card read the day net directly) →
+// RED.
+func TestMentorTruthSnapshotDoneAfterWinOffWithWonDay(t *testing.T) {
+	at, st := doneAfterWinRig(t, "") // explicit true, then nil below
+	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = nil
+	seedClosedWin(t, st, at.id, nyDayClock(8, 11, 2).UnixMilli(), 31.50) // the 10-16 #660 shape
+
+	pinDoneAfterWinClock(t, 8, 11, 3)
+	p, ok := at.MentorTruthSnapshot(nyDayClock(8, 11, 3))
+	if !ok || !p.Enabled {
+		t.Fatalf("snapshot must be enabled, got ok=%v enabled=%v", ok, p.Enabled)
+	}
+	if p.DoneAfterWin {
+		t.Fatalf("switch OFF (nil) + a won day: the truth card must NOT show done-after-win, got why=%q", p.DoneAfterWinWhy)
+	}
+}
+
 // Mentor ON but the evaluator not built yet (mentorEval == nil) → the payload is
 // enabled=true with `computing=true` and Levels/Depth ABSENT (nil), never a
 // fabricated `[]`/`{}`. The card keys off `computing` instead of dereferencing

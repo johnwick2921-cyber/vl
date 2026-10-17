@@ -76,6 +76,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.orb_edge_veto_pts',
     live: true,
   },
+  'ORB-edge ISB candle fraction outside': {
+    settingId: 'risk_control.mentor_tuning.orb_isb_fraction_outside',
+    live: true,
+  },
   'Box-return 5m trend source': {
     settingId: 'risk_control.mentor_tuning.d43_trend_source',
     live: true,
@@ -493,8 +497,8 @@ export const mentor: GuideSection = {
           cite: 'D4.3 @00:00–03:20, @09:27–09:46 · WickMicroscalpEnabled',
         },
         {
-          title: 'Intraday confluence (exit C, size 5)',
-          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. It also fires on timeframe agreement: the 15m ISB, the 5m ISB and the entry side all align AND the 5m trigger agrees (an ISB/PHL/PLH, not just a box) [D4.2 p1 @14:57]. Then: hold at least 1:2, the stop is never moved up (exit C), size 5 — the confluence and big tiers no longer add contracts (owner order 2026-10-13, course 1.1 L1103 “Cái sizing của em Cố định là 5 MNQ”).',
+          title: 'Intraday confluence (exit C, size 4)',
+          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. It also fires on timeframe agreement: the 15m ISB, the 5m ISB and the entry side all align AND the 5m trigger agrees (an ISB/PHL/PLH, not just a box) [D4.2 p1 @14:57]. Then: hold at least 1:2, the stop is never moved up (exit C), size 4 — the confluence and big tiers no longer add contracts (owner order 2026-10-16, “set to 4 at least, sell 2 first so it’s equal”; the course 1.1 L1103 “Cái sizing của em Cố định là 5 MNQ” is superseded).',
           cite: 'R2 · D3.4 p3 @07:38 · D4.2 p1 @14:57',
         },
         {
@@ -545,7 +549,7 @@ export const mentor: GuideSection = {
         ],
         [
           'ORB gate (opening range)',
-          'ORB = the high and the low of the FIRST 2-minute candle of the regular session (08:30–08:32 CT), drawn only once that candle has completed. NO trade inside the ORB and NO reversal trade at either edge. Trade only after price has LEFT the box — escape test: a 1m candle whose BODY is wholly outside, its open AND its close beyond the edge (the course minimum, the same test as the box escape [D4.1 p1 @20:36]; a candle that opens inside and closes one tick out is NOT an escape). Direction follows the side of the LATEST escape: below → shorts only (ISB short / PLH); above → longs only. It is not locked for the day: a later 1m body wholly beyond the OTHER edge switches the side ("cho tới khi nào nó crack" [X7 @07:42–07:51]); a candle that only pushes back inside switches nothing. Every escape and every switch is logged with its candle. The escape picks the side; it is NOT an entry. No ORB for pre-market. The SWING4H is exempt.',
+          'ORB = the high and the low of the FIRST 2-minute candle of the regular session (08:30–08:32 CT), drawn only once that candle has completed. NO trade inside the ORB and NO reversal trade at either edge. Trade only after price has LEFT the box — escape test: a 1m candle whose BODY is wholly outside, its open AND its close beyond the edge (the course minimum, the same test as the box escape [D4.1 p1 @20:36]; a candle that opens inside and closes one tick out is NOT an escape). Direction follows the side of the LATEST escape: below → shorts only (ISB short / PLH); above → longs only. It is not locked for the day: a later 1m body wholly beyond the OTHER edge switches the side ("cho tới khi nào nó crack" [X7 @07:42–07:51]); a candle that only pushes back inside switches nothing. Every escape and every switch is logged with its candle. The escape picks the side; it is NOT an entry. No ORB for pre-market. The SWING4H is exempt. An ISB whose entry candle is not mostly OUTSIDE the range on the trade side is also skipped (the separate rule-5 card below, counter orb_isb_mostly_inside).',
           'orb_gate_enabled = true (default ON) · X5 @01:52, 02:36, 02:57–03:47, 05:42 · X7 @07:42–07:51 · D4.1 p1 @20:36',
         ],
         [
@@ -555,8 +559,13 @@ export const mentor: GuideSection = {
         ],
         [
           '2m execution (1m only in the first 30 min of RTH)',
-          'OFF by default — the course trades the 1m throughout. Turn it on and the ISB entry is read on the 1m chart ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"); at every other minute it is the 2m ("khung 2 phút ÍT BỊ QUÉT RÂU" — the 1m wicks sweep stops, so the 2m read is quieter), overnight and the Europe open (3am Texas) included. "Evening slow → 5m" is an open course question (no number for "slow"). The higher-timeframe lines, the boxes and the ORB escape always stay on the 1m. An ISB entered on the 2m trails its runner on CLOSED 2m candles — "trade khung nào thì gồng theo khung đó" [X8 @18:02–18:14] (BE and the 1:1 rule keep the 1m close); after a restart that frame is not known and the runner trails the 1m (WARN trail_tf_unknown_after_restart).',
-          'mentor_exec_2m_after_30m = false (default OFF) · X5 @00:07–01:17 · X11 @17:06–19:35',
+          'ON by default — the ISB entry is read on the 1m chart ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"); at every other minute it is the 2m ("khung 2 phút ÍT BỊ QUÉT RÂU" — the 1m wicks sweep stops, so the 2m read is quieter), overnight and the Europe open (3am Texas) included. "Evening slow → 5m" is an open course question (no number for "slow"). The higher-timeframe lines, the boxes and the ORB escape always stay on the 1m. An ISB entered on the 2m trails its runner on CLOSED 2m candles, its candle-3 partial reads the 2m fill candle, and its break-even reads the 2m close — "trade khung nào thì gồng theo khung đó" [X8 @18:02–18:14] (only the 1:1 live rule keeps the 1m close); after a restart that frame is not known and the runner trails the 1m (WARN trail_tf_unknown_after_restart).',
+          'mentor_exec_2m_after_30m = true (default ON) · X5 @00:07–01:17 · X11 @17:06–19:35 · "Routine trước khi trade" @00:41–01:14',
+        ],
+        [
+          'ORB-edge ISB candle fraction outside',
+          'An ISB at the ORB edge trades only when at least 80% (the knob) of the ISB candle — its high-minus-low range — lies OUTSIDE the opening range on the trade side: "80% 90% là cái nến nó nằm ở ngoài… anh chị có quyền take risk… điểm entry… nằm gần cái resistance quá thì thôi bỏ đi" [extra "Routine trước khi trade" part1 @07:46–09:04]. It is the fraction of the candle, NOT a points distance (that is the separate CE-7 orb_edge_veto_pts). A candle whose entry point just ticks outside the edge but whose body is still mostly inside the range is skipped and counted orb_isb_mostly_inside. The knob orb_isb_fraction_outside defaults to 0.80; 0 turns the rule OFF (the ISB trades at the edge at any fraction); the rule is part of the ORB gate (orb_gate_enabled), ISB entries only, RTH only.',
+          'orb_isb_fraction_outside = 0.80 (default ON; 0 = off) · extra "Routine trước khi trade" part1 @07:46–09:04',
         ],
       ],
     },
@@ -566,8 +575,8 @@ export const mentor: GuideSection = {
       items: [
         {
           title: 'Done for the day after a win',
-          body: 'One win and the machine is done for the day.',
-          cite: 'Owner setting — done-after-win (D1.2 p1 @20:53 "thắng rồi… quyền được nghỉ ngơi") · mentor_done_after_win — live',
+          body: 'OFF by default (owner order 2026-10-16, "it’s been off … follow it"). ON: after a mentor trade closes in profit and the day is net positive, no new mentor entries until the next NY open (08:30 CT); resting entry orders are cancelled.',
+          cite: 'Owner setting — done-after-win (D1.2 p1 @20:53 "thắng rồi… quyền được nghỉ ngơi") · mentor_done_after_win — nil → OFF (owner order 2026-10-16)',
         },
         {
           title: 'Trading window — 08:30–09:30 CT by default',
@@ -606,13 +615,13 @@ export const mentor: GuideSection = {
       title: 'The size table (SIM)',
       head: ['Tier', 'Default contracts', 'Knob'],
       rows: [
-        ['Base', '5', 'mentor_base_contracts'],
-        ['Confluence (many things agree)', '5', 'mentor_confluence_contracts'],
-        ['Big (the hard tier)', '5', 'mentor_big_contracts'],
+        ['Base', '4', 'mentor_base_contracts'],
+        ['Confluence (many things agree)', '4', 'mentor_confluence_contracts'],
+        ['Big (the hard tier)', '4', 'mentor_big_contracts'],
         ['Hard cap', '20', 'mentor_max_contracts'],
         [
           'Reduced (stop 20–<30 pts; also an ISB at an old high/low or inside a range)',
-          '3',
+          '4',
           'mentor_reduced_contracts',
         ],
         [
@@ -632,6 +641,10 @@ export const mentor: GuideSection = {
       text: 'The risk-control max_contracts_per_order knob does NOT apply in mentor mode: mentor entries size from this table, capped only by mentor_max_contracts (default 20).',
     },
     {
+      kind: 'p',
+      text: 'MENTOR-SIZE-4 (owner order 2026-10-16, “set to 4 at least, sell 2 first so it’s equal”): every intraday tier sizes 4 MNQ — the split sells 2 first (leg 1) and holds 2 (the runner), equal halves. This OVERRIDES the course’s “fixed 5” (1.1 p2 L1103, 3.4 p3 L531, slide 5) and the “reduce size” tier-3 rules (D4.1 p1 @04:37–05:04) — the reduced band no longer cuts below 4. The SWING4H (2) and the spent-day tier (normal size, 15-pt target cap + runner cap 2) are unchanged.',
+    },
+    {
       kind: 'h',
       text: 'The exits',
     },
@@ -646,7 +659,7 @@ export const mentor: GuideSection = {
         ],
         [
           'B — normal',
-          '2 or more contracts: ONE entry with two exits — leg 1 (half, rounded up) takes profit at 1:1 measured from the actual entry price, the runner holds to the target or until the EOD flat closes it, whichever comes first (see EOD flat below; 1 contract = a single leg). The runner’s stop follows mentor_trail_mode. candle (the default, owner ruling R3, release #22): NOTHING moves until leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader (the broker’s fill receipt, or its position size dropping to the runner — never a price touch); then the runner’s stop goes to break-even = the entry (an off-grid averaged entry rounds toward profit), on the first close past the entry — if price is back through it, the original stop stays until a close is past it; then on every CLOSED candle of the frame the entry was read on — the 1m, or the 2m for an ISB read on the 2m under exec_2m_after_30m [X8 @18:02–18:14 "trade khung nào thì gồng theo khung đó"] — it moves to 1 tick beyond that candle’s low (long) / high (short), only when that is tighter — a lower low (long) / higher high (short) moves nothing. off = the older rule: both stops to break-even at HALF the distance to the target, live 1:1 behind the target, trail after the 1:1 point. Either way every move is checked against the stop NinjaTrader actually holds — never wider than it (a stop you tightened by hand is kept), nothing is sent while the broker book is stale, nothing is sent to a leg that is already closed — and each move is confirmed or reported from the next broker book. trail_tf: 1m default, off = break-even only; 30s/45s are REFUSED at load (the bot has no sub-minute bars — NinjaTrader streams 1m and up) and run as 1m, WARN + trail_tf_subminute_refused. Spent day: at most 2 contracts run — the rest leave with leg 1. Needs the AddOn build 2026-10-04-d1; an older AddOn gets one bracket for the whole position, which keeps the older rule',
+          '2 or more contracts: ONE entry with a split exit — leg 1 (half, rounded up) takes profit at 1:1 measured from the actual entry price, and the runner holds toward the target. With a runner of 2 or more contracts the runner splits AGAIN (release #31): half of the runner (rounded down) takes profit at the first target line beyond leg 1’s 1:1 exit (EMA 34/9, old high/low, HTF trigger, box edge, trendline target) — the runner-partial line, strictly between leg 1’s take-profit and the trade target; with no line in that gap (or the line is at/past the target) the runner stays one leg — and the remainder holds to the target or until the EOD flat closes it, whichever comes first (5 contracts → 3/1/1, 3 → 2/1; 1 contract = a single leg; see EOD flat below). The runner’s stop follows mentor_trail_mode. candle (the default, owner ruling R3, release #22): NOTHING moves until leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader (the broker’s fill receipt, or its position size dropping to the runner — never a price touch); then EVERY runner contract’s stop goes to break-even = the entry (the runner-partial line contract and the trailing remainder alike — a contract whose own take-profit already filled is closed and never moved) (an off-grid averaged entry rounds toward profit), on the first close past the entry — if price is back through it, the original stop stays until a close is past it; then on every CLOSED candle of the frame the entry was read on — the 1m, or the 2m for an ISB read on the 2m under exec_2m_after_30m [X8 @18:02–18:14 "trade khung nào thì gồng theo khung đó"] — it moves to 1 tick beyond that candle’s low (long) / high (short), only when that is tighter — a lower low (long) / higher high (short) moves nothing. off = the older rule: both stops to break-even at HALF the distance to the target, live 1:1 behind the target, trail after the 1:1 point. Either way every move is checked against the stop NinjaTrader actually holds — never wider than it (a stop you tightened by hand is kept), nothing is sent while the broker book is stale, nothing is sent to a leg that is already closed — and each move is confirmed or reported from the next broker book. trail_tf: 1m default, off = break-even only; 30s/45s are REFUSED at load (the bot has no sub-minute bars — NinjaTrader streams 1m and up) and run as 1m, WARN + trail_tf_subminute_refused. Spent day: at most 2 contracts run — the rest leave with leg 1. The 2-pair split needs the AddOn build 2026-10-04-d1; the 3-pair (leg-3) split needs 2026-10-16-a — below that the runner stays one leg (the 2-pair plan). An AddOn older than 2026-10-04-d1 gets one bracket for the whole position, which keeps the older rule',
         ],
         [
           'C — confluence',
@@ -732,11 +745,13 @@ export const mentor: GuideSection = {
           label: 'Base contracts',
           where: 'Strategy → Mentor mode → sizing',
           what: 'The default contract count for a mentor entry.',
-          trader: '5 contracts on SIM per setup.',
+          trader:
+            '4 contracts on SIM per setup — the split sells 2 first (leg 1) and holds 2 (the runner), equal halves.',
           consumer: 'trader/mentor_mode.go mentorBaseContractsDefault',
           range: 'int',
-          systemDefault: '5',
-          recommended: '5 — Owner setting: CTO shipped size table (P3).',
+          systemDefault: '4',
+          recommended:
+            '4 — Owner order 2026-10-16 (“set to 4 at least, sell 2 first so it’s equal”); the course’s “fixed 5” (1.1 p2 L1103) is superseded.',
           whenToTouch: 'When you deliberately re-size the method.',
           perSession: 'No.',
         },
@@ -745,26 +760,26 @@ export const mentor: GuideSection = {
           where: 'Strategy → Mentor mode → sizing',
           what: 'Size when many things agree (the confluence path).',
           trader:
-            '5 contracts when everything lines up — the tier still reports WHY, but the count stays 5.',
+            '4 contracts when everything lines up — the tier still reports WHY, but the count stays 4.',
           consumer: 'trader/mentor_mode.go mentorConfluenceContractsDefault',
           range: 'int',
-          systemDefault: '5',
+          systemDefault: '4',
           recommended:
-            '5 — Owner order 2026-10-13 (course 1.1 p2 L1103: fixed 5 MNQ); the confluence tier no longer adds contracts.',
+            '4 — Owner order 2026-10-16 (the course 1.1 p2 L1103 “fixed 5 MNQ” is superseded); the confluence tier no longer adds contracts.',
           whenToTouch: 'Only if the owner re-sizes the method deliberately.',
           perSession: 'No.',
         },
         {
           label: 'Big contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'The big tier — it still reports WHY the setup qualified (4h AND 1h both point the entry’s side, a silent 1h does not count, room ≥ 2× the risk, target ≥ 30 pts), but the count is 5.',
+          what: 'The big tier — it still reports WHY the setup qualified (4h AND 1h both point the entry’s side, a silent 1h does not count, room ≥ 2× the risk, target ≥ 30 pts), but the count is 4.',
           trader:
-            '5 contracts on a big tier — the tier no longer adds contracts.',
+            '4 contracts on a big tier — the tier no longer adds contracts.',
           consumer: 'trader/mentor_mode.go mentorBigContractsDefault',
           range: 'int',
-          systemDefault: '5',
+          systemDefault: '4',
           recommended:
-            '5 — Owner order 2026-10-13 (course 1.1 p2 L1103: fixed 5 MNQ); mentor_max_contracts (20) is a ceiling only.',
+            '4 — Owner order 2026-10-16 (the course 1.1 p2 L1103 “fixed 5 MNQ” is superseded); mentor_max_contracts (20) is a ceiling only.',
           whenToTouch: 'Never above the hard cap.',
           perSession: 'No.',
         },
@@ -784,13 +799,13 @@ export const mentor: GuideSection = {
         {
           label: 'Reduced contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'Size when the stop is 20–<ceiling pts, where the ceiling is the mentor_isb_max_pts knob (default 30 — trader/mentor_mode.go mentorContractsFor). A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in [20,30) sizes swing4h, not 3). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner.',
-          trader: '3 contracts on the reduced tier.',
+          what: 'Size when the stop is 20–<ceiling pts, where the ceiling is the mentor_isb_max_pts knob (default 30 — trader/mentor_mode.go mentorContractsFor). A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in [20,30) sizes swing4h, not the reduced 4). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner. Owner order 2026-10-16: this band no longer cuts below 4.',
+          trader: '4 contracts on the reduced tier.',
           consumer: 'trader/mentor_mode.go mentorReducedContractsDefault',
           range: 'int',
-          systemDefault: '3',
+          systemDefault: '4',
           recommended:
-            '3 — Owner setting: CTO shipped size table (P3); the reduced tier for a 20–<ceiling pt stop (top = mentor_isb_max_pts, default 30). (An ISB at an old high/low or in a range is a fixed 3 in the code, not this knob.)',
+            '4 — Owner ruling 2026-10-16: the reduced tier no longer cuts below 4 (top = mentor_isb_max_pts, default 30). An ISB at an old high/low or in a range also sizes 4.',
           whenToTouch: 'With the 20–<30 reduced band.',
           perSession: 'No.',
         },
@@ -842,16 +857,16 @@ export const mentor: GuideSection = {
         {
           label: 'Runner exit (trail mode)',
           where: 'Strategy → Risk Control → 🧑‍🏫 Mentor mode → Runner exit',
-          what: 'What moves the runner’s stop after a split mentor entry (owner ruling R3, release #22). candle: once leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader, the runner goes to break-even (the entry), then trails 1 tick beyond each closed candle’s low (long) / high (short), only ever tighter. off: the older rule — break-even at half the distance to the trade target, live 1:1, trail after the 1:1 point.',
+          what: 'What moves the runner’s stop after a split mentor entry (course-defaults-30, owner "fix all"). candle: FIRST, on the first closed candle whose close is ≥ +0.5R, BOTH legs’ stops move to break-even BEFORE leg 1’s 1:1 partial fills (mentor_be_before_partial ON by default — this reverses owner ruling R3); THEN, once leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader, the runner trails 1 tick beyond each closed candle’s low (long) / high (short), only ever tighter. off: the older rule — break-even at half the distance to the trade target, live 1:1, trail after the 1:1 point.',
           trader:
-            'candle — after the 1:1 partial fills, the rest is at break-even within one closed candle, then follows each closed candle [D2.4 p1 @16:17 “CỨ BÁN BỚT, xong rồi mình GỒNG lệnh”; @07:01 “move stop THEO TỪNG CÂY NẾN ĐÃ ĐÓNG XONG”; X8 @15:40 the candle’s low].',
+            'candle — BE at +0.5R first, then after the 1:1 partial fills the rest is at break-even within one closed candle, then follows each closed candle [D2.4 p1 @16:17 “CỨ BÁN BỚT, xong rồi mình GỒNG lệnh”; @07:01 “move stop THEO TỪNG CÂY NẾN ĐÃ ĐÓNG XONG”; X8 @15:40 the candle’s low].',
           consumer:
             'trader/mentor_trail_r22.go mentorTrailMode · mentorExitDriveCandle (called from trader/mentor_exit_drive.go mentorExitDrivePos)',
           range:
             'candle / off · any other value fails closed to candle and is counted (trail_mode_bad_value)',
           systemDefault: 'candle',
           recommended:
-            'candle — the owner’s ruling R3 and the course’s normal case. On 10-12 row 313 leg 1 banked 1:1 and the runner, still at its original stop, lost the full 1R a minute later.',
+            'candle — the course’s normal case [D2.4 p1 @16:17; X8 @15:40] with BE at +0.5R first (mentor_be_before_partial ON, owner "fix all"). On 10-12 row 313 leg 1 banked 1:1 and the runner, still at its original stop, lost the full 1R a minute later.',
           whenToTouch:
             'off only to compare against the pre-release-#22 rule; a one-bracket position (1 contract, or an older AddOn) always uses the older rule.',
           perSession: 'No.',
@@ -1003,15 +1018,15 @@ export const mentor: GuideSection = {
         {
           label: '2m ISB execution (1m only in the first 30 min of RTH)',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'X5-10: OFF (default) = the ISB entry is read on the 1m chart all day, as the course trades. ON = the ISB entry is read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). "Evening slow → 5m" is an open course question (no number for "slow"). Only the ISB pair swaps; the higher-TF lines, the boxes and the ORB escape always stay on the 1m. An ISB entered on the 2m trails its runner on CLOSED 2m candles (the trail frame follows the entry frame [X8 @18:02–18:14]).',
+          what: 'X5-10: ON (default) = the ISB entry is read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). "Evening slow → 5m" is an open course question (no number for "slow"). Only the ISB pair swaps; the higher-TF lines, the boxes and the ORB escape always stay on the 1m. An ISB entered on the 2m trails its runner on CLOSED 2m candles and its candle-3 partial reads the 2m fill candle (the frame follows the entry frame [X8 @18:02–18:14]).',
           trader:
-            'OFF — the course trades the 1m throughout; optional and knob-gated.',
+            'ON — the course reads the 1m for the first 30 min after the open, then the 2m ("sau 30 phút em sẽ chuyển qua khung 2 phút", "khung 2 phút ít bị quét râu").',
           consumer:
             'kernel/mentor/eval.go Tick (Exec2mAfter30m → closedBucketsTF(bars, 2, now)) · trader/mentor_tuning.go mentorTuningResolve',
           range: 'true / false',
-          systemDefault: 'false',
+          systemDefault: 'true',
           recommended:
-            'Leave OFF — Owner setting (X5 @00:41–01:17; X11 @17:06–17:32) unless the owner wants the quieter 2m read after the opening 30 minutes.',
+            'ON — release #31 default ("Routine trước khi trade" part1 @00:41–01:14; Go over @17:27). OFF restores the 1m read all day.',
           whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },
@@ -1114,6 +1129,21 @@ export const mentor: GuideSection = {
           recommended:
             '0 — X5 @08:52–09:09 names no distance; knob rule (b): off until an owner ruling sets N.',
           whenToTouch: 'Only when the owner picks a distance.',
+          perSession: 'No.',
+        },
+        {
+          label: 'ORB-edge ISB candle fraction outside',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Rule 5 (release #31): "80% 90% là cái nến nó nằm ở ngoài… anh chị có quyền take risk… điểm entry… nằm gần cái resistance quá thì thôi bỏ đi" (80% 90% of the candle sits outside… only then may you take the risk; if the entry sits too close to the resistance, skip it) [extra "Routine trước khi trade" part1 @07:46–09:04]. An ISB at the ORB edge trades only when at least this fraction of the ISB candle (its high-minus-low range) lies OUTSIDE the opening range on the trade side. It is the fraction of the candle, NOT a points distance (that is the separate CE-7 orb_edge_veto_pts above). A mostly-inside candle is skipped and counted orb_isb_mostly_inside. 0.80 (default) = ON; the rule is part of the ORB gate (orb_gate_enabled), ISB entries only, RTH only.',
+          trader:
+            '0.80 — the course names 80%–90%; the fraction measure, not a distance.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/orb.go orbISBMostlyInside',
+          range: '0.01–1 (fraction of the candle)',
+          systemDefault: '0.80',
+          recommended:
+            '0.80 — "Routine trước khi trade" part1 @07:46–09:04; the fraction the course gives.',
+          whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },
         {
@@ -1628,7 +1658,7 @@ export const mentor: GuideSection = {
           trader:
             'ON — 2 crosses in 30m refuse the EMA34 setup (the most conservative reading).',
           consumer: 'kernel/mentor ema_max_cross_30m',
-          range: 'int / off',
+          range: 'int / 0 = off (reachable since W32)',
           systemDefault: '2',
           recommended:
             '2 — item 16 (2026-10-04): gate the line that trades, default ON; the course states no count (frame D4.2 p1 @22:28 shows the indicator OFF), so 2 = the most conservative of v5_ema_cross2/4 and stays flagged mentor-question-open.',
@@ -1652,7 +1682,7 @@ export const mentor: GuideSection = {
         {
           label: '5m trigger at locations',
           where: 'Strategy → Mentor mode → levels',
-          what: 'The 5m trigger filter at levels and boxes (“bat buoc”). OFF only for the sensitivity row that measures what it costs.',
+          what: 'The 5m trigger filter at levels and boxes (“bat buoc”). Inert under trigger_school 1 (enter at the level — the filter is only consulted when the 5m trigger school is ON). OFF only for the sensitivity row that measures what it costs.',
           trader: 'ON.',
           consumer: 'kernel/mentor location trigger filter',
           range: 'true / false',
@@ -1665,15 +1695,15 @@ export const mentor: GuideSection = {
         {
           label: 'Done after a winning day',
           where:
-            'No Studio control — ON by default (owner ruling); the strategy setting mentor_done_after_win=false turns it off',
-          what: 'Stop new mentor entries for the mentor\u2019s NY day after a winning trade closes and the day\u2019s net P&L is positive. The day boundary is 08:30 CT (the NY open) — owner ruling 2026-10-09; a win at 18:06 CT no longer blocks the next NY open.',
+            'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode → "Stop for the day after a winning trade"',
+          what: 'Stop new mentor entries for the mentor\u2019s NY day after a winning trade closes and the day\u2019s net P&L is positive. OFF by default (owner order 2026-10-16: nil → OFF, an explicit true turns it on). The day boundary is 08:30 CT (the NY open) — owner ruling 2026-10-09; a win at 18:06 CT no longer blocks the next NY open.',
           trader:
-            'ON by default; an explicit false disables this stop rule. The day boundary is the knob mentor_done_after_win_day_start ("HH:MM" CT; unset → 08:30, the NY open). Set it to 17:00 to restore the old CME-session-day behaviour.',
+            'OFF by default; an explicit true enables this stop rule. The day boundary is the knob mentor_done_after_win_day_start ("HH:MM" CT; unset → 08:30, the NY open). Set it to 17:00 to restore the old CME-session-day behaviour.',
           consumer: 'trader/mentor_tick.go mentorDoneAfterWinGate',
           range: 'true / false',
-          systemDefault: 'true (unset = ON)',
+          systemDefault: 'false (unset = OFF)',
           recommended:
-            'ON — owner ruling; stop after a win on a net-positive day. Day boundary: 08:30 CT (owner ruling 2026-10-09).',
+            'OFF — owner order 2026-10-16 ("it\u2019s been off … follow it"). Day boundary: 08:30 CT (owner ruling 2026-10-09).',
           whenToTouch: 'Rarely.',
           perSession: 'No — per strategy.',
         },

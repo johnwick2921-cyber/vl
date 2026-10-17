@@ -59,11 +59,11 @@ func TestB3UnsentStopEntryRefusalDoesNotConsumeSlot(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	tr := NewTCPTrader(s, "MNQ", "Sim101")
-	if _, err := tr.PlaceStopEntry("MNQ", "short", 1, 29590, 29610, 29550, 0, 0, func(string) error { return errors.New("fixture ledger unavailable") }); err == nil {
+	if _, err := tr.PlaceStopEntry("MNQ", "short", 1, 29590, 29610, 29550, 0, 0, 0, 0, func(string) error { return errors.New("fixture ledger unavailable") }); err == nil {
 		t.Fatal("registration failure ignored")
 	}
 	noFrame(t, frames, "unregistered stop-entry")
-	if _, err := tr.PlaceStopEntry("MNQ", "short", 1, 29590, 29610, 29550, 0, 0); err != nil {
+	if _, err := tr.PlaceStopEntry("MNQ", "short", 1, 29590, 29610, 29550, 0, 0, 0, 0); err != nil {
 		t.Fatalf("retry of an unsent stop-entry was refused: %v", err)
 	}
 	awaitFrame(t, frames, "stop-entry retry")
@@ -105,7 +105,7 @@ func TestB3ArmedDuplicateRefusedNamedAndCounted(t *testing.T) {
 	for _, kind := range []string{"limit", "stop_entry"} {
 		send := func(beforeSend ...func(string) error) (string, error) {
 			if kind == "stop_entry" {
-				return tr.PlaceStopEntry("MNQ", "long", 1, 29600, 29575, 29650, 0, 0, beforeSend...)
+				return tr.PlaceStopEntry("MNQ", "long", 1, 29600, 29575, 29650, 0, 0, 0, 0, beforeSend...)
 			}
 			return tr.PlaceLimitEntry("MNQ", "long", 1, 29600, 29575, 29650, beforeSend...)
 		}

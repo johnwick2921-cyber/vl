@@ -93,6 +93,7 @@ const COURSE_ENTRY_WRITES: Array<[string, string, unknown]> = [
   ['isb_box_escape', 'close', 'close'],
   ['ema34_loss_relock', 'session', 'session'],
   ['orb_edge_veto_pts', '2.5', 2.5],
+  ['orb_isb_fraction_outside', '0.5', 0.5],
   ['d43_trend_source', 'structure', 'structure'],
   ['level_entries_need_trigger_side', 'on', true],
   ['trendline_is_target', 'off', false],
@@ -143,6 +144,9 @@ it('an enum knob shows its ruled default on the blank option', () => {
     'placeholder',
     'default: 0'
   )
+  expect(
+    screen.getByTestId('mentor-tuning-orb_isb_fraction_outside')
+  ).toHaveAttribute('placeholder', 'default: 0.8')
 })
 
 it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
@@ -150,10 +154,12 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     '15m_ib_requires_5m_isb': 'require_5m_isb',
     tf_conflict_end: 'both_boxes', // course-defaults-30
     news_wait_both_lines: true, // course-defaults-30
-    news_bars_excluded: false,
+    news_bars_excluded: true, // course-defaults-30 (CE-4, release #29 rework)
     isb_box_escape: 'body',
     ema34_loss_relock: 'until_zone_exit',
     orb_edge_veto_pts: 0,
+    orb_isb_fraction_outside: 0.8, // rule 5 (release #31) default ON
+    exec_2m_after_30m: true, // rule 4 (release #31) default ON
     d43_trend_source: 'structure', // course-defaults-30
     level_entries_need_trigger_side: false,
     trendline_is_target: true,

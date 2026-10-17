@@ -46,6 +46,7 @@ func nearBoxEval(cfg Config, now int64) *Evaluator {
 // eval.go must turn this RED (an ISB intent is emitted).
 func TestNearBoxISBTickRefused(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.EMALocationTFMinutes = 0 // keep the EMA-34 line out of the level set
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
@@ -83,6 +84,7 @@ func TestNearBoxISBTickRefused(t *testing.T) {
 // deleting the PHL near-box call in eval.go must turn this RED.
 func TestNearBoxPHLTickRefused(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.EMALocationTFMinutes = 0
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()

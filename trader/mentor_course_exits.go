@@ -253,13 +253,16 @@ func (at *AutoTrader) mentorResonanceRunnerTP(nt *ntTrader.TCPTrader, p *mentorL
 		at.mentorCount("modify_bracket_resonance_logged")
 		return
 	}
-	runner := &p.Legs[1]
+	runner := mentorRunnerLeg(p)
 	if runnerTarget <= 0 {
 		at.mentorCount("resonance_runner_tp_none")
+		if runner == nil {
+			return
+		}
 		at.logInfof("🧑‍🏫 mentor resonance runner TP: no level beyond the old high on record — the runner keeps its TP %.2f", runner.TP)
 		return
 	}
-	if !runner.Final || runner.Wire != 2 || runner.SignalID == "" || runner.Qty <= 0 {
+	if runner == nil || (runner.Wire != 2 && runner.Wire != 3) {
 		at.mentorCount("resonance_runner_tp_not_split")
 		at.logWarnf("🧑‍🏫 mentor resonance runner TP %.2f NOT sent — one bracket on the wire (no separate runner leg); a TP modify would move the WHOLE position past the 1:1 partial", runnerTarget)
 		return
@@ -298,8 +301,10 @@ func (at *AutoTrader) mentorResonanceRunnerTP(nt *ntTrader.TCPTrader, p *mentorL
 // half-way to leg 1's +1R target (+0.5R) — and past break-even by a tick —
 // BOTH legs' stops go to break-even [D1.2 p1 @12:41–13:12 "kéo stop … về break
 // even … ở mức 1-1"; @15:57 "Bắt buộc … maintain risk reward ở mức 1-1"].
-// Owner ruling R3 (BE only after the confirmed partial) is the default; this
-// runs only with mentor_be_before_partial ON. Returns whether BE armed.
+// course-defaults-30 (owner "fix all") makes mentor_be_before_partial ON by
+// default, which REVERSES owner ruling R3 (BE only after the confirmed
+// partial); this runs only with mentor_be_before_partial ON. Returns whether
+// BE armed.
 func (at *AutoTrader) mentorBEBeforePartialStep(nt *ntTrader.TCPTrader, p *mentorLivePos, c float64) bool {
 	pos := &p.Pos
 	if pos.ArmedBE || pos.R <= 0 || !mentorBEBeforePartialOn(at.mentorRiskControl()) {

@@ -298,15 +298,21 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 
 	// ── Mode D guard: the spent-day runner is capped at 2 (placed by DS-103;
 	// the loop ASSERTS it, never reduces). ────────────────────────────────
-	if p.SpentDay && p.Legs[1].Qty > mentorSpentDayRunnerCap {
-		at.mentorCount("spent_day_runner_over_cap")
-		at.logWarnf("🧑‍🏫 mentor spent-day runner %d over the cap %d — asserting, not reducing [D5.1]", p.Legs[1].Qty, mentorSpentDayRunnerCap)
+	if p.SpentDay {
+		if runner := mentorRunnerLeg(p); runner != nil && runner.Qty > mentorSpentDayRunnerCap {
+			at.mentorCount("spent_day_runner_over_cap")
+			at.logWarnf("🧑‍🏫 mentor spent-day runner %d over the cap %d — asserting, not reducing [D5.1]", runner.Qty, mentorSpentDayRunnerCap)
+		}
 	}
 
 	// scaledNow / exitedAtMs are read ONCE under mentorExitMu (I6): the receipt
 	// (mentorMarkLeg1Scaled) and the I7 fallback write Scaled/Leg1ExitedAtMs from
 	// other goroutines, so an unlocked read races.
 	scaledNow, exitedAtMs := at.mentorScaledState(p)
+	// exited is the per-leg "closed on its own TP receipt" snapshot, read ONCE
+	// under mentorExitMu (release #31 fold, D1): the receipt writes
+	// Legs[i].Exited from the close-sync goroutine, so an unlocked read races.
+	exited := at.mentorExitedLegs(p)
 	// scaledBefore is whether leg 1's exit was confirmed on a PRIOR candle: the
 	// runner's trail begins on the NEXT candle after the confirmation, never on
 	// the candle that crosses it (I6 next-candle rule).
@@ -316,10 +322,17 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	// cây nến của khung đó" [X8 @18:02–18:14]. A 1m entry trails on THIS 1m
 	// candle (unchanged); a 2m entry (X5-10 exec-2m schedule) trails only on a
 	// 2m candle that closed with this 1m bar, and the I6 next-candle rule is
-	// read against THAT candle's open. BE, the 1:1 rule and the ISB partial
-	// keep the 1m close.
-	trailH, trailL, trailOK, trailScaledBefore := h, l, true, scaledBefore
+	// read against THAT candle's open. Release #31 fold (D8): BE also reads the
+	// entry's frame — a 2m entry's break-even uses the 2m close (and the mode-B
+	// BE-half uses the 2m high/low), waiting for the 2m candle to close. The
+	// 1:1 live rule keeps the 1m close.
+	// Release #31 (rule 4): the ISB candle-3 partial ALSO reads the frame the
+	// entry was read on — for a 2m entry the fill candle IS the 2m candle, so
+	// the partial waits for it to close (trailBarOK) and reads ITS close/high/
+	// low, not the 1m's.
+	trailC, trailH, trailL, trailOK, trailScaledBefore := c, h, l, true, scaledBefore
 	if p.TrailTFMin > 1 {
+		trailC = p.trailBar.Close
 		trailH, trailL, trailOK = p.trailBar.High, p.trailBar.Low, p.trailBarOK
 		trailScaledBefore = scaledNow && mentorLeg1ExitedBefore(exitedAtMs, p.trailBar.OpenTime)
 	}
@@ -346,19 +359,45 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		runnerTarget = leg1Target
 	}
 
-	// ── (2) ISB partial (item 8, R1): leg 1's +1R TP always rests at NT8.
-	// When the fill candle's close is in profit SHORT of +1R (leg 1 did NOT
-	// fill inside the candle), leg 1's TP is moved to a MARKETABLE limit at
-	// that close ∓ 8 ticks — through the existing modify_bracket path, never
-	// an AddOn change [D1.4 p1 @12:51–13:01 "bán bớt. Bắt buộc"]. A close PAST
-	// +1R means the +1R TP already filled inside the candle (the 1:1 rule).
-	// A losing close moves nothing. Runs in both mentor_trail_mode values.
+	// ── (2) ISB partial (item 8): leg 1 IS the partial — it leaves at +1R TP
+	// or at the candle-3 close (the fill candle's close), whichever comes
+	// first, ONCE — and the close only when in profit. The resolution reads
+	// the JUST-closed fill candle (BarsSinceFill == 1): its high/low decides
+	// whether +1R printed first. Release #22 (P1-2): a close in profit short
+	// of +1R is a REAL modify_bracket on leg 1 (modifyBracketWire, assigned),
+	// verified on the next fresh book — it was LOG-only from 10-05 to 10-14.
+	// Runs in both mentor_trail_mode values (a bug fix, not the R3 knob).
+	// Release #31 (rule 4): the fill candle is the frame the entry was read on
+	// — a 2m entry waits for the 2m candle to close (trailOK) and reads ITS
+	// close/high/low (trailC/trailH/trailL), not the 1m's. A 1m entry keeps
+	// dev's BarsSinceFill == 1 gate (a later candle never resolves it, D3).
 	if pos.Origin == "ISB" && !p.ISBPartialDone && p.BarsSinceFill >= 1 {
-		p.ISBPartialDone = true
-		if !scaledNow && p.BarsSinceFill == 1 {
-			if tp := at.mentorISBPartialStep(nt, p, c, h, l); tp > 0 {
-				leg1Target = tp
+		switch {
+		case p.TrailTFMin > 1 && !trailOK:
+			// the 2m fill candle has not closed yet — wait for it (the 1m close
+			// is NOT the fill candle).
+		case p.TrailTFMin > 1:
+			// 2m entry: resolve once the 2m fill candle closed, on ITS
+			// close/high/low.
+			p.ISBPartialDone = true
+			if !scaledNow {
+				if tp := at.mentorISBPartialStep(nt, p, trailC, trailH, trailL); tp > 0 {
+					leg1Target = tp
+				}
 			}
+		case p.BarsSinceFill == 1:
+			// 1m entry: dev's gate — resolve ONLY on the just-closed 1m fill
+			// candle (a skipped bar 1 latches done, never resolves late, D3).
+			p.ISBPartialDone = true
+			if !scaledNow {
+				if tp := at.mentorISBPartialStep(nt, p, c, h, l); tp > 0 {
+					leg1Target = tp
+				}
+			}
+		default:
+			// 1m entry whose fill candle was skipped (BarsSinceFill > 1): dev
+			// behaviour — latch done, never resolve on a later candle (D3).
+			p.ISBPartialDone = true
 		}
 	}
 
@@ -382,20 +421,31 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	// position's runner goes to break-even once leg 1's partial is CONFIRMED
 	// filled at NT8, then trails 1 tick beyond each closed candle. A single
 	// bracket has no leg-1 partial to confirm and keeps the rule below.
-	if leg1OnWire && p.Legs[1].Qty > 0 && p.Legs[1].SignalID != "" && at.mentorTrailMode() == mentorTrailModeCandle {
-		at.mentorExitDriveCandle(nt, p, c, trailH, trailL, scaledNow, trailScaledBefore, trail && trailOK)
+	if leg1OnWire && mentorRunnerLeg(p) != nil && at.mentorTrailMode() == mentorTrailModeCandle {
+		// fold #565 (D8): the BE close is the entry's frame close — a 2m entry's
+		// break-even reads the 2m close and waits for the 2m candle to close.
+		// #563: the per-leg exited flags pick the runner legs still on the wire.
+		at.mentorExitDriveCandle(nt, p, trailC, trailH, trailL, scaledNow, trailScaledBefore, trail && trailOK, trailOK, exited)
 		return
 	}
 
 	// ── (1) B BE: arm both legs' stops to entry once price covers HALF the
 	// distance to the trade target (mentorBEHalfDistance). ─────────────────
 	if !pos.ArmedBE {
+		// fold #565 (D8): a 2m entry's BE-half reads the 2m high/low and waits
+		// for the 2m candle to close (trailOK); a 1m entry keeps the 1m high/low.
+		beH, beL := h, l
+		if p.TrailTFMin > 1 {
+			beH, beL = trailH, trailL
+		}
 		half := mentorBEHalfDistance(*pos)
 		armed := false
-		if long {
-			armed = h >= pos.Entry+half
+		if p.TrailTFMin > 1 && !trailOK {
+			armed = false // the 2m candle has not closed — BE-half waits
+		} else if long {
+			armed = beH >= pos.Entry+half
 		} else {
-			armed = l <= pos.Entry+half
+			armed = beL <= pos.Entry+half
 		}
 		if armed {
 			// Release #22: BE counts as armed only when a move was APPLIED (sent,
@@ -404,13 +454,15 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			applied := false
 			for i := range p.Legs {
 				leg := &p.Legs[i]
-				if leg.SignalID == "" || leg.Qty <= 0 {
+				if leg.SignalID == "" || leg.Qty <= 0 || exited[i] {
 					continue
 				}
 				// F-6 (release #22): leg 1 of a split whose partial is CONFIRMED
 				// filled is closed — never send it a move (#651 01:05:00 sent BE
 				// to the gone leg 1, then WARNed "NO live stop order" at 01:06).
-				if leg1OnWire && !leg.Final && scaledNow {
+				// D1 (release #31 fold): the runner partial (wire 2) is NOT leg 1
+				// — it goes to break-even too.
+				if leg1OnWire && leg.Wire == 1 && scaledNow {
 					at.mentorCount("stop_move_skipped_leg_closed")
 					continue
 				}
@@ -467,13 +519,15 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	if pos.ArmedBE && wasArmed {
 		for i := range p.Legs {
 			leg := &p.Legs[i]
-			if leg.SignalID == "" || leg.Qty <= 0 {
+			if leg.SignalID == "" || leg.Qty <= 0 || exited[i] {
 				continue
 			}
 			// Canonical semantics: Final marks the RUNNER (the leg that holds
-			// to the trade target). Leg 1 (Final=false) is the partial that
-			// exits at its own TP — once Scaled its stop is moot.
-			isRunner := leg.Final
+			// to the trade target). Leg 1 (Final=false, wire 1) is the partial
+			// that exits at its own TP — once Scaled its stop is moot. D1
+			// (release #31 fold): the runner partial (wire 2) is a RUNNER too —
+			// it goes to BE and trails until its own line TP closes it.
+			isRunner := leg.Final || leg.Wire == 2
 			if !isRunner && scaledNow {
 				continue
 			}
@@ -482,6 +536,9 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			trailPrice := 0.0
 			if isRunner {
 				target = runnerTarget
+				if leg.Wire == 2 && leg.TP > 0 {
+					target = leg.TP // the runner partial's own line TP (it exits there)
+				}
 				applyTrail = trail && trailOK && trailScaledBefore // the 1:1 point printed on a PRIOR candle (of the trail frame)
 				if applyTrail {
 					// Item 7 ruling [X8 @15:40–17:13]: 1 tick BEYOND the closed
@@ -615,9 +672,9 @@ type mentorStopMoveEpisode struct {
 // leg): after two misses the drive sends NOTHING more for it until the position
 // is gone, or the owner moves the broker stop by hand (see mentorSweepManualLatches).
 type mentorStopMoveManual struct {
-	signalID    string
-	wireLeg     int
-	logged      bool    // the "under manual management" line fired once
+	signalID     string
+	wireLeg      int
+	logged       bool    // the "under manual management" line fired once
 	adoptedPrice float64 // the broker price adopted at latch time (owner-override change detection)
 }
 
@@ -726,9 +783,9 @@ var mentorStopBook = func(nt *ntTrader.TCPTrader) (ntwire.OrderSnapshotPayload, 
 }
 
 // mentorBrokerStopOrders returns the broker's live stop order(s) for a signal
-// wire leg: wire 1 → "<signal>-sl", wire 2 → "<signal>-sl2", wire 0 (single
-// bracket) → every live -sl/-sl2 of the signal (a leg-less move_stop moves them
-// together).
+// wire leg: wire 1 → "<signal>-sl", wire 2 → "<signal>-sl2", wire 3 →
+// "<signal>-sl3" (release #31), wire 0 (single bracket) → every live -sl/-sl2/
+// -sl3 of the signal (a leg-less move_stop moves them together).
 func mentorBrokerStopOrders(book ntwire.OrderSnapshotPayload, signalID string, wireLeg int) []ntwire.NT8Order {
 	if signalID == "" {
 		return nil
@@ -739,8 +796,10 @@ func mentorBrokerStopOrders(book ntwire.OrderSnapshotPayload, signalID string, w
 		names = []string{signalID + "-sl"}
 	case 2:
 		names = []string{signalID + "-sl2"}
+	case 3:
+		names = []string{signalID + "-sl3"}
 	default:
-		names = []string{signalID + "-sl", signalID + "-sl2"}
+		names = []string{signalID + "-sl", signalID + "-sl2", signalID + "-sl3"}
 	}
 	out := make([]ntwire.NT8Order, 0, 2)
 	for _, o := range book.Orders {
