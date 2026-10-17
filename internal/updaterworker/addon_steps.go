@@ -128,27 +128,37 @@ func addonMigrationNeeded(docsDir string) (bool, error) {
 // install ends with: the owner runs the one-time F5, then clicks Update again.
 const addonMigrationBlocker = "One-time step: open NinjaTrader → NinjaScript Editor → press F5 once, then click Update again."
 
-// migrateAddonSources MOVES the AddOn's installed .cs sources (plus their .bak
-// files) out of bin/Custom/AddOns into
-// <docs>/vl-addon-backups/<job>/migrated-sources/, so the owner's next F5
-// recompiles NinjaTrader.Custom.dll WITHOUT the AddOn type. Nothing is deleted:
-// the sources are only moved. With no sources to move the blocker still fires —
-// the owner must F5 regardless.
+// migrateAddonSources MOVEs every installed VL*.cs source (plus their .bak
+// files) out of bin/Custom into
+// <docs>/vl-addon-backups/<job>/migrated-sources/, so a rebuild (or the owner's
+// F5) recompiles NinjaTrader.Custom.dll WITHOUT the VL types. It walks
+// bin/Custom recursively and matches VL*.cs* case-insensitively — the VL files
+// live in more than one folder (AddOns/*.cs and Strategies/vltrader.cs). Nothing
+// is deleted: the sources are only moved.
 func migrateAddonSources(docsDir, jobID string) error {
-	src := filepath.Join(docsDir, "bin", "Custom", "AddOns")
-	matches, _ := filepath.Glob(filepath.Join(src, "VL*.cs*"))
-	if len(matches) == 0 {
-		return nil
-	}
+	custom := filepath.Join(docsDir, "bin", "Custom")
 	dst := filepath.Join(docsDir, "vl-addon-backups", jobID, "migrated-sources")
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return fmt.Errorf("mkdir migrated-sources: %w", err)
-	}
-	for _, m := range matches {
-		if err := os.Rename(m, filepath.Join(dst, filepath.Base(m))); err != nil {
-			return fmt.Errorf("move %s: %w", m, err)
+	err := filepath.Walk(custom, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
 		}
+		if info.IsDir() {
+			return nil
+		}
+		base := info.Name()
+		lower := strings.ToLower(base)
+		if !strings.HasPrefix(lower, "vl") || !strings.Contains(lower, ".cs") {
+			return nil
+		}
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			return err
+		}
+		return os.Rename(path, filepath.Join(dst, base))
+	})
+	if err != nil {
+		return err
 	}
+	// Nothing to move is not an error (the rebuild/F5 still runs).
 	return nil
 }
 
@@ -176,7 +186,38 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 			if err := migrateAddonSources(cfg.DocsDir, j.JobID); err != nil {
 				return "", fmt.Errorf("one-time migration: %w", err)
 			}
-			return "", errors.New(addonMigrationBlocker)
+			// Release #35 (no F5): with NT8 CLOSED the worker rebuilds
+			// NinjaTrader.Custom.dll itself (NT8's Roslyn, over every
+			// bin/Custom/**/*.cs EXCEPT the migrated VL*.cs), ACCEPTING the
+			// result only when compile errors = 0 AND the public type list
+			// equals the old one's minus the VL types. On failure the old
+			// Custom.dll is untouched and the job falls back to the F5
+			// blocker as the last resort.
+			if j.NT8 != nil && j.NT8.Absent {
+				creb, cerr := addonbuild.RebuildCustom(ctx, cfg)
+				if cerr != nil {
+					// The rebuild failed: the old Custom.dll is untouched
+					// (the swap only happens after acceptance), so the job
+					// falls back to the F5 blocker as the last resort. The
+					// receipt carries the real reason.
+					ev["custom_rebuild"] = "failed"
+					ev["custom_rebuild_error"] = clipText(cerr.Error())
+					return "", errors.New(addonMigrationBlocker)
+				}
+				cbak, perr := addonbuild.PlaceCustom(cfg, creb.DllPath, creb.Sha256, j.JobID)
+				if perr != nil {
+					return "", fmt.Errorf("Custom.dll place failed: %w", perr)
+				}
+				ev["custom_rebuild"] = "accepted"
+				ev["custom_rebuild_built_by"] = creb.BuiltBy
+				ev["custom_backup"] = cbak
+				// fall through: place VL.AddOn.dll, the AddOn now lives
+				// only there.
+			} else {
+				// NT8 is OPEN and holds Custom.dll in memory: rebuilding it
+				// in place is unsafe, so the one-time F5 still applies.
+				return "", errors.New(addonMigrationBlocker)
+			}
 		}
 		b, err := addonbuild.Place(cfg, j.Addon.DllPath, j.Addon.Sha256, j.JobID)
 		if err != nil {

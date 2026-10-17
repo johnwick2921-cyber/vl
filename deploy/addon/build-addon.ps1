@@ -1,28 +1,37 @@
-# build-addon.ps1 - compile ninjascript/*.cs into VL.AddOn.dll with the
-# NinjaTrader 8 built-in Roslyn compiler (Microsoft.CodeAnalysis.CSharp.dll).
+# build-addon.ps1 - compile NinjaTrader 8 NinjaScript with NT8's built-in
+# Roslyn compiler (Microsoft.CodeAnalysis.CSharp.dll).
 # NO dotnet SDK required: the partner box has no SDK, only NT8.
 #
-# W-ADDON-ONE-CLICK (owner order 2026-10-17) + GAP 2 (DS-103,
-# feat/addon-build-nt8-roslyn): this is the PRIMARY build path. The Go side
-# falls back to dotnet.exe ONLY when this script fails.
+# W-ADDON-ONE-CLICK (owner order 2026-10-17) + GAP 2 (DS-103) + release #35
+# (DS-103, feat/no-f5-custom-rebuild).
 #
-# Two modes:
-#   -Probe   compile a trivial source against the full reference set and print
-#            "VL_ADDON_PROBE=ok" - used by /api/updates/readiness to prove the
-#            no-SDK path actually works on this box.
-#   normal   compile every <Src>\*.cs into <Out>\VL.AddOn.dll and print
-#            "VL_ADDON_DLL=<path>" and "VL_ADDON_SHA256=<hex>".
+# Modes:
+#   normal    compile every <Src>\*.cs into <Out>\VL.AddOn.dll and print
+#             "VL_ADDON_DLL=<path>" and "VL_ADDON_SHA256=<hex>".
+#   -Probe    compile a trivial source against the full reference set and print
+#             "VL_ADDON_PROBE=ok" - used by /api/updates/readiness to prove the
+#             no-SDK path actually works on this box.
+#   -Custom   compile every <CustomDir>\**\*.cs EXCEPT VL*.cs into
+#             <Out>\NinjaTrader.Custom.dll, then verify the new DLL's PUBLIC
+#             type list equals the old Custom.dll's minus the VL AddOn types.
+#             This replaces the one-time F5: with NT8 closed the worker rebuilds
+#             Custom.dll itself, ACCEPTING it only when compile errors = 0 AND
+#             the public types are unchanged apart from the VL types. It prints
+#             VL_CUSTOM_TYPES_OK (or VL_CUSTOM_TYPES_DIFF + the diff) and
+#             VL_CUSTOM_DLL / VL_CUSTOM_SHA256.
 #
 # Nothing here deletes or overwrites an existing install file: the output goes
 # only to <Out>, which the Go worker owns (a worker-made dir, NEVER the NT8
-# folder).
+# folder). The old Custom.dll is only READ here (for the type-list diff); the Go
+# side MOVEs it to a backup and MOVEs the new one in after acceptance.
 
 param(
     [string]$Src,       # Windows path to the ninjascript source dir (normal mode)
-    [string]$Out,       # Windows path to the output dir (normal mode)
+    [string]$Out,       # Windows path to the output dir
     [string]$CustomDir, # Windows path to Documents\NinjaTrader 8\bin\Custom
     [string]$NT8Bin,    # Windows path to C:\Program Files\NinjaTrader 8\bin
-    [switch]$Probe
+    [switch]$Probe,
+    [switch]$Custom
 )
 
 $ErrorActionPreference = 'Stop'
@@ -30,6 +39,30 @@ $ErrorActionPreference = 'Stop'
 function Fail([string]$msg) {
     Write-Output ("ERROR " + $msg)
     exit 1
+}
+
+# Get-PublicTypes lists the PUBLIC type definitions (namespace.name) of a .NET
+# assembly, read straight from metadata (no loading, no dependency resolution).
+function Get-PublicTypes([string]$dll) {
+    $fs = [System.IO.File]::OpenRead($dll)
+    try {
+        $pe = [System.Reflection.PortableExecutable.PEReader]::new($fs)
+        $md = [System.Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($pe)
+        $out = @()
+        $en = $md.TypeDefinitions.GetEnumerator()
+        while ($en.MoveNext()) {
+            $t = $md.GetTypeDefinition($en.Current)
+            $vis = $t.Attributes -band 0x7
+            if ($vis -eq 0x1 -or $vis -eq 0x2) {  # TypeAttributes.Public / NestedPublic
+                $ns = $md.GetString($t.Namespace)
+                $name = $md.GetString($t.Name)
+                if ($ns) { $out += ($ns + '.' + $name) } else { $out += $name }
+            }
+        }
+        return $out
+    } finally {
+        $fs.Close()
+    }
 }
 
 if (-not $NT8Bin) { $NT8Bin = 'C:\Program Files\NinjaTrader 8\bin' }
@@ -117,14 +150,18 @@ if ($CustomDir) {
             Add-Ref $m.Groups[1].Value
         }
     }
-    # 3. NinjaTrader.Custom.dll - the assembly whose base types our AddOn
-    #    extends (the csproj above BUILDS it, so it cannot list itself).
-    Add-Ref (Join-Path $CustomDir 'NinjaTrader.Custom.dll')
     Add-Ref (Join-Path $CustomDir 'NinjaTrader.Vendor.dll')
 }
 
-# 4. Newtonsoft.Json (the dotnet recipe references it; harmless if unused).
+# 3. Newtonsoft.Json (the dotnet recipe references it; harmless if unused).
 Add-Ref (Join-Path $NT8Bin 'Newtonsoft.Json.dll')
+
+# In the normal VL.AddOn mode the AddOn's base types live in Custom.dll, so it
+# is a reference. In -Custom mode Custom.dll is the OUTPUT - never reference it
+# (that would be the old DLL we are replacing).
+if (-not $Custom) {
+    Add-Ref (Join-Path $CustomDir 'NinjaTrader.Custom.dll')
+}
 
 if ($refPaths.Count -eq 0) {
     Fail "no reference assemblies could be resolved"
@@ -141,9 +178,21 @@ $trees = New-Object 'System.Collections.Generic.List[Microsoft.CodeAnalysis.Synt
 if ($Probe) {
     $trees.Add([Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText('public static class __VlAddonProbe { }'))
     $asmName = '__VlAddonProbe'
+} elseif ($Custom) {
+    if (-not $CustomDir) { Fail "-CustomDir is required with -Custom" }
+    if (-not (Test-Path $CustomDir)) { Fail "custom dir not found: " + $CustomDir }
+    # Every .cs under bin/Custom EXCEPT the VL*.cs being migrated out.
+    $srcFiles = @(Get-ChildItem -Path $CustomDir -Recurse -Filter '*.cs' -File |
+        Where-Object { $_.Name -notlike 'VL*.cs' })
+    if ($srcFiles.Count -eq 0) { Fail "no .cs files in " + $CustomDir }
+    foreach ($f in $srcFiles) {
+        $text = [System.IO.File]::ReadAllText($f.FullName)
+        $trees.Add([Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText($text, $null, $f.FullName, $null))
+    }
+    $asmName = 'NinjaTrader.Custom'
 } else {
-    if (-not $Src) { Fail "-Src is required (unless -Probe)" }
-    if (-not $Out) { Fail "-Out is required (unless -Probe)" }
+    if (-not $Src) { Fail "-Src is required" }
+    if (-not $Out) { Fail "-Out is required" }
     if (-not (Test-Path $Src)) { Fail "source dir not found: " + $Src }
     $srcFiles = @(Get-ChildItem -Path $Src -Filter '*.cs' -File)
     if ($srcFiles.Count -eq 0) { Fail "no .cs files in " + $Src }
@@ -165,10 +214,12 @@ if ($Probe) {
         $ms.Dispose()
     }
 } else {
+    if (-not $Out) { Fail "-Out is required" }
     if (-not (Test-Path $Out)) {
         New-Item -ItemType Directory -Path $Out -Force | Out-Null
     }
-    $outFile = Join-Path $Out 'VL.AddOn.dll'
+    $outName = if ($Custom) { 'NinjaTrader.Custom.dll' } else { 'VL.AddOn.dll' }
+    $outFile = Join-Path $Out $outName
     $fs = [System.IO.File]::Open($outFile, [System.IO.FileMode]::Create)
     try {
         $result = $compilation.Emit($fs)
@@ -179,6 +230,7 @@ if ($Probe) {
 
 $errors = @($result.Diagnostics | Where-Object { $_.Severity -eq [Microsoft.CodeAnalysis.DiagnosticSeverity]::Error })
 if ($errors.Count -gt 0) {
+    if ($Custom) { Write-Output ("VL_CUSTOM_ERRORS=" + $errors.Count) }
     foreach ($d in $errors) {
         Write-Output ("ERROR " + $d.Id + ": " + $d.GetMessage())
     }
@@ -193,6 +245,32 @@ if ($Probe) {
     exit 0
 }
 
+# -Custom: accept only if the public type list is unchanged minus the VL AddOn
+# types (indicators, strategies, Apex untouched).
+if ($Custom) {
+    $oldDll = Join-Path $CustomDir 'NinjaTrader.Custom.dll'
+    if (-not (Test-Path $oldDll)) { Fail "old Custom.dll not found at " + $oldDll }
+    $oldTypes = @(Get-PublicTypes $oldDll)
+    $newTypes = @(Get-PublicTypes $outFile)
+    # The VL types live in more than one namespace (AddOns + Strategies), so
+    # subtract every public type whose SIMPLE name starts with "VL" ? those are
+    # exactly the types the migrated-out VL*.cs defined.
+    $expected = @($oldTypes | Where-Object {
+        $leaf = $_
+        if ($leaf.Contains('.')) { $leaf = $leaf.Substring($leaf.LastIndexOf('.') + 1) }
+        -not $leaf.StartsWith('VL')
+    })
+    $diff = @(Compare-Object $expected $newTypes)
+    if ($diff) {
+        Write-Output 'VL_CUSTOM_TYPES_DIFF'
+        foreach ($d in $diff) {
+            Write-Output ("TYPE " + $d.SideIndicator + " " + $d.InputObject)
+        }
+        Fail "the rebuilt Custom.dll public type list differs from the old one minus the VL types"
+    }
+    Write-Output 'VL_CUSTOM_TYPES_OK'
+}
+
 # -- sha256 + machine-readable result ---------------------------------------
 $sha = [System.Security.Cryptography.SHA256]::Create()
 try {
@@ -203,6 +281,13 @@ try {
     $sha.Dispose()
 }
 
-Write-Output ("VL_ADDON_DLL=" + $outFile)
-Write-Output ("VL_ADDON_SHA256=" + $hex)
+if ($Custom) {
+    Write-Output ("VL_CUSTOM_DLL=" + $outFile)
+    Write-Output ("VL_CUSTOM_SHA256=" + $hex)
+} else {
+    Write-Output ("VL_ADDON_DLL=" + $outFile)
+    Write-Output ("VL_ADDON_SHA256=" + $hex)
+}
 exit 0
+
+

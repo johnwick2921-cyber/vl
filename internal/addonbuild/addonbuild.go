@@ -69,6 +69,7 @@ var (
 	ErrNoDocsDir       = errors.New("addonbuild: DocsDir empty or missing bin/Custom")
 	ErrNoRun           = errors.New("addonbuild: Run is nil")
 	ErrBuildNoDll      = errors.New("addonbuild: build produced no VL.AddOn.dll")
+	ErrNoCustomDll     = errors.New("addonbuild: no NinjaTrader.Custom.dll to rebuild")
 )
 
 // nt8DocsGlob is the WSL glob Detect scans. A package var so tests can point it
@@ -239,6 +240,121 @@ func nt8BinWindows(exe string) string {
 		}
 	}
 	return `C:\Program Files\NinjaTrader 8\bin`
+}
+
+// RebuildCustom (release #35, the no-F5 rebuild) compiles NinjaTrader.Custom.dll
+// from every <DocsDir>/bin/Custom/**/*.cs EXCEPT VL*.cs, through build-addon.ps1
+// -Custom, which ALSO verifies the new DLL's public type list equals the old
+// Custom.dll's minus the VL types. It returns the built DLL (WSL path under
+// WorkDir/custom-out) and its sha on success; any compile error or type-list
+// diff is an error (the caller then asks for F5 as the last resort). The old
+// Custom.dll is only READ here — the caller MOVEs it to a backup via PlaceCustom.
+func RebuildCustom(ctx context.Context, c Config) (Result, error) {
+	if c.Run == nil {
+		return Result{}, ErrNoRun
+	}
+	docsDir, err := filepath.Abs(c.DocsDir)
+	if err != nil {
+		return Result{}, fmt.Errorf("addonbuild: abs DocsDir: %w", err)
+	}
+	workDir, err := filepath.Abs(c.WorkDir)
+	if err != nil {
+		return Result{}, fmt.Errorf("addonbuild: abs WorkDir: %w", err)
+	}
+	customDir := filepath.Join(docsDir, "bin", "Custom")
+	if !isDir(customDir) {
+		return Result{}, fmt.Errorf("%w: %q", ErrNoDocsDir, c.DocsDir)
+	}
+	if !isFile(filepath.Join(customDir, "NinjaTrader.Custom.dll")) {
+		return Result{}, fmt.Errorf("%w: %s", ErrNoCustomDll, filepath.Join(customDir, "NinjaTrader.Custom.dll"))
+	}
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		return Result{}, fmt.Errorf("addonbuild: mkdir work dir: %w", err)
+	}
+	ps1Path := filepath.Join(workDir, "build-addon.ps1")
+	if err := os.WriteFile(ps1Path, []byte(BuildPs1()), 0o644); err != nil {
+		return Result{}, fmt.Errorf("addonbuild: write ps1: %w", err)
+	}
+	outDir := filepath.Join(workDir, "custom-out")
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return Result{}, fmt.Errorf("addonbuild: mkdir custom-out: %w", err)
+	}
+
+	powerShell := c.PowerShellExe
+	if powerShell == "" {
+		powerShell = "powershell.exe"
+	}
+	args := []string{
+		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+		"-File", wslToWindows(ps1Path),
+		"-Custom",
+		"-CustomDir", wslToWindows(customDir),
+		"-Out", wslToWindows(outDir),
+		"-NT8Bin", nt8BinWindows(c.Exe),
+	}
+	out, runErr := c.Run(ctx, powerShell, args...)
+	outStr := string(out)
+	switch {
+	case strings.Contains(outStr, "VL_CUSTOM_TYPES_DIFF"):
+		// Compile succeeded but the public type list is wrong: indicators,
+		// strategies or Apex would be disturbed. Never accept it.
+		return Result{}, fmt.Errorf("addonbuild: the rebuilt Custom.dll public type list differs: %s", clipBuildOut(out))
+	case runErr != nil:
+		return Result{}, fmt.Errorf("addonbuild: Custom.dll rebuild: %w: %s", runErr, clipBuildOut(out))
+	case !strings.Contains(outStr, "VL_CUSTOM_TYPES_OK"):
+		return Result{}, fmt.Errorf("addonbuild: the rebuilt Custom.dll was not accepted: %s", clipBuildOut(out))
+	}
+
+	dll := filepath.Join(outDir, "NinjaTrader.Custom.dll")
+	if !isFile(dll) {
+		return Result{}, fmt.Errorf("addonbuild: the Custom rebuild produced no NinjaTrader.Custom.dll: %s", clipBuildOut(out))
+	}
+	sum, err := sha256File(dll)
+	if err != nil {
+		return Result{}, fmt.Errorf("addonbuild: sha256: %w", err)
+	}
+	return Result{DllPath: dll, Sha256: sum, BuiltBy: BuiltByRoslynPs1}, nil
+}
+
+// PlaceCustom MOVEs the current bin/Custom/NinjaTrader.Custom.dll to
+// <DocsDir>/vl-addon-backups/<jobID>/custom-rebuild/ and copies the rebuilt DLL
+// in, verifying its sha256. On any failure after the backup move it MOVEs the
+// backup back (the old Custom.dll is never left absent). It returns the backup
+// directory.
+func PlaceCustom(c Config, dll, sha, jobID string) (backupDir string, err error) {
+	customDir := filepath.Join(c.DocsDir, "bin", "Custom")
+	if !isDir(customDir) {
+		return "", fmt.Errorf("%w: %q", ErrNoDocsDir, c.DocsDir)
+	}
+	destDll := filepath.Join(customDir, "NinjaTrader.Custom.dll")
+	if !isFile(destDll) {
+		return "", fmt.Errorf("%w: %s", ErrNoCustomDll, destDll)
+	}
+
+	backupDir = filepath.Join(c.DocsDir, "vl-addon-backups", jobID, "custom-rebuild")
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		return "", fmt.Errorf("addonbuild: mkdir custom-rebuild backup: %w", err)
+	}
+	backup := filepath.Join(backupDir, "NinjaTrader.Custom.dll")
+	if err := os.Rename(destDll, backup); err != nil {
+		return "", fmt.Errorf("addonbuild: move old Custom.dll: %w", err)
+	}
+	restore := func() { _ = os.Rename(backup, destDll) }
+
+	if err := copyFile(dll, destDll); err != nil {
+		restore()
+		return "", fmt.Errorf("addonbuild: copy rebuilt Custom.dll: %w (old restored)", err)
+	}
+	got, err := sha256File(destDll)
+	if err != nil {
+		restore()
+		return "", fmt.Errorf("addonbuild: Custom.dll sha256: %w (old restored)", err)
+	}
+	if got != sha {
+		restore()
+		return "", fmt.Errorf("addonbuild: Custom.dll sha256 mismatch: got %s want %s (old restored)", got, sha)
+	}
+	return backupDir, nil
 }
 
 // BuildPs1 returns the embedded build-addon.ps1 source — the single source of

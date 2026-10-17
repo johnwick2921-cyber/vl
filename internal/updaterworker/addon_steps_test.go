@@ -2,6 +2,7 @@ package updaterworker
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,9 +21,9 @@ import (
 // and a flat-but-non-SIM account blocks.
 func TestFlatSIMGateBlocksTheRestart(t *testing.T) {
 	for _, c := range []struct {
-		name   string
-		setup  func(r *rig)
-		want   string
+		name  string
+		setup func(r *rig)
+		want  string
 	}{
 		{name: "not flat", setup: func(r *rig) { r.set(func() { r.flat = false }) }, want: "flat+SIM gate"},
 		{name: "flat but a bound account is not SIM", setup: func(r *rig) { r.set(func() { r.simTradeable = false }) }, want: "sim_accounts"},
@@ -209,6 +210,74 @@ func TestFirstInstallPlacesAfterTheOneTimeF5(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", addonDllName)); err != nil {
 		t.Fatalf("the post-F5 update did not place the AddOn: %v", err)
+	}
+}
+
+// Guard #2 (release #35, no F5): with NT8 CLOSED and Custom.dll still holding
+// the AddOn type, the worker rebuilds Custom.dll itself (build-addon.ps1
+// -Custom), accepts it, and the update completes one-click — no F5, no hands.
+func TestFirstInstallNT8ClosedRebuildsCustomAndPlaces(t *testing.T) {
+	r := newRig(t, withCSChanged(), withNT8Down(absentDown))
+	// First install: Custom.dll holds the type; VL.AddOn.dll does not exist yet.
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"), "type "+addonTypeName+"\n")
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", "VLTraderTCPClient.cs"), "// the AddOn source\n")
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "Strategies", "vltrader.cs"), "// a VL strategy\n")
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateComplete {
+		t.Fatalf("job %s (error %q), want complete — the no-F5 rebuild replaces the one-time F5", j.State, j.Error)
+	}
+	// Custom.dll was rebuilt WITHOUT the type, and the old one was backed up.
+	cur, err := os.ReadFile(filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(cur), addonTypeName) {
+		t.Fatalf("the rebuilt Custom.dll still holds the AddOn type: %q", cur)
+	}
+	backup, err := os.ReadFile(filepath.Join(r.nt8docs, "vl-addon-backups", boxJobID, "custom-rebuild", "NinjaTrader.Custom.dll"))
+	if err != nil || !strings.Contains(string(backup), addonTypeName) {
+		t.Fatalf("the old Custom.dll was not backed up (err=%v): %q", err, backup)
+	}
+	// The AddOn itself was placed.
+	if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", addonDllName)); err != nil {
+		t.Fatalf("the AddOn was not placed: %v", err)
+	}
+	// The VL sources were migrated out (AddOns AND the Strategies strategy).
+	if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", "VLTraderTCPClient.cs")); !os.IsNotExist(err) {
+		t.Fatalf("the AddOn source was not moved out: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(r.nt8docs, "bin", "Custom", "Strategies", "vltrader.cs")); !os.IsNotExist(err) {
+		t.Fatalf("the VL strategy source was not moved out: %v", err)
+	}
+}
+
+// Guard #2 (release #35) failure: with NT8 CLOSED the rebuild fails (the fake
+// -Custom path returns a type diff), so the old Custom.dll is left untouched and
+// the job falls back to the F5 blocker as the last resort.
+func TestFirstInstallNT8ClosedRebuildFailureAsksForF5(t *testing.T) {
+	r := newRig(t, withCSChanged(), withNT8Down(absentDown))
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"), "type "+addonTypeName+"\n")
+	// Make the no-F5 rebuild fail: the -Custom ps1 returns a type diff.
+	prev := r.box.fakeRunWin
+	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if strings.Contains(name, "powershell") && hasWinFlag(args, "-Custom") {
+			return []byte("VL_CUSTOM_TYPES_DIFF\nTYPE <= NinjaTrader.NinjaScript.Strategies.VLTrader\n"), errors.New("exit 1")
+		}
+		return prev(ctx, name, args...)
+	}
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRevertedClean || j.Error != addonMigrationBlocker {
+		t.Fatalf("job %s (error %q), want reverted_clean with the F5 blocker", j.State, j.Error)
+	}
+	// The old Custom.dll is untouched.
+	cur, err := os.ReadFile(filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"))
+	if err != nil || !strings.Contains(string(cur), addonTypeName) {
+		t.Fatalf("the old Custom.dll must be untouched on rebuild failure: %q (err=%v)", cur, err)
+	}
+	if r.callCount("activate") != 0 {
+		t.Fatalf("activate ran %d times under a failed no-F5 rebuild", r.callCount("activate"))
 	}
 }
 
