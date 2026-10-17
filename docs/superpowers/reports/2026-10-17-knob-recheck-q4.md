@@ -127,3 +127,86 @@ On both live strategies (`ninjatrader` CME futures) these are only read by the c
 No P0 found in this slice. The one true "screen OFF vs bot ON" case (`news_bars_excluded`) is already fixed by the open #571.
 
 — DS-104
+
+---
+
+## Three-state recheck (CTO 06:23Z correction)
+
+Each knob is now compared in **three states** — value MISSING, explicit OFF/false/0, explicit ON/true/value — as "Studio shows | the bot does". A mismatch in ANY state is a finding. Pointer-typed bool/number fields (`*bool`, `*float64`, `*int`) preserve an explicit OFF through `omitempty` [A] (`store/strategy.go`); plain value fields with `omitempty` drop an explicit 0 to "missing". That distinction decides the OFF state.
+
+Legend: ✓ = Studio and bot agree in that state. `S:` Studio · `B:` bot. `—` = no meaningful OFF/ON state for the type.
+
+### mentor_tuning (14)
+
+| knob | MISSING | explicit OFF (false/0) | explicit ON (true/value) |
+|---|---|---|---|
+| news_bars_excluded | ❌ S=false \| B=true | ✓ S=false \| B=false | ✓ S=true \| B=true |
+| news_wait_both_lines | ✓ true | ✓ false (pointer) | ✓ true |
+| orb_edge_veto_pts | ✓ 0 | ✓ 0 (0 is off; default also 0) | ✓ 0.25–50 |
+| orb_gate_enabled | ✓ true | ✓ false (pointer) | ✓ true |
+| orb_isb_fraction_outside | ✓ 0.8 | ✓ 0 → OFF (pointer) | ✓ (0,1] |
+| ping_pong_candle_lookback | ✓ 30 | ✓ 0 dropped → 30 (no off for a count) | ✓ 1–200 |
+| ping_pong_candle_max_pts | ✓ 20 | ✓ 0 dropped → 20 | ✓ (0,200] |
+| ping_pong_min_gap_pts | ✓ 50 | ✓ 0 dropped → 50 | ✓ (0,500] |
+| swing_max_stop_pts | ✓ 100 | ✓ 0 dropped → 100 | ✓ 30–300 |
+| swing_min_stop_pts | ⚠ HIDDEN: no control \| B=0 (off) | ⚠ HIDDEN \| B=0 | ⚠ HIDDEN \| B=value |
+| tf_conflict_end | ✓ both_boxes | ✓ first_box | ✓ both_boxes |
+| trendline_between_boxes | ✓ true | ✓ false (pointer) | ✓ true |
+| trendline_is_target | ✓ true | ✓ false (pointer) | ✓ true |
+| trigger_school | ✓ 1 | — (enum 1\|2) | ✓ 2 |
+
+*(Plain `float64`/`int` fields with `omitempty` — ping_pong_*, swing_max_stop_pts, orb_edge_veto_pts — treat a typed 0 as "unset → default", not as "off". For orb_edge_veto_pts the default IS 0 so no visible effect; for the thresholds there is no off-concept. P2 display nuance, not a P0/P1.)*
+
+### prompt / indicator / session / trailing (18)
+
+| knob | MISSING | OFF | ON |
+|---|---|---|---|
+| role_definition | ✓ empty→fixed CME role | — (text) | ✓ text |
+| rsi_periods | ✓ [14] | — (array) | ✓ |
+| selected_timeframes | ✓ default list | — | ✓ |
+| session | ✓ empty→omitted | — | ✓ |
+| sessions_enabled | ✓ ['NY'] | — | ✓ |
+| strategy_type | ✓ ai_trading | — | ✓ |
+| system_prompt | ✓ empty | — | ✓ text |
+| trading_frequency | ✓ empty→omitted | — | ✓ |
+| t1_currencies | ⚠ S=blank \| B=[USD] (guide says empty=[USD]) | ⚠ **no OFF state** — empty is stored as missing → USD hard-block stays ON | ✓ ['EUR'] |
+| trailing_enabled | ✓ false | ✓ false (pointer) | ✓ true (but wire-suspended + mentor-inert; #570 shows the caveat) |
+| trailing_arm | ✓ after_breakeven | — | ✓ immediate/after_points |
+| trailing_arm_points | ✓ 0 | — | ✓ |
+| trailing_atr_mult | ✓ 2.0 | ⚠ 0 dropped → 2.0 (plain omitempty) | ✓ |
+| trailing_atr_period | ✓ 14 | ⚠ 0 dropped → 14 | ✓ |
+| transition_standdown | ⚠ HIDDEN \| B=True | ⚠ HIDDEN \| B=false (pointer) | ⚠ HIDDEN \| B=true |
+| round_trip_cost_points | ⚠ HIDDEN \| B=2 | ⚠ HIDDEN | ⚠ HIDDEN |
+| type | ⚠ HIDDEN \| internal | ⚠ HIDDEN | ⚠ HIDDEN |
+
+### planner / wake / zone (7)
+
+| knob | MISSING | OFF | ON |
+|---|---|---|---|
+| wake_on_level_events | ✓ S=ON \| B=ON | ✓ S=OFF \| B=OFF (pointer) | ✓ |
+| write_time_feasibility | ⚠ HIDDEN \| B=ON | ⚠ HIDDEN \| B=OFF (pointer) | ⚠ HIDDEN \| B=ON |
+| zone_max_pts | ⚠ HIDDEN \| B=10 | ⚠ HIDDEN \| B=10 (saved ≤0 → default, named) | ⚠ HIDDEN \| B=value |
+| zone_place_within_pts | ⚠ HIDDEN \| B=25 (ON) | ⚠ HIDDEN \| B=0 (OFF legacy, named) | ⚠ HIDDEN \| B=value |
+| zone_rest_max_min | ⚠ HIDDEN \| B=30 | ⚠ HIDDEN \| B=30 (saved ≤0 → default) | ⚠ HIDDEN \| B=value |
+
+### crypto-era / grid / data / computed / folded (19)
+
+All DEAD on futures or FOLDED/computed — no state changes bot behaviour on the live futures path:
+
+| knob | three-state |
+|---|---|
+| source_type, static_coins, stop_loss_pct, symbol, total_investment, upper_price, url, use_atr_bounds, use_maker_only | DEAD on futures (crypto/grid path never runs) — all three states inert |
+| total, suggestions, updated_at, usage_pct, user_id | DEAD (computed / internal) — all three states inert |
+| scenario_cap, structure_map, wake_min_interval_min, wake_on_15m_zone, wake_on_htf_ob, wake_on_htf_zone, wake_on_ifvg, wake_on_seated_invalidation | FOLDED — control removed; stored value honoured + logged in every state (wake_on_htf_ob keeps its ANDed effect only when stored true) |
+
+---
+
+## Three-state ADDITIONAL findings (beyond the MISSING-state audit)
+
+No new P0/P1. The one P1 (news_bars_excluded, MISSING state) is FIXED-BY-571. New P2 notes surfaced by the OFF state:
+
+1. `t1_currencies` — **no OFF state**: an emptied field is stored as *missing* (`DayPlanEditor.tsx` writes `undefined` for an empty list), which the bot resolves to the shipped `[USD]` hard-block. The USD block cannot be turned off from Studio and the blank input does not say so. (P2)
+2. `trailing_atr_mult` / `trailing_atr_period` — plain `float64`/`int` with `omitempty`: a typed 0 is dropped and resolves to the default (2.0 / 14). Typing 0 does not "turn the trail off". Inert while exit-mechs are suspended, so cosmetic. (P2)
+3. `ping_pong_*`, `swing_max_stop_pts`, `orb_edge_veto_pts` — same plain-field pattern: a typed 0 = "unset → default", not "off". (P2)
+
+— DS-104 (three-state pass)
