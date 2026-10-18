@@ -1823,6 +1823,26 @@ func (t *TCPTrader) FeedStatus() string { return t.server.FeedStatus() }
 // positions/orders reconciliation.
 func (t *TCPTrader) IsConnected() bool { return t.server.IsConnected() }
 
+// FriendStateKnown (W-FRIEND-HOSTED R9c) reports whether this trader's position
+// state is KNOWN and FRESH enough to answer the friend-flat probe: the NT8 link
+// is connected AND a positions snapshot AND an order snapshot for the bound
+// account were received within maxAge of now. Anything else — disconnected, no
+// snapshot, a snapshot older than maxAge — reads false (never "known" by guess).
+// The 120 s default in the caller is the staleness bound; there is no older
+// snapshot-age knob to reuse, so the bound lives here as the caller's constant.
+func (t *TCPTrader) FriendStateKnown(now time.Time, maxAge time.Duration) bool {
+	if t == nil || t.server == nil || !t.IsConnected() {
+		return false
+	}
+	if _, posAt, _, ok := t.server.PositionsForExecutionReceipt(t.boundAccount, t.symbol); !ok || now.Sub(posAt) > maxAge {
+		return false
+	}
+	if _, ordAt, ok := t.OrderSnapshotBook(); !ok || now.Sub(ordAt) > maxAge {
+		return false
+	}
+	return true
+}
+
 func (t *TCPTrader) GetPositions() ([]map[string]interface{}, error) {
 	// Read positions for THIS trader's OWN bound account — NOT the shared connection
 	// CurrentAccount() (which the dashboard can switch for DISPLAY). Decoupling keeps
