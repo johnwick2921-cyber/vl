@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -18,6 +19,31 @@ import (
 // tunnel host).
 func baseURLFromInstallCode(ic InstallCode) string {
 	return fmt.Sprintf("http://%s:%d", ic.Host, ic.WebPort)
+}
+
+// flatProbeResult is the friend-mode-only flat signal (CTO ruling 2026-10-18):
+// GET /api/friend/flat → {"flat":true|false,"at":<unix ms>} — nothing else.
+type flatProbeResult struct {
+	Flat bool `json:"flat"`
+}
+
+// probeFlat asks the friend bot's /api/friend/flat endpoint and maps it to the
+// positionsProvider contract: 0 = flat, non-zero = open. Any probe error is an
+// error (fail closed): the caller's waitUntilFlat treats it as "not flat" and
+// defers, never swapping mid-trade.
+func probeFlat(ctx context.Context, d deps, base string) (float64, error) {
+	b, err := d.fetch(ctx, base+"/api/friend/flat")
+	if err != nil {
+		return 0, fmt.Errorf("flat probe: %w", err)
+	}
+	var r flatProbeResult
+	if err := json.Unmarshal(b, &r); err != nil {
+		return 0, fmt.Errorf("flat probe: %w", err)
+	}
+	if r.Flat {
+		return 0, nil
+	}
+	return 1, nil
 }
 
 // fetchManifest GETs the signed manifest and verifies it against the embedded

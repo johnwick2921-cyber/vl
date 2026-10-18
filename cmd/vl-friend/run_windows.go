@@ -43,7 +43,9 @@ func realDeps() deps {
 		},
 		homeDir: os.UserHomeDir,
 		positions: func(ctx context.Context) (float64, error) {
-			return 0, fmt.Errorf("flatness check not wired (no friend auth token)")
+			// Fail-closed default; run() replaces this with the real probe
+			// against the friend's /api/friend/flat once the base URL is known.
+			return 0, fmt.Errorf("flat probe not wired")
 		},
 		writeFile: os.WriteFile,
 		mkdirAll:  os.MkdirAll,
@@ -97,6 +99,12 @@ func run(args []string) error {
 		return err
 	}
 	base := fmt.Sprintf("http://%s:%d", cfg.Host, st.WebPort)
+	// CTO flat-signal ruling (2026-10-18): the flat check reads the friend's
+	// friend-mode-only /api/friend/flat (no dashboard JWT). A probe error is an
+	// error → waitUntilFlat defers (fail closed).
+	d.positions = func(ctx context.Context) (float64, error) {
+		return probeFlat(ctx, d, base)
+	}
 	dec, err := RunUpdateCheck(ctx, d, base, false)
 	if err != nil {
 		return err

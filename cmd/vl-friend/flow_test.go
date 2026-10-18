@@ -318,3 +318,39 @@ func TestVersionCompare(t *testing.T) {
 		}
 	}
 }
+
+func TestProbeFlat(t *testing.T) {
+	base := "http://100.64.0.2:18081"
+	cases := []struct {
+		name    string
+		body    string
+		fetchOK bool
+		wantQ   float64
+		wantErr bool
+	}{
+		{"flat", `{"flat":true,"at":1720000000000}`, true, 0, false},
+		{"open", `{"flat":false,"at":1720000000000}`, true, 1, false},
+		{"probe error fails closed", "", false, 0, true},
+		{"malformed json fails closed", `{"flat":`, true, 0, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := deps{fetch: func(_ context.Context, url string) ([]byte, error) {
+				if url != base+"/api/friend/flat" {
+					t.Fatalf("probed %q, want %q", url, base+"/api/friend/flat")
+				}
+				if !c.fetchOK {
+					return nil, fmt.Errorf("connection refused")
+				}
+				return []byte(c.body), nil
+			}}
+			q, err := probeFlat(context.Background(), d, base)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("err=%v wantErr=%v", err, c.wantErr)
+			}
+			if q != c.wantQ {
+				t.Fatalf("q=%v want %v", q, c.wantQ)
+			}
+		})
+	}
+}
