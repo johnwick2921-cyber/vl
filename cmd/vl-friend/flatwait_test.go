@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -17,13 +18,20 @@ func TestWaitUntilFlatReturnsWhenFlat(t *testing.T) {
 }
 
 func TestWaitUntilFlatWaitsUntilFlat(t *testing.T) {
-	q := 2.0
-	p := func(ctx context.Context) (float64, error) { return q, nil }
+	// closed is atomic: the poll reads it while the goroutine below flips it
+	// (a plain float64 here was a DATA RACE under -race in CI).
+	var closed atomic.Bool
+	p := func(ctx context.Context) (float64, error) {
+		if closed.Load() {
+			return 0, nil
+		}
+		return 2, nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		q = 0
+		closed.Store(true)
 	}()
 	if err := waitUntilFlat(ctx, p, 10*time.Millisecond); err != nil {
 		t.Fatalf("should observe the position close, got %v", err)
