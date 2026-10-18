@@ -1,0 +1,45 @@
+package main
+
+import (
+	"context"
+	"io/fs"
+)
+
+// osdeps.go — the OS side effects the install/update flow needs. Everything is
+// a function field so the pure flow is unit-testable on Linux with fakes; the
+// real Windows implementation lives in run_windows.go (GOOS=windows). The flow
+// logic NEVER calls os/exec, os.WriteFile or the network directly — only these
+// fields — so a test can prove ordering (verify-before-write) and refusal.
+
+type deps struct {
+	// exec runs a program and returns its combined output.
+	exec func(ctx context.Context, name string, args ...string) ([]byte, error)
+	// fetch GETs a URL over HTTP(S) and returns the body.
+	fetch func(ctx context.Context, url string) ([]byte, error)
+	// homeDir returns the Windows user profile dir (e.g. C:\Users\Tom).
+	homeDir func() (string, error)
+	// positions reports the friend bot's net position size (0 == flat); used
+	// by the update flat-wait.
+	positions func(ctx context.Context) (float64, error)
+	// writeFile / mkdirAll / rename are thin fs wrappers. rename only MOVES
+	// (the old add-on is moved aside to VL\old\, never deleted — THE ONE RULE).
+	writeFile func(path string, data []byte, perm fs.FileMode) error
+	mkdirAll  func(path string, perm fs.FileMode) error
+	rename    func(oldpath, newpath string) error
+	readFile  func(path string) ([]byte, error)
+	// readLine prompts the user (install code on first run, update yes/no) and
+	// returns the trimmed answer. autoApprove=true bypasses it in tests.
+	readLine func(prompt string) (string, error)
+	// allowedSigners is the trust anchor the flow verifies manifests against:
+	// the embedded friend-distribution public key in production, a test key in
+	// tests. Empty means "no trust" → every signature refuses.
+	allowedSigners []byte
+}
+
+// appVersion / appBuild are the friend app's own version, embedded at build
+// time. appVersion is overridden by -ldflags "-X main.appVersion=…" in the
+// build script; appBuild stays a compile-time constant.
+var (
+	appVersion = "1.0.0"
+	appBuild   = "1"
+)
