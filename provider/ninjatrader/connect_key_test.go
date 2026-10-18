@@ -1,6 +1,7 @@
 package ninjatrader
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -84,5 +85,69 @@ func TestConnectKeyUnsetIsToday(t *testing.T) {
 	}
 	if got := s.ConnectKeyRefused(); got != 0 {
 		t.Fatalf("unset key: ConnectKeyRefused = %d, want 0", got)
+	}
+}
+
+// TestConnectKeyRefusedPeerGetsZeroFramesWithQueuedSignal — B5 S6: a signal
+// queued BEFORE the peer connects must NOT be flushed to a refused (wrong-key)
+// peer, and must remain queued for the next correct client.
+//
+// MUTANT: run sendPostAccept (or flushPending) for a refused peer → the queued
+// signal reaches the wrong-key peer → this test goes RED.
+func TestConnectKeyRefusedPeerGetsZeroFramesWithQueuedSignal(t *testing.T) {
+	t.Setenv("NT_CONNECT_KEY", testConnectKey)
+	s := startedServer(t, nil)
+
+	// Queue a signal while NO client is connected (it stays pending).
+	if err := s.SendSignal(SignalPayload{
+		SignalID:   "q1",
+		Account:    "Sim101",
+		Symbol:     "MNQ",
+		Side:       "long",
+		Quantity:   1,
+		Entry:      20000,
+		StopLoss:   19900,
+		TakeProfit: 20100,
+		Timestamp:  time.Now().UTC().Format(time.RFC3339Nano),
+	}); err != nil {
+		t.Fatalf("queue signal: %v", err)
+	}
+	if got := s.PendingSignalCount(); got != 1 {
+		t.Fatalf("after queueing: PendingSignalCount = %d, want 1", got)
+	}
+
+	// Wrong key: refused, ZERO frames, and the queue is untouched.
+	w := dialWire(t, s, HelloPayload{ConnectKey: "wrong-key"})
+	if n := drainAll(w, 700*time.Millisecond); n != 0 {
+		t.Fatalf("wrong key with a queued signal: the server sent %d frame(s), want 0", n)
+	}
+	if got := s.ConnectKeyRefused(); got != 1 {
+		t.Fatalf("wrong key: ConnectKeyRefused = %d, want 1", got)
+	}
+	if got := s.PendingSignalCount(); got != 1 {
+		t.Fatalf("queue must survive the refused peer: PendingSignalCount = %d, want 1", got)
+	}
+
+	// Right key: the queued signal is delivered to THIS client.
+	w2 := dialWire(t, s, HelloPayload{ConnectKey: testConnectKey})
+	if _, ok := w2.next(FrameHello, 2*time.Second); !ok {
+		t.Fatal("right key: no hello reply, want connected")
+	}
+	env, ok := w2.next(FrameSignal, 2*time.Second)
+	if !ok {
+		t.Fatal("right key: the queued signal was not flushed")
+	}
+	var sp SignalPayload
+	if err := json.Unmarshal(env.Payload, &sp); err != nil {
+		t.Fatalf("unmarshal flushed signal: %v", err)
+	}
+	if sp.SignalID != "q1" {
+		t.Fatalf("flushed signal id = %q, want q1", sp.SignalID)
+	}
+	if got := s.PendingSignalCount(); got != 0 {
+		t.Fatalf("after flush to the right client: PendingSignalCount = %d, want 0", got)
+	}
+	if got := s.ConnectKeyRefused(); got != 1 {
+		t.Fatalf("right key must not be refused: ConnectKeyRefused = %d, want 1", got)
 	}
 }
