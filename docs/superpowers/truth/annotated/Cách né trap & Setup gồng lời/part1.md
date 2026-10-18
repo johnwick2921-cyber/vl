@@ -1,4 +1,4 @@
-cues: 449/449 · rule cues: 118 · rows: 6 · CODE: 57 · MISMATCH: 0 · NOT-IN-BOT: 36 · OWNER-ORDER: 0 · SPLIT: 25 · —: 331
+cues: 449/449 · rule cues: 127 · rows: 6 · CODE: 57 · MISMATCH: 0 · NOT-IN-BOT: 36 · OWNER-ORDER: 0 · SPLIT: 34 · —: 322
 
 00:00 | Thì bây giờ cái tab mình sẽ có sử dụng những cái indicator mà cái indicator mà gọi là OG nhất của cái tab mình thì anh chị cũng biết là cái tab Santa hoặc là bé Na ha hoặc là bé Na sẽ có những lúc mọi người có thấy là nó fake breakout hoặc fake breakdown mọi người có nghĩa là khi mà nó anh chị thấy nó đóng trên bé Na rồi nó đóng trên Santa rồi xong nó gãy ngược xuống và mình vô lệnh và mình thua. | —
 00:33 | Thì đây sẽ là một cái cách né trap em thấy khá là hay | —
@@ -297,15 +297,15 @@ cues: 449/449 · rule cues: 118 · rows: 6 · CODE: 57 · MISMATCH: 0 · NOT-IN-
 12:16 | Sau khi nó phiêu lệnh | —
 12:18 | Là cây lệnh của mình sẽ được phiêu ở cây nến | —
 12:20 | Cây nến xanh này | —
-12:22 | Khi nó break qua cây nến xanh là nó sẽ phiêu cây lệnh của mình | —
-12:25 | Thì trong dòng | —
-12:27 | Hai cây nến tiếp theo | —
-12:29 | Nếu như có | —
-12:31 | Inside wall cùng chiều | —
-12:33 | Với cây lệnh anh chị đang vô | —
-12:34 | Thì gồng cho em | —
-12:37 | Gồng cho em | —
-12:39 | Em nói lại một lần nha | —
+12:22 | Khi nó break qua cây nến xanh là nó sẽ phiêu cây lệnh của mình | COURSE-SPLIT → 8.3 (row 8.3)
+12:25 | Thì trong dòng | COURSE-SPLIT → 8.3 (row 8.3)
+12:27 | Hai cây nến tiếp theo | COURSE-SPLIT → 8.3 (row 8.3)
+12:29 | Nếu như có | COURSE-SPLIT → 8.3 (row 8.3)
+12:31 | Inside wall cùng chiều | COURSE-SPLIT → 8.3 (row 8.3)
+12:33 | Với cây lệnh anh chị đang vô | COURSE-SPLIT → 8.3 (row 8.3)
+12:34 | Thì gồng cho em | COURSE-SPLIT → 8.3 (row 8.3)
+12:37 | Gồng cho em | COURSE-SPLIT → 8.3 (row 8.3)
+12:39 | Em nói lại một lần nha | COURSE-SPLIT → 8.3 (row 8.3)
 12:43 | Khi anh chị bắt potential high ở low | COURSE-SPLIT → 8.3 (row 8.3)
 12:45 | Hoặc là anh chị bắt cái low nào đó | COURSE-SPLIT → 8.3 (row 8.3)
 12:47 | Để anh chị đánh cái quay về bắt test | COURSE-SPLIT → 8.3 (row 8.3)
