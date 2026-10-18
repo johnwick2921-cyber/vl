@@ -30,7 +30,23 @@ func newFriendTestServer(t *testing.T, friend bool) *Server {
 
 func TestFriendModeOwnerSurfaces404(t *testing.T) {
 	s := newFriendTestServer(t, true)
-	for _, p := range []string{"/api/updates", "/api/maintenance", "/api/installation-gate"} {
+	// Segment 2 (owner-only surfaces) + R6 (file/command/backup/deploy/updater/
+	// maintenance/Telegram seams). None of these is registered on a friend bot.
+	routes := []string{
+		"/api/updates",
+		"/api/maintenance",
+		"/api/installation-gate",
+		"/api/telegram",
+		"/api/telegram/model",
+		"/api/telegram/binding",
+		"/api/telegram/bind-code",
+		"/api/debug/nt-test-trade",
+		"/api/debug/nt-bars-unsubscribe",
+		"/api/nt/bar-arbiter",
+		"/api/armed/test-arm",
+		"/api/admin/bars/import",
+	}
+	for _, p := range routes {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, p, nil)
 		s.router.ServeHTTP(w, req)
