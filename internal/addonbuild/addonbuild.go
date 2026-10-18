@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -76,6 +77,36 @@ var (
 // nt8DocsGlob is the WSL glob Detect scans. A package var so tests can point it
 // at a temp dir.
 var nt8DocsGlob = "/mnt/c/Users/*/Documents/NinjaTrader 8"
+
+// Windows tool locations (W-UPDATER-WINPATH). The vl-updater user unit's PATH
+// has no /mnt/c entries (systemd does not inherit WSL's appendWindowsPath), so
+// a bare powershell.exe / dotnet.exe name can miss even though the tool exists
+// at its fixed Windows location. Vars so tests can point them at temp files.
+var (
+	windowsPowerShellWSL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+	windowsDotnetWSL     = "/mnt/c/Program Files/dotnet/dotnet.exe"
+)
+
+// resolveWindowsExe resolves a Windows tool name to a runnable path. A path
+// (contains a separator, or is absolute) is passed through untouched. A bare
+// name is looked up on PATH first (an interactive WSL shell has the Windows
+// dirs); when LookPath misses, the fixed WSL mount of the tool's Windows
+// location is tried. The error names every path tried.
+func resolveWindowsExe(name, fixedWSL string) (string, error) {
+	if name == "" {
+		return "", errors.New("empty tool name")
+	}
+	if strings.ContainsAny(name, `/\`) || filepath.IsAbs(name) {
+		return name, nil // already a path — passed verbatim
+	}
+	if p, err := exec.LookPath(name); err == nil {
+		return p, nil
+	}
+	if isFile(fixedWSL) {
+		return fixedWSL, nil
+	}
+	return "", fmt.Errorf("%q: not found on PATH; %s: no such file", name, fixedWSL)
+}
 
 // Detect returns the single Documents/NinjaTrader 8 directory (WSL path) that
 // has a bin/Custom folder. More than one candidate is an error naming them;
@@ -162,6 +193,10 @@ func Build(ctx context.Context, c Config) (Result, error) {
 // through PowerShell with -Probe off, then verifies the DLL it emitted. On
 // success it returns Result{BuiltBy: BuiltByRoslynPs1}.
 func buildViaPs1(ctx context.Context, c Config, workDir, srcDir, docsDir, powerShell string) (Result, error) {
+	powerShell, err := resolveWindowsExe(powerShell, windowsPowerShellWSL)
+	if err != nil {
+		return Result{}, fmt.Errorf("addonbuild: powershell: %w", err)
+	}
 	ps1Path := filepath.Join(workDir, "build-addon.ps1")
 	if err := os.WriteFile(ps1Path, []byte(BuildPs1()), 0o644); err != nil {
 		return Result{}, fmt.Errorf("addonbuild: write ps1: %w", err)
@@ -200,6 +235,10 @@ func buildViaPs1(ctx context.Context, c Config, workDir, srcDir, docsDir, powerS
 // buildViaDotnet renders the net48 csproj and builds it with dotnet.exe — the
 // fallback that needs an SDK (absent on the partner box).
 func buildViaDotnet(ctx context.Context, c Config, workDir, srcDir, docsDir, dotnetExe string) (Result, error) {
+	dotnetExe, err := resolveWindowsExe(dotnetExe, windowsDotnetWSL)
+	if err != nil {
+		return Result{}, fmt.Errorf("addonbuild: dotnet: %w", err)
+	}
 	customDir := filepath.Join(docsDir, "bin", "Custom")
 
 	proj := renderTemplate(csprojTemplate, map[string]string{
@@ -289,6 +328,10 @@ func RebuildCustom(ctx context.Context, c Config) (Result, error) {
 	powerShell := c.PowerShellExe
 	if powerShell == "" {
 		powerShell = "powershell.exe"
+	}
+	powerShell, err = resolveWindowsExe(powerShell, windowsPowerShellWSL)
+	if err != nil {
+		return Result{}, fmt.Errorf("addonbuild: powershell: %w", err)
 	}
 	args := []string{
 		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
@@ -470,6 +513,10 @@ func CompilerProbe(ctx context.Context, c Config) (ok bool, detail string) {
 	powerShell := c.PowerShellExe
 	if powerShell == "" {
 		powerShell = "powershell.exe"
+	}
+	powerShell, err := resolveWindowsExe(powerShell, windowsPowerShellWSL)
+	if err != nil {
+		return false, err.Error()
 	}
 	dir, err := os.MkdirTemp("", "vl-addon-probe-")
 	if err != nil {

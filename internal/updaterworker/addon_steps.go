@@ -65,7 +65,7 @@ func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
 	return addonbuild.Config{
 		DocsDir:   docsDir,
 		Exe:       addonExe(),
-		DotnetExe: "dotnet.exe",
+		DotnetExe: "dotnet.exe", // bare name — addonbuild.Build resolves it (W-UPDATER-WINPATH)
 		SourceDir: src,
 		WorkDir:   filepath.Join(os.TempDir(), "vl-addon-build", j.JobID),
 		Run:       w.winSeam(),

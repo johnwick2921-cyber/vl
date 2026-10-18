@@ -86,6 +86,15 @@ esac
 echo "install-updater-worker: env ok (release dir outside the install; token present, not shown)"
 echo "install-updater-worker: note — VL_CUTOVER_TOKEN is the cutover-worker credential enroll writes (auth.ScopeCutoverWorker); never a hand-minted gate-jwt — the enroll token is the long-lived type (auth.WorkerTokenTTL)"
 
+# W-UPDATER-WINPATH: the unit's PATH must carry the Windows tool dirs so the
+# AddOn build (powershell.exe / dotnet.exe) can run. systemd does not inherit
+# WSL's appendWindowsPath, so a fresh box's unit would miss them. Write the
+# line here when absent (append-only — never overwrite an existing PATH).
+if ! grep -q '^PATH=' "$ENV_FILE" 2>/dev/null; then
+  printf 'PATH=%s\n' "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/c/Windows/System32/WindowsPowerShell/v1.0:/mnt/c/Windows/System32:/mnt/c/Program Files/dotnet" >> "$ENV_FILE"
+  echo "install-updater-worker: added the Windows-tool PATH line to $ENV_FILE (powershell.exe / dotnet.exe for the AddOn build)"
+fi
+
 BUILD_DIR="$(mktemp -d /tmp/vl-updater-build.XXXXXX)" || { echo "install-updater-worker: REFUSED — cannot make a build dir" >&2; exit 2; }
 trap 'rm -rf "${BUILD_DIR:?}"' EXIT
 echo "install-updater-worker: cloning $REPO_URL (the live install is never touched)"

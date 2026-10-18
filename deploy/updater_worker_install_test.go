@@ -194,4 +194,41 @@ func TestInstallUpdaterWorkerScript(t *testing.T) {
 			t.Fatalf("rc=%d out=%q", rc, out)
 		}
 	})
+
+	// W-UPDATER-WINPATH: the script appends the Windows-tool PATH line to the
+	// env file when absent (systemd does not inherit WSL's appendWindowsPath),
+	// and never duplicates an existing PATH.
+	t.Run("the Windows-tool PATH line is added once", func(t *testing.T) {
+		home := t.TempDir()
+		envBody := "VL_RELEASE_DIR=" + filepath.Join(home, "releases") + "\nVL_CUTOVER_TOKEN=tok\n"
+		writeEnv(t, home, envBody, 0o600)
+		out, rc := run(t, home, "", strings.Repeat("e", 40))
+		if rc != 2 || !strings.Contains(out, "clone failed") {
+			t.Fatalf("rc=%d out=%q", rc, out)
+		}
+		envPath := filepath.Join(home, ".config", "vl-updater", "env")
+		b, err := os.ReadFile(envPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantPath := "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/c/Windows/System32/WindowsPowerShell/v1.0:/mnt/c/Windows/System32:/mnt/c/Program Files/dotnet"
+		if !strings.Contains(string(b), wantPath) {
+			t.Fatalf("env file must carry the Windows-tool PATH line:\n%s", b)
+		}
+		if strings.Count(string(b), "PATH=") != 1 {
+			t.Fatalf("PATH line must appear exactly once:\n%s", b)
+		}
+		// Run again: an existing PATH line is never duplicated.
+		out, rc = run(t, home, "", strings.Repeat("e", 40))
+		if rc != 2 || !strings.Contains(out, "clone failed") {
+			t.Fatalf("second run rc=%d out=%q", rc, out)
+		}
+		b, err = os.ReadFile(envPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Count(string(b), "PATH=") != 1 {
+			t.Fatalf("a second run must not duplicate the PATH line:\n%s", b)
+		}
+	})
 }
