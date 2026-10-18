@@ -191,6 +191,13 @@ func (s *Server) setupRoutes() {
 			s.registerUpdateRoutes(api)
 		}
 
+		// W-FRIEND-HOSTED (CTO ruling 2026-10-18 07:36): the friend-flat probe
+		// exists ONLY in friend mode and answers only {flat, at}. DS-105's
+		// updater calls it (no JWT) to decide a restart; never on the owner's bot.
+		if s.friendMode {
+			api.GET("/friend/flat", s.handleFriendFlat)
+		}
+
 		// Routes requiring authentication
 		protected := api.Group("/", s.authMiddleware(), s.planTraderOwnership())
 		{
