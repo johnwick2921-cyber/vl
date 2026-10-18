@@ -144,6 +144,7 @@ func cx8EMA9Visits(t *testing.T, mode string) *Evaluator {
 	cfg.LocTriggerFilter = false
 	cfg.EMALocationTFMinutes = 0
 	cfg.LevelMaxVisits = 3
+	cfg.Exec2mAfter30m = false // the B23 visit-count pins read the 1m touch
 	cfg.CourseExits.EMA9VisitCap = mode
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {

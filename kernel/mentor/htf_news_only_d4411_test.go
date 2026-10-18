@@ -57,6 +57,7 @@ func TestHTFGateNewsOnlyTick(t *testing.T) {
 		cfg.Enabled = true
 		cfg.PHLTargetShyPts = 6
 		cfg.EMALocationTFMinutes = 0
+		cfg.Exec2mAfter30m = false // the 09:05 conflict-PHL pin reads the 1m touch
 		cfg.HTFGateNewsOnly = !allDay
 
 		e := New(cfg)

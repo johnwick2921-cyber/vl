@@ -120,6 +120,7 @@ func TestPhlTfConflictCountsEveryRejectedLevel(t *testing.T) {
 	cfg.PHLMinCandlesFromExtreme = 2
 	cfg.PHLTargetShyPts = 0
 	cfg.ISBBufferPts = 0
+	cfg.Exec2mAfter30m = false // the conflict counter pin reads the 1m touch
 	cfg.LocTriggerFilter = false
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {

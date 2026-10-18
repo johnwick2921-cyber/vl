@@ -93,9 +93,9 @@ const COPY = {
     es: 'Compuerta 4h/1h solo en la ventana de noticias (07:20–07:35 CT)',
   },
   exec2m: {
-    zh: '09:00 CT 后改用 2 分钟执行 ISB',
-    en: 'Read the ISB on the 2m after 09:00 CT',
-    es: 'Leer el ISB en 2m después de las 09:00 CT',
+    zh: '09:00 CT 后改用 2 分钟执行（ISB + PHL/PLH）',
+    en: 'Read ISB + PHL/PLH on the 2m after 09:00 CT',
+    es: 'Leer ISB + PHL/PLH en 2m después de las 09:00 CT',
   },
   pingGap: {
     zh: '箱体乒乓最小宽度（点）',

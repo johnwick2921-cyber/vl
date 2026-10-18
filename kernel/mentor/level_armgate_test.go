@@ -18,6 +18,7 @@ func TestLevelOrderRestsAndCancels(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 6
+	cfg.Exec2mAfter30m = false // the B6 rest/cancel pin reads the 1m touch
 
 	e := New(cfg)
 	e.seeded = true
