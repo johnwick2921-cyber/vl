@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 	"vl/auth"
+	"vl/config"
 	"vl/crypto"
 	"vl/internal/updateauth"
 	"vl/kernel"
@@ -45,7 +46,18 @@ type Server struct {
 	// CTO fold 1790280466263: the (route, category) pairs already WARNed
 	// (handler_updates.go updatesForbid).
 	updatesWarned sync.Map
+
+	// friendMode (W-FRIEND-HOSTED Segment 2) is decided ONCE at NewServer: when
+	// set, the update / installer / maintenance routes are not registered (404),
+	// the updater glue is not wired, and the owner API prefix 404s. Everything
+	// else — trading, settings, SIM gate — is unchanged.
+	friendMode bool
 }
+
+// friendModeResolver returns whether this process is a friend instance. It is a
+// var (not a direct config read) so tests can pin friend mode without mutating
+// the global config singleton; production resolves it from config.Get().
+var friendModeResolver = func() bool { return config.Get().IsFriendInstance() }
 
 // NewServer Creates API server. host is the bind interface — pass
 // cfg.APIServerHost; an empty value falls back to the loopback-only default.
@@ -81,6 +93,7 @@ func NewServer(traderManager *manager.TraderManager, st *store.Store, cryptoServ
 		host:                      host,
 		port:                      port,
 		updateVerifier:            updateauth.StubVerifier{},
+		friendMode:                friendModeResolver(),
 	}
 	// M4 3b-B U5b: the updater glue knob (OFF = M3, byte for byte).
 	s.configureUpdater()
@@ -172,7 +185,11 @@ func (s *Server) setupRoutes() {
 
 		// W-ONE-BUTTON M3: /api/updates* — their OWN gate (uniform 403), raw
 		// g.GET/g.POST so they never enter GetAPIDocs (F1). See handler_updates.go.
-		s.registerUpdateRoutes(api)
+		// W-FRIEND-HOSTED Segment 2: a friend instance never registers these
+		// (404), and its updater glue is never wired (configureUpdater).
+		if !s.friendMode {
+			s.registerUpdateRoutes(api)
+		}
 
 		// Routes requiring authentication
 		protected := api.Group("/", s.authMiddleware(), s.planTraderOwnership())
@@ -457,14 +474,18 @@ Returns: [{"symbol":"<string>","side":"long|short","quantity":<float>,"entry_pri
 Returns: {"ready":<bool>,"legs":[{"n":1..5,"name":"<string>","pass":<bool>,"detail":"<string>","source":"<string>"}],"note":"<string>"}
 Legs: 1 db_open_positions · 2 api_positions · 3 nt8_positions_snapshot · 4 working_orders (broker versus placed/unconfirmed ledger rows) · 5 planner_in_flight. Leg 4's armed_unplaced count is informational: authorized arms without a signal id do not fail it.`,
 				s.handleCutoverGate)
-			s.routeWithSchema(protected, "GET", "/maintenance", "Installation maintenance hold: state, drain and the AddOn's ack (W-ONE-BUTTON M2; read-only)",
-				`Returns: {"held":<bool>,"state":"clear|held|unreadable|unconfigured","job_id":"<string>|null","since":"<RFC3339>|null","reason":"<string>","in_flight_sends":<int>,"drained":<bool>,"addon_ack":{"received":"<RFC3339>","age_ms":<int>,"held":<bool>,"job_id":"<string>","queued_commands":<int>,"build_id":"<string>","accept_seq":<int>}|null}
+			// W-FRIEND-HOSTED Segment 2: the maintenance + installer surfaces are
+			// owner-only — a friend instance never registers them (404).
+			if !s.friendMode {
+				s.routeWithSchema(protected, "GET", "/maintenance", "Installation maintenance hold: state, drain and the AddOn's ack (W-ONE-BUTTON M2; read-only)",
+					`Returns: {"held":<bool>,"state":"clear|held|unreadable|unconfigured","job_id":"<string>|null","since":"<RFC3339>|null","reason":"<string>","in_flight_sends":<int>,"drained":<bool>,"addon_ack":{"received":"<RFC3339>","age_ms":<int>,"held":<bool>,"job_id":"<string>","queued_commands":<int>,"build_id":"<string>","accept_seq":<int>}|null}
 addon_ack is the CURRENT AddOn connection's maintenance_ack only (null before one arrives, and always null for an AddOn older than 2026-09-22-m2). No write route exists.`,
-				s.handleMaintenanceStatus)
-			s.routeWithSchema(protected, "GET", "/installation-gate", "Installation-wide update gate: every trader, every account, one verdict (W-ONE-BUTTON M2; read-only)",
-				`Returns: {"ready":<bool>,"job_id":"<string>|n/a","legs":[{"name":"<string>","pass":<bool>,"detail":"<string>","source":"<string>"}],"traders":["<id>"],"note":"<string>"}
+					s.handleMaintenanceStatus)
+				s.routeWithSchema(protected, "GET", "/installation-gate", "Installation-wide update gate: every trader, every account, one verdict (W-ONE-BUTTON M2; read-only)",
+					`Returns: {"ready":<bool>,"job_id":"<string>|n/a","legs":[{"name":"<string>","pass":<bool>,"detail":"<string>","source":"<string>"}],"traders":["<id>"],"note":"<string>"}
 Legs: hold · go_drained · in_flight_sends · queued_signals · planner_in_flight (union of every planner-class claim, any trader) · traders_nt8 · addon_ack · addon_census (every connection settled; no position and no working order on ANY account — a connected non-SIM connection is allowed when every account is flat, owner ruling 2026-09-28) · ledger_exposure (all trader ids) · trader_cutover:<id> (legs 1, 2, 4). A leg that cannot be evaluated fails.`,
-				s.handleInstallationGate)
+					s.handleInstallationGate)
+			}
 			s.routeWithSchema(protected, "GET", "/decisions", "AI trading decisions (decision records)",
 				`Query: ?trader_id=<EXACT trader_id from GET /api/my-traders>&limit=<int, default 20>
 Returns: [{"id":"<string>","symbol":"<string>","action":"open_long|open_short|close_long|close_short|hold","confidence":<int>,"reasoning":"<string>","created_at":"<timestamp>"}]`,

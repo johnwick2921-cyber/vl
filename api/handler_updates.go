@@ -144,6 +144,11 @@ func updateVerifierName(v updateauth.Verifier) string {
 // dialled (a worker is started by hand, attended — not dialling at boot is
 // not knowing yet, so n/a, never "down").
 func (s *Server) configureUpdater() {
+	// W-FRIEND-HOSTED Segment 2: a friend instance never wires the updater glue
+	// (no socket dial, no verifier) — even if VL_UPDATER=1 leaked into its .env.
+	if s.friendMode {
+		return
+	}
 	if v := os.Getenv("VL_UPDATER"); v != "1" { // R5: VL_ only
 		return
 	}
