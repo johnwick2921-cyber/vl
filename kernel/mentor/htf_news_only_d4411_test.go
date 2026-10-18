@@ -17,8 +17,8 @@ import (
 // TestHTFGateActiveNewsOnly pins the pure window test.
 func TestHTFGateActiveNewsOnly(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.HTFGateNewsOnly {
-		t.Fatal("HTFGateNewsOnly must default OFF (the all-day gate; U-6 open) — FOLD 2026-10-16")
+	if !cfg.HTFGateNewsOnly {
+		t.Fatal("HTFGateNewsOnly must default ON (news-only; owner order 2026-10-17)")
 	}
 	cfg.HTFGateNewsOnly = true
 	cases := []struct {
@@ -99,6 +99,6 @@ func TestHTFGateNewsOnlyTick(t *testing.T) {
 		t.Fatal("news-only (switch ON): the 09:05 conflict PHL must EMIT — the HTF gate is off outside the news window [D4.4-11]")
 	}
 	if run(true) {
-		t.Fatal("all-day (switch OFF, the default): the same 09:05 conflict PHL must be REFUSED (case 3)")
+		t.Fatal("all-day (switch OFF): the same 09:05 conflict PHL must be REFUSED (case 3)")
 	}
 }

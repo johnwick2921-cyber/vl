@@ -325,19 +325,18 @@ type Config struct {
 
 	// Filters (PLAN v1 §4).
 	StopCeilingPts float64 // hard stop ceiling; default 25 [D3.3 p1 @ 02:04]
-	RoomMultiple   float64 // room rule: first level >= RoomMultiple x leg-1 distance (leg 1 = 1R -> 2R; confluence leg 1 = 2R -> 4R) [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13]; default 2
+	RoomMultiple   float64 // room rule: first level >= RoomMultiple x leg-1 distance (leg 1 = 1R -> 2R; confluence leg 1 = 2R -> 4R) [D5.3 p1 @09:16–09:52]; default 2
 	RangeGapPts    float64 // mid-range: levels bracketing price within this gap both sides; default 0 = disabled
 
 	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h
 	// direction gate is for NEWS first, not ordinary trading yet
 	// ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI. ĐỪNG SỬ DỤNG CHO [trade]
-	// THƯỜNG"). true: the HTF gate applies only inside the 07:20–07:35 CT
-	// news window; ordinary intraday entries are not HTF-gated. Default false
-	// = the all-day gate (U-6 open — the course is split: D4.4 p1 @13:55 news-
-	// first vs D5.1 p1 @19:11–19:20 "4h and 1h agree → trade with them"; the
-	// FOLD 2026-10-16 reverts course-defaults-30 back to the all-day gate and
-	// puts it on the mentor-question list). Studio switch:
-	// risk_control.mentor_tuning.htf_gate_news_only.
+	// THƯỜNG"). true (default): the HTF gate applies only inside the
+	// 07:20–07:35 CT news window; ordinary intraday entries are not
+	// HTF-gated. Owner order 2026-10-17: NEWS-ONLY = ON (the course is
+	// news-first — "em chỉ hướng dẫn mọi người cái news thôi" D4.4 p1
+	// @24:48; D5.1's all-day read stays on the mentor-question list).
+	// Studio switch: risk_control.mentor_tuning.htf_gate_news_only.
 	HTFGateNewsOnly bool
 
 	// NearBoxRoomMultiple — Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: a setup
@@ -534,7 +533,7 @@ func DefaultConfig() Config {
 
 		EMALocationTFMinutes: 1, // R3: intraday EMA 34 lives on the 1m chart
 
-		TouchBandPts: 0, // §3: wait for the LITERAL touch [D3.3 p1 @ 00:13]; §8's "KHÔNG ĐƯỢC GẦN ĐỤNG" is the same strictness
+		TouchBandPts: 0, // §3: wait for the LITERAL touch [D3.3 p1 @ 00:13]; D5.2 p2 @18:36–18:45 "gần gần gần đụng … Còn như cái này thì bắt buộc là phải đụng nha"
 
 		ISBBufferPts:  1.5,
 		ISBStopMinPts: 5,
@@ -549,9 +548,9 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
-		HTFGateNewsOnly:        false, // U-6 open (FOLD 2026-10-16: the all-day gate stays; the course is split D4.4 vs D5.1)
-		NearBoxRoomMultiple:    2,     // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
-		LossDeparturePts:       0,     // B22: structural departure; the numeric fallback is OFF
+		HTFGateNewsOnly:        true, // D4.4-11: news-first — the gate only inside 07:20–07:35 CT (owner order 2026-10-17)
+		NearBoxRoomMultiple:    2,    // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
+		LossDeparturePts:       0,    // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
 		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30
