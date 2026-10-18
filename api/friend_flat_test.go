@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"vl/manager"
 	"vl/store"
@@ -17,11 +18,12 @@ import (
 // {flat, at} in friend mode only, fail-closed on a position-read error.
 
 type fakeFlatTrader struct {
-	trader.Trader // embedded nil interface: only GetPositions/GetOpenOrders are exercised
+	trader.Trader // embedded nil interface: only GetPositions/GetOpenOrders/FriendStateKnown are exercised
 	positions     []map[string]interface{}
 	err           error
 	orders        []trader.OpenOrder
 	ordersErr     error
+	known         bool // FriendStateKnown answer (R9c: connected + fresh)
 }
 
 func (f fakeFlatTrader) GetPositions() ([]map[string]interface{}, error) {
@@ -30,6 +32,10 @@ func (f fakeFlatTrader) GetPositions() ([]map[string]interface{}, error) {
 
 func (f fakeFlatTrader) GetOpenOrders(string) ([]trader.OpenOrder, error) {
 	return f.orders, f.ordersErr
+}
+
+func (f fakeFlatTrader) FriendStateKnown(time.Time, time.Duration) bool {
+	return f.known
 }
 
 func newFriendFlatServer(t *testing.T, friend bool, brokers map[string]trader.Trader) *Server {
@@ -112,21 +118,65 @@ func TestFriendFlatProbeErrorFailsClosed(t *testing.T) {
 
 func TestFriendFlatWorkingOrderNotFlat(t *testing.T) {
 	s := newFriendFlatServer(t, true, map[string]trader.Trader{
-		"t1": fakeFlatTrader{orders: []trader.OpenOrder{{OrderID: "w1", Symbol: "MNQ"}}},
+		"t1": fakeFlatTrader{known: true, orders: []trader.OpenOrder{{OrderID: "w1", Symbol: "MNQ", Type: "LIMIT"}}},
 	})
 	_, body := getFriendFlat(t, s)
 	if body["flat"] != false {
-		t.Fatalf("flat = %v, want false (a working/pending order must block restart)", body["flat"])
+		t.Fatalf("flat = %v, want false (a working/pending entry order must block restart)", body["flat"])
+	}
+}
+
+func TestFriendFlatRestingBracketNotFlat(t *testing.T) {
+	s := newFriendFlatServer(t, true, map[string]trader.Trader{
+		// a resting protective bracket (stop) with no entry order: still blocks.
+		"t1": fakeFlatTrader{known: true, orders: []trader.OpenOrder{{OrderID: "sl1", Symbol: "MNQ", Type: "STOP_MARKET"}}},
+	})
+	_, body := getFriendFlat(t, s)
+	if body["flat"] != false {
+		t.Fatalf("flat = %v, want false (a resting bracket order must block restart)", body["flat"])
 	}
 }
 
 func TestFriendFlatOrdersErrorFailsClosed(t *testing.T) {
 	s := newFriendFlatServer(t, true, map[string]trader.Trader{
-		"t1": fakeFlatTrader{ordersErr: errors.New("order book down")},
+		"t1": fakeFlatTrader{known: true, ordersErr: errors.New("order book down")},
 	})
 	_, body := getFriendFlat(t, s)
 	if body["flat"] != false {
 		t.Fatalf("flat = %v, want false (order-book error must fail closed)", body["flat"])
+	}
+}
+
+func TestFriendFlatDisconnectedNotFlat(t *testing.T) {
+	// FriendStateKnown=false == the NT8 link is down / snapshots absent.
+	s := newFriendFlatServer(t, true, map[string]trader.Trader{
+		"t1": fakeFlatTrader{known: false},
+	})
+	_, body := getFriendFlat(t, s)
+	if body["flat"] != false {
+		t.Fatalf("flat = %v, want false (NT disconnected must not read flat)", body["flat"])
+	}
+}
+
+func TestFriendFlatStaleSnapshotNotFlat(t *testing.T) {
+	// FriendStateKnown=false also covers a stale snapshot (the TCPTrader refuses
+	// any snapshot older than friendSnapshotMaxAge).
+	s := newFriendFlatServer(t, true, map[string]trader.Trader{
+		"t1": fakeFlatTrader{known: false},
+	})
+	_, body := getFriendFlat(t, s)
+	if body["flat"] != false {
+		t.Fatalf("flat = %v, want false (stale snapshot must not read flat)", body["flat"])
+	}
+}
+
+func TestFriendFlatAllClear(t *testing.T) {
+	s := newFriendFlatServer(t, true, map[string]trader.Trader{
+		"t1": fakeFlatTrader{known: true},
+	})
+	_, body := getFriendFlat(t, s)
+	if body["flat"] != true {
+		t.Fatalf("flat = %v, want true (no position, no order, state known + fresh)", body["flat"])
 	}
 }
 
