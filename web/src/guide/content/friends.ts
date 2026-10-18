@@ -32,5 +32,10 @@ export const friends: GuideSection = {
       kind: 'p',
       text: 'The owner’s Telegram bot raises an alert when a friend’s bot is down, when a friend’s NinjaTrader connection has been down more than five minutes, or when a friend’s AddOn build is older than this box’s build. The Friends page is the authoritative surface; the alerts are advisory.',
     },
+    { kind: 'h', text: 'Honest limits (friend mode)' },
+    {
+      kind: 'p',
+      text: 'A friend instance has no updater, no installer, no maintenance pages and no Telegram agent — those surfaces exist only on the owner’s bot and answer 404 on a friend’s bot. A friend’s bot runs under the owner’s OS user; per-friend OS-user separation (which needs sudo) is a later wave. The friend app and AddOn are obfuscated, not encrypted — obfuscation slows a casual reader but is not a security boundary; the real boundaries are the tunnel ACL, the connect key and the signature-verified downloads.',
+    },
   ],
 }
