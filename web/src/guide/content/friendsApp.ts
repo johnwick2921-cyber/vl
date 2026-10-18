@@ -40,6 +40,11 @@ export const friendsApp: GuideSection = {
       kind: 'p',
       text: 'Each time the app starts it asks their bot for a signed version list. When the add-on or the app is newer, a pop-up says “VL update available — Update now / Later”. Update now downloads the new build, checks its signature and its SHA-256 (a bad download refuses and nothing changes), waits until the bot is flat, moves the old add-on aside (never deletes it), and asks them to restart NinjaTrader. It never updates during a trade.',
     },
+    { kind: 'h', text: 'connect.json — the add-on’s connection settings' },
+    {
+      kind: 'p',
+      text: 'The app writes one small settings file so the friend’s NinjaTrader add-on knows which box and port to talk to: Documents\\NinjaTrader 8\\VL\\connect.json. It holds the tunnel host, the NinjaTrader port and the connect key — nothing else. VL-Setup writes it during install; do not edit it by hand — a corrupt file makes the add-on refuse to connect rather than silently fall back.',
+    },
     {
       kind: 'callout',
       title: 'Windows SmartScreen warning',
@@ -57,6 +62,24 @@ export const friendsApp: GuideSection = {
         {
           title: 'Compiled + scrambled only',
           body: 'The friend’s NinjaTrader folder gets only VL.AddOn.dll — compiled and obfuscated. No .cs source file is ever placed on their PC, so the NinjaScript Editor has nothing to open.',
+        },
+      ],
+    },
+    {
+      kind: 'callout',
+      title: 'Friend mode limits (honest)',
+      items: [
+        {
+          title: 'A friend bot is cut down',
+          body: 'Friend mode has no updater, installer, maintenance pages or Telegram. The friend sets their own AI key and strategy; everything else is the same SIM-only trading.',
+        },
+        {
+          title: 'Same OS user on your box',
+          body: 'A friend bot runs under the owner’s OS user on your box — separated by its own folder, database, login and ports, not by an OS account. OS-user separation is a later wave.',
+        },
+        {
+          title: 'Obfuscation is not encryption',
+          body: 'The compiled add-on is scrambled, not encrypted. A determined expert could still study it; what it stops is casual reading and the NinjaScript Editor (no .cs file is present).',
         },
       ],
     },
