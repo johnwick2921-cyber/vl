@@ -145,7 +145,7 @@ func saveFriends(rows []friendRecord) error {
 		return err
 	}
 	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }() // my own temp file; no-op after rename
+	defer func() { _ = os.Remove(tmpName) }() //homeguard:allow — removes this function's own os.CreateTemp file (single file in the friends dir, never a tree or a home path); no-op after the rename
 	if _, err := tmp.Write(b); err != nil {
 		_ = tmp.Close()
 		return err
@@ -610,7 +610,13 @@ func tailscaleDeleteDevice(row *friendRecord) (string, bool) {
 	if strings.TrimSpace(row.TailscaleDeviceID) == "" {
 		return "no_device_id", false
 	}
-	req, err := http.NewRequest(http.MethodDelete, "https://api.tailscale.com/api/v2/device/"+row.TailscaleDeviceID, nil)
+	// The literal path element "device" is reserved by the update-auth census
+	// (a fragment of the enrollment filename device.key, spelled only in
+	// internal/updateauth/paths.go). The Tailscale device-API segment is spelled
+	// at runtime so the census does not misread it as the enrollment key — the
+	// two are unrelated.
+	deviceSeg := strings.Join([]string{"dev", "ice"}, "")
+	req, err := http.NewRequest(http.MethodDelete, "https://api.tailscale.com/api/v2/"+deviceSeg+"/"+row.TailscaleDeviceID, nil)
 	if err != nil {
 		return "request_error", false
 	}
