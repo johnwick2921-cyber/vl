@@ -14,8 +14,11 @@ import (
 // the owner's bot answers 404 on every /api/friend/* route.
 
 // friendManifestDir is where the release build drops the friend manifest, its
-// signature and the artifacts. Tests point it at a temp dir.
-var friendManifestDir = filepath.Join("deploy", "friend")
+// signature and the artifacts (B10.3: /home/hoang/vl-friends/_dist/<build>/,
+// with _dist/current → the latest build). The friend bot's WorkingDirectory is
+// /home/hoang/vl-friends/<name>/ (B2), so "../_dist/current" is the shared dist
+// served only through the friend's own bot. Tests point it at a temp dir.
+var friendManifestDir = filepath.Join("..", "_dist", "current")
 
 // friendModeOn reports friend mode. It reads the env flag directly so this file
 // does not depend on the config plumbing DS-102 owns (the flag contract is
