@@ -1,4 +1,4 @@
-cues: 344/344 · rule cues: 91 · rows: 4 · CODE: 2 · MISMATCH: 0 · NOT-IN-BOT: 1 · OWNER-ORDER: 1 · SPLIT: 0 · CONTEXT: 0 · —: 253
+cues: 344/344 · rule cues: 86 · rows: 4 · CODE: 2 · MISMATCH: 0 · NOT-IN-BOT: 1 · OWNER-ORDER: 1 · SPLIT: 0 · CONTEXT: 0 · —: 258
 
 [00:00] Tiếp theo là bài thứ 3 của lớp ngày hôm nay là mình sẽ đi xa, mình sẽ không đi về vấn đề tâm lý nữa ha, mà mình sẽ bắt đầu mình phân tích kỹ thuật là mọi người hay gọi là technical analysis | —
 [00:28] Hoặc là | —
@@ -220,11 +220,11 @@ cues: 344/344 · rule cues: 91 · rows: 4 · CODE: 2 · MISMATCH: 0 · NOT-IN-BO
 [08:12] Nó sẽ đi tiếp được cái level tiếp theo | —
 [08:15] Nó sẽ đi tiếp được cái level tiếp theo | —
 [08:18] Và một điều nữa | —
-[08:22] Là market | htf_direction.go:66 (row 17)
-[08:23] Luôn có lý do của nó | htf_direction.go:66 (row 17)
-[08:26] Kể cả news | htf_direction.go:66 (row 17)
-[08:27] Market luôn có lý do của nó | htf_direction.go:66 (row 17)
-[08:30] Kể cả news | htf_direction.go:66 (row 17)
+[08:22] Là market | —
+[08:23] Luôn có lý do của nó | —
+[08:26] Kể cả news | —
+[08:27] Market luôn có lý do của nó | —
+[08:30] Kể cả news | —
 [08:32] Chấp news luôn | htf_direction.go:66 (row 17)
 [08:34] Em nói là market là | —
 [08:36] Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —

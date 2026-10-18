@@ -1,4 +1,4 @@
-cues: 692/692 · rule cues: 113 · rows: 5 · CODE: 1 · MISMATCH: 0 · NOT-IN-BOT: 3 · OWNER-ORDER: 1 · SPLIT: 0 · CONTEXT: 0 · —: 579
+cues: 692/692 · rule cues: 100 · rows: 5 · CODE: 1 · MISMATCH: 0 · NOT-IN-BOT: 3 · OWNER-ORDER: 1 · SPLIT: 0 · CONTEXT: 0 · —: 592
 
 [00:00] Ngày đầu tiên là cái ngày lúc nào đối với em nó cũng là cái ngày quan trọng nhất hết mọi người. | —
 [00:05] Có nhiều anh chị nhắn tin cho em và mọi người thấy là chưa lấp, chưa stall nữa là em đã thấy anh chị bị hư rồi. | —
@@ -419,25 +419,25 @@ cues: 692/692 · rule cues: 113 · rows: 5 · CODE: 1 · MISMATCH: 0 · NOT-IN-B
 [15:58] anh chị bấm nút buy | eval.go:2161 (row 1)
 [16:00] xong nó xả một cây lũng ruột | eval.go:2161 (row 1)
 [16:02] đúng không | eval.go:2161 (row 1)
-[16:04] Về bắt test | ema.go:26 (row 2)
-[16:05] Đang xu hướng tăng | ema.go:26 (row 2)
+[16:04] Về bắt test | —
+[16:05] Đang xu hướng tăng | —
 [16:06] Về bắt test | ema.go:26 (row 2)
 [16:06] E-mail 34 | ema.go:26 (row 2)
 [16:07] Đụng E-mail 34 | ema.go:26 (row 2)
-[16:08] Anh chị bấm nút buy | ema.go:26 (row 2)
-[16:09] Nó đâm anh chị lủng ruột | ema.go:26 (row 2)
-[16:10] Đúng không? | ema.go:26 (row 2)
-[16:13] Hay là về tới anh cá | ema.go:26 (row 2)
-[16:14] Bấm nút buy | ema.go:26 (row 2)
-[16:15] Nó quăng | ema.go:26 (row 2)
-[16:17] Nó quăng thêm cái râu | ema.go:26 (row 2)
-[16:18] Cỡ 2-30 điểm nữa | ema.go:26 (row 2)
-[16:19] Lủng ruột | ema.go:26 (row 2)
-[16:19] Đó là anh chị | ema.go:26 (row 2)
+[16:08] Anh chị bấm nút buy | —
+[16:09] Nó đâm anh chị lủng ruột | —
+[16:10] Đúng không? | —
+[16:13] Hay là về tới anh cá | —
+[16:14] Bấm nút buy | —
+[16:15] Nó quăng | —
+[16:17] Nó quăng thêm cái râu | —
+[16:18] Cỡ 2-30 điểm nữa | —
+[16:19] Lủng ruột | —
+[16:19] Đó là anh chị | —
 [16:21] Không cho bản thân mình | eval.go:2161 (row 1)
 [16:23] Một sự confirm | eval.go:2161 (row 1)
 [16:24] Và không cho bản thân mình | eval.go:2161 (row 1)
-[16:27] Một cái sự react | eval.go:2161 (row 1)
+[16:27] Một cái sự react | —
 [16:28] Không cho nến | eval.go:2161 (row 1)
 [16:28] Nó có cơ hội react luôn | eval.go:2161 (row 1)
 [16:30] Với cái level đó | eval.go:2161 (row 1)
