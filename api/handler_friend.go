@@ -64,7 +64,9 @@ func (s *Server) handleFriendFlat(c *gin.Context) {
 			break
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"flat": flat, "at": now.UnixMilli()})
+	// R11: the recorded trader count lets DS-105 restart a zero-trader instance
+	// (safe — nothing manages a position) without touching "flat" itself.
+	c.JSON(http.StatusOK, gin.H{"flat": flat, "traders": len(traders), "at": now.UnixMilli()})
 }
 
 // flatFromPositions reports flat when no position carries a non-zero quantity.
