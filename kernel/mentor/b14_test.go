@@ -25,6 +25,7 @@ func b14Fixture(oldHighLevels []Level, refLow float64) (*Evaluator, []market.Kli
 	cfg.PHLMinCandlesFromExtreme = 2
 	cfg.PHLTargetShyPts = 0
 	cfg.ISBBufferPts = 0
+	cfg.Exec2mAfter30m = false // these B14 pins test the 1m PHL mechanics
 	// LocTriggerFilter off: the 5m trigger the 97-low tape draws is SHORT
 	// and would refuse the long PHL at the B2 gate before the higher-low
 	// check — the knob exists exactly to switch that filter off for level

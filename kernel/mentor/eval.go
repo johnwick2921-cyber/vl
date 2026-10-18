@@ -1502,6 +1502,38 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		levels = append(levels, trendlineTargets(levels)...)
 	}
 
+	// §2.1 / §2.2 exec-frame schedule (F2, W-MENTOR-TRANSCRIPT-TRUTH): the
+	// X5-10 knob (Exec2mAfter30m, default ON since release #31) applies to
+	// EVERY setup the transcript names — the ISB pair AND PHL/PLH ("Lớp học
+	// của mình chỉ only đúng 3 setup: inside bar, potential high or low,
+	// potential low or high" [X11 @07:09–07:30]; "Mình trade khung 2 phút …
+	// potential high low" [X8 @15:52–15:57]):
+	//   • RTH open +30 minutes (08:30 ≤ t < 09:00 CT) → 1-MINUTE read only
+	//     ("Trong dòng 30 phút đầu giờ em vẫn sẽ trade khung 1 phút … sau 30
+	//     phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:14; X11
+	//     @17:08–17:25]).
+	//   • every other minute → 2-MINUTE read ("khung 2 phút ÍT BỊ QUÉT RÂU" —
+	//     the 1m wicks sweep stops [X5 @00:16; X11 @17:27]), overnight and
+	//     the Europe open (3am Texas) included.
+	// OPEN COURSE QUESTION: "evening slow → 5-minute only" has no number for
+	// "slow" — left unimplemented; the 2m read stays through the evening.
+	// What STAYS on the 1m: the box/ORB escapes and every higher-TF read — they
+	// are defined on the 1m body close and are NOT one of the three named
+	// setups. While the knob is OFF, execPrev/execCur == prev/cur and the read
+	// is byte-identical to the 1m-only build.
+	prev, cur := bars[len(bars)-2], bars[len(bars)-1]
+	execPrev, execCur, execTFMin := prev, cur, 1
+	if e.Cfg.Exec2mAfter30m && exec2mReads2m(now) {
+		// closedBucketsTF drops the still-forming last 2m bucket: on a 1m close
+		// that OPENS a 2m bucket, barsTF would flush a half-formed 2m candle and
+		// the read would see it. The read must be the previous two CLOSED 2m
+		// candles (the cb15/cb30 helper path).
+		if b2 := e.closedBucketsTFMemo(bars, 2, now); len(b2) >= 2 {
+			execPrev, execCur = b2[len(b2)-2], b2[len(b2)-1]
+			execTFMin = 2
+		}
+	}
+
 	// §3: first-touch classification per level. BOX edges are OUT of this
 	// loop (BOX PATH DECISION, CTO 12:38:50Z): the box path is DS-106's
 	// boxEntryIntent — the level path treating each edge as a separate line
@@ -1526,7 +1558,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			continue // invalid key level: no PHL/PLH, and touches need no re-read
 		}
 		wasNone := tr.Outcome == TouchNone
-		intents := visitTick(&tr, lvl, bars[len(bars)-2], bars[len(bars)-1], e.Cfg)
+		// F2: the touch classification reads the EXEC frame — the closed 2m
+		// candles when the knob is ON and past the RTH open +30 window, the 1m
+		// otherwise (the 1m stays for the first 30 minutes [X5 @00:41–01:14]).
+		tp, tc := prev, cur
+		if execTFMin == 2 {
+			tp, tc = execPrev, execCur
+		}
+		intents := visitTick(&tr, lvl, tp, tc, e.Cfg)
 		if !wasNone && tr.Outcome == TouchNone {
 			// visit departure: the touching candle is gone. Clear the visit-cap
 			// refusal mark for EVERY level (a new visit re-arms the once-per-visit
@@ -1558,36 +1597,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 
 	// §2.1: ISB on the last closed pair. R1: the direction is the CANDLE-1
-	// colour, not the trigger line (RULES-FIX-v3).
-	prev, cur := bars[len(bars)-2], bars[len(bars)-1]
-
-	// X5-10 (optional knob, default OFF) — the ISB-exec timeframe schedule
-	// (owner order 2026-10-13 ~23:00 CT "fix all"; sources X5 @00:07–01:17,
-	// X11 @17:06–19:35 — transcript in ~/mm-course/extra/notes/05-EXTRA.md
-	// :305-311):
-	//   • RTH open +30 minutes (08:30 ≤ t < 09:00 CT) → 1-MINUTE read only
-	//     ("a 2m stop cannot cover the setup at open volume").
-	//   • every other minute → 2-MINUTE read ("khung 2 phút ÍT BỊ QUÉT RÂU" —
-	//     the 1m wicks sweep stops, so the 2m read is quieter), overnight and
-	//     the Europe open (3am Texas) included.
-	// OPEN COURSE QUESTION: the mentor also says "evening slow → 5-minute only"
-	// but gives no number for "slow" — left unimplemented pending the owner's
-	// call; the 2m read stays through the evening.
-	// The box/ORB escapes and every higher-TF read stay 1m (they are defined on
-	// the 1m body close); only the ISB pair swaps. While the knob is OFF,
-	// execPrev/execCur == prev/cur and the read is byte-identical to the
-	// 1m-only build.
-	execPrev, execCur, execTFMin := prev, cur, 1
-	if e.Cfg.Exec2mAfter30m && exec2mReads2m(now) {
-		// closedBucketsTF drops the still-forming last 2m bucket: on a 1m close
-		// that OPENS a 2m bucket, barsTF would flush a half-formed 2m candle and
-		// the ISB would read it. The read must be the previous two CLOSED 2m
-		// candles (the cb15/cb30 helper path).
-		if b2 := e.closedBucketsTFMemo(bars, 2, now); len(b2) >= 2 {
-			execPrev, execCur = b2[len(b2)-2], b2[len(b2)-1]
-			execTFMin = 2
-		}
-	}
+	// colour, not the trigger line (RULES-FIX-v3). prev/cur and the exec frame
+	// (execPrev/execCur/execTFMin) were computed before the touch loop (F2,
+	// W-MENTOR-TRANSCRIPT-TRUTH) so the ISB pair and the PHL/PLH touch
+	// classification read the SAME closed 2m candles.
 	// fold #565 (D4): the ISB pair is evaluated only when the exec candle
 	// ADVANCED — a 2m read on an odd 1m minute sees the same 2m candle as the
 	// previous tick, so the placement (and the reverse ISB) runs once per 2m
@@ -2335,6 +2348,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			in.Anchor = lvl.Price
 			if lvl.Kind == KindEMA34 || lvl.Kind == KindEMA9 || lvl.Kind == KindEMA34HTF {
 				in.Anchor = in.Stop
+			}
+			// F2: the PHL/PLH was read on the exec frame — stamp it so the
+			// runner trails on closed candles of THAT frame ("trade khung nào
+			// thì gồng theo khung đó" [X8 @18:02–18:14]).
+			if execTFMin > 1 {
+				in.ExecTFMin = execTFMin
 			}
 			// D2-49 / D2.4 p1 @01:56: the mode-A runner target goes BEYOND the
 			// old high ("resonance breaks the old high 70–80%"). Stamp the next

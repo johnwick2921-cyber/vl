@@ -61,9 +61,9 @@ it('the course-exits defaults are the code defaults (course-defaults-30)', () =>
   })
 })
 
-it('the ISB max stop label names its second job (F-11: the R8 ceiling for every non-swing setup)', () => {
+it('the ISB max stop label names it ISB-only (30-pt ceiling; PHL/box use the 25-pt stop ceiling)', () => {
   renderEditor({ mentor_mode: true })
-  expect(screen.getByText(/ISB and every non-swing setup/)).toBeTruthy()
+  expect(screen.getByText(/ISB only/)).toBeTruthy()
 })
 
 it('ON saves true; default removes the key', () => {

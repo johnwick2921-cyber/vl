@@ -104,15 +104,15 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 		want := mentorTuned{
 			TriggerSchool: 1, PingPongMinGapPts: 50, PingPongCandleMaxPts: 20, PingPongCandleLookback: 30,
 			LevelMaxVisits: 3, OrbGateEnabled: true, ISBReverseEMA9Enabled: true,
-			HTFGateNewsOnly: false, // U-6 open (FOLD 2026-10-16: the all-day 4h/1h gate stays the default)
-			Exec2mAfter30m:  true,  // X5-10 rule 4 (release #31): 1m for the first 30 min, then the 2m
+			HTFGateNewsOnly:       true, // D4.4-11: news-only default ON (owner order 2026-10-17)
+			Exec2mAfter30m:        true, // X5-10 rule 4 (release #31): 1m for the first 30 min, then the 2m
 			OrbISBFractionOutside: 0.80, // rule 5 (release #31): the ORB-edge ISB candle must be ≥ 80% outside
-			DayGateSpentPts: 300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
+			DayGateSpentPts:       300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
 			// Release #25 course-entry knobs (course-defaults-30 changes).
 			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictBothBoxes,
 			NewsWaitBothLines: true, // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
-			NewsBarsExcluded: true, // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
-			ISBBoxEscapeMode: mentor.ISBBoxEscapeBody, EmaLossRelock: mentor.EmaRelockUntilZoneExit,
+			NewsBarsExcluded:  true, // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
+			ISBBoxEscapeMode:  mentor.ISBBoxEscapeBody, EmaLossRelock: mentor.EmaRelockUntilZoneExit,
 			D43TrendSource: mentor.D43TrendStructure, TrendlineIsTarget: true,
 			TrendlineBetweenBoxes: true, // CE-11/B13 — course-defaults-30 [D3.2 p2 @10:56–11:04]
 			FlagWallTarget:        true, // CE-11 — course-defaults-30 [X9 @05:59–06:12]

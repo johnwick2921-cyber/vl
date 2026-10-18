@@ -1987,11 +1987,12 @@ type MentorTuning struct {
 	// ISBReverseEMA9Enabled: the reverse ISB at EMA 9 (D5.4; nil → ON, R-C).
 	ISBReverseEMA9Enabled *bool `json:"isb_reverse_ema9_enabled,omitempty"`
 	// HTFGateNewsOnly (D4.4-11): the 4h/1h direction gate only inside the
-	// 07:20–07:35 CT news window (nil → OFF = the all-day gate; U-6 open).
+	// 07:20–07:35 CT news window (nil → ON = news-only; owner order 2026-10-17).
 	HTFGateNewsOnly *bool `json:"htf_gate_news_only,omitempty"`
 	// Exec2mAfter30m (X5-10): after the first 30 minutes of RTH (09:00 CT)
-	// the ISB entry is read on the 2m chart (nil → ON since release #31; the
-	// course trades the 1m for the first 30 min, then the 2m).
+	// the named setups — the ISB pair AND PHL/PLH — are read on the 2m chart
+	// (nil → ON since release #31; the course trades the 1m for the first 30
+	// min, then the 2m [X5 @00:41–01:14; X8 @15:52–15:57]).
 	Exec2mAfter30m *bool `json:"exec_2m_after_30m,omitempty"`
 	// Spent-day gate (METHOD §7 table, D5.1 p1 @14:21–15:57): a run of at
 	// least SpentPts before the open = spent; the target cap then applies,

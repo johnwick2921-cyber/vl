@@ -166,6 +166,6 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     trendline_between_boxes: true, // course-defaults-30
     leg_reset_on_wave_break: true,
     flag_wall_target: true, // course-defaults-30
-    htf_gate_news_only: false, // U-6 open — FOLD 2026-10-16 reverted to the all-day gate
+    htf_gate_news_only: true, // D4.4-11 — news-only default ON (owner order 2026-10-17)
   })
 })

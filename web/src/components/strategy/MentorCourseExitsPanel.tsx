@@ -122,9 +122,9 @@ const COPY = {
     es: 'Contratos SWING (por defecto 2; un runner necesita ≥ 2)',
   },
   mentor_isb_max_pts: {
-    zh: '最大止损（ISB 及每个非 swing 设置；点，0 → 30）',
-    en: 'Max stop (ISB and every non-swing setup; pts, 0 → 30)',
-    es: 'Stop máximo (ISB y cada setup no-swing; pts, 0 → 30)',
+    zh: '最大止损（仅 ISB；点，0 → 30）',
+    en: 'Max stop (ISB only; pts, 0 → 30)',
+    es: 'Stop máximo (solo ISB; pts, 0 → 30)',
   },
   mentor_keypair_candle_ratio: {
     zh: '价位间距 / K 线比例（默认 1）',
