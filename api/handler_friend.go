@@ -19,16 +19,20 @@ type friendStateKnown interface {
 	FriendStateKnown(now time.Time, maxAge time.Duration) bool
 }
 
-// W-FRIEND-HOSTED (CTO ruling 2026-10-18 07:36 + R9 07:42): GET /api/friend/flat
-// is the ONE friend-facing probe DS-105's updater may use to decide a restart.
-// flat=true ONLY when every trader in this friend instance has (a) no open
-// position, (b) no working/pending entry or resting bracket order, and (c) a
-// KNOWN + FRESH position state (NT connected, snapshots recent). Anything else —
-// a position, an order, an error, disconnected, stale, UNKNOWN — reads false.
+// W-FRIEND-HOSTED (CTO ruling 2026-10-18 07:36 + R9 07:42 + F1 09:03):
+// GET /api/friend/flat is the ONE friend-facing probe DS-105's updater may use
+// to decide a restart. flat=true ONLY when the instance has at least one trader
+// AND every trader has (a) no open position, (b) no working/pending entry or
+// resting bracket order, and (c) a KNOWN + FRESH position state (an NT trader
+// that answers FriendStateKnown=true). Anything else — zero traders, no NT8, a
+// position, an order, an error, disconnected, stale, UNKNOWN — reads false.
 func (s *Server) handleFriendFlat(c *gin.Context) {
-	flat := true
+	traders := s.traderManager.GetAllTraders()
+	// F1: an empty instance (no traders, no NT8) is NOT flat — never a
+	// fabricated all-clear that would let the updater restart a half-built bot.
+	flat := len(traders) > 0
 	now := time.Now()
-	for _, at := range s.traderManager.GetAllTraders() {
+	for _, at := range traders {
 		positions, err := at.GetPositions()
 		if err != nil {
 			// UNKNOWN / stale / disconnected position state = NOT flat
@@ -52,8 +56,10 @@ func (s *Server) handleFriendFlat(c *gin.Context) {
 			flat = false
 			break
 		}
-		if k, ok := at.GetUnderlyingTrader().(friendStateKnown); ok && !k.FriendStateKnown(now, friendSnapshotMaxAge) {
-			// NT disconnected or the snapshots are stale → not flat (R9 c).
+		k, ok := at.GetUnderlyingTrader().(friendStateKnown)
+		if !ok || !k.FriendStateKnown(now, friendSnapshotMaxAge) {
+			// NT disconnected / snapshots stale / a trader that cannot answer
+			// → not flat (R9 c). Every trader must be known+fresh.
 			flat = false
 			break
 		}

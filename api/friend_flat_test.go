@@ -38,6 +38,21 @@ func (f fakeFlatTrader) FriendStateKnown(time.Time, time.Duration) bool {
 	return f.known
 }
 
+// plainFlatTrader is a broker that does NOT implement friendStateKnown (the
+// non-NT / unverifiable case): flat is refused for it (R9c, every trader must
+// be known+fresh).
+type plainFlatTrader struct {
+	trader.Trader
+}
+
+func (plainFlatTrader) GetPositions() ([]map[string]interface{}, error) {
+	return []map[string]interface{}{}, nil
+}
+
+func (plainFlatTrader) GetOpenOrders(string) ([]trader.OpenOrder, error) {
+	return nil, nil
+}
+
 func newFriendFlatServer(t *testing.T, friend bool, brokers map[string]trader.Trader) *Server {
 	t.Helper()
 	prev := friendModeResolver
@@ -80,17 +95,30 @@ func TestFriendFlatOwnerMode404(t *testing.T) {
 	}
 }
 
-func TestFriendFlatEmptyTraders(t *testing.T) {
+func TestFriendFlatEmptyInstanceNotFlat(t *testing.T) {
+	// F1: zero traders / no NT8 must NOT read flat — never a fabricated all-clear.
 	s := newFriendFlatServer(t, true, nil)
 	code, body := getFriendFlat(t, s)
 	if code != http.StatusOK {
 		t.Fatalf("friend mode empty = %d, want 200", code)
 	}
-	if body["flat"] != true {
-		t.Fatalf("flat = %v, want true (no traders)", body["flat"])
+	if body["flat"] != false {
+		t.Fatalf("flat = %v, want false (an empty instance has nothing known+fresh)", body["flat"])
 	}
 	if at, ok := body["at"].(float64); !ok || at <= 0 {
 		t.Fatalf("at = %v, want a positive unix-ms number", body["at"])
+	}
+}
+
+func TestFriendFlatTraderWithoutStateGateNotFlat(t *testing.T) {
+	// A trader whose broker cannot answer FriendStateKnown is not verifiably
+	// known → not flat (R9c, every trader must be known+fresh).
+	s := newFriendFlatServer(t, true, map[string]trader.Trader{
+		"t1": plainFlatTrader{},
+	})
+	_, body := getFriendFlat(t, s)
+	if body["flat"] != false {
+		t.Fatalf("flat = %v, want false (no FriendStateKnown answer)", body["flat"])
 	}
 }
 
