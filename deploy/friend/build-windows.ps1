@@ -51,9 +51,11 @@ New-Item -ItemType Directory -Force -Path $obf | Out-Null
 # Write a config with the real InPath/OutPath so the checked-in XML stays a
 # documented default.
 $cfg = [xml](Get-Content -Raw $ObfuscarCfg)
-$vars = @{}; foreach ($v in $cfg.Obfuscator.Var) { $vars[$v.name] = $v }
-$vars['InPath'].value = $plain
-$vars['OutPath'].value = $obf
+foreach ($v in $cfg.Obfuscator.Var) {
+    if ($v.name -eq 'InPath') { $v.SetAttribute('value', $plain) }
+    elseif ($v.name -eq 'OutPath') { $v.SetAttribute('value', $obf) }
+    elseif ($v.name -eq 'ExtraFrameworkFolders') { $v.SetAttribute('value', "$NT8Bin;$CustomDir") }
+}
 $cfgPath = Join-Path $Out 'Obfuscar.generated.xml'
 $cfg.Save($cfgPath)
 

@@ -38,19 +38,34 @@ trap 'rm -rf "${TMP:?}"' EXIT   # our own mktemp under /tmp — allowed cleanup
 
 WIN_SRC=$(wslpath -w "$PWD/ninjascript")
 WIN_OUT=$(wslpath -w "$TMP/addon")
-WIN_CUSTOM='C:\Users\hoang\Documents\NinjaTrader 8\bin\Custom'
+WIN_CUSTOM="${WIN_CUSTOM:-C:\Users\hoang\Documents\NinjaTrader 8\bin\Custom}"
+NT8_BIN="${NT8_BIN:-C:\Program Files\NinjaTrader 8\bin}"
+
+# Obfuscar (Windows dotnet tool) installed LOCALLY into the temp dir (never
+# global; B10.1 "install Obfuscar into that temp folder if needed").
+OBFUSCAR_DIR="$TMP/tools"
+mkdir -p "$OBFUSCAR_DIR"
+OBFUSCAR_WIN=$(wslpath -w "$OBFUSCAR_DIR")
+if ! powershell.exe -NoProfile -Command \
+     "dotnet tool install Obfuscar.GlobalTool --tool-path '$OBFUSCAR_WIN'" >/dev/null 2>&1; then
+  echo "Obfuscar local install failed" >&2
+  exit 1
+fi
+OBFUSCAR="$OBFUSCAR_WIN\\obfuscar.console.exe"
 
 PS_OUT=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File \
   "$PWD/deploy/friend/build-windows.ps1" \
-  -Src "$WIN_SRC" -Out "$WIN_OUT" -CustomDir "$WIN_CUSTOM" 2>&1) || {
+  -Src "$WIN_SRC" -Out "$WIN_OUT" -CustomDir "$WIN_CUSTOM" -NT8Bin "$NT8_BIN" \
+  -Obfuscar "$OBFUSCAR" 2>&1) || {
     echo "$PS_OUT" >&2
     echo "build-windows.ps1 failed" >&2
     exit 1
   }
 echo "$PS_OUT"
 
-ADDON_WIN=$(printf '%s\n' "$PS_OUT" | sed -n 's/^VL_ADDON_OBFUSCATED_DLL=//p')
-ADDON_SHA=$(printf '%s\n' "$PS_OUT" | sed -n 's/^VL_ADDON_OBFUSCATED_SHA256=//p')
+# PowerShell prints CRLF line endings — strip the trailing CR before using the path.
+ADDON_WIN=$(printf '%s\n' "$PS_OUT" | sed -n 's/^VL_ADDON_OBFUSCATED_DLL=//p' | tr -d '\r')
+ADDON_SHA=$(printf '%s\n' "$PS_OUT" | sed -n 's/^VL_ADDON_OBFUSCATED_SHA256=//p' | tr -d '\r')
 [ -n "$ADDON_WIN" ] || { echo "build-windows.ps1 printed no DLL path" >&2; exit 1; }
 [ -n "$ADDON_SHA" ] || { echo "build-windows.ps1 printed no DLL sha" >&2; exit 1; }
 
