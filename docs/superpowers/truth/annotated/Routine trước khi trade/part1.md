@@ -118,12 +118,12 @@ cues: 205/205 · rule cues: 89 · rows: 7 · CODE: 67 · MISMATCH: 18 · NOT-IN-
 00:05:09 | Tiếp tục | —
 00:05:10 | Nếu đánh pre-market | —
 00:05:12 | Ừ không chị Nếu đánh đánh đánh đánh bị mắc kẹt thì tôi bình thường còn em đang nói với cho những anh | —
-00:05:21 | chị nào trai ô bình đó còn nếu mà không không oab là ô bình nó nó là oab là ô bình nên ha nên là mình | CODE kernel/mentor/orb_premarket_test.go
-00:05:38 | chỉ tính Ok lúc mắc kẹt ô bình thôi còn của pre-market thì mình không quan tâm nó kẹt mình | CODE kernel/mentor/orb_premarket_test.go
-00:05:42 | Mình không cần phải vẽ ORB gì hết | CODE kernel/mentor/orb_premarket_test.go
-00:05:44 | Tại vì là mình có ORB mà để mình vẽ | CODE kernel/mentor/orb_premarket_test.go
-00:05:45 | Rồi tiếp tục | CODE kernel/mentor/orb_premarket_test.go
-00:05:52 | Sẽ có những ngày | CODE kernel/mentor/orb_premarket_test.go
+00:05:21 | chị nào trai ô bình đó còn nếu mà không không oab là ô bình nó nó là oab là ô bình nên ha nên là mình | CODE kernel/mentor/orb.go:60
+00:05:38 | chỉ tính Ok lúc mắc kẹt ô bình thôi còn của pre-market thì mình không quan tâm nó kẹt mình | CODE kernel/mentor/orb.go:60
+00:05:42 | Mình không cần phải vẽ ORB gì hết | CODE kernel/mentor/orb.go:60
+00:05:44 | Tại vì là mình có ORB mà để mình vẽ | CODE kernel/mentor/orb.go:60
+00:05:45 | Rồi tiếp tục | CODE kernel/mentor/orb.go:60
+00:05:52 | Sẽ có những ngày | CODE kernel/mentor/orb.go:60
 00:05:55 | Sẽ có những ngày | —
 00:05:59 | Mấy ngày đó đâu | —
 00:06:01 | Để em kiếm thử coi | —
@@ -157,33 +157,33 @@ cues: 205/205 · rule cues: 89 · rows: 7 · CODE: 67 · MISMATCH: 18 · NOT-IN-
 00:07:42 | Em sẽ nói tiếp tục nè | —
 00:07:42 | Rồi | —
 00:07:43 | Cũng sẽ có những lệnh | —
-00:07:46 | Nếu như là inside bar | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:07:48 | Nếu như inside bar | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:07:51 | Mà nó nằm cái kiểu như này nè | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:07:55 | Nó nằm cái kiểu giống vậy nè | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:07:56 | Nó nằm ở ngoài | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:07:57 | Nó kiểu như là 80% 90% là cái nến nó nằm ở ngoài rồi | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:01 | Của inside bar | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:02 | Thì anh chị có quyền take risk | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:04 | nếu như nó nằm ở ngoài rồi | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:10 | ha | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:10 | thì anh chị có quyền | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:14 | tag risk | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:14 | đánh insert ball kiểu này | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:15 | còn như bên đây | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:17 | em sẽ không trade | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:17 | cái kia không | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:19 | cái này em không | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:20 | em không | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:20 | tại vì mọi người nên nhớ nè | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:22 | insert ball mà ngay này | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:23 | nó rất là xấu | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:23 | tại vì sao | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:24 | tại em nói là | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:25 | cái cạnh trên | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:26 | của cái ORP | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:27 | là cái resistance | CODE kernel/mentor/orb.go [orbISBFractionOutside]
-00:08:28 | cái risk nó rất cao | CODE kernel/mentor/orb.go [orbISBFractionOutside]
+00:07:46 | Nếu như là inside bar | CODE kernel/mentor/orb.go:164
+00:07:48 | Nếu như inside bar | CODE kernel/mentor/orb.go:164
+00:07:51 | Mà nó nằm cái kiểu như này nè | CODE kernel/mentor/orb.go:164
+00:07:55 | Nó nằm cái kiểu giống vậy nè | CODE kernel/mentor/orb.go:164
+00:07:56 | Nó nằm ở ngoài | CODE kernel/mentor/orb.go:164
+00:07:57 | Nó kiểu như là 80% 90% là cái nến nó nằm ở ngoài rồi | CODE kernel/mentor/orb.go:164
+00:08:01 | Của inside bar | CODE kernel/mentor/orb.go:164
+00:08:02 | Thì anh chị có quyền take risk | CODE kernel/mentor/orb.go:164
+00:08:04 | nếu như nó nằm ở ngoài rồi | CODE kernel/mentor/orb.go:164
+00:08:10 | ha | CODE kernel/mentor/orb.go:164
+00:08:10 | thì anh chị có quyền | CODE kernel/mentor/orb.go:164
+00:08:14 | tag risk | CODE kernel/mentor/orb.go:164
+00:08:14 | đánh insert ball kiểu này | CODE kernel/mentor/orb.go:164
+00:08:15 | còn như bên đây | CODE kernel/mentor/orb.go:164
+00:08:17 | em sẽ không trade | CODE kernel/mentor/orb.go:164
+00:08:17 | cái kia không | CODE kernel/mentor/orb.go:164
+00:08:19 | cái này em không | CODE kernel/mentor/orb.go:164
+00:08:20 | em không | CODE kernel/mentor/orb.go:164
+00:08:20 | tại vì mọi người nên nhớ nè | CODE kernel/mentor/orb.go:164
+00:08:22 | insert ball mà ngay này | CODE kernel/mentor/orb.go:164
+00:08:23 | nó rất là xấu | CODE kernel/mentor/orb.go:164
+00:08:23 | tại vì sao | CODE kernel/mentor/orb.go:164
+00:08:24 | tại em nói là | CODE kernel/mentor/orb.go:164
+00:08:25 | cái cạnh trên | CODE kernel/mentor/orb.go:164
+00:08:26 | của cái ORP | CODE kernel/mentor/orb.go:164
+00:08:27 | là cái resistance | CODE kernel/mentor/orb.go:164
+00:08:28 | cái risk nó rất cao | CODE kernel/mentor/orb.go:164
 00:08:32 | cái này là | —
 00:08:33 | mình đang đánh breakout á | —
 00:08:34 | nhưng anh quân | —
@@ -195,10 +195,10 @@ cues: 205/205 · rule cues: 89 · rows: 7 · CODE: 67 · MISMATCH: 18 · NOT-IN-
 00:08:41 | của | —
 00:08:41 | cạnh dưới | —
 00:08:42 | phía dưới của cái orbi 2 phút là support mà ông đánh cái lệnh xe bar đó bị quét banh sát đó nên | —
-00:08:52 | là những cái ô em chỉ cho phép anh chị thích những cái lúc mà nến nằm khoảng tầm 80 90 phần | NOT-IN-BOT kernel/mentor/orb.go [orb_edge_veto_pts=0]
-00:08:59 | trăm năm ngoài vậy nè Thì mình ok Còn mà cái cái mà ngay cái cái điểm mà cái điểm entry của mình | NOT-IN-BOT kernel/mentor/orb.go [orb_edge_veto_pts=0]
-00:09:04 | của cái xe bó mà nằm gần cái resistance quá thì thôi bỏ đi ha bỏ đi mà nó có chơi anh chị ok em | NOT-IN-BOT kernel/mentor/orb.go [orb_edge_veto_pts=0]
-00:09:14 | Bây giờ mọi người thấy nè | NOT-IN-BOT kernel/mentor/orb.go [orb_edge_veto_pts=0]
+00:08:52 | là những cái ô em chỉ cho phép anh chị thích những cái lúc mà nến nằm khoảng tầm 80 90 phần | NOT-IN-BOT -> row 29
+00:08:59 | trăm năm ngoài vậy nè Thì mình ok Còn mà cái cái mà ngay cái cái điểm mà cái điểm entry của mình | NOT-IN-BOT -> row 29
+00:09:04 | của cái xe bó mà nằm gần cái resistance quá thì thôi bỏ đi ha bỏ đi mà nó có chơi anh chị ok em | NOT-IN-BOT -> row 29
+00:09:14 | Bây giờ mọi người thấy nè | NOT-IN-BOT -> row 29
 00:09:21 | Khi mà nó thoát được cái OB là nó cứ chạy lên | —
 00:09:23 | Mọi người để ý nè | —
 00:09:25 | Nó thoát được cái OB là chạy | —

@@ -305,17 +305,17 @@ cues: 651/651 · rule cues: 82 · rows: 6 · CODE: 82 · MISMATCH: 0 · NOT-IN-B
 00:12:18 | Tại vì khi nến phá đáy | —
 00:12:22 | Của cây nến trước | —
 00:12:22 | Phá đáy có nghĩa là em không cần nó đóng | —
-00:12:25 | Đó là tại sao em lý do em nói là em nói phá | CODE kernel/mentor/trigger_intrabar_test.go
-00:12:27 | Phá là không cần đóng | CODE kernel/mentor/trigger_intrabar_test.go
-00:12:28 | Phá là phá, nó vượt qua gọi là nó phá | CODE kernel/mentor/trigger_intrabar_test.go
-00:12:34 | Thì giá nên tiếp tục đi theo hướng đó | CODE kernel/mentor/trigger_intrabar_test.go
-00:12:36 | Thì rõ ràng không | CODE kernel/mentor/trigger_intrabar_test.go
-00:12:37 | Khung 5 phút | CODE kernel/mentor/trigger_intrabar_test.go
-00:12:38 | Sell setup trigger potential lower high | CODE kernel/mentor/trigger_intrabar_test.go
-00:12:42 | Đúng không | CODE kernel/mentor/trigger_intrabar_test.go
-00:12:43 | bộ tôi bộ tên solo 205 của khung khung 5 phút thì tôi chỉ có không một phút tôi ngồi đây tôi | CODE kernel/mentor/trigger_intrabar_test.go
-00:12:50 | đánh sót Tại sao Tại vì không 5 phút trích lô hai rồi bộ tên solo hai rồi thì không có lý do | CODE kernel/mentor/trigger_intrabar_test.go
-00:12:55 | gì đánh lên nữa hết đúng không Ừ đây là cái cái sự vi diệu của của multi-time frame Ừ rồi anh | CODE kernel/mentor/trigger_intrabar_test.go
+00:12:25 | Đó là tại sao em lý do em nói là em nói phá | CODE kernel/mentor/filters.go:143
+00:12:27 | Phá là không cần đóng | CODE kernel/mentor/filters.go:143
+00:12:28 | Phá là phá, nó vượt qua gọi là nó phá | CODE kernel/mentor/filters.go:143
+00:12:34 | Thì giá nên tiếp tục đi theo hướng đó | CODE kernel/mentor/filters.go:143
+00:12:36 | Thì rõ ràng không | CODE kernel/mentor/filters.go:143
+00:12:37 | Khung 5 phút | CODE kernel/mentor/filters.go:143
+00:12:38 | Sell setup trigger potential lower high | CODE kernel/mentor/filters.go:143
+00:12:42 | Đúng không | CODE kernel/mentor/filters.go:143
+00:12:43 | bộ tôi bộ tên solo 205 của khung khung 5 phút thì tôi chỉ có không một phút tôi ngồi đây tôi | CODE kernel/mentor/filters.go:143
+00:12:50 | đánh sót Tại sao Tại vì không 5 phút trích lô hai rồi bộ tên solo hai rồi thì không có lý do | CODE kernel/mentor/filters.go:143
+00:12:55 | gì đánh lên nữa hết đúng không Ừ đây là cái cái sự vi diệu của của multi-time frame Ừ rồi anh | CODE kernel/mentor/filters.go:143
 00:13:07 | Anh muốn em làm khung 15 phút | —
 00:13:08 | Nó cũng sẽ the same concept thôi | —
 00:13:10 | Nó cũng the same concept thôi | —

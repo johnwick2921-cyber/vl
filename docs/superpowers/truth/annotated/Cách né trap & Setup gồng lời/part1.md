@@ -1,17 +1,17 @@
 cues: 449/449 · rule cues: 168 · rows: 6 · CODE: 156 · MISMATCH: 0 · NOT-IN-BOT: 12 · RULING: 0 · SPLIT: 0 · —: 281
 
-00:00:00 | Thì bây giờ cái tab mình sẽ có sử dụng những cái indicator mà cái indicator mà gọi là OG nhất của cái tab mình thì anh chị cũng biết là cái tab Santa hoặc là bé Na ha hoặc là bé Na sẽ có những lúc mọi người có thấy là nó fake breakout hoặc fake breakdown mọi người có nghĩa là khi mà nó anh chị thấy nó đóng trên bé Na rồi nó đóng trên Santa rồi xong nó gãy ngược xuống và mình vô lệnh và mình thua. | NOT-IN-BOT kernel/mentor/htf_direction.go
-00:00:33 | Thì đây sẽ là một cái cách né trap em thấy khá là hay | NOT-IN-BOT kernel/mentor/htf_direction.go
-00:00:36 | Khá là hay và em cũng đã né được khá là nhiều lệnh | NOT-IN-BOT kernel/mentor/htf_direction.go
-00:00:39 | Thì bây giờ anh chị bật cái tab Santa lên | NOT-IN-BOT kernel/mentor/htf_direction.go
-00:00:42 | Cái tab Santa | NOT-IN-BOT kernel/mentor/htf_direction.go
-00:00:44 | Hồi sáng hôm nay có đúng có một lệnh luôn | NOT-IN-BOT kernel/mentor/htf_direction.go
-00:00:46 | Hồi sáng hôm nay có một lệnh luôn, né trap | NOT-IN-BOT kernel/mentor/htf_direction.go
-00:00:48 | Ủa sao chị không có Santa hả | NOT-IN-BOT kernel/mentor/htf_direction.go
-00:00:51 | Ủa chị nói anh bé add cho chị á không sao đó | NOT-IN-BOT kernel/mentor/htf_direction.go
-00:00:58 | Anh bé có anh bé add cho chị | NOT-IN-BOT kernel/mentor/htf_direction.go
-00:01:00 | Cái đó là OG nhất của cái tab mình mà | NOT-IN-BOT kernel/mentor/htf_direction.go
-00:01:03 | Rồi nếu như có anh chị nào truy | NOT-IN-BOT kernel/mentor/htf_direction.go
+00:00:00 | Thì bây giờ cái tab mình sẽ có sử dụng những cái indicator mà cái indicator mà gọi là OG nhất của cái tab mình thì anh chị cũng biết là cái tab Santa hoặc là bé Na ha hoặc là bé Na sẽ có những lúc mọi người có thấy là nó fake breakout hoặc fake breakdown mọi người có nghĩa là khi mà nó anh chị thấy nó đóng trên bé Na rồi nó đóng trên Santa rồi xong nó gãy ngược xuống và mình vô lệnh và mình thua. | NOT-IN-BOT -> row 41
+00:00:33 | Thì đây sẽ là một cái cách né trap em thấy khá là hay | NOT-IN-BOT -> row 41
+00:00:36 | Khá là hay và em cũng đã né được khá là nhiều lệnh | NOT-IN-BOT -> row 41
+00:00:39 | Thì bây giờ anh chị bật cái tab Santa lên | NOT-IN-BOT -> row 41
+00:00:42 | Cái tab Santa | NOT-IN-BOT -> row 41
+00:00:44 | Hồi sáng hôm nay có đúng có một lệnh luôn | NOT-IN-BOT -> row 41
+00:00:46 | Hồi sáng hôm nay có một lệnh luôn, né trap | NOT-IN-BOT -> row 41
+00:00:48 | Ủa sao chị không có Santa hả | NOT-IN-BOT -> row 41
+00:00:51 | Ủa chị nói anh bé add cho chị á không sao đó | NOT-IN-BOT -> row 41
+00:00:58 | Anh bé có anh bé add cho chị | NOT-IN-BOT -> row 41
+00:01:00 | Cái đó là OG nhất của cái tab mình mà | NOT-IN-BOT -> row 41
+00:01:03 | Rồi nếu như có anh chị nào truy | NOT-IN-BOT -> row 41
 00:01:11 | Em tắt Santa đi ha | —
 00:01:13 | Bên na thôi | —
 00:01:13 | Ừ rồi Santa cũng được để hai cái luôn rồi Ừ nó có một lệnh khá là hay quên chỉnh lại này xanh | —

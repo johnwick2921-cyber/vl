@@ -13,14 +13,14 @@ R = {
 "Cách trade key levels 1H": {"part1.srt": [
  (0,30,"CODE kernel/mentor/mentor.go:548"), (230,270,"CODE kernel/mentor/box_trade.go:187"), (270,300,"CODE kernel/mentor/box_trade.go:188"), (394,420,"CODE kernel/mentor/box_trade.go:205"), (494,536,"CODE kernel/mentor/box_trade.go:205")]},
 "Routine trước khi trade": {"part1.srt": [
- (0,38,"CODE kernel/mentor/mentor.go:417"), (41,77,"MISMATCH kernel/mentor/eval.go:1581"), (91,129,"CODE kernel/mentor/orb.go:54"), (145,187,"CODE kernel/mentor/orb.go:115"), (317,352,"CODE kernel/mentor/orb_premarket_test.go"), (466,509,"CODE kernel/mentor/orb.go [orbISBFractionOutside]"), (530,554,"NOT-IN-BOT kernel/mentor/orb.go [orb_edge_veto_pts=0]")]},
+ (0,38,"CODE kernel/mentor/mentor.go:417"), (41,77,"MISMATCH kernel/mentor/eval.go:1581"), (91,129,"CODE kernel/mentor/orb.go:54"), (145,187,"CODE kernel/mentor/orb.go:115"), (317,352,"CODE kernel/mentor/orb.go:60"), (466,509,"CODE kernel/mentor/orb.go:164"), (530,554,"NOT-IN-BOT -> row 29")]},
 "Buy-Sell Setup Trigger": {"part1.srt": [
- (0,50,"CODE kernel/mentor/filters.go:43"), (117,130,"CODE kernel/mentor/filters.go:43"), (230,250,"CODE kernel/mentor/mtf.go:22"), (420,490,"CODE kernel/mentor/mtf.go:22"), (745,777,"CODE kernel/mentor/trigger_intrabar_test.go"), (1385,1405,"CODE kernel/mentor/eval.go:1571")],
+ (0,50,"CODE kernel/mentor/filters.go:43"), (117,130,"CODE kernel/mentor/filters.go:43"), (230,250,"CODE kernel/mentor/mtf.go:22"), (420,490,"CODE kernel/mentor/mtf.go:22"), (745,777,"CODE kernel/mentor/filters.go:143"), (1385,1405,"CODE kernel/mentor/eval.go:1571")],
  "part2.srt": [(0,60,"CODE kernel/mentor/mtf.go:22")]},
 "Ping pong": {"part1.srt": [
  (0,87,"CODE kernel/mentor/box_trade.go:205"), (87,110,"CODE kernel/mentor/isb.go:137"), (275,310,"CODE kernel/mentor/isb_box.go:90"), (428,460,"CODE kernel/mentor/box.go:569"), (577,665,"CODE kernel/mentor/box.go:569")]},
 "Cách né trap & Setup gồng lời": {"part1.srt": [
- (0,63,"NOT-IN-BOT kernel/mentor/htf_direction.go"), (227,260,"CODE kernel/mentor/htf_direction.go:47"), (520,590,"CODE kernel/mentor/htf_direction.go:47"), (691,790,"CODE kernel/mentor/eval.go:1853"), (940,980,"CODE kernel/mentor/exec_frame.go:5"), (1050,1096,"CODE kernel/mentor/eval.go:1915")]},
+ (0,63,"NOT-IN-BOT -> row 41"), (227,260,"CODE kernel/mentor/htf_direction.go:47"), (520,590,"CODE kernel/mentor/htf_direction.go:47"), (691,790,"CODE kernel/mentor/eval.go:1853"), (940,980,"CODE kernel/mentor/exec_frame.go:5"), (1050,1096,"CODE kernel/mentor/eval.go:1915")]},
 "Cách vẽ trendline": {"part1.srt": [
  (0,120,"CODE kernel/mentor/trendline.go:74"), (131,180,"CODE kernel/mentor/trendline.go:11"), (292,339,"CODE kernel/mentor/flag_wall.go:11"), (347,412,"CODE kernel/mentor/flag_wall.go:20")]},
 "Cách vẽ supply & demand trong ngày": {"part1.srt": [
