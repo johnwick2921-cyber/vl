@@ -184,11 +184,6 @@ export function AccountSelector({
       {/* Masquerade guard: the shared NT8 connection streams ONE account's balance /
           positions. If it isn't this trader's bound account, say so explicitly so the
           numbers can't be mistaken for this trader's account. */}
-      {isRunning && (
-        <div className="mt-1 px-2 py-1 rounded bg-vl-neo-bg/20 border border-vl-neo-bg/40 text-[11px] leading-tight text-vl-neo-text-muted">
-          ⛔ Stop the trader first, then choose the account, then start it.
-        </div>
-      )}
       {selectedAccount &&
         currentAccount &&
         currentAccount !== selectedAccount && (
