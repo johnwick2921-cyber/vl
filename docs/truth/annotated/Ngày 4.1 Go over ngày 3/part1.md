@@ -1,4 +1,4 @@
-cues: 565/565 · rule cues: 152 · rows: 10 · CODE: 6 · MISMATCH: 0 · NOT-IN-BOT: 1 · OWNER-ORDER: 3 · SPLIT: 0 · —: 413
+cues: 565/565 · rule cues: 154 · rows: 11 · CODE: 7 · MISMATCH: 0 · NOT-IN-BOT: 1 · OWNER-ORDER: 3 · SPLIT: 0 · —: 411
 00:00 | Rồi, thì hôm nay cái việc đầu tiên mà mình vẫn lúc nào cũng sẽ làm trước khi mình bắt đầu những buổi học là mình sẽ go over lại những kiến thức của mình đã học ngày hôm qua. | —
 00:14 | Bài hôm nay không nhiều cũng không ít, nó sẽ tùy phụ thuộc vào tiến độ học của mọi người và cách mọi người hiểu bài như thế nào. | —
 00:23 | Nhưng mà em sẽ cố gắng em đi nó lại lại một tí, tại vì tháng này mình sẽ có những kiến thức khác. | —
@@ -119,27 +119,27 @@ cues: 565/565 · rule cues: 152 · rows: 10 · CODE: 6 · MISMATCH: 0 · NOT-IN-
 06:27 | em sẽ gom lại 2 cái này chung | —
 06:28 | tại vì nó | —
 06:31 | cũng là giống nhau | —
-06:32 | phải đợi đi xa gì mọi người | —
-06:35 | hả anh chị | —
-06:37 | mọi người trả lời giúp em coi | —
-06:41 | phải đợi đi xa gì | —
-06:42 | giữa potential 2 low và potential low 2 | —
-06:48 | thì mọi người phải đợi nó đi xa gì | —
-06:50 | mọi người phải đợi nó đi xa | —
-07:05 | đỉnh | kernel/mentor/eval.go:445 (row 2)
-07:10 | và đỉnh | kernel/mentor/eval.go:445 (row 2)
-07:12 | hoặc đáy củ | kernel/mentor/eval.go:445 (row 2)
-07:14 | trước đó | kernel/mentor/eval.go:445 (row 2)
-07:16 | đúng không | kernel/mentor/eval.go:445 (row 2)
-07:17 | Phải đợi nó đi xa | kernel/mentor/eval.go:445 (row 2)
-07:20 | Để nó đáy củ trước đó | kernel/mentor/eval.go:445 (row 2)
-07:21 | Tại vì sao | kernel/mentor/eval.go:445 (row 2)
-07:23 | Tại vì cái target của potential high low | kernel/mentor/eval.go:445 (row 2)
-07:27 | Là gần đỉnh củ | kernel/mentor/eval.go:445 (row 2)
-07:28 | Và target của potential low high | kernel/mentor/eval.go:445 (row 2)
-07:31 | Là gần đáy củ | kernel/mentor/eval.go:445 (row 2)
-07:32 | Chứ không phải exactly ngay tại đáy củ | kernel/mentor/eval.go:445 (row 2)
-07:35 | Lý do | kernel/mentor/eval.go:445 (row 2)
+06:32 | phải đợi đi xa gì mọi người | kernel/mentor/phl.go:84 (row 31)
+06:35 | hả anh chị | kernel/mentor/phl.go:84 (row 31)
+06:37 | mọi người trả lời giúp em coi | kernel/mentor/phl.go:84 (row 31)
+06:41 | phải đợi đi xa gì | kernel/mentor/phl.go:84 (row 31)
+06:42 | giữa potential 2 low và potential low 2 | kernel/mentor/phl.go:84 (row 31)
+06:48 | thì mọi người phải đợi nó đi xa gì | kernel/mentor/phl.go:84 (row 31)
+06:50 | mọi người phải đợi nó đi xa | kernel/mentor/phl.go:84 (row 31)
+07:05 | đỉnh | kernel/mentor/phl.go:84 (row 31)
+07:10 | và đỉnh | kernel/mentor/phl.go:84 (row 31)
+07:12 | hoặc đáy củ | kernel/mentor/phl.go:84 (row 31)
+07:14 | trước đó | kernel/mentor/phl.go:84 (row 31)
+07:16 | đúng không | —
+07:17 | Phải đợi nó đi xa | —
+07:20 | Để nó đáy củ trước đó | —
+07:21 | Tại vì sao | —
+07:23 | Tại vì cái target của potential high low | kernel/mentor/phl.go:140 (row 2)
+07:27 | Là gần đỉnh củ | kernel/mentor/phl.go:140 (row 2)
+07:28 | Và target của potential low high | kernel/mentor/phl.go:140 (row 2)
+07:31 | Là gần đáy củ | kernel/mentor/phl.go:140 (row 2)
+07:32 | Chứ không phải exactly ngay tại đáy củ | kernel/mentor/phl.go:140 (row 2)
+07:35 | Lý do | —
 07:36 | Hôm qua giờ bữa giờ ông vẫn chưa nói | —
 07:38 | Nhưng xin cho mọi người thấy lý do | —
 07:39 | Nhân dịu khoa mới | —
@@ -507,19 +507,19 @@ cues: 565/565 · rule cues: 152 · rows: 10 · CODE: 6 · MISMATCH: 0 · NOT-IN-
 22:47 | Chứ không phải cái thích | —
 22:49 | Thích chỗ nào bọc cho đó | —
 22:50 | Rồi tiếp theo tới phần | —
-22:55 | Failure to go higher | kernel/mentor/box.go:52 (row 8)
-22:56 | Failure to go lower | kernel/mentor/box.go:52 (row 8)
-22:57 | Anh chị tray khung nào anh chị là vẽ khung đó | kernel/mentor/box.go:52 (row 8)
-23:02 | Chứ không phải là anh chị thích khung nào anh chị làm khung đó | kernel/mentor/box.go:52 (row 8)
-23:05 | Failure to go higher | kernel/mentor/box.go:52 (row 8)
-23:07 | Failure to go lower | kernel/mentor/box.go:52 (row 8)
-23:08 | Nếu như anh chị tray khung 1 phút | kernel/mentor/box.go:52 (row 8)
-23:10 | Anh chị vẽ ở bên khung 1 phút | kernel/mentor/box.go:52 (row 8)
-23:13 | Anh chị tray khung 2 phút | kernel/mentor/box.go:52 (row 8)
-23:14 | Anh chị vẽ khung 2 phút | kernel/mentor/box.go:52 (row 8)
-23:15 | Anh chị tray khung 30 giây | kernel/mentor/box.go:52 (row 8)
-23:18 | Anh chị vẽ fellow to go higher khung 30 giây | kernel/mentor/box.go:52 (row 8)
-23:20 | Chứ đừng làm ơn | kernel/mentor/box.go:52 (row 8)
+22:55 | Failure to go higher | kernel/mentor/box.go:220 (row 8)
+22:56 | Failure to go lower | kernel/mentor/box.go:220 (row 8)
+22:57 | Anh chị tray khung nào anh chị là vẽ khung đó | kernel/mentor/box.go:220 (row 8)
+23:02 | Chứ không phải là anh chị thích khung nào anh chị làm khung đó | kernel/mentor/box.go:220 (row 8)
+23:05 | Failure to go higher | kernel/mentor/box.go:220 (row 8)
+23:07 | Failure to go lower | kernel/mentor/box.go:220 (row 8)
+23:08 | Nếu như anh chị tray khung 1 phút | kernel/mentor/box.go:220 (row 8)
+23:10 | Anh chị vẽ ở bên khung 1 phút | kernel/mentor/box.go:220 (row 8)
+23:13 | Anh chị tray khung 2 phút | kernel/mentor/box.go:220 (row 8)
+23:14 | Anh chị vẽ khung 2 phút | kernel/mentor/box.go:220 (row 8)
+23:15 | Anh chị tray khung 30 giây | kernel/mentor/box.go:220 (row 8)
+23:18 | Anh chị vẽ fellow to go higher khung 30 giây | kernel/mentor/box.go:220 (row 8)
+23:20 | Chứ đừng làm ơn | kernel/mentor/box.go:220 (row 8)
 23:21 | Đừng có thích khung nào vẽ khung đó dùm | —
 23:25 | Nha | —
 23:25 | Rồi | —
