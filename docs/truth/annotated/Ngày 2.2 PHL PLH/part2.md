@@ -1,19 +1,19 @@
-cues: 451/451 marked · rules: 3 · CODE: 87 · MISMATCH: 0 · NOT-IN-BOT: 0 · COURSE-SPLIT: 0 · SILENT: 0 · OWNER-ORDER: 0 · —: 364
+cues: 451/451 · rule cues: 105 · rows: 3 · CODE: 105 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 0 · SPLIT: 0 · —: 346
 
 00:00 | Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
 01:42 | Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
 02:40 | cái đoạn anh bây giờ đang học bộ tên sổ hai lô mà điểm xa ba sót là sao | —
-02:48 | Ngay chỗ này đánh một lệnh bộ tên sổ hai lô không được | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
+02:48 | Ngay chỗ này đánh một lệnh bộ tên sổ hai lô không được | —
 02:53 | tại vì sao ta ghẹt của tôi ta ghẹt của em về gần đỉnh cũ đúng không chị | —
-03:00 | nhắm nè | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-03:03 | ta ghẹt của em về gần đỉnh cũ thì ngay chỗ này | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-03:07 | Cái điểm entry của em | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-03:09 | Nó đang nằm ngay gần đỉnh cũ luôn | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-03:11 | Thì mình xác định ra mình không có target | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-03:14 | Đúng không | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
+03:00 | nhắm nè | —
+03:03 | ta ghẹt của em về gần đỉnh cũ thì ngay chỗ này | —
+03:07 | Cái điểm entry của em | —
+03:09 | Nó đang nằm ngay gần đỉnh cũ luôn | —
+03:11 | Thì mình xác định ra mình không có target | —
+03:14 | Đúng không | —
 03:21 | Thì đó là lý do tại sao cái lệnh này | —
 03:22 | Cái lệnh ở dưới này nó lại đẹp hơn | —
-03:24 | Tại vì sao | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
+03:24 | Tại vì sao | —
 03:25 | Tại sao | —
 03:28 | Này bây giờ trả lời | —
 03:29 | Mọi người nhìn nè | —
@@ -23,83 +23,83 @@ cues: 451/451 marked · rules: 3 · CODE: 87 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 03:37 | Này có nằm dùng rồi đó | —
 03:40 | Rồi | —
 03:41 | Rồi bây giờ mọi người phân biệt được | —
-03:43 | Ồ cái lệnh này không đẹp là tại vì nó gần ta ghẹt quá | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-03:46 | Rồi | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
+03:43 | Ồ cái lệnh này không đẹp là tại vì nó gần ta ghẹt quá | —
+03:46 | Rồi | —
 03:47 | Vậy giữa cái lệnh này | —
 03:49 | Cái lệnh màu vàng với cái lệnh màu xanh | —
 03:52 | Tại sao cái lệnh màu xanh đẹp hơn | —
 03:54 | Tại sao cái lệnh | —
 03:58 | Cái đường lai màu xanh đẹp hơn | —
 04:00 | Tại vì | —
-04:24 | Nó có ta ghẹt là sao | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-04:26 | Nó đi xa cái đỉnh gần | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-04:28 | Nó đi xa cái đỉnh cũ rồi | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-04:30 | Thì ta ghẹt của mình nó sẽ tự nhiên nó nhiều hơn | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-04:32 | Nó đi xa cái đỉnh cũ rồi | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-04:36 | Thì target của mình nó sẽ nhiều hơn | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-04:37 | Đúng không anh chị | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
+04:24 | Nó có ta ghẹt là sao | —
+04:26 | Nó đi xa cái đỉnh gần | —
+04:28 | Nó đi xa cái đỉnh cũ rồi | —
+04:30 | Thì ta ghẹt của mình nó sẽ tự nhiên nó nhiều hơn | —
+04:32 | Nó đi xa cái đỉnh cũ rồi | —
+04:36 | Thì target của mình nó sẽ nhiều hơn | —
+04:37 | Đúng không anh chị | —
 04:39 | Thì mình đúc kết được cái gì mọi người | —
-04:41 | Mình đúc kết là không phải cứ hể nó | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-04:45 | Không phải cứ hể nó đi xa | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-04:51 | Không phải cứ hể là nó | —
-04:53 | Nó đang xuống hướng tăng | —
-04:55 | Nó quay về nó bắt test | —
-04:56 | Là mình đặt cái lệnh buy shop mình vô liền | —
-04:58 | Mà sao | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-04:59 | Mình phải chờ một tí | —
-05:02 | Cho nó đi xa cái đỉnh cũ một tí | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-05:05 | Mình đặt cái lệnh vô | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-05:07 | Thì nó đẹp hơn | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-05:09 | Anh chị đồng ý với em không | —
+04:41 | Mình đúc kết là không phải cứ hể nó | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+04:45 | Không phải cứ hể nó đi xa | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+04:51 | Không phải cứ hể là nó | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+04:53 | Nó đang xuống hướng tăng | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+04:55 | Nó quay về nó bắt test | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+04:56 | Là mình đặt cái lệnh buy shop mình vô liền | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+04:58 | Mà sao | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+04:59 | Mình phải chờ một tí | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:02 | Cho nó đi xa cái đỉnh cũ một tí | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:05 | Mình đặt cái lệnh vô | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:07 | Thì nó đẹp hơn | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:09 | Anh chị đồng ý với em không | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
 05:11 | Bây giờ mình đúc kết thêm 1 điều nè | —
 05:15 | Bây giờ tôi biết là | —
 05:16 | Cái target của tôi là về gần đỉnh cũ | —
-05:19 | Thì làm gì làm | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-05:21 | Cái điểm entry của tôi | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-05:22 | Tôi không được | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-05:24 | Có nghĩa là | —
-05:25 | Cái điểm entry của tôi phải nằm ở xa | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-05:28 | Cái đỉnh cũ thì tôi | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-05:30 | Nó mới có room để nó chạy | —
-05:32 | Nhưng mọi người cũng phải hiểu như vậy | —
-05:35 | Là anh chị không có quyền | —
-05:38 | Chọn | —
-05:43 | Cái điểm entry của anh chị xa bao nhiêu | —
-05:48 | Mà mắc kẹt nó sẽ làm cái việc đó | —
-05:50 | Việc của anh chị | —
-05:53 | Là mọi người | —
-05:55 | Phải hiểu được | —
-05:56 | Cái điểm entry của mọi người | —
-06:00 | Không được gần với target | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-06:02 | Đó là cái việc anh chị | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-06:05 | Có thể làm và anh chị hiểu được | —
-06:07 | Vấn đề là cái điểm entry | —
-06:09 | Của tôi mặc dù | —
-06:11 | Tôi không thể quyết định được | —
-06:12 | Nó sẽ nằm ở đâu | —
-06:13 | Nó sẽ xa cái target bao nhiêu | —
-06:16 | Nhưng tôi quyết định được là | —
-06:19 | Tôi sẽ không vô | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-06:21 | Ở những chỗ gần | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-06:23 | Cái target mà tôi đặt ra | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
+05:19 | Thì làm gì làm | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:21 | Cái điểm entry của tôi | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:22 | Tôi không được | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:24 | Có nghĩa là | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:25 | Cái điểm entry của tôi phải nằm ở xa | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:28 | Cái đỉnh cũ thì tôi | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:30 | Nó mới có room để nó chạy | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:32 | Nhưng mọi người cũng phải hiểu như vậy | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:35 | Là anh chị không có quyền | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:38 | Chọn | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:43 | Cái điểm entry của anh chị xa bao nhiêu | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:48 | Mà mắc kẹt nó sẽ làm cái việc đó | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:50 | Việc của anh chị | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:53 | Là mọi người | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:55 | Phải hiểu được | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+05:56 | Cái điểm entry của mọi người | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+06:00 | Không được gần với target | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+06:02 | Đó là cái việc anh chị | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+06:05 | Có thể làm và anh chị hiểu được | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+06:07 | Vấn đề là cái điểm entry | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+06:09 | Của tôi mặc dù | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+06:11 | Tôi không thể quyết định được | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+06:12 | Nó sẽ nằm ở đâu | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+06:13 | Nó sẽ xa cái target bao nhiêu | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+06:16 | Nhưng tôi quyết định được là | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+06:19 | Tôi sẽ không vô | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+06:21 | Ở những chỗ gần | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+06:23 | Cái target mà tôi đặt ra | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
 06:25 | Mọi người hiểu em đang nói không | —
 06:27 | Có hơi khó hiểu quá không | —
 06:30 | Em nhắc lại nè | —
-06:33 | Anh chị không có quyền | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-06:35 | Chọn điểm entry | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-06:40 | Của mọi người sẽ nằm ở đâu | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
+06:33 | Anh chị không có quyền | —
+06:35 | Chọn điểm entry | —
+06:40 | Của mọi người sẽ nằm ở đâu | —
 06:41 | Xa target bao nhiêu | —
 06:43 | Nhưng anh chị | —
-06:46 | Có quyền | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-06:48 | Không vô lệnh | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-06:51 | Ở những chỗ gần | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-06:52 | Target | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
+06:46 | Có quyền | —
+06:48 | Không vô lệnh | —
+06:51 | Ở những chỗ gần | —
+06:52 | Target | —
 06:53 | Thì ngay chỗ này | —
-06:57 | Nếu như mà nó chỉ thấy nó gần target quá | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-07:00 | Mọi người đừng làm gì hết | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-07:02 | Đợi cho nó xả thêm 1-2 cây nến nữa | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-07:04 | Cho cái điểm entry của mình | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
-07:06 | Nó đi xa 1 tí | CODE kernel/mentor/mentor.go:322 [PHLMinCandlesFromExtreme — entry far from the old high]
+06:57 | Nếu như mà nó chỉ thấy nó gần target quá | —
+07:00 | Mọi người đừng làm gì hết | —
+07:02 | Đợi cho nó xả thêm 1-2 cây nến nữa | —
+07:04 | Cho cái điểm entry của mình | —
+07:06 | Nó đi xa 1 tí | —
 07:08 | Ví dụ | —
 07:09 | Ví dụ | —
 07:11 | Về tới ngay chỗ này | —
@@ -124,17 +124,17 @@ cues: 451/451 marked · rules: 3 · CODE: 87 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 08:40 | Là | —
 08:42 | Uno | —
 08:44 | Ngay chỗ này | —
-08:46 | Lúc trước nó là resistance | CODE kernel/mentor/box_uno.go [polarity/uno]
-08:48 | Nó là resistance | CODE kernel/mentor/box_uno.go [polarity/uno]
-08:52 | Bây giờ | CODE kernel/mentor/box_uno.go [polarity/uno]
-08:53 | Sao anh chị | CODE kernel/mentor/box_uno.go [polarity/uno]
-08:55 | Bây giờ nó về tới chỗ này | CODE kernel/mentor/box_uno.go [polarity/uno]
-08:58 | Nó bắt test lại cái resistance | CODE kernel/mentor/box_uno.go [polarity/uno]
-09:00 | Thì cái resistance này trở thành | CODE kernel/mentor/box_uno.go [polarity/uno]
-09:02 | Support | CODE kernel/mentor/box_uno.go [polarity/uno]
-09:03 | Mình còn được gọi là polarity | CODE kernel/mentor/box_uno.go [polarity/uno]
-09:07 | Hoặc là mình gọi là uno | CODE kernel/mentor/box_uno.go [polarity/uno]
-09:08 | Đúng không | CODE kernel/mentor/box_uno.go [polarity/uno]
+08:46 | Lúc trước nó là resistance | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
+08:48 | Nó là resistance | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
+08:52 | Bây giờ | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
+08:53 | Sao anh chị | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
+08:55 | Bây giờ nó về tới chỗ này | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
+08:58 | Nó bắt test lại cái resistance | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
+09:00 | Thì cái resistance này trở thành | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
+09:02 | Support | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
+09:03 | Mình còn được gọi là polarity | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
+09:07 | Hoặc là mình gọi là uno | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
+09:08 | Đúng không | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
 09:11 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 09:41 | Thì ngay chỗ này rất đẹp | —
 09:42 | Bây giờ em | —
@@ -159,31 +159,31 @@ cues: 451/451 marked · rules: 3 · CODE: 87 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 10:08 | Bên này em nói nè | —
 10:09 | Nếu như | —
 10:10 | Anh chị đặt một cái lệnh limit ngay chỗ này | —
-10:15 | Ngay cái điểm mà nó phá nè | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-10:19 | Bắt test nè đúng không | —
-10:20 | Anh chị đặt một cái điểm limit ngay chỗ này | —
-10:22 | Là anh chị xanh xương | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-10:24 | Em nhắc lại một lần nữa | —
-10:28 | Không bao giờ đặt một lệnh limit | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-10:31 | Em không biết anh chị học | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-10:34 | Mấy lớp khác sao nhưng đối với lớp của em | —
-10:36 | Em không đặt lệnh limit | —
-10:37 | Những cái lệnh như này | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-10:40 | Anh chị căng bản ra | —
-10:41 | Anh chị không có xác định được | —
-10:43 | Khi nào nó sẽ tạo halo | —
-10:45 | Tại vì mọi người không thể nào hiểu, mọi người biết được là khi nào nó sẽ tạo 2 lô và khi nào nó sẽ tạo lô và 2 | —
-10:55 | Đúng không anh chị? | —
-11:01 | Thì ngay cái chỗ limit này là anh chị vô lệnh là cây nến này anh chị xanh xương | —
-11:06 | Anh chị cứ nghĩ, ờ, ngay chỗ này nó có polarity | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-11:09 | Anh chị đặt một cái lệnh limit ngay polarity là ngay cái support | —
-11:12 | Quất một cái cây nến là nhiêu? | —
-11:15 | Có nhiêu? 26 điểm | —
-11:16 | Subloss 20 điểm, phải bà nạc không? | —
-11:19 | Không phải bà nạc mà bánh xác không? | —
-11:20 | Lũng ruột vô này | —
-11:22 | Em nhắc lại một lần nữa | —
-11:24 | Lệnh limit là khi anh chị | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
+10:15 | Ngay cái điểm mà nó phá nè | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:19 | Bắt test nè đúng không | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:20 | Anh chị đặt một cái điểm limit ngay chỗ này | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:22 | Là anh chị xanh xương | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:24 | Em nhắc lại một lần nữa | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:28 | Không bao giờ đặt một lệnh limit | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:31 | Em không biết anh chị học | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:34 | Mấy lớp khác sao nhưng đối với lớp của em | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:36 | Em không đặt lệnh limit | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:37 | Những cái lệnh như này | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:40 | Anh chị căng bản ra | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:41 | Anh chị không có xác định được | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:43 | Khi nào nó sẽ tạo halo | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:45 | Tại vì mọi người không thể nào hiểu, mọi người biết được là khi nào nó sẽ tạo 2 lô và khi nào nó sẽ tạo lô và 2 | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+10:55 | Đúng không anh chị? | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+11:01 | Thì ngay cái chỗ limit này là anh chị vô lệnh là cây nến này anh chị xanh xương | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+11:06 | Anh chị cứ nghĩ, ờ, ngay chỗ này nó có polarity | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+11:09 | Anh chị đặt một cái lệnh limit ngay polarity là ngay cái support | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+11:12 | Quất một cái cây nến là nhiêu? | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+11:15 | Có nhiêu? 26 điểm | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+11:16 | Subloss 20 điểm, phải bà nạc không? | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+11:19 | Không phải bà nạc mà bánh xác không? | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+11:20 | Lũng ruột vô này | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+11:22 | Em nhắc lại một lần nữa | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+11:24 | Lệnh limit là khi anh chị | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
 11:28 | Đang tự nói bản thân chị | —
 11:29 | Ờ chắc chắn 100% | —
 11:32 | Nó sẽ | —
@@ -197,34 +197,34 @@ cues: 451/451 marked · rules: 3 · CODE: 87 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 11:50 | Anh chị nói em | —
 11:51 | Em bán căn nhà mò in với anh chị luôn | —
 11:53 | Đừng bao giờ đặt lệnh lý mịt | —
-12:34 | Là anh chị banh sát | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-12:36 | 100% anh chị đang sai | —
-12:38 | Em không nói 99% nữa | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-12:40 | Anh nói 100% là anh chị đang sai | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-12:42 | Thứ nhất sai là gì | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-12:48 | Thứ nhất anh chị sai là anh chị đang đặt một lệnh limit | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-12:53 | Lệnh limit có nghĩa là như thế nào | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-12:54 | Lệnh limit là anh chị đang ép market nó phải đi theo hướng của anh chị muốn | —
-13:00 | Nhưng anh chị chỉ là con kiến trên sông mạc thôi | —
-13:04 | Anh chị trả là cái gì hết | —
-13:08 | Thì anh chị không thể nào ép mắt kẹt nó đi theo hướng của anh chị muốn được | —
-13:14 | Trong khi anh chị đang đánh cái ạt phân | —
-13:15 | Còn người ta, người ta đang trade hàng tỷ đô mà kia | —
-13:17 | Thì anh chị không thể nào bắt | —
-13:21 | Anh chị không thể nào cầm một cái ạt phân 2.000 đô | —
-13:23 | Một cái ạt phân có 100 đô | —
-13:26 | Mà anh chị bắt mấy chục triệu đô, có tỷ đô | —
-13:29 | Phải đi theo hướng của anh chị | —
-13:30 | Điều đó là hoàn toàn không bao giờ xảy ra | —
-13:32 | Đúng không? | —
-13:36 | Tại vì sao? | —
-13:37 | Ngay chỗ này anh chị vô lệnh là anh chị nói là | —
-13:39 | Ừ, tôi chắc chắn chỗ này nó sẽ bao đó | —
-13:41 | cái thứ hai cái sai thứ hai của chị là gì anh chị không chờ một sự reaction mà anh chị vô lệnh ngay | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-13:56 | lập tức ở chỗ đó reaction là gì chị là điều thứ hai của slide số 16 đó mọi người cái điều tệ hại | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-14:09 | Cho một cái trade mà anh chị trade | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
+12:34 | Là anh chị banh sát | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+12:36 | 100% anh chị đang sai | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+12:38 | Em không nói 99% nữa | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+12:40 | Anh nói 100% là anh chị đang sai | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+12:42 | Thứ nhất sai là gì | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+12:48 | Thứ nhất anh chị sai là anh chị đang đặt một lệnh limit | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+12:53 | Lệnh limit có nghĩa là như thế nào | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+12:54 | Lệnh limit là anh chị đang ép market nó phải đi theo hướng của anh chị muốn | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:00 | Nhưng anh chị chỉ là con kiến trên sông mạc thôi | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:04 | Anh chị trả là cái gì hết | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:08 | Thì anh chị không thể nào ép mắt kẹt nó đi theo hướng của anh chị muốn được | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:14 | Trong khi anh chị đang đánh cái ạt phân | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:15 | Còn người ta, người ta đang trade hàng tỷ đô mà kia | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:17 | Thì anh chị không thể nào bắt | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:21 | Anh chị không thể nào cầm một cái ạt phân 2.000 đô | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:23 | Một cái ạt phân có 100 đô | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:26 | Mà anh chị bắt mấy chục triệu đô, có tỷ đô | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:29 | Phải đi theo hướng của anh chị | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:30 | Điều đó là hoàn toàn không bao giờ xảy ra | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:32 | Đúng không? | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:36 | Tại vì sao? | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:37 | Ngay chỗ này anh chị vô lệnh là anh chị nói là | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:39 | Ừ, tôi chắc chắn chỗ này nó sẽ bao đó | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:41 | cái thứ hai cái sai thứ hai của chị là gì anh chị không chờ một sự reaction mà anh chị vô lệnh ngay | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+13:56 | lập tức ở chỗ đó reaction là gì chị là điều thứ hai của slide số 16 đó mọi người cái điều tệ hại | —
+14:09 | Cho một cái trade mà anh chị trade | —
 14:11 | Là anh chị không chờ sự react của nến | —
-14:16 | Anh chị không có một cái gì gọi là reaction | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
+14:16 | Anh chị không có một cái gì gọi là reaction | —
 14:20 | Mà mọi người cứ thấy nến xanh | —
 14:27 | Mọi người cứ thấy rút râu | —
 14:29 | Mọi người bấm nút buy | —
@@ -266,7 +266,7 @@ cues: 451/451 marked · rules: 3 · CODE: 87 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 16:43 | cũng bấm nút bay nút xe bấm nút bay nút xe vậy không chị vậy thôi muốn thấy nó sang bánh vậy | —
 16:49 | thôi nên em bấm Nếu mà đòi rồi em thấy đến sau này bấm quay đi hình đoạn bóng xeo xong học chứ | —
 16:55 | ở đây là mình mình cần đi kiếm cái sức sống để làm gì đúng không mọi người đó đại đa số mọi người | —
-17:04 | em không để bây giờ phải nói mà phải nói thiệt là tại sao mọi người có mọi người khác em khác | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
+17:04 | em không để bây giờ phải nói mà phải nói thiệt là tại sao mọi người có mọi người khác em khác | —
 17:11 | một người một chỗ anh chị em khác một người một chỗ thôi là khi em trai em chờ sự reaction | —
 17:20 | sau khi em còn anh chị trai anh chị không chờ gì hết đó là lý do tại sao em thành công trong | —
 17:27 | cái việc trai và anh chị không mọi người phải nhìn nhận vấn đề hẳn đi cho em làm hơn em thấy | —
@@ -279,17 +279,17 @@ cues: 451/451 marked · rules: 3 · CODE: 87 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 18:08 | anh không phải là năm 2019 2020 cái thật cô vít mà cái thời mà gọi là vô mua vô mua mấy con biotech | —
 18:18 | mà vô mua xong sáng mai ăn mấy trăm phần trăm không phải thời đó Cái này là thời 2026 rồi mắc kẹt nó | —
 18:26 | quỷ dị lắm nếu như người không làm đúng chắc chắn người sẽ thua rồi ngay đây nó là các cái Polari mà | —
-18:38 | nó hô được nó phải giật xuống một cây xong nó mới bật ngược lên lại thì đây là lý do tại sao em nói | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-18:44 | mọi người là anh chị ơi chờ một lệnh chờ nó react đi nó react bằng việc nó khi mình ra cái lệnh buy | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-18:52 | stop cây nến nào vừa qua được đỉnh cây nến trước đó giá sẽ tiếp tục đi theo cái hướng đó thì cái | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-18:59 | đợi của mình là khi mà có cây nến vượt qua được đỉnh cây nến trước đó cái đó nó gọi là sự react | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-19:07 | Đơn giản là mọi người cái đó nó mới gọi là sự react | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-19:11 | Chứ không phải react là rút râu | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-19:13 | Mọi người sai | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-19:15 | Mọi người đang hiểu sai về cái vấn đề react | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
+18:38 | nó hô được nó phải giật xuống một cây xong nó mới bật ngược lên lại thì đây là lý do tại sao em nói | —
+18:44 | mọi người là anh chị ơi chờ một lệnh chờ nó react đi nó react bằng việc nó khi mình ra cái lệnh buy | —
+18:52 | stop cây nến nào vừa qua được đỉnh cây nến trước đó giá sẽ tiếp tục đi theo cái hướng đó thì cái | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+18:59 | đợi của mình là khi mà có cây nến vượt qua được đỉnh cây nến trước đó cái đó nó gọi là sự react | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+19:07 | Đơn giản là mọi người cái đó nó mới gọi là sự react | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+19:11 | Chứ không phải react là rút râu | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+19:13 | Mọi người sai | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+19:15 | Mọi người đang hiểu sai về cái vấn đề react | —
 19:17 | Cái vấn đề react | —
 19:19 | Nó không phải là rút râu | —
-19:20 | Rút râu là cái biểu tượng có chuyện gì | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
+19:20 | Rút râu là cái biểu tượng có chuyện gì | —
 19:23 | Mọi người trả lời cho em thử coi | —
 19:25 | Mọi người suy ngẩm coi | —
 19:27 | Cái việc rút râu là nó đang thể hiện việc gì | —
@@ -300,10 +300,10 @@ cues: 451/451 marked · rules: 3 · CODE: 87 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 19:39 | Chứ nó không thể nào | —
 19:44 | Nó gọi là cái sự react được | —
 19:45 | React nó phải cho mình thấy được rõ ràng | —
-19:48 | Là nếu như nó muốn đi lên | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
+19:48 | Là nếu như nó muốn đi lên | —
 19:51 | Nó phải phá | —
-19:53 | Qua đỉnh cây nến trước đó | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
-19:54 | Thì nó mới cho mình thấy được | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
+19:53 | Qua đỉnh cây nến trước đó | —
+19:54 | Thì nó mới cho mình thấy được | —
 19:56 | Nó phá đỉnh cây nến trước đó nè | —
 19:58 | Đúng theo cái luật mà tôi học | —
 19:59 | Là nó sẽ đi lên | —
@@ -339,7 +339,7 @@ cues: 451/451 marked · rules: 3 · CODE: 87 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 20:44 | là | —
 20:45 | sao anh chị | —
 20:49 | đừng bao giờ | —
-20:52 | vô lệnh limit | CODE kernel/mentor/phl.go:24 [stop entry — wait for the reaction, never a limit]
+20:52 | vô lệnh limit | —
 20:53 | thay đổi cách trade | —
 20:56 | mọi người sẽ thấy | —
 20:57 | cuộc đời mọi người nhẹ nhởm hơn | —

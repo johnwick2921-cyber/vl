@@ -1,22 +1,22 @@
-cues: 277/277 marked · rules: 10 · CODE: 83 · MISMATCH: 0 · NOT-IN-BOT: 7 · COURSE-SPLIT: 1 · SILENT: 0 · OWNER-ORDER: 0 · —: 186
+cues: 277/277 · rule cues: 93 · rows: 10 · CODE: 84 · MISMATCH: 0 · NOT-IN-BOT: 8 · OWNER-ORDER: 0 · SPLIT: 1 · —: 184
 
 00:00 | Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
-00:30 | Cái win rate nó không bao giờ | NOT-IN-BOT → 1
-00:32 | Nó không bao giờ quan trọng bằng risk and reward | NOT-IN-BOT → 1
-00:34 | Dù anh chị có win rate 60% | NOT-IN-BOT → 1
-00:37 | Như dù cái setup bên chị win rate có 60% | NOT-IN-BOT → 1
-00:40 | Nhưng nếu risk and reward của anh chị là 1,2,1,3 | NOT-IN-BOT → 1
-00:42 | Thì thật sự ra là lúc nào | NOT-IN-BOT → 1
-00:46 | At the end of the day anh chị cũng sẽ win | NOT-IN-BOT → 1
-00:47 | Nên | —
+00:30 | Cái win rate nó không bao giờ | NOT-IN-BOT (row 1)
+00:32 | Nó không bao giờ quan trọng bằng risk and reward | NOT-IN-BOT (row 1)
+00:34 | Dù anh chị có win rate 60% | NOT-IN-BOT (row 1)
+00:37 | Như dù cái setup bên chị win rate có 60% | NOT-IN-BOT (row 1)
+00:40 | Nhưng nếu risk and reward của anh chị là 1,2,1,3 | NOT-IN-BOT (row 1)
+00:42 | Thì thật sự ra là lúc nào | NOT-IN-BOT (row 1)
+00:46 | At the end of the day anh chị cũng sẽ win | NOT-IN-BOT (row 1)
+00:47 | Nên | NOT-IN-BOT (row 1)
 00:49 | Giúp làm mơ giúp em | —
 00:52 | Lúc nào mọi người cũng hơi nhớ nè | —
 00:53 | Khi anh chị tự trade | —
 00:55 | Hoặc là khi anh chị | —
 00:56 | Trade theo em cũng vậy | —
-00:59 | Lúc nào risk and reward của anh chị | CODE phl.go:132 [targetCloserThanStopReason]
-01:03 | Cũng phải at least nằm dưới mức 1-1 cho em | CODE phl.go:132 [targetCloserThanStopReason]
-01:05 | Đừng bao giờ nằm dưới | CODE phl.go:132 [targetCloserThanStopReason]
+00:59 | Lúc nào risk and reward của anh chị | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:03 | Cũng phải at least nằm dưới mức 1-1 cho em | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:05 | Đừng bao giờ nằm dưới | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
 01:06 | Khi anh chị | —
 01:08 | Em hay nói với những người khóa cũ | —
 01:10 | Những người khóa mới cũng vậy | —
@@ -31,10 +31,10 @@ cues: 277/277 marked · rules: 10 · CODE: 83 · MISMATCH: 0 · NOT-IN-BOT: 7 ·
 01:26 | Bây giờ 1 cái lệnh | —
 01:27 | Một cái lệnh mà anh chị nhìn | —
 01:30 | Anh chị thấy | —
-01:31 | Là cái risk reward | CODE phl.go:132 [targetCloserThanStopReason]
-01:32 | Nó sẽ dưới 1-1 | CODE phl.go:132 [targetCloserThanStopReason]
-01:33 | Làm ơn giúp em | CODE phl.go:132 [targetCloserThanStopReason]
-01:34 | Đừng vô những cái lệnh đó | CODE phl.go:132 [targetCloserThanStopReason]
+01:31 | Là cái risk reward | —
+01:32 | Nó sẽ dưới 1-1 | —
+01:33 | Làm ơn giúp em | —
+01:34 | Đừng vô những cái lệnh đó | —
 01:35 | Mình trade | —
 01:36 | Mình có chọn lọc | —
 01:37 | Mình có quyền | —
@@ -58,27 +58,27 @@ cues: 277/277 marked · rules: 10 · CODE: 83 · MISMATCH: 0 · NOT-IN-BOT: 7 ·
 02:12 | và mình trôi mình cảm thấy thoải mái hơn rất nhiều | —
 02:14 | nhớ cho em những chuyện đó | —
 02:16 | rồi | —
-02:17 | risk reward lúc nào là phải mất 1-1 | CODE phl.go:132 [targetCloserThanStopReason]
-02:21 | không bao giờ dưới 1-1 | CODE phl.go:132 [targetCloserThanStopReason]
-02:22 | có nghĩa là sao | CODE phl.go:132 [targetCloserThanStopReason]
-02:25 | Có nghĩa là bây giờ anh chị đã vô một lệnh | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:27 | Stop loss anh chị là 20 | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:29 | Thì làm ơn giúp em | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:31 | Tối thiểu nhất nha | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:34 | Anh nói tối thiểu nhất | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:36 | Nếu stop loss anh chị | —
-02:37 | Cái lúc thời điểm đó | —
-02:38 | Không biết làm sao mà vô dính cái stop loss 20 | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:40 | Tối thiểu nhất | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:43 | Thì cũng phải bán gần target | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:45 | Là nhiêu? 15, 20 | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:47 | Làm ơn đừng vô stop loss | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:50 | Đừng để stop loss 20 | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:51 | Mới 10 bán | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:52 | Không có đáng | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:53 | Những cái lệnh nó không có đáng | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:54 | Mình đã vô một lệnh thì cố gắng mình ngồi | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
-02:56 | Mình chờ cho nó chạy đi | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner]
+02:17 | risk reward lúc nào là phải mất 1-1 | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+02:21 | không bao giờ dưới 1-1 | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+02:22 | có nghĩa là sao | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+02:25 | Có nghĩa là bây giờ anh chị đã vô một lệnh | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:27 | Stop loss anh chị là 20 | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:29 | Thì làm ơn giúp em | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:31 | Tối thiểu nhất nha | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:34 | Anh nói tối thiểu nhất | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:36 | Nếu stop loss anh chị | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:37 | Cái lúc thời điểm đó | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:38 | Không biết làm sao mà vô dính cái stop loss 20 | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:40 | Tối thiểu nhất | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:43 | Thì cũng phải bán gần target | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:45 | Là nhiêu? 15, 20 | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:47 | Làm ơn đừng vô stop loss | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:50 | Đừng để stop loss 20 | —
+02:51 | Mới 10 bán | —
+02:52 | Không có đáng | —
+02:53 | Những cái lệnh nó không có đáng | —
+02:54 | Mình đã vô một lệnh thì cố gắng mình ngồi | —
+02:56 | Mình chờ cho nó chạy đi | —
 02:58 | Còn | —
 02:59 | Cái cách manage cái lệnh như thế nào | —
 03:03 | Cái cách manage lệnh như thế nào | —
@@ -117,32 +117,32 @@ cues: 277/277 marked · rules: 10 · CODE: 83 · MISMATCH: 0 · NOT-IN-BOT: 7 ·
 04:13 | Anh chị có thể nhìn ra ngay lập tức | —
 04:18 | Đối với Insaba là gì | —
 04:20 | Nói lại | —
-04:23 | Nếu như có một cây nến | CODE kernel/mentor/isb.go:18 [IsISB]
-04:25 | Đóng ở bên trong cây nến trước đó | CODE kernel/mentor/isb.go:18 [IsISB]
-04:30 | Cái thân của nó nằm ở bên trong cây nến trước đó | CODE kernel/mentor/isb.go:18 [IsISB]
-04:33 | Thì cây nến | CODE kernel/mentor/isb.go:18 [IsISB]
-04:34 | Cây nến đó được gọi là cây nến Insaba | CODE kernel/mentor/isb.go:18 [IsISB]
-04:36 | Cây nến Insaba em không tính râu | CODE kernel/mentor/isb.go:18 [IsISB]
-04:38 | Em chỉ tính phần thân on lì | CODE kernel/mentor/isb.go:18 [IsISB]
-04:39 | Nhưng khi đặt lệnh | CODE kernel/mentor/isb.go:18 [IsISB]
-04:41 | Nhưng khi đặt lệnh | CODE kernel/mentor/isb.go:67 [ISBOrders]
-04:43 | Em sẽ đặt | CODE kernel/mentor/isb.go:67 [ISBOrders]
-04:44 | Ở cái đỉnh và đáy của cây nến Insaba | CODE kernel/mentor/isb.go:67 [ISBOrders]
-04:47 | Là mình tính luôn các râu | CODE kernel/mentor/isb.go:67 [ISBOrders]
-04:48 | Rồi | CODE kernel/mentor/isb.go:67 [ISBOrders]
+04:23 | Nếu như có một cây nến | CODE kernel/mentor/isb.go:25 [IsISB body comparison] (row 4)
+04:25 | Đóng ở bên trong cây nến trước đó | CODE kernel/mentor/isb.go:25 [IsISB body comparison] (row 4)
+04:30 | Cái thân của nó nằm ở bên trong cây nến trước đó | CODE kernel/mentor/isb.go:25 [IsISB body comparison] (row 4)
+04:33 | Thì cây nến | CODE kernel/mentor/isb.go:25 [IsISB body comparison] (row 4)
+04:34 | Cây nến đó được gọi là cây nến Insaba | CODE kernel/mentor/isb.go:25 [IsISB body comparison] (row 4)
+04:36 | Cây nến Insaba em không tính râu | CODE kernel/mentor/isb.go:25 [IsISB body comparison] (row 4)
+04:38 | Em chỉ tính phần thân on lì | CODE kernel/mentor/isb.go:25 [IsISB body comparison] (row 4)
+04:39 | Nhưng khi đặt lệnh | CODE kernel/mentor/isb.go:25 [IsISB body comparison] (row 4)
+04:41 | Nhưng khi đặt lệnh | CODE kernel/mentor/isb.go:72 [ISBOrders price=High+buffer] (row 5)
+04:43 | Em sẽ đặt | CODE kernel/mentor/isb.go:72 [ISBOrders price=High+buffer] (row 5)
+04:44 | Ở cái đỉnh và đáy của cây nến Insaba | CODE kernel/mentor/isb.go:72 [ISBOrders price=High+buffer] (row 5)
+04:47 | Là mình tính luôn các râu | CODE kernel/mentor/isb.go:72 [ISBOrders price=High+buffer] (row 5)
+04:48 | Rồi | CODE kernel/mentor/isb.go:72 [ISBOrders price=High+buffer] (row 5)
 04:50 | Để biết được là cây nến Insaba | —
 04:56 | Mình sẽ đánh theo lệnh gì | —
 04:57 | Mình sẽ nhìn theo cái | —
-04:59 | Cây nến trend đầu tiên | CODE kernel/mentor/isb.go:31 [ISBDirection]
-05:01 | Cây nến đó màu đỏ | CODE kernel/mentor/isb.go:31 [ISBDirection]
-05:03 | Thì tôi đánh lệnh short | CODE kernel/mentor/isb.go:31 [ISBDirection]
-05:05 | Cây nến đó màu xanh | CODE kernel/mentor/isb.go:31 [ISBDirection]
-05:06 | Thì tôi đánh lệnh long | CODE kernel/mentor/isb.go:31 [ISBDirection]
-05:07 | Còn cây nến đó không có màu khác đâu | CODE kernel/mentor/isb.go:31 [ISBDirection]
-05:10 | Có 2 màu thôi | CODE kernel/mentor/isb.go:31 [ISBDirection]
-05:11 | Chỉ có 2 màu thôi | CODE kernel/mentor/isb.go:31 [ISBDirection]
-05:14 | Không có màu thứ 3 | CODE kernel/mentor/isb.go:31 [ISBDirection]
-05:16 | Rồi tiếp tục | CODE kernel/mentor/isb.go:31 [ISBDirection]
+04:59 | Cây nến trend đầu tiên | —
+05:01 | Cây nến đó màu đỏ | CODE kernel/mentor/isb.go:32 [ISBDirection prev.Close>prev.Open] (row 6)
+05:03 | Thì tôi đánh lệnh short | CODE kernel/mentor/isb.go:32 [ISBDirection prev.Close>prev.Open] (row 6)
+05:05 | Cây nến đó màu xanh | CODE kernel/mentor/isb.go:32 [ISBDirection prev.Close>prev.Open] (row 6)
+05:06 | Thì tôi đánh lệnh long | CODE kernel/mentor/isb.go:32 [ISBDirection prev.Close>prev.Open] (row 6)
+05:07 | Còn cây nến đó không có màu khác đâu | CODE kernel/mentor/isb.go:32 [ISBDirection prev.Close>prev.Open] (row 6)
+05:10 | Có 2 màu thôi | —
+05:11 | Chỉ có 2 màu thôi | —
+05:14 | Không có màu thứ 3 | —
+05:16 | Rồi tiếp tục | —
 05:20 | Để đặt 1 lệnh in sơ ba | —
 05:24 | Nếu | —
 05:26 | Nếu | —
@@ -158,16 +158,16 @@ cues: 277/277 marked · rules: 10 · CODE: 83 · MISMATCH: 0 · NOT-IN-BOT: 7 ·
 06:02 | chịu heo ra | —
 06:04 | lúc nào mình cũng phải nói nhớ chữ chữ heo | —
 06:06 | lúc nào cũng phải nhớ chị chị hao | —
-06:09 | chị hao ra giúp em | CODE kernel/mentor/mentor.go:539 [ISBBufferPts]
-06:11 | tầm 1 đến 2 điểm | CODE kernel/mentor/mentor.go:539 [ISBBufferPts]
-06:12 | 1 điểm rưỡi đi | CODE kernel/mentor/mentor.go:539 [ISBBufferPts]
-06:14 | đừng 1 điểm | CODE kernel/mentor/mentor.go:539 [ISBBufferPts]
-06:14 | 1 điểm rưỡi | CODE kernel/mentor/mentor.go:539 [ISBBufferPts]
-06:16 | ha | CODE kernel/mentor/mentor.go:539 [ISBBufferPts]
-06:17 | rồi | CODE kernel/mentor/mentor.go:539 [ISBBufferPts]
-06:17 | subplot | CODE kernel/mentor/isb.go:74 [ISB stop]
-06:20 | mình sẽ đặt | CODE kernel/mentor/isb.go:74 [ISB stop]
-06:20 | đỉnh cái đó đến 3 | CODE kernel/mentor/isb.go:74 [ISB stop]
+06:09 | chị hao ra giúp em | CODE kernel/mentor/mentor.go:539 [ISBBufferPts: 1.5] (row 7)
+06:11 | tầm 1 đến 2 điểm | CODE kernel/mentor/mentor.go:539 [ISBBufferPts: 1.5] (row 7)
+06:12 | 1 điểm rưỡi đi | CODE kernel/mentor/mentor.go:539 [ISBBufferPts: 1.5] (row 7)
+06:14 | đừng 1 điểm | CODE kernel/mentor/mentor.go:539 [ISBBufferPts: 1.5] (row 7)
+06:14 | 1 điểm rưỡi | CODE kernel/mentor/mentor.go:539 [ISBBufferPts: 1.5] (row 7)
+06:16 | ha | CODE kernel/mentor/mentor.go:539 [ISBBufferPts: 1.5] (row 7)
+06:17 | rồi | CODE kernel/mentor/mentor.go:539 [ISBBufferPts: 1.5] (row 7)
+06:17 | subplot | CODE kernel/mentor/isb.go:74 [ISB stop = Low − buffer] (row 8)
+06:20 | mình sẽ đặt | CODE kernel/mentor/isb.go:74 [ISB stop = Low − buffer] (row 8)
+06:20 | đỉnh cái đó đến 3 | CODE kernel/mentor/isb.go:74 [ISB stop = Low − buffer] (row 8)
 06:22 | nếu như là lệnh long | —
 06:22 | à nếu như là lệnh short | —
 06:23 | target mình đâu anh chị | —
@@ -185,49 +185,49 @@ cues: 277/277 marked · rules: 10 · CODE: 83 · MISMATCH: 0 · NOT-IN-BOT: 7 ·
 07:06 | anh học khóa này là mấy khóa rồi ta | —
 07:08 | 4 khóa | —
 07:09 | ta gặp Instaba lúc nào cũng là cây nến trend | —
-07:13 | kế tiếp | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-07:14 | alo quý vị | —
-07:16 | cái gì vậy | —
-07:17 | mấy anh chị này khóa cũ | —
-07:20 | không phải khóa mới đâu ta | —
-07:21 | đánh đòn quá | —
-07:23 | cái target tiếp theo của cây nến Instaba | —
-07:26 | lúc nào cũng là cây nến trend | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-07:29 | khi nào phiêu lệnh kế tiếp | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-07:30 | đúng không | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-07:33 | 1 setup mình có bao nhiêu phần anh chị | —
+07:13 | kế tiếp | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:14 | alo quý vị | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:16 | cái gì vậy | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:17 | mấy anh chị này khóa cũ | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:20 | không phải khóa mới đâu ta | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:21 | đánh đòn quá | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:23 | cái target tiếp theo của cây nến Instaba | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:26 | lúc nào cũng là cây nến trend | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:29 | khi nào phiêu lệnh kế tiếp | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:30 | đúng không | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:33 | 1 setup mình có bao nhiêu phần anh chị | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
 07:36 | hoài luôn á | —
 07:38 | này anh chị khóa cũ mà trả lời | —
 07:39 | 1 setup mình có tổng cộng là 3 phần | —
-07:43 | cái nến insta bar là cái nến | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-07:45 | phần thứ 2 là phần ranging | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-07:47 | thì bây giờ mình target | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-07:52 | mình target cái gì | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-07:53 | bây giờ 1 setup có 3 phần | —
-07:56 | bây giờ nó đã có 2 phần rồi | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-07:58 | thì bây giờ mình target cái gì anh chị | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-08:00 | trả lời cho em coi | —
-08:03 | bây giờ mình target cái gì | —
-08:04 | có phải là mình bây giờ 1 setup có 3 phần | —
-08:21 | bây giờ phải target của mình là phần thứ 3 không | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-08:23 | bây giờ 1 setup có 3 phần nè | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-08:26 | 1 phần thứ nhất nè | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-08:27 | cái nến thứ nhất nè | —
-08:28 | cái nến thứ 2 nè | —
-08:29 | cái nến thứ 3 nè | —
-08:30 | bây giờ cái nến thứ 3 nó chưa có | —
-08:32 | thì bây giờ có phải là mình target cái nến thứ 3 không | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-08:34 | cái đầu tiên lúc nào của mình | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-08:37 | mình cũng target cái nến thứ 3 đầu tiên | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-08:39 | rồi bán bớt bán hết gì đó | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-08:44 | xíu mình học | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-08:44 | nhưng | —
-08:46 | cái phần | —
-08:47 | theo 1 setup | —
-08:50 | mình chỉ có tổng cộng 3 phần | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-08:52 | không có phần thứ 4 | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-08:53 | mình chỉ ta kể phần thứ 3 thôi | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
-08:55 | anh Winnie ok không anh | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom]
+07:43 | cái nến insta bar là cái nến | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:45 | phần thứ 2 là phần ranging | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:47 | thì bây giờ mình target | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:52 | mình target cái gì | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:53 | bây giờ 1 setup có 3 phần | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:56 | bây giờ nó đã có 2 phần rồi | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+07:58 | thì bây giờ mình target cái gì anh chị | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:00 | trả lời cho em coi | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:03 | bây giờ mình target cái gì | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:04 | có phải là mình bây giờ 1 setup có 3 phần | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:21 | bây giờ phải target của mình là phần thứ 3 không | —
+08:23 | bây giờ 1 setup có 3 phần nè | —
+08:26 | 1 phần thứ nhất nè | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:27 | cái nến thứ nhất nè | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:28 | cái nến thứ 2 nè | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:29 | cái nến thứ 3 nè | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:30 | bây giờ cái nến thứ 3 nó chưa có | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:32 | thì bây giờ có phải là mình target cái nến thứ 3 không | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:34 | cái đầu tiên lúc nào của mình | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:37 | mình cũng target cái nến thứ 3 đầu tiên | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:39 | rồi bán bớt bán hết gì đó | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:44 | xíu mình học | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:44 | nhưng | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:46 | cái phần | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:47 | theo 1 setup | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:50 | mình chỉ có tổng cộng 3 phần | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:52 | không có phần thứ 4 | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:53 | mình chỉ ta kể phần thứ 3 thôi | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
+08:55 | anh Winnie ok không anh | CODE kernel/mentor/eval.go:1122 [nextLevelBeyondRoom] (row 9)
 08:58 | ngày hôm nay | —
 09:01 | bắt đầu từ | —
 09:02 | khi mình học setup này mọi người | —
@@ -240,8 +240,8 @@ cues: 277/277 marked · rules: 10 · CODE: 83 · MISMATCH: 0 · NOT-IN-BOT: 7 ·
 09:16 | bây giờ khi anh chị entry 1 lần | —
 09:18 | làm gì làm | —
 09:20 | cái điều 1 1 | —
-09:22 | cái là cái điều bắt buộc phải làm | CODE phl.go:132 [targetCloserThanStopReason]
-09:23 | Còn hôm nay mình học về setup | CODE phl.go:132 [targetCloserThanStopReason]
+09:22 | cái là cái điều bắt buộc phải làm | —
+09:23 | Còn hôm nay mình học về setup | —
 09:28 | Thì mình sẽ chỉ nói về setup | —
 09:31 | Thì ok không | —
 09:35 | Nhưng căn bản ra | —
@@ -274,6 +274,6 @@ cues: 277/277 marked · rules: 10 · CODE: 83 · MISMATCH: 0 · NOT-IN-BOT: 7 ·
 10:49 | nó cái inside là cái áp dụng cho ba phần đó là một trên rang và trên đúng không chị trên ra ngoài trên | —
 11:00 | Ừ thì cái kia mình ngay một ít sơ ba cái cái điểm entry của mình ở lộn cái cái cái cái tài | —
 11:08 | nghiệp tiếp theo của mình sẽ là cây nến trend kế tiếp khi nó đóng Còn nếu như còn nếu mà những nó | —
-11:16 | đóng lỗ hay là nó đóng còn ít điểm quá chưa đủ đủ điểm với mình ao xíu mình sẽ được học anh chị | COURSE-SPLIT → 10
+11:16 | đóng lỗ hay là nó đóng còn ít điểm quá chưa đủ đủ điểm với mình ao xíu mình sẽ được học anh chị | COURSE-SPLIT (row 10)
 11:23 | Ok không Anh chị ổn khúc này không về sẽ đắp điện sở 3 em con chị nào vậy Lan mang không trả lời | —
 11:36 | em đi tiếp rồi Ok em đi tiếp hả Thầy thời gian rồi máy đứng hình nữa rồi à | —

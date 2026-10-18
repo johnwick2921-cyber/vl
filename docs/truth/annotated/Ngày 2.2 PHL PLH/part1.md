@@ -1,4 +1,4 @@
-cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 · COURSE-SPLIT: 0 · SILENT: 0 · OWNER-ORDER: 0 · —: 368
+cues: 472/472 · rule cues: 90 · rows: 5 · CODE: 90 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 0 · SPLIT: 0 · —: 382
 
 00:00 | Ok, em tiếp tục bài ngày hôm nay là mình sẽ tiếp tục mình sẽ được học về buy setup và sell setup ha. Mình sẽ học về buy setup và sell setup. Rồi, cái này thì em sẽ thực hành chinh chạc cho nó dễ ha, tại vì mình vừa nói mình sẽ thực hành chinh chạc thì nó sẽ rất là nó sẽ dễ hơn. Rồi, đầu đầu đầu đầu đầu đầu, để coi. Rồi, ok, ngay chỗ này đi. Ok, ngay chỗ này đi. | —
 00:37 | anh chị nhìn giúp em từ trái qua phải nó đang đi lên hay đi xuống | —
@@ -26,18 +26,18 @@ cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 02:23 | Quá phức tạp | —
 02:27 | Để mình nhận biết được nó | —
 02:28 | Mà mình chỉ nhìn bằng mắt thường thôi | —
-02:29 | Trong một số hướng tăng | CODE kernel/mentor/phl.go:24 [PHLPLH]
+02:29 | Trong một số hướng tăng | —
 02:31 | Khi nó bắt đầu quay về bug test | —
 02:34 | Mình đặt một lệnh buy stop sẵn | —
 02:39 | Mình vẫn nhìn từ cái khúc này qua | —
-02:44 | Mình ra một lệnh buy stop trên đỉnh của từng cây nến đã đóng xong | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:06 | Mình ra một lệnh buy stop trên đỉnh của từng cây nến đã đóng xong | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:20 | Thì cây nến này đóng xong | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:22 | Nên mình ra tiếp | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:23 | Cây nến này đóng xong | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:24 | Mình tiếp tục mình ra | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:25 | Mình ra | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:25 | Tiếp tục là gì | CODE kernel/mentor/phl.go:24 [PHLPLH]
+02:44 | Mình ra một lệnh buy stop trên đỉnh của từng cây nến đã đóng xong | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:06 | Mình ra một lệnh buy stop trên đỉnh của từng cây nến đã đóng xong | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:20 | Thì cây nến này đóng xong | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:22 | Nên mình ra tiếp | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:23 | Cây nến này đóng xong | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:24 | Mình tiếp tục mình ra | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:25 | Mình ra | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:25 | Tiếp tục là gì | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
 03:28 | Cây nến nào | —
 03:31 | Đây là điều thứ 2 | —
 03:32 | Của slide số 16 | —
@@ -45,18 +45,18 @@ cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 03:34 | Cho mọi người nghe | —
 03:34 | Ngay tại lúc này nè | —
 03:36 | Cây nến nào | —
-03:38 | Vượt qua được | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:39 | Đỉnh của cây nến | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:41 | Trước đó | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:41 | Thì | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:44 | Nó sẽ phiêu lệnh | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:46 | By stop của mình | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:47 | Và nó đi | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:49 | Theo hướng | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:50 | Mà nó phá | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:51 | Là ngay tại hệ điểm | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:52 | Lúc này | CODE kernel/mentor/phl.go:24 [PHLPLH]
-03:53 | Nó sẽ đi đâu chị | CODE kernel/mentor/phl.go:24 [PHLPLH]
+03:38 | Vượt qua được | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:39 | Đỉnh của cây nến | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:41 | Trước đó | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:41 | Thì | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:44 | Nó sẽ phiêu lệnh | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:46 | By stop của mình | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:47 | Và nó đi | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:49 | Theo hướng | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:50 | Mà nó phá | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:51 | Là ngay tại hệ điểm | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:52 | Lúc này | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+03:53 | Nó sẽ đi đâu chị | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
 03:54 | Nó phá | —
 03:59 | Thì nó bắt buộc là nó sẽ | —
 04:00 | Đi lên | —
@@ -64,23 +64,23 @@ cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 04:06 | Nhưng lúc nào market nó cũng sẽ chạy theo | —
 04:09 | Một cái quỷ đạo như vậy | —
 04:10 | Cây nến nào vừa qua được | —
-04:13 | Đỉnh cây nến trước đó | CODE kernel/mentor/phl.go:24 [PHLPLH]
-04:14 | Giá tiếp tục đi theo hướng đó | CODE kernel/mentor/phl.go:24 [PHLPLH]
-04:16 | Là nó sẽ fill lệnh mình và nó đi lên | CODE kernel/mentor/phl.go:24 [PHLPLH]
-04:18 | Tiếp tục | CODE kernel/mentor/phl.go:24 [PHLPLH]
-04:19 | Stop loss mình sẽ đặt ở đâu anh chị | CODE kernel/mentor/phl.go:64 [stop = broken candle]
+04:13 | Đỉnh cây nến trước đó | —
+04:14 | Giá tiếp tục đi theo hướng đó | —
+04:16 | Là nó sẽ fill lệnh mình và nó đi lên | —
+04:18 | Tiếp tục | —
+04:19 | Stop loss mình sẽ đặt ở đâu anh chị | —
 04:22 | Trả lời đúng bài cho em coi nè | —
 04:23 | Trả lời đúng cho em coi nè | —
-04:25 | Bây giờ mình entry rồi | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-04:29 | Mình vô lệnh đây nè | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-04:29 | Thì nó vượt qua cái nó fill mình rồi nè | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-04:31 | Bây giờ subplot mình đặt ở đâu | CODE kernel/mentor/phl.go:64 [stop = broken candle]
+04:25 | Bây giờ mình entry rồi | —
+04:29 | Mình vô lệnh đây nè | —
+04:29 | Thì nó vượt qua cái nó fill mình rồi nè | —
+04:31 | Bây giờ subplot mình đặt ở đâu | —
 04:34 | Đúng bài học | —
-04:35 | Subplot mình sẽ | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-04:58 | Đặt ở | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-04:59 | Đấy cây nến bị vượt qua | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-05:01 | Vậy cây nến bị vượt qua | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-05:05 | Đây là cây nến nào | CODE kernel/mentor/phl.go:64 [stop = broken candle]
+04:35 | Subplot mình sẽ | —
+04:58 | Đặt ở | CODE kernel/mentor/phl.go:64 [stop = RefBar.Low] (row 13)
+04:59 | Đấy cây nến bị vượt qua | CODE kernel/mentor/phl.go:64 [stop = RefBar.Low] (row 13)
+05:01 | Vậy cây nến bị vượt qua | CODE kernel/mentor/phl.go:64 [stop = RefBar.Low] (row 13)
+05:05 | Đây là cây nến nào | CODE kernel/mentor/phl.go:64 [stop = RefBar.Low] (row 13)
 05:06 | Cây nến bị vượt qua đây là cây nến màu nào | —
 05:16 | Cây nến màu đỏ hay này | —
 05:18 | Hay là cây nến màu xanh này | —
@@ -92,14 +92,14 @@ cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 05:29 | nhỏ này nè | —
 05:31 | ok | —
 05:31 | rồi | —
-05:32 | stop block mình đặt ở | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-05:34 | đấy cái nấm bị vượt qua | CODE kernel/mentor/phl.go:64 [stop = broken candle]
+05:32 | stop block mình đặt ở | —
+05:34 | đấy cái nấm bị vượt qua | —
 05:35 | ok chưa | —
 05:38 | ok chưa | —
 05:41 | rồi | —
 05:42 | target của mình | —
-05:45 | ngay đây có nhiều anh chị chưa biết | CODE kernel/mentor/phl.go:139 [phlTarget shy]
-05:46 | target | CODE kernel/mentor/phl.go:139 [phlTarget shy]
+05:45 | ngay đây có nhiều anh chị chưa biết | —
+05:46 | target | —
 05:47 | lý do | —
 05:48 | lý do tại sao nè | —
 05:49 | xíu em sẽ giải thích sau ha | —
@@ -108,10 +108,10 @@ cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 05:54 | rồi xíu mình sẽ | —
 05:54 | mình sẽ được hiểu | —
 05:56 | lý do tại sao nó lại như vậy ha | —
-05:57 | target của mình | CODE kernel/mentor/phl.go:139 [phlTarget shy]
-06:00 | mình sẽ ở gần đỉnh cũ bên tay trái trước đó gần đỉnh cũ trước đó nha gần đỉnh cũ trước đó | CODE kernel/mentor/phl.go:139 [phlTarget shy]
-06:11 | target của mình sẽ là ở gần đỉnh cũ anh chịu không gần đỉnh cũ chứ không phải là ngay đỉnh cũ nha gần | CODE kernel/mentor/phl.go:139 [phlTarget shy]
-06:22 | đỉnh cũ rồi thì bây giờ mình đã mình đã cho bản thân mình được 3 cái target 3 cái điều mà mình cần | CODE kernel/mentor/phl.go:139 [phlTarget shy]
+05:57 | target của mình | —
+06:00 | mình sẽ ở gần đỉnh cũ bên tay trái trước đó gần đỉnh cũ trước đó nha gần đỉnh cũ trước đó | —
+06:11 | target của mình sẽ là ở gần đỉnh cũ anh chịu không gần đỉnh cũ chứ không phải là ngay đỉnh cũ nha gần | CODE kernel/mentor/phl.go:140 [target = oldExtreme.Price − shy] (row 14)
+06:22 | đỉnh cũ rồi thì bây giờ mình đã mình đã cho bản thân mình được 3 cái target 3 cái điều mà mình cần | CODE kernel/mentor/phl.go:140 [target = oldExtreme.Price − shy] (row 14)
 06:33 | cho 1 cái trade | —
 06:34 | điểm entry | —
 06:35 | subplot | —
@@ -139,18 +139,18 @@ cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 07:09 | Tại sao điểm entry mình đã có | —
 07:11 | Mình áp dụng điều thứ 2 là số 16 | —
 07:13 | Đúng không | —
-07:15 | Khi nến vừa qua được đỉnh | CODE kernel/mentor/phl.go:24 [PHLPLH]
-07:18 | Cái nến trước đó giá tiếp tục đi theo hướng đó | CODE kernel/mentor/phl.go:24 [PHLPLH]
-07:20 | Mình đã provide cho mình được cái điểm entry | CODE kernel/mentor/phl.go:24 [PHLPLH]
+07:15 | Khi nến vừa qua được đỉnh | —
+07:18 | Cái nến trước đó giá tiếp tục đi theo hướng đó | —
+07:20 | Mình đã provide cho mình được cái điểm entry | —
 07:22 | Tiếp theo là điểm subplot | —
-07:24 | Subplot mình sẽ đặt | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-07:25 | Khi mà mình đã entry rồi | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-07:28 | Mình sẽ đặt subplot ở đấy | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-07:30 | Cái nến bị vượt qua | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-07:31 | Đúng không | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-07:33 | Target của mình là ở gần đỉnh cũ | CODE kernel/mentor/phl.go:64 [stop = broken candle]
-07:36 | Trước đó | CODE kernel/mentor/phl.go:139 [phlTarget shy]
-07:37 | anh chị ok không | CODE kernel/mentor/phl.go:139 [phlTarget shy]
+07:24 | Subplot mình sẽ đặt | CODE kernel/mentor/phl.go:64 [stop = RefBar.Low] (row 13)
+07:25 | Khi mà mình đã entry rồi | CODE kernel/mentor/phl.go:64 [stop = RefBar.Low] (row 13)
+07:28 | Mình sẽ đặt subplot ở đấy | CODE kernel/mentor/phl.go:64 [stop = RefBar.Low] (row 13)
+07:30 | Cái nến bị vượt qua | CODE kernel/mentor/phl.go:64 [stop = RefBar.Low] (row 13)
+07:31 | Đúng không | CODE kernel/mentor/phl.go:64 [stop = RefBar.Low] (row 13)
+07:33 | Target của mình là ở gần đỉnh cũ | CODE kernel/mentor/phl.go:64 [stop = RefBar.Low] (row 13)
+07:36 | Trước đó | CODE kernel/mentor/phl.go:140 [target = oldExtreme.Price − shy] (row 14)
+07:37 | anh chị ok không | CODE kernel/mentor/phl.go:140 [target = oldExtreme.Price − shy] (row 14)
 07:40 | thì cái tự nhiên | —
 07:43 | mình không cần phải làm | —
 07:44 | mình không cần phải | —
@@ -201,35 +201,35 @@ cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 11:01 | Nó xả nến đỏ | —
 11:02 | Đi theo hướng ngược lại | —
 11:04 | Gọi là bắt test | —
-11:05 | Tôi rà một lệnh sell stop | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:09 | Tôi rà một lệnh sell stop | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:13 | Đã sẵn | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:13 | Cái này gọi là rà đít | —
-11:17 | Tôi rà một lệnh sell stop đã sẵn | —
-11:19 | Cây nến nào vượt qua được | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:22 | Cây nến nào vượt qua được | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:27 | Anh chị cứ thấy nó bật nến xanh | —
-11:29 | Chị ngồi rà | —
-11:30 | Cây nến nào vượt qua được | —
-11:34 | Đấy cây nến trước đó | —
-11:36 | Market nó sẽ fill lệnh của mình | —
-11:38 | Và | —
-11:40 | Nó sẽ đi theo cái hướng mà nó phá | —
-11:44 | Trong một số hướng giảm | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:46 | Khi nó bắt đầu quay về backtest | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:47 | Tôi ra một lệnh sell stop | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:50 | Cây nến nào vừa qua được đáy cây nến trước đó | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:52 | Thì nó sẽ fill lệnh mình | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:53 | Và nó sẽ đi theo hướng mà nó phá | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:55 | Stop loss | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:56 | Cũng như vậy | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:57 | Đạt ở | —
-11:58 | Đỉnh cây nến | CODE kernel/mentor/phl.go:24 [PLH mirror]
-11:59 | Bị vượt qua | CODE kernel/mentor/phl.go:24 [PLH mirror]
-12:00 | Target | CODE kernel/mentor/phl.go:24 [PLH mirror]
-12:03 | Tôi đạt ở | CODE kernel/mentor/phl.go:24 [PLH mirror]
-12:05 | Gần đáy cũ | CODE kernel/mentor/phl.go:24 [PLH mirror]
-12:08 | Đổi ngược lại với lệnh long | CODE kernel/mentor/phl.go:24 [PLH mirror]
+11:05 | Tôi rà một lệnh sell stop | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:09 | Tôi rà một lệnh sell stop | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:13 | Đã sẵn | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:13 | Cái này gọi là rà đít | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:17 | Tôi rà một lệnh sell stop đã sẵn | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:19 | Cây nến nào vượt qua được | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:22 | Cây nến nào vượt qua được | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:27 | Anh chị cứ thấy nó bật nến xanh | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:29 | Chị ngồi rà | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:30 | Cây nến nào vượt qua được | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:34 | Đấy cây nến trước đó | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:36 | Market nó sẽ fill lệnh của mình | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:38 | Và | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:40 | Nó sẽ đi theo cái hướng mà nó phá | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:44 | Trong một số hướng giảm | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:46 | Khi nó bắt đầu quay về backtest | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:47 | Tôi ra một lệnh sell stop | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:50 | Cây nến nào vừa qua được đáy cây nến trước đó | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:52 | Thì nó sẽ fill lệnh mình | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:53 | Và nó sẽ đi theo hướng mà nó phá | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:55 | Stop loss | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:56 | Cũng như vậy | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:57 | Đạt ở | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:58 | Đỉnh cây nến | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+11:59 | Bị vượt qua | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+12:00 | Target | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+12:03 | Tôi đạt ở | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+12:05 | Gần đáy cũ | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+12:08 | Đổi ngược lại với lệnh long | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
 12:09 | đúng không chị | —
 12:11 | rồi để cho nó chạy | —
 12:13 | ngay đây là bán bớt nè | —
@@ -253,11 +253,11 @@ cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 12:48 | làm ra tả nó sẽ lúc nào cũng sẽ tạo đỉnh và đáy đỉnh đỉnh cao hơn đáy cao hơn đỉnh thấp hơn đáy | —
 12:54 | thấp hơn rồi hồi xưa em trade có rất nhiều anh chị bị giống em và ngay thời điểm này cũng có | —
 13:03 | anh chị nào có thì bỏ bật con bỏ cái tập đó đi nè móc kẹt nó lên nó tặng cái chỗ này nó rớt xong | —
-13:14 | nó lên ngay chỗ này lại đa số mọi người đều đặt lệnh bài sớm ngay chỗ này để đánh phát cao lên | CODE kernel/mentor/eval.go:911 [roomRefusal — no entry near the old extreme]
-13:23 | có đúng không trả lời thật sự cho là thật sự cho có con chị nào đang đánh vậy chuyên gia luôn mọi | CODE kernel/mentor/eval.go:911 [roomRefusal — no entry near the old extreme]
-13:46 | chuyên gia đánh chị này luôn Nhưng đây là một kiểu đánh sai hoàn toàn | —
-13:58 | ở ngay chỗ này nó không được gọi là trade ở ngay chỗ này nó được gọi là game bộ ngay chỗ này anh | —
-14:07 | chị đang đừng gọi là cờ bạc anh chị không phải là một người để coi không phải anh chị không phải là | CODE kernel/mentor/eval.go:911 [roomRefusal — no entry near the old extreme]
+13:14 | nó lên ngay chỗ này lại đa số mọi người đều đặt lệnh bài sớm ngay chỗ này để đánh phát cao lên | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+13:23 | có đúng không trả lời thật sự cho là thật sự cho có con chị nào đang đánh vậy chuyên gia luôn mọi | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+13:46 | chuyên gia đánh chị này luôn Nhưng đây là một kiểu đánh sai hoàn toàn | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+13:58 | ở ngay chỗ này nó không được gọi là trade ở ngay chỗ này nó được gọi là game bộ ngay chỗ này anh | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
+14:07 | chị đang đừng gọi là cờ bạc anh chị không phải là một người để coi không phải anh chị không phải là | CODE kernel/mentor/phl.go:84 [barIdx-extremeIdx < PHLMinCandlesFromExtreme] (row 15)
 14:12 | Không phải là một trader | —
 14:14 | Mà anh chị đang cờ bạc ngay chỗ này | —
 14:16 | Rồi | —
@@ -317,11 +317,11 @@ cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 18:14 | Ở chỗ người khác bán ra | —
 18:17 | Là bên đây | —
 18:20 | Thì có phải ngay chỗ này | —
-18:25 | Ngay cái điểm này mà anh chị đặt cái lệnh buy shop | CODE kernel/mentor/eval.go:911 [roomRefusal — no entry near the old extreme]
-18:28 | Có phải là anh chị đang rất là cờ bạc | CODE kernel/mentor/eval.go:911 [roomRefusal — no entry near the old extreme]
-18:30 | Ngay chỗ này không | CODE kernel/mentor/eval.go:911 [roomRefusal — no entry near the old extreme]
+18:25 | Ngay cái điểm này mà anh chị đặt cái lệnh buy shop | —
+18:28 | Có phải là anh chị đang rất là cờ bạc | —
+18:30 | Ngay chỗ này không | —
 18:30 | Tại vì anh chị đang vô | —
-18:33 | Ở cái chỗ người ta bán ra | CODE kernel/mentor/eval.go:911 [roomRefusal — no entry near the old extreme]
+18:33 | Ở cái chỗ người ta bán ra | —
 18:34 | Anh chị mua vô | —
 18:36 | Ở chỗ người ta bán ra | —
 18:37 | Đúng không mọi người | —
@@ -349,11 +349,11 @@ cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 19:34 | Trong một xu hướng tăng | —
 19:37 | Khi nến bắt đầu | —
 19:39 | Quay về bắt test | —
-19:40 | Tôi ra một lệnh buy stop | CODE kernel/mentor/phl.go:24 [PHLPLH]
-19:41 | Cây nến nào vượt qua | CODE kernel/mentor/phl.go:24 [PHLPLH]
-19:44 | Được đỉnh cây nến trước đó | CODE kernel/mentor/phl.go:24 [PHLPLH]
-19:46 | Ngay đó em gọi chỗ đó | CODE kernel/mentor/phl.go:24 [PHLPLH]
-19:49 | Là potential high or low | CODE kernel/mentor/phl.go:24 [PHLPLH]
+19:40 | Tôi ra một lệnh buy stop | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+19:41 | Cây nến nào vượt qua | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+19:44 | Được đỉnh cây nến trước đó | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+19:46 | Ngay đó em gọi chỗ đó | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
+19:49 | Là potential high or low | CODE kernel/mentor/phl.go:63 [price = RefBar.High + buffer] (row 11)
 19:51 | Tại sao gọi là potential | —
 19:52 | Mà em không gọi nó là high or low | —
 19:54 | Potential có nghĩa là có khả năng | —
@@ -372,9 +372,9 @@ cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 20:38 | Mình đã có được một cái system riêng cho bản thân mình | —
 20:41 | Và mình đã có được cái rule riêng cho mình rồi | —
 20:43 | Là | —
-20:45 | Cái nến nào vượt qua được đỉnh | CODE kernel/mentor/phl.go:24 [PHLPLH]
-20:47 | Cái nến trước đó giá tiếp tục đi theo hướng đó | CODE kernel/mentor/phl.go:24 [PHLPLH]
-20:49 | Đúng không | CODE kernel/mentor/phl.go:24 [PHLPLH]
+20:45 | Cái nến nào vượt qua được đỉnh | —
+20:47 | Cái nến trước đó giá tiếp tục đi theo hướng đó | —
+20:49 | Đúng không | —
 20:50 | Thì ngay đây em mới nhận ra | —
 20:52 | Tôi kiếm được cái 2 lô nè | —
 20:55 | Thì tôi bán ở gần đỉnh cũ | —
@@ -388,9 +388,9 @@ cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 21:13 | Anh chị cứ bị cái kiểu đánh ngay chỗ này | —
 21:17 | Đúng không | —
 21:22 | Chỉnh sửa lần tí đi | —
-21:26 | Anh chị đang vô ở cái chỗ người ta bán ra | CODE kernel/mentor/eval.go:911 [roomRefusal — no entry near the old extreme]
-21:28 | Thì ngay chỗ đó mọi người cứ thua hoài thôi | CODE kernel/mentor/eval.go:911 [roomRefusal — no entry near the old extreme]
-21:31 | Mười không thắng nổi đâu | CODE kernel/mentor/eval.go:911 [roomRefusal — no entry near the old extreme]
+21:26 | Anh chị đang vô ở cái chỗ người ta bán ra | —
+21:28 | Thì ngay chỗ đó mọi người cứ thua hoài thôi | —
+21:31 | Mười không thắng nổi đâu | —
 21:32 | Anh chị đang tự giảm win rate của anh chị xuống | —
 21:37 | Mọi người ok không | —
 21:43 | Anh chị nào nhìn nhận ra được vấn đề chưa | —
@@ -444,23 +444,23 @@ cues: 472/472 marked · rules: 5 · CODE: 104 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 23:27 | khi nến bắt đầu | —
 23:29 | quay về bắt test nè | —
 23:30 | tôi ra một lệnh | —
-23:31 | sell stop | CODE kernel/mentor/phl.go:24 [PLH mirror]
-23:32 | tôi ra một lệnh | CODE kernel/mentor/phl.go:24 [PLH mirror]
-23:36 | sell stop | CODE kernel/mentor/phl.go:24 [PLH mirror]
-23:37 | bắt đầu quay về bắt test | CODE kernel/mentor/phl.go:24 [PLH mirror]
-23:38 | bằng việc gì anh chị | CODE kernel/mentor/phl.go:24 [PLH mirror]
-23:40 | nó thể hiện | CODE kernel/mentor/phl.go:24 [PLH mirror]
-23:40 | bằng việc | —
-23:41 | nó bật nến xanh lên | —
-23:42 | đúng không | —
-23:42 | tôi ra một lệnh | —
-23:43 | sell stop | CODE kernel/mentor/phl.go:24 [PLH mirror]
-23:44 | cái nến nào | CODE kernel/mentor/phl.go:24 [PLH mirror]
-23:45 | vừa qua được đấy | CODE kernel/mentor/phl.go:24 [PLH mirror]
-23:46 | cái nến trước đó | CODE kernel/mentor/phl.go:24 [PLH mirror]
-23:46 | giá tiếp tục đi theo hướng đó | CODE kernel/mentor/phl.go:24 [PLH mirror]
-23:48 | thì có phải là ngay chỗ này | CODE kernel/mentor/phl.go:24 [PLH mirror]
-23:49 | em sẽ gọi nó là gì | CODE kernel/mentor/phl.go:24 [PLH mirror]
+23:31 | sell stop | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:32 | tôi ra một lệnh | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:36 | sell stop | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:37 | bắt đầu quay về bắt test | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:38 | bằng việc gì anh chị | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:40 | nó thể hiện | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:40 | bằng việc | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:41 | nó bật nến xanh lên | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:42 | đúng không | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:42 | tôi ra một lệnh | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:43 | sell stop | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:44 | cái nến nào | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:45 | vừa qua được đấy | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:46 | cái nến trước đó | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:46 | giá tiếp tục đi theo hướng đó | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:48 | thì có phải là ngay chỗ này | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
+23:49 | em sẽ gọi nó là gì | CODE kernel/mentor/phl.go:66 [price = RefBar.Low − buffer] (row 12)
 23:50 | em sẽ gọi nó là | —
 23:51 | potential | —
 23:52 | bộ tên xô lô hay em sợ là bộ tên xô lô hay tại vì ngay chỗ này ngay chỗ này là nó có thể có khả | —

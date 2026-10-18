@@ -1,91 +1,91 @@
-cues: 456/456 marked · rules: 5 · CODE: 134 · MISMATCH: 0 · NOT-IN-BOT: 3 · COURSE-SPLIT: 0 · SILENT: 0 · OWNER-ORDER: 0 · —: 319
+cues: 456/456 · rule cues: 133 · rows: 5 · CODE: 130 · MISMATCH: 0 · NOT-IN-BOT: 3 · OWNER-ORDER: 0 · SPLIT: 0 · —: 323
 
 00:00 | Rồi, tiếp tục một cái việc, cái này thì nó sẽ khá là dễ, không có gì khó hết, nó sẽ khá là dễ. | —
 00:13 | Nó sẽ khá là dễ là thứ nhất là mình sẽ học một cái gọi là setup gồng lời. | —
 00:19 | Mình gọi là setup gồng lời. | —
 00:21 | Rồi, setup gồng lời là gì? | —
-00:24 | Setup gồng lời là khi có 2 setup cùng chiều cộng hưởng với nhau. | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-00:30 | Thì nó gọi là set up gồng lời | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-00:32 | Ha | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-00:34 | Set up gồng lời là gì | —
-00:35 | Là ví dụ | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-00:37 | Ngay chỗ này từ trái qua phải | —
-00:40 | Anh chị bắt một lệnh bột | —
-00:41 | Nghe lạ hả | —
-00:43 | Là tại vì chị có vô lớp thường xuyên đâu mà chị không lạ | —
-00:45 | Nói chị có vô lớp thường xuyên đâu | —
-00:48 | Lâu lâu mới vô không à | —
-00:49 | Làm gì chưa bao giờ học | —
-00:50 | Làm gì chưa bao giờ học | —
-00:53 | Ừ | —
-00:54 | Rồi | —
-00:57 | Khi anh chị bắt một lệnh Potential High Low | —
-01:03 | Ví dụ ha | —
-01:03 | Ngay chỗ này nó tạo cái đấy | —
-01:05 | Rồi | —
-01:07 | Ngay chỗ này nó tạo cái đấy | —
-01:08 | Ngay chỗ này | —
-01:12 | Anh chị bắt một lệnh Potential High Low | —
-01:15 | Ngay chỗ này đúng không | —
-01:16 | Là anh chị bắt một lệnh Potential High Low ngay chỗ này | —
-01:17 | Là cái nến đỏ nè | —
-01:19 | Tại vì sao | —
-01:19 | Đối chiếu với cái đấy bên tay trái | —
-01:21 | Etudera một lệnh Buy Stop | —
-01:22 | Đúng không | —
-01:23 | Nè | —
-01:23 | Tăng | —
-01:25 | Về tới đây | —
-01:25 | Buy Stop | —
-01:26 | Đúng không | —
-01:27 | Tại vì mình đối chiếu | —
-01:28 | Mình đối chiếu với đáy trước đó | —
-01:30 | Thì ngay chỗ này có khả năng | —
-01:32 | Nó sẽ tạo một cái đáy cao hơn | —
-01:33 | Đúng không? Rồi, tiếp tục | —
-01:36 | Khi mình bắt | —
-01:38 | Một lệnh potential high or low | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-01:40 | Trong | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-01:42 | Sau khi nó phiêu lệnh của mình | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-01:44 | Trong vòng | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-01:46 | 3 cái nến sau đó | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-01:48 | Xuất hiện một setup | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-01:50 | Inside bar cùng | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-01:52 | Chiều | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-01:53 | Thì đó là một setup cộng hưởng | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-01:56 | Em gọi nó là setup gồng lời | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-01:58 | Thì khi nào nó cộng hưởng như vậy | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:00 | Thì | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:02 | 70-80% | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:04 | Là nó sẽ phá luôn | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:08 | Cái đỉnh bên tay trái của nó | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:09 | Thì cái lúc đó anh chị mạnh mẽ | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:17 | Ê nhưng | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
+00:24 | Setup gồng lời là khi có 2 setup cùng chiều cộng hưởng với nhau. | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:30 | Thì nó gọi là set up gồng lời | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:32 | Ha | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:34 | Set up gồng lời là gì | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:35 | Là ví dụ | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:37 | Ngay chỗ này từ trái qua phải | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:40 | Anh chị bắt một lệnh bột | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:41 | Nghe lạ hả | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:43 | Là tại vì chị có vô lớp thường xuyên đâu mà chị không lạ | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:45 | Nói chị có vô lớp thường xuyên đâu | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:48 | Lâu lâu mới vô không à | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:49 | Làm gì chưa bao giờ học | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:50 | Làm gì chưa bao giờ học | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:53 | Ừ | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:54 | Rồi | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+00:57 | Khi anh chị bắt một lệnh Potential High Low | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:03 | Ví dụ ha | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:03 | Ngay chỗ này nó tạo cái đấy | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:05 | Rồi | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:07 | Ngay chỗ này nó tạo cái đấy | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:08 | Ngay chỗ này | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:12 | Anh chị bắt một lệnh Potential High Low | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:15 | Ngay chỗ này đúng không | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:16 | Là anh chị bắt một lệnh Potential High Low ngay chỗ này | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:17 | Là cái nến đỏ nè | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:19 | Tại vì sao | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:19 | Đối chiếu với cái đấy bên tay trái | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:21 | Etudera một lệnh Buy Stop | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:22 | Đúng không | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:23 | Nè | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:23 | Tăng | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:25 | Về tới đây | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:25 | Buy Stop | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:26 | Đúng không | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:27 | Tại vì mình đối chiếu | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:28 | Mình đối chiếu với đáy trước đó | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:30 | Thì ngay chỗ này có khả năng | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:32 | Nó sẽ tạo một cái đáy cao hơn | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:33 | Đúng không? Rồi, tiếp tục | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:36 | Khi mình bắt | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:38 | Một lệnh potential high or low | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:40 | Trong | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:42 | Sau khi nó phiêu lệnh của mình | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:44 | Trong vòng | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:46 | 3 cái nến sau đó | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:48 | Xuất hiện một setup | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:50 | Inside bar cùng | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:52 | Chiều | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:53 | Thì đó là một setup cộng hưởng | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:56 | Em gọi nó là setup gồng lời | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+01:58 | Thì khi nào nó cộng hưởng như vậy | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:00 | Thì | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:02 | 70-80% | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:04 | Là nó sẽ phá luôn | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:08 | Cái đỉnh bên tay trái của nó | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:09 | Thì cái lúc đó anh chị mạnh mẽ | —
+02:17 | Ê nhưng | —
 02:18 | Nói cho nghe nè | —
 02:20 | Đừng có ai suy nghĩ nè | —
 02:21 | Em biết là có người đang suy nghĩ nè | —
 02:22 | Là sẽ gồng gồng | —
-02:24 | RISK REWARD 1-1 tôi vẫn sẽ bán bớt | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:29 | Nhưng ngay khúc này | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:31 | Nếu như nó xuất hiện | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:33 | Sách đó gồng lời | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:34 | Tôi mạnh mẽ | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:36 | Để stop loss ở break even | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:38 | Cho nó chạy | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:39 | Tôi sẽ | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:41 | Tôi sẽ để | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:43 | Những cái lệnh này mình có thể vô lô một tí | —
-02:45 | Mình sẽ không cần phải move stop theo nến | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:47 | Mình sẽ học cái move stop theo nến sau | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:49 | Sau cái khúc này đi | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:50 | Nhưng khi nó xuất hiện sẽ gồng lời | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:53 | Không cần luôn | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:56 | Em nói khi mà nó xuất hiện sẽ | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:57 | Không có đâu chị | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-02:59 | Ít khi nào | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
+02:24 | RISK REWARD 1-1 tôi vẫn sẽ bán bớt | CODE trader/mentor_mode.go:1176 [mentorExitA — leg-1 +1R stays] (row 30)
+02:29 | Nhưng ngay khúc này | CODE trader/mentor_mode.go:1176 [mentorExitA — leg-1 +1R stays] (row 30)
+02:31 | Nếu như nó xuất hiện | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:33 | Sách đó gồng lời | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:34 | Tôi mạnh mẽ | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:36 | Để stop loss ở break even | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:38 | Cho nó chạy | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:39 | Tôi sẽ | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:41 | Tôi sẽ để | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:43 | Những cái lệnh này mình có thể vô lô một tí | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:45 | Mình sẽ không cần phải move stop theo nến | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:47 | Mình sẽ học cái move stop theo nến sau | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:49 | Sau cái khúc này đi | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:50 | Nhưng khi nó xuất hiện sẽ gồng lời | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:53 | Không cần luôn | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:56 | Em nói khi mà nó xuất hiện sẽ | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance] (row 29)
+02:57 | Không có đâu chị | —
+02:59 | Ít khi nào | —
 03:00 | Hiếm khi nào nó về lại tới | —
-03:03 | chỉ là | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-03:07 | khi nào nó ngay cái chỗ | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
+03:03 | chỉ là | —
+03:07 | khi nào nó ngay cái chỗ | —
 03:09 | mà mình | —
 03:10 | ngay cái chỗ mà mình vô lệnh | —
 03:13 | cái điểm entry | —
@@ -97,9 +97,9 @@ cues: 456/456 marked · rules: 5 · CODE: 134 · MISMATCH: 0 · NOT-IN-BOT: 3 ·
 03:24 | cái chỗ mình vô nó không phải là chỗ trước G | —
 03:26 | nó nằm ở dưới chỗ trước G | —
 03:28 | thì cứ để subplot break even | —
-03:30 | và để cho nó chạy cho em | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-03:31 | Mạnh mẽ | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
-03:34 | Tại vì bằng căn bản | CODE trader/mentor_mode.go:1123 [mentorMaybeArmResonance]
+03:30 | và để cho nó chạy cho em | —
+03:31 | Mạnh mẽ | —
+03:34 | Tại vì bằng căn bản | —
 03:36 | Thứ nhất là mình đã ăn rồi | —
 03:38 | Thứ nhất là nó đã ăn rồi | —
 03:40 | Mình đã ăn rồi | —
@@ -178,20 +178,20 @@ cues: 456/456 marked · rules: 5 · CODE: 134 · MISMATCH: 0 · NOT-IN-BOT: 3 ·
 06:43 | Đúng không | —
 06:46 | Rồi | —
 06:47 | Về cách move stop | —
-06:50 | Về cách move stop | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-06:53 | Không có gì cao | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-06:54 | Không có gì mát mẻ hết | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-06:55 | Khi anh chị | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-06:58 | Try | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-06:59 | Anh chị gồng lệnh | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-07:01 | Anh chị move stop lot | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-07:02 | Thì | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-07:02 | Move stop | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-07:04 | Theo | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-07:04 | Từng cây nến | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-07:06 | Đã đóng xong | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-07:07 | Là như thế nào | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-07:10 | Rồi anh chị | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
+06:50 | Về cách move stop | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+06:53 | Không có gì cao | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+06:54 | Không có gì mát mẻ hết | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+06:55 | Khi anh chị | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+06:58 | Try | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+06:59 | Anh chị gồng lệnh | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+07:01 | Anh chị move stop lot | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+07:02 | Thì | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+07:02 | Move stop | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+07:04 | Theo | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+07:04 | Từng cây nến | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+07:06 | Đã đóng xong | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+07:07 | Là như thế nào | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+07:10 | Rồi anh chị | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
 07:13 | Vô lệnh | —
 07:15 | Hôm bữa mình ăn được cái lệnh | —
 07:16 | Hôm bữa mình ăn được cái lệnh gần trăm điểm đúng không | —
@@ -218,49 +218,49 @@ cues: 456/456 marked · rules: 5 · CODE: 134 · MISMATCH: 0 · NOT-IN-BOT: 3 ·
 07:51 | ngay chỗ này | —
 07:52 | em entry lệnh rồi | —
 07:53 | thì cái cách mua stop của em như thế nào | —
-07:55 | cái cách mua stop của em như thế nào | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-07:57 | cái cách mua stop của em | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-07:59 | em sẽ mua stop | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:00 | theo | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:02 | từng cây nến | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:03 | lý do tại sao | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
+07:55 | cái cách mua stop của em như thế nào | —
+07:57 | cái cách mua stop của em | —
+07:59 | em sẽ mua stop | —
+08:00 | theo | —
+08:02 | từng cây nến | —
+08:03 | lý do tại sao | —
 08:04 | em mua stop theo từng cây nến | —
-08:05 | mình lật ngược | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:07 | Cái điều thứ 2 slide số 16 là một tí nè anh chị | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:09 | Mình lật ngược lại một tí nè | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:11 | Thì có phải là khi nào có một cây nến | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:14 | Vượt qua được đáy cây nến trước đó | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:16 | Bây giờ mình đang hô lệnh lon | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:18 | Thì bây giờ mình ngược lại nè | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:19 | Khi có nào có một cây nến | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:21 | Vượt qua được đáy cây nến trước đó | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:22 | Thì nó sẽ sao anh chị | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:24 | Nó sẽ đi theo cái hướng mà nó phá | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:26 | Là nó rớt ngược lại | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:27 | Thì đây là cái cách em move stop | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:29 | Em đảo ngược lại thôi | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:30 | Thì em move lên đây | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:31 | Em move lên đây | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:32 | Em để ngay đây | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:32 | Đúng không | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:36 | Em để lên đây | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:39 | Thì đây là cái cách mà mình move stop | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:42 | Tại vì sao | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:43 | Mình vẫn áp dụng theo cái điều mà mình học | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:45 | Là | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:46 | Cây nến sau vượt đáy cây nến trước | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:49 | Thì chắc chắn nó sẽ đi theo hướng nó phá | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:51 | Nó sẽ đi xuống ngược lại | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:51 | Nó sẽ đá mình ra | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:54 | Đơn giản nó đá mình ra | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-08:56 | Khi mà nó vượt xuống | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-09:01 | Nó đá mình ra | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-09:01 | Thì đây là cách mà em move stop mỗi ngày | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
-09:07 | Em cứ move theo | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle]
+08:05 | mình lật ngược | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:07 | Cái điều thứ 2 slide số 16 là một tí nè anh chị | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:09 | Mình lật ngược lại một tí nè | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:11 | Thì có phải là khi nào có một cây nến | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:14 | Vượt qua được đáy cây nến trước đó | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:16 | Bây giờ mình đang hô lệnh lon | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:18 | Thì bây giờ mình ngược lại nè | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:19 | Khi có nào có một cây nến | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:21 | Vượt qua được đáy cây nến trước đó | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:22 | Thì nó sẽ sao anh chị | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:24 | Nó sẽ đi theo cái hướng mà nó phá | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:26 | Là nó rớt ngược lại | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:27 | Thì đây là cái cách em move stop | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:29 | Em đảo ngược lại thôi | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:30 | Thì em move lên đây | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:31 | Em move lên đây | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:32 | Em để ngay đây | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:32 | Đúng không | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:36 | Em để lên đây | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:39 | Thì đây là cái cách mà mình move stop | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:42 | Tại vì sao | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:43 | Mình vẫn áp dụng theo cái điều mà mình học | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:45 | Là | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:46 | Cây nến sau vượt đáy cây nến trước | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:49 | Thì chắc chắn nó sẽ đi theo hướng nó phá | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:51 | Nó sẽ đi xuống ngược lại | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:51 | Nó sẽ đá mình ra | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:54 | Đơn giản nó đá mình ra | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+08:56 | Khi mà nó vượt xuống | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+09:01 | Nó đá mình ra | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+09:01 | Thì đây là cách mà em move stop mỗi ngày | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
+09:07 | Em cứ move theo | CODE trader/mentor_mode.go:1031 [mentorExitB — trail behind each closed candle] (row 31)
 09:08 | Hoặc nếu anh chị muốn save hơn | —
-09:10 | Anh chị muốn sát hơn | NOT-IN-BOT → 34
-09:11 | Cứ việc mua shop theo khung 45, khung 30 giây | NOT-IN-BOT → 34
-09:14 | Hả | NOT-IN-BOT → 34
+09:10 | Anh chị muốn sát hơn | NOT-IN-BOT (row 32)
+09:11 | Cứ việc mua shop theo khung 45, khung 30 giây | NOT-IN-BOT (row 32)
+09:14 | Hả | NOT-IN-BOT (row 32)
 09:17 | Mới nói tức thì hồi nãy luôn | —
 09:24 | Nói chứ hôm nay em hết hơi rồi đó | —
 09:35 | Nói thiệt nha | —
@@ -273,27 +273,27 @@ cues: 456/456 marked · rules: 5 · CODE: 134 · MISMATCH: 0 · NOT-IN-BOT: 3 ·
 09:51 | Làm gì biết được | —
 09:54 | Là nó có hô hay không | —
 09:55 | Chỉ khi nào nó react cho mình thấy thôi | —
-09:59 | em không sử dụng polarity | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:05 | mọi người có bao giờ | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:07 | thấy em sử dụng polarity để em vô lệnh không | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:09 | em chỉ sử dụng polarity | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:12 | là khi nào khung 5 phút trigger thôi | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:14 | em rất ít | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:16 | khi nào sử dụng polarity | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:18 | để em vô lệnh | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:20 | mọi người | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:22 | có cái mastermind recap | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:24 | em lúc nào cũng post những cái lệnh | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
+09:59 | em không sử dụng polarity | —
+10:05 | mọi người có bao giờ | —
+10:07 | thấy em sử dụng polarity để em vô lệnh không | —
+10:09 | em chỉ sử dụng polarity | —
+10:12 | là khi nào khung 5 phút trigger thôi | —
+10:14 | em rất ít | —
+10:16 | khi nào sử dụng polarity | —
+10:18 | để em vô lệnh | —
+10:20 | mọi người | —
+10:22 | có cái mastermind recap | —
+10:24 | em lúc nào cũng post những cái lệnh | —
 10:26 | của em vô trỏng hết | —
 10:27 | mọi người nhìn thử coi | —
 10:29 | có bao giờ em vô lệnh ở polarity hay không | —
-10:32 | Không bao giờ | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:34 | Em không sử dụng Polari | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:37 | Để làm một level để em vô lệnh | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:39 | Mà em chỉ cần | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:42 | Làm đúng cái việc là em đối chiếu | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:45 | Đỉnh và đáy củ thôi | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-10:46 | Tại sao hôm bữa em vô cái lệnh ngay chỗ này | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
+10:32 | Không bao giờ | —
+10:34 | Em không sử dụng Polari | —
+10:37 | Để làm một level để em vô lệnh | —
+10:39 | Mà em chỉ cần | —
+10:42 | Làm đúng cái việc là em đối chiếu | —
+10:45 | Đỉnh và đáy củ thôi | —
+10:46 | Tại sao hôm bữa em vô cái lệnh ngay chỗ này | —
 10:49 | Nhìn qua bên trái đơn giản | —
 10:50 | Em chỉ làm một thao tác rất đơn giản | —
 10:52 | Em liếc con mắt qua cái chạc | —
@@ -313,15 +313,15 @@ cues: 456/456 marked · rules: 5 · CODE: 134 · MISMATCH: 0 · NOT-IN-BOT: 3 ·
 11:28 | Em không có chê bai gì hết | —
 11:31 | Nhưng | —
 11:31 | Về cái căn bản lớp của mình | —
-11:34 | Cái lớp của mình | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
+11:34 | Cái lớp của mình | —
 11:35 | Về căn bản lớp của mình | —
-11:36 | Mình sẽ phải chờ cái sự react | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-11:40 | Thì bây giờ về polarity | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-11:43 | Nó có hold polarity hay không | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-11:44 | Em cũng mặc kệ | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-11:45 | Tại vì căn bản mình không có sử dụng tới | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-11:55 | Tại vì thật sự ra | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
-12:00 | Market nó đâu phải là lúc nào | CODE kernel/mentor/box_uno.go [polarity only with the 5m trigger]
+11:36 | Mình sẽ phải chờ cái sự react | —
+11:40 | Thì bây giờ về polarity | —
+11:43 | Nó có hold polarity hay không | —
+11:44 | Em cũng mặc kệ | —
+11:45 | Tại vì căn bản mình không có sử dụng tới | —
+11:55 | Tại vì thật sự ra | —
+12:00 | Market nó đâu phải là lúc nào | —
 12:02 | Nó cũng sẽ về nó đụng ngay cái chỗ | —
 12:04 | Mà nó break xong nó chạy ngược lên | —
 12:05 | Vậy thì đúng như sách giáo khoa quá | —
@@ -336,19 +336,19 @@ cues: 456/456 marked · rules: 5 · CODE: 134 · MISMATCH: 0 · NOT-IN-BOT: 3 ·
 12:26 | Dù bất kỳ chuyện gì xảy ra | —
 12:28 | Dù nó đang ở đâu | —
 12:30 | Thì cứ nhớ giúp em | —
-12:33 | Cái sự reaction nó quan trọng nhất là cái gì | CODE kernel/mentor/phl.go:24 [slide-16 rule 2: break + close]
-12:35 | Nó hai điều thôi | CODE kernel/mentor/phl.go:24 [slide-16 rule 2: break + close]
-12:36 | Thứ nhất | CODE kernel/mentor/phl.go:24 [slide-16 rule 2: break + close]
-12:37 | Là cái gì | CODE kernel/mentor/phl.go:24 [slide-16 rule 2: break + close]
-12:39 | Là cây nến sau phải vừa coi được đỉnh cây nến trước | CODE kernel/mentor/phl.go:24 [slide-16 rule 2: break + close]
-12:42 | Thì nó mới bắt đầu nó react cho mình | CODE kernel/mentor/phl.go:24 [slide-16 rule 2: break + close]
-12:45 | Nó mới chạy được | CODE kernel/mentor/phl.go:24 [slide-16 rule 2: break + close]
-12:45 | Cái điều thứ 2 | CODE kernel/mentor/phl.go:24 [slide-16 rule 2: break + close]
-12:47 | Là nến nó phải đóng ở đâu | CODE kernel/mentor/phl.go:24 [slide-16 rule 2: break + close]
-12:50 | Tại level | CODE kernel/mentor/phl.go:24 [slide-16 rule 2: break + close]
-12:50 | Nó không trên, nó không dưới | CODE kernel/mentor/phl.go:24 [slide-16 rule 2: break + close]
-12:52 | Thì bây giờ căn bản thôi mọi người | CODE kernel/mentor/phl.go:24 [slide-16 rule 2: break + close]
-12:55 | Đơn giản thôi | CODE kernel/mentor/phl.go:24 [slide-16 rule 2: break + close]
+12:33 | Cái sự reaction nó quan trọng nhất là cái gì | CODE kernel/mentor/phl.go:63 [slide-16 rule 2] (row 33)
+12:35 | Nó hai điều thôi | CODE kernel/mentor/phl.go:63 [slide-16 rule 2] (row 33)
+12:36 | Thứ nhất | CODE kernel/mentor/phl.go:63 [slide-16 rule 2] (row 33)
+12:37 | Là cái gì | CODE kernel/mentor/phl.go:63 [slide-16 rule 2] (row 33)
+12:39 | Là cây nến sau phải vừa coi được đỉnh cây nến trước | CODE kernel/mentor/phl.go:63 [slide-16 rule 2] (row 33)
+12:42 | Thì nó mới bắt đầu nó react cho mình | CODE kernel/mentor/phl.go:63 [slide-16 rule 2] (row 33)
+12:45 | Nó mới chạy được | CODE kernel/mentor/phl.go:63 [slide-16 rule 2] (row 33)
+12:45 | Cái điều thứ 2 | CODE kernel/mentor/phl.go:63 [slide-16 rule 2] (row 33)
+12:47 | Là nến nó phải đóng ở đâu | CODE kernel/mentor/phl.go:63 [slide-16 rule 2] (row 33)
+12:50 | Tại level | CODE kernel/mentor/phl.go:63 [slide-16 rule 2] (row 33)
+12:50 | Nó không trên, nó không dưới | CODE kernel/mentor/phl.go:63 [slide-16 rule 2] (row 33)
+12:52 | Thì bây giờ căn bản thôi mọi người | CODE kernel/mentor/phl.go:63 [slide-16 rule 2] (row 33)
+12:55 | Đơn giản thôi | CODE kernel/mentor/phl.go:63 [slide-16 rule 2] (row 33)
 12:56 | Thật sự ra em trade | —
 12:59 | Em ít khi nào em dạy channel live lắm thiệt | —
 13:01 | Nhưng mà hôm bữa em nhìn em thấy | —

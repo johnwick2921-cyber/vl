@@ -1,4 +1,4 @@
-cues: 345/345 marked · rules: 3 · CODE: 35 · MISMATCH: 0 · NOT-IN-BOT: 0 · COURSE-SPLIT: 0 · SILENT: 0 · OWNER-ORDER: 0 · —: 310
+cues: 345/345 · rule cues: 30 · rows: 3 · CODE: 30 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 0 · SPLIT: 0 · —: 315
 
 00:00 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 00:39 | anh liều vậy rồi cây ngay chỗ này anh Winnie hỏi em là nghe chỗ này làm sao để biết đánh lệnh | —
@@ -172,11 +172,11 @@ cues: 345/345 marked · rules: 3 · CODE: 35 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 12:04 | tới thẳng lên trên đây anh mới chịu bán | —
 12:06 | có đúng vậy không | —
 12:13 | anh làm gì anh cũng phải bán bớt ở 11 | —
-12:19 | Cái việc đó là cái việc em làm mỗi ngày với mọi người mà | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1 — bán bớt 1:1]
-12:22 | Là bây giờ sắp lót 20 | —
-12:24 | Tới 20 mình bán bớt | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1 — bán bớt 1:1]
-12:26 | Chừa phirin chứ | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1 — bán bớt 1:1]
-12:26 | Chứ anh hôn 1 phát lần trên đây sao nổi | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1 — bán bớt 1:1]
+12:19 | Cái việc đó là cái việc em làm mỗi ngày với mọi người mà | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
+12:22 | Là bây giờ sắp lót 20 | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
+12:24 | Tới 20 mình bán bớt | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
+12:26 | Chừa phirin chứ | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
+12:26 | Chứ anh hôn 1 phát lần trên đây sao nổi | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
 12:29 | Đâu coi anh hôn được gì đó | —
 12:31 | Không ai làm được cái chuyện đó | —
 12:33 | Đâu coi ai làm được cái việc đó đâu | —
@@ -185,10 +185,10 @@ cues: 345/345 marked · rules: 3 · CODE: 35 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 12:52 | Đúng không | —
 12:56 | Rồi | —
 13:06 | Làm ơn mình vô lệnh á | —
-13:08 | Anh đừng suy nghĩ nhiều á | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1 — bán bớt 1:1]
-13:09 | Cứ việc bán bớt ở Crisqo11 và anh hôn phirin | —
-13:12 | anh ủng hộ tới đâu anh hôn | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1 — bán bớt 1:1]
-13:14 | anh ủng hộ tới đâu anh hôn | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1 — bán bớt 1:1]
+13:08 | Anh đừng suy nghĩ nhiều á | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
+13:09 | Cứ việc bán bớt ở Crisqo11 và anh hôn phirin | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
+13:12 | anh ủng hộ tới đâu anh hôn | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
+13:14 | anh ủng hộ tới đâu anh hôn | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
 13:25 | không thành vấn đề | —
 13:26 | nha | —
 13:36 | nhớ giúp em | —
@@ -262,13 +262,13 @@ cues: 345/345 marked · rules: 3 · CODE: 35 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 16:32 | Đâu | —
 16:33 | Bật cái | —
 16:34 | Internet lên coi | —
-16:35 | Ừ | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
+16:35 | Ừ | —
 16:35 | EMI 34 | —
-16:36 | Hay quá | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
-16:37 | Hay quá | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
+16:36 | Hay quá | —
+16:37 | Hay quá | —
 16:39 | Bật EMI 34 lên | —
-16:40 | Mà ngay chỗ này đánh potential high low được | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
-16:41 | Hay quá | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
+16:40 | Mà ngay chỗ này đánh potential high low được | —
+16:41 | Hay quá | —
 16:42 | Chị ơi | —
 16:43 | Càng nói càng sai | —
 16:44 | Đúng không | —
@@ -280,22 +280,22 @@ cues: 345/345 marked · rules: 3 · CODE: 35 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 16:57 | Đã kẻ được 2 cái rank này rồi | —
 16:58 | Em nói chuyện như thế nào | —
 16:59 | Mọi người phải nhớ giúp em ngay chỗ này nè | —
-17:03 | Khi anh chị đã vẽ được level rồi | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
-17:07 | Thì làm ơn tin cái level dùm | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
-17:09 | Đừng | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
-17:10 | Indicator | —
-17:12 | Là để anh chị | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
-17:13 | Tham khảo | —
-17:15 | Thật sự luôn | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
-17:17 | Indicator là để anh chị tham khảo | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
-17:22 | Nhưng nếu mà anh chị đã vẽ ra được 2 cái rank rồi | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
+17:03 | Khi anh chị đã vẽ được level rồi | —
+17:07 | Thì làm ơn tin cái level dùm | —
+17:09 | Đừng | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
+17:10 | Indicator | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
+17:12 | Là để anh chị | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
+17:13 | Tham khảo | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
+17:15 | Thật sự luôn | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
+17:17 | Indicator là để anh chị tham khảo | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
+17:22 | Nhưng nếu mà anh chị đã vẽ ra được 2 cái rank rồi | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
 17:25 | Và nó đang nằm giữa cái rank á | —
 17:27 | Thường á | —
 17:27 | Indicator nó bị xiên như xiên cá | —
-17:31 | Anh chị biết mà anh thập quýt heo không | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
+17:31 | Anh chị biết mà anh thập quýt heo không | —
 17:34 | Là nó xiên cỡ đó anh chị | —
 17:35 | Nó xiên cỡ đó | —
-17:40 | Tại vì khi | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
+17:40 | Tại vì khi | —
 17:42 | Mọi người biết lý do tại sao | —
 17:44 | Mà em không có trade indicator nhiều không | —
 17:46 | Tại vì đôi khi cái cách trade này | —
@@ -314,12 +314,12 @@ cues: 345/345 marked · rules: 3 · CODE: 35 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 18:22 | Mọi người | —
 18:24 | Mọi người nhìn thấy cái quá khứ cho em thôi | —
 18:26 | Mọi người nhìn nha | —
-18:30 | Nhìn cái quá khứ cho em thôi | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
+18:30 | Nhìn cái quá khứ cho em thôi | —
 18:32 | Có phải mọi người nhìn quá khứ nè | —
-18:37 | Nó đâu có respect email 34 đâu | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
-18:39 | Nhìn kỹ coi | —
-18:42 | Đừng suy nghĩ nhiều hết | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
-18:45 | Thiệt sự luôn | CODE kernel/mentor/course_target_test.go:12 [EMA is reference, not the decision]
+18:37 | Nó đâu có respect email 34 đâu | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
+18:39 | Nhìn kỹ coi | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
+18:42 | Đừng suy nghĩ nhiều hết | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
+18:45 | Thiệt sự luôn | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
 18:45 | Cứ nhìn đơn giản thôi | —
 18:47 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 19:41 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
@@ -333,15 +333,15 @@ cues: 345/345 marked · rules: 3 · CODE: 35 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 22:17 | quay lại thì sẽ học hả Dù anh có kể được cái quay lại ngay chỗ này đúng em kể đúng không chứ | —
 22:22 | Ừ em kể cho mày đúng không Đúng rồi đúng không rồi ok khi mà anh chị đã vẽ được một cái trang | —
 22:34 | live dễ được fellow to go higher fellow to go lower rồi mà thiệt ra căn bản cây căn bản ra nè | —
-22:42 | khi nó mắc kẹt nó đang làm gì anh nó đang chạy in rank nó đang respect hai cái level nào anh nó có | CODE kernel/mentor/trendline.go:91 [FTGL/FTGH range + untested trendline]
-22:49 | respect cái này và cái này không | CODE kernel/mentor/trendline.go:91 [FTGL/FTGH range + untested trendline]
-22:50 | cái trên và cái dưới nè, nó đang respect nè | CODE kernel/mentor/trendline.go:91 [FTGL/FTGH range + untested trendline]
-22:54 | đúng không | CODE kernel/mentor/trendline.go:91 [FTGL/FTGH range + untested trendline]
-22:54 | còn cái trendline này | CODE kernel/mentor/trendline.go:91 [FTGL/FTGH range + untested trendline]
-22:57 | nhìn cho kỹ nè | CODE kernel/mentor/trendline.go:91 [FTGL/FTGH range + untested trendline]
-22:59 | cái trendline này | CODE kernel/mentor/trendline.go:91 [FTGL/FTGH range + untested trendline]
-23:00 | có phải nó mới tạo và nó chưa được test | CODE kernel/mentor/trendline.go:91 [FTGL/FTGH range + untested trendline]
-23:03 | một lần nào không, đúng không | CODE kernel/mentor/trendline.go:91 [FTGL/FTGH range + untested trendline]
-23:07 | tại sao trendline | CODE kernel/mentor/trendline.go:91 [FTGL/FTGH range + untested trendline]
+22:42 | khi nó mắc kẹt nó đang làm gì anh nó đang chạy in rank nó đang respect hai cái level nào anh nó có | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 21)
+22:49 | respect cái này và cái này không | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 21)
+22:50 | cái trên và cái dưới nè, nó đang respect nè | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 21)
+22:54 | đúng không | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 21)
+22:54 | còn cái trendline này | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 21)
+22:57 | nhìn cho kỹ nè | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 21)
+22:59 | cái trendline này | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 21)
+23:00 | có phải nó mới tạo và nó chưa được test | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 21)
+23:03 | một lần nào không, đúng không | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 21)
+23:07 | tại sao trendline | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 21)
 23:12 | nó sẽ được tạo từ | —
 23:13 | từ từ thôi, đợi xíu | —
