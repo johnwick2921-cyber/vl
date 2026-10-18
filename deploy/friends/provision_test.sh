@@ -58,6 +58,8 @@ check "F1 .env mode is 600" "$(stat -c '%a' "$ROOT/alice/.env" 2>/dev/null)" "60
 ENV="$(cat "$ROOT/alice/.env")"
 has    "F1 .env JWT_SECRET set"        "$ENV" "JWT_SECRET="
 has    "F1 .env NT_CONNECT_KEY set"    "$ENV" "NT_CONNECT_KEY="
+has    "F1 .env DATA_ENCRYPTION_KEY set" "$ENV" "DATA_ENCRYPTION_KEY="
+has    "F1 .env RSA_PRIVATE_KEY set"   "$ENV" "RSA_PRIVATE_KEY="
 has    "F1 .env web port 18081"        "$ENV" "API_SERVER_PORT=18081"
 has    "F1 .env host = tunnel IP"      "$ENV" "API_SERVER_HOST=100.64.0.7"
 has    "F1 .env nt bind tunnel:36981"  "$ENV" "NT_TCP_LISTEN_ADDR=100.64.0.7:36981"
@@ -130,6 +132,29 @@ check "F7 provision refuses symlinked name" "$([ "$RC" -ne 0 ] && echo nonzero |
 RC=$(remove evil)
 check "F7 remove refuses symlinked name"    "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" "nonzero"
 has   "F7 remove names the escape" "$(cat "$WORK/err")" "outside"
+
+echo "== F8: per-friend encryption keys valid + distinct (F2 boot gap) =="
+# carol (N=2) is the first fresh provision; dave (N=3) the second.
+RC=$(provision dave)
+check "F8 rc is 0" "$RC" "0"
+dk_of()  { sed -n 's/^DATA_ENCRYPTION_KEY=\(.*\)$/\1/p' "$ROOT/$1/.env"; }
+rsa_of() { sed -n 's/^RSA_PRIVATE_KEY="\(.*\)"$/\1/p' "$ROOT/$1/.env"; }
+DK_CAROL="$(dk_of carol)"; DK_DAVE="$(dk_of dave)"
+RSA_CAROL="$(rsa_of carol)"; RSA_DAVE="$(rsa_of dave)"
+[ -n "$DK_CAROL" ] && ok "F8 data key present (carol)" || bad "F8 data key present (carol)" "empty"
+[ -n "$DK_DAVE" ]  && ok "F8 data key present (dave)"  || bad "F8 data key present (dave)"  "empty"
+[ "$DK_CAROL" != "$DK_DAVE" ] && ok "F8 data keys differ" || bad "F8 data keys differ" "identical"
+[ "$RSA_CAROL" != "$RSA_DAVE" ] && ok "F8 RSA keys differ" || bad "F8 RSA keys differ" "identical"
+for who in carol dave; do
+  n="$(printf '%s' "$(dk_of "$who")" | base64 -d 2>/dev/null | wc -c)"
+  check "F8 $who data key decodes to 32 bytes" "$n" "32"
+  printf '%s' "$(rsa_of "$who")" | python3 -c 'import sys; sys.stdout.write(sys.stdin.read().replace("\\n","\n"))' > "$WORK/rsa-$who.pem"
+  if openssl pkey -inform PEM -noout -in "$WORK/rsa-$who.pem" >/dev/null 2>&1; then
+    ok "F8 $who RSA key is valid PEM"
+  else
+    bad "F8 $who RSA key is valid PEM" "openssl pkey refused"
+  fi
+done
 
 printf '\n== %d pass / %d fail ==\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
