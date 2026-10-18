@@ -645,6 +645,7 @@ type friendAlertState struct {
 	botDownNotified    bool
 	ntDownNotified     bool
 	addonStaleNotified bool
+	lastRelayedReceipt string // dedup key of the last friend update receipt relayed
 }
 
 // ensureFriendMonitor starts the alert loop once (lazily, from the owner's
@@ -716,6 +717,13 @@ func (s *Server) evaluateFriendAlerts() {
 			}
 		}
 	}
+
+	// Relay DS-105's friend update receipts (CTO 2026-10-18 item 3): the
+	// updater keeps the job file as the durable record; this monitor reads
+	// it and notifies the owner, never opens the DB.
+	for _, msg := range s.relayFriendReceipts() {
+		notifyFriendAlert(s.store, msg)
+	}
 }
 
 func (s *Server) friendAlertStateFor(name string) *friendAlertState {
@@ -727,4 +735,12 @@ func (s *Server) friendAlertStateFor(name string) *friendAlertState {
 		friendAlerts[name] = stt
 	}
 	return stt
+}
+
+// resetFriendAlertStateForTest clears the in-memory alert + receipt dedup
+// state (process-global, like the login limiter).
+func resetFriendAlertStateForTest() {
+	friendAlertMu.Lock()
+	friendAlerts = map[string]*friendAlertState{}
+	friendAlertMu.Unlock()
 }

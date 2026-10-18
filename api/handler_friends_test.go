@@ -50,6 +50,8 @@ func friendTestEnv(t *testing.T, e *updEnv) {
 	t.Helper()
 	resetFriendRateLimiterForTest()
 	t.Cleanup(resetFriendRateLimiterForTest)
+	resetFriendAlertStateForTest()
+	t.Cleanup(resetFriendAlertStateForTest)
 	t.Setenv("VL_FRIENDS_ROOT", t.TempDir())
 	t.Setenv("VL_FRIENDS_SCRIPTS_DIR", t.TempDir())
 	t.Setenv("VL_FRIEND_MONITOR_OFF", "1")
