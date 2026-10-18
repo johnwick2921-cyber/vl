@@ -1,6 +1,6 @@
 # Ngày 5.1 Go over lại tất cả part2
 
-cues: 244/244 · rule cues: 99 · rows: 5 · CODE: 59 · MISMATCH: 0 · NOT-IN-BOT: 40 · OWNER-ORDER: 0 · SPLIT: 0 · —: 145
+cues: 244/244 · rule cues: 112 · rows: 6 · CODE: 72 · MISMATCH: 0 · NOT-IN-BOT: 40 · OWNER-ORDER: 0 · SPLIT: 0 · —: 132
 
 00:00 | thì thôi. | CODE kernel/mentor/day_gate.go:334 (row 5)
 00:01 | tắt máy nghỉ 1 ngày cho lành. | CODE kernel/mentor/day_gate.go:334 (row 5)
@@ -18,9 +18,9 @@ cues: 244/244 · rule cues: 99 · rows: 5 · CODE: 59 · MISMATCH: 0 · NOT-IN-B
 01:22 | đang tại quậy ngay đây không làm được gì đây hết nhưng | —
 01:25 | Ừ mình nhìn theo của mình mình nhắm theo khung năm mình nhắm theo khung 15 phút mình đánh theo | —
 01:30 | khung 15 phút thật sự ra không một phút nó vẫn đang làm cái gì anh chị nó vẫn đang làm một cái | —
-01:36 | feller to go lower nhỏ dây này đúng không Ừ nó hô được nó mới nó mới vừa tạo giúp thầy luôn nó mới | —
-01:48 | vừa tạo feller to go lower luôn thì ngay chỗ này nó xuất hiện in C3 cho lệnh loan thì cái sáng mình | —
-01:54 | lượm 1 phát 20 điểm lẹ lẹ | —
+01:36 | feller to go lower nhỏ dây này đúng không Ừ nó hô được nó mới nó mới vừa tạo giúp thầy luôn nó mới | CODE kernel/mentor/isb.go:71 (row 36)
+01:48 | vừa tạo feller to go lower luôn thì ngay chỗ này nó xuất hiện in C3 cho lệnh loan thì cái sáng mình | CODE kernel/mentor/isb.go:71 (row 36)
+01:54 | lượm 1 phát 20 điểm lẹ lẹ | CODE kernel/mentor/isb.go:71 (row 36)
 01:55 | là em nói mọi người á | —
 01:59 | khi mà anh chị thấy nó chạy cứ chạy cùm cùm cùm | —
 02:01 | mọi người nên bật khung 15 phút qua | —
@@ -49,16 +49,16 @@ cues: 244/244 · rule cues: 99 · rows: 5 · CODE: 59 · MISMATCH: 0 · NOT-IN-B
 02:41 | Cái lệnh buổi sáng ngày hôm nay | —
 02:42 | Em đặt cái lệnh | —
 02:43 | Em không suy nghĩ gì luôn | —
-02:44 | Nghĩa là | —
-02:45 | Ủa | —
-02:45 | Thấy là ok | —
-02:46 | Làm xong | —
-02:47 | Insaba 15 phút lệnh lon rồi | —
-02:48 | Rồi | —
-02:49 | Vô cái này | —
-02:50 | Tụi em thấy | —
-02:51 | Nó tạo 2 cái đấy | —
-02:51 | Cái bên nhau nè | —
+02:44 | Nghĩa là | CODE kernel/mentor/isb.go:71 (row 36)
+02:45 | Ủa | CODE kernel/mentor/isb.go:71 (row 36)
+02:45 | Thấy là ok | CODE kernel/mentor/isb.go:71 (row 36)
+02:46 | Làm xong | CODE kernel/mentor/isb.go:71 (row 36)
+02:47 | Insaba 15 phút lệnh lon rồi | CODE kernel/mentor/isb.go:71 (row 36)
+02:48 | Rồi | CODE kernel/mentor/isb.go:71 (row 36)
+02:49 | Vô cái này | CODE kernel/mentor/isb.go:71 (row 36)
+02:50 | Tụi em thấy | CODE kernel/mentor/isb.go:71 (row 36)
+02:51 | Nó tạo 2 cái đấy | CODE kernel/mentor/isb.go:71 (row 36)
+02:51 | Cái bên nhau nè | CODE kernel/mentor/isb.go:71 (row 36)
 02:52 | Em hồi xưa em đâu có vẽ ra gì đâu | —
 02:54 | Rồi đặt lệnh | —
 02:56 | Em không suy nghĩ luôn | —

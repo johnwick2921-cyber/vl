@@ -1,6 +1,6 @@
 # Ngày 5.2 Cách trade khung 4H chuyển xuống 5M part2
 
-cues: 491/491 · rule cues: 175 · rows: 7 · CODE: 122 · MISMATCH: 0 · NOT-IN-BOT: 47 · OWNER-ORDER: 6 · SPLIT: 0 · —: 316
+cues: 491/491 · rule cues: 187 · rows: 8 · CODE: 134 · MISMATCH: 0 · NOT-IN-BOT: 47 · OWNER-ORDER: 6 · SPLIT: 0 · —: 304
 
 00:00 | Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
 00:42 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
@@ -191,18 +191,18 @@ cues: 491/491 · rule cues: 175 · rows: 7 · CODE: 122 · MISMATCH: 0 · NOT-IN
 10:49 | Nhưng sau đó nó xuất hiện inside bar cho lệnh long | —
 10:51 | đây mới gọi là setup | —
 10:53 | anh chị ok không | —
-10:57 | thì anh chị từ đây | —
-11:00 | nếu mà nó xuất hiện như | —
-11:02 | nếu mà như cái này nó sẽ như thế nào | —
-11:04 | thì anh chị sẽ | —
-11:06 | để cái subplot ở dưới này | —
-11:08 | một tí | —
-11:08 | để subplot ngay level chị | —
-11:12 | để subplot ngay level | —
-11:13 | để subplot ngay level | —
-11:17 | rồi target cứ at least là 1 1 trước cho em | —
-11:22 | hoặc là giờ email băm tư cũng 5 phút | —
-11:24 | còn hơn nữa chạy | —
+10:57 | thì anh chị từ đây | CODE kernel/mentor/swing4h.go:93 (row 20)
+11:00 | nếu mà nó xuất hiện như | CODE kernel/mentor/swing4h.go:93 (row 20)
+11:02 | nếu mà như cái này nó sẽ như thế nào | CODE kernel/mentor/swing4h.go:93 (row 20)
+11:04 | thì anh chị sẽ | CODE kernel/mentor/swing4h.go:93 (row 20)
+11:06 | để cái subplot ở dưới này | CODE kernel/mentor/swing4h.go:93 (row 20)
+11:08 | một tí | CODE kernel/mentor/swing4h.go:93 (row 20)
+11:08 | để subplot ngay level chị | CODE kernel/mentor/swing4h.go:93 (row 20)
+11:12 | để subplot ngay level | CODE kernel/mentor/swing4h.go:93 (row 20)
+11:13 | để subplot ngay level | CODE kernel/mentor/swing4h.go:93 (row 20)
+11:17 | rồi target cứ at least là 1 1 trước cho em | CODE kernel/mentor/swing4h.go:93 (row 20)
+11:22 | hoặc là giờ email băm tư cũng 5 phút | CODE kernel/mentor/swing4h.go:93 (row 20)
+11:24 | còn hơn nữa chạy | CODE kernel/mentor/swing4h.go:93 (row 20)
 11:25 | hợp lý không | —
 11:30 | Em nói một người một tháng | —
 11:32 | Mọi người chờ em ngưng lớp một tháng | —

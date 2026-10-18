@@ -1,6 +1,6 @@
 # Ngày 5.2 Cách trade khung 4H chuyển xuống 5M part3
 
-cues: 391/391 · rule cues: 153 · rows: 2 · CODE: 153 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 0 · SPLIT: 0 · —: 238
+cues: 391/391 · rule cues: 165 · rows: 2 · CODE: 165 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 0 · SPLIT: 0 · —: 226
 
 00:02 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 00:35 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
@@ -60,18 +60,18 @@ cues: 391/391 · rule cues: 153 · rows: 2 · CODE: 153 · MISMATCH: 0 · NOT-IN
 08:04 | Nếu bây giờ cái row Insaba nó có dài | —
 08:06 | Cũng đặt ở line cho em | —
 08:07 | Anh chị ok không? Tiếp tục | —
-08:11 | Nếu như anh chị không vô lệnh ở đó | —
-08:13 | Thì bây giờ nếu như nó cứ nằm trên line | —
-08:15 | nó về nó test cái like nằm trên lái | —
-08:16 | về test cái like thì | —
-08:18 | anh chị cứ việc đợi khi nào nó xuất hiện | —
-08:21 | insta bar cho lệnh lon thì anh chị vô | —
-08:22 | đó đông dưới đông lên | —
-08:25 | đông dưới đông trên rồi xong xuất hiện | —
-08:27 | insta bar rồi cứ đặt insta bar cho em | —
-08:29 | rồi vô lệnh ngay đây cũng ok | —
-08:30 | hoàn toàn hợp lý | —
-08:32 | không sao hết tùy góc nhìn của mỗi người | —
+08:11 | Nếu như anh chị không vô lệnh ở đó | CODE kernel/mentor/swing4h.go:401 (row 16)
+08:13 | Thì bây giờ nếu như nó cứ nằm trên line | CODE kernel/mentor/swing4h.go:401 (row 16)
+08:15 | nó về nó test cái like nằm trên lái | CODE kernel/mentor/swing4h.go:401 (row 16)
+08:16 | về test cái like thì | CODE kernel/mentor/swing4h.go:401 (row 16)
+08:18 | anh chị cứ việc đợi khi nào nó xuất hiện | CODE kernel/mentor/swing4h.go:401 (row 16)
+08:21 | insta bar cho lệnh lon thì anh chị vô | CODE kernel/mentor/swing4h.go:401 (row 16)
+08:22 | đó đông dưới đông lên | CODE kernel/mentor/swing4h.go:401 (row 16)
+08:25 | đông dưới đông trên rồi xong xuất hiện | CODE kernel/mentor/swing4h.go:401 (row 16)
+08:27 | insta bar rồi cứ đặt insta bar cho em | CODE kernel/mentor/swing4h.go:401 (row 16)
+08:29 | rồi vô lệnh ngay đây cũng ok | CODE kernel/mentor/swing4h.go:401 (row 16)
+08:30 | hoàn toàn hợp lý | CODE kernel/mentor/swing4h.go:401 (row 16)
+08:32 | không sao hết tùy góc nhìn của mỗi người | CODE kernel/mentor/swing4h.go:401 (row 16)
 08:37 | ok không | —
 08:40 | rồi tiếp tục tới anh chị nào hỏi cây xanh | —
 08:44 | đây hỏi gì đó hỏi đi | —
