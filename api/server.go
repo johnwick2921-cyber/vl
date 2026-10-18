@@ -207,6 +207,19 @@ func (s *Server) setupRoutes() {
 			s.routeWithSchema(protected, "POST", "/telegram/bind-code", "Issue a one-time Telegram bind code (owner-only)",
 				`Response: {"code":"<8 chars>","expires_in_minutes":10} — send /bind <code> from the chat`,
 				s.handleTelegramBindCode)
+
+			// W-FRIEND-HOSTED (DS-106): the owner's Friends page API. Owner JWT
+			// only; 404 when VL_FRIEND_INSTANCE=1 (a friend bot has no owner API).
+			s.routeWithSchema(protected, "GET", "/owner/friends", "List friends with live status (owner-only; 404 in friend mode)",
+				`Response: {"friends":[{name,state,web_port,nt_port,key_sha256,created_at,tailscale_device_id,bot_up,nt_connected,last_bar_age_ms,revision,addon_build,app_version,last_seen,probe_error}],"tailscale_key_set":<bool>,"tunnel_ip":"<string>"}. friends is [] when none; live fields are absent (not fabricated) when the friend cannot be probed.`,
+				s.handleOwnerFriendsList)
+			s.routeWithSchema(protected, "POST", "/owner/friends", "Add a friend — provisions and returns the install code ONCE (owner-only)",
+				`Body: {"name":"<lowercase a-z0-9, 2-20 chars>"}. Returns {"friend":{...},"install_code":"<base64url, shown once — not stored or logged>","shown_once":true}. Rate limited.`,
+				s.handleOwnerFriendsAdd)
+			s.routeWithSchema(protected, "POST", "/owner/friends/:name/:action", "Friend action (owner-only): pause | resume | revoke | rotate",
+				`Path: :action = pause (stop unit, state=paused) | resume (start unit, state=active) | revoke (remove.sh MOVES the folder to trash + Tailscale device delete; tailscale:"api_key_missing" when TAILSCALE_API_KEY is unset — never a silent skip) | rotate (new connect key; returns {"install_code":"<base64url, shown once>"}).`,
+				s.handleOwnerFriendAction)
+
 			s.route(protected, "GET", "/agent/preferences", "Get persistent agent preferences", s.handleGetAgentPreferences)
 			s.route(protected, "POST", "/agent/preferences", "Create persistent agent preference", s.handleCreateAgentPreference)
 			s.route(protected, "DELETE", "/agent/preferences/:id", "Delete persistent agent preference", s.handleDeleteAgentPreference)

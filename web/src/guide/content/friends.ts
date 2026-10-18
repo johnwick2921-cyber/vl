@@ -1,64 +1,36 @@
 import { GUIDE_BUILT_REV, type GuideSection } from '../types'
 
-// Friend app (VL-Setup.exe) + installer — S8 (DS-108). The friend's side of
-// W-FRIEND-HOSTED: they run one exe, paste one code, and the app does the rest.
 export const friends: GuideSection = {
   id: 'friends',
   num: 18,
-  title: 'Friend app (VL-Setup)',
-  tagline:
-    'How your friend installs VL on their own PC — without ever receiving the code.',
+  title: 'Friends',
+  tagline: 'Let a friend run VL on their own PC without ever getting the code.',
   asBuiltRev: GUIDE_BUILT_REV,
   blocks: [
+    { kind: 'h', text: 'The Friends page' },
     {
       kind: 'p',
-      text: 'A friend tests VL on their own PC and never gets the code. Their PC receives only NinjaTrader, a compiled (scrambled) add-on, and a small app. Their bot runs on your box, in its own folder with its own database, login and ports — it cannot see your traders, database or keys.',
+      text: 'Friends is the owner-only screen for granting and removing access. A friend runs VL on their own PC; their bot runs on this box in its own folder (/home/hoang/vl-friends/<name>) with its own database and its own secret, and never receives the source code. Everything on the page is READ from this bot’s own /api/owner/friends — the live columns (bot up · NT connected · last bar age · add-on / app version · last seen) are probed by the bot over the friend’s own health endpoint, never reached into directly. A value the bot cannot tell you prints “—” — it is never invented.',
     },
-    { kind: 'h', text: 'What the friend does (one time, ~5 minutes)' },
-    {
-      kind: 'checklists',
-      items: [
-        {
-          title: 'Install',
-          steps: [
-            'They already have NinjaTrader 8 with live MNQ data and their own SIM account.',
-            'They run VL-Setup.exe and paste the install code you sent (shown once, in the Friends page).',
-            'The app quietly installs Tailscale, writes its connection settings, downloads and verifies the compiled add-on, and places a VL icon on their desktop.',
-          ],
-        },
-        {
-          title: 'Every day',
-          steps: [
-            'They double-click the VL icon — their dashboard opens in its own window.',
-            'They log in, set their own AI key, strategy and settings.',
-          ],
-        },
-      ],
-    },
-    { kind: 'h', text: 'The update pop-up' },
+    { kind: 'h', text: 'The columns' },
     {
       kind: 'p',
-      text: 'Each time the app starts it asks their bot for a signed version list. When the add-on or the app is newer, a pop-up says “VL update available — Update now / Later”. Update now downloads the new build, checks its signature and its SHA-256 (a bad download refuses and nothing changes), waits until the bot is flat, moves the old add-on aside (never deletes it), and asks them to restart NinjaTrader. It never updates during a trade.',
+      text: 'name is the friend id you typed. bot up means the friend’s bot answered its own /api/health. NT connected means the friend’s NinjaTrader AddOn socket is up. last bar age is the youngest bar age across the friend’s running traders. SIM account is reserved for the friend’s account name once the friend bot exposes it. add-on / app is the build the friend’s AddOn and app report. last seen is the last successful probe this bot made (in-memory, since this bot started).',
     },
+    { kind: 'h', text: 'Add and the install code' },
     {
-      kind: 'callout',
-      title: 'Windows SmartScreen warning',
-      items: [
-        {
-          title: 'The exe is not code-signed yet',
-          body: 'Windows SmartScreen warns about the unsigned VL-Setup.exe on first run. That is expected: a code-signing certificate is an optional later step, not part of this release. The friend clicks “More info → Run anyway”.',
-        },
-      ],
+      kind: 'p',
+      text: 'Add provisions a new friend and returns ONE install code — a single line the friend pastes into the VL app on their PC. It is shown once, in a copy box labelled “this will not be shown again”, and is never stored or logged by the bot. Copy it immediately and send it to the friend. Add is rate limited: wait between adds.',
     },
+    { kind: 'h', text: 'Pause · Resume · Revoke · New key' },
     {
-      kind: 'callout',
-      title: 'No source on the friend’s PC',
-      items: [
-        {
-          title: 'Compiled + scrambled only',
-          body: 'The friend’s NinjaTrader folder gets only VL.AddOn.dll — compiled and obfuscated. No .cs source file is ever placed on their PC, so the NinjaScript Editor has nothing to open.',
-        },
-      ],
+      kind: 'p',
+      text: 'Pause stops the friend’s unit (their bot stops running; their folder and key stay). Resume starts it again. Revoke stops the unit, MOVES the friend’s folder to the trash (never deletes it) and removes their Tailscale device — the device removal needs the owner’s TAILSCALE_API_KEY; when that key is not set the page says so instead of skipping it silently. New key rotates the friend’s connect key and returns a new install code (shown once): the old key stops working the moment the new one is written.',
+    },
+    { kind: 'h', text: 'Alerts' },
+    {
+      kind: 'p',
+      text: 'The owner’s Telegram bot raises an alert when a friend’s bot is down, when a friend’s NinjaTrader connection has been down more than five minutes, or when a friend’s AddOn build is older than this box’s build. The Friends page is the authoritative surface; the alerts are advisory.',
     },
   ],
 }

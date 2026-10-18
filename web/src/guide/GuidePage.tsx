@@ -31,6 +31,7 @@ import { candidates } from './content/candidates'
 import { updates } from './content/updates'
 import { mentor } from './content/mentor'
 import { friends } from './content/friends'
+import { friendsApp } from './content/friendsApp'
 
 export const GUIDE_SECTIONS: GuideSection[] = [
   welcome,
@@ -51,6 +52,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   updates,
   mentor,
   friends,
+  friendsApp,
 ]
 
 const ivory = { color: 'var(--vl-ivory)' }
