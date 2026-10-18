@@ -196,14 +196,17 @@ func (s *Server) setupRoutes() {
 		// updater calls it (no JWT) to decide a restart; never on the owner's bot.
 		if s.friendMode {
 			api.GET("/friend/flat", s.handleFriendFlat)
-		}
 
-		// W-FRIEND-HOSTED S8 (DS-108): the friend manifest + artifacts, served
-		// ONLY in friend mode (404 on the owner's bot). Public (no auth): the
-		// friend app fetches them before the friend logs in.
-		s.route(api, "GET", "/friend/manifest", "Friend manifest (friend mode only)", s.handleFriendManifest)
-		s.route(api, "GET", "/friend/manifest.sig", "Friend manifest signature (friend mode only)", s.handleFriendManifestSig)
-		s.route(api, "GET", "/friend/artifact/:name", "Friend artifact (addon|app; friend mode only)", s.handleFriendArtifact)
+			// W-FRIEND-HOSTED S8 (DS-108): the friend manifest + artifacts exist
+			// ONLY in friend mode — never registered on the owner's bot
+			// (B5 S12 + R8). The handlers still 404 outside friend mode as
+			// defense in depth. Raw api.GET like /friend/flat so they never
+			// enter GetAPIDocs; public (no auth): the friend app fetches them
+			// before the friend logs in.
+			api.GET("/friend/manifest", s.handleFriendManifest)
+			api.GET("/friend/manifest.sig", s.handleFriendManifestSig)
+			api.GET("/friend/artifact/:name", s.handleFriendArtifact)
+		}
 
 		// Routes requiring authentication
 		protected := api.Group("/", s.authMiddleware(), s.planTraderOwnership())
