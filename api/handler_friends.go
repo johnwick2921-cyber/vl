@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"vl/logger"
+	"vl/safe"
 	"vl/telemetry"
 
 	"github.com/gin-gonic/gin"
@@ -658,7 +659,7 @@ func (s *Server) ensureFriendMonitor() {
 	friendAlertOnce.Do(func() {
 		stop := make(chan struct{})
 		friendAlertStop = stop
-		go s.friendAlertLoop(stop)
+		safe.GoNamed("friend-alert-loop", func() { s.friendAlertLoop(stop) })
 	})
 }
 
