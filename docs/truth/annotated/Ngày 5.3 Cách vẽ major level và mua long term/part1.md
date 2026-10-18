@@ -1,6 +1,6 @@
 # Ngày 5.3 Cách vẽ major level và mua long term part1
 
-cues: 667/667 marked · rules: 262 · CODE: 262 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 405
+cues: 667/667 · rule cues: 259 · rows: 7 · CODE: 256 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 3 · SPLIT: 0 · —: 408
 
 00:00 | Ví dụ về việc mua xe, về việc swing xe, mua xe nó như thế nào? | —
 00:07 | Em cũng, nói chung là em cũng không có recommend cái, em cũng không có recommend cái việc mà anh chị mua xe mà để theo cái cách này, tại vì sao? | —
@@ -26,9 +26,9 @@ cues: 667/667 marked · rules: 262 · CODE: 262 · MISMATCH: 0 · NOT-IN-BOT: 0 
 01:06 | Cái việc này em mua xe quá nhiều | —
 01:08 | Em chỉ sử dụng em trade fund là chủ yếu | —
 01:11 | Còn đôi khi em cũng có trade cash | —
-01:13 | Nhưng mà em trade cũng có 1 MNQ thôi | —
-01:14 | Em không có trade nhiều | —
-01:15 | Em chỉ trade 1 MNQ thôi | —
+01:13 | Nhưng mà em trade cũng có 1 MNQ thôi | OWNER-ORDER (row 23)
+01:14 | Em không có trade nhiều | OWNER-ORDER (row 23)
+01:15 | Em chỉ trade 1 MNQ thôi | OWNER-ORDER (row 23)
 01:18 | Thì nó căn bản là như vậy | —
 01:20 | Nó cũng là chung một hình xếp hết mọi người | —
 01:21 | Nó cũng là chung một hình xếp hết | —
@@ -255,21 +255,21 @@ cues: 667/667 marked · rules: 262 · CODE: 262 · MISMATCH: 0 · NOT-IN-BOT: 0 
 09:07 | là tôi có khả năng tôi kiếm được | —
 09:13 | những con cá bự tôi về tôi ăn | —
 09:14 | Đúng không | —
-09:16 | Chứ ngồi mà đi scrap 5-10 điểm | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:21 | 15 điểm mà còn | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:23 | 15 điểm mà nó ngay target luôn | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:25 | Thì em lại không chịu nha | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:27 | Target nếu mà | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:29 | Lúc này em cũng chịu hao hết | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:30 | Từ điểm entry của em xuống target at least | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:32 | Bây giờ dù target của em là 15 điểm | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:35 | Dù target của em là 15 điểm | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:38 | Nhưng | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:41 | Từ chỗ em xuống target | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:43 | Nó phải từ 30 điểm đổ lên | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:44 | Từ điểm em entry | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:50 | xuống target nó phải từ 30 điểm đổ lên | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
-09:52 | thì em mới chấp nhận | CODE kernel/mentor/mentor.go:328 [RoomMultiple=2]
+09:16 | Chứ ngồi mà đi scrap 5-10 điểm | CODE kernel/mentor/mentor.go:551 (row 31)
+09:21 | 15 điểm mà còn | CODE kernel/mentor/mentor.go:551 (row 31)
+09:23 | 15 điểm mà nó ngay target luôn | CODE kernel/mentor/mentor.go:551 (row 31)
+09:25 | Thì em lại không chịu nha | CODE kernel/mentor/mentor.go:551 (row 31)
+09:27 | Target nếu mà | CODE kernel/mentor/mentor.go:551 (row 31)
+09:29 | Lúc này em cũng chịu hao hết | CODE kernel/mentor/mentor.go:551 (row 31)
+09:30 | Từ điểm entry của em xuống target at least | CODE kernel/mentor/mentor.go:551 (row 31)
+09:32 | Bây giờ dù target của em là 15 điểm | CODE kernel/mentor/mentor.go:551 (row 31)
+09:35 | Dù target của em là 15 điểm | CODE kernel/mentor/mentor.go:551 (row 31)
+09:38 | Nhưng | CODE kernel/mentor/mentor.go:551 (row 31)
+09:41 | Từ chỗ em xuống target | CODE kernel/mentor/mentor.go:551 (row 31)
+09:43 | Nó phải từ 30 điểm đổ lên | CODE kernel/mentor/mentor.go:551 (row 31)
+09:44 | Từ điểm em entry | CODE kernel/mentor/mentor.go:551 (row 31)
+09:50 | xuống target nó phải từ 30 điểm đổ lên | CODE kernel/mentor/mentor.go:551 (row 31)
+09:52 | thì em mới chấp nhận | CODE kernel/mentor/mentor.go:551 (row 31)
 09:55 | còn cái việc mà từ | —
 09:56 | điểm entry của em | —
 09:57 | từ điểm entry của em | —
@@ -350,252 +350,252 @@ cues: 667/667 marked · rules: 262 · CODE: 262 · MISMATCH: 0 · NOT-IN-BOT: 0 
 12:33 | có nhiều volume nhất | —
 12:34 | chị đói sắp xỉu chứ em cũng là sắp | —
 12:38 | kêu 115 rồi nè | —
-12:40 | là sẽ | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-12:44 | không | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-12:48 | em đâu có xài volume | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-12:49 | xin em sẽ nói về vấn đề volume | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-12:53 | xin em sẽ nói về vấn đề volume | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-12:55 | em sẽ sử dụng | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:00 | dẻ level | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:01 | chỉ ở khung | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:03 | giờ châu Mỹ thôi | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:05 | tại vì khung giờ châu Mỹ là khung giờ có nhiều volume nhất | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:07 | nó có | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:09 | không phải là volume mà nó có độ | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:11 | giao dịch và biên độ nhiều nhất | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:13 | trong ngày, tại vì mình đang trade | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:15 | trên mã Mỹ | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:15 | thì bây giờ, ngay đây nó bị | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:19 | sàn lọc giữa châu Á, châu Âu | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:21 | và châu Mỹ nữa, nên là em sẽ chuyển qua | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:23 | em sẽ chỉnh lại | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:24 | em sẽ chỉ lấy khung giờ Mỹ thôi | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:27 | là gì | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:28 | em chỉ | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:30 | bên phải góc màn hình, nó có dấu pentagon | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:33 | cái dấu lục giác, em bấm vô | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:35 | có chữ session, em chuyển qua | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:37 | regular trading hour | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:38 | regular train hour là nó chỉ lấy cho anh chị | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:40 | cái mã ở | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:42 | cái | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:43 | cái khung giờ châu Mỹ only | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:46 | chứ nó không lấy khung giờ châu Á | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:49 | châu Âu, thì nó chỉ là một màn | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:50 | đen vậy, còn hồi nãy là nó vừa | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:53 | nó vừa xanh vừa đen, vừa xanh vừa đen | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:54 | còn này là một màn đen | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
-13:56 | ha, rồi, cách em vẽ là như thế nào | CODE kernel/mentor/key_levels.go:43 [KeyLevelRTHOnly]
+12:40 | là sẽ | CODE kernel/mentor/key_levels.go:141 (row 29)
+12:44 | không | CODE kernel/mentor/key_levels.go:141 (row 29)
+12:48 | em đâu có xài volume | CODE kernel/mentor/key_levels.go:141 (row 29)
+12:49 | xin em sẽ nói về vấn đề volume | CODE kernel/mentor/key_levels.go:141 (row 29)
+12:53 | xin em sẽ nói về vấn đề volume | CODE kernel/mentor/key_levels.go:141 (row 29)
+12:55 | em sẽ sử dụng | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:00 | dẻ level | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:01 | chỉ ở khung | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:03 | giờ châu Mỹ thôi | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:05 | tại vì khung giờ châu Mỹ là khung giờ có nhiều volume nhất | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:07 | nó có | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:09 | không phải là volume mà nó có độ | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:11 | giao dịch và biên độ nhiều nhất | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:13 | trong ngày, tại vì mình đang trade | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:15 | trên mã Mỹ | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:15 | thì bây giờ, ngay đây nó bị | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:19 | sàn lọc giữa châu Á, châu Âu | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:21 | và châu Mỹ nữa, nên là em sẽ chuyển qua | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:23 | em sẽ chỉnh lại | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:24 | em sẽ chỉ lấy khung giờ Mỹ thôi | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:27 | là gì | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:28 | em chỉ | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:30 | bên phải góc màn hình, nó có dấu pentagon | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:33 | cái dấu lục giác, em bấm vô | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:35 | có chữ session, em chuyển qua | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:37 | regular trading hour | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:38 | regular train hour là nó chỉ lấy cho anh chị | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:40 | cái mã ở | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:42 | cái | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:43 | cái khung giờ châu Mỹ only | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:46 | chứ nó không lấy khung giờ châu Á | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:49 | châu Âu, thì nó chỉ là một màn | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:50 | đen vậy, còn hồi nãy là nó vừa | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:53 | nó vừa xanh vừa đen, vừa xanh vừa đen | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:54 | còn này là một màn đen | CODE kernel/mentor/key_levels.go:141 (row 29)
+13:56 | ha, rồi, cách em vẽ là như thế nào | CODE kernel/mentor/key_levels.go:141 (row 29)
 13:59 | mỗi một | —
 14:01 | cây nến màu là | —
 14:02 | em sẽ tính theo một cái trend | —
 14:04 | thì đỏ là một trend, xanh là một trend | —
 14:06 | Bây giờ em dễ như thế nào | —
-14:08 | Em sẽ đi thuộc lùi lại ha | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:09 | Và key level anh chỉ muốn dễ bao nhiêu tùy thích | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:11 | Anh chỉ muốn dễ bao nhiêu tùy thích | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:13 | Key level nó là quá khứ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:16 | Thì cái quá khứ anh chỉ muốn dễ bao nhiêu tùy thích | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:18 | Rồi dễ như thế nào | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:22 | Mình sẽ đếm nè | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:23 | Từ xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:24 | Từ đỏ sang xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:27 | Cây nến đổi màu sẽ là cây nến xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:30 | Đỏ sang xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:31 | Thì mình lúc nào cũng phải lấy cái bế sau | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:33 | Đỏ sang xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:34 | Đúng không? Đỏ sang xanh là mình phải lấy cái bế sau | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:37 | Cây nến ở ngoài là cây nến xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:39 | Mình sẽ vẽ 1 line | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:41 | Ở điểm open | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:44 | Của cây nến xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:46 | Thì bây giờ anh chị nào không biết | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:48 | Điểm open của cây nến | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:49 | Anh chị đưa con chuột vô cây nến | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:51 | Nó sẽ hiện cái giá nè | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:54 | Nó sẽ hiện cái giá | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:55 | Open, high, low, close | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:58 | Close là đóng | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-14:59 | Open mình sẽ kiếm cây nến | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:00 | Cây nến này | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:02 | Điểm open của nó là 950 | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:04 | Để 1 line đây cho em | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:05 | Tiếp tục | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:08 | Từ xanh sang đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:10 | Điểm đỏ màu là | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:13 | Cây nến đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:14 | Mình sẽ giải định 1 line ở điểm open của cây nến đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:17 | Và mình cứ lập đi lập lại | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:20 | Cái vấn đề này liên tục | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:21 | Từ xanh sang đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:22 | Mình cứ thụt lùi từ từ thôi anh chị | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:24 | Không cần phải nhanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:25 | Từ xanh sang đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:27 | Điểm open cây nến đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:28 | Ngay đây không có đỏ màu gì hết | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:31 | Ngay đây có nè | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:32 | Từ đỏ sang xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:33 | Đúng không | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:34 | Zoom out ra từ đỏ nè | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:35 | Sang xanh nè | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:36 | Mặc dụ tút xuống này luôn | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:37 | Nhưng vẫn phải dẻ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:38 | Open kênh đánh xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:39 | Tiếp tục | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:41 | Lù lù lù lại | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:43 | Rồi từ xanh sang đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:44 | Open kênh đánh đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:45 | Rồi | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:48 | Từ xanh sang đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:49 | Từ đỏ sang xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:50 | Open kênh đánh xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:51 | Từ xanh sang đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:53 | Open kênh đánh đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:54 | Đọc thần chú hả anh chị | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:56 | Rồi từ đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:57 | Sang xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:58 | Open kênh đánh xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:59 | Nhưng | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-15:59 | Nhưng | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-16:01 | Nếu như 2 cái key level | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:04 | Anh chị vẽ mà nó gần nhau quá | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:07 | Nó dưới | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:08 | 20 điểm | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:10 | Nó dưới 20 điểm | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:12 | Giữa cái rank của 2 cái level này là dưới 20 điểm | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:14 | Thì mình sẽ xóa đi 1 điểm | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:17 | 1 đường | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:18 | Mình sẽ xóa đi | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:20 | Mình sẽ giữ cái đường | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:22 | Có quá khứ gần nhất | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:24 | Là cái đường ở dưới | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:25 | Tại vì sao? Nằm bên phải | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:27 | Cái đường ở dưới nằm bên phải | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:29 | Còn đường sau nằm bên trái | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:29 | Cái này là quá khứ gần nhất | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:32 | Thì mình xóa cái đường này đi | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:33 | Mình không lấy cái đường này, mình chỉ lấy cái đường này thôi | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:34 | Nếu mà giữa 2 cái răng | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:37 | Nó nằm ở dưới 20 điểm | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:39 | Nó nằm dưới 20 điểm | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:41 | Đến chi | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:42 | Bây giờ 1 cái nến 1 phút nó cũng đã 20-30 điểm mỗi buổi sáng rồi | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:44 | Bây giờ 1 cái răng ở dưới 20 điểm | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:47 | Anh chị không có nhìn thấy được cái nến | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:48 | Nó toàn like không à | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:50 | Rồi | CODE kernel/mentor/key_levels.go:75 [pruneLevelsByRecency <20]
-16:51 | Tiếp tục vậy thôi | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-16:53 | Cứ đếm là từ xanh sang đỏ, dễ đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-16:55 | Từ đỏ sang xanh, dễ xanh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-16:58 | Xanh không cần, nay gần quá | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:00 | Rồi, từ xanh sang đỏ, dễ đỏ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:02 | Em dễ nhiều nhiều ha | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:05 | Rồi cho mọi người sẽ | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:06 | Mọi người sẽ nhìn ra được cái vấn đề | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:08 | Rồi | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:17 | Ok | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:17 | Sau khi anh chị dễ xong | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:19 | Sau khi anh chị dễ xong | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:21 | Dễ được mớ rồi ha | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:22 | Sau khi anh chị dễ xong | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:22 | Anh chị chuyển lại cái session cho em | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:25 | Chuyển lại electronic | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:26 | Rồi chuyển qua không 1 phút | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:30 | Play bình thường | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:30 | Anh chị thấy điều gì không | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:35 | Nó rất respect những cái level này luôn | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:37 | Level | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:41 | Khi anh chị đang có lệnh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:43 | Khi anh chị đang hold lệnh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:47 | Những cái đường level này | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:48 | Sẽ là những cái target của anh chị | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:50 | Sẽ phải hướng tới | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:51 | Còn nếu như anh chị không có lệnh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:54 | Thì những cái level này | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:56 | Là những cái level để anh chị vô lệnh | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-17:58 | Resistance support | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-18:00 | Đúng không | CODE kernel/mentor/key_levels.go:18 [colour-change open]
-18:03 | Đụng level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:04 | Đâu | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:06 | Để xuống kiếm xa xa đi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:08 | Rồi xuống xa xa đi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:10 | Vẫn là hồi nãy | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:12 | Concept hồi nãy nè | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:13 | Đụng level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:14 | Có đặt lệnh hay không | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:17 | Trả lời cho em coi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:19 | Đụng level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:48 | Đóng nến dưới | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:48 | Em không đặt lệnh | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:50 | Nếu như em đặt lệnh | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:51 | Thì đụng | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:52 | Bây giờ nó trò ngược lên trên | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:54 | Đóng nến trên | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:55 | Xuất hiện cái gì | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:56 | Em mới được vô anh chị | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-18:56 | Xuất hiện cái gì mọi người | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:00 | Có phải là | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:02 | Đợi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:03 | Insaba | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:04 | Cho lệnh lon | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:05 | Thì em đánh ngược lên ở trên | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:06 | Đúng không | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:07 | Nãy giờ mình vẫn học | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:09 | Một concept như vậy | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:09 | Nó liên thông với nhau như vậy | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:13 | Ok không mọi người | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:40 | Level nó sẽ | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:42 | Level nó sẽ ra rồi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:44 | Ví dụ đi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:44 | Bây giờ ví dụ đi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:45 | Để kiếm những cái level nào | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:47 | Mà nó đóng nín | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:48 | Nó đóng | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:48 | Nó đụng level reject coi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:50 | Để em xíu nha | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:52 | Em coi coi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-19:53 | Rồi đây | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:01 | Có luôn nè | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:02 | Đây | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:02 | Đụng level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:06 | Đụng level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:08 | Reject | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:09 | Em đặt lệnh sell stop | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:11 | Ở dưới cây nín xanh | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:11 | Đúng không anh chị | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:12 | Trả lời giúp em đúng hay không | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:13 | Đúng rồi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:19 | Đụng level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:21 | Đóng nín | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:23 | Đóng nín dưới level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:24 | Em không quan tâm màu sắc nha | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:25 | Em không quan tâm cái nến nào đụng level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:27 | Cái nến màu gì em cũng chả quan tâm | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:28 | Đụng level, đóng nến dưới level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:33 | Em đặt lệnh sell stop, đúng không? | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:36 | Như anh chị khác, mọi người thấy không đúng hả? | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:38 | Như anh chị khác thấy đúng không? | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:40 | Đúng rồi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:40 | Vậy tiếp theo | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:42 | Có một cái nến sau nữa nó đụng level nữa | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:44 | Nó đóng nến dưới level tiếp | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:46 | Em có nên move cái lệnh sell stop của em lên cái level này hay không? | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-20:52 | Lên lên cái nến này hay không? | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-21:00 | Tại sao không? | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-21:00 | Nếu như là cái nến sau | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-21:45 | Nến đụng level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-21:46 | Đóng ở dưới | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-21:49 | Đóng dưới level luôn | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-21:51 | Em sẽ không move lên | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-21:52 | Đây là bắt buộc | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-21:56 | Không phải bắt buộc | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-21:58 | Nhưng mà đây là cách của em | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-22:00 | Em đang hướng dẫn cách của em | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-22:01 | Rồi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-22:07 | Em vẫn sẽ để cái nến | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-22:10 | Tại vì em lúc nào cũng sẽ bay theo cái nến đầu tiên | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-22:12 | Nó đụng | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-22:14 | Nhưng sẽ có trường hợp | CODE kernel/mentor/touch.go:10 [TouchOutcome]
+14:08 | Em sẽ đi thuộc lùi lại ha | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:09 | Và key level anh chỉ muốn dễ bao nhiêu tùy thích | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:11 | Anh chỉ muốn dễ bao nhiêu tùy thích | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:13 | Key level nó là quá khứ | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:16 | Thì cái quá khứ anh chỉ muốn dễ bao nhiêu tùy thích | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:18 | Rồi dễ như thế nào | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:22 | Mình sẽ đếm nè | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:23 | Từ xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:24 | Từ đỏ sang xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:27 | Cây nến đổi màu sẽ là cây nến xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:30 | Đỏ sang xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:31 | Thì mình lúc nào cũng phải lấy cái bế sau | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:33 | Đỏ sang xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:34 | Đúng không? Đỏ sang xanh là mình phải lấy cái bế sau | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:37 | Cây nến ở ngoài là cây nến xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:39 | Mình sẽ vẽ 1 line | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:41 | Ở điểm open | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:44 | Của cây nến xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:46 | Thì bây giờ anh chị nào không biết | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:48 | Điểm open của cây nến | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:49 | Anh chị đưa con chuột vô cây nến | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:51 | Nó sẽ hiện cái giá nè | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:54 | Nó sẽ hiện cái giá | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:55 | Open, high, low, close | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:58 | Close là đóng | CODE kernel/mentor/key_levels.go:260 (row 27)
+14:59 | Open mình sẽ kiếm cây nến | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:00 | Cây nến này | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:02 | Điểm open của nó là 950 | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:04 | Để 1 line đây cho em | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:05 | Tiếp tục | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:08 | Từ xanh sang đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:10 | Điểm đỏ màu là | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:13 | Cây nến đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:14 | Mình sẽ giải định 1 line ở điểm open của cây nến đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:17 | Và mình cứ lập đi lập lại | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:20 | Cái vấn đề này liên tục | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:21 | Từ xanh sang đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:22 | Mình cứ thụt lùi từ từ thôi anh chị | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:24 | Không cần phải nhanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:25 | Từ xanh sang đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:27 | Điểm open cây nến đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:28 | Ngay đây không có đỏ màu gì hết | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:31 | Ngay đây có nè | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:32 | Từ đỏ sang xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:33 | Đúng không | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:34 | Zoom out ra từ đỏ nè | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:35 | Sang xanh nè | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:36 | Mặc dụ tút xuống này luôn | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:37 | Nhưng vẫn phải dẻ | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:38 | Open kênh đánh xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:39 | Tiếp tục | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:41 | Lù lù lù lại | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:43 | Rồi từ xanh sang đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:44 | Open kênh đánh đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:45 | Rồi | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:48 | Từ xanh sang đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:49 | Từ đỏ sang xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:50 | Open kênh đánh xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:51 | Từ xanh sang đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:53 | Open kênh đánh đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:54 | Đọc thần chú hả anh chị | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:56 | Rồi từ đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:57 | Sang xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:58 | Open kênh đánh xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:59 | Nhưng | CODE kernel/mentor/key_levels.go:260 (row 27)
+15:59 | Nhưng | CODE kernel/mentor/key_levels.go:260 (row 27)
+16:01 | Nếu như 2 cái key level | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:04 | Anh chị vẽ mà nó gần nhau quá | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:07 | Nó dưới | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:08 | 20 điểm | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:10 | Nó dưới 20 điểm | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:12 | Giữa cái rank của 2 cái level này là dưới 20 điểm | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:14 | Thì mình sẽ xóa đi 1 điểm | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:17 | 1 đường | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:18 | Mình sẽ xóa đi | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:20 | Mình sẽ giữ cái đường | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:22 | Có quá khứ gần nhất | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:24 | Là cái đường ở dưới | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:25 | Tại vì sao? Nằm bên phải | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:27 | Cái đường ở dưới nằm bên phải | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:29 | Còn đường sau nằm bên trái | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:29 | Cái này là quá khứ gần nhất | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:32 | Thì mình xóa cái đường này đi | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:33 | Mình không lấy cái đường này, mình chỉ lấy cái đường này thôi | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:34 | Nếu mà giữa 2 cái răng | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:37 | Nó nằm ở dưới 20 điểm | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:39 | Nó nằm dưới 20 điểm | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:41 | Đến chi | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:42 | Bây giờ 1 cái nến 1 phút nó cũng đã 20-30 điểm mỗi buổi sáng rồi | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:44 | Bây giờ 1 cái răng ở dưới 20 điểm | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:47 | Anh chị không có nhìn thấy được cái nến | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:48 | Nó toàn like không à | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:50 | Rồi | CODE kernel/mentor/key_levels.go:86 (row 28)
+16:51 | Tiếp tục vậy thôi | CODE kernel/mentor/key_levels.go:260 (row 27)
+16:53 | Cứ đếm là từ xanh sang đỏ, dễ đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+16:55 | Từ đỏ sang xanh, dễ xanh | CODE kernel/mentor/key_levels.go:260 (row 27)
+16:58 | Xanh không cần, nay gần quá | CODE kernel/mentor/key_levels.go:260 (row 27)
+17:00 | Rồi, từ xanh sang đỏ, dễ đỏ | CODE kernel/mentor/key_levels.go:260 (row 27)
+17:02 | Em dễ nhiều nhiều ha | CODE kernel/mentor/key_levels.go:260 (row 27)
+17:05 | Rồi cho mọi người sẽ | CODE kernel/mentor/key_levels.go:260 (row 27)
+17:06 | Mọi người sẽ nhìn ra được cái vấn đề | CODE kernel/mentor/key_levels.go:260 (row 27)
+17:08 | Rồi | CODE kernel/mentor/key_levels.go:260 (row 27)
+17:17 | Ok | CODE kernel/mentor/touch.go:10 (row 30)
+17:17 | Sau khi anh chị dễ xong | CODE kernel/mentor/touch.go:10 (row 30)
+17:19 | Sau khi anh chị dễ xong | CODE kernel/mentor/touch.go:10 (row 30)
+17:21 | Dễ được mớ rồi ha | CODE kernel/mentor/touch.go:10 (row 30)
+17:22 | Sau khi anh chị dễ xong | CODE kernel/mentor/touch.go:10 (row 30)
+17:22 | Anh chị chuyển lại cái session cho em | CODE kernel/mentor/touch.go:10 (row 30)
+17:25 | Chuyển lại electronic | CODE kernel/mentor/touch.go:10 (row 30)
+17:26 | Rồi chuyển qua không 1 phút | CODE kernel/mentor/touch.go:10 (row 30)
+17:30 | Play bình thường | CODE kernel/mentor/touch.go:10 (row 30)
+17:30 | Anh chị thấy điều gì không | CODE kernel/mentor/touch.go:10 (row 30)
+17:35 | Nó rất respect những cái level này luôn | CODE kernel/mentor/touch.go:10 (row 30)
+17:37 | Level | CODE kernel/mentor/touch.go:10 (row 30)
+17:41 | Khi anh chị đang có lệnh | CODE kernel/mentor/touch.go:10 (row 30)
+17:43 | Khi anh chị đang hold lệnh | CODE kernel/mentor/touch.go:10 (row 30)
+17:47 | Những cái đường level này | CODE kernel/mentor/touch.go:10 (row 30)
+17:48 | Sẽ là những cái target của anh chị | CODE kernel/mentor/touch.go:10 (row 30)
+17:50 | Sẽ phải hướng tới | CODE kernel/mentor/touch.go:10 (row 30)
+17:51 | Còn nếu như anh chị không có lệnh | CODE kernel/mentor/touch.go:10 (row 30)
+17:54 | Thì những cái level này | CODE kernel/mentor/touch.go:10 (row 30)
+17:56 | Là những cái level để anh chị vô lệnh | CODE kernel/mentor/touch.go:10 (row 30)
+17:58 | Resistance support | CODE kernel/mentor/touch.go:10 (row 30)
+18:00 | Đúng không | CODE kernel/mentor/touch.go:10 (row 30)
+18:03 | Đụng level | CODE kernel/mentor/touch.go:10 (row 30)
+18:04 | Đâu | CODE kernel/mentor/touch.go:10 (row 30)
+18:06 | Để xuống kiếm xa xa đi | CODE kernel/mentor/touch.go:10 (row 30)
+18:08 | Rồi xuống xa xa đi | CODE kernel/mentor/touch.go:10 (row 30)
+18:10 | Vẫn là hồi nãy | CODE kernel/mentor/touch.go:10 (row 30)
+18:12 | Concept hồi nãy nè | CODE kernel/mentor/touch.go:10 (row 30)
+18:13 | Đụng level | CODE kernel/mentor/touch.go:10 (row 30)
+18:14 | Có đặt lệnh hay không | CODE kernel/mentor/touch.go:10 (row 30)
+18:17 | Trả lời cho em coi | CODE kernel/mentor/touch.go:10 (row 30)
+18:19 | Đụng level | CODE kernel/mentor/touch.go:10 (row 30)
+18:48 | Đóng nến dưới | CODE kernel/mentor/touch.go:10 (row 30)
+18:48 | Em không đặt lệnh | CODE kernel/mentor/touch.go:10 (row 30)
+18:50 | Nếu như em đặt lệnh | CODE kernel/mentor/touch.go:10 (row 30)
+18:51 | Thì đụng | CODE kernel/mentor/touch.go:10 (row 30)
+18:52 | Bây giờ nó trò ngược lên trên | CODE kernel/mentor/touch.go:10 (row 30)
+18:54 | Đóng nến trên | CODE kernel/mentor/touch.go:10 (row 30)
+18:55 | Xuất hiện cái gì | CODE kernel/mentor/touch.go:10 (row 30)
+18:56 | Em mới được vô anh chị | CODE kernel/mentor/touch.go:10 (row 30)
+18:56 | Xuất hiện cái gì mọi người | CODE kernel/mentor/touch.go:10 (row 30)
+19:00 | Có phải là | CODE kernel/mentor/touch.go:10 (row 30)
+19:02 | Đợi | CODE kernel/mentor/touch.go:10 (row 30)
+19:03 | Insaba | CODE kernel/mentor/touch.go:10 (row 30)
+19:04 | Cho lệnh lon | CODE kernel/mentor/touch.go:10 (row 30)
+19:05 | Thì em đánh ngược lên ở trên | CODE kernel/mentor/touch.go:10 (row 30)
+19:06 | Đúng không | CODE kernel/mentor/touch.go:10 (row 30)
+19:07 | Nãy giờ mình vẫn học | CODE kernel/mentor/touch.go:10 (row 30)
+19:09 | Một concept như vậy | CODE kernel/mentor/touch.go:10 (row 30)
+19:09 | Nó liên thông với nhau như vậy | CODE kernel/mentor/touch.go:10 (row 30)
+19:13 | Ok không mọi người | CODE kernel/mentor/touch.go:10 (row 30)
+19:40 | Level nó sẽ | CODE kernel/mentor/touch.go:10 (row 30)
+19:42 | Level nó sẽ ra rồi | CODE kernel/mentor/touch.go:10 (row 30)
+19:44 | Ví dụ đi | CODE kernel/mentor/touch.go:10 (row 30)
+19:44 | Bây giờ ví dụ đi | CODE kernel/mentor/touch.go:10 (row 30)
+19:45 | Để kiếm những cái level nào | CODE kernel/mentor/touch.go:10 (row 30)
+19:47 | Mà nó đóng nín | CODE kernel/mentor/touch.go:10 (row 30)
+19:48 | Nó đóng | CODE kernel/mentor/touch.go:10 (row 30)
+19:48 | Nó đụng level reject coi | CODE kernel/mentor/touch.go:10 (row 30)
+19:50 | Để em xíu nha | CODE kernel/mentor/touch.go:10 (row 30)
+19:52 | Em coi coi | CODE kernel/mentor/touch.go:10 (row 30)
+19:53 | Rồi đây | CODE kernel/mentor/touch.go:10 (row 30)
+20:01 | Có luôn nè | CODE kernel/mentor/touch.go:10 (row 30)
+20:02 | Đây | CODE kernel/mentor/touch.go:10 (row 30)
+20:02 | Đụng level | CODE kernel/mentor/touch.go:10 (row 30)
+20:06 | Đụng level | CODE kernel/mentor/touch.go:10 (row 30)
+20:08 | Reject | CODE kernel/mentor/touch.go:10 (row 30)
+20:09 | Em đặt lệnh sell stop | CODE kernel/mentor/touch.go:10 (row 30)
+20:11 | Ở dưới cây nín xanh | CODE kernel/mentor/touch.go:10 (row 30)
+20:11 | Đúng không anh chị | CODE kernel/mentor/touch.go:10 (row 30)
+20:12 | Trả lời giúp em đúng hay không | CODE kernel/mentor/touch.go:10 (row 30)
+20:13 | Đúng rồi | CODE kernel/mentor/touch.go:10 (row 30)
+20:19 | Đụng level | CODE kernel/mentor/touch.go:10 (row 30)
+20:21 | Đóng nín | CODE kernel/mentor/touch.go:10 (row 30)
+20:23 | Đóng nín dưới level | CODE kernel/mentor/touch.go:10 (row 30)
+20:24 | Em không quan tâm màu sắc nha | CODE kernel/mentor/touch.go:10 (row 30)
+20:25 | Em không quan tâm cái nến nào đụng level | CODE kernel/mentor/touch.go:10 (row 30)
+20:27 | Cái nến màu gì em cũng chả quan tâm | CODE kernel/mentor/touch.go:10 (row 30)
+20:28 | Đụng level, đóng nến dưới level | CODE kernel/mentor/touch.go:10 (row 30)
+20:33 | Em đặt lệnh sell stop, đúng không? | CODE kernel/mentor/touch.go:10 (row 30)
+20:36 | Như anh chị khác, mọi người thấy không đúng hả? | CODE kernel/mentor/touch.go:10 (row 30)
+20:38 | Như anh chị khác thấy đúng không? | CODE kernel/mentor/touch.go:10 (row 30)
+20:40 | Đúng rồi | CODE kernel/mentor/touch.go:10 (row 30)
+20:40 | Vậy tiếp theo | CODE kernel/mentor/touch.go:10 (row 30)
+20:42 | Có một cái nến sau nữa nó đụng level nữa | CODE kernel/mentor/swing4h.go:405 (row 14)
+20:44 | Nó đóng nến dưới level tiếp | CODE kernel/mentor/swing4h.go:405 (row 14)
+20:46 | Em có nên move cái lệnh sell stop của em lên cái level này hay không? | CODE kernel/mentor/swing4h.go:405 (row 14)
+20:52 | Lên lên cái nến này hay không? | CODE kernel/mentor/swing4h.go:405 (row 14)
+21:00 | Tại sao không? | CODE kernel/mentor/swing4h.go:405 (row 14)
+21:00 | Nếu như là cái nến sau | CODE kernel/mentor/swing4h.go:405 (row 14)
+21:45 | Nến đụng level | CODE kernel/mentor/swing4h.go:405 (row 14)
+21:46 | Đóng ở dưới | CODE kernel/mentor/swing4h.go:405 (row 14)
+21:49 | Đóng dưới level luôn | CODE kernel/mentor/swing4h.go:405 (row 14)
+21:51 | Em sẽ không move lên | CODE kernel/mentor/swing4h.go:405 (row 14)
+21:52 | Đây là bắt buộc | CODE kernel/mentor/swing4h.go:405 (row 14)
+21:56 | Không phải bắt buộc | CODE kernel/mentor/swing4h.go:405 (row 14)
+21:58 | Nhưng mà đây là cách của em | CODE kernel/mentor/swing4h.go:405 (row 14)
+22:00 | Em đang hướng dẫn cách của em | CODE kernel/mentor/swing4h.go:405 (row 14)
+22:01 | Rồi | CODE kernel/mentor/swing4h.go:405 (row 14)
+22:07 | Em vẫn sẽ để cái nến | CODE kernel/mentor/swing4h.go:405 (row 14)
+22:10 | Tại vì em lúc nào cũng sẽ bay theo cái nến đầu tiên | CODE kernel/mentor/swing4h.go:405 (row 14)
+22:12 | Nó đụng | CODE kernel/mentor/swing4h.go:405 (row 14)
+22:14 | Nhưng sẽ có trường hợp | CODE kernel/mentor/swing4h.go:405 (row 14)
 22:16 | Cái lớp mình học ba phải thiệt luôn | —
 22:18 | Nhưng sẽ có trường hợp | —
 22:26 | Sẽ có trường hợp | —
@@ -663,9 +663,9 @@ cues: 667/667 marked · rules: 262 · CODE: 262 · MISMATCH: 0 · NOT-IN-BOT: 0 
 24:30 | anh chị ok không | —
 24:37 | đây là cách tray tại level | —
 24:38 | rồi tiếp tục | —
-24:47 | em đi tiếp luôn ha | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-24:49 | em đi tiếp luôn | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-24:51 | rồi đối với cách tray tại level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-24:54 | đối với cách tray tại level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-24:57 | thì em sẽ sử dụng | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-24:59 | Và em sẽ sử dụng những cái đường level này để em mua stock long term | CODE kernel/mentor/touch.go:10 [TouchOutcome]
+24:47 | em đi tiếp luôn ha | —
+24:49 | em đi tiếp luôn | —
+24:51 | rồi đối với cách tray tại level | —
+24:54 | đối với cách tray tại level | —
+24:57 | thì em sẽ sử dụng | —
+24:59 | Và em sẽ sử dụng những cái đường level này để em mua stock long term | —

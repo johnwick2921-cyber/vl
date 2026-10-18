@@ -1,6 +1,6 @@
 # Ngày 5.1 Go over lại tất cả part1
 
-cues: 703/703 marked · rules: 337 · CODE: 337 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 366
+cues: 703/703 · rule cues: 140 · rows: 6 · CODE: 140 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 0 · SPLIT: 0 · —: 563
 
 00:01 | Hôm nay là ngày thứ 5 của lớp Mastermind khóa tháng 9. | —
 00:06 | Thì việc đầu tiên thì em muốn cảm ơn mọi người ha. | —
@@ -226,98 +226,98 @@ cues: 703/703 marked · rules: 337 · CODE: 337 · MISMATCH: 0 · NOT-IN-BOT: 0 
 08:33 | Tới 11, 12 giờ khuya | —
 08:34 | Được không? | —
 08:35 | Rồi | —
-08:36 | Thì buổi sáng ngày hôm nay của mình | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-08:37 | Mình nhìn mình ngắm lại coi | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-08:39 | Trước khi market open | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-08:40 | Trước khi market open | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-08:43 | Mình có gì anh chị? | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-08:46 | Mình có | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-08:47 | Trước khi market open | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-08:50 | mình có | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-08:51 | cái mà em lấy cái mà làm màu đỏ là cho 4h | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-08:54 | nhưng mà mình để màu xanh đi | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-08:57 | tại vì nó trigger buy setup | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-08:58 | rồi, trước khi market open | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:00 | mình có buy setup trigger | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:01 | của khung 4h | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:03 | xong, khi market chuẩn bị open | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:06 | mình lại có sell setup trigger | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:08 | của khung | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:10 | 1h | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:11 | mọi người thấy nó bị ngược đúng không | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:14 | rồi đây có trigger | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:16 | trigger buy setup | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:18 | của khung 1h | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:19 | Em nói lại | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:21 | Lúc nào khi mà anh chị open ra | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:23 | Không cần phải là news | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:25 | Sáng mai news mọi người cứ thử | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:27 | Sáng mai news mọi người cứ thử | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:28 | Hình như sáng thứ tư có news | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:32 | Mọi người thử áp dụng | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:33 | Tự nhiên có | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:38 | Sáng mở mắt ra | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:40 | Trước giờ 4h, trước giờ 1h | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:42 | Nó nằm ngược nhau | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:43 | Trước giờ 4h, trước giờ 1h | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:45 | Nằm ngược nhau | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:46 | Sáng nay mình sao anh chị | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:49 | Cứ ngắt nằm giữa cái rank luôn | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:51 | Mình không làm được gì hết trơn | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:52 | Thấy không? Mình không làm được gì hết trơn | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:55 | Sáng 4h anh nằm ngay đây | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-09:59 | Thì 1h anh nằm ở trên này | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:02 | Rồi | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:04 | Anh chỉ có thấy cái đoạn này | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:06 | Để chuyển qua lại khung 5 phút | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:08 | Để chuyển qua lại khung 5 phút | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:10 | Rồi | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:11 | Mọi người thấy đoạn này không? | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:15 | Từ sáng tới chiều | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:17 | Nó chạy đúng trong 1 cái rang này | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:19 | Và nó chả thoát đi đâu được hết | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:20 | Nó cứ chạy lòng vòng lòng vòng trong đây | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:22 | Trigger 4h, trigger 1h | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:25 | Nằm ngay giữa hết tất cả mọi thứ | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:26 | Nó nằm giữa 2 cái đường like | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:29 | Nó nằm giữa 2 cái đường like rank | CODE kernel/mentor/htf_direction.go:85 [HTFConflict]
-10:32 | Những ngày nào anh chị open ra | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:34 | Anh chị thấy trigger 4h | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:36 | Trước khi market open | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:37 | Mình sẽ phải tính như vầy nè anh chị | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:40 | Mình sẽ phải tính như vầy | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:41 | Nếu là news | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:43 | Nếu là news | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:44 | Thì là | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:47 | Trước 1h trước news | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:50 | Và 4h trước new | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:51 | Còn nếu như mà là open | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:54 | Cũng vậy thôi | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:55 | 4h open thì cái cây 4h trước khi market open | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:58 | Là cây xanh này đúng không | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-10:59 | Trước khi market open | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:01 | Thì có phải là qua tới bên đâu rồi | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:03 | Từ từ nha | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:04 | Tại vì bây giờ đang drawback lại | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:07 | Tự nhiên em không có | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:08 | 8h | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:10 | 7h | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:12 | 6h | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:13 | 8h30 là 4h | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:15 | Là ngay đây đúng không | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:16 | là ngay đây | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:20 | rồi | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:22 | ngược lại ngay đây | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:23 | hồi sáng chị Thanh Nhi | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:24 | cũng có vẽ | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:25 | và chị Thanh Nhi | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:26 | quăng cái chạc | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:26 | vô cho mọi người coi | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:28 | đúng không | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:28 | đồn cái nằm giữa | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:30 | 2 cái răng | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:30 | cuối cùng | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:30 | mình không tray được gì hết | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
+08:36 | Thì buổi sáng ngày hôm nay của mình | —
+08:37 | Mình nhìn mình ngắm lại coi | —
+08:39 | Trước khi market open | —
+08:40 | Trước khi market open | —
+08:43 | Mình có gì anh chị? | —
+08:46 | Mình có | —
+08:47 | Trước khi market open | —
+08:50 | mình có | —
+08:51 | cái mà em lấy cái mà làm màu đỏ là cho 4h | —
+08:54 | nhưng mà mình để màu xanh đi | —
+08:57 | tại vì nó trigger buy setup | —
+08:58 | rồi, trước khi market open | —
+09:00 | mình có buy setup trigger | —
+09:01 | của khung 4h | —
+09:03 | xong, khi market chuẩn bị open | —
+09:06 | mình lại có sell setup trigger | —
+09:08 | của khung | —
+09:10 | 1h | —
+09:11 | mọi người thấy nó bị ngược đúng không | —
+09:14 | rồi đây có trigger | —
+09:16 | trigger buy setup | —
+09:18 | của khung 1h | —
+09:19 | Em nói lại | —
+09:21 | Lúc nào khi mà anh chị open ra | —
+09:23 | Không cần phải là news | —
+09:25 | Sáng mai news mọi người cứ thử | —
+09:27 | Sáng mai news mọi người cứ thử | —
+09:28 | Hình như sáng thứ tư có news | —
+09:32 | Mọi người thử áp dụng | —
+09:33 | Tự nhiên có | —
+09:38 | Sáng mở mắt ra | —
+09:40 | Trước giờ 4h, trước giờ 1h | —
+09:42 | Nó nằm ngược nhau | —
+09:43 | Trước giờ 4h, trước giờ 1h | —
+09:45 | Nằm ngược nhau | —
+09:46 | Sáng nay mình sao anh chị | —
+09:49 | Cứ ngắt nằm giữa cái rank luôn | —
+09:51 | Mình không làm được gì hết trơn | —
+09:52 | Thấy không? Mình không làm được gì hết trơn | —
+09:55 | Sáng 4h anh nằm ngay đây | —
+09:59 | Thì 1h anh nằm ở trên này | —
+10:02 | Rồi | —
+10:04 | Anh chỉ có thấy cái đoạn này | —
+10:06 | Để chuyển qua lại khung 5 phút | —
+10:08 | Để chuyển qua lại khung 5 phút | —
+10:10 | Rồi | —
+10:11 | Mọi người thấy đoạn này không? | —
+10:15 | Từ sáng tới chiều | —
+10:17 | Nó chạy đúng trong 1 cái rang này | —
+10:19 | Và nó chả thoát đi đâu được hết | —
+10:20 | Nó cứ chạy lòng vòng lòng vòng trong đây | —
+10:22 | Trigger 4h, trigger 1h | —
+10:25 | Nằm ngay giữa hết tất cả mọi thứ | —
+10:26 | Nó nằm giữa 2 cái đường like | —
+10:29 | Nó nằm giữa 2 cái đường like rank | —
+10:32 | Những ngày nào anh chị open ra | —
+10:34 | Anh chị thấy trigger 4h | —
+10:36 | Trước khi market open | —
+10:37 | Mình sẽ phải tính như vầy nè anh chị | —
+10:40 | Mình sẽ phải tính như vầy | —
+10:41 | Nếu là news | CODE kernel/mentor/htf_direction.go:89 (row 2)
+10:43 | Nếu là news | CODE kernel/mentor/htf_direction.go:89 (row 2)
+10:44 | Thì là | CODE kernel/mentor/htf_direction.go:89 (row 2)
+10:47 | Trước 1h trước news | CODE kernel/mentor/htf_direction.go:89 (row 2)
+10:50 | Và 4h trước new | CODE kernel/mentor/htf_direction.go:89 (row 2)
+10:51 | Còn nếu như mà là open | CODE kernel/mentor/htf_direction.go:89 (row 2)
+10:54 | Cũng vậy thôi | CODE kernel/mentor/htf_direction.go:89 (row 2)
+10:55 | 4h open thì cái cây 4h trước khi market open | CODE kernel/mentor/htf_direction.go:89 (row 2)
+10:58 | Là cây xanh này đúng không | CODE kernel/mentor/htf_direction.go:89 (row 2)
+10:59 | Trước khi market open | CODE kernel/mentor/htf_direction.go:89 (row 2)
+11:01 | Thì có phải là qua tới bên đâu rồi | CODE kernel/mentor/htf_direction.go:89 (row 2)
+11:03 | Từ từ nha | —
+11:04 | Tại vì bây giờ đang drawback lại | —
+11:07 | Tự nhiên em không có | —
+11:08 | 8h | —
+11:10 | 7h | —
+11:12 | 6h | —
+11:13 | 8h30 là 4h | —
+11:15 | Là ngay đây đúng không | —
+11:16 | là ngay đây | —
+11:20 | rồi | —
+11:22 | ngược lại ngay đây | —
+11:23 | hồi sáng chị Thanh Nhi | —
+11:24 | cũng có vẽ | —
+11:25 | và chị Thanh Nhi | —
+11:26 | quăng cái chạc | —
+11:26 | vô cho mọi người coi | —
+11:28 | đúng không | —
+11:28 | đồn cái nằm giữa | —
+11:30 | 2 cái răng | —
+11:30 | cuối cùng | —
+11:30 | mình không tray được gì hết | —
 11:31 | đúng không | —
 11:33 | đợi thác ra khỏi cái răng | —
 11:34 | thì nó lại | —
@@ -334,24 +334,24 @@ cues: 703/703 marked · rules: 337 · CODE: 337 · MISMATCH: 0 · NOT-IN-BOT: 0 
 11:48 | cứng ngắt | —
 11:48 | ở giữa mấy cái răng | —
 11:49 | Mình không làm gì được hết | —
-11:51 | Thì nếu như mà buổi sáng | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:53 | Anh chị để mấy buổi sáng | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:55 | Mà khi mà market open ra | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:56 | Mà anh chị thấy 2 khung giờ nó trigger cùng chiều | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-11:59 | 4 giờ lúc nào cũng nhớ anh chị | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-12:01 | Mình trade | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-12:02 | Mình nhìn xác định trend cái kiểu này | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-12:04 | Thì mình phải lấy từ khung lớn nhất | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-12:05 | Mình lấy xuống khung nhỏ nhất | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-12:07 | Mình lấy xuống khung 4 giờ | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-12:09 | Mình lấy xuống khung 1 giờ | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-12:10 | Chứ không bao giờ mà lấy khung 1 giờ | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-12:11 | Mình đẩy lên khung 4 giờ hết nha | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-12:12 | Nhớ kỹ kỹ kỹ | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-12:15 | Khi mà anh chị muốn xác định trend lúc đầu ngày | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-12:18 | Mình lấy từ khung 4 giờ | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-12:21 | Mình lấy lên khung xuống khung 1 giờ | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
-12:23 | Rồi là cái thứ nhất | CODE kernel/mentor/htf_direction.go:46 [HTFVerdict]
+11:51 | Thì nếu như mà buổi sáng | —
+11:53 | Anh chị để mấy buổi sáng | —
+11:55 | Mà khi mà market open ra | —
+11:56 | Mà anh chị thấy 2 khung giờ nó trigger cùng chiều | CODE kernel/mentor/htf_direction.go:50 (row 1)
+11:59 | 4 giờ lúc nào cũng nhớ anh chị | CODE kernel/mentor/htf_direction.go:50 (row 1)
+12:01 | Mình trade | CODE kernel/mentor/htf_direction.go:50 (row 1)
+12:02 | Mình nhìn xác định trend cái kiểu này | CODE kernel/mentor/htf_direction.go:50 (row 1)
+12:04 | Thì mình phải lấy từ khung lớn nhất | CODE kernel/mentor/htf_direction.go:50 (row 1)
+12:05 | Mình lấy xuống khung nhỏ nhất | CODE kernel/mentor/htf_direction.go:50 (row 1)
+12:07 | Mình lấy xuống khung 4 giờ | CODE kernel/mentor/htf_direction.go:50 (row 1)
+12:09 | Mình lấy xuống khung 1 giờ | CODE kernel/mentor/htf_direction.go:50 (row 1)
+12:10 | Chứ không bao giờ mà lấy khung 1 giờ | CODE kernel/mentor/htf_direction.go:50 (row 1)
+12:11 | Mình đẩy lên khung 4 giờ hết nha | CODE kernel/mentor/htf_direction.go:50 (row 1)
+12:12 | Nhớ kỹ kỹ kỹ | CODE kernel/mentor/htf_direction.go:50 (row 1)
+12:15 | Khi mà anh chị muốn xác định trend lúc đầu ngày | CODE kernel/mentor/htf_direction.go:50 (row 1)
+12:18 | Mình lấy từ khung 4 giờ | CODE kernel/mentor/htf_direction.go:50 (row 1)
+12:21 | Mình lấy lên khung xuống khung 1 giờ | CODE kernel/mentor/htf_direction.go:50 (row 1)
+12:23 | Rồi là cái thứ nhất | CODE kernel/mentor/htf_direction.go:50 (row 1)
 12:24 | Cái thứ 2 về việc xác định trend | —
 12:26 | Cái việc xác định trend của em | —
 12:29 | Nó còn có thêm một cách mà em ít khi nào em nhắc tới | —
@@ -378,208 +378,208 @@ cues: 703/703 marked · rules: 337 · CODE: 337 · MISMATCH: 0 · NOT-IN-BOT: 0 
 13:15 | 2 cái đó nó quá dễ rồi | —
 13:16 | Rồi | —
 13:17 | Ok | —
-13:20 | Khi anh chị muốn xác định trend | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:23 | Không phải anh chị muốn xác định trend | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:25 | Mà khi anh chị muốn | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:27 | Xác định là | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:29 | Ngày hôm đó market nó có chạy | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:31 | Ranging hay không | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:33 | Nó có chạy sideway hay không | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:34 | Trước khi anh chị mở máy | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:37 | Trước khi anh chị trade | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:38 | Trước khi anh chị | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:41 | Trước khi anh chị | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:44 | Market open | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:45 | Trước khi market open | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:46 | Anh chị lấy cái thước đo nè | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:51 | Anh chị đo cây nến ngày hôm đó | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:53 | Nó chạy được bao nhiêu điểm rồi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:54 | Trước khi market open | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:57 | Cái cây nến daily đang chạy | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-13:59 | Anh chị xem cho em ngày hôm đó | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:02 | Market nó chạy bao nhiêu điểm rồi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:04 | Cái cây daily á | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:06 | Đang chạy lúc đó á | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:08 | Nó đang được bao nhiêu điểm rồi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:10 | Đo từ trên xuống dưới | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:11 | Đây là tính theo sát xuất | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:14 | Đây là tính theo sát xuất | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:16 | Em tại vì em là dân kế toán ra | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:20 | Thì em tính hay sát sức | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:21 | Rồi tính hay sát sức là gì anh chị | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:23 | Tính hay sát sức là gì | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:25 | Trung bình | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:27 | Một cây nến daily | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:28 | Ở thời điểm hiện tại | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:30 | Nó chạy tầm 400 điểm một cây | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:31 | Đây cũng tầm cỡ 400-500 điểm một cây | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:35 | Đúng không | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:36 | Buổi sáng ngày hôm nay | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:36 | Ví dụ ha | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:38 | Rồi ngay bên đây mình cũng đo sơ sơ thôi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:40 | Mình đo mấy cây nến này mình viết | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:41 | Thì bây giờ tầm cỡ | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:43 | 400-500 điểm | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:44 | 600 điểm một cây là maximum | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:45 | Đúng không | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:46 | Thì lúc market open ra | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:48 | Mà cây nến daily đó | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:51 | Anh chị thấy đo từ cây nến daily đang chạy hiện tại | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:53 | Ví dụ như cây này đi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:54 | Bây giờ market open ra cây nến daily này nó chạy | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:57 | Nó chạy được tầm cỡ 400-500 điểm rồi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-14:59 | Thì anh chị nghĩ ngày hôm đó nó sẽ như thế nào | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:01 | Nha mọi người trả lời cho em thử coi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:05 | Cây nến daily | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:06 | Trước khi market open | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:08 | Anh chị lên máy anh chị ngồi anh chị bật chạy lên | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:10 | Anh chị bật qua khung daily anh chị coi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:12 | Cây nến daily ngày hôm đó nó chạy được 400-500 điểm rồi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:14 | Thì mọi người nghĩ ngày hôm đó nó sẽ chạy như thế nào | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:16 | Ngày hôm đó không phải là nó sẽ chạy | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:25 | Sideway mà nói đúng hơn | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:26 | Là nó sẽ chạy in rank | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:28 | Có nghĩa là sao | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:30 | Nó sẽ cứ | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:31 | Những ngày mà anh chị thấy mà market nó 4-500 điểm 1 ngày | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:35 | Trước khi anh | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:36 | Market open nó đã chạy được 4-500 điểm 1 ngày rồi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:39 | Thì mọi người đơn giản anh chị suy nghĩ cho em thôi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:41 | Những ngày hôm đó | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:42 | Là những ngày anh chị không được | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:45 | Target nhiều | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:46 | Hiểu với em không | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:49 | Tại vì những ngày nó chạy in rank thì nó sẽ đụng | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:51 | support nó đụng resistance liên tục | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:53 | tại vì căn bản ra nó sẽ không còn | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:55 | rung để nó chạy nữa, một ngày | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-15:57 | một cây nến daily nó chạy có 400-500 điểm | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:00 | mà maximum này cũng có 600 điểm một cây thôi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:01 | mà bây giờ mở mắt ra | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:03 | bật chạy lên, bật qua cung daily | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:05 | coi cây nến ngày hôm đó đang chạy được 300-400 điểm rồi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:07 | thì ngày hôm đó chắc chắn nó sẽ chạy in rank | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:09 | 90% | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:11 | 80-90% nó sẽ chạy in rank | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:13 | thì những ngày chạy in rank | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-16:14 | anh chị không được ta ghẹt nhiều | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-16:17 | có nghĩa là anh chị | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-16:19 | thường như anh chị trade | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-16:21 | Anh chị target tầm | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-16:22 | 40-50 điểm, 50-60 điểm | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-16:24 | Hay là anh chị muốn hô Furin | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-16:25 | Nhưng những ngày hôm đó recommend khỏi hô Furin cũng được | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-16:29 | Hoặc là hô 1 con, 2 con chơi thôi | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-16:32 | Tại vì sao | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-16:33 | Căn bản ngày hôm đó nó không còn gì để nó chạy nữa hết | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-16:36 | Giống như hồi buổi sáng ngày hôm nay | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:38 | Giống như buổi sáng ngày hôm nay | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:41 | Nó có chạy cái gì đâu | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:42 | Mọi người mở mắt ra buổi sáng ngày hôm nay | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:44 | Nè em đo lại cho mọi người coi nè | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:46 | Đây | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:48 | Em sẽ cho mọi người coi lại ha | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:49 | Rồi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:51 | Thì buổi tối | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:54 | Bắt đầu | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:55 | Khi mà anh chị đo cái daily | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:56 | Nó cứ nghĩ là nó phải chạy từ Asia | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-16:59 | Nó chạy qua pre-market | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:00 | Đúng không | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:00 | Thì nó mới tính được một cây rồi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:03 | Ngay chỗ này | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:04 | Hôm qua là pre-market low | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:06 | Dòng dòng ngay chỗ này | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:07 | Rồi nó chạy lên tới trên đây | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:08 | Ok | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:10 | Bây giờ một cây nến daily | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:12 | Ở ngay khúc này mới đúng nha | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:13 | Ngay khúc này mới đúng nè | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:14 | Trên đây mới đúng | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:16 | Rồi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:16 | Ok | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:19 | Chỉ ngoài lại cung daily nè | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:24 | Chờ xíu | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:26 | Cái này không được | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:27 | Ừ cái này đi về rồi mọi người nhìn nè Ngày hôm qua từ lúc mắt kẹt Open lúc thị trường châu Á mở | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:44 | cửa đó em đo em đo nghe lại với em hỗn hợp ngoài đây em không có đo em không hề đo bên ngoài đây | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:50 | em chỉ lấy từ tỉnh ảnh cao nhất của cái Asia nè Cái đáy thấp nhất của bị mắc kẹt nè rồi em | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:56 | Ví dụ mọi người bật thử qua khung Daily | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:58 | Bây giờ | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-17:59 | Một cây nến Daily nó chạy bao nhiêu | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:03 | Nó chạy 300 điểm mà tới đây nó chạy gần được 300 điểm | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:06 | Thì nó phải còn 100 điểm không | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:08 | Rồi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:09 | Bữa sáng ngày hôm nay mọi người thấy có gì để trade đâu | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:12 | Nó chạy gần hết cây nến Daily luôn rồi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:14 | Nó chạy gần hết cây nến Daily luôn rồi | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:17 | Mà nếu như mà anh chị kết hợp thêm vô được | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:20 | Là khung 4h Trigger Sale | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:22 | Khung 1h Trigger Buy | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:24 | Thì sáng ngày hôm nay thật sự ra | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:25 | Nếu như là em | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:26 | Nếu như em không phải like trade buổi sáng ngày hôm nay | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:29 | Là em xách đích em đi nhậu | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:30 | Khỏi nhà làm gì hết | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:32 | Tại nhìn có gì đâu trade | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:34 | Đúng không anh chị | CODE kernel/mentor/day_gate.go:69 [DayGate.SpentPts=300]
-18:36 | Bây giờ mình kết hợp 2 cái đi | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:39 | Buổi sáng mở mắt ra | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:41 | Cái việc đầu tiên của mình là làm gì | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:43 | Anh chị không cần phải làm như nhiều tại vì sao | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:44 | Tại vì căn bản ra key level em cũng đã vẽ cho anh chị rồi | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:47 | Em cũng đã one check | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:49 | Key level cho anh chị cứ bật | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:50 | Cái key level vô thôi anh chị rảnh thêm thì anh chị vẽ | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:52 | Còn không thì thôi em vẫn vẽ anh chị vẽ ngay đó | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:54 | Cái thứ 2 | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:55 | Vì làm gì | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:56 | Anh chị bật qua khung daily | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:57 | Anh chị đo cái nến hiện tại | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:58 | Cái daily nó chạy được bao nhiêu | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-18:59 | Mình lấy trung bình cộng | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:01 | Cái thứ 2 | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:03 | Cái việc thứ 3 | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:04 | Là bây giờ anh chị coi | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:06 | Khung 4 giờ | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:07 | Nó đang trigger gì | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:08 | Khung 1 giờ | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:08 | Xong chuyển xuống khung 1 giờ | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:10 | Nó đang trigger gì | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:11 | Nếu như 2 khung trigger cùng với nhau | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:13 | Ok | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:15 | Mình đánh | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:16 | Mình đánh theo khung 4 giờ | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:17 | Và đánh theo khung 1 giờ | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:19 | Là đánh theo khung 1 giờ | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:20 | Nó đang trigger cùng nhau | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-19:22 | Còn nếu như 2 khung giờ đang ngược nhau | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-19:24 | Mà khung daily nó đã chạy được 300-400 điểm rồi | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-19:26 | Tắt máy nghỉ luôn cho em | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-19:26 | Cái việc anh chị xác định được là anh chị có nên trade ngày hôm đó hay không | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-19:31 | Anh chị chỉ tốn trong vòng có 5 phút | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-19:33 | Chưa tới 5 phút | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-19:35 | Nếu mà anh chị nào làm quen thao tác | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-19:37 | Chưa tới 5 phút | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-19:38 | Bật máy lên ngồi ghè ghẹt xong | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-19:40 | Ngày hôm đó không đáng để trade | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-19:41 | Còn nếu như mà nó đã chạy được 300-400 điểm | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-19:45 | Ok | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-19:45 | 2 khung giờ | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-19:46 | 2 khung giờ mà nó thuận nhau đi | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-19:50 | Nếu mà nó chạy được 300-400 điểm rồi | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-19:51 | Nhưng mà 2 khung giờ nó thuận nhau | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-19:52 | Thì khả năng rất là cao | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-19:54 | Nó vẫn có thể chạy | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-19:55 | Nó vẫn có thể chạy | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-19:56 | Nhưng mình vẫn có thể trade | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-19:59 | Nhưng nó không target nhiều | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-20:00 | Mình không được target nhiều | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-20:02 | 15 điểm bán | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-20:05 | 15 điểm bán | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-20:06 | 10 điểm bán | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-20:07 | 15 điểm bán | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
-20:07 | Là những ngày mà mình phải flexible như vậy | CODE kernel/mentor/day_gate.go:75 [DayGate.TargetCapPts=15]
+13:20 | Khi anh chị muốn xác định trend | —
+13:23 | Không phải anh chị muốn xác định trend | —
+13:25 | Mà khi anh chị muốn | —
+13:27 | Xác định là | —
+13:29 | Ngày hôm đó market nó có chạy | —
+13:31 | Ranging hay không | —
+13:33 | Nó có chạy sideway hay không | —
+13:34 | Trước khi anh chị mở máy | —
+13:37 | Trước khi anh chị trade | —
+13:38 | Trước khi anh chị | —
+13:41 | Trước khi anh chị | —
+13:44 | Market open | —
+13:45 | Trước khi market open | —
+13:46 | Anh chị lấy cái thước đo nè | CODE kernel/mentor/day_gate.go:72 (row 3)
+13:51 | Anh chị đo cây nến ngày hôm đó | CODE kernel/mentor/day_gate.go:72 (row 3)
+13:53 | Nó chạy được bao nhiêu điểm rồi | CODE kernel/mentor/day_gate.go:72 (row 3)
+13:54 | Trước khi market open | CODE kernel/mentor/day_gate.go:72 (row 3)
+13:57 | Cái cây nến daily đang chạy | CODE kernel/mentor/day_gate.go:72 (row 3)
+13:59 | Anh chị xem cho em ngày hôm đó | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:02 | Market nó chạy bao nhiêu điểm rồi | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:04 | Cái cây daily á | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:06 | Đang chạy lúc đó á | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:08 | Nó đang được bao nhiêu điểm rồi | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:10 | Đo từ trên xuống dưới | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:11 | Đây là tính theo sát xuất | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:14 | Đây là tính theo sát xuất | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:16 | Em tại vì em là dân kế toán ra | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:20 | Thì em tính hay sát sức | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:21 | Rồi tính hay sát sức là gì anh chị | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:23 | Tính hay sát sức là gì | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:25 | Trung bình | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:27 | Một cây nến daily | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:28 | Ở thời điểm hiện tại | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:30 | Nó chạy tầm 400 điểm một cây | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:31 | Đây cũng tầm cỡ 400-500 điểm một cây | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:35 | Đúng không | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:36 | Buổi sáng ngày hôm nay | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:36 | Ví dụ ha | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:38 | Rồi ngay bên đây mình cũng đo sơ sơ thôi | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:40 | Mình đo mấy cây nến này mình viết | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:41 | Thì bây giờ tầm cỡ | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:43 | 400-500 điểm | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:44 | 600 điểm một cây là maximum | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:45 | Đúng không | CODE kernel/mentor/day_gate.go:72 (row 3)
+14:46 | Thì lúc market open ra | —
+14:48 | Mà cây nến daily đó | —
+14:51 | Anh chị thấy đo từ cây nến daily đang chạy hiện tại | —
+14:53 | Ví dụ như cây này đi | —
+14:54 | Bây giờ market open ra cây nến daily này nó chạy | —
+14:57 | Nó chạy được tầm cỡ 400-500 điểm rồi | —
+14:59 | Thì anh chị nghĩ ngày hôm đó nó sẽ như thế nào | —
+15:01 | Nha mọi người trả lời cho em thử coi | —
+15:05 | Cây nến daily | —
+15:06 | Trước khi market open | —
+15:08 | Anh chị lên máy anh chị ngồi anh chị bật chạy lên | —
+15:10 | Anh chị bật qua khung daily anh chị coi | —
+15:12 | Cây nến daily ngày hôm đó nó chạy được 400-500 điểm rồi | —
+15:14 | Thì mọi người nghĩ ngày hôm đó nó sẽ chạy như thế nào | —
+15:16 | Ngày hôm đó không phải là nó sẽ chạy | —
+15:25 | Sideway mà nói đúng hơn | —
+15:26 | Là nó sẽ chạy in rank | —
+15:28 | Có nghĩa là sao | —
+15:30 | Nó sẽ cứ | —
+15:31 | Những ngày mà anh chị thấy mà market nó 4-500 điểm 1 ngày | CODE kernel/mentor/day_gate.go:72 (row 3)
+15:35 | Trước khi anh | CODE kernel/mentor/day_gate.go:72 (row 3)
+15:36 | Market open nó đã chạy được 4-500 điểm 1 ngày rồi | CODE kernel/mentor/day_gate.go:72 (row 3)
+15:39 | Thì mọi người đơn giản anh chị suy nghĩ cho em thôi | CODE kernel/mentor/day_gate.go:72 (row 3)
+15:41 | Những ngày hôm đó | CODE kernel/mentor/day_gate.go:72 (row 3)
+15:42 | Là những ngày anh chị không được | CODE kernel/mentor/day_gate.go:72 (row 3)
+15:45 | Target nhiều | CODE kernel/mentor/day_gate.go:72 (row 3)
+15:46 | Hiểu với em không | CODE kernel/mentor/day_gate.go:72 (row 3)
+15:49 | Tại vì những ngày nó chạy in rank thì nó sẽ đụng | CODE kernel/mentor/day_gate.go:72 (row 3)
+15:51 | support nó đụng resistance liên tục | CODE kernel/mentor/day_gate.go:72 (row 3)
+15:53 | tại vì căn bản ra nó sẽ không còn | CODE kernel/mentor/day_gate.go:72 (row 3)
+15:55 | rung để nó chạy nữa, một ngày | CODE kernel/mentor/day_gate.go:72 (row 3)
+15:57 | một cây nến daily nó chạy có 400-500 điểm | CODE kernel/mentor/day_gate.go:72 (row 3)
+16:00 | mà maximum này cũng có 600 điểm một cây thôi | CODE kernel/mentor/day_gate.go:72 (row 3)
+16:01 | mà bây giờ mở mắt ra | CODE kernel/mentor/day_gate.go:72 (row 3)
+16:03 | bật chạy lên, bật qua cung daily | CODE kernel/mentor/day_gate.go:72 (row 3)
+16:05 | coi cây nến ngày hôm đó đang chạy được 300-400 điểm rồi | CODE kernel/mentor/day_gate.go:72 (row 3)
+16:07 | thì ngày hôm đó chắc chắn nó sẽ chạy in rank | CODE kernel/mentor/day_gate.go:72 (row 3)
+16:09 | 90% | CODE kernel/mentor/day_gate.go:72 (row 3)
+16:11 | 80-90% nó sẽ chạy in rank | CODE kernel/mentor/day_gate.go:72 (row 3)
+16:13 | thì những ngày chạy in rank | CODE kernel/mentor/day_gate.go:72 (row 4)
+16:14 | anh chị không được ta ghẹt nhiều | CODE kernel/mentor/day_gate.go:72 (row 4)
+16:17 | có nghĩa là anh chị | CODE kernel/mentor/day_gate.go:72 (row 4)
+16:19 | thường như anh chị trade | CODE kernel/mentor/day_gate.go:72 (row 4)
+16:21 | Anh chị target tầm | CODE kernel/mentor/day_gate.go:72 (row 4)
+16:22 | 40-50 điểm, 50-60 điểm | CODE kernel/mentor/day_gate.go:72 (row 4)
+16:24 | Hay là anh chị muốn hô Furin | CODE kernel/mentor/day_gate.go:72 (row 4)
+16:25 | Nhưng những ngày hôm đó recommend khỏi hô Furin cũng được | CODE kernel/mentor/day_gate.go:72 (row 4)
+16:29 | Hoặc là hô 1 con, 2 con chơi thôi | CODE kernel/mentor/day_gate.go:72 (row 4)
+16:32 | Tại vì sao | CODE kernel/mentor/day_gate.go:72 (row 4)
+16:33 | Căn bản ngày hôm đó nó không còn gì để nó chạy nữa hết | CODE kernel/mentor/day_gate.go:72 (row 4)
+16:36 | Giống như hồi buổi sáng ngày hôm nay | —
+16:38 | Giống như buổi sáng ngày hôm nay | —
+16:41 | Nó có chạy cái gì đâu | —
+16:42 | Mọi người mở mắt ra buổi sáng ngày hôm nay | —
+16:44 | Nè em đo lại cho mọi người coi nè | —
+16:46 | Đây | —
+16:48 | Em sẽ cho mọi người coi lại ha | —
+16:49 | Rồi | —
+16:51 | Thì buổi tối | —
+16:54 | Bắt đầu | —
+16:55 | Khi mà anh chị đo cái daily | —
+16:56 | Nó cứ nghĩ là nó phải chạy từ Asia | —
+16:59 | Nó chạy qua pre-market | —
+17:00 | Đúng không | —
+17:00 | Thì nó mới tính được một cây rồi | —
+17:03 | Ngay chỗ này | —
+17:04 | Hôm qua là pre-market low | —
+17:06 | Dòng dòng ngay chỗ này | —
+17:07 | Rồi nó chạy lên tới trên đây | —
+17:08 | Ok | —
+17:10 | Bây giờ một cây nến daily | —
+17:12 | Ở ngay khúc này mới đúng nha | —
+17:13 | Ngay khúc này mới đúng nè | —
+17:14 | Trên đây mới đúng | —
+17:16 | Rồi | —
+17:16 | Ok | —
+17:19 | Chỉ ngoài lại cung daily nè | —
+17:24 | Chờ xíu | —
+17:26 | Cái này không được | —
+17:27 | Ừ cái này đi về rồi mọi người nhìn nè Ngày hôm qua từ lúc mắt kẹt Open lúc thị trường châu Á mở | —
+17:44 | cửa đó em đo em đo nghe lại với em hỗn hợp ngoài đây em không có đo em không hề đo bên ngoài đây | —
+17:50 | em chỉ lấy từ tỉnh ảnh cao nhất của cái Asia nè Cái đáy thấp nhất của bị mắc kẹt nè rồi em | —
+17:56 | Ví dụ mọi người bật thử qua khung Daily | —
+17:58 | Bây giờ | —
+17:59 | Một cây nến Daily nó chạy bao nhiêu | —
+18:03 | Nó chạy 300 điểm mà tới đây nó chạy gần được 300 điểm | —
+18:06 | Thì nó phải còn 100 điểm không | —
+18:08 | Rồi | —
+18:09 | Bữa sáng ngày hôm nay mọi người thấy có gì để trade đâu | —
+18:12 | Nó chạy gần hết cây nến Daily luôn rồi | —
+18:14 | Nó chạy gần hết cây nến Daily luôn rồi | —
+18:17 | Mà nếu như mà anh chị kết hợp thêm vô được | —
+18:20 | Là khung 4h Trigger Sale | —
+18:22 | Khung 1h Trigger Buy | —
+18:24 | Thì sáng ngày hôm nay thật sự ra | —
+18:25 | Nếu như là em | —
+18:26 | Nếu như em không phải like trade buổi sáng ngày hôm nay | —
+18:29 | Là em xách đích em đi nhậu | —
+18:30 | Khỏi nhà làm gì hết | —
+18:32 | Tại nhìn có gì đâu trade | —
+18:34 | Đúng không anh chị | —
+18:36 | Bây giờ mình kết hợp 2 cái đi | —
+18:39 | Buổi sáng mở mắt ra | —
+18:41 | Cái việc đầu tiên của mình là làm gì | —
+18:43 | Anh chị không cần phải làm như nhiều tại vì sao | —
+18:44 | Tại vì căn bản ra key level em cũng đã vẽ cho anh chị rồi | —
+18:47 | Em cũng đã one check | —
+18:49 | Key level cho anh chị cứ bật | —
+18:50 | Cái key level vô thôi anh chị rảnh thêm thì anh chị vẽ | —
+18:52 | Còn không thì thôi em vẫn vẽ anh chị vẽ ngay đó | —
+18:54 | Cái thứ 2 | —
+18:55 | Vì làm gì | —
+18:56 | Anh chị bật qua khung daily | —
+18:57 | Anh chị đo cái nến hiện tại | —
+18:58 | Cái daily nó chạy được bao nhiêu | —
+18:59 | Mình lấy trung bình cộng | —
+19:01 | Cái thứ 2 | —
+19:03 | Cái việc thứ 3 | —
+19:04 | Là bây giờ anh chị coi | —
+19:06 | Khung 4 giờ | —
+19:07 | Nó đang trigger gì | —
+19:08 | Khung 1 giờ | —
+19:08 | Xong chuyển xuống khung 1 giờ | —
+19:10 | Nó đang trigger gì | —
+19:11 | Nếu như 2 khung trigger cùng với nhau | —
+19:13 | Ok | —
+19:15 | Mình đánh | —
+19:16 | Mình đánh theo khung 4 giờ | —
+19:17 | Và đánh theo khung 1 giờ | —
+19:19 | Là đánh theo khung 1 giờ | —
+19:20 | Nó đang trigger cùng nhau | —
+19:22 | Còn nếu như 2 khung giờ đang ngược nhau | CODE kernel/mentor/day_gate.go:334 (row 5)
+19:24 | Mà khung daily nó đã chạy được 300-400 điểm rồi | CODE kernel/mentor/day_gate.go:334 (row 5)
+19:26 | Tắt máy nghỉ luôn cho em | CODE kernel/mentor/day_gate.go:334 (row 5)
+19:26 | Cái việc anh chị xác định được là anh chị có nên trade ngày hôm đó hay không | CODE kernel/mentor/day_gate.go:334 (row 5)
+19:31 | Anh chị chỉ tốn trong vòng có 5 phút | —
+19:33 | Chưa tới 5 phút | —
+19:35 | Nếu mà anh chị nào làm quen thao tác | —
+19:37 | Chưa tới 5 phút | —
+19:38 | Bật máy lên ngồi ghè ghẹt xong | —
+19:40 | Ngày hôm đó không đáng để trade | —
+19:41 | Còn nếu như mà nó đã chạy được 300-400 điểm | —
+19:45 | Ok | CODE kernel/mentor/day_gate.go:72 (row 4)
+19:45 | 2 khung giờ | CODE kernel/mentor/day_gate.go:72 (row 4)
+19:46 | 2 khung giờ mà nó thuận nhau đi | CODE kernel/mentor/day_gate.go:72 (row 4)
+19:50 | Nếu mà nó chạy được 300-400 điểm rồi | CODE kernel/mentor/day_gate.go:72 (row 4)
+19:51 | Nhưng mà 2 khung giờ nó thuận nhau | CODE kernel/mentor/day_gate.go:72 (row 4)
+19:52 | Thì khả năng rất là cao | CODE kernel/mentor/day_gate.go:72 (row 4)
+19:54 | Nó vẫn có thể chạy | CODE kernel/mentor/day_gate.go:72 (row 4)
+19:55 | Nó vẫn có thể chạy | CODE kernel/mentor/day_gate.go:72 (row 4)
+19:56 | Nhưng mình vẫn có thể trade | CODE kernel/mentor/day_gate.go:72 (row 4)
+19:59 | Nhưng nó không target nhiều | CODE kernel/mentor/day_gate.go:72 (row 4)
+20:00 | Mình không được target nhiều | CODE kernel/mentor/day_gate.go:72 (row 4)
+20:02 | 15 điểm bán | CODE kernel/mentor/day_gate.go:72 (row 4)
+20:05 | 15 điểm bán | CODE kernel/mentor/day_gate.go:72 (row 4)
+20:06 | 10 điểm bán | CODE kernel/mentor/day_gate.go:72 (row 4)
+20:07 | 15 điểm bán | CODE kernel/mentor/day_gate.go:72 (row 4)
+20:07 | Là những ngày mà mình phải flexible như vậy | CODE kernel/mentor/day_gate.go:72 (row 4)
 20:10 | Như buổi sáng ngày hôm nay | —
 20:13 | Anh chị thấy em trade em rất take time luôn | —
 20:15 | Em ngồi tới | —
@@ -606,15 +606,15 @@ cues: 703/703 marked · rules: 337 · CODE: 337 · MISMATCH: 0 · NOT-IN-BOT: 0 
 21:17 | Khi nào nên trade và khi nào không nên trade | —
 21:19 | Trong ngày hôm đó | —
 21:20 | Mọi người chỉ cần xác định | —
-21:32 | Trong vòng 5-10 phút đồng hồ thôi | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-21:33 | Mọi người đã biết là ngày hôm đó mọi người nên làm gì rồi | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-21:36 | Và em | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-21:37 | Recommend anh chị tất cả mọi người | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-21:39 | Đang nghe nói thời điểm hiện tại | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-21:41 | Anh chị nên có cái thói quen đó | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-21:44 | Anh chị nên | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-21:46 | Có cái thói quen đó | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
-21:47 | Là sao sáng dậy đo cái hình hình này liền | CODE kernel/mentor/day_gate.go:7 [sec7 routine]
+21:32 | Trong vòng 5-10 phút đồng hồ thôi | —
+21:33 | Mọi người đã biết là ngày hôm đó mọi người nên làm gì rồi | —
+21:36 | Và em | —
+21:37 | Recommend anh chị tất cả mọi người | —
+21:39 | Đang nghe nói thời điểm hiện tại | —
+21:41 | Anh chị nên có cái thói quen đó | —
+21:44 | Anh chị nên | —
+21:46 | Có cái thói quen đó | —
+21:47 | Là sao sáng dậy đo cái hình hình này liền | —
 21:49 | là việc đầu tiên | —
 21:50 | xong | —
 21:50 | rồi coi khung 4h | —
@@ -646,27 +646,27 @@ cues: 703/703 marked · rules: 337 · CODE: 337 · MISMATCH: 0 · NOT-IN-BOT: 0 
 22:22 | một cái idea | —
 22:23 | Là ngày hôm đó mình sẽ phải làm gì | —
 22:24 | Rồi tiếp tục | —
-22:28 | Tiếp tục | —
-22:32 | Khi anh chị dẻ được cái box | —
-22:36 | Em nhắc lại một lần nữa nha | —
-22:38 | Khi anh chị dẻ được cái box | —
-22:39 | Làm ơn | —
-22:41 | Nếu như anh chị có trade | —
-22:43 | Đừng cố gắng | —
-22:46 | Trade khung giờ nhỏ hơn | —
-22:47 | Kiếm potential high, potential low | —
-22:49 | Ở thời điểm hiện tại | —
-22:50 | Nếu như anh chị đang cố gắng | —
-22:52 | Anh chị tập và anh chị đang practice | —
-22:54 | Insider only cho em | —
-22:58 | Tại vì cơ bản ra là nó rất là khó canh | —
-23:05 | Cái việc mà anh chị trade potential high, low potential low high | —
-23:08 | Ở khung giờ nhỏ hơn trong cái box 305 phút | —
-23:10 | Nó rất là khó canh | —
-23:12 | Em không nói là không được trade | —
-23:15 | Em nói là rất là khó canh | —
-23:16 | Nên là anh chị rap từ từ vô | —
-23:18 | Cái khó của mọi người là anh chị cố gắng | —
+22:28 | Tiếp tục | CODE kernel/mentor/box.go:764 (row 6)
+22:32 | Khi anh chị dẻ được cái box | CODE kernel/mentor/box.go:764 (row 6)
+22:36 | Em nhắc lại một lần nữa nha | CODE kernel/mentor/box.go:764 (row 6)
+22:38 | Khi anh chị dẻ được cái box | CODE kernel/mentor/box.go:764 (row 6)
+22:39 | Làm ơn | CODE kernel/mentor/box.go:764 (row 6)
+22:41 | Nếu như anh chị có trade | CODE kernel/mentor/box.go:764 (row 6)
+22:43 | Đừng cố gắng | CODE kernel/mentor/box.go:764 (row 6)
+22:46 | Trade khung giờ nhỏ hơn | CODE kernel/mentor/box.go:764 (row 6)
+22:47 | Kiếm potential high, potential low | CODE kernel/mentor/box.go:764 (row 6)
+22:49 | Ở thời điểm hiện tại | CODE kernel/mentor/box.go:764 (row 6)
+22:50 | Nếu như anh chị đang cố gắng | CODE kernel/mentor/box.go:764 (row 6)
+22:52 | Anh chị tập và anh chị đang practice | CODE kernel/mentor/box.go:764 (row 6)
+22:54 | Insider only cho em | CODE kernel/mentor/box.go:764 (row 6)
+22:58 | Tại vì cơ bản ra là nó rất là khó canh | CODE kernel/mentor/box.go:764 (row 6)
+23:05 | Cái việc mà anh chị trade potential high, low potential low high | CODE kernel/mentor/box.go:764 (row 6)
+23:08 | Ở khung giờ nhỏ hơn trong cái box 305 phút | CODE kernel/mentor/box.go:764 (row 6)
+23:10 | Nó rất là khó canh | CODE kernel/mentor/box.go:764 (row 6)
+23:12 | Em không nói là không được trade | CODE kernel/mentor/box.go:764 (row 6)
+23:15 | Em nói là rất là khó canh | CODE kernel/mentor/box.go:764 (row 6)
+23:16 | Nên là anh chị rap từ từ vô | CODE kernel/mentor/box.go:764 (row 6)
+23:18 | Cái khó của mọi người là anh chị cố gắng | CODE kernel/mentor/box.go:764 (row 6)
 23:24 | Anh chị nạp hết tất cả mọi thứ vô một lần | —
 23:26 | Nhưng mà mọi người nên nhớ | —
 23:29 | Cơ chế của người mình có hạn anh chị | —
@@ -689,19 +689,19 @@ cues: 703/703 marked · rules: 337 · CODE: 337 · MISMATCH: 0 · NOT-IN-BOT: 0 
 24:08 | Và cái cách trade nó sẽ không work | —
 24:09 | Không, lúc nào cũng sẽ work hết | —
 24:11 | Nếu nó không work, nó không respect thôi | —
-24:14 | Nó không respect thì mình làm gì anh chị | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-24:17 | Nên mọi người | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-24:18 | Nếu mà nó không respect mình sẽ làm gì | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-24:20 | Mọi người, nếu như nó không respect thì mình sẽ làm gì anh chị | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-24:29 | Nghĩ | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-24:44 | Đơn giản mà mình có quyền cho mình | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-24:46 | Một ngày nghỉ mà anh chị | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-24:48 | Đúng không? Mình có quyền cho bản thân mình | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-24:50 | Kiếm khoai làm gì? Cái lúc đó khoai đi ngủ rồi | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-24:52 | Market mà nó không respect là khoai cũng đi ngủ rồi | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-24:54 | Khoai ớp mái khoai đi ngủ rồi | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-24:56 | Chứ khoai không ngờ khoai trade đâu | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-24:58 | Khoai cũng không nhìn chẹt luôn kiếm khoai làm gì | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-25:00 | Kiếm khoai khoai rủ ngược lại đi nhậu | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-25:01 | Con không làm gì được như đó mọi người | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-25:05 | Căn bản ra không làm được gì như đó | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
+24:14 | Nó không respect thì mình làm gì anh chị | —
+24:17 | Nên mọi người | —
+24:18 | Nếu mà nó không respect mình sẽ làm gì | —
+24:20 | Mọi người, nếu như nó không respect thì mình sẽ làm gì anh chị | —
+24:29 | Nghĩ | —
+24:44 | Đơn giản mà mình có quyền cho mình | CODE kernel/mentor/day_gate.go:334 (row 5)
+24:46 | Một ngày nghỉ mà anh chị | CODE kernel/mentor/day_gate.go:334 (row 5)
+24:48 | Đúng không? Mình có quyền cho bản thân mình | CODE kernel/mentor/day_gate.go:334 (row 5)
+24:50 | Kiếm khoai làm gì? Cái lúc đó khoai đi ngủ rồi | CODE kernel/mentor/day_gate.go:334 (row 5)
+24:52 | Market mà nó không respect là khoai cũng đi ngủ rồi | CODE kernel/mentor/day_gate.go:334 (row 5)
+24:54 | Khoai ớp mái khoai đi ngủ rồi | CODE kernel/mentor/day_gate.go:334 (row 5)
+24:56 | Chứ khoai không ngờ khoai trade đâu | CODE kernel/mentor/day_gate.go:334 (row 5)
+24:58 | Khoai cũng không nhìn chẹt luôn kiếm khoai làm gì | CODE kernel/mentor/day_gate.go:334 (row 5)
+25:00 | Kiếm khoai khoai rủ ngược lại đi nhậu | CODE kernel/mentor/day_gate.go:334 (row 5)
+25:01 | Con không làm gì được như đó mọi người | CODE kernel/mentor/day_gate.go:334 (row 5)
+25:05 | Căn bản ra không làm được gì như đó | CODE kernel/mentor/day_gate.go:334 (row 5)

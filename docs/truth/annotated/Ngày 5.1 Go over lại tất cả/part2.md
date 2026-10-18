@@ -1,10 +1,10 @@
 # Ngày 5.1 Go over lại tất cả part2
 
-cues: 244/244 marked · rules: 128 · CODE: 128 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 116
+cues: 244/244 · rule cues: 99 · rows: 5 · CODE: 59 · MISMATCH: 0 · NOT-IN-BOT: 40 · OWNER-ORDER: 0 · SPLIT: 0 · —: 145
 
-00:00 | thì thôi. | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-00:01 | tắt máy nghỉ 1 ngày cho lành. | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
-00:03 | términ gi itself | CODE kernel/mentor/day_gate.go:44 [DayVerdict.DayOff]
+00:00 | thì thôi. | CODE kernel/mentor/day_gate.go:334 (row 5)
+00:01 | tắt máy nghỉ 1 ngày cho lành. | CODE kernel/mentor/day_gate.go:334 (row 5)
+00:03 | términ gi itself | CODE kernel/mentor/day_gate.go:334 (row 5)
 00:09 | Recap lại 1 tý cái lệnh buổi sáng ngày hôm nay mà em anh đã sử dụng cái kiến thức của mình để mình trade cái lệnh mà mình ăn 2 chục điểm buổi sáng ngày hôm nay này | —
 00:16 | ở đây rồi buổi sáng ngày hôm nay mọi người nhớ mình ăn có lệnh 20 điểm bao lẹ đúng không Đâu | —
 00:33 | rồi Để coi cùng 15 phút chứ rồi ngay chỗ này hôm qua cái kiến thức này hôm qua mình mới học luôn | —
@@ -67,66 +67,66 @@ cues: 244/244 marked · rules: 128 · CODE: 128 · MISMATCH: 0 · NOT-IN-BOT: 0 
 03:04 | Em cứ thấy | —
 03:05 | Em làm theo đó thôi | —
 03:06 | Em quăng cái nào cũng đi chỗ khác | —
-03:15 | Tại sao nó 3 nến Insta 3 rồi | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:18 | Tại sao không cancel | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:19 | Lý do đơn giản lắm | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:20 | Tại vì stop loss của mình ở thời điểm đó rất nhỏ | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:22 | Có 12 điểm mà | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:25 | Bây giờ nó quốc cho 4 cây | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:27 | 5 cây | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:28 | 4 cây đi | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:29 | Đúng không | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:30 | Nó làm cho 4 cây | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:31 | Nhưng mà thời điểm đó em vẫn thấy được là | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:33 | Stop loss nó rất nhỏ | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:34 | Có 11, 12 điểm thôi | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:36 | Mình lớp mình | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:42 | Lúc nào anh chị em | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:44 | Mọi người cũng nên nhớ nè | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:45 | Mặc dù là em hướng dẫn trên lớp như vậy | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:47 | Nhưng anh chị có một cái quyền | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:49 | Là bây giờ mọi người thấy stop loss nhỏ | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:52 | Mọi người cứ việc đặt lệnh | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:53 | Mọi người thấy nó hợp lý | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:55 | Mọi người cứ việc đặt lệnh | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:56 | Mặc dù nó là | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:57 | Sau 3 cây | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:58 | Thấy không | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-03:59 | Cái này là mình tâm sự thiệt | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:00 | Sau 3 cây nến đúng không | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:02 | Cái nếu thứ 4 mà nó không fill | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:03 | Mà là mình | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:04 | Mình cancel lệnh | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:05 | Tại vì sao | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:06 | Tại vì nó | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:06 | Mình sẽ không có khung giờ 4 phút | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:08 | Mà nó nhảy thẳng lên 5 phút | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:09 | Đúng không | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:10 | Nhưng | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:11 | Ngay tại thời điểm này | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:13 | Em thấy bây giờ | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:13 | Nó có tạo khung 5 phút đi nữa | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:15 | Thì 1 cái stop loss | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:16 | 1 cái stop loss | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:16 | Nó cũng có 11, 12 điểm | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:17 | Nó không có đáng | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:19 | Mình vẫn đang đích | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:21 | Mình vẫn đang đánh đúng | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:22 | Theo system | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:22 | Mình vẫn đang đánh đúng | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:23 | Theo setup | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:24 | Insta3 cho lợi ngon | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:25 | Anh chị | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:27 | Anh chị | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:28 | Hiểu được ý em nói không | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:29 | Nói là sáng là | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:32 | Tại sao em không cancel lệnh | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:33 | Đương nhiên đúng theo bài học | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:34 | Em cancel lệnh | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:35 | Nhưng em thấy | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:36 | Ồ, subplot có 11, 12 điểm | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:38 | Cancel làm chi trời | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
-04:38 | Em đâu nghĩ nhiều đâu | CODE kernel/mentor/isb.go:153 [ISBStackAdvice]
+03:15 | Tại sao nó 3 nến Insta 3 rồi | NOT-IN-BOT (row 8)
+03:18 | Tại sao không cancel | NOT-IN-BOT (row 8)
+03:19 | Lý do đơn giản lắm | NOT-IN-BOT (row 8)
+03:20 | Tại vì stop loss của mình ở thời điểm đó rất nhỏ | NOT-IN-BOT (row 8)
+03:22 | Có 12 điểm mà | NOT-IN-BOT (row 8)
+03:25 | Bây giờ nó quốc cho 4 cây | NOT-IN-BOT (row 8)
+03:27 | 5 cây | NOT-IN-BOT (row 8)
+03:28 | 4 cây đi | NOT-IN-BOT (row 8)
+03:29 | Đúng không | NOT-IN-BOT (row 8)
+03:30 | Nó làm cho 4 cây | NOT-IN-BOT (row 8)
+03:31 | Nhưng mà thời điểm đó em vẫn thấy được là | NOT-IN-BOT (row 8)
+03:33 | Stop loss nó rất nhỏ | NOT-IN-BOT (row 8)
+03:34 | Có 11, 12 điểm thôi | NOT-IN-BOT (row 8)
+03:36 | Mình lớp mình | NOT-IN-BOT (row 8)
+03:42 | Lúc nào anh chị em | NOT-IN-BOT (row 8)
+03:44 | Mọi người cũng nên nhớ nè | NOT-IN-BOT (row 8)
+03:45 | Mặc dù là em hướng dẫn trên lớp như vậy | NOT-IN-BOT (row 8)
+03:47 | Nhưng anh chị có một cái quyền | NOT-IN-BOT (row 8)
+03:49 | Là bây giờ mọi người thấy stop loss nhỏ | NOT-IN-BOT (row 8)
+03:52 | Mọi người cứ việc đặt lệnh | NOT-IN-BOT (row 8)
+03:53 | Mọi người thấy nó hợp lý | NOT-IN-BOT (row 8)
+03:55 | Mọi người cứ việc đặt lệnh | NOT-IN-BOT (row 8)
+03:56 | Mặc dù nó là | NOT-IN-BOT (row 8)
+03:57 | Sau 3 cây | CODE kernel/mentor/isb.go:153 (row 7)
+03:58 | Thấy không | CODE kernel/mentor/isb.go:153 (row 7)
+03:59 | Cái này là mình tâm sự thiệt | CODE kernel/mentor/isb.go:153 (row 7)
+04:00 | Sau 3 cây nến đúng không | CODE kernel/mentor/isb.go:153 (row 7)
+04:02 | Cái nếu thứ 4 mà nó không fill | CODE kernel/mentor/isb.go:153 (row 7)
+04:03 | Mà là mình | CODE kernel/mentor/isb.go:153 (row 7)
+04:04 | Mình cancel lệnh | CODE kernel/mentor/isb.go:153 (row 7)
+04:05 | Tại vì sao | CODE kernel/mentor/isb.go:153 (row 7)
+04:06 | Tại vì nó | CODE kernel/mentor/isb.go:153 (row 7)
+04:06 | Mình sẽ không có khung giờ 4 phút | CODE kernel/mentor/isb.go:153 (row 7)
+04:08 | Mà nó nhảy thẳng lên 5 phút | CODE kernel/mentor/isb.go:153 (row 7)
+04:09 | Đúng không | CODE kernel/mentor/isb.go:153 (row 7)
+04:10 | Nhưng | CODE kernel/mentor/isb.go:153 (row 7)
+04:11 | Ngay tại thời điểm này | CODE kernel/mentor/isb.go:153 (row 7)
+04:13 | Em thấy bây giờ | CODE kernel/mentor/isb.go:153 (row 7)
+04:13 | Nó có tạo khung 5 phút đi nữa | CODE kernel/mentor/isb.go:153 (row 7)
+04:15 | Thì 1 cái stop loss | CODE kernel/mentor/isb.go:153 (row 7)
+04:16 | 1 cái stop loss | CODE kernel/mentor/isb.go:153 (row 7)
+04:16 | Nó cũng có 11, 12 điểm | CODE kernel/mentor/isb.go:153 (row 7)
+04:17 | Nó không có đáng | CODE kernel/mentor/isb.go:153 (row 7)
+04:19 | Mình vẫn đang đích | NOT-IN-BOT (row 8)
+04:21 | Mình vẫn đang đánh đúng | NOT-IN-BOT (row 8)
+04:22 | Theo system | NOT-IN-BOT (row 8)
+04:22 | Mình vẫn đang đánh đúng | NOT-IN-BOT (row 8)
+04:23 | Theo setup | NOT-IN-BOT (row 8)
+04:24 | Insta3 cho lợi ngon | NOT-IN-BOT (row 8)
+04:25 | Anh chị | NOT-IN-BOT (row 8)
+04:27 | Anh chị | NOT-IN-BOT (row 8)
+04:28 | Hiểu được ý em nói không | NOT-IN-BOT (row 8)
+04:29 | Nói là sáng là | NOT-IN-BOT (row 8)
+04:32 | Tại sao em không cancel lệnh | NOT-IN-BOT (row 8)
+04:33 | Đương nhiên đúng theo bài học | NOT-IN-BOT (row 8)
+04:34 | Em cancel lệnh | NOT-IN-BOT (row 8)
+04:35 | Nhưng em thấy | NOT-IN-BOT (row 8)
+04:36 | Ồ, subplot có 11, 12 điểm | NOT-IN-BOT (row 8)
+04:38 | Cancel làm chi trời | NOT-IN-BOT (row 8)
+04:38 | Em đâu nghĩ nhiều đâu | NOT-IN-BOT (row 8)
 04:42 | Em thấy | —
 04:43 | Trade nó là take risk anh chị | —
 04:45 | Trade nó là take risk | —
@@ -154,14 +154,14 @@ cues: 244/244 marked · rules: 128 · CODE: 128 · MISMATCH: 0 · NOT-IN-BOT: 0 
 05:44 | Là nó | —
 05:46 | Không hợp lý | —
 05:47 | Rồi ha tiếp tục | —
-06:03 | Mình chỉ có 3 setup thôi | CODE kernel/mentor/mentor.go:187 [Setup ISB PHL PLH]
-06:31 | Nhớ là mở giúp em | CODE kernel/mentor/mentor.go:187 [Setup ISB PHL PLH]
-06:32 | Inside bar | CODE kernel/mentor/mentor.go:187 [Setup ISB PHL PLH]
-06:33 | Potential high low | CODE kernel/mentor/mentor.go:187 [Setup ISB PHL PLH]
-06:36 | Potential low high | CODE kernel/mentor/mentor.go:187 [Setup ISB PHL PLH]
-06:37 | Nên nhớ | CODE kernel/mentor/mentor.go:187 [Setup ISB PHL PLH]
-07:03 | Mình có 3 setup only | CODE kernel/mentor/mentor.go:187 [Setup ISB PHL PLH]
-07:05 | Và những thứ bổ trợ cho nó | CODE kernel/mentor/mentor.go:187 [Setup ISB PHL PLH]
+06:03 | Mình chỉ có 3 setup thôi | CODE kernel/mentor/mentor.go:187 (row 9)
+06:31 | Nhớ là mở giúp em | CODE kernel/mentor/mentor.go:187 (row 9)
+06:32 | Inside bar | CODE kernel/mentor/mentor.go:187 (row 9)
+06:33 | Potential high low | CODE kernel/mentor/mentor.go:187 (row 9)
+06:36 | Potential low high | CODE kernel/mentor/mentor.go:187 (row 9)
+06:37 | Nên nhớ | CODE kernel/mentor/mentor.go:187 (row 9)
+07:03 | Mình có 3 setup only | CODE kernel/mentor/mentor.go:187 (row 9)
+07:05 | Và những thứ bổ trợ cho nó | CODE kernel/mentor/mentor.go:187 (row 9)
 07:07 | Và những thứ bổ trợ cho nó | —
 07:11 | Là gì anh chị | —
 07:13 | Thứ nhất là trend light | —
@@ -188,61 +188,61 @@ cues: 244/244 marked · rules: 128 · CODE: 128 · MISMATCH: 0 · NOT-IN-BOT: 0 
 09:30 | giờ lớp mình có indicator hay không có indicator | —
 09:34 | mình cũng ra được bình thường | —
 09:35 | mọi người quên 1 việc | —
-09:46 | rất là quan trọng | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-09:48 | là việc | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-09:51 | đóng mở nến | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-09:52 | tại level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-09:54 | đóng nến tại level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:04 | việc này là việc rất quan trọng | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:09 | rất quan trọng | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:24 | Đó là lý do tại sao em để dưới cùng | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:26 | Tất cả những thứ | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:29 | 4 cái thứ bên trên | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:30 | Nó đều là được là gì | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:32 | 4 thứ bên trên nó đều được gọi là level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:35 | Nhưng | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:37 | Cái quan trọng mật nhất | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:39 | Khi anh chị trade với level là gì mọi người | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:41 | Căn bản ra đúng | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:44 | Thật sự căn bản ra đúng | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:45 | Indicator vẫn có | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:46 | Em vẫn sẽ để indicator vô | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:49 | Nhưng mọi người nên nhớ gì nè | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:51 | Nhớ nằm lòng cho em | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:56 | Nếu nó làm cho em cái chữ | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:57 | Cái câu này nè | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-10:58 | Tất cả mọi thứ | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:02 | Trên chạc anh chị nhìn thấy | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:03 | Ngoại trừ nến ra | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:06 | Tất cả mọi thứ | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:09 | Đều là | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:11 | Quy về một chữ | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:13 | Level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:14 | Anh chị ok không | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:18 | Anh chị ok không | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:28 | Ngoại trừ bỏ | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:31 | Tất cả mọi thứ | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:36 | Ngoại trừ nến ra | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:37 | anh chị nhìn thấy trên chat đều là level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:40 | và cái việc quan trọng nhất | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:42 | là việc đóng nến ở đâu | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:44 | tại level, mình trade ở | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:45 | tại level không anh chị | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:46 | căn bản là anh chị nhìn thấy mọi người | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:49 | trade trên live, trên live là gì? là level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:51 | e-mail 34 là gì? là level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:53 | e-mail 9 là gì? là level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:55 | kia level là gì? là level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:57 | đúng không? đường live | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-11:59 | buy, sell, set up trigger là gì? là level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-12:01 | tất cả mọi thứ đều | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-12:03 | là level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-12:04 | Và khi anh chị đang trade tại level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-12:07 | Thì anh chị thứ nhất là cái việc đóng mở nó | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-12:09 | Tại level | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-12:09 | Nó đang react với cái level đó như thế nào | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-12:15 | Đúng không | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-12:19 | Nên là nhớ giúp em nè | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-12:23 | Cái chuyện quan trọng nhất là level thôi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
-12:25 | Rồi | CODE kernel/mentor/touch.go:10 [TouchOutcome]
+09:46 | rất là quan trọng | CODE kernel/mentor/touch.go:10 (row 10)
+09:48 | là việc | CODE kernel/mentor/touch.go:10 (row 10)
+09:51 | đóng mở nến | CODE kernel/mentor/touch.go:10 (row 10)
+09:52 | tại level | CODE kernel/mentor/touch.go:10 (row 10)
+09:54 | đóng nến tại level | CODE kernel/mentor/touch.go:10 (row 10)
+10:04 | việc này là việc rất quan trọng | CODE kernel/mentor/touch.go:10 (row 10)
+10:09 | rất quan trọng | CODE kernel/mentor/touch.go:10 (row 10)
+10:24 | Đó là lý do tại sao em để dưới cùng | —
+10:26 | Tất cả những thứ | —
+10:29 | 4 cái thứ bên trên | —
+10:30 | Nó đều là được là gì | —
+10:32 | 4 thứ bên trên nó đều được gọi là level | —
+10:35 | Nhưng | —
+10:37 | Cái quan trọng mật nhất | —
+10:39 | Khi anh chị trade với level là gì mọi người | —
+10:41 | Căn bản ra đúng | —
+10:44 | Thật sự căn bản ra đúng | —
+10:45 | Indicator vẫn có | —
+10:46 | Em vẫn sẽ để indicator vô | —
+10:49 | Nhưng mọi người nên nhớ gì nè | —
+10:51 | Nhớ nằm lòng cho em | —
+10:56 | Nếu nó làm cho em cái chữ | —
+10:57 | Cái câu này nè | —
+10:58 | Tất cả mọi thứ | —
+11:02 | Trên chạc anh chị nhìn thấy | —
+11:03 | Ngoại trừ nến ra | —
+11:06 | Tất cả mọi thứ | —
+11:09 | Đều là | —
+11:11 | Quy về một chữ | —
+11:13 | Level | —
+11:14 | Anh chị ok không | —
+11:18 | Anh chị ok không | —
+11:28 | Ngoại trừ bỏ | —
+11:31 | Tất cả mọi thứ | —
+11:36 | Ngoại trừ nến ra | —
+11:37 | anh chị nhìn thấy trên chat đều là level | —
+11:40 | và cái việc quan trọng nhất | CODE kernel/mentor/touch.go:10 (row 10)
+11:42 | là việc đóng nến ở đâu | CODE kernel/mentor/touch.go:10 (row 10)
+11:44 | tại level, mình trade ở | CODE kernel/mentor/touch.go:10 (row 10)
+11:45 | tại level không anh chị | CODE kernel/mentor/touch.go:10 (row 10)
+11:46 | căn bản là anh chị nhìn thấy mọi người | CODE kernel/mentor/touch.go:10 (row 10)
+11:49 | trade trên live, trên live là gì? là level | CODE kernel/mentor/touch.go:10 (row 10)
+11:51 | e-mail 34 là gì? là level | CODE kernel/mentor/touch.go:10 (row 10)
+11:53 | e-mail 9 là gì? là level | CODE kernel/mentor/touch.go:10 (row 10)
+11:55 | kia level là gì? là level | CODE kernel/mentor/touch.go:10 (row 10)
+11:57 | đúng không? đường live | CODE kernel/mentor/touch.go:10 (row 10)
+11:59 | buy, sell, set up trigger là gì? là level | CODE kernel/mentor/touch.go:10 (row 10)
+12:01 | tất cả mọi thứ đều | CODE kernel/mentor/touch.go:10 (row 10)
+12:03 | là level | CODE kernel/mentor/touch.go:10 (row 10)
+12:04 | Và khi anh chị đang trade tại level | CODE kernel/mentor/touch.go:10 (row 10)
+12:07 | Thì anh chị thứ nhất là cái việc đóng mở nó | CODE kernel/mentor/touch.go:10 (row 10)
+12:09 | Tại level | CODE kernel/mentor/touch.go:10 (row 10)
+12:09 | Nó đang react với cái level đó như thế nào | CODE kernel/mentor/touch.go:10 (row 10)
+12:15 | Đúng không | CODE kernel/mentor/touch.go:10 (row 10)
+12:19 | Nên là nhớ giúp em nè | CODE kernel/mentor/touch.go:10 (row 10)
+12:23 | Cái chuyện quan trọng nhất là level thôi | CODE kernel/mentor/touch.go:10 (row 10)
+12:25 | Rồi | CODE kernel/mentor/touch.go:10 (row 10)
 12:37 | Tắt record | —

@@ -1,6 +1,6 @@
 # Ngày 5.2 Cách trade khung 4H chuyển xuống 5M part1
 
-cues: 535/535 marked · rules: 386 · CODE: 386 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 149
+cues: 535/535 · rule cues: 256 · rows: 11 · CODE: 251 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 5 · SPLIT: 0 · —: 279
 
 00:00 | Em sẽ đi xuyên suốt luôn ha, cái video này em sẽ đi xuyên suốt luôn, em sẽ không có, em sẽ không có dừng lại ha, em sẽ đi xuyên suốt luôn. | —
 00:07 | Rồi, về cái việc đầu tiên, level em sẽ dạy sau cùng ha, level em sẽ dạy sau cùng. | —
@@ -14,11 +14,11 @@ cues: 535/535 marked · rules: 386 · CODE: 386 · MISMATCH: 0 · NOT-IN-BOT: 0 
 00:35 | Nó sẽ kết hợp với key level | —
 00:38 | Nhưng mà cách em swing | —
 00:39 | Swing share hay là | —
-00:41 | Em vô 1 MNQ | —
-00:43 | A cash | —
-00:43 | Em vô đúng 1 MNQ thôi, em không vô nhiều | —
-00:47 | Không có tiền thì vô nhiều | —
-00:48 | Tốn tiền lắm | —
+00:41 | Em vô 1 MNQ | OWNER-ORDER (row 23)
+00:43 | A cash | OWNER-ORDER (row 23)
+00:43 | Em vô đúng 1 MNQ thôi, em không vô nhiều | OWNER-ORDER (row 23)
+00:47 | Không có tiền thì vô nhiều | OWNER-ORDER (row 23)
+00:48 | Tốn tiền lắm | OWNER-ORDER (row 23)
 00:50 | Nếu mà anh chị nào vẫn trade fund thì mọi người cứ bị trade | —
 00:52 | Nhưng mà | —
 00:54 | Em biết là trong đây cũng nhiều người trade khác giống em lắm | —
@@ -33,115 +33,115 @@ cues: 535/535 marked · rules: 386 · CODE: 386 · MISMATCH: 0 · NOT-IN-BOT: 0 
 01:14 | Chú bé lém lỉnh | —
 01:16 | Ok rồi | —
 01:17 | Là như thế nào | —
-01:19 | Indicator | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:22 | Indicator của mình | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:24 | Em sẽ chỉ sử dụng 2 indicator only | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:27 | Và mọi người vẫn | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:29 | Bữa giờ mọi người vẫn nghe em nói rất là nhiều | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:31 | Về 2 cái indicator này | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:32 | Cái thứ nhất là về fish trend | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:35 | Cái thứ 2 | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:37 | Là | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:38 | Bena | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:40 | Rồi | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:41 | Fish trend | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:43 | Trời sao fish trend này nhìn lạ lẫm vậy | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:46 | Ủa đâu cần đâu | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:47 | Ok | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:50 | Bena | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:51 | Em sẽ chỉ sử dụng | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:55 | EMA 34 only | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-01:56 | FishTrain em sẽ chỉ sử dụng | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:02 | EMA 34 only | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:02 | Và | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:04 | FishTrain em sử dụng 2 cộng dây | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:07 | Nhưng mà FishTrain thì ít khi nào lắm | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:09 | Căn bản em chỉ sử dụng EMA 34 | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:11 | Căn bản em chỉ sử dụng EMA 34 | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
+01:19 | Indicator | —
+01:22 | Indicator của mình | —
+01:24 | Em sẽ chỉ sử dụng 2 indicator only | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:27 | Và mọi người vẫn | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:29 | Bữa giờ mọi người vẫn nghe em nói rất là nhiều | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:31 | Về 2 cái indicator này | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:32 | Cái thứ nhất là về fish trend | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:35 | Cái thứ 2 | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:37 | Là | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:38 | Bena | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:40 | Rồi | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:41 | Fish trend | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:43 | Trời sao fish trend này nhìn lạ lẫm vậy | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:46 | Ủa đâu cần đâu | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:47 | Ok | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:50 | Bena | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:51 | Em sẽ chỉ sử dụng | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:55 | EMA 34 only | CODE kernel/mentor/swing4h.go:88 (row 11)
+01:56 | FishTrain em sẽ chỉ sử dụng | CODE kernel/mentor/swing4h.go:88 (row 11)
+02:02 | EMA 34 only | CODE kernel/mentor/swing4h.go:88 (row 11)
+02:02 | Và | CODE kernel/mentor/swing4h.go:88 (row 11)
+02:04 | FishTrain em sử dụng 2 cộng dây | CODE kernel/mentor/swing4h.go:88 (row 11)
+02:07 | Nhưng mà FishTrain thì ít khi nào lắm | CODE kernel/mentor/swing4h.go:88 (row 11)
+02:09 | Căn bản em chỉ sử dụng EMA 34 | CODE kernel/mentor/swing4h.go:88 (row 11)
+02:11 | Căn bản em chỉ sử dụng EMA 34 | CODE kernel/mentor/swing4h.go:88 (row 11)
 02:16 | Rồi | —
 02:18 | Và | —
 02:20 | Em sẽ sử dụng thêm | —
-02:22 | Multi Time Frame | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:29 | Là như thế nào | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:36 | Đối với | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:38 | Mua xe | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:41 | Từ từ chị gấp dậy | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:43 | Từ từ | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:44 | Đối với mua xe | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:48 | Đối với | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:49 | Đối với việc mua xe | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:51 | Đối với việc | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:52 | Swing | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:56 | Thì | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:58 | EMI 34 | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-02:59 | Đối với em | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:00 | Là quan trọng nhất | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:01 | Tại vì sao | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:02 | Từ bữa giờ | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:04 | Mọi người | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:04 | Em swing | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:05 | Anh chị | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:06 | Cái system em swing này | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:09 | Cũng được 3 tháng rồi | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:10 | 3-4 tháng | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:11 | Thì | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:13 | Em có một kết luận như vầy | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:15 | Khi mà mình vô một size rất nhỏ | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:20 | Khi mà mình vô size | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:22 | Mình vô một size rất là nhỏ | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:24 | Thì mình cần phải | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:26 | Ăn được một cái rất là dài | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:28 | Một cái sống rất rất rất dày | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:30 | Nói thiệt | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:33 | Mình sẽ phải ăn được một cái sống rất rất rất dày | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:36 | Nên là | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:38 | Mình sẽ phải chọn những cái gì | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:41 | Nó cứng nhất | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:42 | Và những cái gì nó valid nhất | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:44 | Khung giờ lớn | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:46 | Nếu như anh chị để ý | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:47 | Valid nhất là email 34 | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:50 | Và email 34 | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:54 | 1 giờ hoặc 4 giờ | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:56 | Nè | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-03:58 | Email 34 1 giờ hoặc 4 giờ | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
-04:01 | Rồi | CODE kernel/mentor/swing4h.go:14 [sec8 swing 4h EMA34 to 5m]
+02:22 | Multi Time Frame | —
+02:29 | Là như thế nào | —
+02:36 | Đối với | —
+02:38 | Mua xe | —
+02:41 | Từ từ chị gấp dậy | —
+02:43 | Từ từ | —
+02:44 | Đối với mua xe | —
+02:48 | Đối với | —
+02:49 | Đối với việc mua xe | —
+02:51 | Đối với việc | —
+02:52 | Swing | —
+02:56 | Thì | —
+02:58 | EMI 34 | —
+02:59 | Đối với em | —
+03:00 | Là quan trọng nhất | —
+03:01 | Tại vì sao | —
+03:02 | Từ bữa giờ | —
+03:04 | Mọi người | —
+03:04 | Em swing | —
+03:05 | Anh chị | —
+03:06 | Cái system em swing này | —
+03:09 | Cũng được 3 tháng rồi | —
+03:10 | 3-4 tháng | —
+03:11 | Thì | —
+03:13 | Em có một kết luận như vầy | —
+03:15 | Khi mà mình vô một size rất nhỏ | —
+03:20 | Khi mà mình vô size | —
+03:22 | Mình vô một size rất là nhỏ | —
+03:24 | Thì mình cần phải | —
+03:26 | Ăn được một cái rất là dài | —
+03:28 | Một cái sống rất rất rất dày | —
+03:30 | Nói thiệt | —
+03:33 | Mình sẽ phải ăn được một cái sống rất rất rất dày | —
+03:36 | Nên là | —
+03:38 | Mình sẽ phải chọn những cái gì | —
+03:41 | Nó cứng nhất | —
+03:42 | Và những cái gì nó valid nhất | —
+03:44 | Khung giờ lớn | —
+03:46 | Nếu như anh chị để ý | —
+03:47 | Valid nhất là email 34 | —
+03:50 | Và email 34 | —
+03:54 | 1 giờ hoặc 4 giờ | —
+03:56 | Nè | —
+03:58 | Email 34 1 giờ hoặc 4 giờ | —
+04:01 | Rồi | —
 04:02 | Cách try như thế nào | —
-04:03 | Em sẽ chuyển khung giờ xuống | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-04:08 | à à em sẽ chuyển khung giờ xuống sau khi em thấy mắc kẹt nó về gần email 34 của khung 4 giờ | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-04:20 | ở khung 4 giờ em chỉ sử dụng khung 4 giờ ha từ khi nào sử dụng khung 1 giờ thì em sẽ em sẽ báo cho | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-04:26 | người biết em sẽ em sẽ hướng dẫn sau nhưng mà khung 4 giờ sau khi mà em thấy nến nó về gần email 34 | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-04:34 | em sẽ móc 1 cái line | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-04:36 | em sẽ móc 1 cái line | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-04:41 | em chuyển thẳng xuống khung 5 phút | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-04:44 | em chuyển thẳng xuống khung 5 phút luôn | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-04:53 | em không chuyển khung giờ nào khác | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-04:54 | em chuyển thẳng xuống khung 5 phút | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-04:55 | và tại vì sao | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-04:58 | tại vì email 34 04 giờ nè | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-04:59 | em đã kẻ được 1 cái line ngay chỗ này rồi | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:02 | em đã kẻ được 1 cái line ngay email 34 04 giờ | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:11 | là ngay chỗ này đúng không | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:12 | em chuyển thẳng xuống khung 5 phút luôn | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:13 | thì ngay tại cái line ngay chỗ này | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:20 | nó đang là 1 cái resistance đó anh chị | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:22 | Nó đang là một cái resistance | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:24 | Cái chỗ này sẽ là cái chỗ em vô swing | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:30 | Em vẫn đánh theo multi time frame | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:33 | Nhưng mà em chuyển thẳng từ 4 giờ xuống 5 phút | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:36 | 1 giờ xuống 5 phút | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:39 | Chứ không phải là 4 giờ xuống 5 phút | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:41 | Chứ không phải là 4 giờ xuống 1 phút nha anh chị | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:43 | 5 phút nha | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:44 | 5 phút | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:46 | Nhớ giúp em | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:48 | Và em đánh một lệnh lower high | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:51 | Ở khung 5 phút | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:52 | Nhưng em gồng theo khung | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:55 | 4 giờ | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:56 | Lý do | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-05:57 | Lý do | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
-06:00 | Đây là cái lý do này anh chị | CODE kernel/mentor/swing4h.go:17 [sec8 straight to 5m]
+04:03 | Em sẽ chuyển khung giờ xuống | CODE kernel/mentor/swing4h.go:252 (row 12)
+04:08 | à à em sẽ chuyển khung giờ xuống sau khi em thấy mắc kẹt nó về gần email 34 của khung 4 giờ | CODE kernel/mentor/swing4h.go:252 (row 12)
+04:20 | ở khung 4 giờ em chỉ sử dụng khung 4 giờ ha từ khi nào sử dụng khung 1 giờ thì em sẽ em sẽ báo cho | CODE kernel/mentor/swing4h.go:252 (row 12)
+04:26 | người biết em sẽ em sẽ hướng dẫn sau nhưng mà khung 4 giờ sau khi mà em thấy nến nó về gần email 34 | CODE kernel/mentor/swing4h.go:252 (row 12)
+04:34 | em sẽ móc 1 cái line | CODE kernel/mentor/swing4h.go:252 (row 12)
+04:36 | em sẽ móc 1 cái line | CODE kernel/mentor/swing4h.go:252 (row 12)
+04:41 | em chuyển thẳng xuống khung 5 phút | CODE kernel/mentor/swing4h.go:252 (row 12)
+04:44 | em chuyển thẳng xuống khung 5 phút luôn | CODE kernel/mentor/swing4h.go:252 (row 12)
+04:53 | em không chuyển khung giờ nào khác | —
+04:54 | em chuyển thẳng xuống khung 5 phút | —
+04:55 | và tại vì sao | —
+04:58 | tại vì email 34 04 giờ nè | —
+04:59 | em đã kẻ được 1 cái line ngay chỗ này rồi | —
+05:02 | em đã kẻ được 1 cái line ngay email 34 04 giờ | —
+05:11 | là ngay chỗ này đúng không | —
+05:12 | em chuyển thẳng xuống khung 5 phút luôn | —
+05:13 | thì ngay tại cái line ngay chỗ này | —
+05:20 | nó đang là 1 cái resistance đó anh chị | —
+05:22 | Nó đang là một cái resistance | —
+05:24 | Cái chỗ này sẽ là cái chỗ em vô swing | —
+05:30 | Em vẫn đánh theo multi time frame | —
+05:33 | Nhưng mà em chuyển thẳng từ 4 giờ xuống 5 phút | CODE kernel/mentor/swing4h.go:252 (row 12)
+05:36 | 1 giờ xuống 5 phút | CODE kernel/mentor/swing4h.go:252 (row 12)
+05:39 | Chứ không phải là 4 giờ xuống 5 phút | CODE kernel/mentor/swing4h.go:252 (row 12)
+05:41 | Chứ không phải là 4 giờ xuống 1 phút nha anh chị | CODE kernel/mentor/swing4h.go:252 (row 12)
+05:43 | 5 phút nha | CODE kernel/mentor/swing4h.go:252 (row 12)
+05:44 | 5 phút | —
+05:46 | Nhớ giúp em | —
+05:48 | Và em đánh một lệnh lower high | CODE kernel/mentor/swing4h.go:96 (row 13)
+05:51 | Ở khung 5 phút | CODE kernel/mentor/swing4h.go:96 (row 13)
+05:52 | Nhưng em gồng theo khung | CODE kernel/mentor/swing4h.go:96 (row 13)
+05:55 | 4 giờ | CODE kernel/mentor/swing4h.go:96 (row 13)
+05:56 | Lý do | —
+05:57 | Lý do | —
+06:00 | Đây là cái lý do này anh chị | —
 06:03 | Là khi mà anh chị | —
 06:05 | Đơn giản là anh chị vô khung giờ nhỏ | —
 06:07 | Mà anh chị gọng chỉ cần 1 cây | —
@@ -179,32 +179,32 @@ cues: 535/535 marked · rules: 386 · CODE: 386 · MISMATCH: 0 · NOT-IN-BOT: 0 
 07:13 | Ngay đây là nến chạm nè | —
 07:18 | Em sẽ kể | —
 07:19 | Em kể nè | —
-07:20 | Vô sell stop chứ em đánh đòn chị bây giờ | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:24 | Chứ là đời nào mà vô market | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:26 | Trời ơi trời | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:27 | Vô vẫn vô sell stop dưới line recession mà | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:30 | Đánh đòn bây giờ | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:32 | Hỏi câu | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:33 | Nến chạm level | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:38 | Đụng level | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:40 | Chạm level, đóng dưới level | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:42 | Chị này | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:47 | Sao chị này khó khăn quá ta | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:49 | Chị này khó khăn với em thế | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:51 | Rồi ngay đây nè | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:52 | Biết rồi | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:56 | Nhưng mà chị ơi em đang hướng dẫn lớp | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-07:58 | Mà chị bắt em OCD là em cũng chịu luôn á | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-08:00 | Đây đây nè, cây nến này là cây nến chạm nè | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-08:02 | Cái gì | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-08:05 | Cây nến này là cây nến chạm nè | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-08:18 | Thì bắt buộc | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-08:19 | Anh chị vẫn phải đặt một lệnh | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-08:21 | Sell stop | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-08:21 | Nằm bên dưới cây nến chạm reject | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-08:25 | Cây nến chạm đầu tiên | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-08:29 | Làm ơn nhớ dùm | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-08:32 | Cây nến chạm đầu tiên | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
+07:20 | Vô sell stop chứ em đánh đòn chị bây giờ | —
+07:24 | Chứ là đời nào mà vô market | —
+07:26 | Trời ơi trời | —
+07:27 | Vô vẫn vô sell stop dưới line recession mà | —
+07:30 | Đánh đòn bây giờ | —
+07:32 | Hỏi câu | —
+07:33 | Nến chạm level | —
+07:38 | Đụng level | —
+07:40 | Chạm level, đóng dưới level | —
+07:42 | Chị này | —
+07:47 | Sao chị này khó khăn quá ta | —
+07:49 | Chị này khó khăn với em thế | —
+07:51 | Rồi ngay đây nè | —
+07:52 | Biết rồi | —
+07:56 | Nhưng mà chị ơi em đang hướng dẫn lớp | —
+07:58 | Mà chị bắt em OCD là em cũng chịu luôn á | —
+08:00 | Đây đây nè, cây nến này là cây nến chạm nè | —
+08:02 | Cái gì | —
+08:05 | Cây nến này là cây nến chạm nè | —
+08:18 | Thì bắt buộc | CODE kernel/mentor/swing4h.go:405 (row 14)
+08:19 | Anh chị vẫn phải đặt một lệnh | CODE kernel/mentor/swing4h.go:405 (row 14)
+08:21 | Sell stop | CODE kernel/mentor/swing4h.go:405 (row 14)
+08:21 | Nằm bên dưới cây nến chạm reject | CODE kernel/mentor/swing4h.go:405 (row 14)
+08:25 | Cây nến chạm đầu tiên | CODE kernel/mentor/swing4h.go:405 (row 14)
+08:29 | Làm ơn nhớ dùm | CODE kernel/mentor/swing4h.go:405 (row 14)
+08:32 | Cây nến chạm đầu tiên | CODE kernel/mentor/swing4h.go:405 (row 14)
 08:33 | Rồi | —
 08:36 | Căn bản | —
 08:38 | Từ cây nến chạm đầu tiên xuống tới đây | —
@@ -222,70 +222,70 @@ cues: 535/535 marked · rules: 386 · CODE: 386 · MISMATCH: 0 · NOT-IN-BOT: 0 
 10:27 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 11:06 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 11:43 | Rồi | —
-11:44 | Em cứ để nó chạm | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-11:46 | Chạm cái đường like | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-11:47 | Thì cái đường | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-11:48 | Có phải cái đường like màu đỏ này | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-11:49 | Là cái đường like resistance của mình không | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-11:51 | Bây giờ anh chị không cần phải | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-11:54 | Ngồi anh chị | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-11:55 | Anh chị không cần phải anh chị coi chạc | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-11:57 | Hay là anh chị không cần phải | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-11:58 | Anh chị | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-11:58 | Không phải ngồi nhìn chạc 24x24 | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:01 | Để anh chị biết khi nào nó chạm | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:02 | Cái việc đơn giản đó anh chị | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:04 | Dạ đây em chỉ mọi người nha | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:06 | Đừng anh chị nói hỏi nha | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:08 | Rồi | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:08 | Đây đây | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:12 | Em hiểu chị đang chuẩn bị hỏi cái gì | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:14 | Đây | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:14 | Alo | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:15 | Mình chuẩn bị trả lời đây | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:16 | Em chuẩn bị trả lời câu hỏi của chị luôn nè | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:20 | Mọi người có quyền trừ hao | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:24 | Anh chị đặt sẵn cái alert ở đây | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:26 | Giờ mà em được mà anh chị | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:27 | Mắc mớ gì vậy | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:28 | Bây giờ cái email 34 nó nằm ở đây | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:31 | Cái email 34 | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:34 | 04h nó nằm ở đây | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:36 | Dạ anh chị | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:38 | Anh chị có quyền trừ hao thẳng xuống đây | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
-12:40 | Để cái alert ngay đây được không | CODE kernel/mentor/swing4h.go:60 [SwingCfg LineOffsetPts=5]
+11:44 | Em cứ để nó chạm | CODE kernel/mentor/swing4h.go:89 (row 25)
+11:46 | Chạm cái đường like | CODE kernel/mentor/swing4h.go:89 (row 25)
+11:47 | Thì cái đường | CODE kernel/mentor/swing4h.go:89 (row 25)
+11:48 | Có phải cái đường like màu đỏ này | CODE kernel/mentor/swing4h.go:89 (row 25)
+11:49 | Là cái đường like resistance của mình không | CODE kernel/mentor/swing4h.go:89 (row 25)
+11:51 | Bây giờ anh chị không cần phải | CODE kernel/mentor/swing4h.go:89 (row 25)
+11:54 | Ngồi anh chị | CODE kernel/mentor/swing4h.go:89 (row 25)
+11:55 | Anh chị không cần phải anh chị coi chạc | CODE kernel/mentor/swing4h.go:89 (row 25)
+11:57 | Hay là anh chị không cần phải | CODE kernel/mentor/swing4h.go:89 (row 25)
+11:58 | Anh chị | CODE kernel/mentor/swing4h.go:89 (row 25)
+11:58 | Không phải ngồi nhìn chạc 24x24 | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:01 | Để anh chị biết khi nào nó chạm | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:02 | Cái việc đơn giản đó anh chị | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:04 | Dạ đây em chỉ mọi người nha | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:06 | Đừng anh chị nói hỏi nha | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:08 | Rồi | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:08 | Đây đây | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:12 | Em hiểu chị đang chuẩn bị hỏi cái gì | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:14 | Đây | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:14 | Alo | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:15 | Mình chuẩn bị trả lời đây | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:16 | Em chuẩn bị trả lời câu hỏi của chị luôn nè | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:20 | Mọi người có quyền trừ hao | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:24 | Anh chị đặt sẵn cái alert ở đây | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:26 | Giờ mà em được mà anh chị | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:27 | Mắc mớ gì vậy | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:28 | Bây giờ cái email 34 nó nằm ở đây | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:31 | Cái email 34 | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:34 | 04h nó nằm ở đây | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:36 | Dạ anh chị | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:38 | Anh chị có quyền trừ hao thẳng xuống đây | CODE kernel/mentor/swing4h.go:89 (row 25)
+12:40 | Để cái alert ngay đây được không | CODE kernel/mentor/swing4h.go:89 (row 25)
 12:42 | Ủa mắc mớ gì không được | —
 12:44 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 13:17 | Chị ta này tính hỏi cái gì đó | —
 13:18 | Nhưng mà em chuẩn bị trả lời đó | —
-13:21 | Rồi | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:21 | Nghe | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:22 | Tiếp tục | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:23 | Nó lên nó chạm | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:26 | Thì cây nến đầu tiên chạm | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:28 | Anh chị lúc nào cũng phải lấy cây nến đầu tiên giúp em | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:30 | Đừng bao giờ lấy cây nến thứ 2 | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:32 | Nha | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:33 | Lúc nào mình cũng phải | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:34 | Cây đầu tiên | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:36 | Cây đầu tiên | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:37 | Cây đầu tiên | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:37 | Rồi | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:39 | Đặt lệnh xe sớm ngay cây đầu tiên | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:41 | Ok | CODE kernel/mentor/swing4h.go:21 [first touch + leeway]
-13:42 | Target | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-13:44 | Một cây nến 4 giờ | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-13:46 | Nó chạy từ 50 đến 100 điểm | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-13:47 | At least | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-13:49 | Nhưng | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-13:51 | Stop loss | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-13:54 | Sẽ tầm 30 điểm | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-13:57 | Có nghĩa là nó sẽ nằm trên đường line này | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-14:00 | Tầm 30 điểm | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-14:01 | Em sẽ không để quá nhiều | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-14:04 | Sẽ có những lệnh bị quét | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-14:06 | Nhưng | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-14:07 | Lệnh ăn rất nhiều | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
+13:21 | Rồi | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:21 | Nghe | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:22 | Tiếp tục | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:23 | Nó lên nó chạm | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:26 | Thì cây nến đầu tiên chạm | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:28 | Anh chị lúc nào cũng phải lấy cây nến đầu tiên giúp em | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:30 | Đừng bao giờ lấy cây nến thứ 2 | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:32 | Nha | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:33 | Lúc nào mình cũng phải | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:34 | Cây đầu tiên | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:36 | Cây đầu tiên | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:37 | Cây đầu tiên | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:37 | Rồi | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:39 | Đặt lệnh xe sớm ngay cây đầu tiên | CODE kernel/mentor/swing4h.go:405 (row 14)
+13:41 | Ok | —
+13:42 | Target | CODE kernel/mentor/swing4h.go:90 (row 18)
+13:44 | Một cây nến 4 giờ | CODE kernel/mentor/swing4h.go:90 (row 18)
+13:46 | Nó chạy từ 50 đến 100 điểm | CODE kernel/mentor/swing4h.go:90 (row 18)
+13:47 | At least | CODE kernel/mentor/swing4h.go:90 (row 18)
+13:49 | Nhưng | CODE kernel/mentor/swing4h.go:90 (row 18)
+13:51 | Stop loss | CODE kernel/mentor/swing4h.go:90 (row 18)
+13:54 | Sẽ tầm 30 điểm | CODE kernel/mentor/swing4h.go:90 (row 18)
+13:57 | Có nghĩa là nó sẽ nằm trên đường line này | CODE kernel/mentor/swing4h.go:90 (row 18)
+14:00 | Tầm 30 điểm | CODE kernel/mentor/swing4h.go:90 (row 18)
+14:01 | Em sẽ không để quá nhiều | CODE kernel/mentor/swing4h.go:90 (row 18)
+14:04 | Sẽ có những lệnh bị quét | CODE kernel/mentor/swing4h.go:90 (row 18)
+14:06 | Nhưng | CODE kernel/mentor/swing4h.go:90 (row 18)
+14:07 | Lệnh ăn rất nhiều | CODE kernel/mentor/swing4h.go:90 (row 18)
 14:09 | Anh chị cũng phải nhớ là | —
 14:12 | Mọi người nhớ đặt giúp em | —
 14:13 | Đặt giúp em cái sell stop | —
@@ -295,91 +295,91 @@ cues: 535/535 marked · rules: 386 · CODE: 386 · MISMATCH: 0 · NOT-IN-BOT: 0 
 15:05 | Ừ rồi tiếp tục nè Vậy em kể cái đường lại ngay chỗ này đúng không là nãy vẫn là cái ví dụ hồi | —
 15:12 | là cái ví dụ hồi nãy | —
 15:13 | vậy | —
-15:21 | em nói mọi người | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:23 | cây nến | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:24 | cây nến | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:25 | đầu tiên | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:26 | nó chạm | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:27 | cây nến đầu tiên | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:29 | nó chạm level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:30 | cái đó nãy giờ | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:31 | vẫn decode mà | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:31 | cây nến đầu tiên | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:33 | nó chạm level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:34 | tại vì cái này | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:35 | là thay mình | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:36 | kheo khung lớn | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:37 | nên là em cũng sẽ | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:38 | du di | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:38 | 2 cây nến | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:40 | mình không cần phải | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:41 | 1 cây nến | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:41 | 2 cây nến cũng được | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:42 | em sẽ du di | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:44 | nó 1 tí | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:44 | tại vì mình đang lấy | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:45 | khung rất là lớn | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:46 | khung tới khung 4 giờ | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:47 | em sẽ du di | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:48 | là 2 cây nến | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:48 | Nếu như 2 cây nến đầu tiên nó chạm level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:51 | Mà 1 cây nến sau đó nó đóng ở trên level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:54 | Hoặc là cây nến đầu tiên nó đóng ở trên level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:57 | Anh chỉ có đặt lệnh hay không | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-15:58 | Cây nến 5 phút đầu tiên nó đóng trên level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:02 | Anh chỉ có đặt lệnh hay không | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:04 | Trả lời thử giúp em xem | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:06 | Không | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:09 | Không đặt lệnh | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:11 | Không đặt lệnh | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:15 | Lý do | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:19 | Tại vì nó đóng trên level rồi | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:22 | Nó đã đóng trên level rồi | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:24 | Rồi, nó sẽ có thêm một trường hợp như thế này | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:27 | Nó sẽ có thêm một trường hợp như thế này | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:29 | Nó đóng ở trên level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:31 | Xong nó đóng ngược xuống lại level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:33 | Anh chị có vô lệnh hay không? | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:46 | Vô lệnh như thế nào? | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:49 | Có, nếu mà có thì vô lệnh như thế nào? | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:50 | Nếu mà không, tại sao không? | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:55 | Trả lời được không? | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:57 | Phân tích thử coi | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-16:58 | Không | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:14 | Ngay chỗ này, nó sẽ hoàn toàn khác biệt một tí | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:19 | Nó sẽ hoàn toàn khác biệt | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:22 | Nghe em nói | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:23 | Khi nến đóng trên level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:28 | Xong đóng ngược xuống lại level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:30 | Nó vẫn | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:32 | Mọi người | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:33 | Vừa chỉ cái này cái là mọi người hư liền | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:36 | Vừa chỉ cái này cái là mọi người hư liền | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:39 | Hư trong mindset liền | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:40 | Em nói cái này là mọi người nhật mình liền | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:41 | Nến đóng trên level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:44 | Và đóng | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:46 | Xong đóng ngược lại dưới level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:47 | Nó có cái setup gì mà cho mọi người vô lệnh | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:51 | Mọi người vô lệnh mà mọi người lại không nghĩ tới chuyện | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:54 | Là mọi người đang vô setup gì | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:55 | Nó có cái setup gì | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-17:59 | Mà để mọi người vô lệnh | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:00 | Nó chỉ là việc đóng trên | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:02 | Xong đóng ngược lại xuống dưới | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:03 | Nó có một setup gì để anh chị vô lệnh không | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:06 | Bộ tên solo 2 chỗ nào | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:11 | Nó chỉ đang cái việc giữa cái việc level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:14 | Nó đâu có cái đỉnh | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:15 | Nó đâu có cái đỉnh cái đáy nào kế bên đâu | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:17 | Mà bộ tên solo 2 ở đây | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:19 | Nó chỉ đang thể hiện cái việc | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:22 | Nó đóng một cái nến trên | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:23 | Nó đóng trên level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:24 | Xong nó đóng một cái nến ngược lại xuống dưới level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:26 | Hết | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:27 | Chấm dứt ngay chỗ đó luôn | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-18:31 | Nó không có một cái setup gì hết | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
+15:21 | em nói mọi người | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:23 | cây nến | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:24 | cây nến | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:25 | đầu tiên | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:26 | nó chạm | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:27 | cây nến đầu tiên | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:29 | nó chạm level | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:30 | cái đó nãy giờ | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:31 | vẫn decode mà | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:31 | cây nến đầu tiên | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:33 | nó chạm level | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:34 | tại vì cái này | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:35 | là thay mình | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:36 | kheo khung lớn | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:37 | nên là em cũng sẽ | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:38 | du di | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:38 | 2 cây nến | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:40 | mình không cần phải | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:41 | 1 cây nến | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:41 | 2 cây nến cũng được | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:42 | em sẽ du di | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:44 | nó 1 tí | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:44 | tại vì mình đang lấy | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:45 | khung rất là lớn | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:46 | khung tới khung 4 giờ | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:47 | em sẽ du di | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:48 | là 2 cây nến | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:48 | Nếu như 2 cây nến đầu tiên nó chạm level | CODE kernel/mentor/swing4h.go:95 (row 26)
+15:51 | Mà 1 cây nến sau đó nó đóng ở trên level | —
+15:54 | Hoặc là cây nến đầu tiên nó đóng ở trên level | —
+15:57 | Anh chỉ có đặt lệnh hay không | —
+15:58 | Cây nến 5 phút đầu tiên nó đóng trên level | —
+16:02 | Anh chỉ có đặt lệnh hay không | —
+16:04 | Trả lời thử giúp em xem | —
+16:06 | Không | —
+16:09 | Không đặt lệnh | —
+16:11 | Không đặt lệnh | —
+16:15 | Lý do | —
+16:19 | Tại vì nó đóng trên level rồi | CODE kernel/mentor/swing4h.go:401 (row 16)
+16:22 | Nó đã đóng trên level rồi | CODE kernel/mentor/swing4h.go:401 (row 16)
+16:24 | Rồi, nó sẽ có thêm một trường hợp như thế này | —
+16:27 | Nó sẽ có thêm một trường hợp như thế này | —
+16:29 | Nó đóng ở trên level | —
+16:31 | Xong nó đóng ngược xuống lại level | —
+16:33 | Anh chị có vô lệnh hay không? | —
+16:46 | Vô lệnh như thế nào? | —
+16:49 | Có, nếu mà có thì vô lệnh như thế nào? | —
+16:50 | Nếu mà không, tại sao không? | —
+16:55 | Trả lời được không? | —
+16:57 | Phân tích thử coi | —
+16:58 | Không | —
+17:14 | Ngay chỗ này, nó sẽ hoàn toàn khác biệt một tí | —
+17:19 | Nó sẽ hoàn toàn khác biệt | —
+17:22 | Nghe em nói | —
+17:23 | Khi nến đóng trên level | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:28 | Xong đóng ngược xuống lại level | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:30 | Nó vẫn | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:32 | Mọi người | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:33 | Vừa chỉ cái này cái là mọi người hư liền | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:36 | Vừa chỉ cái này cái là mọi người hư liền | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:39 | Hư trong mindset liền | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:40 | Em nói cái này là mọi người nhật mình liền | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:41 | Nến đóng trên level | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:44 | Và đóng | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:46 | Xong đóng ngược lại dưới level | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:47 | Nó có cái setup gì mà cho mọi người vô lệnh | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:51 | Mọi người vô lệnh mà mọi người lại không nghĩ tới chuyện | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:54 | Là mọi người đang vô setup gì | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:55 | Nó có cái setup gì | CODE kernel/mentor/swing4h.go:401 (row 16)
+17:59 | Mà để mọi người vô lệnh | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:00 | Nó chỉ là việc đóng trên | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:02 | Xong đóng ngược lại xuống dưới | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:03 | Nó có một setup gì để anh chị vô lệnh không | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:06 | Bộ tên solo 2 chỗ nào | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:11 | Nó chỉ đang cái việc giữa cái việc level | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:14 | Nó đâu có cái đỉnh | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:15 | Nó đâu có cái đỉnh cái đáy nào kế bên đâu | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:17 | Mà bộ tên solo 2 ở đây | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:19 | Nó chỉ đang thể hiện cái việc | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:22 | Nó đóng một cái nến trên | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:23 | Nó đóng trên level | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:24 | Xong nó đóng một cái nến ngược lại xuống dưới level | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:26 | Hết | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:27 | Chấm dứt ngay chỗ đó luôn | CODE kernel/mentor/swing4h.go:401 (row 16)
+18:31 | Nó không có một cái setup gì hết | CODE kernel/mentor/swing4h.go:401 (row 16)
 18:33 | Bộ tan solo 2 lại càng không | —
 18:35 | Có cái đỉnh nào kế bên đâu mà bộ tan solo 2 | —
 18:43 | Không làm gì có chuyện | —
@@ -394,58 +394,58 @@ cues: 535/535 marked · rules: 386 · CODE: 386 · MISMATCH: 0 · NOT-IN-BOT: 0 
 19:07 | Là anh chị hoàn toàn sai | —
 19:10 | Không có excuse gì ở đây hết | —
 19:12 | Nó không xuất hiện cái setup nào hết | —
-19:14 | Phải chi | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:15 | Mà nó | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:17 | Nè em nói nè | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:18 | Phải chi | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:18 | Mà ở bên đây nó có cái đỉnh | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:19 | Bên đây có cái đỉnh cao hơn | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:21 | Rồi ngay đây level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:22 | Đóng trên level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:23 | Đóng dưới level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:24 | Anh chị còn có | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:26 | Anh chị còn có excuse em là | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:28 | Anh chị đánh potential low 2 | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:31 | Nhưng | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:31 | Anh chị vẫn sai ở một chỗ | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:33 | Là nếu như anh chị muốn đánh | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:37 | Một cái lệnh potential low 2 | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:38 | Tại level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:39 | Thì cái việc đầu tiên nó làm trước đó | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:42 | Là nó đã phải đóng ở | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:44 | Nó đã phải làm gì hả chị | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:46 | Nó đã phải đóng | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:47 | Cái nến đầu tiên nó chạm level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:49 | Nó phải đóng ở dưới rồi | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:51 | Chứ nó không được quỳ nóng ở trên rồi | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:54 | Nếu như nến nó đóng ở trên level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:57 | Thì level đó | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:58 | Invalid | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-19:59 | Hư mindset liền không | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:04 | Cái việc anh chị đánh một lệnh bộ ten solo 2 | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:08 | Ngay tại level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:09 | Thì cái level đó | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:11 | Nó cái nến đầu tiên chạm level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:13 | Thì nó phải đóng ở dưới level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:18 | Thì anh chị mới có lệnh potential low 2 | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:20 | Nếu như nó đã đóng ở trên rồi | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:22 | Thì cái level đó là | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:24 | Invalid level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:25 | Thì chả có cái lệnh potential low 2 nào ngay đó | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:31 | Thì làm sao mà anh chị đánh | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
+19:14 | Phải chi | —
+19:15 | Mà nó | —
+19:17 | Nè em nói nè | —
+19:18 | Phải chi | —
+19:18 | Mà ở bên đây nó có cái đỉnh | —
+19:19 | Bên đây có cái đỉnh cao hơn | —
+19:21 | Rồi ngay đây level | —
+19:22 | Đóng trên level | —
+19:23 | Đóng dưới level | —
+19:24 | Anh chị còn có | —
+19:26 | Anh chị còn có excuse em là | —
+19:28 | Anh chị đánh potential low 2 | —
+19:31 | Nhưng | —
+19:31 | Anh chị vẫn sai ở một chỗ | —
+19:33 | Là nếu như anh chị muốn đánh | —
+19:37 | Một cái lệnh potential low 2 | —
+19:38 | Tại level | —
+19:39 | Thì cái việc đầu tiên nó làm trước đó | —
+19:42 | Là nó đã phải đóng ở | CODE kernel/mentor/swing4h.go:555 (row 17)
+19:44 | Nó đã phải làm gì hả chị | CODE kernel/mentor/swing4h.go:555 (row 17)
+19:46 | Nó đã phải đóng | CODE kernel/mentor/swing4h.go:555 (row 17)
+19:47 | Cái nến đầu tiên nó chạm level | CODE kernel/mentor/swing4h.go:555 (row 17)
+19:49 | Nó phải đóng ở dưới rồi | CODE kernel/mentor/swing4h.go:555 (row 17)
+19:51 | Chứ nó không được quỳ nóng ở trên rồi | CODE kernel/mentor/swing4h.go:555 (row 17)
+19:54 | Nếu như nến nó đóng ở trên level | CODE kernel/mentor/swing4h.go:555 (row 17)
+19:57 | Thì level đó | CODE kernel/mentor/swing4h.go:555 (row 17)
+19:58 | Invalid | CODE kernel/mentor/swing4h.go:555 (row 17)
+19:59 | Hư mindset liền không | CODE kernel/mentor/swing4h.go:555 (row 17)
+20:04 | Cái việc anh chị đánh một lệnh bộ ten solo 2 | CODE kernel/mentor/swing4h.go:555 (row 17)
+20:08 | Ngay tại level | CODE kernel/mentor/swing4h.go:555 (row 17)
+20:09 | Thì cái level đó | CODE kernel/mentor/swing4h.go:555 (row 17)
+20:11 | Nó cái nến đầu tiên chạm level | CODE kernel/mentor/swing4h.go:555 (row 17)
+20:13 | Thì nó phải đóng ở dưới level | CODE kernel/mentor/swing4h.go:555 (row 17)
+20:18 | Thì anh chị mới có lệnh potential low 2 | CODE kernel/mentor/swing4h.go:555 (row 17)
+20:20 | Nếu như nó đã đóng ở trên rồi | CODE kernel/mentor/swing4h.go:555 (row 17)
+20:22 | Thì cái level đó là | CODE kernel/mentor/swing4h.go:555 (row 17)
+20:24 | Invalid level | CODE kernel/mentor/swing4h.go:555 (row 17)
+20:25 | Thì chả có cái lệnh potential low 2 nào ngay đó | CODE kernel/mentor/swing4h.go:555 (row 17)
+20:31 | Thì làm sao mà anh chị đánh | CODE kernel/mentor/swing4h.go:555 (row 17)
 20:37 | Một cái lệnh shock ngay đó | —
-20:38 | Nếu như nó đóng ở dưới level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:42 | Làm sao | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:43 | Thì có phải là bây giờ anh chị đợi nó đóng ở dưới level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:46 | Anh chị đợi inside 305 phút | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:47 | Anh chị vô lệnh giùm em được không | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:48 | Hả mọi người | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:50 | Insider 305 là cái confirm đó anh chị | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:54 | Bây giờ nếu như nó đóng ở trên level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:58 | Nó đóng ở trên level | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-20:59 | Là invalid | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-21:00 | Đóng dưới là level thì chả có gì cái đó hết | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
-21:03 | Nhưng nó xuất hiện Insider cho lệnh short | CODE kernel/mentor/swing4h.go:23 [sec8 two cases]
+20:38 | Nếu như nó đóng ở dưới level | CODE kernel/mentor/swing4h.go:401 (row 16)
+20:42 | Làm sao | CODE kernel/mentor/swing4h.go:401 (row 16)
+20:43 | Thì có phải là bây giờ anh chị đợi nó đóng ở dưới level | CODE kernel/mentor/swing4h.go:401 (row 16)
+20:46 | Anh chị đợi inside 305 phút | CODE kernel/mentor/swing4h.go:401 (row 16)
+20:47 | Anh chị vô lệnh giùm em được không | CODE kernel/mentor/swing4h.go:401 (row 16)
+20:48 | Hả mọi người | CODE kernel/mentor/swing4h.go:401 (row 16)
+20:50 | Insider 305 là cái confirm đó anh chị | CODE kernel/mentor/swing4h.go:401 (row 16)
+20:54 | Bây giờ nếu như nó đóng ở trên level | CODE kernel/mentor/swing4h.go:401 (row 16)
+20:58 | Nó đóng ở trên level | CODE kernel/mentor/swing4h.go:401 (row 16)
+20:59 | Là invalid | CODE kernel/mentor/swing4h.go:401 (row 16)
+21:00 | Đóng dưới là level thì chả có gì cái đó hết | CODE kernel/mentor/swing4h.go:401 (row 16)
+21:03 | Nhưng nó xuất hiện Insider cho lệnh short | CODE kernel/mentor/swing4h.go:401 (row 16)
 21:06 | Tiếp theo | —
 21:06 | Mọi người ok không | —
 21:12 | Hiểu vấn đề em đang nói không | —
@@ -463,65 +463,65 @@ cues: 535/535 marked · rules: 386 · CODE: 386 · MISMATCH: 0 · NOT-IN-BOT: 0 
 21:38 | Cây nến INSA 305 phút | —
 21:40 | Cho lệnh sót | —
 21:40 | Nó rất thường xuyên xảy ra | —
-21:43 | Stop loss đặt đâu | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-21:45 | Stop loss đặt ở trên cái level 1 tí | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-21:46 | Không phải đặt 30-40 điểm trên level nữa | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-21:49 | Mà đặt ngay tại level | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-21:50 | Hiểu ý em nói không | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-21:54 | Rồi | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-21:57 | Em tiếp tục lại nè | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-21:58 | Nhanh chị khác hiểu không mọi người | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:02 | Chị Văn mới vô | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:06 | Thì xíu chị coi lại record đi | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:07 | subplot | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:12 | subplot | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:13 | không | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:14 | nếu mà vô insert bar | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:15 | nếu mà nó đóng ở dưới là level | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:16 | nó | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:17 | nó đơn giản hơn | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:17 | nếu mà nó đóng trên level | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:18 | xong đóng dưới là level | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:20 | thì | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:20 | vô | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:22 | thì đợi insert bar cho lệnh | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:23 | cho | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:24 | đợi insert bar cho lệnh short | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:25 | ở khung 5 phút | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:26 | vô insert bar khung 5 phút | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:27 | đặt subplot | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:29 | ở ngay level luôn | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:30 | đặt subplot ngay level luôn | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:34 | rồi em tiếp tục lại nè | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:35 | ví dụ tiếp | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:35 | đây nè | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:41 | đây là một ví dụ cho việc | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:42 | đóng trên level nè | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-22:45 | Khoan gì chị | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:03 | Nói đêm nghe nè | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:06 | Stop Loss | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:25 | Khi Stop Loss 30 điểm là khi mà | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:28 | Cái lệnh nó valid | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:29 | Là khi nó đụng level, nó reject | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:32 | Nó fill cái lệnh của mình | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:33 | Ngay tại Resistance | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:34 | Thì Stop Loss của mình sẽ là 30 điểm | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:37 | Hiểu ý không | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:39 | Trên level 30 điểm | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:41 | Còn nếu như mà | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:43 | Nếu như mà | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:45 | Nếu như mà nó đụng level | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:47 | Nó đóng trên level | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:48 | Xong nó đóng ngược lại level | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:49 | Và nó ra inside bar cho lệnh short | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:52 | Hoặc là inside bar cho lệnh short | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:55 | Nói chung là khi mình vô inside bar | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:57 | Thì stop loss của mình ngay level | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-23:59 | Khi mình vô đúng | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-24:01 | Ngay cái chỗ potential low high | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-24:03 | Ngay tại level, ngay tại resistance | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-24:04 | Thì mình để stop loss 30 điểm | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
-24:06 | Ok không | CODE kernel/mentor/swing4h.go:97 [DefaultSwingCfg StopBeyondLinePts=30]
+21:43 | Stop loss đặt đâu | CODE kernel/mentor/swing4h.go:93 (row 20)
+21:45 | Stop loss đặt ở trên cái level 1 tí | CODE kernel/mentor/swing4h.go:93 (row 20)
+21:46 | Không phải đặt 30-40 điểm trên level nữa | CODE kernel/mentor/swing4h.go:93 (row 20)
+21:49 | Mà đặt ngay tại level | CODE kernel/mentor/swing4h.go:93 (row 20)
+21:50 | Hiểu ý em nói không | CODE kernel/mentor/swing4h.go:93 (row 20)
+21:54 | Rồi | CODE kernel/mentor/swing4h.go:93 (row 20)
+21:57 | Em tiếp tục lại nè | CODE kernel/mentor/swing4h.go:93 (row 20)
+21:58 | Nhanh chị khác hiểu không mọi người | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:02 | Chị Văn mới vô | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:06 | Thì xíu chị coi lại record đi | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:07 | subplot | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:12 | subplot | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:13 | không | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:14 | nếu mà vô insert bar | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:15 | nếu mà nó đóng ở dưới là level | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:16 | nó | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:17 | nó đơn giản hơn | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:17 | nếu mà nó đóng trên level | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:18 | xong đóng dưới là level | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:20 | thì | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:20 | vô | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:22 | thì đợi insert bar cho lệnh | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:23 | cho | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:24 | đợi insert bar cho lệnh short | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:25 | ở khung 5 phút | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:26 | vô insert bar khung 5 phút | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:27 | đặt subplot | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:29 | ở ngay level luôn | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:30 | đặt subplot ngay level luôn | CODE kernel/mentor/swing4h.go:93 (row 20)
+22:34 | rồi em tiếp tục lại nè | —
+22:35 | ví dụ tiếp | —
+22:35 | đây nè | —
+22:41 | đây là một ví dụ cho việc | —
+22:42 | đóng trên level nè | —
+22:45 | Khoan gì chị | —
+23:03 | Nói đêm nghe nè | —
+23:06 | Stop Loss | —
+23:25 | Khi Stop Loss 30 điểm là khi mà | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:28 | Cái lệnh nó valid | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:29 | Là khi nó đụng level, nó reject | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:32 | Nó fill cái lệnh của mình | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:33 | Ngay tại Resistance | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:34 | Thì Stop Loss của mình sẽ là 30 điểm | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:37 | Hiểu ý không | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:39 | Trên level 30 điểm | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:41 | Còn nếu như mà | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:43 | Nếu như mà | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:45 | Nếu như mà nó đụng level | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:47 | Nó đóng trên level | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:48 | Xong nó đóng ngược lại level | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:49 | Và nó ra inside bar cho lệnh short | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:52 | Hoặc là inside bar cho lệnh short | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:55 | Nói chung là khi mình vô inside bar | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:57 | Thì stop loss của mình ngay level | CODE kernel/mentor/swing4h.go:90 (row 18)
+23:59 | Khi mình vô đúng | CODE kernel/mentor/swing4h.go:90 (row 18)
+24:01 | Ngay cái chỗ potential low high | CODE kernel/mentor/swing4h.go:90 (row 18)
+24:03 | Ngay tại level, ngay tại resistance | CODE kernel/mentor/swing4h.go:90 (row 18)
+24:04 | Thì mình để stop loss 30 điểm | CODE kernel/mentor/swing4h.go:90 (row 18)
+24:06 | Ok không | CODE kernel/mentor/swing4h.go:90 (row 18)
 24:08 | Rồi anh chị thấy nè | —
 24:13 | Tiếp theo là cái việc này nè | —
 24:14 | Rồi tiếp theo ha | —
