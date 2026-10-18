@@ -1,4 +1,4 @@
-cues: 555/555 marked · rules: 229 · CODE: 211 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 18 · COURSE-SPLIT: 0 · —: 326
+cues: 555/555 marked · rules: 151 · CODE: 133 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 18 · COURSE-SPLIT: 0 · —: 404
 00:01 | Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
 00:31 | 1 phút 1 phút bình thường á mọi người khó khó khi nào mọi người đánh được hai chiều lắm nhưng tại | —
 00:38 | sao em mọi người thì cũng đấy em like trai với mọi người em đánh 2 chiều bình thường đánh lên | —
@@ -6,21 +6,21 @@ cues: 555/555 marked · rules: 229 · CODE: 211 · MISMATCH: 0 · NOT-IN-BOT: 0 
 00:50 | công cụ này mà công cụ này cũng chả phải là indicator hay chả phải là gì hết Nó chỉ là | —
 00:55 | Góc nhìn | —
 00:55 | Nó chỉ là một cái góc nhìn thôi | —
-00:58 | Khung 5 phút | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:00 | Lúc nào cũng sẽ là một cái khung | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:02 | Làm chủng | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:04 | Mọi người nhớ vậy nè | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:06 | Khung giờ lớn | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:09 | Khung giờ lớn | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:12 | Và khung giờ nhỏ | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:14 | Sẽ tác động lẫn nhau | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:16 | Nhưng | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:19 | Khung giờ nhỏ | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:21 | Sẽ nghe lời | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:24 | Theo khung giờ lớn | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:25 | Chứ không phải bao giờ thằng lớn | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:29 | Nó nghe lời thằng nhỏ hết | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
-01:30 | Thằng nhỏ lúc nào cũng phải nghe lời thằng lớn | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 43)
+00:58 | Khung 5 phút | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:00 | Lúc nào cũng sẽ là một cái khung | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:02 | Làm chủng | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:04 | Mọi người nhớ vậy nè | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:06 | Khung giờ lớn | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:09 | Khung giờ lớn | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:12 | Và khung giờ nhỏ | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:14 | Sẽ tác động lẫn nhau | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:16 | Nhưng | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:19 | Khung giờ nhỏ | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:21 | Sẽ nghe lời | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:24 | Theo khung giờ lớn | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:25 | Chứ không phải bao giờ thằng lớn | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:29 | Nó nghe lời thằng nhỏ hết | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
+01:30 | Thằng nhỏ lúc nào cũng phải nghe lời thằng lớn | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 39)
 01:33 | Thì | —
 01:36 | Khi anh chị nhìn ở khung 5 phút | —
 01:42 | Bây giờ em sẽ mật 2 cái chẹt cho mọi người coi | —
@@ -54,14 +54,14 @@ cues: 555/555 marked · rules: 229 · CODE: 211 · MISMATCH: 0 · NOT-IN-BOT: 0 
 03:04 | mà chứ anh chị đâu trade khung 5 phút | —
 03:05 | nhưng mọi người biết được là khi khung 5 phút | —
 03:09 | bắt đầu quay vào podcast | —
-03:10 | trong một xu hướng giảm của khung 5 phút | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 44)
-03:12 | thì lúc đó khung 1 phút anh chị có quyền | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 44)
-03:14 | đánh lệnh lon tại vì sao | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 44)
-03:16 | tại vì khung giờ lớn đang đi lên | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 44)
-03:19 | Thì không giờ nhỏ | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 44)
-03:20 | Mình cũng phải đi lên | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 44)
-03:21 | Mình cũng phải đánh lên | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 44)
-03:23 | Nhưng mà không đánh xuống | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 44)
+03:10 | trong một xu hướng giảm của khung 5 phút | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 40)
+03:12 | thì lúc đó khung 1 phút anh chị có quyền | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 40)
+03:14 | đánh lệnh lon tại vì sao | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 40)
+03:16 | tại vì khung giờ lớn đang đi lên | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 40)
+03:19 | Thì không giờ nhỏ | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 40)
+03:20 | Mình cũng phải đi lên | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 40)
+03:21 | Mình cũng phải đánh lên | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 40)
+03:23 | Nhưng mà không đánh xuống | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 40)
 03:25 | Rồi | —
 03:26 | Tiếp tục | —
 03:28 | Vậy | —
@@ -86,69 +86,69 @@ cues: 555/555 marked · rules: 229 · CODE: 211 · MISMATCH: 0 · NOT-IN-BOT: 0 
 03:49 | Nếu mà nó đang đi xuống | —
 03:50 | Mà nó muốn đi lên | —
 03:51 | Thì làm gì anh chị | —
-03:52 | là cái điều thứ 2 slide số 16 | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-03:54 | là khi mà nến phá qua | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-03:56 | được đỉnh cây nến trước đó | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-03:58 | giá nó sẽ tiếp tục đi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:00 | theo hướng đó, nhưng | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:02 | ở đây, mình sẽ áp dụng | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:04 | trên khung 5 phút | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:05 | mình sẽ áp dụng | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:08 | trên khung 5 phút, là như thế nào | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:10 | đang rớt | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:11 | khi nào mình biết nó quay về bắt test, khi nào mình biết nó đảo chịu | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:14 | đi ngược lên, là khi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:16 | có một cây nến vượt qua được đỉnh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:18 | cây nến trước đó, thì có phải là cây nến xanh này | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:20 | vượt qua đỉnh cây nến xanh này không | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:21 | Là đầu tiên | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:22 | Đúng không chị | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:25 | Là cái đầu tiên | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:28 | Nhưng em nhắc lại một lần nữa | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:30 | Mình không được vô lệnh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:33 | Ở khung 5 phút | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:34 | Thì thay vào đó em sử dụng cách gì | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:39 | Em kể một cái đường like | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:40 | Ngay cái chỗ mà cái nến | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:42 | Cái đỉnh nó bị vượt qua | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:43 | Là em lấy luôn cái đỉnh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:44 | Tính luôn cái râu | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:46 | Rồi em kể đường like | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:50 | Anh chị ok không | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:54 | Em kể đường like | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:56 | Thì cái đường line này nó có tác dụng gì | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-04:57 | Cái đường line này nó có tác dụng là | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:01 | Nếu như | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:04 | Khung 1 phút | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:05 | Vượt nến | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:08 | Nằm ở trên cái đường line này | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:09 | Đường line trigger của khung 5 phút | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:12 | Ngay chỗ này em gọi nó là | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:14 | By | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:16 | Setup trigger | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:19 | Tại vì sao by setup trigger | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:23 | Tại vì ngay chỗ này | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:25 | Khung 5 phút có 1 cây nến | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:28 | Vượt qua được đỉnh cây nến trước đó | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:30 | Thì nó đang kêu mình là | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:35 | Ê, 1 phút ơi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:36 | Đánh lên | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:37 | Không cho đánh xuống nữa | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:39 | Tại vì sao? Tại vì nó trigger | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:41 | Buy rồi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:44 | Tiếp tục | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:46 | Mình sẽ chuyển khung giờ xuống khung 1 phút | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:50 | Khi mà mình kẻ đúng cái đường like vậy rồi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:52 | Mình sẽ chuyển khung giờ xuống khung 1 phút | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:53 | Rồi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:55 | Tất cả những | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:57 | Điểm | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-05:59 | Những | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-06:00 | Những setup nào xuất hiện | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-06:03 | Cho lĩnh lon | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-06:04 | Nào xuất hiện | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-06:05 | Ở trên đường like này | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
-06:07 | Đều hoàn toàn hợp lý | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 45)
+03:52 | là cái điều thứ 2 slide số 16 | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+03:54 | là khi mà nến phá qua | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+03:56 | được đỉnh cây nến trước đó | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+03:58 | giá nó sẽ tiếp tục đi | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:00 | theo hướng đó, nhưng | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:02 | ở đây, mình sẽ áp dụng | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:04 | trên khung 5 phút | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:05 | mình sẽ áp dụng | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:08 | trên khung 5 phút, là như thế nào | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:10 | đang rớt | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:11 | khi nào mình biết nó quay về bắt test, khi nào mình biết nó đảo chịu | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:14 | đi ngược lên, là khi | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:16 | có một cây nến vượt qua được đỉnh | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:18 | cây nến trước đó, thì có phải là cây nến xanh này | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:20 | vượt qua đỉnh cây nến xanh này không | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:21 | Là đầu tiên | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:22 | Đúng không chị | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:25 | Là cái đầu tiên | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:28 | Nhưng em nhắc lại một lần nữa | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:30 | Mình không được vô lệnh | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:33 | Ở khung 5 phút | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:34 | Thì thay vào đó em sử dụng cách gì | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:39 | Em kể một cái đường like | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:40 | Ngay cái chỗ mà cái nến | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:42 | Cái đỉnh nó bị vượt qua | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:43 | Là em lấy luôn cái đỉnh | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:44 | Tính luôn cái râu | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:46 | Rồi em kể đường like | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 41)
+04:50 | Anh chị ok không | —
+04:54 | Em kể đường like | —
+04:56 | Thì cái đường line này nó có tác dụng gì | —
+04:57 | Cái đường line này nó có tác dụng là | —
+05:01 | Nếu như | —
+05:04 | Khung 1 phút | —
+05:05 | Vượt nến | —
+05:08 | Nằm ở trên cái đường line này | —
+05:09 | Đường line trigger của khung 5 phút | —
+05:12 | Ngay chỗ này em gọi nó là | —
+05:14 | By | —
+05:16 | Setup trigger | —
+05:19 | Tại vì sao by setup trigger | —
+05:23 | Tại vì ngay chỗ này | —
+05:25 | Khung 5 phút có 1 cây nến | —
+05:28 | Vượt qua được đỉnh cây nến trước đó | —
+05:30 | Thì nó đang kêu mình là | —
+05:35 | Ê, 1 phút ơi | —
+05:36 | Đánh lên | —
+05:37 | Không cho đánh xuống nữa | —
+05:39 | Tại vì sao? Tại vì nó trigger | —
+05:41 | Buy rồi | —
+05:44 | Tiếp tục | —
+05:46 | Mình sẽ chuyển khung giờ xuống khung 1 phút | —
+05:50 | Khi mà mình kẻ đúng cái đường like vậy rồi | —
+05:52 | Mình sẽ chuyển khung giờ xuống khung 1 phút | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 42)
+05:53 | Rồi | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 42)
+05:55 | Tất cả những | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 42)
+05:57 | Điểm | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 42)
+05:59 | Những | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 42)
+06:00 | Những setup nào xuất hiện | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 42)
+06:03 | Cho lĩnh lon | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 42)
+06:04 | Nào xuất hiện | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 42)
+06:05 | Ở trên đường like này | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 42)
+06:07 | Đều hoàn toàn hợp lý | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 42)
 06:10 | Có thêm vô | —
 06:11 | Rồi | —
 06:22 | Vậy em hỏi mọi người | —
@@ -159,31 +159,31 @@ cues: 555/555 marked · rules: 229 · CODE: 211 · MISMATCH: 0 · NOT-IN-BOT: 0 
 06:52 | Nếu nến nằm dưới đường like thì sao | —
 07:01 | Tại sao không làm gì | —
 07:08 | Nếu nến nằm dưới đường like | —
-07:19 | Mình sẽ không được làm gì hết | —
-07:24 | Lý do | —
-07:26 | Nó đang là buy setup | —
-07:28 | Vậy | —
+07:19 | Mình sẽ không được làm gì hết | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 43)
+07:24 | Lý do | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 43)
+07:26 | Nó đang là buy setup | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 43)
+07:28 | Vậy | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 43)
 07:31 | Vậy | —
-07:37 | Nếu như | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-07:38 | Mình muốn đánh lệnh short | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-07:40 | Thì mình phải chờ điều gì xảy ra | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-07:42 | Ngược lại với buy setup | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-07:47 | Là | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-07:49 | Sell setup ở khủng | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-07:55 | Sell setup trigger | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-07:57 | Ở khủng 5 phút | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-08:02 | Rồi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-08:04 | Thì có phải là nếu như mình muốn đánh lệnh shop | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-08:09 | Thì là | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-08:11 | Xe shop trigger nằm chỗ đâu hả anh chị | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-08:12 | Có phải là nó nằm ở bên đây không | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-08:14 | Nó là cái nến đỏ này nè | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-08:18 | Vừa qua được đấy cái nến xanh nè | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-08:19 | Không cần đóng anh chứ | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-08:22 | Không cần đóng anh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-08:23 | Anh đóng cũng được | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-08:23 | Nói chung là chơi xe play để đóng cũng được | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-08:25 | Nhưng mà không cần đóng | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
+07:37 | Nếu như | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+07:38 | Mình muốn đánh lệnh short | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+07:40 | Thì mình phải chờ điều gì xảy ra | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+07:42 | Ngược lại với buy setup | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+07:47 | Là | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+07:49 | Sell setup ở khủng | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+07:55 | Sell setup trigger | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+07:57 | Ở khủng 5 phút | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+08:02 | Rồi | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+08:04 | Thì có phải là nếu như mình muốn đánh lệnh shop | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+08:09 | Thì là | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+08:11 | Xe shop trigger nằm chỗ đâu hả anh chị | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+08:12 | Có phải là nó nằm ở bên đây không | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+08:14 | Nó là cái nến đỏ này nè | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+08:18 | Vừa qua được đấy cái nến xanh nè | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+08:19 | Không cần đóng anh chứ | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+08:22 | Không cần đóng anh | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+08:23 | Anh đóng cũng được | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+08:23 | Nói chung là chơi xe play để đóng cũng được | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
+08:25 | Nhưng mà không cần đóng | CODE kernel/mentor/filters.go:145 [trigger_break_low] (row 44)
 08:26 | Rồi | —
 08:27 | Thì có phải là | —
 08:32 | Tất cả những lệnh ngay dưới | —
@@ -255,65 +255,65 @@ cues: 555/555 marked · rules: 229 · CODE: 211 · MISMATCH: 0 · NOT-IN-BOT: 0 
 11:41 | Đây là lý do tại sao em biết cái lệnh nào | —
 11:46 | Nên đánh lên | —
 11:47 | Lệnh này đánh xuống | —
-11:48 | Rồi thêm một cái củ này nữa | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-11:51 | Cho những anh chị nào khóa củ nè | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-11:52 | Mọi người nhớ giúp em nè | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-11:55 | Khóa mới luôn | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-11:57 | Cái đường like trigger này | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:00 | Anh chị chỉ | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:01 | Move nó khi nào | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:04 | Nó đảo chiều | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:05 | Hiểu ý em nói không | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:09 | Chứ không phải là ngay chỗ này trigger | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:11 | Ngay chỗ này trigger | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:13 | Cái đường like trigger này | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:16 | Cái này chị biết rồi mà chị ta lại hỏi gì nữa | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:17 | Cái đường like trigger này | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:20 | Nó sẽ | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:21 | Anh chị chỉ được move nó | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:23 | Khi nào nó đảo chiều | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:25 | Có nghĩa là sao | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:26 | Đang buy trigger thì khi nào có sell trigger mới để ngược lên | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:29 | Đúng không | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:31 | Có buy trigger | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:32 | Đang buy trigger nè | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:35 | Cái đường like này đang là buy trigger là nó vượt | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:37 | Có cái nến sau vượt đỉnh cái nến trước đó | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:38 | Vẫn là điều thứ 2 slide số 16 nha anh chị | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:40 | Vượt đỉnh cái nến trước đó | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:43 | Rồi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:44 | Cứ để cho nó chạy | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:45 | Nãy giờ tôi vẫn chưa | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:46 | Tôi chưa có thấy cái xe trước gần hết | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:48 | Tại vì sao | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:48 | Tại vì chưa có cái nến nào | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:49 | Vượt qua được đáy cái nến trước đó | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:51 | Ở khung 5 phút hết | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:51 | Rồi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:53 | Lên tới đây có | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:55 | Tôi mới mua lên đây | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:56 | Chứ không phải là mua cái này | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:57 | Xong thấy nến sau vượt qua được đỉnh nến trước | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-12:59 | Tôi mua lên đây | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:00 | Xong nến sau vượt qua được đỉnh nến trước | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:01 | Tôi mua lên đây | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:02 | Xong nến sau vượt qua được đỉnh nến trước | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:05 | Tôi mua lên đây | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:05 | Không | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:05 | Mình không làm | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:06 | Mình không chơi như vậy | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:07 | Một lần một thôi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:09 | là khi nào nó đang đi lên nó đảo chiều đi xuống | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:12 | thì mình để cái làn vô chỗ | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:13 | cái chỗ đảo chiều | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:14 | đi xuống, đi lên | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:16 | xuống, xuống, xuống, xuống | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:20 | tới đây, trigger bài | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:22 | mới kéo cái đường lại xuống tới đây | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:24 | còn không thì nó chưa có trigger | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:26 | nó chưa có cái nến nào vượt qua được đỉnh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:28 | hay vượt qua được đấy thì anh chị không cần phải move | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
-13:30 | cứ để giống như tự chạy | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 47)
+11:48 | Rồi thêm một cái củ này nữa | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+11:51 | Cho những anh chị nào khóa củ nè | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+11:52 | Mọi người nhớ giúp em nè | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+11:55 | Khóa mới luôn | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+11:57 | Cái đường like trigger này | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:00 | Anh chị chỉ | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:01 | Move nó khi nào | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:04 | Nó đảo chiều | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:05 | Hiểu ý em nói không | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:09 | Chứ không phải là ngay chỗ này trigger | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:11 | Ngay chỗ này trigger | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:13 | Cái đường like trigger này | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:16 | Cái này chị biết rồi mà chị ta lại hỏi gì nữa | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:17 | Cái đường like trigger này | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:20 | Nó sẽ | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:21 | Anh chị chỉ được move nó | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:23 | Khi nào nó đảo chiều | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:25 | Có nghĩa là sao | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 45)
+12:26 | Đang buy trigger thì khi nào có sell trigger mới để ngược lên | —
+12:29 | Đúng không | —
+12:31 | Có buy trigger | —
+12:32 | Đang buy trigger nè | —
+12:35 | Cái đường like này đang là buy trigger là nó vượt | —
+12:37 | Có cái nến sau vượt đỉnh cái nến trước đó | —
+12:38 | Vẫn là điều thứ 2 slide số 16 nha anh chị | —
+12:40 | Vượt đỉnh cái nến trước đó | —
+12:43 | Rồi | —
+12:44 | Cứ để cho nó chạy | —
+12:45 | Nãy giờ tôi vẫn chưa | —
+12:46 | Tôi chưa có thấy cái xe trước gần hết | —
+12:48 | Tại vì sao | —
+12:48 | Tại vì chưa có cái nến nào | —
+12:49 | Vượt qua được đáy cái nến trước đó | —
+12:51 | Ở khung 5 phút hết | —
+12:51 | Rồi | —
+12:53 | Lên tới đây có | —
+12:55 | Tôi mới mua lên đây | —
+12:56 | Chứ không phải là mua cái này | —
+12:57 | Xong thấy nến sau vượt qua được đỉnh nến trước | —
+12:59 | Tôi mua lên đây | —
+13:00 | Xong nến sau vượt qua được đỉnh nến trước | —
+13:01 | Tôi mua lên đây | —
+13:02 | Xong nến sau vượt qua được đỉnh nến trước | —
+13:05 | Tôi mua lên đây | —
+13:05 | Không | —
+13:05 | Mình không làm | —
+13:06 | Mình không chơi như vậy | —
+13:07 | Một lần một thôi | —
+13:09 | là khi nào nó đang đi lên nó đảo chiều đi xuống | —
+13:12 | thì mình để cái làn vô chỗ | —
+13:13 | cái chỗ đảo chiều | —
+13:14 | đi xuống, đi lên | —
+13:16 | xuống, xuống, xuống, xuống | —
+13:20 | tới đây, trigger bài | —
+13:22 | mới kéo cái đường lại xuống tới đây | —
+13:24 | còn không thì nó chưa có trigger | —
+13:26 | nó chưa có cái nến nào vượt qua được đỉnh | —
+13:28 | hay vượt qua được đấy thì anh chị không cần phải move | —
+13:30 | cứ để giống như tự chạy | —
 13:33 | anh chị ok không? | —
 13:35 | tiếp tục | —
 13:36 | Đừng suy nghĩ | —
@@ -323,15 +323,15 @@ cues: 555/555 marked · rules: 229 · CODE: 211 · MISMATCH: 0 · NOT-IN-BOT: 0 
 13:45 | Anh chị đã được học nó từ ngày hôm qua rồi | —
 13:48 | Nếu tính theo khung 5 phút | —
 13:52 | Chỉ là khung giờ lớn hơn thôi | —
-13:53 | Nhưng căn bản, cơ bản | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 48)
-13:55 | Nó là Potential 2 | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 48)
-13:58 | Low và Potential Low 2 | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 48)
-13:59 | Ở khung 5 phút | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 48)
-14:00 | Lý do tại sao em không nói là Potential 2 | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 48)
-14:04 | Low và Potential Low 2 | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 48)
-14:05 | Tại vì khung 5 phút | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 48)
-14:07 | Không phải để trade | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 48)
-14:08 | Mà khung 5 phút là để nghe theo | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 48)
+13:53 | Nhưng căn bản, cơ bản | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 46)
+13:55 | Nó là Potential 2 | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 46)
+13:58 | Low và Potential Low 2 | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 46)
+13:59 | Ở khung 5 phút | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 46)
+14:00 | Lý do tại sao em không nói là Potential 2 | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 46)
+14:04 | Low và Potential Low 2 | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 46)
+14:05 | Tại vì khung 5 phút | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 46)
+14:07 | Không phải để trade | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 46)
+14:08 | Mà khung 5 phút là để nghe theo | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 46)
 14:12 | Em mới nói | —
 14:15 | Thì nó mới xuất hiện được | —
 14:16 | Nó mới ra được cái chữ là | —
@@ -346,11 +346,11 @@ cues: 555/555 marked · rules: 229 · CODE: 211 · MISMATCH: 0 · NOT-IN-BOT: 0 
 14:35 | Của khung giờ lớn | —
 14:37 | Khung giờ lớn | —
 14:39 | lúc nào nó cũng sẽ kêu lên khung giờ nhỏ | —
-14:41 | khung giờ lớn kêu gì khung giờ nhỏ sẽ làm đó | —
-14:43 | mọi người nhìn đơn giản | —
-14:47 | có phải là ngay khúc này | —
-14:48 | nếu mà tính đi, mọi người nhìn bên phải cho em nè | —
-14:51 | khung 5 phút đi | —
+14:41 | khung giờ lớn kêu gì khung giờ nhỏ sẽ làm đó | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 47)
+14:43 | mọi người nhìn đơn giản | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 47)
+14:47 | có phải là ngay khúc này | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 47)
+14:48 | nếu mà tính đi, mọi người nhìn bên phải cho em nè | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 47)
+14:51 | khung 5 phút đi | CODE kernel/mentor/htf_direction.go:53 [htf_agree] (row 47)
 14:52 | đừng nghĩ là khung 5 phút hay khung 1 phút gì hết | —
 14:55 | có phải là ngay chỗ này làm bộ tên solo 2 | —
 14:57 | khung bộ tên solo 2 không | —
@@ -365,22 +365,22 @@ cues: 555/555 marked · rules: 229 · CODE: 211 · MISMATCH: 0 · NOT-IN-BOT: 0 
 15:26 | Ok không | —
 16:20 | Nằm im trong đầu là ok | —
 16:27 | Rồi ok em tiếp tục ha | —
-16:38 | Nếu nến đang ở giữa | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-16:44 | Pheller, Trigger, Lower | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-16:48 | Và Live by Trigger | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-16:51 | Từ từ | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-16:56 | Nếu nến đang ở giữa Pheller, Trigger, Lower | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-16:58 | Và Live by Trigger thì mình nên làm gì? Khỏi đánh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-17:00 | Có được tiền đánh không? Khỏi đánh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-17:03 | Không | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-17:04 | Còn đánh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-17:05 | Cái này nằm ở giữa | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-17:10 | Phello Chocolo mà | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-17:11 | Và Lightbite | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-17:14 | Thì thôi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-17:15 | Đợi nó thoát ra khỏi 2 cái đi anh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-17:16 | Khỏi đánh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
-17:17 | Đợi thoát ra khỏi 2 cái đi đánh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 49)
+16:38 | Nếu nến đang ở giữa | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+16:44 | Pheller, Trigger, Lower | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+16:48 | Và Live by Trigger | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+16:51 | Từ từ | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+16:56 | Nếu nến đang ở giữa Pheller, Trigger, Lower | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+16:58 | Và Live by Trigger thì mình nên làm gì? Khỏi đánh | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+17:00 | Có được tiền đánh không? Khỏi đánh | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+17:03 | Không | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+17:04 | Còn đánh | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+17:05 | Cái này nằm ở giữa | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+17:10 | Phello Chocolo mà | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+17:11 | Và Lightbite | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+17:14 | Thì thôi | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+17:15 | Đợi nó thoát ra khỏi 2 cái đi anh | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+17:16 | Khỏi đánh | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
+17:17 | Đợi thoát ra khỏi 2 cái đi đánh | CODE kernel/mentor/filters.go:144 [trigger_break_high] (row 48)
 17:19 | Đánh cho cực | —
 17:21 | Nằm dưới mà đánh gì | —
 17:30 | Đúng không | —
@@ -389,45 +389,45 @@ cues: 555/555 marked · rules: 229 · CODE: 211 · MISMATCH: 0 · NOT-IN-BOT: 0 
 17:34 | Cái đường Lightbite Trigger | —
 17:35 | Để mới đánh được chứ | —
 17:36 | Để nói là | —
-17:39 | Bất kỳ trường hợp nào | OWNER-ORDER (row 50)
-17:41 | Nha | OWNER-ORDER (row 50)
-17:42 | Nên nói nè | OWNER-ORDER (row 50)
-17:43 | Nhắc lại cực | OWNER-ORDER (row 50)
-17:44 | Nhớ nè | OWNER-ORDER (row 50)
-17:44 | Khẳng định luôn nè | OWNER-ORDER (row 50)
-17:46 | Khẳng định nè | OWNER-ORDER (row 50)
-17:48 | Bất kỳ trường hợp nào đi nữa | OWNER-ORDER (row 50)
-17:50 | Nếu như anh chị đã kể ra được | OWNER-ORDER (row 50)
-17:54 | Cái đường live by trigger rồi | OWNER-ORDER (row 50)
-17:56 | Thì nếu như nằm ở dưới đường live by trigger | OWNER-ORDER (row 50)
-18:00 | Không được đánh | OWNER-ORDER (row 50)
-18:02 | Anh chị ok không | OWNER-ORDER (row 50)
-18:08 | Nghe câu này hiểu không mọi người | OWNER-ORDER (row 50)
-18:11 | Nếu như nằm ở bên dưới | OWNER-ORDER (row 50)
-18:14 | Bên trên đường live by trigger | OWNER-ORDER (row 50)
-18:16 | Anh chị không được đánh | OWNER-ORDER (row 50)
-18:18 | Ok không anh chị | OWNER-ORDER (row 50)
-18:25 | Anh Winnie là anh là over thinking | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-18:31 | Giai đoạn cuối luôn | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-18:34 | Đã nói rồi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-18:39 | Nó nhắc lại một lần nữa nè | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-18:40 | Đường live by trigger không được đánh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-18:43 | Đâu sẽ xem trigger | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-18:48 | Là sao | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-18:50 | Ý là cái nến màu đỏ đó đâu liên quan gì đâu anh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-18:56 | Đâu kê cái hình mạnh | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-19:04 | Cái hình mạnh 890 mới gửi vô nè | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-19:06 | Cái màu đỏ đâu lâu liên quan đâu | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-19:08 | Tại đâu cây xanh bị vượt | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-19:10 | Cây xanh nào bị vượt | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-19:22 | Từ cây đỏ | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-19:23 | Cái mũi tên 1,2,3 | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-19:25 | Cây xanh chinh cọ | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-19:30 | Có nghĩa là anh sẽ nhìn theo | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-19:48 | Cái nến nào | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-19:49 | Cái nến nào đầu tiên bị vượt qua đáy | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-19:52 | Thì ngay chỗ đó là xe Trigger | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
-19:53 | Hiểu không | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 46)
+17:39 | Bất kỳ trường hợp nào | OWNER-ORDER (row 49)
+17:41 | Nha | OWNER-ORDER (row 49)
+17:42 | Nên nói nè | OWNER-ORDER (row 49)
+17:43 | Nhắc lại cực | OWNER-ORDER (row 49)
+17:44 | Nhớ nè | OWNER-ORDER (row 49)
+17:44 | Khẳng định luôn nè | OWNER-ORDER (row 49)
+17:46 | Khẳng định nè | OWNER-ORDER (row 49)
+17:48 | Bất kỳ trường hợp nào đi nữa | OWNER-ORDER (row 49)
+17:50 | Nếu như anh chị đã kể ra được | OWNER-ORDER (row 49)
+17:54 | Cái đường live by trigger rồi | OWNER-ORDER (row 49)
+17:56 | Thì nếu như nằm ở dưới đường live by trigger | OWNER-ORDER (row 49)
+18:00 | Không được đánh | OWNER-ORDER (row 49)
+18:02 | Anh chị ok không | OWNER-ORDER (row 49)
+18:08 | Nghe câu này hiểu không mọi người | OWNER-ORDER (row 49)
+18:11 | Nếu như nằm ở bên dưới | OWNER-ORDER (row 49)
+18:14 | Bên trên đường live by trigger | OWNER-ORDER (row 49)
+18:16 | Anh chị không được đánh | OWNER-ORDER (row 49)
+18:18 | Ok không anh chị | OWNER-ORDER (row 49)
+18:25 | Anh Winnie là anh là over thinking | —
+18:31 | Giai đoạn cuối luôn | —
+18:34 | Đã nói rồi | —
+18:39 | Nó nhắc lại một lần nữa nè | —
+18:40 | Đường live by trigger không được đánh | —
+18:43 | Đâu sẽ xem trigger | —
+18:48 | Là sao | —
+18:50 | Ý là cái nến màu đỏ đó đâu liên quan gì đâu anh | —
+18:56 | Đâu kê cái hình mạnh | —
+19:04 | Cái hình mạnh 890 mới gửi vô nè | —
+19:06 | Cái màu đỏ đâu lâu liên quan đâu | —
+19:08 | Tại đâu cây xanh bị vượt | —
+19:10 | Cây xanh nào bị vượt | —
+19:22 | Từ cây đỏ | —
+19:23 | Cái mũi tên 1,2,3 | —
+19:25 | Cây xanh chinh cọ | —
+19:30 | Có nghĩa là anh sẽ nhìn theo | —
+19:48 | Cái nến nào | —
+19:49 | Cái nến nào đầu tiên bị vượt qua đáy | —
+19:52 | Thì ngay chỗ đó là xe Trigger | —
+19:53 | Hiểu không | —
 19:56 | Đó anh Quỳnh này dạy đúng rồi đó | —
 19:59 | Anh giỏi nhưng mà anh bị | —
 20:02 | Overthinking giai đoạn cuối thôi | —

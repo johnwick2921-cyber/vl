@@ -1,8 +1,8 @@
-cues: 425/425 marked · rules: 207 · CODE: 196 · MISMATCH: 0 · NOT-IN-BOT: 11 · OWNER-ORDER: 0 · COURSE-SPLIT: 0 · —: 218
-00:14 | Khi mặt kẹp tạo inside bar khung 5 phút thì nghỉ, đã mới vừa nói tức thì xong là cây nến inside bar là cây nến nghỉ, khung 5 phút nó kêu mình làm cái gì thì mình làm cái đó, thì bây giờ khung 5 phút nó kêu mình nghỉ thì mình nghỉ, tới khi nào, tới khi nào mình hết nghỉ, bây giờ nè, rồi, khi anh chị gặp inside bar khung 5 phút, làm ơn, dạy 1 cái box cho em, kéo dài nó ra nha. | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
-00:49 | Mình sẽ không sử dụng light trigger | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
-00:57 | Mà mình sẽ sử dụng box | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
-00:58 | Khi khung 5 phút | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
+cues: 425/425 marked · rules: 111 · CODE: 100 · MISMATCH: 0 · NOT-IN-BOT: 11 · OWNER-ORDER: 0 · COURSE-SPLIT: 0 · —: 314
+00:14 | Khi mặt kẹp tạo inside bar khung 5 phút thì nghỉ, đã mới vừa nói tức thì xong là cây nến inside bar là cây nến nghỉ, khung 5 phút nó kêu mình làm cái gì thì mình làm cái đó, thì bây giờ khung 5 phút nó kêu mình nghỉ thì mình nghỉ, tới khi nào, tới khi nào mình hết nghỉ, bây giờ nè, rồi, khi anh chị gặp inside bar khung 5 phút, làm ơn, dạy 1 cái box cho em, kéo dài nó ra nha. | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 50)
+00:49 | Mình sẽ không sử dụng light trigger | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 50)
+00:57 | Mà mình sẽ sử dụng box | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 50)
+00:58 | Khi khung 5 phút | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 50)
 01:00 | Tạo | —
 01:00 | Khi khung 5 phút xuất hiện insta bar | —
 01:03 | Dạy cái box ra cho em | —
@@ -30,9 +30,9 @@ cues: 425/425 marked · rules: 207 · CODE: 196 · MISMATCH: 0 · NOT-IN-BOT: 11
 02:28 | Anh chỉ khóa mới luôn nè | —
 02:30 | Trả lời cho em câu này coi | —
 02:31 | Bây giờ mình vẽ được cái box in C3 | —
-02:33 | Cung 5 phút | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 52)
-02:34 | Bây giờ mình đợi | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 52)
-02:35 | Mình nói là bây giờ mình phải đợi nó thoát box | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 52)
+02:33 | Cung 5 phút | —
+02:34 | Bây giờ mình đợi | —
+02:35 | Mình nói là bây giờ mình phải đợi nó thoát box | —
 02:36 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 03:22 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 03:57 | Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
@@ -54,115 +54,115 @@ cues: 425/425 marked · rules: 207 · CODE: 196 · MISMATCH: 0 · NOT-IN-BOT: 11
 05:29 | Tại vì xíu nữa mình sẽ học thêm cái nữa | —
 05:32 | Thì mình sẽ trả lời sau ha | —
 05:33 | Anh chị ok không mọi người | —
-05:37 | Bây giờ thoát đầu nào đánh đầu đó được không | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 53)
-05:39 | Rồi bây giờ mình tính cái chuyện thoát đầu trên trước nè | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 53)
-05:42 | Rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 53)
-05:43 | Bây giờ thoát đầu trên | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 53)
-05:44 | Thì đương nhiên là 1 cái chuyện quá đơn giản | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 53)
-05:48 | Là thoát đầu trên | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 53)
-05:49 | Thì tôi kiếm Insta Ballon | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 53)
-05:50 | Tôi đánh vô | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 53)
-05:51 | Tôi đánh thêm | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 53)
-05:51 | Hoặc là tôi kiếm Potential High Low | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 53)
-05:53 | Rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 53)
-05:53 | Nếu như nó cứ chạy lên như vầy | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 53)
+05:37 | Bây giờ thoát đầu nào đánh đầu đó được không | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
+05:39 | Rồi bây giờ mình tính cái chuyện thoát đầu trên trước nè | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
+05:42 | Rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
+05:43 | Bây giờ thoát đầu trên | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
+05:44 | Thì đương nhiên là 1 cái chuyện quá đơn giản | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
+05:48 | Là thoát đầu trên | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
+05:49 | Thì tôi kiếm Insta Ballon | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
+05:50 | Tôi đánh vô | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
+05:51 | Tôi đánh thêm | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
+05:51 | Hoặc là tôi kiếm Potential High Low | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
+05:53 | Rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
+05:53 | Nếu như nó cứ chạy lên như vầy | CODE kernel/mentor/isb_box.go:74 [isb_box_escape] (row 51)
 05:56 | Nó thoát ra được cái đầu chơi | —
 05:57 | Là nó đóng một cái nến một phút ở ngoài nè | —
 05:58 | Nó đóng một cái nến một phút ở ngoài nè | —
 06:01 | Đúng không | —
 06:01 | Rồi | —
 06:02 | Bây giờ nó chạy lên | —
-06:05 | Mà nó không có cái lệnh nào cho mình vô hết | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-06:07 | Thì làm gì | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-06:07 | Thế thì | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-06:13 | Thì mình bật khung nhỏ hơn | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-06:25 | Kiếm Insta Ballon vô theo | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-06:27 | Đợi trả về thì chị ngồi đó | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-06:30 | Chị đợi mình chị đi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-06:31 | Em bật khung nhỏ hơn | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-06:33 | Em ngọn đánh InstaBar em đu theo | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-06:34 | Trường nào mới trả về | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-06:37 | Giảm khung giờ xuống | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-06:41 | Kiếm InstaBar đu vô theo | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-06:44 | Mọi người ok không | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-06:54 | Nếu như nó thoát ra | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-07:10 | Thì anh chị cứ việc kiếm | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
-07:12 | InstaBar ở khung giờ nhỏ hơn | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 54)
+06:05 | Mà nó không có cái lệnh nào cho mình vô hết | —
+06:07 | Thì làm gì | —
+06:07 | Thế thì | —
+06:13 | Thì mình bật khung nhỏ hơn | —
+06:25 | Kiếm Insta Ballon vô theo | —
+06:27 | Đợi trả về thì chị ngồi đó | —
+06:30 | Chị đợi mình chị đi | —
+06:31 | Em bật khung nhỏ hơn | —
+06:33 | Em ngọn đánh InstaBar em đu theo | —
+06:34 | Trường nào mới trả về | —
+06:37 | Giảm khung giờ xuống | —
+06:41 | Kiếm InstaBar đu vô theo | —
+06:44 | Mọi người ok không | —
+06:54 | Nếu như nó thoát ra | —
+07:10 | Thì anh chị cứ việc kiếm | —
+07:12 | InstaBar ở khung giờ nhỏ hơn | —
 07:20 | Rồi tiếp tục | —
-07:27 | Sẽ có một trường hợp | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-07:31 | Sẽ có một trường hợp | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-07:45 | Sẽ có một trường hợp | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-07:46 | Là | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-07:50 | anh chị được quyền | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-07:53 | trade bên trong | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-07:54 | insert bar 05 | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-07:55 | là | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-07:58 | nếu như | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:00 | nó | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:00 | chỉ có đúng | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:02 | một trường hợp này thôi nha | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:03 | sẽ không được | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:03 | một trường hợp nào khác nha | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:05 | là | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:06 | khi bên trong | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:07 | cái insert bar 05 | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:08 | có một lệnh | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:11 | insert bar | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:11 | cùng chiều | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:12 | em sẽ không | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:15 | đánh potential | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:16 | 2 low | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:16 | potential low 2 | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:17 | bên trong | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:18 | cái insert bar 05 | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:18 | em chỉ đánh | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:20 | inside bar | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:20 | bên trong | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:21 | inside bar | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:21 | Ví dụ | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:24 | Bấm coi chị đang làm gì | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:35 | Ok rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:39 | Đây là Insaba cho lệnh gì anh chị | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:48 | Mọi người khung 5 phút nè | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:51 | Đây là Insaba cho lệnh gì | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-08:52 | Đây là Insaba cho lệnh long | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:03 | Thì em chỉ cho phép mọi người | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:09 | Tray bên trong | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:11 | Cái Insaba này | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:12 | Khi nào bên trong Insaba này | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:14 | Sức hiện Insaba cho lệnh long | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:17 | Là một lệnh cùng chiều | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:18 | Với khung giờ lớn | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:19 | Mình đánh cùng chiều khung giờ lớn | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:22 | Ok không | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:24 | Thì ngay bên đây | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:26 | Thì ngay bên đây | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:28 | Mặc dù là bên trong | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:31 | Inserpa 5 phút mình không được trade | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:32 | Ủa cho từ bữa giờ mấy khóa rồi mà | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:38 | Nói gì chạy | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:39 | Thì nó xuất hiện Inserpa cùng chiều với khung giờ lớn | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:43 | Mọi người hoàn toàn có thể đánh những lệnh Inserpa này | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:47 | Anh chị ok không | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:52 | Alo | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:56 | Trả lại cho em nè | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-09:57 | Ok đúng không | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:00 | Đâu gì đâu khó hiểu | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:01 | Có nghĩa là bây giờ nếu như khung 5 phút là Instaba cho lệnh long | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:04 | Thì mình kiếm Instaba cho lệnh long cùng chiều | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:06 | Ở bên trong Instaba nếu như mình vẫn muốn trade | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:09 | Còn nếu như mà | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:13 | Nếu như mà Instaba lệnh 6 có được không | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:15 | Nếu như mà khung 5 phút | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:17 | Khung 5 phút | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:18 | Là Instaba cho lệnh long | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:21 | Nhưng mà bên trong mình trade Instaba cho lệnh 6 được không | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:23 | Nhớ giùm em nha | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:24 | Không được | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:25 | Đây là những cái set risk | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:30 | Nó cùng chiều tại vì sao | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:32 | Tại vì khung 5 phút nó đang kêu mình làm gì thì mình làm nó thôi | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
-10:35 | Rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 55)
+07:27 | Sẽ có một trường hợp | —
+07:31 | Sẽ có một trường hợp | —
+07:45 | Sẽ có một trường hợp | —
+07:46 | Là | —
+07:50 | anh chị được quyền | —
+07:53 | trade bên trong | —
+07:54 | insert bar 05 | —
+07:55 | là | —
+07:58 | nếu như | —
+08:00 | nó | —
+08:00 | chỉ có đúng | —
+08:02 | một trường hợp này thôi nha | —
+08:03 | sẽ không được | —
+08:03 | một trường hợp nào khác nha | —
+08:05 | là | —
+08:06 | khi bên trong | —
+08:07 | cái insert bar 05 | —
+08:08 | có một lệnh | —
+08:11 | insert bar | —
+08:11 | cùng chiều | —
+08:12 | em sẽ không | —
+08:15 | đánh potential | —
+08:16 | 2 low | —
+08:16 | potential low 2 | —
+08:17 | bên trong | —
+08:18 | cái insert bar 05 | —
+08:18 | em chỉ đánh | —
+08:20 | inside bar | —
+08:20 | bên trong | —
+08:21 | inside bar | —
+08:21 | Ví dụ | —
+08:24 | Bấm coi chị đang làm gì | —
+08:35 | Ok rồi | —
+08:39 | Đây là Insaba cho lệnh gì anh chị | —
+08:48 | Mọi người khung 5 phút nè | —
+08:51 | Đây là Insaba cho lệnh gì | —
+08:52 | Đây là Insaba cho lệnh long | —
+09:03 | Thì em chỉ cho phép mọi người | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:09 | Tray bên trong | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:11 | Cái Insaba này | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:12 | Khi nào bên trong Insaba này | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:14 | Sức hiện Insaba cho lệnh long | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:17 | Là một lệnh cùng chiều | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:18 | Với khung giờ lớn | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:19 | Mình đánh cùng chiều khung giờ lớn | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:22 | Ok không | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:24 | Thì ngay bên đây | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:26 | Thì ngay bên đây | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:28 | Mặc dù là bên trong | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:31 | Inserpa 5 phút mình không được trade | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:32 | Ủa cho từ bữa giờ mấy khóa rồi mà | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:38 | Nói gì chạy | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:39 | Thì nó xuất hiện Inserpa cùng chiều với khung giờ lớn | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:43 | Mọi người hoàn toàn có thể đánh những lệnh Inserpa này | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:47 | Anh chị ok không | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:52 | Alo | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:56 | Trả lại cho em nè | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+09:57 | Ok đúng không | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:00 | Đâu gì đâu khó hiểu | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:01 | Có nghĩa là bây giờ nếu như khung 5 phút là Instaba cho lệnh long | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:04 | Thì mình kiếm Instaba cho lệnh long cùng chiều | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:06 | Ở bên trong Instaba nếu như mình vẫn muốn trade | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:09 | Còn nếu như mà | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:13 | Nếu như mà Instaba lệnh 6 có được không | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:15 | Nếu như mà khung 5 phút | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:17 | Khung 5 phút | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:18 | Là Instaba cho lệnh long | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:21 | Nhưng mà bên trong mình trade Instaba cho lệnh 6 được không | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:23 | Nhớ giùm em nha | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:24 | Không được | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:25 | Đây là những cái set risk | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:30 | Nó cùng chiều tại vì sao | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:32 | Tại vì khung 5 phút nó đang kêu mình làm gì thì mình làm nó thôi | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
+10:35 | Rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_same_dir] (row 52)
 10:40 | Trở lại câu hỏi của chị Hạnh | —
 10:44 | Trở lại câu hỏi của chị Hạnh | —
 10:50 | Em biết chị mà chị chỗ nào chị không có mặt chị đâu | —
@@ -178,55 +178,55 @@ cues: 425/425 marked · rules: 207 · CODE: 196 · MISMATCH: 0 · NOT-IN-BOT: 11
 11:15 | Nó sẽ là như này | —
 11:19 | Rồi | —
 11:25 | Ok | —
-11:30 | Nó | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:31 | Tại vì nó là 2 cái khác nhau | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:33 | Tại vì nó là 2 cái khác nhau | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:36 | Nó là 2 thứ hoàn toàn khác nhau | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:39 | Nó là 2 công cụ hoàn toàn khác nhau | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:41 | Không có liên quan | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:41 | Nha | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:42 | Không có liên quan | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:43 | Đây | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:44 | Là đường line by trigger setup | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:47 | Nhìn | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:48 | Nhìn nè anh chị | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:48 | Nhìn nè | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:49 | Tập trung nè | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:50 | Đây là đường line by trigger | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:53 | By setup trigger | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:54 | Đúng không | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:54 | đây lệnh sơ ba cung 5 phút | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:57 | 2 cái nó không liên quan tới nhau | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-11:59 | rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:02 | nếu như thoát ở trên | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:04 | thì chả có gì để nói hết đúng không | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:06 | thoát ở trên chả có gì để nói hết | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:08 | thì mình cứ khi đã thoát ra rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:11 | thì xóa cái bóc đi nha anh chị | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:12 | khi mà nó đã thoát ra được rồi thì cứ xóa cái bóc đi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:15 | anh chị ok ha | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:16 | xóa đi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:17 | rồi thì nó vẫn là | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:23 | setup trigger | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:25 | tại vì nó thoát ra khỏi cái rank rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:26 | thì mình không có lý do gì mà mình ngồi giữ cái rank nó hết | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:28 | xóa đi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:29 | Nó xóa đi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:32 | Rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:33 | Vậy | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:34 | Nếu như nó thoát đầu dưới | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:36 | Nó thoát xuống đầu dưới | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:40 | Thì mình cũng xóa cái bóc đi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:43 | Nhưng mình làm thêm một cái việc gì nữa | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:45 | Mình chuyển từ | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:47 | By Trigger | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:48 | Qua C Trigger | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:50 | Vậy thôi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:52 | Đâu làm gì khác đâu | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:54 | Hiểu không chị | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:57 | Đâu làm gì khác đâu | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-12:59 | Chứ vậy thôi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
-13:00 | Chỉ qua lại thôi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 56)
+11:30 | Nó | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:31 | Tại vì nó là 2 cái khác nhau | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:33 | Tại vì nó là 2 cái khác nhau | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:36 | Nó là 2 thứ hoàn toàn khác nhau | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:39 | Nó là 2 công cụ hoàn toàn khác nhau | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:41 | Không có liên quan | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:41 | Nha | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:42 | Không có liên quan | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:43 | Đây | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:44 | Là đường line by trigger setup | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:47 | Nhìn | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:48 | Nhìn nè anh chị | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:48 | Nhìn nè | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:49 | Tập trung nè | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:50 | Đây là đường line by trigger | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:53 | By setup trigger | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:54 | Đúng không | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:54 | đây lệnh sơ ba cung 5 phút | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:57 | 2 cái nó không liên quan tới nhau | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+11:59 | rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+12:02 | nếu như thoát ở trên | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+12:04 | thì chả có gì để nói hết đúng không | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+12:06 | thoát ở trên chả có gì để nói hết | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+12:08 | thì mình cứ khi đã thoát ra rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+12:11 | thì xóa cái bóc đi nha anh chị | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+12:12 | khi mà nó đã thoát ra được rồi thì cứ xóa cái bóc đi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+12:15 | anh chị ok ha | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+12:16 | xóa đi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+12:17 | rồi thì nó vẫn là | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+12:23 | setup trigger | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+12:25 | tại vì nó thoát ra khỏi cái rank rồi | CODE kernel/mentor/isb_box.go:74 [isb_box_delete_flip] (row 53)
+12:26 | thì mình không có lý do gì mà mình ngồi giữ cái rank nó hết | —
+12:28 | xóa đi | —
+12:29 | Nó xóa đi | —
+12:32 | Rồi | —
+12:33 | Vậy | —
+12:34 | Nếu như nó thoát đầu dưới | —
+12:36 | Nó thoát xuống đầu dưới | —
+12:40 | Thì mình cũng xóa cái bóc đi | —
+12:43 | Nhưng mình làm thêm một cái việc gì nữa | —
+12:45 | Mình chuyển từ | —
+12:47 | By Trigger | —
+12:48 | Qua C Trigger | —
+12:50 | Vậy thôi | —
+12:52 | Đâu làm gì khác đâu | —
+12:54 | Hiểu không chị | —
+12:57 | Đâu làm gì khác đâu | —
+12:59 | Chứ vậy thôi | —
+13:00 | Chỉ qua lại thôi | —
 13:01 | Ok không chị | —
 13:08 | Chị Hạnh kìa | —
 13:19 | Chị Hạnh | —
@@ -244,11 +244,11 @@ cues: 425/425 marked · rules: 207 · CODE: 196 · MISMATCH: 0 · NOT-IN-BOT: 11
 15:21 | hai cá là hai cái khác biệt mà anh chị thì bây giờ đang trích giờ bay đúng không Thì nó nằm | —
 15:28 | dưới đây cái cờ bay nằm dưới đây thì giờ trên đây có xe ba Ừ thì bây giờ nếu nếu như nó phát đầu trên | —
 15:34 | thì chẳng có gì để nói hết tại vì phát đầu trên thì tôi cứ bị tôi đánh lên tiếp Còn nếu như phát | —
-15:40 | Ví dụ nếu không có box InstaBar thì ngay chỗ này nó đang làm cái gì? | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 57)
-15:52 | Nếu không có box InstaBar thì mọi người nhìn theo một cách bình thường thôi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 57)
-15:58 | Thì lên tới trên đây mọi người thấy nó đang làm cái gì? | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 57)
-16:00 | Nó là Sell Trigger thôi, nó đâu có làm cái gì khác đâu, tụi nó cứ kéo cái cộng like lên trên đây | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 57)
-16:05 | Tại sao phải suy nghĩ là InstaBar nữa? | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 57)
+15:40 | Ví dụ nếu không có box InstaBar thì ngay chỗ này nó đang làm cái gì? | —
+15:52 | Nếu không có box InstaBar thì mọi người nhìn theo một cách bình thường thôi | —
+15:58 | Thì lên tới trên đây mọi người thấy nó đang làm cái gì? | —
+16:00 | Nó là Sell Trigger thôi, nó đâu có làm cái gì khác đâu, tụi nó cứ kéo cái cộng like lên trên đây | —
+16:05 | Tại sao phải suy nghĩ là InstaBar nữa? | —
 16:08 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 16:54 | Nếu về email 34, bật lên tạo bộ tên số 2 nó được | —
 16:57 | Nghe cái đó nghe một chừng từ từ mình học | —
@@ -257,17 +257,17 @@ cues: 425/425 marked · rules: 207 · CODE: 196 · MISMATCH: 0 · NOT-IN-BOT: 11
 17:07 | Sao | —
 17:07 | Nếu number nó bao chừng từ | —
 17:11 | Lỡ number nhiều inside bar | —
-17:20 | Xuyên qua xuyên lại thì buy sale trigger không valid | NOT-IN-BOT (row 58)
-17:22 | Thì chuyển qua khung 15 phút | NOT-IN-BOT (row 58)
-17:24 | Chọc chữ hoài trời | NOT-IN-BOT (row 58)
-17:34 | Thì chuyển qua khung 15 phút | NOT-IN-BOT (row 58)
-17:36 | Thì chuyển qua khung 15 phút không qua thì qua khung 30 phút | NOT-IN-BOT (row 58)
-17:42 | Hôm qua 30 phút | NOT-IN-BOT (row 58)
-17:44 | Hôm qua 40 | NOT-IN-BOT (row 58)
-17:46 | Thật là tức ghê | NOT-IN-BOT (row 58)
-17:48 | Qua khu 1 giờ, 4 giờ | NOT-IN-BOT (row 58)
-17:49 | Thật ra cả lâm luôn á | NOT-IN-BOT (row 58)
-17:52 | Nếu nến 5M nó bao nến | NOT-IN-BOT (row 58)
+17:20 | Xuyên qua xuyên lại thì buy sale trigger không valid | NOT-IN-BOT (row 54)
+17:22 | Thì chuyển qua khung 15 phút | NOT-IN-BOT (row 54)
+17:24 | Chọc chữ hoài trời | NOT-IN-BOT (row 54)
+17:34 | Thì chuyển qua khung 15 phút | NOT-IN-BOT (row 54)
+17:36 | Thì chuyển qua khung 15 phút không qua thì qua khung 30 phút | NOT-IN-BOT (row 54)
+17:42 | Hôm qua 30 phút | NOT-IN-BOT (row 54)
+17:44 | Hôm qua 40 | NOT-IN-BOT (row 54)
+17:46 | Thật là tức ghê | NOT-IN-BOT (row 54)
+17:48 | Qua khu 1 giờ, 4 giờ | NOT-IN-BOT (row 54)
+17:49 | Thật ra cả lâm luôn á | NOT-IN-BOT (row 54)
+17:52 | Nếu nến 5M nó bao nến | NOT-IN-BOT (row 54)
 18:00 | Trước đó như vậy thì vẽ light trigger như nào | —
 18:03 | Nến 5M nó bao nến | —
 18:05 | Là sao | —
@@ -335,39 +335,39 @@ cues: 425/425 marked · rules: 207 · CODE: 196 · MISMATCH: 0 · NOT-IN-BOT: 11
 20:36 | Dạ được | —
 20:37 | Dạ được | —
 20:39 | Dạ được | —
-20:51 | Thường đa số | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-20:54 | Rất nhiều lần | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-20:56 | Khi anh chị dẻ ra được cái đường light trigger | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-20:59 | Khi anh dẻ ra được cái đường light trigger | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:02 | Anh chị dẻ ra được cái đường light trigger | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:03 | Mọi người để ý | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:05 | Nếu như nó không cho lệnh anh chị vô | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:09 | Thì chắc chắn sứ hỏi nó quay về | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:11 | Nó test cái đường like trước giờ | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:12 | Nó như một cái level confirm | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:16 | Level confirm nha anh chị | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:19 | Level confirm có nghĩa là sao | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:20 | Là nó về ngay tới đường like đó | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:22 | Nó đóng ở trên đường like đó | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:23 | Anh chị có quyền bắt ngay tại đó | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:24 | Tại vì nó là confirm cuối cùng 5 phút | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:27 | Đang ngay đâu | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:32 | Ngay đây cái gì | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:34 | Thì lúc nào thường nó sẽ quay về | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:39 | Nó bắt test cái đường like này nè | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:41 | Đâu có đâu | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:42 | Nếu mà Trigger thì nó ngay chỗ này đầu tiên đúng không | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:45 | Nè | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:47 | Đúng | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:53 | Thường nó Trigger | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:54 | Cái đường live Trigger | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:55 | Đa số nó sẽ quay về nó bắt test cái đường live Trigger anh chị | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-21:59 | Bởi mọi người thấy nhiều lúc mà em đánh | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-22:02 | Em có đánh mà | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-22:03 | Em có đánh | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-22:03 | Em có đánh | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-22:06 | Lúc mà em live trade | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
-22:08 | Em có đánh đường live Trigger đó | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 59)
+20:51 | Thường đa số | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+20:54 | Rất nhiều lần | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+20:56 | Khi anh chị dẻ ra được cái đường light trigger | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+20:59 | Khi anh dẻ ra được cái đường light trigger | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+21:02 | Anh chị dẻ ra được cái đường light trigger | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+21:03 | Mọi người để ý | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+21:05 | Nếu như nó không cho lệnh anh chị vô | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+21:09 | Thì chắc chắn sứ hỏi nó quay về | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+21:11 | Nó test cái đường like trước giờ | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+21:12 | Nó như một cái level confirm | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+21:16 | Level confirm nha anh chị | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+21:19 | Level confirm có nghĩa là sao | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+21:20 | Là nó về ngay tới đường like đó | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+21:22 | Nó đóng ở trên đường like đó | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+21:23 | Anh chị có quyền bắt ngay tại đó | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+21:24 | Tại vì nó là confirm cuối cùng 5 phút | CODE kernel/mentor/eval.go:1193 [trigger_retest] (row 55)
+21:27 | Đang ngay đâu | —
+21:32 | Ngay đây cái gì | —
+21:34 | Thì lúc nào thường nó sẽ quay về | —
+21:39 | Nó bắt test cái đường like này nè | —
+21:41 | Đâu có đâu | —
+21:42 | Nếu mà Trigger thì nó ngay chỗ này đầu tiên đúng không | —
+21:45 | Nè | —
+21:47 | Đúng | —
+21:53 | Thường nó Trigger | —
+21:54 | Cái đường live Trigger | —
+21:55 | Đa số nó sẽ quay về nó bắt test cái đường live Trigger anh chị | —
+21:59 | Bởi mọi người thấy nhiều lúc mà em đánh | —
+22:02 | Em có đánh mà | —
+22:03 | Em có đánh | —
+22:03 | Em có đánh | —
+22:06 | Lúc mà em live trade | —
+22:08 | Em có đánh đường live Trigger đó | —
 22:10 | Nhà chị Hạnh ở đâu vậy | —
 22:20 | Chắc em qua tới nhà chị em kiếm chị luôn | —
 22:25 | Đã mới vừa nói tức thì | —

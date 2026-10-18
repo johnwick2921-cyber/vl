@@ -1,4 +1,4 @@
-cues: 317/317 marked · rules: 211 · CODE: 55 · MISMATCH: 16 · NOT-IN-BOT: 133 · OWNER-ORDER: 0 · COURSE-SPLIT: 7 · —: 106
+cues: 317/317 marked · rules: 47 · CODE: 4 · MISMATCH: 16 · NOT-IN-BOT: 20 · OWNER-ORDER: 0 · COURSE-SPLIT: 7 · —: 270
 00:00 | Ok, thì hôm nay là ngày thứ 3 của lớp ha, thì trước tiên em vẫn sẽ go over với anh chị một tí những cái gì mà mình đã học những 2 ngày trước ha, lúc nào cũng sẽ là như vậy ha, mình sẽ go over một tí, mình sẽ remind bản thân mình lại một tí, xong rồi mình mới bắt đầu mình đi tiếp cái kiến thức mới. | —
 00:18 | rồi | —
 00:23 | thì cái việc đầu tiên | —
@@ -9,24 +9,24 @@ cues: 317/317 marked · rules: 211 · CODE: 55 · MISMATCH: 16 · NOT-IN-BOT: 13
 00:31 | chỉ có đúng 3 setup thôi nha anh chị | NOT-IN-BOT (row 1)
 00:32 | mình sẽ không có bất kỳ | NOT-IN-BOT (row 1)
 00:34 | 1 cái setup thứ 4 nào hết | NOT-IN-BOT (row 1)
-00:35 | thì 3 cái setup của mình | NOT-IN-BOT (row 1)
-00:36 | nó sẽ | NOT-IN-BOT (row 1)
-00:37 | nó sẽ quay vòng | NOT-IN-BOT (row 1)
-00:38 | nó sẽ quay vòng | NOT-IN-BOT (row 1)
-00:39 | nó sẽ lúc nào nó cũng sẽ | NOT-IN-BOT (row 1)
-00:41 | hiện hữu | NOT-IN-BOT (row 1)
-00:42 | trong cái | NOT-IN-BOT (row 1)
-00:43 | cái chẹt hết | NOT-IN-BOT (row 1)
-00:43 | và | NOT-IN-BOT (row 1)
-00:45 | 3 cái setup của lớp mình | NOT-IN-BOT (row 1)
-00:47 | là nó lúc nào | NOT-IN-BOT (row 1)
-00:48 | nó | NOT-IN-BOT (row 1)
-00:49 | không phải lúc nào | NOT-IN-BOT (row 1)
-00:50 | mà cũng gọi là | NOT-IN-BOT (row 1)
-00:51 | Nó là cấu tạo của market | NOT-IN-BOT (row 1)
-00:54 | Nó là cấu tạo của market | NOT-IN-BOT (row 1)
-00:57 | Nó là cái cấu tạo | NOT-IN-BOT (row 1)
-00:59 | Tiêu chuẩn nhất | NOT-IN-BOT (row 1)
+00:35 | thì 3 cái setup của mình | —
+00:36 | nó sẽ | —
+00:37 | nó sẽ quay vòng | —
+00:38 | nó sẽ quay vòng | —
+00:39 | nó sẽ lúc nào nó cũng sẽ | —
+00:41 | hiện hữu | —
+00:42 | trong cái | —
+00:43 | cái chẹt hết | —
+00:43 | và | —
+00:45 | 3 cái setup của lớp mình | —
+00:47 | là nó lúc nào | —
+00:48 | nó | —
+00:49 | không phải lúc nào | —
+00:50 | mà cũng gọi là | —
+00:51 | Nó là cấu tạo của market | —
+00:54 | Nó là cấu tạo của market | —
+00:57 | Nó là cái cấu tạo | —
+00:59 | Tiêu chuẩn nhất | —
 01:00 | Của cái thị trường này | —
 01:02 | Là | —
 01:03 | Market nó lúc nào nó cũng sẽ tạo | NOT-IN-BOT (row 2)
@@ -43,57 +43,57 @@ cues: 317/317 marked · rules: 211 · CODE: 55 · MISMATCH: 16 · NOT-IN-BOT: 13
 01:37 | không biết chị hôm nay anh chị hồi nãy em mở chat lên em thấy cái lệnh Instaba đầu tiên trong ngày mở chuyện | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
 01:42 | có anh chị nào bắt không? | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
 01:45 | cái lệnh Instaba đầu tiên trong ngày có anh chị nào bắt không? | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-01:49 | Cái lệnh feel | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-01:51 | Em nghĩ rất nhiều người bắt | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-01:53 | Nếu mà anh chị thật sự | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-01:54 | Anh chị có mở máy lên | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-01:54 | Anh chị cho anh ngay thời điểm đó | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-01:55 | Rất dễ thấy | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-01:57 | Em không biết có ai bắt không ha | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-01:59 | Em không biết là có ai bắt không | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:00 | Để em coi coi | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:01 | Đứng yên | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:04 | Dưới đây | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:07 | Quên | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:07 | Rất | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:08 | Nè | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:08 | Rồi | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:09 | Ok | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:10 | Nhìn thẳng trên chẹt nè | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:12 | Đúng không | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:12 | Cái lệnh Instagram | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:13 | Nó feel đầu tiên trong ngày | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:15 | Là lệnh nào anh chị | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:15 | Là lệnh này | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:16 | Một cái lệnh này thôi | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:19 | Là anh chị đã xong ngày rồi | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:20 | Hoặc | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:21 | Anh chị nào không thấy | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:22 | Bắt được trên đây | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:23 | Bắt ngay cái lệnh này | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:24 | Là anh chị xong ngày rồi | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:26 | Đúng không | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:28 | Có anh chị nào bắt không | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:29 | Một lệnh này thôi | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:30 | Nhiều 30 điểm | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:31 | 35 điểm | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:31 | Đúng không | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:37 | Ủa mọi người có anh chị nào bắt không | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:40 | Không | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:55 | Kỳ vậy | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:56 | Chiều mở máy lên không bắt hả | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-02:58 | Chiều mở máy luôn hả | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-03:10 | Ok | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-03:10 | Không sao | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-03:11 | Nhưng mà mọi người thấy được | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-03:12 | Các bản là mọi người thấy được | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-03:14 | Cái sự | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-03:14 | Cái sự lợi hại | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-03:17 | Của nó đúng không | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-03:17 | Một lệnh | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-03:19 | Hai lệnh trong ngày | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-03:20 | Thế là mọi người đã xong rồi | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
-03:20 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | CODE kernel/mentor/isb.go:72 [isb_stop_limit] (row 3)
+01:49 | Cái lệnh feel | —
+01:51 | Em nghĩ rất nhiều người bắt | —
+01:53 | Nếu mà anh chị thật sự | —
+01:54 | Anh chị có mở máy lên | —
+01:54 | Anh chị cho anh ngay thời điểm đó | —
+01:55 | Rất dễ thấy | —
+01:57 | Em không biết có ai bắt không ha | —
+01:59 | Em không biết là có ai bắt không | —
+02:00 | Để em coi coi | —
+02:01 | Đứng yên | —
+02:04 | Dưới đây | —
+02:07 | Quên | —
+02:07 | Rất | —
+02:08 | Nè | —
+02:08 | Rồi | —
+02:09 | Ok | —
+02:10 | Nhìn thẳng trên chẹt nè | —
+02:12 | Đúng không | —
+02:12 | Cái lệnh Instagram | —
+02:13 | Nó feel đầu tiên trong ngày | —
+02:15 | Là lệnh nào anh chị | —
+02:15 | Là lệnh này | —
+02:16 | Một cái lệnh này thôi | —
+02:19 | Là anh chị đã xong ngày rồi | —
+02:20 | Hoặc | —
+02:21 | Anh chị nào không thấy | —
+02:22 | Bắt được trên đây | —
+02:23 | Bắt ngay cái lệnh này | —
+02:24 | Là anh chị xong ngày rồi | —
+02:26 | Đúng không | —
+02:28 | Có anh chị nào bắt không | —
+02:29 | Một lệnh này thôi | —
+02:30 | Nhiều 30 điểm | —
+02:31 | 35 điểm | —
+02:31 | Đúng không | —
+02:37 | Ủa mọi người có anh chị nào bắt không | —
+02:40 | Không | —
+02:55 | Kỳ vậy | —
+02:56 | Chiều mở máy lên không bắt hả | —
+02:58 | Chiều mở máy luôn hả | —
+03:10 | Ok | —
+03:10 | Không sao | —
+03:11 | Nhưng mà mọi người thấy được | —
+03:12 | Các bản là mọi người thấy được | —
+03:14 | Cái sự | —
+03:14 | Cái sự lợi hại | —
+03:17 | Của nó đúng không | —
+03:17 | Một lệnh | —
+03:19 | Hai lệnh trong ngày | —
+03:20 | Thế là mọi người đã xong rồi | —
+03:20 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 03:50 | Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
 04:22 | Những lệnh INSABA nó không fill | COURSE-SPLIT (row 4)
 04:25 | Cancel đúng không | COURSE-SPLIT (row 4)
@@ -107,24 +107,24 @@ cues: 317/317 marked · rules: 211 · CODE: 55 · MISMATCH: 16 · NOT-IN-BOT: 13
 04:42 | INSABA ngay chỗ này cũng ăn | —
 04:43 | INSABA nhỏ xíu này cũng ăn | —
 04:44 | Căn bản ra | —
-04:50 | Mọi người trade | NOT-IN-BOT (row 5)
-04:51 | Chỉ với INSABA thôi | NOT-IN-BOT (row 5)
-04:53 | mọi người đã tăng cái win rate của anh chị lên rồi | NOT-IN-BOT (row 5)
-04:56 | tăng cái win rate của anh chị lên | NOT-IN-BOT (row 5)
-04:58 | tăng cái risk score của anh chị lên | NOT-IN-BOT (row 5)
-05:00 | không phải vì setup Insaba | NOT-IN-BOT (row 5)
-05:01 | mà là vì anh chị có được | NOT-IN-BOT (row 5)
-05:04 | điểm entry stop loss và target rõ ràng | NOT-IN-BOT (row 5)
-05:06 | chứ Insaba nó chả là gì hết | NOT-IN-BOT (row 5)
-05:10 | Insaba nó chỉ là 1 cái nánh rank thôi | NOT-IN-BOT (row 5)
-05:12 | Insaba nó chỉ là 1 cái nánh rank thôi | NOT-IN-BOT (row 5)
+04:50 | Mọi người trade | —
+04:51 | Chỉ với INSABA thôi | —
+04:53 | mọi người đã tăng cái win rate của anh chị lên rồi | —
+04:56 | tăng cái win rate của anh chị lên | —
+04:58 | tăng cái risk score của anh chị lên | —
+05:00 | không phải vì setup Insaba | —
+05:01 | mà là vì anh chị có được | —
+05:04 | điểm entry stop loss và target rõ ràng | —
+05:06 | chứ Insaba nó chả là gì hết | —
+05:10 | Insaba nó chỉ là 1 cái nánh rank thôi | —
+05:12 | Insaba nó chỉ là 1 cái nánh rank thôi | —
 05:17 | vậy ok ha | —
-05:19 | rồi setup tiếp theo của lớp | NOT-IN-BOT (row 1)
-05:21 | 2 cái setup kế tiếp | NOT-IN-BOT (row 1)
-05:23 | là Potential High và Low | NOT-IN-BOT (row 1)
-05:25 | này mình ghi lại ha | NOT-IN-BOT (row 1)
-05:26 | hình xe 3, rồi potential 2 low | NOT-IN-BOT (row 1)
-05:28 | và potential low 2 | NOT-IN-BOT (row 1)
+05:19 | rồi setup tiếp theo của lớp | —
+05:21 | 2 cái setup kế tiếp | —
+05:23 | là Potential High và Low | —
+05:25 | này mình ghi lại ha | —
+05:26 | hình xe 3, rồi potential 2 low | —
+05:28 | và potential low 2 | —
 05:29 | rồi, ngay đây | —
 05:33 | là đang trong một xu hướng giảm | —
 05:38 | cái chỗ này mặc dù nó có hơi khó nhìn một tí | —
@@ -152,25 +152,25 @@ cues: 317/317 marked · rules: 211 · CODE: 55 · MISMATCH: 16 · NOT-IN-BOT: 13
 06:25 | Còn ngay chỗ này tại sao anh chị sẽ không nhìn thấy được | —
 06:27 | lý do | —
 06:28 | mọi người nên nhớ vậy nè | —
-06:31 | gap | NOT-IN-BOT (row 6)
-06:34 | nó sẽ có 2 phần | NOT-IN-BOT (row 6)
-06:37 | kiến thức này sẽ là kiến thức mới | NOT-IN-BOT (row 6)
-06:41 | kiến thức này sẽ là kiến thức mới | NOT-IN-BOT (row 6)
-06:44 | em chưa bao giờ hướng dẫn trong lớp | NOT-IN-BOT (row 6)
-06:45 | về gap | NOT-IN-BOT (row 6)
-06:47 | những cái gap như thế này | NOT-IN-BOT (row 6)
-06:49 | gọi là gap | NOT-IN-BOT (row 6)
-06:50 | gap là như thế nào | NOT-IN-BOT (row 6)
-06:51 | nó sẽ là | NOT-IN-BOT (row 6)
-06:53 | nó gớt 1 cái 1 | NOT-IN-BOT (row 6)
-06:56 | và nó không có 1 cái nến nào | NOT-IN-BOT (row 6)
-06:59 | lúc nào nó ở giữa hết lúc nào nó nó cũng sen sen kẽ nhau và nó sẽ dính nhau còn gáp là nó sẽ làm | NOT-IN-BOT (row 6)
-07:06 | cái khoảng không như thế này rồi gáp không bắt buộc lúc nào cũng phải phiên lập tức đây sẽ là | NOT-IN-BOT (row 6)
-07:17 | kết thúc mới ở những lúc những anh chị nào đã từng trai buổi học lúc trước nhưng chị đã từng trai lúc | NOT-IN-BOT (row 6)
-07:25 | mọi người để ý là gáp lúc nào cũng sẽ nói nó rớt ghép lại anh chị nghĩ là ngày hôm đó nó sẽ nó sẽ | NOT-IN-BOT (row 6)
-07:31 | phiêu liền nhưng không em mới tìm ra và em mới ngộ ra được một điều là ghép không phải lúc nào cũng | NOT-IN-BOT (row 6)
-07:41 | sẽ phiêu liền ngay lập tức mà ghép nó có thể đợi từ vài ngày hoặc là vài tuần nó mới phim tiếp tục | NOT-IN-BOT (row 6)
-07:49 | tiếp tục khi anh chị đã thấy được cái ghép khi mọi người dễ cho mình không vậy cô vợ từ đâu | NOT-IN-BOT (row 6)
+06:31 | gap | —
+06:34 | nó sẽ có 2 phần | —
+06:37 | kiến thức này sẽ là kiến thức mới | —
+06:41 | kiến thức này sẽ là kiến thức mới | —
+06:44 | em chưa bao giờ hướng dẫn trong lớp | —
+06:45 | về gap | —
+06:47 | những cái gap như thế này | —
+06:49 | gọi là gap | —
+06:50 | gap là như thế nào | —
+06:51 | nó sẽ là | —
+06:53 | nó gớt 1 cái 1 | —
+06:56 | và nó không có 1 cái nến nào | —
+06:59 | lúc nào nó ở giữa hết lúc nào nó nó cũng sen sen kẽ nhau và nó sẽ dính nhau còn gáp là nó sẽ làm | —
+07:06 | cái khoảng không như thế này rồi gáp không bắt buộc lúc nào cũng phải phiên lập tức đây sẽ là | —
+07:17 | kết thúc mới ở những lúc những anh chị nào đã từng trai buổi học lúc trước nhưng chị đã từng trai lúc | —
+07:25 | mọi người để ý là gáp lúc nào cũng sẽ nói nó rớt ghép lại anh chị nghĩ là ngày hôm đó nó sẽ nó sẽ | —
+07:31 | phiêu liền nhưng không em mới tìm ra và em mới ngộ ra được một điều là ghép không phải lúc nào cũng | —
+07:41 | sẽ phiêu liền ngay lập tức mà ghép nó có thể đợi từ vài ngày hoặc là vài tuần nó mới phim tiếp tục | —
+07:49 | tiếp tục khi anh chị đã thấy được cái ghép khi mọi người dễ cho mình không vậy cô vợ từ đâu | —
 08:02 | khi cô vợ từ cây nến ở trên và cái đấy nó ở trên và cái đỉnh lên dưới dễ xong được | —
 08:10 | không phải đại chung chung mua được không có nhất thiết loại giống số đâu rồi ok khi mắc kẹt bắt | —
 08:19 | đầu open lúc nào vậy à Khi mà cạch bắt đầu open nó sẽ có hai trường hợp nó sẽ có hai trường hợp | —
@@ -182,48 +182,48 @@ cues: 317/317 marked · rules: 211 · CODE: 55 · MISMATCH: 16 · NOT-IN-BOT: 13
 09:17 | Ừ anh chị đang chơi đó kể cho loại dùm xíu rất gấp trên like đi đánh đánh các outline đi đánh | —
 09:23 | rồi ok nó sẽ chạy nó sẽ làm cái dùng ranking ở bên trong cái gáp và lên hay xuống mình không | —
 09:32 | biết đây từ khúc này tới lúc này nó là hai dùng Ừ nó phải thoát được cái dùng này nó mới lên trên | —
-09:41 | Thì cái cạnh dưới của cái gap | NOT-IN-BOT (row 7)
-09:43 | Lúc nào nó cũng sẽ là resistance | NOT-IN-BOT (row 7)
-09:46 | Tại vì sao | NOT-IN-BOT (row 7)
-09:47 | Nó nằm dưới level | NOT-IN-BOT (row 7)
-09:49 | Level là resistance | NOT-IN-BOT (row 7)
-09:50 | Đúng không | NOT-IN-BOT (row 7)
-09:51 | Nó sẽ lên | NOT-IN-BOT (row 7)
-09:57 | Nó đụng cái gap | NOT-IN-BOT (row 7)
-09:58 | Và nó sẽ xuất hiện trường hợp thứ 2 | NOT-IN-BOT (row 7)
-10:02 | Là cái trường hợp | NOT-IN-BOT (row 7)
-10:04 | Mà nó đụng resistance | NOT-IN-BOT (row 7)
-10:07 | Nó rớt ngược lại | NOT-IN-BOT (row 7)
-10:08 | Và nó không chui được cái gap | NOT-IN-BOT (row 7)
-10:09 | Là trường hợp thứ 2 | NOT-IN-BOT (row 7)
+09:41 | Thì cái cạnh dưới của cái gap | —
+09:43 | Lúc nào nó cũng sẽ là resistance | —
+09:46 | Tại vì sao | —
+09:47 | Nó nằm dưới level | —
+09:49 | Level là resistance | —
+09:50 | Đúng không | —
+09:51 | Nó sẽ lên | —
+09:57 | Nó đụng cái gap | —
+09:58 | Và nó sẽ xuất hiện trường hợp thứ 2 | —
+10:02 | Là cái trường hợp | —
+10:04 | Mà nó đụng resistance | —
+10:07 | Nó rớt ngược lại | —
+10:08 | Và nó không chui được cái gap | —
+10:09 | Là trường hợp thứ 2 | —
 10:11 | Là trường hợp thứ 2 | —
 10:19 | Rồi trường hợp thứ 3 | —
-10:22 | Ít anh chị nào để ý | NOT-IN-BOT (row 8)
-10:24 | Thường | NOT-IN-BOT (row 8)
-10:27 | Nó fill cái gap xong | NOT-IN-BOT (row 8)
-10:30 | Không bắt buộc là nó phải fill lên tới trên này | NOT-IN-BOT (row 8)
-10:32 | Không bắt buộc là nó phải fill lên tới trên này | NOT-IN-BOT (row 8)
-10:36 | Nó sẽ fill nửa gap | NOT-IN-BOT (row 8)
-10:37 | Nửa gap | NOT-IN-BOT (row 8)
-10:41 | Là phần nửa nè | NOT-IN-BOT (row 8)
-10:42 | Nhìn mắt thường thôi mình chia đôi ra thôi | NOT-IN-BOT (row 8)
-10:46 | Nửa gap | NOT-IN-BOT (row 8)
-10:48 | Hoặc là | NOT-IN-BOT (row 8)
-10:50 | 2 phần 3 cái gáp | NOT-IN-BOT (row 8)
-10:53 | Nó không fill nữa | NOT-IN-BOT (row 8)
-10:55 | Vẫn được coi là valid nhanh chị | NOT-IN-BOT (row 8)
-10:58 | Không bắt buộc là phải fill hết cái gáp nha | NOT-IN-BOT (row 8)
-11:01 | À không bắt buộc phải fill hết cái gáp nha | NOT-IN-BOT (row 8)
-11:04 | Vẫn được coi là valid | NOT-IN-BOT (row 8)
-11:08 | Nhớ nha | NOT-IN-BOT (row 8)
+10:22 | Ít anh chị nào để ý | —
+10:24 | Thường | —
+10:27 | Nó fill cái gap xong | —
+10:30 | Không bắt buộc là nó phải fill lên tới trên này | —
+10:32 | Không bắt buộc là nó phải fill lên tới trên này | —
+10:36 | Nó sẽ fill nửa gap | —
+10:37 | Nửa gap | —
+10:41 | Là phần nửa nè | —
+10:42 | Nhìn mắt thường thôi mình chia đôi ra thôi | —
+10:46 | Nửa gap | —
+10:48 | Hoặc là | —
+10:50 | 2 phần 3 cái gáp | —
+10:53 | Nó không fill nữa | —
+10:55 | Vẫn được coi là valid nhanh chị | —
+10:58 | Không bắt buộc là phải fill hết cái gáp nha | —
+11:01 | À không bắt buộc phải fill hết cái gáp nha | —
+11:04 | Vẫn được coi là valid | —
+11:08 | Nhớ nha | —
 11:09 | Cái này là | —
 11:10 | Ngoài lề | —
 11:11 | Kinh thức ngoài lề | —
-11:12 | Em thì em không | —
-11:13 | Em không chú trọng gáp cho lắm | —
-11:14 | Tại vì em không có đánh theo gáp | —
-11:17 | Đánh theo gáp xíu hồi là | —
-11:18 | Lên dĩa luôn á | —
+11:12 | Em thì em không | NOT-IN-BOT (row 5)
+11:13 | Em không chú trọng gáp cho lắm | NOT-IN-BOT (row 5)
+11:14 | Tại vì em không có đánh theo gáp | NOT-IN-BOT (row 5)
+11:17 | Đánh theo gáp xíu hồi là | NOT-IN-BOT (row 5)
+11:18 | Lên dĩa luôn á | NOT-IN-BOT (row 5)
 11:20 | Nhưng mà cái này là | —
 11:21 | Có thì em mới nói | —
 11:23 | cho anh chị biết | —
@@ -234,38 +234,38 @@ cues: 317/317 marked · rules: 211 · CODE: 55 · MISMATCH: 16 · NOT-IN-BOT: 13
 11:28 | hư hào gì | —
 11:30 | rồi | —
 11:32 | quay trở lại | —
-11:34 | potential low 2 | NOT-IN-BOT (row 9)
-11:35 | đa số lần | NOT-IN-BOT (row 9)
-11:37 | khi mà nó tạo cái gap | NOT-IN-BOT (row 9)
-11:38 | nó tạo cái low như này | NOT-IN-BOT (row 9)
-11:39 | anh chị lúc nào | NOT-IN-BOT (row 9)
-11:40 | cũng phải lấy cái low này | NOT-IN-BOT (row 9)
-11:41 | làm chững | NOT-IN-BOT (row 9)
-11:42 | và anh chị đo | NOT-IN-BOT (row 9)
-11:42 | anh chị đánh | NOT-IN-BOT (row 9)
-11:43 | potential low 2 | NOT-IN-BOT (row 9)
-11:44 | nghe là sao | NOT-IN-BOT (row 9)
-11:46 | anh chị phải lấy cái low này | NOT-IN-BOT (row 9)
-11:47 | làm chững nè | NOT-IN-BOT (row 9)
-11:48 | thì muốn | NOT-IN-BOT (row 9)
-11:49 | làm một lệnh potential low 2 | NOT-IN-BOT (row 9)
-11:51 | thì bắt buộc | NOT-IN-BOT (row 9)
-11:52 | Mọi người gì | NOT-IN-BOT (row 9)
-11:53 | Nó phải lên gần tới cái chỗ này | NOT-IN-BOT (row 9)
-11:55 | Mọi người phải đánh lùa 2 đối chiếu với cái đỉnh này đúng không | NOT-IN-BOT (row 9)
-11:58 | Nghe chỗ này nó rất khó cho anh chị nhìn | NOT-IN-BOT (row 9)
-12:01 | Nhưng mà đây là kinh nghiệm thực chiến này | NOT-IN-BOT (row 9)
-12:02 | Khi nó tạo | NOT-IN-BOT (row 9)
-12:04 | Một cái gap | NOT-IN-BOT (row 9)
-12:05 | Và nó là không bây giờ nó không phải nói gap luôn đi | NOT-IN-BOT (row 9)
-12:08 | Nhưng anh chị nhìn thật sự ra | NOT-IN-BOT (row 9)
-12:10 | Nó không có tầm cái đỉnh nào rõ ràng như chỗ này hết | NOT-IN-BOT (row 9)
-12:12 | Tại vì đây là mới lúc open | NOT-IN-BOT (row 9)
-12:13 | Đây là mới lúc open | NOT-IN-BOT (row 9)
-12:15 | Thì | NOT-IN-BOT (row 9)
-12:19 | Mọi người để ý nè | NOT-IN-BOT (row 9)
-12:21 | Cái này nó sẽ là cái đỉnh | NOT-IN-BOT (row 9)
-12:23 | cái cái râu này nó sẽ là cái đỉnh và nếu như anh chị muốn đánh một lệnh bộ tên solo hai ngày từ | NOT-IN-BOT (row 9)
+11:34 | potential low 2 | —
+11:35 | đa số lần | —
+11:37 | khi mà nó tạo cái gap | —
+11:38 | nó tạo cái low như này | —
+11:39 | anh chị lúc nào | —
+11:40 | cũng phải lấy cái low này | —
+11:41 | làm chững | —
+11:42 | và anh chị đo | —
+11:42 | anh chị đánh | —
+11:43 | potential low 2 | —
+11:44 | nghe là sao | —
+11:46 | anh chị phải lấy cái low này | —
+11:47 | làm chững nè | —
+11:48 | thì muốn | —
+11:49 | làm một lệnh potential low 2 | —
+11:51 | thì bắt buộc | —
+11:52 | Mọi người gì | —
+11:53 | Nó phải lên gần tới cái chỗ này | —
+11:55 | Mọi người phải đánh lùa 2 đối chiếu với cái đỉnh này đúng không | —
+11:58 | Nghe chỗ này nó rất khó cho anh chị nhìn | —
+12:01 | Nhưng mà đây là kinh nghiệm thực chiến này | —
+12:02 | Khi nó tạo | —
+12:04 | Một cái gap | —
+12:05 | Và nó là không bây giờ nó không phải nói gap luôn đi | —
+12:08 | Nhưng anh chị nhìn thật sự ra | —
+12:10 | Nó không có tầm cái đỉnh nào rõ ràng như chỗ này hết | —
+12:12 | Tại vì đây là mới lúc open | —
+12:13 | Đây là mới lúc open | —
+12:15 | Thì | —
+12:19 | Mọi người để ý nè | —
+12:21 | Cái này nó sẽ là cái đỉnh | —
+12:23 | cái cái râu này nó sẽ là cái đỉnh và nếu như anh chị muốn đánh một lệnh bộ tên solo hai ngày từ | —
 12:30 | nay cho này vì mọi người thấy nó rớt kiểu này là chỉ có đang xuống giảm thôi không thể nào xuống | —
 12:34 | tăng được hết ha thì rớt mọi người phải đợi lên tới gần trên đây đương nhiên đương nhiên là sẽ | —
 12:47 | có lệnh thua chắc chắn rồi thắng thua chuyện bình thường không gì hết đương nhiên anh chị sẽ có lệnh | —
@@ -277,34 +277,34 @@ cues: 317/317 marked · rules: 211 · CODE: 55 · MISMATCH: 16 · NOT-IN-BOT: 13
 13:25 | Đúng không | —
 13:25 | Nó phim cái này xong dựt ngược râu lên quét em | —
 13:27 | Đây là cách của em | —
-13:30 | Khi mà anh chị thấy | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-13:32 | Nó bắt đầu nó phim râu ẩu như vậy | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-13:35 | Nó quét râu ẩu như vậy | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-13:36 | Làm ơn | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-13:37 | Chuyển qua khung giờ 2 phút | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-13:39 | Nó sẽ clear rất là nhiều | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-13:41 | Khi anh chị bị quét 1 lệnh | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-13:48 | Mà nó dựt cái râu như vậy | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-13:51 | Để nó phim lại anh chị | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-13:52 | Xong nó quét anh chị | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-13:53 | Thì làm ơn | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-13:55 | Chuyển qua khung giờ 2 phút | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-13:57 | Mọi người đang train 1 phút | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-13:59 | Mọi người train không được | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-14:00 | Mọi người chuyển qua khung giờ 2 phút | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
-14:01 | Nó sẽ rất clear | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 10)
+13:30 | Khi mà anh chị thấy | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+13:32 | Nó bắt đầu nó phim râu ẩu như vậy | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+13:35 | Nó quét râu ẩu như vậy | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+13:36 | Làm ơn | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+13:37 | Chuyển qua khung giờ 2 phút | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+13:39 | Nó sẽ clear rất là nhiều | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+13:41 | Khi anh chị bị quét 1 lệnh | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+13:48 | Mà nó dựt cái râu như vậy | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+13:51 | Để nó phim lại anh chị | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+13:52 | Xong nó quét anh chị | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+13:53 | Thì làm ơn | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+13:55 | Chuyển qua khung giờ 2 phút | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+13:57 | Mọi người đang train 1 phút | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+13:59 | Mọi người train không được | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+14:00 | Mọi người chuyển qua khung giờ 2 phút | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
+14:01 | Nó sẽ rất clear | MISMATCH kernel/mentor/eval.go:1581 [exec_2m_after_30m] (row 6)
 14:04 | Nhưng | —
 14:07 | Khung giờ 2 phút | —
 14:10 | Đồng thời nó sẽ bị kéo theo cái việc gì | —
 14:12 | Cái hệ lựa gì | —
 14:12 | Là khi anh chị | —
 14:15 | Vô lệnh | —
-14:18 | Khung 2 phút | NOT-IN-BOT (row 11)
-14:20 | Stop loss lớn hơn khung 1 phút | NOT-IN-BOT (row 11)
-14:23 | Thì bây giờ stop loss lớn | NOT-IN-BOT (row 11)
-14:25 | Mình phải làm gì mọi người | NOT-IN-BOT (row 11)
-14:26 | hơn anh chị sắp lên lớn hơn không một phút mình phải làm gì mình phải giảm size dừng lại đô mình | NOT-IN-BOT (row 11)
-14:38 | phải giảm sai lại nhưng nhớ đây là một cái trick mà em bản thân em trai em có rất nhiều trip em có | NOT-IN-BOT (row 11)
+14:18 | Khung 2 phút | NOT-IN-BOT (row 7)
+14:20 | Stop loss lớn hơn khung 1 phút | NOT-IN-BOT (row 7)
+14:23 | Thì bây giờ stop loss lớn | NOT-IN-BOT (row 7)
+14:25 | Mình phải làm gì mọi người | NOT-IN-BOT (row 7)
+14:26 | hơn anh chị sắp lên lớn hơn không một phút mình phải làm gì mình phải giảm size dừng lại đô mình | NOT-IN-BOT (row 7)
+14:38 | phải giảm sai lại nhưng nhớ đây là một cái trick mà em bản thân em trai em có rất nhiều trip em có | NOT-IN-BOT (row 7)
 14:47 | rất nhiều cách để em đối phó với mắt kẹt anh không phải là tài đạo như là cái nhưng mà gọi là chuyển | —
 14:53 | cái những cái kỹ năng bản thân hay những kỹ năng của bản thân em châu dọa suốt sáu mươi năm anh | —
 14:58 | thì cái không hai phút là gì đổi qua không hai phút thì nó vẫn là về vấn đề mua cho em nhưng | —

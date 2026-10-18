@@ -1,18 +1,18 @@
-cues: 463/463 marked · rules: 191 · CODE: 142 · MISMATCH: 0 · NOT-IN-BOT: 49 · OWNER-ORDER: 0 · COURSE-SPLIT: 0 · —: 272
-00:00 | Tiếp theo thì ngoài 3 cái setup của lớp mình ra, ngoài 3 setup của lớp mình ra thì tất cả những thứ mình được học tiếp theo sau đây nó đều là những thứ được bổ trợ cho cách trade của mình. | NOT-IN-BOT (row 12)
-00:17 | Setup | NOT-IN-BOT (row 12)
-00:19 | Mình chỉ có tổng cộng 3 setup thôi anh chị | NOT-IN-BOT (row 12)
-00:21 | Mình không có setup thứ 4 | NOT-IN-BOT (row 12)
-00:22 | Và | NOT-IN-BOT (row 12)
-00:24 | Và | NOT-IN-BOT (row 12)
-00:27 | Những thứ mình học như chẳng hạn như trendline | NOT-IN-BOT (row 12)
-00:30 | Như hôm qua mình học trendline đúng không | NOT-IN-BOT (row 12)
-00:32 | Thì cũng như trendline | NOT-IN-BOT (row 12)
-00:34 | Thì những thứ mình học tiếp theo | NOT-IN-BOT (row 12)
-00:35 | Nó sẽ là những thứ rất rất cần thiết | NOT-IN-BOT (row 12)
-00:38 | Bổ trợ cho cách trade của mình | NOT-IN-BOT (row 12)
-00:39 | Rất rất rất cần thiết | NOT-IN-BOT (row 12)
-00:43 | Bổ trợ cho cách trade của mình | NOT-IN-BOT (row 12)
+cues: 463/463 marked · rules: 93 · CODE: 87 · MISMATCH: 0 · NOT-IN-BOT: 6 · OWNER-ORDER: 0 · COURSE-SPLIT: 0 · —: 370
+00:00 | Tiếp theo thì ngoài 3 cái setup của lớp mình ra, ngoài 3 setup của lớp mình ra thì tất cả những thứ mình được học tiếp theo sau đây nó đều là những thứ được bổ trợ cho cách trade của mình. | —
+00:17 | Setup | —
+00:19 | Mình chỉ có tổng cộng 3 setup thôi anh chị | —
+00:21 | Mình không có setup thứ 4 | —
+00:22 | Và | —
+00:24 | Và | —
+00:27 | Những thứ mình học như chẳng hạn như trendline | —
+00:30 | Như hôm qua mình học trendline đúng không | —
+00:32 | Thì cũng như trendline | —
+00:34 | Thì những thứ mình học tiếp theo | —
+00:35 | Nó sẽ là những thứ rất rất cần thiết | —
+00:38 | Bổ trợ cho cách trade của mình | —
+00:39 | Rất rất rất cần thiết | —
+00:43 | Bổ trợ cho cách trade của mình | —
 00:45 | Rồi | —
 00:47 | Tiếp tục | —
 00:53 | Cái tiếp theo là gì | —
@@ -88,42 +88,42 @@ cues: 463/463 marked · rules: 191 · CODE: 142 · MISMATCH: 0 · NOT-IN-BOT: 49
 03:16 | Nó quan trọng như thế nào | —
 03:17 | Mọi người sẽ được biết ngay tại thời điểm hiện tại | —
 03:20 | Rồi | —
-03:21 | Failure to go higher | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:24 | Là một dùng | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:26 | Zone | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:27 | Được cấu tạo bởi | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:30 | Hai đỉnh trở lên | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:31 | là bắt đầu 2 đỉnh | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:34 | mình là mình có quyền dễ rồi | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:35 | bắt đầu từ 2 đỉnh là mình có quyền dễ rồi | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:38 | và mình dễ như thế nào | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:39 | rồi nó lên ngay chỗ này | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:47 | thì nó đã tạo cái đỉnh ngay chỗ này rồi đúng không | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:48 | rồi cái thứ 2 | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:50 | là tạo lên đây | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:53 | là tạo cái thứ 2 | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:55 | đúng không | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:56 | mình sẽ lấy cái râu cao nhất | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-03:59 | của cái đỉnh 1 | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-04:00 | vẽ xuống cái thân gần nhất của cái đỉnh 2 | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-04:06 | hát lại | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-04:08 | Mình sẽ lấy cái râu cao nhất của cái đỉnh 1 | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-04:10 | Vẽ xuống cái thân gần nhất | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-04:13 | Của cái đỉnh 2 | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-04:14 | Rồi tiếp tục sau đó mình cứ kéo dài nó ra | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-04:17 | Anh chị extend right cho em nha | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-04:19 | Những cái box này nè | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-04:20 | Mọi người lúc nào cũng phải chỉnh vô setting | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-04:22 | Extend right cho em | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
-04:23 | Extend right cho em | CODE kernel/mentor/box.go:315 [ftgh_key] (row 13)
+03:21 | Failure to go higher | CODE kernel/mentor/box.go:315 [ftgh_key] (row 8)
+03:24 | Là một dùng | CODE kernel/mentor/box.go:315 [ftgh_key] (row 8)
+03:26 | Zone | CODE kernel/mentor/box.go:315 [ftgh_key] (row 8)
+03:27 | Được cấu tạo bởi | CODE kernel/mentor/box.go:315 [ftgh_key] (row 8)
+03:30 | Hai đỉnh trở lên | CODE kernel/mentor/box.go:315 [ftgh_key] (row 8)
+03:31 | là bắt đầu 2 đỉnh | CODE kernel/mentor/box.go:315 [ftgh_key] (row 8)
+03:34 | mình là mình có quyền dễ rồi | CODE kernel/mentor/box.go:315 [ftgh_key] (row 8)
+03:35 | bắt đầu từ 2 đỉnh là mình có quyền dễ rồi | CODE kernel/mentor/box.go:315 [ftgh_key] (row 8)
+03:38 | và mình dễ như thế nào | —
+03:39 | rồi nó lên ngay chỗ này | —
+03:47 | thì nó đã tạo cái đỉnh ngay chỗ này rồi đúng không | —
+03:48 | rồi cái thứ 2 | —
+03:50 | là tạo lên đây | —
+03:53 | là tạo cái thứ 2 | —
+03:55 | đúng không | —
+03:56 | mình sẽ lấy cái râu cao nhất | CODE kernel/mentor/box.go:315 [ftgh_key] (row 9)
+03:59 | của cái đỉnh 1 | CODE kernel/mentor/box.go:315 [ftgh_key] (row 9)
+04:00 | vẽ xuống cái thân gần nhất của cái đỉnh 2 | CODE kernel/mentor/box.go:315 [ftgh_key] (row 9)
+04:06 | hát lại | CODE kernel/mentor/box.go:315 [ftgh_key] (row 9)
+04:08 | Mình sẽ lấy cái râu cao nhất của cái đỉnh 1 | CODE kernel/mentor/box.go:315 [ftgh_key] (row 9)
+04:10 | Vẽ xuống cái thân gần nhất | CODE kernel/mentor/box.go:315 [ftgh_key] (row 9)
+04:13 | Của cái đỉnh 2 | CODE kernel/mentor/box.go:315 [ftgh_key] (row 9)
+04:14 | Rồi tiếp tục sau đó mình cứ kéo dài nó ra | CODE kernel/mentor/box.go:315 [ftgh_key] (row 9)
+04:17 | Anh chị extend right cho em nha | CODE kernel/mentor/box.go:315 [ftgh_key] (row 9)
+04:19 | Những cái box này nè | CODE kernel/mentor/box.go:315 [ftgh_key] (row 9)
+04:20 | Mọi người lúc nào cũng phải chỉnh vô setting | CODE kernel/mentor/box.go:315 [ftgh_key] (row 9)
+04:22 | Extend right cho em | CODE kernel/mentor/box.go:315 [ftgh_key] (row 9)
+04:23 | Extend right cho em | CODE kernel/mentor/box.go:315 [ftgh_key] (row 9)
 04:25 | Vậy bây giờ em hỏi mọi người nè | —
-04:29 | Nó lên lại cái box này lần thứ 3 | CODE kernel/mentor/box_trade.go:212 [box_return] (row 14)
-04:31 | Anh chị làm gì | CODE kernel/mentor/box_trade.go:212 [box_return] (row 14)
-04:32 | Anh chị cắn đánh xuống | CODE kernel/mentor/box_trade.go:212 [box_return] (row 14)
-04:44 | Đụng resistance cắn đánh xuống | CODE kernel/mentor/box_trade.go:212 [box_return] (row 14)
-04:51 | Đúng không | CODE kernel/mentor/box_trade.go:212 [box_return] (row 14)
-04:52 | Động Resistance cắn xuống | CODE kernel/mentor/box_trade.go:212 [box_return] (row 14)
-04:53 | Rồi | CODE kernel/mentor/box_trade.go:212 [box_return] (row 14)
+04:29 | Nó lên lại cái box này lần thứ 3 | CODE kernel/mentor/box_trade.go:212 [box_return] (row 10)
+04:31 | Anh chị làm gì | CODE kernel/mentor/box_trade.go:212 [box_return] (row 10)
+04:32 | Anh chị cắn đánh xuống | CODE kernel/mentor/box_trade.go:212 [box_return] (row 10)
+04:44 | Đụng resistance cắn đánh xuống | CODE kernel/mentor/box_trade.go:212 [box_return] (row 10)
+04:51 | Đúng không | CODE kernel/mentor/box_trade.go:212 [box_return] (row 10)
+04:52 | Động Resistance cắn xuống | CODE kernel/mentor/box_trade.go:212 [box_return] (row 10)
+04:53 | Rồi | CODE kernel/mentor/box_trade.go:212 [box_return] (row 10)
 05:04 | Đây em sẽ chỉnh cho mọi người một tí | —
 05:07 | Phải cần cái phần này | —
 05:08 | Ngay đây | —
@@ -141,12 +141,12 @@ cues: 463/463 marked · rules: 191 · CODE: 142 · MISMATCH: 0 · NOT-IN-BOT: 49
 05:55 | Không chịu ngắm | —
 05:56 | Mọi người không hiểu gì | —
 05:57 | Lower High | —
-06:00 | Thì bắt buộc là cái đỉnh sau | NOT-IN-BOT (row 15)
-06:03 | Nó phải thấp hơn cái đỉnh trước | NOT-IN-BOT (row 15)
-06:05 | Nó mới gọi là lower high | NOT-IN-BOT (row 15)
-06:06 | Chứ hai cái đỉnh nó ngang phè với nhau | NOT-IN-BOT (row 15)
-06:11 | Thì không thể nào mà anh chị gọi nó là lower high được | NOT-IN-BOT (row 15)
-06:13 | Đúng không | NOT-IN-BOT (row 15)
+06:00 | Thì bắt buộc là cái đỉnh sau | NOT-IN-BOT (row 11)
+06:03 | Nó phải thấp hơn cái đỉnh trước | NOT-IN-BOT (row 11)
+06:05 | Nó mới gọi là lower high | NOT-IN-BOT (row 11)
+06:06 | Chứ hai cái đỉnh nó ngang phè với nhau | NOT-IN-BOT (row 11)
+06:11 | Thì không thể nào mà anh chị gọi nó là lower high được | NOT-IN-BOT (row 11)
+06:13 | Đúng không | NOT-IN-BOT (row 11)
 06:14 | Cái này căn bản thôi | —
 06:21 | Là anh chị chỉ đang đánh một lệnh | —
 06:24 | Đụng resistance | —
@@ -159,20 +159,20 @@ cues: 463/463 marked · rules: 191 · CODE: 142 · MISMATCH: 0 · NOT-IN-BOT: 49
 06:47 | thể nào nó còn lâu hay được đúng không em gọi lô hay cũng được không sao nó bình thường nhưng mà | —
 06:55 | em muốn em muốn nhấn mạnh cho mọi người mọi người phải nên hiểu là một người đang làm gì | —
 06:59 | anh nghe chỗ này đụng cái bóc Ừ đúng không Động cái bóc nè tuyệt đối khi anh chị đã | —
-07:07 | cái cái bóc rồi đây cách đây là cách play cái bóc nè tuyệt đối khi anh chị đã vẽ được cái bóc rồi | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-07:15 | Ừ nếu như nến của anh nến đang nằm bên trong cái bóc hoặc điểm entry của anh chị nằm bên | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-07:22 | trong cái bóc có được chơi hay không hoàn toàn không lý do tại vì bên trong cái bóc nó đang | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-07:31 | anh chị Ok không Tại vì bên trong cái box nó đang lên trên nên là tuyệt đối không được cho | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-07:50 | cái bóc bây giờ nếu như nó chui vô cái box thì mình phải làm sao anh chị Nếu giờ mới chui vô | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-07:56 | nó nó chui vô đóng trong cái box và làm gì mình đợi nó thoát của cái box phát trên phát dưới không | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-08:21 | quan tâm nhưng mà nó phải nằm bên ngoài box và mình at least at least là mình cái điểm entry của mình | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-08:29 | Ừ mình muốn coi cái điểm entry của mình mình nó phải nằm nó phải nằm ở ngoài cái box thì nghe đây | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-08:38 | chứ không phải anh chị nên nhớ nè em chỉ muốn chơi cái box trên cái level hết không phải nó | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-08:47 | thoát cái level là anh chị nhảy dưới lệnh chị chơi liền cái đó là là đánh đánh đánh game bồ khi | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 17)
-08:54 | nó thoát khỏi cái box nó thoát không cái level cái level nào đó anh chị vẫn phải đợi setup sẽ | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 17)
-09:00 | bộ tên solo 2 | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 17)
-09:03 | bộ tên solo 2 | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 17)
-09:04 | như ngay chẳng hạn ở chỗ này | CODE kernel/mentor/eval.go:1880 [isb_trigger_side] (row 17)
+07:07 | cái cái bóc rồi đây cách đây là cách play cái bóc nè tuyệt đối khi anh chị đã vẽ được cái bóc rồi | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 12)
+07:15 | Ừ nếu như nến của anh nến đang nằm bên trong cái bóc hoặc điểm entry của anh chị nằm bên | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 12)
+07:22 | trong cái bóc có được chơi hay không hoàn toàn không lý do tại vì bên trong cái bóc nó đang | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 12)
+07:31 | anh chị Ok không Tại vì bên trong cái box nó đang lên trên nên là tuyệt đối không được cho | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 12)
+07:50 | cái bóc bây giờ nếu như nó chui vô cái box thì mình phải làm sao anh chị Nếu giờ mới chui vô | —
+07:56 | nó nó chui vô đóng trong cái box và làm gì mình đợi nó thoát của cái box phát trên phát dưới không | —
+08:21 | quan tâm nhưng mà nó phải nằm bên ngoài box và mình at least at least là mình cái điểm entry của mình | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 13)
+08:29 | Ừ mình muốn coi cái điểm entry của mình mình nó phải nằm nó phải nằm ở ngoài cái box thì nghe đây | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 13)
+08:38 | chứ không phải anh chị nên nhớ nè em chỉ muốn chơi cái box trên cái level hết không phải nó | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 13)
+08:47 | thoát cái level là anh chị nhảy dưới lệnh chị chơi liền cái đó là là đánh đánh đánh game bồ khi | —
+08:54 | nó thoát khỏi cái box nó thoát không cái level cái level nào đó anh chị vẫn phải đợi setup sẽ | —
+09:00 | bộ tên solo 2 | —
+09:03 | bộ tên solo 2 | —
+09:04 | như ngay chẳng hạn ở chỗ này | —
 09:07 | anh chị dễ được cái | —
 09:10 | anh chị dễ được cái box | —
 09:13 | thì có phải là | —
@@ -192,14 +192,14 @@ cues: 463/463 marked · rules: 191 · CODE: 142 · MISMATCH: 0 · NOT-IN-BOT: 49
 09:44 | Mọi người nhìn trendline mọi người đánh | —
 09:45 | Nó khỏe cỡ đó | —
 09:47 | Rồi tiếp tục | —
-09:50 | Nói với cái trendline | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 18)
-09:53 | Anh chị nào tính ý | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 18)
-09:56 | Đóng dưới trendline xuất hiện | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 18)
-09:58 | Inser 3 lệnh sót | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 18)
-09:59 | Đây là cách kết hợp nè | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 18)
-10:04 | Đóng dưới trendline | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 18)
-10:06 | Xuất hiện Inser 3 lệnh sót | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 18)
-10:08 | Đánh xuống ngược tiếp | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 18)
+09:50 | Nói với cái trendline | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 14)
+09:53 | Anh chị nào tính ý | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 14)
+09:56 | Đóng dưới trendline xuất hiện | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 14)
+09:58 | Inser 3 lệnh sót | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 14)
+09:59 | Đây là cách kết hợp nè | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 14)
+10:04 | Đóng dưới trendline | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 14)
+10:06 | Xuất hiện Inser 3 lệnh sót | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 14)
+10:08 | Đánh xuống ngược tiếp | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 14)
 10:09 | Rồi | —
 10:14 | Tiếp tục | —
 10:18 | Tiếp tục | —
@@ -222,9 +222,9 @@ cues: 463/463 marked · rules: 191 · CODE: 142 · MISMATCH: 0 · NOT-IN-BOT: 49
 10:55 | Là sao | —
 10:57 | Ăn bản là như vậy nè mọi người | —
 11:07 | Ây da | —
-11:08 | Thứ nhất | CODE kernel/mentor/mentor.go:530 [key_level_prune_pts] (row 19)
-11:11 | Em không chơi mini level | CODE kernel/mentor/mentor.go:530 [key_level_prune_pts] (row 19)
-11:14 | Là cái thứ nhất | CODE kernel/mentor/mentor.go:530 [key_level_prune_pts] (row 19)
+11:08 | Thứ nhất | CODE kernel/mentor/mentor.go:530 [key_level_prune_pts] (row 15)
+11:11 | Em không chơi mini level | CODE kernel/mentor/mentor.go:530 [key_level_prune_pts] (row 15)
+11:14 | Là cái thứ nhất | CODE kernel/mentor/mentor.go:530 [key_level_prune_pts] (row 15)
 11:19 | Thứ hai | —
 11:20 | Cái Insta3 subplot nhỏ xíu anh | —
 11:23 | Cái Insta3 subplot nhỏ xíu à | —
@@ -256,8 +256,8 @@ cues: 463/463 marked · rules: 191 · CODE: 142 · MISMATCH: 0 · NOT-IN-BOT: 49
 13:08 | Là | —
 13:11 | Em dám take risk | —
 13:13 | stop vô lệnh còn anh chị thì không có nghĩa là như thế nào em thấy đó em đặt lệnh Ừ cái duy nhất em | —
-13:31 | biết và cái nhất em thấy được là in Sa Ba có một cái stop-loss rất rất nhỏ trong ba cái setup in | CODE kernel/mentor/isb.go:125 [isb_max_stop] (row 20)
-13:42 | Sa Ba là stop-loss nhỏ nhất thì em chẳng ngại ngùng gì mà em không vô cái lệnh này hết cái sự khác | CODE kernel/mentor/isb.go:125 [isb_max_stop] (row 20)
+13:31 | biết và cái nhất em thấy được là in Sa Ba có một cái stop-loss rất rất nhỏ trong ba cái setup in | CODE kernel/mentor/isb.go:125 [isb_max_stop] (row 16)
+13:42 | Sa Ba là stop-loss nhỏ nhất thì em chẳng ngại ngùng gì mà em không vô cái lệnh này hết cái sự khác | CODE kernel/mentor/isb.go:125 [isb_max_stop] (row 16)
 13:55 | em và anh chị nó chỉ nằm ở cái việc là em dám xét risk vô lệnh còn anh chị thì suy nghĩ quá nhiều | —
 14:01 | đối với setup Insaba mọi người đừng nên suy nghĩ quá nhiều đằng này nó là Insaba mà có slot nhỏ | —
 14:15 | nữa thì tao khỏi suy nghĩ cái lệnh Insaba này slot có bao nhiêu điểm 5-6 điểm thì chả có lý do gì mà | —
@@ -272,35 +272,35 @@ cues: 463/463 marked · rules: 191 · CODE: 142 · MISMATCH: 0 · NOT-IN-BOT: 49
 15:26 | Sợ thua | —
 15:26 | Ai cũng sợ thua mà | —
 15:29 | Em cũng sợ thua mà | —
-15:30 | Nhưng mọi người phải nên hiểu rõ là | NOT-IN-BOT (row 21)
-15:33 | Thắng, thua trong cái thị trường này | NOT-IN-BOT (row 21)
-15:35 | Nó là điều bắt buộc phải có | NOT-IN-BOT (row 21)
-15:36 | Nhưng thay vì mọi người thua | NOT-IN-BOT (row 21)
-15:41 | Ở những cái lệnh | NOT-IN-BOT (row 21)
-15:43 | Có subplot nhỏ | NOT-IN-BOT (row 21)
-15:44 | Hay là mọi người thua | NOT-IN-BOT (row 21)
-15:48 | Ở những lệnh có subplot lớn | NOT-IN-BOT (row 21)
-15:50 | Nó chỉ có vậy thôi | NOT-IN-BOT (row 21)
-15:52 | Chứ không phải là mọi người sẽ đi vô đây | NOT-IN-BOT (row 21)
-16:00 | Mọi người đi tìm những lệnh thắng | NOT-IN-BOT (row 21)
-16:02 | Không | NOT-IN-BOT (row 21)
-16:03 | Mọi người vô lớp em học | NOT-IN-BOT (row 21)
-16:06 | Là mọi người học cái cách | NOT-IN-BOT (row 21)
-16:08 | Quản lý rủi ro | NOT-IN-BOT (row 21)
-16:10 | Cái cách manage risk | NOT-IN-BOT (row 21)
-16:12 | Và làm như thế nào thì nó đúng | NOT-IN-BOT (row 21)
-16:14 | Nó hợp lý | NOT-IN-BOT (row 21)
-16:15 | Chứ mọi người vô đây | NOT-IN-BOT (row 21)
-16:17 | Mọi người tìm những lệnh thắng em không có | NOT-IN-BOT (row 21)
-16:19 | Và cũng không ở đâu có hết | NOT-IN-BOT (row 21)
-16:22 | Cái việc đơn giản thôi | NOT-IN-BOT (row 21)
-16:25 | Anh chị phải định hình được là | NOT-IN-BOT (row 21)
-16:27 | Giữa việc anh chị vô lệnh có stop loss nhỏ | NOT-IN-BOT (row 21)
-16:30 | Thì để thua | NOT-IN-BOT (row 21)
-16:32 | Hay là anh chị vô lệnh có stop loss lớn | NOT-IN-BOT (row 21)
-16:35 | Để anh chị thua | NOT-IN-BOT (row 21)
-16:36 | Anh chị chọn cái nào | NOT-IN-BOT (row 21)
-16:37 | Và thật sự đúng | NOT-IN-BOT (row 21)
+15:30 | Nhưng mọi người phải nên hiểu rõ là | —
+15:33 | Thắng, thua trong cái thị trường này | —
+15:35 | Nó là điều bắt buộc phải có | —
+15:36 | Nhưng thay vì mọi người thua | —
+15:41 | Ở những cái lệnh | —
+15:43 | Có subplot nhỏ | —
+15:44 | Hay là mọi người thua | —
+15:48 | Ở những lệnh có subplot lớn | —
+15:50 | Nó chỉ có vậy thôi | —
+15:52 | Chứ không phải là mọi người sẽ đi vô đây | —
+16:00 | Mọi người đi tìm những lệnh thắng | —
+16:02 | Không | —
+16:03 | Mọi người vô lớp em học | —
+16:06 | Là mọi người học cái cách | —
+16:08 | Quản lý rủi ro | —
+16:10 | Cái cách manage risk | —
+16:12 | Và làm như thế nào thì nó đúng | —
+16:14 | Nó hợp lý | —
+16:15 | Chứ mọi người vô đây | —
+16:17 | Mọi người tìm những lệnh thắng em không có | —
+16:19 | Và cũng không ở đâu có hết | —
+16:22 | Cái việc đơn giản thôi | —
+16:25 | Anh chị phải định hình được là | —
+16:27 | Giữa việc anh chị vô lệnh có stop loss nhỏ | —
+16:30 | Thì để thua | —
+16:32 | Hay là anh chị vô lệnh có stop loss lớn | —
+16:35 | Để anh chị thua | —
+16:36 | Anh chị chọn cái nào | —
+16:37 | Và thật sự đúng | —
 16:42 | Là cũng không biết ai biết được cái lệnh nó có đẹp hay không | —
 16:45 | Cho tới khi anh chị entry lệnh | —
 16:47 | Và anh chị ăn | —
@@ -332,53 +332,53 @@ cues: 463/463 marked · rules: 191 · CODE: 142 · MISMATCH: 0 · NOT-IN-BOT: 49
 17:56 | Tiếp tục | —
 17:58 | Giữa Feller to go | —
 18:00 | Higher thì bây giờ mình sẽ có | —
-18:02 | Feller to go lower | CODE kernel/mentor/box.go:317 [ftgl_key] (row 22)
-18:03 | Feller to go lower mình sẽ dễ như thế nào | CODE kernel/mentor/box.go:317 [ftgl_key] (row 22)
-18:06 | Mình sẽ lấy cái row thấp nhất | CODE kernel/mentor/box.go:317 [ftgl_key] (row 22)
-18:08 | Của cái đáy 1 | CODE kernel/mentor/box.go:317 [ftgl_key] (row 22)
-18:09 | Ngay đây là cái đáy ha | CODE kernel/mentor/box.go:317 [ftgl_key] (row 22)
-18:11 | Nó mực lên ngược lên là tạo đáy nè | CODE kernel/mentor/box.go:317 [ftgl_key] (row 22)
-18:13 | Mình kéo lên cái thân gần nhất | CODE kernel/mentor/box.go:317 [ftgl_key] (row 22)
-18:17 | Của cái đỉnh | CODE kernel/mentor/box.go:317 [ftgl_key] (row 22)
-18:18 | Cái đáy 2 gì | CODE kernel/mentor/box.go:317 [ftgl_key] (row 22)
-18:19 | Mình kéo lên cái thân gần nhất | CODE kernel/mentor/box.go:317 [ftgl_key] (row 22)
-18:26 | Của cái đáy 2 | CODE kernel/mentor/box.go:317 [ftgl_key] (row 22)
-18:26 | Rồi đánh làm sao | CODE kernel/mentor/box.go:317 [ftgl_key] (row 22)
-18:30 | Ở bên trong này có làm gì không anh chị | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-18:33 | Bên trong cái box này có làm gì không | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-18:36 | Nếu mà nó chạy vô bên trong cái box này có làm gì không | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-18:38 | Không | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-18:39 | Tơn giản nè | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-18:42 | Chạy bên trong cái box này | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-18:42 | Nó đang chạy ngang | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-18:44 | Nó đang debate trong đây | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-18:47 | rồi khi nào mình được | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-18:49 | trade tiếp | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-18:50 | đợi nó thoát ra khỏi cái box | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-18:51 | rồi mình tiếp tục mình trade | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-18:59 | thì thoát khỏi cái box | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:00 | là mình sẽ có những setup gì mọi người | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:02 | thoát | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:05 | khỏi cái box và nằm trong cái box | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:07 | có gì anh chị chưa hình dung được là như thế nào | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:09 | rồi để mình hình dung cho mọi người nè | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:11 | thoát khỏi box | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:13 | có nghĩa là cái body của cái đó | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:15 | cái nến đó nó phải nằm bên ngoài cái box | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:17 | ok không | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:19 | Còn nếu mà cả cái nến nằm bên ngoài luôn | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:21 | Thì quá ok | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:21 | Nhưng tối thiểu | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:23 | Tối thiểu nằm cái bên ngoài cái box | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:27 | Thì tối thiểu | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:28 | Cái mức tối thiểu nhất là cái body | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:30 | Cái thân của cái nến nó phải nằm bên ngoài | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:32 | Anh chị hình dung không | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:34 | Còn nếu mà nguyên cả một cái nến nằm bên ngoài | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:39 | Thì quá hợp quá ok | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:40 | Không thành vấn đề | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:41 | Nó quá ok không thành vấn đề | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
-19:45 | Không có sai đâu | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 16)
+18:02 | Feller to go lower | CODE kernel/mentor/box.go:317 [ftgl_key] (row 17)
+18:03 | Feller to go lower mình sẽ dễ như thế nào | CODE kernel/mentor/box.go:317 [ftgl_key] (row 17)
+18:06 | Mình sẽ lấy cái row thấp nhất | CODE kernel/mentor/box.go:317 [ftgl_key] (row 17)
+18:08 | Của cái đáy 1 | CODE kernel/mentor/box.go:317 [ftgl_key] (row 17)
+18:09 | Ngay đây là cái đáy ha | CODE kernel/mentor/box.go:317 [ftgl_key] (row 17)
+18:11 | Nó mực lên ngược lên là tạo đáy nè | CODE kernel/mentor/box.go:317 [ftgl_key] (row 17)
+18:13 | Mình kéo lên cái thân gần nhất | CODE kernel/mentor/box.go:317 [ftgl_key] (row 17)
+18:17 | Của cái đỉnh | CODE kernel/mentor/box.go:317 [ftgl_key] (row 17)
+18:18 | Cái đáy 2 gì | CODE kernel/mentor/box.go:317 [ftgl_key] (row 17)
+18:19 | Mình kéo lên cái thân gần nhất | CODE kernel/mentor/box.go:317 [ftgl_key] (row 17)
+18:26 | Của cái đáy 2 | CODE kernel/mentor/box.go:317 [ftgl_key] (row 17)
+18:26 | Rồi đánh làm sao | CODE kernel/mentor/box.go:317 [ftgl_key] (row 17)
+18:30 | Ở bên trong này có làm gì không anh chị | —
+18:33 | Bên trong cái box này có làm gì không | —
+18:36 | Nếu mà nó chạy vô bên trong cái box này có làm gì không | —
+18:38 | Không | —
+18:39 | Tơn giản nè | —
+18:42 | Chạy bên trong cái box này | —
+18:42 | Nó đang chạy ngang | —
+18:44 | Nó đang debate trong đây | —
+18:47 | rồi khi nào mình được | —
+18:49 | trade tiếp | —
+18:50 | đợi nó thoát ra khỏi cái box | —
+18:51 | rồi mình tiếp tục mình trade | —
+18:59 | thì thoát khỏi cái box | —
+19:00 | là mình sẽ có những setup gì mọi người | —
+19:02 | thoát | —
+19:05 | khỏi cái box và nằm trong cái box | —
+19:07 | có gì anh chị chưa hình dung được là như thế nào | —
+19:09 | rồi để mình hình dung cho mọi người nè | —
+19:11 | thoát khỏi box | —
+19:13 | có nghĩa là cái body của cái đó | —
+19:15 | cái nến đó nó phải nằm bên ngoài cái box | —
+19:17 | ok không | —
+19:19 | Còn nếu mà cả cái nến nằm bên ngoài luôn | —
+19:21 | Thì quá ok | —
+19:21 | Nhưng tối thiểu | —
+19:23 | Tối thiểu nằm cái bên ngoài cái box | —
+19:27 | Thì tối thiểu | —
+19:28 | Cái mức tối thiểu nhất là cái body | —
+19:30 | Cái thân của cái nến nó phải nằm bên ngoài | —
+19:32 | Anh chị hình dung không | —
+19:34 | Còn nếu mà nguyên cả một cái nến nằm bên ngoài | —
+19:39 | Thì quá hợp quá ok | —
+19:40 | Không thành vấn đề | —
+19:41 | Nó quá ok không thành vấn đề | —
+19:45 | Không có sai đâu | —
 19:57 | Tại vì mình nói từ 2 đáy mà không bao giờ là sai | —
 19:59 | Mình nói từ 2 đáy mà | —
 20:02 | là nó không Mình lấy này này mà mình đâu có sai đâu thì mình cứ nhớ nhớ đơn giản là bên trong cái | —
@@ -391,45 +391,45 @@ cues: 463/463 marked · rules: 191 · CODE: 142 · MISMATCH: 0 · NOT-IN-BOT: 49
 20:44 | không đụng tới em thấy là bóc tự nhiên có sắp lên thì chơi liền rồi thái khổ bốc như thế nào | —
 20:50 | Ừ thì mình nói từ ngày này có này thì có nghĩa là qua bên chỗ này cái đấy bên kênh mình đã nói | —
 20:57 | cái đáy này với cái đấy này đúng không Thì cái đấy bên đây là mình đã có chỗ đưa ra nè Ừ rồi | —
-21:04 | anh về tới cái bóp đụng cái bóp Ừ tôi làm sao anh chị Ừ nếu mà nó nó đóng ở trên cái bóp nắm bên ngoài | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:13 | cái bóp thì tôi đánh một lệnh cho phép gọi luôn á Nhưng mà em hãy là em chỉ chỉnh cái cách suy nghĩ | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:19 | anh chị là thôi nhưng mà thật sự ra mình học sẽ đó thì mình gọi cho nó dễ là bộ tên số 2 lô Ok | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:23 | Thì vẫn được gọi không sao hết | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:24 | Nhưng mà nãy em chỉ chỉnh cho mọi người thôi | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:26 | Thì mình vẫn có thể đánh 1 lệnh buy stop | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:28 | Về đụng level đóng nến trên | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:30 | Đúng không | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:33 | Đã vậy ngay đây nó còn xuất hiện | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:35 | Insert buy cho lệnh long nữa | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:36 | Thì có phải là về tới trên đây | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:39 | Anh chị có quyền đánh lên không | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:40 | Nè còn ăn được bao nhiêu là tùy hỷ mọi người | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:43 | Một lệnh này chắc 50 điểm | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:44 | Đúng không | CODE kernel/mentor/box_trade.go:212 [box_return] (row 23)
-21:46 | Nếu mà lệnh này anh chị kéo stop theo từng cái nến | CODE kernel/mentor/exec_frame.go:25 [trail_on_frame] (row 64)
-21:48 | Là lệnh này bèo bèo là cũng phải 50 điểm | CODE kernel/mentor/exec_frame.go:25 [trail_on_frame] (row 64)
-21:50 | Đúng không | CODE kernel/mentor/exec_frame.go:25 [trail_on_frame] (row 64)
+21:04 | anh về tới cái bóp đụng cái bóp Ừ tôi làm sao anh chị Ừ nếu mà nó nó đóng ở trên cái bóp nắm bên ngoài | CODE kernel/mentor/box_trade.go:212 [box_return] (row 18)
+21:13 | cái bóp thì tôi đánh một lệnh cho phép gọi luôn á Nhưng mà em hãy là em chỉ chỉnh cái cách suy nghĩ | CODE kernel/mentor/box_trade.go:212 [box_return] (row 18)
+21:19 | anh chị là thôi nhưng mà thật sự ra mình học sẽ đó thì mình gọi cho nó dễ là bộ tên số 2 lô Ok | CODE kernel/mentor/box_trade.go:212 [box_return] (row 18)
+21:23 | Thì vẫn được gọi không sao hết | CODE kernel/mentor/box_trade.go:212 [box_return] (row 18)
+21:24 | Nhưng mà nãy em chỉ chỉnh cho mọi người thôi | CODE kernel/mentor/box_trade.go:212 [box_return] (row 18)
+21:26 | Thì mình vẫn có thể đánh 1 lệnh buy stop | CODE kernel/mentor/box_trade.go:212 [box_return] (row 18)
+21:28 | Về đụng level đóng nến trên | CODE kernel/mentor/box_trade.go:212 [box_return] (row 18)
+21:30 | Đúng không | CODE kernel/mentor/box_trade.go:212 [box_return] (row 18)
+21:33 | Đã vậy ngay đây nó còn xuất hiện | CODE kernel/mentor/box_trade.go:212 [box_return] (row 18)
+21:35 | Insert buy cho lệnh long nữa | CODE kernel/mentor/box_trade.go:212 [box_return] (row 18)
+21:36 | Thì có phải là về tới trên đây | CODE kernel/mentor/box_trade.go:212 [box_return] (row 18)
+21:39 | Anh chị có quyền đánh lên không | CODE kernel/mentor/box_trade.go:212 [box_return] (row 18)
+21:40 | Nè còn ăn được bao nhiêu là tùy hỷ mọi người | —
+21:43 | Một lệnh này chắc 50 điểm | —
+21:44 | Đúng không | —
+21:46 | Nếu mà lệnh này anh chị kéo stop theo từng cái nến | —
+21:48 | Là lệnh này bèo bèo là cũng phải 50 điểm | —
+21:50 | Đúng không | —
 21:53 | Rồi tiếp tục nè | —
 21:54 | Em hỏi mọi người nè | —
 21:57 | Rồi | —
 21:58 | Cái này là cái gì | —
 22:01 | Cái em mới quan trọng nè | —
 22:10 | Cái em mới quan trọng là cái gì | —
-22:12 | Insaba Sword | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-22:13 | Đúng không | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-22:25 | Vậy ngay Insaba Sword ngay chỗ đó anh chị có đánh không | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-22:27 | Đúng | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-22:42 | Thank you | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-22:44 | Insaba Sword ngay chỗ đó mình không được đánh | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-22:47 | Lý do tại vì | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-22:49 | Nó gần cái support | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-22:53 | Nó gần cái supply zone | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-22:56 | Mình không được đánh | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-22:59 | Insaba ngay chỗ đó | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-23:01 | Nhớ ha | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-23:04 | sát box gần box gần supply quá | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-23:07 | mình không được đánh | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-23:08 | đơn giản vậy thôi | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
+22:12 | Insaba Sword | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+22:13 | Đúng không | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+22:25 | Vậy ngay Insaba Sword ngay chỗ đó anh chị có đánh không | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+22:27 | Đúng | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+22:42 | Thank you | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+22:44 | Insaba Sword ngay chỗ đó mình không được đánh | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+22:47 | Lý do tại vì | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+22:49 | Nó gần cái support | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+22:53 | Nó gần cái supply zone | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+22:56 | Mình không được đánh | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+22:59 | Insaba ngay chỗ đó | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+23:01 | Nhớ ha | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+23:04 | sát box gần box gần supply quá | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+23:07 | mình không được đánh | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
+23:08 | đơn giản vậy thôi | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 19)
 23:10 | rồi | —
 23:14 | tiếp tục | —
 23:16 | nhớ nha | —

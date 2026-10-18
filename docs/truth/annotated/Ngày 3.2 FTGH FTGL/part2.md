@@ -1,25 +1,25 @@
-cues: 244/244 marked · rules: 120 · CODE: 118 · MISMATCH: 0 · NOT-IN-BOT: 2 · OWNER-ORDER: 0 · COURSE-SPLIT: 0 · —: 124
-00:00 | Chắc chắn em sẽ không trade inside bar ngay chỗ này. Quá risky. | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-00:04 | Nhưng ngay chỗ này nó chả là cái gì ngay đây. | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-00:09 | Nó đâu có là cái gì ngay đây đâu. | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
-00:11 | Đúng không? Nó đâu có là cái gì ngay đây đâu. | CODE kernel/mentor/box.go:828 [near_box_refusal] (row 24)
+cues: 244/244 marked · rules: 99 · CODE: 97 · MISMATCH: 0 · NOT-IN-BOT: 2 · OWNER-ORDER: 0 · COURSE-SPLIT: 0 · —: 145
+00:00 | Chắc chắn em sẽ không trade inside bar ngay chỗ này. Quá risky. | —
+00:04 | Nhưng ngay chỗ này nó chả là cái gì ngay đây. | —
+00:09 | Nó đâu có là cái gì ngay đây đâu. | —
+00:11 | Đúng không? Nó đâu có là cái gì ngay đây đâu. | —
 00:16 | Những cái đường level em đều vẽ trước hết chứ em có vừa trade vừa vẽ. | —
-00:24 | Level em vừa trade vừa vẽ, em chỉ có vẽ 2 thứ thôi. | NOT-IN-BOT (row 25)
-00:28 | Là fail là trigger higher, fail là trigger lower, hoặc là trendline. | NOT-IN-BOT (row 25)
-00:38 | Tại sao em dám check risk | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
-00:39 | Ngay chỗ level của anh dễ | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
-00:43 | Tại vì ngay đây | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
-00:45 | Nó chả có gì minh chứng nó sẽ hô hết | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
-00:46 | Nó chỉ có cái đường lay nhỏ ngang ngay thôi | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
-00:48 | Đúng không | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
-00:50 | Nó chỉ có cái đường lay nhỏ ngang ngay thôi | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
-00:52 | Nó chưa về nó test một lần nào | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
-00:54 | Mọi người hình dung giống như cái bài hôm qua không | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
-00:59 | Nhấn bài trendline hôm qua không | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
-01:01 | Ngay chỗ ngang này | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
-01:03 | Nó chưa về nó test một lần nào hết | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
-01:06 | Đúng không | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
-01:06 | Mọi người có đồng ý với em không nè | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 26)
+00:24 | Level em vừa trade vừa vẽ, em chỉ có vẽ 2 thứ thôi. | NOT-IN-BOT (row 20)
+00:28 | Là fail là trigger higher, fail là trigger lower, hoặc là trendline. | NOT-IN-BOT (row 20)
+00:38 | Tại sao em dám check risk | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
+00:39 | Ngay chỗ level của anh dễ | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
+00:43 | Tại vì ngay đây | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
+00:45 | Nó chả có gì minh chứng nó sẽ hô hết | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
+00:46 | Nó chỉ có cái đường lay nhỏ ngang ngay thôi | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
+00:48 | Đúng không | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
+00:50 | Nó chỉ có cái đường lay nhỏ ngang ngay thôi | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
+00:52 | Nó chưa về nó test một lần nào | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
+00:54 | Mọi người hình dung giống như cái bài hôm qua không | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
+00:59 | Nhấn bài trendline hôm qua không | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
+01:01 | Ngay chỗ ngang này | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
+01:03 | Nó chưa về nó test một lần nào hết | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
+01:06 | Đúng không | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
+01:06 | Mọi người có đồng ý với em không nè | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 21)
 01:08 | trả lời cho em biết đi | —
 01:09 | ngay cái đường like này để em dễ cái ha | —
 01:11 | ngay cái đường like này | —
@@ -78,24 +78,24 @@ cues: 244/244 marked · rules: 120 · CODE: 118 · MISMATCH: 0 · NOT-IN-BOT: 2 
 03:28 | Nó đã cấu tạo được cái trendline rồi | —
 03:30 | Nó cũng được cấu tạo bởi hai đấy | —
 03:33 | Đúng không? | —
-03:34 | Nhưng | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:34 | Giữa một cái đường line | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:37 | Và một cái box | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:39 | Làm ơn giúp em | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:41 | Tin cái box hơn dùm em | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:43 | Tại vì sao | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:45 | Nhớ nè | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:47 | Niệm thần chú dùm em nè | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:49 | Trainline | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:51 | Nó phải về nó test lần thứ 3 | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:53 | Thì mới valid | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:54 | Còn box | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:57 | Khi anh chị vẽ ra được | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:58 | Vẽ ra được rồi | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-03:59 | Anh chị không cần phải test gì nữa hết | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-04:02 | Tại vì căn bản ra | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-04:04 | Là anh chị đã vẽ được cái box rồi | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
-04:06 | Vẽ được cái dụng rồi | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 27)
+03:34 | Nhưng | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:34 | Giữa một cái đường line | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:37 | Và một cái box | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:39 | Làm ơn giúp em | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:41 | Tin cái box hơn dùm em | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:43 | Tại vì sao | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:45 | Nhớ nè | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:47 | Niệm thần chú dùm em nè | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:49 | Trainline | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:51 | Nó phải về nó test lần thứ 3 | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:53 | Thì mới valid | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:54 | Còn box | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:57 | Khi anh chị vẽ ra được | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:58 | Vẽ ra được rồi | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+03:59 | Anh chị không cần phải test gì nữa hết | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+04:02 | Tại vì căn bản ra | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+04:04 | Là anh chị đã vẽ được cái box rồi | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
+04:06 | Vẽ được cái dụng rồi | CODE kernel/mentor/trendline.go:280 [trendline_3rd_touch] (row 22)
 04:07 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 04:48 | nghe cái like rồi quay trở lại câu chuyện ở ngay chỗ này khi tôi là con chị cái này thì ngay chỗ này | —
 04:56 | em Texas còn ngay chỗ này em không dám sắc chết tại vì em đang dẻo được một cái nguyên một cái | —
@@ -110,67 +110,67 @@ cues: 244/244 marked · rules: 120 · CODE: 118 · MISMATCH: 0 · NOT-IN-BOT: 2 
 05:34 | Tôi làm cái gì anh chị? | —
 05:37 | Về mà, mình về cái box | —
 05:38 | Đụng cái box mình làm cái gì? | —
-05:43 | Nó break trendline đẹp quá kìa, có ai đánh trendline vậy? | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 28)
-05:47 | Nãy giờ mà có em là xong rồi | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 28)
-05:49 | Break trendline ra Insta3 đẹp quá kìa | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 28)
-05:55 | Trời ơi, hồi nãy nói đúng không? | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 28)
-05:57 | break trendline có insaba lịnh long | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 28)
-05:59 | đẹp quá chừng đẹp luôn | CODE kernel/mentor/trendline.go:280 [trendline_valid] (row 28)
+05:43 | Nó break trendline đẹp quá kìa, có ai đánh trendline vậy? | —
+05:47 | Nãy giờ mà có em là xong rồi | —
+05:49 | Break trendline ra Insta3 đẹp quá kìa | —
+05:55 | Trời ơi, hồi nãy nói đúng không? | —
+05:57 | break trendline có insaba lịnh long | —
+05:59 | đẹp quá chừng đẹp luôn | —
 06:21 | mọi người cũng nhìn để ý nè | —
 06:23 | mọi người cũng nhìn để ý nè | —
-06:25 | mình sẽ dùng box này hoài nè đúng không Nó dễ sát xuống ngoài chui bên trong chui bên trong mình không | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 29)
-06:32 | mình không đụng mình không cho gì hết và bây giờ nè qua bên đây xíu nào rồi xíu mình qua lại bên | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 29)
-06:39 | đây rồi sẽ tiếp nè rồi em xóa cái này rồi về đụng cái box mình đợi nó làm gì chị ạ ạ bây giờ mình | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 29)
-06:48 | mình bây giờ mình mình ví dụ như mình đang quay khúc này nè nghe khúc em đang đưa chuột vô nè | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 29)
-06:53 | Ừ rồi mình về đụng cái bóp mình đợi làm gì hai người mình đợi mình đụng nên mình đợi nó đụng cái | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 29)
-07:05 | bóp thì mình coi nến nó đóng trên bóc hay đóng ở trong bên trong cái bóp nếu mà đến bên trong bóc | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 29)
-07:09 | mình không làm gì hết Còn nếu như mà nóng đó nó nó nó về nè nhìn hai lệnh nó rõ ràng nó về nó đụng | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 29)
-07:16 | cái bóp nó đóng bên trên cái bóp nó đóng bên ngoài cái bóp thì tôi đặt lệnh được đúng không Tôi đặt | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 29)
-07:21 | lệnh được còn nghe này cái nến đỏ này xuyên đóng bên trong cái bóp luôn tôi không làm gì hết nó và | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 29)
-07:28 | sẽ đánh được rất nhiều lệnh kết hợp giữa box và trendline lại mọi người thử kết hợp giữa box và | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 29)
-07:38 | trendline lại nè về với box trong bên trong box tôi không làm gì hết thoát ra cái box đóng ở bên | CODE kernel/mentor/box_trade.go:212 [box_return] (row 30)
-07:45 | ngoài cái box một cái nè cái thân đóng bên ngoài cái box nè xuất hiện in supply cho lệnh long một | CODE kernel/mentor/box_trade.go:212 [box_return] (row 30)
-07:50 | lệnh một nó đánh thẳng lên tới trên đây luôn thì đây là mình có gì ping pong lên tới trên đây canh | CODE kernel/mentor/box_trade.go:212 [box_return] (row 30)
-07:56 | setup đánh xuống xuống tới đây đánh lên đánh ping pong không được đánh giữa thì đây là mình | CODE kernel/mentor/box_trade.go:212 [box_return] (row 30)
-08:04 | Một cái nữa là nếu khi mà mình vẽ được 2 cái box này rồi | CODE kernel/mentor/box_trade.go:212 [box_return] (row 30)
-08:06 | Thì việc đơn giản căn bản | CODE kernel/mentor/box_trade.go:212 [box_return] (row 30)
-08:10 | Là đụng dưới đánh lên | CODE kernel/mentor/box_trade.go:212 [box_return] (row 30)
-08:13 | Đụng trên đánh xuống | CODE kernel/mentor/box_trade.go:212 [box_return] (row 30)
-08:14 | Nhưng vẫn phải chờ setup cho em | CODE kernel/mentor/box_trade.go:212 [box_return] (row 30)
-08:16 | Là gì? Đợi nó đụng cái box | CODE kernel/mentor/box_trade.go:212 [box_return] (row 30)
-08:19 | Đóng lên dưới | CODE kernel/mentor/box_trade.go:212 [box_return] (row 30)
-08:20 | Đóng bên ngoài cái box | CODE kernel/mentor/box_trade.go:212 [box_return] (row 30)
-08:22 | Mình mới được đánh lệnh shock | CODE kernel/mentor/box_trade.go:212 [box_return] (row 30)
+06:25 | mình sẽ dùng box này hoài nè đúng không Nó dễ sát xuống ngoài chui bên trong chui bên trong mình không | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 23)
+06:32 | mình không đụng mình không cho gì hết và bây giờ nè qua bên đây xíu nào rồi xíu mình qua lại bên | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 23)
+06:39 | đây rồi sẽ tiếp nè rồi em xóa cái này rồi về đụng cái box mình đợi nó làm gì chị ạ ạ bây giờ mình | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 23)
+06:48 | mình bây giờ mình mình ví dụ như mình đang quay khúc này nè nghe khúc em đang đưa chuột vô nè | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 23)
+06:53 | Ừ rồi mình về đụng cái bóp mình đợi làm gì hai người mình đợi mình đụng nên mình đợi nó đụng cái | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 23)
+07:05 | bóp thì mình coi nến nó đóng trên bóc hay đóng ở trong bên trong cái bóp nếu mà đến bên trong bóc | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 23)
+07:09 | mình không làm gì hết Còn nếu như mà nóng đó nó nó nó về nè nhìn hai lệnh nó rõ ràng nó về nó đụng | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 23)
+07:16 | cái bóp nó đóng bên trên cái bóp nó đóng bên ngoài cái bóp thì tôi đặt lệnh được đúng không Tôi đặt | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 23)
+07:21 | lệnh được còn nghe này cái nến đỏ này xuyên đóng bên trong cái bóp luôn tôi không làm gì hết nó và | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 23)
+07:28 | sẽ đánh được rất nhiều lệnh kết hợp giữa box và trendline lại mọi người thử kết hợp giữa box và | CODE kernel/mentor/box_trade.go:189 [close_inside_cancel] (row 23)
+07:38 | trendline lại nè về với box trong bên trong box tôi không làm gì hết thoát ra cái box đóng ở bên | —
+07:45 | ngoài cái box một cái nè cái thân đóng bên ngoài cái box nè xuất hiện in supply cho lệnh long một | —
+07:50 | lệnh một nó đánh thẳng lên tới trên đây luôn thì đây là mình có gì ping pong lên tới trên đây canh | —
+07:56 | setup đánh xuống xuống tới đây đánh lên đánh ping pong không được đánh giữa thì đây là mình | —
+08:04 | Một cái nữa là nếu khi mà mình vẽ được 2 cái box này rồi | —
+08:06 | Thì việc đơn giản căn bản | —
+08:10 | Là đụng dưới đánh lên | CODE kernel/mentor/box_trade.go:212 [box_return] (row 24)
+08:13 | Đụng trên đánh xuống | CODE kernel/mentor/box_trade.go:212 [box_return] (row 24)
+08:14 | Nhưng vẫn phải chờ setup cho em | CODE kernel/mentor/box_trade.go:212 [box_return] (row 24)
+08:16 | Là gì? Đợi nó đụng cái box | CODE kernel/mentor/box_trade.go:212 [box_return] (row 24)
+08:19 | Đóng lên dưới | CODE kernel/mentor/box_trade.go:212 [box_return] (row 24)
+08:20 | Đóng bên ngoài cái box | CODE kernel/mentor/box_trade.go:212 [box_return] (row 24)
+08:22 | Mình mới được đánh lệnh shock | CODE kernel/mentor/box_trade.go:212 [box_return] (row 24)
 08:24 | Nếu mà nó xíu nó chạy lên kia | —
 08:26 | Phải là 2 lần 2 lần | —
 08:27 | Đúng không? | —
 08:28 | Còn này là phải là 2 lần 2 lần | —
 08:29 | Đúng không? Nó khác biệt nhau | —
 08:33 | Rồi | —
-08:34 | Nếu như nằm bên giữa | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:35 | Ở giữa cái box | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:36 | Mình sẽ không được bắt | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:38 | Bất kỳ một lệnh | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:39 | Potential 2 low | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:40 | Hay potential low | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:41 | Hay 2 nào hết | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:41 | Mình | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:42 | Nếu như nó ở giữa | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:44 | Một cái box | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:45 | Nó giữa một cái dùng rank | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:46 | Rank này nhiều | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:47 | 8 lục điểm mà | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:48 | Cũng không đủ đâu | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:49 | Nó giữa một cái dùng rank | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:50 | Anh chị làm ơn giúp em | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:51 | Nếu như anh chị muốn | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:52 | Tray ở bên | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:53 | Ở giữa cái này | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:54 | Kiếm Insta 3 đu vô theo | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:55 | Đừng đánh potential 2 low | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:56 | Anh chị ok không | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-08:59 | Đừng đánh potential 2 low | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-09:02 | Tại vì ở giữa cái box | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
+08:34 | Nếu như nằm bên giữa | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:35 | Ở giữa cái box | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:36 | Mình sẽ không được bắt | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:38 | Bất kỳ một lệnh | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:39 | Potential 2 low | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:40 | Hay potential low | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:41 | Hay 2 nào hết | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:41 | Mình | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:42 | Nếu như nó ở giữa | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:44 | Một cái box | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:45 | Nó giữa một cái dùng rank | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:46 | Rank này nhiều | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:47 | 8 lục điểm mà | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:48 | Cũng không đủ đâu | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:49 | Nó giữa một cái dùng rank | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:50 | Anh chị làm ơn giúp em | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:51 | Nếu như anh chị muốn | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:52 | Tray ở bên | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:53 | Ở giữa cái này | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:54 | Kiếm Insta 3 đu vô theo | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:55 | Đừng đánh potential 2 low | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:56 | Anh chị ok không | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+08:59 | Đừng đánh potential 2 low | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
+09:02 | Tại vì ở giữa cái box | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 25)
 09:04 | Vừa bóc vừa con cá | —
 09:06 | Vừa bé na | —
 09:07 | Indicator em sẽ hướng dẫn sau | —
@@ -189,19 +189,19 @@ cues: 244/244 marked · rules: 120 · CODE: 118 · MISMATCH: 0 · NOT-IN-BOT: 2 
 09:40 | Chứ từ sau lại ngay khúc này | —
 09:41 | Anh thấy nó bị rối không | —
 09:44 | Rất là rối | —
-09:47 | Fail là chú gô 2 rồi | CODE kernel/mentor/mentor.go:596 [box_new_zone_after_escape] (row 32)
-09:48 | Anh chị dễ được 2 dùng | CODE kernel/mentor/mentor.go:596 [box_new_zone_after_escape] (row 32)
-09:50 | Đừng dễ dùng thứ 3 dùm cái | CODE kernel/mentor/mentor.go:596 [box_new_zone_after_escape] (row 32)
-09:51 | Rối lắm | CODE kernel/mentor/mentor.go:596 [box_new_zone_after_escape] (row 32)
-09:54 | Nó bự bự dễ đánh | CODE kernel/mentor/mentor.go:596 [box_new_zone_after_escape] (row 32)
+09:47 | Fail là chú gô 2 rồi | CODE kernel/mentor/mentor.go:596 [box_new_zone_after_escape] (row 26)
+09:48 | Anh chị dễ được 2 dùng | CODE kernel/mentor/mentor.go:596 [box_new_zone_after_escape] (row 26)
+09:50 | Đừng dễ dùng thứ 3 dùm cái | CODE kernel/mentor/mentor.go:596 [box_new_zone_after_escape] (row 26)
+09:51 | Rối lắm | CODE kernel/mentor/mentor.go:596 [box_new_zone_after_escape] (row 26)
+09:54 | Nó bự bự dễ đánh | CODE kernel/mentor/mentor.go:596 [box_new_zone_after_escape] (row 26)
 09:57 | Rồi | —
 09:59 | Khi anh chị đánh | —
 10:01 | Tray | —
-10:02 | Lý do tại sao mà em nói | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-10:05 | Mọi người không nên đánh Potential 2 low | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-10:07 | Hoặc là Potential 2 high | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-10:08 | Ngay ở giữa 2 cái box | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
-10:09 | Là tại vì nó có thể tạo trendline | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 31)
+10:02 | Lý do tại sao mà em nói | —
+10:05 | Mọi người không nên đánh Potential 2 low | —
+10:07 | Hoặc là Potential 2 high | —
+10:08 | Ngay ở giữa 2 cái box | —
+10:09 | Là tại vì nó có thể tạo trendline | —
 10:12 | Mình sẽ không biết được khi nào nó tạo | —
 10:16 | Mà khi mình đã dẻ được trendline rồi | —
 10:19 | Thì nãy giờ mọi người thấy là | —
@@ -220,25 +220,25 @@ cues: 244/244 marked · rules: 120 · CODE: 118 · MISMATCH: 0 · NOT-IN-BOT: 2 
 10:50 | Cái này là xíu là đánh là khùng đầu luôn á | —
 10:53 | Nhưng | —
 10:53 | Cái này mọi người thấy nó đơn giản không | —
-10:56 | Mọi người kể 1 cái line ra | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-10:57 | Train line | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-10:59 | Đụng train line | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:01 | Nên đống dưới | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:01 | Đánh ngược lại xuống dưới | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:02 | Dưới đâu | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:03 | Dưới cái box | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:04 | Đúng không | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:06 | Rồi ví dụ đi | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:07 | Đứng dưới cái box nè | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:08 | Đụng dưới | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:11 | Đụng cái box | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:12 | Cái ta ghẹt anh chị muốn đánh | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:14 | Đánh lên đâu | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:14 | Có phải là đánh lên | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:16 | Train line không | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:16 | Mình sẽ có 1 cái dùng biên bông | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:19 | Khá là nhỏ dưới chỗ này | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
-11:20 | nếu mà thoát ra khỏi trendline | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 33)
+10:56 | Mọi người kể 1 cái line ra | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+10:57 | Train line | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+10:59 | Đụng train line | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:01 | Nên đống dưới | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:01 | Đánh ngược lại xuống dưới | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:02 | Dưới đâu | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:03 | Dưới cái box | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:04 | Đúng không | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:06 | Rồi ví dụ đi | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:07 | Đứng dưới cái box nè | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:08 | Đụng dưới | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:11 | Đụng cái box | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:12 | Cái ta ghẹt anh chị muốn đánh | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:14 | Đánh lên đâu | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:14 | Có phải là đánh lên | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:16 | Train line không | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:16 | Mình sẽ có 1 cái dùng biên bông | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:19 | Khá là nhỏ dưới chỗ này | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
+11:20 | nếu mà thoát ra khỏi trendline | CODE kernel/mentor/eval.go:1016 [trendline_between_boxes] (row 27)
 11:31 | thì biên bon nó sẽ bự hơn | —
 11:33 | tại vì cái rank ở bên ngoài nó sẽ bự hơn | —
 11:35 | là mình canh mình đánh lên tới trên đây | —
