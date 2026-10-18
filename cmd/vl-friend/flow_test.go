@@ -259,6 +259,38 @@ func TestRunUpdateCheckRefusesWhenNotFlat(t *testing.T) {
 	}
 }
 
+// TestRunUpdateCheckUnreachableFlatProbeDefers — CTO ruling 1: a flat probe
+// ERROR (endpoint unreachable / malformed) is NOT flat → the update defers and
+// nothing is swapped. Same fail-closed path as an open position.
+func TestRunUpdateCheckUnreachableFlatProbeDefers(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "36", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	// The flat endpoint is unreachable: the probe returns an error every poll.
+	d.positions = func(_ context.Context) (float64, error) {
+		return 0, fmt.Errorf("GET /api/friend/flat: connection refused")
+	}
+	base := "http://100.64.0.2:18081"
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	dec, err := RunUpdateCheck(ctx, d, base, true)
+	if err == nil {
+		t.Fatal("an unreachable flat probe did not defer the update")
+	}
+	if dec.Applied {
+		t.Fatal("the add-on was swapped despite an unreachable flat probe")
+	}
+	if _, statErr := os.Stat(addonDstPath(home)); statErr == nil {
+		t.Fatal("an add-on appeared despite an unreachable flat probe")
+	}
+}
+
 // TestRunUpdateCheckLaterDoesNothing — answering the pop-up with "later" leaves
 // everything untouched.
 func TestRunUpdateCheckLaterDoesNothing(t *testing.T) {
