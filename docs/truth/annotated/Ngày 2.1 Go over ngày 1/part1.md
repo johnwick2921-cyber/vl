@@ -1,4 +1,4 @@
-cues: 277/277 · rule cues: 98 · rows: 10 · CODE: 89 · MISMATCH: 0 · NOT-IN-BOT: 8 · OWNER-ORDER: 0 · SPLIT: 1 · —: 179
+cues: 277/277 · rule cues: 138 · rows: 11 · CODE: 129 · MISMATCH: 0 · NOT-IN-BOT: 8 · OWNER-ORDER: 0 · SPLIT: 1 · —: 139
 
 00:00 | Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
 00:30 | Cái win rate nó không bao giờ | NOT-IN-BOT (row 1)
@@ -26,24 +26,24 @@ cues: 277/277 · rule cues: 98 · rows: 10 · CODE: 89 · MISMATCH: 0 · NOT-IN-
 01:17 | Có nghĩa là sao | —
 01:18 | Những cái lệnh xấu quá | —
 01:19 | Những cái lệnh xấu quá là như thế nào | —
-01:21 | Bây giờ cái risk and reward | —
-01:23 | Bây giờ em ví dụ đi | —
-01:26 | Bây giờ 1 cái lệnh | —
-01:27 | Một cái lệnh mà anh chị nhìn | —
-01:30 | Anh chị thấy | —
-01:31 | Là cái risk reward | —
-01:32 | Nó sẽ dưới 1-1 | —
-01:33 | Làm ơn giúp em | —
-01:34 | Đừng vô những cái lệnh đó | —
-01:35 | Mình trade | —
-01:36 | Mình có chọn lọc | —
-01:37 | Mình có quyền | —
-01:39 | Mình là người chủ động | —
-01:42 | Cầm con chuột | —
-01:44 | Để vô lệnh | —
-01:45 | Thì không có lý do gì | —
-01:47 | Mình vô những cái lệnh nó xấu hết | —
-01:48 | Mà cái thứ nhất | —
+01:21 | Bây giờ cái risk and reward | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:23 | Bây giờ em ví dụ đi | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:26 | Bây giờ 1 cái lệnh | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:27 | Một cái lệnh mà anh chị nhìn | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:30 | Anh chị thấy | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:31 | Là cái risk reward | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:32 | Nó sẽ dưới 1-1 | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:33 | Làm ơn giúp em | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:34 | Đừng vô những cái lệnh đó | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:35 | Mình trade | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:36 | Mình có chọn lọc | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:37 | Mình có quyền | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:39 | Mình là người chủ động | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:42 | Cầm con chuột | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:44 | Để vô lệnh | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:45 | Thì không có lý do gì | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:47 | Mình vô những cái lệnh nó xấu hết | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
+01:48 | Mà cái thứ nhất | CODE kernel/mentor/phl.go:107 [targetCloserThanStopReason] (row 2)
 01:49 | Cái thứ hai | —
 01:51 | Anh chị hoàn toàn nắm | —
 01:54 | Cái việc chủ động | —
@@ -73,31 +73,31 @@ cues: 277/277 · rule cues: 98 · rows: 10 · CODE: 89 · MISMATCH: 0 · NOT-IN-
 02:43 | Thì cũng phải bán gần target | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
 02:45 | Là nhiêu? 15, 20 | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
 02:47 | Làm ơn đừng vô stop loss | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
-02:50 | Đừng để stop loss 20 | —
-02:51 | Mới 10 bán | —
-02:52 | Không có đáng | —
-02:53 | Những cái lệnh nó không có đáng | —
-02:54 | Mình đã vô một lệnh thì cố gắng mình ngồi | —
-02:56 | Mình chờ cho nó chạy đi | —
-02:58 | Còn | —
-02:59 | Cái cách manage cái lệnh như thế nào | —
-03:03 | Cái cách manage lệnh như thế nào | —
-03:05 | Thì em sẽ | —
-03:06 | Bài học ngày hôm nay và ngày mai | —
-03:09 | Ngày mốt thì mình sẽ được học tiếp | —
-03:11 | Nhưng làm ơn giúp em | —
-03:13 | Đừng | —
-03:14 | Có vô lệnh | —
-03:16 | Mà vô subplot 20 | —
-03:19 | Mà đi bán | —
-03:19 | đi bán | —
-03:20 | đi bán | —
-03:24 | ở 10 | —
-03:26 | hay là sợ quá | —
-03:28 | vừa thấy có điểm bắt đầu chốt bán | —
-03:31 | nha không cần | —
-03:33 | mình không cần phải làm những chuyện đó | —
-03:34 | mình vô lệnh là mình đã biết | —
+02:50 | Đừng để stop loss 20 | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:51 | Mới 10 bán | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:52 | Không có đáng | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:53 | Những cái lệnh nó không có đáng | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:54 | Mình đã vô một lệnh thì cố gắng mình ngồi | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:56 | Mình chờ cho nó chạy đi | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:58 | Còn | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+02:59 | Cái cách manage cái lệnh như thế nào | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:03 | Cái cách manage lệnh như thế nào | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:05 | Thì em sẽ | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:06 | Bài học ngày hôm nay và ngày mai | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:09 | Ngày mốt thì mình sẽ được học tiếp | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:11 | Nhưng làm ơn giúp em | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:13 | Đừng | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:14 | Có vô lệnh | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:16 | Mà vô subplot 20 | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:19 | Mà đi bán | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:19 | đi bán | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:20 | đi bán | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:24 | ở 10 | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:26 | hay là sợ quá | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:28 | vừa thấy có điểm bắt đầu chốt bán | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:31 | nha không cần | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:33 | mình không cần phải làm những chuyện đó | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
+03:34 | mình vô lệnh là mình đã biết | CODE trader/mentor_mode.go:909 [leg-1 +1R then runner] (row 3)
 03:39 | mình nên làm cái gì rồi | —
 03:40 | hôm nay mình sẽ học | —
 03:42 | sâu về những cái gì mình nên làm | —
@@ -185,49 +185,49 @@ cues: 277/277 · rule cues: 98 · rows: 10 · CODE: 89 · MISMATCH: 0 · NOT-IN-
 07:06 | anh học khóa này là mấy khóa rồi ta | —
 07:08 | 4 khóa | —
 07:09 | ta gặp Instaba lúc nào cũng là cây nến trend | —
-07:13 | kế tiếp | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:14 | alo quý vị | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:16 | cái gì vậy | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:17 | mấy anh chị này khóa cũ | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:20 | không phải khóa mới đâu ta | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:21 | đánh đòn quá | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:23 | cái target tiếp theo của cây nến Instaba | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:26 | lúc nào cũng là cây nến trend | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:29 | khi nào phiêu lệnh kế tiếp | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:30 | đúng không | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:33 | 1 setup mình có bao nhiêu phần anh chị | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:36 | hoài luôn á | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:38 | này anh chị khóa cũ mà trả lời | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:39 | 1 setup mình có tổng cộng là 3 phần | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:43 | cái nến insta bar là cái nến | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:45 | phần thứ 2 là phần ranging | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:47 | thì bây giờ mình target | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:52 | mình target cái gì | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:53 | bây giờ 1 setup có 3 phần | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:56 | bây giờ nó đã có 2 phần rồi | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-07:58 | thì bây giờ mình target cái gì anh chị | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:00 | trả lời cho em coi | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:03 | bây giờ mình target cái gì | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:04 | có phải là mình bây giờ 1 setup có 3 phần | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:21 | bây giờ phải target của mình là phần thứ 3 không | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:23 | bây giờ 1 setup có 3 phần nè | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:26 | 1 phần thứ nhất nè | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:27 | cái nến thứ nhất nè | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:28 | cái nến thứ 2 nè | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:29 | cái nến thứ 3 nè | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:30 | bây giờ cái nến thứ 3 nó chưa có | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:32 | thì bây giờ có phải là mình target cái nến thứ 3 không | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:34 | cái đầu tiên lúc nào của mình | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:37 | mình cũng target cái nến thứ 3 đầu tiên | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:39 | rồi bán bớt bán hết gì đó | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:44 | xíu mình học | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:44 | nhưng | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:46 | cái phần | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:47 | theo 1 setup | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:50 | mình chỉ có tổng cộng 3 phần | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:52 | không có phần thứ 4 | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:53 | mình chỉ ta kể phần thứ 3 thôi | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
-08:55 | anh Winnie ok không anh | CODE kernel/mentor/isb.go:72 [Intent build — entry/stop of the 3-part setup] (row 9)
+07:13 | kế tiếp | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+07:14 | alo quý vị | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+07:16 | cái gì vậy | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+07:17 | mấy anh chị này khóa cũ | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+07:20 | không phải khóa mới đâu ta | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+07:21 | đánh đòn quá | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+07:23 | cái target tiếp theo của cây nến Instaba | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+07:26 | lúc nào cũng là cây nến trend | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+07:29 | khi nào phiêu lệnh kế tiếp | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+07:30 | đúng không | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+07:33 | 1 setup mình có bao nhiêu phần anh chị | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+07:36 | hoài luôn á | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+07:38 | này anh chị khóa cũ mà trả lời | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+07:39 | 1 setup mình có tổng cộng là 3 phần | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+07:43 | cái nến insta bar là cái nến | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+07:45 | phần thứ 2 là phần ranging | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+07:47 | thì bây giờ mình target | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+07:52 | mình target cái gì | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+07:53 | bây giờ 1 setup có 3 phần | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+07:56 | bây giờ nó đã có 2 phần rồi | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+07:58 | thì bây giờ mình target cái gì anh chị | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+08:00 | trả lời cho em coi | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+08:03 | bây giờ mình target cái gì | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+08:04 | có phải là mình bây giờ 1 setup có 3 phần | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+08:21 | bây giờ phải target của mình là phần thứ 3 không | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+08:23 | bây giờ 1 setup có 3 phần nè | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+08:26 | 1 phần thứ nhất nè | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+08:27 | cái nến thứ nhất nè | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+08:28 | cái nến thứ 2 nè | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+08:29 | cái nến thứ 3 nè | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+08:30 | bây giờ cái nến thứ 3 nó chưa có | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+08:32 | thì bây giờ có phải là mình target cái nến thứ 3 không | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+08:34 | cái đầu tiên lúc nào của mình | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+08:37 | mình cũng target cái nến thứ 3 đầu tiên | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+08:39 | rồi bán bớt bán hết gì đó | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+08:44 | xíu mình học | CODE kernel/mentor/eval.go:1151 [best = l.Price — target computation] (row 9)
+08:44 | nhưng | —
+08:46 | cái phần | —
+08:47 | theo 1 setup | —
+08:50 | mình chỉ có tổng cộng 3 phần | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+08:52 | không có phần thứ 4 | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+08:53 | mình chỉ ta kể phần thứ 3 thôi | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
+08:55 | anh Winnie ok không anh | CODE kernel/mentor/isb.go:72 [Intent build — entry, 1st of the 3 parts] (row 35)
 08:58 | ngày hôm nay | —
 09:01 | bắt đầu từ | —
 09:02 | khi mình học setup này mọi người | —

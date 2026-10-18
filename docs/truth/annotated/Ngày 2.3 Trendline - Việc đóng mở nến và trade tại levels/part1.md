@@ -1,4 +1,4 @@
-cues: 520/520 · rule cues: 259 · rows: 7 · CODE: 215 · MISMATCH: 0 · NOT-IN-BOT: 44 · OWNER-ORDER: 0 · SPLIT: 0 · —: 261
+cues: 520/520 · rule cues: 271 · rows: 7 · CODE: 227 · MISMATCH: 0 · NOT-IN-BOT: 44 · OWNER-ORDER: 0 · SPLIT: 0 · —: 249
 
 00:00 | Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
 00:30 | thấp và một đáy cao hơn hoặc | CODE kernel/mentor/trendline.go:129 [horizontal refused] (row 22)
@@ -52,16 +52,16 @@ cues: 520/520 · rule cues: 259 · rows: 7 · CODE: 215 · MISMATCH: 0 · NOT-IN
 02:41 | Là mình biết oh trendline này nó work rồi nè | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
 02:43 | Đúng không | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
 02:45 | Tại vì đây là lần đầu tiên market nó thử | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
-02:47 | Cái trendline này coi nó work hay không | —
-02:48 | Đúng không | —
-02:49 | Tại vì cấu tạo nè | —
-02:51 | Một hai đấy nó mới ra cái trendline | —
-02:53 | Thì ngay đây là lần đầu tiên | —
-02:55 | Lần đầu tiên market nó test cái trendline | —
-02:58 | Lần đầu tiên market nó test cái trendline | —
-03:03 | Và mình cũng không biết được là nó có hô hay không | —
-03:06 | Tại vì sao | —
-03:07 | Căn bản ra lần đầu tiên mà | —
+02:47 | Cái trendline này coi nó work hay không | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
+02:48 | Đúng không | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
+02:49 | Tại vì cấu tạo nè | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
+02:51 | Một hai đấy nó mới ra cái trendline | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
+02:53 | Thì ngay đây là lần đầu tiên | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
+02:55 | Lần đầu tiên market nó test cái trendline | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
+02:58 | Lần đầu tiên market nó test cái trendline | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
+03:03 | Và mình cũng không biết được là nó có hô hay không | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
+03:06 | Tại vì sao | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
+03:07 | Căn bản ra lần đầu tiên mà | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
 03:08 | Thà nó về một lần | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
 03:10 | Rồi nó test rồi nó hô rồi | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
 03:13 | Là lần thứ ba đó | CODE kernel/mentor/trendline.go:280 [ValidAt==0 skip] (row 23)
@@ -415,8 +415,8 @@ cues: 520/520 · rule cues: 259 · rows: 7 · CODE: 215 · MISMATCH: 0 · NOT-IN
 17:54 | Lý do | CODE kernel/mentor/touch.go:82 [first-touch guard] (row 26)
 17:55 | Cây nến chạm đầu tiên | CODE kernel/mentor/touch.go:82 [first-touch guard] (row 26)
 17:59 | Là cây nến làm chuẩn | CODE kernel/mentor/touch.go:82 [first-touch guard] (row 26)
-18:01 | Cây nến đầu tiên chạm lúc nào cũng sẽ là cây nến làm chuẩn | —
-18:08 | Không bao giờ được dời lệnh buy stop của mình xuống cây nến kế tiếp | —
+18:01 | Cây nến đầu tiên chạm lúc nào cũng sẽ là cây nến làm chuẩn | CODE kernel/mentor/touch.go:82 [first-touch guard] (row 26)
+18:08 | Không bao giờ được dời lệnh buy stop của mình xuống cây nến kế tiếp | CODE kernel/mentor/touch.go:82 [first-touch guard] (row 26)
 18:14 | Đây là điều bắt buộc | CODE kernel/mentor/touch.go:82 [first-touch guard] (row 26)
 18:16 | Cây nến chạm nó còn chưa vượt qua được | CODE kernel/mentor/touch.go:82 [first-touch guard] (row 26)
 18:22 | Thì làm sao mà cây nến sâu nó có lực nó chạy được | CODE kernel/mentor/touch.go:82 [first-touch guard] (row 26)
