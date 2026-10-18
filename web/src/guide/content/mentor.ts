@@ -39,7 +39,7 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.isb_reverse_ema9_enabled',
     live: true,
   },
-  '4h/1h gate only in the news window': {
+  '4h/1h gate only in the news window (07:20–07:35 CT)': {
     settingId: 'risk_control.mentor_tuning.htf_gate_news_only',
     live: true,
   },
@@ -545,7 +545,7 @@ export const mentor: GuideSection = {
         [
           'Room rule',
           'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. Release #30: the EMA 9 / EMA 34 lines are PARTIAL points along the way, not the level the room (and the 1:1 floor) measure — "ta ghẹt tôi đầu tiên phải là về gần đỉnh cũ … tiếp tục là EMA 34 … những cái chỗ này là những cái chỗ anh chị bán bớt" [D3.3 p1 @05:15–07:38]; an EMA must not by itself kill the trade (the room/floor read the next non-EMA level — the nearest old high/low, a key level, or a trendline target; the EMA is the target only when no other level stands beyond). The room is measured to the LEVEL, also on a spent day: the 15-pt take-profit cap shortens the take-profit, never the room — "dù target của em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]. So a spent-day setup needs stop ≤ 15 (the 1:1 floor on the capped take-profit), room ≥ 2R to the level, AND room to the level ≥ 2× the capped take-profit — his worked figure: target 15 → room 30 (a take-profit sitting right at the level is refused). A PHL/PLH stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
-          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · every non-swing stop, the ISB included, also meets the mentor_isb_max_pts ceiling (default 30 — the SAME knob the trader’s R8 gate reads; P2-1 one number) · swing_max_stop_pts 100',
+          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · mentor_isb_max_pts 30 (the ISB and reverse ISB only — the SAME knob the trader’s R8 gate reads; P2-1 one number) · swing_max_stop_pts 100',
         ],
         [
           'ORB gate (opening range)',
@@ -965,12 +965,13 @@ export const mentor: GuideSection = {
           label: 'Touch band',
           where: 'Strategy → Mentor mode → touches',
           what: 'How close counts as touching a level.',
-          trader: '0 — a LITERAL touch only ("KHÔNG ĐƯỢC GẦN ĐỤNG").',
+          trader:
+            '0 — a literal touch. On the 1m a near-touch is allowed ("chưa gần đụng… gần gần gần đụng"), but the 4h swing must literally touch ("bắt buộc là phải đụng nha").',
           consumer: 'kernel/mentor/mentor.go TouchBandPts',
           range: 'pts',
           systemDefault: '0',
           recommended:
-            '0 — the literal touch [D3.3 p1 @00:13; D5.2 p2 @18:36 "KHÔNG ĐƯỢC GẦN ĐỤNG"].',
+            '0 — the literal touch [D3.3 p1 @00:13; D5.2 p2 @18:36 "chưa gần đụng… bắt buộc là phải đụng nha" — near-touch ok on the 1m, the 4h swing must touch].',
           whenToTouch: 'Never — the literal touch is the method.',
           perSession: 'No.',
         },
@@ -1001,17 +1002,16 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
-          label: '4h/1h gate only in the news window',
+          label: '4h/1h gate only in the news window (07:20–07:35 CT)',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D4.4-11: ON = the 4h/1h direction gate applies ONLY inside the 07:20–07:35 CT news window; ordinary intraday entries are then not HTF-gated. OFF (default — the all-day gate) = no 4h trigger means nothing to follow, and a 1h against the 4h sits out all day. The course: "Đánh thường đánh níu cũng được / Nhưng mà đánh níu nên sử dụng cho níu trước đi / Đừng sử dụng cho thường / Thường bắt đầu khó lắm" (D4.4 p1 @13:55–14:06 — trading normal or news is fine, but use the HTF read for news first); the later D5.1 routine reads 4h then 1h for the day [D5.1 p1 @19:04–19:20]. The course is split, so the all-day gate stays the default and the news-only switch sits on the mentor-question list (U-6 open).',
-          trader:
-            'OFF — FOLD 2026-10-16 reverted course-defaults-30 back to the all-day gate (U-6 open).',
+          what: 'D4.4-11: ON (default) = the 4h/1h direction gate applies ONLY inside the 07:20–07:35 CT news window; ordinary intraday entries are then not HTF-gated. OFF = the all-day gate (no 4h trigger means nothing to follow, and a 1h against the 4h sits out all day). The course: "Đánh thường đánh níu cũng được / Nhưng mà đánh níu nên sử dụng cho níu trước đi / Đừng sử dụng cho thường / Thường bắt đầu khó lắm" (D4.4 p1 @13:55–14:06 — trading normal or news is fine, but use the HTF read for news first) and "em chỉ hướng dẫn mọi người cái news thôi" (D4.4 p1 @24:48–24:51). Owner order 2026-10-17: news-only is ON by default; the D5.1 all-day read stays on the mentor-question list.',
+          trader: 'ON — owner order 2026-10-17: news-only is the default.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (HTFGateNewsOnly) · kernel/mentor/htf_direction.go HTFGateActive / HTFVerdict',
           range: 'true / false',
-          systemDefault: 'false',
+          systemDefault: 'true',
           recommended:
-            'OFF — the all-day gate is the default (U-6 open; the course is split D4.4 p1 @13:55 vs D5.1 p1 @19:11–19:20).',
+            'ON — news-only is the default (owner order 2026-10-17; D4.4 p1 @13:55 "đánh níu nên sử dụng cho níu trước đi", @24:48 "em chỉ hướng dẫn mọi người cái news thôi").',
           whenToTouch: 'Rarely.',
           perSession: 'No.',
         },

@@ -88,9 +88,9 @@ const COPY = {
     es: 'ISB inverso en EMA 9',
   },
   htfNews: {
-    zh: '4h/1h 方向闸门仅限新闻窗口',
-    en: '4h/1h direction gate only in the news window',
-    es: 'Compuerta 4h/1h solo en la ventana de noticias',
+    zh: '4h/1h 方向闸门仅限新闻窗口（07:20–07:35 CT）',
+    en: '4h/1h direction gate only in the news window (07:20–07:35 CT)',
+    es: 'Compuerta 4h/1h solo en la ventana de noticias (07:20–07:35 CT)',
   },
   exec2m: {
     zh: '09:00 CT 后改用 2 分钟执行 ISB',
@@ -306,7 +306,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   level_max_visits: 3,
   orb_gate_enabled: true,
   isb_reverse_ema9_enabled: true,
-  htf_gate_news_only: false,
+  htf_gate_news_only: true,
   exec_2m_after_30m: true,
   day_gate_spent_pts: 300,
   day_gate_target_cap_pts: 15,
