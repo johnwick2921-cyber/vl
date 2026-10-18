@@ -26,13 +26,36 @@ type FriendManifest struct {
 	AppURL      string `json:"app_url"`
 }
 
+// friendManifestFields is the EXACT set of keys a friend manifest may carry
+// (R8: build metadata ONLY — build id, sha256s, versions, artifact file names).
+// No paths, hosts, keys, accounts or user data. Anything else refuses.
+var friendManifestFields = []string{
+	"addon_build", "addon_sha256", "addon_url", "app_version", "app_sha256", "app_url",
+}
+
 // VerifyFriendManifest verifies the manifest bytes against the armored SSHSIG
 // signature using the EMBEDDED allowed-signers content (the friend-distribution
-// public key, B10.2), then validates every SHA-256 field is well-formed. The
-// signature is checked FIRST — a manifest whose signature fails is never parsed.
+// public key, B10.2), then validates the JSON has EXACTLY the six R8 fields and
+// that every SHA-256 field is well-formed. The signature is checked FIRST — a
+// manifest whose signature fails is never parsed.
 func VerifyFriendManifest(manifestBytes, sigBytes, allowedSigners []byte) (FriendManifest, error) {
 	if _, err := verifySSHSIG(manifestBytes, sigBytes, allowedSigners); err != nil {
 		return FriendManifest{}, fmt.Errorf("friend manifest signature: %w", err)
+	}
+	// R8: the manifest carries build metadata only. Enforce the exact key set
+	// BEFORE the typed parse, so a manifest that smuggles a host / key / account
+	// field refuses (unknown fields are not silently dropped).
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(manifestBytes, &keys); err != nil {
+		return FriendManifest{}, fmt.Errorf("friend manifest JSON: %w", err)
+	}
+	if len(keys) != len(friendManifestFields) {
+		return FriendManifest{}, fmt.Errorf("friend manifest: %d fields, want exactly %d (build metadata only)", len(keys), len(friendManifestFields))
+	}
+	for _, want := range friendManifestFields {
+		if _, ok := keys[want]; !ok {
+			return FriendManifest{}, fmt.Errorf("friend manifest: missing field %q", want)
+		}
 	}
 	var m FriendManifest
 	if err := json.Unmarshal(manifestBytes, &m); err != nil {

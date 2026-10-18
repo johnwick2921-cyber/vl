@@ -110,6 +110,31 @@ func TestVerifyFriendManifestRefusesBadSHAFields(t *testing.T) {
 	}
 }
 
+// TestVerifyFriendManifestRejectsUnknownField — R8: the manifest is build
+// metadata ONLY. An extra key (a host / key / account) must refuse, even when
+// the signature is valid: the app must not carry or trust smuggled fields.
+func TestVerifyFriendManifestRejectsUnknownField(t *testing.T) {
+	extra := `{"addon_build":"37","addon_sha256":"` + strings.Repeat("ab", 32) +
+		`","addon_url":"/api/friend/artifact/addon","app_version":"1.0.0","app_sha256":"` +
+		strings.Repeat("cd", 32) + `","app_url":"/api/friend/artifact/app","host":"100.64.0.2"}` + "\n"
+	msg, sig, signers := signManifest(t, []byte(extra))
+	if _, err := VerifyFriendManifest(msg, sig, signers); err == nil {
+		t.Fatal("a manifest with an extra host field was accepted")
+	}
+}
+
+// TestVerifyFriendManifestRejectsMissingField — a manifest missing one of the
+// six R8 fields refuses.
+func TestVerifyFriendManifestRejectsMissingField(t *testing.T) {
+	missing := `{"addon_build":"37","addon_sha256":"` + strings.Repeat("ab", 32) +
+		`","addon_url":"/api/friend/artifact/addon","app_version":"1.0.0","app_sha256":"` +
+		strings.Repeat("cd", 32) + `}` + "\n"
+	msg, sig, signers := signManifest(t, []byte(missing))
+	if _, err := VerifyFriendManifest(msg, sig, signers); err == nil {
+		t.Fatal("a manifest missing app_url was accepted")
+	}
+}
+
 func TestVerifySHA256(t *testing.T) {
 	content := []byte("hello")
 	want := "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824" // sha256("hello")
