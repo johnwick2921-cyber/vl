@@ -83,21 +83,21 @@ cues: 130/130 · rule cues: 78 · rows: 4 · CODE: 78 · MISMATCH: 0 · NOT-IN-B
 00:02:44 | Nên là | CODE kernel/mentor/box.go:545
 00:02:46 | Cái flag anh chị đừng quá quan trọng | —
 00:02:49 | Nó là một cái trend | —
-00:02:50 | Sau khi nó trend xong nó pull back | CODE kernel/mentor/mtf.go:34
-00:02:52 | Anh chị chỉ qua khung lớn anh chị nhìn nè | CODE kernel/mentor/mtf.go:34
-00:02:54 | Có phải là khung 5 phút trigger buy setup không | CODE kernel/mentor/mtf.go:34
-00:02:59 | Rõ ràng đúng không | CODE kernel/mentor/mtf.go:34
-00:03:01 | Khung 5 phút trigger buy setup nè | CODE kernel/mentor/mtf.go:34
-00:03:03 | Khung 2 phút cũng trigger buy setup nè | CODE kernel/mentor/mtf.go:34
-00:03:05 | Đúng không | CODE kernel/mentor/mtf.go:34
-00:03:06 | Thì nó sẽ được nối lại bởi những potential high low | CODE kernel/mentor/mtf.go:34
-00:03:09 | và potential low 2 để nó tạo ra cái flag | CODE kernel/mentor/mtf.go:34
-00:03:10 | break down và break up thôi | CODE kernel/mentor/mtf.go:34
-00:03:12 | cái đó là tùy market | CODE kernel/mentor/mtf.go:34
-00:03:14 | cái đó mình không thể nào mình biết được | CODE kernel/mentor/mtf.go:34
-00:03:16 | cái flag ở hướng nào thì mình canh setup | CODE kernel/mentor/mtf.go:34
-00:03:19 | hướng đó mình đánh lên tiếp | CODE kernel/mentor/mtf.go:34
-00:03:20 | hoặc là mình đánh xuống tiếp, cái đó tùy anh chị ha | CODE kernel/mentor/mtf.go:34
+00:02:50 | Sau khi nó trend xong nó pull back | CODE kernel/mentor/filters.go:54
+00:02:52 | Anh chị chỉ qua khung lớn anh chị nhìn nè | CODE kernel/mentor/filters.go:54
+00:02:54 | Có phải là khung 5 phút trigger buy setup không | CODE kernel/mentor/filters.go:54
+00:02:59 | Rõ ràng đúng không | CODE kernel/mentor/filters.go:54
+00:03:01 | Khung 5 phút trigger buy setup nè | CODE kernel/mentor/filters.go:54
+00:03:03 | Khung 2 phút cũng trigger buy setup nè | CODE kernel/mentor/filters.go:54
+00:03:05 | Đúng không | CODE kernel/mentor/filters.go:54
+00:03:06 | Thì nó sẽ được nối lại bởi những potential high low | CODE kernel/mentor/filters.go:54
+00:03:09 | và potential low 2 để nó tạo ra cái flag | CODE kernel/mentor/filters.go:54
+00:03:10 | break down và break up thôi | CODE kernel/mentor/filters.go:54
+00:03:12 | cái đó là tùy market | CODE kernel/mentor/filters.go:54
+00:03:14 | cái đó mình không thể nào mình biết được | CODE kernel/mentor/filters.go:54
+00:03:16 | cái flag ở hướng nào thì mình canh setup | CODE kernel/mentor/filters.go:54
+00:03:19 | hướng đó mình đánh lên tiếp | CODE kernel/mentor/filters.go:54
+00:03:20 | hoặc là mình đánh xuống tiếp, cái đó tùy anh chị ha | CODE kernel/mentor/filters.go:54
 00:03:22 | rồi | —
 00:03:24 | em tắt record ở đây ha | —
 00:03:26 | nên là cố gắng với em là | —

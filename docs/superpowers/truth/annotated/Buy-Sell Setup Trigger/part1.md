@@ -92,16 +92,16 @@ cues: 651/651 · rule cues: 82 · rows: 6 · CODE: 82 · MISMATCH: 0 · NOT-IN-B
 00:03:44 | Khi nào nó bắt đầu nó pullback | —
 00:03:46 | Thì đây | —
 00:03:48 | Nó sẽ provide được cho mình | —
-00:03:50 | Cũng như cái lúc mà anh chị | CODE kernel/mentor/mtf.go:34
-00:03:51 | Đánh potential lower 2 vậy thôi | CODE kernel/mentor/mtf.go:34
-00:03:53 | Nó không khác gì đó | CODE kernel/mentor/mtf.go:34
-00:03:55 | Nó chỉ là | CODE kernel/mentor/mtf.go:34
-00:03:57 | Cũng như là cái khui mà khi anh chị trade | CODE kernel/mentor/mtf.go:34
-00:04:00 | Khung 1 phút khung 2 phút | CODE kernel/mentor/mtf.go:34
-00:04:01 | Nó cũng là anh chị bắt potential lower 2 | CODE kernel/mentor/mtf.go:34
-00:04:03 | Cây nến sau vượt qua đấy cây nến trước | CODE kernel/mentor/mtf.go:34
-00:04:06 | Thì mình sẽ có được cái điểm entry | CODE kernel/mentor/mtf.go:34
-00:04:08 | Và điểm stop loss | CODE kernel/mentor/mtf.go:34
+00:03:50 | Cũng như cái lúc mà anh chị | CODE kernel/mentor/filters.go:54
+00:03:51 | Đánh potential lower 2 vậy thôi | CODE kernel/mentor/filters.go:54
+00:03:53 | Nó không khác gì đó | CODE kernel/mentor/filters.go:54
+00:03:55 | Nó chỉ là | CODE kernel/mentor/filters.go:54
+00:03:57 | Cũng như là cái khui mà khi anh chị trade | CODE kernel/mentor/filters.go:54
+00:04:00 | Khung 1 phút khung 2 phút | CODE kernel/mentor/filters.go:54
+00:04:01 | Nó cũng là anh chị bắt potential lower 2 | CODE kernel/mentor/filters.go:54
+00:04:03 | Cây nến sau vượt qua đấy cây nến trước | CODE kernel/mentor/filters.go:54
+00:04:06 | Thì mình sẽ có được cái điểm entry | CODE kernel/mentor/filters.go:54
+00:04:08 | Và điểm stop loss | CODE kernel/mentor/filters.go:54
 00:04:13 | Đúng không? Rõ ràng | —
 00:04:15 | Không gì khác hết | —
 00:04:17 | Rồi | —
@@ -170,39 +170,39 @@ cues: 651/651 · rule cues: 82 · rows: 6 · CODE: 82 · MISMATCH: 0 · NOT-IN-B
 00:06:54 | Em nhìn nhứt mắt lắm | —
 00:06:56 | Rồi có anh chị nào không hiểu không mọi người | —
 00:06:58 | Cái buy setup trigger | —
-00:07:00 | Hoặc là share setup trigger | CODE kernel/mentor/mtf.go:34
-00:07:01 | Mình sẽ chỉ sử dụng cho khung 5 phút | CODE kernel/mentor/mtf.go:34
-00:07:04 | Hoặc là khung 15 phút | CODE kernel/mentor/mtf.go:34
-00:07:06 | Để mình biết được là cái trend | CODE kernel/mentor/mtf.go:34
-00:07:08 | Nó sẽ bắt đầu nó chuẩn bị | CODE kernel/mentor/mtf.go:34
-00:07:10 | Nó đảo chiều hay là nó bắt đầu nó pull back | CODE kernel/mentor/mtf.go:34
-00:07:12 | Hay là nó bắt đầu nó đi như thế nào đó | CODE kernel/mentor/mtf.go:34
-00:07:14 | Nên là mình sẽ | CODE kernel/mentor/mtf.go:34
-00:07:19 | chỉ sử dụng khung 5 phút | CODE kernel/mentor/mtf.go:34
-00:07:21 | để mình biết xác định được là | CODE kernel/mentor/mtf.go:34
-00:07:23 | đây nè, khung 5 phút bắt đầu | CODE kernel/mentor/mtf.go:34
-00:07:25 | nó pullback rồi nè, thì bắt đầu | CODE kernel/mentor/mtf.go:34
-00:07:27 | bây giờ em hỏi anh chị ha | CODE kernel/mentor/mtf.go:34
-00:07:29 | khung 5 phút | CODE kernel/mentor/mtf.go:34
-00:07:31 | đang uptrend | CODE kernel/mentor/mtf.go:34
-00:07:32 | và pullback thì khung 2 phút và khung 1 phút | CODE kernel/mentor/mtf.go:34
-00:07:35 | đang làm gì anh chị, có anh chị nào trả lời với em không | CODE kernel/mentor/mtf.go:34
-00:07:38 | trả lời với em mọi người | CODE kernel/mentor/mtf.go:34
-00:07:42 | khung 5 phút | CODE kernel/mentor/mtf.go:34
-00:07:44 | đang uptrend | CODE kernel/mentor/mtf.go:34
-00:07:45 | và | CODE kernel/mentor/mtf.go:34
-00:07:47 | qua cái giai đoạn uptrend nè | CODE kernel/mentor/mtf.go:34
-00:07:50 | bây giờ pullback thì mình sẽ | CODE kernel/mentor/mtf.go:34
-00:07:52 | Cái khung 1 phút và khung 2 phút sẽ đang làm gì | CODE kernel/mentor/mtf.go:34
-00:07:54 | Đang là downtrend đúng không | CODE kernel/mentor/mtf.go:34
-00:07:56 | Đó bây giờ khung 5 phút nè | CODE kernel/mentor/mtf.go:34
-00:07:57 | Trigger pullback rồi nè | CODE kernel/mentor/mtf.go:34
-00:07:59 | Trigger pullback có nghĩa là gì | CODE kernel/mentor/mtf.go:34
-00:08:00 | Là khi nến phá đáy của cây nến trước đó | CODE kernel/mentor/mtf.go:34
-00:08:04 | Giá nên tiếp tục đi theo hướng đó | CODE kernel/mentor/mtf.go:34
-00:08:05 | Bây giờ nó phá cái đáy là nó đi xuống | CODE kernel/mentor/mtf.go:34
-00:08:07 | Thì khung 2 phút và khung 1 phút đang là downtrend | CODE kernel/mentor/mtf.go:34
-00:08:09 | Thì mình đi kiếm lệnh short | CODE kernel/mentor/mtf.go:34
+00:07:00 | Hoặc là share setup trigger | CODE kernel/mentor/filters.go:54
+00:07:01 | Mình sẽ chỉ sử dụng cho khung 5 phút | CODE kernel/mentor/filters.go:54
+00:07:04 | Hoặc là khung 15 phút | CODE kernel/mentor/filters.go:54
+00:07:06 | Để mình biết được là cái trend | CODE kernel/mentor/filters.go:54
+00:07:08 | Nó sẽ bắt đầu nó chuẩn bị | CODE kernel/mentor/filters.go:54
+00:07:10 | Nó đảo chiều hay là nó bắt đầu nó pull back | CODE kernel/mentor/filters.go:54
+00:07:12 | Hay là nó bắt đầu nó đi như thế nào đó | CODE kernel/mentor/filters.go:54
+00:07:14 | Nên là mình sẽ | CODE kernel/mentor/filters.go:54
+00:07:19 | chỉ sử dụng khung 5 phút | CODE kernel/mentor/filters.go:54
+00:07:21 | để mình biết xác định được là | CODE kernel/mentor/filters.go:54
+00:07:23 | đây nè, khung 5 phút bắt đầu | CODE kernel/mentor/filters.go:54
+00:07:25 | nó pullback rồi nè, thì bắt đầu | CODE kernel/mentor/filters.go:54
+00:07:27 | bây giờ em hỏi anh chị ha | CODE kernel/mentor/filters.go:54
+00:07:29 | khung 5 phút | CODE kernel/mentor/filters.go:54
+00:07:31 | đang uptrend | CODE kernel/mentor/filters.go:54
+00:07:32 | và pullback thì khung 2 phút và khung 1 phút | CODE kernel/mentor/filters.go:54
+00:07:35 | đang làm gì anh chị, có anh chị nào trả lời với em không | CODE kernel/mentor/filters.go:54
+00:07:38 | trả lời với em mọi người | CODE kernel/mentor/filters.go:54
+00:07:42 | khung 5 phút | CODE kernel/mentor/filters.go:54
+00:07:44 | đang uptrend | CODE kernel/mentor/filters.go:54
+00:07:45 | và | CODE kernel/mentor/filters.go:54
+00:07:47 | qua cái giai đoạn uptrend nè | CODE kernel/mentor/filters.go:54
+00:07:50 | bây giờ pullback thì mình sẽ | CODE kernel/mentor/filters.go:54
+00:07:52 | Cái khung 1 phút và khung 2 phút sẽ đang làm gì | CODE kernel/mentor/filters.go:54
+00:07:54 | Đang là downtrend đúng không | CODE kernel/mentor/filters.go:54
+00:07:56 | Đó bây giờ khung 5 phút nè | CODE kernel/mentor/filters.go:54
+00:07:57 | Trigger pullback rồi nè | CODE kernel/mentor/filters.go:54
+00:07:59 | Trigger pullback có nghĩa là gì | CODE kernel/mentor/filters.go:54
+00:08:00 | Là khi nến phá đáy của cây nến trước đó | CODE kernel/mentor/filters.go:54
+00:08:04 | Giá nên tiếp tục đi theo hướng đó | CODE kernel/mentor/filters.go:54
+00:08:05 | Bây giờ nó phá cái đáy là nó đi xuống | CODE kernel/mentor/filters.go:54
+00:08:07 | Thì khung 2 phút và khung 1 phút đang là downtrend | CODE kernel/mentor/filters.go:54
+00:08:09 | Thì mình đi kiếm lệnh short | CODE kernel/mentor/filters.go:54
 00:08:12 | Rõ ràng không | —
 00:08:14 | Mình đi kiếm lệnh short | —
 00:08:15 | Nên là anh chị đừng suy nghĩ quá nhiều về cái việc | —

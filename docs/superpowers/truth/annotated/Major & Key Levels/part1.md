@@ -1,8 +1,8 @@
 cues: 715/715 · rule cues: 226 · rows: 11 · CODE: 100 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 126 · SPLIT: 0 · —: 489
 
-00:00:00 | Rồi, ngày hôm nay em sẽ go over lại với anh chị, thứ nhất là mình sẽ có cái major level, thứ hai là mình sẽ có key level khung 4H, và thứ ba nữa mình sẽ vẽ nến hacking, mình sẽ vẽ tập vẽ nến hacking. | CODE kernel/mentor/mentor.go:548
-00:00:16 | Rồi, khung 1H major level thì anh chị cũng đã biết rồi. Mình chỉnh regular trading hour và chỉnh khung 1H. | CODE kernel/mentor/mentor.go:548
-00:00:26 | Thì hôm nay | CODE kernel/mentor/mentor.go:548
+00:00:00 | Rồi, ngày hôm nay em sẽ go over lại với anh chị, thứ nhất là mình sẽ có cái major level, thứ hai là mình sẽ có key level khung 4H, và thứ ba nữa mình sẽ vẽ nến hacking, mình sẽ vẽ tập vẽ nến hacking. | CODE kernel/mentor/mentor.go:528
+00:00:16 | Rồi, khung 1H major level thì anh chị cũng đã biết rồi. Mình chỉnh regular trading hour và chỉnh khung 1H. | CODE kernel/mentor/mentor.go:528
+00:00:26 | Thì hôm nay | CODE kernel/mentor/mentor.go:528
 00:00:27 | Mọi người nhìn rất là clear đúng không | —
 00:00:30 | Mọi người nhìn rất là clear | —
 00:00:31 | Đây nè, tại sao ngày hôm nay nó bounce đúng không | —
@@ -188,18 +188,18 @@ cues: 715/715 · rule cues: 226 · rows: 11 · CODE: 100 · MISMATCH: 0 · NOT-I
 00:06:30 | Đúng không | —
 00:06:32 | Rồi | —
 00:06:37 | Tiếp tục | —
-00:06:38 | Còn những cái key level | CODE kernel/mentor/mentor.go:548
-00:06:41 | Bình thường | CODE kernel/mentor/mentor.go:548
-00:06:42 | Để mình trade trong cái mid term | CODE kernel/mentor/mentor.go:548
-00:06:44 | Nó sẽ là những cái | CODE kernel/mentor/mentor.go:548
-00:06:45 | Nó sẽ là trong cái short term | CODE kernel/mentor/mentor.go:548
-00:06:47 | Game nó là cái short term | CODE kernel/mentor/mentor.go:548
-00:06:48 | Nó sẽ là như thế nào | CODE kernel/mentor/mentor.go:548
-00:06:50 | Thì bây giờ | CODE kernel/mentor/mentor.go:548
-00:06:52 | Những cái major level | CODE kernel/mentor/mentor.go:548
-00:06:53 | Những cái khung 1 giờ nó rất là bự | CODE kernel/mentor/mentor.go:548
-00:06:55 | Nó chỉ là những cái target mà mình hướng tới thôi | CODE kernel/mentor/mentor.go:548
-00:06:59 | Chứ không phải là | CODE kernel/mentor/mentor.go:548
+00:06:38 | Còn những cái key level | CODE kernel/mentor/mentor.go:528
+00:06:41 | Bình thường | CODE kernel/mentor/mentor.go:528
+00:06:42 | Để mình trade trong cái mid term | CODE kernel/mentor/mentor.go:528
+00:06:44 | Nó sẽ là những cái | CODE kernel/mentor/mentor.go:528
+00:06:45 | Nó sẽ là trong cái short term | CODE kernel/mentor/mentor.go:528
+00:06:47 | Game nó là cái short term | CODE kernel/mentor/mentor.go:528
+00:06:48 | Nó sẽ là như thế nào | CODE kernel/mentor/mentor.go:528
+00:06:50 | Thì bây giờ | CODE kernel/mentor/mentor.go:528
+00:06:52 | Những cái major level | CODE kernel/mentor/mentor.go:528
+00:06:53 | Những cái khung 1 giờ nó rất là bự | CODE kernel/mentor/mentor.go:528
+00:06:55 | Nó chỉ là những cái target mà mình hướng tới thôi | CODE kernel/mentor/mentor.go:528
+00:06:59 | Chứ không phải là | CODE kernel/mentor/mentor.go:528
 00:07:00 | Chứ không phải là | —
 00:07:06 | Mình bias | —
 00:07:10 | Em nói rất nhiều lần ha | CODE kernel/mentor/htf_direction.go:47

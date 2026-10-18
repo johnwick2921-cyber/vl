@@ -336,27 +336,27 @@ cues: 607/607 · rule cues: 194 · rows: 11 · CODE: 158 · MISMATCH: 15 · NOT-
 00:13:24 | Đang uptrend | —
 00:13:25 | Quay về bắt test | —
 00:13:28 | Thì trong lúc bắt test | —
-00:13:30 | Của khung 5 phút | CODE kernel/mentor/mtf.go:34
-00:13:31 | Khung nhỏ hơn đang làm gì | CODE kernel/mentor/mtf.go:34
-00:13:33 | Khung nhỏ hơn đang là downtrend | CODE kernel/mentor/mtf.go:34
-00:13:41 | Khung nhỏ hơn đang là downtrend | CODE kernel/mentor/mtf.go:34
-00:13:44 | Và ngược lại | CODE kernel/mentor/mtf.go:34
-00:13:46 | Khi khung 5 phút đang downtrend | CODE kernel/mentor/mtf.go:34
-00:13:49 | Bắt đầu quay về bắt test | CODE kernel/mentor/mtf.go:34
-00:13:54 | Thì khung nhỏ hơn sẽ là uptrend | CODE kernel/mentor/mtf.go:34
-00:13:57 | Vậy | CODE kernel/mentor/mtf.go:34
-00:14:02 | Khi nào mình biết là | CODE kernel/mentor/mtf.go:34
-00:14:04 | Nếu mà | CODE kernel/mentor/mtf.go:34
-00:14:05 | Khung 5 phút đang uptrend | CODE kernel/mentor/mtf.go:34
-00:14:08 | Thì khi nào mình biết được | CODE kernel/mentor/mtf.go:34
-00:14:10 | Là | CODE kernel/mentor/mtf.go:34
-00:14:11 | Market | CODE kernel/mentor/mtf.go:34
-00:14:13 | Chuẩn bị pullback | CODE kernel/mentor/mtf.go:34
-00:14:15 | Phá đâu mới được chứ mọi người | CODE kernel/mentor/mtf.go:34
-00:14:31 | Đâu phải phá đầu rồi đi lên tiếp rồi | CODE kernel/mentor/mtf.go:34
-00:14:33 | Phá qua đáy của cây nến trước | CODE kernel/mentor/mtf.go:34
-00:14:37 | Phá đáy của cây nến trước | CODE kernel/mentor/mtf.go:34
-00:14:40 | Nó vượt qua cái đáy thôi | CODE kernel/mentor/mtf.go:34
+00:13:30 | Của khung 5 phút | CODE kernel/mentor/filters.go:54
+00:13:31 | Khung nhỏ hơn đang làm gì | CODE kernel/mentor/filters.go:54
+00:13:33 | Khung nhỏ hơn đang là downtrend | CODE kernel/mentor/filters.go:54
+00:13:41 | Khung nhỏ hơn đang là downtrend | CODE kernel/mentor/filters.go:54
+00:13:44 | Và ngược lại | CODE kernel/mentor/filters.go:54
+00:13:46 | Khi khung 5 phút đang downtrend | CODE kernel/mentor/filters.go:54
+00:13:49 | Bắt đầu quay về bắt test | CODE kernel/mentor/filters.go:54
+00:13:54 | Thì khung nhỏ hơn sẽ là uptrend | CODE kernel/mentor/filters.go:54
+00:13:57 | Vậy | CODE kernel/mentor/filters.go:54
+00:14:02 | Khi nào mình biết là | CODE kernel/mentor/filters.go:54
+00:14:04 | Nếu mà | CODE kernel/mentor/filters.go:54
+00:14:05 | Khung 5 phút đang uptrend | CODE kernel/mentor/filters.go:54
+00:14:08 | Thì khi nào mình biết được | CODE kernel/mentor/filters.go:54
+00:14:10 | Là | CODE kernel/mentor/filters.go:54
+00:14:11 | Market | CODE kernel/mentor/filters.go:54
+00:14:13 | Chuẩn bị pullback | CODE kernel/mentor/filters.go:54
+00:14:15 | Phá đâu mới được chứ mọi người | CODE kernel/mentor/filters.go:54
+00:14:31 | Đâu phải phá đầu rồi đi lên tiếp rồi | CODE kernel/mentor/filters.go:54
+00:14:33 | Phá qua đáy của cây nến trước | CODE kernel/mentor/filters.go:54
+00:14:37 | Phá đáy của cây nến trước | CODE kernel/mentor/filters.go:54
+00:14:40 | Nó vượt qua cái đáy thôi | CODE kernel/mentor/filters.go:54
 00:14:41 | Là mình đã biết | —
 00:14:42 | Là mình đã bắt đầu mình có thể | —
 00:14:44 | Mình có thể biết được | —

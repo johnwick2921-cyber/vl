@@ -1,9 +1,9 @@
 cues: 282/282 · rule cues: 73 · rows: 5 · CODE: 73 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · SPLIT: 0 · —: 209
 
-00:00:00 | Đây là cái cách mà em cảm thấy từ bữa tới giờ nó rất ngon, nó trade rất ok, nó trade rất ok. | CODE kernel/mentor/mentor.go:548
-00:00:14 | Và cái này nó là một cái cách đánh support resistance, nó là một cách đánh support resistance. | CODE kernel/mentor/mentor.go:548
-00:00:26 | Nhưng mà tại sao em lại nói là nó ok ở đây? | CODE kernel/mentor/mentor.go:548
-00:00:30 | Tại vì như thế này đánh gì? | CODE kernel/mentor/mentor.go:548
+00:00:00 | Đây là cái cách mà em cảm thấy từ bữa tới giờ nó rất ngon, nó trade rất ok, nó trade rất ok. | CODE kernel/mentor/mentor.go:528
+00:00:14 | Và cái này nó là một cái cách đánh support resistance, nó là một cách đánh support resistance. | CODE kernel/mentor/mentor.go:528
+00:00:26 | Nhưng mà tại sao em lại nói là nó ok ở đây? | CODE kernel/mentor/mentor.go:528
+00:00:30 | Tại vì như thế này đánh gì? | CODE kernel/mentor/mentor.go:528
 00:00:31 | Bây giờ mọi người thấy là cái major level của mình | —
 00:00:36 | Cái level của khung 1 giờ của mình | —
 00:00:38 | Nó rất đúng | —
