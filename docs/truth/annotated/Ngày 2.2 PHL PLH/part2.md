@@ -1,4 +1,4 @@
-cues: 451/451 · rule cues: 105 · rows: 3 · CODE: 105 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 0 · SPLIT: 0 · —: 346
+cues: 451/451 · rule cues: 105 · rows: 4 · CODE: 105 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 0 · SPLIT: 0 · —: 346
 
 00:00 | Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
 01:42 | Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
@@ -178,8 +178,8 @@ cues: 451/451 · rule cues: 105 · rows: 3 · CODE: 105 · MISMATCH: 0 · NOT-IN
 11:06 | Anh chị cứ nghĩ, ờ, ngay chỗ này nó có polarity | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
 11:09 | Anh chị đặt một cái lệnh limit ngay polarity là ngay cái support | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
 11:12 | Quất một cái cây nến là nhiêu? | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
-11:15 | Có nhiêu? 26 điểm | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
-11:16 | Subloss 20 điểm, phải bà nạc không? | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
+11:15 | Có nhiêu? 26 điểm | CODE kernel/mentor/phl.go:64 [stop = RefBar.Low] (row 13)
+11:16 | Subloss 20 điểm, phải bà nạc không? | CODE kernel/mentor/phl.go:64 [stop = RefBar.Low] (row 13)
 11:19 | Không phải bà nạc mà bánh xác không? | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
 11:20 | Lũng ruột vô này | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)
 11:22 | Em nhắc lại một lần nữa | CODE kernel/mentor/phl.go:117 [PlaceStopEntry] (row 16)

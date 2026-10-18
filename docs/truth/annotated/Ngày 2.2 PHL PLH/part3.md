@@ -1,4 +1,4 @@
-cues: 345/345 · rule cues: 30 · rows: 3 · CODE: 30 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 0 · SPLIT: 0 · —: 315
+cues: 345/345 · rule cues: 34 · rows: 4 · CODE: 34 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 0 · SPLIT: 0 · —: 311
 
 00:00 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 00:39 | anh liều vậy rồi cây ngay chỗ này anh Winnie hỏi em là nghe chỗ này làm sao để biết đánh lệnh | —
@@ -65,15 +65,15 @@ cues: 345/345 · rule cues: 30 · rows: 3 · CODE: 30 · MISMATCH: 0 · NOT-IN-B
 04:16 | Thì ngay chỗ này có phải là nó khả năng rất cao | —
 04:18 | Tạo đáy cao hơn không? | —
 04:19 | Rồi nếu như mà đánh lệnh | —
-04:21 | Insaba cho lệnh short cái chỗ này | —
-04:23 | Insaba cho lệnh short cái chỗ này | —
+04:21 | Insaba cho lệnh short cái chỗ này | CODE kernel/mentor/isb.go:84 [short: Price = Low − buffer] (row 34)
+04:23 | Insaba cho lệnh short cái chỗ này | CODE kernel/mentor/isb.go:84 [short: Price = Low − buffer] (row 34)
 04:25 | Thì nó không hợp lý | —
 04:26 | Anh đang bắt market nó phải tạo fail là to go lower | —
 04:29 | Cái này anh chịu khóa mới | —
 04:31 | Thì ngày mai mọi người được học ha | —
 04:33 | Đúng không? Rồi tiếp tục | —
 04:35 | Nếu như là | —
-04:38 | Insaba cho lệnh short | —
+04:38 | Insaba cho lệnh short | CODE kernel/mentor/isb.go:84 [short: Price = Low − buffer] (row 34)
 04:39 | Anh đặt cái lệnh ngay đây anh cũng đâu có thua | —
 04:41 | Mình có quyền nhầm | —
 04:44 | Mình có quyền sai anh | —
@@ -228,7 +228,7 @@ cues: 345/345 · rule cues: 30 · rows: 3 · CODE: 30 · MISMATCH: 0 · NOT-IN-B
 14:40 | nếu như mà thật sự nó vừa reject cái failure to go higher | —
 14:43 | thì về tới đây tôi đánh sót xuống tiếp chứ | —
 14:45 | Bây giờ tôi đánh | —
-14:46 | Insaba short xuống tiếp | —
+14:46 | Insaba short xuống tiếp | CODE kernel/mentor/isb.go:84 [short: Price = Low − buffer] (row 34)
 14:47 | Chứ mắc mới gì tôi đánh | —
 14:48 | Ngược lên | —
 14:49 | Chứ cho khổ vậy | —

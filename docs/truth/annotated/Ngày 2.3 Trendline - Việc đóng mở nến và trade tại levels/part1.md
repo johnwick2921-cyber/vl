@@ -1,4 +1,4 @@
-cues: 520/520 · rule cues: 242 · rows: 7 · CODE: 198 · MISMATCH: 0 · NOT-IN-BOT: 44 · OWNER-ORDER: 0 · SPLIT: 0 · —: 278
+cues: 520/520 · rule cues: 259 · rows: 7 · CODE: 215 · MISMATCH: 0 · NOT-IN-BOT: 44 · OWNER-ORDER: 0 · SPLIT: 0 · —: 261
 
 00:00 | Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
 00:30 | thấp và một đáy cao hơn hoặc | CODE kernel/mentor/trendline.go:129 [horizontal refused] (row 22)
@@ -258,23 +258,23 @@ cues: 520/520 · rule cues: 242 · rows: 7 · CODE: 198 · MISMATCH: 0 · NOT-IN
 10:39 | Em hay nói không | —
 10:41 | Đợi nó đụng email 34 đi | —
 10:43 | Đợi nó đụng cái level đi | —
-10:47 | Đợi nó đụng trendline đi | —
-10:48 | Rồi mình vô lệnh | —
-10:49 | Mọi người nếu như anh chị nào | —
-10:50 | Thật sự mọi người theo dõi em á | —
-10:52 | Đủ hiểu em á | —
-10:53 | Những cái lệnh mà em nói đợi nó chạm đi | —
-10:56 | Mà em không đợi nó chạm | —
-10:58 | Mà em vô lệnh á | —
-10:58 | Toàn lên thua không | —
-10:59 | Em không cần phải | —
-11:05 | Phải giấu giếm gì hết | —
-11:07 | Mọi người thấy mà | —
-11:09 | Em ngồi em nói là | —
-11:10 | Ôi anh chị đợi nó đụng email 34 đi | —
-11:12 | Đợi nó đụng trendline đi | —
-11:12 | Mình vô lệnh | —
-11:13 | Nhưng mà nó chưa đụng | —
+10:47 | Đợi nó đụng trendline đi | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+10:48 | Rồi mình vô lệnh | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+10:49 | Mọi người nếu như anh chị nào | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+10:50 | Thật sự mọi người theo dõi em á | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+10:52 | Đủ hiểu em á | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+10:53 | Những cái lệnh mà em nói đợi nó chạm đi | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+10:56 | Mà em không đợi nó chạm | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+10:58 | Mà em vô lệnh á | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+10:58 | Toàn lên thua không | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+10:59 | Em không cần phải | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+11:05 | Phải giấu giếm gì hết | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+11:07 | Mọi người thấy mà | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+11:09 | Em ngồi em nói là | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+11:10 | Ôi anh chị đợi nó đụng email 34 đi | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+11:12 | Đợi nó đụng trendline đi | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+11:12 | Mình vô lệnh | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
+11:13 | Nhưng mà nó chưa đụng | CODE kernel/mentor/touch.go:91 [no touch → nil] (row 24)
 11:14 | Nó chưa có đụng | —
 11:15 | Mà nó mới có gần gần đó thôi | —
 11:18 | Em vô lệnh | —
