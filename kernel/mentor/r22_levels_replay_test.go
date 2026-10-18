@@ -38,6 +38,9 @@ func r22Cfg() Config {
 	// LEVEL fix against the pre-B52 box world — the knob OFF reproduces
 	// exactly today's behaviour, so the r22 placement expectations hold.
 	cfg.BoxNewZoneAfterEscape = false
+	// The recorded 10-12/10-13 days ran the 1m read (exec_2m defaulted OFF
+	// then) — pin it so the r22 level expectations hold.
+	cfg.Exec2mAfter30m = false
 	return cfg
 }
 

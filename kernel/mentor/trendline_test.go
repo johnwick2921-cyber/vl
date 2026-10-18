@@ -316,6 +316,7 @@ func trendlineEval(bars []market.Kline, now int64, key string, priceAt float64) 
 	cfg.LocTriggerFilter = false
 	cfg.NearBoxRoomMultiple = 0
 	cfg.PingPongCandleMaxPts = 0
+	cfg.Exec2mAfter30m = false // the trendline location pins read the 1m touch
 	e := New(cfg)
 	e.seeded = true
 	e.State.Seed1mWatermark = math.MaxInt64

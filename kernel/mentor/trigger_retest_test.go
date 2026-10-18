@@ -23,6 +23,7 @@ func TestTriggerRetestWrongWayRefused(t *testing.T) {
 	// the SHORT target's first obstacle and cap the room below 2R — the pin
 	// is the direction gate, not the target geometry.
 	cfg.EMALocationTFMinutes = 0
+	cfg.Exec2mAfter30m = false // the row-56 direction-gate pin reads the 1m touch
 	// TriggerSchool stays 1 (the default) — exactly the school that skips the
 	// LocTriggerFilter side check and needs the row-56 gate.
 

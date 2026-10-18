@@ -145,11 +145,12 @@ type Intent struct {
 	ExpiryMs int64
 
 	// ExecTFMin is the frame the entry was READ on: 2 when the X5-10 exec-2m
-	// schedule (Exec2mAfter30m) read the ISB pair on closed 2m candles; 0 = the
-	// 1m (every other setup, and every ISB while the knob is OFF). The trader
-	// trails the runner on closed candles of THIS frame — "nếu như mình trade
-	// khung nào thì mình gồng theo khung đó, theo cây nến của khung đó"
-	// [X8 @18:02–18:14].
+	// schedule (Exec2mAfter30m) read the setup on closed 2m candles — the ISB
+	// pair AND PHL/PLH (F2: "Mình trade khung 2 phút … potential high low"
+	// [X8 @15:52–15:57]); 0 = the 1m (every other setup, and every named setup
+	// while the knob is OFF). The trader trails the runner on closed candles of
+	// THIS frame — "nếu như mình trade khung nào thì mình gồng theo khung đó,
+	// theo cây nến của khung đó" [X8 @18:02–18:14].
 	ExecTFMin int
 
 	// RefBarMs (N10) is the reference candle's CLOSE time (ms) — the bar the
@@ -378,13 +379,15 @@ type Config struct {
 	// edges into the location gate and InsideAnyBox into the bans.
 	Box BoxCfg
 
-	// Exec2mAfter30m — X5-10 knob (default ON since release #31): the ISB-exec
+	// Exec2mAfter30m — X5-10 knob (default ON since release #31): the exec-frame
 	// timeframe schedule (owner order 2026-10-13 ~23:00 CT "fix all"; sources
 	// X5 @00:07–01:17, X11 @17:06–19:35 — ~/mm-course/extra/notes/05-EXTRA.md
 	// :305-311; re-read 2026-10-16: extra "Routine trước khi trade" part1
 	// @00:41–01:14 "Trong 30 phút đầu giờ em vẫn sẽ trade khung 1 phút… sau
 	// 30 phút em sẽ chuyển qua khung 2 phút", Go over @17:27 "khung 2 phút ít
-	// bị quét râu"): with the knob ON the ISB reads the 1m ONLY during the RTH
+	// bị quét râu"): with the knob ON the NAMED setups — the ISB pair AND
+	// PHL/PLH (F2, W-MENTOR-TRANSCRIPT-TRUTH; "Mình trade khung 2 phút …
+	// potential high low" [X8 @15:52–15:57]) — read the 1m ONLY during the RTH
 	// open +30 minutes (08:30 ≤ t < 09:00 CT), and the 2m at every other
 	// minute — overnight and the Europe open (3am Texas) included. "Evening
 	// slow → 5m" is an OPEN COURSE QUESTION (no number for "slow"); left

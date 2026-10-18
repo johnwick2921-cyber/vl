@@ -50,3 +50,25 @@ func TestMentorRebuildTrailFrameWarnsOnTheNewDefault(t *testing.T) {
 		t.Fatalf("explicit OFF must not WARN; trail_tf_unknown_after_restart = %d", n)
 	}
 }
+
+// TestMentorRebuildTrailFrameWarnsForPHL — F2: a PHL/PLH entered on the 2m is
+// the SAME restart-unknown-frame case as an ISB ("Mình trade khung 2 phút …
+// potential high low" [X8 @15:52–15:57]); the rebuild must WARN + count for it
+// too, never silently trail the 1m. MUTANT (isMentorExec2mSetup drops PHL/PLH)
+// → count 0 → RED.
+func TestMentorRebuildTrailFrameWarnsForPHL(t *testing.T) {
+	at := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}}}}
+	for _, cond := range []string{"PHL", "PLH"} {
+		row := store.ArmedOrderDB{Condition: cond, Scenario: "phl-x", SignalID: "sig", TraderID: "t"}
+		at.mentorRebuildTrailFrame(row, &mentorLivePos{})
+	}
+	if n := at.mentorCountSnapshot()["trail_tf_unknown_after_restart"]; n != 2 {
+		t.Fatalf("trail_tf_unknown_after_restart = %d, want 2 (one per PHL/PLH)", n)
+	}
+	// A setup OUTSIDE the named three (the box) never WARNs — it stays the 1m.
+	box := store.ArmedOrderDB{Condition: "BOX", Scenario: "box-x", SignalID: "sig", TraderID: "t"}
+	at.mentorRebuildTrailFrame(box, &mentorLivePos{})
+	if n := at.mentorCountSnapshot()["trail_tf_unknown_after_restart"]; n != 2 {
+		t.Fatalf("a BOX rebuild must not WARN; trail_tf_unknown_after_restart = %d, want still 2", n)
+	}
+}
