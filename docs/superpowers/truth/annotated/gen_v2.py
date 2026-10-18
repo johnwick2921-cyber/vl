@@ -40,7 +40,7 @@ ROWS = [
    ("01:22","01:28","NOT-IN-BOT → 13.4","13.4"),
    ("01:28","01:33","OWNER-ORDER → 13.5","13.5"),
    ("02:25","02:33","NOT-IN-BOT → 13.4","13.4"),
-   ("02:58","03:20","CODE kernel/mentor/isb.go:72","13.7"),
+   ("02:58","03:20","CODE kernel/mentor/isb.go:74","13.7"),
  ]),
  ("Ví dụ đánh Retracement trong range", "part1.srt", [
    ("00:00","01:05","CODE kernel/mentor/mentor.go:594 [flag_wall_target]","14.1"),
@@ -75,7 +75,7 @@ ROWS = [
  ]),
  ("Anh Levy chia sẻ kinh nghiệm", "part1.srt", [
    ("00:00","00:20","NOT-IN-BOT → 17.1","17.1"),
-   ("00:23","01:25","CODE kernel/mentor/mentor.go:530 [key_level_prune_pts]","17.2"),
+   ("00:23","01:25","CODE kernel/mentor/mentor.go:528 [key_level_tf_minutes]","17.2"),
    ("03:55","04:07","NOT-IN-BOT → 17.3","17.3"),
    ("05:01","05:16","CODE kernel/mentor/mentor.go:592 [trendline_is_target]","17.4"),
    ("06:22","07:30","CODE kernel/mentor/trendline.go:123 [swing-pair]","17.5"),

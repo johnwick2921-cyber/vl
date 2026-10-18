@@ -71,13 +71,13 @@ cues: 81/81 · rule cues: 40 · rows: 7 · CODE: 10 · MISMATCH: 0 · NOT-IN-BOT
 02:51 | Nhiều khi nó đi được nữa chừng nó phải nhay về | —
 02:53 | Cho nên đừng có hàm | —
 02:56 | Mà ăn nhiều trong cái tray này | —
-02:58 | Đừng có bỏ cái mindset là không stop loss | CODE kernel/mentor/isb.go:72 (row 13.7)
-03:02 | Cái này là phá sách của khói | CODE kernel/mentor/isb.go:72 (row 13.7)
-03:04 | Khói nó dạy bao nhiêu ngày | CODE kernel/mentor/isb.go:72 (row 13.7)
-03:06 | Kể cuối cùng nó tự phá sách của nó | CODE kernel/mentor/isb.go:72 (row 13.7)
-03:08 | Đừng có đi ra ngồi nói | CODE kernel/mentor/isb.go:72 (row 13.7)
-03:10 | Không có stop loss khói suối tu như vậy | CODE kernel/mentor/isb.go:72 (row 13.7)
-03:12 | Tại vì cái này chỉ có ăn | CODE kernel/mentor/isb.go:72 (row 13.7)
-03:14 | 150 cho đến 190 đô thôi | CODE kernel/mentor/isb.go:72 (row 13.7)
-03:16 | Nha mọi người | CODE kernel/mentor/isb.go:72 (row 13.7)
-03:18 | Đừng có để hư mindset nha | CODE kernel/mentor/isb.go:72 (row 13.7)
+02:58 | Đừng có bỏ cái mindset là không stop loss | CODE kernel/mentor/isb.go:74 (row 13.7)
+03:02 | Cái này là phá sách của khói | CODE kernel/mentor/isb.go:74 (row 13.7)
+03:04 | Khói nó dạy bao nhiêu ngày | CODE kernel/mentor/isb.go:74 (row 13.7)
+03:06 | Kể cuối cùng nó tự phá sách của nó | CODE kernel/mentor/isb.go:74 (row 13.7)
+03:08 | Đừng có đi ra ngồi nói | CODE kernel/mentor/isb.go:74 (row 13.7)
+03:10 | Không có stop loss khói suối tu như vậy | CODE kernel/mentor/isb.go:74 (row 13.7)
+03:12 | Tại vì cái này chỉ có ăn | CODE kernel/mentor/isb.go:74 (row 13.7)
+03:14 | 150 cho đến 190 đô thôi | CODE kernel/mentor/isb.go:74 (row 13.7)
+03:16 | Nha mọi người | CODE kernel/mentor/isb.go:74 (row 13.7)
+03:18 | Đừng có để hư mindset nha | CODE kernel/mentor/isb.go:74 (row 13.7)
