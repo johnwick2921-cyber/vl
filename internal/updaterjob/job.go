@@ -110,6 +110,26 @@ type Job struct {
 	ResumedAt       *time.Time `json:"resumed_at,omitempty"`        // the attended resume from nt8_updated
 	LastGoodReceipt *int       `json:"last_good_receipt,omitempty"` // index into receipts (recovery_needed)
 	RecoveryReason  string     `json:"recovery_reason,omitempty"`
+
+	// Friends records the friend-update sweep that follows a COMPLETED owner
+	// install (W-FRIEND-HOSTED Segment 5): each active friend's outcome.
+	// Absent when no sweep ran (no friend surface configured, the registry
+	// was unreadable, or the job ended rolled_back / reverted_clean /
+	// refused) or the sweep found no friends to record.
+	Friends []FriendResult `json:"friends,omitempty"`
+}
+
+// FriendResult is one friend's outcome in the post-complete friend sweep
+// (W-FRIEND-HOSTED). State is one of restarted | deferred | restored |
+// failed | skipped. Rev is the revision the friend's BOOT INTEGRITY line
+// named ("" when the friend did not boot the release).
+type FriendResult struct {
+	Name  string `json:"name"`
+	State string `json:"state"`
+	Rev   string `json:"rev,omitempty"`
+	// Note carries the verbatim reason for a non-restarted state (the boot
+	// error, the defer reason, the skip reason). Absent for a clean restart.
+	Note string `json:"note,omitempty"`
 }
 
 // Transition is one persisted (state, phase) with its time. The list is the

@@ -36,6 +36,10 @@ type Budgets struct {
 	// blocker is a transitional connection or a stale census, keep
 	// re-checking up to this long (never less than the step budget)
 	// before self-recovery — a mid-transition NT8 is not a refusal.
+	FriendFlat time.Duration // W-FRIEND-HOSTED: the total time the friend sweep
+	// may wait for an active friend to go flat before giving up for today
+	// (deferred + notify).
+	FriendPoll time.Duration // W-FRIEND-HOSTED: the interval between flat re-checks (60 s).
 }
 
 // DefaultBudgets are the ruled values.
@@ -52,6 +56,8 @@ func DefaultBudgets() Budgets {
 		HoldClear:     30 * time.Second,
 		PlannerWait:   15 * time.Minute,
 		Transitional:  10 * time.Minute,
+		FriendFlat:    60 * time.Minute,
+		FriendPoll:    60 * time.Second,
 	}
 }
 
@@ -66,6 +72,12 @@ type Config struct {
 	// Logf is the worker's log (stderr in serve). Nothing it is handed ever
 	// carries the cutover token (TestNoTokenEverReachesTheJobFileOrEvidence).
 	Logf func(format string, args ...any)
+	// FriendRegistry is the friends.json path (the B2 registry). Empty = the
+	// friend sweep is disabled (no friends surface configured).
+	FriendRegistry string
+	// FriendHost is the box's tunnel IP friends reach their bots at. Empty =
+	// the friend sweep is disabled.
+	FriendHost string
 }
 
 // Worker owns ONE durable update job at a time.
@@ -98,6 +110,10 @@ type Worker struct {
 	// and the restarted worker then re-runs worker_swapped until the attempts
 	// cap sends the job to recovery_needed (job de4cf900, 2026-10-04).
 	swapDone chan struct{}
+
+	// notifier is the advisory owner-notification seam (Telegram in
+	// production). nil = log instead (W-FRIEND-HOSTED Segment 5).
+	notifier func(text string)
 
 	// crash is a TEST SEAM: called at every boundary with a point name
 	// ("<state>/started", "<state>/effect", "<state>/done"); a test panics in
@@ -143,7 +159,7 @@ func New(cfg Config, d Deps) (*Worker, error) {
 	if cfg.Logf == nil {
 		cfg.Logf = func(string, ...any) {}
 	}
-	return &Worker{cfg: cfg, lib: d.Lib, app: d.App, rel: d.Rel, host: d.Host, resume: map[string]bool{}, wake: make(chan struct{}, 1), swapDone: make(chan struct{})}, nil
+	return &Worker{cfg: cfg, lib: d.Lib, app: d.App, rel: d.Rel, host: d.Host, notifier: d.Notify, resume: map[string]bool{}, wake: make(chan struct{}, 1), swapDone: make(chan struct{})}, nil
 }
 
 // execWindows is the production runWin: it execs a Windows binary (powershell.exe,

@@ -213,6 +213,14 @@ func TestJobFileSchemaGolden(t *testing.T) {
 	// them (absent ≠ false).
 	delete(want, "catchup")
 	delete(want, "catchup_nt8_open")
+	// friends (W-FRIEND-HOSTED Segment 5) is written only by the worker's
+	// post-complete friend sweep, which the golden's install path does not
+	// run (no friend registry configured): absent ≠ empty, like the others.
+	for k := range want {
+		if k == "friends" || strings.HasPrefix(k, "friends.") {
+			delete(want, k)
+		}
+	}
 	var missing, extra []string
 	for k := range want {
 		if !got[k] {
