@@ -1,4 +1,4 @@
-cues: 123/123 marked · rules: 10 · CODE: 10 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 113
+cues: 123/123 marked · rules: 10 · CODE: 10 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · —: 113
 
 00:00:00 | Cho anh chị nào chưa biết vẽ những cái supply và demand zone của ngày hôm trước, em sẽ hướng dẫn mọi người luôn. | —
 00:00:05 | Rồi, cái đầu tiên anh chị cần làm là anh chị sẽ phải vẽ cái đỉnh và cái đáy của buổi sáng ngày hôm nay. | CODE kernel/mentor/day_seed.go [B]

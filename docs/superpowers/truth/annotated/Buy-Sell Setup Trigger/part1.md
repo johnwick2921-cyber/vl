@@ -1,4 +1,4 @@
-cues: 651/651 marked · rules: 111 · CODE: 111 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 540
+cues: 651/651 marked · rules: 111 · CODE: 111 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · —: 540
 
 00:00:00 | Ok, thì từ đó giờ anh chị cứ bị lấn cấn giữa cái việc là buy setup trigger và sell setup trigger. | CODE kernel/mentor/phl.go [PHL/PLH]
 00:00:15 | Em, thật sự là mọi người đang đi hơi bị xa cái vấn đề đó anh chị. Anh chị đang bị đi xa cái vấn đề đó mọi người. | —

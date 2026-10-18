@@ -1,4 +1,4 @@
-cues: 715/715 marked · rules: 32 · CODE: 24 · MISMATCH: 4 · NOT-IN-BOT: 2 · —: 683
+cues: 715/715 marked · rules: 32 · CODE: 24 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 8 · —: 683
 
 00:00:00 | Rồi, ngày hôm nay em sẽ go over lại với anh chị, thứ nhất là mình sẽ có cái major level, thứ hai là mình sẽ có key level khung 4H, và thứ ba nữa mình sẽ vẽ nến hacking, mình sẽ vẽ tập vẽ nến hacking. | CODE kernel/mentor/mentor.go:548 [KeyLevelTFMinutes=60]
 00:00:16 | Rồi, khung 1H major level thì anh chị cũng đã biết rồi. Mình chỉnh regular trading hour và chỉnh khung 1H. | CODE kernel/mentor/mentor.go:548 [KeyLevelTFMinutes=60]
@@ -320,8 +320,8 @@ cues: 715/715 marked · rules: 32 · CODE: 24 · MISMATCH: 4 · NOT-IN-BOT: 2 ·
 00:10:50 | Em là một người OCD cực kỳ nặng | —
 00:10:52 | Thì em muốn lấy một cái điểm chính xác | —
 00:10:55 | Là khi nào có buyer | —
-00:10:57 | Là cái chỗ rút râu của cây nến đỏ | MISMATCH kernel/mentor/key_levels.go:21 -> row 11
-00:11:00 | Là cái chỗ rút râu của cây nến đỏ | MISMATCH kernel/mentor/key_levels.go:21 -> row 11
+00:10:57 | Là cái chỗ rút râu của cây nến đỏ | RULING -> row 11 (slide 31 over X3)
+00:11:00 | Là cái chỗ rút râu của cây nến đỏ | RULING -> row 11 (slide 31 over X3)
 00:11:04 | Rồi | —
 00:11:09 | Tiếp tục mình cứ vẽ đi | —
 00:11:13 | Mọi người cứ vẽ nè | —
@@ -334,7 +334,7 @@ cues: 715/715 marked · rules: 32 · CODE: 24 · MISMATCH: 4 · NOT-IN-BOT: 2 ·
 00:11:21 | Cái đỏ, cái bên, cái cây xanh | —
 00:11:23 | Cái râu cây xanh nó thấp hơn thì mình lấy cây xanh luôn cũng được | —
 00:11:25 | Không thành vấn đề | —
-00:11:26 | Mình cứ lấy cái điểm thấp nhất của 2 cây nến | MISMATCH kernel/mentor/key_levels.go:21 -> row 11
+00:11:26 | Mình cứ lấy cái điểm thấp nhất của 2 cây nến | RULING -> row 11 (slide 31 over X3)
 00:11:29 | Đúng không? Rồi cứ vẽ ra | —
 00:11:31 | Chỗ nào bật lên thì vẽ | —
 00:11:32 | Này sao giống ngồi vẽ lại từ đầu à | —
@@ -347,7 +347,7 @@ cues: 715/715 marked · rules: 32 · CODE: 24 · MISMATCH: 4 · NOT-IN-BOT: 2 ·
 00:11:53 | Vẫn sẽ lấy | —
 00:11:55 | Cái râu của cây nến đỏ | —
 00:11:57 | Xem concept hết | —
-00:12:01 | Em vẫn sẽ lấy cái râu của cây nến đỏ | MISMATCH kernel/mentor/key_levels.go:21 -> row 11
+00:12:01 | Em vẫn sẽ lấy cái râu của cây nến đỏ | RULING -> row 11 (slide 31 over X3: key_levels.go:21 draws at OPEN never wick; X3 video says wick)
 00:12:04 | Còn nếu như cái râu của cây nến xanh | —
 00:12:06 | Nó cao hơn cái râu của cây nến đỏ | —
 00:12:07 | Thì em lấy cây nến xanh | —
@@ -421,7 +421,7 @@ cues: 715/715 marked · rules: 32 · CODE: 24 · MISMATCH: 4 · NOT-IN-BOT: 2 ·
 00:14:27 | Nó là như thế nào | —
 00:14:27 | Trên 30 điểm | —
 00:14:31 | Em mới giữ | —
-00:14:32 | Còn nếu như dưới 30 điểm em xóa | COURSE-SPLIT -> row 13
+00:14:32 | Còn nếu như dưới 30 điểm em xóa | RULING -> row 13 (slide 31 over X3)
 00:14:35 | Những cái rang á | —
 00:14:36 | Giữa những cái đường line này nè | —
 00:14:38 | Bây giờ em ví dụ hả | —
@@ -431,7 +431,7 @@ cues: 715/715 marked · rules: 32 · CODE: 24 · MISMATCH: 4 · NOT-IN-BOT: 2 ·
 00:14:45 | Trở lên | —
 00:14:47 | Và 60 trở lại | —
 00:14:49 | Anh chị hiểu em không | —
-00:14:51 | Là dưới 60 điểm nhưng trên 30 điểm | COURSE-SPLIT -> row 13
+00:14:51 | Là dưới 60 điểm nhưng trên 30 điểm | RULING -> row 13 (slide 31 over X3: prune 20 supersedes the 30–60 tier)
 00:14:54 | Thì em mới lấy | —
 00:14:54 | Như cái này | —
 00:14:55 | Tắt cái này đi | —
@@ -471,7 +471,7 @@ cues: 715/715 marked · rules: 32 · CODE: 24 · MISMATCH: 4 · NOT-IN-BOT: 2 ·
 00:16:54 | Những cái chỗ mà râu nến | —
 00:16:58 | Của khung 4 giờ nó bật lên | —
 00:17:00 | Những cái đó | —
-00:17:02 | Em vẽ một cái màu đỏ | NOT-IN-BOT -> row 14
+00:17:02 | Em vẽ một cái màu đỏ | RULING -> row 14 (slide 31 over X3)
 00:17:04 | Em chuyển cái key level đó qua cái màu đỏ | —
 00:17:06 | Những cái râu nè | —
 00:17:09 | Những cái râu nến nè | —
@@ -518,7 +518,7 @@ cues: 715/715 marked · rules: 32 · CODE: 24 · MISMATCH: 4 · NOT-IN-BOT: 2 ·
 00:18:39 | Và thêm một cái confirm cho anh chị nữa | —
 00:18:40 | Là bây giờ một cái key level | —
 00:18:43 | Nó đã cứng của khung 4 giờ | —
-00:18:45 | Em nói khung 4 giờ là khung cứng nhất | NOT-IN-BOT -> row 14
+00:18:45 | Em nói khung 4 giờ là khung cứng nhất | RULING -> row 14 (slide 31 over X3: 4h red recolouring superseded)
 00:18:46 | Khung daily nó sẽ không cứng | —
 00:18:48 | Bằng khung 4 giờ đâu | —
 00:18:49 | Tại vì sẽ không ai trade khung daily đâu | —

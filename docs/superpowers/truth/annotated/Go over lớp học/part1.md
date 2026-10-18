@@ -1,4 +1,4 @@
-cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 · —: 579
+cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 · RULING: 0 · —: 579
 
 00:00:00 | Rồi, ok, thì buổi tối ngày hôm nay là ngày thứ 5, là ngày cuối cùng của khóa Mastermind tháng 9. | —
 00:00:12 | Thì một lần nữa em cảm ơn anh chị đã cố gắng học, cố gắng làm recap và cố gắng trâu dòi kiến thức. | —

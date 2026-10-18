@@ -1,4 +1,4 @@
-cues: 62/62 marked · rules: 3 · CODE: 3 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 59
+cues: 62/62 marked · rules: 3 · CODE: 3 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · —: 59
 
 00:00:00 | Khung nào cũng sẽ giống như nhau nhưng em không có khuyến khích anh chị ở thời điểm này trade khung 15 hoặc là coi khung 15, coi khung 30. | —
 00:00:09 | Có thể coi nhưng em sẽ coi bằng cách như vậy nè. Em hướng dẫn anh chị luôn ha, em sẽ coi bằng cách như vậy nè. | —

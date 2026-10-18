@@ -1,4 +1,4 @@
-cues: 205/205 marked · rules: 27 · CODE: 22 · MISMATCH: 4 · NOT-IN-BOT: 1 · —: 178
+cues: 205/205 marked · rules: 27 · CODE: 22 · MISMATCH: 4 · NOT-IN-BOT: 1 · RULING: 0 · —: 178
 
 00:00:00 | Bây giờ em sẽ hướng dẫn cho anh chị step by step những thứ mình cần làm. | —
 00:00:07 | Điều thứ nhất, khung giờ mà em lúc nào cũng prefer để trade là khung 2 phút. | CODE kernel/mentor/mentor.go:417 [Exec2mAfter30m]

@@ -1,4 +1,4 @@
-cues: 130/130 marked · rules: 11 · CODE: 11 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 119
+cues: 130/130 marked · rules: 11 · CODE: 11 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · —: 119
 
 00:00:00 | Đây sẽ là một cái, em nói anh chị ha, mình chỉ có 3 setup ở trong cái lớp của mình thôi là potential high or low, potential low or high, và inside bar. | CODE kernel/mentor [setup set]
 00:00:12 | Thì hôm qua có nhiều anh chị nhắn hỏi em là, vậy cái bull flag, bear flag là cái gì? Nó chỉ là một cái formation thôi anh chị, nó chỉ là một cái, nó chỉ là một cái mẫu hình thôi. | CODE kernel/mentor/flag_wall.go:23

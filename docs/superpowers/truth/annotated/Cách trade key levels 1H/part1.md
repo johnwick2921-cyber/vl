@@ -1,4 +1,4 @@
-cues: 282/282 marked · rules: 14 · CODE: 14 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 268
+cues: 282/282 marked · rules: 14 · CODE: 14 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · —: 268
 
 00:00:00 | Đây là cái cách mà em cảm thấy từ bữa tới giờ nó rất ngon, nó trade rất ok, nó trade rất ok. | —
 00:00:14 | Và cái này nó là một cái cách đánh support resistance, nó là một cách đánh support resistance. | —

@@ -1,4 +1,4 @@
-cues: 449/449 marked · rules: 16 · CODE: 12 · MISMATCH: 0 · NOT-IN-BOT: 4 · —: 433
+cues: 449/449 marked · rules: 16 · CODE: 12 · MISMATCH: 0 · NOT-IN-BOT: 4 · RULING: 0 · —: 433
 
 00:00:00 | Thì bây giờ cái tab mình sẽ có sử dụng những cái indicator mà cái indicator mà gọi là OG nhất của cái tab mình thì anh chị cũng biết là cái tab Santa hoặc là bé Na ha hoặc là bé Na sẽ có những lúc mọi người có thấy là nó fake breakout hoặc fake breakdown mọi người có nghĩa là khi mà nó anh chị thấy nó đóng trên bé Na rồi nó đóng trên Santa rồi xong nó gãy ngược xuống và mình vô lệnh và mình thua. | NOT-IN-BOT -> row 41 (Santa indicator)
 00:00:33 | Thì đây sẽ là một cái cách né trap em thấy khá là hay | —

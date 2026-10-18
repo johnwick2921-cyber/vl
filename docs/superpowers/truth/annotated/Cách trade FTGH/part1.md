@@ -1,4 +1,4 @@
-cues: 119/119 marked · rules: 13 · CODE: 13 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 106
+cues: 119/119 marked · rules: 13 · CODE: 13 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · —: 106
 
 00:00:00 | Đây sẽ là một cái setup mà em thấy, đây là cảm em, trước tiên em phải cảm ơn chị AuthorTrader, em chẳng phải cảm ơn chị AuthorTrader, thì khi mọi người thấy, mọi người ở bên đây nè, mọi người đã vẽ được một cái demand zone hoặc là failure to go higher rồi, mọi người kéo ngang qua cho em. | CODE kernel/mentor/box.go:545 [FTGH = demand/supply box]
 00:00:27 | Khi anh chị thấy | —

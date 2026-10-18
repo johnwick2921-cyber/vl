@@ -1,4 +1,4 @@
-cues: 79/79 marked · rules: 6 · CODE: 6 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 73
+cues: 79/79 marked · rules: 6 · CODE: 6 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · —: 73
 
 00:00:00 | Dưới 20 điểm là không vẽ, nhiều hơn thì mới vẽ, nhiều hơn 30 điểm thì mình mới vẽ thêm 1 cái nữa ha. | —
 00:00:06 | Nó lên, xuống, rồi, chuyển lại khung 5 phút. | —

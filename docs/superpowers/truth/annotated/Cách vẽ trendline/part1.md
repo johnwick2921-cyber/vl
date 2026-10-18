@@ -1,4 +1,4 @@
-cues: 259/259 marked · rules: 10 · CODE: 10 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 249
+cues: 259/259 marked · rules: 10 · CODE: 10 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · —: 249
 
 00:00:00 | Rồi, dễ mình sẽ dễ trendline ha, tập dễ trendline. | —
 00:00:08 | Trendline nó được tạo ra bởi cái gì anh chị? | —

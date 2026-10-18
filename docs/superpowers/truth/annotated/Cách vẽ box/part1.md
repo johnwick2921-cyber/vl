@@ -1,4 +1,4 @@
-cues: 87/87 marked · rules: 11 · CODE: 11 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 76
+cues: 87/87 marked · rules: 11 · CODE: 11 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · —: 76
 
 00:00:00 | Rồi, thì trong một xu hướng giảm, đúng không? Trong một xu hướng giảm, nến bật lên ở chỗ nào thì mình sẽ có một cái đáy ngay chỗ đó. Anh chị có đồng ý với em không? | —
 00:00:15 | Và trong một xu hướng giảm thì mình đi kiếm lệnh gì anh chị? Trả lời cho em nè, trong một xu hướng giảm thì mình sẽ đi kiếm lệnh gì? Potential lower high, đúng không? | CODE kernel/mentor/phl.go:88 [phlTarget: near old extreme]

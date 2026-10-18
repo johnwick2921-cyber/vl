@@ -1,4 +1,4 @@
-cues: 290/290 marked · rules: 11 · CODE: 7 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 279
+cues: 290/290 marked · rules: 11 · CODE: 11 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · —: 279
 
 00:00:00 | Rồi, khi mình có 2 cái box là PLH2 ở trên và PLH2 ở dưới và nến nằm ở giữa thì mình dẻ ra và mình đánh ping pong tại vì những cái này là những cái zone và nó khá là cứng, em nói khá là cứng ha nhưng mình cũng không có được quyền mình vô giá market ha, tuyệt đối không được vô giá market ha. | CODE kernel/mentor/box_trade.go:205 [pingPongVerdict]
 00:00:30 | Bây giờ mình có setup gì | —
@@ -251,7 +251,7 @@ cues: 290/290 marked · rules: 11 · CODE: 7 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 00:09:38 | Mà anh chị | —
 00:09:40 | Giỡn anh chị đưa tay anh chị | —
 00:09:42 | Đụng vô cái kiến xe vậy | —
-00:09:43 | Có phải là completely nằm ở ngoài không | COURSE-SPLIT -> row 39 (X7 wick-included vs D4.1 body; box.go:569 escaped())
+00:09:43 | Có phải là completely nằm ở ngoài không | CODE kernel/mentor/box.go:569 [escaped() body close = the class rule D4.1 @20:36; X7 wick-included is his personal-OCD CONTEXT]
 00:09:45 | Hay là | —
 00:09:48 | Hay là | —
 00:09:49 | Anh chị còn bị dướng | —
@@ -268,7 +268,7 @@ cues: 290/290 marked · rules: 11 · CODE: 7 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 00:10:11 | Completely nằm ở ngoài | —
 00:10:14 | Có nghĩa là cái nến nó không đụng gì tới cái box nữa hết | —
 00:10:17 | Mới gọi là completely | —
-00:10:19 | Còn nếu mà dính râu thì đâu phải là completely | COURSE-SPLIT -> row 39
+00:10:19 | Còn nếu mà dính râu thì đâu phải là completely | CODE kernel/mentor/box.go:569 [CONTEXT: stricter personal habit]
 00:10:22 | Đúng không | —
 00:10:26 | Dính râu thì mình đâu được gọi là completely đâu | —
 00:10:28 | Completely có nghĩa là | —
@@ -282,8 +282,8 @@ cues: 290/290 marked · rules: 11 · CODE: 7 · MISMATCH: 0 · NOT-IN-BOT: 0 · 
 00:10:49 | Có nghĩa là | —
 00:10:51 | Bắt buộc em phải nằm ở ngoài | —
 00:10:54 | Không nằm ở ngoài | —
-00:10:55 | Em không tính nó là completely nằm ở ngoài | COURSE-SPLIT -> row 39 (X7 wick-included vs D4.1 body; box.go:569 escaped())
-00:10:57 | Nên là mình tính luôn cả râu | COURSE-SPLIT -> row 39
+00:10:55 | Em không tính nó là completely nằm ở ngoài | CODE kernel/mentor/box.go:569 [escaped() body close = the class rule D4.1 @20:36; X7 wick-included is his personal-OCD CONTEXT]
+00:10:57 | Nên là mình tính luôn cả râu | CODE kernel/mentor/box.go:569 [CONTEXT: stricter personal habit, not the class rule]
 00:11:00 | Body thì mình không nói ra | —
 00:11:01 | Là không có một cái gì | —
 00:11:04 | Mà dướng bận đến cái box nữa | —
