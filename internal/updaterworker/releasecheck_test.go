@@ -28,13 +28,15 @@ func (stubHost) Sleep(context.Context, time.Duration) error { return nil }
 func (stubHost) LockAcquire(string, string, int) (bool, string, error) {
 	return false, "", nil
 }
-func (stubHost) LockHolder() (string, error)                      { return "", nil }
-func (stubHost) LockRelease(string) error                         { return nil }
-func (s stubHost) BuildInfo(string) (string, string, error)       { return s.rev, "false", nil }
-func (stubHost) ExeOf(int) (string, error)                        { return "", fmt.Errorf("unused") }
-func (stubHost) AddonRestore(string, string) error                { return nil }
-func (stubHost) FriendFlat(context.Context, string) (bool, error) { return true, nil }
-func (stubHost) FriendRestart(context.Context, string) error      { return nil }
+func (stubHost) LockHolder() (string, error)                { return "", nil }
+func (stubHost) LockRelease(string) error                   { return nil }
+func (s stubHost) BuildInfo(string) (string, string, error) { return s.rev, "false", nil }
+func (stubHost) ExeOf(int) (string, error)                  { return "", fmt.Errorf("unused") }
+func (stubHost) AddonRestore(string, string) error          { return nil }
+func (stubHost) FriendFlat(context.Context, string) (FriendFlatView, error) {
+	return FriendFlatView{Flat: true}, nil
+}
+func (stubHost) FriendRestart(context.Context, string) error { return nil }
 func (stubHost) FriendBootOK(context.Context, string, time.Time, string) (bool, string, error) {
 	return true, "", nil
 }

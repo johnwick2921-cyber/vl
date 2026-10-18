@@ -149,24 +149,24 @@ func (w *Worker) updateFriends(ctx context.Context, expectedSHA string) ([]Recei
 // flat retry loop bounded by the FriendFlat budget.
 func (w *Worker) updateOneFriend(ctx context.Context, fr friendRecord, expectedSHA string) updaterjob.FriendResult {
 	base := w.friendBaseURL(fr.WebPort)
-	flat, err := w.host.FriendFlat(ctx, base)
+	view, err := w.host.FriendFlat(ctx, base)
 	if err != nil {
-		// A flat probe that errors is NOT flat: fail-closed, never restart a
+		// A flat probe that errors is NOT safe: fail-closed, never restart a
 		// friend whose positions we could not read.
-		flat = false
+		view = FriendFlatView{}
 	}
-	if !flat {
+	if !friendRestartSafe(view) {
 		deadline := w.host.Now().Add(w.cfg.Budgets.FriendFlat)
-		for !flat {
+		for !friendRestartSafe(view) {
 			if !w.host.Now().Before(deadline) {
 				return updaterjob.FriendResult{Name: fr.Name, State: string(FriendDeferred), Note: "not flat at the friend-update cutoff"}
 			}
 			if err := w.host.Sleep(ctx, w.cfg.Budgets.FriendPoll); err != nil {
 				return updaterjob.FriendResult{Name: fr.Name, State: string(FriendDeferred), Note: "friend update interrupted: " + err.Error()}
 			}
-			flat, err = w.host.FriendFlat(ctx, base)
+			view, err = w.host.FriendFlat(ctx, base)
 			if err != nil {
-				flat = false
+				view = FriendFlatView{}
 			}
 		}
 	}
@@ -196,6 +196,18 @@ func (w *Worker) updateOneFriend(ctx context.Context, fr friendRecord, expectedS
 		return updaterjob.FriendResult{Name: fr.Name, State: string(FriendRestored), Rev: rev2}
 	}
 	return updaterjob.FriendResult{Name: fr.Name, State: string(FriendFailed), Note: "boot failed and the restore did not recover"}
+}
+
+// friendRestartSafe is the R11 restart rule: restart when the friend reports
+// flat==true, OR when it reports a traders count of ZERO (a zero-trader
+// instance manages no position, so restarting it is safe even though F1 makes
+// its flat read false forever). An OLDER bot that omits "traders" (HasTraders
+// false) falls back to flat alone; a failed probe (zero view) is never safe.
+func friendRestartSafe(v FriendFlatView) bool {
+	if v.HasTraders && v.Traders == 0 {
+		return true
+	}
+	return v.Flat
 }
 
 // friendBootWait waits (within the Watch budget, re-read every Poll) for the

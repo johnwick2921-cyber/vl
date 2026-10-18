@@ -169,6 +169,8 @@ type box struct {
 	friendRegistry      string            // the friends.json bytes ("" = no registry file)
 	friendWebPorts      map[string]int    // name → web_port (the flat probe's baseURL reverse-map)
 	friendFlat          map[string]bool   // name → the flat probe's first answer
+	friendTraders       map[string]int    // name → the traders count the flat reply reports (R11)
+	friendHasTraders    map[string]bool   // name → whether the flat reply carries "traders" (R11)
 	friendFlatAfter     map[string]int    // name → after this many flat probes, flip to true (deferred → flat)
 	friendFlatProbes    map[string]int    // name → count of flat probes
 	friendBootResults   map[string][]bool // name → boot OK answers in order (one per restart)
@@ -939,7 +941,7 @@ func (h *fakeHost) AddonRestore(docsDir, backupDir string) error {
 }
 
 // FriendFlat plays the friend's health + positions probe from the box knobs.
-func (h *fakeHost) FriendFlat(ctx context.Context, baseURL string) (bool, error) {
+func (h *fakeHost) FriendFlat(ctx context.Context, baseURL string) (FriendFlatView, error) {
 	name := h.friendNameForURL(baseURL)
 	h.b.mu.Lock()
 	defer h.b.mu.Unlock()
@@ -952,7 +954,12 @@ func (h *fakeHost) FriendFlat(ctx context.Context, baseURL string) (bool, error)
 	if n, ok := h.b.friendFlatAfter[name]; ok && h.b.friendFlatProbes[name] > n {
 		flat = true
 	}
-	return flat, nil
+	v := FriendFlatView{Flat: flat}
+	if has, ok := h.b.friendHasTraders[name]; ok && has {
+		v.HasTraders = true
+		v.Traders = h.b.friendTraders[name]
+	}
+	return v, nil
 }
 
 func (h *fakeHost) FriendRestart(ctx context.Context, unit string) error {

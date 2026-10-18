@@ -261,7 +261,11 @@ type Host interface {
 	// GET /api/positions reports no open positions. A probe error is NOT flat
 	// (fail-closed — the worker never restarts a friend it cannot prove is
 	// flat). W-FRIEND-HOSTED Segment 5.
-	FriendFlat(ctx context.Context, baseURL string) (bool, error)
+	//
+	// R11 (CTO 2026-10-18): the view also carries the friend's TRADERS count
+	// so the worker can restart a zero-trader instance (safe — it manages no
+	// position) even though F1 makes it read flat:false forever.
+	FriendFlat(ctx context.Context, baseURL string) (FriendFlatView, error)
 	// FriendRestart restarts a friend's user unit (systemctl --user restart
 	// vl-friend@<name>). W-FRIEND-HOSTED Segment 5.
 	FriendRestart(ctx context.Context, unit string) error
@@ -270,6 +274,15 @@ type Host interface {
 	// it). ok is true only for the OK line; rev is what the line named ("").
 	// W-FRIEND-HOSTED Segment 5.
 	FriendBootOK(ctx context.Context, unit string, since time.Time, expectedSHA string) (ok bool, rev string, err error)
+}
+
+// FriendFlatView is what GET /api/friend/flat reports, plus whether the reply
+// carried the traders count. R11: an OLDER friend bot omits "traders" — then
+// HasTraders is false and the worker falls back to flat alone.
+type FriendFlatView struct {
+	Flat       bool // flat as the friend reported it
+	Traders    int  // the friend's trader count
+	HasTraders bool // the reply carried a "traders" field (false = older bot)
 }
 
 // Deps is everything New needs besides the Config.
