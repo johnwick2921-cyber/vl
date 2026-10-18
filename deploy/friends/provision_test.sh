@@ -71,10 +71,12 @@ has    "F1 symlink web/dist"           "$(readlink "$ROOT/alice/web/dist")" "/ho
 has    "F1 symlink deploy/RELEASE"     "$(readlink "$ROOT/alice/deploy/RELEASE")" "/home/hoang/vl/deploy/RELEASE"
 
 echo "== F2: invalid names refused =="
-for bad_name in "Tom" "t" "toolongname1234567890" "to m" "tom!"; do
+for bad_name in "Tom" "t" "toolongname1234567890" "to m" "tom!" ".." "." "a/b"; do
   RC=$(provision "$bad_name")
   check "F2 refuses '$bad_name'" "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" "nonzero"
 done
+RC=$(provision "")
+check "F2 refuses empty name" "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" "nonzero"
 
 echo "== F3: port collision refused =="
 export FAKE_SS_BUSY=18082
@@ -120,6 +122,14 @@ has    "F6 code connect_key matches .env" "$DECODED" "\"connect_key\": \"$KEY\""
 SHA="$(printf '%s' "$KEY" | sha256sum | awk '{print $1}')"
 has    "F6 registry stores only sha256" "$(cat "$ROOT/friends.json")" "\"key_sha256\": \"$SHA\""
 hasnt  "F6 registry never stores the clear key" "$(cat "$ROOT/friends.json")" "$KEY"
+
+echo "== F7: a symlinked name resolves outside the root -> refused =="
+ln -s /home/hoang "$ROOT/evil"
+RC=$(provision evil)
+check "F7 provision refuses symlinked name" "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" "nonzero"
+RC=$(remove evil)
+check "F7 remove refuses symlinked name"    "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" "nonzero"
+has   "F7 remove names the escape" "$(cat "$WORK/err")" "outside"
 
 printf '\n== %d pass / %d fail ==\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

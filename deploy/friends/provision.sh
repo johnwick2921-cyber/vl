@@ -51,6 +51,16 @@ DEST="$ROOT/$NAME"
 mkdir -p "$ROOT"
 [ -f "$REGISTRY" ] || printf '[]\n' > "$REGISTRY"
 
+# Defense in depth: the folder must RESOLVE inside $ROOT (a symlinked name or a
+# traversal must never point the mkdir at a path outside the friend root).
+REAL_ROOT="$(realpath -m -- "$ROOT")"
+REAL_DEST="$(realpath -m -- "$DEST")"
+case "$REAL_DEST" in
+  "$REAL_ROOT"/*) : ;;
+  *) echo "provision: '$NAME' resolves outside $ROOT — refusing" >&2; exit 1 ;;
+esac
+[ "$REAL_DEST" != "$REAL_ROOT" ] || { echo "provision: refusing to create the friend root itself" >&2; exit 1; }
+
 # Refuse a second provision of the same name (folder or registry entry).
 if [ -e "$DEST" ]; then
   echo "provision: '$DEST' already exists — refusing (remove.sh first)" >&2
