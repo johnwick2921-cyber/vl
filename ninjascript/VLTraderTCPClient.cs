@@ -34,8 +34,16 @@ namespace NinjaTrader.NinjaScript.AddOns
     public class VLTraderTCPClient : AddOnBase
     {
         // === Connection constants (must match Go-side tcp_server.go) ===
-        private const string GO_SERVER_HOST          = "127.0.0.1";
-        private const int    GO_SERVER_PORT          = 36974; // NOT NT's ATI port 36973
+        // W-FRIEND-HOSTED (DS-103): the AddOn reads Documents\NinjaTrader 8\VL\connect.json once at
+        // activation and OVERRIDES these defaults (see LoadConnectConfig). The defaults are exactly
+        // today's behaviour when the file is absent. A corrupt file is FATAL: we do NOT connect
+        // (never silently fall back to local when the file exists).
+        private const string GO_SERVER_HOST_DEFAULT  = "127.0.0.1";
+        private const int    GO_SERVER_PORT_DEFAULT  = 36974; // NOT NT's ATI port 36973
+        private string        serverHost             = GO_SERVER_HOST_DEFAULT;
+        private int           serverPort             = GO_SERVER_PORT_DEFAULT;
+        private string        connectKey             = "";    // sent in hello (omitempty); never logged
+        private bool          connectConfigCorrupt   = false; // true = refuse to connect
         private const int    HEARTBEAT_INTERVAL_MS   = 30000; // spec L4408
         // F12: the working-order snapshot period. The Go side calls a book older
         // than 2x this STALE (trader.DefaultOrderSnapshotSecs = 30). Changing one
@@ -60,7 +68,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         // no nested census locks, source_hash at activation. The ISO-date
         // prefix is kept (CTO ruling Q3).
         // 2026-10-14-a (release #24, AC-1): close_position honours its `account` field.
-        private const string  VL_BUILD_ID             = "2026-10-16-a";
+        private const string  VL_BUILD_ID             = "2026-10-18-a";
         private const int    MAX_FRAME_BYTES         = 1 << 20; // 1 MB, spec L4376
 
         // === State ===
@@ -303,6 +311,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
             else if (State == State.Active)
             {
+                LoadConnectConfig(); // W-FRIEND-HOSTED: read connect.json BEFORE the reader thread dials
                 cts = new CancellationTokenSource();
                 ResolveAccount();
                 if (account != null)
@@ -357,7 +366,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 readerThread.Start();
                 heartbeatThread.Start();
                 LogInfo("VLTraderTCPClient: AddOn Active, connecting to "
-                        + GO_SERVER_HOST + ":" + GO_SERVER_PORT);
+                        + serverHost + ":" + serverPort);
             }
             else if (State == State.Terminated)
             {
@@ -615,15 +624,90 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
         }
 
+        // W-FRIEND-HOSTED (DS-103) — pure, NT8-free parser (unit-testable): extracts
+        // host / port / connect_key from the connect.json text. host == "" means
+        // "keep the default"; err != null means CORRUPT (parse error or a port that is
+        // not a valid TCP port). The key is never echoed into err or any log line.
+        public static void TryParseConnectJson(string json, out string host, out int port, out string key, out string err)
+        {
+            host = ""; port = 0; key = ""; err = null;
+            var root = new JsonParser(json).Parse() as Dictionary<string, object>;
+            if (root == null) { err = "connect.json is not a JSON object"; return; }
+            if (root.TryGetValue("host", out object h) && h is string sh && !string.IsNullOrEmpty(sh))
+            {
+                host = sh;
+            }
+            if (root.TryGetValue("port", out object p))
+            {
+                long pl;
+                if (p is long l) pl = l;
+                else if (p is double d && d == Math.Truncate(d)) pl = (long)d;
+                else { err = "connect.json port is not a whole number"; return; }
+                if (pl <= 0 || pl > 65535) { err = "connect.json port out of range"; return; }
+                port = (int)pl;
+            }
+            if (root.TryGetValue("connect_key", out object k) && k is string sk && !string.IsNullOrEmpty(sk))
+            {
+                key = sk;
+            }
+        }
+
+        // Reads Documents\NinjaTrader 8\VL\connect.json once at activation. Absent file ->
+        // today's defaults. Corrupt file -> connectConfigCorrupt=true and the loop never dials.
+        private void LoadConnectConfig()
+        {
+            string docs;
+            try { docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments); }
+            catch { docs = ""; }
+            if (string.IsNullOrEmpty(docs)) return; // absent -> defaults
+
+            string path;
+            try { path = Path.Combine(docs, "NinjaTrader 8", "VL", "connect.json"); }
+            catch { return; }
+
+            if (!File.Exists(path)) return; // absent -> defaults (today's behaviour)
+
+            string json;
+            try { json = File.ReadAllText(path); }
+            catch (Exception ex)
+            {
+                connectConfigCorrupt = true;
+                LogWarn("VLTraderTCPClient: connect.json unreadable (" + ex.Message + ") — will NOT connect");
+                return;
+            }
+
+            string host = ""; int port = 0; string key = ""; string err = null;
+            try { TryParseConnectJson(json, out host, out port, out key, out err); }
+            catch (Exception ex) { err = ex.Message; }
+
+            if (err != null)
+            {
+                connectConfigCorrupt = true;
+                LogWarn("VLTraderTCPClient: connect.json invalid (" + err + ") — will NOT connect");
+                return;
+            }
+            if (!string.IsNullOrEmpty(host)) serverHost = host;
+            if (port > 0) serverPort = port;
+            if (!string.IsNullOrEmpty(key)) connectKey = key;
+            // The key is NEVER logged — only its presence.
+            LogInfo("VLTraderTCPClient: connect.json loaded — " + serverHost + ":" + serverPort
+                    + (connectKey.Length > 0 ? " + connect_key" : " (no connect_key)"));
+        }
+
         // === Connection loop with reconnect (spec L4415: every 5s) ===
         private void RunConnectionLoop(CancellationToken ct)
         {
+            if (connectConfigCorrupt)
+            {
+                LogWarn("VLTraderTCPClient: refusing to connect — connect.json is invalid. Fix or remove the file and restart the AddOn.");
+                return;
+            }
             while (!ct.IsCancellationRequested)
             {
                 try
                 {
                     client = new TcpClient();
-                    client.Connect(GO_SERVER_HOST, GO_SERVER_PORT);
+                    client.Connect(serverHost, serverPort);
                     stream = client.GetStream();
                     LogInfo("VLTraderTCPClient: CONNECTED");
                     // W-ONE-BUTTON M2 — a hold belongs to the connection that was
@@ -1936,6 +2020,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (sourceHashCache == null) sourceHashCache = ComputeSourceHash();
             if (sourceHashCache.Length > 0) hello["source_hash"] = sourceHashCache;
             hello["activation_nonce"] = activationNonce;
+            if (!string.IsNullOrEmpty(connectKey)) hello["connect_key"] = connectKey; // W-FRIEND-HOSTED
             WriteEnvelope("hello", hello);
         }
 

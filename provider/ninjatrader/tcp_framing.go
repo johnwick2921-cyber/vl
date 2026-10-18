@@ -162,6 +162,12 @@ type HelloPayload struct {
 	AssemblyMVID    string `json:"assembly_mvid,omitempty"`
 	SourceHash      string `json:"source_hash,omitempty"`
 	ActivationNonce string `json:"activation_nonce,omitempty"`
+
+	// ConnectKey (W-FRIEND-HOSTED S4) — a friend bot's connect key. When the
+	// server requires NT_CONNECT_KEY, a hello whose ConnectKey does not match
+	// is refused. omitempty keeps the wire byte-identical for an owner AddOn
+	// that does not send it.
+	ConnectKey string `json:"connect_key,omitempty"`
 }
 
 // ── W-ONE-BUTTON M2 site 7 — the installation maintenance frames ───────────

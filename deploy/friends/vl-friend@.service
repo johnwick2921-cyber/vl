@@ -1,0 +1,31 @@
+# VL friend bot — user systemd unit TEMPLATE (W-FRIEND-HOSTED, segment 1).
+# One instance per friend: `systemctl --user enable --now vl-friend@tom.service`.
+# `%i` is the friend name (lowercase a-z0-9), matching the folder name under
+# /home/hoang/vl-friends/.
+#
+# It runs the SAME program as the owner's bot (/home/hoang/vl/vl-bin), from the
+# friend's OWN folder, so it reads that folder's .env and data/data.db — never
+# the owner's. It is a USER unit (no sudo), enabled for the owner's account
+# (loginctl linger is already on — E8).
+#
+# LOGGING = THE JOURNAL, as with vl.service: journalctl --user -u vl-friend@tom -f
+# (the file-logging designs died with exit 209/STDOUT before the binary ran; do
+# not reintroduce StandardOutput=/StandardError= file directives — see vl.service).
+#
+# WorkingDirectory matters: .env (godotenv) + data/data.db resolve relative to
+# it. Every env var the friend bot needs lives in /home/hoang/vl-friends/%i/.env.
+
+[Unit]
+Description=VL friend bot (%i) — SIM-only, isolated instance
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/home/hoang/vl-friends/%i
+ExecStart=/home/hoang/vl/vl-bin
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

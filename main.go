@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -54,6 +55,19 @@ func main() {
 	config.Init()
 	cfg := config.Get()
 	logger.Info("✅ Configuration loaded")
+
+	// W-FRIEND-HOSTED Segment 2: a friend instance boots with the owner-only
+	// surfaces off. Refuse an unsafe bind BEFORE anything listens — a friend
+	// copy must never sit on 0.0.0.0 / :: / an empty address.
+	if cfg.IsFriendInstance() {
+		if err := validateFriendBind(cfg.APIServerHost, os.Getenv("NT_TCP_LISTEN_ADDR")); err != nil {
+			logger.Fatalf("❌ friend instance refused: %v", err)
+		}
+		if !config.ValidFriendName(cfg.FriendName) {
+			logger.Fatalf("❌ friend instance refused: VL_FRIEND_NAME=%q is not a valid friend name (lowercase a-z0-9, 2-20 chars)", cfg.FriendName)
+		}
+		logger.Info(friendBootLine(cfg.FriendName, cfg.APIServerHost, cfg.APIServerPort, ntwire.ListenAddr()))
+	}
 
 	// Initialize encryption service BEFORE database (so EncryptedString can decrypt on read)
 	logger.Info("🔐 Initializing encryption service...")
@@ -819,8 +833,12 @@ func main() {
 		}
 	})
 
-	// Start Telegram bot (if TELEGRAM_BOT_TOKEN is configured)
-	safe.GoNet("telegram-bot", "", func() { telegram.Start(cfg, st, telegramReloadCh) })
+	// Start Telegram bot (if TELEGRAM_BOT_TOKEN is configured). A friend
+	// instance has no Telegram (W-FRIEND-HOSTED Segment 2, S7): the agent is
+	// never started, so a leaked owner token in a friend .env cannot post.
+	if !cfg.IsFriendInstance() {
+		safe.GoNet("telegram-bot", "", func() { telegram.Start(cfg, st, telegramReloadCh) })
+	}
 
 	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
@@ -874,6 +892,47 @@ func formatTopP(v float64) string {
 		return "omitted"
 	}
 	return fmt.Sprintf("%.2f", v)
+}
+
+// isAllInterfacesHost reports whether a bind host is a bind-everything address
+// (empty, 0.0.0.0 or ::). It is the ONE canonicalizer for the friend bind
+// refusal (W-FRIEND-HOSTED Segment 2) — the check the mutant test removes to
+// prove the rail is load-bearing.
+func isAllInterfacesHost(h string) bool {
+	switch strings.TrimSpace(h) {
+	case "", "0.0.0.0", "::":
+		return true
+	}
+	return false
+}
+
+// validateFriendBind refuses a friend instance whose web or NinjaTrader bind
+// would expose it on every interface. apiHost is cfg.APIServerHost; ntListen is
+// the raw NT_TCP_LISTEN_ADDR env value (host:port, or a bare host). Values are
+// READ, never fabricated: "" names an unset variable.
+func validateFriendBind(apiHost, ntListen string) error {
+	if isAllInterfacesHost(apiHost) {
+		return fmt.Errorf("API_SERVER_HOST must be a specific address, not %q", strings.TrimSpace(apiHost))
+	}
+	if ntListen == "" {
+		return fmt.Errorf("NT_TCP_LISTEN_ADDR must be set to the friend's tunnel address, not empty")
+	}
+	host, _, err := net.SplitHostPort(ntListen)
+	if err != nil {
+		// A bare host (no port) is still a bind target; judge the whole string.
+		host = ntListen
+	}
+	if isAllInterfacesHost(host) {
+		return fmt.Errorf("NT_TCP_LISTEN_ADDR must not bind every interface, got host %q", strings.TrimSpace(host))
+	}
+	return nil
+}
+
+// friendBootLine renders the friend startup line (W-FRIEND-HOSTED Segment 2).
+// Every field is READ from the caller — the web and NT addresses come off the
+// live config / env, never a literal (boot lines are READ, class 45).
+func friendBootLine(name, webHost string, webPort int, ntAddr string) string {
+	return fmt.Sprintf("👥 friend instance %s · web %s:%d · nt %s", name, webHost, webPort, ntAddr)
 }
 
 // totalUnrecomputable sums the three-state backfill's reason buckets. It is a

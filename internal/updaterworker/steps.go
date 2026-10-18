@@ -1068,7 +1068,26 @@ func (w *Worker) stepReleaseHold(ctx context.Context, j updaterjob.Job) stepResu
 			return stepResult{receipts: receipts, err: errors.New(lrec.Err), reason: clipText("the main-tree lock could not be released: " + lrec.Err)}
 		}
 	}
-	return stepResult{receipts: receipts, err: err}
+	// W-FRIEND-HOSTED Segment 5: a COMPLETED owner install sweeps the friend
+	// registry — AFTER the hold and the lock are released, and only for the
+	// complete edge (a rolled_back install never touches friends). The sweep
+	// is advisory: it never returns an error, so a friend failure can never
+	// send the owner's proven install to recovery_needed.
+	var friends []updaterjob.FriendResult
+	if err == nil && j.State == updaterjob.StateComplete {
+		sha := ""
+		if j.Release != nil {
+			sha = j.Release.SHA
+		}
+		freceipts, fresults := w.updateFriends(ctx, sha)
+		receipts = append(receipts, freceipts...)
+		friends = fresults
+	}
+	res := stepResult{receipts: receipts, err: err}
+	if friends != nil {
+		res.set = func(k *updaterjob.Job) { k.Friends = friends }
+	}
+	return res
 }
 
 // stepRevertClean is the pre-activation self-recovery (W-ADDON-ONE-CLICK,

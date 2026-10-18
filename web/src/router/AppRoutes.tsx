@@ -19,6 +19,7 @@ import { SetupPage } from '../components/modals/SetupPage'
 import { AITradersPage } from '../components/trader/AITradersPage'
 import { AgentChatPage } from '../pages/AgentChatPage'
 import { SettingsPage } from '../pages/SettingsPage'
+import { FriendsPage } from '../pages/FriendsPage'
 import { StrategyStudioPage } from '../pages/StrategyStudioPage'
 import { TraderDashboardPage } from '../pages/TraderDashboardPage'
 import { GuidePage } from '../guide/GuidePage'
@@ -557,6 +558,18 @@ export function AppRoutes() {
             isAuthenticated ? (
               <AppChrome currentPage="guide" animateContent>
                 <GuidePage />
+              </AppChrome>
+            ) : (
+              <Navigate to={ROUTES.login} replace />
+            )
+          }
+        />
+        <Route
+          path={ROUTES.friends}
+          element={
+            isAuthenticated ? (
+              <AppChrome currentPage="friends" showFooter={false}>
+                <FriendsPage />
               </AppChrome>
             ) : (
               <Navigate to={ROUTES.login} replace />

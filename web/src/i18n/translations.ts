@@ -25,6 +25,7 @@ export const translations = {
     dashboardNav: 'Dashboard',
     strategyNav: 'Strategy',
     faqNav: 'FAQ',
+    friendsNav: 'Friends',
 
     // Footer
     footerTitle: PERSONA_NAME + ' - AI Trading System',
@@ -1357,6 +1358,7 @@ export const translations = {
     dashboardNav: '看板',
     strategyNav: '策略',
     faqNav: '常见问题',
+    friendsNav: '好友',
 
     // Footer
     footerTitle: PERSONA_NAME + ' - AI交易系统',
@@ -2614,6 +2616,7 @@ export const translations = {
     dashboardNav: 'Dasbor',
     strategyNav: 'Strategi',
     faqNav: 'FAQ',
+    friendsNav: 'Teman',
 
     // Footer
     footerTitle: PERSONA_NAME + ' - Sistem Trading AI',

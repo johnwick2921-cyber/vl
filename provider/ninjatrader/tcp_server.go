@@ -12,6 +12,7 @@ package ninjatrader
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -71,6 +72,10 @@ type TCPServer struct {
 	// bumps these; a 60s reporter line answers "feed or math" in one glance.
 	framesTotal     atomic.Int64
 	lastFrameUnixMs atomic.Int64
+
+	// ntConnectKeyRefused (W-FRIEND-HOSTED S4) — hellos refused for a missing
+	// or wrong connect key. 0 when no key is required.
+	ntConnectKeyRefused atomic.Int64
 	// T8 (2026-08-27) — bar_update frame-log sampler (INFO spam ate the
 	// journald cap in <1 day; the frame is DEBUG-sampled 1-in-N now).
 	frameLogN atomic.Int64
@@ -712,6 +717,17 @@ func ListenAddr() string {
 	}
 	return TCPListenAddr
 }
+
+// ConnectKey returns the connect key a friend bot requires in the hello
+// (NT_CONNECT_KEY env, W-FRIEND-HOSTED S4). Empty = no key required: the
+// owner's box behaves exactly as today.
+func ConnectKey() string {
+	return strings.TrimSpace(os.Getenv("NT_CONNECT_KEY"))
+}
+
+// ConnectKeyRefused returns the count of hellos refused for a missing or wrong
+// connect key (W-FRIEND-HOSTED S4). 0 when no key is required.
+func (s *TCPServer) ConnectKeyRefused() int64 { return s.ntConnectKeyRefused.Load() }
 
 // NewTCPServer constructs a server bound to ListenAddr(). The listener is
 // not opened until Start. Pass nil to use the default slog logger.
@@ -1623,27 +1639,42 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 		s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // B11: a fresh conn restarts the read-idle clock
 		s.connMu.Unlock()
 		s.beginConnectionRecord(c, s.acceptNow()) // W-ONE-BUTTON M2 site 7
-		s.attempted.noteReconnect(time.Now())  // FIX-DOUBLE-ENTRY: reconnect instant for fresh-truth checks
-		s.barCache.NoteReconnect(time.Now())   // WAVE 26: arm the stale-print guard for the AddOn's reloaded-series re-emit
+		s.attempted.noteReconnect(time.Now())     // FIX-DOUBLE-ENTRY: reconnect instant for fresh-truth checks
+		s.barCache.NoteReconnect(time.Now())      // WAVE 26: arm the stale-print guard for the AddOn's reloaded-series re-emit
 
 		s.logger.Info("tcp_server: client connected", "addr", c.RemoteAddr())
 		s.wg.Add(2)
 		go s.readLoop(ctx, c)
 		go s.heartbeatLoop(ctx, c)
-		// A3 (G2) — declare the bound-account allowlist BEFORE flushing any queued
-		// signals, so the AddOn's allowlist is established before it can execute one.
-		s.sendAccountAllowlist(c)
-		// W-ONE-BUTTON M2 site 7 — a held installation tells the AddOn BEFORE
-		// the flush (which itself drops queued entries while held).
-		s.pushMaintenance(c, time.Now())
-		// Flush any signals queued during the disconnect window.
-		_ = s.flushPending()
-		// Plan 4.4 Stage 2 — auto-subscribe to bars on every accept so
-		// the C# AddOn starts emitting bars_historical + bar_update
-		// without operator action. Idempotent on the C# side per the
-		// protocol contract (re-subscribing returns immediately).
-		s.sendAutoBarsSubscribe(c)
+		// W-FRIEND-HOSTED S4 — with a connect key required, nothing is sent to the
+		// peer until its hello carries the matching key (the readLoop runs the
+		// post-accept sends after a successful check). Without a key (the owner's
+		// box) the sends run here, exactly as before.
+		if ConnectKey() == "" {
+			s.sendPostAccept(c)
+		}
 	}
+}
+
+// sendPostAccept sends everything the accept path sends once a connection is
+// established: the bound-account allowlist, the maintenance hold (if any), the
+// queued signals, and the auto bars subscription. With a connect key required,
+// this runs only AFTER the hello carried the matching key (readLoop); without
+// a key it runs in the accept loop exactly as before (byte-identical).
+func (s *TCPServer) sendPostAccept(c net.Conn) {
+	// A3 (G2) — declare the bound-account allowlist BEFORE flushing any queued
+	// signals, so the AddOn's allowlist is established before it can execute one.
+	s.sendAccountAllowlist(c)
+	// W-ONE-BUTTON M2 site 7 — a held installation tells the AddOn BEFORE
+	// the flush (which itself drops queued entries while held).
+	s.pushMaintenance(c, time.Now())
+	// Flush any signals queued during the disconnect window.
+	_ = s.flushPending()
+	// Plan 4.4 Stage 2 — auto-subscribe to bars on every accept so
+	// the C# AddOn starts emitting bars_historical + bar_update
+	// without operator action. Idempotent on the C# side per the
+	// protocol contract (re-subscribing returns immediately).
+	s.sendAutoBarsSubscribe(c)
 }
 
 // ── BAR-TRUTH WAVE (2026-08-28) — deep backfill + three-way arbiter ────────
@@ -1797,7 +1828,7 @@ func (s *TCPServer) sendAutoBarsSubscribe(c net.Conn) {
 				"symbol", payload.Symbol, "timeframes", payload.Timeframes)
 			continue
 		}
-		s.barCache.NoteReconnect(time.Now()) // W26: the accept auto-subscribe rebuilds the AddOn's BarsRequests
+		s.barCache.NoteReconnect(time.Now())             // W26: the accept auto-subscribe rebuilds the AddOn's BarsRequests
 		s.setSubState(payload.Symbol, "pending", "", "") // P5.3 — awaiting the AddOn's ack
 		s.logger.Info("tcp_server: sent bars_subscribe",
 			"symbol", payload.Symbol,
@@ -2059,6 +2090,16 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 					"action", "redeploy the C# AddOn + Go binary in lockstep (cp → F5 → NT8 restart)")
 				return // closes the connection via the deferred cleanup
 			}
+			// W-FRIEND-HOSTED S4 — with NT_CONNECT_KEY set, a hello whose key is
+			// missing or wrong is refused: closed, logged, counted. Constant-time
+			// compare; the key itself is never logged.
+			if key := ConnectKey(); key != "" {
+				if subtle.ConstantTimeCompare([]byte(p.ConnectKey), []byte(key)) != 1 {
+					s.ntConnectKeyRefused.Add(1)
+					s.logger.Warn("tcp_server: connect_key refused", "addr", c.RemoteAddr())
+					return // close: no hello reply, no allowlist, no flush
+				}
+			}
 			helloSeen = true
 			// W26 — the hello precedes the AddOn's first BarsRequest build + the
 			// reloaded-series re-emit; arm the stale-print guard for it.
@@ -2083,6 +2124,12 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 			if err != nil {
 				s.logger.Warn("tcp_server: write hello reply", "err", err)
 				return
+			}
+			// W-FRIEND-HOSTED S4 — the accept loop deferred its post-accept sends
+			// while a connect key is required; run them now that the hello carried
+			// the matching key.
+			if ConnectKey() != "" {
+				s.sendPostAccept(c)
 			}
 
 		case FrameMaintenanceAck:

@@ -130,6 +130,12 @@ export default function HeaderBar({
                   label: '📖 Guide',
                   requiresAuth: true,
                 },
+                {
+                  page: 'friends',
+                  path: ROUTES.friends,
+                  label: t('friendsNav', language),
+                  requiresAuth: true,
+                },
               ]
 
               const handleNavClick = (tab: (typeof navTabs)[0]) => {
@@ -363,6 +369,12 @@ export default function HeaderBar({
                       page: 'guide',
                       path: ROUTES.guide,
                       label: '📖 Guide',
+                      requiresAuth: true,
+                    },
+                    {
+                      page: 'friends',
+                      path: ROUTES.friends,
+                      label: t('friendsNav', language),
                       requiresAuth: true,
                     },
                   ]
