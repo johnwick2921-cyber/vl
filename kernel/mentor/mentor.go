@@ -325,7 +325,7 @@ type Config struct {
 
 	// Filters (PLAN v1 §4).
 	StopCeilingPts float64 // hard stop ceiling; default 25 [D3.3 p1 @ 02:04]
-	RoomMultiple   float64 // room rule: first level >= RoomMultiple x leg-1 distance (leg 1 = 1R -> 2R; confluence leg 1 = 2R -> 4R) [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13]; default 2
+	RoomMultiple   float64 // room rule: first level >= RoomMultiple x leg-1 distance (leg 1 = 1R -> 2R; confluence leg 1 = 2R -> 4R) [D5.3 p1 @09:16–09:52]; default 2
 	RangeGapPts    float64 // mid-range: levels bracketing price within this gap both sides; default 0 = disabled
 
 	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h
@@ -533,7 +533,7 @@ func DefaultConfig() Config {
 
 		EMALocationTFMinutes: 1, // R3: intraday EMA 34 lives on the 1m chart
 
-		TouchBandPts: 0, // §3: wait for the LITERAL touch [D3.3 p1 @ 00:13]; §8's "KHÔNG ĐƯỢC GẦN ĐỤNG" is the same strictness
+		TouchBandPts: 0, // §3: wait for the LITERAL touch [D3.3 p1 @ 00:13]; D5.2 p2 @18:36–18:45 "gần gần gần đụng … Còn như cái này thì bắt buộc là phải đụng nha"
 
 		ISBBufferPts:  1.5,
 		ISBStopMinPts: 5,
