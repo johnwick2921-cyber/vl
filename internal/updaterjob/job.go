@@ -120,7 +120,7 @@ type Job struct {
 }
 
 // FriendResult is one friend's outcome in the post-complete friend sweep
-// (W-FRIEND-HOSTED). State is one of restarted | deferred | restored |
+// (W-FRIEND-HOSTED). State is one of restarted | deferred | restored-restart |
 // failed | skipped. Rev is the revision the friend's BOOT INTEGRITY line
 // named ("" when the friend did not boot the release).
 type FriendResult struct {

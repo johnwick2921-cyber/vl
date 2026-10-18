@@ -28,7 +28,7 @@ import (
 //
 //	restarted — flat → restarted → its BOOT INTEGRITY line named the new rev
 //	deferred  — open (never flat) → retried every flat-poll → gave up at the budget
-//	restored  — flat → restarted → boot FAILED → a restore restart recovered it
+//	restored-restart — flat → restarted → boot FAILED → one extra restart recovered it
 //	failed    — boot failed and the restore did not recover, or the probe could not
 //	            prove flat before the budget (fail-closed)
 //	skipped   — a paused friend (the updater never restarts a paused unit)
@@ -45,9 +45,13 @@ type FriendResultState string
 const (
 	FriendRestarted FriendResultState = "restarted"
 	FriendDeferred  FriendResultState = "deferred"
-	FriendRestored  FriendResultState = "restored"
-	FriendFailed    FriendResultState = "failed"
-	FriendSkipped   FriendResultState = "skipped"
+	// FriendRestored is "restored-restart" (CTO ruling 2026-10-18): the
+	// binary is SHARED with the owner, so a friend boot failure is recovered
+	// by ONE extra restart of the friend unit — never a per-friend binary
+	// revert. Recorded honestly as a restart, not a rollback.
+	FriendRestored FriendResultState = "restored-restart"
+	FriendFailed   FriendResultState = "failed"
+	FriendSkipped  FriendResultState = "skipped"
 )
 
 // friendRecord is one B2 registry row (friends.json). Only the SHA-256 of the

@@ -25,6 +25,14 @@ type friendHealth struct {
 	Revision string `json:"revision"`
 }
 
+// friendFlat is GET /api/friend/flat (B2 + CTO ruling 2026-10-18): DS-102 adds
+// it in friend mode ONLY, reachable only on the tunnel-bound friend port.
+// It reports ONLY {flat, at} — no symbols, sizes, prices or accounts.
+type friendFlat struct {
+	Flat bool  `json:"flat"`
+	At   int64 `json:"at"`
+}
+
 func (h OSHost) friendGet(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -47,9 +55,9 @@ func (h OSHost) friendGet(ctx context.Context, url string) ([]byte, error) {
 }
 
 // FriendFlat reports whether the friend bot at baseURL is flat: its health
-// answers 200 AND its positions endpoint reports no open positions. A probe
-// error is NOT flat (the caller fail-closes: a friend whose flatness cannot
-// be proven is never restarted).
+// answers 200 AND GET /api/friend/flat reports flat:true. A probe error is
+// NOT flat (the caller fail-closes: a friend whose flatness cannot be proven
+// is never restarted).
 func (h OSHost) FriendFlat(ctx context.Context, baseURL string) (bool, error) {
 	body, err := h.friendGet(ctx, baseURL+"/api/health")
 	if err != nil {
@@ -62,18 +70,18 @@ func (h OSHost) FriendFlat(ctx context.Context, baseURL string) (bool, error) {
 	if hh.Status != "ok" && hh.Status != "degraded" {
 		return false, fmt.Errorf("friend health status %q", hh.Status)
 	}
-	// The positions view is JWT-protected on the owner bot; on a friend bot
-	// the same endpoint reports the friend's own positions. A 401 here means
-	// flatness cannot be proven → not flat (fail-closed), never an error.
-	body, err = h.friendGet(ctx, baseURL+"/api/positions")
+	// The flat signal is public in friend mode only (DS-102's
+	// /api/friend/flat); a 404/401 means flatness cannot be proven → not flat
+	// (fail-closed), never an error.
+	body, err = h.friendGet(ctx, baseURL+"/api/friend/flat")
 	if err != nil {
 		return false, nil
 	}
-	var pos []json.RawMessage
-	if err := json.Unmarshal(body, &pos); err != nil {
-		return false, fmt.Errorf("friend positions body: %w", err)
+	var ff friendFlat
+	if err := json.Unmarshal(body, &ff); err != nil {
+		return false, fmt.Errorf("friend flat body: %w", err)
 	}
-	return len(pos) == 0, nil
+	return ff.Flat, nil
 }
 
 // FriendRestart restarts a friend's user unit.
