@@ -174,6 +174,13 @@ func (s *Server) setupRoutes() {
 		// g.GET/g.POST so they never enter GetAPIDocs (F1). See handler_updates.go.
 		s.registerUpdateRoutes(api)
 
+		// W-FRIEND-HOSTED S8 (DS-108): the friend manifest + artifacts, served
+		// ONLY in friend mode (404 on the owner's bot). Public (no auth): the
+		// friend app fetches them before the friend logs in.
+		s.route(api, "GET", "/friend/manifest", "Friend manifest (friend mode only)", s.handleFriendManifest)
+		s.route(api, "GET", "/friend/manifest.sig", "Friend manifest signature (friend mode only)", s.handleFriendManifestSig)
+		s.route(api, "GET", "/friend/artifact/:name", "Friend artifact (addon|app; friend mode only)", s.handleFriendArtifact)
+
 		// Routes requiring authentication
 		protected := api.Group("/", s.authMiddleware(), s.planTraderOwnership())
 		{
