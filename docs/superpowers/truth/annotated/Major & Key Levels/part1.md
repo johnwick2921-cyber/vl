@@ -710,8 +710,8 @@ cues: 715/715 · rule cues: 226 · rows: 11 · CODE: 100 · MISMATCH: 0 · NOT-I
 00:24:53 | Ở dưới đây nó có 1 cái low rồi | CODE kernel/mentor/box.go:555
 00:24:54 | Có nghĩa là yesterday low | CODE kernel/mentor/box.go:555
 00:24:57 | Nó có rồi, mình không dễ | CODE kernel/mentor/box.go:555
-00:24:58 | Tại vì sao? | CODE kernel/mentor/day_seed.go:25
-00:25:00 | Tại vì nếu em, cũng như cái việc vẽ key level | CODE kernel/mentor/day_seed.go:25
-00:25:03 | Nếu như cái rank | CODE kernel/mentor/day_seed.go:25
-00:25:04 | Nó tầm gần qua 30 điểm | CODE kernel/mentor/day_seed.go:25
-00:25:07 | Là ok rồi | CODE kernel/mentor/day_seed.go:25
+00:24:58 | Tại vì sao? | CODE kernel/mentor/key_levels.go:40
+00:25:00 | Tại vì nếu em, cũng như cái việc vẽ key level | CODE kernel/mentor/key_levels.go:40
+00:25:03 | Nếu như cái rank | CODE kernel/mentor/key_levels.go:40
+00:25:04 | Nó tầm gần qua 30 điểm | CODE kernel/mentor/key_levels.go:40
+00:25:07 | Là ok rồi | CODE kernel/mentor/key_levels.go:40
