@@ -655,6 +655,21 @@ its `accept_seq`, monotonic accept time and `remote_port`, as that connection's 
 The verifier binds to that record, **never** to `FarSideBuildID()`. `VL_BUILD_ID` keeps
 its ISO-date prefix, because the capability floors compare it bytewise.
 
+### `connect_key` on `hello` (W-FRIEND-HOSTED)
+
+`hello` (AddOn → Go) gains one additive, `omitempty` field for the friend-hosted
+deploy (release #37): `connect_key` (string). The AddOn reads it from
+`Documents\NinjaTrader 8\VL\connect.json` (`connect_key`); with the file absent
+the field is omitted, keeping the wire byte-identical to today.
+
+The Go server checks it only when `NT_CONNECT_KEY` is set in the friend's
+`.env`. A hello that omits the key, or whose key does not match (compared with
+`crypto/subtle.ConstantTimeCompare`), is refused **before** anything is accepted
+— no hello reply, no allowlist flush, no queued signal, no bars subscribe — and
+the refusal is counted (`nt_connect_key_refused`). Unset `NT_CONNECT_KEY` =
+today's behaviour, byte-identical. The key is never logged and never appears in
+the Go reply.
+
 ## `signal.stop_limit` (2026-10-03-c2) — mentor stop-LIMIT entries (PR B)
 
 The `signal` payload gains `stop_limit` (bool, omitempty). When true and
