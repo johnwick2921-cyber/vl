@@ -20,7 +20,7 @@ R = {
   (0,50,"CODE kernel/mentor/filters.go:54"), (117,130,"CODE kernel/mentor/filters.go:54"), (230,250,"CODE kernel/mentor/filters.go:54"), (420,490,"CODE kernel/mentor/filters.go:54"), (745,777,"CODE kernel/mentor/filters.go:144"), (1385,1405,"CODE kernel/mentor/eval.go:1580")],
  "part2.srt": [(0,60,"CODE kernel/mentor/filters.go:54")]},
 "Ping pong": {"part1.srt": [
- (0,87,"CODE kernel/mentor/box_trade.go:168"), (87,110,"CODE kernel/mentor/isb.go:174"), (275,310,"CODE kernel/mentor/isb_box.go:42"), (428,460,"CODE kernel/mentor/box.go:576"), (577,665,"CODE kernel/mentor/box.go:576")]},
+ (0,87,"CODE kernel/mentor/box_trade.go:168"), (87,110,"CODE kernel/mentor/isb.go:174"), (277,370,"CODE kernel/mentor/isb_box.go:42"), (372,394,"CODE kernel/mentor/box_trade.go:168"), (428,460,"CODE kernel/mentor/box.go:576"), (577,665,"CODE kernel/mentor/box.go:576")]},
 "Cách né trap & Setup gồng lời": {"part1.srt": [
  (0,63,"NOT-IN-BOT -> row 41"), (227,260,"CODE kernel/mentor/htf_direction.go:47"), (520,590,"CODE kernel/mentor/htf_direction.go:47"), (691,790,"CODE kernel/mentor/eval.go:1856"), (940,980,"CODE kernel/mentor/exec_frame.go:25"), (1050,1096,"CODE kernel/mentor/eval.go:1917")]},
 "Cách vẽ trendline": {"part1.srt": [

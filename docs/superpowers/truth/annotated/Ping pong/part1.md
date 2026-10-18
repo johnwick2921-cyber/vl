@@ -1,4 +1,4 @@
-cues: 290/290 · rule cues: 103 · rows: 5 · CODE: 103 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · SPLIT: 0 · —: 187
+cues: 290/290 · rule cues: 146 · rows: 6 · CODE: 146 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · SPLIT: 0 · —: 144
 
 00:00:00 | Rồi, khi mình có 2 cái box là PLH2 ở trên và PLH2 ở dưới và nến nằm ở giữa thì mình dẻ ra và mình đánh ping pong tại vì những cái này là những cái zone và nó khá là cứng, em nói khá là cứng ha nhưng mình cũng không có được quyền mình vô giá market ha, tuyệt đối không được vô giá market ha. | CODE kernel/mentor/box_trade.go:168
 00:00:30 | Bây giờ mình có setup gì | CODE kernel/mentor/box_trade.go:168
@@ -117,49 +117,49 @@ cues: 290/290 · rule cues: 103 · rows: 5 · CODE: 103 · MISMATCH: 0 · NOT-IN
 00:05:07 | ha | CODE kernel/mentor/isb_box.go:42
 00:05:08 | tìm mọi người thấy nó in rank vậy nè | CODE kernel/mentor/isb_box.go:42
 00:05:10 | nó tạo fail to go higher fail to go lower rồi | CODE kernel/mentor/isb_box.go:42
-00:05:13 | là mọi người nhìn thử khung 15 phút khung lớn hơn đi | —
-00:05:16 | là nó sẽ tự nhiên nó có cái | —
-00:05:18 | cái inside bar | —
-00:05:18 | lúc nào cũng làm vậy á | —
-00:05:20 | tại vì nó | —
-00:05:21 | inside bar là cái | —
-00:05:23 | cái inside bar của khung giờ lớn | —
-00:05:25 | là nó | —
-00:05:26 | nó chứng minh cho cái việc là | —
-00:05:28 | Market đang in rank | —
-00:05:30 | Anh chị ok không | —
-00:05:34 | Dạ đúng | —
-00:05:46 | Có nghĩa là inside bar | —
-00:05:48 | Khung lớn | —
-00:05:49 | Như hôm qua mình | —
-00:05:49 | Bây giờ | —
-00:05:50 | Inside bar khung lớn | —
-00:05:51 | Thì mình đợi out ra | —
-00:05:52 | Mình mới trade | —
-00:05:53 | Có nghĩa là sao | —
-00:05:54 | Bây giờ | —
-00:05:55 | Nó là inside bar khung lớn | —
-00:05:56 | Thì cái đỉnh này | —
-00:05:57 | Với cái đáy này | —
-00:05:57 | Nó là inside bar đúng không | —
-00:05:58 | Anh Phú có đồng ý với em là | —
-00:06:00 | Cái đỉnh này | —
-00:06:01 | Với cái đáy này | —
-00:06:02 | Là cái inside bar khung 15 phút đúng không | —
-00:06:04 | Mà khung 15 phút | —
-00:06:06 | Là khung giờ lớn | —
-00:06:07 | Thì mình đâu | —
-00:06:09 | Mình đâu thể nào | —
-00:06:09 | Mình ngồi | —
-00:06:10 | Mình chờ | —
-00:06:10 | Mình chờ nó thoát ra | —
-00:06:12 | Thì bây giờ tôi vẽ được, anh vẽ được ở cái vùng ở đây, một cái support | —
-00:06:16 | Ở đây là cái resistance, ở dưới đây là support | —
-00:06:19 | Thì mình đánh lên, đánh xuống, đánh lên, đánh xuống, đánh lên, đánh xuống | —
-00:06:23 | Mình đánh ping pong với nhau thôi | —
-00:06:25 | Chứ em hỏi thiệt nếu mà từ đây là lúc 11h26 phút cho tới bên khúc này nó thoát ra được là tới 3h chiều | —
-00:06:32 | Có nghĩa là 2 tiếng đồng hồ | —
-00:06:34 | Thì mình không thể nào mình ngồi mình đợi thì mình cứ đánh đụng support mình đánh lên, đụng support mình đánh lên, đánh resistance mình đánh xuống | —
+00:05:13 | là mọi người nhìn thử khung 15 phút khung lớn hơn đi | CODE kernel/mentor/isb_box.go:42
+00:05:16 | là nó sẽ tự nhiên nó có cái | CODE kernel/mentor/isb_box.go:42
+00:05:18 | cái inside bar | CODE kernel/mentor/isb_box.go:42
+00:05:18 | lúc nào cũng làm vậy á | CODE kernel/mentor/isb_box.go:42
+00:05:20 | tại vì nó | CODE kernel/mentor/isb_box.go:42
+00:05:21 | inside bar là cái | CODE kernel/mentor/isb_box.go:42
+00:05:23 | cái inside bar của khung giờ lớn | CODE kernel/mentor/isb_box.go:42
+00:05:25 | là nó | CODE kernel/mentor/isb_box.go:42
+00:05:26 | nó chứng minh cho cái việc là | CODE kernel/mentor/isb_box.go:42
+00:05:28 | Market đang in rank | CODE kernel/mentor/isb_box.go:42
+00:05:30 | Anh chị ok không | CODE kernel/mentor/isb_box.go:42
+00:05:34 | Dạ đúng | CODE kernel/mentor/isb_box.go:42
+00:05:46 | Có nghĩa là inside bar | CODE kernel/mentor/isb_box.go:42
+00:05:48 | Khung lớn | CODE kernel/mentor/isb_box.go:42
+00:05:49 | Như hôm qua mình | CODE kernel/mentor/isb_box.go:42
+00:05:49 | Bây giờ | CODE kernel/mentor/isb_box.go:42
+00:05:50 | Inside bar khung lớn | CODE kernel/mentor/isb_box.go:42
+00:05:51 | Thì mình đợi out ra | CODE kernel/mentor/isb_box.go:42
+00:05:52 | Mình mới trade | CODE kernel/mentor/isb_box.go:42
+00:05:53 | Có nghĩa là sao | CODE kernel/mentor/isb_box.go:42
+00:05:54 | Bây giờ | CODE kernel/mentor/isb_box.go:42
+00:05:55 | Nó là inside bar khung lớn | CODE kernel/mentor/isb_box.go:42
+00:05:56 | Thì cái đỉnh này | CODE kernel/mentor/isb_box.go:42
+00:05:57 | Với cái đáy này | CODE kernel/mentor/isb_box.go:42
+00:05:57 | Nó là inside bar đúng không | CODE kernel/mentor/isb_box.go:42
+00:05:58 | Anh Phú có đồng ý với em là | CODE kernel/mentor/isb_box.go:42
+00:06:00 | Cái đỉnh này | CODE kernel/mentor/isb_box.go:42
+00:06:01 | Với cái đáy này | CODE kernel/mentor/isb_box.go:42
+00:06:02 | Là cái inside bar khung 15 phút đúng không | CODE kernel/mentor/isb_box.go:42
+00:06:04 | Mà khung 15 phút | CODE kernel/mentor/isb_box.go:42
+00:06:06 | Là khung giờ lớn | CODE kernel/mentor/isb_box.go:42
+00:06:07 | Thì mình đâu | CODE kernel/mentor/isb_box.go:42
+00:06:09 | Mình đâu thể nào | CODE kernel/mentor/isb_box.go:42
+00:06:09 | Mình ngồi | CODE kernel/mentor/isb_box.go:42
+00:06:10 | Mình chờ | CODE kernel/mentor/isb_box.go:42
+00:06:10 | Mình chờ nó thoát ra | CODE kernel/mentor/isb_box.go:42
+00:06:12 | Thì bây giờ tôi vẽ được, anh vẽ được ở cái vùng ở đây, một cái support | CODE kernel/mentor/box_trade.go:168
+00:06:16 | Ở đây là cái resistance, ở dưới đây là support | CODE kernel/mentor/box_trade.go:168
+00:06:19 | Thì mình đánh lên, đánh xuống, đánh lên, đánh xuống, đánh lên, đánh xuống | CODE kernel/mentor/box_trade.go:168
+00:06:23 | Mình đánh ping pong với nhau thôi | CODE kernel/mentor/box_trade.go:168
+00:06:25 | Chứ em hỏi thiệt nếu mà từ đây là lúc 11h26 phút cho tới bên khúc này nó thoát ra được là tới 3h chiều | CODE kernel/mentor/box_trade.go:168
+00:06:32 | Có nghĩa là 2 tiếng đồng hồ | CODE kernel/mentor/box_trade.go:168
+00:06:34 | Thì mình không thể nào mình ngồi mình đợi thì mình cứ đánh đụng support mình đánh lên, đụng support mình đánh lên, đánh resistance mình đánh xuống | CODE kernel/mentor/box_trade.go:168
 00:06:44 | 14h50 | —
 00:06:49 | Cây này hả? 14h52 đúng không? | —
 00:06:55 | Nè 14h52 | —
