@@ -97,6 +97,7 @@ func TestFriendFlatOwnerMode404(t *testing.T) {
 
 func TestFriendFlatEmptyInstanceNotFlat(t *testing.T) {
 	// F1: zero traders / no NT8 must NOT read flat — never a fabricated all-clear.
+	// R11: the recorded traders count is 0 so DS-105 can still restart it safely.
 	s := newFriendFlatServer(t, true, nil)
 	code, body := getFriendFlat(t, s)
 	if code != http.StatusOK {
@@ -104,6 +105,9 @@ func TestFriendFlatEmptyInstanceNotFlat(t *testing.T) {
 	}
 	if body["flat"] != false {
 		t.Fatalf("flat = %v, want false (an empty instance has nothing known+fresh)", body["flat"])
+	}
+	if body["traders"] != float64(0) {
+		t.Fatalf("traders = %v, want 0 (the recorded count, R11)", body["traders"])
 	}
 	if at, ok := body["at"].(float64); !ok || at <= 0 {
 		t.Fatalf("at = %v, want a positive unix-ms number", body["at"])
@@ -205,6 +209,9 @@ func TestFriendFlatAllClear(t *testing.T) {
 	_, body := getFriendFlat(t, s)
 	if body["flat"] != true {
 		t.Fatalf("flat = %v, want true (no position, no order, state known + fresh)", body["flat"])
+	}
+	if body["traders"] != float64(1) {
+		t.Fatalf("traders = %v, want 1 (the recorded count)", body["traders"])
 	}
 }
 
