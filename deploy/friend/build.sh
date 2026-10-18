@@ -58,6 +58,11 @@ ADDON_SHA=$(printf '%s\n' "$PS_OUT" | sed -n 's/^VL_ADDON_OBFUSCATED_SHA256=//p'
 ADDON_LOCAL=$(wslpath -u "$ADDON_WIN")
 cp "$ADDON_LOCAL" "$OUT/VL.AddOn.dll"
 
+# The friend double-clicks a friendly name on first run: VL-Setup.exe is the
+# same self-installing app (first run = install wizard). The owner hands it to
+# the friend alongside the install code.
+cp "$OUT/vl-friend.exe" "$OUT/VL-Setup.exe"
+
 # 3. SHA-256 of the app exe.
 APP_SHA=$(sha256sum "$OUT/vl-friend.exe" | cut -d' ' -f1)
 
