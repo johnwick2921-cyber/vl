@@ -1,4 +1,4 @@
-cues: 623/623 marked · rules: 232 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 213 · —: 391
+cues: 623/623 · rule cues: 209 · rows: 11 · CODE: 10 · MISMATCH: 0 · NOT-IN-BOT: 180 · OWNER-ORDER: 19 · SPLIT: 0 · —: 414
 
 00:00 | Rồi, mình recap xong rồi, thì cái nhận định của em em cũng đã cho mọi người biết rồi ha, em nghĩ thì nó vẫn sẽ không rớt lên đâu, nhưng mà mình phải consider thôi, tại vì nếu mà mắc gạch nó ngay đây nó rớt nữa thì rất là xấu, rất là xấu ha, mà em nghĩ thì Trump không thể nào cho rớt được đâu, tại vì nó đang ngay trên like khung lớn mà. | —
 00:23 | Rồi, cái vấn đề thứ 2 | —
@@ -14,13 +14,13 @@ cues: 623/623 marked · rules: 232 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 213 
 00:50 | Thì | —
 00:52 | Luật của Top Step | —
 00:55 | Lúc nào em cũng nói đơn giản thôi | —
-01:01 | No rules | NOT-IN-BOT → 18.1
-01:05 | No rules | NOT-IN-BOT → 18.1
-01:08 | Nhưng | NOT-IN-BOT → 18.1
-01:11 | Cái no rules này | NOT-IN-BOT → 18.1
-01:13 | Sẽ là cái mà em ghét nhất | NOT-IN-BOT → 18.1
-01:16 | Em ghét nhất | NOT-IN-BOT → 18.1
-01:18 | Nên | NOT-IN-BOT → 18.1
+01:01 | No rules | NOT-IN-BOT → 18.1 (row 18.1)
+01:05 | No rules | NOT-IN-BOT → 18.1 (row 18.1)
+01:08 | Nhưng | NOT-IN-BOT → 18.1 (row 18.1)
+01:11 | Cái no rules này | NOT-IN-BOT → 18.1 (row 18.1)
+01:13 | Sẽ là cái mà em ghét nhất | NOT-IN-BOT → 18.1 (row 18.1)
+01:16 | Em ghét nhất | NOT-IN-BOT → 18.1 (row 18.1)
+01:18 | Nên | NOT-IN-BOT → 18.1 (row 18.1)
 01:21 | Em không recommend | —
 01:23 | Cho những anh chị nào | —
 01:25 | Ở Mỹ | —
@@ -39,20 +39,20 @@ cues: 623/623 marked · rules: 232 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 213 
 01:55 | Topstep nó rất mắc | —
 01:57 | 200 đô một hoạt | —
 01:59 | Có nghĩa là bây giờ 40-50 đô | —
-02:01 | Để anh chị mua hoạt test | OWNER-ORDER → 18.2
-02:01 | Để anh chị đánh một đầu | OWNER-ORDER → 18.2
-02:02 | 2 ngày 50% consistency | OWNER-ORDER → 18.2
-02:04 | là mỗi ngày anh chỉ đánh 1.500 cho ạc 50.000 | OWNER-ORDER → 18.2
-02:07 | ha, cho ạc 50.000 | OWNER-ORDER → 18.2
-02:08 | anh chỉ đánh | OWNER-ORDER → 18.2
-02:09 | 50.000, 1.500 | OWNER-ORDER → 18.2
-02:12 | 1.500 một ngày là | OWNER-ORDER → 18.2
-02:14 | 5 NQ 15 điểm | OWNER-ORDER → 18.2
-02:16 | thường em sẽ đánh như thế này | OWNER-ORDER → 18.2
-02:19 | 15 NQ 15 điểm | OWNER-ORDER → 18.2
-02:21 | hồi xưa | OWNER-ORDER → 18.2
-02:22 | thì nó sẽ là | OWNER-ORDER → 18.2
-02:23 | 1 ạc là 50 đồng | OWNER-ORDER → 18.2
+02:01 | Để anh chị mua hoạt test | OWNER-ORDER → 18.2 (row 18.2)
+02:01 | Để anh chị đánh một đầu | OWNER-ORDER → 18.2 (row 18.2)
+02:02 | 2 ngày 50% consistency | OWNER-ORDER → 18.2 (row 18.2)
+02:04 | là mỗi ngày anh chỉ đánh 1.500 cho ạc 50.000 | OWNER-ORDER → 18.2 (row 18.2)
+02:07 | ha, cho ạc 50.000 | OWNER-ORDER → 18.2 (row 18.2)
+02:08 | anh chỉ đánh | OWNER-ORDER → 18.2 (row 18.2)
+02:09 | 50.000, 1.500 | OWNER-ORDER → 18.2 (row 18.2)
+02:12 | 1.500 một ngày là | OWNER-ORDER → 18.2 (row 18.2)
+02:14 | 5 NQ 15 điểm | OWNER-ORDER → 18.2 (row 18.2)
+02:16 | thường em sẽ đánh như thế này | OWNER-ORDER → 18.2 (row 18.2)
+02:19 | 15 NQ 15 điểm | OWNER-ORDER → 18.2 (row 18.2)
+02:21 | hồi xưa | OWNER-ORDER → 18.2 (row 18.2)
+02:22 | thì nó sẽ là | OWNER-ORDER → 18.2 (row 18.2)
+02:23 | 1 ạc là 50 đồng | OWNER-ORDER → 18.2 (row 18.2)
 02:25 | 50 đồng cộng với | —
 02:28 | 149 đô | —
 02:32 | Của PA fee | —
@@ -123,70 +123,70 @@ cues: 623/623 marked · rules: 232 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 213 
 04:53 | Thì nó cũng có cái cushion giống như lucid thôi | —
 04:57 | Thì anh chị đánh 1.000 | —
 04:59 | Nếu như những anh chị nào đánh | —
-05:01 | All in | NOT-IN-BOT → 18.3
-05:01 | Thì | NOT-IN-BOT → 18.3
-05:04 | Anh chị có thể đánh 5 NQ | NOT-IN-BOT → 18.3
-05:07 | Tại vì | NOT-IN-BOT → 18.3
-05:08 | Khi anh chị trade top step | NOT-IN-BOT → 18.3
-05:10 | Nó sẽ | NOT-IN-BOT → 18.3
-05:11 | Nó sẽ có cái bracket cho mọi người | NOT-IN-BOT → 18.3
-05:14 | Nhưng cái bracket là cái ATM á anh chị | NOT-IN-BOT → 18.3
-05:16 | Nhưng nó sẽ không để | NOT-IN-BOT → 18.3
-05:18 | Điểm | NOT-IN-BOT → 18.3
-05:19 | Nó cũng không để tick mà nó để giá tiền | NOT-IN-BOT → 18.3
-05:21 | Thì 5 man kill | NOT-IN-BOT → 18.3
-05:24 | Anh chị sẽ đánh là stop gain | NOT-IN-BOT → 18.3
-05:26 | Stop loss | NOT-IN-BOT → 18.3
-05:28 | Anh chị để cho em là 2.000 | NOT-IN-BOT → 18.3
-05:30 | Tại vì đã all in thì chắc chắn là ban nặt thôi đúng không | NOT-IN-BOT → 18.3
-05:33 | Rõ ràng | NOT-IN-BOT → 18.3
-05:34 | Stop loss anh chị để 2.000 | NOT-IN-BOT → 18.3
-05:35 | Stop gain | NOT-IN-BOT → 18.3
-05:36 | Anh chị để 1 ngàn 525 đồng | NOT-IN-BOT → 18.3
-05:39 | 1 ngàn 525 đồng | NOT-IN-BOT → 18.3
-05:45 | 5 men kill | NOT-IN-BOT → 18.3
-05:46 | Anh chị ok không | NOT-IN-BOT → 18.3
-05:52 | 5 men kill | NOT-IN-BOT → 18.3
-05:55 | Anh chị nào có câu hỏi thì cứ việc hỏi ha | NOT-IN-BOT → 18.3
-05:57 | Tại sao stop loss là 2 ngàn 1 | NOT-IN-BOT → 18.3
-06:01 | Mà stop loss không phải là 2 ngàn | NOT-IN-BOT → 18.3
-06:03 | Nó thú vị vậy nè anh chị | NOT-IN-BOT → 18.3
-06:05 | Khi em trade với top set nó đủ nhiều | NOT-IN-BOT → 18.3
-06:07 | Em nhận ra | NOT-IN-BOT → 18.3
-06:08 | Khi mà mình đang hold lệnh | NOT-IN-BOT → 18.3
-06:11 | Mà mình lỗ quá 2 ngàn | NOT-IN-BOT → 18.3
-06:13 | Nó không có stop out em | NOT-IN-BOT → 18.3
-06:15 | Cho tới khi | NOT-IN-BOT → 18.3
-06:16 | Hit 2.000 mốt | NOT-IN-BOT → 18.3
-06:18 | Có nghĩa là bây giờ em cái ạt đó | NOT-IN-BOT → 18.3
-06:22 | Ví dụ em đang âm 2.050 đồng | NOT-IN-BOT → 18.3
-06:25 | Nhưng em vẫn đang hô cái lệnh đó | NOT-IN-BOT → 18.3
-06:27 | Và em không bán ra | NOT-IN-BOT → 18.3
-06:29 | Và nó không hit 2.000 mốt | NOT-IN-BOT → 18.3
-06:31 | Thì nếu như | NOT-IN-BOT → 18.3
-06:34 | Hên trời độ | NOT-IN-BOT → 18.3
-06:35 | Nó quay đầu ngược lại | NOT-IN-BOT → 18.3
-06:37 | Và em lời lại | NOT-IN-BOT → 18.3
-06:38 | Nó vẫn tính bình thường cho em | NOT-IN-BOT → 18.3
-06:41 | Không phải để cho anh | NOT-IN-BOT → 18.3
-06:47 | Phải để chứ | NOT-IN-BOT → 18.3
-06:48 | Dỡn hoài anh | NOT-IN-BOT → 18.3
-06:49 | Tray mà không để subplot hư mindset hết | NOT-IN-BOT → 18.3
-06:52 | Để 2.000 mốt | NOT-IN-BOT → 18.3
-06:56 | Eval cũng vậy nữa | NOT-IN-BOT → 18.3
-06:58 | Đừng tự làm bản thân mình hư | NOT-IN-BOT → 18.3
-07:00 | Tại sao vậy người ta để cái ATM ra | NOT-IN-BOT → 18.3
-07:03 | Để mình set vô | NOT-IN-BOT → 18.3
-07:04 | Mà tại sao mình không set | NOT-IN-BOT → 18.3
-07:05 | Rồi mốt vô PA mình cũng không set luôn hả | NOT-IN-BOT → 18.3
-07:08 | Eval thì eval | NOT-IN-BOT → 18.3
-07:13 | Eval cũng là tiền mà | NOT-IN-BOT → 18.3
-07:14 | Đúng không? Eval cũng là tiền mà | NOT-IN-BOT → 18.3
-07:19 | Rồi | NOT-IN-BOT → 18.3
-07:20 | Ha | NOT-IN-BOT → 18.3
-07:20 | Subplot là 2.000 mốt | NOT-IN-BOT → 18.3
-07:23 | Stopgain là 1.525 đồng | NOT-IN-BOT → 18.3
-07:25 | 5NQ | NOT-IN-BOT → 18.3
+05:01 | All in | —
+05:01 | Thì | —
+05:04 | Anh chị có thể đánh 5 NQ | —
+05:07 | Tại vì | —
+05:08 | Khi anh chị trade top step | —
+05:10 | Nó sẽ | —
+05:11 | Nó sẽ có cái bracket cho mọi người | —
+05:14 | Nhưng cái bracket là cái ATM á anh chị | NOT-IN-BOT → 18.3 (row 18.3)
+05:16 | Nhưng nó sẽ không để | NOT-IN-BOT → 18.3 (row 18.3)
+05:18 | Điểm | NOT-IN-BOT → 18.3 (row 18.3)
+05:19 | Nó cũng không để tick mà nó để giá tiền | NOT-IN-BOT → 18.3 (row 18.3)
+05:21 | Thì 5 man kill | NOT-IN-BOT → 18.3 (row 18.3)
+05:24 | Anh chị sẽ đánh là stop gain | NOT-IN-BOT → 18.3 (row 18.3)
+05:26 | Stop loss | NOT-IN-BOT → 18.3 (row 18.3)
+05:28 | Anh chị để cho em là 2.000 | NOT-IN-BOT → 18.3 (row 18.3)
+05:30 | Tại vì đã all in thì chắc chắn là ban nặt thôi đúng không | NOT-IN-BOT → 18.3 (row 18.3)
+05:33 | Rõ ràng | NOT-IN-BOT → 18.3 (row 18.3)
+05:34 | Stop loss anh chị để 2.000 | NOT-IN-BOT → 18.3 (row 18.3)
+05:35 | Stop gain | NOT-IN-BOT → 18.3 (row 18.3)
+05:36 | Anh chị để 1 ngàn 525 đồng | NOT-IN-BOT → 18.3 (row 18.3)
+05:39 | 1 ngàn 525 đồng | NOT-IN-BOT → 18.3 (row 18.3)
+05:45 | 5 men kill | NOT-IN-BOT → 18.3 (row 18.3)
+05:46 | Anh chị ok không | NOT-IN-BOT → 18.3 (row 18.3)
+05:52 | 5 men kill | NOT-IN-BOT → 18.3 (row 18.3)
+05:55 | Anh chị nào có câu hỏi thì cứ việc hỏi ha | NOT-IN-BOT → 18.3 (row 18.3)
+05:57 | Tại sao stop loss là 2 ngàn 1 | NOT-IN-BOT → 18.3 (row 18.3)
+06:01 | Mà stop loss không phải là 2 ngàn | NOT-IN-BOT → 18.3 (row 18.3)
+06:03 | Nó thú vị vậy nè anh chị | NOT-IN-BOT → 18.3 (row 18.3)
+06:05 | Khi em trade với top set nó đủ nhiều | NOT-IN-BOT → 18.3 (row 18.3)
+06:07 | Em nhận ra | NOT-IN-BOT → 18.3 (row 18.3)
+06:08 | Khi mà mình đang hold lệnh | NOT-IN-BOT → 18.3 (row 18.3)
+06:11 | Mà mình lỗ quá 2 ngàn | NOT-IN-BOT → 18.3 (row 18.3)
+06:13 | Nó không có stop out em | NOT-IN-BOT → 18.3 (row 18.3)
+06:15 | Cho tới khi | NOT-IN-BOT → 18.3 (row 18.3)
+06:16 | Hit 2.000 mốt | NOT-IN-BOT → 18.3 (row 18.3)
+06:18 | Có nghĩa là bây giờ em cái ạt đó | NOT-IN-BOT → 18.3 (row 18.3)
+06:22 | Ví dụ em đang âm 2.050 đồng | NOT-IN-BOT → 18.3 (row 18.3)
+06:25 | Nhưng em vẫn đang hô cái lệnh đó | NOT-IN-BOT → 18.3 (row 18.3)
+06:27 | Và em không bán ra | NOT-IN-BOT → 18.3 (row 18.3)
+06:29 | Và nó không hit 2.000 mốt | NOT-IN-BOT → 18.3 (row 18.3)
+06:31 | Thì nếu như | NOT-IN-BOT → 18.3 (row 18.3)
+06:34 | Hên trời độ | NOT-IN-BOT → 18.3 (row 18.3)
+06:35 | Nó quay đầu ngược lại | NOT-IN-BOT → 18.3 (row 18.3)
+06:37 | Và em lời lại | NOT-IN-BOT → 18.3 (row 18.3)
+06:38 | Nó vẫn tính bình thường cho em | NOT-IN-BOT → 18.3 (row 18.3)
+06:41 | Không phải để cho anh | NOT-IN-BOT → 18.3 (row 18.3)
+06:47 | Phải để chứ | CODE kernel/mentor/isb.go:72 (row 18.13)
+06:48 | Dỡn hoài anh | CODE kernel/mentor/isb.go:72 (row 18.13)
+06:49 | Tray mà không để subplot hư mindset hết | CODE kernel/mentor/isb.go:72 (row 18.13)
+06:52 | Để 2.000 mốt | CODE kernel/mentor/isb.go:72 (row 18.13)
+06:56 | Eval cũng vậy nữa | CODE kernel/mentor/isb.go:72 (row 18.13)
+06:58 | Đừng tự làm bản thân mình hư | CODE kernel/mentor/isb.go:72 (row 18.13)
+07:00 | Tại sao vậy người ta để cái ATM ra | CODE kernel/mentor/isb.go:72 (row 18.13)
+07:03 | Để mình set vô | CODE kernel/mentor/isb.go:72 (row 18.13)
+07:04 | Mà tại sao mình không set | CODE kernel/mentor/isb.go:72 (row 18.13)
+07:05 | Rồi mốt vô PA mình cũng không set luôn hả | CODE kernel/mentor/isb.go:72 (row 18.13)
+07:08 | Eval thì eval | NOT-IN-BOT → 18.3 (row 18.3)
+07:13 | Eval cũng là tiền mà | NOT-IN-BOT → 18.3 (row 18.3)
+07:14 | Đúng không? Eval cũng là tiền mà | NOT-IN-BOT → 18.3 (row 18.3)
+07:19 | Rồi | NOT-IN-BOT → 18.3 (row 18.3)
+07:20 | Ha | NOT-IN-BOT → 18.3 (row 18.3)
+07:20 | Subplot là 2.000 mốt | NOT-IN-BOT → 18.3 (row 18.3)
+07:23 | Stopgain là 1.525 đồng | NOT-IN-BOT → 18.3 (row 18.3)
+07:25 | 5NQ | NOT-IN-BOT → 18.3 (row 18.3)
 07:28 | Stopgain 1.525 đồng | —
 07:29 | Trừ phi ra nó sẽ còn 1.511 đồng | —
 07:32 | Em trade nhiều tới nỗi mà em nhớ luôn | —
@@ -198,110 +198,110 @@ cues: 623/623 marked · rules: 232 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 213 
 07:47 | Nên là đây | —
 07:49 | Stopgain 1.5NQ | —
 07:51 | Rồi | —
-07:56 | Sẽ có nhiều anh chị | NOT-IN-BOT → 18.4
-07:58 | Top step anh chị chỉ được mua | NOT-IN-BOT → 18.4
-08:02 | Maximum là 10 art test | NOT-IN-BOT → 18.4
-08:04 | Một tháng | NOT-IN-BOT → 18.4
-08:08 | Không phải là 10 art test một tháng không | NOT-IN-BOT → 18.4
-08:11 | Mà khi anh chị mua 10 art test một tháng | NOT-IN-BOT → 18.4
-08:13 | Nếu như anh chị đã mua | NOT-IN-BOT → 18.4
-08:15 | Một lần 10 art test rồi | NOT-IN-BOT → 18.4
-08:17 | Đừng làm ơn | NOT-IN-BOT → 18.4
-08:19 | Nếu như đánh fail đừng cancel | NOT-IN-BOT → 18.4
-08:21 | Renew lại tại vì top step | NOT-IN-BOT → 18.4
-08:23 | Anh chị renew lại giá nó cũng như đó | NOT-IN-BOT → 18.4
-08:24 | Nó chả giảm cho anh chị đồng nào đâu | NOT-IN-BOT → 18.4
-08:25 | Nên khỏi có cancel | NOT-IN-BOT → 18.4
-08:27 | Cứ renew lại cho em | NOT-IN-BOT → 18.4
-08:29 | Và 1 account | NOT-IN-BOT → 18.4
-08:31 | 1 ngày | NOT-IN-BOT → 18.4
-08:33 | Anh chị được renew 2 lần | NOT-IN-BOT → 18.4
-08:35 | 1 account | NOT-IN-BOT → 18.4
-08:37 | 1 ngày | NOT-IN-BOT → 18.4
-08:38 | Được renew 2 lần | NOT-IN-BOT → 18.4
-08:42 | Thì 10 account | NOT-IN-BOT → 18.4
-08:43 | 1 ngày | NOT-IN-BOT → 18.4
-08:44 | Được renew tổng cộng 20 lần | NOT-IN-BOT → 18.4
-08:47 | Đây là những cái mà em ghét của nó nè | NOT-IN-BOT → 18.4
-08:53 | Tháng 6 cho mặt | NOT-IN-BOT → 18.4
-08:55 | Lỡ fail ngày | NOT-IN-BOT → 18.4
-08:57 | Ngày xa | NOT-IN-BOT → 18.4
-08:58 | Được | NOT-IN-BOT → 18.4
-08:59 | Bình thường chị | NOT-IN-BOT → 18.4
-09:00 | Được | NOT-IN-BOT → 18.4
-09:02 | Được rồi nếu | NOT-IN-BOT → 18.4
-09:04 | Nha | NOT-IN-BOT → 18.4
-09:06 | Tiếp tục nè | NOT-IN-BOT → 18.4
-09:09 | Em kể ra thì đương nhiên là nó sẽ có rất là nhiều khúc mắt | NOT-IN-BOT → 18.4
-09:12 | Rồi | NOT-IN-BOT → 18.4
-09:14 | Thì top step nó là end of day | NOT-IN-BOT → 18.4
-09:16 | Cho anh chị nào đã biết top step là end of day | NOT-IN-BOT → 18.4
-09:18 | Tiếp theo | NOT-IN-BOT → 18.4
-09:19 | Ờ | NOT-IN-BOT → 18.5
-09:21 | Không được đánh 2 đầu cho hạt test | NOT-IN-BOT → 18.5
-09:26 | Nên nhớ | NOT-IN-BOT → 18.5
-09:29 | Em là nhân chứng sống | NOT-IN-BOT → 18.5
-09:32 | Nha em là nhân chứng sống | NOT-IN-BOT → 18.5
-09:34 | Top step có cái trick gì | NOT-IN-BOT → 18.5
-09:38 | Có cái gì em cũng qua hết rồi | NOT-IN-BOT → 18.5
-09:40 | Nên em là một nhân chứng sống | NOT-IN-BOT → 18.5
-09:43 | Anh chị không được đánh 2 đầu | NOT-IN-BOT → 18.5
-09:49 | Có nghĩa là ok bây giờ vấn đề đi | NOT-IN-BOT → 18.5
-09:50 | Cái ngày đầu tiên anh chị đánh 2 hạt | NOT-IN-BOT → 18.5
-09:53 | Mỗi hạt được 1.500 rồi | NOT-IN-BOT → 18.5
-09:54 | Bây giờ ngày thứ 2 anh chị đánh 2 đầu | NOT-IN-BOT → 18.5
-09:56 | Để được 1 đầu anh chị vô | NOT-IN-BOT → 18.5
-09:57 | Nó không cho phép | NOT-IN-BOT → 18.5
-09:59 | Thời điểm hiện tại nó không cho phép | NOT-IN-BOT → 18.5
-10:01 | Không phải là không cho phép | NOT-IN-BOT → 18.5
-10:04 | Anh chị vẫn có thể làm như vậy | NOT-IN-BOT → 18.5
-10:06 | Nhưng | NOT-IN-BOT → 18.5
-10:07 | Nhưng | NOT-IN-BOT → 18.5
-10:08 | Nó sẽ như vầy nè anh chị | NOT-IN-BOT → 18.5
-10:10 | Nó sẽ như vầy nè | NOT-IN-BOT → 18.5
-10:12 | Anh chị hiểu là ý em nói là cái ngày đầu tiên | NOT-IN-BOT → 18.5
-10:15 | Anh chị đánh 2 ạc, mó ạc 1 ngàn rưỡi | NOT-IN-BOT → 18.5
-10:17 | Và ngày thứ 2 đánh 2 cái ạc đó ngược lại | NOT-IN-BOT → 18.5
-10:19 | Thì anh chị vô được 1 ạc đúng không | NOT-IN-BOT → 18.5
-10:20 | Rồi | NOT-IN-BOT → 18.5
-10:21 | Cái lời như này nó không cho anh chị đánh 2 đầu | NOT-IN-BOT → 18.5
-10:25 | Nhưng anh chị vẫn có thể làm | NOT-IN-BOT → 18.5
-10:28 | Nhưng | NOT-IN-BOT → 18.5
-10:29 | Đừng làm quá nhiều | NOT-IN-BOT → 18.5
-10:31 | Nó vẫn du di cho anh chị nha | NOT-IN-BOT → 18.5
-10:34 | Nó rất dễ, nó vẫn du di cho mọi người | NOT-IN-BOT → 18.5
-10:37 | Nhưng đừng làm quá nhiều lần | NOT-IN-BOT → 18.5
-10:39 | Có nghĩa là ok | NOT-IN-BOT → 18.5
-10:40 | Một lần, một tuần tôi làm | NOT-IN-BOT → 18.5
-10:42 | Một lần hay là hai tuần tôi làm một lần như vậy | NOT-IN-BOT → 18.5
-10:45 | Thì nó ok | NOT-IN-BOT → 18.5
-10:46 | Nó không thành vấn đề | NOT-IN-BOT → 18.5
-10:47 | Nhưng anh chị làm với số lượng nhiều | NOT-IN-BOT → 18.5
-10:51 | Em đã từng làm như vậy | NOT-IN-BOT → 18.5
-10:53 | Em làm với số lượng nhiều | NOT-IN-BOT → 18.5
-10:55 | Và | NOT-IN-BOT → 18.5
-10:57 | Nó gửi email warn em | NOT-IN-BOT → 18.5
-11:01 | Nếu như em tái phạm một lần nữa | NOT-IN-BOT → 18.5
-11:03 | Nó ban em luôn | NOT-IN-BOT → 18.5
-11:05 | Có nha anh chị | NOT-IN-BOT → 18.5
-11:07 | Có nha | NOT-IN-BOT → 18.5
-11:08 | Tấp xếp | NOT-IN-BOT → 18.5
-11:09 | Nó sẽ warning anh chị một lần | NOT-IN-BOT → 18.5
-11:11 | Và nếu như lần thứ hai | NOT-IN-BOT → 18.5
-11:14 | Anh chị vẫn làm | NOT-IN-BOT → 18.5
-11:15 | Nó sẽ ban anh chị luôn | NOT-IN-BOT → 18.5
-11:16 | Nó sẽ nói rõ trong email luôn | NOT-IN-BOT → 18.5
-11:18 | Là nó sẽ ban anh chị | NOT-IN-BOT → 18.5
-11:20 | 6 tháng | NOT-IN-BOT → 18.5
-11:22 | Và trong dòng 6 tháng đó | NOT-IN-BOT → 18.5
-11:24 | Anh chị chỉ được đánh đúng | NOT-IN-BOT → 18.5
-11:26 | Chỉ được mỗi lần | NOT-IN-BOT → 18.5
-11:27 | Anh chị chỉ được mua đúng một ad eval | NOT-IN-BOT → 18.5
-11:29 | Đúng một ad test | NOT-IN-BOT → 18.5
-11:30 | Để anh chị tự trade vô ad PA | NOT-IN-BOT → 18.5
-11:31 | Và anh chị chỉ được mở 1 act PA của nó thôi | NOT-IN-BOT → 18.5
-11:35 | Chứ không phải là 5 act | NOT-IN-BOT → 18.5
-11:35 | Nên là nhớ giúp em | NOT-IN-BOT → 18.5
+07:56 | Sẽ có nhiều anh chị | NOT-IN-BOT → 18.4 (row 18.4)
+07:58 | Top step anh chị chỉ được mua | NOT-IN-BOT → 18.4 (row 18.4)
+08:02 | Maximum là 10 art test | NOT-IN-BOT → 18.4 (row 18.4)
+08:04 | Một tháng | NOT-IN-BOT → 18.4 (row 18.4)
+08:08 | Không phải là 10 art test một tháng không | NOT-IN-BOT → 18.4 (row 18.4)
+08:11 | Mà khi anh chị mua 10 art test một tháng | NOT-IN-BOT → 18.4 (row 18.4)
+08:13 | Nếu như anh chị đã mua | NOT-IN-BOT → 18.4 (row 18.4)
+08:15 | Một lần 10 art test rồi | NOT-IN-BOT → 18.4 (row 18.4)
+08:17 | Đừng làm ơn | NOT-IN-BOT → 18.4 (row 18.4)
+08:19 | Nếu như đánh fail đừng cancel | NOT-IN-BOT → 18.4 (row 18.4)
+08:21 | Renew lại tại vì top step | NOT-IN-BOT → 18.4 (row 18.4)
+08:23 | Anh chị renew lại giá nó cũng như đó | NOT-IN-BOT → 18.4 (row 18.4)
+08:24 | Nó chả giảm cho anh chị đồng nào đâu | NOT-IN-BOT → 18.4 (row 18.4)
+08:25 | Nên khỏi có cancel | NOT-IN-BOT → 18.4 (row 18.4)
+08:27 | Cứ renew lại cho em | NOT-IN-BOT → 18.4 (row 18.4)
+08:29 | Và 1 account | NOT-IN-BOT → 18.4 (row 18.4)
+08:31 | 1 ngày | NOT-IN-BOT → 18.4 (row 18.4)
+08:33 | Anh chị được renew 2 lần | NOT-IN-BOT → 18.4 (row 18.4)
+08:35 | 1 account | NOT-IN-BOT → 18.4 (row 18.4)
+08:37 | 1 ngày | NOT-IN-BOT → 18.4 (row 18.4)
+08:38 | Được renew 2 lần | NOT-IN-BOT → 18.4 (row 18.4)
+08:42 | Thì 10 account | NOT-IN-BOT → 18.4 (row 18.4)
+08:43 | 1 ngày | NOT-IN-BOT → 18.4 (row 18.4)
+08:44 | Được renew tổng cộng 20 lần | NOT-IN-BOT → 18.4 (row 18.4)
+08:47 | Đây là những cái mà em ghét của nó nè | —
+08:53 | Tháng 6 cho mặt | —
+08:55 | Lỡ fail ngày | —
+08:57 | Ngày xa | —
+08:58 | Được | —
+08:59 | Bình thường chị | —
+09:00 | Được | —
+09:02 | Được rồi nếu | —
+09:04 | Nha | —
+09:06 | Tiếp tục nè | —
+09:09 | Em kể ra thì đương nhiên là nó sẽ có rất là nhiều khúc mắt | —
+09:12 | Rồi | —
+09:14 | Thì top step nó là end of day | —
+09:16 | Cho anh chị nào đã biết top step là end of day | —
+09:18 | Tiếp theo | —
+09:19 | Ờ | NOT-IN-BOT → 18.5 (row 18.5)
+09:21 | Không được đánh 2 đầu cho hạt test | NOT-IN-BOT → 18.5 (row 18.5)
+09:26 | Nên nhớ | NOT-IN-BOT → 18.5 (row 18.5)
+09:29 | Em là nhân chứng sống | NOT-IN-BOT → 18.5 (row 18.5)
+09:32 | Nha em là nhân chứng sống | NOT-IN-BOT → 18.5 (row 18.5)
+09:34 | Top step có cái trick gì | NOT-IN-BOT → 18.5 (row 18.5)
+09:38 | Có cái gì em cũng qua hết rồi | NOT-IN-BOT → 18.5 (row 18.5)
+09:40 | Nên em là một nhân chứng sống | NOT-IN-BOT → 18.5 (row 18.5)
+09:43 | Anh chị không được đánh 2 đầu | NOT-IN-BOT → 18.5 (row 18.5)
+09:49 | Có nghĩa là ok bây giờ vấn đề đi | NOT-IN-BOT → 18.5 (row 18.5)
+09:50 | Cái ngày đầu tiên anh chị đánh 2 hạt | NOT-IN-BOT → 18.5 (row 18.5)
+09:53 | Mỗi hạt được 1.500 rồi | NOT-IN-BOT → 18.5 (row 18.5)
+09:54 | Bây giờ ngày thứ 2 anh chị đánh 2 đầu | NOT-IN-BOT → 18.5 (row 18.5)
+09:56 | Để được 1 đầu anh chị vô | NOT-IN-BOT → 18.5 (row 18.5)
+09:57 | Nó không cho phép | NOT-IN-BOT → 18.5 (row 18.5)
+09:59 | Thời điểm hiện tại nó không cho phép | NOT-IN-BOT → 18.5 (row 18.5)
+10:01 | Không phải là không cho phép | NOT-IN-BOT → 18.5 (row 18.5)
+10:04 | Anh chị vẫn có thể làm như vậy | NOT-IN-BOT → 18.5 (row 18.5)
+10:06 | Nhưng | NOT-IN-BOT → 18.5 (row 18.5)
+10:07 | Nhưng | NOT-IN-BOT → 18.5 (row 18.5)
+10:08 | Nó sẽ như vầy nè anh chị | NOT-IN-BOT → 18.5 (row 18.5)
+10:10 | Nó sẽ như vầy nè | NOT-IN-BOT → 18.5 (row 18.5)
+10:12 | Anh chị hiểu là ý em nói là cái ngày đầu tiên | NOT-IN-BOT → 18.5 (row 18.5)
+10:15 | Anh chị đánh 2 ạc, mó ạc 1 ngàn rưỡi | NOT-IN-BOT → 18.5 (row 18.5)
+10:17 | Và ngày thứ 2 đánh 2 cái ạc đó ngược lại | NOT-IN-BOT → 18.5 (row 18.5)
+10:19 | Thì anh chị vô được 1 ạc đúng không | NOT-IN-BOT → 18.5 (row 18.5)
+10:20 | Rồi | NOT-IN-BOT → 18.5 (row 18.5)
+10:21 | Cái lời như này nó không cho anh chị đánh 2 đầu | NOT-IN-BOT → 18.5 (row 18.5)
+10:25 | Nhưng anh chị vẫn có thể làm | NOT-IN-BOT → 18.5 (row 18.5)
+10:28 | Nhưng | NOT-IN-BOT → 18.5 (row 18.5)
+10:29 | Đừng làm quá nhiều | NOT-IN-BOT → 18.5 (row 18.5)
+10:31 | Nó vẫn du di cho anh chị nha | NOT-IN-BOT → 18.5 (row 18.5)
+10:34 | Nó rất dễ, nó vẫn du di cho mọi người | NOT-IN-BOT → 18.5 (row 18.5)
+10:37 | Nhưng đừng làm quá nhiều lần | NOT-IN-BOT → 18.5 (row 18.5)
+10:39 | Có nghĩa là ok | NOT-IN-BOT → 18.5 (row 18.5)
+10:40 | Một lần, một tuần tôi làm | NOT-IN-BOT → 18.5 (row 18.5)
+10:42 | Một lần hay là hai tuần tôi làm một lần như vậy | NOT-IN-BOT → 18.5 (row 18.5)
+10:45 | Thì nó ok | NOT-IN-BOT → 18.5 (row 18.5)
+10:46 | Nó không thành vấn đề | NOT-IN-BOT → 18.5 (row 18.5)
+10:47 | Nhưng anh chị làm với số lượng nhiều | NOT-IN-BOT → 18.5 (row 18.5)
+10:51 | Em đã từng làm như vậy | NOT-IN-BOT → 18.5 (row 18.5)
+10:53 | Em làm với số lượng nhiều | NOT-IN-BOT → 18.5 (row 18.5)
+10:55 | Và | NOT-IN-BOT → 18.5 (row 18.5)
+10:57 | Nó gửi email warn em | NOT-IN-BOT → 18.5 (row 18.5)
+11:01 | Nếu như em tái phạm một lần nữa | NOT-IN-BOT → 18.5 (row 18.5)
+11:03 | Nó ban em luôn | NOT-IN-BOT → 18.5 (row 18.5)
+11:05 | Có nha anh chị | NOT-IN-BOT → 18.5 (row 18.5)
+11:07 | Có nha | NOT-IN-BOT → 18.5 (row 18.5)
+11:08 | Tấp xếp | NOT-IN-BOT → 18.5 (row 18.5)
+11:09 | Nó sẽ warning anh chị một lần | NOT-IN-BOT → 18.5 (row 18.5)
+11:11 | Và nếu như lần thứ hai | NOT-IN-BOT → 18.5 (row 18.5)
+11:14 | Anh chị vẫn làm | NOT-IN-BOT → 18.5 (row 18.5)
+11:15 | Nó sẽ ban anh chị luôn | NOT-IN-BOT → 18.5 (row 18.5)
+11:16 | Nó sẽ nói rõ trong email luôn | NOT-IN-BOT → 18.5 (row 18.5)
+11:18 | Là nó sẽ ban anh chị | NOT-IN-BOT → 18.5 (row 18.5)
+11:20 | 6 tháng | NOT-IN-BOT → 18.5 (row 18.5)
+11:22 | Và trong dòng 6 tháng đó | NOT-IN-BOT → 18.5 (row 18.5)
+11:24 | Anh chị chỉ được đánh đúng | NOT-IN-BOT → 18.5 (row 18.5)
+11:26 | Chỉ được mỗi lần | NOT-IN-BOT → 18.5 (row 18.5)
+11:27 | Anh chị chỉ được mua đúng một ad eval | NOT-IN-BOT → 18.5 (row 18.5)
+11:29 | Đúng một ad test | NOT-IN-BOT → 18.5 (row 18.5)
+11:30 | Để anh chị tự trade vô ad PA | NOT-IN-BOT → 18.5 (row 18.5)
+11:31 | Và anh chị chỉ được mở 1 act PA của nó thôi | NOT-IN-BOT → 18.5 (row 18.5)
+11:35 | Chứ không phải là 5 act | NOT-IN-BOT → 18.5 (row 18.5)
+11:35 | Nên là nhớ giúp em | NOT-IN-BOT → 18.5 (row 18.5)
 11:40 | Có làm cái gì | —
 11:42 | Nhẹ nhẹ tay 1 xíu | —
 11:44 | Nó vẫn sẽ du di lần đầu | —
@@ -466,40 +466,40 @@ cues: 623/623 marked · rules: 232 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 213 
 16:51 | Em bị quật rất là nhiều lần rồi | —
 16:53 | Chứ không phải là | —
 16:56 | Mà và mỗi | —
-16:59 | Không | NOT-IN-BOT → 18.7
-17:01 | Top step là end of day drawdown | NOT-IN-BOT → 18.7
-17:03 | Nó giống như | NOT-IN-BOT → 18.7
-17:04 | End of day drawdown | NOT-IN-BOT → 18.7
-17:05 | Chứ nó không phải là | NOT-IN-BOT → 18.7
-17:07 | Chứ nó không phải là trail | NOT-IN-BOT → 18.7
-17:08 | Cuối ngày nó mới tính | NOT-IN-BOT → 18.7
-17:09 | Còn end of day drawdown là gì | NOT-IN-BOT → 18.7
-17:11 | Thì học lại bài của ngày hôm | NOT-IN-BOT → 18.7
-17:13 | Hôm hôm qua hả | NOT-IN-BOT → 18.7
-17:15 | Hôm kia | NOT-IN-BOT → 18.1
-17:16 | Ngày hôm kia của anh Bép | NOT-IN-BOT → 18.1
-17:18 | Bữa anh Bép mới dạy xong | NOT-IN-BOT → 18.1
-17:20 | Không | NOT-IN-BOT → 18.1
-17:25 | Em đã nói là no rules | NOT-IN-BOT → 18.1
-17:26 | No rules | NOT-IN-BOT → 18.1
-17:27 | Không có 10 giây gì hết | NOT-IN-BOT → 18.1
-17:32 | No rules | NOT-IN-BOT → 18.1
-17:37 | Anh chị vô lệnh lẽ bao nhiêu | NOT-IN-BOT → 18.1
-17:40 | Nó cũng không thành vấn đề | NOT-IN-BOT → 18.1
-17:41 | No rules at all | NOT-IN-BOT → 18.1
-17:44 | Nên đây là một cái con dao | NOT-IN-BOT → 18.1
-17:51 | Hai lưỡi | NOT-IN-BOT → 18.1
-17:52 | Nên là lúc làm ơn giúp em | NOT-IN-BOT → 18.1
-18:10 | Và top step cho anh chị | NOT-IN-BOT → 18.6
-18:13 | Trade every news | NOT-IN-BOT → 18.6
-18:16 | News nào anh chị cũng có thể trade | NOT-IN-BOT → 18.6
-18:18 | News đỏ, news FOMC | NOT-IN-BOT → 18.6
-18:20 | News CBI | NOT-IN-BOT → 18.6
-18:21 | Nếu anh chị đủ tự tin, anh chị đủ can rảm, anh chị đủ gan lì | NOT-IN-BOT → 18.6
-18:26 | Anh chị có quyền đánh nêu | NOT-IN-BOT → 18.6
-18:28 | Nó cho anh chị luôn | NOT-IN-BOT → 18.6
-18:30 | Không thành vấn đề | NOT-IN-BOT → 18.6
-18:31 | Không thành vấn đề | NOT-IN-BOT → 18.6
+16:59 | Không | NOT-IN-BOT → 18.7 (row 18.7)
+17:01 | Top step là end of day drawdown | NOT-IN-BOT → 18.7 (row 18.7)
+17:03 | Nó giống như | NOT-IN-BOT → 18.7 (row 18.7)
+17:04 | End of day drawdown | NOT-IN-BOT → 18.7 (row 18.7)
+17:05 | Chứ nó không phải là | NOT-IN-BOT → 18.7 (row 18.7)
+17:07 | Chứ nó không phải là trail | NOT-IN-BOT → 18.7 (row 18.7)
+17:08 | Cuối ngày nó mới tính | NOT-IN-BOT → 18.7 (row 18.7)
+17:09 | Còn end of day drawdown là gì | NOT-IN-BOT → 18.7 (row 18.7)
+17:11 | Thì học lại bài của ngày hôm | NOT-IN-BOT → 18.7 (row 18.7)
+17:13 | Hôm hôm qua hả | NOT-IN-BOT → 18.7 (row 18.7)
+17:15 | Hôm kia | NOT-IN-BOT → 18.1 (row 18.1)
+17:16 | Ngày hôm kia của anh Bép | NOT-IN-BOT → 18.1 (row 18.1)
+17:18 | Bữa anh Bép mới dạy xong | NOT-IN-BOT → 18.1 (row 18.1)
+17:20 | Không | NOT-IN-BOT → 18.1 (row 18.1)
+17:25 | Em đã nói là no rules | NOT-IN-BOT → 18.1 (row 18.1)
+17:26 | No rules | NOT-IN-BOT → 18.1 (row 18.1)
+17:27 | Không có 10 giây gì hết | NOT-IN-BOT → 18.1 (row 18.1)
+17:32 | No rules | NOT-IN-BOT → 18.1 (row 18.1)
+17:37 | Anh chị vô lệnh lẽ bao nhiêu | NOT-IN-BOT → 18.1 (row 18.1)
+17:40 | Nó cũng không thành vấn đề | NOT-IN-BOT → 18.1 (row 18.1)
+17:41 | No rules at all | NOT-IN-BOT → 18.1 (row 18.1)
+17:44 | Nên đây là một cái con dao | NOT-IN-BOT → 18.1 (row 18.1)
+17:51 | Hai lưỡi | NOT-IN-BOT → 18.1 (row 18.1)
+17:52 | Nên là lúc làm ơn giúp em | NOT-IN-BOT → 18.1 (row 18.1)
+18:10 | Và top step cho anh chị | NOT-IN-BOT → 18.6 (row 18.6)
+18:13 | Trade every news | NOT-IN-BOT → 18.6 (row 18.6)
+18:16 | News nào anh chị cũng có thể trade | NOT-IN-BOT → 18.6 (row 18.6)
+18:18 | News đỏ, news FOMC | NOT-IN-BOT → 18.6 (row 18.6)
+18:20 | News CBI | NOT-IN-BOT → 18.6 (row 18.6)
+18:21 | Nếu anh chị đủ tự tin, anh chị đủ can rảm, anh chị đủ gan lì | NOT-IN-BOT → 18.6 (row 18.6)
+18:26 | Anh chị có quyền đánh nêu | NOT-IN-BOT → 18.6 (row 18.6)
+18:28 | Nó cho anh chị luôn | NOT-IN-BOT → 18.6 (row 18.6)
+18:30 | Không thành vấn đề | NOT-IN-BOT → 18.6 (row 18.6)
+18:31 | Không thành vấn đề | NOT-IN-BOT → 18.6 (row 18.6)
 18:34 | Anh chị muốn trade nêu nè, anh chị trade | —
 18:36 | FOMC, CBI, Unemployment Claim | —
 18:44 | PPI, Any News | —
@@ -519,11 +519,11 @@ cues: 623/623 marked · rules: 232 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 213 
 19:24 | Anh chỉ muốn làm cái gì cũng được | —
 19:28 | Và act PA | —
 19:30 | Sẽ có scaling plan | —
-19:32 | Scaling plan là cái gì | OWNER-ORDER → 18.8
-19:35 | Sẽ em sẽ gửi vô room | OWNER-ORDER → 18.8
-19:36 | Mới đầu do anh chị chỉ được đánh có 2 NQ thôi | OWNER-ORDER → 18.8
-19:40 | Maximum là 2 NQ | OWNER-ORDER → 18.8
-19:41 | Còn Scanplane là cái gì thì xíu em sẽ gửi vô cái room sau | OWNER-ORDER → 18.8
+19:32 | Scaling plan là cái gì | OWNER-ORDER → 18.8 (row 18.8)
+19:35 | Sẽ em sẽ gửi vô room | OWNER-ORDER → 18.8 (row 18.8)
+19:36 | Mới đầu do anh chị chỉ được đánh có 2 NQ thôi | OWNER-ORDER → 18.8 (row 18.8)
+19:40 | Maximum là 2 NQ | OWNER-ORDER → 18.8 (row 18.8)
+19:41 | Còn Scanplane là cái gì thì xíu em sẽ gửi vô cái room sau | OWNER-ORDER → 18.8 (row 18.8)
 19:45 | Rồi | —
 19:45 | Anh chị có câu hỏi gì không | —
 19:48 | Cứ bật mic hay là ấy luôn hỏi ha | —
@@ -537,10 +537,10 @@ cues: 623/623 marked · rules: 232 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 213 
 20:15 | Đến OCO là nó fill đầu này nó cancel đầu kia | —
 20:38 | Mà nó là bình thường đó chị | —
 20:40 | Hai đầu hai ạc đúng rồi | —
-20:50 | Hai đầu là hai ạc một loan một short at the same time | NOT-IN-BOT → 18.5
-20:52 | Là cái đó nó ban thẳng luôn nó khỏi nó nhiều | NOT-IN-BOT → 18.5
-20:54 | Cái đó là nó ban thẳng luôn | NOT-IN-BOT → 18.5
-20:57 | Tới thời điểm hiện tại em chưa thấy nó reject | NOT-IN-BOT → 18.5
+20:50 | Hai đầu là hai ạc một loan một short at the same time | NOT-IN-BOT → 18.5 (row 18.5)
+20:52 | Là cái đó nó ban thẳng luôn nó khỏi nó nhiều | NOT-IN-BOT → 18.5 (row 18.5)
+20:54 | Cái đó là nó ban thẳng luôn | NOT-IN-BOT → 18.5 (row 18.5)
+20:57 | Tới thời điểm hiện tại em chưa thấy nó reject | —
 21:44 | Tại vì em cũng rất là hay đánh news bằng ạc top step | —
 21:46 | Đọc thì là như vậy | —
 21:50 | Nhưng mà người thật việc thật là ngồi đây | —

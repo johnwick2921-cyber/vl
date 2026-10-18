@@ -1,51 +1,51 @@
-cues: 267/267 marked · rules: 78 · CODE: 78 · MISMATCH: 0 · NOT-IN-BOT: 0 · —: 189
+cues: 267/267 · rule cues: 77 · rows: 7 · CODE: 77 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 0 · SPLIT: 0 · —: 190
 
-00:00 | Market này nó, anh chị đã học, anh chị đã biết rồi, market này nó là 1 chuỗi 2 à 2 và 2 à low, nếu như trong 1 sự hướng tăng. | CODE kernel/mentor/mentor.go:488 [leg_reset_on_wave_break]
-00:08 | Ok, rồi, thật sự ra lý do tại sao mà lúc này em cũng bình tĩnh là vì dù em có bị quét 1 lệnh đi, em vẫn không rush để em kiếm cái setup vô lại. | CODE kernel/mentor/mentor.go:488 [leg_reset_on_wave_break]
-00:17 | Tại vì sao? Tại vì bây giờ, market nó sẽ chia ra 2 giai đoạn anh chị. | CODE kernel/mentor/mentor.go:488 [leg_reset_on_wave_break]
-00:23 | Đây là 1 giai đoạn nè, đúng không? Đây là 1 giai đoạn nè, cái giai đoạn thứ 2 nó sẽ làm bên này. | —
-00:27 | Mọi người có để ý là | —
-00:29 | Những cái lúc mà em bị thua lệnh | —
-00:30 | Em sẽ đợi một tí | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:32 | Để làm chi | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:32 | Tại vì ngay chỗ này | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:34 | Nó không có setup gì nhiều | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:35 | Ngay chỗ này | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:36 | Nó chỉ có 2 setup thôi anh chị | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:37 | Một là high or low | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:38 | Ngay chỗ này | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:38 | Nếu như mình remix | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:39 | Hai | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:40 | Ví dụ | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:41 | Ví dụ nha | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:41 | Cái lệnh thứ 2 | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:42 | Là inside bar | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:43 | Nó trong một cái khung khúc này thôi | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:46 | Trong một cái đoạn này thôi | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:47 | Nó chỉ có đúng 2 setup cho anh chị trade thôi | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:49 | Nó chỉ có đúng 2 setup cho anh chị | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:52 | 2 lệnh cho anh chị thôi | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:53 | Trong một cái đoạn | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:54 | Một con sóng tăng | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:56 | Sống tăng nó tính từ đâu | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-00:58 | Sống tăng là nó tính khi mà nó vậy nè | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:03 | Cái đoạn này là một con sống tăng | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:05 | Cái đoạn mà anh chị bắt potential high low | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:09 | Lên tới cái đỉnh cũ là nó là một con sống tăng | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:11 | Thì anh chị phải đơn giản | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:13 | Anh chị phải hiểu nè | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:14 | Ngay từ cái đoạn từ đây đi lên thôi | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:16 | Cái đoạn này rất là ít | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:18 | Anh chị chỉ có đúng 2 chỗ anh chị vô lệnh | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:20 | Một là potential high low | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:22 | Hai là insa 3 cho lệnh long nếu như nó có | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:24 | Thì target anh chị về đây | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:26 | Đây là một đoạn | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:27 | Thì khi mà em | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:30 | Ví dụ đi | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:31 | Như khi mà em có thua | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:32 | Cái lệnh nó dòng dòng cái đoạn này | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-01:34 | Thì bắt buộc em phải hiểu | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
+00:00 | Market này nó, anh chị đã học, anh chị đã biết rồi, market này nó là 1 chuỗi 2 à 2 và 2 à low, nếu như trong 1 sự hướng tăng. | —
+00:08 | Ok, rồi, thật sự ra lý do tại sao mà lúc này em cũng bình tĩnh là vì dù em có bị quét 1 lệnh đi, em vẫn không rush để em kiếm cái setup vô lại. | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.2)
+00:17 | Tại vì sao? Tại vì bây giờ, market nó sẽ chia ra 2 giai đoạn anh chị. | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.2)
+00:23 | Đây là 1 giai đoạn nè, đúng không? Đây là 1 giai đoạn nè, cái giai đoạn thứ 2 nó sẽ làm bên này. | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.2)
+00:27 | Mọi người có để ý là | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.2)
+00:29 | Những cái lúc mà em bị thua lệnh | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.2)
+00:30 | Em sẽ đợi một tí | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.2)
+00:32 | Để làm chi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.2)
+00:32 | Tại vì ngay chỗ này | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.2)
+00:34 | Nó không có setup gì nhiều | —
+00:35 | Ngay chỗ này | —
+00:36 | Nó chỉ có 2 setup thôi anh chị | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+00:37 | Một là high or low | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+00:38 | Ngay chỗ này | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+00:38 | Nếu như mình remix | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+00:39 | Hai | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+00:40 | Ví dụ | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+00:41 | Ví dụ nha | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+00:41 | Cái lệnh thứ 2 | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+00:42 | Là inside bar | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+00:43 | Nó trong một cái khung khúc này thôi | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+00:46 | Trong một cái đoạn này thôi | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+00:47 | Nó chỉ có đúng 2 setup cho anh chị trade thôi | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+00:49 | Nó chỉ có đúng 2 setup cho anh chị | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+00:52 | 2 lệnh cho anh chị thôi | —
+00:53 | Trong một cái đoạn | —
+00:54 | Một con sóng tăng | —
+00:56 | Sống tăng nó tính từ đâu | —
+00:58 | Sống tăng là nó tính khi mà nó vậy nè | —
+01:03 | Cái đoạn này là một con sống tăng | —
+01:05 | Cái đoạn mà anh chị bắt potential high low | —
+01:09 | Lên tới cái đỉnh cũ là nó là một con sống tăng | —
+01:11 | Thì anh chị phải đơn giản | —
+01:13 | Anh chị phải hiểu nè | —
+01:14 | Ngay từ cái đoạn từ đây đi lên thôi | —
+01:16 | Cái đoạn này rất là ít | —
+01:18 | Anh chị chỉ có đúng 2 chỗ anh chị vô lệnh | —
+01:20 | Một là potential high low | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+01:22 | Hai là insa 3 cho lệnh long nếu như nó có | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+01:24 | Thì target anh chị về đây | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+01:26 | Đây là một đoạn | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+01:27 | Thì khi mà em | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.3)
+01:30 | Ví dụ đi | —
+01:31 | Như khi mà em có thua | —
+01:32 | Cái lệnh nó dòng dòng cái đoạn này | —
+01:34 | Thì bắt buộc em phải hiểu | —
 01:35 | Mắc kẹt nó phải tạo một cái đoạn khoát | —
 01:38 | Mình mới có điểm để mình vô lệnh | —
 01:40 | Mình mới có cơ hội mình vô lệnh | —
@@ -94,15 +94,15 @@ cues: 267/267 marked · rules: 78 · CODE: 78 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 02:31 | nó nếu quay về bắt test, tôi có 2 LO | —
 02:32 | ngay tại BOLA đi, hoặc là ngay email 34 | —
 02:34 | rồi, cái đoạn thứ 3, cái lệnh thứ 3 | —
-02:37 | là tôi có 1 cái lệnh | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-02:39 | INSA 3 ngay đây, mình chỉ chọn được | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-02:41 | 2 trong 3 là quá lắm | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-02:42 | 2 trên 3 lệnh | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-02:45 | là quá lắm cho 1 đoạn | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-02:46 | thì không có lý do gì mọi người cứ vừa | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-02:48 | bị quét ngay đây, cái danh chỉ vô đây, cái xong bị quét ngay đây | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-02:50 | Vô lại ở đây | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-02:51 | Mọi người thấy nó có vô lý không | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
+02:37 | là tôi có 1 cái lệnh | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.4)
+02:39 | INSA 3 ngay đây, mình chỉ chọn được | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.4)
+02:41 | 2 trong 3 là quá lắm | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.4)
+02:42 | 2 trên 3 lệnh | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.4)
+02:45 | là quá lắm cho 1 đoạn | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.4)
+02:46 | thì không có lý do gì mọi người cứ vừa | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.4)
+02:48 | bị quét ngay đây, cái danh chỉ vô đây, cái xong bị quét ngay đây | —
+02:50 | Vô lại ở đây | —
+02:51 | Mọi người thấy nó có vô lý không | —
 02:53 | Như đây em thẳng trên nến cho mọi người coi nè | —
 02:58 | Rồi em thẳng trên nến cho mọi người coi nè | —
 03:01 | Hồi sáng cái lệnh ngày trên | —
@@ -187,19 +187,19 @@ cues: 267/267 marked · rules: 78 · CODE: 78 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 04:45 | alo 2 | —
 04:45 | thì nó cứ | —
 04:47 | nếu mà anh chị | —
-04:48 | bị quét một lệnh | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-04:49 | Anh chị phải đợi cho nó break cái đỉnh kế tiếp | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-04:51 | Cái đỉnh trước đó nè | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-04:54 | Nếu như mà là em á nha | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-04:55 | Em ngồi em trade á | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-04:56 | Khi mà em ngồi em bị quét một lệnh đi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-04:59 | Em về tới đây em đánh 2 lô em bị quét lệnh | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-05:00 | Em đợi cho nó tạo cái điều mà đáng lẽ nó phải xảy ra đó anh chị | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-05:03 | Là nó break luôn cái đỉnh | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-05:05 | Bên trái | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-05:06 | Nó tạo ra một cái đoạn mới | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-05:08 | Nó bắt đầu nó đi một cái cycle mới | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-05:09 | Cho một cái con sóng mới | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
+04:48 | bị quét một lệnh | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.5)
+04:49 | Anh chị phải đợi cho nó break cái đỉnh kế tiếp | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.5)
+04:51 | Cái đỉnh trước đó nè | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.5)
+04:54 | Nếu như mà là em á nha | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.5)
+04:55 | Em ngồi em trade á | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.5)
+04:56 | Khi mà em ngồi em bị quét một lệnh đi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.5)
+04:59 | Em về tới đây em đánh 2 lô em bị quét lệnh | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.5)
+05:00 | Em đợi cho nó tạo cái điều mà đáng lẽ nó phải xảy ra đó anh chị | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.5)
+05:03 | Là nó break luôn cái đỉnh | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.5)
+05:05 | Bên trái | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.5)
+05:06 | Nó tạo ra một cái đoạn mới | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.5)
+05:08 | Nó bắt đầu nó đi một cái cycle mới | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.5)
+05:09 | Cho một cái con sóng mới | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.5)
 05:11 | Thì em mới bắt đầu em kiếm lệnh em vô tiếp | —
 05:12 | Đây là một cái lý do rất rõ ràng | —
 05:15 | Cho lý do tại sao anh chị không hiểu được là | —
@@ -223,42 +223,42 @@ cues: 267/267 marked · rules: 78 · CODE: 78 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 05:47 | Mọi người hiểu gì em nói không? | —
 05:50 | Nên đây là một cái lý do rất thực tiễn là tại sao mọi người hay bị FOMO là thua cái vô lệnh lại liền | —
 05:55 | Nhưng mà thực sự mọi người không hiểu được là đâu có nhiều lệnh để vô như vậy | —
-06:00 | Một cái con sóng tăng nó chỉ có từ 2 đến 3 lệnh thôi | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
-06:05 | Thì nếu mà bây giờ anh chị muốn anh chị hiểu được cái vấn đề á | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled]
+06:00 | Một cái con sóng tăng nó chỉ có từ 2 đến 3 lệnh thôi | CODE kernel/mentor/mentor.go:580 [leg_budget_enabled] (row 15.7)
+06:05 | Thì nếu mà bây giờ anh chị muốn anh chị hiểu được cái vấn đề á | —
 06:10 | Nếu mà anh chị đã thua một lệnh á, đợi cho nó break được cái đỉnh | —
 06:14 | Hoặc đợi cho nó break được cái đáy của con sóng đó | —
 06:18 | Thì nó sẽ tạo 1 cái | —
-06:20 | Dùng rank mới để mình tiếp tục mình trade | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-06:22 | Thì mình đang trade ở 1 cái khu vực mới | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-06:25 | Anh chị đang | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-06:26 | Anh chị bị quét lệnh anh chị vô lại | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-06:28 | Giống như là anh chị đang tắm 2-3 lần | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-06:30 | 3-4 lần trên 1 vòng sông vậy | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-06:31 | Nước nó thúi mà tắm hoài | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-06:34 | Tại sao không đợi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-06:36 | Qua 1 khúc sông khác anh chị tắm | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-06:37 | Đúng không | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-06:39 | Bây giờ ví dụ đi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break]
-06:40 | Bây giờ anh chị đang tắm ở hạ nguồn đi | —
-06:42 | Cứ có bao nhiêu chất bẩn | —
-06:46 | Chất dơ đồ anh chị tắm ở dưới | —
-06:47 | Vậy thôi bây giờ anh chị lên thử ngủ anh chị tắm đi | —
-06:49 | Lên một khúc sông khác tắm | —
-06:51 | Thì nó sẽ sạch | —
-06:52 | Tại sao mà nó | —
-06:54 | Lý do vậy thôi | —
-06:56 | Không cái này phải nói thiệt luôn mọi người | —
-07:00 | Sorry anh chị nhưng mà đôi khi em nói chuyện dân giả vậy | —
-07:02 | Nhưng mà nó gần gũi với mọi người | —
-07:04 | Nhưng mà đôi khi nó rất là gần gũi | —
-07:07 | Và anh chị hiểu liền | —
-07:07 | Cái chỗ này anh chị đã bị quét rồi | —
-07:10 | Là anh chị thấy nó thúi rồi | —
-07:11 | Anh chị thấy nó không đẹp rồi | —
-07:13 | Mà cứ đâm đầu cứ vô lại cái khu vực này | —
-07:15 | Tại sao không đợi nó thoát ra khu vực này | —
-07:17 | Nó ra một cái khu vực mới | —
-07:18 | Rồi mình ngồi mình trace khu vực mới | —
+06:20 | Dùng rank mới để mình tiếp tục mình trade | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:22 | Thì mình đang trade ở 1 cái khu vực mới | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:25 | Anh chị đang | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:26 | Anh chị bị quét lệnh anh chị vô lại | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:28 | Giống như là anh chị đang tắm 2-3 lần | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:30 | 3-4 lần trên 1 vòng sông vậy | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:31 | Nước nó thúi mà tắm hoài | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:34 | Tại sao không đợi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:36 | Qua 1 khúc sông khác anh chị tắm | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:37 | Đúng không | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:39 | Bây giờ ví dụ đi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:40 | Bây giờ anh chị đang tắm ở hạ nguồn đi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:42 | Cứ có bao nhiêu chất bẩn | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:46 | Chất dơ đồ anh chị tắm ở dưới | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:47 | Vậy thôi bây giờ anh chị lên thử ngủ anh chị tắm đi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:49 | Lên một khúc sông khác tắm | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:51 | Thì nó sẽ sạch | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:52 | Tại sao mà nó | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:54 | Lý do vậy thôi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+06:56 | Không cái này phải nói thiệt luôn mọi người | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+07:00 | Sorry anh chị nhưng mà đôi khi em nói chuyện dân giả vậy | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+07:02 | Nhưng mà nó gần gũi với mọi người | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+07:04 | Nhưng mà đôi khi nó rất là gần gũi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+07:07 | Và anh chị hiểu liền | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+07:07 | Cái chỗ này anh chị đã bị quét rồi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+07:10 | Là anh chị thấy nó thúi rồi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+07:11 | Anh chị thấy nó không đẹp rồi | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+07:13 | Mà cứ đâm đầu cứ vô lại cái khu vực này | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+07:15 | Tại sao không đợi nó thoát ra khu vực này | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+07:17 | Nó ra một cái khu vực mới | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
+07:18 | Rồi mình ngồi mình trace khu vực mới | CODE kernel/mentor/mentor.go:595 [leg_reset_on_wave_break] (row 15.6)
 07:20 | Anh chị hiểu em không | —
 07:24 | Không | —
 07:25 | Ở ngoài em không có nói chuyện đâu chị | —

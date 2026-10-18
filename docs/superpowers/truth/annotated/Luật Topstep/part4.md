@@ -1,4 +1,4 @@
-cues: 47/47 marked · rules: 9 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 9 · —: 38
+cues: 47/47 · rule cues: 9 · rows: 1 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 9 · OWNER-ORDER: 0 · SPLIT: 0 · —: 38
 
 00:00 | Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
 00:30 | ngày bạn xưa bạn phê nguyên vàng đó tháng 4 đi | —
@@ -20,15 +20,15 @@ cues: 47/47 marked · rules: 9 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 9 · —
 01:03 | vậy đó thôi, chừng đó thôi, bây giờ tháng 1 này, tháng 2 | —
 01:07 | tháng 2 cũng ngắn lắm, bạn nào chưa bắt đầu thì bỏ tháng 2 đi | —
 01:11 | từ tháng 1 tới tháng 2 mình không lẽ bia hôn được 5 hay 10 cái account đứng draw out | —
-01:14 | từ từ mà đánh thôi, đừng có copy trade, bỏ copy trade đây, đừng có copy trade | NOT-IN-BOT → 18.11
-01:19 | rotate account, cái nào đỏ dụt qua một bên | NOT-IN-BOT → 18.11
-01:23 | một lệnh lấy cái thứ 2 đã đánh tiếp, đánh hết cái vòng account đó | NOT-IN-BOT → 18.11
-01:27 | Cái nào đỏ quay ngược lại | NOT-IN-BOT → 18.11
-01:28 | Đánh thêm một lệnh nữa | NOT-IN-BOT → 18.11
-01:29 | Vẫn đỏ | NOT-IN-BOT → 18.11
-01:30 | Nghỉ | NOT-IN-BOT → 18.11
-01:31 | Đơn giản vậy thôi | NOT-IN-BOT → 18.11
-01:32 | Cũng không cần ba lệnh nữa | NOT-IN-BOT → 18.11
+01:14 | từ từ mà đánh thôi, đừng có copy trade, bỏ copy trade đây, đừng có copy trade | NOT-IN-BOT → 18.11 (row 18.11)
+01:19 | rotate account, cái nào đỏ dụt qua một bên | NOT-IN-BOT → 18.11 (row 18.11)
+01:23 | một lệnh lấy cái thứ 2 đã đánh tiếp, đánh hết cái vòng account đó | NOT-IN-BOT → 18.11 (row 18.11)
+01:27 | Cái nào đỏ quay ngược lại | NOT-IN-BOT → 18.11 (row 18.11)
+01:28 | Đánh thêm một lệnh nữa | NOT-IN-BOT → 18.11 (row 18.11)
+01:29 | Vẫn đỏ | NOT-IN-BOT → 18.11 (row 18.11)
+01:30 | Nghỉ | NOT-IN-BOT → 18.11 (row 18.11)
+01:31 | Đơn giản vậy thôi | NOT-IN-BOT → 18.11 (row 18.11)
+01:32 | Cũng không cần ba lệnh nữa | NOT-IN-BOT → 18.11 (row 18.11)
 01:34 | Bắt đầu tháng 1, tháng 2 | —
 01:37 | Bắt đầu tháng 3 là cái tháng mình hái quả | —
 01:39 | Tháng 3, tháng 4, tháng 5 | —
