@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-
-	"vl/internal/updaterworker"
 )
 
 // verify.go — B5 S9: the friend app verifies EVERY download (the SSHSIG
@@ -29,11 +27,11 @@ type FriendManifest struct {
 }
 
 // VerifyFriendManifest verifies the manifest bytes against the armored SSHSIG
-// signature with the release trust anchor (the same VerifySSHSIG the release
-// worker uses), then validates every SHA-256 field is well-formed. The signature
-// is checked FIRST — a manifest whose signature fails is never parsed.
-func VerifyFriendManifest(manifestBytes, sigBytes []byte, allowedSignersPath string) (FriendManifest, error) {
-	if _, err := updaterworker.VerifySSHSIG(manifestBytes, sigBytes, allowedSignersPath); err != nil {
+// signature using the EMBEDDED allowed-signers content (the friend-distribution
+// public key, B10.2), then validates every SHA-256 field is well-formed. The
+// signature is checked FIRST — a manifest whose signature fails is never parsed.
+func VerifyFriendManifest(manifestBytes, sigBytes, allowedSigners []byte) (FriendManifest, error) {
+	if _, err := verifySSHSIG(manifestBytes, sigBytes, allowedSigners); err != nil {
 		return FriendManifest{}, fmt.Errorf("friend manifest signature: %w", err)
 	}
 	var m FriendManifest

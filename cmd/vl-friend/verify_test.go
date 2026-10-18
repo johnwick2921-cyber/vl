@@ -9,13 +9,14 @@ import (
 	"testing"
 )
 
-// verify_test.go — B5 S9. The manifest must be signed with the release key and
-// verified with VerifySSHSIG before anything is installed. A tampered manifest
-// or artifact refuses; nothing changes.
+// verify_test.go — B5 S9. The manifest must be signed with the friend-
+// distribution key and verified (ported SSHSIG) before anything is installed.
+// A tampered manifest or artifact refuses; nothing changes.
 
-// signManifest generates an ed25519 key + allowed-signers file, signs msg with
-// `ssh-keygen -Y sign -n release`, and returns (manifest, sig, allowedSigners).
-func signManifest(t *testing.T, msg []byte) ([]byte, []byte, string) {
+// signManifest generates an ed25519 key, signs msg with
+// `ssh-keygen -Y sign -n release`, and returns (manifest, sig, allowedSigners
+// CONTENT — the public key line the app embeds at build time).
+func signManifest(t *testing.T, msg []byte) ([]byte, []byte, []byte) {
 	t.Helper()
 	if _, err := exec.LookPath("ssh-keygen"); err != nil {
 		t.Skip("ssh-keygen not available")
@@ -33,10 +34,7 @@ func signManifest(t *testing.T, msg []byte) ([]byte, []byte, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	signers := filepath.Join(dir, "allowed_signers")
-	if err := os.WriteFile(signers, []byte("release "+strings.TrimSpace(string(pub))+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	signers := []byte("release " + strings.TrimSpace(string(pub)) + "\n")
 	msgPath := filepath.Join(dir, "manifest.json")
 	if err := os.WriteFile(msgPath, msg, 0o644); err != nil {
 		t.Fatal(err)
@@ -69,7 +67,7 @@ func TestVerifyFriendManifestAcceptsASignedManifest(t *testing.T) {
 // TestVerifyFriendManifestRefusesTamper — S9: the named mutant. If the manifest
 // is changed after signing (here: a different addon_sha256), the signature no
 // longer matches and VerifyFriendManifest refuses. MUTANT: drop the
-// VerifySSHSIG call → this test RED (the tampered manifest is accepted).
+// verifySSHSIG call → this test RED (the tampered manifest is accepted).
 func TestVerifyFriendManifestRefusesTamper(t *testing.T) {
 	msg, sig, signers := signManifest(t, testManifest())
 	tampered := bytes.Replace(msg, []byte(strings.Repeat("ab", 32)), []byte(strings.Repeat("11", 32)), 1)
@@ -86,10 +84,20 @@ func TestVerifyFriendManifestRefusesBadSignature(t *testing.T) {
 	}
 }
 
-func TestVerifyFriendManifestRefusesMissingSigners(t *testing.T) {
+func TestVerifyFriendManifestRefusesForeignKey(t *testing.T) {
 	msg, sig, _ := signManifest(t, testManifest())
-	if _, err := VerifyFriendManifest(msg, sig, filepath.Join(t.TempDir(), "absent")); err == nil {
-		t.Fatal("a manifest verified against an absent trust anchor was accepted")
+	// A signature made by a key that is NOT embedded must refuse.
+	foreign := []byte("release ssh-ed25519 " +
+		"AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n")
+	if _, err := VerifyFriendManifest(msg, sig, foreign); err == nil {
+		t.Fatal("a manifest signed by a foreign key was accepted")
+	}
+}
+
+func TestVerifyFriendManifestRefusesEmptySigners(t *testing.T) {
+	msg, sig, _ := signManifest(t, testManifest())
+	if _, err := VerifyFriendManifest(msg, sig, nil); err == nil {
+		t.Fatal("a manifest verified against no embedded key was accepted")
 	}
 }
 
