@@ -172,11 +172,11 @@ cues: 345/345 · rule cues: 30 · rows: 3 · CODE: 30 · MISMATCH: 0 · NOT-IN-B
 12:04 | tới thẳng lên trên đây anh mới chịu bán | —
 12:06 | có đúng vậy không | —
 12:13 | anh làm gì anh cũng phải bán bớt ở 11 | —
-12:19 | Cái việc đó là cái việc em làm mỗi ngày với mọi người mà | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
-12:22 | Là bây giờ sắp lót 20 | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
-12:24 | Tới 20 mình bán bớt | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
-12:26 | Chừa phirin chứ | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
-12:26 | Chứ anh hôn 1 phát lần trên đây sao nổi | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
+12:19 | Cái việc đó là cái việc em làm mỗi ngày với mọi người mà | CODE kernel/mentor/mentor.go:228 [return 1] (row 19)
+12:22 | Là bây giờ sắp lót 20 | CODE kernel/mentor/mentor.go:228 [return 1] (row 19)
+12:24 | Tới 20 mình bán bớt | CODE kernel/mentor/mentor.go:228 [return 1] (row 19)
+12:26 | Chừa phirin chứ | CODE kernel/mentor/mentor.go:228 [return 1] (row 19)
+12:26 | Chứ anh hôn 1 phát lần trên đây sao nổi | CODE kernel/mentor/mentor.go:228 [return 1] (row 19)
 12:29 | Đâu coi anh hôn được gì đó | —
 12:31 | Không ai làm được cái chuyện đó | —
 12:33 | Đâu coi ai làm được cái việc đó đâu | —
@@ -185,10 +185,10 @@ cues: 345/345 · rule cues: 30 · rows: 3 · CODE: 30 · MISMATCH: 0 · NOT-IN-B
 12:52 | Đúng không | —
 12:56 | Rồi | —
 13:06 | Làm ơn mình vô lệnh á | —
-13:08 | Anh đừng suy nghĩ nhiều á | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
-13:09 | Cứ việc bán bớt ở Crisqo11 và anh hôn phirin | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
-13:12 | anh ủng hộ tới đâu anh hôn | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
-13:14 | anh ủng hộ tới đâu anh hôn | CODE kernel/mentor/mentor.go:224 [Leg1RiskMultiple=1] (row 19)
+13:08 | Anh đừng suy nghĩ nhiều á | CODE kernel/mentor/mentor.go:228 [return 1] (row 19)
+13:09 | Cứ việc bán bớt ở Crisqo11 và anh hôn phirin | CODE kernel/mentor/mentor.go:228 [return 1] (row 19)
+13:12 | anh ủng hộ tới đâu anh hôn | CODE kernel/mentor/mentor.go:228 [return 1] (row 19)
+13:14 | anh ủng hộ tới đâu anh hôn | CODE kernel/mentor/mentor.go:228 [return 1] (row 19)
 13:25 | không thành vấn đề | —
 13:26 | nha | —
 13:36 | nhớ giúp em | —
@@ -282,13 +282,13 @@ cues: 345/345 · rule cues: 30 · rows: 3 · CODE: 30 · MISMATCH: 0 · NOT-IN-B
 16:59 | Mọi người phải nhớ giúp em ngay chỗ này nè | —
 17:03 | Khi anh chị đã vẽ được level rồi | —
 17:07 | Thì làm ơn tin cái level dùm | —
-17:09 | Đừng | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
-17:10 | Indicator | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
-17:12 | Là để anh chị | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
-17:13 | Tham khảo | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
-17:15 | Thật sự luôn | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
-17:17 | Indicator là để anh chị tham khảo | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
-17:22 | Nhưng nếu mà anh chị đã vẽ ra được 2 cái rank rồi | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
+17:09 | Đừng | CODE kernel/mentor/eval.go:1061 [isEMAPartialKind skip] (row 20)
+17:10 | Indicator | CODE kernel/mentor/eval.go:1061 [isEMAPartialKind skip] (row 20)
+17:12 | Là để anh chị | CODE kernel/mentor/eval.go:1061 [isEMAPartialKind skip] (row 20)
+17:13 | Tham khảo | CODE kernel/mentor/eval.go:1061 [isEMAPartialKind skip] (row 20)
+17:15 | Thật sự luôn | CODE kernel/mentor/eval.go:1061 [isEMAPartialKind skip] (row 20)
+17:17 | Indicator là để anh chị tham khảo | CODE kernel/mentor/eval.go:1061 [isEMAPartialKind skip] (row 20)
+17:22 | Nhưng nếu mà anh chị đã vẽ ra được 2 cái rank rồi | CODE kernel/mentor/eval.go:1061 [isEMAPartialKind skip] (row 20)
 17:25 | Và nó đang nằm giữa cái rank á | —
 17:27 | Thường á | —
 17:27 | Indicator nó bị xiên như xiên cá | —
@@ -316,10 +316,10 @@ cues: 345/345 · rule cues: 30 · rows: 3 · CODE: 30 · MISMATCH: 0 · NOT-IN-B
 18:26 | Mọi người nhìn nha | —
 18:30 | Nhìn cái quá khứ cho em thôi | —
 18:32 | Có phải mọi người nhìn quá khứ nè | —
-18:37 | Nó đâu có respect email 34 đâu | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
-18:39 | Nhìn kỹ coi | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
-18:42 | Đừng suy nghĩ nhiều hết | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
-18:45 | Thiệt sự luôn | CODE kernel/mentor/eval.go:1047 [nextLevelBeyondNonEMA] (row 20)
+18:37 | Nó đâu có respect email 34 đâu | CODE kernel/mentor/eval.go:1061 [isEMAPartialKind skip] (row 20)
+18:39 | Nhìn kỹ coi | CODE kernel/mentor/eval.go:1061 [isEMAPartialKind skip] (row 20)
+18:42 | Đừng suy nghĩ nhiều hết | CODE kernel/mentor/eval.go:1061 [isEMAPartialKind skip] (row 20)
+18:45 | Thiệt sự luôn | CODE kernel/mentor/eval.go:1061 [isEMAPartialKind skip] (row 20)
 18:45 | Cứ nhìn đơn giản thôi | —
 18:47 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 19:41 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —

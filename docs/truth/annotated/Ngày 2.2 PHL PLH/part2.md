@@ -124,17 +124,17 @@ cues: 451/451 · rule cues: 105 · rows: 3 · CODE: 105 · MISMATCH: 0 · NOT-IN
 08:40 | Là | —
 08:42 | Uno | —
 08:44 | Ngay chỗ này | —
-08:46 | Lúc trước nó là resistance | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
-08:48 | Nó là resistance | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
-08:52 | Bây giờ | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
-08:53 | Sao anh chị | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
-08:55 | Bây giờ nó về tới chỗ này | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
-08:58 | Nó bắt test lại cái resistance | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
-09:00 | Thì cái resistance này trở thành | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
-09:02 | Support | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
-09:03 | Mình còn được gọi là polarity | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
-09:07 | Hoặc là mình gọi là uno | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
-09:08 | Đúng không | CODE kernel/mentor/box.go:326 [Uno Reverse] (row 17)
+08:46 | Lúc trước nó là resistance | CODE kernel/mentor/box.go:330 [b.Flipped = escaped] (row 17)
+08:48 | Nó là resistance | CODE kernel/mentor/box.go:330 [b.Flipped = escaped] (row 17)
+08:52 | Bây giờ | CODE kernel/mentor/box.go:330 [b.Flipped = escaped] (row 17)
+08:53 | Sao anh chị | CODE kernel/mentor/box.go:330 [b.Flipped = escaped] (row 17)
+08:55 | Bây giờ nó về tới chỗ này | CODE kernel/mentor/box.go:330 [b.Flipped = escaped] (row 17)
+08:58 | Nó bắt test lại cái resistance | CODE kernel/mentor/box.go:330 [b.Flipped = escaped] (row 17)
+09:00 | Thì cái resistance này trở thành | CODE kernel/mentor/box.go:330 [b.Flipped = escaped] (row 17)
+09:02 | Support | CODE kernel/mentor/box.go:330 [b.Flipped = escaped] (row 17)
+09:03 | Mình còn được gọi là polarity | CODE kernel/mentor/box.go:330 [b.Flipped = escaped] (row 17)
+09:07 | Hoặc là mình gọi là uno | CODE kernel/mentor/box.go:330 [b.Flipped = escaped] (row 17)
+09:08 | Đúng không | CODE kernel/mentor/box.go:330 [b.Flipped = escaped] (row 17)
 09:11 | Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 09:41 | Thì ngay chỗ này rất đẹp | —
 09:42 | Bây giờ em | —
