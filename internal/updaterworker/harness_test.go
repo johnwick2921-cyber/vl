@@ -164,6 +164,19 @@ type box struct {
 	// W-ADDON-ONE-CLICK self-recovery seam
 	addonRestoreCalls []string
 	addonRestoreErr   error
+
+	// W-FRIEND-HOSTED Segment 5 friend seams
+	friendRegistry      string            // the friends.json bytes ("" = no registry file)
+	friendWebPorts      map[string]int    // name → web_port (the flat probe's baseURL reverse-map)
+	friendFlat          map[string]bool   // name → the flat probe's first answer
+	friendFlatAfter     map[string]int    // name → after this many flat probes, flip to true (deferred → flat)
+	friendFlatProbes    map[string]int    // name → count of flat probes
+	friendBootResults   map[string][]bool // name → boot OK answers in order (one per restart)
+	friendBootRev       map[string]string // name → the rev a successful boot reports
+	friendRestartCalls  map[string]int    // name → restart count
+	friendRestartErr    map[string]error  // name → restart error (consumed once)
+	friendBootErr       map[string]error  // name → boot check error (consumed once)
+	friendNotifications []string          // every Notify text, in order
 }
 
 // rig is one worker on one box.
@@ -224,7 +237,6 @@ func withStaleAddon() rigOpt {
 		b.catchupBuild = boxNewBuild
 	}
 }
-
 
 func newRig(t *testing.T, opts ...rigOpt) *rig {
 	t.Helper()
@@ -924,6 +936,80 @@ func (h *fakeHost) AddonRestore(docsDir, backupDir string) error {
 	h.b.addonRestored = true
 	h.b.mu.Unlock()
 	return nil
+}
+
+// FriendFlat plays the friend's health + positions probe from the box knobs.
+func (h *fakeHost) FriendFlat(ctx context.Context, baseURL string) (bool, error) {
+	name := h.friendNameForURL(baseURL)
+	h.b.mu.Lock()
+	defer h.b.mu.Unlock()
+	if h.b.friendFlatProbes == nil {
+		h.b.friendFlatProbes = map[string]int{}
+	}
+	h.b.friendFlatProbes[name]++
+	flat := h.b.friendFlat[name]
+	// flip to true after N probes (deferred → flat)
+	if n, ok := h.b.friendFlatAfter[name]; ok && h.b.friendFlatProbes[name] > n {
+		flat = true
+	}
+	return flat, nil
+}
+
+func (h *fakeHost) FriendRestart(ctx context.Context, unit string) error {
+	name := strings.TrimSuffix(strings.TrimPrefix(unit, "vl-friend@"), ".service")
+	h.b.mu.Lock()
+	defer h.b.mu.Unlock()
+	if h.b.friendRestartCalls == nil {
+		h.b.friendRestartCalls = map[string]int{}
+	}
+	h.b.friendRestartCalls[name]++
+	if err, ok := h.b.friendRestartErr[name]; ok {
+		delete(h.b.friendRestartErr, name) // consumed once
+		return err
+	}
+	return nil
+}
+
+func (h *fakeHost) FriendBootOK(ctx context.Context, unit string, since time.Time, expectedSHA string) (bool, string, error) {
+	name := strings.TrimSuffix(strings.TrimPrefix(unit, "vl-friend@"), ".service")
+	h.b.mu.Lock()
+	defer h.b.mu.Unlock()
+	if err, ok := h.b.friendBootErr[name]; ok {
+		delete(h.b.friendBootErr, name) // consumed once
+		return false, "", err
+	}
+	restarts := 0
+	if h.b.friendRestartCalls != nil {
+		restarts = h.b.friendRestartCalls[name]
+	}
+	results := h.b.friendBootResults[name]
+	// one result per restart; the LAST restart's result is what a fresh boot
+	// check sees (index restarts-1). Absent result = boot never OK.
+	if restarts > 0 && len(results) >= restarts {
+		ok := results[restarts-1]
+		if ok {
+			return true, h.b.friendBootRev[name], nil
+		}
+		return false, "", nil
+	}
+	return false, "", nil
+}
+
+// friendNameForURL maps a friend baseURL back to the friend name via its web
+// port (the box records name → web_port in friendWebPorts).
+func (h *fakeHost) friendNameForURL(baseURL string) string {
+	port := ""
+	if i := strings.LastIndex(baseURL, ":"); i >= 0 {
+		port = baseURL[i+1:]
+	}
+	h.b.mu.Lock()
+	defer h.b.mu.Unlock()
+	for name, p := range h.b.friendWebPorts {
+		if fmt.Sprintf("%d", p) == port {
+			return name
+		}
+	}
+	return port
 }
 
 // ── the app (httptest) ──────────────────────────────────────────────────────

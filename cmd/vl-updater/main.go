@@ -139,6 +139,16 @@ func lockScriptFor(installDir string) string {
 	return filepath.Join(installDir, "deploy", "vl-lock.sh")
 }
 
+// friendRegistryPath is the B2 friends.json path. VL_FRIENDS_ROOT overrides
+// the folder for tests (the same knob DS-106's Friends page reads).
+func friendRegistryPath() string {
+	root := strings.TrimSpace(os.Getenv("VL_FRIENDS_ROOT"))
+	if root == "" {
+		root = "/home/hoang/vl-friends"
+	}
+	return filepath.Join(root, "friends.json")
+}
+
 // serve refuses, in order: the process checks (root, the bot's cgroup, TZ),
 // a missing cutover token, an adapter that has not landed, no home for the
 // backups, the worker lock (a second serve writes nothing), and the start
@@ -175,7 +185,17 @@ func serve(t updaterworker.Target, stderr io.Writer) int {
 		BackupRoot: filepath.Join(installpath.BackupRoot(), "updater"),
 		Budgets:    updaterworker.DefaultBudgets(),
 		Logf:       logf,
-	}, updaterworker.Deps{Lib: lib, App: app, Rel: rel, Host: updaterworker.OSHost{LockScript: lockScript}})
+		// W-FRIEND-HOSTED Segment 5: the friend sweep follows a completed
+		// install. Both are disabled when unset (no friend surface configured).
+		FriendRegistry: friendRegistryPath(),
+		FriendHost:     strings.TrimSpace(os.Getenv("TUNNEL_IP")),
+	}, updaterworker.Deps{
+		Lib:    lib,
+		App:    app,
+		Rel:    rel,
+		Host:   updaterworker.OSHost{LockScript: lockScript},
+		Notify: func(text string) { logf("updater notify: %s", text) },
+	})
 	if err != nil {
 		fmt.Fprintln(stderr, "vl-updater serve:", err)
 		return 2

@@ -44,8 +44,13 @@ func (h suHost) BuildInfo(binary string) (string, string, error) {
 	}
 	return strings.Repeat("00", 20), "false", nil
 }
-func (h suHost) ExeOf(int) (string, error) { return h.exe, nil }
-func (h suHost) AddonRestore(string, string) error { return nil }
+func (h suHost) ExeOf(int) (string, error)                        { return h.exe, nil }
+func (h suHost) AddonRestore(string, string) error                { return nil }
+func (h suHost) FriendFlat(context.Context, string) (bool, error) { return true, nil }
+func (h suHost) FriendRestart(context.Context, string) error      { return nil }
+func (h suHost) FriendBootOK(context.Context, string, time.Time, string) (bool, string, error) {
+	return true, "", nil
+}
 
 const suNewSHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 const suOldSHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
