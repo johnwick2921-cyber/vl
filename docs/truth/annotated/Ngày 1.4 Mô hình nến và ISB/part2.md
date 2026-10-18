@@ -1,4 +1,4 @@
-cues: 142/142 · rule cues: 83 · rows: 3 · CODE: 2 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 0 · SPLIT: 1 · —: 59
+cues: 142/142 · rule cues: 83 · rows: 3 · CODE: 2 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 0 · SPLIT: 1 · CONTEXT: 0 · —: 59
 
 [00:00] Hãy subscribe cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn | —
 [00:40] Khi entry 1 lệnh, stop-loss và stop-loss của mình đặt ở đáy cây nến bị vượt qua | isb.go:124 (row 22)

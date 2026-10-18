@@ -1,4 +1,4 @@
-cues: 344/344 · rule cues: 91 · rows: 4 · CODE: 2 · MISMATCH: 0 · NOT-IN-BOT: 1 · OWNER-ORDER: 1 · SPLIT: 0 · —: 253
+cues: 344/344 · rule cues: 91 · rows: 4 · CODE: 2 · MISMATCH: 0 · NOT-IN-BOT: 1 · OWNER-ORDER: 1 · SPLIT: 0 · CONTEXT: 0 · —: 253
 
 [00:00] Tiếp theo là bài thứ 3 của lớp ngày hôm nay là mình sẽ đi xa, mình sẽ không đi về vấn đề tâm lý nữa ha, mà mình sẽ bắt đầu mình phân tích kỹ thuật là mọi người hay gọi là technical analysis | —
 [00:28] Hoặc là | —

@@ -1,4 +1,4 @@
-cues: 162/162 · rule cues: 94 · rows: 1 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 1 · OWNER-ORDER: 0 · SPLIT: 0 · —: 68
+cues: 162/162 · rule cues: 94 · rows: 1 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 1 · OWNER-ORDER: 0 · SPLIT: 0 · CONTEXT: 0 · —: 68
 
 [00:00] Phải xác định được giúp em là anh chị đang mắc phải những lỗi nào? Làm sao? | —
 [00:08] Là mọi người phải biết là anh chị đang, tôi đang bị DCA, tôi hay DCA, tôi hay kéo stop loss nó xa ra, tôi hay chặn đầu xe, tôi không có practice, tôi không có thực tập, tôi chỉ lên tôi ngồi tôi trade thôi, bla bla bla. | —

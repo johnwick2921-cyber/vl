@@ -1,4 +1,4 @@
-cues: 615/615 · rule cues: 253 · rows: 6 · CODE: 4 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 2 · SPLIT: 0 · —: 362
+cues: 615/615 · rule cues: 253 · rows: 6 · CODE: 4 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 2 · SPLIT: 0 · CONTEXT: 0 · —: 362
 
 [00:00] Tới cái bài thứ 2 của ngày hôm nay thì mình sẽ đi vẫn là về cái risk, mình vẫn là về cái psychology, vẫn là về phần tâm lý một tí nhưng mình sẽ có risk và reward, những cái mô hình của nhà cái, của cái market maker, cách xác lập tỷ lệ risk reward, khái niệm về R-multiple là risk reward di động. | —
 [00:30] Rồi, phần thứ 2 của cái bài này nữa là về cái Account Risk Management. | —

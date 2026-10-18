@@ -1,4 +1,4 @@
-cues: 678/678 · rule cues: 86 · rows: 1 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 1 · SPLIT: 0 · —: 592
+cues: 678/678 · rule cues: 86 · rows: 1 · CODE: 0 · MISMATCH: 0 · NOT-IN-BOT: 0 · OWNER-ORDER: 1 · SPLIT: 0 · CONTEXT: 0 · —: 592
 
 [00:00] Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn | —
 [00:30] cho cái chẹt và để tay trên con chuột | —

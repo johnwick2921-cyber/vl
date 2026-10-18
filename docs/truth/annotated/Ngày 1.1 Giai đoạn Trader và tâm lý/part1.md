@@ -1,4 +1,4 @@
-cues: 692/692 · rule cues: 113 · rows: 5 · CODE: 1 · MISMATCH: 0 · NOT-IN-BOT: 3 · OWNER-ORDER: 1 · SPLIT: 0 · —: 579
+cues: 692/692 · rule cues: 113 · rows: 5 · CODE: 1 · MISMATCH: 0 · NOT-IN-BOT: 3 · OWNER-ORDER: 1 · SPLIT: 0 · CONTEXT: 0 · —: 579
 
 [00:00] Ngày đầu tiên là cái ngày lúc nào đối với em nó cũng là cái ngày quan trọng nhất hết mọi người. | —
 [00:05] Có nhiều anh chị nhắn tin cho em và mọi người thấy là chưa lấp, chưa stall nữa là em đã thấy anh chị bị hư rồi. | —
