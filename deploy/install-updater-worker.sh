@@ -95,6 +95,20 @@ if ! grep -q '^PATH=' "$ENV_FILE" 2>/dev/null; then
   echo "install-updater-worker: added the Windows-tool PATH line to $ENV_FILE (powershell.exe / dotnet.exe for the AddOn build)"
 fi
 
+# W-UPDATER-WINPATH (add-on, job 1ead8859): the unit also needs the WSL distro
+# name for UNC paths (wsl.localhost\<distro>\...). systemd does not pass
+# WSL_DISTRO_NAME, so write it from the INSTALLING shell (which has it); when
+# the shell lacks it, ask wslpath; only then fall back to the old "Ubuntu" guess.
+if ! grep -q '^WSL_DISTRO_NAME=' "$ENV_FILE" 2>/dev/null; then
+  d="${WSL_DISTRO_NAME:-}"
+  if [ -z "$d" ] && command -v wslpath >/dev/null 2>&1; then
+    d="$(wslpath -w / 2>/dev/null | awk -F'\\\\' '{print $3}')"
+  fi
+  [ -n "$d" ] || d="Ubuntu"
+  printf 'WSL_DISTRO_NAME=%s\n' "$d" >> "$ENV_FILE"
+  echo "install-updater-worker: added WSL_DISTRO_NAME=$d to $ENV_FILE"
+fi
+
 BUILD_DIR="$(mktemp -d /tmp/vl-updater-build.XXXXXX)" || { echo "install-updater-worker: REFUSED — cannot make a build dir" >&2; exit 2; }
 trap 'rm -rf "${BUILD_DIR:?}"' EXIT
 echo "install-updater-worker: cloning $REPO_URL (the live install is never touched)"

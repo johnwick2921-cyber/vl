@@ -433,6 +433,29 @@ func TestWslToWindows(t *testing.T) {
 	}
 }
 
+// TestWslToWindowsWslpathFallback pins the W-UPDATER-WINPATH add-on (job
+// 1ead8859): with WSL_DISTRO_NAME unset, wslToWindows must ASK the system
+// (wslpath -w) rather than guess "Ubuntu", and only fall back to the guess
+// when wslpath fails.
+func TestWslToWindowsWslpathFallback(t *testing.T) {
+	t.Setenv("WSL_DISTRO_NAME", "")
+	orig := wslpathSeam
+	t.Cleanup(func() { wslpathSeam = orig })
+
+	wslpathSeam = func(wslPath string) (string, error) {
+		return `\\wsl.localhost\Ubuntu-24.04` + strings.ReplaceAll(wslPath, "/", "\\"), nil
+	}
+	if got, want := wslToWindows("/tmp/foo/bar.ps1"), `\\wsl.localhost\Ubuntu-24.04\tmp\foo\bar.ps1`; got != want {
+		t.Fatalf("wslToWindows with wslpath seam = %q, want %q", got, want)
+	}
+
+	// wslpath fails → the old guess is the last resort.
+	wslpathSeam = func(string) (string, error) { return "", errors.New("no wslpath") }
+	if got, want := wslToWindows("/tmp/foo"), `\\wsl.localhost\Ubuntu\tmp\foo`; got != want {
+		t.Fatalf("wslToWindows with failing wslpath = %q, want the Ubuntu guess %q", got, want)
+	}
+}
+
 func TestTemplateParityWithDeploy(t *testing.T) {
 	deploy, err := os.ReadFile(filepath.Join("..", "..", "deploy", "addon", "VL.AddOn.csproj.tmpl"))
 	if err != nil {

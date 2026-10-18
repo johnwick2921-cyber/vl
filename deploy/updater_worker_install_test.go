@@ -218,6 +218,11 @@ func TestInstallUpdaterWorkerScript(t *testing.T) {
 		if strings.Count(string(b), "PATH=") != 1 {
 			t.Fatalf("PATH line must appear exactly once:\n%s", b)
 		}
+		// W-UPDATER-WINPATH add-on (job 1ead8859): the distro name is written
+		// too, and never duplicated.
+		if strings.Count(string(b), "WSL_DISTRO_NAME=") != 1 {
+			t.Fatalf("WSL_DISTRO_NAME line must appear exactly once:\n%s", b)
+		}
 		// Run again: an existing PATH line is never duplicated.
 		out, rc = run(t, home, "", strings.Repeat("e", 40))
 		if rc != 2 || !strings.Contains(out, "clone failed") {
@@ -229,6 +234,9 @@ func TestInstallUpdaterWorkerScript(t *testing.T) {
 		}
 		if strings.Count(string(b), "PATH=") != 1 {
 			t.Fatalf("a second run must not duplicate the PATH line:\n%s", b)
+		}
+		if strings.Count(string(b), "WSL_DISTRO_NAME=") != 1 {
+			t.Fatalf("a second run must not duplicate the WSL_DISTRO_NAME line:\n%s", b)
 		}
 	})
 }
