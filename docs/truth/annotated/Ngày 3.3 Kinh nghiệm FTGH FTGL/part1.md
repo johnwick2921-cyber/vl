@@ -151,15 +151,15 @@ cues: 231/231 marked · rules: 164 · CODE: 148 · MISMATCH: 0 · NOT-IN-BOT: 16
 07:16 | Tiếp tục là email 34 nè | —
 07:19 | Rồi qua email 34 tiếp tục là làm gì? | —
 07:21 | Tiếp tục tôi lên ta ghẹt này nè | —
-07:23 | Là cái file 2 ở dưới nằm trên này nè | CODE kernel/mentor/eval.go:1084 [runner_partial_line] (row 40)
-07:25 | Thì những cái chỗ này | CODE kernel/mentor/eval.go:1084 [runner_partial_line] (row 40)
-07:28 | Là những cái chỗ | CODE kernel/mentor/eval.go:1084 [runner_partial_line] (row 40)
-07:33 | Anh chị | CODE kernel/mentor/eval.go:1084 [runner_partial_line] (row 40)
-07:33 | Bán bớt | CODE kernel/mentor/eval.go:1084 [runner_partial_line] (row 40)
-07:36 | Gì ai hôn trăm điểm ghê vậy | CODE kernel/mentor/eval.go:1084 [runner_partial_line] (row 40)
-07:37 | Ai ngầu vậy | CODE kernel/mentor/eval.go:1084 [runner_partial_line] (row 40)
-07:38 | Là những cái chuyện chỗ chỗ anh chị bán bớt | CODE kernel/mentor/eval.go:1084 [runner_partial_line] (row 40)
-07:46 | Đúng không | CODE kernel/mentor/eval.go:1084 [runner_partial_line] (row 40)
+07:23 | Là cái file 2 ở dưới nằm trên này nè | CODE kernel/mentor/eval.go:1088 [partial_1_1] (row 40)
+07:25 | Thì những cái chỗ này | CODE kernel/mentor/eval.go:1088 [partial_1_1] (row 40)
+07:28 | Là những cái chỗ | CODE kernel/mentor/eval.go:1088 [partial_1_1] (row 40)
+07:33 | Anh chị | CODE kernel/mentor/eval.go:1088 [partial_1_1] (row 40)
+07:33 | Bán bớt | CODE kernel/mentor/eval.go:1088 [partial_1_1] (row 40)
+07:36 | Gì ai hôn trăm điểm ghê vậy | CODE kernel/mentor/eval.go:1088 [partial_1_1] (row 40)
+07:37 | Ai ngầu vậy | CODE kernel/mentor/eval.go:1088 [partial_1_1] (row 40)
+07:38 | Là những cái chuyện chỗ chỗ anh chị bán bớt | CODE kernel/mentor/eval.go:1088 [partial_1_1] (row 40)
+07:46 | Đúng không | CODE kernel/mentor/eval.go:1088 [partial_1_1] (row 40)
 07:47 | Rồi tiếp tục | —
 07:55 | Nếu mà lên tới đây | CODE kernel/mentor/eval.go:1501 [trendline_is_target] (row 41)
 07:56 | Mọi người dễ tiếp nè | CODE kernel/mentor/eval.go:1501 [trendline_is_target] (row 41)
