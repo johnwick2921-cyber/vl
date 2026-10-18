@@ -1,58 +1,58 @@
-cues: 123/123 marked · rules: 10 · CODE: 10 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · —: 113
+cues: 123/123 · rule cues: 35 · rows: 2 · CODE: 35 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · SPLIT: 0 · —: 88
 
-00:00:00 | Cho anh chị nào chưa biết vẽ những cái supply và demand zone của ngày hôm trước, em sẽ hướng dẫn mọi người luôn. | —
-00:00:05 | Rồi, cái đầu tiên anh chị cần làm là anh chị sẽ phải vẽ cái đỉnh và cái đáy của buổi sáng ngày hôm nay. | CODE kernel/mentor/day_seed.go [B]
-00:00:16 | Đúng không? Bắt buộc mọi người phải chính đường like. | —
-00:00:18 | Còn cái mấy cái châu Á thì đang chạy, xíu 3-4 giờ sáng châu Âu nó chạy nữa thì mình vẽ sau. | —
-00:00:24 | Nhưng mà bây giờ mình phải có cái buổi sáng ngày hôm nay trước nè. Đúng không? | —
-00:00:30 | Điểm cao nhất | —
-00:00:32 | Điểm thấp nhất | —
-00:00:33 | Và | —
-00:00:34 | Cái đường middle | CODE kernel/mentor/orb.go [B]
-00:00:35 | Cộng lại chi 2 anh chị | —
-00:00:36 | Hoặc là anh chị nào có | —
-00:00:38 | Indicator | —
-00:00:39 | Cái tab level | —
-00:00:40 | Anh chị bật lên | —
-00:00:40 | Có sẵn | —
-00:00:41 | Anh chị click cái tí cho thôi | —
-00:00:43 | Mark cho thôi | —
-00:00:44 | Rồi | —
-00:00:44 | Tiếp tục | —
+00:00:00 | Cho anh chị nào chưa biết vẽ những cái supply và demand zone của ngày hôm trước, em sẽ hướng dẫn mọi người luôn. | CODE kernel/mentor/box.go:545
+00:00:05 | Rồi, cái đầu tiên anh chị cần làm là anh chị sẽ phải vẽ cái đỉnh và cái đáy của buổi sáng ngày hôm nay. | CODE kernel/mentor/box.go:545
+00:00:16 | Đúng không? Bắt buộc mọi người phải chính đường like. | CODE kernel/mentor/box.go:545
+00:00:18 | Còn cái mấy cái châu Á thì đang chạy, xíu 3-4 giờ sáng châu Âu nó chạy nữa thì mình vẽ sau. | CODE kernel/mentor/box.go:545
+00:00:24 | Nhưng mà bây giờ mình phải có cái buổi sáng ngày hôm nay trước nè. Đúng không? | CODE kernel/mentor/box.go:545
+00:00:30 | Điểm cao nhất | CODE kernel/mentor/box.go:545
+00:00:32 | Điểm thấp nhất | CODE kernel/mentor/box.go:545
+00:00:33 | Và | CODE kernel/mentor/box.go:545
+00:00:34 | Cái đường middle | CODE kernel/mentor/box.go:545
+00:00:35 | Cộng lại chi 2 anh chị | CODE kernel/mentor/box.go:545
+00:00:36 | Hoặc là anh chị nào có | CODE kernel/mentor/box.go:545
+00:00:38 | Indicator | CODE kernel/mentor/box.go:545
+00:00:39 | Cái tab level | CODE kernel/mentor/box.go:545
+00:00:40 | Anh chị bật lên | CODE kernel/mentor/box.go:545
+00:00:40 | Có sẵn | CODE kernel/mentor/box.go:545
+00:00:41 | Anh chị click cái tí cho thôi | CODE kernel/mentor/box.go:545
+00:00:43 | Mark cho thôi | CODE kernel/mentor/box.go:545
+00:00:44 | Rồi | CODE kernel/mentor/box.go:545
+00:00:44 | Tiếp tục | CODE kernel/mentor/box.go:545
 00:00:45 | Anh chị chỉ nguồn | —
 00:00:47 | Khung 5 phút nha | —
-00:00:48 | Em đang sử dụng khung 5 phút ha | CODE kernel/mentor/mentor.go:549 [KeyLevelRTHOnly]
-00:00:50 | Lúc nào cũng sẽ là khung 5 phút ha | CODE kernel/mentor/mentor.go:549 [KeyLevelRTHOnly]
-00:00:52 | Dẻ supply demand zone là khung 5 phút | CODE kernel/mentor/mentor.go:549 [KeyLevelRTHOnly]
+00:00:48 | Em đang sử dụng khung 5 phút ha | —
+00:00:50 | Lúc nào cũng sẽ là khung 5 phút ha | —
+00:00:52 | Dẻ supply demand zone là khung 5 phút | —
 00:00:54 | Chỉ dẻ | —
-00:00:55 | Của market US | CODE kernel/mentor/mentor.go:549 [KeyLevelRTHOnly]
+00:00:55 | Của market US | —
 00:00:57 | Buổi sáng | —
 00:00:58 | sáng và mình sẽ ngày sáng ngày sáng ngày mai mình sử dụng sẽ sử dụng cái box này hả Tại vì sao em | —
-00:01:05 | không dễ của Asia Tại vì sao không dễ của YouTube anh chị cũng biết rồi là mắt mình trade market | CODE kernel/mentor/mentor.go:549 [KeyLevelRTHOnly]
+00:01:05 | không dễ của Asia Tại vì sao không dễ của YouTube anh chị cũng biết rồi là mắt mình trade market | —
 00:01:12 | us cái market us nó là cá khi mắt mắt kết mở open nó là cái market có nhiều volume nhất tại vì mình | —
 00:01:21 | nó sẽ quay trên cái mỏ trên cái mã của của nq là nasdaq ha thì us là cái cái ngày hôm nay là buổi | —
 00:01:33 | sáng nè nó có nhiều volume nhất thì mình chỉ bay xong cái cái nào nhiều volume nhất thì mình dễ | —
 00:01:37 | ha rồi chuyển quật nến hay kinh chuyển qua nến hay kinh rồi từ đỏ sang xanh mình dễ được cái | —
-00:01:49 | là cái râu thấp nhất của cây đánh đỏ kéo lên cái thân gần nhất là mình được một box đỏ sang xanh | CODE kernel/mentor/box.go:563 [FTGL]
-00:02:02 | rồi từ xanh sang đỏ cái râu cao nhất tới cái thân gần nhất mình được hai cái box đúng không rồi hôm | CODE kernel/mentor/box.go:545 [FTGH]
+00:01:49 | là cái râu thấp nhất của cây đánh đỏ kéo lên cái thân gần nhất là mình được một box đỏ sang xanh | —
+00:02:02 | rồi từ xanh sang đỏ cái râu cao nhất tới cái thân gần nhất mình được hai cái box đúng không rồi hôm | —
 00:02:12 | nay mình có hai cái box thôi chị rồi mình cứ giữ hai box này sáng hôm mai mình trade tại sao mà ở | —
 00:02:23 | chỗ này em không vẽ cái box nếu mà đúng đó là đúng là cái chỗ này em sẽ vẽ một cái box nè tại sao em | —
-00:02:28 | Dựa những cái rank của cái box | —
-00:02:32 | Nếu như nó thấp hơn 30 điểm | CODE kernel/mentor/box.go [B box range gate]
-00:02:35 | Em sẽ không dẻ | —
-00:02:36 | Cái rank là cái điểm | —
-00:02:38 | Cái khoảng giữa của 2 cái box | —
-00:02:40 | Nó phải nhiều hơn 30 điểm | —
-00:02:42 | Em mới dẻ | —
-00:02:43 | Như ví dụ giữa 2 cái box này | —
-00:02:44 | Nó là 40 mấy điểm | —
-00:02:45 | Ok em chấp nhận | —
-00:02:46 | Nhưng dưới 30 điểm em không dẻ | —
-00:02:47 | Tại vì sao | —
-00:02:49 | Tại vì nếu mà dưới 30 điểm | —
-00:02:50 | Cái rank nó rất nhỏ | —
-00:02:51 | Anh chị không thể nào trade được | —
-00:02:52 | Và thay vào đó | —
+00:02:28 | Dựa những cái rank của cái box | CODE kernel/mentor/box.go:555
+00:02:32 | Nếu như nó thấp hơn 30 điểm | CODE kernel/mentor/box.go:555
+00:02:35 | Em sẽ không dẻ | CODE kernel/mentor/box.go:555
+00:02:36 | Cái rank là cái điểm | CODE kernel/mentor/box.go:555
+00:02:38 | Cái khoảng giữa của 2 cái box | CODE kernel/mentor/box.go:555
+00:02:40 | Nó phải nhiều hơn 30 điểm | CODE kernel/mentor/box.go:555
+00:02:42 | Em mới dẻ | CODE kernel/mentor/box.go:555
+00:02:43 | Như ví dụ giữa 2 cái box này | CODE kernel/mentor/box.go:555
+00:02:44 | Nó là 40 mấy điểm | CODE kernel/mentor/box.go:555
+00:02:45 | Ok em chấp nhận | CODE kernel/mentor/box.go:555
+00:02:46 | Nhưng dưới 30 điểm em không dẻ | CODE kernel/mentor/box.go:555
+00:02:47 | Tại vì sao | CODE kernel/mentor/box.go:555
+00:02:49 | Tại vì nếu mà dưới 30 điểm | CODE kernel/mentor/box.go:555
+00:02:50 | Cái rank nó rất nhỏ | CODE kernel/mentor/box.go:555
+00:02:51 | Anh chị không thể nào trade được | CODE kernel/mentor/box.go:555
+00:02:52 | Và thay vào đó | CODE kernel/mentor/box.go:555
 00:02:54 | Em chỉnh lại | —
 00:02:55 | Đúng không | —
 00:02:56 | Em chỉnh lại | —

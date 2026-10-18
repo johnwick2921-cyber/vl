@@ -1,4 +1,4 @@
-cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 · RULING: 0 · —: 579
+cues: 607/607 · rule cues: 194 · rows: 11 · CODE: 158 · MISMATCH: 15 · NOT-IN-BOT: 21 · RULING: 0 · SPLIT: 0 · —: 413
 
 00:00:00 | Rồi, ok, thì buổi tối ngày hôm nay là ngày thứ 5, là ngày cuối cùng của khóa Mastermind tháng 9. | —
 00:00:12 | Thì một lần nữa em cảm ơn anh chị đã cố gắng học, cố gắng làm recap và cố gắng trâu dòi kiến thức. | —
@@ -36,7 +36,7 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:01:27 | Và anh chị bắt đầu ổn định | —
 00:01:29 | Anh chị bắt đầu biết | —
 00:01:31 | Chờ setup vô lệnh | —
-00:01:33 | Anh chị không FOMO nữa | CODE kernel/mentor/box_trade.go:243 [stop-order model]
+00:01:33 | Anh chị không FOMO nữa | —
 00:01:34 | Anh chị biết anh chị nên vô đâu, anh chị nên out đâu | —
 00:01:37 | Và stop loss anh chị đặt ở đâu | —
 00:01:38 | Đó là cái điều quan trọng nhất | —
@@ -93,33 +93,33 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:03:25 | những anh chị này | —
 00:03:27 | lúc đầu mọi người rất là im lặng | —
 00:03:29 | nhưng mà lúc sau anh chị cố gắng anh chị recap | —
-00:03:32 | thì mọi người có thấy rõ ràng với em là mọi người tiến bộ không | —
-00:03:34 | hay là mọi người vô lệnh, mọi người nhớ | —
-00:03:36 | là mọi người đã từng vô ở đó | —
-00:03:38 | và thua hay thắng | —
-00:03:39 | mọi người tự biết | —
-00:03:40 | rồi | —
-00:03:43 | cái dòng | —
-00:03:47 | Cái slide số 16 | —
-00:03:49 | Trong cái powerpoint của mình | —
-00:03:51 | Nó sẽ đi với anh chị | —
-00:03:54 | Trong suốt hành trình trader | —
-00:03:55 | Nên | —
-00:03:57 | Là in ra hay là ghi xuống | —
-00:04:00 | Ghi sao cho dễ thấy | —
-00:04:01 | Ghi bự bự ra 1 xíu ha | —
-00:04:02 | Đừng có ghi vô mấy cái stick note | —
-00:04:04 | Mình không có nhìn rõ đâu | —
-00:04:05 | Ghi lấy 1 cái tờ giấy A4 | —
-00:04:07 | Ghi ra ha | —
-00:04:08 | Hoặc là in ra cái tờ giấy A4 | —
-00:04:09 | Rồi để trước cái hình trade của mình | —
-00:04:11 | Thì | —
-00:04:13 | Thị trường luôn luôn | —
-00:04:15 | Trong trạng thái | —
-00:04:16 | Một là trending | —
-00:04:18 | Và hai là ranking | —
-00:04:20 | Không còn gì hơn nữa hết | —
+00:03:32 | thì mọi người có thấy rõ ràng với em là mọi người tiến bộ không | CODE kernel/mentor/filters.go:43
+00:03:34 | hay là mọi người vô lệnh, mọi người nhớ | CODE kernel/mentor/filters.go:43
+00:03:36 | là mọi người đã từng vô ở đó | CODE kernel/mentor/filters.go:43
+00:03:38 | và thua hay thắng | CODE kernel/mentor/filters.go:43
+00:03:39 | mọi người tự biết | CODE kernel/mentor/filters.go:43
+00:03:40 | rồi | CODE kernel/mentor/filters.go:43
+00:03:43 | cái dòng | CODE kernel/mentor/filters.go:43
+00:03:47 | Cái slide số 16 | CODE kernel/mentor/filters.go:43
+00:03:49 | Trong cái powerpoint của mình | CODE kernel/mentor/filters.go:43
+00:03:51 | Nó sẽ đi với anh chị | CODE kernel/mentor/filters.go:43
+00:03:54 | Trong suốt hành trình trader | CODE kernel/mentor/filters.go:43
+00:03:55 | Nên | CODE kernel/mentor/filters.go:43
+00:03:57 | Là in ra hay là ghi xuống | CODE kernel/mentor/filters.go:43
+00:04:00 | Ghi sao cho dễ thấy | CODE kernel/mentor/filters.go:43
+00:04:01 | Ghi bự bự ra 1 xíu ha | CODE kernel/mentor/filters.go:43
+00:04:02 | Đừng có ghi vô mấy cái stick note | CODE kernel/mentor/filters.go:43
+00:04:04 | Mình không có nhìn rõ đâu | CODE kernel/mentor/filters.go:43
+00:04:05 | Ghi lấy 1 cái tờ giấy A4 | CODE kernel/mentor/filters.go:43
+00:04:07 | Ghi ra ha | CODE kernel/mentor/filters.go:43
+00:04:08 | Hoặc là in ra cái tờ giấy A4 | CODE kernel/mentor/filters.go:43
+00:04:09 | Rồi để trước cái hình trade của mình | CODE kernel/mentor/filters.go:43
+00:04:11 | Thì | CODE kernel/mentor/filters.go:43
+00:04:13 | Thị trường luôn luôn | CODE kernel/mentor/filters.go:43
+00:04:15 | Trong trạng thái | CODE kernel/mentor/filters.go:43
+00:04:16 | Một là trending | CODE kernel/mentor/filters.go:43
+00:04:18 | Và hai là ranking | CODE kernel/mentor/filters.go:43
+00:04:20 | Không còn gì hơn nữa hết | CODE kernel/mentor/filters.go:43
 00:04:24 | Như mọi người cũng thấy | —
 00:04:24 | Inside bar | —
 00:04:27 | Là cái | —
@@ -128,34 +128,34 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:04:34 | Khi market ranking | —
 00:04:36 | Thì mình nghĩ mình không trade | —
 00:04:37 | Khi nến phá đỉnh và đáy củ | —
-00:04:44 | Giá nên tiếp tục đi theo hướng đó | —
-00:04:46 | Nếu như giá | —
-00:04:48 | Không tiếp tục đi theo hướng mà nó phá | —
-00:04:50 | Thì đó là một cái signal | —
-00:04:51 | Phân tích nến | —
-00:04:55 | Áp dụng trên mỗi khung thời gian | —
-00:04:58 | Sẽ không có một cái khung nào | —
-00:05:01 | Nó khác cái khung nào hết | —
-00:05:02 | Phân tích nến nó đều sẽ giống như nhau | —
-00:05:04 | Nếu như anh chị để ý | —
-00:05:06 | Buổi sáng ngày hôm nay có một cái signal | —
-00:05:09 | Có một cái setup rất là đẹp | —
-00:05:11 | Ở khung lớn | —
-00:05:11 | Để mọi người trade trong ngày luôn | —
-00:05:13 | Nếu mà anh chị đang có trên trạng hiện tại | —
-00:05:16 | Anh chị có thể bật qua khung 4 giờ | —
-00:05:18 | Hồi sáng nó có là 1 cái potential low | —
-00:05:20 | 2 khung 4 giờ | —
-00:05:21 | Nếu như anh chị nào để ý | —
-00:05:23 | Em nghĩ chắc chị Tiny có nè | —
-00:05:25 | Là anh chị thử anh chị bật qua khung 4 giờ đi | —
-00:05:28 | Sáng nó là 1 cái potential low | —
-00:05:29 | 2 của khung 4 giờ rất đẹp luôn | —
-00:05:31 | Nó sell set up trigger | —
-00:05:34 | Là nó rớt luôn tới buổi chiều luôn | —
-00:05:36 | Nên là | —
-00:05:38 | Phân tích nến | —
-00:05:39 | Luôn luôn áp dụng trên mọi khung thời gian | —
+00:04:44 | Giá nên tiếp tục đi theo hướng đó | CODE kernel/mentor/isb_box.go:90
+00:04:46 | Nếu như giá | CODE kernel/mentor/isb_box.go:90
+00:04:48 | Không tiếp tục đi theo hướng mà nó phá | CODE kernel/mentor/isb_box.go:90
+00:04:50 | Thì đó là một cái signal | CODE kernel/mentor/isb_box.go:90
+00:04:51 | Phân tích nến | CODE kernel/mentor/isb_box.go:90
+00:04:55 | Áp dụng trên mỗi khung thời gian | CODE kernel/mentor/isb_box.go:90
+00:04:58 | Sẽ không có một cái khung nào | CODE kernel/mentor/isb_box.go:90
+00:05:01 | Nó khác cái khung nào hết | CODE kernel/mentor/isb_box.go:90
+00:05:02 | Phân tích nến nó đều sẽ giống như nhau | CODE kernel/mentor/isb_box.go:90
+00:05:04 | Nếu như anh chị để ý | CODE kernel/mentor/isb_box.go:90
+00:05:06 | Buổi sáng ngày hôm nay có một cái signal | CODE kernel/mentor/isb_box.go:90
+00:05:09 | Có một cái setup rất là đẹp | CODE kernel/mentor/isb_box.go:90
+00:05:11 | Ở khung lớn | CODE kernel/mentor/isb_box.go:90
+00:05:11 | Để mọi người trade trong ngày luôn | CODE kernel/mentor/isb_box.go:90
+00:05:13 | Nếu mà anh chị đang có trên trạng hiện tại | CODE kernel/mentor/isb_box.go:90
+00:05:16 | Anh chị có thể bật qua khung 4 giờ | CODE kernel/mentor/isb_box.go:90
+00:05:18 | Hồi sáng nó có là 1 cái potential low | CODE kernel/mentor/isb_box.go:90
+00:05:20 | 2 khung 4 giờ | CODE kernel/mentor/isb_box.go:90
+00:05:21 | Nếu như anh chị nào để ý | CODE kernel/mentor/isb_box.go:90
+00:05:23 | Em nghĩ chắc chị Tiny có nè | CODE kernel/mentor/isb_box.go:90
+00:05:25 | Là anh chị thử anh chị bật qua khung 4 giờ đi | CODE kernel/mentor/isb_box.go:90
+00:05:28 | Sáng nó là 1 cái potential low | CODE kernel/mentor/isb_box.go:90
+00:05:29 | 2 của khung 4 giờ rất đẹp luôn | CODE kernel/mentor/isb_box.go:90
+00:05:31 | Nó sell set up trigger | CODE kernel/mentor/isb_box.go:90
+00:05:34 | Là nó rớt luôn tới buổi chiều luôn | CODE kernel/mentor/isb_box.go:90
+00:05:36 | Nên là | CODE kernel/mentor/isb_box.go:90
+00:05:38 | Phân tích nến | CODE kernel/mentor/isb_box.go:90
+00:05:39 | Luôn luôn áp dụng trên mọi khung thời gian | CODE kernel/mentor/isb_box.go:90
 00:05:43 | Sẽ không có gì thay đổi hết | —
 00:05:45 | Tiếp theo | —
 00:05:46 | Giá luôn tiếp tục di chuyển từ level này | —
@@ -186,7 +186,7 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:06:36 | hay như anh | —
 00:06:37 | vô cái lệnh potential low | —
 00:06:40 | trong khi đó, khung 5 phút | —
-00:06:42 | Đang là inside bar | CODE kernel/mentor/isb.go:137 [ISBArm]
+00:06:42 | Đang là inside bar | —
 00:06:45 | Nên là trong cái lúc mà market nó đang range như vậy | —
 00:06:49 | Thì mình hạn chế mình trade | —
 00:06:51 | Tới khi nào nó thoát ra khỏi cái range | —
@@ -197,21 +197,21 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:07:06 | Bây giờ em cần anh chị trả lời giúp em ha | —
 00:07:08 | Lớp học của mình có bao nhiêu setup anh chị | —
 00:07:09 | Lớp học của mình chỉ only đúng 3 setup | —
-00:07:23 | Là inside bar | CODE kernel/mentor/isb.go:137 [ISBArm]
-00:07:26 | Potential high or low | —
-00:07:28 | Và potential low or high | CODE kernel/mentor/phl.go [PLH]
-00:07:30 | Mình chỉ có đúng 3 setup thôi | —
-00:07:32 | Sẽ không có gì khác hết | —
-00:07:34 | Tiếp theo | —
-00:07:37 | Trong 1 setup | —
-00:07:38 | Mình có tổng cộng là bao nhiêu phần | —
-00:07:41 | Nó thấy em bật | —
-00:07:44 | Buflac hay Bflac | —
-00:07:46 | Cái tiện thấy đọc Buflac Bflac | —
-00:07:47 | Là mình có | —
-00:07:48 | Potential high or low | —
+00:07:23 | Là inside bar | CODE kernel/mentor/phl.go:90
+00:07:26 | Potential high or low | CODE kernel/mentor/phl.go:90
+00:07:28 | Và potential low or high | CODE kernel/mentor/phl.go:90
+00:07:30 | Mình chỉ có đúng 3 setup thôi | CODE kernel/mentor/phl.go:90
+00:07:32 | Sẽ không có gì khác hết | CODE kernel/mentor/phl.go:90
+00:07:34 | Tiếp theo | CODE kernel/mentor/phl.go:90
+00:07:37 | Trong 1 setup | CODE kernel/mentor/phl.go:90
+00:07:38 | Mình có tổng cộng là bao nhiêu phần | CODE kernel/mentor/phl.go:90
+00:07:41 | Nó thấy em bật | CODE kernel/mentor/phl.go:90
+00:07:44 | Buflac hay Bflac | CODE kernel/mentor/phl.go:90
+00:07:46 | Cái tiện thấy đọc Buflac Bflac | CODE kernel/mentor/phl.go:90
+00:07:47 | Là mình có | CODE kernel/mentor/phl.go:90
+00:07:48 | Potential high or low | CODE kernel/mentor/phl.go:90
 00:07:51 | Potential low or high | —
-00:07:52 | Và inside bar | CODE kernel/mentor/isb.go:137 [ISBArm]
+00:07:52 | Và inside bar | —
 00:07:53 | Buflac Bflac là nó tạo | —
 00:07:55 | Bull Flag, Bear Flag | —
 00:07:57 | Mọi người nên nhớ nè | —
@@ -225,10 +225,10 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:08:09 | Nó là một cái cờ | —
 00:08:10 | Rồi | —
 00:08:12 | Trong một setup của mình | —
-00:08:16 | Sẽ có tổng cộng 3 phần | CODE kernel/mentor/flag_wall.go:11 [trend-range-trend]
+00:08:16 | Sẽ có tổng cộng 3 phần | —
 00:08:18 | Là Trend, Range và Trend | —
 00:08:21 | Ok | —
-00:08:25 | Với setup inside bar | CODE kernel/mentor/isb.go:137 [ISBArm]
+00:08:25 | Với setup inside bar | —
 00:08:28 | Thì | —
 00:08:29 | Cây nến trend | —
 00:08:32 | Là cây nến quan trọng nhất | —
@@ -236,34 +236,34 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:08:37 | Sẽ là cây nến quan trọng nhất | —
 00:08:38 | Nó xác định cho mình được | —
 00:08:39 | Mình sẽ phải đặt lệnh ở đâu | —
-00:08:41 | Đánh lên hay đánh xuống | —
-00:08:42 | Tiếp tục | —
-00:08:44 | Cái nến trend đầu tiên | —
-00:08:48 | Em có tính râu hay không anh chị | —
-00:08:49 | Ok | —
-00:08:58 | Cây nến trend đầu tiên là tính râu | —
-00:09:02 | Cây nến trend thứ hai | —
-00:09:04 | Cây nến | —
-00:09:05 | Em chưa nói về inside bar ha | CODE kernel/mentor/isb.go:137 [ISBArm]
-00:09:07 | Để như thế nào | —
-00:09:10 | Là cây nến inside bar mình có tính râu hay không | CODE kernel/mentor/isb.go:137 [ISBArm]
-00:09:12 | Không | —
-00:09:17 | Phải như thế nào | —
-00:09:19 | Mới được cây nến đó | —
-00:09:21 | Cây nến sau cây nến trend mới được gọi là inside bar | CODE kernel/mentor/isb.go:137 [ISBArm]
-00:09:24 | Nè mốt anh chị nào không nhớ | —
+00:08:41 | Đánh lên hay đánh xuống | CODE kernel/mentor/isb.go:137
+00:08:42 | Tiếp tục | CODE kernel/mentor/isb.go:137
+00:08:44 | Cái nến trend đầu tiên | CODE kernel/mentor/isb.go:137
+00:08:48 | Em có tính râu hay không anh chị | CODE kernel/mentor/isb.go:137
+00:08:49 | Ok | CODE kernel/mentor/isb.go:137
+00:08:58 | Cây nến trend đầu tiên là tính râu | CODE kernel/mentor/isb.go:137
+00:09:02 | Cây nến trend thứ hai | CODE kernel/mentor/isb.go:137
+00:09:04 | Cây nến | CODE kernel/mentor/isb.go:137
+00:09:05 | Em chưa nói về inside bar ha | CODE kernel/mentor/isb.go:137
+00:09:07 | Để như thế nào | CODE kernel/mentor/isb.go:137
+00:09:10 | Là cây nến inside bar mình có tính râu hay không | CODE kernel/mentor/isb.go:137
+00:09:12 | Không | CODE kernel/mentor/isb.go:137
+00:09:17 | Phải như thế nào | CODE kernel/mentor/isb.go:137
+00:09:19 | Mới được cây nến đó | CODE kernel/mentor/isb.go:137
+00:09:21 | Cây nến sau cây nến trend mới được gọi là inside bar | CODE kernel/mentor/isb.go:137
+00:09:24 | Nè mốt anh chị nào không nhớ | CODE kernel/mentor/isb.go:137
 00:09:32 | Thì cứ nhắm cho em nè | —
 00:09:33 | Inside | —
 00:09:34 | Inside có nghĩa là cây body của cây nến đó | —
 00:09:37 | Phải nằm bên trong cây nến trend | —
-00:09:41 | Thì mới được gọi là inside bar | CODE kernel/mentor/isb.go:137 [ISBArm]
+00:09:41 | Thì mới được gọi là inside bar | —
 00:09:42 | Nhớ nha chị Jay | —
 00:09:44 | Chị Jay hồi nãy có một cái lệnh | —
 00:09:47 | Lệnh ES của chị | —
-00:09:49 | Cái đó không phải là inside bar | CODE kernel/mentor/isb.go:137 [ISBArm]
+00:09:49 | Cái đó không phải là inside bar | —
 00:09:50 | Cái body nó nằm ở ngoài | —
 00:09:52 | Nhớ cho em nha, cái lệnh đó ăn thì có ăn | —
-00:09:55 | Nhưng mà đối với em nó không phải là inside bar | CODE kernel/mentor/isb.go:137 [ISBArm]
+00:09:55 | Nhưng mà đối với em nó không phải là inside bar | —
 00:09:56 | Rồi | —
 00:09:57 | Tiếp tục | —
 00:09:59 | Khi mắt kẹt đang | —
@@ -272,26 +272,26 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:10:07 | Có tổng cộng | —
 00:10:09 | Bao nhiêu setup | —
 00:10:10 | Mình sẽ có tổng trọng | —
-00:10:21 | 2 setup là potential high or low | CODE kernel/mentor/phl.go [PHL]
-00:10:24 | Và inside bar cho lệnh long | CODE kernel/mentor/isb.go:137 [ISBArm]
+00:10:21 | 2 setup là potential high or low | —
+00:10:24 | Và inside bar cho lệnh long | —
 00:10:26 | Và ngược lại | —
 00:10:29 | Trong một xu hướng giảm | —
-00:10:31 | Mình cũng vẫn sẽ có 2 setup | —
-00:10:32 | Là inside bar cho lệnh short | CODE kernel/mentor/isb.go:137 [ISBArm]
-00:10:34 | Và potential low or high | CODE kernel/mentor/phl.go [PLH]
-00:10:37 | Ok ha | —
-00:10:40 | Rồi | —
-00:10:42 | Tiếp tục | —
-00:10:43 | Khi mình vô lệnh ở potential high or low | CODE kernel/mentor/phl.go [PHL]
-00:10:49 | Thì mình | —
-00:10:50 | Target mình về đâu anh chị | —
-00:10:53 | Target mình sẽ về | —
-00:11:11 | Đỉnh cũ | —
-00:11:12 | Và khi mình vô potential lower high | —
-00:11:16 | Thì target mình sẽ về | —
-00:11:18 | Đấy, cũ gần nhất | —
-00:11:20 | Rồi | —
-00:11:28 | Nếu như | —
+00:10:31 | Mình cũng vẫn sẽ có 2 setup | CODE kernel/mentor/phl.go:90
+00:10:32 | Là inside bar cho lệnh short | CODE kernel/mentor/phl.go:90
+00:10:34 | Và potential low or high | CODE kernel/mentor/phl.go:90
+00:10:37 | Ok ha | CODE kernel/mentor/phl.go:90
+00:10:40 | Rồi | CODE kernel/mentor/phl.go:90
+00:10:42 | Tiếp tục | CODE kernel/mentor/phl.go:90
+00:10:43 | Khi mình vô lệnh ở potential high or low | CODE kernel/mentor/phl.go:90
+00:10:49 | Thì mình | CODE kernel/mentor/phl.go:90
+00:10:50 | Target mình về đâu anh chị | CODE kernel/mentor/phl.go:90
+00:10:53 | Target mình sẽ về | CODE kernel/mentor/phl.go:90
+00:11:11 | Đỉnh cũ | CODE kernel/mentor/phl.go:90
+00:11:12 | Và khi mình vô potential lower high | CODE kernel/mentor/phl.go:90
+00:11:16 | Thì target mình sẽ về | CODE kernel/mentor/phl.go:90
+00:11:18 | Đấy, cũ gần nhất | CODE kernel/mentor/phl.go:90
+00:11:20 | Rồi | CODE kernel/mentor/phl.go:90
+00:11:28 | Nếu như | CODE kernel/mentor/phl.go:90
 00:11:32 | Anh chị nhớ giúp em nè | —
 00:11:36 | Khi mà mình đã out lệnh rồi | —
 00:11:39 | Thì mình nên chờ | —
@@ -315,19 +315,19 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:12:26 | Mà nó bật ngược lên lại | —
 00:12:27 | Thì mình sẽ đang có | —
 00:12:29 | Failure to go lower | —
-00:12:33 | Mọi người biết là cái đợt này | —
-00:12:37 | Lý do | —
-00:12:38 | Cái đợt này em cảm thấy là mọi người khá hơn | —
-00:12:41 | Em cảm thấy là em truyền đạp dễ hơn | —
-00:12:44 | Cho mọi người | —
-00:12:44 | Như cái đợt tháng 8 là mọi người biết gì không | —
-00:12:46 | Tại vì em hỏi | —
-00:12:47 | Không phải chê | —
-00:12:49 | Nhưng mà tháng 8 | —
-00:12:52 | Tại vì em không có hỏi mọi người nhiều | —
-00:12:54 | Thì mọi người cứ ngồi mọi người nghe không | —
-00:12:55 | Còn đợt này em interact với anh chị | —
-00:12:57 | Em cố gắng em connect với anh chị rất nhiều | —
+00:12:33 | Mọi người biết là cái đợt này | CODE kernel/mentor/box.go:545
+00:12:37 | Lý do | CODE kernel/mentor/box.go:545
+00:12:38 | Cái đợt này em cảm thấy là mọi người khá hơn | CODE kernel/mentor/box.go:545
+00:12:41 | Em cảm thấy là em truyền đạp dễ hơn | CODE kernel/mentor/box.go:545
+00:12:44 | Cho mọi người | CODE kernel/mentor/box.go:545
+00:12:44 | Như cái đợt tháng 8 là mọi người biết gì không | CODE kernel/mentor/box.go:545
+00:12:46 | Tại vì em hỏi | CODE kernel/mentor/box.go:545
+00:12:47 | Không phải chê | CODE kernel/mentor/box.go:545
+00:12:49 | Nhưng mà tháng 8 | CODE kernel/mentor/box.go:545
+00:12:52 | Tại vì em không có hỏi mọi người nhiều | CODE kernel/mentor/box.go:545
+00:12:54 | Thì mọi người cứ ngồi mọi người nghe không | CODE kernel/mentor/box.go:545
+00:12:55 | Còn đợt này em interact với anh chị | CODE kernel/mentor/box.go:545
+00:12:57 | Em cố gắng em connect với anh chị rất nhiều | CODE kernel/mentor/box.go:545
 00:13:01 | Để anh chị tự trả lời | —
 00:13:03 | Rồi | —
 00:13:14 | Tiếp tục | —
@@ -336,27 +336,27 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:13:24 | Đang uptrend | —
 00:13:25 | Quay về bắt test | —
 00:13:28 | Thì trong lúc bắt test | —
-00:13:30 | Của khung 5 phút | —
-00:13:31 | Khung nhỏ hơn đang làm gì | —
-00:13:33 | Khung nhỏ hơn đang là downtrend | —
-00:13:41 | Khung nhỏ hơn đang là downtrend | —
-00:13:44 | Và ngược lại | —
-00:13:46 | Khi khung 5 phút đang downtrend | —
-00:13:49 | Bắt đầu quay về bắt test | —
-00:13:54 | Thì khung nhỏ hơn sẽ là uptrend | —
-00:13:57 | Vậy | —
-00:14:02 | Khi nào mình biết là | —
-00:14:04 | Nếu mà | —
-00:14:05 | Khung 5 phút đang uptrend | —
-00:14:08 | Thì khi nào mình biết được | —
-00:14:10 | Là | —
-00:14:11 | Market | —
-00:14:13 | Chuẩn bị pullback | —
-00:14:15 | Phá đâu mới được chứ mọi người | —
-00:14:31 | Đâu phải phá đầu rồi đi lên tiếp rồi | —
-00:14:33 | Phá qua đáy của cây nến trước | —
-00:14:37 | Phá đáy của cây nến trước | —
-00:14:40 | Nó vượt qua cái đáy thôi | —
+00:13:30 | Của khung 5 phút | CODE kernel/mentor/mtf.go:22
+00:13:31 | Khung nhỏ hơn đang làm gì | CODE kernel/mentor/mtf.go:22
+00:13:33 | Khung nhỏ hơn đang là downtrend | CODE kernel/mentor/mtf.go:22
+00:13:41 | Khung nhỏ hơn đang là downtrend | CODE kernel/mentor/mtf.go:22
+00:13:44 | Và ngược lại | CODE kernel/mentor/mtf.go:22
+00:13:46 | Khi khung 5 phút đang downtrend | CODE kernel/mentor/mtf.go:22
+00:13:49 | Bắt đầu quay về bắt test | CODE kernel/mentor/mtf.go:22
+00:13:54 | Thì khung nhỏ hơn sẽ là uptrend | CODE kernel/mentor/mtf.go:22
+00:13:57 | Vậy | CODE kernel/mentor/mtf.go:22
+00:14:02 | Khi nào mình biết là | CODE kernel/mentor/mtf.go:22
+00:14:04 | Nếu mà | CODE kernel/mentor/mtf.go:22
+00:14:05 | Khung 5 phút đang uptrend | CODE kernel/mentor/mtf.go:22
+00:14:08 | Thì khi nào mình biết được | CODE kernel/mentor/mtf.go:22
+00:14:10 | Là | CODE kernel/mentor/mtf.go:22
+00:14:11 | Market | CODE kernel/mentor/mtf.go:22
+00:14:13 | Chuẩn bị pullback | CODE kernel/mentor/mtf.go:22
+00:14:15 | Phá đâu mới được chứ mọi người | CODE kernel/mentor/mtf.go:22
+00:14:31 | Đâu phải phá đầu rồi đi lên tiếp rồi | CODE kernel/mentor/mtf.go:22
+00:14:33 | Phá qua đáy của cây nến trước | CODE kernel/mentor/mtf.go:22
+00:14:37 | Phá đáy của cây nến trước | CODE kernel/mentor/mtf.go:22
+00:14:40 | Nó vượt qua cái đáy thôi | CODE kernel/mentor/mtf.go:22
 00:14:41 | Là mình đã biết | —
 00:14:42 | Là mình đã bắt đầu mình có thể | —
 00:14:44 | Mình có thể biết được | —
@@ -417,57 +417,57 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:16:32 | Em sẽ nốt luôn tiếp tục ha | —
 00:16:34 | Khi market open | —
 00:16:37 | Mình sẽ phải làm gì anh chị | —
-00:16:40 | Khi market open | —
-00:16:42 | Mình sẽ phải làm gì | —
-00:16:43 | Cái này là điều bắt buộc | —
-00:16:45 | Em phải biết mọi người phải nhớ nha | —
-00:16:46 | Mình sẽ phải đợi | —
-00:16:52 | ORB 2 phút | CODE kernel/mentor/orb.go:54 [ORBAdvance]
-00:16:53 | Để mình xác được đỉnh và đáy | —
-00:16:56 | Của cây 2 phút đầu tiên trong ngày | —
-00:16:58 | Mình phải xác định được | —
-00:17:01 | 2 cái line đầu tiên trong ngày | —
-00:17:03 | Là cái ORB của khung 2 phút | —
-00:17:04 | Nha, nhớ giúp em điều đó | —
-00:17:06 | Rồi, sau đó | —
-00:17:08 | Mình vẫn sẽ, nếu như nến | —
-00:17:10 | Lớn, nến to | —
-00:17:12 | Market open thì chắc chắn là nến sẽ to rồi ha | —
-00:17:13 | Thì mình vẫn sẽ trade khung 1 phút | —
-00:17:15 | Ha | —
-00:17:17 | Sau | —
-00:17:18 | 30 phút đầu giờ | MISMATCH kernel/mentor/eval.go:1581 -> row 64
-00:17:21 | Khi market bắt đầu ổn định, volume bắt đầu vô ổn định lại rồi | —
-00:17:24 | Thì mình sẽ | —
-00:17:25 | Trade khung 2 phút | —
-00:17:27 | Tại vì sao? Tại vì khung 2 phút ít bị quét râu | —
-00:17:30 | Ha | —
-00:17:32 | Trade khung 2 phút ít bị quét râu | —
-00:17:33 | Có một cái điểm này nữa | —
-00:17:36 | Là em sẽ nhắc mọi người | —
-00:17:38 | Khi anh chị | —
-00:17:40 | Nếu anh chị không có thời gian trade buổi sáng | —
-00:17:44 | Không có thời gian trade buổi sáng | —
-00:17:46 | Khi anh chị chỉ có thời gian trade buổi tối | —
-00:17:49 | Thì nếu như buổi tối | —
-00:17:51 | Mắc kẹt nó chạy mạnh | —
-00:17:51 | Thì mình trade cùng 2 phút bình thường | —
-00:17:53 | Em không nói gì | —
-00:17:53 | Nhưng nếu những ngày nào mắc kẹt nó không chạy | —
-00:17:57 | Mà nó chạy hay không là mình biết | —
-00:17:59 | Cùng 1 phút là nó chạy có chút xíu | —
-00:18:01 | Cái nến chút xíu | —
-00:18:02 | Thì làm ơn giúp em | —
-00:18:03 | Trade khung 5 phút only | —
-00:18:06 | Cho buổi tối | —
-00:18:07 | Buổi tối là trade khung 5 phút only | NOT-IN-BOT -> row 65 (evening slow, no number)
-00:18:13 | Nếu như mắc kẹt chạy ít | —
-00:18:15 | Còn như buổi tối ngày hôm qua mắc kẹt nó chạy 100-200 điểm | —
-00:18:18 | Thì em không nói | —
-00:18:19 | Nhưng nếu mắc kẹt nó chạy 1 buổi tối | —
-00:18:21 | Chạy cần mấy chục điểm | —
-00:18:22 | Thì nên trade khung 5 phút | —
-00:18:26 | Nó không chạy mới phải chờ 5 phút | —
+00:16:40 | Khi market open | CODE kernel/mentor/orb.go:54
+00:16:42 | Mình sẽ phải làm gì | CODE kernel/mentor/orb.go:54
+00:16:43 | Cái này là điều bắt buộc | CODE kernel/mentor/orb.go:54
+00:16:45 | Em phải biết mọi người phải nhớ nha | CODE kernel/mentor/orb.go:54
+00:16:46 | Mình sẽ phải đợi | CODE kernel/mentor/orb.go:54
+00:16:52 | ORB 2 phút | CODE kernel/mentor/orb.go:54
+00:16:53 | Để mình xác được đỉnh và đáy | CODE kernel/mentor/orb.go:54
+00:16:56 | Của cây 2 phút đầu tiên trong ngày | CODE kernel/mentor/orb.go:54
+00:16:58 | Mình phải xác định được | CODE kernel/mentor/orb.go:54
+00:17:01 | 2 cái line đầu tiên trong ngày | CODE kernel/mentor/orb.go:54
+00:17:03 | Là cái ORB của khung 2 phút | CODE kernel/mentor/orb.go:54
+00:17:04 | Nha, nhớ giúp em điều đó | CODE kernel/mentor/orb.go:54
+00:17:06 | Rồi, sau đó | CODE kernel/mentor/orb.go:54
+00:17:08 | Mình vẫn sẽ, nếu như nến | CODE kernel/mentor/orb.go:54
+00:17:10 | Lớn, nến to | CODE kernel/mentor/orb.go:54
+00:17:12 | Market open thì chắc chắn là nến sẽ to rồi ha | MISMATCH kernel/mentor/eval.go:1581
+00:17:13 | Thì mình vẫn sẽ trade khung 1 phút | MISMATCH kernel/mentor/eval.go:1581
+00:17:15 | Ha | MISMATCH kernel/mentor/eval.go:1581
+00:17:17 | Sau | MISMATCH kernel/mentor/eval.go:1581
+00:17:18 | 30 phút đầu giờ | MISMATCH kernel/mentor/eval.go:1581
+00:17:21 | Khi market bắt đầu ổn định, volume bắt đầu vô ổn định lại rồi | MISMATCH kernel/mentor/eval.go:1581
+00:17:24 | Thì mình sẽ | MISMATCH kernel/mentor/eval.go:1581
+00:17:25 | Trade khung 2 phút | MISMATCH kernel/mentor/eval.go:1581
+00:17:27 | Tại vì sao? Tại vì khung 2 phút ít bị quét râu | MISMATCH kernel/mentor/eval.go:1581
+00:17:30 | Ha | MISMATCH kernel/mentor/eval.go:1581
+00:17:32 | Trade khung 2 phút ít bị quét râu | MISMATCH kernel/mentor/eval.go:1581
+00:17:33 | Có một cái điểm này nữa | MISMATCH kernel/mentor/eval.go:1581
+00:17:36 | Là em sẽ nhắc mọi người | MISMATCH kernel/mentor/eval.go:1581
+00:17:38 | Khi anh chị | MISMATCH kernel/mentor/eval.go:1581
+00:17:40 | Nếu anh chị không có thời gian trade buổi sáng | MISMATCH kernel/mentor/eval.go:1581
+00:17:44 | Không có thời gian trade buổi sáng | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:17:46 | Khi anh chị chỉ có thời gian trade buổi tối | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:17:49 | Thì nếu như buổi tối | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:17:51 | Mắc kẹt nó chạy mạnh | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:17:51 | Thì mình trade cùng 2 phút bình thường | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:17:53 | Em không nói gì | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:17:53 | Nhưng nếu những ngày nào mắc kẹt nó không chạy | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:17:57 | Mà nó chạy hay không là mình biết | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:17:59 | Cùng 1 phút là nó chạy có chút xíu | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:18:01 | Cái nến chút xíu | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:18:02 | Thì làm ơn giúp em | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:18:03 | Trade khung 5 phút only | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:18:06 | Cho buổi tối | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:18:07 | Buổi tối là trade khung 5 phút only | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:18:13 | Nếu như mắc kẹt chạy ít | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:18:15 | Còn như buổi tối ngày hôm qua mắc kẹt nó chạy 100-200 điểm | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:18:18 | Thì em không nói | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:18:19 | Nhưng nếu mắc kẹt nó chạy 1 buổi tối | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:18:21 | Chạy cần mấy chục điểm | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:18:22 | Thì nên trade khung 5 phút | NOT-IN-BOT kernel/mentor/eval.go:1579
+00:18:26 | Nó không chạy mới phải chờ 5 phút | NOT-IN-BOT kernel/mentor/eval.go:1579
 00:18:32 | Tại vì sao | —
 00:18:33 | Nó không chạy thì nó sẽ quét râu | —
 00:18:36 | Mọi người nên nhớ em nè | —
@@ -476,8 +476,8 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:18:40 | Và mình không muốn cái điều quét râu xảy ra | —
 00:18:43 | Trade 5 phút thì mình trade 0.5 phút thôi anh | —
 00:18:47 | Đánh potential low 2 low 0.5 phút thôi | —
-00:18:50 | Hoặc là inside bar 0.5 phút | CODE kernel/mentor/isb.go:137 [ISBArm]
-00:18:51 | Trời buổi tối có dự lệnh inside bar 5 phút đẹp lắm hả chị | CODE kernel/mentor/isb.go:137 [ISBArm]
+00:18:50 | Hoặc là inside bar 0.5 phút | —
+00:18:51 | Trời buổi tối có dự lệnh inside bar 5 phút đẹp lắm hả chị | —
 00:18:53 | Thì mình sẽ trade 0.5 phút | —
 00:18:58 | Buổi tối | —
 00:18:59 | Còn qua tới market của Europe | —
@@ -506,15 +506,15 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:20:10 | Bây giờ mọi người đã bắt đầu | —
 00:20:12 | Mọi người có một cái system | —
 00:20:13 | Nên nhớ nè | —
-00:20:15 | Nên nhớ với em nè | —
-00:20:18 | Mình sẽ không FOMO | CODE kernel/mentor/box_trade.go:243 [stop-order model]
-00:20:20 | Mình sẽ không FOMO nữa | CODE kernel/mentor/box_trade.go:243 [stop-order model]
-00:20:23 | Đặt lệnh cho em | —
-00:20:25 | Mình sẽ không vô giá market nữa | CODE kernel/mentor/box_trade.go:243 [stop-order model]
-00:20:27 | Mình phải bắt buộc | —
-00:20:29 | Mình phải set lệnh | CODE kernel/mentor/box_trade.go:243 [stop-order model]
-00:20:31 | Mình phải nhìn market đang làm cái gì | —
-00:20:33 | Rồi | —
+00:20:15 | Nên nhớ với em nè | CODE kernel/mentor/box_trade.go:187
+00:20:18 | Mình sẽ không FOMO | CODE kernel/mentor/box_trade.go:187
+00:20:20 | Mình sẽ không FOMO nữa | CODE kernel/mentor/box_trade.go:187
+00:20:23 | Đặt lệnh cho em | CODE kernel/mentor/box_trade.go:187
+00:20:25 | Mình sẽ không vô giá market nữa | CODE kernel/mentor/box_trade.go:187
+00:20:27 | Mình phải bắt buộc | CODE kernel/mentor/box_trade.go:187
+00:20:29 | Mình phải set lệnh | CODE kernel/mentor/box_trade.go:187
+00:20:31 | Mình phải nhìn market đang làm cái gì | CODE kernel/mentor/box_trade.go:187
+00:20:33 | Rồi | CODE kernel/mentor/box_trade.go:187
 00:20:34 | Khi mình | —
 00:20:36 | Bây giờ em không biết là | —
 00:20:39 | Anh chị có hiểu được cái terms này hay không | —
@@ -557,7 +557,7 @@ cues: 607/607 marked · rules: 28 · CODE: 26 · MISMATCH: 1 · NOT-IN-BOT: 1 ·
 00:21:45 | Em chắc chắn 100% là mọi người sẽ không nghỉ | —
 00:21:48 | Nên đừng để cho bản thân mình | —
 00:21:50 | Có cái suy nghĩ đó | —
-00:21:51 | Đứng ra, giờ đứng dậy | CODE kernel/mentor [B discipline]
+00:21:51 | Đứng ra, giờ đứng dậy | —
 00:21:55 | Đi ra chỗ khác liền | —
 00:21:56 | Cái việc mà mọi người không suy nghĩ | —
 00:21:59 | Mọi người chỉ cần | —

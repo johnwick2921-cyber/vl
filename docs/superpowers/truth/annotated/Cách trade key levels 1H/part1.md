@@ -1,9 +1,9 @@
-cues: 282/282 marked · rules: 14 · CODE: 14 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · —: 268
+cues: 282/282 · rule cues: 73 · rows: 5 · CODE: 73 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · SPLIT: 0 · —: 209
 
-00:00:00 | Đây là cái cách mà em cảm thấy từ bữa tới giờ nó rất ngon, nó trade rất ok, nó trade rất ok. | —
-00:00:14 | Và cái này nó là một cái cách đánh support resistance, nó là một cách đánh support resistance. | —
-00:00:26 | Nhưng mà tại sao em lại nói là nó ok ở đây? | —
-00:00:30 | Tại vì như thế này đánh gì? | —
+00:00:00 | Đây là cái cách mà em cảm thấy từ bữa tới giờ nó rất ngon, nó trade rất ok, nó trade rất ok. | CODE kernel/mentor/mentor.go:548
+00:00:14 | Và cái này nó là một cái cách đánh support resistance, nó là một cách đánh support resistance. | CODE kernel/mentor/mentor.go:548
+00:00:26 | Nhưng mà tại sao em lại nói là nó ok ở đây? | CODE kernel/mentor/mentor.go:548
+00:00:30 | Tại vì như thế này đánh gì? | CODE kernel/mentor/mentor.go:548
 00:00:31 | Bây giờ mọi người thấy là cái major level của mình | —
 00:00:36 | Cái level của khung 1 giờ của mình | —
 00:00:38 | Nó rất đúng | —
@@ -57,7 +57,7 @@ cues: 282/282 marked · rules: 14 · CODE: 14 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 00:02:19 | 50 đô, thôi đừng, đừng | —
 00:02:20 | Nói chung là đừng | —
 00:02:21 | Tray NQ được rồi | —
-00:02:23 | NQ MNQ là ok rồi, đừng tray ES | CODE [repo MNQ end-to-end]
+00:02:23 | NQ MNQ là ok rồi, đừng tray ES | —
 00:02:26 | Ok, rồi | —
 00:02:28 | Bây giờ, cái cách Tray sẽ là như thế nào? | —
 00:02:31 | Những cái level như này nè anh chị | —
@@ -70,7 +70,7 @@ cues: 282/282 marked · rules: 14 · CODE: 14 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 00:02:45 | Mỗi buổi sáng | —
 00:02:46 | Buổi sáng ha | —
 00:02:48 | Buổi tối thì vẫn được | —
-00:02:50 | Nhưng mà buổi tối thì em không có recommend cho lắm | CODE kernel/mentor/eval.go:1579 [B evening]
+00:02:50 | Nhưng mà buổi tối thì em không có recommend cho lắm | —
 00:02:52 | Nhưng mà buổi sáng | —
 00:02:53 | Ở những cái level em sẽ có một cái tray như này | —
 00:02:59 | Để em làm cái chạc khác cho nó dễ nhìn xíu | —
@@ -89,38 +89,38 @@ cues: 282/282 marked · rules: 14 · CODE: 14 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 00:03:31 | Tại vì đây là những cái level | —
 00:03:37 | Thì những cái level này | —
 00:03:46 | Khi nó rớt về support | —
-00:03:50 | Khi nó rớt về support | —
-00:03:52 | Là những cái level này đúng không | —
-00:03:53 | Những cây nến nào | —
-00:03:55 | Đụng cái level | —
-00:03:57 | Em sẽ đặt 1 lệnh buy stop | CODE kernel/mentor/box_trade.go:243 [stop order with reference candle]
-00:03:59 | Ở trên cây nến đó | —
-00:04:01 | Và stop loss | —
-00:04:03 | Nó như là em đánh potential 2 low vậy đó | —
-00:04:05 | Và cái stop loss của nó là | —
-00:04:07 | Em đặt ở đấy | —
-00:04:09 | Cái nến bị vượt qua | —
-00:04:10 | Em đặt ở đấy cái nến bị vượt qua | —
-00:04:13 | Nhưng | —
-00:04:15 | Nếu như cái cây nến đụng cái level | —
-00:04:17 | Mà cây nến sau đó | —
-00:04:19 | Nó không fill | —
-00:04:20 | Em cancel | —
-00:04:22 | Anh chị theo kịp không | —
-00:04:25 | Anh chị theo kịp với em không | —
-00:04:27 | Là những cây nến nào | —
-00:04:29 | Nó đụng cái level | —
-00:04:31 | Em sẽ đặt một cái lệnh buy stop | —
-00:04:32 | Ở trên cây nến đó | —
-00:04:34 | Mọi người thấy rõ ràng không | —
-00:04:37 | Còn nếu như cây nến tiếp theo | —
-00:04:42 | Nó không fill em | —
-00:04:42 | Em cancel | —
-00:04:43 | Và ngược lại cho lệnh sell | —
-00:04:46 | Ngược lại cho lệnh sell stop | —
-00:04:55 | Nến nào đụng là được | —
-00:04:59 | Nến đỏ là càng tốt | —
-00:05:00 | Nếu mà đụng resistance nến đỏ là càng tốt | CODE kernel/mentor/box_trade.go:243 [stop order]
+00:03:50 | Khi nó rớt về support | CODE kernel/mentor/box_trade.go:187
+00:03:52 | Là những cái level này đúng không | CODE kernel/mentor/box_trade.go:187
+00:03:53 | Những cây nến nào | CODE kernel/mentor/box_trade.go:187
+00:03:55 | Đụng cái level | CODE kernel/mentor/box_trade.go:187
+00:03:57 | Em sẽ đặt 1 lệnh buy stop | CODE kernel/mentor/box_trade.go:187
+00:03:59 | Ở trên cây nến đó | CODE kernel/mentor/box_trade.go:187
+00:04:01 | Và stop loss | CODE kernel/mentor/box_trade.go:187
+00:04:03 | Nó như là em đánh potential 2 low vậy đó | CODE kernel/mentor/box_trade.go:187
+00:04:05 | Và cái stop loss của nó là | CODE kernel/mentor/box_trade.go:187
+00:04:07 | Em đặt ở đấy | CODE kernel/mentor/box_trade.go:187
+00:04:09 | Cái nến bị vượt qua | CODE kernel/mentor/box_trade.go:187
+00:04:10 | Em đặt ở đấy cái nến bị vượt qua | CODE kernel/mentor/box_trade.go:187
+00:04:13 | Nhưng | CODE kernel/mentor/box_trade.go:187
+00:04:15 | Nếu như cái cây nến đụng cái level | CODE kernel/mentor/box_trade.go:187
+00:04:17 | Mà cây nến sau đó | CODE kernel/mentor/box_trade.go:187
+00:04:19 | Nó không fill | CODE kernel/mentor/box_trade.go:187
+00:04:20 | Em cancel | CODE kernel/mentor/box_trade.go:187
+00:04:22 | Anh chị theo kịp không | CODE kernel/mentor/box_trade.go:187
+00:04:25 | Anh chị theo kịp với em không | CODE kernel/mentor/box_trade.go:187
+00:04:27 | Là những cây nến nào | CODE kernel/mentor/box_trade.go:187
+00:04:29 | Nó đụng cái level | CODE kernel/mentor/box_trade.go:187
+00:04:31 | Em sẽ đặt một cái lệnh buy stop | CODE kernel/mentor/box_trade.go:188
+00:04:32 | Ở trên cây nến đó | CODE kernel/mentor/box_trade.go:188
+00:04:34 | Mọi người thấy rõ ràng không | CODE kernel/mentor/box_trade.go:188
+00:04:37 | Còn nếu như cây nến tiếp theo | CODE kernel/mentor/box_trade.go:188
+00:04:42 | Nó không fill em | CODE kernel/mentor/box_trade.go:188
+00:04:42 | Em cancel | CODE kernel/mentor/box_trade.go:188
+00:04:43 | Và ngược lại cho lệnh sell | CODE kernel/mentor/box_trade.go:188
+00:04:46 | Ngược lại cho lệnh sell stop | CODE kernel/mentor/box_trade.go:188
+00:04:55 | Nến nào đụng là được | CODE kernel/mentor/box_trade.go:188
+00:04:59 | Nến đỏ là càng tốt | CODE kernel/mentor/box_trade.go:188
+00:05:00 | Nếu mà đụng resistance nến đỏ là càng tốt | CODE kernel/mentor/box_trade.go:188
 00:05:02 | Nếu mà đụng support nến xanh | —
 00:05:04 | Thì càng tốt | —
 00:05:05 | Rồi đây | —
@@ -175,21 +175,21 @@ cues: 282/282 marked · rules: 14 · CODE: 14 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 00:06:29 | Rồi | —
 00:06:30 | Tiếp tục | —
 00:06:31 | Những cái level nào | —
-00:06:34 | Anh chị thấy nó gần nhau quá | CODE kernel/mentor/box_trade.go [B near-box]
-00:06:36 | Một cái nến nó bằng cái rank của 2 cái level rồi | —
-00:06:40 | Thì | —
-00:06:41 | Ngồi im | —
-00:06:42 | Chờ nó thoát ra được 2 cái level đi | —
-00:06:45 | Để có 1 cái rank mình bự hơn | —
-00:06:47 | Mình trade | —
-00:06:48 | Dạ không | —
-00:06:50 | Đúng rồi | —
-00:06:50 | 2 cái level gần nhau quá đừng chơi chị | CODE kernel/mentor/box_trade.go [B near-box]
-00:06:52 | 2 cái level gần nhau quá | CODE kernel/mentor/box_trade.go [B near-box]
-00:06:54 | Nếu mà buổi tối á | CODE kernel/mentor/eval.go:1579 [B evening]
-00:06:55 | Thì chắc chắn là cái rank rất là nhỏ | —
-00:06:58 | Buổi sáng thì anh chị phải scapping nữa | —
-00:07:01 | Nên là những cái level mà gần nhau quá | CODE kernel/mentor/box_trade.go [B near-box]
+00:06:34 | Anh chị thấy nó gần nhau quá | CODE kernel/mentor/box_trade.go:205
+00:06:36 | Một cái nến nó bằng cái rank của 2 cái level rồi | CODE kernel/mentor/box_trade.go:205
+00:06:40 | Thì | CODE kernel/mentor/box_trade.go:205
+00:06:41 | Ngồi im | CODE kernel/mentor/box_trade.go:205
+00:06:42 | Chờ nó thoát ra được 2 cái level đi | CODE kernel/mentor/box_trade.go:205
+00:06:45 | Để có 1 cái rank mình bự hơn | CODE kernel/mentor/box_trade.go:205
+00:06:47 | Mình trade | CODE kernel/mentor/box_trade.go:205
+00:06:48 | Dạ không | CODE kernel/mentor/box_trade.go:205
+00:06:50 | Đúng rồi | CODE kernel/mentor/box_trade.go:205
+00:06:50 | 2 cái level gần nhau quá đừng chơi chị | CODE kernel/mentor/box_trade.go:205
+00:06:52 | 2 cái level gần nhau quá | CODE kernel/mentor/box_trade.go:205
+00:06:54 | Nếu mà buổi tối á | CODE kernel/mentor/box_trade.go:205
+00:06:55 | Thì chắc chắn là cái rank rất là nhỏ | CODE kernel/mentor/box_trade.go:205
+00:06:58 | Buổi sáng thì anh chị phải scapping nữa | CODE kernel/mentor/box_trade.go:205
+00:07:01 | Nên là những cái level mà gần nhau quá | —
 00:07:03 | Bỏ đi để nó thoát ra | —
 00:07:04 | Anh chị thấy nó thoát ra 1 cái nè | —
 00:07:07 | Nó đi smooth không | —
@@ -224,29 +224,29 @@ cues: 282/282 marked · rules: 14 · CODE: 14 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 00:08:08 | Là chị bật lên thôi | —
 00:08:11 | Giống như mỗi cái level | —
 00:08:12 | Cái level mà hôm bữa | —
-00:08:14 | Hôm bữa cái major level em hay gửi á | —
-00:08:18 | Rồi đây ví dụ nè | —
-00:08:23 | Anh chị thấy rõ ràng không | —
-00:08:24 | Những cái level này nè | —
-00:08:25 | Đừng trade | —
-00:08:26 | Đợi luôn | —
-00:08:28 | Nó nằm ở giữa những cái level này | —
-00:08:29 | Đừng trade đợi luôn | —
-00:08:30 | Rồi nè | —
-00:08:31 | Đây đúng không | —
-00:08:33 | Anh chị nhìn rõ ha | —
-00:08:35 | Cái nến xanh này anh chị thấy nó đụng level không | —
-00:08:38 | Đụng cái level nè | —
-00:08:40 | Đặt lệnh sell stop đây | —
-00:08:42 | Kéo xuống 1 cái | —
-00:08:43 | Vậy cái level gần nhất | —
-00:08:45 | Có nghĩa là mình đang đánh ping pong với những cái level | CODE kernel/mentor/box_trade.go:205 [pingPongVerdict gap>=50]
-00:08:48 | Còn những cái level nào gần nhau quá | CODE kernel/mentor/box_trade.go [B near-box]
-00:08:50 | Đừng trade những cái level đó | —
-00:08:52 | Đợi đi | —
-00:08:52 | Đợi nó ra được những cái level nó bự hơn đi | —
-00:08:56 | Mình trade | —
-00:08:56 | Nó dễ dàng hơn | —
+00:08:14 | Hôm bữa cái major level em hay gửi á | CODE kernel/mentor/box_trade.go:205
+00:08:18 | Rồi đây ví dụ nè | CODE kernel/mentor/box_trade.go:205
+00:08:23 | Anh chị thấy rõ ràng không | CODE kernel/mentor/box_trade.go:205
+00:08:24 | Những cái level này nè | CODE kernel/mentor/box_trade.go:205
+00:08:25 | Đừng trade | CODE kernel/mentor/box_trade.go:205
+00:08:26 | Đợi luôn | CODE kernel/mentor/box_trade.go:205
+00:08:28 | Nó nằm ở giữa những cái level này | CODE kernel/mentor/box_trade.go:205
+00:08:29 | Đừng trade đợi luôn | CODE kernel/mentor/box_trade.go:205
+00:08:30 | Rồi nè | CODE kernel/mentor/box_trade.go:205
+00:08:31 | Đây đúng không | CODE kernel/mentor/box_trade.go:205
+00:08:33 | Anh chị nhìn rõ ha | CODE kernel/mentor/box_trade.go:205
+00:08:35 | Cái nến xanh này anh chị thấy nó đụng level không | CODE kernel/mentor/box_trade.go:205
+00:08:38 | Đụng cái level nè | CODE kernel/mentor/box_trade.go:205
+00:08:40 | Đặt lệnh sell stop đây | CODE kernel/mentor/box_trade.go:205
+00:08:42 | Kéo xuống 1 cái | CODE kernel/mentor/box_trade.go:205
+00:08:43 | Vậy cái level gần nhất | CODE kernel/mentor/box_trade.go:205
+00:08:45 | Có nghĩa là mình đang đánh ping pong với những cái level | CODE kernel/mentor/box_trade.go:205
+00:08:48 | Còn những cái level nào gần nhau quá | CODE kernel/mentor/box_trade.go:205
+00:08:50 | Đừng trade những cái level đó | CODE kernel/mentor/box_trade.go:205
+00:08:52 | Đợi đi | CODE kernel/mentor/box_trade.go:205
+00:08:52 | Đợi nó ra được những cái level nó bự hơn đi | CODE kernel/mentor/box_trade.go:205
+00:08:56 | Mình trade | CODE kernel/mentor/box_trade.go:205
+00:08:56 | Nó dễ dàng hơn | CODE kernel/mentor/box_trade.go:205
 00:08:58 | Đúng không | —
 00:08:59 | Nè cái nến này | —
 00:09:00 | Cái nến đỏ nè | —
@@ -263,14 +263,14 @@ cues: 282/282 marked · rules: 14 · CODE: 14 · MISMATCH: 0 · NOT-IN-BOT: 0 ·
 00:09:22 | Mỗi lần mọi người bật cái chạc em lên nến xanh như thế nào | —
 00:09:24 | Đó | —
 00:09:31 | Đây là cái cách mới mà em trade | —
-00:09:34 | Nhưng mà buổi tối | CODE kernel/mentor/eval.go:1579 [B evening]
+00:09:34 | Nhưng mà buổi tối | —
 00:09:36 | Thì anh chị nên cẩn thận | —
-00:09:37 | Thật sự là buổi tối nó không có đi giống như buổi sáng đâu | CODE kernel/mentor/eval.go:1579 [B evening]
+00:09:37 | Thật sự là buổi tối nó không có đi giống như buổi sáng đâu | —
 00:09:40 | Buổi tối nó đa số | —
 00:09:42 | Tại vì có những ngày nó có volume nhiều | —
 00:09:44 | Nó chạy smooth | —
 00:09:46 | Thì mình ok | —
-00:09:47 | Nhưng mà những buổi tối nó không có volume | CODE kernel/mentor/eval.go:1579 [B evening]
+00:09:47 | Nhưng mà những buổi tối nó không có volume | —
 00:09:51 | Thì nó sẽ không đủ lực | —
 00:09:51 | Nó chạy ở những cái level và nó cứ chạy ngang | —
 00:09:53 | Nó cứ ranging ở những cái level không à | —
