@@ -17,13 +17,19 @@ import (
 // {flat, at} in friend mode only, fail-closed on a position-read error.
 
 type fakeFlatTrader struct {
-	trader.Trader // embedded nil interface: only GetPositions is exercised
+	trader.Trader // embedded nil interface: only GetPositions/GetOpenOrders are exercised
 	positions     []map[string]interface{}
 	err           error
+	orders        []trader.OpenOrder
+	ordersErr     error
 }
 
 func (f fakeFlatTrader) GetPositions() ([]map[string]interface{}, error) {
 	return f.positions, f.err
+}
+
+func (f fakeFlatTrader) GetOpenOrders(string) ([]trader.OpenOrder, error) {
+	return f.orders, f.ordersErr
 }
 
 func newFriendFlatServer(t *testing.T, friend bool, brokers map[string]trader.Trader) *Server {
@@ -101,6 +107,26 @@ func TestFriendFlatProbeErrorFailsClosed(t *testing.T) {
 	_, body := getFriendFlat(t, s)
 	if body["flat"] != false {
 		t.Fatalf("flat = %v, want false (probe error must fail closed)", body["flat"])
+	}
+}
+
+func TestFriendFlatWorkingOrderNotFlat(t *testing.T) {
+	s := newFriendFlatServer(t, true, map[string]trader.Trader{
+		"t1": fakeFlatTrader{orders: []trader.OpenOrder{{OrderID: "w1", Symbol: "MNQ"}}},
+	})
+	_, body := getFriendFlat(t, s)
+	if body["flat"] != false {
+		t.Fatalf("flat = %v, want false (a working/pending order must block restart)", body["flat"])
+	}
+}
+
+func TestFriendFlatOrdersErrorFailsClosed(t *testing.T) {
+	s := newFriendFlatServer(t, true, map[string]trader.Trader{
+		"t1": fakeFlatTrader{ordersErr: errors.New("order book down")},
+	})
+	_, body := getFriendFlat(t, s)
+	if body["flat"] != false {
+		t.Fatalf("flat = %v, want false (order-book error must fail closed)", body["flat"])
 	}
 }
 

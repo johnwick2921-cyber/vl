@@ -18,12 +18,24 @@ func (s *Server) handleFriendFlat(c *gin.Context) {
 	for _, at := range s.traderManager.GetAllTraders() {
 		positions, err := at.GetPositions()
 		if err != nil {
-			// A probe error = NOT flat (fail closed): an unreadable position
-			// state must never read as "safe to restart".
+			// R9: UNKNOWN / stale / disconnected position state = NOT flat
+			// (GetPositions already errors when there is no fresh NT8 snapshot
+			// and no confirmed entry fill — never a fabricated flat book).
 			flat = false
 			break
 		}
 		if !flatFromPositions(positions) {
+			flat = false
+			break
+		}
+		orders, err := at.GetOpenOrders("")
+		if err != nil {
+			// An unreadable order book is also UNKNOWN → not flat.
+			flat = false
+			break
+		}
+		if len(orders) > 0 {
+			// A working/pending entry or bracket order → not flat (R9 all-clear).
 			flat = false
 			break
 		}
