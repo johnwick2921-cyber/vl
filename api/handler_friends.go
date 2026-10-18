@@ -540,12 +540,12 @@ func sha256Hex(s string) string {
 
 // friendInstallCode is the B2 install-code payload (base64url of this JSON).
 type friendInstallCode struct {
-	V        int    `json:"v"`
-	Name     string `json:"name"`
-	Host     string `json:"host"`
-	NTPort   int    `json:"nt_port"`
-	WebPort  int    `json:"web_port"`
-	Key      string `json:"connect_key"`
+	V         int    `json:"v"`
+	Name      string `json:"name"`
+	Host      string `json:"host"`
+	NTPort    int    `json:"nt_port"`
+	WebPort   int    `json:"web_port"`
+	Key       string `json:"connect_key"`
 	TSAuthKey string `json:"ts_authkey,omitempty"`
 }
 
@@ -599,6 +599,11 @@ func setFriendEnvKey(name, key string) error {
 
 // ---- Tailscale ------------------------------------------------------------
 
+// tailscaleAPIBase is the Tailscale API base URL. A var so the S11 proof can
+// point the production handler's Tailscale delete at a fake server; the
+// production value is the real api.tailscale.com.
+var tailscaleAPIBase = "https://api.tailscale.com"
+
 // tailscaleDeleteDevice deletes the friend's Tailscale device via the API.
 // Returns a status string and whether the delete happened (a missing key or an
 // unknown device is surfaced — never a silent skip, S11/B2).
@@ -616,7 +621,7 @@ func tailscaleDeleteDevice(row *friendRecord) (string, bool) {
 	// at runtime so the census does not misread it as the enrollment key — the
 	// two are unrelated.
 	deviceSeg := strings.Join([]string{"dev", "ice"}, "")
-	req, err := http.NewRequest(http.MethodDelete, "https://api.tailscale.com/api/v2/"+deviceSeg+"/"+row.TailscaleDeviceID, nil)
+	req, err := http.NewRequest(http.MethodDelete, tailscaleAPIBase+"/api/v2/"+deviceSeg+"/"+row.TailscaleDeviceID, nil)
 	if err != nil {
 		return "request_error", false
 	}
