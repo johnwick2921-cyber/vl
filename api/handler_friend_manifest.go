@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -13,12 +14,27 @@ import (
 // everything before installing. Served ONLY in friend mode (VL_FRIEND_INSTANCE=1);
 // the owner's bot answers 404 on every /api/friend/* route.
 
-// friendManifestDir is where the release build drops the friend manifest, its
-// signature and the artifacts (B10.3: /home/hoang/vl-friends/_dist/<build>/,
-// with _dist/current → the latest build). The friend bot's WorkingDirectory is
-// /home/hoang/vl-friends/<name>/ (B2), so "../_dist/current" is the shared dist
-// served only through the friend's own bot. Tests point it at a temp dir.
-var friendManifestDir = filepath.Join("..", "_dist", "current")
+// The build (DS-108 deploy/friend/build.sh) drops each build into
+// /home/hoang/vl-friends/_dist/<build>/ and writes the build name into
+// _dist/LATEST. The friend bot's WorkingDirectory is /home/hoang/vl-friends/<name>/
+// (B2), so "../_dist" is the shared dist root. A LATEST pointer file (never a
+// symlink swap) avoids any deletion when a new build lands: old builds persist.
+var (
+	friendDistRoot    = filepath.Join("..", "_dist")
+	friendManifestDir string // test override; empty = resolve from _dist/LATEST
+)
+
+// resolveFriendDistDir returns the active dist dir (the LATEST build), or "".
+func (s *Server) resolveFriendDistDir() string {
+	if friendManifestDir != "" {
+		return friendManifestDir // test override
+	}
+	b, err := os.ReadFile(filepath.Join(friendDistRoot, "LATEST"))
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(friendDistRoot, strings.TrimSpace(string(b)))
+}
 
 // friendModeOn reports friend mode. It reads the env flag directly so this file
 // does not depend on the config plumbing DS-102 owns (the flag contract is
@@ -33,7 +49,12 @@ func (s *Server) handleFriendManifest(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
-	b, err := os.ReadFile(filepath.Join(friendManifestDir, "manifest.json"))
+	dir := s.resolveFriendDistDir()
+	if dir == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no friend dist"})
+		return
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no friend manifest"})
 		return
@@ -48,7 +69,12 @@ func (s *Server) handleFriendManifestSig(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
-	b, err := os.ReadFile(filepath.Join(friendManifestDir, "manifest.json.sig"))
+	dir := s.resolveFriendDistDir()
+	if dir == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no friend dist"})
+		return
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "manifest.json.sig"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no friend manifest signature"})
 		return
@@ -64,6 +90,11 @@ func (s *Server) handleFriendArtifact(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
+	dir := s.resolveFriendDistDir()
+	if dir == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no friend dist"})
+		return
+	}
 	name := c.Param("name")
 	var fn string
 	switch name {
@@ -75,5 +106,5 @@ func (s *Server) handleFriendArtifact(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
-	c.File(filepath.Join(friendManifestDir, fn))
+	c.File(filepath.Join(dir, fn))
 }
