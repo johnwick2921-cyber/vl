@@ -40,20 +40,20 @@ cues: 715/715 · rule cues: 226 · rows: 11 · CODE: 100 · MISMATCH: 0 · NOT-I
 00:02:00 | Cực kỳ | —
 00:02:01 | Chính xác | —
 00:02:03 | Đúng không | —
-00:02:04 | Về tới đây bật lên | CODE kernel/mentor/box_trade.go:187
-00:02:05 | Thì mình cứ | CODE kernel/mentor/box_trade.go:187
-00:02:06 | Mình không bắt limit nữa ha | CODE kernel/mentor/box_trade.go:187
-00:02:08 | Mình cái những cái lệnh này | CODE kernel/mentor/box_trade.go:187
-00:02:09 | Mình không bắt limit | CODE kernel/mentor/box_trade.go:187
-00:02:09 | Tại vì mình phải đợi nó react như thế nào | CODE kernel/mentor/box_trade.go:187
-00:02:11 | Thì cái giữa cái việc | CODE kernel/mentor/box_trade.go:187
-00:02:12 | Mà mình muốn đợi nó react như thế nào | CODE kernel/mentor/box_trade.go:187
-00:02:13 | Thì mình chỉ có set lệnh | CODE kernel/mentor/box_trade.go:187
-00:02:14 | Buy stop | CODE kernel/mentor/box_trade.go:187
-00:02:15 | Sell stop thôi | CODE kernel/mentor/box_trade.go:187
-00:02:16 | Ha | CODE kernel/mentor/box_trade.go:187
-00:02:17 | Và về những cái kia level này | CODE kernel/mentor/box_trade.go:187
-00:02:19 | Đây là còn thiếu ha | CODE kernel/mentor/box_trade.go:187
+00:02:04 | Về tới đây bật lên | CODE kernel/mentor/box_trade.go:188
+00:02:05 | Thì mình cứ | CODE kernel/mentor/box_trade.go:188
+00:02:06 | Mình không bắt limit nữa ha | CODE kernel/mentor/box_trade.go:188
+00:02:08 | Mình cái những cái lệnh này | CODE kernel/mentor/box_trade.go:188
+00:02:09 | Mình không bắt limit | CODE kernel/mentor/box_trade.go:188
+00:02:09 | Tại vì mình phải đợi nó react như thế nào | CODE kernel/mentor/box_trade.go:188
+00:02:11 | Thì cái giữa cái việc | CODE kernel/mentor/box_trade.go:188
+00:02:12 | Mà mình muốn đợi nó react như thế nào | CODE kernel/mentor/box_trade.go:188
+00:02:13 | Thì mình chỉ có set lệnh | CODE kernel/mentor/box_trade.go:188
+00:02:14 | Buy stop | CODE kernel/mentor/box_trade.go:188
+00:02:15 | Sell stop thôi | CODE kernel/mentor/box_trade.go:188
+00:02:16 | Ha | CODE kernel/mentor/box_trade.go:188
+00:02:17 | Và về những cái kia level này | CODE kernel/mentor/box_trade.go:188
+00:02:19 | Đây là còn thiếu ha | CODE kernel/mentor/box_trade.go:188
 00:02:20 | Chứ có nha | —
 00:02:20 | Thiếu ha | —
 00:02:21 | Chứ là đầy đủ hết á | —
@@ -289,54 +289,54 @@ cues: 715/715 · rule cues: 226 · rows: 11 · CODE: 100 · MISMATCH: 0 · NOT-I
 00:09:44 | em expect là anh chị phải biết được | —
 00:09:46 | cái chỗ nào là cái đỉnh cái nào là ở đấy | —
 00:09:48 | Ở những cái đường đấy | —
-00:09:53 | Của khung 15 phút | RULING kernel/mentor/key_levels.go:21
-00:09:54 | Em sẽ vẽ một cái level vô đây | RULING kernel/mentor/key_levels.go:21
-00:09:57 | Tùy anh chị ha | RULING kernel/mentor/key_levels.go:21
-00:09:59 | Anh chị cứ mắc vô đây cũng được | RULING kernel/mentor/key_levels.go:21
-00:10:00 | Còn em thì em sẽ lấy cái râu | RULING kernel/mentor/key_levels.go:21
-00:10:02 | Em sẽ lấy cái râu thấp nhất | RULING kernel/mentor/key_levels.go:21
-00:10:07 | Khi mà em vẽ | RULING kernel/mentor/key_levels.go:21
-00:10:08 | Từ đỏ sang xanh | RULING kernel/mentor/key_levels.go:21
-00:10:10 | Em vẽ từ đỏ sang xanh | RULING kernel/mentor/key_levels.go:21
-00:10:13 | Em sẽ lấy | RULING kernel/mentor/key_levels.go:21
-00:10:14 | Cái râu của cây nến đỏ | RULING kernel/mentor/key_levels.go:21
-00:10:17 | Tại sao | RULING kernel/mentor/key_levels.go:21
-00:10:19 | Tại vì ngay đó | RULING kernel/mentor/key_levels.go:21
-00:10:20 | Chính xác là có người mua | RULING kernel/mentor/key_levels.go:21
-00:10:23 | Anh chị nhớ rõ với em | RULING kernel/mentor/key_levels.go:21
-00:10:25 | Cái cây đỏ nó rút râu | RULING kernel/mentor/key_levels.go:21
-00:10:27 | Là chỗ đó có người mua | RULING kernel/mentor/key_levels.go:21
-00:10:29 | Em sẽ không dễ ở | RULING kernel/mentor/key_levels.go:21
-00:10:31 | Cây nến xanh mặc dù nó không có bao nhiêu điểm hết | RULING kernel/mentor/key_levels.go:21
-00:10:33 | Nhưng anh chị biết rồi | RULING kernel/mentor/key_levels.go:21
-00:10:34 | Em là một thằng bị OCD cực kỳ nặng | RULING kernel/mentor/key_levels.go:21
-00:10:37 | Và em cái gì | RULING kernel/mentor/key_levels.go:21
-00:10:39 | Đối với em nó cũng phải chính xác hết | RULING kernel/mentor/key_levels.go:21
-00:10:41 | Tới cái cách trade của em mọi người cũng thấy rõ | RULING kernel/mentor/key_levels.go:21
-00:10:43 | Em phải có 1 cái stop loss | RULING kernel/mentor/key_levels.go:21
-00:10:44 | Cái target rõ ràng em mới trade | RULING kernel/mentor/key_levels.go:21
-00:10:47 | Còn không em không trade | RULING kernel/mentor/key_levels.go:21
-00:10:48 | Thì mọi người cũng biết cái tính em rồi | RULING kernel/mentor/key_levels.go:21
-00:10:50 | Em là một người OCD cực kỳ nặng | RULING kernel/mentor/key_levels.go:21
-00:10:52 | Thì em muốn lấy một cái điểm chính xác | RULING kernel/mentor/key_levels.go:21
-00:10:55 | Là khi nào có buyer | RULING kernel/mentor/key_levels.go:21
-00:10:57 | Là cái chỗ rút râu của cây nến đỏ | RULING kernel/mentor/key_levels.go:21
-00:11:00 | Là cái chỗ rút râu của cây nến đỏ | RULING kernel/mentor/key_levels.go:21
-00:11:04 | Rồi | RULING kernel/mentor/key_levels.go:21
-00:11:09 | Tiếp tục mình cứ vẽ đi | RULING kernel/mentor/key_levels.go:21
-00:11:13 | Mọi người cứ vẽ nè | RULING kernel/mentor/key_levels.go:21
-00:11:14 | Cái chỗ đây | RULING kernel/mentor/key_levels.go:21
-00:11:15 | Buy lên | RULING kernel/mentor/key_levels.go:21
-00:11:15 | Thì cái râu thấp nhất | RULING kernel/mentor/key_levels.go:21
-00:11:17 | Nếu mà cái râu nến đỏ thấp nhất | RULING kernel/mentor/key_levels.go:21
-00:11:18 | Thì mình lấy cái râu nến đỏ | RULING kernel/mentor/key_levels.go:21
-00:11:19 | Còn nếu như những cái râu mà nến mà | RULING kernel/mentor/key_levels.go:21
-00:11:21 | Cái đỏ, cái bên, cái cây xanh | RULING kernel/mentor/key_levels.go:21
-00:11:23 | Cái râu cây xanh nó thấp hơn thì mình lấy cây xanh luôn cũng được | RULING kernel/mentor/key_levels.go:21
-00:11:25 | Không thành vấn đề | RULING kernel/mentor/key_levels.go:21
-00:11:26 | Mình cứ lấy cái điểm thấp nhất của 2 cây nến | RULING kernel/mentor/key_levels.go:21
-00:11:29 | Đúng không? Rồi cứ vẽ ra | RULING kernel/mentor/key_levels.go:21
-00:11:31 | Chỗ nào bật lên thì vẽ | RULING kernel/mentor/key_levels.go:21
+00:09:53 | Của khung 15 phút | RULING -> row 11
+00:09:54 | Em sẽ vẽ một cái level vô đây | RULING -> row 11
+00:09:57 | Tùy anh chị ha | RULING -> row 11
+00:09:59 | Anh chị cứ mắc vô đây cũng được | RULING -> row 11
+00:10:00 | Còn em thì em sẽ lấy cái râu | RULING -> row 11
+00:10:02 | Em sẽ lấy cái râu thấp nhất | RULING -> row 11
+00:10:07 | Khi mà em vẽ | RULING -> row 11
+00:10:08 | Từ đỏ sang xanh | RULING -> row 11
+00:10:10 | Em vẽ từ đỏ sang xanh | RULING -> row 11
+00:10:13 | Em sẽ lấy | RULING -> row 11
+00:10:14 | Cái râu của cây nến đỏ | RULING -> row 11
+00:10:17 | Tại sao | RULING -> row 11
+00:10:19 | Tại vì ngay đó | RULING -> row 11
+00:10:20 | Chính xác là có người mua | RULING -> row 11
+00:10:23 | Anh chị nhớ rõ với em | RULING -> row 11
+00:10:25 | Cái cây đỏ nó rút râu | RULING -> row 11
+00:10:27 | Là chỗ đó có người mua | RULING -> row 11
+00:10:29 | Em sẽ không dễ ở | RULING -> row 11
+00:10:31 | Cây nến xanh mặc dù nó không có bao nhiêu điểm hết | RULING -> row 11
+00:10:33 | Nhưng anh chị biết rồi | RULING -> row 11
+00:10:34 | Em là một thằng bị OCD cực kỳ nặng | RULING -> row 11
+00:10:37 | Và em cái gì | RULING -> row 11
+00:10:39 | Đối với em nó cũng phải chính xác hết | RULING -> row 11
+00:10:41 | Tới cái cách trade của em mọi người cũng thấy rõ | RULING -> row 11
+00:10:43 | Em phải có 1 cái stop loss | RULING -> row 11
+00:10:44 | Cái target rõ ràng em mới trade | RULING -> row 11
+00:10:47 | Còn không em không trade | RULING -> row 11
+00:10:48 | Thì mọi người cũng biết cái tính em rồi | RULING -> row 11
+00:10:50 | Em là một người OCD cực kỳ nặng | RULING -> row 11
+00:10:52 | Thì em muốn lấy một cái điểm chính xác | RULING -> row 11
+00:10:55 | Là khi nào có buyer | RULING -> row 11
+00:10:57 | Là cái chỗ rút râu của cây nến đỏ | RULING -> row 11
+00:11:00 | Là cái chỗ rút râu của cây nến đỏ | RULING -> row 11
+00:11:04 | Rồi | RULING -> row 11
+00:11:09 | Tiếp tục mình cứ vẽ đi | RULING -> row 11
+00:11:13 | Mọi người cứ vẽ nè | RULING -> row 11
+00:11:14 | Cái chỗ đây | RULING -> row 11
+00:11:15 | Buy lên | RULING -> row 11
+00:11:15 | Thì cái râu thấp nhất | RULING -> row 11
+00:11:17 | Nếu mà cái râu nến đỏ thấp nhất | RULING -> row 11
+00:11:18 | Thì mình lấy cái râu nến đỏ | RULING -> row 11
+00:11:19 | Còn nếu như những cái râu mà nến mà | RULING -> row 11
+00:11:21 | Cái đỏ, cái bên, cái cây xanh | RULING -> row 11
+00:11:23 | Cái râu cây xanh nó thấp hơn thì mình lấy cây xanh luôn cũng được | RULING -> row 11
+00:11:25 | Không thành vấn đề | RULING -> row 11
+00:11:26 | Mình cứ lấy cái điểm thấp nhất của 2 cây nến | RULING -> row 11
+00:11:29 | Đúng không? Rồi cứ vẽ ra | RULING -> row 11
+00:11:31 | Chỗ nào bật lên thì vẽ | RULING -> row 11
 00:11:32 | Này sao giống ngồi vẽ lại từ đầu à | —
 00:11:42 | Rồi, vẽ sơ sơ vậy ha, vẽ sơ sơ vậy rồi | —
 00:11:45 | Tiếp tục | —
@@ -388,72 +388,72 @@ cues: 715/715 · rule cues: 226 · rows: 11 · CODE: 100 · MISMATCH: 0 · NOT-I
 00:13:41 | Mình tương tác đi | —
 00:13:42 | Lâu rồi mình không tương tác nè | —
 00:13:43 | Đúng không | —
-00:13:47 | Rõ ràng | RULING kernel/mentor/key_levels.go:14
-00:13:47 | Là cái ở dưới | RULING kernel/mentor/key_levels.go:14
-00:13:49 | Nó dễ trade hơn | RULING kernel/mentor/key_levels.go:14
-00:13:50 | Tại vì sao | RULING kernel/mentor/key_levels.go:14
-00:13:51 | Nó bự hơn | RULING kernel/mentor/key_levels.go:14
-00:13:52 | Thì | RULING kernel/mentor/key_levels.go:14
-00:13:53 | Đây là lý do | RULING kernel/mentor/key_levels.go:14
-00:13:54 | Tại sao em không vẽ | RULING kernel/mentor/key_levels.go:14
-00:13:56 | Key level | RULING kernel/mentor/key_levels.go:14
-00:13:56 | Ở khung 5 phút | RULING kernel/mentor/key_levels.go:14
-00:13:57 | Em cũng không vẽ | RULING kernel/mentor/key_levels.go:14
-00:13:58 | Key level | RULING kernel/mentor/key_levels.go:14
-00:13:59 | Ở khung 1 phút | RULING kernel/mentor/key_levels.go:14
-00:14:00 | Cũng không vẽ | RULING kernel/mentor/key_levels.go:14
-00:14:00 | Key level | RULING kernel/mentor/key_levels.go:14
-00:14:01 | Ở khung 2 phút | RULING kernel/mentor/key_levels.go:14
-00:14:02 | Mà em vẽ | RULING kernel/mentor/key_levels.go:14
-00:14:03 | Key level | RULING kernel/mentor/key_levels.go:14
-00:14:03 | Ở khung 15 phút | RULING kernel/mentor/key_levels.go:14
-00:14:04 | Tại vì mình | RULING kernel/mentor/key_levels.go:14
-00:14:05 | Cần phải có cái rang nó đủ bự | RULING kernel/mentor/key_levels.go:14
-00:14:07 | Để mình trade | RULING kernel/mentor/key_levels.go:14
-00:14:10 | Chứ nếu mà cái rang | RULING kernel/mentor/key_levels.go:14
-00:14:13 | Nhay đây mình trade gì | RULING kernel/mentor/key_levels.go:14
-00:14:14 | Chuyển xuống không 30 giây à | RULING kernel/mentor/key_levels.go:14
-00:14:16 | Sao trade được đúng không rõ ràng | RULING kernel/mentor/key_levels.go:14
-00:14:19 | Thì những cái rang nhỏ quá | RULING kernel/mentor/key_levels.go:14
-00:14:22 | Em sẽ không dễ | RULING kernel/mentor/key_levels.go:14
-00:14:23 | Thì cái cách tính | RULING kernel/mentor/key_levels.go:14
-00:14:25 | Cái điểm giữa của những cái rang | RULING kernel/mentor/key_levels.go:14
-00:14:27 | Nó là như thế nào | RULING kernel/mentor/key_levels.go:28
-00:14:27 | Trên 30 điểm | RULING kernel/mentor/key_levels.go:28
-00:14:31 | Em mới giữ | RULING kernel/mentor/key_levels.go:28
-00:14:32 | Còn nếu như dưới 30 điểm em xóa | RULING kernel/mentor/key_levels.go:28
-00:14:35 | Những cái rang á | RULING kernel/mentor/key_levels.go:28
-00:14:36 | Giữa những cái đường line này nè | RULING kernel/mentor/key_levels.go:28
-00:14:38 | Bây giờ em ví dụ hả | RULING kernel/mentor/key_levels.go:28
-00:14:39 | Giữa cái đường line này | RULING kernel/mentor/key_levels.go:28
-00:14:40 | Cái khoảng ở giữa nó phải từ | RULING kernel/mentor/key_levels.go:28
-00:14:44 | 30 | RULING kernel/mentor/key_levels.go:28
-00:14:45 | Trở lên | RULING kernel/mentor/key_levels.go:28
-00:14:47 | Và 60 trở lại | RULING kernel/mentor/key_levels.go:28
-00:14:49 | Anh chị hiểu em không | RULING kernel/mentor/key_levels.go:28
-00:14:51 | Là dưới 60 điểm nhưng trên 30 điểm | RULING kernel/mentor/key_levels.go:28
-00:14:54 | Thì em mới lấy | RULING kernel/mentor/key_levels.go:28
-00:14:54 | Như cái này | RULING kernel/mentor/key_levels.go:28
-00:14:55 | Tắt cái này đi | RULING kernel/mentor/key_levels.go:28
-00:15:01 | Bật tắt cái này đi | RULING kernel/mentor/key_levels.go:28
-00:15:03 | Kéo xuống đây nè | RULING kernel/mentor/key_levels.go:28
-00:15:05 | 40 điểm | RULING kernel/mentor/key_levels.go:28
-00:15:05 | Anh chị hiểu em không | RULING kernel/mentor/key_levels.go:28
-00:15:09 | Có nghĩa là những cái nào mà nó bị nhiều quá, nó bị nhỏ quá thì mình đừng có giữ | RULING kernel/mentor/key_levels.go:28
-00:15:16 | Tại vì hồi nãy cái răng có mười mấy điểm, hai chục điểm | RULING kernel/mentor/key_levels.go:28
-00:15:19 | Giờ cái nến nó sáu chục điểm rồi | RULING kernel/mentor/key_levels.go:28
-00:15:21 | Như những cái răng này nè | RULING kernel/mentor/key_levels.go:28
-00:15:24 | Là nhiêu? Ba mươi bảy điểm | RULING kernel/mentor/key_levels.go:28
-00:15:26 | Em giữ | RULING kernel/mentor/key_levels.go:28
-00:15:26 | Có nghĩa là phải dưới sáu chục nhưng mà trên ba chục điểm | RULING kernel/mentor/key_levels.go:28
-00:15:30 | Thì em giữ | RULING kernel/mentor/key_levels.go:28
-00:15:31 | Giữ những cái khoảng cách của cái răng | RULING kernel/mentor/key_levels.go:28
-00:15:33 | Rồi | RULING kernel/mentor/key_levels.go:28
-00:15:35 | Tiếp tục | RULING kernel/mentor/key_levels.go:28
-00:15:36 | Để em dễ nhìn | RULING kernel/mentor/key_levels.go:28
-00:15:38 | Để em vẽ nhiều đi, đi xíu anh nhìn chị coi | RULING kernel/mentor/key_levels.go:28
-00:15:42 | Dạo này vẽ Key Level cực lắm anh chị | RULING kernel/mentor/key_levels.go:28
-00:15:46 | Nó chạy quá là chạy mà | RULING kernel/mentor/key_levels.go:28
+00:13:47 | Rõ ràng | RULING -> row 12
+00:13:47 | Là cái ở dưới | RULING -> row 12
+00:13:49 | Nó dễ trade hơn | RULING -> row 12
+00:13:50 | Tại vì sao | RULING -> row 12
+00:13:51 | Nó bự hơn | RULING -> row 12
+00:13:52 | Thì | RULING -> row 12
+00:13:53 | Đây là lý do | RULING -> row 12
+00:13:54 | Tại sao em không vẽ | RULING -> row 12
+00:13:56 | Key level | RULING -> row 12
+00:13:56 | Ở khung 5 phút | RULING -> row 12
+00:13:57 | Em cũng không vẽ | RULING -> row 12
+00:13:58 | Key level | RULING -> row 12
+00:13:59 | Ở khung 1 phút | RULING -> row 12
+00:14:00 | Cũng không vẽ | RULING -> row 12
+00:14:00 | Key level | RULING -> row 12
+00:14:01 | Ở khung 2 phút | RULING -> row 12
+00:14:02 | Mà em vẽ | RULING -> row 12
+00:14:03 | Key level | RULING -> row 12
+00:14:03 | Ở khung 15 phút | RULING -> row 12
+00:14:04 | Tại vì mình | RULING -> row 12
+00:14:05 | Cần phải có cái rang nó đủ bự | RULING -> row 12
+00:14:07 | Để mình trade | RULING -> row 12
+00:14:10 | Chứ nếu mà cái rang | RULING -> row 12
+00:14:13 | Nhay đây mình trade gì | RULING -> row 12
+00:14:14 | Chuyển xuống không 30 giây à | RULING -> row 12
+00:14:16 | Sao trade được đúng không rõ ràng | RULING -> row 12
+00:14:19 | Thì những cái rang nhỏ quá | RULING -> row 12
+00:14:22 | Em sẽ không dễ | RULING -> row 12
+00:14:23 | Thì cái cách tính | RULING -> row 12
+00:14:25 | Cái điểm giữa của những cái rang | RULING -> row 12
+00:14:27 | Nó là như thế nào | RULING -> row 14
+00:14:27 | Trên 30 điểm | RULING -> row 14
+00:14:31 | Em mới giữ | RULING -> row 14
+00:14:32 | Còn nếu như dưới 30 điểm em xóa | RULING -> row 14
+00:14:35 | Những cái rang á | RULING -> row 14
+00:14:36 | Giữa những cái đường line này nè | RULING -> row 14
+00:14:38 | Bây giờ em ví dụ hả | RULING -> row 14
+00:14:39 | Giữa cái đường line này | RULING -> row 14
+00:14:40 | Cái khoảng ở giữa nó phải từ | RULING -> row 14
+00:14:44 | 30 | RULING -> row 14
+00:14:45 | Trở lên | RULING -> row 14
+00:14:47 | Và 60 trở lại | RULING -> row 14
+00:14:49 | Anh chị hiểu em không | RULING -> row 14
+00:14:51 | Là dưới 60 điểm nhưng trên 30 điểm | RULING -> row 14
+00:14:54 | Thì em mới lấy | RULING -> row 14
+00:14:54 | Như cái này | RULING -> row 14
+00:14:55 | Tắt cái này đi | RULING -> row 14
+00:15:01 | Bật tắt cái này đi | RULING -> row 14
+00:15:03 | Kéo xuống đây nè | RULING -> row 14
+00:15:05 | 40 điểm | RULING -> row 14
+00:15:05 | Anh chị hiểu em không | RULING -> row 14
+00:15:09 | Có nghĩa là những cái nào mà nó bị nhiều quá, nó bị nhỏ quá thì mình đừng có giữ | RULING -> row 14
+00:15:16 | Tại vì hồi nãy cái răng có mười mấy điểm, hai chục điểm | RULING -> row 14
+00:15:19 | Giờ cái nến nó sáu chục điểm rồi | RULING -> row 14
+00:15:21 | Như những cái răng này nè | RULING -> row 14
+00:15:24 | Là nhiêu? Ba mươi bảy điểm | RULING -> row 14
+00:15:26 | Em giữ | RULING -> row 14
+00:15:26 | Có nghĩa là phải dưới sáu chục nhưng mà trên ba chục điểm | RULING -> row 14
+00:15:30 | Thì em giữ | RULING -> row 14
+00:15:31 | Giữ những cái khoảng cách của cái răng | RULING -> row 14
+00:15:33 | Rồi | RULING -> row 14
+00:15:35 | Tiếp tục | RULING -> row 14
+00:15:36 | Để em dễ nhìn | RULING -> row 14
+00:15:38 | Để em vẽ nhiều đi, đi xíu anh nhìn chị coi | RULING -> row 14
+00:15:42 | Dạo này vẽ Key Level cực lắm anh chị | RULING -> row 14
+00:15:46 | Nó chạy quá là chạy mà | RULING -> row 14
 00:15:48 | Em mắc đã, em mắc tạm thời thôi ha | —
 00:15:55 | Nó cũng là những Key Level đó, mọi người thấy nó React nữa hông | —
 00:15:59 | Vẽ đây bật lên, vẽ đây bật lên, nó trong quá khứ luôn nè | —
@@ -464,18 +464,18 @@ cues: 715/715 · rule cues: 226 · rows: 11 · CODE: 100 · MISMATCH: 0 · NOT-I
 00:16:16 | Thì khi mình vẽ Key Level á, mình vẽ những cái đường màu trắng không à, thì mình không có hình dung được là bây giờ nó sẽ bật ở chỗ nào | —
 00:16:29 | Có bao giờ mình hình dung được, mình cũng không biết ổ bây giờ cái Key Level nào nó cũng giống cái nào hết | —
 00:16:40 | Rồi sao mình biết mình trade, không lẽ chỗ nào mình cũng bắt sao, hay là chỗ nào mình cũng phải chờ nó react sao, không | —
-00:16:46 | Tôi chuyển qua khung 4 giờ | RULING kernel/mentor/key_levels.go:28
-00:16:48 | Chuyển qua khung 4 giờ ha | RULING kernel/mentor/key_levels.go:28
-00:16:51 | Rồi | RULING kernel/mentor/key_levels.go:28
-00:16:52 | Cái cách của em là như thế nào | RULING kernel/mentor/key_levels.go:28
-00:16:54 | Những cái chỗ mà râu nến | RULING kernel/mentor/key_levels.go:28
-00:16:58 | Của khung 4 giờ nó bật lên | RULING kernel/mentor/key_levels.go:28
-00:17:00 | Những cái đó | RULING kernel/mentor/key_levels.go:28
-00:17:02 | Em vẽ một cái màu đỏ | RULING kernel/mentor/key_levels.go:28
-00:17:04 | Em chuyển cái key level đó qua cái màu đỏ | RULING kernel/mentor/key_levels.go:28
-00:17:06 | Những cái râu nè | RULING kernel/mentor/key_levels.go:28
-00:17:09 | Những cái râu nến nè | RULING kernel/mentor/key_levels.go:28
-00:17:10 | Râu xanh râu đỏ vậy em cũng lấy | RULING kernel/mentor/key_levels.go:28
+00:16:46 | Tôi chuyển qua khung 4 giờ | RULING -> row 14
+00:16:48 | Chuyển qua khung 4 giờ ha | RULING -> row 14
+00:16:51 | Rồi | RULING -> row 14
+00:16:52 | Cái cách của em là như thế nào | RULING -> row 14
+00:16:54 | Những cái chỗ mà râu nến | RULING -> row 14
+00:16:58 | Của khung 4 giờ nó bật lên | RULING -> row 14
+00:17:00 | Những cái đó | RULING -> row 14
+00:17:02 | Em vẽ một cái màu đỏ | RULING -> row 14
+00:17:04 | Em chuyển cái key level đó qua cái màu đỏ | RULING -> row 14
+00:17:06 | Những cái râu nè | RULING -> row 14
+00:17:09 | Những cái râu nến nè | RULING -> row 14
+00:17:10 | Râu xanh râu đỏ vậy em cũng lấy | RULING -> row 14
 00:17:11 | Nè râu đỏ nè | —
 00:17:14 | Cũng lấy luôn | —
 00:17:15 | Lấy luôn | —
@@ -710,8 +710,8 @@ cues: 715/715 · rule cues: 226 · rows: 11 · CODE: 100 · MISMATCH: 0 · NOT-I
 00:24:53 | Ở dưới đây nó có 1 cái low rồi | CODE kernel/mentor/box.go:555
 00:24:54 | Có nghĩa là yesterday low | CODE kernel/mentor/box.go:555
 00:24:57 | Nó có rồi, mình không dễ | CODE kernel/mentor/box.go:555
-00:24:58 | Tại vì sao? | CODE kernel/mentor/day_seed.go
-00:25:00 | Tại vì nếu em, cũng như cái việc vẽ key level | CODE kernel/mentor/day_seed.go
-00:25:03 | Nếu như cái rank | CODE kernel/mentor/day_seed.go
-00:25:04 | Nó tầm gần qua 30 điểm | CODE kernel/mentor/day_seed.go
-00:25:07 | Là ok rồi | CODE kernel/mentor/day_seed.go
+00:24:58 | Tại vì sao? | CODE kernel/mentor/day_seed.go:25
+00:25:00 | Tại vì nếu em, cũng như cái việc vẽ key level | CODE kernel/mentor/day_seed.go:25
+00:25:03 | Nếu như cái rank | CODE kernel/mentor/day_seed.go:25
+00:25:04 | Nó tầm gần qua 30 điểm | CODE kernel/mentor/day_seed.go:25
+00:25:07 | Là ok rồi | CODE kernel/mentor/day_seed.go:25

@@ -18,20 +18,20 @@ cues: 119/119 · rule cues: 32 · rows: 3 · CODE: 32 · MISMATCH: 0 · NOT-IN-B
 00:00:56 | Mình setup cho anh chị trade | —
 00:00:57 | Đảo chiều | —
 00:00:58 | Mọi người thấy ở đây | —
-00:01:01 | Vừa ngay demand zone | CODE kernel/mentor/eval.go:1560
-00:01:03 | Mà có cái gì không anh chị | CODE kernel/mentor/eval.go:1560
-00:01:05 | Có anh chị nào trả lời cho em ngay đây có cái gì không | CODE kernel/mentor/eval.go:1560
-00:01:09 | Yes | CODE kernel/mentor/eval.go:1560
-00:01:14 | Vừa ngay demand zone | CODE kernel/mentor/eval.go:1560
-00:01:17 | Mà vừa có inside bar cho lệnh short nữa | CODE kernel/mentor/eval.go:1560
-00:01:20 | Thì mình có vô lệnh không anh chị | CODE kernel/mentor/eval.go:1560
-00:01:24 | Stop loss | CODE kernel/mentor/eval.go:1560
-00:01:26 | Của mình là cái inside bar | CODE kernel/mentor/eval.go:1560
-00:01:27 | Và target mình về gần đáy cũ | CODE kernel/mentor/eval.go:1560
-00:01:29 | Risk reward tới 3 | CODE kernel/mentor/eval.go:1560
-00:01:32 | R | CODE kernel/mentor/eval.go:1560
-00:01:33 | Và yes nó đúng như vậy nè mọi người | CODE kernel/mentor/eval.go:1560
-00:01:37 | Em nói thiệt luôn mọi người | CODE kernel/mentor/eval.go:1560
+00:01:01 | Vừa ngay demand zone | CODE kernel/mentor/eval.go:1562
+00:01:03 | Mà có cái gì không anh chị | CODE kernel/mentor/eval.go:1562
+00:01:05 | Có anh chị nào trả lời cho em ngay đây có cái gì không | CODE kernel/mentor/eval.go:1562
+00:01:09 | Yes | CODE kernel/mentor/eval.go:1562
+00:01:14 | Vừa ngay demand zone | CODE kernel/mentor/eval.go:1562
+00:01:17 | Mà vừa có inside bar cho lệnh short nữa | CODE kernel/mentor/eval.go:1562
+00:01:20 | Thì mình có vô lệnh không anh chị | CODE kernel/mentor/eval.go:1562
+00:01:24 | Stop loss | CODE kernel/mentor/eval.go:1562
+00:01:26 | Của mình là cái inside bar | CODE kernel/mentor/eval.go:1562
+00:01:27 | Và target mình về gần đáy cũ | CODE kernel/mentor/eval.go:1562
+00:01:29 | Risk reward tới 3 | CODE kernel/mentor/eval.go:1562
+00:01:32 | R | CODE kernel/mentor/eval.go:1562
+00:01:33 | Và yes nó đúng như vậy nè mọi người | CODE kernel/mentor/eval.go:1562
+00:01:37 | Em nói thiệt luôn mọi người | CODE kernel/mentor/eval.go:1562
 00:01:42 | Em thấy chị Outer Trader trade nó rất là hay | —
 00:01:44 | Tại em thì chị đánh theo trend thôi | —
 00:01:46 | Hiện tại em chỉ đánh theo trend | —
@@ -46,30 +46,30 @@ cues: 119/119 · rule cues: 32 · rows: 3 · CODE: 32 · MISMATCH: 0 · NOT-IN-B
 00:02:03 | Xong từ demand zone | —
 00:02:04 | Chị đánh ngược xuống lại cái lô | —
 00:02:05 | Nhưng bắt buộc mình phải chờ setup | —
-00:02:12 | Có nghĩa là gì | CODE kernel/mentor/box_trade.go:187
-00:02:13 | Mình 1 là sẽ có inside bar | CODE kernel/mentor/box_trade.go:187
-00:02:16 | 2 | CODE kernel/mentor/box_trade.go:187
-00:02:17 | Là mình nó tạo 1 cái low | CODE kernel/mentor/box_trade.go:187
-00:02:19 | 1 tensile low | CODE kernel/mentor/box_trade.go:187
-00:02:20 | 2 | CODE kernel/mentor/box_trade.go:187
-00:02:21 | Nó rớt | CODE kernel/mentor/box_trade.go:187
-00:02:22 | Đó | CODE kernel/mentor/box_trade.go:187
-00:02:25 | Và tiếp tục nè | CODE kernel/mentor/box_trade.go:187
+00:02:12 | Có nghĩa là gì | CODE kernel/mentor/box_trade.go:188
+00:02:13 | Mình 1 là sẽ có inside bar | CODE kernel/mentor/box_trade.go:188
+00:02:16 | 2 | CODE kernel/mentor/box_trade.go:188
+00:02:17 | Là mình nó tạo 1 cái low | CODE kernel/mentor/box_trade.go:188
+00:02:19 | 1 tensile low | CODE kernel/mentor/box_trade.go:188
+00:02:20 | 2 | CODE kernel/mentor/box_trade.go:188
+00:02:21 | Nó rớt | CODE kernel/mentor/box_trade.go:188
+00:02:22 | Đó | CODE kernel/mentor/box_trade.go:188
+00:02:25 | Và tiếp tục nè | CODE kernel/mentor/box_trade.go:188
 00:02:26 | Mọi người nhìn để tiếp tục nè | —
 00:02:28 | Ngay đây đúng không | —
 00:02:28 | Mình lon lên ngại ngay đây | —
 00:02:29 | Xong | —
 00:02:30 | Mình bán ở đây | —
 00:02:32 | Thì có chuyện gì xảy ra mọi người | —
-00:02:35 | Nó break | CODE kernel/mentor/box.go:326
-00:02:36 | Có nghĩa là demand zone | CODE kernel/mentor/box.go:326
-00:02:37 | Mọi người nhớ Uno không | CODE kernel/mentor/box.go:326
-00:02:39 | Lập tức | CODE kernel/mentor/box.go:326
-00:02:41 | Trở thành | CODE kernel/mentor/box.go:326
-00:02:42 | Support | CODE kernel/mentor/box.go:326
-00:02:43 | Trở thành | CODE kernel/mentor/box.go:326
-00:02:48 | Supply Zone | CODE kernel/mentor/box.go:326
-00:02:50 | Tại vì | CODE kernel/mentor/box.go:326
+00:02:35 | Nó break | CODE kernel/mentor/box.go:330
+00:02:36 | Có nghĩa là demand zone | CODE kernel/mentor/box.go:330
+00:02:37 | Mọi người nhớ Uno không | CODE kernel/mentor/box.go:330
+00:02:39 | Lập tức | CODE kernel/mentor/box.go:330
+00:02:41 | Trở thành | CODE kernel/mentor/box.go:330
+00:02:42 | Support | CODE kernel/mentor/box.go:330
+00:02:43 | Trở thành | CODE kernel/mentor/box.go:330
+00:02:48 | Supply Zone | CODE kernel/mentor/box.go:330
+00:02:50 | Tại vì | CODE kernel/mentor/box.go:330
 00:02:54 | Mọi người thấy rõ ràng ở đây không nè | —
 00:02:56 | Mọi người thấy rõ ràng ở đây | —
 00:02:59 | Rồi | —

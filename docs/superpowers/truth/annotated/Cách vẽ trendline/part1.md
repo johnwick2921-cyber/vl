@@ -1,75 +1,75 @@
 cues: 259/259 · rule cues: 123 · rows: 4 · CODE: 123 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · SPLIT: 0 · —: 136
 
-00:00:00 | Rồi, dễ mình sẽ dễ trendline ha, tập dễ trendline. | CODE kernel/mentor/trendline.go:74
-00:00:08 | Trendline nó được tạo ra bởi cái gì anh chị? | CODE kernel/mentor/trendline.go:74
-00:00:11 | Nó sẽ được tạo ra bởi những cái đỉnh và những cái đáy. | CODE kernel/mentor/trendline.go:74
-00:00:14 | Mình nối lại những cái đỉnh và những cái đáy đó với nhau thì nó sẽ được gọi là 1 cái trendline. | CODE kernel/mentor/trendline.go:74
-00:00:20 | Và trendline nó vẫn là như vậy. | CODE kernel/mentor/trendline.go:74
-00:00:23 | Nó cũng là những cái gì thần tí nhất của market thì nó vẫn, | CODE kernel/mentor/trendline.go:74
-00:00:27 | Mình vẫn có thể vẽ khung 5 phút, khung 3 phút | CODE kernel/mentor/trendline.go:74
-00:00:29 | Khung 2, khung 1, khung 30, khung 15 gì đó | CODE kernel/mentor/trendline.go:74
-00:00:32 | Rồi | CODE kernel/mentor/trendline.go:74
-00:00:35 | Thì trendline sẽ được dễ như thế nào | CODE kernel/mentor/trendline.go:74
-00:00:38 | Khi anh chị | CODE kernel/mentor/trendline.go:74
-00:00:40 | Có 1 cái đáy thì mình chắc chắn | CODE kernel/mentor/trendline.go:74
-00:00:42 | Mình sẽ không thể nào dễ trendline được | CODE kernel/mentor/trendline.go:74
-00:00:44 | 1 cái đáy mình không thể nào dễ trendline được | CODE kernel/mentor/trendline.go:74
-00:00:46 | Thì mình phải cần tới | CODE kernel/mentor/trendline.go:74
-00:00:48 | 2 cái đáy | CODE kernel/mentor/trendline.go:74
-00:00:50 | Thì mình mới dễ trendline được | CODE kernel/mentor/trendline.go:74
-00:00:53 | Đúng không | CODE kernel/mentor/trendline.go:74
-00:00:54 | Thì đây, 1 đáy, 2 đáy | CODE kernel/mentor/trendline.go:74
-00:00:56 | Đấy này thì bỏ, đấy này thì vẽ rồi | CODE kernel/mentor/trendline.go:74
-00:00:58 | Nó break qua rồi thì mình bỏ | CODE kernel/mentor/trendline.go:74
-00:01:00 | Thì mình sẽ lấy 1 cái đấy | CODE kernel/mentor/trendline.go:74
-00:01:04 | Thứ nhất mình nối | CODE kernel/mentor/trendline.go:74
-00:01:05 | Cái đấy thứ 2 | CODE kernel/mentor/trendline.go:74
-00:01:06 | Thì mình sẽ được 1 cái trendline | CODE kernel/mentor/trendline.go:74
-00:01:08 | Đấy là cái nến đỏ | CODE kernel/mentor/trendline.go:74
-00:01:10 | Mình nối lại với nhau | CODE kernel/mentor/trendline.go:74
-00:01:13 | Thì mình sẽ được 1 cái trendline | CODE kernel/mentor/trendline.go:74
-00:01:15 | Anh chị có thể vẽ trendline | CODE kernel/mentor/trendline.go:74
-00:01:17 | Không bao nhiêu giờ nó vẫn sẽ giống nhau hết | CODE kernel/mentor/trendline.go:74
-00:01:20 | Nó vẫn sẽ giống nhau hết | CODE kernel/mentor/trendline.go:74
-00:01:22 | Nhưng | CODE kernel/mentor/trendline.go:74
-00:01:24 | Làm ơn giúp em | CODE kernel/mentor/trendline.go:74
-00:01:25 | Trendline chứ không phải cầu tuột | CODE kernel/mentor/trendline.go:74
-00:01:28 | Trên line chứ không phải là mình móc 2 đỉnh 2 đáy chứ không phải mình vẽ 1 giày | CODE kernel/mentor/trendline.go:74
-00:01:33 | Ủa Eveline đâu? Có trong lớp không? | CODE kernel/mentor/trendline.go:74
-00:01:37 | Chứ không phải mình vẽ 1 giày nha | CODE kernel/mentor/trendline.go:74
-00:01:39 | Nhắc lại 1 lần nữa nha | CODE kernel/mentor/trendline.go:74
-00:01:42 | Trên line là mình vẽ | CODE kernel/mentor/trendline.go:74
-00:01:43 | Móc 2 cái đỉnh lại với nhau | CODE kernel/mentor/trendline.go:74
-00:01:47 | Mình nối 2 cái đỉnh lại với nhau | CODE kernel/mentor/trendline.go:74
-00:01:49 | Thì mình sẽ có được 1 cái trendline | CODE kernel/mentor/trendline.go:74
-00:01:52 | Hoặc là 2 cái đáy lại với nhau | CODE kernel/mentor/trendline.go:74
-00:01:53 | Chứ không phải là mình thích vẽ đâu mình vẽ | CODE kernel/mentor/trendline.go:74
-00:01:57 | Chứ không phải mình tích đầu dẻ | CODE kernel/mentor/trendline.go:74
-00:02:00 | Anh chị thấy không? Cái đỉnh nè | CODE kernel/mentor/trendline.go:74
+00:00:00 | Rồi, dễ mình sẽ dễ trendline ha, tập dễ trendline. | CODE kernel/mentor/trendline.go:242
+00:00:08 | Trendline nó được tạo ra bởi cái gì anh chị? | CODE kernel/mentor/trendline.go:242
+00:00:11 | Nó sẽ được tạo ra bởi những cái đỉnh và những cái đáy. | CODE kernel/mentor/trendline.go:242
+00:00:14 | Mình nối lại những cái đỉnh và những cái đáy đó với nhau thì nó sẽ được gọi là 1 cái trendline. | CODE kernel/mentor/trendline.go:242
+00:00:20 | Và trendline nó vẫn là như vậy. | CODE kernel/mentor/trendline.go:242
+00:00:23 | Nó cũng là những cái gì thần tí nhất của market thì nó vẫn, | CODE kernel/mentor/trendline.go:242
+00:00:27 | Mình vẫn có thể vẽ khung 5 phút, khung 3 phút | CODE kernel/mentor/trendline.go:242
+00:00:29 | Khung 2, khung 1, khung 30, khung 15 gì đó | CODE kernel/mentor/trendline.go:242
+00:00:32 | Rồi | CODE kernel/mentor/trendline.go:242
+00:00:35 | Thì trendline sẽ được dễ như thế nào | CODE kernel/mentor/trendline.go:242
+00:00:38 | Khi anh chị | CODE kernel/mentor/trendline.go:242
+00:00:40 | Có 1 cái đáy thì mình chắc chắn | CODE kernel/mentor/trendline.go:242
+00:00:42 | Mình sẽ không thể nào dễ trendline được | CODE kernel/mentor/trendline.go:242
+00:00:44 | 1 cái đáy mình không thể nào dễ trendline được | CODE kernel/mentor/trendline.go:242
+00:00:46 | Thì mình phải cần tới | CODE kernel/mentor/trendline.go:242
+00:00:48 | 2 cái đáy | CODE kernel/mentor/trendline.go:242
+00:00:50 | Thì mình mới dễ trendline được | CODE kernel/mentor/trendline.go:242
+00:00:53 | Đúng không | CODE kernel/mentor/trendline.go:242
+00:00:54 | Thì đây, 1 đáy, 2 đáy | CODE kernel/mentor/trendline.go:242
+00:00:56 | Đấy này thì bỏ, đấy này thì vẽ rồi | CODE kernel/mentor/trendline.go:242
+00:00:58 | Nó break qua rồi thì mình bỏ | CODE kernel/mentor/trendline.go:242
+00:01:00 | Thì mình sẽ lấy 1 cái đấy | CODE kernel/mentor/trendline.go:242
+00:01:04 | Thứ nhất mình nối | CODE kernel/mentor/trendline.go:242
+00:01:05 | Cái đấy thứ 2 | CODE kernel/mentor/trendline.go:242
+00:01:06 | Thì mình sẽ được 1 cái trendline | CODE kernel/mentor/trendline.go:242
+00:01:08 | Đấy là cái nến đỏ | CODE kernel/mentor/trendline.go:242
+00:01:10 | Mình nối lại với nhau | CODE kernel/mentor/trendline.go:242
+00:01:13 | Thì mình sẽ được 1 cái trendline | CODE kernel/mentor/trendline.go:242
+00:01:15 | Anh chị có thể vẽ trendline | CODE kernel/mentor/trendline.go:242
+00:01:17 | Không bao nhiêu giờ nó vẫn sẽ giống nhau hết | CODE kernel/mentor/trendline.go:242
+00:01:20 | Nó vẫn sẽ giống nhau hết | CODE kernel/mentor/trendline.go:242
+00:01:22 | Nhưng | CODE kernel/mentor/trendline.go:242
+00:01:24 | Làm ơn giúp em | CODE kernel/mentor/trendline.go:242
+00:01:25 | Trendline chứ không phải cầu tuột | CODE kernel/mentor/trendline.go:242
+00:01:28 | Trên line chứ không phải là mình móc 2 đỉnh 2 đáy chứ không phải mình vẽ 1 giày | CODE kernel/mentor/trendline.go:242
+00:01:33 | Ủa Eveline đâu? Có trong lớp không? | CODE kernel/mentor/trendline.go:242
+00:01:37 | Chứ không phải mình vẽ 1 giày nha | CODE kernel/mentor/trendline.go:242
+00:01:39 | Nhắc lại 1 lần nữa nha | CODE kernel/mentor/trendline.go:242
+00:01:42 | Trên line là mình vẽ | CODE kernel/mentor/trendline.go:242
+00:01:43 | Móc 2 cái đỉnh lại với nhau | CODE kernel/mentor/trendline.go:242
+00:01:47 | Mình nối 2 cái đỉnh lại với nhau | CODE kernel/mentor/trendline.go:242
+00:01:49 | Thì mình sẽ có được 1 cái trendline | CODE kernel/mentor/trendline.go:242
+00:01:52 | Hoặc là 2 cái đáy lại với nhau | CODE kernel/mentor/trendline.go:242
+00:01:53 | Chứ không phải là mình thích vẽ đâu mình vẽ | CODE kernel/mentor/trendline.go:242
+00:01:57 | Chứ không phải mình tích đầu dẻ | CODE kernel/mentor/trendline.go:242
+00:02:00 | Anh chị thấy không? Cái đỉnh nè | CODE kernel/mentor/trendline.go:242
 00:02:02 | Cái đỉnh, đáng lẽ cái đỉnh này nè | —
 00:02:05 | Đó, đúng không? | —
 00:02:09 | Rõ ràng không? | —
-00:02:11 | Đó, rồi | CODE kernel/mentor/trendline.go:11
-00:02:12 | Những trendline khung lớn | CODE kernel/mentor/trendline.go:11
-00:02:19 | Thì mình sẽ dùng để làm gì? | CODE kernel/mentor/trendline.go:11
-00:02:21 | Để mình nhận biết được là trend khung lớn | CODE kernel/mentor/trendline.go:11
-00:02:23 | Là vẫn còn đang tăng hay đang giảm | CODE kernel/mentor/trendline.go:11
-00:02:25 | Anh chị nhìn nè, nếu như em chuyển qua khung 1 giờ đi | CODE kernel/mentor/trendline.go:11
-00:02:27 | Em chuyển qua khung 1 giờ ha | CODE kernel/mentor/trendline.go:11
-00:02:30 | Đó anh chị | CODE kernel/mentor/trendline.go:11
-00:02:34 | Rõ ràng đúng không? | CODE kernel/mentor/trendline.go:11
-00:02:37 | Chuyển qua khung 30 phút thì nó cũng sẽ giống nhau thôi | CODE kernel/mentor/trendline.go:11
-00:02:39 | Không 15 phút nó vẫn sẽ giống nhau thôi | CODE kernel/mentor/trendline.go:11
-00:02:41 | Đâu khác gì đâu | CODE kernel/mentor/trendline.go:11
-00:02:42 | Nó sẽ chỉ minimize lại thôi | CODE kernel/mentor/trendline.go:11
-00:02:43 | Thì mình chỉnh lại 1 tí | CODE kernel/mentor/trendline.go:11
-00:02:44 | Nó vẫn sẽ giống nhau | CODE kernel/mentor/trendline.go:11
-00:02:48 | Không 5 phút thì nó càng minimize lại | CODE kernel/mentor/trendline.go:11
-00:02:52 | Thì nó sẽ càng chi tiết hơn thôi | CODE kernel/mentor/trendline.go:11
-00:02:54 | Đúng không | CODE kernel/mentor/trendline.go:11
-00:02:55 | Nó sẽ càng chi tiết hơn | CODE kernel/mentor/trendline.go:11
-00:02:58 | Được không | CODE kernel/mentor/trendline.go:11
-00:02:59 | Rồi | CODE kernel/mentor/trendline.go:11
+00:02:11 | Đó, rồi | CODE kernel/mentor/trendline.go:114
+00:02:12 | Những trendline khung lớn | CODE kernel/mentor/trendline.go:114
+00:02:19 | Thì mình sẽ dùng để làm gì? | CODE kernel/mentor/trendline.go:114
+00:02:21 | Để mình nhận biết được là trend khung lớn | CODE kernel/mentor/trendline.go:114
+00:02:23 | Là vẫn còn đang tăng hay đang giảm | CODE kernel/mentor/trendline.go:114
+00:02:25 | Anh chị nhìn nè, nếu như em chuyển qua khung 1 giờ đi | CODE kernel/mentor/trendline.go:114
+00:02:27 | Em chuyển qua khung 1 giờ ha | CODE kernel/mentor/trendline.go:114
+00:02:30 | Đó anh chị | CODE kernel/mentor/trendline.go:114
+00:02:34 | Rõ ràng đúng không? | CODE kernel/mentor/trendline.go:114
+00:02:37 | Chuyển qua khung 30 phút thì nó cũng sẽ giống nhau thôi | CODE kernel/mentor/trendline.go:114
+00:02:39 | Không 15 phút nó vẫn sẽ giống nhau thôi | CODE kernel/mentor/trendline.go:114
+00:02:41 | Đâu khác gì đâu | CODE kernel/mentor/trendline.go:114
+00:02:42 | Nó sẽ chỉ minimize lại thôi | CODE kernel/mentor/trendline.go:114
+00:02:43 | Thì mình chỉnh lại 1 tí | CODE kernel/mentor/trendline.go:114
+00:02:44 | Nó vẫn sẽ giống nhau | CODE kernel/mentor/trendline.go:114
+00:02:48 | Không 5 phút thì nó càng minimize lại | CODE kernel/mentor/trendline.go:114
+00:02:52 | Thì nó sẽ càng chi tiết hơn thôi | CODE kernel/mentor/trendline.go:114
+00:02:54 | Đúng không | CODE kernel/mentor/trendline.go:114
+00:02:55 | Nó sẽ càng chi tiết hơn | CODE kernel/mentor/trendline.go:114
+00:02:58 | Được không | CODE kernel/mentor/trendline.go:114
+00:02:59 | Rồi | CODE kernel/mentor/trendline.go:114
 00:03:04 | Mình sẽ | —
 00:03:06 | Mình sẽ có 2 cái | —
 00:03:08 | Thứ nhất là những cái trendline không lớn | —
@@ -122,62 +122,62 @@ cues: 259/259 · rule cues: 123 · rows: 4 · CODE: 123 · MISMATCH: 0 · NOT-IN
 00:04:43 | Đây thì mình có 1 cái potential high low đây | —
 00:04:47 | Mình có thể trade | —
 00:04:50 | Khi mà market nó đang tạo những cái trendline như thế này | —
-00:04:53 | Mình có thể trade được luôn anh chị | CODE kernel/mentor/flag_wall.go:11
-00:04:54 | Thường là tới cuối flag | CODE kernel/mentor/flag_wall.go:11
-00:05:04 | Nó sẽ | CODE kernel/mentor/flag_wall.go:11
-00:05:05 | Khi mình nói 2 cái trendline lại | CODE kernel/mentor/flag_wall.go:11
-00:05:07 | Mình sẽ được 1 cái flag | CODE kernel/mentor/flag_wall.go:11
-00:05:08 | Thường là tới cuối flag | CODE kernel/mentor/flag_wall.go:11
-00:05:09 | Nó sẽ pick up được 1 cái | CODE kernel/mentor/flag_wall.go:11
-00:05:12 | Hướng đi | CODE kernel/mentor/flag_wall.go:11
-00:05:13 | Đúng | CODE kernel/mentor/flag_wall.go:11
-00:05:14 | Nhưng | CODE kernel/mentor/flag_wall.go:11
-00:05:16 | Mình vẫn sẽ phải chờ cái sự reaction của market | CODE kernel/mentor/flag_wall.go:11
-00:05:19 | Đây nè anh chị | CODE kernel/mentor/flag_wall.go:11
-00:05:20 | Rõ ràng hồi sáng nó là 1 cái fake breakout | CODE kernel/mentor/flag_wall.go:11
-00:05:22 | Nó là một cái fact breakout rõ ràng | CODE kernel/mentor/flag_wall.go:11
-00:05:25 | Nó break qua xong chui ngược về | CODE kernel/mentor/flag_wall.go:11
-00:05:27 | Đúng không | CODE kernel/mentor/flag_wall.go:11
-00:05:30 | Mình sẽ không | CODE kernel/mentor/flag_wall.go:11
-00:05:32 | Em nói rồi | CODE kernel/mentor/flag_wall.go:11
-00:05:33 | Mình sẽ không bias | CODE kernel/mentor/flag_wall.go:11
-00:05:34 | Bây giờ nó break ra | CODE kernel/mentor/flag_wall.go:11
-00:05:36 | Thì nếu mà có setup | CODE kernel/mentor/flag_wall.go:11
-00:05:37 | Thì mình trade | CODE kernel/mentor/flag_wall.go:11
-00:05:38 | Còn không thì thôi | CODE kernel/mentor/flag_wall.go:11
-00:05:39 | Có nên vô hay không | CODE kernel/mentor/flag_wall.go:11
-00:05:47 | Thì có nên bây giờ nè | CODE kernel/mentor/flag_wall.go:20
-00:05:48 | Nếu mà anh chị vô chỗ này | CODE kernel/mentor/flag_wall.go:20
-00:05:53 | Anh chị vô cái lệnh | CODE kernel/mentor/flag_wall.go:20
-00:05:55 | Potential high low chỗ này | CODE kernel/mentor/flag_wall.go:20
-00:05:56 | Thì cái target anh chị về chỗ nào | CODE kernel/mentor/flag_wall.go:20
-00:05:58 | Mọi người trả lời thử | CODE kernel/mentor/flag_wall.go:20
-00:05:59 | Giúp em coi | CODE kernel/mentor/flag_wall.go:20
-00:05:59 | Có phải là target của anh chị | CODE kernel/mentor/flag_wall.go:20
-00:06:02 | là chỉ là trên cái đỉnh | CODE kernel/mentor/flag_wall.go:20
-00:06:04 | của cái flag không | CODE kernel/mentor/flag_wall.go:20
-00:06:05 | là trên cạnh trên không | CODE kernel/mentor/flag_wall.go:20
-00:06:06 | thì nếu như anh chị nào | CODE kernel/mentor/flag_wall.go:20
-00:06:10 | vẫn muốn vô thì mình vẫn | CODE kernel/mentor/flag_wall.go:20
-00:06:12 | scoping được | CODE kernel/mentor/flag_wall.go:20
-00:06:12 | không sai | CODE kernel/mentor/flag_wall.go:20
-00:06:14 | cũng như Lúa nói | CODE kernel/mentor/flag_wall.go:20
-00:06:20 | hay chị Sunny nói | CODE kernel/mentor/flag_wall.go:20
-00:06:21 | bây giờ nó break cái trend right rồi | CODE kernel/mentor/flag_wall.go:20
-00:06:24 | thì mình vẫn sẽ | CODE kernel/mentor/flag_wall.go:20
-00:06:25 | nếu mà mình muốn confirm, mình muốn chắc chắn | CODE kernel/mentor/flag_wall.go:20
-00:06:28 | thì đợi khung 5 phút đóng | CODE kernel/mentor/flag_wall.go:20
-00:06:29 | đợi đến 5 phút đóng | CODE kernel/mentor/flag_wall.go:20
-00:06:30 | đóng trên hay đóng dưới | CODE kernel/mentor/flag_wall.go:20
-00:06:34 | Đóng trên rồi đóng dưới | CODE kernel/mentor/flag_wall.go:20
-00:06:37 | Đóng dưới nguyên cây luôn | CODE kernel/mentor/flag_wall.go:20
-00:06:38 | Đóng dưới nguyên cây luôn | CODE kernel/mentor/flag_wall.go:20
-00:06:41 | Không đợi khung 15 phút | CODE kernel/mentor/flag_wall.go:20
-00:06:44 | Cô đợi khung 5 phút thôi | CODE kernel/mentor/flag_wall.go:20
-00:06:45 | Khung 5 phút đóng trên rồi đóng dưới là ok | CODE kernel/mentor/flag_wall.go:20
-00:06:47 | Rõ ràng ha | CODE kernel/mentor/flag_wall.go:20
-00:06:49 | Cái trendline | CODE kernel/mentor/flag_wall.go:20
-00:06:51 | Và cái multi time frame | CODE kernel/mentor/flag_wall.go:20
+00:04:53 | Mình có thể trade được luôn anh chị | CODE kernel/mentor/flag_wall.go:44
+00:04:54 | Thường là tới cuối flag | CODE kernel/mentor/flag_wall.go:44
+00:05:04 | Nó sẽ | CODE kernel/mentor/flag_wall.go:44
+00:05:05 | Khi mình nói 2 cái trendline lại | CODE kernel/mentor/flag_wall.go:44
+00:05:07 | Mình sẽ được 1 cái flag | CODE kernel/mentor/flag_wall.go:44
+00:05:08 | Thường là tới cuối flag | CODE kernel/mentor/flag_wall.go:44
+00:05:09 | Nó sẽ pick up được 1 cái | CODE kernel/mentor/flag_wall.go:44
+00:05:12 | Hướng đi | CODE kernel/mentor/flag_wall.go:44
+00:05:13 | Đúng | CODE kernel/mentor/flag_wall.go:44
+00:05:14 | Nhưng | CODE kernel/mentor/flag_wall.go:44
+00:05:16 | Mình vẫn sẽ phải chờ cái sự reaction của market | CODE kernel/mentor/flag_wall.go:44
+00:05:19 | Đây nè anh chị | CODE kernel/mentor/flag_wall.go:44
+00:05:20 | Rõ ràng hồi sáng nó là 1 cái fake breakout | CODE kernel/mentor/flag_wall.go:44
+00:05:22 | Nó là một cái fact breakout rõ ràng | CODE kernel/mentor/flag_wall.go:44
+00:05:25 | Nó break qua xong chui ngược về | CODE kernel/mentor/flag_wall.go:44
+00:05:27 | Đúng không | CODE kernel/mentor/flag_wall.go:44
+00:05:30 | Mình sẽ không | CODE kernel/mentor/flag_wall.go:44
+00:05:32 | Em nói rồi | CODE kernel/mentor/flag_wall.go:44
+00:05:33 | Mình sẽ không bias | CODE kernel/mentor/flag_wall.go:44
+00:05:34 | Bây giờ nó break ra | CODE kernel/mentor/flag_wall.go:44
+00:05:36 | Thì nếu mà có setup | CODE kernel/mentor/flag_wall.go:44
+00:05:37 | Thì mình trade | CODE kernel/mentor/flag_wall.go:44
+00:05:38 | Còn không thì thôi | CODE kernel/mentor/flag_wall.go:44
+00:05:39 | Có nên vô hay không | CODE kernel/mentor/flag_wall.go:44
+00:05:47 | Thì có nên bây giờ nè | CODE kernel/mentor/flag_wall.go:72
+00:05:48 | Nếu mà anh chị vô chỗ này | CODE kernel/mentor/flag_wall.go:72
+00:05:53 | Anh chị vô cái lệnh | CODE kernel/mentor/flag_wall.go:72
+00:05:55 | Potential high low chỗ này | CODE kernel/mentor/flag_wall.go:72
+00:05:56 | Thì cái target anh chị về chỗ nào | CODE kernel/mentor/flag_wall.go:72
+00:05:58 | Mọi người trả lời thử | CODE kernel/mentor/flag_wall.go:72
+00:05:59 | Giúp em coi | CODE kernel/mentor/flag_wall.go:72
+00:05:59 | Có phải là target của anh chị | CODE kernel/mentor/flag_wall.go:72
+00:06:02 | là chỉ là trên cái đỉnh | CODE kernel/mentor/flag_wall.go:72
+00:06:04 | của cái flag không | CODE kernel/mentor/flag_wall.go:72
+00:06:05 | là trên cạnh trên không | CODE kernel/mentor/flag_wall.go:72
+00:06:06 | thì nếu như anh chị nào | CODE kernel/mentor/flag_wall.go:72
+00:06:10 | vẫn muốn vô thì mình vẫn | CODE kernel/mentor/flag_wall.go:72
+00:06:12 | scoping được | CODE kernel/mentor/flag_wall.go:72
+00:06:12 | không sai | CODE kernel/mentor/flag_wall.go:72
+00:06:14 | cũng như Lúa nói | CODE kernel/mentor/flag_wall.go:72
+00:06:20 | hay chị Sunny nói | CODE kernel/mentor/flag_wall.go:72
+00:06:21 | bây giờ nó break cái trend right rồi | CODE kernel/mentor/flag_wall.go:72
+00:06:24 | thì mình vẫn sẽ | CODE kernel/mentor/flag_wall.go:72
+00:06:25 | nếu mà mình muốn confirm, mình muốn chắc chắn | CODE kernel/mentor/flag_wall.go:72
+00:06:28 | thì đợi khung 5 phút đóng | CODE kernel/mentor/flag_wall.go:72
+00:06:29 | đợi đến 5 phút đóng | CODE kernel/mentor/flag_wall.go:72
+00:06:30 | đóng trên hay đóng dưới | CODE kernel/mentor/flag_wall.go:72
+00:06:34 | Đóng trên rồi đóng dưới | CODE kernel/mentor/flag_wall.go:72
+00:06:37 | Đóng dưới nguyên cây luôn | CODE kernel/mentor/flag_wall.go:72
+00:06:38 | Đóng dưới nguyên cây luôn | CODE kernel/mentor/flag_wall.go:72
+00:06:41 | Không đợi khung 15 phút | CODE kernel/mentor/flag_wall.go:72
+00:06:44 | Cô đợi khung 5 phút thôi | CODE kernel/mentor/flag_wall.go:72
+00:06:45 | Khung 5 phút đóng trên rồi đóng dưới là ok | CODE kernel/mentor/flag_wall.go:72
+00:06:47 | Rõ ràng ha | CODE kernel/mentor/flag_wall.go:72
+00:06:49 | Cái trendline | CODE kernel/mentor/flag_wall.go:72
+00:06:51 | Và cái multi time frame | CODE kernel/mentor/flag_wall.go:72
 00:06:53 | Nó sẽ rất là hép anh chị | —
 00:06:54 | Nó hép rất nhiều | —
 00:06:55 | Nên là | —

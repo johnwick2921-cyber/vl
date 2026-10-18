@@ -1,35 +1,35 @@
 cues: 79/79 · rule cues: 24 · rows: 2 · CODE: 23 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 1 · SPLIT: 0 · —: 55
 
-00:00:00 | Dưới 20 điểm là không vẽ, nhiều hơn thì mới vẽ, nhiều hơn 30 điểm thì mình mới vẽ thêm 1 cái nữa ha. | RULING kernel/mentor/key_levels.go:28
+00:00:00 | Dưới 20 điểm là không vẽ, nhiều hơn thì mới vẽ, nhiều hơn 30 điểm thì mình mới vẽ thêm 1 cái nữa ha. | RULING -> row 13
 00:00:06 | Nó lên, xuống, rồi, chuyển lại khung 5 phút. | —
 00:00:09 | Anh chị nhìn buổi sáng ngày hôm nay, khung 1 phút luôn, bự dữ vậy. | —
 00:00:20 | Mọi người thấy nó bao xe đâu không anh chị? Mọi người thấy nó bao xe đâu không? | —
 00:00:28 | Rõ ràng ha. Nè, mọi người thấy nó bao xe đâu không? | —
 00:00:34 | Không? Rồi, về tới đây nó vẫn có lực bao xe đó anh chị. | —
 00:00:40 | Cho tới thời điểm này, nó rớt, nó rớt luôn. | —
-00:00:43 | là khi mà nó break qua được | CODE kernel/mentor/day_gate.go:18
-00:00:45 | chính cái đường line | CODE kernel/mentor/day_gate.go:18
-00:00:46 | là châu Mỹ | CODE kernel/mentor/day_gate.go:18
-00:00:48 | 3 cái đường ZSR | CODE kernel/mentor/day_gate.go:18
-00:00:50 | 2 low middle của châu Mỹ | CODE kernel/mentor/day_gate.go:18
-00:00:52 | châu Âu và châu Á | CODE kernel/mentor/day_gate.go:18
-00:00:54 | thì khi đó market confirm | CODE kernel/mentor/day_gate.go:18
-00:00:56 | là trend đây | CODE kernel/mentor/day_gate.go:18
-00:00:58 | uptrend hay downtrend | CODE kernel/mentor/day_gate.go:18
-00:01:00 | thì em không biết | CODE kernel/mentor/day_gate.go:18
-00:01:01 | thì nó cứ break, nếu mà nó break lên hết bên trên | CODE kernel/mentor/day_gate.go:18
-00:01:04 | thì nó là uptrend | CODE kernel/mentor/day_gate.go:18
-00:01:05 | nó đang break hết xuống dưới thì nó là downtrend | CODE kernel/mentor/day_gate.go:18
-00:01:08 | và anh chị nên nhớ | CODE kernel/mentor/day_gate.go:18
-00:01:09 | phải nhớ kỹ cái điều này nè anh chị | CODE kernel/mentor/day_gate.go:18
-00:01:12 | Cho những anh chị nào hay trade gà | CODE kernel/mentor/day_gate.go:18
-00:01:15 | Tụi em nói hoài | CODE kernel/mentor/day_gate.go:18
-00:01:17 | Những ngày trend day | CODE kernel/mentor/day_gate.go:18
-00:01:21 | Thì làm ơn | CODE kernel/mentor/day_gate.go:18
-00:01:23 | Nếu như thích đánh đảo chiều | CODE kernel/mentor/day_gate.go:18
-00:01:26 | Thì làm ơn | CODE kernel/mentor/day_gate.go:18
-00:01:27 | Size nhỏ hoặc là trade cách như chị Tiny nói là kiếm | CODE kernel/mentor/day_gate.go:18
-00:01:30 | Potential low, high potential, high low | CODE kernel/mentor/day_gate.go:18
+00:00:43 | là khi mà nó break qua được | CODE kernel/mentor/day_gate.go:72
+00:00:45 | chính cái đường line | CODE kernel/mentor/day_gate.go:72
+00:00:46 | là châu Mỹ | CODE kernel/mentor/day_gate.go:72
+00:00:48 | 3 cái đường ZSR | CODE kernel/mentor/day_gate.go:72
+00:00:50 | 2 low middle của châu Mỹ | CODE kernel/mentor/day_gate.go:72
+00:00:52 | châu Âu và châu Á | CODE kernel/mentor/day_gate.go:72
+00:00:54 | thì khi đó market confirm | CODE kernel/mentor/day_gate.go:72
+00:00:56 | là trend đây | CODE kernel/mentor/day_gate.go:72
+00:00:58 | uptrend hay downtrend | CODE kernel/mentor/day_gate.go:72
+00:01:00 | thì em không biết | CODE kernel/mentor/day_gate.go:72
+00:01:01 | thì nó cứ break, nếu mà nó break lên hết bên trên | CODE kernel/mentor/day_gate.go:72
+00:01:04 | thì nó là uptrend | CODE kernel/mentor/day_gate.go:72
+00:01:05 | nó đang break hết xuống dưới thì nó là downtrend | CODE kernel/mentor/day_gate.go:72
+00:01:08 | và anh chị nên nhớ | CODE kernel/mentor/day_gate.go:72
+00:01:09 | phải nhớ kỹ cái điều này nè anh chị | CODE kernel/mentor/day_gate.go:72
+00:01:12 | Cho những anh chị nào hay trade gà | CODE kernel/mentor/day_gate.go:72
+00:01:15 | Tụi em nói hoài | CODE kernel/mentor/day_gate.go:72
+00:01:17 | Những ngày trend day | CODE kernel/mentor/day_gate.go:72
+00:01:21 | Thì làm ơn | CODE kernel/mentor/day_gate.go:72
+00:01:23 | Nếu như thích đánh đảo chiều | CODE kernel/mentor/day_gate.go:72
+00:01:26 | Thì làm ơn | CODE kernel/mentor/day_gate.go:72
+00:01:27 | Size nhỏ hoặc là trade cách như chị Tiny nói là kiếm | CODE kernel/mentor/day_gate.go:72
+00:01:30 | Potential low, high potential, high low | CODE kernel/mentor/day_gate.go:72
 00:01:33 | Đặt lệnh buy stop, sell stop | —
 00:01:34 | Còn những cái ngày trend day | —
 00:01:36 | Mà anh chị cứ đè con gà ra | —

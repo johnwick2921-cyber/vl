@@ -1,16 +1,16 @@
 cues: 651/651 · rule cues: 82 · rows: 6 · CODE: 82 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · SPLIT: 0 · —: 569
 
-00:00:00 | Ok, thì từ đó giờ anh chị cứ bị lấn cấn giữa cái việc là buy setup trigger và sell setup trigger. | CODE kernel/mentor/filters.go:43
-00:00:15 | Em, thật sự là mọi người đang đi hơi bị xa cái vấn đề đó anh chị. Anh chị đang bị đi xa cái vấn đề đó mọi người. | CODE kernel/mentor/filters.go:43
-00:00:24 | Nên là bây giờ | CODE kernel/mentor/filters.go:43
-00:00:30 | Quay về với em nè | CODE kernel/mentor/filters.go:43
-00:00:32 | Quay về hả mình | CODE kernel/mentor/filters.go:43
-00:00:32 | Bây giờ mình quay về nè | CODE kernel/mentor/filters.go:43
-00:00:34 | Buy setup trigger là gì | CODE kernel/mentor/filters.go:43
-00:00:36 | Và sell setup trigger là gì | CODE kernel/mentor/filters.go:43
-00:00:38 | Buy setup trigger | CODE kernel/mentor/filters.go:43
-00:00:40 | Tập trung nè | CODE kernel/mentor/filters.go:43
-00:00:42 | Potential high low | CODE kernel/mentor/filters.go:43
+00:00:00 | Ok, thì từ đó giờ anh chị cứ bị lấn cấn giữa cái việc là buy setup trigger và sell setup trigger. | CODE kernel/mentor/filters.go:54
+00:00:15 | Em, thật sự là mọi người đang đi hơi bị xa cái vấn đề đó anh chị. Anh chị đang bị đi xa cái vấn đề đó mọi người. | CODE kernel/mentor/filters.go:54
+00:00:24 | Nên là bây giờ | CODE kernel/mentor/filters.go:54
+00:00:30 | Quay về với em nè | CODE kernel/mentor/filters.go:54
+00:00:32 | Quay về hả mình | CODE kernel/mentor/filters.go:54
+00:00:32 | Bây giờ mình quay về nè | CODE kernel/mentor/filters.go:54
+00:00:34 | Buy setup trigger là gì | CODE kernel/mentor/filters.go:54
+00:00:36 | Và sell setup trigger là gì | CODE kernel/mentor/filters.go:54
+00:00:38 | Buy setup trigger | CODE kernel/mentor/filters.go:54
+00:00:40 | Tập trung nè | CODE kernel/mentor/filters.go:54
+00:00:42 | Potential high low | CODE kernel/mentor/filters.go:54
 00:00:52 | Sell setup trigger | —
 00:00:58 | Bằng potential low high | —
 00:01:00 | That's it | —
@@ -37,13 +37,13 @@ cues: 651/651 · rule cues: 82 · rows: 6 · CODE: 82 · MISMATCH: 0 · NOT-IN-B
 00:01:50 | Mình nhìn lại cái câu | —
 00:01:52 | Dòng số 2 | —
 00:01:54 | Slide số 16 giúp em | —
-00:01:57 | Khi nến phá đỉnh | CODE kernel/mentor/filters.go:43
-00:01:59 | Và đáy củ giá | CODE kernel/mentor/filters.go:43
-00:02:01 | Nên tiếp tục đi theo hướng đó | CODE kernel/mentor/filters.go:43
-00:02:02 | Khi nào mình bắt đầu | CODE kernel/mentor/filters.go:43
-00:02:05 | Mình biết được | CODE kernel/mentor/filters.go:43
-00:02:06 | Đây em ví dụ ngay item 2 đi cho mọi người dễ hình dung | CODE kernel/mentor/filters.go:43
-00:02:10 | Rồi | CODE kernel/mentor/filters.go:43
+00:01:57 | Khi nến phá đỉnh | CODE kernel/mentor/filters.go:54
+00:01:59 | Và đáy củ giá | CODE kernel/mentor/filters.go:54
+00:02:01 | Nên tiếp tục đi theo hướng đó | CODE kernel/mentor/filters.go:54
+00:02:02 | Khi nào mình bắt đầu | CODE kernel/mentor/filters.go:54
+00:02:05 | Mình biết được | CODE kernel/mentor/filters.go:54
+00:02:06 | Đây em ví dụ ngay item 2 đi cho mọi người dễ hình dung | CODE kernel/mentor/filters.go:54
+00:02:10 | Rồi | CODE kernel/mentor/filters.go:54
 00:02:11 | Khi nào mình biết được | —
 00:02:14 | Bây giờ cái này nè | —
 00:02:17 | Mình sẽ sử dụng cho gì anh chị | —
@@ -92,16 +92,16 @@ cues: 651/651 · rule cues: 82 · rows: 6 · CODE: 82 · MISMATCH: 0 · NOT-IN-B
 00:03:44 | Khi nào nó bắt đầu nó pullback | —
 00:03:46 | Thì đây | —
 00:03:48 | Nó sẽ provide được cho mình | —
-00:03:50 | Cũng như cái lúc mà anh chị | CODE kernel/mentor/mtf.go:22
-00:03:51 | Đánh potential lower 2 vậy thôi | CODE kernel/mentor/mtf.go:22
-00:03:53 | Nó không khác gì đó | CODE kernel/mentor/mtf.go:22
-00:03:55 | Nó chỉ là | CODE kernel/mentor/mtf.go:22
-00:03:57 | Cũng như là cái khui mà khi anh chị trade | CODE kernel/mentor/mtf.go:22
-00:04:00 | Khung 1 phút khung 2 phút | CODE kernel/mentor/mtf.go:22
-00:04:01 | Nó cũng là anh chị bắt potential lower 2 | CODE kernel/mentor/mtf.go:22
-00:04:03 | Cây nến sau vượt qua đấy cây nến trước | CODE kernel/mentor/mtf.go:22
-00:04:06 | Thì mình sẽ có được cái điểm entry | CODE kernel/mentor/mtf.go:22
-00:04:08 | Và điểm stop loss | CODE kernel/mentor/mtf.go:22
+00:03:50 | Cũng như cái lúc mà anh chị | CODE kernel/mentor/mtf.go:34
+00:03:51 | Đánh potential lower 2 vậy thôi | CODE kernel/mentor/mtf.go:34
+00:03:53 | Nó không khác gì đó | CODE kernel/mentor/mtf.go:34
+00:03:55 | Nó chỉ là | CODE kernel/mentor/mtf.go:34
+00:03:57 | Cũng như là cái khui mà khi anh chị trade | CODE kernel/mentor/mtf.go:34
+00:04:00 | Khung 1 phút khung 2 phút | CODE kernel/mentor/mtf.go:34
+00:04:01 | Nó cũng là anh chị bắt potential lower 2 | CODE kernel/mentor/mtf.go:34
+00:04:03 | Cây nến sau vượt qua đấy cây nến trước | CODE kernel/mentor/mtf.go:34
+00:04:06 | Thì mình sẽ có được cái điểm entry | CODE kernel/mentor/mtf.go:34
+00:04:08 | Và điểm stop loss | CODE kernel/mentor/mtf.go:34
 00:04:13 | Đúng không? Rõ ràng | —
 00:04:15 | Không gì khác hết | —
 00:04:17 | Rồi | —
@@ -170,39 +170,39 @@ cues: 651/651 · rule cues: 82 · rows: 6 · CODE: 82 · MISMATCH: 0 · NOT-IN-B
 00:06:54 | Em nhìn nhứt mắt lắm | —
 00:06:56 | Rồi có anh chị nào không hiểu không mọi người | —
 00:06:58 | Cái buy setup trigger | —
-00:07:00 | Hoặc là share setup trigger | CODE kernel/mentor/mtf.go:22
-00:07:01 | Mình sẽ chỉ sử dụng cho khung 5 phút | CODE kernel/mentor/mtf.go:22
-00:07:04 | Hoặc là khung 15 phút | CODE kernel/mentor/mtf.go:22
-00:07:06 | Để mình biết được là cái trend | CODE kernel/mentor/mtf.go:22
-00:07:08 | Nó sẽ bắt đầu nó chuẩn bị | CODE kernel/mentor/mtf.go:22
-00:07:10 | Nó đảo chiều hay là nó bắt đầu nó pull back | CODE kernel/mentor/mtf.go:22
-00:07:12 | Hay là nó bắt đầu nó đi như thế nào đó | CODE kernel/mentor/mtf.go:22
-00:07:14 | Nên là mình sẽ | CODE kernel/mentor/mtf.go:22
-00:07:19 | chỉ sử dụng khung 5 phút | CODE kernel/mentor/mtf.go:22
-00:07:21 | để mình biết xác định được là | CODE kernel/mentor/mtf.go:22
-00:07:23 | đây nè, khung 5 phút bắt đầu | CODE kernel/mentor/mtf.go:22
-00:07:25 | nó pullback rồi nè, thì bắt đầu | CODE kernel/mentor/mtf.go:22
-00:07:27 | bây giờ em hỏi anh chị ha | CODE kernel/mentor/mtf.go:22
-00:07:29 | khung 5 phút | CODE kernel/mentor/mtf.go:22
-00:07:31 | đang uptrend | CODE kernel/mentor/mtf.go:22
-00:07:32 | và pullback thì khung 2 phút và khung 1 phút | CODE kernel/mentor/mtf.go:22
-00:07:35 | đang làm gì anh chị, có anh chị nào trả lời với em không | CODE kernel/mentor/mtf.go:22
-00:07:38 | trả lời với em mọi người | CODE kernel/mentor/mtf.go:22
-00:07:42 | khung 5 phút | CODE kernel/mentor/mtf.go:22
-00:07:44 | đang uptrend | CODE kernel/mentor/mtf.go:22
-00:07:45 | và | CODE kernel/mentor/mtf.go:22
-00:07:47 | qua cái giai đoạn uptrend nè | CODE kernel/mentor/mtf.go:22
-00:07:50 | bây giờ pullback thì mình sẽ | CODE kernel/mentor/mtf.go:22
-00:07:52 | Cái khung 1 phút và khung 2 phút sẽ đang làm gì | CODE kernel/mentor/mtf.go:22
-00:07:54 | Đang là downtrend đúng không | CODE kernel/mentor/mtf.go:22
-00:07:56 | Đó bây giờ khung 5 phút nè | CODE kernel/mentor/mtf.go:22
-00:07:57 | Trigger pullback rồi nè | CODE kernel/mentor/mtf.go:22
-00:07:59 | Trigger pullback có nghĩa là gì | CODE kernel/mentor/mtf.go:22
-00:08:00 | Là khi nến phá đáy của cây nến trước đó | CODE kernel/mentor/mtf.go:22
-00:08:04 | Giá nên tiếp tục đi theo hướng đó | CODE kernel/mentor/mtf.go:22
-00:08:05 | Bây giờ nó phá cái đáy là nó đi xuống | CODE kernel/mentor/mtf.go:22
-00:08:07 | Thì khung 2 phút và khung 1 phút đang là downtrend | CODE kernel/mentor/mtf.go:22
-00:08:09 | Thì mình đi kiếm lệnh short | CODE kernel/mentor/mtf.go:22
+00:07:00 | Hoặc là share setup trigger | CODE kernel/mentor/mtf.go:34
+00:07:01 | Mình sẽ chỉ sử dụng cho khung 5 phút | CODE kernel/mentor/mtf.go:34
+00:07:04 | Hoặc là khung 15 phút | CODE kernel/mentor/mtf.go:34
+00:07:06 | Để mình biết được là cái trend | CODE kernel/mentor/mtf.go:34
+00:07:08 | Nó sẽ bắt đầu nó chuẩn bị | CODE kernel/mentor/mtf.go:34
+00:07:10 | Nó đảo chiều hay là nó bắt đầu nó pull back | CODE kernel/mentor/mtf.go:34
+00:07:12 | Hay là nó bắt đầu nó đi như thế nào đó | CODE kernel/mentor/mtf.go:34
+00:07:14 | Nên là mình sẽ | CODE kernel/mentor/mtf.go:34
+00:07:19 | chỉ sử dụng khung 5 phút | CODE kernel/mentor/mtf.go:34
+00:07:21 | để mình biết xác định được là | CODE kernel/mentor/mtf.go:34
+00:07:23 | đây nè, khung 5 phút bắt đầu | CODE kernel/mentor/mtf.go:34
+00:07:25 | nó pullback rồi nè, thì bắt đầu | CODE kernel/mentor/mtf.go:34
+00:07:27 | bây giờ em hỏi anh chị ha | CODE kernel/mentor/mtf.go:34
+00:07:29 | khung 5 phút | CODE kernel/mentor/mtf.go:34
+00:07:31 | đang uptrend | CODE kernel/mentor/mtf.go:34
+00:07:32 | và pullback thì khung 2 phút và khung 1 phút | CODE kernel/mentor/mtf.go:34
+00:07:35 | đang làm gì anh chị, có anh chị nào trả lời với em không | CODE kernel/mentor/mtf.go:34
+00:07:38 | trả lời với em mọi người | CODE kernel/mentor/mtf.go:34
+00:07:42 | khung 5 phút | CODE kernel/mentor/mtf.go:34
+00:07:44 | đang uptrend | CODE kernel/mentor/mtf.go:34
+00:07:45 | và | CODE kernel/mentor/mtf.go:34
+00:07:47 | qua cái giai đoạn uptrend nè | CODE kernel/mentor/mtf.go:34
+00:07:50 | bây giờ pullback thì mình sẽ | CODE kernel/mentor/mtf.go:34
+00:07:52 | Cái khung 1 phút và khung 2 phút sẽ đang làm gì | CODE kernel/mentor/mtf.go:34
+00:07:54 | Đang là downtrend đúng không | CODE kernel/mentor/mtf.go:34
+00:07:56 | Đó bây giờ khung 5 phút nè | CODE kernel/mentor/mtf.go:34
+00:07:57 | Trigger pullback rồi nè | CODE kernel/mentor/mtf.go:34
+00:07:59 | Trigger pullback có nghĩa là gì | CODE kernel/mentor/mtf.go:34
+00:08:00 | Là khi nến phá đáy của cây nến trước đó | CODE kernel/mentor/mtf.go:34
+00:08:04 | Giá nên tiếp tục đi theo hướng đó | CODE kernel/mentor/mtf.go:34
+00:08:05 | Bây giờ nó phá cái đáy là nó đi xuống | CODE kernel/mentor/mtf.go:34
+00:08:07 | Thì khung 2 phút và khung 1 phút đang là downtrend | CODE kernel/mentor/mtf.go:34
+00:08:09 | Thì mình đi kiếm lệnh short | CODE kernel/mentor/mtf.go:34
 00:08:12 | Rõ ràng không | —
 00:08:14 | Mình đi kiếm lệnh short | —
 00:08:15 | Nên là anh chị đừng suy nghĩ quá nhiều về cái việc | —
@@ -305,17 +305,17 @@ cues: 651/651 · rule cues: 82 · rows: 6 · CODE: 82 · MISMATCH: 0 · NOT-IN-B
 00:12:18 | Tại vì khi nến phá đáy | —
 00:12:22 | Của cây nến trước | —
 00:12:22 | Phá đáy có nghĩa là em không cần nó đóng | —
-00:12:25 | Đó là tại sao em lý do em nói là em nói phá | CODE kernel/mentor/filters.go:143
-00:12:27 | Phá là không cần đóng | CODE kernel/mentor/filters.go:143
-00:12:28 | Phá là phá, nó vượt qua gọi là nó phá | CODE kernel/mentor/filters.go:143
-00:12:34 | Thì giá nên tiếp tục đi theo hướng đó | CODE kernel/mentor/filters.go:143
-00:12:36 | Thì rõ ràng không | CODE kernel/mentor/filters.go:143
-00:12:37 | Khung 5 phút | CODE kernel/mentor/filters.go:143
-00:12:38 | Sell setup trigger potential lower high | CODE kernel/mentor/filters.go:143
-00:12:42 | Đúng không | CODE kernel/mentor/filters.go:143
-00:12:43 | bộ tôi bộ tên solo 205 của khung khung 5 phút thì tôi chỉ có không một phút tôi ngồi đây tôi | CODE kernel/mentor/filters.go:143
-00:12:50 | đánh sót Tại sao Tại vì không 5 phút trích lô hai rồi bộ tên solo hai rồi thì không có lý do | CODE kernel/mentor/filters.go:143
-00:12:55 | gì đánh lên nữa hết đúng không Ừ đây là cái cái sự vi diệu của của multi-time frame Ừ rồi anh | CODE kernel/mentor/filters.go:143
+00:12:25 | Đó là tại sao em lý do em nói là em nói phá | CODE kernel/mentor/filters.go:144
+00:12:27 | Phá là không cần đóng | CODE kernel/mentor/filters.go:144
+00:12:28 | Phá là phá, nó vượt qua gọi là nó phá | CODE kernel/mentor/filters.go:144
+00:12:34 | Thì giá nên tiếp tục đi theo hướng đó | CODE kernel/mentor/filters.go:144
+00:12:36 | Thì rõ ràng không | CODE kernel/mentor/filters.go:144
+00:12:37 | Khung 5 phút | CODE kernel/mentor/filters.go:144
+00:12:38 | Sell setup trigger potential lower high | CODE kernel/mentor/filters.go:144
+00:12:42 | Đúng không | CODE kernel/mentor/filters.go:144
+00:12:43 | bộ tôi bộ tên solo 205 của khung khung 5 phút thì tôi chỉ có không một phút tôi ngồi đây tôi | CODE kernel/mentor/filters.go:144
+00:12:50 | đánh sót Tại sao Tại vì không 5 phút trích lô hai rồi bộ tên solo hai rồi thì không có lý do | CODE kernel/mentor/filters.go:144
+00:12:55 | gì đánh lên nữa hết đúng không Ừ đây là cái cái sự vi diệu của của multi-time frame Ừ rồi anh | CODE kernel/mentor/filters.go:144
 00:13:07 | Anh muốn em làm khung 15 phút | —
 00:13:08 | Nó cũng sẽ the same concept thôi | —
 00:13:10 | Nó cũng the same concept thôi | —
@@ -580,16 +580,16 @@ cues: 651/651 · rule cues: 82 · rows: 6 · CODE: 82 · MISMATCH: 0 · NOT-IN-B
 00:23:00 | Thì bây giờ nếu mà | —
 00:23:02 | nó đã lớn quá thì cái độ delay | —
 00:23:04 | của nó sẽ rất là cao và mình sẽ | —
-00:23:06 | không có được một cái điểm entry sớm | CODE kernel/mentor/eval.go:1571
-00:23:08 | tại vì sao | CODE kernel/mentor/eval.go:1571
-00:23:10 | tại vì khung 2 phút là | CODE kernel/mentor/eval.go:1571
-00:23:11 | cái entry mình sớm nhất rồi, khung 1 phút | CODE kernel/mentor/eval.go:1571
-00:23:13 | em không sử dụng ha, tại vì sao | CODE kernel/mentor/eval.go:1571
-00:23:15 | tại vì khung 1 phút nó bị quét râu | CODE kernel/mentor/eval.go:1571
-00:23:18 | em sẽ không sử dụng khung 1 phút | CODE kernel/mentor/eval.go:1571
-00:23:20 | để em mark, mà em sẽ sử dụng | CODE kernel/mentor/eval.go:1571
-00:23:22 | khung 2 phút để em mark cái buy setup trigger | CODE kernel/mentor/eval.go:1571
-00:23:24 | hoặc là setup trigger, xong sau đó | CODE kernel/mentor/eval.go:1571
+00:23:06 | không có được một cái điểm entry sớm | CODE kernel/mentor/eval.go:1580
+00:23:08 | tại vì sao | CODE kernel/mentor/eval.go:1580
+00:23:10 | tại vì khung 2 phút là | CODE kernel/mentor/eval.go:1580
+00:23:11 | cái entry mình sớm nhất rồi, khung 1 phút | CODE kernel/mentor/eval.go:1580
+00:23:13 | em không sử dụng ha, tại vì sao | CODE kernel/mentor/eval.go:1580
+00:23:15 | tại vì khung 1 phút nó bị quét râu | CODE kernel/mentor/eval.go:1580
+00:23:18 | em sẽ không sử dụng khung 1 phút | CODE kernel/mentor/eval.go:1580
+00:23:20 | để em mark, mà em sẽ sử dụng | CODE kernel/mentor/eval.go:1580
+00:23:22 | khung 2 phút để em mark cái buy setup trigger | CODE kernel/mentor/eval.go:1580
+00:23:24 | hoặc là setup trigger, xong sau đó | CODE kernel/mentor/eval.go:1580
 00:23:26 | em chuyển khung 5 phút, em mark thêm cái nữa | —
 00:23:27 | rồi, là em biết lúc đó | —
 00:23:29 | Bài setup trigger | —

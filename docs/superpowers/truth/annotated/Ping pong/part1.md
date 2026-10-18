@@ -1,38 +1,38 @@
 cues: 290/290 · rule cues: 103 · rows: 5 · CODE: 103 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · SPLIT: 0 · —: 187
 
-00:00:00 | Rồi, khi mình có 2 cái box là PLH2 ở trên và PLH2 ở dưới và nến nằm ở giữa thì mình dẻ ra và mình đánh ping pong tại vì những cái này là những cái zone và nó khá là cứng, em nói khá là cứng ha nhưng mình cũng không có được quyền mình vô giá market ha, tuyệt đối không được vô giá market ha. | CODE kernel/mentor/box_trade.go:205
-00:00:30 | Bây giờ mình có setup gì | CODE kernel/mentor/box_trade.go:205
-00:00:32 | Bây giờ lên tới resistance | CODE kernel/mentor/box_trade.go:205
-00:00:35 | Là mình có nghĩ là mình phải đánh lệnh short đúng không | CODE kernel/mentor/box_trade.go:205
-00:00:37 | Thì mình phải kiếm inside bar cho lệnh short | CODE kernel/mentor/box_trade.go:205
-00:00:40 | Và mình kiếm | CODE kernel/mentor/box_trade.go:205
-00:00:42 | Potential lower 2 | CODE kernel/mentor/box_trade.go:205
-00:00:43 | Đây để em ghi ra luôn ha | CODE kernel/mentor/box_trade.go:205
-00:00:48 | Rồi | CODE kernel/mentor/box_trade.go:205
-00:01:01 | Kiếm inside bar cho lệnh short và potential lower 2 | CODE kernel/mentor/box_trade.go:205
-00:01:04 | Failure to go lower | CODE kernel/mentor/box_trade.go:205
-00:01:05 | Thì mình kiếm cái gì anh chị | CODE kernel/mentor/box_trade.go:205
-00:01:07 | Giờ xíu mình sẽ hướng dẫn giấy bóc sau ha | CODE kernel/mentor/box_trade.go:205
-00:01:11 | Giờ đụng ở dưới là gì | CODE kernel/mentor/box_trade.go:205
-00:01:15 | Mình kiếm gì | CODE kernel/mentor/box_trade.go:205
-00:01:15 | Inside bar | CODE kernel/mentor/box_trade.go:205
-00:01:16 | Cho lệnh long | CODE kernel/mentor/box_trade.go:205
-00:01:18 | Và potential high or low | CODE kernel/mentor/box_trade.go:205
-00:01:20 | Chứ mình tuyệt đối không được vô | CODE kernel/mentor/box_trade.go:205
-00:01:23 | Ở giá market | CODE kernel/mentor/box_trade.go:205
-00:01:24 | Tuyệt đối nha anh chị | CODE kernel/mentor/box_trade.go:205
-00:01:27 | Bây giờ mình đã học | CODE kernel/mentor/box_trade.go:205
-00:01:28 | Mình đã trade | CODE kernel/mentor/isb.go:137
-00:01:29 | Mình có biết khi nào nó entry cái lệnh của mình rồi | CODE kernel/mentor/isb.go:137
-00:01:33 | Khi nào nó bắt đầu trigger cái lệnh của mình rồi | CODE kernel/mentor/isb.go:137
-00:01:35 | Thì không có lý do gì mình vô giá market nữa hết | CODE kernel/mentor/isb.go:137
-00:01:37 | Rồi | CODE kernel/mentor/isb.go:137
-00:01:40 | Đây | CODE kernel/mentor/isb.go:137
-00:01:43 | Đây là cái khúc này | CODE kernel/mentor/isb.go:137
-00:01:44 | Rồi bình bỏ nè | CODE kernel/mentor/isb.go:137
-00:01:46 | Có phải anh chị có thấy không | CODE kernel/mentor/isb.go:137
-00:01:48 | Ở đây nó làm cái gì mọi người | CODE kernel/mentor/isb.go:137
-00:01:49 | Có phải rõ ràng nếu như nó hô | CODE kernel/mentor/isb.go:137
+00:00:00 | Rồi, khi mình có 2 cái box là PLH2 ở trên và PLH2 ở dưới và nến nằm ở giữa thì mình dẻ ra và mình đánh ping pong tại vì những cái này là những cái zone và nó khá là cứng, em nói khá là cứng ha nhưng mình cũng không có được quyền mình vô giá market ha, tuyệt đối không được vô giá market ha. | CODE kernel/mentor/box_trade.go:168
+00:00:30 | Bây giờ mình có setup gì | CODE kernel/mentor/box_trade.go:168
+00:00:32 | Bây giờ lên tới resistance | CODE kernel/mentor/box_trade.go:168
+00:00:35 | Là mình có nghĩ là mình phải đánh lệnh short đúng không | CODE kernel/mentor/box_trade.go:168
+00:00:37 | Thì mình phải kiếm inside bar cho lệnh short | CODE kernel/mentor/box_trade.go:168
+00:00:40 | Và mình kiếm | CODE kernel/mentor/box_trade.go:168
+00:00:42 | Potential lower 2 | CODE kernel/mentor/box_trade.go:168
+00:00:43 | Đây để em ghi ra luôn ha | CODE kernel/mentor/box_trade.go:168
+00:00:48 | Rồi | CODE kernel/mentor/box_trade.go:168
+00:01:01 | Kiếm inside bar cho lệnh short và potential lower 2 | CODE kernel/mentor/box_trade.go:168
+00:01:04 | Failure to go lower | CODE kernel/mentor/box_trade.go:168
+00:01:05 | Thì mình kiếm cái gì anh chị | CODE kernel/mentor/box_trade.go:168
+00:01:07 | Giờ xíu mình sẽ hướng dẫn giấy bóc sau ha | CODE kernel/mentor/box_trade.go:168
+00:01:11 | Giờ đụng ở dưới là gì | CODE kernel/mentor/box_trade.go:168
+00:01:15 | Mình kiếm gì | CODE kernel/mentor/box_trade.go:168
+00:01:15 | Inside bar | CODE kernel/mentor/box_trade.go:168
+00:01:16 | Cho lệnh long | CODE kernel/mentor/box_trade.go:168
+00:01:18 | Và potential high or low | CODE kernel/mentor/box_trade.go:168
+00:01:20 | Chứ mình tuyệt đối không được vô | CODE kernel/mentor/box_trade.go:168
+00:01:23 | Ở giá market | CODE kernel/mentor/box_trade.go:168
+00:01:24 | Tuyệt đối nha anh chị | CODE kernel/mentor/box_trade.go:168
+00:01:27 | Bây giờ mình đã học | CODE kernel/mentor/box_trade.go:168
+00:01:28 | Mình đã trade | CODE kernel/mentor/isb.go:174
+00:01:29 | Mình có biết khi nào nó entry cái lệnh của mình rồi | CODE kernel/mentor/isb.go:174
+00:01:33 | Khi nào nó bắt đầu trigger cái lệnh của mình rồi | CODE kernel/mentor/isb.go:174
+00:01:35 | Thì không có lý do gì mình vô giá market nữa hết | CODE kernel/mentor/isb.go:174
+00:01:37 | Rồi | CODE kernel/mentor/isb.go:174
+00:01:40 | Đây | CODE kernel/mentor/isb.go:174
+00:01:43 | Đây là cái khúc này | CODE kernel/mentor/isb.go:174
+00:01:44 | Rồi bình bỏ nè | CODE kernel/mentor/isb.go:174
+00:01:46 | Có phải anh chị có thấy không | CODE kernel/mentor/isb.go:174
+00:01:48 | Ở đây nó làm cái gì mọi người | CODE kernel/mentor/isb.go:174
+00:01:49 | Có phải rõ ràng nếu như nó hô | CODE kernel/mentor/isb.go:174
 00:01:52 | Nó làm cái gì anh chị | —
 00:01:54 | Nên là nếu mà có anh chị nào nhìn ra không | —
 00:01:59 | Ngay cái nến đỏ nè | —
@@ -101,22 +101,22 @@ cues: 290/290 · rule cues: 103 · rows: 5 · CODE: 103 · MISMATCH: 0 · NOT-IN
 00:04:29 | Tôi không cần đi kiếm | —
 00:04:30 | Ha | —
 00:04:33 | Rồi tiếp tục nè | —
-00:04:37 | Khi mà nó | CODE kernel/mentor/isb_box.go:90
-00:04:39 | Kẹt trong răng kiểu này nè | CODE kernel/mentor/isb_box.go:90
-00:04:41 | Anh chị | CODE kernel/mentor/isb_box.go:90
-00:04:41 | Bật qua cái khung lớn | CODE kernel/mentor/isb_box.go:90
-00:04:43 | Khung giờ lớn đi | CODE kernel/mentor/isb_box.go:90
-00:04:44 | Mọi người thấy liền luôn à | CODE kernel/mentor/isb_box.go:90
-00:04:46 | Là inside bar nè mọi người | CODE kernel/mentor/isb_box.go:90
-00:04:49 | Mọi người thấy rõ ràng đấy với em không | CODE kernel/mentor/isb_box.go:90
-00:04:51 | Là nó là inside bar | CODE kernel/mentor/isb_box.go:90
-00:04:52 | Khung 15 phút nè | CODE kernel/mentor/isb_box.go:90
-00:04:55 | Ha | CODE kernel/mentor/isb_box.go:90
-00:04:55 | xíu nữa em sẽ hướng dẫn anh chị vẽ box rồi anh chị sẽ có cái target ha | CODE kernel/mentor/isb_box.go:90
-00:05:04 | xíu nữa em sẽ hướng dẫn vẽ box rồi em sẽ có cái target | CODE kernel/mentor/isb_box.go:90
-00:05:07 | ha | CODE kernel/mentor/isb_box.go:90
-00:05:08 | tìm mọi người thấy nó in rank vậy nè | CODE kernel/mentor/isb_box.go:90
-00:05:10 | nó tạo fail to go higher fail to go lower rồi | CODE kernel/mentor/isb_box.go:90
+00:04:37 | Khi mà nó | CODE kernel/mentor/isb_box.go:42
+00:04:39 | Kẹt trong răng kiểu này nè | CODE kernel/mentor/isb_box.go:42
+00:04:41 | Anh chị | CODE kernel/mentor/isb_box.go:42
+00:04:41 | Bật qua cái khung lớn | CODE kernel/mentor/isb_box.go:42
+00:04:43 | Khung giờ lớn đi | CODE kernel/mentor/isb_box.go:42
+00:04:44 | Mọi người thấy liền luôn à | CODE kernel/mentor/isb_box.go:42
+00:04:46 | Là inside bar nè mọi người | CODE kernel/mentor/isb_box.go:42
+00:04:49 | Mọi người thấy rõ ràng đấy với em không | CODE kernel/mentor/isb_box.go:42
+00:04:51 | Là nó là inside bar | CODE kernel/mentor/isb_box.go:42
+00:04:52 | Khung 15 phút nè | CODE kernel/mentor/isb_box.go:42
+00:04:55 | Ha | CODE kernel/mentor/isb_box.go:42
+00:04:55 | xíu nữa em sẽ hướng dẫn anh chị vẽ box rồi anh chị sẽ có cái target ha | CODE kernel/mentor/isb_box.go:42
+00:05:04 | xíu nữa em sẽ hướng dẫn vẽ box rồi em sẽ có cái target | CODE kernel/mentor/isb_box.go:42
+00:05:07 | ha | CODE kernel/mentor/isb_box.go:42
+00:05:08 | tìm mọi người thấy nó in rank vậy nè | CODE kernel/mentor/isb_box.go:42
+00:05:10 | nó tạo fail to go higher fail to go lower rồi | CODE kernel/mentor/isb_box.go:42
 00:05:13 | là mọi người nhìn thử khung 15 phút khung lớn hơn đi | —
 00:05:16 | là nó sẽ tự nhiên nó có cái | —
 00:05:18 | cái inside bar | —
@@ -169,19 +169,19 @@ cues: 290/290 · rule cues: 103 · rows: 5 · CODE: 103 · MISMATCH: 0 · NOT-IN
 00:07:05 | Rồi | —
 00:07:06 | Bây giờ nè | —
 00:07:07 | Mọi người nhớ lại với em nè | —
-00:07:12 | Mọi người nhớ lại với em nè | CODE kernel/mentor/box.go:569
-00:07:13 | Khi nào mình có quyền | CODE kernel/mentor/box.go:569
-00:07:16 | Đánh sốt | CODE kernel/mentor/box.go:569
-00:07:20 | Ở dưới | CODE kernel/mentor/box.go:569
-00:07:21 | Khi nào mình có một cây nến | CODE kernel/mentor/box.go:569
-00:07:25 | Completely nằm ở bên ngoài | CODE kernel/mentor/box.go:569
-00:07:28 | Ngoài cái box | CODE kernel/mentor/box.go:569
-00:07:29 | Còn cây nến này | CODE kernel/mentor/box.go:569
-00:07:31 | Anh Thắng thấy | CODE kernel/mentor/box.go:569
-00:07:32 | Có thấy là cây nến này | CODE kernel/mentor/box.go:569
-00:07:33 | Nó có đóng ở bên ngoài không | CODE kernel/mentor/box.go:569
-00:07:34 | Hay nó có nằm completely ở ngoài không | CODE kernel/mentor/box.go:569
-00:07:36 | Đúng rồi | CODE kernel/mentor/box.go:569
+00:07:12 | Mọi người nhớ lại với em nè | CODE kernel/mentor/box.go:576
+00:07:13 | Khi nào mình có quyền | CODE kernel/mentor/box.go:576
+00:07:16 | Đánh sốt | CODE kernel/mentor/box.go:576
+00:07:20 | Ở dưới | CODE kernel/mentor/box.go:576
+00:07:21 | Khi nào mình có một cây nến | CODE kernel/mentor/box.go:576
+00:07:25 | Completely nằm ở bên ngoài | CODE kernel/mentor/box.go:576
+00:07:28 | Ngoài cái box | CODE kernel/mentor/box.go:576
+00:07:29 | Còn cây nến này | CODE kernel/mentor/box.go:576
+00:07:31 | Anh Thắng thấy | CODE kernel/mentor/box.go:576
+00:07:32 | Có thấy là cây nến này | CODE kernel/mentor/box.go:576
+00:07:33 | Nó có đóng ở bên ngoài không | CODE kernel/mentor/box.go:576
+00:07:34 | Hay nó có nằm completely ở ngoài không | CODE kernel/mentor/box.go:576
+00:07:36 | Đúng rồi | CODE kernel/mentor/box.go:576
 00:07:42 | Nếu mà không có | —
 00:07:43 | Nằm completely ở ngoài cái box này | —
 00:07:45 | Thì mình đâu có kiếm lệnh short nữa | —
@@ -247,46 +247,46 @@ cues: 290/290 · rule cues: 103 · rows: 5 · CODE: 103 · MISMATCH: 0 · NOT-IN
 00:09:33 | Anh chị ơi | —
 00:09:33 | Anh chị đi ra ngoài cửa xe | —
 00:09:35 | Đứng ở ngoài cái xe luôn cho em | —
-00:09:37 | Không được đụng vô cái xe | CODE kernel/mentor/box.go:569
-00:09:38 | Mà anh chị | CODE kernel/mentor/box.go:569
-00:09:40 | Giỡn anh chị đưa tay anh chị | CODE kernel/mentor/box.go:569
-00:09:42 | Đụng vô cái kiến xe vậy | CODE kernel/mentor/box.go:569
-00:09:43 | Có phải là completely nằm ở ngoài không | CODE kernel/mentor/box.go:569
-00:09:45 | Hay là | CODE kernel/mentor/box.go:569
-00:09:48 | Hay là | CODE kernel/mentor/box.go:569
-00:09:49 | Anh chị còn bị dướng | CODE kernel/mentor/box.go:569
-00:09:52 | Anh chị còn bị dướng cái tay | CODE kernel/mentor/box.go:569
-00:09:53 | Hay là anh chị còn bị dướng cái dại | CODE kernel/mentor/box.go:569
-00:09:55 | Dính cái xe | CODE kernel/mentor/box.go:569
-00:09:56 | Em nói anh chị ơi anh chị | CODE kernel/mentor/box.go:569
-00:09:58 | Bây giờ anh chị ra ngoài xe anh chị đứng | CODE kernel/mentor/box.go:569
-00:09:59 | Mà đứng ở ngoài xe luôn đừng có đụng gì tới cái xe hết | CODE kernel/mentor/box.go:569
-00:10:01 | Mà bây giờ anh chị đưa cái dò vô | CODE kernel/mentor/box.go:569
-00:10:04 | Anh chị đúng là có phải là đúng theo lời nói của em không | CODE kernel/mentor/box.go:569
-00:10:06 | Hay là | CODE kernel/mentor/box.go:569
-00:10:07 | Anh chị dẫn anh chị dính vô cái xe | CODE kernel/mentor/box.go:569
-00:10:11 | Completely nằm ở ngoài | CODE kernel/mentor/box.go:569
-00:10:14 | Có nghĩa là cái nến nó không đụng gì tới cái box nữa hết | CODE kernel/mentor/box.go:569
-00:10:17 | Mới gọi là completely | CODE kernel/mentor/box.go:569
-00:10:19 | Còn nếu mà dính râu thì đâu phải là completely | CODE kernel/mentor/box.go:569
-00:10:22 | Đúng không | CODE kernel/mentor/box.go:569
-00:10:26 | Dính râu thì mình đâu được gọi là completely đâu | CODE kernel/mentor/box.go:569
-00:10:28 | Completely có nghĩa là | CODE kernel/mentor/box.go:569
-00:10:34 | Một cái râu nhỏ thôi | CODE kernel/mentor/box.go:569
-00:10:37 | Dính một chút xíu thôi | CODE kernel/mentor/box.go:569
-00:10:38 | Em cũng không cho nó là completely | CODE kernel/mentor/box.go:569
-00:10:40 | 100% nó phải nằm | CODE kernel/mentor/box.go:569
-00:10:42 | Ở bên ngoài cái box | CODE kernel/mentor/box.go:569
-00:10:43 | Em bị OCD lắm | CODE kernel/mentor/box.go:569
-00:10:48 | Nên là anh chị đừng có | CODE kernel/mentor/box.go:569
-00:10:49 | Có nghĩa là | CODE kernel/mentor/box.go:569
-00:10:51 | Bắt buộc em phải nằm ở ngoài | CODE kernel/mentor/box.go:569
-00:10:54 | Không nằm ở ngoài | CODE kernel/mentor/box.go:569
-00:10:55 | Em không tính nó là completely nằm ở ngoài | CODE kernel/mentor/box.go:569
-00:10:57 | Nên là mình tính luôn cả râu | CODE kernel/mentor/box.go:569
-00:11:00 | Body thì mình không nói ra | CODE kernel/mentor/box.go:569
-00:11:01 | Là không có một cái gì | CODE kernel/mentor/box.go:569
-00:11:04 | Mà dướng bận đến cái box nữa | CODE kernel/mentor/box.go:569
-00:11:05 | Mới gọi là completely | CODE kernel/mentor/box.go:569
+00:09:37 | Không được đụng vô cái xe | CODE kernel/mentor/box.go:576
+00:09:38 | Mà anh chị | CODE kernel/mentor/box.go:576
+00:09:40 | Giỡn anh chị đưa tay anh chị | CODE kernel/mentor/box.go:576
+00:09:42 | Đụng vô cái kiến xe vậy | CODE kernel/mentor/box.go:576
+00:09:43 | Có phải là completely nằm ở ngoài không | CODE kernel/mentor/box.go:576
+00:09:45 | Hay là | CODE kernel/mentor/box.go:576
+00:09:48 | Hay là | CODE kernel/mentor/box.go:576
+00:09:49 | Anh chị còn bị dướng | CODE kernel/mentor/box.go:576
+00:09:52 | Anh chị còn bị dướng cái tay | CODE kernel/mentor/box.go:576
+00:09:53 | Hay là anh chị còn bị dướng cái dại | CODE kernel/mentor/box.go:576
+00:09:55 | Dính cái xe | CODE kernel/mentor/box.go:576
+00:09:56 | Em nói anh chị ơi anh chị | CODE kernel/mentor/box.go:576
+00:09:58 | Bây giờ anh chị ra ngoài xe anh chị đứng | CODE kernel/mentor/box.go:576
+00:09:59 | Mà đứng ở ngoài xe luôn đừng có đụng gì tới cái xe hết | CODE kernel/mentor/box.go:576
+00:10:01 | Mà bây giờ anh chị đưa cái dò vô | CODE kernel/mentor/box.go:576
+00:10:04 | Anh chị đúng là có phải là đúng theo lời nói của em không | CODE kernel/mentor/box.go:576
+00:10:06 | Hay là | CODE kernel/mentor/box.go:576
+00:10:07 | Anh chị dẫn anh chị dính vô cái xe | CODE kernel/mentor/box.go:576
+00:10:11 | Completely nằm ở ngoài | CODE kernel/mentor/box.go:576
+00:10:14 | Có nghĩa là cái nến nó không đụng gì tới cái box nữa hết | CODE kernel/mentor/box.go:576
+00:10:17 | Mới gọi là completely | CODE kernel/mentor/box.go:576
+00:10:19 | Còn nếu mà dính râu thì đâu phải là completely | CODE kernel/mentor/box.go:576
+00:10:22 | Đúng không | CODE kernel/mentor/box.go:576
+00:10:26 | Dính râu thì mình đâu được gọi là completely đâu | CODE kernel/mentor/box.go:576
+00:10:28 | Completely có nghĩa là | CODE kernel/mentor/box.go:576
+00:10:34 | Một cái râu nhỏ thôi | CODE kernel/mentor/box.go:576
+00:10:37 | Dính một chút xíu thôi | CODE kernel/mentor/box.go:576
+00:10:38 | Em cũng không cho nó là completely | CODE kernel/mentor/box.go:576
+00:10:40 | 100% nó phải nằm | CODE kernel/mentor/box.go:576
+00:10:42 | Ở bên ngoài cái box | CODE kernel/mentor/box.go:576
+00:10:43 | Em bị OCD lắm | CODE kernel/mentor/box.go:576
+00:10:48 | Nên là anh chị đừng có | CODE kernel/mentor/box.go:576
+00:10:49 | Có nghĩa là | CODE kernel/mentor/box.go:576
+00:10:51 | Bắt buộc em phải nằm ở ngoài | CODE kernel/mentor/box.go:576
+00:10:54 | Không nằm ở ngoài | CODE kernel/mentor/box.go:576
+00:10:55 | Em không tính nó là completely nằm ở ngoài | CODE kernel/mentor/box.go:576
+00:10:57 | Nên là mình tính luôn cả râu | CODE kernel/mentor/box.go:576
+00:11:00 | Body thì mình không nói ra | CODE kernel/mentor/box.go:576
+00:11:01 | Là không có một cái gì | CODE kernel/mentor/box.go:576
+00:11:04 | Mà dướng bận đến cái box nữa | CODE kernel/mentor/box.go:576
+00:11:05 | Mới gọi là completely | CODE kernel/mentor/box.go:576
 00:11:07 | Anh ok không | —
 00:11:09 | Anh ơi anh ok không | —

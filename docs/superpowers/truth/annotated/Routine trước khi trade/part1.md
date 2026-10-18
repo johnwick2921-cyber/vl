@@ -1,14 +1,14 @@
 cues: 205/205 · rule cues: 89 · rows: 7 · CODE: 67 · MISMATCH: 18 · NOT-IN-BOT: 4 · RULING: 0 · SPLIT: 0 · —: 116
 
-00:00:00 | Bây giờ em sẽ hướng dẫn cho anh chị step by step những thứ mình cần làm. | CODE kernel/mentor/mentor.go:417
-00:00:07 | Điều thứ nhất, khung giờ mà em lúc nào cũng prefer để trade là khung 2 phút. | CODE kernel/mentor/mentor.go:417
-00:00:16 | Tại vì sao? Tại vì khung 1 phút em không trade, tại vì khung 1 phút nó quét râu, rất ẩu. | CODE kernel/mentor/mentor.go:417
-00:00:25 | Và mọi người đã được chứng kiến cái chuyện đó xảy ra rất nhiều lần. | CODE kernel/mentor/mentor.go:417
-00:00:30 | Nó quét râu | CODE kernel/mentor/mentor.go:417
-00:00:31 | Xong nó chạy tiếp | CODE kernel/mentor/mentor.go:417
-00:00:32 | Nên | CODE kernel/mentor/mentor.go:417
-00:00:34 | Em lúc nào cũng prefer trade khung 2 phút | CODE kernel/mentor/mentor.go:417
-00:00:38 | Tiếp tục | CODE kernel/mentor/mentor.go:417
+00:00:00 | Bây giờ em sẽ hướng dẫn cho anh chị step by step những thứ mình cần làm. | CODE kernel/mentor/mentor.go:576
+00:00:07 | Điều thứ nhất, khung giờ mà em lúc nào cũng prefer để trade là khung 2 phút. | CODE kernel/mentor/mentor.go:576
+00:00:16 | Tại vì sao? Tại vì khung 1 phút em không trade, tại vì khung 1 phút nó quét râu, rất ẩu. | CODE kernel/mentor/mentor.go:576
+00:00:25 | Và mọi người đã được chứng kiến cái chuyện đó xảy ra rất nhiều lần. | CODE kernel/mentor/mentor.go:576
+00:00:30 | Nó quét râu | CODE kernel/mentor/mentor.go:576
+00:00:31 | Xong nó chạy tiếp | CODE kernel/mentor/mentor.go:576
+00:00:32 | Nên | CODE kernel/mentor/mentor.go:576
+00:00:34 | Em lúc nào cũng prefer trade khung 2 phút | CODE kernel/mentor/mentor.go:576
+00:00:38 | Tiếp tục | CODE kernel/mentor/mentor.go:576
 00:00:41 | Trong dòng 30 phút đầu giờ | MISMATCH kernel/mentor/eval.go:1581
 00:00:44 | Em vẫn sẽ trade khung 1 phút | MISMATCH kernel/mentor/eval.go:1581
 00:00:47 | Tại vì market hiện tại | MISMATCH kernel/mentor/eval.go:1581
@@ -32,35 +32,35 @@ cues: 205/205 · rule cues: 89 · rows: 7 · CODE: 67 · MISMATCH: 18 · NOT-IN-
 00:01:24 | Mình sẽ không kiếm lệnh liền | —
 00:01:27 | Mà | —
 00:01:28 | Mình sẽ đợi | —
-00:01:31 | là ORB 2 phút đối với em ORB 2 phút là ORB quan trọng nhất ORB 2 phút là ORB quan trọng nhất thì | CODE kernel/mentor/orb.go:54
-00:01:46 | khi mà chị anh chị sự dự dẫn có anh chị biết anh chị biết dẻ ORB 2 phút mà ha là anh chị có thể bật | CODE kernel/mentor/orb.go:54
-00:01:52 | qua khung 2 phút anh chị dẻ đỉnh đáy cái 2 phút đầu tiên trong ngày hoặc là dẻ anh chị khung 1 | CODE kernel/mentor/orb.go:54
-00:01:57 | phút thì anh chị dẻ đỉnh của cái cây cao nhất trong trong 2 cây 2 cái nến đầu tiên của lúc | CODE kernel/mentor/orb.go:54
-00:02:03 | Thì anh chị dạy đỉnh và đáy của 2 cây đó | CODE kernel/mentor/orb.go:54
-00:02:05 | Thì mình sẽ có được 1 cái ORB 2 phút | CODE kernel/mentor/orb.go:54
-00:02:09 | Anh chị ok ha | CODE kernel/mentor/orb.go:54
+00:01:31 | là ORB 2 phút đối với em ORB 2 phút là ORB quan trọng nhất ORB 2 phút là ORB quan trọng nhất thì | CODE kernel/mentor/orb.go:73
+00:01:46 | khi mà chị anh chị sự dự dẫn có anh chị biết anh chị biết dẻ ORB 2 phút mà ha là anh chị có thể bật | CODE kernel/mentor/orb.go:73
+00:01:52 | qua khung 2 phút anh chị dẻ đỉnh đáy cái 2 phút đầu tiên trong ngày hoặc là dẻ anh chị khung 1 | CODE kernel/mentor/orb.go:73
+00:01:57 | phút thì anh chị dẻ đỉnh của cái cây cao nhất trong trong 2 cây 2 cái nến đầu tiên của lúc | CODE kernel/mentor/orb.go:73
+00:02:03 | Thì anh chị dạy đỉnh và đáy của 2 cây đó | CODE kernel/mentor/orb.go:73
+00:02:05 | Thì mình sẽ có được 1 cái ORB 2 phút | CODE kernel/mentor/orb.go:73
+00:02:09 | Anh chị ok ha | CODE kernel/mentor/orb.go:73
 00:02:12 | Rồi tiếp tục | —
 00:02:16 | Anh Quân nè | —
 00:02:18 | Làm ơn nhớ | —
 00:02:20 | Đừng có | —
-00:02:25 | Mọi người cứ tưởng tượng đi | CODE kernel/mentor/orb.go:115
-00:02:29 | Mọi người cứ hình dung đi nè | CODE kernel/mentor/orb.go:115
-00:02:32 | ORB 2 phút | CODE kernel/mentor/orb.go:115
-00:02:33 | Cạnh trên là resistance | CODE kernel/mentor/orb.go:115
-00:02:35 | Cạnh dưới là support | CODE kernel/mentor/orb.go:115
-00:02:36 | Nhưng mình sẽ không trade ở giữa | CODE kernel/mentor/orb.go:115
-00:02:39 | Và mình cũng sẽ không đánh đảo chiều gì hết | CODE kernel/mentor/orb.go:115
-00:02:43 | Mình sẽ phải đợi | CODE kernel/mentor/orb.go:115
-00:02:46 | Bây giờ mình vẽ OOB 2 phút xong rồi đúng không | CODE kernel/mentor/orb.go:115
-00:02:48 | Mình chuyển lại qua 0.1 phút mình trade | CODE kernel/mentor/orb.go:115
-00:02:49 | Đúng không | CODE kernel/mentor/orb.go:115
-00:02:51 | Mình sẽ vẫn phải đợi | CODE kernel/mentor/orb.go:115
-00:02:53 | Nó thoát ra khỏi OOB | CODE kernel/mentor/orb.go:115
-00:02:55 | Rồi mình mới trade | CODE kernel/mentor/orb.go:115
-00:02:57 | Nó thoát ra khỏi đầu nào | CODE kernel/mentor/orb.go:115
-00:03:02 | Nó sẽ đi theo đầu đó | CODE kernel/mentor/orb.go:115
-00:03:04 | Đọc lại slide số 16 | CODE kernel/mentor/orb.go:115
-00:03:06 | À slide số 16 | CODE kernel/mentor/orb.go:115
+00:02:25 | Mọi người cứ tưởng tượng đi | CODE kernel/mentor/orb.go:122
+00:02:29 | Mọi người cứ hình dung đi nè | CODE kernel/mentor/orb.go:122
+00:02:32 | ORB 2 phút | CODE kernel/mentor/orb.go:122
+00:02:33 | Cạnh trên là resistance | CODE kernel/mentor/orb.go:122
+00:02:35 | Cạnh dưới là support | CODE kernel/mentor/orb.go:122
+00:02:36 | Nhưng mình sẽ không trade ở giữa | CODE kernel/mentor/orb.go:122
+00:02:39 | Và mình cũng sẽ không đánh đảo chiều gì hết | CODE kernel/mentor/orb.go:122
+00:02:43 | Mình sẽ phải đợi | CODE kernel/mentor/orb.go:122
+00:02:46 | Bây giờ mình vẽ OOB 2 phút xong rồi đúng không | CODE kernel/mentor/orb.go:122
+00:02:48 | Mình chuyển lại qua 0.1 phút mình trade | CODE kernel/mentor/orb.go:122
+00:02:49 | Đúng không | CODE kernel/mentor/orb.go:122
+00:02:51 | Mình sẽ vẫn phải đợi | CODE kernel/mentor/orb.go:122
+00:02:53 | Nó thoát ra khỏi OOB | CODE kernel/mentor/orb.go:122
+00:02:55 | Rồi mình mới trade | CODE kernel/mentor/orb.go:122
+00:02:57 | Nó thoát ra khỏi đầu nào | CODE kernel/mentor/orb.go:122
+00:03:02 | Nó sẽ đi theo đầu đó | CODE kernel/mentor/orb.go:122
+00:03:04 | Đọc lại slide số 16 | CODE kernel/mentor/orb.go:122
+00:03:06 | À slide số 16 | CODE kernel/mentor/orb.go:122
 00:03:08 | Điều thứ 2 | —
 00:03:09 | Có lý do không ạ | —
 00:03:11 | Dạ không | —
@@ -157,33 +157,33 @@ cues: 205/205 · rule cues: 89 · rows: 7 · CODE: 67 · MISMATCH: 18 · NOT-IN-
 00:07:42 | Em sẽ nói tiếp tục nè | —
 00:07:42 | Rồi | —
 00:07:43 | Cũng sẽ có những lệnh | —
-00:07:46 | Nếu như là inside bar | CODE kernel/mentor/orb.go:164
-00:07:48 | Nếu như inside bar | CODE kernel/mentor/orb.go:164
-00:07:51 | Mà nó nằm cái kiểu như này nè | CODE kernel/mentor/orb.go:164
-00:07:55 | Nó nằm cái kiểu giống vậy nè | CODE kernel/mentor/orb.go:164
-00:07:56 | Nó nằm ở ngoài | CODE kernel/mentor/orb.go:164
-00:07:57 | Nó kiểu như là 80% 90% là cái nến nó nằm ở ngoài rồi | CODE kernel/mentor/orb.go:164
-00:08:01 | Của inside bar | CODE kernel/mentor/orb.go:164
-00:08:02 | Thì anh chị có quyền take risk | CODE kernel/mentor/orb.go:164
-00:08:04 | nếu như nó nằm ở ngoài rồi | CODE kernel/mentor/orb.go:164
-00:08:10 | ha | CODE kernel/mentor/orb.go:164
-00:08:10 | thì anh chị có quyền | CODE kernel/mentor/orb.go:164
-00:08:14 | tag risk | CODE kernel/mentor/orb.go:164
-00:08:14 | đánh insert ball kiểu này | CODE kernel/mentor/orb.go:164
-00:08:15 | còn như bên đây | CODE kernel/mentor/orb.go:164
-00:08:17 | em sẽ không trade | CODE kernel/mentor/orb.go:164
-00:08:17 | cái kia không | CODE kernel/mentor/orb.go:164
-00:08:19 | cái này em không | CODE kernel/mentor/orb.go:164
-00:08:20 | em không | CODE kernel/mentor/orb.go:164
-00:08:20 | tại vì mọi người nên nhớ nè | CODE kernel/mentor/orb.go:164
-00:08:22 | insert ball mà ngay này | CODE kernel/mentor/orb.go:164
-00:08:23 | nó rất là xấu | CODE kernel/mentor/orb.go:164
-00:08:23 | tại vì sao | CODE kernel/mentor/orb.go:164
-00:08:24 | tại em nói là | CODE kernel/mentor/orb.go:164
-00:08:25 | cái cạnh trên | CODE kernel/mentor/orb.go:164
-00:08:26 | của cái ORP | CODE kernel/mentor/orb.go:164
-00:08:27 | là cái resistance | CODE kernel/mentor/orb.go:164
-00:08:28 | cái risk nó rất cao | CODE kernel/mentor/orb.go:164
+00:07:46 | Nếu như là inside bar | CODE kernel/mentor/orb.go:168
+00:07:48 | Nếu như inside bar | CODE kernel/mentor/orb.go:168
+00:07:51 | Mà nó nằm cái kiểu như này nè | CODE kernel/mentor/orb.go:168
+00:07:55 | Nó nằm cái kiểu giống vậy nè | CODE kernel/mentor/orb.go:168
+00:07:56 | Nó nằm ở ngoài | CODE kernel/mentor/orb.go:168
+00:07:57 | Nó kiểu như là 80% 90% là cái nến nó nằm ở ngoài rồi | CODE kernel/mentor/orb.go:168
+00:08:01 | Của inside bar | CODE kernel/mentor/orb.go:168
+00:08:02 | Thì anh chị có quyền take risk | CODE kernel/mentor/orb.go:168
+00:08:04 | nếu như nó nằm ở ngoài rồi | CODE kernel/mentor/orb.go:168
+00:08:10 | ha | CODE kernel/mentor/orb.go:168
+00:08:10 | thì anh chị có quyền | CODE kernel/mentor/orb.go:168
+00:08:14 | tag risk | CODE kernel/mentor/orb.go:168
+00:08:14 | đánh insert ball kiểu này | CODE kernel/mentor/orb.go:168
+00:08:15 | còn như bên đây | CODE kernel/mentor/orb.go:168
+00:08:17 | em sẽ không trade | CODE kernel/mentor/orb.go:168
+00:08:17 | cái kia không | CODE kernel/mentor/orb.go:168
+00:08:19 | cái này em không | CODE kernel/mentor/orb.go:168
+00:08:20 | em không | CODE kernel/mentor/orb.go:168
+00:08:20 | tại vì mọi người nên nhớ nè | CODE kernel/mentor/orb.go:168
+00:08:22 | insert ball mà ngay này | CODE kernel/mentor/orb.go:168
+00:08:23 | nó rất là xấu | CODE kernel/mentor/orb.go:168
+00:08:23 | tại vì sao | CODE kernel/mentor/orb.go:168
+00:08:24 | tại em nói là | CODE kernel/mentor/orb.go:168
+00:08:25 | cái cạnh trên | CODE kernel/mentor/orb.go:168
+00:08:26 | của cái ORP | CODE kernel/mentor/orb.go:168
+00:08:27 | là cái resistance | CODE kernel/mentor/orb.go:168
+00:08:28 | cái risk nó rất cao | CODE kernel/mentor/orb.go:168
 00:08:32 | cái này là | —
 00:08:33 | mình đang đánh breakout á | —
 00:08:34 | nhưng anh quân | —

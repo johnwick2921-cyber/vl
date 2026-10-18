@@ -1,34 +1,36 @@
 import os
 SRT="/home/hoang/mm-course/extra/transcripts"
 OUT="/home/hoang/fleet-1017/out/truth/annotated"
-# tight instruction spans (start_sec, end_sec, REF)
+# (start_sec, end_sec, REF) — every CODE/MISMATCH ref is an executing line.
 R = {
 "Cách vẽ box": {"part1.srt": [
- (15,48,"CODE kernel/mentor/phl.go:90"), (134,183,"CODE kernel/mentor/box.go:555"), (198,230,"CODE kernel/mentor/box.go:545")]},
+ (15,48,"CODE kernel/mentor/phl.go:89"), (134,183,"CODE kernel/mentor/box.go:555"), (198,230,"CODE kernel/mentor/box.go:545")]},
 "Cách trade FTGH": {"part1.srt": [
- (61,97,"CODE kernel/mentor/eval.go:1560"), (132,145,"CODE kernel/mentor/box_trade.go:187"), (155,170,"CODE kernel/mentor/box.go:326")]},
-"Major & Key Levels": {"part1.srt": [
- (0,26,"CODE kernel/mentor/mentor.go:548"), (124,139,"CODE kernel/mentor/box_trade.go:187"), (398,419,"CODE kernel/mentor/mentor.go:548"), (430,439,"CODE kernel/mentor/htf_direction.go:47"), (593,691,"RULING kernel/mentor/key_levels.go:21"), (827,865,"RULING kernel/mentor/key_levels.go:14"), (867,946,"RULING kernel/mentor/key_levels.go:28"), (1006,1030,"RULING kernel/mentor/key_levels.go:28"), (1242,1310,"CODE kernel/mentor/box.go:545"), (1465,1497,"CODE kernel/mentor/box.go:555"), (1494,1508,"CODE kernel/mentor/day_seed.go")],
- "part2.srt": [(0,5,"RULING kernel/mentor/key_levels.go:28"), (43,90,"CODE kernel/mentor/day_gate.go:18")]},
+ (61,97,"CODE kernel/mentor/eval.go:1562"), (132,145,"CODE kernel/mentor/box_trade.go:188"), (155,170,"CODE kernel/mentor/box.go:330")]},
+"Major & Key Levels": {
+ "part1.srt": [
+  (0,26,"CODE kernel/mentor/mentor.go:548"), (124,139,"CODE kernel/mentor/box_trade.go:188"), (398,419,"CODE kernel/mentor/mentor.go:548"), (430,439,"CODE kernel/mentor/htf_direction.go:47"), (593,691,"RULING -> row 11"), (827,865,"RULING -> row 12"), (867,946,"RULING -> row 14"), (1006,1030,"RULING -> row 14"), (1242,1310,"CODE kernel/mentor/box.go:545"), (1465,1497,"CODE kernel/mentor/box.go:555"), (1494,1508,"CODE kernel/mentor/day_seed.go:25")],
+ "part2.srt": [(0,5,"RULING -> row 13"), (43,90,"CODE kernel/mentor/day_gate.go:72")]},
 "Cách trade key levels 1H": {"part1.srt": [
- (0,30,"CODE kernel/mentor/mentor.go:548"), (230,270,"CODE kernel/mentor/box_trade.go:187"), (270,300,"CODE kernel/mentor/box_trade.go:188"), (394,420,"CODE kernel/mentor/box_trade.go:205"), (494,536,"CODE kernel/mentor/box_trade.go:205")]},
+ (0,30,"CODE kernel/mentor/mentor.go:548"), (230,270,"CODE kernel/mentor/box_trade.go:188"), (270,300,"CODE kernel/mentor/box_trade.go:188"), (394,420,"CODE kernel/mentor/box_trade.go:168"), (494,536,"CODE kernel/mentor/box_trade.go:168")]},
 "Routine trước khi trade": {"part1.srt": [
- (0,38,"CODE kernel/mentor/mentor.go:417"), (41,77,"MISMATCH kernel/mentor/eval.go:1581"), (91,129,"CODE kernel/mentor/orb.go:54"), (145,187,"CODE kernel/mentor/orb.go:115"), (317,352,"CODE kernel/mentor/orb.go:60"), (466,509,"CODE kernel/mentor/orb.go:164"), (530,554,"NOT-IN-BOT -> row 29")]},
-"Buy-Sell Setup Trigger": {"part1.srt": [
- (0,50,"CODE kernel/mentor/filters.go:43"), (117,130,"CODE kernel/mentor/filters.go:43"), (230,250,"CODE kernel/mentor/mtf.go:22"), (420,490,"CODE kernel/mentor/mtf.go:22"), (745,777,"CODE kernel/mentor/filters.go:143"), (1385,1405,"CODE kernel/mentor/eval.go:1571")],
- "part2.srt": [(0,60,"CODE kernel/mentor/mtf.go:22")]},
+ (0,38,"CODE kernel/mentor/mentor.go:576"), (41,77,"MISMATCH kernel/mentor/eval.go:1581"), (91,129,"CODE kernel/mentor/orb.go:73"), (145,187,"CODE kernel/mentor/orb.go:122"), (317,352,"CODE kernel/mentor/orb.go:60"), (466,509,"CODE kernel/mentor/orb.go:168"), (530,554,"NOT-IN-BOT -> row 29")]},
+"Buy-Sell Setup Trigger": {
+ "part1.srt": [
+  (0,50,"CODE kernel/mentor/filters.go:54"), (117,130,"CODE kernel/mentor/filters.go:54"), (230,250,"CODE kernel/mentor/mtf.go:34"), (420,490,"CODE kernel/mentor/mtf.go:34"), (745,777,"CODE kernel/mentor/filters.go:144"), (1385,1405,"CODE kernel/mentor/eval.go:1580")],
+ "part2.srt": [(0,60,"CODE kernel/mentor/mtf.go:34")]},
 "Ping pong": {"part1.srt": [
- (0,87,"CODE kernel/mentor/box_trade.go:205"), (87,110,"CODE kernel/mentor/isb.go:137"), (275,310,"CODE kernel/mentor/isb_box.go:90"), (428,460,"CODE kernel/mentor/box.go:569"), (577,665,"CODE kernel/mentor/box.go:569")]},
+ (0,87,"CODE kernel/mentor/box_trade.go:168"), (87,110,"CODE kernel/mentor/isb.go:174"), (275,310,"CODE kernel/mentor/isb_box.go:42"), (428,460,"CODE kernel/mentor/box.go:576"), (577,665,"CODE kernel/mentor/box.go:576")]},
 "Cách né trap & Setup gồng lời": {"part1.srt": [
- (0,63,"NOT-IN-BOT -> row 41"), (227,260,"CODE kernel/mentor/htf_direction.go:47"), (520,590,"CODE kernel/mentor/htf_direction.go:47"), (691,790,"CODE kernel/mentor/eval.go:1853"), (940,980,"CODE kernel/mentor/exec_frame.go:5"), (1050,1096,"CODE kernel/mentor/eval.go:1915")]},
+ (0,63,"NOT-IN-BOT -> row 41"), (227,260,"CODE kernel/mentor/htf_direction.go:47"), (520,590,"CODE kernel/mentor/htf_direction.go:47"), (691,790,"CODE kernel/mentor/eval.go:1856"), (940,980,"CODE kernel/mentor/exec_frame.go:25"), (1050,1096,"CODE kernel/mentor/eval.go:1917")]},
 "Cách vẽ trendline": {"part1.srt": [
- (0,120,"CODE kernel/mentor/trendline.go:74"), (131,180,"CODE kernel/mentor/trendline.go:11"), (292,339,"CODE kernel/mentor/flag_wall.go:11"), (347,412,"CODE kernel/mentor/flag_wall.go:20")]},
+ (0,120,"CODE kernel/mentor/trendline.go:242"), (131,180,"CODE kernel/mentor/trendline.go:114"), (292,339,"CODE kernel/mentor/flag_wall.go:44"), (347,412,"CODE kernel/mentor/flag_wall.go:72")]},
 "Cách vẽ supply & demand trong ngày": {"part1.srt": [
  (0,44,"CODE kernel/mentor/box.go:545"), (148,172,"CODE kernel/mentor/box.go:555")]},
 "Go over lớp học": {"part1.srt": [
- (210,260,"CODE kernel/mentor/filters.go:43"), (280,340,"CODE kernel/mentor/isb_box.go:90"), (430,470,"CODE kernel/mentor/phl.go:90"), (520,570,"CODE kernel/mentor/isb.go:137"), (630,690,"CODE kernel/mentor/phl.go:90"), (750,780,"CODE kernel/mentor/box.go:545"), (810,880,"CODE kernel/mentor/mtf.go:22"), (1000,1030,"CODE kernel/mentor/orb.go:54"), (1030,1060,"MISMATCH kernel/mentor/eval.go:1581"), (1060,1110,"NOT-IN-BOT kernel/mentor/eval.go:1579"), (1215,1233,"CODE kernel/mentor/box_trade.go:187")]},
+ (210,260,"CODE kernel/mentor/filters.go:54"), (280,340,"CODE kernel/mentor/isb_box.go:42"), (430,470,"CODE kernel/mentor/phl.go:89"), (520,570,"CODE kernel/mentor/isb.go:174"), (630,690,"CODE kernel/mentor/phl.go:89"), (750,780,"CODE kernel/mentor/box.go:545"), (810,880,"CODE kernel/mentor/mtf.go:34"), (1000,1030,"CODE kernel/mentor/orb.go:73"), (1030,1060,"MISMATCH kernel/mentor/eval.go:1581"), (1060,1110,"NOT-IN-BOT -> row 65"), (1215,1233,"CODE kernel/mentor/box_trade.go:188")]},
 "Bull-Bear Flags": {"part1.srt": [
- (0,26,"CODE kernel/mentor/flag_wall.go:23"), (26,115,"CODE kernel/mentor/flag_wall.go:11"), (156,164,"CODE kernel/mentor/box.go:545"), (170,200,"CODE kernel/mentor/mtf.go:22")]},
+ (0,26,"CODE kernel/mentor/flag_wall.go:61"), (26,115,"CODE kernel/mentor/flag_wall.go:44"), (156,164,"CODE kernel/mentor/box.go:545"), (170,200,"CODE kernel/mentor/mtf.go:34")]},
 }
 def parse(p):
     c=[]; ls=open(p,encoding="utf-8").read().splitlines(); i=0

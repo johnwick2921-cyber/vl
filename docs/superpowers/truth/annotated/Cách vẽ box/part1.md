@@ -1,15 +1,15 @@
 cues: 87/87 · rule cues: 35 · rows: 3 · CODE: 35 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · SPLIT: 0 · —: 52
 
 00:00:00 | Rồi, thì trong một xu hướng giảm, đúng không? Trong một xu hướng giảm, nến bật lên ở chỗ nào thì mình sẽ có một cái đáy ngay chỗ đó. Anh chị có đồng ý với em không? | —
-00:00:15 | Và trong một xu hướng giảm thì mình đi kiếm lệnh gì anh chị? Trả lời cho em nè, trong một xu hướng giảm thì mình sẽ đi kiếm lệnh gì? Potential lower high, đúng không? | CODE kernel/mentor/phl.go:90
-00:00:32 | Rồi | CODE kernel/mentor/phl.go:90
-00:00:33 | Mình sẽ đi kiếm potential low high | CODE kernel/mentor/phl.go:90
-00:00:36 | Và target của mình về đâu mọi người | CODE kernel/mentor/phl.go:90
-00:00:37 | Target của mình về đâu | CODE kernel/mentor/phl.go:90
-00:00:41 | Về đáy cũ gần nhất | CODE kernel/mentor/phl.go:90
-00:00:47 | Đúng không | CODE kernel/mentor/phl.go:90
-00:00:48 | Thì đây | CODE kernel/mentor/phl.go:90
-00:00:48 | Mình về đáy cũ gần nhất | CODE kernel/mentor/phl.go:90
+00:00:15 | Và trong một xu hướng giảm thì mình đi kiếm lệnh gì anh chị? Trả lời cho em nè, trong một xu hướng giảm thì mình sẽ đi kiếm lệnh gì? Potential lower high, đúng không? | CODE kernel/mentor/phl.go:89
+00:00:32 | Rồi | CODE kernel/mentor/phl.go:89
+00:00:33 | Mình sẽ đi kiếm potential low high | CODE kernel/mentor/phl.go:89
+00:00:36 | Và target của mình về đâu mọi người | CODE kernel/mentor/phl.go:89
+00:00:37 | Target của mình về đâu | CODE kernel/mentor/phl.go:89
+00:00:41 | Về đáy cũ gần nhất | CODE kernel/mentor/phl.go:89
+00:00:47 | Đúng không | CODE kernel/mentor/phl.go:89
+00:00:48 | Thì đây | CODE kernel/mentor/phl.go:89
+00:00:48 | Mình về đáy cũ gần nhất | CODE kernel/mentor/phl.go:89
 00:00:51 | Làm gì làm kể cho nó chạy ha | —
 00:01:00 | Cứ về tới gần đây là em thấy là em chuẩn bị bán rồi nè | —
 00:01:03 | Rồi | —

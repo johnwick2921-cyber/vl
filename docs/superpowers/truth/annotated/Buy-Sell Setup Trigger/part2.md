@@ -1,28 +1,28 @@
 cues: 62/62 · rule cues: 23 · rows: 1 · CODE: 23 · MISMATCH: 0 · NOT-IN-BOT: 0 · RULING: 0 · SPLIT: 0 · —: 39
 
-00:00:00 | Khung nào cũng sẽ giống như nhau nhưng em không có khuyến khích anh chị ở thời điểm này trade khung 15 hoặc là coi khung 15, coi khung 30. | CODE kernel/mentor/mtf.go:22
-00:00:09 | Có thể coi nhưng em sẽ coi bằng cách như vậy nè. Em hướng dẫn anh chị luôn ha, em sẽ coi bằng cách như vậy nè. | CODE kernel/mentor/mtf.go:22
-00:00:17 | Khung 15 | CODE kernel/mentor/mtf.go:22
-00:00:19 | Tại vì khi mà mọi người coi nhiều khung quá | CODE kernel/mentor/mtf.go:22
-00:00:28 | Nó sẽ | CODE kernel/mentor/mtf.go:22
-00:00:29 | Nó sẽ bị nhiều | CODE kernel/mentor/mtf.go:22
-00:00:34 | Nó bị nhiều thông tin quá | CODE kernel/mentor/mtf.go:22
-00:00:36 | Để cho anh chị trade | CODE kernel/mentor/mtf.go:22
-00:00:36 | Mình không cần nhiều tới vậy | CODE kernel/mentor/mtf.go:22
-00:00:38 | Mình vẫn cần vừa đủ thôi | CODE kernel/mentor/mtf.go:22
-00:00:40 | Giờ khung 15 phút không | CODE kernel/mentor/mtf.go:22
-00:00:41 | Nếu như anh chị nào có nhiều màn hình | CODE kernel/mentor/mtf.go:22
-00:00:43 | Để cái này trên đây cho em đi | CODE kernel/mentor/mtf.go:22
-00:00:45 | Rồi nếu mà nó rớt thêm cái 15 phút nữa | CODE kernel/mentor/mtf.go:22
-00:00:47 | Kéo xuống | CODE kernel/mentor/mtf.go:22
-00:00:48 | Rồi bỏ đó | CODE kernel/mentor/mtf.go:22
-00:00:49 | Kệ nó, làm gì kệ nó | CODE kernel/mentor/mtf.go:22
-00:00:51 | Khung 1 giờ nó cũng vậy thôi | CODE kernel/mentor/mtf.go:22
-00:00:54 | Khung 1 giờ tới khi nào | CODE kernel/mentor/mtf.go:22
-00:00:55 | Cái nến này đóng | CODE kernel/mentor/mtf.go:22
-00:00:56 | Có phải là anh chị có thêm nhiều quá nhiều thao tác không | CODE kernel/mentor/mtf.go:22
-00:00:58 | Bị rối | CODE kernel/mentor/mtf.go:22
-00:01:00 | Rất rối | CODE kernel/mentor/mtf.go:22
+00:00:00 | Khung nào cũng sẽ giống như nhau nhưng em không có khuyến khích anh chị ở thời điểm này trade khung 15 hoặc là coi khung 15, coi khung 30. | CODE kernel/mentor/mtf.go:34
+00:00:09 | Có thể coi nhưng em sẽ coi bằng cách như vậy nè. Em hướng dẫn anh chị luôn ha, em sẽ coi bằng cách như vậy nè. | CODE kernel/mentor/mtf.go:34
+00:00:17 | Khung 15 | CODE kernel/mentor/mtf.go:34
+00:00:19 | Tại vì khi mà mọi người coi nhiều khung quá | CODE kernel/mentor/mtf.go:34
+00:00:28 | Nó sẽ | CODE kernel/mentor/mtf.go:34
+00:00:29 | Nó sẽ bị nhiều | CODE kernel/mentor/mtf.go:34
+00:00:34 | Nó bị nhiều thông tin quá | CODE kernel/mentor/mtf.go:34
+00:00:36 | Để cho anh chị trade | CODE kernel/mentor/mtf.go:34
+00:00:36 | Mình không cần nhiều tới vậy | CODE kernel/mentor/mtf.go:34
+00:00:38 | Mình vẫn cần vừa đủ thôi | CODE kernel/mentor/mtf.go:34
+00:00:40 | Giờ khung 15 phút không | CODE kernel/mentor/mtf.go:34
+00:00:41 | Nếu như anh chị nào có nhiều màn hình | CODE kernel/mentor/mtf.go:34
+00:00:43 | Để cái này trên đây cho em đi | CODE kernel/mentor/mtf.go:34
+00:00:45 | Rồi nếu mà nó rớt thêm cái 15 phút nữa | CODE kernel/mentor/mtf.go:34
+00:00:47 | Kéo xuống | CODE kernel/mentor/mtf.go:34
+00:00:48 | Rồi bỏ đó | CODE kernel/mentor/mtf.go:34
+00:00:49 | Kệ nó, làm gì kệ nó | CODE kernel/mentor/mtf.go:34
+00:00:51 | Khung 1 giờ nó cũng vậy thôi | CODE kernel/mentor/mtf.go:34
+00:00:54 | Khung 1 giờ tới khi nào | CODE kernel/mentor/mtf.go:34
+00:00:55 | Cái nến này đóng | CODE kernel/mentor/mtf.go:34
+00:00:56 | Có phải là anh chị có thêm nhiều quá nhiều thao tác không | CODE kernel/mentor/mtf.go:34
+00:00:58 | Bị rối | CODE kernel/mentor/mtf.go:34
+00:01:00 | Rất rối | CODE kernel/mentor/mtf.go:34
 00:01:02 | Là anh chị phải mở rất nhiều chẹt | —
 00:01:03 | Thì không có lý do này | —
 00:01:04 | Anh chị phải bật khung 15 | —

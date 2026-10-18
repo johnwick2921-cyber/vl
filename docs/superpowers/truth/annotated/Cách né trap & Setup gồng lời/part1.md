@@ -273,51 +273,51 @@ cues: 449/449 · rule cues: 168 · rows: 6 · CODE: 156 · MISMATCH: 0 · NOT-IN
 00:11:21 | Đây em nói hả | —
 00:11:23 | Gọi cái khúc này nè | —
 00:11:24 | Khi mà anh chị thấy | —
-00:11:31 | Khi anh chị bắt potential higher low | CODE kernel/mentor/eval.go:1853
-00:11:33 | Hoặc là anh chị bắt một cái low | CODE kernel/mentor/eval.go:1853
-00:11:35 | Và nó trigger cái buy setup | CODE kernel/mentor/eval.go:1853
-00:11:39 | Và mọi người tự đảo ngược lại cho lệnh | CODE kernel/mentor/eval.go:1853
-00:11:42 | Mọi người nghe lại xong mọi người tự đảo ngược lại cho lệnh sót | CODE kernel/mentor/eval.go:1853
-00:11:44 | Tại vì bây giờ mà kiếm lệnh sót thì cũng hơi lâu | CODE kernel/mentor/eval.go:1853
-00:11:46 | Rồi chắc cũng sẽ có | CODE kernel/mentor/eval.go:1853
-00:11:48 | Nhưng mà để xíu em sẽ cố gắng em kiếm cho anh chị | CODE kernel/mentor/eval.go:1853
-00:11:49 | Rồi khi mà | CODE kernel/mentor/eval.go:1853
-00:11:51 | Khi mà nến | CODE kernel/mentor/eval.go:1853
-00:11:53 | Mọi người có thể kiếm potential high low | CODE kernel/mentor/eval.go:1853
-00:11:56 | Hoặc là mọi người kiếm low | CODE kernel/mentor/eval.go:1853
-00:11:57 | Thì mọi người sẽ ra cái | CODE kernel/mentor/eval.go:1853
-00:11:59 | Đầu | CODE kernel/mentor/eval.go:1853
-00:12:01 | Mọi người bắt đầu mọi người ra cái đầu | CODE kernel/mentor/eval.go:1853
-00:12:04 | Sau khi nó | CODE kernel/mentor/eval.go:1853
-00:12:05 | Sau khi nó phiêu lệnh cho anh chị | CODE kernel/mentor/eval.go:1853
-00:12:07 | Sau khi nó phiêu lệnh cho anh chị | CODE kernel/mentor/eval.go:1853
-00:12:10 | Nếu như | CODE kernel/mentor/eval.go:1853
-00:12:12 | Hai cây nến | CODE kernel/mentor/eval.go:1853
-00:12:15 | Ở đằng sau | CODE kernel/mentor/eval.go:1853
-00:12:16 | Sau khi nó phiêu lệnh | CODE kernel/mentor/eval.go:1853
-00:12:18 | Là cây lệnh của mình sẽ được phiêu ở cây nến | CODE kernel/mentor/eval.go:1853
-00:12:20 | Cây nến xanh này | CODE kernel/mentor/eval.go:1853
-00:12:22 | Khi nó break qua cây nến xanh là nó sẽ phiêu cây lệnh của mình | CODE kernel/mentor/eval.go:1853
-00:12:25 | Thì trong dòng | CODE kernel/mentor/eval.go:1853
-00:12:27 | Hai cây nến tiếp theo | CODE kernel/mentor/eval.go:1853
-00:12:29 | Nếu như có | CODE kernel/mentor/eval.go:1853
-00:12:31 | Inside wall cùng chiều | CODE kernel/mentor/eval.go:1853
-00:12:33 | Với cây lệnh anh chị đang vô | CODE kernel/mentor/eval.go:1853
-00:12:34 | Thì gồng cho em | CODE kernel/mentor/eval.go:1853
-00:12:37 | Gồng cho em | CODE kernel/mentor/eval.go:1853
-00:12:39 | Em nói lại một lần nha | CODE kernel/mentor/eval.go:1853
-00:12:43 | Khi anh chị bắt potential high ở low | CODE kernel/mentor/eval.go:1853
-00:12:45 | Hoặc là anh chị bắt cái low nào đó | CODE kernel/mentor/eval.go:1853
-00:12:47 | Để anh chị đánh cái quay về bắt test | CODE kernel/mentor/eval.go:1853
-00:12:49 | By setup trigger | CODE kernel/mentor/eval.go:1853
-00:12:50 | Của khung nhỏ | CODE kernel/mentor/eval.go:1853
-00:12:52 | Thì nếu như 2 cây nến sau đó | CODE kernel/mentor/eval.go:1853
-00:12:59 | Trong vòng 2 cây nến ha | CODE kernel/mentor/eval.go:1853
-00:13:00 | Trong vòng 2 cây nến sau đó | CODE kernel/mentor/eval.go:1853
-00:13:02 | Nếu như có inside bar | CODE kernel/mentor/eval.go:1853
-00:13:04 | Thì | CODE kernel/mentor/eval.go:1853
-00:13:06 | Gồng cái lệnh đó luôn giúp em | CODE kernel/mentor/eval.go:1853
-00:13:08 | Và cái risk reward nó cực kỳ cao | CODE kernel/mentor/eval.go:1853
+00:11:31 | Khi anh chị bắt potential higher low | CODE kernel/mentor/eval.go:1856
+00:11:33 | Hoặc là anh chị bắt một cái low | CODE kernel/mentor/eval.go:1856
+00:11:35 | Và nó trigger cái buy setup | CODE kernel/mentor/eval.go:1856
+00:11:39 | Và mọi người tự đảo ngược lại cho lệnh | CODE kernel/mentor/eval.go:1856
+00:11:42 | Mọi người nghe lại xong mọi người tự đảo ngược lại cho lệnh sót | CODE kernel/mentor/eval.go:1856
+00:11:44 | Tại vì bây giờ mà kiếm lệnh sót thì cũng hơi lâu | CODE kernel/mentor/eval.go:1856
+00:11:46 | Rồi chắc cũng sẽ có | CODE kernel/mentor/eval.go:1856
+00:11:48 | Nhưng mà để xíu em sẽ cố gắng em kiếm cho anh chị | CODE kernel/mentor/eval.go:1856
+00:11:49 | Rồi khi mà | CODE kernel/mentor/eval.go:1856
+00:11:51 | Khi mà nến | CODE kernel/mentor/eval.go:1856
+00:11:53 | Mọi người có thể kiếm potential high low | CODE kernel/mentor/eval.go:1856
+00:11:56 | Hoặc là mọi người kiếm low | CODE kernel/mentor/eval.go:1856
+00:11:57 | Thì mọi người sẽ ra cái | CODE kernel/mentor/eval.go:1856
+00:11:59 | Đầu | CODE kernel/mentor/eval.go:1856
+00:12:01 | Mọi người bắt đầu mọi người ra cái đầu | CODE kernel/mentor/eval.go:1856
+00:12:04 | Sau khi nó | CODE kernel/mentor/eval.go:1856
+00:12:05 | Sau khi nó phiêu lệnh cho anh chị | CODE kernel/mentor/eval.go:1856
+00:12:07 | Sau khi nó phiêu lệnh cho anh chị | CODE kernel/mentor/eval.go:1856
+00:12:10 | Nếu như | CODE kernel/mentor/eval.go:1856
+00:12:12 | Hai cây nến | CODE kernel/mentor/eval.go:1856
+00:12:15 | Ở đằng sau | CODE kernel/mentor/eval.go:1856
+00:12:16 | Sau khi nó phiêu lệnh | CODE kernel/mentor/eval.go:1856
+00:12:18 | Là cây lệnh của mình sẽ được phiêu ở cây nến | CODE kernel/mentor/eval.go:1856
+00:12:20 | Cây nến xanh này | CODE kernel/mentor/eval.go:1856
+00:12:22 | Khi nó break qua cây nến xanh là nó sẽ phiêu cây lệnh của mình | CODE kernel/mentor/eval.go:1856
+00:12:25 | Thì trong dòng | CODE kernel/mentor/eval.go:1856
+00:12:27 | Hai cây nến tiếp theo | CODE kernel/mentor/eval.go:1856
+00:12:29 | Nếu như có | CODE kernel/mentor/eval.go:1856
+00:12:31 | Inside wall cùng chiều | CODE kernel/mentor/eval.go:1856
+00:12:33 | Với cây lệnh anh chị đang vô | CODE kernel/mentor/eval.go:1856
+00:12:34 | Thì gồng cho em | CODE kernel/mentor/eval.go:1856
+00:12:37 | Gồng cho em | CODE kernel/mentor/eval.go:1856
+00:12:39 | Em nói lại một lần nha | CODE kernel/mentor/eval.go:1856
+00:12:43 | Khi anh chị bắt potential high ở low | CODE kernel/mentor/eval.go:1856
+00:12:45 | Hoặc là anh chị bắt cái low nào đó | CODE kernel/mentor/eval.go:1856
+00:12:47 | Để anh chị đánh cái quay về bắt test | CODE kernel/mentor/eval.go:1856
+00:12:49 | By setup trigger | CODE kernel/mentor/eval.go:1856
+00:12:50 | Của khung nhỏ | CODE kernel/mentor/eval.go:1856
+00:12:52 | Thì nếu như 2 cây nến sau đó | CODE kernel/mentor/eval.go:1856
+00:12:59 | Trong vòng 2 cây nến ha | CODE kernel/mentor/eval.go:1856
+00:13:00 | Trong vòng 2 cây nến sau đó | CODE kernel/mentor/eval.go:1856
+00:13:02 | Nếu như có inside bar | CODE kernel/mentor/eval.go:1856
+00:13:04 | Thì | CODE kernel/mentor/eval.go:1856
+00:13:06 | Gồng cái lệnh đó luôn giúp em | CODE kernel/mentor/eval.go:1856
+00:13:08 | Và cái risk reward nó cực kỳ cao | CODE kernel/mentor/eval.go:1856
 00:13:12 | Cái risk reward nó cực kỳ cao | —
 00:13:22 | Tùy theo anh chị gồng bao nhiêu thôi | —
 00:13:23 | Nếu như mà là em | —
@@ -378,26 +378,26 @@ cues: 449/449 · rule cues: 168 · rows: 6 · CODE: 156 · MISMATCH: 0 · NOT-IN
 00:15:34 | Anh chị ok không | —
 00:15:37 | Rồi | —
 00:15:39 | Tiếp tục | —
-00:15:40 | Đây sẽ là một cách em kéo stop | CODE kernel/mentor/exec_frame.go:5
-00:15:44 | Gồng lời | CODE kernel/mentor/exec_frame.go:5
-00:15:46 | Nó sẽ theo bài học | CODE kernel/mentor/exec_frame.go:5
-00:15:48 | Nó sẽ không có gì khác hết | CODE kernel/mentor/exec_frame.go:5
-00:15:49 | Nó sẽ theo bài học | CODE kernel/mentor/exec_frame.go:5
-00:15:50 | Có nghĩa là sao | CODE kernel/mentor/exec_frame.go:5
-00:15:52 | Mình trade khung 2 phút | CODE kernel/mentor/exec_frame.go:5
-00:15:54 | Khi mình vô lệnh rồi | CODE kernel/mentor/exec_frame.go:5
-00:15:56 | Đây em ví dụ | CODE kernel/mentor/exec_frame.go:5
-00:15:57 | Mình potential high low | CODE kernel/mentor/exec_frame.go:5
-00:16:01 | Thì mình sẽ vô cái lệnh ở bên đây | CODE kernel/mentor/exec_frame.go:5
-00:16:02 | Cách em gồng lệnh nè mọi người | CODE kernel/mentor/exec_frame.go:5
-00:16:05 | Và em sẽ nói lý do tại sao em gồng vậy | CODE kernel/mentor/exec_frame.go:5
-00:16:07 | Cứ mỗi cây nến 2 phút đóng xong | CODE kernel/mentor/exec_frame.go:5
-00:16:11 | Em sẽ không sử dụng khung 1 phút | CODE kernel/mentor/exec_frame.go:5
-00:16:13 | Mình trade khung 2 phút | CODE kernel/mentor/exec_frame.go:5
-00:16:14 | Thì mình theo khung 2 phút | CODE kernel/mentor/exec_frame.go:5
-00:16:15 | Nếu như mỗi lần cây | CODE kernel/mentor/exec_frame.go:5
-00:16:18 | Mỗi cây 2 phút đóng xong | CODE kernel/mentor/exec_frame.go:5
-00:16:20 | Em sẽ kéo stop | CODE kernel/mentor/exec_frame.go:5
+00:15:40 | Đây sẽ là một cách em kéo stop | CODE kernel/mentor/exec_frame.go:25
+00:15:44 | Gồng lời | CODE kernel/mentor/exec_frame.go:25
+00:15:46 | Nó sẽ theo bài học | CODE kernel/mentor/exec_frame.go:25
+00:15:48 | Nó sẽ không có gì khác hết | CODE kernel/mentor/exec_frame.go:25
+00:15:49 | Nó sẽ theo bài học | CODE kernel/mentor/exec_frame.go:25
+00:15:50 | Có nghĩa là sao | CODE kernel/mentor/exec_frame.go:25
+00:15:52 | Mình trade khung 2 phút | CODE kernel/mentor/exec_frame.go:25
+00:15:54 | Khi mình vô lệnh rồi | CODE kernel/mentor/exec_frame.go:25
+00:15:56 | Đây em ví dụ | CODE kernel/mentor/exec_frame.go:25
+00:15:57 | Mình potential high low | CODE kernel/mentor/exec_frame.go:25
+00:16:01 | Thì mình sẽ vô cái lệnh ở bên đây | CODE kernel/mentor/exec_frame.go:25
+00:16:02 | Cách em gồng lệnh nè mọi người | CODE kernel/mentor/exec_frame.go:25
+00:16:05 | Và em sẽ nói lý do tại sao em gồng vậy | CODE kernel/mentor/exec_frame.go:25
+00:16:07 | Cứ mỗi cây nến 2 phút đóng xong | CODE kernel/mentor/exec_frame.go:25
+00:16:11 | Em sẽ không sử dụng khung 1 phút | CODE kernel/mentor/exec_frame.go:25
+00:16:13 | Mình trade khung 2 phút | CODE kernel/mentor/exec_frame.go:25
+00:16:14 | Thì mình theo khung 2 phút | CODE kernel/mentor/exec_frame.go:25
+00:16:15 | Nếu như mỗi lần cây | CODE kernel/mentor/exec_frame.go:25
+00:16:18 | Mỗi cây 2 phút đóng xong | CODE kernel/mentor/exec_frame.go:25
+00:16:20 | Em sẽ kéo stop | CODE kernel/mentor/exec_frame.go:25
 00:16:22 | Đặt ở dưới đáy cây nến 2 phút đó | —
 00:16:25 | Cho lệnh lon | —
 00:16:27 | Anh chị tự đảo ngược lại lệnh short | —
@@ -427,25 +427,25 @@ cues: 449/449 · rule cues: 168 · rows: 6 · CODE: 156 · MISMATCH: 0 · NOT-IN
 00:17:21 | Đây là cách em gọng lệnh | —
 00:17:23 | Theo những gì em hướng dẫn anh chị trong lớp | —
 00:17:28 | Tại vì khi mình vô lệnh | —
-00:17:30 | Đúng không? Bây giờ mình vô lệnh | CODE kernel/mentor/eval.go:1915
-00:17:32 | Nếu như không có một cây nến nào | CODE kernel/mentor/eval.go:1915
-00:17:35 | Vượt qua đáy của cây nến trước | CODE kernel/mentor/eval.go:1915
-00:17:37 | Thì nó đâu có sell set up trigger đâu | CODE kernel/mentor/eval.go:1915
-00:17:40 | Nó đâu có | CODE kernel/mentor/eval.go:1915
-00:17:42 | Tại vì đọc theo cái dòng thứ 2 | CODE kernel/mentor/eval.go:1915
-00:17:44 | Của slide số 16 là khi nến phá | CODE kernel/mentor/eval.go:1915
-00:17:46 | Đấy củ giá nên tiếp tục đi theo hướng đó | CODE kernel/mentor/eval.go:1915
-00:17:48 | Đúng không | CODE kernel/mentor/eval.go:1915
-00:17:49 | Đây là cách em gồng lệnh | CODE kernel/mentor/eval.go:1915
-00:17:53 | Đây là cách em gồng lệnh | CODE kernel/mentor/eval.go:1915
-00:17:55 | Em cứ kéo stop theo mỗi cây nến | CODE kernel/mentor/eval.go:1915
-00:17:58 | 2 phút mỗi khi nó đóng xong | CODE kernel/mentor/eval.go:1915
-00:17:59 | Và đây là cách em gồng | CODE kernel/mentor/eval.go:1915
-00:18:02 | Tại vì em trade theo khung 2 phút | CODE kernel/mentor/eval.go:1915
-00:18:04 | Khung 1 phút em sẽ | CODE kernel/mentor/eval.go:1915
-00:18:05 | Vẫn gồng theo cách này | CODE kernel/mentor/eval.go:1915
-00:18:07 | Nếu như mình trade khung nào thì mình gồng theo khung đó | CODE kernel/mentor/eval.go:1915
-00:18:09 | Theo cây nến của khung đó | CODE kernel/mentor/eval.go:1915
-00:18:10 | Nhưng khung 1 phút nó rất dễ bị quét râu | CODE kernel/mentor/eval.go:1915
-00:18:12 | Nên em sẽ không sử dụng khung 1 phút | CODE kernel/mentor/eval.go:1915
-00:18:14 | Em sẽ sử dụng khung 2 phút | CODE kernel/mentor/eval.go:1915
+00:17:30 | Đúng không? Bây giờ mình vô lệnh | CODE kernel/mentor/eval.go:1917
+00:17:32 | Nếu như không có một cây nến nào | CODE kernel/mentor/eval.go:1917
+00:17:35 | Vượt qua đáy của cây nến trước | CODE kernel/mentor/eval.go:1917
+00:17:37 | Thì nó đâu có sell set up trigger đâu | CODE kernel/mentor/eval.go:1917
+00:17:40 | Nó đâu có | CODE kernel/mentor/eval.go:1917
+00:17:42 | Tại vì đọc theo cái dòng thứ 2 | CODE kernel/mentor/eval.go:1917
+00:17:44 | Của slide số 16 là khi nến phá | CODE kernel/mentor/eval.go:1917
+00:17:46 | Đấy củ giá nên tiếp tục đi theo hướng đó | CODE kernel/mentor/eval.go:1917
+00:17:48 | Đúng không | CODE kernel/mentor/eval.go:1917
+00:17:49 | Đây là cách em gồng lệnh | CODE kernel/mentor/eval.go:1917
+00:17:53 | Đây là cách em gồng lệnh | CODE kernel/mentor/eval.go:1917
+00:17:55 | Em cứ kéo stop theo mỗi cây nến | CODE kernel/mentor/eval.go:1917
+00:17:58 | 2 phút mỗi khi nó đóng xong | CODE kernel/mentor/eval.go:1917
+00:17:59 | Và đây là cách em gồng | CODE kernel/mentor/eval.go:1917
+00:18:02 | Tại vì em trade theo khung 2 phút | CODE kernel/mentor/eval.go:1917
+00:18:04 | Khung 1 phút em sẽ | CODE kernel/mentor/eval.go:1917
+00:18:05 | Vẫn gồng theo cách này | CODE kernel/mentor/eval.go:1917
+00:18:07 | Nếu như mình trade khung nào thì mình gồng theo khung đó | CODE kernel/mentor/eval.go:1917
+00:18:09 | Theo cây nến của khung đó | CODE kernel/mentor/eval.go:1917
+00:18:10 | Nhưng khung 1 phút nó rất dễ bị quét râu | CODE kernel/mentor/eval.go:1917
+00:18:12 | Nên em sẽ không sử dụng khung 1 phút | CODE kernel/mentor/eval.go:1917
+00:18:14 | Em sẽ sử dụng khung 2 phút | CODE kernel/mentor/eval.go:1917
