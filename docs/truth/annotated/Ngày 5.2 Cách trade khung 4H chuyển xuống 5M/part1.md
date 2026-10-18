@@ -107,14 +107,14 @@ cues: 535/535 · rule cues: 256 · rows: 11 · CODE: 251 · MISMATCH: 0 · NOT-I
 03:58 | Email 34 1 giờ hoặc 4 giờ | —
 04:01 | Rồi | —
 04:02 | Cách try như thế nào | —
-04:03 | Em sẽ chuyển khung giờ xuống | CODE kernel/mentor/swing4h.go:252 (row 12)
-04:08 | à à em sẽ chuyển khung giờ xuống sau khi em thấy mắc kẹt nó về gần email 34 của khung 4 giờ | CODE kernel/mentor/swing4h.go:252 (row 12)
-04:20 | ở khung 4 giờ em chỉ sử dụng khung 4 giờ ha từ khi nào sử dụng khung 1 giờ thì em sẽ em sẽ báo cho | CODE kernel/mentor/swing4h.go:252 (row 12)
-04:26 | người biết em sẽ em sẽ hướng dẫn sau nhưng mà khung 4 giờ sau khi mà em thấy nến nó về gần email 34 | CODE kernel/mentor/swing4h.go:252 (row 12)
-04:34 | em sẽ móc 1 cái line | CODE kernel/mentor/swing4h.go:252 (row 12)
-04:36 | em sẽ móc 1 cái line | CODE kernel/mentor/swing4h.go:252 (row 12)
-04:41 | em chuyển thẳng xuống khung 5 phút | CODE kernel/mentor/swing4h.go:252 (row 12)
-04:44 | em chuyển thẳng xuống khung 5 phút luôn | CODE kernel/mentor/swing4h.go:252 (row 12)
+04:03 | Em sẽ chuyển khung giờ xuống | CODE kernel/mentor/swing4h.go:270 (row 12)
+04:08 | à à em sẽ chuyển khung giờ xuống sau khi em thấy mắc kẹt nó về gần email 34 của khung 4 giờ | CODE kernel/mentor/swing4h.go:270 (row 12)
+04:20 | ở khung 4 giờ em chỉ sử dụng khung 4 giờ ha từ khi nào sử dụng khung 1 giờ thì em sẽ em sẽ báo cho | CODE kernel/mentor/swing4h.go:270 (row 12)
+04:26 | người biết em sẽ em sẽ hướng dẫn sau nhưng mà khung 4 giờ sau khi mà em thấy nến nó về gần email 34 | CODE kernel/mentor/swing4h.go:270 (row 12)
+04:34 | em sẽ móc 1 cái line | CODE kernel/mentor/swing4h.go:270 (row 12)
+04:36 | em sẽ móc 1 cái line | CODE kernel/mentor/swing4h.go:270 (row 12)
+04:41 | em chuyển thẳng xuống khung 5 phút | CODE kernel/mentor/swing4h.go:270 (row 12)
+04:44 | em chuyển thẳng xuống khung 5 phút luôn | CODE kernel/mentor/swing4h.go:270 (row 12)
 04:53 | em không chuyển khung giờ nào khác | —
 04:54 | em chuyển thẳng xuống khung 5 phút | —
 04:55 | và tại vì sao | —
@@ -128,11 +128,11 @@ cues: 535/535 · rule cues: 256 · rows: 11 · CODE: 251 · MISMATCH: 0 · NOT-I
 05:22 | Nó đang là một cái resistance | —
 05:24 | Cái chỗ này sẽ là cái chỗ em vô swing | —
 05:30 | Em vẫn đánh theo multi time frame | —
-05:33 | Nhưng mà em chuyển thẳng từ 4 giờ xuống 5 phút | CODE kernel/mentor/swing4h.go:252 (row 12)
-05:36 | 1 giờ xuống 5 phút | CODE kernel/mentor/swing4h.go:252 (row 12)
-05:39 | Chứ không phải là 4 giờ xuống 5 phút | CODE kernel/mentor/swing4h.go:252 (row 12)
-05:41 | Chứ không phải là 4 giờ xuống 1 phút nha anh chị | CODE kernel/mentor/swing4h.go:252 (row 12)
-05:43 | 5 phút nha | CODE kernel/mentor/swing4h.go:252 (row 12)
+05:33 | Nhưng mà em chuyển thẳng từ 4 giờ xuống 5 phút | CODE kernel/mentor/swing4h.go:270 (row 12)
+05:36 | 1 giờ xuống 5 phút | CODE kernel/mentor/swing4h.go:270 (row 12)
+05:39 | Chứ không phải là 4 giờ xuống 5 phút | CODE kernel/mentor/swing4h.go:270 (row 12)
+05:41 | Chứ không phải là 4 giờ xuống 1 phút nha anh chị | CODE kernel/mentor/swing4h.go:270 (row 12)
+05:43 | 5 phút nha | CODE kernel/mentor/swing4h.go:270 (row 12)
 05:44 | 5 phút | —
 05:46 | Nhớ giúp em | —
 05:48 | Và em đánh một lệnh lower high | CODE kernel/mentor/swing4h.go:96 (row 13)
@@ -412,27 +412,27 @@ cues: 535/535 · rule cues: 256 · rows: 11 · CODE: 251 · MISMATCH: 0 · NOT-I
 19:37 | Một cái lệnh potential low 2 | —
 19:38 | Tại level | —
 19:39 | Thì cái việc đầu tiên nó làm trước đó | —
-19:42 | Là nó đã phải đóng ở | CODE kernel/mentor/swing4h.go:555 (row 17)
-19:44 | Nó đã phải làm gì hả chị | CODE kernel/mentor/swing4h.go:555 (row 17)
-19:46 | Nó đã phải đóng | CODE kernel/mentor/swing4h.go:555 (row 17)
-19:47 | Cái nến đầu tiên nó chạm level | CODE kernel/mentor/swing4h.go:555 (row 17)
-19:49 | Nó phải đóng ở dưới rồi | CODE kernel/mentor/swing4h.go:555 (row 17)
-19:51 | Chứ nó không được quỳ nóng ở trên rồi | CODE kernel/mentor/swing4h.go:555 (row 17)
-19:54 | Nếu như nến nó đóng ở trên level | CODE kernel/mentor/swing4h.go:555 (row 17)
-19:57 | Thì level đó | CODE kernel/mentor/swing4h.go:555 (row 17)
-19:58 | Invalid | CODE kernel/mentor/swing4h.go:555 (row 17)
-19:59 | Hư mindset liền không | CODE kernel/mentor/swing4h.go:555 (row 17)
-20:04 | Cái việc anh chị đánh một lệnh bộ ten solo 2 | CODE kernel/mentor/swing4h.go:555 (row 17)
-20:08 | Ngay tại level | CODE kernel/mentor/swing4h.go:555 (row 17)
-20:09 | Thì cái level đó | CODE kernel/mentor/swing4h.go:555 (row 17)
-20:11 | Nó cái nến đầu tiên chạm level | CODE kernel/mentor/swing4h.go:555 (row 17)
-20:13 | Thì nó phải đóng ở dưới level | CODE kernel/mentor/swing4h.go:555 (row 17)
-20:18 | Thì anh chị mới có lệnh potential low 2 | CODE kernel/mentor/swing4h.go:555 (row 17)
-20:20 | Nếu như nó đã đóng ở trên rồi | CODE kernel/mentor/swing4h.go:555 (row 17)
-20:22 | Thì cái level đó là | CODE kernel/mentor/swing4h.go:555 (row 17)
-20:24 | Invalid level | CODE kernel/mentor/swing4h.go:555 (row 17)
-20:25 | Thì chả có cái lệnh potential low 2 nào ngay đó | CODE kernel/mentor/swing4h.go:555 (row 17)
-20:31 | Thì làm sao mà anh chị đánh | CODE kernel/mentor/swing4h.go:555 (row 17)
+19:42 | Là nó đã phải đóng ở | CODE kernel/mentor/swing4h.go:559 (row 17)
+19:44 | Nó đã phải làm gì hả chị | CODE kernel/mentor/swing4h.go:559 (row 17)
+19:46 | Nó đã phải đóng | CODE kernel/mentor/swing4h.go:559 (row 17)
+19:47 | Cái nến đầu tiên nó chạm level | CODE kernel/mentor/swing4h.go:559 (row 17)
+19:49 | Nó phải đóng ở dưới rồi | CODE kernel/mentor/swing4h.go:559 (row 17)
+19:51 | Chứ nó không được quỳ nóng ở trên rồi | CODE kernel/mentor/swing4h.go:559 (row 17)
+19:54 | Nếu như nến nó đóng ở trên level | CODE kernel/mentor/swing4h.go:559 (row 17)
+19:57 | Thì level đó | CODE kernel/mentor/swing4h.go:559 (row 17)
+19:58 | Invalid | CODE kernel/mentor/swing4h.go:559 (row 17)
+19:59 | Hư mindset liền không | CODE kernel/mentor/swing4h.go:559 (row 17)
+20:04 | Cái việc anh chị đánh một lệnh bộ ten solo 2 | CODE kernel/mentor/swing4h.go:559 (row 17)
+20:08 | Ngay tại level | CODE kernel/mentor/swing4h.go:559 (row 17)
+20:09 | Thì cái level đó | CODE kernel/mentor/swing4h.go:559 (row 17)
+20:11 | Nó cái nến đầu tiên chạm level | CODE kernel/mentor/swing4h.go:559 (row 17)
+20:13 | Thì nó phải đóng ở dưới level | CODE kernel/mentor/swing4h.go:559 (row 17)
+20:18 | Thì anh chị mới có lệnh potential low 2 | CODE kernel/mentor/swing4h.go:559 (row 17)
+20:20 | Nếu như nó đã đóng ở trên rồi | CODE kernel/mentor/swing4h.go:559 (row 17)
+20:22 | Thì cái level đó là | CODE kernel/mentor/swing4h.go:559 (row 17)
+20:24 | Invalid level | CODE kernel/mentor/swing4h.go:559 (row 17)
+20:25 | Thì chả có cái lệnh potential low 2 nào ngay đó | CODE kernel/mentor/swing4h.go:559 (row 17)
+20:31 | Thì làm sao mà anh chị đánh | CODE kernel/mentor/swing4h.go:559 (row 17)
 20:37 | Một cái lệnh shock ngay đó | —
 20:38 | Nếu như nó đóng ở dưới level | CODE kernel/mentor/swing4h.go:401 (row 16)
 20:42 | Làm sao | CODE kernel/mentor/swing4h.go:401 (row 16)

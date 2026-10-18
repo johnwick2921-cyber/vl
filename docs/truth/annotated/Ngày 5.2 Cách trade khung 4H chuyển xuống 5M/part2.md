@@ -107,8 +107,8 @@ cues: 491/491 · rule cues: 175 · rows: 7 · CODE: 122 · MISMATCH: 0 · NOT-IN
 06:08 | Nhưng thường nếu mà anh chị trade khung 4 giờ | CODE kernel/mentor/swing4h.go:94 (row 21)
 06:14 | Thì anh chị nên cái target đầu tiên là email 34 của 05 phút | CODE kernel/mentor/swing4h.go:94 (row 21)
 06:19 | Nhưng đừng vô 1 MNQ | CODE kernel/mentor/swing4h.go:94 (row 21)
-06:23 | Vô Addict là 2 của MNQ để có đường bắn bớt | CODE store/strategy.go:2154 (row 22)
-06:27 | Không cần Asia anh | CODE store/strategy.go:2154 (row 22)
+06:23 | Vô Addict là 2 của MNQ để có đường bắn bớt | CODE trader/mentor_mode.go:43 (row 22)
+06:27 | Không cần Asia anh | CODE trader/mentor_mode.go:43 (row 22)
 06:28 | Khi nào nó đụng email 34 là được | —
 06:30 | Không cần Asia | —
 06:31 | Tại sao em lại thích Asia | —
@@ -281,12 +281,12 @@ cues: 491/491 · rule cues: 175 · rows: 7 · CODE: 122 · MISMATCH: 0 · NOT-IN
 14:23 | Level nè | —
 14:26 | Đụng level | —
 14:28 | Đúng không nè | —
-14:29 | Đụng | CODE kernel/mentor/swing4h.go:531 (row 15)
-14:29 | Phải đợi nó đụng | CODE kernel/mentor/swing4h.go:531 (row 15)
-14:30 | Phải đợi nó đụng | CODE kernel/mentor/swing4h.go:531 (row 15)
-14:32 | Bắt buộc phải đợi nó đụng | CODE kernel/mentor/swing4h.go:531 (row 15)
-14:34 | Đụng ít đụng nhiều gì | CODE kernel/mentor/swing4h.go:531 (row 15)
-14:35 | Vẫn phải đụng | CODE kernel/mentor/swing4h.go:531 (row 15)
+14:29 | Đụng | CODE kernel/mentor/swing4h.go:535 (row 15)
+14:29 | Phải đợi nó đụng | CODE kernel/mentor/swing4h.go:535 (row 15)
+14:30 | Phải đợi nó đụng | CODE kernel/mentor/swing4h.go:535 (row 15)
+14:32 | Bắt buộc phải đợi nó đụng | CODE kernel/mentor/swing4h.go:535 (row 15)
+14:34 | Đụng ít đụng nhiều gì | CODE kernel/mentor/swing4h.go:535 (row 15)
+14:35 | Vẫn phải đụng | CODE kernel/mentor/swing4h.go:535 (row 15)
 14:36 | Đụng xong cái đi | —
 14:37 | Tôi đánh lên | —
 14:37 | Thì đây nè | —
@@ -322,15 +322,15 @@ cues: 491/491 · rule cues: 175 · rows: 7 · CODE: 122 · MISMATCH: 0 · NOT-IN
 18:13 | Em sử dụng để | —
 18:15 | Để em trade | —
 18:20 | Em không có | —
-18:26 | Bắt buộc là phải em nhắc lại 1 lần | CODE kernel/mentor/swing4h.go:531 (row 15)
-18:29 | 1 ngàn lần nữa nha | CODE kernel/mentor/swing4h.go:531 (row 15)
-18:30 | Đôi khi anh chị trade | CODE kernel/mentor/swing4h.go:531 (row 15)
-18:32 | 1 phút thì anh chị có thể | CODE kernel/mentor/swing4h.go:531 (row 15)
-18:35 | Anh chị có thể | CODE kernel/mentor/swing4h.go:531 (row 15)
-18:36 | UG nó là chưa gần đụng ha | CODE kernel/mentor/swing4h.go:531 (row 15)
-18:39 | Gần gần gần đụng | CODE kernel/mentor/swing4h.go:531 (row 15)
-18:41 | Còn như cái này thì bắt buộc là phải đụng nha | CODE kernel/mentor/swing4h.go:531 (row 15)
-18:45 | Bắt buộc cho em là phải đụng nha | CODE kernel/mentor/swing4h.go:531 (row 15)
+18:26 | Bắt buộc là phải em nhắc lại 1 lần | CODE kernel/mentor/swing4h.go:535 (row 15)
+18:29 | 1 ngàn lần nữa nha | CODE kernel/mentor/swing4h.go:535 (row 15)
+18:30 | Đôi khi anh chị trade | CODE kernel/mentor/swing4h.go:535 (row 15)
+18:32 | 1 phút thì anh chị có thể | CODE kernel/mentor/swing4h.go:535 (row 15)
+18:35 | Anh chị có thể | CODE kernel/mentor/swing4h.go:535 (row 15)
+18:36 | UG nó là chưa gần đụng ha | CODE kernel/mentor/swing4h.go:535 (row 15)
+18:39 | Gần gần gần đụng | CODE kernel/mentor/swing4h.go:535 (row 15)
+18:41 | Còn như cái này thì bắt buộc là phải đụng nha | CODE kernel/mentor/swing4h.go:535 (row 15)
+18:45 | Bắt buộc cho em là phải đụng nha | CODE kernel/mentor/swing4h.go:535 (row 15)
 18:47 | Rồi ví dụ | —
 18:49 | Sẽ có những lệnh thua | —
 18:50 | Ừ có thua nè | —
