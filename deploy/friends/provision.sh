@@ -103,6 +103,11 @@ done
 # Secrets: a fresh random login secret and connect key per friend.
 JWT_SECRET="$(openssl rand -base64 64 | tr -d '\n')"
 CONNECT_KEY="$(openssl rand -hex 32)"
+# Encryption keys, same generator/format as the owner's start.sh. Both are
+# demanded before store init (crypto/crypto.go:77-94): DATA_ENCRYPTION_KEY is
+# AES-256 base64; RSA_PRIVATE_KEY is PEM on ONE line with literal \n.
+DATA_ENCRYPTION_KEY="$(openssl rand -base64 32 | tr -d '\n')"
+RSA_PRIVATE_KEY="$(openssl genrsa 2048 2>/dev/null | awk '{printf "%s\\n", $0}')"
 KEY_SHA="$(printf '%s' "$CONNECT_KEY" | sha256sum | awk '{print $1}')"
 
 # The folder (B2): .env + data/ + symlinks to the owner's web/dist and deploy/RELEASE
@@ -116,6 +121,8 @@ umask 077
 cat > "$DEST/.env" <<EOF
 JWT_SECRET=$JWT_SECRET
 NT_CONNECT_KEY=$CONNECT_KEY
+DATA_ENCRYPTION_KEY=$DATA_ENCRYPTION_KEY
+RSA_PRIVATE_KEY="$RSA_PRIVATE_KEY"
 API_SERVER_PORT=$WEB_PORT
 API_SERVER_HOST=$TUNNEL_IP
 NT_TCP_LISTEN_ADDR=$TUNNEL_IP:$NT_PORT
