@@ -25,12 +25,14 @@ type friendHealth struct {
 	Revision string `json:"revision"`
 }
 
-// friendFlat is GET /api/friend/flat (B2 + CTO ruling 2026-10-18): DS-102 adds
-// it in friend mode ONLY, reachable only on the tunnel-bound friend port.
-// It reports ONLY {flat, at} — no symbols, sizes, prices or accounts.
+// friendFlat is GET /api/friend/flat (B2 + CTO ruling 2026-10-18, R11): DS-102
+// adds it in friend mode ONLY, reachable only on the tunnel-bound friend port.
+// It reports {flat, traders, at} — no symbols, sizes, prices or accounts.
+// "traders" is a pointer so an OLDER bot that omits it is detected (R11).
 type friendFlat struct {
-	Flat bool  `json:"flat"`
-	At   int64 `json:"at"`
+	Flat    bool  `json:"flat"`
+	Traders *int  `json:"traders"`
+	At      int64 `json:"at"`
 }
 
 func (h OSHost) friendGet(ctx context.Context, url string) ([]byte, error) {
@@ -55,33 +57,38 @@ func (h OSHost) friendGet(ctx context.Context, url string) ([]byte, error) {
 }
 
 // FriendFlat reports whether the friend bot at baseURL is flat: its health
-// answers 200 AND GET /api/friend/flat reports flat:true. A probe error is
-// NOT flat (the caller fail-closes: a friend whose flatness cannot be proven
-// is never restarted).
-func (h OSHost) FriendFlat(ctx context.Context, baseURL string) (bool, error) {
+// answers 200 AND GET /api/friend/flat parses. A probe error is NOT flat (the
+// caller fail-closes: a friend whose flatness cannot be proven is never
+// restarted). The returned view carries the friend's trader count when the
+// reply had one (R11).
+func (h OSHost) FriendFlat(ctx context.Context, baseURL string) (FriendFlatView, error) {
 	body, err := h.friendGet(ctx, baseURL+"/api/health")
 	if err != nil {
-		return false, fmt.Errorf("friend health: %w", err)
+		return FriendFlatView{}, fmt.Errorf("friend health: %w", err)
 	}
 	var hh friendHealth
 	if err := json.Unmarshal(body, &hh); err != nil {
-		return false, fmt.Errorf("friend health body: %w", err)
+		return FriendFlatView{}, fmt.Errorf("friend health body: %w", err)
 	}
 	if hh.Status != "ok" && hh.Status != "degraded" {
-		return false, fmt.Errorf("friend health status %q", hh.Status)
+		return FriendFlatView{}, fmt.Errorf("friend health status %q", hh.Status)
 	}
 	// The flat signal is public in friend mode only (DS-102's
 	// /api/friend/flat); a 404/401 means flatness cannot be proven → not flat
 	// (fail-closed), never an error.
 	body, err = h.friendGet(ctx, baseURL+"/api/friend/flat")
 	if err != nil {
-		return false, nil
+		return FriendFlatView{}, nil
 	}
 	var ff friendFlat
 	if err := json.Unmarshal(body, &ff); err != nil {
-		return false, fmt.Errorf("friend flat body: %w", err)
+		return FriendFlatView{}, fmt.Errorf("friend flat body: %w", err)
 	}
-	return ff.Flat, nil
+	v := FriendFlatView{Flat: ff.Flat}
+	if ff.Traders != nil {
+		v.Traders, v.HasTraders = *ff.Traders, true
+	}
+	return v, nil
 }
 
 // FriendRestart restarts a friend's user unit.

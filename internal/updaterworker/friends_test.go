@@ -135,6 +135,50 @@ func TestUpdateFriendsPausedSkips(t *testing.T) {
 	}
 }
 
+// TestUpdateFriendsR11TradersRule pins the CTO R11 rule: restart when
+// flat==true OR the reply carries traders==0 (a zero-trader instance manages
+// no position). An older bot omitting "traders" falls back to flat alone.
+func TestUpdateFriendsR11TradersRule(t *testing.T) {
+	// traders=0, flat=false → RESTARTED (zero traders are safe to move).
+	r, _ := friendRig(t, []friendRecord{{Name: "tom", WebPort: 18081, State: "active"}})
+	r.box.friendWebPorts = map[string]int{"tom": 18081}
+	r.box.friendFlat = map[string]bool{"tom": false}
+	r.box.friendHasTraders = map[string]bool{"tom": true}
+	r.box.friendTraders = map[string]int{"tom": 0}
+	r.box.friendBootResults = map[string][]bool{"tom": {true}}
+	r.box.friendBootRev = map[string]string{"tom": "f8faa0bcb96a"}
+	_, results := r.w.updateFriends(context.Background(), strings40())
+	if len(results) != 1 || results[0].State != "restarted" {
+		t.Fatalf("traders=0 → results = %+v, want one restarted tom", results)
+	}
+
+	// traders=1, flat=false → DEFERRED (a real trader, not flat).
+	r, _ = friendRig(t, []friendRecord{{Name: "tom", WebPort: 18081, State: "active"}})
+	r.box.friendWebPorts = map[string]int{"tom": 18081}
+	r.box.friendFlat = map[string]bool{"tom": false}
+	r.box.friendHasTraders = map[string]bool{"tom": true}
+	r.box.friendTraders = map[string]int{"tom": 1}
+	_, results = r.w.updateFriends(context.Background(), strings40())
+	if len(results) != 1 || results[0].State != "deferred" {
+		t.Fatalf("traders=1 flat=false → results = %+v, want one deferred tom", results)
+	}
+	if got := r.box.friendRestartCalls["tom"]; got != 0 {
+		t.Fatalf("traders=1 flat=false: tom restarts = %d, want 0", got)
+	}
+
+	// "traders" MISSING, flat=false → DEFERRED (older bot: flat alone).
+	r, _ = friendRig(t, []friendRecord{{Name: "tom", WebPort: 18081, State: "active"}})
+	r.box.friendWebPorts = map[string]int{"tom": 18081}
+	r.box.friendFlat = map[string]bool{"tom": false}
+	_, results = r.w.updateFriends(context.Background(), strings40())
+	if len(results) != 1 || results[0].State != "deferred" {
+		t.Fatalf("missing traders, flat=false → results = %+v, want one deferred tom", results)
+	}
+	if got := r.box.friendRestartCalls["tom"]; got != 0 {
+		t.Fatalf("missing traders, flat=false: tom restarts = %d, want 0", got)
+	}
+}
+
 func TestUpdateFriendsNoRegistryNoSweep(t *testing.T) {
 	r := newRig(t)
 	r.cfg.FriendRegistry = ""
@@ -165,11 +209,15 @@ func TestUpdateFriendsRegistryReadErrorIsAdvisory(t *testing.T) {
 func strings40() string { return "0123456789abcdef0123456789abcdef01234567" }
 
 // TestOSHostFriendFlat drives the PRODUCTION FriendFlat adapter (the real
-// OSHost HTTP + JSON path) against an httptest server: flat:true, flat:false,
-// and a 404 (friend mode off or the route absent) fail-closes to not-flat.
+// OSHost HTTP + JSON path) against an httptest server: flat:true with a
+// traders count, flat:false with a traders count, a 404 (friend mode off)
+// fail-closes to not-flat, and a reply WITHOUT "traders" (an older bot) is
+// detected (HasTraders false, R11).
 func TestOSHostFriendFlat(t *testing.T) {
 	var mu sync.Mutex
 	flat := true
+	traders := 0
+	hasTraders := true
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/health":
@@ -179,7 +227,11 @@ func TestOSHostFriendFlat(t *testing.T) {
 			mu.Lock()
 			defer mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"flat":%t,"at":%d}`, flat, time.Now().UnixMilli())
+			if hasTraders {
+				fmt.Fprintf(w, `{"flat":%t,"traders":%d,"at":%d}`, flat, traders, time.Now().UnixMilli())
+			} else {
+				fmt.Fprintf(w, `{"flat":%t,"at":%d}`, flat, time.Now().UnixMilli())
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -187,16 +239,17 @@ func TestOSHostFriendFlat(t *testing.T) {
 	defer srv.Close()
 	h := OSHost{}
 
-	got, err := h.FriendFlat(context.Background(), srv.URL)
-	if err != nil || !got {
-		t.Fatalf("flat:true → (%v, %v), want (true, nil)", got, err)
+	v, err := h.FriendFlat(context.Background(), srv.URL)
+	if err != nil || !v.Flat || !v.HasTraders || v.Traders != 0 {
+		t.Fatalf("flat:true traders:0 → (%+v, %v), want Flat HasTraders Traders=0", v, err)
 	}
 	mu.Lock()
 	flat = false
+	traders = 1
 	mu.Unlock()
-	got, err = h.FriendFlat(context.Background(), srv.URL)
-	if err != nil || got {
-		t.Fatalf("flat:false → (%v, %v), want (false, nil)", got, err)
+	v, err = h.FriendFlat(context.Background(), srv.URL)
+	if err != nil || v.Flat || !v.HasTraders || v.Traders != 1 {
+		t.Fatalf("flat:false traders:1 → (%+v, %v), want !Flat HasTraders Traders=1", v, err)
 	}
 	// A server without /api/friend/flat (friend mode off) fails closed.
 	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -207,8 +260,17 @@ func TestOSHostFriendFlat(t *testing.T) {
 		http.NotFound(w, r)
 	}))
 	defer srv2.Close()
-	got, err = h.FriendFlat(context.Background(), srv2.URL)
-	if err != nil || got {
-		t.Fatalf("missing /api/friend/flat → (%v, %v), want (false, nil)", got, err)
+	v, err = h.FriendFlat(context.Background(), srv2.URL)
+	if err != nil || v.Flat || v.HasTraders {
+		t.Fatalf("missing /api/friend/flat → (%+v, %v), want zero view, nil", v, err)
+	}
+	// An OLDER bot reply without "traders" is detected.
+	mu.Lock()
+	hasTraders = false
+	flat = false
+	mu.Unlock()
+	v, err = h.FriendFlat(context.Background(), srv.URL)
+	if err != nil || v.Flat || v.HasTraders {
+		t.Fatalf("missing traders field → (%+v, %v), want !Flat !HasTraders", v, err)
 	}
 }
