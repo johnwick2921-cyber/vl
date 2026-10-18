@@ -9,7 +9,7 @@
   consistently). KeepPublicApi also preserves the public surface NT8 calls.
 
   Run with: Obfuscar.Console.exe Obfuscar.xml   (or `obfuscar.console` via the
-  `Obfuscar.GlobalTool` dotnet tool). Install: `dotnet tool install --global
+  `Obfuscar.GlobalTool` dotnet tool). Install: `dotnet tool install -g
   Obfuscar.GlobalTool`.
 
   The build script (deploy/friend/build-windows.ps1) rewrites InPath/OutPath to
@@ -28,6 +28,7 @@
   <Var name="HideStrings" value="true" />
   <Var name="OptimizeMethods" value="true" />
   <Var name="SuppressIldasm" value="true" />
+  <Var name="ExtraFrameworkFolders" value="" />
 
   <Module file="$(InPath)\VL.AddOn.dll">
     <!-- NT8 must still find this type by name. -->
