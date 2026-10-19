@@ -33,3 +33,12 @@ DS-105 owns fixes. DS-107 owns independent re-review, integration, full B7 gates
 - Revoke moves the instance directory, while resume starts the original unit and rotate needs the original .env [A source trace]. Exact revoke->resume/new key recovery remains for isolated reproduction; not asserted working.
 
 Follow docs/superpowers/AUDIT-CHECKLIST.md and the owner no-delete, SIM-only, no-service-restart rules. B8 investigation is separate from #39 scope.
+
+## Checkpoint update — 08:14 CT
+
+- Parser fix `098c90ef7f70cd7a8a50d01ac466e948afd45580`: independent CTO production-script verification [A], six cases pass (both UNC roots, no trailing slash, failed/empty discovery, unexpected host). Evidence /tmp/r39-installer-fixed.whyh6u/result.json. DS-107 independently passed the increment. Timeout pin and Windows execution adapter remain open at this checkpoint.
+- Friend distribution `20261018084531`: ssh-keygen verification against the public key embedded in cmd/vl-friend/friend_pubkey.go succeeds [A]. VL.AddOn.dll, vl-friend.exe and VL-Setup.exe all match the signed manifest hashes [A]. This proves file integrity only; it is not a real Windows installation result.
+- DS-101/104 reproduced in isolated fixtures: removing a friend moves its directory, resume/rotate lack their required files, and provision rejects the remaining revoked registry name. Device ID remains empty, so remote removal reports no_device_id. These are lane-reported fixture results backed by matching source inspection; no real friend was revoked.
+- Running friend key is loaded from process environment; changing .env alone does not establish immediate old-key rejection. Real connection-path invalidation tests remain required.
+- Production Windows installer source calls `tailscaleInstall` from flow.go, while run_windows.go directly executes the supplied name and has no dispatcher for that symbolic command. DS-108 is assigned to verify clean-PC behavior. Desktop shortcut targets msedge, so automatic app-update invocation also needs verification.
+- Owner setup handover references an unmerged runbook (feat/friend-runbook). Actual source needs TUNNEL_IP in both bot and updater environments, plus enrollment credentials; no manual service restart is authorized. Existing Tailscale installation and enabled vl service mean those steps should not be blindly repeated.
