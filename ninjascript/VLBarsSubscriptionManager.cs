@@ -798,11 +798,18 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
         }
 
+        // Test seam: the callback harness reassigns ClockMs to a deterministic
+        // clock so arrival/freshness assertions are exact, never same-ms luck.
+        internal static Func<long> ClockMs = () => (long)((DateTime.UtcNow
+            - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds);
+
         private static long NowUtcMs()
         {
-            return (long)((DateTime.UtcNow
-                - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds);
+            return ClockMs();
         }
+
+        // Test seam: drive one watchdog tick synchronously.
+        internal void TickForTest() { WatchdogTick(null); }
 
         /// <summary>
         /// Feed freshness for the additive feed_status frame: the newest bar's
