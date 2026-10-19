@@ -164,9 +164,9 @@ machines page).
 `api/handler_friends.go`), so it inherits whatever `TS_AUTHKEY` the bot loaded
 **at boot**. Privately editing `.env` between friends is **not hot-active** — the
 running bot keeps the old value until an Update/restart. The registry stores no
-per-friend auth keys (the key is embedded in the install code once). Effectively
-**only the first friend** (or friends sharing the same boot-time key) can be
-provisioned with the correct tag; per-friend key handling does not exist yet.
+per-friend auth keys (the key is embedded in the install code once). This setup
+is limited to the **first named friend** until per-friend key handling is
+implemented; do not share a tagged auth key between friends.
 `rotate` later issues a new **connect key** but does **not** re-issue a Tailscale
 auth key (see §6).
 
