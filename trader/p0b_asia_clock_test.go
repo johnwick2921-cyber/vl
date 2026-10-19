@@ -68,15 +68,11 @@ func TestP0BAsiaReadFiresAt1630WhileMarketClosed(t *testing.T) {
 	market.FuturesBarsProvider = func(symbol, tf string, count int) []market.Kline {
 		// Stored-data path: supply a realistic prior session so DailyRangeProxy
 		// resolves (~100 pts) instead of the thin one-bar fallback that the
-		// P0.2 target-reachability rule would trip over.
-		now := time.Now().UnixMilli()
-		bars := make([]market.Kline, 0, 390)
-		base := now - 400*60_000
-		for i := 0; i < 390; i++ {
-			o := base + int64(i)*60_000
-			bars = append(bars, market.Kline{OpenTime: o, High: 15650 + float64(i%10), Low: 15550 + float64(i%10), Close: 15600 + float64(i%10), CloseTime: o + 59_000})
-		}
-		return bars
+		// P0.2 target-reachability rule would trip over. rthTapeBars clamps the
+		// lookback to the NY open so the machine table never carries a London
+		// tail whose single High=15650 bar collided with the mock's "RN 15650"
+		// under the P0.4-H provenance check (r40).
+		return rthTapeBars(time.Now())
 	}
 
 	// Tuesday 16:30 CT — the CME maintenance break (open−30 read, owner

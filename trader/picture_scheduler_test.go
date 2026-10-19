@@ -2,6 +2,7 @@ package trader
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -25,14 +26,83 @@ func schedulerTape(t *testing.T) {
 	prev := market.FuturesBarsProvider
 	t.Cleanup(func() { market.FuturesBarsProvider = prev })
 	market.FuturesBarsProvider = func(symbol, tf string, count int) []market.Kline {
-		now := time.Now().UnixMilli()
-		bars := make([]market.Kline, 0, 390)
-		base := now - 400*60_000
-		for i := 0; i < 390; i++ {
-			o := base + int64(i)*60_000
-			bars = append(bars, market.Kline{OpenTime: o, High: 15650 + float64(i%10), Low: 15550 + float64(i%10), Close: 15600 + float64(i%10), CloseTime: o + 59_000})
+		return rthTapeBars(time.Now())
+	}
+}
+
+// rthTapeBars builds the shared 390-bar session fixture ending at now, clamped
+// to the NY open (08:30 CT) so the tape is RTH-only and deterministic.
+//
+// r40 (5 trader race failures): the old fixture anchored `base = now - 400m`
+// to time.Now(). In the 15:09–15:10 CT minute that base landed at 08:29, inside
+// the London session tail, so the single London bar (High 15650, i=0) became the
+// machine-table ONH/LDN-H — which the P0.4-H label-provenance check correctly
+// refused against the mock plan's "RN 15650" (price 15650 is the only mock level
+// inside the fixture's 15650..15659 high range). Clamping the lookback to 08:30
+// CT keeps the machine table nonempty (RTH-H/L + EQH/EQL) with no colliding
+// structural label at 15650, at every wall time.
+func rthTapeBars(now time.Time) []market.Kline {
+	base := now.Add(-400 * time.Minute)
+	if open := kernel.CMESessionDayStart(now).Add(15*time.Hour + 30*time.Minute); base.Before(open) {
+		base = open
+	}
+	baseMs := base.UnixMilli()
+	nowMs := now.UnixMilli()
+	bars := make([]market.Kline, 0, 390)
+	for i := 0; i < 390; i++ {
+		o := baseMs + int64(i)*60_000
+		if o >= nowMs {
+			break // every bar closed relative to the read clock
 		}
-		return bars
+		bars = append(bars, market.Kline{OpenTime: o, High: 15650 + float64(i%10), Low: 15550 + float64(i%10), Close: 15600 + float64(i%10), CloseTime: o + 59_000})
+	}
+	return bars
+}
+
+// TestRthTapeBarsNeverIncludesTheLondonTail pins the r40 fix: at the wall
+// minute that failed r40 (15:09–15:10 CT) the tape's oldest bar must not fall
+// in the London session — otherwise that single bar (High 15650) becomes the
+// machine-table ONH/LDN-H=15650 and the P0.4-H provenance check correctly
+// refuses the mock plan's "RN 15650". Runs the ACTUAL production check
+// (MislabeledStructuralLevels) against a NONEMPTY machine table built from the
+// fixed tape.
+func TestRthTapeBarsNeverIncludesTheLondonTail(t *testing.T) {
+	loc := kernel.CTLocation()
+	bad := time.Date(2026, 10, 19, 15, 9, 30, 0, loc) // the failing r40 minute
+	reg := kernel.DefaultSessionRegistry()
+
+	bars := rthTapeBars(bad)
+	if len(bars) == 0 {
+		t.Fatal("tape is empty — the machine table would be empty too")
+	}
+	nyOpen := kernel.CMESessionDayStart(bad).Add(15*time.Hour + 30*time.Minute)
+	if first := bars[0].OpenTime; first < nyOpen.UnixMilli() {
+		t.Fatalf("first bar opens at %s < NY open %s — the London tail is still present",
+			time.UnixMilli(first).In(loc).Format("15:04:05"), nyOpen.In(loc).Format("15:04:05"))
+	}
+
+	// The full machine table (what MislabeledStructuralLevels reads) must be
+	// nonempty.
+	scored, _, _ := kernel.AssembleScoredLevels("t", bars, reg, "MNQ", 20, bad, 1.0)
+	if len(scored) == 0 {
+		t.Fatal("machine table is empty — the P0.4-H provenance check would not be exercised")
+	}
+	machineLabels := map[float64]string{}
+	for _, s := range scored {
+		machineLabels[math.Round(s.Price*100)/100] = s.Label
+	}
+
+	// The mock plan's levels, exactly as planClient returns them.
+	doc := &kernel.PlanDoc{Levels: []kernel.PlanLevel{
+		{Price: 15480, Label: "PWL"},
+		{Price: 15520, Label: "RN 15525"},
+		{Price: 15575, Label: "RN 15575"},
+		{Price: 15620, Label: "PDH"},
+		{Price: 15650, Label: "RN 15650"},
+		{Price: 15700, Label: "RN 15700"},
+	}}
+	if mis := kernel.MislabeledStructuralLevels(doc, machineLabels); len(mis) > 0 {
+		t.Fatalf("P0.4-H mislabels with the fixed tape: %v", mis)
 	}
 }
 
