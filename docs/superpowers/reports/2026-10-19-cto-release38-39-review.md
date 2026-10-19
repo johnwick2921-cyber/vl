@@ -52,3 +52,13 @@ go test ./internal/updaterworker ./deploy -run 'TestExecWindows|TestNT8ExitWait|
 ```
 
 Fresh temporary HOME, fixed Go cache paths, fleet gorun throttle. Exit 0. Both exit-wait tests, four executable-adapter tests including the three-tool table, and production installer tests passed. Log: /tmp/vl-cto-marker.mWTXdq/cto-final-candidate-targeted.log. No real Windows executable, service, NT8 process or owner DB used. These targeted checks close the original review defects; they do not substitute for DS-107's full gates on the integrated release head.
+
+## Integrated gate correction (2026-10-19 08:38 CT)
+
+[A] The integrated CT run at `647ee2d931b486c89440d3e55eca1401de6ea46a` failed `internal/updatereadiness.TestCheckAllGreen`: the fake matched bare `powershell.exe`, while the production compiler probe now resolves its absolute path. Reproduced independently; this is test coupling, not evidence of an NT8 installation failure.
+
+CTO correction `8e93b20aa94ab66d6595355300c7cfa40e3c54e8` creates a harmless executable fixture under `t.TempDir`, prepends its directory to PATH, matches the basename, and asserts the probe receives exactly that resolved fixture path. Targeted UTC and race runs passed; removing fixture PATH or restoring bare-name equality made the regression test fail. Logs: `/tmp/vl-cto-marker.mWTXdq/readiness-fixed-utc.log`, `readiness-fixed-race.log`, `mutant-bare-name-match.log`, `mutant-no-fixture-path.log`. Production logic unchanged.
+
+DS-107 independently pushed basename-only correction `e65aaee9bd2aaa3d6cf24bc69aa533956f48e4aa`. [A] Source review confirms it lacks the isolated executable fixture; CTO requested incorporation of the complete correction before final gates. No merge/tag authorized by these partial results.
+
+[A] Owner setup guide `c8b497059` rejected after full read: auth key/tagOwners use `tag:friend` while ACL uses `tag:friend-tom`; secret-in-shell examples remain; blind policy replacement and isolation overclaims remain. Corrections sent to DS-103, outside release #39. Real friend-PC B8 remains unverified.
