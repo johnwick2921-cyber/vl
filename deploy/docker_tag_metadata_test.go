@@ -1,19 +1,22 @@
 package deploy
 
 import (
-	"regexp"
 	"strings"
 	"testing"
 )
 
-// W-DOCKER-TAG-METADATA (2026-10-19): the Docker workflow's create-manifest job
-// references per-arch images as ${REF_NAME}-amd64 / ${REF_NAME}-arm64, where
-// REF_NAME is github.ref_name with '/' -> '-'. The build-and-push job must emit
-// those tags. A tag like v2026.10.19.1 is NOT valid semver (four numeric parts),
-// so the type=semver rules emit nothing and the manifest step failed with
-// "not found". The fix is a type=ref,event=tag rule, which emits the raw tag
-// name for ANY tag. These are OFFLINE fixtures that encode the documented
-// docker/metadata-action semantics — they are NOT a run of the real action.
+// W-DOCKER-TAG-METADATA (2026-10-19): Docker workflow tag fix regression.
+//
+// The create-manifest job references per-arch images as ${REF_NAME}-<arch>,
+// where REF_NAME is github.ref_name with '/' -> '-'. A calendar tag like
+// v2026.10.19.1 is NOT valid semver (four numeric parts), so the type=semver
+// rules emitted nothing and the manifest step failed "not found". The fix adds
+// type=ref,event=tag, which emits the RAW tag name (no semver processing).
+//
+// These are OFFLINE fixtures that model ONLY the ref,event=tag rule and the
+// manifest's REF_NAME computation. They do NOT model docker/metadata-action's
+// semver/branch/pr tag semantics — those rules are asserted by source pin
+// (presence), not simulated.
 
 // TestDockerBuildTagRulesPinned asserts the exact tag rules are present and the
 // pre-existing rules are preserved.
@@ -43,79 +46,36 @@ func TestDockerBuildTagRulesPinned(t *testing.T) {
 	}
 }
 
-var semverRE = regexp.MustCompile(`^v?\d+\.\d+\.\d+$`)
+// refEventTagName models type=ref,event=tag: the raw tag name, unchanged (the
+// action applies NO semver stripping or v-prefix handling to a ref tag).
+func refEventTagName(refName string) string { return refName }
 
-// metadataRefTags encodes the documented type=ref tag names (docker/metadata-action):
-// branch -> branch name, tag -> tag name, pr -> pr-<number>. Returns the set for one arch.
-func metadataRefTags(event, refName, arch string) map[string]bool {
-	base := ""
-	switch event {
-	case "branch", "tag":
-		base = refName
-	case "pr":
-		base = "pr-" + refName // ref_name is "<number>/merge"; number is the leading digits
-	}
-	return map[string]bool{base + "-" + arch: true}
-}
+// manifestRefName models the create-manifest REF_NAME: github.ref_name with
+// '/' -> '-'.
+func manifestRefName(refName string) string { return strings.ReplaceAll(refName, "/", "-") }
 
-// metadataSemverTags encodes type=semver tags for a valid semver ref only.
-func metadataSemverTags(refName, arch string) map[string]bool {
-	v := strings.TrimPrefix(refName, "v")
-	if !semverRE.MatchString(refName) {
-		return map[string]bool{}
-	}
-	parts := strings.Split(v, ".")
-	return map[string]bool{
-		refName + "-" + arch:                         true, // {{version}}
-		"v" + parts[0] + "." + parts[1] + "-" + arch: true, // {{major}}.{{minor}}
-		"v" + parts[0] + "-" + arch:                  true, // {{major}}
-	}
-}
-
-// TestDockerBuildTagCoverageForTagEvents is the regression: for a calendar tag
-// (invalid semver), the type=ref,event=tag rule must produce the exact
-// REF_NAME-<arch> references the manifest builds from.
-func TestDockerBuildTagCoverageForTagEvents(t *testing.T) {
-	cases := []struct {
-		name        string
-		refName     string
-		validSemver bool
-	}{
-		{"calendar tag v2026.10.19.1", "v2026.10.19.1", false},
-		{"true semver tag v1.2.3", "v1.2.3", true},
-		{"branch dev", "dev", false},
-	}
-	for _, c := range cases {
-		for _, arch := range []string{"amd64", "arm64"} {
-			tags := map[string]bool{}
-			for k := range metadataRefTags("tag", c.refName, arch) {
-				tags[k] = true
-			}
-			for k := range metadataSemverTags(c.refName, arch) {
-				tags[k] = true
-			}
-			// The manifest references REF_NAME-<arch> (REF_NAME == ref_name for tags,
-			// and the branch rule supplies branch names the same way).
-			refName := strings.ReplaceAll(c.refName, "/", "-")
-			want := refName + "-" + arch
-			if !tags[want] {
-				t.Fatalf("%s %s: tag %q missing from produced set %v", c.name, arch, want, tags)
-			}
-		}
-	}
-}
-
-// TestDockerBuildTagCoverageCalendarTagWithoutTagRule is the mutant guard: if the
-// type=ref,event=tag rule is removed, a calendar tag (invalid semver) emits NO
-// v2026.10.19.1-<arch> tag and the manifest reference is uncovered.
-func TestDockerBuildTagCoverageCalendarTagWithoutTagRule(t *testing.T) {
-	// This fixture mirrors the pre-fix state: only semver rules for a tag event.
-	refName := "v2026.10.19.1"
+// TestDockerBuildCalendarTagCoverage is the regression: for a calendar tag
+// (no slash), the ref,event=tag rule emits <tag>-<arch>, which is exactly the
+// REF_NAME-<arch> reference the manifest builds from. Semver rules are not
+// involved (the tag is not valid semver).
+func TestDockerBuildCalendarTagCoverage(t *testing.T) {
+	const refName = "v2026.10.19.1"
 	for _, arch := range []string{"amd64", "arm64"} {
-		tags := metadataSemverTags(refName, arch) // semver-only (no ref,event=tag rule)
-		want := refName + "-" + arch
-		if tags[want] {
-			t.Fatalf("pre-fix semver-only rules must NOT produce %q (that was the bug)", want)
+		produced := refEventTagName(refName) + "-" + arch
+		referenced := manifestRefName(refName) + "-" + arch
+		if produced != referenced {
+			t.Fatalf("ref,event=tag produces %q but the manifest references %q", produced, referenced)
 		}
+	}
+}
+
+// TestDockerBuildCalendarTagIsNotSemver pins the premise of the bug: the
+// calendar tag is not MAJOR.MINOR.PATCH, so the semver-only rules (pre-fix)
+// produced no <tag>-<arch> image.
+func TestDockerBuildCalendarTagIsNotSemver(t *testing.T) {
+	const refName = "v2026.10.19.1"
+	v := strings.TrimPrefix(refName, "v")
+	if n := len(strings.Split(v, ".")); n == 3 {
+		t.Fatalf("%q unexpectedly parses as valid semver (%d parts)", refName, n)
 	}
 }

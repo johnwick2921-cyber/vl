@@ -28,18 +28,20 @@ This emits `<tag>-amd64` / `<tag>-arm64` for ANY tag, matching the
 `github.ref_name` with `/` -> `-`). Existing branch / semver / pr / sha rules are
 preserved.
 
-## Offline tag-coverage fixture (docker/metadata-action documented semantics)
+## Offline fixture scope (narrowed — see correction note)
 
-| Event                | ref_name         | manifest runs? | tags (per arch)                          | covered |
-|----------------------|------------------|----------------|------------------------------------------|---------|
-| tag (calendar)       | `v2026.10.19.1`  | yes            | `v2026.10.19.1-<arch>` (ref,event=tag)   | yes     |
-| tag (true semver)    | `v1.2.3`         | yes            | `v1.2.3-<arch>`, `v1.2-<arch>`, `v1-<arch>` (semver + ref,event=tag) | yes |
-| branch               | `dev`            | yes            | `dev-<arch>` (ref,event=branch)          | yes     |
-| pull_request         | `<n>/merge`      | no (skipped)   | `pr-<n>-<arch>`, `sha-<sha>-<arch>`      | n/a     |
+The Go fixtures in `deploy/docker_tag_metadata_test.go` model ONLY:
 
-The Go fixtures in `deploy/docker_tag_metadata_test.go` pin the exact rules and
-assert the manifest references are covered; a mutant removing the
-`type=ref,event=tag` rule leaves `v2026.10.19.1-<arch>` uncovered (RED).
+1. `type=ref,event=tag` = the raw tag name, unchanged (no semver stripping).
+2. the create-manifest `REF_NAME` = `github.ref_name` with `/` -> `-`.
+
+For the calendar tag `v2026.10.19.1` (no slash), these coincide, so the
+`<tag>-<arch>` images the manifest references are produced. `TestDockerBuildCalendarTagIsNotSemver`
+pins the premise that a four-part tag is not semver.
+
+They do **NOT** model docker/metadata-action's `type=semver` / `type=ref,event=branch`
+/ `type=ref,event=pr` tag output — those rules are asserted by source pin
+(presence) only in `TestDockerBuildTagRulesPinned`, not simulated.
 
 ## Validation (retained logs)
 
