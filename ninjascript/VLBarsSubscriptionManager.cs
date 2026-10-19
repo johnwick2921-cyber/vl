@@ -663,7 +663,8 @@ namespace NinjaTrader.NinjaScript.AddOns
             {
                 long now = NowUtcMs();
                 long oldestBarT = long.MaxValue;     // freshness: newest bar's MARKET time (min over entries)
-                long oldestArrival = long.MaxValue;  // liveness: arrival of that bar
+                long oldestArrival = long.MaxValue;  // liveness: arrival paired with the oldest market-time entry
+                long minArrival = long.MaxValue;     // liveness/backstop: MIN arrival (LastUpdateUtcMs) over ALL entries
                 string staleKey = null;
                 bool anyDead = false; // (re)subscribed + historical sent, but NO live .Update within FAST_STALL_MS
                 bool anyLive = false; // at least one subscription has seen a REAL live .Update
@@ -680,6 +681,11 @@ namespace NinjaTrader.NinjaScript.AddOns
                         if (e.LiveUpdateSeen) anyLive = true;
                         if (!e.HistoricalSent) continue;
                         if (!e.LiveUpdateSeen && now - e.SubscribedAtUtcMs >= FAST_STALL_MS) { anyDead = true; deadCount++; }
+                        // Liveness/backstop: the MIN arrival over ALL entries — this is
+                        // what the 75-min backstop must use, NOT the arrival paired with
+                        // the oldest market-time entry (that pairing is not the oldest
+                        // arrival).
+                        if (e.LastUpdateUtcMs != 0 && e.LastUpdateUtcMs < minArrival) minArrival = e.LastUpdateUtcMs;
                         // Freshness is the MARKET time of the newest bar, NOT the
                         // arrival wall-clock. A steady stream of DELAYED bars keeps
                         // LastUpdateUtcMs at age 0 while LastBarTUtcMs shows the
@@ -766,7 +772,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // 75-MIN BACKSTOP — catches a SILENT mid-session .Update death (live updates
                 // were flowing, then stopped, so the fast guard above does not apply).
                 if (staleKey == null) return;
-                long ageMs = now - oldest;
+                long ageMs = now - minArrival;
                 if (ageMs < WATCHDOG_STALL_MS) return;
 
                 bool doRecreate = false;
@@ -805,10 +811,10 @@ namespace NinjaTrader.NinjaScript.AddOns
         /// supported NT8 API for the market-data subscription mode (Delayed vs
         /// Realtime), so the caller always sends mode="unknown".
         /// </summary>
-        public void GetFeedFreshness(out long lastBarTMs, out long lastBarArrivalMs, out string provenance, out string timeframe)
+        public void GetFeedFreshness(out long lastBarTMs, out long lastBarArrivalMs, out string provenance, out string timeframe, out string symbol)
         {
             long bestT = 0, bestArrival = 0;
-            string bestProv = "none", bestTf = "";
+            string bestProv = "none", bestTf = "", bestSym = "";
             lock (subsLock)
             {
                 foreach (var kv in active)
@@ -820,6 +826,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                         bestArrival = e.LastBarArrivalUtcMs;
                         bestProv = e.LastBarProvenance ?? "none";
                         bestTf = e.Timeframe;
+                        bestSym = e.Symbol;
                     }
                 }
             }
@@ -827,6 +834,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             lastBarArrivalMs = bestArrival;
             provenance = bestProv;
             timeframe = bestTf;
+            symbol = bestSym;
         }
 
         /// <summary>
