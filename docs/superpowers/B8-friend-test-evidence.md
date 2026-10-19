@@ -19,6 +19,12 @@ item. It does NOT execute anything and must not be used to mutate the box.
   install code pasted; friend instance `tom` running (`vl-friend@tom.service`).
 - Friend name: `tom` (d26 §B8). Friend ports: read from `GET /api/owner/friends`
   (`web_port`, `nt_port`) — do not guess them.
+- **Test-start timestamp:** capture `TS="$(date -u +%Y-%m-%dT%H:%M:%S)"` BEFORE
+  the test and pass `--since "$TS"` to every `journalctl` below. Counts are
+  scoped to the test window, never to all historical logs.
+- **Key-presence audit:** never put the 64-hex key in a command's argv (it leaks
+  into process listings and shell history). Read the key from the friend `.env`
+  inside a private process and print only a match COUNT (see §1).
 
 ## 1. Hello auth accepted — WITHOUT the key contents
 
@@ -28,13 +34,29 @@ The server logs the handshake with metadata only — never the key:
 
 | what | read-only command (owner box) |
 |---|---|
-| handshake accepted | `journalctl --user -u vl-friend@tom --no-pager \| grep "hello handshake OK"` |
-| no refusal | `journalctl --user -u vl-friend@tom --no-pager \| grep -c "connect_key refused"` |
-| key never logged | `journalctl --user -u vl-friend@tom --no-pager \| grep -c "<the friend's 64-hex connect key>"` |
+| handshake accepted | `journalctl --user -u vl-friend@tom --since "$TS" --no-pager \| grep "hello handshake OK"` |
+| no refusal | `journalctl --user -u vl-friend@tom --since "$TS" --no-pager \| grep -c "connect_key refused"` |
+| key never logged | see the private-process audit below (prints a count only, key never in argv) |
 
-**PASS:** at least one `hello handshake OK` line (with `protocol_version`,
-`source`, `build_id`, `nt8_pid`, `assembly_mvid`); refusal count `0`; key-string
-count `0`.
+**Key-presence audit** (private process — the key is read from the `.env`, never
+passed on a command line, and only a match count is printed):
+
+```
+journalctl --user -u vl-friend@tom --since "$TS" --no-pager > /tmp/b8-tom.log
+python3 - <<'PY'
+import pathlib
+key = ""
+for ln in pathlib.Path("/home/hoang/vl-friends/tom/.env").read_text().splitlines():
+    if ln.startswith("NT_CONNECT_KEY="):
+        key = ln.split("=", 1)[1].strip()
+log = pathlib.Path("/tmp/b8-tom.log").read_text()
+print("key_matches_in_log_count:", log.count(key))   # count ONLY — never the key
+PY
+```
+
+**PASS:** at least one `hello handshake OK` line **with a `build_id`** (plus
+`protocol_version`, `source`, `nt8_pid`, `assembly_mvid`); refusal count `0`;
+key-match count `0`.
 
 Source: `provider/ninjatrader/tcp_server.go:2099` (refused — logs only `addr`),
 `:2117` (handshake OK — logs only metadata). The compare is
@@ -42,16 +64,24 @@ Source: `provider/ninjatrader/tcp_server.go:2099` (refused — logs only `addr`)
 
 ## 2. MNQ bars arriving in tom's bot
 
-Proves the friend's NT8 → AddOn → TCP → bot bar feed is live.
+Proves the friend's NT8 → AddOn → TCP → bot bar feed is live — **actual fresh
+data received**, not merely the absence of an error.
 
 The 60-second `wire_liveness` reporter answers "feed or math" at a glance:
 
 ```
-journalctl --user -u vl-friend@tom --no-pager | grep "wire_liveness" | tail -3
+journalctl --user -u vl-friend@tom --since "$TS" --no-pager | grep "wire_liveness" | tail -3
 ```
 
-**PASS:** `last_frame_age` is small (seconds), `frames_per_min` > 0, and
-`bar_age` shows real ages for `1m`/`5m`/`15m` (NOT `none`).
+**PASS (all three, no absent-error-only evidence):**
+- `last_frame_age` small (`< 60s` in the sampled line — a frame arrived within
+  the last minute);
+- `frames_per_min` `> 0`;
+- `bar_age` shows a **fresh 1m bar** — `1m=<N>s` with `N < 120` (a bar stamped
+  within the last two minutes), and `5m`/`15m` real (not `none`).
+
+A `bar_age` of `none` or a large `last_frame_age` is FAIL even with no error
+line.
 
 Source: `provider/ninjatrader/tcp_server.go:1311` (livenessReporter) — logs
 `wire_liveness` with `last_frame_age`, `frames_per_min`, `bar_age`.
@@ -89,7 +119,7 @@ Proves B5 **S11** (revoke works within 10s) and B8 step 5.
 | state recorded | `GET /api/owner/friends` → `tom` shows `state: revoked` |
 | tailscale device gone | `tailscale status` no longer lists the friend's device |
 | rekey | `POST /api/owner/friends/tom/rotate` → new key → friend reconnects |
-| reconnect | `journalctl --user -u vl-friend@tom --no-pager \| grep "hello handshake OK"` (fresh line); `grep -c "connect_key refused"` still `0` |
+| reconnect | `journalctl --user -u vl-friend@tom --since "$TS" --no-pager \| grep "hello handshake OK"` (fresh line); `grep -c "connect_key refused"` still `0` |
 
 **PASS:** unit inactive within 10s; `state: revoked`; tailscale device removed;
 after rotate, a fresh `hello handshake OK` and refusal count `0`.
@@ -97,3 +127,33 @@ after rotate, a fresh `hello handshake OK` and refusal count `0`.
 Source: `api/handler_friends.go:459` (revoke → `remove.sh` + tailscale device
 delete), `deploy/friends/remove.sh:53` (`systemctl --user stop/disable` — moves
 the folder to trash, never deletes).
+
+## 5. Known gaps — PENDING (verified 2026-10-19, DS-104)
+
+The B8 revoke → resume/new-key → reconnect sequence does **not** hold against
+the current code. Reproduced in an isolated temp fixture (`remove.sh --root`
++ isolated `TRASH_DIR`, no live services). These stay PENDING until a follow-up
+fix lands (do NOT widen #39):
+
+- **GAP-1 recoverability.** `revoke` → `remove.sh` moves the whole friend folder
+  (`/home/hoang/vl-friends/<name>`, including `.env` and `data/`) to
+  `~/trash/<date>/`. After that:
+  - `resume` = `systemctl --user start vl-friend@<name>` but the unit is disabled
+    AND its `WorkingDirectory` is gone → chdir failure;
+  - `rotate` = `setFriendEnvKey` reads `<root>/<name>/.env` → ENOENT → "failed to
+    write the friend's .env".
+  Implemented = shutdown only; the B8 recoverability is claimed, not implemented.
+- **GAP-2 network revoke.** `TailscaleDeviceID` is never populated
+  (`deploy/friends/provision.sh:151` writes `""`; no code sets it), so
+  `tailscaleDeleteDevice` (`api/handler_friends.go:615`) returns `no_device_id`
+  and the Tailscale device delete always no-ops (logged "not done").
+
+**Smallest scoped fix proposal (follow-up):**
+1. Recoverability: make `resume` restore the moved folder from trash before
+   `systemctl start` (remove.sh already writes the trash path deterministically),
+   and make `rotate` restore it too or return a clear "revoked — Add a new
+   friend" error.
+2. Network revoke: capture the tailscale device id at provision time — after
+   `tailscale up`, run `tailscale status --json` and store the device id whose
+   hostname is `friend-<name>` into `friends.json` `tailscale_device_id` (or have
+   revoke delete by hostname via the Tailscale API).
