@@ -104,10 +104,34 @@ func TestNT8HangsThenRecheckPassesAndForces(t *testing.T) {
 	}
 }
 
-// (c)/(d) NT8 is still running after 60 s + the re-check FAILS (a fill landed
-// during the wait) → no Stop-Process, no start, reverted_clean with NT8 LEFT
-// running. Mutant: run the re-check unconditionally (before knowing NT8 exited)
-// → case (a) RED.
+// W-UPDATER-WINPATH (d): after the stop, start waits until the OLD
+// NinjaTrader.exe has FULLY exited (the owner saw "Unable to start ATI server
+// component … socket forbidden" when NT8 restarted before the old process
+// released the port). The wait is polled, bounded, and recorded in the receipt.
+func TestNT8ExitWaitBeforeStart(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	_, starts := restartCounts(r)
+	// A hang forces the Stop-Process path; the old process then lingers for 2
+	// tasklist polls before fully exiting, so the exit-wait must poll it.
+	r.set(func() { r.nt8HangsOnClose = true; r.nt8ExitLinger = 2 })
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateComplete {
+		t.Fatalf("job %s (error %q), want complete: the old NT8 fully exited and the new one started", j.State, j.Error)
+	}
+	if *starts != 1 {
+		t.Fatalf("Start-Process ran %d times, want exactly 1", *starts)
+	}
+	var waitMS string
+	for _, rc := range j.Receipts {
+		if rc.Step == "nt8_restart" && rc.Evidence != nil {
+			waitMS = rc.Evidence["nt8_exit_wait_ms"]
+		}
+	}
+	if waitMS == "" || waitMS == "0" {
+		t.Fatalf("the nt8_restart receipt must record a non-zero nt8_exit_wait_ms, got %q", waitMS)
+	}
+}
 func TestFlatSIMGateRecheckBeforeStopProcessAborts(t *testing.T) {
 	r := newRig(t, withCSChanged())
 	stops, starts := restartCounts(r)
