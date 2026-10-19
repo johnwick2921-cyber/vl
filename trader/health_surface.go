@@ -32,6 +32,20 @@ func (at *AutoTrader) HealthFeedStatus() string {
 	return nt.FeedStatus()
 }
 
+// HealthFeedMode returns the broker market-data mode from the most recent
+// feed_status frame ("realtime" | "delayed" | "" = UNKNOWN). "" never means
+// realtime — the UI must label it as broker mode unknown, not realtime.
+func (at *AutoTrader) HealthFeedMode() string {
+	if at == nil {
+		return ""
+	}
+	nt := at.armedTrader()
+	if nt == nil {
+		return ""
+	}
+	return nt.FeedMode()
+}
+
 // HealthLinkConnected reports the REAL NT8 TCP socket state for the health
 // payload (P-D stale link latch): true only while a client is actually
 // connected. A latched feed_status frame alone is NOT link evidence —
