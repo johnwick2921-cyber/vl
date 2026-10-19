@@ -163,7 +163,9 @@ func New(cfg Config, d Deps) (*Worker, error) {
 }
 
 // execWindows is the production runWin: it execs a Windows binary (powershell.exe,
-// dotnet.exe, tasklist.exe) from WSL. Never called in a test (the seam is overridden).
+// dotnet.exe, tasklist.exe) from WSL. The worker overrides the runWin seam in the
+// restart/build tests, but the W-UPDATER-WINPATH adapter pins call execWindows
+// directly with harmless stub executables (never the real Windows binaries).
 // W-UPDATER-WINPATH: a bare tool name is resolved to its fixed WSL mount when
 // PATH lacks the Windows dirs (the user unit does not inherit appendWindowsPath),
 // so an already-running worker still restarts/probes NT8 on a Linux-only PATH.

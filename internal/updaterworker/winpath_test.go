@@ -24,19 +24,42 @@ func writeToolStub(t *testing.T, dir, name, out string) string {
 // vars repointed at harmless stubs — never a real Windows binary. A Linux-only
 // PATH simulates the user unit (systemd does not inherit appendWindowsPath).
 
-func TestExecWindowsResolvesBareToolViaFixedPath(t *testing.T) {
-	dir := t.TempDir()
-	stub := writeToolStub(t, dir, "powershell.exe", "from-fixed-stub")
-	prev := windowsPowerShellWSL
-	windowsPowerShellWSL = stub
-	t.Cleanup(func() { windowsPowerShellWSL = prev })
-	t.Setenv("PATH", "/usr/bin:/bin") // Linux-only: no powershell.exe on PATH
-	out, err := execWindows(context.Background(), "powershell.exe", "-NoProfile", "-Command", "hi")
-	if err != nil {
-		t.Fatalf("execWindows: %v", err)
+// repointFixed points the fixed-path var for tool at p and returns a restore.
+func repointFixed(tool, p string) func() {
+	switch tool {
+	case "powershell.exe":
+		prev := windowsPowerShellWSL
+		windowsPowerShellWSL = p
+		return func() { windowsPowerShellWSL = prev }
+	case "tasklist.exe":
+		prev := windowsTasklistWSL
+		windowsTasklistWSL = p
+		return func() { windowsTasklistWSL = prev }
+	case "dotnet.exe":
+		prev := windowsDotnetWSL
+		windowsDotnetWSL = p
+		return func() { windowsDotnetWSL = prev }
 	}
-	if !strings.Contains(string(out), "from-fixed-stub") {
-		t.Fatalf("execWindows must run the fixed-path stub, output %q", out)
+	panic("unknown tool " + tool)
+}
+
+func TestExecWindowsResolvesBareToolViaFixedPath(t *testing.T) {
+	// tasklist.exe is essential: deciding whether the old NinjaTrader.exe has
+	// fully exited reads it, so it must resolve on a Linux-only PATH too.
+	for _, tool := range []string{"powershell.exe", "tasklist.exe", "dotnet.exe"} {
+		t.Run(tool, func(t *testing.T) {
+			dir := t.TempDir()
+			stub := writeToolStub(t, dir, tool, "from-fixed-stub")
+			t.Cleanup(repointFixed(tool, stub))
+			t.Setenv("PATH", "/usr/bin:/bin") // Linux-only: no Windows dirs
+			out, err := execWindows(context.Background(), tool, "arg")
+			if err != nil {
+				t.Fatalf("execWindows(%s): %v", tool, err)
+			}
+			if !strings.Contains(string(out), "from-fixed-stub") {
+				t.Fatalf("execWindows(%s) must run the fixed-path stub, output %q", tool, out)
+			}
+		})
 	}
 }
 
