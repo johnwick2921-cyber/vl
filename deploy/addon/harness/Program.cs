@@ -37,6 +37,7 @@ class Program
     static int Main()
     {
         VLBarsSubscriptionManager.ClockMs = () => fakeNow;
+        VLBarsSubscriptionManager.DisableWatchdogTimerForTest = true; // deterministic ticks only, no 15s background timer
         var frames = new List<(string, Dictionary<string, object>)>();
 
         // ---- S1: raw-empty seed - readiness + no false ARRIVAL ----
@@ -135,43 +136,60 @@ class Program
         // ---- S5: watchdog - dead empty seed eligible for BOUNDED recovery ----
         frames.Clear();
         var m5 = NewManager(frames);
+        fakeNow = 1_700_000_000_000L; // BEFORE subscribe so SubscribedAtUtcMs is deterministic
         Subscribe(m5);
         var r5 = NinjaTrader.Data.BarsRequest.Created.Last();
-        fakeNow = 1_700_000_000_000L;
         r5.Bars = new Bars();
         r5.FireRequest(); // empty seed: HistoricalSent=true, LiveUpdateSeen=false
-        int created0 = NinjaTrader.Data.BarsRequest.Created.Count;
         int recreates = 0;
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < 4; i++)
         {
             Advance(20_001); // past FAST_STALL_MS
             int before = NinjaTrader.Data.BarsRequest.Created.Count;
             m5.TickForTest();
-            if (NinjaTrader.Data.BarsRequest.Created.Count > before) recreates++;
+            if (NinjaTrader.Data.BarsRequest.Created.Count > before)
+            {
+                recreates++;
+                // Complete the RECREATED request with EMPTY history so it is
+                // seeded (HistoricalSent=true, LiveUpdateSeen=false) and the
+                // watchdog counts it dead on the next tick — the cap must then
+                // stop the loop, not a skipped unseeded entry.
+                var rn = NinjaTrader.Data.BarsRequest.Created.Last();
+                rn.Bars = new Bars();
+                rn.FireRequest();
+            }
         }
-        Check(recreates > 0, "S5 dead empty seed: watchdog recreates (eligible for recovery)");
-        Check(recreates <= 3, "S5 dead empty seed: recovery BOUNDED by FAST_MAX_ATTEMPTS (<=3)");
+        Check(recreates == 3, "S5 fast-guard reaches EXACTLY 3 recreates (no 4th after cap)");
 
         // ---- S6: watchdog - minArrival backstop independent of oldest market-time entry ----
         frames.Clear();
         var m6 = NewManager(frames);
+        fakeNow = 1_700_000_000_000L; // T0, BEFORE subscribe
         Subscribe(m6, "5m"); // entry B
         var r6b = NinjaTrader.Data.BarsRequest.Created.Last();
-        fakeNow = 1_700_000_000_000L;
-        long bMarket = fakeNow - 60_000; // B market (newer)
-        r6b.Bars = MakeBars(bMarket);
+        long bMarket = fakeNow; // B's newest market time (LATER than A's)
+        r6b.Bars = MakeBars(bMarket - 1000);
         r6b.FireRequest();
-        r6b.Bars = MakeBars(bMarket, fakeNow);
-        r6b.FireUpdate(1, 1); // B live: arrival = fakeNow (old), LiveUpdateSeen=true
+        r6b.Bars = MakeBars(bMarket - 1000, bMarket);
+        r6b.FireUpdate(1, 1); // B live: market = T0, arrival = T0 (OLD arrival)
         long bArrival = fakeNow;
-        Advance(4_500_001); // 75 min+
+        Advance(4_500_001); // 75 min+ → T1
         Subscribe(m6, "1m"); // entry A
         var r6a = NinjaTrader.Data.BarsRequest.Created.Last();
-        long aMarket = fakeNow - 3_600_000; // A market OLDER than B
-        r6a.Bars = MakeBars(aMarket);
+        long aMarket = 1_700_000_000_000L - 3_600_000; // A market STRICTLY OLDER than B (T0-60min)
+        r6a.Bars = MakeBars(aMarket - 1000);
         r6a.FireRequest();
-        r6a.Bars = MakeBars(aMarket, fakeNow);
-        r6a.FireUpdate(1, 1); // A live: arrival = fakeNow (recent), market OLDEST
+        r6a.Bars = MakeBars(aMarket - 1000, aMarket);
+        r6a.FireUpdate(1, 1); // A live: market = T0-60min (OLDEST), arrival = T1 (LATER)
+
+        // Assert the ordering BEFORE ticking: A has the oldest MARKET, B has the
+        // oldest ARRIVAL. The backstop must key on B's arrival, not A's.
+        var samples = m6.SampleEntriesForTest();
+        var aEntry = samples.First(x => x.Key == "MNQ|1M");
+        var bEntry = samples.First(x => x.Key == "MNQ|5M");
+        Check(aEntry.MarketMs < bEntry.MarketMs, "S6 setup: A (1m) has the OLDEST market time");
+        Check(bEntry.ArrivalMs < aEntry.ArrivalMs, "S6 setup: B (5m) has the OLDEST arrival");
+
         int beforeBackstop = NinjaTrader.Data.BarsRequest.Created.Count;
         m6.TickForTest();
         Check(NinjaTrader.Data.BarsRequest.Created.Count > beforeBackstop,

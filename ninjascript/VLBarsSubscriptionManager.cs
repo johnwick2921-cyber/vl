@@ -118,6 +118,11 @@ namespace NinjaTrader.NinjaScript.AddOns
         private long  lastAgeLogUtcMs = 0;
         private readonly object watchdogLock = new object();
 
+        // Test seam: the callback harness sets this true so the 15s background
+        // watchdog Timer is NOT started (it drives ticks deterministically via
+        // TickForTest). Default false = production behavior unchanged.
+        internal static bool DisableWatchdogTimerForTest = false;
+
         public VLBarsSubscriptionManager(
             Action<string, Dictionary<string, object>> sendFrame,
             Action<string> logInfo,
@@ -129,7 +134,8 @@ namespace NinjaTrader.NinjaScript.AddOns
 
             // Start the stall watchdog (logs bar age each tick; recreates on a
             // genuine stall). Ticks do nothing until a subscription is streaming.
-            watchdogTimer = new Timer(WatchdogTick, null, WATCHDOG_PERIOD_MS, WATCHDOG_PERIOD_MS);
+            if (!DisableWatchdogTimerForTest)
+                watchdogTimer = new Timer(WatchdogTick, null, WATCHDOG_PERIOD_MS, WATCHDOG_PERIOD_MS);
         }
 
         // ==============================================================
@@ -810,6 +816,24 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         // Test seam: drive one watchdog tick synchronously.
         internal void TickForTest() { WatchdogTick(null); }
+
+        // Test seam: per-entry (key, market time, arrival) so the harness can
+        // assert the oldest-market vs oldest-arrival ordering before ticking.
+        internal sealed class EntrySample
+        {
+            public string Key;
+            public long MarketMs;
+            public long ArrivalMs;
+        }
+
+        internal List<EntrySample> SampleEntriesForTest()
+        {
+            var list = new List<EntrySample>();
+            lock (subsLock)
+                foreach (var kv in active)
+                    list.Add(new EntrySample { Key = kv.Key, MarketMs = kv.Value.LastBarTUtcMs, ArrivalMs = kv.Value.LastBarArrivalUtcMs });
+            return list;
+        }
 
         /// <summary>
         /// Feed freshness for the additive feed_status frame: the newest bar's
