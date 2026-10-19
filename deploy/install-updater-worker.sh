@@ -86,6 +86,45 @@ esac
 echo "install-updater-worker: env ok (release dir outside the install; token present, not shown)"
 echo "install-updater-worker: note — VL_CUTOVER_TOKEN is the cutover-worker credential enroll writes (auth.ScopeCutoverWorker); never a hand-minted gate-jwt — the enroll token is the long-lived type (auth.WorkerTokenTTL)"
 
+# W-UPDATER-WINPATH: the unit's PATH must carry the Windows tool dirs so the
+# AddOn build (powershell.exe / dotnet.exe) can run. systemd does not inherit
+# WSL's appendWindowsPath, so a fresh box's unit would miss them. Write the
+# line here when absent (append-only — never overwrite an existing PATH).
+if ! grep -q '^PATH=' "$ENV_FILE" 2>/dev/null; then
+  printf 'PATH=%s\n' "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/c/Windows/System32/WindowsPowerShell/v1.0:/mnt/c/Windows/System32:/mnt/c/Program Files/dotnet" >> "$ENV_FILE"
+  echo "install-updater-worker: added the Windows-tool PATH line to $ENV_FILE (powershell.exe / dotnet.exe for the AddOn build)"
+fi
+
+# W-UPDATER-WINPATH (add-on, job 1ead8859; REVIEW-BACK fix 2026-10-19): the
+# unit also needs the WSL distro name for UNC paths
+# (\\wsl.localhost\<distro>\...). systemd does not pass WSL_DISTRO_NAME, so
+# write it from the INSTALLING shell (which has it); when the shell lacks it,
+# ask wslpath and take the LAST component of the UNC root. The old awk $3 read
+# the HOST (wsl.localhost), not the distro — a wrong value helpers.go then
+# trusted. Never persist a guessed distro as though it were discovered: if the
+# distro cannot be resolved, leave WSL_DISTRO_NAME unset.
+if ! grep -q '^WSL_DISTRO_NAME=' "$ENV_FILE" 2>/dev/null; then
+  d="${WSL_DISTRO_NAME:-}"
+  if [ -z "$d" ] && command -v wslpath >/dev/null 2>&1; then
+    winroot="$(wslpath -w / 2>/dev/null | tr -d '\r')"
+    # wslpath -w / returns a UNC root: \\wsl.localhost\<distro>\ or
+    # \\wsl$\<distro>\. Accept only those two hosts, then keep the LAST
+    # component (the distro), tolerating a missing trailing backslash.
+    case "$winroot" in
+      \\\\wsl.localhost\\*|\\\\wsl\$\\*) d="${winroot%\\}"; d="${d##*\\}" ;;
+    esac
+  fi
+  case "$d" in
+    ""|wsl.localhost|wsl\$) d="" ;;
+  esac
+  if [ -n "$d" ]; then
+    printf 'WSL_DISTRO_NAME=%s\n' "$d" >> "$ENV_FILE"
+    echo "install-updater-worker: added WSL_DISTRO_NAME=$d to $ENV_FILE"
+  else
+    echo "install-updater-worker: note — WSL distro not discovered; WSL_DISTRO_NAME left unset (the worker resolves it at build time)" >&2
+  fi
+fi
+
 BUILD_DIR="$(mktemp -d /tmp/vl-updater-build.XXXXXX)" || { echo "install-updater-worker: REFUSED — cannot make a build dir" >&2; exit 2; }
 trap 'rm -rf "${BUILD_DIR:?}"' EXIT
 echo "install-updater-worker: cloning $REPO_URL (the live install is never touched)"

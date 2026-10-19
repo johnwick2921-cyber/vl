@@ -24,6 +24,73 @@ func mkNT8(t *testing.T, root, user string, withCustom bool) string {
 	return docs
 }
 
+// useTempWindowsTools points the fixed Windows tool paths at temp files so a
+// bare powershell.exe / dotnet.exe name resolves on any box (the real /mnt/c
+// paths may not exist in the test env). It restores the real paths on cleanup.
+func useTempWindowsTools(t *testing.T) {
+	t.Helper()
+	ps := filepath.Join(t.TempDir(), "powershell.exe")
+	dn := filepath.Join(t.TempDir(), "dotnet.exe")
+	if err := os.WriteFile(ps, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dn, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origPS, origDN := windowsPowerShellWSL, windowsDotnetWSL
+	windowsPowerShellWSL, windowsDotnetWSL = ps, dn
+	t.Cleanup(func() { windowsPowerShellWSL, windowsDotnetWSL = origPS, origDN })
+}
+
+// TestResolveWindowsExe pins the W-UPDATER-WINPATH resolution: a path is passed
+// through; a bare name on PATH resolves via LookPath; a bare name NOT on PATH
+// falls back to the fixed Windows location when it exists; neither errors and
+// names every path tried.
+func TestResolveWindowsExe(t *testing.T) {
+	t.Run("path passthrough", func(t *testing.T) {
+		p := "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+		got, err := resolveWindowsExe(p, "/mnt/c/Program Files/dotnet/dotnet.exe")
+		if err != nil || got != p {
+			t.Fatalf("resolveWindowsExe(%q) = (%q, %v), want passthrough", p, got, err)
+		}
+	})
+
+	t.Run("bare name on PATH", func(t *testing.T) {
+		dir := t.TempDir()
+		tool := filepath.Join(dir, "myfake.exe")
+		if err := os.WriteFile(tool, nil, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		got, err := resolveWindowsExe("myfake.exe", "/nowhere/fixed.exe")
+		if err != nil || got != tool {
+			t.Fatalf("resolveWindowsExe(myfake.exe) = (%q, %v), want %q via PATH", got, err, tool)
+		}
+	})
+
+	t.Run("bare name not on PATH uses fixed", func(t *testing.T) {
+		fixed := filepath.Join(t.TempDir(), "powershell.exe")
+		if err := os.WriteFile(fixed, nil, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		got, err := resolveWindowsExe("definitely-not-a-real-tool-xyz.exe", fixed)
+		if err != nil || got != fixed {
+			t.Fatalf("resolveWindowsExe(missing) = (%q, %v), want the fixed path %q", got, err, fixed)
+		}
+	})
+
+	t.Run("neither errors and names both", func(t *testing.T) {
+		_, err := resolveWindowsExe("definitely-not-a-real-tool-xyz.exe", "/nowhere/fixed.exe")
+		if err == nil {
+			t.Fatal("resolveWindowsExe(neither) = nil error, want one naming both paths")
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "definitely-not-a-real-tool-xyz.exe") || !strings.Contains(msg, "/nowhere/fixed.exe") {
+			t.Fatalf("error = %q, want it to name both the bare name and the fixed path", msg)
+		}
+	})
+}
+
 func TestDetect(t *testing.T) {
 	orig := nt8DocsGlob
 	t.Cleanup(func() { nt8DocsGlob = orig })
@@ -66,6 +133,7 @@ func TestDetect(t *testing.T) {
 }
 
 func TestBuild(t *testing.T) {
+	useTempWindowsTools(t)
 	root := t.TempDir()
 	docsDir := mkNT8(t, root, "alice", true)
 	srcDir := filepath.Join(root, "ninjascript")
@@ -116,8 +184,10 @@ func TestBuild(t *testing.T) {
 		t.Fatalf("sum = %q, want %q", res.Sha256, wantSum)
 	}
 
-	if len(gotArgs) == 0 || gotArgs[0] != "powershell.exe" {
-		t.Fatalf("Run got %v, want powershell.exe -File ... build-addon.ps1", gotArgs)
+	// The run must be invoked with a RESOLVED powershell path (PATH-resolved on
+	// a box with /mnt/c, or the fixed location otherwise), never the bare name.
+	if len(gotArgs) == 0 || !strings.Contains(gotArgs[0], "powershell") {
+		t.Fatalf("Run got %v, want a resolved powershell path", gotArgs)
 	}
 	// The ps1 must be written into the work dir and invoked with the right
 	// reference dirs.
@@ -133,6 +203,7 @@ func TestBuild(t *testing.T) {
 // TestBuildFallsBackToDotnet: when the ps1 path fails, Build falls back to the
 // dotnet.exe net48 csproj and records BuiltBy=dotnet.
 func TestBuildFallsBackToDotnet(t *testing.T) {
+	useTempWindowsTools(t)
 	root := t.TempDir()
 	docsDir := mkNT8(t, root, "alice", true)
 	srcDir := filepath.Join(root, "ninjascript")
@@ -196,6 +267,7 @@ func TestBuildFallsBackToDotnet(t *testing.T) {
 // TestBuildBothFail: ps1 fails AND the dotnet fallback fails — the error must
 // name both, never silently pass.
 func TestBuildBothFail(t *testing.T) {
+	useTempWindowsTools(t)
 	root := t.TempDir()
 	docsDir := mkNT8(t, root, "alice", true)
 	srcDir := filepath.Join(root, "ninjascript")
@@ -222,6 +294,7 @@ func TestBuildBothFail(t *testing.T) {
 }
 
 func TestBuildErrors(t *testing.T) {
+	useTempWindowsTools(t)
 	root := t.TempDir()
 	docsDir := mkNT8(t, root, "alice", true)
 	srcDir := filepath.Join(root, "ninjascript")
@@ -360,6 +433,29 @@ func TestWslToWindows(t *testing.T) {
 	}
 }
 
+// TestWslToWindowsWslpathFallback pins the W-UPDATER-WINPATH add-on (job
+// 1ead8859): with WSL_DISTRO_NAME unset, wslToWindows must ASK the system
+// (wslpath -w) rather than guess "Ubuntu", and only fall back to the guess
+// when wslpath fails.
+func TestWslToWindowsWslpathFallback(t *testing.T) {
+	t.Setenv("WSL_DISTRO_NAME", "")
+	orig := wslpathSeam
+	t.Cleanup(func() { wslpathSeam = orig })
+
+	wslpathSeam = func(wslPath string) (string, error) {
+		return `\\wsl.localhost\Ubuntu-24.04` + strings.ReplaceAll(wslPath, "/", "\\"), nil
+	}
+	if got, want := wslToWindows("/tmp/foo/bar.ps1"), `\\wsl.localhost\Ubuntu-24.04\tmp\foo\bar.ps1`; got != want {
+		t.Fatalf("wslToWindows with wslpath seam = %q, want %q", got, want)
+	}
+
+	// wslpath fails → the old guess is the last resort.
+	wslpathSeam = func(string) (string, error) { return "", errors.New("no wslpath") }
+	if got, want := wslToWindows("/tmp/foo"), `\\wsl.localhost\Ubuntu\tmp\foo`; got != want {
+		t.Fatalf("wslToWindows with failing wslpath = %q, want the Ubuntu guess %q", got, want)
+	}
+}
+
 func TestTemplateParityWithDeploy(t *testing.T) {
 	deploy, err := os.ReadFile(filepath.Join("..", "..", "deploy", "addon", "VL.AddOn.csproj.tmpl"))
 	if err != nil {
@@ -391,6 +487,7 @@ func TestBuilderCsParityWithDeploy(t *testing.T) {
 }
 
 func TestCompilerProbe(t *testing.T) {
+	useTempWindowsTools(t)
 	root := t.TempDir()
 	docsDir := mkNT8(t, root, "alice", true)
 
@@ -408,8 +505,8 @@ func TestCompilerProbe(t *testing.T) {
 		if !ok {
 			t.Fatalf("CompilerProbe = %v (%q), want ok", ok, detail)
 		}
-		if len(gotArgs) == 0 || gotArgs[0] != "powershell.exe" {
-			t.Fatalf("Run got %v, want powershell.exe -Probe", gotArgs)
+		if len(gotArgs) == 0 || !strings.Contains(gotArgs[0], "powershell") {
+			t.Fatalf("Run got %v, want a resolved powershell path", gotArgs)
 		}
 		// The -Probe flag and the reference dirs must be passed.
 		found := false
@@ -560,6 +657,7 @@ func TestPlaceCustomLeavesSatellitesUntouched(t *testing.T) {
 // TestRebuildCustom: the no-F5 Custom.dll rebuild runs build-addon.ps1 -Custom
 // and accepts the result when the ps1 reports VL_CUSTOM_TYPES_OK.
 func TestRebuildCustom(t *testing.T) {
+	useTempWindowsTools(t)
 	root := t.TempDir()
 	docsDir := mkNT8(t, root, "alice", true)
 	oldDll := filepath.Join(docsDir, "bin", "Custom", "NinjaTrader.Custom.dll")
@@ -592,8 +690,8 @@ func TestRebuildCustom(t *testing.T) {
 	if res.DllPath != wantDll || res.BuiltBy != BuiltByRoslynPs1 {
 		t.Fatalf("res = %+v, want dll %q built_by roslyn-ps1", res, wantDll)
 	}
-	if len(gotArgs) == 0 || gotArgs[0] != "powershell.exe" {
-		t.Fatalf("Run got %v, want powershell.exe -Custom", gotArgs)
+	if len(gotArgs) == 0 || !strings.Contains(gotArgs[0], "powershell") {
+		t.Fatalf("Run got %v, want a resolved powershell path", gotArgs)
 	}
 	foundCustom := false
 	for _, a := range gotArgs {
@@ -607,6 +705,7 @@ func TestRebuildCustom(t *testing.T) {
 }
 
 func TestRebuildCustomErrors(t *testing.T) {
+	useTempWindowsTools(t)
 	root := t.TempDir()
 	docsDir := mkNT8(t, root, "alice", true)
 	workDir := filepath.Join(root, "build")

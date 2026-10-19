@@ -113,6 +113,8 @@ type box struct {
 	addonRestored           bool   // fakeHost.AddonRestore ran: the OLD DLL is back in bin/Custom
 	nt8Running              bool   // the fake NT8 process is alive (tasklist sees it)
 	nt8HangsOnClose         bool   // TOCTOU: CloseMainWindow does NOT exit NT8 (a dialog/hang)
+	nt8ExitLinger           int    // W-UPDATER-WINPATH (d): after a stop, tasklist keeps reporting NT8 for this many polls (the old process fully exiting)
+	nt8LingerLeft           int    // the remaining linger polls
 	flipSimOnClose          bool   // TOCTOU: the sim_accounts leg flips FAIL when the graceful close runs
 	catchupBuild            string // feat/addon-catchup: the install's own AddOn build (the fake reports it after the catch-up restart, instead of manifestBuild)
 	omitLeg                 string // the fake gate omits this leg entirely (guard #1 missing-leg pin)
@@ -266,6 +268,23 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	// bin/Custom, so addonbuild never touches the real /mnt/c tree.
 	b.nt8docs = filepath.Join(root, "nt8docs")
 	t.Setenv("VL_NT8_DOCS_DIR", b.nt8docs)
+	// Hermetic Windows tools on PATH (W-UPDATER-WINPATH CI fix): addonbuild.Build
+	// resolves a bare powershell.exe / dotnet.exe through exec.LookPath BEFORE
+	// invoking the runWin seam. On a Linux box with no /mnt/c mount that lookup
+	// misses and the fixed WSL mount does not exist, so the build fails before
+	// the fake seam is reached. Provide harmless executables on PATH so the
+	// production resolution finds them and the fake seam runs — never a real
+	// Windows binary.
+	winTools := filepath.Join(root, "wintools")
+	if err := os.MkdirAll(winTools, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"powershell.exe", "dotnet.exe"} {
+		if err := os.WriteFile(filepath.Join(winTools, tool), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", winTools+string(os.PathListSeparator)+os.Getenv("PATH"))
 	writeFile(t, filepath.Join(b.nt8docs, "bin", "Custom", ".keep"), "")
 	// the running install (a checkout at boxOld)
 	writeFile(t, filepath.Join(b.inst, b.binName), binaryBody(boxOld))
@@ -391,6 +410,10 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 	if strings.Contains(name, "tasklist") {
 		b.mu.Lock()
 		running := b.nt8Running
+		if !running && b.nt8LingerLeft > 0 {
+			running = true
+			b.nt8LingerLeft--
+		}
 		b.mu.Unlock()
 		if running {
 			return []byte("\"NinjaTrader.exe\",\"4242\",\"Console\",\"1\",\"1,234,567 K\"\r\n"), nil
@@ -416,6 +439,7 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 			b.mu.Lock()
 			b.nt8Running = false
 			b.addonConnected = false
+			b.nt8LingerLeft = b.nt8ExitLinger // the old process takes a moment to fully exit
 			b.mu.Unlock()
 		}
 		if strings.Contains(a, "Start-Process") {

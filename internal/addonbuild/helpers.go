@@ -4,8 +4,10 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -33,12 +35,29 @@ var buildPs1Script string
 //go:embed VLCustomBuilder.cs
 var builderCs string
 
+// wslpathSeam runs `wslpath -w <path>` to ask the system for the Windows form
+// of a WSL path. A var so tests can substitute a fake; production runs the real
+// wslpath (present on every WSL box).
+var wslpathSeam = func(wslPath string) (string, error) {
+	out, err := exec.Command("wslpath", "-w", wslPath).Output()
+	if err != nil {
+		return "", err
+	}
+	s := strings.TrimSpace(string(out))
+	if s == "" {
+		return "", fmt.Errorf("wslpath -w %s: empty output", wslPath)
+	}
+	return s, nil
+}
+
 // wslToWindows converts a WSL path to the Windows form dotnet.exe /
 // powershell.exe sees. /mnt/c/... → C:\... ; anything else (e.g.
-// /home/<u>/...) → the UNC \\wsl.localhost\<distro>\... form (distro from
-// WSL_DISTRO_NAME, default Ubuntu). A path that is ALREADY Windows (drive
-// letter or UNC) passes through unchanged, because the worker's addonExe
-// returns a Windows path.
+// /home/<u>/...) → the UNC \\wsl.localhost\<distro>\... form. The distro comes
+// from WSL_DISTRO_NAME; when that is empty (the updater user unit does not
+// inherit it), the system is asked via `wslpath -w` — only if that fails is
+// the old "Ubuntu" guess used. A path that is ALREADY Windows (drive letter or
+// UNC) passes through unchanged, because the worker's addonExe returns a
+// Windows path.
 func wslToWindows(p string) string {
 	if p == "" {
 		return p
@@ -61,6 +80,11 @@ func wslToWindows(p string) string {
 	}
 	distro := os.Getenv("WSL_DISTRO_NAME")
 	if distro == "" {
+		// W-UPDATER-WINPATH: systemd does not pass WSL_DISTRO_NAME, and the
+		// box's distro may be "Ubuntu-24.04", not "Ubuntu". Ask the system.
+		if win, err := wslpathSeam(clean); err == nil {
+			return strings.ReplaceAll(win, "/", "\\")
+		}
 		distro = "Ubuntu"
 	}
 	return `\\wsl.localhost\` + distro + strings.ReplaceAll(clean, "/", "\\")
