@@ -113,6 +113,8 @@ type box struct {
 	addonRestored           bool   // fakeHost.AddonRestore ran: the OLD DLL is back in bin/Custom
 	nt8Running              bool   // the fake NT8 process is alive (tasklist sees it)
 	nt8HangsOnClose         bool   // TOCTOU: CloseMainWindow does NOT exit NT8 (a dialog/hang)
+	nt8ExitLinger           int    // W-UPDATER-WINPATH (d): after a stop, tasklist keeps reporting NT8 for this many polls (the old process fully exiting)
+	nt8LingerLeft           int    // the remaining linger polls
 	flipSimOnClose          bool   // TOCTOU: the sim_accounts leg flips FAIL when the graceful close runs
 	catchupBuild            string // feat/addon-catchup: the install's own AddOn build (the fake reports it after the catch-up restart, instead of manifestBuild)
 	omitLeg                 string // the fake gate omits this leg entirely (guard #1 missing-leg pin)
@@ -391,6 +393,10 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 	if strings.Contains(name, "tasklist") {
 		b.mu.Lock()
 		running := b.nt8Running
+		if !running && b.nt8LingerLeft > 0 {
+			running = true
+			b.nt8LingerLeft--
+		}
 		b.mu.Unlock()
 		if running {
 			return []byte("\"NinjaTrader.exe\",\"4242\",\"Console\",\"1\",\"1,234,567 K\"\r\n"), nil
@@ -416,6 +422,7 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 			b.mu.Lock()
 			b.nt8Running = false
 			b.addonConnected = false
+			b.nt8LingerLeft = b.nt8ExitLinger // the old process takes a moment to fully exit
 			b.mu.Unlock()
 		}
 		if strings.Contains(a, "Start-Process") {
