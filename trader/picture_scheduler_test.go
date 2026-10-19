@@ -19,80 +19,55 @@ import (
 // LIVE Picture scenario re-appends it (CTO 1790191033566). Driven through
 // maybeRunSessionReadsAt → runPlannerRead → the planner write site.
 
-// schedulerTape is a realistic session of 1m bars ending at the wall clock
-// (the planner preflight judges bar freshness on the wall clock).
+// schedulerTape is a deterministic full-session tape of 1m bars ending at the
+// trader clock (testNow / traderNow), so the read clock and the tape are the
+// SAME pinned instant — coherent and wall-time independent.
 func schedulerTape(t *testing.T) {
 	t.Helper()
 	prev := market.FuturesBarsProvider
 	t.Cleanup(func() { market.FuturesBarsProvider = prev })
 	market.FuturesBarsProvider = func(symbol, tf string, count int) []market.Kline {
-		return rthTapeBars(time.Now())
+		return rthTapeBars(traderNow())
 	}
 }
 
-// rthTapeBars builds the shared 390-bar session fixture ending at now, clamped
-// to the NY open (08:30 CT) so the tape is RTH-only and deterministic.
+// rthTapeBars builds a deterministic 1m tape ending at the read clock `now`,
+// spanning 24h so the machine table carries a full overnight + RTH (ONH/ONL/
+// AS-H/LDN-H) instead of an empty one. Every bar is CLOSED (CloseTime < now).
 //
-// r40 (5 trader race failures): the old fixture anchored `base = now - 400m`
+// r40 (5 trader race failures): the old 390-bar tape anchored `base = now-400m`
 // to time.Now(). In the 15:09–15:10 CT minute that base landed at 08:29, inside
 // the London session tail, so the single London bar (High 15650, i=0) became the
-// machine-table ONH/LDN-H — which the P0.4-H label-provenance check correctly
-// refused against the mock plan's "RN 15650" (price 15650 is the only mock level
-// inside the fixture's 15650..15659 high range). Clamping the lookback to 08:30
-// CT keeps the machine table nonempty (RTH-H/L + EQH/EQL) with no colliding
-// structural label at 15650, at every wall time.
+// machine-table ONH/LDN-H=15650, which the P0.4-H label-provenance check
+// correctly refused against the mock plan's "RN 15650". The 24h span always puts
+// MANY bars in the overnight windows, so the overnight HIGH is 15659 — the mock's
+// 15650 is never a structural label, at any wall time.
 func rthTapeBars(now time.Time) []market.Kline {
-	base := now.Add(-400 * time.Minute)
-	if open := kernel.CMESessionDayStart(now).Add(15*time.Hour + 30*time.Minute); base.Before(open) {
-		base = open
-	}
-	baseMs := base.UnixMilli()
+	const span = 24 * 60 // 24h of 1m bars: full overnight + prior RTH
 	nowMs := now.UnixMilli()
-	bars := make([]market.Kline, 0, 390)
-	for i := 0; i < 390; i++ {
+	baseMs := nowMs - span*60_000
+	bars := make([]market.Kline, 0, span)
+	for i := 0; i < span; i++ {
 		o := baseMs + int64(i)*60_000
-		if o >= nowMs {
-			break // every bar closed relative to the read clock
+		if o+59_000 >= nowMs {
+			break // CloseTime must be strictly before now: every bar CLOSED
 		}
 		bars = append(bars, market.Kline{OpenTime: o, High: 15650 + float64(i%10), Low: 15550 + float64(i%10), Close: 15600 + float64(i%10), CloseTime: o + 59_000})
 	}
 	return bars
 }
 
-// TestRthTapeBarsNeverIncludesTheLondonTail pins the r40 fix: at the wall
-// minute that failed r40 (15:09–15:10 CT) the tape's oldest bar must not fall
-// in the London session — otherwise that single bar (High 15650) becomes the
-// machine-table ONH/LDN-H=15650 and the P0.4-H provenance check correctly
-// refuses the mock plan's "RN 15650". Runs the ACTUAL production check
-// (MislabeledStructuralLevels) against a NONEMPTY machine table built from the
-// fixed tape.
+// TestRthTapeBarsNeverIncludesTheLondonTail pins the r40 fix across wall-time
+// boundary cases: at every instant the tape must be nonempty, every bar CLOSED,
+// and the REAL production check (MislabeledStructuralLevels) must find no
+// mislabel against a NONEMPTY machine table. The old 390-bar time.Now() tape put
+// exactly one London bar at 08:29 in the 15:09–15:10 CT minute (now-400m landed
+// inside the London tail), whose High 15650 became ONH/LDN-H=15650 and the
+// P0.4-H check correctly refused the mock's "RN 15650".
 func TestRthTapeBarsNeverIncludesTheLondonTail(t *testing.T) {
 	loc := kernel.CTLocation()
-	bad := time.Date(2026, 10, 19, 15, 9, 30, 0, loc) // the failing r40 minute
 	reg := kernel.DefaultSessionRegistry()
 
-	bars := rthTapeBars(bad)
-	if len(bars) == 0 {
-		t.Fatal("tape is empty — the machine table would be empty too")
-	}
-	nyOpen := kernel.CMESessionDayStart(bad).Add(15*time.Hour + 30*time.Minute)
-	if first := bars[0].OpenTime; first < nyOpen.UnixMilli() {
-		t.Fatalf("first bar opens at %s < NY open %s — the London tail is still present",
-			time.UnixMilli(first).In(loc).Format("15:04:05"), nyOpen.In(loc).Format("15:04:05"))
-	}
-
-	// The full machine table (what MislabeledStructuralLevels reads) must be
-	// nonempty.
-	scored, _, _ := kernel.AssembleScoredLevels("t", bars, reg, "MNQ", 20, bad, 1.0)
-	if len(scored) == 0 {
-		t.Fatal("machine table is empty — the P0.4-H provenance check would not be exercised")
-	}
-	machineLabels := map[float64]string{}
-	for _, s := range scored {
-		machineLabels[math.Round(s.Price*100)/100] = s.Label
-	}
-
-	// The mock plan's levels, exactly as planClient returns them.
 	doc := &kernel.PlanDoc{Levels: []kernel.PlanLevel{
 		{Price: 15480, Label: "PWL"},
 		{Price: 15520, Label: "RN 15525"},
@@ -101,8 +76,45 @@ func TestRthTapeBarsNeverIncludesTheLondonTail(t *testing.T) {
 		{Price: 15650, Label: "RN 15650"},
 		{Price: 15700, Label: "RN 15700"},
 	}}
-	if mis := kernel.MislabeledStructuralLevels(doc, machineLabels); len(mis) > 0 {
-		t.Fatalf("P0.4-H mislabels with the fixed tape: %v", mis)
+
+	cases := []struct {
+		name string
+		now  time.Time
+	}{
+		{"before open 07:00", time.Date(2026, 10, 19, 7, 0, 0, 0, loc)},
+		{"at NY open 08:30", time.Date(2026, 10, 19, 8, 30, 0, 0, loc)},
+		{"the failing minute 15:09:30", time.Date(2026, 10, 19, 15, 9, 30, 0, loc)},
+		{"just after 15:10", time.Date(2026, 10, 19, 15, 10, 0, 0, loc)},
+		{"after CME rollover 17:30", time.Date(2026, 10, 19, 17, 30, 0, 0, loc)},
+		{"after midnight roll 00:30", time.Date(2026, 10, 20, 0, 30, 0, 0, loc)},
+		{"DST spring-forward 2026-03-08 02:30", time.Date(2026, 3, 8, 2, 30, 0, 0, loc)},
+		{"DST fall-back 2026-11-01 01:30", time.Date(2026, 11, 1, 1, 30, 0, 0, loc)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			bars := rthTapeBars(c.now)
+			if len(bars) == 0 {
+				t.Fatal("tape is empty — the machine table would be empty too")
+			}
+			for _, b := range bars {
+				if b.CloseTime >= c.now.UnixMilli() {
+					t.Fatalf("bar at %s is not closed (CloseTime %s >= now)",
+						time.UnixMilli(b.OpenTime).In(loc).Format("15:04:05"),
+						time.UnixMilli(b.CloseTime).In(loc).Format("15:04:05"))
+				}
+			}
+			scored, _, _ := kernel.AssembleScoredLevels("t", bars, reg, "MNQ", 20, c.now, 1.0)
+			if len(scored) == 0 {
+				t.Fatal("machine table is empty — the P0.4-H provenance check would not be exercised")
+			}
+			machineLabels := map[float64]string{}
+			for _, s := range scored {
+				machineLabels[math.Round(s.Price*100)/100] = s.Label
+			}
+			if mis := kernel.MislabeledStructuralLevels(doc, machineLabels); len(mis) > 0 {
+				t.Fatalf("P0.4-H mislabels: %v", mis)
+			}
+		})
 	}
 }
 

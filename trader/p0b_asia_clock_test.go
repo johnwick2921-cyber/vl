@@ -68,11 +68,11 @@ func TestP0BAsiaReadFiresAt1630WhileMarketClosed(t *testing.T) {
 	market.FuturesBarsProvider = func(symbol, tf string, count int) []market.Kline {
 		// Stored-data path: supply a realistic prior session so DailyRangeProxy
 		// resolves (~100 pts) instead of the thin one-bar fallback that the
-		// P0.2 target-reachability rule would trip over. rthTapeBars clamps the
-		// lookback to the NY open so the machine table never carries a London
-		// tail whose single High=15650 bar collided with the mock's "RN 15650"
-		// under the P0.4-H provenance check (r40).
-		return rthTapeBars(time.Now())
+		// P0.2 target-reachability rule would trip over. rthTapeBars builds a
+		// deterministic full-session tape anchored to the trader clock, so the
+		// machine table never carries the London-tail ONH/LDN-H=15650 that
+		// collided with the mock's "RN 15650" under P0.4-H (r40).
+		return rthTapeBars(traderNow())
 	}
 
 	// Tuesday 16:30 CT — the CME maintenance break (open−30 read, owner
@@ -81,6 +81,9 @@ func TestP0BAsiaReadFiresAt1630WhileMarketClosed(t *testing.T) {
 	if kernel.IsCMEOpen(now) {
 		t.Fatalf("fixture: 16:30 must be inside the maintenance break (IsCMEOpen=false)")
 	}
+	// Pin the trader clock to the scenario's read instant so the scheduled
+	// read and the tape are coherent and deterministic (r40).
+	pinTraderNow(t, now)
 
 	at.maybeRunSessionReadsAt(now)
 	defer drainReReads(t) // CTO M4: join the async re-read before the seam resets
