@@ -163,9 +163,16 @@ func New(cfg Config, d Deps) (*Worker, error) {
 }
 
 // execWindows is the production runWin: it execs a Windows binary (powershell.exe,
-// dotnet.exe) from WSL. Never called in a test (the seam is overridden).
+// dotnet.exe, tasklist.exe) from WSL. Never called in a test (the seam is overridden).
+// W-UPDATER-WINPATH: a bare tool name is resolved to its fixed WSL mount when
+// PATH lacks the Windows dirs (the user unit does not inherit appendWindowsPath),
+// so an already-running worker still restarts/probes NT8 on a Linux-only PATH.
 func execWindows(ctx context.Context, name string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	resolved, err := resolveWindowsExe(name)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, resolved, args...)
 	return cmd.CombinedOutput()
 }
 

@@ -132,6 +132,41 @@ func TestNT8ExitWaitBeforeStart(t *testing.T) {
 		t.Fatalf("the nt8_restart receipt must record a non-zero nt8_exit_wait_ms, got %q", waitMS)
 	}
 }
+
+// W-UPDATER-WINPATH (d) timeout: when the old NinjaTrader.exe NEVER fully exits
+// within nt8ExitWait, the step errors, starts ZERO new processes (never a second
+// instance racing the old one for the ATI socket), and records
+// nt8_exit_wait=timeout_still_running. The job reverts clean.
+func TestNT8ExitWaitTimeoutNoStart(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	stops, starts := restartCounts(r)
+	// A hang forces Stop-Process; the old process then lingers far past the
+	// ~31 tasklist polls of the 60 s nt8ExitWait deadline — it never exits.
+	r.set(func() { r.nt8HangsOnClose = true; r.nt8ExitLinger = 1000 })
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRevertedClean || j.Addon == nil || j.Addon.Restarted {
+		t.Fatalf("job %s addon=%+v, want reverted_clean with no restart", j.State, j.Addon)
+	}
+	if !strings.Contains(j.Error, "did not fully exit") {
+		t.Fatalf("error %q must say the old NT8 did not fully exit", j.Error)
+	}
+	if *stops != 1 {
+		t.Fatalf("Stop-Process ran %d times, want exactly 1 (the hang forced the stop)", *stops)
+	}
+	if *starts != 0 {
+		t.Fatalf("Start-Process ran %d times, want 0: never start a second instance while the old one still runs", *starts)
+	}
+	var wait string
+	for _, rc := range j.Receipts {
+		if rc.Step == "nt8_restart" && rc.Evidence != nil {
+			wait = rc.Evidence["nt8_exit_wait"]
+		}
+	}
+	if wait != "timeout_still_running" {
+		t.Fatalf("the nt8_restart receipt must record nt8_exit_wait=timeout_still_running, got %q", wait)
+	}
+}
 func TestFlatSIMGateRecheckBeforeStopProcessAborts(t *testing.T) {
 	r := newRig(t, withCSChanged())
 	stops, starts := restartCounts(r)
