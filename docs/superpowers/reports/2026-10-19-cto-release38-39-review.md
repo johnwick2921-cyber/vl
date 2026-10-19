@@ -42,3 +42,13 @@ Follow docs/superpowers/AUDIT-CHECKLIST.md and the owner no-delete, SIM-only, no
 - Running friend key is loaded from process environment; changing .env alone does not establish immediate old-key rejection. Real connection-path invalidation tests remain required.
 - Production Windows installer source calls `tailscaleInstall` from flow.go, while run_windows.go directly executes the supplied name and has no dispatcher for that symbolic command. DS-108 is assigned to verify clean-PC behavior. Desktop shortcut targets msedge, so automatic app-update invocation also needs verification.
 - Owner setup handover references an unmerged runbook (feat/friend-runbook). Actual source needs TUNNEL_IP in both bot and updater environments, plus enrollment credentials; no manual service restart is authorized. Existing Tailscale installation and enabled vl service mean those steps should not be blindly repeated.
+
+## Final fix candidate — independent CTO targeted pass [A]
+
+Candidate `cf9bebc17ff806ce5b86fdd34493bdf7a5c7676a` includes all three fixes and table coverage for powershell.exe, tasklist.exe and dotnet.exe. CTO merged it into isolated audit branch at `4f7fd0ed19dd04e42c82eb50b2d8f2d1874262f4` (not dev) and ran:
+
+```text
+go test ./internal/updaterworker ./deploy -run 'TestExecWindows|TestNT8ExitWait|TestInstallUpdaterWorkerScript' -count=1 -v
+```
+
+Fresh temporary HOME, fixed Go cache paths, fleet gorun throttle. Exit 0. Both exit-wait tests, four executable-adapter tests including the three-tool table, and production installer tests passed. Log: /tmp/vl-cto-marker.mWTXdq/cto-final-candidate-targeted.log. No real Windows executable, service, NT8 process or owner DB used. These targeted checks close the original review defects; they do not substitute for DS-107's full gates on the integrated release head.
