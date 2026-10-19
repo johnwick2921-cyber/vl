@@ -474,8 +474,24 @@ namespace NinjaTrader.NinjaScript.AddOns
                     bars.GetVolume(i), true, NowUtcMs())); // historical bars are closed by definition
             }
 
+            if (barsList.Count == 0)
+            {
+                // Empty seed (every bar was deduped — delayed/older feed
+                // re-returning bars we already emitted): do NOT stamp
+                // HistoricalSent or the watchdog clock. An empty historical
+                // callback must not read as "fresh" — that was the incident:
+                // bars=0 still reset LastUpdateUtcMs so the watchdog reported
+                // age 0 while the market timestamps were ~10 min late.
+                logInfo("VLBarsSubscriptionManager: historical " + entry.Key
+                        + " — deduped all (no new bars); not stamping freshness");
+                return;
+            }
+
             entry.HistoricalSent = true;
-            entry.LastUpdateUtcMs = NowUtcMs(); // watchdog: reset stall clock
+            entry.LastUpdateUtcMs = NowUtcMs();       // liveness: wall-clock of this emit
+            entry.LastBarTUtcMs = lastT;              // freshness: newest bar's MARKET time
+            entry.LastBarArrivalUtcMs = NowUtcMs();   // liveness: arrival of that newest bar
+            entry.LastBarProvenance = "bars_historical";
             if (lastT > entry.LastEmittedTimeUtcMs)
                 entry.LastEmittedTimeUtcMs = lastT;
             if (lastT > entry.LastFinalizedTimeUtcMs)
@@ -553,6 +569,9 @@ namespace NinjaTrader.NinjaScript.AddOns
 
             entry.LastEmittedTimeUtcMs = maxEmittedT;
             entry.LastUpdateUtcMs = NowUtcMs(); // watchdog: live bar received
+            entry.LastBarTUtcMs = maxEmittedT;        // freshness: newest forming bar's MARKET time
+            entry.LastBarArrivalUtcMs = NowUtcMs();   // liveness: arrival of that bar
+            entry.LastBarProvenance = "bar_update";
             entry.LiveUpdateSeen = true;        // fast-guard: a real live .Update has fired since (re)subscribe
 
             var payload = new Dictionary<string, object>
@@ -636,7 +655,8 @@ namespace NinjaTrader.NinjaScript.AddOns
             try
             {
                 long now = NowUtcMs();
-                long oldest = long.MaxValue;
+                long oldestBarT = long.MaxValue;     // freshness: newest bar's MARKET time (min over entries)
+                long oldestArrival = long.MaxValue;  // liveness: arrival of that bar
                 string staleKey = null;
                 bool anyDead = false; // (re)subscribed + historical sent, but NO live .Update within FAST_STALL_MS
                 bool anyLive = false; // at least one subscription has seen a REAL live .Update
@@ -653,7 +673,16 @@ namespace NinjaTrader.NinjaScript.AddOns
                         if (e.LiveUpdateSeen) anyLive = true;
                         if (!e.HistoricalSent) continue;
                         if (!e.LiveUpdateSeen && now - e.SubscribedAtUtcMs >= FAST_STALL_MS) { anyDead = true; deadCount++; }
-                        if (e.LastUpdateUtcMs != 0 && e.LastUpdateUtcMs < oldest) { oldest = e.LastUpdateUtcMs; staleKey = e.Key; }
+                        // Freshness is the MARKET time of the newest bar, NOT the
+                        // arrival wall-clock. A steady stream of DELAYED bars keeps
+                        // LastUpdateUtcMs at age 0 while LastBarTUtcMs shows the
+                        // ~10-min lag — that is the truthful signal.
+                        if (e.LastBarTUtcMs != 0 && e.LastBarTUtcMs < oldestBarT)
+                        {
+                            oldestBarT = e.LastBarTUtcMs;
+                            oldestArrival = e.LastBarArrivalUtcMs;
+                            staleKey = e.Key;
+                        }
                     }
                 }
 
@@ -661,8 +690,11 @@ namespace NinjaTrader.NinjaScript.AddOns
                 if (staleKey != null && now - lastAgeLogUtcMs >= 60000L)
                 {
                     lastAgeLogUtcMs = now;
+                    long marketAge = oldestBarT != 0 ? (now - oldestBarT) / 1000 : -1;
+                    long arrivalAge = oldestArrival != 0 ? (now - oldestArrival) / 1000 : -1;
                     logInfo("VLBarsSubscriptionManager: watchdog — most-stale " + staleKey
-                            + " bar age " + ((now - oldest) / 1000) + "s; dead-subscriptions=" + deadCount);
+                            + " bar age(market) " + marketAge + "s / last-arrival "
+                            + arrivalAge + "s; dead-subscriptions=" + deadCount);
                 }
 
                 // FAST GUARD — the post-(re)subscribe dead window. Historical seeded but
@@ -757,6 +789,35 @@ namespace NinjaTrader.NinjaScript.AddOns
         {
             return (long)((DateTime.UtcNow
                 - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds);
+        }
+
+        /// <summary>
+        /// Feed freshness for the additive feed_status frame: the newest bar's
+        /// MARKET timestamp + its arrival wall-clock + provenance, across all
+        /// active subscriptions. mode is NOT returned here — the C# side has no
+        /// supported NT8 API for the market-data subscription mode (Delayed vs
+        /// Realtime), so the caller always sends mode="unknown".
+        /// </summary>
+        public void GetFeedFreshness(out long lastBarTMs, out long lastBarArrivalMs, out string provenance)
+        {
+            long bestT = 0, bestArrival = 0;
+            string bestProv = "none";
+            lock (subsLock)
+            {
+                foreach (var kv in active)
+                {
+                    var e = kv.Value;
+                    if (e.LastBarTUtcMs > bestT)
+                    {
+                        bestT = e.LastBarTUtcMs;
+                        bestArrival = e.LastBarArrivalUtcMs;
+                        bestProv = e.LastBarProvenance ?? "none";
+                    }
+                }
+            }
+            lastBarTMs = bestT;
+            lastBarArrivalMs = bestArrival;
+            provenance = bestProv;
         }
 
         /// <summary>
@@ -933,7 +994,10 @@ namespace NinjaTrader.NinjaScript.AddOns
             public long         LastEmittedTimeUtcMs;
             public long         LastFinalizedTimeUtcMs; // the newest bar emitted with final=true
             public bool         HistoricalSent;
-            public long         LastUpdateUtcMs;   // wall-clock UTC ms of last emit (stall watchdog)
+            public long         LastUpdateUtcMs;   // wall-clock UTC ms of last emit (stall watchdog / liveness)
+            public long         LastBarTUtcMs;      // MARKET open time (UTC ms) of the newest bar emitted (freshness)
+            public long         LastBarArrivalUtcMs;// wall-clock UTC ms when that newest bar was emitted (liveness)
+            public string       LastBarProvenance;  // "bars_historical" | "bar_update" for the newest bar
             public long         SubscribedAtUtcMs; // wall-clock UTC ms when this request was (re)subscribed — fast-guard baseline
             public bool         LiveUpdateSeen;    // a genuine live .Update (OnBarsUpdate) has fired since (re)subscribe
         }

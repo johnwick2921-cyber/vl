@@ -426,8 +426,35 @@ Used by auto-breakeven (once the trade is +N points in profit → stop → entry
   therefore REQUIRES the paired redeploy (cp `ninjascript/*.cs` → AddOns → F5 →
   clean NT8 restart).
 
-## Failure modes
+### 11. `feed_status` (C# AddOn → Go server) — P0 feed freshness
 
+Sent on every NT8 price-feed connection-status transition, and again ~1/min from
+the AddOn freshness timer. Carries the connection status PLUS the truthful bar
+freshness, so Go can tell "callbacks flowing but bars DELAYED" apart from "fresh".
+
+```json
+{ "type": "feed_status",
+  "payload": { "price_status": "Connected", "time": "RFC3339",
+               "last_bar_t_ms": 1729xxxxxxxxx, "last_bar_arrival_ms": 1729xxxxxxxxx,
+               "mode": "unknown", "provenance": "bar_update" } }
+```
+
+- `price_status` — the NT8 price-feed connection status (`Connected` | `ConnectionLost` |
+  `Connecting` | `Disconnected`). Same as before; Go gates opens/closes on it.
+- `last_bar_t_ms` — **market** open timestamp (Unix ms UTC) of the newest bar the
+  AddOn emitted across all subscriptions. `0` = no bar yet. THIS is freshness.
+- `last_bar_arrival_ms` — wall-clock Unix ms UTC when that newest bar was emitted
+  (arrival/liveness). Distinct from freshness: delayed bars arrive late.
+- `mode` — **ALWAYS `"unknown"`** in this build. No supported NT8 API exposes the
+  market-data subscription mode (`Delayed` vs `Realtime`); it is NOT derived from
+  the account type. Reserved for when a real API is proven.
+- `provenance` — `"bar_update"` | `"bars_historical"` | `"none"` — where the
+  newest bar came from.
+
+Additive: an OLD Go build ignores the four new keys (it only reads `price_status`
+/ `time`); a NEW Go build treats an absent key as unknown.
+
+## Failure modes
 - **TCP disconnect**: the server holds the signal queue; on reconnect, it sends pending signals with their original timestamps. The C# AddOn may reject signals older than 60s as stale (emits a `status=rejected` fill).
 - **Heartbeat timeout**: the server closes the connection after 60s without an ack; the C# AddOn reconnects every 5s.
 - **Invalid frame** (bad length, >1 MB, malformed JSON): the receiver logs a warning and closes the connection; the other side reconnects.
