@@ -694,9 +694,27 @@ func (at *AutoTrader) deskFeed(now time.Time) DeskLine {
 	}
 	state := "ok"
 	reason := ""
-	if age > int64(2*time.Minute/time.Millisecond) {
+	// P0 feed freshness — an explicit DELAYED broker mode is surfaced as stale
+	// with actionable guidance, and takes precedence over the bar-age leg.
+	// An UNKNOWN mode is labeled as such, never claimed as realtime; if the
+	// bar-age leg then fires, the reason names the NT8 data connection.
+	mode := at.HealthFeedMode()
+	modeText := "mode unknown"
+	if mode == "delayed" {
 		state = "stale"
-		reason = "the newest 1m bar is older than 2 minutes"
+		reason = "broker feed mode is DELAYED — connect a realtime NT8 data feed"
+		modeText = "mode DELAYED"
+	} else if mode == "realtime" {
+		modeText = "mode realtime"
+	}
+	if age > int64(2*time.Minute/time.Millisecond) {
+		if state != "stale" {
+			state = "stale"
+		}
+		if reason != "" {
+			reason += "; "
+		}
+		reason += "the newest 1m bar is older than 2 minutes — check the NT8 data connection"
 	}
 	if !linkKnown {
 		state = "unknown"
@@ -707,7 +725,7 @@ func (at *AutoTrader) deskFeed(now time.Time) DeskLine {
 	}
 	return DeskLine{N: 9, Key: "feed", Label: "FEED", State: state, Verified: state == "ok",
 		Source: "bars · NT8 link · AddOn build id", AsOfMs: last, Reason: reason,
-		Text: fmt.Sprintf("last bar %s ago · link %s · AddOn build %s", deskAge(age), link, build)}
+		Text: fmt.Sprintf("last bar %s ago · link %s · %s · AddOn build %s", deskAge(age), link, modeText, build)}
 }
 
 func (at *AutoTrader) deskPlanner(now time.Time) DeskLine {

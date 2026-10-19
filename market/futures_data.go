@@ -12,3 +12,10 @@ package market
 // provider (crypto-only build, or NT transport not started) means the
 // futures branch in GetWithTimeframes simply skips the symbol.
 var FuturesBarsProvider func(symbol, timeframe string, count int) []Kline
+
+// FuturesFeedMode, when non-nil, returns the broker market-data mode reported
+// by the live NT8 feed_status frame: "realtime" | "delayed" | "" ("" = UNKNOWN
+// — absent, unsupported, or not yet received). Wired by trader/ninjatrader the
+// same way as FuturesBarsProvider; the market package takes no provider
+// dependency. Consumers must treat "" as UNKNOWN, never as realtime.
+var FuturesFeedMode func() string
