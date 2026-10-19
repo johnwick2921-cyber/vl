@@ -39,7 +39,10 @@ func writeCompiler(t *testing.T, docs string) {
 // item stays ok.
 func okRunner() Runner {
 	return func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		if name == "powershell.exe" {
+		// W-UPDATER-WINPATH: CompilerProbe now RESOLVES the bare "powershell.exe"
+		// to its fixed/PATH location before invoking Run, so the fake must match
+		// the resolved path too (the bare-name equality no longer holds).
+		if filepath.Base(name) == "powershell.exe" {
 			for _, a := range args {
 				if a == "-Probe" {
 					return []byte("VL_ADDON_PROBE=ok\nVL_SELFTEST_OK\n"), nil
