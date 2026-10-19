@@ -28,6 +28,15 @@ func wireFuturesBarsProvider(server *ntwire.TCPServer) {
 		// `now` is taken HERE, at the entry point, and handed down (A28).
 		return barsFromCache(server.BarCache(), symbol, timeframe, count, time.Now())
 	}
+	// P0 feed freshness — expose the broker mode (realtime|delayed|"" unknown)
+	// so the kernel's entry gate can distinguish explicit delayed from inferred
+	// stale. "" is UNKNOWN, never realtime.
+	market.FuturesFeedMode = func() string {
+		if server == nil {
+			return ""
+		}
+		return server.FeedMode()
+	}
 	// Release #22 OPS-SAFETY: the stale gate's MONOTONIC receipt leg reads the
 	// same cache, and the clock-step guard samples wall vs monotonic every
 	// second from here on (one sampler per process).

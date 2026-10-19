@@ -2573,8 +2573,14 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 			s.feedMu.Lock()
 			prev := s.feedStatus
 			s.feedStatus = p.PriceStatus
-			if p.Mode != "" {
+			// P0 feed freshness — normalize the broker mode: only the two known
+			// values are evidence; an unsupported or omitted value reads UNKNOWN
+			// ("") and is NEVER fabricated as realtime.
+			switch p.Mode {
+			case "realtime", "delayed":
 				s.feedMode = p.Mode
+			default:
+				s.feedMode = ""
 			}
 			s.feedMu.Unlock()
 			// W26 — NT8's data-feed reconnect recreates the AddOn's BarsRequests

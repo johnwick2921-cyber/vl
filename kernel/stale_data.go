@@ -156,6 +156,14 @@ func applyStaleDataBlock(fd *FullDecision, ctx *Context, nowMs int64) {
 			continue
 		}
 		md := ctx.MarketDataMap[d.Symbol]
+		// P0 feed freshness — explicit DELAYED broker mode blocks a NEW entry
+		// first (precedence: delayed > stale > fresh). Unknown mode is NOT a
+		// reject reason on its own; the timestamp legs below still refuse
+		// missing/stale candles regardless of mode.
+		if mode := feedMode(); mode == "delayed" {
+			b4RefuseDelayed(d, ctx, "broker feed mode is delayed")
+			continue
+		}
 		// Release #22 OPS-SAFETY: the wall-clock rule below fails OPEN on a
 		// backward wall step. Two legs that never read the wall clock run
 		// FIRST: a clock-step hold around the snapshot, and the monotonic
@@ -208,6 +216,18 @@ func b4Refuse(d *Decision, ctx *Context, why string) {
 	d.Action = "wait"
 	telemetry.IncGateBlock(ctx.TraderID, "stale_data")
 	telemetry.RecordError(ctx.TraderID, "entry_refused", "stale-data: "+why, telemetry.CostTradeLost)
+}
+
+// b4RefuseDelayed (P0 feed freshness) neutralizes one open decision for the
+// explicit delayed-mode leg: WARN + a DISTINCT delayed_data gate-block counter
+// and entry_refused error, so the delayed refusal is separable from inferred
+// stale. Exits and protection are never touched.
+func b4RefuseDelayed(d *Decision, ctx *Context, why string) {
+	logger.Warnf("⛔ delayed_data_discarded %s — %s %s → WAIT (exits unaffected)", why, d.Symbol, d.Action)
+	d.RefusalReason = "delayed-data: " + why
+	d.Action = "wait"
+	telemetry.IncGateBlock(ctx.TraderID, "delayed_data")
+	telemetry.RecordError(ctx.TraderID, "entry_refused", "delayed-data: "+why, telemetry.CostTradeLost)
 }
 
 // liveFeedDiagnostics reads the LIVE bar provider (not the snapshot) for the
