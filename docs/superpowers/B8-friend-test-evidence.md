@@ -128,32 +128,61 @@ Source: `api/handler_friends.go:459` (revoke → `remove.sh` + tailscale device
 delete), `deploy/friends/remove.sh:53` (`systemctl --user stop/disable` — moves
 the folder to trash, never deletes).
 
-## 5. Known gaps — PENDING (verified 2026-10-19, DS-104)
+## 5. Known gaps — B8 BLOCKED (verified 2026-10-19, DS-104)
 
-The B8 revoke → resume/new-key → reconnect sequence does **not** hold against
-the current code. Reproduced in an isolated temp fixture (`remove.sh --root`
-+ isolated `TRASH_DIR`, no live services). These stay PENDING until a follow-up
-fix lands (do NOT widen #39):
+B8 is **BLOCKED** on (a) revoke recovery + device enrollment and (b) the real
+friend prerequisites (owner B6 steps + friend install). The revoke →
+resume/new-key → reconnect sequence does **not** hold against the current code.
+
+**Exact reproduction (isolated temp fixture — no live services, no secrets):**
+
+```
+FIX=$(mktemp -d); ROOT="$FIX/vl-friends"; TRASH="$FIX/trash"; mkdir -p "$ROOT/tom" "$TRASH"
+cat > "$ROOT/tom/.env" <<'EOF'   # friend .env (NT_CONNECT_KEY=<64-hex test key> …)
+NT_CONNECT_KEY=<64-hex-test-key>
+API_SERVER_PORT=18081
+API_SERVER_HOST=100.64.0.7
+NT_TCP_LISTEN_ADDR=100.64.0.7:36981
+VL_FRIEND_INSTANCE=1
+VL_FRIEND_NAME=tom
+EOF
+python3 - "$ROOT/friends.json" <<'PY'   # registry row: state active, tailscale_device_id ""
+import json, sys
+json.dump([{"name":"tom","web_port":18081,"nt_port":36981,"key_sha256":"<sha256>",
+            "state":"active","created_at":"2026-10-19T00:00:00+00:00",
+            "tailscale_device_id":""}], open(sys.argv[1],"w"), indent=2)
+PY
+HOME="$FIX" TRASH_DIR="$TRASH" bash deploy/friends/remove.sh tom --root "$ROOT"
+```
+
+Observed output (exact, condensed):
+
+```
+remove: friend 'tom' moved to <FIX>/trash/friend-tom
+remove rc=0
+ROOT/tom exists? NO — folder moved
+friend .env still readable for rotate? NO — setFriendEnvKey would return ENOENT
+registry state: {'state': 'revoked', 'tailscale_device_id': ''}
+unit WorkingDirectory (<FIX>/vl-friends/tom) exists? NO — systemd start would fail to chdir
+```
 
 - **GAP-1 recoverability.** `revoke` → `remove.sh` moves the whole friend folder
-  (`/home/hoang/vl-friends/<name>`, including `.env` and `data/`) to
-  `~/trash/<date>/`. After that:
-  - `resume` = `systemctl --user start vl-friend@<name>` but the unit is disabled
-    AND its `WorkingDirectory` is gone → chdir failure;
-  - `rotate` = `setFriendEnvKey` reads `<root>/<name>/.env` → ENOENT → "failed to
-    write the friend's .env".
-  Implemented = shutdown only; the B8 recoverability is claimed, not implemented.
-- **GAP-2 network revoke.** `TailscaleDeviceID` is never populated
+  (`/home/hoang/vl-friends/<name>`, including `.env` and `data/`) to trash. So
+  `resume` (`systemctl --user start`, but the unit is disabled AND its
+  `WorkingDirectory` is gone) and `rotate` (`setFriendEnvKey` reads
+  `<root>/<name>/.env` → ENOENT) both fail. Implemented = shutdown only.
+- **GAP-2 device enrollment.** `TailscaleDeviceID` is never populated
   (`deploy/friends/provision.sh:151` writes `""`; no code sets it), so
   `tailscaleDeleteDevice` (`api/handler_friends.go:615`) returns `no_device_id`
-  and the Tailscale device delete always no-ops (logged "not done").
+  — the omission IS surfaced as `no_device_id` (logged "not done:
+  no_device_id"), **not silent** — but the device is never actually deleted.
 
-**Smallest scoped fix proposal (follow-up):**
-1. Recoverability: make `resume` restore the moved folder from trash before
-   `systemctl start` (remove.sh already writes the trash path deterministically),
-   and make `rotate` restore it too or return a clear "revoked — Add a new
-   friend" error.
-2. Network revoke: capture the tailscale device id at provision time — after
-   `tailscale up`, run `tailscale status --json` and store the device id whose
-   hostname is `friend-<name>` into `friends.json` `tailscale_device_id` (or have
-   revoke delete by hostname via the Tailscale API).
+**Design direction (NOT an unverified workaround).** The follow-up design and
+dispatch live in
+`docs/superpowers/B8-friend-revoke-recovery-design.md`. In short: no guessed
+trash-path restore (trash can collide/change), no hostname-based device delete
+(hostname is not an authenticated device identity), and no restoring the old key
+(a revoked client must never be reauthorized by its old key). Required
+invariants: explicit persisted archive provenance, a FRESH key before re-enable,
+a VERIFIED device association, and production-path sequence pins. #39 stays
+updater-only.
