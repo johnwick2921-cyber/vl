@@ -300,6 +300,13 @@ namespace NinjaTrader.NinjaScript.AddOns
         private DateTime lastRecreateUtc = DateTime.MinValue;
         private static readonly TimeSpan RecreateDebounce = TimeSpan.FromSeconds(30);
 
+        // P0 feed freshness — latest NT8 price-feed status (ConnectionStatusUpdate)
+        // and a periodic timer that re-emits the feed_status frame with the
+        // barsManager's truthful market-timestamp freshness, so the Go side sees
+        // freshness even without a connection transition.
+        private string currentPriceStatus = "";
+        private Timer feedFreshnessTimer;
+
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
@@ -340,6 +347,14 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // disposable, per-request BarsRequests for EXPLICIT contract
                 // names; it never touches the live subscriptions.
                 historyPulls = new VLHistoryPullManager(SendFrame, LogInfo, LogWarn);
+
+                // P0 feed freshness — re-emit feed_status ~1/min so the Go side
+                // sees the truthful market-timestamp freshness even when there is
+                // no connection-status transition (the edge-triggered path alone
+                // would go silent while delayed bars keep arriving).
+                feedFreshnessTimer = new Timer(
+                    FeedFreshnessTick,
+                    null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
 
                 // Phase 0 — hook the NT8 data-feed status so BarsRequests get
                 // recreated when the NT8<->provider price feed recovers. Without
@@ -383,6 +398,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                     try { account.AccountItemUpdate -= OnAccountItemUpdate; } catch { }
                 }
                 try { Connection.ConnectionStatusUpdate -= OnVLConnectionStatusUpdate; } catch { }
+                try { if (feedFreshnessTimer != null) feedFreshnessTimer.Dispose(); } catch { }
                 try { barsManager?.DisposeAll(); } catch { }
                 try { historyPulls?.DisposeAll(); } catch { }
                 try { stream?.Close(); } catch { }
@@ -467,6 +483,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // opens/closes when the feed is down (the SIM rejects "no market
                 // data" — the upstream condition behind the phantom-close mess).
                 // Emitted on every connection-status transition.
+                currentPriceStatus = priceStatus ?? "";
                 SendFeedStatusFrame(priceStatus);
             }
             catch (Exception ex)
@@ -3279,13 +3296,33 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         // TRACK A — emit the NT8 price-feed status so Go can gate opens/closes when
         // the feed is down (the SIM rejects orders with "no market data"). Sent on
-        // every connection-status transition (OnVLConnectionStatusUpdate).
+        // every connection-status transition (OnVLConnectionStatusUpdate) and ~1/min
+        // from the freshness timer. P0: carries the truthful feed freshness — the
+        // newest bar's MARKET timestamp + arrival + provenance — so the Go side can
+        // tell "callbacks flowing but bars delayed" apart from "fresh". mode is
+        // ALWAYS "unknown": no supported NT8 API exposes the market-data
+        // subscription mode (Delayed vs Realtime); we do NOT derive it from the
+        // account type.
+        private void FeedFreshnessTick(object state)
+        {
+            try { SendFeedStatusFrame(currentPriceStatus); } catch { }
+        }
+
         private void SendFeedStatusFrame(string priceStatus)
         {
+            long lastBarT = 0, lastBarArrival = 0;
+            string provenance = "none", timeframe = "", symbol = "";
+            barsManager?.GetFeedFreshness(out lastBarT, out lastBarArrival, out provenance, out timeframe, out symbol);
             var payload = new Dictionary<string, object>
             {
-                ["price_status"] = priceStatus ?? "",
-                ["time"]         = DateTime.UtcNow.ToString("o")
+                ["price_status"]         = priceStatus ?? "",
+                ["time"]                 = DateTime.UtcNow.ToString("o"),
+                ["last_bar_t_ms"]        = lastBarT,
+                ["last_bar_arrival_ms"]  = lastBarArrival,
+                ["last_bar_symbol"]      = symbol,
+                ["last_bar_tf"]          = timeframe,
+                ["mode"]                 = "unknown",
+                ["provenance"]           = provenance
             };
             WriteEnvelope("feed_status", payload);
         }
