@@ -65,7 +65,7 @@ func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
 	return addonbuild.Config{
 		DocsDir:   docsDir,
 		Exe:       addonExe(),
-		DotnetExe: "dotnet.exe",
+		DotnetExe: "dotnet.exe", // bare name — addonbuild.Build resolves it (W-UPDATER-WINPATH)
 		SourceDir: src,
 		WorkDir:   filepath.Join(os.TempDir(), "vl-addon-build", j.JobID),
 		Run:       w.winSeam(),
@@ -483,6 +483,29 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 				return err
 			}
 		}
+		// W-UPDATER-WINPATH (d): wait until the old NinjaTrader.exe has FULLY
+		// exited before starting the new one. The owner saw "Unable to start ATI
+		// server component … socket forbidden" when NT8 restarted before the old
+		// process released the port. Poll IsRunning, bounded; record the wait.
+		exitStart := w.host.Now()
+		exitDeadline := exitStart.Add(nt8ExitWait)
+		for {
+			running, err := r.isRunning(ctx)
+			if err != nil {
+				return err
+			}
+			if !running {
+				break
+			}
+			if !w.host.Now().Before(exitDeadline) {
+				ev["nt8_exit_wait"] = "timeout_still_running"
+				return fmt.Errorf("NinjaTrader did not fully exit within %s of the stop — not starting a second instance", nt8ExitWait)
+			}
+			if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
+				return err
+			}
+		}
+		ev["nt8_exit_wait_ms"] = strconv.FormatInt(w.host.Now().Sub(exitStart).Milliseconds(), 10)
 		// FOLD 2: a deferred migration (NT8 was open and Custom.dll still held
 		// the AddOn type) runs while NT8 is closed — right after the stop and
 		// before the start. A failure here must NEVER leave NT8 closed: restore
