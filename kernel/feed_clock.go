@@ -401,6 +401,14 @@ func EntryFeedStale(symbol string, newestBarOpenMs int64, now time.Time) (bool, 
 	if held, why := clockStepHeldAt(time.Time{}); held {
 		return true, why
 	}
+	// P0 feed freshness — explicit DELAYED broker mode blocks a NEW entry with
+	// precedence over the timestamp legs (delayed > stale). UNKNOWN mode is not
+	// a reject reason on its own; FeedStaleAt still refuses missing/stale
+	// candles below. This is the ENTRY verdict only — FeedStaleAt stays pure
+	// for protection.
+	if mode := feedMode(); mode == "delayed" {
+		return true, "broker feed mode is delayed"
+	}
 	return FeedStaleAt(symbol, newestBarOpenMs, now)
 }
 

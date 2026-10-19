@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -53,5 +54,26 @@ func TestFeedModeReadsWiredProvider(t *testing.T) {
 	market.FuturesFeedMode = func() string { return "delayed" }
 	if got := feedMode(); got != "delayed" {
 		t.Fatalf("feedMode() with wired provider = %q, want \"delayed\"", got)
+	}
+}
+
+// TestEntryFeedStaleDelayed pins the production call site: the mentor /
+// entry-admission entry verdict (EntryFeedStale) refuses a NEW entry when the
+// broker mode is explicitly delayed, even with a fresh bar; an unknown mode +
+// fresh bar is not refused by mode.
+func TestEntryFeedStaleDelayed(t *testing.T) {
+	prev := market.FuturesFeedMode
+	t.Cleanup(func() { market.FuturesFeedMode = prev })
+
+	now := time.Now()
+	market.FuturesFeedMode = func() string { return "delayed" }
+	stale, why := EntryFeedStale("MNQ", now.UnixMilli(), now)
+	if !stale || why != "broker feed mode is delayed" {
+		t.Fatalf("delayed mode + fresh bar: EntryFeedStale = (%v, %q), want (true, \"broker feed mode is delayed\")", stale, why)
+	}
+
+	market.FuturesFeedMode = func() string { return "" }
+	if stale, _ := EntryFeedStale("MNQ", now.UnixMilli(), now); stale {
+		t.Fatalf("unknown mode + fresh bar: EntryFeedStale = stale, want not stale")
 	}
 }
