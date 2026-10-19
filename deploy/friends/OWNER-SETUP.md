@@ -5,8 +5,12 @@ one click on the **Friends** page (or `provision.sh`). No secrets are written in
 this file — you type them into your own files and never into chat.
 
 Ports (B2 contract): friend **N** gets web `18080+N` and NinjaTrader `36980+N`,
-bound **only** to your box's Tailscale address. The ranges below cover friends
-1–9.
+bound **only** to your box's Tailscale address.
+
+**Assumptions (sourced):** the box already runs Tailscale with WSL mirrored
+networking (verified); the `vl-updater` user service is already installed and
+enabled. You are only adding the friend-specific values below. **Do not manually
+restart `vl`** — the new values load when you press **Update**.
 
 ---
 
@@ -15,8 +19,7 @@ bound **only** to your box's Tailscale address. The ranges below cover friends
 You need two things from Tailscale:
 
 1. **A Tailscale account** (free plan is enough): https://login.tailscale.com/start
-2. **An API access token** so the Friends page can delete a friend's device when
-   you **Revoke** it. Create it **once**:
+2. **An API access token**, read by the Friends page. Create it **once**:
 
    1. Open https://login.tailscale.com/admin/settings/keys
    2. Click **Generate API access token** (not "auth key" — that one is for
@@ -28,56 +31,74 @@ You need two things from Tailscale:
    **full-permission**. That page has no scope checkboxes — the generated token
    can read and write the whole tailnet (devices, ACL, everything). The bot
    reads this static token and authenticates to the Tailscale API with HTTP
-   **BasicAuth** (token as the username, empty password). In this release the
-   bot uses it for exactly one thing: **deleting the friend's device on Revoke**.
-   It never edits the ACL and never adds devices.
+   **BasicAuth** (token as the username, empty password).
+   Source: https://tailscale.com/docs/reference/tailscale-api
+
+   **What it does as shipped:** the code has a device-delete path
+   (`DELETE /api/v2/device/<id>`, `api/handler_friends.go`
+   `tailscaleDeleteDevice`), but the registry's `tailscale_device_id` is **never
+   populated** (`provision.sh` writes `""`), so on Revoke the bot surfaces
+   `no_device_id` and **does not actually delete the device** — a known B8
+   blocker (see §6). It never edits the ACL and never adds devices.
 
    **Do NOT** paste an OAuth / trust-credential **client secret** as this token.
    Fine-grained scopes exist only on OAuth/trust credentials, which need token
    exchange and expiry handling that the bot does not implement. No OAuth
    automation is added in this release.
+   Source: https://tailscale.com/docs/reference/trust-credentials
 
 Put the token where the owner bot reads it (the owner types it; no lane ever sees
-it):
+it). The box's Tailscale address (`tailscale ip -4`) goes into **both** env
+files — the bot reads it, and so does the updater:
 
 ```sh
+# 1) the bot's own env
 echo 'TAILSCALE_API_KEY=<paste the token here>' >> /home/hoang/vl/.env
+echo 'TUNNEL_IP=<box tailscale address>'       >> /home/hoang/vl/.env
+
+# 2) the updater worker's env (already holds VL_RELEASE_DIR + VL_CUTOVER_TOKEN)
+echo 'TUNNEL_IP=<box tailscale address>'       >> /home/hoang/.config/vl-updater/env
 ```
 
-Verify: `tailscale status` from WSL lists your box (if not, run `sudo tailscale
-up`).
+Why both: the bot probes each friend's HTTP API at `http://<TUNNEL_IP>:<web_port>`
+(`api/handler_friends.go`), and the updater uses it as the friend host
+(`cmd/vl-updater/main.go:191` `FriendHost`). **Do not restart `vl` by hand** —
+these values load when you press **Update**.
+
+Verify: `tailscale status` from WSL lists your box.
 
 ---
 
-## 2. Tailscale on Windows
+## 2. Tailscale on Windows — already in place (verify, don't reinstall)
 
-1. Download + run the Windows installer: https://tailscale.com/download/windows
-2. Sign in with the same account as §1.
-3. Confirm your Windows PC shows as a node in https://login.tailscale.com/admin/machines
-
-Your box runs WSL in **mirrored networking** (`.wslconfig` has
-`networkingMode=mirrored`), so the Windows Tailscale tunnel address reaches WSL
-directly — that is why this step is on Windows.
+The box already runs the Windows Tailscale client and WSL **mirrored
+networking** (`.wslconfig` has `networkingMode=mirrored`); this is verified. No
+reinstall is needed — just confirm the Windows PC appears as a node at
+https://login.tailscale.com/admin/machines, on the same account as §1.
 
 ---
 
 ## 3. The ONE admin PowerShell line (Hyper-V firewall)
 
 WSL mirrored mode blocks inbound to WSL unless the Hyper-V firewall allows it.
-Open **only** the friend ports (web 18081–18089 + NinjaTrader 36981–36989),
-inbound, to WSL. Run once, in an **admin** PowerShell:
+Open **only the ports you are actually using** — start with the first friend's
+two ports. `LocalPorts` is a `String[]`: give each port as its own element, not
+one comma-delimited string, and do not pre-open nine friends' worth of ports.
+Run once, in an **admin** PowerShell:
 
 ```powershell
-New-NetFirewallHyperVRule -Name "VL-friends" -DisplayName "VL friend bots (web 18081-18089, NT 36981-36989)" -Direction Inbound -VMCreatorId "{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}" -Protocol TCP -LocalPorts "18081-18089,36981-36989" -Action Allow
+New-NetFirewallHyperVRule -Name "VL-friends" -DisplayName "VL friend bots" -Direction Inbound -VMCreatorId "{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}" -Protocol TCP -LocalPorts "18081","36981" -Action Allow
 ```
 
-Reference — `New-NetFirewallHyperVRule` (PowerShell `NetSecurity` module):
+Add one more `-LocalPorts` element per friend as you add them (friend 2 →
+`"18082","36982"`, and so on). Reference — `New-NetFirewallHyperVRule`
+(PowerShell `NetSecurity` module):
 https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallhypervrule
 
-That one line **adds** an inbound allow for exactly those ports and nothing else.
-It does **not** revoke or narrow any other rule already on your box — if some
-other rule already allows inbound to WSL, that grant still applies. The
-Tailscale-side restriction is §4; this firewall rule is not it.
+That line **adds** an inbound allow for exactly those ports and nothing else. It
+does **not** revoke or narrow any other rule already on your box — if some other
+rule already allows inbound to WSL, that grant still applies. The Tailscale-side
+restriction is §4; this firewall rule is not it.
 
 Verify (admin PowerShell):
 
@@ -121,10 +142,15 @@ Rules to keep when you edit:
 - **Nothing else** — no catch-all `src: ["*"]`, no `dst` that isn't `tag:owner-box`
   with that friend's two ports.
 
-**How the friend's device gets its tag:** the install code carries a Tailscale
-**auth key** (`TS_AUTHKEY`, folded in at `provision.sh` time); the friend's
-`vl-friend` setup runs `tailscale up --authkey=…`, so the device joins the
-tailnet pre-tagged. The owner box must carry `tag:owner-box` (tag it once in the
+**The friend's auth key (`TS_AUTHKEY`) is distinct from the API token (§1).**
+Create it once per friend (or reuse one tagged key) at
+https://login.tailscale.com/admin/settings/keys → **Generate auth key**, tagged
+`tag:friend`. Pass it to provisioning, where it is folded into the **one-time
+install code** (`provision.sh` `TS_AUTHKEY`); the friend's `vl-friend` setup runs
+`tailscale up --authkey=…` (`cmd/vl-friend/flow.go`), so the device joins the
+tailnet **pre-tagged**. The API token is only for the Friends page's
+device-delete path; the auth key is only for device login — they are not
+interchangeable. The owner box must carry `tag:owner-box` (tag it once in the
 machines page).
 
 **Isolation is only as strong as the WHOLE file.** The `accept` entries above
@@ -149,9 +175,27 @@ tailscale ping <friend-pc>  # replies over the tailnet
 | Step | How to verify |
 |---|---|
 | 1 API token | `curl -s "https://api.tailscale.com/api/v2/tailnet/-/devices" -u "<token>:"` returns a JSON list (HTTP 200) |
-| 2 Windows Tailscale | the PC appears at …/admin/machines |
-| 3 Hyper-V firewall | `Get-NetFirewallHyperVRule -Name "VL-friends"` shows `Action=Allow`, ports `18081-18089,36981-36989` |
-| 4 ACL | in …/admin/acls, `tailscale status` on a friend device shows the two ports reachable and **nothing else** (`nmap -p18081,36981,22,80 <box-ip>` from the friend's PC: 18081/36981 open, 22/80 closed) |
+| 2 TUNNEL_IP | both `/home/hoang/vl/.env` and `/home/hoang/.config/vl-updater/env` contain `TUNNEL_IP=<box address>` |
+| 3 Windows Tailscale | the PC appears at …/admin/machines (already verified — no reinstall) |
+| 4 auth key | the install code carries `TS_AUTHKEY`; the friend's `vl-friend` runs `tailscale up --authkey=…` |
+| 5 Hyper-V firewall | `Get-NetFirewallHyperVRule -Name "VL-friends"` shows `Action=Allow`, `LocalPorts {18081, 36981}` |
+| 6 ACL | in …/admin/acls, `tailscale status` on a friend device shows the two ports reachable and **nothing else** (`nmap -p18081,36981,22,80 <box-ip>` from the friend's PC: 18081/36981 open, 22/80 closed) |
 
-After all five pass: run the autostart step once (`sudo bash deploy/install-autostart.sh`)
-and set Windows **sleep = never** — then the box keeps serving friends after a reboot.
+The `vl-updater` service is **already installed and enabled** — do **not** re-run
+`deploy/install-autostart.sh` (the script restarts the service; re-running is not
+needed and can disturb a running updater). Windows **sleep = never** should
+already be set; confirm it, don't change anything else.
+
+---
+
+## 6. B8 known blockers (do not hide these)
+
+- **Revoke does not actually delete the friend's Tailscale device as shipped.**
+  `provision.sh` writes `tailscale_device_id: ""` and nothing populates it, so
+  the Revoke API call surfaces `no_device_id` and the device remains on the
+  tailnet until removed manually from the admin console. The device-delete code
+  path exists (`api/handler_friends.go` `tailscaleDeleteDevice`, BasicAuth) but
+  is not wired to a real device id yet.
+- The friend's device tag depends on the `TS_AUTHKEY` passed at provisioning — a
+  missing or untagged auth key leaves the device with the default tag, and the
+  §4 ACL will not match it.
