@@ -159,6 +159,12 @@ type TCPServer struct {
 	// first frame; consumers DEFAULT-ALLOW on empty (never false-halt at startup).
 	feedMu     sync.RWMutex
 	feedStatus string
+	// feedMode is the broker market-data mode from the feed_status frame
+	// ("realtime" | "delayed" | ""). P0 feed freshness: an explicit "delayed" is
+	// DELAYED DATA (actionable: switch the NT8 connection to realtime), NOT
+	// inferred stale. Empty until the first frame that carries a mode; a legacy
+	// AddOn that omits it leaves it empty.
+	feedMode string
 	// lastBarNano is the wall-clock (UnixNano) of the most recent LIVE bar_update.
 	// The feed_status frame is edge-triggered (sent only on CHANGE), so a momentary
 	// flap can latch a stale "Disconnected" that never self-heals. A recent
@@ -1475,6 +1481,15 @@ func (s *TCPServer) FeedStatus() string {
 	return s.feedStatus
 }
 
+// FeedMode returns the latest broker market-data mode from the feed_status frame
+// ("realtime" | "delayed" | ""). "" = the AddOn has not reported a mode (legacy
+// or not yet received) — callers must treat "" as UNKNOWN, never as realtime.
+func (s *TCPServer) FeedMode() string {
+	s.feedMu.RLock()
+	defer s.feedMu.RUnlock()
+	return s.feedMode
+}
+
 // feedFreshWindow: a live bar_update within this window proves the NT8 feed is
 // actually delivering data, so IsFeedConnected treats it as connected even if the
 // last edge-triggered feed_status frame latched a stale "Disconnected".
@@ -2558,6 +2573,9 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 			s.feedMu.Lock()
 			prev := s.feedStatus
 			s.feedStatus = p.PriceStatus
+			if p.Mode != "" {
+				s.feedMode = p.Mode
+			}
 			s.feedMu.Unlock()
 			// W26 — NT8's data-feed reconnect recreates the AddOn's BarsRequests
 			// ("feed Connected … recreating BarsRequests"), so the stale re-emit

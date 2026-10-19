@@ -45,3 +45,67 @@ func TestIsFeedConnected_FreshBarOverridesStaleStatus(t *testing.T) {
 		t.Fatal("a fresh bar must override a non-Connected transient status too")
 	}
 }
+
+// P0 feed freshness — the feed_status frame's additive "mode" is decoded and
+// cached on the production path; an omitted mode stays "" (UNKNOWN) and is
+// never fabricated as realtime.
+func TestFeedStatusModeDecoded(t *testing.T) {
+	s := startedServer(t, nil)
+	w := dialWire(t, s, HelloPayload{})
+
+	send := func(mode string) {
+		t.Helper()
+		if err := WriteFrame(w.conn, FrameFeedStatus, FeedStatusPayload{
+			PriceStatus: "Connected",
+			Time:        time.Now().UTC().Format(time.RFC3339),
+			Mode:        mode,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	send("delayed")
+	waitFeedMode(t, s, "delayed")
+	if got := s.FeedStatus(); got != "Connected" {
+		t.Fatalf("FeedStatus = %q, want Connected", got)
+	}
+
+	send("realtime")
+	waitFeedMode(t, s, "realtime")
+}
+
+// TestFeedStatusModeOmittedStaysUnknown — a legacy AddOn that omits "mode"
+// leaves FeedMode() == "" (UNKNOWN); the code must not fabricate realtime.
+func TestFeedStatusModeOmittedStaysUnknown(t *testing.T) {
+	s := startedServer(t, nil)
+	w := dialWire(t, s, HelloPayload{})
+
+	if err := WriteFrame(w.conn, FrameFeedStatus, FeedStatusPayload{
+		PriceStatus: "Connected",
+		Time:        time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if s.FeedStatus() == "Connected" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := s.FeedMode(); got != "" {
+		t.Fatalf("FeedMode = %q, want \"\" (UNKNOWN) for an omitted mode", got)
+	}
+}
+
+func waitFeedMode(t *testing.T, s *TCPServer, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if s.FeedMode() == want {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("FeedMode = %q, want %q", s.FeedMode(), want)
+}

@@ -633,6 +633,12 @@ const FrameFeedStatus FrameType = "feed_status"
 type FeedStatusPayload struct {
 	PriceStatus string `json:"price_status"` // "Connected" | "ConnectionLost" | "Connecting" | "Disconnected"
 	Time        string `json:"time"`         // RFC3339
+	// Mode (P0 feed freshness, W-FRIEND-HOSTED follow-up) — the broker's market
+	// data mode, so a DELAYED feed (data ~10 min late) is distinguished from a
+	// STALE feed (bar timestamps frozen). "realtime" | "delayed" | "" (absent =
+	// unknown, the legacy AddOn that does not send it). omitempty keeps the wire
+	// byte-identical for an AddOn that omits it.
+	Mode string `json:"mode,omitempty"`
 }
 
 // instrument_info — C#-AddOn → Go-server, additive frame. Carries the RESOLVED
