@@ -1,4 +1,12 @@
 // Dispatch 102 freezes load-bearing identifiers, including their surrounding guards.
+// Wire baselines advanced 2026-10-19 for P0 feed-freshness (release #40,
+// C# fix/p0-addon-feed-freshness 52a88a004 + Go/UI fix/p0-feed-freshness-status
+// f5ff7e0ae): the additive feed_status freshness field is added to the TCP wire
+// schema (C# AddOn + Go framing + server, changed in lockstep). Additive only —
+// no identifier renamed, no frame/order/position path touched.
+//   ninjascript/VLTraderTCPClient.cs    sha256 7aae2529… — additive feed_status.
+//   provider/ninjatrader/tcp_framing.go sha256 9b5c00cf… — decode feed_status mode.
+//   provider/ninjatrader/tcp_server.go  sha256 bdd96a75… — session-scope feed mode.
 // go.mod baseline advanced 2026-10-13 for GO-VULN-1026 (owner order 2026-10-13):
 //   go 1.26.9 + golang.org/x/net v0.60.0 — clears GO-2026-6617/6613/6612.
 //   sha256 58e9a9bc… — toolchain bump only; no identifier, frame or wire change.

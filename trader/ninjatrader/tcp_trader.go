@@ -1817,6 +1817,10 @@ func (t *TCPTrader) IsFeedConnected() bool { return t.server.IsFeedConnected() }
 // feed_status frame).
 func (t *TCPTrader) FeedStatus() string { return t.server.FeedStatus() }
 
+// FeedMode returns the latest broker market-data mode ("realtime" | "delayed" |
+// "" = UNKNOWN) from the feed_status frame. "" never means realtime.
+func (t *TCPTrader) FeedMode() string { return t.server.FeedMode() }
+
 // IsConnected reports whether the NT8 C# AddOn's TCP socket is currently connected
 // — the RAW link, independent of feed/market-data status. The dead-man watchdog
 // (B5) gates NEW entries on this: a dropped link blocks entries until a clean

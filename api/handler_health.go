@@ -35,8 +35,12 @@ func (s *Server) handleHealth(c *gin.Context) {
 		Probes  int   `json:"probes"`
 	}
 	type nt8Info struct {
-		Link         string `json:"link"`
-		FeedStatus   string `json:"feed_status"`
+		Link       string `json:"link"`
+		FeedStatus string `json:"feed_status"`
+		// FeedMode is the broker market-data mode from the feed_status frame:
+		// "realtime" | "delayed" | "unknown". "" is projected to "unknown" —
+		// a missing mode is NEVER reported as realtime (P0 feed freshness).
+		FeedMode     string `json:"feed_mode"`
 		LastBarAgeMs *int64 `json:"last_bar_age_ms"` // absent = no bar available
 		// W26 deadman-escalation: entries blocked by the dead-man reconcile gate
 		// and the current blocked episode. READ values; since_ms = 0 when not
@@ -66,6 +70,11 @@ func (s *Server) handleHealth(c *gin.Context) {
 			}
 			if st := at.HealthFeedStatus(); st != "" {
 				info.FeedStatus = st
+			}
+			// P0 feed freshness — broker mode, never fabricated realtime.
+			info.FeedMode = "unknown"
+			if mode := at.HealthFeedMode(); mode == "realtime" || mode == "delayed" {
+				info.FeedMode = mode
 			}
 			if ageMs, ok := at.HealthLastBarAgeMs(now); ok {
 				info.LastBarAgeMs = &ageMs
