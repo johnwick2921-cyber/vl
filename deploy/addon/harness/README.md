@@ -10,7 +10,16 @@ Run (Windows, .NET 9 SDK, from WSL):
 
     powershell.exe -NoProfile -Command "cd 'C:\path\to\repo\deploy\addon\harness'; dotnet run -c Release"
 
-Pins: raw-empty seed, dedup-all first seed, normal seed, delayed/fresh market
-timestamps, symbol+timeframe sample, recovery after a deduped seed. Two mutants
-(raw-empty drops HistoricalSent; dedup path sets HistoricalSent after the empty
-check) each go RED then restore to green.
+Tested source SHA: `735c0962f` (see COMPILE-EVIDENCE.md for hashes + retained
+log paths).
+
+21 pins PASS: raw-empty seed (no false freshness/arrival + later live bar emits),
+normal seed, delayed/fresh market timestamps, symbol+timeframe sample, dedup-all
+seed, dedup-first-seed readiness, real `OnConnectionReconnected` path, watchdog
+dead-empty-seed bounded recovery (exactly 3 recreates, no 4th), minArrival
+backstop independence. 4 mutants RED then restored: raw-empty drops
+`HistoricalSent`; dedup path sets `HistoricalSent` after the empty check;
+fast-guard cap removed; 75-min backstop uses the oldest market-time entry's
+paired arrival. Deterministic clock (`ClockMs`) + `TickForTest`; the 15s
+background watchdog Timer is disabled via `DisableWatchdogTimerForTest` (default
+false = production unchanged).
