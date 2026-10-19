@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"vl/kernel"
 	"vl/kernel/mentor"
 	"vl/market"
 	"vl/store"
@@ -17,7 +18,13 @@ import (
 // (the control proves the seed+fill machinery would otherwise fill it).
 func TestMentorRefusedIntentLeavesNoSimFill(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "") // off — every entry is SIZED then held (refused)
-	now := time.Now().UnixMilli()
+	// r40 race: the control applies the pend at `now` and again at `now+60s`.
+	// With now=time.Now() a run at 16:59–17:00 CT straddles the 17:00 trading-day
+	// roll, and Limits.Apply correctly discards the unfinished sim with the day
+	// (kernel/mentor/limits.go day-reset) — the control then fails for a reason
+	// unrelated to the X-07 pin. Pin to a deterministic same-session instant
+	// (Wed 2026-10-19 10:00 CT, far from 17:00) so both Applies stay in one day.
+	now := time.Date(2026, 10, 19, 10, 0, 0, 0, kernel.CTLocation()).UnixMilli()
 	cfg := mentor.DefaultConfig()
 	levels := []mentor.Level{{Kind: mentor.KindOldExtreme, Price: 29650}}
 	prev := market.Kline{Open: 29500, High: 29590, Low: 29450, Close: 29580}
