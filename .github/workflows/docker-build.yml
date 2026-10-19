@@ -96,6 +96,11 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME && format('{0}/vl-{1}', secrets.DOCKERHUB_USERNAME, matrix.image_suffix) || '' }}
           tags: |
             type=ref,event=branch,suffix=-${{ matrix.arch_tag }}
+            # Tags like v2026.10.19.1 are NOT valid semver (4 numeric parts), so
+            # the semver rules below emit nothing for them. A tag event must
+            # still produce <tag>-<arch> so the create-manifest job can reference
+            # the per-arch images it builds the multi-arch manifest from.
+            type=ref,event=tag,suffix=-${{ matrix.arch_tag }}
             type=semver,pattern={{version}},suffix=-${{ matrix.arch_tag }}
             type=semver,pattern={{major}}.{{minor}},suffix=-${{ matrix.arch_tag }}
             type=semver,pattern={{major}},suffix=-${{ matrix.arch_tag }}
