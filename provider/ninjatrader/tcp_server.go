@@ -2867,4 +2867,12 @@ func (s *TCPServer) closeConn() {
 	// older AddOn. Fail closed: until the new connection proves itself,
 	// FarSideBuildID() reads "".
 	s.farSideBuild.Store("")
+	// P0 feed freshness — the broker mode is session-scoped: a disconnect
+	// retires the old session's "delayed"/"realtime" evidence. The next
+	// session must re-report its mode; an old client's feed_status cannot
+	// overwrite the new session's state. feedStatus (edge-triggered) is left
+	// for its existing liveness override.
+	s.feedMu.Lock()
+	s.feedMode = ""
+	s.feedMu.Unlock()
 }

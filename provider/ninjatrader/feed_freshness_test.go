@@ -109,3 +109,54 @@ func waitFeedMode(t *testing.T, s *TCPServer, want string) {
 	}
 	t.Fatalf("FeedMode = %q, want %q", s.FeedMode(), want)
 }
+
+// TestFeedModeInvalidatedOnDisconnect — the broker mode is session-scoped:
+// a disconnect retires the old session's "delayed" evidence, and a replacement
+// that omits mode reads UNKNOWN (no false recovery from the old session's
+// receipt).
+func TestFeedModeInvalidatedOnDisconnect(t *testing.T) {
+	s := startedServer(t, nil)
+
+	// Session A reports delayed.
+	w := dialWire(t, s, HelloPayload{})
+	if err := WriteFrame(w.conn, FrameFeedStatus, FeedStatusPayload{
+		PriceStatus: "Connected",
+		Time:        time.Now().UTC().Format(time.RFC3339),
+		Mode:        "delayed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitFeedMode(t, s, "delayed")
+
+	// Disconnect session A.
+	_ = w.conn.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if s.FeedMode() == "" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := s.FeedMode(); got != "" {
+		t.Fatalf("after disconnect: FeedMode = %q, want \"\" (session-scoped)", got)
+	}
+
+	// Session B connects and omits mode → still UNKNOWN.
+	w2 := dialWire(t, s, HelloPayload{})
+	if err := WriteFrame(w2.conn, FrameFeedStatus, FeedStatusPayload{
+		PriceStatus: "Connected",
+		Time:        time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if s.FeedStatus() == "Connected" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := s.FeedMode(); got != "" {
+		t.Fatalf("replacement omits mode: FeedMode = %q, want \"\" (no false recovery)", got)
+	}
+}
