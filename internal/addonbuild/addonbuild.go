@@ -44,6 +44,11 @@ type Config struct {
 	Exe           string
 	DotnetExe     string
 	PowerShellExe string
+	// PowerShellWSL is the fixed WSL mount of powershell.exe used when a bare
+	// name is not on PATH (W-UPDATER-WINPATH). Empty → the package default
+	// windowsPowerShellWSL. Tests point it at a hermetic (or non-existent) path
+	// so the resolution never touches a real Windows file.
+	PowerShellWSL string
 	SourceDir     string
 	WorkDir       string
 	Run           func(ctx context.Context, name string, args ...string) ([]byte, error)
@@ -514,7 +519,11 @@ func CompilerProbe(ctx context.Context, c Config) (ok bool, detail string) {
 	if powerShell == "" {
 		powerShell = "powershell.exe"
 	}
-	powerShell, err := resolveWindowsExe(powerShell, windowsPowerShellWSL)
+	fixed := windowsPowerShellWSL
+	if c.PowerShellWSL != "" {
+		fixed = c.PowerShellWSL
+	}
+	powerShell, err := resolveWindowsExe(powerShell, fixed)
 	if err != nil {
 		return false, err.Error()
 	}

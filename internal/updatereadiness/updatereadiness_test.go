@@ -36,10 +36,13 @@ func writeCompiler(t *testing.T, docs string) {
 
 // okRunner fakes the Windows seam: the -Probe call (the no-SDK Roslyn compiler
 // check) reports ok; every other command succeeds, so the "PowerShell reachable"
-// item stays ok.
+// item stays ok. It matches the RESOLVED tool by basename: CompilerProbe resolves
+// a bare "powershell.exe" to an absolute path before invoking Run
+// (W-UPDATER-WINPATH), while the "PowerShell reachable" probe still reaches Run
+// with the bare name — basename matches both.
 func okRunner() Runner {
 	return func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		if name == "powershell.exe" {
+		if filepath.Base(name) == "powershell.exe" {
 			for _, a := range args {
 				if a == "-Probe" {
 					return []byte("VL_ADDON_PROBE=ok\nVL_SELFTEST_OK\n"), nil
@@ -48,6 +51,18 @@ func okRunner() Runner {
 		}
 		return nil, nil
 	}
+}
+
+// powershellFixture writes a hermetic executable named powershell.exe and
+// prepends its dir to PATH, so resolveWindowsExe's LookPath finds IT (never a
+// real Windows binary) on any box — including CI, where no /mnt/c files exist.
+func powershellFixture(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "powershell.exe"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
 func find(items []Item, name string) *Item {
@@ -75,6 +90,7 @@ func TestCheckAllGreen(t *testing.T) {
 	docs := buildDocs(t)
 	writeCompiler(t, docs)
 	writeConfig(t, docs, tradovateOn)
+	powershellFixture(t)
 	items := Check(context.Background(), Config{DocsDir: docs, Run: okRunner()})
 	if len(items) != 7 {
 		t.Fatalf("got %d items, want 7: %+v", len(items), items)
@@ -126,6 +142,28 @@ func TestCheckMissingCompiler(t *testing.T) {
 	}
 }
 
+// W-UPDATER-WINPATH: on a Linux-only box with no Windows host (no powershell.exe
+// on PATH AND no fixed WSL mount), the compiler probe must fail closed with a
+// detail that names the unresolved tool — never pass, never panic.
+func TestCheckCompilerFailsClosedWithoutWindowsHost(t *testing.T) {
+	docs := buildDocs(t)
+	writeCompiler(t, docs)
+	writeConfig(t, docs, tradovateOn)
+	t.Setenv("PATH", "/usr/bin:/bin") // no powershell.exe anywhere
+	items := Check(context.Background(), Config{
+		DocsDir:       docs,
+		Run:           okRunner(), // never reached for the compiler item: resolution fails first
+		PowerShellWSL: "/nonexistent/powershell.exe",
+	})
+	it := find(items, "NT8 Roslyn compiler")
+	if it == nil || it.OK {
+		t.Fatalf("compiler must fail closed with no Windows host: %+v", it)
+	}
+	if !strings.Contains(it.Detail, "powershell.exe") || !strings.Contains(it.Detail, "/nonexistent/powershell.exe") {
+		t.Fatalf("detail should name the unresolved tool and the fixed path: %+v", it)
+	}
+}
+
 func TestCheckConnectOnStartupOff(t *testing.T) {
 	docs := buildDocs(t)
 	writeCompiler(t, docs)
@@ -135,6 +173,7 @@ func TestCheckConnectOnStartupOff(t *testing.T) {
     <ConnectOnStartup>false</ConnectOnStartup>
   </TradovateOptions>
 </ConnectOptions>`)
+	powershellFixture(t)
 	items := Check(context.Background(), Config{DocsDir: docs, Run: okRunner()})
 	it := find(items, "Connect on startup")
 	if it == nil || it.OK {
@@ -152,6 +191,7 @@ func TestCheckMigrationPending(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(docs, "bin", "Custom", "AddOns", "VLTrader.cs"), []byte("//"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	powershellFixture(t)
 	items := Check(context.Background(), Config{DocsDir: docs, Run: okRunner()})
 	it := find(items, "One-time AddOn migration")
 	if it == nil || it.OK {
