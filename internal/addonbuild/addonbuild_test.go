@@ -705,6 +705,7 @@ func TestRebuildCustom(t *testing.T) {
 }
 
 func TestRebuildCustomErrors(t *testing.T) {
+	useTempWindowsTools(t)
 	root := t.TempDir()
 	docsDir := mkNT8(t, root, "alice", true)
 	workDir := filepath.Join(root, "build")

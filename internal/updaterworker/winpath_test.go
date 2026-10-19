@@ -3,6 +3,7 @@ package updaterworker
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -100,6 +101,22 @@ func TestExecWindowsPathLookupWinsOverFixedPath(t *testing.T) {
 	}
 	if strings.Contains(string(out), "from-fixed-stub") {
 		t.Fatalf("PATH lookup must win over the fixed location")
+	}
+}
+
+// W-UPDATER-WINPATH CI fix: the rig must put HERMETIC powershell.exe/dotnet.exe
+// on PATH (never /mnt/c), so addonbuild.Build's production resolveWindowsExe
+// finds them via LookPath on a Linux box with no Windows mount.
+func TestHarnessWindowsToolsAreHermetic(t *testing.T) {
+	newRig(t)
+	for _, tool := range []string{"powershell.exe", "dotnet.exe"} {
+		p, err := exec.LookPath(tool)
+		if err != nil {
+			t.Fatalf("hermetic %s not on PATH after newRig: %v", tool, err)
+		}
+		if strings.Contains(p, "/mnt/c/") {
+			t.Fatalf("%s resolved to a real Windows path %q — the harness must use its hermetic stub", tool, p)
+		}
 	}
 }
 
