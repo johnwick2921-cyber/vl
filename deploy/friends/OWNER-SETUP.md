@@ -54,8 +54,8 @@ or a command line, so the secret never lands in shell history. **Back up the fil
 first** and **update the existing key in place** (do not append a duplicate line):
 
 - `/home/hoang/vl/.env` — the bot's env. Set (or update): `TAILSCALE_API_KEY`,
-  `TUNNEL_IP`, and `TS_AUTHKEY` (the current friend's auth key from §4, used when
-  you run `provision.sh`).
+  `TUNNEL_IP`, and `TS_AUTHKEY` (the auth key for the friend you are provisioning
+  — see §4's boot-time limitation).
 - `/home/hoang/.config/vl-updater/env` — the updater worker's env (already holds
   `VL_RELEASE_DIR` + `VL_CUTOVER_TOKEN`). Set (or update): `TUNNEL_IP`.
 
@@ -65,7 +65,9 @@ it as the friend host (`cmd/vl-updater/main.go:191` `FriendHost`). **Do not
 restart `vl` by hand** — these values load when you press **Update**.
 
 Verify without exposing the token: the Friends page reports
-`tailscale_key_set: true` (it reads `TAILSCALE_API_KEY`, `api/handler_friends.go`).
+`tailscale_key_set: true` — that only proves `TAILSCALE_API_KEY` is **non-empty**
+in the bot's env, **not** that the token is valid or authorized
+(`api/handler_friends.go` reports `strings.TrimSpace(os.Getenv(...)) != ""`).
 
 ---
 
@@ -111,12 +113,12 @@ Get-NetFirewallHyperVRule -Name "VL-friends" | Select-Object DisplayName, Direct
 ## 4. The Tailscale ACL (each friend reaches ONLY their two ports)
 
 Admin console → **Access Controls** (https://login.tailscale.com/admin/acls/file).
-**Do not blindly overwrite the policy.** First export your current ACL
-(admin console → download, or `tailscale get acl`), keep every unrelated grant,
-and read the whole file for broad grants that would also authorize this friend's
-device (e.g. a catch-all `*` or a wide `dst`) — adjust those safely. Then add
-the friend-specific entries below. The JSON is an **example** of the entries to
-add, not a full policy to paste over yours.
+**Do not blindly overwrite the policy.** First export your current ACL from the
+admin policy editor (copy it to a backed-up private file), keep every unrelated
+grant, and read the whole file for broad grants that would also authorize this
+friend's device (e.g. a catch-all `*` or a wide `dst`) — adjust those safely.
+Then add the friend-specific entries below. The JSON is an **example** of the
+entries to add, not a full policy to paste over yours.
 
 ```json
 {
@@ -157,12 +159,16 @@ device-delete path; the auth key is only for device login — they are not
 interchangeable. The owner box must carry `tag:owner-box` (tag it once in the
 machines page).
 
-**Current limitation (single `TS_AUTHKEY` env):** provisioning reads one
-`TS_AUTHKEY` environment variable per run (`provision.sh`), and the registry does
-not store per-friend auth keys — the key is embedded in the install code once.
-Set `TS_AUTHKEY` to the specific friend's key immediately before provisioning
-that friend. `rotate` later issues a new **connect key** but does **not** re-issue
-a Tailscale auth key (see §6).
+**Current limitation (single, boot-time `TS_AUTHKEY`):** the Friends page runs
+`provision.sh` with the bot's **process environment** (`cmd.Env = os.Environ()`,
+`api/handler_friends.go`), so it inherits whatever `TS_AUTHKEY` the bot loaded
+**at boot**. Privately editing `.env` between friends is **not hot-active** — the
+running bot keeps the old value until an Update/restart. The registry stores no
+per-friend auth keys (the key is embedded in the install code once). Effectively
+**only the first friend** (or friends sharing the same boot-time key) can be
+provisioned with the correct tag; per-friend key handling does not exist yet.
+`rotate` later issues a new **connect key** but does **not** re-issue a Tailscale
+auth key (see §6).
 
 **Isolation is only as strong as the WHOLE file.** The `accept` entries above
 restrict *Tailscale* traffic for the listed tags, but they are additive: any
@@ -174,9 +180,9 @@ device reach more than its two ports.
 
 Verify in two separate parts:
 
-1. **Policy proof** — `tailscale get acl` (or the admin console) shows the
-   friend's tag has an `accept` only to `tag:owner-box:18081` / `36981` and no
-   catch-all reaches it. This is the actual isolation; `tailscale status` /
+1. **Policy proof** — the admin policy editor (your exported, backed-up copy)
+   shows the friend's tag has an `accept` only to `tag:owner-box:18081` / `36981`
+   and no catch-all reaches it. This is the actual isolation; `tailscale status` /
    `tailscale ping` only prove reachability, not that other ports are closed.
 2. **Connection probes** — from the friend's PC: the friend's web port `18081`
    and NinjaTrader port `36981` connect (positive); a **different** port (e.g.
@@ -189,12 +195,12 @@ Verify in two separate parts:
 
 | Step | How to verify |
 |---|---|
-| 1 API token | the Friends page reports `tailscale_key_set: true` (no secret in the shell) |
+| 1 API token | the Friends page reports `tailscale_key_set: true` — non-empty only, not proof of valid credentials |
 | 2 TUNNEL_IP | both `/home/hoang/vl/.env` and `/home/hoang/.config/vl-updater/env` contain `TUNNEL_IP=<box address>` |
 | 3 Windows Tailscale | the PC appears at …/admin/machines (already verified — no reinstall) |
 | 4 auth key | the install code carries `TS_AUTHKEY`; the friend's `vl-friend` runs `tailscale up --authkey=…` |
 | 5 Hyper-V firewall | `Get-NetFirewallHyperVRule -Name "VL-friends"` shows `Action=Allow`, `LocalPorts {18081, 36981}` |
-| 6 ACL | policy proof (`tailscale get acl`) + a negative probe from the friend's PC to a different port (see §4 "Verify") |
+| 6 ACL | policy proof (admin policy editor export) + a negative probe from the friend's PC to a different port (see §4 "Verify") |
 
 The `vl-updater` service is **already installed and enabled** — do **not** re-run
 `deploy/install-autostart.sh` (the script restarts the service; re-running is not
@@ -212,12 +218,17 @@ already be set; confirm it, don't change anything else.
   `tailscaleDeleteDevice`, BasicAuth) but is not wired to a real device id yet.
 - **Re-add after revoke is refused for the same name.** Revoke sets the registry
   entry to `state=revoked` but keeps it; `provision.sh` refuses a name already
-  in `friends.json` ("friend 'X' is already in the registry"). Re-adding the same
-  friend needs the old registry entry removed (or a new name).
-- **Rotate only rotates the NT8 connect key.** It writes a new key to the
-  friend's `.env` and returns a new install code, but that code does **not**
-  carry a Tailscale auth key (`TSAuthKey` is not set in the rotate path), so
-  rotate does not re-provision a device onto the tailnet and does not re-tag it.
+  in `friends.json` ("friend 'X' is already in the registry"). Same-name re-add
+  is **blocked pending implementation** — **never delete registry entries**;
+  preserve the registry and the archived friend folder.
+- **Rotate is incomplete as shipped.** Three problems, until a production-path
+  fix/test lands: (a) it writes a new key to the friend's `.env`, but the running
+  friend bot has the connect key **cached in its process** — a `.env` edit does
+  not invalidate it, so the old key stays in force until the bot restarts; (b)
+  after Revoke the friend's `.env` was **moved to trash** (`remove.sh`), so
+  rotate's `.env` write fails; (c) the rotated install code does **not** carry a
+  Tailscale auth key (`TSAuthKey` is not set in the rotate path), so it cannot
+  re-provision a device onto the tailnet.
 - The friend's device tag depends on the `TS_AUTHKEY` passed at provisioning — a
   missing or untagged auth key leaves the device with the default tag, and the
   §4 ACL will not match it.
