@@ -177,12 +177,14 @@ unit WorkingDirectory (<FIX>/vl-friends/tom) exists? NO — systemd start would 
   — the omission IS surfaced as `no_device_id` (logged "not done:
   no_device_id"), **not silent** — but the device is never actually deleted.
 
-**Design direction (NOT an unverified workaround).** The follow-up design and
-dispatch live in
-`docs/superpowers/B8-friend-revoke-recovery-design.md`. In short: no guessed
-trash-path restore (trash can collide/change), no hostname-based device delete
-(hostname is not an authenticated device identity), and no restoring the old key
-(a revoked client must never be reauthorized by its old key). Required
-invariants: explicit persisted archive provenance, a FRESH key before re-enable,
-a VERIFIED device association, and production-path sequence pins. #39 stays
-updater-only.
+**Design direction (ruled, NOT an unverified workaround).** The follow-up design
+and dispatch live in
+`docs/superpowers/B8-friend-revoke-recovery-design.md`. Ruled: revoke is
+TERMINAL (archived folder + provenance preserved); recovery is an explicit
+Re-add with a fresh key + install code (the old key is never restored);
+pause/resume stays reversible. No guessed trash-path restore, no hostname-based
+device delete, no client-self-reported ID trusted alone — device association is
+cross-checked through the OWNER-controlled Tailscale API against the
+authenticated source and the expected friend tag, refusing ambiguous/mismatched
+identities. Required tests exercise provision → revoke → re-add and rejected old
+credentials. #39 stays updater-only.
