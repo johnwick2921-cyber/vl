@@ -98,6 +98,33 @@ func TestFeedStatusModeOmittedStaysUnknown(t *testing.T) {
 	}
 }
 
+// TestFeedStatusModeUnsupportedNormalizesUnknown — an unsupported enum value is
+// normalized to UNKNOWN, never realtime (CTO schema requirement 2).
+func TestFeedStatusModeUnsupportedNormalizesUnknown(t *testing.T) {
+	s := startedServer(t, nil)
+	w := dialWire(t, s, HelloPayload{})
+
+	for _, bad := range []string{"weird", "REALTIME", "Delayed", " "} {
+		if err := WriteFrame(w.conn, FrameFeedStatus, FeedStatusPayload{
+			PriceStatus: "Connected",
+			Time:        time.Now().UTC().Format(time.RFC3339),
+			Mode:        bad,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if s.FeedStatus() == "Connected" {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if got := s.FeedMode(); got != "" {
+			t.Fatalf("unsupported mode %q: FeedMode = %q, want \"\" (UNKNOWN, never realtime)", bad, got)
+		}
+	}
+}
+
 func waitFeedMode(t *testing.T, s *TCPServer, want string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
