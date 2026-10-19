@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"vl/market"
+	"vl/telemetry"
 )
 
 // TestClassifyFeedFreshnessPrecedence pins the CTO precedence contract:
@@ -75,5 +76,41 @@ func TestEntryFeedStaleDelayed(t *testing.T) {
 	market.FuturesFeedMode = func() string { return "" }
 	if stale, _ := EntryFeedStale("MNQ", now.UnixMilli(), now); stale {
 		t.Fatalf("unknown mode + fresh bar: EntryFeedStale = stale, want not stale")
+	}
+}
+
+// TestApplyStaleDataBlockDelayedRefusesEntry pins the production AI-path call
+// site: applyStaleDataBlock refuses a NEW entry (Action wait, delayed-data
+// refusal reason, delayed_data gate-block counter) when the broker mode is
+// delayed, even with a fresh bar; exits are never touched.
+func TestApplyStaleDataBlockDelayedRefusesEntry(t *testing.T) {
+	telemetry.ResetGateBlocksForTest()
+	t.Cleanup(telemetry.ResetGateBlocksForTest)
+	prev := market.FuturesFeedMode
+	t.Cleanup(func() { market.FuturesFeedMode = prev })
+	market.FuturesFeedMode = func() string { return "delayed" }
+	defer ClockSampleForTest(NewSteppedClock(ctOpen()).Sample)()
+
+	snapAt := time.Now()
+	wallMs := snapAt.UnixMilli()
+	md := &market.Data{TimeframeData: map[string]*market.TimeframeSeriesData{
+		"1m": {Klines: []market.KlineBar{{Time: wallMs - 3_000, Close: 30000}}}, // fresh 3s bar
+	}}
+	ctx := &Context{TraderID: "t1", SnapshotMs: wallMs, SnapshotAt: snapAt,
+		MarketDataMap: map[string]*market.Data{"MNQ": md}}
+	fd := &FullDecision{Decisions: []Decision{
+		{Action: "open_long", Symbol: "MNQ"},
+		{Action: "close_long", Symbol: "MNQ"},
+	}}
+	applyStaleDataBlock(fd, ctx, wallMs)
+	if fd.Decisions[0].Action != "wait" || fd.Decisions[0].RefusalReason != "delayed-data: broker feed mode is delayed" {
+		t.Fatalf("delayed mode must refuse the entry: got %q (%q)", fd.Decisions[0].Action, fd.Decisions[0].RefusalReason)
+	}
+	if fd.Decisions[1].Action != "close_long" {
+		t.Fatalf("exits are never gated, got %q", fd.Decisions[1].Action)
+	}
+	_, table := telemetry.GateBlockSnapshot()
+	if n := table["t1"]["delayed_data"]; n != 1 {
+		t.Fatalf("delayed_data gate-block counter = %d, want 1", n)
 	}
 }

@@ -10,7 +10,7 @@ export const status: GuideSection = {
     { kind: 'h', text: 'Desk FEED row and broker mode (delayed vs stale)' },
     {
       kind: 'p',
-      text: 'The Desk FEED row names the broker market-data mode and the age of the newest 1m bar. mode realtime means the NT8 feed reported a realtime connection; mode DELAYED means the broker feed is delayed (bars arrive ~10 minutes late) and the row goes stale with the reason "broker feed mode is DELAYED — connect a realtime NT8 data feed". mode unknown means the AddOn did not report a mode (an older AddOn, or none received yet) — it is NEVER claimed as realtime. A NEW entry is refused while the mode is DELAYED, and also refused when the newest 1m bar is older than 2 minutes, whatever the mode says. Exits and existing protection are never blocked by the feed row.',
+      text: 'The Desk FEED row names the broker market-data mode and the age of the newest 1m bar. mode realtime means the NT8 feed reported a realtime connection; mode DELAYED means the broker feed is delayed and the row goes stale with the reason "broker feed mode is DELAYED — connect a realtime NT8 data feed". mode unknown means the AddOn did not report a mode (an older AddOn, or none received yet) — it is NEVER claimed as realtime. A NEW entry is refused while the mode is DELAYED, and also refused when the newest 1m bar is older than 2 minutes, whatever the mode says; that stale case shows market-data guidance to check the NT8 data connection. Exits and existing protection are never blocked by the feed row.',
     },
     { kind: 'h', text: 'Scenario activation and order authorization' },
     {

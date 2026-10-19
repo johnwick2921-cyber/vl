@@ -695,14 +695,14 @@ func (at *AutoTrader) deskFeed(now time.Time) DeskLine {
 	state := "ok"
 	reason := ""
 	// P0 feed freshness — an explicit DELAYED broker mode is surfaced as stale
-	// with actionable guidance, and takes precedence over the bar-age leg
-	// (delayed data is ~10 min late even when a bar timestamp looks recent).
-	// An UNKNOWN mode is labeled as such, never claimed as realtime.
+	// with actionable guidance, and takes precedence over the bar-age leg.
+	// An UNKNOWN mode is labeled as such, never claimed as realtime; if the
+	// bar-age leg then fires, the reason names the NT8 data connection.
 	mode := at.HealthFeedMode()
 	modeText := "mode unknown"
 	if mode == "delayed" {
 		state = "stale"
-		reason = "broker feed mode is DELAYED — connect a realtime NT8 data feed (bars are ~10 min late)"
+		reason = "broker feed mode is DELAYED — connect a realtime NT8 data feed"
 		modeText = "mode DELAYED"
 	} else if mode == "realtime" {
 		modeText = "mode realtime"
@@ -714,7 +714,7 @@ func (at *AutoTrader) deskFeed(now time.Time) DeskLine {
 		if reason != "" {
 			reason += "; "
 		}
-		reason += "the newest 1m bar is older than 2 minutes"
+		reason += "the newest 1m bar is older than 2 minutes — check the NT8 data connection"
 	}
 	if !linkKnown {
 		state = "unknown"
