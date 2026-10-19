@@ -44,11 +44,6 @@ type Config struct {
 	Detect func() (string, error)
 	// Run executes a command; nil → the powershell probe fails closed.
 	Run Runner
-	// PowerShellWSL is forwarded to the compiler probe as the fixed WSL mount
-	// of powershell.exe used when a bare name is not on PATH (W-UPDATER-WINPATH).
-	// Empty → the package default. Tests point it at a non-existent path to
-	// simulate a Linux-only box with no Windows host.
-	PowerShellWSL string
 	// Accounts returns the best-known NT account list — the LIVE list now when
 	// the AddOn is connected, else the last persisted snapshot (DS-108's
 	// persistence). nil → the accounts item fails closed ("no accounts known").
@@ -186,7 +181,6 @@ func checkCompiler(ctx context.Context, c Config, docs string) Item {
 	ok, detail := addonbuild.CompilerProbe(ctx, addonbuild.Config{
 		DocsDir:       docs,
 		PowerShellExe: "powershell.exe",
-		PowerShellWSL: c.PowerShellWSL,
 		Run:           c.Run,
 	})
 	it.OK = ok
