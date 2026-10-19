@@ -176,6 +176,11 @@ unit WorkingDirectory (<FIX>/vl-friends/tom) exists? NO — systemd start would 
   `tailscaleDeleteDevice` (`api/handler_friends.go:615`) returns `no_device_id`
   — the omission IS surfaced as `no_device_id` (logged "not done:
   no_device_id"), **not silent** — but the device is never actually deleted.
+- **GAP-3 Re-add not implemented.** `provision.sh` refuses a name already in
+  `friends.json` — reproduced: after revoke (folder gone, registry row
+  `state=revoked`), `provision.sh tom` prints `friend 'tom' is already in
+  …/friends.json — refusing` (rc 1). So the ruled "recovery = Re-add" cannot run
+  until Re-add accepts a REVOKED name with a fresh key/code + fresh ports.
 
 **Design direction (ruled, NOT an unverified workaround).** The follow-up design
 and dispatch live in
@@ -185,6 +190,9 @@ Re-add with a fresh key + install code (the old key is never restored);
 pause/resume stays reversible. No guessed trash-path restore, no hostname-based
 device delete, no client-self-reported ID trusted alone — device association is
 cross-checked through the OWNER-controlled Tailscale API against the
-authenticated source and the expected friend tag, refusing ambiguous/mismatched
-identities. Required tests exercise provision → revoke → re-add and rejected old
-credentials. #39 stays updater-only.
+authenticated SOURCE IP + the expected friend tag + the candidate ID, refusing
+ambiguous/mismatched identities. Key invalidation is proven only on the live
+code path (a real hello with the OLD key is refused after the friend unit
+restarts to reload `NT_CONNECT_KEY` into its process env — a `.env` edit alone
+is not proof). Required tests exercise provision → revoke → re-add and rejected
+old credentials. #39 stays updater-only.

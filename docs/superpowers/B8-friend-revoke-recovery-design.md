@@ -30,6 +30,12 @@ is the current B8 priority; this follow-up comes after it.
    (`deploy/friends/provision.sh:151`) and never populated, so revoke's Tailscale
    device delete always returns `no_device_id` (surfaced, not silent) and the
    device is never actually removed from the tailnet.
+3. **Re-add is NOT implemented.** `provision.sh` refuses a name that is already
+   in `friends.json` (reproduced: after revoke the folder is gone but the
+   registry row remains `state=revoked`, and `provision.sh tom` prints
+   `friend 'tom' is already in …/friends.json — refusing`, rc 1). So the ruled
+   "recovery = Re-add" cannot run today — Re-add must be made to accept a
+   REVOKED name with a fresh key + fresh ports, without touching the archive.
 
 ## Security invariants (non-negotiable)
 
@@ -42,18 +48,28 @@ is the current B8 priority; this follow-up comes after it.
   (a revoked client must not be reauthorized by its old key).
 - **I-3 Verified device association (owner-side cross-check).** The friend's
   Tailscale device is resolved through the OWNER-controlled Tailscale API,
-  cross-checked against the authenticated connection/source and the expected
-  unique friend tag (`tag:friend-<name>`). Ambiguous or mismatched identities are
-  refused. A client self-reported ID is never trusted alone, an arbitrary
-  client-supplied ID is never deleted, and hostname is never guessed.
+  cross-checked against (a) the authenticated SOURCE IP of the connection, (b)
+  the expected unique friend tag (`tag:friend-<name>`), and (c) the candidate
+  device ID. Any ambiguity or mismatch is refused. A client self-reported ID is
+  never trusted alone, an arbitrary client-supplied ID is never deleted, and
+  hostname is never guessed.
 - **I-4 Sequence pins.** Production-path tests pin the exact lifecycle sequence
   end-to-end (see below). No invariant is satisfied by an absent-error check.
+- **I-5 Live key invalidation.** Rotating/re-adding a key is proven only by the
+  live code path, not by a file-content assertion: after Re-add, a fresh hello
+  carrying the OLD key is REFUSED (`connect_key refused`) and a hello carrying
+  the NEW key is accepted. Note the process-cache fact: the friend bot reads
+  `NT_CONNECT_KEY` from its process environment (set at startup from `.env`), so
+  the new key is live only after the friend unit restarts — the pin must
+  exercise that restart, not assume a `.env` edit takes effect.
 
 ## Minimal scope
 
 Only the friend lifecycle path:
 - `deploy/friends/remove.sh` — write archive provenance (I-1).
-- `deploy/friends/provision.sh` — Re-add produces a fresh key/code (I-2).
+- `deploy/friends/provision.sh` — Re-add must accept a REVOKED name with a fresh
+  key/code + fresh ports (I-2) without touching the archive; currently it refuses
+  a name already in the registry (GAP-3).
 - `api/handler_friends.go` — `resume`/`rotate` refuse a `revoked` friend (no
   restore path); `revoke` deletes only a VERIFIED device ID via the owner's
   Tailscale API cross-check (I-3).
@@ -64,22 +80,26 @@ NOT in scope: the TCP wire format, the connect-key check (S4/S5/S6), the updater
 
 ## Proposed ownership (dispatch lanes)
 
-- **DS-101** (`deploy/friends/*.sh`): archive provenance + Re-add fresh-key/code;
-  pins.
+- **DS-101** (`deploy/friends/*.sh`): archive provenance + Re-add of a revoked
+  name (fresh key/code/ports); pins.
 - **DS-106** (`api/handler_friends.go`): `resume`/`rotate` guard on `revoked`;
   owner-side Tailscale API device cross-check + verified delete; pins.
 - **DS-108** (`cmd/vl-friend`): the friend side of the authenticated association
   (after its artifact report). Pins.
+- **DS-104** (`provider/ninjatrader` + review): the live old-key-refusal pin on
+  the real hello code path (I-5) + security review. Pins.
 - Reviewer pairs per d26 (101↔102, 105↔106, 107↔108) — CTO to confirm.
 
 ## Sequence pins (tests to write)
 
 1. **Provision → revoke → re-add**: provision creates `tom` (key A); revoke
-   archives the folder + records provenance and state `revoked`; re-add mints
-   key B (`key_sha256` changes), a NEW install code, and the friend reconnects
-   with key B.
-2. **Rejected old credentials**: after revoke + re-add, a hello carrying key A is
-   REFUSED (`connect_key refused`); key B is accepted.
+   archives the folder + records provenance and state `revoked`; re-add of the
+   REVOKED name succeeds with key B (`key_sha256` changes), a NEW install code,
+   fresh ports, and the archive is untouched.
+2. **Rejected old credentials (live code path, I-5)**: after revoke + re-add and
+   a friend-unit restart, a real hello carrying key A is REFUSED
+   (`connect_key refused`) and key B is accepted — asserted on the production
+   hello path, not by comparing `.env` bytes.
 3. **Resume/rotate refuse revoked**: `resume` and `rotate` on a `revoked` friend
    return a clear error (no folder restore, no old-key write).
 4. **Device cross-check refuses ambiguity**: a self-reported or hostname-guessed
