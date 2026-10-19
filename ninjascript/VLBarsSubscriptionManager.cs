@@ -453,7 +453,14 @@ namespace NinjaTrader.NinjaScript.AddOns
             var bars = entry.Request != null ? entry.Request.Bars : null;
             if (bars == null || bars.Count == 0)
             {
-                logInfo("VLBarsSubscriptionManager: historical " + entry.Key + " — zero bars");
+                // READINESS, not data: the historical Request CALLBACK returned.
+                // HistoricalSent is a readiness latch — OnBarsUpdate ignores
+                // updates until it is set, and the watchdog only watches entries
+                // with HistoricalSent. A raw-empty completion must still mark the
+                // stream READY so a later live .Update can flow and a dead seed
+                // can be detected/retried. It must NOT stamp freshness/arrival.
+                entry.HistoricalSent = true;
+                logInfo("VLBarsSubscriptionManager: historical " + entry.Key + " — zero bars (stream ready)");
                 return;
             }
 
@@ -474,20 +481,20 @@ namespace NinjaTrader.NinjaScript.AddOns
                     bars.GetVolume(i), true, NowUtcMs())); // historical bars are closed by definition
             }
 
+            // READINESS latch set on every completed callback, even when every
+            // bar was deduped — a deduped seed must not suppress the stream
+            // (OnBarsUpdate would stay gated off) and must not falsely refresh
+            // the arrival/freshness clock (the incident: bars=0 reset the
+            // watchdog to age 0 while market timestamps were ~10 min late).
+            entry.HistoricalSent = true;
+
             if (barsList.Count == 0)
             {
-                // Empty seed (every bar was deduped — delayed/older feed
-                // re-returning bars we already emitted): do NOT stamp
-                // HistoricalSent or the watchdog clock. An empty historical
-                // callback must not read as "fresh" — that was the incident:
-                // bars=0 still reset LastUpdateUtcMs so the watchdog reported
-                // age 0 while the market timestamps were ~10 min late.
                 logInfo("VLBarsSubscriptionManager: historical " + entry.Key
-                        + " — deduped all (no new bars); not stamping freshness");
+                        + " — deduped all (no new bars); stream ready, not stamping freshness");
                 return;
             }
 
-            entry.HistoricalSent = true;
             entry.LastUpdateUtcMs = NowUtcMs();       // liveness: wall-clock of this emit
             entry.LastBarTUtcMs = lastT;              // freshness: newest bar's MARKET time
             entry.LastBarArrivalUtcMs = NowUtcMs();   // liveness: arrival of that newest bar
@@ -798,10 +805,10 @@ namespace NinjaTrader.NinjaScript.AddOns
         /// supported NT8 API for the market-data subscription mode (Delayed vs
         /// Realtime), so the caller always sends mode="unknown".
         /// </summary>
-        public void GetFeedFreshness(out long lastBarTMs, out long lastBarArrivalMs, out string provenance)
+        public void GetFeedFreshness(out long lastBarTMs, out long lastBarArrivalMs, out string provenance, out string timeframe)
         {
             long bestT = 0, bestArrival = 0;
-            string bestProv = "none";
+            string bestProv = "none", bestTf = "";
             lock (subsLock)
             {
                 foreach (var kv in active)
@@ -812,12 +819,14 @@ namespace NinjaTrader.NinjaScript.AddOns
                         bestT = e.LastBarTUtcMs;
                         bestArrival = e.LastBarArrivalUtcMs;
                         bestProv = e.LastBarProvenance ?? "none";
+                        bestTf = e.Timeframe;
                     }
                 }
             }
             lastBarTMs = bestT;
             lastBarArrivalMs = bestArrival;
             provenance = bestProv;
+            timeframe = bestTf;
         }
 
         /// <summary>

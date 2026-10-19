@@ -436,7 +436,7 @@ freshness, so Go can tell "callbacks flowing but bars DELAYED" apart from "fresh
 { "type": "feed_status",
   "payload": { "price_status": "Connected", "time": "RFC3339",
                "last_bar_t_ms": 1729xxxxxxxxx, "last_bar_arrival_ms": 1729xxxxxxxxx,
-               "mode": "unknown", "provenance": "bar_update" } }
+               "last_bar_tf": "1m", "mode": "unknown", "provenance": "bar_update" } }
 ```
 
 - `price_status` — the NT8 price-feed connection status (`Connected` | `ConnectionLost` |
@@ -445,13 +445,18 @@ freshness, so Go can tell "callbacks flowing but bars DELAYED" apart from "fresh
   AddOn emitted across all subscriptions. `0` = no bar yet. THIS is freshness.
 - `last_bar_arrival_ms` — wall-clock Unix ms UTC when that newest bar was emitted
   (arrival/liveness). Distinct from freshness: delayed bars arrive late.
+- `last_bar_tf` — the timeframe of that newest bar (e.g. `"1m"`), so the timestamp
+  is sampled honestly (`""` = none). A higher-timeframe candle's open age is NOT a
+  liveness signal — freshness and liveness are separate.
 - `mode` — **ALWAYS `"unknown"`** in this build. No supported NT8 API exposes the
   market-data subscription mode (`Delayed` vs `Realtime`); it is NOT derived from
-  the account type. Reserved for when a real API is proven.
+  the account type. Reserved for when a real API is proven. Broker mode and bar
+  freshness are independent: a missing mode is broker-mode unknown, never candle
+  freshness unknown.
 - `provenance` — `"bar_update"` | `"bars_historical"` | `"none"` — where the
   newest bar came from.
 
-Additive: an OLD Go build ignores the four new keys (it only reads `price_status`
+Additive: an OLD Go build ignores the new keys (it only reads `price_status`
 / `time`); a NEW Go build treats an absent key as unknown.
 
 ## Failure modes

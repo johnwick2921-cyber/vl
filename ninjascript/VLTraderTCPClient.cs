@@ -3311,14 +3311,15 @@ namespace NinjaTrader.NinjaScript.AddOns
         private void SendFeedStatusFrame(string priceStatus)
         {
             long lastBarT = 0, lastBarArrival = 0;
-            string provenance = "none";
-            barsManager?.GetFeedFreshness(out lastBarT, out lastBarArrival, out provenance);
+            string provenance = "none", timeframe = "";
+            barsManager?.GetFeedFreshness(out lastBarT, out lastBarArrival, out provenance, out timeframe);
             var payload = new Dictionary<string, object>
             {
                 ["price_status"]         = priceStatus ?? "",
                 ["time"]                 = DateTime.UtcNow.ToString("o"),
                 ["last_bar_t_ms"]        = lastBarT,
                 ["last_bar_arrival_ms"]  = lastBarArrival,
+                ["last_bar_tf"]          = timeframe,
                 ["mode"]                 = "unknown",
                 ["provenance"]           = provenance
             };
