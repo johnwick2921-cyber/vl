@@ -97,9 +97,10 @@ type box struct {
 	// knobs
 	flat                    bool
 	addonConnected          bool
-	pollHook                func() // run at every fake-host sleep boundary (planner-wait tests)
-	addonBuild              string // what the running AddOn reports
-	manifestBuild           string // the signed manifest's addon.build_id
+	pollHook                func()          // run at every fake-host sleep boundary (planner-wait tests)
+	driveCtx                context.Context // non-nil overrides the drive context (cancellation pins)
+	addonBuild              string          // what the running AddOn reports
+	manifestBuild           string          // the signed manifest's addon.build_id
 	refuseBoot              map[string]bool
 	watchFail               map[string]bool
 	rollbackFail            bool
@@ -561,7 +562,11 @@ func (r *rig) install() {
 
 // drive runs the job to its next stop on the calling goroutine.
 func (r *rig) drive() error {
-	return r.w.drive(context.Background(), boxJobID)
+	ctx := r.box.driveCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return r.w.drive(ctx, boxJobID)
 }
 
 func (r *rig) job() updaterjob.Job {

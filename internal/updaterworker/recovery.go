@@ -72,9 +72,9 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 			// restart of it and no boot proof of it can be printed — a
 			// kill whose condition is "health does not serve n/a" is
 			// always true and proves nothing (#206 review fold).
-			p("%d. Nothing was installed: the job stopped in %s before it read the install, so no build is on record for this job. The bot keeps whatever build it booted; this job proves nothing about it. Do NOT restore anything.", step, j.State)
+			p("%d. Nothing was installed for the BOT BINARY: the job stopped in %s before it read the install, so no build is on record for this job. The bot keeps whatever build it booted; this job proves nothing about it. Do NOT restore the bot binary.", step, j.State)
 		} else {
-			p("%d. Nothing was installed: the job stopped before the activate, so the pre-update build %s still runs. Do NOT restore anything.", step, oldSHA)
+			p("%d. Nothing was installed for the BOT BINARY: the job stopped before the activate, so the pre-update build %s still runs. Do NOT restore the bot binary.", step, oldSHA)
 		}
 		restart = false
 	case reachRolledBack:
@@ -93,13 +93,15 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 			// a nanosecond timestamp), never deleted — it is the evidence —
 			// and mv -T refuses to move it INTO an existing directory, so a
 			// repeat run can never nest the live dist in an earlier leftover
-			// (U4 re-verify note 7, TestRecoveryRestoreIsSafeToRunTwice). The
-			// SECOND mv's -T is the same guard for a <dist> re-created between
-			// the two moves: it refuses rather than nest the snapshot copy in
-			// it (U4F verify note 1,
+			// (U4 re-verify note 7, TestRecoveryRestoreIsSafeToRunTwice). A
+			// leftover <dist>.recovery.tmp from an interrupted earlier run is
+			// MOVED aside (never rm -rf — the owner's no-delete rule), then a
+			// fresh copy is made. The SECOND mv's -T is the same guard for a
+			// <dist> re-created between the two moves: it refuses rather than
+			// nest the snapshot copy in it (U4F verify note 1,
 			// TestRecoveryRestoreRefusesADistRecreatedBetweenTheTwoMoves).
-			p("     rm -rf %s.recovery.tmp && cp -a %s %s.recovery.tmp && mv -T %s %s.failed.%s.$(date +%%Y%%m%%dT%%H%%M%%S.%%N) && mv -T %s.recovery.tmp %s",
-				in.Dist, s.Dist, in.Dist, in.Dist, in.Dist, j.JobID, in.Dist, in.Dist)
+			p("     [ ! -e %s.recovery.tmp ] || mv -T %s.recovery.tmp %s.recovery.tmp.previous.$(date +%%Y%%m%%dT%%H%%M%%S.%%N); cp -a %s %s.recovery.tmp && mv -T %s %s.failed.%s.$(date +%%Y%%m%%dT%%H%%M%%S.%%N) && mv -T %s.recovery.tmp %s",
+				in.Dist, in.Dist, in.Dist, s.Dist, in.Dist, in.Dist, in.Dist, j.JobID, in.Dist, in.Dist)
 			// A crash BETWEEN the two mv's leaves no live dist; a re-run then
 			// stops at its first mv -T (safe, but it cannot finish), so name
 			// the one command that does (U4F defect 5,
@@ -110,11 +112,11 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 		}
 	}
 	step++
-	// A job that failed AFTER the AddOn was placed but BEFORE activation has the
-	// new DLL in the AddOns folder and the previous one in the backup. The
-	// "nothing installed" text above is about the bot binary only — the AddOn is
-	// a separate artifact the recovery must not forget.
-	addonPlaced := j.Addon != nil && j.Addon.BackupDir != ""
+	// A job that failed AFTER the AddOn was placed but BEFORE the AddOn's state
+	// was proven has the new DLL in the AddOns folder and the previous one in the
+	// backup. Only the unproven reaches need this step: a PROVEN rollback already
+	// restored the old AddOn, and a PROVEN release already runs the new one.
+	addonPlaced := j.Addon != nil && j.Addon.BackupDir != "" && (reach == reachNothingInstalled || reach == reachUnproven)
 	if addonPlaced {
 		p("%d. The AddOn was already placed before this failure: the NEW AddOn DLL is in the AddOns folder and the PREVIOUS one is backed up at %s. The bot binary was NOT activated (it still runs the pre-update build), so leaving the new DLL would run mixed, unverified bot and AddOn versions — the demonstrated risk. Restore the previous AddOn (MOVE the backup back, never delete) BEFORE opening NinjaTrader, then verify the AddOn reconnects on the previous build. Do NOT clear the hold until that is proven.", step, j.Addon.BackupDir)
 		step++

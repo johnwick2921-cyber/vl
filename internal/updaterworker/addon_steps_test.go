@@ -136,7 +136,9 @@ func TestNT8ExitWaitBeforeStart(t *testing.T) {
 // W-UPDATER-WINPATH (d) timeout: when the old NinjaTrader.exe NEVER fully exits
 // within nt8ExitWait, the step errors, starts ZERO new processes (never a second
 // instance racing the old one for the ATI socket), and records
-// nt8_exit_wait=timeout_still_running. The job reverts clean.
+// nt8_exit_wait=timeout_still_running. The old process running does NOT prove a
+// clean state (the NEW DLL is already on disk): the job ends recovery_needed and
+// the hold is kept.
 func TestNT8ExitWaitTimeoutNoStart(t *testing.T) {
 	r := newRig(t, withCSChanged())
 	stops, starts := restartCounts(r)
@@ -145,8 +147,8 @@ func TestNT8ExitWaitTimeoutNoStart(t *testing.T) {
 	r.set(func() { r.nt8HangsOnClose = true; r.nt8ExitLinger = 1000 })
 	j := r.runToEnd(t)
 	r.noViolations(t)
-	if j.State != updaterjob.StateRevertedClean || j.Addon == nil || j.Addon.Restarted {
-		t.Fatalf("job %s addon=%+v, want reverted_clean with no restart", j.State, j.Addon)
+	if j.State != updaterjob.StateRecoveryNeeded || j.Addon == nil || j.Addon.Restarted {
+		t.Fatalf("job %s addon=%+v, want recovery_needed with no restart (mixed state: old process + new DLL on disk)", j.State, j.Addon)
 	}
 	if !strings.Contains(j.Error, "did not fully exit") {
 		t.Fatalf("error %q must say the old NT8 did not fully exit", j.Error)

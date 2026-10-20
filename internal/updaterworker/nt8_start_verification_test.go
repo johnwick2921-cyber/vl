@@ -80,17 +80,43 @@ func TestNT8StartVerificationProbeErrorIsRecoveryNeeded(t *testing.T) {
 	}
 }
 
-// A canceled context during the post-start liveness wait must abort the step
-// (never hang, never silently succeed). The caller routes that error to
-// recovery_needed.
+// A canceled context mid-way through the post-start liveness wait (production
+// path, via the rig's drive context) must abort the drive WITHOUT finishing the
+// job: the started restart step stays on disk (a restart re-runs it) and the
+// hold is KEPT — a cancellation must never read as reverted_clean or clear the
+// hold.
 func TestNT8StartVerificationCancelledContextAborts(t *testing.T) {
 	r := newRig(t, withCSChanged())
-	r.set(func() { r.startDelayPolls = 100 }) // NT8 "not visible" so the wait sleeps
+	r.set(func() { r.startDelayPolls = 1000 }) // NT8 "not visible" so the wait sleeps
+
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	rr := newNT8Restart(r.box.fakeRunWin, addonExe(), nil)
-	if err := r.w.startAndVerifyNT8(ctx, rr, map[string]string{}); err == nil {
-		t.Fatalf("startAndVerifyNT8 must return an error when the context is canceled mid-wait")
+	defer cancel()
+	r.box.driveCtx = ctx
+	r.box.pollHook = func() {
+		// Cancel only once we are INSIDE the post-start liveness wait (the
+		// start set the delay countdown), not at any earlier sleep boundary.
+		r.box.mu.Lock()
+		delaying := r.box.startDelayRemaining > 0
+		r.box.mu.Unlock()
+		if delaying {
+			cancel()
+		}
+	}
+	r.install()
+	if err := r.drive(); err == nil {
+		t.Fatal("drive must abort on a cancelled context during the liveness wait")
+	}
+	r.noViolations(t)
+
+	j := r.job()
+	if updaterjob.Finished(j.State, j.Phase) {
+		t.Fatalf("a cancelled restart finished the job %s/%s; it must stay started", j.State, j.Phase)
+	}
+	if j.State != updaterjob.StateNT8Restarted {
+		t.Fatalf("job %s, want the interrupted restart step (nt8_restarted) still on disk", j.State)
+	}
+	if !r.hold().Present || !r.hold().Held {
+		t.Fatalf("the hold must be KEPT after a cancelled restart: %+v", r.hold())
 	}
 }
 

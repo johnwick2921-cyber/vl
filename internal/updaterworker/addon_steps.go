@@ -539,7 +539,11 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 				break
 			}
 			if !w.host.Now().Before(exitDeadline) {
+				// The OLD process is still running while the NEW DLL is already
+				// on disk — a mixed state, not a clean one. recovery_needed
+				// (hold kept) until the human resolves it.
 				ev["nt8_exit_wait"] = "timeout_still_running"
+				nt8Down = true
 				return fmt.Errorf("NinjaTrader did not fully exit within %s of the stop — not starting a second instance", nt8ExitWait)
 			}
 			if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {

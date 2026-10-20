@@ -218,7 +218,7 @@ func TestRecoveryTextPreHoldJobClaimsNothing(t *testing.T) {
 		"entries are NOT refused",
 		"No bot restart and no boot proof",
 		"There is no hold to clear",
-		"Do NOT restore anything",
+		"Do NOT restore the bot binary",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("the text lacks %q:\n%s", want, text)
@@ -431,7 +431,7 @@ func restoreLines(t *testing.T, j updaterjob.Job, tg Target) []string {
 	}
 	var restore []string
 	for _, l := range strings.Split(RecoveryText(j, tg), "\n") {
-		if l = strings.TrimSpace(l); strings.HasPrefix(l, "cp -p ") || strings.HasPrefix(l, "rm -rf ") {
+		if l = strings.TrimSpace(l); strings.HasPrefix(l, "cp -p ") || strings.HasPrefix(l, "[ ! -e ") {
 			restore = append(restore, l)
 		}
 	}
@@ -530,7 +530,7 @@ func TestRecoveryRestoreFinishesAfterACrashBetweenTheTwoMoves(t *testing.T) {
 	// the production dist line, cut before its last move: what ran before the crash
 	distLine := restore[2]
 	k := strings.LastIndex(distLine, " && ")
-	if !strings.HasPrefix(distLine, "rm -rf "+in.Dist+".recovery.tmp ") || k < 0 {
+	if !strings.HasPrefix(distLine, "[ ! -e "+in.Dist+".recovery.tmp ") || k < 0 {
 		t.Fatalf("restore line 3 is not the dist restore: %q", distLine)
 	}
 	preCrash, lastMove := distLine[:k], distLine[k+len(" && "):]
