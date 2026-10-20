@@ -1,0 +1,10 @@
+orb_minutes,side,trades,confirmed_TP,confirmed_SL,unresolved
+1,LONG,97,17,63,17
+1,SHORT,119,18,85,16
+1,UNKNOWN,10,0,10,0
+2,LONG,102,22,69,11
+2,SHORT,123,15,94,14
+2,UNKNOWN,1,0,0,1
+5,LONG,109,14,85,10
+5,SHORT,117,13,91,13
+5,UNKNOWN,0,0,0,0

@@ -1,0 +1,26 @@
+{
+  "all-trades.csv": {
+    "rows": 678,
+    "sha256": "959bf366820065d34ae4d173026f4c8ef3b53f3e675372dd45363061e0258f99"
+  },
+  "successful-trades.csv": {
+    "rows": 99,
+    "sha256": "f93ccf8c0ec3798de666e3f4ac453f2b77cce1ea4f6be3cdf9088911661a6366"
+  },
+  "stopped-trades.csv": {
+    "rows": 497,
+    "sha256": "6b3c19d3a62281a305b252b39685106c8b855f34c6e7854a457cb6f7b678c9c8"
+  },
+  "unresolved-trades.csv": {
+    "rows": 82,
+    "sha256": "9523c8b8fb921bad8f4bf3573755d270da5d2cd59b96fa6c59f9f35bf0070114"
+  },
+  "monthly.csv": {
+    "rows": 39,
+    "sha256": "d5d3225b7d922cc6dfd65f92b08044c8d80070b4c573764dcd62646c810b869b"
+  },
+  "excluded-dates.csv": {
+    "rows": 35,
+    "sha256": "7e8668fb4d3bef03ad80253974b68f51551656e1da5de7475d9c88c6dd707f1b"
+  }
+}

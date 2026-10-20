@@ -1,0 +1,36 @@
+date,contract,reason,rth_bars
+2025-11-27,MNQ 12-25,incomplete_390_minute_session_including_early_closes,210
+2025-11-28,MNQ 12-25,incomplete_390_minute_session_including_early_closes,225
+2025-12-03,,no_session_rows_holiday_or_missing,0
+2025-12-04,,no_session_rows_holiday_or_missing,0
+2025-12-05,,no_session_rows_holiday_or_missing,0
+2025-12-08,,no_session_rows_holiday_or_missing,0
+2025-12-09,,no_session_rows_holiday_or_missing,0
+2025-12-10,,no_session_rows_holiday_or_missing,0
+2025-12-11,,no_session_rows_holiday_or_missing,0
+2025-12-12,,no_session_rows_holiday_or_missing,0
+2025-12-24,MNQ 03-26,incomplete_390_minute_session_including_early_closes,225
+2025-12-25,,no_session_rows_holiday_or_missing,0
+2026-01-01,,no_session_rows_holiday_or_missing,0
+2026-01-19,MNQ 03-26,incomplete_390_minute_session_including_early_closes,210
+2026-02-16,MNQ 03-26,incomplete_390_minute_session_including_early_closes,210
+2026-03-03,,no_session_rows_holiday_or_missing,0
+2026-03-04,,no_session_rows_holiday_or_missing,0
+2026-03-05,,no_session_rows_holiday_or_missing,0
+2026-03-06,,no_session_rows_holiday_or_missing,0
+2026-03-09,,no_session_rows_holiday_or_missing,0
+2026-03-10,,no_session_rows_holiday_or_missing,0
+2026-03-11,,no_session_rows_holiday_or_missing,0
+2026-03-12,,no_session_rows_holiday_or_missing,0
+2026-03-13,,no_session_rows_holiday_or_missing,0
+2026-04-03,MNQ 06-26,incomplete_390_minute_session_including_early_closes,0
+2026-05-25,MNQ 06-26,incomplete_390_minute_session_including_early_closes,210
+2026-06-03,MNQ 09-26,incomplete_390_minute_session_including_early_closes,383
+2026-06-04,MNQ 09-26,incomplete_390_minute_session_including_early_closes,369
+2026-06-08,MNQ 09-26,incomplete_390_minute_session_including_early_closes,388
+2026-06-10,MNQ 09-26,incomplete_390_minute_session_including_early_closes,389
+2026-06-19,MNQ 09-26,incomplete_390_minute_session_including_early_closes,210
+2026-07-03,MNQ 09-26,incomplete_390_minute_session_including_early_closes,210
+2026-08-19,MNQ 09-26,incomplete_390_minute_session_including_early_closes,389
+2026-09-07,MNQ 09-26,incomplete_390_minute_session_including_early_closes,210
+2026-09-14,MNQ 09-26,incomplete_390_minute_session_including_early_closes,102

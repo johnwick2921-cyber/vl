@@ -1,0 +1,159 @@
+{
+  "engine_sha256": "312947e04f1f3bf92202a01ba29d7d060d474a5fac125d301d8a25a1e4f0b5cf",
+  "chronological_price_oracle": {
+    "seed": 20261020,
+    "synthetic_paths": 2000,
+    "comparisons": 6000,
+    "actual_path_outcomes": {
+      "SL": 3782,
+      "TP": 1989,
+      "TIME": 191,
+      "NO_ENTRY": 38
+    },
+    "result": "PASS"
+  },
+  "mutation_tests": [
+    {
+      "name": "wrong_stop_21_points",
+      "killed": true,
+      "failures": 2,
+      "errors": 0
+    },
+    {
+      "name": "no_breakout_tick",
+      "killed": true,
+      "failures": 3,
+      "errors": 0
+    },
+    {
+      "name": "lookahead_orb_high",
+      "killed": true,
+      "failures": 10,
+      "errors": 0
+    },
+    {
+      "name": "stop_gap_filled_at_old_stop",
+      "killed": true,
+      "failures": 1,
+      "errors": 0
+    },
+    {
+      "name": "wrong_target_distance",
+      "killed": true,
+      "failures": 3,
+      "errors": 0
+    },
+    {
+      "name": "erase_surviving_entry_branch",
+      "killed": true,
+      "failures": 1,
+      "errors": 0
+    }
+  ],
+  "table_crosscheck": {
+    "result": "PASS",
+    "groups": [
+      {
+        "orb_minutes": 1,
+        "counts": {
+          "TP": 35,
+          "SL": 158,
+          "UNRESOLVED": 33
+        },
+        "rows": 226
+      },
+      {
+        "orb_minutes": 2,
+        "counts": {
+          "TP": 37,
+          "SL": 163,
+          "UNRESOLVED": 26
+        },
+        "rows": 226
+      },
+      {
+        "orb_minutes": 5,
+        "counts": {
+          "SL": 176,
+          "TP": 27,
+          "UNRESOLVED": 23
+        },
+        "rows": 226
+      }
+    ],
+    "rows": 678,
+    "included_sessions": 226,
+    "excluded_weekdays": 35
+  },
+  "independent_input_crosscheck": {
+    "result": "PASS",
+    "raw_rows": 329692,
+    "canonical_sha256": "34a84b59ff2c0de05a93968fa43218e0db1f66af0b846fbab3725edbd48570a5",
+    "complete_sessions_verified": 226,
+    "contract_choices_verified": 226,
+    "orb_ranges_and_first_entries_verified": 678,
+    "houston_entry_times": {
+      "1": {
+        "first": "08:31",
+        "last": "08:40",
+        "mode": [
+          [
+            "08:31",
+            180
+          ]
+        ]
+      },
+      "2": {
+        "first": "08:32",
+        "last": "08:45",
+        "mode": [
+          [
+            "08:32",
+            135
+          ]
+        ]
+      },
+      "5": {
+        "first": "08:35",
+        "last": "09:29",
+        "mode": [
+          [
+            "08:35",
+            126
+          ]
+        ]
+      }
+    },
+    "dst_checks": [
+      {
+        "date": "2025-10-20",
+        "houston": "08:30",
+        "utc": "13:30",
+        "result": "PASS"
+      },
+      {
+        "date": "2025-11-07",
+        "houston": "08:30",
+        "utc": "14:30",
+        "result": "PASS"
+      }
+    ],
+    "late_entry_examples": [
+      {
+        "date": "2026-05-11",
+        "orb_minutes": 5,
+        "entry_houston": "09:29",
+        "all_390_bars_present": true,
+        "earlier_bars_inside_orb": true
+      },
+      {
+        "date": "2026-10-12",
+        "orb_minutes": 5,
+        "entry_houston": "09:05",
+        "all_390_bars_present": true,
+        "earlier_bars_inside_orb": true
+      }
+    ],
+    "late_entry_note": "Late entry is delayed FIRST PRICE BREAKOUT; all opening/session bars are present."
+  }
+}

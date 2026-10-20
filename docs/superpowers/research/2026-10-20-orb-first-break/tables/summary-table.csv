@@ -1,0 +1,4 @@
+orb_minutes,trades,confirmed_TP,confirmed_SL,unresolved,conservative_TP,conservative_SL,conservative_TP_pct,optimistic_TP,optimistic_SL,optimistic_TP_pct
+1,226,35,158,33,35,191,15.49,68,158,30.09
+2,226,37,163,26,37,189,16.37,63,163,27.88
+5,226,27,176,23,27,199,11.95,50,176,22.12

@@ -193,3 +193,6 @@ protects earlier evidence. `--db` can replace `--input-csv` for a fresh read-onl
 query. A later DB query may change if the source database gains historical bars.
 CSV `entry_ms`/`exit_ms` identify the **minute containing** the event, not an
 invented exact fill time. Blank values mean unknown/not applicable, not zero.
+
+
+**Full re-verification and owner tables (2026-10-20):** see [FULL-REPORT.md](tables/FULL-REPORT.md), [all 678 trades](tables/all-trades.md), and [verification evidence](tables/verification.json). Engine SHA256 unchanged; 6,000 independent synthetic price-path comparisons, six killed mutations, and all 678 first-entry/range checks passed. Re-run with `python3 -B reverify.py --snapshot /path/input-1m.csv.gz --out /new/path/verification.json`. `build_tables.py` and `export_xlsx.py` reproduce the tables and Excel workbook.
