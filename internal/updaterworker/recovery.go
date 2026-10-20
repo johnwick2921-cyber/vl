@@ -72,9 +72,9 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 			// restart of it and no boot proof of it can be printed — a
 			// kill whose condition is "health does not serve n/a" is
 			// always true and proves nothing (#206 review fold).
-			p("%d. Nothing was installed: the job stopped in %s before it read the install, so no build is on record for this job. The bot keeps whatever build it booted; this job proves nothing about it. Do NOT restore anything.", step, j.State)
+			p("%d. Nothing was installed for the BOT BINARY: the job stopped in %s before it read the install, so no build is on record for this job. The bot keeps whatever build it booted; this job proves nothing about it. Do NOT restore the bot binary.", step, j.State)
 		} else {
-			p("%d. Nothing was installed: the job stopped before the activate, so the pre-update build %s still runs. Do NOT restore anything.", step, oldSHA)
+			p("%d. Nothing was installed for the BOT BINARY: the job stopped before the activate, so the pre-update build %s still runs. Do NOT restore the bot binary.", step, oldSHA)
 		}
 		restart = false
 	case reachRolledBack:
@@ -86,30 +86,64 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 	default:
 		if j.Snapshot != nil && j.Install != nil {
 			s, in := *j.Snapshot, *j.Install
-			p("%d. Restore the pre-update install from this job's snapshot (copy to a temp name, then mv -f over the live one):", step)
-			p("     cp -p %s %s.recovery.tmp && mv -f %s.recovery.tmp %s", s.Binary, in.Binary, in.Binary, in.Binary)
-			p("     cp -p %s %s.recovery.tmp && mv -f %s.recovery.tmp %s", s.ReleaseFile, in.ReleaseFile, in.ReleaseFile, in.ReleaseFile)
-			// The failed dist is moved aside under a UNIQUE name (job id +
-			// a nanosecond timestamp), never deleted — it is the evidence —
-			// and mv -T refuses to move it INTO an existing directory, so a
-			// repeat run can never nest the live dist in an earlier leftover
-			// (U4 re-verify note 7, TestRecoveryRestoreIsSafeToRunTwice). The
-			// SECOND mv's -T is the same guard for a <dist> re-created between
-			// the two moves: it refuses rather than nest the snapshot copy in
-			// it (U4F verify note 1,
-			// TestRecoveryRestoreRefusesADistRecreatedBetweenTheTwoMoves).
-			p("     rm -rf %s.recovery.tmp && cp -a %s %s.recovery.tmp && mv -T %s %s.failed.%s.$(date +%%Y%%m%%dT%%H%%M%%S.%%N) && mv -T %s.recovery.tmp %s",
-				in.Dist, s.Dist, in.Dist, in.Dist, in.Dist, j.JobID, in.Dist, in.Dist)
-			// A crash BETWEEN the two mv's leaves no live dist; a re-run then
-			// stops at its first mv -T (safe, but it cannot finish), so name
-			// the one command that does (U4F defect 5,
+			p("%d. Restore the pre-update install from this job's snapshot (the failed artifact is moved aside as evidence, never overwritten in place; each command aborts if a leftover cannot be preserved):", step)
+			p("     %s", restoreFileLine(in.Binary, s.Binary, j.JobID, "cp -p"))
+			p("     %s", restoreFileLine(in.ReleaseFile, s.ReleaseFile, j.JobID, "cp -p"))
+			p("     %s", restoreFileLine(in.Dist, s.Dist, j.JobID, "cp -a"))
+			// A crash BETWEEN the two mv's leaves no live artifact; a re-run then
+			// stops at its first mv -T (safe, but it cannot finish), so name the
+			// one command that does (U4F defect 5,
 			// TestRecoveryRestoreFinishesAfterACrashBetweenTheTwoMoves).
-			p("     If %s is ABSENT (a crash between the two mv's above), run only: mv -T %s.recovery.tmp %s", in.Dist, in.Dist, in.Dist)
+			p("     If %s is ABSENT (a crash between the two mv's above), run only: %s", in.Binary, crashLineCmd(in.Binary))
+			p("     If %s is ABSENT (a crash between the two mv's above), run only: %s", in.ReleaseFile, crashLineCmd(in.ReleaseFile))
+			p("     If %s is ABSENT (a crash between the two mv's above), run only: %s", in.Dist, crashLineCmd(in.Dist))
 		} else {
 			p("%d. The activate ran but this job recorded no snapshot of the install: the install cannot be restored from it — stop and restore it by hand.", step)
 		}
 	}
 	step++
+	// The AddOn state comes from the job's RECORDED transitions and receipts,
+	// never from j.Addon.BackupDir alone: that field is empty both when the box
+	// had no previous DLL AND when the place step did not run (or was deferred).
+	// A PROVEN rollback already restored the old AddOn (addon_restore receipt),
+	// and a PROVEN release already reconnected the new one (addon_reconnected).
+	// Only a placed-but-unproven (or ambiguous) AddOn needs an operator step,
+	// and it always keeps the hold until the AddOn's state is proven.
+	addon := recoveryAddon(j)
+	addonHoldCond := "" // the extra condition the hold-clear must name ("" = none)
+	switch addon {
+	case addonProvenNew, addonUnknown:
+		// Proven new, or never touched: nothing to restore.
+	case addonRestored:
+		// The previous DLL is restored AND (when the place restarted NT8) NT8
+		// was proven restarted + reconnected on it: nothing to restore.
+	case addonDiskRestored:
+		p("%d. The previous AddOn DLL was restored to disk, but NinjaTrader was NOT proven restarted + reconnected on it (the place restarted NT8 and the rollback's restart/reconnect did not finish). Restart NinjaTrader, or verify it is running the previous build, and confirm the AddOn reconnects on the previous build. Do NOT clear the hold until that is proven.", step)
+		addonHoldCond = "AND the AddOn is proven running on the previous build"
+		step++
+	case addonAmbiguous:
+		p("%d. The AddOn placement is INCOMPLETE or UNPROVEN: the job reached addon_placed but did not finish it. Inspect the AddOns folder by hand — the new DLL may or may not be in place, and the previous DLL may or may not be backed up. Do NOT clear the hold until the AddOn state is proven.", step)
+		addonHoldCond = "AND the AddOn state is proven"
+		step++
+	case addonPlaced:
+		// addonPlaced co-occurs only with reachNothingInstalled: reaching
+		// StateActivated requires addon_reconnected (which would classify as
+		// addonProvenNew), and a rollback would classify as addonAmbiguous.
+		act := "was NOT activated (it still runs the pre-update build)"
+		dir, dirKnown := addonBackupDir(j)
+		switch {
+		case dir != "":
+			p("%d. The AddOn was already placed before this failure: the NEW AddOn DLL is in the AddOns folder and the PREVIOUS one is backed up at %s. The bot binary %s, so leaving the new DLL would run mixed, unverified bot and AddOn versions — the demonstrated risk, not an established incompatibility. Restore the previous AddOn by FIRST moving the current (new) AddOn DLL aside (never overwrite or delete it — it is the evidence), then COPYING the backup back into place (never MOVE or delete the backup — it is the only copy of the previous DLL) BEFORE opening NinjaTrader, then verify the AddOn reconnects on the previous build. If you cannot determine the exact AddOns folder path, STOP and inspect it manually — do not guess. Do NOT clear the hold until that is proven.", step, dir, act)
+			addonHoldCond = "AND the previous AddOn is restored + reconnected"
+		case dirKnown:
+			p("%d. The AddOn was already placed but NO previous DLL was recorded (the box had none to back up): there is nothing to restore, but the new DLL is unproven and the bot binary %s. Do NOT clear the hold until the AddOn reconnects and the boot is proven.", step, act)
+			addonHoldCond = "AND the new AddOn's build is confirmed"
+		default:
+			p("%d. The AddOn was already placed but the previous-AddOn backup location is NOT recorded for this job (a deferred place records it later): inspect the AddOns folder and the vl-addon-backups folder by hand. The bot binary %s. Do NOT clear the hold until the AddOn state is proven.", step, act)
+			addonHoldCond = "AND the AddOn state is proven"
+		}
+		step++
+	}
 	short := prove
 	if len(short) > 12 {
 		short = short[:12]
@@ -130,7 +164,7 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 		p("     %s", restartLine)
 		step++
 		p("%d. Prove the boot: the data log must show the OK line for %s, and health must serve it:", step, short)
-			p(`     grep -a "BOOT INTEGRITY OK — rev %s ·" %s/vl_$(TZ=America/Chicago date +%%F).log`, short, t.LogDir)
+		p(`     grep -a "BOOT INTEGRITY OK — rev %s ·" %s/vl_$(TZ=America/Chicago date +%%F).log`, short, t.LogDir)
 		p("     curl -s http://127.0.0.1:%d/api/health    (revision must be %s)", t.Port, short)
 	}
 	if j.BackupPath != "" {
@@ -139,6 +173,9 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 	step++
 	if s, _ := ReadHoldFor(t.DataDir, j.JobID); s == HoldAbsent {
 		p("%d. There is no hold to clear (the job stopped before the hold step).", step)
+	} else if addonHoldCond != "" {
+		p("%d. LAST, once the boot is proven %s, clear this job's hold:", step, addonHoldCond)
+		p("     maintenance-hold --install-dir %s clear --job %s", t.InstallDir, j.JobID)
 	} else {
 		p("%d. LAST, once the boot is proven, clear this job's hold:", step)
 		p("     maintenance-hold --install-dir %s clear --job %s", t.InstallDir, j.JobID)
@@ -146,6 +183,51 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 	p("")
 	p("Then restart vl-updater (the restart is the acknowledgement; install stays refused until then).")
 	return b.String()
+}
+
+// shellQuote single-quotes s for POSIX sh, escaping embedded apostrophes with
+// the standard '...'\”...' idiom — so a path with spaces, quotes, or any
+// other metacharacter is safe in the emitted commands.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// restoreFileLine emits ONE no-delete, no-clobber restore command for a single
+// artifact (the binary, the RELEASE file, or the web dist directory). TS is
+// captured ONCE so every guard and move name the SAME timestamped file. Every
+// move uses `mv -n -T` (atomic no-clobber — a destination that exists at the
+// move is left untouched, no check-to-move gap) followed by a verification that
+// the SOURCE is gone: some no-clobber moves report success on a skip, so the
+// source-absence check turns a silent skip into a refusal.
+//
+//  1. If a leftover <dst>.recovery.tmp exists — including a DANGLING symlink,
+//     which [ -e ] alone would miss — move it aside to
+//     <dst>.recovery.tmp.previous.$TS. A skip or failed preservation ABORTS the
+//     whole command.
+//  2. Copy the snapshot artifact to <dst>.recovery.tmp.
+//  3. Move the live artifact aside to <dst>.failed.<jobID>.$TS (evidence,
+//     never overwritten).
+//  4. Move the snapshot copy into place — an existing <dst> aborts instead of
+//     being overwritten.
+//
+// Every path is shell-quoted (spaces and apostrophes safe); only $TS expands.
+func restoreFileLine(dst, src, jobID, cpFlag string) string {
+	tmp := shellQuote(dst + ".recovery.tmp")
+	prev := shellQuote(dst+".recovery.tmp.previous.") + `"$TS"`
+	failed := shellQuote(dst+".failed."+jobID+".") + `"$TS"`
+	live := shellQuote(dst)
+	snap := shellQuote(src)
+	return fmt.Sprintf(`TS="$(date +%%Y%%m%%dT%%H%%M%%S.%%N)"; { { [ ! -e %[1]s ] && [ ! -L %[1]s ]; } || { mv -n -T %[1]s %[2]s && [ ! -e %[1]s ] && [ ! -L %[1]s ]; }; } && %[6]s %[5]s %[1]s && { mv -n -T %[4]s %[3]s && [ ! -e %[4]s ] && [ ! -L %[4]s ]; } && { mv -n -T %[1]s %[4]s && [ ! -e %[1]s ] && [ ! -L %[1]s ]; }`,
+		tmp, prev, failed, live, snap, cpFlag)
+}
+
+// crashLineCmd is the one no-clobber move that finishes a restore interrupted
+// between the two mv's (the live artifact already moved aside, the snapshot
+// copy waiting at <dst>.recovery.tmp). It refuses if <dst> reappears.
+func crashLineCmd(dst string) string {
+	live := shellQuote(dst)
+	tmp := shellQuote(dst + ".recovery.tmp")
+	return fmt.Sprintf("{ mv -n -T %[1]s %[2]s && [ ! -e %[1]s ] && [ ! -L %[1]s ]; }", tmp, live)
 }
 
 // restartLine restarts the unit by its MainPID and refuses a pid below 2 (a
@@ -188,4 +270,115 @@ func recoveryReach(j updaterjob.Job) reach {
 		return reachReleaseProven
 	}
 	return reachUnproven
+}
+
+// addonReach classifies what the job PROVED about the AddOn, from its recorded
+// transitions and receipts — never from j.Addon.BackupDir alone, which is empty
+// both when the box had no previous DLL AND when the place step never ran (or
+// was deferred to the restart step).
+type addonReach int
+
+const (
+	addonUnknown      addonReach = iota // no addon_placed transition recorded
+	addonAmbiguous                      // addon_placed STARTED but not finished (or restore unproven after a rollback)
+	addonPlaced                         // addon_placed finished; not restored, not proven new
+	addonDiskRestored                   // previous DLL restored to disk, NT8 reload NOT proven
+	addonRestored                       // previous DLL restored AND NT8 reloaded + reconnected
+	addonProvenNew                      // addon_reconnected reached (new build proven)
+)
+
+// recoveryAddon reads the job's AddOn history CHRONOLOGICALLY: the
+// addon_placed / nt8_restarted / addon_reconnected transitions and the
+// addon_restore receipt. A reconnect that happened BEFORE a rollback is STALE
+// once the rollback runs: the rollback's restore (or its absence) is the
+// latest word on which DLL is in place.
+func recoveryAddon(j updaterjob.Job) addonReach {
+	placedStarted, placedDone, reconnected := false, false, false
+	rollingBack := false
+	for _, tr := range j.Transitions {
+		switch tr.State {
+		case updaterjob.StateAddonPlaced:
+			if tr.Phase == updaterjob.PhaseDone {
+				placedDone = true
+			} else {
+				placedStarted = true
+			}
+		case updaterjob.StateNT8Restarted:
+			placedDone = true
+		case updaterjob.StateAddonReconnected:
+			placedDone = true
+			if tr.Phase == updaterjob.PhaseDone {
+				reconnected = true
+			}
+		case updaterjob.StateRollingBack:
+			rollingBack = true
+		}
+	}
+	// The receipts are write-ordered. A NEW attempt of an upstream step RESETS
+	// its downstream proof: a new addon_restore invalidates any earlier
+	// nt8_rerestart + addon_rollback_reconnect, and a new nt8_rerestart
+	// invalidates any earlier addon_rollback_reconnect. So the classification
+	// reflects the LATEST attempt's actual downstream evidence, never a stale
+	// success from a prior attempt. A FAILED or nil-evidence receipt still
+	// overwrites an earlier success (it is NOT skipped).
+	restored, rerestartOK, reconnectOK := false, false, false
+	for _, rc := range j.Receipts {
+		ev := rc.Evidence
+		switch rc.Step {
+		case "addon_restore":
+			restored = rc.OK && ev != nil && ev["outcome"] == "restored"
+			rerestartOK = false
+			reconnectOK = false
+		case "nt8_rerestart":
+			rerestartOK = rc.OK && ev != nil && ev["outcome"] == "restarted"
+			reconnectOK = false
+		case "addon_rollback_reconnect":
+			reconnectOK = rc.OK && ev != nil && ev["outcome"] == "reconnected"
+		}
+	}
+	// Missing AddOn metadata (j.Addon == nil) cannot prove that no NT8 reload
+	// was owed, so it is treated as needing reload: a restored-DLL receipt
+	// alone must not label the runtime proven from missing metadata.
+	needsReload := j.Addon == nil || j.Addon.Restarted
+	switch {
+	case restored && (!needsReload || (rerestartOK && reconnectOK)):
+		// The previous DLL is restored to disk AND (when the place restarted
+		// NT8) the rollback proved NT8 restarted + reconnected on it.
+		return addonRestored
+	case restored && needsReload && !(rerestartOK && reconnectOK):
+		// Disk restored, but the restart/reconnect pair did not finish: the
+		// restored DLL may not be loaded. Distinct from full restoration.
+		return addonDiskRestored
+	case rollingBack && placedDone:
+		// A rollback ran after the AddOn was placed but produced no proven
+		// restore: the current DLL is UNPROVEN — a reconnect from before the
+		// rollback is stale proof.
+		return addonAmbiguous
+	case reconnected:
+		return addonProvenNew
+	case placedDone:
+		return addonPlaced
+	case placedStarted:
+		return addonAmbiguous
+	}
+	return addonUnknown
+}
+
+// addonBackupDir returns the previous-AddOn backup dir the job recorded, and
+// whether that recording is COMPLETE. ("", true) = the place ran and there was
+// no previous DLL to back up; ("", false) = the backup location is unknown
+// (not recorded — e.g. a deferred place whose backup is recorded later, in the
+// restart receipt, not in j.Addon.BackupDir).
+func addonBackupDir(j updaterjob.Job) (string, bool) {
+	if j.Addon != nil && j.Addon.BackupDir != "" {
+		return j.Addon.BackupDir, true
+	}
+	for _, rc := range j.Receipts {
+		if rc.Step == "addon_place" && rc.Evidence != nil {
+			if b, ok := rc.Evidence["backup_dir"]; ok {
+				return b, true // "" = no previous DLL existed
+			}
+		}
+	}
+	return "", false
 }

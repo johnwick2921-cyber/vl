@@ -97,9 +97,10 @@ type box struct {
 	// knobs
 	flat                    bool
 	addonConnected          bool
-	pollHook                func() // run at every fake-host sleep boundary (planner-wait tests)
-	addonBuild              string // what the running AddOn reports
-	manifestBuild           string // the signed manifest's addon.build_id
+	pollHook                func()          // run at every fake-host sleep boundary (planner-wait tests)
+	driveCtx                context.Context // non-nil overrides the drive context (cancellation pins)
+	addonBuild              string          // what the running AddOn reports
+	manifestBuild           string          // the signed manifest's addon.build_id
 	refuseBoot              map[string]bool
 	watchFail               map[string]bool
 	rollbackFail            bool
@@ -113,6 +114,13 @@ type box struct {
 	addonRestored           bool   // fakeHost.AddonRestore ran: the OLD DLL is back in bin/Custom
 	nt8Running              bool   // the fake NT8 process is alive (tasklist sees it)
 	nt8HangsOnClose         bool   // TOCTOU: CloseMainWindow does NOT exit NT8 (a dialog/hang)
+	startDoesNotBringUp     bool   // Start-Process returns success but NT8 never comes up (restart-evidence gap)
+	startDelayPolls         int    // Start-Process launches, but tasklist does not see NT8 for this many polls (delayed healthy start)
+	startDelayRemaining     int    // runtime countdown for startDelayPolls
+	startProbeError         bool   // tasklist errors once after Start-Process (process probe error)
+	startProbeFails         bool   // runtime one-shot for startProbeError
+	startFails              bool   // Start-Process itself returns an error (start command fails)
+	exitWaitProbeError      bool   // tasklist errors once during the exit-wait linger (after the stop)
 	nt8ExitLinger           int    // W-UPDATER-WINPATH (d): after a stop, tasklist keeps reporting NT8 for this many polls (the old process fully exiting)
 	nt8LingerLeft           int    // the remaining linger polls
 	flipSimOnClose          bool   // TOCTOU: the sim_accounts leg flips FAIL when the graceful close runs
@@ -409,7 +417,23 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 	}
 	if strings.Contains(name, "tasklist") {
 		b.mu.Lock()
+		if b.startProbeFails {
+			b.startProbeFails = false
+			b.mu.Unlock()
+			return nil, errors.New("fake tasklist probe error")
+		}
+		if !b.nt8Running && b.nt8LingerLeft > 0 && b.exitWaitProbeError {
+			b.exitWaitProbeError = false // one-shot
+			b.mu.Unlock()
+			return nil, errors.New("fake tasklist probe error during exit wait")
+		}
 		running := b.nt8Running
+		if running && b.startDelayRemaining > 0 {
+			// Delayed healthy start: Start-Process launched it, but tasklist
+			// does not see the process for the first N polls.
+			b.startDelayRemaining--
+			running = false
+		}
 		if !running && b.nt8LingerLeft > 0 {
 			running = true
 			b.nt8LingerLeft--
@@ -444,7 +468,25 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 		}
 		if strings.Contains(a, "Start-Process") {
 			b.mu.Lock()
+			if b.startFails && !b.addonRestored {
+				// FORWARD start only: Start-Process itself errors (the start
+				// command fails, not a launch-then-exit).
+				b.mu.Unlock()
+				return nil, errors.New("fake Start-Process failure")
+			}
+			if b.startDoesNotBringUp && !b.addonRestored {
+				// FORWARD start only: Start-Process returns success but the
+				// launched process is absent (launch-then-immediate-exit) —
+				// reproduce the restart-evidence gap. The rollback's own
+				// re-restart is unaffected so a rollback can still recover.
+				b.nt8Running = false
+				b.addonConnected = false
+				b.mu.Unlock()
+				return []byte(""), nil
+			}
 			b.nt8Running = true
+			b.startDelayRemaining = b.startDelayPolls
+			b.startProbeFails = b.startProbeError
 			if !b.addonRestored {
 				// FORWARD restart: remember what it was running, then bring up
 				// the NEW build on a NEW connection.
@@ -520,7 +562,11 @@ func (r *rig) install() {
 
 // drive runs the job to its next stop on the calling goroutine.
 func (r *rig) drive() error {
-	return r.w.drive(context.Background(), boxJobID)
+	ctx := r.box.driveCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return r.w.drive(ctx, boxJobID)
 }
 
 func (r *rig) job() updaterjob.Job {
