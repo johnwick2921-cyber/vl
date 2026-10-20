@@ -112,8 +112,15 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 	addon := recoveryAddon(j)
 	addonHoldCond := "" // the extra condition the hold-clear must name ("" = none)
 	switch addon {
-	case addonProvenNew, addonRestored, addonUnknown:
-		// Proven new, proven restored, or never touched: nothing to restore.
+	case addonProvenNew, addonUnknown:
+		// Proven new, or never touched: nothing to restore.
+	case addonRestored:
+		// The previous DLL is restored AND (when the place restarted NT8) NT8
+		// was proven restarted + reconnected on it: nothing to restore.
+	case addonDiskRestored:
+		p("%d. The previous AddOn DLL was restored to disk, but NinjaTrader was NOT proven restarted + reconnected on it (the place restarted NT8 and the rollback's restart/reconnect did not finish). Restart NinjaTrader, or verify it is running the previous build, and confirm the AddOn reconnects on the previous build. Do NOT clear the hold until that is proven.", step)
+		addonHoldCond = "AND the AddOn is proven running on the previous build"
+		step++
 	case addonAmbiguous:
 		p("%d. The AddOn placement is INCOMPLETE or UNPROVEN: the job reached addon_placed but did not finish it. Inspect the AddOns folder by hand — the new DLL may or may not be in place, and the previous DLL may or may not be backed up. Do NOT clear the hold until the AddOn state is proven.", step)
 		addonHoldCond = "AND the AddOn state is proven"
@@ -187,27 +194,30 @@ func shellQuote(s string) string {
 
 // restoreFileLine emits ONE no-delete, no-clobber restore command for a single
 // artifact (the binary, the RELEASE file, or the web dist directory). TS is
-// captured ONCE so every guard and move name the SAME timestamped file. In
-// order:
+// captured ONCE so every guard and move name the SAME timestamped file. Every
+// move uses `mv -n -T` (atomic no-clobber — a destination that exists at the
+// move is left untouched, no check-to-move gap) followed by a verification that
+// the SOURCE is gone: some no-clobber moves report success on a skip, so the
+// source-absence check turns a silent skip into a refusal.
 //
 //  1. If a leftover <dst>.recovery.tmp exists — including a DANGLING symlink,
 //     which [ -e ] alone would miss — move it aside to
-//     <dst>.recovery.tmp.previous.$TS. A failed preservation (or a
-//     .previous.$TS that already exists) ABORTS the whole command.
+//     <dst>.recovery.tmp.previous.$TS. A skip or failed preservation ABORTS the
+//     whole command.
 //  2. Copy the snapshot artifact to <dst>.recovery.tmp.
 //  3. Move the live artifact aside to <dst>.failed.<jobID>.$TS (evidence,
-//     never overwritten — an existing .failed.$TS aborts instead).
-//  4. Move the snapshot copy into place — an existing <dst> (a recreated
-//     file, directory, or symlink) aborts instead of being overwritten.
+//     never overwritten).
+//  4. Move the snapshot copy into place — an existing <dst> aborts instead of
+//     being overwritten.
 //
-// Every path is single-quoted (spaces and apostrophes safe); only $TS expands.
+// Every path is shell-quoted (spaces and apostrophes safe); only $TS expands.
 func restoreFileLine(dst, src, jobID, cpFlag string) string {
 	tmp := shellQuote(dst + ".recovery.tmp")
 	prev := shellQuote(dst+".recovery.tmp.previous.") + `"$TS"`
 	failed := shellQuote(dst+".failed."+jobID+".") + `"$TS"`
 	live := shellQuote(dst)
 	snap := shellQuote(src)
-	return fmt.Sprintf(`TS="$(date +%%Y%%m%%dT%%H%%M%%S.%%N)"; { { [ ! -e %[1]s ] && [ ! -L %[1]s ]; } || { [ ! -e %[2]s ] && [ ! -L %[2]s ] && mv -T %[1]s %[2]s; }; } && %[6]s %[5]s %[1]s && { [ ! -e %[3]s ] && [ ! -L %[3]s ] && mv -T %[4]s %[3]s; } && { [ ! -e %[4]s ] && [ ! -L %[4]s ] && mv -T %[1]s %[4]s; }`,
+	return fmt.Sprintf(`TS="$(date +%%Y%%m%%dT%%H%%M%%S.%%N)"; { { [ ! -e %[1]s ] && [ ! -L %[1]s ]; } || { mv -n -T %[1]s %[2]s && [ ! -e %[1]s ] && [ ! -L %[1]s ]; }; } && %[6]s %[5]s %[1]s && { mv -n -T %[4]s %[3]s && [ ! -e %[4]s ] && [ ! -L %[4]s ]; } && { mv -n -T %[1]s %[4]s && [ ! -e %[1]s ] && [ ! -L %[1]s ]; }`,
 		tmp, prev, failed, live, snap, cpFlag)
 }
 
@@ -217,7 +227,7 @@ func restoreFileLine(dst, src, jobID, cpFlag string) string {
 func crashLineCmd(dst string) string {
 	live := shellQuote(dst)
 	tmp := shellQuote(dst + ".recovery.tmp")
-	return fmt.Sprintf("{ [ ! -e %[1]s ] && [ ! -L %[1]s ] && mv -T %[2]s %[1]s; }", live, tmp)
+	return fmt.Sprintf("{ mv -n -T %[1]s %[2]s && [ ! -e %[1]s ] && [ ! -L %[1]s ]; }", tmp, live)
 }
 
 // restartLine restarts the unit by its MainPID and refuses a pid below 2 (a
@@ -269,11 +279,12 @@ func recoveryReach(j updaterjob.Job) reach {
 type addonReach int
 
 const (
-	addonUnknown   addonReach = iota // no addon_placed transition recorded
-	addonAmbiguous                   // addon_placed STARTED but not finished
-	addonPlaced                      // addon_placed finished; not restored, not proven new
-	addonRestored                    // an addon_restore receipt (outcome=restored)
-	addonProvenNew                   // addon_reconnected reached (new build proven)
+	addonUnknown      addonReach = iota // no addon_placed transition recorded
+	addonAmbiguous                      // addon_placed STARTED but not finished (or restore unproven after a rollback)
+	addonPlaced                         // addon_placed finished; not restored, not proven new
+	addonDiskRestored                   // previous DLL restored to disk, NT8 reload NOT proven
+	addonRestored                       // previous DLL restored AND NT8 reloaded + reconnected
+	addonProvenNew                      // addon_reconnected reached (new build proven)
 )
 
 // recoveryAddon reads the job's AddOn history CHRONOLOGICALLY: the
@@ -303,38 +314,35 @@ func recoveryAddon(j updaterjob.Job) addonReach {
 			rollingBack = true
 		}
 	}
-	restored := false
-	rerestartOK := false
-	reconnectOK := false
+	// The receipts are write-ordered, so the LAST receipt for each step is the
+	// latest outcome — a later failed attempt invalidates an earlier success
+	// (chronological, not an accumulated boolean). A FAILED or nil-evidence
+	// receipt must still overwrite an earlier success, so it is NOT skipped.
+	latest := map[string]bool{}
 	for _, rc := range j.Receipts {
-		if rc.Evidence == nil {
-			continue
-		}
+		ev := rc.Evidence
 		switch rc.Step {
 		case "addon_restore":
-			if rc.OK && rc.Evidence["outcome"] == "restored" {
-				restored = true
-			}
+			latest["addon_restore"] = rc.OK && ev != nil && ev["outcome"] == "restored"
 		case "nt8_rerestart":
-			if rc.OK && rc.Evidence["outcome"] == "restarted" {
-				rerestartOK = true
-			}
+			latest["nt8_rerestart"] = rc.OK && ev != nil && ev["outcome"] == "restarted"
 		case "addon_rollback_reconnect":
-			if rc.OK && rc.Evidence["outcome"] == "reconnected" {
-				reconnectOK = true
-			}
+			latest["addon_rollback_reconnect"] = rc.OK && ev != nil && ev["outcome"] == "reconnected"
 		}
 	}
+	restored := latest["addon_restore"]
+	rerestartOK := latest["nt8_rerestart"]
+	reconnectOK := latest["addon_rollback_reconnect"]
+	needsReload := j.Addon != nil && j.Addon.Restarted
 	switch {
-	case restored:
-		// The previous DLL is proven restored. But if the place step restarted
-		// NT8, the rollback must ALSO have restarted it and proven the old AddOn
-		// reconnected — a restored DLL receipt alone does not prove NT8 is
-		// running it. Without that pair, the loaded state is unproven.
-		if j.Addon == nil || !j.Addon.Restarted || (rerestartOK && reconnectOK) {
-			return addonRestored
-		}
-		return addonAmbiguous
+	case restored && (!needsReload || (rerestartOK && reconnectOK)):
+		// The previous DLL is restored to disk AND (when the place restarted
+		// NT8) the rollback proved NT8 restarted + reconnected on it.
+		return addonRestored
+	case restored && needsReload && !(rerestartOK && reconnectOK):
+		// Disk restored, but the restart/reconnect pair did not finish: the
+		// restored DLL may not be loaded. Distinct from full restoration.
+		return addonDiskRestored
 	case rollingBack && placedDone:
 		// A rollback ran after the AddOn was placed but produced no proven
 		// restore: the current DLL is UNPROVEN — a reconnect from before the

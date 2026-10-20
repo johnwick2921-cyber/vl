@@ -524,12 +524,12 @@ func TestRecoveryRestoreFinishesAfterACrashBetweenTheTwoMoves(t *testing.T) {
 	in, snap := *j.Install, *j.Snapshot
 	snapFiles := relFiles(t, snap.Dist)
 	only := crashLine(j, r.cfg.Target)
-	if want := "{ [ ! -e '" + in.Dist + "' ] && [ ! -L '" + in.Dist + "' ] && mv -T '" + in.Dist + ".recovery.tmp' '" + in.Dist + "'; }"; only != want {
+	if want := "{ mv -n -T '" + in.Dist + ".recovery.tmp' '" + in.Dist + "' && [ ! -e '" + in.Dist + ".recovery.tmp' ] && [ ! -L '" + in.Dist + ".recovery.tmp' ]; }"; only != want {
 		t.Fatalf("the recovery text has no crash-between-the-moves line (got %q, want %q):\n%s", only, want, RecoveryText(j, r.cfg.Target))
 	}
 	// the production dist line, cut before its last move: what ran before the crash
 	distLine := restore[2]
-	k := strings.LastIndex(distLine, " && { [ ! -e '")
+	k := strings.LastIndex(distLine, " && { mv -n -T '")
 	if !strings.HasPrefix(distLine, "TS=\"$(date ") || k < 0 {
 		t.Fatalf("restore line 3 is not the dist restore: %q", distLine)
 	}
@@ -748,12 +748,12 @@ func TestRecoveryAddonClassification(t *testing.T) {
 
 	// When the place step DID restart NT8 (Addon.Restarted), a restored DLL
 	// receipt alone does not prove NT8 is running it: the rerestart + reconnect
-	// pair must also be recorded, else the state is ambiguous.
+	// pair must also be recorded. Restored-but-not-reloaded is a DISTINCT state.
 	partial := mk(placedDone, restarted, reconnectedDone, rollingBack)
 	partial.Addon = &updaterjob.AddonState{Restarted: true}
 	partial.Receipts = []updaterjob.Receipt{{Step: "addon_restore", OK: true, Evidence: map[string]string{"outcome": "restored"}}}
-	if got := recoveryAddon(partial); got != addonAmbiguous {
-		t.Fatalf("recoveryAddon(restored, Restarted, no rerestart) = %v, want addonAmbiguous", got)
+	if got := recoveryAddon(partial); got != addonDiskRestored {
+		t.Fatalf("recoveryAddon(restored, Restarted, no rerestart) = %v, want addonDiskRestored", got)
 	}
 	full := mk(placedDone, restarted, reconnectedDone, rollingBack)
 	full.Addon = &updaterjob.AddonState{Restarted: true}
@@ -764,6 +764,17 @@ func TestRecoveryAddonClassification(t *testing.T) {
 	}
 	if got := recoveryAddon(full); got != addonRestored {
 		t.Fatalf("recoveryAddon(restored+rerestart+reconnect) = %v, want addonRestored", got)
+	}
+
+	// Chronology: a LATER failed addon_restore invalidates an earlier success.
+	later := mk(placedDone, restarted, reconnectedDone, rollingBack)
+	later.Addon = &updaterjob.AddonState{Restarted: true}
+	later.Receipts = []updaterjob.Receipt{
+		{Step: "addon_restore", OK: true, Evidence: map[string]string{"outcome": "restored"}},
+		{Step: "addon_restore", OK: false},
+	}
+	if got := recoveryAddon(later); got != addonAmbiguous {
+		t.Fatalf("recoveryAddon(later failed restore) = %v, want addonAmbiguous", got)
 	}
 }
 

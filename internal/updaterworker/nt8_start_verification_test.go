@@ -332,3 +332,28 @@ func TestRecoveryTextReachUnprovenAddonPlacedDoesNotClaimNotActivated(t *testing
 		t.Fatalf("the ambiguous AddOn state must be named:\n%s", text)
 	}
 }
+
+// PRODUCTION rollback sequence (not a hand-built receipt): forward place →
+// reconnect → activate → watch fails → rollback restores the DLL and restarts
+// NT8, but the AddOn does NOT reconnect on the old build (noRollbackReconnect).
+// That is disk-restored-unverified, NOT fully restored — the hold must gate on
+// the AddOn being proven running on the previous build.
+func TestRecoveryAddonRollbackReconnectFailureIsDiskRestored(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "VL.AddOn.dll"), "old AddOn DLL\n")
+	r.set(func() { r.watchFail[boxNew] = true; r.noRollbackReconnect = true })
+	j := r.runToEnd(t)
+	if j.State != updaterjob.StateRecoveryNeeded {
+		t.Fatalf("job %s (error %q), want recovery_needed", j.State, j.Error)
+	}
+	if got := recoveryAddon(j); got != addonDiskRestored {
+		t.Fatalf("recoveryAddon = %v, want addonDiskRestored (restore OK, reconnect failed)", got)
+	}
+	text := RecoveryText(j, r.cfg.Target)
+	if !strings.Contains(text, "restored to disk, but NinjaTrader was NOT proven restarted + reconnected") {
+		t.Fatalf("the disk-restored-unverified state must be named:\n%s", text)
+	}
+	if !strings.Contains(text, "AND the AddOn is proven running on the previous build") {
+		t.Fatalf("the hold-clear must be gated on the AddOn reload:\n%s", text)
+	}
+}
