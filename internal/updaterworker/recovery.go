@@ -86,9 +86,11 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 	default:
 		if j.Snapshot != nil && j.Install != nil {
 			s, in := *j.Snapshot, *j.Install
-			p("%d. Restore the pre-update install from this job's snapshot (copy to a temp name, then mv -f over the live one):", step)
-			p("     cp -p %s %s.recovery.tmp && mv -f %s.recovery.tmp %s", s.Binary, in.Binary, in.Binary, in.Binary)
-			p("     cp -p %s %s.recovery.tmp && mv -f %s.recovery.tmp %s", s.ReleaseFile, in.ReleaseFile, in.ReleaseFile, in.ReleaseFile)
+			p("%d. Restore the pre-update install from this job's snapshot (the failed file is moved aside as evidence, never overwritten in place):", step)
+			p("     [ ! -e %s.recovery.tmp ] || mv -T %s.recovery.tmp %s.recovery.tmp.previous.$(date +%%Y%%m%%dT%%H%%M%%S.%%N); cp -p %s %s.recovery.tmp && mv -T %s %s.failed.%s.$(date +%%Y%%m%%dT%%H%%M%%S.%%N) && mv -T %s.recovery.tmp %s",
+				in.Binary, in.Binary, in.Binary, s.Binary, in.Binary, in.Binary, in.Binary, j.JobID, in.Binary, in.Binary)
+			p("     [ ! -e %s.recovery.tmp ] || mv -T %s.recovery.tmp %s.recovery.tmp.previous.$(date +%%Y%%m%%dT%%H%%M%%S.%%N); cp -p %s %s.recovery.tmp && mv -T %s %s.failed.%s.$(date +%%Y%%m%%dT%%H%%M%%S.%%N) && mv -T %s.recovery.tmp %s",
+				in.ReleaseFile, in.ReleaseFile, in.ReleaseFile, s.ReleaseFile, in.ReleaseFile, in.ReleaseFile, in.ReleaseFile, j.JobID, in.ReleaseFile, in.ReleaseFile)
 			// The failed dist is moved aside under a UNIQUE name (job id +
 			// a nanosecond timestamp), never deleted — it is the evidence —
 			// and mv -T refuses to move it INTO an existing directory, so a
@@ -118,7 +120,7 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 	// restored the old AddOn, and a PROVEN release already runs the new one.
 	addonPlaced := j.Addon != nil && j.Addon.BackupDir != "" && (reach == reachNothingInstalled || reach == reachUnproven)
 	if addonPlaced {
-		p("%d. The AddOn was already placed before this failure: the NEW AddOn DLL is in the AddOns folder and the PREVIOUS one is backed up at %s. The bot binary was NOT activated (it still runs the pre-update build), so leaving the new DLL would run mixed, unverified bot and AddOn versions — the demonstrated risk. Restore the previous AddOn (MOVE the backup back, never delete) BEFORE opening NinjaTrader, then verify the AddOn reconnects on the previous build. Do NOT clear the hold until that is proven.", step, j.Addon.BackupDir)
+		p("%d. The AddOn was already placed before this failure: the NEW AddOn DLL is in the AddOns folder and the PREVIOUS one is backed up at %s. The bot binary was NOT activated (it still runs the pre-update build), so leaving the new DLL would run mixed, unverified bot and AddOn versions — the demonstrated risk, not an established incompatibility. Restore the previous AddOn by COPYING the backup back into place (never MOVE or delete it — it is the only copy of the previous DLL) BEFORE opening NinjaTrader, then verify the AddOn reconnects on the previous build. Do NOT clear the hold until that is proven.", step, j.Addon.BackupDir)
 		step++
 	}
 	short := prove

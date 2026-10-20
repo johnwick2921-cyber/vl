@@ -180,6 +180,37 @@ func TestNT8StartVerificationMigrationFallbackStartFailureIsRecoveryNeeded(t *te
 	}
 }
 
+// The SPECIFIC migration-fallback regression: Start-Process SUCCEEDS but NT8
+// never becomes running. The fallback must not report "restarted on the old
+// files" (reverted_clean) on Start-Process success alone — liveness is proven
+// first, so a launch-then-exit ends recovery_needed with the hold kept.
+func TestNT8StartVerificationMigrationFallbackStartSuccessNotRunningIsRecoveryNeeded(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"), "type "+addonTypeName+"\n")
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", "VLTraderTCPClient.cs"), "// the AddOn source\n")
+	prev := r.box.fakeRunWin
+	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if strings.Contains(name, "powershell") && hasWinFlag(args, "-Custom") {
+			return []byte("VL_CUSTOM_TYPES_DIFF\n"), errors.New("exit 1")
+		}
+		return prev(ctx, name, args...)
+	}
+	r.set(func() { r.startDoesNotBringUp = true }) // Start-Process succeeds, NT8 never comes up
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRecoveryNeeded ||
+		!strings.Contains(j.Error, "could not be restarted") ||
+		!strings.Contains(j.Error, "did not come up") {
+		t.Fatalf("job %s (error %q), want recovery_needed: the fallback start succeeded but NT8 never came up", j.State, j.Error)
+	}
+	if r.callCount("activate") != 0 {
+		t.Fatalf("activate ran %d times under an unverified migration fallback start", r.callCount("activate"))
+	}
+	if !r.hold().Present || !r.hold().Held {
+		t.Fatalf("the hold must be KEPT after an unverified fallback start: %+v", r.hold())
+	}
+}
+
 // RecoveryText for a job that placed the AddOn but never activated the bot must
 // NOT print the bare "nothing installed / do not restore anything" + hold-clear
 // on old-Go-boot proof alone. It must name the backup, instruct restoring the
@@ -202,11 +233,22 @@ func TestRecoveryTextAddonPlacedNotActivatedGatesHoldOnAddon(t *testing.T) {
 		"The AddOn was already placed",
 		"Restore the previous AddOn",
 		"mixed, unverified",
+		"not an established incompatibility",
 		j.Addon.BackupDir,
 		"AND the previous AddOn is restored",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("recovery text must contain %q:\n%s", want, text)
+		}
+	}
+	// The bare "nothing installed / Do NOT restore anything" contradiction must
+	// be GONE: the bot binary and the AddOn are named separately.
+	for _, forbid := range []string{
+		"Do NOT restore anything",
+		"Nothing was installed:", // unqualified form
+	} {
+		if strings.Contains(text, forbid) {
+			t.Fatalf("recovery text must not contain the unqualified %q:\n%s", forbid, text)
 		}
 	}
 	for _, l := range strings.Split(text, "\n") {
