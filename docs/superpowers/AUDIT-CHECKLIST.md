@@ -2299,6 +2299,8 @@ never renumbered; a gap means a wave took a later slot to avoid a collision.*
     fails on correct text, so the window was calibrated against the real
     sentences instead.
 
+**[NEW — number assigned at merge] Restart-evidence gap (process launched ≠ process alive).** Root cause: `stepNT8Restart` treated `Start-Process` returning without error as proof NinjaTrader had restarted; a launch-then-immediate-exit was indistinguishable from a healthy restart, so `nt8_restarted` marked "done" while NinjaTrader was down, and the failure only surfaced five minutes later at the AddOn reconnect (then the rollback's own restart failed → recovery_needed). **Probe:** a fake-process fixture where `Start-Process` returns success but `isRunning` stays false — the step must not report success (and must route to recovery, never a clean-revert). **Law:** a start command's exit code proves only "launch attempted", never "process alive"; every restart of an external process is followed by a bounded liveness check and an honest receipt, and a dead process routes to recovery (hold kept), never a clean-revert that releases the hold while the old build is not actually running. Fixed in `internal/updaterworker/addon_steps.go` (`startAndVerifyNT8`) + `nt8_start_verification_test.go`.
+
 ## PART 2 — PRE-AUDIT (standing hard rules)
 
 - **R1 fresh evidence only** — produced THIS run: CT-timestamped queries,

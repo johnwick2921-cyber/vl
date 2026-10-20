@@ -1,6 +1,7 @@
 package updaterworker
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -74,5 +75,19 @@ func TestNT8StartVerificationProbeErrorIsRecoveryNeeded(t *testing.T) {
 	}
 	if r.callCount("activate") != 0 {
 		t.Fatalf("activate ran %d times before NT8 liveness was proven", r.callCount("activate"))
+	}
+}
+
+// A canceled context during the post-start liveness wait must abort the step
+// (never hang, never silently succeed). The caller routes that error to
+// recovery_needed.
+func TestNT8StartVerificationCancelledContextAborts(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	r.set(func() { r.startDelayPolls = 100 }) // NT8 "not visible" so the wait sleeps
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rr := newNT8Restart(r.box.fakeRunWin, addonExe(), nil)
+	if err := r.w.startAndVerifyNT8(ctx, rr, map[string]string{}); err == nil {
+		t.Fatalf("startAndVerifyNT8 must return an error when the context is canceled mid-wait")
 	}
 }

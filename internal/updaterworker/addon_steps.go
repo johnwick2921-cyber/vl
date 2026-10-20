@@ -438,14 +438,46 @@ func isRegularFile(p string) bool {
 // wait). If the re-check fails, NT8 is NOT force-stopped: it is left running
 // and the job ends reverted_clean. If NT8 exits on its own, there is no
 // re-check and no force — it closed itself, and nothing can trade while closed.
+
+// startAndVerifyNT8 starts NinjaTrader and proves it is actually running with a
+// bounded process check. Start-Process succeeding proves only "process
+// started", never "AddOn ready" — the AddOn-ready proof (build id + a new
+// accept_seq) stays in stepAddonReconnect. The wait is recorded in ev.
+func (w *Worker) startAndVerifyNT8(ctx context.Context, r nt8Restart, ev map[string]string) error {
+	if err := r.start(ctx); err != nil {
+		return err
+	}
+	startStart := w.host.Now()
+	startDeadline := startStart.Add(nt8StartWait)
+	for {
+		running, err := r.isRunning(ctx)
+		if err != nil {
+			return err
+		}
+		if running {
+			break
+		}
+		if !w.host.Now().Before(startDeadline) {
+			ev["nt8_start_wait"] = "timeout_not_running"
+			return fmt.Errorf("NinjaTrader did not come up within %s of the start", nt8StartWait)
+		}
+		if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
+			return err
+		}
+	}
+	ev["nt8_start_wait_ms"] = strconv.FormatInt(w.host.Now().Sub(startStart).Milliseconds(), 10)
+	return nil
+}
+
 func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
 	// nt8Down is set once NinjaTrader has been stopped and a start attempt
-	// (or its liveness verification) leaves it down: the DLL is already
-	// placed, so a plain reverted_clean (which releases the hold and declares
-	// the old build "still running normally") would be FALSE. Those failures
-	// roll back instead (restore the old DLL, restart NT8, prove it).
+	// (or its liveness verification) leaves it down (or liveness unproven):
+	// the new DLL is already placed, so a plain reverted_clean — which releases
+	// the hold and declares the old build "still running normally" — would be
+	// FALSE. Those failures end recovery_needed (the hold stays, the honest
+	// reason is named) instead.
 	nt8Down := false
 	err := func() error {
 		if err := w.flatSIMGate(ctx, j); err != nil {
@@ -498,6 +530,9 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 		for {
 			running, err := r.isRunning(ctx)
 			if err != nil {
+				// NT8 was stopped; the liveness probe failed, so liveness is
+				// unproven — recovery_needed, never a false-clean revert.
+				nt8Down = true
 				return err
 			}
 			if !running {
@@ -508,6 +543,7 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 				return fmt.Errorf("NinjaTrader did not fully exit within %s of the stop — not starting a second instance", nt8ExitWait)
 			}
 			if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
+				nt8Down = true
 				return err
 			}
 		}
@@ -518,7 +554,7 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 		// the old files and start NT8 on them, then fail to reverted_clean.
 		if j.Addon != nil && j.Addon.MigrationPending {
 			if merr := w.migrateRebuildPlaceWhileClosed(ctx, j, ev); merr != nil {
-				if serr := r.start(ctx); serr != nil {
+				if serr := w.startAndVerifyNT8(ctx, r, ev); serr != nil {
 					nt8Down = true
 					return fmt.Errorf("the Custom.dll migration failed (%v) and NT8 could not be restarted: %w", merr, serr)
 				}
@@ -527,37 +563,10 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 			}
 			ev["migration"] = "rebuilt"
 		}
-		if err := r.start(ctx); err != nil {
+		if err := w.startAndVerifyNT8(ctx, r, ev); err != nil {
 			nt8Down = true
 			return err
 		}
-		// W-ADDON-ONE-CLICK start verification: Start-Process returning without
-		// error only proves the launch was attempted, not that NinjaTrader is
-		// still alive. Poll IsRunning, bounded, and record the wait. This
-		// distinguishes "process started" from "AddOn ready" — the AddOn-ready
-		// proof stays in stepAddonReconnect (build id + new accept_seq).
-		startStart := w.host.Now()
-		startDeadline := startStart.Add(nt8StartWait)
-		for {
-			running, err := r.isRunning(ctx)
-			if err != nil {
-				nt8Down = true
-				return err
-			}
-			if running {
-				break
-			}
-			if !w.host.Now().Before(startDeadline) {
-				ev["nt8_start_wait"] = "timeout_not_running"
-				nt8Down = true
-				return fmt.Errorf("NinjaTrader did not come up within %s of the start", nt8StartWait)
-			}
-			if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
-				nt8Down = true
-				return err
-			}
-		}
-		ev["nt8_start_wait_ms"] = strconv.FormatInt(w.host.Now().Sub(startStart).Milliseconds(), 10)
 		return nil
 	}()
 	res := stepResult{receipts: []Receipt{w.receipt("nt8_restart", start, ev, err)}, err: err}

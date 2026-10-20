@@ -110,6 +110,15 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 		}
 	}
 	step++
+	// A job that failed AFTER the AddOn was placed but BEFORE activation has the
+	// new DLL in the AddOns folder and the previous one in the backup. The
+	// "nothing installed" text above is about the bot binary only — the AddOn is
+	// a separate artifact the recovery must not forget.
+	addonPlaced := j.Addon != nil && j.Addon.BackupDir != ""
+	if addonPlaced {
+		p("%d. The AddOn was already placed before this failure: the NEW AddOn DLL is in the AddOns folder and the PREVIOUS one is backed up at %s. The running bot is still the pre-update build, so restore the previous AddOn (MOVE the backup back, never delete) BEFORE opening NinjaTrader — otherwise NinjaTrader loads the new AddOn against the old bot. Do NOT clear the hold until NinjaTrader is back on the previous AddOn.", step, j.Addon.BackupDir)
+		step++
+	}
 	short := prove
 	if len(short) > 12 {
 		short = short[:12]
@@ -130,7 +139,7 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 		p("     %s", restartLine)
 		step++
 		p("%d. Prove the boot: the data log must show the OK line for %s, and health must serve it:", step, short)
-			p(`     grep -a "BOOT INTEGRITY OK — rev %s ·" %s/vl_$(TZ=America/Chicago date +%%F).log`, short, t.LogDir)
+		p(`     grep -a "BOOT INTEGRITY OK — rev %s ·" %s/vl_$(TZ=America/Chicago date +%%F).log`, short, t.LogDir)
 		p("     curl -s http://127.0.0.1:%d/api/health    (revision must be %s)", t.Port, short)
 	}
 	if j.BackupPath != "" {
@@ -139,6 +148,9 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 	step++
 	if s, _ := ReadHoldFor(t.DataDir, j.JobID); s == HoldAbsent {
 		p("%d. There is no hold to clear (the job stopped before the hold step).", step)
+	} else if addonPlaced {
+		p("%d. LAST, once the boot is proven AND the previous AddOn is restored + reconnected, clear this job's hold:", step)
+		p("     maintenance-hold --install-dir %s clear --job %s", t.InstallDir, j.JobID)
 	} else {
 		p("%d. LAST, once the boot is proven, clear this job's hold:", step)
 		p("     maintenance-hold --install-dir %s clear --job %s", t.InstallDir, j.JobID)
