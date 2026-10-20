@@ -314,25 +314,28 @@ func recoveryAddon(j updaterjob.Job) addonReach {
 			rollingBack = true
 		}
 	}
-	// The receipts are write-ordered, so the LAST receipt for each step is the
-	// latest outcome — a later failed attempt invalidates an earlier success
-	// (chronological, not an accumulated boolean). A FAILED or nil-evidence
-	// receipt must still overwrite an earlier success, so it is NOT skipped.
-	latest := map[string]bool{}
+	// The receipts are write-ordered. A NEW attempt of an upstream step RESETS
+	// its downstream proof: a new addon_restore invalidates any earlier
+	// nt8_rerestart + addon_rollback_reconnect, and a new nt8_rerestart
+	// invalidates any earlier addon_rollback_reconnect. So the classification
+	// reflects the LATEST attempt's actual downstream evidence, never a stale
+	// success from a prior attempt. A FAILED or nil-evidence receipt still
+	// overwrites an earlier success (it is NOT skipped).
+	restored, rerestartOK, reconnectOK := false, false, false
 	for _, rc := range j.Receipts {
 		ev := rc.Evidence
 		switch rc.Step {
 		case "addon_restore":
-			latest["addon_restore"] = rc.OK && ev != nil && ev["outcome"] == "restored"
+			restored = rc.OK && ev != nil && ev["outcome"] == "restored"
+			rerestartOK = false
+			reconnectOK = false
 		case "nt8_rerestart":
-			latest["nt8_rerestart"] = rc.OK && ev != nil && ev["outcome"] == "restarted"
+			rerestartOK = rc.OK && ev != nil && ev["outcome"] == "restarted"
+			reconnectOK = false
 		case "addon_rollback_reconnect":
-			latest["addon_rollback_reconnect"] = rc.OK && ev != nil && ev["outcome"] == "reconnected"
+			reconnectOK = rc.OK && ev != nil && ev["outcome"] == "reconnected"
 		}
 	}
-	restored := latest["addon_restore"]
-	rerestartOK := latest["nt8_rerestart"]
-	reconnectOK := latest["addon_rollback_reconnect"]
 	// Missing AddOn metadata (j.Addon == nil) cannot prove that no NT8 reload
 	// was owed, so it is treated as needing reload: a restored-DLL receipt
 	// alone must not label the runtime proven from missing metadata.

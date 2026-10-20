@@ -816,6 +816,34 @@ func TestRecoveryAddonClassification(t *testing.T) {
 	if got := recoveryAddon(later); got != addonAmbiguous {
 		t.Fatalf("recoveryAddon(later failed restore) = %v, want addonAmbiguous", got)
 	}
+
+	// A NEW upstream attempt RESETS downstream proof: a full successful
+	// sequence followed by a NEW restore (and no further restart/reconnect)
+	// must NOT reuse the OLD restart/reconnect — it is disk-restored-unverified.
+	reRestore := mk(placedDone, restarted, reconnectedDone, rollingBack)
+	reRestore.Addon = &updaterjob.AddonState{Restarted: true}
+	reRestore.Receipts = []updaterjob.Receipt{
+		{Step: "addon_restore", OK: true, Evidence: map[string]string{"outcome": "restored"}},
+		{Step: "nt8_rerestart", OK: true, Evidence: map[string]string{"outcome": "restarted"}},
+		{Step: "addon_rollback_reconnect", OK: true, Evidence: map[string]string{"outcome": "reconnected"}},
+		{Step: "addon_restore", OK: true, Evidence: map[string]string{"outcome": "restored"}},
+	}
+	if got := recoveryAddon(reRestore); got != addonDiskRestored {
+		t.Fatalf("recoveryAddon(new restore after full success) = %v, want addonDiskRestored", got)
+	}
+
+	// A NEW restart resets the reconnect proof only.
+	reRestart := mk(placedDone, restarted, reconnectedDone, rollingBack)
+	reRestart.Addon = &updaterjob.AddonState{Restarted: true}
+	reRestart.Receipts = []updaterjob.Receipt{
+		{Step: "addon_restore", OK: true, Evidence: map[string]string{"outcome": "restored"}},
+		{Step: "nt8_rerestart", OK: true, Evidence: map[string]string{"outcome": "restarted"}},
+		{Step: "addon_rollback_reconnect", OK: true, Evidence: map[string]string{"outcome": "reconnected"}},
+		{Step: "nt8_rerestart", OK: true, Evidence: map[string]string{"outcome": "restarted"}},
+	}
+	if got := recoveryAddon(reRestart); got != addonDiskRestored {
+		t.Fatalf("recoveryAddon(new restart after full success) = %v, want addonDiskRestored", got)
+	}
 }
 
 // PIN (finding 5, preservation): a leftover <dst>.recovery.tmp that CANNOT be
