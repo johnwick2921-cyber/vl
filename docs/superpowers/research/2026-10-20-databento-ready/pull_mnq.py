@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import stat
 import sys
+import time as clock_time
 import warnings
 from zoneinfo import ZoneInfo
 
@@ -122,6 +123,18 @@ def money(value):
     d = Decimal(str(value))
     require(d.is_finite() and d >= 0, 'Cost estimate is invalid')
     return d
+
+
+def quote(client, request):
+    # Metadata only: retry transient server errors, never retry a data download.
+    import databento as db
+    for attempt in range(3):
+        try:
+            return money(client.metadata.get_cost(**request))
+        except db.BentoServerError:
+            if attempt == 2:
+                raise Stop('Databento cost metadata server error at ' + request['start'])
+            clock_time.sleep(attempt + 1)
 
 
 def preflight(client, plan_path, out):
@@ -237,30 +250,40 @@ def download(client, plan_path, out, max_cost='0', validator=validate_dbn):
                 require(not folder.exists(), 'Interrupted attempt exists; preserve and inspect '
                         'before any retry: ' + str(folder))
                 pending.append(day)
-        # Quote every pending day BEFORE requesting any billable data.
-        quotes = [money(client.metadata.get_cost(**d['request'])) for d in pending]
+        # Monthly supersets include all pending daily windows plus intervening
+        # nights/weekends. Smaller requests avoid the full-year gateway timeout.
+        groups = {}
+        for day in pending:
+            groups.setdefault(day['day'][:7], []).append(day)
+        month_quotes = {}
+        for month, days in groups.items():
+            req = dict(days[0]['request'], end=days[-1]['request']['end'])
+            month_quotes[month] = quote(client, req)
+            print('Quote', month, 'USD', month_quotes[month], flush=True)
+        quotes = list(month_quotes.values())
         require(spent + sum(quotes, Decimal(0)) <= cap,
                 'Estimated additional usage exceeds cap; no new data downloaded')
-        for day, original_quote in zip(pending, quotes):
+        for day in pending:
+            original_quote = month_quotes[day['day'][:7]]
             # Recheck immediately before download; rolling plan windows can change.
-            quote = money(client.metadata.get_cost(**day['request']))
-            require(quote <= original_quote and spent + quote <= cap,
+            daily_quote = quote(client, day['request'])
+            require(daily_quote <= original_quote and spent + daily_quote <= cap,
                     'Quote increased; stop before billable request')
             folder = root / day['day']
             folder.mkdir(exist_ok=False)
-            write_json(folder / 'started.json', dict(day, quoted_usd=str(quote)))
+            write_json(folder / 'started.json', dict(day, quoted_usd=str(daily_quote)))
             path = folder / 'ticks.dbn.zst'
             downloaded = client.timeseries.get_range(**day['request'], path=path)
             if downloaded is not None:
                 downloaded.reader.close()
             validation = validator(path, day['request'])
             write_json(folder / 'validation.json', validation)
-            done = {'day': day['day'], 'quoted_usd': str(quote), 'bytes': path.stat().st_size,
+            done = {'day': day['day'], 'quoted_usd': str(daily_quote), 'bytes': path.stat().st_size,
                     'sha256': digest(path), 'records': validation['records'],
                     'download_complete': True,
                     'research_ready': False}  # Coverage/contract/sequence audit is separate.
             write_json(folder / 'complete.json', done)
-            spent += quote
+            spent += daily_quote
             print(day['day'], 'download validated:', validation['records'], 'records', flush=True)
         return {'downloaded_now': len(pending), 'total_quoted_usd': str(spent)}
 

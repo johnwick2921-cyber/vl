@@ -98,8 +98,11 @@ python3 -B pull_mnq.py download \
   --out /home/hoang/fleet-1017/out/databento-mnq-20261020-data
 ```
 
-The code checks ALL pending-day quotes before downloading, then rechecks each
-quote immediately before its request. `--max-cost-usd` is an explicit operator
+The downloader quotes monthly windows covering ALL pending days before downloading
+(including intervening nights/weekends, a conservative superset), then checks the
+exact daily quote immediately before its request. Transient server errors on
+cost metadata retry at most three times; data downloads never auto-retry.
+`--max-cost-usd` is an explicit operator
 parameter, not a provider-enforced billing cap. Leave it at zero unless the owner
 authorizes a concrete quoted extra charge. No automatic paid retries.
 

@@ -6,6 +6,7 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 import databento_dbn as dbn
+import databento as db
 import zstandard
 import pull_mnq as p
 
@@ -91,7 +92,7 @@ class Tests(unittest.TestCase):
 
     def test_full_budget_checked_before_any_day_downloads(self):
         plan = self.root / 'two-days.json'
-        p.write_json(plan, p.make_plan('2025-10-20', '2025-10-22'))
+        p.write_json(plan, p.make_plan('2025-10-31', '2025-11-04'))
         c = Client([0.75, 0.75, 0.75, 0.75])
         with self.assertRaises(p.Stop):
             p.download(c, plan, self.root / 'out', '1')
@@ -189,6 +190,19 @@ class Tests(unittest.TestCase):
         for value in ('NaN', 'Infinity', '-1'):
             with self.assertRaises(p.Stop):
                 p.money(value)
+
+    def test_metadata_server_retry_is_bounded(self):
+        c = Client()
+        with patch.object(c.metadata, 'get_cost', side_effect=[
+                db.BentoServerError(504), 0]) as cost, patch.object(p.clock_time, 'sleep'):
+            self.assertEqual(p.quote(c, self.req), 0)
+            self.assertEqual(cost.call_count, 2)
+        with patch.object(c.metadata, 'get_cost', side_effect=db.BentoServerError(504)) as cost, \
+                patch.object(p.clock_time, 'sleep'):
+            with self.assertRaises(p.Stop):
+                p.quote(c, self.req)
+            self.assertEqual(cost.call_count, 3)
+        self.assertEqual(c.calls, 0)
 
     def test_truncated_dbn_never_passes_validation(self):
         path = self.root / 'full'
