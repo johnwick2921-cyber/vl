@@ -2,6 +2,7 @@
 """Offline MNQ research downloads only. No bot/DB access; no automatic paid retry."""
 import argparse
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 import fcntl
@@ -12,6 +13,7 @@ import os
 from pathlib import Path
 import stat
 import sys
+import threading
 import time as clock_time
 import warnings
 from uuid import uuid4
@@ -235,6 +237,7 @@ def download_day(client, day, root, daily_quote, validator):
         except db.BentoServerError as exc:
             write_json(folder / 'server-error.json', {
                 'type': type(exc).__name__, 'attempt': attempt,
+                'http_status': exc.http_status,
                 'quoted_usd': str(daily_quote)})
             # Only a zero-priced request may retry automatically. Keep every
             # failed attempt, including partial bytes, before a new request.
@@ -259,9 +262,13 @@ def download_day(client, day, root, daily_quote, validator):
         return done
 
 
-def download(client, plan_path, out, max_cost='0', validator=validate_dbn):
+def download(client, plan_path, out, max_cost='0', validator=validate_dbn,
+             workers=1, client_factory=None):
     plan = load_plan(plan_path)
     cap = money(max_cost)
+    require(1 <= workers <= 8, 'Workers must be between 1 and 8')
+    require(workers == 1 or (cap == 0 and client_factory is not None),
+            'Parallel downloads require zero additional usage and isolated clients')
     root = Path(out)
     root.mkdir(parents=True, exist_ok=True)
     # Advisory process lock; file retained on exit, never deleted.
@@ -293,13 +300,54 @@ def download(client, plan_path, out, max_cost='0', validator=validate_dbn):
         for day in pending:
             groups.setdefault(day['day'][:7], []).append(day)
         month_quotes = {}
-        for month, days in groups.items():
+        local = threading.local()
+        def isolated_client():
+            if not hasattr(local, 'client'):
+                local.client = client_factory()
+            return local.client
+        def quote_month(item):
+            month, days = item
             req = dict(days[0]['request'], end=days[-1]['request']['end'])
-            month_quotes[month] = quote(client, req)
-            print('Quote', month, 'USD', month_quotes[month], flush=True)
+            amount = quote(isolated_client() if workers > 1 else client, req)
+            print('Quote', month, 'USD', amount, flush=True)
+            return month, amount
+        if workers > 1:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                month_quotes.update(pool.map(quote_month, groups.items()))
+        else:
+            month_quotes.update(quote_month(item) for item in groups.items())
         quotes = list(month_quotes.values())
         require(spent + sum(quotes, Decimal(0)) <= cap,
                 'Estimated additional usage exceeds cap; no new data downloaded')
+        if workers > 1:
+            def receive_day(day):
+                own = isolated_client()
+                require(quote(own, day['request']) == 0,
+                        'Daily quote is no longer zero; refusing request')
+                return download_day(own, day, root, Decimal(0), validator)
+            # At most workers days in flight. A failure stops new scheduling;
+            # already-started requests finish and retain their own receipts.
+            todo = iter(pending)
+            failures = []
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                active = {pool.submit(receive_day, d): d for d in
+                          [next(todo, None) for _ in range(workers)] if d is not None}
+                while active:
+                    ready, _ = wait(active, return_when=FIRST_COMPLETED)
+                    for future in ready:
+                        day = active.pop(future)
+                        try:
+                            future.result()
+                        except Exception as exc:
+                            failures.append((day['day'], type(exc).__name__))
+                    if not failures:
+                        for _ in ready:
+                            day = next(todo, None)
+                            if day is not None:
+                                active[pool.submit(receive_day, day)] = day
+            require(not failures, 'Parallel run stopped; preserved failed days: '+str(failures))
+            return {'downloaded_now': len(pending), 'total_quoted_usd': str(spent),
+                    'workers': workers}
         for day in pending:
             original_quote = month_quotes[day['day'][:7]]
             # Recheck immediately before download; rolling plan windows can change.
@@ -327,6 +375,7 @@ def main():
         p.add_argument('--key-file', type=Path, default=DEFAULT_KEY)
         if command == 'download':
             p.add_argument('--max-cost-usd', default='0')
+            p.add_argument('--workers', type=int, default=1)
     args = parser.parse_args()
     if args.command == 'save-key':
         save_key(args.key_file)
@@ -338,7 +387,8 @@ def main():
         if args.command == 'preflight':
             result = preflight(client, args.plan, args.out)
         else:
-            result = download(client, args.plan, args.out, args.max_cost_usd)
+            result = download(client, args.plan, args.out, args.max_cost_usd,
+                              workers=args.workers, client_factory=lambda: client_for(args.key_file))
         print(json.dumps(result, indent=2))
 
 

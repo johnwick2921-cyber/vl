@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import threading
+import time
 from unittest.mock import patch
 from types import SimpleNamespace
 
@@ -248,6 +250,68 @@ class Tests(unittest.TestCase):
             f.write(raw[:-1])
         with self.assertRaises(Warning):
             p.validate_dbn(broken, self.req)
+
+    def test_parallel_overlaps_isolated_clients_and_resumes_without_requests(self):
+        plan = self.root / 'parallel-plan.json'
+        p.write_json(plan, p.make_plan('2025-10-20', '2025-10-24'))
+        guard = threading.Lock()
+        barrier = threading.Barrier(2)
+        state = {'active': 0, 'peak': 0, 'calls': 0}
+        class Isolated(Client):
+            def __init__(self):
+                super().__init__()
+                self.owner = threading.get_ident()
+            def get_range(self, path, **req):
+                assert self.owner == threading.get_ident()
+                with guard:
+                    state['active'] += 1
+                    state['calls'] += 1
+                    state['peak'] = max(state['peak'], state['active'])
+                barrier.wait(timeout=5)
+                fixture(path, req)
+                with guard: state['active'] -= 1
+        out=self.root/'parallel'
+        p.download(Client(),plan,out,workers=2,client_factory=Isolated)
+        self.assertEqual(state['peak'],2)
+        self.assertEqual(len(list(out.glob('*/complete.json'))),4)
+        p.download(Client(),plan,out,workers=2,client_factory=Isolated)
+        self.assertEqual(state['calls'],4)
+
+    def test_parallel_positive_quote_refused_before_download(self):
+        factory=lambda: Client([0.01])
+        with self.assertRaises(p.Stop):
+            p.download(Client(),self.plan,self.root/'out',workers=2,client_factory=factory)
+        self.assertFalse(list((self.root/'out').glob('*/started.json')))
+        with self.assertRaises(p.Stop):
+            p.download(Client(),self.plan,self.root/'paid',max_cost='1',workers=2,client_factory=Client)
+
+    def test_parallel_daily_quote_increase_refused(self):
+        # Month checks and data checks use separate thread pools/clients.
+        def factory():
+            c=Client()
+            c.metadata.get_cost=lambda **kw: 0 if 'ThreadPoolExecutor' in threading.current_thread().name else 0
+            return c
+        original=p.quote
+        count={'n':0}
+        def cost(client,req):
+            count['n']+=1
+            return p.Decimal(0 if count['n']==1 else 1)
+        with patch.object(p,'quote',side_effect=cost),self.assertRaises(p.Stop):
+            p.download(Client(),self.plan,self.root/'out',workers=2,client_factory=factory)
+        self.assertFalse(list((self.root/'out').glob('*/started.json')))
+
+    def test_parallel_failure_stops_scheduling_and_preserves_receipts(self):
+        plan=self.root/'failure-plan.json'
+        p.write_json(plan,p.make_plan('2025-10-20','2025-10-24'))
+        def receive(client,day,root,cost,validator):
+            if day['day']=='2025-10-20': raise p.Stop('failed fixture')
+            time.sleep(0.05)
+            return original(client,day,root,cost,validator)
+        original=p.download_day
+        with patch.object(p,'download_day',side_effect=receive),self.assertRaises(p.Stop):
+            p.download(Client(),plan,self.root/'out',workers=2,client_factory=Client)
+        self.assertTrue((self.root/'out'/'2025-10-21'/'complete.json').exists())
+        self.assertFalse((self.root/'out'/'2025-10-22').exists())
 
 
 if __name__ == '__main__':

@@ -95,7 +95,7 @@ python3 -B pull_mnq.py preflight \
 ```bash
 python3 -B pull_mnq.py download \
   --plan /home/hoang/fleet-1017/out/databento-mnq-20261020-plan.json \
-  --out /home/hoang/fleet-1017/out/databento-mnq-20261020-data
+  --out /home/hoang/fleet-1017/out/databento-mnq-20261020-data --workers 8
 ```
 
 The downloader quotes monthly windows covering ALL pending days before downloading
@@ -107,6 +107,16 @@ zero-cost quote before retry and each failed attempt directory preserved.
 `--max-cost-usd` is an explicit operator
 parameter, not a provider-enforced billing cap. Leave it at zero unless the owner
 authorizes a concrete quoted extra charge. No automatic paid retries.
+
+Owner-requested acceleration: `--workers 8` overlaps up to eight daily requests,
+with a private SDK client per worker and parallel monthly metadata checks. Only
+zero-additional-usage downloads permit concurrency. Each day still gets its own
+quote, original DBN, validation and SHA256 receipt. One process retains the root
+lock; completed files are verified and skipped. Failure stops new scheduling
+while in-flight days finish, retaining receipts. HTTP status codes are recorded
+for server failures without recording credentials or response bodies.
+`verification-parallel.json`: 24 tests pass in Chicago and UTC; three mutants
+caught, including real overlap, private clients, resume, pricing and failure gates.
 
 An interrupted directory contains `started.json` and possibly a partial DBN.
 Preserve and inspect it; never delete it. If a retry is needed, move that day
