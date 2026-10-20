@@ -333,7 +333,10 @@ func recoveryAddon(j updaterjob.Job) addonReach {
 	restored := latest["addon_restore"]
 	rerestartOK := latest["nt8_rerestart"]
 	reconnectOK := latest["addon_rollback_reconnect"]
-	needsReload := j.Addon != nil && j.Addon.Restarted
+	// Missing AddOn metadata (j.Addon == nil) cannot prove that no NT8 reload
+	// was owed, so it is treated as needing reload: a restored-DLL receipt
+	// alone must not label the runtime proven from missing metadata.
+	needsReload := j.Addon == nil || j.Addon.Restarted
 	switch {
 	case restored && (!needsReload || (rerestartOK && reconnectOK)):
 		// The previous DLL is restored to disk AND (when the place restarted

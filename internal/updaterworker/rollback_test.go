@@ -705,6 +705,37 @@ func TestRestoreFileLineHandlesSpacedPaths(t *testing.T) {
 	}
 }
 
+// The no-clobber move primitive must hold even when the destination appears
+// right at the move boundary — after any existence check, immediately before
+// the real move. mv -n -T is atomic (no check-to-move gap), and the
+// source-absence postcondition turns a silent skip into a refusal. Both the
+// source and the intruding destination survive.
+func TestCrashLineMoveBoundaryNoClobber(t *testing.T) {
+	root := t.TempDir()
+	live := filepath.Join(root, "live dir")
+	writeFile(t, live+".recovery.tmp", "snapshot copy\n")
+
+	// An mv that creates the destination right before the real move.
+	bin := t.TempDir()
+	mvShim := "#!/bin/sh\nlast=\nfor a in \"$@\"; do last=\"$a\"; done\n" +
+		"if [ \"$last\" = '" + live + "' ]; then echo intruder > '" + live + "'; fi\n" +
+		"/usr/bin/mv \"$@\"\n"
+	writeFile(t, filepath.Join(bin, "mv"), mvShim)
+	if err := os.Chmod(filepath.Join(bin, "mv"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if out, err := runRestore([]string{crashLineCmd(live)}, bin); err == nil {
+		t.Fatalf("the crash line succeeded despite a destination created at the move boundary:\n%s", out)
+	}
+	if b, _ := os.ReadFile(live); string(b) != "intruder\n" {
+		t.Fatalf("the destination created at the boundary was overwritten: %q", b)
+	}
+	if b, _ := os.ReadFile(live + ".recovery.tmp"); string(b) != "snapshot copy\n" {
+		t.Fatalf("the source was lost on a skipped move: %q", b)
+	}
+}
+
 // The AddOn state is derived from recorded transitions + receipts, never from
 // j.Addon.BackupDir alone (empty both when the box had no previous DLL and when
 // the place never ran). This matrix pins each classification.
@@ -738,12 +769,21 @@ func TestRecoveryAddonClassification(t *testing.T) {
 	}
 
 	// A successful addon_restore receipt is the LATEST word, even after a
-	// reconnect and a rollback — when the place step did NOT restart NT8, so
-	// no rerestart/reconnect pair is owed.
+	// reconnect and a rollback — when the place step did NOT restart NT8
+	// (Addon.Restarted == false, recorded), so no rerestart/reconnect is owed.
 	restored := mk(placedDone, restarted, reconnectedDone, rollingBack)
+	restored.Addon = &updaterjob.AddonState{Restarted: false}
 	restored.Receipts = []updaterjob.Receipt{{Step: "addon_restore", OK: true, Evidence: map[string]string{"outcome": "restored"}}}
 	if got := recoveryAddon(restored); got != addonRestored {
-		t.Fatalf("recoveryAddon(restored receipt) = %v, want addonRestored", got)
+		t.Fatalf("recoveryAddon(restored receipt, Restarted=false) = %v, want addonRestored", got)
+	}
+
+	// Missing AddOn metadata (j.Addon == nil) cannot prove no NT8 reload was
+	// owed: a restored-DLL receipt alone must NOT label the runtime proven.
+	noMeta := mk(placedDone, restarted, reconnectedDone, rollingBack)
+	noMeta.Receipts = []updaterjob.Receipt{{Step: "addon_restore", OK: true, Evidence: map[string]string{"outcome": "restored"}}}
+	if got := recoveryAddon(noMeta); got != addonDiskRestored {
+		t.Fatalf("recoveryAddon(restored, nil AddOn) = %v, want addonDiskRestored", got)
 	}
 
 	// When the place step DID restart NT8 (Addon.Restarted), a restored DLL
