@@ -1,0 +1,42 @@
+{
+  "mutants": [
+    {
+      "caught": true,
+      "errors": 0,
+      "failures": 1,
+      "name": "disable_total_cost_gate"
+    },
+    {
+      "caught": true,
+      "errors": 0,
+      "failures": 1,
+      "name": "disable_saved_hash_check"
+    },
+    {
+      "caught": true,
+      "errors": 0,
+      "failures": 1,
+      "name": "ignore_Houston_DST"
+    }
+  ],
+  "network_calls": 0,
+  "paid_data_downloads": 0,
+  "status": "OFFLINE_READY_AUTHENTICATED_VALIDATION_PENDING",
+  "test_count": 15,
+  "timezone_runs": {
+    "America/Chicago": {
+      "exit": 0,
+      "output": "2025-10-20 download validated: 2 records\n2025-10-20 records 2 estimated USD 0\nSaved private key file; contents not displayed.\n2025-10-20 download validated: 2 records\ntest_event_regression_is_reported_not_silently_sorted (test_pull_mnq.Tests.test_event_regression_is_reported_not_silently_sorted) ... ok\ntest_full_budget_checked_before_any_day_downloads (test_pull_mnq.Tests.test_full_budget_checked_before_any_day_downloads) ... ok\ntest_hash_tampering_blocks_resume (test_pull_mnq.Tests.test_hash_tampering_blocks_resume) ... ok\ntest_interrupted_attempt_never_auto_retried (test_pull_mnq.Tests.test_interrupted_attempt_never_auto_retried) ... ok\ntest_invalid_cost_is_rejected (test_pull_mnq.Tests.test_invalid_cost_is_rejected) ... ok\ntest_no_overwrite_and_plan_tamper (test_pull_mnq.Tests.test_no_overwrite_and_plan_tamper) ... ok\ntest_positive_quote_blocks_before_download (test_pull_mnq.Tests.test_positive_quote_blocks_before_download) ... ok\ntest_preflight_metadata_only (test_pull_mnq.Tests.test_preflight_metadata_only) ... ok\ntest_private_key_and_preserve_existing (test_pull_mnq.Tests.test_private_key_and_preserve_existing) ... ok\ntest_quote_increase_blocks (test_pull_mnq.Tests.test_quote_increase_blocks) ... ok\ntest_real_compressed_dbn_download_validate_resume (test_pull_mnq.Tests.test_real_compressed_dbn_download_validate_resume) ... ok\ntest_real_dbn_validation_bad_tick_and_order (test_pull_mnq.Tests.test_real_dbn_validation_bad_tick_and_order) ... ok\ntest_schema_specific_availability (test_pull_mnq.Tests.test_schema_specific_availability) ... ok\ntest_truncated_dbn_never_passes_validation (test_pull_mnq.Tests.test_truncated_dbn_never_passes_validation) ... ok\ntest_year_dates_dst_and_exact_symbols (test_pull_mnq.Tests.test_year_dates_dst_and_exact_symbols) ... ok\n\n----------------------------------------------------------------------\nRan 15 tests in 0.338s\n\nOK\n/usr/lib/python3.12/asyncio/base_events.py:726: ResourceWarning: unclosed event loop <_UnixSelectorEventLoop running=False closed=False debug=False>\n"
+    },
+    "UTC": {
+      "exit": 0,
+      "output": "2025-10-20 download validated: 2 records\n2025-10-20 records 2 estimated USD 0\nSaved private key file; contents not displayed.\n2025-10-20 download validated: 2 records\ntest_event_regression_is_reported_not_silently_sorted (test_pull_mnq.Tests.test_event_regression_is_reported_not_silently_sorted) ... ok\ntest_full_budget_checked_before_any_day_downloads (test_pull_mnq.Tests.test_full_budget_checked_before_any_day_downloads) ... ok\ntest_hash_tampering_blocks_resume (test_pull_mnq.Tests.test_hash_tampering_blocks_resume) ... ok\ntest_interrupted_attempt_never_auto_retried (test_pull_mnq.Tests.test_interrupted_attempt_never_auto_retried) ... ok\ntest_invalid_cost_is_rejected (test_pull_mnq.Tests.test_invalid_cost_is_rejected) ... ok\ntest_no_overwrite_and_plan_tamper (test_pull_mnq.Tests.test_no_overwrite_and_plan_tamper) ... ok\ntest_positive_quote_blocks_before_download (test_pull_mnq.Tests.test_positive_quote_blocks_before_download) ... ok\ntest_preflight_metadata_only (test_pull_mnq.Tests.test_preflight_metadata_only) ... ok\ntest_private_key_and_preserve_existing (test_pull_mnq.Tests.test_private_key_and_preserve_existing) ... ok\ntest_quote_increase_blocks (test_pull_mnq.Tests.test_quote_increase_blocks) ... ok\ntest_real_compressed_dbn_download_validate_resume (test_pull_mnq.Tests.test_real_compressed_dbn_download_validate_resume) ... ok\ntest_real_dbn_validation_bad_tick_and_order (test_pull_mnq.Tests.test_real_dbn_validation_bad_tick_and_order) ... ok\ntest_schema_specific_availability (test_pull_mnq.Tests.test_schema_specific_availability) ... ok\ntest_truncated_dbn_never_passes_validation (test_pull_mnq.Tests.test_truncated_dbn_never_passes_validation) ... ok\ntest_year_dates_dst_and_exact_symbols (test_pull_mnq.Tests.test_year_dates_dst_and_exact_symbols) ... ok\n\n----------------------------------------------------------------------\nRan 15 tests in 0.320s\n\nOK\n/usr/lib/python3.12/asyncio/base_events.py:726: ResourceWarning: unclosed event loop <_UnixSelectorEventLoop running=False closed=False debug=False>\n"
+    }
+  },
+  "versions": {
+    "databento": "0.74.0",
+    "databento-dbn": "0.52.1",
+    "pandas": "3.0.2",
+    "zstandard": "0.25.0"
+  }
+}
