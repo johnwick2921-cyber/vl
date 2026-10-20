@@ -118,6 +118,8 @@ type box struct {
 	startDelayRemaining     int    // runtime countdown for startDelayPolls
 	startProbeError         bool   // tasklist errors once after Start-Process (process probe error)
 	startProbeFails         bool   // runtime one-shot for startProbeError
+	startFails              bool   // Start-Process itself returns an error (start command fails)
+	exitWaitProbeError      bool   // tasklist errors once during the exit-wait linger (after the stop)
 	nt8ExitLinger           int    // W-UPDATER-WINPATH (d): after a stop, tasklist keeps reporting NT8 for this many polls (the old process fully exiting)
 	nt8LingerLeft           int    // the remaining linger polls
 	flipSimOnClose          bool   // TOCTOU: the sim_accounts leg flips FAIL when the graceful close runs
@@ -419,6 +421,11 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 			b.mu.Unlock()
 			return nil, errors.New("fake tasklist probe error")
 		}
+		if !b.nt8Running && b.nt8LingerLeft > 0 && b.exitWaitProbeError {
+			b.exitWaitProbeError = false // one-shot
+			b.mu.Unlock()
+			return nil, errors.New("fake tasklist probe error during exit wait")
+		}
 		running := b.nt8Running
 		if running && b.startDelayRemaining > 0 {
 			// Delayed healthy start: Start-Process launched it, but tasklist
@@ -460,6 +467,12 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 		}
 		if strings.Contains(a, "Start-Process") {
 			b.mu.Lock()
+			if b.startFails && !b.addonRestored {
+				// FORWARD start only: Start-Process itself errors (the start
+				// command fails, not a launch-then-exit).
+				b.mu.Unlock()
+				return nil, errors.New("fake Start-Process failure")
+			}
 			if b.startDoesNotBringUp && !b.addonRestored {
 				// FORWARD start only: Start-Process returns success but the
 				// launched process is absent (launch-then-immediate-exit) —

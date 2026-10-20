@@ -2,6 +2,8 @@ package updaterworker
 
 import (
 	"context"
+	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -89,5 +91,101 @@ func TestNT8StartVerificationCancelledContextAborts(t *testing.T) {
 	rr := newNT8Restart(r.box.fakeRunWin, addonExe(), nil)
 	if err := r.w.startAndVerifyNT8(ctx, rr, map[string]string{}); err == nil {
 		t.Fatalf("startAndVerifyNT8 must return an error when the context is canceled mid-wait")
+	}
+}
+
+// The start command itself errors (Start-Process fails, not launch-then-exit):
+// the step must not report success. recovery_needed, hold kept.
+func TestNT8StartVerificationStartCommandFailsIsRecoveryNeeded(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	r.set(func() { r.startFails = true })
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRecoveryNeeded {
+		t.Fatalf("job %s (error %q), want recovery_needed: the start command failed", j.State, j.Error)
+	}
+	if r.callCount("activate") != 0 {
+		t.Fatalf("activate ran %d times before NT8 was proven up", r.callCount("activate"))
+	}
+}
+
+// The liveness probe errors during the exit-wait (after NT8 was stopped):
+// liveness is unproven, so recovery_needed — never a false-clean revert.
+func TestNT8StartVerificationExitWaitProbeErrorIsRecoveryNeeded(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	r.set(func() {
+		r.nt8HangsOnClose = true // force-stop path
+		r.nt8ExitLinger = 1      // the old process lingers one poll after the stop
+		r.exitWaitProbeError = true
+	})
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRecoveryNeeded {
+		t.Fatalf("job %s (error %q), want recovery_needed: the exit-wait probe errored after the stop", j.State, j.Error)
+	}
+	if r.callCount("activate") != 0 {
+		t.Fatalf("activate ran %d times before NT8 liveness was proven", r.callCount("activate"))
+	}
+}
+
+// The migration-failure fallback start is ALSO liveness-verified: when the
+// fallback Start-Process errors, the job is recovery_needed (not reverted_clean).
+func TestNT8StartVerificationMigrationFallbackStartFailureIsRecoveryNeeded(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "NinjaTrader.Custom.dll"), "type "+addonTypeName+"\n")
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "AddOns", "VLTraderTCPClient.cs"), "// the AddOn source\n")
+	// The -Custom rebuild fails (type diff), so the worker falls back to a
+	// restart on the old files.
+	prev := r.box.fakeRunWin
+	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if strings.Contains(name, "powershell") && hasWinFlag(args, "-Custom") {
+			return []byte("VL_CUSTOM_TYPES_DIFF\n"), errors.New("exit 1")
+		}
+		return prev(ctx, name, args...)
+	}
+	r.set(func() { r.startFails = true }) // the fallback Start-Process errors
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRecoveryNeeded || !strings.Contains(j.Error, "could not be restarted") {
+		t.Fatalf("job %s (error %q), want recovery_needed: the migration fallback start failed", j.State, j.Error)
+	}
+	if r.callCount("activate") != 0 {
+		t.Fatalf("activate ran %d times under a failed migration fallback start", r.callCount("activate"))
+	}
+}
+
+// RecoveryText for a job that placed the AddOn but never activated the bot must
+// NOT print the bare "nothing installed / do not restore anything" + hold-clear
+// on old-Go-boot proof alone. It must name the backup, instruct restoring the
+// previous AddOn (mixed versions as the risk, never asserted incompatibility),
+// and gate the hold-clear on the AddOn being restored + reconnected.
+func TestRecoveryTextAddonPlacedNotActivatedGatesHoldOnAddon(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	// An OLD AddOn DLL on disk so addonbuild.Place records a non-empty backup dir.
+	writeFile(r.t, filepath.Join(r.nt8docs, "bin", "Custom", "VL.AddOn.dll"), "old AddOn DLL\n")
+	r.set(func() { r.startDoesNotBringUp = true })
+	j := r.runToEnd(t)
+	if j.State != updaterjob.StateRecoveryNeeded {
+		t.Fatalf("job %s (error %q), want recovery_needed", j.State, j.Error)
+	}
+	if j.Addon == nil || j.Addon.BackupDir == "" {
+		t.Fatalf("the AddOn must be placed (backup dir set) for this regression")
+	}
+	text := RecoveryText(j, r.cfg.Target)
+	for _, want := range []string{
+		"The AddOn was already placed",
+		"Restore the previous AddOn",
+		"mixed, unverified",
+		j.Addon.BackupDir,
+		"AND the previous AddOn is restored",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("recovery text must contain %q:\n%s", want, text)
+		}
+	}
+	for _, l := range strings.Split(text, "\n") {
+		if strings.Contains(l, "clear this job's hold") && !strings.Contains(l, "AND the previous AddOn is restored") {
+			t.Fatalf("an ungated hold-clear line exists while the AddOn is placed:\n%s", text)
+		}
 	}
 }

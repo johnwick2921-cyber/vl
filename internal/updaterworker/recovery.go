@@ -116,7 +116,7 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 	// a separate artifact the recovery must not forget.
 	addonPlaced := j.Addon != nil && j.Addon.BackupDir != ""
 	if addonPlaced {
-		p("%d. The AddOn was already placed before this failure: the NEW AddOn DLL is in the AddOns folder and the PREVIOUS one is backed up at %s. The running bot is still the pre-update build, so restore the previous AddOn (MOVE the backup back, never delete) BEFORE opening NinjaTrader — otherwise NinjaTrader loads the new AddOn against the old bot. Do NOT clear the hold until NinjaTrader is back on the previous AddOn.", step, j.Addon.BackupDir)
+		p("%d. The AddOn was already placed before this failure: the NEW AddOn DLL is in the AddOns folder and the PREVIOUS one is backed up at %s. The bot binary was NOT activated (it still runs the pre-update build), so leaving the new DLL would run mixed, unverified bot and AddOn versions — the demonstrated risk. Restore the previous AddOn (MOVE the backup back, never delete) BEFORE opening NinjaTrader, then verify the AddOn reconnects on the previous build. Do NOT clear the hold until that is proven.", step, j.Addon.BackupDir)
 		step++
 	}
 	short := prove
