@@ -738,11 +738,32 @@ func TestRecoveryAddonClassification(t *testing.T) {
 	}
 
 	// A successful addon_restore receipt is the LATEST word, even after a
-	// reconnect and a rollback.
+	// reconnect and a rollback — when the place step did NOT restart NT8, so
+	// no rerestart/reconnect pair is owed.
 	restored := mk(placedDone, restarted, reconnectedDone, rollingBack)
 	restored.Receipts = []updaterjob.Receipt{{Step: "addon_restore", OK: true, Evidence: map[string]string{"outcome": "restored"}}}
 	if got := recoveryAddon(restored); got != addonRestored {
 		t.Fatalf("recoveryAddon(restored receipt) = %v, want addonRestored", got)
+	}
+
+	// When the place step DID restart NT8 (Addon.Restarted), a restored DLL
+	// receipt alone does not prove NT8 is running it: the rerestart + reconnect
+	// pair must also be recorded, else the state is ambiguous.
+	partial := mk(placedDone, restarted, reconnectedDone, rollingBack)
+	partial.Addon = &updaterjob.AddonState{Restarted: true}
+	partial.Receipts = []updaterjob.Receipt{{Step: "addon_restore", OK: true, Evidence: map[string]string{"outcome": "restored"}}}
+	if got := recoveryAddon(partial); got != addonAmbiguous {
+		t.Fatalf("recoveryAddon(restored, Restarted, no rerestart) = %v, want addonAmbiguous", got)
+	}
+	full := mk(placedDone, restarted, reconnectedDone, rollingBack)
+	full.Addon = &updaterjob.AddonState{Restarted: true}
+	full.Receipts = []updaterjob.Receipt{
+		{Step: "addon_restore", OK: true, Evidence: map[string]string{"outcome": "restored"}},
+		{Step: "nt8_rerestart", OK: true, Evidence: map[string]string{"outcome": "restarted"}},
+		{Step: "addon_rollback_reconnect", OK: true, Evidence: map[string]string{"outcome": "reconnected"}},
+	}
+	if got := recoveryAddon(full); got != addonRestored {
+		t.Fatalf("recoveryAddon(restored+rerestart+reconnect) = %v, want addonRestored", got)
 	}
 }
 

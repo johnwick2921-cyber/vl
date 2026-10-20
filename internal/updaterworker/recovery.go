@@ -126,7 +126,7 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 		dir, dirKnown := addonBackupDir(j)
 		switch {
 		case dir != "":
-			p("%d. The AddOn was already placed before this failure: the NEW AddOn DLL is in the AddOns folder and the PREVIOUS one is backed up at %s. The bot binary %s, so leaving the new DLL would run mixed, unverified bot and AddOn versions — the demonstrated risk, not an established incompatibility. Restore the previous AddOn by FIRST moving the current (new) AddOn DLL aside (never overwrite or delete it — it is the evidence), then COPYING the backup back into place (never MOVE or delete the backup — it is the only copy of the previous DLL) BEFORE opening NinjaTrader, then verify the AddOn reconnects on the previous build. Do NOT clear the hold until that is proven.", step, dir, act)
+			p("%d. The AddOn was already placed before this failure: the NEW AddOn DLL is in the AddOns folder and the PREVIOUS one is backed up at %s. The bot binary %s, so leaving the new DLL would run mixed, unverified bot and AddOn versions — the demonstrated risk, not an established incompatibility. Restore the previous AddOn by FIRST moving the current (new) AddOn DLL aside (never overwrite or delete it — it is the evidence), then COPYING the backup back into place (never MOVE or delete the backup — it is the only copy of the previous DLL) BEFORE opening NinjaTrader, then verify the AddOn reconnects on the previous build. If you cannot determine the exact AddOns folder path, STOP and inspect it manually — do not guess. Do NOT clear the hold until that is proven.", step, dir, act)
 			addonHoldCond = "AND the previous AddOn is restored + reconnected"
 		case dirKnown:
 			p("%d. The AddOn was already placed but NO previous DLL was recorded (the box had none to back up): there is nothing to restore, but the new DLL is unproven and the bot binary %s. Do NOT clear the hold until the AddOn reconnects and the boot is proven.", step, act)
@@ -304,15 +304,37 @@ func recoveryAddon(j updaterjob.Job) addonReach {
 		}
 	}
 	restored := false
+	rerestartOK := false
+	reconnectOK := false
 	for _, rc := range j.Receipts {
-		if rc.Step == "addon_restore" && rc.OK && rc.Evidence != nil && rc.Evidence["outcome"] == "restored" {
-			restored = true
+		if rc.Evidence == nil {
+			continue
+		}
+		switch rc.Step {
+		case "addon_restore":
+			if rc.OK && rc.Evidence["outcome"] == "restored" {
+				restored = true
+			}
+		case "nt8_rerestart":
+			if rc.OK && rc.Evidence["outcome"] == "restarted" {
+				rerestartOK = true
+			}
+		case "addon_rollback_reconnect":
+			if rc.OK && rc.Evidence["outcome"] == "reconnected" {
+				reconnectOK = true
+			}
 		}
 	}
 	switch {
 	case restored:
-		// A proven restore is the LATEST AddOn word, after any earlier reconnect.
-		return addonRestored
+		// The previous DLL is proven restored. But if the place step restarted
+		// NT8, the rollback must ALSO have restarted it and proven the old AddOn
+		// reconnected — a restored DLL receipt alone does not prove NT8 is
+		// running it. Without that pair, the loaded state is unproven.
+		if j.Addon == nil || !j.Addon.Restarted || (rerestartOK && reconnectOK) {
+			return addonRestored
+		}
+		return addonAmbiguous
 	case rollingBack && placedDone:
 		// A rollback ran after the AddOn was placed but produced no proven
 		// restore: the current DLL is UNPROVEN — a reconnect from before the
