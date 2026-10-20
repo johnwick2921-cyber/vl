@@ -1,0 +1,36 @@
+{
+  "timezone_runs": {
+    "America/Chicago": {
+      "exit": 0,
+      "log": "test_be_gap_is_separate (test_stop_variants.Tests.test_be_gap_is_separate) ... ok\ntest_be_threshold_and_no_reentry (test_stop_variants.Tests.test_be_threshold_and_no_reentry) ... ok\ntest_boundary_touch_not_entry_and_late_orb (test_stop_variants.Tests.test_boundary_touch_not_entry_and_late_orb) ... ok\ntest_box_equal_risk_and_target_long_short (test_stop_variants.Tests.test_box_equal_risk_and_target_long_short) ... ok\ntest_entry_print_not_exit_and_cutoff (test_stop_variants.Tests.test_entry_print_not_exit_and_cutoff) ... ok\ntest_equal_timestamp_preserves_row_order (test_stop_variants.Tests.test_equal_timestamp_preserves_row_order) ... ok\ntest_half_box (test_stop_variants.Tests.test_half_box) ... ok\ntest_half_tick_nominal_vs_rounded (test_stop_variants.Tests.test_half_tick_nominal_vs_rounded) ... ok\ntest_random_independent_first_passage (test_stop_variants.Tests.test_random_independent_first_passage) ... ok\ntest_target_before_or_at_be_activation (test_stop_variants.Tests.test_target_before_or_at_be_activation) ... ok\n\n----------------------------------------------------------------------\nRan 10 tests in 0.067s\n\nOK\n"
+    },
+    "UTC": {
+      "exit": 0,
+      "log": "test_be_gap_is_separate (test_stop_variants.Tests.test_be_gap_is_separate) ... ok\ntest_be_threshold_and_no_reentry (test_stop_variants.Tests.test_be_threshold_and_no_reentry) ... ok\ntest_boundary_touch_not_entry_and_late_orb (test_stop_variants.Tests.test_boundary_touch_not_entry_and_late_orb) ... ok\ntest_box_equal_risk_and_target_long_short (test_stop_variants.Tests.test_box_equal_risk_and_target_long_short) ... ok\ntest_entry_print_not_exit_and_cutoff (test_stop_variants.Tests.test_entry_print_not_exit_and_cutoff) ... ok\ntest_equal_timestamp_preserves_row_order (test_stop_variants.Tests.test_equal_timestamp_preserves_row_order) ... ok\ntest_half_box (test_stop_variants.Tests.test_half_box) ... ok\ntest_half_tick_nominal_vs_rounded (test_stop_variants.Tests.test_half_tick_nominal_vs_rounded) ... ok\ntest_random_independent_first_passage (test_stop_variants.Tests.test_random_independent_first_passage) ... ok\ntest_target_before_or_at_be_activation (test_stop_variants.Tests.test_target_before_or_at_be_activation) ... ok\n\n----------------------------------------------------------------------\nRan 10 tests in 0.066s\n\nOK\n"
+    }
+  },
+  "mutants": {
+    "BE_at_19_points": {
+      "failures": 2,
+      "errors": 0
+    },
+    "BE_not_moved": {
+      "failures": 4,
+      "errors": 0
+    },
+    "half_box_full_risk": {
+      "failures": 3,
+      "errors": 0
+    },
+    "enter_on_touch": {
+      "failures": 1,
+      "errors": 0
+    },
+    "BE_before_target": {
+      "failures": 2,
+      "errors": 0
+    }
+  },
+  "engine_sha256": "dec4b8be971acf77d5bd7822321bc89993f0ba96c2743d3eedc72d328c91231f",
+  "synthetic_comparisons_per_timezone": 6000
+}
