@@ -14,6 +14,7 @@ import stat
 import sys
 import time as clock_time
 import warnings
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 DATASET = 'GLBX.MDP3'
@@ -222,6 +223,42 @@ def validate_records(store, request):
                              'Calendar/flags/symbol mapping review still required.'}
 
 
+def download_day(client, day, root, daily_quote, validator):
+    import databento as db
+    folder = root / day['day']
+    for attempt in range(1, 4):
+        folder.mkdir(exist_ok=False)
+        write_json(folder / 'started.json', dict(day, quoted_usd=str(daily_quote), attempt=attempt))
+        path = folder / 'ticks.dbn.zst'
+        try:
+            downloaded = client.timeseries.get_range(**day['request'], path=path)
+        except db.BentoServerError as exc:
+            write_json(folder / 'server-error.json', {
+                'type': type(exc).__name__, 'attempt': attempt,
+                'quoted_usd': str(daily_quote)})
+            # Only a zero-priced request may retry automatically. Keep every
+            # failed attempt, including partial bytes, before a new request.
+            if daily_quote != 0 or attempt == 3:
+                raise Stop('Data server error at ' + day['day'] + '; attempt preserved') from None
+            archive = root / ('failed-attempt-' + day['day'] + '-' + uuid4().hex)
+            archive.mkdir(exist_ok=False)
+            folder.rename(archive / day['day'])
+            print('Server retry', day['day'], attempt, 'preserved at', archive, flush=True)
+            require(quote(client, day['request']) == 0, 'Retry quote is no longer zero')
+            clock_time.sleep(attempt * 2)
+            continue
+        if downloaded is not None:
+            downloaded.reader.close()
+        validation = validator(path, day['request'])
+        write_json(folder / 'validation.json', validation)
+        done = {'day': day['day'], 'quoted_usd': str(daily_quote), 'bytes': path.stat().st_size,
+                'sha256': digest(path), 'records': validation['records'],
+                'download_complete': True, 'research_ready': False}
+        write_json(folder / 'complete.json', done)
+        print(day['day'], 'download validated:', validation['records'], 'records', flush=True)
+        return done
+
+
 def download(client, plan_path, out, max_cost='0', validator=validate_dbn):
     plan = load_plan(plan_path)
     cap = money(max_cost)
@@ -269,22 +306,8 @@ def download(client, plan_path, out, max_cost='0', validator=validate_dbn):
             daily_quote = quote(client, day['request'])
             require(daily_quote <= original_quote and spent + daily_quote <= cap,
                     'Quote increased; stop before billable request')
-            folder = root / day['day']
-            folder.mkdir(exist_ok=False)
-            write_json(folder / 'started.json', dict(day, quoted_usd=str(daily_quote)))
-            path = folder / 'ticks.dbn.zst'
-            downloaded = client.timeseries.get_range(**day['request'], path=path)
-            if downloaded is not None:
-                downloaded.reader.close()
-            validation = validator(path, day['request'])
-            write_json(folder / 'validation.json', validation)
-            done = {'day': day['day'], 'quoted_usd': str(daily_quote), 'bytes': path.stat().st_size,
-                    'sha256': digest(path), 'records': validation['records'],
-                    'download_complete': True,
-                    'research_ready': False}  # Coverage/contract/sequence audit is separate.
-            write_json(folder / 'complete.json', done)
+            download_day(client, day, root, daily_quote, validator)
             spent += daily_quote
-            print(day['day'], 'download validated:', validation['records'], 'records', flush=True)
         return {'downloaded_now': len(pending), 'total_quoted_usd': str(spent)}
 
 

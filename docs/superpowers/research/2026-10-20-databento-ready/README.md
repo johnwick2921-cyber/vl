@@ -46,7 +46,7 @@ versions used for tests are recorded in `verification.json`.
 | Padding | Ten minutes around event window for receive/event differences; not a guarantee against arbitrary delays |
 | Storage | Daily original compressed DBN plus SHA256, request and validation receipts |
 | Default extra-usage ceiling | $0 estimated; positive/unknown/increasing quotes stop the downloader |
-| Retries | Completed files are hash-checked and skipped. An interrupted day stops for inspection, never silently redownloaded |
+| Retries | Completed files are hash-checked and skipped. Zero-quoted server failures retry at most three attempts, preserving each failed directory; other interruptions stop for inspection |
 
 The five raw symbols are conventional candidates, **not yet verified against this
 account**. Preflight requires each to resolve for some part of the year and saves
@@ -101,7 +101,9 @@ python3 -B pull_mnq.py download \
 The downloader quotes monthly windows covering ALL pending days before downloading
 (including intervening nights/weekends, a conservative superset), then checks the
 exact daily quote immediately before its request. Transient server errors on
-cost metadata retry at most three times; data downloads never auto-retry.
+cost metadata retry at most three times. Data requests retry only a
+`BentoServerError` on a zero-quoted request, at most three attempts, with a fresh
+zero-cost quote before retry and each failed attempt directory preserved.
 `--max-cost-usd` is an explicit operator
 parameter, not a provider-enforced billing cap. Leave it at zero unless the owner
 authorizes a concrete quoted extra charge. No automatic paid retries.
@@ -109,7 +111,11 @@ authorizes a concrete quoted extra charge. No automatic paid retries.
 An interrupted directory contains `started.json` and possibly a partial DBN.
 Preserve and inspect it; never delete it. If a retry is needed, move that day
 directory to a dated archive and account for any prior charges first. No such
-recovery has been needed/tested on a real request yet.
+recovery was needed on 2025-10-22: the server failure left only `started.json`,
+which was moved to a dated archive before resuming. Paid failures and other
+interruptions never retry automatically. `verification-data-retry.json` records
+20 tests passing under Chicago and UTC, including partial-file preservation and
+bounded retries, with all three mutation checks detecting the introduced fault.
 
 ## Validation and next backtest stage
 

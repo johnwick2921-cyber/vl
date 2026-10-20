@@ -52,3 +52,7 @@ both Houston and UTC plus 3/3 deliberate mutations caught by assertions.
 
 The full-year query still enforces a zero extra-usage quote before billable calls.
 Quoted cost is an estimate; these records are not a provider invoice.
+
+## Full-run recovery
+
+Run 2 validated 2025-10-20 and 2025-10-21: 977,344 records in 23,731,777 compressed bytes. The next request raised BentoServerError and left only started.json, with no tick file. Under the download lock that directory was moved to /home/hoang/trash/2026-10-20/databento-2025-10-22-server-error. No completed data was replaced. The new bounded zero-cost server-error retry path passes 20 tests under Chicago and UTC; all three mutation checks detect their introduced fault (verification-data-retry.json). Full-year completion and research coverage remain unverified until subsequent receipts.

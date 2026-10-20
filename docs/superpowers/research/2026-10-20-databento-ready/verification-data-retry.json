@@ -1,0 +1,42 @@
+{
+  "mutants": [
+    {
+      "caught": true,
+      "errors": 0,
+      "failures": 1,
+      "name": "disable_total_cost_gate"
+    },
+    {
+      "caught": true,
+      "errors": 0,
+      "failures": 1,
+      "name": "disable_saved_hash_check"
+    },
+    {
+      "caught": true,
+      "errors": 0,
+      "failures": 1,
+      "name": "ignore_Houston_DST"
+    }
+  ],
+  "network_calls": 0,
+  "paid_data_downloads": 0,
+  "status": "OFFLINE_READY_AUTHENTICATED_VALIDATION_PENDING",
+  "test_count": 20,
+  "timezone_runs": {
+    "America/Chicago": {
+      "exit": 0,
+      "output": "Quote 2025-10 USD 0\nServer retry 2025-10-20 1 preserved at /tmp/tmp3chgasxb/out/failed-attempt-2025-10-20-6c8561388d16497a8c0785418640a991\nServer retry 2025-10-20 2 preserved at /tmp/tmp3chgasxb/out/failed-attempt-2025-10-20-0bf70320c6b345bb829447f4b185b4f2\nQuote 2025-10 USD 0.75\nQuote 2025-11 USD 0.75\nQuote 2025-10 USD 0\n2025-10-20 download validated: 2 records\nQuote 2025-10 USD 0\nQuote 2025-10 USD 1\n2025-10-20 records 2 estimated USD 0\nQuote 2025-10 USD 0.01\n2025-10-20 records 2 estimated USD 0\nSaved private key file; contents not displayed.\nQuote 2025-10 USD 0\nQuote 2025-10 USD 0\n2025-10-20 download validated: 2 records\nQuote 2025-10 USD 0\nServer retry 2025-10-20 1 preserved at /tmp/tmpj922jefa/out/failed-attempt-2025-10-20-9bdd47b027034780828cf8379d246816\n2025-10-20 download validated: 2 records\ntest_data_server_retry_stops_after_three (test_pull_mnq.Tests.test_data_server_retry_stops_after_three) ... ok\ntest_event_regression_is_reported_not_silently_sorted (test_pull_mnq.Tests.test_event_regression_is_reported_not_silently_sorted) ... ok\ntest_full_budget_checked_before_any_day_downloads (test_pull_mnq.Tests.test_full_budget_checked_before_any_day_downloads) ... ok\ntest_hash_tampering_blocks_resume (test_pull_mnq.Tests.test_hash_tampering_blocks_resume) ... ok\ntest_interrupted_attempt_never_auto_retried (test_pull_mnq.Tests.test_interrupted_attempt_never_auto_retried) ... ok\ntest_invalid_cost_is_rejected (test_pull_mnq.Tests.test_invalid_cost_is_rejected) ... ok\ntest_metadata_server_retry_is_bounded (test_pull_mnq.Tests.test_metadata_server_retry_is_bounded) ... ok\ntest_no_overwrite_and_plan_tamper (test_pull_mnq.Tests.test_no_overwrite_and_plan_tamper) ... ok\ntest_paid_server_failure_never_auto_retries (test_pull_mnq.Tests.test_paid_server_failure_never_auto_retries) ... ok\ntest_pilot_resolves_study_universe_not_only_pilot_day (test_pull_mnq.Tests.test_pilot_resolves_study_universe_not_only_pilot_day) ... ok\ntest_positive_quote_blocks_before_download (test_pull_mnq.Tests.test_positive_quote_blocks_before_download) ... ok\ntest_preflight_metadata_only (test_pull_mnq.Tests.test_preflight_metadata_only) ... ok\ntest_private_key_and_preserve_existing (test_pull_mnq.Tests.test_private_key_and_preserve_existing) ... ok\ntest_quote_increase_blocks (test_pull_mnq.Tests.test_quote_increase_blocks) ... ok\ntest_real_compressed_dbn_download_validate_resume (test_pull_mnq.Tests.test_real_compressed_dbn_download_validate_resume) ... ok\ntest_real_dbn_validation_bad_tick_and_order (test_pull_mnq.Tests.test_real_dbn_validation_bad_tick_and_order) ... ok\ntest_schema_specific_availability (test_pull_mnq.Tests.test_schema_specific_availability) ... ok\ntest_truncated_dbn_never_passes_validation (test_pull_mnq.Tests.test_truncated_dbn_never_passes_validation) ... ok\ntest_year_dates_dst_and_exact_symbols (test_pull_mnq.Tests.test_year_dates_dst_and_exact_symbols) ... ok\ntest_zero_cost_server_retry_preserves_partial_bytes (test_pull_mnq.Tests.test_zero_cost_server_retry_preserves_partial_bytes) ... ok\n\n----------------------------------------------------------------------\nRan 20 tests in 0.019s\n\nOK\n/usr/lib/python3.12/asyncio/base_events.py:726: ResourceWarning: unclosed event loop <_UnixSelectorEventLoop running=False closed=False debug=False>\n"
+    },
+    "UTC": {
+      "exit": 0,
+      "output": "Quote 2025-10 USD 0\nServer retry 2025-10-20 1 preserved at /tmp/tmpjjcwifkj/out/failed-attempt-2025-10-20-791717948b084b90b9d0e480ae45f565\nServer retry 2025-10-20 2 preserved at /tmp/tmpjjcwifkj/out/failed-attempt-2025-10-20-614fe299d80e49df8db1b4e8bf336b74\nQuote 2025-10 USD 0.75\nQuote 2025-11 USD 0.75\nQuote 2025-10 USD 0\n2025-10-20 download validated: 2 records\nQuote 2025-10 USD 0\nQuote 2025-10 USD 1\n2025-10-20 records 2 estimated USD 0\nQuote 2025-10 USD 0.01\n2025-10-20 records 2 estimated USD 0\nSaved private key file; contents not displayed.\nQuote 2025-10 USD 0\nQuote 2025-10 USD 0\n2025-10-20 download validated: 2 records\nQuote 2025-10 USD 0\nServer retry 2025-10-20 1 preserved at /tmp/tmpi177waea/out/failed-attempt-2025-10-20-75c2d2929208423892ae202633a9885d\n2025-10-20 download validated: 2 records\ntest_data_server_retry_stops_after_three (test_pull_mnq.Tests.test_data_server_retry_stops_after_three) ... ok\ntest_event_regression_is_reported_not_silently_sorted (test_pull_mnq.Tests.test_event_regression_is_reported_not_silently_sorted) ... ok\ntest_full_budget_checked_before_any_day_downloads (test_pull_mnq.Tests.test_full_budget_checked_before_any_day_downloads) ... ok\ntest_hash_tampering_blocks_resume (test_pull_mnq.Tests.test_hash_tampering_blocks_resume) ... ok\ntest_interrupted_attempt_never_auto_retried (test_pull_mnq.Tests.test_interrupted_attempt_never_auto_retried) ... ok\ntest_invalid_cost_is_rejected (test_pull_mnq.Tests.test_invalid_cost_is_rejected) ... ok\ntest_metadata_server_retry_is_bounded (test_pull_mnq.Tests.test_metadata_server_retry_is_bounded) ... ok\ntest_no_overwrite_and_plan_tamper (test_pull_mnq.Tests.test_no_overwrite_and_plan_tamper) ... ok\ntest_paid_server_failure_never_auto_retries (test_pull_mnq.Tests.test_paid_server_failure_never_auto_retries) ... ok\ntest_pilot_resolves_study_universe_not_only_pilot_day (test_pull_mnq.Tests.test_pilot_resolves_study_universe_not_only_pilot_day) ... ok\ntest_positive_quote_blocks_before_download (test_pull_mnq.Tests.test_positive_quote_blocks_before_download) ... ok\ntest_preflight_metadata_only (test_pull_mnq.Tests.test_preflight_metadata_only) ... ok\ntest_private_key_and_preserve_existing (test_pull_mnq.Tests.test_private_key_and_preserve_existing) ... ok\ntest_quote_increase_blocks (test_pull_mnq.Tests.test_quote_increase_blocks) ... ok\ntest_real_compressed_dbn_download_validate_resume (test_pull_mnq.Tests.test_real_compressed_dbn_download_validate_resume) ... ok\ntest_real_dbn_validation_bad_tick_and_order (test_pull_mnq.Tests.test_real_dbn_validation_bad_tick_and_order) ... ok\ntest_schema_specific_availability (test_pull_mnq.Tests.test_schema_specific_availability) ... ok\ntest_truncated_dbn_never_passes_validation (test_pull_mnq.Tests.test_truncated_dbn_never_passes_validation) ... ok\ntest_year_dates_dst_and_exact_symbols (test_pull_mnq.Tests.test_year_dates_dst_and_exact_symbols) ... ok\ntest_zero_cost_server_retry_preserves_partial_bytes (test_pull_mnq.Tests.test_zero_cost_server_retry_preserves_partial_bytes) ... ok\n\n----------------------------------------------------------------------\nRan 20 tests in 0.019s\n\nOK\n/usr/lib/python3.12/asyncio/base_events.py:726: ResourceWarning: unclosed event loop <_UnixSelectorEventLoop running=False closed=False debug=False>\n"
+    }
+  },
+  "versions": {
+    "databento": "0.74.0",
+    "databento-dbn": "0.52.1",
+    "pandas": "3.0.2",
+    "zstandard": "0.25.0"
+  }
+}

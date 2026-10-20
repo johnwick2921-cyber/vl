@@ -204,6 +204,41 @@ class Tests(unittest.TestCase):
             self.assertEqual(cost.call_count, 3)
         self.assertEqual(c.calls, 0)
 
+    def test_zero_cost_server_retry_preserves_partial_bytes(self):
+        c = Client()
+        calls = []
+        def receive(path, **req):
+            calls.append(path)
+            if len(calls) == 1:
+                with path.open('xb') as f:
+                    f.write(b'partial evidence')
+                raise db.BentoServerError(504)
+            fixture(path, req)
+        c.timeseries.get_range = receive
+        out = self.root / 'out'
+        with patch.object(p.clock_time, 'sleep'):
+            p.download(c, self.plan, out)
+        archived = list(out.glob('failed-attempt-*/*/ticks.dbn.zst'))
+        self.assertEqual(len(archived), 1)
+        self.assertEqual(archived[0].read_bytes(), b'partial evidence')
+        self.assertTrue((out / '2025-10-20' / 'complete.json').exists())
+        self.assertEqual(len(calls), 2)
+
+    def test_paid_server_failure_never_auto_retries(self):
+        c = Client()
+        c.metadata.get_cost = lambda **kw: 1
+        c.timeseries.get_range = unittest.mock.Mock(side_effect=db.BentoServerError(504))
+        with self.assertRaises(p.Stop):
+            p.download(c, self.plan, self.root / 'out', '2')
+        self.assertEqual(c.timeseries.get_range.call_count, 1)
+
+    def test_data_server_retry_stops_after_three(self):
+        c = Client()
+        c.timeseries.get_range = unittest.mock.Mock(side_effect=db.BentoServerError(504))
+        with patch.object(p.clock_time, 'sleep'), self.assertRaises(p.Stop):
+            p.download(c, self.plan, self.root / 'out')
+        self.assertEqual(c.timeseries.get_range.call_count, 3)
+
     def test_truncated_dbn_never_passes_validation(self):
         path = self.root / 'full'
         fixture(path, self.req)
