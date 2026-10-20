@@ -441,6 +441,12 @@ func isRegularFile(p string) bool {
 func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
+	// nt8Down is set once NinjaTrader has been stopped and a start attempt
+	// (or its liveness verification) leaves it down: the DLL is already
+	// placed, so a plain reverted_clean (which releases the hold and declares
+	// the old build "still running normally") would be FALSE. Those failures
+	// roll back instead (restore the old DLL, restart NT8, prove it).
+	nt8Down := false
 	err := func() error {
 		if err := w.flatSIMGate(ctx, j); err != nil {
 			return err
@@ -513,6 +519,7 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 		if j.Addon != nil && j.Addon.MigrationPending {
 			if merr := w.migrateRebuildPlaceWhileClosed(ctx, j, ev); merr != nil {
 				if serr := r.start(ctx); serr != nil {
+					nt8Down = true
 					return fmt.Errorf("the Custom.dll migration failed (%v) and NT8 could not be restarted: %w", merr, serr)
 				}
 				ev["nt8_restarted_after_migration_failure"] = "true"
@@ -521,13 +528,52 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 			ev["migration"] = "rebuilt"
 		}
 		if err := r.start(ctx); err != nil {
+			nt8Down = true
 			return err
 		}
+		// W-ADDON-ONE-CLICK start verification: Start-Process returning without
+		// error only proves the launch was attempted, not that NinjaTrader is
+		// still alive. Poll IsRunning, bounded, and record the wait. This
+		// distinguishes "process started" from "AddOn ready" — the AddOn-ready
+		// proof stays in stepAddonReconnect (build id + new accept_seq).
+		startStart := w.host.Now()
+		startDeadline := startStart.Add(nt8StartWait)
+		for {
+			running, err := r.isRunning(ctx)
+			if err != nil {
+				nt8Down = true
+				return err
+			}
+			if running {
+				break
+			}
+			if !w.host.Now().Before(startDeadline) {
+				ev["nt8_start_wait"] = "timeout_not_running"
+				nt8Down = true
+				return fmt.Errorf("NinjaTrader did not come up within %s of the start", nt8StartWait)
+			}
+			if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
+				nt8Down = true
+				return err
+			}
+		}
+		ev["nt8_start_wait_ms"] = strconv.FormatInt(w.host.Now().Sub(startStart).Milliseconds(), 10)
 		return nil
 	}()
 	res := stepResult{receipts: []Receipt{w.receipt("nt8_restart", start, ev, err)}, err: err}
 	if err != nil {
-		res.failTo, res.reason = updaterjob.StateRevertedClean, "the NT8 restart failed: "+clipText(err.Error())
+		if nt8Down {
+			// The AddOn DLL is already placed and NinjaTrader is down (or its
+			// liveness is unproven): never declare reverted_clean (which
+			// releases the hold and claims the old build is still running).
+			// recovery_needed keeps the hold and names the honest reason —
+			// a human opens NinjaTrader before anything else. (Auto-rollback
+			// from nt8_restarted would need a state-machine edge and a
+			// "NT8 down" rollback signal; kept out of this minimal fix.)
+			res.failTo, res.reason = updaterjob.StateRecoveryNeeded, "the NT8 restart left NinjaTrader down: "+clipText(err.Error())
+		} else {
+			res.failTo, res.reason = updaterjob.StateRevertedClean, "the NT8 restart failed: "+clipText(err.Error())
+		}
 		return res
 	}
 	res.set = func(k *updaterjob.Job) {

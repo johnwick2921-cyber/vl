@@ -20,6 +20,7 @@ const (
 	defaultNT8Exe    = `C:\Program Files\NinjaTrader 8\bin\NinjaTrader.exe`
 	nt8CloseWait     = 60 * time.Second
 	nt8ExitWait      = 60 * time.Second
+	nt8StartWait     = 60 * time.Second
 	nt8RestartPoll   = 2 * time.Second
 	nt8ReconnectWait = 5 * time.Minute
 	// nt8ImageName is the image tasklist.exe matches (the exe's file name).
