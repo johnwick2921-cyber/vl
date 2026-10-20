@@ -232,6 +232,8 @@ func TestRecoveryTextAddonPlacedNotActivatedGatesHoldOnAddon(t *testing.T) {
 	for _, want := range []string{
 		"The AddOn was already placed",
 		"Restore the previous AddOn",
+		"FIRST moving the current (new) AddOn DLL aside",
+		"COPYING the backup back into place",
 		"mixed, unverified",
 		"not an established incompatibility",
 		j.Addon.BackupDir,
@@ -296,5 +298,37 @@ func TestRecoveryTextAddonPlacedNoPreviousDLLKeepsHold(t *testing.T) {
 	}
 	if !gated {
 		t.Fatalf("the hold-clear is not gated on the new AddOn's build:\n%s", text)
+	}
+}
+
+// reachUnproven means the activation RAN (StateActivated was reached) but was
+// never proven. The AddOn paragraph must say the activation is UNPROVEN — not
+// "was NOT activated" — while still naming the placed AddOn and its backup.
+func TestRecoveryTextReachUnprovenAddonPlacedDoesNotClaimNotActivated(t *testing.T) {
+	r := newRig(t) // only for the disposable Target
+	j := updaterjob.Job{
+		JobID:          "job-u4-word",
+		ReleaseID:      "rel",
+		State:          updaterjob.StateRecoveryNeeded,
+		RecoveryReason: "test",
+		Transitions: []updaterjob.Transition{
+			{State: updaterjob.StateAddonPlaced, Phase: updaterjob.PhaseDone},
+			{State: updaterjob.StateActivated, Phase: updaterjob.PhaseDone},
+			{State: updaterjob.StateRollingBack, Phase: updaterjob.PhaseDone},
+		},
+		Install:  &updaterjob.Release{SHA: "oldsha", Binary: filepath.Join(r.inst, "vl-bin"), ReleaseFile: filepath.Join(r.inst, "deploy", "RELEASE"), Dist: filepath.Join(r.inst, "web", "dist")},
+		Snapshot: &updaterjob.Release{SHA: "oldsha", Binary: filepath.Join(r.inst, "snap", "vl-bin"), ReleaseFile: filepath.Join(r.inst, "snap", "RELEASE"), Dist: filepath.Join(r.inst, "snap", "dist")},
+		Release:  &updaterjob.Release{SHA: "newsha"},
+		Addon:    &updaterjob.AddonState{BackupDir: filepath.Join(r.inst, "addon-backup")},
+	}
+	text := RecoveryText(j, r.cfg.Target)
+	if !strings.Contains(text, "activation is UNPROVEN") {
+		t.Fatalf("reachUnproven text must say the activation is UNPROVEN:\n%s", text)
+	}
+	if strings.Contains(text, "was NOT activated") {
+		t.Fatalf("reachUnproven text must not claim the bot was NOT activated:\n%s", text)
+	}
+	if !strings.Contains(text, "The AddOn was already placed") {
+		t.Fatalf("the AddOn restore step must appear for a placed AddOn:\n%s", text)
 	}
 }

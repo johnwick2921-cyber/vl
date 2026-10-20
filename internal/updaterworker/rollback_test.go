@@ -431,7 +431,7 @@ func restoreLines(t *testing.T, j updaterjob.Job, tg Target) []string {
 	}
 	var restore []string
 	for _, l := range strings.Split(RecoveryText(j, tg), "\n") {
-		if l = strings.TrimSpace(l); strings.HasPrefix(l, "cp -p ") || strings.HasPrefix(l, "{ { [ ! -e ") {
+		if l = strings.TrimSpace(l); strings.HasPrefix(l, "TS=\"$(date ") {
 			restore = append(restore, l)
 		}
 	}
@@ -524,13 +524,13 @@ func TestRecoveryRestoreFinishesAfterACrashBetweenTheTwoMoves(t *testing.T) {
 	in, snap := *j.Install, *j.Snapshot
 	snapFiles := relFiles(t, snap.Dist)
 	only := crashLine(j, r.cfg.Target)
-	if want := "mv -T '" + in.Dist + ".recovery.tmp' '" + in.Dist + "'"; only != want {
+	if want := "{ [ ! -e '" + in.Dist + "' ] && [ ! -L '" + in.Dist + "' ] && mv -T '" + in.Dist + ".recovery.tmp' '" + in.Dist + "'; }"; only != want {
 		t.Fatalf("the recovery text has no crash-between-the-moves line (got %q, want %q):\n%s", only, want, RecoveryText(j, r.cfg.Target))
 	}
 	// the production dist line, cut before its last move: what ran before the crash
 	distLine := restore[2]
-	k := strings.LastIndex(distLine, " && ")
-	if !strings.HasPrefix(distLine, "{ { [ ! -e '"+in.Dist+".recovery.tmp' ") || k < 0 {
+	k := strings.LastIndex(distLine, " && { [ ! -e '")
+	if !strings.HasPrefix(distLine, "TS=\"$(date ") || k < 0 {
 		t.Fatalf("restore line 3 is not the dist restore: %q", distLine)
 	}
 	preCrash, lastMove := distLine[:k], distLine[k+len(" && "):]
@@ -642,6 +642,68 @@ func TestRecoveryRestoreRefusesADistRecreatedBetweenTheTwoMoves(t *testing.T) {
 }
 
 func fileThere(p string) bool { _, err := os.Lstat(p); return err == nil }
+
+// The crash-between-the-moves line must refuse when <dist> was re-created as a
+// regular FILE (not just a directory): plain mv -T would overwrite the file,
+// the guarded form refuses. No-clobber on the live destination.
+func TestRecoveryRestoreRefusesARecreatedDistFile(t *testing.T) {
+	r := newRig(t)
+	r.watchFail[boxNew] = true
+	r.rollbackFail = true
+	j := r.runToEnd(t)
+	if j.State != updaterjob.StateRecoveryNeeded || j.Install == nil {
+		t.Fatalf("fixture: job %s", j.State)
+	}
+	in := *j.Install
+	only := crashLine(j, r.cfg.Target)
+	if only == "" {
+		t.Fatal("no crash-between-the-moves line")
+	}
+	// Move the live dist directory aside (the crash already took it), then
+	// re-create the live path as a FILE.
+	if err := os.Rename(in.Dist, in.Dist+".intruder-dir"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, in.Dist, "a re-created intruder file\n")
+	if out, err := runRestore([]string{only}, ""); err == nil {
+		t.Fatalf("the crash line succeeded over a re-created dist file:\n%s", out)
+	}
+	if b, err := os.ReadFile(in.Dist); err != nil || string(b) != "a re-created intruder file\n" {
+		t.Fatalf("the re-created dist file was overwritten (%q, %v)", b, err)
+	}
+}
+
+// Every path in the emitted command is single-quoted, so a restore works when
+// the install dir itself contains spaces.
+func TestRestoreFileLineHandlesSpacedPaths(t *testing.T) {
+	root := t.TempDir()
+	live := filepath.Join(root, "live dir")
+	snap := filepath.Join(root, "snap dir")
+	if err := os.MkdirAll(live, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(snap, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(snap, "vl-bin"), "snapshot binary\n")
+	writeFile(t, filepath.Join(live, "vl-bin"), "live binary\n")
+	dst, src := filepath.Join(live, "vl-bin"), filepath.Join(snap, "vl-bin")
+	cmd := restoreFileLine(dst, src, "job1", "cp -p")
+	out, err := runRestore([]string{cmd}, "")
+	if err != nil {
+		t.Fatalf("restore with spaced paths: %v\n%s\ncmd: %s", err, out, cmd)
+	}
+	if b, _ := os.ReadFile(dst); string(b) != "snapshot binary\n" {
+		t.Fatalf("live binary after restore = %q, want the snapshot", b)
+	}
+	matches, _ := filepath.Glob(dst + ".failed.job1.*")
+	if len(matches) != 1 {
+		t.Fatalf("failed binary evidence = %v, want exactly one", matches)
+	}
+	if b, _ := os.ReadFile(matches[0]); string(b) != "live binary\n" {
+		t.Fatalf("the failed binary's evidence was lost: %q", b)
+	}
+}
 
 // The AddOn state is derived from recorded transitions + receipts, never from
 // j.Addon.BackupDir alone (empty both when the box had no previous DLL and when

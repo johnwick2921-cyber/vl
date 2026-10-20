@@ -94,9 +94,9 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 			// stops at its first mv -T (safe, but it cannot finish), so name the
 			// one command that does (U4F defect 5,
 			// TestRecoveryRestoreFinishesAfterACrashBetweenTheTwoMoves).
-			p("     If %s is ABSENT (a crash between the two mv's above), run only: mv -T '%s.recovery.tmp' '%s'", in.Binary, in.Binary, in.Binary)
-			p("     If %s is ABSENT (a crash between the two mv's above), run only: mv -T '%s.recovery.tmp' '%s'", in.ReleaseFile, in.ReleaseFile, in.ReleaseFile)
-			p("     If %s is ABSENT (a crash between the two mv's above), run only: mv -T '%s.recovery.tmp' '%s'", in.Dist, in.Dist, in.Dist)
+			p("     If %s is ABSENT (a crash between the two mv's above), run only: %s", in.Binary, crashLineCmd(in.Binary))
+			p("     If %s is ABSENT (a crash between the two mv's above), run only: %s", in.ReleaseFile, crashLineCmd(in.ReleaseFile))
+			p("     If %s is ABSENT (a crash between the two mv's above), run only: %s", in.Dist, crashLineCmd(in.Dist))
 		} else {
 			p("%d. The activate ran but this job recorded no snapshot of the install: the install cannot be restored from it — stop and restore it by hand.", step)
 		}
@@ -124,7 +124,7 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 			act = "activation is UNPROVEN (it may run either build)"
 		}
 		if j.Addon != nil && j.Addon.BackupDir != "" {
-			p("%d. The AddOn was already placed before this failure: the NEW AddOn DLL is in the AddOns folder and the PREVIOUS one is backed up at %s. The bot binary %s, so leaving the new DLL would run mixed, unverified bot and AddOn versions — the demonstrated risk, not an established incompatibility. Restore the previous AddOn by COPYING the backup back into place (never MOVE or delete it — it is the only copy of the previous DLL) BEFORE opening NinjaTrader, then verify the AddOn reconnects on the previous build. Do NOT clear the hold until that is proven.", step, j.Addon.BackupDir, act)
+			p("%d. The AddOn was already placed before this failure: the NEW AddOn DLL is in the AddOns folder and the PREVIOUS one is backed up at %s. The bot binary %s, so leaving the new DLL would run mixed, unverified bot and AddOn versions — the demonstrated risk, not an established incompatibility. Restore the previous AddOn by FIRST moving the current (new) AddOn DLL aside (never overwrite or delete it — it is the evidence), then COPYING the backup back into place (never MOVE or delete the backup — it is the only copy of the previous DLL) BEFORE opening NinjaTrader, then verify the AddOn reconnects on the previous build. Do NOT clear the hold until that is proven.", step, j.Addon.BackupDir, act)
 			addonHoldCond = "AND the previous AddOn is restored + reconnected"
 		} else {
 			p("%d. The AddOn was already placed but NO previous DLL was recorded (the box had none to back up): there is nothing to restore, but the new DLL is unproven and the bot binary %s. Do NOT clear the hold until the AddOn reconnects and the boot is proven.", step, act)
@@ -173,22 +173,32 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 	return b.String()
 }
 
-// restoreFileLine emits ONE no-delete restore command for a single artifact
-// (the binary, the RELEASE file, or the web dist directory). In order:
+// restoreFileLine emits ONE no-delete, no-clobber restore command for a single
+// artifact (the binary, the RELEASE file, or the web dist directory). TS is
+// captured ONCE so every guard and move name the SAME timestamped file. In
+// order:
 //
 //  1. If a leftover <dst>.recovery.tmp exists — including a DANGLING symlink,
 //     which [ -e ] alone would miss — move it aside to
-//     <dst>.recovery.tmp.previous.<ts>. A failed preservation ABORTS the whole
-//     command (the && chain), so nothing below copies or installs.
+//     <dst>.recovery.tmp.previous.$TS. A failed preservation (or a
+//     .previous.$TS that already exists) ABORTS the whole command.
 //  2. Copy the snapshot artifact to <dst>.recovery.tmp.
-//  3. Move the live artifact aside to <dst>.failed.<jobID>.<ts> (evidence,
-//     never overwritten).
-//  4. Move the snapshot copy into place.
+//  3. Move the live artifact aside to <dst>.failed.<jobID>.$TS (evidence,
+//     never overwritten — an existing .failed.$TS aborts instead).
+//  4. Move the snapshot copy into place — an existing <dst> (a recreated
+//     file, directory, or symlink) aborts instead of being overwritten.
 //
-// Every path is single-quoted (spaces safe); only the timestamp is expanded.
+// Every path is single-quoted (spaces safe); only $TS is expanded.
 func restoreFileLine(dst, src, jobID, cpFlag string) string {
-	return fmt.Sprintf("{ { [ ! -e '%[1]s.recovery.tmp' ] && [ ! -L '%[1]s.recovery.tmp' ]; } || mv -T '%[1]s.recovery.tmp' '%[1]s.recovery.tmp.previous.'$(date +%%Y%%m%%dT%%H%%M%%S.%%N); } && %[4]s '%[2]s' '%[1]s.recovery.tmp' && mv -T '%[1]s' '%[1]s.failed.%[3]s.'$(date +%%Y%%m%%dT%%H%%M%%S.%%N) && mv -T '%[1]s.recovery.tmp' '%[1]s'",
+	return fmt.Sprintf(`TS="$(date +%%Y%%m%%dT%%H%%M%%S.%%N)"; { { [ ! -e '%[1]s.recovery.tmp' ] && [ ! -L '%[1]s.recovery.tmp' ]; } || { [ ! -e '%[1]s.recovery.tmp.previous.'"$TS" ] && [ ! -L '%[1]s.recovery.tmp.previous.'"$TS" ] && mv -T '%[1]s.recovery.tmp' '%[1]s.recovery.tmp.previous.'"$TS"; }; } && %[4]s '%[2]s' '%[1]s.recovery.tmp' && { [ ! -e '%[1]s.failed.%[3]s.'"$TS" ] && [ ! -L '%[1]s.failed.%[3]s.'"$TS" ] && mv -T '%[1]s' '%[1]s.failed.%[3]s.'"$TS"; } && { [ ! -e '%[1]s' ] && [ ! -L '%[1]s' ] && mv -T '%[1]s.recovery.tmp' '%[1]s'; }`,
 		dst, src, jobID, cpFlag)
+}
+
+// crashLineCmd is the one no-clobber move that finishes a restore interrupted
+// between the two mv's (the live artifact already moved aside, the snapshot
+// copy waiting at <dst>.recovery.tmp). It refuses if <dst> reappears.
+func crashLineCmd(dst string) string {
+	return fmt.Sprintf("{ [ ! -e '%[1]s' ] && [ ! -L '%[1]s' ] && mv -T '%[1]s.recovery.tmp' '%[1]s'; }", dst)
 }
 
 // restartLine restarts the unit by its MainPID and refuses a pid below 2 (a
