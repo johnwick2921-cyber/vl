@@ -1,0 +1,53 @@
+{
+  "engine_sha256": "3b7687a4e5f483f107eeb28fb8e9de62c5b912433d2dfd1af8891584aaef0903",
+  "mutants": [
+    {
+      "errors": 0,
+      "failures": 2,
+      "name": "stop_not_20"
+    },
+    {
+      "errors": 0,
+      "failures": 2,
+      "name": "break_on_touch"
+    },
+    {
+      "errors": 0,
+      "failures": 2,
+      "name": "entry_boundary_instead_of_observed"
+    },
+    {
+      "errors": 0,
+      "failures": 11,
+      "name": "range_includes_next_tick"
+    },
+    {
+      "errors": 0,
+      "failures": 1,
+      "name": "time_cutoff_includes_next_session"
+    },
+    {
+      "errors": 0,
+      "failures": 1,
+      "name": "ignore_hash"
+    },
+    {
+      "errors": 0,
+      "failures": 1,
+      "name": "wrong_cost"
+    }
+  ],
+  "status": "PASS_OFFLINE_ENGINE_TESTS",
+  "synthetic_first_passage_comparisons": 6000,
+  "test_count": 17,
+  "timezone_runs": {
+    "America/Chicago": {
+      "exit": 0,
+      "log": "2025-10-20 processed\ntest_data_quality_exclusions_and_hash_gate (test_tick_orb.Tests.test_data_quality_exclusions_and_hash_gate) ... ok\ntest_dst_changes_utc_not_houston_open (test_tick_orb.Tests.test_dst_changes_utc_not_houston_open) ... ok\ntest_exact_boundary_is_not_breakout (test_tick_orb.Tests.test_exact_boundary_is_not_breakout) ... ok\ntest_gap_entry_and_stop_use_observed_trade (test_tick_orb.Tests.test_gap_entry_and_stop_use_observed_trade) ... ok\ntest_identical_price_tie_and_later_same_timestamp_sequence (test_tick_orb.Tests.test_identical_price_tie_and_later_same_timestamp_sequence) ... ok\ntest_last_orb_tick_excluded_from_entry_and_next_tick_included (test_tick_orb.Tests.test_last_orb_tick_excluded_from_entry_and_next_tick_included) ... ok\ntest_late_range_data_excluded (test_tick_orb.Tests.test_late_range_data_excluded) ... ok\ntest_long_and_short_target_stop_mirror (test_tick_orb.Tests.test_long_and_short_target_stop_mirror) ... ok\ntest_missing_downloads_block_report (test_tick_orb.Tests.test_missing_downloads_block_report) ... ok\ntest_no_forced_close_or_next_session_exit (test_tick_orb.Tests.test_no_forced_close_or_next_session_exit) ... ok\ntest_no_reentry_after_first_loss (test_tick_orb.Tests.test_no_reentry_after_first_loss) ... ok\ntest_random_first_passage_oracle (test_tick_orb.Tests.test_random_first_passage_oracle) ... ok\ntest_real_dbn_callsite_and_no_overwrite (test_tick_orb.Tests.test_real_dbn_callsite_and_no_overwrite) ... ok\ntest_same_event_sequence_conflict_not_guessed (test_tick_orb.Tests.test_same_event_sequence_conflict_not_guessed) ... ok\ntest_summary_denominators_include_unknown_and_open (test_tick_orb.Tests.test_summary_denominators_include_unknown_and_open) ... ok\ntest_touch_vs_trade_through (test_tick_orb.Tests.test_touch_vs_trade_through) ... ok\ntest_zero_and_missing_range (test_tick_orb.Tests.test_zero_and_missing_range) ... ok\n\n----------------------------------------------------------------------\nRan 17 tests in 0.275s\n\nOK\n"
+    },
+    "UTC": {
+      "exit": 0,
+      "log": "2025-10-20 processed\ntest_data_quality_exclusions_and_hash_gate (test_tick_orb.Tests.test_data_quality_exclusions_and_hash_gate) ... ok\ntest_dst_changes_utc_not_houston_open (test_tick_orb.Tests.test_dst_changes_utc_not_houston_open) ... ok\ntest_exact_boundary_is_not_breakout (test_tick_orb.Tests.test_exact_boundary_is_not_breakout) ... ok\ntest_gap_entry_and_stop_use_observed_trade (test_tick_orb.Tests.test_gap_entry_and_stop_use_observed_trade) ... ok\ntest_identical_price_tie_and_later_same_timestamp_sequence (test_tick_orb.Tests.test_identical_price_tie_and_later_same_timestamp_sequence) ... ok\ntest_last_orb_tick_excluded_from_entry_and_next_tick_included (test_tick_orb.Tests.test_last_orb_tick_excluded_from_entry_and_next_tick_included) ... ok\ntest_late_range_data_excluded (test_tick_orb.Tests.test_late_range_data_excluded) ... ok\ntest_long_and_short_target_stop_mirror (test_tick_orb.Tests.test_long_and_short_target_stop_mirror) ... ok\ntest_missing_downloads_block_report (test_tick_orb.Tests.test_missing_downloads_block_report) ... ok\ntest_no_forced_close_or_next_session_exit (test_tick_orb.Tests.test_no_forced_close_or_next_session_exit) ... ok\ntest_no_reentry_after_first_loss (test_tick_orb.Tests.test_no_reentry_after_first_loss) ... ok\ntest_random_first_passage_oracle (test_tick_orb.Tests.test_random_first_passage_oracle) ... ok\ntest_real_dbn_callsite_and_no_overwrite (test_tick_orb.Tests.test_real_dbn_callsite_and_no_overwrite) ... ok\ntest_same_event_sequence_conflict_not_guessed (test_tick_orb.Tests.test_same_event_sequence_conflict_not_guessed) ... ok\ntest_summary_denominators_include_unknown_and_open (test_tick_orb.Tests.test_summary_denominators_include_unknown_and_open) ... ok\ntest_touch_vs_trade_through (test_tick_orb.Tests.test_touch_vs_trade_through) ... ok\ntest_zero_and_missing_range (test_tick_orb.Tests.test_zero_and_missing_range) ... ok\n\n----------------------------------------------------------------------\nRan 17 tests in 0.259s\n\nOK\n"
+    }
+  }
+}
