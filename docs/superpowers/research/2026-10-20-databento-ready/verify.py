@@ -45,7 +45,8 @@ def run(out):
         rows.append({'name': name, 'caught': True, 'failures': len(result.failures),
                      'errors': len(result.errors)})
     report = {'status': 'OFFLINE_READY_AUTHENTICATED_VALIDATION_PENDING',
-              'test_count': 15, 'timezone_runs': results, 'mutants': rows,
+              'test_count': unittest.defaultTestLoader.loadTestsFromTestCase(tests.Tests).countTestCases(),
+              'timezone_runs': results, 'mutants': rows,
               'versions': {x: version(x) for x in
                            ['databento', 'databento-dbn', 'pandas', 'zstandard']},
               'network_calls': 0, 'paid_data_downloads': 0}

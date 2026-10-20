@@ -131,7 +131,9 @@ def preflight(client, plan_path, out):
     write_json(out / 'availability.json', available(client, plan))
     resolved = client.symbology.resolve(dataset=DATASET, symbols=SYMBOLS,
         stype_in='raw_symbol', stype_out='instrument_id',
-        start_date=plan['start'], end_date=plan['end_exclusive'])
+        # Resolve the study universe over its full lifetime window, even for a
+        # one-day pilot. Expired candidates need not resolve on the pilot date.
+        start_date='2025-10-20', end_date='2026-10-20')
     write_json(out / 'symbology.json', resolved)
     require(all(resolved.get('result', {}).get(s) for s in SYMBOLS),
             'At least one MNQ contract did not resolve; inspect symbology.json')

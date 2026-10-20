@@ -148,6 +148,18 @@ class Tests(unittest.TestCase):
         self.assertTrue(report['zero_extra_usage_quote'])
         self.assertEqual(c.calls, 0)
 
+    def test_pilot_resolves_study_universe_not_only_pilot_day(self):
+        c = Client()
+        old = c.symbology.resolve
+        seen = {}
+        def resolve(**kw):
+            seen.update(kw)
+            return old(**kw)
+        c.symbology.resolve = resolve
+        p.preflight(c, self.plan, self.root / 'quote')
+        self.assertEqual(seen['start_date'], '2025-10-20')
+        self.assertEqual(seen['end_date'], '2026-10-20')
+
     def test_private_key_and_preserve_existing(self):
         key = self.root / 'key'
         with patch('getpass.getpass', return_value='synthetic-not-real'):

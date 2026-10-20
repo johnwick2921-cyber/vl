@@ -1,5 +1,9 @@
 # Databento MNQ historical download readiness — 2026-10-20
 
+**Update:** authenticated one-day download subsequently passed. See
+[AUTHENTICATED-PILOT.md](AUTHENTICATED-PILOT.md); the initial preparation record
+below is retained. Full-year completion and tick backtest results are separate.
+
 Prepared for the owner's ORB 1m/2m/5m study, not the live bot. Source base at
 accept: `be172c7a8d401d437f1b70454f39833fcd52a89f`. Branch:
 `research/databento-mnq-ready-20261020`.
