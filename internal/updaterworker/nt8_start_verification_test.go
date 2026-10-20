@@ -257,3 +257,44 @@ func TestRecoveryTextAddonPlacedNotActivatedGatesHoldOnAddon(t *testing.T) {
 		}
 	}
 }
+
+// The no-previous-DLL case: the AddOn was placed but the box had NO old DLL to
+// back up (BackupDir empty). That is NOT the same as "nothing to do" — the new
+// DLL is still unproven. The text must name this explicitly and gate the
+// hold-clear on the new AddOn's build, never on a backup that does not exist.
+func TestRecoveryTextAddonPlacedNoPreviousDLLKeepsHold(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	// NO old VL.AddOn.dll on disk → addonbuild.Place records an EMPTY backup dir.
+	r.set(func() { r.startDoesNotBringUp = true })
+	j := r.runToEnd(t)
+	if j.State != updaterjob.StateRecoveryNeeded {
+		t.Fatalf("job %s (error %q), want recovery_needed", j.State, j.Error)
+	}
+	if j.Addon == nil || j.Addon.BackupDir != "" {
+		t.Fatalf("the AddOn must be placed with an EMPTY backup dir (no previous DLL), got %+v", j.Addon)
+	}
+	text := RecoveryText(j, r.cfg.Target)
+	for _, want := range []string{
+		"NO previous DLL was recorded",
+		"there is nothing to restore",
+		"the new DLL is unproven",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("recovery text must contain %q:\n%s", want, text)
+		}
+	}
+	// It must NOT name a backup to restore (there is none).
+	if strings.Contains(text, "backed up at") {
+		t.Fatalf("recovery text names a backup dir that does not exist:\n%s", text)
+	}
+	// The hold-clear must be gated on the new AddOn's build confirmation.
+	gated := false
+	for _, l := range strings.Split(text, "\n") {
+		if strings.Contains(l, "clear this job's hold") {
+			gated = strings.Contains(l, "AND the new AddOn's build is confirmed")
+		}
+	}
+	if !gated {
+		t.Fatalf("the hold-clear is not gated on the new AddOn's build:\n%s", text)
+	}
+}

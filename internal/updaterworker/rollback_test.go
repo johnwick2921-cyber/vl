@@ -265,7 +265,7 @@ func TestRecoveryTextFollowsWhatTheJobProved(t *testing.T) {
 		}
 		return r, j
 	}
-	restore := func(j updaterjob.Job) string { return "cp -p " + j.Snapshot.Binary }
+	restore := func(j updaterjob.Job) string { return "cp -p '" + j.Snapshot.Binary + "'" }
 	for _, tc := range []struct {
 		name        string
 		build       func(t *testing.T) (*rig, updaterjob.Job)
@@ -431,7 +431,7 @@ func restoreLines(t *testing.T, j updaterjob.Job, tg Target) []string {
 	}
 	var restore []string
 	for _, l := range strings.Split(RecoveryText(j, tg), "\n") {
-		if l = strings.TrimSpace(l); strings.HasPrefix(l, "cp -p ") || strings.HasPrefix(l, "[ ! -e ") {
+		if l = strings.TrimSpace(l); strings.HasPrefix(l, "cp -p ") || strings.HasPrefix(l, "{ { [ ! -e ") {
 			restore = append(restore, l)
 		}
 	}
@@ -524,13 +524,13 @@ func TestRecoveryRestoreFinishesAfterACrashBetweenTheTwoMoves(t *testing.T) {
 	in, snap := *j.Install, *j.Snapshot
 	snapFiles := relFiles(t, snap.Dist)
 	only := crashLine(j, r.cfg.Target)
-	if want := "mv -T " + in.Dist + ".recovery.tmp " + in.Dist; only != want {
+	if want := "mv -T '" + in.Dist + ".recovery.tmp' '" + in.Dist + "'"; only != want {
 		t.Fatalf("the recovery text has no crash-between-the-moves line (got %q, want %q):\n%s", only, want, RecoveryText(j, r.cfg.Target))
 	}
 	// the production dist line, cut before its last move: what ran before the crash
 	distLine := restore[2]
 	k := strings.LastIndex(distLine, " && ")
-	if !strings.HasPrefix(distLine, "[ ! -e "+in.Dist+".recovery.tmp ") || k < 0 {
+	if !strings.HasPrefix(distLine, "{ { [ ! -e '"+in.Dist+".recovery.tmp' ") || k < 0 {
 		t.Fatalf("restore line 3 is not the dist restore: %q", distLine)
 	}
 	preCrash, lastMove := distLine[:k], distLine[k+len(" && "):]
@@ -642,3 +642,92 @@ func TestRecoveryRestoreRefusesADistRecreatedBetweenTheTwoMoves(t *testing.T) {
 }
 
 func fileThere(p string) bool { _, err := os.Lstat(p); return err == nil }
+
+// The AddOn state is derived from recorded transitions + receipts, never from
+// j.Addon.BackupDir alone (empty both when the box had no previous DLL and when
+// the place never ran). This matrix pins each classification.
+func TestRecoveryAddonClassification(t *testing.T) {
+	mk := func(trs ...updaterjob.Transition) updaterjob.Job { return updaterjob.Job{Transitions: trs} }
+	placedStarted := updaterjob.Transition{State: updaterjob.StateAddonPlaced, Phase: updaterjob.PhaseStarted}
+	placedDone := updaterjob.Transition{State: updaterjob.StateAddonPlaced, Phase: updaterjob.PhaseDone}
+	restarted := updaterjob.Transition{State: updaterjob.StateNT8Restarted, Phase: updaterjob.PhaseDone}
+	reconnectedStarted := updaterjob.Transition{State: updaterjob.StateAddonReconnected, Phase: updaterjob.PhaseStarted}
+	reconnectedDone := updaterjob.Transition{State: updaterjob.StateAddonReconnected, Phase: updaterjob.PhaseDone}
+
+	cases := []struct {
+		name string
+		j    updaterjob.Job
+		want addonReach
+	}{
+		{"no addon transitions", mk(), addonUnknown},
+		{"placed started only", mk(placedStarted), addonAmbiguous},
+		{"placed done, not restored or proven", mk(placedDone), addonPlaced},
+		{"placed + restarted, reconnect started (unproven)", mk(placedDone, restarted, reconnectedStarted), addonPlaced},
+		{"reconnected done", mk(placedDone, restarted, reconnectedDone), addonProvenNew},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := recoveryAddon(tc.j); got != tc.want {
+				t.Fatalf("recoveryAddon = %v, want %v (transitions %v)", got, tc.want, tc.j.Transitions)
+			}
+		})
+	}
+
+	// A successful addon_restore receipt wins over the placed transition.
+	restored := mk(placedDone, restarted)
+	restored.Receipts = []updaterjob.Receipt{{Step: "addon_restore", OK: true, Evidence: map[string]string{"outcome": "restored"}}}
+	if got := recoveryAddon(restored); got != addonRestored {
+		t.Fatalf("recoveryAddon(restored receipt) = %v, want addonRestored", got)
+	}
+}
+
+// PIN (finding 5, preservation): a leftover <dst>.recovery.tmp that CANNOT be
+// moved aside must ABORT the whole restore command — the copy/install below
+// must not run, the live artifact and the leftover both stay untouched. The
+// old `[ ! -e ] || mv; cp …` semicolon let the copy proceed on a failed
+// preservation; the && chain here does not.
+func TestRecoveryRestorePreservationFailureAborts(t *testing.T) {
+	r := newRig(t)
+	r.watchFail[boxNew] = true
+	r.rollbackFail = true
+	j := r.runToEnd(t)
+	if j.State != updaterjob.StateRecoveryNeeded || j.Install == nil || j.Snapshot == nil {
+		t.Fatalf("fixture: job %s", j.State)
+	}
+	restore := restoreLines(t, j, r.cfg.Target)
+	in := *j.Install
+
+	leftover := in.Binary + ".recovery.tmp"
+	writeFile(t, leftover, "leftover snapshot copy\n")
+	before, err := os.ReadFile(in.Binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// An mv that fails only on the preservation move (the .previous target).
+	bin := t.TempDir()
+	mvShim := "#!/bin/sh\n" +
+		"for a in \"$@\"; do case \"$a\" in *.recovery.tmp.previous.*) echo 'preservation refused' >&2; exit 1;; esac; done\n" +
+		"/usr/bin/mv \"$@\"\n"
+	writeFile(t, filepath.Join(bin, "mv"), mvShim)
+	if err := os.Chmod(filepath.Join(bin, "mv"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if out, err := runRestore([]string{restore[0]}, bin); err == nil {
+		t.Fatalf("the restore succeeded despite a failed preservation:\n%s", out)
+	}
+	after, err := os.ReadFile(in.Binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("a failed preservation changed the live binary")
+	}
+	if b, err := os.ReadFile(leftover); err != nil || string(b) != "leftover snapshot copy\n" {
+		t.Fatalf("the leftover was lost on a failed preservation (%q, %v)", b, err)
+	}
+	if matches, _ := filepath.Glob(in.Binary + ".failed." + j.JobID + ".*"); len(matches) != 0 {
+		t.Fatalf("the failed artifact was moved aside despite the aborted preservation: %v", matches)
+	}
+}
