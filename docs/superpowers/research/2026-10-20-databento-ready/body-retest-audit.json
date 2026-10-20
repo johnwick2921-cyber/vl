@@ -1,0 +1,15 @@
+{
+  "artifacts": {
+    "sessions.csv": "a714ad8183bf850e99e804e227150d9ac1924d4d7cabcec8e50a4f3ddcd7527f",
+    "summary.csv": "f287845f8d235678a2560e25c726c91a198a5e44357944cfd95c90bbf6c42a1d",
+    "trades.csv": "02a1be6154af216117c396c11dcdc8efde54d1221072ea27d386b999a340eebd"
+  },
+  "engine_sha256": "11b8e24701404208b05d86264d7de1a49547ed47cf28f7525140c1da01bcce3b",
+  "included_days": 122,
+  "independently_checked_rows": 2196,
+  "input_days": 130,
+  "limits": "Independent first-passage math shares decoder. Trade-path simulation, not broker fills. First qualifying CLOSED body candle; no wick or time-delay rule. Touch fills are assumptions, not proof of fills. Retest gaps through stop exit immediately. Exact nominal planned stops; half-box half-ticks are idealized, outward rounded PnL separate. BE means stop moved to entry, not guaranteed zero loss under gaps. No costs.",
+  "orb_and_exclusions_match_frozen_baseline": true,
+  "shared_decoder_sha256": "3b7687a4e5f483f107eeb28fb8e9de62c5b912433d2dfd1af8891584aaef0903",
+  "status": "PASS_WITH_CAVEATS"
+}
