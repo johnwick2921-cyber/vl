@@ -7,22 +7,34 @@ call site via reflection. It does **not** copy the algorithm — it invokes the 
 private method on the real type and observes the real `VLBarsSubscriptionManager.OnConnectionReconnected()`
 side effects through injected log delegates.
 
-## Exact dependencies blocking execution on this WSL box (DS-104, 2026-10-20)
+## Correction (2026-10-20 00:2x CT) — earlier "NinjaTrader.Cbi.dll required" claim was WRONG
 
-1. **No C# toolchain** — `dotnet`, `mono`, `csc`, `mcs` are all absent on this host.
-2. **`NinjaTrader.Cbi.dll` is not on the WSL-accessible path.** `/mnt/c/Program Files/NinjaTrader 8/bin/`
-   exposes `NinjaTrader.Core.dll`, `NinjaTrader.Gui.dll`, `NinjaTrader.Client.dll` but **not**
-   `NinjaTrader.Cbi.dll` (which defines `Connection`, `Connection.ConnectionStatusUpdate`, and
-   `ConnectionStatusEventArgs`). `NinjaTrader.Custom.dll` / `NinjaTrader.Vendor.dll` exist only under
-   `Documents\NinjaTrader 8\bin\Custom\`.
-3. **`VLTraderTCPClient.cs` itself declares it cannot be compiled in WSL2** (file header): the
-   operator compiles on Windows via NT8 F5 or Visual Studio.
-4. The static `Connection.ConnectionStatusUpdate` event is raised by a running NT8; a faithful
-   execution also needs a live NT8 process (or the full NT8 SDK + a Windows .NET SDK to build the
-   reflection driver against the real assemblies).
+`NinjaTrader.Cbi` is a **namespace**, and its types (`ConnectionStatusEventArgs`, `ConnectionStatus`)
+plus `NinjaTrader.NinjaScript.AddOnBase` all live in **`NinjaTrader.Core.dll`**. There is no separate
+`NinjaTrader.Cbi.dll`. PROVEN: the Windows .NET Framework compiler `csc.exe` (4.8.9221.0, runs via WSL
+interop) compiled a probe that references `NinjaTrader.Cbi.ConnectionStatusEventArgs` and
+`NinjaTrader.NinjaScript.AddOnBase` against `-r:"C:\Program Files\NinjaTrader 8\bin\NinjaTrader.Core.dll"`
+with NO errors.
 
-Because of #1–#3 the harness below has **not been compiled or executed here**. It is a
-reviewable scaffold that must be built/run once on a Windows box with the NT8 assemblies.
+## Offline compile: FEASIBLE (proven) — offline EXECUTION: BLOCKED
+
+- **Compile works:** `csc.exe` (Framework 4.8) is available and compiles against the NT8 assemblies.
+  Limitation: `csc.exe` is C# 5 only; the production sources use C# ≥ 6, so the full build needs
+  `dotnet.exe` 9.0.307 (Roslyn) with a `net48` target. The .NET Framework 4.8 targeting pack is present
+  at `C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8`, so the
+  build is feasible offline (no NuGet network needed if `TargetFrameworkRootPath` is set).
+- **Execution is blocked:** `NinjaTrader.Core.dll` is AgileDotNet-protected; loading it in a standalone
+  CLR throws at `<AgileDotNetRT>.Initialize()` (`ArgumentNullException`). A faithful repro of the real
+  `OnVLConnectionStatusUpdate` therefore must run **inside NT8's AppDomain** (launching NT8 is not
+  authorized for DS-104 at this time). The reflection driver below is the correct shape but cannot be
+  executed standalone.
+
+## Withdrawn (DS-104)
+
+- The earlier claim that a separate `NinjaTrader.Cbi.dll` is required.
+- The "desired feed stays dead until the 75-minute watchdog" outcome — not directly demonstrated; withdrawn.
+- Framing `lastRecreateUtc` advance as a direct runtime proof of `OnConnectionReconnected()` execution —
+  it is a source-level equivalence (`fireRecreate` is the only setter), not a runtime demonstration.
 
 ## What the harness proves (once run)
 

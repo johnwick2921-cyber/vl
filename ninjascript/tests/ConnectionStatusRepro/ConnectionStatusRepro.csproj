@@ -26,9 +26,6 @@
 
   <ItemGroup>
     <!-- NinjaTrader 8 framework assemblies — validate paths per machine. -->
-    <Reference Include="NinjaTrader.Cbi">
-      <HintPath>C:\Program Files\NinjaTrader 8\bin\NinjaTrader.Cbi.dll</HintPath>
-    </Reference>
     <Reference Include="NinjaTrader.Core">
       <HintPath>C:\Program Files\NinjaTrader 8\bin\NinjaTrader.Core.dll</HintPath>
     </Reference>
