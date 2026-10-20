@@ -1,0 +1,15 @@
+{
+  "artifacts": {
+    "sessions.csv": "a714ad8183bf850e99e804e227150d9ac1924d4d7cabcec8e50a4f3ddcd7527f",
+    "summary.csv": "f740bc0cb3fa7f31f65c45c34e0aa06bb655afc4526debba2f9576b9b48931cc",
+    "trades.csv": "15d59ceec53f0ed77a458df3058da8ce585138f6a8504810568a4847c82f5b33"
+  },
+  "breakout_matches_frozen_baseline": true,
+  "engine_sha256": "9c4ea681845beafa04733feea3bce433ba67b9d87ae9e4c41fe352628302f7d2",
+  "included_days": 122,
+  "independently_checked_rows": 2196,
+  "input_days": 130,
+  "limits": "Independent first-passage math shares decoder. Trade-path simulation, not broker fills. Delay measured after first breakout event; touch-only fills after eligibility. First eligible tape print proxies order activation; marketable-at-activation disclosed. Limit touch is an assumption, not proof of fills. Retest gaps through stop exit immediately. Exact nominal planned stops; half-box half-ticks are idealized, outward rounded PnL separate. BE means stop moved to entry, not guaranteed zero loss under gaps. No costs.",
+  "shared_decoder_sha256": "3b7687a4e5f483f107eeb28fb8e9de62c5b912433d2dfd1af8891584aaef0903",
+  "status": "PASS_WITH_CAVEATS"
+}
