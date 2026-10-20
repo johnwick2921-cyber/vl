@@ -1,0 +1,15 @@
+{
+  "artifacts": {
+    "sessions.csv": "a714ad8183bf850e99e804e227150d9ac1924d4d7cabcec8e50a4f3ddcd7527f",
+    "summary.csv": "d2eb1827b1b829293f03cb5abd96a9d7bd8c54165d7bd469f10ab5cee59e1f4f",
+    "trades.csv": "a57cf75425f6886a4946488f3e323d42d02c36b4b50b58ba3c1959a4e16dd777"
+  },
+  "engine_sha256": "dec4b8be971acf77d5bd7822321bc89993f0ba96c2743d3eedc72d328c91231f",
+  "entry_matches_frozen_baseline": true,
+  "included_days": 122,
+  "independently_checked_rows": 1098,
+  "input_days": 130,
+  "limits": "Independent first-passage math shares decoder. Trade-path simulation, not broker fills. Exact nominal planned stops; half-box half-ticks are idealized, outward rounded PnL separate. BE means stop moved to entry, not guaranteed zero loss under gaps. No costs.",
+  "shared_decoder_sha256": "3b7687a4e5f483f107eeb28fb8e9de62c5b912433d2dfd1af8891584aaef0903",
+  "status": "PASS_WITH_CAVEATS"
+}
