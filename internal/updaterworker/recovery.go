@@ -119,16 +119,21 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 		addonHoldCond = "AND the AddOn state is proven"
 		step++
 	case addonPlaced:
+		// addonPlaced co-occurs only with reachNothingInstalled: reaching
+		// StateActivated requires addon_reconnected (which would classify as
+		// addonProvenNew), and a rollback would classify as addonAmbiguous.
 		act := "was NOT activated (it still runs the pre-update build)"
-		if reach == reachUnproven {
-			act = "activation is UNPROVEN (it may run either build)"
-		}
-		if j.Addon != nil && j.Addon.BackupDir != "" {
-			p("%d. The AddOn was already placed before this failure: the NEW AddOn DLL is in the AddOns folder and the PREVIOUS one is backed up at %s. The bot binary %s, so leaving the new DLL would run mixed, unverified bot and AddOn versions — the demonstrated risk, not an established incompatibility. Restore the previous AddOn by FIRST moving the current (new) AddOn DLL aside (never overwrite or delete it — it is the evidence), then COPYING the backup back into place (never MOVE or delete the backup — it is the only copy of the previous DLL) BEFORE opening NinjaTrader, then verify the AddOn reconnects on the previous build. Do NOT clear the hold until that is proven.", step, j.Addon.BackupDir, act)
+		dir, dirKnown := addonBackupDir(j)
+		switch {
+		case dir != "":
+			p("%d. The AddOn was already placed before this failure: the NEW AddOn DLL is in the AddOns folder and the PREVIOUS one is backed up at %s. The bot binary %s, so leaving the new DLL would run mixed, unverified bot and AddOn versions — the demonstrated risk, not an established incompatibility. Restore the previous AddOn by FIRST moving the current (new) AddOn DLL aside (never overwrite or delete it — it is the evidence), then COPYING the backup back into place (never MOVE or delete the backup — it is the only copy of the previous DLL) BEFORE opening NinjaTrader, then verify the AddOn reconnects on the previous build. Do NOT clear the hold until that is proven.", step, dir, act)
 			addonHoldCond = "AND the previous AddOn is restored + reconnected"
-		} else {
+		case dirKnown:
 			p("%d. The AddOn was already placed but NO previous DLL was recorded (the box had none to back up): there is nothing to restore, but the new DLL is unproven and the bot binary %s. Do NOT clear the hold until the AddOn reconnects and the boot is proven.", step, act)
 			addonHoldCond = "AND the new AddOn's build is confirmed"
+		default:
+			p("%d. The AddOn was already placed but the previous-AddOn backup location is NOT recorded for this job (a deferred place records it later): inspect the AddOns folder and the vl-addon-backups folder by hand. The bot binary %s. Do NOT clear the hold until the AddOn state is proven.", step, act)
+			addonHoldCond = "AND the AddOn state is proven"
 		}
 		step++
 	}
@@ -173,6 +178,13 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 	return b.String()
 }
 
+// shellQuote single-quotes s for POSIX sh, escaping embedded apostrophes with
+// the standard '...'\”...' idiom — so a path with spaces, quotes, or any
+// other metacharacter is safe in the emitted commands.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // restoreFileLine emits ONE no-delete, no-clobber restore command for a single
 // artifact (the binary, the RELEASE file, or the web dist directory). TS is
 // captured ONCE so every guard and move name the SAME timestamped file. In
@@ -188,17 +200,24 @@ func RecoveryText(j updaterjob.Job, t Target) string {
 //  4. Move the snapshot copy into place — an existing <dst> (a recreated
 //     file, directory, or symlink) aborts instead of being overwritten.
 //
-// Every path is single-quoted (spaces safe); only $TS is expanded.
+// Every path is single-quoted (spaces and apostrophes safe); only $TS expands.
 func restoreFileLine(dst, src, jobID, cpFlag string) string {
-	return fmt.Sprintf(`TS="$(date +%%Y%%m%%dT%%H%%M%%S.%%N)"; { { [ ! -e '%[1]s.recovery.tmp' ] && [ ! -L '%[1]s.recovery.tmp' ]; } || { [ ! -e '%[1]s.recovery.tmp.previous.'"$TS" ] && [ ! -L '%[1]s.recovery.tmp.previous.'"$TS" ] && mv -T '%[1]s.recovery.tmp' '%[1]s.recovery.tmp.previous.'"$TS"; }; } && %[4]s '%[2]s' '%[1]s.recovery.tmp' && { [ ! -e '%[1]s.failed.%[3]s.'"$TS" ] && [ ! -L '%[1]s.failed.%[3]s.'"$TS" ] && mv -T '%[1]s' '%[1]s.failed.%[3]s.'"$TS"; } && { [ ! -e '%[1]s' ] && [ ! -L '%[1]s' ] && mv -T '%[1]s.recovery.tmp' '%[1]s'; }`,
-		dst, src, jobID, cpFlag)
+	tmp := shellQuote(dst + ".recovery.tmp")
+	prev := shellQuote(dst+".recovery.tmp.previous.") + `"$TS"`
+	failed := shellQuote(dst+".failed."+jobID+".") + `"$TS"`
+	live := shellQuote(dst)
+	snap := shellQuote(src)
+	return fmt.Sprintf(`TS="$(date +%%Y%%m%%dT%%H%%M%%S.%%N)"; { { [ ! -e %[1]s ] && [ ! -L %[1]s ]; } || { [ ! -e %[2]s ] && [ ! -L %[2]s ] && mv -T %[1]s %[2]s; }; } && %[6]s %[5]s %[1]s && { [ ! -e %[3]s ] && [ ! -L %[3]s ] && mv -T %[4]s %[3]s; } && { [ ! -e %[4]s ] && [ ! -L %[4]s ] && mv -T %[1]s %[4]s; }`,
+		tmp, prev, failed, live, snap, cpFlag)
 }
 
 // crashLineCmd is the one no-clobber move that finishes a restore interrupted
 // between the two mv's (the live artifact already moved aside, the snapshot
 // copy waiting at <dst>.recovery.tmp). It refuses if <dst> reappears.
 func crashLineCmd(dst string) string {
-	return fmt.Sprintf("{ [ ! -e '%[1]s' ] && [ ! -L '%[1]s' ] && mv -T '%[1]s.recovery.tmp' '%[1]s'; }", dst)
+	live := shellQuote(dst)
+	tmp := shellQuote(dst + ".recovery.tmp")
+	return fmt.Sprintf("{ [ ! -e %[1]s ] && [ ! -L %[1]s ] && mv -T %[2]s %[1]s; }", live, tmp)
 }
 
 // restartLine restarts the unit by its MainPID and refuses a pid below 2 (a
@@ -257,10 +276,14 @@ const (
 	addonProvenNew                   // addon_reconnected reached (new build proven)
 )
 
-// recoveryAddon reads the job's AddOn history: the addon_placed / nt8_restarted
-// / addon_reconnected transitions and the addon_restore receipt.
+// recoveryAddon reads the job's AddOn history CHRONOLOGICALLY: the
+// addon_placed / nt8_restarted / addon_reconnected transitions and the
+// addon_restore receipt. A reconnect that happened BEFORE a rollback is STALE
+// once the rollback runs: the rollback's restore (or its absence) is the
+// latest word on which DLL is in place.
 func recoveryAddon(j updaterjob.Job) addonReach {
 	placedStarted, placedDone, reconnected := false, false, false
+	rollingBack := false
 	for _, tr := range j.Transitions {
 		switch tr.State {
 		case updaterjob.StateAddonPlaced:
@@ -276,6 +299,8 @@ func recoveryAddon(j updaterjob.Job) addonReach {
 			if tr.Phase == updaterjob.PhaseDone {
 				reconnected = true
 			}
+		case updaterjob.StateRollingBack:
+			rollingBack = true
 		}
 	}
 	restored := false
@@ -285,14 +310,39 @@ func recoveryAddon(j updaterjob.Job) addonReach {
 		}
 	}
 	switch {
+	case restored:
+		// A proven restore is the LATEST AddOn word, after any earlier reconnect.
+		return addonRestored
+	case rollingBack && placedDone:
+		// A rollback ran after the AddOn was placed but produced no proven
+		// restore: the current DLL is UNPROVEN — a reconnect from before the
+		// rollback is stale proof.
+		return addonAmbiguous
 	case reconnected:
 		return addonProvenNew
-	case restored:
-		return addonRestored
 	case placedDone:
 		return addonPlaced
 	case placedStarted:
 		return addonAmbiguous
 	}
 	return addonUnknown
+}
+
+// addonBackupDir returns the previous-AddOn backup dir the job recorded, and
+// whether that recording is COMPLETE. ("", true) = the place ran and there was
+// no previous DLL to back up; ("", false) = the backup location is unknown
+// (not recorded — e.g. a deferred place whose backup is recorded later, in the
+// restart receipt, not in j.Addon.BackupDir).
+func addonBackupDir(j updaterjob.Job) (string, bool) {
+	if j.Addon != nil && j.Addon.BackupDir != "" {
+		return j.Addon.BackupDir, true
+	}
+	for _, rc := range j.Receipts {
+		if rc.Step == "addon_place" && rc.Evidence != nil {
+			if b, ok := rc.Evidence["backup_dir"]; ok {
+				return b, true // "" = no previous DLL existed
+			}
+		}
+	}
+	return "", false
 }

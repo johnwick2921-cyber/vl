@@ -715,6 +715,7 @@ func TestRecoveryAddonClassification(t *testing.T) {
 	restarted := updaterjob.Transition{State: updaterjob.StateNT8Restarted, Phase: updaterjob.PhaseDone}
 	reconnectedStarted := updaterjob.Transition{State: updaterjob.StateAddonReconnected, Phase: updaterjob.PhaseStarted}
 	reconnectedDone := updaterjob.Transition{State: updaterjob.StateAddonReconnected, Phase: updaterjob.PhaseDone}
+	rollingBack := updaterjob.Transition{State: updaterjob.StateRollingBack, Phase: updaterjob.PhaseDone}
 
 	cases := []struct {
 		name string
@@ -726,6 +727,7 @@ func TestRecoveryAddonClassification(t *testing.T) {
 		{"placed done, not restored or proven", mk(placedDone), addonPlaced},
 		{"placed + restarted, reconnect started (unproven)", mk(placedDone, restarted, reconnectedStarted), addonPlaced},
 		{"reconnected done", mk(placedDone, restarted, reconnectedDone), addonProvenNew},
+		{"reconnected then rollback, no restore receipt", mk(placedDone, restarted, reconnectedDone, rollingBack), addonAmbiguous},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -735,8 +737,9 @@ func TestRecoveryAddonClassification(t *testing.T) {
 		})
 	}
 
-	// A successful addon_restore receipt wins over the placed transition.
-	restored := mk(placedDone, restarted)
+	// A successful addon_restore receipt is the LATEST word, even after a
+	// reconnect and a rollback.
+	restored := mk(placedDone, restarted, reconnectedDone, rollingBack)
 	restored.Receipts = []updaterjob.Receipt{{Step: "addon_restore", OK: true, Evidence: map[string]string{"outcome": "restored"}}}
 	if got := recoveryAddon(restored); got != addonRestored {
 		t.Fatalf("recoveryAddon(restored receipt) = %v, want addonRestored", got)

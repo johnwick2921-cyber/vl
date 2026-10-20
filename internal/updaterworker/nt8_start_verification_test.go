@@ -301,9 +301,11 @@ func TestRecoveryTextAddonPlacedNoPreviousDLLKeepsHold(t *testing.T) {
 	}
 }
 
-// reachUnproven means the activation RAN (StateActivated was reached) but was
-// never proven. The AddOn paragraph must say the activation is UNPROVEN — not
-// "was NOT activated" — while still naming the placed AddOn and its backup.
+// reachUnproven means the activation RAN but was never proven, and a rollback
+// ran after the AddOn was placed. With no proven AddOn restore, the AddOn state
+// is AMBIGUOUS (a reconnect from before the rollback is stale proof). The text
+// must NOT claim the bot "was NOT activated", and the hold stays until the AddOn
+// state is proven.
 func TestRecoveryTextReachUnprovenAddonPlacedDoesNotClaimNotActivated(t *testing.T) {
 	r := newRig(t) // only for the disposable Target
 	j := updaterjob.Job{
@@ -313,6 +315,7 @@ func TestRecoveryTextReachUnprovenAddonPlacedDoesNotClaimNotActivated(t *testing
 		RecoveryReason: "test",
 		Transitions: []updaterjob.Transition{
 			{State: updaterjob.StateAddonPlaced, Phase: updaterjob.PhaseDone},
+			{State: updaterjob.StateAddonReconnected, Phase: updaterjob.PhaseDone},
 			{State: updaterjob.StateActivated, Phase: updaterjob.PhaseDone},
 			{State: updaterjob.StateRollingBack, Phase: updaterjob.PhaseDone},
 		},
@@ -322,13 +325,10 @@ func TestRecoveryTextReachUnprovenAddonPlacedDoesNotClaimNotActivated(t *testing
 		Addon:    &updaterjob.AddonState{BackupDir: filepath.Join(r.inst, "addon-backup")},
 	}
 	text := RecoveryText(j, r.cfg.Target)
-	if !strings.Contains(text, "activation is UNPROVEN") {
-		t.Fatalf("reachUnproven text must say the activation is UNPROVEN:\n%s", text)
-	}
 	if strings.Contains(text, "was NOT activated") {
-		t.Fatalf("reachUnproven text must not claim the bot was NOT activated:\n%s", text)
+		t.Fatalf("the text claims the bot was NOT activated when activation ran unproven:\n%s", text)
 	}
-	if !strings.Contains(text, "The AddOn was already placed") {
-		t.Fatalf("the AddOn restore step must appear for a placed AddOn:\n%s", text)
+	if !strings.Contains(text, "AddOn placement is INCOMPLETE or UNPROVEN") {
+		t.Fatalf("the ambiguous AddOn state must be named:\n%s", text)
 	}
 }
