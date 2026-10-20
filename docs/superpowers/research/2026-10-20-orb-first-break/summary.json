@@ -1,0 +1,99 @@
+{
+  "start_inclusive": "2025-10-20",
+  "end_exclusive": "2026-10-20",
+  "timezone": "America/Chicago",
+  "input_rows": 329692,
+  "input_canonical_sha256": "34a84b59ff2c0de05a93968fa43218e0db1f66af0b846fbab3725edbd48570a5",
+  "sources": {
+    "historical_import": 270247,
+    "live": 55188,
+    "mixed": 4,
+    "historical": 4253
+  },
+  "sessions": 261,
+  "session_counts": {
+    "included": 226,
+    "incomplete_390_minute_session_including_early_closes": 16,
+    "no_session_rows_holiday_or_missing": 19
+  },
+  "results": [
+    {
+      "orb_minutes": 1,
+      "counts": {
+        "TP": 35,
+        "SL": 158,
+        "UNRESOLVED": 33
+      },
+      "entries": 226,
+      "tp_rate_lower_pct": 15.486725663716815,
+      "tp_rate_upper_pct": 30.088495575221238,
+      "resolved_only_tp_pct": 18.134715025906736,
+      "definite_comeback_stops": 47,
+      "possible_comeback_stops": 158,
+      "gross_points_lower": -2053.5,
+      "gross_points_upper": 423.25,
+      "net_points_lower_2pt_cost": -2505.5,
+      "net_points_upper_2pt_cost": -28.75,
+      "ambiguous_reasons": {
+        "entry_bar_stop_order_unknown": 29,
+        "entry_bar_stop_order_unknown|stop_and_target_same_bar": 3,
+        "stop_and_target_same_bar": 1
+      }
+    },
+    {
+      "orb_minutes": 2,
+      "counts": {
+        "TP": 37,
+        "SL": 163,
+        "UNRESOLVED": 26
+      },
+      "entries": 226,
+      "tp_rate_lower_pct": 16.371681415929203,
+      "tp_rate_upper_pct": 27.876106194690266,
+      "resolved_only_tp_pct": 18.5,
+      "definite_comeback_stops": 46,
+      "possible_comeback_stops": 163,
+      "gross_points_lower": -1483.5,
+      "gross_points_upper": 751.5,
+      "net_points_lower_2pt_cost": -1935.5,
+      "net_points_upper_2pt_cost": 299.5,
+      "ambiguous_reasons": {
+        "entry_bar_stop_order_unknown": 24,
+        "both_breakout_sides_in_first_trigger_bar|stop_and_target_same_bar": 1,
+        "stop_and_target_same_bar": 1
+      }
+    },
+    {
+      "orb_minutes": 5,
+      "counts": {
+        "SL": 176,
+        "TP": 27,
+        "UNRESOLVED": 23
+      },
+      "entries": 226,
+      "tp_rate_lower_pct": 11.946902654867257,
+      "tp_rate_upper_pct": 22.123893805309734,
+      "resolved_only_tp_pct": 13.300492610837438,
+      "definite_comeback_stops": 65,
+      "possible_comeback_stops": 175,
+      "gross_points_lower": -1903.75,
+      "gross_points_upper": 848.5,
+      "net_points_lower_2pt_cost": -2355.75,
+      "net_points_upper_2pt_cost": 396.5,
+      "ambiguous_reasons": {
+        "entry_bar_stop_order_unknown": 23
+      }
+    }
+  ],
+  "assumptions": {
+    "entry_buffer_points": 0.25,
+    "stop_points": 20,
+    "target": "1x ORB width from actual entry",
+    "session": "08:30-15:00 CT",
+    "trades_per_day_per_test": 1,
+    "contract_selection": "highest observed 08:00-08:30 same-day volume; before entry",
+    "timestamp": "historical_import -60000ms; live/historical unchanged",
+    "cost_points_round_trip": 2,
+    "cost_note": "scenario inherited from prior research; not measured broker fees"
+  }
+}
