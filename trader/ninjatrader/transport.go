@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 
+	"vl/config"
 	"vl/logger"
 	ntwire "vl/provider/ninjatrader"
 	"vl/trader/types"
@@ -55,6 +56,16 @@ var accountsListSink func([]ntwire.AccountInfo)
 // SetAccountsListSink registers the hook. Call before the first trader is built.
 func SetAccountsListSink(fn func([]ntwire.AccountInfo)) { accountsListSink = fn }
 
+// U6: in friend mode a cached NT bind error is FATAL (so systemd's
+// Restart=on-failure retries) instead of being cached for the process life. The
+// owner's box keeps the cached-error behavior. Both are seams so a test can
+// force friend mode and intercept the fatal without os.Exit.
+var friendModeEnabled = config.FriendInstanceEnabled
+
+var bindErrorFatal = func(err error) {
+	logger.Fatalf("transport: friend-mode NT bind error is fatal (Restart=on-failure will retry): %v", err)
+}
+
 // getOrStartTCPServer lazily starts the singleton TCP server on first call.
 // Subsequent calls return the same instance. The startup error (if any) is
 // cached and returned to every caller so a bind failure surfaces consistently.
@@ -62,6 +73,12 @@ func getOrStartTCPServer() (*ntwire.TCPServer, error) {
 	tcpServerOnce.Do(func() {
 		server := ntwire.NewTCPServer(nil)
 		if err := server.Start(context.Background()); err != nil {
+			if friendModeEnabled() {
+				// U6: fatal, so Restart=on-failure retries. In production
+				// bindErrorFatal exits; in tests it records and we fall through
+				// to the cache so the test can assert the error too.
+				bindErrorFatal(err)
+			}
 			tcpServerErr = fmt.Errorf("transport: start tcp server: %w", err)
 			return
 		}
