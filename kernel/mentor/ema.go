@@ -52,8 +52,37 @@ func EMALevels(bars []market.Kline, cfg Config) []Level {
 func emaValue(bars []market.Kline, period int) float64 {
 	k := 2.0 / float64(period+1)
 	ema := bars[0].Close
-	for _, b := range bars[1:] {
-		ema = ema + k*(b.Close-ema)
+	step := klineStep(bars)
+	for i := 1; i < len(bars); i++ {
+		// m134 (b): a bar that closes a HOLE must not move the EMA across it —
+		// the restart chart hole made the 5m EMA50 wrong by up to 125 pts.
+		if step > 0 && bars[i].OpenTime-bars[i-1].OpenTime > step+step/2 {
+			continue
+		}
+		ema = ema + k*(bars[i].Close-ema)
 	}
 	return ema
+}
+
+// klineStep returns the series' bar interval: the smallest positive gap between
+// consecutive bars over the first run (the contiguous head). 0 = unknown.
+func klineStep(bars []market.Kline) int64 {
+	if len(bars) < 2 {
+		return 0
+	}
+	var step int64
+	m := len(bars)
+	if m > 8 {
+		m = 8
+	}
+	for i := 1; i < m; i++ {
+		d := bars[i].OpenTime - bars[i-1].OpenTime
+		if d <= 0 {
+			continue
+		}
+		if step == 0 || d < step {
+			step = d
+		}
+	}
+	return step
 }

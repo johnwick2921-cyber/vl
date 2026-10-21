@@ -657,6 +657,43 @@ func barsTF(bars []market.Kline, tfMin int) []market.Kline {
 	return out
 }
 
+// BarsTFHoles reports the OPEN TIMES of aggregate buckets built from a 1m series
+// that have an INTERIOR hole (a missing minute) — m134 (b): a holey bucket must
+// be marked so the mentor's HTF reads can skip it. The last (possibly forming)
+// bucket is never reported; a short leading bucket (the series starts mid-bucket)
+// is not a hole. PURE — it does not mutate the bars.
+func BarsTFHoles(bars []market.Kline, tfMin int) map[int64]bool {
+	if tfMin <= 1 || len(bars) < 2 {
+		return nil
+	}
+	var holes map[int64]bool
+	var curBucket int64
+	var prevMin int64
+	var gapSeen bool
+	for i, b := range bars {
+		bucket := bucketOpen(b.OpenTime, tfMin)
+		if i == 0 {
+			curBucket, prevMin, gapSeen = bucket, b.OpenTime, false
+			continue
+		}
+		if bucket != curBucket {
+			if gapSeen {
+				if holes == nil {
+					holes = map[int64]bool{}
+				}
+				holes[curBucket] = true
+			}
+			curBucket, prevMin, gapSeen = bucket, b.OpenTime, false
+			continue
+		}
+		if b.OpenTime-prevMin > 60_000 {
+			gapSeen = true
+		}
+		prevMin = b.OpenTime
+	}
+	return holes
+}
+
 // bucketOpen floors an open time to its TF bucket. 1m/5m/15m/1h buckets are
 // whole TF multiples of real-UTC epoch ms (whole-hour UTC offsets — DST
 // safe). The 4h bucket is anchored at the CME session open 17:00 CT and is

@@ -65,6 +65,35 @@ type StructureOneWay struct {
 // StructureTFs are the per-TF detectors the wave builds (2.1).
 var StructureTFs = []string{"5m", "15m", "1h"}
 
+// StructureGapKey is the reserved snapshot key under which StructureSnapshot
+// records a bars-HOLE warning (m134). It is not a timeframe; StructurePromptLine
+// renders it as its own advisory clause.
+const StructureGapKey = "_gap"
+
+// BarsHoleWarning reports a HOLE in a bar series (m134): a gap longer than one
+// bar interval between consecutive bars, where a missing minute is a CME-OPEN
+// trading minute. A pure session break (16:00→17:00 CT, a weekend) has no open
+// minute missing and does NOT warn. The forming tail never trips it. Returns
+// "" when the series is contiguous.
+func BarsHoleWarning(bars []market.Kline, tfMin int) string {
+	if tfMin <= 0 || len(bars) < 2 {
+		return ""
+	}
+	step := int64(tfMin) * 60_000
+	for i := 1; i < len(bars); i++ {
+		d := bars[i].OpenTime - bars[i-1].OpenTime
+		if d <= step {
+			continue
+		}
+		prev := bars[i-1].OpenTime
+		next := bars[i].OpenTime
+		if IsCMEOpen(time.UnixMilli(prev+step)) || IsCMEOpen(time.UnixMilli(next-step)) {
+			return fmt.Sprintf("gap %s → %s CT (%d missing open minute(s))", ClockCT(time.UnixMilli(prev)), ClockCT(time.UnixMilli(next)), (d-step)/60_000)
+		}
+	}
+	return ""
+}
+
 // structureTFMinutes is the bar length table for the structure detectors
 // (5m/15m/1h only — the acceptance resolver is rule-scoped and would fold 1h
 // into its 5m default).
@@ -472,6 +501,9 @@ func StructureSnapshot(bars1m []market.Kline, nowMs int64) map[string]StructureS
 			snap[tf] = state
 		}
 	}
+	if w := BarsHoleWarning(bars1m, 1); w != "" {
+		snap[StructureGapKey] = StructureState{Trend: "bars hole: " + w}
+	}
 	return snap
 }
 
@@ -540,6 +572,9 @@ func StructurePromptLine(snap map[string]StructureState) string {
 			label += fmt.Sprintf(" (%s %.2f @%s)", st.Swing.Kind, st.Swing.Price, structureClockCT(st.Swing.TimeMs))
 		}
 		parts = append(parts, label)
+	}
+	if g, ok := snap[StructureGapKey]; ok && strings.TrimSpace(g.Trend) != "" {
+		parts = append(parts, g.Trend)
 	}
 	var lastEv *StructureEvent
 	var lastTF string
