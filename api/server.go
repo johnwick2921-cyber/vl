@@ -197,6 +197,14 @@ func (s *Server) setupRoutes() {
 		if s.friendMode {
 			api.GET("/friend/flat", s.handleFriendFlat)
 
+			// W-FRIEND-HOSTED (CTO 2026-10-21 00:15): the addon-status probe the
+			// friend dashboard banner reads — friend mode only, never the owner.
+			api.GET("/friend/addon-status", s.handleFriendAddonStatus)
+
+			// S14: the identity probe (key_sha256) the friend app uses to prove
+			// "my bot" — friend mode only, never the owner.
+			api.GET("/friend/identity", s.handleFriendIdentity)
+
 			// W-FRIEND-HOSTED S8 (DS-108): the friend manifest + artifacts exist
 			// ONLY in friend mode — never registered on the owner's bot
 			// (B5 S12 + R8). The handlers still 404 outside friend mode as
@@ -273,8 +281,11 @@ func (s *Server) setupRoutes() {
 				`Body: {"confirm":"RESET-ALL-DATA"}. Requires ALLOW_ACCOUNT_RESET=1 in the server environment.`,
 				s.handleResetAccount)
 
-			// Server IP query (requires authentication, for whitelist configuration)
-			s.route(protected, "GET", "/server-ip", "Get server public IP (for exchange whitelist)", s.handleGetServerIP)
+			// Server IP query (requires authentication, for whitelist configuration).
+			// U8: NOT registered on a friend bot — it leaks the owner's public IP.
+			if !s.friendMode {
+				s.route(protected, "GET", "/server-ip", "Get server public IP (for exchange whitelist)", s.handleGetServerIP)
+			}
 
 			// AI trader management
 			s.routeWithSchema(protected, "GET", "/my-traders", "List user's traders with status",

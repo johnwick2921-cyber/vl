@@ -45,6 +45,7 @@ func TestFriendModeOwnerSurfaces404(t *testing.T) {
 		"/api/nt/bar-arbiter",
 		"/api/armed/test-arm",
 		"/api/admin/bars/import",
+		"/api/server-ip",
 	}
 	for _, p := range routes {
 		w := httptest.NewRecorder()
