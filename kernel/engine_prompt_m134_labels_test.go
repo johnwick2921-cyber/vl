@@ -170,11 +170,14 @@ func TestDailySessionBarLine_ClosedNamesReasonAndReopen(t *testing.T) {
 	}
 }
 
-// TestDailySessionBarLine_DST (m150-3) — across BOTH 2026 DST transitions the
-// session close stays at 16:00 CT wall clock (an Add(24h)/Add(23h) arithmetic
-// mutant shifts it an hour and this pin goes RED). The transitions fall on
-// Sundays, so the morning instants are weekend-closed and the evening instants
-// are the re-opened session.
+// TestDailySessionBarLine_DST (m150-3, comment corrected m162) — the 1d label's
+// close reads 16:00 CT wall clock across both 2026 DST transition Sundays. This
+// pin documents the WALL-CLOCK invariant (the close is built by time.Date(…,16),
+// never by duration arithmetic), so a duration mutant in the LABEL path cannot
+// shift it. The transition days themselves are the subject of
+// TestCMESessionDayStart_DST below, which is the pin a duration mutant actually
+// breaks. The transitions fall on Sundays, so 10:00 is weekend-closed and 18:00
+// is the re-opened session.
 func TestDailySessionBarLine_DST(t *testing.T) {
 	tfData := oneDummy1D()
 
@@ -195,9 +198,35 @@ func TestDailySessionBarLine_DST(t *testing.T) {
 	}
 }
 
+// TestCMESessionDayStart_DST (m162) — the pin a DURATION mutant actually breaks.
+// CMESessionDayStart moves a 17:00 CT boundary back one CALENDAR day via
+// AddDate(0,0,-1). A mutant that swaps in Add(-24h) lands on the wrong wall
+// clock at both transition instants (the 24h interval crosses the 02:00
+// transition), and this pin goes RED in both.
+func TestCMESessionDayStart_DST(t *testing.T) {
+	t.Run("spring-forward", func(t *testing.T) {
+		// 2026-03-08 is a 23h day: at 08:00 CT the session start is 03-07 17:00
+		// CT. Add(-24h) from the 03-08 17:00 boundary lands at 03-07 16:00 CST
+		// (it crosses the 02:00→03:00 jump) — one hour early.
+		if got := CMESessionDayStart(time.UnixMilli(ctMs(2026, 3, 8, 8, 0))).UnixMilli(); got != ctMs(2026, 3, 7, 17, 0) {
+			t.Fatalf("session start = %s, want 2026-03-07 17:00 CT", time.UnixMilli(got).In(CTLocation()))
+		}
+	})
+	t.Run("fall-back", func(t *testing.T) {
+		// 2026-11-01 is a 25h day: Add(-24h) from the 11-01 17:00 boundary lands
+		// at 10-31 18:00 CDT — one hour late.
+		if got := CMESessionDayStart(time.UnixMilli(ctMs(2026, 11, 1, 8, 0))).UnixMilli(); got != ctMs(2026, 10, 31, 17, 0) {
+			t.Fatalf("session start = %s, want 2026-10-31 17:00 CT", time.UnixMilli(got).In(CTLocation()))
+		}
+	})
+}
+
 // TestDailySessionClose_WallClock (m150-3) — dailySessionClose returns 16:00 CT
-// wall clock on the session's close day, never a duration-arithmetic time that
-// drifts across a DST transition.
+// wall clock on the session's close day. It builds the close with
+// time.Date(…,16) from the session's close day, so no duration arithmetic is
+// involved; this pin documents that invariant (it is NOT a mutant-catcher —
+// no CME session spans a DST transition, so a 23h shortcut would also be
+// correct here).
 func TestDailySessionClose_WallClock(t *testing.T) {
 	// Sunday 03-08 18:00 CT (post spring-forward): session closes Mon 03-09 16:00.
 	c := dailySessionClose(time.UnixMilli(ctMs(2026, 3, 8, 18, 0)))
