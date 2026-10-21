@@ -56,6 +56,7 @@ check "F1 rc is 0" "$RC" "0"
 [ -d "$ROOT/alice/data" ] && ok "F1 data/ exists" || bad "F1 data/ exists" "missing $ROOT/alice/data"
 check "F1 friend dir mode is 700 (U16)" "$(stat -c '%a' "$ROOT/alice" 2>/dev/null)" "700"
 check "F1 data/ mode is 700 (U16)" "$(stat -c '%a' "$ROOT/alice/data" 2>/dev/null)" "700"
+check "F1 root dir mode is 700 (R11)" "$(stat -c '%a' "$ROOT" 2>/dev/null)" "700"
 check "F1 .env mode is 600" "$(stat -c '%a' "$ROOT/alice/.env" 2>/dev/null)" "600"
 ENV="$(cat "$ROOT/alice/.env")"
 has    "F1 .env JWT_SECRET set"        "$ENV" "JWT_SECRET="
@@ -203,8 +204,14 @@ for a in "$@"; do
   esac
 done
 case "$verb" in
-  stop|disable) exit 0 ;;
-  is-active) if [ "${FAKE_ACTIVE:-0}" = "1" ]; then echo active; exit 0; else echo inactive; exit 3; fi ;;
+  stop) [ "${FAKE_STOP_FAIL:-0}" = "1" ] && exit 1 || exit 0 ;;
+  disable) exit 0 ;;
+  is-active)
+    case "${FAKE_ACTIVE:-0}" in
+      1) echo active; exit 0 ;;
+      2) exit 1 ;;
+      *) echo inactive; exit 3 ;;
+    esac ;;
 esac
 exit 0
 EOF
@@ -221,7 +228,23 @@ FAKE_ACTIVE=0 REMOVE_CHECK_ACTIVE=1 TRASH_DIR="$WORK/trash" "$REMOVE_SH" frank -
 RC=$?
 check "F10 inactive remove exits 0" "$RC" "0"
 [ ! -e "$ROOT/frank" ] && ok "F10 inactive remove moved the folder" || bad "F10 inactive remove moved the folder" "$ROOT/frank still present"
-unset FAKE_ACTIVE REMOVE_CHECK_ACTIVE
+# R5: a failed `stop` must refuse.
+RC=$(provision grace)
+check "F10b provision grace rc 0" "$RC" "0"
+FAKE_STOP_FAIL=1 REMOVE_CHECK_ACTIVE=1 TRASH_DIR="$WORK/trash" "$REMOVE_SH" grace --root "$ROOT" > "$WORK/out" 2> "$WORK/err"
+RC=$?
+check "F10b failed stop exits nonzero" "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" "nonzero"
+[ -d "$ROOT/grace" ] && ok "F10b failed stop did not move" || bad "F10b failed stop did not move" "$ROOT/grace gone"
+has "F10b names the failed stop" "$(cat "$WORK/err")" "failed to stop"
+# R5: an unknown is-active status (bus unreachable) must refuse.
+FAKE_STOP_FAIL=0 FAKE_ACTIVE=2 REMOVE_CHECK_ACTIVE=1 TRASH_DIR="$WORK/trash" "$REMOVE_SH" grace --root "$ROOT" > "$WORK/out" 2> "$WORK/err"
+RC=$?
+check "F10c unknown status exits nonzero" "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" "nonzero"
+[ -d "$ROOT/grace" ] && ok "F10c unknown status did not move" || bad "F10c unknown status did not move" "$ROOT/grace gone"
+has "F10c names the unknown status" "$(cat "$WORK/err")" "cannot confirm"
+# cleanup grace (inactive) so later tests see a clean registry
+FAKE_ACTIVE=0 FAKE_STOP_FAIL=0 REMOVE_CHECK_ACTIVE=1 TRASH_DIR="$WORK/trash" "$REMOVE_SH" grace --root "$ROOT" > "$WORK/out" 2> "$WORK/err"
+unset FAKE_ACTIVE REMOVE_CHECK_ACTIVE FAKE_STOP_FAIL
 
 echo "== F11: U17 registry write holds the flock (blocks a concurrent writer) =="
 REG_LOCK="$ROOT/friends.json.lock"
@@ -238,6 +261,32 @@ if [ "$DUR" -ge 2 ]; then ok "F11 provision waited for the lock (${DUR}s)"; else
 wait "$HOLDER" 2>/dev/null || true
 LEFT="$(find "$ROOT" -maxdepth 1 -name '.friends-*.json.tmp' 2>/dev/null | wc -l)"
 check "F11 no leftover .tmp in root" "$LEFT" "0"
+
+echo "== F12: R12 remove of an already-moved folder marks the row revoked =="
+RC=$(provision heidi)
+check "F12 provision heidi rc 0" "$RC" "0"
+mv "$ROOT/heidi" "$WORK/heidi-premoved"
+TRASH_DIR="$WORK/trash" "$REMOVE_SH" heidi --root "$ROOT" > "$WORK/out" 2> "$WORK/err"
+RC=$?
+check "F12 exit 0 (active row marked revoked)" "$RC" "0"
+has "F12 registry row revoked" "$(cat "$ROOT/friends.json")" '"state": "revoked"'
+
+echo "== F13: R11 a corrupt registry aborts and is never replaced =="
+cp "$ROOT/friends.json" "$WORK/friends.json.bak"
+printf '{not json' > "$ROOT/friends.json"
+RC=$(provision ivy)
+check "F13 corrupt registry exits nonzero" "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" "nonzero"
+has "F13 names the corruption" "$(cat "$WORK/err")" "corrupt"
+grep -q '{not json' "$ROOT/friends.json" && ok "F13 registry bytes unchanged" || bad "F13 registry bytes unchanged" "registry was replaced"
+cp "$WORK/friends.json.bak" "$ROOT/friends.json"
+
+echo "== F14: R11 a name already in the registry is refused (folder gone) =="
+RC=$(provision jade)
+check "F14 provision jade rc 0" "$RC" "0"
+mv "$ROOT/jade" "$WORK/jade-premoved"
+RC=$(provision jade)
+check "F14 dup-name exits nonzero" "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" "nonzero"
+has "F14 names the duplicate" "$(cat "$WORK/err")" "already in the registry"
 
 printf '\n== %d pass / %d fail ==\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
