@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"time"
 )
 
 // connect.go — the AddOn settings file (B2 contract). The app writes
@@ -82,6 +83,25 @@ func connectJSON(ic InstallCode) ([]byte, error) {
 	}, "", "  ")
 }
 
+// renamePause is the retry delay for a rename that hits a transient lock (A7).
+// A var so tests can shorten it.
+var renamePause = 250 * time.Millisecond
+
+// retryRename renames, retrying for up to ~5s. A7 (seen on the owner's laptop
+// 10-21: "being used by another process"): Windows Defender / OneDrive /
+// Explorer hold a just-written file for a moment, and the rename fails with a
+// sharing violation that clears on its own.
+func retryRename(d deps, oldpath, newpath string) error {
+	var err error
+	for i := 0; i < 20; i++ {
+		if err = d.rename(oldpath, newpath); err == nil {
+			return nil
+		}
+		time.Sleep(renamePause)
+	}
+	return err
+}
+
 // writeFileAtomic writes data to a temp file then renames it into place (S19).
 // A reader therefore sees either the complete OLD file or the complete NEW file
 // — never a half-written one (a crash mid-write must not corrupt a state file).
@@ -90,7 +110,7 @@ func writeFileAtomic(d deps, path string, data []byte, perm fs.FileMode) error {
 	if err := d.writeFile(tmp, data, perm); err != nil {
 		return err
 	}
-	return d.rename(tmp, path)
+	return retryRename(d, tmp, path)
 }
 
 // writeConnectJSON writes connect.json (and its parent dir) for the install code.

@@ -219,9 +219,11 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	// [6/6] Desktop + Start Menu shortcuts + README, then the final screen, then
 	// OPEN the dashboard so the non-technical owner lands on the login page.
 	// The icon launches vl-friend.exe --open, so copy ourselves to LOCALAPPDATA
-	// first. B1: shortcut creation is NON-fatal — warn and continue.
+	// first. B1: shortcut creation is NON-fatal — warn and continue. A7: so is
+	// the local copy — the icon falls back to the .url shortcut (dashboard in
+	// the browser) and the next run re-copies (A3).
 	if err := ensureLocalExe(d); err != nil {
-		return err
+		d.print("warning: could not copy VL to this PC's app folder — " + err.Error())
 	}
 	if err := createDesktopShortcut(ctx, d, base); err != nil {
 		d.print("warning: could not create the VL icon — " + err.Error())
@@ -892,7 +894,7 @@ func ensureLocalExe(d deps) error {
 		if err := d.mkdirAll(filepath.Dir(old), 0o755); err != nil {
 			return err
 		}
-		if err := d.rename(dst, old); err != nil {
+		if err := retryRename(d, dst, old); err != nil {
 			return err
 		}
 	}
@@ -1210,7 +1212,7 @@ func migrateDocsIfNeeded(d deps, home, docs string) error {
 			d.print("warning: could not move " + m.from + " — " + err.Error())
 			continue
 		}
-		if err := d.rename(m.from, m.to); err != nil {
+		if err := retryRename(d, m.from, m.to); err != nil {
 			d.print("warning: could not move " + m.from + " — " + err.Error())
 			continue
 		}
@@ -1292,11 +1294,11 @@ func applyNewCode(ctx context.Context, d deps, docs, code string) error {
 	if err := d.mkdirAll(filepath.Dir(backup), 0o755); err != nil {
 		return err
 	}
-	if err := d.rename(oldPath, backup); err != nil {
+	if err := retryRename(d, oldPath, backup); err != nil {
 		return err
 	}
 	if err := writeConnectJSON(d, docs, ic); err != nil {
-		_ = d.rename(backup, oldPath) // rollback: never leave a PC without connect.json
+		_ = retryRename(d, backup, oldPath) // rollback: never leave a PC without connect.json
 		return err
 	}
 	if err := writeAppState(d, docs, appState{Name: ic.Name, WebPort: ic.WebPort}); err != nil {
@@ -1347,8 +1349,10 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 	// F8: the dashboard comes FIRST — print the URL, ensure the icons, open it —
 	// so a non-technical user lands on the login page before any y/N question.
 	d.print("Your VL dashboard: " + base)
+	// A7 (owner laptop 10-21): a locked file here must never block the
+	// dashboard — warn; the next run re-copies (A3).
 	if err := ensureLocalExe(d); err != nil {
-		return err
+		d.print("warning: could not update VL's app copy — " + err.Error())
 	}
 	// B1: shortcut creation is NON-fatal — warn and continue to the dashboard.
 	if err := createDesktopShortcut(ctx, d, base); err != nil {
@@ -1588,7 +1592,7 @@ func placeAddon(d deps, docs, build string, addon []byte) error {
 		if err := d.mkdirAll(filepath.Dir(old), 0o755); err != nil {
 			return err
 		}
-		if err := d.rename(dst, old); err != nil {
+		if err := retryRename(d, dst, old); err != nil {
 			return err
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -1596,10 +1600,10 @@ func placeAddon(d deps, docs, build string, addon []byte) error {
 		// blind.
 		return fmt.Errorf("read existing add-on: %w", err)
 	}
-	if err := d.rename(tmp, dst); err != nil {
+	if err := retryRename(d, tmp, dst); err != nil {
 		// S2: roll the old DLL back so the PC is never left without an add-on.
 		if old != "" {
-			if rb := d.rename(old, dst); rb != nil {
+			if rb := retryRename(d, old, dst); rb != nil {
 				return fmt.Errorf("install add-on: %w (and could not restore the previous add-on from %s: %v)", err, old, rb)
 			}
 		}
