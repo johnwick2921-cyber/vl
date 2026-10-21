@@ -56,6 +56,7 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	// cycle at all; the link check must not depend on either.
 	wd := at.driveDeadManWatchdog()
 	at.checkFeedDown(now)
+	at.feedLagAlarmTick(now) // m134 DS-108 (c): 500–700 s lag held > 3 min → WARN
 	at.checkPositionDrawdown()
 	// Release #25 PK-2 — exit a planner position whose own thesis died
 	// (day_plan.planner_exit_on_thesis_death; OFF → returns at once).

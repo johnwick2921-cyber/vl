@@ -465,6 +465,15 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		row.Leg2Qty = store.IntPtr(leg2Qty)
 		row.Leg2TP = leg2TP
 	}
+	// m134 DS-108 (a): persist the evaluator snapshot the arm is authored under
+	// (EMA9/34, 1h/4h/5m triggers, HTF verdict, ORB, valid/forming trendlines,
+	// swing, nearest levels). A nil/empty evaluator leaves it NULL (absent).
+	if at.mentorEval != nil {
+		if snap, err := at.mentorEval.State.ArmSnapshot(in.Price).JSON(); err == nil {
+			s := snap
+			row.MentorSnapshot = &s
+		}
+	}
 	if err := ledger.UpsertArm(&row); err != nil {
 		at.mentorCount("placement_refused_upsert")
 		at.logErrorf("🧑‍🏫 mentor placement REFUSED — arm upsert failed: %v", err)

@@ -61,6 +61,65 @@ func (at *AutoTrader) feedNewestBarAge(now time.Time) (time.Duration, bool) {
 	return time.Duration(now.UnixMilli()-newestStamp) * time.Millisecond, true
 }
 
+// ── FEED-LAG ALARM (m134 DS-108 (c)) ────────────────────────────────────────
+//
+// The hard FEED DOWN (checkFeedDown) fires at ~10 min. A lag of 500–700 s
+// (~8–11 min late) that PERSISTS for 3 minutes is the soft, loud early warning:
+// one WARN per episode plus a dashboard line naming the fix. It sits on the
+// 60 s monitor beat (monitorTick), independent of the decision cycle, so a
+// late-but-not-dead feed is announced instead of silently chugging on stale
+// bars (the 10-min lag that used to be silent).
+
+const (
+	feedLagBandLow  = 500 * time.Second
+	feedLagBandHigh = 700 * time.Second
+	feedLagSustain  = 3 * time.Minute
+)
+
+// feedLagAlarmTick advances the 500–700 s feed-lag alarm episode (one beat).
+func (at *AutoTrader) feedLagAlarmTick(now time.Time) {
+	if at.config.Exchange != "ninjatrader" || !kernel.IsCMEOpen(now) {
+		at.feedLagMu.Lock()
+		at.feedLagEnteredAt, at.feedLagSaid, at.feedLagActive = time.Time{}, false, false
+		at.feedLagMu.Unlock()
+		return
+	}
+	age, haveBars := at.feedNewestBarAge(now)
+	at.feedLagMu.Lock()
+	inBand := haveBars && age >= feedLagBandLow && age <= feedLagBandHigh
+	if !inBand {
+		if at.feedLagActive || at.feedLagSaid {
+			// recovered (< 500 s) or crossed into the hard FEED DOWN (> 700 s):
+			// the episode is over; a NEW one re-arms.
+			at.feedLagEnteredAt, at.feedLagSaid, at.feedLagActive = time.Time{}, false, false
+		}
+		at.feedLagMu.Unlock()
+		return
+	}
+	if at.feedLagEnteredAt.IsZero() {
+		at.feedLagEnteredAt = now
+	}
+	at.feedLagActive = true
+	fire := !at.feedLagSaid && now.Sub(at.feedLagEnteredAt) >= feedLagSustain
+	if fire {
+		at.feedLagSaid = true
+	}
+	ageRounded := age.Round(time.Second)
+	at.feedLagMu.Unlock()
+	if fire {
+		at.logWarnf("📉 NinjaTrader bars ~10 min late — restart NinjaTrader (newest bar age %s, held > %s)",
+			ageRounded, feedLagSustain.Round(time.Second))
+	}
+}
+
+// feedLagActiveForDesk reports whether the 500–700 s band is active right now,
+// so the FEED dashboard line names the fix.
+func (at *AutoTrader) feedLagActiveForDesk() bool {
+	at.feedLagMu.Lock()
+	defer at.feedLagMu.Unlock()
+	return at.feedLagActive
+}
+
 // checkFeedDown (3.1) fires a P0 alert + CRITICAL log when no bar has arrived
 // for >10 min while the CME session is open. P0 renders as the persistent
 // dashboard banner (in-app only — the owner's no-external-push rule). Deduped

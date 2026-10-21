@@ -68,7 +68,7 @@ func barRowsForPersist(symbol, tf, contract string, historical bool, closed []nt
 			bs = store.BarSourceMixed
 		}
 		rows = append(rows, store.BarHistoryDB{
-			Symbol: symbol, TF: tf, OpenTimeMs: b.T,
+			Symbol: symbol, TF: tf, OpenTimeMs: kernel.ReanchorCMEStub(tf, b.T),
 			O: b.O, H: b.H, L: b.L, C: b.C, V: b.V,
 			Convention: market.StampConvention(tf),
 			Contract:   contract,
@@ -313,7 +313,7 @@ func backfillBars(bh *store.BarHistoryStore, server *ntwire.TCPServer) int {
 			// BAR-SOURCE WAVE — the ring stamped each bar at Seed/Upsert; the
 			// backfill carries that through. A ring bar with no source is a
 			// programming error and is refused by InsertBars rather than guessed.
-			rows = append(rows, store.BarHistoryDB{Symbol: pair[0], TF: pair[1], OpenTimeMs: b.T,
+			rows = append(rows, store.BarHistoryDB{Symbol: pair[0], TF: pair[1], OpenTimeMs: kernel.ReanchorCMEStub(pair[1], b.T),
 				O: b.O, H: b.H, L: b.L, C: b.C, V: b.V, Convention: market.StampConvention(pair[1]),
 				Contract: contract, Source: b.Source})
 		}
